@@ -99,9 +99,9 @@ void UploadQueue::onBlockPacketsReady(UpDownClient* client, QByteArray fileId,
     if (!client || !isDownloading(client))
         return;
     if (thePrefs.logRawSocketPackets())
-        logDebug(QStringLiteral("onBlockPacketsReady: client=%1 packets=%2")
+        logDebug([&]() -> QString { return QStringLiteral("onBlockPacketsReady: client=%1 packets=%2")
                      .arg(client->userName())
-                     .arg(packets.size()));
+                     .arg(packets.size()); });
     if (!client->socket() || fileId.size() != 16)
         return;
 
@@ -205,8 +205,8 @@ void UploadQueue::onSharedFileRemoved(KnownFile* file)
         if (!md4equ(servedFileId(cur), hash))
             continue;
         if (thePrefs.logUlDlEvents()) {
-            logDebug(QStringLiteral("%1: uploaded file \"%2\" is no longer shared — "
-                                    "removing from upload list").arg(cur->userName(), file->fileName()));
+            logDebug([&]() -> QString { return QStringLiteral("%1: uploaded file \"%2\" is no longer shared — "
+                                    "removing from upload list").arg(cur->userName(), file->fileName()); });
         }
         removeFromUploadQueue(cur, QStringLiteral("Uploaded file no longer shared"));
     }
@@ -626,9 +626,9 @@ bool UploadQueue::addUpNextClient(UpDownClient* directadd)
     // means it survived a slot it should have been cleared by. MFC ASSERT(0)s here
     // (srchybrid/UploadQueue.cpp:202-205); log and clear.
     if (!directadd && newClient->collectionUploadSlot()) {
-        logDebug(QStringLiteral("addUpNextClient: %1 reached normal slot selection still "
+        logDebug([&]() -> QString { return QStringLiteral("addUpNextClient: %1 reached normal slot selection still "
                                 "holding a collection slot — clearing")
-                     .arg(newClient->userName()));
+                     .arg(newClient->userName()); });
         newClient->setCollectionUploadSlot(false);
     }
 
@@ -711,15 +711,15 @@ UploadQueue::QueueAdmission UploadQueue::checkWaitingListAdmission(UpDownClient*
                                                                    bool evictDuplicates)
 {
     if (client->isBanned()) {
-        logDebug(QStringLiteral("%1: rejected banned client %2")
-                     .arg(QLatin1String(context), client->userName()));
+        logDebug([&]() -> QString { return QStringLiteral("%1: rejected banned client %2")
+                     .arg(QLatin1String(context), client->userName()); });
         return QueueAdmission::Rejected;
     }
 
     // ed3k §14.4: a dual peer already waiting or served on ed3k gets no 2nd place here
     if (theApp.isEd3kUploadPeer && client->hasValidHash() && theApp.isEd3kUploadPeer(client->userHash())) {
-        logDebug(QStringLiteral("%1: rejected %2 — queued over ed3k already")
-                     .arg(QLatin1String(context), client->userName()));
+        logDebug([&]() -> QString { return QStringLiteral("%1: rejected %2 — queued over ed3k already")
+                     .arg(QLatin1String(context), client->userName()); });
         return QueueAdmission::Rejected;
     }
 
@@ -763,8 +763,8 @@ UploadQueue::QueueAdmission UploadQueue::checkWaitingListAdmission(UpDownClient*
     }
 
     if (sameIPCount >= 3) {
-        logDebug(QStringLiteral("%1: rejected %2 — 3+ clients from same IP")
-                     .arg(QLatin1String(context), client->userName()));
+        logDebug([&]() -> QString { return QStringLiteral("%1: rejected %2 — 3+ clients from same IP")
+                     .arg(QLatin1String(context), client->userName()); });
         return QueueAdmission::Rejected;
     }
 
@@ -775,8 +775,8 @@ UploadQueue::QueueAdmission UploadQueue::checkWaitingListAdmission(UpDownClient*
     if (client->userAddress().isIPv4() && theApp.clientList
         && theApp.clientList->clientsFromIP(client->userAddress()) >= 3)
     {
-        logDebug(QStringLiteral("%1: rejected %2 — 3+ tracked clients from %3")
-                     .arg(QLatin1String(context), client->userName(), ipstr(client->userAddress())));
+        logDebug([&]() -> QString { return QStringLiteral("%1: rejected %2 — 3+ tracked clients from %3")
+                     .arg(QLatin1String(context), client->userName(), ipstr(client->userAddress())); });
         return QueueAdmission::Rejected;
     }
 
@@ -803,10 +803,10 @@ UploadQueue::QueueAdmission UploadQueue::checkWaitingListAdmission(UpDownClient*
         std::for_each(m_waitingList.begin(), m_waitingList.end(), count);
         std::for_each(m_uploadingList.begin(), m_uploadingList.end(), count);
         if (sameAddress || samePrefix >= 3) {
-            logDebug(QStringLiteral("%1: rejected %2 — IPv6 %3 %4")
+            logDebug([&]() -> QString { return QStringLiteral("%1: rejected %2 — IPv6 %3 %4")
                          .arg(QLatin1String(context), client->userName(), ipstr(v6),
                               sameAddress ? QStringLiteral("already queued or uploading")
-                                          : QStringLiteral("has 3 clients in its /64")));
+                                          : QStringLiteral("has 3 clients in its /64")); });
             return QueueAdmission::Rejected;
         }
     }
@@ -836,9 +836,9 @@ bool UploadQueue::queueLimitRejects(const UpDownClient* client)
         return false;
 
     if (waiting >= hardQueueLimit) {
-        logDebug(QStringLiteral("addClientToQueue: rejected %1 — hard queue limit %2 reached")
+        logDebug([&]() -> QString { return QStringLiteral("addClientToQueue: rejected %1 — hard queue limit %2 reached")
                      .arg(client->userName())
-                     .arg(hardQueueLimit));
+                     .arg(hardQueueLimit); });
         return true;
     }
 
@@ -852,12 +852,12 @@ bool UploadQueue::queueLimitRejects(const UpDownClient* client)
     if (client->getCombinedFilePrioAndCredit() >= getAverageCombinedFilePrioAndCredit())
         return false;
 
-    logDebug(QStringLiteral("addClientToQueue: rejected %1 — soft queue limit %2 reached "
+    logDebug([&]() -> QString { return QStringLiteral("addClientToQueue: rejected %1 — soft queue limit %2 reached "
                             "and its rank %3 is below the queue average %4")
                  .arg(client->userName())
                  .arg(softQueueLimit)
                  .arg(static_cast<double>(client->getCombinedFilePrioAndCredit()))
-                 .arg(static_cast<double>(m_averageCombinedFilePrioAndCredit)));
+                 .arg(static_cast<double>(m_averageCombinedFilePrioAndCredit)); });
     return true;
 }
 
@@ -1045,9 +1045,9 @@ bool UploadQueue::removeFromUploadQueue(UpDownClient* client, const QString& rea
     // MFC logs this under GetLogUlDlEvents (srchybrid/UploadQueue.cpp:706-715); here in the
     // verbose log, with what tells a stalled peer from one that stopped asking (emule-qt#58).
     if (thePrefs.verbose()) {
-        logDebug(QStringLiteral("Removing client from upload list: %1 Client: %2 %3")
+        logDebug([&]() -> QString { return QStringLiteral("Removing client from upload list: %1 Client: %2 %3")
                      .arg(reason.isEmpty() ? QStringLiteral("-") : reason,
-                          client->dbgGetClientInfo(), client->upSlotDebugInfo()));
+                          client->dbgGetClientInfo(), client->upSlotDebugInfo()); });
     }
 
     m_uploadingList.erase(it);
@@ -1134,9 +1134,9 @@ bool UploadQueue::checkForTimeOver(const UpDownClient* client)
         }
 
         if (thePrefs.logUlDlEvents()) {
-            logDebug(QStringLiteral("%1: upload session ended — client with a collection slot "
+            logDebug([&]() -> QString { return QStringLiteral("%1: upload session ended — client with a collection slot "
                                     "requested blocks from another file")
-                         .arg(client->userName()));
+                         .arg(client->userName()); });
         }
         return true;
     }
@@ -1152,8 +1152,8 @@ bool UploadQueue::checkForTimeOver(const UpDownClient* client)
             && !(client->queueSessionPayloadUp() <= kSessionStretch * uint64{SESSIONMAXTRANS}
                  && keepsProductiveSlot(client))) {
             if (thePrefs.logUlDlEvents()) {
-                logDebug(QStringLiteral("%1: upload session ended — max transferred amount")
-                             .arg(client->userName()));
+                logDebug([&]() -> QString { return QStringLiteral("%1: upload session ended — max transferred amount")
+                             .arg(client->userName()); });
             }
             return true;
         }
@@ -1165,9 +1165,9 @@ bool UploadQueue::checkForTimeOver(const UpDownClient* client)
         && !(client->getUpStartTimeDelay() <= kSessionStretch * uint64{SESSIONMAXTIME}
              && keepsProductiveSlot(client))) {
         if (thePrefs.logUlDlEvents()) {
-            logDebug(QStringLiteral("%1: upload session ended — max time %2 min")
+            logDebug([&]() -> QString { return QStringLiteral("%1: upload session ended — max time %2 min")
                          .arg(client->userName())
-                         .arg(SESSIONMAXTIME / MIN2MS(1)));
+                         .arg(SESSIONMAXTIME / MIN2MS(1)); });
         }
         return true;
     }
@@ -1180,8 +1180,8 @@ bool UploadQueue::checkForTimeOver(const UpDownClient* client)
         const uint64 curTick = getTickCount();
         if (curTick >= m_removedClientByScore) {
             if (thePrefs.logUlDlEvents()) {
-                logDebug(QStringLiteral("%1: upload session ended — score")
-                             .arg(client->userName()));
+                logDebug([&]() -> QString { return QStringLiteral("%1: upload session ended — score")
+                             .arg(client->userName()); });
             }
             // Slots open at least 1 s apart and the max score is only recomputed every 5 s,
             // so 6 s guarantees the next kick judges against a fresh figure instead of
@@ -1353,9 +1353,9 @@ void UploadQueue::recycleDeadSlots(uint64 curTick)
     cooldown.lastStrike = curTick;
     cooldown.until = curTick + wait;
 
-    logDebug(QStringLiteral("Upload slot of %1 is taking nothing — given to the next in line "
+    logDebug([&]() -> QString { return QStringLiteral("Upload slot of %1 is taking nothing — given to the next in line "
                             "(not chosen again for %2 s)")
-                 .arg(dead->userName()).arg(wait / 1000));
+                 .arg(dead->userName()).arg(wait / 1000); });
     m_deadSlotSince.erase(dead);
     if (removeFromUploadQueue(dead, QStringLiteral("Dead slot, given to the next in line")))
         dead->sendOutOfPartReqsAndAddToWaitingQueue();
@@ -1574,8 +1574,8 @@ void UploadQueue::answerReask(const Endpoint& replyTo, SafeMemFile& in,
 
     // Still about the file it holds a queue place for? MFC ClientUDPSocket.cpp:255.
     if (!md4equ(fileHash, sender->reqUpFileId())) {
-        logDebug(QStringLiteral("answerReask: %1 asked about a file it is not queued for")
-                     .arg(sender->userName()));
+        logDebug([&]() -> QString { return QStringLiteral("answerReask: %1 asked about a file it is not queued for")
+                     .arg(sender->userName()); });
         return;
     }
 
@@ -1624,8 +1624,8 @@ bool UploadQueue::followRequestedFile(UpDownClient* client, const uint8* fileId)
     }
 
     if (thePrefs.logUlDlEvents()) {
-        logDebug(QStringLiteral("%1: requested file of a block request is not shared — "
-                                "removing from upload list").arg(client->userName()));
+        logDebug([&]() -> QString { return QStringLiteral("%1: requested file of a block request is not shared — "
+                                "removing from upload list").arg(client->userName()); });
     }
     removeFromUploadQueue(client, QStringLiteral("Requested file of a block request not shared"));
     return false;

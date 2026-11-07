@@ -173,9 +173,9 @@ bool HttpCacheClient::processHttpDownResponse(const QList<QByteArray>& headers)
     }
 
     if (code != 200 && code != 206) {
-        logDebug(QStringLiteral("HTTP Cache: server returned %1 for part %2")
+        logDebug([&]() -> QString { return QStringLiteral("HTTP Cache: server returned %1 for part %2")
                      .arg(code)
-                     .arg(m_offer.partIndex));
+                     .arg(m_offer.partIndex); });
         finish(HttpCacheResult::HttpFailed);
         return false;
     }

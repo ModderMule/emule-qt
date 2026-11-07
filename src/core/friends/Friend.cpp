@@ -274,9 +274,9 @@ void Friend::findKadID()
     if (client->kadPort() == 0 || client->kadVersion() < KADEMLIA_VERSION2_47a)
         return;
 
-    logDebug(QStringLiteral("Searching Kad ID for friend %1 by address %2")
+    logDebug([&]() -> QString { return QStringLiteral("Searching Kad ID for friend %1 by address %2")
                  .arg(m_name.isEmpty() ? QStringLiteral("(unknown)") : m_name)
-                 .arg(ipstr(client->connectAddress())));
+                 .arg(ipstr(client->connectAddress())); });
     kad->findNodeIDByIP(*this, client->connectAddress().toUint32(),
                         client->userPort(), client->kadPort());
 }
@@ -304,8 +304,8 @@ void Friend::kadSearchNodeIDByIPResult(kad::KadClientSearchResult status, const 
         return;
 
     if (status == kad::KadClientSearchResult::Succeeded && nodeID) {
-        logDebug(QStringLiteral("Fetched Kad ID for friend %1")
-                     .arg(m_name.isEmpty() ? QStringLiteral("(unknown)") : m_name));
+        logDebug([&]() -> QString { return QStringLiteral("Fetched Kad ID for friend %1")
+                     .arg(m_name.isEmpty() ? QStringLiteral("(unknown)") : m_name); });
         md4cpy(m_kadID.data(), nodeID);
     }
 }
@@ -322,9 +322,9 @@ void Friend::kadSearchIPByNodeIDResult(kad::KadClientSearchResult status, uint32
         const Address found = Address::fromHostOrder(ip);   // Kad hands out host order
         // The same address that just failed is no news.
         if (client->connectAddress() != found || client->userPort() != port) {
-            logDebug(QStringLiteral("Kad found friend %1 at %2:%3")
+            logDebug([&]() -> QString { return QStringLiteral("Kad found friend %1 at %2:%3")
                          .arg(m_name.isEmpty() ? QStringLiteral("(unknown)") : m_name)
-                         .arg(ipstr(found)).arg(port));
+                         .arg(ipstr(found)).arg(port); });
             reportProgress(ChatConnectProgress::FoundInKad);
 
             m_lastUsedAddress = found;

@@ -487,7 +487,7 @@ void Ed3kJdResolver::send(const QJsonObject& req)
     // never logged whole: it may hold a password
     const QByteArray line = QJsonDocument(req).toJson(QJsonDocument::Compact) + '\n';
     const bool now = m_authed && m_sock;
-    logHosterDebug(QStringLiteral("hoster: -> %1%2").arg(describeRequest(req), now ? QString() : QStringLiteral(" (queued)")));
+    logHosterDebug([&]() -> QString { return QStringLiteral("hoster: -> %1%2").arg(describeRequest(req), now ? QString() : QStringLiteral(" (queued)")); });
     if (now)
         m_sock->write(line);
     else
@@ -556,9 +556,9 @@ bool Ed3kJdResolver::ensureStarted()
     m_sidecar.closeWriteChannel();
     m_connectTimer.start();
     m_progressLogged.clear();
-    logHosterDebug(QStringLiteral("hoster: resolver starting: %1, plugins %2, listening on 127.0.0.1:%3")
+    logHosterDebug([&]() -> QString { return QStringLiteral("hoster: resolver starting: %1, plugins %2, listening on 127.0.0.1:%3")
                        .arg(m_config.java, m_revision.isEmpty() ? QStringLiteral("?") : QStringLiteral("r") + m_revision)
-                       .arg(m_server->serverPort()));
+                       .arg(m_server->serverPort()); });
     m_stopping = false;
     request({{QStringLiteral("op"), QStringLiteral("hello")}}, false);
     if (!m_config.proxy.isEmpty())
@@ -583,16 +583,16 @@ void Ed3kJdResolver::onLog(const QByteArray& line)
 {
     // JD's own log may hold page content: only the driver's lines
     if (line.startsWith("resolver: "))
-        logHosterDebug(QStringLiteral("hoster: ") + QString::fromUtf8(line.mid(10)));
+        logHosterDebug([&]() -> QString { return QStringLiteral("hoster: ") + QString::fromUtf8(line.mid(10)); });
 }
 
 void Ed3kJdResolver::onFinished(int exitCode, bool crashed, bool stopped)
 {
     const bool expected = m_stopping || stopped;
-    logHosterDebug(QStringLiteral("hoster: resolver exited, code %1%2, after %3 s")
+    logHosterDebug([&]() -> QString { return QStringLiteral("hoster: resolver exited, code %1%2, after %3 s")
                        .arg(exitCode)
                        .arg(crashed ? QStringLiteral(" (crashed)") : QString())
-                       .arg(m_sidecar.uptimeMs() / 1000));
+                       .arg(m_sidecar.uptimeMs() / 1000); });
     closeChannel();
     m_stopping = false;
     if (!expected)
@@ -604,9 +604,9 @@ void Ed3kJdResolver::onFinished(int exitCode, bool crashed, bool stopped)
 void Ed3kJdResolver::onIdle()
 {
     if (m_pending.empty()) {
-        logHosterDebug(QStringLiteral("hoster: resolver idle for %1 min, stopping it (up %2 s)")
+        logHosterDebug([&]() -> QString { return QStringLiteral("hoster: resolver idle for %1 min, stopping it (up %2 s)")
                            .arg(kIdleStopMs / 60000)
-                           .arg(m_sidecar.uptimeMs() / 1000));
+                           .arg(m_sidecar.uptimeMs() / 1000); });
         stop();
     }
 }
@@ -635,11 +635,11 @@ void Ed3kJdResolver::handleLine(const QByteArray& line)
         }
         if (const QString rev = o.value(QStringLiteral("jdRevision")).toString(); !rev.isEmpty() && rev != u'?')
             m_revision = rev;
-        logHosterDebug(QStringLiteral("hoster: <- hello, protocol %1, JD r%2, %3 hosters, %4 decrypters")
+        logHosterDebug([&]() -> QString { return QStringLiteral("hoster: <- hello, protocol %1, JD r%2, %3 hosters, %4 decrypters")
                            .arg(proto)
                            .arg(o.value(QStringLiteral("jdRevision")).toString())
                            .arg(o.value(QStringLiteral("hosts")).toInt())
-                           .arg(o.value(QStringLiteral("crawlers")).toInt()));
+                           .arg(o.value(QStringLiteral("crawlers")).toInt()); });
         m_description = tr("JDownloader r%1, %2 hosters, %3 decrypters")
                             .arg(o.value(QStringLiteral("jdRevision")).toString())
                             .arg(o.value(QStringLiteral("hosts")).toInt())
@@ -650,8 +650,8 @@ void Ed3kJdResolver::handleLine(const QByteArray& line)
     auto parsed = parseEvent(line);
     if (!parsed) {
         // the name only: the line may hold page content
-        logHosterDebug(QStringLiteral("hoster: <- unknown event '%1', dropped")
-                           .arg(o.value(QStringLiteral("ev")).toString().left(32)));
+        logHosterDebug([&]() -> QString { return QStringLiteral("hoster: <- unknown event '%1', dropped")
+                           .arg(o.value(QStringLiteral("ev")).toString().left(32)); });
         return;
     }
     const auto& [id, ev] = *parsed;
@@ -659,8 +659,8 @@ void Ed3kJdResolver::handleLine(const QByteArray& line)
     if (id == 0 && ev.kind != ResolverEvent::Kind::Puzzle)
         return;
     if (id != 0 && !m_pending.contains(id)) {
-        logHosterDebug(QStringLiteral("hoster: <- %1 for task %2, not open any more, dropped")
-                           .arg(o.value(QStringLiteral("ev")).toString()).arg(id));
+        logHosterDebug([&]() -> QString { return QStringLiteral("hoster: <- %1 for task %2, not open any more, dropped")
+                           .arg(o.value(QStringLiteral("ev")).toString()).arg(id); });
         return;
     }
     logEvent(id, o.value(QStringLiteral("ev")).toString(), ev);
@@ -706,8 +706,8 @@ void Ed3kJdResolver::onNewConnection()
         }
         s->setParent(this);   // the server is deleted after auth, its children with it
         m_sock = s;
-        logHosterDebug(QStringLiteral("hoster: resolver connected from port %1, waiting for its token")
-                           .arg(s->peerPort()));
+        logHosterDebug([&]() -> QString { return QStringLiteral("hoster: resolver connected from port %1, waiting for its token")
+                           .arg(s->peerPort()); });
         m_outBuf.clear();
         connect(s, &QTcpSocket::readyRead, this, &Ed3kJdResolver::onSocketRead);
         connect(s, &QTcpSocket::disconnected, this, &Ed3kJdResolver::onSocketGone);
@@ -747,9 +747,9 @@ void Ed3kJdResolver::onSocketRead()
             m_server = nullptr;
         }
         m_sock->setSocketOption(QAbstractSocket::LowDelayOption, 1);
-        logHosterDebug(QStringLiteral("hoster: resolver authenticated after %1 ms, %2 queued request(s) sent")
+        logHosterDebug([&]() -> QString { return QStringLiteral("hoster: resolver authenticated after %1 ms, %2 queued request(s) sent")
                            .arg(m_sidecar.uptimeMs())
-                           .arg(m_sendQueue.count('\n')));
+                           .arg(m_sendQueue.count('\n')); });
         m_sock->write(std::exchange(m_sendQueue, {}));
     }
     if (m_outBuf.size() > kMaxLine) {
@@ -870,7 +870,7 @@ void Ed3kJdResolver::logEvent(TaskId id, const QString& ev, const ResolverEvent&
     case K::Cancelled:
         break;
     }
-    logHosterDebug(QStringLiteral("hoster: <- task %1 %2%3").arg(id).arg(ev, d.isEmpty() ? QString() : QStringLiteral(": ") + d));
+    logHosterDebug([&]() -> QString { return QStringLiteral("hoster: <- task %1 %2%3").arg(id).arg(ev, d.isEmpty() ? QString() : QStringLiteral(": ") + d); });
 }
 
 } // namespace eMule::ed3k

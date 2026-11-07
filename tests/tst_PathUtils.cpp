@@ -153,7 +153,7 @@ private slots:
         QVERIFY2(drift < (std::uint64_t{1} << 30), "answered for a different volume");
     }
 
-    /// Windows builds put the binaries in the build root, beside build/i2pd/: the
+    /// Windows builds put the binaries in the build root, beside build/hoster-resolver/: the
     /// build-tree file is looked for in the app dir itself too, not only above it.
     void bundledFileInTheAppDirsBuildTree()
     {

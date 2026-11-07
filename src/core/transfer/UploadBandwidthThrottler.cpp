@@ -365,8 +365,8 @@ void UploadBandwidthThrottler::runInternal()
                         changesCount = 0;
                         loopsCount = 0;
                         if (thePrefs.verbose())
-                            logDebug(QStringLiteral("Throttler: initial guessed upload limit %1 KB/s")
-                                         .arg(nEstimatedDataRate / 1024.0, 0, 'f', 1));
+                            logDebug([&]() -> QString { return QStringLiteral("Throttler: initial guessed upload limit %1 KB/s")
+                                         .arg(nEstimatedDataRate / 1024.0, 0, 'f', 1); });
                     }
                 } else if (nSlotsBusyLevel > 250) {
                     if (changesCount > 500 || (changesCount > 300 && loopsCount > 1000) || loopsCount > 2000)
@@ -380,11 +380,11 @@ void UploadBandwidthThrottler::runInternal()
                     numberOfConsecutiveUpChanges = 0;
                     nSlotsBusyLevel = 0;
                     if (thePrefs.verbose())
-                        logDebug(QStringLiteral("Throttler: REDUCED guessed limit #%1 by %2 bytes to %3 KB/s "
+                        logDebug([&]() -> QString { return QStringLiteral("Throttler: REDUCED guessed limit #%1 by %2 bytes to %3 KB/s "
                                                 "(changes %4, loops %5)")
                                      .arg(numberOfConsecutiveDownChanges).arg(changeDelta)
                                      .arg(nEstimatedDataRate / 1024.0, 0, 'f', 1)
-                                     .arg(changesCount).arg(loopsCount));
+                                     .arg(changesCount).arg(loopsCount); });
                     changesCount = 0;
                     loopsCount = 0;
                 } else if (nSlotsBusyLevel < -250) {
@@ -402,11 +402,11 @@ void UploadBandwidthThrottler::runInternal()
                     numberOfConsecutiveDownChanges = 0;
                     nSlotsBusyLevel = 0;
                     if (thePrefs.verbose())
-                        logDebug(QStringLiteral("Throttler: INCREASED guessed limit #%1 by %2 bytes to %3 KB/s "
+                        logDebug([&]() -> QString { return QStringLiteral("Throttler: INCREASED guessed limit #%1 by %2 bytes to %3 KB/s "
                                                 "(changes %4, loops %5)")
                                      .arg(numberOfConsecutiveUpChanges).arg(changeDelta)
                                      .arg(nEstimatedDataRate / 1024.0, 0, 'f', 1)
-                                     .arg(changesCount).arg(loopsCount));
+                                     .arg(changesCount).arg(loopsCount); });
                     changesCount = 0;
                     loopsCount = 0;
                 }

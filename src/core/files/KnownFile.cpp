@@ -1012,8 +1012,8 @@ std::unique_ptr<Packet> KnownFile::createSrcInfoPacket(
     // writes the client's upload file ID into the packet and relies on this guard for
     // the two to agree (srchybrid/KnownFile.cpp:1012-1017).
     if (!md4equ(forClient->reqUpFileId(), fileHash())) {
-        logDebug(QStringLiteral("createSrcInfoPacket: requester's upload file is not %1")
-                     .arg(fileName()));
+        logDebug([&]() -> QString { return QStringLiteral("createSrcInfoPacket: requester's upload file is not %1")
+                     .arg(fileName()); });
         return nullptr;
     }
 
@@ -1024,9 +1024,9 @@ std::unique_ptr<Packet> KnownFile::createSrcInfoPacket(
     if (!(forClient->upPartCount() == 0 && clientParts.empty()) &&
         !(forClient->upPartCount() == partCount() && !clientParts.empty()))
     {
-        logDebug(QStringLiteral("createSrcInfoPacket: requester part count %1 does not "
+        logDebug([&]() -> QString { return QStringLiteral("createSrcInfoPacket: requester part count %1 does not "
                                 "match file part count %2 for %3")
-                     .arg(forClient->upPartCount()).arg(partCount()).arg(fileName()));
+                     .arg(forClient->upPartCount()).arg(partCount()).arg(fileName()); });
         return nullptr;
     }
 
@@ -1431,7 +1431,7 @@ bool KnownFile::adoptAndStoreAICHHashSet(AICHRecoveryHashSet& hashSet)
     hashSet.setStatus(EAICHStatus::HashSetComplete);
     fileIdentifier().setAICHHash(hashSet.getMasterHash());
     if (!fileIdentifier().setAICHHashSet(hashSet))
-        logDebug(QStringLiteral("Failed to store AICH part hashset for %1").arg(fileName()));
+        logDebug([&]() -> QString { return QStringLiteral("Failed to store AICH part hashset for %1").arg(fileName()); });
 
     // No store configured (a bare KnownFile, a unit test): nothing to save to, and
     // nothing to serve recovery data from.

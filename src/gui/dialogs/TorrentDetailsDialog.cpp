@@ -6,8 +6,8 @@
 
 #include "app/IpcClient.h"
 #include "controls/TorrentListModel.h"
+#include "controls/TorrentOptionsForm.h"
 #include "controls/TorrentPieceGrid.h"
-#include "prefs/Preferences.h"
 #include "utils/Clipboard.h"
 #include "utils/MenuUtils.h"
 #include "utils/StatusBarNotifier.h"
@@ -17,17 +17,13 @@
 
 #include <QApplication>
 #include <QButtonGroup>
-#include <QCheckBox>
-#include <QComboBox>
 #include <QDateTime>
-#include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLocale>
 #include <QPlainTextEdit>
-#include <QSpinBox>
 #include <QStyle>
 #include <QTabWidget>
 #include <QTextBrowser>
@@ -42,8 +38,6 @@ namespace {
 constexpr int kPollMs = 2000;
 /// an Options edit goes out this long after the last change
 constexpr int kSendDelayMs = 600;
-/// Modes of the seed limit combos: BtLimitMode on the wire
-enum LimitMode { ModeGlobal = 0, ModeUnlimited = 1, ModeCustom = 2 };
 
 /// the tab the last dialog was left on, for the next one
 int s_lastTab = TorrentDetailsDialog::TabActivity;
@@ -81,19 +75,6 @@ QFormLayout* makeForm(QWidget* parent)
     form->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
     form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     return form;
-}
-
-void fillLimitCombo(QComboBox* combo)
-{
-    combo->addItem(TorrentDetailsDialog::tr("Use global settings"), ModeGlobal);
-    combo->addItem(TorrentDetailsDialog::tr("Seed regardless"), ModeUnlimited);
-    combo->addItem(TorrentDetailsDialog::tr("Stop seeding at:"), ModeCustom);
-}
-
-void selectMode(QComboBox* combo, int mode)
-{
-    const int at = combo->findData(mode);
-    combo->setCurrentIndex(at >= 0 ? at : 0);
 }
 
 } // namespace
@@ -264,15 +245,7 @@ void TorrentDetailsDialog::setRow(const TorrentRow& row)
 
 QCborMap TorrentDetailsDialog::optionsFromUi() const
 {
-    return QCborMap{
-        {QStringLiteral("downloadLimitKb"), m_limitDown->isChecked() ? m_limitDownKb->value() : 0},
-        {QStringLiteral("uploadLimitKb"), m_limitUp->isChecked() ? m_limitUpKb->value() : 0},
-        {QStringLiteral("maxPeers"), m_maxPeers->value()},
-        {QStringLiteral("ratioMode"), m_ratioMode->currentData().toInt()},
-        {QStringLiteral("ratioPercent"), qRound(m_ratio100->value() * 100.0)},
-        {QStringLiteral("seedTimeMode"), m_seedTimeMode->currentData().toInt()},
-        {QStringLiteral("seedTimeMinutes"), m_seedMinutes->value()},
-    };
+    return m_optionsForm->options();
 }
 
 // ---------------------------------------------------------------------------
@@ -397,68 +370,9 @@ QWidget* TorrentDetailsDialog::buildOptionsTab()
 {
     auto* page = new QWidget(this);
     auto* layout = new QVBoxLayout(page);
-
-    auto* speed = new QGroupBox(tr("Speed"), page);
-    auto* speedForm = makeForm(speed);
-    auto limitRow = [&](const QString& text, QCheckBox*& check, QSpinBox*& spin) {
-        check = new QCheckBox(text, speed);
-        spin = new QSpinBox(speed);
-        spin->setRange(1, 1'000'000);
-        spin->setValue(100);
-        spin->setSuffix(tr(" KiB/s"));
-        spin->setToolTip(tr("Also limited by the global and BitTorrent limits."));
-        speedForm->addRow(check, spin);
-        connect(check, &QCheckBox::toggled, this, &TorrentDetailsDialog::onOptionsEdited);
-        connect(spin, &QSpinBox::valueChanged, this, &TorrentDetailsDialog::onOptionsEdited);
-    };
-    limitRow(tr("Limit download speed:"), m_limitDown, m_limitDownKb);
-    limitRow(tr("Limit upload speed:"), m_limitUp, m_limitUpKb);
-    applyRateMaxima();
-    layout->addWidget(speed);
-
-    auto* seeding = new QGroupBox(tr("Seeding Limits"), page);
-    auto* seedForm = makeForm(seeding);
-    auto* ratioRow = new QHBoxLayout;
-    m_ratioMode = new QComboBox(seeding);
-    fillLimitCombo(m_ratioMode);
-    m_ratio100 = new QDoubleSpinBox(seeding);
-    m_ratio100->setRange(0.01, 1000.0);
-    m_ratio100->setDecimals(2);
-    m_ratio100->setSingleStep(0.1);
-    m_ratio100->setValue(1.0);
-    ratioRow->addWidget(m_ratioMode);
-    ratioRow->addWidget(m_ratio100);
-    ratioRow->addStretch(1);
-    seedForm->addRow(tr("Ratio:"), ratioRow);
-    auto* timeRow = new QHBoxLayout;
-    m_seedTimeMode = new QComboBox(seeding);
-    fillLimitCombo(m_seedTimeMode);
-    m_seedMinutes = new QSpinBox(seeding);
-    m_seedMinutes->setRange(1, 1'000'000);
-    m_seedMinutes->setValue(60);
-    m_seedMinutes->setSuffix(tr(" min"));
-    timeRow->addWidget(m_seedTimeMode);
-    timeRow->addWidget(m_seedMinutes);
-    timeRow->addStretch(1);
-    seedForm->addRow(tr("Seed time:"), timeRow);
-    for (QComboBox* combo : {m_ratioMode, m_seedTimeMode})
-        connect(combo, &QComboBox::currentIndexChanged, this, &TorrentDetailsDialog::onOptionsEdited);
-    connect(m_ratio100, &QDoubleSpinBox::valueChanged, this, &TorrentDetailsDialog::onOptionsEdited);
-    connect(m_seedMinutes, &QSpinBox::valueChanged, this, &TorrentDetailsDialog::onOptionsEdited);
-    layout->addWidget(seeding);
-
-    auto* peers = new QGroupBox(tr("Peer Connections"), page);
-    auto* peerForm = makeForm(peers);
-    m_maxPeers = new QSpinBox(peers);
-    m_maxPeers->setRange(0, 10'000);
-    m_maxPeers->setSpecialValueText(tr("Default"));
-    m_maxPeers->setMinimumWidth(110);
-    peerForm->addRow(tr("Maximum peers:"), m_maxPeers);
-    connect(m_maxPeers, &QSpinBox::valueChanged, this, &TorrentDetailsDialog::onOptionsEdited);
-    layout->addWidget(peers);
-    layout->addStretch(1);
-
-    updateOptionEnables();
+    m_optionsForm = new TorrentOptionsForm(page);
+    connect(m_optionsForm, &TorrentOptionsForm::edited, this, &TorrentDetailsDialog::onOptionsEdited);
+    layout->addWidget(m_optionsForm);
     return page;
 }
 
@@ -495,34 +409,11 @@ void TorrentDetailsDialog::applyOptions(const QCborMap& options)
     // never over what the user is typing
     if (m_optionsDirty || m_tabs->widget(TabOptions)->isAncestorOf(QApplication::focusWidget()))
         return;
-    m_fillingOptions = true;
-    // The limits may have changed since the last poll
-    applyRateMaxima();
-    const int down = int(options.value(QStringLiteral("downloadLimitKb")).toInteger());
-    const int up = int(options.value(QStringLiteral("uploadLimitKb")).toInteger());
-    m_limitDown->setChecked(down > 0);
-    if (down > 0)
-        m_limitDownKb->setValue(down);
-    m_limitUp->setChecked(up > 0);
-    if (up > 0)
-        m_limitUpKb->setValue(up);
-    m_maxPeers->setValue(int(options.value(QStringLiteral("maxPeers")).toInteger()));
-    selectMode(m_ratioMode, int(options.value(QStringLiteral("ratioMode")).toInteger()));
-    // 0 = never set: the spin boxes keep their defaults
-    if (const qint64 ratio = options.value(QStringLiteral("ratioPercent")).toInteger(); ratio > 0)
-        m_ratio100->setValue(static_cast<double>(ratio) / 100.0);
-    selectMode(m_seedTimeMode, int(options.value(QStringLiteral("seedTimeMode")).toInteger()));
-    if (const qint64 minutes = options.value(QStringLiteral("seedTimeMinutes")).toInteger(); minutes > 0)
-        m_seedMinutes->setValue(int(minutes));
-    updateOptionEnables();
-    m_fillingOptions = false;
+    m_optionsForm->setOptions(options);
 }
 
 void TorrentDetailsDialog::onOptionsEdited()
 {
-    updateOptionEnables();
-    if (m_fillingOptions)
-        return;
     m_optionsDirty = true;
     m_sendTimer->start();
 }
@@ -546,35 +437,12 @@ void TorrentDetailsDialog::sendOptions()
     });
 }
 
-void TorrentDetailsDialog::updateOptionEnables()
-{
-    m_limitDownKb->setEnabled(m_limitDown->isChecked());
-    m_limitUpKb->setEnabled(m_limitUp->isChecked());
-    m_ratio100->setEnabled(m_ratioMode->currentData().toInt() == ModeCustom);
-    m_seedMinutes->setEnabled(m_seedTimeMode->currentData().toInt() == ModeCustom);
-}
-
 void TorrentDetailsDialog::copyMagnet()
 {
     if (m_magnet.isEmpty())
         return;
     eMule::Clipboard::setText(m_magnet);
     StatusBarNotifier::post(tr("Copied %n magnet link(s).", nullptr, 1), 3000);
-}
-
-void TorrentDetailsDialog::applyRateMaxima()
-{
-    // thePrefs mirrors the daemon (GetPreferences on connect); 0 = no limit
-    const auto ceiling = [](uint32 global, uint32 bt) {
-        uint32 kb = 1'000'000;
-        for (const uint32 limit : {global, bt}) {
-            if (limit > 0)
-                kb = std::min(kb, limit);
-        }
-        return int(kb);
-    };
-    m_limitDownKb->setMaximum(ceiling(thePrefs.maxDownload(), thePrefs.btMaxDownloadKb()));
-    m_limitUpKb->setMaximum(ceiling(thePrefs.maxUpload(), thePrefs.btMaxUploadKb()));
 }
 
 } // namespace eMule

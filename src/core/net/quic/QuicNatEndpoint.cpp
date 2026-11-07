@@ -359,7 +359,7 @@ void QuicNatEndpoint::routeQuic(const uint8* data, size_t len, const Endpoint& f
     if (!match) {
         // the peer repeats its Initial every 250 ms: one line per address
         if (m_droppedLogged.insert(from.address()).second)
-            logDebug(QStringLiteral("NAT-T QUIC: Initial from unexpected %1 dropped").arg(from.toString()));
+            logDebug([&]() -> QString { return QStringLiteral("NAT-T QUIC: Initial from unexpected %1 dropped").arg(from.toString()); });
         return;
     }
     if (m_conns.size() >= kMaxConnections || !m_io.admit(from.address()))

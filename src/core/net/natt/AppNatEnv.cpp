@@ -374,7 +374,7 @@ void AppNatEnv::dialPeerQuic(const Attempt& attempt)
     }
     ep->learnPeerHash(to, obfuscationHash(attempt));
     if (!ep->dial(to, attempt.peer.hashKnown ? attempt.peer.hash : quic::Hash16{}))
-        logDebug(QStringLiteral("NAT-T QUIC: cannot dial %1").arg(to.toString()));
+        logDebug([&]() -> QString { return QStringLiteral("NAT-T QUIC: cannot dial %1").arg(to.toString()); });
 }
 
 bool AppNatEnv::quicActive(const Attempt& attempt) const
@@ -403,8 +403,8 @@ quic::QuicNatEndpoint* AppNatEnv::quic() const
     m_quic = std::make_unique<quic::QuicNatEndpoint>(*m_quicIo);
     m_quic->onEstablished = [this](std::shared_ptr<quic::QuicNatConnection> conn, bool outgoing) {
         const Endpoint peer = conn->peerEndpoint();
-        logDebug(QStringLiteral("NAT-T: QUIC connected %1 (%2)")
-                     .arg(peer.toString(), outgoing ? QStringLiteral("out") : QStringLiteral("in")));
+        logDebug([&]() -> QString { return QStringLiteral("NAT-T: QUIC connected %1 (%2)")
+                     .arg(peer.toString(), outgoing ? QStringLiteral("out") : QStringLiteral("in")); });
         if (!outgoing) {
             // like an accepted TCP connection: the hello finds the known client by hash
             if (theApp.listenSocket)
@@ -433,15 +433,15 @@ quic::QuicNatEndpoint* AppNatEnv::quic() const
         if (client->connectingState() == ConnectingState::NatRendezvous)
             client->setConnectingState(ConnectingState::None);
         if (!client->connectOverTransport(conn))
-            logDebug(QStringLiteral("NAT-T: QUIC link to %1 not needed, already connected").arg(peer.toString()));
+            logDebug([&]() -> QString { return QStringLiteral("NAT-T: QUIC link to %1 not needed, already connected").arg(peer.toString()); });
     };
     m_quic->onFailed = [](const Endpoint& peer, const quic::Hash16&, const QString& reason) {
-        logDebug(QStringLiteral("NAT-T: QUIC to %1 failed: %2").arg(peer.toString(), reason));
+        logDebug([&]() -> QString { return QStringLiteral("NAT-T: QUIC to %1 failed: %2").arg(peer.toString(), reason); });
     };
     m_quic->onCaps = [](const Endpoint& peer, const quic::Caps& caps, bool ack) {
-        logDebug(QStringLiteral("NAT-T: caps%1 from %2 options 0x%3")
+        logDebug([&]() -> QString { return QStringLiteral("NAT-T: caps%1 from %2 options 0x%3")
                      .arg(ack ? QStringLiteral(" ack") : QString(), peer.toString())
-                     .arg(caps.options, 2, 16, QLatin1Char('0')));
+                     .arg(caps.options, 2, 16, QLatin1Char('0')); });
     };
     return m_quic.get();
 }

@@ -38,6 +38,7 @@
 #include <QFrame>
 #include <QHostAddress>
 #include <QHostInfo>
+#include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -178,7 +179,7 @@ void ServerPanel::onAddServerClicked()
     // The daemon classifies without resolving: a hostname is stored as a dynIP and
     // re-resolved on every connect (A then AAAA), so an AAAA-only host works and
     // nothing blocks the GUI thread. Accepts an IPv6 literal, bracketed or bare.
-    sendAddServer(ip, port, name, [this, ip, port](bool added, const QString& rejected) {
+    sendAddServer(ip, port, name, QString(), [this, ip, port](bool added, const QString& rejected) {
         if (!rejected.isEmpty()) {
             // Inputs stay so the address can be fixed; the daemon already logged it.
             StatusBarNotifier::post(rejected);
@@ -717,26 +718,26 @@ QWidget* ServerPanel::createControlsPanel()
     auto* nsLayout = new QVBoxLayout(newServerGroup);
     nsLayout->setSpacing(4);
 
-    // IP + Port row
-    auto* ipPortRow = new QHBoxLayout;
-    ipPortRow->setSpacing(4);
-    ipPortRow->addWidget(new QLabel(tr("IP Address:")));
+    // Labels above fields like MFC (emule.rc IDC_SSTATIC4/7/3), so the IP field gets the width
+    auto* fieldGrid = new QGridLayout;
+    fieldGrid->setHorizontalSpacing(6);
+    fieldGrid->setVerticalSpacing(2);
+    fieldGrid->addWidget(new QLabel(tr("IP Address:")), 0, 0);
+    fieldGrid->addWidget(new QLabel(tr("Port:")), 0, 1);
     m_newServerIp = new QLineEdit;
     m_newServerIp->setPlaceholderText(QStringLiteral("0.0.0.0"));
-    ipPortRow->addWidget(m_newServerIp, 1);
-    ipPortRow->addWidget(new QLabel(tr("Port:")));
+    // fit a full dotted IPv4 plus frame padding
+    m_newServerIp->setMinimumWidth(
+        m_newServerIp->fontMetrics().horizontalAdvance(QStringLiteral("255.255.255.255")) + 16);
+    fieldGrid->addWidget(m_newServerIp, 1, 0);
     m_newServerPort = new QLineEdit(QStringLiteral("4661"));
     m_newServerPort->setMaximumWidth(55);
-    ipPortRow->addWidget(m_newServerPort);
-    nsLayout->addLayout(ipPortRow);
-
-    // Name row
-    auto* nameRow = new QHBoxLayout;
-    nameRow->setSpacing(4);
-    nameRow->addWidget(new QLabel(tr("Name:")));
+    fieldGrid->addWidget(m_newServerPort, 1, 1);
+    fieldGrid->addWidget(new QLabel(tr("Name:")), 2, 0, 1, 2);
     m_newServerName = new QLineEdit;
-    nameRow->addWidget(m_newServerName, 1);
-    nsLayout->addLayout(nameRow);
+    fieldGrid->addWidget(m_newServerName, 3, 0, 1, 2);
+    fieldGrid->setColumnStretch(0, 1);
+    nsLayout->addLayout(fieldGrid);
 
     // Add to list button
     m_addServerBtn = new QPushButton(tr("Add to list"));
@@ -1426,7 +1427,7 @@ std::vector<ServerPanel::ServerKey> ServerPanel::selectedServers() const
         // row->ip is Server::address() — a bare literal or hostname, never "ip:port";
         // ED2KServerLink::toLink() adds the brackets an IPv6 literal needs.
         out.push_back({row->numericIp, row->addr, row->port,
-                       ED2KServerLink{row->ip, row->port}.toLink()});
+                       ED2KServerLink{row->ip, row->port, row->addr6}.toLink()});
     }
     return out;
 }
@@ -1523,7 +1524,7 @@ void ServerPanel::addServerLinks(const std::vector<ED2KServerLink>& links)
     auto batch = std::make_shared<Batch>();
     batch->pending = links.size();
     for (const ED2KServerLink& link : links) {
-        sendAddServer(link.address, link.port, QString(),
+        sendAddServer(link.address, link.port, QString(), link.address6,
                       [this, batch, addr = ServerAddr{link.address, link.port}]
                       (bool, const QString& rejected) {
             if (!rejected.isEmpty())
@@ -1544,6 +1545,7 @@ void ServerPanel::addServerLinks(const std::vector<ED2KServerLink>& links)
 }
 
 void ServerPanel::sendAddServer(const QString& address, uint16_t port, const QString& name,
+                                const QString& address6,
                                 std::function<void(bool added, const QString& rejected)> done)
 {
     if (!m_ipc || !m_ipc->isConnected())
@@ -1552,6 +1554,8 @@ void ServerPanel::sendAddServer(const QString& address, uint16_t port, const QSt
     req.append(address);
     req.append(static_cast<qint64>(port));
     req.append(name);
+    if (!address6.isEmpty())
+        req.append(address6);   // the daemon joins it to an IPv4 primary
     m_ipc->sendRequest(std::move(req), [done = std::move(done)](const Ipc::IpcMessage& resp) {
         // Error(ErrServerLanFiltered, text) is the only rejection worth telling the
         // user about; Result(false) is a duplicate, which MFC stays quiet on too.

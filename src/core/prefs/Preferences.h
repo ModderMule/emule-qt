@@ -541,6 +541,12 @@ public:
     /// Debug lines of BitTorrent, hoster and ed3k: own Verbose tabs, independent of verbose()
     [[nodiscard]] bool btVerboseLog() const;
     void setBtVerboseLog(bool val);
+    /// Usenet debug lines (Usenet tab, _Usenet file)
+    [[nodiscard]] bool usenetVerboseLog() const;
+    void setUsenetVerboseLog(bool val);
+    /// Hashing and duplicate lines of the shared files (emule.sharedv, Verbose tab)
+    [[nodiscard]] bool sharedFilesVerboseLog() const;
+    void setSharedFilesVerboseLog(bool val);
     [[nodiscard]] bool hosterVerboseLog() const;
     void setHosterVerboseLog(bool val);
     [[nodiscard]] bool ed3kVerboseLog() const;
@@ -1388,6 +1394,10 @@ public:
     /// Peer exchange.
     [[nodiscard]] bool btPex() const;
     void setBtPex(bool val);
+    /// Announce to every tracker and tier. Off = libtorrent's default, the first
+    /// working tracker per tier (#144)
+    [[nodiscard]] bool btAnnounceToAll() const;
+    void setBtAnnounceToAll(bool val);
 
     /// 0 enabled (prefer), 1 forced, 2 disabled.
     [[nodiscard]] int btEncryption() const;

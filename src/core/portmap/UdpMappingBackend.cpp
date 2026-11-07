@@ -225,8 +225,8 @@ bool UdpMappingBackend::openChannel(Channel& channel, PortMapFamily family)
         channel.gateway = gateway;
         channel.localAddress = Address::fromQHostAddress(probe.localAddress());
         channel.open = true;
-        logDebug(QStringLiteral("%1: talking to %2 from %3")
-                     .arg(name(), gateway.toString(), channel.localAddress.toString()));
+        logDebug([&]() -> QString { return QStringLiteral("%1: talking to %2 from %3")
+                     .arg(name(), gateway.toString(), channel.localAddress.toString()); });
         return true;
     }
     return false;
@@ -378,9 +378,9 @@ void UdpMappingBackend::onTransactionError(int transactionId)
         return;
 
     const bool wasProbe = transaction->isProbe;
-    logDebug(QStringLiteral("%1: gateway refused the connection (nothing on UDP/%2)")
+    logDebug([&]() -> QString { return QStringLiteral("%1: gateway refused the connection (nothing on UDP/%2)")
                  .arg(name())
-                 .arg(kServerPort));
+                 .arg(kServerPort); });
 
     if (wasProbe) {
         eraseTransaction(transactionId);

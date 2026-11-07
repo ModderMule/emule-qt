@@ -396,7 +396,7 @@ void IndexerSearchList::fetchGrab(const IndexerConfig& account, const QString& r
     // Details fetched it lately: a Download spends no second grab
     const QString key = MetaFileCache::indexerKey(resultId);
     if (const auto cached = MetaFileCache::instance().find(key)) {
-        logDebug(QStringLiteral("Indexers: %1 served from cache").arg(resultId));
+        logDebug([&]() -> QString { return QStringLiteral("Indexers: %1 served from cache").arg(resultId); });
         QTimer::singleShot(0, this, [content = cached->content, name, password, done = std::move(done)] {
             done(true, content, name, password, {});
         });
@@ -419,7 +419,7 @@ void IndexerSearchList::fetchGrab(const IndexerConfig& account, const QString& r
         }
         // tracker down or .torrent gone: the magnet still works
         if (hasMagnet) {
-            logDebug(QStringLiteral("Indexers: .torrent fetch failed (%1), using the magnet").arg(error));
+            logDebug([&]() -> QString { return QStringLiteral("Indexers: .torrent fetch failed (%1), using the magnet").arg(error); });
             done(true, magnetUri, name, password, {});
             return;
         }

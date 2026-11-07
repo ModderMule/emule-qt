@@ -408,7 +408,8 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_verboseCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logSourceExchangeCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_serverVerboseCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
-    for (auto* c : {m_btVerboseCheck, m_hosterVerboseCheck, m_ed3kVerboseCheck})
+    for (auto* c : {m_btVerboseCheck, m_hosterVerboseCheck, m_ed3kVerboseCheck,
+                    m_usenetVerboseCheck, m_sharedFilesVerboseCheck})
         connect(c, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logBannedClientsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logRatingDescCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -1315,9 +1316,17 @@ QWidget* OptionsDialog::createDisplayPage()
         m_fontScaleCombo->addItem(tr("%1 %").arg(percent), percent);
     m_fontScaleCombo->setToolTip(tr("Text size of lists, menus and dialogs. Takes effect after a restart."));
     appearanceGrid->addWidget(m_fontScaleCombo, 1, 1);
+    appearanceGrid->addWidget(new QLabel(tr("Speed graph background:"), appearanceGroup), 2, 0);
+    m_speedGraphBgCombo = new QComboBox(appearanceGroup);
+    m_speedGraphBgCombo->addItem(tr("Dark (eMule)"), 0);
+    m_speedGraphBgCombo->addItem(tr("Light"), 1);
+    m_speedGraphBgCombo->addItem(tr("Follow theme"), 2);
+    m_speedGraphBgCombo->setToolTip(tr("Background of the speed graph in the toolbar."));
+    appearanceGrid->addWidget(m_speedGraphBgCombo, 2, 1);
     appearanceGrid->setColumnStretch(2, 1);
     connect(m_colorSchemeCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
     connect(m_fontScaleCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
+    connect(m_speedGraphBgCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
     layout->addWidget(appearanceGroup);
 
     // --- Font group ---
@@ -5979,6 +5988,10 @@ QWidget* OptionsDialog::createBtConnectionPage()
     peerForm->addRow(m_btLsdCheck);
     m_btPexCheck = new QCheckBox(tr("Exchange peers with other clients (PEX)"), peerGroup);
     peerForm->addRow(m_btPexCheck);
+    m_btAnnounceToAllCheck = new QCheckBox(tr("Announce to all trackers and tiers"), peerGroup);
+    m_btAnnounceToAllCheck->setToolTip(
+        tr("Asks every tracker of a torrent for peers. Off: only the first working tracker of each tier."));
+    peerForm->addRow(m_btAnnounceToAllCheck);
 
     mainLayout->addWidget(peerGroup);
 
@@ -6050,7 +6063,7 @@ QWidget* OptionsDialog::createBtConnectionPage()
     mainLayout->addStretch();
 
     // -- Wiring -------------------------------------------------------------
-    for (QCheckBox* box : {m_btPortMappingCheck, m_btDhtCheck, m_btLsdCheck, m_btPexCheck})
+    for (QCheckBox* box : {m_btPortMappingCheck, m_btDhtCheck, m_btLsdCheck, m_btPexCheck, m_btAnnounceToAllCheck})
         connect(box, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     for (QSpinBox* box : {m_btPortSpin, m_btMaxConnSpin, m_btMaxConnPerTorrentSpin,
                           m_btDownShareSpin, m_btUpShareSpin, m_btMaxDownSpin, m_btMaxUpSpin})
@@ -6298,6 +6311,13 @@ QWidget* OptionsDialog::createExtendedPage()
     m_ed3kVerboseCheck = new QCheckBox(tr("Log ed3k node details (ed3k Verbose tab)"), verboseGroup);
     m_ed3kVerboseCheck->setToolTip(tr("The ed3k node's debug output. The tab shows while ed3k is on."));
     verboseLayout->addWidget(m_ed3kVerboseCheck);
+    m_usenetVerboseCheck = new QCheckBox(tr("Log Usenet details (Usenet tab)"), verboseGroup);
+    m_usenetVerboseCheck->setToolTip(tr("Worker, rate share and connection details of the Usenet engine."));
+    verboseLayout->addWidget(m_usenetVerboseCheck);
+    m_sharedFilesVerboseCheck = new QCheckBox(tr("Log hashing and duplicates of shared files"), verboseGroup);
+    m_sharedFilesVerboseCheck->setToolTip(tr("A line for each file hashed and each duplicate not shared, "
+                                             "in the Verbose tab."));
+    verboseLayout->addWidget(m_sharedFilesVerboseCheck);
 
     m_logBannedClientsCheck = new QCheckBox(tr("Log banned clients"), verboseGroup);
     verboseLayout->addWidget(m_logBannedClientsCheck);
@@ -7155,6 +7175,8 @@ void OptionsDialog::loadSettings()
         std::max(0, m_colorSchemeCombo->findData(theUiState.colorScheme())));
     m_fontScaleCombo->setCurrentIndex(
         std::max(0, m_fontScaleCombo->findData(theUiState.fontScalePercent())));
+    m_speedGraphBgCombo->setCurrentIndex(
+        std::max(0, m_speedGraphBgCombo->findData(theUiState.speedGraphBackground())));
 
     // Display - font
     m_currentLogFont = thePrefs.logFont();
@@ -7390,6 +7412,11 @@ void OptionsDialog::saveSettings()
             QMessageBox::information(this, tr("Theme"),
                 tr("The theme change will take effect after restarting the application."));
         }
+    }
+    if (const int mode = m_speedGraphBgCombo->currentData().toInt();
+        mode != theUiState.speedGraphBackground()) {
+        theUiState.setSpeedGraphBackground(mode);
+        refreshThemedWidgets(); // repaints the toolbar graph
     }
     if (const int percent = m_fontScaleCombo->currentData().toInt();
         percent != theUiState.fontScalePercent()) {
@@ -7762,6 +7789,8 @@ void OptionsDialog::saveSettings()
         req.append(m_btLsdCheck->isChecked());
         req.append(QStringLiteral("btPex"));
         req.append(m_btPexCheck->isChecked());
+        req.append(QStringLiteral("btAnnounceToAll"));
+        req.append(m_btAnnounceToAllCheck->isChecked());
         req.append(QStringLiteral("btEncryption"));
         req.append(static_cast<qint64>(std::max(0, m_btEncryptionGroup->checkedId())));
         req.append(QStringLiteral("btMaxActiveDownloads"));
@@ -7919,6 +7948,10 @@ void OptionsDialog::saveSettings()
         req.append(m_hosterVerboseCheck->isChecked());
         req.append(QStringLiteral("ed3kVerboseLog"));
         req.append(m_ed3kVerboseCheck->isChecked());
+        req.append(QStringLiteral("usenetVerboseLog"));
+        req.append(m_usenetVerboseCheck->isChecked());
+        req.append(QStringLiteral("sharedFilesVerboseLog"));
+        req.append(m_sharedFilesVerboseCheck->isChecked());
         req.append(QStringLiteral("logBannedClients"));
         req.append(m_logBannedClientsCheck->isChecked());
         req.append(QStringLiteral("logRatingDescReceived"));
@@ -8289,6 +8322,8 @@ void OptionsDialog::saveSettings()
         thePrefs.setBtVerboseLog(m_btVerboseCheck->isChecked());
         thePrefs.setHosterVerboseLog(m_hosterVerboseCheck->isChecked());
         thePrefs.setEd3kVerboseLog(m_ed3kVerboseCheck->isChecked());
+        thePrefs.setUsenetVerboseLog(m_usenetVerboseCheck->isChecked());
+        thePrefs.setSharedFilesVerboseLog(m_sharedFilesVerboseCheck->isChecked());
         thePrefs.setLogBannedClients(m_logBannedClientsCheck->isChecked());
         thePrefs.setLogRatingDescReceived(m_logRatingDescCheck->isChecked());
         thePrefs.setLogSecureIdent(m_logSecureIdentCheck->isChecked());
@@ -8707,6 +8742,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_btDhtCheck->setChecked(prefs.value(QStringLiteral("btDht")).toBool(true));
     m_btLsdCheck->setChecked(prefs.value(QStringLiteral("btLsd")).toBool(true));
     m_btPexCheck->setChecked(prefs.value(QStringLiteral("btPex")).toBool(true));
+    m_btAnnounceToAllCheck->setChecked(prefs.value(QStringLiteral("btAnnounceToAll")).toBool(false));
     m_btEncryptionGroup->button(
         std::clamp(int(prefs.value(QStringLiteral("btEncryption")).toInteger(0)), 0, 2))->setChecked(true);
     m_btMaxActiveDownSpin->setValue(
@@ -8806,6 +8842,8 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_btVerboseCheck->setChecked(prefs.value(QStringLiteral("btVerboseLog")).toBool());
     m_hosterVerboseCheck->setChecked(prefs.value(QStringLiteral("hosterVerboseLog")).toBool());
     m_ed3kVerboseCheck->setChecked(prefs.value(QStringLiteral("ed3kVerboseLog")).toBool());
+    m_usenetVerboseCheck->setChecked(prefs.value(QStringLiteral("usenetVerboseLog")).toBool());
+    m_sharedFilesVerboseCheck->setChecked(prefs.value(QStringLiteral("sharedFilesVerboseLog")).toBool());
     m_logBannedClientsCheck->setChecked(prefs.value(QStringLiteral("logBannedClients")).toBool(true));
     m_logBannedClientsCheck->setEnabled(verboseOn);
     m_logRatingDescCheck->setChecked(prefs.value(QStringLiteral("logRatingDescReceived")).toBool(true));

@@ -91,8 +91,8 @@ void ServerSocket::connectTo(const Server& server, bool noCrypt, const Address& 
         // [emDynIP:] echo) must never reach the resolver: QDnsLookup(A, "8.8.8.8")
         // NXDOMAINs and the server is marked dead.
         if (const Address literal = Address::fromString(m_curServer->dynIP()); !literal.isNull()) {
-            logServerVerbose(QStringLiteral("connectTo: dynIP '%1' is a literal — no DNS needed")
-                                 .arg(m_curServer->dynIP()));
+            logServerVerbose([&]() -> QString { return QStringLiteral("connectTo: dynIP '%1' is a literal — no DNS needed")
+                                 .arg(m_curServer->dynIP()); });
             m_curServer->setIpAddress(literal);
             m_sessionAddress = literal;
         } else if (!dialAddress.isNull()) {
@@ -100,8 +100,8 @@ void ServerSocket::connectTo(const Server& server, bool noCrypt, const Address& 
             dialResolved(dialAddress);
             return;
         } else {
-            logServerVerbose(QStringLiteral("connectTo: resolving dynIP hostname '%1' for server %2")
-                                 .arg(m_curServer->dynIP()).arg(m_curServer->name()));
+            logServerVerbose([&]() -> QString { return QStringLiteral("connectTo: resolving dynIP hostname '%1' for server %2")
+                                 .arg(m_curServer->dynIP()).arg(m_curServer->name()); });
             startDnsLookup();
             return;
         }
@@ -204,7 +204,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
 
         // The reference only Debug()s here — the message text belongs in the Server Info
         // pane, not the log. Keeping it on the verbose channel preserves diagnostics.
-        logServerVerbose(QStringLiteral("<<< OP_SERVERMESSAGE (%1 bytes): %2").arg(msgLen).arg(msg));
+        logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_SERVERMESSAGE (%1 bytes): %2").arg(msgLen).arg(msg); });
         if (m_connectionState == ServerConnState::WaitForLogin)
             rememberLoginRejectReason(msg);
         emit serverMessage(msg);
@@ -284,8 +284,8 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         // The "more results available" flag is a trailing byte the search parser
         // reads authoritatively (SearchList::processSearchAnswer), which also
         // surfaces it to the user (#19). The socket-level flag here is unused.
-        logServerVerbose(QStringLiteral("<<< OP_SEARCHRESULT received (%1 bytes) from %2")
-                             .arg(size).arg(m_curServer ? m_curServer->name() : QStringLiteral("?")));
+        logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_SEARCHRESULT received (%1 bytes) from %2")
+                             .arg(size).arg(m_curServer ? m_curServer->name() : QStringLiteral("?")); });
         emit searchResultReceived(packet, size, /*moreResultsAvailable=*/false);
         break;
     }
@@ -301,8 +301,8 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         }
 
         bool obfuscated = (opcode == OP_FOUNDSOURCES_OBFU);
-        logServerVerbose(QStringLiteral("<<< OP_FOUNDSOURCES%1 received (%2 bytes)")
-                             .arg(obfuscated ? QStringLiteral("_OBFU") : QString()).arg(size));
+        logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_FOUNDSOURCES%1 received (%2 bytes)")
+                             .arg(obfuscated ? QStringLiteral("_OBFU") : QString()).arg(size); });
         emit foundSourcesReceived(packet, size, obfuscated);
         break;
     }
@@ -332,11 +332,11 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
             m_curServer->setFiles(files);
         }
 
-        logServerVerbose(QStringLiteral("<<< OP_SERVERSTATUS: users=%1 files=%2").arg(users).arg(files));
+        logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_SERVERSTATUS: users=%1 files=%2").arg(users).arg(files); });
 
         if (size > 8) {
-            logServerVerbose(QStringLiteral("ServerSocket: OP_SERVERSTATUS has %1 trailing bytes (ignored)")
-                         .arg(size - 8));
+            logServerVerbose([&]() -> QString { return QStringLiteral("ServerSocket: OP_SERVERSTATUS has %1 trailing bytes (ignored)")
+                         .arg(size - 8); });
         }
 
         emit serverStatusReceived(users, files);
@@ -389,9 +389,9 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
                     if (specTag || !haveSvrIPv6Tag) {
                         haveSvrIPv6Tag = haveSvrIPv6Tag || specTag;
                         serverIPv6 = Address::fromIPv6Bytes(tag.hashValue());
-                        logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: server IPv6 %1 (0x%2)")
+                        logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_SERVERIDENT: server IPv6 %1 (0x%2)")
                                              .arg(serverIPv6.toString())
-                                             .arg(tag.nameId(), 2, 16, QLatin1Char('0')));
+                                             .arg(tag.nameId(), 2, 16, QLatin1Char('0')); });
                     }
                 }
                 else if (tag.nameId() == CT_MOD_YOUR_IP && tag.isHash()) {
@@ -404,9 +404,9 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
                     // back before connecting.
                     const Address observed = Address::fromIPv6Bytes(tag.hashValue());
                     if (!m_curServer || !m_sessionAddress.isIPv6()) {
-                        logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: ignoring CT_MOD_YOUR_IP "
+                        logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_SERVERIDENT: ignoring CT_MOD_YOUR_IP "
                                                         "(%1): this session is IPv4")
-                                             .arg(observed.toString()));
+                                             .arg(observed.toString()); });
                     } else {
                         theApp.setPublicIPv6Observed(observed, m_sessionAddress.toString());
                     }
@@ -425,10 +425,10 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
                     // The server's verdict on whether the IPv6 we advertised is reachable.
                     const uint8 status = static_cast<uint8>(tag.intValue());
                     theApp.setPublicIPv6Status(status);
-                    logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: IPv6 status have=%1 reachable=%2 probed=%3")
+                    logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_SERVERIDENT: IPv6 status have=%1 reachable=%2 probed=%3")
                                          .arg((status & IPV6ST_HAVE) ? 1 : 0)
                                          .arg((status & IPV6ST_REACHABLE) ? 1 : 0)
-                                         .arg((status & IPV6ST_PROBED) ? 1 : 0));
+                                         .arg((status & IPV6ST_PROBED) ? 1 : 0); });
                 }
             }
         } catch (...) {
@@ -445,8 +445,8 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
             if (natToken) {
                 m_curServer->setNatToken(natToken->data());
                 m_curServer->setNatProof(natProof);
-                logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: 0x9F session token%1")
-                                     .arg(natProof ? QStringLiteral(" (proof)") : QString()));
+                logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_SERVERIDENT: 0x9F session token%1")
+                                     .arg(natProof ? QStringLiteral(" (proof)") : QString()); });
             }
             // The ident body has a 4-byte IP field, so a dual-stack server always reports
             // its IPv4 there. It never replaces the address we are connected to (MFC
@@ -468,20 +468,20 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
                 m_curServer->clearMetaApi();
             if (apiOk) {
                 m_curServer->setMetaApi(metaApiUrl, metaApiPin);
-                logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: Meta API %1%2")
+                logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_SERVERIDENT: Meta API %1%2")
                                      .arg(metaApiUrl, metaApiPin.isEmpty() ? QString()
-                                                                           : QStringLiteral(" (pinned)")));
+                                                                           : QStringLiteral(" (pinned)")); });
             } else if (!metaApiUrl.isEmpty()) {
-                logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: ignoring Meta API '%1' (version %2)")
-                                     .arg(metaApiUrl).arg(metaApiVersion));
+                logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_SERVERIDENT: ignoring Meta API '%1' (version %2)")
+                                     .arg(metaApiUrl).arg(metaApiVersion); });
             }
         }
 
-        logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: name='%1' (%2) ident=%3 tags=%4")
+        logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_SERVERIDENT: name='%1' (%2) ident=%3 tags=%4")
                              .arg(name)
                              .arg(Endpoint(m_sessionAddress, peerPort()).toString())
                              .arg(Endpoint::fromNetworkOrder(serverIP, serverPort).toString())
-                             .arg(tagCount));
+                             .arg(tagCount); });
         emit serverIdentReceived(serverHash, serverIP, serverPort, name, description);
         if (!learned.isNull())
             emit serverAddressLearned(learned);
@@ -493,8 +493,8 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         if (size < 1)
             break;
 
-        logServerVerbose(QStringLiteral("<<< OP_SERVERLIST received (%1 bytes, %2 entries advertised)")
-                             .arg(size).arg(static_cast<uint>(packet[0])));
+        logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_SERVERLIST received (%1 bytes, %2 entries advertised)")
+                             .arg(size).arg(static_cast<uint>(packet[0])); });
         emit serverListReceived(packet, size);
         break;
     }
@@ -507,9 +507,9 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         uint32 clientIP = peekUInt32(packet);
         uint16 clientPort = peekUInt16(packet + 4);
 
-        logServerVerbose(QStringLiteral("<<< OP_CALLBACKREQUESTED from %1:%2 (%3 crypt bytes)")
+        logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_CALLBACKREQUESTED from %1:%2 (%3 crypt bytes)")
                              .arg(Address::fromNetworkOrder(clientIP).toString()).arg(clientPort)
-                             .arg(size > 6 ? size - 6 : 0));
+                             .arg(size > 6 ? size - 6 : 0); });
 
         if (auto* filter = theApp.ipFilter) {
             if (filter->isFiltered(clientIP, thePrefs.ipFilterLevel())) {
@@ -539,8 +539,8 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
             break;
 
         const Endpoint requester(Address::fromIPv6Bytes(packet), peekUInt16(packet + 16));
-        logServerVerbose(QStringLiteral("<<< OP_CALLBACKREQUESTED_IPV6 from %1")
-                             .arg(requester.toString()));
+        logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_CALLBACKREQUESTED_IPV6 from %1")
+                             .arg(requester.toString()); });
         emit callbackRequestedIPv6(requester);
         break;
     }
@@ -555,8 +555,8 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
     case OP_LOWID_HOLEPUNCH_INFO:
     case OP_LOWID_HOLEPUNCH_FAIL:
         // NAT rendezvous notices; parsed by the rendezvous paths (net/natt).
-        logServerVerbose(QStringLiteral("<<< NAT rendezvous opcode 0x%1, size %2")
-                             .arg(opcode, 2, 16, QLatin1Char('0')).arg(size));
+        logServerVerbose([&]() -> QString { return QStringLiteral("<<< NAT rendezvous opcode 0x%1, size %2")
+                             .arg(opcode, 2, 16, QLatin1Char('0')).arg(size); });
         emit natPacketReceived(opcode, QByteArray(reinterpret_cast<const char*>(packet),
                                                   static_cast<qsizetype>(size)));
         break;
@@ -567,9 +567,9 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         break;
 
     default:
-        logServerVerbose(QStringLiteral("ServerSocket: Unknown opcode 0x%1, size %2")
+        logServerVerbose([&]() -> QString { return QStringLiteral("ServerSocket: Unknown opcode 0x%1, size %2")
                      .arg(opcode, 2, 16, QLatin1Char('0'))
-                     .arg(size));
+                     .arg(size); });
         break;
     }
 
@@ -600,10 +600,10 @@ void ServerSocket::setConnectionState(ServerConnState newState)
     if (m_connectionState == newState)
         return;
 
-    logServerVerbose(QStringLiteral("[%1] socket state: %2 -> %3")
+    logServerVerbose([&]() -> QString { return QStringLiteral("[%1] socket state: %2 -> %3")
                          .arg(m_curServer ? m_curServer->name() : QStringLiteral("?"))
                          .arg(QLatin1String(serverConnStateName(m_connectionState)))
-                         .arg(QLatin1String(serverConnStateName(newState))));
+                         .arg(QLatin1String(serverConnStateName(newState))); });
 
     m_connectionState = newState;
     emit connectionStateChanged(newState);
@@ -787,8 +787,8 @@ void ServerSocket::onSocketConnected()
         // Nothing to log in over: the error for this dial follows (or our own
         // timeout does). Going on used to send a login into a dead socket and
         // report the attempt as a handshake rather than a failed connect.
-        logServerVerbose(QStringLiteral("[%1] connected() without a peer — waiting for the error")
-                             .arg(m_curServer ? m_curServer->name() : QStringLiteral("?")));
+        logServerVerbose([&]() -> QString { return QStringLiteral("[%1] connected() without a peer — waiting for the error")
+                             .arg(m_curServer ? m_curServer->name() : QStringLiteral("?")); });
         return;
     }
     logInfo(QStringLiteral("ServerSocket connected to %1 (%2) serverCrypt=%3")

@@ -157,10 +157,10 @@ SearchDispatch dispatchEd2kSearch(SearchList& list, uint32 searchID, SearchType 
         auto pkt = std::make_unique<Packet>(OP_SEARCHREQUEST, static_cast<uint32>(payload.size()));
         pkt->prot = OP_EDONKEYPROT;
         std::memcpy(pkt->pBuffer, payload.constData(), static_cast<size_t>(payload.size()));
-        logServerVerbose(QStringLiteral(">>> TCP server search: expr=\"%1\" -> %2 (%3 byte payload)")
+        logServerVerbose([&]() -> QString { return QStringLiteral(">>> TCP server search: expr=\"%1\" -> %2 (%3 byte payload)")
                              .arg(params.expression)
                              .arg(current ? current->name() : QStringLiteral("connected server"))
-                             .arg(payload.size()));
+                             .arg(payload.size()); });
         localRequestSent = theApp.serverConnect->sendPacket(std::move(pkt));
     }
 
@@ -359,7 +359,7 @@ SearchQueueBackend defaultSearchQueueBackend(SearchList& list)
         list.beginSearch(searchID, resultTypeFilter(params.fileType), /*ed2k*/ true, params.expression);
         auto pkt = std::make_unique<Packet>(OP_QUERY_MORE_RESULT, 0);
         pkt->prot = OP_EDONKEYPROT;
-        logServerVerbose(QStringLiteral(">>> OP_QUERY_MORE_RESULT for search %1").arg(searchID));
+        logServerVerbose([&]() -> QString { return QStringLiteral(">>> OP_QUERY_MORE_RESULT for search %1").arg(searchID); });
         if (theApp.serverConnect->sendPacket(std::move(pkt)))
             return true;
         list.releaseEd2kRouting(searchID);

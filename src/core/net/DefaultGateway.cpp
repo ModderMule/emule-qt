@@ -336,7 +336,7 @@ std::vector<GatewayCandidate> defaultGateways(Address::Family family)
 
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        logDebug(QStringLiteral("DefaultGateway: cannot read %1").arg(path));
+        logDebug([&]() -> QString { return QStringLiteral("DefaultGateway: cannot read %1").arg(path); });
         return {};
     }
     const QString text = QString::fromLatin1(file.readAll());

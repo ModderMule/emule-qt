@@ -64,10 +64,10 @@ public:
     void promptOpenContainer();
     /// Opens the container files of a drop (the main window's too). False: none in it.
     bool acceptContainerDrop(const QMimeData* mime);
-    /// Asks for the password of item @p id's encrypted archive (one dialog per package, else
-    /// per folder); the core keeps it with the package, tries it first and extracts again.
-    /// Opens by itself when an extraction ends wanting one.
-    void promptArchivePassword(qint64 id);
+    /// Asks for the password of the encrypted archives of @p ids (one dialog per package, else
+    /// per folder; one for a whole selection, #143); the core keeps it with the package,
+    /// tries it first and extracts again. Opens by itself when an extraction ends wanting one.
+    void promptArchivePassword(const QList<qint64>& ids);
     /// Re-read the Display options this panel acts on: the status filter row.
     void applyDisplayOptions();
     /// Hoster downloads on (ed3kHosterEnabled), as the core last reported.

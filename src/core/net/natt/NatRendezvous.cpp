@@ -220,8 +220,8 @@ bool NatRendezvous::start(const PeerInfo& peer)
         a->triedPaths = static_cast<uint8>(1u << static_cast<unsigned>(p->kind()));
         if (!p->request(*a))
             continue;
-        logDebug(QStringLiteral("NAT-T: rendezvous #%1 via %2 for %3")
-                     .arg(a->id).arg(QLatin1StringView(pathName(a->path)), peerKey(peer)));
+        logDebug([&]() -> QString { return QStringLiteral("NAT-T: rendezvous #%1 via %2 for %3")
+                     .arg(a->id).arg(QLatin1StringView(pathName(a->path)), peerKey(peer)); });
         m_attempts.push_back(std::move(a));
         return true;
     }
@@ -296,8 +296,8 @@ Attempt* NatRendezvous::acceptNotice(PathKind kind, const PeerInfo& peer, const 
         return existing;
     }
     if (peerUdp.port() == 0 || !m_env->admit(peerUdp.address())) {
-        logDebug(QStringLiteral("NAT-T: %1 notice for %2 dropped (endpoint %3)")
-                     .arg(QLatin1StringView(pathName(kind)), peerKey(peer), peerUdp.toString()));
+        logDebug([&]() -> QString { return QStringLiteral("NAT-T: %1 notice for %2 dropped (endpoint %3)")
+                     .arg(QLatin1StringView(pathName(kind)), peerKey(peer), peerUdp.toString()); });
         return nullptr;
     }
     if (m_attempts.size() >= kMaxAttempts || !noticeAllowed(peer, peerUdp.address()))
@@ -314,9 +314,9 @@ Attempt* NatRendezvous::acceptNotice(PathKind kind, const PeerInfo& peer, const 
     a->deadlineMs = now + kAttemptTimeoutMs;
     Attempt* raw = a.get();
     m_attempts.push_back(std::move(a));
-    logDebug(QStringLiteral("NAT-T: %1 notice #%2: %3 at %4")
+    logDebug([&]() -> QString { return QStringLiteral("NAT-T: %1 notice #%2: %3 at %4")
                  .arg(QLatin1StringView(pathName(kind))).arg(raw->id)
-                 .arg(peerKey(peer), peerUdp.toString()));
+                 .arg(peerKey(peer), peerUdp.toString()); });
     endpointKnown(*raw, peerUdp, peerTcpPort);
     return raw;
 }
@@ -348,8 +348,8 @@ void NatRendezvous::endpointKnown(Attempt& a, const Endpoint& udp, uint16 tcpPor
 
     if (!a.endpointReported) {
         a.endpointReported = true;
-        logDebug(QStringLiteral("NAT-T: #%1 peer endpoint %2 (%3)")
-                     .arg(a.id).arg(udp.toString(), QLatin1StringView(pathName(a.path))));
+        logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 peer endpoint %2 (%3)")
+                     .arg(a.id).arg(udp.toString(), QLatin1StringView(pathName(a.path))); });
         emit peerEndpointReady(a.peer.hash, udp, a.role);
     }
 }
@@ -360,8 +360,8 @@ void NatRendezvous::fail(Attempt& a, const QString& why)
         return;
     a.finished = true;
     a.state = Attempt::State::Failed;
-    logDebug(QStringLiteral("NAT-T: #%1 %2 failed: %3")
-                 .arg(a.id).arg(peerKey(a.peer), why));
+    logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 %2 failed: %3")
+                 .arg(a.id).arg(peerKey(a.peer), why); });
     const uint64 now = m_env->now();
     remember(m_recentDone, a, now);
     if (a.role == Role::Requester) {
@@ -385,7 +385,7 @@ void NatRendezvous::finish(Attempt& a, bool connected)
         return;
     a.finished = true;
     remember(m_recentDone, a, m_env->now());
-    logDebug(QStringLiteral("NAT-T: #%1 %2 connected").arg(a.id).arg(peerKey(a.peer)));
+    logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 %2 connected").arg(a.id).arg(peerKey(a.peer)); });
     emit attemptFinished(a.id, connected);
 }
 
@@ -610,7 +610,7 @@ void NatRendezvous::dialQuic(Attempt& a)
 {
     a.quicDialed = true;
     a.state = Attempt::State::Dialed;
-    logDebug(QStringLiteral("NAT-T: #%1 QUIC dialing %2").arg(a.id).arg(a.quicEndpoint().toString()));
+    logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 QUIC dialing %2").arg(a.id).arg(a.quicEndpoint().toString()); });
     m_env->dialPeerQuic(a);
 }
 
@@ -618,8 +618,8 @@ void NatRendezvous::dial(Attempt& a)
 {
     a.dialed = true;
     a.state = Attempt::State::Dialed;
-    logDebug(QStringLiteral("NAT-T: #%1 dialing [%2]:%3")
-                 .arg(a.id).arg(a.peerIPv6.toString()).arg(a.peerTcpPort));
+    logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 dialing [%2]:%3")
+                 .arg(a.id).arg(a.peerIPv6.toString()).arg(a.peerTcpPort); });
     m_env->dialPeer(a, a.peerIPv6);
 }
 
@@ -697,8 +697,8 @@ void NatRendezvous::handleHolePunch(const Endpoint& from)
     }
     // The datagram's source is the mapping that actually works.
     if (sameHost(a->peerUdp, from.address()) && a->peerUdp.port() != from.port()) {
-        logDebug(QStringLiteral("NAT-T: #%1 peer port %2 -> %3")
-                     .arg(a->id).arg(a->peerUdp.port()).arg(from.port()));
+        logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 peer port %2 -> %3")
+                     .arg(a->id).arg(a->peerUdp.port()).arg(from.port()); });
         a->peerUdp = from;
         if (m_env->quicAvailable())
             m_env->armQuic(*a);
@@ -725,7 +725,7 @@ void NatRendezvous::handleHandoff(const uint8* data, uint32 size, const Endpoint
         // A late repeat for an attempt that just ended is expected; anything else is noise.
         const QString key = QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(hash.data()), 16).toHex());
         if (!m_recentDone.contains(key))
-            logDebug(QStringLiteral("NAT-T: unsolicited handoff from %1 dropped").arg(from.toString()));
+            logDebug([&]() -> QString { return QStringLiteral("NAT-T: unsolicited handoff from %1 dropped").arg(from.toString()); });
         return;
     }
     if (a->state == Attempt::State::Requested)
@@ -816,9 +816,9 @@ bool NatRendezvous::tryNextPath(Attempt& a)
         a.deadlineMs = now + kAttemptTimeoutMs;
         if (!p->request(a))
             continue;
-        logDebug(QStringLiteral("NAT-T: #%1 %2 timed out, trying %3")
+        logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 %2 timed out, trying %3")
                      .arg(a.id)
-                     .arg(QLatin1StringView(pathName(previous)), QLatin1StringView(pathName(a.path))));
+                     .arg(QLatin1StringView(pathName(previous)), QLatin1StringView(pathName(a.path))); });
         return true;
     }
     return false;

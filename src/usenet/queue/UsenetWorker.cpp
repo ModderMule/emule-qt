@@ -352,10 +352,10 @@ void UsenetWorker::finishJob(Job* job, NntpError error, const QString& text)
                     follower->fetcher->disconnect(this);
                 follower->socket = nullptr;
                 follower->requeue = true;
-                logUsenetDebug(QStringLiteral("Usenet: worker %1 requeues pipelined <%2>: %3")
+                logUsenetDebug([&]() -> QString { return QStringLiteral("Usenet: worker %1 requeues pipelined <%2>: %3")
                                    .arg(m_index)
                                    .arg(follower->request.segment.messageId,
-                                        describeNntpError(error)));
+                                        describeNntpError(error)); });
                 finishJob(follower, NntpError::Disconnected,
                           QStringLiteral("Connection closed before the pipelined article"));
             }

@@ -15,12 +15,8 @@
 #include <QPointer>
 #include <QString>
 
-class QCheckBox;
-class QComboBox;
-class QDoubleSpinBox;
 class QLabel;
 class QPlainTextEdit;
-class QSpinBox;
 class QTabWidget;
 class QTextBrowser;
 class QTimer;
@@ -30,6 +26,7 @@ namespace eMule {
 
 class IpcClient;
 class TorrentListModel;
+class TorrentOptionsForm;
 class TorrentPieceGrid;
 struct TorrentRow;
 
@@ -71,10 +68,7 @@ private:
     void applyOptions(const QCborMap& options);
     void onOptionsEdited();
     void sendOptions();
-    void updateOptionEnables();
     void copyMagnet();
-    /// Rate spins top out at the global / BitTorrent limits
-    void applyRateMaxima();
 
     IpcClient* m_ipc = nullptr;
     QPointer<const TorrentListModel> m_model;
@@ -120,20 +114,10 @@ private:
     QLabel* m_remaining = nullptr;
 
     // Options
-    QCheckBox* m_limitDown = nullptr;
-    QSpinBox* m_limitDownKb = nullptr;
-    QCheckBox* m_limitUp = nullptr;
-    QSpinBox* m_limitUpKb = nullptr;
-    QComboBox* m_ratioMode = nullptr;
-    QDoubleSpinBox* m_ratio100 = nullptr;
-    QComboBox* m_seedTimeMode = nullptr;
-    QSpinBox* m_seedMinutes = nullptr;
-    QSpinBox* m_maxPeers = nullptr;
+    TorrentOptionsForm* m_optionsForm = nullptr;
     QTimer* m_sendTimer = nullptr;
     /// the user changed an option that has not gone out yet
     bool m_optionsDirty = false;
-    /// the Options tab is being filled from a reply
-    bool m_fillingOptions = false;
     /// grid cells of a torrent that has every wanted piece; 0 = still downloading
     int m_seedBuckets = 0;
 };

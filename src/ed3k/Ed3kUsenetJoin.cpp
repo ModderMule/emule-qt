@@ -263,8 +263,8 @@ bool Ed3kUsenetJoin::fileClaim(const QString& itemId, int fileIndex, const ffi::
     if (!post || fileIndex < 0)
         return false;
     if (auto ok = post->join.fileClaim(std::uint64_t(fileIndex), root, size, publishers); !ok) {
-        logEd3kDebug(QStringLiteral("ed3k usenet: claim %1 for file %2 of %3 refused (error %4)")
-                         .arg(hexOf(root.bytes), QString::number(fileIndex), itemId, errorName(ok.error())));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: claim %1 for file %2 of %3 refused (error %4)")
+                         .arg(hexOf(root.bytes), QString::number(fileIndex), itemId, errorName(ok.error())); });
         return false;
     }
     scheduleSave(itemId);
@@ -398,15 +398,15 @@ void Ed3kUsenetJoin::onArticleDecoded(const QString& itemId, int fileIndex, qint
         const auto ok = post->join.ybegin(std::uint64_t(fileIndex), idView,
                                           std::string_view(rawYbeginLine.constData(), std::size_t(rawYbeginLine.size())));
         if (!ok && ok.error() != ffi::Error::Stale)
-            logEd3kDebug(QStringLiteral("ed3k usenet: =ybegin of part %1 not taken (error %2)")
-                             .arg(partNumber).arg(errorName(ok.error())));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: =ybegin of part %1 not taken (error %2)")
+                             .arg(partNumber).arg(errorName(ok.error())); });
     }
     auto reads = post->join.article(e, std::uint64_t(fileIndex), idView, std::uint64_t(offset), std::uint64_t(length),
                                     crcOk, tag);
     if (!reads) {
         if (reads.error() != ffi::Error::Stale)
-            logEd3kDebug(QStringLiteral("ed3k usenet: article %1 of file %2 not taken (error %3)")
-                             .arg(partNumber).arg(fileIndex).arg(errorName(reads.error())));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: article %1 of file %2 not taken (error %3)")
+                             .arg(partNumber).arg(fileIndex).arg(errorName(reads.error())); });
         drainEvents(itemId);
         pumpSession();
         return;
@@ -432,8 +432,8 @@ void Ed3kUsenetJoin::onFilesRepaired(const QString& itemId, const QList<int>& fi
             break;
         auto reads = p->join.memberRepaired(e, std::uint64_t(f));
         if (!reads) {
-            logEd3kDebug(QStringLiteral("ed3k usenet: repaired file %1 of %2 not taken (error %3)")
-                             .arg(f).arg(itemId, errorName(reads.error())));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: repaired file %1 of %2 not taken (error %3)")
+                             .arg(f).arg(itemId, errorName(reads.error())); });
             continue;
         }
         // was: ToDo: archive volumes are deleted right after this signal (consumed by the
@@ -505,7 +505,7 @@ void Ed3kUsenetJoin::onSetManifest(const QString& owner, const ffi::Root& root, 
 void Ed3kUsenetJoin::onSetSearchDone(const QString& owner)
 {
     // §4.2 step 1: `nzb` gave no post set that passes §3: `nzb-file` now
-    logEd3kDebug(QStringLiteral("ed3k usenet: no post set for %1, searching its files").arg(owner));
+    logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: no post set for %1, searching its files").arg(owner); });
     startClaimSearches(owner);
 }
 
@@ -594,7 +594,7 @@ std::shared_ptr<Ed3kUsenetJoin::Post> Ed3kUsenetJoin::ensurePost(const QString& 
         // then setManifest(); until then the link only makes the core the BLAKE3 judge
         // (done: fetchBlob → onBlobFetched → fetchList → onListFetched → setManifest)
         if (linked->size == 0 || !fetchBlob(*link, linked->size, itemId, kSetManifest))
-            logEd3kDebug(QStringLiteral("ed3k usenet: post set %1 of \"%2\" not fetched").arg(hexOf(link->bytes), item->name));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: post set %1 of \"%2\" not fetched").arg(hexOf(link->bytes), item->name); });
     } else {
         startPostSearch(itemId);
     }
@@ -678,8 +678,8 @@ void Ed3kUsenetJoin::readBatch(const QString& itemId, std::vector<ffi::TorrentRe
             }
             auto next = post->join.blockRead(m_session.engine(), r, spanOf(*data));
             if (!next) {
-                logEd3kDebug(QStringLiteral("ed3k usenet: block %1 of file %2 not taken (error %3)")
-                                 .arg(r.offset).arg(r.member).arg(errorName(next.error())));
+                logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: block %1 of file %2 not taken (error %3)")
+                                 .arg(r.offset).arg(r.member).arg(errorName(next.error())); });
                 continue;
             }
             more.insert(more.end(), next->begin(), next->end());
@@ -727,8 +727,8 @@ void Ed3kUsenetJoin::handleEvent(const QString& itemId, const ffi::UsenetEvent& 
             acc.append({from, to});
         }
         const int n = m_queue.acceptExternalRange(itemId, int(a->member), from, to - from);
-        logEd3kDebug(QStringLiteral("ed3k usenet: bytes %1+%2 of file %3 from ed3k: %4 article(s)")
-                         .arg(a->offset).arg(a->len).arg(a->member).arg(n));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: bytes %1+%2 of file %3 from ed3k: %4 article(s)")
+                         .arg(a->offset).arg(a->len).arg(a->member).arg(n); });
         m_queue.releaseSealHold(itemId, int(a->member));
     } else if (const auto* r = std::get_if<u::RefetchRange>(&event)) {
         // an unknown tag (a restart before that server was seen again): nobody excluded
@@ -810,8 +810,8 @@ void Ed3kUsenetJoin::onMemberHashed(const QString& itemId, int fileIndex, quint6
             });
     } else {
         m.hashes = hashed->hashes;
-        logEd3kDebug(QStringLiteral("ed3k usenet: file %1 of %2 hashed: %3, %4 bytes")
-                         .arg(fileIndex).arg(itemId, hexOf(hashed->root.bytes)).arg(hashed->size));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: file %1 of %2 hashed: %3, %4 bytes")
+                         .arg(fileIndex).arg(itemId, hexOf(hashed->root.bytes)).arg(hashed->size); });
         if (auto done = post->join.memberHashed(std::uint64_t(fileIndex), hashed->hashes); !done)
             logEd3kWarning(QStringLiteral("ed3k usenet: hash of file %1 of %2 not taken (error %3)")
                                .arg(fileIndex).arg(itemId, errorName(done.error())));
@@ -849,13 +849,13 @@ void Ed3kUsenetJoin::onMemberVerified(const QString& itemId, int fileIndex, cons
     const ffi::FileInfo info{root, size, name, std::nullopt, 0, 0, 0, 0, 0, 0};
     // was: e->publish(t, info, m_holdBack ? ffi::Publish::Source : ffi::Publish::Both)
     if (auto ok = publishShared(info); !ok)
-        logEd3kDebug(QStringLiteral("ed3k usenet: publish of file %1 of %2 failed (error %3)")
-                         .arg(fileIndex).arg(itemId, errorName(ok.error())));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: publish of file %1 of %2 failed (error %3)")
+                         .arg(fileIndex).arg(itemId, errorName(ok.error())); });
     if (auto alias = post->join.memberAlias(std::uint64_t(fileIndex), m_holdBack); alias && *alias) {
         const std::vector<ffi::Bytes> one{**alias};
         if (auto ok = e->publishAlias(t, one); !ok)
-            logEd3kDebug(QStringLiteral("ed3k usenet: nzb-file record of file %1 of %2 not published (error %3)")
-                             .arg(fileIndex).arg(itemId, errorName(ok.error())));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: nzb-file record of file %1 of %2 not published (error %3)")
+                             .arg(fileIndex).arg(itemId, errorName(ok.error())); });
         keepRecords(itemId, std::nullopt, {}, one);
     }
     keepMember(itemId, fileIndex, root, size, QString::fromStdString(name));
@@ -944,12 +944,12 @@ void Ed3kUsenetJoin::onPostComplete(const QString& itemId)
         // MEMBER rows (file-set.md §6)
         if (auto ok = e->setPublish(t, done->manifest, *done->root, std::string_view(nameUtf8.constData(), std::size_t(nameUtf8.size())));
             !ok)
-            logEd3kDebug(QStringLiteral("ed3k usenet: set of \"%1\" not published (error %2)").arg(name, errorName(ok.error())));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: set of \"%1\" not published (error %2)").arg(name, errorName(ok.error())); });
     }
     if (!done->aliases.empty()) {
         keepRecords(itemId, std::nullopt, {}, done->aliases);
         if (auto ok = e->publishAlias(t, done->aliases); !ok)
-            logEd3kDebug(QStringLiteral("ed3k usenet: ALIAS records of \"%1\" not published (error %2)").arg(name, errorName(ok.error())));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: ALIAS records of \"%1\" not published (error %2)").arg(name, errorName(ok.error())); });
     }
     logEd3k(QStringLiteral("ed3k usenet: \"%1\" complete%2").arg(name, done->root ? QStringLiteral(", post root ") + hexOf(done->root->bytes) : QString()));
     emit postCompleted(itemId, done->root.has_value());
@@ -1085,8 +1085,8 @@ void Ed3kUsenetJoin::onFileBlock(const Download& d, const ffi::event::Block& b)
     }
     f.close();
     if (auto ok = post->join.ed3kBlock(std::uint64_t(fileIndex), b.offset, std::uint32_t(b.data.size())); !ok)
-        logEd3kDebug(QStringLiteral("ed3k usenet: block %1 of file %2 not taken (error %3)")
-                         .arg(b.offset).arg(fileIndex).arg(errorName(ok.error())));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: block %1 of file %2 not taken (error %3)")
+                         .arg(b.offset).arg(fileIndex).arg(errorName(ok.error())); });
     drainEvents(itemId);
 }
 
@@ -1168,7 +1168,7 @@ void Ed3kUsenetJoin::startClaimSearches(const QString& itemId)
             continue;
         auto search = e->aliasSearchStart(m_session.now(), "nzb-file", std::span<const std::uint8_t>(*m->fileId), ED3K_REL_SAME);
         if (!search) {
-            logEd3kDebug(QStringLiteral("ed3k usenet: nzb-file search not started (error %1)").arg(errorName(search.error())));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: nzb-file search not started (error %1)").arg(errorName(search.error())); });
             break;
         }
         m_claimSearches[*search] = {itemId, f};
@@ -1198,8 +1198,8 @@ void Ed3kUsenetJoin::fetchList(const QString& itemId, const ffi::Root& root, con
     // §3: the article list the manifest names; one above 32 MiB is not fetched
     const auto list = ffi::usenetSetList(spanOf(manifest));
     if (!list) {
-        logEd3kDebug(QStringLiteral("ed3k usenet: set %1 of %2 names no article list (error %3)")
-                         .arg(hexOf(root.bytes), itemId, errorName(list.error())));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: set %1 of %2 names no article list (error %3)")
+                         .arg(hexOf(root.bytes), itemId, errorName(list.error())); });
         setRefused(itemId, root, fromLink);
         return;
     }
@@ -1209,7 +1209,7 @@ void Ed3kUsenetJoin::fetchList(const QString& itemId, const ffi::Root& root, con
     post->setFromLink = fromLink;
     post->listRoot = list->root;
     if (!fetchBlob(list->root, list->size, itemId, kArticleList)) {
-        logEd3kDebug(QStringLiteral("ed3k usenet: article list %1 of %2 not fetched").arg(hexOf(list->root.bytes), itemId));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: article list %1 of %2 not fetched").arg(hexOf(list->root.bytes), itemId); });
         setRefused(itemId, root, fromLink);
     }
 }

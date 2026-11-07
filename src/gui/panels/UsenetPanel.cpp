@@ -51,6 +51,8 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <algorithm>
+
 namespace eMule {
 
 UsenetPanel::UsenetPanel(QWidget* parent)
@@ -644,11 +646,8 @@ void UsenetPanel::onContextMenu(const QPoint& pos)
         catMenu->setEnabled(catCount > 1);
 
         menu.addSeparator();
-        // One item only: a passphrase belongs to a release, and setting the same
-        // one on four selected downloads is almost always a mistake.
-        auto* pwAct = menu.addAction(menuIcon("Security.ico"), tr("Set Password…"), this,
-                                     &UsenetPanel::onSetPassword);
-        pwAct->setEnabled(ids.size() == 1);
+        // Whole selection (#143): a release split over several NZBs shares one passphrase.
+        menu.addAction(menuIcon("Security.ico"), tr("Set Password…"), this, &UsenetPanel::onSetPassword);
 
         menu.addSeparator();
         menu.addAction(m_checkAction);
@@ -750,25 +749,26 @@ void UsenetPanel::onAddNzb()
 void UsenetPanel::onSetPassword()
 {
     const QStringList ids = selectedItemIds();
-    if (ids.size() != 1 || !m_ipc || !m_ipc->isConnected())
+    if (ids.isEmpty() || !m_ipc || !m_ipc->isConnected())
         return;
 
     const UsenetItemRow* row = m_model->findById(ids.first());
-    const bool has = row && row->hasPassword;
+    const bool has = std::ranges::any_of(ids, [this](const QString& id) {
+        const UsenetItemRow* r = m_model->findById(id);
+        return r && r->hasPassword;
+    });
 
-    bool ok = false;
     // Never pre-filled with the stored value: the daemon does not send it, on
-    // purpose — the same one-way contract the news-server passwords keep. The
-    // placeholder says whether there is one without showing it.
+    // purpose — the same one-way contract the news-server passwords keep.
     QInputDialog dlg(this);
     dlg.setWindowTitle(tr("Set Password"));
-    dlg.setLabelText(tr("Archive password for \"%1\":")
-                         .arg(row ? row->name : tr("this download")));
+    dlg.setLabelText(ids.size() == 1
+                         ? tr("Archive password for \"%1\":").arg(row ? row->name : tr("this download"))
+                         : tr("Archive password for %n selected download(s):", nullptr, int(ids.size())));
     dlg.setInputMode(QInputDialog::TextInput);
     dlg.setTextEchoMode(QLineEdit::Password);
     dlg.setTextValue(QString());
-    ok = dlg.exec() == QDialog::Accepted;
-    if (!ok)
+    if (dlg.exec() != QDialog::Accepted)
         return;
     const QString password = dlg.textValue();
 
@@ -776,27 +776,30 @@ void UsenetPanel::onSetPassword()
     // how a user takes back a wrong guess. Confirmed, because the same gesture
     // is what somebody who opened the dialog by mistake makes.
     if (password.isEmpty() && has) {
-        if (QMessageBox::question(this, tr("Set Password"),
-                                  tr("Remove the stored password for this download?"),
-                                  QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes) {
+        const QString ask = ids.size() == 1
+                                ? tr("Remove the stored password for this download?")
+                                : tr("Remove the stored passwords of %n download(s)?", nullptr, int(ids.size()));
+        if (QMessageBox::question(this, tr("Set Password"), ask, QMessageBox::Yes | QMessageBox::No)
+            != QMessageBox::Yes)
             return;
-        }
     }
 
-    Ipc::IpcMessage msg(Ipc::IpcMsgType::SetUsenetItemPassword);
-    msg.append(ids.first());
-    msg.append(password);
-    m_ipc->sendRequest(msg, [this](const Ipc::IpcMessage& reply) {
-        if (!reply.isValid())
-            return;   // connection dropped
-        if (!reply.fieldBool(0)) {
-            StatusBarNotifier::post(tr("Could not set the password."));
-            return;
-        }
-        // Setting it on a failed item retries the unpack daemon-side, so the row
-        // is about to change status; refresh rather than wait for the poll.
-        m_poller->refreshNow();
-    });
+    for (const QString& id : ids) {
+        Ipc::IpcMessage msg(Ipc::IpcMsgType::SetUsenetItemPassword);
+        msg.append(id);
+        msg.append(password);
+        m_ipc->sendRequest(msg, [this](const Ipc::IpcMessage& reply) {
+            if (!reply.isValid())
+                return;   // connection dropped
+            if (!reply.fieldBool(0)) {
+                StatusBarNotifier::post(tr("Could not set the password."));
+                return;
+            }
+            // Setting it on a failed item retries the unpack daemon-side, so the row
+            // is about to change status; refresh rather than wait for the poll.
+            m_poller->refreshNow();
+        });
+    }
 }
 
 void UsenetPanel::onPause()

@@ -159,8 +159,9 @@ void report(const Resolution& r)
                                       "another interface.").arg(r.friendlyName.isEmpty() ? r.name : r.friendlyName));
         break;
     case State::Blocked:
-        logError(QStringLiteral("Network interface: %1 — no connection is opened until it "
-                                "is available").arg(r.reason));
+        // status channel: Log tab + status bar, a silent hold looks like a hung core
+        logStatusError(QStringLiteral("Network interface: %1 — no connection is opened until it "
+                                      "is available").arg(r.reason));
         break;
     }
 }

@@ -202,9 +202,14 @@ QString ED2KServerLink::toLink() const
     // failure as a dynIP hostname, so a bracketed literal degrades to an
     // unresolvable server entry rather than a mis-dialed one.
     const bool isIPv6Literal = Address::fromString(address).isIPv6();
-    return QStringLiteral("ed2k://|server|%1|%2|/")
+    QString out = QStringLiteral("ed2k://|server|%1|%2|/")
         .arg(isIPv6Literal ? QStringLiteral("[%1]").arg(address) : address)
         .arg(port);
+    // A dual-stack server's IPv6 goes after the closing "/": stock eMule returns the
+    // server link at that "/" and never reads further (srchybrid/ED2KLink.cpp:390-395).
+    if (!isIPv6Literal && Address::fromString(address6).isIPv6())
+        out += QStringLiteral("|v6=[%1]|/").arg(address6);
+    return out;
 }
 
 QString ED2KFileLink::toLink(const ED2KLinkFormat& fmt) const
@@ -419,9 +424,32 @@ static std::optional<ED2KFileLink> parseFileLink(const QStringList& parts)
 // Server link parsing
 // ---------------------------------------------------------------------------
 
+/// The `v6=` value of a server link: "[v6]", "[v6]:port" or a bare literal. Returns the
+/// bare literal, or empty when malformed or when its port differs from @p linkPort —
+/// a server entry has one port for both families.
+static QString parseServerV6Field(QStringView value, uint16 linkPort)
+{
+    QStringView host = value;
+    if (value.startsWith(u'[')) {
+        const qsizetype close = value.indexOf(u']');
+        if (close < 0)
+            return {};
+        host = value.mid(1, close - 1);
+        const QStringView rest = value.mid(close + 1);
+        if (!rest.isEmpty()) {
+            bool ok = false;
+            if (!rest.startsWith(u':') || rest.mid(1).toUInt(&ok) != linkPort || !ok)
+                return {};
+        }
+    }
+    // A bare literal must parse whole: "2001:db8::1:4661" is itself an address (§6.2).
+    const Address addr = Address::fromString(host.toString());
+    return addr.isIPv6() ? addr.toString() : QString();
+}
+
 static std::optional<ED2KServerLink> parseServerLink(const QStringList& parts)
 {
-    // ed2k://|server|<address>|<port>|/
+    // ed2k://|server|<address>|<port>|/[|v6=[<ipv6>]|/]
     if (parts.size() < 3)
         return std::nullopt;
 
@@ -446,6 +474,18 @@ static std::optional<ED2KServerLink> parseServerLink(const QStringList& parts)
     if (!portOk || port == 0 || port > 65535)   // MFC ED2KLink.cpp:66-68
         return std::nullopt;
     link.port = static_cast<uint16>(port);
+
+    // Optional fields after the closing "/" (§6.4). Unknown ones are ignored, and a
+    // malformed v6= drops only the hint, never the link. An IPv6 primary needs none.
+    if (!Address::fromString(link.address).isIPv6()) {
+        for (qsizetype i = 3; i < parts.size(); ++i) {
+            const QString tok = parts[i].trimmed();
+            if (tok.startsWith(QStringLiteral("v6="), Qt::CaseInsensitive)) {
+                link.address6 = parseServerV6Field(QStringView(tok).mid(3), link.port);
+                break;
+            }
+        }
+    }
 
     return link;
 }

@@ -471,16 +471,16 @@ UpDownClient* DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* sou
     // Never add ourselves as a source for our own download.
     if (isSelf(source->userIDHybrid(), source->userPort(),
                source->serverAddress(), source->serverPort())) {
-        logDebug(QStringLiteral("Source rejected — that is us: %1:%2")
-                     .arg(ipstr(source->userAddress())).arg(source->userPort()));
+        logDebug([&]() -> QString { return QStringLiteral("Source rejected — that is us: %1:%2")
+                     .arg(ipstr(source->userAddress())).arg(source->userPort()); });
         return nullptr;
     }
 
     // The same test by identity rather than address: a source exchange can hand us our
     // own hash behind an address we don't recognise. MFC DownloadQueue.cpp:461-466.
     if (source->hasValidHash() && md4equ(source->userHash(), thePrefs.userHash().data())) {
-        logDebug(QStringLiteral("Source rejected — user hash matches our own: %1")
-                     .arg(ipstr(source->userAddress())));
+        logDebug([&]() -> QString { return QStringLiteral("Source rejected — user hash matches our own: %1")
+                     .arg(ipstr(source->userAddress())); });
         return nullptr;
     }
 
@@ -508,9 +508,9 @@ UpDownClient* DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* sou
                     false, false, false, nullptr, true, false);
             }
         }
-        logDebug(QStringLiteral("Source rejected — already a source of %1: %2:%3")
+        logDebug([&]() -> QString { return QStringLiteral("Source rejected — already a source of %1: %2:%3")
                      .arg(curFile->fileName(), ipstr(cur->connectAddress()))
-                     .arg(cur->userPort()));
+                     .arg(cur->userPort()); });
         return true;
     };
     // `file` first: it need not be in files() (tests), and a same-file hit is the common case.
@@ -523,8 +523,8 @@ UpDownClient* DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* sou
 
     // Check max sources per file
     if (file->sourceCount() >= static_cast<int>(file->maxSources())) {
-        logDebug(QStringLiteral("Source rejected — max sources reached (%1/%2) for %3")
-                     .arg(file->sourceCount()).arg(file->maxSources()).arg(file->fileName()));
+        logDebug([&]() -> QString { return QStringLiteral("Source rejected — max sources reached (%1/%2) for %3")
+                     .arg(file->sourceCount()).arg(file->maxSources()).arg(file->fileName()); });
         return nullptr;
     }
 
@@ -580,8 +580,8 @@ bool DownloadQueue::checkAndAddKnownSource(PartFile* file, UpDownClient* source,
     source->setSourceFrom(SourceFrom::Passive);
     // Deliberately no clientList->addClient(): the client is already in the list, and the
     // skipDupTest path checkAndAddSource() uses would insert it a second time.
-    logDebug(QStringLiteral("Passively added source %1:%2 to %3")
-                 .arg(ipstr(source->userAddress())).arg(source->userPort()).arg(file->fileName()));
+    logDebug([&]() -> QString { return QStringLiteral("Passively added source %1:%2 to %3")
+                 .arg(ipstr(source->userAddress())).arg(source->userPort()).arg(file->fileName()); });
     return true;
 }
 
@@ -658,11 +658,11 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
         if (buddyIPv6)
             client->setBuddyIPv6(Address::fromIPv6Bytes(buddyIPv6));
         if (addSourceAndConnect(file, client)) {
-            logDebug(QStringLiteral("addKadSourceResult: source ADDED type=%1 file=%2 totalSources=%3")
-                         .arg(sourceType).arg(file->fileName()).arg(file->sourceCount()));
+            logDebug([&]() -> QString { return QStringLiteral("addKadSourceResult: source ADDED type=%1 file=%2 totalSources=%3")
+                         .arg(sourceType).arg(file->fileName()).arg(file->sourceCount()); });
         } else {
-            logDebug(QStringLiteral("addKadSourceResult: source REJECTED type=%1 IP=%2:%3")
-                         .arg(sourceType).arg(ip).arg(tcpPort));
+            logDebug([&]() -> QString { return QStringLiteral("addKadSourceResult: source REJECTED type=%1 IP=%2:%3")
+                         .arg(sourceType).arg(ip).arg(tcpPort); });
         }
     };
 
@@ -671,8 +671,8 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
     case 1: {
         // Non-firewalled users (MFC DownloadQueue.cpp:1530-1548)
         if (tcpPort == 0) {
-            logDebug(QStringLiteral("addKadSourceResult: ignored type %1 — no TCP port, IP=%2")
-                         .arg(sourceType).arg(ip));
+            logDebug([&]() -> QString { return QStringLiteral("addKadSourceResult: ignored type %1 — no TCP port, IP=%2")
+                         .arg(sourceType).arg(ip); });
             return;
         }
         auto* client = new UpDownClient(tcpPort, ip, 0, 0, file);
@@ -685,9 +685,9 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
         // a source that is reachable on TCP has no callback to offer, and a publisher
         // that is not firewalled never sets bit 3 in the first place.
         client->setConnectOptions(buddyCrypt, true, false);
-        logDebug(QStringLiteral("Kad HighID source for %1: type=%2 IP=%3:%4 crypt=0x%5")
+        logDebug([&]() -> QString { return QStringLiteral("Kad HighID source for %1: type=%2 IP=%3:%4 crypt=0x%5")
                      .arg(file->fileName()).arg(sourceType).arg(ip).arg(tcpPort)
-                     .arg(buddyCrypt, 2, 16, QLatin1Char('0')));
+                     .arg(buddyCrypt, 2, 16, QLatin1Char('0')); });
         finalizeSource(client);
         break;
     }
@@ -710,8 +710,8 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
             natPeer.kadEndpoint = Endpoint(Address::fromHostOrder(ip), udpPort);
         if (theApp.isFirewalled() && !(sourceIPv6 && theApp.hasConfidentPublicIPv6())
             && !natt::NatRendezvous::keepLowIdSource(natPeer)) {
-            logDebug(QStringLiteral("addKadSourceResult: skipping FW source type %1 — we are firewalled")
-                         .arg(sourceType));
+            logDebug([&]() -> QString { return QStringLiteral("addKadSourceResult: skipping FW source type %1 — we are firewalled")
+                         .arg(sourceType); });
             return;
         }
         // buddyIP is FT_SERVERIP, which travels in network order — unlike the source
@@ -724,7 +724,7 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
         }
         // buddyIP 0: an IPv6-only record without a buddy
         if (buddyIP != 0 && m_clientList && m_clientList->isBannedClient(Address::fromNetworkOrder(buddyIP))) {
-            logDebug(QStringLiteral("addKadSourceResult: buddy IP %1 banned").arg(ipstr(buddyIP)));
+            logDebug([&]() -> QString { return QStringLiteral("addKadSourceResult: buddy IP %1 banned").arg(ipstr(buddyIP)); });
             return;
         }
         // clientID=1: "We set the clientID to 1 as a Kad user only has 1 buddy" (MFC:1570)
@@ -746,8 +746,8 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
         if (result.natt & KADNATT_QUIC)
             client->setSupportsNatTQuic(true);
         client->setConnectOptions(buddyCrypt, true, true);
-        logDebug(QStringLiteral("Kad FW source for %1: type=%2 buddy=%3:%4")
-                     .arg(file->fileName()).arg(sourceType).arg(buddyIP).arg(buddyPort));
+        logDebug([&]() -> QString { return QStringLiteral("Kad FW source for %1: type=%2 buddy=%3:%4")
+                     .arg(file->fileName()).arg(sourceType).arg(buddyIP).arg(buddyPort); });
         finalizeSource(client);
         break;
     }
@@ -755,8 +755,8 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
     case 6: {
         // Direct UDP callback (MFC DownloadQueue.cpp:1584-1601)
         if ((buddyCrypt & 0x08) == 0) {
-            logDebug(QStringLiteral("addKadSourceResult: type 6 direct callback flag not set (crypt=0x%1)")
-                         .arg(buddyCrypt, 2, 16, QLatin1Char('0')));
+            logDebug([&]() -> QString { return QStringLiteral("addKadSourceResult: type 6 direct callback flag not set (crypt=0x%1)")
+                         .arg(buddyCrypt, 2, 16, QLatin1Char('0')); });
             return;
         }
         // Not MFC: kept while we are firewalled when the source speaks QUIC NAT-T (TAG_NATT);
@@ -789,14 +789,14 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
         // argument (srchybrid/DownloadQueue.cpp:1605). supportsDirectUDPCallback()
         // still needs the user hash and the Kad port set above, so all three are here.
         client->setConnectOptions(buddyCrypt, true, true);
-        logDebug(QStringLiteral("Kad UDP callback source for %1: type=6 IP=%2:%3")
-                     .arg(file->fileName()).arg(ip).arg(tcpPort));
+        logDebug([&]() -> QString { return QStringLiteral("Kad UDP callback source for %1: type=6 IP=%2:%3")
+                     .arg(file->fileName()).arg(ip).arg(tcpPort); });
         finalizeSource(client);
         break;
     }
 
     default:
-        logDebug(QStringLiteral("addKadSourceResult: unknown source type %1").arg(sourceType));
+        logDebug([&]() -> QString { return QStringLiteral("addKadSourceResult: unknown source type %1").arg(sourceType); });
         return;
     }
 }
@@ -1025,8 +1025,8 @@ void DownloadQueue::addUDPGlobalSources(const uint8* data, uint32 size, const En
     if (!wasAskedForUdpSources(from.address())
         && !(asked && (wasAskedForUdpSources(asked->ipAddress())
                        || wasAskedForUdpSources(asked->ipv6Address())))) {
-        logDebug(QStringLiteral("DownloadQueue: unrequested OP_GlobFoundSources from %1 dropped")
-                     .arg(from.toString()));
+        logDebug([&]() -> QString { return QStringLiteral("DownloadQueue: unrequested OP_GlobFoundSources from %1 dropped")
+                     .arg(from.toString()); });
         return;
     }
 
@@ -1272,7 +1272,7 @@ void DownloadQueue::addLinkSources(PartFile* file, const std::vector<ED2KLinkSou
         m_hostResolver->resolve(host, HostResolver::Preference::Any, this,
             [this, fileHash, host, port](const HostResolver::Result& result) {
                 if (!result.ok()) {
-                    logDebug(QStringLiteral("Link source %1: %2").arg(host, result.errorString));
+                    logDebug([&]() -> QString { return QStringLiteral("Link source %1: %2").arg(host, result.errorString); });
                     return;
                 }
                 PartFile* target = fileByID(fileHash.data());
@@ -1977,12 +1977,12 @@ bool DownloadQueue::sendGlobGetSourcesUDPPacket(SafeMemFile& data, bool ext2Pack
     if (theApp.statistics)
         theApp.statistics->addUpDataOverheadServer(pktSize);
 
-    logDebug(QStringLiteral("DownloadQueue: sending %1 to server %2 (%3 files, %4 large)")
+    logDebug([&]() -> QString { return QStringLiteral("DownloadQueue: sending %1 to server %2 (%3 files, %4 large)")
                  .arg(ext2Packet ? QStringLiteral("OP_GlobGetSources2")
                                  : QStringLiteral("OP_GlobGetSources"),
                       m_curUdpServer->addressWithPort())
                  .arg(nFiles)
-                 .arg(nIncludedLargeFiles));
+                 .arg(nIncludedLargeFiles); });
 
     m_serverConnect->sendUDPPacket(std::move(pkt), *m_curUdpServer,
                                    static_cast<uint16>(m_curUdpServer->port() + 4));
@@ -2515,7 +2515,7 @@ bool DownloadQueue::sourceFiltersPass(PartFile* file, UpDownClient* source,
                                       bool ignoreGlobalDeadList) const
 {
     if (file->isStopped()) {
-        logDebug(QStringLiteral("Source rejected — download is stopped: %1").arg(file->fileName()));
+        logDebug([&]() -> QString { return QStringLiteral("Source rejected — download is stopped: %1").arg(file->fileName()); });
         return false;
     }
 
@@ -2523,8 +2523,8 @@ bool DownloadQueue::sourceFiltersPass(PartFile* file, UpDownClient* source,
     // wasted slot and a connect attempt that always fails. The hash matters because it
     // seeds the RC4 key. MFC DownloadQueue.cpp:478-485.
     if (source->isCryptLayerIncompatible(/*requireHash*/ true)) {
-        logDebug(QStringLiteral("Source rejected — obfuscation settings incompatible: %1")
-                     .arg(ipstr(source->userAddress())));
+        logDebug([&]() -> QString { return QStringLiteral("Source rejected — obfuscation settings incompatible: %1")
+                     .arg(ipstr(source->userAddress())); });
         return false;
     }
 
@@ -2535,8 +2535,8 @@ bool DownloadQueue::sourceFiltersPass(PartFile* file, UpDownClient* source,
     // deliberately a Low ID for the same reason. MFC DownloadQueue.cpp:568-575.
     // m_userIDHybrid is host order for a High ID, isGoodIP() takes network order.
     if (!source->hasLowID() && !isGoodIP(htonl(source->userIDHybrid()))) {
-        logDebug(QStringLiteral("Source rejected — unusable high ID: %1")
-                     .arg(ipstr(htonl(source->userIDHybrid()))));
+        logDebug([&]() -> QString { return QStringLiteral("Source rejected — unusable high ID: %1")
+                     .arg(ipstr(htonl(source->userIDHybrid()))); });
         return false;
     }
 
@@ -2555,12 +2555,12 @@ bool DownloadQueue::sourceFiltersPass(PartFile* file, UpDownClient* source,
     if (m_clientList && !ignoreGlobalDeadList
         && m_clientList->globalDeadSourceList.isDeadSource(deadKey))
     {
-        logDebug(QStringLiteral("Source rejected — dead source: %1").arg(ipstr(source->userAddress())));
+        logDebug([&]() -> QString { return QStringLiteral("Source rejected — dead source: %1").arg(ipstr(source->userAddress())); });
         return false;
     }
     // It told us it does not have this file; asking us for it changes nothing about that.
     if (file && file->deadSourceList().isDeadSource(deadKey)) {
-        logDebug(QStringLiteral("Source rejected — dead for this file: %1").arg(ipstr(source->userAddress())));
+        logDebug([&]() -> QString { return QStringLiteral("Source rejected — dead for this file: %1").arg(ipstr(source->userAddress())); });
         return false;
     }
 

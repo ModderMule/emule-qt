@@ -245,10 +245,10 @@ void Ed3kHide::onEvent(const ffi::Event& ev)
 {
     namespace e = ffi::event;
     if (const auto* b = std::get_if<e::HopsPathBuilt>(&ev)) {
-        logEd3kDebug(QStringLiteral("ed3k: path %1 built (%2 hops)").arg(b->path).arg(b->hops));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: path %1 built (%2 hops)").arg(b->path).arg(b->hops); });
         emit changed();
     } else if (const auto* f = std::get_if<e::HopsPathFailed>(&ev)) {
-        logEd3kDebug(QStringLiteral("ed3k: path %1 failed at hop %2 (code %3)").arg(f->path).arg(f->hop).arg(f->code));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: path %1 failed at hop %2 (code %3)").arg(f->path).arg(f->hop).arg(f->code); });
         emit changed();
     } else if (std::holds_alternative<e::HopsPathClosed>(ev)) {
         emit changed();

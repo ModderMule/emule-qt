@@ -640,8 +640,8 @@ void IPFilter::logLastHit(QStringView context) const
 {
     if (!thePrefs.logFilteredIPs())
         return;
-    logDebug(QStringLiteral("IPFilter(%1): Filtered IP=%2 - IP filter (%3)")
-                 .arg(context, ipstr(m_lastHitAddress), lastHitDescription()));
+    logDebug([&]() -> QString { return QStringLiteral("IPFilter(%1): Filtered IP=%2 - IP filter (%3)")
+                 .arg(context, ipstr(m_lastHitAddress), lastHitDescription()); });
 }
 
 QString IPFilter::lastHitDescription() const

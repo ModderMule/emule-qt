@@ -11,6 +11,7 @@
 /// (research doc §5.2); every signal and call here is on that thread.
 
 #include "BtJoin.h"
+#include "BtTrackerList.h"
 #include "BtTypes.h"
 
 #include <QBitArray>
@@ -89,6 +90,8 @@ public:
     /// Adds trackers to the last tier, skipping those already there.
     bool addTrackers(const QString& id, const QStringList& urls);
     bool removeTrackers(const QString& id, const QStringList& urls);
+    /// One edit of the tracker list (#143). nullopt: unknown id; false: nothing changed.
+    std::optional<bool> editTrackers(const QString& id, const BtTrackerEdit& edit);
 
     /// The rows as of the last status update (≤ 1 s old).
     [[nodiscard]] QList<BtTorrentRow> torrents() const;

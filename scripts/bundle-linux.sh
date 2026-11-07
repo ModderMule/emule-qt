@@ -101,18 +101,6 @@ echo "  emuleqt"
 echo "  emulecored"
 echo "  emuleqt-mcp"
 echo "  emuleqt-updater"
-# Bundled I2P router (cmake/I2pd.cmake fetches it into build/i2pd): static musl, no wrapper.
-# Optional: without it only an external router can be used
-I2PD_DIR="${EMULE_I2PD_DIR:-$BUILD_DIR/i2pd}"
-if [ -f "$I2PD_DIR/emuleqt-i2pd" ]; then
-    cp "$I2PD_DIR/emuleqt-i2pd" "$STAGE_DIR/emuleqt-i2pd"
-    chmod +x "$STAGE_DIR/emuleqt-i2pd"
-    cp -R "$I2PD_DIR/certificates" "$STAGE_DIR/i2pd-certificates"
-    cp "$I2PD_DIR/LICENSE" "$STAGE_DIR/i2pd-LICENSE.txt"
-    echo "  emuleqt-i2pd"
-else
-    echo "Warning: no $I2PD_DIR/emuleqt-i2pd (cmake -DEMULE_I2PD=ON) — bundled I2P router not included."
-fi
 # Hoster resolver (scripts/build-hoster-resolver.sh): next to the daemon, optional
 RESOLVER_ZIP="${EMULE_RESOLVER_ZIP:-$BUILD_DIR/hoster-resolver/resolver.zip}"
 if [ -f "$RESOLVER_ZIP" ]; then
@@ -250,10 +238,6 @@ WRAPPER
     cp "$STAGE_DIR/emulecored" "$APPDIR/usr/bin/emulecored"
     chmod +x "$APPDIR/usr/bin/emulecored"
     [ -f "$STAGE_DIR/resolver.zip" ] && cp "$STAGE_DIR/resolver.zip" "$APPDIR/usr/bin/resolver.zip"
-    if [ -f "$STAGE_DIR/emuleqt-i2pd" ]; then
-        cp "$STAGE_DIR/emuleqt-i2pd" "$APPDIR/usr/bin/emuleqt-i2pd"
-        cp -R "$STAGE_DIR/i2pd-certificates" "$APPDIR/usr/bin/i2pd-certificates"
-    fi
 
     # Minimal .desktop file required by linuxdeploy
     cat > "$APPDIR/usr/share/applications/emuleqt.desktop" <<DESKTOP

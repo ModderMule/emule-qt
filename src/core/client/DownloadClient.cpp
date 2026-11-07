@@ -52,12 +52,12 @@ bool UpDownClient::askForDownload()
     }
 
     if (!m_reqFile) {
-        logDebug(QStringLiteral("askForDownload: no reqFile for %1").arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("askForDownload: no reqFile for %1").arg(userName()); });
         return false;
     }
 
     if (m_downloadState == DownloadState::Downloading) {
-        logDebug(QStringLiteral("askForDownload: already downloading from %1").arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("askForDownload: already downloading from %1").arg(userName()); });
         return false;
     }
 
@@ -134,7 +134,7 @@ bool UpDownClient::askForDownload()
                 if (!connected) {
                     setDownloadState(DownloadState::Connecting);
                     m_connectingState = ConnectingState::Ed3kHint;
-                    logDebug(QStringLiteral("askForDownload: ed3k first for %1").arg(userName()));
+                    logDebug([&]() -> QString { return QStringLiteral("askForDownload: ed3k first for %1").arg(userName()); });
                     return true;
                 }
             }
@@ -257,17 +257,17 @@ void UpDownClient::sendFileRequest()
         return;
     ++m_askedCountDown;   // MFC DownloadClient.cpp:271
 
-    logDebug(QStringLiteral("sendFileRequest: reqFile=%1")
-                 .arg(m_reqFile ? m_reqFile->fileName() : QStringLiteral("null")));
+    logDebug([&]() -> QString { return QStringLiteral("sendFileRequest: reqFile=%1")
+                 .arg(m_reqFile ? m_reqFile->fileName() : QStringLiteral("null")); });
 
     const bool useMultiPacket = supportMultiPacket() || supportsFileIdentifiers();
     if (thePrefs.logRawSocketPackets())
-        logDebug(QStringLiteral("sendFileRequest: %1 path for file=%2 multiPacket=%3 extMultiPacket=%4 fileIdent=%5")
+        logDebug([&]() -> QString { return QStringLiteral("sendFileRequest: %1 path for file=%2 multiPacket=%3 extMultiPacket=%4 fileIdent=%5")
                      .arg(useMultiPacket ? QStringLiteral("multipacket") : QStringLiteral("individual"))
                      .arg(m_reqFile->fileName())
                      .arg(supportMultiPacket())
                      .arg(supportExtMultiPacket())
-                     .arg(supportsFileIdentifiers()));
+                     .arg(supportsFileIdentifiers()); });
 
     if (useMultiPacket) {
         // --- Multipacket path (MFC DownloadClient.cpp SendFileRequest) ---
@@ -584,13 +584,13 @@ void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdent
         }
 
         if (m_hashsetRequestingMD4 && !md4) {
-            logDebug(QStringLiteral("processHashSet: %1 did not deliver the MD4 hashset for %2")
-                         .arg(userName(), m_reqFile->fileName()));
+            logDebug([&]() -> QString { return QStringLiteral("processHashSet: %1 did not deliver the MD4 hashset for %2")
+                         .arg(userName(), m_reqFile->fileName()); });
             m_reqFile->setMD4HashsetNeeded(true);
         }
         if (m_hashsetRequestingAICH && !aich) {
-            logDebug(QStringLiteral("processHashSet: %1 did not deliver the AICH part hashset for %2")
-                         .arg(userName(), m_reqFile->fileName()));
+            logDebug([&]() -> QString { return QStringLiteral("processHashSet: %1 did not deliver the AICH part hashset for %2")
+                         .arg(userName(), m_reqFile->fileName()); });
             m_reqFile->setAICHPartHashsetNeeded(true);
         }
         if (md4 || aich)
@@ -612,9 +612,9 @@ void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdent
     m_hashsetRequestingAICH = false;
 
     if (thePrefs.logRawSocketPackets())
-        logDebug(QStringLiteral("processHashSet: state=%1 reqFile=%2")
+        logDebug([&]() -> QString { return QStringLiteral("processHashSet: state=%1 reqFile=%2")
                      .arg(static_cast<int>(m_downloadState))
-                     .arg(m_reqFile ? m_reqFile->fileName() : QStringLiteral("null")));
+                     .arg(m_reqFile ? m_reqFile->fileName() : QStringLiteral("null")); });
 
     // If hashset obtained, proceed with download — MFC: transition to
     // OnQueue before sending OP_STARTUPLOADREQ so that the subsequent
@@ -634,8 +634,8 @@ void UpDownClient::processAcceptUpload()
     // An accept is normally followed by a rank update — expect one (MFC
     // DownloadClient.cpp:1964).
     m_queueRankPending = true;
-    logDebug(QStringLiteral("processAcceptUpload: downloadState=%1 from %2")
-                 .arg(static_cast<int>(m_downloadState)).arg(userName()));
+    logDebug([&]() -> QString { return QStringLiteral("processAcceptUpload: downloadState=%1 from %2")
+                 .arg(static_cast<int>(m_downloadState)).arg(userName()); });
 
     // MFC: Check file is valid and ready for download
     if (m_reqFile && !m_reqFile->isStopped() &&
@@ -648,7 +648,7 @@ void UpDownClient::processAcceptUpload()
             // Its last sessions gave us nothing; not again just yet. It keeps its
             // place as a source and is asked again after the pause.
             if (isDownloadCoolingDown()) {
-                logDebug(QStringLiteral("processAcceptUpload: %1 is cooling down, declining").arg(userName()));
+                logDebug([&]() -> QString { return QStringLiteral("processAcceptUpload: %1 is cooling down, declining").arg(userName()); });
                 if (auto* ledger = fruitlessLedger())
                     ledger->noteDeclinedAccept(userHash(), getTickCount());
                 sendCancelTransfer();
@@ -777,7 +777,7 @@ void UpDownClient::sendBlockRequests()
     }
 
     if (m_downloadState != DownloadState::Downloading) {
-        logDebug(QStringLiteral("sendBlockRequests: wrong state %1").arg(static_cast<int>(m_downloadState)));
+        logDebug([&]() -> QString { return QStringLiteral("sendBlockRequests: wrong state %1").arg(static_cast<int>(m_downloadState)); });
         return;
     }
 
@@ -817,8 +817,8 @@ void UpDownClient::sendBlockRequests()
     // (srchybrid/DownloadClient.cpp:1126). logDebug() is a plain function, so the
     // gate also skips the eager QString formatting.
     if (thePrefs.logRawSocketPackets())
-        logDebug(QStringLiteral("sendBlockRequests: pendingBlocks=%1 from %2")
-                     .arg(m_pendingBlocks.size()).arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("sendBlockRequests: pendingBlocks=%1 from %2")
+                     .arg(m_pendingBlocks.size()).arg(userName()); });
 
     if (m_pendingBlocks.empty()) {
         // Every gap is filled, but the last parts are still being written and
@@ -883,9 +883,9 @@ void UpDownClient::sendBlockRequests()
 
     if (thePrefs.logRawSocketPackets()) {
         for (int i = 0; i < nr; ++i) {
-            logDebug(QStringLiteral("sendBlockRequests: block[%1] start=%2 end=%3 to %4")
+            logDebug([&]() -> QString { return QStringLiteral("sendBlockRequests: block[%1] start=%2 end=%3 to %4")
                          .arg(i).arg(pblock[i]->block->startOffset)
-                         .arg(pblock[i]->block->endOffset).arg(userName()));
+                         .arg(pblock[i]->block->endOffset).arg(userName()); });
         }
     }
 
@@ -947,7 +947,7 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
 
     // Verify this data is for the correct file
     if (!m_reqFile || !md4equ(data, m_reqFile->fileHash())) {
-        logDebug(QStringLiteral("processBlockPacket: wrong file ID from %1").arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("processBlockPacket: wrong file ID from %1").arg(userName()); });
         return;
     }
 
@@ -1021,8 +1021,8 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
             m_unmatchedWindowStart = now;
         }
         if (++m_unmatchedPackets >= kMaxUnmatchedPackets) {
-            logDebug(QStringLiteral("processBlockPacket: %1 keeps sending data we did not ask for")
-                         .arg(userName()));
+            logDebug([&]() -> QString { return QStringLiteral("processBlockPacket: %1 keeps sending data we did not ask for")
+                         .arg(userName()); });
             noteDownloadSessionEndedByPeer();
             sendCancelTransfer();
             setDownloadState(DownloadState::OnQueue);
@@ -1057,7 +1057,7 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
         // --- Uncompressed data ---
         // Security check: received end must not exceed requested end
         if (nEndPos > curBlock->block->endOffset) {
-            logDebug(QStringLiteral("processBlockPacket: block exceeds requested boundary from %1").arg(userName()));
+            logDebug([&]() -> QString { return QStringLiteral("processBlockPacket: block exceeds requested boundary from %1").arg(userName()); });
             m_reqFile->removeBlockFromList(curBlock->block);
             return;
         }
@@ -1087,7 +1087,7 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
                 if (writeStart > curBlock->block->endOffset ||
                     writeEnd > curBlock->block->endOffset)
                 {
-                    logDebug(QStringLiteral("processBlockPacket: decompressed data exceeds block boundary from %1").arg(userName()));
+                    logDebug([&]() -> QString { return QStringLiteral("processBlockPacket: decompressed data exceeds block boundary from %1").arg(userName()); });
                     m_reqFile->removeBlockFromList(curBlock->block);
                 } else {
                     lenWritten = m_reqFile->writeToBuffer(uTransferredFileDataSize,
@@ -1097,7 +1097,7 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
                 }
             }
         } else {
-            logDebug(QStringLiteral("processBlockPacket: decompression error %1 from %2").arg(result).arg(userName()));
+            logDebug([&]() -> QString { return QStringLiteral("processBlockPacket: decompression error %1 from %2").arg(result).arg(userName()); });
             m_reqFile->removeBlockFromList(curBlock->block);
 
             // Clean up the failed zstream
@@ -1325,12 +1325,12 @@ void UpDownClient::sendHashSetRequest()
         return;
 
     if (thePrefs.logRawSocketPackets())
-        logDebug(QStringLiteral("sendHashSetRequest: file=%1 md4needed=%2 aichNeeded=%3 state=%4 fileIdent=%5")
+        logDebug([&]() -> QString { return QStringLiteral("sendHashSetRequest: file=%1 md4needed=%2 aichNeeded=%3 state=%4 fileIdent=%5")
                      .arg(m_reqFile->fileName())
                      .arg(m_reqFile->isMD4HashsetNeeded())
                      .arg(m_reqFile->isAICHPartHashsetNeeded())
                      .arg(static_cast<int>(m_downloadState))
-                     .arg(supportsFileIdentifiers()));
+                     .arg(supportsFileIdentifiers()); });
 
     if (supportsFileIdentifiers()) {
         // MFC: v2 path — OP_HASHSETREQUEST2 with FileIdentifier + options byte
@@ -1417,7 +1417,7 @@ void UpDownClient::checkDownloadTimeout()
         m_lastBlockReceived = curTick;
 
     if ((curTick - m_lastBlockReceived) > DOWNLOADTIMEOUT) {
-        logDebug(QStringLiteral("Download timeout for %1").arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("Download timeout for %1").arg(userName()); });
         noteDownloadSessionEndedByPeer();
         // HTTP sources have no cancel opcode and resume through disconnected().
         if (!m_socket || m_socket->isRawDataMode()) {
@@ -1596,8 +1596,8 @@ void UpDownClient::udpReaskForDownload()
             && !theApp.clientList->allowRelayRequest(m_buddyAddress, m_buddyID.data(),
                                                      RelayRequest::ReaskCallback))
         {
-            logDebug(QStringLiteral("udpReaskForDownload: relay limit of buddy %1 reached, reask to %2 held back")
-                         .arg(m_buddyAddress.toString(), userName()));
+            logDebug([&]() -> QString { return QStringLiteral("udpReaskForDownload: relay limit of buddy %1 reached, reask to %2 held back")
+                         .arg(m_buddyAddress.toString(), userName()); });
             return;
         }
 
@@ -1833,7 +1833,7 @@ bool UpDownClient::doSwap(PartFile* swapTo, bool removeCompletely, const QString
     m_sentCancelTransfer = false;
 
     if (thePrefs.wantsA4AFLog())
-        logDebug(QStringLiteral("Source swap: %1 from %2 to %3 reason: %4").arg(userName(), oldFile->fileName(), swapTo->fileName(), reason));
+        logDebug([&]() -> QString { return QStringLiteral("Source swap: %1 from %2 to %3 reason: %4").arg(userName(), oldFile->fileName(), swapTo->fileName(), reason); });
 
     return true;
 }
@@ -2042,18 +2042,18 @@ void UpDownClient::noteDownloadSessionEndedByPeer()
         using Verdict = FruitlessSessionLedger::Verdict;
         const Verdict verdict = ledger->noteFruitlessSession(userHash(), now);
         if (verdict != Verdict::Noted) {
-            logDebug(QStringLiteral("Download sessions with %1 gave no data; %2 for %3 s")
+            logDebug([&]() -> QString { return QStringLiteral("Download sessions with %1 gave no data; %2 for %3 s")
                          .arg(userName(), verdict == Verdict::Quarantined
                                               ? QStringLiteral("quarantined") : QStringLiteral("paused"))
-                         .arg(ledger->heldBackFor(userHash(), now) / 1000));
+                         .arg(ledger->heldBackFor(userHash(), now) / 1000); });
         }
         return;
     }
     if (m_fruitlessSessionTick != 0 && now - m_fruitlessSessionTick <= kFruitlessWindowMs) {
         m_fruitlessSessionTick = 0;
         m_downloadCooldownUntil = now + kDownloadCooldownMs;
-        logDebug(QStringLiteral("Two download sessions with %1 gave no data; pausing it for %2 s")
-                     .arg(userName()).arg(kDownloadCooldownMs / 1000));
+        logDebug([&]() -> QString { return QStringLiteral("Two download sessions with %1 gave no data; pausing it for %2 s")
+                     .arg(userName()).arg(kDownloadCooldownMs / 1000); });
     } else {
         m_fruitlessSessionTick = now;
     }
@@ -2212,15 +2212,15 @@ void UpDownClient::processAICHAnswer(const uint8* data, uint32 size)
                 partFile->aichRecoveryDataAvailable(request.part);
                 return;
             }
-            logDebug(QStringLiteral("processAICHAnswer: recovery data failed to validate from %1")
-                         .arg(userName()));
+            logDebug([&]() -> QString { return QStringLiteral("processAICHAnswer: recovery data failed to validate from %1")
+                         .arg(userName()); });
         } else {
-            logDebug(QStringLiteral("processAICHAnswer: master hash differs or hash set not trusted (%1)")
-                         .arg(userName()));
+            logDebug([&]() -> QString { return QStringLiteral("processAICHAnswer: master hash differs or hash set not trusted (%1)")
+                         .arg(userName()); });
         }
     } else {
-        logDebug(QStringLiteral("processAICHAnswer: answer does not match what we asked %1 for")
-                     .arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("processAICHAnswer: answer does not match what we asked %1 for")
+                     .arg(userName()); });
     }
 
     AICHRecoveryHashSet::clientAICHRequestFailed(this);
@@ -2271,8 +2271,8 @@ void UpDownClient::processAICHFileHash(SafeMemFile* data, PartFile* file,
         return;
 
     if (!partFile || partFile != m_reqFile) {
-        logDebug(QStringLiteral("processAICHFileHash: not the file we asked %1 for")
-                     .arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("processAICHFileHash: not the file we asked %1 for")
+                     .arg(userName()); });
         return;
     }
 
@@ -2436,7 +2436,7 @@ int UpDownClient::unzip(Pending_Block_Struct* block, const uint8* zipped,
 
     } else {
         // Unexpected error — corrupt data
-        logDebug(QStringLiteral("unzip error: %1 %2").arg(err).arg(QString::fromUtf8(zS->msg ? zS->msg : zError(err))));
+        logDebug([&]() -> QString { return QStringLiteral("unzip error: %1 %2").arg(err).arg(QString::fromUtf8(zS->msg ? zS->msg : zError(err))); });
     }
 
     if (err != Z_OK)
@@ -2485,7 +2485,7 @@ bool UpDownClient::canServeAICHRecovery(const uint8* fileHash, uint16 part,
     if (knownFile->partCount() <= part
         || fileSize <= static_cast<uint64>(part) * PARTSIZE + EMBLOCKSIZE)
     {
-        logDebug(QStringLiteral("processAICHRequest: invalid part number %1").arg(part));
+        logDebug([&]() -> QString { return QStringLiteral("processAICHRequest: invalid part number %1").arg(part); });
         return false;
     }
 

@@ -502,7 +502,7 @@ bool DaemonApp::start()
         // eD2K hashes it, Ed3kShared then serves it (releaseShare); set members sit in
         // <incoming>/<set>/, single shared when shareIncomingSubdirs is off
         if (theApp.sharedFileList && !theApp.sharedFileList->shareCompletedFile(done.path))
-            logDebug(QStringLiteral("ed3k: %1 is not shared").arg(done.path));
+            logDebug([&]() -> QString { return QStringLiteral("ed3k: %1 is not shared").arg(done.path); });
     });
     if (m_ed3kShared) {
         m_ed3kDownloads->setSharedElsewhere([s = m_ed3kShared.get()](const ::ed3k::Root& root) { return s->sharesRoot(root); });
@@ -655,7 +655,7 @@ bool DaemonApp::start()
             return;
         for (const QString& f : files)
             if (!theApp.sharedFileList->shareCompletedFile(f))
-                logDebug(QStringLiteral("hoster: %1 is not shared").arg(f));
+                logDebug([&]() -> QString { return QStringLiteral("hoster: %1 is not shared").arg(f); });
     });
     {
         const auto pushStatus = [this] {
@@ -727,7 +727,7 @@ bool DaemonApp::start()
             for (const QString& f : change.finished)
                 if (!theApp.sharedFileList->shouldBeShared(QFileInfo(f).absolutePath(), f, false)
                     && !theApp.sharedFileList->addSingleSharedFile(f))
-                    logDebug(QStringLiteral("BitTorrent: %1 is not shared").arg(f));
+                    logDebug([&]() -> QString { return QStringLiteral("BitTorrent: %1 is not shared").arg(f); });
         };
         connect(m_btSession.get(), &bt::BtSession::torrentAdded, this, guard);
         connect(m_btSession.get(), &bt::BtSession::torrentChanged, this, guard);
@@ -738,14 +738,19 @@ bool DaemonApp::start()
     m_i2pRouter = std::make_unique<I2pRouter>();
     BtBridge::setI2pRouter(m_i2pRouter.get());
     // Ready hands libtorrent the SAM bridge, a crash takes it away
-    connect(m_i2pRouter.get(), &I2pRouter::stateChanged, this, [this] {
-        applyBtConfig();
+    const auto pushBtStatus = [this] {
         if (!m_ipcServer)
             return;
         IpcMessage msg(IpcMsgType::PushBtStatus, 0);
         msg.append(BtBridge::statusToCbor());
         m_ipcServer->broadcast(msg);
+    };
+    connect(m_i2pRouter.get(), &I2pRouter::stateChanged, this, [this, pushBtStatus] {
+        applyBtConfig();
+        pushBtStatus();
     });
+    // the Options page shows the router download's percent
+    connect(m_i2pRouter.get(), &I2pRouter::downloadProgressChanged, this, pushBtStatus);
     connectBtPushes();
     // the app's IP filter (§7.6): kept by the session across stop/start
     BtBridge::applyIpFilter();
@@ -1327,8 +1332,8 @@ void DaemonApp::applyEd3kConfig()
                                 && theApp.clientUDP->connectedPort() != port;
     const bool holdNode = udpMovePending && enabled && m_ed3kSession->isRunning();
     if (holdNode)
-        logEd3kDebug(QStringLiteral("ed3k: stays on UDP port %1 until eD2K UDP moves to %2")
-                         .arg(m_ed3kSession->udpPort()).arg(port));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: stays on UDP port %1 until eD2K UDP moves to %2")
+                         .arg(m_ed3kSession->udpPort()).arg(port); });
     QUdpSocket* shared = nullptr;
     if (theApp.clientUDP) {
         if (wantShared && !udpMovePending)
@@ -1346,7 +1351,7 @@ void DaemonApp::applyEd3kConfig()
         stopEd3kNode();
     if (enabled && !m_ed3kSession->isRunning() && wantShared && !shared) {
         // the eD2K socket opens once the core is loaded (onCoreLoaded comes back here)
-        logEd3kDebug(QStringLiteral("ed3k: waits for the eD2K UDP socket on port %1").arg(port));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: waits for the eD2K UDP socket on port %1").arg(port); });
     } else if (enabled && !m_ed3kSession->isRunning()) {
         ed3k::Ed3kSettings settings;
         settings.udpPort = port;
@@ -1820,9 +1825,6 @@ void DaemonApp::applyLogFilterRules()
         rules << QStringLiteral("emule.kad.debug=true");
     if (thePrefs.serverVerboseLog())
         rules << QStringLiteral("emule.serverv.debug=true");
-    // Usenet debug lines are rate-bounded (no per-article lines) and have their
-    // own tab and file, so they are always on.
-    rules << QStringLiteral("emule.usenet.debug=true");
     // ed3k's Kad debug lines follow the Kad switch, like eD2K's Kad
     if (thePrefs.kadVerboseLog())
         rules << QStringLiteral("emule.ed3k.kad.debug=true");
@@ -1834,6 +1836,9 @@ void DaemonApp::applyLogFilterRules()
     own("emule.torrent", thePrefs.btVerboseLog());
     own("emule.hoster", thePrefs.hosterVerboseLog());
     own("emule.ed3k", thePrefs.ed3kVerboseLog());
+    // Usenet's were always on: its rate-share line alone was the biggest pattern (#139)
+    own("emule.usenet", thePrefs.usenetVerboseLog());
+    own("emule.sharedv", thePrefs.sharedFilesVerboseLog());
 
     QLoggingCategory::setFilterRules(rules.join(QLatin1Char('\n')));
 }

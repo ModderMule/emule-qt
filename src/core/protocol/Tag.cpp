@@ -218,7 +218,7 @@ Tag::Tag(FileDataIO& data, bool optUTF8)
             m_type = TAGTYPE_STRING;
         } else {
             // Debug only: a peer picks the type, so this must not flood the log.
-            logDebug(QStringLiteral("Unknown tag type 0x%1").arg(m_type, 2, 16, QChar(u'0')));
+            logDebug([&]() -> QString { return QStringLiteral("Unknown tag type 0x%1").arg(m_type, 2, 16, QChar(u'0')); });
             m_type = TAGTYPE_NONE;
         }
         break;

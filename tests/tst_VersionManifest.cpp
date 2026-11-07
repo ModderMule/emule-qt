@@ -40,6 +40,8 @@ private slots:
     void hashIsLowercased();
     void installableNeedsHashUrlAndSize();
     void missingEntryIsEmpty();
+    void notesDefaultEmpty();
+    void parsesDescriptionAndChangelog();
 };
 
 void TestVersionManifest::parsesEveryEntry()
@@ -76,6 +78,24 @@ void TestVersionManifest::missingEntryIsEmpty()
     const VersionDownload d = info.downloadFor(QStringLiteral("linux-arm64"));
     QVERIFY(d.url.isEmpty());
     QVERIFY(!d.isUsable());
+}
+
+void TestVersionManifest::notesDefaultEmpty()
+{
+    const auto info = VersionManifest::parse(kManifest);
+    QVERIFY(info.description.isEmpty());
+    QVERIFY(info.changelog.isEmpty());
+}
+
+void TestVersionManifest::parsesDescriptionAndChangelog()
+{
+    const auto info = VersionManifest::parse(
+        "{\"latest\": \"0.8.1\", \"description\": \"  Bug fix release.\\n\","
+        " \"changelog\": [\"Faster search\", \"\", 7, \"  Fix <b>crash</b> \"]}");
+    QVERIFY(info.isValid());
+    QCOMPARE(info.description, QStringLiteral("Bug fix release."));
+    // empty and non-string entries dropped, rest trimmed
+    QCOMPARE(info.changelog, (QStringList{QStringLiteral("Faster search"), QStringLiteral("Fix <b>crash</b>")}));
 }
 
 QTEST_GUILESS_MAIN(TestVersionManifest)

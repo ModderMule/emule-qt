@@ -11,6 +11,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QLoggingCategory>
 #include <QRegularExpression>
 #include <QTest>
 #include <QTextStream>
@@ -41,6 +42,13 @@ private slots:
     void logFileSink_routesLeecherToItsOwnFile();
     void logFileSink_disabledWritesNothing();
     void logFileSink_messageHandlerFeedsSink();
+    void logFileSink_sharedVerboseGoesToVerboseFile();
+
+    // Console level, repeat gate, lazy lines (#139)
+    void consoleLogLevel_fromArgsAndEnv();
+    void consoleLogLevel_allows();
+    void repeatGate_dropsRepeatsWithinWindow();
+    void lazyDebug_skipsMakerWhileDisabled();
 
     // Opcodes compile-time checks
     void opcodes_partsize();
@@ -352,6 +360,94 @@ void tst_Log::logFileSink_messageHandlerFeedsSink()
 
     QVERIFY(readAll(tmp.filePath(QStringLiteral("emulecored.log")))
                 .contains(QStringLiteral("emule.general: routed through the handler")));
+}
+
+void tst_Log::logFileSink_sharedVerboseGoesToVerboseFile()
+{
+    eMule::testing::TempDir tmp;
+    applyLogFileSink(tmp.path(), QStringLiteral("emuleqt"), true, 1048576);
+    writeToLogFileSink(QtDebugMsg, "emule.sharedv", QStringLiteral("Hashing file: \"a\""));
+    closeLogFileSink();
+    QVERIFY(readAll(tmp.filePath(QStringLiteral("emuleqt_Verbose.log")))
+                .contains(QStringLiteral("emule.sharedv: Hashing file: \"a\"")));
+    QVERIFY(readAll(tmp.filePath(QStringLiteral("emuleqt.log"))).isEmpty());
+}
+
+// ---------------------------------------------------------------------------
+// Console level, repeat gate, lazy lines
+// ---------------------------------------------------------------------------
+
+void tst_Log::consoleLogLevel_fromArgsAndEnv()
+{
+    const QByteArray saved = qgetenv("EMULE_LOG_LEVEL");
+    qunsetenv("EMULE_LOG_LEVEL");
+    const QString app = QStringLiteral("emulecored");
+    QCOMPARE(consoleLogLevelFromArgs({app}), kConsoleLogLevelAll);
+    QCOMPARE(consoleLogLevelFromArgs({app, QStringLiteral("--log-level"), QStringLiteral("1")}), 1);
+    QCOMPARE(consoleLogLevelFromArgs({app, QStringLiteral("--log-level=0")}), 0);
+    QCOMPARE(consoleLogLevelFromArgs({app, QStringLiteral("--log-level=9")}), kConsoleLogLevelAll);
+    QCOMPARE(consoleLogLevelFromArgs({app, QStringLiteral("--log-level"), QStringLiteral("x")}),
+             kConsoleLogLevelAll);
+    qputenv("EMULE_LOG_LEVEL", "2");
+    QCOMPARE(consoleLogLevelFromArgs({app}), 2);
+    // the argument wins over the environment
+    QCOMPARE(consoleLogLevelFromArgs({app, QStringLiteral("--log-level=1")}), 1);
+    if (saved.isNull())
+        qunsetenv("EMULE_LOG_LEVEL");
+    else
+        qputenv("EMULE_LOG_LEVEL", saved);
+}
+
+void tst_Log::consoleLogLevel_allows()
+{
+    // 0: nothing but fatal
+    QVERIFY(!consoleLogAllows(0, QtCriticalMsg, "emule.general"));
+    QVERIFY(consoleLogAllows(0, QtFatalMsg, "qt.core"));
+    // 1: errors of any category, status and server lines
+    QVERIFY(consoleLogAllows(1, QtCriticalMsg, "emule.kad"));
+    QVERIFY(consoleLogAllows(1, QtInfoMsg, "emule.status"));
+    QVERIFY(consoleLogAllows(1, QtWarningMsg, "emule.server"));
+    QVERIFY(!consoleLogAllows(1, QtInfoMsg, "emule.general"));
+    QVERIFY(!consoleLogAllows(1, QtWarningMsg, "qt.network.ssl"));
+    // 2: + main log; network tabs and debug stay off
+    QVERIFY(consoleLogAllows(2, QtInfoMsg, "emule.general"));
+    QVERIFY(consoleLogAllows(2, QtWarningMsg, "emule.general"));
+    QVERIFY(!consoleLogAllows(2, QtDebugMsg, "emule.general"));
+    QVERIFY(!consoleLogAllows(2, QtInfoMsg, "emule.usenet"));
+    QVERIFY(!consoleLogAllows(2, QtInfoMsg, "emule.torrent"));
+    // 3: everything
+    QVERIFY(consoleLogAllows(3, QtDebugMsg, "emule.kad"));
+    QVERIFY(consoleLogAllows(3, QtWarningMsg, "qt.network.ssl"));
+}
+
+void tst_Log::repeatGate_dropsRepeatsWithinWindow()
+{
+    LogRepeatGate gate(50);
+    const QString a = QStringLiteral("i2p_error");
+    QCOMPARE(gate.filter(a, a), a);
+    QVERIFY(gate.filter(a, a).isEmpty());
+    QVERIFY(gate.filter(a, a).isEmpty());
+    // another key is its own line
+    QCOMPARE(gate.filter(QStringLiteral("b"), QStringLiteral("b")), QStringLiteral("b"));
+    QTest::qWait(80);
+    QCOMPARE(gate.filter(a, a), QStringLiteral("i2p_error (2 more hidden)"));
+    QVERIFY(gate.filter(a, a).isEmpty());
+}
+
+void tst_Log::lazyDebug_skipsMakerWhileDisabled()
+{
+    int calls = 0;
+    const auto make = [&calls]() -> QString {
+        ++calls;
+        return QStringLiteral("lazy line");
+    };
+    QLoggingCategory::setFilterRules(QStringLiteral("emule.general.debug=false"));
+    logDebug(make);
+    QCOMPARE(calls, 0);
+    QLoggingCategory::setFilterRules(QStringLiteral("emule.general.debug=true"));
+    logDebug(make);
+    QCOMPARE(calls, 1);
+    QLoggingCategory::setFilterRules({});
 }
 
 // ---------------------------------------------------------------------------

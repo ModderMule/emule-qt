@@ -1363,15 +1363,15 @@ void CoreSession::handleDirectCallbackRequest(const Endpoint& senderEP,
     // The user hash is self-asserted. One we already know at another IP is someone
     // else's: don't dial a stranger on behalf of a client we can reach elsewhere.
     if (hashKnownElsewhere(userHash, senderAddr)) {
-        logDebug(QStringLiteral("Direct callback from %1 ignored: user hash known at another IP")
-                     .arg(senderAddr.toString()));
+        logDebug([&]() -> QString { return QStringLiteral("Direct callback from %1 ignored: user hash known at another IP")
+                     .arg(senderAddr.toString()); });
         return;
     }
 
     // Global cap: many addresses together must not drive our connect slots either.
     if (!takeDirectCallbackBudget()) {
-        logDebug(QStringLiteral("Direct callback from %1 ignored: global limit reached")
-                     .arg(senderAddr.toString()));
+        logDebug([&]() -> QString { return QStringLiteral("Direct callback from %1 ignored: global limit reached")
+                     .arg(senderAddr.toString()); });
         return;
     }
     theApp.clientList->addTrackCallbackRequests(senderAddr);
@@ -2163,7 +2163,7 @@ void CoreSession::suspendNetworking()
 void CoreSession::resumeNetworking()
 {
     m_netSuspended = false;
-    logInfo(QStringLiteral("Network interface available — reopening sockets"));
+    logStatusInfo(QStringLiteral("Network interface available — reopening sockets"));
 
     if (m_listenSocket && !m_listenSocket->startListening(thePrefs.port()))
         logWarning(QStringLiteral("Failed to bind TCP listen socket on port %1").arg(thePrefs.port()));

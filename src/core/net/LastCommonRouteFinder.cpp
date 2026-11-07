@@ -460,7 +460,7 @@ void LastCommonRouteFinder::run()
             if (!waitWhileEnabled(1000))
                 break;
 
-            logDebug(QStringLiteral("USS: Try #%1, tracing %2 hosts").arg(tries).arg(hosts.size()));
+            logDebug([&]() -> QString { return QStringLiteral("USS: Try #%1, tracing %2 hosts").arg(tries).arg(hosts.size()); });
             probe = traceLastCommonHost(hosts, pingFn, keepGoing,
                                         [this](uint32 ms) { waitWhileEnabled(ms); });
 

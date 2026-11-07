@@ -187,6 +187,12 @@ void TorrentListsPane::setTorrentId(const QString& id)
     m_poller->refreshNow();
 }
 
+void TorrentListsPane::refresh()
+{
+    if (!m_id.isEmpty())
+        m_poller->refreshNow();
+}
+
 void TorrentListsPane::applyDetails(const QCborMap& details)
 {
     m_stack->setCurrentWidget(m_tabs);

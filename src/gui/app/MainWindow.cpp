@@ -295,12 +295,25 @@ MainWindow::MainWindow(QWidget* parent)
                   .arg(info.latest, QLocale().toString(info.date, QLocale::LongFormat))
             : tr("Version %1 of eMule Qt is available.").arg(info.latest);
 
-        const auto result = QMessageBox::question(
-            this, tr("New Version Available"),
-            tr("%1\n\nYou are running %2. Open the eMule Qt website?")
-                .arg(released, QCoreApplication::applicationVersion()),
-            QMessageBox::Yes | QMessageBox::No);
-        if (result == QMessageBox::Yes)
+        // Optional manifest "description" + "changelog" bullets; both empty = old plain text
+        QString head = released.toHtmlEscaped();
+        if (!info.description.isEmpty())
+            head += QStringLiteral("<p>%1</p>")
+                        .arg(info.description.toHtmlEscaped().replace(QLatin1Char('\n'), QStringLiteral("<br>")));
+        if (!info.changelog.isEmpty()) {
+            head += QStringLiteral("<ul>");
+            for (const QString& line : info.changelog)
+                head += QStringLiteral("<li>%1</li>").arg(line.toHtmlEscaped());
+            head += QStringLiteral("</ul>");
+        }
+        const QString body = tr("%1\n\nYou are running %2. Open the eMule Qt website?")
+                                 .arg(head, QCoreApplication::applicationVersion().toHtmlEscaped())
+                                 .replace(QLatin1Char('\n'), QStringLiteral("<br>"));
+
+        QMessageBox box(QMessageBox::Question, tr("New Version Available"), body,
+                        QMessageBox::Yes | QMessageBox::No, this);
+        box.setTextFormat(Qt::RichText);
+        if (box.exec() == QMessageBox::Yes)
             QDesktopServices::openUrl(QUrl(QString(kWebsiteUrl)));
     });
     connect(m_versionChecker, &VersionChecker::upToDate,
@@ -649,6 +662,10 @@ void MainWindow::setUssStatus(bool enabled, int state, qint64 limitBytes, qint64
 
 void MainWindow::setNetworkBlocked(bool blocked, const QString& reason)
 {
+    // the core logs the block once; repeat it here so a GUI attached later sees it too
+    if (blocked && (!m_netBlocked || reason != m_netBlockReason))
+        StatusBarNotifier::post(tr("Network interface: %1 — no connection is opened until it "
+                                   "is available").arg(reason));
     m_netBlocked = blocked;
     m_netBlockReason = reason;
 }
@@ -2543,14 +2560,7 @@ void MainWindow::handleOtherEd2kLinks(const Ed2kLinkImporter::OtherLinks& links,
     }
 
     if (!links.servers.isEmpty() && m_serverPanel) {
-        std::vector<ED2KServerLink> servers;
-        for (const auto& [address, port] : links.servers) {
-            ED2KServerLink link;
-            link.address = address;
-            link.port = port;
-            servers.push_back(std::move(link));
-        }
-        m_serverPanel->addServerLinks(servers);
+        m_serverPanel->addServerLinks({links.servers.cbegin(), links.servers.cend()});
     }
 
     // nodes.dat: MFC asks, "to avoid accidental / malicious updating"

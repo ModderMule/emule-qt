@@ -145,6 +145,7 @@ SOURCES += \
     media/PreviewThread.cpp \
     net/BindAddress.cpp \
     net/I2pRouter.cpp \
+    net/I2pdInstaller.cpp \
     net/ClientReqSocket.cpp \
     net/ClientUDPSocket.cpp \
     net/EMSocket.cpp \
@@ -322,6 +323,8 @@ HEADERS += \
     media/PreviewThread.h \
     net/BindAddress.h \
     net/I2pRouter.h \
+    net/I2pdInstaller.h \
+    net/I2pdRelease.h \
     net/ClientReqSocket.h \
     net/ClientUDPSocket.h \
     net/EMSocket.h \

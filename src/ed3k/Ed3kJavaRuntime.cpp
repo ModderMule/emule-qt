@@ -332,11 +332,11 @@ void Ed3kJavaRuntime::probeFinished(const QString& java, const QByteArray& out)
 {
     const auto info = parseProperties(out, java);
     if (!info) {
-        logHosterDebug(QStringLiteral("hoster: %1 is no Java runtime").arg(java));
+        logHosterDebug([&]() -> QString { return QStringLiteral("hoster: %1 is no Java runtime").arg(java); });
     } else if (info->feature < kMinFeature) {
-        logHosterDebug(QStringLiteral("hoster: %1 is Java %2, %3 or newer is needed").arg(java).arg(info->feature).arg(kMinFeature));
+        logHosterDebug([&]() -> QString { return QStringLiteral("hoster: %1 is Java %2, %3 or newer is needed").arg(java).arg(info->feature).arg(kMinFeature); });
     } else if (info->arch != hostArch()) {
-        logHosterDebug(QStringLiteral("hoster: %1 is for %2, not %3").arg(java, info->arch, hostArch()));
+        logHosterDebug([&]() -> QString { return QStringLiteral("hoster: %1 is for %2, not %3").arg(java, info->arch, hostArch()); });
     } else {
         m_info = info;
         m_verifyInstall = false;

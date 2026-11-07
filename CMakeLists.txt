@@ -571,14 +571,6 @@ if(EMULE_HOSTER_JD)
 endif()
 
 # ---------------------------------------------------------------------------
-# Bundled I2P router for BitTorrent over I2P: a pinned prebuilt helper (cmake/I2pd.cmake)
-# ---------------------------------------------------------------------------
-option(EMULE_I2PD "Download the bundled I2P router (emuleqt-i2pd, scripts/i2pd.ref)" ON)
-if(EMULE_I2PD AND EMULE_BITTORRENT)
-    include(${CMAKE_SOURCE_DIR}/cmake/I2pd.cmake)
-endif()
-
-# ---------------------------------------------------------------------------
 # QUIC NAT-T transport (LowID<->LowID over a punched UDP path)
 # ---------------------------------------------------------------------------
 option(EMULE_QUIC_NATT "Build the QUIC NAT-T transport (ngtcp2, OpenSSL >= 3.5)" ON)

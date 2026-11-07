@@ -205,8 +205,8 @@ void HttpCacheManager::handlePacket(UpDownClient* sender, const uint8* data, uin
     case HttpCacheCodec::Kind::Invalid:
         // Not a ban-worthy offence on its own — a future version of this protocol
         // would look exactly like this to us.
-        logDebug(QStringLiteral("HTTP Cache: bad packet from %1: %2")
-                     .arg(sender->userName(), parsed.error));
+        logDebug([&]() -> QString { return QStringLiteral("HTTP Cache: bad packet from %1: %2")
+                     .arg(sender->userName(), parsed.error); });
         break;
     }
 }
@@ -489,9 +489,9 @@ void HttpCacheManager::publish(const Candidate& candidate, const HttpCacheServer
 
     const uint64 budget = thePrefs.httpCacheMaxPublishBytesPerDay();
     if (budget != 0 && m_publishedToday + PARTSIZE > budget) {
-        logDebug(QStringLiteral("HTTP Cache: daily publish budget reached (%1 of %2)")
+        logDebug([&]() -> QString { return QStringLiteral("HTTP Cache: daily publish budget reached (%1 of %2)")
                      .arg(m_publishedToday)
-                     .arg(budget));
+                     .arg(budget); });
         return;
     }
 
@@ -771,10 +771,10 @@ void HttpCacheManager::handleReport(UpDownClient* sender, const HttpCacheReport&
         return;
 
     if (report.result == HttpCacheResult::Ok) {
-        logDebug(QStringLiteral("HTTP Cache: %1 fetched part %2 (%3 bytes)")
+        logDebug([&]() -> QString { return QStringLiteral("HTTP Cache: %1 fetched part %2 (%3 bytes)")
                      .arg(sender ? sender->userName() : QString())
                      .arg(report.partIndex)
-                     .arg(report.bytesFetched));
+                     .arg(report.bytesFetched); });
         return;
     }
 
@@ -1003,8 +1003,8 @@ void HttpCacheManager::handleOffer(UpDownClient* sender, const HttpCacheOffer& o
     // has to be someone we were already talking to about this file. Otherwise any
     // client that can reach us could point us at anything.
     if (sender->reqFile() != file) {
-        logDebug(QStringLiteral("HTTP Cache: %1 offered a part of a file it is not a source for")
-                     .arg(sender->userName()));
+        logDebug([&]() -> QString { return QStringLiteral("HTTP Cache: %1 offered a part of a file it is not a source for")
+                     .arg(sender->userName()); });
         decline(HttpCacheResult::BadOffer);
         return;
     }
@@ -1058,8 +1058,8 @@ void HttpCacheManager::handleCancel(UpDownClient* sender, const HttpCacheReport&
     const QString key = entryKey(report.fileHash, report.partIndex);
 
     if (auto* client = m_fetches.value(key, nullptr)) {
-        logDebug(QStringLiteral("HTTP Cache: offer for part %1 withdrawn")
-                     .arg(report.partIndex));
+        logDebug([&]() -> QString { return QStringLiteral("HTTP Cache: offer for part %1 withdrawn")
+                     .arg(report.partIndex); });
         client->sendCancelTransfer();
     }
 }
@@ -1098,9 +1098,9 @@ void HttpCacheManager::onFetchFinished(HttpCacheClient* client, HttpCacheResult 
         if (result != HttpCacheResult::NotWanted)
             ++m_session.fetchesFailed;
 
-        logDebug(QStringLiteral("HTTP Cache: fetch of part %1 ended with code %2")
+        logDebug([&]() -> QString { return QStringLiteral("HTTP Cache: fetch of part %1 ended with code %2")
                      .arg(client->partIndex())
-                     .arg(static_cast<int>(result)));
+                     .arg(static_cast<int>(result)); });
     }
 
     if (result != HttpCacheResult::Ok && fromKad) {
@@ -1472,7 +1472,7 @@ void HttpCacheManager::noteHostReach(const QString& host, CacheReach reach, qint
                                "peers, and only while LAN IP filtering is off")
                     .arg(host));
     } else if (reach == CacheReach::Unknown) {
-        logDebug(QStringLiteral("HTTP Cache: cannot resolve %1 — skipped for now").arg(host));
+        logDebug([&]() -> QString { return QStringLiteral("HTTP Cache: cannot resolve %1 — skipped for now").arg(host); });
     }
 }
 

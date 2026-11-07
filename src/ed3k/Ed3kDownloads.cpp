@@ -342,7 +342,7 @@ void Ed3kDownloads::releaseShare(const ffi::Root& root)
         forgetShare(root);
     if (!e->sharedByList) {
         e->sharedByList = true;
-        logDebug(QStringLiteral("\"%1\" is served by the share list now").arg(e->info.name));
+        logDebug([&]() -> QString { return QStringLiteral("\"%1\" is served by the share list now").arg(e->info.name); });
         touch(*e);
     }
 }
@@ -537,7 +537,7 @@ void Ed3kDownloads::openEntry(Entry& e)
     }
     QDir().mkpath(QFileInfo(e.info.partPath).absolutePath());
     if (!openDownload(e.info.root, e.info.size, e.info.owner, e.id))
-        logDebug(QStringLiteral("download of \"%1\" not opened").arg(e.info.name));
+        logDebug([&]() -> QString { return QStringLiteral("download of \"%1\" not opened").arg(e.info.name); });
     sharePieces(e);
 }
 
@@ -638,7 +638,7 @@ void Ed3kDownloads::shareComplete(Entry& e, std::span<const std::byte> hashes)
     const ffi::FileInfo fi{e.info.root, e.info.size, name, std::nullopt, 0, 0, 0, 0, 0, 0};
     // was: eng->publish(m_session.now(), fi, m_holdBack ? ffi::Publish::Source : ffi::Publish::Both)
     if (auto ok = publishShared(fi); !ok)
-        logDebug(QStringLiteral("publish of \"%1\" failed (error %2)").arg(e.info.name, errorName(ok.error())));
+        logDebug([&]() -> QString { return QStringLiteral("publish of \"%1\" failed (error %2)").arg(e.info.name, errorName(ok.error())); });
     keepMember(e.info.owner, e.id, e.info.root, e.info.size, e.info.name);
 }
 

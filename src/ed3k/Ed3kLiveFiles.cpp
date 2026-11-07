@@ -223,7 +223,7 @@ void Ed3kLiveFiles::onBlobFetched(const QString& owner, int member, const ffi::R
         return;
     // verified block by block against the root: the magic says it is a channel file
     if (!hasMagic(data)) {
-        logDebug(QStringLiteral("%1 is no channel file").arg(hexOf(root.bytes)));
+        logDebug([&]() -> QString { return QStringLiteral("%1 is no channel file").arg(hexOf(root.bytes)); });
         deliver(root, QByteArray());   // fetched, not a channel file: empty
         return;
     }

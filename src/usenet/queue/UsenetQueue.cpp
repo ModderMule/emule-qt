@@ -5665,10 +5665,10 @@ void UsenetQueue::distributeRateLimit()
         if (shares.at(i) == m_workerShare.at(i))
             continue;
         m_workerShare[i] = shares.at(i);
-        logUsenetDebug(QStringLiteral("Usenet: worker %1 rate share %2 KB/s over %3 socket(s)")
+        logUsenetDebug([&]() -> QString { return QStringLiteral("Usenet: worker %1 rate share %2 KB/s over %3 socket(s)")
                            .arg(i)
                            .arg(shares.at(i) / 1024)
-                           .arg(m_workerLive.value(i)));
+                           .arg(m_workerLive.value(i)); });
         QMetaObject::invokeMethod(m_workers.at(i), "setRateLimit", Qt::QueuedConnection,
                                   Q_ARG(qint64, shares.at(i)));
     }
@@ -5695,9 +5695,9 @@ void UsenetQueue::noteDispatchPark(const QString& reason)
     if (reason == m_dispatchParkReason)
         return;
     if (reason.isEmpty())
-        logUsenetDebug(QStringLiteral("Usenet: dispatch resumed (was: %1)").arg(m_dispatchParkReason));
+        logUsenetDebug([&]() -> QString { return QStringLiteral("Usenet: dispatch resumed (was: %1)").arg(m_dispatchParkReason); });
     else
-        logUsenetDebug(QStringLiteral("Usenet: dispatch parked: %1").arg(reason));
+        logUsenetDebug([&]() -> QString { return QStringLiteral("Usenet: dispatch parked: %1").arg(reason); });
     m_dispatchParkReason = reason;
 }
 
@@ -5723,7 +5723,7 @@ void UsenetQueue::logQueueState()
     for (const int cap : std::as_const(m_workerCapacity))
         caps.append(QString::number(cap));
 
-    logUsenetDebug(QStringLiteral("Usenet: %1 KB/s (limit %2) | %3 conns open | in flight %4 "
+    logUsenetDebug([&]() -> QString { return QStringLiteral("Usenet: %1 KB/s (limit %2) | %3 conns open | in flight %4 "
                                   "of %5 (+%6 slots, %7 pipelined) | per worker %8 | "
                                   "no-server %9, starved skips %10, requeued %11 | %12 active%13")
                        .arg(currentRate() / 1024)
@@ -5741,7 +5741,7 @@ void UsenetQueue::logQueueState()
                        .arg(active)
                        .arg(m_dispatchParkReason.isEmpty()
                                 ? QString()
-                                : QStringLiteral(" | parked: %1").arg(m_dispatchParkReason)));
+                                : QStringLiteral(" | parked: %1").arg(m_dispatchParkReason)); });
     m_diagNoServer = 0;
     m_diagStarvedSkips = 0;
     m_diagRequeued = 0;

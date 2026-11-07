@@ -4,6 +4,7 @@
 #include "utils/OtherFunctions.h"
 
 #include <libtorrent/announce_entry.hpp>
+#include <libtorrent/error_code.hpp>
 #include <libtorrent/peer_info.hpp>
 #include <libtorrent/torrent_info.hpp>
 
@@ -331,8 +332,18 @@ QList<BtTrackerRow> BtTorrentView::trackers(const lt::torrent_handle& h)
         r.url = QString::fromStdString(a.url);
         r.tier = a.tier;
         QString error;
+        // an endpoint on a local-only interface (docker, VPN, link-local) skips every
+        // public tracker: count it only when no endpoint got further (#144)
+        const auto skippedOnly = [](const lt::announce_endpoint& ep) {
+            return std::ranges::all_of(ep.info_hashes, [](const lt::announce_infohash& ih) {
+                return ih.last_error == lt::errors::announce_skipped;
+            });
+        };
+        const bool allSkipped = std::ranges::all_of(a.endpoints, skippedOnly);
         // one entry per local address and hash: working if any of them works
         for (const auto& ep : a.endpoints) {
+            if (!allSkipped && skippedOnly(ep))
+                continue;
             for (const auto& ih : ep.info_hashes) {
                 if (!ih.message.empty() && r.message.isEmpty())
                     r.message = QString::fromStdString(ih.message);

@@ -303,15 +303,16 @@ void TestEd2kLinkImporter::otherLinksGoToTheHandlerForManualImportsOnly()
         "ed2k://|serverlist|http://example.com/server.met|/\n"
         "ed2k://|nodeslist|http://example.com/nodes.dat|/\n"
         "ed2k://|search|some words|/\n"
-        "ed2k://|server|192.0.2.7|4661|/\n");
+        "ed2k://|server|192.0.2.7|4661|/|v6=[2001:db8::7]|/\n");
 
     const auto parsed = Ed2kLinkImporter::otherLinksIn(text);
     QCOMPARE(parsed.serverLists, QStringList{QStringLiteral("http://example.com/server.met")});
     QCOMPARE(parsed.nodesLists, QStringList{QStringLiteral("http://example.com/nodes.dat")});
     QCOMPARE(parsed.searches, QStringList{QStringLiteral("some words")});
     QCOMPARE(parsed.servers.size(), 1);
-    QCOMPARE(parsed.servers.first().first, QStringLiteral("192.0.2.7"));
-    QCOMPARE(parsed.servers.first().second, quint16{4661});
+    QCOMPARE(parsed.servers.first().address, QStringLiteral("192.0.2.7"));
+    QCOMPARE(parsed.servers.first().port, quint16{4661});
+    QCOMPARE(parsed.servers.first().address6, QStringLiteral("2001:db8::7"));
 
     int calls = 0;
     Ed2kLinkImporter::OtherLinks seen;

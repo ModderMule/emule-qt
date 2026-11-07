@@ -305,7 +305,7 @@ bool ClientCreditsList::saveList(const QString& filePath) const
 {
     const QString tmpPath = filePath + QStringLiteral(".tmp");
     if (thePrefs.wantsFileSavingLog())
-        logDebug(QStringLiteral("Saving clients credit list file \"%1\"").arg(filePath));
+        logDebug([&]() -> QString { return QStringLiteral("Saving clients credit list file \"%1\"").arg(filePath); });
 
     try {
         QFile::remove(tmpPath);
@@ -718,8 +718,8 @@ bool ClientCreditsList::verifyIdent(ClientCredits* target, const uint8* signatur
         QString sigHex;
         for (uint8 i = 0; i < std::min<uint8>(sigSize, 8); ++i)
             sigHex += QStringLiteral("%1").arg(signature[i], 2, 16, QLatin1Char('0'));
-        logDebug(QStringLiteral("verifyIdent: msgLen=%1 challenge=%2 sha1=%3 sig8=%4")
-                     .arg(msgLen).arg(target->cryptRndChallengeFor).arg(hashHex).arg(sigHex));
+        logDebug([&]() -> QString { return QStringLiteral("verifyIdent: msgLen=%1 challenge=%2 sha1=%3 sig8=%4")
+                     .arg(msgLen).arg(target->cryptRndChallengeFor).arg(hashHex).arg(sigHex); });
     }
 
     const RSA* rsa = EVP_PKEY_get0_RSA(peerKey);

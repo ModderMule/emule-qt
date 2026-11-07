@@ -356,14 +356,14 @@ void NntpServerPool::onCapTimer()
         }
         lifted = true;
         if (it->limit + 1 >= configured) {
-            logUsenetDebug(QStringLiteral("Usenet: connection cap on %1 lifted").arg(it.key()));
+            logUsenetDebug([&]() -> QString { return QStringLiteral("Usenet: connection cap on %1 lifted").arg(it.key()); });
             it = m_caps.erase(it);
             continue;
         }
         it->limit += 1;
         it->untilMs = now + kCapProbeStepMs;
-        logUsenetDebug(QStringLiteral("Usenet: connection cap on %1 probing %2 of %3")
-                           .arg(it.key()).arg(it->limit).arg(configured));
+        logUsenetDebug([&]() -> QString { return QStringLiteral("Usenet: connection cap on %1 probing %2 of %3")
+                           .arg(it.key()).arg(it->limit).arg(configured); });
         ++it;
     }
     armCapTimer();

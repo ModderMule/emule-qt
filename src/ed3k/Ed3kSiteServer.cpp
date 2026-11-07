@@ -261,7 +261,7 @@ void Ed3kSiteServer::listen()
     const std::uint16_t port = v4->serverPort();
     auto* v6 = new QTcpServer(server.get());
     if (!v6->listen(QHostAddress::LocalHostIPv6, port) || !server->bind(v6)) {
-        logEd3kDebug(QStringLiteral("ed3k: the website server has no [::1]:%1 (%2)").arg(port).arg(v6->errorString()));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: the website server has no [::1]:%1 (%2)").arg(port).arg(v6->errorString()); });
         delete v6;
     }
     m_server = std::move(server);
@@ -414,7 +414,7 @@ void Ed3kSiteServer::servePage(std::unique_ptr<Pending> p, const QByteArray& man
     }
     // only verified bytes are sent: the member is fetched first (§6.3)
     if (!m_names.fetchSiteMember(page->root, page->size)) {
-        logEd3kDebug(QStringLiteral("ed3k: website member of %1 B not fetched").arg(page->size));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: website member of %1 B not fetched").arg(page->size); });
         answer(p->responder, 504, {}, kPlain, p->head);
         return;
     }
@@ -487,7 +487,7 @@ void Ed3kSiteServer::onMemberBad(const QByteArray& root)
     // a stream under way is cut: its client must not take what comes as the member (batch 13
     // #12); one not started yet waits on (the core asks again; 504 after 60 s)
     for (auto& p : take([&](const Pending& x) { return x.stream && x.started && x.member && Ed3kNames::toBytes(x.member->bytes) == root; })) {
-        logEd3kDebug(QStringLiteral("ed3k: a website member had a bad block: its stream is cut at %1 of %2 B").arg(p->sent).arg(p->size));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: a website member had a bad block: its stream is cut at %1 of %2 B").arg(p->sent).arg(p->size); });
         cut(std::move(p));
     }
 }

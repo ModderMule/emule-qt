@@ -55,6 +55,8 @@ public:
     /// The torrent to show; empty shows the "select a torrent" note.
     void setTorrentId(const QString& id);
     [[nodiscard]] QString torrentId() const { return m_id; }
+    /// Asks the daemon now instead of on the next poll.
+    void refresh();
 
     /// Apply one GetTorrentDetails reply. Public for tests.
     void applyDetails(const QCborMap& details);

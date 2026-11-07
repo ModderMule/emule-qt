@@ -79,7 +79,7 @@ void FriendList::save(const QString& configDir) const
         QString::fromLatin1(kFriendsMetFilename));
     const QString tmpPath = filePath + QStringLiteral(".tmp");
     if (thePrefs.wantsFileSavingLog())
-        logDebug(QStringLiteral("Saving friends list file \"%1\"").arg(filePath));
+        logDebug([&]() -> QString { return QStringLiteral("Saving friends list file \"%1\"").arg(filePath); });
 
     try {
         QFile::remove(tmpPath);
@@ -100,9 +100,9 @@ void FriendList::save(const QString& configDir) const
             commitAndReplace(file, tmpPath, filePath, theApp.commitFilesNow());
         }
 
-        logDebug(QStringLiteral("FriendList: saved %1 friends to %2")
+        logDebug([&]() -> QString { return QStringLiteral("FriendList: saved %1 friends to %2")
                     .arg(m_friends.size())
-                    .arg(filePath));
+                    .arg(filePath); });
 
     } catch (const FileException& ex) {
         logError(QStringLiteral("FriendList: error writing %1: %2")

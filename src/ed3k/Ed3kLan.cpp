@@ -82,7 +82,7 @@ bool Ed3kLan::start()
         }
     }
     if (auto ok = e->lanEnable(m_session.now(), true); !ok) {
-        logEd3kDebug(QStringLiteral("ed3k: LAN discovery not on (error %1)").arg(errorName(ok.error())));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: LAN discovery not on (error %1)").arg(errorName(ok.error())); });
         m_sock4.reset();
         m_sock6.reset();
         return false;
@@ -145,7 +145,7 @@ void Ed3kLan::datagramIn(std::uint32_t iface, const QHostAddress& from, std::uin
     const auto ok = e->lanDatagramIn(m_session.now(), iface, toAddress(withoutScope(from), port),
                                       {reinterpret_cast<const std::byte*>(data.constData()), std::size_t(data.size())});
     if (!ok)
-        logEd3kDebug(QStringLiteral("ed3k: LAN datagram of %1 dropped (error %2)").arg(from.toString(), errorName(ok.error())));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: LAN datagram of %1 dropped (error %2)").arg(from.toString(), errorName(ok.error())); });
     m_session.pump();
 }
 
@@ -232,7 +232,7 @@ void Ed3kLan::rescan()
             m_sock4->leaveMulticastGroup(kGroup4, ni);
         if (m_sock6 && ni.isValid())
             m_sock6->leaveMulticastGroup(kGroup6, ni);
-        logEd3kDebug(QStringLiteral("ed3k: LAN discovery off on %1").arg(iface.name));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: LAN discovery off on %1").arg(iface.name); });
     }
     for (const auto& [index, iface] : next) {
         const auto old = m_up.find(index);
@@ -241,15 +241,15 @@ void Ed3kLan::rescan()
         if (old == m_up.end()) {
             const QNetworkInterface ni = QNetworkInterface::interfaceFromIndex(int(index));
             if (m_sock4 && ni.isValid() && !m_sock4->joinMulticastGroup(kGroup4, ni))
-                logEd3kDebug(QStringLiteral("ed3k: LAN group not joined on %1 (IPv4): %2").arg(iface.name, m_sock4->errorString()));
+                logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: LAN group not joined on %1 (IPv4): %2").arg(iface.name, m_sock4->errorString()); });
             if (m_sock6 && ni.isValid() && !m_sock6->joinMulticastGroup(kGroup6, ni))
-                logEd3kDebug(QStringLiteral("ed3k: LAN group not joined on %1 (IPv6): %2").arg(iface.name, m_sock6->errorString()));
+                logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: LAN group not joined on %1 (IPv6): %2").arg(iface.name, m_sock6->errorString()); });
         }
         std::vector<ffi::LanNet> nets;
         for (const auto& [ip, prefix] : iface.nets)
             nets.push_back(ffi::LanNet{toAddress(ip, 0), std::uint8_t(prefix)});
         if (auto ok = e->lanInterface(t, index, m_nodePort, nets); !ok) {
-            logEd3kDebug(QStringLiteral("ed3k: LAN interface %1 refused (error %2)").arg(iface.name, errorName(ok.error())));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: LAN interface %1 refused (error %2)").arg(iface.name, errorName(ok.error())); });
             continue;
         }
         if (old == m_up.end())
@@ -279,7 +279,7 @@ void Ed3kLan::sendOne(std::uint32_t iface, const QHostAddress& to, std::uint16_t
             s->setMulticastInterface(ni);
     }
     if (s->writeDatagram(dg) < 0)
-        logEd3kDebug(QStringLiteral("ed3k: LAN datagram not sent on %1: %2").arg(iface).arg(s->errorString()));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: LAN datagram not sent on %1: %2").arg(iface).arg(s->errorString()); });
 }
 
 bool Ed3kLan::eligible(const QNetworkInterface& ni)

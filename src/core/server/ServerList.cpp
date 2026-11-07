@@ -92,7 +92,7 @@ bool ServerList::saveServerMet(const QString& filePath)
 {
     const QString tmpPath = filePath + QStringLiteral(".tmp");
     if (thePrefs.wantsFileSavingLog())
-        logDebug(QStringLiteral("Saving servers list file \"%1\"").arg(filePath));
+        logDebug([&]() -> QString { return QStringLiteral("Saving servers list file \"%1\"").arg(filePath); });
 
     SafeFile file;
     if (!file.open(tmpPath, QIODevice::WriteOnly)) {
@@ -306,6 +306,11 @@ int ServerList::addServersFromTextFile(const QString& filePath)
                 // The link address may be an IPv4/IPv6 literal or a hostname.
                 if (auto srv = Server::fromAddressString(srvLink.address, srvLink.port)) {
                     srv->setName(srvLink.address);
+                    // A dual-stack link's v6= joins an IPv4 primary (Server::addAddress
+                    // refuses it for a dynIP entry).
+                    if (const Address addr6 = Address::fromString(srvLink.address6);
+                        !addr6.isNull() && isGoodServerIP(addr6))
+                        srv->addAddress(addr6);
                     if (addServer(std::move(srv)))
                         ++added;
                 }
@@ -534,8 +539,8 @@ Server* ServerList::attachAddress(Server* entry, const Address& addr)
     // Only fill a missing family; never swap an address the entry already holds.
     const Address current = addr.isIPv6() ? entry->ipv6Address() : entry->ipv4Address();
     if (!current.isNull()) {
-        logServerVerbose(QStringLiteral("attachAddress: %1 already has %2, ignoring %3")
-                             .arg(entry->name(), ipstr(current), ipstr(addr)));
+        logServerVerbose([&]() -> QString { return QStringLiteral("attachAddress: %1 already has %2, ignoring %3")
+                             .arg(entry->name(), ipstr(current), ipstr(addr)); });
         return entry;
     }
     if (!isGoodServerIP(addr) || isFilteredServerIP(addr, u"ServerIdent", entry->name()))
@@ -582,8 +587,8 @@ Server* ServerList::attachAddress(Server* entry, const Address& addr)
                     .arg(twin->addressWithPort(), entry->name(), entry->addressWithPort()));
         removeServer(twin);
     } else {
-        logServerVerbose(QStringLiteral("attachAddress: %1 is also reachable at %2")
-                             .arg(entry->addressWithPort(), ipstr(addr)));
+        logServerVerbose([&]() -> QString { return QStringLiteral("attachAddress: %1 is also reachable at %2")
+                             .arg(entry->addressWithPort(), ipstr(addr)); });
     }
     notifyServerUpdated(entry);
     return entry;
@@ -974,9 +979,9 @@ void ServerList::serverStats()
         emit serverUpdated(target);
     }
 
-    logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATREQ -> %1 (%2) challenge=0x%3")
+    logDebug([&]() -> QString { return QStringLiteral("ServerList: OP_GLOBSERVSTATREQ -> %1 (%2) challenge=0x%3")
                  .arg(target->name(), target->addressWithPort())
-                 .arg(challenge, 8, 16, QLatin1Char('0')));
+                 .arg(challenge, 8, 16, QLatin1Char('0')); });
 
     theApp.serverConnect->sendUDPPacket(std::move(packet), *target,
                                         static_cast<uint16>(target->port() + 4));
@@ -1023,18 +1028,18 @@ void ServerList::processStatusResponse(const uint8* data, uint32 size, const End
     Server* server = findStatServer(from.address(), from.port());
     Server* const unlisted = server && !findByIPUdp(from.address(), from.port(), true) ? server : nullptr;
     if (server == nullptr) {
-        logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATRES from unknown server %1")
-                     .arg(from.toString()));
+        logDebug([&]() -> QString { return QStringLiteral("ServerList: OP_GLOBSERVSTATRES from unknown server %1")
+                     .arg(from.toString()); });
         return;
     }
 
     const uint32 challenge = peekUInt32(data);
     if (challenge != server->challenge()) {
-        logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATRES challenge mismatch from %1 "
+        logDebug([&]() -> QString { return QStringLiteral("ServerList: OP_GLOBSERVSTATRES challenge mismatch from %1 "
                                 "(got 0x%2, expected 0x%3)")
                      .arg(server->name())
                      .arg(challenge, 8, 16, QLatin1Char('0'))
-                     .arg(server->challenge(), 8, 16, QLatin1Char('0')));
+                     .arg(server->challenge(), 8, 16, QLatin1Char('0')); });
         return;
     }
 
@@ -1088,10 +1093,10 @@ void ServerList::processStatusResponse(const uint8* data, uint32 size, const End
         if (size == 44 && !unlisted) {   // an unlisted server gets no vote on our IP
             noteObservedIPv4(*server, from, peekUInt32(data + 40));
         } else if (size > 40) {
-            logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATRES from %1 has %2 extra bytes "
+            logDebug([&]() -> QString { return QStringLiteral("ServerList: OP_GLOBSERVSTATRES from %1 has %2 extra bytes "
                                     "(vendor extension, ignored)")
                          .arg(server->name())
-                         .arg(size - 40));
+                         .arg(size - 40); });
         }
 
         // setServerKeyUDP() stamps our current public IP itself, as MFC does.
@@ -1110,19 +1115,19 @@ void ServerList::processStatusResponse(const uint8* data, uint32 size, const End
 
     if (unlisted) {
         m_unlisted.answered(*unlisted);
-        logDebug(QStringLiteral("ServerList: unlisted server %1 answered, udpFlags=0x%2")
-                     .arg(unlisted->addressWithPort()).arg(udpFlags, 8, 16, QLatin1Char('0')));
+        logDebug([&]() -> QString { return QStringLiteral("ServerList: unlisted server %1 answered, udpFlags=0x%2")
+                     .arg(unlisted->addressWithPort()).arg(udpFlags, 8, 16, QLatin1Char('0')); });
         return;
     }
 
-    logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATRES from %1 — users=%2 files=%3 "
+    logDebug([&]() -> QString { return QStringLiteral("ServerList: OP_GLOBSERVSTATRES from %1 — users=%2 files=%3 "
                             "ping=%4ms udpFlags=0x%5 udpKey=0x%6")
                  .arg(server->name())
                  .arg(server->users())
                  .arg(server->files())
                  .arg(server->ping())
                  .arg(udpFlags, 8, 16, QLatin1Char('0'))
-                 .arg(server->serverKeyUDPRaw(), 8, 16, QLatin1Char('0')));
+                 .arg(server->serverKeyUDPRaw(), 8, 16, QLatin1Char('0')); });
 
     emit serverUpdated(server);
 
@@ -1292,12 +1297,12 @@ void ServerList::checkForExpiredUDPKeys(uint32 currentClientIP)
         }
     }
 
-    logDebug(QStringLiteral("ServerList: public IP changed — %1 UDP keys total, %2 expired, "
+    logDebug([&]() -> QString { return QStringLiteral("ServerList: public IP changed — %1 UDP keys total, %2 expired, "
                             "%3 immediate pings forced, %4 delayed")
                  .arg(keysTotal)
                  .arg(keysExpired)
                  .arg(keysExpired - pingsDelayed)
-                 .arg(pingsDelayed));
+                 .arg(pingsDelayed); });
 }
 
 // ---------------------------------------------------------------------------
@@ -1397,7 +1402,7 @@ void ServerList::noteObservedIPv4(const Server& server, const Endpoint& from, ui
     // datagram worth counting as a vote at all; the rest is plausibility.
     const QString who = server.name().isEmpty() ? from.toString() : server.name();
     const auto reject = [&who](const QString& why) {
-        logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATRES from %1 — %2").arg(who, why));
+        logDebug([&]() -> QString { return QStringLiteral("ServerList: OP_GLOBSERVSTATRES from %1 — %2").arg(who, why); });
     };
 
     // A v4 reflection cannot describe a path it did not arrive on. Servers omit the field
@@ -1455,11 +1460,11 @@ void ServerList::sendCryptPing(Server& target)
     target.setLastPinged(static_cast<uint32>(QDateTime::currentMSecsSinceEpoch()));
 
     const bool listed = findByIPTcp(target.ipAddress(), target.port()) == &target;
-    logDebug(QStringLiteral("ServerList: obfuscated crypt-ping -> %1%2 challenge=0x%3 pad=%4")
+    logDebug([&]() -> QString { return QStringLiteral("ServerList: obfuscated crypt-ping -> %1%2 challenge=0x%3 pad=%4")
                  .arg(listed ? target.name() + QLatin1Char(' ') : QStringLiteral("unlisted "),
                       target.addressWithPort())
                  .arg(challenge, 8, 16, QLatin1Char('0'))
-                 .arg(padding));
+                 .arg(padding); });
 
     theApp.serverConnect->sendRawUDPPacket(
         target, static_cast<uint16>(target.port() + 12), raw.data(), rawLen);

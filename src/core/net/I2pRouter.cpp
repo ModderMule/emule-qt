@@ -1,7 +1,6 @@
 #include "net/I2pRouter.h"
 
 #include "utils/Log.h"
-#include "utils/PathUtils.h"
 
 #include <QDir>
 #include <QFile>
@@ -23,12 +22,6 @@
 namespace eMule {
 
 namespace {
-
-#ifdef Q_OS_WIN
-const QString kBinaryName = QStringLiteral("emuleqt-i2pd.exe");
-#else
-const QString kBinaryName = QStringLiteral("emuleqt-i2pd");
-#endif
 
 /// Writes @p text to @p path unless the file is there already.
 void writeOnce(const QString& path, const QByteArray& text)
@@ -56,6 +49,8 @@ I2pRouter::I2pRouter(QObject* parent)
         fail(QStringLiteral("%1 did not start").arg(m_binary));
         onFinished(-1, false, false);
     });
+    connect(&m_installer, &I2pdInstaller::finished, this, &I2pRouter::onInstalled);
+    connect(&m_installer, &I2pdInstaller::progressChanged, this, &I2pRouter::downloadProgressChanged);
 }
 
 I2pRouter::~I2pRouter()
@@ -68,8 +63,13 @@ I2pRouter::~I2pRouter()
 
 QString I2pRouter::findBinary()
 {
-    return findBundledFile("EMULE_I2PD", {kBinaryName, QStringLiteral("../libexec/emuleqt/") + kBinaryName},
-                           QStringLiteral("i2pd/") + kBinaryName);
+    const QString env = qEnvironmentVariable("EMULE_I2PD");
+    return !env.isEmpty() && QFileInfo(env).isFile() ? QFileInfo(env).absoluteFilePath() : QString();
+}
+
+QString I2pRouter::installDir(const QString& dataDir)
+{
+    return QDir(dataDir).filePath(QStringLiteral("bin"));
 }
 
 QString I2pRouter::findCertificates(const QString& binary)
@@ -77,9 +77,8 @@ QString I2pRouter::findCertificates(const QString& binary)
     if (binary.isEmpty())
         return {};
     const QDir dir = QFileInfo(binary).absoluteDir();
-    // bundles: i2pd-certificates beside the binary or in Resources/share; build tree: certificates/
-    for (const QString& rel : {QStringLiteral("i2pd-certificates"), QStringLiteral("../Resources/i2pd-certificates"),
-                               QStringLiteral("../share/emuleqt/i2pd-certificates"), QStringLiteral("certificates")}) {
+    // the release archive: certificates/ beside the program
+    for (const QString& rel : {QStringLiteral("certificates"), QStringLiteral("i2pd-certificates")}) {
         if (const QString p = dir.filePath(rel); QFileInfo(p).isDir())
             return QDir::cleanPath(p);
     }
@@ -127,7 +126,7 @@ QStringList I2pRouter::arguments(const Config& config, quint16 samPort, const QS
 
 bool I2pRouter::available() const
 {
-    return !m_binary.isEmpty();
+    return !m_binary.isEmpty() || I2pdInstaller::supported();
 }
 
 void I2pRouter::start(const Config& config)
@@ -156,6 +155,7 @@ void I2pRouter::stop()
     m_wanted = false;
     m_restartTimer.stop();
     m_pollTimer.stop();
+    m_installer.abort();
     if (m_probe) {
         m_probe->abort();
         m_probe->deleteLater();
@@ -169,16 +169,27 @@ void I2pRouter::stop()
 
 void I2pRouter::launch()
 {
-    if (!m_wanted || m_proc.running())
+    if (!m_wanted || m_proc.running() || m_installer.running())
         return;
-    m_binary = findBinary();
-    if (m_binary.isEmpty()) {
-        fail(QStringLiteral("no bundled router (emuleqt-i2pd) in this build"));
-        return;
-    }
     if (m_config.dataDir.isEmpty() || !QDir().mkpath(m_config.dataDir)) {
         fail(QStringLiteral("I2P data folder %1 not writable").arg(m_config.dataDir));
         return;
+    }
+    m_binary = findBinary();
+    if (m_binary.isEmpty()) {
+        m_installer.setDir(installDir(m_config.dataDir));
+        const bool fallback = !m_installer.binary().isEmpty() && m_failedRelease == I2pdInstaller::pinnedAsset().release;
+        if (!m_installer.current() && !fallback) {
+            if (!I2pdInstaller::supported()) {
+                fail(QStringLiteral("no I2P router release for this system; use an external router"));
+                return;
+            }
+            m_error.clear();
+            if (m_installer.install())
+                setState(State::Downloading);
+            return;
+        }
+        m_binary = m_installer.binary();
     }
     const QDir data(m_config.dataDir);
     writeOnce(data.filePath(QStringLiteral("i2pd.conf")),
@@ -205,6 +216,29 @@ void I2pRouter::launch()
     // A synchronous failedToStart has set Failed already
     if (m_proc.running())
         setState(State::Starting);
+}
+
+void I2pRouter::onInstalled(bool ok)
+{
+    if (!m_wanted)
+        return;
+    if (ok) {
+        m_failedRelease.clear();
+        launch();
+        return;
+    }
+    const QString why = QStringLiteral("router download failed: ") + m_installer.error();
+    if (!m_installer.binary().isEmpty()) {
+        // a newer pin that did not come: the older router still works
+        logTorrentWarning(QStringLiteral("I2P: %1; starting the installed older one").arg(why));
+        m_failedRelease = I2pdInstaller::pinnedAsset().release;
+        launch();
+        return;
+    }
+    fail(why);
+    logTorrentWarning(QStringLiteral("I2P: next download try in %1 s").arg(m_restartDelayMs / 1000));
+    m_restartTimer.start(m_restartDelayMs);
+    m_restartDelayMs = std::min(m_restartDelayMs * 2, kMaxRestartMs);
 }
 
 void I2pRouter::setState(State s)

@@ -419,8 +419,8 @@ void IndexerFeedList::grabNext(const QString& feedKey)
             guard->deliver(*live, row, body);
         } else if (!row.isUsenet() && row.magnetUrl.isValid() && !row.magnetUrl.isEmpty()) {
             // .torrent fetch failed, the magnet still works
-            logDebug(QStringLiteral("Feeds: \"%1\" falls back to the magnet of \"%2\": %3")
-                         .arg(live->feed.name, row.title, redactApiKey(error)));
+            logDebug([&]() -> QString { return QStringLiteral("Feeds: \"%1\" falls back to the magnet of \"%2\": %3")
+                         .arg(live->feed.name, row.title, redactApiKey(error)); });
             guard->deliver(*live, row, row.magnetUrl.toString(QUrl::FullyEncoded).toUtf8());
         } else {
             guard->recordFetchFailure(*live, row, error);

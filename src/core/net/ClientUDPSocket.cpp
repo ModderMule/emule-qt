@@ -374,12 +374,12 @@ void ClientUDPSocket::onReadyRead()
         try {
             processDatagram(datagram);
         } catch (const std::exception& ex) {
-            logDebug(QStringLiteral("ClientUDPSocket: error processing datagram from %1:%2: %3")
+            logDebug([&]() -> QString { return QStringLiteral("ClientUDPSocket: error processing datagram from %1:%2: %3")
                          .arg(datagram.senderAddress().toString()).arg(datagram.senderPort())
-                         .arg(QLatin1String(ex.what())));
+                         .arg(QLatin1String(ex.what())); });
         } catch (...) {
-            logDebug(QStringLiteral("ClientUDPSocket: unhandled exception processing datagram from %1:%2")
-                         .arg(datagram.senderAddress().toString()).arg(datagram.senderPort()));
+            logDebug([&]() -> QString { return QStringLiteral("ClientUDPSocket: unhandled exception processing datagram from %1:%2")
+                         .arg(datagram.senderAddress().toString()).arg(datagram.senderPort()); });
         }
     }
 }
@@ -591,9 +591,9 @@ bool ClientUDPSocket::processPacket(const uint8* packet, uint32 size, uint8 opco
         break;
 
     default:
-        logDebug(QStringLiteral("ClientUDPSocket: Unknown opcode 0x%1 from %2")
+        logDebug([&]() -> QString { return QStringLiteral("ClientUDPSocket: Unknown opcode 0x%1 from %2")
                      .arg(opcode, 2, 16, QLatin1Char('0'))
-                     .arg(senderEP.toString()));
+                     .arg(senderEP.toString()); });
         break;
     }
 
@@ -686,12 +686,12 @@ bool ClientUDPSocket::processReservedProtPacket(uint8 protByte, const uint8* pac
         return true;
     }
 
-    logDebug(QStringLiteral("ClientUDPSocket: reserved UDP prot (0x%1) opcode 0x%2 size %3 "
+    logDebug([&]() -> QString { return QStringLiteral("ClientUDPSocket: reserved UDP prot (0x%1) opcode 0x%2 size %3 "
                             "from %4 — no channel handler registered")
                  .arg(protByte, 2, 16, QLatin1Char('0'))
                  .arg(opcode, 2, 16, QLatin1Char('0'))
                  .arg(size)
-                 .arg(senderEP.toString()));
+                 .arg(senderEP.toString()); });
     return true;
 }
 
@@ -702,7 +702,7 @@ void ClientUDPSocket::growReceiveBuffer()
     if (got < kMinReceiveBufferSize)
         logWarning(QStringLiteral("ClientUDPSocket: receive buffer is only %1 bytes").arg(got));
     else
-        logDebug(QStringLiteral("ClientUDPSocket: receive buffer %1 bytes").arg(got));
+        logDebug([&]() -> QString { return QStringLiteral("ClientUDPSocket: receive buffer %1 bytes").arg(got); });
 }
 
 // ---------------------------------------------------------------------------
@@ -726,8 +726,13 @@ bool ClientUDPSocket::writeDatagramNow(const QByteArray& data, const Endpoint& t
         sent = m_socket.writeDatagram(datagram);
     }
     if (sent < 0) {
-        logWarning(QStringLiteral("UDP send failed to %1 — %2")
-            .arg(to.toString()).arg(m_socket.errorString()));
+        // Once a minute per error, a dead route fails every datagram (#139)
+        static LogRepeatGate gate;
+        const QString error = m_socket.errorString();
+        if (const QString line = gate.filter(error, QStringLiteral("UDP send failed to %1 — %2")
+                                                        .arg(to.toString(), error));
+            !line.isEmpty())
+            logWarning(line);
         return false;
     }
     return true;

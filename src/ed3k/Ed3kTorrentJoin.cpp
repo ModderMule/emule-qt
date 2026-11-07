@@ -308,9 +308,9 @@ void Ed3kTorrentJoin::onPieceResult(const QString& id, int piece, bool passed)
     if (piece >= 0 && piece < j->have.size())
         j->have.setBit(piece, passed);
     if (!passed)
-        logDebug(QStringLiteral("piece %1 of \"%2\" failed in BitTorrent").arg(piece).arg(name(id)));
+        logDebug([&]() -> QString { return QStringLiteral("piece %1 of \"%2\" failed in BitTorrent").arg(piece).arg(name(id)); });
     if (auto ok = j->torrent.pieceResult(std::uint64_t(piece), passed); !ok && ok.error() != ffi::Error::NotFound)
-        logDebug(QStringLiteral("verdict on piece %1 of %2 not taken (error %3)").arg(piece).arg(id, errorName(ok.error())));
+        logDebug([&]() -> QString { return QStringLiteral("verdict on piece %1 of %2 not taken (error %3)").arg(piece).arg(id, errorName(ok.error())); });
     drainEvents(id);
     pumpSession();
 }
@@ -380,9 +380,9 @@ void Ed3kTorrentJoin::onFileBlock(const Download& d, const ffi::event::Block& b)
     j->members[std::size_t(d.member)].received.insert(b.offset);
     auto pieces = j->torrent.ed3kBlock(std::uint64_t(d.member), b.offset, std::uint32_t(b.data.size()));
     if (!pieces) {
-        logDebug(QStringLiteral("block %1 of member %2 not taken (error %3)").arg(b.offset).arg(d.member).arg(errorName(pieces.error())));
+        logDebug([&]() -> QString { return QStringLiteral("block %1 of member %2 not taken (error %3)").arg(b.offset).arg(d.member).arg(errorName(pieces.error())); });
     } else {
-        logDebug(QStringLiteral("ed3k block %1 of member %2: %3 piece(s) for BitTorrent").arg(b.offset).arg(d.member).arg(pieces->size()));
+        logDebug([&]() -> QString { return QStringLiteral("ed3k block %1 of member %2: %3 piece(s) for BitTorrent").arg(b.offset).arg(d.member).arg(pieces->size()); });
         feedPieces(id, *pieces);
     }
     drainEvents(id);
@@ -504,7 +504,7 @@ Ed3kTorrentJoin::Join* Ed3kTorrentJoin::ensureJoin(const QString& id)
             linkSize = parsed->size;
         } else {
             // torrent.md §7: an invalid xs is ignored, the magnet goes on
-            logDebug(QStringLiteral("ed3k link of \"%1\" ignored (error %2)").arg(name(id), errorName(parsed.error())));
+            logDebug([&]() -> QString { return QStringLiteral("ed3k link of \"%1\" ignored (error %2)").arg(name(id), errorName(parsed.error())); });
         }
     }
 
@@ -526,7 +526,7 @@ Ed3kTorrentJoin::Join* Ed3kTorrentJoin::ensureJoin(const QString& id)
         auto created = ffi::Torrent::create(*e, spanOf(infoDict), link);
         if (!created) {
             // DENIED: private (§6.3); UNSUPPORTED: the extension is off
-            logDebug(QStringLiteral("no join for \"%1\" (error %2)").arg(name(id), errorName(created.error())));
+            logDebug([&]() -> QString { return QStringLiteral("no join for \"%1\" (error %2)").arg(name(id), errorName(created.error())); });
             m_noJoin.insert(id);
             return nullptr;
         }
@@ -564,7 +564,7 @@ Ed3kTorrentJoin::Join* Ed3kTorrentJoin::ensureJoin(const QString& id)
         startDownloads(id);   // a restart: the set is known
     } else if (link) {
         if (linkSize == 0 || !fetchBlob(*link, linkSize, id, kSetManifest))
-            logDebug(QStringLiteral("set of \"%1\" not fetched").arg(name(id)));
+            logDebug([&]() -> QString { return QStringLiteral("set of \"%1\" not fetched").arg(name(id)); });
     } else {
         startSetSearch(id);
     }
@@ -602,7 +602,7 @@ void Ed3kTorrentJoin::onPieceHashed(const QString& id, int piece, const QByteArr
     }
     auto check = j->torrent.pieceHashed(m_session.engine(), std::uint64_t(piece), spanOf(data));
     if (!check) {
-        logDebug(QStringLiteral("piece %1 of %2 not checked (error %3)").arg(piece).arg(id, errorName(check.error())));
+        logDebug([&]() -> QString { return QStringLiteral("piece %1 of %2 not checked (error %3)").arg(piece).arg(id, errorName(check.error())); });
         done(false);
         return;
     }
@@ -620,7 +620,7 @@ void Ed3kTorrentJoin::onPieceHashed(const QString& id, int piece, const QByteArr
         j->waiting[piece] = std::move(done);
         break;
     case ffi::PieceVerdict::Fail:
-        logDebug(QStringLiteral("piece %1 of \"%2\" failed under BLAKE3").arg(piece).arg(name(id)));
+        logDebug([&]() -> QString { return QStringLiteral("piece %1 of \"%2\" failed under BLAKE3").arg(piece).arg(name(id)); });
         done(true);
         break;
     }
@@ -662,7 +662,7 @@ void Ed3kTorrentJoin::serveReads(const QString& id, const std::vector<ffi::Torre
                 continue;
             }
             if (auto ok = j->torrent.readDone(m_session.engine(), r, spanOf(*bytes[i])); !ok)
-                logDebug(QStringLiteral("read %1 of member %2 not taken (error %3)").arg(r.offset).arg(r.member).arg(errorName(ok.error())));
+                logDebug([&]() -> QString { return QStringLiteral("read %1 of member %2 not taken (error %3)").arg(r.offset).arg(r.member).arg(errorName(ok.error())); });
         }
         drainEvents(id);
         pumpSession();
@@ -692,7 +692,7 @@ void Ed3kTorrentJoin::handleEvent(const QString& id, const ffi::TorrentEvent& ev
         // an ed3k block whose pieces failed: fetched again
         if (Join* j = findJoin(id); j && bf->member < j->members.size())
             j->members[std::size_t(bf->member)].received.erase(bf->block * kBlock);
-        logDebug(QStringLiteral("ed3k block %1 of member %2 of \"%3\" failed").arg(bf->block).arg(bf->member).arg(name(id)));
+        logDebug([&]() -> QString { return QStringLiteral("ed3k block %1 of member %2 of \"%3\" failed").arg(bf->block).arg(bf->member).arg(name(id)); });
         if (const auto m = member(id, int(bf->member)); m && m->root)
             requestBlocks(*m->root);
     } else if (const auto* h = std::get_if<t::HaveChanged>(&event)) {
@@ -727,7 +727,7 @@ void Ed3kTorrentJoin::finishPiece(const QString& id, int piece, bool spoil)
     auto done = std::move(it->second);
     j->waiting.erase(it);
     if (spoil)
-        logDebug(QStringLiteral("piece %1 of \"%2\" failed under BLAKE3").arg(piece).arg(name(id)));
+        logDebug([&]() -> QString { return QStringLiteral("piece %1 of \"%2\" failed under BLAKE3").arg(piece).arg(name(id)); });
     done(spoil);
 }
 
@@ -807,7 +807,7 @@ void Ed3kTorrentJoin::onMemberVerified(const QString& id, int index, const ffi::
     const ffi::FileInfo info{root, size, fileName, std::nullopt, 0, 0, 0, 0, 0, 0};
     // was: e->publish(m_session.now(), info, m_holdBack ? ffi::Publish::Source : ffi::Publish::Both)
     if (auto ok = publishShared(info); !ok)
-        logDebug(QStringLiteral("publish of member %1 of \"%2\" failed (error %3)").arg(index).arg(name(id), errorName(ok.error())));
+        logDebug([&]() -> QString { return QStringLiteral("publish of member %1 of \"%2\" failed (error %3)").arg(index).arg(name(id), errorName(ok.error())); });
     keepMember(id, index, root, size, file);
     logInfo(QStringLiteral("\"%1\" verified and shared as %2").arg(file, hexOf(root.bytes)));
     emit memberVerified(id, index);
@@ -896,10 +896,10 @@ void Ed3kTorrentJoin::onTorrentComplete(const QString& id)
     keepRecords(id, done->root, torrentName, done->aliases);
     // MEMBER rows (file-set.md §6)
     if (auto ok = e->setPublish(t, done->manifest, done->root, nameView); !ok)
-        logDebug(QStringLiteral("set of \"%1\" not published (error %2)").arg(torrentName, errorName(ok.error())));
+        logDebug([&]() -> QString { return QStringLiteral("set of \"%1\" not published (error %2)").arg(torrentName, errorName(ok.error())); });
     if (!m_holdBack && !done->aliases.empty()) {
         if (auto ok = e->publishAlias(t, done->aliases); !ok)
-            logDebug(QStringLiteral("ALIAS records of \"%1\" not published (error %2)").arg(torrentName, errorName(ok.error())));
+            logDebug([&]() -> QString { return QStringLiteral("ALIAS records of \"%1\" not published (error %2)").arg(torrentName, errorName(ok.error())); });
     }
     logInfo(QStringLiteral("\"%1\" complete, torrent root %2").arg(torrentName, hexOf(done->root.bytes)));
     emit torrentCompleted(id);
@@ -955,14 +955,14 @@ void Ed3kTorrentJoin::feedPieces(const QString& id, const std::vector<std::uint6
             at.push_back(x.at);
         }
         if (!ok) {
-            logDebug(QStringLiteral("piece %1 of \"%2\" not read for BitTorrent").arg(piece).arg(name(id)));
+            logDebug([&]() -> QString { return QStringLiteral("piece %1 of \"%2\" not read for BitTorrent").arg(piece).arg(name(id)); });
             continue;
         }
         readInBackground(id, std::move(reads), [this, id, piece, size, at = std::move(at)](ReadResults bytes) {
             QByteArray data(size, '\0');   // padding between members is zeros
             for (std::size_t i = 0; i < at.size(); ++i) {
                 if (i >= bytes.size() || !bytes[i]) {
-                    logDebug(QStringLiteral("piece %1 of \"%2\" not read for BitTorrent").arg(piece).arg(name(id)));
+                    logDebug([&]() -> QString { return QStringLiteral("piece %1 of \"%2\" not read for BitTorrent").arg(piece).arg(name(id)); });
                     return;
                 }
                 std::memcpy(data.data() + at[i], bytes[i]->constData(), std::size_t(bytes[i]->size()));

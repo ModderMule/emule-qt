@@ -209,13 +209,13 @@ void ListenSocket::process()
     while (it != m_socketList.end()) {
         ClientReqSocket* socket = *it;
         if (socket->checkTimeOut()) {
-            logDebug(QStringLiteral("ListenSocket: Socket timed out: %1 "
+            logDebug([&]() -> QString { return QStringLiteral("ListenSocket: Socket timed out: %1 "
                                     "socketState=%2 qtState=%3 fd=%4 error=%5")
                          .arg(socket->debugClientInfo())
                          .arg(static_cast<int>(socket->peerSocketState()))
                          .arg(static_cast<int>(socket->state()))
                          .arg(socket->socketDescriptor())
-                         .arg(socket->errorString()));
+                         .arg(socket->errorString()); });
             it = m_socketList.erase(it);
             socket->disconnect(QStringLiteral("Timeout"));
         } else {

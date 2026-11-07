@@ -11,12 +11,14 @@
 #include "Types.h"
 #include "DebugUtils.h"
 
+#include <QElapsedTimer>
 #include <QFile>
+#include <QHash>
 #include <QMutex>
 #include <QString>
-#include <QTextStream>
 #include <QtLogging>
 
+#include <concepts>
 #include <cstdint>
 #include <limits>
 
@@ -72,6 +74,8 @@ public:
 
     /// Append a message to the log file.
     bool log(const QString& message);
+    /// Append `category: message`; empty @p category writes the message alone.
+    bool log(QLatin1StringView category, const QString& message);
 
     /// Rotate the log file when it exceeds the maximum size.
     void startNewLogFile();
@@ -85,7 +89,6 @@ private:
     bool openLocked();
     mutable QMutex m_mutex;
     QFile m_file;
-    QTextStream m_stream;
     QString m_filePath;
     std::size_t m_bytesWritten = 0;
     std::size_t m_maxFileSize = std::numeric_limits<std::size_t>::max();
@@ -151,6 +154,114 @@ void logStatusWarning(const QString& msg);
 void logStatusError(const QString& msg);
 
 // ---------------------------------------------------------------------------
+// Lazy debug logging
+// ---------------------------------------------------------------------------
+//
+// Pass a callable instead of a string and it only runs when the line would be
+// kept: a debug line whose category is off costs a bool test, not an .arg() chain.
+// Give the lambda `-> QString`, a deduced `a + b` returns a dangling QStringBuilder.
+
+/// A callable building the message.
+template <typename F>
+concept LogMessageMaker = std::invocable<F&> && std::convertible_to<std::invoke_result_t<F&>, QString>;
+
+template <LogMessageMaker F> void logDebug(F&& make)
+{
+    if (lcEmuleGeneral().isDebugEnabled())
+        logDebug(QString(make()));
+}
+template <LogMessageMaker F> void logUsenetDebug(F&& make)
+{
+    if (lcEmuleUsenet().isDebugEnabled())
+        logUsenetDebug(QString(make()));
+}
+template <LogMessageMaker F> void logEd3kDebug(F&& make)
+{
+    if (lcEmuleEd3k().isDebugEnabled())
+        logEd3kDebug(QString(make()));
+}
+template <LogMessageMaker F> void logEd3kKadDebug(F&& make)
+{
+    if (lcEmuleEd3kKad().isDebugEnabled())
+        logEd3kKadDebug(QString(make()));
+}
+template <LogMessageMaker F> void logHosterDebug(F&& make)
+{
+    if (lcEmuleHoster().isDebugEnabled())
+        logHosterDebug(QString(make()));
+}
+template <LogMessageMaker F> void logTorrentDebug(F&& make)
+{
+    if (lcEmuleTorrent().isDebugEnabled())
+        logTorrentDebug(QString(make()));
+}
+
+// ---------------------------------------------------------------------------
+// Shared files verbose (hashing, duplicates)
+// ---------------------------------------------------------------------------
+//
+// emule.sharedv, debug level: the Verbose tab and the _Verbose file. Its own
+// switch (sharedFilesVerboseLog), whatever the global verbose says.
+
+void logSharedVerbose(const QString& msg);
+template <LogMessageMaker F> void logSharedVerbose(F&& make)
+{
+    if (lcEmuleSharedVerbose().isDebugEnabled())
+        logSharedVerbose(QString(make()));
+}
+
+// ---------------------------------------------------------------------------
+// Repeat gate
+// ---------------------------------------------------------------------------
+
+/// Lets the same line through once per window. Thread-safe.
+/// A line let through after quiet ones carries their count: `msg (N more hidden)`.
+class LogRepeatGate {
+public:
+    explicit LogRepeatGate(qint64 windowMs = 60'000) : m_windowMs(windowMs) {}
+
+    /// @p msg if due, with the hidden count of @p key appended; empty: drop it.
+    [[nodiscard]] QString filter(const QString& key, const QString& msg);
+
+private:
+    struct Entry {
+        QElapsedTimer since;
+        int hidden = 0;
+    };
+    static constexpr qsizetype kMaxKeys = 256;   ///< cleared when full, at worst a line too many
+    QMutex m_mutex;
+    QHash<QString, Entry> m_entries;
+    qint64 m_windowMs;
+};
+
+// ---------------------------------------------------------------------------
+// Console log level (--log-level)
+// ---------------------------------------------------------------------------
+//
+// Filters what reaches stdout/stderr only; the log tabs and files are unaffected.
+//   0  silent
+//   1  errors, status bar and server lines
+//   2  + the main Log tab (emule.general info and warnings)
+//   3  everything enabled (default)
+
+inline constexpr int kConsoleLogLevelAll = 3;
+
+/// `--log-level N` / `--log-level=N` in @p args, else the EMULE_LOG_LEVEL
+/// environment variable, else kConsoleLogLevelAll. Out of range: clamped.
+[[nodiscard]] int consoleLogLevelFromArgs(const QStringList& args);
+
+/// Whether a line of @p type and @p category reaches the console at @p level.
+[[nodiscard]] bool consoleLogAllows(int level, QtMsgType type, const char* category);
+
+/// Filter the console by @p level. Call right after installConsoleMessagePattern(),
+/// before any other handler is installed, so it wraps only Qt's console output.
+/// kConsoleLogLevelAll installs nothing.
+void installConsoleLogFilter(int level);
+
+/// The level installed, kConsoleLogLevelAll if none.
+[[nodiscard]] int consoleLogLevel();
+
+// ---------------------------------------------------------------------------
 // Console output format
 // ---------------------------------------------------------------------------
 
@@ -208,11 +319,18 @@ void closeLogFileSink();
 /// Log a server TCP/UDP/search verbose line via qCDebug(lcEmuleServerVerbose)
 /// when server-verbose logging is enabled.
 void logServerVerbose(const QString& msg);
+template <LogMessageMaker F> void logServerVerbose(F&& make);
 
 /// Enable/disable server-verbose logging (the emit-site gate).
 void setServerVerboseLogging(bool enabled);
 
 /// Check whether server-verbose logging is enabled.
 [[nodiscard]] bool isServerVerboseLoggingEnabled();
+
+template <LogMessageMaker F> void logServerVerbose(F&& make)
+{
+    if (isServerVerboseLoggingEnabled())
+        logServerVerbose(QString(make()));
+}
 
 } // namespace eMule

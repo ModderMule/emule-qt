@@ -65,7 +65,7 @@ bool collectOther(const ED2KLink& link, Ed2kLinkImporter::OtherLinks& others)
     else if (const auto* search = std::get_if<ED2KSearchLink>(&link))
         others.searches << search->searchTerm;
     else if (const auto* server = std::get_if<ED2KServerLink>(&link))
-        others.servers.append({server->address, server->port});
+        others.servers.append(*server);
     else
         return false;
     return true;

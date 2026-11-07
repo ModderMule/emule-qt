@@ -873,7 +873,7 @@ void Ed3kPaidSeller::tickOne(Sale& s)
         if (auto season = makeSeason(s, end, lengthOf(s), pub)) {
             s.seasons.push_back(*season);
             publishSeason(s, s.seasons.back());
-            logEd3kDebug(QStringLiteral("ed3k: paid scope %1: season %2 planned").arg(scopeHex).arg(end));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: paid scope %1: season %2 planned").arg(scopeHex).arg(end); });
             dirty = true;
         }
     }

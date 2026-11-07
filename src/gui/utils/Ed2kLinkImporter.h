@@ -14,6 +14,7 @@
 /// without knowing anything about the format.
 
 #include "IpcMessage.h"
+#include "protocol/ED2KLink.h"
 #include "search/SearchFile.h"
 
 #include <QByteArray>
@@ -75,7 +76,7 @@ public:
         QStringList serverLists;                   ///< server.met URLs
         QStringList nodesLists;                    ///< nodes.dat URLs
         QStringList searches;                      ///< search terms
-        QList<std::pair<QString, quint16>> servers;
+        QList<ED2KServerLink> servers;             ///< with a dual-stack v6= when given
 
         [[nodiscard]] int count() const
         {

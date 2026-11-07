@@ -36,7 +36,7 @@ uint32 NatPath::ourID() const
 
 void NatPath::log(const QString& text) const
 {
-    logDebug(QStringLiteral("NAT-T %1: %2").arg(QLatin1StringView(pathName(kind())), text));
+    logDebug([&]() -> QString { return QStringLiteral("NAT-T %1: %2").arg(QLatin1StringView(pathName(kind())), text); });
 }
 
 bool NatPath::repeatDue(const Attempt& attempt, uint64 intervalMs, uint32 maxCount) const

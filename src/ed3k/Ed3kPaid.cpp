@@ -253,7 +253,7 @@ bool Ed3kPaid::setOffer(const ffi::Scope& scope, const QByteArray& signedOffer)
                                 : e->paidSetOffer(m_session.now(), scope, spanOf(signedOffer));
         m_session.pump();
         if (!ok) {
-            logEd3kDebug(QStringLiteral("ed3k: paid scope %1: an offer refused (error %2)").arg(hexOf(scope)).arg(int(ok.error())));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: paid scope %1: an offer refused (error %2)").arg(hexOf(scope)).arg(int(ok.error())); });
             return false;
         }
     }
@@ -598,7 +598,7 @@ void Ed3kPaid::onEventPolled(const ffi::Event& event, bool* handled)
             s->keys = true;
             for (const auto ep : k->epochs)
                 s->newestEpoch = std::max(s->newestEpoch, ep);
-            logEd3kDebug(QStringLiteral("ed3k: paid scope %1: keys of %2 epoch(s)").arg(hexOf(s->scope)).arg(k->epochs.size()));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: paid scope %1: keys of %2 epoch(s)").arg(hexOf(s->scope)).arg(k->epochs.size()); });
             emit keysArrived(s->scope);
             markChanged();
         }
@@ -607,19 +607,19 @@ void Ed3kPaid::onEventPolled(const ffi::Event& event, bool* handled)
             *handled = true;
             // was: ToDo: read the offer the core holds (done: paidOffer; a hidden set's comes
             // from pass holders, §6.2)
-            logEd3kDebug(QStringLiteral("ed3k: paid scope %1: an offer of %2 held").arg(hexOf(s->scope)).arg(o->issued));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: paid scope %1: an offer of %2 held").arg(hexOf(s->scope)).arg(o->issued); });
             readOffer(*s);
             markChanged();
         }
     } else if (const auto* r = std::get_if<e::PaidRefused>(&event)) {
         if (find(r->scope)) {
             *handled = true;
-            logEd3kDebug(QStringLiteral("ed3k: paid scope %1: no key (refusal %2)").arg(hexOf(r->scope)).arg(r->refusal));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: paid scope %1: no key (refusal %2)").arg(hexOf(r->scope)).arg(r->refusal); });
         }
     } else if (const auto* f = std::get_if<e::PaidFault>(&event)) {
         if (find(f->scope)) {
             *handled = true;
-            logEd3kDebug(QStringLiteral("ed3k: paid scope %1: a key that failed; that node is no source for 24 h").arg(hexOf(f->scope)));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: paid scope %1: a key that failed; that node is no source for 24 h").arg(hexOf(f->scope)); });
         }
     } else if (const auto* w = std::get_if<e::PaidAnonWarn>(&event)) {
         if (Sub* s = find(w->scope)) {
@@ -649,7 +649,7 @@ void Ed3kPaid::onEventPolled(const ffi::Event& event, bool* handled)
     } else if (const auto* rp = std::get_if<e::PassReported>(&event)) {
         if (find(rp->scope)) {
             *handled = true;
-            logEd3kDebug(QStringLiteral("ed3k: paid scope %1: a share report %2").arg(hexOf(rp->scope), rp->ok ? QStringLiteral("taken") : QStringLiteral("not taken")));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: paid scope %1: a share report %2").arg(hexOf(rp->scope), rp->ok ? QStringLiteral("taken") : QStringLiteral("not taken")); });
         }
     }
 }
@@ -950,7 +950,7 @@ Ed3kPaid::Check Ed3kPaid::setPassOnEngine(Sub& s)
         return Check::Ok;
     // §9.3: an issuer-signed pass without the offer (or a scope not followed): held unused
     if (ok.error() == ffi::Error::NotFound) {
-        logEd3kDebug(QStringLiteral("ed3k: paid scope %1: the pass is not checked yet (no offer)").arg(hexOf(s.scope)));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: paid scope %1: the pass is not checked yet (no offer)").arg(hexOf(s.scope)); });
         return Check::Unchecked;
     }
     // if (!ok)

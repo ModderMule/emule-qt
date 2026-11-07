@@ -178,13 +178,13 @@ bool Ed3kSealedCipher::run(Job& job)
             QFile::remove(job.output);
         if (!QFile::rename(job.out.fileName(), job.output))
             return fail("not renamed");
-        logEd3kDebug(QStringLiteral("ed3k: a member sealed: %1").arg(job.output));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: a member sealed: %1").arg(job.output); });
         return false;
     }
     // never over a file the user has (file-set.md §5.3)
     if (QFileInfo::exists(job.output) || !QFile::rename(job.out.fileName(), job.output))
         return fail("the plain file is there");
-    logEd3kDebug(QStringLiteral("ed3k: a sealed member opened: %1").arg(job.output));
+    logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: a sealed member opened: %1").arg(job.output); });
     return false;
 }
 

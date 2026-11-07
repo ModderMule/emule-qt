@@ -104,8 +104,8 @@ void IndexerClient::finish(QNetworkReply* reply, const QUrl& requestUrl,
             done(false, body, transport);
             return;
         }
-        logDebug(QStringLiteral("Indexer request failed: %1 (%2)")
-                       .arg(redactApiKey(requestUrl), transport));
+        logDebug([&]() -> QString { return QStringLiteral("Indexer request failed: %1 (%2)")
+                       .arg(redactApiKey(requestUrl), transport); });
         done(false, {}, transport);
         return;
     }

@@ -688,6 +688,12 @@ bool ArchiveReader::extractAllInto(::archive* ar, const QString& destDir)
             m_impl->encrypted = true;
 
         const QString destPath = safeEntryPath(destDir, rawName);
+        // "./" of `tar -C dir .`: the destination itself, nothing to refuse
+        if (destPath.isEmpty() && archive_entry_filetype(entry) == AE_IFDIR
+            && QDir::cleanPath(QString(rawName).replace(u'\\', u'/')) == QLatin1String(".")) {
+            archive_read_data_skip(ar);
+            continue;
+        }
         if (destPath.isEmpty()) {
             // Not a failure of the archive — a refusal by us. Record it and keep
             // going: one hostile member should not cost the other forty.

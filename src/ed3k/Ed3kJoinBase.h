@@ -12,6 +12,7 @@
 /// an owner id (queue item, torrent) and a member index.
 
 #include "Ed3kFfi.h"
+#include "utils/Log.h"
 
 #include <QByteArray>
 #include <QObject>
@@ -330,6 +331,12 @@ protected:
     void pumpSession();
     [[nodiscard]] QString joinDir(const QString& sub) const;
     void logDebug(const QString& msg) const;
+    /// Lazy: @p make runs only while the category's debug lines are on
+    template <LogMessageMaker F> void logDebug(F&& make) const
+    {
+        if (logCategory()().isDebugEnabled())
+            logDebug(QString(make()));
+    }
     void logWarning(const QString& msg) const;
     void logInfo(const QString& msg) const;
     /// Category of the log*() lines: emule.ed3k unless a join has its own tab (hoster)

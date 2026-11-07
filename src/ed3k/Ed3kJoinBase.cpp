@@ -486,7 +486,7 @@ std::optional<ffi::Root> Ed3kJoinBase::shareBlob(const QByteArray& data, const Q
                             std::nullopt, ffi::Have::complete(), hashed->hashes.bytes()};
     const auto t = m_session.now();
     if (auto ok = e->fileOpen(t, f); !ok && !m_shared.contains(hashed->root)) {
-        logDebug(QStringLiteral("cannot share \"%1\" (error %2)").arg(name, errorName(ok.error())));
+        logDebug([&]() -> QString { return QStringLiteral("cannot share \"%1\" (error %2)").arg(name, errorName(ok.error())); });
         return std::nullopt;
     }
     m_shared[hashed->root] = Shared{QString(), -1, hashed->size, data};
@@ -508,13 +508,13 @@ bool Ed3kJoinBase::shareMember(const ffi::SharedFile& file, const QString& owner
     // hops.md §1: under the key it is held under; a new one as the hiding switch says
     const ffi::KeyKind key = keyOf(file.root);
     if (key == ffi::KeyKind::Anon && !m_session.hide().hiding()) {
-        logDebug(QStringLiteral("member %1 of %2 is held under the anonymous key: not shared while hiding is off")
-                     .arg(member).arg(owner));
+        logDebug([&]() -> QString { return QStringLiteral("member %1 of %2 is held under the anonymous key: not shared while hiding is off")
+                     .arg(member).arg(owner); });
         return false;
     }
     // was: if (auto ok = e->fileOpen(t, file); !ok) {
     if (auto ok = key == ffi::KeyKind::Anon ? e->anonFileOpen(t, file) : e->fileOpen(t, file); !ok) {
-        logDebug(QStringLiteral("member %1 of %2 not shared (error %3)").arg(member).arg(owner, errorName(ok.error())));
+        logDebug([&]() -> QString { return QStringLiteral("member %1 of %2 not shared (error %3)").arg(member).arg(owner, errorName(ok.error())); });
         return false;
     }
     if (anonCapable())
@@ -716,8 +716,8 @@ bool Ed3kJoinBase::startSetSearch(const QString& owner, std::string_view scheme,
         return false;
     auto s = e->aliasSearchStart(m_session.now(), scheme, id, rel);
     if (!s) {
-        logDebug(QStringLiteral("%1 search of %2 not started (error %3)")
-                     .arg(QString::fromUtf8(scheme.data(), qsizetype(scheme.size())), owner, errorName(s.error())));
+        logDebug([&]() -> QString { return QStringLiteral("%1 search of %2 not started (error %3)")
+                     .arg(QString::fromUtf8(scheme.data(), qsizetype(scheme.size())), owner, errorName(s.error())); });
         return false;
     }
     m_setSearches[*s] = {owner, false};
@@ -855,7 +855,7 @@ void Ed3kJoinBase::shareKept()
     for (const QString& sub : dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
         const QString owner = QUrl::fromPercentEncoding(sub.toLatin1());
         if (!keepsOwner(owner)) {
-            logDebug(QStringLiteral("%1 is gone: what was kept of it is dropped").arg(owner));
+            logDebug([&]() -> QString { return QStringLiteral("%1 is gone: what was kept of it is dropped").arg(owner); });
             QDir(dir.filePath(sub)).removeRecursively();
             continue;
         }
@@ -866,7 +866,7 @@ void Ed3kJoinBase::shareKept()
             for (const auto& b : kept.blobs) {
                 const QByteArray data = readBlob(QDir(keptDir(owner)).filePath(blobFile(b.root)));
                 if (data.isEmpty())
-                    logDebug(QStringLiteral("kept \"%1\" of %2 is gone").arg(b.name, owner));
+                    logDebug([&]() -> QString { return QStringLiteral("kept \"%1\" of %2 is gone").arg(b.name, owner); });
                 else
                     (void)shareBlob(data, b.name, b.root);
             }
@@ -1208,7 +1208,7 @@ void Ed3kJoinBase::finishBlock(std::uint64_t id, const ffi::Root& root, std::opt
         (void)e->blockFail(t, id);
         const auto it = m_shared.find(root);
         if (it != m_shared.end() && it->second.blob.isEmpty() && sharedGone(it->second)) {
-            logDebug(QStringLiteral("%1 is gone, not shared any more").arg(hexOf(root.bytes)));
+            logDebug([&]() -> QString { return QStringLiteral("%1 is gone, not shared any more").arg(hexOf(root.bytes)); });
             (void)e->fileClose(t, root);
             m_shared.erase(it);
         }
@@ -1331,7 +1331,7 @@ bool Ed3kJoinBase::open(const ffi::Root& root, std::uint64_t size, const QString
     // it for the node key)
     if (key == ffi::KeyKind::Node)
         if (auto ok = e->downloadOpen(t, root, size); !ok)
-            logDebug(QStringLiteral("download of %1 not opened (error %2)").arg(hexOf(root.bytes), errorName(ok.error())));
+            logDebug([&]() -> QString { return QStringLiteral("download of %1 not opened (error %2)").arg(hexOf(root.bytes), errorName(ok.error())); });
     auto d = std::make_unique<Download>();
     d->key = key;
     d->owner = owner;
@@ -1399,7 +1399,7 @@ void Ed3kJoinBase::onSetAliasFound(const ffi::event::AliasFound& found)
         return;
     it->second.second = true;
     const QString owner = it->second.first;
-    logDebug(QStringLiteral("%1 set(s) claimed for %2").arg(found.roots).arg(owner));
+    logDebug([&]() -> QString { return QStringLiteral("%1 set(s) claimed for %2").arg(found.roots).arg(owner); });
     auto& t = m_setTries[owner];
     if (!t)
         t = std::make_unique<SetTry>();
@@ -1511,7 +1511,7 @@ void Ed3kJoinBase::shareKeptHashed(const QString& owner, int member, const ffi::
     {
         if (!hashed) {
             // gone or unreadable now: again later, and at the next start
-            logDebug(QStringLiteral("kept member %1 of %2 not readable (%3)").arg(member).arg(owner, path));
+            logDebug([&]() -> QString { return QStringLiteral("kept member %1 of %2 not readable (%3)").arg(member).arg(owner, path); });
             if (tries + 1 < kRehashTries)
                 QTimer::singleShot(kRehashMs, this, [this, owner, member, root, size, name, tries] {
                     if (m_started && keepsOwner(owner))
@@ -1539,7 +1539,7 @@ void Ed3kJoinBase::shareKeptHashed(const QString& owner, int member, const ffi::
             Q_UNUSED(e)
             (void)publishShared(info);
         }
-        logDebug(QStringLiteral("kept member %1 of %2 shared again as %3").arg(member).arg(owner, hexOf(root.bytes)));
+        logDebug([&]() -> QString { return QStringLiteral("kept member %1 of %2 shared again as %3").arg(member).arg(owner, hexOf(root.bytes)); });
         pumpSession();
     }
 }
@@ -1569,20 +1569,20 @@ void Ed3kJoinBase::publishKeptRecords(const QString& owner)
         const QByteArray manifest = readBlob(QDir(keptDir(owner)).filePath(blobFile(kept.set->root)));
         const QByteArray n = kept.set->name.toUtf8();
         if (manifest.isEmpty())
-            logDebug(QStringLiteral("kept set of %1 is gone: not published").arg(owner));
+            logDebug([&]() -> QString { return QStringLiteral("kept set of %1 is gone: not published").arg(owner); });
         else if (auto ok = e->setPublish(t, spanOf(manifest), kept.set->root, std::string_view(n.constData(), std::size_t(n.size()))); !ok)
-            logDebug(QStringLiteral("kept set of %1 not published (error %2)").arg(owner, errorName(ok.error())));
+            logDebug([&]() -> QString { return QStringLiteral("kept set of %1 not published (error %2)").arg(owner, errorName(ok.error())); });
     }
     const auto records = readRecords(QDir(keptDir(owner)).filePath(kKeptRecords));
     int published = 0;
     // §6: no ALIAS records while holding back
     if (!m_holdBack && !records.empty()) {
         if (auto ok = e->publishAlias(t, records); !ok)
-            logDebug(QStringLiteral("kept ALIAS records of %1 not published (error %2)").arg(owner, errorName(ok.error())));
+            logDebug([&]() -> QString { return QStringLiteral("kept ALIAS records of %1 not published (error %2)").arg(owner, errorName(ok.error())); });
         else
             published = int(records.size());
     }
-    logDebug(QStringLiteral("kept records of %1 published again (%2 alias(es))").arg(owner).arg(published));
+    logDebug([&]() -> QString { return QStringLiteral("kept records of %1 published again (%2 alias(es))").arg(owner).arg(published); });
     pumpSession();
     emit keptRecordsPublished(owner, published);
 }
@@ -1598,8 +1598,8 @@ void Ed3kJoinBase::withdrawKeptRecords()
         if (records.empty())
             continue;
         if (auto ok = e->unpublishAlias(m_session.now(), records); !ok)
-            logDebug(QStringLiteral("kept ALIAS records of %1 not withdrawn (error %2)")
-                         .arg(QUrl::fromPercentEncoding(sub.toLatin1()), errorName(ok.error())));
+            logDebug([&]() -> QString { return QStringLiteral("kept ALIAS records of %1 not withdrawn (error %2)")
+                         .arg(QUrl::fromPercentEncoding(sub.toLatin1()), errorName(ok.error())); });
     }
     pumpSession();
 }
@@ -1634,13 +1634,13 @@ bool Ed3kJoinBase::openStream(const ffi::Root& root, const ffi::Source& source)
     // was: auto stream = e->fileRequest(m_session.now(), source, req);
     auto stream = anon ? e->anonFileRequest(m_session.now(), source, req) : e->fileRequest(m_session.now(), source, req);
     if (!stream) {
-        logDebug(QStringLiteral("source refused (error %1)").arg(errorName(stream.error())));
+        logDebug([&]() -> QString { return QStringLiteral("source refused (error %1)").arg(errorName(stream.error())); });
         return false;
     }
     // the anonymous node holds the root now: downloadOpen goes there (ffi.md hiding)
     if (anon && !d.anonOpened) {
         if (auto ok = e->downloadOpen(m_session.now(), root, d.size); !ok)
-            logDebug(QStringLiteral("anonymous download of %1 not opened (error %2)").arg(hexOf(root.bytes), errorName(ok.error())));
+            logDebug([&]() -> QString { return QStringLiteral("anonymous download of %1 not opened (error %2)").arg(hexOf(root.bytes), errorName(ok.error())); });
         d.anonOpened = true;
     }
     d.asked.insert(source.id);
@@ -1672,7 +1672,7 @@ bool Ed3kJoinBase::waitTurn(const ffi::Root& root, const ffi::Source& source)
         const auto d = m_downloads.find(root);
         const int priority = d == m_downloads.end() ? 0 : downloadPriority(*d->second);
         q.push_back(NodeTurns::Want{this, root, source, priority, ++t.seq});
-        logDebug(QStringLiteral("%1 waits for its turn at %2").arg(hexOf(root.bytes), hexOf(source.id.bytes)));
+        logDebug([&]() -> QString { return QStringLiteral("%1 waits for its turn at %2").arg(hexOf(root.bytes), hexOf(source.id.bytes)); });
         // a higher priority asks first: the holder gives the node up now (its position stays, §12.5)
         (void)yieldToHigher(source.id);
     }
@@ -1723,7 +1723,7 @@ bool Ed3kJoinBase::grantTurn(const ffi::Root& root, const ffi::Source& source)
         it->second->asked.erase(source.id);   // offered again by a later search
         return false;
     }
-    logDebug(QStringLiteral("%1 has its turn at %2").arg(hexOf(root.bytes), hexOf(source.id.bytes)));
+    logDebug([&]() -> QString { return QStringLiteral("%1 has its turn at %2").arg(hexOf(root.bytes), hexOf(source.id.bytes)); });
     if (openStream(root, source))
         return true;
     it->second->asked.erase(source.id);
@@ -1755,7 +1755,7 @@ bool Ed3kJoinBase::switchTurn(const ffi::Root& root, std::uint64_t stream)
     d.sourceHave.erase(stream);
     // back in line for the node
     t.waiting[*node].push_back(NodeTurns::Want{this, root, holder.source, downloadPriority(d), ++t.seq});
-    logDebug(QStringLiteral("%1 gave its turn at %2 to the next file").arg(hexOf(root.bytes), hexOf(node->bytes)));
+    logDebug([&]() -> QString { return QStringLiteral("%1 gave its turn at %2 to the next file").arg(hexOf(root.bytes), hexOf(node->bytes)); });
     return true;
 }
 

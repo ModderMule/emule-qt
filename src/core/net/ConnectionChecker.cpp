@@ -169,8 +169,8 @@ void ConnectionChecker::onProbeDone(uint32 generation, bool reached)
     if (!m_enabled)
         return;
 
-    logDebug(QStringLiteral("Connection checker: %1 %2")
-                 .arg(host(), reached ? QStringLiteral("reached") : QStringLiteral("unreachable")));
+    logDebug([&]() -> QString { return QStringLiteral("Connection checker: %1 %2")
+                 .arg(host(), reached ? QStringLiteral("reached") : QStringLiteral("unreachable")); });
 
     if (reached) {
         m_failures = 0;

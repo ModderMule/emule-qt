@@ -364,6 +364,7 @@ private:
     QLabel* m_geoIpStatusLabel = nullptr;
     QComboBox* m_colorSchemeCombo = nullptr;
     QComboBox* m_fontScaleCombo = nullptr;
+    QComboBox* m_speedGraphBgCombo = nullptr;
     QPushButton* m_selectFontBtn = nullptr;
     QLabel* m_fontPreviewLabel = nullptr;
     QString m_currentLogFont;
@@ -594,6 +595,7 @@ private:
     QCheckBox*      m_btDhtCheck = nullptr;
     QCheckBox*      m_btLsdCheck = nullptr;
     QCheckBox*      m_btPexCheck = nullptr;
+    QCheckBox*      m_btAnnounceToAllCheck = nullptr;
     BtI2pPage*      m_btI2pPage = nullptr;
     QButtonGroup*   m_btEncryptionGroup = nullptr; // id = btEncryption
     QSpinBox*       m_btMaxActiveDownSpin = nullptr;
@@ -725,6 +727,8 @@ private:
     QCheckBox*    m_btVerboseCheck = nullptr;
     QCheckBox*    m_hosterVerboseCheck = nullptr;
     QCheckBox*    m_ed3kVerboseCheck = nullptr;
+    QCheckBox*    m_usenetVerboseCheck = nullptr;
+    QCheckBox*    m_sharedFilesVerboseCheck = nullptr;
     QCheckBox*    m_logBannedClientsCheck = nullptr;
     QCheckBox*    m_logRatingDescCheck = nullptr;
     QCheckBox*    m_logSecureIdentCheck = nullptr;

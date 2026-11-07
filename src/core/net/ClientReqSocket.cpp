@@ -72,7 +72,7 @@ void ClientReqSocket::disconnect(const QString& reason)
     if (m_deleteThis)
         return;
 
-    logDebug(QStringLiteral("ClientReqSocket::disconnect: %1").arg(reason));
+    logDebug([&]() -> QString { return QStringLiteral("ClientReqSocket::disconnect: %1").arg(reason); });
 
     // Accepted, then gone without a hello: garbage, a failed handshake or a bare
     // connect-and-drop. Counted per address before the socket loses its peer.
@@ -199,11 +199,11 @@ bool ClientReqSocket::packetReceived(Packet* packet)
         return false;
 
     if (thePrefs.logRawSocketPackets())
-        logDebug(QStringLiteral("ClientReqSocket::packetReceived — proto=0x%1 opcode=0x%2 size=%3 peer=%4:%5")
+        logDebug([&]() -> QString { return QStringLiteral("ClientReqSocket::packetReceived — proto=0x%1 opcode=0x%2 size=%3 peer=%4:%5")
                      .arg(packet->prot, 2, 16, QLatin1Char('0'))
                      .arg(packet->opcode, 2, 16, QLatin1Char('0'))
                      .arg(packet->size)
-                     .arg(peerAddress().toString()).arg(peerPort()));
+                     .arg(peerAddress().toString()).arg(peerPort()); });
     resetTimeOutTimer();
     m_lastReceivedTimer = m_timeoutTimer;
 
@@ -413,9 +413,9 @@ bool ClientReqSocket::processPacket(const uint8* packet, uint32 size, uint8 opco
         break;
 
     default:
-        logDebug(QStringLiteral("ClientReqSocket: Unknown ED2K opcode 0x%1, size %2")
+        logDebug([&]() -> QString { return QStringLiteral("ClientReqSocket: Unknown ED2K opcode 0x%1, size %2")
                      .arg(opcode, 2, 16, QLatin1Char('0'))
-                     .arg(size));
+                     .arg(size); });
         break;
     }
 
@@ -516,9 +516,9 @@ bool ClientReqSocket::processExtPacket(const uint8* packet, uint32 size, uint8 o
         break;
 
     default:
-        logDebug(QStringLiteral("ClientReqSocket: Unknown eMule opcode 0x%1, size %2")
+        logDebug([&]() -> QString { return QStringLiteral("ClientReqSocket: Unknown eMule opcode 0x%1, size %2")
                      .arg(opcode, 2, 16, QLatin1Char('0'))
-                     .arg(size));
+                     .arg(size); });
         break;
     }
 
@@ -548,7 +548,7 @@ void ClientReqSocket::setPeerSocketState(PeerSocketState val)
 
 void ClientReqSocket::onError(int errorCode)
 {
-    logDebug(QStringLiteral("ClientReqSocket error: %1").arg(errorCode));
+    logDebug([&]() -> QString { return QStringLiteral("ClientReqSocket error: %1").arg(errorCode); });
     disconnect(QStringLiteral("Socket error %1").arg(errorCode));
 }
 
@@ -558,8 +558,8 @@ void ClientReqSocket::onError(int errorCode)
 
 void ClientReqSocket::onSocketConnected()
 {
-    logDebug(QStringLiteral("ClientReqSocket::onSocketConnected — peer=%1:%2 fd=%3")
-                 .arg(peerAddress().toString()).arg(peerPort()).arg(socketDescriptor()));
+    logDebug([&]() -> QString { return QStringLiteral("ClientReqSocket::onSocketConnected — peer=%1:%2 fd=%3")
+                 .arg(peerAddress().toString()).arg(peerPort()).arg(socketDescriptor()); });
 
     // The TCP connect is done, whatever the handshake still does: no longer half-open
     setPeerSocketState(PeerSocketState::Complete);
@@ -576,8 +576,8 @@ void ClientReqSocket::onSocketConnected()
 
 void ClientReqSocket::onEncryptionHandshakeComplete()
 {
-    logDebug(QStringLiteral("ClientReqSocket::onEncryptionHandshakeComplete — peer=%1:%2")
-                 .arg(peerAddress().toString()).arg(peerPort()));
+    logDebug([&]() -> QString { return QStringLiteral("ClientReqSocket::onEncryptionHandshakeComplete — peer=%1:%2")
+                 .arg(peerAddress().toString()).arg(peerPort()); });
     emitSocketConnected();
 }
 
@@ -597,9 +597,9 @@ void ClientReqSocket::onSocketDisconnected()
 
 void ClientReqSocket::onSocketError(QAbstractSocket::SocketError error)
 {
-    logDebug(QStringLiteral("ClientReqSocket::onSocketError — error=%1 (%2) peer=%3:%4 fd=%5")
+    logDebug([&]() -> QString { return QStringLiteral("ClientReqSocket::onSocketError — error=%1 (%2) peer=%3:%4 fd=%5")
                  .arg(static_cast<int>(error)).arg(errorString())
-                 .arg(peerAddress().toString()).arg(peerPort()).arg(socketDescriptor()));
+                 .arg(peerAddress().toString()).arg(peerPort()).arg(socketDescriptor()); });
 
     if (m_deleteThis)
         return;

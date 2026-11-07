@@ -6,6 +6,9 @@
 #include "controls/TorrentListModel.h"
 #include "controls/TorrentListsPane.h"
 #include "controls/TorrentPieceGrid.h"
+#include "controls/TorrentOptionsForm.h"
+#include "dialogs/EditTrackersDialog.h"
+#include "dialogs/TorrentOptionsDialog.h"
 #include "dialogs/TorrentDetailsDialog.h"
 
 #include <QCborArray>
@@ -13,6 +16,7 @@
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QLabel>
+#include <QPlainTextEdit>
 #include <QSignalSpy>
 #include <QSpinBox>
 #include <QTabWidget>
@@ -99,8 +103,10 @@ private slots:
     void filesChecksToPriorities();
     void peersAndFlags();
     void trackersBackupToggle();
+    void editTrackersForMany();
     void inspectorInfoAndActivity();
     void inspectorOptions();
+    void optionsForMany();
     void pieceGridColours();
 };
 
@@ -238,6 +244,38 @@ void tst_TorrentDetailsGui::trackersBackupToggle()
     QVERIFY(backup->isHidden());
 }
 
+void tst_TorrentDetailsGui::editTrackersForMany()
+{
+    using D = EditTrackersDialog;
+    const QString a = QStringLiteral("udp://a/announce");
+    const QString b = QStringLiteral("udp://b/announce");
+    const QString c = QStringLiteral("udp://c/announce");
+    const QString d = QStringLiteral("udp://d/announce");
+    QCOMPARE(D::commonTrackers({{a, b, c}, {c, a}, {a, c, d}}), (QStringList{a, c}));
+    QVERIFY(D::commonTrackers({}).isEmpty());
+
+    // box held a, c: c removed, d added; b (only some) untouched
+    const D::Edit e = D::editFor({a, c}, {a, d}, false);
+    QCOMPARE(e.add, QStringList{d});
+    QCOMPARE(e.remove, QStringList{c});
+    QVERIFY(!e.exact);
+    QVERIFY(D::editFor({a, c}, {a, c}, false).isEmpty());
+    const D::Edit x = D::editFor({a, c}, {a, c}, true);
+    QVERIFY(x.exact && !x.isEmpty());
+    QCOMPARE(x.add, (QStringList{a, c}));
+
+    // the box: common ones; "remove others" only when some differ
+    D one({{a, b}});
+    QCOMPARE(one.findChild<QPlainTextEdit*>()->toPlainText(), a + u'\n' + b);
+    QVERIFY(one.findChild<QCheckBox*>()->isHidden());
+    D many({{a, b}, {a, c}});
+    QCOMPARE(many.findChild<QPlainTextEdit*>()->toPlainText(), a);
+    QVERIFY(!many.findChild<QCheckBox*>()->isHidden());
+    many.findChild<QPlainTextEdit*>()->setPlainText(a + QStringLiteral("\n ") + d + QStringLiteral("\n\n") + d);
+    QCOMPARE(many.edit().add, QStringList{d});
+    QVERIFY(many.edit().remove.isEmpty());
+}
+
 void tst_TorrentDetailsGui::inspectorInfoAndActivity()
 {
     TorrentListModel model;
@@ -305,6 +343,43 @@ void tst_TorrentDetailsGui::inspectorOptions()
     QVERIFY(sent.wait(3000));
     QCOMPARE(sent.count(), 1);
     QCOMPARE(sent.first().first().value<QCborMap>().value(QStringLiteral("maxPeers")).toInteger(), 45);
+}
+
+void tst_TorrentDetailsGui::optionsForMany()
+{
+    const QCborMap a{{QStringLiteral("downloadLimitKb"), 0}, {QStringLiteral("uploadLimitKb"), 50},
+                     {QStringLiteral("maxPeers"), 30}, {QStringLiteral("ratioMode"), 2},
+                     {QStringLiteral("ratioPercent"), 150}, {QStringLiteral("seedTimeMode"), 0},
+                     {QStringLiteral("seedTimeMinutes"), 60}};
+    QCborMap b = a;
+    b.insert(QStringLiteral("uploadLimitKb"), 80);
+    b.insert(QStringLiteral("ratioPercent"), 200);
+    TorrentOptionsDialog dlg({a, b});
+    TorrentOptionsForm* form = dlg.form();
+    QVERIFY(!form->varies(TorrentOptionsForm::FieldDown));
+    QVERIFY(form->varies(TorrentOptionsForm::FieldUp));
+    QVERIFY(form->varies(TorrentOptionsForm::FieldRatio));
+    QVERIFY(!form->varies(TorrentOptionsForm::FieldMaxPeers));
+    // nothing touched: nothing sent
+    QVERIFY(dlg.changedOptions().isEmpty());
+
+    // one setting changed: only its keys go out, for every torrent
+    QSpinBox* maxPeers = nullptr;
+    for (QSpinBox* s : dlg.findChildren<QSpinBox*>())
+        if (s->specialValueText() == QLatin1String("Default"))
+            maxPeers = s;
+    QVERIFY(maxPeers);
+    maxPeers->setValue(70);
+    const QCborMap e = dlg.changedOptions();
+    QCOMPARE(e.size(), 1);
+    QCOMPARE(e.value(QStringLiteral("maxPeers")).toInteger(), 70);
+
+    // the ratio pair goes together
+    auto* ratioMode = dlg.findChildren<QComboBox*>().first();
+    ratioMode->setCurrentIndex(ratioMode->findData(1));
+    QCOMPARE(dlg.changedOptions().size(), 3);
+    QCOMPARE(dlg.changedOptions().value(QStringLiteral("ratioMode")).toInteger(), 1);
+    QVERIFY(dlg.changedOptions().contains(QStringLiteral("ratioPercent")));
 }
 
 void tst_TorrentDetailsGui::pieceGridColours()

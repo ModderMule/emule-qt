@@ -883,13 +883,13 @@ QHttpServerResponse WebServer::handlePreviewStream(const QString& hash, const QH
     const bool dbg = m_preferences && m_preferences->logWebServer();
 
     if (dbg) {
-        logDebug(QStringLiteral("Preview: GET %1").arg(redactedUrl(req.url())));
+        logDebug([&]() -> QString { return QStringLiteral("Preview: GET %1").arg(redactedUrl(req.url())); });
         const auto reqHeaders = req.headers();
         for (qsizetype i = 0; i < reqHeaders.size(); ++i) {
             const QString name = QString::fromLatin1(reqHeaders.nameAt(i));
-            logDebug(QStringLiteral("Preview request header: %1: %2")
+            logDebug([&]() -> QString { return QStringLiteral("Preview request header: %1: %2")
                 .arg(name, isSecretHeader(name) ? QStringLiteral("***")
-                                                : QString::fromLatin1(reqHeaders.valueAt(i))));
+                                                : QString::fromLatin1(reqHeaders.valueAt(i))); });
         }
     }
 
@@ -1132,9 +1132,9 @@ QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& pieces
     const QByteArray mimeType = mime.name().toUtf8();
 
     if (dbg)
-        logDebug(QStringLiteral("Preview: file=%1  pieces=%2  size=%3  available=%4  mime=%5")
+        logDebug([&]() -> QString { return QStringLiteral("Preview: file=%1  pieces=%2  size=%3  available=%4  mime=%5")
             .arg(fileName).arg(pieces.size()).arg(fileSize).arg(contentEnd)
-            .arg(QString::fromUtf8(mimeType)));
+            .arg(QString::fromUtf8(mimeType)); });
 
     // --- Range, for seeking support (required by VLC et al.) ---
     qint64 rangeStart = 0;
@@ -1143,7 +1143,7 @@ QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& pieces
 
     if (!rangeHeader.isEmpty()) {
         if (dbg)
-            logDebug(QStringLiteral("Preview: Range header: %1").arg(QString::fromLatin1(rangeHeader)));
+            logDebug([&]() -> QString { return QStringLiteral("Preview: Range header: %1").arg(QString::fromLatin1(rangeHeader)); });
 
         qint64 parsedEnd = -1;
         if (!parseRange(rangeHeader, rangeStart, parsedEnd)) {
@@ -1159,7 +1159,7 @@ QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& pieces
         // ordinary EOF, not worth a warning
         if (rangeStart == fileSize) {
             if (dbg)
-                logDebug(QStringLiteral("Preview: 416 — EOF probe at %1").arg(fileSize));
+                logDebug([&]() -> QString { return QStringLiteral("Preview: 416 — EOF probe at %1").arg(fileSize); });
             return rangeNotSatisfiable(fileSize);
         }
         if (rangeStart >= fileSize || rangeStart > rangeEnd) {
@@ -1234,9 +1234,9 @@ QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& pieces
     rangeEnd = rangeStart + data.size() - 1;
 
     if (dbg)
-        logDebug(QStringLiteral("Preview: serving %1 bytes [%2-%3/%4]  hasRange=%5  pieces=%6")
+        logDebug([&]() -> QString { return QStringLiteral("Preview: serving %1 bytes [%2-%3/%4]  hasRange=%5  pieces=%6")
             .arg(data.size()).arg(rangeStart).arg(rangeEnd).arg(fileSize)
-            .arg(hasRange).arg(pieces.size()));
+            .arg(hasRange).arg(pieces.size()); });
 
     // Pieces of a stated length, and no total: whoever built them knows how far
     // the file goes but not how far it will go — an extraction still writing it
@@ -1273,12 +1273,12 @@ QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& pieces
     if (dbg) {
         const auto respHeaders = resp.headers();
         for (qsizetype i = 0; i < respHeaders.size(); ++i) {
-            logDebug(QStringLiteral("Preview response header: %1: %2")
+            logDebug([&]() -> QString { return QStringLiteral("Preview response header: %1: %2")
                 .arg(QString::fromLatin1(respHeaders.nameAt(i)),
-                     QString::fromLatin1(respHeaders.valueAt(i))));
+                     QString::fromLatin1(respHeaders.valueAt(i))); });
         }
-        logDebug(QStringLiteral("Preview: responding %1  body=%2 bytes")
-            .arg(static_cast<int>(statusCode)).arg(data.size()));
+        logDebug([&]() -> QString { return QStringLiteral("Preview: responding %1  body=%2 bytes")
+            .arg(static_cast<int>(statusCode)).arg(data.size()); });
     }
 
     return resp;

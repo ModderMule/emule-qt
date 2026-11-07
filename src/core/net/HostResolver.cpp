@@ -250,10 +250,10 @@ void HostResolver::startLookup(const QString& host)
                         : info.errorString();
         }
 
-        logDebug(QStringLiteral("HostResolver: %1 -> %2 address(es)%3")
+        logDebug([&]() -> QString { return QStringLiteral("HostResolver: %1 -> %2 address(es)%3")
                      .arg(host)
                      .arg(addresses.size())
-                     .arg(error.isEmpty() ? QString() : QStringLiteral(" (%1)").arg(error)));
+                     .arg(error.isEmpty() ? QString() : QStringLiteral(" (%1)").arg(error)); });
 
         cacheResult(host, addresses, error);
         completeHost(host, addresses, error);

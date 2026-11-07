@@ -1091,6 +1091,42 @@ ed2k://|server|<address>|<port>|/
   An unbracketed address containing a colon is rejected unless the whole string parses as an IPv6
   literal — this is what rejects `host:1234` pasted into an address field.
 
+#### Dual-stack server links — the `v6=` field
+
+A server with both an IPv4 and an IPv6 address is one link, not two:
+
+```
+ed2k://|server|<ipv4-or-host>|<port>|/|v6=[<ipv6-literal>]|/
+```
+
+Example: `ed2k://|server|203.0.113.7|4661|/|v6=[2001:db8::7]|/`
+
+- **The IPv6 is reached on the link's `<port>`.** A server entry has one port for both families,
+  so the field carries no port of its own.
+- **Emission:** only when the primary is not itself an IPv6 literal; always bracketed, no port.
+- **Ingest is tolerant:** `[v6]`, `[v6]:port` (accepted only when `port` equals the link's port,
+  otherwise the hint is dropped) and a bare literal, which MUST parse as a *whole* IPv6 address
+  (§6.2). The field name is case-insensitive. The first `v6=` field is used.
+- A malformed `v6=` (an IPv4 literal, a hostname, an unclosed bracket, a different port) drops
+  **only the hint**: the link still adds the primary. A `v6=` on a link whose primary is an IPv6
+  literal is ignored.
+- Unknown fields after the closing `/` MUST be ignored, so the tail can grow later.
+- The client stores the hint as the server's other-family address (one list row, the same as a
+  `server.met` entry with an IPv4 header plus `ST_IPV6`, §4.8). It is subject to the same address
+  acceptance rules (§7). A hostname primary keeps resolving through DNS and the hint is ignored.
+- The server's admin page offers this link when it advertises both addresses, next to one link per
+  family.
+
+#### Placement — the legacy-parser constraint
+
+`v6=` MUST appear **after the `/` that closes the classic link.** Stock eMule's server branch reads
+the address and the port, requires the next token to be `/`, and returns the link there
+(`srchybrid/ED2KLink.cpp:390-395`); everything after is never read. Every stock caller that takes
+links out of text (the clipboard paste in the server window, the direct-download dialog, the
+command line) splits on whitespace only, so the tail stays attached and is ignored. Stock eMule
+therefore adds the plain IPv4 server. Inserting `v6=` *before* that `/` would make stock eMule reject
+the whole link.
+
 `ed2k://|serverlist|…` and `ed2k://|nodeslist|…` carry an opaque URL and have no IPv6 semantics of
 their own.
 
@@ -1280,6 +1316,7 @@ A client claiming interoperability with these extensions should implement, at mi
 - [ ] `s6=` emission after `/` and before `|sources,` (§6.2)
 - [ ] Tolerant `s6=` ingest, including the bare-literal rule (§6.2)
 - [ ] Bracketed IPv6 in `|server|` links (§6.4)
+- [ ] `v6=` dual-stack server field after the closing `/`, tolerant ingest (§6.4)
 
 **Recommended**
 
@@ -1324,8 +1361,8 @@ tests, whose names are capitalised "Live".)*
 | `tst_Address` | 42 cases. Family construction and round-trips, ordering and hashing across families, the `isPublicIP` reject table (Teredo, documentation, 6to4, multicast, SRv6), `toUint32`/`toNetworkUint32` returning 0 for v6, mapped-v4 conversion, `isGoodIP`, `Endpoint` and `parseHostPort`/`formatHostPort` bracketing, and `labNetworkMode_widensIPv6Only` (§7 lab mode, incl. IPv4 left untouched and the scoped guard restoring state) | no |
 | `tst_SourceExchange` | 12 cases. ExtSX v1 tag-block layout, IPv6 round-trip, unknown-tag skip without desync, LowID-with-IPv6 kept where classic drops it, the 500 cap, hybrid-ID encoding, IPv6-only source survival, `CT_EMULE_USERHASH`/`CT_EMULE_CONOPTS` emitted **only** for a `MODMISC_EXTXS_SKIPTAGS` peer and recovered on parse, plus the §2 gates (peer corroboration threshold, reflection not held locally, tier precedence, proof sources: probe / inbound peer outside our /64 / pinhole / assumed, verdict kept across disconnect, reset on address change) | no |
 | `tst_SourceExchangeCompat` | 64 cases. The interop layer: two in-test models of foreign readers (stock eMule's fixed-record parser, and the intolerant ExtSX reader of §10 that abandons an answer on any unknown tag) run against real emitted answers. Golden bytes for classic v1–v4 and SX1, the §3.3.3 worked example byte for byte, no IPv6/userhash/crypt leaking into a non-`MODMISC_EXTXS` answer, the `MODMISC_EXTXS_SKIPTAGS` gate proven load-bearing by its negative control, `CT_MOD_IP_V6` emitted only for global unicast, zlib round trip, address-less source kept, hostile input (truncation, over-large `tagCount`, over-declared count, oversized unknown tag, wrong-typed and non-public `CT_MOD_IP_V6`, families judged independently, the classic-v1-from-an-ExtSX-peer ambiguity), the requested version byte on both the standalone and multipacket request forms, the hello capability round trip, and the source request bundled in a multipacket | no |
-| `tst_ED2KLink` | 16 cases. `s6=` grammar (bracketed, bracketed-no-port, bare literal, bare-with-colon-is-an-address, malformed skipped), rejection of non-IPv6 in `s6=`, the v4-LowID drop applying to v4 only, and the legacy-safety invariants: `s6=` after `/` and before `\|sources,`, no IPv6 inside `sources,`, v6-only hints emit no `sources` token, and a re-implementation of the legacy scan recovering exactly the v4 entry. Plus IPv6 server links, bracketed and bare | no |
-| `tst_ServerList` | 9 cases. Adding an IPv6 server, not colliding with a dynIP entry (both project to `uint32` 0), duplicate rejection, `ST_IPV6` `server.met` round-trip incl. mixed lists, static-server round-trip, text and `ed2k://` link import of bracketed literals, `findByIPUdp` by Address | no |
+| `tst_ED2KLink` | 16 cases. `s6=` grammar (bracketed, bracketed-no-port, bare literal, bare-with-colon-is-an-address, malformed skipped), rejection of non-IPv6 in `s6=`, the v4-LowID drop applying to v4 only, and the legacy-safety invariants: `s6=` after `/` and before `\|sources,`, no IPv6 inside `sources,`, v6-only hints emit no `sources` token, and a re-implementation of the legacy scan recovering exactly the v4 entry. Plus IPv6 server links, bracketed and bare, and the dual-stack `v6=` field: accepted spellings, a malformed hint dropping only itself, emission and round trip | no |
+| `tst_ServerList` | 9 cases. Adding an IPv6 server, not colliding with a dynIP entry (both project to `uint32` 0), duplicate rejection, `ST_IPV6` `server.met` round-trip incl. mixed lists, static-server round-trip, text and `ed2k://` link import of bracketed literals and of a dual-stack `v6=` link, `findByIPUdp` by Address | no |
 | `tst_Server` | 6 cases. Address-vs-hostname classification, `addressWithPort` bracketing, `ST_IPV6` tag add/read, dynIP precedence over `ST_IPV6`, tag write round-trip, and no `ST_IPV6` emitted for an IPv4 server | no |
 | `tst_DownloadQueue` | 5 cases. The `0xFFFFFFFF` sentinel stride (the sentinel source is placed **first**, so a mis-stride corrupts the source after it), link-sourced v6 literals surviving a firewalled harness, v4+v6 collapsing to one client, banned-v6 drop, and no dedup against an address-less client | no |
 | `tst_IPFilterMatch` | 8 IPv6 cases. Range match and boundaries across a byte carry, families isolated in both directions, CIDR prefix expansion, explicit `start - end`, `description:range` with colons in the description, longest-match parsing (so `2a01:4f8::/32` is never split into `4f8::/32`), overlap split across differing levels, save/load round-trip, and the Address-typed `ipBlocked` signal | no |

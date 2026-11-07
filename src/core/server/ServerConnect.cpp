@@ -132,14 +132,14 @@ void ServerConnect::tryAnotherConnectionRequest()
         } else {
             // Only auto-connect to static servers if configured
             if (!m_config.autoConnectStaticOnly || next->isStaticMember()) {
-                logServerVerbose(QStringLiteral("tryAnotherConnectionRequest: next candidate %1 (%2) obfuscated=%3 (slot %4/%5)")
+                logServerVerbose([&]() -> QString { return QStringLiteral("tryAnotherConnectionRequest: next candidate %1 (%2) obfuscated=%3 (slot %4/%5)")
                                      .arg(next->name(), next->addressWithPort())
                                      .arg(m_tryObfuscated)
-                                     .arg(m_connectionAttempts.size() + 1).arg(m_maxSimCons));
+                                     .arg(m_connectionAttempts.size() + 1).arg(m_maxSimCons); });
                 connectToServer(next, true, !m_tryObfuscated);
             } else {
-                logServerVerbose(QStringLiteral("tryAnotherConnectionRequest: skipping non-static %1 (static-only auto-connect)")
-                                     .arg(next->name()));
+                logServerVerbose([&]() -> QString { return QStringLiteral("tryAnotherConnectionRequest: skipping non-static %1 (static-only auto-connect)")
+                                     .arg(next->name()); });
             }
         }
     }
@@ -155,8 +155,8 @@ void ServerConnect::tryAnotherConnectionRequest()
 void ServerConnect::connectToAnyServer(size_t startAt, bool prioSort,
                                        bool isAuto, bool noCrypt)
 {
-    logServerVerbose(QStringLiteral("connectToAnyServer: %1 servers in list, startAt=%2 prioSort=%3 isAuto=%4 noCrypt=%5")
-                         .arg(m_serverList.serverCount()).arg(startAt).arg(prioSort).arg(isAuto).arg(noCrypt));
+    logServerVerbose([&]() -> QString { return QStringLiteral("connectToAnyServer: %1 servers in list, startAt=%2 prioSort=%3 isAuto=%4 noCrypt=%5")
+                         .arg(m_serverList.serverCount()).arg(startAt).arg(prioSort).arg(isAuto).arg(noCrypt); });
     if (!BindAddress::outboundAllowed()) {
         logWarning(QStringLiteral("Not connecting: %1").arg(BindAddress::current().reason));
         return;
@@ -241,9 +241,9 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
     // into a HighID. A LowID again just repeats the handover without going offline.
     auto* socket = createServerSocket(m_singleConnecting);
 
-    logServerVerbose(QStringLiteral("connectToServer: %1 (%2) multiconnect=%3 noCrypt=%4 openSockets=%5")
+    logServerVerbose([&]() -> QString { return QStringLiteral("connectToServer: %1 (%2) multiconnect=%3 noCrypt=%4 openSockets=%5")
                          .arg(server->name()).arg(server->addressWithPort())
-                         .arg(multiconnect).arg(noCrypt).arg(m_openSockets.size()));
+                         .arg(multiconnect).arg(noCrypt).arg(m_openSockets.size()); });
 
     // Registered before the dial: a connect that fails inside connectTo() (an
     // unusable bind address does) is torn down on the spot, and an entry added
@@ -281,8 +281,8 @@ bool ServerConnect::isConnectedOrConnectingTo(const Server* server) const
 void ServerConnect::stopConnectionTry()
 {
     if (!m_connectionAttempts.empty() || !m_openSockets.empty())
-        logServerVerbose(QStringLiteral("stopConnectionTry: %1 pending attempt(s), %2 open socket(s)")
-                             .arg(m_connectionAttempts.size()).arg(m_openSockets.size()));
+        logServerVerbose([&]() -> QString { return QStringLiteral("stopConnectionTry: %1 pending attempt(s), %2 open socket(s)")
+                             .arg(m_connectionAttempts.size()).arg(m_openSockets.size()); });
 
     m_connectionAttempts.clear();
     m_connecting = false;
@@ -466,9 +466,9 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
     const Address& otherFamily = next.address;
 
     if (const ServerFailure& failure = sender->lastFailure(); failure.isSet()) {
-        logServerVerbose(QStringLiteral("[%1] failure: phase=%2 reason=%3")
+        logServerVerbose([&]() -> QString { return QStringLiteral("[%1] failure: phase=%2 reason=%3")
                              .arg(cserver ? cserver->name() : QStringLiteral("?"))
-                             .arg(failure.phaseName(), failure.reasonName()));
+                             .arg(failure.phaseName(), failure.reasonName()); });
     }
 
     switch (sender->connectionState()) {
@@ -683,8 +683,8 @@ void ServerConnect::setOfflineHold(bool held)
 
 void ServerConnect::onRetryTimer()
 {
-    logServerVerbose(QStringLiteral("Retry timer fired — re-attempting auto-connect from position %1")
-                         .arg(m_startAutoConnectPos));
+    logServerVerbose([&]() -> QString { return QStringLiteral("Retry timer fired — re-attempting auto-connect from position %1")
+                         .arg(m_startAutoConnectPos); });
     stopConnectionTry();
     if (isConnected() || m_offlineHold)
         return;
@@ -749,10 +749,10 @@ void ServerConnect::checkForTimeout()
             // to be tried.
             const bool unreachable = !socket->tcpConnected()
                 && (!socket->isServerCryptEnabledConnection() || m_config.cryptLayerRequired);
-            logServerVerbose(QStringLiteral("[%1] failure: phase=%2 reason=timeout-unreachable")
+            logServerVerbose([&]() -> QString { return QStringLiteral("[%1] failure: phase=%2 reason=timeout-unreachable")
                                  .arg(cserver ? cserver->name() : QStringLiteral("?"),
                                       socket->tcpConnected() ? QStringLiteral("handshake")
-                                                             : QStringLiteral("connect")));
+                                                             : QStringLiteral("connect")); });
             m_connectionAttempts.erase(startTime);
             destroySocket(socket);
 
@@ -812,8 +812,8 @@ void ServerConnect::keepConnectionAlive()
         auto packet = std::make_unique<Packet>(files);
         packet->opcode = OP_OFFERFILES;
 
-        logServerVerbose(QStringLiteral("Refreshing server connection (keep-alive, idle %1 ms)")
-                             .arg(elapsed - lastTx));
+        logServerVerbose([&]() -> QString { return QStringLiteral("Refreshing server connection (keep-alive, idle %1 ms)")
+                             .arg(elapsed - lastTx); });
         m_connectedSocket->sendPacket(std::move(packet));
     }
 }
@@ -908,8 +908,8 @@ void ServerConnect::destroySocket(ServerSocket* socket)
         return;
 
     if (const Server* cs = socket->currentServer())
-        logServerVerbose(QStringLiteral("destroySocket: %1 (%2)")
-                             .arg(cs->name(), Endpoint(socket->sessionAddress(), cs->port()).toString()));
+        logServerVerbose([&]() -> QString { return QStringLiteral("destroySocket: %1 (%2)")
+                             .arg(cs->name(), Endpoint(socket->sessionAddress(), cs->port()).toString()); });
 
     // Remove from open sockets list
     auto it = std::find(m_openSockets.begin(), m_openSockets.end(), socket);
@@ -1094,9 +1094,9 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
     auto packet = std::make_unique<Packet>(data);
     packet->opcode = OP_LOGINREQUEST;
 
-    logServerVerbose(QStringLiteral(">>> Sending OP_LoginRequest (clientID=%1 port=%2 nick=%3 caps=0x%4)")
+    logServerVerbose([&]() -> QString { return QStringLiteral(">>> Sending OP_LoginRequest (clientID=%1 port=%2 nick=%3 caps=0x%4)")
                          .arg(m_clientID).arg(m_config.listenPort).arg(m_config.userNick)
-                         .arg(srvCaps, 0, 16));
+                         .arg(srvCaps, 0, 16); });
     // forceImmediateSend=true: write the login to the socket NOW rather than
     // deferring via QTimer::singleShot(0).  After a DH handshake the login
     // must reach the server in the same event-loop iteration, otherwise
@@ -1112,12 +1112,12 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
 void ServerConnect::onLoginReceived(ServerSocket* socket, uint32 clientID, uint32 tcpFlags,
                                     uint32 serverReportedIP)
 {
-    logServerVerbose(QStringLiteral("onLoginReceived: clientID=%1 (%2) tcpFlags=0x%3 serverReportedIP=%4 smartIdState=%5")
+    logServerVerbose([&]() -> QString { return QStringLiteral("onLoginReceived: clientID=%1 (%2) tcpFlags=0x%3 serverReportedIP=%4 smartIdState=%5")
                          .arg(clientID)
                          .arg(eMule::isLowID(clientID) ? QStringLiteral("LowID") : QStringLiteral("HighID"))
                          .arg(tcpFlags, 0, 16)
                          .arg(Address::fromNetworkOrder(serverReportedIP).toString())
-                         .arg(m_smartIdState));
+                         .arg(m_smartIdState); });
 
     // #14: the socket applied the server's capability flags only to its throwaway
     // copy; push them (including the obfuscation bit the IDCHANGE handler OR-ed in
@@ -1189,8 +1189,8 @@ void ServerConnect::onLoginReceived(ServerSocket* socket, uint32 clientID, uint3
     if (serverReportedIP != 0
         && !acceptReportedIP(serverReportedIP, socket->sessionAddress(), socket->currentServer(),
                              theApp.publicIP())) {
-        logServerVerbose(QStringLiteral("OP_IDCHANGE: reported IP %1 is the server's own address — ignored")
-                             .arg(Address::fromNetworkOrder(serverReportedIP).toString()));
+        logServerVerbose([&]() -> QString { return QStringLiteral("OP_IDCHANGE: reported IP %1 is the server's own address — ignored")
+                             .arg(Address::fromNetworkOrder(serverReportedIP).toString()); });
         serverReportedIP = 0;
     }
     if (eMule::isLowID(clientID) && serverReportedIP != 0)
@@ -1581,8 +1581,8 @@ ServerSocket* ServerConnect::createServerSocket(bool manualSingleConnect)
     connect(socket, &ServerSocket::foundSourcesReceived, this,
             [](const uint8* data, uint32 size, bool obfuscated) {
                 if (thePrefs.wantsSourceExchangeLog() && size >= 17)
-                    logDebug(QStringLiteral("SXRecv: Server source response; Count=%1, File=%2")
-                                 .arg(data[16]).arg(md4str(data)));
+                    logDebug([&]() -> QString { return QStringLiteral("SXRecv: Server source response; Count=%1, File=%2")
+                                 .arg(data[16]).arg(md4str(data)); });
                 if (theApp.downloadQueue)
                     theApp.downloadQueue->addServerSourceResult(data, size, obfuscated);
             });

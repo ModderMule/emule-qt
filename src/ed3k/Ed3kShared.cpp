@@ -453,7 +453,7 @@ void Ed3kShared::add(const SharedEntry& entry)
     }
     const QFileInfo fi(entry.path);
     if (!fi.isFile() || std::uint64_t(fi.size()) != entry.size) {
-        logDebug(QStringLiteral("\"%1\" is not what the share list says, left out").arg(entry.path));
+        logDebug([&]() -> QString { return QStringLiteral("\"%1\" is not what the share list says, left out").arg(entry.path); });
         return;
     }
     File& f = m_files[entry.md4];
@@ -517,7 +517,7 @@ void Ed3kShared::share(File& f, const Hashed& h)
     // if (auto ok = e->publish(t, info, mode); !ok)
     // a name without a keyword: its source record alone (publishShared)
     if (auto ok = publishShared(info); !ok)
-        logDebug(QStringLiteral("publish of \"%1\" failed (error %2)").arg(f.entry.name, errorName(ok.error())));
+        logDebug([&]() -> QString { return QStringLiteral("publish of \"%1\" failed (error %2)").arg(f.entry.name, errorName(ok.error())); });
     else
         f.keywords = *ok == ffi::Publish::Both;
     // alias.md §3: the root is shared here and both names come from these bytes; never for a
@@ -526,7 +526,7 @@ void Ed3kShared::share(File& f, const Hashed& h)
     if (!m_holdBack && !anon) {
         f.alias = ed2kAlias(f.entry.md4, h.size, h.root, f.entry.name);
         if (auto ok = e->publishAlias(t, std::span{&f.alias, 1}); !ok) {
-            logDebug(QStringLiteral("ed2k record of \"%1\" not published (error %2)").arg(f.entry.name, errorName(ok.error())));
+            logDebug([&]() -> QString { return QStringLiteral("ed2k record of \"%1\" not published (error %2)").arg(f.entry.name, errorName(ok.error())); });
             f.alias.clear();
         }
     }
@@ -588,7 +588,7 @@ void Ed3kShared::onHashed(const QByteArray& md4, const QString& path, qint64 mti
     }
     // written while hashed: the share list rehashes it and adds it again
     if (hashed->size != f.entry.size || !unchanged(path, f.entry.size, mtimeMs)) {
-        logDebug(QStringLiteral("\"%1\" changed while hashed, left out").arg(path));
+        logDebug([&]() -> QString { return QStringLiteral("\"%1\" changed while hashed, left out").arg(path); });
         return;
     }
     Hashed& h = m_cache[md4];

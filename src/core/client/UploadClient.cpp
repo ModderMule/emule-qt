@@ -246,10 +246,10 @@ bool UpDownClient::processExtendedInfo(SafeMemFile& data, KnownFile* file)
 void UpDownClient::setUploadFileID(KnownFile* newReqFile)
 {
     if (thePrefs.logRawSocketPackets())
-        logDebug(QStringLiteral("setUploadFileID: old=%1 new=%2 for %3")
+        logDebug([&]() -> QString { return QStringLiteral("setUploadFileID: old=%1 new=%2 for %3")
                      .arg(m_uploadFile ? m_uploadFile->fileName() : QStringLiteral("null"))
                      .arg(newReqFile ? newReqFile->fileName() : QStringLiteral("null"))
-                     .arg(userName()));
+                     .arg(userName()); });
     if (m_uploadFile == newReqFile)
         return;
 
@@ -295,8 +295,8 @@ void UpDownClient::addReqBlock(Requested_Block_Struct* reqBlock)
     // client. MFC srchybrid/UploadClient.cpp:327-332.
     if (m_uploadState != UploadState::Uploading) {
         if (thePrefs.logUlDlEvents()) {
-            logDebug(QStringLiteral("addReqBlock: %1 requested a block without holding an "
-                                    "upload slot — dropped").arg(userName()));
+            logDebug([&]() -> QString { return QStringLiteral("addReqBlock: %1 requested a block without holding an "
+                                    "upload slot — dropped").arg(userName()); });
         }
         delete reqBlock;
         return;
@@ -312,8 +312,8 @@ void UpDownClient::addReqBlock(Requested_Block_Struct* reqBlock)
             && (!Collection::hasCollectionExtension(srcFile->fileName())
                 || srcFile->fileSize() > MAXPRIORITYCOLL_SIZE))
         {
-            logDebug(QStringLiteral("addReqBlock: %1 tried to use its collection slot for "
-                                    "%2 — dropped").arg(userName(), srcFile->fileName()));
+            logDebug([&]() -> QString { return QStringLiteral("addReqBlock: %1 tried to use its collection slot for "
+                                    "%2 — dropped").arg(userName(), srcFile->fileName()); });
             delete reqBlock;
             return;
         }
@@ -323,9 +323,9 @@ void UpDownClient::addReqBlock(Requested_Block_Struct* reqBlock)
     // trust what it is handed; a bad request is dropped, never fatal to the slot.
     const auto drop = [&](const QString& why) {
         if (thePrefs.logUlDlEvents()) {
-            logDebug(QStringLiteral("addReqBlock: %1 — %2 (%3-%4) dropped")
+            logDebug([&]() -> QString { return QStringLiteral("addReqBlock: %1 — %2 (%3-%4) dropped")
                          .arg(userName(), why)
-                         .arg(reqBlock->startOffset).arg(reqBlock->endOffset));
+                         .arg(reqBlock->startOffset).arg(reqBlock->endOffset); });
         }
         delete reqBlock;
     };
@@ -444,8 +444,8 @@ void UpDownClient::startBlockReads()
             break;
 
         if (thePrefs.logRawSocketPackets())
-            logDebug(QStringLiteral("startBlockReads: start=%1 end=%2 file=%3")
-                         .arg(block->startOffset).arg(block->endOffset).arg(srcFile->fileName()));
+            logDebug([&]() -> QString { return QStringLiteral("startBlockReads: start=%1 end=%2 file=%3")
+                         .arg(block->startOffset).arg(block->endOffset).arg(srcFile->fileName()); });
 
         BlockReadRequest readReq;
         readReq.setFile(*srcFile, m_dataCompVer != 0);
@@ -959,8 +959,8 @@ uint64 UpDownClient::waitStartTime() const
     if (result > m_uploadTime && isUploadingToPeer()) {
         result = m_uploadTime - 1;
         if (thePrefs.verbose()) {
-            logDebug(QStringLiteral("Warning: UpDownClient::waitStartTime() waittime collision (%1)")
-                         .arg(userName()));
+            logDebug([&]() -> QString { return QStringLiteral("Warning: UpDownClient::waitStartTime() waittime collision (%1)")
+                         .arg(userName()); });
         }
     }
     return result;
@@ -1124,10 +1124,10 @@ void UpDownClient::sendFileStatus(const uint8* fileHash, KnownFile* file)
 void UpDownClient::processRequestParts(const uint8* data, uint32 size, bool i64Offsets)
 {
     if (thePrefs.logRawSocketPackets())
-        logDebug(QStringLiteral("processRequestParts: size=%1 i64=%2 uploadFile=%3 from %4")
+        logDebug([&]() -> QString { return QStringLiteral("processRequestParts: size=%1 i64=%2 uploadFile=%3 from %4")
                      .arg(size).arg(i64Offsets)
                      .arg(m_uploadFile ? m_uploadFile->fileName() : QStringLiteral("null"))
-                     .arg(userName()));
+                     .arg(userName()); });
 
     const uint32 expectedSize = i64Offsets ? 64u : 40u; // 16 + 3*(4 or 8) + 3*(4 or 8)
     if (size < expectedSize)
@@ -1302,10 +1302,10 @@ void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
     setUploadFileID(reqFile);
 
     if (thePrefs.logRawSocketPackets())
-        logDebug(QStringLiteral("processMultiPacketExt2: file=%1 hash=%2 from %3")
+        logDebug([&]() -> QString { return QStringLiteral("processMultiPacketExt2: file=%1 hash=%2 from %3")
                      .arg(reqFile->fileName())
                      .arg(md4str(fileIdent.getMD4Hash()))
-                     .arg(userName()));
+                     .arg(userName()); });
 
     // Build response
     SafeMemFile dataOut;
@@ -1351,8 +1351,8 @@ void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
             // and consuming them is what keeps the rest of the multipacket aligned — the
             // version byte would otherwise be read as the next sub-opcode.
             if (thePrefs.wantsSourceExchangeLog())
-                logDebug(QStringLiteral("SXRecv: Client source request; %1, File=\"%2\"")
-                             .arg(userName(), reqFile->fileName()));
+                logDebug([&]() -> QString { return QStringLiteral("SXRecv: Client source request; %1, File=\"%2\"")
+                             .arg(userName(), reqFile->fileName()); });
             uint8 requestedVersion = 0;
             uint16 requestedOptions = 0;
             if (subOpcode == OP_REQUESTSOURCES2) {
@@ -1369,8 +1369,8 @@ void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
         case OP_AICHFILEHASHREQ:
             // Not answered for a file-identifier peer: the identifier at the head of our
             // answer already carries the AICH hash (MFC ListenSocket.cpp:970-971).
-            logDebug(QStringLiteral("MultiPacketExt2: AICH hash sub-request from %1 ignored, "
-                                    "it supports file identifiers").arg(userName()));
+            logDebug([&]() -> QString { return QStringLiteral("MultiPacketExt2: AICH hash sub-request from %1 ignored, "
+                                    "it supports file identifiers").arg(userName()); });
             break;
 
         default:
@@ -1385,8 +1385,8 @@ void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
     Q_UNUSED(hasResponse);
     if (!answerFNF) {
         if (thePrefs.logRawSocketPackets())
-            logDebug(QStringLiteral("processMultiPacketExt2: sending OP_MULTIPACKETANSWER_EXT2 size=%1 for %2")
-                         .arg(dataOut.length()).arg(reqFile->fileName()));
+            logDebug([&]() -> QString { return QStringLiteral("processMultiPacketExt2: sending OP_MULTIPACKETANSWER_EXT2 size=%1 for %2")
+                         .arg(dataOut.length()).arg(reqFile->fileName()); });
         auto packet = std::make_unique<Packet>(dataOut, OP_EMULEPROT, OP_MULTIPACKETANSWER_EXT2);
         sendPacket(std::move(packet));
         sendCommentInfo(reqFile);
@@ -1487,8 +1487,8 @@ void UpDownClient::processMultiPacketLegacy(const uint8* data, uint32 size, bool
             // Same case as the EXT2 path: MFC ListenSocket.cpp:852-854 routed all three
             // multipacket opcodes into one handler, so both of our handlers need it.
             if (thePrefs.wantsSourceExchangeLog())
-                logDebug(QStringLiteral("SXRecv: Client source request; %1, File=\"%2\"")
-                             .arg(userName(), reqFile->fileName()));
+                logDebug([&]() -> QString { return QStringLiteral("SXRecv: Client source request; %1, File=\"%2\"")
+                             .arg(userName(), reqFile->fileName()); });
             uint8 requestedVersion = 0;
             uint16 requestedOptions = 0;
             if (subOpcode == OP_REQUESTSOURCES2) {
@@ -1503,8 +1503,8 @@ void UpDownClient::processMultiPacketLegacy(const uint8* data, uint32 size, bool
             // The legacy way of asking for our AICH root hash, which is what we ask a
             // legacy peer for too. MFC ListenSocket.cpp:966-976.
             if (supportsFileIdentifiers()) {
-                logDebug(QStringLiteral("MultiPacketLegacy: AICH hash sub-request from %1 "
-                                        "ignored, it supports file identifiers").arg(userName()));
+                logDebug([&]() -> QString { return QStringLiteral("MultiPacketLegacy: AICH hash sub-request from %1 "
+                                        "ignored, it supports file identifiers").arg(userName()); });
             } else if (isSupportingAICH() && reqFile->fileIdentifier().hasAICHHash()) {
                 dataOut.writeUInt8(OP_AICHFILEHASHANS);
                 reqFile->fileIdentifier().getAICHHash().write(dataOut);
@@ -1618,8 +1618,8 @@ void UpDownClient::processMultiPacketAnswer(const uint8* data, uint32 size)
     // Find the file we requested
     if (!m_reqFile || !md4equ(fileIdent.getMD4Hash(), m_reqFile->fileHash())) {
         if (thePrefs.logRawSocketPackets())
-            logDebug(QStringLiteral("processMultiPacketAnswer: hash mismatch or no reqFile, reqFile=%1")
-                         .arg(m_reqFile ? m_reqFile->fileName() : QStringLiteral("null")));
+            logDebug([&]() -> QString { return QStringLiteral("processMultiPacketAnswer: hash mismatch or no reqFile, reqFile=%1")
+                         .arg(m_reqFile ? m_reqFile->fileName() : QStringLiteral("null")); });
         // MFC ListenSocket.cpp:1085-1088
         throw FileException("OP_MULTIPACKETANSWER_EXT2: not the requested file");
     }
@@ -1635,10 +1635,10 @@ void UpDownClient::processMultiPacketAnswer(const uint8* data, uint32 size)
         processAICHFileHash(nullptr, m_reqFile, &fileIdent.getAICHHash());
 
     if (thePrefs.logRawSocketPackets())
-        logDebug(QStringLiteral("processMultiPacketAnswer: file=%1 dlState=%2 from %3")
+        logDebug([&]() -> QString { return QStringLiteral("processMultiPacketAnswer: file=%1 dlState=%2 from %3")
                      .arg(m_reqFile->fileName())
                      .arg(static_cast<int>(m_downloadState))
-                     .arg(userName()));
+                     .arg(userName()); });
 
     // Process sub-responses
     while ((dataIn.length() - dataIn.position()) > 0) {

@@ -42,7 +42,7 @@ void UPnPBackend::probe(int timeoutMs)
     // the caller's whole budget, which the description fetches and SOAP calls after
     // SSDP have to fit into; it is logged so a report that ends in "no port-mapping
     // protocol available" shows whether discovery was still running.
-    logDebug(QStringLiteral("UPnP: starting device discovery (budget %1 ms)").arg(timeoutMs));
+    logDebug([&]() -> QString { return QStringLiteral("UPnP: starting device discovery (budget %1 ms)").arg(timeoutMs); });
 
     ensureThread();
     m_probing = true;

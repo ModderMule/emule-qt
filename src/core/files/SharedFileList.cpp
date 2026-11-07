@@ -133,9 +133,12 @@ void HashingThread::run()
             continue;
         }
 
-        // Info level as in MFC (SharedFileList.cpp: Log IDS_HASHINGFILE)
-        logInfo(QStringLiteral("Hashing file: \"%1\"")
-                    .arg(QDir::toNativeSeparators(QDir(job.directory).filePath(job.filename))));
+        // MFC logs it at Info (IDS_HASHINGFILE); its own switch here, a big share
+        // flooded the log (#139)
+        logSharedVerbose([&]() -> QString {
+            return QStringLiteral("Hashing file: \"%1\"")
+                .arg(QDir::toNativeSeparators(QDir(job.directory).filePath(job.filename)));
+        });
 
         auto* kf = new KnownFile();
         const KnownFile::FileStamp scanned{job.scannedSize, job.scannedMtime};
@@ -162,9 +165,9 @@ void HashingThread::run()
             }
             emit fullRehashDone(kf, job.directory, job.filename, changedSinceScan);
         } else if (ok) {
-            logDebug(QStringLiteral("Hashed OK: %1/%2 (%3 bytes)")
+            logDebug([&]() -> QString { return QStringLiteral("Hashed OK: %1/%2 (%3 bytes)")
                          .arg(job.directory, job.filename)
-                         .arg(kf->fileSize()));
+                         .arg(kf->fileSize()); });
             if (!job.sharedDirectory.isEmpty())
                 kf->setSharedDirectory(job.sharedDirectory);
             emit hashingFinished(kf, job.generation);
@@ -371,8 +374,8 @@ bool SharedFileList::isDuplicate(const MD4Key& key, KnownFile* file) const
     // What actually keeps an unshared file out is shouldBeShared(), applied by the
     // directory scan.
     if (m_map.contains(key)) {
-        logDebug(QStringLiteral("Duplicate hash: \"%1\" has same MD4 as existing \"%2\" — skipped")
-                     .arg(file->fileName(), m_map.at(key)->fileName()));
+        logDebug([&]() -> QString { return QStringLiteral("Duplicate hash: \"%1\" has same MD4 as existing \"%2\" — skipped")
+                     .arg(file->fileName(), m_map.at(key)->fileName()); });
         return true;
     }
     return false;
@@ -879,9 +882,9 @@ void SharedFileList::loadSharedFilesConfig()
             m_singleSharedFiles.insert(pathKey(line), line);
     }
 
-    logDebug(QStringLiteral("sharedfiles.dat: %1 shared, %2 excluded")
+    logDebug([&]() -> QString { return QStringLiteral("sharedfiles.dat: %1 shared, %2 excluded")
                  .arg(m_singleSharedFiles.size())
-                 .arg(m_singleExcludedFiles.size()));
+                 .arg(m_singleExcludedFiles.size()); });
 }
 
 void SharedFileList::saveSharedFilesConfig() const
@@ -1021,7 +1024,7 @@ void SharedFileList::sendListToServer()
 
     m_serverConnect->sendPacket(std::move(packet));
 
-    logDebug(QStringLiteral("Sent %1 shared files to server").arg(sortedFiles.size()));
+    logDebug([&]() -> QString { return QStringLiteral("Sent %1 shared files to server").arg(sortedFiles.size()); });
 }
 
 // ---------------------------------------------------------------------------
@@ -1417,8 +1420,11 @@ void SharedFileList::onHashingFinished(KnownFile* file, uint64 generation)
     // let the known list replace (and delete) an object that is still shared —
     // MFC FileHashingFinished, srchybrid/SharedFileList.cpp:735-741.
     if (const KnownFile* dup = getFileByID(file->fileHash())) {
-        logInfo(QStringLiteral("Duplicate file not shared: %1 has the same content as %2")
-                    .arg(file->filePath(), dup->filePath()));
+        // Each start again for every duplicate: the shared files switch (#139)
+        logSharedVerbose([&]() -> QString {
+            return QStringLiteral("Duplicate file not shared: %1 has the same content as %2")
+                .arg(file->filePath(), dup->filePath());
+        });
         // Remembered, or the next rescan hashes it again
         m_duplicates.insert(pathKey(file->filePath()),
                             {file->filePath(), static_cast<uint64>(file->fileSize()),
@@ -1542,7 +1548,7 @@ void SharedFileList::onHashingFailed(const QString& directory, const QString& fi
     } else if (static_cast<size_t>(failure.attempts) < m_hashRetrySecs.size()) {
         failure.retryAt = std::time(nullptr) + m_hashRetrySecs[static_cast<size_t>(failure.attempts)];
         ++failure.attempts;
-        logDebug(QStringLiteral("Failed to hash file, will retry: %1").arg(path));
+        logDebug([&]() -> QString { return QStringLiteral("Failed to hash file, will retry: %1").arg(path); });
     } else {
         failure.retryAt = 0;
         failure.givenUp = true;

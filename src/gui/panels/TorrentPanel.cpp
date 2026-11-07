@@ -15,6 +15,8 @@
 #include "controls/TorrentListsPane.h"
 #include "controls/TorrentProgressDelegate.h"
 #include "dialogs/AddTorrentDialog.h"
+#include "dialogs/EditTrackersDialog.h"
+#include "dialogs/TorrentOptionsDialog.h"
 #include "dialogs/TorrentDetailsDialog.h"
 #include "utils/Clipboard.h"
 #include "utils/ListActivation.h"
@@ -27,6 +29,7 @@
 #include "utils/ViewNavigation.h"
 
 #include <QAction>
+#include <QCborArray>
 #include <QApplication>
 #include <QCheckBox>
 #include <QClipboard>
@@ -293,6 +296,10 @@ void TorrentPanel::setupUi()
     m_reannounceAction = new QAction(menuIcon("ServersUpdate.ico"), tr("Force Reannounce"), this);
     connect(m_reannounceAction, &QAction::triggered, this,
             [this] { sendForSelection(IpcMsgType::ReannounceTorrent); });
+    m_editTrackersAction = new QAction(menuIcon("Server.ico"), tr("Edit Trackers…"), this);
+    connect(m_editTrackersAction, &QAction::triggered, this, &TorrentPanel::onEditTrackers);
+    m_optionsAction = new QAction(menuIcon("Preferences.ico"), tr("Options…"), this);
+    connect(m_optionsAction, &QAction::triggered, this, &TorrentPanel::onEditOptions);
     m_openFolderAction = new QAction(menuIcon("FolderOpen.ico"), tr("Open Folder"), this);
     connect(m_openFolderAction, &QAction::triggered, this, &TorrentPanel::onOpenFolder);
     m_copyMagnetAction = new QAction(menuIcon("Copy.ico"), tr("Copy Magnet Link"), this);
@@ -504,6 +511,8 @@ void TorrentPanel::onContextMenu(const QPoint& pos)
         menu.addSeparator();
         menu.addAction(m_recheckAction);
         menu.addAction(m_reannounceAction);
+        menu.addAction(m_editTrackersAction);
+        menu.addAction(m_optionsAction);
         menu.addSeparator();
         menu.addAction(m_openFolderAction);
         menu.addAction(m_copyMagnetAction);
@@ -580,6 +589,118 @@ void TorrentPanel::onOpenFolder()
     const QString inner = QDir(row->savePath).filePath(row->name);
     const QString folder = row->numFiles > 1 && QFileInfo(inner).isDir() ? inner : row->savePath;
     QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+}
+
+void TorrentPanel::onEditTrackers()
+{
+    const QStringList ids = selectedIds();
+    if (ids.isEmpty() || !m_ipc || !m_ipc->isConnected())
+        return;
+    IpcMessage req(IpcMsgType::GetTorrentTrackerUrls);
+    req.append(QCborArray::fromStringList(ids));
+    m_ipc->sendRequest(std::move(req), [this, ids](const IpcMessage& resp) {
+        if (!resp.isValid())
+            return;
+        if (resp.type() == IpcMsgType::Error || !resp.fieldBool(0)) {
+            StatusBarNotifier::post(tr("Could not read the trackers."));
+            return;
+        }
+        const QCborMap lists = resp.fieldMap(1);
+        QStringList found;
+        QList<QStringList> urls;
+        for (const QString& id : ids) {
+            if (!lists.contains(id))
+                continue;   // removed meanwhile
+            found << id;
+            QStringList l;
+            for (const auto& v : lists.value(id).toArray())
+                l << v.toString();
+            urls << l;
+        }
+        if (!found.isEmpty())
+            // not inside the reply: the dialog runs its own event loop
+            QMetaObject::invokeMethod(this, [this, found, urls] { editTrackers(found, urls); },
+                                      Qt::QueuedConnection);
+    });
+}
+
+void TorrentPanel::editTrackers(const QStringList& ids, const QList<QStringList>& urls)
+{
+    EditTrackersDialog dlg(urls, this);
+    if (dlg.exec() != QDialog::Accepted || !m_ipc || !m_ipc->isConnected())
+        return;
+    const EditTrackersDialog::Edit edit = dlg.edit();
+    if (edit.isEmpty())
+        return;
+    IpcMessage msg(IpcMsgType::EditTorrentTrackers);
+    msg.append(QCborArray::fromStringList(ids));
+    msg.append(QCborArray::fromStringList(edit.add));
+    msg.append(QCborArray::fromStringList(edit.remove));
+    msg.append(edit.exact);
+    m_ipc->sendRequest(std::move(msg), [this](const IpcMessage& r) {
+        if (!r.isValid())
+            return;
+        if (r.type() == IpcMsgType::Error || !r.fieldBool(0)) {
+            StatusBarNotifier::post(tr("Could not change the trackers."));
+            return;
+        }
+        const int changed = int(r.field(1).toInteger());
+        StatusBarNotifier::post(tr("Trackers changed on %n torrent(s).", nullptr, changed), 4000);
+        m_pane->refresh();
+    });
+}
+
+void TorrentPanel::onEditOptions()
+{
+    const QStringList ids = selectedIds();
+    if (ids.isEmpty() || !m_ipc || !m_ipc->isConnected())
+        return;
+    IpcMessage req(IpcMsgType::GetTorrentOptionsMany);
+    req.append(QCborArray::fromStringList(ids));
+    m_ipc->sendRequest(std::move(req), [this, ids](const IpcMessage& resp) {
+        if (!resp.isValid())
+            return;
+        if (resp.type() == IpcMsgType::Error || !resp.fieldBool(0)) {
+            StatusBarNotifier::post(tr("Could not read the torrent options."));
+            return;
+        }
+        const QCborMap all = resp.fieldMap(1);
+        QStringList found;
+        QList<QCborMap> options;
+        for (const QString& id : ids) {
+            if (!all.contains(id))
+                continue;   // removed meanwhile
+            found << id;
+            options << all.value(id).toMap();
+        }
+        if (!found.isEmpty())
+            // not inside the reply: the dialog runs its own event loop
+            QMetaObject::invokeMethod(this, [this, found, options] { editOptions(found, options); },
+                                      Qt::QueuedConnection);
+    });
+}
+
+void TorrentPanel::editOptions(const QStringList& ids, const QList<QCborMap>& options)
+{
+    TorrentOptionsDialog dlg(options, this);
+    if (dlg.exec() != QDialog::Accepted || !m_ipc || !m_ipc->isConnected())
+        return;
+    const QCborMap edited = dlg.changedOptions();
+    if (edited.isEmpty())
+        return;
+    IpcMessage msg(IpcMsgType::SetTorrentOptionsMany);
+    msg.append(QCborArray::fromStringList(ids));
+    msg.append(edited);
+    m_ipc->sendRequest(std::move(msg), [](const IpcMessage& r) {
+        if (!r.isValid())
+            return;
+        if (r.type() == IpcMsgType::Error || !r.fieldBool(0)) {
+            StatusBarNotifier::post(tr("Could not change the torrent options."));
+            return;
+        }
+        const int changed = int(r.field(1).toInteger());
+        StatusBarNotifier::post(tr("Options changed on %n torrent(s).", nullptr, changed), 4000);
+    });
 }
 
 void TorrentPanel::onCopyMagnet()
@@ -725,6 +846,8 @@ void TorrentPanel::updateActions()
     m_removeAction->setEnabled(running && any);
     m_recheckAction->setEnabled(running && any);
     m_reannounceAction->setEnabled(running && any);
+    m_editTrackersAction->setEnabled(running && any);
+    m_optionsAction->setEnabled(running && any);
     m_openFolderAction->setEnabled(any);
     m_copyMagnetAction->setEnabled(hasMagnet);
     m_detailsAction->setEnabled(running && any);

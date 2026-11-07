@@ -133,7 +133,7 @@ bool Ed3kBootstrap::offerEd2kPeer(const std::array<std::uint8_t, 16>& userHash, 
     const auto dialled = e->kadSeedHint(m_session.now(), *hint, toAddress(ip, tcpPort));
     m_session.pump();
     if (dialled && *dialled)
-        logEd3kKadDebug(QStringLiteral("ed3k: Kad seed from eD2K peer %1:%2").arg(key).arg(tcpPort));
+        logEd3kKadDebug([&]() -> QString { return QStringLiteral("ed3k: Kad seed from eD2K peer %1:%2").arg(key).arg(tcpPort); });
     return dialled && *dialled;
 }
 
@@ -278,7 +278,7 @@ void Ed3kBootstrap::applyShipped()
     if (auto ok = e->bootstrapShipped({reinterpret_cast<const std::byte*>(file.constData()), std::size_t(file.size())}); !ok)
         logEd3kWarning(QStringLiteral("ed3k: shipped node list not used (error %1)").arg(errorName(ok.error())));
     else
-        logEd3kKadDebug(QStringLiteral("ed3k: shipped node list %1 (%2 bytes)").arg(m_shippedPath).arg(file.size()));
+        logEd3kKadDebug([&]() -> QString { return QStringLiteral("ed3k: shipped node list %1 (%2 bytes)").arg(m_shippedPath).arg(file.size()); });
 }
 
 void Ed3kBootstrap::loadLast()

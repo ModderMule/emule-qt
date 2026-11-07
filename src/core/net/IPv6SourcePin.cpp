@@ -44,8 +44,8 @@ void bindForConnect(QAbstractSocket& socket, const Address& dest)
     if (source.isNull() || socket.state() != QAbstractSocket::UnconnectedState)
         return;
     if (!socket.bind(source.toQHostAddress(), 0))
-        logDebug(QStringLiteral("IPv6: cannot bind outgoing TCP to %1 (%2) — OS picks the source")
-                     .arg(source.toString(), socket.errorString()));
+        logDebug([&]() -> QString { return QStringLiteral("IPv6: cannot bind outgoing TCP to %1 (%2) — OS picks the source")
+                     .arg(source.toString(), socket.errorString()); });
 }
 
 void applyToDatagram(QNetworkDatagram& datagram, const Address& dest)

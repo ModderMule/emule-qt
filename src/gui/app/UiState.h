@@ -339,6 +339,14 @@ public:
         scheduleSave();
     }
 
+    /// Toolbar speed graph background: 0 = dark (eMule), 1 = light, 2 = follow theme (#140).
+    [[nodiscard]] int speedGraphBackground() const { return m_speedGraphBackground; }
+    void setSpeedGraphBackground(int mode)
+    {
+        m_speedGraphBackground = std::clamp(mode, 0, 2);
+        scheduleSave();
+    }
+
     /// Toolbar button order (empty = default).
     [[nodiscard]] const QList<int>& toolbarButtonOrder() const { return m_toolbarButtonOrder; }
     void setToolbarButtonOrder(const QList<int>& order) { m_toolbarButtonOrder = order; }
@@ -521,6 +529,7 @@ private:
     bool m_kadAutoShowLookups = true;
     int  m_colorScheme = 0;
     int  m_fontScalePercent = 100;
+    int  m_speedGraphBackground = 0;
     QList<int> m_toolbarButtonOrder;
     int  m_toolbarButtonStyle = 3;
     QString m_toolbarSkinPath;

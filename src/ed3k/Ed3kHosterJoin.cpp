@@ -972,7 +972,7 @@ void Ed3kHosterJoin::startRooted(Entry& e, const ffi::Root& root, std::uint64_t 
     src.url = e.item.url.toStdString();
     const auto link = eng->linkAddUser(m_session.now(), root, size, src);
     if (!link) {
-        logDebug(QStringLiteral("link not added under its root (error %1)").arg(errorName(link.error())));
+        logDebug([&]() -> QString { return QStringLiteral("link not added under its root (error %1)").arg(errorName(link.error())); });
         startRootless(e);
         return;
     }
@@ -1409,7 +1409,7 @@ void Ed3kHosterJoin::answer(std::uint64_t link, std::uint32_t kind, const QStrin
     if (!eng || !link)
         return;
     if (auto ok = eng->linkAnswer(m_session.now(), link, kind, text.toStdString(), value); !ok)
-        logDebug(QStringLiteral("link answer %1 not taken (error %2)").arg(kind).arg(errorName(ok.error())));
+        logDebug([&]() -> QString { return QStringLiteral("link answer %1 not taken (error %2)").arg(kind).arg(errorName(ok.error())); });
 }
 
 void Ed3kHosterJoin::prefill(Ask a, const QString& from, std::uint64_t offset)
@@ -1439,7 +1439,7 @@ void Ed3kHosterJoin::prefilled(std::uint64_t link, bool ok)
         return;   // the item let go of it meanwhile
     Ask a = std::move(node.mapped());
     if (!ok) {
-        logDebug(QStringLiteral("cannot copy %1 bytes to resume, the link starts over").arg(a.have));
+        logDebug([&]() -> QString { return QStringLiteral("cannot copy %1 bytes to resume, the link starts over").arg(a.have); });
         a.have = 0;
     }
     openTask(std::move(a));
@@ -1540,7 +1540,7 @@ void Ed3kHosterJoin::fed(Ed3kResolver::TaskId task, std::optional<QByteArray> da
         return;
     }
     if (auto ok = eng->linkData(m_session.now(), a.link, spanOf(*data)); !ok) {
-        logDebug(QStringLiteral("link data not taken (error %1)").arg(errorName(ok.error())));
+        logDebug([&]() -> QString { return QStringLiteral("link data not taken (error %1)").arg(errorName(ok.error())); });
         a.ended = true;
         if (m_resolver)
             m_resolver->cancel(task);
@@ -1625,7 +1625,7 @@ void Ed3kHosterJoin::onLinkEnded(std::uint64_t link, std::uint32_t code, std::ui
             e->peerLink = 0;
         if (code != ED3K_HTTP_OK)
             e->peerTried.insert(link);
-        logDebug(QStringLiteral("%1: a peer's link ended, code %2, %3 bytes").arg(e->item.host).arg(code).arg(bytes));
+        logDebug([&]() -> QString { return QStringLiteral("%1: a peer's link ended, code %2, %3 bytes").arg(e->item.host).arg(code).arg(bytes); });
         if (tryPeerLink(*e))
             return;
         if (e->link)
@@ -1637,7 +1637,7 @@ void Ed3kHosterJoin::onLinkEnded(std::uint64_t link, std::uint32_t code, std::ui
     }
     if (!e || e->item.state == State::Complete)
         return;
-    logDebug(QStringLiteral("%1: link ended, code %2, %3 bytes").arg(e->item.host).arg(code).arg(bytes));
+    logDebug([&]() -> QString { return QStringLiteral("%1: link ended, code %2, %3 bytes").arg(e->item.host).arg(code).arg(bytes); });
     switch (code) {
     case ED3K_HTTP_OK:
         // the stream ended before the file was complete: open it again
@@ -1740,7 +1740,7 @@ void Ed3kHosterJoin::onPeerLinks(const ev::Links& links)
         return;
     for (const auto& [id, src] : links.links)
         m_peerLinks[id] = PeerLink{e->item.id, src.offset, QString::fromStdString(src.url)};
-    logDebug(QStringLiteral("%1 hoster link(s) from peers for %2").arg(links.links.size()).arg(e->item.name));
+    logDebug([&]() -> QString { return QStringLiteral("%1 hoster link(s) from peers for %2").arg(links.links.size()).arg(e->item.name); });
     if (ownLinkStuck(*e))
         tryPeerLink(*e);
 }
@@ -1955,7 +1955,7 @@ void Ed3kHosterJoin::onTick()
             continue;
         }
         if (e.item.state == State::Looking && e.search && e.nextAskAt && e.nextAskAt <= now) {
-            logDebug(QStringLiteral("%1: lookup timed out, using the link without a root").arg(e.item.host));
+            logDebug([&]() -> QString { return QStringLiteral("%1: lookup timed out, using the link without a root").arg(e.item.host); });
             if (auto* eng = m_session.engine())
                 (void)eng->aliasSearchEnd(*e.search);
             m_searches.erase(*e.search);
@@ -1986,7 +1986,7 @@ void Ed3kHosterJoin::onTick()
         Entry* e = find(it->first);
         if (!e || now - it->second > kAliasWaitMs) {
             if (e)
-                logDebug(QStringLiteral("%1: link not published, the file was never shared").arg(e->item.host));
+                logDebug([&]() -> QString { return QStringLiteral("%1: link not published, the file was never shared").arg(e->item.host); });
             it = m_aliasPending.erase(it);
             continue;
         }
@@ -2263,7 +2263,7 @@ void Ed3kHosterJoin::publishShared(Entry& e)
             continue;
         const auto alias = ffi::linkAliasSame(l.url.toStdString(), *e.root, e.item.size, e.item.name.toStdString());
         if (!alias) {
-            logDebug(QStringLiteral("%1: no ALIAS record of the link (error %2)").arg(e.item.host, errorName(alias.error())));
+            logDebug([&]() -> QString { return QStringLiteral("%1: no ALIAS record of the link (error %2)").arg(e.item.host, errorName(alias.error())); });
             continue;
         }
         const std::vector<ffi::Bytes> list{*alias};
@@ -2275,7 +2275,7 @@ void Ed3kHosterJoin::publishShared(Entry& e)
             } else if (ok.error() == ffi::Error::State) {
                 waiting = true;   // the file is not shared yet: the tick tries again
             } else {
-                logDebug(QStringLiteral("%1: link not published (error %2)").arg(host, errorName(ok.error())));
+                logDebug([&]() -> QString { return QStringLiteral("%1: link not published (error %2)").arg(host, errorName(ok.error())); });
             }
         } else {
             (void)eng->unpublishAlias(t, list);
@@ -2294,7 +2294,7 @@ void Ed3kHosterJoin::publishShared(Entry& e)
     for (const QString& u : std::as_const(urls))
         list.push_back(u.toStdString());
     if (auto ok = eng->linkShare(*e.root, list); !ok) {
-        logDebug(QStringLiteral("%1: links not shared (error %2)").arg(e.item.host, errorName(ok.error())));
+        logDebug([&]() -> QString { return QStringLiteral("%1: links not shared (error %2)").arg(e.item.host, errorName(ok.error())); });
         return;
     }
     e.sharedOut = urls;
@@ -2356,7 +2356,7 @@ void Ed3kHosterJoin::queueRechecks(qint64 now)
             if (reported)
                 logInfo(QStringLiteral("%1: downloaders in %2 sites reported a published link dead, checking it").arg(host).arg(kReportsUntilCheck));
             else
-                logDebug(QStringLiteral("%1: rechecking a published link").arg(host));
+                logDebug([&]() -> QString { return QStringLiteral("%1: rechecking a published link").arg(host); });
             m_probeQueue.append({l.url, host, now, e.item.id});
             queued = true;
         }
@@ -2403,7 +2403,7 @@ void Ed3kHosterJoin::onRechecked(quint32 item, const QString& url, LinkStatus st
         // not proven dead: kept, asked again later
         l->unknown = true;
         l->retryAt = now + (recheckMs() == 0 ? kRecheckRetryMs : std::min(kRecheckRetryMs, recheckMs()));
-        logDebug(QStringLiteral("%1: recheck of a published link could not tell").arg(host));
+        logDebug([&]() -> QString { return QStringLiteral("%1: recheck of a published link could not tell").arg(host); });
         break;
     }
     // reports count from the last answer on
@@ -2457,8 +2457,8 @@ void Ed3kHosterJoin::onHttpResults(const ev::HttpResults& r)
                 continue;
             if (std::ranges::find(l.reporters, r.site) == l.reporters.end() && l.reporters.size() < 16)
                 l.reporters.push_back(r.site);
-            logDebug(QStringLiteral("%1: a downloader reported a published link dead (%2)")
-                         .arg(QUrl(l.url).host()).arg(l.reporters.size()));
+            logDebug([&]() -> QString { return QStringLiteral("%1: a downloader reported a published link dead (%2)")
+                         .arg(QUrl(l.url).host()).arg(l.reporters.size()); });
             due = due || reportDue(l, now);
         }
     }

@@ -328,18 +328,18 @@ void PortMapper::onProbeDeadline()
     // status line, while cutting them off costs the mapping entirely. Extend once.
     if (!pending.isEmpty() && !anyAvailable && !m_probeExtended) {
         m_probeExtended = true;
-        logDebug(QStringLiteral("PortMap: nothing has answered yet — giving %1 another %2 ms")
+        logDebug([&]() -> QString { return QStringLiteral("PortMap: nothing has answered yet — giving %1 another %2 ms")
                      .arg(pending.join(QStringLiteral(", ")))
-                     .arg(m_probeTotalMs - m_probeGraceMs));
+                     .arg(m_probeTotalMs - m_probeGraceMs); });
         m_probeDeadline.start(m_probeTotalMs - m_probeGraceMs);
         return;
     }
 
-    logDebug(QStringLiteral("PortMap: probe deadline reached%1")
+    logDebug([&]() -> QString { return QStringLiteral("PortMap: probe deadline reached%1")
                  .arg(pending.isEmpty()
                           ? QString()
                           : QStringLiteral(" — no answer from %1")
-                                .arg(pending.join(QStringLiteral(", ")))));
+                                .arg(pending.join(QStringLiteral(", ")))); });
     finishProbe();
 }
 
@@ -355,12 +355,12 @@ void PortMapper::onProbeFinished(PortMapBackend* backend, bool supported, const 
             continue;
         slot.probed = true;
         slot.available = supported;
-        logDebug(QStringLiteral("PortMap: %1 probe -> %2%3")
+        logDebug([&]() -> QString { return QStringLiteral("PortMap: %1 probe -> %2%3")
                      .arg(backend->name(),
                           supported ? QStringLiteral("available")
                                     : QStringLiteral("not available"),
                           detail.isEmpty() ? QString()
-                                           : QStringLiteral(" (%1)").arg(detail)));
+                                           : QStringLiteral(" (%1)").arg(detail)); });
         break;
     }
 
@@ -467,9 +467,9 @@ void PortMapper::tryNextCandidate()
         return;
     }
 
-    logDebug(QStringLiteral("PortMap: trying %1 for %2 mapping(s)")
+    logDebug([&]() -> QString { return QStringLiteral("PortMap: trying %1 for %2 mapping(s)")
                  .arg(backend->name())
-                 .arg(m_trialExpected));
+                 .arg(m_trialExpected); });
 
     // requestMapping() is allowed to answer synchronously, and UdpMappingBackend does for
     // "no gateway for this family", "could not encode request" and "could not open a
@@ -495,9 +495,9 @@ void PortMapper::evaluateTrial()
     const TrialQuality quality = gradeTrial(m_trialMappings, m_trialExpected);
 
     m_trialResults.push_back(TrialResult{slot, m_trialMappings, quality});
-    logDebug(QStringLiteral("PortMap: %1 trial graded %2")
+    logDebug([&]() -> QString { return QStringLiteral("PortMap: %1 trial graded %2")
                  .arg(m_backends[slot].backend->name())
-                 .arg(static_cast<int>(quality)));
+                 .arg(static_cast<int>(quality)); });
 
     // An exact match cannot be beaten, so stop the race immediately.
     if (quality == TrialQuality::Exact) {
@@ -605,11 +605,11 @@ void PortMapper::onMappingResult(PortMapBackend* backend, const PortMapping& map
         if (ok)
             m_trialMappings.push_back(mapping);
         else
-            logDebug(QStringLiteral("PortMap: %1 could not map %2/%3: %4")
+            logDebug([&]() -> QString { return QStringLiteral("PortMap: %1 could not map %2/%3: %4")
                          .arg(backend->name(),
                               portMapPurposeName(mapping.request.purpose))
                          .arg(mapping.request.internalPort)
-                         .arg(error));
+                         .arg(error); });
 
         // Deferred while tryNextCandidate() is still issuing this candidate's requests —
         // it calls evaluateTrial() itself once the loop is done. See the note there.

@@ -35,6 +35,7 @@ void CommandLineExec::parse(QCoreApplication& app)
     m_parser.addOption(m_connectKadOption);
     m_parser.addOption(m_disconnectKadOption);
     m_parser.addOption(m_configOption);
+    m_parser.addOption(m_logLevelOption);   // read early by consoleLogLevelFromArgs
     m_parser.addOption(m_holdConnectOption);
     m_parser.addOption(m_autoUpdateOption);
     m_parser.addOption(m_autoUpdateHoursOption);

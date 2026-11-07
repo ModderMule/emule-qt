@@ -244,6 +244,14 @@ void tst_BtSmoke::i2pSettingsMap()
     lt::settings_pack p = BtSettingsMap::toPack(s);
     QVERIFY(placeholder(p));
     QVERIFY(!p.get_bool(lt::settings_pack::allow_i2p_mixed));
+    // default: first working tracker per tier; on: every tracker and tier (#144)
+    QVERIFY(!p.get_bool(lt::settings_pack::announce_to_all_trackers));
+    QVERIFY(!p.get_bool(lt::settings_pack::announce_to_all_tiers));
+    s.announceToAll = true;
+    p = BtSettingsMap::toPack(s);
+    QVERIFY(p.get_bool(lt::settings_pack::announce_to_all_trackers));
+    QVERIFY(p.get_bool(lt::settings_pack::announce_to_all_tiers));
+    s.announceToAll = false;
 
     // on, bridge not ready yet (bundled router starting): still no SAM session
     s.i2pEnabled = true;

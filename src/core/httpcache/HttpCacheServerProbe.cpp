@@ -160,7 +160,7 @@ void probe(const QString& baseUrl, QObject* context,
         nam->deleteLater();
 
         if (!info.ok)
-            logDebug(QStringLiteral("HTTP Cache: probe failed — %1").arg(info.error));
+            logDebug([&]() -> QString { return QStringLiteral("HTTP Cache: probe failed — %1").arg(info.error); });
 
         if (done && (!guarded || guard))
             done(info);

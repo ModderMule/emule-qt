@@ -277,7 +277,7 @@ void Ed3kFriends::onEventPolled(const ffi::Event& ev, bool* handled)
         const QString text = QString::fromUtf8(m->text.data(), qsizetype(m->text.size()));
         // the engine's policy may lag a pref change: the host checks again
         if ((m_options.friendsOnly && !isFriend(m->node)) || filtered(text)) {
-            logEd3kDebug(QStringLiteral("ed3k: chat message of %1 filtered").arg(hexOf(m->node.bytes)));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: chat message of %1 filtered").arg(hexOf(m->node.bytes)); });
             return;
         }
         emit chatMessage(nodeBytes(m->node), nameOf(m->node), text, m->id);
@@ -304,7 +304,7 @@ void Ed3kFriends::onEventPolled(const ffi::Event& ev, bool* handled)
         onFound(se->key, se->node, se->addr, qint64(se->issued));
     } else if (const auto* nf = std::get_if<e::FriendNotFound>(&ev)) {
         *handled = true;
-        logEd3kDebug(QStringLiteral("ed3k: friend %1 not found (%2)").arg(hexOf(nf->node.bytes)).arg(int(nf->why)));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: friend %1 not found (%2)").arg(hexOf(nf->node.bytes)).arg(int(nf->why)); });
         onNotFound(nf->node);
     } else if (const auto* a = std::get_if<e::FriendAccepted>(&ev)) {
         *handled = true;

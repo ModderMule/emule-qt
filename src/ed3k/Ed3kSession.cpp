@@ -611,19 +611,19 @@ void Ed3kSession::dispatch(ffi::Event& ev, ffi::KeyKind key)
         logEd3kKad(QStringLiteral("ed3k: Kad bootstrap (IPv%1): %2 contacts").arg(b->family).arg(b->contacts));
         emit statusChanged();
     } else if (const auto* ks = std::get_if<e::KadStored>(&ev)) {
-        logEd3kKadDebug(QStringLiteral("ed3k: Kad store %1 (kind %2): %3 nodes")
-                            .arg(ks->lookup).arg(ks->kind).arg(ks->nodes));
+        logEd3kKadDebug([&]() -> QString { return QStringLiteral("ed3k: Kad store %1 (kind %2): %3 nodes")
+                            .arg(ks->lookup).arg(ks->kind).arg(ks->nodes); });
     } else if (const auto* sp = std::get_if<e::SourcesPublished>(&ev)) {
-        logEd3kKadDebug(QStringLiteral("ed3k: sources published: %1 of %2 nodes stored (%3 again)")
-                            .arg(sp->stored).arg(sp->nodes).arg(sp->again));
+        logEd3kKadDebug([&]() -> QString { return QStringLiteral("ed3k: sources published: %1 of %2 nodes stored (%3 again)")
+                            .arg(sp->stored).arg(sp->nodes).arg(sp->again); });
     } else if (const auto* kp = std::get_if<e::KeywordsPublished>(&ev)) {
-        logEd3kKadDebug(QStringLiteral("ed3k: keywords of %1 file(s) published: %2 stored, %3 full, %4 rejected, %5 unanswered")
-                            .arg(kp->files).arg(kp->stored).arg(kp->full).arg(kp->rejected).arg(kp->unanswered));
+        logEd3kKadDebug([&]() -> QString { return QStringLiteral("ed3k: keywords of %1 file(s) published: %2 stored, %3 full, %4 rejected, %5 unanswered")
+                            .arg(kp->files).arg(kp->stored).arg(kp->full).arg(kp->rejected).arg(kp->unanswered); });
     } else if (const auto* n = std::get_if<e::NatClass>(&ev)) {
-        logEd3kDebug(QStringLiteral("ed3k: IPv%1 class %2").arg(n->family).arg(n->natClass));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: IPv%1 class %2").arg(n->family).arg(n->natClass); });
         emit statusChanged();
     } else if (const auto* r = std::get_if<e::Router>(&ev)) {
-        logEd3kDebug(QStringLiteral("ed3k: router %1").arg(r->on ? 1 : 0));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: router %1").arg(r->on ? 1 : 0); });
         emit statusChanged();
     } else if (const auto* ko = std::get_if<e::KadOffline>(&ev)) {
         // Protocol.md §10 "Own network down": no store, no answer from Kad of that family
@@ -713,7 +713,7 @@ void Ed3kSession::answerUnhandled(const ffi::Event& ev)
     if (const auto* w = std::get_if<e::WantBlock>(&ev)) {
         // was: ToDo: serve eMule shared files over ed3k (done: Ed3kShared); here only roots nobody serves
         (void)m_engine->blockFail(t, w->id);
-        logEd3kDebug(QStringLiteral("ed3k: block %1 refused, root not shared").arg(w->id));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: block %1 refused, root not shared").arg(w->id); });
     } else if (const auto* v = std::get_if<e::VerifyBlock>(&ev)) {
         (void)m_engine->blockFail(t, v->id);
     } else if (const auto* r = std::get_if<e::RpcRequest>(&ev)) {
@@ -847,7 +847,7 @@ void Ed3kSession::followIPv6Pin()
     if (auto ok = m_engine->setLocalAddr(now(), 6, local); !ok)
         logEd3kWarning(QStringLiteral("ed3k: IPv6 address not set (error %1)").arg(errorName(ok.error())));
     else
-        logEd3kDebug(QStringLiteral("ed3k: IPv6 source %1").arg(pin.isNull() ? QStringLiteral("[::]") : pin.toString()));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: IPv6 source %1").arg(pin.isNull() ? QStringLiteral("[::]") : pin.toString()); });
 }
 
 void Ed3kSession::writeDatagram(const char* data, qint64 len, const ffi::Address& to)

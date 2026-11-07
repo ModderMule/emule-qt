@@ -18,12 +18,17 @@ set -euo pipefail
 #                              (--assets DIR | --from-github)
 #                              [--geoip GeoLite2-Country.mmdb] [--resolver resolver.zip]
 #                              [--repo-root DIR]
+#                              [--description TEXT] [--changelog LINE]...
 #
 #   --assets DIR     DIR holds the release files and SHA256SUMS.txt (CI)
 #   --from-github    read SHA256SUMS.txt + sizes from the public GitHub release
 #   --geoip FILE     already verified against the tag; omitted = "geoip" kept as is
 #   --resolver FILE  already verified against the tag; omitted = "hosterResolver" kept
 #   --repo-root DIR  checkout of the tag, for the specialdlp versions (default: cwd)
+#   --description T  text shown in the GUI's new-version dialog
+#   --changelog LINE one bullet in that dialog; repeat for more
+#                    Neither given: kept on a re-run of the same version, emptied
+#                    on a new one so old notes never announce a new release.
 #
 # An older version than the manifest's "latest" (a re-run of an old tag) leaves
 # the file untouched and exits 0.
@@ -35,6 +40,7 @@ set -euo pipefail
 # Without them the job warns and skips; run --publish-only locally instead.
 
 MANIFEST="" VERSION="" SLUG="" ASSETS="" FROM_GITHUB=0 GEOIP="" RESOLVER="" REPO_ROOT="."
+DESCRIPTION="" HAVE_NOTES=0 CHANGELOG=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --manifest)    MANIFEST="$2"; shift 2 ;;
@@ -45,6 +51,8 @@ while [[ $# -gt 0 ]]; do
     --geoip)       GEOIP="$2"; shift 2 ;;
     --resolver)    RESOLVER="$2"; shift 2 ;;
     --repo-root)   REPO_ROOT="$2"; shift 2 ;;
+    --description) DESCRIPTION="$2"; HAVE_NOTES=1; shift 2 ;;
+    --changelog)   CHANGELOG+=("$2"); HAVE_NOTES=1; shift 2 ;;
     *) echo "error: unknown argument $1" >&2; exit 1 ;;
   esac
 done
@@ -171,19 +179,30 @@ PY
      + (if $src == "mtime" then {buildDateSource: "mtime"} else {} end)')"
 fi
 
+# --- release notes for the GUI dialog -----------------------------------------
+# notes: null = keep as is, else replace; both keys always written ("" / [] = not shown)
+notes='null'
+if [[ "$HAVE_NOTES" -eq 1 ]]; then
+  notes="$(jq -nc --arg d "$DESCRIPTION" '{description: $d, changelog: $ARGS.positional}' \
+             --args ${CHANGELOG[@]+"${CHANGELOG[@]}"})"
+elif [[ "$current" != "$VERSION" ]]; then
+  notes='{"description": "", "changelog": []}'
+fi
+
 # --- write --------------------------------------------------------------------
 jq --arg v "$VERSION" \
    --arg d "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
    --arg r "https://github.com/${SLUG}/releases/tag/${TAG}" \
    --argjson dl "$downloads" \
    --arg dlv "$DLP_LIB_VERSION" --argjson drv "$DLP_RULES_VERSION" --argjson dabi "$DLP_ABI" \
-   --argjson res "$resolver" --argjson geo "$geoip" \
+   --argjson res "$resolver" --argjson geo "$geoip" --argjson notes "$notes" \
    '.latest = $v | .date = $d | .releaseNotes = $r
     | .downloads = $dl
     | .specialdlp = ((.specialdlp // {}) + {libVersion: $dlv, rulesVersion: $drv, abi: $dabi})
     | .specialdlp.downloads = (.specialdlp.downloads // {})
     | if $res != null then .hosterResolver = $res else . end
-    | if $geo != null then .geoip = $geo else . end' \
+    | if $geo != null then .geoip = $geo else . end
+    | if $notes != null then . + $notes else . end' \
    "$MANIFEST" > "$WORK/manifest.json"
 
 jq -e --arg v "$VERSION" '.latest == $v' "$WORK/manifest.json" >/dev/null || die "rewritten manifest failed validation"

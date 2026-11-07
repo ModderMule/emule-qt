@@ -7,6 +7,7 @@
 #include <QHash>
 #include <QMetaType>
 #include <QString>
+#include <QStringList>
 
 namespace eMule {
 
@@ -31,6 +32,8 @@ struct VersionManifestInfo {
     QDate   date;          ///< "date" (ISO-8601 instant), invalid when absent/malformed
     QString releaseNotes;  ///< "releaseNotes"
     QString minVersion;    ///< "minVersion"
+    QString description;   ///< "description": plain text for the update dialog, empty = none
+    QStringList changelog; ///< "changelog": one bullet per entry, empty = none
     QString downloadUrl;   ///< this platform's usable "downloads" URL, empty otherwise
     QHash<QString, VersionDownload> downloads; ///< every entry, keyed "mac-arm64", ...
     QString error;         ///< why the document could not be used; empty on success

@@ -144,15 +144,15 @@ bool URLClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
     // Resolve hostname to IP asynchronously. IPv4-preferred with an IPv6 fallback: an
     // HTTP source is fine over either family, but IPv4 is the safer default for a random
     // web server. The shared resolver handles the timeout and cancels on destruction.
-    logDebug(QStringLiteral("URLClient::tryToConnect: resolving %1").arg(m_urlHost));
+    logDebug([&]() -> QString { return QStringLiteral("URLClient::tryToConnect: resolving %1").arg(m_urlHost); });
     if (!m_hostResolver)
         m_hostResolver = new HostResolver(this);
 
     m_hostResolver->resolve(m_urlHost, HostResolver::Preference::PreferIPv4, this,
         [this](const HostResolver::Result& result) {
             if (!result.ok()) {
-                logDebug(QStringLiteral("URLClient: DNS resolution failed for %1: %2")
-                             .arg(m_urlHost, result.errorString));
+                logDebug([&]() -> QString { return QStringLiteral("URLClient: DNS resolution failed for %1: %2")
+                             .arg(m_urlHost, result.errorString); });
                 disconnected(QStringLiteral("DNS resolution failed"));
                 return;
             }
@@ -183,7 +183,7 @@ void URLClient::connectionEstablished()
 
 bool URLClient::disconnected(const QString& reason, bool fromSocket)
 {
-    logDebug(QStringLiteral("URLClient disconnected: %1 reason: %2").arg(m_urlHost, reason));
+    logDebug([&]() -> QString { return QStringLiteral("URLClient disconnected: %1 reason: %2").arg(m_urlHost, reason); });
 
     // Clean up HTTP state
     setConnectingState(ConnectingState::None);
@@ -263,7 +263,7 @@ bool URLClient::processHttpDownResponse(const QList<QByteArray>& headers)
     const bool expectData = code == 200 || code == 206;
     const bool redirection = code == 301 || code == 302;
     if (!expectData && !redirection) {
-        logDebug(QStringLiteral("URLClient: unexpected HTTP status %1 from %2").arg(code).arg(m_urlHost));
+        logDebug([&]() -> QString { return QStringLiteral("URLClient: unexpected HTTP status %1 from %2").arg(code).arg(m_urlHost); });
         return false;
     }
 
@@ -275,13 +275,13 @@ bool URLClient::processHttpDownResponse(const QList<QByteArray>& headers)
         if (const QUrl target(location); target.isRelative())
             location = m_url.resolved(target).toString();
         if (++m_redirected >= kMaxRedirects) {
-            logDebug(QStringLiteral("URLClient: too many redirections from %1").arg(m_urlHost));
+            logDebug([&]() -> QString { return QStringLiteral("URLClient: too many redirections from %1").arg(m_urlHost); });
             return false;
         }
         // the new host is resolved afresh; the reserved blocks go with the old request
         setUserAddress({});
         if (!setUrl(location, Address{})) {
-            logDebug(QStringLiteral("URLClient: bad redirection URL \"%1\"").arg(location));
+            logDebug([&]() -> QString { return QStringLiteral("URLClient: bad redirection URL \"%1\"").arg(location); });
             return false;
         }
         clearDownloadBlockRequests();
@@ -296,8 +296,8 @@ bool URLClient::processHttpDownResponse(const QList<QByteArray>& headers)
         const uint64 contentLength = length.toULongLong();
         // the whole file is tolerated here; the range check below still has to pass
         if (contentLength != m_reqEnd - m_reqStart + 1 && contentLength != fileSize) {
-            logDebug(QStringLiteral("URLClient: unexpected Content-Length %1 from %2")
-                         .arg(contentLength).arg(m_urlHost));
+            logDebug([&]() -> QString { return QStringLiteral("URLClient: unexpected Content-Length %1 from %2")
+                         .arg(contentLength).arg(m_urlHost); });
             return false;
         }
     }
@@ -305,7 +305,7 @@ bool URLClient::processHttpDownResponse(const QList<QByteArray>& headers)
     uint64 first = 0, last = 0, total = 0;
     if (!parseContentRange(headerValue(headers, "content-range"), first, last, total)
         || first != m_reqStart || last != m_reqEnd || total != fileSize) {
-        logDebug(QStringLiteral("URLClient: no valid Content-Range from %1").arg(m_urlHost));
+        logDebug([&]() -> QString { return QStringLiteral("URLClient: no valid Content-Range from %1").arg(m_urlHost); });
         return false;
     }
 
@@ -389,7 +389,7 @@ void URLClient::onSocketConnected(int errorCode)
     if (errorCode == 0) {
         connectionEstablished();
     } else {
-        logDebug(QStringLiteral("URLClient: connection failed to %1 error: %2").arg(m_urlHost).arg(errorCode));
+        logDebug([&]() -> QString { return QStringLiteral("URLClient: connection failed to %1 error: %2").arg(m_urlHost).arg(errorCode); });
         disconnected(QStringLiteral("Connection failed"));
     }
 }
@@ -521,8 +521,8 @@ void URLClient::connectToHost()
         relayPort = m_tlsRelay->start(connectAddress(), m_urlPort, m_urlHost,
                                       thePrefs.proxySettings());
         if (relayPort == 0) {
-            logDebug(QStringLiteral("URLClient: no TLS relay for %1: %2")
-                         .arg(m_urlHost, m_tlsRelay->failure()));
+            logDebug([&]() -> QString { return QStringLiteral("URLClient: no TLS relay for %1: %2")
+                         .arg(m_urlHost, m_tlsRelay->failure()); });
             // queued: callers treat tryToConnect() as started
             QMetaObject::invokeMethod(this, [this] {
                 disconnected(QStringLiteral("TLS relay failed"));
@@ -584,7 +584,7 @@ void URLClient::connectToHost()
     }
     reqSocket->waitForOnConnect();
 
-    logDebug(QStringLiteral("URLClient::connectToHost: connecting to %1:%2").arg(addr.toString()).arg(m_urlPort));
+    logDebug([&]() -> QString { return QStringLiteral("URLClient::connectToHost: connecting to %1:%2").arg(addr.toString()).arg(m_urlPort); });
 }
 
 // ===========================================================================
@@ -602,8 +602,8 @@ bool URLClient::acceptResolvedAddress(const Address& addr)
     if (!vetPeerAddress(addr, theApp.ipFilter, theApp.clientList).isNull())
         return true;
 
-    logDebug(QStringLiteral("URLClient: refusing %1 for host %2 — not a usable address")
-                 .arg(addr.toString(), m_urlHost));
+    logDebug([&]() -> QString { return QStringLiteral("URLClient: refusing %1 for host %2 — not a usable address")
+                 .arg(addr.toString(), m_urlHost); });
     disconnected(QStringLiteral("URL host resolved to an unusable address"));
     return false;
 }
@@ -620,8 +620,8 @@ bool URLClient::dialNextAddress(EMSocket* failed, const QString& reason)
 
     const Address next = m_nextAddresses.front();
     m_nextAddresses.pop_front();
-    logDebug(QStringLiteral("URLClient: %1 unreachable at %2 (%3) — trying %4")
-                 .arg(m_urlHost, connectAddress().toString(), reason, next.toString()));
+    logDebug([&]() -> QString { return QStringLiteral("URLClient: %1 unreachable at %2 (%3) — trying %4")
+                 .arg(m_urlHost, connectAddress().toString(), reason, next.toString()); });
 
     // The dead socket goes; the client stays in its connect attempt
     releaseSocket(/*destroy*/ false);

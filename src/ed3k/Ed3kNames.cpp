@@ -402,7 +402,7 @@ bool Ed3kNames::followSite(const ffi::Key32& key, const QByteArray& id)
     auto topic = heldRoot ? e->setFollow(m_session.now(), key, spanOf(id), spanOf(held), &*heldRoot, ffi::SetPolicy::Ask)
                           : e->setFollow(m_session.now(), key, spanOf(id), {}, nullptr, ffi::SetPolicy::Ask);
     if (!topic) {
-        logDebug(QStringLiteral("website set not followed (error %1)").arg(errorName(topic.error())));
+        logDebug([&]() -> QString { return QStringLiteral("website set not followed (error %1)").arg(errorName(topic.error())); });
         return false;
     }
     s.topic = *topic;
@@ -559,7 +559,7 @@ void Ed3kNames::onBlobFetched(const QString& owner, int member, const ffi::Root&
     if (owner == kListOwner) {
         // §4.5: the core checks the root, the magic and the limits
         if (auto ok = e->nameListFile(m_session.now(), root, spanOf(data)); !ok)
-            logDebug(QStringLiteral("list file of list %1 not taken (error %2)").arg(member).arg(errorName(ok.error())));
+            logDebug([&]() -> QString { return QStringLiteral("list file of list %1 not taken (error %2)").arg(member).arg(errorName(ok.error())); });
         pumpSession();
         return;
     }
@@ -605,7 +605,7 @@ void Ed3kNames::onNameEvent(const ffi::Event& ev, bool* handled)
         QList<QByteArray> ties;
         for (const auto& t : f->ties)
             ties.append(toBytes(t));
-        logEd3kDebug(QStringLiteral("ed3k: name %1 not resolved (why %2)").arg(textOf(f->name)).arg(f->why));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: name %1 not resolved (why %2)").arg(textOf(f->name)).arg(f->why); });
         emit failed(f->id, textOf(f->name), int(f->why), ties);
     } else if (const auto* lf = std::get_if<e::NameListFetch>(&ev)) {
         *handled = true;
@@ -636,7 +636,7 @@ void Ed3kNames::onNameEvent(const ffi::Event& ev, bool* handled)
     } else if (const auto* sr = std::get_if<e::SetManifestRefused>(&ev)) {
         if (m_siteTopics.contains(sr->set)) {
             *handled = true;
-            logEd3kDebug(QStringLiteral("ed3k: a website manifest was refused (%1)").arg(int(sr->why)));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: a website manifest was refused (%1)").arg(int(sr->why)); });
             // a newer one refused: the one held is served (its head was checked)
             const auto it = m_sites.find(m_siteTopics.at(sr->set));
             if (it != m_sites.end() && it->second.headPending) {
@@ -671,7 +671,7 @@ void Ed3kNames::onDns(const ffi::event::NameDns& q)
 {
     const std::uint64_t id = q.id;
     const QString qname = textOf(q.qname);
-    logEd3kDebug(QStringLiteral("ed3k: DNS TXT question for %1").arg(qname));
+    logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: DNS TXT question for %1").arg(qname); });
     QPointer<Ed3kNames> self(this);
     std::weak_ptr<int> gen = m_dnsGen;
     m_dns(qname, [self, gen, id](std::optional<DnsAnswer> a) {
@@ -684,7 +684,7 @@ void Ed3kNames::onDns(const ffi::event::NameDns& q)
         const auto t = self->m_session.now();
         const auto ok = a ? e->nameDnsAnswer(t, id, a->records, a->secure, a->ttl) : e->nameDnsFailed(t, id);
         if (!ok && ok.error() != ffi::Error::Stale)
-            logEd3kDebug(QStringLiteral("ed3k: DNS answer not taken (error %1)").arg(int(ok.error())));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: DNS answer not taken (error %1)").arg(int(ok.error())); });
         self->pumpSession();
     });
 }
@@ -708,7 +708,7 @@ void Ed3kNames::onResolved(const ffi::event::NameResolved& n)
     // at most a few hundred kept: the oldest go
     while (m_resolved.size() > 256)
         m_resolved.erase(m_resolved.begin());
-    logEd3kDebug(QStringLiteral("ed3k: name %1 resolved (how %2, %3 link(s))").arg(r.name).arg(r.how.how).arg(r.links.size()));
+    logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: name %1 resolved (how %2, %3 link(s))").arg(r.name).arg(r.how.how).arg(r.links.size()); });
     emit resolved(r);
 }
 
@@ -716,13 +716,13 @@ void Ed3kNames::onListFetch(const ffi::event::NameListFetch& f)
 {
     // the core opened the download; the base finds sources and fetches it into memory
     if (f.size == 0 || f.size > kListFileMax) {
-        logEd3kDebug(QStringLiteral("ed3k: list file %1 of %2 B not fetched").arg(textOf(f.name)).arg(f.size));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: list file %1 of %2 B not fetched").arg(textOf(f.name)).arg(f.size); });
         return;
     }
     if (!m_started || downloading(f.root))
         return;
     if (!fetchBlob(f.root, f.size, kListOwner, int(f.list)))
-        logEd3kDebug(QStringLiteral("ed3k: list file %1 not fetched").arg(textOf(f.name)));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: list file %1 not fetched").arg(textOf(f.name)); });
 }
 
 void Ed3kNames::onSiteManifest(const ffi::Topic& topic, const ffi::Bytes& file)

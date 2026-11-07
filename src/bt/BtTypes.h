@@ -30,6 +30,8 @@ struct BtSettings {
     bool lsd = true;
     /// applied when the session starts
     bool pex = true;
+    /// every tracker and tier; off = the first working tracker per tier
+    bool announceToAll = false;
     /// 0 enabled (prefer), 1 forced, 2 disabled
     int encryption = 0;
     int maxActiveDownloads = 3;

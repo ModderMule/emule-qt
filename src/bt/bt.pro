@@ -26,6 +26,7 @@ win32 {
 SOURCES += \
     BtIds.cpp \
     BtSession.cpp \
+    BtTrackerList.cpp \
     add/BtAddSource.cpp \
     session/BtJoinDiskIo.cpp \
     session/BtSettingsMap.cpp \
@@ -35,6 +36,7 @@ HEADERS += \
     BtIds.h \
     BtJoin.h \
     BtSession.h \
+    BtTrackerList.h \
     BtTypes.h \
     add/BtAddSource.h \
     session/BtJoinDiskIo.h \

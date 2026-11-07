@@ -321,9 +321,12 @@ HEADERS += \
         controls/TorrentFilterProxy.cpp \
         controls/TorrentListsPane.cpp \
         controls/TorrentPieceGrid.cpp \
+        controls/TorrentOptionsForm.cpp \
         dialogs/AddTorrentDialog.cpp \
         dialogs/BtI2pPage.cpp \
+        dialogs/EditTrackersDialog.cpp \
         dialogs/TorrentDetailsDialog.cpp \
+        dialogs/TorrentOptionsDialog.cpp \
         panels/TorrentPanel.cpp
     HEADERS += \
         utils/TorrentAdd.h \
@@ -332,9 +335,12 @@ HEADERS += \
         controls/TorrentFilterProxy.h \
         controls/TorrentListsPane.h \
         controls/TorrentPieceGrid.h \
+        controls/TorrentOptionsForm.h \
         dialogs/AddTorrentDialog.h \
         dialogs/BtI2pPage.h \
+        dialogs/EditTrackersDialog.h \
         dialogs/TorrentDetailsDialog.h \
+        dialogs/TorrentOptionsDialog.h \
         panels/TorrentPanel.h
 }
 

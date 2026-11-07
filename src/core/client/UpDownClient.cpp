@@ -1416,8 +1416,8 @@ void UpDownClient::sendHelloPacket()
     sendHelloTypePacket(data);
 
     auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_HELLO);
-    logDebug(QStringLiteral("sendHelloPacket: sending OP_HELLO size=%1 to %2:%3")
-                 .arg(packet->size).arg(m_socket->peerAddress().toString()).arg(m_socket->peerPort()));
+    logDebug([&]() -> QString { return QStringLiteral("sendHelloPacket: sending OP_HELLO size=%1 to %2:%3")
+                 .arg(packet->size).arg(m_socket->peerAddress().toString()).arg(m_socket->peerPort()); });
     bookUpOverhead(*packet);
     m_socket->sendPacket(std::move(packet));
     m_helloAnswerPending = true;
@@ -1442,9 +1442,9 @@ void UpDownClient::sendHelloAnswer()
     m_helloAnswerPending = false;
 
     if (thePrefs.verbose())
-        logDebug(QStringLiteral("sendHelloAnswer: sent OP_HELLOANSWER to %1:%2")
+        logDebug([&]() -> QString { return QStringLiteral("sendHelloAnswer: sent OP_HELLOANSWER to %1:%2")
                      .arg(m_socket->peerAddress().toString())
-                     .arg(m_socket->peerPort()));
+                     .arg(m_socket->peerPort()); });
 }
 
 // ===========================================================================
@@ -1799,9 +1799,9 @@ void UpDownClient::processMuleCommentPacket(const uint8* data, uint32 size)
     if (thePrefs.wantsRatingDescLog()) {
         const QString fileName = m_reqFile ? m_reqFile->fileName() : QString();
         if (rating > 0)
-            logDebug(QStringLiteral("Rating for file '%1' received: %2").arg(fileName).arg(rating));
+            logDebug([&]() -> QString { return QStringLiteral("Rating for file '%1' received: %2").arg(fileName).arg(rating); });
         if (!comment.isEmpty())
-            logDebug(QStringLiteral("Description for file '%1' received: %2").arg(fileName, comment));
+            logDebug([&]() -> QString { return QStringLiteral("Description for file '%1' received: %2").arg(fileName, comment); });
     }
 
     // Spam filter, MFC BaseClient.cpp:1075-1091. The default list is the usual
@@ -1885,8 +1885,8 @@ bool UpDownClient::checkHandshakeFinished() const
 bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
 {
     if (m_connectingState != ConnectingState::None) {
-        logDebug(QStringLiteral("tryToConnect: already connecting (state=%1) for %2")
-                     .arg(static_cast<int>(m_connectingState)).arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("tryToConnect: already connecting (state=%1) for %2")
+                     .arg(static_cast<int>(m_connectingState)).arg(userName()); });
         return true;
     }
 
@@ -1896,9 +1896,9 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
     // throttle would block it for 1 minute.
     if (m_socket && m_socket->isConnected()) {
         if (thePrefs.logRawSocketPackets())
-            logDebug(QStringLiteral("tryToConnect: already connected, reqFile=%1 dlState=%2")
+            logDebug([&]() -> QString { return QStringLiteral("tryToConnect: already connected, reqFile=%1 dlState=%2")
                          .arg(m_reqFile ? m_reqFile->fileName() : QStringLiteral("null"))
-                         .arg(static_cast<int>(m_downloadState)));
+                         .arg(static_cast<int>(m_downloadState)); });
         // MFC BaseClient.cpp:1274-1282 runs the whole of ConnectionEstablished() here,
         // and its download-state switch (BaseClient.cpp:1541-1548) is what turns
         // DS_CONNECTING into a file request on the link we already hold. That switch is
@@ -1991,8 +1991,8 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
     if (theApp.clientList && !m_connectAddress.isNull()
         && theApp.clientList->isBannedClient(m_connectAddress)) {
         if (thePrefs.logBannedClients())
-            logDebug(QStringLiteral("Refused to connect to banned client %1 (IP=%2)")
-                         .arg(userName(), ipstr(m_connectAddress)));
+            logDebug([&]() -> QString { return QStringLiteral("Refused to connect to banned client %1 (IP=%2)")
+                         .arg(userName(), ipstr(m_connectAddress)); });
         disconnected(QStringLiteral("Banned IP"));
         return false;
     }
@@ -2038,7 +2038,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
         if (theApp.isFirewalled() && theApp.natRendezvous && theApp.natRendezvous->canStart(*this)) {
             m_connectingState = ConnectingState::NatRendezvous;
             if (theApp.natRendezvous->start(*this)) {
-                logDebug(QStringLiteral("tryToConnect: NAT rendezvous for %1").arg(userName()));
+                logDebug([&]() -> QString { return QStringLiteral("tryToConnect: NAT rendezvous for %1").arg(userName()); });
                 return true;
             }
             m_connectingState = ConnectingState::Preconditions;
@@ -2046,8 +2046,8 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
 
         // No route at all — fail once instead of walking all three branches on every retry.
         if (!directUdp && !kadCallback && !serverCallback) {
-            logDebug(QStringLiteral("tryToConnect: no callback route available for %1")
-                         .arg(userName()));
+            logDebug([&]() -> QString { return QStringLiteral("tryToConnect: no callback route available for %1")
+                         .arg(userName()); });
             disconnected(QStringLiteral("LowID: no callback option available"));
             return false;
         }
@@ -2064,8 +2064,8 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
         // Kept as a source rather than dropped, in the hope our own ID changes;
         // PartFile::process() revives it from this state.
         if (!directUdp && !kadCallback && !theApp.canDoCallback(this)) {
-            logDebug(QStringLiteral("tryToConnect: LowID->LowID, no callback route to %1")
-                         .arg(userName()));
+            logDebug([&]() -> QString { return QStringLiteral("tryToConnect: LowID->LowID, no callback route to %1")
+                         .arg(userName()); });
             disconnected(QStringLiteral("LowID->LowID"));
             return false;
         }
@@ -2092,9 +2092,9 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
         // Endpoint::toString() renders both families and brackets IPv6 ([addr]:port).
         // The old connectIP=0x%x field is gone on purpose: it came from toUint32(),
         // which is 0 for every IPv6 address — it printed 0.0.0.0 on exactly this branch.
-        logDebug(QStringLiteral("tryToConnect: DIRECT TCP to %1 (userIDHybrid=0x%2)")
+        logDebug([&]() -> QString { return QStringLiteral("tryToConnect: DIRECT TCP to %1 (userIDHybrid=0x%2)")
                      .arg(Endpoint(m_connectAddress, m_userPort).toString())
-                     .arg(m_userIDHybrid, 8, 16, QLatin1Char('0')));
+                     .arg(m_userIDHybrid, 8, 16, QLatin1Char('0')); });
 
         m_connectingState = ConnectingState::DirectTCP;
         connect();
@@ -2130,8 +2130,8 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
                                           m_userHash.data(), false, 0);
         }
 
-        logDebug(QStringLiteral("tryToConnect: DIRECT CALLBACK via UDP to %1:%2")
-                     .arg(m_connectAddress.toQHostAddress().toString()).arg(m_kadPort));
+        logDebug([&]() -> QString { return QStringLiteral("tryToConnect: DIRECT CALLBACK via UDP to %1:%2")
+                     .arg(m_connectAddress.toQHostAddress().toString()).arg(m_kadPort); });
         return true;
     }
 
@@ -2152,7 +2152,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
             auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_CALLBACKREQUEST);
             theApp.serverConnect->sendPacket(std::move(packet));
             m_connectingState = ConnectingState::ServerCallback;
-            logDebug(QStringLiteral("tryToConnect: SERVER CALLBACK for lowID=%1").arg(m_userIDHybrid));
+            logDebug([&]() -> QString { return QStringLiteral("tryToConnect: SERVER CALLBACK for lowID=%1").arg(m_userIDHybrid); });
             return true;
         }
     }
@@ -2183,25 +2183,25 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
             if (kad::SearchManager::startSearch(findSource)) {
                 m_connectingState = ConnectingState::KadCallback;
                 setDownloadState(DownloadState::WaitCallbackKad);
-                logDebug(QStringLiteral("tryToConnect: started FindSource lookup for buddy of %1")
-                             .arg(userName()));
+                logDebug([&]() -> QString { return QStringLiteral("tryToConnect: started FindSource lookup for buddy of %1")
+                             .arg(userName()); });
             } else {
                 delete findSource;
             }
             return true;
         }
-        logDebug(QStringLiteral("tryToConnect: Kad buddy without known IP for %1").arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("tryToConnect: Kad buddy without known IP for %1").arg(userName()); });
         disconnected(QStringLiteral("LowID: buddy without known address"));
         return false;
     }
 
-    logDebug(QStringLiteral("tryToConnect: no viable connection path for %1 "
+    logDebug([&]() -> QString { return QStringLiteral("tryToConnect: no viable connection path for %1 "
                             "(connectAddr=%2 lowID=%3 buddyValid=%4)")
                  .arg(userName())
                  .arg(m_connectAddress.isNull() ? QStringLiteral("<none>")
                                                 : Endpoint(m_connectAddress, m_userPort).toString())
                  .arg(hasLowID())
-                 .arg(hasValidBuddyID()));
+                 .arg(hasValidBuddyID()); });
     disconnected(QStringLiteral("No connection path"));
     return false;
 }
@@ -2225,8 +2225,8 @@ bool UpDownClient::fallBackToKadCallback()
     if (!kadCallbackAvailable() || m_reqFile == nullptr || !resolveBuddyAddress())
         return false;
 
-    logDebug(QStringLiteral("Server callback for %1 failed (lowID=%2), retrying via Kad buddy")
-                 .arg(userName()).arg(m_userIDHybrid));
+    logDebug([&]() -> QString { return QStringLiteral("Server callback for %1 failed (lowID=%2), retrying via Kad buddy")
+                 .arg(userName()).arg(m_userIDHybrid); });
     if (theApp.clientList) {
         // fresh connect timeout for the Kad attempt
         theApp.clientList->removeConnectingClient(this);
@@ -2256,9 +2256,9 @@ bool UpDownClient::connectOverTransport(std::shared_ptr<StreamTransport> transpo
     if (m_reqFile && (m_downloadState == DownloadState::None
                       || m_downloadState == DownloadState::LowToLowIP))
         setDownloadState(DownloadState::Connecting);
-    logDebug(QStringLiteral("connectOverTransport: %1 over NAT-T stream %2")
+    logDebug([&]() -> QString { return QStringLiteral("connectOverTransport: %1 over NAT-T stream %2")
                  .arg(hasValidHash() ? md4str(userHash()) : QStringLiteral("(no hash yet)"),
-                      transport->peerEndpoint().toString()));
+                      transport->peerEndpoint().toString()); });
     m_connectingState = ConnectingState::DirectTCP;
     connect(std::move(transport));
     return true;
@@ -2269,7 +2269,7 @@ void UpDownClient::connect(std::shared_ptr<StreamTransport> transport)
     // Create a ClientReqSocket for this peer connection
     auto* reqSocket = new ClientReqSocket(this);
     if (!reqSocket->createSocket()) {
-        logDebug(QStringLiteral("connect: failed to create socket for %1").arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("connect: failed to create socket for %1").arg(userName()); });
         delete reqSocket;
         // Still connecting: the connect timeout cleans up (MFC BaseClient.cpp:1390)
         return;
@@ -2318,11 +2318,11 @@ void UpDownClient::connect(std::shared_ptr<StreamTransport> transport)
             "ConnectedState", "BoundState", "ListeningState", "ClosingState"
         };
         const char* name = (state >= 0 && state <= 6) ? stateNames[state] : "Unknown";
-        logDebug(QStringLiteral("Socket state → %1 for %2:%3 (fd=%4)")
+        logDebug([&]() -> QString { return QStringLiteral("Socket state → %1 for %2:%3 (fd=%4)")
                      .arg(QLatin1String(name))
                      .arg(reqSocket->peerAddress().toString())
                      .arg(reqSocket->peerPort())
-                     .arg(reqSocket->socketDescriptor()));
+                     .arg(reqSocket->socketDescriptor()); });
     });
 
     // Set up connection encryption if the peer supports/requests it and we have their hash.
@@ -2330,14 +2330,14 @@ void UpDownClient::connect(std::shared_ptr<StreamTransport> transport)
     // MFC: IsCryptLayerEnabled() = cryptLayerSupported(), IsCryptLayerPreferred() = cryptLayerRequested()
     reqSocket->setObfuscationConfig(thePrefs.obfuscationConfig());
     bool encrypted = false;
-    logDebug(QStringLiteral("connect: encryption check — hasValidHash=%1 supportsCrypt=%2 prefCryptSupported=%3 requestsCrypt=%4 prefCryptRequested=%5")
+    logDebug([&]() -> QString { return QStringLiteral("connect: encryption check — hasValidHash=%1 supportsCrypt=%2 prefCryptSupported=%3 requestsCrypt=%4 prefCryptRequested=%5")
                  .arg(hasValidHash()).arg(supportsCryptLayer()).arg(thePrefs.cryptLayerSupported())
-                 .arg(requestsCryptLayer()).arg(thePrefs.cryptLayerRequested()));
+                 .arg(requestsCryptLayer()).arg(thePrefs.cryptLayerRequested()); });
     if (hasValidHash()) {
         QString hashHex;
         for (int i = 0; i < 16; ++i)
             hashHex += QStringLiteral("%1").arg(userHash()[i], 2, 16, QLatin1Char('0'));
-        logDebug(QStringLiteral("connect: targetHash=%1").arg(hashHex));
+        logDebug([&]() -> QString { return QStringLiteral("connect: targetHash=%1").arg(hashHex); });
     }
     if (hasValidHash() && supportsCryptLayer() && thePrefs.cryptLayerSupported()
         && (requestsCryptLayer() || thePrefs.cryptLayerRequested())) {
@@ -2363,17 +2363,17 @@ void UpDownClient::connect(std::shared_ptr<StreamTransport> transport)
     // Initiate TCP connection. toQHostAddress() dials both families — an IPv6
     // m_connectAddress connects over IPv6, an IPv4 one exactly as before.
     const QHostAddress addr = m_connectAddress.toQHostAddress();
-    logDebug(QStringLiteral("connect: connectToHost(%1, %2) encrypted=%3 socketState=%4 fd=%5")
+    logDebug([&]() -> QString { return QStringLiteral("connect: connectToHost(%1, %2) encrypted=%3 socketState=%4 fd=%5")
                  .arg(addr.toString()).arg(m_userPort)
                  .arg(encrypted)
                  .arg(static_cast<int>(reqSocket->state()))
-                 .arg(reqSocket->socketDescriptor()));
+                 .arg(reqSocket->socketDescriptor()); });
 
     reqSocket->connectToPeer(m_connectAddress, m_userPort);
 
-    logDebug(QStringLiteral("connect: after connectToHost — socketState=%1 fd=%2")
+    logDebug([&]() -> QString { return QStringLiteral("connect: after connectToHost — socketState=%1 fd=%2")
                  .arg(static_cast<int>(reqSocket->state()))
-                 .arg(reqSocket->socketDescriptor()));
+                 .arg(reqSocket->socketDescriptor()); });
 
     reqSocket->waitForOnConnect();
 
@@ -2418,10 +2418,10 @@ void UpDownClient::wireIncomingSocket(ClientReqSocket* socket)
 
 void UpDownClient::connectionEstablished()
 {
-    logDebug(QStringLiteral("connectionEstablished: peer=%1:%2 socket=%3")
+    logDebug([&]() -> QString { return QStringLiteral("connectionEstablished: peer=%1:%2 socket=%3")
                  .arg(m_socket ? m_socket->peerAddress().toString() : QStringLiteral("null"))
                  .arg(m_socket ? m_socket->peerPort() : 0)
-                 .arg(m_socket ? QStringLiteral("valid") : QStringLiteral("null")));
+                 .arg(m_socket ? QStringLiteral("valid") : QStringLiteral("null")); });
 
     if (theApp.clientList)
         theApp.clientList->removeConnectingClient(this);
@@ -2429,9 +2429,9 @@ void UpDownClient::connectionEstablished()
     m_connectingState = ConnectingState::None;
 
     // Send HELLO on outgoing connections if handshake not started
-    logDebug(QStringLiteral("connectionEstablished: handshakeFinished=%1 helloAnswerPending=%2 downloadState=%3")
+    logDebug([&]() -> QString { return QStringLiteral("connectionEstablished: handshakeFinished=%1 helloAnswerPending=%2 downloadState=%3")
                  .arg(checkHandshakeFinished()).arg(m_helloAnswerPending)
-                 .arg(static_cast<int>(m_downloadState)));
+                 .arg(static_cast<int>(m_downloadState)); });
     // Only on an outgoing connection. On an accepted one the peer opened with OP_HELLO and
     // we have just answered it, so sending our own hello here would be a spurious extra
     // packet. MFC sends this from Connect() at dial time and relies on CEMSocket buffering
@@ -2454,17 +2454,17 @@ void UpDownClient::connectionEstablished()
             // The state stays as it is until then: MFC runs ConnectionEstablished() from
             // the hello answer (ListenSocket.cpp:229), so a peer that took the TCP
             // connection but has not answered still reads "Connecting", not "Asking".
-            logDebug(QStringLiteral("connectionEstablished: deferring file request until "
+            logDebug([&]() -> QString { return QStringLiteral("connectionEstablished: deferring file request until "
                                     "HELLO_ANSWER (downloadState=%1)")
-                         .arg(static_cast<int>(m_downloadState)));
+                         .arg(static_cast<int>(m_downloadState)); });
             m_pendingFileRequest = true;
         } else {
             // Inbound (typically a LowID source answering our OP_CALLBACKREQUEST): its
             // OP_HELLO already carried everything, and no OP_HELLOANSWER will ever arrive
             // to release a deferred request. Send it now, as MFC does inline.
-            logDebug(QStringLiteral("connectionEstablished: sending file request inline "
+            logDebug([&]() -> QString { return QStringLiteral("connectionEstablished: sending file request inline "
                                     "(downloadState=%1)")
-                         .arg(static_cast<int>(m_downloadState)));
+                         .arg(static_cast<int>(m_downloadState)); });
             setDownloadState(DownloadState::Connected);
             sendFileRequest();
         }
@@ -2642,7 +2642,7 @@ void UpDownClient::releaseSocket(bool destroy)
 
 bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
 {
-    logDebug(QStringLiteral("Client disconnected: %1 reason: %2").arg(userName(), reason));
+    logDebug([&]() -> QString { return QStringLiteral("Client disconnected: %1 reason: %2").arg(userName(), reason); });
 
     if (theApp.clientList)
         theApp.clientList->removeConnectingClient(this);
@@ -2744,8 +2744,8 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
             if (unanswered || m_downloadState == DownloadState::Connecting)
                 setDownloadState(DownloadState::None);
         } else if (v6RouteFailed) {
-            logDebug(QStringLiteral("IPv6 dial to LowID source %1 failed, trying its LowID route")
-                         .arg(dbgGetClientInfo()));
+            logDebug([&]() -> QString { return QStringLiteral("IPv6 dial to LowID source %1 failed, trying its LowID route")
+                         .arg(dbgGetClientInfo()); });
             m_openIPv6 = false;
             // Back to the IPv4 endpoint a Kad source came with (NAT-T needs it); null
             // for the others, as before
@@ -2972,7 +2972,7 @@ void UpDownClient::checkQueueRankFlood()
         ++m_unaskQueueRankRecv;
 
     if (m_unaskQueueRankRecv == 3) {
-        logDebug(QStringLiteral("Queue rank flood detected from %1").arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("Queue rank flood detected from %1").arg(userName()); });
         registerBadRequest(QStringLiteral("QR flood"));
     }
 }
@@ -3013,7 +3013,7 @@ void UpDownClient::processSharedFileList(const uint8* data, uint32 size, const Q
                                          bool directoryAnswer)
 {
     if (m_fileListRequested <= 0) {
-        logDebug(QStringLiteral("processSharedFileList: unrequested response from %1").arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("processSharedFileList: unrequested response from %1").arg(userName()); });
         return;
     }
 
@@ -3067,7 +3067,7 @@ void UpDownClient::checkFailedFileIdReqs(const uint8* fileHash)
         ++m_failedFileIdReqs;
 
     if (m_failedFileIdReqs == 6) {
-        logDebug(QStringLiteral("FileReq flood detected from %1").arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("FileReq flood detected from %1").arg(userName()); });
         registerBadRequest(QStringLiteral("FileReq flood"));
     }
 }
@@ -3339,7 +3339,7 @@ void UpDownClient::sendPublicKeyPacket()
     sendPacket(std::move(packet));
 
     if (thePrefs.logSecureIdent())
-        logDebug(QStringLiteral("sendPublicKeyPacket: keyLen=%1 to %2").arg(keyLen).arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("sendPublicKeyPacket: keyLen=%1 to %2").arg(keyLen).arg(userName()); });
 
     m_secureIdentState = SecureIdentState::SignatureNeeded;
 }
@@ -3359,13 +3359,13 @@ void UpDownClient::sendSignaturePacket()
     // MFC: bail out if we don't have the remote's public key yet —
     // will be called again from processPublicKeyPacket when it arrives
     if (m_credits->secIDKeyLen() == 0) {
-        logDebug(QStringLiteral("sendSignaturePacket: no remote public key yet for %1 — deferring").arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("sendSignaturePacket: no remote public key yet for %1 — deferring").arg(userName()); });
         return;
     }
 
     // Signature requires a valid challenge from the peer
     if (m_credits->cryptRndChallengeFrom == 0) {
-        logDebug(QStringLiteral("sendSignaturePacket: no challenge available for %1").arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("sendSignaturePacket: no challenge available for %1").arg(userName()); });
         return;
     }
 
@@ -3393,7 +3393,7 @@ void UpDownClient::sendSignaturePacket()
         m_credits, sig, sizeof(sig), challengeIP, chaIPKind);
 
     if (sigLen == 0) {
-        logDebug(QStringLiteral("sendSignaturePacket: signature creation failed for %1").arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("sendSignaturePacket: signature creation failed for %1").arg(userName()); });
         return;
     }
 
@@ -3431,8 +3431,8 @@ void UpDownClient::processPublicKeyPacket(const uint8* data, uint32 size)
 
     if (m_credits->setSecureIdent(data + 1, data[0])) {
         if (thePrefs.logSecureIdent())
-            logDebug(QStringLiteral("processPublicKeyPacket: stored %1-byte key from %2, state=%3")
-                         .arg(data[0]).arg(userName()).arg(static_cast<int>(m_secureIdentState)));
+            logDebug([&]() -> QString { return QStringLiteral("processPublicKeyPacket: stored %1-byte key from %2, state=%3")
+                         .arg(data[0]).arg(userName()).arg(static_cast<int>(m_secureIdentState)); });
         // MFC: If we were waiting to send our signature (deferred because we
         // didn't have the remote's public key yet), send it now.
         if (m_secureIdentState == SecureIdentState::SignatureNeeded)
@@ -3440,8 +3440,8 @@ void UpDownClient::processPublicKeyPacket(const uint8* data, uint32 size)
         else if (m_secureIdentState == SecureIdentState::KeyAndSigNeeded)
             logDebug(QStringLiteral("processPublicKeyPacket: invalid state IS_KEYANDSIGNEEDED"));
     } else {
-        logDebug(QStringLiteral("processPublicKeyPacket: setSecureIdent failed for %1 (keyLen=%2)")
-                     .arg(userName()).arg(data[0]));
+        logDebug([&]() -> QString { return QStringLiteral("processPublicKeyPacket: setSecureIdent failed for %1 (keyLen=%2)")
+                     .arg(userName()).arg(data[0]); });
     }
 }
 
@@ -3472,19 +3472,19 @@ void UpDownClient::processSignaturePacket(const uint8* data, uint32 size)
 
     // Prevent duplicate signatures from the same IP (MFC uses GetIP())
     if (m_lastSignatureAddress == m_userAddress) {
-        logDebug(QStringLiteral("processSignaturePacket: duplicate signature from %1").arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("processSignaturePacket: duplicate signature from %1").arg(userName()); });
         return;
     }
 
     // Must have their public key
     if (m_credits->secIDKeyLen() == 0) {
-        logDebug(QStringLiteral("processSignaturePacket: no public key stored for %1").arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("processSignaturePacket: no public key stored for %1").arg(userName()); });
         return;
     }
 
     // Must have a valid challenge
     if (m_credits->cryptRndChallengeFor == 0) {
-        logDebug(QStringLiteral("processSignaturePacket: no challenge for %1").arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("processSignaturePacket: no challenge for %1").arg(userName()); });
         return;
     }
 
@@ -3494,8 +3494,8 @@ void UpDownClient::processSignaturePacket(const uint8* data, uint32 size)
     if (verified && theApp.clientCensus)
         theApp.clientCensus->noteIdentified(m_userHash.data());
     if (thePrefs.logSecureIdent())
-        logDebug(QStringLiteral("processSignaturePacket: sigLen=%1 chaIPKind=%2 verified=%3 for %4")
-                     .arg(data[0]).arg(chaIPKind).arg(verified).arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("processSignaturePacket: sigLen=%1 chaIPKind=%2 verified=%3 for %4")
+                     .arg(data[0]).arg(chaIPKind).arg(verified).arg(userName()); });
 
     // A friend attempt waiting on authentication has been waiting for exactly this.
     // MFC srchybrid/BaseClient.cpp:1962-1972.
@@ -3544,8 +3544,8 @@ void UpDownClient::sendSecIdentStatePacket()
     sendPacket(std::move(packet));
 
     if (thePrefs.logSecureIdent())
-        logDebug(QStringLiteral("sendSecIdentStatePacket: state=%1 challenge=%2 to %3")
-                     .arg(state).arg(m_credits->cryptRndChallengeFor).arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("sendSecIdentStatePacket: state=%1 challenge=%2 to %3")
+                     .arg(state).arg(m_credits->cryptRndChallengeFor).arg(userName()); });
 }
 
 // ===========================================================================
@@ -3565,10 +3565,10 @@ void UpDownClient::processSecIdentStatePacket(const uint8* data, uint32 size)
     m_credits->cryptRndChallengeFrom = peekUInt32(data + 1);
 
     if (thePrefs.logSecureIdent()) {
-        logDebug(QStringLiteral("processSecIdentStatePacket: state=%1 size=%2 credits=%3 challenge=%4")
+        logDebug([&]() -> QString { return QStringLiteral("processSecIdentStatePacket: state=%1 size=%2 credits=%3 challenge=%4")
                      .arg(data[0]).arg(size)
                      .arg(QLatin1StringView(m_credits ? "yes" : "null"))
-                     .arg(m_credits->cryptRndChallengeFrom));
+                     .arg(m_credits->cryptRndChallengeFrom); });
     }
 
     // MFC state mapping: 0→Unavailable, 1→SignatureNeeded, 2→KeyAndSigNeeded
@@ -3629,7 +3629,7 @@ void UpDownClient::processChatMessage(SafeMemFile& data, uint32 length)
     if ((thePrefs.msgOnlyFriends() && !isFriend)
         || (thePrefs.msgSecure() && !hasPassedSecureIdent(false))) {
         if (!m_messageFiltered)
-            logDebug(QStringLiteral("Filtered message from '%1'").arg(statusName()));
+            logDebug([&]() -> QString { return QStringLiteral("Filtered message from '%1'").arg(statusName()); });
         m_messageFiltered = true;
         return;
     }
@@ -3657,8 +3657,8 @@ void UpDownClient::processChatMessage(SafeMemFile& data, uint32 length)
             setSpammer(true);
             endChatSession();
         }
-        logDebug(QStringLiteral("Message from '%1' matched filter '%2'")
-                     .arg(statusName(), trimmed));
+        logDebug([&]() -> QString { return QStringLiteral("Message from '%1' matched filter '%2'")
+                     .arg(statusName(), trimmed); });
         return;
     }
 
@@ -3707,7 +3707,7 @@ void UpDownClient::processChatMessage(SafeMemFile& data, uint32 length)
                      });
         }
         if (isSpam) {
-            logDebug(QStringLiteral("'%1' has been marked as spammer").arg(statusName()));
+            logDebug([&]() -> QString { return QStringLiteral("'%1' has been marked as spammer").arg(statusName()); });
             setSpammer(true);
             endChatSession();
             return;
@@ -3772,7 +3772,7 @@ void UpDownClient::processCaptchaRequest(SafeMemFile& data)
     // Only as the reply to a message we just sent (MFC srchybrid/BaseClient.cpp:2765-2797);
     // otherwise any peer could push images at us.
     if (m_chatCaptchaState != ChatCaptchaState::Accepting) {
-        logDebug(QStringLiteral("Unrequested captcha from %1 ignored").arg(statusName()));
+        logDebug([&]() -> QString { return QStringLiteral("Unrequested captcha from %1 ignored").arg(statusName()); });
         return;
     }
 
@@ -3781,14 +3781,14 @@ void UpDownClient::processCaptchaRequest(SafeMemFile& data)
         for (uint32 i = data.readUInt8(); i > 0; --i)
             Tag tag(data, true);
     } catch (const FileException&) {
-        logDebug(QStringLiteral("Captcha from %1: bad tags").arg(statusName()));
+        logDebug([&]() -> QString { return QStringLiteral("Captcha from %1: bad tags").arg(statusName()); });
         return;
     }
 
     // A small captcha, not a wallpaper
     const qint64 imgSize = data.length() - data.position();
     if (imgSize <= 128 || imgSize >= 4096) {
-        logDebug(QStringLiteral("Captcha from %1: bad image size %2").arg(statusName()).arg(imgSize));
+        logDebug([&]() -> QString { return QStringLiteral("Captcha from %1: bad image size %2").arg(statusName()).arg(imgSize); });
         return;
     }
     QByteArray imgData(static_cast<qsizetype>(imgSize), Qt::Uninitialized);
@@ -3802,15 +3802,15 @@ void UpDownClient::processCaptchaRequest(SafeMemFile& data)
     if (!dims.isValid()
         || dims.height() <= 10 || dims.height() >= 50
         || dims.width() <= 10 || dims.width() >= 150) {
-        logDebug(QStringLiteral("Captcha from %1: refused image (%2x%3)")
-                     .arg(statusName()).arg(dims.width()).arg(dims.height()));
+        logDebug([&]() -> QString { return QStringLiteral("Captcha from %1: refused image (%2x%3)")
+                     .arg(statusName()).arg(dims.width()).arg(dims.height()); });
         return;
     }
     QImage captchaImg = reader.read();
     if (captchaImg.isNull()
         || captchaImg.height() <= 10 || captchaImg.height() >= 50
         || captchaImg.width() <= 10 || captchaImg.width() >= 150) {
-        logDebug(QStringLiteral("Captcha from %1: not a usable image").arg(statusName()));
+        logDebug([&]() -> QString { return QStringLiteral("Captcha from %1: not a usable image").arg(statusName()); });
         return;
     }
 
@@ -3830,7 +3830,7 @@ void UpDownClient::processCaptchaReqRes(uint8 status)
     if (expected)
         emit captchaResultReceived(m_username, status == 0);
     else
-        logDebug(QStringLiteral("Unrequested captcha result from %1 ignored").arg(statusName()));
+        logDebug([&]() -> QString { return QStringLiteral("Unrequested captcha result from %1 ignored").arg(statusName()); });
 }
 
 // ===========================================================================
@@ -4035,8 +4035,8 @@ void UpDownClient::processPreviewAnswer(const uint8* data, uint32 size)
     const uint8 frameCount = file.readUInt8();
     const bool ours = fileHash == m_previewReqHash;
     if (frameCount == 0 || !ours) {
-        logDebug(QStringLiteral("processPreviewAnswer: remote sent %1")
-                     .arg(ours ? QStringLiteral("0 frames") : QStringLiteral("another file")));
+        logDebug([&]() -> QString { return QStringLiteral("processPreviewAnswer: remote sent %1")
+                     .arg(ours ? QStringLiteral("0 frames") : QStringLiteral("another file")); });
         emit previewAnswerReceived(m_previewReqHash, {});
         return;
     }
@@ -4049,7 +4049,7 @@ void UpDownClient::processPreviewAnswer(const uint8* data, uint32 size)
     for (uint8 i = 0; i < std::min(frameCount, kMaxFrames); ++i) {
         const uint32 imgSize = file.readUInt32();
         if (imgSize == 0 || imgSize > static_cast<uint64>(file.length() - file.position())) {
-            logDebug(QStringLiteral("processPreviewAnswer: frame %1 size exceeds packet").arg(i));
+            logDebug([&]() -> QString { return QStringLiteral("processPreviewAnswer: frame %1 size exceeds packet").arg(i); });
             break;
         }
 
@@ -4062,14 +4062,14 @@ void UpDownClient::processPreviewAnswer(const uint8* data, uint32 size)
         QImageReader reader(&buffer, "png");
         const QSize dims = reader.size();
         if (!dims.isValid() || dims.width() > kMaxFrameEdge || dims.height() > kMaxFrameEdge) {
-            logDebug(QStringLiteral("processPreviewAnswer: frame %1 refused (%2x%3)")
-                         .arg(i).arg(dims.width()).arg(dims.height()));
+            logDebug([&]() -> QString { return QStringLiteral("processPreviewAnswer: frame %1 refused (%2x%3)")
+                         .arg(i).arg(dims.width()).arg(dims.height()); });
             continue;
         }
         if (QImage image = reader.read(); !image.isNull())
             previewImages.push_back(std::move(image));
         else
-            logDebug(QStringLiteral("processPreviewAnswer: failed to decode frame %1").arg(i));
+            logDebug([&]() -> QString { return QStringLiteral("processPreviewAnswer: failed to decode frame %1").arg(i); });
     }
 
     emit previewAnswerReceived(fileHash, previewImages);
@@ -4088,8 +4088,8 @@ void UpDownClient::sendFirewallCheckUDPRequest()
 {
     // MFC BaseClient.cpp:2837-2858
     if (m_kadState != KadState::FwCheckUDP) {
-        logDebug(QStringLiteral("sendFirewallCheckUDPRequest: wrong state %1, expected FwCheckUDP")
-                     .arg(static_cast<int>(m_kadState)));
+        logDebug([&]() -> QString { return QStringLiteral("sendFirewallCheckUDPRequest: wrong state %1, expected FwCheckUDP")
+                     .arg(static_cast<int>(m_kadState)); });
         return;
     }
 
@@ -4104,12 +4104,12 @@ void UpDownClient::sendFirewallCheckUDPRequest()
         || m_chatState != ChatState::None
         || m_kadVersion <= KADEMLIA_VERSION5_48a || kadPort() == 0)
     {
-        logDebug(QStringLiteral("sendFirewallCheckUDPRequest: cancelled — upState=%1 downState=%2 "
+        logDebug([&]() -> QString { return QStringLiteral("sendFirewallCheckUDPRequest: cancelled — upState=%1 downState=%2 "
                                 "chatState=%3 kadVer=%4 kadPort=%5")
                      .arg(static_cast<int>(m_uploadState))
                      .arg(static_cast<int>(m_downloadState))
                      .arg(static_cast<int>(m_chatState))
-                     .arg(m_kadVersion).arg(kadPort()));
+                     .arg(m_kadVersion).arg(kadPort()); });
         kad::UDPFirewallTester::setUDPFWCheckResult(false, true, m_connectAddress.toUint32(), 0);
         setKadState(KadState::None);
         return;
@@ -4132,11 +4132,11 @@ void UpDownClient::sendFirewallCheckUDPRequest()
     data.writeUInt16(externPort);
     data.writeUInt32(verifyKey);
 
-    logDebug(QStringLiteral("sendFirewallCheckUDPRequest: sending OP_FWCHECKUDPREQ "
+    logDebug([&]() -> QString { return QStringLiteral("sendFirewallCheckUDPRequest: sending OP_FWCHECKUDPREQ "
                             "internPort=%1 externPort=%2 verifyKey=0x%3 to %4")
                  .arg(internPort).arg(externPort)
                  .arg(verifyKey, 8, 16, QLatin1Char('0'))
-                 .arg(userName()));
+                 .arg(userName()); });
 
     auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_FWCHECKUDPREQ);
     safeConnectAndSendPacket(std::move(packet));
@@ -4195,7 +4195,7 @@ void UpDownClient::processFirewallCheckUDPRequest(SafeMemFile& data)
                                 kad::KadUDPKey(senderKey, theApp.publicIP()), nullptr);
     }
 
-    logDebug(QStringLiteral("Answered UDP firewall check request from %1").arg(dbgGetClientInfo()));
+    logDebug([&]() -> QString { return QStringLiteral("Answered UDP firewall check request from %1").arg(dbgGetClientInfo()); });
 }
 
 // ===========================================================================
@@ -4273,7 +4273,7 @@ void UpDownClient::processCallbackPacket(const uint8* data, uint32 size)
     if (!theApp.clientList || theApp.clientList->getBuddy() != this
         || theApp.clientList->buddyStatus() != BuddyStatus::Connected)
     {
-        logDebug(QStringLiteral("OP_CALLBACK from %1, which is not our buddy").arg(dbgGetClientInfo()));
+        logDebug([&]() -> QString { return QStringLiteral("OP_CALLBACK from %1, which is not our buddy").arg(dbgGetClientInfo()); });
         return;
     }
 
@@ -4301,8 +4301,8 @@ void UpDownClient::processCallbackPacket(const uint8* data, uint32 size)
         || (theApp.isOwnTcpPort(tcp) && target == Address::fromNetworkOrder(theApp.publicIP()))
         || !theApp.clientList->allowCallbackRequest(target))
     {
-        logDebug(QStringLiteral("OP_CALLBACK: refused target %1:%2")
-                     .arg(Address::fromHostOrder(ip).toString()).arg(tcp));
+        logDebug([&]() -> QString { return QStringLiteral("OP_CALLBACK: refused target %1:%2")
+                     .arg(Address::fromHostOrder(ip).toString()).arg(tcp); });
         return;
     }
     theApp.clientList->addTrackCallbackRequests(target);
@@ -4346,7 +4346,7 @@ void UpDownClient::processReaskCallbackTCP(const uint8* data, uint32 size)
         buddy = theApp.clientList->getBuddy();
 
     if (buddy != this) {
-        logDebug(QStringLiteral("processReaskCallbackTCP: received from non-buddy %1").arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("processReaskCallbackTCP: received from non-buddy %1").arg(userName()); });
         return;
     }
 
@@ -4538,7 +4538,7 @@ void UpDownClient::onExtPacketReceived(const uint8* data, uint32 size, uint8 opc
     case OP_REQUESTSOURCES:
     case OP_REQUESTSOURCES2:
         if (thePrefs.wantsSourceExchangeLog())
-            logDebug(QStringLiteral("SXRecv: Client source request; %1").arg(userName()));
+            logDebug([&]() -> QString { return QStringLiteral("SXRecv: Client source request; %1").arg(userName()); });
         if (opcode == OP_REQUESTSOURCES)
             processRequestSources(data, size);
         else
@@ -4685,7 +4685,7 @@ void UpDownClient::onExtPacketReceived(const uint8* data, uint32 size, uint8 opc
         break;
 
     default:
-        logDebug(QStringLiteral("onExtPacketReceived: unhandled opcode 0x%1 from %2").arg(opcode, 0, 16).arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("onExtPacketReceived: unhandled opcode 0x%1 from %2").arg(opcode, 0, 16).arg(userName()); });
         break;
     }
 }
@@ -4798,7 +4798,7 @@ void UpDownClient::onPacketForClient(const uint8* data, uint32 size, uint8 opcod
     }
 
     default:
-        logDebug(QStringLiteral("onPacketForClient: unhandled opcode 0x%1 from %2").arg(opcode, 0, 16).arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("onPacketForClient: unhandled opcode 0x%1 from %2").arg(opcode, 0, 16).arg(userName()); });
         break;
     }
 }
@@ -4813,9 +4813,9 @@ void UpDownClient::onHelloReceived(const uint8* data, uint32 size, uint8 opcode)
 
     if (opcode == OP_HELLO) {
         if (thePrefs.verbose())
-            logDebug(QStringLiteral("onHelloReceived: OP_HELLO from %1:%2")
+            logDebug([&]() -> QString { return QStringLiteral("onHelloReceived: OP_HELLO from %1:%2")
                          .arg(m_socket ? m_socket->peerAddress().toString() : QStringLiteral("?"))
-                         .arg(m_socket ? m_socket->peerPort() : 0));
+                         .arg(m_socket ? m_socket->peerPort() : 0); });
         // OP_HELLO has a 1-byte hash-size prefix (always 16) before the
         // user hash — must be consumed before processHelloTypePacket,
         // matching processHelloPacket() (MFC BaseClient.cpp:340-355).
@@ -4870,9 +4870,9 @@ void UpDownClient::onHelloReceived(const uint8* data, uint32 size, uint8 opcode)
         maybeBootstrapKadFromPeer();   // MFC ListenSocket.cpp:289-290
     } else if (opcode == OP_HELLOANSWER) {
         if (thePrefs.verbose())
-            logDebug(QStringLiteral("onHelloReceived: OP_HELLOANSWER from %1:%2")
+            logDebug([&]() -> QString { return QStringLiteral("onHelloReceived: OP_HELLOANSWER from %1:%2")
                          .arg(m_socket ? m_socket->peerAddress().toString() : QStringLiteral("?"))
-                         .arg(m_socket ? m_socket->peerPort() : 0));
+                         .arg(m_socket ? m_socket->peerPort() : 0); });
         m_helloAnswerPending = false;
         (void)processHelloTypePacket(io);   // its tags are read for their side effects
 
@@ -4971,9 +4971,9 @@ void UpDownClient::onFileRequestReceived(const uint8* data, uint32 size, uint8 o
         // Verify this is for the file we requested
         if (m_reqFile && md4equ(fileHash, m_reqFile->fileHash())) {
             processFileStatus(false, io, m_reqFile);
-            logDebug(QStringLiteral("OP_FILESTATUS: partCount=%1 completeSource=%2 downloadState=%3 from %4")
+            logDebug([&]() -> QString { return QStringLiteral("OP_FILESTATUS: partCount=%1 completeSource=%2 downloadState=%3 from %4")
                          .arg(m_partCount).arg(m_completeSource)
-                         .arg(static_cast<int>(m_downloadState)).arg(userName()));
+                         .arg(static_cast<int>(m_downloadState)).arg(userName()); });
         }
         break;
     }
@@ -5015,8 +5015,8 @@ void UpDownClient::onUploadRequestReceived(const uint8* data, uint32 size)
             theApp.uploadQueue->addClientToQueue(this);
     } else {
         // MFC answers nothing here, it only counts the miss
-        logDebug(QStringLiteral("onUploadRequestReceived: file not found for %1")
-                     .arg(userName()));
+        logDebug([&]() -> QString { return QStringLiteral("onUploadRequestReceived: file not found for %1")
+                     .arg(userName()); });
         checkFailedFileIdReqs(data);
     }
 }
@@ -5266,7 +5266,7 @@ void UpDownClient::processAnswerSources(const uint8* data, uint32 size)
         return;
     }
     if (!expectsSourcesFor(file)) {
-        logDebug(QStringLiteral("Unrequested source answer from %1 dropped").arg(statusName()));
+        logDebug([&]() -> QString { return QStringLiteral("Unrequested source answer from %1 dropped").arg(statusName()); });
         return;
     }
 
@@ -5334,7 +5334,7 @@ void UpDownClient::processAnswerSources2(const uint8* data, uint32 size)
         return;
     }
     if (!expectsSourcesFor(file)) {
-        logDebug(QStringLiteral("Unrequested source answer from %1 dropped").arg(statusName()));
+        logDebug([&]() -> QString { return QStringLiteral("Unrequested source answer from %1 dropped").arg(statusName()); });
         return;
     }
 
@@ -5396,8 +5396,8 @@ void UpDownClient::processAskSharedFiles()
     if (!allowed) {
         // An empty list, not the denial opcode: a client old enough to send this
         // request may not know it (MFC ListenSocket.cpp:672-694).
-        logDebug(QStringLiteral("User %1 (%2) requested your shared files list -> denied")
-                     .arg(statusName()).arg(m_userIDHybrid));
+        logDebug([&]() -> QString { return QStringLiteral("User %1 (%2) requested your shared files list -> denied")
+                     .arg(statusName()).arg(m_userIDHybrid); });
         SafeMemFile empty;
         empty.writeUInt32(0);
         sendPacket(std::make_unique<Packet>(empty, OP_EDONKEYPROT, OP_ASKSHAREDFILESANSWER));
@@ -5428,7 +5428,7 @@ void UpDownClient::processAskSharedFiles()
     auto packet = std::make_unique<Packet>(response, OP_EDONKEYPROT, OP_ASKSHAREDFILESANSWER);
     sendPacket(std::move(packet));
 
-    logDebug(QStringLiteral("Sent %1 shared files to %2").arg(files.size()).arg(userName()));
+    logDebug([&]() -> QString { return QStringLiteral("Sent %1 shared files to %2").arg(files.size()).arg(userName()); });
 }
 
 // ===========================================================================
@@ -5441,8 +5441,8 @@ void UpDownClient::processAskSharedDirs()
     const bool allowed = (access == 2) || (access == 1 && m_friend != nullptr);
 
     if (!allowed) {
-        logDebug(QStringLiteral("User %1 (%2) requested your list of shared directories -> denied")
-                     .arg(statusName()).arg(m_userIDHybrid));
+        logDebug([&]() -> QString { return QStringLiteral("User %1 (%2) requested your list of shared directories -> denied")
+                     .arg(statusName()).arg(m_userIDHybrid); });
         auto packet = std::make_unique<Packet>(OP_ASKSHAREDDENIEDANS, 0);
         packet->prot = OP_EDONKEYPROT;
         sendPacket(std::move(packet));
@@ -5472,8 +5472,8 @@ void UpDownClient::processAskSharedFilesDir(const uint8* data, uint32 size)
     }
 
     if (!allowed) {
-        logDebug(QStringLiteral("User %1 (%2) requested your list of shared files for directory '%3' -> denied")
-                     .arg(statusName()).arg(m_userIDHybrid).arg(reqDir));
+        logDebug([&]() -> QString { return QStringLiteral("User %1 (%2) requested your list of shared files for directory '%3' -> denied")
+                     .arg(statusName()).arg(m_userIDHybrid).arg(reqDir); });
         auto packet = std::make_unique<Packet>(OP_ASKSHAREDDENIEDANS, 0);
         packet->prot = OP_EDONKEYPROT;
         sendPacket(std::move(packet));
@@ -5503,8 +5503,8 @@ void UpDownClient::processAskSharedFilesDir(const uint8* data, uint32 size)
         matchedFiles = theApp.sharedFileList->filesInDirectory(dir);
         std::erase_if(matchedFiles, [](const KnownFile* file) { return file->isPartFile(); });
     } else {
-        logDebug(QStringLiteral("View shared files: no directory behind \"%1\" — sending an empty list")
-                     .arg(reqDir));
+        logDebug([&]() -> QString { return QStringLiteral("View shared files: no directory behind \"%1\" — sending an empty list")
+                     .arg(reqDir); });
     }
     if (!largePeer)
         std::erase_if(matchedFiles, [](const KnownFile* file) { return file->isLargeFile(); });
@@ -5668,8 +5668,8 @@ void UpDownClient::flushPendingIPChange()
     std::memcpy(packet->pBuffer, ourIPv6.ipv6Bytes().data(), 16);
     sendPacket(std::move(packet));
 
-    logDebug(QStringLiteral("OP_CHANGE_CLIENT_IP to %1: our IPv6 is now %2")
-                 .arg(userName(), ourIPv6.toString()));
+    logDebug([&]() -> QString { return QStringLiteral("OP_CHANGE_CLIENT_IP to %1: our IPv6 is now %2")
+                 .arg(userName(), ourIPv6.toString()); });
 }
 
 void UpDownClient::processChangeClientIP(const uint8* data, uint32 size)
@@ -5681,8 +5681,8 @@ void UpDownClient::processChangeClientIP(const uint8* data, uint32 size)
 
     const Address announced = Address::fromIPv6Bytes(data);
     if (!announced.isPublicIP()) {
-        logDebug(QStringLiteral("OP_CHANGE_CLIENT_IP from %1: ignoring non-public address %2")
-                     .arg(userName(), announced.toString()));
+        logDebug([&]() -> QString { return QStringLiteral("OP_CHANGE_CLIENT_IP from %1: ignoring non-public address %2")
+                     .arg(userName(), announced.toString()); });
         return;
     }
 
@@ -5695,8 +5695,8 @@ void UpDownClient::processChangeClientIP(const uint8* data, uint32 size)
     if (m_connectAddress.isIPv6())
         m_connectAddress = m_userIPv6;
 
-    logDebug(QStringLiteral("OP_CHANGE_CLIENT_IP from %1: new IPv6 %2")
-                 .arg(userName(), announced.toString()));
+    logDebug([&]() -> QString { return QStringLiteral("OP_CHANGE_CLIENT_IP from %1: new IPv6 %2")
+                 .arg(userName(), announced.toString()); });
 }
 
 // ===========================================================================
@@ -5758,8 +5758,8 @@ void UpDownClient::processChangeClientID(const uint8* data, uint32 size)
             setServerPort(newServer->port());
         }
     } else {
-        logDebug(QStringLiteral("OP_CHANGE_CLIENT_ID from %1: unknown contents (id=%2)")
-                     .arg(userName(), ipstr(newUserID)));
+        logDebug([&]() -> QString { return QStringLiteral("OP_CHANGE_CLIENT_ID from %1: unknown contents (id=%2)")
+                     .arg(userName(), ipstr(newUserID)); });
     }
 }
 
@@ -5955,8 +5955,8 @@ bool UpDownClient::resolveBuddyAddress()
         if (auto* contact = zone->getContact(buddyKadId)) {
             m_buddyAddress = contact->address();
             m_buddyPort = contact->getUDPPort();
-            logDebug(QStringLiteral("tryToConnect: found buddy IP from Kad routing table: %1:%2")
-                         .arg(m_buddyAddress.toQHostAddress().toString()).arg(m_buddyPort));
+            logDebug([&]() -> QString { return QStringLiteral("tryToConnect: found buddy IP from Kad routing table: %1:%2")
+                         .arg(m_buddyAddress.toQHostAddress().toString()).arg(m_buddyPort); });
         }
     }
     return !m_buddyAddress.isNull() && m_buddyPort != 0;
@@ -5985,9 +5985,9 @@ void UpDownClient::sendKadCallback()
                                      Endpoint(m_buddyAddress, m_buddyPort),
                                      false, nullptr, true, 0);
     setDownloadState(DownloadState::WaitCallbackKad);
-    logDebug(QStringLiteral("tryToConnect: KAD CALLBACK via buddy %1:%2%3")
+    logDebug([&]() -> QString { return QStringLiteral("tryToConnect: KAD CALLBACK via buddy %1:%2%3")
                  .arg(m_buddyAddress.toQHostAddress().toString()).arg(m_buddyPort)
-                 .arg(send ? QString() : QStringLiteral(" — not sent, relay limit")));
+                 .arg(send ? QString() : QStringLiteral(" — not sent, relay limit")); });
 }
 
 bool UpDownClient::serverCallbackKnownStale() const

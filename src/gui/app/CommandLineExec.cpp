@@ -46,6 +46,7 @@ void CommandLineExec::parse(QApplication& app)
     m_parser.addOption(m_optionsOption);
     m_parser.addOption(m_clientDetailsOption);
     m_parser.addOption(m_configOption);
+    m_parser.addOption(m_logLevelOption);   // read early by consoleLogLevelFromArgs
     m_parser.addOption(m_newInstanceOption);
     m_afterUpdateOption.setFlags(QCommandLineOption::HiddenFromHelp);
     m_parser.addOption(m_afterUpdateOption);

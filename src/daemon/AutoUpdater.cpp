@@ -280,14 +280,14 @@ void AutoUpdater::onManifest(QNetworkReply* reply)
 
     if (!VersionManifest::isNewer(info.latest, m_currentVersion)) {
         m_busy = false;
-        logDebug(QStringLiteral("Auto-update: v%1 is current").arg(m_currentVersion));
+        logDebug([&]() -> QString { return QStringLiteral("Auto-update: v%1 is current").arg(m_currentVersion); });
         setStage(QStringLiteral("uptodate"), m_currentVersion);
         return;
     }
     if (info.latest == m_failedVersion && m_failedCount >= kMaxFailures) {
         m_busy = false;
-        logDebug(QStringLiteral("Auto-update: v%1 failed %2 times, waiting for a newer release")
-                     .arg(info.latest).arg(m_failedCount));
+        logDebug([&]() -> QString { return QStringLiteral("Auto-update: v%1 failed %2 times, waiting for a newer release")
+                     .arg(info.latest).arg(m_failedCount); });
         setStage(QStringLiteral("skipped"), info.latest);
         return;
     }

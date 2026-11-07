@@ -116,7 +116,7 @@ void MetaSearchService::fetch(const Target& target, const QByteArray& hash16, co
     // fetched lately (Details, then Download): no second request
     if (const auto cached = MetaFileCache::instance().find(MetaFileCache::enodeKey(target.serverAddr, hash16));
         cached && (maxBytes == 0 || cached->content.size() <= qsizetype(maxBytes))) {
-        logDebug(QStringLiteral("Meta API: %1 served from cache").arg(QString::fromLatin1(hash16.toHex())));
+        logDebug([&]() -> QString { return QStringLiteral("Meta API: %1 served from cache").arg(QString::fromLatin1(hash16.toHex())); });
         pb::MetaFile file;
         file.setContent(cached->content);
         file.setContentType(cached->contentType);
@@ -323,8 +323,8 @@ void MetaSearchService::askNextServer(uint32 searchID)
         SearchRun& run = *it;
         if (!r.ok()) {
             run.lastError = errorText(r, statusFor(r));
-            logServerVerbose(QStringLiteral("Meta search %1: %2 — %3")
-                                 .arg(searchID).arg(server.endpoint.serverName, r.message));
+            logServerVerbose([&]() -> QString { return QStringLiteral("Meta search %1: %2 — %3")
+                                 .arg(searchID).arg(server.endpoint.serverName, r.message); });
             askNextServer(searchID);
             return;
         }
@@ -345,9 +345,9 @@ void MetaSearchService::askNextServer(uint32 searchID)
             askNextServer(searchID);
             return;
         }
-        logServerVerbose(QStringLiteral(">>> Meta search %1: \"%2\" (%3) -> %4")
+        logServerVerbose([&]() -> QString { return QStringLiteral(">>> Meta search %1: \"%2\" (%3) -> %4")
                              .arg(searchID).arg(run.request.query(), metaNetworkName(run.type),
-                                                server.endpoint.serverName));
+                                                server.endpoint.serverName); });
         askPage(searchID, server, token, 0);
     });
 }
@@ -380,8 +380,8 @@ void MetaSearchService::askPage(uint32 searchID, const MetaSearchCandidate& serv
             } else {
                 run.lastError = QStringLiteral("%1: %2").arg(server.endpoint.serverName, errorText(r, st));
             }
-            logServerVerbose(QStringLiteral("Meta search %1: %2 — %3 (grpc %4)")
-                                 .arg(searchID).arg(server.endpoint.serverName, r.message).arg(r.grpcCode));
+            logServerVerbose([&]() -> QString { return QStringLiteral("Meta search %1: %2 — %3 (grpc %4)")
+                                 .arg(searchID).arg(server.endpoint.serverName, r.message).arg(r.grpcCode); });
             askNextServer(searchID);
             return;
         }
@@ -399,9 +399,9 @@ void MetaSearchService::askPage(uint32 searchID, const MetaSearchCandidate& serv
             }
             emit theApp.searchList->tabHeaderUpdated(searchID);
         }
-        logServerVerbose(QStringLiteral("<<< Meta search %1: %2 row(s) from %3, %4 kept")
+        logServerVerbose([&]() -> QString { return QStringLiteral("<<< Meta search %1: %2 row(s) from %3, %4 kept")
                              .arg(searchID).arg(resp.entries().size())
-                             .arg(server.endpoint.serverName).arg(added));
+                             .arg(server.endpoint.serverName).arg(added); });
 
         // One page a request: the next is fetched when the user asks for more.
         run.rows += added;

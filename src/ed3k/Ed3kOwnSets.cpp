@@ -703,7 +703,7 @@ bool Ed3kOwnSets::publishVersion(Set& s, Build& b, QString* error)
                 return false;
             auto head = e->setPublishHidden(t, utf8(link), key.expose(), spanOf(file), *root);
             if (!head) {
-                logDebug(QStringLiteral("hidden set %1 not published (error %2)").arg(idHex, errorName(head.error())));
+                logDebug([&]() -> QString { return QStringLiteral("hidden set %1 not published (error %2)").arg(idHex, errorName(head.error())); });
                 if (root != s.manifest)
                     unshare(*root);
                 return false;
@@ -718,7 +718,7 @@ bool Ed3kOwnSets::publishVersion(Set& s, Build& b, QString* error)
             return false;
         auto head = e->setPublish(t, spanOf(file), *root, utf8(name), ffi::SetSigner::Seed, &key.expose());
         if (!head) {
-            logDebug(QStringLiteral("set %1 not published (error %2)").arg(idHex, errorName(head.error())));
+            logDebug([&]() -> QString { return QStringLiteral("set %1 not published (error %2)").arg(idHex, errorName(head.error())); });
             if (root != s.manifest)
                 unshare(*root);
             return false;
@@ -804,9 +804,9 @@ void Ed3kOwnSets::shareMembers(Set& s, Build& b)
         if (sealed) {
             // §8.1, §4.3: a SOURCE record, no KEYWORD or MEMBER record
             if (auto ok = e->publish(t, info, ffi::Publish::Source); !ok)
-                logDebug(QStringLiteral("a sealed member's source not published (error %1)").arg(errorName(ok.error())));
+                logDebug([&]() -> QString { return QStringLiteral("a sealed member's source not published (error %1)").arg(errorName(ok.error())); });
         } else if (auto ok = publishShared(info); !ok) {
-            logDebug(QStringLiteral("member %1 not published (error %2)").arg(m.path, errorName(ok.error())));
+            logDebug([&]() -> QString { return QStringLiteral("member %1 not published (error %2)").arg(m.path, errorName(ok.error())); });
         }
     }
 }

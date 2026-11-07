@@ -246,7 +246,7 @@ bool Ed3kSets::downloadParts(std::uint32_t id, const std::optional<ffi::Key32>& 
     const auto ok = e->setPartDownload(m_session.now(), *s->topic, author ? &*author : nullptr);
     m_session.pump();
     if (!ok)
-        logEd3kDebug(QStringLiteral("ed3k: parts of set %1 not downloaded (error %2)").arg(id).arg(int(ok.error())));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: parts of set %1 not downloaded (error %2)").arg(id).arg(int(ok.error())); });
     return ok.has_value();
 }
 
@@ -323,12 +323,12 @@ void Ed3kSets::onEventPolled(const ffi::Event& event, bool* handled)
     if (const auto* h = std::get_if<e::SetHead>(&event)) {
         if (Set* s = setOfTopic(h->set)) {
             *handled = true;
-            logEd3kDebug(QStringLiteral("ed3k: set %1 has version %2, fetching it").arg(s->id).arg(h->seq));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: set %1 has version %2, fetching it").arg(s->id).arg(h->seq); });
         }
     } else if (const auto* hh = std::get_if<e::SetHiddenHead>(&event)) {
         if (Set* s = setOfTopic(hh->set)) {
             *handled = true;
-            logEd3kDebug(QStringLiteral("ed3k: hidden set %1 has version %2, fetching it").arg(s->id).arg(hh->seq));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: hidden set %1 has version %2, fetching it").arg(s->id).arg(hh->seq); });
         }
     } else if (const auto* m = std::get_if<e::SetManifest>(&event)) {
         if (Set* s = setOfTopic(m->set, &mount)) {
@@ -342,7 +342,7 @@ void Ed3kSets::onEventPolled(const ffi::Event& event, bool* handled)
         if (Set* s = setOfTopic(r->set)) {
             *handled = true;
             s->error = QStringLiteral("a version was refused (%1)").arg(int(r->why));
-            logEd3kDebug(QStringLiteral("ed3k: set %1: %2").arg(s->id).arg(s->error));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: set %1: %2").arg(s->id).arg(s->error); });
             markChanged();
         }
     } else if (const auto* in = std::get_if<e::SetInner>(&event)) {
@@ -549,7 +549,7 @@ void Ed3kSets::onMountManifest(Set& s, const QString& path, const ffi::Root& roo
         return;   // offered already
     storeManifest(root, f);
     s.inner[root] = f;
-    logEd3kDebug(QStringLiteral("ed3k: set %1: a new version of the mount at %2").arg(s.id).arg(path));
+    logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: set %1: a new version of the mount at %2").arg(s.id).arg(path); });
     // was: ToDo: a mount's new version under Policy::Ask is shown, downloaded on the next apply
     // (done: the first version is taken; a newer one under Ask waits for the user)
     // s.mounts[path] = root;
@@ -653,7 +653,7 @@ bool Ed3kSets::addMember(Set& s, const ffi::Root& root, std::uint64_t size, cons
     spec.owner = ownerOf(s.id);
     // spec.paused = true;
     if (auto ok = m_downloads.add(spec); !ok) {
-        logEd3kDebug(QStringLiteral("ed3k: set %1: a member not added (%2)").arg(s.id).arg(ok.error()));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: set %1: a member not added (%2)").arg(s.id).arg(ok.error()); });
         return false;
     }
     // s.queued.push_back(root);
@@ -1021,7 +1021,7 @@ void Ed3kSets::onPaidKeys(const ffi::Scope& scope)
         s.topic.reset();
         if (m_attached)
             (void)followOnEngine(s);
-        logEd3kDebug(QStringLiteral("ed3k: set %1: keys arrived, followed again").arg(id));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: set %1: keys arrived, followed again").arg(id); });
     }
     // §8.1: the sealed members waiting for these keys
     m_keysAsked.erase(scope);
@@ -1110,7 +1110,7 @@ bool Ed3kSets::openMember(Set& s, const Ed3kSetEntry& m, const QString& sealedPa
                 anon = i->anon;
         auto got = e->paidMemberKey(m_session.now(), *scope, *m.epoch, anon);
         if (!got) {
-            logEd3kDebug(QStringLiteral("ed3k: set %1: no member key (error %2)").arg(s.id).arg(int(got.error())));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: set %1: no member key (error %2)").arg(s.id).arg(int(got.error())); });
             return false;
         }
         if (!*got) {
@@ -1118,7 +1118,7 @@ bool Ed3kSets::openMember(Set& s, const Ed3kSetEntry& m, const QString& sealedPa
             if (m_keysAsked.insert(*scope).second) {
                 (void)e->paidWantKeys(m_session.now(), *scope);
                 m_session.pump();
-                logEd3kDebug(QStringLiteral("ed3k: set %1: a sealed member waits for the key of epoch %2").arg(s.id).arg(*m.epoch));
+                logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: set %1: a sealed member waits for the key of epoch %2").arg(s.id).arg(*m.epoch); });
             }
             return false;
         }

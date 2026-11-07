@@ -58,6 +58,9 @@ private slots:
     void serverLink_ipv6Bare();
     void serverLink_ipv6ToLinkRoundTrip();
     void serverLink_rejectsHostPortInAddressField();
+    void serverLink_dualStack();
+    void serverLink_dualStackMalformedHintKeepsLink();
+    void serverLink_dualStackToLink();
 
     // ServerList links
     void serverListLink_basic();
@@ -608,6 +611,54 @@ void tst_ED2KLink::serverLink_rejectsHostPortInAddressField()
     QVERIFY(!parseED2KLink(QStringLiteral("ed2k://|server|1:2:3|4661|/")).has_value());
     // A hostname stays valid — it is resolved at connect time.
     QVERIFY(parseED2KLink(QStringLiteral("ed2k://|server|srv.example.com|4661|/")).has_value());
+}
+
+void tst_ED2KLink::serverLink_dualStack()
+{
+    // §6.4: the IPv6 of a dual-stack server rides after the closing "/", where stock
+    // eMule has already returned the plain IPv4 link.
+    for (const char* text : {"ed2k://|server|192.0.2.7|4661|/|v6=[2001:db8::7]|/",
+                             "ed2k://|server|192.0.2.7|4661|/|v6=[2001:db8::7]:4661|/",
+                             "ed2k://|server|192.0.2.7|4661|/|V6=2001:db8::7|/",
+                             "ed2k://|server|192.0.2.7|4661|/|x=1|v6=[2001:db8::7]",
+                             "ed2k://|server|192.0.2.7|4661|/|v6=[2001:0db8:0:0:0:0:0:7]|/"}) {
+        auto result = parseED2KLink(QString::fromLatin1(text));
+        QVERIFY2(result.has_value(), text);
+        const auto& link = std::get<ED2KServerLink>(*result);
+        QCOMPARE(link.address, QStringLiteral("192.0.2.7"));
+        QCOMPARE(link.port, uint16{4661});
+        QCOMPARE(link.address6, QStringLiteral("2001:db8::7"));
+    }
+}
+
+void tst_ED2KLink::serverLink_dualStackMalformedHintKeepsLink()
+{
+    // A bad hint drops only itself; an IPv6 primary ignores one.
+    for (const char* text : {"ed2k://|server|192.0.2.7|4661|/|v6=[2001:db8::7]:4662|/",
+                             "ed2k://|server|192.0.2.7|4661|/|v6=192.0.2.8|/",
+                             "ed2k://|server|192.0.2.7|4661|/|v6=[2001:db8::7|/",
+                             "ed2k://|server|192.0.2.7|4661|/|v6=host.example.com|/",
+                             "ed2k://|server|[2001:db8::1]|4661|/|v6=[2001:db8::7]|/"}) {
+        auto result = parseED2KLink(QString::fromLatin1(text));
+        QVERIFY2(result.has_value(), text);
+        QVERIFY2(std::get<ED2KServerLink>(*result).address6.isEmpty(), text);
+    }
+}
+
+void tst_ED2KLink::serverLink_dualStackToLink()
+{
+    QCOMPARE((ED2KServerLink{QStringLiteral("192.0.2.7"), 4661, QStringLiteral("2001:db8::7")}.toLink()),
+             QStringLiteral("ed2k://|server|192.0.2.7|4661|/|v6=[2001:db8::7]|/"));
+    // An IPv6 primary carries no hint; neither does a non-IPv6 address6.
+    QCOMPARE((ED2KServerLink{QStringLiteral("2001:db8::1"), 4661, QStringLiteral("2001:db8::7")}.toLink()),
+             QStringLiteral("ed2k://|server|[2001:db8::1]|4661|/"));
+    QCOMPARE((ED2KServerLink{QStringLiteral("192.0.2.7"), 4661, QStringLiteral("192.0.2.8")}.toLink()),
+             QStringLiteral("ed2k://|server|192.0.2.7|4661|/"));
+    // Round trip.
+    auto again = parseED2KLink(QStringLiteral("ed2k://|server|192.0.2.7|4661|/|v6=[2001:db8::7]|/"));
+    QVERIFY(again.has_value());
+    QCOMPARE(std::get<ED2KServerLink>(*again).toLink(),
+             QStringLiteral("ed2k://|server|192.0.2.7|4661|/|v6=[2001:db8::7]|/"));
 }
 
 // ---------------------------------------------------------------------------

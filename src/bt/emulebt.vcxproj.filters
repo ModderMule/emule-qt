@@ -21,6 +21,9 @@
     <ClCompile Include="BtSession.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="BtTrackerList.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="add\BtAddSource.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -39,6 +42,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="BtJoin.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="BtTrackerList.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="BtTypes.h">

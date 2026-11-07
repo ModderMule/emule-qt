@@ -228,6 +228,9 @@
     <ClCompile Include="dialogs\AddTorrentDialog.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="dialogs\BtI2pPage.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="dialogs\TorrentDetailsDialog.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
+    <ClCompile Include="dialogs\TorrentOptionsDialog.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
+    <ClCompile Include="dialogs\EditTrackersDialog.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
+    <ClCompile Include="controls\TorrentOptionsForm.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="panels\TorrentPanel.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="panels\HosterPanel.cpp" Condition="'$(EmuleHosterJd)'=='true'" />
     <ClCompile Include="dialogs\HosterPuzzleDialog.cpp" Condition="'$(EmuleHosterJd)'=='true'" />
@@ -528,6 +531,9 @@
     <QtMoc Include="dialogs\AddTorrentDialog.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="dialogs\BtI2pPage.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="dialogs\TorrentDetailsDialog.h" Condition="'$(EmuleBitTorrent)'=='true'" />
+    <QtMoc Include="dialogs\TorrentOptionsDialog.h" Condition="'$(EmuleBitTorrent)'=='true'" />
+    <QtMoc Include="dialogs\EditTrackersDialog.h" Condition="'$(EmuleBitTorrent)'=='true'" />
+    <QtMoc Include="controls\TorrentOptionsForm.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="panels\TorrentPanel.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="panels\HosterPanel.h" Condition="'$(EmuleHosterJd)'=='true'" />
     <QtMoc Include="dialogs\HosterPuzzleDialog.h" Condition="'$(EmuleHosterJd)'=='true'" />

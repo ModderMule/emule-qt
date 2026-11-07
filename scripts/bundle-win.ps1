@@ -143,35 +143,6 @@ if (Test-Path $resolverZip) {
     Write-Warning "No resolver.zip (scripts\build-hoster-resolver.ps1): hoster downloads not bundled."
 }
 
-# -- Bundled I2P router (emuleqt-i2pd), optional -----------------------------------
-# CMake fetches it into <build>\i2pd (cmake\I2pd.cmake). A Visual Studio build has none:
-# then it is downloaded here from the release pinned in scripts\i2pd.ref, hash checked.
-
-$i2pdDir = @($env:EMULE_I2PD_DIR, (Join-Path $BuildDir 'i2pd'), (Join-Path $projectDir 'build\i2pd')) |
-    Where-Object { $_ -and (Test-Path (Join-Path $_ 'emuleqt-i2pd.exe')) } | Select-Object -First 1
-if (-not $i2pdDir) {
-    $ref = Get-Content (Join-Path $projectDir 'scripts\i2pd.ref') | Where-Object { $_ -and -not $_.StartsWith('#') }
-    $tag = ($ref | Where-Object { $_ -like 'tag *' } | Select-Object -First 1) -replace '^tag\s+', ''
-    $line = $ref | Where-Object { $_ -like 'i2pd-windows-x64.zip *' } | Select-Object -First 1
-    $sha = if ($line) { ($line -split '\s+')[1] } else { '' }
-    if ($tag -and $sha -match '^[0-9a-fA-F]{64}$') {
-        $i2pdDir = Join-Path $projectDir 'build\i2pd'
-        $zip = Join-Path $env:TEMP 'i2pd-windows-x64.zip'
-        Invoke-WebRequest -Uri "https://github.com/ed3k-protocol/i2pd/releases/download/$tag/i2pd-windows-x64.zip" -OutFile $zip
-        if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne $sha.ToUpper()) { throw "i2pd-windows-x64.zip: SHA-256 differs from scripts\i2pd.ref" }
-        if (Test-Path $i2pdDir) { Remove-Item -Recurse -Force $i2pdDir }
-        Expand-Archive $zip -DestinationPath $i2pdDir
-    }
-}
-if ($i2pdDir) {
-    Copy-Item (Join-Path $i2pdDir 'emuleqt-i2pd.exe') (Join-Path $stageDir 'emuleqt-i2pd.exe') -Force
-    Copy-Item (Join-Path $i2pdDir 'certificates') (Join-Path $stageDir 'i2pd-certificates') -Recurse -Force
-    Copy-Item (Join-Path $i2pdDir 'LICENSE') (Join-Path $stageDir 'i2pd-LICENSE.txt') -Force
-    Write-Host '  emuleqt-i2pd.exe'
-} else {
-    Write-Warning 'No emuleqt-i2pd.exe (scripts\i2pd.ref not pinned yet): bundled I2P router not included.'
-}
-
 # -- Copy API documents -------------------------------------------------------
 
 $docDst = Join-Path $stageDir 'doc'

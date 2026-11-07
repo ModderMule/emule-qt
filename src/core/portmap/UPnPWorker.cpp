@@ -151,9 +151,9 @@ void UPnPWorker::discover(const QString& bindAddress)
                                    &firewallEnabled, &inboundPinholeAllowed)
             == UPNPCOMMAND_SUCCESS) {
             m_pinholesAvailable = firewallEnabled != 0 && inboundPinholeAllowed != 0;
-            logDebug(QStringLiteral("UPnP: IGD2 firewall control — enabled=%1 pinholes=%2")
+            logDebug([&]() -> QString { return QStringLiteral("UPnP: IGD2 firewall control — enabled=%1 pinholes=%2")
                          .arg(firewallEnabled)
-                         .arg(inboundPinholeAllowed));
+                         .arg(inboundPinholeAllowed); });
         }
     }
 
@@ -205,9 +205,9 @@ void UPnPWorker::deleteMapping(const PortMapping& mapping)
                                               protocolName(mapping.request.protocol),
                                               nullptr);
     if (result != UPNPCOMMAND_SUCCESS) {
-        logDebug(QStringLiteral("UPnP: DeletePortMapping(%1) returned %2")
+        logDebug([&]() -> QString { return QStringLiteral("UPnP: DeletePortMapping(%1) returned %2")
                      .arg(mapping.externalPort)
-                     .arg(describeError(result)));
+                     .arg(describeError(result)); });
     }
 }
 

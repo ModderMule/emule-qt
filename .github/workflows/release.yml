@@ -340,17 +340,25 @@ jobs:
 
       # eD2K links (MD4 + AICH) for the release notes and as an asset.
       # hashlib can't do MD4 on OpenSSL 3, hence rhash. Links only resolve once
-      # someone seeds the files -- see scripts/seed.local.py.
+      # someone seeds the files -- see scripts/seed.local.py -- but each link also
+      # carries its GitHub asset URL as a plain web source (s=), so it works at once.
       - name: Generate ED2K-LINKS.txt
         working-directory: dist
         run: |
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq rhash
-          # same file list as SHA256SUMS.txt
-          awk '{print $2}' SHA256SUMS.txt | xargs rhash --ed2k-link -- | tee ED2K-LINKS.txt
+          # same file list as SHA256SUMS.txt; raw file outside dist/ (all of dist/ is uploaded)
+          awk '{print $2}' SHA256SUMS.txt | xargs rhash --ed2k-link -- > "$RUNNER_TEMP/ed2k.raw"
+          # web source before the closing "/" (asset names are URL-safe ASCII)
+          base="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+          sed -E "s#^(ed2k://\|file\|([^|]+)\|.*\|)/\$#\1s=${base}/\2|/#" "$RUNNER_TEMP/ed2k.raw" \
+            | tee ED2K-LINKS.txt
           [ "$(wc -l < ED2K-LINKS.txt)" -eq "$(wc -l < SHA256SUMS.txt)" ] \
             || { echo "::error::ED2K-LINKS.txt does not match SHA256SUMS.txt"; exit 1; }
+          if grep -v -q '|s=https://' ED2K-LINKS.txt; then
+            echo "::error::ED2K-LINKS.txt has a link without a GitHub web source"; exit 1
+          fi
           grep -q '|h=' ED2K-LINKS.txt || echo "::warning::rhash links carry no AICH hash"
 
       - name: Build release notes

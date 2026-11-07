@@ -1,8 +1,15 @@
 /// @file tst_I2pRouter.cpp
-/// @brief The bundled I2P router's supervisor (I2pRouter): args, ready, crash restart, stop.
+/// @brief The own I2P router's supervisor (I2pRouter): args, ready, crash restart, stop;
+/// and its download (I2pdInstaller).
 /// A shell script stands in for i2pd ($EMULE_I2PD): it opens the SAM port it was given.
+/// EMULE_I2PD_LIVE=1 also fetches the pinned release from GitHub.
 
 #include "net/I2pRouter.h"
+#include "net/I2pdInstaller.h"
+
+#include <QCryptographicHash>
+#include <QProcess>
+#include <QUrl>
 
 #include <QFile>
 #include <QHostAddress>
@@ -52,6 +59,30 @@ I2pRouter::Config configIn(const QTemporaryDir& dir)
     return c;
 }
 
+/// A release-like tar.gz in @p dir: emuleqt-i2pd (no exec bit), certificates/, LICENSE.
+I2pdInstaller::Asset writeFakeRelease(const QTemporaryDir& dir)
+{
+    const QString src = dir.filePath(QStringLiteral("src"));
+    QDir().mkpath(src + QStringLiteral("/certificates/reseed"));
+    for (const auto& [name, text] : {std::pair{"emuleqt-i2pd", "#!/bin/sh\nexit 0\n"},
+                                     std::pair{"LICENSE", "BSD\n"},
+                                     std::pair{"certificates/reseed/a.crt", "cert\n"}}) {
+        QFile f(src + QLatin1Char('/') + QLatin1StringView(name));
+        if (!f.open(QIODevice::WriteOnly))
+            return {};
+        f.write(text);
+    }
+    const QString archive = dir.filePath(QStringLiteral("i2pd-test.tar.gz"));
+    if (QProcess::execute(QStringLiteral("tar"), {QStringLiteral("-czf"), archive, QStringLiteral("-C"), src,
+                                                  QStringLiteral(".")}) != 0)
+        return {};
+    QFile f(archive);
+    if (!f.open(QIODevice::ReadOnly))
+        return {};
+    const QString sha = QString::fromLatin1(QCryptographicHash::hash(f.readAll(), QCryptographicHash::Sha256).toHex());
+    return {QStringLiteral("i2pd-test.tar.gz"), sha, QUrl::fromLocalFile(archive), I2pdInstaller::pinnedAsset().release};
+}
+
 } // namespace
 
 class tst_I2pRouter : public QObject {
@@ -62,6 +93,9 @@ private slots:
     void readyOnceSamAnswers();
     void crashRestartsWithPause();
     void stopEndsIt();
+    void installerUnpacksAndStamps();
+    void installerBadHashKeepsOld();
+    void installerLive();
 };
 
 void tst_I2pRouter::arguments()
@@ -157,6 +191,79 @@ void tst_I2pRouter::stopEndsIt()
     };
     QTRY_VERIFY_WITH_TIMEOUT(portFree(), 5000);
     qunsetenv("EMULE_I2PD");
+}
+
+void tst_I2pRouter::installerUnpacksAndStamps()
+{
+#ifdef Q_OS_WIN
+    QSKIP("the fake release is a shell script");
+#endif
+    QTemporaryDir dir;
+    const I2pdInstaller::Asset asset = writeFakeRelease(dir);
+    QVERIFY(!asset.name.isEmpty());
+    I2pdInstaller inst;
+    inst.setDir(I2pRouter::installDir(dir.filePath(QStringLiteral("I2P"))));
+    QVERIFY(inst.binary().isEmpty());
+    QVERIFY(!inst.current());
+    QSignalSpy done(&inst, &I2pdInstaller::finished);
+    QVERIFY(inst.install(asset));
+    QVERIFY(inst.running());
+    QTRY_COMPARE_WITH_TIMEOUT(done.count(), 1, 10000);
+    QVERIFY2(done.first().first().toBool(), qPrintable(inst.error()));
+    QVERIFY(!inst.running());
+    const QString bin = inst.binary();
+    QVERIFY(!bin.isEmpty());
+    QVERIFY(QFileInfo(bin).isExecutable());
+    // the stamp names the pin
+    QCOMPARE(inst.current(), I2pdInstaller::supported());
+    QCOMPARE(I2pRouter::findCertificates(bin), QDir::cleanPath(inst.dir() + QStringLiteral("/certificates")));
+    // no archive or temp folder left
+    QVERIFY(!QFileInfo::exists(dir.filePath(QStringLiteral("I2P/i2pd-test.tar.gz"))));
+    QVERIFY(!QFileInfo::exists(inst.dir() + QStringLiteral(".tmp")));
+}
+
+void tst_I2pRouter::installerBadHashKeepsOld()
+{
+#ifdef Q_OS_WIN
+    QSKIP("the fake release is a shell script");
+#endif
+    QTemporaryDir dir;
+    I2pdInstaller::Asset asset = writeFakeRelease(dir);
+    QVERIFY(!asset.name.isEmpty());
+    I2pdInstaller inst;
+    inst.setDir(I2pRouter::installDir(dir.filePath(QStringLiteral("I2P"))));
+    QSignalSpy done(&inst, &I2pdInstaller::finished);
+    QVERIFY(inst.install(asset));
+    QTRY_COMPARE_WITH_TIMEOUT(done.count(), 1, 10000);
+    QVERIFY(done.takeFirst().first().toBool());
+    asset.sha256 = QString(64, QLatin1Char('0'));
+    asset.release = QStringLiteral("other 00");
+    QVERIFY(inst.install(asset));
+    QTRY_COMPARE_WITH_TIMEOUT(done.count(), 1, 10000);
+    QVERIFY(!done.first().first().toBool());
+    QVERIFY(inst.error().contains(QStringLiteral("SHA-256")));
+    QVERIFY(!inst.binary().isEmpty());
+}
+
+void tst_I2pRouter::installerLive()
+{
+    if (qEnvironmentVariableIntValue("EMULE_I2PD_LIVE") != 1)
+        QSKIP("EMULE_I2PD_LIVE=1 downloads the pinned release");
+    if (!I2pdInstaller::supported())
+        QSKIP("no release for this system");
+    QTemporaryDir dir;
+    I2pdInstaller inst;
+    inst.setDir(I2pRouter::installDir(dir.path()));
+    QSignalSpy done(&inst, &I2pdInstaller::finished);
+    QVERIFY(inst.install());
+    QTRY_COMPARE_WITH_TIMEOUT(done.count(), 1, 120000);
+    QVERIFY2(done.first().first().toBool(), qPrintable(inst.error()));
+    QVERIFY(inst.current());
+    QVERIFY(!I2pRouter::findCertificates(inst.binary()).isEmpty());
+    QProcess p;
+    p.start(inst.binary(), {QStringLiteral("--version")});
+    QVERIFY(p.waitForFinished(10000));
+    QVERIFY(p.readAll().contains("i2pd"));
 }
 
 QTEST_GUILESS_MAIN(tst_I2pRouter)

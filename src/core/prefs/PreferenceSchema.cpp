@@ -203,6 +203,7 @@ using Kind = PrefSpec::Kind;
     t << flag("btDht", "Find BitTorrent peers through the DHT.");
     t << flag("btLsd", "Find BitTorrent peers on the local network (local service discovery).");
     t << flag("btPex", "Exchange BitTorrent peers with connected peers (PEX).");
+    t << flag("btAnnounceToAll", "Announce to every tracker and tier. Off = the first working tracker per tier.");
     t << number("btEncryption", 0, 2, "", "BitTorrent encryption: 0 = enabled (preferred), "
                 "1 = forced, 2 = disabled.");
     t << number("btMaxActiveDownloads", 1, 100, "", "Torrents downloading at the same time.");
@@ -305,6 +306,8 @@ using Kind = PrefSpec::Kind;
     t << flag("verbose", "Write verbose (debug) log lines.");
     t << advanced(flag("btVerboseLog", "Log BitTorrent details (Torrent Verbose tab)."));
     t << advanced(flag("hosterVerboseLog", "Log hoster resolver details (Hoster Verbose tab)."));
+    t << advanced(flag("usenetVerboseLog", "Log Usenet details (Usenet tab)."));
+    t << advanced(flag("sharedFilesVerboseLog", "Log hashing and duplicates of shared files (Verbose tab)."));
     t << advanced(flag("ed3kVerboseLog", "Log ed3k node details (ed3k Verbose tab)."));
     t << flag("logToDiskCore", "Write the core log to a file.");
     t << advanced(flag("logWebServer", "Log web server requests."));

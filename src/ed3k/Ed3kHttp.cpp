@@ -112,7 +112,7 @@ void Ed3kHttp::start(const ::ed3k::event::HttpRequest& req)
     r->noBody = req.method == ED3K_HTTP_HEAD;
     if (!r->url.isValid() || r->url.host().isEmpty() || (!r->tls && scheme != QLatin1String("http"))
         || methodName(req.method).isEmpty()) {
-        logEd3kDebug(QStringLiteral("http %1: unusable request").arg(id));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("http %1: unusable request").arg(id); });
         m_answers.failed(id);
         return;
     }
@@ -126,7 +126,7 @@ void Ed3kHttp::startRpc(std::uint64_t id, const QString& url, const QByteArray& 
             m_answers.rpcFailed(id);
     };
     if (!rpcUrlUsable(url) || std::uint64_t(body.size()) > kRpcBodyMax) {
-        logEd3kDebug(QStringLiteral("rpc %1: unusable endpoint").arg(id));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("rpc %1: unusable endpoint").arg(id); });
         failed();
         return;
     }
@@ -182,7 +182,7 @@ void Ed3kHttp::begin(std::unique_ptr<Request> r)
     const std::uint64_t id = r->ev.id;
     r->timer.setSingleShot(true);
     connect(&r->timer, &QTimer::timeout, this, [this, id] {
-        logEd3kDebug(QStringLiteral("http %1: timed out").arg(id));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("http %1: timed out").arg(id); });
         // queued: the timer belongs to the request fail() destroys
         QMetaObject::invokeMethod(this, [this, id] { fail(id); }, Qt::QueuedConnection);
     });
@@ -301,13 +301,13 @@ void Ed3kHttp::onSocketError(std::uint64_t id)
             onDisconnected(id);
             return;
         }
-        logEd3kDebug(QStringLiteral("http %1: %2").arg(id).arg(r.socket->errorString()));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("http %1: %2").arg(id).arg(r.socket->errorString()); });
         fail(id);   // broken transfer
         return;
     }
     if (r.tcpUp || r.literal) {
         // TLS failure, or the one address of a literal URL: no other address (host-io.md)
-        logEd3kDebug(QStringLiteral("http %1: %2").arg(id).arg(r.socket->errorString()));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("http %1: %2").arg(id).arg(r.socket->errorString()); });
         fail(id);
         return;
     }
@@ -468,7 +468,7 @@ void Ed3kHttp::finish(std::uint64_t id)
         m_answers.rpcAnswer(id, r->body);
         return;
     }
-    logEd3kDebug(QStringLiteral("rpc %1: status %2").arg(id).arg(r->status));
+    logEd3kDebug([&]() -> QString { return QStringLiteral("rpc %1: status %2").arg(id).arg(r->status); });
     if (m_answers.rpcFailed)
         m_answers.rpcFailed(id);
 }

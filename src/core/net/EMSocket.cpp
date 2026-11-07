@@ -182,9 +182,9 @@ void EMSocket::setConState(EMSState val)
 
 void EMSocket::onConnected()
 {
-    logDebug(QStringLiteral("EMSocket::onConnected — peer=%1 fd=%2")
+    logDebug([&]() -> QString { return QStringLiteral("EMSocket::onConnected — peer=%1 fd=%2")
                  .arg(Endpoint(Address::fromQHostAddress(peerAddress()), peerPort()).toString())
-                 .arg(socketDescriptor()));
+                 .arg(socketDescriptor()); });
     m_conState.store(EMSState::Connected, std::memory_order_release);
     onSocketConnected(); // trigger encryption handshake if needed
 }
@@ -197,11 +197,11 @@ void EMSocket::onDisconnected()
 
 void EMSocket::onSocketError(QAbstractSocket::SocketError socketError)
 {
-    logDebug(QStringLiteral("EMSocket::onSocketError — error=%1 (%2) cryptState=%3 bytesAvail=%4 peer=%5:%6")
+    logDebug([&]() -> QString { return QStringLiteral("EMSocket::onSocketError — error=%1 (%2) cryptState=%3 bytesAvail=%4 peer=%5:%6")
                  .arg(static_cast<int>(error())).arg(errorString())
                  .arg(static_cast<int>(m_streamCryptState))
                  .arg(bytesAvailable())
-                 .arg(peerAddress().toString()).arg(peerPort()));
+                 .arg(peerAddress().toString()).arg(peerPort()); });
     switch (error()) {
     case QAbstractSocket::ProxyAuthenticationRequiredError:
     case QAbstractSocket::ProxyConnectionRefusedError:
@@ -224,8 +224,8 @@ void EMSocket::onSocketError(QAbstractSocket::SocketError socketError)
     // call silently discards anything past 2 MB.
     if (error() == QAbstractSocket::RemoteHostClosedError) {
         if (qint64 avail = bytesAvailable(); avail > 0)
-            logDebug(QStringLiteral("EMSocket::onSocketError — RemoteHostClosedError with %1 bytes still available, processing")
-                         .arg(avail));
+            logDebug([&]() -> QString { return QStringLiteral("EMSocket::onSocketError — RemoteHostClosedError with %1 bytes still available, processing")
+                         .arg(avail); });
         while (bytesAvailable() > 0
                && m_conState.load(std::memory_order_acquire) != EMSState::Disconnected) {
             const qint64 before = bytesAvailable();
@@ -310,9 +310,9 @@ void EMSocket::readIncoming(bool peerShutdown)
         return;
 
     if (thePrefs.logRawSocketPackets())
-        logDebug(QStringLiteral("EMSocket::onReadyRead — %1 bytes available from %2:%3 cryptState=%4")
+        logDebug([&]() -> QString { return QStringLiteral("EMSocket::onReadyRead — %1 bytes available from %2:%3 cryptState=%4")
                      .arg(bytesAvailable).arg(peerAddress().toString()).arg(peerPort())
-                     .arg(static_cast<int>(m_streamCryptState)));
+                     .arg(static_cast<int>(m_streamCryptState)); });
 
     qint64 toRead = std::min(static_cast<qint64>(readMax), bytesAvailable);
     qint64 ret = read(buffer.data() + m_pendingHeaderSize, toRead);
@@ -335,21 +335,21 @@ void EMSocket::readIncoming(bool peerShutdown)
     // setup but the QTimer fired before the encryption handshake completed.
     if (!wasReady && isEncryptionLayerReady()) {
         if (thePrefs.logRawSocketPackets())
-            logDebug(QStringLiteral("EMSocket::onReadyRead — encryption just became ready for %1:%2")
-                         .arg(peerAddress().toString()).arg(peerPort()));
+            logDebug([&]() -> QString { return QStringLiteral("EMSocket::onReadyRead — encryption just became ready for %1:%2")
+                         .arg(peerAddress().toString()).arg(peerPort()); });
         std::lock_guard lock(m_sendLock);
         bool hasQueued = !m_controlQueue.empty() || m_sendBuffer != nullptr;
         if (thePrefs.logRawSocketPackets())
-            logDebug(QStringLiteral("EMSocket::onReadyRead — controlQueue=%1 sendBuffer=%2")
-                         .arg(m_controlQueue.size()).arg(m_sendBuffer != nullptr));
+            logDebug([&]() -> QString { return QStringLiteral("EMSocket::onReadyRead — controlQueue=%1 sendBuffer=%2")
+                         .arg(m_controlQueue.size()).arg(m_sendBuffer != nullptr); });
         if (hasQueued) {
             QTimer::singleShot(0, this, [this] {
                 if (m_conState.load(std::memory_order_acquire) == EMSState::Connected && isEncryptionLayerReady()) {
                     auto result = send(1024 * 64, 0, true);
                     if (thePrefs.logRawSocketPackets())
-                        logDebug(QStringLiteral("EMSocket::onReadyRead — post-enc flush: ctrl=%1 std=%2 success=%3 peer=%4:%5")
+                        logDebug([&]() -> QString { return QStringLiteral("EMSocket::onReadyRead — post-enc flush: ctrl=%1 std=%2 success=%3 peer=%4:%5")
                                      .arg(result.sentBytesControlPackets).arg(result.sentBytesStandardPackets)
-                                     .arg(result.success).arg(peerAddress().toString()).arg(peerPort()));
+                                     .arg(result.success).arg(peerAddress().toString()).arg(peerPort()); });
                     // scheduleRetryIfNeeded() deliberately does not re-arm at full rate
                     // while encryption is pending, so this flush owns restarting the
                     // chain — otherwise a control packet that hits EAGAIN right here
@@ -360,8 +360,8 @@ void EMSocket::readIncoming(bool peerShutdown)
         }
     } else if (!wasReady && !isEncryptionLayerReady()) {
         if (thePrefs.logRawSocketPackets())
-            logDebug(QStringLiteral("EMSocket::onReadyRead — encryption NOT ready yet after processReceivedData for %1:%2")
-                         .arg(peerAddress().toString()).arg(peerPort()));
+            logDebug([&]() -> QString { return QStringLiteral("EMSocket::onReadyRead — encryption NOT ready yet after processReceivedData for %1:%2")
+                         .arg(peerAddress().toString()).arg(peerPort()); });
     }
 
     // Update download rate limit
@@ -510,18 +510,18 @@ void EMSocket::sendPacket(std::unique_ptr<Packet> packet, bool controlPacket,
 {
     if (m_conState.load(std::memory_order_acquire) == EMSState::Disconnected) {
         if (thePrefs.logRawSocketPackets())
-            logDebug(QStringLiteral("EMSocket::sendPacket — DROPPED (disconnected) opcode=0x%1")
-                         .arg(packet ? packet->opcode : 0, 2, 16, QLatin1Char('0')));
+            logDebug([&]() -> QString { return QStringLiteral("EMSocket::sendPacket — DROPPED (disconnected) opcode=0x%1")
+                         .arg(packet ? packet->opcode : 0, 2, 16, QLatin1Char('0')); });
         return;
     }
 
     uint8 opcode = packet ? packet->opcode : 0;
     uint32 pktSize = packet ? packet->size : 0;
     if (thePrefs.logRawSocketPackets())
-        logDebug(QStringLiteral("EMSocket::sendPacket — opcode=0x%1 size=%2 ctrl=%3 force=%4 conState=%5 peer=%6:%7")
+        logDebug([&]() -> QString { return QStringLiteral("EMSocket::sendPacket — opcode=0x%1 size=%2 ctrl=%3 force=%4 conState=%5 peer=%6:%7")
                      .arg(opcode, 2, 16, QLatin1Char('0')).arg(pktSize).arg(controlPacket)
                      .arg(forceImmediateSend).arg(static_cast<int>(m_conState.load(std::memory_order_relaxed)))
-                     .arg(peerAddress().toString()).arg(peerPort()));
+                     .arg(peerAddress().toString()).arg(peerPort()); });
 
     bool wakeThrottler = false;
     {
@@ -539,8 +539,8 @@ void EMSocket::sendPacket(std::unique_ptr<Packet> packet, bool controlPacket,
             // Close from the event loop: callers keep using the socket after sendPacket().
             QMetaObject::invokeMethod(this, [this] {
                 if (m_conState.load(std::memory_order_acquire) != EMSState::Disconnected) {
-                    logDebug(QStringLiteral("EMSocket: send queue overflow — closing %1")
-                                 .arg(peerAddress().toString()));
+                    logDebug([&]() -> QString { return QStringLiteral("EMSocket: send queue overflow — closing %1")
+                                 .arg(peerAddress().toString()); });
                     onError(kErrSendQueueOverflow);
                 }
             }, Qt::QueuedConnection);
@@ -675,10 +675,10 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
                 QString hex;
                 for (int i = 0; i < dumpLen; ++i)
                     hex += QStringLiteral("%1 ").arg(static_cast<uint8>(m_sendBuffer[i]), 2, 16, QLatin1Char('0'));
-                logDebug(QStringLiteral("EMSocket::send — ENCRYPTED first %1 bytes: [%2] cryptState=%3 peer=%4:%5")
+                logDebug([&]() -> QString { return QStringLiteral("EMSocket::send — ENCRYPTED first %1 bytes: [%2] cryptState=%3 peer=%4:%5")
                              .arg(dumpLen).arg(hex.trimmed())
                              .arg(static_cast<int>(m_streamCryptState))
-                             .arg(peerAddress().toString()).arg(peerPort()));
+                             .arg(peerAddress().toString()).arg(peerPort()); });
             }
         }
 

@@ -37,8 +37,8 @@ RouterInfo locateRouter()
         info.routerInterface = iface.isValid() ? iface.humanReadableName() : picked->interfaceName;
     }
 
-    logDebug(QStringLiteral("RouterLocator: router %1 on %2, vpn '%3'")
-                 .arg(info.router.toString(), info.routerInterface, info.vpnInterface));
+    logDebug([&]() -> QString { return QStringLiteral("RouterLocator: router %1 on %2, vpn '%3'")
+                 .arg(info.router.toString(), info.routerInterface, info.vpnInterface); });
     return info;
 }
 

@@ -31,6 +31,10 @@ inline constexpr int kMaxLinkSources = 64;
 struct ED2KServerLink {
     QString address;    ///< IPv4/IPv6 literal (never bracketed) or a hostname
     uint16 port = 0;
+    /// Dual-stack server's IPv6 literal (never bracketed), from the `v6=` field after
+    /// the closing "/" (ipv6-spec §6.4). Empty when absent; always empty when
+    /// @a address is itself an IPv6 literal. Reached on the same @a port.
+    QString address6;
     [[nodiscard]] QString toLink() const;
 };
 

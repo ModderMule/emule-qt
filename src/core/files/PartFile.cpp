@@ -478,8 +478,8 @@ uint32 PartFile::writeToBuffer(uint64 transize, const uint8* data,
     const auto startPart = static_cast<uint32>(start / PARTSIZE);
     const auto endPart = static_cast<uint32>(end / PARTSIZE);
     if (isComplete(startPart) || (endPart != startPart && isComplete(endPart))) {
-        logDebug(QStringLiteral("Received data touches an already complete part - ignored: %1")
-                     .arg(fileName()));
+        logDebug([&]() -> QString { return QStringLiteral("Received data touches an already complete part - ignored: %1")
+                     .arg(fileName()); });
         return 0;
     }
 
@@ -2087,7 +2087,7 @@ bool PartFile::createPartFile(const QString& tempDir)
     // the resize: NTFS claims every cluster with it otherwise.
     const bool sparse = thePrefs.sparsePartFiles() && markFileSparse(m_partFileHandle);
     if (thePrefs.sparsePartFiles() && !sparse)
-        logDebug(QStringLiteral("Could not make %1 a sparse file").arg(partPath));   // FAT etc.
+        logDebug([&]() -> QString { return QStringLiteral("Could not make %1 a sparse file").arg(partPath); });   // FAT etc.
     const bool sizeNow = sparse || thePrefs.allocFullFile();
 #else
     const bool sparse = false;   // the option is Windows only
@@ -3967,7 +3967,7 @@ void PartFile::aichRecoveryDataAvailable(uint32 partNumber)
 
     // If the part is already complete, nothing to recover
     if (isComplete(partStart, partStart + partLen - 1)) {
-        logDebug(QStringLiteral("PartFile AICH recovery: part %1 is already complete").arg(partNumber));
+        logDebug([&]() -> QString { return QStringLiteral("PartFile AICH recovery: part %1 is already complete").arg(partNumber); });
         return;
     }
 
@@ -4125,8 +4125,8 @@ std::unique_ptr<Packet> PartFile::createSrcInfoPacket(
     // nothing rather than a source set filtered through a stale bitmap.
     // MFC srchybrid/PartFile.cpp:3645-3650.
     if (!md4equ(forClient->reqUpFileId(), fileHash())) {
-        logDebug(QStringLiteral("createSrcInfoPacket: requester's upload file is not %1")
-                     .arg(fileName()));
+        logDebug([&]() -> QString { return QStringLiteral("createSrcInfoPacket: requester's upload file is not %1")
+                     .arg(fileName()); });
         return nullptr;
     }
 
@@ -4134,9 +4134,9 @@ std::unique_ptr<Packet> PartFile::createSrcInfoPacket(
     if (!(forClient->upPartCount() == 0 && forClient->upPartStatus().empty()) &&
         !(forClient->upPartCount() == partCount() && !forClient->upPartStatus().empty()))
     {
-        logDebug(QStringLiteral("createSrcInfoPacket: requester part count %1 does not "
+        logDebug([&]() -> QString { return QStringLiteral("createSrcInfoPacket: requester part count %1 does not "
                                 "match file part count %2 for %3")
-                     .arg(forClient->upPartCount()).arg(partCount()).arg(fileName()));
+                     .arg(forClient->upPartCount()).arg(partCount()).arg(fileName()); });
         return nullptr;
     }
 
@@ -4187,9 +4187,9 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
     const uint16 srcCount = data.readUInt16();
     const qint64 dataSize = data.length() - data.position();
     if (thePrefs.wantsSourceExchangeLog())
-        logDebug(QStringLiteral("SXRecv: Client source response; SX2=%1, Ver=%2, Count=%3, File=\"%4\"")
+        logDebug([&]() -> QString { return QStringLiteral("SXRecv: Client source response; SX2=%1, Ver=%2, Count=%3, File=\"%4\"")
                      .arg(isSX2 ? QStringLiteral("Yes") : QStringLiteral("No"))
-                     .arg(clientSXVersion).arg(srcCount).arg(fileName()));
+                     .arg(clientSXVersion).arg(srcCount).arg(fileName()); });
 
     // Byte size of one source record for a given SX version.
     const auto recordSize = [](uint8 v) -> qint64 {
@@ -4799,7 +4799,7 @@ bool PartFile::shrinkToAvoidAlreadyRequested(uint64& start, uint64& end) const
 void PartFile::adoptCompletedAICHHashSet()
 {
     if (m_completedAICHMaster.size() != kAICHHashSize) {
-        logDebug(QStringLiteral("No AICH recovery set stored for completed file %1").arg(fileName()));
+        logDebug([&]() -> QString { return QStringLiteral("No AICH recovery set stored for completed file %1").arg(fileName()); });
         return;
     }
     const AICHHash master(reinterpret_cast<const uint8*>(m_completedAICHMaster.constData()));
@@ -4815,7 +4815,7 @@ void PartFile::adoptCompletedAICHHashSet()
     AICHRecoveryHashSet stored(fileSize());
     stored.setMasterHash(master, EAICHStatus::HashSetComplete);
     if (!stored.loadHashSet() || !fileIdentifier().setAICHHashSet(stored))
-        logDebug(QStringLiteral("Failed to create AICH part hashset for %1").arg(fileName()));
+        logDebug([&]() -> QString { return QStringLiteral("Failed to create AICH part hashset for %1").arg(fileName()); });
     setAICHRecoverHashSetAvailable(true);
 }
 

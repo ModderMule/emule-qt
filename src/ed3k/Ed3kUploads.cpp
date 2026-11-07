@@ -168,10 +168,10 @@ void Ed3kUploads::onEventPolled(const ffi::Event& ev, bool* handled)
     } else if (const auto* se = std::get_if<e::SlotEnded>(&ev)) {
         if (m_rows.erase(se->node) == 0)
             return;
-        logEd3kDebug(QStringLiteral("ed3k: upload slot of %1 ended (why %2, %3 B)")
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: upload slot of %1 ended (why %2, %3 B)")
                          .arg(QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(se->node.bytes.data()), 4).toHex()))
                          .arg(int(se->why))
-                         .arg(se->bytes));
+                         .arg(se->bytes); });
     } else if (const auto* q = std::get_if<e::QueueEntryEnded>(&ev)) {
         const auto it = m_rows.find(q->node);
         if (it == m_rows.end() || it->second.holding)

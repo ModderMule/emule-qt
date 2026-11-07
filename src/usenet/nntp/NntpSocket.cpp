@@ -170,7 +170,7 @@ void NntpSocket::connectToServer(const NewsServer& server)
     applyTlsConfiguration();
 
     m_state = State::Connecting;
-    logUsenetDebug(QStringLiteral("NNTP: connecting to %1:%2%3%4")
+    logUsenetDebug([&]() -> QString { return QStringLiteral("NNTP: connecting to %1:%2%3%4")
                 .arg(m_server.host)
                 .arg(m_server.port)
                 .arg(m_server.tlsMode == TlsMode::None ? QString{}
@@ -178,7 +178,7 @@ void NntpSocket::connectToServer(const NewsServer& server)
                 .arg(m_proxy.type() == QNetworkProxy::NoProxy
                          ? QString{}
                          : QStringLiteral(" via proxy %1:%2")
-                               .arg(m_proxy.hostName()).arg(m_proxy.port())));
+                               .arg(m_proxy.hostName()).arg(m_proxy.port())); });
 
     // Implicit TLS negotiates before the greeting; STARTTLS and cleartext both
     // start as plain TCP. This is the explicit form of what SmtpClient decides
@@ -486,8 +486,8 @@ void NntpSocket::onResponseTimeout()
 void NntpSocket::onIdleTimeout()
 {
     if (m_state == State::Ready) {
-        logUsenetDebug(QStringLiteral("NNTP: %1 idle for %2 s, closing")
-                           .arg(m_server.displayName()).arg(m_idleTimeoutMs / 1000));
+        logUsenetDebug([&]() -> QString { return QStringLiteral("NNTP: %1 idle for %2 s, closing")
+                           .arg(m_server.displayName()).arg(m_idleTimeoutMs / 1000); });
         close();
     }
 }
@@ -857,7 +857,7 @@ void NntpSocket::enterReady()
         m_idleTimer->start(m_idleTimeoutMs);
     }
 
-    logUsenetDebug(QStringLiteral("NNTP: %1 ready").arg(m_server.displayName()));
+    logUsenetDebug([&]() -> QString { return QStringLiteral("NNTP: %1 ready").arg(m_server.displayName()); });
     emit ready();
 }
 

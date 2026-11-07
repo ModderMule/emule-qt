@@ -85,6 +85,13 @@ private:
         QStringLiteral("disconnect-kad"),
         QStringLiteral("Stop Kademlia.")};
 
+    QCommandLineOption m_logLevelOption{
+        QStringLiteral("log-level"),
+        QStringLiteral("Console output: 0 silent, 1 errors and server/status lines, 2 also the "
+                       "main log, 3 everything (default). Log tabs and files are unaffected. "
+                       "Also EMULE_LOG_LEVEL."),
+        QStringLiteral("0-3")};
+
     QCommandLineOption m_configOption{
         QStringLiteral("config"),
         QStringLiteral("Override config directory (default: platform-specific)."),

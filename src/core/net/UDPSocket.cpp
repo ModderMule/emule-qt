@@ -145,11 +145,11 @@ void UDPSocket::sendPacket(std::unique_ptr<Packet> packet, const Server& server,
 
     const Endpoint dest(server.ipAddress(), port);
 
-    logServerVerbose(QStringLiteral(">>> UDPSocket::sendPacket opcode=0x%1 payload=%2 bytes -> %3 encrypted=%4")
+    logServerVerbose([&]() -> QString { return QStringLiteral(">>> UDPSocket::sendPacket opcode=0x%1 payload=%2 bytes -> %3 encrypted=%4")
                  .arg(packet->opcode, 2, 16, QLatin1Char('0'))
                  .arg(packet->size)
                  .arg(dest.toString())
-                 .arg(encrypt ? QStringLiteral("yes") : QStringLiteral("no")));
+                 .arg(encrypt ? QStringLiteral("yes") : QStringLiteral("no")); });
 
     // Send directly
     sendBuffer(dest, buf.data() + offset, rawSize);
@@ -182,8 +182,8 @@ void UDPSocket::sendRawPacket(const Server& server, uint16 specialPort,
 
     const Endpoint dest(server.ipAddress(), port);
 
-    logServerVerbose(QStringLiteral(">>> UDPSocket::sendRawPacket %1 bytes -> %2 (raw)")
-                 .arg(size).arg(dest.toString()));
+    logServerVerbose([&]() -> QString { return QStringLiteral(">>> UDPSocket::sendRawPacket %1 bytes -> %2 (raw)")
+                 .arg(size).arg(dest.toString()); });
 
     sendBuffer(dest, data, size);
 }
@@ -310,15 +310,15 @@ void UDPSocket::onReadyRead()
                 processPacket(dr.data + 2, static_cast<uint32>(dr.length - 2), dr.data[1],
                               sender);
             } else {
-                logServerVerbose(QStringLiteral("UDPSocket: dropped undecryptable server datagram from %1")
-                             .arg(sender.toString()));
+                logServerVerbose([&]() -> QString { return QStringLiteral("UDPSocket: dropped undecryptable server datagram from %1")
+                             .arg(sender.toString()); });
             }
         } else {
             // Unknown protocol byte and no server key applies — drop it (MFC does
             // not fall back to parsing it as plaintext).
-            logServerVerbose(QStringLiteral("UDPSocket: dropped non-ed2k datagram (proto=0x%1) from %2")
+            logServerVerbose([&]() -> QString { return QStringLiteral("UDPSocket: dropped non-ed2k datagram (proto=0x%1) from %2")
                          .arg(protoByte, 2, 16, QLatin1Char('0'))
-                         .arg(sender.toString()));
+                         .arg(sender.toString()); });
         }
     }
 }
@@ -350,34 +350,34 @@ bool UDPSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode,
     try {
         switch (opcode) {
         case OP_GLOBSEARCHRES:
-            logServerVerbose(QStringLiteral("<<< UDP OP_GLOBSEARCHRES from %1 size=%2")
+            logServerVerbose([&]() -> QString { return QStringLiteral("<<< UDP OP_GLOBSEARCHRES from %1 size=%2")
                          .arg(senderEP.toString())
-                         .arg(size));
+                         .arg(size); });
             emit globalSearchResult(packet, size, senderEP);
             break;
 
         case OP_GLOBFOUNDSOURCES:
-            logServerVerbose(QStringLiteral("<<< UDP OP_GLOBFOUNDSOURCES from %1 size=%2")
-                         .arg(senderEP.toString()).arg(size));
+            logServerVerbose([&]() -> QString { return QStringLiteral("<<< UDP OP_GLOBFOUNDSOURCES from %1 size=%2")
+                         .arg(senderEP.toString()).arg(size); });
             emit globalFoundSources(packet, size, senderEP);
             break;
 
         case OP_GLOBSERVSTATRES:
-            logServerVerbose(QStringLiteral("<<< UDP OP_GLOBSERVSTATRES from %1 size=%2")
-                         .arg(senderEP.toString()).arg(size));
+            logServerVerbose([&]() -> QString { return QStringLiteral("<<< UDP OP_GLOBSERVSTATRES from %1 size=%2")
+                         .arg(senderEP.toString()).arg(size); });
             emit serverStatusResult(packet, size, senderEP);
             break;
 
         case OP_SERVER_DESC_RES:
-            logServerVerbose(QStringLiteral("<<< UDP OP_SERVER_DESC_RES from %1 size=%2")
-                         .arg(senderEP.toString()).arg(size));
+            logServerVerbose([&]() -> QString { return QStringLiteral("<<< UDP OP_SERVER_DESC_RES from %1 size=%2")
+                         .arg(senderEP.toString()).arg(size); });
             emit serverDescResult(packet, size, senderEP);
             break;
 
         default:
-            logServerVerbose(QStringLiteral("UDPSocket: Unknown server opcode 0x%1 from %2")
+            logServerVerbose([&]() -> QString { return QStringLiteral("UDPSocket: Unknown server opcode 0x%1 from %2")
                          .arg(opcode, 2, 16, QLatin1Char('0'))
-                         .arg(senderEP.toString()));
+                         .arg(senderEP.toString()); });
             break;
         }
         return true;

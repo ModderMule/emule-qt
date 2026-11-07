@@ -354,7 +354,7 @@ void Ed3kLive::onEventPolled(const ffi::Event& event, bool* handled)
     } else if (const auto* r = std::get_if<e::LiveRefused>(&event)) {
         if (find(r->stream)) {
             *handled = true;
-            logEd3kDebug(QStringLiteral("ed3k: a peer refused live stream %1 (%2)").arg(idOf(r->stream)).arg(r->refusal));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: a peer refused live stream %1 (%2)").arg(idOf(r->stream)).arg(r->refusal); });
         }
     } else if (const auto* c = std::get_if<e::LiveChannel>(&event)) {
         if (Watched* w = find(c->stream)) {
@@ -415,7 +415,7 @@ void Ed3kLive::onEventPolled(const ffi::Event& event, bool* handled)
     } else if (const auto* b = std::get_if<e::LiveBadBlock>(&event)) {
         if (find(b->stream)) {
             *handled = true;
-            logEd3kDebug(QStringLiteral("ed3k: a bad block of live stream %1 at %2").arg(idOf(b->stream)).arg(b->offset));
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: a bad block of live stream %1 at %2").arg(idOf(b->stream)).arg(b->offset); });
         }
     }
 }
@@ -588,9 +588,9 @@ void Ed3kLive::restartViewers(Watched& w)
     w.window.clear();
     ++w.restarts;
     if (before != w.viewers.size())
-        logEd3kDebug(QStringLiteral("ed3k: live stream %1 restarted (gap, init or broadcast): %2 response(s) ended")
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: live stream %1 restarted (gap, init or broadcast): %2 response(s) ended")
                          .arg(idOf(w.stream))
-                         .arg(before - w.viewers.size()));
+                         .arg(before - w.viewers.size()); });
     markChanged();
 }
 

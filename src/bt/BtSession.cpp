@@ -32,6 +32,8 @@
 #include <QJsonObject>
 #include <QSaveFile>
 #include <QSet>
+
+#include <algorithm>
 #include <QTimer>
 
 #include <atomic>
@@ -149,7 +151,15 @@ void forwardAlert(const lt::alert* a)
     const lt::alert_category_t cat = a->category();
     if (cat & lt::alert_category::piece_progress)
         return;
-    const QString line = QString::fromLatin1(a->what()) + QStringLiteral(": ") + message(a);
+    QString line = QString::fromLatin1(a->what()) + QStringLiteral(": ") + message(a);
+    // The same line again within a minute is dropped: a failing i2p or listen
+    // socket repeats each second (#139). Performance alerts have their own gate.
+    static LogRepeatGate repeats;
+    if (!lt::alert_cast<lt::performance_alert>(a)) {
+        line = repeats.filter(line, line);
+        if (line.isEmpty())
+            return;
+    }
     if (const auto* pa = lt::alert_cast<lt::performance_alert>(a)) {
         if (!performanceDue(pa))
             return;
@@ -568,7 +578,7 @@ void BtSession::setIpFilter(const std::vector<BtIpRange4>& v4, const std::vector
     d->ipFilter = std::move(f);
     if (d->ses)
         d->ses->set_ip_filter(d->ipFilter);
-    logTorrentDebug(QStringLiteral("BitTorrent: IP filter of %1 range(s)").arg(v4.size() + v6.size()));
+    logTorrentDebug([&]() -> QString { return QStringLiteral("BitTorrent: IP filter of %1 range(s)").arg(v4.size() + v6.size()); });
 }
 
 quint64 BtSession::blockedPeers() const
@@ -761,45 +771,48 @@ bool BtSession::setOptions(const QString& id, const BtTorrentOptions& options)
 
 bool BtSession::addTrackers(const QString& id, const QStringList& urls)
 {
-    const auto h = d->handle(id);
-    if (!h.is_valid())
-        return false;
-    const auto current = h.trackers();
-    int tier = 0;
-    QSet<QString> known;
-    for (const auto& a : current) {
-        tier = std::max(tier, static_cast<int>(a.tier));
-        known.insert(QString::fromStdString(a.url));
-    }
-    bool added = false;
-    for (const QString& raw : urls) {
-        const QString url = raw.trimmed();
-        if (url.isEmpty() || known.contains(url))
-            continue;
-        lt::announce_entry e(url.toStdString());
-        e.tier = static_cast<std::uint8_t>(current.empty() ? 0 : tier);
-        h.add_tracker(e);
-        known.insert(url);
-        added = true;
-    }
-    if (added) {
-        h.force_reannounce();
-        d->saveResume(h);
-    }
-    return true;
+    return editTrackers(id, {urls, {}, false}).has_value();
 }
 
 bool BtSession::removeTrackers(const QString& id, const QStringList& urls)
 {
+    return editTrackers(id, {{}, urls, false}).has_value();
+}
+
+std::optional<bool> BtSession::editTrackers(const QString& id, const BtTrackerEdit& edit)
+{
     const auto h = d->handle(id);
     if (!h.is_valid())
+        return std::nullopt;
+    const auto current = h.trackers();
+    QList<BtTrackerEntry> before;
+    before.reserve(static_cast<qsizetype>(current.size()));
+    for (const auto& a : current)
+        before.append({QString::fromStdString(a.url), static_cast<int>(a.tier)});
+    const QList<BtTrackerEntry> after = editTrackerList(before, edit);
+    if (after == before)
         return false;
-    const QSet<QString> drop(urls.cbegin(), urls.cend());
-    std::vector<lt::announce_entry> keep;
-    for (const auto& a : h.trackers())
-        if (!drop.contains(QString::fromStdString(a.url)))
-            keep.push_back(a);
-    h.replace_trackers(keep);
+
+    // kept entries keep their state; new ones start fresh
+    std::vector<lt::announce_entry> next;
+    next.reserve(static_cast<std::size_t>(after.size()));
+    bool added = false;
+    for (const BtTrackerEntry& e : after) {
+        const auto old = std::ranges::find_if(current, [&e](const lt::announce_entry& a) {
+            return QString::fromStdString(a.url) == e.url;
+        });
+        if (old != current.end()) {
+            next.push_back(*old);
+            continue;
+        }
+        lt::announce_entry a(e.url.toStdString());
+        a.tier = static_cast<std::uint8_t>(e.tier);
+        next.push_back(a);
+        added = true;
+    }
+    h.replace_trackers(next);
+    if (added)
+        h.force_reannounce();
     d->saveResume(h);
     return true;
 }

@@ -393,14 +393,14 @@ void SearchQueue::setState(Entry& entry, SearchRunState state, const QString& er
     entry.status.state = state;
     entry.status.reason.clear();
     entry.status.error = error;
-    logServerVerbose(QStringLiteral("Search %1 \"%2\": %3%4")
+    logServerVerbose([&]() -> QString { return QStringLiteral("Search %1 \"%2\": %3%4")
                          .arg(entry.status.searchID)
                          .arg(entry.params.expression)
                          .arg(state == SearchRunState::Running ? QStringLiteral("running")
                               : state == SearchRunState::Finished ? QStringLiteral("finished")
                               : state == SearchRunState::Failed ? QStringLiteral("failed")
                               : QStringLiteral("queued"))
-                         .arg(error.isEmpty() ? QString() : QStringLiteral(" — ") + error));
+                         .arg(error.isEmpty() ? QString() : QStringLiteral(" — ") + error); });
     emit stateChanged(entry.status);
 }
 

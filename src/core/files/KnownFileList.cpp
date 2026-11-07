@@ -75,7 +75,7 @@ void KnownFileList::save()
     const QString knownPath = m_configDir + QStringLiteral("/known.met");
     const QString tmpPath   = knownPath + QStringLiteral(".tmp");
     if (thePrefs.wantsFileSavingLog())
-        logDebug(QStringLiteral("Saving known files list file \"%1\"").arg(knownPath));
+        logDebug([&]() -> QString { return QStringLiteral("Saving known files list file \"%1\"").arg(knownPath); });
 
     try {
         // Clean up stale .tmp from a previous failed save
@@ -461,7 +461,7 @@ void KnownFileList::saveCancelledFiles()
     const QString filePath = m_configDir + QStringLiteral("/cancelled.met");
     const QString tmpPath  = filePath + QStringLiteral(".tmp");
     if (thePrefs.wantsFileSavingLog())
-        logDebug(QStringLiteral("Saving cancelled files list file \"%1\"").arg(filePath));
+        logDebug([&]() -> QString { return QStringLiteral("Saving cancelled files list file \"%1\"").arg(filePath); });
 
     // No seed minting here: addCancelledFileID() owns that, so the header can never
     // claim a seed the records below it were not derived from.

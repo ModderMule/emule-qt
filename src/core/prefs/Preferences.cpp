@@ -253,6 +253,8 @@ struct Preferences::Data {
     bool kadVerboseLog = true;
     bool serverVerboseLog = false;  // Gated server TCP/UDP/search handshake logging
     bool btVerboseLog = false;      // Torrent Verbose tab: emule.torrent debug lines
+    bool usenetVerboseLog = false;  // emule.usenet debug lines
+    bool sharedFilesVerboseLog = false; // emule.sharedv: hashing, duplicates
     bool hosterVerboseLog = false;  // Hoster Verbose tab: emule.hoster debug lines
     bool ed3kVerboseLog = false;    // ed3k Verbose tab: emule.ed3k debug lines, packmule Verbose level
     uint32 maxLogLines = 5000;  // Max lines kept per log tab in the GUI
@@ -720,6 +722,7 @@ struct Preferences::Data {
     bool btDht = true;
     bool btLsd = true;
     bool btPex = true;
+    bool btAnnounceToAll = false;      // every tracker and tier, not 1 per tier
     int btEncryption = 0;              // 0 enabled, 1 forced, 2 disabled
     int btMaxActiveDownloads = 3;
     int btMaxActiveSeeds = 5;
@@ -1294,6 +1297,14 @@ void Preferences::setServerVerboseLog(bool val) { set(&Data::serverVerboseLog, v
 bool Preferences::btVerboseLog() const { return get(&Data::btVerboseLog); }
 
 void Preferences::setBtVerboseLog(bool val) { set(&Data::btVerboseLog, val); }
+
+bool Preferences::usenetVerboseLog() const { return get(&Data::usenetVerboseLog); }
+
+void Preferences::setUsenetVerboseLog(bool val) { set(&Data::usenetVerboseLog, val); }
+
+bool Preferences::sharedFilesVerboseLog() const { return get(&Data::sharedFilesVerboseLog); }
+
+void Preferences::setSharedFilesVerboseLog(bool val) { set(&Data::sharedFilesVerboseLog, val); }
 
 bool Preferences::hosterVerboseLog() const { return get(&Data::hosterVerboseLog); }
 
@@ -2369,6 +2380,8 @@ void Preferences::setBtLsd(bool val) { set(&Data::btLsd, val); }
 
 bool Preferences::btPex() const { return get(&Data::btPex); }
 void Preferences::setBtPex(bool val) { set(&Data::btPex, val); }
+bool Preferences::btAnnounceToAll() const { return get(&Data::btAnnounceToAll); }
+void Preferences::setBtAnnounceToAll(bool val) { set(&Data::btAnnounceToAll, val); }
 
 int Preferences::btEncryption() const { return get(&Data::btEncryption); }
 void Preferences::setBtEncryption(int val) { set(&Data::btEncryption, std::clamp(val, 0, 2)); }
@@ -3854,6 +3867,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("btDht"), btDht());
     prefs.insert(QStringLiteral("btLsd"), btLsd());
     prefs.insert(QStringLiteral("btPex"), btPex());
+    prefs.insert(QStringLiteral("btAnnounceToAll"), btAnnounceToAll());
     prefs.insert(QStringLiteral("btEncryption"), static_cast<qint64>(btEncryption()));
     prefs.insert(QStringLiteral("btMaxActiveDownloads"),
                  static_cast<qint64>(btMaxActiveDownloads()));
@@ -3964,6 +3978,8 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("verbose"), verbose());
     prefs.insert(QStringLiteral("serverVerboseLog"), serverVerboseLog());
     prefs.insert(QStringLiteral("btVerboseLog"), btVerboseLog());
+    prefs.insert(QStringLiteral("usenetVerboseLog"), usenetVerboseLog());
+    prefs.insert(QStringLiteral("sharedFilesVerboseLog"), sharedFilesVerboseLog());
     prefs.insert(QStringLiteral("hosterVerboseLog"), hosterVerboseLog());
     prefs.insert(QStringLiteral("ed3kVerboseLog"), ed3kVerboseLog());
     prefs.insert(QStringLiteral("logPublicIP"), logPublicIP());
@@ -4206,6 +4222,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
         m_data->btDht = p.value(QStringLiteral("btDht")).toBool(true);
         m_data->btLsd = p.value(QStringLiteral("btLsd")).toBool(true);
         m_data->btPex = p.value(QStringLiteral("btPex")).toBool(true);
+        m_data->btAnnounceToAll = p.value(QStringLiteral("btAnnounceToAll")).toBool(false);
         m_data->btEncryption = int(num("btEncryption", 0, 0, 2));
         m_data->btMaxActiveDownloads = int(num("btMaxActiveDownloads", 3, 1, 100));
         m_data->btMaxActiveSeeds = int(num("btMaxActiveSeeds", 5, 0, 100));
@@ -4298,6 +4315,8 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->logFakeCheckShared          = p.value(QStringLiteral("logFakeCheckShared")).toBool();
     m_data->serverVerboseLog            = p.value(QStringLiteral("serverVerboseLog")).toBool();
     m_data->btVerboseLog                = p.value(QStringLiteral("btVerboseLog")).toBool();
+    m_data->usenetVerboseLog            = p.value(QStringLiteral("usenetVerboseLog")).toBool();
+    m_data->sharedFilesVerboseLog       = p.value(QStringLiteral("sharedFilesVerboseLog")).toBool();
     m_data->hosterVerboseLog            = p.value(QStringLiteral("hosterVerboseLog")).toBool();
     m_data->ed3kVerboseLog              = p.value(QStringLiteral("ed3kVerboseLog")).toBool();
     m_data->closeUPnPOnExit             = p.value(QStringLiteral("closeUPnPOnExit")).toBool();
@@ -4771,6 +4790,8 @@ bool Preferences::load(const QString& filePath)
             m_data->kadVerboseLog = l["kadVerboseLog"].as<bool>(m_data->kadVerboseLog);
             m_data->serverVerboseLog = l["serverVerboseLog"].as<bool>(m_data->serverVerboseLog);
             m_data->btVerboseLog = l["btVerboseLog"].as<bool>(m_data->btVerboseLog);
+            m_data->usenetVerboseLog = l["usenetVerboseLog"].as<bool>(m_data->usenetVerboseLog);
+            m_data->sharedFilesVerboseLog = l["sharedFilesVerboseLog"].as<bool>(m_data->sharedFilesVerboseLog);
             m_data->hosterVerboseLog = l["hosterVerboseLog"].as<bool>(m_data->hosterVerboseLog);
             m_data->ed3kVerboseLog = l["ed3kVerboseLog"].as<bool>(m_data->ed3kVerboseLog);
             m_data->maxLogLines = l["maxLogLines"].as<uint32>(m_data->maxLogLines);
@@ -5468,6 +5489,7 @@ bool Preferences::load(const QString& filePath)
             m_data->btDht = bt["dht"].as<bool>(m_data->btDht);
             m_data->btLsd = bt["lsd"].as<bool>(m_data->btLsd);
             m_data->btPex = bt["pex"].as<bool>(m_data->btPex);
+            m_data->btAnnounceToAll = bt["announceToAll"].as<bool>(m_data->btAnnounceToAll);
             m_data->btEncryption = std::clamp(
                 bt["encryption"].as<int>(m_data->btEncryption), 0, 2);
             m_data->btMaxActiveDownloads = std::clamp(
@@ -6217,6 +6239,8 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "kadVerboseLog" << YAML::Value << m_data->kadVerboseLog;
     out << YAML::Key << "serverVerboseLog" << YAML::Value << m_data->serverVerboseLog;
     out << YAML::Key << "btVerboseLog" << YAML::Value << m_data->btVerboseLog;
+    out << YAML::Key << "usenetVerboseLog" << YAML::Value << m_data->usenetVerboseLog;
+    out << YAML::Key << "sharedFilesVerboseLog" << YAML::Value << m_data->sharedFilesVerboseLog;
     out << YAML::Key << "hosterVerboseLog" << YAML::Value << m_data->hosterVerboseLog;
     out << YAML::Key << "ed3kVerboseLog" << YAML::Value << m_data->ed3kVerboseLog;
     out << YAML::Key << "maxLogLines" << YAML::Value << m_data->maxLogLines;
@@ -6820,6 +6844,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "dht" << YAML::Value << m_data->btDht;
     out << YAML::Key << "lsd" << YAML::Value << m_data->btLsd;
     out << YAML::Key << "pex" << YAML::Value << m_data->btPex;
+    out << YAML::Key << "announceToAll" << YAML::Value << m_data->btAnnounceToAll;
     out << YAML::Key << "encryption" << YAML::Value << m_data->btEncryption;
     out << YAML::Key << "maxActiveDownloads" << YAML::Value << m_data->btMaxActiveDownloads;
     out << YAML::Key << "maxActiveSeeds" << YAML::Value << m_data->btMaxActiveSeeds;

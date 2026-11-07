@@ -68,8 +68,8 @@ void startChecked(const QString& program, const QStringList& args, const QString
             return;
         const QString detail = QString::fromLocal8Bit(proc->readAllStandardError()).trimmed();
         if (retries > 0) {
-            logDebug(QStringLiteral("Opening %1 failed (%2 exit %3), retrying")
-                         .arg(shown, program).arg(exitCode));
+            logDebug([&]() -> QString { return QStringLiteral("Opening %1 failed (%2 exit %3), retrying")
+                         .arg(shown, program).arg(exitCode); });
             QTimer::singleShot(kLaunchRetryDelayMs, qApp, [program, args, shown, retries] {
                 startChecked(program, args, shown, retries - 1);
             });

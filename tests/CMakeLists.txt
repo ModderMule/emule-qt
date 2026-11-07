@@ -937,6 +937,9 @@ if(EMULE_BITTORRENT)
                 "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentFileTree.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentPieceGrid.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/dialogs/TorrentDetailsDialog.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/dialogs/EditTrackersDialog.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/dialogs/TorrentOptionsDialog.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentOptionsForm.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/dialogs/DetailDialog.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
                 # DetailDialog opens client sheets and reports IPC failures
@@ -959,6 +962,11 @@ if(EMULE_BITTORRENT)
     target_link_libraries(tst_TorrentDetailsGui PRIVATE
         eMule::Core eMule::Ipc Qt6::Widgets)
 endif()
+
+# Edit Trackers for many torrents (#143): the list rules, no libtorrent
+emule_add_test(tst_BtTrackerList FOLDER "BitTorrent"
+    SOURCES tst_BtTrackerList.cpp "${CMAKE_SOURCE_DIR}/src/bt/BtTrackerList.cpp")
+target_include_directories(tst_BtTrackerList PRIVATE "${CMAKE_SOURCE_DIR}/src/bt")
 
 # Magnet routing (BitTorrent vs eD2K) and .torrent drops. Pure string work.
 emule_add_test(tst_TorrentLinks FOLDER "Gui"

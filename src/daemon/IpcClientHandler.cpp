@@ -4370,6 +4370,14 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
         thePrefs.setHosterVerboseLog(val.toBool());
         DaemonApp::applyLogFilterRules();
     }
+    else if (key == QStringLiteral("usenetVerboseLog")) {
+        thePrefs.setUsenetVerboseLog(val.toBool());
+        DaemonApp::applyLogFilterRules();
+    }
+    else if (key == QStringLiteral("sharedFilesVerboseLog")) {
+        thePrefs.setSharedFilesVerboseLog(val.toBool());
+        DaemonApp::applyLogFilterRules();
+    }
     else if (key == QStringLiteral("ed3kVerboseLog")) {
         // the node's own level follows on its next tick (Ed3kSession::applyLogLevel)
         thePrefs.setEd3kVerboseLog(val.toBool());
@@ -4741,6 +4749,8 @@ bool IpcClientHandler::applyPreferenceBt(const QString& key, const QCborValue& v
         thePrefs.setBtLsd(val.toBool());
     else if (key == QStringLiteral("btPex"))
         thePrefs.setBtPex(val.toBool());
+    else if (key == QStringLiteral("btAnnounceToAll"))
+        thePrefs.setBtAnnounceToAll(val.toBool());
     else if (key == QStringLiteral("btEncryption"))
         thePrefs.setBtEncryption(int(val.toInteger()));
     else if (key == QStringLiteral("btMaxActiveDownloads"))

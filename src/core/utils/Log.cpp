@@ -7,8 +7,12 @@
 #include <QDateTime>
 #include <QDir>
 #include <QMutexLocker>
+#include <QReadWriteLock>
 
+#include <algorithm>
+#include <atomic>
 #include <cstring>
+#include <utility>
 
 namespace eMule {
 
@@ -67,20 +71,32 @@ void LogFile::setMaxFileSize(std::size_t maxSize)
 
 bool LogFile::log(const QString& message)
 {
+    return log(QLatin1StringView{}, message);
+}
+
+bool LogFile::log(QLatin1StringView category, const QString& message)
+{
+    // Built outside the lock, encoded once. Milliseconds, so a file line can be
+    // lined up against the console output (see installConsoleMessagePattern).
+    QByteArray line = QDateTime::currentDateTime()
+                          .toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"))
+                          .toLatin1();
+    line.reserve(line.size() + category.size() + message.size() + 8);
+    line += ": ";
+    if (!category.isEmpty()) {
+        line += QByteArrayView(category.data(), category.size());
+        line += ": ";
+    }
+    line += message.toUtf8();
+    line += '\n';
+
     QMutexLocker lock(&m_mutex);
     if (!m_file.isOpen())
         return false;
 
-    // Milliseconds, so a file line can be lined up against the console output —
-    // both carry the same resolution (see installConsoleMessagePattern).
-    const QString timestamp =
-        QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"));
-    const QString line = QStringLiteral("%1: %2\n").arg(timestamp, message);
-
-    const QByteArray utf8 = line.toUtf8();
-    m_stream << line;
-    m_stream.flush();
-    m_bytesWritten += static_cast<std::size_t>(utf8.size());
+    m_file.write(line);
+    m_file.flush();
+    m_bytesWritten += static_cast<std::size_t>(line.size());
 
     if (m_bytesWritten >= m_maxFileSize)
         rotateLocked();
@@ -107,7 +123,6 @@ bool LogFile::openLocked()
     if (!m_file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
         return false;
 
-    m_stream.setDevice(&m_file);
     m_bytesWritten = static_cast<std::size_t>(m_file.size());
     return true;
 }
@@ -117,8 +132,6 @@ void LogFile::closeLocked()
     if (!m_file.isOpen())
         return;
 
-    m_stream.flush();
-    m_stream.setDevice(nullptr);
     m_file.close();
     m_bytesWritten = 0;
 }
@@ -274,6 +287,35 @@ void logStatusError(const QString& msg)
     qCCritical(lcEmuleStatus).noquote() << msg;
 }
 
+void logSharedVerbose(const QString& msg)
+{
+    qCDebug(lcEmuleSharedVerbose).noquote() << msg;
+}
+
+// ---------------------------------------------------------------------------
+// Repeat gate
+// ---------------------------------------------------------------------------
+
+QString LogRepeatGate::filter(const QString& key, const QString& msg)
+{
+    QMutexLocker lock(&m_mutex);
+    auto it = m_entries.find(key);
+    if (it == m_entries.end()) {
+        if (m_entries.size() >= kMaxKeys)
+            m_entries.clear();
+        it = m_entries.insert(key, {});
+        it->since.start();
+        return msg;
+    }
+    if (!it->since.hasExpired(m_windowMs)) {
+        ++it->hidden;
+        return {};
+    }
+    const int hidden = std::exchange(it->hidden, 0);
+    it->since.start();
+    return hidden ? QStringLiteral("%1 (%2 more hidden)").arg(msg).arg(hidden) : msg;
+}
+
 // ---------------------------------------------------------------------------
 // Console message pattern
 // ---------------------------------------------------------------------------
@@ -288,6 +330,81 @@ void installConsoleMessagePattern(const QString& processTag)
     qSetMessagePattern(QStringLiteral("%{time HH:mm:ss.zzz} [")
                        + processTag.leftJustified(4)
                        + QStringLiteral("] %{if-category}%{category}: %{endif}%{message}"));
+}
+
+// ---------------------------------------------------------------------------
+// Console log level
+// ---------------------------------------------------------------------------
+
+namespace {
+
+std::atomic_int s_consoleLevel{kConsoleLogLevelAll};
+QtMessageHandler s_consolePrevious = nullptr;
+bool s_consoleFilterInstalled = false;
+
+void consoleFilterHandler(QtMsgType type, const QMessageLogContext& context, const QString& msg)
+{
+    if (s_consolePrevious && consoleLogAllows(s_consoleLevel, type, context.category))
+        s_consolePrevious(type, context, msg);
+}
+
+/// "3" -> 3, anything else -1.
+int parseLevel(QStringView text)
+{
+    bool ok = false;
+    const int v = text.trimmed().toInt(&ok);
+    return ok ? std::clamp(v, 0, kConsoleLogLevelAll) : -1;
+}
+
+} // namespace
+
+int consoleLogLevelFromArgs(const QStringList& args)
+{
+    static constexpr QLatin1StringView kOpt("--log-level");
+    for (qsizetype i = 0; i < args.size(); ++i) {
+        const QString& a = args.at(i);
+        int level = -1;
+        if (a == kOpt && i + 1 < args.size())
+            level = parseLevel(args.at(i + 1));
+        else if (a.startsWith(kOpt + QLatin1Char('=')))
+            level = parseLevel(QStringView(a).mid(kOpt.size() + 1));
+        if (level >= 0)
+            return level;
+    }
+    if (const int level = parseLevel(qEnvironmentVariable("EMULE_LOG_LEVEL")); level >= 0)
+        return level;
+    return kConsoleLogLevelAll;
+}
+
+bool consoleLogAllows(int level, QtMsgType type, const char* category)
+{
+    if (type == QtFatalMsg || level >= kConsoleLogLevelAll)
+        return true;
+    if (level <= 0)
+        return false;
+    if (type == QtCriticalMsg)
+        return true;
+    if (type == QtDebugMsg || !category)
+        return false;
+    const auto is = [category](const char* name) { return std::strcmp(category, name) == 0; };
+    if (is("emule.status") || is("emule.server"))
+        return true;
+    return level >= 2 && is("emule.general");
+}
+
+void installConsoleLogFilter(int level)
+{
+    level = std::clamp(level, 0, kConsoleLogLevelAll);
+    s_consoleLevel = level;
+    if (level == kConsoleLogLevelAll || s_consoleFilterInstalled)
+        return;
+    s_consoleFilterInstalled = true;
+    s_consolePrevious = qInstallMessageHandler(consoleFilterHandler);
+}
+
+int consoleLogLevel()
+{
+    return s_consoleLevel;
 }
 
 // ---------------------------------------------------------------------------
@@ -306,9 +423,11 @@ constexpr const char* kSinkSuffix[SinkCount] = {".log", "_Verbose.log", "_Kad.lo
                                                 "_Ed3k.log", "_Ed3kKad.log", "_Hoster.log", "_Torrent.log",
                                                 "_Leecher.log"};
 
-QMutex s_sinkMutex;
+// Write lock to open/close, read lock to write a line: each LogFile has its own
+// mutex, so threads logging to different files never wait on each other.
+QReadWriteLock s_sinkLock;
 LogFile s_sinks[SinkCount];   ///< SinkLog: non-debug lines; SinkVerbose: debug lines of the rest
-bool s_sinkEnabled = false;
+bool s_sinkEnabled = false;   ///< guarded by s_sinkLock
 
 void closeSinksLocked()
 {
@@ -323,7 +442,7 @@ void applyLogFileSink(const QString& dir, const QString& baseName,
 {
     QString failedPath;
     {
-        QMutexLocker lock(&s_sinkMutex);
+        QWriteLocker lock(&s_sinkLock);
         s_sinkEnabled = false;
         closeSinksLocked();
 
@@ -349,44 +468,40 @@ void applyLogFileSink(const QString& dir, const QString& baseName,
 
 void writeToLogFileSink(QtMsgType type, const char* category, const QString& msg)
 {
-    QMutexLocker lock(&s_sinkMutex);
-    if (!s_sinkEnabled)
-        return;
-
-    const QString line = category && *category
-        ? QStringLiteral("%1: %2").arg(QString::fromLatin1(category), msg)
-        : msg;
-
     // Kad is its own channel everywhere else — its own GUI tab, its own filter
     // rule — so it gets its own file rather than drowning the verbose log, which
     // it would otherwise dominate. Tested before the severity split so a future
     // qCWarning(lcEmuleKad) lands here too, exactly as it would in the Kad tab.
     // Usenet, ed3k, ed3k Kad, hoster, torrent and leecher likewise (ed3k: its debug lines too).
     const auto is = [category](const char* name) { return category && std::strcmp(category, name) == 0; };
+    Sink sink = SinkLog;
     if (is("emule.kad"))
-        s_sinks[SinkKad].log(line);
+        sink = SinkKad;
     else if (is("emule.usenet"))
-        s_sinks[SinkUsenet].log(line);
+        sink = SinkUsenet;
     else if (is("emule.ed3k"))
-        s_sinks[SinkEd3k].log(line);
+        sink = SinkEd3k;
     else if (is("emule.ed3k.kad"))
-        s_sinks[SinkEd3kKad].log(line);
+        sink = SinkEd3kKad;
     else if (is("emule.hoster"))
-        s_sinks[SinkHoster].log(line);
+        sink = SinkHoster;
     else if (is("emule.torrent"))
-        s_sinks[SinkTorrent].log(line);
+        sink = SinkTorrent;
     else if (is("emule.leecher"))
-        s_sinks[SinkLeecher].log(line);
+        sink = SinkLeecher;
     // Debug is the reference's LOG_DEBUG: it goes to the verbose log only.
     else if (type == QtDebugMsg)
-        s_sinks[SinkVerbose].log(line);
-    else
-        s_sinks[SinkLog].log(line);
+        sink = SinkVerbose;
+
+    QReadLocker lock(&s_sinkLock);
+    if (!s_sinkEnabled)
+        return;
+    s_sinks[sink].log(category ? QLatin1StringView(category) : QLatin1StringView{}, msg);
 }
 
 void closeLogFileSink()
 {
-    QMutexLocker lock(&s_sinkMutex);
+    QWriteLocker lock(&s_sinkLock);
     s_sinkEnabled = false;
     closeSinksLocked();
 }

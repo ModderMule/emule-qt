@@ -244,9 +244,9 @@ void HttpCachePublisher::deleteChunk(const QString& url, const QString& apiKey)
         // the server could not remove the blob — it stays downloadable until its
         // TTL runs out, so this is worth seeing rather than swallowing.
         if (status == 204 || status == 404) {
-            logDebug(QStringLiteral("HTTP Cache: DELETE %1 -> %2")
+            logDebug([&]() -> QString { return QStringLiteral("HTTP Cache: DELETE %1 -> %2")
                          .arg(reply->url().toString())
-                         .arg(status));
+                         .arg(status); });
         } else {
             logWarning(QStringLiteral("HTTP Cache: DELETE %1 failed with %2 — the chunk may "
                                       "stay available until it expires")

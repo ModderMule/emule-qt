@@ -258,9 +258,9 @@ void BtI2pPage::updateEnabled()
         // a build without the helper: only a chosen one stays pickable, to switch away
         bundled->setEnabled(m_bundledAvailable || mode == Preferences::kBtI2pBundled);
         bundled->setToolTip(m_bundledAvailable
-                                ? tr("eMule runs its own I2P router. The first start takes a few minutes to join "
-                                     "the network.")
-                                : tr("This build has no bundled I2P router (emuleqt-i2pd)."));
+                                ? tr("eMule runs its own I2P router, downloaded (about 10 MB) when first switched "
+                                     "on. The first start takes a few minutes to join the network.")
+                                : tr("No I2P router (i2pd) is offered for this system."));
     }
     m_hostEdit->setEnabled(mode == Preferences::kBtI2pExternal);
     m_portSpin->setEnabled(mode == Preferences::kBtI2pExternal);
@@ -303,11 +303,14 @@ void BtI2pPage::applyStatus(const QCborMap& status)
         return;
     }
     QString text;
-    // I2pRouter::State: 0 stopped, 1 starting, 2 ready, 3 failed; stopped = external router
+    // I2pRouter::State: 0 stopped, 1 starting, 2 ready, 3 failed, 4 downloading; stopped = external router
     switch (status.value(QStringLiteral("i2pRouter")).toInteger(0)) {
     case 1: text = tr("Bundled router starting..."); break;
     case 2: text = tr("Bundled router running"); break;
     case 3: text = tr("Bundled router failed: %1").arg(status.value(QStringLiteral("i2pRouterError")).toString()); break;
+    case 4:
+        text = tr("Downloading the I2P router... %1%").arg(status.value(QStringLiteral("i2pRouterProgress")).toInteger(0));
+        break;
     default: break;
     }
     const QString samError = status.value(QStringLiteral("i2pError")).toString();

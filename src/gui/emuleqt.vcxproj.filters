@@ -367,6 +367,15 @@
     <ClCompile Include="dialogs\MassRenameDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="dialogs\TorrentOptionsDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\TorrentOptionsForm.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\EditTrackersDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="dialogs\SimpleCleanupDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -853,6 +862,15 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\MassRenameDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\TorrentOptionsDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\TorrentOptionsForm.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\EditTrackersDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\SimpleCleanupDialog.h">

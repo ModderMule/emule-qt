@@ -202,9 +202,9 @@ void AppContext::setPublicIP(uint32 ip)
         if (kadInst && kadInst->isConnected() && kadInst->getIPAddress() != 0) {
             const uint32 kadIP = htonl(kadInst->getIPAddress());
             if (kadIP != ip)
-                logDebug(QStringLiteral("Public IP reported by Kad (%1) differs from the "
+                logDebug([&]() -> QString { return QStringLiteral("Public IP reported by Kad (%1) differs from the "
                                         "ED2K-reported one (%2); Kad's takes precedence")
-                             .arg(ipstr(kadIP), ipstr(ip)));
+                             .arg(ipstr(kadIP), ipstr(ip)); });
         }
     }
 
@@ -264,10 +264,10 @@ void AppContext::recordServerObservedIP(const Address& candidate, const Address&
 
     const std::size_t bestCount = recomputeServerCorroboratedIP();
     const std::size_t threshold = serverConfirmThreshold();
-    logDebug(QStringLiteral("Public IPv4: server %1 observes us at %2 (%3/%4 distinct servers)")
+    logDebug([&]() -> QString { return QStringLiteral("Public IPv4: server %1 observes us at %2 (%3/%4 distinct servers)")
                  .arg(who, candidate.toString())
                  .arg(m_ipv4ServerVotes.voterCount(candidate))
-                 .arg(threshold));
+                 .arg(threshold); });
 
     // Note once per candidate when a server's view disagrees with the address we are
     // actually using. This is the CGNAT / multi-homed-egress signal: on such a host no
@@ -275,10 +275,10 @@ void AppContext::recordServerObservedIP(const Address& candidate, const Address&
     const uint32 chosen = publicIP();
     if (chosen != 0 && chosen != candidate.toNetworkUint32()
         && m_ipv4ServerVotes.markWarnedOnce(candidate)) {
-        logDebug(QStringLiteral("Public IPv4: a server reports our address as %1, which differs "
+        logDebug([&]() -> QString { return QStringLiteral("Public IPv4: a server reports our address as %1, which differs "
                                 "from our chosen %2 (%3 server(s) agree; need %4 to adopt)")
                      .arg(candidate.toString(), ipstr(chosen))
-                     .arg(bestCount).arg(threshold));
+                     .arg(bestCount).arg(threshold); });
     }
 }
 
@@ -339,8 +339,8 @@ void AppContext::noteEffectiveIPv6Change()
     // Reachability is proven per address: a new one starts unproven. Re-sync the gate
     // silently — onPublicIPv6Changed below already tells connected peers.
     if (m_ipv6Reach != IPv6Reachability::Unknown && !(m_ipv6ReachAddr == effective)) {
-        logDebug(QStringLiteral("IPv6: reachability verdict for %1 dropped (address changed)")
-                     .arg(m_ipv6ReachAddr.toString()));
+        logDebug([&]() -> QString { return QStringLiteral("IPv6: reachability verdict for %1 dropped (address changed)")
+                     .arg(m_ipv6ReachAddr.toString()); });
         m_ipv6Reach = IPv6Reachability::Unknown;
         m_ipv6ReachSource = IPv6ProofSource::None;
         m_ipv6ReachAddr = Address{};
@@ -387,10 +387,10 @@ void AppContext::setLocalIPv6Addresses(std::vector<Address> addrs)
     names.reserve(static_cast<qsizetype>(m_localIPv6.size()));
     for (const Address& a : m_localIPv6)
         names.append(a.toString());
-    logDebug(QStringLiteral("IPv6: local interface set refreshed: %1 global address(es)%2")
+    logDebug([&]() -> QString { return QStringLiteral("IPv6: local interface set refreshed: %1 global address(es)%2")
                  .arg(m_localIPv6.size())
                  .arg(names.isEmpty() ? QString()
-                                      : QStringLiteral(" (%1)").arg(names.join(QStringLiteral(", ")))));
+                                      : QStringLiteral(" (%1)").arg(names.join(QStringLiteral(", ")))); });
 
     // An address we no longer hold cannot still be our egress — drop reflections that the
     // refreshed interface list no longer backs (prefix renumber, interface down).
@@ -408,9 +408,9 @@ void AppContext::setLocalIPv6Addresses(std::vector<Address> addrs)
     m_ipv6PeerVotes.eraseCandidatesIf([this](const Address& cand, std::size_t peers) {
         if (isLocalIPv6(cand))
             return false;
-        logDebug(QStringLiteral("IPv6: discarding %1 peer report(s) for %2 — no longer assigned "
+        logDebug([&]() -> QString { return QStringLiteral("IPv6: discarding %1 peer report(s) for %2 — no longer assigned "
                                 "to any local interface")
-                     .arg(peers).arg(cand.toString()));
+                     .arg(peers).arg(cand.toString()); });
         return true;
     });
 
@@ -488,9 +488,9 @@ void AppContext::setPublicIPv6Observed(const Address& addr, const QString& serve
     const QString who = serverLabel.isEmpty() ? QStringLiteral("server") : serverLabel;
 
     if (!isUsablePublicIPv6(addr)) {
-        logDebug(QStringLiteral("IPv6: ignoring egress %1 reported by %2 — not a global-unicast "
+        logDebug([&]() -> QString { return QStringLiteral("IPv6: ignoring egress %1 reported by %2 — not a global-unicast "
                                 "IPv6 address")
-                     .arg(addr.toString(), who));
+                     .arg(addr.toString(), who); });
         return;
     }
 
@@ -510,9 +510,9 @@ void AppContext::setPublicIPv6Observed(const Address& addr, const QString& serve
         return;
 
     m_publicIPv6Server = addr;
-    logDebug(QStringLiteral("IPv6: %1 observed our egress as %2 on an IPv6 session — accepted "
+    logDebug([&]() -> QString { return QStringLiteral("IPv6: %1 observed our egress as %2 on an IPv6 session — accepted "
                             "(held locally)")
-                 .arg(who, addr.toString()));
+                 .arg(who, addr.toString()); });
     noteEffectiveIPv6Change();
 }
 
@@ -523,8 +523,8 @@ void AppContext::clearPublicIPv6Observed()
     m_publicIPv6Status = 0;
     if (m_publicIPv6Server.isNull())
         return;
-    logDebug(QStringLiteral("IPv6: dropping server-observed egress %1 (session ended)")
-                 .arg(m_publicIPv6Server.toString()));
+    logDebug([&]() -> QString { return QStringLiteral("IPv6: dropping server-observed egress %1 (session ended)")
+                 .arg(m_publicIPv6Server.toString()); });
     m_publicIPv6Server = Address{};
     noteEffectiveIPv6Change();
 }
@@ -555,7 +555,7 @@ void AppContext::setPublicIPv6Status(uint8 status)
     } else if ((status & IPV6ST_PROBED) && (status & IPV6ST_REACHABLE)) {
         logInfo(QStringLiteral("IPv6: server verified %1 is reachable inbound").arg(endpoint));
     } else if (status & IPV6ST_REACHABLE) {
-        logDebug(QStringLiteral("IPv6: server assumes %1 is reachable (not tested)").arg(endpoint));
+        logDebug([&]() -> QString { return QStringLiteral("IPv6: server assumes %1 is reachable (not tested)").arg(endpoint); });
     }
 }
 
@@ -691,9 +691,9 @@ void AppContext::recordPeerObservedIPv6(const Address& candidate, const QByteArr
         if (!(candidate == m_ipv6LastRejected) || tick - m_ipv6LastRejectTick > 60 * 1000) {
             m_ipv6LastRejected = candidate;
             m_ipv6LastRejectTick = tick;
-            logDebug(QStringLiteral("IPv6: rejecting peer-reported %1 — not assigned to any "
+            logDebug([&]() -> QString { return QStringLiteral("IPv6: rejecting peer-reported %1 — not assigned to any "
                                     "local interface")
-                         .arg(candidate.toString()));
+                         .arg(candidate.toString()); });
         }
         return;
     }
@@ -705,9 +705,9 @@ void AppContext::recordPeerObservedIPv6(const Address& candidate, const QByteArr
     const std::size_t threshold = peerConfirmThreshold();
 
     const std::size_t candCount = m_ipv6PeerVotes.voterCount(candidate);
-    logDebug(QStringLiteral("IPv6: peer %1 reports our IPv6 as %2 (%3/%4 distinct peers)")
+    logDebug([&]() -> QString { return QStringLiteral("IPv6: peer %1 reports our IPv6 as %2 (%3/%4 distinct peers)")
                  .arg(QString::fromUtf8(peerKey), candidate.toString())
-                 .arg(candCount).arg(threshold));
+                 .arg(candCount).arg(threshold); });
 
     // Note once per distinct candidate when a peer reports an address that differs from the
     // one we currently present. Bounded: only locally-held addresses reach this point, and
@@ -716,10 +716,10 @@ void AppContext::recordPeerObservedIPv6(const Address& candidate, const QByteArr
     // conditions before it hold.
     const Address chosen = publicIPv6();
     if (!chosen.isNull() && !(candidate == chosen) && m_ipv6PeerVotes.markWarnedOnce(candidate)) {
-        logDebug(QStringLiteral("IPv6: a peer reports our public IPv6 as %1, which differs from "
+        logDebug([&]() -> QString { return QStringLiteral("IPv6: a peer reports our public IPv6 as %1, which differs from "
                                 "our chosen %2 (%3 peer(s) agree; need %4 to adopt)")
                      .arg(candidate.toString(), chosen.toString())
-                     .arg(bestCount).arg(threshold));
+                     .arg(bestCount).arg(threshold); });
     }
 }
 

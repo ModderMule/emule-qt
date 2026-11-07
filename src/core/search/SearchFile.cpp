@@ -480,8 +480,8 @@ void SearchFile::resolveMeta(bool hadKindTag, uint8 tagKind, bool hadVersionTag,
         // tags claim a meta row the hash can't back: another scheme version, or garbage
         if (hadKindTag) {
             m_metaInvalid = true;
-            logServerVerbose(QStringLiteral("Search: dropping meta row '%1' (%2)")
-                                 .arg(fileName(), enodemeta::parseErrorText(parsed.error())));
+            logServerVerbose([&]() -> QString { return QStringLiteral("Search: dropping meta row '%1' (%2)")
+                                 .arg(fileName(), enodemeta::parseErrorText(parsed.error())); });
         }
         m_meta = {};
         return;
@@ -495,8 +495,8 @@ void SearchFile::resolveMeta(bool hadKindTag, uint8 tagKind, bool hadVersionTag,
                                  hadIndexTag ? m_meta.fileIndex : parsed->fileIndex);
     if (!versionOk || !tagsAgree) {
         m_metaInvalid = true;
-        logServerVerbose(QStringLiteral("Search: dropping meta row '%1' — tags disagree with its hash")
-                             .arg(fileName()));
+        logServerVerbose([&]() -> QString { return QStringLiteral("Search: dropping meta row '%1' — tags disagree with its hash")
+                             .arg(fileName()); });
         m_meta = {};
         return;
     }

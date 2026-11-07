@@ -47,6 +47,7 @@
 
 #include <algorithm>
 #include <array>
+#include <memory>
 
 namespace eMule {
 
@@ -434,39 +435,60 @@ bool HosterPanel::acceptContainerDrop(const QMimeData* mime)
     return true;
 }
 
-void HosterPanel::promptArchivePassword(qint64 id)
+void HosterPanel::promptArchivePassword(const QList<qint64>& ids)
 {
-    const QCborMap it = m_items.value(id);
-    if (it.isEmpty())
+    // one item per package / folder: the core gives the password to the whole group
+    QMap<QString, qint64> groups;
+    for (const qint64 id : ids) {
+        const QCborMap it = m_items.value(id);
+        if (it.isEmpty())
+            continue;
+        const qint64 pkg = it.value(QStringLiteral("packageId")).toInteger();
+        const QString key = pkg != 0 ? QStringLiteral("p%1").arg(pkg)
+                                     : u'd' + QFileInfo(it.value(QStringLiteral("file")).toString()).absolutePath();
+        if (!groups.contains(key))
+            groups.insert(key, id);
+    }
+    if (groups.isEmpty())
         return;
-    const qint64 pkg = it.value(QStringLiteral("packageId")).toInteger();
-    const QString key = pkg != 0 ? QStringLiteral("p%1").arg(pkg)
-                                 : u'd' + QFileInfo(it.value(QStringLiteral("file")).toString()).absolutePath();
+    const QString key = groups.keys().join(u'|');
     if (QInputDialog* open = m_passwordAsks.value(key)) {
         open->raise();
         open->activateWindow();
         return;
     }
-    const QString name = pkg != 0 ? it.value(QStringLiteral("package")).toString()
-                                  : it.value(QStringLiteral("name")).toString();
+    QString label;
+    if (groups.size() == 1) {
+        const QCborMap it = m_items.value(groups.first());
+        const bool pkg = it.value(QStringLiteral("packageId")).toInteger() != 0;
+        label = tr("Archive password for \"%1\":")
+                    .arg(it.value(pkg ? QStringLiteral("package") : QStringLiteral("name")).toString());
+    } else {
+        label = tr("Archive password for %n selected package(s):", nullptr, int(groups.size()));
+    }
     auto* dlg = new QInputDialog(window());
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     // as the Usenet tab's Set Password
     dlg->setWindowTitle(tr("Set Password"));
-    dlg->setLabelText(tr("Archive password for \"%1\":").arg(name));
+    dlg->setLabelText(label);
     dlg->setInputMode(QInputDialog::TextInput);
     dlg->setTextEchoMode(QLineEdit::Password);
-    connect(dlg, &QInputDialog::textValueSelected, this, [this, id](const QString& text) {
+    const QList<qint64> targets = groups.values();
+    connect(dlg, &QInputDialog::textValueSelected, this, [this, targets](const QString& text) {
         if (text.trimmed().isEmpty() || !m_ipc)
             return;
-        IpcMessage req(IpcMsgType::HosterAction);
-        req.append(id);
-        req.append(QStringLiteral("password"));
-        req.append(text);
-        m_ipc->sendRequest(std::move(req), [this](const IpcMessage& r) {
-            if (r.isValid() && !r.fieldBool(0))
-                QMessageBox::warning(this, tr("Set Password"), tr("The download no longer waits for a password."));
-        });
+        // warn once, when none of them still wanted one
+        auto failed = std::make_shared<int>(0);
+        for (const qint64 id : targets) {
+            IpcMessage req(IpcMsgType::HosterAction);
+            req.append(id);
+            req.append(QStringLiteral("password"));
+            req.append(text);
+            m_ipc->sendRequest(std::move(req), [this, failed, n = int(targets.size())](const IpcMessage& r) {
+                if (r.isValid() && !r.fieldBool(0) && ++*failed == n)
+                    QMessageBox::warning(this, tr("Set Password"), tr("The download no longer waits for a password."));
+            });
+        }
     });
     m_passwordAsks.insert(key, dlg);
     dlg->open();
@@ -534,7 +556,7 @@ void HosterPanel::upsert(const QCborMap& item)
     if (!m_bulkFill)
         updateFilterCounts();
     if (askPassword)
-        QMetaObject::invokeMethod(this, [this, id] { promptArchivePassword(id); }, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(this, [this, id] { promptArchivePassword({id}); }, Qt::QueuedConnection);
 }
 
 void HosterPanel::removeRow(qint64 id)
@@ -692,18 +714,16 @@ void HosterPanel::showContextMenu(const QPoint& pos)
         const auto r = it.value(QStringLiteral("reason")).toInteger();
         return s == 4 || s >= 9 || (s == kStateComplete && (r == kReasonUnpackFailed || r == kReasonUnpackPassword));
     }));
-    // an encrypted set, or a failed one (some tools say only "cannot open")
-    qint64 passwordId = 0;
+    // an encrypted set, or a failed one (some tools say only "cannot open"); all selected
+    QList<qint64> passwordIds;
     for (const qint64 id : ids) {
         const QCborMap it = m_items.value(id);
         const auto r = it.value(QStringLiteral("reason")).toInteger();
         if (it.value(QStringLiteral("state")).toInteger() == kStateComplete
-            && (r == kReasonUnpackPassword || r == kReasonUnpackFailed)) {
-            passwordId = id;
-            break;
-        }
+            && (r == kReasonUnpackPassword || r == kReasonUnpackFailed))
+            passwordIds << id;
     }
-    password->setEnabled(passwordId != 0);
+    password->setEnabled(!passwordIds.isEmpty());
     if (ids.size() == 1) {
         const int state = int(m_items.value(ids.first()).value(QStringLiteral("state")).toInteger());
         pause->setEnabled(state != kStateComplete && state != kStatePaused);
@@ -717,7 +737,7 @@ void HosterPanel::showContextMenu(const QPoint& pos)
     else if (chosen == retry)
         act(QStringLiteral("retry"));
     else if (chosen == password)
-        promptArchivePassword(passwordId);
+        promptArchivePassword(passwordIds);
     else if (chosen == remove)
         act(QStringLiteral("remove"));
     else if (chosen == del) {

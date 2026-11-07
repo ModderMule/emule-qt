@@ -162,8 +162,8 @@ AppContext::Ed3kHint Ed3kEd2kJoin::offerHint(UpDownClient& client, bool wait)
     same->told = false;
     same->answered = false;
     same->stream = 0;
-    logDebug(QStringLiteral("eD2K source %1 has a derived user hash, asking over ed3k first")
-                 .arg(Endpoint(ip, client.userPort()).toString()));
+    logDebug([&]() -> QString { return QStringLiteral("eD2K source %1 has a derived user hash, asking over ed3k first")
+                 .arg(Endpoint(ip, client.userPort()).toString()); });
     if (f->root && downloading(*f->root)) {
         addSource(*f->root, src);
         pumpSession();
@@ -207,8 +207,8 @@ void Ed3kEd2kJoin::onPartVerdict(const QByteArray& md4, std::uint32_t part, bool
         return;
     const auto verdict = e->aliasSearchPartFailed(m_session.now(), *f.search, *f.root, part, spanOf(*data));
     if (!verdict) {
-        logDebug(QStringLiteral("\"%1\": part %2 not checked under the root (error %3)")
-                     .arg(f.name).arg(part).arg(errorName(verdict.error())));
+        logDebug([&]() -> QString { return QStringLiteral("\"%1\": part %2 not checked under the root (error %3)")
+                     .arg(f.name).arg(part).arg(errorName(verdict.error())); });
         return;
     }
     if (*verdict == ED3K_PART_CLAIM_FALSE) {
@@ -420,7 +420,7 @@ void Ed3kEd2kJoin::onStreamStatus(const ffi::event::FileStatus& status)
         h.answered = true;
         h.told = true;
         if (h.client) {
-            logDebug(QStringLiteral("eD2K source %1 answered over ed3k").arg(h.client->userName()));
+            logDebug([&]() -> QString { return QStringLiteral("eD2K source %1 answered over ed3k").arg(h.client->userName()); });
             h.client->setEd3kRoute(Ed3kRoute::Preferred);
         }
     }
@@ -560,7 +560,7 @@ void Ed3kEd2kJoin::startSearch(File& f)
     auto search = e->aliasSearchStart(m_session.now(), "ed2k", id, ED3K_REL_SAME, f.size);
     f.nextSearch = nowMs() + m_searchGapMs;
     if (!search) {
-        logDebug(QStringLiteral("\"%1\": ed2k alias search refused (error %2)").arg(f.name, errorName(search.error())));
+        logDebug([&]() -> QString { return QStringLiteral("\"%1\": ed2k alias search refused (error %2)").arg(f.name, errorName(search.error())); });
         return;
     }
     f.search = *search;
@@ -584,7 +584,7 @@ void Ed3kEd2kJoin::onAliasFound(const ffi::event::AliasFound& found)
     // a later AliasFound of the search in use: its candidates wait for a false pair
     if (f.root)
         return;
-    logDebug(QStringLiteral("\"%1\": %2 ed3k root(s) claimed for its ed2k hash").arg(f.name).arg(found.roots));
+    logDebug([&]() -> QString { return QStringLiteral("\"%1\": %2 ed3k root(s) claimed for its ed2k hash").arg(f.name).arg(found.roots); });
     takeNextCandidate(f);
 }
 
@@ -602,7 +602,7 @@ void Ed3kEd2kJoin::takeNextCandidate(File& f)
             if (cand.size != f.size || f.refused.contains(cand.root))
                 continue;
             if (m_rootTaken && m_rootTaken(cand.root)) {
-                logDebug(QStringLiteral("\"%1\": root %2 is downloaded over ed3k already").arg(f.name, hexOf(cand.root.bytes)));
+                logDebug([&]() -> QString { return QStringLiteral("\"%1\": root %2 is downloaded over ed3k already").arg(f.name, hexOf(cand.root.bytes)); });
                 f.refused.insert(cand.root);
                 continue;
             }

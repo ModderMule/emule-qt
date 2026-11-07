@@ -3,6 +3,7 @@
 /// @brief Compact dual-pane speed graph — implementation.
 
 #include "controls/SpeedGraph.h"
+#include "app/UiState.h"
 #include "utils/Appearance.h"
 
 #include <QFontMetrics>
@@ -15,6 +16,34 @@
 namespace eMule {
 
 static constexpr int kGridSpacing = 10; // pixels between grid lines
+
+namespace {
+
+// Colours of one background choice
+struct GraphPalette {
+    QColor background;
+    QColor border;
+    QColor grid;
+    QColor text;
+    QColor upload;
+    QColor download;
+};
+
+const GraphPalette& graphPalette()
+{
+    static const GraphPalette dark{QColor(0, 0, 64), QColor(80, 80, 128), QColor(75, 75, 75),
+                                   QColor(160, 160, 200), QColor(210, 0, 0), QColor(0, 210, 0)};
+    static const GraphPalette light{QColor(250, 250, 255), QColor(160, 160, 190),
+                                    QColor(220, 220, 228), QColor(60, 60, 100),
+                                    QColor(200, 0, 0), QColor(0, 150, 0)};
+    switch (theUiState.speedGraphBackground()) {
+    case 1:  return light;
+    case 2:  return isDarkScheme() ? dark : light;
+    default: return dark;
+    }
+}
+
+} // namespace
 
 SpeedGraph::SpeedGraph(QWidget* parent)
     : QWidget(parent)
@@ -86,7 +115,7 @@ double SpeedGraph::niceYMax(double raw)
 
 void SpeedGraph::drawGrid(QPainter& p, const QRect& area)
 {
-    p.setPen(QPen(QColor(75, 75, 75), 1, Qt::SolidLine));
+    p.setPen(QPen(graphPalette().grid, 1, Qt::SolidLine));
 
     // Vertical lines — scroll left via m_gridXOffset
     for (int x = area.left() + (kGridSpacing - m_gridXOffset) % kGridSpacing;
@@ -140,7 +169,7 @@ void SpeedGraph::drawHalf(QPainter& p, const QRect& area,
     }
 
     // Rate text after arrow
-    p.setPen(QColor(160, 160, 200));
+    p.setPen(graphPalette().text);
     p.drawText(labelX + arrowSize + 3, labelY, area.width(), fm.height(),
                Qt::AlignLeft | Qt::AlignTop, rateText);
 
@@ -182,12 +211,13 @@ void SpeedGraph::paintEvent(QPaintEvent* /*event*/)
     p.setRenderHint(QPainter::Antialiasing, true);
 
     const QRect r = rect();
+    const GraphPalette& pal = graphPalette();
 
-    // Dark navy background
-    p.fillRect(r, QColor(0, 0, 64));
+    // Dark navy by default (eMule), light or theme-following on request
+    p.fillRect(r, pal.background);
 
     // Thin border
-    p.setPen(QPen(QColor(80, 80, 128), 1));
+    p.setPen(QPen(pal.border, 1));
     p.drawRect(r.adjusted(0, 0, -1, -1));
 
     // Split into top (upload) and bottom (download) halves
@@ -200,7 +230,7 @@ void SpeedGraph::paintEvent(QPaintEvent* /*event*/)
     drawGrid(p, downArea);
 
     // Divider line
-    p.setPen(QPen(QColor(80, 80, 128), 1));
+    p.setPen(QPen(pal.border, 1));
     p.drawLine(r.left(), midY, r.right(), midY);
 
     // Compute Y scales with minimum floor
@@ -225,11 +255,11 @@ void SpeedGraph::paintEvent(QPaintEvent* /*event*/)
     const double curDown = m_downData.empty() ? 0.0 : m_downData.back();
 
     // Draw upload half (red, top) with ▲ arrow
-    drawHalf(p, upArea, m_upData, upScale, QColor(210, 0, 0),
+    drawHalf(p, upArea, m_upData, upScale, pal.upload,
              true, fmtRate(curUp));
 
     // Draw download half (green, bottom) with ▼ arrow
-    drawHalf(p, downArea, m_downData, downScale, QColor(0, 210, 0),
+    drawHalf(p, downArea, m_downData, downScale, pal.download,
              false, fmtRate(curDown));
 }
 

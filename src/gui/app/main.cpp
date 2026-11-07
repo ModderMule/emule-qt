@@ -301,6 +301,9 @@ bool launchDaemon(const QString& daemonPath, bool holdConnect, qint64& pid)
         daemonArgs << QStringLiteral("--config") << QDir(dir).absolutePath();
     if (holdConnect)
         daemonArgs << QStringLiteral("--hold-connect");
+    // A quiet console asked for here holds for the core it starts too
+    if (const int level = eMule::consoleLogLevel(); level < eMule::kConsoleLogLevelAll)
+        daemonArgs << QStringLiteral("--log-level") << QString::number(level);
 
     if (eMule::thePrefs.startCoreWithConsole()) {
 #if defined(Q_OS_MACOS)
@@ -435,6 +438,9 @@ int main(int argc, char* argv[])
     // Before anything can log: scripts/debug-gui.sh runs the daemon and the GUI
     // into one terminal, so every console line needs a time and a process tag.
     eMule::installConsoleMessagePattern(QStringLiteral("gui"));
+    // --log-level / EMULE_LOG_LEVEL: quiets the console only (#139), wraps Qt's own
+    // console output, so it goes before the file and log-tab handlers
+    eMule::installConsoleLogFilter(eMule::consoleLogLevelFromArgs(app.arguments()));
     // Installed here, not in LogWidget, so the file also captures the lines
     // emitted before the window exists. The sink stays closed until
     // LogWidget::applyLogFileSettings() below opens it.

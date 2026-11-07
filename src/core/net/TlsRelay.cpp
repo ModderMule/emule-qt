@@ -142,7 +142,7 @@ void TlsRelay::fail(const QString& reason)
         return;
     m_failure = reason;
     m_remoteClosed = true;
-    logDebug(QStringLiteral("TlsRelay: %1").arg(reason));
+    logDebug([&]() -> QString { return QStringLiteral("TlsRelay: %1").arg(reason); });
     m_listener.close();   // a local leg not yet connected is refused
     if (m_remote)
         m_remote->abort();

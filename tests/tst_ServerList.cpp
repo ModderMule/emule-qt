@@ -142,6 +142,7 @@ private slots:
     void staticServers_numericIPv4NotDynIP();
     void textImport_ipv6Bracketed();
     void textImport_ed2kLinkIPv6();
+    void textImport_ed2kLinkDualStack();
     void findByIPUdp_ipv6();
 
     // Dual-stack merge (one row per server)
@@ -854,6 +855,27 @@ void tst_ServerList::textImport_ed2kLinkIPv6()
     QVERIFY(srv->ipAddress().isIPv6());
     QVERIFY(!srv->hasDynIP());
     QCOMPARE(srv->address(), QStringLiteral("2a01:4f8::1"));
+}
+
+void tst_ServerList::textImport_ed2kLinkDualStack()
+{
+    TempDir tmp;
+    const QString filePath = tmp.filePath(QStringLiteral("servers.txt"));
+
+    QFile f(filePath);
+    QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
+    QTextStream s(&f);
+    s << "ed2k://|server|93.184.216.34|4661|/|v6=[2a01:4f8::1]|/\n";
+    f.close();
+
+    // One row: the IPv4 primary with the IPv6 next to it (ipv6-spec §6.4).
+    ServerList list;
+    QCOMPARE(list.addServersFromTextFile(filePath), 1);
+    auto* srv = list.serverAt(0);
+    QVERIFY(srv != nullptr);
+    QCOMPARE(srv->address(), QStringLiteral("93.184.216.34"));
+    QVERIFY(srv->hasBothFamilies());
+    QCOMPARE(srv->ipv6Address().toString(), QStringLiteral("2a01:4f8::1"));
 }
 
 void tst_ServerList::findByIPUdp_ipv6()

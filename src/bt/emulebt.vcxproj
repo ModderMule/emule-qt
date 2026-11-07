@@ -158,6 +158,7 @@
   <ItemGroup>
     <ClCompile Include="BtIds.cpp" />
     <ClCompile Include="BtSession.cpp" />
+    <ClCompile Include="BtTrackerList.cpp" />
     <ClCompile Include="add\BtAddSource.cpp" />
     <ClCompile Include="session\BtJoinDiskIo.cpp" />
     <ClCompile Include="session\BtSettingsMap.cpp" />
@@ -166,6 +167,7 @@
   <ItemGroup>
     <ClInclude Include="BtIds.h" />
     <ClInclude Include="BtJoin.h" />
+    <ClInclude Include="BtTrackerList.h" />
     <ClInclude Include="BtTypes.h" />
     <ClInclude Include="add\BtAddSource.h" />
     <ClInclude Include="session\BtJoinDiskIo.h" />

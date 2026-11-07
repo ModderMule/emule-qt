@@ -27,6 +27,8 @@ Q_LOGGING_CATEGORY(lcEmuleServer,  "emule.server")
 // GUI "Verbose" tab (any emule.* category that is not emule.kad/emule.usenet/emule.server falls
 // through there); a separate category keeps it independent of the global `verbose`.
 Q_LOGGING_CATEGORY(lcEmuleServerVerbose, "emule.serverv")
+// Shared files: hashing, duplicates. Verbose tab, own switch (sharedFilesVerboseLog).
+Q_LOGGING_CATEGORY(lcEmuleSharedVerbose, "emule.sharedv")
 Q_LOGGING_CATEGORY(lcEmuleCrypto,  "emule.crypto")
 // MFC LOG_STATUSBAR: the GUI puts these in the main Log tab and the status bar.
 Q_LOGGING_CATEGORY(lcEmuleStatus,  "emule.status")

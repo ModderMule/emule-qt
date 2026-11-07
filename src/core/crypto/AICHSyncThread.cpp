@@ -342,7 +342,7 @@ void AICHSyncThread::applyStoredHashSet(KnownFile* file)
     AICHRecoveryHashSet stored(file->fileSize());
     stored.setMasterHash(fileId.getAICHHash(), EAICHStatus::HashSetComplete);
     if (!stored.loadHashSet() || !fileId.setAICHHashSet(stored))
-        logDebug(QStringLiteral("Failed to create AICH part hashset for %1").arg(file->fileName()));
+        logDebug([&]() -> QString { return QStringLiteral("Failed to create AICH part hashset for %1").arg(file->fileName()); });
 }
 
 bool AICHSyncThread::convertKnown2ToKnown264(SafeFile& targetFile)

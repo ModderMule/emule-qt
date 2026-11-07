@@ -109,6 +109,12 @@ private:
     void onRemove();
     void onOpenFolder();
     void onCopyMagnet();
+    /// Edit Trackers… for the whole selection (#143).
+    void onEditTrackers();
+    void editTrackers(const QStringList& ids, const QList<QStringList>& urls);
+    /// Options… for the whole selection (#143).
+    void onEditOptions();
+    void editOptions(const QStringList& ids, const QList<QCborMap>& options);
     void onPasteMagnets();
     void showDetails(const QString& id);
     /// GetTorrentDetails for the file rows of @p id.
@@ -139,6 +145,8 @@ private:
     QAction* m_removeAction = nullptr;
     QAction* m_recheckAction = nullptr;
     QAction* m_reannounceAction = nullptr;
+    QAction* m_editTrackersAction = nullptr;
+    QAction* m_optionsAction = nullptr;
     QAction* m_openFolderAction = nullptr;
     QAction* m_copyMagnetAction = nullptr;
     QAction* m_pasteMagnetAction = nullptr;

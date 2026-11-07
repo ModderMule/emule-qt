@@ -6,6 +6,7 @@
 
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
@@ -89,6 +90,11 @@ VersionManifestInfo parse(const QByteArray& json)
     info.date = QDateTime::fromString(obj.value(QStringLiteral("date")).toString(), Qt::ISODate).date();
     info.releaseNotes = obj.value(QStringLiteral("releaseNotes")).toString();
     info.minVersion = obj.value(QStringLiteral("minVersion")).toString();
+    info.description = obj.value(QStringLiteral("description")).toString().trimmed();
+    for (const QJsonValue& v : obj.value(QStringLiteral("changelog")).toArray()) {
+        if (const QString line = v.toString().trimmed(); !line.isEmpty())
+            info.changelog.append(line);
+    }
 
     const QJsonObject downloads = obj.value(QStringLiteral("downloads")).toObject();
     for (auto it = downloads.begin(); it != downloads.end(); ++it) {

@@ -112,8 +112,10 @@ private:
     void pasteServerLinks();          ///< MP_PASTE (Ctrl+V)
 
     /// Send AddServer. @p done gets added, or the daemon's text when the address was
-    /// LAN-filtered (empty for a duplicate or a dropped connection).
+    /// LAN-filtered (empty for a duplicate or a dropped connection). @p address6 is a
+    /// dual-stack server's IPv6 next to an IPv4 @p address, else empty.
     void sendAddServer(const QString& address, uint16_t port, const QString& name,
+                       const QString& address6,
                        std::function<void(bool added, const QString& rejected)> done);
     /// Connect to one server: double click, Enter and "Connect To" all land here.
     /// The daemon aborts a running attempt; the same server is a no-op there.

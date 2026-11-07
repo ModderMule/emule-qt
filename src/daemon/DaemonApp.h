@@ -113,7 +113,7 @@ public:
     [[nodiscard]] static QString loadStage();
 
     /// (Re)compose the Qt logging filter rules from the current logging prefs
-    /// (verbose / kadVerboseLog / serverVerboseLog / bt-, hoster-, ed3kVerboseLog) and apply them. Each debug
+    /// (verbose / kadVerboseLog / serverVerboseLog / bt-, hoster-, ed3k-, usenet-, sharedFilesVerboseLog) and apply them. Each debug
     /// subsystem is enabled independently so a single toggle can surface its
     /// channel without turning on the global verbose firehose. Also refreshes
     /// the per-subsystem emit-site gates (setServerVerboseLogging). Safe to call

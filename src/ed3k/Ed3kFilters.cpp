@@ -289,7 +289,7 @@ ffi::Result<> Ed3kFilters::showAnyway(const ffi::Root& root, bool on)
     std::copy_n(root.bytes.begin(), id.size(), id.begin());
     auto ok = e->filterShowAnyway(m_session.now(), ffi::FilterSubject::File, id, on);
     if (ok)
-        logEd3kDebug(QStringLiteral("ed3k: filter: %1 shown anyway: %2").arg(hexOf(id)).arg(on));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: filter: %1 shown anyway: %2").arg(hexOf(id)).arg(on); });
     pumpSession();
     emit filtersChanged();
     return ok;
@@ -375,7 +375,7 @@ void Ed3kFilters::onBlobFetched(const QString& owner, int member, const ffi::Roo
     // the core checks the root, the magic and the limits (§1, §2)
     const auto ok = e->filterFile(m_session.now(), root, spanOf(data));
     if (!ok)
-        logDebug(QStringLiteral("list file of filter list %1 not taken (error %2)").arg(member).arg(errorName(ok.error())));
+        logDebug([&]() -> QString { return QStringLiteral("list file of filter list %1 not taken (error %2)").arg(member).arg(errorName(ok.error())); });
     pumpSession();
     emit listFileFetched(quint32(member), ok.has_value());
 }
@@ -415,8 +415,8 @@ void Ed3kFilters::onFilterEvent(const ffi::Event& ev, bool* handled)
         // §2: the old version stays; the client says so
         logEd3kWarning(QStringLiteral("ed3k: filter list %1 is above the limits; the version before stays").arg(t->filter));
     } else if (const auto* i = std::get_if<e::FilterIgnored>(&ev)) {
-        logEd3kDebug(QStringLiteral("ed3k: a file of filter list %1 is no list file, ignored (%2)")
-                         .arg(i->filter).arg(hexOf(i->root.bytes).left(16)));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: a file of filter list %1 is no list file, ignored (%2)")
+                         .arg(i->filter).arg(hexOf(i->root.bytes).left(16)); });
     } else if (std::holds_alternative<e::FilterChanged>(ev)) {
         // the session saves filter.dat; the lists may have moved
     } else {
@@ -430,13 +430,13 @@ void Ed3kFilters::onFetch(const ffi::event::FilterFetch& f)
 {
     // the core picked the list files (§2); the base finds sources and fetches into memory
     if (f.size == 0 || f.size > kListFileMax) {
-        logEd3kDebug(QStringLiteral("ed3k: filter list file %1 of %2 B not fetched").arg(textOf(f.name)).arg(f.size));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: filter list file %1 of %2 B not fetched").arg(textOf(f.name)).arg(f.size); });
         return;
     }
     if (!m_started || downloading(f.root))
         return;
     if (!fetchBlob(f.root, f.size, kFetchOwner, int(f.filter)))
-        logEd3kDebug(QStringLiteral("ed3k: filter list file %1 not fetched").arg(textOf(f.name)));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: filter list file %1 not fetched").arg(textOf(f.name)); });
 }
 
 void Ed3kFilters::loadOwn()

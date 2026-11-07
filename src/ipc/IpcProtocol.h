@@ -794,6 +794,18 @@ enum class IpcMsgType : int {
     AddTorrentTrackers      = 811,
     /// [id: string, urls: [string]] -> bool
     RemoveTorrentTrackers   = 812,
+    /// [ids: [string]] -> [ok, {id: [url]}] tier order; unknown ids left out
+    GetTorrentTrackerUrls   = 813,
+    /// [ids: [string], add: [string], remove: [string], exact: bool] -> [ok, changed: int]
+    /// One edit for many torrents (#143). New URLs go to the last tier. exact: each list
+    /// becomes `add`, `remove` ignored. changed: torrents whose list changed.
+    EditTorrentTrackers     = 814,
+    /// [ids: [string], options: {any SetTorrentOptions keys}] -> [ok, changed: int]
+    /// Options… for many torrents (#143): only the keys sent change, the rest stay.
+    /// changed: torrents whose options changed.
+    SetTorrentOptionsMany   = 815,
+    /// [ids: [string]] -> [ok, {id: {see SetTorrentOptions}}]; unknown ids left out
+    GetTorrentOptionsMany   = 816,
     /// [] -> {running, listenPort, listening, dhtNodes, torrents, rateDown, rateUp}
     GetBtStatus             = 818,
     /// [] -> [ok, map]. The BitTorrent branch of the Statistics window; answered

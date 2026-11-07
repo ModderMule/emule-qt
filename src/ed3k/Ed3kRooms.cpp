@@ -490,9 +490,9 @@ void Ed3kRooms::onEventPolled(const ffi::Event& ev, bool* handled)
         }
     } else if (const auto* rf = std::get_if<e::RoomRefused>(&ev)) {
         *handled = true;
-        logEd3kDebug(QStringLiteral("ed3k: room %1 refused by %2 (%3)")
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: room %1 refused by %2 (%3)")
                          .arg(roomHex(rf->room), QString::fromLatin1(bytesOf(rf->node.bytes).toHex()))
-                         .arg(rf->refusal));
+                         .arg(rf->refusal); });
         // #17: ROOM_MEMBER: the room is closed and we are not admitted; the GUI shows the key
         if (Room* r = roomOf(rf->room); r && rf->refusal == ED3K_ROOM_MEMBER && !r->notAdmitted) {
             r->notAdmitted = true;
@@ -501,7 +501,7 @@ void Ed3kRooms::onEventPolled(const ffi::Event& ev, bool* handled)
         noticeOf(rf->room, Notice::Refused, rf->refusal, false, bytesOf(rf->node.bytes));
     } else if (const auto* f = std::get_if<e::RoomFault>(&ev)) {
         *handled = true;
-        logEd3kDebug(QStringLiteral("ed3k: room %1: %2 sent a bad item").arg(roomHex(f->room), QString::fromLatin1(bytesOf(f->node.bytes).toHex())));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: room %1: %2 sent a bad item").arg(roomHex(f->room), QString::fromLatin1(bytesOf(f->node.bytes).toHex())); });
         noticeOf(f->room, Notice::Fault, f->until, false, bytesOf(f->node.bytes));
     }
 }

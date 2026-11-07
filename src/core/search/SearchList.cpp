@@ -281,8 +281,8 @@ SearchList::TcpSearchAnswer SearchList::processSearchAnswer(const uint8* packet,
     // SearchFile keeps the ed2k (IPv4) form; an IPv6 server records 0 there.
     // The search this answers is over (or was closed): the results are nobody's.
     if (m_currentEd2kSearchID == 0) {
-        logServerVerbose(QStringLiteral("TCP search answer from %1 dropped — no server "
-                                        "search is waiting for one").arg(server.toString()));
+        logServerVerbose([&]() -> QString { return QStringLiteral("TCP search answer from %1 dropped — no server "
+                                        "search is waiting for one").arg(server.toString()); });
         return {};
     }
 
@@ -319,8 +319,8 @@ SearchList::TcpSearchAnswer SearchList::processSearchAnswer(const uint8* packet,
                                "are available."));
     }
 
-    logServerVerbose(QStringLiteral("TCP search answer from %1 — parsed %2 result(s), moreResults=%3")
-                         .arg(server.toString()).arg(parsed).arg(moreResults));
+    logServerVerbose([&]() -> QString { return QStringLiteral("TCP search answer from %1 — parsed %2 result(s), moreResults=%3")
+                         .arg(server.toString()).arg(parsed).arg(moreResults); });
 
     emit tabHeaderUpdated(m_currentEd2kSearchID);
     return {moreResults, parsed, foundFiles(m_currentEd2kSearchID) - filesBefore};
@@ -358,8 +358,8 @@ uint32 SearchList::processClientSharedFiles(UpDownClient& sender, const uint8* p
             auto* file = new SearchFile(data, sender.unicodeSupport(), serverIP,
                                         sender.serverPort(), directory);
             if (file->isLargeFile() && !sender.supportsLargeFiles()) {
-                logDebug(QStringLiteral("Client offers large file (%1) but did not announce support for it - ignoring file")
-                             .arg(file->fileName()));
+                logDebug([&]() -> QString { return QStringLiteral("Client offers large file (%1) but did not announce support for it - ignoring file")
+                             .arg(file->fileName()); });
                 delete file;
                 continue;
             }
@@ -396,8 +396,8 @@ void SearchList::processUDPSearchAnswer(const uint8* packet, uint32 size,
 
     // Validate server was in our request list
     if (!m_curED2KSentRequestsIPs.contains(server.address())) {
-        logServerVerbose(QStringLiteral("UDP search answer from %1 DROPPED — sender not in our sent-request set")
-                             .arg(server.toString()));
+        logServerVerbose([&]() -> QString { return QStringLiteral("UDP search answer from %1 DROPPED — sender not in our sent-request set")
+                             .arg(server.toString()); });
         return;
     }
 
@@ -443,8 +443,8 @@ void SearchList::processUDPSearchAnswer(const uint8* packet, uint32 size,
         }
     } while (data.position() < data.length());
 
-    logServerVerbose(QStringLiteral("UDP search answer from %1 — parsed %2 result(s)")
-                         .arg(server.toString()).arg(parsedResults));
+    logServerVerbose([&]() -> QString { return QStringLiteral("UDP search answer from %1 — parsed %2 result(s)")
+                         .arg(server.toString()).arg(parsedResults); });
 
     emit tabHeaderUpdated(m_currentEd2kSearchID);
 }
@@ -518,8 +518,8 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
     if (!parent && topLevelRows >= cap) {
         if (!entry->capLogged) {
             entry->capLogged = true;
-            logDebug(QStringLiteral("Search #%1 reached %2 distinct files — further new files ignored")
-                         .arg(searchID).arg(cap));
+            logDebug([&]() -> QString { return QStringLiteral("Search #%1 reached %2 distinct files — further new files ignored")
+                         .arg(searchID).arg(cap); });
         }
         return;
     }

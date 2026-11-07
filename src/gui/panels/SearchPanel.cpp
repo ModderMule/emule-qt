@@ -2819,7 +2819,7 @@ void SearchPanel::saveSearches()
     QSaveFile file(path);
     if (file.open(QIODevice::WriteOnly)
         && file.write(QJsonDocument(root).toJson(QJsonDocument::Compact)) >= 0 && file.commit())
-        logDebug(QStringLiteral("Stored %1 searches to %2").arg(searchesArr.size()).arg(path));
+        logDebug([&]() -> QString { return QStringLiteral("Stored %1 searches to %2").arg(searchesArr.size()).arg(path); });
     else
         logWarning(QStringLiteral("Could not store searches to %1: %2").arg(path, file.errorString()));
 }

@@ -345,8 +345,8 @@ void Ed3kCredit::onEventPolled(const ffi::Event& ev, bool* handled)
     } else if (const auto* h = std::get_if<e::CreditSlotHint>(&ev)) {
         // the queue policy granted it already (ffi.md: the engine acts on its own hint)
         ++m_status.slotHints;
-        logEd3kDebug(QStringLiteral("ed3k: credit: priority turn to %1 at %2 µ/MiB")
-                         .arg(hexOf(h->node.bytes).left(8)).arg(h->price));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: credit: priority turn to %1 at %2 µ/MiB")
+                         .arg(hexOf(h->node.bytes).left(8)).arg(h->price); });
     } else if (std::holds_alternative<e::CreditPaymentLate>(ev)) {
         ++m_status.lateBids;
     } else if (const auto* t = std::get_if<e::CreditTx>(&ev)) {
@@ -512,7 +512,7 @@ void Ed3kCredit::bid(const ffi::Root& root)
     // 0 takes a bid away (receipts only, §5.4)
     // if (auto ok = engine->creditBid(m_session.now(), root, m_prefs.bidMaxPrice); !ok)
     if (auto ok = engine->creditBid(m_session.now(), root, m_auto.price(m_prefs)); !ok)
-        logEd3kDebug(QStringLiteral("ed3k: credits: no bid for %1 (error %2)").arg(hexOf(root.bytes).left(8)).arg(int(ok.error())));
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: credits: no bid for %1 (error %2)").arg(hexOf(root.bytes).left(8)).arg(int(ok.error())); });
 }
 
 void Ed3kCredit::unconfigure(const QString& why)

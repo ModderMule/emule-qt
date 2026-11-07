@@ -303,14 +303,17 @@ void BandwidthCoordinator::logChange()
     if (m_logClock.isValid() && m_logClock.elapsed() < kLogMinIntervalMs)
         return;
 
+    // Verbose: flips with every busy/idle change of the engines (#139)
     if (s.contended) {
-        logInfo(QStringLiteral("Bandwidth: limits shared — download %1 KB/s: eD2K up to %2, "
-                               "Usenet up to %3, BitTorrent up to %4; upload %5 KB/s: eD2K up "
-                               "to %6, BitTorrent up to %7 (0 = unlimited)")
-                    .arg(s.maxDownloadKb).arg(s.ed2kDownKb).arg(s.usenetDownKb).arg(s.btDownKb)
-                    .arg(s.uploadLineKb).arg(s.ed2kUpKb).arg(s.btUpKb));
+        logDebug([&]() -> QString {
+            return QStringLiteral("Bandwidth: limits shared — download %1 KB/s: eD2K up to %2, "
+                                  "Usenet up to %3, BitTorrent up to %4; upload %5 KB/s: eD2K up "
+                                  "to %6, BitTorrent up to %7 (0 = unlimited)")
+                .arg(s.maxDownloadKb).arg(s.ed2kDownKb).arg(s.usenetDownKb).arg(s.btDownKb)
+                .arg(s.uploadLineKb).arg(s.ed2kUpKb).arg(s.btUpKb);
+        });
     } else {
-        logInfo(QStringLiteral("Bandwidth: limits no longer shared — each engine may use all of them"));
+        logDebug(QStringLiteral("Bandwidth: limits no longer shared — each engine may use all of them"));
     }
     m_logged = s;
     m_logClock.start();

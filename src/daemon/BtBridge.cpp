@@ -166,6 +166,29 @@ bt::BtTorrentOptions optionsFromCbor(const QCborMap& m)
     return o;
 }
 
+/// @p base with the keys of @p m applied (same clamping as optionsFromCbor).
+bt::BtTorrentOptions mergeOptions(const bt::BtTorrentOptions& base, const QCborMap& m)
+{
+    const bt::BtTorrentOptions sent = optionsFromCbor(m);
+    bt::BtTorrentOptions o = base;
+    const auto has = [&m](const char* key) { return m.contains(QString::fromLatin1(key)); };
+    if (has("downloadLimitKb"))
+        o.downloadLimitKb = sent.downloadLimitKb;
+    if (has("uploadLimitKb"))
+        o.uploadLimitKb = sent.uploadLimitKb;
+    if (has("maxPeers"))
+        o.maxPeers = sent.maxPeers;
+    if (has("ratioMode"))
+        o.ratioMode = sent.ratioMode;
+    if (has("ratioPercent"))
+        o.ratioPercent = sent.ratioPercent;
+    if (has("seedTimeMode"))
+        o.seedTimeMode = sent.seedTimeMode;
+    if (has("seedTimeMinutes"))
+        o.seedTimeMinutes = sent.seedTimeMinutes;
+    return o;
+}
+
 QStringList stringsOf(const QCborArray& arr)
 {
     QStringList out;
@@ -361,6 +384,51 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
     case IpcMsgType::RemoveTorrentTrackers:
         boolResult(s_session->removeTrackers(id, stringsOf(msg.fieldArray(1))));
         break;
+    case IpcMsgType::GetTorrentOptionsMany: {
+        QCborMap all;
+        for (const QString& tid : stringsOf(msg.fieldArray(0)))
+            if (const auto o = s_session->options(tid))
+                all.insert(tid, optionsToCbor(*o));
+        reply(IpcMessage::makeResult(seq, true, all));
+        break;
+    }
+    case IpcMsgType::SetTorrentOptionsMany: {
+        const QCborMap sent = msg.fieldMap(1);
+        int changed = 0;
+        for (const QString& tid : stringsOf(msg.fieldArray(0))) {
+            const auto cur = s_session->options(tid);
+            if (!cur)
+                continue;
+            const bt::BtTorrentOptions next = mergeOptions(*cur, sent);
+            if (next != *cur && s_session->setOptions(tid, next))
+                ++changed;
+        }
+        reply(IpcMessage::makeResult(seq, true, changed));
+        break;
+    }
+    case IpcMsgType::GetTorrentTrackerUrls: {
+        QCborMap lists;
+        for (const QString& tid : stringsOf(msg.fieldArray(0))) {
+            if (!s_session->torrent(tid))
+                continue;
+            QCborArray urls;
+            for (const auto& t : s_session->trackers(tid))
+                urls.append(t.url);
+            lists.insert(tid, urls);
+        }
+        reply(IpcMessage::makeResult(seq, true, lists));
+        break;
+    }
+    case IpcMsgType::EditTorrentTrackers: {
+        const bt::BtTrackerEdit edit{stringsOf(msg.fieldArray(1)), stringsOf(msg.fieldArray(2)),
+                                     msg.fieldBool(3)};
+        int changed = 0;
+        for (const QString& tid : stringsOf(msg.fieldArray(0)))
+            if (s_session->editTrackers(tid, edit).value_or(false))
+                ++changed;
+        reply(IpcMessage::makeResult(seq, true, changed));
+        break;
+    }
     default:
         reply(IpcMessage::makeError(seq, 400, QStringLiteral("Unknown BitTorrent request")));
         break;
@@ -487,6 +555,7 @@ QCborMap statusToCbor()
     out.insert(QStringLiteral("i2pBundled"), s_router && s_router->available());
     out.insert(QStringLiteral("i2pRouter"), s_router ? static_cast<int>(s_router->state()) : 0);
     out.insert(QStringLiteral("i2pRouterError"), s_router ? s_router->lastError() : QString());
+    out.insert(QStringLiteral("i2pRouterProgress"), s_router ? s_router->downloadProgress() : 0);
     return out;
 }
 
@@ -602,6 +671,7 @@ bt::BtSettings settingsFromPrefs()
     s.dht = thePrefs.btDht();
     s.lsd = thePrefs.btLsd();
     s.pex = thePrefs.btPex();
+    s.announceToAll = thePrefs.btAnnounceToAll();
     s.encryption = thePrefs.btEncryption();
     s.maxActiveDownloads = thePrefs.btMaxActiveDownloads();
     s.maxActiveSeeds = thePrefs.btMaxActiveSeeds();

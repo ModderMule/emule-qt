@@ -286,12 +286,12 @@ void SharedDirWatcher::onWatched(const QString& dir, bool ok, bool remote, quint
 
     if (first) {
         if (!ok)
-            logDebug(QStringLiteral("Shared directory is polled, not watched: %1").arg(dir));
+            logDebug([&]() -> QString { return QStringLiteral("Shared directory is polled, not watched: %1").arg(dir); });
         else if (it->remote)
-            logDebug(QStringLiteral("Shared directory on a network share is polled too: %1").arg(dir));
+            logDebug([&]() -> QString { return QStringLiteral("Shared directory on a network share is polled too: %1").arg(dir); });
     }
     if (tookMs > kSlowWatchMs)
-        logDebug(QStringLiteral("Watching shared directory took %1 ms: %2").arg(tookMs).arg(dir));
+        logDebug([&]() -> QString { return QStringLiteral("Watching shared directory took %1 ms: %2").arg(tookMs).arg(dir); });
     updatePollTimer();
     // changes made while the OS was busy setting up the watch were not seen
     if (first && ok && tookMs > kSlowWatchMs)

@@ -1,12 +1,14 @@
 #pragma once
 
 /// @file I2pRouter.h
-/// @brief The bundled I2P router (i2pd, `emuleqt-i2pd`) for BitTorrent's btI2pMode 1.
+/// @brief The own I2P router (i2pd, `emuleqt-i2pd`) for BitTorrent's btI2pMode 1.
 ///
-/// Runs i2pd as a child with its data under <config>/I2P, SAM on a free loopback port,
+/// Not shipped: I2pdInstaller fetches the pinned release into <config>/I2P/bin the first
+/// time it is wanted (or when a newer one is pinned). Runs i2pd as a child with its data under <config>/I2P, SAM on a free loopback port,
 /// every other client service off. Ready once the SAM port answers; libtorrent gets the
 /// bridge only then. A crash restarts it with a growing pause.
 
+#include "net/I2pdInstaller.h"
 #include "utils/SidecarProcess.h"
 
 #include <QElapsedTimer>
@@ -29,6 +31,7 @@ public:
         Starting = 1,
         Ready = 2,
         Failed = 3,
+        Downloading = 4,
     };
 
     struct Config {
@@ -54,15 +57,16 @@ public:
     explicit I2pRouter(QObject* parent = nullptr);
     ~I2pRouter() override;
 
-    /// `emuleqt-i2pd` next to the binary (or $EMULE_I2PD, or a build tree's i2pd/).
-    /// Empty: not bundled.
+    /// $EMULE_I2PD (a router of the user's or a test's); empty when unset or missing.
     [[nodiscard]] static QString findBinary();
+    /// The download folder under @p dataDir.
+    [[nodiscard]] static QString installDir(const QString& dataDir);
     /// The reseed certificates shipped beside @p binary; empty when none.
     [[nodiscard]] static QString findCertificates(const QString& binary);
     /// i2pd's command line for @p config.
     [[nodiscard]] static QStringList arguments(const Config& config, quint16 samPort, const QString& certsDir);
 
-    /// A bundled binary exists.
+    /// A router can be had: $EMULE_I2PD, or a release to download for this OS/CPU.
     [[nodiscard]] bool available() const;
 
     /// Runs the router with @p config; restarts it when the config changed. Idempotent.
@@ -75,12 +79,17 @@ public:
     [[nodiscard]] quint16 samPort() const { return m_samPort; }
     /// Why it is Failed (or the last crash); English.
     [[nodiscard]] QString lastError() const { return m_error; }
+    /// 0..100 while Downloading
+    [[nodiscard]] int downloadProgress() const { return m_installer.progress(); }
 
 signals:
     void stateChanged();
+    /// downloadProgress() moved, while Downloading
+    void downloadProgressChanged();
 
 private:
     void launch();
+    void onInstalled(bool ok);
     void setState(State s);
     void poll();
     void onLine(const QByteArray& line);
@@ -104,6 +113,9 @@ private:
     QElapsedTimer m_launchedAt;
     int m_restartDelayMs = kFirstRestartMs;
     QTcpSocket* m_probe = nullptr;
+    I2pdInstaller m_installer;
+    /// the pin whose download failed this run: an older install is used then
+    QString m_failedRelease;
 };
 
 } // namespace eMule

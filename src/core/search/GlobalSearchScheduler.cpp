@@ -69,9 +69,9 @@ GlobalSearchScheduler::GlobalSearchScheduler(QObject* parent)
     m_localTimeout->setSingleShot(true);
     m_localTimeout->setInterval(kLocalAnswerTimeoutMs);
     connect(m_localTimeout, &QTimer::timeout, this, [this] {
-        logServerVerbose(QStringLiteral("Global search: local server did not answer within "
+        logServerVerbose([&]() -> QString { return QStringLiteral("Global search: local server did not answer within "
                                         "%1s — starting the UDP sweep anyway")
-                             .arg(kLocalAnswerTimeoutMs / 1000));
+                             .arg(kLocalAnswerTimeoutMs / 1000); });
         beginSweep();
     });
 
@@ -158,9 +158,9 @@ void GlobalSearchScheduler::onResultCountChanged(uint32 searchID)
 
     // Port change: counts files, not MFC's sources (see kSweepMaxFiles)
     if (theApp.searchList->foundFiles(searchID) >= kSweepMaxFiles) {
-        logServerVerbose(QStringLiteral("Global search: stopping the UDP sweep after %1 "
+        logServerVerbose([&]() -> QString { return QStringLiteral("Global search: stopping the UDP sweep after %1 "
                                         "files — the query is too broad")
-                             .arg(theApp.searchList->foundFiles(searchID)));
+                             .arg(theApp.searchList->foundFiles(searchID)); });
         cancel();
     }
 }
@@ -180,9 +180,9 @@ void GlobalSearchScheduler::beginSweep()
         return;
     }
 
-    logServerVerbose(QStringLiteral("UDP Global Search: sweeping %1 servers, one every %2ms")
+    logServerVerbose([&]() -> QString { return QStringLiteral("UDP Global Search: sweeping %1 servers, one every %2ms")
                          .arg(count)
-                         .arg(kSweepIntervalMs));
+                         .arg(kSweepIntervalMs); });
     m_sweepTimer->start();
     emitProgress(true);
 }
@@ -212,12 +212,12 @@ void GlobalSearchScheduler::onSweepTick()
             theApp.searchList->addSentUDPRequestIP(m_searchID, toask->ipAddress());
 
         const auto udpPort = static_cast<uint16>(toask->port() + 4);
-        logServerVerbose(QStringLiteral("  -> %1 (%2) UDP:%3 opcode=0x%4 (%5 of %6)")
+        logServerVerbose([&]() -> QString { return QStringLiteral("  -> %1 (%2) UDP:%3 opcode=0x%4 (%5 of %6)")
                              .arg(toask->name(), toask->addressWithPort())
                              .arg(udpPort)
                              .arg(pkt->opcode, 2, 16, QLatin1Char('0'))
                              .arg(m_examined)
-                             .arg(theApp.serverList->serverCount()));
+                             .arg(theApp.serverList->serverCount()); });
         if (theApp.serverConnect)
             theApp.serverConnect->sendUDPPacket(std::move(pkt), *toask, udpPort);
     }
