@@ -1111,7 +1111,10 @@ protected:
     void markAsCompleteHttpSource(const PartFile* file);
     /// Reserve up to a part's worth of blocks and merge the contiguous run into one
     /// inclusive byte range; the rest is given back. False when nothing is needed.
+    /// A complete server gets the largest free gap instead (PartFile::getNextHttpRange).
     bool reserveHttpRange(uint64& start, uint64& end);
+    static constexpr uint64 kHttpRangeSecs = 60;      // one range lasts about this long
+    static constexpr uint64 kHttpRangeMaxParts = 16;  // ~148 MB per request at most
     /// Write body bytes that belong at file offset @p pos into the reserved blocks.
     /// Returns the bytes consumed; fewer than @p size means no block wanted the rest.
     uint32 writeHttpData(uint64 pos, const uint8* data, uint32 size);

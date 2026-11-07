@@ -63,6 +63,9 @@ private slots:
     void flushBuffer_writesToDisk();
     void flushBuffer_isRefusedAtTheDiskFloorAndRetried();
     void getNextRequestedBlock_basic();
+    void httpRange_takesLargestGap();
+    void httpRange_splitsAGapAnotherSourceIsIn();
+    void httpRange_continuesItsOwnRun();
     void chunkSelection_spreadsTies();
     void chunkSelection_rarestFirst();
     void chunkSelection_shortLastPartNotFavoured();
@@ -424,6 +427,94 @@ void tst_PartFile::getNextRequestedBlock_basic()
     QVERIFY(blocks[0]->startOffset < static_cast<uint64>(pf.fileSize()));
 
     // Clean up (blocks are owned by PartFile's requested list)
+}
+
+namespace {
+
+PartFile& httpFile(PartFile& pf, uint16 parts)
+{
+    pf.setFileName(QStringLiteral("web.bin"));
+    pf.setFileSize(PARTSIZE * parts);
+    uint8 hash[16] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+    pf.setFileHash(hash);
+    return pf;
+}
+
+/// Blocks form one run without holes and none crosses an AICH block boundary.
+bool isOneAlignedRun(const std::vector<Requested_Block_Struct*>& blocks)
+{
+    for (size_t i = 0; i < blocks.size(); ++i) {
+        const auto* b = blocks[i];
+        const uint64 partStart = b->startOffset / PARTSIZE * PARTSIZE;
+        if ((b->startOffset - partStart) / EMBLOCKSIZE != (b->endOffset - partStart) / EMBLOCKSIZE)
+            return false;
+        if (b->endOffset / PARTSIZE != b->startOffset / PARTSIZE)
+            return false;
+        if (i > 0 && blocks[i - 1]->endOffset + 1 != b->startOffset)
+            return false;
+    }
+    return true;
+}
+
+} // namespace
+
+void tst_PartFile::httpRange_takesLargestGap()
+{
+    PartFile pf;
+    httpFile(pf, 20);
+    pf.fillGap(0, PARTSIZE * 20 - 1);
+    pf.addGap(PARTSIZE * 2, PARTSIZE * 3 - 1);    // 1 part, rarity would not matter
+    pf.addGap(PARTSIZE * 8, PARTSIZE * 14 - 1);   // 6 parts: the one to take
+
+    UpDownClient client;
+    client.setCompleteSource(true);
+    std::vector<Requested_Block_Struct*> blocks;
+    QCOMPARE(pf.getNextHttpRange(&client, PARTSIZE * 3, blocks), uint64{PARTSIZE} * 3);
+    QCOMPARE(blocks.front()->startOffset, uint64{PARTSIZE} * 8);
+    QCOMPARE(blocks.back()->endOffset, uint64{PARTSIZE} * 11 - 1);
+    QVERIFY(isOneAlignedRun(blocks));
+    QVERIFY(pf.isAlreadyRequested(PARTSIZE * 9, PARTSIZE * 9));
+    pf.releaseReservedBlocks(blocks);
+}
+
+void tst_PartFile::httpRange_splitsAGapAnotherSourceIsIn()
+{
+    PartFile pf;
+    httpFile(pf, 20);
+    UpDownClient first;
+    first.setCompleteSource(true);
+    UpDownClient second;
+    second.setCompleteSource(true);
+
+    std::vector<Requested_Block_Struct*> a;
+    QVERIFY(pf.getNextHttpRange(&first, PARTSIZE, a) > 0);
+    QCOMPARE(a.front()->startOffset, uint64{0});
+
+    // first moves right into the rest; second starts halfway, not right behind it
+    std::vector<Requested_Block_Struct*> b;
+    QVERIFY(pf.getNextHttpRange(&second, PARTSIZE, b) > 0);
+    QVERIFY(b.front()->startOffset >= uint64{PARTSIZE} * 10);
+    QVERIFY(b.front()->startOffset <= uint64{PARTSIZE} * 11);
+    QCOMPARE((b.front()->startOffset % PARTSIZE) % EMBLOCKSIZE, uint64{0});
+    QVERIFY(isOneAlignedRun(b));
+    pf.releaseReservedBlocks(a);
+    pf.releaseReservedBlocks(b);
+}
+
+void tst_PartFile::httpRange_continuesItsOwnRun()
+{
+    PartFile pf;
+    httpFile(pf, 20);
+    UpDownClient client;
+    client.setCompleteSource(true);
+
+    std::vector<Requested_Block_Struct*> a;
+    QVERIFY(pf.getNextHttpRange(&client, PARTSIZE, a) > 0);
+    std::vector<Requested_Block_Struct*> b;
+    QVERIFY(pf.getNextHttpRange(&client, PARTSIZE, b) > 0);
+    QCOMPARE(b.front()->startOffset, uint64{PARTSIZE});
+    pf.releaseReservedBlocks(a);
+    pf.releaseReservedBlocks(b);
 }
 
 namespace {

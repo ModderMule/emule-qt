@@ -1186,7 +1186,23 @@ bool UpDownClient::reserveHttpRange(uint64& start, uint64& end)
     if (!m_reqFile)
         return false;
 
-    createBlockRequests(static_cast<int>(PARTSIZE / EMBLOCKSIZE));
+    // A server with the whole file: the largest free gap in long ranges (BEP 19),
+    // about a minute's worth at the current rate. Near the end the eD2K picker
+    // takes over, it knows how to share the last blocks with other sources.
+    if (m_pendingBlocks.empty() && m_completeSource
+        && m_reqFile->endPhase() == PartFile::EndPhase::Normal) {
+        const uint64 target = std::clamp<uint64>(uint64{downDatarate()} * kHttpRangeSecs,
+                                                 PARTSIZE, kHttpRangeMaxParts * uint64{PARTSIZE});
+        std::vector<Requested_Block_Struct*> blocks;
+        m_reqFile->getNextHttpRange(this, target, blocks);
+        for (auto* block : blocks) {
+            auto* pending = new Pending_Block_Struct;
+            pending->block = block;
+            m_pendingBlocks.push_back(pending);
+        }
+    }
+    if (m_pendingBlocks.empty())
+        createBlockRequests(static_cast<int>(PARTSIZE / EMBLOCKSIZE));
     if (m_pendingBlocks.empty())
         return false;
 

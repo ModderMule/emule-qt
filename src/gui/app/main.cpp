@@ -14,6 +14,7 @@
 #include <QLocale>
 #include <QMessageBox>
 #include <QPixmap>
+#include <QPointer>
 #include <QProcess>
 #include <QSocketNotifier>
 #include <QSplashScreen>
@@ -91,6 +92,24 @@ namespace {
 /// over. Started again from there, so it finds that profile without --config.
 QString s_attachedCoreProgram;
 
+/// The attached core's own binary, else the one next to the GUI; empty when neither exists.
+QString bundledDaemonPath()
+{
+    if (!s_attachedCoreProgram.isEmpty() && QFileInfo::exists(s_attachedCoreProgram))
+        return s_attachedCoreProgram;
+
+    const QString appDir = QCoreApplication::applicationDirPath();
+    for (const QString& name : {QStringLiteral("/emulecored"),
+#ifdef Q_OS_WIN
+                                QStringLiteral("/emulecored.exe"),
+#endif
+         }) {
+        if (const QString path = appDir + name; QFileInfo::exists(path))
+            return path;
+    }
+    return {};
+}
+
 /// Resolve the daemon binary path.
 /// Priority: 1) "local" = assume daemon is running  2) explicit path
 /// 3) the attached core's own binary  4) next to GUI binary.
@@ -105,22 +124,7 @@ QString resolveDaemonPath()
     if (!path.isEmpty() && QFileInfo::exists(path))
         return path;
 
-    if (!s_attachedCoreProgram.isEmpty() && QFileInfo::exists(s_attachedCoreProgram))
-        return s_attachedCoreProgram;
-
-    // Look next to the GUI executable
-    const QString appDir = QCoreApplication::applicationDirPath();
-    path = appDir + QStringLiteral("/emulecored");
-    if (QFileInfo::exists(path))
-        return path;
-
-#ifdef Q_OS_WIN
-    path = appDir + QStringLiteral("/emulecored.exe");
-    if (QFileInfo::exists(path))
-        return path;
-#endif
-
-    return {};
+    return bundledDaemonPath();
 }
 
 /// The configured core address is another machine: nothing to discover or launch here.
@@ -992,34 +996,91 @@ int main(int argc, char* argv[])
         }
         if (!isRemote && daemonPath == QStringLiteral("local")) {
             // "local" mode: daemon should already be running; show dialog on failure
-            auto dialogShown = std::make_shared<bool>(false);
-            QObject::connect(&ipcClient, &eMule::IpcClient::connectionFailed,
-                             &mainWindow, [&mainWindow, &ipcClient, dialogShown](const QString& error) {
-                eMule::logWarning(QStringLiteral("Daemon not reachable (%1)").arg(error));
-                if (*dialogShown)
+            struct LastCore {
+                QString host;
+                uint16_t port = 0;
+                QString token;
+            };
+            auto lastCore = std::make_shared<LastCore>();
+            auto connectDlg = std::make_shared<QPointer<eMule::CoreConnectDialog>>();
+            // Local core gone (nothing on its port): dialing alone can never succeed,
+            // so the dialog's buttons start the bundled one, if there is one
+            const auto startLocalCoreIfDown = [&ipcClient, weOwnDaemon, daemonLost, daemonPid] {
+                if (ipcClient.daemonStarting()
+                    || !ipcPortFree(eMule::thePrefs.ipcListenAddress(), eMule::thePrefs.ipcPort()))
                     return;
-                *dialogShown = true;
+                const QString path = bundledDaemonPath();
+                if (path.isEmpty()) {
+                    eMule::logWarning(QStringLiteral("No local emulecored binary found to start."));
+                    return;
+                }
+                if (launchDaemon(path, false, *daemonPid)) {
+                    *weOwnDaemon = true;
+                    *daemonLost = false;
+                    eMule::CoreAttachment::instance().noteLaunched();
+                    ipcClient.expectDaemonStart();
+                }
+            };
+            QObject::connect(&ipcClient, &eMule::IpcClient::connectionFailed,
+                             &mainWindow, [&mainWindow, &ipcClient, lastCore, connectDlg,
+                                           startLocalCoreIfDown](const QString& error) {
+                if (ipcClient.daemonStarting())
+                    return;   // launched, still loading
+                eMule::logWarning(QStringLiteral("Daemon not reachable (%1)").arg(error));
+                // A requested restart comes back by itself; auto-reconnect picks it up
+                if (ipcClient.daemonRestarting() || *connectDlg)
+                    return;
 
                 // open(), not exec(): this runs inside the socket's error signal, and
                 // a nested event loop there keeps the retry timer waiting on the dialog
                 auto* dlg = new eMule::CoreConnectDialog(&mainWindow);
                 dlg->setAttribute(Qt::WA_DeleteOnClose);
-                QObject::connect(dlg, &QDialog::accepted, &mainWindow, [dlg, &ipcClient] {
+                *connectDlg = dlg;
+                const bool haveLast = lastCore->port != 0;
+                if (haveLast)
+                    dlg->setTarget(lastCore->host, lastCore->port, lastCore->token);
+                else
+                    dlg->setTarget(ipcClient.daemonHost(), ipcClient.daemonPort(),
+                                   ipcClient.authToken());
+                dlg->setLastCoreAvailable(haveLast);
+                eMule::logInfo(QStringLiteral("Core not reachable — showing connect dialog."));
+                // Repeatable; auto-reconnect keeps trying meanwhile, connected() closes it
+                QObject::connect(dlg, &eMule::CoreConnectDialog::retryLastCoreRequested,
+                                 &mainWindow, [&ipcClient, lastCore, startLocalCoreIfDown] {
+                    eMule::logInfo(QStringLiteral("Retrying last core at %1:%2...")
+                                       .arg(lastCore->host).arg(lastCore->port));
+                    const bool remote = isRemoteCoreAddress(lastCore->host);
+                    eMule::CoreAttachment::instance().setTarget(lastCore->host, lastCore->port, remote);
+                    ipcClient.setAuthToken(lastCore->token);
+                    if (!remote)
+                        startLocalCoreIfDown();
+                    ipcClient.connectToDaemon(lastCore->host, lastCore->port);
+                });
+                QObject::connect(dlg, &QDialog::accepted, &mainWindow, [dlg, &ipcClient, startLocalCoreIfDown] {
                     eMule::thePrefs.setIpcListenAddress(dlg->address());
                     eMule::thePrefs.setIpcPort(dlg->port());
                     eMule::CoreAttachment::instance().setTarget(dlg->address(), dlg->port(),
                                                           isRemoteCoreAddress(dlg->address()));
                     ipcClient.setAuthToken(dlg->token());
-                    if (dlg->saveToken())
+                    if (dlg->saveToken() && !dlg->token().isEmpty())
                         eMule::thePrefs.setIpcTokens({dlg->token()});
+                    if (!isRemoteCoreAddress(dlg->address()))
+                        startLocalCoreIfDown();
                     ipcClient.connectToDaemon(QHostAddress(coreDialHost(dlg->address())), dlg->port());
                 });
                 QObject::connect(dlg, &QDialog::rejected, &mainWindow, &eMule::MainWindow::forceQuit);
                 dlg->open();
             });
             QObject::connect(&ipcClient, &eMule::IpcClient::connected,
-                             &mainWindow, [dialogShown]() {
-                *dialogShown = false;
+                             &mainWindow, [&ipcClient, lastCore, connectDlg]() {
+                *lastCore = {ipcClient.daemonHost(), ipcClient.daemonPort(), ipcClient.authToken()};
+                // Back by auto-reconnect or retry: the dialog has nothing left to ask
+                if (auto dlg = *connectDlg) {
+                    QObject::disconnect(dlg, &QDialog::rejected, nullptr, nullptr);
+                    dlg->close();
+                    eMule::logInfo(QStringLiteral("Core reachable again — connect dialog closed."));
+                }
+                *connectDlg = nullptr;
             });
         } else if (!isRemote && !daemonPath.isEmpty()) {
             QObject::connect(&ipcClient, &eMule::IpcClient::connectionFailed,
@@ -1274,13 +1335,16 @@ int main(int argc, char* argv[])
         });
 
         QObject::connect(&app, &QCoreApplication::aboutToQuit,
-                         &ipcClient, [&ipcClient, weOwnDaemon, daemonPid, coreUpdating]() {
+                         &ipcClient, [&ipcClient, weOwnDaemon, daemonPid, coreUpdating,
+                                      screenshot = cli.screenshotMode()]() {
             if (*coreUpdating) {
                 ipcClient.disconnectFromDaemon();
                 return;
             }
-            // Attached (launched by us, or by the user's choice) stops the core
-            const bool stopCore = eMule::CoreAttachment::instance().stopsOnExit();
+            // Attached (launched by us, or by the user's choice) stops the core.
+            // A screenshot run leaves a core it found running alone: another GUI may use it.
+            const bool stopCore = eMule::CoreAttachment::instance().stopsOnExit()
+                                  && (!screenshot || *weOwnDaemon);
             if (stopCore && ipcClient.isConnected()) {
                 eMule::logInfo(QStringLiteral("Shutting down daemon (attached)..."));
                 const qint64 corePid = ipcClient.corePid();

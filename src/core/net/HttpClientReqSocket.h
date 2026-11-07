@@ -87,8 +87,9 @@ private:
     void processHttpHeaderPacket(const char* data, uint32 size,
                                  const uint8*& bodyStart, int& bodySize);
 
-    static constexpr int kMaxHeaderLineSize = 1024;
-    static constexpr int kMaxTotalHeaderSize = 2048;
+    // MFC had 1024/2048; GitHub release redirects send a 4 KB CSP line + ~1 KB Location
+    static constexpr int kMaxHeaderLineSize = 8 * 1024;
+    static constexpr int kMaxTotalHeaderSize = 32 * 1024;
 };
 
 // ---------------------------------------------------------------------------

@@ -265,9 +265,7 @@ SocketSentBytes ClientUDPSocket::sendControlData(uint32 maxNumberOfBytesToSend, 
         // Encrypt if requested. The ED2K key mixes in OUR public IP, in the same
         // family as the destination (v6 key for a v6 peer, v4 key otherwise).
         else if (pack.encrypt) {
-            const Address publicIP = pack.destination.address().isIPv6()
-                ? theApp.publicIPv6()
-                : Address::fromNetworkOrder(theApp.publicIP());
+            const Address publicIP = pack.kad ? Address{} : keyIPFor(pack.destination);
             uint32 cryptOverhead = static_cast<uint32>(
                 EncryptedDatagramSocket::encryptOverheadSize(pack.kad));
 
@@ -342,8 +340,7 @@ bool ClientUDPSocket::sendNattFrameNow(uint8 type, const uint8* payload, size_t 
     const char* start = reinterpret_cast<const char*>(buf.data() + kRoom);
     auto size = static_cast<uint32>(2 + len);
     if (cryptHash) {
-        const Address publicIP = to.address().isIPv6() ? theApp.publicIPv6()
-                                                       : Address::fromNetworkOrder(theApp.publicIP());
+        const Address publicIP = keyIPFor(to);
         // random padding spreads the sizes; every receiver skips padLen & 0x0F bytes
         const auto pad = static_cast<uint8>(getRandomUInt16() & 0x0F);
         uint8* head = buf.data() + kRoom - 8 - pad;
@@ -491,6 +488,9 @@ void ClientUDPSocket::processDatagram(const QNetworkDatagram& datagram)
         }
         DecryptResult dr = EncryptedDatagramSocket::decryptReceivedClient(
             buf, static_cast<int>(bufLen), senderAddress, userHash.data(), kadIDPtr, kadRecvKey);
+        // A punched peer keying with another IP of ours: it may answer with OP_NATT_ADDR_ECHO
+        if (dr.undecodable && theApp.natRendezvous)
+            theApp.natRendezvous->handleUndecodable(senderEP);
 
         if (dr.length > 1 && dr.data != nullptr) {
             uint8 innerProto = dr.data[0];
@@ -586,6 +586,7 @@ bool ClientUDPSocket::processPacket(const uint8* packet, uint32 size, uint8 opco
 
     case OP_HOLEPUNCH:
     case OP_NATT_ENDPOINT_HINT:
+    case OP_NATT_ADDR_ECHO:
         if (theApp.natRendezvous)
             theApp.natRendezvous->handlePeerPacket(opcode, packet, size, senderEP);
         break;
@@ -703,6 +704,25 @@ void ClientUDPSocket::growReceiveBuffer()
         logWarning(QStringLiteral("ClientUDPSocket: receive buffer is only %1 bytes").arg(got));
     else
         logDebug([&]() -> QString { return QStringLiteral("ClientUDPSocket: receive buffer %1 bytes").arg(got); });
+}
+
+// ---------------------------------------------------------------------------
+// Per-peer key IP (ed2k-server#40)
+// ---------------------------------------------------------------------------
+
+void ClientUDPSocket::setKeyIPv4(const Address& peer, const Address& ourIP, natt::UdpKeyIpTable::Source src)
+{
+    m_keyIps.set(peer, ourIP, src, static_cast<uint64>(m_elapsedTimer.elapsed()));
+}
+
+Address ClientUDPSocket::keyIPFor(const Endpoint& to)
+{
+    if (to.address().isIPv6())
+        return theApp.publicIPv6();
+    if (const Address keyIP = m_keyIps.lookup(to.address(), static_cast<uint64>(m_elapsedTimer.elapsed()));
+        !keyIP.isNull())
+        return keyIP;
+    return Address::fromNetworkOrder(theApp.publicIP());
 }
 
 // ---------------------------------------------------------------------------

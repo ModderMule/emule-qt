@@ -136,6 +136,7 @@ private slots:
     void seenIndex_leavesANewerFileAlone();
     void seenMarker_isSetForAFileMetBeforeThisSearch();
     void processUDPSearchAnswer_ipv6OnlyFromAskedServer();
+    void processUDPSearchAnswer_countsCatalogueServers();
     void spamRating_hashHit();
     void spamRating_nameHit();
     void spamRating_belowThreshold();
@@ -806,6 +807,52 @@ void tst_SearchList::processUDPSearchAnswer_ipv6OnlyFromAskedServer()
     QCOMPARE(added.count(), 0);
     list.processUDPSearchAnswer(data, size, true, Endpoint(asked, 5555));
     QCOMPARE(added.count(), 1);
+}
+
+// A global sweep declines catalogue rows once enough servers sent some: the count is
+// of distinct servers whose answer held a Kad/web or meta row, plain eD2K files aside.
+void tst_SearchList::processUDPSearchAnswer_countsCatalogueServers()
+{
+    SearchList list;
+    const uint32 id = list.newSearch({}, SearchParams{});
+    const Address a = Address::fromString(QStringLiteral("10.0.0.1"));
+    const Address b = Address::fromString(QStringLiteral("10.0.0.2"));
+    const Address c = Address::fromString(QStringLiteral("2001:db8::3"));
+    for (const Address& srv : {a, b, c})
+        list.addSentUDPRequestIP(id, srv);
+
+    // One UDP record; with kad the server found the file on Kad (FT_META_NETWORK).
+    const auto record = [](uint8 first, bool kad) {
+        uint8 hash[16] = {first};
+        SafeMemFile mem;
+        mem.write(hash, 16);
+        mem.writeUInt32(0);
+        mem.writeUInt16(0);
+        mem.writeUInt32(kad ? 3 : 2);
+        Tag(FT_FILENAME, QStringLiteral("file-%1.iso").arg(first)).writeNewEd2kTag(mem, UTF8Mode::Raw);
+        Tag(FT_FILESIZE, uint32{8000}).writeNewEd2kTag(mem);
+        if (kad)
+            Tag(FT_META_NETWORK, uint32{FT_META_NETWORK_KAD}).writeNewEd2kTag(mem);
+        return mem.takeBuffer();
+    };
+    const auto answer = [&](const Address& srv, uint8 first, bool kad) {
+        const QByteArray packet = record(first, kad);
+        list.processUDPSearchAnswer(reinterpret_cast<const uint8*>(packet.constData()),
+                                    static_cast<uint32>(packet.size()), true, Endpoint(srv, 4665));
+        qInfo() << "input: answer from" << srv.toString() << "kad =" << kad
+                << "; output: catalogueServers =" << list.catalogueServerCount(id);
+    };
+
+    QCOMPARE(list.catalogueServerCount(id), uint32{0});
+    answer(b, 0x10, false);   // a plain eD2K file is no catalogue row
+    QCOMPARE(list.catalogueServerCount(id), uint32{0});
+    answer(a, 0x20, true);
+    QCOMPARE(list.catalogueServerCount(id), uint32{1});
+    answer(a, 0x21, true);    // the same server again
+    QCOMPARE(list.catalogueServerCount(id), uint32{1});
+    answer(c, 0x20, true);    // another server, the same file: still a second sender
+    QCOMPARE(list.catalogueServerCount(id), uint32{2});
+    QCOMPARE(list.catalogueServerCount(id + 1), uint32{0});
 }
 
 // A short record used to throw through the server socket and drop the connection.

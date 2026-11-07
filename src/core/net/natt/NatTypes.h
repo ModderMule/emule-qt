@@ -121,6 +121,8 @@ struct Attempt {
     bool foreignWake = false;       ///< target woken by a 0x37 naming requester ID 0 (logged in elsewhere)
     uint8 burstLeft = 0;            ///< target: 0x9F still due of the 0 / 0.5 / 1 s burst
     uint64 burstStartMs = 0;
+    bool echoSent = false;          ///< OP_NATT_ADDR_ECHO sent (once per attempt)
+    Address echoKeyIP;              ///< key IP from the peer's echo, null = none
 
     /// QUIC goes to the peer's IPv6 endpoint when a server gave one (PR_NAT SYNC_IPV6).
     [[nodiscard]] Endpoint quicEndpoint() const

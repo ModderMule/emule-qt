@@ -295,7 +295,7 @@ private slots:
         seed.write("network:\n  maxServedBuddies: -1\n"
                    "bandwidth:\n  uploadSlotTargetRate: 5\n"
                    "transfer:\n  queueSize: 5\n"
-                   "serverConnection:\n  deadServerRetries: 500\n"
+                   "serverConnection:\n  deadServerRetries: 500\n  globalSearchCatalogueServers: 500\n"
                    "webserver:\n  sessionTimeout: 0\n");
         seed.close();
 
@@ -305,6 +305,7 @@ private slots:
         QCOMPARE(loaded.queueSize(), uint32{2000});
         QCOMPARE(loaded.uploadSlotTargetRate(), uint32{12});
         QCOMPARE(loaded.deadServerRetries(), uint32{99});
+        QCOMPARE(loaded.globalSearchCatalogueServers(), uint32{99});
         QCOMPARE(loaded.webServerSessionTimeout(), 1);
     }
 
@@ -737,12 +738,13 @@ private slots:
         const auto file = tmp.filePath(QStringLiteral("prefs.yaml"));
         QFile seed(file);
         QVERIFY(seed.open(QIODevice::WriteOnly));
-        seed.write("serverConnection:\n  deadServerRetries: 0\n");
+        seed.write("serverConnection:\n  deadServerRetries: 0\n  globalSearchCatalogueServers: 0\n");
         seed.close();
 
         Preferences loaded;
         loaded.load(file);
         QCOMPARE(loaded.deadServerRetries(), uint32{0});
+        QCOMPARE(loaded.globalSearchCatalogueServers(), uint32{0});   // 0 = never decline
     }
 
     // -- Load / Save ----------------------------------------------------------
@@ -1548,6 +1550,7 @@ private slots:
     {
         Preferences prefs;
         QCOMPARE(prefs.deadServerRetries(), uint32{20});     // MFC 1
+        QCOMPARE(prefs.globalSearchCatalogueServers(), uint32{1});   // eNode only, YAML only
         QCOMPARE(prefs.addServersFromServer(), true);        // MFC off
         QCOMPARE(prefs.safeServerConnect(), true);           // MFC off
         QCOMPARE(prefs.autoConnect(), true);                 // MFC off

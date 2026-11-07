@@ -38,7 +38,7 @@ struct BtSettings {
     int maxActiveSeeds = 5;
     /// peer connections, session-wide and the default per torrent
     int maxConnections = 200;
-    int maxConnectionsPerTorrent = 50;
+    int maxConnectionsPerTorrent = 100;
     /// stop seeding at this ratio, percent; 0 = no limit
     int seedRatioPercent = 100;
     /// stop seeding after this long; 0 = no limit

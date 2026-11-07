@@ -33,6 +33,7 @@ private slots:
     void stopAfterMetadataPolicy();
     void i2pPeerAddress();
     void i2pTorrentIsFlagged();
+    void peerFlagsChokeDirection();
 };
 
 void tst_BtSmoke::constructs()
@@ -244,9 +245,9 @@ void tst_BtSmoke::i2pSettingsMap()
     lt::settings_pack p = BtSettingsMap::toPack(s);
     QVERIFY(placeholder(p));
     QVERIFY(!p.get_bool(lt::settings_pack::allow_i2p_mixed));
-    // default: first working tracker per tier; on: every tracker and tier (#144)
+    // default: first working tracker of every tier (#147); on: every tracker (#144)
     QVERIFY(!p.get_bool(lt::settings_pack::announce_to_all_trackers));
-    QVERIFY(!p.get_bool(lt::settings_pack::announce_to_all_tiers));
+    QVERIFY(p.get_bool(lt::settings_pack::announce_to_all_tiers));
     s.announceToAll = true;
     p = BtSettingsMap::toPack(s);
     QVERIFY(p.get_bool(lt::settings_pack::announce_to_all_trackers));
@@ -404,6 +405,35 @@ void tst_BtSmoke::i2pTorrentIsFlagged()
     QVERIFY(session.status().i2pEnabled);
     QVERIFY(!session.status().i2pSam);
     session.stop();
+}
+
+void tst_BtSmoke::peerFlagsChokeDirection()
+{
+    namespace lt = libtorrent;
+    // choked = we choke them, remote_choked = they choke us (#147)
+    lt::peer_info p;
+    p.source = {};
+    p.flags = lt::peer_info::outgoing_connection;
+
+    // seeding: we upload to them, they choke us, we want nothing
+    p.flags |= lt::peer_info::remote_interested | lt::peer_info::remote_choked;
+    QCOMPARE(BtTorrentView::peerFlags(p), QStringLiteral("U"));
+
+    // they wait for a slot of ours
+    p.flags |= lt::peer_info::choked;
+    QCOMPARE(BtTorrentView::peerFlags(p), QStringLiteral("u"));
+
+    // downloading from them, they choke our upload interest away: D
+    p.flags = lt::peer_info::outgoing_connection | lt::peer_info::interesting | lt::peer_info::choked;
+    QCOMPARE(BtTorrentView::peerFlags(p), QStringLiteral("D"));
+    p.flags |= lt::peer_info::remote_choked;
+    QCOMPARE(BtTorrentView::peerFlags(p), QStringLiteral("d"));
+
+    // they unchoked us but we want nothing: K; we unchoked them, they want nothing: ?
+    p.flags = lt::peer_info::outgoing_connection | lt::peer_info::choked;
+    QCOMPARE(BtTorrentView::peerFlags(p), QStringLiteral("K"));
+    p.flags = lt::peer_info::outgoing_connection | lt::peer_info::remote_choked;
+    QCOMPARE(BtTorrentView::peerFlags(p), QStringLiteral("?"));
 }
 
 QTEST_GUILESS_MAIN(tst_BtSmoke)

@@ -206,18 +206,23 @@ void GlobalSearchScheduler::onSweepTick()
 
     // The opcode comes from the server's UDP flags; a 64-bit search is skipped for
     // servers without large-file support, which returns nullptr.
-    auto pkt = buildGlobalSearchPacket(*toask, m_searchTerms, m_is64BitSearch);
+    const bool declineMeta = theApp.searchList
+        && declineGlobalSearchMeta(theApp.searchList->catalogueServerCount(m_searchID),
+                                   thePrefs.globalSearchCatalogueServers());
+    auto pkt = buildGlobalSearchPacket(*toask, m_searchTerms, m_is64BitSearch, declineMeta);
     if (pkt) {
         if (theApp.searchList)
             theApp.searchList->addSentUDPRequestIP(m_searchID, toask->ipAddress());
 
         const auto udpPort = static_cast<uint16>(toask->port() + 4);
-        logServerVerbose([&]() -> QString { return QStringLiteral("  -> %1 (%2) UDP:%3 opcode=0x%4 (%5 of %6)")
+        logServerVerbose([&]() -> QString { return QStringLiteral("  -> %1 (%2) UDP:%3 opcode=0x%4 (%5 of %6)%7")
                              .arg(toask->name(), toask->addressWithPort())
                              .arg(udpPort)
                              .arg(pkt->opcode, 2, 16, QLatin1Char('0'))
                              .arg(m_examined)
-                             .arg(theApp.serverList->serverCount()); });
+                             .arg(theApp.serverList->serverCount())
+                             .arg(declineMeta && pkt->opcode == OP_GLOBSEARCHREQ3
+                                      ? QStringLiteral(" no-meta") : QString()); });
         if (theApp.serverConnect)
             theApp.serverConnect->sendUDPPacket(std::move(pkt), *toask, udpPort);
     }

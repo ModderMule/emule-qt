@@ -1123,6 +1123,94 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
     return blocksFound > 0;
 }
 
+uint64 PartFile::getNextHttpRange(UpDownClient* sender, uint64 maxBytes,
+                                  std::vector<Requested_Block_Struct*>& out)
+{
+    // BEP 19: rarity means nothing to a server that has it all; what costs is the
+    // number of requests. So take the biggest hole and fill it in long ranges.
+    if (!sender || maxBytes == 0 || m_gapList.empty())
+        return 0;
+
+    struct Span { uint64 start; uint64 end; const UpDownClient* holder; };
+    std::vector<Span> taken;
+    taken.reserve(m_requestedBlocks.size());
+    for (const auto* block : m_requestedBlocks)
+        taken.push_back({block->startOffset, block->endOffset, block->holder});
+    std::ranges::sort(taken, {}, &Span::start);
+
+    // Largest gap stretch nobody holds; the first one wins a tie
+    uint64 bestStart = 0;
+    uint64 bestEnd = 0;
+    uint64 bestLen = 0;
+    auto consider = [&](uint64 s, uint64 e) {
+        if (e - s + 1 > bestLen) {
+            bestStart = s;
+            bestEnd = e;
+            bestLen = e - s + 1;
+        }
+    };
+    size_t ti = 0;
+    for (const auto& gap : m_gapList) {
+        while (ti < taken.size() && taken[ti].end < gap.start)
+            ++ti;
+        uint64 cursor = gap.start;
+        bool open = true;
+        for (size_t j = ti; j < taken.size() && taken[j].start <= gap.end; ++j) {
+            if (taken[j].start > cursor)
+                consider(cursor, taken[j].start - 1);
+            if (taken[j].end >= gap.end) {
+                open = false;
+                break;
+            }
+            cursor = std::max(cursor, taken[j].end + 1);
+        }
+        if (open && cursor <= gap.end)
+            consider(cursor, gap.end);
+    }
+    if (bestLen == 0)
+        return 0;
+
+    // Another source runs into this stretch from the left: take the second half,
+    // so the two do not end up one block apart
+    if (bestStart > 0 && bestLen > 2 * uint64{PARTSIZE}) {
+        const auto left = std::ranges::find_if(taken, [&](const Span& s) {
+            return s.start < bestStart && s.end + 1 >= bestStart;
+        });
+        if (left != taken.end() && left->holder != sender) {
+            const uint64 mid = bestStart + bestLen / 2;
+            const uint64 partStart = mid / PARTSIZE * PARTSIZE;
+            const uint64 aligned =
+                partStart + (mid - partStart + EMBLOCKSIZE - 1) / EMBLOCKSIZE * EMBLOCKSIZE;
+            if (aligned <= bestEnd)
+                bestStart = aligned;
+        }
+    }
+    bestEnd = std::min(bestEnd, bestStart + maxBytes - 1);
+
+    // Blocks end on part-relative EMBLOCKSIZE boundaries, as getNextEmptyBlockInPart's
+    const uint64 nowTick = getTickCount();
+    uint64 covered = 0;
+    for (uint64 at = bestStart; at <= bestEnd;) {
+        const uint64 partStart = at / PARTSIZE * PARTSIZE;
+        const uint64 blockLimit =
+            partStart + ((at - partStart) / EMBLOCKSIZE + 1) * EMBLOCKSIZE - 1;
+        // PARTSIZE is no multiple of EMBLOCKSIZE: the part end cuts too
+        const uint64 end = std::min({bestEnd, blockLimit, partStart + PARTSIZE - 1});
+        auto* reqBlock = new Requested_Block_Struct;
+        reqBlock->startOffset = at;
+        reqBlock->endOffset = end;
+        reqBlock->holder = sender;
+        reqBlock->lastProgressTick = nowTick;
+        std::memcpy(reqBlock->fileID.data(), fileHash(), 16);
+        m_requestedBlocks.push_back(reqBlock);
+        out.push_back(reqBlock);
+        covered += end - at + 1;
+        at = end + 1;
+    }
+    sender->setLastPartAsked(static_cast<uint16>(bestStart / PARTSIZE));
+    return covered;
+}
+
 bool PartFile::getNextEmptyBlockInPart(uint32 partNumber,
                                         Requested_Block_Struct* reqBlock,
                                         uint64 searchFrom) const
@@ -1541,6 +1629,7 @@ void PartFile::resumeFile(bool quiet)
     m_paused = false;
     m_stopped = false;
     m_insufficient = false;
+    m_lastWebSeedCheckTick = 0;   // stop dropped the sources: web seeds back on the next tick
     // A failed write: the buffer is still held, so resuming is the retry. (MFC keeps
     // PS_ERROR until a restart.)
     if (m_writeError) {
@@ -2278,6 +2367,10 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
                 if (tag.isInt())
                     m_nameLocked = tag.intValue() != 0;
                 break;
+            case FT_WEBSEED:
+                if (tag.isStr())
+                    addWebSeed(tag.strValue());
+                break;
             case FT_DL_PREVIEW:
                 if (tag.isInt()) {
                     m_previewPrio = (tag.intValue() & 0x01) != 0;
@@ -2709,6 +2802,11 @@ bool PartFile::savePartFile()
             tagCount++;
         }
 
+        for (const QString& url : m_webSeeds) {
+            Tag(FT_WEBSEED, url).writeNewEd2kTag(file, UTF8Mode::OptBOM);
+            tagCount++;
+        }
+
         // Bit 0 preview priority, bit 1 pause on preview (MFC PartFile.cpp:1284-1289)
         if (m_previewPrio || m_pauseOnPreview) {
             Tag(FT_DL_PREVIEW, static_cast<uint32>((m_pauseOnPreview ? 2 : 0) | (m_previewPrio ? 1 : 0)))
@@ -2978,7 +3076,10 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
                 //
                 // Same line gates on theApp.IsConnected(): offline, no source is asked or
                 // dialled — else sources restored by SourceSaver download with no network up.
-                if (!theApp.isConnected() || client->timeUntilReask(this) > 0) {
+                // A web seed may also run on ed3k alone.
+                const bool online = client->isUrlClient() ? theApp.isConnectedAnyNetwork()
+                                                          : theApp.isConnected();
+                if (!online || client->timeUntilReask(this) > 0) {
                     ++i;
                     continue;
                 }
@@ -3087,6 +3188,15 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
     // connecting loads and dials the saved sources.
     if (counter == 3 && thePrefs.useSaveLoadSources() && theApp.isConnectedAnyNetwork())
         m_sourceSaver.process(this);
+
+    // -- Web seeds: a saved s= URL that is not a source now (start, resume, purged) comes
+    // back. Every 20 min, the dial gate of a peer; addUserUrlSource skips one already here.
+    if (counter == 3 && !m_webSeeds.isEmpty() && theApp.downloadQueue
+        && (m_lastWebSeedCheckTick == 0 || curTick >= m_lastWebSeedCheckTick + MIN2MS(20))) {
+        m_lastWebSeedCheckTick = curTick;
+        for (const QString& url : QStringList(m_webSeeds))   // copy: adding may append
+            theApp.downloadQueue->addUserUrlSource(this, url);
+    }
 
     // -- Server TCP source request (MFC PartFile.cpp:2383-2389) --
     // Only queued here. DownloadQueue sends up to 15 per TCP frame and then waits,
@@ -3335,6 +3445,14 @@ void PartFile::addObservedNames(const QStringList& names)
             m_observedNames.push_back(name);
     }
     m_fakeVerdictAt = 0;
+}
+
+bool PartFile::addWebSeed(const QString& url)
+{
+    if (url.isEmpty() || m_webSeeds.contains(url))
+        return false;
+    m_webSeeds.append(url);
+    return true;
 }
 
 void PartFile::renameTo(const QString& newName)

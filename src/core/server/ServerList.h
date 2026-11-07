@@ -192,10 +192,13 @@ public:
     /// nullptr when listed, pinged before this session, over the cap or crypt off.
     Server* pingUnlisted(const Address& addr, uint16 tcpPort, uint64 nowMs);
 
-    /// Periodic tick: persist server.met to `metPath` at most every 17 minutes so
-    /// list state (users/files/ping/failedCount/UDP keys) survives a kill/crash,
-    /// not just a clean shutdown. Port of CServerList::Process() — ServerList.cpp:849.
+    /// Periodic tick: persist server.met to `metPath` 30 s after the first unsaved
+    /// change (add/remove/update), else every 17 minutes (MFC CServerList::Process()),
+    /// so list state survives a kill/crash, not just a clean shutdown.
     void process(const QString& metPath);
+
+    /// Unsaved changes pending? Set by the list's own change signals.
+    [[nodiscard]] bool isDirty() const { return m_dirty; }
 
     /// Parse an OP_GLOBSERVSTATRES (0x97) reply and update the matching server.
     /// Port of the OP_GLOBSERVSTATRES case in CUDPSocket::ProcessPacket.
@@ -252,10 +255,13 @@ private:
     size_t m_statServerPos = 0;
     uint32 m_deletedServerCount = 0;
     uint32 m_lastServerMetSave = 0;   ///< epoch-secs of last periodic save (#28)
+    uint32 m_dirtySince = 0;          ///< epoch-secs of first unsaved change
+    bool m_dirty = false;
     UnlistedServers m_unlisted;
 
     [[nodiscard]] bool isDuplicate(const Server& server) const;
     void adjustPositionsAfterRemoval(size_t removedIndex);
+    void markDirty();
 
     /// Obfuscated OP_GLOBSERVSTATREQ to port + 12: a raw random challenge, which keys the reply.
     void sendCryptPing(Server& target);

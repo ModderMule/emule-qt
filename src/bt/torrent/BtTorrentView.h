@@ -8,6 +8,7 @@
 
 #include <libtorrent/info_hash.hpp>
 #include <libtorrent/add_torrent_params.hpp>
+#include <libtorrent/peer_info.hpp>
 #include <libtorrent/torrent_handle.hpp>
 #include <libtorrent/torrent_status.hpp>
 
@@ -23,6 +24,8 @@ public:
     static BtTorrentRow row(const libtorrent::torrent_status& st);
     static QList<BtFileRow> files(const libtorrent::torrent_handle& h);
     static QList<BtPeerRow> peers(const libtorrent::torrent_handle& h);
+    /// The Flags column of a peer, as qBittorrent's (d/D, u/U, K, ?, ...).
+    static QString peerFlags(const libtorrent::peer_info& p);
     static QList<BtTrackerRow> trackers(const libtorrent::torrent_handle& h);
     /// What a loaded .torrent holds, without a session.
     static BtTorrentPreview preview(const libtorrent::add_torrent_params& atp);

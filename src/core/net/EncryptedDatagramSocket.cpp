@@ -202,7 +202,9 @@ DecryptResult EncryptedDatagramSocket::decryptReceivedClient(
         rc4Crypt(result.data, static_cast<uint32>(remaining), keyReceiveKey);
         result.length = remaining;
     }
-    // else: pass through with original length (not encrypted)
+    else {
+        result.undecodable = true;   // passed through with the original length
+    }
 
     return result;
 }

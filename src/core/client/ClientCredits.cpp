@@ -623,7 +623,7 @@ uint8 ClientCreditsList::createSignature(ClientCredits* target, uint8* output, u
 }
 
 bool ClientCreditsList::verifyIdent(ClientCredits* target, const uint8* signature, uint8 sigSize,
-                                    const Address& forIP, uint8 chaIPKind)
+                                    const Address& forIP, uint8 chaIPKind, const Address& seenAs)
 {
     if (!target || target->secIDKeyLen() == 0)
         return false;
@@ -692,7 +692,9 @@ bool ClientCreditsList::verifyIdent(ClientCredits* target, const uint8* signatur
         if (chaIPKind == kCryptCipLocalClient) {
             ip = forIP.toNetworkUint32();   // the wire form: 0 for an IPv6 peer, as before
         } else if (chaIPKind == kCryptCipRemoteClient) {
-            if (theApp.serverConnect) {
+            if (seenAs.isIPv4()) {
+                ip = seenAs.toNetworkUint32();
+            } else if (theApp.serverConnect) {
                 ip = theApp.serverConnect->isLowID()
                          ? theApp.serverConnect->localIP()
                          : theApp.serverConnect->clientID();

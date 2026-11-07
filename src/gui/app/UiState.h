@@ -250,14 +250,15 @@ public:
         scheduleSave();
     }
 
-    /// "Don't show this again" on the Low ID hint.
+    /// "Don't show this again" on the Low ID hint. One-way: save() keeps a true
+    /// already on disk, so another GUI window's stale copy cannot undo it (#146).
     [[nodiscard]] bool lowIdHintDisabled() const { return m_lowIdHintDisabled; }
     void setLowIdHintDisabled(bool disabled)
     {
         if (m_lowIdHintDisabled == disabled)
             return;
         m_lowIdHintDisabled = disabled;
-        scheduleSave();
+        save();   // now, not debounced: the session may not exit cleanly
     }
 
     /// Country flag next to the client/server icon (IP2Country). Display-only.

@@ -3490,7 +3490,13 @@ void UpDownClient::processSignaturePacket(const uint8* data, uint32 size)
 
     m_lastSignatureAddress = m_userAddress;
 
-    bool verified = theApp.clientCredits->verifyIdent(m_credits, data + 1, data[0], m_userAddress, chaIPKind);
+    // Over a NAT-T stream a LowID peer signs the IPv4 it sees our UDP at, which may not
+    // be our TCP address (ed2k-server#40).
+    Address seenAs;
+    if (natRoute() == NatRoute::Quic && m_userAddress.isIPv4() && theApp.clientUDP)
+        seenAs = theApp.clientUDP->keyIPFor(Endpoint(m_userAddress, 0));
+    bool verified = theApp.clientCredits->verifyIdent(m_credits, data + 1, data[0], m_userAddress, chaIPKind,
+                                                      seenAs);
     if (verified && theApp.clientCensus)
         theApp.clientCensus->noteIdentified(m_userHash.data());
     if (thePrefs.logSecureIdent())

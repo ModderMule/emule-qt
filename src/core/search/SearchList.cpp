@@ -301,6 +301,7 @@ SearchList::TcpSearchAnswer SearchList::processSearchAnswer(const uint8* packet,
         for (; parsed < resultCount; ++parsed) {
             auto* file = new SearchFile(data, optUTF8, serverIP, serverPort);
             file->setSearchID(m_currentEd2kSearchID);
+            noteCatalogueSender(m_currentEd2kSearchID, *file, server.address());
             addToList(file, false, 0);
         }
 
@@ -420,6 +421,7 @@ void SearchList::processUDPSearchAnswer(const uint8* packet, uint32 size,
         file->setSearchID(m_currentEd2kSearchID);
         // Nobody set this: the UDP-server spam criteria never saw a UDP answer
         file->markServersUdpAnswer();
+        noteCatalogueSender(m_currentEd2kSearchID, *file, server.address());
 
         auto& record = m_udpServerRecords[serverIP];
         record.totalResults++;
@@ -833,6 +835,12 @@ uint32 SearchList::foundFiles(uint32 searchID) const
 {
     auto it = m_foundFilesCount.find(searchID);
     return (it != m_foundFilesCount.end()) ? it->second : 0;
+}
+
+uint32 SearchList::catalogueServerCount(uint32 searchID) const
+{
+    const auto* entry = findEntry(searchID);
+    return entry ? static_cast<uint32>(entry->catalogueServers.size()) : 0;
 }
 
 uint32 SearchList::foundSources(uint32 searchID) const
@@ -1405,6 +1413,15 @@ void SearchList::addResultCount(uint32 searchID, const uint8* hash, uint32 count
     // a spam file counts as at most 5
     const bool capped = spam && thePrefs.enableSearchResultFilter();
     m_foundSourcesCount[searchID] += capped ? std::min(count, uint32{5}) : count;
+}
+
+// Before addToList: a merge may clear the Kad origin of a row a server has itself.
+void SearchList::noteCatalogueSender(uint32 searchID, const SearchFile& file, const Address& server)
+{
+    if (!file.isMetaResult() && !file.isKadOrigin())
+        return;
+    if (auto* entry = findEntry(searchID))
+        entry->catalogueServers.insert(server);
 }
 
 } // namespace eMule

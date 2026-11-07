@@ -1482,7 +1482,7 @@ public:
     static constexpr uint16 kDefaultBtListenPort = 6881;
     static constexpr int kDefaultBtSharePercent = 25;
     static constexpr int kDefaultBtMaxConnections = 200;
-    static constexpr int kDefaultBtMaxConnectionsPerTorrent = 50;
+    static constexpr int kDefaultBtMaxConnectionsPerTorrent = 100;
     static constexpr int kMaxBtConnections = 5000;
     static constexpr int kMaxBtSeedRatioPercent = 10000;
     static constexpr int kMaxBtSeedTimeLimitMinutes = 525600;   // one year
@@ -1889,6 +1889,11 @@ public:
 
     [[nodiscard]] uint32 deadServerRetries() const;
     void setDeadServerRetries(uint32 val);
+
+    /// Servers that must send catalogue rows before a global UDP search declines them
+    /// from the rest (SRVCAP_UDP_NO_META); 0 = never. YAML-only, no UI.
+    [[nodiscard]] uint32 globalSearchCatalogueServers() const;
+    void setGlobalSearchCatalogueServers(uint32 val);
 
     [[nodiscard]] bool autoUpdateServerList() const;
     void setAutoUpdateServerList(bool val);

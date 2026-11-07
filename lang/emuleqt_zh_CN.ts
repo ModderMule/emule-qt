@@ -699,7 +699,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+577"/>
+        <location filename="../src/gui/app/main.cpp" line="+578"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -733,7 +733,7 @@ Trust the new certificate?</source>
 信任新证书吗?</translation>
     </message>
     <message>
-        <location line="+327"/>
+        <location line="+359"/>
         <source>Download Added</source>
         <translation>下载已添加</translation>
     </message>
@@ -3700,7 +3700,7 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::CoreConnectDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/CoreConnectDialog.cpp" line="+23"/>
+        <location filename="../src/gui/dialogs/CoreConnectDialog.cpp" line="+24"/>
         <source>Connect to Core</source>
         <translation>连接到核心</translation>
     </message>
@@ -3743,6 +3743,16 @@ Enter the address and authentication token of a remote core.</source>
     </message>
     <message>
         <location line="+10"/>
+        <source>Retry Last Core</source>
+        <translation>重试上次的核心</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Connect once more to the core that last worked</source>
+        <translation>再次连接到上次可用的核心</translation>
+    </message>
+    <message>
+        <location line="+4"/>
         <source>Connect</source>
         <translation>连接</translation>
     </message>
@@ -3750,6 +3760,13 @@ Enter the address and authentication token of a remote core.</source>
         <location line="+5"/>
         <source>Exit</source>
         <translation>退出</translation>
+    </message>
+    <message>
+        <location line="+63"/>
+        <source>Lost the connection to the eMule core.
+Retry the last core, or enter the address and authentication token of another one.</source>
+        <translation>与 eMule 核心的连接已断开。
+请重试上次的核心，或输入另一个核心的地址和认证令牌。</translation>
     </message>
 </context>
 <context>

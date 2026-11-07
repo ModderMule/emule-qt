@@ -399,6 +399,10 @@
 #define OP_RENDEZVOUS               0xA0    // embedded in OP_REASKCALLBACKUDP after a zero file hash
 #define OP_HOLEPUNCH                0xA1    // empty; opens a NAT mapping
 #define OP_NATT_ENDPOINT_HINT       0xAA    // buddy -> requester: target's public endpoint (56 bytes)
+// ed2k-server#40: peer -> split side, <ip 4><port 2> = source of a datagram from the punched
+// endpoint that no key decoded; the split side keys with that IP toward this peer only.
+// Free as client UDP opcode in MorphXT, aMule and eMuleAI (0xAB elsewhere only as a tag).
+#define OP_NATT_ADDR_ECHO           0xAB
 #define OP_PORTTEST                 0xFE
 
 // ---------------------------------------------------------------------------
@@ -516,6 +520,7 @@
 #define FT_LASTREQUESTED            0x92  // known.met only: uint32 UTC time of the last upload request
 #define FT_NAMELOCKED               0x93  // .part.met only: uint8 1 = no auto-rename (user or auto renamed it)
 #define FT_CONTAINERCHECK           0x94  // known.met only: blob, fake-file header verdict (packContainerCheck)
+#define FT_WEBSEED                  0x95  // .part.met only: string, one s= web seed URL per tag (as linked, before redirects)
 
 // eNode meta search rows (torrent/Usenet/web/container in eD2K results) — enodemeta/tags/tags.go.
 // 0x60-0x6F is unused under FT_ in stock, MorphXT and eMuleAI.
@@ -814,6 +819,7 @@
 // Values for CT_SERVER_UDPSEARCH_FLAGS
 #define SRVCAP_UDP_NEWTAGS_LARGEFILES   0x01
 #define SRVCAP_UDP_META_SEARCH          0x02    // wants eNode meta rows in UDP answers
+#define SRVCAP_UDP_NO_META              0x04    // eNode: no catalogue rows in this answer (enodemeta amendment 29)
 
 // ---------------------------------------------------------------------------
 // eMule tag names (ET_*)

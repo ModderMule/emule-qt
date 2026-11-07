@@ -7,6 +7,7 @@
 #include "net/ClientUDPSocket.h"
 #include "net/EncryptedDatagramSocket.h"
 #include "net/Packet.h"
+#include "prefs/Preferences.h"
 #include "stats/Statistics.h"
 #include "utils/ByteOrder.h"
 #include "utils/Opcodes.h"
@@ -40,6 +41,8 @@ private slots:
     void kadDatagram_fromNativeIPv6IsDropped();
     void natRendezvous_handoffAndPunchReachTheHub();
     void natRendezvous_rawAndServerKeyedSends();
+    void natRendezvous_keyIpTowardPeer();
+    void natRendezvous_undecodableFromPunchedPeerEchoes();
 };
 
 // ---------------------------------------------------------------------------
@@ -410,6 +413,92 @@ void tst_ClientUDPSocket::natRendezvous_rawAndServerKeyedSends()
     QCOMPARE(plain.size(), 18);
     QCOMPARE(uint8(plain[0]), uint8{OP_EDONKEYPROT});
     QCOMPARE(uint8(plain[1]), uint8{OP_SERVER_NATT_KEEPALIVE});
+}
+
+void tst_ClientUDPSocket::natRendezvous_keyIpTowardPeer()
+{
+    // TCP on A, UDP on B (ed2k-server#40): datagrams to that peer key with B
+    const Address ipA = Address::fromString(QStringLiteral("9.9.9.9"));
+    const Address ipB = Address::fromString(QStringLiteral("9.9.9.10"));
+    theApp.setPublicIP(ipA.toNetworkUint32());
+    const auto restore = qScopeGuard([] { theApp.setPublicIP(0); });
+
+    ClientUDPSocket sock;
+    QVERIFY(sock.create());
+    QUdpSocket peer;
+    QVERIFY(peer.bind(QHostAddress::LocalHost, 0));
+    const Address loop = Address::fromString(QStringLiteral("127.0.0.1"));
+    const Endpoint to(loop, peer.localPort());
+    std::array<uint8, 16> peerHash{};
+    peerHash.fill(0x42);
+
+    // decodes with exactly one of the two sender IPs
+    const auto keyedWith = [&](QByteArray d) -> Address {
+        for (const Address& ip : {ipA, ipB}) {
+            QByteArray c = d;
+            const DecryptResult r = EncryptedDatagramSocket::decryptReceivedClient(
+                reinterpret_cast<uint8*>(c.data()), int(c.size()), ip, peerHash.data(), nullptr, 0);
+            if (!r.undecodable && r.length > 1 && r.data[0] == OP_EMULEPROT)
+                return ip;
+        }
+        return {};
+    };
+    const auto sendOne = [&]() -> QByteArray {
+        sock.sendPacket(std::make_unique<Packet>(OP_HOLEPUNCH, 0, OP_EMULEPROT), to, true,
+                        peerHash.data(), false, 0);
+        sock.sendControlData(100000, 0);
+        if (!QTest::qWaitFor([&] { return peer.hasPendingDatagrams(); }))
+            return {};
+        return peer.receiveDatagram().data();
+    };
+
+    QCOMPARE(keyedWith(sendOne()), ipA);
+    sock.setKeyIPv4(loop, ipB, natt::UdpKeyIpTable::Source::Server);
+    QCOMPARE(keyedWith(sendOne()), ipB);
+
+    // QUIC NAT-T frames too
+    const uint8 payload[3] = {1, 2, 3};
+    QVERIFY(sock.sendNattFrameNow(OP_NATT_FRAME_IPV6HANDOFF, payload, 3, to, peerHash.data()));
+    QTRY_VERIFY(peer.hasPendingDatagrams());
+    QByteArray frame = peer.receiveDatagram().data();
+    const DecryptResult r = EncryptedDatagramSocket::decryptReceivedClient(
+        reinterpret_cast<uint8*>(frame.data()), int(frame.size()), ipB, peerHash.data(), nullptr, 0);
+    QVERIFY(!r.undecodable);
+    QCOMPARE(r.data[0], uint8{OP_UDPRESERVEDPROT2});
+
+    // cleared: back to our public IP
+    sock.setKeyIPv4(loop, Address{}, natt::UdpKeyIpTable::Source::Server);
+    QCOMPARE(keyedWith(sendOne()), ipA);
+}
+
+void tst_ClientUDPSocket::natRendezvous_undecodableFromPunchedPeerEchoes()
+{
+    natt::test::HubFixture f;
+    theApp.natRendezvous = f.hub.get();
+    const auto restore = qScopeGuard([] { theApp.natRendezvous = nullptr; });
+
+    ClientUDPSocket sock;
+    QVERIFY(sock.create());
+    QUdpSocket peer;
+    QVERIFY(peer.bind(QHostAddress::LocalHost, 0));
+    const Address loop = Address::fromString(QStringLiteral("127.0.0.1"));
+    natt::PeerInfo info;
+    info.hash.fill(0x21);
+    info.hashKnown = true;
+    QVERIFY(f.hub->acceptNotice(natt::PathKind::Ed2kServer, info, Endpoint(loop, peer.localPort()), 0));
+
+    // the peer keyed with an IP we don't see it on
+    QByteArray buf(32 + 2, '\0');
+    buf[32] = char(OP_EMULEPROT);
+    buf[33] = char(OP_HOLEPUNCH);
+    const auto ours = thePrefs.userHash();
+    const uint32 len = EncryptedDatagramSocket::encryptSendClient(
+        reinterpret_cast<uint8*>(buf.data()) + 32 - EncryptedDatagramSocket::encryptOverheadSize(false), 2,
+        ours.data(), false, 0, 0, Address::fromString(QStringLiteral("9.9.9.9")));
+    const QByteArray wire = buf.right(qsizetype(len));
+    peer.writeDatagram(wire, QHostAddress::LocalHost, sock.connectedPort());
+    QTRY_COMPARE(f.env->udpWith(OP_EMULEPROT, OP_NATT_ADDR_ECHO).size(), size_t{1});
+    QCOMPARE(f.env->udpWith(OP_EMULEPROT, OP_NATT_ADDR_ECHO)[0].to, Endpoint(loop, peer.localPort()));
 }
 
 QTEST_MAIN(tst_ClientUDPSocket)

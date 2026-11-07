@@ -651,6 +651,8 @@ void NatRendezvous::handlePeerPacket(uint8 opcode, const uint8* data, uint32 siz
     }
     if (opcode == OP_HOLEPUNCH)
         handleHolePunch(from);
+    else if (opcode == OP_NATT_ADDR_ECHO)
+        handleAddrEcho(data, size, from);
 }
 
 void NatRendezvous::handleFrame(uint8 frameType, const uint8* data, uint32 size, const Endpoint& from,
@@ -663,6 +665,31 @@ void NatRendezvous::handleFrame(uint8 frameType, const uint8* data, uint32 size,
         return;
     }
     m_env->handleQuicFrame(frameType, data, size, from, obfuscated);
+}
+
+void NatRendezvous::handleUndecodable(const Endpoint& from)
+{
+    if (!m_env->enabled() || !from.address().isIPv4())
+        return;
+    Attempt* a = punchingFrom(from);
+    if (!a || a->echoSent)
+        return;
+    a->echoSent = true;
+    // Obfuscated only: a fixed-layout plain datagram is an easy DPI signature. The peer can
+    // decode it, since we key with our IP and that is the source it sees.
+    const uint8* crypt = peerCryptHash(*a, false);
+    if (!crypt) {
+        logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 undecodable datagram from %2, no hash for an echo")
+                     .arg(a->id).arg(from.toString()); });
+        return;
+    }
+    auto packet = std::make_unique<Packet>(OP_NATT_ADDR_ECHO, kAddrEchoSize, OP_EMULEPROT);
+    auto* out = reinterpret_cast<uint8*>(packet->pBuffer);
+    pokeUInt32(out, from.address().toNetworkUint32());
+    pokeUInt16(out + 4, from.port());
+    m_env->sendPeerUdp(std::move(packet), from, crypt);
+    logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 undecodable datagram, echoed %2")
+                 .arg(a->id).arg(from.toString()); });
 }
 
 void NatRendezvous::handleBuddyRelay(const Endpoint& requester, const uint8* data, uint32 size,
@@ -822,6 +849,37 @@ bool NatRendezvous::tryNextPath(Attempt& a)
         return true;
     }
     return false;
+}
+
+void NatRendezvous::handleAddrEcho(const uint8* data, uint32 size, const Endpoint& from)
+{
+    if (size < kAddrEchoSize)
+        return;
+    Attempt* a = punchingFrom(from);
+    if (!a)
+        return;
+    const Address ip = Address::fromNetworkOrder(peekUInt32(data));
+    if (!ip.isIPv4() || !ip.isPublicIP() || ip == a->echoKeyIP)
+        return;
+    a->echoKeyIP = ip;
+    // Toward this peer only, never our public IP. Same as our public IP: back to that.
+    const bool other = ip != Address::fromNetworkOrder(m_env->ourPublicIPv4());
+    m_env->setPeerKeyIPv4(from.address(), other ? ip : Address{}, true);
+    logDebug([&]() -> QString { return QStringLiteral("NAT-T: #%1 peer %2 sees our UDP on %3%4")
+                 .arg(a->id).arg(from.toString(), ip.toString(),
+                                 other ? QStringLiteral(", keying with it") : QString()); });
+    // What we sent so far was undecodable: again with the new key
+    sendPunch(*a);
+    if (!a->peerHandoffSeen)
+        sendHandoff(*a, false);
+}
+
+Attempt* NatRendezvous::punchingFrom(const Endpoint& from) const
+{
+    const uint64 now = m_env->now();
+    return findAttempt([&](const Attempt& x) {
+        return !x.finished && now < x.punchUntilMs && sameHost(x.peerUdp, from.address());
+    });
 }
 
 void NatRendezvous::remember(QHash<QString, uint64>& map, const Attempt& a, uint64 now)

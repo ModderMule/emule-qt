@@ -34,6 +34,11 @@ namespace eMule {
 ServerList::ServerList(QObject* parent)
     : QObject(parent)
 {
+    // Any list change schedules a save (see process()).
+    connect(this, &ServerList::serverAdded, this, &ServerList::markDirty);
+    connect(this, &ServerList::serverAboutToBeRemoved, this, &ServerList::markDirty);
+    connect(this, &ServerList::serverUpdated, this, &ServerList::markDirty);
+    connect(this, &ServerList::listReloaded, this, &ServerList::markDirty);
 }
 
 // ---------------------------------------------------------------------------
@@ -62,6 +67,7 @@ bool ServerList::init(const QString& configDir)
     const size_t before = serverCount();
     if (loadStaticServers(dir.filePath(QStringLiteral("staticservers.dat"))))
         logInfo(QStringLiteral("Loaded static servers (%1 new)").arg(serverCount() - before));
+    m_dirty = false;   // just loaded from disk
     return ok;
 }
 
@@ -131,6 +137,8 @@ bool ServerList::saveServerMet(const QString& filePath)
         return false;
     }
 
+    m_dirty = false;
+    m_lastServerMetSave = static_cast<uint32>(QDateTime::currentSecsSinceEpoch());
     emit listSaved();
     return true;
 }
@@ -989,14 +997,17 @@ void ServerList::serverStats()
 
 void ServerList::process(const QString& metPath)
 {
-    // Persist at most every 17 minutes (MFC uses MIN2MS(17)); the first tick just
-    // seeds the timer so we don't save immediately on startup.
+    // Save 30 s after the first unsaved change; otherwise at most every 17 minutes
+    // (MFC uses MIN2MS(17)). The first tick just seeds the timer so we don't save
+    // immediately on startup.
+    static constexpr uint32 kDirtySaveDelay = 30;
     const uint32 now = static_cast<uint32>(QDateTime::currentSecsSinceEpoch());
     if (m_lastServerMetSave == 0) {
         m_lastServerMetSave = now;
         return;
     }
-    if (now - m_lastServerMetSave >= static_cast<uint32>(MIN2S(17))) {
+    const bool dirtyDue = m_dirty && now - m_dirtySince >= kDirtySaveDelay;
+    if (dirtyDue || now - m_lastServerMetSave >= static_cast<uint32>(MIN2S(17))) {
         m_lastServerMetSave = now;
         saveServerMet(metPath);
     }
@@ -1468,6 +1479,14 @@ void ServerList::sendCryptPing(Server& target)
 
     theApp.serverConnect->sendRawUDPPacket(
         target, static_cast<uint16>(target.port() + 12), raw.data(), rawLen);
+}
+
+void ServerList::markDirty()
+{
+    if (m_dirty)
+        return;
+    m_dirty = true;
+    m_dirtySince = static_cast<uint32>(QDateTime::currentSecsSinceEpoch());
 }
 
 } // namespace eMule

@@ -705,7 +705,7 @@ Activez l&apos;interface web ou l&apos;API REST dans Options → Interface web.<
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+577"/>
+        <location filename="../src/gui/app/main.cpp" line="+578"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -739,7 +739,7 @@ Présenté : %3
 Faire confiance au nouveau certificat ?</translation>
     </message>
     <message>
-        <location line="+327"/>
+        <location line="+359"/>
         <source>Download Added</source>
         <translation>Téléchargement ajouté</translation>
     </message>
@@ -3715,7 +3715,7 @@ Ses téléchargements conservent leurs fichiers et passent dans Tous.</translati
 <context>
     <name>eMule::CoreConnectDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/CoreConnectDialog.cpp" line="+23"/>
+        <location filename="../src/gui/dialogs/CoreConnectDialog.cpp" line="+24"/>
         <source>Connect to Core</source>
         <translation>Connexion au noyau</translation>
     </message>
@@ -3758,6 +3758,16 @@ Entrez l&apos;adresse et le jeton d&apos;authentification d&apos;un noyau distan
     </message>
     <message>
         <location line="+10"/>
+        <source>Retry Last Core</source>
+        <translation>Réessayer le dernier cœur</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Connect once more to the core that last worked</source>
+        <translation>Se reconnecter au dernier cœur qui a fonctionné</translation>
+    </message>
+    <message>
+        <location line="+4"/>
         <source>Connect</source>
         <translation>Connecter</translation>
     </message>
@@ -3765,6 +3775,13 @@ Entrez l&apos;adresse et le jeton d&apos;authentification d&apos;un noyau distan
         <location line="+5"/>
         <source>Exit</source>
         <translation>Quitter</translation>
+    </message>
+    <message>
+        <location line="+63"/>
+        <source>Lost the connection to the eMule core.
+Retry the last core, or enter the address and authentication token of another one.</source>
+        <translation>La connexion au cœur eMule a été perdue.
+Réessayez le dernier cœur ou saisissez l&apos;adresse et le jeton d&apos;authentification d&apos;un autre.</translation>
     </message>
 </context>
 <context>

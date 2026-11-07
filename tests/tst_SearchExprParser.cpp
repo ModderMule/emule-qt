@@ -10,6 +10,8 @@
 #include "net/Packet.h"
 #include "server/Server.h"
 #include "utils/Opcodes.h"
+#include "protocol/Tag.h"
+#include "utils/SafeFile.h"
 
 #include <QTest>
 
@@ -125,6 +127,7 @@ private slots:
     void globalSearch_legacyReq_whenNoFlags();
     void globalSearch_req2_whenExtGetFiles();
     void globalSearch_req3_whenExtGetFilesAndLargeFiles();
+    void globalSearch_req3_metaFlags();
     void globalSearch_skip_when64BitAndNoLargeFiles();
 };
 
@@ -995,6 +998,42 @@ void tst_SearchExprParser::globalSearch_req3_whenExtGetFilesAndLargeFiles()
                           | (static_cast<uint32>(body[2]) << 16)
                           | (static_cast<uint32>(body[3]) << 24);
     QCOMPARE(tagCount, 1u);
+}
+
+// The REQ3 tag asks for meta rows (0x02) by default and declines every catalogue
+// row (0x04) when declineMeta is set — never both (enodemeta amendment 29).
+void tst_SearchExprParser::globalSearch_req3_metaFlags()
+{
+    const QByteArray terms = parseSearchExpression(QStringLiteral("eMule")).expr.toBytes();
+    Server srv(0x01020304, 4661);
+    srv.setUDPFlags(SrvUdpFlag::ExtGetFiles | SrvUdpFlag::LargeFiles);
+
+    const auto flagsOf = [&](bool declineMeta) {
+        auto pkt = buildGlobalSearchPacket(srv, terms, /*is64BitSearch*/ false, declineMeta);
+        if (!pkt || pkt->opcode != OP_GLOBSEARCHREQ3)
+            return ~0u;
+        SafeMemFile data(reinterpret_cast<const uint8*>(pkt->pBuffer), pkt->size);
+        if (data.readUInt32() != 1)
+            return ~0u;
+        const Tag tag(data, false);
+        if (tag.nameId() != CT_SERVER_UDPSEARCH_FLAGS || !tag.isInt())
+            return ~0u;
+        return tag.intValue();
+    };
+
+    const uint32 wanted = flagsOf(false);
+    const uint32 declined = flagsOf(true);
+    qInfo("input: declineMeta=false/true; output: flags=0x%02X/0x%02X", wanted, declined);
+    QCOMPARE(wanted, static_cast<uint32>(SRVCAP_UDP_NEWTAGS_LARGEFILES | SRVCAP_UDP_META_SEARCH));
+    QCOMPARE(declined, static_cast<uint32>(SRVCAP_UDP_NEWTAGS_LARGEFILES | SRVCAP_UDP_NO_META));
+
+    // REQ2 has no tag block: declining changes nothing there.
+    Server legacy(0x01020304, 4661);
+    legacy.setUDPFlags(SrvUdpFlag::ExtGetFiles);
+    auto pkt = buildGlobalSearchPacket(legacy, terms, /*is64BitSearch*/ false, /*declineMeta*/ true);
+    QVERIFY(pkt != nullptr);
+    QCOMPARE(pkt->opcode, static_cast<uint8>(OP_GLOBSEARCHREQ2));
+    QCOMPARE(pkt->size, static_cast<uint32>(terms.size()));
 }
 
 void tst_SearchExprParser::globalSearch_skip_when64BitAndNoLargeFiles()

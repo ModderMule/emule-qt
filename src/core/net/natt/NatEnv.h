@@ -76,6 +76,9 @@ public:
     [[nodiscard]] virtual ServerUdpCrypt serverUdpCrypt() const = 0;
     /// Stat-ping the current server soon: its UDP key is missing or may be stale.
     virtual void refreshServerKey() = 0;
+    /// Our IPv4 for the client UDP key toward @p peer instead of our public IP; null clears
+    /// (ed2k-server#40). @p fromPeer: a peer's 0xAB echo, which a server value doesn't replace.
+    virtual void setPeerKeyIPv4(const Address& peer, const Address& ourIP, bool fromPeer) = 0;
     /// Pre-built bytes (PR_NAT frames).
     virtual void sendRawUdp(const QByteArray& data, const Endpoint& to) = 0;
     /// TCP packet on the live server session.

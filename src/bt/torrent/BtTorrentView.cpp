@@ -77,7 +77,9 @@ qint64 unixOf(lt::time_point tp)
 }
 
 /// Transmission's peer status letters (libtransmission/peer-mgr.cc).
-QString flagsOf(const lt::peer_info& p)
+} // namespace
+
+QString BtTorrentView::peerFlags(const lt::peer_info& p)
 {
     QString f;
     const auto has = [&p](lt::peer_flags_t bit) { return static_cast<bool>(p.flags & bit); };
@@ -85,17 +87,19 @@ QString flagsOf(const lt::peer_info& p)
         f += QLatin1Char('T');
     if (has(lt::peer_info::optimistic_unchoke))
         f += QLatin1Char('O');
+    // libtorrent: `choked` = we choke the peer, `remote_choked` = the peer chokes us.
+    // Read the other way round, a seed's upload peers showed "uK" (#147)
     const bool weInterested = has(lt::peer_info::interesting);
-    const bool weChoked = has(lt::peer_info::choked);
+    const bool weChokeThem = has(lt::peer_info::choked);
     const bool theyInterested = has(lt::peer_info::remote_interested);
-    const bool theyChoked = has(lt::peer_info::remote_choked);
+    const bool theyChokeUs = has(lt::peer_info::remote_choked);
     if (weInterested)
-        f += weChoked ? QLatin1Char('d') : QLatin1Char('D');
+        f += theyChokeUs ? QLatin1Char('d') : QLatin1Char('D');
     if (theyInterested)
-        f += theyChoked ? QLatin1Char('u') : QLatin1Char('U');
-    if (!weChoked && !weInterested)
+        f += weChokeThem ? QLatin1Char('u') : QLatin1Char('U');
+    if (!theyChokeUs && !weInterested)
         f += QLatin1Char('K');
-    if (!theyChoked && !theyInterested)
+    if (!weChokeThem && !theyInterested)
         f += QLatin1Char('?');
     if (has(lt::peer_info::rc4_encrypted) || has(lt::peer_info::plaintext_encrypted))
         f += QLatin1Char('E');
@@ -111,8 +115,6 @@ QString flagsOf(const lt::peer_info& p)
         f += QLatin1Char('P');
     return f;
 }
-
-} // namespace
 
 QString BtTorrentView::i2pAddressOf(const lt::sha256_hash& destination)
 {
@@ -253,7 +255,7 @@ QList<BtPeerRow> BtTorrentView::peers(const lt::torrent_handle& h)
         r.encrypted = static_cast<bool>(p.flags & (lt::peer_info::rc4_encrypted | lt::peer_info::plaintext_encrypted));
         r.utp = static_cast<bool>(p.flags & lt::peer_info::utp_socket);
         r.source = sourceOf(p.source);
-        r.flags = flagsOf(p);
+        r.flags = peerFlags(p);
         out.append(r);
     }
     return out;

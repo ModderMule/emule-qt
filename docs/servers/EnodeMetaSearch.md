@@ -45,6 +45,15 @@ amendments 24 and 27:
   network is stripped; `[Group] Title` is left alone.
 - **Capability bits.** The client announces `SRVCAP_META_SEARCH` (0x10000) at
   login, and puts `SRVCAP_UDP_META_SEARCH` (0x02) in the `GLOBSEARCHREQ3` flags.
+- **Declining in a global search.** A global search asks every server, and eNode
+  servers with the same catalogues would each send the same rows again; they merge
+  by hash and the copies are discarded. Once `serverConnection.globalSearchCatalogueServers`
+  servers (YAML only, default 1, 0 = never) have sent catalogue rows for the search,
+  each later `GLOBSEARCHREQ3` carries `SRVCAP_UDP_NO_META` (0x04) instead of 0x02.
+  An eNode server then makes no catalogue lookup and sends no torrent, Usenet,
+  web or Kad row (enodemeta amendment 29). The count is kept by
+  `SearchList::catalogueServerCount()`, and the check is made for each server
+  `GlobalSearchScheduler` asks.
 - **Never an eD2K file.** A meta hash is never queued as an eD2K download: the
   daemon refuses it in `DownloadSearchFile`.
 

@@ -10,6 +10,7 @@
 #include "net/Address.h"
 #include "net/Packet.h"
 #include "net/ThrottledSocket.h"
+#include "net/natt/UdpKeyIpTable.h"
 #include "utils/Types.h"
 
 #include <QElapsedTimer>
@@ -116,6 +117,14 @@ public:
     bool sendNattFrameNow(uint8 type, const uint8* payload, size_t len, const Endpoint& to,
                           const uint8* cryptHash);
 
+    /// Our IPv4 for the obfuscation key toward @p peer instead of our public IP (null
+    /// clears): TCP and UDP leave from different public IPv4s (ed2k-server#40).
+    void setKeyIPv4(const Address& peer, const Address& ourIP, natt::UdpKeyIpTable::Source src);
+
+    /// Our IP as @p to sees our UDP: the per-peer key IP, else our public IP. Keys the
+    /// obfuscation and checks a NAT-T peer's secure ident signature. Any thread.
+    [[nodiscard]] Address keyIPFor(const Endpoint& to);
+
     /// ThrottledControlSocket: send queued data up to bandwidth limit.
     SocketSentBytes sendControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize) override;
 
@@ -208,6 +217,7 @@ private:
     bool m_wouldBlock = false;
 
     QElapsedTimer m_elapsedTimer;
+    natt::UdpKeyIpTable m_keyIps;
 
     /// Most packets waiting to be sent; beyond it new ones are dropped.
     static constexpr size_t kMaxQueuedPackets = 4096;

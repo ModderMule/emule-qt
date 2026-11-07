@@ -28,6 +28,10 @@
 /// Proof (ed2k-server 0.9.88, ST_NATT_PROOF in OP_SERVERIDENT): the token never goes on UDP,
 /// 0x9F = <user hash 16><counter u32 LE><mac 16>, mac = HMAC-SHA256(token, hash | counter)[0..16].
 /// The counter must rise within a login; a captured 0x9F can't be replayed.
+///
+/// Own endpoint (ed2k-server 0.9.88, #40): a 0x61 of 36 bytes appends <own_ip 4><own_udp_port 2>,
+/// our UDP endpoint from our last accepted 0x9F. Our key IP toward that peer only (TCP and
+/// UDP on different public IPv4s), never our public IP; the peer's 0xAB echo replaces it.
 
 #include "net/natt/NatPath.h"
 
@@ -41,6 +45,7 @@ public:
     static constexpr uint32 kInfoMinSize = 25;      // pre-0.9.84 servers
     static constexpr uint32 kInfoIdSize  = 29;      // with peer_id
     static constexpr uint32 kInfoCryptSize = 30;    // extension pair: with peer_crypt
+    static constexpr uint32 kInfoOwnSize   = 36;    // 0.9.88: + own_ip 4 + own_udp_port 2
     static constexpr uint64 kBurstStepMs = 500;     // target 0x9F at 0, 0.5 and 1 s
     static constexpr uint8  kBurstCount  = 3;
     static constexpr uint64 kInfoWaitMs  = 4000;    // server waits 3 s for our 0x9F, then sends 0x61

@@ -62,6 +62,7 @@ private slots:
     void crypto_failedVerifyKeepsAnIdentifiedRecord();
     void crypto_signVerifyWithLocalIP();
     void crypto_signVerifyIPMismatch();
+    void crypto_remoteClientUsesSeenAs();
     void crypto_signVerifyMixedIPKinds();
     void crypto_twoPartyCrossVerify();
     void cryptoAvailable_afterInit();
@@ -613,6 +614,32 @@ void tst_ClientCredits::crypto_signVerifyWithLocalIP()
     bool verified = list.verifyIdent(peer, sig, sigLen, ip(pseudoIP), kCryptCipLocalClient);
     QVERIFY2(verified, "verifyIdent with matching pseudo IP should succeed");
     QCOMPARE(peer->currentIdentState(ip(pseudoIP)), IdentState::Identified);
+}
+
+void tst_ClientCredits::crypto_remoteClientUsesSeenAs()
+{
+    // A LowID peer signs the IPv4 it sees us at. Over a NAT-T stream that is our UDP
+    // address, which the caller passes as seenAs (ed2k-server#40).
+    TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+
+    ClientCreditsList list;
+    QVERIFY(list.cryptoAvailable());
+
+    auto* peer = list.getCredit(testHash);
+    peer->setSecureIdent(list.publicKey(), list.pubKeyLen());
+    peer->cryptRndChallengeFrom = 0x2468ACE0;
+    peer->cryptRndChallengeFor  = 0x2468ACE0;
+
+    const uint32 udpIP = Address::fromString(QStringLiteral("198.51.100.20")).toNetworkUint32();
+    uint8 sig[200];
+    const uint8 sigLen = list.createSignature(peer, sig, sizeof(sig), udpIP, kCryptCipRemoteClient);
+    QVERIFY(sigLen > 0);
+
+    QVERIFY(!list.verifyIdent(peer, sig, sigLen, ip(0x01020304), kCryptCipRemoteClient,
+                              Address::fromString(QStringLiteral("198.51.100.21"))));
+    QVERIFY(list.verifyIdent(peer, sig, sigLen, ip(0x01020304), kCryptCipRemoteClient,
+                             Address::fromNetworkOrder(udpIP)));
 }
 
 void tst_ClientCredits::crypto_signVerifyIPMismatch()

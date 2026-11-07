@@ -71,6 +71,7 @@ private slots:
     void target_stopsAfterOnePass();
     void target_allDeadTerminates();
     void target_emptyListTerminates();
+    void declineMeta_threshold();
 
     // GlobalSearchScheduler — the pacing
     void sweep_asksOneServerPerInterval();
@@ -360,6 +361,23 @@ void tst_GlobalSearchScheduler::sweep_emptyServerListEndsImmediately()
     GlobalSearchScheduler sched;
     sched.start(13, QByteArrayLiteral("payload"), false, false);
     QVERIFY(!sched.isRunning());
+}
+
+// The sweep declines catalogue rows once the configured number of servers sent some;
+// 0 asks every server for them.
+void tst_GlobalSearchScheduler::declineMeta_threshold()
+{
+    struct Case { uint32 senders; uint32 threshold; bool decline; };
+    const Case cases[] = {
+        {0, 0, false}, {5, 0, false},
+        {0, 1, false}, {1, 1, true}, {2, 1, true},
+        {1, 2, false}, {2, 2, true},
+    };
+    for (const Case& c : cases) {
+        const bool got = declineGlobalSearchMeta(c.senders, c.threshold);
+        qInfo("input: catalogueServers=%u threshold=%u; output: decline=%d", c.senders, c.threshold, got);
+        QCOMPARE(got, c.decline);
+    }
 }
 
 QTEST_MAIN(tst_GlobalSearchScheduler)

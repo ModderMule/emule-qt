@@ -530,6 +530,9 @@ struct Preferences::Data {
     // Disable a server after N failed attempts (0 = never). MFC 1; deliberate, 2026-10: one failed
     // connect says little, and a wrongly disabled server is one the user has to find again.
     uint32 deadServerRetries = 20;
+    // A global UDP search stops asking eNode servers for catalogue rows (torrent, Usenet,
+    // web, Kad) once this many servers have sent some; 0 asks every server. YAML-only, no UI.
+    uint32 globalSearchCatalogueServers = 1;
     bool autoUpdateServerList = false;  // Auto-update server list from URL at startup
     QString serverListURL = Preferences::kDefaultServerListURL;  // URL for server.met download
     bool smartLowIdCheck = true;        // Try another server if we get a LowID
@@ -3186,6 +3189,13 @@ uint32 Preferences::deadServerRetries() const { return get(&Data::deadServerRetr
 
 void Preferences::setDeadServerRetries(uint32 val) { set(&Data::deadServerRetries, val); }
 
+uint32 Preferences::globalSearchCatalogueServers() const { return get(&Data::globalSearchCatalogueServers); }
+
+void Preferences::setGlobalSearchCatalogueServers(uint32 val)
+{
+    set(&Data::globalSearchCatalogueServers, std::min<uint32>(val, 99));
+}
+
 bool Preferences::autoUpdateServerList() const { return get(&Data::autoUpdateServerList); }
 
 void Preferences::setAutoUpdateServerList(bool val) { set(&Data::autoUpdateServerList, val); }
@@ -4477,6 +4487,9 @@ void Preferences::validate()
     // deadServerRetries: max 99 (the Options spin box); 0 = never disable, left alone
     m_data->deadServerRetries = std::min<uint32>(m_data->deadServerRetries, 99);
 
+    // globalSearchCatalogueServers: max 99; 0 = never decline catalogue rows
+    m_data->globalSearchCatalogueServers = std::min<uint32>(m_data->globalSearchCatalogueServers, 99);
+
     // webServerSessionTimeout: clamp 1–60 min; 0 expires a session at once
     m_data->webServerSessionTimeout = std::clamp(m_data->webServerSessionTimeout, 1, 60);
 
@@ -4634,6 +4647,7 @@ bool Preferences::load(const QString& filePath)
             m_data->addServersFromClients = s["addServersFromClients"].as<bool>(m_data->addServersFromClients);
             m_data->filterServerByIP = s["filterServerByIP"].as<bool>(m_data->filterServerByIP);
             m_data->deadServerRetries = s["deadServerRetries"].as<uint32>(m_data->deadServerRetries);
+            m_data->globalSearchCatalogueServers = s["globalSearchCatalogueServers"].as<uint32>(m_data->globalSearchCatalogueServers);
             m_data->autoUpdateServerList = s["autoUpdateServerList"].as<bool>(m_data->autoUpdateServerList);
             if (s["serverListURL"])
                 m_data->serverListURL = urlOrDefault(
@@ -6096,6 +6110,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "addServersFromClients" << YAML::Value << m_data->addServersFromClients;
     out << YAML::Key << "filterServerByIP" << YAML::Value << m_data->filterServerByIP;
     out << YAML::Key << "deadServerRetries" << YAML::Value << m_data->deadServerRetries;
+    out << YAML::Key << "globalSearchCatalogueServers" << YAML::Value << m_data->globalSearchCatalogueServers;
     out << YAML::Key << "autoUpdateServerList" << YAML::Value << m_data->autoUpdateServerList;
     out << YAML::Key << "serverListURL" << YAML::Value << m_data->serverListURL.toStdString();
     out << YAML::Key << "smartLowIdCheck" << YAML::Value << m_data->smartLowIdCheck;

@@ -687,7 +687,7 @@ Włącz interfejs WWW lub REST API w Opcje → Interfejs WWW.</translation>
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+577"/>
+        <location filename="../src/gui/app/main.cpp" line="+578"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -721,7 +721,7 @@ Przedstawiony: %3
 Zaufać nowemu certyfikatowi?</translation>
     </message>
     <message>
-        <location line="+327"/>
+        <location line="+359"/>
         <source>Download Added</source>
         <translation>Dodano pobieranie</translation>
     </message>
@@ -3480,7 +3480,7 @@ Jej pobierania zachowają swoje pliki i trafią do Wszystkie.</translation>
 <context>
     <name>eMule::CoreConnectDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/CoreConnectDialog.cpp" line="+23"/>
+        <location filename="../src/gui/dialogs/CoreConnectDialog.cpp" line="+24"/>
         <source>Connect to Core</source>
         <translation>Połącz z rdzeniem</translation>
     </message>
@@ -3523,6 +3523,16 @@ Podaj adres i token uwierzytelniający zdalnego rdzenia.</translation>
     </message>
     <message>
         <location line="+10"/>
+        <source>Retry Last Core</source>
+        <translation>Ponów ostatni rdzeń</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Connect once more to the core that last worked</source>
+        <translation>Połącz ponownie z ostatnio działającym rdzeniem</translation>
+    </message>
+    <message>
+        <location line="+4"/>
         <source>Connect</source>
         <translation>Podłącz</translation>
     </message>
@@ -3530,6 +3540,13 @@ Podaj adres i token uwierzytelniający zdalnego rdzenia.</translation>
         <location line="+5"/>
         <source>Exit</source>
         <translation>Zakończ</translation>
+    </message>
+    <message>
+        <location line="+63"/>
+        <source>Lost the connection to the eMule core.
+Retry the last core, or enter the address and authentication token of another one.</source>
+        <translation>Utracono połączenie z rdzeniem eMule.
+Ponów ostatni rdzeń lub wprowadź adres i token uwierzytelniający innego.</translation>
     </message>
 </context>
 <context>

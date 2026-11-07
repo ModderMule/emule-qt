@@ -54,7 +54,8 @@ Spec: the ed2k-server README, "Implementing a compatible client".
   `0x20000` server. The server trusts the observed
   port for 600 s.
 - Request: `0x60 <target id 4><our udp port 2>`, re-sent every 10 s (3 times) until an answer.
-- Answer to both sides: `0x61 <ip 4><tcp 2><udp 2><hash 16><role 1>[<peer id 4>]`. `peer id`
+- Answer to both sides: `0x61 <ip 4><tcp 2><udp 2><hash 16><role 1>[<peer id 4>]` (30 and
+  36 bytes on an extension pair, below and [§ Split TCP/UDP address](#split-tcpudp-address-ed2k-server40)). `peer id`
   (0.9.84+) is read only when the payload has 29 bytes or more. A requester matches it by that
   ID, else by hash, else the single request in flight. Any other `0x61` makes us the target.
   Both sides punch. The role byte is advisory here; only a 30-byte `0x61` (below) makes it binding.
@@ -356,6 +357,37 @@ flags: 0x01 IPv6 present, 0x02 answer (do not reply)
 - `peerEndpointReady(hash, endpoint, role)` is still emitted once per attempt.
 
 `0x11` is not in use by the other `0xB2` frame types (`0x00`-`0x03`, `0xFF`: eMuleAI).
+
+### Split TCP/UDP address (ed2k-server#40)
+
+The client UDP key is `MD5(receiver hash ‖ sender IPv4 ‖ magic ‖ random)`. The sender puts in
+the public IP it believes in (the server's view of its TCP session), the receiver the
+datagram's source. A carrier NAT that maps TCP and UDP to different public IPv4s breaks it:
+the peer decodes nothing the split side sends. The other direction works (the peer keys with
+the IP the split side sees). Fix: a per-peer key IP, never our public IP, IPv4 only.
+
+- Server value: a 36-byte `0x61` (0.9.88) appends `<own_ip 4><own_udp_port 2>`, our UDP
+  endpoint from our last accepted `0x9F` (same encoding as `peer_ip`, port LE). Only after the
+  crypt byte, so only on an extension pair; absent without a `0x9F` in the last 10 min. A
+  public `own_ip` other than our public IP becomes the key IP toward the peer in that `0x61`,
+  set before the first punch; equal clears it.
+- Peer echo: `0xC5 0xAB` (`OP_NATT_ADDR_ECHO`, client UDP) `<ip 4><port 2>`, the source of a
+  datagram that no key decoded, as the sender saw it. `ip` in `peer_ip`'s byte order, port LE.
+  - Sent by the peer that gets such a datagram from the host of a running attempt's punched
+    endpoint, inside its 20 s punch window, once per attempt, back to that source.
+    Obfuscated only (a fixed-layout plain datagram is an easy DPI signature); without the
+    peer's hash (foreign wake before its handoff) nothing is sent.
+  - Taken only from the punched host inside the punch window, only a public IPv4. It replaces
+    the server value for that peer; a server value doesn't replace an echo younger than 60 s.
+    The punch and (if still due) the handoff go out again at once with the new key.
+- Key IPs live in the client UDP socket per peer address and expire 1 h after their last use
+  (256 at most). They apply to every eD2K client datagram to that address: punch, handoff,
+  QUIC NAT-T frames, reasks.
+- Secure ident v2 over a QUIC NAT-T stream: a LowID peer signs (`CRYPT_CIP_REMOTECLIENT`) the
+  IPv4 it sees us at, i.e. our UDP address. We verify with the key IP toward it, else our
+  public IP. Plain TCP keeps the server-derived IP.
+- Both sides split: neither can decode the other's echo; only the server value helps.
+- Per-flow VPN (each flow a new exit): the server value can be wrong; the echo is exact.
 
 ## Limits and failure handling
 

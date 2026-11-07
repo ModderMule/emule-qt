@@ -193,6 +193,7 @@ private slots:
     void isGoodServerIP_honorsFilterLANIPs();          // #29
     void addDuplicate_onlyAManualAddRevives();
     void disabledServer_isSkippedAndSurvivesServerMet();
+    void changes_markDirtyUntilSaved();
     void moveServerDown_toBottom();                    // #33
     void getSuccServer_nonWrapping();                  // #34
     void getServerByIP_ipOnly();                       // #34
@@ -2410,6 +2411,38 @@ void tst_ServerList::addDuplicate_onlyAManualAddRevives()
     QVERIFY(list.addServer(makeServer(0x08080808, 4661), ServerOrigin::Manual) == nullptr);
     QCOMPARE(s->failedCount(), uint32{0});
     QVERIFY(!s->isDisabled());
+}
+
+void tst_ServerList::changes_markDirtyUntilSaved()
+{
+    eMule::testing::TempDir tmp;
+    const QString path = tmp.filePath(QStringLiteral("server.met"));
+    ServerList list;
+    QVERIFY(!list.isDirty());
+
+    Server* s = list.addServer(makeServer(0x08080808, 4661));
+    QVERIFY(s);
+    QVERIFY(list.isDirty());
+    QVERIFY(list.saveServerMet(path));
+    QVERIFY(!list.isDirty());
+
+    // Connect refreshes name/files in place, then notifies.
+    s->setName(QStringLiteral("renamed"));
+    list.notifyServerUpdated(s);
+    QVERIFY(list.isDirty());
+    QVERIFY(list.saveServerMet(path));
+
+    QVERIFY(list.removeServer(s));
+    QVERIFY(list.isDirty());
+    QVERIFY(list.saveServerMet(path));
+
+    // A fresh load from disk is not a change.
+    QVERIFY(list.addServer(makeServer(0x08080809, 4661)));
+    QVERIFY(list.saveServerMet(path));
+    ServerList loaded;
+    QVERIFY(loaded.init(tmp.path()));
+    QCOMPARE(loaded.serverCount(), size_t{1});
+    QVERIFY(!loaded.isDirty());
 }
 
 void tst_ServerList::disabledServer_isSkippedAndSurvivesServerMet()

@@ -9,6 +9,7 @@
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QHostAddress>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -26,13 +27,13 @@ CoreConnectDialog::CoreConnectDialog(QWidget* parent)
     auto* mainLayout = new QVBoxLayout(this);
 
     // Header
-    auto* headerLabel = new QLabel(
+    m_headerLabel = new QLabel(
         tr("Could not find a local eMule core.\n"
            "Enter the address and authentication token of a remote core."),
         this);
-    headerLabel->setWordWrap(true);
-    DialogSizing::enableHeightForWidth(headerLabel);
-    mainLayout->addWidget(headerLabel);
+    m_headerLabel->setWordWrap(true);
+    DialogSizing::enableHeightForWidth(m_headerLabel);
+    mainLayout->addWidget(m_headerLabel);
 
     // Connection group
     auto* group = new QGroupBox(tr("Remote Core"), this);
@@ -61,6 +62,11 @@ CoreConnectDialog::CoreConnectDialog(QWidget* parent)
     // Buttons
     auto* btnLayout = new QHBoxLayout;
     btnLayout->addStretch();
+    m_retryLastBtn = new QPushButton(tr("Retry Last Core"), this);
+    m_retryLastBtn->setToolTip(tr("Connect once more to the core that last worked"));
+    m_retryLastBtn->setVisible(false);
+    btnLayout->addWidget(m_retryLastBtn);
+
     m_connectBtn = new QPushButton(tr("Connect"), this);
     m_connectBtn->setEnabled(false);
     m_connectBtn->setDefault(true);
@@ -72,14 +78,20 @@ CoreConnectDialog::CoreConnectDialog(QWidget* parent)
 
     // Enable Connect only when both address and token are non-empty
     auto updateConnectBtn = [this]() {
-        m_connectBtn->setEnabled(!m_addressEdit->text().trimmed().isEmpty()
-                                 && !m_tokenEdit->text().trimmed().isEmpty());
+        // A core on this machine trusts loopback without a token
+        const QString addr = m_addressEdit->text().trimmed();
+        const bool loopback = addr.compare(QLatin1String("localhost"), Qt::CaseInsensitive) == 0
+                              || QHostAddress(addr).isLoopback();
+        m_connectBtn->setEnabled(!addr.isEmpty()
+                                 && (loopback || !m_tokenEdit->text().trimmed().isEmpty()));
     };
     connect(m_addressEdit, &QLineEdit::textChanged, this, updateConnectBtn);
     connect(m_tokenEdit, &QLineEdit::textChanged, this, updateConnectBtn);
 
     connect(m_connectBtn, &QPushButton::clicked, this, &QDialog::accept);
     connect(m_exitBtn, &QPushButton::clicked, this, &QDialog::reject);
+    // Repeatable: stays open, closed by the caller once connected
+    connect(m_retryLastBtn, &QPushButton::clicked, this, &CoreConnectDialog::retryLastCoreRequested);
 
     m_addressEdit->setFocus();
 
@@ -108,6 +120,27 @@ QString CoreConnectDialog::token() const
 bool CoreConnectDialog::saveToken() const
 {
     return m_saveTokenCheck->isChecked();
+}
+
+void CoreConnectDialog::setTarget(const QString& address, uint16_t port, const QString& token)
+{
+    m_addressEdit->setText(address);
+    if (port != 0)
+        m_portSpin->setValue(port);
+    m_tokenEdit->setText(token);
+}
+
+void CoreConnectDialog::setLastCoreAvailable(bool available)
+{
+    m_retryLastBtn->setVisible(available);
+    if (!available)
+        return;
+    m_headerLabel->setText(tr("Lost the connection to the eMule core.\n"
+                              "Retry the last core, or enter the address and "
+                              "authentication token of another one."));
+    m_connectBtn->setDefault(false);
+    m_retryLastBtn->setDefault(true);
+    m_retryLastBtn->setFocus();
 }
 
 } // namespace eMule

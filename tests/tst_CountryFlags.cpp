@@ -47,6 +47,14 @@ void tst_CountryFlags::flag_knownAndUnknownCodes()
     QVERIFY(!CountryFlags::flag(QStringLiteral("DE")).isNull());
     QVERIFY(!CountryFlags::flag(QStringLiteral("de")).isNull());
     QVERIFY(!CountryFlags::flag(QStringLiteral("GB")).isNull());
+    QVERIFY(!CountryFlags::flag(QStringLiteral("UK")).isNull());   // alias of GB
+    QVERIFY(!CountryFlags::flag(QStringLiteral("XK")).isNull());
+    QVERIFY(!CountryFlags::flag(QStringLiteral("YU")).isNull());   // old MorphXT-only code
+    // HiDPI variants
+    const QList<QSize> sizes = CountryFlags::flag(QStringLiteral("DE")).availableSizes();
+    QVERIFY(sizes.contains(QSize(18, 16)));
+    QVERIFY(sizes.contains(QSize(36, 32)));
+    QVERIFY(sizes.contains(QSize(54, 48)));
     QVERIFY(CountryFlags::flag(QStringLiteral("QQ")).isNull());
     QVERIFY(CountryFlags::flag(QString()).isNull());
     QVERIFY(CountryFlags::flag(QStringLiteral("DEU")).isNull());
@@ -58,8 +66,8 @@ void tst_CountryFlags::flag_everyIsoTerritoryHasOne()
     // and territories MaxMind never returns are allowed to lack a flag.
     const QSet<QString> allowedMissing = {
         QStringLiteral("AC"), QStringLiteral("CP"), QStringLiteral("DG"), QStringLiteral("EA"),
-        QStringLiteral("IC"), QStringLiteral("TA"), QStringLiteral("XK"), QStringLiteral("QO"),
-        QStringLiteral("EZ"), QStringLiteral("UN"), QStringLiteral("CQ"), QStringLiteral("419"),
+        QStringLiteral("IC"), QStringLiteral("TA"), QStringLiteral("QO"),
+        QStringLiteral("EZ"), QStringLiteral("CQ"), QStringLiteral("419"),
         QStringLiteral("150"), QStringLiteral("001")};
     QStringList missing;
     for (int t = QLocale::Afghanistan; t <= QLocale::LastTerritory; ++t) {

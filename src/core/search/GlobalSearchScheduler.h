@@ -39,6 +39,16 @@ class ServerList;
 [[nodiscard]] Server* nextGlobalSearchTarget(ServerList& list, const Server* connected,
                                              uint32 deadServerRetries, uint32& examined);
 
+/// Whether the next request of a sweep declines catalogue rows (SRVCAP_UDP_NO_META):
+/// @p catalogueServers servers already sent some, and @p threshold is the
+/// serverConnection.globalSearchCatalogueServers preference. 0 never declines.
+/// Asking more servers would only bring the same torrent, Usenet, web and Kad
+/// rows again, which merge by hash and are discarded (enodemeta amendment 29).
+[[nodiscard]] constexpr bool declineGlobalSearchMeta(uint32 catalogueServers, uint32 threshold)
+{
+    return threshold > 0 && catalogueServers >= threshold;
+}
+
 // ---------------------------------------------------------------------------
 // GlobalSearchScheduler
 // ---------------------------------------------------------------------------

@@ -129,11 +129,15 @@ struct ParseResult {
 /// @param is64BitSearch True when the search carries a >4 GiB size condition; such
 ///        a request is skipped (returns nullptr) for servers without large-file
 ///        UDP support, matching the reference's b64BitSearchPacket guard.
+/// @param declineMeta True asks an eNode server for no catalogue rows
+///        (SRVCAP_UDP_NO_META instead of SRVCAP_UDP_META_SEARCH): enough servers of
+///        this sweep already sent them. Only OP_GLOBSEARCHREQ3 carries the flag.
 /// @return The packet (prot = OP_EDONKEYPROT), or nullptr if the server must be
 ///         skipped. Obfuscation/obf-port are applied later by UDPSocket::sendPacket
 ///         when the server has a UDP key and advertises UDP obfuscation.
 [[nodiscard]] std::unique_ptr<Packet> buildGlobalSearchPacket(const Server& server,
                                                               const QByteArray& searchTerms,
-                                                              bool is64BitSearch);
+                                                              bool is64BitSearch,
+                                                              bool declineMeta = false);
 
 } // namespace eMule

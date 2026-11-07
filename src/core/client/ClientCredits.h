@@ -151,8 +151,10 @@ public:
     // RSA signature / verification
     uint8 createSignature(ClientCredits* target, uint8* output, uint8 maxSize,
                           uint32 challengeIP, uint8 chaIPKind) const;
+    /// @p seenAs: the IPv4 the peer sees us at, for a REMOTECLIENT signature. Null = the
+    /// server-derived one; a NAT-T UDP stream passes our UDP key IP (ed2k-server#40).
     bool verifyIdent(ClientCredits* target, const uint8* signature, uint8 sigSize,
-                     const Address& forIP, uint8 chaIPKind);
+                     const Address& forIP, uint8 chaIPKind, const Address& seenAs = {});
 
     [[nodiscard]] uint8 pubKeyLen() const { return m_myPublicKeyLen; }
     [[nodiscard]] const uint8* publicKey() const { return m_myPublicKey.data(); }

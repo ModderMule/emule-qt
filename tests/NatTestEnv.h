@@ -73,6 +73,8 @@ public:
     std::vector<uint32> quicArms;                    // attempt ids
     std::vector<std::pair<uint32, Endpoint>> quicDials;
     std::vector<uint8> quicFrames;                   // frame types handed over
+    struct KeyIp { Address peer; Address ourIP; bool fromPeer = false; size_t udpBefore = 0; };
+    std::vector<KeyIp> keyIps;                       // setPeerKeyIPv4() calls
 
     FakeNatEnv()
     {
@@ -186,6 +188,10 @@ public:
                       : ServerUdpCrypt{};
     }
     void refreshServerKey() override { ++keyRefreshes; }
+    void setPeerKeyIPv4(const Address& peer, const Address& ourIP, bool fromPeer) override
+    {
+        keyIps.push_back({peer, ourIP, fromPeer, udp.size()});
+    }
     void sendRawUdp(const QByteArray& data, const Endpoint& to) override
     {
         SentUdp s;

@@ -264,6 +264,17 @@ void Ed2kServerHolePunchPath::onInfo(const uint8* data, uint32 size)
     // Extension pair: the peer's crypt bits, and the role byte is binding for both.
     const bool extended = size >= kInfoCryptSize;
     const auto peerCrypt = static_cast<uint8>(extended ? (data[29] & 0x07) : 0);
+    // Our UDP as the server saw it: key IP toward this peer, set before the first punch
+    if (size >= kInfoOwnSize && udp.address().isIPv4()) {
+        const Address own = Address::fromNetworkOrder(peekUInt32(data + 30));
+        if (own.isIPv4() && own.isPublicIP()) {
+            const bool other = own != Address::fromNetworkOrder(env().ourPublicIPv4());
+            env().setPeerKeyIPv4(udp.address(), other ? own : Address{}, false);
+            if (other)
+                log(QStringLiteral("0x61: server sees our UDP on %1, keying with it toward %2")
+                        .arg(own.toString(), udp.address().toString()));
+        }
+    }
     log(QStringLiteral("0x61 peer %1 tcp %2 id %3 role %4%5")
             .arg(udp.toString()).arg(tcpPort).arg(peerID).arg(role)
             .arg(extended ? QStringLiteral(" crypt 0x%1").arg(peerCrypt, 0, 16) : QString()));

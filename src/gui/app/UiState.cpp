@@ -225,6 +225,15 @@ void UiState::save(const QString& configDir)
 {
     const QString path = configDir + QStringLiteral("/uistate.yml");
 
+    // Another GUI window on this config may have ticked "Don't show this again" (#146)
+    if (!m_lowIdHintDisabled) {
+        try {
+            m_lowIdHintDisabled = YAML::LoadFile(path.toStdString())["lowIdHintDisabled"].as<bool>(false);
+        } catch (const YAML::Exception&) {
+            // no file yet or unreadable: nothing to keep
+        }
+    }
+
     YAML::Emitter out;
     out << YAML::BeginMap;
 

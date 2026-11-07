@@ -63,6 +63,7 @@ public:
     static constexpr uint8  kHandoffVersion     = 1;
     static constexpr uint8  kHandoffHasIPv6     = 0x01;
     static constexpr uint8  kHandoffAnswer      = 0x02;
+    static constexpr uint32 kAddrEchoSize       = 6;      // OP_NATT_ADDR_ECHO <ip 4><port 2>
 
     explicit NatRendezvous(std::unique_ptr<NatEnv> env, QObject* parent = nullptr);
     ~NatRendezvous() override;
@@ -116,6 +117,9 @@ public:
     bool handleServerDatagram(const Endpoint& from, const uint8* data, qsizetype len);
     /// OP_HOLEPUNCH / OP_NATT_ENDPOINT_HINT.
     void handlePeerPacket(uint8 opcode, const uint8* data, uint32 size, const Endpoint& from);
+    /// A client datagram no key decoded: from a punched peer, answer once with
+    /// OP_NATT_ADDR_ECHO (it keys with another IP of its own than we see).
+    void handleUndecodable(const Endpoint& from);
     /// OP_UDPRESERVEDPROT2 frame.
     void handleFrame(uint8 frameType, const uint8* data, uint32 size, const Endpoint& from,
                      bool obfuscated);
@@ -192,6 +196,9 @@ private:
     void finish(Attempt& attempt, bool connected);
     void handleHolePunch(const Endpoint& from);
     void handleHandoff(const uint8* data, uint32 size, const Endpoint& from);
+    void handleAddrEcho(const uint8* data, uint32 size, const Endpoint& from);
+    /// Live attempt in its punch window whose punched endpoint is @p from's host.
+    [[nodiscard]] Attempt* punchingFrom(const Endpoint& from) const;
     void removeFinished();
     [[nodiscard]] bool noticeAllowed(const PeerInfo& peer, const Address& from);
 

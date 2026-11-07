@@ -839,7 +839,7 @@ Has comments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+577"/>
+        <location filename="../src/gui/app/main.cpp" line="+578"/>
         <source>eMule Qt</source>
         <translation type="unfinished"></translation>
     </message>
@@ -866,7 +866,7 @@ Trust the new certificate?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+327"/>
+        <location line="+359"/>
         <source>Download Added</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3375,7 +3375,7 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::CoreConnectDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/CoreConnectDialog.cpp" line="+23"/>
+        <location filename="../src/gui/dialogs/CoreConnectDialog.cpp" line="+24"/>
         <source>Connect to Core</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3417,12 +3417,28 @@ Enter the address and authentication token of a remote core.</source>
     </message>
     <message>
         <location line="+10"/>
+        <source>Retry Last Core</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Connect once more to the core that last worked</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+4"/>
         <source>Connect</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Exit</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+63"/>
+        <source>Lost the connection to the eMule core.
+Retry the last core, or enter the address and authentication token of another one.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

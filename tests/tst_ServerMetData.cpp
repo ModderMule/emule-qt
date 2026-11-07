@@ -131,10 +131,10 @@ void tst_ServerMetData::serverMet_eNodeGoConnectsFirst()
 
     ServerList list;
     QVERIFY(list.loadServerMet(dstPath));
-    QCOMPARE(list.serverCount(), size_t{11});
+    QCOMPARE(list.serverCount(), size_t{13});
 
-    // eNode-go is entry 0 and the only High server, so it leads the
-    // connectToAnyServer() order with or without priority sorting
+    // eNode-go is entry 0 and High, so it leads the connectToAnyServer() order
+    // with or without (stable) priority sorting; BiG BanG + Razorback 4 follow
     const auto isENodeGo = [](const Server* srv) {
         return srv->name() == QStringLiteral("eNode-go")
             && srv->address() == QStringLiteral("176.125.242.230")
@@ -147,8 +147,15 @@ void tst_ServerMetData::serverMet_eNodeGoConnectsFirst()
         if (list.serverAt(i)->preference() == ServerPriority::High)
             ++highCount;
     }
-    QCOMPARE(highCount, size_t{1});
+    QCOMPARE(highCount, size_t{3});
     QCOMPARE(list.serverAt(0)->preference(), ServerPriority::High);
+    for (const auto& [addr, port] : {std::pair{QStringLiteral("176.116.0.51"), uint16{6555}},
+                                     std::pair{QStringLiteral("176.116.0.62"), uint16{7555}}}) {
+        const Server* srv = list.findByAddress(addr, port);
+        QVERIFY2(srv, qPrintable(addr));
+        QCOMPARE(srv->preference(), ServerPriority::High);
+        QVERIFY(srv->hasBothFamilies());
+    }
 
     list.sortByPreference();
     QVERIFY(isENodeGo(list.serverAt(0)));

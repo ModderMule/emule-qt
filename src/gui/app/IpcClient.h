@@ -107,6 +107,8 @@ public:
 
     /// Set the auth token for non-localhost connections.
     void setAuthToken(const QString& token);
+    /// The auth token sent on connect (empty for an unauthenticated local core).
+    [[nodiscard]] QString authToken() const { return m_authToken; }
 
     /// Return the daemon host address as a string (hostname or IP).
     [[nodiscard]] QString daemonHost() const {

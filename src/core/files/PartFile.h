@@ -344,6 +344,12 @@ public:
     bool getNextRequestedBlock(UpDownClient* sender,
                                Requested_Block_Struct** newblocks,
                                int& count);
+    /// Block selection for a web server holding the whole file (BEP 19): one
+    /// contiguous run of up to @p maxBytes from the start of the largest free gap,
+    /// split into AICH-aligned blocks. Starts mid-gap when another source is already
+    /// eating into the gap from its left end. Appends to @p out, returns the bytes.
+    uint64 getNextHttpRange(UpDownClient* sender, uint64 maxBytes,
+                            std::vector<Requested_Block_Struct*>& out);
     bool getNextEmptyBlockInPart(uint32 partNumber,
                                 Requested_Block_Struct* reqBlock,
                                 uint64 searchFrom = 0) const;
@@ -681,6 +687,12 @@ public:
     [[nodiscard]] bool isNameLocked() const { return m_nameLocked; }
     void setNameLocked(bool locked) { m_nameLocked = locked; }
 
+    /// Web seed URLs (`s=` link sources, as linked). Persisted in the .part.met and put
+    /// back as sources by process() after a restart or resume.
+    [[nodiscard]] const QStringList& webSeeds() const { return m_webSeeds; }
+    /// Remember  url (fully encoded); false when empty or already known.
+    bool addWebSeed(const QString& url);
+
     /// New display/target name: re-publishes the keywords when shared, saves the
     /// .part.met and locks the name against automatic renames. The caller checks
     /// the name and the status (CoreOps::renameDownload).
@@ -839,6 +851,8 @@ private:
     uint64 m_lastFakeCheckTick = 0;
     uint64 m_lastNameCheckTick = 0;
     bool m_nameLocked = false;
+    QStringList m_webSeeds;                      // FT_WEBSEED
+    uint64 m_lastWebSeedCheckTick = 0;           // 0 = first active tick restores at once
 
     // Timestamps
     time_t m_tLastModified = 0;

@@ -1106,7 +1106,8 @@ QByteArray buildSearchTermsPayload(const SearchParams& params, const QString& ka
 
 std::unique_ptr<Packet> buildGlobalSearchPacket(const Server& server,
                                                 const QByteArray& searchTerms,
-                                                bool is64BitSearch)
+                                                bool is64BitSearch,
+                                                bool declineMeta)
 {
     const bool extGetFiles = (server.udpFlags() & SrvUdpFlag::ExtGetFiles) != 0;
     const bool largeFiles  = server.supportsLargeFilesUDP();
@@ -1114,11 +1115,13 @@ std::unique_ptr<Packet> buildGlobalSearchPacket(const Server& server,
     // OP_GLOBSEARCHREQ3: server supports large files AND extended get-files. Prepend a
     // CT_SERVER_UDPSEARCH_FLAGS tag advertising our new-tags/large-files capability,
     // then the search tree. MFC: CSearchResultsWnd::OnTimer (SearchResultsWnd.cpp:273).
+    // eNode reads one of its two meta bits: rows wanted, or none at all.
     if (largeFiles && extGetFiles) {
         SafeMemFile data;
         data.writeUInt32(1);   // tag count
+        const uint32 metaBit = declineMeta ? SRVCAP_UDP_NO_META : SRVCAP_UDP_META_SEARCH;
         Tag(static_cast<uint8>(CT_SERVER_UDPSEARCH_FLAGS),
-            static_cast<uint32>(SRVCAP_UDP_NEWTAGS_LARGEFILES | SRVCAP_UDP_META_SEARCH))
+            static_cast<uint32>(SRVCAP_UDP_NEWTAGS_LARGEFILES | metaBit))
             .writeNewEd2kTag(data);
         const QByteArray prefix = data.buffer();
 

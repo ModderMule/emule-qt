@@ -687,7 +687,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+577"/>
+        <location filename="../src/gui/app/main.cpp" line="+578"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -721,7 +721,7 @@ Trust the new certificate?</source>
 Доверять новому сертификату?</translation>
     </message>
     <message>
-        <location line="+327"/>
+        <location line="+359"/>
         <source>Download Added</source>
         <translation>Приём добавлен</translation>
     </message>
@@ -3480,7 +3480,7 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::CoreConnectDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/CoreConnectDialog.cpp" line="+23"/>
+        <location filename="../src/gui/dialogs/CoreConnectDialog.cpp" line="+24"/>
         <source>Connect to Core</source>
         <translation>Соединение с ядром</translation>
     </message>
@@ -3523,6 +3523,16 @@ Enter the address and authentication token of a remote core.</source>
     </message>
     <message>
         <location line="+10"/>
+        <source>Retry Last Core</source>
+        <translation>Повторить последнее ядро</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Connect once more to the core that last worked</source>
+        <translation>Ещё раз подключиться к последнему работавшему ядру</translation>
+    </message>
+    <message>
+        <location line="+4"/>
         <source>Connect</source>
         <translation>Соединиться</translation>
     </message>
@@ -3530,6 +3540,13 @@ Enter the address and authentication token of a remote core.</source>
         <location line="+5"/>
         <source>Exit</source>
         <translation>Выход</translation>
+    </message>
+    <message>
+        <location line="+63"/>
+        <source>Lost the connection to the eMule core.
+Retry the last core, or enter the address and authentication token of another one.</source>
+        <translation>Соединение с ядром eMule потеряно.
+Повторите попытку с последним ядром или введите адрес и токен аутентификации другого.</translation>
     </message>
 </context>
 <context>

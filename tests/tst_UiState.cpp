@@ -29,6 +29,8 @@ private slots:
     void headerState_newColumnsStayMovable();
     void dialogSizes_roundTripAndClear();
     void dialogSizes_legacyOptionsKeysImported();
+    void lowIdHintDisabled_reachesDiskWithoutExplicitSave();
+    void lowIdHintDisabled_survivesStaleSecondWindow();
 
 private:
     QTemporaryDir m_legacyDir;   ///< stands in for ~/.config
@@ -248,6 +250,41 @@ void tst_UiState::headerState_newColumnsStayMovable()
     QVERIFY(UiState::restoreHeaderState(repaired.header(), broken));
     QVERIFY(lengthOk(repaired.header()));
     QCOMPARE(repaired.header()->logicalIndex(1), 4);
+}
+
+// #146: "Don't show this again" is on disk at once, even if the GUI is killed next
+void tst_UiState::lowIdHintDisabled_reachesDiskWithoutExplicitSave()
+{
+    QTemporaryDir cfg;
+    {
+        UiState s;
+        s.load(cfg.path());
+        QVERIFY(!s.lowIdHintDisabled());
+        s.setLowIdHintDisabled(true);
+        // no save(), no event loop: as if the GUI were killed right after the click
+    }
+    UiState r;
+    r.load(cfg.path());
+    QVERIFY(r.lowIdHintDisabled());
+}
+
+// #146: a second GUI window loaded before the tick must not write false back
+void tst_UiState::lowIdHintDisabled_survivesStaleSecondWindow()
+{
+    QTemporaryDir cfg;
+    UiState stale;
+    stale.load(cfg.path());
+    {
+        UiState ticked;
+        ticked.load(cfg.path());
+        ticked.setLowIdHintDisabled(true);
+    }
+    stale.save();   // its exit save
+    QVERIFY(stale.lowIdHintDisabled());
+
+    UiState r;
+    r.load(cfg.path());
+    QVERIFY(r.lowIdHintDisabled());
 }
 
 QTEST_MAIN(tst_UiState)

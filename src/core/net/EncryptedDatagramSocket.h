@@ -19,6 +19,7 @@ struct DecryptResult {
     int length = -1;            ///< Decrypted data length (-1 = not encrypted / pass through).
     uint32 receiverVerifyKey = 0;
     uint32 senderVerifyKey = 0;
+    bool undecodable = false;   ///< not a plain header and no key matched
 };
 
 /// Static utility class for eMule UDP packet encryption/obfuscation.

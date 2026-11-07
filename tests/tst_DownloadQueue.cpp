@@ -96,6 +96,7 @@ private slots:
     void addDownload_paused();
     void addDownloadFromED2KLink_refusesMetaHash();
     void addDownloadFromED2KLink_emptyTempDirUsesDefault();
+    void addDownloadFromED2KLink_keepsWebSeedAcrossReload();
     void addDownloadFromSearch_followsThePausedOption();
     void clientDetails_carryWhatMfcsDialogNeeds();
     void addUserSource_vetsWhatTheUserTyped();
@@ -384,6 +385,31 @@ void tst_DownloadQueue::addDownloadFromED2KLink_emptyTempDirUsesDefault()
     QVERIFY(dq.addDownloadFromED2KLink(fileLinkFor(md4, QStringLiteral("default.bin")), QString()));
     QCOMPARE(dq.fileCount(), 1);
     QCOMPARE(partMetCount(temp.path()), 1);
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::addDownloadFromED2KLink_keepsWebSeedAcrossReload()
+{
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+    DownloadQueue dq;
+    const uint8 md4[16] = {0x4F, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+    const QString seed = QStringLiteral("https://cdn.example/dl/a%20b.bin?sig=ab%2Bc");
+    const QString link = QStringLiteral("ed2k://|file|seed.bin|1000|%1|s=%2|/").arg(md4str(md4), seed);
+
+    QVERIFY(dq.addDownloadFromED2KLink(link, temp.path()));
+    // the same link again: no second URL source, no second seed
+    QVERIFY(!dq.addDownloadFromED2KLink(link, temp.path()));
+    PartFile* pf = dq.fileByID(md4);
+    QVERIFY(pf);
+    QCOMPARE(pf->webSeeds(), QStringList{seed});
+    QCOMPARE(pf->sourceCount(), 1);
+
+    // the .part.met carries it
+    PartFile reloaded;
+    QCOMPARE(reloaded.loadPartFile(temp.path(), pf->partMetFileName()), PartFileLoadResult::LoadSuccess);
+    QCOMPARE(reloaded.webSeeds(), QStringList{seed});
 
     dq.deleteAll();
 }

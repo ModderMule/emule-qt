@@ -64,10 +64,13 @@ bool URLClient::setUrl(const QString& url, const Address& fromAddr)
         return false;
 
     m_url = parsed;
+    if (m_originUrl.isEmpty())
+        m_originUrl = parsed.toString(QUrl::FullyEncoded);
     m_urlTls = tls;
     m_urlHost = parsed.host();
     m_urlPort = static_cast<uint16>(parsed.port(tls ? 443 : 80));
-    m_urlPathLocal = parsed.path().toUtf8();
+    // FullyEncoded: the pretty default turns %20 into a raw space (GitHub release redirect -> 400)
+    m_urlPathLocal = parsed.path(QUrl::FullyEncoded).toLatin1();
 
     if (m_urlPathLocal.isEmpty())
         m_urlPathLocal = "/";
@@ -75,7 +78,7 @@ bool URLClient::setUrl(const QString& url, const Address& fromAddr)
     // Include query string if present
     if (parsed.hasQuery()) {
         m_urlPathLocal += '?';
-        m_urlPathLocal += parsed.query().toUtf8();
+        m_urlPathLocal += parsed.query(QUrl::FullyEncoded).toLatin1();
     }
 
     // Set user identity from URL

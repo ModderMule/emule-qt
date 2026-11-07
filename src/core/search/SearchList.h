@@ -59,6 +59,9 @@ struct SearchListEntry {
     QSet<QString> keywords;
     std::list<std::unique_ptr<SearchFile>> files;
     bool capLogged = false;         ///< result cap hit was logged
+    /// Servers that sent catalogue rows (eNode meta, Kad or web rows) for this search:
+    /// a global sweep declines them from the rest once enough did (SRVCAP_UDP_NO_META).
+    std::unordered_set<Address> catalogueServers;
 
     SearchListEntry() = default;
     SearchListEntry(SearchListEntry&&) = default;
@@ -202,6 +205,9 @@ public:
     /// Number of found sources for a search session.
     [[nodiscard]] uint32 foundSources(uint32 searchID) const;
 
+    /// Distinct servers that sent catalogue rows (eNode meta, Kad or web rows) for a search.
+    [[nodiscard]] uint32 catalogueServerCount(uint32 searchID) const;
+
     /// Our own searches that still hold a result list, oldest first. Not the lists
     /// of a peer's shared files.
     [[nodiscard]] std::vector<uint32> searchIDs() const;
@@ -321,6 +327,8 @@ private:
     /// Find the SearchListEntry for a given search ID.
     [[nodiscard]] SearchListEntry* findEntry(uint32 searchID);
     [[nodiscard]] const SearchListEntry* findEntry(uint32 searchID) const;
+    /// Record that @p server sent @p file for @p searchID, when @p file is a catalogue row.
+    void noteCatalogueSender(uint32 searchID, const SearchFile& file, const Address& server);
 
     /// Fake-file verdict of a top-level row, from its children, notes and tags.
     /// True when the verdict changed.

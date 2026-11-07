@@ -1240,15 +1240,15 @@ void DownloadQueue::addLinkSources(PartFile* file, const std::vector<ED2KLinkSou
     int skippedForDns = 0;
 
     for (const auto& src : sources) {
-        if (file->sourceCount() >= static_cast<int>(file->maxSources()))
-            break;
-        if (src.port == 0)
-            continue;
-
+        // Before the cap: a web seed is remembered even when the file is full
         if (!src.url.isEmpty()) {
             addLinkUrlSource(file, src);
             continue;
         }
+        if (file->sourceCount() >= static_cast<int>(file->maxSources()))
+            break;
+        if (src.port == 0)
+            continue;
 
         if (!src.address.isNull()) {
             addLinkPeerSource(file,
@@ -1363,11 +1363,23 @@ void DownloadQueue::addLinkUrlSource(PartFile* file, const ED2KLinkSource& sourc
             return;
     }
 
-    if (file->sourceCount() >= static_cast<int>(file->maxSources()))
-        return;
-
     auto* client = new URLClient();
     if (!client->setUrl(source.url, source.address)) {
+        delete client;
+        return;
+    }
+
+    // Remembered even when the file takes no more sources: process() retries it later
+    const QString& seed = client->originUrl();
+    if (file->addWebSeed(seed))
+        file->savePartFile();
+
+    // One client per web seed: the link added twice, or the restore tick
+    const bool known = std::ranges::any_of(file->srcList(), [&seed](const UpDownClient* src) {
+        const auto* url = dynamic_cast<const URLClient*>(src);
+        return url && url->originUrl() == seed;
+    });
+    if (known || file->sourceCount() >= static_cast<int>(file->maxSources())) {
         delete client;
         return;
     }
@@ -1402,7 +1414,7 @@ bool DownloadQueue::addUserUrlSource(PartFile* file, const QString& urlText)
     source.hostname = url.host();
     source.port = static_cast<uint16>(url.port(scheme == QStringLiteral("https") ? 443 : 80));
     source.address = Address::fromString(source.hostname);
-    source.url = url.toString();
+    source.url = url.toString(QUrl::FullyEncoded);
 
     const int before = file->sourceCount();
     addLinkUrlSource(file, source);
@@ -2578,7 +2590,8 @@ bool DownloadQueue::addSourceAndConnect(PartFile* file, UpDownClient* client)
         delete client;
     // Dial only a fresh source. A known client it was folded into is asked by
     // PartFile::process() like any other DownloadState::None source.
-    if (added == client)
+    // A web seed waits for eD2K, ed3k or Kad; process() dials it once one is up.
+    if (added == client && (!client->isUrlClient() || theApp.isConnectedAnyNetwork()))
         client->tryToConnect();
     return added != nullptr;
 }

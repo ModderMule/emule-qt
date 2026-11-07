@@ -19,7 +19,7 @@ namespace {
 
 constexpr int kIconSize = 16;
 constexpr int kGap = 2;
-constexpr int kFlagWidth = 18;   // MorphXT flags: 18x12 plus a 2 px border top/bottom
+constexpr int kFlagWidth = 18;   // flag 18x12 (incl. frame) plus 2 px top/bottom
 
 bool s_showFlags = true;
 
@@ -54,8 +54,17 @@ QIcon flag(const QString& cc)
     if (const auto it = cache.constFind(key); it != cache.cend())
         return *it;
 
-    const QString path = QStringLiteral(":/flags/%1.ico").arg(key);
-    const QIcon icon = QFile::exists(path) ? QIcon(path) : QIcon();
+    // 18x16 base plus @2x/@3x for HiDPI (old MorphXT-only codes have 1x only)
+    QIcon icon;
+    const QString base = QStringLiteral(":/flags/") + key;
+    if (const QString path = base + QStringLiteral(".png"); QFile::exists(path)) {
+        icon.addFile(path, QSize(kFlagWidth, kIconSize));
+        for (const int scale : {2, 3}) {
+            const QString hd = base + QStringLiteral("@%1x.png").arg(scale);
+            if (QFile::exists(hd))
+                icon.addFile(hd, QSize(kFlagWidth * scale, kIconSize * scale));
+        }
+    }
     cache.insert(key, icon);
     return icon;
 }

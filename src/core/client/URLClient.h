@@ -71,6 +71,8 @@ public:
     [[nodiscard]] uint16 urlPort() const { return m_urlPort; }
     [[nodiscard]] bool urlIsTls() const { return m_urlTls; }
     [[nodiscard]] const QByteArray& urlPath() const { return m_urlPathLocal; }
+    /// The first URL set, fully encoded — the web seed as linked, not where it redirected.
+    [[nodiscard]] const QString& originUrl() const { return m_originUrl; }
 
 protected:
     /// Build the request line and the common headers, up to but not including
@@ -134,6 +136,7 @@ private:
     std::deque<Address> m_nextAddresses;      ///< resolved, not dialled yet, in resolver order
     bool m_serverReached = false;             ///< plain http: the socket connected
     QUrl m_url;                 ///< as last set; a relative redirect resolves against it
+    QString m_originUrl;        ///< first URL set; redirects keep it
     QString m_urlHost;
     bool m_urlTls = false;      ///< https: dialled through m_tlsRelay
     TlsRelay* m_tlsRelay = nullptr;

@@ -379,6 +379,7 @@
     <ClCompile Include="net\natt\ForeignCallbackPath.cpp" />
     <ClCompile Include="net\natt\NatPath.cpp" />
     <ClCompile Include="net\natt\NatRendezvous.cpp" />
+    <ClCompile Include="net\natt\UdpKeyIpTable.cpp" />
     <ClCompile Include="net\quic\QuicNatConnection.cpp" />
     <ClCompile Include="net\quic\QuicNatEndpoint.cpp" />
     <ClCompile Include="net\quic\QuicTls.cpp" />
@@ -417,6 +418,7 @@
     <ClInclude Include="net\natt\NatEnv.h" />
     <ClInclude Include="net\natt\NatPath.h" />
     <ClInclude Include="net\natt\NatTypes.h" />
+    <ClInclude Include="net\natt\UdpKeyIpTable.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="crypto\AICHData.h" />
     <ClInclude Include="crypto\AICHHashSet.h" />

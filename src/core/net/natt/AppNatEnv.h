@@ -49,6 +49,7 @@ public:
     void sendServerUdp(std::unique_ptr<Packet> packet, const Endpoint& to, uint32 serverKey) override;
     [[nodiscard]] ServerUdpCrypt serverUdpCrypt() const override;
     void refreshServerKey() override;
+    void setPeerKeyIPv4(const Address& peer, const Address& ourIP, bool fromPeer) override;
     void sendRawUdp(const QByteArray& data, const Endpoint& to) override;
     bool sendServerTcp(std::unique_ptr<Packet> packet) override;
 

@@ -4,6 +4,7 @@
 
 #include "NatTestEnv.h"
 #include "net/natt/Ed2kServerHolePunchPath.h"
+#include "net/natt/UdpKeyIpTable.h"
 
 #include "app/AppContext.h"
 #include "utils/OtherFunctions.h"
@@ -52,6 +53,29 @@ QByteArray infoExt(const Hash16& hash, uint32 peerId, uint8 role, uint8 peerCryp
     b.append(char(peerCrypt));
     return b;
 }
+
+/// 36-byte 0x61 (0.9.88): + our own UDP endpoint as the server saw it.
+QByteArray infoOwn(const Hash16& hash, uint32 peerId, const Address& ownIP, uint16 ownPort)
+{
+    QByteArray b = infoExt(hash, peerId, 1, CONNECT_OPT_CRYPT_SUPPORTED);
+    char tail[6];
+    pokeUInt32(tail, ownIP.toNetworkUint32());
+    pokeUInt16(tail + 4, ownPort);
+    b.append(tail, 6);
+    return b;
+}
+
+/// OP_NATT_ADDR_ECHO payload <ip 4><port 2>.
+QByteArray addrEcho(const Address& ip, uint16 port)
+{
+    QByteArray b(6, '\0');
+    pokeUInt32(b.data(), ip.toNetworkUint32());
+    pokeUInt16(b.data() + 4, port);
+    return b;
+}
+
+const Address kOurTcpIP = Address::fromString(QStringLiteral("9.9.9.9"));
+const Address kOurUdpIP = Address::fromString(QStringLiteral("9.9.9.10"));
 
 /// Lugdunum's 0x37 body: <ip 4><port 2><id 4><flags 1>
 QByteArray wakeUp(uint32 requesterId, uint8 flags)
@@ -119,6 +143,11 @@ private slots:
     void ext_peerCrypt_obfuscatesOrFails();
     void ext_foreignWake_infoMatchedByAddress();
     void ext_foreignWake_noFallback();
+    // split TCP/UDP public IPv4 (ed2k-server#40)
+    void split_info36_keysTowardPeer();
+    void split_undecodable_echoedOnce();
+    void split_echo_setsKeyAndResends();
+    void split_keyIpTable_rules();
     // QUIC NAT-T
     void quic_requesterDialsWithoutHandoff();
     void quic_targetWaitsThenFallsBack();
@@ -871,6 +900,159 @@ void tst_NatRendezvous::ext_foreignWake_noFallback()
     QCOMPARE(list[0]->path, PathKind::Ed2kServer);
     QVERIFY(!list[0]->awaitingInfo);
     QVERIFY(f.env->udpWith(OP_EMULEPROT, OP_HOLEPUNCH).size() > 1);
+}
+
+void tst_NatRendezvous::split_info36_keysTowardPeer()
+{
+    Hash16 hash{};
+    hash.fill(0x33);
+    // UDP leaves from another IPv4: key toward this peer, before the first punch
+    {
+        HubFixture f;
+        logInExtension(f);
+        f.env->publicIPv4 = kOurTcpIP.toNetworkUint32();
+        f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, infoOwn(hash, 55, kOurUdpIP, 40000));
+        QCOMPARE(f.env->keyIps.size(), size_t{1});
+        QCOMPARE(f.env->keyIps[0].peer, kPeerIP);
+        QCOMPARE(f.env->keyIps[0].ourIP, kOurUdpIP);
+        QVERIFY(!f.env->keyIps[0].fromPeer);
+        QCOMPARE(f.env->keyIps[0].udpBefore, size_t{0});
+        QCOMPARE(f.env->udpWith(OP_EMULEPROT, OP_HOLEPUNCH).size(), size_t{1});
+    }
+    // same IPv4 as the TCP session: back to our public IP
+    {
+        HubFixture f;
+        logInExtension(f);
+        f.env->publicIPv4 = kOurTcpIP.toNetworkUint32();
+        f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, infoOwn(hash, 55, kOurTcpIP, 40000));
+        QCOMPARE(f.env->keyIps.size(), size_t{1});
+        QVERIFY(f.env->keyIps[0].ourIP.isNull());
+    }
+    // 30 bytes, or a non-public own_ip: nothing
+    {
+        HubFixture f;
+        logInExtension(f);
+        f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, infoExt(hash, 55, 1, CONNECT_OPT_CRYPT_SUPPORTED));
+        f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO,
+                               infoOwn(hash, 56, Address::fromString(QStringLiteral("10.0.0.2")), 40000));
+        QVERIFY(f.env->keyIps.empty());
+    }
+}
+
+void tst_NatRendezvous::split_undecodable_echoedOnce()
+{
+    Hash16 hash{};
+    hash.fill(0x33);
+    {
+        HubFixture f;
+        logInExtension(f);
+        f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, infoExt(hash, 55, 1, CONNECT_OPT_CRYPT_SUPPORTED));
+        // another host first: no echo
+        f.hub->handleUndecodable(Endpoint(Address::fromString(QStringLiteral("8.8.8.8")), kPeerUdp));
+        QVERIFY(f.env->udpWith(OP_EMULEPROT, OP_NATT_ADDR_ECHO).empty());
+        // the punched host, from another port (its NAT remapped): echo that source, obfuscated
+        const Endpoint src(kPeerIP, 40001);
+        f.hub->handleUndecodable(src);
+        f.hub->handleUndecodable(src);
+        const auto echo = f.env->udpWith(OP_EMULEPROT, OP_NATT_ADDR_ECHO);
+        QCOMPARE(echo.size(), size_t{1});
+        QCOMPARE(echo[0].to, src);
+        QVERIFY(echo[0].encrypted);
+        QCOMPARE(echo[0].cryptHash, hash);
+        QCOMPARE(echo[0].payload, addrEcho(kPeerIP, 40001));
+    }
+    // after the punch window: nothing
+    {
+        HubFixture f;
+        logInExtension(f);
+        f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, infoExt(hash, 55, 1, CONNECT_OPT_CRYPT_SUPPORTED));
+        f.env->clock += NatRendezvous::kPunchWindowMs;
+        f.hub->handleUndecodable(Endpoint(kPeerIP, kPeerUdp));
+        QVERIFY(f.env->udpWith(OP_EMULEPROT, OP_NATT_ADDR_ECHO).empty());
+    }
+    // foreign wake, no hash yet: no plain echo
+    {
+        HubFixture f;
+        logInExtension(f);
+        QVERIFY(f.hub->handleServerTcp(OP_NAT_CALLBACKREQUESTED, wakeUp(0, CONNECT_OPT_CRYPT_SUPPORTED)));
+        f.hub->handleUndecodable(Endpoint(kPeerIP, kPeerUdp));
+        QVERIFY(f.env->udpWith(OP_EMULEPROT, OP_NATT_ADDR_ECHO).empty());
+    }
+}
+
+void tst_NatRendezvous::split_echo_setsKeyAndResends()
+{
+    Hash16 hash{};
+    hash.fill(0x33);
+    HubFixture f;
+    logInExtension(f);
+    f.env->publicIPv4 = kOurTcpIP.toNetworkUint32();
+    f.hub->handleServerTcp(OP_LOWID_HOLEPUNCH_INFO, infoExt(hash, 55, 1, CONNECT_OPT_CRYPT_SUPPORTED));
+    const size_t punches = f.env->udpWith(OP_EMULEPROT, OP_HOLEPUNCH).size();
+    const size_t handoffs = f.env->udpWith(OP_UDPRESERVEDPROT2, OP_NATT_FRAME_IPV6HANDOFF).size();
+    const Endpoint peer(kPeerIP, kPeerUdp);
+
+    // stranger, short, non-public: ignored
+    QByteArray e = addrEcho(kOurUdpIP, 40000);
+    f.hub->handlePeerPacket(OP_NATT_ADDR_ECHO, bytes(e), 6, Endpoint(Address::fromString(QStringLiteral("8.8.8.8")), 1));
+    f.hub->handlePeerPacket(OP_NATT_ADDR_ECHO, bytes(e), 5, peer);
+    const QByteArray lan = addrEcho(Address::fromString(QStringLiteral("192.168.1.2")), 40000);
+    f.hub->handlePeerPacket(OP_NATT_ADDR_ECHO, bytes(lan), 6, peer);
+    QVERIFY(f.env->keyIps.empty());
+
+    f.hub->handlePeerPacket(OP_NATT_ADDR_ECHO, bytes(e), 6, peer);
+    QCOMPARE(f.env->keyIps.size(), size_t{1});
+    QCOMPARE(f.env->keyIps[0].peer, kPeerIP);
+    QCOMPARE(f.env->keyIps[0].ourIP, kOurUdpIP);
+    QVERIFY(f.env->keyIps[0].fromPeer);
+    // punch and handoff again with the new key
+    QCOMPARE(f.env->udpWith(OP_EMULEPROT, OP_HOLEPUNCH).size(), punches + 1);
+    QCOMPARE(f.env->udpWith(OP_UDPRESERVEDPROT2, OP_NATT_FRAME_IPV6HANDOFF).size(), handoffs + 1);
+    // a repeat changes nothing
+    f.hub->handlePeerPacket(OP_NATT_ADDR_ECHO, bytes(e), 6, peer);
+    QCOMPARE(f.env->keyIps.size(), size_t{1});
+    // after the punch window: ignored
+    f.env->clock += NatRendezvous::kPunchWindowMs;
+    const QByteArray later = addrEcho(Address::fromString(QStringLiteral("9.9.9.11")), 40000);
+    f.hub->handlePeerPacket(OP_NATT_ADDR_ECHO, bytes(later), 6, peer);
+    QCOMPARE(f.env->keyIps.size(), size_t{1});
+}
+
+void tst_NatRendezvous::split_keyIpTable_rules()
+{
+    using Src = UdpKeyIpTable::Source;
+    UdpKeyIpTable t;
+    uint64 now = 1000;
+    QVERIFY(t.lookup(kPeerIP, now).isNull());
+    t.set(kPeerIP, kOurUdpIP, Src::Server, now);
+    QCOMPARE(t.lookup(kPeerIP, now), kOurUdpIP);
+    // the echo replaces a server value, a server value doesn't replace a fresh echo
+    const Address echoed = Address::fromString(QStringLiteral("9.9.9.11"));
+    t.set(kPeerIP, echoed, Src::Peer, now);
+    t.set(kPeerIP, kOurUdpIP, Src::Server, now + 1000);
+    t.set(kPeerIP, Address{}, Src::Server, now + 1000);
+    QCOMPARE(t.lookup(kPeerIP, now + 1000), echoed);
+    // ...once the echo is older than the hold, it does
+    now += UdpKeyIpTable::kPeerHoldMs;
+    t.set(kPeerIP, kOurUdpIP, Src::Server, now);
+    QCOMPARE(t.lookup(kPeerIP, now), kOurUdpIP);
+    // null clears
+    t.set(kPeerIP, Address{}, Src::Server, now);
+    QVERIFY(t.lookup(kPeerIP, now).isNull());
+    // unused for the TTL: gone; each use refreshes
+    t.set(kPeerIP, kOurUdpIP, Src::Server, now);
+    QCOMPARE(t.lookup(kPeerIP, now + UdpKeyIpTable::kTtlMs - 1), kOurUdpIP);
+    QCOMPARE(t.lookup(kPeerIP, now + 2 * UdpKeyIpTable::kTtlMs - 2), kOurUdpIP);
+    QVERIFY(t.lookup(kPeerIP, now + 3 * UdpKeyIpTable::kTtlMs).isNull());
+    // full: the least recently used goes
+    t.clear();
+    for (uint32 i = 0; i < UdpKeyIpTable::kMaxEntries; ++i)
+        t.set(Address::fromNetworkOrder(0x01000000u + i), kOurUdpIP, Src::Server, 10 + i);
+    QCOMPARE(t.size(), UdpKeyIpTable::kMaxEntries);
+    t.set(kPeerIP, kOurUdpIP, Src::Server, 100000);
+    QCOMPARE(t.size(), UdpKeyIpTable::kMaxEntries);
+    QVERIFY(t.lookup(Address::fromNetworkOrder(0x01000000u), 100000).isNull());
+    QCOMPARE(t.lookup(kPeerIP, 100000), kOurUdpIP);
 }
 
 void tst_NatRendezvous::ext_peerCrypt_obfuscatesOrFails()

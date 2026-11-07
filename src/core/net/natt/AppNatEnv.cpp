@@ -272,6 +272,13 @@ void AppNatEnv::refreshServerKey()
         theApp.serverList->requestStatPing(*server);
 }
 
+void AppNatEnv::setPeerKeyIPv4(const Address& peer, const Address& ourIP, bool fromPeer)
+{
+    if (theApp.clientUDP)
+        theApp.clientUDP->setKeyIPv4(peer, ourIP, fromPeer ? UdpKeyIpTable::Source::Peer
+                                                           : UdpKeyIpTable::Source::Server);
+}
+
 void AppNatEnv::sendRawUdp(const QByteArray& data, const Endpoint& to)
 {
     if (theApp.clientUDP)

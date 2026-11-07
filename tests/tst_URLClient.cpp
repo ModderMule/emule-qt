@@ -129,6 +129,7 @@ private slots:
     void setUrl_parsesComponents();
     void setUrl_defaultPort();
     void setUrl_invalidUrl_returnsFalse();
+    void setUrl_keepsPercentEscapes();
     void isEd2kClient_returnsFalse();
     void sendHelloPacket_noop();
     void httpBlockRequest_format();
@@ -156,6 +157,17 @@ void tst_URLClient::setUrl_parsesComponents()
     QCOMPARE(client.urlPath(), QByteArray("/path/file.dat"));
     QCOMPARE(client.userName(), QStringLiteral("example.com"));
     QCOMPARE(client.userPort(), uint16{8080});
+}
+
+void tst_URLClient::setUrl_keepsPercentEscapes()
+{
+    // GitHub release redirect: a decoded %20 put a raw space in the request line -> 400
+    URLClient client;
+    QVERIFY(client.setUrl(QStringLiteral(
+        "https://cdn.example/a%20b/x?rscd=attachment%3B%20filename%3Dx.exe&sig=ab%2Bc%3D&t=a+b")));
+    QCOMPARE(client.urlPath(),
+             QByteArray("/a%20b/x?rscd=attachment%3B%20filename%3Dx.exe&sig=ab%2Bc%3D&t=a+b"));
+    QVERIFY(!client.urlPath().contains(' '));
 }
 
 void tst_URLClient::setUrl_defaultPort()
