@@ -10,6 +10,9 @@
 ///   EMULE_UPLOAD_STABILITY=1            run it
 ///   EMULE_UPLOAD_STABILITY_SEED=<n>     other random network (default fixed)
 ///   EMULE_UPLOAD_STABILITY_CSV=<file>   write the per-second series
+///
+/// One IP per peer (127.0.<row>.<10+i>): run `scripts/loopback-aliases.sh up` first on
+/// macOS (lo0 has only 127.0.0.1), `down` to remove. Linux has all of 127/8 already.
 
 #include "UploadPipelineFixture.h"
 #include "TestHelpers.h"
@@ -34,6 +37,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QHostAddress>
+#include <QLoggingCategory>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTest>
@@ -703,6 +707,16 @@ void tst_UploadRateStability::initTestCase()
     m_enabled = qEnvironmentVariable("EMULE_UPLOAD_STABILITY") == QLatin1StringView("1");
     if (!m_enabled)
         QSKIP("opt-in, ~3 min per row: set EMULE_UPLOAD_STABILITY=1");
+
+    // Each peer needs its own IP (3-per-IP gate). macOS has only 127.0.0.1 on lo0.
+    for (const char* ip : {"127.0.1.10", "127.0.2.10"}) {
+        QTcpSocket probe;
+        QVERIFY2(probe.bind(QHostAddress(QString::fromLatin1(ip)), 0),
+                 qPrintable(QStringLiteral("%1 not bindable: run scripts/loopback-aliases.sh up").arg(QLatin1String(ip))));
+    }
+
+    // core debug lines hit QTest's 2000-message cap and hide the row summaries
+    QLoggingCategory::setFilterRules(QStringLiteral("emule.*.debug=false"));
 
     m_pipe.setup(this);
     m_pipe.processTimer.stop();   // it flushes sockets unthrottled; the throttler sends here

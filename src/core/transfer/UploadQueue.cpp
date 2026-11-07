@@ -563,13 +563,14 @@ bool UploadQueue::underfillAllowsSlot(uint64 curTick) const
     if (slotCount >= cap)
         return false;
 
-    // Full send buffers: the line itself is the bottleneck, more slots would not help
-    int busy = 0;
+    // Nearly all send buffers full: the line itself is the bottleneck, more slots would
+    // not help. A slow peer fills its own buffer too, so some busy sockets are normal.
+    size_t busy = 0;
     for (const UpDownClient* cur : m_uploadingList) {
         if (const EMSocket* sock = cur->getFileUploadSocket(); sock && sock->isBusyQuickCheck())
             ++busy;
     }
-    return busy * 2 <= static_cast<int>(m_uploadingList.size());
+    return m_uploadingList.empty() || busy * 10 < m_uploadingList.size() * 9;
 }
 
 // ===========================================================================

@@ -215,7 +215,7 @@ public:
 
     /// uploadUnderfillSlots: one more slot (one per second, up to twice the ladder count)
     /// while the rate stayed under kUnderfillSlotPercent of a known limit for
-    /// kUnderfillSlotMs and at most half the slot sockets are full. Public for tests.
+    /// kUnderfillSlotMs and fewer than 90 % of the slot sockets are full. Public for tests.
     [[nodiscard]] bool underfillAllowsSlot(uint64 curTick) const;
     static constexpr uint32 kUnderfillSlotMs = 5'000;
     static constexpr uint32 kUnderfillSlotPercent = 95;
