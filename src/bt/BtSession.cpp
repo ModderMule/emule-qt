@@ -271,6 +271,9 @@ struct BtSession::Impl {
     QSet<QString> stopAtMeta;
     /// stopped at metadata, not resumed since: nothing wanted, so a finish is not a download
     QSet<QString> metaStopped;
+    /// finished, cache flush asked: pread_disk_io holds written blocks in memory, so
+    /// torrentFinished waits for cache_flushed_alert (files complete on disk)
+    QSet<QString> finishFlush;
     /// File priorities sent, not yet applied: libtorrent 2.x updates them only when the
     /// disk job returns (file_prio_alert), a poll in between read the old ones (report 21)
     struct PendingPriorities {
@@ -516,6 +519,7 @@ void BtSession::stop()
     d->ses.reset();
     d->handles.clear();
     d->rows.clear();
+    d->finishFlush.clear();
     d->outstandingResume = 0;
     d->listening = false;
     d->dhtNodes = 0;
@@ -650,6 +654,7 @@ bool BtSession::remove(const QString& id, bool deleteFiles)
     d->rows.erase(id);
     d->limitOverride.remove(id);
     d->metaStopped.remove(id);
+    d->finishFlush.remove(id);
     d->pendingPriorities.erase(id);
     if (d->links.erase(id) > 0)
         d->saveLinks();
@@ -1066,7 +1071,15 @@ void BtSession::drainAlerts()
             if (download)
                 logInfo(QStringLiteral("BitTorrent: %1").arg(message(tf)));
             d->saveResume(tf->handle);
-            if (download)
+            // the last blocks may still be in the disk cache: announced once on disk
+            if (download) {
+                d->finishFlush.insert(id);
+                tf->handle.flush_cache();
+            }
+        } else if (auto* cf = lt::alert_cast<lt::cache_flushed_alert>(a)) {
+            // also posted on removal: only a torrent still in the list
+            const QString id = BtTorrentView::idOf(cf->handle.info_hashes());
+            if (d->finishFlush.remove(id) && d->handles.contains(id))
                 emit torrentFinished(id);
         } else if (auto* md = lt::alert_cast<lt::metadata_received_alert>(a)) {
             const QString id = BtTorrentView::idOf(md->handle.info_hashes());
