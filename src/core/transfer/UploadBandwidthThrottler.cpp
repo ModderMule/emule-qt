@@ -15,9 +15,55 @@
 #include "utils/Opcodes.h"
 #include "utils/TimeUtils.h"
 
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <timeapi.h>
+#ifdef _MSC_VER
+#pragma comment(lib, "winmm.lib")
+#endif
+#endif
+
 
 
 namespace eMule {
+
+namespace {
+
+#ifdef Q_OS_WIN
+/// Windows rounds sleeps and timed waits up to the 15.6 ms system tick, so the 1 ms
+/// pacing of the loop sends in bursts. 1 ms timer resolution while the thread runs.
+class HighResTimerScope
+{
+public:
+    HighResTimerScope()
+    {
+#ifdef PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION
+        // Windows 11 may ignore the request for a windowless process unless it opts out
+        PROCESS_POWER_THROTTLING_STATE state{};
+        state.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
+        state.ControlMask = PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
+        state.StateMask = 0;
+        SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &state, sizeof(state));
+#endif
+        m_active = timeBeginPeriod(1) == TIMERR_NOERROR;
+    }
+    ~HighResTimerScope()
+    {
+        if (m_active)
+            timeEndPeriod(1);
+    }
+    HighResTimerScope(const HighResTimerScope&) = delete;
+    HighResTimerScope& operator=(const HighResTimerScope&) = delete;
+
+private:
+    bool m_active = false;
+};
+#endif
+
+} // namespace
 
 UploadBandwidthThrottler::UploadBandwidthThrottler(QObject* parent)
     : QThread(parent)
@@ -239,6 +285,9 @@ uint32 UploadBandwidthThrottler::calculateChangeDelta(uint32 numberOfConsecutive
 
 void UploadBandwidthThrottler::run()
 {
+#ifdef Q_OS_WIN
+    const HighResTimerScope timerScope;
+#endif
     runInternal();
 }
 

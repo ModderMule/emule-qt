@@ -435,6 +435,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_queueSizeSlider, &QSlider::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_slotRateCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_slotRateSlider, &QSlider::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_underfillSlotsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_dynUpEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_dynUpMinUploadSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_dynUpPingToleranceSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
@@ -685,31 +686,31 @@ void OptionsDialog::setupSidebar()
     // *sidebar's*; the Page values keep the stacked-page order, which is what lets the
     // two diverge without touching anything that persists a page index.
     static constexpr PageDef kGeneralPages[] = {
-        {PageGeneral,       "General",               QStyle::SP_FileDialogDetailedView, "Preferences.ico"},
-        {PageDisplay,       "Display",               QStyle::SP_DesktopIcon,            "Display.ico"},
-        {PageConnection,    "Connection",            QStyle::SP_DriveNetIcon,           "Connection.ico"},
-        {PageServer,        "Server",                QStyle::SP_ComputerIcon,           "Server.ico"},
-        {PageDirectories,   "Directories",           QStyle::SP_DirIcon,                "Folders.ico"},
-        {PageFiles,         "Files",                 QStyle::SP_FileIcon,               "FileTypeAny.ico"},
-        {PageNotifications, "Notifications",         QStyle::SP_MessageBoxInformation,  "Notifications.ico"},
-        {PageMessages,      "Messages and Comments", QStyle::SP_MessageBoxQuestion,     "Chat.ico"},
-        {PageSecurity,      "Security",              QStyle::SP_CustomBase,             "Security.ico"},
+        {PageGeneral,       QT_TR_NOOP("General"),             QStyle::SP_FileDialogDetailedView, "Preferences.ico"},
+        {PageDisplay,       QT_TR_NOOP("Display"),             QStyle::SP_DesktopIcon,            "Display.ico"},
+        {PageConnection,    QT_TR_NOOP("Connection"),          QStyle::SP_DriveNetIcon,           "Connection.ico"},
+        {PageServer,        QT_TR_NOOP("Server"),              QStyle::SP_ComputerIcon,           "Server.ico"},
+        {PageDirectories,   QT_TR_NOOP("Directories"),         QStyle::SP_DirIcon,                "Folders.ico"},
+        {PageFiles,         QT_TR_NOOP("Files"),               QStyle::SP_FileIcon,               "FileTypeAny.ico"},
+        {PageNotifications, QT_TR_NOOP("Notifications"),       QStyle::SP_MessageBoxInformation,  "Notifications.ico"},
+        {PageMessages,      QT_TR_NOOP("Messages and Comments"), QStyle::SP_MessageBoxQuestion,     "Chat.ico"},
+        {PageSecurity,      QT_TR_NOOP("Security"),            QStyle::SP_CustomBase,             "Security.ico"},
     };
     static constexpr PageDef kAdvancedPages[] = {
-        {PageProxy,         "Proxy",                 QStyle::SP_BrowserReload,          "Proxy.ico"},
-        {PageIRC,           "IRC",                   QStyle::SP_DialogApplyButton,      "IRC.ico"},
-        {PageStatistics,    "Statistics",            QStyle::SP_DialogHelpButton,       "Statistics.ico"},
-        {PageScheduler,     "Scheduler",             QStyle::SP_DialogResetButton,      "Scheduler.ico"},
-        {PageWebInterface,  "Web Interface",         QStyle::SP_DriveNetIcon,           "Web.ico"},
-        {PageExtended,      "Extended",              QStyle::SP_DialogCancelButton,     "Tweak.ico"},
+        {PageProxy,         QT_TR_NOOP("Proxy"),               QStyle::SP_BrowserReload,          "Proxy.ico"},
+        {PageIRC,           QT_TR_NOOP("IRC"),                 QStyle::SP_DialogApplyButton,      "IRC.ico"},
+        {PageStatistics,    QT_TR_NOOP("Statistics"),          QStyle::SP_DialogHelpButton,       "Statistics.ico"},
+        {PageScheduler,     QT_TR_NOOP("Scheduler"),           QStyle::SP_DialogResetButton,      "Scheduler.ico"},
+        {PageWebInterface,  QT_TR_NOOP("Web Interface"),       QStyle::SP_DriveNetIcon,           "Web.ico"},
+        {PageExtended,      QT_TR_NOOP("Extended"),            QStyle::SP_DialogCancelButton,     "Tweak.ico"},
     };
     static constexpr PageDef kUsenetPages[] = {
-        {PageUsenet,        "Usenet",                QStyle::SP_DriveNetIcon,           "Usenet.ico"},
-        {PageIndexers,      "Indexers",              QStyle::SP_FileDialogContentsView, "UsenetSearch.ico"},
-        {PageFeeds,         "Feeds",                 QStyle::SP_BrowserReload,          "SearchEdit.ico"},
+        {PageUsenet,        QT_TR_NOOP("Usenet"),              QStyle::SP_DriveNetIcon,           "Usenet.ico"},
+        {PageIndexers,      QT_TR_NOOP("Indexers"),            QStyle::SP_FileDialogContentsView, "UsenetSearch.ico"},
+        {PageFeeds,         QT_TR_NOOP("Feeds"),               QStyle::SP_BrowserReload,          "SearchEdit.ico"},
     };
     static constexpr PageDef kBitTorrentPages[] = {
-        {PageBitTorrent,    "BitTorrent",            QStyle::SP_DriveNetIcon,           "Torrent.ico"},
+        {PageBitTorrent,    QT_TR_NOOP("BitTorrent"),    QStyle::SP_DriveNetIcon,           "Torrent.ico"},
         {PageBtConnection,  QT_TR_NOOP("Connection"), QStyle::SP_DirLinkIcon,           "Connection.ico"},
         // own icon in both modes (no MFC original, no standard one)
         {PageBtI2p,         QT_TR_NOOP("I2P"),        QStyle::SP_CustomBase,            "I2P.ico"},
@@ -1446,6 +1447,11 @@ QWidget* OptionsDialog::createConnectionPage()
     m_slotCountLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     m_slotCountLabel->setEnabled(false);
     limLayout->addWidget(m_slotCountLabel, 6, 0, 1, 2);
+    m_underfillSlotsCheck = new QCheckBox(tr("More slots while below the upload limit"), limGroup);
+    m_underfillSlotsCheck->setToolTip(
+        tr("When the upload limit is not reached because the peers take too little, "
+           "open extra slots, up to twice the normal number."));
+    limLayout->addWidget(m_underfillSlotsCheck, 7, 0, 1, 2);
 
     row1->addWidget(limGroup);
     layout->addLayout(row1);
@@ -8001,6 +8007,8 @@ void OptionsDialog::saveSettings()
         req.append(static_cast<qint64>(m_queueSizeSlider->value()) * 100); // slider to count
         req.append(QStringLiteral("uploadSlotTargetRate"));
         req.append(static_cast<qint64>(m_slotRateCheck->isChecked() ? m_slotRateSlider->value() : 0));
+        req.append(QStringLiteral("uploadUnderfillSlots"));
+        req.append(m_underfillSlotsCheck->isChecked());
 
         req.append(QStringLiteral("allocFullFile"));
         req.append(m_allocFullFileCheck->isChecked());
@@ -8347,6 +8355,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setQueueSize(static_cast<uint32>(m_queueSizeSlider->value()) * 100);
         thePrefs.setUploadSlotTargetRate(
             m_slotRateCheck->isChecked() ? static_cast<uint32>(m_slotRateSlider->value()) : 0);
+        thePrefs.setUploadUnderfillSlots(m_underfillSlotsCheck->isChecked());
 
         thePrefs.setAllocFullFile(m_allocFullFileCheck->isChecked());
 #ifdef Q_OS_WIN
@@ -8901,6 +8910,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     if (slotRate > 0)
         m_slotRateSlider->setValue(slotRate);
     updateSlotRateLabel();
+    m_underfillSlotsCheck->setChecked(prefs.value(QStringLiteral("uploadUnderfillSlots")).toBool(false));
 
     m_allocFullFileCheck->setChecked(prefs.value(QStringLiteral("allocFullFile")).toBool());
 #ifdef Q_OS_WIN

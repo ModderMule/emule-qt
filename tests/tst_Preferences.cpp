@@ -421,7 +421,7 @@ private slots:
             Preferences loaded;
             QVERIFY(loaded.load(file));
             QCOMPARE(loaded.btEnabled(), version < 3);
-            QCOMPARE(loaded.startVersion(), 4u);
+            QCOMPARE(loaded.startVersion(), 5u);
         }
     }
 
@@ -440,7 +440,7 @@ private slots:
             Preferences loaded;
             QVERIFY(loaded.load(file));
             QCOMPARE(loaded.shareIncomingSubdirs(), version < 4);
-            QCOMPARE(loaded.startVersion(), 4u);
+            QCOMPARE(loaded.startVersion(), 5u);
         }
         Preferences fresh;
         QVERIFY(fresh.shareIncomingSubdirs());
@@ -449,6 +449,35 @@ private slots:
         Preferences copy;
         copy.updateFromCbor(fresh.toIpcMap());
         QVERIFY(!copy.shareIncomingSubdirs());
+    }
+
+    // v5: MFC default nick replaced once; afterwards any nick is the user's choice
+    void mfcDefaultNick_v5Replaced()
+    {
+        QVERIFY(Preferences::isMfcDefaultNick(QStringLiteral("https://emule-project.net")));
+        QVERIFY(Preferences::isMfcDefaultNick(QStringLiteral("http://emule-project.net")));
+        QVERIFY(Preferences::isMfcDefaultNick(QStringLiteral("https://www.emule-project.net")));
+        QVERIFY(Preferences::isMfcDefaultNick(QStringLiteral("https://www150.emule-project.com")));
+        QVERIFY(Preferences::isMfcDefaultNick(QStringLiteral("https://emule.sf.net")));
+        QVERIFY(Preferences::isMfcDefaultNick(QStringLiteral("https://sourceforge.net/projects/emule/")));
+        QVERIFY(!Preferences::isMfcDefaultNick(Preferences::defaultNick()));
+        QVERIFY(!Preferences::isMfcDefaultNick(QStringLiteral("emule-project.net fan")));
+
+        TempDir tmp;
+        for (const uint32 version : {4u, 5u}) {
+            const auto file = tmp.filePath(QStringLiteral("nick%1.yaml").arg(version));
+            {
+                Preferences prefs;
+                prefs.setStartVersion(version);
+                prefs.setNick(QStringLiteral("https://emule-project.net"));
+                QVERIFY(prefs.saveTo(file));
+            }
+            Preferences loaded;
+            QVERIFY(loaded.load(file));
+            QCOMPARE(loaded.nick(), version < 5 ? Preferences::defaultNick()
+                                                : QStringLiteral("https://emule-project.net"));
+            QCOMPARE(loaded.startVersion(), 5u);
+        }
     }
 
     // Every key through YAML and the IPC map, non-default values throughout

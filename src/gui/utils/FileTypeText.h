@@ -16,6 +16,7 @@ namespace eMule {
 /// token is shown as it is.
 [[nodiscard]] inline QString fileTypeText(const QString& token, const QString& fileName = {})
 {
+    // literals marked QT_TRANSLATE_NOOP: lupdate does not look inside this lambda
     const auto text = [](const char* s) {
         return QCoreApplication::translate("eMule::FileType", s);
     };
@@ -25,14 +26,14 @@ namespace eMule {
         if (byName == QLatin1String("Arc") || byName == QLatin1String("Iso"))
             type = byName;
     }
-    if (type == QLatin1String("Audio"))           return text("Audio");
-    if (type == QLatin1String("Video"))           return text("Video");
-    if (type == QLatin1String("Image"))           return text("Picture");
-    if (type == QLatin1String("Doc"))             return text("Document");
-    if (type == QLatin1String("Pro"))             return text("Program");
-    if (type == QLatin1String("Arc"))             return text("Archive");
-    if (type == QLatin1String("Iso"))             return text("CD-Image");
-    if (type == QLatin1String("EmuleCollection")) return text("Collection");
+    if (type == QLatin1String("Audio"))           return text(QT_TRANSLATE_NOOP("eMule::FileType", "Audio"));
+    if (type == QLatin1String("Video"))           return text(QT_TRANSLATE_NOOP("eMule::FileType", "Video"));
+    if (type == QLatin1String("Image"))           return text(QT_TRANSLATE_NOOP("eMule::FileType", "Picture"));
+    if (type == QLatin1String("Doc"))             return text(QT_TRANSLATE_NOOP("eMule::FileType", "Document"));
+    if (type == QLatin1String("Pro"))             return text(QT_TRANSLATE_NOOP("eMule::FileType", "Program"));
+    if (type == QLatin1String("Arc"))             return text(QT_TRANSLATE_NOOP("eMule::FileType", "Archive"));
+    if (type == QLatin1String("Iso"))             return text(QT_TRANSLATE_NOOP("eMule::FileType", "CD-Image"));
+    if (type == QLatin1String("EmuleCollection")) return text(QT_TRANSLATE_NOOP("eMule::FileType", "Collection"));
     return type;
 }
 

@@ -1936,10 +1936,10 @@ void MainWindow::onToolbarContextMenu(const QPoint& pos)
         Qt::ToolButtonStyle style;
     };
     static constexpr StyleOption kStyles[] = {
-        {"Icon Only",        Qt::ToolButtonIconOnly},
-        {"Text Only",        Qt::ToolButtonTextOnly},
-        {"Text Beside Icon", Qt::ToolButtonTextBesideIcon},
-        {"Text Under Icon",  Qt::ToolButtonTextUnderIcon},
+        {QT_TR_NOOP("Icon Only"),        Qt::ToolButtonIconOnly},
+        {QT_TR_NOOP("Text Only"),        Qt::ToolButtonTextOnly},
+        {QT_TR_NOOP("Text Beside Icon"), Qt::ToolButtonTextBesideIcon},
+        {QT_TR_NOOP("Text Under Icon"),  Qt::ToolButtonTextUnderIcon},
     };
 
     const auto currentStyle = static_cast<Qt::ToolButtonStyle>(theUiState.toolbarButtonStyle());

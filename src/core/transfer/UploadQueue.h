@@ -210,6 +210,15 @@ public:
     /// upPerClient divisors and slot floors are the deliberate "eMule 2026 bandwidth"
     /// divergence — MFC has a single /43 tier and tops out at MIN_UP_CLIENTS_ALLOWED+3.
     [[nodiscard]] bool slotLadderAllows(int curUploadSlots, uint32 datarate) const;
+    /// Slot count the ladder allows at this cap and datarate.
+    [[nodiscard]] uint32 ladderSlotCount(uint32 datarate) const;
+
+    /// uploadUnderfillSlots: one more slot (one per second, up to twice the ladder count)
+    /// while the rate stayed under kUnderfillSlotPercent of a known limit for
+    /// kUnderfillSlotMs and at most half the slot sockets are full. Public for tests.
+    [[nodiscard]] bool underfillAllowsSlot(uint64 curTick) const;
+    static constexpr uint32 kUnderfillSlotMs = 5'000;
+    static constexpr uint32 kUnderfillSlotPercent = 95;
 
     // Stats
     [[nodiscard]] uint32 successfulUploadCount() const { return m_successfulUpCount; }

@@ -521,7 +521,7 @@ bool UploadQueue::forceNewClient(bool allowEmptyWaitingQueue)
         return false;
 
     if (!acceptNewClient())
-        return false;
+        return underfillAllowsSlot(curTick);
 
     // USS veto — after the minimum slots, as MFC
     if (theApp.lastCommonRouteFinder && thePrefs.isDynUpEnabled()
@@ -535,8 +535,41 @@ bool UploadQueue::forceNewClient(bool allowEmptyWaitingQueue)
 
     // The ladder said no, but the throttler saw more slots fully active than we have
     // open — that is evidence the line can carry another one anyway.
-    return m_highestNumberOfFullyActivatedSlotsSinceLastCall >
-           static_cast<int>(m_uploadingList.size());
+    if (m_highestNumberOfFullyActivatedSlotsSinceLastCall > static_cast<int>(m_uploadingList.size()))
+        return true;
+    return underfillAllowsSlot(curTick);
+}
+
+// ===========================================================================
+// underfillAllowsSlot — extra slots while the peers, not the line, hold the rate down
+// ===========================================================================
+
+bool UploadQueue::underfillAllowsSlot(uint64 curTick) const
+{
+    // USS sizes the line itself; unlimited has no "below the limit"
+    if (!thePrefs.uploadUnderfillSlots() || thePrefs.isDynUpEnabled())
+        return false;
+    const uint32 capKB = uploadCapKB();
+    if (capKB == UNLIMITED || m_underfillSince == 0 || curTick - m_underfillSince < kUnderfillSlotMs)
+        return false;
+    if (static_cast<uint64>(m_datarate) * 100 >= static_cast<uint64>(capKB) * 1024 * kUnderfillSlotPercent)
+        return false;
+    // one per second: a new slot needs time to ramp up before it shows in the rate
+    if (curTick < m_lastStartUpload + SEC2MS(1))
+        return false;
+
+    const auto slotCount = static_cast<uint32>(m_uploadingList.size()) + static_cast<uint32>(m_foreignSlots);
+    const uint32 cap = std::min(2 * ladderSlotCount(m_datarate), static_cast<uint32>(MAX_UP_CLIENTS_ALLOWED));
+    if (slotCount >= cap)
+        return false;
+
+    // Full send buffers: the line itself is the bottleneck, more slots would not help
+    int busy = 0;
+    for (const UpDownClient* cur : m_uploadingList) {
+        if (const EMSocket* sock = cur->getFileUploadSocket(); sock && sock->isBusyQuickCheck())
+            ++busy;
+    }
+    return busy * 2 <= static_cast<int>(m_uploadingList.size());
 }
 
 // ===========================================================================
@@ -545,17 +578,22 @@ bool UploadQueue::forceNewClient(bool allowEmptyWaitingQueue)
 
 bool UploadQueue::slotLadderAllows(int curUploadSlots, uint32 datarate) const
 {
+    return static_cast<uint32>(std::max(curUploadSlots, 0)) < ladderSlotCount(datarate);
+}
+
+uint32 UploadQueue::ladderSlotCount(uint32 datarate) const
+{
     const uint32 maxSpeed = uploadCapKB();
     uint32 upPerClient = targetClientDataRate(false);
 
     // User-set target: no datarate boost and no broadband floors, they would override it
     if (thePrefs.uploadSlotTargetRate() != 0) {
         if (maxSpeed == UNLIMITED)
-            return static_cast<uint32>(curUploadSlots) < datarate / upPerClient;
+            return datarate / upPerClient;
         // 64-bit: the cap may come from USS and is not bounded like the pref
         const uint64 nMaxSlots = uint64{maxSpeed} * 1024 / upPerClient;
-        return static_cast<uint64>(curUploadSlots)
-               < std::max<uint64>(nMaxSlots, MIN_UP_CLIENTS_ALLOWED);
+        return static_cast<uint32>(std::min<uint64>(std::max<uint64>(nMaxSlots, MIN_UP_CLIENTS_ALLOWED),
+                                                     UINT32_MAX));
     }
 
     // eMule 2026 bandwidth: tiered upPerClient scaling matching getSlotLimit(). MFC default: single tier at >49 KB/s with /43 divisor.
@@ -574,7 +612,7 @@ bool UploadQueue::slotLadderAllows(int curUploadSlots, uint32 datarate) const
     }
 
     if (maxSpeed == UNLIMITED)
-        return static_cast<uint32>(curUploadSlots) < datarate / upPerClient;
+        return datarate / upPerClient;
 
     // eMule 2026 bandwidth: higher slot floors for broadband. MFC default: max tier at >25 KB/s.
     uint32 nMaxSlots;
@@ -594,7 +632,7 @@ bool UploadQueue::slotLadderAllows(int curUploadSlots, uint32 datarate) const
     else
         nMaxSlots = MIN_UP_CLIENTS_ALLOWED;
 
-    return static_cast<uint32>(curUploadSlots) < nMaxSlots;
+    return nMaxSlots;
 }
 
 // ===========================================================================

@@ -143,6 +143,7 @@ private slots:
     void import_carriesSchedulesOnly();
     void import_runsOnlyOnce();
     void import_expandsEnvironmentInTheRequest();
+    void import_skipsMfcDefaultNick();
     void usedProfile_isLeftAlone();
     void missingSource_isRecordedAndSkipped();
     void pendingTempDirs_areHandedOutOnce();
@@ -362,6 +363,24 @@ void tst_LegacyConfigImport::import_expandsEnvironmentInTheRequest()
 
     QCOMPARE(out.result, LegacyConfigImport::Result::Imported);
     QCOMPARE(out.sourceDir, mfc.config);
+}
+
+// New install from an MFC profile: its homepage-URL nick is never taken over
+void tst_LegacyConfigImport::import_skipsMfcDefaultNick()
+{
+    for (const QString& mfcNick : {QStringLiteral("https://emule-project.net"),
+                                   QStringLiteral("http://emule-project.net"),
+                                   QStringLiteral("https://www12.emule-project.net"),
+                                   QStringLiteral("https://emule.sf.net")}) {
+        MfcInstall mfc;
+        QString ini = mfc.prefsIni();
+        ini.replace(QStringLiteral("Nick=OldMule"), QStringLiteral("Nick=") + mfcNick);
+        writeFile(mfc.file(QStringLiteral("preferences.ini")), utf16(ini));
+
+        Profile profile(mfc.config);
+        QCOMPARE(profile.run().result, LegacyConfigImport::Result::Imported);
+        QCOMPARE(profile.prefs.nick(), Preferences::defaultNick());
+    }
 }
 
 void tst_LegacyConfigImport::usedProfile_isLeftAlone()

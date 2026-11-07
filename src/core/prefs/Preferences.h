@@ -170,6 +170,13 @@ public:
     [[nodiscard]] QString nick() const;
     void setNick(const QString& val);
 
+    /// Our default nick (website URL).
+    [[nodiscard]] static QString defaultNick();
+
+    /// True for an MFC default nick (any emule-project homepage URL, see
+    /// CPreferences::IsDefaultNick); such nicks are replaced by defaultNick().
+    [[nodiscard]] static bool isMfcDefaultNick(const QString& nick);
+
     [[nodiscard]] std::array<uint8, 16> userHash() const;
     void setUserHash(const std::array<uint8, 16>& val);
 
@@ -708,6 +715,11 @@ public:
     /// Target rate per upload slot in KiB/s; 0 = automatic (grows with the slot count).
     [[nodiscard]] uint32 uploadSlotTargetRate() const;
     void setUploadSlotTargetRate(uint32 val);
+
+    /// Open extra upload slots (up to twice the normal count) while the upload limit
+    /// is not reached because the peers take too little. Off by default.
+    [[nodiscard]] bool uploadUnderfillSlots() const;
+    void setUploadUnderfillSlots(bool val);
 
     // Upload SpeedSense (USS)
     [[nodiscard]] bool dynUpEnabled() const;

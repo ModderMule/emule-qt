@@ -4445,6 +4445,8 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
         thePrefs.setQueueSize(static_cast<uint32>(val.toInteger()));
     else if (key == QStringLiteral("uploadSlotTargetRate"))
         thePrefs.setUploadSlotTargetRate(static_cast<uint32>(val.toInteger()));
+    else if (key == QStringLiteral("uploadUnderfillSlots"))
+        thePrefs.setUploadUnderfillSlots(val.toBool());
     else if (key == QStringLiteral("rememberUploadQueue"))
         thePrefs.setRememberUploadQueue(val.toBool());
     // USS

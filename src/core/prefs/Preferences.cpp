@@ -51,7 +51,8 @@ namespace {
 ///   3 — BitTorrent switched on: builds before it never compiled BT in, so a stored
 ///       `enabled: false` was only the old default
 ///   4 — incoming shared with its subfolders (torrents, Usenet, hoster packages; #124)
-constexpr uint32 kCurrentPrefsVersion = 4;
+///   5 — MFC default nick (emule-project.net URL) replaced by ours
+constexpr uint32 kCurrentPrefsVersion = 5;
 
 /// See Preferences::usenetSubjectPatternsRevision().
 ///
@@ -135,7 +136,7 @@ QString urlOrDefault(const QString& value, QLatin1StringView fallback)
 
 struct Preferences::Data {
     // General
-    QString nick = QStringLiteral("https://emule-qt.org");
+    QString nick = QString(kWebsiteUrl);
     std::array<uint8, 16> userHash{};
     bool autoConnect = true;            // MFC off; deliberate, 2026-10: a headless daemon has nobody to press Connect
     bool reconnect = true;
@@ -308,6 +309,7 @@ struct Preferences::Data {
     int extractMetaData = 1;         // 0=never, 1=MediaInfo library
     uint32 queueSize = 5000;         // Upload queue size (2000-50000)
     uint32 uploadSlotTargetRate = 0; // KiB/s per upload slot (12-256), 0 = automatic
+    bool uploadUnderfillSlots = false; // open extra slots (up to 2x) while the upload limit is not reached
 
     // Upload SpeedSense (USS)
     bool dynUpEnabled = false;
@@ -844,6 +846,18 @@ void Preferences::setDefaults()
 QString Preferences::nick() const { return get(&Data::nick); }
 
 void Preferences::setNick(const QString& val) { set(&Data::nick, val); }
+
+QString Preferences::defaultNick() { return QString(kWebsiteUrl); }
+
+bool Preferences::isMfcDefaultNick(const QString& nick)
+{
+    // MFC GetHomepageBaseURLForLevel() for all levels, plus the old http:// forms
+    static const QRegularExpression re(
+        QStringLiteral(R"(^https?://((www\d*\.)?emule-project\.(net|org|com)|www\.emuleproject\.net)"
+                       R"(|emule\.sf\.net|sourceforge\.net/projects/emule)/?$)"),
+        QRegularExpression::CaseInsensitiveOption);
+    return re.match(nick.trimmed()).hasMatch();
+}
 
 std::array<uint8, 16> Preferences::userHash() const { return get(&Data::userHash); }
 
@@ -1452,6 +1466,10 @@ void Preferences::setUploadSlotTargetRate(uint32 val)
 {
     set(&Data::uploadSlotTargetRate, val ? std::clamp<uint32>(val, 12, 256) : 0);
 }
+
+bool Preferences::uploadUnderfillSlots() const { return get(&Data::uploadUnderfillSlots); }
+
+void Preferences::setUploadUnderfillSlots(bool val) { set(&Data::uploadUnderfillSlots, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Upload SpeedSense (USS)
@@ -4021,6 +4039,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("startCoreWithConsole"), startCoreWithConsole());
     prefs.insert(QStringLiteral("queueSize"), static_cast<qint64>(queueSize()));
     prefs.insert(QStringLiteral("uploadSlotTargetRate"), static_cast<qint64>(uploadSlotTargetRate()));
+    prefs.insert(QStringLiteral("uploadUnderfillSlots"), uploadUnderfillSlots());
     prefs.insert(QStringLiteral("rememberUploadQueue"), rememberUploadQueue());
     // USS
     prefs.insert(QStringLiteral("dynUpEnabled"), dynUpEnabled());
@@ -4352,6 +4371,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->logWebServer                = p.value(QStringLiteral("logWebServer")).toBool();
     m_data->queueSize                   = static_cast<uint32>(p.value(QStringLiteral("queueSize")).toInteger());
     m_data->uploadSlotTargetRate        = static_cast<uint32>(p.value(QStringLiteral("uploadSlotTargetRate")).toInteger());
+    m_data->uploadUnderfillSlots        = p.value(QStringLiteral("uploadUnderfillSlots")).toBool(false);
 
     // USS
     m_data->dynUpEnabled                       = p.value(QStringLiteral("dynUpEnabled")).toBool();
@@ -4422,7 +4442,7 @@ void Preferences::validate()
 {
     // nick: restore default if empty, truncate to 50 chars
     if (m_data->nick.isEmpty())
-        m_data->nick = QStringLiteral("https://emule-qt.org");
+        m_data->nick = defaultNick();
     if (m_data->nick.size() > 50)
         m_data->nick.truncate(50);
 
@@ -4700,6 +4720,7 @@ bool Preferences::load(const QString& filePath)
             m_data->minUpload = b["minUpload"].as<uint32>(m_data->minUpload);
             m_data->maxGraphUploadRate = b["maxGraphUploadRate"].as<uint32>(m_data->maxGraphUploadRate);
             m_data->uploadSlotTargetRate = b["uploadSlotTargetRate"].as<uint32>(m_data->uploadSlotTargetRate);
+            m_data->uploadUnderfillSlots = b["uploadUnderfillSlots"].as<bool>(m_data->uploadUnderfillSlots);
             m_data->maxGraphDownloadRate = b["maxGraphDownloadRate"].as<uint32>(m_data->maxGraphDownloadRate);
             m_data->dynUpEnabled = b["dynUpEnabled"].as<bool>(m_data->dynUpEnabled);
             m_data->dynUpPingTolerance = b["dynUpPingTolerance"].as<int>(m_data->dynUpPingTolerance);
@@ -5873,6 +5894,10 @@ bool Preferences::load(const QString& filePath)
         if (m_data->startVersion < 4)
             m_data->shareIncomingSubdirs = true;
 
+        // v5: MFC default nick (copied over from an MFC install) becomes ours
+        if (m_data->startVersion < 5 && isMfcDefaultNick(m_data->nick))
+            m_data->nick = defaultNick();
+
         m_data->startVersion = kCurrentPrefsVersion;
         saveImpl(m_filePath);
     }
@@ -6153,6 +6178,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "minUpload" << YAML::Value << m_data->minUpload;
     out << YAML::Key << "maxGraphUploadRate" << YAML::Value << m_data->maxGraphUploadRate;
     out << YAML::Key << "uploadSlotTargetRate" << YAML::Value << m_data->uploadSlotTargetRate;
+    out << YAML::Key << "uploadUnderfillSlots" << YAML::Value << m_data->uploadUnderfillSlots;
     out << YAML::Key << "maxGraphDownloadRate" << YAML::Value << m_data->maxGraphDownloadRate;
     out << YAML::Key << "dynUpEnabled" << YAML::Value << m_data->dynUpEnabled;
     out << YAML::Key << "dynUpPingTolerance" << YAML::Value << m_data->dynUpPingTolerance;

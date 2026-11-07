@@ -381,6 +381,7 @@ private:
     QCheckBox* m_slotRateCheck = nullptr;
     QLabel*    m_slotRateLabel = nullptr;
     QSlider*   m_slotRateSlider = nullptr;
+    QCheckBox* m_underfillSlotsCheck = nullptr;
     QLabel*    m_slotCountLabel = nullptr;
     QSpinBox*  m_tcpPortSpin = nullptr;
     QCheckBox* m_randomPortsCheck = nullptr;

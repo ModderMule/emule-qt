@@ -176,6 +176,9 @@ private slots:
     void slotTargetRate_boundsTheLadderWithoutBoostOrFloors();
     void slotTargetRate_unlimitedDividesTheDatarate();
     void slotTargetRate_boundsAcceptNewClient();
+
+    // Slot gating — extra slots while below the limit (uploadUnderfillSlots)
+    void underfillSlots_upToTwiceTheLadderWhileBelowTheLimit();
 };
 
 namespace {
@@ -3519,6 +3522,39 @@ void tst_UploadQueue::onBlockPacketsReady_followsTheBlocksFile()
 
     queue.removeFromUploadQueue(client);
     queue.setDiskIOThread(nullptr);
+}
+
+// Peers that take too little leave the line below the limit: with the switch on, up to
+// twice the ladder's slots, only after kUnderfillSlotMs below it, never with USS or no limit.
+void tst_UploadQueue::underfillSlots_upToTwiceTheLadderWhileBelowTheLimit()
+{
+    SlotGateGuard gates;
+    const bool savedUnderfill = thePrefs.uploadUnderfillSlots();
+    const auto restore = qScopeGuard([&] { thePrefs.setUploadUnderfillSlots(savedUnderfill); });
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxUpload(100);
+    thePrefs.setUploadSlotTargetRate(50);   // ladder: 100 / 50 = 2 slots, so 4 at most
+
+    UploadQueue queue;
+    QCOMPARE(queue.ladderSlotCount(0), 2u);
+    const uint64 t0 = getTickCount();
+    queue.recycleDeadSlots(t0);             // nothing goes out: below the limit from t0
+    const uint64 later = t0 + UploadQueue::kUnderfillSlotMs;
+
+    queue.setForeignSlots(3);
+    QVERIFY(!queue.underfillAllowsSlot(later));        // off by default
+    thePrefs.setUploadUnderfillSlots(true);
+    QVERIFY(!queue.underfillAllowsSlot(later - 1));    // not below long enough
+    QVERIFY(queue.underfillAllowsSlot(later));
+    queue.setForeignSlots(4);
+    QVERIFY(!queue.underfillAllowsSlot(later));        // twice the ladder
+
+    queue.setForeignSlots(3);
+    thePrefs.setDynUpEnabled(true);
+    QVERIFY(!queue.underfillAllowsSlot(later));        // USS sizes the line itself
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxUpload(0);
+    QVERIFY(!queue.underfillAllowsSlot(later));        // no limit, nothing to fill
 }
 
 QTEST_GUILESS_MAIN(tst_UploadQueue)

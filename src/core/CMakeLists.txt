@@ -162,7 +162,7 @@ target_link_libraries(emulecore
 )
 
 if(WIN32)
-    target_link_libraries(emulecore PRIVATE iphlpapi)
+    target_link_libraries(emulecore PRIVATE iphlpapi winmm)
 endif()
 
 if(EMULE_QUIC_NATT)

@@ -423,9 +423,10 @@ int applyPreferences(const LegacyIni& ini, Preferences& prefs)
 {
     int applied = 0;
 
-    // MFC resets its default nick (the homepage URL) at load; ours stays then
+    // MFC default nick (homepage URL) never imported: every new install keeps ours
     if (const QString nick = ini.utf8String(kMainSection, QLatin1StringView("Nick"));
-        !nick.isEmpty() && !nick.contains(QLatin1StringView("emule-project.net"))) {
+        !nick.isEmpty() && !Preferences::isMfcDefaultNick(nick)
+        && !nick.contains(QLatin1StringView("emule-project.net"))) {
         prefs.setNick(nick);
         ++applied;
     }
