@@ -91,10 +91,16 @@ QList<IconRef> iconRefsInGuiSources()
 
         const QString shortName = QStringLiteral("src/gui/")
                                   + QDir(guiDir).relativeFilePath(path);
+        // Its table keys are lower-cased emule.rc file names, not resource paths.
+        if (shortName == QLatin1String("src/gui/app/SkinIcons.cpp"))
+            continue;
         int lineNo = 0;
         while (!f.atEnd()) {
             ++lineNo;
             const QString line = QString::fromUtf8(f.readLine());
+            // Doc comments name placeholders like ":/icons/X.ico".
+            if (line.trimmed().startsWith(QLatin1String("//")))
+                continue;
             const QString where = QStringLiteral("%1:%2").arg(shortName).arg(lineNo);
 
             for (auto m = fullRe.globalMatch(line); m.hasNext();) {

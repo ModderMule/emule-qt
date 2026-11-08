@@ -1108,7 +1108,7 @@ Contient des commentaires</translation>
         <translation>Test</translation>
     </message>
     <message>
-        <location filename="../src/gui/utils/FileAssociation.cpp" line="+604"/>
+        <location filename="../src/gui/utils/FileAssociation.cpp" line="+636"/>
         <source>Could not write the file association to the registry.</source>
         <translation>Impossible d&apos;écrire l&apos;association de fichier dans le registre.</translation>
     </message>
@@ -10087,6 +10087,16 @@ Ses fichiers vont dans le dossier d&apos;arrivée, dans un dossier propre au set
         <translation>Fichiers .nzb pour Usenet</translation>
     </message>
     <message>
+        <location line="+10"/>
+        <source>Menu entry</source>
+        <translation>Entrée de menu</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Adds eMule Qt to the desktop&apos;s application menu</source>
+        <translation>Ajoute eMule Qt au menu des applications du bureau</translation>
+    </message>
+    <message>
         <location line="+171"/>
         <source>Ports and Connection</source>
         <translation>Ports et connexion</translation>
@@ -10112,8 +10122,8 @@ Ses fichiers vont dans le dossier d&apos;arrivée, dans un dossier propre au set
         <translation>eMule utilise deux ports pour communiquer avec les serveurs et les clients. Ces ports doivent être libres et disponibles pour les clients distants. Le port TCP doit être disponible pour assurer la fonctionnalité principale d&apos;eMule. Le port UDP est utilisé pour Kad (réseau sans serveur) et pour réduire l&apos;utilisation du réseau (overhead).</translation>
     </message>
     <message>
-        <location line="-575"/>
-        <location line="+373"/>
+        <location line="-586"/>
+        <location line="+384"/>
         <source>Unlimited</source>
         <translation>Illimité</translation>
     </message>
@@ -10162,18 +10172,18 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 Si votre FAI tente de brider ou de bloquer eMule, l&apos;obfuscation aide à contourner ces restrictions.</translation>
     </message>
     <message>
-        <location line="-265"/>
+        <location line="-276"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>Vous pouvez modifier les ports ici tant qu&apos;aucune activité réseau n&apos;a démarré.</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+449"/>
+        <location line="+460"/>
         <source>TCP:</source>
         <translation>TCP :</translation>
     </message>
     <message>
-        <location line="-445"/>
+        <location line="-456"/>
         <source>UDP:</source>
         <translation>UDP :</translation>
     </message>
@@ -10230,7 +10240,7 @@ Si votre FAI tente de brider ou de bloquer eMule, l&apos;obfuscation aide à con
         <translation type="vanished">Désactiver cette fonction permet à eMule de se connecter un peu plus vite aux serveurs, mais peut provoquer davantage de fausses connexions en LowID.</translation>
     </message>
     <message>
-        <location line="+105"/>
+        <location line="+116"/>
         <source>Select your internet connection. eMule derives its download and upload limits from it, leaving room for your other applications. You can change the limits at any time in the Options.</source>
         <translation>Sélectionnez votre connexion Internet. eMule en déduit ses limites de téléchargement et d&apos;envoi, en laissant de la marge à vos autres applications. Vous pouvez modifier ces limites à tout moment dans les Options.</translation>
     </message>
@@ -13033,12 +13043,12 @@ Les autres membres voient votre pseudo et vos messages ; votre nœud participe a
     </message>
     <message>
         <location line="+12"/>
-        <location line="+1574"/>
+        <location line="+1580"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K : Déconnecté</translation>
     </message>
     <message>
-        <location line="-1502"/>
+        <location line="-1508"/>
         <source>Kad: Connected</source>
         <translation>Kad : Connecté</translation>
     </message>
@@ -13054,12 +13064,12 @@ Les autres membres voient votre pseudo et vos messages ; votre nœud participe a
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1494"/>
+        <location line="+1500"/>
         <source>Kad: Disconnected</source>
         <translation>Kad : Déconnecté</translation>
     </message>
     <message>
-        <location line="-1401"/>
+        <location line="-1407"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Utilisateurs : %1 | Fichiers : %2</translation>
     </message>
@@ -13496,7 +13506,7 @@ Activez-la dans Options → Interface web, puis réessayez.</translation>
         <translation>Ouvrir les options</translation>
     </message>
     <message>
-        <location line="+208"/>
+        <location line="+214"/>
         <source>Main</source>
         <translation>Principal</translation>
     </message>

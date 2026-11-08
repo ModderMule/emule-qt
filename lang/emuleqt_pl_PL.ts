@@ -1005,7 +1005,7 @@ Zaufać nowemu certyfikatowi?</translation>
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/utils/FileAssociation.cpp" line="+604"/>
+        <location filename="../src/gui/utils/FileAssociation.cpp" line="+636"/>
         <source>Could not write the file association to the registry.</source>
         <translation>Nie można zapisać skojarzenia plików w rejestrze.</translation>
     </message>
@@ -9757,33 +9757,33 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
     <name>eMule::FirstStartWizard</name>
     <message>
         <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+57"/>
-        <location line="+373"/>
+        <location line="+384"/>
         <source>Unlimited</source>
         <translation>Bez limitu</translation>
     </message>
     <message>
-        <location line="-364"/>
+        <location line="-375"/>
         <source>eMule First Runtime Wizard</source>
         <translation>Kreator pierwszego uruchomienia eMule</translation>
     </message>
     <message>
-        <location line="+566"/>
+        <location line="+577"/>
         <source>eMule uses two ports for communication with servers and clients. These ports must be free and available for remote clients. The TCP port must be available to ensure the main functionality of eMule. The UDP port is used for Kad (serverless network) and to reduce network usage (Overhead).</source>
         <translation>eMule używa dwóch portów do komunikacji z serwerami i klientami. Porty te muszą być wolne i dostępne dla zdalnych klientów. Port TCP musi być dostępny, aby zapewnić podstawowe działanie eMule. Port UDP jest używany przez Kad (sieć bezserwerową) oraz do zmniejszenia obciążenia sieci (narzutu).</translation>
     </message>
     <message>
-        <location line="-467"/>
+        <location line="-478"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>Możesz zmienić porty tutaj, dopóki nie rozpoczęła się żadna aktywność sieciowa.</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+449"/>
+        <location line="+460"/>
         <source>TCP:</source>
         <translation>TCP:</translation>
     </message>
     <message>
-        <location line="-445"/>
+        <location line="-456"/>
         <source>UDP:</source>
         <translation>UDP:</translation>
     </message>
@@ -9910,6 +9910,16 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
         <location line="+1"/>
         <source>.nzb files for Usenet</source>
         <translation>Pliki .nzb dla Usenetu</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Menu entry</source>
+        <translation>Pozycja menu</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Adds eMule Qt to the desktop&apos;s application menu</source>
+        <translation>Dodaje eMule Qt do menu aplikacji pulpitu</translation>
     </message>
     <message>
         <location line="+44"/>
@@ -12754,12 +12764,12 @@ Włącz co najmniej jedną w Opcje → Połączenie, aby się połączyć.</tran
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1574"/>
+        <location line="+1580"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: Rozłączony</translation>
     </message>
     <message>
-        <location line="-1565"/>
+        <location line="-1571"/>
         <source>eD2K Server: %1  (%2 Users)</source>
         <translation>Serwer eD2K: %1  (%2 użytkowników)</translation>
     </message>
@@ -12800,12 +12810,12 @@ Włącz co najmniej jedną w Opcje → Połączenie, aby się połączyć.</tran
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1494"/>
+        <location line="+1500"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: Rozłączony</translation>
     </message>
     <message>
-        <location line="-1453"/>
+        <location line="-1459"/>
         <source>ed3k: Connected</source>
         <translation>ed3k: Podłączony</translation>
     </message>
@@ -13138,7 +13148,7 @@ Włącz go w Opcje → Interfejs WWW i spróbuj ponownie.</translation>
         <translation>Otwórz opcje</translation>
     </message>
     <message>
-        <location line="+208"/>
+        <location line="+214"/>
         <source>Main</source>
         <translation>Główne</translation>
     </message>

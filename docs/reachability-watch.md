@@ -31,6 +31,9 @@ Action: LowID → `ServerConnect::requestHighIdRecheck`; Kad firewalled → rech
   (HighID or same LowID). ≥ 2 min apart; answer timeout 30 s.
 - other servers: background re-login to the same address (handover machinery, reason
   `HighIdRecheck`), live session kept until the new one logs in. ≥ 10 min apart.
+- IPv6 session (moved there by "prefer IPv6 on LowID"): only IPv4 gets a HighID, so no opcode —
+  background re-login over the server's IPv4 (≥ 10 min apart). HighID → stays on IPv4; LowID →
+  back to IPv6 in the background, as after a login. Server without IPv4: no recheck.
 - each recheck that keeps a LowID doubles the gap, up to 4×.
 - mid-session `OP_IDCHANGE` on the live socket: no smart-LowID bounce, no IPv6 move.
 - handover login and pending opcode count for `awaitingTestFromIP` (crypt-required lets the

@@ -67,8 +67,9 @@ struct FileTypes {
 /// One entry for every type, so claiming one never drops another.
 ///
 /// @p dataHome is $XDG_DATA_HOME, so a test can point it somewhere harmless.
+/// @p menuEntry false: NoDisplay=true, it opens links but is not in the menu.
 [[nodiscard]] QList<DesktopFile> desktopFiles(const QString& exePath, const QString& dataHome,
-                                              FileTypes types);
+                                              FileTypes types, bool menuEntry = true);
 
 /// The MIME types an XDG desktop gets told to open with us (`xdg-mime default`).
 [[nodiscard]] QStringList xdgMimeTypes(FileTypes types);
@@ -103,6 +104,14 @@ void installDesktopIcons();
 /// stays missing (the user deleted it, #121); an existing stale bare one is rewritten,
 /// one that claims types is left alone. Linux only.
 void installLauncher(bool createMissing);
+
+/// Removes the bare launcher entry. One that claims types stays (written hidden
+/// while setMenuEntry() is off). Linux only.
+void removeLauncher();
+
+/// Whether the entries written from now on show in the application menu. Off: the
+/// claims entry gets NoDisplay=true and no bare launcher is put back. Default on.
+void setMenuEntry(bool on);
 
 /// The per-user registry values of @p types for @p exePath, relative to Software\\Classes.
 [[nodiscard]] QList<RegistryValue> registryValues(const QString& exePath, FileTypes types);

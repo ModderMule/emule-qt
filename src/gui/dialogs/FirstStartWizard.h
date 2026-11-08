@@ -52,6 +52,9 @@ public:
     /// The preference keys Finish wrote (IPC names). Empty until accepted.
     [[nodiscard]] const QCborMap& appliedSettings() const { return m_applied; }
 
+    /// Finish switched the Linux menu entry on: MainWindow writes the launcher (#153).
+    [[nodiscard]] bool menuEntryTurnedOn() const { return m_menuEntryTurnedOn; }
+
     /// Show a port-mapping status (PushPortMapStatus map); a final one ends the wait.
     void showPortMapStatus(const QCborMap& info);
 
@@ -127,6 +130,8 @@ private:
     QCheckBox* m_assocEd2kCheck = nullptr;
     QCheckBox* m_assocTorrentCheck = nullptr;
     QCheckBox* m_assocNzbCheck = nullptr;
+    QCheckBox* m_menuEntryCheck = nullptr;            ///< Linux only
+    bool m_menuEntryTurnedOn = false;
     gui::FileAssociation::FileTypes m_shownTypes;     ///< the file type boxes as first shown
 #ifdef Q_OS_MACOS
     gui::FileAssociation::FileTypes m_claimedTypes;   ///< the default app when opened

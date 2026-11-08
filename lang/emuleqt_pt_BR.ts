@@ -1108,7 +1108,7 @@ Tem comentários</translation>
         <translation>Testar</translation>
     </message>
     <message>
-        <location filename="../src/gui/utils/FileAssociation.cpp" line="+604"/>
+        <location filename="../src/gui/utils/FileAssociation.cpp" line="+636"/>
         <source>Could not write the file association to the registry.</source>
         <translation>Não foi possível gravar a associação de arquivo no registro.</translation>
     </message>
@@ -10087,6 +10087,16 @@ Seus arquivos vão para a pasta de recebidos, dentro de uma pasta própria do se
         <translation>Arquivos .nzb para Usenet</translation>
     </message>
     <message>
+        <location line="+10"/>
+        <source>Menu entry</source>
+        <translation>Entrada de menu</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Adds eMule Qt to the desktop&apos;s application menu</source>
+        <translation>Adiciona o eMule Qt ao menu de aplicativos da área de trabalho</translation>
+    </message>
+    <message>
         <location line="+171"/>
         <source>Ports and Connection</source>
         <translation>Portas e conexão</translation>
@@ -10112,8 +10122,8 @@ Seus arquivos vão para a pasta de recebidos, dentro de uma pasta própria do se
         <translation>O eMule utiliza duas portas para comunicação com servidores e clientes. Essas portas devem estar livres e disponíveis para clientes remotos. A porta TCP deve estar disponível para garantir a funcionalidade principal do eMule. A porta UDP é usada para Kad (rede sem servidor) e para reduzir o uso da rede (overhead).</translation>
     </message>
     <message>
-        <location line="-575"/>
-        <location line="+373"/>
+        <location line="-586"/>
+        <location line="+384"/>
         <source>Unlimited</source>
         <translation>Ilimitado</translation>
     </message>
@@ -10162,18 +10172,18 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 Se o seu provedor tenta limitar ou bloquear o eMule, a ofuscação ajuda a contornar essas restrições.</translation>
     </message>
     <message>
-        <location line="-265"/>
+        <location line="-276"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>Você pode alterar as portas aqui enquanto nenhuma atividade de rede foi iniciada.</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+449"/>
+        <location line="+460"/>
         <source>TCP:</source>
         <translation>TCP:</translation>
     </message>
     <message>
-        <location line="-445"/>
+        <location line="-456"/>
         <source>UDP:</source>
         <translation>UDP:</translation>
     </message>
@@ -10230,7 +10240,7 @@ Se o seu provedor tenta limitar ou bloquear o eMule, a ofuscação ajuda a conto
         <translation type="vanished">Desativar este recurso permite que o eMule se conecte aos servidores um pouco mais rápido, mas pode causar mais conexões com LowID falso.</translation>
     </message>
     <message>
-        <location line="+105"/>
+        <location line="+116"/>
         <source>Select your internet connection. eMule derives its download and upload limits from it, leaving room for your other applications. You can change the limits at any time in the Options.</source>
         <translation>Selecione sua conexão com a Internet. O eMule define a partir dela os limites de download e upload, deixando folga para os seus outros aplicativos. Você pode alterar os limites a qualquer momento nas Opções.</translation>
     </message>
@@ -13033,12 +13043,12 @@ Outros membros veem seu nick e suas mensagens; seu nó participa do repasse das 
     </message>
     <message>
         <location line="+12"/>
-        <location line="+1574"/>
+        <location line="+1580"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: Desconectado</translation>
     </message>
     <message>
-        <location line="-1502"/>
+        <location line="-1508"/>
         <source>Kad: Connected</source>
         <translation>Kad: Conectado</translation>
     </message>
@@ -13054,12 +13064,12 @@ Outros membros veem seu nick e suas mensagens; seu nó participa do repasse das 
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1494"/>
+        <location line="+1500"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: Desconectado</translation>
     </message>
     <message>
-        <location line="-1401"/>
+        <location line="-1407"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Usuários: %1 | Arquivos: %2</translation>
     </message>
@@ -13496,7 +13506,7 @@ Ative-a em Opções → Interface web e tente novamente.</translation>
         <translation>Abrir Opções</translation>
     </message>
     <message>
-        <location line="+208"/>
+        <location line="+214"/>
         <source>Main</source>
         <translation>Principal</translation>
     </message>

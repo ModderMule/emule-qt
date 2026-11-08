@@ -39,6 +39,7 @@ private slots:
     void mimeappsKeepsOtherHandlersOnTheLine();
     void mimeappsRemovedAssociationsStayAlone();
     void theDesktopEntryReadsBackWhatItClaims();
+    void withoutMenuEntryTheClaimsEntryIsHidden();
 };
 
 namespace {
@@ -56,6 +57,20 @@ QString contentsOf(const QList<FileAssociation::DesktopFile>& files, const QStri
 }
 
 } // namespace
+
+// #153: links still open, but no second icon in the application menu
+void tst_FileAssociation::withoutMenuEntryTheClaimsEntryIsHidden()
+{
+    const QString dataHome = QStringLiteral("/home/u/.local/share");
+    const QString shown = contentsOf(FileAssociation::desktopFiles(QStringLiteral("/opt/emuleqt"), dataHome, kNzb),
+                                     QStringLiteral("emuleqt.desktop"));
+    const QString hidden = contentsOf(
+        FileAssociation::desktopFiles(QStringLiteral("/opt/emuleqt"), dataHome, kNzb, /*menuEntry*/ false),
+        QStringLiteral("emuleqt.desktop"));
+    QVERIFY(!shown.contains(QStringLiteral("NoDisplay")));
+    QVERIFY(hidden.contains(QStringLiteral("NoDisplay=true\n")));
+    QCOMPARE(FileAssociation::typesInDesktopEntry(hidden), kNzb);
+}
 
 void tst_FileAssociation::theDesktopFileClaimsNzbAndEd2kOnlyWhenAsked()
 {

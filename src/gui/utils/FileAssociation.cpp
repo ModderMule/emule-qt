@@ -35,6 +35,9 @@ constexpr auto kMimeFileName = "emuleqt-nzb.xml";
 constexpr auto kTorrentMimeFileName = "emuleqt-torrent.xml";
 constexpr auto kDlcMimeFileName = "emuleqt-dlc.xml";
 
+/// setMenuEntry(): off writes the claims entry hidden, and no bare launcher
+bool s_menuEntry = true;
+
 /// What the desktop should start. The Linux tarball runs foo.bin through a foo
 /// script that sets LD_LIBRARY_PATH; the bare .bin finds no libraries (#111).
 QString exePath()
@@ -122,9 +125,10 @@ QString withoutMimeDefaults(const QString& mimeapps, const QStringList& mimeType
     return out.join(QLatin1Char('\n'));
 }
 
-QList<DesktopFile> desktopFiles(const QString& exePath, const QString& dataHome, FileTypes types)
+QList<DesktopFile> desktopFiles(const QString& exePath, const QString& dataHome, FileTypes types,
+                                bool menuEntry)
 {
-    const QString desktop = QStringLiteral(
+    QString desktop = QStringLiteral(
         "[Desktop Entry]\n"
         "Type=Application\n"
         "Name=eMule Qt\n"
@@ -136,6 +140,8 @@ QList<DesktopFile> desktopFiles(const QString& exePath, const QString& dataHome,
         "Categories=Network;FileTransfer;P2P;\n"
         "MimeType=%2;\n")
                                .arg(quoteExec(exePath), xdgMimeTypes(types).join(QLatin1Char(';')));
+    if (!menuEntry)
+        desktop += QStringLiteral("NoDisplay=true\n");   // handles links, not in the menu
 
     QList<DesktopFile> files{
         {QDir(dataHome).filePath(QStringLiteral("applications/%1").arg(kDesktopFileName)), desktop}};
@@ -280,12 +286,38 @@ void installLauncher(bool createMissing)
             {QDir(dataHome).filePath(QStringLiteral("applications"))});
 }
 
+void removeLauncher()
+{
+    const QString dataHome =
+        QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+    if (dataHome.isEmpty())
+        return;
+    const QString path = launcherDesktopFile(exePath(), dataHome).path;
+    QFile existing(path);
+    // one that claims types is applyFileTypes()' business: hidden, not removed
+    if (!existing.open(QIODevice::ReadOnly) || existing.readAll().contains("MimeType="))
+        return;
+    existing.close();
+    if (!QFile::remove(path)) {
+        logWarning(QStringLiteral("Cannot remove %1").arg(path));
+        return;
+    }
+    refresh(QStringLiteral("update-desktop-database"),
+            {QDir(dataHome).filePath(QStringLiteral("applications"))});
+}
+
 #else
 
 void installDesktopIcons() {}
 void installLauncher(bool) {}
+void removeLauncher() {}
 
 #endif
+
+void setMenuEntry(bool on)
+{
+    s_menuEntry = on;
+}
 
 QString launcherExec()
 {
@@ -716,7 +748,7 @@ bool isStale(FileTypes types)
     const QString dataHome = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
     if (dataHome.isEmpty())
         return false;
-    const DesktopFile entry = desktopFiles(exePath(), dataHome, types).constFirst();
+    const DesktopFile entry = desktopFiles(exePath(), dataHome, types, s_menuEntry).constFirst();
     QFile file(entry.path);
     // gone: deleted by the user, not ours to put back
     if (!file.open(QIODevice::ReadOnly))
@@ -733,7 +765,7 @@ bool applyFileTypes(FileTypes types, QString& error, bool setDefault)
     if (!types.any()) {
         const bool hadEntry = QFileInfo::exists(desktopFiles(exePath(), dataHome, {}).constFirst().path);
         const bool ok = unregisterFileTypes(error);
-        if (ok && hadEntry)
+        if (ok && hadEntry && s_menuEntry)
             installLauncher(true);
         return ok;
     }
@@ -742,7 +774,7 @@ bool applyFileTypes(FileTypes types, QString& error, bool setDefault)
 
     // the mime definitions of every type, so those switched off can be removed
     const QList<DesktopFile> all = desktopFiles(exePath(), dataHome, FileTypes::all());
-    const QList<DesktopFile> wanted = desktopFiles(exePath(), dataHome, types);
+    const QList<DesktopFile> wanted = desktopFiles(exePath(), dataHome, types, s_menuEntry);
     for (const auto& entry : all)
         if (std::none_of(wanted.begin(), wanted.end(), [&](const DesktopFile& w) { return w.path == entry.path; }))
             QFile::remove(entry.path);

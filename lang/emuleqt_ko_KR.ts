@@ -1100,7 +1100,7 @@ Has comments</source>
         <translation>테스트</translation>
     </message>
     <message>
-        <location filename="../src/gui/utils/FileAssociation.cpp" line="+604"/>
+        <location filename="../src/gui/utils/FileAssociation.cpp" line="+636"/>
         <source>Could not write the file association to the registry.</source>
         <translation>파일 연결을 레지스트리에 기록하지 못했습니다.</translation>
     </message>
@@ -10051,6 +10051,16 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>Usenet용 .nzb 파일</translation>
     </message>
     <message>
+        <location line="+10"/>
+        <source>Menu entry</source>
+        <translation>메뉴 항목</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Adds eMule Qt to the desktop&apos;s application menu</source>
+        <translation>데스크톱 응용 프로그램 메뉴에 eMule Qt를 추가합니다</translation>
+    </message>
+    <message>
         <location line="+171"/>
         <source>Ports and Connection</source>
         <translation>포트 및 연결</translation>
@@ -10076,8 +10086,8 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>eMule은 서버 및 클라이언트와의 통신에 두 개의 포트를 사용합니다. 이 포트는 원격 클라이언트에서 사용할 수 있어야 합니다. TCP 포트는 eMule의 주요 기능을 보장하기 위해 필요합니다. UDP 포트는 Kad(서버리스 네트워크) 및 네트워크 사용량 절감(오버헤드)에 사용됩니다.</translation>
     </message>
     <message>
-        <location line="-575"/>
-        <location line="+373"/>
+        <location line="-586"/>
+        <location line="+384"/>
         <source>Unlimited</source>
         <translation>무제한</translation>
     </message>
@@ -10126,18 +10136,18 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그런 제한을 우회하는 데 도움이 됩니다.</translation>
     </message>
     <message>
-        <location line="-265"/>
+        <location line="-276"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>네트워크 활동이 시작되지 않은 동안 여기에서 포트를 변경할 수 있습니다.</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+449"/>
+        <location line="+460"/>
         <source>TCP:</source>
         <translation>TCP:</translation>
     </message>
     <message>
-        <location line="-445"/>
+        <location line="-456"/>
         <source>UDP:</source>
         <translation>UDP:</translation>
     </message>
@@ -10194,7 +10204,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation type="vanished">이 기능을 끄면 eMule이 서버에 조금 더 빨리 연결하지만 잘못된 LowID 연결이 늘어날 수 있습니다.</translation>
     </message>
     <message>
-        <location line="+105"/>
+        <location line="+116"/>
         <source>Select your internet connection. eMule derives its download and upload limits from it, leaving room for your other applications. You can change the limits at any time in the Options.</source>
         <translation>인터넷 연결을 선택하세요. eMule은 이를 바탕으로 다운로드 및 업로드 제한을 정하고 다른 프로그램을 위한 여유를 남겨 둡니다. 제한은 옵션에서 언제든지 변경할 수 있습니다.</translation>
     </message>
@@ -12985,12 +12995,12 @@ Other members see your nick and posts; your node takes part in passing the room&
     </message>
     <message>
         <location line="+12"/>
-        <location line="+1574"/>
+        <location line="+1580"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: 연결 해제됨</translation>
     </message>
     <message>
-        <location line="-1502"/>
+        <location line="-1508"/>
         <source>Kad: Connected</source>
         <translation>Kad: 연결됨</translation>
     </message>
@@ -13006,12 +13016,12 @@ Other members see your nick and posts; your node takes part in passing the room&
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1494"/>
+        <location line="+1500"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: 연결 해제됨</translation>
     </message>
     <message>
-        <location line="-1401"/>
+        <location line="-1407"/>
         <source>Users: %1 | Files: %2</source>
         <translation>사용자: %1 | 파일: %2</translation>
     </message>
@@ -13448,7 +13458,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>옵션 열기</translation>
     </message>
     <message>
-        <location line="+208"/>
+        <location line="+214"/>
         <source>Main</source>
         <translation>메인</translation>
     </message>

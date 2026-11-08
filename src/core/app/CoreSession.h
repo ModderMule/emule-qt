@@ -8,6 +8,7 @@
 /// Creates and owns core upload pipeline components.
 
 #include "net/BindAddress.h"
+#include "net/ReachabilityWatch.h"
 #include "portmap/PortMapTypes.h"
 #include "utils/Types.h"
 
@@ -24,7 +25,6 @@ namespace eMule {
 class Address;
 class ClientCreditsList;
 class ConnectionChecker;
-class ReachabilityWatch;
 class ClientList;
 class ClientUDPSocket;
 class CollectionKeys;
@@ -101,6 +101,13 @@ public:
     /// ask for the ports. Set before start().
     void setConnectHold(bool hold) { m_connectHold = hold; }
     [[nodiscard]] bool isConnectHeld() const { return m_connectHold; }
+    /// #156 website eD2K port test for the reachability watch. May be set before start().
+    void setReachabilityPortTest(std::function<void(ReachabilityWatch::PortTestDone)> portTest)
+    {
+        m_reachPortTest = std::move(portTest);
+        if (m_reachWatch)
+            m_reachWatch->setPortTest(m_reachPortTest);
+    }
     /// End the hold and do the auto-connect that start() skipped.
     void releaseConnectHold();
 
@@ -297,6 +304,7 @@ private:
     std::unique_ptr<PortMapper> m_portMapper;
     std::unique_ptr<ConnectionChecker> m_connChecker;
     std::unique_ptr<ReachabilityWatch> m_reachWatch;
+    std::function<void(ReachabilityWatch::PortTestDone)> m_reachPortTest;
     std::unique_ptr<CollectionKeys> m_collectionKeys;
 };
 

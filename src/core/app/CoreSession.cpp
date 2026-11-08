@@ -1849,6 +1849,7 @@ void CoreSession::initReachabilityWatch()
     hooks.requestHighId = [](const QString& why, bool portChanged) {
         return theApp.serverConnect && theApp.serverConnect->requestHighIdRecheck(why, portChanged);
     };
+    hooks.portTest = m_reachPortTest;
     m_reachWatch->setHooks(std::move(hooks));
     m_reachWatch->setEnabled(thePrefs.reachabilityWatch());
 

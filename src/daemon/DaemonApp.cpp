@@ -195,23 +195,22 @@ bool DaemonApp::start()
                 m_coreSession->releaseConnectHold();
         });
     }
-    m_coreSession->start();
-    // #156: the watch runs the website eD2K port test from here, like TestPorts
-    if (theApp.reachabilityWatch) {
-        theApp.reachabilityWatch->setPortTest([](ReachabilityWatch::PortTestDone done) {
-            PortTestRunner::run(int(PortTestApi::Network::Ed2k),
-                                [done](bool ok, const QCborMap& result, int, const QString& detail) {
-                if (!ok) {
-                    logDebug(QStringLiteral("Reachability watch: port test failed: %1").arg(detail));
-                    done(PortTestApi::Verdict::Unknown);
-                    return;
-                }
-                done(PortTestApi::tcpVerdict(result.value(QStringLiteral("targets")).toArray(),
-                                             result.value(QStringLiteral("obfuscated")).toBool(),
-                                             thePrefs.cryptLayerRequired()));
-            });
+    // #156: the watch runs the website eD2K port test from here, like TestPorts. Before
+    // start(): the watch itself is made later, in finishStart().
+    m_coreSession->setReachabilityPortTest([](ReachabilityWatch::PortTestDone done) {
+        PortTestRunner::run(int(PortTestApi::Network::Ed2k),
+                            [done](bool ok, const QCborMap& result, int, const QString& detail) {
+            if (!ok) {
+                logDebug(QStringLiteral("Reachability watch: port test failed: %1").arg(detail));
+                done(PortTestApi::Verdict::Unknown);
+                return;
+            }
+            done(PortTestApi::tcpVerdict(result.value(QStringLiteral("targets")).toArray(),
+                                         result.value(QStringLiteral("obfuscated")).toBool(),
+                                         thePrefs.cryptLayerRequired()));
         });
-    }
+    });
+    m_coreSession->start();
     MetaSearchService::instance();   // registers itself as theApp.metaSearch
 
     // Generate IPC auth token on first run

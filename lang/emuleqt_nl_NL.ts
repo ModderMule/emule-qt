@@ -997,7 +997,7 @@ Het nieuwe certificaat vertrouwen?</translation>
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/utils/FileAssociation.cpp" line="+604"/>
+        <location filename="../src/gui/utils/FileAssociation.cpp" line="+636"/>
         <source>Could not write the file association to the registry.</source>
         <translation>Kon de bestandskoppeling niet naar het register schrijven.</translation>
     </message>
@@ -9722,33 +9722,33 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
     <name>eMule::FirstStartWizard</name>
     <message>
         <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+57"/>
-        <location line="+373"/>
+        <location line="+384"/>
         <source>Unlimited</source>
         <translation>Onbeperkt</translation>
     </message>
     <message>
-        <location line="-364"/>
+        <location line="-375"/>
         <source>eMule First Runtime Wizard</source>
         <translation>eMule-instellingenwizard voor eerste keer</translation>
     </message>
     <message>
-        <location line="+566"/>
+        <location line="+577"/>
         <source>eMule uses two ports for communication with servers and clients. These ports must be free and available for remote clients. The TCP port must be available to ensure the main functionality of eMule. The UDP port is used for Kad (serverless network) and to reduce network usage (Overhead).</source>
         <translation>eMule gebruikt twee poorten voor communicatie met servers en cliënten. Deze poorten moeten vrij zijn en beschikbaar voor cliënten van buiten. De TCP-poort moet beschikbaar zijn voor de hoofdfunctionaliteit van eMule. De UDP-poort wordt gebruikt voor Kad (serverloos netwerk) en om netwerkgebruik te verminderen (overhead).</translation>
     </message>
     <message>
-        <location line="-467"/>
+        <location line="-478"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>U kunt de poorten hier wijzigen zolang er nog geen netwerkactiviteiten zijn gestart.</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+449"/>
+        <location line="+460"/>
         <source>TCP:</source>
         <translation>TCP:</translation>
     </message>
     <message>
-        <location line="-445"/>
+        <location line="-456"/>
         <source>UDP:</source>
         <translation>UDP:</translation>
     </message>
@@ -9875,6 +9875,16 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
         <location line="+1"/>
         <source>.nzb files for Usenet</source>
         <translation>.nzb-bestanden voor Usenet</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Menu entry</source>
+        <translation>Menu-item</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Adds eMule Qt to the desktop&apos;s application menu</source>
+        <translation>Voegt eMule Qt toe aan het toepassingsmenu van het bureaublad</translation>
     </message>
     <message>
         <location line="+44"/>
@@ -12707,12 +12717,12 @@ Schakel er minstens één in onder Opties → Verbinding om te verbinden.</trans
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1574"/>
+        <location line="+1580"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: verbinding verbroken</translation>
     </message>
     <message>
-        <location line="-1565"/>
+        <location line="-1571"/>
         <source>eD2K Server: %1  (%2 Users)</source>
         <translation>eD2K-server: %1  (%2 gebruikers)</translation>
     </message>
@@ -12753,12 +12763,12 @@ Schakel er minstens één in onder Opties → Verbinding om te verbinden.</trans
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1494"/>
+        <location line="+1500"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: verbinding verbroken</translation>
     </message>
     <message>
-        <location line="-1453"/>
+        <location line="-1459"/>
         <source>ed3k: Connected</source>
         <translation>ed3k: verbonden</translation>
     </message>
@@ -13091,7 +13101,7 @@ Schakel hem in onder Opties → Webinterface en probeer het opnieuw.</translatio
         <translation>Opties openen</translation>
     </message>
     <message>
-        <location line="+208"/>
+        <location line="+214"/>
         <source>Main</source>
         <translation>Hoofdmenu</translation>
     </message>

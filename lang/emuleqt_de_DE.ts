@@ -1108,7 +1108,7 @@ Hat Kommentare</translation>
         <translation>Test</translation>
     </message>
     <message>
-        <location filename="../src/gui/utils/FileAssociation.cpp" line="+604"/>
+        <location filename="../src/gui/utils/FileAssociation.cpp" line="+636"/>
         <source>Could not write the file association to the registry.</source>
         <translation>Die Dateizuordnung konnte nicht in die Registry geschrieben werden.</translation>
     </message>
@@ -10087,6 +10087,16 @@ Seine Dateien kommen in den Eingangsordner, in einen eigenen Ordner des Sets; ne
         <translation>.nzb-Dateien für Usenet</translation>
     </message>
     <message>
+        <location line="+10"/>
+        <source>Menu entry</source>
+        <translation>Menüeintrag</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Adds eMule Qt to the desktop&apos;s application menu</source>
+        <translation>Fügt eMule Qt dem Anwendungsmenü der Arbeitsumgebung hinzu</translation>
+    </message>
+    <message>
         <location line="+171"/>
         <source>Ports and Connection</source>
         <translation>Ports und Verbindung</translation>
@@ -10112,8 +10122,8 @@ Seine Dateien kommen in den Eingangsordner, in einen eigenen Ordner des Sets; ne
         <translation>eMule verwendet zwei Ports für die Kommunikation mit Servern und Clients. Diese Ports müssen frei und für entfernte Clients verfügbar sein. Der TCP-Port muss verfügbar sein, um die Hauptfunktionalität von eMule sicherzustellen. Der UDP-Port wird für Kad (serverloses Netzwerk) und zur Reduzierung der Netzwerknutzung (Overhead) verwendet.</translation>
     </message>
     <message>
-        <location line="-575"/>
-        <location line="+373"/>
+        <location line="-586"/>
+        <location line="+384"/>
         <source>Unlimited</source>
         <translation>Unbegrenzt</translation>
     </message>
@@ -10162,18 +10172,18 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 Falls der Internetanbieter eMule drosselt oder blockiert, hilft die Verschleierung, solche Einschränkungen zu umgehen.</translation>
     </message>
     <message>
-        <location line="-265"/>
+        <location line="-276"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>Sie können die Ports hier ändern, solange keine Netzwerkaktivitäten gestartet wurden.</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+449"/>
+        <location line="+460"/>
         <source>TCP:</source>
         <translation>TCP:</translation>
     </message>
     <message>
-        <location line="-445"/>
+        <location line="-456"/>
         <source>UDP:</source>
         <translation>UDP:</translation>
     </message>
@@ -10230,7 +10240,7 @@ Falls der Internetanbieter eMule drosselt oder blockiert, hilft die Verschleieru
         <translation type="vanished">Ohne diese Funktion verbindet sich eMule etwas schneller mit Servern, es kann aber häufiger zu falschen LowID-Verbindungen kommen.</translation>
     </message>
     <message>
-        <location line="+105"/>
+        <location line="+116"/>
         <source>Select your internet connection. eMule derives its download and upload limits from it, leaving room for your other applications. You can change the limits at any time in the Options.</source>
         <translation>Wählen Sie Ihren Internetanschluss. eMule leitet daraus seine Download- und Upload-Limits ab und lässt Ihren anderen Anwendungen genug Bandbreite. Sie können die Limits jederzeit in den Optionen ändern.</translation>
     </message>
@@ -13033,12 +13043,12 @@ Andere Mitglieder sehen Ihren Nickname und Ihre Beiträge; Ihr Knoten hilft beim
     </message>
     <message>
         <location line="+12"/>
-        <location line="+1574"/>
+        <location line="+1580"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: Getrennt</translation>
     </message>
     <message>
-        <location line="-1502"/>
+        <location line="-1508"/>
         <source>Kad: Connected</source>
         <translation>Kad: Verbunden</translation>
     </message>
@@ -13054,12 +13064,12 @@ Andere Mitglieder sehen Ihren Nickname und Ihre Beiträge; Ihr Knoten hilft beim
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1494"/>
+        <location line="+1500"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: Getrennt</translation>
     </message>
     <message>
-        <location line="-1401"/>
+        <location line="-1407"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Benutzer: %1 | Dateien: %2</translation>
     </message>
@@ -13496,7 +13506,7 @@ Aktivieren Sie sie unter Optionen → Weboberfläche und versuchen Sie es erneut
         <translation>Optionen öffnen</translation>
     </message>
     <message>
-        <location line="+208"/>
+        <location line="+214"/>
         <source>Main</source>
         <translation>Hauptfenster</translation>
     </message>

@@ -329,6 +329,15 @@ QWidget* FirstStartWizard::setupDesktopRow(QWidget* parent)
     layout->addWidget(m_assocEd2kCheck);
     layout->addWidget(m_assocTorrentCheck);
     layout->addWidget(m_assocNzbCheck);
+#ifdef Q_OS_LINUX
+    // a --config profile's entry would start the default profile: off unless chosen (#153)
+    m_menuEntryCheck = new QCheckBox(tr("Menu entry"), group);
+    m_menuEntryCheck->setToolTip(tr("Adds eMule Qt to the desktop's application menu"));
+    m_menuEntryCheck->setObjectName(QStringLiteral("wizardMenuEntry"));
+    m_menuEntryCheck->setChecked(theUiState.menuEntry().value_or(!isSecondaryProfile()));
+    layout->addSpacing(16);
+    layout->addWidget(m_menuEntryCheck);
+#endif
     layout->addStretch();
 
 #ifdef Q_OS_MACOS
@@ -337,8 +346,10 @@ QWidget* FirstStartWizard::setupDesktopRow(QWidget* parent)
     const gui::FileAssociation::FileTypes shown = m_claimedTypes;
 #else
     gui::FileAssociation::FileTypes shown = savedFileTypes();
-    // never chosen: on, as for the other two
-    if (!theUiState.firstStartWizardDone())
+    // never chosen: on, as for the other two; a fresh --config profile claims nothing (#153)
+    if (!theUiState.firstStartWizardDone() && isSecondaryProfile())
+        shown = {};
+    else if (!theUiState.firstStartWizardDone())
         shown.ed2k = theUiState.associateEd2kLinks().value_or(true);
 #endif
     m_assocEd2kCheck->setChecked(shown.ed2k);
@@ -950,6 +961,12 @@ void FirstStartWizard::applyFileTypes()
     theUiState.setAssociateTorrentFiles(wanted.torrent);
     theUiState.setAssociateEd2kLinks(wanted.ed2k);
 #endif
+    // stored only when changed: an unchosen one keeps its profile default
+    if (m_menuEntryCheck
+        && m_menuEntryCheck->isChecked() != theUiState.menuEntry().value_or(!isSecondaryProfile())) {
+        theUiState.setMenuEntry(m_menuEntryCheck->isChecked());
+        m_menuEntryTurnedOn = m_menuEntryCheck->isChecked();
+    }
 }
 
 void FirstStartWizard::requestPortMapStatus()

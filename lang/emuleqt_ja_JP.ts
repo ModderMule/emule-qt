@@ -1100,7 +1100,7 @@ Has comments</source>
         <translation>テスト</translation>
     </message>
     <message>
-        <location filename="../src/gui/utils/FileAssociation.cpp" line="+604"/>
+        <location filename="../src/gui/utils/FileAssociation.cpp" line="+636"/>
         <source>Could not write the file association to the registry.</source>
         <translation>ファイルの関連付けをレジストリに書き込めませんでした。</translation>
     </message>
@@ -10051,6 +10051,16 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>Usenet 用の .nzb ファイル</translation>
     </message>
     <message>
+        <location line="+10"/>
+        <source>Menu entry</source>
+        <translation>メニュー項目</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Adds eMule Qt to the desktop&apos;s application menu</source>
+        <translation>デスクトップのアプリケーションメニューに eMule Qt を追加します</translation>
+    </message>
+    <message>
         <location line="+171"/>
         <source>Ports and Connection</source>
         <translation>ポートと接続</translation>
@@ -10076,8 +10086,8 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>eMule はサーバーおよびクライアントとの通信に2つのポートを使用します。これらのポートはリモートクライアントに対して空いている必要があります。TCP ポートは eMule の主要機能を確保するために必要です。UDP ポートは Kad（サーバーレスネットワーク）およびネットワーク使用量の削減（オーバーヘッド）に使用されます。</translation>
     </message>
     <message>
-        <location line="-575"/>
-        <location line="+373"/>
+        <location line="-586"/>
+        <location line="+384"/>
         <source>Unlimited</source>
         <translation>無制限</translation>
     </message>
@@ -10126,18 +10136,18 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 プロバイダーが eMule を制限または遮断しようとする場合、難読化を有効にするとそのような制限を回避しやすくなります。</translation>
     </message>
     <message>
-        <location line="-265"/>
+        <location line="-276"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>ネットワーク活動が開始されていない間に、ここでポートを変更できます。</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+449"/>
+        <location line="+460"/>
         <source>TCP:</source>
         <translation>TCP：</translation>
     </message>
     <message>
-        <location line="-445"/>
+        <location line="-456"/>
         <source>UDP:</source>
         <translation>UDP：</translation>
     </message>
@@ -10194,7 +10204,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation type="vanished">この機能をオフにすると eMule はサーバーに少し速く接続できますが、誤った LowID 接続が増えることがあります。</translation>
     </message>
     <message>
-        <location line="+105"/>
+        <location line="+116"/>
         <source>Select your internet connection. eMule derives its download and upload limits from it, leaving room for your other applications. You can change the limits at any time in the Options.</source>
         <translation>インターネット接続を選択してください。eMule はそこからダウンロードとアップロードの制限を決め、他のアプリケーションのための余裕を残します。制限はオプションでいつでも変更できます。</translation>
     </message>
@@ -12985,12 +12995,12 @@ Other members see your nick and posts; your node takes part in passing the room&
     </message>
     <message>
         <location line="+12"/>
-        <location line="+1574"/>
+        <location line="+1580"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K：未接続</translation>
     </message>
     <message>
-        <location line="-1502"/>
+        <location line="-1508"/>
         <source>Kad: Connected</source>
         <translation>Kad：接続済み</translation>
     </message>
@@ -13006,12 +13016,12 @@ Other members see your nick and posts; your node takes part in passing the room&
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1494"/>
+        <location line="+1500"/>
         <source>Kad: Disconnected</source>
         <translation>Kad：未接続</translation>
     </message>
     <message>
-        <location line="-1401"/>
+        <location line="-1407"/>
         <source>Users: %1 | Files: %2</source>
         <translation>ユーザー：%1 | ファイル：%2</translation>
     </message>
@@ -13448,7 +13458,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>オプションを開く</translation>
     </message>
     <message>
-        <location line="+208"/>
+        <location line="+214"/>
         <source>Main</source>
         <translation>メイン</translation>
     </message>

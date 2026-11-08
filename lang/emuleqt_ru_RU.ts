@@ -1005,7 +1005,7 @@ Trust the new certificate?</source>
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/utils/FileAssociation.cpp" line="+604"/>
+        <location filename="../src/gui/utils/FileAssociation.cpp" line="+636"/>
         <source>Could not write the file association to the registry.</source>
         <translation>Не удалось записать ассоциацию файлов в реестр.</translation>
     </message>
@@ -9757,33 +9757,33 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
     <name>eMule::FirstStartWizard</name>
     <message>
         <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+57"/>
-        <location line="+373"/>
+        <location line="+384"/>
         <source>Unlimited</source>
         <translation>Без ограничений</translation>
     </message>
     <message>
-        <location line="-364"/>
+        <location line="-375"/>
         <source>eMule First Runtime Wizard</source>
         <translation>Помощник первого запуска eMule</translation>
     </message>
     <message>
-        <location line="+566"/>
+        <location line="+577"/>
         <source>eMule uses two ports for communication with servers and clients. These ports must be free and available for remote clients. The TCP port must be available to ensure the main functionality of eMule. The UDP port is used for Kad (serverless network) and to reduce network usage (Overhead).</source>
         <translation>eMule использует два порта для связи с серверами и клиентами. Эти порты должны быть свободны и доступны для удалённых клиентов. TCP порт должен быть доступен для обеспечения основной функциональности eMule. UDP порт используется для Kad (бессерверной сети) и для снижения сетевой нагрузки (служебного трафика).</translation>
     </message>
     <message>
-        <location line="-467"/>
+        <location line="-478"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>Здесь можно изменить порты, пока сетевая активность не началась.</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+449"/>
+        <location line="+460"/>
         <source>TCP:</source>
         <translation>TCP:</translation>
     </message>
     <message>
-        <location line="-445"/>
+        <location line="-456"/>
         <source>UDP:</source>
         <translation>UDP:</translation>
     </message>
@@ -9910,6 +9910,16 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <location line="+1"/>
         <source>.nzb files for Usenet</source>
         <translation>Файлы .nzb для Usenet</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Menu entry</source>
+        <translation>Пункт меню</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Adds eMule Qt to the desktop&apos;s application menu</source>
+        <translation>Добавляет eMule Qt в меню приложений рабочего стола</translation>
     </message>
     <message>
         <location line="+44"/>
@@ -12754,12 +12764,12 @@ Enable at least one under Options → Connection to connect.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1574"/>
+        <location line="+1580"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: Отсоединён</translation>
     </message>
     <message>
-        <location line="-1565"/>
+        <location line="-1571"/>
         <source>eD2K Server: %1  (%2 Users)</source>
         <translation>eD2K сервер: %1  (%2 пользователей)</translation>
     </message>
@@ -12800,12 +12810,12 @@ Enable at least one under Options → Connection to connect.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1494"/>
+        <location line="+1500"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: Отсоединён</translation>
     </message>
     <message>
-        <location line="-1453"/>
+        <location line="-1459"/>
         <source>ed3k: Connected</source>
         <translation>ed3k: Соединён</translation>
     </message>
@@ -13138,7 +13148,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>Открыть настройки</translation>
     </message>
     <message>
-        <location line="+208"/>
+        <location line="+214"/>
         <source>Main</source>
         <translation>Основная</translation>
     </message>

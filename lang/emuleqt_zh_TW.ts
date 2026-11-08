@@ -989,7 +989,7 @@ Trust the new certificate?</source>
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/utils/FileAssociation.cpp" line="+604"/>
+        <location filename="../src/gui/utils/FileAssociation.cpp" line="+636"/>
         <source>Could not write the file association to the registry.</source>
         <translation>無法將檔案關聯寫入登錄檔。</translation>
     </message>
@@ -9687,33 +9687,33 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
     <name>eMule::FirstStartWizard</name>
     <message>
         <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+57"/>
-        <location line="+373"/>
+        <location line="+384"/>
         <source>Unlimited</source>
         <translation>無限制</translation>
     </message>
     <message>
-        <location line="-364"/>
+        <location line="-375"/>
         <source>eMule First Runtime Wizard</source>
         <translation>eMule 首次執行精靈</translation>
     </message>
     <message>
-        <location line="+566"/>
+        <location line="+577"/>
         <source>eMule uses two ports for communication with servers and clients. These ports must be free and available for remote clients. The TCP port must be available to ensure the main functionality of eMule. The UDP port is used for Kad (serverless network) and to reduce network usage (Overhead).</source>
         <translation>eMule 使用兩個連接埠與伺服器和客戶端通訊。這些連接埠必須空閒並可供遠端客戶端使用。TCP 連接埠必須可用以確保 eMule 的主要功能。UDP 連接埠用於 Kad (無伺服器網路) 和減少網路使用量 (額外負擔)。</translation>
     </message>
     <message>
-        <location line="-467"/>
+        <location line="-478"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>在尚未開始任何網路活動前，您可以在此變更連接埠。</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+449"/>
+        <location line="+460"/>
         <source>TCP:</source>
         <translation>TCP：</translation>
     </message>
     <message>
-        <location line="-445"/>
+        <location line="-456"/>
         <source>UDP:</source>
         <translation>UDP：</translation>
     </message>
@@ -9840,6 +9840,16 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <location line="+1"/>
         <source>.nzb files for Usenet</source>
         <translation>用於 Usenet 的 .nzb 檔案</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Menu entry</source>
+        <translation>選單項目</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Adds eMule Qt to the desktop&apos;s application menu</source>
+        <translation>將 eMule Qt 加入桌面的應用程式選單</translation>
     </message>
     <message>
         <location line="+44"/>
@@ -12660,12 +12670,12 @@ Enable at least one under Options → Connection to connect.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1574"/>
+        <location line="+1580"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K：已中斷連線</translation>
     </message>
     <message>
-        <location line="-1565"/>
+        <location line="-1571"/>
         <source>eD2K Server: %1  (%2 Users)</source>
         <translation>eD2K 伺服器：%1  (%2 位使用者)</translation>
     </message>
@@ -12706,12 +12716,12 @@ Enable at least one under Options → Connection to connect.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1494"/>
+        <location line="+1500"/>
         <source>Kad: Disconnected</source>
         <translation>Kad：已中斷連線</translation>
     </message>
     <message>
-        <location line="-1453"/>
+        <location line="-1459"/>
         <source>ed3k: Connected</source>
         <translation>ed3k：已連線</translation>
     </message>
@@ -13044,7 +13054,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>開啟選項</translation>
     </message>
     <message>
-        <location line="+208"/>
+        <location line="+214"/>
         <source>Main</source>
         <translation>主選單</translation>
     </message>
