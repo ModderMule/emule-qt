@@ -137,15 +137,12 @@ bool SharedDirWatcher::isOnNetworkShare(const QString& dir)
 
 SharedDirWatchWorker::SharedDirWatchWorker(QObject* parent)
     : QObject(parent)
-    , m_watcher(new QFileSystemWatcher(this))   // moves with us to the worker thread
 {
-    connect(m_watcher, &QFileSystemWatcher::directoryChanged,
-            this, &SharedDirWatchWorker::directoryChanged);
 }
 
 void SharedDirWatchWorker::watch(const QList<Request>& requests, bool checkRemote)
 {
-    const QStringList have = m_watcher->directories();
+    const QStringList have = watcher()->directories();
     QStringList add;
     for (const Request& r : requests)
         if (!have.contains(r.dir) && !add.contains(r.dir))
@@ -164,13 +161,13 @@ void SharedDirWatchWorker::watch(const QList<Request>& requests, bool checkRemot
 
 void SharedDirWatchWorker::unwatch(const QString& dir)
 {
-    if (m_watcher->directories().contains(dir))
-        m_watcher->removePath(dir);
+    if (watcher()->directories().contains(dir))
+        watcher()->removePath(dir);
 }
 
 void SharedDirWatchWorker::rewatchIfLost(const QString& dir, quint64 request)
 {
-    if (m_watcher->directories().contains(dir))
+    if (watcher()->directories().contains(dir))
         return;
     if (beforeAdd)
         beforeAdd(dir);
@@ -180,6 +177,20 @@ void SharedDirWatchWorker::rewatchIfLost(const QString& dir, quint64 request)
 // ---------------------------------------------------------------------------
 // Private
 // ---------------------------------------------------------------------------
+
+QFileSystemWatcher* SharedDirWatchWorker::watcher()
+{
+    // Made here, on the worker thread: on Windows the watcher hooks a drive listener
+    // into the current thread's event dispatcher and unhooks it from whatever thread
+    // deletes it. Made on the main thread, the hook outlived the worker and crashed
+    // the main loop.
+    if (!m_watcher) {
+        m_watcher = new QFileSystemWatcher(this);
+        connect(m_watcher, &QFileSystemWatcher::directoryChanged,
+                this, &SharedDirWatchWorker::directoryChanged);
+    }
+    return m_watcher;
+}
 
 bool SharedDirWatcher::onDirectoryEvent(const QString& dir)
 {

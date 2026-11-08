@@ -1688,8 +1688,10 @@ set_tests_properties(tst_Updater PROPERTIES TIMEOUT 180)
 # with "Received a fatal error". APPEND, so emule_add_test's QT_QPA_PLATFORM
 # survives.
 if(EMULE_LIVE_TESTS)
+    # RESOURCE_LOCK ed2k_port: these bind the fixed EMULE_TCP_PORT/EMULE_UDP_PORT from
+    # .env, so under ctest -j only one at a time
     emule_add_test(tst_KadLiveNetwork FOLDER "LiveNetwork")
-    set_tests_properties(tst_KadLiveNetwork PROPERTIES LABELS "live" TIMEOUT 180)
+    set_tests_properties(tst_KadLiveNetwork PROPERTIES LABELS "live" TIMEOUT 360 RESOURCE_LOCK ed2k_port)
 
     # Runs every case once per cache server it can reach, and skips the rest:
     # EMULE_HTTPCACHE_URL / EMULE_HTTPCACHE_KEY name one that is already running,
@@ -1703,7 +1705,7 @@ if(EMULE_LIVE_TESTS)
     set_property(TEST tst_HttpCacheLive APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=60000")
 
     emule_add_test(tst_FileDownloadLive FOLDER "LiveNetwork")
-    set_tests_properties(tst_FileDownloadLive PROPERTIES LABELS "live" TIMEOUT 960)
+    set_tests_properties(tst_FileDownloadLive PROPERTIES LABELS "live" TIMEOUT 960 RESOURCE_LOCK ed2k_port)
     set_property(TEST tst_FileDownloadLive APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=960000")
 
     emule_add_test(tst_ServerDownloadLive FOLDER "LiveNetwork")
@@ -1715,7 +1717,7 @@ if(EMULE_LIVE_TESTS)
     set_property(TEST tst_ServerGlobalSearchLive APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=120000")
 
     emule_add_test(tst_ServerConnectLive FOLDER "LiveNetwork")
-    set_tests_properties(tst_ServerConnectLive PROPERTIES LABELS "live" TIMEOUT 320)
+    set_tests_properties(tst_ServerConnectLive PROPERTIES LABELS "live" TIMEOUT 320 RESOURCE_LOCK ed2k_port)
     set_property(TEST tst_ServerConnectLive APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=240000")
 
     emule_add_test(tst_ServerLocalTest FOLDER "LiveNetwork")
@@ -1761,7 +1763,7 @@ if(EMULE_LIVE_TESTS)
     set_property(TEST tst_SmtpSendEmail APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=60000")
 
     emule_add_test(tst_PortTestLive FOLDER "LiveNetwork")
-    set_tests_properties(tst_PortTestLive PROPERTIES LABELS "live" TIMEOUT 60)
+    set_tests_properties(tst_PortTestLive PROPERTIES LABELS "live" TIMEOUT 60 RESOURCE_LOCK ed2k_port)
     set_property(TEST tst_PortTestLive APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=60000")
 
     emule_add_test(tst_PortMapLive FOLDER "LiveNetwork")

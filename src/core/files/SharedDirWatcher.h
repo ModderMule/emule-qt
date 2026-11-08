@@ -55,6 +55,8 @@ signals:
     void directoryChanged(const QString& dir);
 
 private:
+    QFileSystemWatcher* watcher();   // created on first use, on the worker thread
+
     QFileSystemWatcher* m_watcher = nullptr;
 };
 

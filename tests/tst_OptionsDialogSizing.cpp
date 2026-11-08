@@ -38,6 +38,7 @@
 #include <QScopeGuard>
 #include <QScreen>
 #include <QScrollArea>
+#include <QFontMetrics>
 #include <QSlider>
 #include <QSpinBox>
 #include <QStackedWidget>
@@ -52,6 +53,12 @@
 #include <QTemporaryDir>
 #include <QTreeView>
 #include <QTreeWidget>
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 using namespace eMule;
 
@@ -262,6 +269,12 @@ void TestOptionsDialogSizing::defaultSizeFitsTheScreen()
 
 void TestOptionsDialogSizing::storedSizeIsRestored()
 {
+    // offscreen without a font database (Windows): 12 px box glyphs, the dialog's
+    // minimum then fills the test screen
+    const QFontMetrics fm(QApplication::font());
+    if (fm.horizontalAdvance(u'i') == fm.horizontalAdvance(u'W'))
+        QSKIP("offscreen platform without real fonts");
+
     OptionsDialog probe(nullptr, nullptr);
     const QSize wanted = probe.minimumSize() + QSize(8, 12);
     QVERIFY2(wanted.width() < probe.screen()->availableGeometry().width() - 40
@@ -1282,6 +1295,11 @@ void TestOptionsDialogSizing::theSharedDirTreeStartsAtTheMachineRoot()
     QVERIFY(scratch.isValid());
     QVERIFY(QDir(scratch.path()).mkdir(QStringLiteral("shown")));
     QVERIFY(QDir(scratch.path()).mkdir(QStringLiteral(".hidden")));
+#ifdef Q_OS_WIN
+    // no dot convention here: hidden is the file attribute
+    const QString hidden = QDir::toNativeSeparators(QDir(scratch.path()).filePath(QStringLiteral(".hidden")));
+    QVERIFY(SetFileAttributesW(reinterpret_cast<LPCWSTR>(hidden.utf16()), FILE_ATTRIBUTE_HIDDEN));
+#endif
 
     OptionsDialog dlg(nullptr, nullptr);
     auto* tree = stackOf(dlg)->widget(OptionsDialog::PageDirectories)->findChild<QTreeView*>();
@@ -1375,3 +1393,4 @@ void TestOptionsDialogSizing::ctrlClickSharesTheSubdirectories()
 
 QTEST_MAIN(TestOptionsDialogSizing)
 #include "tst_OptionsDialogSizing.moc"
+

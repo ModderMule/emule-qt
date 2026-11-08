@@ -387,7 +387,9 @@ int main(int argc, char* argv[])
                               R"("logicalDpi":96,"logicalBaseDpi":96,"dpr":1}]})")
                    .arg(kScreenWidth).arg(kScreenHeight).toUtf8());
     file.close();
-    qputenv("QT_QPA_PLATFORM", QStringLiteral("offscreen:configfile=%1").arg(config).toUtf8());
+    // Relative: Qt splits the platform spec on ':', so "C:/..." would break on Windows
+    qputenv("QT_QPA_PLATFORM", QStringLiteral("offscreen:configfile=%1")
+                                   .arg(QDir::current().relativeFilePath(config)).toUtf8());
 
     QApplication app(argc, argv);
     TestFileDetailDialog test;

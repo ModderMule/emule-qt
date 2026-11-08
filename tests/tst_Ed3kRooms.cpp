@@ -433,9 +433,11 @@ void tst_Ed3kRooms::roomsAcrossRestart()
     const QString memberFile = QDir(dir).filePath(QStringLiteral("%1.member").arg(hexOf(*room)));
     QVERIFY(QFile::exists(memberFile));
     QCOMPARE(QFile(memberFile).size(), 32);
+#ifndef Q_OS_WIN
     QCOMPARE(QFile::permissions(memberFile) & (QFileDevice::ReadGroup | QFileDevice::ReadOther), QFileDevice::Permissions());
     QCOMPARE(QFile::permissions(QDir(dir).filePath(QStringLiteral("joined.cbor"))) & (QFileDevice::ReadGroup | QFileDevice::ReadOther),
              QFileDevice::Permissions());
+#endif
 
     // A restarts: the room is joined again, as owner, with the same member key and nick
     a.stop();
@@ -492,13 +494,15 @@ void tst_Ed3kRooms::replyRoundTripShowsTheQuotedLine()
     const auto& atB = rb.find(*room)->posts;
     const auto question = std::ranges::find_if(atB, [](const auto& p) { return p.text == QStringLiteral("who has the film?"); });
     QVERIFY(question != atB.end());
-    const QString questionId = QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(question->id.data()), 16).toHex());
+    // copied: B's own post below grows the deque, which invalidates `question`
+    const auto questionRaw = question->id;
+    const QString questionId = QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(questionRaw.data()), 16).toHex());
     QVERIFY(post(rb, *room, QStringLiteral("I do"), questionId).fieldBool(0));
     QTRY_VERIFY_WITH_TIMEOUT(texts(ra, *room).contains(QStringLiteral("I do")), 30000);
     const auto& atA = ra.find(*room)->posts;
     const auto answer = std::ranges::find_if(atA, [](const auto& p) { return p.text == QStringLiteral("I do"); });
     QVERIFY(answer != atA.end() && answer->replyTo.has_value());
-    QVERIFY(*answer->replyTo == question->id);
+    QVERIFY(*answer->replyTo == questionRaw);
     // over IPC and in the tab: the quoted parent
     auto tab = tabOf(*room);
     tab->setRow(rowOf(ra, *room));

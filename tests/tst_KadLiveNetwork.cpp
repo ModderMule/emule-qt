@@ -66,6 +66,20 @@ using namespace eMule;
 using namespace eMule::kad;
 using namespace eMule::testing;
 
+namespace {
+
+/// A publish is done once its search stops: a stopping search stays listed until
+/// its lifetime is over (MFC too), so isSearching() alone waits for that.
+bool publishDone(uint32 searchID)
+{
+    for (const auto& [target, search] : SearchManager::getSearches())
+        if (search->getSearchID() == searchID)
+            return search->stopping();
+    return true;
+}
+
+} // namespace
+
 // ---------------------------------------------------------------------------
 // Test class
 // ---------------------------------------------------------------------------
@@ -675,7 +689,7 @@ void tst_KadLiveNetwork::publishSources_completesForSharedFiles()
     // Wait for all source publishes to complete (3 min total budget — 45s here).
     const bool allDone = QTest::qWaitFor([&] {
         for (uint32 id : searchIDs) {
-            if (SearchManager::isSearching(id))
+            if (!publishDone(id))
                 return false;
         }
         return true;
@@ -807,7 +821,7 @@ void tst_KadLiveNetwork::publishKeywords_completesWithLoad()
     // Wait for all keyword publishes to complete (3 min total budget — 45s here)
     const bool allDone = QTest::qWaitFor([&] {
         for (const auto& [id, kw] : searchInfo) {
-            if (SearchManager::isSearching(id))
+            if (!publishDone(id))
                 return false;
         }
         return true;
