@@ -54,6 +54,9 @@ DisableReadyPage=yes
 ; GUI and daemon hold their own exe and the Qt DLLs open
 CloseApplications=force
 RestartApplications=no
+; The GUI starts no core while this exists (main.cpp installerRunning): it would
+; start the one StopAppCores just stopped again (#157). Global: GUIs of other sessions
+SetupMutex=eMuleQtSetupRunning,Global\eMuleQtSetupRunning
 Compression=lzma2/max
 SolidCompression=yes
 OutputBaseFilename=eMuleQt-v{#AppVersion}-win64-setup
@@ -354,9 +357,10 @@ var
 begin
   App := AddBackslash(ExpandConstant('{app}'));
   StringChangeEx(App, #39, #39#39, True);
+  // no line may start with #: ISPP reads it as a directive
   Cmd := '-NoProfile -NonInteractive -Command "Get-Process ' + ChangeFileExt(CoreExe, '') +
-    ' -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith(' +
-    #39 + App + #39 + ', [StringComparison]::OrdinalIgnoreCase) } | ' +
+    ' -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith(' + #39 +
+    App + #39 + ', [StringComparison]::OrdinalIgnoreCase) } | ' +
     'Stop-Process -Force -PassThru | Wait-Process -Timeout 10"';
   if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Cmd, '',
               SW_HIDE, ewWaitUntilTerminated, ResultCode) then
@@ -373,7 +377,8 @@ begin
   begin
     Log('Asked running ' + CoreExe + ' to stop');
     I := 0;
-    while (I < CoreStopPolls) and CloseAppCores(False) do
+    // Asked again each time: a core started meanwhile (GUI of an older version) too
+    while (I < CoreStopPolls) and CloseAppCores(True) do
     begin
       Sleep(250);
       I := I + 1;
@@ -395,6 +400,9 @@ end;
 
 function InitializeUninstall: Boolean;
 begin
+  // SetupMutex is setup's only; held until the uninstaller exits
+  CreateMutex('eMuleQtSetupRunning');
+  CreateMutex('Global\eMuleQtSetupRunning');
   StopAppCores;
   Result := True;
 end;

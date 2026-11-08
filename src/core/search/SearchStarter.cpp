@@ -27,6 +27,7 @@
 #include <QTimer>
 
 #include <cstring>
+#include <utility>
 
 namespace eMule {
 
@@ -227,6 +228,34 @@ SearchDispatch dispatchEd3kSearch(uint32 searchID, SearchType type, const Search
     return out;
 }
 
+// Meta API searches beside a sent ED2K / Kad search, for each network asked in
+// params.blendMeta. A network no known server offers, or an expression the Meta API
+// cannot take, is skipped: the ED2K / Kad search is what was asked for.
+void startBlendedMetaSearches(uint32 searchID, const SearchParams& params)
+{
+    if (!theApp.metaSearch || params.blendMeta == 0 || params.internal)
+        return;
+    static constexpr std::pair<uint8, SearchType> kBlends[] = {
+        {kBlendMetaUsenet, SearchType::MetaUsenet},
+        {kBlendMetaTorrent, SearchType::MetaTorrent},
+        {kBlendMetaWeb, SearchType::MetaWeb},
+    };
+    for (const auto& [bit, type] : kBlends) {
+        if ((params.blendMeta & bit) == 0)
+            continue;
+        auto request = buildMetaSearchRequest(params, type);
+        if (!request) {
+            logServerVerbose([&]() -> QString { return QStringLiteral("Blended %1 search %2 skipped: %3")
+                                 .arg(metaNetworkName(type)).arg(searchID).arg(request.error()); });
+            continue;
+        }
+        auto candidates = metaSearchCandidates(type);
+        if (candidates.empty())
+            continue;
+        theApp.metaSearch->startBlendedSearch(searchID, type, params, *request, std::move(candidates));
+    }
+}
+
 } // anonymous namespace
 
 AutoSearchState gatherAutoSearchState()
@@ -321,8 +350,6 @@ SearchQueueBackend defaultSearchQueueBackend(SearchList& list)
     backend.discard = [&list](uint32 searchID) { list.removeResults(searchID); };
 
     backend.dispatch = [&list](uint32 searchID, SearchType type, const SearchParams& params) {
-        if (type == SearchType::Kademlia)
-            return dispatchKadSearch(list, searchID, params);
         if (isMetaSearchType(type)) {
             list.setSearchExpression(searchID, params.expression);
             return dispatchMetaSearch(searchID, type, params);
@@ -331,7 +358,11 @@ SearchQueueBackend defaultSearchQueueBackend(SearchList& list)
             list.setSearchExpression(searchID, params.expression);
             return dispatchEd3kSearch(searchID, type, params);
         }
-        return dispatchEd2kSearch(list, searchID, type, params);
+        SearchDispatch out = type == SearchType::Kademlia ? dispatchKadSearch(list, searchID, params)
+                                                          : dispatchEd2kSearch(list, searchID, type, params);
+        if (out.outcome == SearchDispatch::Outcome::Sent)
+            startBlendedMetaSearches(searchID, params);
+        return out;
     };
 
     backend.endServerSearch = [&list](uint32 searchID) { list.releaseEd2kRouting(searchID); };
@@ -391,6 +422,8 @@ SearchStartResult startSearch(SearchList& list, SearchParams params)
 void stopSearch(SearchList& list, uint32 searchID)
 {
     kad::SearchManager::stopSearch(searchID, false);
+    if (theApp.metaSearch)
+        theApp.metaSearch->cancelBlendedSearches(searchID);
     if (theApp.globalSearch)
         theApp.globalSearch->cancelSearch(searchID);
     list.queue().stop(searchID);

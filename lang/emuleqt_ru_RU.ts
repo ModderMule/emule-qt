@@ -769,7 +769,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+583"/>
+        <location filename="../src/gui/app/main.cpp" line="+605"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -1197,7 +1197,7 @@ Has comments</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4229"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4567"/>
         <source>Bytes</source>
         <translation>байт</translation>
     </message>
@@ -5515,7 +5515,7 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+934"/>
-        <location line="+220"/>
+        <location line="+224"/>
         <source>Not valid</source>
         <translation>Недействительно</translation>
     </message>
@@ -5576,7 +5576,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">Пересыльщик:</translation>
     </message>
     <message>
-        <location line="-1402"/>
+        <location line="-1406"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>Также раздавать публикации Usenet через ed3k</translation>
     </message>
@@ -5668,12 +5668,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1196"/>
+        <location line="+1200"/>
         <source> credits/MiB</source>
         <translation> кредитов/MiB</translation>
     </message>
     <message>
-        <location line="-1205"/>
+        <location line="-1209"/>
         <source>Never pay (receipts only)</source>
         <translation>Никогда не платить (только квитанции)</translation>
     </message>
@@ -5921,12 +5921,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1034"/>
+        <location line="+1042"/>
         <source>not read yet</source>
         <translation>ещё не прочитано</translation>
     </message>
     <message>
-        <location line="-1032"/>
+        <location line="-1040"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Счёт в минусе: выход — новый кредитный ключ.</translation>
     </message>
@@ -6312,22 +6312,22 @@ Export?</source>
     </message>
     <message>
         <location line="+39"/>
-        <location line="+220"/>
+        <location line="+224"/>
         <source>Not reachable</source>
         <translation>Недоступен</translation>
     </message>
     <message>
-        <location line="-139"/>
+        <location line="-142"/>
         <source>Solve puzzles with these services</source>
         <translation>Решать головоломки этими сервисами</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+1"/>
         <source>A hoster&apos;s image puzzle goes to these paid services first; the puzzle window only comes when none of them answers.</source>
         <translation>Картинка-головоломка хостера сначала уходит в эти платные сервисы; окно головоломки появляется, только если ни один не ответил.</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+6"/>
         <source>Captcha solver services solve the puzzles of hosters for a small fee each. An account needs credit at the service. Logins stay on this computer: never sent to another node, never logged.</source>
         <translation>Сервисы решения капчи решают головоломки хостеров за небольшую плату за каждую. На счёте в сервисе нужен баланс. Данные входа остаются на этом компьютере: никогда не передаются другому узлу и не записываются в журнал.</translation>
     </message>
@@ -6337,7 +6337,7 @@ Export?</source>
         <translation>Сервис</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+17"/>
         <source>Add captcha solver</source>
         <translation>Добавить решатель капчи</translation>
     </message>
@@ -6387,12 +6387,12 @@ Export?</source>
         <translation>Автозапуск скоростной загрузки</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+1"/>
         <source>Once the credit balance reaches the threshold, every ed3k download bids the credit factor for priority upload slots. It stops before about 20 credits are left, from what downloads spent in the past seconds, so the account is never overdrawn.</source>
         <translation>Когда баланс кредитов достигает порога, каждая загрузка ed3k ставит кредитный коэффициент за приоритетные слоты отдачи. Остановка происходит до того, как останется около 20 кредитов, по расходу загрузок за последние секунды, поэтому счёт никогда не уходит в минус.</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+15"/>
         <source>The most paid per MiB for a priority slot while the autostart runs.</source>
         <translation>Максимум за МиБ за приоритетный слот, пока работает автозапуск.</translation>
     </message>
@@ -6417,7 +6417,7 @@ Export?</source>
         <translation>Порог автозапуска:</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+27"/>
         <source>ed3k is off: this has no effect.</source>
         <translation>ed3k выключен: это не действует.</translation>
     </message>
@@ -6456,7 +6456,7 @@ Export?</source>
         <translation>Скоростная загрузка не работает. Баланс: %1</translation>
     </message>
     <message>
-        <location line="-686"/>
+        <location line="-694"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -6688,18 +6688,18 @@ Export?</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+233"/>
+        <location line="+236"/>
         <source>User</source>
         <translation>Пользователь</translation>
     </message>
     <message>
-        <location line="-233"/>
-        <location line="+233"/>
+        <location line="-236"/>
+        <location line="+236"/>
         <source>Status</source>
         <translation>Статус</translation>
     </message>
     <message>
-        <location line="-39"/>
+        <location line="-42"/>
         <source>Add...</source>
         <translation>Добавить...</translation>
     </message>
@@ -6786,7 +6786,7 @@ Export?</source>
         <translation type="vanished">Публиковать ссылки хостеров</translation>
     </message>
     <message>
-        <location line="+90"/>
+        <location line="+94"/>
         <source>Add hoster account</source>
         <translation>Добавить учётную запись хостера</translation>
     </message>
@@ -20212,14 +20212,14 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     </message>
     <message>
         <location line="+103"/>
-        <location line="+1240"/>
+        <location line="+1244"/>
         <location line="+21"/>
         <location line="+602"/>
         <source>Download</source>
         <translation>Скачать</translation>
     </message>
     <message>
-        <location line="-1843"/>
+        <location line="-1847"/>
         <source>Close All Searches</source>
         <translation>Закрыть все поиски</translation>
     </message>
@@ -20239,7 +20239,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>Тип:</translation>
     </message>
     <message>
-        <location line="+846"/>
+        <location line="+850"/>
         <location line="+9"/>
         <source>Any</source>
         <translation>Любой</translation>
@@ -20286,7 +20286,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>Коллекция</translation>
     </message>
     <message>
-        <location line="-858"/>
+        <location line="-862"/>
         <source>Method:</source>
         <translation>Метод:</translation>
     </message>
@@ -20356,7 +20356,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>Сбросить</translation>
     </message>
     <message>
-        <location line="+24"/>
+        <location line="+27"/>
         <source>Show results the server found on this network</source>
         <translation>Показывать результаты, найденные сервером в этой сети</translation>
     </message>
@@ -20488,13 +20488,13 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     <message>
         <location line="+34"/>
         <location line="+37"/>
-        <location line="+204"/>
+        <location line="+205"/>
         <source>Not connected to daemon — search cannot be started.</source>
         <translation>Нет соединения с демоном — поиск невозможно начать.</translation>
     </message>
     <message>
-        <location line="-225"/>
-        <location line="+54"/>
+        <location line="-226"/>
+        <location line="+55"/>
         <location line="+214"/>
         <source>Search</source>
         <translation>Поиск</translation>
@@ -20561,12 +20561,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>Поиск «%1» не удался: %2</translation>
     </message>
     <message>
-        <location line="-721"/>
+        <location line="-725"/>
         <source>Usenet search</source>
         <translation>Поиск в Usenet</translation>
     </message>
     <message>
-        <location line="+965"/>
+        <location line="+969"/>
         <source>%1 results — %2 of %3 indexers</source>
         <translation>Результатов: %1 — индексаторов: %2 из %3</translation>
     </message>
@@ -20675,7 +20675,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>Индексатор торрентов не настроен.</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-503"/>
+        <source>Show results the server found on this network. New eD2K and Kad searches also ask the servers&apos; catalogues of it.</source>
+        <translation>Показывать результаты, найденные сервером в этой сети. Новые поиски eD2K и Kad также опрашивают каталоги серверов.</translation>
+    </message>
+    <message>
+        <location line="+504"/>
         <source>No Usenet indexer is configured.</source>
         <translation>Индексатор Usenet не настроен.</translation>
     </message>
@@ -20835,7 +20840,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>Предпросмотр недоступен — веб-сервер не запущен или не получен токен потока.</translation>
     </message>
     <message>
-        <location line="+364"/>
+        <location line="+370"/>
         <source>Asking servers: %1 / %2</source>
         <translation>Опрос серверов: %1 / %2</translation>
     </message>
@@ -27773,19 +27778,31 @@ A password is set for this release.</source>
 <context>
     <name>eMule::WebServer</name>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3492"/>
-        <location line="+3374"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3829"/>
+        <location line="+3711"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>Сессия истекла — войдите снова</translation>
     </message>
     <message>
-        <location line="-3419"/>
+        <location line="-3756"/>
         <source>Guests cannot add downloads</source>
         <translation>Гости не могут добавлять загрузки</translation>
     </message>
     <message>
-        <location line="+649"/>
+        <location line="+589"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+180"/>
+        <source>Torrent</source>
+        <translation>Торрент</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+19"/>
+        <source>Web</source>
+        <translation>Веб</translation>
+    </message>
+    <message>
+        <location line="+71"/>
         <source>Looking for comments on Kad</source>
         <translation>Поиск комментариев в Kad</translation>
     </message>
@@ -27812,13 +27829,13 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+32"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+90"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-102"/>
         <source>Name</source>
         <translation>Имя</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+58"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+69"/>
         <source>Size</source>
         <translation>Размер</translation>
     </message>
@@ -27829,7 +27846,7 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+40"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-89"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-104"/>
         <source>Download</source>
         <translation>Скачать</translation>
     </message>
@@ -27898,7 +27915,8 @@ A password is set for this release.</source>
         <translation>Ошибка входа</translation>
     </message>
     <message numerus="yes">
-        <location line="+238"/>
+        <location line="+255"/>
+        <location line="+1038"/>
         <source>%n download(s) added</source>
         <translation>
             <numerusform>Добавлена %n загрузка</numerusform>
@@ -27907,7 +27925,7 @@ A password is set for this release.</source>
         </translation>
     </message>
     <message>
-        <location line="+35"/>
+        <location line="-993"/>
         <source>Not sent yet — the search is waiting (%1) and starts by itself.</source>
         <translation>Ещё не отправлен — поиск ожидает (%1) и начнётся сам.</translation>
     </message>
@@ -27945,12 +27963,12 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1981"/>
+        <location line="+2279"/>
         <source>Web Control Panel</source>
         <translation>Панель веб-управления</translation>
     </message>
     <message>
-        <location line="-1973"/>
+        <location line="-2271"/>
         <source>Not connected</source>
         <translation>Нет соединения</translation>
     </message>
@@ -27960,13 +27978,13 @@ A password is set for this release.</source>
         <translation>Заблокировано: сетевой интерфейс недоступен</translation>
     </message>
     <message>
-        <location line="+299"/>
+        <location line="+303"/>
         <source>Connected</source>
         <translation>Соединён</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+335"/>
+        <location line="+342"/>
         <source>Disconnected</source>
         <translation>Отсоединён</translation>
     </message>
@@ -27987,7 +28005,7 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+107"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+126"/>
         <source>Uploads</source>
         <translation>Отдача</translation>
     </message>
@@ -28003,7 +28021,7 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-96"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-112"/>
         <source>KB/s</source>
         <translation>KB/s</translation>
     </message>
@@ -28063,31 +28081,50 @@ A password is set for this release.</source>
         <translation>Недоступно</translation>
     </message>
     <message>
-        <location line="+150"/>
+        <location line="+40"/>
+        <source>Error: %1</source>
+        <translation>Ошибка: %1</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <location line="+21"/>
+        <location line="+372"/>
         <location line="+1135"/>
         <source>Queued</source>
         <translation>В очереди</translation>
     </message>
     <message>
-        <location line="-1134"/>
+        <location line="-1525"/>
+        <source>Downloading metadata</source>
+        <translation>Загрузка метаданных</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+19"/>
+        <location line="+371"/>
         <location line="+1133"/>
         <source>Downloading</source>
         <translation>Приём</translation>
     </message>
     <message>
-        <location line="-1132"/>
+        <location line="-1529"/>
+        <location line="+9"/>
+        <location line="+18"/>
+        <location line="+370"/>
         <source>Paused</source>
         <translation>Пауза</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-369"/>
+        <location line="+370"/>
         <location line="+967"/>
         <location line="+163"/>
         <source>Complete</source>
         <translation>Готово</translation>
     </message>
     <message>
-        <location line="-1129"/>
+        <location line="-1496"/>
+        <location line="+367"/>
         <source>Failed</source>
         <translation>Ошибка</translation>
     </message>
@@ -28107,12 +28144,130 @@ A password is set for this release.</source>
         <translation>Распаковка</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-398"/>
+        <location line="+18"/>
+        <location line="+381"/>
         <source>Checking</source>
         <translation>Проверяется</translation>
     </message>
     <message>
+        <location line="-396"/>
+        <source>Finished</source>
+        <translation>Завершён</translation>
+    </message>
+    <message>
         <location line="+1"/>
+        <source>Seeding</source>
+        <translation>Раздача</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Error</source>
+        <translation>Ошибка</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Moving</source>
+        <translation>Перемещение</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Matching</source>
+        <translation>Сопоставление</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Looking up</source>
+        <translation>Поиск</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Waiting</source>
+        <translation>Ожидание</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Puzzle</source>
+        <translation>Капча</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Gone</source>
+        <translation>Удалён</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Needs you</source>
+        <translation>Требуется действие</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>No resolver</source>
+        <translation>Нет резолвера</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+70"/>
+        <source>%n torrent(s)</source>
+        <translation>
+            <numerusform>%n торрент</numerusform>
+            <numerusform>%n торрента</numerusform>
+            <numerusform>%n торрентов</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Down: %1, up: %2</source>
+        <translation>Приём: %1, отдача: %2</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+40"/>
+        <source>%n download(s)</source>
+        <translation>
+            <numerusform>%n загрузка</numerusform>
+            <numerusform>%n загрузки</numerusform>
+            <numerusform>%n загрузок</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location line="+22"/>
+        <source>%n torrent(s) added</source>
+        <translation>
+            <numerusform>Добавлен %n торрент</numerusform>
+            <numerusform>Добавлено %n торрента</numerusform>
+            <numerusform>Добавлено %n торрентов</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+22"/>
+        <source>%1 of %2 torrent(s) did not take it.</source>
+        <translation>%1 из %2 торрентов не приняли это.</translation>
+    </message>
+    <message>
+        <location line="+30"/>
+        <source>%1 of %2 download(s) did not take it.</source>
+        <translation>%1 из %2 загрузок не приняли это.</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+22"/>
+        <source>Fetching %n result(s) from the server… refresh to see how it went.</source>
+        <translation>
+            <numerusform>Получение %n результата с сервера… обновите страницу, чтобы увидеть итог.</numerusform>
+            <numerusform>Получение %n результатов с сервера… обновите страницу, чтобы увидеть итог.</numerusform>
+            <numerusform>Получение %n результатов с сервера… обновите страницу, чтобы увидеть итог.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+12"/>
+        <source>&quot;%1&quot; grabbed</source>
+        <translation>«%1» получено</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>&quot;%1&quot; could not be grabbed: %2</source>
+        <translation>Не удалось получить «%1»: %2</translation>
+    </message>
+    <message>
+        <location line="+153"/>
         <source>Unknown</source>
         <translation>Неизвестно</translation>
     </message>
@@ -28177,7 +28332,7 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+55"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+99"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+115"/>
         <source>Usenet engine unavailable</source>
         <translation>Модуль Usenet недоступен</translation>
     </message>
@@ -28264,7 +28419,7 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+56"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-147"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-169"/>
         <source>All</source>
         <translation>Все</translation>
     </message>
@@ -28382,6 +28537,11 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location line="+2"/>
+        <source>Also ask</source>
+        <translation>Также искать</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Any</source>
         <translation>Любой</translation>
     </message>
@@ -28419,6 +28579,11 @@ Whichever network is idle lends its share to the other.</source>
         <location line="+1"/>
         <source>Back to the queue</source>
         <translation>Назад к очереди</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>BitTorrent is off.</source>
+        <translation>BitTorrent выключен.</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -28551,6 +28716,11 @@ Whichever network is idle lends its share to the other.</source>
         <translation>Документ (.doc .pdf ...)</translation>
     </message>
     <message>
+        <location line="+1"/>
+        <source>Down</source>
+        <translation>Приём</translation>
+    </message>
+    <message>
         <location line="+2"/>
         <source>Download Speed</source>
         <translation>Скорость приёма</translation>
@@ -28606,6 +28776,21 @@ Whichever network is idle lends its share to the other.</source>
         <translation>Состояние:</translation>
     </message>
     <message>
+        <location line="+1"/>
+        <source>Hoster</source>
+        <translation>Хостер</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hoster downloads are off.</source>
+        <translation>Загрузки с хостеров выключены.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hoster links, one per line:</source>
+        <translation>Ссылки на хостеры, по одной в строке:</translation>
+    </message>
+    <message>
         <location line="+2"/>
         <source>Kad</source>
         <translation>Kad</translation>
@@ -28644,6 +28829,11 @@ Whichever network is idle lends its share to the other.</source>
         <location line="+1"/>
         <source>Logout</source>
         <translation>Выход</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Magnet links, one per line:</source>
+        <translation>Magnet-ссылки, по одной в строке:</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -28692,6 +28882,11 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location line="+2"/>
+        <source>Network</source>
+        <translation>Сеть</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Newsgroups:</source>
         <translation>Группы новостей:</translation>
     </message>
@@ -28727,6 +28922,16 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location line="+1"/>
+        <source>Package</source>
+        <translation>Пакет</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Package:</source>
+        <translation>Пакет:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Password</source>
         <translation>Пароль</translation>
     </message>
@@ -28749,6 +28954,11 @@ Whichever network is idle lends its share to the other.</source>
         <location line="+1"/>
         <source>Pause All</source>
         <translation>Пауза для всех</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peers</source>
+        <translation>Пиры</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -28857,6 +29067,16 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location line="+1"/>
+        <source>Ratio</source>
+        <translation>Соотношение</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Recheck</source>
+        <translation>Перепроверить</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Recheck Firewall</source>
         <translation>Перепроверить файрвол</translation>
     </message>
@@ -28892,6 +29112,11 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location line="+1"/>
+        <source>Remove and delete files</source>
+        <translation>Удалить вместе с файлами</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Remove every Usenet download in &quot;%1&quot; and delete its files?</source>
         <translation>Удалить все загрузки Usenet в «%1» вместе с их файлами?</translation>
     </message>
@@ -28904,6 +29129,16 @@ Whichever network is idle lends its share to the other.</source>
         <location line="+1"/>
         <source>Remove the stored password for this download?</source>
         <translation>Удалить сохранённый пароль для этой загрузки?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove the ticked downloads and delete their files?</source>
+        <translation>Удалить отмеченные загрузки вместе с их файлами?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove the ticked torrents and delete their files?</source>
+        <translation>Удалить отмеченные торренты вместе с их файлами?</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -28922,8 +29157,18 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location line="+1"/>
+        <source>Retry</source>
+        <translation>Повторить</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Search</source>
         <translation>Поиск</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Seeds</source>
+        <translation>Сиды</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -29022,6 +29267,11 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location line="+1"/>
+        <source>The servers&apos; catalogues of these networks are asked too.</source>
+        <translation>Каталоги серверов для этих сетей тоже опрашиваются.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>These could not be added: %1</source>
         <translation>Не удалось добавить: %1</translation>
     </message>
@@ -29034,6 +29284,11 @@ Whichever network is idle lends its share to the other.</source>
         <location line="+1"/>
         <source>This download is no longer in the queue.</source>
         <translation>Этой загрузки больше нет в очереди.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Torrents</source>
+        <translation>Торренты</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -29067,6 +29322,11 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location line="+1"/>
+        <source>Up</source>
+        <translation>Отдача</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Upload Speed</source>
         <translation>Скорость отдачи</translation>
     </message>
@@ -29076,12 +29336,13 @@ Whichever network is idle lends its share to the other.</source>
         <translation>Время работы</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3565"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+2"/>
         <source>User</source>
         <translation>Пользователь</translation>
     </message>
@@ -29106,7 +29367,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>Видео (.avi .mkv ...)</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>You have already downloaded %1 of these. Download them again?</source>
         <translation>%1 из них уже загружены. Загрузить их снова?</translation>
     </message>

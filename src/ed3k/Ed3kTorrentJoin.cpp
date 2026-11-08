@@ -100,6 +100,7 @@ struct Ed3kTorrentJoin::Join {
     struct Member {
         ffi::Bytes hashes;           ///< block values: own hash, or of a download's Hashes event
         bool hashing = false;
+        bool flushWait = false;      ///< hashed once libtorrent's cache is on disk
         quint64 generation = 0;
         int rehashTries = 0;
         std::set<std::uint64_t> received;   ///< ed3k blocks written (offsets)
@@ -117,14 +118,6 @@ struct Ed3kTorrentJoin::Join {
     std::shared_ptr<Sink> sink;
     /// TORRENT_COMPLETE came before every member was hashed: complete() after the last
     bool completePending = false;
-    /// complete members hashed once libtorrent's flush with that ticket is done: a
-    /// passed piece may still be in its memory, not in the file
-    struct FlushWait {
-        quint64 ticket = 0;
-        int member = 0;
-        quint64 generation = 0;
-    };
-    std::vector<FlushWait> flushWait;
 };
 
 Ed3kTorrentJoin::Ed3kTorrentJoin(Ed3kSession& session, bt::BtSession& bt, const QString& configDir, QObject* parent)
@@ -138,7 +131,7 @@ Ed3kTorrentJoin::Ed3kTorrentJoin(Ed3kSession& session, bt::BtSession& bt, const 
     connect(&m_bt, &bt::BtSession::torrentRemoved, this, &Ed3kTorrentJoin::onTorrentRemoved);
     connect(&m_bt, &bt::BtSession::pieceResult, this, &Ed3kTorrentJoin::onPieceResult);
     connect(&m_bt, &bt::BtSession::torrentChecked, this, &Ed3kTorrentJoin::onTorrentChecked);
-    connect(&m_bt, &bt::BtSession::torrentFlushed, this, &Ed3kTorrentJoin::onTorrentFlushed);
+    connect(&m_bt, &bt::BtSession::cacheFlushed, this, &Ed3kTorrentJoin::onCacheFlushed);
 }
 
 Ed3kTorrentJoin::~Ed3kTorrentJoin()
@@ -330,6 +323,16 @@ void Ed3kTorrentJoin::onPieceResult(const QString& id, int piece, bool passed)
         logDebug([&]() -> QString { return QStringLiteral("verdict on piece %1 of %2 not taken (error %3)").arg(piece).arg(id, errorName(ok.error())); });
     drainEvents(id);
     pumpSession();
+}
+
+void Ed3kTorrentJoin::onCacheFlushed(const QString& id)
+{
+    Join* j = findJoin(id);
+    if (!j)
+        return;
+    for (std::size_t m = 0; m < j->members.size(); ++m)
+        if (j->members[m].flushWait)
+            hashMember(id, int(m));
 }
 
 void Ed3kTorrentJoin::onTorrentChecked(const QString& id)
@@ -630,19 +633,27 @@ void Ed3kTorrentJoin::onPieceHashed(const QString& id, int piece, const QByteArr
     switch (check->verdict) {
     case ffi::PieceVerdict::Pass:
     case ffi::PieceVerdict::Unknown:
+    case ffi::PieceVerdict::Pending:
+        // only §4.1 holds; §4.2 waited here too, and a slow or failed read of ours failed
+        // a piece the torrent passed (report 31)
         if (!check->hold) {
             done(false);
             break;
         }
-        [[fallthrough]];
-    case ffi::PieceVerdict::Pending:
         if (auto old = j->waiting.find(piece); old != j->waiting.end())
             old->second(false);   // a second hash of the same piece: the first one goes
         j->waiting[piece] = std::move(done);
         break;
     case ffi::PieceVerdict::Fail:
-        logDebug([&]() -> QString { return QStringLiteral("piece %1 of \"%2\" failed under BLAKE3").arg(piece).arg(name(id)); });
-        done(true);
+        if (blakeJudges(*j)) {
+            logDebug([&]() -> QString { return QStringLiteral("piece %1 of \"%2\" failed under BLAKE3").arg(piece).arg(name(id)); });
+            done(true);
+        } else {
+            // §4.2: the torrent's hash judges, the Kad set is only a claim. Spoiling here
+            // failed good pieces on every recheck and the claim never proved false (report 31)
+            logDebug([&]() -> QString { return QStringLiteral("piece %1 of \"%2\" fails the claimed set; the torrent hash decides").arg(piece).arg(name(id)); });
+            done(false);
+        }
         break;
     }
     if (check->hold) {
@@ -783,31 +794,36 @@ void Ed3kTorrentJoin::onMemberComplete(const QString& id, int index)
     if (const auto m = member(id, index); m && m->root)
         stopDownload(*m->root);
     Join::Member& m = j->members[std::size_t(index)];
+    if (m.hashing || m.flushWait)
+        return;
+    // its last blocks may still be in libtorrent's disk cache (pread_disk_io): a hash now
+    // reads a short or missing file
+    if (m_bt.flushCache(id)) {
+        m.flushWait = true;
+        QTimer::singleShot(kFlushWaitMs, this, [this, id, index] {
+            if (Join* w = findJoin(id); w && std::size_t(index) < w->members.size() && w->members[std::size_t(index)].flushWait)
+                hashMember(id, index);
+        });
+        return;
+    }
+    hashMember(id, index);
+}
+
+void Ed3kTorrentJoin::hashMember(const QString& id, int index)
+{
+    Join* j = findJoin(id);
+    if (!j || index < 0 || std::size_t(index) >= j->members.size())
+        return;
+    Join::Member& m = j->members[std::size_t(index)];
+    m.flushWait = false;
     if (m.hashing)
         return;
     m.hashing = true;
     m.generation = ++m_hashGeneration;
-    if (const quint64 ticket = m_bt.flushToDisk(id))
-        j->flushWait.push_back({ticket, index, m.generation});
-    else
-        hashMember(id, *j, index, m.generation);
-}
-
-void Ed3kTorrentJoin::onTorrentFlushed(const QString& id, quint64 ticket)
-{
-    Join* j = findJoin(id);
-    if (!j)
-        return;
-    std::vector<Join::FlushWait> due;
-    std::erase_if(j->flushWait, [&](const Join::FlushWait& w) {
-        if (w.ticket > ticket)
-            return false;
-        due.push_back(w);
-        return true;
+    const quint64 generation = m.generation;
+    hashInBackground(memberPath(*j, index), [this, id, index, generation](std::optional<FileHash> hashed) {
+        onMemberHashed(id, index, generation, hashed);
     });
-    for (const auto& w : due)
-        if (std::size_t(w.member) < j->members.size() && j->members[std::size_t(w.member)].generation == w.generation)
-            hashMember(id, *j, w.member, w.generation);
 }
 
 void Ed3kTorrentJoin::onMemberHashed(const QString& id, int index, quint64 generation, const std::optional<FileHash>& hashed)
@@ -1071,16 +1087,15 @@ bool Ed3kTorrentJoin::piecesHad(const Join& j, std::uint64_t begin, std::uint64_
     return true;
 }
 
+bool Ed3kTorrentJoin::blakeJudges(const Join& j) const
+{
+    const auto info = j.torrent.info();
+    return info && info->judge == ffi::Judge::Blake3;
+}
+
 QString Ed3kTorrentJoin::torrentDir() const
 {
     return joinDir(QStringLiteral("torrent"));
-}
-
-void Ed3kTorrentJoin::hashMember(const QString& id, const Join& j, int index, quint64 generation)
-{
-    hashInBackground(memberPath(j, index), [this, id, index, generation](std::optional<FileHash> hashed) {
-        onMemberHashed(id, index, generation, hashed);
-    });
 }
 
 } // namespace eMule::ed3k

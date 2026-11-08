@@ -189,15 +189,15 @@ void tst_BtLocalSwarm::seedAndLeech()
     QTRY_VERIFY_WITH_TIMEOUT(leecher.torrent(added.id)->state == BtState::Seeding, 5000);
     QCOMPARE(leecher.files(added.id).size(), 1);
 
-    // a join's flush: each ticket answered in turn (a member is hashed only after it)
-    QSignalSpy flushed(&leecher, &BtSession::torrentFlushed);
-    QCOMPARE(leecher.flushToDisk(QStringLiteral("bt:v1:none")), quint64(0));
-    const quint64 first = leecher.flushToDisk(added.id);
-    const quint64 second = leecher.flushToDisk(added.id);
-    QVERIFY(first > 0 && second == first + 1);
-    QTRY_COMPARE_WITH_TIMEOUT(flushed.count(), 2, kTimeoutMs);
-    QCOMPARE(flushed.at(0).at(1).toULongLong(), first);
-    QCOMPARE(flushed.at(1).at(1).toULongLong(), second);
+    // a join's flush: one cacheFlushed once the last of two asks is done (a member is
+    // hashed only after it)
+    QSignalSpy flushed(&leecher, &BtSession::cacheFlushed);
+    QVERIFY(!leecher.flushCache(QStringLiteral("bt:v1:none")));
+    QVERIFY(leecher.flushCache(added.id) && leecher.flushCache(added.id));
+    QTRY_COMPARE_WITH_TIMEOUT(flushed.count(), 1, kTimeoutMs);
+    QTest::qWait(200);
+    QCOMPARE(flushed.count(), 1);
+    QCOMPARE(flushed.first().first().toString(), added.id);
     leecher.stop();
     seeder.stop();
 }

@@ -30,6 +30,15 @@ public:
 
     /// Stop asking and forget a kept page; nothing is reported for @p searchID any more.
     virtual void cancelMetaSearch(uint32 searchID) = 0;
+
+    /// A Meta API search beside an ED2K / Kad search: its first page is added under
+    /// @p searchID, nothing is reported to the queue, failures are only logged.
+    virtual void startBlendedSearch(uint32 /*searchID*/, SearchType /*type*/, const SearchParams& /*params*/,
+                                    const enodemeta::pb::SearchRequest& /*request*/,
+                                    std::vector<MetaSearchCandidate> /*candidates*/) {}
+
+    /// Stop the blended searches of @p searchID.
+    virtual void cancelBlendedSearches(uint32 /*searchID*/) {}
 };
 
 } // namespace eMule

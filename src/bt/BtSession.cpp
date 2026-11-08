@@ -331,13 +331,13 @@ struct BtSession::Impl {
     /// finished, cache flush asked: pread_disk_io holds written blocks in memory, so
     /// torrentFinished waits for cache_flushed_alert (files complete on disk)
     QSet<QString> finishFlush;
-    /// flushToDisk tickets: last given, last answered. A cache_flushed_alert answers these
-    /// first: the only other ones are libtorrent's own at finish (covers every write) and ours
-    struct Flushes {
-        quint64 asked = 0;
-        quint64 answered = 0;
-    };
-    std::map<QString, Flushes> askedFlush;
+    /// flush_cache asks without their alert yet: "on disk" waits for the last one
+    std::map<QString, int> flushing;
+    void flush(const lt::torrent_handle& h, const QString& id)
+    {
+        ++flushing[id];
+        h.flush_cache();
+    }
     /// pieces libtorrent has, from its status updates: havePieces() never waits
     std::map<QString, QBitArray> have;
     /// checked, a join attached: torrentChecked waits for the status with the new pieces
@@ -731,7 +731,7 @@ void BtSession::stop()
     d->adding.clear();
     d->rows.clear();
     d->finishFlush.clear();
-    d->askedFlush.clear();
+    d->flushing.clear();
     d->have.clear();
     d->checkWaited.clear();
     d->outstandingResume = 0;
@@ -875,7 +875,7 @@ bool BtSession::remove(const QString& id, bool deleteFiles)
     d->limitOverride.remove(id);
     d->metaStopped.remove(id);
     d->finishFlush.remove(id);
-    d->askedFlush.erase(id);
+    d->flushing.erase(id);
     d->have.erase(id);
     d->checkWaited.remove(id);
     d->pendingPriorities.erase(id);
@@ -1187,15 +1187,6 @@ bool BtSession::addPiece(const QString& id, int piece, const QByteArray& data)
     return true;
 }
 
-quint64 BtSession::flushToDisk(const QString& id)
-{
-    const auto h = d->handle(id);
-    if (!h.is_valid())
-        return 0;
-    h.flush_cache();
-    return ++d->askedFlush[id].asked;
-}
-
 void BtSession::raisePieces(const QString& id, const QList<int>& pieces)
 {
     const auto h = d->handle(id);
@@ -1203,6 +1194,15 @@ void BtSession::raisePieces(const QString& id, const QList<int>& pieces)
         return;
     for (const int p : pieces)
         h.set_piece_deadline(lt::piece_index_t(p), 0);
+}
+
+bool BtSession::flushCache(const QString& id)
+{
+    const auto h = d->handle(id);
+    if (!h.is_valid())
+        return false;
+    d->flush(h, id);
+    return true;
 }
 
 QBitArray BtSession::havePieces(const QString& id) const
@@ -1343,16 +1343,20 @@ void BtSession::drainAlerts()
             // the last blocks may still be in the disk cache: announced once on disk
             if (download) {
                 d->finishFlush.insert(id);
-                tf->handle.flush_cache();
+                d->flush(tf->handle, id);
             }
         } else if (auto* cf = lt::alert_cast<lt::cache_flushed_alert>(a)) {
             // also posted on removal: only a torrent still in the list
             const QString id = BtTorrentView::idOf(cf->handle.info_hashes());
-            if (!d->handles.contains(id)) {
-            } else if (auto it = d->askedFlush.find(id); it != d->askedFlush.end() && it->second.answered < it->second.asked) {
-                emit torrentFlushed(id, ++it->second.answered);
-            } else if (d->finishFlush.remove(id)) {
-                emit torrentFinished(id);
+            const auto fl = d->flushing.find(id);
+            if (fl != d->flushing.end() && --fl->second > 0)
+                continue;   // a later ask still runs
+            if (fl != d->flushing.end())
+                d->flushing.erase(fl);
+            if (d->handles.contains(id)) {
+                if (d->finishFlush.remove(id))
+                    emit torrentFinished(id);
+                emit cacheFlushed(id);
             }
         } else if (auto* md = lt::alert_cast<lt::metadata_received_alert>(a)) {
             const QString id = BtTorrentView::idOf(md->handle.info_hashes());

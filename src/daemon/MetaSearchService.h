@@ -75,6 +75,10 @@ public:
                          std::vector<MetaSearchCandidate> candidates) override;
     void continueMetaSearch(uint32 searchID) override;
     void cancelMetaSearch(uint32 searchID) override;
+    void startBlendedSearch(uint32 searchID, SearchType type, const SearchParams& params,
+                            const enodemeta::pb::SearchRequest& request,
+                            std::vector<MetaSearchCandidate> candidates) override;
+    void cancelBlendedSearches(uint32 searchID) override;
 
     /// The runner of SearchType::Ed3k and Ed3kLive (the ed3k node's Ed3kSearch); null: refused.
     void setEd3kRunner(MetaSearchRunner* runner) { m_ed3kRunner = runner; }
@@ -110,14 +114,23 @@ private:
         QString lastError;
     };
 
-    void askNextServer(uint32 searchID);
-    void askPage(uint32 searchID, const MetaSearchCandidate& server, const QString& token, quint32 offset);
-    void finishSearch(uint32 searchID, const QString& error);
+    /// m_searches key: the search id, plus the network for a blended run.
+    [[nodiscard]] static quint64 runKey(uint32 searchID, SearchType blended = SearchType::Automatic)
+    {
+        return (static_cast<quint64>(blended) << 32) | searchID;
+    }
+    [[nodiscard]] static uint32 searchOf(quint64 key) { return static_cast<uint32>(key); }
+    [[nodiscard]] static bool isBlended(quint64 key) { return (key >> 32) != 0; }
+
+    void askNextServer(quint64 key);
+    void askPage(quint64 key, const MetaSearchCandidate& server, const QString& token, quint32 offset);
+    void finishSearch(quint64 key, const QString& error);
     /// Keep what Caps says the server searches on its list entry (and in server.met).
     static void noteNetworks(const MetaSearchCandidate& server, const enodemeta::pb::Caps& caps);
     [[nodiscard]] static Target targetOf(const MetaSearchCandidate& server);
 
-    QHash<uint32, SearchRun> m_searches;
+    /// by runKey(): queue searches and the blended ones beside ED2K / Kad searches
+    QHash<quint64, SearchRun> m_searches;
     /// Search → the server that answered it, where its rows cannot say (IPv6-only).
     QHash<uint32, Target> m_searchTargets;
     MetaSearchRunner* m_ed3kRunner = nullptr;

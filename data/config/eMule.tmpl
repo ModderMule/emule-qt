@@ -191,6 +191,8 @@ function sharedmenu(e,link){
   <div class="nav-tab [Page_search]"><a href="?w=search"><span class="icon icon-h_search"></span><br>{{Search}}</a></div>
   <div class="nav-tab [Page_shared]"><a href="?w=shared"><span class="icon icon-h_shared"></span><br>{{Shared}}</a></div>
   <div class="nav-tab [Page_usenet]"><a href="?w=usenet"><span class="icon icon-h_usenet"></span><br>{{Usenet}}</a></div>
+  <div class="nav-tab [Page_torrents]"><a href="?w=torrents"><span class="icon icon-h_torrent"></span><br>{{Torrents}}</a></div>
+  <div class="nav-tab [Page_hoster]"><a href="?w=hoster"><span class="icon icon-h_hoster"></span><br>{{Hoster}}</a></div>
   <div class="nav-tab [Page_stats]"><a href="?w=stats"><span class="icon icon-h_statistic"></span><br>{{Statistics}}</a></div>
   <div class="nav-tab [Page_graphs]"><a href="?w=graphs"><span class="icon icon-h_graph"></span><br>{{Graphs}}</a></div>
   <div class="nav-tab [Page_options]"><a href="?w=options"><span class="icon icon-h_preferences"></span><br>{{Preferences}}</a></div>
@@ -1199,6 +1201,158 @@ unRestore();
 
 
 <-- ################################################################# -->
+<-- ########################## TORRENTS ############################# -->
+<-- ################################################################# -->
+
+<--TMPL_TORRENTS-->
+<div class="section-header">
+ <span class="icon icon-h_torrent" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span>&nbsp; <b>{{Torrents}}</b>
+</div>
+<div class="search-form">
+ <form action="/" method="POST">
+  <input type="hidden" name="w" value="torrents">
+  <input type="hidden" name="op" value="add">
+  {{Magnet links, one per line:}}<br>
+  <textarea name="links" rows="3" cols="70"></textarea><br>
+  <input type="checkbox" name="paused" value="1"> {{Add paused}}&nbsp;
+  <input type="submit" value="{{Add}}" [FormOff]>
+ </form>
+ [TorrentNotice]
+</div>
+<form action="/" method="POST">
+ <input type="hidden" name="w" value="torrents">
+ <p>[TorrentSummary] &nbsp; <a href="?w=torrents">{{Refresh}}</a></p>
+ <table class="data-table">
+  <thead>
+   <tr>
+    <th style="width:18px"></th>
+    <th class="left">{{Name}}</th>
+    <th>{{Size}}</th>
+    <th>{{Progress}}</th>
+    <th class="left">{{Status}}</th>
+    <th>{{Down}}</th>
+    <th>{{Up}}</th>
+    <th>{{Seeds}}</th>
+    <th>{{Peers}}</th>
+    <th>{{Ratio}}</th>
+   </tr>
+  </thead>
+  <tbody>[TorrentLines]</tbody>
+ </table>
+ <br>
+ <button type="submit" name="op" value="resume" [FormOff]>{{Resume}}</button>
+ <button type="submit" name="op" value="pause" [FormOff]>{{Pause}}</button>
+ <button type="submit" name="op" value="recheck" [FormOff]>{{Recheck}}</button>
+ <button type="submit" name="op" value="remove" [FormOff]>{{Remove}}</button>
+ <button type="submit" name="op" value="delete" [FormOff] onclick="return confirm('{{js:Remove the ticked torrents and delete their files?}}')">{{Remove and delete files}}</button>
+</form>
+<--TMPL_TORRENTS_END-->
+
+
+<--TMPL_TORRENT_LINE-->
+<tr>
+ <td class="center"><input type="checkbox" name="ids" value="[TorrentId]"></td>
+ <td class="left" title="[TorrentTitle]">[TorrentName]</td>
+ <td class="right">[TorrentSize]</td>
+ <td class="center">
+  <div class="progress-bar">
+   <div class="progress-fill" style="width:[TorrentPercent]%"></div>
+   <div class="progress-text">[TorrentPercent]%</div>
+  </div>
+ </td>
+ <td class="left">[TorrentStatus]</td>
+ <td class="right">[TorrentDown]</td>
+ <td class="right">[TorrentUp]</td>
+ <td class="center">[TorrentSeeds]</td>
+ <td class="center">[TorrentPeers]</td>
+ <td class="center">[TorrentRatio]</td>
+</tr>
+<--TMPL_TORRENT_LINE_END-->
+
+
+<--TMPL_TORRENTS_UNAVAILABLE-->
+<div class="section-header">
+ <span class="icon icon-h_torrent" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span>&nbsp; <b>{{Torrents}}</b>
+</div>
+<div class="message">{{BitTorrent is off.}}</div>
+<--TMPL_TORRENTS_UNAVAILABLE_END-->
+
+
+<-- ################################################################# -->
+<-- ########################### HOSTER ############################## -->
+<-- ################################################################# -->
+
+<--TMPL_HOSTER-->
+<div class="section-header">
+ <span class="icon icon-h_hoster" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span>&nbsp; <b>{{Hoster}}</b>
+</div>
+<div class="search-form">
+ <form action="/" method="POST">
+  <input type="hidden" name="w" value="hoster">
+  <input type="hidden" name="op" value="add">
+  {{Hoster links, one per line:}}<br>
+  <textarea name="links" rows="3" cols="70"></textarea><br>
+  {{Package:}} <input name="package" type="text" size="30">&nbsp;
+  <input type="submit" value="{{Add}}" [FormOff]>
+ </form>
+ [HosterNotice]
+</div>
+<form action="/" method="POST">
+ <input type="hidden" name="w" value="hoster">
+ <p>[HosterSummary] &nbsp; <a href="?w=hoster">{{Refresh}}</a></p>
+ <table class="data-table">
+  <thead>
+   <tr>
+    <th style="width:18px"></th>
+    <th class="left">{{Name}}</th>
+    <th class="left">{{Hoster}}</th>
+    <th class="left">{{Package}}</th>
+    <th>{{Size}}</th>
+    <th>{{Progress}}</th>
+    <th>{{Speed}}</th>
+    <th class="left">{{Status}}</th>
+   </tr>
+  </thead>
+  <tbody>[HosterLines]</tbody>
+ </table>
+ <br>
+ <button type="submit" name="op" value="resume" [FormOff]>{{Resume}}</button>
+ <button type="submit" name="op" value="pause" [FormOff]>{{Pause}}</button>
+ <button type="submit" name="op" value="retry" [FormOff]>{{Retry}}</button>
+ <button type="submit" name="op" value="remove" [FormOff]>{{Remove}}</button>
+ <button type="submit" name="op" value="delete" [FormOff] onclick="return confirm('{{js:Remove the ticked downloads and delete their files?}}')">{{Remove and delete files}}</button>
+</form>
+<--TMPL_HOSTER_END-->
+
+
+<--TMPL_HOSTER_LINE-->
+<tr>
+ <td class="center"><input type="checkbox" name="ids" value="[HosterId]"></td>
+ <td class="left" title="[HosterUrl]">[HosterName]</td>
+ <td class="left">[HosterHost]</td>
+ <td class="left">[HosterPackage]</td>
+ <td class="right">[HosterSize]</td>
+ <td class="center">
+  <div class="progress-bar">
+   <div class="progress-fill" style="width:[HosterPercent]%"></div>
+   <div class="progress-text">[HosterPercent]%</div>
+  </div>
+ </td>
+ <td class="right">[HosterSpeed]</td>
+ <td class="left" title="[HosterStatusTitle]">[HosterStatus]</td>
+</tr>
+<--TMPL_HOSTER_LINE_END-->
+
+
+<--TMPL_HOSTER_UNAVAILABLE-->
+<div class="section-header">
+ <span class="icon icon-h_hoster" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span>&nbsp; <b>{{Hoster}}</b>
+</div>
+<div class="message">{{Hoster downloads are off.}}</div>
+<--TMPL_HOSTER_UNAVAILABLE_END-->
+
+
+<-- ################################################################# -->
 <-- ########################### SEARCH ############################## -->
 <-- ################################################################# -->
 
@@ -1240,6 +1394,14 @@ unRestore();
     </td>
    </tr>
    <tr>
+    <td>{{Also ask}}</td>
+    <td title="{{The servers' catalogues of these networks are asked too.}}">
+     <input value="1" type="checkbox" name="usenet"[BlendUsenet]> {{Usenet}}&nbsp;
+     <input value="1" type="checkbox" name="torrent"[BlendTorrent]> {{Torrent}}&nbsp;
+     <input value="1" type="checkbox" name="web"[BlendWeb]> {{Web}}
+    </td>
+   </tr>
+   <tr>
     <td></td>
     <td><br><input type="submit" value="{{Search}}" [FormOff]></td>
    </tr>
@@ -1267,6 +1429,7 @@ unRestore();
 <--TMPL_SEARCH_RESULT_HEADER-->
 <tr>
  <th class="left">{{File Name}}</th>
+ <th>{{Network}}</th>
  <th>{{Size}}</th>
  <th>{{Hash}}</th>
  <th>{{Sources}}</th>
@@ -1279,6 +1442,7 @@ unRestore();
 <--TMPL_SEARCH_RESULT_LINE-->
 <tr>
  <td class="left"><span class="icon icon-filetype_[ResultFileType]" style="vertical-align:middle"></span>&nbsp;[ResultName]</td>
+ <td class="center">[ResultNetwork]</td>
  <td class="right">[ResultSize]</td>
  <td class="center" style="font-size:7pt">[ResultHash]</td>
  <td class="center">[ResultSources]</td>

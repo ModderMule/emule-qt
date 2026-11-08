@@ -137,6 +137,7 @@ private slots:
     void aGoneMemberFailsItsRead();
     void i2pTorrentJoinsOnlyWhenAllowed();
     void aFirstSetSearchThatFindsNothingEnds();
+    void aFalseClaimNeverFailsATorrentPiece();
 
 private:
     QTemporaryDir m_dir;
@@ -446,7 +447,8 @@ void tst_Ed3kTorrentJoin::ed3kSkipsPiecesLibtorrentHas()
 
 // Block 0 of member A spans pieces 0-3: a recheck of them asks the host to read the block.
 // The read pool is held busy, the file goes away, then the worker reads: the read fails,
-// the pieces waiting on the block fail, nothing crashes.
+// nothing crashes. §4.2: the torrent's hash judges and nothing waits for our read, so the
+// pieces libtorrent read before the file went keep their verdict (report 31).
 void tst_Ed3kTorrentJoin::aGoneMemberFailsItsRead()
 {
     if (m_manifest.isEmpty())
@@ -497,7 +499,6 @@ void tst_Ed3kTorrentJoin::aGoneMemberFailsItsRead()
 
     QTRY_COMPARE_WITH_TIMEOUT(join.readsInFlight(), std::size_t(0), kTimeoutMs);
     QTRY_VERIFY_WITH_TIMEOUT(checked.count() > checks, kTimeoutMs);
-    QCOMPARE(leecher.havePieces(added.id).count(true), qsizetype(0));
     QVERIFY(join.hasJoin(added.id));
 
     join.stop();
@@ -568,6 +569,103 @@ void tst_Ed3kTorrentJoin::aFirstSetSearchThatFindsNothingEnds()
     bt.stop();
     node.stop();
     peer.stop();
+}
+
+// report 31, §4.2: a claimed set whose root of b.bin is wrong. The torrent's hash judges:
+// a recheck of complete data finishes, the claim is found false. It used to spoil b.bin's
+// piece on every check, and the torrent stayed short of 100 %.
+void tst_Ed3kTorrentJoin::aFalseClaimNeverFailsATorrentPiece()
+{
+    // 256 KiB pieces: b.bin is one ed3k block inside one piece, judged by its root alone
+    lt::create_torrent t(lt::list_files(QString(m_seedDir + QStringLiteral("/set")).toStdString()), 256 * 1024);
+    lt::set_piece_hashes(t, m_seedDir.toStdString());
+    const std::vector<char> buf = t.generate_buf();
+    const QByteArray torrent(buf.data(), qsizetype(buf.size()));
+
+    // added to an empty folder (a join is made), then the data comes and is checked
+    const auto addThenFill = [&](BtSession& bt, Ed3kTorrentJoin& join, const QString& save) -> QString {
+        const BtAddResult added = bt.addTorrentFile(torrent, save);
+        if (added.outcome != BtAddOutcome::Added)
+            return {};
+        if (!QTest::qWaitFor([&] { return join.hasJoin(added.id); }, kTimeoutMs))
+            return {};
+        return added.id;
+    };
+    const auto copyData = [&](const QString& save) {
+        QVERIFY(QDir().mkpath(save + QStringLiteral("/set")));
+        for (const char* name : {"a.bin", "b.bin"}) {
+            const QString n = QString::fromLatin1(name);
+            QFile::remove(save + QStringLiteral("/set/") + n);
+            QVERIFY(QFile::copy(m_seedDir + QStringLiteral("/set/") + n, save + QStringLiteral("/set/") + n));
+        }
+    };
+    const auto complete = [](BtSession& bt, const QString& id) {
+        const auto row = bt.torrent(id);
+        return row && row->totalSize > 0 && row->haveBytes >= row->totalSize;
+    };
+
+    // the true set first: a join that completes builds it
+    QByteArray manifest;
+    {
+        const QString dir = m_dir.filePath(QStringLiteral("claim-true"));
+        Ed3kSession node;
+        QVERIFY(node.start(loopback(dir)));
+        BtSession bt;
+        bt.start(btSettings(dir));
+        Ed3kTorrentJoin join(node, bt, dir);
+        join.setSearchEnabled(false);
+        join.start();
+        const QString save = dir + QStringLiteral("/data");
+        const QString id = addThenFill(bt, join, save);
+        QVERIFY(!id.isEmpty());
+        copyData(save);
+        QVERIFY(bt.recheck(id));
+        QTRY_VERIFY_WITH_TIMEOUT(complete(bt, id), kTimeoutMs);
+        QTRY_VERIFY_WITH_TIMEOUT(!join.completedManifest(id).isEmpty(), kTimeoutMs);
+        manifest = join.completedManifest(id);
+        join.stop();
+        bt.stop();
+        node.stop();
+    }
+
+    // the same set with b.bin's root swapped for the root of other bytes of its size
+    QByteArray other = m_b;
+    other[1000] = char(other[1000] ^ 0x5A);
+    const auto rootBytes = [](const Hashed& h) {
+        return QByteArray(reinterpret_cast<const char*>(h.root.bytes.data()), qsizetype(h.root.bytes.size()));
+    };
+    const QByteArray trueRoot = rootBytes(hashOf(m_b));
+    const qsizetype at = manifest.indexOf(trueRoot);
+    QVERIFY(at >= 0);
+    QCOMPARE(manifest.indexOf(trueRoot, at + 1), qsizetype(-1));
+    QByteArray falseSet = manifest;
+    falseSet.replace(at, trueRoot.size(), rootBytes(hashOf(other)));
+
+    const QString dir = m_dir.filePath(QStringLiteral("claim-false"));
+    Ed3kSession node;
+    QVERIFY(node.start(loopback(dir)));
+    BtSession bt;
+    bt.start(btSettings(dir));
+    Ed3kTorrentJoin join(node, bt, dir);
+    join.setSearchEnabled(false);
+    join.start();
+    QSignalSpy problems(&join, &Ed3kTorrentJoin::memberProblem);
+    const QString save = dir + QStringLiteral("/data");
+    const QString id = addThenFill(bt, join, save);
+    QVERIFY(!id.isEmpty());
+    QVERIFY(join.setManifest(id, {reinterpret_cast<const std::byte*>(falseSet.constData()), std::size_t(falseSet.size())}));
+    QCOMPARE(join.info(id)->judge, ::ed3k::Judge::Torrent);
+    copyData(save);
+    QVERIFY(bt.recheck(id));
+
+    QTRY_VERIFY_WITH_TIMEOUT(complete(bt, id), 20000);
+    // CLAIM_FALSE: the set is dropped, the torrent goes on
+    QTRY_VERIFY_WITH_TIMEOUT(!problems.isEmpty(), 10000);
+    QCOMPARE(problems.first().at(1).toInt(), -1);
+
+    join.stop();
+    bt.stop();
+    node.stop();
 }
 
 QTEST_GUILESS_MAIN(tst_Ed3kTorrentJoin)

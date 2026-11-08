@@ -23,7 +23,11 @@
 #include "app/TranslationRouter.h"
 #include "friends/FriendList.h"
 #include "prefs/Preferences.h"
+#include "search/SearchFile.h"
 #include "search/SearchList.h"
+#include "protocol/Tag.h"
+#include "utils/Opcodes.h"
+#include "utils/SafeFile.h"
 #include "server/Server.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
@@ -333,6 +337,32 @@ public:
 };
 #endif
 
+/// Two hoster items; records the actions and adds.
+class FakeHosterBackend final : public HosterWebBackend {
+public:
+    mutable QStringList calls;
+
+    bool available() const override { return true; }
+    QCborArray items() const override
+    {
+        return {QCborMap{{QStringLiteral("id"), 7}, {QStringLiteral("name"), QStringLiteral("<i>clip</i>.mkv")},
+                         {QStringLiteral("host"), QStringLiteral("files.test")}, {QStringLiteral("size"), 200},
+                         {QStringLiteral("done"), 50}, {QStringLiteral("speed"), 1000}, {QStringLiteral("state"), 5}},
+                QCborMap{{QStringLiteral("id"), 8}, {QStringLiteral("url"), QStringLiteral("https://files.test/x")},
+                         {QStringLiteral("state"), 12}}};
+    }
+    int addLinks(const QString& text, const QString& package) override
+    {
+        calls << QStringLiteral("add:%1:%2").arg(text, package);
+        return int(text.count(QLatin1Char('\n'))) + 1;
+    }
+    bool action(quint32 id, const QString& op) override
+    {
+        calls << QStringLiteral("%1:%2").arg(op).arg(id);
+        return id == 7;
+    }
+};
+
 /// Records what the web server asked for. Categories 0-2 exist.
 class FakeUsenetBackend final : public UsenetWebBackend {
 public:
@@ -559,6 +589,7 @@ private slots:
     void patchPreferences();
     void postSearch_offlineIsQueuedAndSaysSo();
     void deleteSearch_removesResults();
+    void searchResults_leaveBlendedMetaRowsOut();
 
     // CORS tests
     void corsOptionsRequest();
@@ -644,6 +675,11 @@ private slots:
     void https_servesRsaAndEcKeys();
     void configFromPreferences_differsOnlyOnWhatTheServerUses();
     void webSearchForm_offlineSaysItWaits();
+    void webSearchForm_keepsTheNetworkBoxes();
+    void webHosterPage_listsAndActs();
+#ifdef EMULE_HAVE_BITTORRENT
+    void webTorrentsPage_listsAndActs();
+#endif
     // Operation table: new routes, validation, OpenAPI, events, MCP
     void api_healthNeedsNoKeyAndRepliesCarryTheContractVersion();
     void api_unknownRouteIsAJsonError();
@@ -1217,6 +1253,51 @@ void tst_WebServer::postSearch_offlineIsQueuedAndSaysSo()
     };
     QCOMPARE(sendRequest(QByteArrayLiteral("POST"), QStringLiteral("/api/v1/search"),
                          QJsonDocument(bad).toJson(QJsonDocument::Compact)).statusCode, 400);
+}
+
+void tst_WebServer::searchResults_leaveBlendedMetaRowsOut()
+{
+    SearchParams params;
+    params.type = SearchType::Ed2kServer;
+    const uint32 id = m_searchList->newSearch({}, params);
+    const auto cleanup = qScopeGuard([&] { m_searchList->removeResults(id); });
+
+    // an eD2K row, and a torrent row a server's catalogue added beside it
+    auto* ed2k = new SearchFile;
+    uint8 plain[16]{};
+    plain[0] = 0x42;
+    ed2k->setFileHash(plain);
+    ed2k->setFileName(QStringLiteral("plain.avi"), true);
+    ed2k->setFileSize(1000);
+    m_searchList->addMetaSearchResult(id, ed2k);
+
+    uint8 metaHash[16] = {0xED, 0x2B, 0x01, 0x10, 0xFF, 0xFF, 0x1E, 0x1B, 0x36, 0x20, 0xAD, 0xE2, 0xAF, 0x9D, 0x6E, 0x01};
+    SafeMemFile mem;
+    mem.write(metaHash, 16);
+    mem.writeUInt32(0);
+    mem.writeUInt16(0);
+    mem.writeUInt32(5);
+    Tag(FT_FILENAME, QStringLiteral("catalogue.mkv")).writeNewEd2kTag(mem, UTF8Mode::Raw);
+    Tag(FT_FILESIZE, uint32{700000000}).writeNewEd2kTag(mem);
+    Tag(FT_META_KIND, uint32{1}).writeNewEd2kTag(mem);
+    Tag(FT_META_VERSION, uint32{1}).writeNewEd2kTag(mem);
+    Tag(FT_META_FILEINDEX, uint32{0xFFFFFFFF}).writeNewEd2kTag(mem);
+    const QByteArray data = mem.takeBuffer();
+    SafeMemFile in(data);
+    auto* meta = new SearchFile(in, true);
+    QVERIFY(meta->isMetaResult());
+    m_searchList->addMetaSearchResult(id, meta);
+    QCOMPARE(m_searchList->resultCount(id), uint32{2});
+
+    const auto results = sendRequest(QByteArrayLiteral("GET"), QStringLiteral("/api/v1/search/%1/results").arg(id));
+    QCOMPARE(results.statusCode, 200);
+    const QJsonArray items = results.json.object()[QStringLiteral("items")].toArray();
+    QCOMPARE(items.size(), 1);
+    QCOMPARE(items.at(0).toObject()[QStringLiteral("fileName")].toString(), QStringLiteral("plain.avi"));
+
+    const QJsonObject pick{{QStringLiteral("hash"), md4str(metaHash)}};
+    QCOMPARE(sendRequest(QByteArrayLiteral("POST"), QStringLiteral("/api/v1/search/%1/download").arg(id),
+                         QJsonDocument(pick).toJson(QJsonDocument::Compact)).statusCode, 404);
 }
 
 void tst_WebServer::deleteSearch_removesResults()
@@ -3728,6 +3809,111 @@ void tst_WebServer::webSearchForm_offlineSaysItWaits()
 
     server->stop();
 }
+
+void tst_WebServer::webSearchForm_keepsTheNetworkBoxes()
+{
+    auto server = startUsenetUi(nullptr);
+    const uint16 port = server->port();
+    const QString admin = webLogin(port, QStringLiteral("admin-pw"));
+
+    QString page = rawGetBody(port, QStringLiteral("/?ses=%1&w=search").arg(admin));
+    QVERIFY(page.contains(QStringLiteral("name=\"torrent\">")));
+    QVERIFY(!page.contains(QStringLiteral("[Blend")));
+
+    sendRaw(port, QByteArrayLiteral("POST"), QStringLiteral("/?ses=%1").arg(admin),
+            QByteArrayLiteral("w=search&tosearch=holiday&method=server&torrent=1&web=1"),
+            QByteArrayLiteral("application/x-www-form-urlencoded"));
+    page = rawGetBody(port, QStringLiteral("/?ses=%1&w=search").arg(admin));
+    QVERIFY(page.contains(QStringLiteral("name=\"usenet\">")));
+    QVERIFY(page.contains(QStringLiteral("name=\"torrent\" checked>")));
+    QVERIFY(page.contains(QStringLiteral("name=\"web\" checked>")));
+
+    server->stop();
+}
+
+void tst_WebServer::webHosterPage_listsAndActs()
+{
+    FakeHosterBackend fake;
+    auto server = startServer(/*webUiEnabled*/ true, /*restApiEnabled*/ true,
+                              eMule::testing::projectDataDir() + QStringLiteral("/config/eMule.tmpl"),
+                              [&fake](WebServer& s, WebServerConfig& config) {
+        s.setHosterBackend(&fake);
+        config.adminPasswordHash = sha256Hex(QStringLiteral("admin-pw"));
+    });
+    const uint16 port = server->port();
+    const QString ses = webLogin(port, QStringLiteral("admin-pw"));
+    QVERIFY(!ses.isEmpty());
+
+    const QString page = rawGetBody(port, QStringLiteral("/?ses=%1&w=hoster").arg(ses));
+    QVERIFY(page.contains(QStringLiteral("nav-tab active\"><a href=\"?w=hoster\"")));
+    QVERIFY(page.contains(QStringLiteral("&lt;i&gt;clip&lt;/i&gt;.mkv")));
+    QVERIFY(page.contains(QStringLiteral("width:25.0%")));
+    QVERIFY(page.contains(QStringLiteral("https://files.test/x")));   // no name: the link
+    QVERIFY(!page.contains(QStringLiteral("[Hoster")));
+
+    const QByteArray form = QByteArrayLiteral("application/x-www-form-urlencoded");
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses), QByteArrayLiteral("w=hoster&op=pause&ids=7&ids=8"), form);
+    QCOMPARE(fake.calls, (QStringList{QStringLiteral("pause:7"), QStringLiteral("pause:8")}));
+    QVERIFY(rawGetBody(port, QStringLiteral("/?ses=%1&w=hoster").arg(ses))
+                .contains(QStringLiteral("1 of 2 download(s) did not take it.")));
+
+    fake.calls.clear();
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses),
+            QByteArrayLiteral("w=hoster&op=add&package=Pack&links=") + QUrl::toPercentEncoding(
+                QStringLiteral("https://files.test/a\r\n\r\n https://files.test/b ")), form);
+    QCOMPARE(fake.calls, QStringList{QStringLiteral("add:https://files.test/a\nhttps://files.test/b:Pack")});
+
+    // an unknown op does nothing
+    fake.calls.clear();
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses), QByteArrayLiteral("w=hoster&op=password&ids=7"), form);
+    QVERIFY(fake.calls.isEmpty());
+    // no REST route
+    QCOMPARE(sendRaw(port, "GET", QStringLiteral("/api/v1/hoster"), {}, {}).statusCode, 404);
+
+    server->stop();
+}
+
+#ifdef EMULE_HAVE_BITTORRENT
+void tst_WebServer::webTorrentsPage_listsAndActs()
+{
+    FakeTorrentBackend fake;
+    auto server = startServer(/*webUiEnabled*/ true, /*restApiEnabled*/ false,
+                              eMule::testing::projectDataDir() + QStringLiteral("/config/eMule.tmpl"),
+                              [&fake](WebServer& s, WebServerConfig& config) {
+        s.setTorrentBackend(&fake);
+        config.adminPasswordHash = sha256Hex(QStringLiteral("admin-pw"));
+    });
+    const uint16 port = server->port();
+    const QString ses = webLogin(port, QStringLiteral("admin-pw"));
+    QVERIFY(!ses.isEmpty());
+
+    QString page = rawGetBody(port, QStringLiteral("/?ses=%1&w=torrents").arg(ses));
+    QVERIFY(page.contains(QStringLiteral("nav-tab active\"><a href=\"?w=torrents\"")));
+    QVERIFY(page.contains(QStringLiteral("Alpha")));
+    QVERIFY(page.contains(QStringLiteral("Seeding")));
+    QVERIFY(page.contains(QStringLiteral("width:40.0%")));
+    QVERIFY(!page.contains(QStringLiteral("[Torrent")));
+
+    const QByteArray form = QByteArrayLiteral("application/x-www-form-urlencoded");
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses),
+            QByteArrayLiteral("w=torrents&op=delete&ids=") + QUrl::toPercentEncoding(FakeTorrentBackend::idA()), form);
+    QCOMPARE(fake.calls, QStringList{QStringLiteral("remove:%1:true").arg(FakeTorrentBackend::idA())});
+
+    fake.nextAdd.outcome = TorrentWebAddOutcome::Added;
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses),
+            QByteArrayLiteral("w=torrents&op=add&paused=1&links=") + QUrl::toPercentEncoding(
+                QStringLiteral("magnet:?xt=urn:btih:") + QString(40, QLatin1Char('c'))), form);
+    QCOMPARE(fake.lastMagnet, QStringLiteral("magnet:?xt=urn:btih:") + QString(40, QLatin1Char('c')));
+    QVERIFY(fake.lastPaused);
+    page = rawGetBody(port, QStringLiteral("/?ses=%1&w=torrents").arg(ses));
+    QVERIFY(page.contains(QStringLiteral("1 torrent(s) added")));
+
+    fake.isRunning = false;
+    QVERIFY(rawGetBody(port, QStringLiteral("/?ses=%1&w=torrents").arg(ses)).contains(QStringLiteral("BitTorrent is off.")));
+
+    server->stop();
+}
+#endif
 
 void tst_WebServer::webEd2kActionRefusesAMetaHash()
 {

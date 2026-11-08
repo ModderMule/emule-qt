@@ -493,23 +493,26 @@ QWidget* SearchPanel::createSearchBar()
     // row set the main window's minimum width.
     auto* networkRow = new QHBoxLayout;
     networkRow->setSpacing(8);
-    const auto addNetworkCheck = [&](const QString& text, const QString& icon, bool on) {
+    // blends: the box also asks the servers' catalogues (SearchRequest::blendMeta)
+    const auto addNetworkCheck = [&](const QString& text, const QString& icon, bool on, bool blends) {
         auto* check = new QCheckBox(text, container);
         check->setIcon(skinIcon(icon));
         check->setChecked(on);
-        check->setToolTip(tr("Show results the server found on this network"));
+        check->setToolTip(blends ? tr("Show results the server found on this network. "
+                                      "New eD2K and Kad searches also ask the servers' catalogues of it.")
+                                 : tr("Show results the server found on this network"));
         networkRow->addWidget(check);
         connect(check, &QCheckBox::toggled, this, &SearchPanel::onNetworkFilterChanged);
         return check;
     };
     m_showUsenetCheck = addNetworkCheck(tr("Usenet results"), QStringLiteral(":/icons/Usenet.ico"),
-                                        theUiState.searchShowUsenet());
+                                        theUiState.searchShowUsenet(), true);
     m_showKadCheck = addNetworkCheck(tr("Kad results"), QStringLiteral(":/icons/Kad.ico"),
-                                     theUiState.searchShowKad());
+                                     theUiState.searchShowKad(), false);
     m_showTorrentCheck = addNetworkCheck(tr("Torrent results"), QStringLiteral(":/icons/Torrent.ico"),
-                                         theUiState.searchShowTorrent());
+                                         theUiState.searchShowTorrent(), true);
     m_showWebCheck = addNetworkCheck(tr("Web results"), QStringLiteral(":/icons/Web.ico"),
-                                     theUiState.searchShowWeb());
+                                     theUiState.searchShowWeb(), true);
     networkRow->addStretch();
     grid->addLayout(networkRow, 2, 0);
 
@@ -730,6 +733,7 @@ void SearchPanel::sendSearchRequest(const SearchRequest& req)
     msg.append(req.title);                                // field 11
     msg.append(req.album);                                // field 12
     msg.append(req.artist);                               // field 13
+    msg.append(static_cast<qint64>(req.blendMeta));       // field 14
 
     const QString expression = req.expression;
     const int method = req.method;
@@ -3281,6 +3285,12 @@ SearchRequest SearchPanel::requestFromUi() const
     req.title           = m_titleEdit->text().trimmed();
     req.album           = m_albumEdit->text().trimmed();
     req.artist          = m_artistEdit->text().trimmed();
+    // what the result check boxes show is also asked of the servers' catalogues
+    if (canBlendMetaSearch(static_cast<SearchType>(req.method))) {
+        req.blendMeta = (m_showUsenetCheck->isChecked() ? kBlendMetaUsenet : 0)
+                      | (m_showTorrentCheck->isChecked() ? kBlendMetaTorrent : 0)
+                      | (m_showWebCheck->isChecked() ? kBlendMetaWeb : 0);
+    }
     return req;
 }
 

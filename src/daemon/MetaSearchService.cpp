@@ -262,9 +262,9 @@ void MetaSearchService::startMetaSearch(uint32 searchID, SearchType type, const 
     run.params = params;
     run.request = request;
     run.candidates = std::move(candidates);
-    m_searches.insert(searchID, std::move(run));
+    m_searches.insert(runKey(searchID), std::move(run));
     // cached caps answer on the spot; the queue is still sending this search
-    QTimer::singleShot(0, this, [this, searchID] { askNextServer(searchID); });
+    QTimer::singleShot(0, this, [this, searchID] { askNextServer(runKey(searchID)); });
 }
 
 void MetaSearchService::continueMetaSearch(uint32 searchID)
@@ -275,7 +275,7 @@ void MetaSearchService::continueMetaSearch(uint32 searchID)
     }
     // the queue is still switching the search to running
     QTimer::singleShot(0, this, [this, searchID] {
-        const auto it = m_searches.find(searchID);
+        const auto it = m_searches.find(runKey(searchID));
         if (it == m_searches.end() || !it->parked) {
             if (it == m_searches.end() && theApp.searchList)
                 theApp.searchList->queue().onMetaSearchFinished(searchID, {});
@@ -284,7 +284,7 @@ void MetaSearchService::continueMetaSearch(uint32 searchID)
         it->parked = false;
         const MetaSearchCandidate server = it->server;
         const QString token = it->token;
-        askPage(searchID, server, token, it->nextOffset);
+        askPage(runKey(searchID), server, token, it->nextOffset);
     });
 }
 
@@ -292,16 +292,39 @@ void MetaSearchService::cancelMetaSearch(uint32 searchID)
 {
     if (m_ed3kSearches.remove(searchID) && m_ed3kRunner)
         m_ed3kRunner->cancelMetaSearch(searchID);
-    m_searches.remove(searchID);
+    m_searches.remove(runKey(searchID));
+}
+
+void MetaSearchService::startBlendedSearch(uint32 searchID, SearchType type, const SearchParams& params,
+                                           const pb::SearchRequest& request,
+                                           std::vector<MetaSearchCandidate> candidates)
+{
+    if (!isMetaSearchType(type))
+        return;
+    const quint64 key = runKey(searchID, type);
+    SearchRun run;
+    run.type = type;
+    run.params = params;
+    run.request = request;
+    run.candidates = std::move(candidates);
+    m_searches.insert(key, std::move(run));
+    QTimer::singleShot(0, this, [this, key] { askNextServer(key); });
+}
+
+void MetaSearchService::cancelBlendedSearches(uint32 searchID)
+{
+    for (const SearchType type : {SearchType::MetaUsenet, SearchType::MetaTorrent, SearchType::MetaWeb})
+        m_searches.remove(runKey(searchID, type));
 }
 
 // ---------------------------------------------------------------------------
 // private
 // ---------------------------------------------------------------------------
 
-void MetaSearchService::askNextServer(uint32 searchID)
+void MetaSearchService::askNextServer(quint64 key)
 {
-    const auto it = m_searches.find(searchID);
+    const uint32 searchID = searchOf(key);
+    const auto it = m_searches.find(key);
     if (it == m_searches.end())
         return;   // stopped
     SearchRun& run = *it;
@@ -310,14 +333,14 @@ void MetaSearchService::askNextServer(uint32 searchID)
         QString error = !run.authError.isEmpty() ? run.authError : run.lastError;
         if (error.isEmpty())
             error = tr("No server answered the %1 search.").arg(metaNetworkName(run.type));
-        finishSearch(searchID, error);
+        finishSearch(key, error);
         return;
     }
 
     const MetaSearchCandidate server = run.candidates[run.next++];
     const uint32 network = metaNetworkFor(run.type);
-    m_client.getCaps(server.endpoint, [this, searchID, server, network](const CallResult& r, const pb::Caps& caps) {
-        const auto it = m_searches.find(searchID);
+    m_client.getCaps(server.endpoint, [this, key, searchID, server, network](const CallResult& r, const pb::Caps& caps) {
+        const auto it = m_searches.find(key);
         if (it == m_searches.end())
             return;
         SearchRun& run = *it;
@@ -325,7 +348,7 @@ void MetaSearchService::askNextServer(uint32 searchID)
             run.lastError = errorText(r, statusFor(r));
             logServerVerbose([&]() -> QString { return QStringLiteral("Meta search %1: %2 — %3")
                                  .arg(searchID).arg(server.endpoint.serverName, r.message); });
-            askNextServer(searchID);
+            askNextServer(key);
             return;
         }
         noteNetworks(server, caps);
@@ -335,41 +358,42 @@ void MetaSearchService::askNextServer(uint32 searchID)
         if (!offered) {
             run.lastError = tr("%1 offers no %2 search.").arg(server.endpoint.serverName,
                                                               metaNetworkName(run.type));
-            askNextServer(searchID);
+            askNextServer(key);
             return;
         }
         const QString token = store().account(server.endpoint.origin()).token;
         if (caps.searchRequiresAccount() && token.isEmpty()) {
             run.authError = tr("%1 needs an account to search: log in under Servers, eNode Account.")
                                 .arg(server.endpoint.serverName);
-            askNextServer(searchID);
+            askNextServer(key);
             return;
         }
         logServerVerbose([&]() -> QString { return QStringLiteral(">>> Meta search %1: \"%2\" (%3) -> %4")
                              .arg(searchID).arg(run.request.query(), metaNetworkName(run.type),
                                                 server.endpoint.serverName); });
-        askPage(searchID, server, token, 0);
+        askPage(key, server, token, 0);
     });
 }
 
-void MetaSearchService::askPage(uint32 searchID, const MetaSearchCandidate& server, const QString& token,
+void MetaSearchService::askPage(quint64 key, const MetaSearchCandidate& server, const QString& token,
                                 quint32 offset)
 {
-    const auto it = m_searches.find(searchID);
+    const uint32 searchID = searchOf(key);
+    const auto it = m_searches.find(key);
     if (it == m_searches.end())
         return;
     pb::SearchRequest request = it->request;
     request.setOffset(offset);
 
     m_client.search(server.endpoint, request, token,
-                    [this, searchID, server, token, offset](const CallResult& r, const pb::SearchResponse& resp) {
-        const auto it = m_searches.find(searchID);
+                    [this, key, searchID, server, token, offset](const CallResult& r, const pb::SearchResponse& resp) {
+        const auto it = m_searches.find(key);
         if (it == m_searches.end())
             return;
         SearchRun& run = *it;
         if (!r.ok()) {
             if (offset != 0) {
-                finishSearch(searchID, {});   // the pages before it stand
+                finishSearch(key, {});   // the pages before it stand
                 return;
             }
             const MetaStatus st = statusFor(r);
@@ -382,11 +406,12 @@ void MetaSearchService::askPage(uint32 searchID, const MetaSearchCandidate& serv
             }
             logServerVerbose([&]() -> QString { return QStringLiteral("Meta search %1: %2 — %3 (grpc %4)")
                                  .arg(searchID).arg(server.endpoint.serverName, r.message).arg(r.grpcCode); });
-            askNextServer(searchID);
+            askNextServer(key);
             return;
         }
 
-        if (server.ip == 0)
+        // a blended run takes the slot only while it is free
+        if (server.ip == 0 && (!isBlended(key) || !m_searchTargets.contains(searchID)))
             m_searchTargets.insert(searchID, targetOf(server));
         int added = 0;
         if (theApp.searchList) {
@@ -405,8 +430,9 @@ void MetaSearchService::askPage(uint32 searchID, const MetaSearchCandidate& serv
 
         // One page a request: the next is fetched when the user asks for more.
         run.rows += added;
-        if (resp.nextOffset() == 0 || run.rows >= kMaxMetaRows) {
-            finishSearch(searchID, {});
+        // a blended run: first page only, More belongs to the ED2K / Kad search
+        if (resp.nextOffset() == 0 || run.rows >= kMaxMetaRows || isBlended(key)) {
+            finishSearch(key, {});
             return;
         }
         run.parked = true;
@@ -418,11 +444,17 @@ void MetaSearchService::askPage(uint32 searchID, const MetaSearchCandidate& serv
     });
 }
 
-void MetaSearchService::finishSearch(uint32 searchID, const QString& error)
+void MetaSearchService::finishSearch(quint64 key, const QString& error)
 {
-    m_searches.remove(searchID);
+    m_searches.remove(key);
+    if (isBlended(key)) {
+        if (!error.isEmpty())
+            logServerVerbose([&]() -> QString { return QStringLiteral("Blended meta search %1: %2")
+                                 .arg(searchOf(key)).arg(error); });
+        return;
+    }
     if (theApp.searchList)
-        theApp.searchList->queue().onMetaSearchFinished(searchID, error);
+        theApp.searchList->queue().onMetaSearchFinished(searchOf(key), error);
 }
 
 void MetaSearchService::noteNetworks(const MetaSearchCandidate& server, const pb::Caps& caps)

@@ -17,6 +17,7 @@ private slots:
     void storeAndLoad_roundTrip();
     void searchType_values();
     void fields_initialValues();
+    void blendMeta_onlyBesideEd2kAndKad();
 
     // Automatic method resolution
     void automatic_kadOnly_picksKad();
@@ -218,6 +219,20 @@ void tst_SearchParams::automatic_serverThresholds_areExact()
     QCOMPARE(resolveAutomaticSearchType(s), SearchType::Kademlia);
     s.serverFiles = 5000001;
     QCOMPARE(resolveAutomaticSearchType(s), SearchType::Ed2kServer);
+}
+
+void tst_SearchParams::blendMeta_onlyBesideEd2kAndKad()
+{
+    QCOMPARE(SearchParams{}.blendMeta, uint8{0});
+    QVERIFY(canBlendMetaSearch(SearchType::Automatic));
+    QVERIFY(canBlendMetaSearch(SearchType::Ed2kServer));
+    QVERIFY(canBlendMetaSearch(SearchType::Ed2kGlobal));
+    QVERIFY(canBlendMetaSearch(SearchType::Kademlia));
+    // a Meta, indexer or ed3k search asks its own network only
+    for (const SearchType t : {SearchType::MetaUsenet, SearchType::MetaTorrent, SearchType::MetaWeb,
+                               SearchType::UsenetIndexer, SearchType::TorrentIndexer, SearchType::Ed3k,
+                               SearchType::Ed3kLive, SearchType::ContentDB})
+        QVERIFY(!canBlendMetaSearch(t));
 }
 
 QTEST_MAIN(tst_SearchParams)

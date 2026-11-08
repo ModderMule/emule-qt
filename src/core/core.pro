@@ -216,6 +216,7 @@ SOURCES += \
     utils/DebugUtils.cpp \
     utils/BackgroundFileWriter.cpp \
     utils/DiskLoadLimiter.cpp \
+    utils/ReadOnceHint.cpp \
     utils/StallWatchdog.cpp \
     utils/FileDate.cpp \
     utils/Log.cpp \
@@ -409,6 +410,7 @@ HEADERS += \
     utils/DebugUtils.h \
     utils/BackgroundFileWriter.h \
     utils/DiskLoadLimiter.h \
+    utils/ReadOnceHint.h \
     utils/StallWatchdog.h \
     utils/FileDate.h \
     utils/Exceptions.h \
@@ -437,6 +439,8 @@ HEADERS += \
     webserver/ApiTypes.h \
     webserver/OpenApiWriter.h \
     webserver/ApiEventHub.h \
+    webserver/HosterWebBackend.h \
+    webserver/MetaGrabWebBackend.h \
     webserver/TorrentWebBackend.h \
     webserver/UsenetWebBackend.h \
     webserver/WebTemplateStrings.h \

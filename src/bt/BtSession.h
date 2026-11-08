@@ -128,11 +128,11 @@ public:
     [[nodiscard]] std::optional<BtLayout> layout(const QString& id) const;
     /// Hands a whole piece to libtorrent (it hashes it as if a peer had sent it).
     bool addPiece(const QString& id, int piece, const QByteArray& data);
-    /// Writes what libtorrent still holds in memory of the torrent to its files;
-    /// torrentFlushed(id, ticket) once it is there. 0: no such torrent.
-    quint64 flushToDisk(const QString& id);
     /// Asks peers for these pieces first (a held piece waits for them).
     void raisePieces(const QString& id, const QList<int>& pieces);
+    /// Writes the blocks libtorrent holds in memory to disk; cacheFlushed follows. false:
+    /// unknown id (no signal).
+    bool flushCache(const QString& id);
     /// Pieces libtorrent has (hash passed); empty before the metadata or for an unknown id.
     /// From the last status update (≤ 1 s old) plus finished pieces; never waits.
     [[nodiscard]] QBitArray havePieces(const QString& id) const;
@@ -146,8 +146,6 @@ signals:
     void torrentRemoved(const QString& id);
     /// every wanted byte is there
     void torrentFinished(const QString& id);
-    /// what was written before flushToDisk(id) gave @p ticket (and the ones before) is in the files
-    void torrentFlushed(const QString& id, quint64 ticket);
     void statusChanged();
     /// The info dictionary of a magnet arrived.
     void metadataReceived(const QString& id);
@@ -156,6 +154,8 @@ signals:
     /// libtorrent checked the files of a torrent with a join attached; follows the status
     /// update with the checked pieces, so havePieces is current.
     void torrentChecked(const QString& id);
+    /// Every block written before the last flushCache (or finish) is on disk.
+    void cacheFlushed(const QString& id);
 
 private slots:
     void drainAlerts();

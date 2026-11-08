@@ -36,6 +36,12 @@
     <ClCompile Include="DaemonApiBackend.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DaemonHosterWebBackend.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DaemonMetaGrabWebBackend.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="DaemonTorrentWebBackend.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -177,6 +183,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DaemonApiBackend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DaemonHosterWebBackend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DaemonMetaGrabWebBackend.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DaemonTorrentWebBackend.h">

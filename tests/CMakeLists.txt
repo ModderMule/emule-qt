@@ -10,6 +10,8 @@
 
 find_package(Qt6 REQUIRED COMPONENTS Test)
 
+option(EMULE_TEST_PDB "MSVC Debug: write a PDB for each test exe (slow, ~1 GB each)" OFF)
+
 # EMULE_HAVE_BITTORRENT: inherited from the top-level EMULE_BITTORRENT switch
 
 # All tests are independent executables — safe to run in parallel:
@@ -70,6 +72,14 @@ function(emule_add_test TEST_NAME)
         eMule::TestHelpers
         ${ARG_LIBRARIES}
     )
+
+    # MSVC Debug: a full PDB per test is ~1 GB and makes the link ~5x slower
+    # (372s vs 70s for tst_Ed3kHide). 300+ tests -> disk-bound, idle CPU.
+    # Turn EMULE_TEST_PDB on to get symbols when debugging a test.
+    if(MSVC AND NOT EMULE_TEST_PDB)
+        target_link_options(${TEST_NAME} PRIVATE
+            "$<$<CONFIG:Debug>:/DEBUG:NONE>" "$<$<CONFIG:Debug>:/INCREMENTAL:NO>")
+    endif()
 
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
 

@@ -175,6 +175,20 @@ void tst_PortTestApi::ed2kTcpVerdict()
     QCOMPARE(tcpVerdict(targets("bad_reply"), true, true), Verdict::Closed);
     QCOMPARE(tcpVerdict(targets("rate_limited"), true, false), Verdict::Unknown);
     QCOMPARE(tcpVerdict({}, true, false), Verdict::Unknown);
+
+    // HighID check: only the IPv4 target counts
+    const auto tcp = [](bool open, const char* reason) {
+        return QCborMap{{QStringLiteral("open"), open}, {QStringLiteral("reason"), QString::fromLatin1(reason)}};
+    };
+    const QCborArray v4ClosedV6Open{
+        QCborMap{{QStringLiteral("family"), 4}, {QStringLiteral("tcp"), tcp(false, "filtered")}},
+        QCborMap{{QStringLiteral("family"), 6}, {QStringLiteral("tcp"), tcp(true, "open")}}};
+    QCOMPARE(tcpVerdict(v4ClosedV6Open, true, true), Verdict::Open);
+    QCOMPARE(tcpVerdict(v4ClosedV6Open, true, true, 4), Verdict::Closed);
+    QCOMPARE(tcpVerdict(v4ClosedV6Open, true, true, 6), Verdict::Open);
+    // request went over IPv6 without a known IPv4: no IPv4 target, no verdict
+    const QCborArray v6Only{QCborMap{{QStringLiteral("family"), 6}, {QStringLiteral("tcp"), tcp(true, "open")}}};
+    QCOMPARE(tcpVerdict(v6Only, true, true, 4), Verdict::Unknown);
 }
 
 QTEST_GUILESS_MAIN(tst_PortTestApi)

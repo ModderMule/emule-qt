@@ -7,6 +7,8 @@
 #include "CoreNotifierBridge.h"
 #include "ApiEventFeeder.h"
 #include "DaemonApiBackend.h"
+#include "DaemonHosterWebBackend.h"
+#include "DaemonMetaGrabWebBackend.h"
 #include "DaemonTorrentWebBackend.h"
 #include "DaemonUsenetWebBackend.h"
 #include "IpcServer.h"
@@ -205,9 +207,11 @@ bool DaemonApp::start()
                 done(PortTestApi::Verdict::Unknown);
                 return;
             }
+            // IPv4 only: the server gives a HighID for the IPv4 port alone. An open IPv6
+            // port (no NAT, typical after the "prefer IPv6 on LowID" move) is no evidence.
             done(PortTestApi::tcpVerdict(result.value(QStringLiteral("targets")).toArray(),
                                          result.value(QStringLiteral("obfuscated")).toBool(),
-                                         thePrefs.cryptLayerRequired()));
+                                         thePrefs.cryptLayerRequired(), 4));
         });
     });
     m_coreSession->start();
@@ -1172,6 +1176,14 @@ void DaemonApp::startWebServer()
         m_torrentWebBackend = std::make_unique<DaemonTorrentWebBackend>();
     m_webServer->setTorrentBackend(m_torrentWebBackend.get());
 #endif
+
+    // The Hoster page, and the web search's meta-row grabs; page only, no REST routes.
+    if (!m_hosterWebBackend)
+        m_hosterWebBackend = std::make_unique<DaemonHosterWebBackend>();
+    m_webServer->setHosterBackend(m_hosterWebBackend.get());
+    if (!m_metaGrabWebBackend)
+        m_metaGrabWebBackend = std::make_unique<DaemonMetaGrabWebBackend>();
+    m_webServer->setMetaGrabBackend(m_metaGrabWebBackend.get());
 
     // The REST API's daemon half and its event source, kept the same way.
     if (!m_apiBackend)

@@ -27,6 +27,8 @@ class CoreSession;
 class ApiEventFeeder;
 class ApiEventHub;
 class DaemonApiBackend;
+class DaemonHosterWebBackend;
+class DaemonMetaGrabWebBackend;
 class DaemonTorrentWebBackend;
 class DaemonUsenetWebBackend;
 class TranslationRouter;
@@ -197,6 +199,8 @@ private:
 #ifdef EMULE_HAVE_BITTORRENT
     std::unique_ptr<DaemonTorrentWebBackend> m_torrentWebBackend;
 #endif
+    std::unique_ptr<DaemonHosterWebBackend> m_hosterWebBackend;
+    std::unique_ptr<DaemonMetaGrabWebBackend> m_metaGrabWebBackend;
     std::unique_ptr<DaemonApiBackend> m_apiBackend;
     /// Events for GET /api/v1/events; outlive a web-server restart.
     ApiEventHub* m_eventHub = nullptr;

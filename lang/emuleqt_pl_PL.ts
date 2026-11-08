@@ -769,7 +769,7 @@ Włącz interfejs WWW lub REST API w Opcje → Interfejs WWW.</translation>
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+583"/>
+        <location filename="../src/gui/app/main.cpp" line="+605"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -1197,7 +1197,7 @@ Ma komentarze</translation>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4229"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4567"/>
         <source>Bytes</source>
         <translation>Bajty</translation>
     </message>
@@ -5515,7 +5515,7 @@ Jej nazwy będą wtedy rozwiązywane po listach, które już obserwujesz.</trans
     </message>
     <message>
         <location line="+934"/>
-        <location line="+220"/>
+        <location line="+224"/>
         <source>Not valid</source>
         <translation>Nieprawidłowe</translation>
     </message>
@@ -5576,7 +5576,7 @@ Jej nazwy będą wtedy rozwiązywane po listach, które już obserwujesz.</trans
         <translation type="vanished">Przekaźnik:</translation>
     </message>
     <message>
-        <location line="-1402"/>
+        <location line="-1406"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>Udostępniaj też posty Usenet przez ed3k</translation>
     </message>
@@ -5668,12 +5668,12 @@ Jej nazwy będą wtedy rozwiązywane po listach, które już obserwujesz.</trans
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1196"/>
+        <location line="+1200"/>
         <source> credits/MiB</source>
         <translation> kredytów/MiB</translation>
     </message>
     <message>
-        <location line="-1205"/>
+        <location line="-1209"/>
         <source>Never pay (receipts only)</source>
         <translation>Nigdy nie płać (tylko pokwitowania)</translation>
     </message>
@@ -5921,12 +5921,12 @@ Jej nazwy będą wtedy rozwiązywane po listach, które już obserwujesz.</trans
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1034"/>
+        <location line="+1042"/>
         <source>not read yet</source>
         <translation>jeszcze nie odczytano</translation>
     </message>
     <message>
-        <location line="-1032"/>
+        <location line="-1040"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Konto ma debet: dalsza droga to nowy klucz kredytowy.</translation>
     </message>
@@ -6312,22 +6312,22 @@ Eksportować?</translation>
     </message>
     <message>
         <location line="+39"/>
-        <location line="+220"/>
+        <location line="+224"/>
         <source>Not reachable</source>
         <translation>Nieosiągalny</translation>
     </message>
     <message>
-        <location line="-139"/>
+        <location line="-142"/>
         <source>Solve puzzles with these services</source>
         <translation>Rozwiązuj zagadki tymi usługami</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+1"/>
         <source>A hoster&apos;s image puzzle goes to these paid services first; the puzzle window only comes when none of them answers.</source>
         <translation>Zagadka obrazkowa hostingu trafia najpierw do tych płatnych usług; okno zagadki pojawia się tylko, gdy żadna nie odpowie.</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+6"/>
         <source>Captcha solver services solve the puzzles of hosters for a small fee each. An account needs credit at the service. Logins stay on this computer: never sent to another node, never logged.</source>
         <translation>Usługi rozwiązywania captcha rozwiązują zagadki hostingów za niewielką opłatą za każdą. Konto musi mieć środki w usłudze. Dane logowania zostają na tym komputerze: nigdy nie są wysyłane do innego węzła ani zapisywane w logu.</translation>
     </message>
@@ -6337,7 +6337,7 @@ Eksportować?</translation>
         <translation>Usługa</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+17"/>
         <source>Add captcha solver</source>
         <translation>Dodaj usługę captcha</translation>
     </message>
@@ -6387,12 +6387,12 @@ Eksportować?</translation>
         <translation>Automatyczne uruchamianie szybkiego pobierania</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+1"/>
         <source>Once the credit balance reaches the threshold, every ed3k download bids the credit factor for priority upload slots. It stops before about 20 credits are left, from what downloads spent in the past seconds, so the account is never overdrawn.</source>
         <translation>Gdy saldo kredytów osiągnie próg, każde pobieranie ed3k licytuje współczynnik kredytowy o priorytetowe sloty wysyłania. Zatrzymuje się, zanim zostanie około 20 kredytów, na podstawie wydatków pobierania z ostatnich sekund, więc konto nigdy nie zostanie przekroczone.</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+15"/>
         <source>The most paid per MiB for a priority slot while the autostart runs.</source>
         <translation>Najwyższa kwota za MiB za priorytetowy slot, gdy działa automatyczne uruchamianie.</translation>
     </message>
@@ -6417,7 +6417,7 @@ Eksportować?</translation>
         <translation>Próg automatycznego uruchamiania:</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+27"/>
         <source>ed3k is off: this has no effect.</source>
         <translation>ed3k jest wyłączone: to nie ma żadnego efektu.</translation>
     </message>
@@ -6456,7 +6456,7 @@ Eksportować?</translation>
         <translation>Szybkie pobieranie nie działa. Saldo: %1</translation>
     </message>
     <message>
-        <location line="-686"/>
+        <location line="-694"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -6688,18 +6688,18 @@ Eksportować?</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+233"/>
+        <location line="+236"/>
         <source>User</source>
         <translation>Użytkownik</translation>
     </message>
     <message>
-        <location line="-233"/>
-        <location line="+233"/>
+        <location line="-236"/>
+        <location line="+236"/>
         <source>Status</source>
         <translation>Status</translation>
     </message>
     <message>
-        <location line="-39"/>
+        <location line="-42"/>
         <source>Add...</source>
         <translation>Dodaj...</translation>
     </message>
@@ -6786,7 +6786,7 @@ Eksportować?</translation>
         <translation type="vanished">Udostępniaj linki hostingów</translation>
     </message>
     <message>
-        <location line="+90"/>
+        <location line="+94"/>
         <source>Add hoster account</source>
         <translation>Dodaj konto hostingu</translation>
     </message>
@@ -20212,14 +20212,14 @@ Słowa kluczowe w wyszukiwaniu Kad muszą mieć co najmniej 3 znaki.</translatio
     </message>
     <message>
         <location line="+103"/>
-        <location line="+1240"/>
+        <location line="+1244"/>
         <location line="+21"/>
         <location line="+602"/>
         <source>Download</source>
         <translation>Pobierz</translation>
     </message>
     <message>
-        <location line="-1843"/>
+        <location line="-1847"/>
         <source>Close All Searches</source>
         <translation>Zamknij wszystkie wyszukiwania</translation>
     </message>
@@ -20239,7 +20239,7 @@ Słowa kluczowe w wyszukiwaniu Kad muszą mieć co najmniej 3 znaki.</translatio
         <translation>Typ:</translation>
     </message>
     <message>
-        <location line="+846"/>
+        <location line="+850"/>
         <location line="+9"/>
         <source>Any</source>
         <translation>Dowolny</translation>
@@ -20286,7 +20286,7 @@ Słowa kluczowe w wyszukiwaniu Kad muszą mieć co najmniej 3 znaki.</translatio
         <translation>Kolekcja</translation>
     </message>
     <message>
-        <location line="-858"/>
+        <location line="-862"/>
         <source>Method:</source>
         <translation>Metoda:</translation>
     </message>
@@ -20356,7 +20356,7 @@ Słowa kluczowe w wyszukiwaniu Kad muszą mieć co najmniej 3 znaki.</translatio
         <translation>Resetuj</translation>
     </message>
     <message>
-        <location line="+24"/>
+        <location line="+27"/>
         <source>Show results the server found on this network</source>
         <translation>Pokaż wyniki znalezione przez serwer w tej sieci</translation>
     </message>
@@ -20488,13 +20488,13 @@ Słowa kluczowe w wyszukiwaniu Kad muszą mieć co najmniej 3 znaki.</translatio
     <message>
         <location line="+34"/>
         <location line="+37"/>
-        <location line="+204"/>
+        <location line="+205"/>
         <source>Not connected to daemon — search cannot be started.</source>
         <translation>Brak połączenia z demonem — nie można rozpocząć wyszukiwania.</translation>
     </message>
     <message>
-        <location line="-225"/>
-        <location line="+54"/>
+        <location line="-226"/>
+        <location line="+55"/>
         <location line="+214"/>
         <source>Search</source>
         <translation>Szukaj</translation>
@@ -20561,12 +20561,12 @@ Słowa kluczowe w wyszukiwaniu Kad muszą mieć co najmniej 3 znaki.</translatio
         <translation>Wyszukiwanie „%1” nie powiodło się: %2</translation>
     </message>
     <message>
-        <location line="-721"/>
+        <location line="-725"/>
         <source>Usenet search</source>
         <translation>Wyszukiwanie Usenet</translation>
     </message>
     <message>
-        <location line="+965"/>
+        <location line="+969"/>
         <source>%1 results — %2 of %3 indexers</source>
         <translation>Wyników: %1 — %2 z %3 indekserów</translation>
     </message>
@@ -20675,7 +20675,12 @@ Słowa kluczowe w wyszukiwaniu Kad muszą mieć co najmniej 3 znaki.</translatio
         <translation>Nie skonfigurowano indeksera torrentów.</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-503"/>
+        <source>Show results the server found on this network. New eD2K and Kad searches also ask the servers&apos; catalogues of it.</source>
+        <translation>Pokaż wyniki znalezione przez serwer w tej sieci. Nowe wyszukiwania eD2K i Kad pytają też katalogi serwerów.</translation>
+    </message>
+    <message>
+        <location line="+504"/>
         <source>No Usenet indexer is configured.</source>
         <translation>Nie skonfigurowano indeksera Usenet.</translation>
     </message>
@@ -20835,7 +20840,7 @@ Słowa kluczowe w wyszukiwaniu Kad muszą mieć co najmniej 3 znaki.</translatio
         <translation>Podgląd niedostępny — serwer WWW nie działa lub nie otrzymano tokenu strumienia.</translation>
     </message>
     <message>
-        <location line="+364"/>
+        <location line="+370"/>
         <source>Asking servers: %1 / %2</source>
         <translation>Odpytywanie serwerów: %1 / %2</translation>
     </message>
@@ -27773,19 +27778,31 @@ Dla tego wydania ustawiono hasło.</translation>
 <context>
     <name>eMule::WebServer</name>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3492"/>
-        <location line="+3374"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3829"/>
+        <location line="+3711"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>Sesja wygasła — zaloguj się ponownie</translation>
     </message>
     <message>
-        <location line="-3419"/>
+        <location line="-3756"/>
         <source>Guests cannot add downloads</source>
         <translation>Goście nie mogą dodawać pobierań</translation>
     </message>
     <message>
-        <location line="+649"/>
+        <location line="+589"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+180"/>
+        <source>Torrent</source>
+        <translation>Torrent</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+19"/>
+        <source>Web</source>
+        <translation>Web</translation>
+    </message>
+    <message>
+        <location line="+71"/>
         <source>Looking for comments on Kad</source>
         <translation>Szukanie komentarzy w Kad</translation>
     </message>
@@ -27812,13 +27829,13 @@ Dla tego wydania ustawiono hasło.</translation>
     </message>
     <message>
         <location line="+32"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+90"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-102"/>
         <source>Name</source>
         <translation>Nazwa</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+58"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+69"/>
         <source>Size</source>
         <translation>Rozmiar</translation>
     </message>
@@ -27829,7 +27846,7 @@ Dla tego wydania ustawiono hasło.</translation>
     </message>
     <message>
         <location line="+40"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-89"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-104"/>
         <source>Download</source>
         <translation>Pobierz</translation>
     </message>
@@ -27898,7 +27915,8 @@ Dla tego wydania ustawiono hasło.</translation>
         <translation>Logowanie nie powiodło się</translation>
     </message>
     <message numerus="yes">
-        <location line="+238"/>
+        <location line="+255"/>
+        <location line="+1038"/>
         <source>%n download(s) added</source>
         <translation>
             <numerusform>Dodano %n pobieranie</numerusform>
@@ -27907,7 +27925,7 @@ Dla tego wydania ustawiono hasło.</translation>
         </translation>
     </message>
     <message>
-        <location line="+35"/>
+        <location line="-993"/>
         <source>Not sent yet — the search is waiting (%1) and starts by itself.</source>
         <translation>Jeszcze nie wysłano — wyszukiwanie czeka (%1) i uruchomi się samo.</translation>
     </message>
@@ -27945,12 +27963,12 @@ Dla tego wydania ustawiono hasło.</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1981"/>
+        <location line="+2279"/>
         <source>Web Control Panel</source>
         <translation>Panel sterowania WWW</translation>
     </message>
     <message>
-        <location line="-1973"/>
+        <location line="-2271"/>
         <source>Not connected</source>
         <translation>Nie połączono</translation>
     </message>
@@ -27960,13 +27978,13 @@ Dla tego wydania ustawiono hasło.</translation>
         <translation>Zablokowano: interfejs sieciowy niedostępny</translation>
     </message>
     <message>
-        <location line="+299"/>
+        <location line="+303"/>
         <source>Connected</source>
         <translation>Podłączony</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+335"/>
+        <location line="+342"/>
         <source>Disconnected</source>
         <translation>Rozłączony</translation>
     </message>
@@ -27987,7 +28005,7 @@ Dla tego wydania ustawiono hasło.</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+107"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+126"/>
         <source>Uploads</source>
         <translation>Wysyłanie</translation>
     </message>
@@ -28003,7 +28021,7 @@ Dla tego wydania ustawiono hasło.</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-96"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-112"/>
         <source>KB/s</source>
         <translation>KB/s</translation>
     </message>
@@ -28063,31 +28081,50 @@ Dla tego wydania ustawiono hasło.</translation>
         <translation>Niedostępne</translation>
     </message>
     <message>
-        <location line="+150"/>
+        <location line="+40"/>
+        <source>Error: %1</source>
+        <translation>Błąd: %1</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <location line="+21"/>
+        <location line="+372"/>
         <location line="+1135"/>
         <source>Queued</source>
         <translation>W kolejce</translation>
     </message>
     <message>
-        <location line="-1134"/>
+        <location line="-1525"/>
+        <source>Downloading metadata</source>
+        <translation>Pobieranie metadanych</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+19"/>
+        <location line="+371"/>
         <location line="+1133"/>
         <source>Downloading</source>
         <translation>Pobieranie</translation>
     </message>
     <message>
-        <location line="-1132"/>
+        <location line="-1529"/>
+        <location line="+9"/>
+        <location line="+18"/>
+        <location line="+370"/>
         <source>Paused</source>
         <translation>Wstrzymane</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-369"/>
+        <location line="+370"/>
         <location line="+967"/>
         <location line="+163"/>
         <source>Complete</source>
         <translation>Ukończony</translation>
     </message>
     <message>
-        <location line="-1129"/>
+        <location line="-1496"/>
+        <location line="+367"/>
         <source>Failed</source>
         <translation>Nieudane</translation>
     </message>
@@ -28107,12 +28144,130 @@ Dla tego wydania ustawiono hasło.</translation>
         <translation>Rozpakowywanie</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-398"/>
+        <location line="+18"/>
+        <location line="+381"/>
         <source>Checking</source>
         <translation>Sprawdzanie</translation>
     </message>
     <message>
+        <location line="-396"/>
+        <source>Finished</source>
+        <translation>Ukończony</translation>
+    </message>
+    <message>
         <location line="+1"/>
+        <source>Seeding</source>
+        <translation>Seedowanie</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Error</source>
+        <translation>Błąd</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Moving</source>
+        <translation>Przenoszenie</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Matching</source>
+        <translation>Dopasowywanie</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Looking up</source>
+        <translation>Wyszukiwanie</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Waiting</source>
+        <translation>Oczekujące</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Puzzle</source>
+        <translation>Captcha</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Gone</source>
+        <translation>Usunięty</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Needs you</source>
+        <translation>Wymaga działania</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>No resolver</source>
+        <translation>Brak resolvera</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+70"/>
+        <source>%n torrent(s)</source>
+        <translation>
+            <numerusform>%n torrent</numerusform>
+            <numerusform>%n torrenty</numerusform>
+            <numerusform>%n torrentów</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Down: %1, up: %2</source>
+        <translation>Pobieranie: %1, wysyłanie: %2</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+40"/>
+        <source>%n download(s)</source>
+        <translation>
+            <numerusform>%n pobranie</numerusform>
+            <numerusform>%n pobrania</numerusform>
+            <numerusform>%n pobrań</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location line="+22"/>
+        <source>%n torrent(s) added</source>
+        <translation>
+            <numerusform>Dodano %n torrent</numerusform>
+            <numerusform>Dodano %n torrenty</numerusform>
+            <numerusform>Dodano %n torrentów</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+22"/>
+        <source>%1 of %2 torrent(s) did not take it.</source>
+        <translation>%1 z %2 torrentów tego nie przyjęło.</translation>
+    </message>
+    <message>
+        <location line="+30"/>
+        <source>%1 of %2 download(s) did not take it.</source>
+        <translation>%1 z %2 pobrań tego nie przyjęło.</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+22"/>
+        <source>Fetching %n result(s) from the server… refresh to see how it went.</source>
+        <translation>
+            <numerusform>Pobieranie %n wyniku z serwera… odśwież, aby zobaczyć efekt.</numerusform>
+            <numerusform>Pobieranie %n wyników z serwera… odśwież, aby zobaczyć efekt.</numerusform>
+            <numerusform>Pobieranie %n wyników z serwera… odśwież, aby zobaczyć efekt.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+12"/>
+        <source>&quot;%1&quot; grabbed</source>
+        <translation>„%1” pobrano</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>&quot;%1&quot; could not be grabbed: %2</source>
+        <translation>Nie udało się pobrać „%1”: %2</translation>
+    </message>
+    <message>
+        <location line="+153"/>
         <source>Unknown</source>
         <translation>Nieznany</translation>
     </message>
@@ -28177,7 +28332,7 @@ Dla tego wydania ustawiono hasło.</translation>
     </message>
     <message>
         <location line="+55"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+99"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+115"/>
         <source>Usenet engine unavailable</source>
         <translation>Moduł Usenet niedostępny</translation>
     </message>
@@ -28264,7 +28419,7 @@ Dla tego wydania ustawiono hasło.</translation>
     </message>
     <message>
         <location line="+56"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-147"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-169"/>
         <source>All</source>
         <translation>Wszystkie</translation>
     </message>
@@ -28382,6 +28537,11 @@ Sieć, która jest bezczynna, oddaje swój udział drugiej.</translation>
     </message>
     <message>
         <location line="+2"/>
+        <source>Also ask</source>
+        <translation>Pytaj też</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Any</source>
         <translation>Dowolny</translation>
     </message>
@@ -28419,6 +28579,11 @@ Sieć, która jest bezczynna, oddaje swój udział drugiej.</translation>
         <location line="+1"/>
         <source>Back to the queue</source>
         <translation>Powrót do kolejki</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>BitTorrent is off.</source>
+        <translation>BitTorrent jest wyłączony.</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -28551,6 +28716,11 @@ Sieć, która jest bezczynna, oddaje swój udział drugiej.</translation>
         <translation>Dokument (.doc .pdf ...)</translation>
     </message>
     <message>
+        <location line="+1"/>
+        <source>Down</source>
+        <translation>Pobieranie</translation>
+    </message>
+    <message>
         <location line="+2"/>
         <source>Download Speed</source>
         <translation>Prędkość pobierania</translation>
@@ -28606,6 +28776,21 @@ Sieć, która jest bezczynna, oddaje swój udział drugiej.</translation>
         <translation>Stan:</translation>
     </message>
     <message>
+        <location line="+1"/>
+        <source>Hoster</source>
+        <translation>Hosting</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hoster downloads are off.</source>
+        <translation>Pobieranie z hostingów jest wyłączone.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hoster links, one per line:</source>
+        <translation>Linki do hostingów, jeden w wierszu:</translation>
+    </message>
+    <message>
         <location line="+2"/>
         <source>Kad</source>
         <translation>Kad</translation>
@@ -28644,6 +28829,11 @@ Sieć, która jest bezczynna, oddaje swój udział drugiej.</translation>
         <location line="+1"/>
         <source>Logout</source>
         <translation>Wyloguj</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Magnet links, one per line:</source>
+        <translation>Linki magnet, jeden w wierszu:</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -28692,6 +28882,11 @@ Sieć, która jest bezczynna, oddaje swój udział drugiej.</translation>
     </message>
     <message>
         <location line="+2"/>
+        <source>Network</source>
+        <translation>Sieć</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Newsgroups:</source>
         <translation>Grupy dyskusyjne:</translation>
     </message>
@@ -28727,6 +28922,16 @@ Sieć, która jest bezczynna, oddaje swój udział drugiej.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>Package</source>
+        <translation>Pakiet</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Package:</source>
+        <translation>Pakiet:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Password</source>
         <translation>Hasło</translation>
     </message>
@@ -28749,6 +28954,11 @@ Sieć, która jest bezczynna, oddaje swój udział drugiej.</translation>
         <location line="+1"/>
         <source>Pause All</source>
         <translation>Wstrzymaj wszystkie</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peers</source>
+        <translation>Peery</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -28857,6 +29067,16 @@ Sieć, która jest bezczynna, oddaje swój udział drugiej.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>Ratio</source>
+        <translation>Ratio</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Recheck</source>
+        <translation>Sprawdź ponownie</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Recheck Firewall</source>
         <translation>Sprawdź firewall</translation>
     </message>
@@ -28892,6 +29112,11 @@ Sieć, która jest bezczynna, oddaje swój udział drugiej.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>Remove and delete files</source>
+        <translation>Usuń wraz z plikami</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Remove every Usenet download in &quot;%1&quot; and delete its files?</source>
         <translation>Usunąć wszystkie pobierania z Usenetu w „%1” i skasować ich pliki?</translation>
     </message>
@@ -28904,6 +29129,16 @@ Sieć, która jest bezczynna, oddaje swój udział drugiej.</translation>
         <location line="+1"/>
         <source>Remove the stored password for this download?</source>
         <translation>Usunąć zapisane hasło dla tego pobierania?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove the ticked downloads and delete their files?</source>
+        <translation>Usunąć zaznaczone pobrania wraz z ich plikami?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove the ticked torrents and delete their files?</source>
+        <translation>Usunąć zaznaczone torrenty wraz z ich plikami?</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -28922,8 +29157,18 @@ Sieć, która jest bezczynna, oddaje swój udział drugiej.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>Retry</source>
+        <translation>Ponów</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Search</source>
         <translation>Szukaj</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Seeds</source>
+        <translation>Seedy</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -29022,6 +29267,11 @@ Sieć, która jest bezczynna, oddaje swój udział drugiej.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>The servers&apos; catalogues of these networks are asked too.</source>
+        <translation>Pytane są też katalogi serwerów dla tych sieci.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>These could not be added: %1</source>
         <translation>Nie udało się dodać: %1</translation>
     </message>
@@ -29034,6 +29284,11 @@ Sieć, która jest bezczynna, oddaje swój udział drugiej.</translation>
         <location line="+1"/>
         <source>This download is no longer in the queue.</source>
         <translation>Tego pobierania nie ma już w kolejce.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Torrents</source>
+        <translation>Torrenty</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -29067,6 +29322,11 @@ Sieć, która jest bezczynna, oddaje swój udział drugiej.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>Up</source>
+        <translation>Wysyłanie</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Upload Speed</source>
         <translation>Prędkość wysyłania</translation>
     </message>
@@ -29076,12 +29336,13 @@ Sieć, która jest bezczynna, oddaje swój udział drugiej.</translation>
         <translation>Czas działania</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3565"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+2"/>
         <source>User</source>
         <translation>Użytkownik</translation>
     </message>
@@ -29106,7 +29367,7 @@ Sieć, która jest bezczynna, oddaje swój udział drugiej.</translation>
         <translation>Wideo (.avi .mkv ...)</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>You have already downloaded %1 of these. Download them again?</source>
         <translation>Już pobrano %1 z nich. Pobrać ponownie?</translation>
     </message>
