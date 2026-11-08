@@ -1285,15 +1285,18 @@ void tst_ServerLocalTest::requestFixtureSourcesUdp()
     m_downloadQueue->noteUdpSourceRequest(udpDest.ipAddress(), getTickCount());
     qDebug() << "Sent OP_GLOBGETSOURCES for Sintel";
 
-    const bool got = QTest::qWaitFor([pf] { return pf->sourceCount() > 0; }, 15'000);
-    qDebug() << "UDP sources for Sintel:" << pf->sourceCount();
+    // 198.51.100.42 already is a Debian source from the TCP round, so it lands in
+    // Sintel's A4AF list (MFC DownloadQueue.cpp:488-505), not its source list.
+    const auto count = [pf] { return pf->sourceCount() + pf->a4afSourceCount(); };
+    const bool got = QTest::qWaitFor([&] { return count() > 0; }, 15'000);
+    qDebug() << "UDP sources for Sintel:" << pf->sourceCount() << "A4AF:" << pf->a4afSourceCount();
     QVERIFY2(got, "No UDP sources returned for the Sintel fixture hash");
 
-    QVERIFY2(pf->sourceCount() == 1,
-             qPrintable(QStringLiteral("Expected 1 Sintel source, got %1").arg(pf->sourceCount())));
+    QVERIFY2(count() == 1,
+             qPrintable(QStringLiteral("Expected 1 Sintel source, got %1").arg(count())));
 
     const uint32 ip2 = Address::fromString(QString::fromLatin1(kPeer2IPv4)).toNetworkUint32();
-    const UpDownClient* src = pf->srcList().front();
+    const UpDownClient* src = pf->sourceCount() ? pf->srcList().front() : pf->a4afSrcList().front();
     QVERIFY2(!src->hasLowID() && src->connectAddress().toNetworkUint32() == ip2,
              "Sintel UDP source is not the expected peer 198.51.100.42");
 
@@ -2116,14 +2119,12 @@ void tst_ServerLocalTest::searchFilters_data()
         << QStringLiteral("Snow") << 0u << 0u << uint64(0) << uint64(0) << 0u << 0u
         << none << none << QStringLiteral("Blizzard") << noHash << kSnowHash;
 
-    // A hand-written 20-way OR is well inside the server's 64-leaf limit. (Not more:
-    // the parser emits an OR chain one level deeper per operator, and eMule's depth
-    // limit of 24 — which the server shares — rejects a longer chain regardless.)
+    // An 11-way OR: 10 operators, the most the parser takes (MFC IDS_SEARCH_TOOCOMPLEX).
     QStringList terms;
-    for (int i = 1; i < 20; ++i)
+    for (int i = 1; i < 11; ++i)
         terms << QStringLiteral("nomatch%1").arg(i);
     terms << QStringLiteral("Debian");
-    QTest::newRow("20-keyword OR finds Debian")
+    QTest::newRow("11-keyword OR finds Debian")
         << terms.join(QStringLiteral(" OR ")) << 0u << 0u << uint64(0) << uint64(0) << 0u << 0u
         << none << none << none << kDebianHash << noHash;
 }

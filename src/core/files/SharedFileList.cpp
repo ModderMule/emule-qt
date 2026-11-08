@@ -1632,9 +1632,12 @@ void SharedFileList::setDuplicateStorePath(const QString& path)
 
 void SharedFileList::loadDuplicates()
 {
-    for (DuplicateRecord& rec : DuplicateFileStore::read(m_duplicateStorePath))
-        m_duplicates.insert(pathKey(rec.path), {std::move(rec.path), rec.size, rec.mtime,
-                                                std::move(rec.fileHash)});
+    for (DuplicateRecord& rec : DuplicateFileStore::read(m_duplicateStorePath)) {
+        // key first: argument order is unspecified, MSVC moved the path out before
+        QString key = pathKey(rec.path);
+        m_duplicates.insert(std::move(key), {std::move(rec.path), rec.size, rec.mtime,
+                                             std::move(rec.fileHash)});
+    }
     m_duplicatesSaved = 0;
     m_hashFailuresCheckedAt = 0;   // shared save tick
 }

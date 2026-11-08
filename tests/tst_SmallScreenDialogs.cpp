@@ -33,8 +33,10 @@
 #include "utils/DialogSizing.h"
 
 #include <QApplication>
+#include <QFontMetrics>
 #include <QCborArray>
 #include <QCborMap>
+#include <QDir>
 #include <QFile>
 #include <QLayout>
 #include <QScreen>
@@ -173,6 +175,12 @@ private slots:
 /// - no hand-picked floor far above what the content needs (the white space)
 void TestSmallScreenDialogs::everyDialogFits()
 {
+    // offscreen without a font database (Windows) draws every glyph as a 12 px box:
+    // text twice its real width, nothing here can be measured
+    const QFontMetrics fm(QApplication::font());
+    if (fm.horizontalAdvance(u'i') == fm.horizontalAdvance(u'W'))
+        QSKIP("offscreen platform without real fonts");
+
     const QRect avail = QGuiApplication::primaryScreen()->availableGeometry();
     QCOMPARE(avail.height(), kScreenHeight);
     const QSize budget(avail.width() - 40, avail.height() - 60);   // DialogSizing's
@@ -223,7 +231,9 @@ int main(int argc, char* argv[])
                               R"("logicalDpi":96,"logicalBaseDpi":96,"dpr":1}]})")
                    .arg(kScreenWidth).arg(kScreenHeight).toUtf8());
     file.close();
-    qputenv("QT_QPA_PLATFORM", QStringLiteral("offscreen:configfile=%1").arg(config).toUtf8());
+    // Relative: Qt splits the platform spec on ':', so "C:/..." would break on Windows
+    qputenv("QT_QPA_PLATFORM", QStringLiteral("offscreen:configfile=%1")
+                                   .arg(QDir::current().relativeFilePath(config)).toUtf8());
 
     QApplication app(argc, argv);
     TestSmallScreenDialogs test;
