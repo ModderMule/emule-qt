@@ -112,9 +112,13 @@ void installLauncher(bool createMissing);
 /// claimedTypes() reads it back.
 [[nodiscard]] bool isRuntimeRegistration();
 
-/// The types this app is the default for right now. macOS only (a type counts
-/// when every extension and scheme in it is ours); {} elsewhere.
+/// The types this app is the default for right now. macOS: a type counts when every
+/// extension and scheme in it is ours. Windows, Linux: what our own entries claim
+/// (registry keys, emuleqt.desktop), whoever the default is now.
 [[nodiscard]] FileTypes claimedTypes();
+
+/// The types a desktop entry's MimeType= line claims (Linux claimedTypes()).
+[[nodiscard]] FileTypes typesInDesktopEntry(const QString& contents);
 
 /// Whether what applyFileTypes(@p types) wrote starts another executable now (moved
 /// or updated install). False when nothing is written, and on macOS.

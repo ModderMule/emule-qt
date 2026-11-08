@@ -12,6 +12,7 @@
 #include <libtorrent/torrent_info.hpp>
 
 #include <QCoreApplication>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QRandomGenerator>
 #include <QSignalSpy>
@@ -66,6 +67,19 @@ private:
     bool m_deferred;
 };
 
+/// A join sink with nothing to judge: libtorrent alone decides.
+class IdleSink final : public BtJoinSink {
+public:
+    void pieceHashed(const QString&, int, QByteArray, std::function<void(bool)> done) override
+    {
+        calls.fetch_add(1);
+        done(false);
+    }
+    bool judges(const QString&) const override { return false; }
+
+    std::atomic<int> calls{0};
+};
+
 BtSettings settingsIn(const QTemporaryDir& dir, const QString& name)
 {
     BtSettings s;
@@ -110,6 +124,7 @@ private slots:
     void joinHookPassesEveryPiece();
     void joinHookSpoilsAPiece_data();
     void joinHookSpoilsAPiece();
+    void fullCheckWithLateVerdictsIsFast();
     void resumeAfterRestart();
     void peersTrackersAndOptions();
     void ipFilterBlocksPeer();
@@ -203,6 +218,61 @@ void tst_BtLocalSwarm::joinHookSpoilsAPiece()
     // there: the test checks the failure, not a second fetch
     QFETCH(bool, deferred);
     runJoin(true, deferred);
+}
+
+void tst_BtLocalSwarm::fullCheckWithLateVerdictsIsFast()
+{
+    // #152: a joined torrent's late verdicts waited for libtorrent's tick (500 ms), with
+    // 4 MiB checked per tick: ~8 MB/s. Woken at once now, 32 MiB read ahead
+    constexpr qsizetype kSize = 64 * 1024 * 1024;
+    const QString dir = m_dir.filePath(QStringLiteral("check"));
+    QVERIFY(QDir().mkpath(dir));
+    const QString file = dir + QStringLiteral("/payload.bin");
+    {
+        QByteArray big(kSize, Qt::Uninitialized);
+        QRandomGenerator rng(152);
+        rng.fillRange(reinterpret_cast<quint32*>(big.data()), kSize / 4);
+        QFile f(file);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        QCOMPARE(f.write(big), kSize);
+    }
+    const Torrent torrent = makeTorrent(file, dir, lt::create_torrent::v1_only);
+    const int pieces = int(kSize / kPieceLength);
+
+    BtSession s;
+    s.start(settingsIn(m_dir, QStringLiteral("checker")));
+    QVERIFY(s.diskIo() != nullptr);
+    auto hook = std::make_shared<SpoilHook>(false, true);
+    s.diskIo()->attach(torrent.hashes, hook);
+    QElapsedTimer clock;
+    clock.start();
+    const BtAddResult r = s.addTorrentFile(torrent.bytes, dir);
+    QCOMPARE(r.outcome, BtAddOutcome::Added);
+    const auto seeding = [&] { return s.torrent(r.id).has_value() && s.torrent(r.id)->state == BtState::Seeding; };
+    QTRY_VERIFY_WITH_TIMEOUT(seeding(), kTimeoutMs);
+    const qint64 firstMs = clock.elapsed();
+    QCOMPARE(hook->calls.load(), pieces);
+
+    // a forced recheck goes the same way
+    clock.restart();
+    QVERIFY(s.recheck(r.id));
+    QTRY_VERIFY_WITH_TIMEOUT(hook->calls.load() == 2 * pieces && seeding(), kTimeoutMs);
+    const qint64 recheckMs = clock.elapsed();
+    // tick-paced: 64 MiB / 4 MiB per 500 ms = 8 s each
+    QVERIFY2(firstMs < 5000 && recheckMs < 5000, qPrintable(QStringLiteral("check %1 ms, recheck %2 ms").arg(firstMs).arg(recheckMs)));
+
+    // a join with no set to check against: pieces are neither read twice nor asked
+    auto idle = std::make_shared<IdleSink>();
+    QVERIFY(s.attachJoin(r.id, idle));
+    QSignalSpy checked(&s, &BtSession::torrentChecked);
+    QVERIFY(s.recheck(r.id));
+    QTRY_VERIFY_WITH_TIMEOUT(checked.count() > 0 && seeding(), kTimeoutMs);
+    QCOMPARE(idle->calls.load(), 0);
+    QCOMPARE(hook->calls.load(), 2 * pieces);
+    s.detachJoin(r.id);
+    s.diskIo()->detach(torrent.hashes);
+    s.stop();
+    QTest::qWait(50);
 }
 
 void tst_BtLocalSwarm::runJoin(bool spoil, bool deferred)
@@ -450,8 +520,8 @@ void tst_BtLocalSwarm::addWithWantedFiles()
                         lt::span<char const>(torrent.bytes.constData(), static_cast<std::ptrdiff_t>(torrent.bytes.size())))
                         .ti;
     const auto indexOf = [&ti](const char* name) {
-        for (const lt::file_index_t i : ti->files().file_range())
-            if (ti->files().file_path(i).ends_with(name))
+        for (const lt::file_index_t i : ti->layout().file_range())
+            if (ti->layout().file_path(i).ends_with(name))
                 return static_cast<int>(i);
         return -1;
     };

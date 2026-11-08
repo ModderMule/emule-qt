@@ -180,9 +180,13 @@
     <ClCompile Include="..\..\src\gui\app\IpcClient.cpp" />
     <ClCompile Include="..\..\src\gui\app\KnownCores.cpp" />
     <ClCompile Include="..\..\src\daemon\IpcTlsIdentity.cpp" />
+    <ClCompile Include="..\..\src\gui\app\SkinIcons.cpp" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="..\..\src\gui\app\IpcClient.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\app\SkinIcons.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
   </ItemGroup>

@@ -3,6 +3,7 @@
 
 #include "pch.h"
 #include "dialogs/Ed3kStakeGroup.h"
+#include "controls/AbstractListView.h"
 
 #include "app/IpcClient.h"
 #include "IpcMessage.h"
@@ -83,12 +84,8 @@ Ed3kStakeGroup::Ed3kStakeGroup(IpcClient* ipc, QWidget* parent)
     m_rateLabel->setWordWrap(true);
     layout->addWidget(m_rateLabel);
 
-    m_tree = new QTreeWidget(this);
-    m_tree->setHeaderLabels({tr("Claim"), tr("Amount (E3S)"), tr("To"), tr("Ready"), tr("State")});
-    m_tree->setRootIsDecorated(false);
-    m_tree->setUniformRowHeights(true);
-    m_tree->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_tree->header()->setStretchLastSection(true);
+    m_tree = makeFlatList({tr("Claim"), tr("Amount (E3S)"), tr("To"), tr("Ready"), tr("State")},
+                          QStringLiteral("ed3kStakeClaims"), this);
     m_tree->setFixedHeight(m_tree->fontMetrics().lineSpacing() * 6);
     layout->addWidget(m_tree);
 

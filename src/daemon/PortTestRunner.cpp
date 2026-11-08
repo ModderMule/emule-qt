@@ -10,6 +10,7 @@
 #include "net/GuardedNetworkAccessManager.h"
 #include "net/HttpDefaults.h"
 #include "net/PortTestApi.h"
+#include "prefs/Preferences.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 
@@ -50,9 +51,19 @@ QCborMap resultMap(const PortTestApi::Request& req, const QCborArray& targets)
         {QStringLiteral("udpPort"), qint64(req.udpPort)},
         {QStringLiteral("targets"), targets},
     };
-    if (req.network == PortTestApi::Network::BitTorrent)
+    if (req.network != PortTestApi::Network::Ed3k)
         m.insert(QStringLiteral("tcpPort"), qint64(req.tcpPort));
     return m;
+}
+
+QString networkName(PortTestApi::Network network)
+{
+    switch (network) {
+    case PortTestApi::Network::BitTorrent: return QStringLiteral("BitTorrent");
+    case PortTestApi::Network::Ed3k:       return QStringLiteral("ed3k");
+    case PortTestApi::Network::Ed2k:       return QStringLiteral("eD2K");
+    }
+    return {};
 }
 
 /// ed3k: polls the node until every family the server sent to has seen the PROBE, or time is up.
@@ -90,8 +101,8 @@ void send(PortTestApi::Request req, quint64 nonce, const Done& done)
     httpReq.setTransferTimeout(kTransferTimeoutMs);
     QNetworkReply* reply = nam()->get(httpReq);
     logInfo(QStringLiteral("Port test: %1 port %2 via %3")
-                .arg(req.network == PortTestApi::Network::BitTorrent ? QStringLiteral("BitTorrent") : QStringLiteral("ed3k"))
-                .arg(req.udpPort)
+                .arg(networkName(req.network))
+                .arg(req.network == PortTestApi::Network::Ed3k ? req.udpPort : req.tcpPort)
                 .arg(QLatin1String(kWebsiteUrl)));
 
     QObject::connect(reply, &QNetworkReply::finished, reply, [reply, req, nonce, done] {
@@ -107,10 +118,14 @@ void send(PortTestApi::Request req, quint64 nonce, const Done& done)
             done(false, {}, int(parsed.failure), parsed.error);
             return;
         }
-        if (req.network == PortTestApi::Network::Ed3k)
+        if (req.network == PortTestApi::Network::Ed3k) {
             awaitProbe(req, nonce, parsed.targets, done);
-        else
-            done(true, resultMap(req, parsed.targets), 0, {});
+            return;
+        }
+        QCborMap result = resultMap(req, parsed.targets);
+        if (req.network == PortTestApi::Network::Ed2k)
+            result.insert(QStringLiteral("obfuscated"), parsed.obfuscated);
+        done(true, result, 0, {});
     });
 }
 
@@ -145,6 +160,20 @@ void run(int network, Done done)
             return;
         }
         break;
+    case PortTestApi::Network::Ed2k: {
+        req.tcpPort = theApp.advertisedTcpPort();
+        req.udpPort = theApp.advertisedUdpPort();   // 0 = UDP off: TCP only
+        if (req.tcpPort == 0 || !theApp.listenSocket) {
+            fail(PortTestApi::Failure::Ed2kNotListening, QStringLiteral("eD2K is not listening"));
+            return;
+        }
+        // obfuscated dial (plugin >= 1.6.0) unless we refuse obfuscation altogether
+        if (thePrefs.cryptLayerSupported()) {
+            const auto hash = thePrefs.userHash();
+            req.userHash = QByteArray(reinterpret_cast<const char*>(hash.data()), int(hash.size()));
+        }
+        break;
+    }
     default:
         fail(PortTestApi::Failure::UnknownNetwork, QStringLiteral("Unknown network"));
         return;

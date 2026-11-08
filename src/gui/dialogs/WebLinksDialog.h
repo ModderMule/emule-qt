@@ -14,8 +14,11 @@
 /// Select All / None / Invert above, as a torrent's or an NZB's Files tab. Download reads
 /// "Download (n)" for n of several checked, "Download (all)" for all of them; the list's
 /// context menu has Download and Check / Uncheck Selected.
+/// Column widths, order and hidden columns are kept ("webLinks"); without a saved layout
+/// Name is cut so the columns up to Status fit the window.
 
 #include "IpcMessage.h"
+#include "controls/AbstractListView.h"
 
 
 #include <QByteArray>
@@ -28,6 +31,7 @@ class QCborArray;
 class QPoint;
 
 class QPushButton;
+class QShowEvent;
 class QTreeWidget;
 class QTreeWidgetItem;
 
@@ -44,10 +48,14 @@ public:
     /// @p ipc: for the link checks; null: none.
     WebLinksDialog(const QString& rowName, const QCborMap& links, const QByteArray& content,
                    const QString& fileName, IpcClient* ipc, QWidget* parent = nullptr);
+    ~WebLinksDialog() override;
 
     /// The links of @p links [{url,file,...}] by file, in order: one download a file, the
     /// core goes on with its next mirror when one fails.
     [[nodiscard]] static QList<QStringList> mirrorsByFile(const QCborArray& links);
+
+protected:
+    void showEvent(QShowEvent* event) override;
 
 private:
     /// Whether any listed link is on a Tor hidden service.
@@ -70,14 +78,24 @@ private:
     void copyLinks();
     void openLinks();
     void saveList();
+    /// Name as wide as its text, but File..Status stay in sight (fresh layout only).
+    void fitNameColumn();
+    /// Status/Account got data: back in the header menu, shown unless the user hid it.
+    void unlockColumn(int column, bool wanted);
+    /// Status/Account have no data (again): hidden and out of the header menu.
+    void lockColumn(int column);
 
-    QTreeWidget* m_list = nullptr;
+    ListTreeWidget* m_list = nullptr;
     QPushButton* m_openBtn = nullptr;
     QPushButton* m_downloadBtn = nullptr;   ///< null while hoster downloads are off
     QByteArray m_content;
     QString m_fileName;
     QString m_rowName;
     IpcClient* m_ipc = nullptr;
+    bool m_freshLayout = false;   ///< no saved column layout: widths follow the text
+    bool m_fitOnShow = false;     ///< fresh layout, Name not fitted yet
+    bool m_wantStatus = true;     ///< the user's choice, kept while the column has no data
+    bool m_wantAccount = true;
 };
 
 } // namespace eMule

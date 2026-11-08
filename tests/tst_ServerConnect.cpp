@@ -225,6 +225,12 @@ private slots:
     void smartLowId_unarmedKeepsFirstLowID();
     void smartLowId_armedBouncesTwiceThenKeeps();
     void smartLowId_manualConnectKeepsLowID();
+
+    // HighID recheck (#156)
+    void recheck_opcodeGetsHighIdOnTheLiveSession();
+    void recheck_opcodeStillLowIdIsThrottled();
+    void recheck_reloginWithoutTheFlag();
+    void recheck_highIdNeedsAPortChange();
 };
 
 // ---------------------------------------------------------------------------
@@ -1976,6 +1982,157 @@ void tst_ServerConnect::smartLowId_manualConnectKeepsLowID()
     QTest::qWait(300);
     QVERIFY(!b.listener.hasPendingConnections());
     conn.disconnect();
+}
+
+// ---------------------------------------------------------------------------
+// Tests: HighID recheck (#156)
+// ---------------------------------------------------------------------------
+
+/// Logged in on @p listed with @p clientID / @p tcpFlags; the server side in @p side.
+static bool recheckLogin(ServerConnect& conn, ListedLoopback& listed, uint32 clientID, uint32 tcpFlags,
+                         QTcpSocket*& side)
+{
+    conn.setConfig(makeSmartIdConfig());
+    conn.connectToServer(listed.entry, false, true);
+    side = acceptOn(listed.listener);
+    if (!side || !loginArrives(side))
+        return false;
+    side->readAll();
+    writeIdChange(side, clientID, tcpFlags);
+    return QTest::qWaitFor([&] { return conn.isConnected(); }, 5000);
+}
+
+/// Waits for OP_RECHECKFIREWALL on @p side and returns its port, or -1.
+static int recheckPortArrives(QTcpSocket* side)
+{
+    QByteArray got;
+    const bool ok = QTest::qWaitFor([&] {
+        got += side->readAll();
+        return got.size() >= 8;
+    }, 5000);
+    if (!ok || uint8(got[0]) != OP_EDONKEYPROT || uint8(got[5]) != OP_RECHECKFIREWALL)
+        return -1;
+    return uint8(got[6]) | (uint8(got[7]) << 8);
+}
+
+void tst_ServerConnect::recheck_opcodeGetsHighIdOnTheLiveSession()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    ServerList list;
+    ListedLoopback listed(list, QStringLiteral("S"));
+    QVERIFY(listed.entry);
+    ServerConnect conn(list);
+    QTcpSocket* side = nullptr;
+    QVERIFY(recheckLogin(conn, listed, 0x42, SrvTcpFlag::FirewallRecheck, side));
+    QVERIFY(conn.isLowID());
+
+    QSignalSpy finished(&conn, &ServerConnect::highIdRecheckFinished);
+    QSignalSpy lost(&conn, &ServerConnect::disconnectedFromServer);
+    QVERIFY(conn.requestHighIdRecheck(QStringLiteral("test")));
+    QVERIFY(conn.isRecheckPending());
+    QVERIFY(!conn.requestHighIdRecheck(QStringLiteral("again")));   // one at a time
+    QCOMPARE(recheckPortArrives(side), 4662);
+    // the server's dial-back is let in while we wait
+    QVERIFY(conn.awaitingTestFromIP(htonl(0x7F000001)));
+
+    writeIdChange(side, 0x0100007f, SrvTcpFlag::FirewallRecheck);   // HighID 127.0.0.1
+    QVERIFY(QTest::qWaitFor([&] { return !conn.isLowID(); }, 5000));
+    QCOMPARE(finished.count(), 1);
+    QCOMPARE(finished.at(0).at(0).toBool(), true);
+    QVERIFY(!conn.isRecheckPending());
+    QVERIFY(conn.isConnected());
+    QCOMPARE(lost.count(), 0);
+    QCOMPARE(listed.listener.hasPendingConnections(), false);   // no re-login
+    conn.disconnect();
+}
+
+void tst_ServerConnect::recheck_opcodeStillLowIdIsThrottled()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    ServerList list;
+    ListedLoopback listed(list, QStringLiteral("S"));
+    QVERIFY(listed.entry);
+    ServerConnect conn(list);
+    QTcpSocket* side = nullptr;
+    QVERIFY(recheckLogin(conn, listed, 0x42, SrvTcpFlag::FirewallRecheck, side));
+
+    QSignalSpy finished(&conn, &ServerConnect::highIdRecheckFinished);
+    QVERIFY(conn.requestHighIdRecheck(QStringLiteral("test")));
+    QVERIFY(recheckPortArrives(side) > 0);
+    // still LowID: no smart-LowID bounce, same session
+    writeIdChange(side, 0x42, SrvTcpFlag::FirewallRecheck);
+    QVERIFY(QTest::qWaitFor([&] { return finished.count() == 1; }, 5000));
+    QCOMPARE(finished.at(0).at(0).toBool(), false);
+    QVERIFY(conn.isConnected());
+    QVERIFY(conn.isLowID());
+    // the next one waits out the interval
+    QVERIFY(!conn.requestHighIdRecheck(QStringLiteral("soon again")));
+    conn.disconnect();
+}
+
+void tst_ServerConnect::recheck_reloginWithoutTheFlag()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    ServerList list;
+    ListedLoopback listed(list, QStringLiteral("S"));
+    QVERIFY(listed.entry);
+    ServerConnect conn(list);
+    QTcpSocket* side = nullptr;
+    QVERIFY(recheckLogin(conn, listed, 0x42, 0, side));
+
+    QSignalSpy finished(&conn, &ServerConnect::highIdRecheckFinished);
+    QSignalSpy lost(&conn, &ServerConnect::disconnectedFromServer);
+    QSignalSpy handedOver(&conn, &ServerConnect::sessionHandedOver);
+    bool everOffline = false;
+    connect(&conn, &ServerConnect::stateChanged, &conn,
+            [&] { everOffline = everOffline || !conn.isConnected(); });
+
+    QVERIFY(conn.requestHighIdRecheck(QStringLiteral("test")));
+    QTcpSocket* side2 = acceptOn(listed.listener);   // same server, same address
+    QVERIFY(side2);
+    QVERIFY(loginArrives(side2));
+    QVERIFY(conn.isHandoverLoggingIn());
+    QVERIFY(conn.awaitingTestFromIP(htonl(0x7F000001)));
+    writeIdChange(side2, 0x0100007f);
+    QVERIFY(QTest::qWaitFor([&] { return finished.count() == 1; }, 5000));
+    QCOMPARE(finished.at(0).at(0).toBool(), true);
+    QVERIFY(conn.isConnected());
+    QVERIFY(!conn.isLowID());
+    QVERIFY(!everOffline);
+    QCOMPARE(lost.count(), 0);
+    QCOMPARE(handedOver.count(), 1);
+    QVERIFY(QTest::qWaitFor([&] { return side->state() == QAbstractSocket::UnconnectedState; }, 5000));
+    conn.disconnect();
+}
+
+void tst_ServerConnect::recheck_highIdNeedsAPortChange()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    ServerList list;
+    ListedLoopback listed(list, QStringLiteral("S"));
+    QVERIFY(listed.entry);
+    ServerConnect conn(list);
+    QTcpSocket* side = nullptr;
+    QVERIFY(recheckLogin(conn, listed, 0x0100007f, SrvTcpFlag::FirewallRecheck, side));
+    QVERIFY(!conn.isLowID());
+
+    QVERIFY(!conn.requestHighIdRecheck(QStringLiteral("nothing to fix")));
+    QVERIFY(conn.requestHighIdRecheck(QStringLiteral("port changed"), true));
+    QCOMPARE(recheckPortArrives(side), 4662);
+    conn.disconnect();
+    QVERIFY(!conn.isRecheckPending());
 }
 
 QTEST_MAIN(tst_ServerConnect)

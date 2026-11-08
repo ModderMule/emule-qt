@@ -691,7 +691,10 @@ void FirstStartWizard::onPortTest()
         return;
     }
     // The core has to listen on the ports being tested (MFC rebinds first)
-    pushPorts(/*withUPnP*/ false, [this, tcp, udp](bool) { PortTest::open(m_ipc, this, tcp, udp); });
+    pushPorts(/*withUPnP*/ false, [this, tcp, udp](bool) {
+        PortTest::NetworkTest::run(m_ipc, this, m_portTestBtn, PortTest::Network::Ed2k,
+                                   [this, tcp, udp] { PortTest::open(m_ipc, this, tcp, udp); });
+    });
 }
 
 void FirstStartWizard::reject()

@@ -47,6 +47,10 @@ public:
     /// called once, from any thread; `spoil` makes libtorrent fail the piece and blame
     /// its peers.
     virtual void pieceHashed(const QString& id, int piece, QByteArray data, std::function<void(bool spoil)> done) = 0;
+
+    /// false: the join passes every piece of @p id unseen now (no set to check against),
+    /// so libtorrent alone decides and the piece is not read twice (#152). Any thread.
+    [[nodiscard]] virtual bool judges(const QString& id) const { (void)id; return true; }
 };
 
 } // namespace eMule::bt

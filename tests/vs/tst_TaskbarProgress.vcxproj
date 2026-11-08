@@ -178,6 +178,12 @@
   <ItemGroup>
     <ClCompile Include="..\tst_TaskbarProgress.cpp" />
     <ClCompile Include="..\..\src\gui\utils\TaskbarProgress.cpp" />
+    <ClCompile Include="..\..\src\gui\app\SkinIcons.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="..\..\src\gui\app\SkinIcons.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="..\tst_TaskbarProgress.cpp.moc.cbt">

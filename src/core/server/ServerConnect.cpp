@@ -50,7 +50,14 @@ ServerConnect::ServerConnect(ServerList& serverList, QObject* parent)
     m_handoverTimer.setSingleShot(true);
     connect(&m_handoverTimer, &QTimer::timeout, this, [this] {
         if (m_handoverSocket)
-            failIPv6Handover(m_handoverSocket, QStringLiteral("timed out"));
+            failHandover(m_handoverSocket, QStringLiteral("timed out"));
+    });
+
+    // eNode-go throttles or drops a recheck silently: give up waiting for its answer
+    m_recheckAnswerTimer.setSingleShot(true);
+    connect(&m_recheckAnswerTimer, &QTimer::timeout, this, [this] {
+        logInfo(QStringLiteral("HighID recheck: no answer from the server"));
+        finishRecheck(!isLowID());
     });
 }
 
@@ -326,15 +333,16 @@ void ServerConnect::connectionEstablished(ServerSocket* sender)
 {
     if (sender == m_handoverSocket) {
         if (sender->connectionState() == ServerConnState::WaitForLogin) {
-            // Logs in beside the live IPv4 session (or after it, closeFirst)
+            // Logs in beside the live session (or after it, closeFirst)
             initLocalIP();
-            logInfo(QStringLiteral("IPv6 handover: connected to %1 (%2), sending login request")
-                        .arg(sender->currentServer() ? sender->currentServer()->name() : QString(),
+            logInfo(QStringLiteral("%1: connected to %2 (%3), sending login request")
+                        .arg(handoverName(),
+                             sender->currentServer() ? sender->currentServer()->name() : QString(),
                              ipstr(sender->sessionAddress())));
             m_handoverLoginSent = true;
             sendLoginPacket(sender);
         } else if (sender->connectionState() == ServerConnState::Connected) {
-            finishIPv6Handover(sender);
+            finishHandover(sender);
         }
         return;
     }
@@ -408,7 +416,10 @@ void ServerConnect::connectionEstablished(ServerSocket* sender)
         // LowID over IPv4 on a dual-stack server: we are online now, move to IPv6
         // in the background. Deferred: we are inside this socket's packet handler.
         if (m_handoverServerId != 0 && !m_handoverSocket && sender->sessionAddress().isIPv4())
-            QTimer::singleShot(0, this, [this] { startIPv6Handover(false); });
+            QTimer::singleShot(0, this, [this] {
+                m_handoverReason = HandoverReason::IPv6Switch;
+                startHandover(false);
+            });
     }
 }
 
@@ -425,18 +436,18 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
                 ? QStringLiteral("closed by the server")
                 : QStringLiteral("refused by the server: %1").arg(sender->loginRejectReason());
         }
-        failIPv6Handover(sender, why);
+        failHandover(sender, why);
         return;
     }
 
     if (!m_connecting && sender != m_connectedSocket)
         return;
 
-    // The server closed the IPv4 session because the IPv6 login took it over
+    // The server closed the live session because the handover login took it over
     // (eNode-go releases it right before accepting the new one). Not a loss: the
-    // IPv6 answer follows, and a failed one falls back to IPv4.
+    // new answer follows, and a failed one reconnects.
     if (m_connected && sender == m_connectedSocket && m_handoverSocket && m_handoverLoginSent) {
-        logInfo(QStringLiteral("IPv6 handover: server closed the IPv4 session"));
+        logInfo(QStringLiteral("%1: server closed the old session").arg(handoverName()));
         destroySocket(sender);
         m_connecting = true;
         m_singleConnecting = true;
@@ -883,14 +894,27 @@ bool ServerConnect::isLocalServer(uint32 ip, uint16 port) const
 
 bool ServerConnect::awaitingTestFromIP(uint32 ip) const
 {
+    const auto waitsFor = [ip](const ServerSocket* socket) {
+        return socket && socket->currentServer()
+            && socket->currentServer()->ipAddress().toNetworkUint32() == ip
+            && socket->connectionState() == ServerConnState::WaitForLogin;
+    };
     for (const auto& [timestamp, socket] : m_connectionAttempts) {
-        if (socket && socket->currentServer() &&
-            socket->currentServer()->ipAddress().toNetworkUint32() == ip &&
-            socket->connectionState() == ServerConnState::WaitForLogin) {
+        if (waitsFor(socket))
             return true;
-        }
     }
-    return false;
+    // A background login is tested like any other (#156: crypt-required rejected it).
+    // eNode-go also re-tests on OP_RECHECKFIREWALL, from the live session's server.
+    if (waitsFor(m_handoverSocket))
+        return true;
+    return m_recheckAnswerTimer.isActive() && m_connected && m_connectedSocket
+        && m_connectedSocket->currentServer()
+        && m_connectedSocket->currentServer()->ipAddress().toNetworkUint32() == ip;
+}
+
+bool ServerConnect::isHandoverLoggingIn() const
+{
+    return (m_handoverSocket && m_handoverLoginSent) || m_recheckAnswerTimer.isActive();
 }
 
 bool ServerConnect::isConnectedObfuscated() const
@@ -925,7 +949,10 @@ void ServerConnect::destroySocket(ServerSocket* socket)
     }
 
     if (socket == m_handoverSocket)
-        resetIPv6Handover();
+        resetHandover();
+    // The answer to a recheck can only come on the live session
+    if (socket == m_connectedSocket && m_recheckAnswerTimer.isActive())
+        finishRecheck(false);
 
     // Never leave m_connectedSocket pointing at a socket we are about to delete.
     // connectionFailed() funnels every terminal state here, but only its
@@ -1013,8 +1040,7 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
     data.writeUInt32(m_clientID);
 
     // Listening port — the router's, when it mapped us to another one
-    const uint16 mappedPort = theApp.mappedTcpPort();
-    data.writeUInt16(mappedPort != 0 ? mappedPort : m_config.listenPort);
+    data.writeUInt16(loginTcpPort());
 
     // IPv6: advertise our public IPv6 to the server so it can publish us as a v6 source
     // and mark this session sentinel-safe. This is safe against legacy servers (they skip
@@ -1125,6 +1151,22 @@ void ServerConnect::onLoginReceived(ServerSocket* socket, uint32 clientID, uint3
     // applies the TCP flags before the smart-ID check (ServerSocket.cpp:301).
     applyServerFlags(socket, tcpFlags);
 
+    // #156: a fresh OP_IDCHANGE on the live session (eNode-go answering
+    // OP_RECHECKFIREWALL). No smart-LowID bounce and no IPv6 move: same session.
+    if (m_connected && socket == m_connectedSocket) {
+        const bool wasLowID = isLowID();
+        setClientID(clientID);
+        if (eMule::isLowID(clientID) && serverReportedIP != 0
+            && acceptReportedIP(serverReportedIP, socket->sessionAddress(), socket->currentServer(),
+                                theApp.publicIP()))
+            theApp.setPublicIP(serverReportedIP);
+        if (wasLowID && !eMule::isLowID(clientID))
+            logInfo(QStringLiteral("Port is reachable now: the server gave us a HighID"));
+        if (m_recheckAnswerTimer.isActive())
+            finishRecheck(!eMule::isLowID(clientID));
+        return;
+    }
+
     // Smart-LowID retry — faithful port of srchybrid CServerSocket::ProcessPacket
     // OP_IDCHANGE (ServerSocket.cpp:326-350). The retry is *armed* only after we
     // have seen a HighID this session (m_smartIdState set to 1); a consistently
@@ -1168,7 +1210,7 @@ void ServerConnect::onLoginReceived(ServerSocket* socket, uint32 clientID, uint3
 
     // serverPreferIPv6 (not MFC): a LowID we would keep, on the IPv4 side of a
     // dual-stack server — accept it, then move to IPv6 in the background once
-    // connected (startIPv6Handover). Committing first keeps us online meanwhile.
+    // connected (startHandover). Committing first keeps us online meanwhile.
     if (Server* entry = listEntryFor(socket->currentServer()); entry && !handover) {
         if (!eMule::isLowID(clientID)) {
             if (socket->sessionAddress().isIPv4())
@@ -1176,6 +1218,7 @@ void ServerConnect::onLoginReceived(ServerSocket* socket, uint32 clientID, uint3
         } else if (wantsIPv6Switch(socket, entry)) {
             logWarning(QStringLiteral("You have a Low ID over IPv4 on %1 — moving to its IPv6 address in the background.")
                            .arg(entry->name()));
+            m_handoverReason = HandoverReason::IPv6Switch;
             m_handoverServerId = entry->serverId();
         }
     }
@@ -1271,22 +1314,28 @@ ServerConnect::NextDial ServerConnect::nextDialFor(const ServerSocket* socket,
     return {otherFamilyFor(socket, listServer), {}};
 }
 
-void ServerConnect::startIPv6Handover(bool closeFirst)
+void ServerConnect::startHandover(bool closeFirst)
 {
     Server* entry = m_serverList.findById(m_handoverServerId);
     if (m_handoverSocket)
         return;
-    if (!entry || !m_connected || !m_connectedSocket || !wantsIPv6Switch(m_connectedSocket, entry)
-        || listEntryFor(m_connectedSocket->currentServer()) != entry) {
+    const bool recheck = m_handoverReason == HandoverReason::HighIdRecheck;
+    if (!entry || !m_connected || !m_connectedSocket
+        || listEntryFor(m_connectedSocket->currentServer()) != entry
+        || (!recheck && !wantsIPv6Switch(m_connectedSocket, entry))) {
         m_handoverServerId = 0;
+        if (recheck && closeFirst)
+            finishRecheck(!isLowID());   // deferred retry found nothing left to do
         return;
     }
     const uint32 serverId = m_handoverServerId;
+    // Recheck: the address the live session dialed again; IPv6 switch: the other family
+    const Address dial = recheck ? m_connectedSocket->sessionAddress() : entry->ipv6Address();
 
     if (closeFirst) {
-        // One session per user hash and no takeover: go offline for the IPv6 login
-        logInfo(QStringLiteral("IPv6 handover: %1 refused a second session — closing the IPv4 one first")
-                    .arg(entry->name()));
+        // One session per user hash and no takeover: go offline for the new login
+        logInfo(QStringLiteral("%1: %2 refused a second session — closing the current one first")
+                    .arg(handoverName(), entry->name()));
         m_connecting = true;
         m_singleConnecting = true;
         disconnect();
@@ -1303,75 +1352,177 @@ void ServerConnect::startIPv6Handover(bool closeFirst)
         timeout = std::max<uint32>(timeout, CONNECTION_TIMEOUT);
     m_handoverTimer.start(static_cast<int>(timeout));
 
-    logInfo(QStringLiteral("IPv6 handover: dialing %1 (%2)")
-                .arg(entry->name(), Endpoint(entry->ipv6Address(), entry->port()).toString()));
+    logInfo(QStringLiteral("%1: dialing %2 (%3)")
+                .arg(handoverName(), entry->name(), Endpoint(dial, entry->port()).toString()));
     socket->initProxySupport(thePrefs.proxySettings());
-    socket->connectTo(*entry, false, entry->ipv6Address(), true);
+    socket->connectTo(*entry, false, dial, !recheck);
 }
 
-void ServerConnect::finishIPv6Handover(ServerSocket* socket)
+void ServerConnect::finishHandover(ServerSocket* socket)
 {
     Server* entry = listEntryFor(socket->currentServer());
     const bool closeFirst = m_handoverCloseFirst;
-    resetIPv6Handover();
+    const HandoverReason reason = m_handoverReason;
+    const QString name = handoverName();
+    resetHandover();
 
     // Still up: the server let the two overlap (ed2k-server keeps the old socket)
     if (m_connected && m_connectedSocket) {
         destroySocket(m_connectedSocket);
         emit sessionHandedOver();
     }
-    if (entry) {
+    if (entry && reason == HandoverReason::IPv6Switch)
         entry->setIPv6SwitchFailed(false);
-    }
-    logInfo(QStringLiteral("IPv6 handover to %1 complete%2")
-                .arg(entry ? entry->name() : QString(),
+    logInfo(QStringLiteral("%1 to %2 complete%3")
+                .arg(name, entry ? entry->name() : QString(),
                      closeFirst ? QString() : QStringLiteral(" without going offline")));
 
     // The ordinary login path makes it the live session
     m_connecting = true;
     connectionEstablished(socket);
+    if (reason == HandoverReason::HighIdRecheck)
+        finishRecheck(!isLowID());
 }
 
-void ServerConnect::failIPv6Handover(ServerSocket* socket, const QString& reason)
+void ServerConnect::failHandover(ServerSocket* socket, const QString& reason)
 {
     Server* entry = m_serverList.findById(m_handoverServerId);
     const bool closeFirst = m_handoverCloseFirst;
+    const bool recheck = m_handoverReason == HandoverReason::HighIdRecheck;
+    const QString name = handoverName();
     // eNode-go refuses a second session for the hash with a message and a close
     const bool refused = m_handoverLoginSent && socket->connectionState() == ServerConnState::ServerFull;
     destroySocket(socket);   // resets the handover state
 
     if (m_connected && m_connectedSocket) {
-        if (!entry)
-            return;
-        if (refused && !closeFirst) {
-            m_handoverServerId = entry->serverId();
-            QTimer::singleShot(0, this, [this] { startIPv6Handover(true); });
+        if (!entry) {
+            if (recheck)
+                finishRecheck(!isLowID());
             return;
         }
-        logInfo(QStringLiteral("IPv6 handover to %1 failed (%2) — staying on IPv4")
-                    .arg(entry->name(), reason));
-        entry->setIPv6SwitchFailed(true);
+        if (refused && !closeFirst) {
+            m_handoverServerId = entry->serverId();
+            QTimer::singleShot(0, this, [this] { startHandover(true); });
+            return;
+        }
+        logInfo(QStringLiteral("%1 to %2 failed (%3) — %4")
+                    .arg(name, entry->name(), reason,
+                         recheck ? QStringLiteral("keeping the current session")
+                                 : QStringLiteral("staying on IPv4")));
+        if (recheck)
+            finishRecheck(!isLowID());
+        else
+            entry->setIPv6SwitchFailed(true);
         return;
     }
 
-    // The IPv4 session is gone already: back to it
+    // The old session is gone already: back to it
     if (!entry) {
         stopConnectionTry();
+        if (recheck)
+            finishRecheck(false);
         return;
     }
-    logWarning(QStringLiteral("IPv6 handover to %1 failed (%2) — reconnecting over IPv4")
-                   .arg(entry->name(), reason));
-    entry->setIPv6SwitchFailed(true);
+    logWarning(QStringLiteral("%1 to %2 failed (%3) — reconnecting%4")
+                   .arg(name, entry->name(), reason,
+                        recheck ? QString() : QStringLiteral(" over IPv4")));
+    if (!recheck)
+        entry->setIPv6SwitchFailed(true);
     connectToServer(entry);
+    if (recheck)
+        finishRecheck(false);
 }
 
-void ServerConnect::resetIPv6Handover()
+void ServerConnect::resetHandover()
 {
     m_handoverTimer.stop();
     m_handoverSocket = nullptr;
     m_handoverServerId = 0;
     m_handoverLoginSent = false;
     m_handoverCloseFirst = false;
+}
+
+QString ServerConnect::handoverName() const
+{
+    return m_handoverReason == HandoverReason::HighIdRecheck ? QStringLiteral("HighID recheck")
+                                                             : QStringLiteral("IPv6 handover");
+}
+
+// ---------------------------------------------------------------------------
+// HighID recheck (#156)
+// ---------------------------------------------------------------------------
+
+namespace {
+constexpr qint64 kRecheckOpcodeIntervalMs  = 2 * 60 * 1000;    // eNode-go throttles at 120 s
+constexpr qint64 kRecheckReloginIntervalMs = 10 * 60 * 1000;   // a re-login costs the server more
+constexpr int    kRecheckAnswerTimeoutMs   = 30 * 1000;        // its dial-back takes <= ~4 s
+} // namespace
+
+bool ServerConnect::requestHighIdRecheck(const QString& why, bool portChanged)
+{
+    if (!m_connected || !m_connectedSocket || m_handoverSocket || isRecheckPending())
+        return false;
+    if (!portChanged && !isLowID())
+        return false;
+    const Server* live = m_connectedSocket->currentServer();
+    Server* entry = listEntryFor(live);
+    if (!live || !entry)
+        return false;
+
+    const bool viaOpcode = (live->tcpFlags() & SrvTcpFlag::FirewallRecheck) != 0;
+    // Each recheck that kept a LowID doubles the wait, up to 4x
+    const qint64 interval = (viaOpcode ? kRecheckOpcodeIntervalMs : kRecheckReloginIntervalMs)
+                            << std::min(m_recheckLowIdResults, 2);
+    const qint64 now = m_elapsedTimer.elapsed();
+    if (m_lastRecheckMs >= 0 && now - m_lastRecheckMs < interval) {
+        logServerVerbose([&]() -> QString {
+            return QStringLiteral("HighID recheck (%1) skipped: last one %2 s ago")
+                .arg(why).arg((now - m_lastRecheckMs) / 1000);
+        });
+        return false;
+    }
+    m_lastRecheckMs = now;
+
+    if (viaOpcode) {
+        SafeMemFile data;
+        data.writeUInt16(loginTcpPort());
+        auto packet = std::make_unique<Packet>(data);
+        packet->opcode = OP_RECHECKFIREWALL;
+        logInfo(QStringLiteral("HighID recheck (%1): asking %2 to test port %3 again")
+                    .arg(why, entry->name()).arg(loginTcpPort()));
+        if (!sendPacket(std::move(packet)))
+            return false;
+        m_recheckAnswerTimer.start(kRecheckAnswerTimeoutMs);
+        return true;
+    }
+
+    logInfo(QStringLiteral("HighID recheck (%1): logging in to %2 again in the background")
+                .arg(why, entry->name()));
+    m_handoverReason = HandoverReason::HighIdRecheck;
+    m_handoverServerId = entry->serverId();
+    startHandover(false);
+    return m_handoverSocket != nullptr;
+}
+
+bool ServerConnect::isRecheckPending() const
+{
+    return m_recheckAnswerTimer.isActive()
+        || (m_handoverSocket && m_handoverReason == HandoverReason::HighIdRecheck);
+}
+
+uint16 ServerConnect::loginTcpPort() const
+{
+    const uint16 mappedPort = theApp.mappedTcpPort();
+    return mappedPort != 0 ? mappedPort : m_config.listenPort;
+}
+
+void ServerConnect::finishRecheck(bool highId)
+{
+    m_recheckAnswerTimer.stop();
+    m_recheckLowIdResults = highId ? 0 : m_recheckLowIdResults + 1;
+    if (!highId)
+        logInfo(QStringLiteral("HighID recheck: still a LowID"));
+    emit highIdRecheckFinished(highId);
 }
 
 void ServerConnect::applyServerFlags(ServerSocket* socket, uint32 tcpFlags)
@@ -1619,8 +1770,9 @@ ServerSocket* ServerConnect::createServerSocket(bool manualSingleConnect)
                         if (m_handoverSocket || !m_connected || !isLowID())
                             return;
                         logInfo(QStringLiteral("Low ID over IPv4 — moving to the server's IPv6 address in the background"));
+                        m_handoverReason = HandoverReason::IPv6Switch;
                         m_handoverServerId = id;
-                        startIPv6Handover(false);
+                        startHandover(false);
                     });
                 }
             });

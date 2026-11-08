@@ -16,6 +16,9 @@
 /// - No zip at all (release bundles ship none): nothing at start; fetchFirst() once a hoster
 ///   link wants plugins (Ed3kJdResolver::pluginsNeeded), also with autoUpdate off.
 /// - Off (pref, or hoster downloads off): nothing is checked, a running fetch is stopped.
+/// - Shared (`sharedPluginDir`): <dir> is <sharedPluginDir>/update for all instances. One
+///   fetches at a time (.fetch.lock); the others wait, then take its zip from update.json, and
+///   each tick reads update.json again, so one check per interval serves every instance.
 
 #ifdef EMULE_HAVE_HOSTER_JD
 
@@ -23,8 +26,10 @@
 #include "net/ScheduledUpdater.h"
 
 #include <QDateTime>
+#include <QLockFile>
 #include <QNetworkProxy>
 #include <QString>
+#include <QTimer>
 #include <QUrl>
 
 #include <memory>
@@ -42,11 +47,17 @@ class Ed3kResolverUpdater : public ScheduledUpdater {
 public:
     static constexpr qint64 kMaxZipBytes = 256ll * 1024 * 1024;
     static constexpr qint64 kFirstRetrySecs = 10 * 60;
+    /// another instance holds the fetch lock: try again after this
+    static constexpr int kLockRetryMs = 30 * 1000;
 
     /// @p dir: where fetched zips and update.json live (<config>/ed3k/resolver/update)
     explicit Ed3kResolverUpdater(QString dir, QObject* parent = nullptr);
     ~Ed3kResolverUpdater() override;
 
+    /// Another folder (shared on/off): a running fetch stops. A fetched zip of the old folder
+    /// newer than any in the new one is copied along; the old folder is left to the caller
+    void setDir(const QString& dir);
+    [[nodiscard]] QString dir() const { return m_dir; }
     /// @p on: autoUpdate and hoster downloads on. @p hours: check interval
     void setSchedule(bool on, int hours);
     void setProxy(const QNetworkProxy& proxy) { m_proxy = proxy; }
@@ -54,6 +65,8 @@ public:
     void setBundledZip(const QString& zip);
     /// Tests: a local manifest; default VersionManifest::manifestUrl()
     void setManifestUrl(const QUrl& url) { m_manifestUrl = url; }
+    /// Tests: wait for another instance's fetch this long; default kLockRetryMs
+    void setLockRetryMs(int ms) { m_lockRetry.setInterval(ms); }
 
     /// The fetched zip when newer than the bundled one and of our api, else the bundled one
     [[nodiscard]] QString zipToUse() const;
@@ -88,6 +101,11 @@ private:
     void finish(bool ok, const QString& message);
     void loadState();
     void saveState() const;
+    /// update.json again (another instance may have fetched). True: zipToUse() changed
+    bool reloadState();
+    /// False: another instance fetches; retried after kLockRetryMs
+    bool takeFetchLock();
+    void clearFetched();
     /// Removes fetched zips but @p keep and the previous one (the resolver may still use it)
     void pruneZips(const QString& keep) const;
     [[nodiscard]] int haveRevision() const;
@@ -107,6 +125,8 @@ private:
     QString m_fetchedSha;
     QDateTime m_firstTried;           ///< last fetchFirst()
     HosterResolverRelease m_wanted;   ///< while the zip downloads
+    std::unique_ptr<QLockFile> m_fetchLock;   ///< held from manifest to zip done
+    QTimer m_lockRetry;                       ///< waiting for another instance's fetch
     std::unique_ptr<GuardedNetworkAccessManager> m_nam;
     std::unique_ptr<HttpStreamDownload> m_dl;
 };

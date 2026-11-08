@@ -25,6 +25,7 @@
 #include "friends/FriendList.h"
 #include "files/SharedFileList.h"
 #include "kademlia/Kademlia.h"
+#include "kademlia/KadFirewallTester.h"
 #include "search/FakeFileDetector.h"
 #include "search/GlobalSearchScheduler.h"
 #include "search/SearchList.h"
@@ -34,6 +35,7 @@
 #include "net/Address.h"
 #include "net/ClientUDPSocket.h"
 #include "net/ConnectionChecker.h"
+#include "net/ReachabilityWatch.h"
 #include "net/HttpFileDownload.h"
 #include "net/ListenSocket.h"
 #include "net/LocalIPv6.h"
@@ -142,6 +144,9 @@ CoreSession::~CoreSession()
     saveUploadQueueStore();
     stopWorkerThreads();
     shutdownScheduler();
+    if (theApp.reachabilityWatch == m_reachWatch.get())
+        theApp.reachabilityWatch = nullptr;
+    m_reachWatch.reset();
     shutdownPortMapper();
     shutdownKademlia();
     shutdownClientUDP();
@@ -1777,6 +1782,10 @@ void CoreSession::initPortMapper()
                 }
                 if (!ok)
                     return;
+                // #156: a new external port (VPN) is told to the server
+                if (mapping.request.family == PortMapFamily::IPv4
+                    && mapping.request.purpose == PortMapPurpose::Ed2kTcp && theApp.reachabilityWatch)
+                    theApp.reachabilityWatch->onMappedPortChanged(mapping.externalPort);
                 logInfo(QStringLiteral("Port mapping: %1 port %2 -> external %3 (%4, %5s lease)")
                             .arg(portMapPurposeName(mapping.request.purpose))
                             .arg(mapping.request.internalPort)
@@ -1807,6 +1816,60 @@ void CoreSession::initPortMapper()
 
     m_portMapper->setDesiredMappings(buildPortMapRequests());
     m_portMapper->start();
+}
+
+// ---------------------------------------------------------------------------
+// initReachabilityWatch — notice a port that opens after start (#156)
+// ---------------------------------------------------------------------------
+
+void CoreSession::initReachabilityWatch()
+{
+    m_reachWatch = std::make_unique<ReachabilityWatch>();
+    theApp.reachabilityWatch = m_reachWatch.get();
+
+    ReachabilityWatch::Hooks hooks;
+    hooks.state = [] {
+        ReachabilityWatch::State st;
+        if (ServerConnect* sc = theApp.serverConnect)
+            st.ed2kLowId = sc->isConnected() && sc->isLowID();
+        if (kad::Kademlia* kad = kad::Kademlia::instance(); kad && kad->isRunning()) {
+            st.kadRunning = true;
+            st.kadTcpFirewalled = kad->isFirewalled();
+            st.kadUdpOpen = kad::UDPFirewallTester::isOpenAndVerified();
+            st.lanMode = kad::Kademlia::shouldSkipFirewallChecks();
+        }
+        st.portMapped = theApp.mappedTcpPort() != 0;
+        st.lastHighIdAt = static_cast<time_t>(thePrefs.lastHighIdAt());
+        return st;
+    };
+    hooks.recheckKad = [] {
+        kad::Kademlia* kad = kad::Kademlia::instance();
+        return kad && kad->recheckFirewalled() == kad::RecheckFirewallResult::Started;
+    };
+    hooks.requestHighId = [](const QString& why, bool portChanged) {
+        return theApp.serverConnect && theApp.serverConnect->requestHighIdRecheck(why, portChanged);
+    };
+    m_reachWatch->setHooks(std::move(hooks));
+    m_reachWatch->setEnabled(thePrefs.reachabilityWatch());
+
+    // A HighID / open Kad says the port is normally reachable: gates the website test
+    const auto noteReachable = [] { thePrefs.setLastHighIdAt(static_cast<int64>(time(nullptr))); };
+    if (m_serverConnect) {
+        connect(m_serverConnect.get(), &ServerConnect::clientIDChanged, this, [noteReachable](uint32 id) {
+            if (id != 0 && !eMule::isLowID(id))
+                noteReachable();
+        });
+    }
+    if (m_kademlia) {
+        connect(m_kademlia.get(), &kad::Kademlia::firewallStatusChanged, this,
+                [this, noteReachable](bool tcpFirewalled) {
+                    if (tcpFirewalled)
+                        return;
+                    noteReachable();
+                    if (m_reachWatch)
+                        m_reachWatch->onReachable(QStringLiteral("Kad TCP firewall check"));
+                });
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2148,6 +2211,8 @@ void CoreSession::suspendNetworking()
         m_kademlia->stop();
     if (m_portMapper)
         m_portMapper->stopForInterfaceChange();
+    if (m_reachWatch)
+        m_reachWatch->reset();
     if (m_listenSocket) {
         m_listenSocket->disconnectAll(QStringLiteral("Network interface lost"));
         m_listenSocket->stopListening();
@@ -2412,6 +2477,7 @@ void CoreSession::finishStart()
     }
 
     initPortMapper();
+    initReachabilityWatch();
     initScheduler();
 
     // After the auto-connect: it starts online and only Kad or the URL say otherwise

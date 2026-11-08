@@ -13,11 +13,14 @@
 
 #include <QCborArray>
 #include <QCborMap>
+#include <QFileInfo>
+#include <QUrl>
 
 #include <algorithm>
 
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kHosterJoin.h"
+#include "Ed3kLinkGrabber.h"
 #include "Ed3kResolver.h"
 #ifdef EMULE_HAVE_HOSTER_JD
 #include "Ed3kJavaRuntime.h"
@@ -35,6 +38,7 @@ namespace {
 ed3k::Ed3kHosterJoin* s_join = nullptr;
 ed3k::Ed3kResolver* s_resolver = nullptr;
 ed3k::Ed3kJavaRuntime* s_java = nullptr;
+ed3k::Ed3kLinkGrabber* s_grabber = nullptr;
 /// item pushes come per block: one per item and window
 constexpr int kItemWindowMs = 500;
 
@@ -76,6 +80,136 @@ QCborArray linksToCbor(const QList<ed3k::ResolverLink>& links)
         list.append(m);
     }
     return list;
+}
+
+QCborMap grabberPackageToCbor(const ed3k::Ed3kLinkGrabber::Package& p)
+{
+    return QCborMap{{QStringLiteral("id"), qint64(p.id)},
+                    {QStringLiteral("name"), p.name},
+                    {QStringLiteral("passwords"), QCborArray::fromStringList(p.passwords)},
+                    {QStringLiteral("source"), p.source},
+                    {QStringLiteral("added"), p.added}};
+}
+
+QCborMap grabberLinkToCbor(const ed3k::Ed3kLinkGrabber::Link& k)
+{
+    return QCborMap{{QStringLiteral("id"), qint64(k.id)},
+                    {QStringLiteral("packageId"), qint64(k.packageId)},
+                    {QStringLiteral("url"), k.url},
+                    {QStringLiteral("name"), k.name},
+                    {QStringLiteral("host"), k.host},
+                    {QStringLiteral("size"), qint64(k.size)},
+                    {QStringLiteral("status"), int(k.status)},
+                    {QStringLiteral("enabled"), k.enabled},
+                    {QStringLiteral("dupe"), k.dupe}};
+}
+
+QList<quint32> idsOf(const QCborValue& v)
+{
+    QList<quint32> out;
+    for (const QCborValue& x : v.toArray())
+        if (const qint64 id = x.toInteger(); id > 0)
+            out << quint32(id);
+    return out;
+}
+
+/// Whole list (GetLinkGrabber, a push with all).
+QCborMap grabberToCbor(const ed3k::Ed3kLinkGrabber& g)
+{
+    QCborArray pkgs;
+    for (const auto& p : g.packages())
+        pkgs.append(grabberPackageToCbor(p));
+    QCborArray links;
+    for (const auto& k : g.links())
+        links.append(grabberLinkToCbor(k));
+    return QCborMap{{QStringLiteral("packages"), pkgs},
+                    {QStringLiteral("links"), links},
+                    {QStringLiteral("crawling"), g.crawling()},
+                    {QStringLiteral("deep"), g.canDeepCrawl()}};
+}
+
+QCborValue grabberRequest(const IpcMessage& msg, QString* error)
+{
+    auto& g = *s_grabber;
+    switch (msg.type()) {
+    case IpcMsgType::GetLinkGrabber:
+        return grabberToCbor(g);
+    case IpcMsgType::GrabLinks: {
+        if (!thePrefs.hosterDownloadsOn() || !s_resolver) {
+            *error = QStringLiteral("hoster downloads are off");
+            return {};
+        }
+        const bool ask = msg.field(5).toBool();
+        if (!ask && !g.isEnabled()) {
+            *error = QStringLiteral("the Link Grabber is off");
+            return {};
+        }
+        QStringList pw;
+        for (const QCborValue& v : msg.field(4).toArray())
+            pw << v.toString();
+        const quint64 token = g.grab(msg.fieldString(0), msg.fieldString(1), msg.field(2).toBool(), msg.fieldString(3),
+                                     pw, ask ? ed3k::Ed3kLinkGrabber::Mode::Ask : ed3k::Ed3kLinkGrabber::Mode::List,
+                                     msg.field(6).toBool());
+        if (token == 0) {
+            *error = QStringLiteral("no new links");
+            return {};
+        }
+        return QCborMap{{QStringLiteral("token"), qint64(token)}};
+    }
+    case IpcMsgType::EditGrabberPackages: {
+        std::optional<QStringList> pw;
+        if (msg.field(2).isArray()) {
+            pw = QStringList{};
+            for (const QCborValue& v : msg.field(2).toArray())
+                *pw << v.toString();
+        }
+        if (!g.editPackages(idsOf(msg.field(0)), msg.fieldString(1), pw)) {
+            *error = QStringLiteral("no such package");
+            return {};
+        }
+        return QCborValue{};
+    }
+    case IpcMsgType::SetGrabberLinksEnabled:
+        g.setLinksEnabled(idsOf(msg.field(0)), msg.field(1).toBool());
+        return QCborValue{};
+    case IpcMsgType::MoveGrabberLinks: {
+        if (const QList<quint32> split = idsOf(msg.field(3)); !split.isEmpty()) {
+            g.splitByHost(split);
+            return QCborValue{};
+        }
+        const quint32 id = g.moveLinks(idsOf(msg.field(0)), quint32(msg.field(1).toInteger()), msg.fieldString(2));
+        if (id == 0) {
+            *error = QStringLiteral("no package");
+            return {};
+        }
+        return QCborMap{{QStringLiteral("packageId"), qint64(id)}};
+    }
+    case IpcMsgType::RemoveGrabberLinks:
+        if (const QString mode = msg.fieldString(2); !mode.isEmpty()) {
+            if (!g.cleanup(mode)) {
+                *error = QStringLiteral("unknown cleanup");
+                return {};
+            }
+        } else {
+            g.remove(idsOf(msg.field(0)), idsOf(msg.field(1)));
+        }
+        return QCborValue{};
+    case IpcMsgType::RecheckGrabberLinks:
+        g.recheck(idsOf(msg.field(0)), idsOf(msg.field(1)));
+        return QCborValue{};
+    case IpcMsgType::ConfirmGrabberLinks: {
+        QCborArray ids;
+        for (const quint32 id : g.confirm(idsOf(msg.field(0)), idsOf(msg.field(1)), msg.field(2).toBool()))
+            ids.append(qint64(id));
+        return QCborMap{{QStringLiteral("ids"), ids}};
+    }
+    case IpcMsgType::AbortGrabberCrawls:
+        g.abortCrawls();
+        return QCborValue{};
+    default:
+        *error = QStringLiteral("unknown request");
+        return {};
+    }
 }
 
 /// GetHosterStats: the counters from Statistics, the live part from the items.
@@ -160,11 +294,20 @@ void setHoster(ed3k::Ed3kHosterJoin* join, ed3k::Ed3kResolver* resolver, ed3k::E
 #endif
 }
 
+void setGrabber(ed3k::Ed3kLinkGrabber* grabber)
+{
+#ifdef EMULE_HAVE_ED3K
+    s_grabber = grabber;
+#else
+    Q_UNUSED(grabber)
+#endif
+}
+
 bool isHosterRequest(IpcMsgType type)
 {
     const int t = static_cast<int>(type);
-    // 1139: AddClickNLoad, after the block was full
-    return (t >= 1100 && t <= 1109) || type == IpcMsgType::AddClickNLoad;
+    // 1139: AddClickNLoad, after the block was full; 1210-1218: the Link Grabber
+    return (t >= 1100 && t <= 1109) || type == IpcMsgType::AddClickNLoad || (t >= 1210 && t <= 1218);
 }
 
 bool carriesSecret(IpcMsgType type)
@@ -177,10 +320,21 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
     if (!isHosterRequest(msg.type()))
         return false;
     // ed3k off: nothing under config/ed3k is written
-    if (Ed3kBridge::refuseWhileOff(msg, {IpcMsgType::GetHosterItems, IpcMsgType::GetHosterStats}, reply))
+    if (Ed3kBridge::refuseWhileOff(msg, {IpcMsgType::GetHosterItems, IpcMsgType::GetHosterStats, IpcMsgType::GetLinkGrabber},
+                                   reply))
         return true;
     const int seq = msg.seqId();
 #ifdef EMULE_HAVE_ED3K
+    if (const int t = static_cast<int>(msg.type()); t >= 1210 && t <= 1218) {
+        if (!s_grabber) {
+            reply(failure(seq, QStringLiteral("no link grabber")));
+            return true;
+        }
+        QString error;
+        const QCborValue v = grabberRequest(msg, &error);
+        reply(error.isEmpty() ? IpcMessage::makeResult(seq, true, v) : failure(seq, error));
+        return true;
+    }
     if (!s_join) {
         reply(failure(seq, QStringLiteral("no hoster join")));
         return true;
@@ -373,7 +527,13 @@ void connectPushes(ed3k::Ed3kHosterJoin& join, const std::function<void(const Ip
                          broadcast(msg);
                      });
     QObject::connect(&join, &ed3k::Ed3kHosterJoin::linksExpanded, &join,
-                     [broadcast](quint32 id, const QList<ed3k::ResolverLink>& links) {
+                     [broadcast, j = &join](quint32 id, const QList<ed3k::ResolverLink>& links) {
+                         // the Link Grabber on: a folder's links go there, no dialog
+                         if (s_grabber && s_grabber->isEnabled()) {
+                             const auto it = j->item(id);
+                             s_grabber->add(links, it ? it->url : QString(), it ? it->name : QString());
+                             return;
+                         }
                          IpcMessage msg(IpcMsgType::PushHosterLinks, 0);
                          msg.append(qint64(id));
                          msg.append(linksToCbor(links));
@@ -383,25 +543,40 @@ void connectPushes(ed3k::Ed3kHosterJoin& join, const std::function<void(const Ip
                      [broadcast](quint64 token, const QString& fileName, const QList<ed3k::ResolverLink>& links,
                                  const QString& code, const QString& text) {
                          IpcMessage msg(IpcMsgType::PushHosterLinks, 0);
+                         QCborMap c{{QStringLiteral("token"), qint64(token)},
+                                    {QStringLiteral("fileName"), fileName},
+                                    {QStringLiteral("code"), code},
+                                    {QStringLiteral("text"), text}};
+                         // "open all links in the Link Grabber": the GUI only switches to it
+                         const bool grab = s_grabber && s_grabber->takesAll() && !links.isEmpty();
+                         if (grab) {
+                             c.insert(QStringLiteral("grabbed"), true);
+                             c.insert(QStringLiteral("count"),
+                                      s_grabber->add(links, fileName, QFileInfo(fileName).completeBaseName()));
+                         }
                          msg.append(qint64(0));
-                         msg.append(linksToCbor(links));
-                         msg.append(QCborMap{{QStringLiteral("token"), qint64(token)},
-                                             {QStringLiteral("fileName"), fileName},
-                                             {QStringLiteral("code"), code},
-                                             {QStringLiteral("text"), text}});
+                         msg.append(grab ? QCborArray{} : linksToCbor(links));
+                         msg.append(c);
                          broadcast(msg);
                      });
     QObject::connect(&join, &ed3k::Ed3kHosterJoin::clickNLoadOpened, &join,
                      [broadcast](quint64 token, const QString& source, const QList<ed3k::ResolverLink>& links,
                                  const QString& code, const QString& text) {
                          IpcMessage msg(IpcMsgType::PushHosterLinks, 0);
+                         QCborMap c{{QStringLiteral("token"), qint64(token)},
+                                    {QStringLiteral("cnl"), true},
+                                    {QStringLiteral("source"), source},
+                                    {QStringLiteral("code"), code},
+                                    {QStringLiteral("text"), text}};
+                         const bool grab = s_grabber && s_grabber->takesAll() && !links.isEmpty();
+                         if (grab) {
+                             const QString host = QUrl(source).host();
+                             c.insert(QStringLiteral("grabbed"), true);
+                             c.insert(QStringLiteral("count"), s_grabber->add(links, source, host.isEmpty() ? source.left(80) : host));
+                         }
                          msg.append(qint64(0));
-                         msg.append(linksToCbor(links));
-                         msg.append(QCborMap{{QStringLiteral("token"), qint64(token)},
-                                             {QStringLiteral("cnl"), true},
-                                             {QStringLiteral("source"), source},
-                                             {QStringLiteral("code"), code},
-                                             {QStringLiteral("text"), text}});
+                         msg.append(grab ? QCborArray{} : linksToCbor(links));
+                         msg.append(c);
                          broadcast(msg);
                      });
     QObject::connect(&join, &ed3k::Ed3kHosterJoin::accountChecked, &join,
@@ -428,6 +603,58 @@ void connectPushes(ed3k::Ed3kHosterJoin& join, const std::function<void(const Ip
 #endif
 }
 
+void connectGrabberPushes(ed3k::Ed3kLinkGrabber& grabber, const std::function<void(const IpcMessage&)>& broadcast)
+{
+#ifdef EMULE_HAVE_ED3K
+    QObject::connect(&grabber, &ed3k::Ed3kLinkGrabber::changed, &grabber,
+                     [broadcast, g = &grabber](const ed3k::Ed3kLinkGrabber::Delta& d) {
+                         QCborMap m;
+                         if (d.all) {
+                             m = grabberToCbor(*g);
+                             m.insert(QStringLiteral("all"), true);
+                         } else {
+                             QCborArray pkgs;
+                             for (const quint32 id : d.packages)
+                                 if (const auto* p = g->package(id))
+                                     pkgs.append(grabberPackageToCbor(*p));
+                             QCborArray links;
+                             for (const quint32 id : d.links)
+                                 if (const auto* k = g->link(id))
+                                     links.append(grabberLinkToCbor(*k));
+                             QCborArray rp;
+                             for (const quint32 id : d.removedPackages)
+                                 rp.append(qint64(id));
+                             QCborArray rl;
+                             for (const quint32 id : d.removedLinks)
+                                 rl.append(qint64(id));
+                             m = QCborMap{{QStringLiteral("packages"), pkgs},
+                                          {QStringLiteral("links"), links},
+                                          {QStringLiteral("removedPackages"), rp},
+                                          {QStringLiteral("removedLinks"), rl},
+                                          {QStringLiteral("crawling"), g->crawling()}};
+                         }
+                         IpcMessage msg(IpcMsgType::PushLinkGrabber, 0);
+                         msg.append(m);
+                         broadcast(msg);
+                     });
+    // a GrabLinks ask: the GUI that sent it asks which to add, as for a container
+    QObject::connect(&grabber, &ed3k::Ed3kLinkGrabber::grabbed, &grabber,
+                     [broadcast](quint64 token, const QString& source, const QList<ed3k::ResolverLink>& links,
+                                 const QString& code) {
+                         IpcMessage msg(IpcMsgType::PushHosterLinks, 0);
+                         msg.append(qint64(0));
+                         msg.append(linksToCbor(links));
+                         msg.append(QCborMap{{QStringLiteral("token"), qint64(token)},
+                                             {QStringLiteral("grab"), true},
+                                             {QStringLiteral("source"), source},
+                                             {QStringLiteral("code"), code}});
+                         broadcast(msg);
+                     });
+#else
+    Q_UNUSED(grabber) Q_UNUSED(broadcast)
+#endif
+}
+
 QCborMap statusToCbor()
 {
     QCborMap out;
@@ -440,6 +667,11 @@ QCborMap statusToCbor()
     out.insert(QStringLiteral("compiled"), false);
 #endif
     out.insert(QStringLiteral("enabled"), thePrefs.hosterDownloadsOn());
+    const Ed3kHosterPrefs h = thePrefs.ed3kHoster();
+    out.insert(QStringLiteral("clipboard"), h.clipboard);
+    out.insert(QStringLiteral("linkGrabber"), h.linkGrabber);
+    out.insert(QStringLiteral("grabAll"), h.linkGrabber && h.grabAll);
+    out.insert(QStringLiteral("deepCrawl"), s_grabber && s_grabber->canDeepCrawl());
     if (s_resolver)
         out.insert(QStringLiteral("resolver"), QCborMap{{QStringLiteral("available"), s_resolver->available()},
                                                         {QStringLiteral("reason"), s_resolver->unavailableReason()},

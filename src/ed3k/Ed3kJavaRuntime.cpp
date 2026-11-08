@@ -38,6 +38,8 @@ constexpr int kProbeTimeoutMs = 15000;
 constexpr int kFirstRunTimeoutMs = 90000;
 /// A JRE is about 45 MB; anything far above that is not one
 constexpr qint64 kMaxPackage = 400LL * 1024 * 1024;
+/// another instance fetches into the shared folder: look again after this
+constexpr int kLockRetryMs = 10000;
 
 QString exe(const QString& name)
 {
@@ -55,6 +57,9 @@ Ed3kJavaRuntime::Ed3kJavaRuntime(QString baseDir, QString legacyDir, QObject* pa
     , m_baseDir(std::move(baseDir))
     , m_legacyDir(std::move(legacyDir))
 {
+    m_lockRetry.setSingleShot(true);
+    m_lockRetry.setInterval(kLockRetryMs);
+    connect(&m_lockRetry, &QTimer::timeout, this, &Ed3kJavaRuntime::onLockRetry);
 }
 
 Ed3kJavaRuntime::~Ed3kJavaRuntime()
@@ -75,7 +80,16 @@ Ed3kJavaRuntime::~Ed3kJavaRuntime()
 
 QString Ed3kJavaRuntime::runtimeDir() const
 {
-    return QDir(m_baseDir).filePath(QStringLiteral("java/jre"));
+    return !m_sharedDir.isEmpty() && m_sharedWritable ? sharedRuntimeDir() : instanceRuntimeDir();
+}
+
+void Ed3kJavaRuntime::setSharedDir(const QString& dir, bool writable)
+{
+    // a running fetch keeps its folder
+    if (m_state == State::Downloading || m_state == State::Unpacking)
+        return;
+    m_sharedDir = dir;
+    m_sharedWritable = writable;
 }
 
 bool Ed3kJavaRuntime::locate(const QString& prefPath)
@@ -83,6 +97,7 @@ bool Ed3kJavaRuntime::locate(const QString& prefPath)
     if (m_state == State::Probing || m_state == State::Downloading || m_state == State::Unpacking)
         return false;
     adoptLegacy();
+    adoptInstance();
     m_info.reset();
     m_verifyInstall = false;
     m_queue = candidates(prefPath);
@@ -102,7 +117,9 @@ QStringList Ed3kJavaRuntime::candidates(const QString& prefPath) const
             out << clean;
     };
     add(prefPath);
-    add(javaIn(runtimeDir()));
+    if (!m_sharedDir.isEmpty())
+        add(javaIn(sharedRuntimeDir()));
+    add(javaIn(instanceRuntimeDir()));
     const QString javaHome = QProcessEnvironment::systemEnvironment().value(QStringLiteral("JAVA_HOME"));
     if (!javaHome.isEmpty())
         add(QDir(javaHome).filePath(QStringLiteral("bin/") + exe(QStringLiteral("java"))));
@@ -256,6 +273,8 @@ bool Ed3kJavaRuntime::download()
     m_progress = 0;
     // no runtime while fetching: the resolver stops, so nothing runs from java/jre at the swap
     m_info.reset();
+    if (!takeInstallLock())
+        return true;
     if (!m_nam)
         m_nam = std::make_unique<QNetworkAccessManager>();
     m_nam->setProxy(m_proxy);
@@ -273,6 +292,12 @@ void Ed3kJavaRuntime::setAllowed(bool allowed)
     m_allowed = allowed;
     if (allowed || (m_state != State::Downloading && m_state != State::Unpacking))
         return;
+    if (m_lockRetry.isActive()) {
+        // only waited for another instance: nothing of ours to remove
+        m_lockRetry.stop();
+        setState(State::Missing);
+        return;
+    }
     // switched off while fetching: stop and leave nothing behind
     abortTransfer();
     if (m_tar) {
@@ -341,6 +366,8 @@ void Ed3kJavaRuntime::probeFinished(const QString& java, const QByteArray& out)
         m_info = info;
         m_verifyInstall = false;
         logHoster(QStringLiteral("hoster: Java %1 (%2) at %3").arg(info->feature).arg(info->vendor, java));
+        if (!m_sharedDir.isEmpty() && java.startsWith(sharedRuntimeDir() + u'/'))
+            dropInstance();
         setState(State::Ready);
         return;
     }
@@ -364,7 +391,8 @@ void Ed3kJavaRuntime::onMetadata()
         return;
     }
     m_package = *pkg;
-    QDir().mkpath(QDir(m_baseDir).filePath(QStringLiteral("java")));
+    const QString javaDir = QFileInfo(runtimeDir()).path();
+    QDir().mkpath(javaDir);
     m_dl = std::make_unique<HttpStreamDownload>(m_nam.get());
     connect(m_dl.get(), &HttpStreamDownload::progress, this, [this](qint64 got, qint64 total) {
         const qint64 all = total > 0 ? total : m_package.size;
@@ -375,7 +403,7 @@ void Ed3kJavaRuntime::onMetadata()
         }
     });
     connect(m_dl.get(), &HttpStreamDownload::finished, this, &Ed3kJavaRuntime::onPackageDone);
-    const QString archive = QDir(m_baseDir).filePath(QStringLiteral("java/") + m_package.name);
+    const QString archive = QDir(javaDir).filePath(m_package.name);
     if (!m_dl->start(QUrl(m_package.link), archive, {kMaxPackage, m_package.checksum, 0})) {
         const QString err = m_dl->errorString();
         m_dl.reset();
@@ -404,7 +432,7 @@ void Ed3kJavaRuntime::onPackageDone(bool ok)
         }
         return;
     }
-    unpack(QDir(m_baseDir).filePath(QStringLiteral("java/") + m_package.name));
+    unpack(QDir(QFileInfo(runtimeDir()).path()).filePath(m_package.name));
 }
 
 void Ed3kJavaRuntime::adoptLegacy()
@@ -543,10 +571,89 @@ QString Ed3kJavaRuntime::javaIn(const QString& home)
 void Ed3kJavaRuntime::setState(State s, const QString& error)
 {
     m_state = s;
+    // the shared install is done (or given up): other instances may look
+    if (s != State::Downloading && s != State::Unpacking)
+        m_installLock.reset();
     m_error = error;
     if (s == State::Failed)
         logHosterWarning(QStringLiteral("hoster: Java runtime: %1").arg(error));
     emit stateChanged();
+}
+
+QString Ed3kJavaRuntime::instanceRuntimeDir() const
+{
+    return QDir(m_baseDir).filePath(QStringLiteral("java/jre"));
+}
+
+QString Ed3kJavaRuntime::sharedRuntimeDir() const
+{
+    return m_sharedDir.isEmpty() ? QString() : QDir(m_sharedDir).filePath(QStringLiteral("java/jre"));
+}
+
+void Ed3kJavaRuntime::adoptInstance()
+{
+    const QString own = instanceRuntimeDir();
+    if (m_sharedDir.isEmpty() || !m_sharedWritable || !QFileInfo(own).isDir())
+        return;
+    const QString shared = sharedRuntimeDir();
+    QDir().mkpath(QFileInfo(shared).path());
+    QLockFile lock(QFileInfo(shared).path() + QStringLiteral("/.install.lock"));
+    lock.setStaleLockTime(0);
+    // another instance installs right now: its runtime wins, ours goes once that one runs
+    if (!lock.tryLock(0) || QFileInfo::exists(shared))
+        return;
+    if (QDir().rename(own, shared))
+        logHoster(QStringLiteral("hoster: Java runtime moved to the shared folder %1").arg(shared));
+    else   // another volume: fetched once into the shared folder instead
+        logHosterDebug([&]() -> QString { return QStringLiteral("hoster: cannot move %1 to %2").arg(own, shared); });
+}
+
+void Ed3kJavaRuntime::dropInstance()
+{
+    const QString own = instanceRuntimeDir();
+    if (!QFileInfo(own).isDir())
+        return;
+    const QString aside = own + QStringLiteral(".old-") + QString::number(QDateTime::currentMSecsSinceEpoch());
+    // renamed first: a runtime in use on Windows cannot be renamed, so it is kept whole
+    if (!QDir().rename(own, aside))
+        return;
+    QDir(aside).removeRecursively();
+    QDir().rmdir(QFileInfo(own).path());
+    logHoster(QStringLiteral("hoster: own Java runtime %1 removed, the shared one runs").arg(own));
+}
+
+bool Ed3kJavaRuntime::takeInstallLock()
+{
+    if (m_sharedDir.isEmpty() || !m_sharedWritable || m_installLock)
+        return true;
+    const QString javaDir = QFileInfo(sharedRuntimeDir()).path();
+    QDir().mkpath(javaDir);
+    auto lock = std::make_unique<QLockFile>(javaDir + QStringLiteral("/.install.lock"));
+    lock->setStaleLockTime(0);   // a fetch takes minutes; only a dead holder frees it
+    if (lock->tryLock(0)) {
+        m_installLock = std::move(lock);
+        return true;
+    }
+    logHoster(QStringLiteral("hoster: another instance fetches the Java runtime into %1, waiting").arg(javaDir));
+    setState(State::Downloading);
+    m_lockRetry.start();
+    return false;
+}
+
+void Ed3kJavaRuntime::onLockRetry()
+{
+    if (!m_allowed)
+        return;
+    // the other instance is done: probe what it installed, and fetch only if that fails
+    if (!javaIn(sharedRuntimeDir()).isEmpty()) {
+        m_state = State::Unknown;
+        locate(QString());
+        return;
+    }
+    if (takeInstallLock()) {
+        m_state = State::Unknown;
+        download();
+    }
 }
 
 void Ed3kJavaRuntime::abortTransfer()

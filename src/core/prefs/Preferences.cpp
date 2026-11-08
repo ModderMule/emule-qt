@@ -538,10 +538,12 @@ struct Preferences::Data {
     bool autoUpdateServerList = false;  // Auto-update server list from URL at startup
     QString serverListURL = Preferences::kDefaultServerListURL;  // URL for server.met download
     bool smartLowIdCheck = true;        // Try another server if we get a LowID
+    bool reachabilityWatch = false;     // #156: recheck LowID / Kad firewalled after 2, 10, 30, 60 min
+    int64 lastHighIdAt = 0;             // epoch s of the last HighID / Kad open; gates the website port test
     bool manualServerHighPriority = false; // Set manually added servers to high priority
 
     // Network modes
-    bool networkED2K = false;  // ED2K protocol disabled by default
+    bool networkED2K = true;   // fresh install: every network on; a file without the key keeps it off
 
     // Chat / Messages
     bool msgOnlyFriends = false;   // Only accept messages from friends
@@ -682,7 +684,7 @@ struct Preferences::Data {
     // -- Usenet -------------------------------------------------------------
     // Provider passwords are AES-encrypted in the YAML under the same file key
     // as the SMTP password and the HTTP Cache API keys; see the save path.
-    bool usenetEnabled = false;
+    bool usenetEnabled = true;   // fresh install only; a file without it keeps it off
     QList<NewsServer> usenetServers;
     int usenetRetryIntervalSeconds = 60;
     int usenetDownloadSharePercent = 50;
@@ -2696,6 +2698,12 @@ bool Preferences::applyEd3kHosterKey(Ed3kHosterPrefs& h, const QString& key, con
         h.extract = val.toBool(h.extract);
     else if (key == QLatin1StringView("ed3kHosterDeleteArchives"))
         h.deleteArchives = val.toBool(h.deleteArchives);
+    else if (key == QLatin1StringView("ed3kHosterClipboard"))
+        h.clipboard = val.toBool(h.clipboard);
+    else if (key == QLatin1StringView("ed3kHosterLinkGrabber"))
+        h.linkGrabber = val.toBool(h.linkGrabber);
+    else if (key == QLatin1StringView("ed3kHosterGrabAll"))
+        h.grabAll = val.toBool(h.grabAll);
     else if (key == QLatin1StringView("ed3kHosterSolversEnabled"))
         h.solversEnabled = val.toBool(h.solversEnabled);
     else if (key == QLatin1StringView("ed3kHosterAutoUpdate"))
@@ -3259,6 +3267,14 @@ bool Preferences::smartLowIdCheck() const { return get(&Data::smartLowIdCheck); 
 
 void Preferences::setSmartLowIdCheck(bool val) { set(&Data::smartLowIdCheck, val); }
 
+bool Preferences::reachabilityWatch() const { return get(&Data::reachabilityWatch); }
+
+void Preferences::setReachabilityWatch(bool val) { set(&Data::reachabilityWatch, val); }
+
+int64 Preferences::lastHighIdAt() const { return get(&Data::lastHighIdAt); }
+
+void Preferences::setLastHighIdAt(int64 epochSecs) { set(&Data::lastHighIdAt, epochSecs); }
+
 bool Preferences::manualServerHighPriority() const { return get(&Data::manualServerHighPriority); }
 
 void Preferences::setManualServerHighPriority(bool val) { set(&Data::manualServerHighPriority, val); }
@@ -3793,6 +3809,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("serverListURL"), serverListURL());
     prefs.insert(QStringLiteral("nodesDatURL"), nodesDatURL());
     prefs.insert(QStringLiteral("smartLowIdCheck"), smartLowIdCheck());
+    prefs.insert(QStringLiteral("reachabilityWatch"), reachabilityWatch());
     prefs.insert(QStringLiteral("serverPreferIPv6"), serverPreferIPv6());
     prefs.insert(QStringLiteral("manualServerHighPriority"), manualServerHighPriority());
 
@@ -4013,6 +4030,9 @@ QCborMap Preferences::toIpcMap() const
         prefs.insert(QStringLiteral("ed3kHosterCheckSearchLinks"), h.checkSearchLinks);
         prefs.insert(QStringLiteral("ed3kHosterExtract"), h.extract);
         prefs.insert(QStringLiteral("ed3kHosterDeleteArchives"), h.deleteArchives);
+        prefs.insert(QStringLiteral("ed3kHosterClipboard"), h.clipboard);
+        prefs.insert(QStringLiteral("ed3kHosterLinkGrabber"), h.linkGrabber);
+        prefs.insert(QStringLiteral("ed3kHosterGrabAll"), h.grabAll);
         prefs.insert(QStringLiteral("ed3kHosterAutoUpdate"), h.autoUpdate);
         prefs.insert(QStringLiteral("ed3kHosterAccounts"), hosterAccountsToCbor(h.accounts));
         prefs.insert(QStringLiteral("ed3kHosterSolversEnabled"), h.solversEnabled);
@@ -4172,6 +4192,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->nodesDatURL             = urlOrDefault(p.value(QStringLiteral("nodesDatURL")).toString(),
                                                    kDefaultNodesDatURL);
     m_data->smartLowIdCheck         = p.value(QStringLiteral("smartLowIdCheck")).toBool();
+    m_data->reachabilityWatch       = p.value(QStringLiteral("reachabilityWatch")).toBool();
     m_data->serverPreferIPv6        = p.value(QStringLiteral("serverPreferIPv6")).toBool(true);
     m_data->manualServerHighPriority = p.value(QStringLiteral("manualServerHighPriority")).toBool();
 
@@ -4712,6 +4733,8 @@ bool Preferences::load(const QString& filePath)
                     QString::fromStdString(s["serverListURL"].as<std::string>("")),
                     kDefaultServerListURL);
             m_data->smartLowIdCheck = s["smartLowIdCheck"].as<bool>(m_data->smartLowIdCheck);
+            m_data->reachabilityWatch = s["reachabilityWatch"].as<bool>(m_data->reachabilityWatch);
+            m_data->lastHighIdAt = s["lastHighIdAt"].as<int64>(m_data->lastHighIdAt);
             m_data->manualServerHighPriority = s["manualServerHighPriority"].as<bool>(m_data->manualServerHighPriority);
         }
 
@@ -4745,7 +4768,7 @@ bool Preferences::load(const QString& filePath)
             m_data->serverPreferIPv6 = n["serverPreferIPv6"].as<bool>(m_data->serverPreferIPv6);
             m_data->maxConsPerFive = static_cast<uint16>(n["maxConsPerFive"].as<int>(m_data->maxConsPerFive));
             m_data->showOverhead = n["showOverhead"].as<bool>(m_data->showOverhead);
-            m_data->networkED2K = n["networkED2K"].as<bool>(m_data->networkED2K);
+            m_data->networkED2K = n["networkED2K"].as<bool>(false);   // older default: Kad only
             // "publicIP" is deliberately not read: it now lives on AppContext as
             // session state. A value left over from an older preferences.yml is
             // ignored rather than resurrecting keys bound to a stale address.
@@ -5380,8 +5403,10 @@ bool Preferences::load(const QString& filePath)
         // that is where notifyEmailEncKey is read, and it is the key every
         // provider password is encrypted under. Load this block earlier and
         // every password silently comes back empty.
+        // older default off: only a fresh install starts with it on
+        m_data->usenetEnabled = false;
         if (auto un = root["usenet"]) {
-            m_data->usenetEnabled = un["enabled"].as<bool>(m_data->usenetEnabled);
+            m_data->usenetEnabled = un["enabled"].as<bool>(false);
             m_data->usenetRetryIntervalSeconds =
                 un["retryIntervalSeconds"].as<int>(m_data->usenetRetryIntervalSeconds);
             m_data->usenetPar2Repair =
@@ -5685,6 +5710,9 @@ bool Preferences::load(const QString& filePath)
                 h.checkSearchLinks = ho["checkSearchLinks"].as<bool>(h.checkSearchLinks);
                 h.extract = ho["extract"].as<bool>(h.extract);
                 h.deleteArchives = ho["deleteArchives"].as<bool>(h.deleteArchives);
+                h.clipboard = ho["clipboard"].as<bool>(h.clipboard);
+                h.linkGrabber = ho["linkGrabber"].as<bool>(h.linkGrabber);
+                h.grabAll = ho["grabAll"].as<bool>(h.grabAll);
                 h.checkMaxParallel = std::clamp(ho["checkMaxParallel"].as<int>(h.checkMaxParallel), 1, 256);
                 h.checkMaxPerHost = std::clamp(ho["checkMaxPerHost"].as<int>(h.checkMaxPerHost), 1, 64);
                 h.recheckHours = std::clamp(ho["recheckHours"].as<int>(h.recheckHours), 0, 8760);
@@ -6192,6 +6220,8 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "autoUpdateServerList" << YAML::Value << m_data->autoUpdateServerList;
     out << YAML::Key << "serverListURL" << YAML::Value << m_data->serverListURL.toStdString();
     out << YAML::Key << "smartLowIdCheck" << YAML::Value << m_data->smartLowIdCheck;
+    out << YAML::Key << "reachabilityWatch" << YAML::Value << m_data->reachabilityWatch;
+    out << YAML::Key << "lastHighIdAt" << YAML::Value << m_data->lastHighIdAt;
     out << YAML::Key << "manualServerHighPriority" << YAML::Value << m_data->manualServerHighPriority;
     out << YAML::EndMap;
 
@@ -7038,6 +7068,9 @@ bool Preferences::saveImpl(const QString& filePath) const
         out << YAML::Key << "checkSearchLinks" << YAML::Value << h.checkSearchLinks;
         out << YAML::Key << "extract" << YAML::Value << h.extract;
         out << YAML::Key << "deleteArchives" << YAML::Value << h.deleteArchives;
+        out << YAML::Key << "clipboard" << YAML::Value << h.clipboard;
+        out << YAML::Key << "linkGrabber" << YAML::Value << h.linkGrabber;
+        out << YAML::Key << "grabAll" << YAML::Value << h.grabAll;
         out << YAML::Key << "checkMaxParallel" << YAML::Value << h.checkMaxParallel;
         out << YAML::Key << "checkMaxPerHost" << YAML::Value << h.checkMaxPerHost;
         out << YAML::Key << "recheckHours" << YAML::Value << h.recheckHours;

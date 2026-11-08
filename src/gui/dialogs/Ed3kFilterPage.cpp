@@ -3,6 +3,7 @@
 
 #include "pch.h"
 #include "dialogs/Ed3kFilterPage.h"
+#include "controls/AbstractListView.h"
 
 #include "app/IpcClient.h"
 #include "IpcMessage.h"
@@ -39,14 +40,9 @@ namespace {
 /// ED3K_FILTER_OWN: the own list's handle
 constexpr qint64 kOwnList = 0;
 
-QTreeWidget* makeTree(const QStringList& headers, QWidget* parent, int rows)
+QTreeWidget* makeTree(const QStringList& headers, const QString& stateKey, QWidget* parent, int rows)
 {
-    auto* t = new QTreeWidget(parent);
-    t->setHeaderLabels(headers);
-    t->setRootIsDecorated(false);
-    t->setUniformRowHeights(true);
-    t->setSelectionMode(QAbstractItemView::SingleSelection);
-    t->header()->setStretchLastSection(true);
+    auto* t = makeFlatList(headers, stateKey, parent);
     t->setFixedHeight(t->fontMetrics().lineSpacing() * rows);
     return t;
 }
@@ -85,7 +81,7 @@ Ed3kFilterPage::Ed3kFilterPage(IpcClient* ipc, QWidget* parent)
                                 listGroup);
     listNote->setWordWrap(true);
     listLayout->addWidget(listNote);
-    m_lists = makeTree({tr("Label"), tr("Mode"), tr("Version"), tr("Files"), tr("Entries"), tr("Waiting")}, listGroup, 8);
+    m_lists = makeTree({tr("Label"), tr("Mode"), tr("Version"), tr("Files"), tr("Entries"), tr("Waiting")}, QStringLiteral("ed3kFilterLists"), listGroup, 8);
     listLayout->addWidget(m_lists);
     auto* listRow = new QHBoxLayout;
     auto* followBtn = new QPushButton(tr("Follow…"), listGroup);
@@ -109,7 +105,7 @@ Ed3kFilterPage::Ed3kFilterPage(IpcClient* ipc, QWidget* parent)
     // -- own verdicts (§2, §3): overrule every list
     auto* ownGroup = new QGroupBox(tr("Own verdicts (they overrule every list)"), this);
     auto* ownLayout = new QVBoxLayout(ownGroup);
-    m_own = makeTree({tr("Entry"), tr("ID"), tr("Verdict"), tr("Reason")}, ownGroup, 7);
+    m_own = makeTree({tr("Entry"), tr("ID"), tr("Verdict"), tr("Reason")}, QStringLiteral("ed3kFilterOwn"), ownGroup, 7);
     ownLayout->addWidget(m_own);
     auto* ownRow = new QHBoxLayout;
     auto* addBtn = new QPushButton(tr("Add…"), ownGroup);

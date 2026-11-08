@@ -67,6 +67,8 @@ public:
     /// stop once the file list is known; nullopt = the settings' default.
     /// @p wantedFiles: file indices to download, the rest skipped; empty = all. Already
     /// in the list: those files are switched on there (Duplicate all the same).
+    /// Never waits for libtorrent's thread: the row and files() are there at once,
+    /// torrentAdded follows when libtorrent has the torrent.
     BtAddResult addTorrentFile(const QByteArray& data, const QString& savePath = {}, bool paused = false,
                                std::optional<bool> i2pOnly = std::nullopt,
                                std::optional<bool> stopAfterMetadata = std::nullopt,
@@ -99,7 +101,12 @@ public:
     /// The rows as of the last status update (≤ 1 s old).
     [[nodiscard]] QList<BtTorrentRow> torrents() const;
     [[nodiscard]] std::optional<BtTorrentRow> torrent(const QString& id) const;
+    /// Detail queries answer from the last libtorrent answer and ask for a new one: the
+    /// first call may be empty, the next (≤ 1 s) has it. Never waits for libtorrent's thread.
     [[nodiscard]] QList<BtFileRow> files(const QString& id) const;
+    /// files() with progress newer than the last change of the torrent; nullopt: asked,
+    /// torrentChanged follows with it
+    [[nodiscard]] std::optional<QList<BtFileRow>> currentFiles(const QString& id) const;
     [[nodiscard]] QList<BtPeerRow> peers(const QString& id) const;
     [[nodiscard]] QList<BtTrackerRow> trackers(const QString& id) const;
     /// Peers per piece, bucketed (BtTorrentView::availabilityMap).
@@ -124,6 +131,7 @@ public:
     /// Asks peers for these pieces first (a held piece waits for them).
     void raisePieces(const QString& id, const QList<int>& pieces);
     /// Pieces libtorrent has (hash passed); empty before the metadata or for an unknown id.
+    /// From the last status update (≤ 1 s old) plus finished pieces; never waits.
     [[nodiscard]] QBitArray havePieces(const QString& id) const;
     /// The ed3k:file link the torrent was added with (link or magnet `xs`); kept across
     /// restarts. Empty: none.
@@ -140,7 +148,8 @@ signals:
     void metadataReceived(const QString& id);
     /// libtorrent's verdict on a piece of a torrent with a join attached.
     void pieceResult(const QString& id, int piece, bool passed);
-    /// libtorrent checked the files of a torrent with a join attached (havePieces is current).
+    /// libtorrent checked the files of a torrent with a join attached; follows the status
+    /// update with the checked pieces, so havePieces is current.
     void torrentChecked(const QString& id);
 
 private slots:

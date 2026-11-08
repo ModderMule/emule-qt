@@ -27,7 +27,7 @@ target_link_libraries(emulebt
         eMule::CommonSettings
         # PUBLIC: the target carries TORRENT_ABI_VERSION and the other defines to every
         # unit that includes a libtorrent header (research doc §5.5 trap 3)
-        LibtorrentRasterbar::torrent-rasterbar
+        emule_libtorrent
 )
 
 set_target_properties(emulebt PROPERTIES FOLDER "Libraries")

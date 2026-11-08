@@ -9,6 +9,7 @@
 
 #include <libtorrent/version.hpp>
 
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QUrl>
@@ -34,6 +35,9 @@ private slots:
     void i2pPeerAddress();
     void i2pTorrentIsFlagged();
     void peerFlagsChokeDirection();
+    void addDoesNotWait();
+    void stopRightAfterAddKeepsIt();
+    void removeWhileAdding();
 };
 
 void tst_BtSmoke::constructs()
@@ -437,4 +441,75 @@ void tst_BtSmoke::peerFlagsChokeDirection()
 }
 
 QTEST_GUILESS_MAIN(tst_BtSmoke)
+
+namespace {
+BtSettings quietSettings(const QTemporaryDir& dir)
+{
+    BtSettings s;
+    s.listenPort = 0;
+    s.dht = false;
+    s.lsd = false;
+    s.stateDir = dir.filePath(QStringLiteral("BT"));
+    s.downloadDir = dir.filePath(QStringLiteral("Incoming"));
+    return s;
+}
+const QString kMagnet = QStringLiteral("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&tr=http%3A%2F%2Ftracker.example%2Fa");
+} // namespace
+
+// the row is there at once, torrentAdded follows with libtorrent's answer
+void tst_BtSmoke::addDoesNotWait()
+{
+    QTemporaryDir dir;
+    BtSession session;
+    session.start(quietSettings(dir));
+    QSignalSpy added(&session, &BtSession::torrentAdded);
+    const auto r = session.addMagnet(kMagnet, {}, true);
+    QCOMPARE(r.outcome, BtAddOutcome::Added);
+    QVERIFY(session.torrent(r.id).has_value());
+    QCOMPARE(session.trackers(r.id).size(), 1);
+    QCOMPARE(session.addMagnet(kMagnet, {}, true).outcome, BtAddOutcome::Duplicate);
+    QTRY_COMPARE(added.count(), 1);
+    QCOMPARE(added.first().first().toString(), r.id);
+    QCOMPARE(session.addMagnet(kMagnet, {}, true).outcome, BtAddOutcome::Duplicate);
+    session.stop();
+}
+
+// stopped before the add_torrent_alert came: resume data all the same
+void tst_BtSmoke::stopRightAfterAddKeepsIt()
+{
+    QTemporaryDir dir;
+    QString id;
+    {
+        BtSession session;
+        session.start(quietSettings(dir));
+        id = session.addMagnet(kMagnet, {}, true).id;
+        session.stop();
+    }
+    BtSession again;
+    again.start(quietSettings(dir));
+    QTRY_VERIFY(again.torrent(id).has_value());
+    again.stop();
+}
+
+// removed before libtorrent had it: gone, also after its answer and a restart
+void tst_BtSmoke::removeWhileAdding()
+{
+    QTemporaryDir dir;
+    BtSession session;
+    session.start(quietSettings(dir));
+    QSignalSpy added(&session, &BtSession::torrentAdded);
+    QSignalSpy removed(&session, &BtSession::torrentRemoved);
+    const QString id = session.addMagnet(kMagnet, {}, true).id;
+    QVERIFY(session.remove(id, false));
+    QCOMPARE(removed.count(), 1);
+    QVERIFY(!session.torrent(id));
+    QTest::qWait(500);   // libtorrent's answer comes and goes
+    QCOMPARE(added.count(), 0);
+    QVERIFY(!session.torrent(id));
+    // listed again: a new add, not a duplicate
+    QCOMPARE(session.addMagnet(kMagnet, {}, true).outcome, BtAddOutcome::Added);
+    QTRY_COMPARE(added.count(), 1);
+    session.stop();
+}
+
 #include "tst_BtSmoke.moc"

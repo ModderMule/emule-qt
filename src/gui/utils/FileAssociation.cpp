@@ -341,7 +341,48 @@ bool isRuntimeRegistration()
 #endif
 }
 
-#ifndef Q_OS_MACOS
+FileTypes typesInDesktopEntry(const QString& contents)
+{
+    for (const QString& line : contents.split(QLatin1Char('\n'))) {
+        if (!line.startsWith(QLatin1String("MimeType=")))
+            continue;
+        const QStringList mimes = line.mid(9).trimmed().split(QLatin1Char(';'), Qt::SkipEmptyParts);
+        return {.nzb = mimes.contains(QLatin1String(kNzbMimeType)),
+                .torrent = mimes.contains(QLatin1String(kTorrentMimeType)),
+                .ed2k = mimes.contains(QLatin1String("x-scheme-handler/ed2k")),
+                .dlc = mimes.contains(QLatin1String(kDlcMimeType))};
+    }
+    return {};
+}
+
+#if defined(Q_OS_LINUX)
+FileTypes claimedTypes()
+{
+    const QString dataHome = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+    if (dataHome.isEmpty())
+        return {};
+    QFile file(desktopFiles(exePath(), dataHome, {}).constFirst().path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return {};
+    return typesInDesktopEntry(QString::fromUtf8(file.readAll()));
+}
+#elif defined(Q_OS_WIN)
+FileTypes claimedTypes()
+{
+    QSettings classes(QStringLiteral("HKEY_CURRENT_USER\\Software\\Classes"), QSettings::NativeFormat);
+    const auto ownsExt = [&](const QString& ext, const char* progId) {
+        return classes.value(ext + QStringLiteral("/.")).toString() == QLatin1String(progId);
+    };
+    const auto ownsScheme = [&](const QString& scheme) {
+        return classes.value(scheme + QStringLiteral("/shell/open/command/.")).toString()
+            .contains(QLatin1String("emuleqt"), Qt::CaseInsensitive);
+    };
+    return {.nzb = ownsExt(QStringLiteral(".nzb"), kProgId),
+            .torrent = ownsExt(QStringLiteral(".torrent"), kTorrentProgId),
+            .ed2k = ownsScheme(QStringLiteral("ed2k")),
+            .dlc = ownsExt(QStringLiteral(".dlc"), kDlcProgId)};
+}
+#elif !defined(Q_OS_MACOS)
 FileTypes claimedTypes()
 {
     return {};

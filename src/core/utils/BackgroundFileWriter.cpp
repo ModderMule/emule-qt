@@ -37,23 +37,28 @@ BackgroundFileWriter& BackgroundFileWriter::instance()
 
 void BackgroundFileWriter::write(const QString& path, QByteArray data, WriteFn fn)
 {
-    {
-        std::lock_guard lock(m_mutex);
-        const auto [it, added] = m_jobs.insert_or_assign(path, Job{std::move(data), std::move(fn)});
-        if (added)
-            m_order.push_back(path);
-    }
-    m_wake.notify_one();
+    enqueue(path, Job{std::move(data), {}, std::move(fn)});
+}
+
+void BackgroundFileWriter::writeProduced(const QString& path, ProduceFn produce, WriteFn fn)
+{
+    enqueue(path, Job{{}, std::move(produce), std::move(fn)});
 }
 
 std::optional<QByteArray> BackgroundFileWriter::pending(const QString& path) const
 {
-    std::lock_guard lock(m_mutex);
-    if (const auto it = m_jobs.find(path); it != m_jobs.end())
-        return it->second.data;
-    if (m_writing && *m_writing == path)
-        return m_writingData;
-    return std::nullopt;
+    Job job;
+    {
+        std::lock_guard lock(m_mutex);
+        if (const auto it = m_jobs.find(path); it != m_jobs.end())
+            job = it->second;
+        else if (m_writing && *m_writing == path)
+            job = m_writingJob;
+        else
+            return std::nullopt;
+    }
+    // made outside the lock: the worker goes on meanwhile
+    return job.produce ? job.produce() : job.data;
 }
 
 void BackgroundFileWriter::discard(const QString& path)
@@ -113,16 +118,28 @@ void BackgroundFileWriter::run()
             continue;
         Job job = std::move(node.mapped());
         m_writing = path;
-        m_writingData = job.data;
+        m_writingJob = job;
         lock.unlock();
+        const QByteArray data = job.produce ? job.produce() : job.data;
         const WriteFn& fn = job.fn ? job.fn : WriteFn(&BackgroundFileWriter::saveFile);
-        if (!fn(path, job.data))
+        if (!fn(path, data))
             logWarning(QStringLiteral("Cannot write %1").arg(path));
         lock.lock();
         m_writing.reset();
-        m_writingData.clear();
+        m_writingJob = {};
         m_idle.notify_all();
     }
+}
+
+void BackgroundFileWriter::enqueue(const QString& path, Job job)
+{
+    {
+        std::lock_guard lock(m_mutex);
+        const auto [it, added] = m_jobs.insert_or_assign(path, std::move(job));
+        if (added)
+            m_order.push_back(path);
+    }
+    m_wake.notify_one();
 }
 
 void BackgroundFileWriter::waitNotWriting(std::unique_lock<std::mutex>& lock,

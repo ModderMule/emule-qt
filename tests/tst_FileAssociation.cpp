@@ -38,6 +38,7 @@ private slots:
     void mimeappsLosesOnlyOurHandlerOfDroppedTypes();
     void mimeappsKeepsOtherHandlersOnTheLine();
     void mimeappsRemovedAssociationsStayAlone();
+    void theDesktopEntryReadsBackWhatItClaims();
 };
 
 namespace {
@@ -374,6 +375,26 @@ void tst_FileAssociation::mimeappsRemovedAssociationsStayAlone()
     const QString before = QStringLiteral("[Removed Associations]\n"
                                           "application/x-nzb=emuleqt.desktop\n");
     QCOMPARE(FileAssociation::withoutMimeDefaults(before, {QStringLiteral("application/x-nzb")}), before);
+}
+
+void tst_FileAssociation::theDesktopEntryReadsBackWhatItClaims()
+{
+    // an old profile adopts what its entry claims, not its saved defaults (#153)
+    const auto readBack = [](FileAssociation::FileTypes t) {
+        return FileAssociation::typesInDesktopEntry(
+            FileAssociation::desktopFiles(QStringLiteral("/opt/emuleqt/emuleqt"), QStringLiteral("/tmp/x"), t)
+                .constFirst()
+                .contents);
+    };
+    const FileAssociation::FileTypes torrentEd2k{.torrent = true, .ed2k = true};
+    QCOMPARE(readBack(torrentEd2k), torrentEd2k);
+    QCOMPARE(readBack(FileAssociation::FileTypes::all()), FileAssociation::FileTypes::all());
+    QCOMPARE(readBack({}), FileAssociation::FileTypes{});
+    // the bare launcher claims nothing
+    QCOMPARE(FileAssociation::typesInDesktopEntry(
+                 FileAssociation::launcherDesktopFile(QStringLiteral("/opt/emuleqt/emuleqt"), QStringLiteral("/tmp/x"))
+                     .contents),
+             FileAssociation::FileTypes{});
 }
 
 QTEST_MAIN(tst_FileAssociation)

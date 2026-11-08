@@ -181,8 +181,9 @@ bool available()
 bool isEd3kRequest(IpcMsgType type)
 {
     const int t = static_cast<int>(type);
-    // 1100-1149: second request block (batch 12), the first was full; 1200-1209: Kad window
-    return (t >= 1000 && t <= 1049) || (t >= 1100 && t <= 1149) || (t >= 1200 && t <= 1209);
+    // 1100-1149: second request block (batch 12), the first was full; 1200-1209: Kad window;
+    // 1210-1219: the Link Grabber (Ed3kHosterBridge)
+    return (t >= 1000 && t <= 1049) || (t >= 1100 && t <= 1149) || (t >= 1200 && t <= 1219);
 }
 
 bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMessage&)>& reply)
@@ -192,7 +193,8 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
     // other links (batch 15): 1032, 1049, 1137 (first: 1137 is inside the filter lists' block)
     if (Ed3kLinksBridge::handleRequest(msg, reply))
         return true;
-    // hoster links: 1100-1109, and 1139 (AddClickNLoad) inside the filter lists' block, so first
+    // hoster links: 1100-1109, and 1139 (AddClickNLoad) inside the filter lists' block, so first;
+    // the Link Grabber: 1210-1218
     if (Ed3kHosterBridge::handleRequest(msg, reply))
         return true;
     // Kad window: 1200-1205 (1205 in IpcClientHandler, it re-applies the config)

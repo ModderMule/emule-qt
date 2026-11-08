@@ -6,11 +6,16 @@
 
 #include "BtTypes.h"
 
+#include <libtorrent/announce_entry.hpp>
+#include <libtorrent/download_priority.hpp>
 #include <libtorrent/info_hash.hpp>
 #include <libtorrent/add_torrent_params.hpp>
 #include <libtorrent/peer_info.hpp>
 #include <libtorrent/torrent_handle.hpp>
+#include <libtorrent/torrent_info.hpp>
 #include <libtorrent/torrent_status.hpp>
+
+#include <vector>
 
 namespace eMule::bt {
 
@@ -22,17 +27,20 @@ public:
     static QString i2pAddressOf(const libtorrent::sha256_hash& destination);
 
     static BtTorrentRow row(const libtorrent::torrent_status& st);
-    static QList<BtFileRow> files(const libtorrent::torrent_handle& h);
-    static QList<BtPeerRow> peers(const libtorrent::torrent_handle& h);
+    /// Rows of @p ti's files; progress and priorities by file index, missing = 0 / normal.
+    /// Plain data in: the handle's own calls wait for libtorrent's thread (report 27)
+    static QList<BtFileRow> files(const libtorrent::torrent_info& ti, const std::vector<std::int64_t>& progress,
+                                  const std::vector<libtorrent::download_priority_t>& priorities);
+    static QList<BtPeerRow> peers(const std::vector<libtorrent::peer_info>& list);
     /// The Flags column of a peer, as qBittorrent's (d/D, u/U, K, ?, ...).
     static QString peerFlags(const libtorrent::peer_info& p);
-    static QList<BtTrackerRow> trackers(const libtorrent::torrent_handle& h);
+    static QList<BtTrackerRow> trackers(const std::vector<libtorrent::announce_entry>& list);
     /// What a loaded .torrent holds, without a session.
     static BtTorrentPreview preview(const libtorrent::add_torrent_params& atp);
 
     /// Peers that have each piece: up to `buckets` values, each the rarest piece of
     /// its bucket, capped at 255. Empty without metadata.
-    static QByteArray availabilityMap(const libtorrent::torrent_handle& h, int buckets = 256);
+    static QByteArray availabilityMap(const std::vector<int>& avail, int buckets = 256);
 
     /// The part map of a row: up to `buckets` values 0..255.
     static QByteArray pieceMap(const libtorrent::typed_bitfield<libtorrent::piece_index_t>& pieces, int buckets = 256);

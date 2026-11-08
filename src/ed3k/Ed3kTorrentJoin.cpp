@@ -19,6 +19,7 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <deque>
 #include <limits>
@@ -79,8 +80,13 @@ public:
             Qt::QueuedConnection);
     }
 
+    bool judges(const QString&) const override { return m_judges.load(std::memory_order_relaxed); }
+    /// on the daemon thread, from the join's state (updateJudging)
+    void setJudges(bool on) { m_judges.store(on, std::memory_order_relaxed); }
+
 private:
     std::shared_ptr<Gate> m_gate;
+    std::atomic<bool> m_judges{true};
 };
 
 // One torrent: the core's join and what the host keeps.
@@ -108,6 +114,7 @@ struct Ed3kTorrentJoin::Join {
     // std::optional<ffi::Root> trying;
     // std::vector<ffi::PublisherKey> tryingPublishers;
     QByteArray completedManifest;
+    std::shared_ptr<Sink> sink;
     /// TORRENT_COMPLETE came before every member was hashed: complete() after the last
     bool completePending = false;
 };
@@ -551,7 +558,9 @@ Ed3kTorrentJoin::Join* Ed3kTorrentJoin::ensureJoin(const QString& id)
     j->members.resize(j->memberFile.size());
     Join* raw = j.get();
     m_joins.emplace(id, std::move(j));
-    m_bt.attachJoin(id, std::make_shared<Sink>(m_gate));
+    raw->sink = std::make_shared<Sink>(m_gate);
+    updateJudging(*raw);
+    m_bt.attachJoin(id, raw->sink);
     logInfo(QStringLiteral("\"%1\" joined (%2 member(s), %3)")
                 .arg(name(id))
                 .arg(raw->members.size())
@@ -683,7 +692,19 @@ void Ed3kTorrentJoin::drainEvents(const QString& id)
             break;
         handleEvent(id, *ev);
     }
+    // a set taken or refused (CLAIM_FALSE) comes through here
+    if (Join* j = findJoin(id))
+        updateJudging(*j);
     scheduleSave(id);
+}
+
+void Ed3kTorrentJoin::updateJudging(Join& j)
+{
+    // without a claimed set (§4.2) a piece's check is UNKNOWN and changes nothing: piece_result
+    // marks its bytes present. A link (§4.1) always judges
+    const auto info = j.torrent.info();
+    if (j.sink)
+        j.sink->setJudges(!info || info->judge == ffi::Judge::Blake3 || info->manifest.has_value());
 }
 
 void Ed3kTorrentJoin::handleEvent(const QString& id, const ffi::TorrentEvent& event)

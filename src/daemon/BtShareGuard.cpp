@@ -53,7 +53,10 @@ BtShareGuard::Change BtShareGuard::update(const QString& id, const std::optional
         if (!next.done) {
             next.paths = {root};
         } else if (files) {
-            for (const bt::BtFileRow& f : files()) {
+            const auto list = files();
+            if (!list)
+                return {};   // entry kept: judged again when they come
+            for (const bt::BtFileRow& f : *list) {
                 if (f.pad)
                     continue;
                 const QString path = QDir::cleanPath(row->savePath + u'/' + f.path);

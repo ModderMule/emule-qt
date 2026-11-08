@@ -148,7 +148,9 @@ private:
     [[nodiscard]] bool confirmShareLinks();
     struct AccountList;
     /// The tree and Add/Edit/Remove/Check of @p list, into @p layout.
-    void buildAccountList(AccountList& list, const QStringList& columns, QVBoxLayout* layout, QWidget* parent);
+    /// @p stateKey: uistate.yml key of the list's column layout.
+    void buildAccountList(AccountList& list, const QStringList& columns, const QString& stateKey, QVBoxLayout* layout,
+                          QWidget* parent);
     /// The "Captcha solvers" tab of the Hoster page.
     void buildSolvers(QVBoxLayout* layout, QWidget* parent);
     /// Adds (@p row -1) or edits a login of @p list.
@@ -258,6 +260,9 @@ private:
     QCheckBox* m_hosterDeleteArchivesCheck = nullptr;   ///< greyed out while extraction is off
     QCheckBox* m_associateDlcCheck = nullptr;
     QCheckBox* m_clickNLoadCheck = nullptr;
+    QCheckBox* m_hosterClipboardCheck = nullptr;
+    QCheckBox* m_linkGrabberCheck = nullptr;
+    QCheckBox* m_grabAllCheck = nullptr;      ///< greyed out while the Link Grabber is off
     QCheckBox* m_publishLinksCheck = nullptr;
     QLabel* m_javaLabel = nullptr;
     QLabel* m_jdVersionLabel = nullptr;   ///< the resolver engine's JD revision

@@ -63,6 +63,9 @@
     <ClCompile Include="net\ConnectionChecker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="net\ReachabilityWatch.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="net\HttpFileDownload.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -744,6 +747,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="net\ConnectionChecker.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\ReachabilityWatch.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="net\HttpFileDownload.h">

@@ -178,9 +178,13 @@
   <ItemGroup>
     <ClCompile Include="..\tst_ClickNLoadServer.cpp" />
     <ClCompile Include="..\..\src\gui\app\ClickNLoadServer.cpp" />
+    <ClCompile Include="..\..\src\gui\app\SkinIcons.cpp" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="..\..\src\gui\app\ClickNLoadServer.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\app\SkinIcons.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
   </ItemGroup>

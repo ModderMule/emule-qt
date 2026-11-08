@@ -21,6 +21,7 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTemporaryDir>
+#include <QTemporaryFile>
 #include <QThread>
 #include <QUrl>
 
@@ -74,21 +75,10 @@ void touchUsed(const QString& versionDir)
         f.write(QDateTime::currentDateTimeUtc().toString(Qt::ISODate).toLatin1());
 }
 
-/// the shared version last used, for a config without a zip
-QString newestShared(const QString& sharedDir)
+int readNumber(const QString& root, const QString& name)
 {
-    QString best;
-    QDateTime bestAt;
-    const QDir dir(sharedDir);
-    for (const QString& v : dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
-        const QString root = dir.filePath(v + QStringLiteral("/resolver"));
-        const QDateTime at = QFileInfo(dir.filePath(v + u'/' + QLatin1StringView(kLastUsed))).lastModified();
-        if (layoutOk(root) && (best.isEmpty() || at > bestAt)) {
-            best = root;
-            bestAt = at;
-        }
-    }
-    return best;
+    QFile f(QDir(root).filePath(name));
+    return f.open(QIODevice::ReadOnly) ? QString::fromUtf8(f.readLine(64)).trimmed().toInt() : 0;
 }
 
 /// under the install lock: left-over tmp dirs, and versions nobody started for a while
@@ -101,10 +91,9 @@ void pruneShared(const QString& sharedDir, const QString& keep, int days)
         if (v == keep || !version.match(v).hasMatch())
             continue;
         const QFileInfo used(dir.filePath(v + u'/' + QLatin1StringView(kLastUsed)));
-        if (v.endsWith(QStringLiteral(".tmp")) || !used.exists() || used.lastModified() < cutoff) {
-            QDir(dir.filePath(v)).removeRecursively();
+        if ((v.endsWith(QStringLiteral(".tmp")) || !used.exists() || used.lastModified() < cutoff)
+            && QDir(dir.filePath(v)).removeRecursively())
             logHoster(QStringLiteral("hoster: shared resolver plugins %1 removed (unused)").arg(v));
-        }
     }
 }
 
@@ -305,7 +294,8 @@ QString Ed3kJdResolver::installShared(const QString& zip, const QString& sharedD
     QLockFile lock(dir.filePath(QStringLiteral(".install.lock")));
     lock.setStaleLockTime(kSharedLockWaitMs);
     if (!lock.tryLock(kSharedLockWaitMs))
-        return fail(QStringLiteral("%1 is locked by another instance").arg(sharedDir));
+        return fail(lock.error() == QLockFile::LockFailedError ? QStringLiteral("%1 is locked by another instance").arg(sharedDir)
+                                                               : QStringLiteral("%1 is not writable").arg(sharedDir));
     if (layoutOk(root)) {
         touchUsed(version);
         return root;
@@ -339,6 +329,38 @@ void Ed3kJdResolver::removePlugins(const QString& dataDir)
     QDir(plugins + QStringLiteral(".tmp")).removeRecursively();
     if (QFileInfo(plugins).isDir() && QDir(plugins).removeRecursively())
         logHoster(QStringLiteral("hoster: resolver plugins removed (hoster downloads off)"));
+}
+
+QString Ed3kJdResolver::sharedVersion(const QString& sharedDir)
+{
+    QString best;
+    int bestRev = -1;
+    QDateTime bestAt;
+    const QDir dir(sharedDir);
+    for (const QString& v : dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        const QString root = dir.filePath(v + QStringLiteral("/resolver"));
+        if (v.endsWith(QStringLiteral(".tmp")) || !layoutOk(root))
+            continue;
+        // mixed app versions share the folder: never a version of another api
+        if (const int api = readNumber(root, QStringLiteral("api.txt")); api != 0 && api != kProtocol)
+            continue;
+        const int rev = readNumber(root, QStringLiteral("revision.txt"));
+        const QDateTime at = QFileInfo(dir.filePath(v + u'/' + QLatin1StringView(kLastUsed))).lastModified();
+        if (rev > bestRev || (rev == bestRev && at > bestAt)) {
+            best = root;
+            bestRev = rev;
+            bestAt = at;
+        }
+    }
+    return best;
+}
+
+bool Ed3kJdResolver::dirWritable(const QString& dir)
+{
+    if (dir.isEmpty() || !QDir().mkpath(dir))
+        return false;
+    QTemporaryFile probe(QDir(dir).filePath(QStringLiteral(".probe-XXXXXX")));
+    return probe.open();
 }
 
 QStringList Ed3kJdResolver::arguments() const
@@ -415,6 +437,12 @@ Ed3kResolver::TaskId Ed3kJdResolver::check(const QString& url, const std::option
 Ed3kResolver::TaskId Ed3kJdResolver::expand(const QString& url)
 {
     return request({{QStringLiteral("op"), QStringLiteral("expand")}, {QStringLiteral("url"), url}}, true);
+}
+
+Ed3kResolver::TaskId Ed3kJdResolver::expandDeep(const QString& url)
+{
+    return request({{QStringLiteral("op"), QStringLiteral("expand")}, {QStringLiteral("url"), url}, {QStringLiteral("deep"), true}},
+                   true);
 }
 
 Ed3kResolver::TaskId Ed3kJdResolver::openContainer(const QString& path)
@@ -636,10 +664,11 @@ Ed3kJdResolver::InstallResult Ed3kJdResolver::installFor(const JdResolverConfig&
     } else {
         // a per-instance copy of before is not needed any more
         removePlugins(c.dataDir);
-        if (c.zip.isEmpty())
-            r.root = newestShared(c.sharedDir);
-        else if (r.root = installShared(c.zip, c.sharedDir, &r.error); r.root.isEmpty())
+        if (!c.zip.isEmpty() && (r.root = installShared(c.zip, c.sharedDir, &r.error)).isEmpty())
             logHosterWarning(QStringLiteral("hoster: shared resolver plugins not installed: %1").arg(r.error));
+        // no zip, or it could not go in (read-only folder, disk full): what is there already
+        if (r.root.isEmpty() && !(r.root = sharedVersion(c.sharedDir)).isEmpty())
+            r.error.clear();
     }
     r.revision = readRevision(r.root);
     return r;
@@ -859,6 +888,7 @@ void Ed3kJdResolver::handleLine(const QByteArray& line)
         }
         if (const QString rev = o.value(QStringLiteral("jdRevision")).toString(); !rev.isEmpty() && rev != u'?')
             m_revision = rev;
+        m_deep = o.value(QStringLiteral("deep")).toBool();
         logHosterDebug([&]() -> QString { return QStringLiteral("hoster: <- hello, protocol %1, JD r%2, %3 hosters, %4 decrypters")
                            .arg(proto)
                            .arg(o.value(QStringLiteral("jdRevision")).toString())

@@ -74,6 +74,7 @@
 #include <QClipboard>
 #include <QCheckBox>
 #include <QDesktopServices>
+#include <QRegularExpression>
 #include <QTimer>
 #include <QCursor>
 #include <QDir>
@@ -1131,7 +1132,8 @@ void MainWindow::restoreWindow()
 void MainWindow::updateClickNLoad()
 {
     if (m_clickNLoad)
-        m_clickNLoad->setEnabled(theUiState.clickNLoad() && m_hosterPanel && m_hosterPanel->hostersEnabled());
+        m_clickNLoad->setEnabled(theUiState.clickNLoad() && m_hosterPanel && m_hosterPanel->hostersEnabled(),
+                                 theUiState.clickNLoadPort());
 }
 
 void MainWindow::changeEvent(QEvent* event)
@@ -1247,12 +1249,14 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
 
 void MainWindow::onClipboardChanged()
 {
+    const QString text = QApplication::clipboard()->text().trimmed();
+    checkHosterClipboard(text);
+
     // MFC guards SearchClipboard() with the same preference (srchybrid/UploadQueue.cpp:925).
     // Read it here rather than gating the connect() so Options changes take effect at once.
     if (!thePrefs.watchClipboard4ED2KLinks())
         return;
 
-    const QString text = QApplication::clipboard()->text().trimmed();
     if (text.isEmpty() || text == m_lastClipboardContents)
         return;
 
@@ -1297,6 +1301,23 @@ void MainWindow::onClipboardChanged()
             if (result.added > 0)
                 switchToTab(TabTransfers);
         });
+}
+
+void MainWindow::checkHosterClipboard(const QString& text)
+{
+    if (!m_hosterPanel || !m_hosterPanel->watchesClipboard() || !m_ipc || !m_ipc->isConnected())
+        return;
+    if (text.isEmpty() || text == m_lastHosterClipboard)
+        return;
+    m_lastHosterClipboard = text;
+    // our own "Copy link" is never taken back
+    if (Clipboard::isOwnText(text))
+        return;
+    static const QRegularExpression http(QStringLiteral(R"(https?://)"), QRegularExpression::CaseInsensitiveOption);
+    if (!text.contains(http))
+        return;
+    // the core crawls only links a plugin takes; the rest (any web page) is dropped quietly
+    m_hosterPanel->grabLinks(text, tr("Clipboard"), true);
 }
 
 // ---------------------------------------------------------------------------
@@ -1491,17 +1512,14 @@ void MainWindow::onFirstTimeWizard()
     connect(m_firstStartWizard, &QDialog::finished, this, [this](int result) {
         const bool firstRun = !theUiState.firstStartWizardDone();
         theUiState.setFirstStartWizardDone(true);
-#ifndef Q_OS_MACOS
-        // Cancel on the first run claims the types of the enabled networks (#121)
-        if (firstRun && result != QDialog::Accepted) {
-            theUiState.setAssociateNzbFiles(true);
-            theUiState.setAssociateTorrentFiles(true);
-            theUiState.setAssociateEd2kLinks(true);
-        }
-#endif
         // Held back until now, so nothing is claimed before the user could say no (#111).
-        // A no-op when reopened from Tools and nothing changed.
-        applyDesktopIntegration(firstRun);
+        // Fresh install closed without Finish: the defaults, every type claimed. Old
+        // profiles never get here, they adopt what is claimed (#153). A no-op when
+        // reopened from Tools unchanged.
+        if (firstRun && result != QDialog::Accepted)
+            claimAllFileTypes();
+        else
+            applyDesktopIntegration(firstRun);
         // Lists built on the old showExtControls pick up the wizard's choice
         if (result == QDialog::Accepted) {
             m_transferPanel->applyDisplayOptions();
@@ -2347,6 +2365,22 @@ void MainWindow::setupPages()
         },
         this);
     connect(m_hosterPanel, &HosterPanel::hostersEnabledChanged, this, &MainWindow::updateClickNLoad);
+    // switched on (or at start): what the clipboard holds now is old, only new copies count
+    m_hosterClipboardPoll = new QTimer(this);
+    m_hosterClipboardPoll->setInterval(1000);
+    connect(m_hosterClipboardPoll, &QTimer::timeout, this, [this] {
+        // a huge copy (a whole document) is no link list: the core takes 1 MiB at most
+        if (const QString text = QApplication::clipboard()->text(); text.size() <= 1024 * 1024)
+            checkHosterClipboard(text.trimmed());
+    });
+    connect(m_hosterPanel, &HosterPanel::clipboardWatchChanged, this, [this](bool on) {
+        if (on) {
+            m_lastHosterClipboard = QApplication::clipboard()->text().trimmed();
+            m_hosterClipboardPoll->start();
+        } else {
+            m_hosterClipboardPoll->stop();
+        }
+    });
     connect(m_hosterPanel, &HosterPanel::clickNLoadArrived, this, [this] {
         restoreWindow();
         switchToTab(TabHoster);

@@ -11,15 +11,22 @@
 /// Windows zip in-process (ArchiveReader), the tar.gz elsewhere with the system `tar`, which
 /// keeps exec bits and links. The fresh runtime alone is probed then; failing, the state is
 /// Failed (not Missing), so it is not fetched again and again.
+///
+/// Shared (`sharedPluginDir`): the runtime lives in <sharedPluginDir>/java/jre for every
+/// instance; one fetches it (java/.install.lock), the others wait and take it. An instance's
+/// own runtime is moved there, or dropped once the shared one runs. A read-only shared folder
+/// is still probed; a fetch then goes to the instance's own folder.
 
 #ifdef EMULE_HAVE_HOSTER_JD
 
 #include <QByteArray>
+#include <QLockFile>
 #include <QNetworkProxy>
 #include <QObject>
 #include <QPointer>
 #include <QString>
 #include <QStringList>
+#include <QTimer>
 
 #include <memory>
 #include <optional>
@@ -60,10 +67,15 @@ public:
     /// Fetches Temurin into <baseDir>/java/jre, then probes it. Refused (false) while
     /// not allowed: only a user who switched hoster downloads on gets a runtime fetched.
     bool download();
+    /// @p dir: <sharedPluginDir>; empty: per instance. @p writable: a fetch may go there.
+    /// Takes effect with the next locate(); ignored while a fetch runs
+    void setSharedDir(const QString& dir, bool writable);
     /// Off: download() is refused and a running one is stopped (its files removed).
     void setAllowed(bool allowed);
     [[nodiscard]] bool allowed() const { return m_allowed; }
     void setProxy(const QNetworkProxy& proxy) { m_proxy = proxy; }
+    /// Tests: look again for another instance's fetch this often; default 10 s
+    void setLockRetryMs(int ms) { m_lockRetry.setInterval(ms); }
 
     [[nodiscard]] State state() const { return m_state; }
     [[nodiscard]] std::optional<JavaInfo> runtime() const { return m_info; }
@@ -71,6 +83,7 @@ public:
     [[nodiscard]] QString error() const { return m_error; }
     /// 0..100 while Downloading.
     [[nodiscard]] int progress() const { return m_progress; }
+    /// Where a fetched runtime goes: the shared folder when writable, else the instance's
     [[nodiscard]] QString runtimeDir() const;
 
     // -- pure parts, for tests ----------------------------------------------
@@ -110,12 +123,25 @@ private:
     bool installTree(const QString& home);
     /// The legacy runtime moved to runtimeDir() when there is none yet; its empty parent removed
     void adoptLegacy();
+    /// Shared: the instance's own runtime moved to the shared folder when that has none
+    void adoptInstance();
+    /// Shared runtime running: the instance's own copy goes (moved aside first: Windows)
+    void dropInstance();
+    /// False: another instance fetches into the shared folder; retried by m_lockRetry
+    bool takeInstallLock();
+    void onLockRetry();
+    [[nodiscard]] QString instanceRuntimeDir() const;
+    [[nodiscard]] QString sharedRuntimeDir() const;
     /// java under an unpacked JDK/JRE tree (Contents/Home on macOS).
     [[nodiscard]] static QString javaIn(const QString& home);
     void abortTransfer();
 
     QString m_baseDir;
     QString m_legacyDir;
+    QString m_sharedDir;
+    bool m_sharedWritable = false;
+    std::unique_ptr<QLockFile> m_installLock;   ///< held while fetching into the shared folder
+    QTimer m_lockRetry;
     bool m_allowed = false;
     State m_state = State::Unknown;
     std::optional<JavaInfo> m_info;

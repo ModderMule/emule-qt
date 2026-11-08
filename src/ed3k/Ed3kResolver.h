@@ -139,6 +139,10 @@ public:
     virtual TaskId match(const QString& url) = 0;
     virtual TaskId check(const QString& url, const std::optional<ResolverAccount>& account) = 0;
     virtual TaskId expand(const QString& url) = 0;
+    /// expand, and every hoster link on the page @p url names (JD's deep crawl).
+    virtual TaskId expandDeep(const QString& url) { return expand(url); }
+    /// Whether expandDeep() crawls pages (a resolver that knows it).
+    [[nodiscard]] virtual bool canDeepCrawl() const { return false; }
     /// The links of a container file (DLC, RSDF, CCF) at @p path, as written; DLC asks JD's
     /// key service (network). Links or Failed follows.
     virtual TaskId openContainer(const QString& path) = 0;

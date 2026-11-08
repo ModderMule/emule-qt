@@ -16,6 +16,8 @@
 #include <QScopeGuard>
 #include <QTimer>
 
+#include <algorithm>
+
 
 #ifdef Q_OS_WIN
 #include <winsock2.h>
@@ -972,7 +974,7 @@ uint32 EMSocket::getSentPayloadSinceLastCall(bool reset)
 // GetNeededBytes
 // ---------------------------------------------------------------------------
 
-uint32 EMSocket::getNeededBytes()
+uint32 EMSocket::getNeededBytes(uint32 paceBytesPerSec)
 {
     std::lock_guard lock(m_sendLock);
     if (m_conState.load(std::memory_order_relaxed) == EMSState::Disconnected)
@@ -1001,6 +1003,14 @@ uint32 EMSocket::getNeededBytes()
         if (!front.packet)
             return 0;
         sizeLeft = sizeTotal = front.packet->getRealPacketSize();
+    }
+
+    // Capped line: 32 KB per 5 s is 6.5 KB/s per slot, above a low limit with 3-4
+    // slots (report 25). Stretch to the slot's share, at most MFC's 45 s / 90 s.
+    if (paceBytesPerSec > 0) {
+        const uint64 paced = sizeTotal * 1000 / paceBytesPerSec;
+        const uint32 mfcTotal = SEC2MS(m_accelerateUpload ? 45 : 90);
+        timeTotal = static_cast<uint32>(std::clamp<uint64>(paced, timeTotal, mfcTotal));
     }
 
     if (timeSinceLastFinished >= timeTotal)

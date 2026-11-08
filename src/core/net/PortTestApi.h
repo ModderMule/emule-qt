@@ -7,6 +7,9 @@
 ///
 /// - BitTorrent (`proto=bt`): the server dials TCP and sends a DHT ping + uTP SYN over UDP.
 ///   Both must be reachable.
+/// - eD2K (`proto=ed2k`): the server dials TCP and sends OP_PORTTEST, then `C5 FE 12` over
+///   UDP; the core confirms the datagram over the same TCP link. With `hash` (our user hash)
+///   the TCP link is obfuscated, so a core that requires encryption answers too (#156).
 /// - ed3k (`proto=ed3k`): UDP only. The node never answers a PROBE (spec §4.4), so the daemon
 ///   seals one to itself, the server only sends it, and the node says whether it arrived.
 ///
@@ -26,15 +29,17 @@ namespace eMule::PortTestApi {
 enum class Network : int {
     BitTorrent = 1,
     Ed3k = 2,
+    Ed2k = 3,
 };
 
 struct Request {
     Network network = Network::BitTorrent;
-    quint16 tcpPort = 0;   ///< BitTorrent only
+    quint16 tcpPort = 0;   ///< BitTorrent and eD2K
     quint16 udpPort = 0;
     QString ip4;           ///< own public addresses, for the family the request does not use
     QString ip6;
     QByteArray probe;      ///< ed3k: the sealed PROBE datagram
+    QByteArray userHash;   ///< eD2K: 16 bytes; the server then dials obfuscated
 };
 
 /// TestPorts error codes (IpcMessage::makeError); the GUI words them, the detail is the server's.
@@ -46,6 +51,7 @@ enum class Failure : int {
     NoAnswer = 4005,       ///< detail: the network error
     Refused = 4006,        ///< detail: the server's message
     OldServer = 4007,      ///< the server ignored `proto`
+    Ed2kNotListening = 4008, ///< no eD2K TCP listen port
 };
 
 /// The reply of the server, reduced to what the GUI shows.
@@ -54,6 +60,7 @@ struct Reply {
     QString error;         ///< set when !ok
     Failure failure = Failure::Refused;
     QString proto;         ///< data.proto; empty from a server older than the bt/ed3k tests
+    bool obfuscated = false; ///< eD2K: the server dialed obfuscated (plugin >= 1.6.0)
     QCborArray targets;
 };
 
@@ -68,7 +75,7 @@ inline constexpr int kSeenIPv6 = 2;
 
 [[nodiscard]] QUrl url(const Request& request);
 
-/// The `proto` value of @p network ("bt", "ed3k").
+/// The `proto` value of @p network ("bt", "ed3k", "ed2k").
 [[nodiscard]] QString protoName(Network network);
 
 /// Parses the JSON body; @p httpStatus is used for the error text when the body has none.
@@ -81,5 +88,10 @@ inline constexpr int kSeenIPv6 = 2;
 
 /// ed3k: turns each "sent" UDP entry into open/filtered by the families the node saw.
 [[nodiscard]] QCborArray applySeen(const QCborArray& targets, int seenFamilies);
+
+/// eD2K: the TCP verdict of the targets. Open when one target is open; closed only when the
+/// server reached a target and got no answer it could trust, otherwise unknown.
+enum class Verdict : quint8 { Unknown, Open, Closed };
+[[nodiscard]] Verdict tcpVerdict(const QCborArray& targets, bool obfuscated, bool cryptRequired);
 
 } // namespace eMule::PortTestApi

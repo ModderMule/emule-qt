@@ -8,6 +8,7 @@
 #include "app/UiState.h"
 #include "dialogs/HosterPuzzleDialog.h"
 #include "panels/HosterPanel.h"
+#include "panels/LinkGrabberPanel.h"
 #include "utils/StringUtils.h"
 #include "IpcMessage.h"
 #include "IpcProtocol.h"
@@ -26,6 +27,8 @@
 #include <QMimeData>
 #include <QPushButton>
 #include <QRadioButton>
+#include <QTabBar>
+#include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
@@ -65,6 +68,30 @@ void pushRemoved(IpcClient& ipc, qint64 id)
     IpcMessage msg(IpcMsgType::PushHosterItemRemoved, 0);
     msg.append(id);
     emit ipc.hosterItemRemoved(msg);
+}
+
+/// The core's ed3k status with these "hoster" switches.
+void pushStatus(IpcClient& ipc, bool grabber, bool grabAll = false, bool clipboard = false)
+{
+    IpcMessage msg(IpcMsgType::PushEd3kStatus, 0);
+    msg.append(QCborMap{{QStringLiteral("hoster"), QCborMap{{QStringLiteral("enabled"), true},
+                                                            {QStringLiteral("linkGrabber"), grabber},
+                                                            {QStringLiteral("grabAll"), grabAll},
+                                                            {QStringLiteral("clipboard"), clipboard}}}});
+    emit ipc.ed3kStatusChanged(msg);
+}
+
+QCborMap grabberLink(qint64 id, qint64 pkg, const QString& name, int status, bool enabled = true)
+{
+    return QCborMap{{QStringLiteral("id"), id},
+                    {QStringLiteral("packageId"), pkg},
+                    {QStringLiteral("url"), QStringLiteral("https://a.test/%1").arg(name)},
+                    {QStringLiteral("name"), name},
+                    {QStringLiteral("host"), QStringLiteral("a.test")},
+                    {QStringLiteral("size"), qint64(1000)},
+                    {QStringLiteral("status"), status},
+                    {QStringLiteral("enabled"), enabled},
+                    {QStringLiteral("dupe"), false}};
 }
 
 void shoot(QWidget* w, const QString& name)
@@ -289,6 +316,7 @@ private slots:
             msg.append(links);
             msg.append(QCborMap{{QStringLiteral("token"), qint64(1)}, {QStringLiteral("fileName"), QStringLiteral("set.dlc")}});
             emit ipc.hosterLinksExpanded(msg);
+            QCoreApplication::processEvents();   // the dialog opens queued
         };
 
         QTimer::singleShot(50, inspect);
@@ -331,6 +359,7 @@ private slots:
         msg.append(QCborMap{{QStringLiteral("fileName"), QStringLiteral("x.dlc")}, {QStringLiteral("code"), QStringLiteral("limit")},
                             {QStringLiteral("text"), QStringLiteral("Server claims: DLC Limit reached.")}});
         emit ipc.hosterLinksExpanded(msg);
+        QCoreApplication::processEvents();   // the box opens queued
         QVERIFY2(text.startsWith(QStringLiteral("x.dlc: ")), qPrintable(text));
         QVERIFY2(text.contains(QStringLiteral("too many")), qPrintable(text));
     }
@@ -420,6 +449,140 @@ private slots:
             QCOMPARE(calls, 1);
             QCOMPARE(skipHoster, label == QLatin1String("Skip hoster"));
         }
+    }
+
+    /// the Link Grabber switch: a second tab beside Downloads; off, no tab bar at all
+    void grabberTabFollowsStatus()
+    {
+        IpcClient ipc;
+        HosterPanel panel;
+        panel.setIpcClient(&ipc);
+        auto* tabs = panel.findChild<QTabWidget*>();
+        QVERIFY(tabs);
+        QCOMPARE(tabs->count(), 1);
+        QVERIFY(tabs->tabBar()->isHidden());
+        pushStatus(ipc, true, false, true);
+        QCOMPARE(tabs->count(), 2);
+        QVERIFY(!tabs->tabBar()->isHidden());
+        QVERIFY(panel.linkGrabberOn());
+        QVERIFY(panel.watchesClipboard());
+        QVERIFY(tabs->tabText(1).startsWith(LinkGrabberPanel::tr("Link Grabber")));
+        pushStatus(ipc, false);
+        QCOMPARE(tabs->count(), 1);
+        QVERIFY(tabs->tabBar()->isHidden());
+        QVERIFY(!panel.watchesClipboard());
+    }
+
+    /// the core's list: packages hold their links, a delta moves and removes them
+    void grabberListFromPushes()
+    {
+        IpcClient ipc;
+        HosterPanel panel;
+        panel.setIpcClient(&ipc);
+        pushStatus(ipc, true);
+        LinkGrabberPanel* grabber = panel.linkGrabber();
+        QVERIFY(grabber);
+        auto* tree = grabber->findChild<QTreeWidget*>();
+        QVERIFY(tree);
+        IpcMessage all(IpcMsgType::PushLinkGrabber, 0);
+        all.append(QCborMap{
+            {QStringLiteral("all"), true},
+            {QStringLiteral("packages"),
+             QCborArray{QCborMap{{QStringLiteral("id"), qint64(1)}, {QStringLiteral("name"), QStringLiteral("Movie")},
+                                 {QStringLiteral("passwords"), QCborArray{QStringLiteral("pw")}}},
+                        QCborMap{{QStringLiteral("id"), qint64(2)}, {QStringLiteral("name"), QStringLiteral("Clip")}}}},
+            {QStringLiteral("links"),
+             QCborArray{grabberLink(10, 1, QStringLiteral("Movie.part1.rar"), 1),
+                        grabberLink(11, 1, QStringLiteral("Movie.part2.rar"), 2, false),
+                        grabberLink(12, 2, QStringLiteral("Clip.mkv"), 0)}},
+            {QStringLiteral("crawling"), 1}});
+        emit ipc.linkGrabberChanged(all);
+        QCOMPARE(tree->topLevelItemCount(), 2);
+        QTreeWidgetItem* movie = nullptr;
+        for (int i = 0; i < tree->topLevelItemCount(); ++i)
+            if (tree->topLevelItem(i)->text(0).startsWith(QStringLiteral("Movie")))
+                movie = tree->topLevelItem(i);
+        QVERIFY(movie);
+        QCOMPARE(movie->text(0), QStringLiteral("Movie (2)"));
+        QCOMPARE(movie->childCount(), 2);
+        QCOMPARE(movie->text(1), formatByteSize(2000));
+        QVERIFY(movie->text(3).contains(LinkGrabberPanel::tr("%1 offline").arg(1)));
+        QVERIFY(movie->toolTip(0).contains(QStringLiteral("pw")));
+        // the disabled link: unticked
+        QTreeWidgetItem* part2 = nullptr;
+        for (int i = 0; i < movie->childCount(); ++i)
+            if (movie->child(i)->text(0) == QStringLiteral("Movie.part2.rar"))
+                part2 = movie->child(i);
+        QVERIFY(part2);
+        QCOMPARE(part2->checkState(0), Qt::Unchecked);
+        QCOMPARE(part2->text(3), LinkGrabberPanel::tr("Offline"));
+        auto* tabs = panel.findChild<QTabWidget*>();
+        QCOMPARE(tabs->tabText(1), HosterPanel::tr("Link Grabber (%1, crawling)").arg(3));
+        panel.showLinkGrabber();
+        QCOMPARE(tabs->currentWidget(), grabber);
+        shoot(&panel, QStringLiteral("hoster-linkgrabber.png"));
+
+        // Clip.mkv joins Movie, part2 goes; Clip's package goes with its last link
+        IpcMessage delta(IpcMsgType::PushLinkGrabber, 0);
+        delta.append(QCborMap{{QStringLiteral("links"), QCborArray{grabberLink(12, 1, QStringLiteral("Clip.mkv"), 1)}},
+                              {QStringLiteral("removedLinks"), QCborArray{qint64(11)}},
+                              {QStringLiteral("removedPackages"), QCborArray{qint64(2)}},
+                              {QStringLiteral("crawling"), 0}});
+        emit ipc.linkGrabberChanged(delta);
+        QCOMPARE(tree->topLevelItemCount(), 1);
+        QCOMPARE(tree->topLevelItem(0)->childCount(), 2);
+        QCOMPARE(tree->topLevelItem(0)->text(0), QStringLiteral("Movie (2)"));
+        QCOMPARE(grabber->linkCount(), 2);
+        QCOMPARE(tabs->tabText(1), HosterPanel::tr("Link Grabber (%1)").arg(2));
+    }
+
+    /// links the core put into the Link Grabber: its tab shows, no dialog
+    void grabbedContainerShowsGrabber()
+    {
+        IpcClient ipc;
+        HosterPanel panel;
+        panel.setIpcClient(&ipc);
+        pushStatus(ipc, true, true);
+        auto* tabs = panel.findChild<QTabWidget*>();
+        QCOMPARE(tabs->currentIndex(), 0);
+        bool dialog = false;
+        QTimer::singleShot(50, [&] {
+            if (QWidget* w = QApplication::activeModalWidget()) {
+                dialog = true;
+                w->close();
+            }
+        });
+        IpcMessage msg(IpcMsgType::PushHosterLinks, 0);
+        msg.append(qint64(0));
+        msg.append(QCborArray{});
+        msg.append(QCborMap{{QStringLiteral("token"), qint64(5)}, {QStringLiteral("fileName"), QStringLiteral("set.dlc")},
+                            {QStringLiteral("grabbed"), true}, {QStringLiteral("count"), 3}});
+        emit ipc.hosterLinksExpanded(msg);
+        QTest::qWait(100);
+        QVERIFY(!dialog);
+        QCOMPARE(tabs->currentWidget(), panel.linkGrabber());
+    }
+
+    /// a copied link's crawl result for another GUI (its token unknown here): no dialog
+    void otherGuisGrabNotAsked()
+    {
+        IpcClient ipc;
+        HosterPanel panel;
+        panel.setIpcClient(&ipc);
+        bool dialog = false;
+        QTimer::singleShot(50, [&] {
+            if (QWidget* w = QApplication::activeModalWidget()) {
+                dialog = true;
+                w->close();
+            }
+        });
+        IpcMessage msg(IpcMsgType::PushHosterLinks, 0);
+        msg.append(qint64(0));
+        msg.append(QCborArray{QCborMap{{QStringLiteral("url"), QStringLiteral("https://a.test/x")}}});
+        msg.append(QCborMap{{QStringLiteral("token"), qint64(9)}, {QStringLiteral("grab"), true}});
+        emit ipc.hosterLinksExpanded(msg);
+        QTest::qWait(100);
+        QVERIFY(!dialog);
     }
 };
 

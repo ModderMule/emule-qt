@@ -178,10 +178,11 @@
   <ItemGroup>
     <ClCompile Include="..\tst_HosterPanel.cpp" />
     <ClCompile Include="..\..\src\gui\panels\HosterPanel.cpp" />
-    <ClCompile Include="..\..\src\gui\app\ClickNLoadServer.cpp" />
+    <ClCompile Include="..\..\src\gui\panels\LinkGrabberPanel.cpp" />
     <ClCompile Include="..\..\src\gui\controls\StatusFilterBar.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\HosterPuzzleDialog.cpp" />
     <ClCompile Include="..\..\src\gui\utils\Appearance.cpp" />
+    <ClCompile Include="..\..\src\gui\app\SkinColors.cpp" />
     <ClCompile Include="..\..\src\gui\utils\FileTypeIcons.cpp" />
     <ClCompile Include="..\..\src\gui\utils\ListActivation.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\FindInListDialog.cpp" />
@@ -189,13 +190,16 @@
     <ClCompile Include="..\..\src\gui\app\UiState.cpp" />
     <ClCompile Include="..\..\src\gui\app\IpcClient.cpp" />
     <ClCompile Include="..\..\src\gui\app\KnownCores.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\ContainerDrop.cpp" />
+    <ClCompile Include="..\..\src\gui\app\ClickNLoadServer.cpp" />
+    <ClCompile Include="..\..\src\gui\app\SkinIcons.cpp" />
     <QtRcc Include="..\..\resources\emuleqt.qrc" />
   </ItemGroup>
   <ItemGroup>
-    <QtMoc Include="..\..\src\gui\app\ClickNLoadServer.h">
+    <QtMoc Include="..\..\src\gui\panels\HosterPanel.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
-    <QtMoc Include="..\..\src\gui\panels\HosterPanel.h">
+    <QtMoc Include="..\..\src\gui\panels\LinkGrabberPanel.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\controls\StatusFilterBar.h">
@@ -204,7 +208,16 @@
     <QtMoc Include="..\..\src\gui\dialogs\HosterPuzzleDialog.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
+    <QtMoc Include="..\..\src\gui\app\SkinColors.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
     <QtMoc Include="..\..\src\gui\app\IpcClient.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\app\ClickNLoadServer.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\app\SkinIcons.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
   </ItemGroup>

@@ -155,6 +155,14 @@ IpcMessage IpcMessage::makeResult(int seqId, bool success, const QCborValue& dat
     return msg;
 }
 
+IpcMessage IpcMessage::withSeqId(int seqId) const
+{
+    QCborArray array = m_array;
+    if (array.size() >= 2)
+        array[1] = seqId;
+    return IpcMessage(std::move(array));
+}
+
 IpcMessage IpcMessage::makeError(int seqId, int code, const QString& message)
 {
     IpcMessage msg(IpcMsgType::Error, seqId);
@@ -263,6 +271,36 @@ bool isReadOnlyRequest(IpcMsgType type)
     case IpcMsgType::GetUsenetKnownTypes:
     case IpcMsgType::GetUsenetItemDetails:
     case IpcMsgType::GetUsenetStats:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool answeredWhileLoading(IpcMsgType type)
+{
+    switch (type) {
+    case IpcMsgType::Handshake:
+    case IpcMsgType::Ping:
+    case IpcMsgType::Subscribe:
+    case IpcMsgType::Shutdown:
+    case IpcMsgType::SyncLogs:
+    case IpcMsgType::GetPreferences:
+    // Report 26: several panels ask at connect, and a held copy refused as
+    // superseded left the Transfers tabs at "All" until a restart
+    case IpcMsgType::GetCategories:
+    case IpcMsgType::GetStats:
+    case IpcMsgType::GetSpeedHistory:
+    case IpcMsgType::GetStatsHistory:
+    case IpcMsgType::GetServers:
+    case IpcMsgType::GetConnection:
+    case IpcMsgType::GetServerState:
+    case IpcMsgType::GetServerMessages:
+    case IpcMsgType::GetNetworkInfo:
+    case IpcMsgType::GetKadContacts:
+    case IpcMsgType::GetKadStatus:
+    case IpcMsgType::GetKadSearches:
+    case IpcMsgType::GetKadLookupHistory:
         return true;
     default:
         return false;

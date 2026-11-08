@@ -24,6 +24,7 @@ namespace eMule {
 class Address;
 class ClientCreditsList;
 class ConnectionChecker;
+class ReachabilityWatch;
 class ClientList;
 class ClientUDPSocket;
 class CollectionKeys;
@@ -216,6 +217,7 @@ private:
     void autoUpdateServerList();
     void initPortMapper();
     void shutdownPortMapper();
+    void initReachabilityWatch();
     /// Collect the mappings that should currently exist. Reads the ports the
     /// sockets are actually bound to, not the preference values — with a random
     /// or zero configured port those differ, and mapping the pref would forward
@@ -294,6 +296,7 @@ private:
     std::unique_ptr<StatsHistory> m_statsHistory;
     std::unique_ptr<PortMapper> m_portMapper;
     std::unique_ptr<ConnectionChecker> m_connChecker;
+    std::unique_ptr<ReachabilityWatch> m_reachWatch;
     std::unique_ptr<CollectionKeys> m_collectionKeys;
 };
 

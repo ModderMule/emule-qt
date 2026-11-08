@@ -181,6 +181,7 @@
     <ClCompile Include="..\..\src\daemon\Ed3kBridge.cpp" />
     <ClCompile Include="..\..\src\daemon\Ed3kOwnSetsBridge.cpp" />
     <ClCompile Include="..\..\src\daemon\Ed3kLinksBridge.cpp" />
+    <ClCompile Include="..\..\src\daemon\Ed3kKadBridge.cpp" />
     <ClCompile Include="..\..\src\daemon\Ed3kFriendsBridge.cpp" />
     <ClCompile Include="..\..\src\daemon\Ed3kNamesBridge.cpp" />
     <ClCompile Include="..\..\src\daemon\Ed3kRoomsBridge.cpp" />

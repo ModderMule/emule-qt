@@ -40,6 +40,7 @@
 #include <QHostInfo>
 
 #include "app/AppContext.h"
+#include "net/ReachabilityWatch.h"
 #include "archive/ArchiveRecovery.h"
 #include "app/CoreInfo.h"
 #include "app/CoreOps.h"
@@ -277,6 +278,15 @@ IpcClientHandler::~IpcClientHandler() = default;
 void IpcClientHandler::sendMessage(const IpcMessage& msg)
 {
     m_connection->sendMessage(msg);
+    // Older identical reads held while loading: same answer, their own seqId
+    if (!m_sharedReplies.isEmpty() && msg.seqId() != 0) {
+        if (const auto it = m_sharedReplies.constFind(msg.seqId()); it != m_sharedReplies.constEnd()) {
+            const std::vector<int> sharers = *it;
+            m_sharedReplies.erase(it);
+            for (const int seq : sharers)
+                m_connection->sendMessage(msg.withSeqId(seq));
+        }
+    }
     if (auto* sock = m_connection->socket())
         sock->flush();
 }
@@ -296,43 +306,12 @@ bool IpcClientHandler::isHandshaked() const
 
 void IpcClientHandler::replayDeferred()
 {
-    for (const IpcMessage& msg : m_deferred.take())
-        onMessageReceived(msg);
-}
-
-namespace {
-
-/// Requests answered while the core still loads its files: the session itself and
-/// what the server list, the Kad page, the status bar and the log show. Everything
-/// else reads or changes lists that are not complete yet.
-bool answeredWhileLoading(IpcMsgType type)
-{
-    switch (type) {
-    case IpcMsgType::Handshake:
-    case IpcMsgType::Ping:
-    case IpcMsgType::Subscribe:
-    case IpcMsgType::Shutdown:
-    case IpcMsgType::SyncLogs:
-    case IpcMsgType::GetPreferences:
-    case IpcMsgType::GetStats:
-    case IpcMsgType::GetSpeedHistory:
-    case IpcMsgType::GetStatsHistory:
-    case IpcMsgType::GetServers:
-    case IpcMsgType::GetConnection:
-    case IpcMsgType::GetServerState:
-    case IpcMsgType::GetServerMessages:
-    case IpcMsgType::GetNetworkInfo:
-    case IpcMsgType::GetKadContacts:
-    case IpcMsgType::GetKadStatus:
-    case IpcMsgType::GetKadSearches:
-    case IpcMsgType::GetKadLookupHistory:
-        return true;
-    default:
-        return false;
+    for (auto& held : m_deferred.take()) {
+        if (!held.alsoAnswers.empty())
+            m_sharedReplies.insert(held.msg.seqId(), std::move(held.alsoAnswers));
+        onMessageReceived(held.msg);
     }
 }
-
-} // namespace
 
 // ---------------------------------------------------------------------------
 // Private slots
@@ -349,9 +328,9 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
 
     // A download added now could duplicate a part file not read yet, and a list
     // fetched now is partial: held, and answered by replayDeferred().
-    if (theApp.loading && !answeredWhileLoading(msg.type())) {
-        // A polling GUI repeats itself for as long as the load takes: only the
-        // newest of identical reads is kept, the older one is refused right away.
+    if (theApp.loading && !Ipc::answeredWhileLoading(msg.type())) {
+        // Identical reads run once when loading ends and all get that answer; only a
+        // client asking the same thing past DeferredRequests::kMaxSharers is refused.
         if (const auto refused = m_deferred.hold(msg))
             sendMessage(IpcMessage::makeError(refused->seqId(), Ipc::ErrSuperseded,
                                               QStringLiteral("Core is loading")));
@@ -2421,6 +2400,8 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
         cfg.bindAddress            = BindAddress::ipv4Literal();
         theApp.serverConnect->setConfig(cfg);
     }
+    if (theApp.reachabilityWatch)
+        theApp.reachabilityWatch->setEnabled(thePrefs.reachabilityWatch());
 
     // Rescan shared files only if directory settings actually changed
     if (sharedDirsChanged && theApp.sharedFileList)
@@ -4094,6 +4075,8 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setNodesDatURL(val.toString());
     else if (key == QStringLiteral("smartLowIdCheck"))
         thePrefs.setSmartLowIdCheck(val.toBool());
+    else if (key == QStringLiteral("reachabilityWatch"))
+        thePrefs.setReachabilityWatch(val.toBool());
     else if (key == QStringLiteral("serverPreferIPv6"))
         thePrefs.setServerPreferIPv6(val.toBool());
     else if (key == QStringLiteral("manualServerHighPriority"))

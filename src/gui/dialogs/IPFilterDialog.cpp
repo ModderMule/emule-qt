@@ -194,7 +194,7 @@ IPFilterDialog::IPFilterDialog(IpcClient* ipc, QWidget* parent)
     layout->addWidget(new QLabel(tr("IP filters:"), this));
 
     m_model = new IpFilterModel(this);
-    m_view = new QTableView(this);
+    m_view = new ListTableView(this);
     m_view->setModel(m_model);
     m_view->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_view->setSelectionMode(QAbstractItemView::ExtendedSelection);
@@ -207,10 +207,7 @@ IPFilterDialog::IPFilterDialog(IpcClient* ipc, QWidget* parent)
     m_view->verticalHeader()->setDefaultSectionSize(m_view->fontMetrics().height() + 4);
     m_view->horizontalHeader()->setStretchLastSection(true);
     m_view->horizontalHeader()->setHighlightSections(false);
-    m_view->setColumnWidth(IpFilterModel::ColStart, 130);
-    m_view->setColumnWidth(IpFilterModel::ColEnd, 130);
-    m_view->setColumnWidth(IpFilterModel::ColLevel, 50);
-    m_view->setColumnWidth(IpFilterModel::ColHits, 60);
+    m_view->bindColumns(QStringLiteral("ipFilter"), {130, 130, 50, 60});
     m_view->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_view, &QWidget::customContextMenuRequested, this, &IPFilterDialog::showContextMenu);
     layout->addWidget(m_view, 1);

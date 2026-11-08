@@ -22,6 +22,7 @@ namespace eMule::ed3k {
 namespace {
 
 constexpr auto kStateFile = "update.json";
+constexpr auto kFetchLock = ".fetch.lock";
 
 QString zipName(int revision)
 {
@@ -34,6 +35,9 @@ Ed3kResolverUpdater::Ed3kResolverUpdater(QString dir, QObject* parent)
     : ScheduledUpdater(parent)
     , m_dir(std::move(dir))
 {
+    m_lockRetry.setSingleShot(true);
+    m_lockRetry.setInterval(kLockRetryMs);
+    connect(&m_lockRetry, &QTimer::timeout, this, &Ed3kResolverUpdater::fetchManifest);
     loadState();
 }
 
@@ -41,6 +45,44 @@ Ed3kResolverUpdater::~Ed3kResolverUpdater()
 {
     if (m_dl)
         m_dl->abort();
+}
+
+void Ed3kResolverUpdater::setDir(const QString& dir)
+{
+    if (dir == m_dir)
+        return;
+    const bool wasBusy = busy();
+    stop();
+    const QString oldDir = std::exchange(m_dir, dir);
+    const QString oldZip = m_fetched.isEmpty() ? QString() : QDir(oldDir).filePath(m_fetched);
+    const int oldRev = m_fetchedApi == Ed3kJdResolver::kProtocol ? m_fetchedRevision : 0;
+    const QString oldSha = m_fetchedSha;
+    m_checked = {};
+    clearFetched();
+    loadState();
+    // the zip fetched before goes along when the new folder has nothing as new
+    QLockFile lock(QDir(m_dir).filePath(QLatin1StringView(kFetchLock)));
+    lock.setStaleLockTime(0);
+    if (oldRev > haveRevision() && QDir().mkpath(m_dir) && lock.tryLock(5000) && (reloadState(), oldRev > haveRevision())) {
+        const QString name = zipName(oldRev);
+        const QString to = QDir(m_dir).filePath(name);
+        const QString part = to + QStringLiteral(".part");
+        QFile::remove(part);
+        // copied: the old folder may be the shared one other instances still read
+        if (QFile::copy(oldZip, part) && (QFile::remove(to), QFile::rename(part, to))) {
+            m_fetched = name;
+            m_fetchedRevision = oldRev;
+            m_fetchedApi = Ed3kJdResolver::kProtocol;
+            m_fetchedSha = oldSha;
+            saveState();
+        }
+        QFile::remove(part);
+    }
+    lock.unlock();
+    logHosterDebug([&]() -> QString { return QStringLiteral("hoster: resolver plugin updates in %1").arg(m_dir); });
+    // a first fetch a link waits for goes on in the new folder
+    if (wasBusy && zipToUse().isEmpty())
+        fetchManifest();
 }
 
 void Ed3kResolverUpdater::setSchedule(bool on, int hours)
@@ -90,11 +132,14 @@ QString Ed3kResolverUpdater::zipToUse() const
 
 bool Ed3kResolverUpdater::busy() const
 {
-    return isRunning() || (m_dl && m_dl->isRunning());
+    return isRunning() || (m_dl && m_dl->isRunning()) || m_lockRetry.isActive();
 }
 
 void Ed3kResolverUpdater::checkSchedule()
 {
+    // shared: another instance may have fetched or checked meanwhile
+    if (!busy() && reloadState())
+        emit zipReady();
     // no zip at all (bundles ship none): fetchFirst() once a link wants one
     if (!m_on || busy() || backingOff() || zipToUse().isEmpty())
         return;
@@ -107,6 +152,8 @@ bool Ed3kResolverUpdater::fetchFirst()
 {
     if (busy())
         return true;
+    if (reloadState())
+        emit zipReady();
     if (!zipToUse().isEmpty())
         return false;
     // links come in bursts: one try per kFirstRetrySecs
@@ -130,10 +177,12 @@ void Ed3kResolverUpdater::checkNow()
 void Ed3kResolverUpdater::stop()
 {
     ScheduledUpdater::stop();
+    m_lockRetry.stop();
     if (m_dl && m_dl->isRunning()) {
         m_dl->abort();
         logHosterDebug([] { return QStringLiteral("hoster: resolver plugin download stopped"); });
     }
+    m_fetchLock.reset();
 }
 
 bool Ed3kResolverUpdater::wanted(const HosterResolverRelease& r, int haveRevision, QString* why)
@@ -163,6 +212,14 @@ bool Ed3kResolverUpdater::wanted(const HosterResolverRelease& r, int haveRevisio
 
 void Ed3kResolverUpdater::fetchManifest()
 {
+    if (!takeFetchLock())
+        return;
+    // the other instance's fetch ended: its zip, no second download
+    if (reloadState()) {
+        emit zipReady();
+        finish(true, QStringLiteral("resolver plugins r%1 fetched by another instance").arg(m_fetchedRevision));
+        return;
+    }
     const QUrl url = m_manifestUrl.isValid() ? m_manifestUrl : QUrl(VersionManifest::manifestUrl());
     logHosterDebug([] { return QStringLiteral("hoster: checking for new resolver plugins"); });
     m_job = HttpFileDownload::fetch(this, url, {}, [this](const HttpFileDownload::Result& res) {
@@ -243,6 +300,7 @@ void Ed3kResolverUpdater::finish(bool ok, const QString& message)
     if (ok)
         m_checked = QDateTime::currentDateTimeUtc();
     saveState();
+    m_fetchLock.reset();
     if (ok)
         logHosterDebug([&]() -> QString { return QStringLiteral("hoster: plugin update check: %1").arg(message); });
     else
@@ -266,6 +324,47 @@ void Ed3kResolverUpdater::loadState()
     m_fetchedRevision = o.value(QStringLiteral("revision")).toInt();
     m_fetchedApi = o.value(QStringLiteral("api")).toInt();
     m_fetchedSha = o.value(QStringLiteral("sha256")).toString();
+}
+
+bool Ed3kResolverUpdater::reloadState()
+{
+    const QString before = zipToUse();
+    const QString fetched = m_fetched;
+    const int revision = m_fetchedRevision;
+    m_checked = {};
+    clearFetched();
+    loadState();
+    return zipToUse() != before || m_fetched != fetched || m_fetchedRevision != revision;
+}
+
+bool Ed3kResolverUpdater::takeFetchLock()
+{
+    if (m_fetchLock)
+        return true;
+    if (!QDir().mkpath(m_dir)) {
+        finish(false, QStringLiteral("cannot create %1").arg(m_dir));
+        return false;
+    }
+    auto lock = std::make_unique<QLockFile>(QDir(m_dir).filePath(QLatin1StringView(kFetchLock)));
+    lock->setStaleLockTime(0);   // a fetch can take long; only a dead holder frees it
+    if (!lock->tryLock(0)) {
+        if (lock->error() != QLockFile::LockFailedError) {
+            finish(false, QStringLiteral("cannot lock %1").arg(m_dir));
+            return false;
+        }
+        logHosterDebug([] { return QStringLiteral("hoster: another instance fetches resolver plugins, waiting"); });
+        m_lockRetry.start();
+        return false;
+    }
+    m_fetchLock = std::move(lock);
+    return true;
+}
+
+void Ed3kResolverUpdater::clearFetched()
+{
+    m_fetched.clear();
+    m_fetchedRevision = m_fetchedApi = 0;
+    m_fetchedSha.clear();
 }
 
 void Ed3kResolverUpdater::saveState() const

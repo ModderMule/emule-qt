@@ -41,10 +41,10 @@
   <Import Project="$(QtMsBuild)\qt_defaults.props" Condition="Exists('$(QtMsBuild)\qt_defaults.props')" />
   <Import Project="..\..\QtVersion.props" />
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <QtModules>core;network;testlib;gui;multimedia;websockets;httpserver;concurrent;sql</QtModules>
+    <QtModules>core;network;testlib;gui;multimedia;websockets;httpserver;concurrent;sql;widgets</QtModules>
   </PropertyGroup>
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <QtModules>core;network;testlib;gui;multimedia;websockets;httpserver;concurrent;sql</QtModules>
+    <QtModules>core;network;testlib;gui;multimedia;websockets;httpserver;concurrent;sql;widgets</QtModules>
   </PropertyGroup>
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') OR !Exists('$(QtMsBuild)\Qt.props')">
     <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
@@ -72,7 +72,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..;..\..\src\core;..\..\src\ipc;..\..\src\usenet;..\..\src\indexer;..\..\src\vcpkg_installed\x64-windows\include;..\..\src\vcpkg_installed\x64-windows\include\miniupnpc;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\src\gui;..;..\..\src\core;..\..\src\ipc;..\..\src\usenet;..\..\src\indexer;..\..\src\vcpkg_installed\x64-windows\include;..\..\src\vcpkg_installed\x64-windows\include\miniupnpc;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
       <AssemblerListingLocation>release\</AssemblerListingLocation>
       <BrowseInformation>false</BrowseInformation>
@@ -127,7 +127,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..;..\..\src\core;..\..\src\ipc;..\..\src\usenet;..\..\src\indexer;..\..\src\vcpkg_installed\x64-windows\include;..\..\src\vcpkg_installed\x64-windows\include\miniupnpc;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\src\gui;..;..\..\src\core;..\..\src\ipc;..\..\src\usenet;..\..\src\indexer;..\..\src\vcpkg_installed\x64-windows\include;..\..\src\vcpkg_installed\x64-windows\include\miniupnpc;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
       <AssemblerListingLocation>debug\</AssemblerListingLocation>
       <BrowseInformation>false</BrowseInformation>
@@ -177,6 +177,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\tst_TextLinks.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\Smileys.cpp" />
+    <ClCompile Include="..\..\src\gui\app\SkinIcons.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="..\..\src\gui\app\SkinIcons.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="..\tst_TextLinks.cpp.moc.cbt">

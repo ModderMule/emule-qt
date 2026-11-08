@@ -35,6 +35,9 @@ public:
     /// Sequence ID (index 1). Returns 0 if invalid.
     [[nodiscard]] int seqId() const;
 
+    /// Copy of this message under another sequence ID.
+    [[nodiscard]] IpcMessage withSeqId(int seqId) const;
+
     // -- Payload field access (index 2+) -------------------------------------
 
     /// Number of payload fields (total array size minus 2 header fields).
@@ -100,6 +103,11 @@ private:
 
 /// A request that only reads: answering it twice costs time and changes nothing.
 [[nodiscard]] bool isReadOnlyRequest(IpcMsgType type);
+
+/// Answered at once while the core still loads its files: the session itself, what
+/// the server list, the Kad page, the status bar and the log show, and reads served
+/// from preferences alone. Everything else waits for the lists to be complete.
+[[nodiscard]] bool answeredWhileLoading(IpcMsgType type);
 
 /// Type and payload without the seqId — equal for two requests asking the same thing.
 [[nodiscard]] QByteArray requestIdentity(const IpcMessage& msg);

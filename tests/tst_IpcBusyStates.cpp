@@ -219,6 +219,8 @@ private slots:
     void deferred_differentQuestionsAreAllKept();
     void deferred_fullRefusesTheNewcomer();
     void deferred_repeatedReadDoesNotGrowWithoutBound();
+    void deferred_categoriesAreAnsweredWhileLoading();
+    void deferred_oneShotReadsShareTheAnswer();
 
     // The start-up watch
     void watch_coreThatDiedIsReportedWithoutWaitingOutTheGrace();
@@ -784,25 +786,62 @@ void tst_IpcBusyStates::deferred_identicalReadsCollapseToTheNewest()
 {
     DeferredRequests held;
 
-    // A GUI polling GetDownloads twice a second through a one-minute load
+    // A client polling GetDownloads twice a second through a one-minute load
     QList<int> refused;
     for (int seq = 1; seq <= 120; ++seq) {
         if (const auto old = held.hold(IpcMessage(IpcMsgType::GetDownloads, seq)))
             refused.append(old->seqId());
     }
 
-    // Each newcomer released the one before it: every seqId gets an answer, and
-    // the load ends with one list to build instead of 120.
-    QCOMPARE(refused.size(), 119);
+    // One list to build instead of 120: the newest runs, the last kMaxSharers older
+    // ones share its answer, the rest were refused oldest first
+    const int sharers = DeferredRequests::kMaxSharers;
+    QCOMPARE(refused.size(), 119 - sharers);
     QCOMPARE(refused.first(), 1);
-    QCOMPARE(refused.last(), 119);
+    QCOMPARE(refused.last(), 119 - sharers);
     QCOMPARE(held.size(), 1);
 
     const auto replay = held.take();
     QCOMPARE(static_cast<int>(replay.size()), 1);
-    QCOMPARE(replay.front().seqId(), 120);
+    QCOMPARE(replay.front().msg.seqId(), 120);
+    QCOMPARE(static_cast<int>(replay.front().alsoAnswers.size()), sharers);
+    QCOMPARE(replay.front().alsoAnswers.front(), 120 - sharers);
+    QCOMPARE(replay.front().alsoAnswers.back(), 119);
     QCOMPARE(held.size(), 0);
     QVERIFY(held.take().empty());
+}
+
+void tst_IpcBusyStates::deferred_oneShotReadsShareTheAnswer()
+{
+    // Report 26: four panels ask the same thing once at connect. None may be refused,
+    // a one-shot caller never asks again.
+    DeferredRequests held;
+    for (int seq = 1; seq <= 4; ++seq)
+        QVERIFY(!held.hold(IpcMessage(IpcMsgType::GetSharedFiles, seq)));
+
+    const auto replay = held.take();
+    QCOMPARE(static_cast<int>(replay.size()), 1);
+    QCOMPARE(replay.front().msg.seqId(), 4);
+    QCOMPARE(replay.front().alsoAnswers, (std::vector<int>{1, 2, 3}));
+
+    // The copy is the same answer under the older seqId
+    IpcMessage reply = IpcMessage::makeResult(4, true, QCborValue(QStringLiteral("list")));
+    const IpcMessage copy = reply.withSeqId(2);
+    QCOMPARE(copy.seqId(), 2);
+    QCOMPARE(copy.type(), reply.type());
+    QCOMPARE(copy.field(1), reply.field(1));
+    QCOMPARE(reply.seqId(), 4);
+}
+
+void tst_IpcBusyStates::deferred_categoriesAreAnsweredWhileLoading()
+{
+    // Report 26: Transfers, Usenet, Search and Shared Files each ask once at connect.
+    // Held, all but the newest were refused and never asked again.
+    QVERIFY(answeredWhileLoading(IpcMsgType::GetCategories));
+    QVERIFY(answeredWhileLoading(IpcMsgType::GetPreferences));
+    // lists still being read do wait
+    QVERIFY(!answeredWhileLoading(IpcMsgType::GetDownloads));
+    QVERIFY(!answeredWhileLoading(IpcMsgType::GetSharedFiles));
 }
 
 void tst_IpcBusyStates::deferred_aWriteKeepsItsPlaceBeforeTheReadAfterIt()
@@ -814,15 +853,15 @@ void tst_IpcBusyStates::deferred_aWriteKeepsItsPlaceBeforeTheReadAfterIt()
 
     QVERIFY(!held.hold(IpcMessage(IpcMsgType::GetDownloads, 1)));
     QVERIFY(!held.hold(pause));
-    const auto refused = held.hold(IpcMessage(IpcMsgType::GetDownloads, 3));
-    QVERIFY(refused);
-    QCOMPARE(refused->seqId(), 1);
+    QVERIFY(!held.hold(IpcMessage(IpcMsgType::GetDownloads, 3)));
 
-    // The surviving read comes after the pause, so its answer shows the pause
+    // The surviving read comes after the pause, so its answer shows the pause;
+    // the older read gets that answer too
     const auto replay = held.take();
     QCOMPARE(static_cast<int>(replay.size()), 2);
-    QCOMPARE(replay[0].type(), IpcMsgType::PauseDownload);
-    QCOMPARE(replay[1].seqId(), 3);
+    QCOMPARE(replay[0].msg.type(), IpcMsgType::PauseDownload);
+    QCOMPARE(replay[1].msg.seqId(), 3);
+    QCOMPARE(replay[1].alsoAnswers, (std::vector<int>{1}));
 
     // A write is never dropped for looking like another
     QVERIFY(!held.hold(pause));
@@ -874,9 +913,9 @@ void tst_IpcBusyStates::deferred_repeatedReadDoesNotGrowWithoutBound()
     const int rounds = DeferredRequests::kMaxHeld * 5;
     for (int seq = 2; seq < 2 + rounds; ++seq) {
         const auto refused = held.hold(IpcMessage(IpcMsgType::GetDownloads, seq));
-        QCOMPARE(refused.has_value(), seq > 2);
+        QCOMPARE(refused.has_value(), seq > 2 + DeferredRequests::kMaxSharers);
         if (refused)
-            QCOMPARE(refused->seqId(), seq - 1);
+            QCOMPARE(refused->seqId(), seq - 1 - DeferredRequests::kMaxSharers);
         QVERIFY(held.slotCount() <= DeferredRequests::kMaxHeld * 2);
     }
     QCOMPARE(held.size(), 2);
@@ -884,8 +923,9 @@ void tst_IpcBusyStates::deferred_repeatedReadDoesNotGrowWithoutBound()
     // Still the write first, then the newest read
     const auto replay = held.take();
     QCOMPARE(replay.size(), std::size_t(2));
-    QCOMPARE(replay[0].type(), IpcMsgType::PauseDownload);
-    QCOMPARE(replay[1].seqId(), 1 + rounds);
+    QCOMPARE(replay[0].msg.type(), IpcMsgType::PauseDownload);
+    QCOMPARE(replay[1].msg.seqId(), 1 + rounds);
+    QCOMPARE(static_cast<int>(replay[1].alsoAnswers.size()), DeferredRequests::kMaxSharers);
 }
 
 // ---------------------------------------------------------------------------

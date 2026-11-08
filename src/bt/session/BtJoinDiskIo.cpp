@@ -1,5 +1,6 @@
 #include "session/BtJoinDiskIo.h"
 
+#include <libtorrent/alert_types.hpp>
 #include <libtorrent/pread_disk_io.hpp>
 #include <libtorrent/session_params.hpp>
 
@@ -43,19 +44,32 @@ struct BtJoinDiskIo::Pending {
     }
 };
 
-/// Hands late verdicts back on libtorrent's tick.
+/// Hands late verdicts back on libtorrent's network thread: at the tick, and on the
+/// dht_stats_alert a wake asked for (BtJoinDiskIo::setWake).
 class Pump final : public lt::plugin {
 public:
     explicit Pump(std::function<BtJoinDiskIo*()> io) : m_io(std::move(io)) {}
-    lt::feature_flags_t implemented_features() override { return tick_feature; }
+    lt::feature_flags_t implemented_features() override { return tick_feature | alert_feature; }
     void on_tick() override
     {
+        m_network = std::this_thread::get_id();
+        if (BtJoinDiskIo* io = m_io())
+            io->pump();
+    }
+    // Inside emplace_alert (its lock held). Only this alert: post_dht_stats posts it from
+    // a top-level call, so the hash handlers run on no half-done torrent state. The last
+    // alert plugin: the queue may grow under the loop that called us
+    void on_alert(lt::alert const* a) override
+    {
+        if (!lt::alert_cast<lt::dht_stats_alert>(a) || m_network.load() != std::this_thread::get_id())
+            return;
         if (BtJoinDiskIo* io = m_io())
             io->pump();
     }
 
 private:
     std::function<BtJoinDiskIo*()> m_io;
+    std::atomic<std::thread::id> m_network{};   ///< set at the first tick
 };
 
 BtJoinDiskIo::BtJoinDiskIo(std::unique_ptr<lt::disk_interface> inner)
@@ -99,9 +113,16 @@ void BtJoinDiskIo::pump()
     {
         std::scoped_lock lock(m_ready->mutex);
         jobs.swap(m_ready->jobs);
+        m_ready->wakeAsked = false;
     }
     for (auto& job : jobs)
         job();
+}
+
+void BtJoinDiskIo::setWake(std::function<void()> wake)
+{
+    std::scoped_lock lock(m_ready->mutex);
+    m_ready->wake = std::move(wake);
 }
 
 void BtJoinDiskIo::attach(const lt::info_hash_t& torrent, std::shared_ptr<BtJoinHook> hook)
@@ -166,7 +187,7 @@ void BtJoinDiskIo::async_hash(lt::storage_index_t storage, lt::piece_index_t pie
                               std::function<void(lt::piece_index_t, lt::sha1_hash const&, lt::storage_error const&)> handler)
 {
     auto hook = hookOf(storage);
-    if (!hook) {
+    if (!hook || !hook->judges()) {
         m_inner->async_hash(storage, piece, v2, flags, std::move(handler));
         return;
     }
@@ -297,9 +318,20 @@ void BtJoinDiskIo::readForHook(lt::storage_index_t storage, int pieceSize, std::
                 state->finish(spoil);
                 return;
             }
-            std::scoped_lock lock(ready->mutex);
-            if (ready->alive)
+            std::function<void()> wake;
+            {
+                std::scoped_lock lock(ready->mutex);
+                if (!ready->alive)
+                    return;
                 ready->jobs.emplace_back([state, spoil] { state->finish(spoil); });
+                if (!ready->wakeAsked && ready->wake) {
+                    ready->wakeAsked = true;
+                    wake = ready->wake;
+                }
+            }
+            // outside the lock: the wake may run pump() in place (dispatch on its thread)
+            if (wake)
+                wake();
         });
         inside->store(false);
     };

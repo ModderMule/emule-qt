@@ -3,6 +3,7 @@
 
 #include "pch.h"
 #include "dialogs/Ed3kOptionsPages.h"
+#include "controls/AbstractListView.h"
 
 #include "app/Ed3kNameOpener.h"
 #include "app/Ed3kLinkActions.h"
@@ -116,14 +117,9 @@ QLabel* noteLabel(const QString& text, QWidget* parent)
     return l;
 }
 
-QTreeWidget* makeTree(const QStringList& headers, QWidget* parent)
+QTreeWidget* makeTree(const QStringList& headers, const QString& stateKey, QWidget* parent)
 {
-    auto* t = new QTreeWidget(parent);
-    t->setHeaderLabels(headers);
-    t->setRootIsDecorated(false);
-    t->setUniformRowHeights(true);
-    t->setSelectionMode(QAbstractItemView::SingleSelection);
-    t->header()->setStretchLastSection(true);
+    auto* t = makeFlatList(headers, stateKey, parent);
     // a few rows each: the three lists fit the page together
     t->setFixedHeight(t->fontMetrics().lineSpacing() * 7);
     return t;
@@ -290,6 +286,10 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     m_hosterExtractCheck->setChecked(h.extract);
     m_hosterDeleteArchivesCheck->setChecked(h.deleteArchives);
     m_hosterDeleteArchivesCheck->setEnabled(h.extract);
+    m_hosterClipboardCheck->setChecked(h.clipboard);
+    m_linkGrabberCheck->setChecked(h.linkGrabber);
+    m_grabAllCheck->setChecked(h.grabAll);
+    m_grabAllCheck->setEnabled(h.linkGrabber);
     m_publishLinksCheck->setChecked(h.publishLinks);
     m_javaEdit->setText(h.java);
     m_autoJavaCheck->setChecked(h.autoJava);
@@ -360,6 +360,9 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kHosterCheckSearchLinks", h.checkSearchLinks);
     put("ed3kHosterExtract", h.extract);
     put("ed3kHosterDeleteArchives", h.deleteArchives);
+    put("ed3kHosterClipboard", h.clipboard);
+    put("ed3kHosterLinkGrabber", h.linkGrabber);
+    put("ed3kHosterGrabAll", h.grabAll);
     put("ed3kHosterAutoUpdate", h.autoUpdate);
     // a password only when typed here: the daemon keeps the stored one otherwise
     const auto rows = [](const AccountList& list) {
@@ -852,7 +855,7 @@ QWidget* Ed3kOptionsPages::buildNames(QWidget* parent)
     // -- Pins (name.md §4.4): only the user changes them
     auto* pinGroup = new QGroupBox(tr("Pinned names"), page);
     new QVBoxLayout(pinGroup);
-    m_pinsTree = makeTree({tr("Name"), tr("Key"), tr("How"), tr("Vouched")}, pinGroup);
+    m_pinsTree = makeTree({tr("Name"), tr("Key"), tr("How"), tr("Vouched")}, QStringLiteral("ed3kPins"), pinGroup);
     pinGroup->layout()->addWidget(m_pinsTree);
     auto* unpin = new QPushButton(tr("Unpin"), pinGroup);
     auto* vouch = new QPushButton(tr("Vouch / Withdraw"), pinGroup);
@@ -872,7 +875,7 @@ QWidget* Ed3kOptionsPages::buildNames(QWidget* parent)
     // -- Petnames
     auto* petGroup = new QGroupBox(tr("Petnames"), page);
     new QVBoxLayout(petGroup);
-    m_petnamesTree = makeTree({tr("Petname"), tr("Key"), tr("Shared with friends")}, petGroup);
+    m_petnamesTree = makeTree({tr("Petname"), tr("Key"), tr("Shared with friends")}, QStringLiteral("ed3kPetnames"), petGroup);
     petGroup->layout()->addWidget(m_petnamesTree);
     auto* addPet = new QPushButton(tr("Add…"), petGroup);
     auto* removePet = new QPushButton(tr("Remove"), petGroup);
@@ -887,7 +890,7 @@ QWidget* Ed3kOptionsPages::buildNames(QWidget* parent)
     // -- Followed name lists, in order: the first wins
     auto* listGroup = new QGroupBox(tr("Followed name lists (the first one wins)"), page);
     new QVBoxLayout(listGroup);
-    m_listsTree = makeTree({tr("Label"), tr("Entries"), tr("Refused"), tr("Link")}, listGroup);
+    m_listsTree = makeTree({tr("Label"), tr("Entries"), tr("Refused"), tr("Link")}, QStringLiteral("ed3kOptLists"), listGroup);
     listGroup->layout()->addWidget(m_listsTree);
     auto* follow = new QPushButton(tr("Follow…"), listGroup);
     auto* unfollow = new QPushButton(tr("Unfollow"), listGroup);
@@ -1501,7 +1504,8 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
     accLayout->addWidget(noteLabel(tr("Logins at hosters. They stay on this computer: never sent to another node, "
                                       "never logged."),
                                    accGroup));
-    buildAccountList(m_hosterAccounts, {tr("Hoster"), tr("User"), tr("Status")}, accLayout, accGroup);
+    buildAccountList(m_hosterAccounts, {tr("Hoster"), tr("User"), tr("Status")}, QStringLiteral("ed3kHosterAccounts"),
+                     accLayout, accGroup);
     layout->addWidget(accGroup);
 
     // GUI-only: OptionsDialog loads and saves it with the other file types
@@ -1521,10 +1525,31 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
                                      "they would to JDownloader. eMule Qt shows them and asks which to add. "
                                      "Not while JDownloader runs: it has the port."));
     desktopLayout->addWidget(m_clickNLoadCheck);
+    m_hosterClipboardCheck = new QCheckBox(tr("Watch the clipboard for hoster links (http/https)"), desktopGroup);
+    m_hosterClipboardCheck->setToolTip(tr("A copied link that a hoster plugin knows is crawled and offered for "
+                                          "download, or goes to the Link Grabber when it is on. Other web links are "
+                                          "ignored."));
+    desktopLayout->addWidget(m_hosterClipboardCheck);
     layout->addWidget(desktopGroup);
+
+    auto* grabberGroup = new QGroupBox(tr("Link Grabber"), page);
+    auto* grabberLayout = new QVBoxLayout(grabberGroup);
+    m_linkGrabberCheck = new QCheckBox(tr("Collect links in the Link Grabber before downloading"), grabberGroup);
+    m_linkGrabberCheck->setToolTip(tr("The Hoster tab gets a Link Grabber tab: links are crawled and checked into "
+                                      "packages you can rename, merge, give passwords or delete before the "
+                                      "downloads start. Copied links and folder links go there."));
+    grabberLayout->addWidget(m_linkGrabberCheck);
+    m_grabAllCheck = new QCheckBox(tr("Open all links in the Link Grabber"), grabberGroup);
+    m_grabAllCheck->setToolTip(tr("Click'n'Load, Add Links and link containers (DLC) go to the Link Grabber too. "
+                                  "Links from search results always start downloading at once."));
+    grabberLayout->addWidget(m_grabAllCheck);
+    layout->addWidget(grabberGroup);
     layout->addStretch();
     connect(m_associateDlcCheck, &QCheckBox::toggled, this, edited);
     connect(m_clickNLoadCheck, &QCheckBox::toggled, this, edited);
+    for (QCheckBox* box : {m_hosterClipboardCheck, m_linkGrabberCheck, m_grabAllCheck})
+        connect(box, &QCheckBox::toggled, this, edited);
+    connect(m_linkGrabberCheck, &QCheckBox::toggled, m_grabAllCheck, &QWidget::setEnabled);
 
     buildSolvers(solversLayout, page);
 
@@ -1667,10 +1692,10 @@ bool Ed3kOptionsPages::confirmShareLinks()
            == QMessageBox::Yes;
 }
 
-void Ed3kOptionsPages::buildAccountList(AccountList& list, const QStringList& columns, QVBoxLayout* layout,
-                                        QWidget* parent)
+void Ed3kOptionsPages::buildAccountList(AccountList& list, const QStringList& columns, const QString& stateKey,
+                                        QVBoxLayout* layout, QWidget* parent)
 {
-    list.tree = makeTree(columns, parent);
+    list.tree = makeTree(columns, stateKey, parent);
     layout->addWidget(list.tree);
     auto* btns = new QHBoxLayout;
     auto* addBtn = new QPushButton(tr("Add..."), parent);
@@ -1712,7 +1737,8 @@ void Ed3kOptionsPages::buildSolvers(QVBoxLayout* layout, QWidget* parent)
                                         "An account needs credit at the service. Logins stay on this computer: "
                                         "never sent to another node, never logged."),
                                      m_solversGroup));
-    buildAccountList(m_solverAccounts, {tr("Service"), tr("User"), tr("Status")}, groupLayout, m_solversGroup);
+    buildAccountList(m_solverAccounts, {tr("Service"), tr("User"), tr("Status")}, QStringLiteral("ed3kSolverAccounts"),
+                     groupLayout, m_solversGroup);
     layout->addWidget(m_solversGroup);
     layout->addStretch();
     connect(m_solversGroup, &QGroupBox::toggled, this, [this] {
@@ -1872,6 +1898,9 @@ Ed3kHosterPrefs Ed3kOptionsPages::hosterPrefs() const
     h.checkSearchLinks = m_hosterCheckLinksCheck->isChecked();
     h.extract = m_hosterExtractCheck->isChecked();
     h.deleteArchives = m_hosterDeleteArchivesCheck->isChecked();
+    h.clipboard = m_hosterClipboardCheck->isChecked();
+    h.linkGrabber = m_linkGrabberCheck->isChecked();
+    h.grabAll = m_grabAllCheck->isChecked();
     for (const HosterAccountRow& a : m_hosterAccounts.rows)
         h.accounts.append({a.host, a.user, a.passwordSet ? a.password : QString()});
     h.solversEnabled = m_solversGroup->isChecked();

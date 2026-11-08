@@ -632,9 +632,12 @@ int main(int argc, char* argv[])
 
     // Launcher, icons and file types, only once the first start wizard ran: it asks
     // first (#111). Its close does it the first time. Later starts touch the desktop
-    // only when the wanted types changed (#121).
-    if (!cli.screenshotMode() && eMule::theUiState.firstStartWizardDone())
+    // only when the wanted types changed (#121). An old profile's saved defaults are
+    // no choice: what is claimed now is adopted, nothing new (#153).
+    if (!cli.screenshotMode() && eMule::theUiState.firstStartWizardDone()) {
+        eMule::adoptClaimedFileTypes();
         eMule::applyDesktopIntegration();
+    }
 
     // "Tooltip delay" (Options > Display)
     app.setStyle(new eMule::TooltipDelayStyle);

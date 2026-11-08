@@ -351,6 +351,6 @@ HEADERS += \
 # Hoster resolver: on by default, as in CMake (EMULE_HOSTER_JD). `qmake CONFIG+=no_emule_hoster_jd` turns it off
 !no_emule_hoster_jd {
     DEFINES += EMULE_HAVE_HOSTER_JD=1
-    SOURCES += panels/HosterPanel.cpp dialogs/HosterPuzzleDialog.cpp
-    HEADERS += panels/HosterPanel.h dialogs/HosterPuzzleDialog.h
+    SOURCES += panels/HosterPanel.cpp panels/LinkGrabberPanel.cpp dialogs/HosterPuzzleDialog.cpp
+    HEADERS += panels/HosterPanel.h panels/LinkGrabberPanel.h dialogs/HosterPuzzleDialog.h
 }

@@ -275,6 +275,130 @@ begin
   Result := RegKeyExists(HKLM, UninstallKey);
 end;
 
+// --- Stopping a running core (#157) ---
+// Restart Manager can't close emulecored: started detached, it has no console
+// and only a hidden window, so it kept archive.dll & co. open and setup failed
+// with "DeleteFile failed; code 5". WM_CLOSE to that window is the GUI's own
+// stop (daemon WinShutdownHandler::kWindowClass, GUI main.cpp stopCoreProcess):
+// downloads and settings get saved. A core that won't stop is killed.
+
+const
+  CoreWindowClass = 'eMuleQtCoreShutdownWindow';
+  CoreExe = 'emulecored.exe';
+  CoreWmClose = $0010;
+  PROCESS_QUERY_LIMITED_INFORMATION = $1000;
+  // Saving many part files takes a while; 120 x 250 ms
+  CoreStopPolls = 120;
+
+function FindWindowExW(Parent, ChildAfter: HWND; ClassName: String; WindowName: Longint): HWND;
+  external 'FindWindowExW@user32.dll stdcall';
+function GetWindowThreadProcessId(Wnd: HWND; var ProcessId: Cardinal): Cardinal;
+  external 'GetWindowThreadProcessId@user32.dll stdcall';
+// HWND: the pointer-sized type Pascal Script surely knows, also for the process handle
+function OpenProcess(Access: Cardinal; Inherit: Boolean; ProcessId: Cardinal): HWND;
+  external 'OpenProcess@kernel32.dll stdcall';
+function QueryFullProcessImageNameW(Process: HWND; Flags: Cardinal; ExeName: String; var Size: Cardinal): Boolean;
+  external 'QueryFullProcessImageNameW@kernel32.dll stdcall';
+function CloseHandle(Handle: HWND): Boolean;
+  external 'CloseHandle@kernel32.dll stdcall';
+
+// Only cores of this install: a portable copy elsewhere keeps running
+function IsAppCoreWindow(Wnd: HWND): Boolean;
+var
+  Pid, Size: Cardinal;
+  Process: HWND;
+  Path: String;
+begin
+  Result := False;
+  Pid := 0;
+  GetWindowThreadProcessId(Wnd, Pid);
+  if Pid = 0 then
+    Exit;
+  Process := OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, Pid);
+  if Process = 0 then
+    Exit;
+  Size := 1024;
+  SetLength(Path, Size);
+  if QueryFullProcessImageNameW(Process, 0, Path, Size) then
+  begin
+    Path := Lowercase(Copy(Path, 1, Size));
+    Result := Pos(Lowercase(AddBackslash(ExpandConstant('{app}'))), Path) = 1;
+  end;
+  CloseHandle(Process);
+end;
+
+// Asks every core of this install to stop; False when none runs
+function CloseAppCores(Post: Boolean): Boolean;
+var
+  Wnd: HWND;
+begin
+  Result := False;
+  Wnd := FindWindowExW(0, 0, CoreWindowClass, 0);
+  while Wnd <> 0 do
+  begin
+    if IsAppCoreWindow(Wnd) then
+    begin
+      Result := True;
+      if Post then
+        PostMessage(Wnd, CoreWmClose, 0, 0);
+    end;
+    Wnd := FindWindowExW(0, Wnd, CoreWindowClass, 0);
+  end;
+end;
+
+// Cores of other sessions and ones that didn't stop in time
+procedure KillAppCores;
+var
+  App, Cmd: String;
+  ResultCode: Integer;
+begin
+  App := AddBackslash(ExpandConstant('{app}'));
+  StringChangeEx(App, #39, #39#39, True);
+  Cmd := '-NoProfile -NonInteractive -Command "Get-Process ' + ChangeFileExt(CoreExe, '') +
+    ' -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith(' +
+    #39 + App + #39 + ', [StringComparison]::OrdinalIgnoreCase) } | ' +
+    'Stop-Process -Force -PassThru | Wait-Process -Timeout 10"';
+  if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Cmd, '',
+              SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    Log('Could not run PowerShell to end ' + CoreExe);
+end;
+
+procedure StopAppCores;
+var
+  I: Integer;
+begin
+  if not DirExists(ExpandConstant('{app}')) then
+    Exit;
+  if CloseAppCores(True) then
+  begin
+    Log('Asked running ' + CoreExe + ' to stop');
+    I := 0;
+    while (I < CoreStopPolls) and CloseAppCores(False) do
+    begin
+      Sleep(250);
+      I := I + 1;
+    end;
+    if I >= CoreStopPolls then
+      Log(CoreExe + ' did not stop in time');
+  end;
+  KillAppCores;
+  // Window gone before the process lets go of its DLLs
+  Sleep(500);
+end;
+
+// Runs before Setup checks for files in use
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  StopAppCores;
+  Result := '';
+end;
+
+function InitializeUninstall: Boolean;
+begin
+  StopAppCores;
+  Result := True;
+end;
+
 function InitializeSetup: Boolean;
 begin
   DetectEmuleConfig;

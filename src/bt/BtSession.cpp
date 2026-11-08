@@ -37,10 +37,12 @@
 #include <algorithm>
 #include <QTimer>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <deque>
 #include <map>
+#include <memory>
 #include <optional>
 
 namespace lt = libtorrent;
@@ -52,12 +54,18 @@ namespace {
 constexpr int kTickMs = 1000;
 /// resume data of changed torrents every 5 min
 constexpr int kResumeEveryTicks = 300;
+/// a torrent that only moved data: its totals every 30 min (and at stop). libtorrent
+/// marks the totals changed each second a torrent is active, so every seed counted as
+/// modified and re-saved with its info dict every 5 min (report 28)
+constexpr int kCountersEveryTicks = 1800;
 /// stop() waits this long for resume data
 constexpr qint64 kStopWaitMs = 5000;
 /// Counter samples kept for demand(): the longest rate window plus a sample
 constexpr qint64 kRateHistoryMs = 3000;
 constexpr qint64 kRateWindowMs = 2000;
 constexpr qint64 kRecentWindowMs = 500;
+/// a detail query asks libtorrent again at most this often (the GUI polls each second)
+constexpr qint64 kDetailAskMs = 500;
 /// libtorrent reports "no limit" on max_connections as (1 << 24) - 1
 constexpr int kLtNoLimit = (1 << 24) - 1;
 
@@ -109,11 +117,18 @@ bool writeAtomic(const QString& path, const std::vector<char>& data)
     return f.commit();
 }
 
-/// Off the main thread: a commit syncs, seconds on a busy disk (report 23)
-void writeLater(const QString& path, const std::vector<char>& data)
+/// Off the main thread: a commit syncs, seconds on a busy disk (report 23); the encode
+/// too, seconds of CPU for big seeds with many peers (report 28)
+void writeLater(const QString& path, lt::add_torrent_params params)
 {
-    BackgroundFileWriter::instance().write(path, QByteArray(data.data(), qsizetype(data.size())),
-                                           &BackgroundFileWriter::saveFile);
+    auto p = std::make_shared<const lt::add_torrent_params>(std::move(params));
+    BackgroundFileWriter::instance().writeProduced(
+        path,
+        [p] {
+            const std::vector<char> buf = lt::write_resume_data_buf(*p);
+            return QByteArray(buf.data(), qsizetype(buf.size()));
+        },
+        &BackgroundFileWriter::saveFile);
 }
 
 /// The file name of a torrent's resume data: its hash, no ':'.
@@ -155,6 +170,9 @@ void forwardAlert(const lt::alert* a)
     if (lt::alert_cast<lt::session_stats_alert>(a) || lt::alert_cast<lt::state_update_alert>(a)
         || lt::alert_cast<lt::dht_stats_alert>(a) || lt::alert_cast<lt::dht_get_peers_alert>(a)
         || lt::alert_cast<lt::dht_announce_alert>(a))
+        return;
+    // the answer of only_if_modified when nothing changed: every few minutes per torrent
+    if (const auto* sf = lt::alert_cast<lt::save_resume_data_failed_alert>(a); sf && sf->error == lt::errors::resume_data_not_modified)
         return;
     const lt::alert_category_t cat = a->category();
     if (cat & lt::alert_category::piece_progress)
@@ -200,10 +218,41 @@ public:
         sink->pieceHashed(m_id, static_cast<int>(piece), QByteArray(data.data(), qsizetype(data.size())), std::move(done));
     }
 
+    bool judges() const override
+    {
+        const auto sink = m_sink.lock();
+        return sink && sink->judges(m_id);
+    }
+
 private:
     QString m_id;
     std::weak_ptr<BtJoinSink> m_sink;
 };
+
+/// A first status of a torrent just added, from its add parameters: no wait for
+/// libtorrent's thread. The post_status() answer replaces it.
+lt::torrent_status addedStatus(const lt::add_torrent_params& p, const lt::torrent_handle& h, const lt::info_hash_t& hashes)
+{
+    lt::torrent_status st;
+    st.handle = h;
+    st.info_hashes = hashes;
+    st.flags = p.flags;
+    st.state = lt::torrent_status::checking_resume_data;
+    st.name = p.name;
+    st.save_path = p.save_path;
+    st.added_time = p.added_time;
+    st.completed_time = p.completed_time;
+    st.all_time_download = p.total_downloaded;
+    st.all_time_upload = p.total_uploaded;
+    if (p.ti && p.ti->is_valid()) {
+        st.has_metadata = true;
+        st.torrent_file = p.ti;
+        st.name = p.ti->name();
+        st.total = p.ti->total_size();
+        st.total_wanted = st.total;
+    }
+    return st;
+}
 
 } // namespace
 
@@ -254,9 +303,9 @@ struct BtSession::Impl {
     {
         BtJoinDiskIo* disk = io.load();
         const auto j = joins.find(id);
-        const auto h = handle(id);
-        if (disk && j != joins.end() && h.is_valid())
-            disk->attach(h.info_hashes(), std::make_shared<SinkHook>(id, j->second));
+        const lt::info_hash_t hashes = hashesOf(id);   // by hash: also before libtorrent has the torrent
+        if (disk && j != joins.end() && (hashes.has_v1() || hashes.has_v2()))
+            disk->attach(hashes, std::make_shared<SinkHook>(id, j->second));
     }
     [[nodiscard]] QString linksPath() const { return QDir(settings.stateDir).filePath(kLinksFile); }
     void loadLinks()
@@ -282,6 +331,10 @@ struct BtSession::Impl {
     /// finished, cache flush asked: pread_disk_io holds written blocks in memory, so
     /// torrentFinished waits for cache_flushed_alert (files complete on disk)
     QSet<QString> finishFlush;
+    /// pieces libtorrent has, from its status updates: havePieces() never waits
+    std::map<QString, QBitArray> have;
+    /// checked, a join attached: torrentChecked waits for the status with the new pieces
+    QSet<QString> checkWaited;
     /// File priorities sent, not yet applied: libtorrent 2.x updates them only when the
     /// disk job returns (file_prio_alert), a poll in between read the old ones (report 21)
     struct PendingPriorities {
@@ -293,6 +346,7 @@ struct BtSession::Impl {
     void prioritizeFiles(const lt::torrent_handle& h, const QString& id, std::vector<lt::download_priority_t> prio)
     {
         h.prioritize_files(prio);
+        details[id].priorities = prio;
         PendingPriorities& p = pendingPriorities[id];
         p.priorities = std::move(prio);
         ++p.outstanding;
@@ -301,8 +355,11 @@ struct BtSession::Impl {
     void filePrioritiesApplied(const QString& id)
     {
         auto it = pendingPriorities.find(id);
-        if (it != pendingPriorities.end() && --it->second.outstanding <= 0)
+        if (it != pendingPriorities.end() && --it->second.outstanding <= 0) {
+            // an answer asked before the change may have put the old ones in
+            details[id].priorities = std::move(it->second.priorities);
             pendingPriorities.erase(it);
+        }
     }
     [[nodiscard]] QString stopsPath() const { return QDir(settings.stateDir).filePath(kStopsFile); }
     void loadStops()
@@ -326,6 +383,118 @@ struct BtSession::Impl {
     }
     /// at metadata: paused, every file back to normal so the user unticks what to skip
     void stopAtMetadata(const lt::torrent_handle& h, const QString& id);
+    /// GUI detail data by id: libtorrent's answers to post_*(), never waited for (report 27)
+    struct Detail {
+        std::vector<std::int64_t> progress;
+        bool progressCurrent = false;   ///< answered after the last change of done or state
+        bool filesWaited = false;       ///< currentFiles() said nullopt: torrentChanged on the answer
+        std::vector<lt::download_priority_t> priorities;
+        std::vector<lt::peer_info> peers;
+        std::vector<lt::announce_entry> trackers;
+        std::vector<int> availability;
+        std::array<QElapsedTimer, 4> asked;
+    };
+    enum class Ask { Files, Peers, Trackers, Availability };
+    std::map<QString, Detail> details;
+    /// added by add(), its add_torrent_alert not in yet: a row, no handle
+    struct Adding {
+        lt::info_hash_t hashes;
+        std::shared_ptr<const lt::torrent_info> ti;
+        bool prioritiesChanged = false;   ///< details' priorities go to libtorrent when it comes
+        std::optional<lt::remove_flags_t> removed;   ///< removed meanwhile: removed when it comes
+    };
+    std::map<QString, Adding> adding;
+    /// the metadata of @p id, also while it is being added; null: none yet. Never waits
+    [[nodiscard]] std::shared_ptr<const lt::torrent_info> torrentFile(const QString& id) const
+    {
+        if (const lt::torrent_handle h = handle(id); h.is_valid())
+            return h.torrent_file();   // a shared_ptr copy
+        const auto a = adding.find(id);
+        return a == adding.end() ? nullptr : a->second.ti;
+    }
+    /// info hashes of @p id, also while it is being added; empty: unknown
+    [[nodiscard]] lt::info_hash_t hashesOf(const QString& id) const
+    {
+        if (const lt::torrent_handle h = handle(id); h.is_valid())
+            return h.info_hashes();
+        const auto a = adding.find(id);
+        return a == adding.end() ? lt::info_hash_t{} : a->second.hashes;
+    }
+    /// the id @p hashes are listed under (added or adding); empty: not listed
+    [[nodiscard]] QString listedId(const lt::info_hash_t& hashes) const
+    {
+        const QString id = BtTorrentView::idOf(hashes);
+        if (handles.contains(id) || (adding.contains(id) && !adding.at(id).removed))
+            return id;
+        // a v2 hash of a hybrid listed under its v1 id; info_hashes() does not wait
+        if (hashes.has_v2()) {
+            for (const auto& [other, h] : handles)
+                if (h.is_valid() && h.info_hashes().v2 == hashes.v2)
+                    return other;
+            for (const auto& [other, a] : adding)
+                if (!a.removed && a.hashes.has_v2() && a.hashes.v2 == hashes.v2)
+                    return other;
+        }
+        return {};
+    }
+    /// posts the query for @p what unless asked within kDetailAskMs (or @p force)
+    Detail& ask(const QString& id, Ask what, bool force = false)
+    {
+        Detail& dt = details[id];
+        const lt::torrent_handle h = handle(id);
+        QElapsedTimer& t = dt.asked[static_cast<std::size_t>(what)];
+        if (!h.is_valid() || (!force && t.isValid() && t.elapsed() < kDetailAskMs))
+            return dt;
+        t.start();
+        switch (what) {
+        case Ask::Files:
+            h.post_file_progress({});
+            h.post_file_priorities();
+            break;
+        case Ask::Peers: h.post_peer_info(); break;
+        case Ask::Trackers: h.post_trackers(); break;
+        case Ask::Availability:
+            // piece_availability asserts without metadata
+            if (const auto ti = h.torrent_file(); ti && ti->is_valid())
+                h.post_piece_availability();
+            break;
+        }
+        return dt;
+    }
+    /// what an add knows already: trackers and priorities before libtorrent's first answer
+    void seedDetail(const QString& id, const lt::add_torrent_params& p)
+    {
+        Detail& dt = details[id];
+        if (dt.trackers.empty())
+            for (std::size_t i = 0; i < p.trackers.size(); ++i) {
+                lt::announce_entry a(p.trackers[i]);
+                a.tier = static_cast<std::uint8_t>(i < p.tracker_tiers.size() ? p.tracker_tiers[i] : 0);
+                dt.trackers.push_back(std::move(a));
+            }
+        if (dt.priorities.empty())
+            dt.priorities = p.file_priorities;
+    }
+    /// BtTorrentView::files() of the cache, with priorities still on their way
+    [[nodiscard]] QList<BtFileRow> fileRows(const QString& id, const Detail& dt)
+    {
+        const auto ti = torrentFile(id);
+        if (!ti)
+            return {};
+        QList<BtFileRow> out = BtTorrentView::files(*ti, dt.progress, dt.priorities);
+        // report what was asked for until libtorrent has applied it
+        if (auto it = pendingPriorities.find(id); it != pendingPriorities.end()) {
+            constexpr qint64 kPendingCapMs = 10'000;   // no alert (unchanged / failed): trust libtorrent again
+            if (it->second.since.elapsed() > kPendingCapMs) {
+                pendingPriorities.erase(it);
+            } else {
+                const auto& prio = it->second.priorities;
+                for (BtFileRow& f : out)
+                    if (f.index >= 0 && f.index < static_cast<int>(prio.size()))
+                        f.priority = static_cast<int>(static_cast<std::uint8_t>(prio[static_cast<std::size_t>(f.index)]));
+            }
+        }
+        return out;
+    }
     /// the app's filter, set again at each start (session state does not keep it)
     lt::ip_filter ipFilter;
     quint64 blockedPeers = 0;
@@ -441,6 +610,15 @@ void BtSession::start(const BtSettings& settings)
         d->io = nullptr;
         return;
     }
+    // late join verdicts back at once, not at the next tick (#152). A weak handle: no-op
+    // (throws) once the session is gone
+    if (BtJoinDiskIo* io = d->io.load())
+        io->setWake([h = lt::session_handle(*d->ses)]() mutable {
+            try {
+                h.post_dht_stats();
+            } catch (const std::exception&) {
+            }
+        });
     // libtorrent's thread: only wake ours (research doc §5.2)
     d->ses->set_alert_notify([this] { QMetaObject::invokeMethod(this, &BtSession::drainAlerts, Qt::QueuedConnection); });
 
@@ -498,19 +676,32 @@ void BtSession::stop()
     // what alerts queued lands first: the writes below must not be overtaken
     BackgroundFileWriter::instance().flush();
     for (const auto& [id, h] : d->handles)
-        if (h.is_valid() && h.need_save_resume_data())
-            d->saveResume(h);
+        d->saveResume(h, lt::torrent_handle::save_info_dict | lt::torrent_handle::only_if_modified);
 
     // drain until every resume data came, or the time is up
     QElapsedTimer waited;
     waited.start();
-    while (d->outstandingResume > 0 && waited.elapsed() < kStopWaitMs) {
+    while ((d->outstandingResume > 0 || !d->adding.empty()) && waited.elapsed() < kStopWaitMs) {
         if (!d->ses->wait_for_alert(lt::milliseconds(200)))
             continue;
         std::vector<lt::alert*> alerts;
         d->ses->pop_alerts(&alerts);
         for (lt::alert* a : alerts) {
-            if (auto* rd = lt::alert_cast<lt::save_resume_data_alert>(a)) {
+            if (auto* at = lt::alert_cast<lt::add_torrent_alert>(a)) {
+                // added just before the stop: its resume data, or it is gone at the next start
+                const auto& p = at->params;
+                const QString id = BtTorrentView::idOf(p.ti ? p.ti->info_hashes() : p.info_hashes);
+                const auto pending = d->adding.extract(id);
+                if (at->error || pending.empty())
+                    continue;
+                if (pending.mapped().removed) {
+                    d->ses->remove_torrent(at->handle, *pending.mapped().removed);
+                    continue;
+                }
+                if (pending.mapped().prioritiesChanged)
+                    at->handle.prioritize_files(d->details[id].priorities);
+                d->saveResume(at->handle);
+            } else if (auto* rd = lt::alert_cast<lt::save_resume_data_alert>(a)) {
                 --d->outstandingResume;
                 writeAtomic(d->resumePath(BtTorrentView::idOf(rd->params.info_hashes)), lt::write_resume_data_buf(rd->params));
             } else if (lt::alert_cast<lt::save_resume_data_failed_alert>(a)) {
@@ -530,8 +721,11 @@ void BtSession::stop()
     lt::session_proxy proxy = d->ses->abort();
     d->ses.reset();
     d->handles.clear();
+    d->adding.clear();
     d->rows.clear();
     d->finishFlush.clear();
+    d->have.clear();
+    d->checkWaited.clear();
     d->outstandingResume = 0;
     d->listening = false;
     d->dhtNodes = 0;
@@ -659,21 +853,30 @@ BtAddResult BtSession::addMagnet(const QString& uri, const QString& savePath, bo
 bool BtSession::remove(const QString& id, bool deleteFiles)
 {
     const auto h = d->handle(id);
-    if (!d->ses || !h.is_valid())
+    const auto pending = d->adding.find(id);
+    if (!d->ses || (!h.is_valid() && pending == d->adding.end()))
         return false;
-    d->ses->remove_torrent(h, deleteFiles ? lt::session_handle::delete_files : lt::remove_flags_t{});
+    const lt::info_hash_t hashes = d->hashesOf(id);
+    const lt::remove_flags_t flags = deleteFiles ? lt::session_handle::delete_files : lt::remove_flags_t{};
+    if (h.is_valid())
+        d->ses->remove_torrent(h, flags);
+    else
+        pending->second.removed = flags;   // removed when libtorrent has added it
     d->handles.erase(id);
     d->rows.erase(id);
     d->limitOverride.remove(id);
     d->metaStopped.remove(id);
     d->finishFlush.remove(id);
+    d->have.erase(id);
+    d->checkWaited.remove(id);
     d->pendingPriorities.erase(id);
+    d->details.erase(id);
     if (d->links.erase(id) > 0)
         d->saveLinks();
     if (d->stopAtMeta.remove(id))
         d->saveStops();
     if (auto* disk = d->io.load(); disk && d->joins.contains(id))
-        disk->detach(h.info_hashes());
+        disk->detach(hashes);
     d->joins.erase(id);
     if (d->seedLimits.erase(id) > 0)
         d->saveSeedLimits();
@@ -802,7 +1005,8 @@ std::optional<bool> BtSession::editTrackers(const QString& id, const BtTrackerEd
     const auto h = d->handle(id);
     if (!h.is_valid())
         return std::nullopt;
-    const auto current = h.trackers();
+    // the cache, not h.trackers(): that waits for libtorrent's thread
+    const std::vector<lt::announce_entry> current = d->ask(id, Impl::Ask::Trackers).trackers;
     QList<BtTrackerEntry> before;
     before.reserve(static_cast<qsizetype>(current.size()));
     for (const auto& a : current)
@@ -829,6 +1033,7 @@ std::optional<bool> BtSession::editTrackers(const QString& id, const BtTrackerEd
         added = true;
     }
     h.replace_trackers(next);
+    d->details[id].trackers = next;
     if (added)
         h.force_reannounce();
     d->saveResume(h);
@@ -854,41 +1059,43 @@ std::optional<BtTorrentRow> BtSession::torrent(const QString& id) const
 
 QList<BtFileRow> BtSession::files(const QString& id) const
 {
-    const auto h = d->handle(id);
-    if (!h.is_valid())
+    if (!d->handle(id).is_valid() && !d->adding.contains(id))
         return {};
-    QList<BtFileRow> out = BtTorrentView::files(h);
-    // report what was asked for until libtorrent has applied it
-    if (auto it = d->pendingPriorities.find(id); it != d->pendingPriorities.end()) {
-        constexpr qint64 kPendingCapMs = 10'000;   // no alert (unchanged / failed): trust libtorrent again
-        if (it->second.since.elapsed() > kPendingCapMs) {
-            d->pendingPriorities.erase(it);
-        } else {
-            const auto& prio = it->second.priorities;
-            for (BtFileRow& f : out)
-                if (f.index >= 0 && f.index < static_cast<int>(prio.size()))
-                    f.priority = static_cast<int>(static_cast<std::uint8_t>(prio[static_cast<std::size_t>(f.index)]));
-        }
-    }
-    return out;
+    return d->fileRows(id, d->ask(id, Impl::Ask::Files));
+}
+
+std::optional<QList<BtFileRow>> BtSession::currentFiles(const QString& id) const
+{
+    if (!d->handle(id).is_valid())
+        return QList<BtFileRow>{};
+    Impl::Detail& dt = d->details[id];
+    if (dt.progressCurrent)
+        return d->fileRows(id, dt);
+    // forced: the answer to an earlier ask may predate the change
+    d->ask(id, Impl::Ask::Files, true);
+    dt.filesWaited = true;
+    return std::nullopt;
 }
 
 QList<BtPeerRow> BtSession::peers(const QString& id) const
 {
-    const auto h = d->handle(id);
-    return h.is_valid() ? BtTorrentView::peers(h) : QList<BtPeerRow>{};
+    if (!d->handle(id).is_valid())
+        return {};
+    return BtTorrentView::peers(d->ask(id, Impl::Ask::Peers).peers);
 }
 
 QList<BtTrackerRow> BtSession::trackers(const QString& id) const
 {
-    const auto h = d->handle(id);
-    return h.is_valid() ? BtTorrentView::trackers(h) : QList<BtTrackerRow>{};
+    if (!d->handle(id).is_valid() && !d->adding.contains(id))
+        return {};
+    return BtTorrentView::trackers(d->ask(id, Impl::Ask::Trackers).trackers);
 }
 
 QByteArray BtSession::availabilityMap(const QString& id) const
 {
-    const auto h = d->handle(id);
-    return h.is_valid() ? BtTorrentView::availabilityMap(h) : QByteArray{};
+    if (!d->handle(id).is_valid())
+        return {};
+    return BtTorrentView::availabilityMap(d->ask(id, Impl::Ask::Availability).availability);
 }
 
 BtStatus BtSession::status() const
@@ -918,7 +1125,7 @@ BtJoinDiskIo* BtSession::diskIo() const
 
 bool BtSession::attachJoin(const QString& id, std::shared_ptr<BtJoinSink> sink)
 {
-    if (!sink || !d->handles.contains(id))
+    if (!sink || (!d->handles.contains(id) && !d->adding.contains(id)))
         return false;
     d->joins[id] = std::move(sink);
     d->attachSink(id);
@@ -927,16 +1134,15 @@ bool BtSession::attachJoin(const QString& id, std::shared_ptr<BtJoinSink> sink)
 
 void BtSession::detachJoin(const QString& id)
 {
-    const auto h = d->handle(id);
-    if (auto* disk = d->io.load(); disk && h.is_valid())
-        disk->detach(h.info_hashes());
+    const lt::info_hash_t hashes = d->hashesOf(id);
+    if (auto* disk = d->io.load(); disk && (hashes.has_v1() || hashes.has_v2()))
+        disk->detach(hashes);
     d->joins.erase(id);
 }
 
 QByteArray BtSession::infoSection(const QString& id) const
 {
-    const auto h = d->handle(id);
-    const auto ti = h.is_valid() ? h.torrent_file() : nullptr;
+    const auto ti = d->torrentFile(id);
     if (!ti || !ti->is_valid())
         return {};
     const auto info = ti->info_section();
@@ -945,11 +1151,12 @@ QByteArray BtSession::infoSection(const QString& id) const
 
 std::optional<BtLayout> BtSession::layout(const QString& id) const
 {
-    const auto h = d->handle(id);
-    const auto ti = h.is_valid() ? h.torrent_file() : nullptr;
-    if (!ti || !ti->is_valid())
+    const auto ti = d->torrentFile(id);
+    const auto row = d->rows.find(id);
+    if (!ti || !ti->is_valid() || row == d->rows.end())
         return std::nullopt;
-    const std::string savePath = h.status(lt::torrent_handle::query_save_path).save_path;
+    // was: status(query_save_path), a sync call; the row has it (no move_storage here)
+    const std::string savePath = row->second.savePath.toStdString();
     const lt::file_storage& fs = ti->layout();
     BtLayout out;
     out.pieceLength = ti->piece_length();
@@ -982,15 +1189,9 @@ void BtSession::raisePieces(const QString& id, const QList<int>& pieces)
 
 QBitArray BtSession::havePieces(const QString& id) const
 {
-    const auto h = d->handle(id);
-    if (!h.is_valid())
-        return {};
-    const auto st = h.status(lt::torrent_handle::query_pieces);
-    QBitArray out(st.pieces.size());
-    for (int i = 0; i < st.pieces.size(); ++i)
-        if (st.pieces.get_bit(lt::piece_index_t(i)))
-            out.setBit(i);
-    return out;
+    // was: status(query_pieces), a sync call into libtorrent's thread
+    const auto it = d->have.find(id);
+    return it == d->have.end() ? QBitArray() : it->second;
 }
 
 QString BtSession::ed3kLink(const QString& id) const
@@ -1046,29 +1247,66 @@ void BtSession::drainAlerts()
                 const QString id = row.id;
                 if (!d->handles.contains(id))
                     continue;
+                // file progress asked before this change is old now
+                if (auto old = d->rows.find(id); old == d->rows.end() || old->second.done != row.done
+                    || old->second.state != row.state)
+                    if (auto dt = d->details.find(id); dt != d->details.end())
+                        dt->second.progressCurrent = false;
                 d->rows[id] = row;
+                // every status update asks for the pieces (all flags)
+                QBitArray& bits = d->have[id];
+                bits.resize(st.pieces.size());
+                for (int i = 0; i < st.pieces.size(); ++i)
+                    bits.setBit(i, st.pieces.get_bit(lt::piece_index_t(i)));
                 emit torrentChanged(id);
+                if (d->checkWaited.remove(id) && d->joins.contains(id))
+                    emit torrentChecked(id);
                 d->enforceSeedLimits(st, row);
             }
         } else if (auto* at = lt::alert_cast<lt::add_torrent_alert>(a)) {
+            const auto& p = at->params;
+            const QString id = at->handle.is_valid() ? BtTorrentView::idOf(at->handle.info_hashes())
+                                                     : BtTorrentView::idOf(p.ti ? p.ti->info_hashes() : p.info_hashes);
+            const auto pending = d->adding.extract(id);
             if (at->error) {
                 logWarning(QStringLiteral("BitTorrent: could not add: %1").arg(message(at)));
+                // the row add() put up goes again
+                if (!pending.empty() && !pending.mapped().removed && !d->handles.contains(id)) {
+                    d->rows.erase(id);
+                    d->details.erase(id);
+                    if (d->links.erase(id) > 0)
+                        d->saveLinks();
+                    if (d->stopAtMeta.remove(id))
+                        d->saveStops();
+                    emit torrentRemoved(id);
+                }
                 continue;
             }
-            const QString id = BtTorrentView::idOf(at->handle.info_hashes());
             if (d->handles.contains(id))
                 continue;
+            if (!pending.empty() && pending.mapped().removed) {
+                d->ses->remove_torrent(at->handle, *pending.mapped().removed);
+                continue;
+            }
             d->handles[id] = at->handle;
-            d->noteMeta(id, at->params);
-            d->rows[id] = d->row(at->handle.status());
+            d->noteMeta(id, p);
+            d->seedDetail(id, p);
+            if (!pending.empty() && pending.mapped().prioritiesChanged)
+                d->prioritizeFiles(at->handle, id, d->details[id].priorities);
+            // was: row(handle.status()), a sync call per torrent; the real one follows
+            d->rows[id] = d->row(addedStatus(p, at->handle, at->handle.info_hashes()));
+            at->handle.post_status();
             d->attachSink(id);
+            // added by add(): kept across a restart from now on
+            if (!pending.empty())
+                d->saveResume(at->handle);
             emit torrentAdded(id);
         } else if (auto* rd = lt::alert_cast<lt::save_resume_data_alert>(a)) {
             d->outstandingResume = std::max(0, d->outstandingResume - 1);
             const QString id = BtTorrentView::idOf(rd->params.info_hashes);
             d->noteMeta(id, rd->params);
             if (d->handles.contains(id))
-                writeLater(d->resumePath(id), lt::write_resume_data_buf(rd->params));
+                writeLater(d->resumePath(id), std::move(rd->params));
         } else if (lt::alert_cast<lt::save_resume_data_failed_alert>(a)) {
             d->outstandingResume = std::max(0, d->outstandingResume - 1);
         } else if (auto* tf = lt::alert_cast<lt::torrent_finished_alert>(a)) {
@@ -1102,11 +1340,36 @@ void BtSession::drainAlerts()
             emit torrentChanged(id);
             emit metadataReceived(id);
         } else if (auto* pf = lt::alert_cast<lt::piece_finished_alert>(a)) {
-            if (const QString id = BtTorrentView::idOf(pf->handle.info_hashes()); d->joins.contains(id))
+            const QString id = BtTorrentView::idOf(pf->handle.info_hashes());
+            if (auto hv = d->have.find(id); hv != d->have.end() && int(pf->piece_index) < hv->second.size())
+                hv->second.setBit(int(pf->piece_index));
+            if (d->joins.contains(id))
                 emit pieceResult(id, static_cast<int>(pf->piece_index), true);
         } else if (auto* tc = lt::alert_cast<lt::torrent_checked_alert>(a)) {
-            if (const QString id = BtTorrentView::idOf(tc->handle.info_hashes()); d->joins.contains(id))
-                emit torrentChecked(id);
+            // torrentChecked once the pieces of the check are in (post_status asks all flags)
+            if (const QString id = BtTorrentView::idOf(tc->handle.info_hashes()); d->joins.contains(id)) {
+                d->checkWaited.insert(id);
+                tc->handle.post_status();
+            }
+        } else if (auto* fpr = lt::alert_cast<lt::file_progress_alert>(a)) {
+            if (auto dt = d->details.find(BtTorrentView::idOf(fpr->handle.info_hashes())); dt != d->details.end()) {
+                dt->second.progress.assign(fpr->files.begin(), fpr->files.end());
+                dt->second.progressCurrent = true;
+                if (std::exchange(dt->second.filesWaited, false))
+                    emit torrentChanged(dt->first);
+            }
+        } else if (auto* fps = lt::alert_cast<lt::file_priorities_alert>(a)) {
+            if (auto dt = d->details.find(BtTorrentView::idOf(fps->handle.info_hashes())); dt != d->details.end())
+                dt->second.priorities.assign(fps->priorities.begin(), fps->priorities.end());
+        } else if (auto* pi = lt::alert_cast<lt::peer_info_alert>(a)) {
+            if (auto dt = d->details.find(BtTorrentView::idOf(pi->handle.info_hashes())); dt != d->details.end())
+                dt->second.peers = pi->peer_info;
+        } else if (auto* tl = lt::alert_cast<lt::tracker_list_alert>(a)) {
+            if (auto dt = d->details.find(BtTorrentView::idOf(tl->handle.info_hashes())); dt != d->details.end())
+                dt->second.trackers = tl->trackers;
+        } else if (auto* pa = lt::alert_cast<lt::piece_availability_alert>(a)) {
+            if (auto dt = d->details.find(BtTorrentView::idOf(pa->handle.info_hashes())); dt != d->details.end())
+                dt->second.availability = pa->piece_availability;
         } else if (lt::alert_cast<lt::listen_succeeded_alert>(a)) {
             // one per interface and transport: the port is in the start line
             d->listening = true;
@@ -1146,11 +1409,10 @@ void BtSession::drainAlerts()
                 if (BtCounters* c = Impl::counters())
                     ++c->hashFailures;
                 const QString id = BtTorrentView::idOf(hf->handle.info_hashes());
-                // libtorrent counts failed bytes without a state update: refresh the row here
-                if (d->handles.contains(id) && hf->handle.is_valid()) {
-                    d->rows[id] = d->row(hf->handle.status());
-                    emit torrentChanged(id);
-                }
+                // libtorrent counts failed bytes without a state update: ask for one (async,
+                // status() would wait for libtorrent's thread)
+                if (d->handles.contains(id))
+                    hf->handle.post_status();
                 if (d->joins.contains(id))
                     emit pieceResult(id, static_cast<int>(hf->piece_index), false);
             }
@@ -1164,10 +1426,18 @@ void BtSession::tick()
         return;
     d->ses->post_torrent_updates();
     d->ses->post_dht_stats();
-    if (++d->ticks % kResumeEveryTicks == 0)
+    // was: need_save_resume_data() first, a sync call: froze the core while libtorrent's
+    // thread was busy (report 27). only_if_modified checks on libtorrent's thread instead
+    ++d->ticks;
+    if (d->ticks % kResumeEveryTicks == 0) {
+        auto flags = lt::torrent_handle::save_info_dict | lt::torrent_handle::if_metadata_changed
+            | lt::torrent_handle::if_state_changed | lt::torrent_handle::if_config_changed
+            | lt::torrent_handle::if_download_progress;
+        if (d->ticks % kCountersEveryTicks == 0)
+            flags |= lt::torrent_handle::if_counters_changed;
         for (const auto& [id, h] : d->handles)
-            if (h.is_valid() && h.need_save_resume_data())
-                d->saveResume(h, lt::torrent_handle::save_info_dict | lt::torrent_handle::only_if_modified);
+            d->saveResume(h, flags);
+    }
 }
 
 BtAddResult BtSession::Impl::add(BtSession& q, lt::add_torrent_params atp, const QString& savePath, bool paused,
@@ -1175,11 +1445,11 @@ BtAddResult BtSession::Impl::add(BtSession& q, lt::add_torrent_params atp, const
                                  const QList<int>& wanted)
 {
     const lt::info_hash_t hashes = atp.ti ? atp.ti->info_hashes() : atp.info_hashes;
-    if (auto found = ses->find_torrent(hashes.get_best()); found.is_valid()) {
-        const QString id = BtTorrentView::idOf(found.info_hashes());
+    // was: find_torrent(), a sync call; the list here knows it as well
+    if (const QString id = listedId(hashes); !id.isEmpty()) {
         // another file of a torrent already here: switch it on there
         if (!wanted.isEmpty())
-            wantFiles(found, id, wanted);
+            wantFiles(handle(id), id, wanted);
         return {BtAddOutcome::Duplicate, id, QStringLiteral("already in the list")};
     }
     // only the picked files: the rest start skipped
@@ -1188,7 +1458,7 @@ BtAddResult BtSession::Impl::add(BtSession& q, lt::add_torrent_params atp, const
         std::vector<lt::download_priority_t> prio(static_cast<std::size_t>(files), lt::dont_download);
         bool any = false;
         for (const int f : wanted) {
-            if (f >= 0 && f < files && !atp.ti->files().pad_file_at(lt::file_index_t{f})) {
+            if (f >= 0 && f < files && !atp.ti->layout().pad_file_at(lt::file_index_t{f})) {
                 prio[static_cast<std::size_t>(f)] = lt::default_priority;
                 any = true;
             }
@@ -1212,16 +1482,20 @@ BtAddResult BtSession::Impl::add(BtSession& q, lt::add_torrent_params atp, const
         p.comment = atp.comment;
         p.created_by = atp.created_by;
         p.creation_date = atp.creation_date;
+        p.trackers = atp.trackers;
+        p.tracker_tiers = atp.tracker_tiers;
+        p.file_priorities = atp.file_priorities;
         return p;
     }();
-    lt::error_code ec;
-    lt::torrent_handle h = ses->add_torrent(std::move(atp), ec);
-    if (ec || !h.is_valid())
-        return {BtAddOutcome::Failed, {}, QString::fromStdString(ec.message())};
-    const QString id = BtTorrentView::idOf(h.info_hashes());
-    handles[id] = h;
+    // was: add_torrent() and status(), sync calls: the row comes from the parameters,
+    // the handle with the add_torrent_alert (drainAlerts)
+    const QString id = BtTorrentView::idOf(hashes);
+    if (id.isEmpty())
+        return {BtAddOutcome::Invalid, {}, QStringLiteral("no info hash")};
     noteMeta(id, metaOf);
-    rows[id] = row(h.status());
+    seedDetail(id, metaOf);
+    rows[id] = row(addedStatus(atp, {}, hashes));
+    adding[id] = Adding{hashes, atp.ti, false, std::nullopt};
     if (!link.isEmpty()) {
         links[id] = link;
         saveLinks();
@@ -1230,29 +1504,28 @@ BtAddResult BtSession::Impl::add(BtSession& q, lt::add_torrent_params atp, const
         stopAtMeta.insert(id);
         saveStops();
     }
-    // kept across a restart from now on
-    saveResume(h);
+    ses->async_add_torrent(std::move(atp));
     logInfo(QStringLiteral("BitTorrent: added %1%2").arg(rows[id].name, i2p ? QStringLiteral(" (I2P only)") : QString()));
     if (BtCounters* c = counters())
         ++c->torrentsAdded;
-    emit q.torrentAdded(id);
     return {BtAddOutcome::Added, id, {}};
 }
 
 void BtSession::Impl::wantFiles(const lt::torrent_handle& h, const QString& id, const QList<int>& wanted)
 {
-    const auto ti = h.torrent_file();
+    const auto pendingAdd = adding.find(id);
+    const auto ti = torrentFile(id);
     if (!ti)
         return;
     const int files = ti->num_files();
     // a change still on its way counts, not the state libtorrent reports before it
     const auto pending = pendingPriorities.find(id);
     std::vector<lt::download_priority_t> prio =
-        pending != pendingPriorities.end() ? pending->second.priorities : h.get_file_priorities();
+        pending != pendingPriorities.end() ? pending->second.priorities : details[id].priorities;
     prio.resize(static_cast<std::size_t>(files), lt::default_priority);
     bool changed = false;
     for (const int f : wanted) {
-        if (f < 0 || f >= files || ti->files().pad_file_at(lt::file_index_t{f}))
+        if (f < 0 || f >= files || ti->layout().pad_file_at(lt::file_index_t{f}))
             continue;
         auto& p = prio[static_cast<std::size_t>(f)];
         if (p == lt::dont_download) {
@@ -1260,8 +1533,15 @@ void BtSession::Impl::wantFiles(const lt::torrent_handle& h, const QString& id, 
             changed = true;
         }
     }
-    if (changed)
+    if (!changed)
+        return;
+    if (h.is_valid()) {
         prioritizeFiles(h, id, std::move(prio));
+    } else if (pendingAdd != adding.end()) {
+        // still being added: sent when the handle comes
+        details[id].priorities = std::move(prio);
+        pendingAdd->second.prioritiesChanged = true;
+    }
 }
 
 void BtSession::Impl::stopAtMetadata(const lt::torrent_handle& h, const QString& id)

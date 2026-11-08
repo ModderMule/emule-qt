@@ -62,6 +62,7 @@ class PartFileSizeLookup;
 class PartFile;
 class UpDownClient;
 class PortMapper;
+class ReachabilityWatch;
 class UploadBandwidthThrottler;
 class UpDownClient;
 class UploadQueue;
@@ -105,6 +106,8 @@ struct AppContext {
     /// The scheduler's Usenet / BitTorrent / ed3k actions (daemon). Null: those do nothing.
     ScheduleNetworkActions* scheduleNetworkActions = nullptr;
     PortMapper*  portMapper     = nullptr;
+    /// #156 port-opened watch (CoreSession). Null in unit tests.
+    ReachabilityWatch* reachabilityWatch = nullptr;
     /// Download writes and part hashing off the main thread. Null: PartFile does
     /// both inline (unit tests).
     PartFileWriteThread* partFileWriter = nullptr;
@@ -269,6 +272,8 @@ struct AppContext {
     /// An incoming connection from @p peer completed its hello over IPv6. Proves we are
     /// reachable unless the peer sits in one of our own /64s (LAN, no router in between).
     void noteInboundIPv6Peer(const Address& peer);
+    /// Same over IPv4 (#156): a public peer dialed us directly, so our port is open.
+    void noteInboundIPv4Peer(const Address& peer);
     /// A UPnP/PCP IPv6 pinhole for our eD2K TCP port for @p internal was opened (ok) or lost.
     void noteIPv6Pinhole(const Address& internal, bool ok);
     /// Forget the reachability verdict (tests, network change).

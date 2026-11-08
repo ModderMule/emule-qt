@@ -9,6 +9,8 @@
 #include "app/UiState.h"
 #include "controls/StatusFilterBar.h"
 #include "dialogs/HosterPuzzleDialog.h"
+#include "panels/LinkGrabberPanel.h"
+#include "utils/Clipboard.h"
 #include "utils/ContainerDrop.h"
 #include "utils/FileTypeIcons.h"
 #include "utils/ListActivation.h"
@@ -42,6 +44,8 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRadioButton>
+#include <QTabBar>
+#include <QTabWidget>
 #include <QTreeWidget>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -217,7 +221,25 @@ public:
 HosterPanel::HosterPanel(QWidget* parent)
     : QWidget(parent)
 {
-    auto* layout = new QVBoxLayout(this);
+    // Downloads | Link Grabber, as the Kad window's tabs; one tab: no tab bar
+    auto* outer = new QVBoxLayout(this);
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->setSpacing(0);
+    m_tabs = new QTabWidget(this);
+    m_tabs->setDocumentMode(true);
+    outer->addWidget(m_tabs);
+    auto* page = new QWidget(m_tabs);
+    m_tabs->addTab(page, menuIcon("Hoster.ico"), tr("Downloads"));
+    m_tabs->tabBar()->setVisible(false);
+    m_grabber = new LinkGrabberPanel(this);
+    m_grabber->hide();
+    connect(m_grabber, &LinkGrabberPanel::countChanged, this, [this](int links, int crawling) {
+        if (const int i = m_tabs->indexOf(m_grabber); i >= 0)
+            m_tabs->setTabText(i, crawling > 0 ? tr("Link Grabber (%1, crawling)").arg(links)
+                                               : tr("Link Grabber (%1)").arg(links));
+    });
+
+    auto* layout = new QVBoxLayout(page);
     layout->setContentsMargins(4, 4, 4, 4);
 
     auto* bar = new QHBoxLayout;
@@ -244,7 +266,7 @@ HosterPanel::HosterPanel(QWidget* parent)
     updateFilterCounts();
     setAcceptDrops(true);
 
-    m_tree = new QTreeWidget(this);
+    m_tree = new ListTreeWidget(this);
     m_tree->setColumnCount(ColCount);
     m_tree->setHeaderLabels({tr("File Name"), tr("Size"), tr("Progress"), tr("Speed"), tr("Hoster"), tr("Status"),
                              tr("Source")});
@@ -254,9 +276,8 @@ HosterPanel::HosterPanel(QWidget* parent)
     m_tree->sortByColumn(ColName, Qt::AscendingOrder);
     m_tree->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
-    m_tree->header()->resizeSection(ColName, 320);
     layout->addWidget(m_tree, 1);
-    theUiState.bindHeaderView(m_tree->header(), QStringLiteral("hosterList"));
+    m_tree->bindColumns(QStringLiteral("hosterList"), {320});
     // After the restore: an older saved state pinned the name column to Stretch
     m_tree->header()->setSectionResizeMode(QHeaderView::Interactive);
     m_tree->header()->setStretchLastSection(true);
@@ -282,7 +303,7 @@ HosterPanel::HosterPanel(QWidget* parent)
     keys.copy = [this] { copyLinks(); };
     keys.paste = [this] {
         if (const QStringList links = clipboardLinks(); !links.isEmpty())
-            addLinks(links);
+            pasteLinks(links);
     };
     keys.find = true;
     keys.expandKeys = true;
@@ -303,8 +324,39 @@ void HosterPanel::setIpcClient(IpcClient* ipc)
     connect(m_ipc, &IpcClient::hosterPuzzleAsked, this, &HosterPanel::onPuzzle);
     connect(m_ipc, &IpcClient::hosterLinksExpanded, this, &HosterPanel::onLinks);
     connect(m_ipc, &IpcClient::ed3kStatusChanged, this, [this](const IpcMessage& msg) { applyStatus(msg.fieldMap(0)); });
+    m_grabber->setIpcClient(ipc);
     if (m_ipc->isConnected())
         refresh();
+}
+
+void HosterPanel::grabLinks(const QString& text, const QString& source, bool clipboard)
+{
+    if (m_grabberOn) {
+        m_grabber->grab(text, source, false, {}, {}, clipboard);
+        return;
+    }
+    // the Link Grabber off: the links come back here and a dialog asks which to add
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+    IpcMessage req(IpcMsgType::GrabLinks);
+    req.append(text);
+    req.append(source);
+    req.append(false);
+    req.append(QString());
+    req.append(QCborArray{});
+    req.append(true);   // ask
+    req.append(clipboard);
+    QPointer<HosterPanel> self(this);
+    m_ipc->sendRequest(std::move(req), [self](const IpcMessage& r) {
+        if (self && r.isValid() && r.fieldBool(0))
+            self->m_grabTokens.insert(r.fieldMap(1).value(QStringLiteral("token")).toInteger());
+    });
+}
+
+void HosterPanel::showLinkGrabber()
+{
+    if (const int i = m_tabs->indexOf(m_grabber); i >= 0)
+        m_tabs->setCurrentIndex(i);
 }
 
 void HosterPanel::applyDisplayOptions()
@@ -349,6 +401,12 @@ void HosterPanel::addLinks(const QList<QStringList>& files, const QString& packa
 
 void HosterPanel::promptAddLinks(const QStringList& prefill)
 {
+    // "open all links in the Link Grabber": its own dialog (deep crawl, passwords)
+    if (m_grabAll) {
+        showLinkGrabber();
+        m_grabber->promptAddLinks(prefill);
+        return;
+    }
     QDialog dlg(this);
     dlg.setWindowTitle(tr("Add hoster links"));
     auto* layout = new QVBoxLayout(&dlg);
@@ -792,7 +850,7 @@ void HosterPanel::showContextMenu(const QPoint& pos)
     } else if (chosen == dlc) {
         promptOpenContainer();
     } else if (chosen == paste) {
-        addLinks(pasted);
+        pasteLinks(pasted);
     }
 }
 
@@ -843,8 +901,24 @@ void HosterPanel::onPuzzle(const IpcMessage& msg)
 void HosterPanel::onLinks(const IpcMessage& msg)
 {
     const QCborArray links = msg.field(1).toArray();
+    if (msg.field(0).toInteger() == 0 && msg.field(2).isMap()
+        && msg.fieldMap(2).value(QStringLiteral("grabbed")).toBool()) {
+        // the core put them into the Link Grabber: show it, no dialog
+        const QCborMap c = msg.fieldMap(2);
+        const bool cnl = c.value(QStringLiteral("cnl")).toBool();
+        const bool ours = m_cnlTokens.remove(c.value(QStringLiteral("token")).toInteger());
+        if (cnl && !ours)
+            return;
+        if (ours)
+            emit clickNLoadArrived();
+        showLinkGrabber();
+        return;
+    }
     if (msg.field(0).toInteger() == 0 && msg.field(2).isMap()) {
-        onContainer(msg.fieldMap(2), links);
+        // its dialog is modal: run it outside the IPC socket's readyRead, which Qt does not
+        // emit again while inside it, so no reply (next Click'n'Load post) could arrive
+        QMetaObject::invokeMethod(this, [this, c = msg.fieldMap(2), links] { onContainer(c, links); },
+                                  Qt::QueuedConnection);
         return;
     }
     if (links.isEmpty())
@@ -911,6 +985,13 @@ void HosterPanel::applyStatus(const QCborMap& st)
         m_enabled = on;
         emit hostersEnabledChanged(on);
     }
+    m_grabAll = h.value(QStringLiteral("grabAll")).toBool();
+    m_grabber->setDeepCrawl(h.value(QStringLiteral("deepCrawl")).toBool());
+    setGrabberOn(h.value(QStringLiteral("linkGrabber")).toBool());
+    if (const bool watch = h.value(QStringLiteral("clipboard")).toBool(); watch != m_watchClipboard) {
+        m_watchClipboard = watch;
+        emit clipboardWatchChanged(watch);
+    }
     QString text;
     if (!m_enabled)
         text = tr("Downloads from hosters are off (Options, ed3k, Hoster).");
@@ -969,7 +1050,31 @@ void HosterPanel::copyLinks()
     for (const qint64 id : selectedIds())
         urls << m_items.value(id).value(QStringLiteral("url")).toString();
     if (!urls.isEmpty())
-        QApplication::clipboard()->setText(urls.join(QLatin1Char('\n')));
+        Clipboard::setText(urls.join(QLatin1Char('\n')));
+}
+
+void HosterPanel::pasteLinks(const QStringList& links)
+{
+    if (m_grabAll) {
+        showLinkGrabber();
+        m_grabber->grab(links.join(QLatin1Char('\n')), tr("Clipboard"));
+        return;
+    }
+    addLinks(links);
+}
+
+void HosterPanel::setGrabberOn(bool on)
+{
+    if (on == m_grabberOn)
+        return;
+    m_grabberOn = on;
+    if (on) {
+        m_tabs->addTab(m_grabber, menuIcon("ListAdd.ico"), tr("Link Grabber (%1)").arg(m_grabber->linkCount()));
+    } else if (const int i = m_tabs->indexOf(m_grabber); i >= 0) {
+        m_tabs->removeTab(i);
+        m_grabber->hide();
+    }
+    m_tabs->tabBar()->setVisible(m_tabs->count() > 1);
 }
 
 void HosterPanel::dragEnterEvent(QDragEnterEvent* event)
@@ -992,15 +1097,23 @@ void HosterPanel::dropEvent(QDropEvent* event)
 
 void HosterPanel::onContainer(const QCborMap& c, const QCborArray& links)
 {
+    // a copied link (GrabLinks ask): only the GUI that sent it asks, none found: nothing
+    if (c.value(QStringLiteral("grab")).toBool()) {
+        if (!m_grabTokens.remove(c.value(QStringLiteral("token")).toInteger()) || links.isEmpty())
+            return;
+    }
+    const bool grab = c.value(QStringLiteral("grab")).toBool();
     // Click'n'Load: only the GUI the page posted to asks (pushes reach every GUI)
-    const bool cnl = c.value(QStringLiteral("cnl")).toBool();
+    const bool cnl = c.value(QStringLiteral("cnl")).toBool() || grab;
     const bool ours = m_cnlTokens.remove(c.value(QStringLiteral("token")).toInteger());
-    if (cnl && !ours)
+    if (cnl && !ours && !grab)
         return;
     if (ours)
         emit clickNLoadArrived();
     QString fileName = c.value(QStringLiteral("fileName")).toString();
-    if (cnl) {
+    if (grab) {
+        fileName = tr("the clipboard");
+    } else if (cnl) {
         const QString source = c.value(QStringLiteral("source")).toString();
         const QString host = QUrl(source).host();
         fileName = !host.isEmpty() ? host : !source.isEmpty() ? source.left(80) : tr("Click'n'Load");
@@ -1048,12 +1161,16 @@ void HosterPanel::onContainer(const QCborMap& c, const QCborArray& links)
     const bool single = packages.size() == 1;
 
     if (cnl)
-        logInfo(QStringLiteral("Click'n'Load: %1 link(s) from %2, asking which to add").arg(links.size()).arg(fileName));
+        logInfo(QStringLiteral("%1: %2 link(s) from %3, asking which to add")
+                    .arg(grab ? QStringLiteral("Clipboard") : QStringLiteral("Click'n'Load"))
+                    .arg(links.size())
+                    .arg(fileName));
     QDialog dlg(window());
-    dlg.setWindowTitle(tr("Links of %1").arg(fileName));
+    dlg.setWindowTitle(grab ? tr("Copied hoster links") : tr("Links of %1").arg(fileName));
     auto* layout = new QVBoxLayout(&dlg);
-    layout->addWidget(new QLabel(cnl ? tr("%1 sent %n link(s) (Click'n'Load). Add which?", nullptr, int(links.size())).arg(fileName)
-                                     : tr("The container holds %n link(s). Add which?", nullptr, int(links.size())),
+    layout->addWidget(new QLabel(grab  ? tr("You copied %n hoster link(s). Add which?", nullptr, int(links.size()))
+                                 : cnl ? tr("%1 sent %n link(s) (Click'n'Load). Add which?", nullptr, int(links.size())).arg(fileName)
+                                       : tr("The container holds %n link(s). Add which?", nullptr, int(links.size())),
                                  &dlg));
     auto* list = new QListWidget(&dlg);
     for (const QCborValue& v : links) {
@@ -1077,7 +1194,7 @@ void HosterPanel::onContainer(const QCborMap& c, const QCborArray& links)
     if (single) {
         auto* row = new QHBoxLayout;
         row->addWidget(new QLabel(tr("Package Name:"), &dlg));
-        const QString fallback = cnl ? fileName : QFileInfo(fileName).completeBaseName();
+        const QString fallback = grab ? QString() : cnl ? fileName : QFileInfo(fileName).completeBaseName();
         packageEdit = new QLineEdit(packages.first().isEmpty() ? fallback : packages.first(), &dlg);
         packageEdit->setToolTip(tr("The links download under one entry, into a folder of this name"));
         row->addWidget(packageEdit, 1);
@@ -1113,7 +1230,7 @@ void HosterPanel::onContainer(const QCborMap& c, const QCborArray& links)
                     passwords << t;
         }
         QString name = packageEdit ? packageEdit->text().trimmed() : pkg;
-        if (name.isEmpty())
+        if (name.isEmpty() && !grab)
             name = cnl ? fileName : QFileInfo(fileName).completeBaseName();
         addLinks(files, name, 0, passwords);
     }

@@ -64,8 +64,9 @@ public:
 
     [[nodiscard]] uint64 getLastCalledSend() const override { return lastCalledSend.load(); }
     // Only the trickle pass asks this, so the count tells that pass from the others.
-    [[nodiscard]] uint32 getNeededBytes() override
+    [[nodiscard]] uint32 getNeededBytes(uint32 paceBytesPerSec) override
     {
+        lastPace.store(paceBytesPerSec, std::memory_order_relaxed);
         neededCalls.fetch_add(1, std::memory_order_relaxed);
         return 1024;
     }
@@ -79,6 +80,7 @@ public:
     std::atomic<uint32> perCall{1024};        // what one send call takes at most
     std::atomic<uint64> sentBytes{0};
     std::atomic<int> neededCalls{0};
+    std::atomic<uint32> lastPace{UINT32_MAX};   // UINT32_MAX = never asked
     std::atomic<uint64> lastCalledSend{0};   // 0 = silent for ever
 };
 
@@ -102,6 +104,7 @@ private slots:
     void wakesOnControlPacketQueued();
     void wakesOnAddToStandardList();
     void trickleOnlyAfterASecondOfSilence();
+    void trickleIsPacedOnACappedLine();
     void controlQueueDrainsWhenSocketEmpty();
     void surplusPassRotatesItsStartSlot();
 };
@@ -308,6 +311,39 @@ void tst_UploadBandwidthThrottler::trickleOnlyAfterASecondOfSilence()
     throttler.removeFromAllQueues(static_cast<ThrottledFileSocket*>(&busy));
     throttler.removeFromAllQueues(static_cast<ThrottledFileSocket*>(&silent));
     throttler.endThread();
+}
+
+// Report 25: 12 KB/s, 5 slots at 6.5 KB/s each from the trickle alone. Capped, each
+// slot is paced at its share of half the line; uncapped, not at all.
+void tst_UploadBandwidthThrottler::trickleIsPacedOnACappedLine()
+{
+    const uint32 oldLimit = thePrefs.maxUpload();
+    const bool oldDyn = thePrefs.dynUpEnabled();
+    thePrefs.setDynUpEnabled(false);
+
+    const auto paceWith = [](uint32 limitKb) -> uint32 {
+        thePrefs.setMaxUpload(limitKb);
+        FakeFileSocket socks[5];
+        for (auto& s : socks)
+            s.lastCalledSend = getTickCount() - SEC2MS(2);
+        UploadBandwidthThrottler throttler;
+        for (int i = 0; i < 5; ++i)
+            throttler.addToStandardList(i, &socks[i]);
+        QTest::qWaitFor([&] { return socks[4].neededCalls.load() > 0; }, 1000);
+        const uint32 pace = socks[4].lastPace.load();   // UINT32_MAX = never trickled
+        for (auto& s : socks)
+            throttler.removeFromAllQueues(static_cast<ThrottledFileSocket*>(&s));
+        throttler.endThread();
+        return pace;
+    };
+    const uint32 capped = paceWith(12);
+    const uint32 uncapped = paceWith(0);
+
+    thePrefs.setMaxUpload(oldLimit);
+    thePrefs.setDynUpEnabled(oldDyn);
+
+    QCOMPARE(capped, 12u * 1024u / 2u / 5u);
+    QCOMPARE(uncapped, 0u);
 }
 
 void tst_UploadBandwidthThrottler::controlQueueDrainsWhenSocketEmpty()

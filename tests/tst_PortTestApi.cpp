@@ -24,6 +24,9 @@ private slots:
     void parseGarbage();
     void parseOldServer();
     void ed3kSeenMerge();
+    void urlEd2k();
+    void parseEd2kObfuscated();
+    void ed2kTcpVerdict();
 };
 
 void tst_PortTestApi::urlBitTorrent()
@@ -128,6 +131,50 @@ void tst_PortTestApi::ed3kSeenMerge()
     QCOMPARE(udp(1).value(QStringLiteral("reason")).toString(), QStringLiteral("filtered"));
     // not sent: left as the server said
     QCOMPARE(udp(2).value(QStringLiteral("reason")).toString(), QStringLiteral("server_egress_blocked"));
+}
+
+void tst_PortTestApi::urlEd2k()
+{
+    Request r;
+    r.network = Network::Ed2k;
+    r.tcpPort = 5662;
+    r.udpPort = 5672;
+    r.userHash = QByteArray::fromHex("00112233445566778899aabbccddeeff");
+    const QUrlQuery q(url(r));
+    QCOMPARE(q.queryItemValue(QStringLiteral("proto")), QStringLiteral("ed2k"));
+    QCOMPARE(q.queryItemValue(QStringLiteral("tcpport")), QStringLiteral("5662"));
+    QCOMPARE(q.queryItemValue(QStringLiteral("udpport")), QStringLiteral("5672"));
+    QCOMPARE(q.queryItemValue(QStringLiteral("hash")), QStringLiteral("00112233445566778899aabbccddeeff"));
+    QVERIFY(!q.hasQueryItem(QStringLiteral("probe")));
+
+    r.userHash.clear();   // obfuscation off: plain dial
+    QVERIFY(!QUrlQuery(url(r)).hasQueryItem(QStringLiteral("hash")));
+}
+
+void tst_PortTestApi::parseEd2kObfuscated()
+{
+    const QByteArray body = R"({"error":false,"data":{"proto":"ed2k","obfuscated":true,"results":[
+        {"family":4,"ip":"203.0.113.5","tcp":{"open":true,"reason":"open"},"udp":{"open":true,"reason":"open"}}]}})";
+    const Reply r = parseReply(body, 200, Network::Ed2k);
+    QVERIFY(r.ok);
+    QVERIFY(r.obfuscated);
+    QCOMPARE(tcpVerdict(r.targets, r.obfuscated, true), Verdict::Open);
+}
+
+void tst_PortTestApi::ed2kTcpVerdict()
+{
+    const auto targets = [](const char* reason) {
+        return QCborArray{QCborMap{{QStringLiteral("family"), 4},
+                                   {QStringLiteral("tcp"), QCborMap{{QStringLiteral("open"), false},
+                                                                    {QStringLiteral("reason"), QString::fromLatin1(reason)}}}}};
+    };
+    QCOMPARE(tcpVerdict(targets("filtered"), true, true), Verdict::Closed);
+    QCOMPARE(tcpVerdict(targets("closed"), false, false), Verdict::Closed);
+    // plain dial refused by our require-encryption: says nothing
+    QCOMPARE(tcpVerdict(targets("bad_reply"), false, true), Verdict::Unknown);
+    QCOMPARE(tcpVerdict(targets("bad_reply"), true, true), Verdict::Closed);
+    QCOMPARE(tcpVerdict(targets("rate_limited"), true, false), Verdict::Unknown);
+    QCOMPARE(tcpVerdict({}, true, false), Verdict::Unknown);
 }
 
 QTEST_GUILESS_MAIN(tst_PortTestApi)

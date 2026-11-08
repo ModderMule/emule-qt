@@ -177,6 +177,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\tst_SmallScreenDialogs.cpp" />
+    <ClCompile Include="..\..\src\gui\app\SkinColors.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\AddFriendDialog.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\AddSourceDialog.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\ArchivePreviewPanel.cpp" />
@@ -186,6 +187,8 @@
     <ClCompile Include="..\..\src\gui\dialogs\MetaAccountDialog.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\OptionsDialog.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\Ed3kOptionsPages.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\BtI2pPage.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\ClientIcons.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\Ed3kFilterPage.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\Ed3kSellPage.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\Ed3kSellDialogs.cpp" />
@@ -200,6 +203,8 @@
     <ClCompile Include="..\..\src\gui\controls\StatsGraph.cpp" />
     <ClCompile Include="..\..\src\gui\panels\StatisticsPanel.cpp" />
     <ClCompile Include="..\..\src\gui\utils\FileAssociation.cpp" />
+    <ClCompile Include="..\..\src\gui\app\CoreAttachment.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\FitTextTabBar.cpp" />
     <ClCompile Include="..\..\src\gui\utils\PanelPoller.cpp" />
     <ClCompile Include="..\..\src\gui\utils\WebServices.cpp" />
     <ClCompile Include="..\..\src\gui\app\AutoStart.cpp" />
@@ -229,6 +234,7 @@
     <ClCompile Include="..\..\src\gui\controls\BarShader.cpp" />
     <ClCompile Include="..\..\src\gui\controls\ContentScrollArea.cpp" />
     <ClCompile Include="..\..\src\gui\controls\UsenetFileCheckList.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\FileCheckButtons.cpp" />
     <ClCompile Include="..\..\src\gui\controls\UsenetProgressDelegate.cpp" />
     <ClCompile Include="..\..\src\gui\controls\UsenetQueueModel.cpp" />
     <ClCompile Include="..\..\src\gui\utils\Appearance.cpp" />
@@ -245,14 +251,14 @@
     <ClCompile Include="..\..\src\gui\app\UiState.cpp" />
     <ClCompile Include="..\..\src\gui\app\IpcClient.cpp" />
     <ClCompile Include="..\..\src\gui\app\KnownCores.cpp" />
-    <ClCompile Include="..\..\src\gui\controls\FileCheckButtons.cpp" />
+    <ClCompile Include="..\..\src\gui\app\SkinIcons.cpp" />
     <QtRcc Include="..\..\resources\emuleqt.qrc" />
   </ItemGroup>
   <ItemGroup>
-    <QtMoc Include="..\..\src\gui\dialogs\AddFriendDialog.h">
+    <QtMoc Include="..\..\src\gui\app\SkinColors.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
-    <QtMoc Include="..\..\src\gui\dialogs\RememberedSizeDialog.h">
+    <QtMoc Include="..\..\src\gui\dialogs\AddFriendDialog.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\dialogs\AddSourceDialog.h">
@@ -262,6 +268,9 @@
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\dialogs\BugReportDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\RememberedSizeDialog.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\dialogs\FirstStartWizard.h">
@@ -274,6 +283,9 @@
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\dialogs\Ed3kOptionsPages.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\BtI2pPage.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\dialogs\Ed3kFilterPage.h">
@@ -310,6 +322,9 @@
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\panels\StatisticsPanel.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\app\CoreAttachment.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\utils\PanelPoller.h">
@@ -382,6 +397,9 @@
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\app\IpcClient.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\app\SkinIcons.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
   </ItemGroup>

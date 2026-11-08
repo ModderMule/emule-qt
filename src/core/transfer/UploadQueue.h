@@ -159,6 +159,11 @@ public:
     /// One slot per call. @p curTick is passed in so a test can move time.
     void recycleDeadSlots(uint64 curTick);
     [[nodiscard]] bool isSlotCoolingDown(const UpDownClient* client, uint64 curTick) const;
+    /// #150: a LowID callback slot may be asked for now (line has room, pacing). Non-const:
+    /// forgets addresses asked longer than kCallbackRetryMs ago.
+    [[nodiscard]] bool callbackSlotAllowed(uint64 curTick);
+    /// A Connecting slot handed out by callback, still within kCallbackWaitMs.
+    [[nodiscard]] bool awaitsCallback(const UpDownClient* client, uint64 curTick) const;
     /// True while the line has been underfilled (known limit) for kUnderfillMs and
     /// this slot is taking data: its session limits stretch to kSessionStretch times.
     [[nodiscard]] bool keepsProductiveSlot(const UpDownClient* client) const;
@@ -168,6 +173,14 @@ public:
     static constexpr uint32 kSlotCooldownMs = 30'000;
     static constexpr uint32 kSlotCooldownMaxMs = 16 * 60 * 1000;
     static constexpr uint32 kSlotStrikeMemoryMs = 60 * 60 * 1000;
+    /// emule-qt#150: a free line and only LowID peers waiting. The best one we can reach
+    /// by callback gets the slot (Connecting until it calls in), one per kCallbackSlotMs,
+    /// each address once per kCallbackRetryMs. MFC waits for the peer's next re-ask.
+    static constexpr uint32 kCallbackSlotMs = 3'000;
+    static constexpr uint32 kCallbackRetryMs = 10 * 60 * 1000;
+    /// A callback slot without a socket is kept this long: two 45 s connect timeouts
+    /// (server, then Kad buddy) and some slack.
+    static constexpr uint32 kCallbackWaitMs = 100'000;
 
     /// Whether this client's upload session should end now, freeing its slot.
     /// MFC CUploadQueue::CheckForTimeOver (srchybrid/UploadQueue.cpp:791). Public where MFC
@@ -219,6 +232,9 @@ public:
     [[nodiscard]] bool underfillAllowsSlot(uint64 curTick) const;
     static constexpr uint32 kUnderfillSlotMs = 5'000;
     static constexpr uint32 kUnderfillSlotPercent = 95;
+    /// Cap (KB/s) up to which acceptNewClient's slot floor is 3, not MFC's 4; matches
+    /// the ladder's MIN+1 tier.
+    static constexpr uint32 kLowCapMaxKB = 16;
 
     // Stats
     [[nodiscard]] uint32 successfulUploadCount() const { return m_successfulUpCount; }
@@ -356,6 +372,9 @@ private:
         uint32 strikes = 0;
     };
     std::unordered_map<Address, SlotCooldown> m_slotCooldowns;
+    // LowID callback slots (#150)
+    uint64 m_lastCallbackSlot = 0;                          // 0: none yet
+    std::unordered_map<Address, uint64> m_callbackAskedAt;  // address -> tick asked
 
     /// Earliest tick at which the score kick may fire again. MFC seeds it with the current
     /// tick and pushes it 6 s ahead on every kick (srchybrid/UploadQueue.cpp:833), so a

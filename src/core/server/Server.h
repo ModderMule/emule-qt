@@ -47,6 +47,8 @@ namespace SrvTcpFlag {
     inline constexpr uint32 NatRendezvous   = 0x00040000;   // eNode-go PR_NAT rendezvous (UDP 0xF1)
     inline constexpr uint32 HolePunchExtension = 0x00100000; // ed2k-server 0.9.85 hole-punch extension (ed2k-server#39)
     inline constexpr uint32 NatWake         = 0x00200000;   // eNode-go PR_NAT wake-up (TCP OP_NAT_WAKE 0x46)
+    // 0x400000 = ed2k-server IPV6_PROBE
+    inline constexpr uint32 FirewallRecheck = 0x00800000;   // eNode-go: OP_RECHECKFIREWALL 0x27 re-tests our port mid-session (#156)
 }
 
 namespace SrvUdpFlag {

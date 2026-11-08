@@ -411,6 +411,22 @@ bool UpDownClient::isReachableForSlot() const
         || (m_socket && m_socket->isConnected());
 }
 
+bool UpDownClient::canCallBackForSlot() const
+{
+    if (isReachableForSlot())
+        return false;
+    // same order and tests as tryToConnect()'s callback prechecks
+    if (supportsDirectUDPCallback() && theApp.listeningUdpPort() != 0 && !m_connectAddress.isNull())
+        return true;
+    if (kadCallbackAvailable())
+        return true;
+    if (theApp.serverConnect && theApp.serverConnect->isConnected()
+        && theApp.serverConnect->isLocalServer(m_serverAddress.toNetworkUint32(), m_serverPort)
+        && theApp.canDoCallback(this))
+        return true;
+    return theApp.isFirewalled() && theApp.natRendezvous && theApp.natRendezvous->canStart(*this);
+}
+
 bool UpDownClient::isIPv6Connection() const
 {
     // The live socket is authoritative: it is the link the data actually rides.

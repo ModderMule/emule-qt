@@ -351,6 +351,8 @@ private:
     QStringList m_guiRelaunch;
     /// Requests that arrived while theApp.loading and need the file lists.
     Ipc::DeferredRequests m_deferred;
+    /// Replayed read seqId -> older identical reads that get a copy of its reply
+    QHash<int, std::vector<int>> m_sharedReplies;
     /// NZB downloads this connection has in flight. Bounded so a paste of a
     /// thousand lines cannot turn the daemon into a port scanner — that, rather
     /// than any single fetch, is what makes an operator-supplied URL worth

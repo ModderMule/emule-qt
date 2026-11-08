@@ -3,6 +3,7 @@
 
 #include "pch.h"
 #include "dialogs/Ed3kSetsDialog.h"
+#include "controls/AbstractListView.h"
 #include "dialogs/Ed3kSellDialogs.h"
 
 #include "app/IpcClient.h"
@@ -63,15 +64,12 @@ constexpr int kPrivateRole = Qt::UserRole + 21;
 /// a channel of ours (its id hex), on air or not: Delete Channel… (batch 15 #5)
 constexpr int kChannelRole = Qt::UserRole + 22;
 
-QTreeWidget* makeList(const QStringList& headers, QWidget* parent)
+QTreeWidget* makeList(const QStringList& headers, const QString& stateKey, QWidget* parent,
+                      std::initializer_list<int> defaultWidths)
 {
-    auto* t = new QTreeWidget(parent);
-    t->setHeaderLabels(headers);
-    t->setRootIsDecorated(false);
-    t->setUniformRowHeights(true);
-    t->setSelectionMode(QAbstractItemView::SingleSelection);
+    auto* t = makeFlatList(headers, stateKey, parent, defaultWidths);
+    t->setObjectName(stateKey);
     t->setAlternatingRowColors(false);
-    t->header()->setStretchLastSection(true);
     return t;
 }
 
@@ -111,17 +109,15 @@ Ed3kSetsDialog::Ed3kSetsDialog(IpcClient* ipc, QWidget* parent)
     auto* setsPage = new QWidget(m_tabs);
     auto* setsLayout = new QHBoxLayout(setsPage);
     auto* split = new QSplitter(Qt::Vertical, setsPage);
-    m_sets = makeList({tr("Name"), tr("Author"), tr("Version"), tr("Files"), tr("Size"), tr("New Versions"), tr("Status")}, split);
-    m_sets->setObjectName(QStringLiteral("ed3kSets"));
-    m_sets->header()->resizeSection(SetName, 180);
-    for (const auto& [col, width] : {std::pair{SetAuthor, 80}, {SetVersion, 60}, {SetFiles, 50}, {SetSize, 80}, {SetPolicy, 100}})
-        m_sets->header()->resizeSection(col, width);
-    m_members = new QTreeWidget(split);
-    m_members->setHeaderLabels({tr("File"), tr("Size"), tr("Status")});
-    m_members->setObjectName(QStringLiteral("ed3kMembers"));
-    m_members->setUniformRowHeights(true);
-    m_members->header()->resizeSection(MemberName, 380);
-    m_members->header()->resizeSection(MemberSize, 90);
+    // widths by SetCol
+    m_sets = makeList({tr("Name"), tr("Author"), tr("Version"), tr("Files"), tr("Size"), tr("New Versions"), tr("Status")},
+                      QStringLiteral("ed3kSets"), split, {180, 80, 60, 50, 80, 100});
+    auto* members = new ListTreeWidget(split);
+    members->setHeaderLabels({tr("File"), tr("Size"), tr("Status")});
+    members->setObjectName(QStringLiteral("ed3kMembers"));
+    members->setUniformRowHeights(true);
+    members->bindColumns(QStringLiteral("ed3kMembers"), {380, 90});   // by MemberCol
+    m_members = members;
     split->addWidget(m_sets);
     split->addWidget(m_members);
     split->setStretchFactor(0, 2);
@@ -173,9 +169,8 @@ Ed3kSetsDialog::Ed3kSetsDialog(IpcClient* ipc, QWidget* parent)
     // -- Live ------------------------------------------------------------------
     auto* livePage = new QWidget(m_tabs);
     auto* liveLayout = new QHBoxLayout(livePage);
-    m_live = makeList({tr("Channel"), tr("Status"), tr("Peers"), tr("Segments"), tr("Received"), tr("Players")}, livePage);
-    m_live->setObjectName(QStringLiteral("ed3kLive"));
-    m_live->header()->resizeSection(LiveName, 220);
+    m_live = makeList({tr("Channel"), tr("Status"), tr("Peers"), tr("Segments"), tr("Received"), tr("Players")},
+                      QStringLiteral("ed3kLive"), livePage, {220});
     liveLayout->addWidget(m_live, 1);
     auto* liveSide = new QVBoxLayout;
     m_watch = button(tr("Watch Link..."), livePage);

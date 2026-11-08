@@ -3,6 +3,7 @@
 
 #include "pch.h"
 #include "dialogs/Ed3kSellDialogs.h"
+#include "controls/AbstractListView.h"
 
 #include "app/IpcClient.h"
 #include "IpcMessage.h"
@@ -196,11 +197,7 @@ Ed3kIssuePassDialog::Ed3kIssuePassDialog(const QCborArray& sales, const QString&
     setWindowTitle(tr("Issue ed3k Pass"));
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(new QLabel(tr("The pass covers:"), this));
-    m_scopes = new QTreeWidget(this);
-    m_scopes->setHeaderLabels({tr("Subscription"), tr("Kind"), tr("Price")});
-    m_scopes->setRootIsDecorated(false);
-    m_scopes->setUniformRowHeights(true);
-    m_scopes->header()->setStretchLastSection(true);
+    m_scopes = makeFlatList({tr("Subscription"), tr("Kind"), tr("Price")}, QStringLiteral("ed3kPassScopes"), this);
     m_scopes->setFixedHeight(m_scopes->fontMetrics().lineSpacing() * 6);
     for (const auto& v : sales) {
         const QCborMap s = v.toMap();

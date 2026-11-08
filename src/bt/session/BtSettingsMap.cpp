@@ -35,6 +35,9 @@ lt::settings_pack BtSettingsMap::toPack(const BtSettings& s)
     // rate * request_queue_time (3 s) and caps it here: the default 500 caps a peer at
     // ~2.7 MB/s and posts outstanding_request_limit_reached each second. 1500 = ~8 MB/s
     p.set_int(lt::settings_pack::max_out_request_queue, 1500);
+    // blocks read ahead while checking: the default 256 (4 MiB) left the disk idle between
+    // pieces; 32 MiB as qBittorrent (#152)
+    p.set_int(lt::settings_pack::checking_mem_usage, 2048);
     p.set_int(lt::settings_pack::active_downloads, std::max(1, s.maxActiveDownloads));
     p.set_int(lt::settings_pack::active_seeds, std::max(0, s.maxActiveSeeds));
     p.set_int(lt::settings_pack::active_limit, std::max(1, s.maxActiveDownloads) + std::max(0, s.maxActiveSeeds));

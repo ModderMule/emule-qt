@@ -188,6 +188,21 @@ public:
     /// True if we are attempting a connection to a server with this IP.
     [[nodiscard]] bool awaitingTestFromIP(uint32 ip) const;
 
+    /// A background login (IPv6 handover, HighID recheck) waits for the server's answer.
+    [[nodiscard]] bool isHandoverLoggingIn() const;
+
+    // -- HighID recheck (#156) ------------------------------------------------
+
+    /// The port looks reachable now, or the mapped port changed: get a fresh ID from
+    /// the live server without going offline. eNode-go (FirewallRecheck flag): one
+    /// OP_RECHECKFIREWALL; others: a background re-login to the same server.
+    /// @return false when nothing started (offline, HighID w/o port change, throttled, busy)
+    bool requestHighIdRecheck(const QString& why, bool portChanged = false);
+    /// A recheck was sent or a recheck re-login runs.
+    [[nodiscard]] bool isRecheckPending() const;
+    /// The TCP port the login advertises: the router's mapped port, else ours.
+    [[nodiscard]] uint16 loginTcpPort() const;
+
     /// True if the active connection uses obfuscation.
     [[nodiscard]] bool isConnectedObfuscated() const;
 
@@ -219,6 +234,9 @@ signals:
 
     /// Client ID was assigned or changed.
     void clientIDChanged(uint32 newID);
+
+    /// A requestHighIdRecheck() ended: @p highId is the ID we have now.
+    void highIdRecheckFinished(bool highId);
 
     /// One line destined for the GUI "Server Info" pane, already stripped of the
     /// control markers the reference consumes. Emitted once per line — the pane
@@ -271,20 +289,27 @@ private:
     /// serverPreferIPv6: may @p entry trade its IPv4 LowID session for an IPv6 one?
     bool wantsIPv6Switch(const ServerSocket* socket, const Server* entry) const;
 
-    // -- IPv6 handover (serverPreferIPv6) -------------------------------------
-    // The IPv4 LowID session is kept and the IPv6 one logs in beside it; the server
-    // takes the session over (eNode-go: advertised IPv6 + port, ed2k-server: any).
-    // A server that refuses a second session gets the IPv4 one closed first.
+    // -- Background handover ----------------------------------------------------
+    // The live session is kept and a second one logs in beside it; the server takes
+    // the session over (eNode-go: advertised IPv6 + port or same IP, ed2k-server: any).
+    // A server that refuses a second session gets the live one closed first.
+    //  IPv6Switch (serverPreferIPv6): IPv4 LowID -> the server's IPv6 address.
+    //  HighIdRecheck (#156): same address again, the port may be open by now.
 
-    /// Dial the IPv6 address of the server in m_handoverServerId. @p closeFirst drops
-    /// the IPv4 session before the dial.
-    void startIPv6Handover(bool closeFirst);
-    /// The IPv6 session logged in: it becomes the live one.
-    void finishIPv6Handover(ServerSocket* socket);
-    /// The IPv6 dial or login failed, or timed out.
-    void failIPv6Handover(ServerSocket* socket, const QString& reason);
+    enum class HandoverReason : uint8 { IPv6Switch, HighIdRecheck };
+
+    /// Dial the server in m_handoverServerId for m_handoverReason. @p closeFirst drops
+    /// the live session before the dial.
+    void startHandover(bool closeFirst);
+    /// The new session logged in: it becomes the live one.
+    void finishHandover(ServerSocket* socket);
+    /// The dial or login failed, or timed out.
+    void failHandover(ServerSocket* socket, const QString& reason);
     /// Shared state reset; does not touch the sockets.
-    void resetIPv6Handover();
+    void resetHandover();
+    [[nodiscard]] QString handoverName() const;
+    /// A recheck ended (answer, re-login, failure): stats + highIdRecheckFinished.
+    void finishRecheck(bool highId);
 
     /// New socket with every signal wired to this object, in m_openSockets.
     ServerSocket* createServerSocket(bool manualSingleConnect);
@@ -326,12 +351,18 @@ private:
     /// The socket we are actively connected through.
     ServerSocket* m_connectedSocket = nullptr;
 
-    /// IPv6 handover in flight (see startIPv6Handover), else null.
+    /// Background handover in flight (see startHandover), else null.
     ServerSocket* m_handoverSocket = nullptr;
     QTimer m_handoverTimer;
-    uint32 m_handoverServerId = 0;     ///< list entry to move to IPv6; 0 = none
+    uint32 m_handoverServerId = 0;     ///< list entry to hand over to; 0 = none
     bool m_handoverLoginSent = false;
     bool m_handoverCloseFirst = false;
+    HandoverReason m_handoverReason = HandoverReason::IPv6Switch;
+
+    // HighID recheck (#156)
+    QTimer m_recheckAnswerTimer;       ///< OP_RECHECKFIREWALL sent, no OP_IDCHANGE yet
+    qint64 m_lastRecheckMs = -1;       ///< m_elapsedTimer time of the last recheck start; -1 = never
+    int m_recheckLowIdResults = 0;     ///< consecutive rechecks that kept a LowID
 
     QTimer m_retryTimer;
     QElapsedTimer m_elapsedTimer;

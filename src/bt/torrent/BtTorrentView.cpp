@@ -199,17 +199,14 @@ BtTorrentRow BtTorrentView::row(const lt::torrent_status& st)
     return r;
 }
 
-QList<BtFileRow> BtTorrentView::files(const lt::torrent_handle& h)
+QList<BtFileRow> BtTorrentView::files(const lt::torrent_info& ti, const std::vector<std::int64_t>& progress,
+                                      const std::vector<lt::download_priority_t>& prio)
 {
     QList<BtFileRow> out;
-    // no metadata yet (magnet): empty stub, the per-file calls assert
-    auto ti = h.torrent_file();
-    if (!ti || !ti->is_valid())
+    // no metadata yet (magnet): empty stub
+    if (!ti.is_valid())
         return out;
-    const lt::file_storage& fs = ti->layout();
-    std::vector<std::int64_t> progress;
-    h.file_progress(progress);
-    const auto prio = h.get_file_priorities();
+    const lt::file_storage& fs = ti.layout();
     for (lt::file_index_t i : fs.file_range()) {
         const int idx = static_cast<int>(i);
         BtFileRow f;
@@ -225,11 +222,9 @@ QList<BtFileRow> BtTorrentView::files(const lt::torrent_handle& h)
     return out;
 }
 
-QList<BtPeerRow> BtTorrentView::peers(const lt::torrent_handle& h)
+QList<BtPeerRow> BtTorrentView::peers(const std::vector<lt::peer_info>& list)
 {
     QList<BtPeerRow> out;
-    std::vector<lt::peer_info> list;
-    h.get_peer_info(list);
     for (const auto& p : list) {
         // no half-open attempts: the same peers num_peers counts
         if (p.flags & lt::peer_info::connecting)
@@ -325,11 +320,11 @@ BtTorrentPreview BtTorrentView::preview(const lt::add_torrent_params& atp)
     return p;
 }
 
-QList<BtTrackerRow> BtTorrentView::trackers(const lt::torrent_handle& h)
+QList<BtTrackerRow> BtTorrentView::trackers(const std::vector<lt::announce_entry>& list)
 {
     QList<BtTrackerRow> out;
     const auto now = lt::clock_type::now();
-    for (const auto& a : h.trackers()) {
+    for (const auto& a : list) {
         BtTrackerRow r;
         r.url = QString::fromStdString(a.url);
         r.tier = a.tier;
@@ -373,13 +368,8 @@ QList<BtTrackerRow> BtTorrentView::trackers(const lt::torrent_handle& h)
     return out;
 }
 
-QByteArray BtTorrentView::availabilityMap(const lt::torrent_handle& h, int buckets)
+QByteArray BtTorrentView::availabilityMap(const std::vector<int>& avail, int buckets)
 {
-    // piece_availability asserts without metadata
-    if (const auto ti = h.torrent_file(); !ti || !ti->is_valid())
-        return {};
-    std::vector<int> avail;
-    h.piece_availability(avail);
     const int n = static_cast<int>(avail.size());
     if (n <= 0 || buckets <= 0)
         return {};

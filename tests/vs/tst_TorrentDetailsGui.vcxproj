@@ -177,13 +177,18 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\tst_TorrentDetailsGui.cpp" />
+    <ClCompile Include="..\..\src\gui\app\SkinColors.cpp" />
     <ClCompile Include="..\..\src\gui\controls\TorrentFilterProxy.cpp" />
     <ClCompile Include="..\..\src\gui\controls\TorrentListModel.cpp" />
     <ClCompile Include="..\..\src\gui\utils\FileTypeIcons.cpp" />
     <ClCompile Include="..\..\src\gui\controls\TorrentListsPane.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\ClientIcons.cpp" />
     <ClCompile Include="..\..\src\gui\controls\TorrentFileTree.cpp" />
     <ClCompile Include="..\..\src\gui\controls\TorrentPieceGrid.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\TorrentDetailsDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\EditTrackersDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\TorrentOptionsDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\TorrentOptionsForm.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\DetailDialog.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\RememberedSizeDialog.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\ClientDetailDialog.cpp" />
@@ -199,8 +204,12 @@
     <ClCompile Include="..\..\src\gui\app\UiState.cpp" />
     <ClCompile Include="..\..\src\gui\app\IpcClient.cpp" />
     <ClCompile Include="..\..\src\gui\app\KnownCores.cpp" />
+    <ClCompile Include="..\..\src\gui\app\SkinIcons.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <QtMoc Include="..\..\src\gui\app\SkinColors.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
     <QtMoc Include="..\..\src\gui\controls\TorrentFilterProxy.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
@@ -216,10 +225,19 @@
     <QtMoc Include="..\..\src\gui\dialogs\TorrentDetailsDialog.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
-    <QtMoc Include="..\..\src\gui\dialogs\RememberedSizeDialog.h">
+    <QtMoc Include="..\..\src\gui\dialogs\EditTrackersDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\TorrentOptionsDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\controls\TorrentOptionsForm.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\dialogs\DetailDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\RememberedSizeDialog.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\dialogs\ClientDetailDialog.h">
@@ -235,6 +253,9 @@
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\app\IpcClient.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\app\SkinIcons.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
   </ItemGroup>

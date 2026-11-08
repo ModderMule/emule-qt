@@ -120,6 +120,8 @@ using Kind = PrefSpec::Kind;
     t << text("nodesDatURL", 2048, "URL of a Kad nodes.dat file the Kad window offers for a "
               "bootstrap. Empty = built-in default.");
     t << flag("smartLowIdCheck", "Retry another server when one assigns a LowID.");
+    t << flag("reachabilityWatch", "While LowID or Kad firewalled, recheck after 2, 10, 30 and 60 min "
+              "and when a peer reaches us; get a HighID without going offline.");
     t << flag("serverPreferIPv6", "Reconnect to a dual-stack server over IPv6 when IPv4 gives a LowID.");
     t << flag("manualServerHighPriority", "Give manually added servers high priority.");
 
@@ -306,6 +308,9 @@ using Kind = PrefSpec::Kind;
     t << flag("ed3kHosterExtract", "Unpack finished hoster archives into incoming/<package>/ and share the files. "
                                    "The archives stay in Temp.");
     t << flag("ed3kHosterDeleteArchives", "Delete hoster archives after a good unpack (only with ed3kHosterExtract).");
+    t << flag("ed3kHosterClipboard", "The GUI watches the clipboard for http/https hoster links.");
+    t << flag("ed3kHosterLinkGrabber", "Hoster links collect in the Link Grabber (crawled, checked, editable) before downloading.");
+    t << flag("ed3kHosterGrabAll", "Click'n'Load, Add Links and DLC files go to the Link Grabber too; search results never do.");
     t << flag("ed3kHosterAutoUpdate", "Fetch newer hoster resolver plugins (resolver.zip) from the update manifest; swapped in while the resolver is idle.");
 
     // --- Logging ---

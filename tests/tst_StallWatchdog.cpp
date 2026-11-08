@@ -14,6 +14,7 @@
 #include <atomic>
 #include <chrono>
 #include <semaphore>
+#include <thread>
 
 using namespace eMule;
 using namespace std::chrono_literals;
@@ -45,6 +46,7 @@ private slots:
     void blockedLoop_reportedOnceWithStack();
     void backgroundWriter_newestWinsAndReadsBack();
     void backgroundWriter_discardDropsQueued();
+    void backgroundWriter_producedOnWorker();
 };
 
 void tst_StallWatchdog::runningLoop_noReport()
@@ -147,6 +149,40 @@ void tst_StallWatchdog::backgroundWriter_discardDropsQueued()
     QVERIFY(!QFile::exists(one));
     QVERIFY(!QFile::exists(nested));
     QCOMPARE(fileBytes(kept), QByteArray("k"));
+}
+
+void tst_StallWatchdog::backgroundWriter_producedOnWorker()
+{
+    // report 28: the bytes are made on the worker, not by the caller
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString held = dir.filePath(QStringLiteral("held"));
+    const QString path = dir.filePath(QStringLiteral("resume"));
+    std::binary_semaphore release(0);
+    std::atomic<int> made{0};
+    std::atomic<bool> madeOnCaller{false};
+    const auto caller = std::this_thread::get_id();
+    BackgroundFileWriter writer;
+    writer.write(held, "h", [&release](const QString& p, const QByteArray& d) {
+        release.acquire();
+        return BackgroundFileWriter::saveFile(p, d);
+    });
+    writer.writeProduced(path, [&] {
+        ++made;
+        if (std::this_thread::get_id() == caller)
+            madeOnCaller = true;
+        return QByteArray("encoded");
+    }, &BackgroundFileWriter::saveFile);
+    QCOMPARE(made.load(), 0);   // queued, not made yet
+    // a read-back makes it on the caller's thread
+    QCOMPARE(writer.pending(path).value_or(QByteArray()), QByteArray("encoded"));
+    QVERIFY(madeOnCaller.exchange(false));
+    release.release();
+    writer.flush();
+    QCOMPARE(fileBytes(path), QByteArray("encoded"));
+    QCOMPARE(made.load(), 2);
+    QVERIFY(!madeOnCaller.load());   // the write made it on the worker
+    QVERIFY(!writer.pending(path));
 }
 
 QTEST_GUILESS_MAIN(tst_StallWatchdog)

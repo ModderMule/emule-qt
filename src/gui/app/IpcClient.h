@@ -493,6 +493,8 @@ signals:
     void hosterAccountChecked(const Ipc::IpcMessage& msg);
     /// [url, {status, host, name, size, account}] — a CheckHosterLinks result.
     void hosterLinkChecked(const Ipc::IpcMessage& msg);
+    /// PushLinkGrabber: the Link Grabber list changed
+    void linkGrabberChanged(const Ipc::IpcMessage& msg);
 
     /// [searchId, rows] — a batch of indexer results, as each indexer answers.
     void indexerResultsReceived(const Ipc::IpcMessage& msg);

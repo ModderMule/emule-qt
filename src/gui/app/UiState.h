@@ -187,6 +187,8 @@ public:
         m_clickNLoad = on;
         scheduleSave();
     }
+    /// Click'n'Load port, uistate.yml only (no GUI); 9666 is what pages post to
+    [[nodiscard]] quint16 clickNLoadPort() const { return m_clickNLoadPort; }
 
     /// Claim ed2k: and ed3k: links (Windows, Linux). Unset in configs from before
     /// it was stored: savedFileTypes() (Ed2kSchemeHandler) derives it then.
@@ -520,6 +522,7 @@ private:
     bool m_associateTorrentFiles = true;
     bool m_associateDlcFiles = false;
     bool m_clickNLoad = true;
+    quint16 m_clickNLoadPort = 9666;
     std::optional<bool> m_associateEd2kLinks;
     std::optional<int> m_appliedFileTypes;
     bool m_launcherInstalled = false;

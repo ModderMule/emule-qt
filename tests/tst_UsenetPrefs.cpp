@@ -332,20 +332,29 @@ void tst_UsenetPrefs::listIsCapped()
 
 void tst_UsenetPrefs::defaultsAreSaneWithNoUsenetBlock()
 {
-    // An older preferences.yml has no usenet: block at all. Loading it must
-    // leave the defaults alone rather than producing an enabled engine with
-    // zero servers.
+    // A fresh install starts with Usenet on; it round-trips as saved.
     Preferences p;
-    QCOMPARE(p.usenetEnabled(), false);
+    QCOMPARE(p.usenetEnabled(), true);
     QVERIFY(p.usenetServers().isEmpty());
     QCOMPARE(p.usenetRetryIntervalSeconds(), 60);
 
     QVERIFY(p.saveTo(m_file));
     Preferences p2;
     QVERIFY(p2.load(m_file));
-    QCOMPARE(p2.usenetEnabled(), false);
+    QCOMPARE(p2.usenetEnabled(), true);
     QVERIFY(p2.usenetServers().isEmpty());
     QCOMPARE(p2.usenetRetryIntervalSeconds(), 60);
+
+    // An older preferences.yml without a usenet: block keeps the old default, off
+    {
+        QFile f(m_file);
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        f.write("version: 1\nnetwork:\n  maxConsPerFive: 20\n");
+    }
+    Preferences p3;
+    QVERIFY(p3.load(m_file));
+    QCOMPARE(p3.usenetEnabled(), false);
+    QVERIFY(p3.usenetServers().isEmpty());
 }
 
 void tst_UsenetPrefs::theEnginePauseRoundTrips()

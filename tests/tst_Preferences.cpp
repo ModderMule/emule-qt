@@ -1811,7 +1811,7 @@ private slots:
     void defaults_networkModes()
     {
         Preferences prefs;
-        QCOMPARE(prefs.networkED2K(), false);
+        QCOMPARE(prefs.networkED2K(), true);   // fresh install: every network on
     }
 
     void defaults_chat()

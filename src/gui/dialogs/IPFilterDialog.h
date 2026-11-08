@@ -3,6 +3,7 @@
 /// @file IPFilterDialog.h
 /// @brief Tools > IP Filter... — view, delete, append and save ranges (MFC CIPFilterDlg, IDD_IPFILTER).
 
+#include "controls/AbstractListView.h"
 #include "controls/AbstractTableModel.h"
 #include "dialogs/RememberedSizeDialog.h"
 #include "utils/Types.h"
@@ -14,7 +15,6 @@
 
 class QLabel;
 class QPushButton;
-class QTableView;
 
 namespace eMule {
 
@@ -83,7 +83,7 @@ private:
 
     IpcClient* m_ipc = nullptr;
     IpFilterModel* m_model = nullptr;
-    QTableView* m_view = nullptr;
+    ListTableView* m_view = nullptr;
     QLabel* m_totalFilters = nullptr;
     QLabel* m_totalIps = nullptr;
     QPushButton* m_deleteBtn = nullptr;

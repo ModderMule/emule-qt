@@ -263,7 +263,7 @@ private:
 
     /// Open the web port test for the ports currently entered in the Connection page.
     /// Asks the daemon for its public addresses first, so both address families get a verdict.
-    void openPortTest();
+    void openPortTest(QPushButton* button);
 
     /// Open the LAN router's web page in the default browser. Warns first when a
     /// VPN carries the traffic, since router forwards then do not reach us.
@@ -431,6 +431,9 @@ private:
     QCheckBox* m_addServersFromClientsCheck = nullptr;
     QCheckBox* m_smartLowIdCheck = nullptr;
     QCheckBox* m_serverPreferIPv6Check = nullptr;
+    QCheckBox* m_reachabilityWatchCheck = nullptr;
+    int m_loadedTcpPort = 0;   ///< ports the core has; others are tested in the browser
+    int m_loadedUdpPort = 0;
     QCheckBox* m_safeServerConnectCheck = nullptr;
     QCheckBox* m_natTraversalCheck = nullptr;
     QCheckBox* m_natDialUnlistedCheck = nullptr;

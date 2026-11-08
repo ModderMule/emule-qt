@@ -30,6 +30,14 @@ void registerEd2kUrlScheme();
 /// install moved (#121). @p createLauncher: write the bare launcher if missing (first run only).
 void applyDesktopIntegration(bool createLauncher = false);
 
+/// Wizard done but nothing recorded (profile from before #121): takes what our entries
+/// claim now as the stored choice and the applied state. Writes nothing (#153).
+void adoptClaimedFileTypes();
+
+/// First start wizard closed without Finish on a fresh install: every switch on, every
+/// type of the enabled networks claimed (all of them by default), launcher created.
+void claimAllFileTypes();
+
 /// Applies wantedFileTypes() now and remembers it. @p setDefault false: rewrite only,
 /// without becoming the default app again.
 bool applyFileTypesNow(bool setDefault);

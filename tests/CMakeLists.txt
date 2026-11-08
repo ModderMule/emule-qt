@@ -125,6 +125,7 @@ emule_add_test(tst_Address            FOLDER "Net")
 emule_add_test(tst_LocalIPv6         FOLDER "Net")
 emule_add_test(tst_IPv6SourcePin     FOLDER "Net")
 emule_add_test(tst_ConnectionChecker FOLDER "Net")
+emule_add_test(tst_ReachabilityWatch FOLDER "Net")
 emule_add_test(tst_BindInterface     FOLDER "Net")
 emule_add_test(tst_Packet            FOLDER "Net")
 emule_add_test(tst_EncryptedDatagram FOLDER "Net")
@@ -644,6 +645,8 @@ if(EMULE_ED3K)
     # hoster links: the hoster join with a fake resolver on loopback, the JD resolver's parts
     emule_add_test(tst_Ed3kHoster FOLDER "Ed3k" LIBRARIES eMule::Ed3k)
     set_tests_properties(tst_Ed3kHoster PROPERTIES TIMEOUT 240)
+    # the Link Grabber: crawls, grouping, edits, confirm, saving (fake resolver and join)
+    emule_add_test(tst_LinkGrabber FOLDER "Ed3k" LIBRARIES eMule::Ed3k)
     # JD's captcha solver plugins via the resolver: accounts + a test image (EMULE_HOSTER_LIVE=1, .env keys)
     if(EMULE_HOSTER_JD)
         emule_add_test(tst_HosterSolvers FOLDER "Ed3k" LIBRARIES eMule::Ed3k)
@@ -830,6 +833,8 @@ emule_add_test(tst_Ed3kSetsDialog FOLDER "Gui"
     SOURCES tst_Ed3kSetsDialog.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kSetsDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kSellDialogs.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
@@ -1151,15 +1156,39 @@ target_include_directories(tst_MetaSearchGui PRIVATE
 target_link_libraries(tst_MetaSearchGui PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
 
+# IP Filter dialog column layout (ListTableView); no daemon.
+emule_add_test(tst_IPFilterDialog FOLDER "Gui"
+    SOURCES tst_IPFilterDialog.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/IPFilterDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FindInListDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/IpcFeedback.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/StatusBarNotifier.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp")
+target_include_directories(tst_IPFilterDialog PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_SOURCE_DIR}/src/core"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_IPFilterDialog PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+
 # The Hoster tab: package rows from pushed items, folder links. Pushes are emitted
 # on an unconnected IpcClient, so no daemon.
 if(EMULE_HOSTER_JD)
     emule_add_test(tst_HosterPanel FOLDER "Gui"
         SOURCES tst_HosterPanel.cpp
                 "${CMAKE_SOURCE_DIR}/src/gui/panels/HosterPanel.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/panels/LinkGrabberPanel.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/controls/StatusFilterBar.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/dialogs/HosterPuzzleDialog.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/utils/ListActivation.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FindInListDialog.cpp"

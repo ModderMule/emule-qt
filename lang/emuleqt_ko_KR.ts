@@ -483,7 +483,7 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
 <context>
     <name>PortTest</name>
     <message>
-        <location filename="../src/gui/dialogs/PortTest.h" line="+82"/>
+        <location filename="../src/gui/dialogs/PortTest.h" line="+86"/>
         <source>reachable</source>
         <translation>접근 가능</translation>
     </message>
@@ -528,6 +528,21 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
         <translation>테스트 안 됨: 테스트가 너무 많습니다. 1분 후 다시 시도하세요</translation>
     </message>
     <message>
+        <location line="+2"/>
+        <source>not reachable: something else answers on this port</source>
+        <translation>연결 불가: 이 포트에서 다른 것이 응답합니다</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>not reachable: the encrypted connection failed</source>
+        <translation>연결 불가: 암호화 연결에 실패했습니다</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>not tested: TCP failed first</source>
+        <translation>테스트 안 함: TCP가 먼저 실패했습니다</translation>
+    </message>
+    <message>
         <location line="+1"/>
         <source>not reachable (%1)</source>
         <translation>접근 불가 (%1)</translation>
@@ -563,13 +578,18 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
         <translation>테스트 서버가 아직 이 포트를 테스트할 수 없습니다. 나중에 다시 시도하세요.</translation>
     </message>
     <message>
+        <location line="+2"/>
+        <source>eD2K is not listening on a TCP port, so it cannot be tested.</source>
+        <translation>eD2K가 TCP 포트에서 수신 대기하지 않으므로 테스트할 수 없습니다.</translation>
+    </message>
+    <message>
         <location line="+3"/>
-        <location line="+90"/>
+        <location line="+119"/>
         <source>The core did not run the test.</source>
         <translation>코어가 테스트를 실행하지 않았습니다.</translation>
     </message>
     <message>
-        <location line="-59"/>
+        <location line="-84"/>
         <source>TCP: %1</source>
         <translation>TCP: %1</translation>
     </message>
@@ -579,7 +599,32 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
         <translation>UDP: %1</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+9"/>
+        <source>eD2K TCP port %1, UDP port %2.</source>
+        <translation>eD2K TCP 포트 %1, UDP 포트 %2.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>eD2K TCP port %1 (UDP is off).</source>
+        <translation>eD2K TCP 포트 %1 (UDP 꺼짐).</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>The ports are reachable: servers give you a High ID.</source>
+        <translation>포트에 연결할 수 있습니다: 서버가 High ID를 부여합니다.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>The ports are reachable over one address family only.</source>
+        <translation>포트는 한 주소 체계로만 연결할 수 있습니다.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>The ports are not reachable: servers give you a Low ID and Kad stays firewalled.</source>
+        <translation>포트에 연결할 수 없습니다: 서버가 Low ID를 부여하고 Kad는 방화벽 상태로 남습니다.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>BitTorrent port %1. TCP and UDP must both be reachable from the internet.</source>
         <translation>BitTorrent 포트 %1. TCP와 UDP 모두 인터넷에서 접근 가능해야 합니다.</translation>
     </message>
@@ -619,15 +664,15 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
         <translation>UDP에 접근할 수 없습니다. 노드가 찾는 피어가 줄고 홀 펀칭에 의존하게 됩니다.</translation>
     </message>
     <message>
-        <location line="+10"/>
-        <location line="+19"/>
+        <location line="+17"/>
+        <location line="+26"/>
         <location line="+4"/>
         <location line="+5"/>
         <source>Test Ports</source>
         <translation>포트 테스트</translation>
     </message>
     <message>
-        <location line="-28"/>
+        <location line="-35"/>
         <source>Not connected to the core.</source>
         <translation>코어에 연결되지 않았습니다.</translation>
     </message>
@@ -748,7 +793,7 @@ Start it with --new-instance or --config &lt;dir&gt; to open another window.</so
 다른 창을 열려면 --new-instance 또는 --config &lt;폴더&gt; 옵션으로 실행하세요.</translation>
     </message>
     <message>
-        <location line="+207"/>
+        <location line="+210"/>
         <source>Core Certificate Changed</source>
         <translation>코어 인증서가 변경됨</translation>
     </message>
@@ -1050,12 +1095,12 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3609"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3620"/>
         <source>Test</source>
         <translation>테스트</translation>
     </message>
     <message>
-        <location filename="../src/gui/utils/FileAssociation.cpp" line="+563"/>
+        <location filename="../src/gui/utils/FileAssociation.cpp" line="+604"/>
         <source>Could not write the file association to the registry.</source>
         <translation>파일 연결을 레지스트리에 기록하지 못했습니다.</translation>
     </message>
@@ -4346,7 +4391,7 @@ ED2K 해시:	%2
 <context>
     <name>eMule::Ed3kFilterPage</name>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kFilterPage.cpp" line="+76"/>
+        <location filename="../src/gui/dialogs/Ed3kFilterPage.cpp" line="+72"/>
         <location line="+100"/>
         <source>Changes on this page take effect at once.</source>
         <translation>이 페이지의 변경 사항은 즉시 적용됩니다.</translation>
@@ -4779,18 +4824,18 @@ Make a new anonymous key?</source>
 <context>
     <name>eMule::Ed3kIssuePassDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kSellDialogs.cpp" line="+196"/>
-        <location line="+94"/>
+        <location filename="../src/gui/dialogs/Ed3kSellDialogs.cpp" line="+197"/>
+        <location line="+90"/>
         <source>Issue ed3k Pass</source>
         <translation>ed3k 패스 발급</translation>
     </message>
     <message>
-        <location line="-92"/>
+        <location line="-88"/>
         <source>The pass covers:</source>
         <translation>패스 적용 대상:</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+1"/>
         <source>Subscription</source>
         <translation>구독</translation>
     </message>
@@ -4805,7 +4850,7 @@ Make a new anonymous key?</source>
         <translation>가격</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+9"/>
         <source>Live channel</source>
         <translation>라이브 채널</translation>
     </message>
@@ -5557,7 +5602,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">ed3k 노드는 일반 페이지의 닉네임을 사용합니다: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+420"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+423"/>
         <location line="+11"/>
         <location line="+559"/>
         <location line="+11"/>
@@ -5713,8 +5758,8 @@ Its names are then resolved after the lists you already follow.</source>
         <translation>Chain ID:</translation>
     </message>
     <message>
-        <location line="+912"/>
-        <location line="+219"/>
+        <location line="+934"/>
+        <location line="+220"/>
         <source>Not valid</source>
         <translation>유효하지 않음</translation>
     </message>
@@ -5775,7 +5820,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">포워더:</translation>
     </message>
     <message>
-        <location line="-1379"/>
+        <location line="-1402"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>Usenet 게시물도 ed3k로 공유</translation>
     </message>
@@ -5867,12 +5912,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1170"/>
+        <location line="+1196"/>
         <source> credits/MiB</source>
         <translation> 크레딧/MiB</translation>
     </message>
     <message>
-        <location line="-1179"/>
+        <location line="-1205"/>
         <source>Never pay (receipts only)</source>
         <translation>지불 안 함(영수증만)</translation>
     </message>
@@ -6028,12 +6073,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+1"/>
         <location line="+6"/>
-        <location line="+794"/>
+        <location line="+816"/>
         <source>Remove</source>
         <translation>제거</translation>
     </message>
     <message>
-        <location line="-790"/>
+        <location line="-812"/>
         <source>Followed name lists (the first one wins)</source>
         <translation>팔로우 중인 이름 목록(첫 번째가 우선)</translation>
     </message>
@@ -6120,12 +6165,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1008"/>
+        <location line="+1034"/>
         <source>not read yet</source>
         <translation>아직 읽지 않음</translation>
     </message>
     <message>
-        <location line="-1006"/>
+        <location line="-1032"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>계정이 초과 인출 상태입니다. 계속하려면 새 크레딧 키가 필요합니다.</translation>
     </message>
@@ -6430,7 +6475,7 @@ Export?</source>
         <translation>emule-qt.org에서 최신 JDownloader 플러그인을 받아 SHA-256으로 확인합니다. 호스터 다운로드가 진행 중이지 않을 때 교체됩니다.</translation>
     </message>
     <message>
-        <location line="+59"/>
+        <location line="+60"/>
         <source>Desktop</source>
         <translation>바탕 화면</translation>
     </message>
@@ -6460,7 +6505,42 @@ Export?</source>
         <translation>링크 사이트와 브라우저 추가 기능은 JDownloader에 보내듯이 이 컴퓨터의 포트 9666으로 링크를 보냅니다. eMule Qt는 이를 보여 주고 어느 것을 추가할지 묻습니다. JDownloader가 실행 중이면 사용할 수 없습니다(포트를 사용 중).</translation>
     </message>
     <message>
-        <location line="+64"/>
+        <location line="+4"/>
+        <source>Watch the clipboard for hoster links (http/https)</source>
+        <translation>클립보드에서 호스터 링크 감시 (http/https)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>A copied link that a hoster plugin knows is crawled and offered for download, or goes to the Link Grabber when it is on. Other web links are ignored.</source>
+        <translation>호스터 플러그인이 아는 복사된 링크는 분석되어 다운로드로 제안되거나, LinkGrabber가 켜져 있으면 그곳으로 갑니다. 다른 웹 링크는 무시됩니다.</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Link Grabber</source>
+        <translation>LinkGrabber</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Collect links in the Link Grabber before downloading</source>
+        <translation>다운로드 전에 LinkGrabber에 링크 모으기</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The Hoster tab gets a Link Grabber tab: links are crawled and checked into packages you can rename, merge, give passwords or delete before the downloads start. Copied links and folder links go there.</source>
+        <translation>호스터 탭에 LinkGrabber 탭이 생깁니다: 링크는 분석·확인되어 패키지로 묶이며, 다운로드 시작 전에 이름 바꾸기, 병합, 비밀번호 지정, 삭제를 할 수 있습니다. 복사한 링크와 폴더 링크가 그곳으로 갑니다.</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Open all links in the Link Grabber</source>
+        <translation>모든 링크를 LinkGrabber에서 열기</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Click&apos;n&apos;Load, Add Links and link containers (DLC) go to the Link Grabber too. Links from search results always start downloading at once.</source>
+        <translation>Click&apos;n&apos;Load, 링크 추가, 링크 컨테이너(DLC)도 LinkGrabber로 갑니다. 검색 결과의 링크는 항상 바로 다운로드를 시작합니다.</translation>
+    </message>
+    <message>
+        <location line="+66"/>
         <source>JDownloader: not installed</source>
         <translation>JDownloader: 설치되지 않음</translation>
     </message>
@@ -6476,12 +6556,12 @@ Export?</source>
     </message>
     <message>
         <location line="+39"/>
-        <location line="+219"/>
+        <location line="+220"/>
         <source>Not reachable</source>
         <translation>연결할 수 없음</translation>
     </message>
     <message>
-        <location line="-138"/>
+        <location line="-139"/>
         <source>Solve puzzles with these services</source>
         <translation>이 서비스로 퍼즐 풀기</translation>
     </message>
@@ -6501,7 +6581,7 @@ Export?</source>
         <translation>서비스</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+16"/>
         <source>Add captcha solver</source>
         <translation>캡차 풀이 서비스 추가</translation>
     </message>
@@ -6546,7 +6626,7 @@ Export?</source>
         <translation>%1의 비밀번호:</translation>
     </message>
     <message>
-        <location line="+91"/>
+        <location line="+94"/>
         <source>Autostart highspeed download</source>
         <translation>고속 다운로드 자동 시작</translation>
     </message>
@@ -6620,7 +6700,7 @@ Export?</source>
         <translation>고속 다운로드가 실행 중이 아닙니다. 잔액: %1</translation>
     </message>
     <message>
-        <location line="-660"/>
+        <location line="-686"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -6813,17 +6893,17 @@ Export?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+173"/>
+        <location line="+195"/>
         <source>Publish hoster links</source>
         <translation>호스터 링크 게시</translation>
     </message>
     <message>
-        <location line="-171"/>
+        <location line="-193"/>
         <source>A downloaded file is shared either way. Published, its link is found in ed3k and handed to other nodes: a link is often all that protects a file at a hoster.</source>
         <translation>다운로드한 파일은 어느 쪽이든 공유됩니다. 게시하면 그 링크가 ed3k에서 검색되고 다른 노드에 전달됩니다. 호스터의 파일을 보호하는 것은 링크뿐인 경우가 많습니다.</translation>
     </message>
     <message>
-        <location line="+167"/>
+        <location line="+189"/>
         <source>&lt;p&gt;Sharing hoster links means: once a file from a link is downloaded and verified, its link is published in ed3k and handed to other nodes that download the same file.&lt;/p&gt;&lt;p&gt;A link is often all that keeps a file at a hoster private. Whoever knows the link can find the file in ed3k, and anyone can find the link of a file you share.&lt;/p&gt;&lt;p&gt;Publish hoster links?&lt;/p&gt;</source>
         <translation>&lt;p&gt;호스터 링크 공유란, 링크의 파일을 다운로드하고 검증한 뒤 그 링크를 ed3k에 게시하고 같은 파일을 다운로드하는 다른 노드에 전달하는 것을 뜻합니다.&lt;/p&gt;&lt;p&gt;호스터의 파일을 비공개로 지키는 것은 링크뿐인 경우가 많습니다. 링크를 아는 사람은 ed3k에서 파일을 찾을 수 있고, 누구나 사용자가 공유하는 파일의 링크를 찾을 수 있습니다.&lt;/p&gt;&lt;p&gt;호스터 링크를 게시할까요?&lt;/p&gt;</translation>
     </message>
@@ -6836,7 +6916,7 @@ Export?</source>
         <translation type="vanished">다운로드한 파일은 어느 경우든 공유됩니다. 보류하면 링크가 게시되지 않고 다른 노드에도 전달되지 않습니다. 호스터의 파일을 보호하는 것은 링크뿐인 경우가 많습니다.</translation>
     </message>
     <message>
-        <location line="-162"/>
+        <location line="-184"/>
         <source>Accounts</source>
         <translation>계정</translation>
     </message>
@@ -6852,13 +6932,13 @@ Export?</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+211"/>
+        <location line="+233"/>
         <source>User</source>
         <translation>사용자</translation>
     </message>
     <message>
-        <location line="-211"/>
-        <location line="+211"/>
+        <location line="-233"/>
+        <location line="+233"/>
         <source>Status</source>
         <translation>상태</translation>
     </message>
@@ -6950,7 +7030,7 @@ Export?</source>
         <translation type="vanished">호스터 링크 공유</translation>
     </message>
     <message>
-        <location line="+89"/>
+        <location line="+90"/>
         <source>Add hoster account</source>
         <translation>호스터 계정 추가</translation>
     </message>
@@ -7623,7 +7703,7 @@ Its files are no longer shared here; what the network holds of it runs out. &quo
 <context>
     <name>eMule::Ed3kSellPage</name>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kSellPage.cpp" line="+56"/>
+        <location filename="../src/gui/dialogs/Ed3kSellPage.cpp" line="+52"/>
         <location line="+90"/>
         <source>Changes on this page take effect at once.</source>
         <translation>이 페이지의 변경 사항은 즉시 적용됩니다.</translation>
@@ -7907,7 +7987,7 @@ Buyers see it is no longer sold. Passes held still work until they end, and you 
 <context>
     <name>eMule::Ed3kSellTermsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kSellDialogs.cpp" line="-278"/>
+        <location filename="../src/gui/dialogs/Ed3kSellDialogs.cpp" line="-274"/>
         <source>e.g. 4.99 EUR / month</source>
         <translation>예: 4.99 EUR / 월</translation>
     </message>
@@ -8065,13 +8145,13 @@ Buyers see it is no longer sold. Passes held still work until they end, and you 
 <context>
     <name>eMule::Ed3kSetsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kSetsDialog.cpp" line="+104"/>
-        <location line="+1113"/>
+        <location filename="../src/gui/dialogs/Ed3kSetsDialog.cpp" line="+102"/>
+        <location line="+1110"/>
         <source>ed3k Sets</source>
         <translation>ed3k 세트</translation>
     </message>
     <message>
-        <location line="-1103"/>
+        <location line="-1099"/>
         <source>Name</source>
         <translation>이름</translation>
     </message>
@@ -8092,18 +8172,18 @@ Buyers see it is no longer sold. Passes held still work until they end, and you 
     </message>
     <message>
         <location line="+0"/>
-        <location line="+6"/>
+        <location line="+3"/>
         <source>Size</source>
         <translation>크기</translation>
     </message>
     <message>
-        <location line="-6"/>
+        <location line="-3"/>
         <source>New Versions</source>
         <translation>새 버전</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+6"/>
+        <location line="+3"/>
         <location line="+56"/>
         <source>Status</source>
         <translation>상태</translation>
@@ -8140,13 +8220,13 @@ Buyers see it is no longer sold. Passes held still work until they end, and you 
     </message>
     <message>
         <location line="+1"/>
-        <location line="+52"/>
+        <location line="+51"/>
         <location line="+465"/>
         <source>Buy Pass...</source>
         <translation>패스 구매...</translation>
     </message>
     <message>
-        <location line="-515"/>
+        <location line="-514"/>
         <source>Enter Pass...</source>
         <translation>패스 입력...</translation>
     </message>
@@ -8196,7 +8276,7 @@ Buyers see it is no longer sold. Passes held still work until they end, and you 
         <translation>플레이어</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+4"/>
         <source>Watch Link...</source>
         <translation>링크 시청...</translation>
     </message>
@@ -8846,19 +8926,19 @@ Go on?</source>
 <context>
     <name>eMule::Ed3kStakeGroup</name>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kStakeGroup.cpp" line="+78"/>
+        <location filename="../src/gui/dialogs/Ed3kStakeGroup.cpp" line="+79"/>
         <source>Stake tokens (E3S)</source>
         <translation>스테이크 토큰 (E3S)</translation>
     </message>
     <message>
-        <location line="+9"/>
-        <location line="+11"/>
+        <location line="+8"/>
+        <location line="+8"/>
         <location line="+296"/>
         <source>Claim</source>
         <translation>청구</translation>
     </message>
     <message>
-        <location line="-307"/>
+        <location line="-304"/>
         <source>Amount (E3S)</source>
         <translation>수량 (E3S)</translation>
     </message>
@@ -8869,17 +8949,17 @@ Go on?</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+77"/>
+        <location line="+74"/>
         <source>Ready</source>
         <translation>준비됨</translation>
     </message>
     <message>
-        <location line="-77"/>
+        <location line="-74"/>
         <source>State</source>
         <translation>상태</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+6"/>
         <source>Burn for stake…</source>
         <translation>스테이크용 소각…</translation>
     </message>
@@ -10211,7 +10291,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>Kad에는 UDP가 필요하지만 설정 파일에서 비활성화되어 있습니다</translation>
     </message>
     <message>
-        <location line="+238"/>
+        <location line="+241"/>
         <source>You must enable at least one network.</source>
         <translation>하나 이상의 네트워크를 사용하도록 설정해야 합니다.</translation>
     </message>
@@ -10248,7 +10328,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation type="vanished">난독화</translation>
     </message>
     <message>
-        <location line="-285"/>
+        <location line="-288"/>
         <source>Connection Speed</source>
         <translation>연결 속도</translation>
     </message>
@@ -10277,7 +10357,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation type="vanished">다운로드 제한: %1    업로드 제한: %2</translation>
     </message>
     <message>
-        <location line="+249"/>
+        <location line="+252"/>
         <source>The ports are forwarded when the core starts.</source>
         <translation>포트는 코어가 시작될 때 전달됩니다.</translation>
     </message>
@@ -10335,7 +10415,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
 <context>
     <name>eMule::HosterPanel</name>
     <message>
-        <location filename="../src/gui/panels/HosterPanel.cpp" line="+114"/>
+        <location filename="../src/gui/panels/HosterPanel.cpp" line="+118"/>
         <source>Finding a resolver</source>
         <translation>리졸버 찾는 중</translation>
     </message>
@@ -10609,12 +10689,22 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation type="vanished">압축 파일에 암호가 필요합니다</translation>
     </message>
     <message>
-        <location line="+41"/>
+        <location line="+59"/>
         <source>Hoster downloads</source>
         <translation>호스터 다운로드</translation>
     </message>
     <message>
-        <location line="+782"/>
+        <location line="+814"/>
+        <source>Clipboard</source>
+        <translation>클립보드</translation>
+    </message>
+    <message>
+        <location line="+55"/>
+        <source>the clipboard</source>
+        <translation>클립보드</translation>
+    </message>
+    <message>
+        <location line="+4"/>
         <location line="+2"/>
         <source>Click&apos;n&apos;Load</source>
         <translation>Click&apos;n&apos;Load</translation>
@@ -10667,12 +10757,24 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>%1: %2</translation>
     </message>
     <message>
-        <location line="+14"/>
+        <location line="+17"/>
         <source>Links of %1</source>
         <translation>%1의 링크</translation>
     </message>
+    <message>
+        <location line="+0"/>
+        <source>Copied hoster links</source>
+        <translation>복사한 호스터 링크</translation>
+    </message>
     <message numerus="yes">
         <location line="+2"/>
+        <source>You copied %n hoster link(s). Add which?</source>
+        <translation>
+            <numerusform>호스터 링크 %n개를 복사했습니다. 어떤 것을 추가할까요?</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location line="+1"/>
         <source>%1 sent %n link(s) (Click&apos;n&apos;Load). Add which?</source>
         <translation>
             <numerusform>%1에서 링크 %n개를 보냈습니다(Click&apos;n&apos;Load). 어느 것을 추가할까요?</numerusform>
@@ -10700,12 +10802,12 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation type="vanished">링크 추가...</translation>
     </message>
     <message>
-        <location line="-370"/>
+        <location line="-429"/>
         <source>Retry</source>
         <translation>다시 시도</translation>
     </message>
     <message>
-        <location line="+201"/>
+        <location line="+224"/>
         <source>JDownloader %1</source>
         <translation>JDownloader %1</translation>
     </message>
@@ -10714,7 +10816,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation type="vanished">옵션...</translation>
     </message>
     <message>
-        <location line="-673"/>
+        <location line="-732"/>
         <source>File Name</source>
         <translation>파일 이름</translation>
     </message>
@@ -10749,7 +10851,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>소스</translation>
     </message>
     <message>
-        <location line="+14"/>
+        <location line="+13"/>
         <source>Add hoster links...</source>
         <translation>호스터 링크 추가...</translation>
     </message>
@@ -10761,8 +10863,8 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         </translation>
     </message>
     <message>
-        <location line="+69"/>
-        <location line="+33"/>
+        <location line="+100"/>
+        <location line="+39"/>
         <source>Hoster links</source>
         <translation>호스터 링크</translation>
     </message>
@@ -10778,23 +10880,23 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
     </message>
     <message>
         <location line="+6"/>
-        <location line="+718"/>
+        <location line="+777"/>
         <source>Package Name:</source>
         <translation>패키지 이름:</translation>
     </message>
     <message>
-        <location line="-716"/>
+        <location line="-775"/>
         <source>optional</source>
         <translation>선택 사항</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+718"/>
+        <location line="+777"/>
         <source>The links download under one entry, into a folder of this name</source>
         <translation>링크가 하나의 항목 아래 이 이름의 폴더로 다운로드됩니다</translation>
     </message>
     <message>
-        <location line="-703"/>
+        <location line="-762"/>
         <location line="+11"/>
         <location line="+16"/>
         <source>Not connected to the eMule core.</source>
@@ -10807,12 +10909,12 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <location line="+4"/>
         <location line="+9"/>
         <location line="+42"/>
-        <location line="+547"/>
+        <location line="+602"/>
         <source>Open DLC</source>
         <translation>DLC 열기</translation>
     </message>
     <message>
-        <location line="-612"/>
+        <location line="-667"/>
         <location line="+14"/>
         <source>Cannot read %1.</source>
         <translation>%1을(를) 읽을 수 없습니다.</translation>
@@ -10893,13 +10995,13 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>재개</translation>
     </message>
     <message>
-        <location line="-442"/>
-        <location line="+447"/>
+        <location line="-479"/>
+        <location line="+484"/>
         <source>Remove</source>
         <translation>제거</translation>
     </message>
     <message>
-        <location line="-540"/>
+        <location line="-594"/>
         <source>The archive needs a password (Set Password…)</source>
         <translation>압축 파일에 비밀번호가 필요합니다 (비밀번호 설정…)</translation>
     </message>
@@ -10914,29 +11016,45 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>파일이 호스터의 %1과(와) 일치하지 않아 삭제됨 (다시 시도하면 다시 다운로드)</translation>
     </message>
     <message>
-        <location line="+45"/>
-        <location line="+499"/>
+        <location line="+42"/>
+        <source>Downloads</source>
+        <translation>다운로드</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Link Grabber (%1, crawling)</source>
+        <translation>LinkGrabber (%1, 분석 중)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+833"/>
+        <source>Link Grabber (%1)</source>
+        <translation>LinkGrabber (%1)</translation>
+    </message>
+    <message>
+        <location line="-819"/>
+        <location line="+535"/>
         <source>Add Links...</source>
         <translation>링크 추가...</translation>
     </message>
     <message>
-        <location line="-498"/>
+        <location line="-534"/>
         <source>Links to files at hosters, one per line</source>
         <translation>호스터의 파일 링크, 한 줄에 하나씩</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+497"/>
+        <location line="+533"/>
         <source>Open DLC...</source>
         <translation>DLC 열기...</translation>
     </message>
     <message>
-        <location line="-496"/>
+        <location line="-532"/>
         <source>Adds the links of a link container (.dlc, .rsdf, .ccf); you can also drop one here</source>
         <translation>링크 컨테이너(.dlc, .rsdf, .ccf)의 링크를 추가합니다. 여기에 끌어다 놓을 수도 있습니다</translation>
     </message>
     <message>
-        <location line="+487"/>
+        <location line="+523"/>
         <source>Set Password…</source>
         <translation>비밀번호 설정…</translation>
     </message>
@@ -10967,7 +11085,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>선택한 파일을 디스크에서 삭제하시겠습니까?</translation>
     </message>
     <message>
-        <location line="+77"/>
+        <location line="+93"/>
         <source>Links of a folder</source>
         <translation>폴더의 링크</translation>
     </message>
@@ -10997,7 +11115,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>폴더</translation>
     </message>
     <message>
-        <location line="+14"/>
+        <location line="+21"/>
         <source>Downloads from hosters are off (Options, ed3k, Hoster).</source>
         <translation>호스터 다운로드가 꺼져 있습니다(옵션 &gt; ed3k &gt; 호스터).</translation>
     </message>
@@ -11061,17 +11179,17 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
     <name>eMule::IPFilterDialog</name>
     <message>
         <location filename="../src/gui/dialogs/IPFilterDialog.cpp" line="+190"/>
-        <location line="+107"/>
+        <location line="+104"/>
         <source>IP Filter</source>
         <translation>IP 필터</translation>
     </message>
     <message>
-        <location line="-103"/>
+        <location line="-100"/>
         <source>IP filters:</source>
         <translation>IP 필터:</translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="+22"/>
         <source>Total IP filters:</source>
         <translation>전체 IP 필터:</translation>
     </message>
@@ -11387,7 +11505,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
 <context>
     <name>eMule::IpFilterModel</name>
     <message>
-        <location filename="../src/gui/dialogs/IPFilterDialog.cpp" line="-351"/>
+        <location filename="../src/gui/dialogs/IPFilterDialog.cpp" line="-348"/>
         <source>Start</source>
         <translation>시작</translation>
     </message>
@@ -11415,7 +11533,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1160"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1170"/>
         <source>The core&apos;s certificate changed</source>
         <translation>코어 인증서가 변경되었습니다</translation>
     </message>
@@ -12431,6 +12549,317 @@ Other members see your nick and posts; your node takes part in passing the room&
     </message>
 </context>
 <context>
+    <name>eMule::LinkGrabberPanel</name>
+    <message>
+        <location filename="../src/gui/panels/LinkGrabberPanel.cpp" line="+103"/>
+        <location line="+116"/>
+        <location line="+15"/>
+        <location line="+366"/>
+        <location line="+2"/>
+        <location line="+111"/>
+        <source>Link Grabber</source>
+        <translation>LinkGrabber</translation>
+    </message>
+    <message>
+        <location line="-603"/>
+        <location line="+365"/>
+        <source>Add Links...</source>
+        <translation>링크 추가...</translation>
+    </message>
+    <message>
+        <location line="-364"/>
+        <source>Links to crawl into the list, one per line</source>
+        <translation>목록으로 분석할 링크, 한 줄에 하나씩</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Start All</source>
+        <translation>모두 시작</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Every enabled link that is not offline starts downloading</source>
+        <translation>오프라인이 아닌 활성화된 모든 링크의 다운로드를 시작합니다</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <location line="+24"/>
+        <source>Clear</source>
+        <translation>지우기</translation>
+    </message>
+    <message>
+        <location line="-23"/>
+        <source>Removes every link and stops the crawling</source>
+        <translation>모든 링크를 제거하고 분석을 중지합니다</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>File Name</source>
+        <translation>파일 이름</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Size</source>
+        <translation>크기</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Hoster</source>
+        <translation>호스터</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Status</source>
+        <translation>상태</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Link</source>
+        <translation>링크</translation>
+    </message>
+    <message>
+        <location line="+17"/>
+        <source>Remove every link from the Link Grabber?</source>
+        <translation>LinkGrabber에서 모든 링크를 제거할까요?</translation>
+    </message>
+    <message>
+        <location line="+15"/>
+        <source>Clipboard</source>
+        <translation>클립보드</translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>Add links to the Link Grabber</source>
+        <translation>LinkGrabber에 링크 추가</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Links, or text with links in it:</source>
+        <translation>링크 또는 링크가 포함된 텍스트:</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Package Name:</source>
+        <translation>패키지 이름:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>optional</source>
+        <translation>선택 사항</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>All links found go into one package of this name</source>
+        <translation>찾은 모든 링크를 이 이름의 패키지 하나에 넣습니다</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Archive passwords (one per line, optional):</source>
+        <translation>압축 파일 비밀번호 (한 줄에 하나, 선택 사항):</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Deep crawl: look for hoster links on the pages too</source>
+        <translation>심층 분석: 페이지에서도 호스터 링크 찾기</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>A link no plugin knows is loaded as a web page, and every hoster link on it is added. Takes longer.</source>
+        <translation>어떤 플러그인도 모르는 링크는 웹 페이지로 불러오고, 그 안의 모든 호스터 링크를 추가합니다. 시간이 더 걸립니다.</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Add Links</source>
+        <translation>링크 추가</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Not connected to the eMule core.</source>
+        <translation>eMule 코어에 연결되지 않았습니다.</translation>
+    </message>
+    <message>
+        <location line="+161"/>
+        <source>Archive passwords: %1</source>
+        <translation>압축 파일 비밀번호: %1</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <location line="+56"/>
+        <source>%1 online</source>
+        <translation>온라인 %1</translation>
+    </message>
+    <message>
+        <location line="-54"/>
+        <source>%1 offline</source>
+        <translation>오프라인 %1</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>%1 checking</source>
+        <translation>확인 중 %1</translation>
+    </message>
+    <message>
+        <location line="+25"/>
+        <source>Checking...</source>
+        <translation>확인 중...</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Online</source>
+        <translation>온라인</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Offline</source>
+        <translation>오프라인</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Unknown</source>
+        <translation>알 수 없음</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Already in downloads</source>
+        <translation>이미 다운로드 목록에 있음</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+19"/>
+        <source>%n link(s) in %1 package(s)</source>
+        <translation>
+            <numerusform>패키지 %1개에 링크 %n개</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location line="+4"/>
+        <source>crawling %n link(s)...</source>
+        <translation>
+            <numerusform>링크 %n개 분석 중...</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+12"/>
+        <source>Start Downloads</source>
+        <translation>다운로드 시작</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Rename Package...</source>
+        <translation>패키지 이름 바꾸기...</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Set Passwords...</source>
+        <translation>비밀번호 설정...</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Merge into New Package...</source>
+        <translation>새 패키지로 병합...</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Split by Hoster</source>
+        <translation>호스터별로 분할</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Enable</source>
+        <translation>사용</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Disable</source>
+        <translation>비활성화</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Check Again</source>
+        <translation>다시 확인</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Remove</source>
+        <translation>제거</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove from List</source>
+        <translation>목록에서 제거</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Offline Links</source>
+        <translation>오프라인 링크</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Disabled Links</source>
+        <translation>비활성화된 링크</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Links Already in Downloads</source>
+        <translation>이미 다운로드 목록에 있는 링크</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Copy Links</source>
+        <translation>링크 복사</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+226"/>
+        <source>Open in Browser</source>
+        <translation>브라우저에서 열기</translation>
+    </message>
+    <message>
+        <location line="-221"/>
+        <source>Stop Crawling</source>
+        <translation>분석 중지</translation>
+    </message>
+    <message>
+        <location line="+125"/>
+        <source>Nothing to start: the links are disabled, offline or downloading already.</source>
+        <translation>시작할 항목이 없습니다: 링크가 비활성화되었거나 오프라인이거나 이미 다운로드 중입니다.</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Rename Package</source>
+        <translation>패키지 이름 바꾸기</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <location line="+39"/>
+        <source>Package name:</source>
+        <translation>패키지 이름:</translation>
+    </message>
+    <message>
+        <location line="-20"/>
+        <source>Set Passwords</source>
+        <translation>비밀번호 설정</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+1"/>
+        <source>Archive passwords for %n package(s), one per line; extraction tries them:</source>
+        <translation>
+            <numerusform>패키지 %n개의 압축 파일 비밀번호, 한 줄에 하나씩; 압축 해제 시 차례로 시도합니다:</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+19"/>
+        <source>Merge into New Package</source>
+        <translation>새 패키지로 병합</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+47"/>
+        <source>Open %n links in the browser?</source>
+        <translation>
+            <numerusform>링크 %n개를 브라우저에서 열까요?</numerusform>
+        </translation>
+    </message>
+</context>
+<context>
     <name>eMule::LogTextView</name>
     <message>
         <location filename="../src/gui/controls/LogTextView.cpp" line="+86"/>
@@ -12528,7 +12957,7 @@ Other members see your nick and posts; your node takes part in passing the room&
 <context>
     <name>eMule::MainWindow</name>
     <message>
-        <location filename="../src/gui/app/MainWindow.cpp" line="+115"/>
+        <location filename="../src/gui/app/MainWindow.cpp" line="+116"/>
         <location line="+746"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
@@ -12556,12 +12985,12 @@ Other members see your nick and posts; your node takes part in passing the room&
     </message>
     <message>
         <location line="+12"/>
-        <location line="+1557"/>
+        <location line="+1574"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: 연결 해제됨</translation>
     </message>
     <message>
-        <location line="-1485"/>
+        <location line="-1502"/>
         <source>Kad: Connected</source>
         <translation>Kad: 연결됨</translation>
     </message>
@@ -12577,17 +13006,17 @@ Other members see your nick and posts; your node takes part in passing the room&
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1477"/>
+        <location line="+1494"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: 연결 해제됨</translation>
     </message>
     <message>
-        <location line="-1384"/>
+        <location line="-1401"/>
         <source>Users: %1 | Files: %2</source>
         <translation>사용자: %1 | 파일: %2</translation>
     </message>
     <message>
-        <location line="+508"/>
+        <location line="+528"/>
         <source>Open Incoming Folder...</source>
         <translation>수신 폴더 열기...</translation>
     </message>
@@ -12627,14 +13056,14 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>기능</translation>
     </message>
     <message>
-        <location line="-1046"/>
+        <location line="-1066"/>
         <location line="+7"/>
-        <location line="+1042"/>
+        <location line="+1062"/>
         <source>Version Check</source>
         <translation>버전 확인</translation>
     </message>
     <message>
-        <location line="-1128"/>
+        <location line="-1148"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt 종료</translation>
     </message>
@@ -12930,12 +13359,17 @@ The core is detached: it keeps running with all downloads and uploads. Open eMul
         <translation>로그 항목</translation>
     </message>
     <message>
-        <location line="+148"/>
+        <location line="+149"/>
         <source>eMule Log</source>
         <translation>eMule 로그</translation>
     </message>
     <message>
-        <location line="+91"/>
+        <location line="+89"/>
+        <source>Clipboard</source>
+        <translation>클립보드</translation>
+    </message>
+    <message>
+        <location line="+21"/>
         <source>Open Downloads Folder in Browser</source>
         <translation>브라우저에서 다운로드 폴더 열기</translation>
     </message>
@@ -13014,7 +13448,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>옵션 열기</translation>
     </message>
     <message>
-        <location line="+211"/>
+        <location line="+208"/>
         <source>Main</source>
         <translation>메인</translation>
     </message>
@@ -13156,7 +13590,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>네트워크 정보를 보려면 더블 클릭</translation>
     </message>
     <message>
-        <location line="+728"/>
+        <location line="+744"/>
         <source>New message — double-click to read</source>
         <translation>새 메시지 — 두 번 클릭하여 읽기</translation>
     </message>
@@ -14898,36 +15332,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3487"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3498"/>
         <source>Options</source>
         <translation>옵션</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2396"/>
+        <location line="+2407"/>
         <source>OK</source>
         <translation>확인</translation>
     </message>
     <message>
-        <location line="-2395"/>
-        <location line="+2396"/>
+        <location line="-2406"/>
+        <location line="+2407"/>
         <source>Cancel</source>
         <translation>취소</translation>
     </message>
     <message>
-        <location line="-2395"/>
-        <location line="+6523"/>
+        <location line="-2406"/>
+        <location line="+6534"/>
         <source>Apply</source>
         <translation>적용</translation>
     </message>
     <message>
-        <location line="-6522"/>
+        <location line="-6533"/>
         <source>Help</source>
         <translation>도움말</translation>
     </message>
     <message>
-        <location line="+284"/>
-        <location line="+2379"/>
+        <location line="+285"/>
+        <location line="+2389"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -14939,7 +15373,7 @@ Download it again?</source>
         <translation>IP 필터</translation>
     </message>
     <message>
-        <location line="-2494"/>
+        <location line="-2504"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP 필터 다시 로드됨: %1개 항목.</translation>
     </message>
@@ -14949,12 +15383,12 @@ Download it again?</source>
         <translation>옵션 -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+5472"/>
+        <location line="+5482"/>
         <source>Bandwidth</source>
         <translation>대역폭</translation>
     </message>
     <message>
-        <location line="-5257"/>
+        <location line="-5267"/>
         <source>General options</source>
         <translation>일반 옵션</translation>
     </message>
@@ -14966,37 +15400,37 @@ Download it again?</source>
     <message>
         <location line="-64"/>
         <location line="+65"/>
-        <location line="+6203"/>
+        <location line="+6213"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="-6081"/>
+        <location line="-6091"/>
         <source>User Name</source>
         <translation>사용자 이름</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6448"/>
+        <location line="+6458"/>
         <source>Language</source>
         <translation>언어</translation>
     </message>
     <message>
-        <location line="-6445"/>
+        <location line="-6455"/>
         <source>System Default</source>
         <translation>시스템 기본값</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+924"/>
-        <location line="+384"/>
+        <location line="+927"/>
+        <location line="+391"/>
         <location line="+508"/>
         <location line="+299"/>
         <source>Miscellaneous</source>
         <translation>기타</translation>
     </message>
     <message>
-        <location line="-2112"/>
+        <location line="-2122"/>
         <source>Bring to front on link click</source>
         <translation>링크 클릭 시 앞으로 가져오기</translation>
     </message>
@@ -15091,25 +15525,25 @@ Download it again?</source>
     <message>
         <location line="+8"/>
         <location line="+40"/>
-        <location line="+6325"/>
+        <location line="+6335"/>
         <source>Core</source>
         <translation>코어</translation>
     </message>
     <message>
-        <location line="-6338"/>
+        <location line="-6348"/>
         <source>Address:</source>
         <translation>주소:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1497"/>
+        <location line="+1507"/>
         <location line="+775"/>
         <location line="+427"/>
         <source>Port:</source>
         <translation>포트:</translation>
     </message>
     <message>
-        <location line="-2696"/>
+        <location line="-2706"/>
         <source>authentication token</source>
         <translation>인증 토큰</translation>
     </message>
@@ -15119,7 +15553,7 @@ Download it again?</source>
         <translation>토큰:</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="+33"/>
         <source>Changes require a restart to take effect.</source>
         <translation>변경 사항을 적용하려면 재시작이 필요합니다.</translation>
     </message>
@@ -15231,22 +15665,22 @@ Are you sure you want to continue?</source>
         <translation>원본 eMule 아이콘 사용</translation>
     </message>
     <message>
-        <location line="+8480"/>
+        <location line="+8499"/>
         <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
         <translation>각 릴리스에는 데이터베이스가 포함되어 있습니다. 선택 사항인 무료 &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; 계정을 사용하면 릴리스 사이에도 최신 상태로 유지됩니다. 이 제품에는 MaxMind에서 만든 GeoLite2 데이터가 포함되어 있습니다.</translation>
     </message>
     <message>
-        <location line="-8427"/>
+        <location line="-8446"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation>CPU &amp;&amp; 메모리 사용량 절약</translation>
     </message>
     <message>
-        <location line="-581"/>
+        <location line="-584"/>
         <source>I2P</source>
         <translation>I2P</translation>
     </message>
     <message>
-        <location line="+447"/>
+        <location line="+450"/>
         <source>Download progress bar</source>
         <translation>다운로드 진행 막대</translation>
     </message>
@@ -15352,7 +15786,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1936"/>
+        <location line="+1943"/>
         <location line="+133"/>
         <location line="+296"/>
         <location line="+1073"/>
@@ -15364,7 +15798,7 @@ Are you sure you want to continue?</source>
         <translation>활성화됨</translation>
     </message>
     <message>
-        <location line="-5291"/>
+        <location line="-5298"/>
         <source>Reset</source>
         <translation>초기화</translation>
     </message>
@@ -15381,13 +15815,13 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4661"/>
+        <location line="+4668"/>
         <location line="+354"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-5018"/>
+        <location line="-5025"/>
         <source>Upload</source>
         <translation>업로드</translation>
     </message>
@@ -15418,18 +15852,18 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+28"/>
-        <location line="+4492"/>
+        <location line="+4499"/>
         <source>Client Port</source>
         <translation>클라이언트 포트</translation>
     </message>
     <message>
-        <location line="-4489"/>
-        <location line="+8185"/>
+        <location line="-4496"/>
+        <location line="+8204"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-8179"/>
+        <location line="-8198"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -15439,24 +15873,24 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4492"/>
+        <location line="+4499"/>
         <source>Test Ports</source>
         <translation>포트 테스트</translation>
     </message>
     <message>
-        <location line="-4488"/>
-        <location line="+4496"/>
+        <location line="-4495"/>
+        <location line="+4503"/>
         <source>Open Router</source>
         <translation>라우터 열기</translation>
     </message>
     <message>
-        <location line="-4495"/>
-        <location line="+4496"/>
+        <location line="-4502"/>
+        <location line="+4503"/>
         <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
         <translation>이 컴퓨터의 라우터 웹 페이지를 엽니다. 여기서 포트를 포워딩합니다</translation>
     </message>
     <message>
-        <location line="-4492"/>
+        <location line="-4499"/>
         <source>Use UPnP to Setup Ports</source>
         <translation>UPnP로 포트 설정</translation>
     </message>
@@ -15482,23 +15916,23 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1800"/>
-        <location line="+5933"/>
+        <location line="+1807"/>
+        <location line="+5945"/>
         <source>Any</source>
         <translation>모든</translation>
     </message>
     <message>
-        <location line="-7731"/>
+        <location line="-7750"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>이 네트워크 인터페이스(예: VPN 터널)만 사용합니다. 목록에서 선택하거나 IP 주소 또는 10.64.0.0/10 같은 서브넷(해당 범위의 주소를 가진 인터페이스)을 입력하십시오. 프록시를 통한 연결은 바인딩되지 않습니다.</translation>
     </message>
     <message>
-        <location line="+7628"/>
+        <location line="+7647"/>
         <source>While the selected interface is not available, all P2P, Usenet and update connections stay closed.</source>
         <translation>선택한 인터페이스를 사용할 수 없는 동안에는 모든 P2P, Usenet 및 업데이트 연결이 닫힌 상태로 유지됩니다.</translation>
     </message>
     <message>
-        <location line="-7614"/>
+        <location line="-7633"/>
         <source>Max. Sources/File</source>
         <translation>최대 소스/파일</translation>
     </message>
@@ -15517,12 +15951,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4518"/>
+        <location line="+4525"/>
         <source>Connection Limits</source>
         <translation>연결 제한</translation>
     </message>
     <message>
-        <location line="-4516"/>
+        <location line="-4523"/>
         <source>Max. connections</source>
         <translation>최대 연결 수</translation>
     </message>
@@ -15602,14 +16036,14 @@ Are you sure you want to continue?</source>
         <translation>Kad가 꺼져 있습니다: URL을 설정하지 않으면 확인이 동작하지 않습니다.</translation>
     </message>
     <message>
-        <location line="-943"/>
-        <location line="+1011"/>
-        <location line="+1592"/>
+        <location line="-946"/>
+        <location line="+1014"/>
+        <location line="+1599"/>
         <source>General</source>
         <translation>일반</translation>
     </message>
     <message>
-        <location line="-2602"/>
+        <location line="-2612"/>
         <source>Display</source>
         <translation>표시</translation>
     </message>
@@ -15654,7 +16088,7 @@ Are you sure you want to continue?</source>
         <translation>확장</translation>
     </message>
     <message>
-        <location line="+745"/>
+        <location line="+748"/>
         <source>More slots while below the upload limit</source>
         <translation>업로드 제한 미만일 때 슬롯 늘리기</translation>
     </message>
@@ -15715,26 +16149,26 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+21"/>
-        <location line="+815"/>
+        <location line="+822"/>
         <source>Authentication</source>
         <translation>인증</translation>
     </message>
     <message>
-        <location line="-812"/>
+        <location line="-819"/>
         <source>Enable authentication</source>
         <translation>인증 활성화</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1974"/>
+        <location line="+1981"/>
         <location line="+1076"/>
         <location line="+162"/>
         <source>Name:</source>
         <translation>이름:</translation>
     </message>
     <message>
-        <location line="-3208"/>
-        <location line="+816"/>
+        <location line="-3215"/>
+        <location line="+823"/>
         <location line="+838"/>
         <location line="+19"/>
         <location line="+325"/>
@@ -15742,7 +16176,7 @@ Are you sure you want to continue?</source>
         <translation>비밀번호:</translation>
     </message>
     <message>
-        <location line="-1964"/>
+        <location line="-1971"/>
         <source>Update</source>
         <translation>업데이트</translation>
     </message>
@@ -15793,6 +16227,16 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+9"/>
+        <source>Recheck a Low ID when the port opens later</source>
+        <translation>포트가 나중에 열리면 Low ID 다시 확인</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>While Low ID or Kad firewalled: recheck after 2, 10, 30 and 60 minutes and when a peer reaches us, then get a High ID without disconnecting</source>
+        <translation>Low ID 또는 Kad 방화벽 상태일 때: 2, 10, 30, 60분 후와 피어가 연결해 올 때 다시 확인하고, 연결을 끊지 않고 High ID를 받습니다</translation>
+    </message>
+    <message>
+        <location line="+5"/>
         <source>Safe Connect</source>
         <translation>안전 연결</translation>
     </message>
@@ -16144,8 +16588,8 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>사용자 이름:</translation>
     </message>
     <message>
-        <location line="-1879"/>
-        <location line="+1990"/>
+        <location line="-1889"/>
+        <location line="+2000"/>
         <source>Server</source>
         <translation>서버</translation>
     </message>
@@ -16504,7 +16948,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>업로드 슬롯(오버헤드 없음)</translation>
     </message>
     <message>
-        <location line="-1897"/>
+        <location line="-1904"/>
         <source>Country flags (IP2Country)</source>
         <translation>국기 (IP2Country)</translation>
     </message>
@@ -16578,7 +17022,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>IPv4 연결이 LowID를 받으면 서버의 IPv6 주소로 다시 연결합니다</translation>
     </message>
     <message>
-        <location line="+430"/>
+        <location line="+437"/>
         <source>Remember files seen in search results</source>
         <translation>검색 결과에 나온 파일 기억</translation>
     </message>
@@ -16588,10 +17032,10 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>검색에 나타난 파일과 그때의 이름을 로컬에 기록하여, 이후 검색에서 이전에 본 항목을 표시할 수 있게 합니다.</translation>
     </message>
     <message>
-        <location line="-1594"/>
+        <location line="-1604"/>
         <location line="+23"/>
         <location line="+7"/>
-        <location line="+1817"/>
+        <location line="+1827"/>
         <source>Connection</source>
         <translation>연결</translation>
     </message>
@@ -17059,15 +17503,15 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>엄격</translation>
     </message>
     <message>
-        <location line="-3099"/>
+        <location line="-3109"/>
         <location line="+62"/>
-        <location line="+6203"/>
-        <location line="+2709"/>
+        <location line="+6213"/>
+        <location line="+2721"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-8449"/>
+        <location line="-8468"/>
         <source>Show download progress on the Dock icon</source>
         <translation>Dock 아이콘에 다운로드 진행률 표시</translation>
     </message>
@@ -17123,7 +17567,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>목록, 메뉴, 대화 상자의 글자 크기입니다. 다시 시작한 후 적용됩니다.</translation>
     </message>
     <message>
-        <location line="+543"/>
+        <location line="+550"/>
         <source>Connect Low ID to Low ID through server or Kad buddy (NAT traversal)</source>
         <translation>서버 또는 Kad 버디를 통해 Low ID끼리 연결 (NAT 통과)</translation>
     </message>
@@ -17763,8 +18207,8 @@ Enter what your provider&apos;s control panel says, or 0 to start again.</source
         <translation>검색 인덱서는 키워드 검색에 답하고 NZB를 돌려줍니다. 뉴스 서버와는 별개입니다. Usenet에서는 다운로드하는 제공업체와 검색하는 서비스가 서로 다른 사업자입니다.</translation>
     </message>
     <message>
-        <location line="-4050"/>
-        <location line="+4057"/>
+        <location line="-4060"/>
+        <location line="+4067"/>
         <location line="+395"/>
         <location line="+541"/>
         <source>Indexers</source>
@@ -17896,8 +18340,8 @@ Every page is an API call against the allowance your account has, so this is a s
         <translation>피드는 스스로 실행되어 찾아낸 것을 대기열에 추가하는 검색입니다. 첫 확인에서는 아무것도 추가하지 않고 인덱서에 이미 올라와 있는 항목을 기록만 합니다 — 그렇게 하지 않으면 새 피드가 서버에 남아 있는 모든 것을 내려받게 되기 때문입니다.</translation>
     </message>
     <message>
-        <location line="-4212"/>
-        <location line="+4220"/>
+        <location line="-4222"/>
+        <location line="+4230"/>
         <location line="+325"/>
         <location line="+277"/>
         <source>Feeds</source>
@@ -18383,7 +18827,7 @@ The Details window lets you choose the files either way.</source>
         <translation>BitTorrent: 업로드 제한</translation>
     </message>
     <message>
-        <location line="+2338"/>
+        <location line="+2350"/>
         <source>This interface has no default route (split-tunnel VPN?): servers and peers outside its subnets are unreachable. Route all traffic through it, or choose another interface.</source>
         <translation>이 인터페이스에는 기본 경로가 없습니다(스플릿 터널 VPN?). 서브넷 밖의 서버와 피어에 연결할 수 없습니다. 모든 트래픽을 이 인터페이스로 보내거나 다른 인터페이스를 선택하세요.</translation>
     </message>
@@ -18466,7 +18910,7 @@ The Details window lets you choose the files either way.</source>
         <translation type="vanished">TCP와 UDP 모두에 사용됩니다. eD2K 포트와 달라야 합니다.</translation>
     </message>
     <message>
-        <location line="-3708"/>
+        <location line="-3720"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>수신 포트 (TCP/UDP):</translation>
     </message>
@@ -18609,12 +19053,12 @@ The Details window lets you choose the files either way.</source>
         <translation>다운로드는 항상 검사되고 기록됩니다. 공유 파일은 시작할 때마다 다시 검사됩니다.</translation>
     </message>
     <message>
-        <location line="+2035"/>
+        <location line="+2038"/>
         <source>Could not update the file associations: %1</source>
         <translation>파일 연결을 업데이트할 수 없습니다: %1</translation>
     </message>
     <message>
-        <location line="+1061"/>
+        <location line="+1070"/>
         <location line="+16"/>
         <location line="+6"/>
         <location line="+3"/>
@@ -18692,8 +19136,8 @@ Look up the &quot;default gateway&quot; in this computer&apos;s network settings
         <translation type="vanished">라우터 페이지 열기</translation>
     </message>
     <message>
-        <location line="-8939"/>
-        <location line="+8869"/>
+        <location line="-8961"/>
+        <location line="+8891"/>
         <location line="+52"/>
         <source>Directories</source>
         <translation>폴더</translation>
@@ -18764,7 +19208,7 @@ Create it?</source>
 %1</translation>
     </message>
     <message>
-        <location line="-3444"/>
+        <location line="-3456"/>
         <source>Disabled</source>
         <translation>비활성화됨</translation>
     </message>
@@ -18789,7 +19233,7 @@ Create it?</source>
         <translation>글꼴 크기 변경은 응용 프로그램을 다시 시작한 후 적용됩니다.</translation>
     </message>
     <message>
-        <location line="+1205"/>
+        <location line="+1211"/>
         <source>specialdlp loaded, DLP v%1</source>
         <translation>specialdlp 로드됨, DLP v%1</translation>
     </message>
@@ -18799,7 +19243,7 @@ Create it?</source>
         <translation>specialdlp 라이브러리를 찾을 수 없어 검사가 비활성 상태입니다</translation>
     </message>
     <message>
-        <location line="+862"/>
+        <location line="+868"/>
         <source>Automatic</source>
         <translation>자동</translation>
     </message>
@@ -18813,7 +19257,7 @@ Create it?</source>
         <translation type="vanished">실행 중에만 eD2K 링크 자동 수락</translation>
     </message>
     <message>
-        <location line="-3333"/>
+        <location line="-3345"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>크레딧 시스템 사용(업로더 보상)</translation>
     </message>
@@ -18837,12 +19281,12 @@ Create it?</source>
         <translation>서버 및 클라이언트 LAN IP 필터</translation>
     </message>
     <message>
-        <location line="-4959"/>
+        <location line="-4966"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation>더 많은 컨트롤 표시(고급 모드)</translation>
     </message>
     <message>
-        <location line="-527"/>
+        <location line="-530"/>
         <location line="+58"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
@@ -18859,12 +19303,12 @@ Create it?</source>
     </message>
     <message>
         <location line="-1"/>
-        <location line="+485"/>
+        <location line="+488"/>
         <source>Hoster</source>
         <translation>호스터</translation>
     </message>
     <message>
-        <location line="-483"/>
+        <location line="-486"/>
         <source>Filters</source>
         <translation>필터</translation>
     </message>
@@ -18933,7 +19377,7 @@ Create it?</source>
         <translation>처음 확인</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+26"/>
         <source>Trusted cores:</source>
         <translation>신뢰하는 코어:</translation>
     </message>
@@ -18961,7 +19405,7 @@ Create it?</source>
         <translation type="vanished">토렌트, Usenet, 호스터 다운로드가 받은 파일 폴더(및 BitTorrent 다운로드 폴더)의 하위 폴더에 저장한 파일을 eD2K와 ed3k에서 공유합니다. 토렌트는 완료된 후에 공유됩니다.</translation>
     </message>
     <message>
-        <location line="+1029"/>
+        <location line="+1036"/>
         <source>Rehash All Files...</source>
         <translation>모든 파일 다시 해시...</translation>
     </message>
@@ -19395,8 +19839,8 @@ News server connections switch over immediately.</source>
 뉴스 서버 연결은 즉시 전환됩니다.</translation>
     </message>
     <message>
-        <location line="-6620"/>
-        <location line="+7167"/>
+        <location line="-6630"/>
+        <location line="+7179"/>
         <source>Web Interface</source>
         <translation>웹 인터페이스</translation>
     </message>
@@ -19406,7 +19850,7 @@ News server connections switch over immediately.</source>
         <translation>&quot;%1&quot;은(는) IP 주소가 아닙니다. 수신 주소는 변경되지 않았습니다.</translation>
     </message>
     <message>
-        <location line="+549"/>
+        <location line="+550"/>
         <source>File types</source>
         <translation>파일 유형</translation>
     </message>
@@ -19415,7 +19859,7 @@ News server connections switch over immediately.</source>
         <translation type="vanished">.nzb 파일 연결을 업데이트하지 못했습니다: %1</translation>
     </message>
     <message>
-        <location line="+777"/>
+        <location line="+786"/>
         <source>Port forwarding: %1</source>
         <translation>포트 전달: %1</translation>
     </message>
@@ -19469,18 +19913,18 @@ News server connections switch over immediately.</source>
         <translation>기본값으로 재설정</translation>
     </message>
     <message>
-        <location line="-8380"/>
-        <location line="+2641"/>
+        <location line="-8399"/>
+        <location line="+2648"/>
         <location line="+1076"/>
         <location line="+164"/>
         <location line="+1680"/>
         <location line="+406"/>
-        <location line="+2411"/>
+        <location line="+2423"/>
         <source>Remove</source>
         <translation>제거</translation>
     </message>
     <message>
-        <location line="-6976"/>
+        <location line="-6988"/>
         <source>New eMule Qt version detected</source>
         <translation>새 eMule Qt 버전이 감지되었습니다</translation>
     </message>
@@ -19557,12 +20001,12 @@ News server connections switch over immediately.</source>
         <translation> 초</translation>
     </message>
     <message>
-        <location line="-5329"/>
+        <location line="-5336"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>데이터를 받는 다운로드와 이를 보내는 소스를 굵게 표시합니다. 다른 파일 아래에 있는 소스(A4AF)도 전송 중에는 굵게 표시됩니다. 연결된 서버와 선택된 카테고리 탭도 굵게 표시됩니다.</translation>
     </message>
     <message>
-        <location line="+1084"/>
+        <location line="+1091"/>
         <source>Rename downloads to the name most sources use</source>
         <translation>다운로드 이름을 대부분의 소스가 쓰는 이름으로 변경</translation>
     </message>
@@ -19821,7 +20265,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <location line="+1076"/>
         <location line="+164"/>
         <location line="+2021"/>
-        <location line="+2471"/>
+        <location line="+2483"/>
         <source>Add</source>
         <translation>추가</translation>
     </message>
@@ -19834,7 +20278,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="vanished">값 입력:</translation>
     </message>
     <message>
-        <location line="-2414"/>
+        <location line="-2426"/>
         <source>Edit Value</source>
         <translation>값 편집</translation>
     </message>
@@ -19844,8 +20288,8 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>설정 페이지 %1은(는) 아직 구현되지 않았습니다.</translation>
     </message>
     <message>
-        <location line="-6426"/>
-        <location line="+6623"/>
+        <location line="-6436"/>
+        <location line="+6633"/>
         <source>Proxy</source>
         <translation>프록시</translation>
     </message>
@@ -20165,14 +20609,14 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
     <name>eMule::SearchPanel</name>
     <message>
         <location filename="../src/gui/panels/SearchPanel.cpp" line="+392"/>
-        <location line="+1238"/>
+        <location line="+1240"/>
         <location line="+21"/>
-        <location line="+606"/>
+        <location line="+602"/>
         <source>Download</source>
         <translation>다운로드</translation>
     </message>
     <message>
-        <location line="-1845"/>
+        <location line="-1843"/>
         <source>Close All Searches</source>
         <translation>모든 검색 닫기</translation>
     </message>
@@ -20329,7 +20773,7 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
         <translation>코덱:</translation>
     </message>
     <message>
-        <location line="+3015"/>
+        <location line="+3013"/>
         <source>ed3k download added: %1</source>
         <translation>ed3k 다운로드 추가됨: %1</translation>
     </message>
@@ -20343,7 +20787,7 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
         <translation type="vanished">최소 비트레이트 [kbps]:</translation>
     </message>
     <message>
-        <location line="-3008"/>
+        <location line="-3006"/>
         <source>Min. Length [s]:</source>
         <translation>최소 길이 [초]:</translation>
     </message>
@@ -20548,7 +20992,7 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
         <translation>이름 복사(&amp;N)</translation>
     </message>
     <message>
-        <location line="+95"/>
+        <location line="+97"/>
         <source>%1 (%2)</source>
         <translation>%1 (%2)</translation>
     </message>
@@ -20566,28 +21010,27 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
         <translation type="vanished">토렌트 다운로드</translation>
     </message>
     <message>
-        <location line="-116"/>
-        <location line="+141"/>
+        <location line="-118"/>
+        <location line="+143"/>
         <source>Copy Magnet Link</source>
         <translation>마그넷 링크 복사</translation>
     </message>
     <message>
-        <location line="+12"/>
         <source>Show Links...</source>
-        <translation>링크 보기...</translation>
+        <translation type="vanished">링크 보기...</translation>
     </message>
     <message>
         <source>Download Container...</source>
         <translation type="vanished">컨테이너 다운로드...</translation>
     </message>
     <message>
-        <location line="-142"/>
-        <location line="+167"/>
+        <location line="-132"/>
+        <location line="+155"/>
         <source>Details...</source>
         <translation>상세...</translation>
     </message>
     <message>
-        <location line="-1582"/>
+        <location line="-1570"/>
         <source>Torrent search</source>
         <translation>토렌트 검색</translation>
     </message>
@@ -20693,7 +21136,7 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
     </message>
     <message>
         <location line="+230"/>
-        <location line="+137"/>
+        <location line="+139"/>
         <source>Save NZB File...</source>
         <translation>NZB 파일 저장...</translation>
     </message>
@@ -20703,12 +21146,12 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
         <translation>시청</translation>
     </message>
     <message>
-        <location line="+60"/>
+        <location line="+45"/>
         <source>Save Container File...</source>
         <translation>컨테이너 파일 저장...</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+33"/>
         <source>Comments...</source>
         <translation>댓글...</translation>
     </message>
@@ -20839,13 +21282,13 @@ Kad 검색식 검색어는 최소 3자 이상이어야 합니다.</translation>
         <translation>스팸으로 표시</translation>
     </message>
     <message>
-        <location line="-268"/>
-        <location line="+138"/>
+        <location line="-266"/>
+        <location line="+140"/>
         <source>Save Torrent File...</source>
         <translation>토렌트 파일 저장...</translation>
     </message>
     <message>
-        <location line="+146"/>
+        <location line="+142"/>
         <source>Remove</source>
         <translation>제거</translation>
     </message>
@@ -27772,7 +28215,7 @@ A password is set for this release.</source>
 <context>
     <name>eMule::WebLinksDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/WebLinksDialog.cpp" line="+124"/>
+        <location filename="../src/gui/dialogs/WebLinksDialog.cpp" line="+96"/>
         <source>Links: %1</source>
         <translation>링크: %1</translation>
     </message>
@@ -27818,24 +28261,24 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+231"/>
+        <location line="+298"/>
         <source>Account</source>
         <translation>계정</translation>
     </message>
     <message>
-        <location line="-205"/>
+        <location line="-266"/>
         <source>Links to .onion addresses are Tor hidden services. Copy them into Tor Browser: other browsers cannot open them.</source>
         <translation>.onion 주소 링크는 Tor 히든 서비스입니다. Tor Browser에 복사하세요. 다른 브라우저로는 열 수 없습니다.</translation>
     </message>
     <message>
         <location line="+15"/>
-        <location line="+110"/>
+        <location line="+172"/>
         <location line="+19"/>
         <source>Download</source>
         <translation>다운로드</translation>
     </message>
     <message>
-        <location line="-123"/>
+        <location line="-185"/>
         <source>Copy Links</source>
         <translation>링크 복사</translation>
     </message>
@@ -27850,7 +28293,7 @@ A password is set for this release.</source>
         <translation>목록 저장...</translation>
     </message>
     <message>
-        <location line="+81"/>
+        <location line="+143"/>
         <source>Could not add the links of &quot;%1&quot;: downloads from hosters are off.</source>
         <translation>&quot;%1&quot;의 링크를 추가할 수 없습니다: 호스터 다운로드가 꺼져 있습니다.</translation>
     </message>
@@ -27886,7 +28329,7 @@ A password is set for this release.</source>
         <translation type="vanished">모두 선택 해제</translation>
     </message>
     <message>
-        <location line="+45"/>
+        <location line="+44"/>
         <source>Checking...</source>
         <translation>확인 중...</translation>
     </message>
@@ -27925,7 +28368,7 @@ A password is set for this release.</source>
         </translation>
     </message>
     <message numerus="yes">
-        <location line="+19"/>
+        <location line="+21"/>
         <source>Copied %n link(s) to the clipboard.</source>
         <translation>
             <numerusform>링크 %n개를 클립보드에 복사했습니다.</numerusform>

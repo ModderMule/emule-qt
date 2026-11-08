@@ -612,11 +612,15 @@ void UploadBandwidthThrottler::runInternal()
 
             // Trickle: send to sockets that haven't sent in over 1 second
             int listSize = static_cast<int>(m_standardOrder.size());
+            // Capped: all slots' trickle together within half the limit (report 25)
+            const uint32 tricklePace = (allowedDataRate != UNLIMITED && allowedDataRate > 0 && listSize > 0)
+                ? std::max<uint32>(1, allowedDataRate / 2 / static_cast<uint32>(listSize))
+                : 0;
             for (int slotCounter = 0; slotCounter < listSize; ++slotCounter) {
                 ThrottledFileSocket* socket = m_standardOrder[static_cast<size_t>(slotCounter)];
                 if (socket) {
                     if (!socket->isBusyQuickCheck() && thisLoopTick >= socket->getLastCalledSend() + SEC2MS(1)) {
-                        uint32 neededBytes = socket->getNeededBytes();
+                        uint32 neededBytes = socket->getNeededBytes(tricklePace);
                         if (neededBytes > 0) {
                             SocketSentBytes sent = socket->sendFileAndControlData(neededBytes, minFragSize);
                             uint32 lastSpent = sent.sentBytesControlPackets + sent.sentBytesStandardPackets;

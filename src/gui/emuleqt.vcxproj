@@ -233,6 +233,7 @@
     <ClCompile Include="controls\TorrentOptionsForm.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="panels\TorrentPanel.cpp" Condition="'$(EmuleBitTorrent)'=='true'" />
     <ClCompile Include="panels\HosterPanel.cpp" Condition="'$(EmuleHosterJd)'=='true'" />
+    <ClCompile Include="panels\LinkGrabberPanel.cpp" Condition="'$(EmuleHosterJd)'=='true'" />
     <ClCompile Include="dialogs\HosterPuzzleDialog.cpp" Condition="'$(EmuleHosterJd)'=='true'" />
     <ClCompile Include="utils\PriorityText.cpp" />
     <ClCompile Include="utils\Smileys.cpp" />
@@ -422,6 +423,7 @@
     <ClInclude Include="dialogs\FindInListDialog.h" />
     <ClInclude Include="dialogs\MetadataPage.h" />
     <ClInclude Include="utils\Clipboard.h" />
+    <ClInclude Include="utils\HosterLinkStatus.h" />
     <ClInclude Include="utils\IpcFeedback.h" />
     <ClInclude Include="app\Ed3kLiveWatch.h" />
     <ClInclude Include="app\Ed3kLinkActions.h" />
@@ -539,6 +541,7 @@
     <QtMoc Include="controls\TorrentOptionsForm.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="panels\TorrentPanel.h" Condition="'$(EmuleBitTorrent)'=='true'" />
     <QtMoc Include="panels\HosterPanel.h" Condition="'$(EmuleHosterJd)'=='true'" />
+    <QtMoc Include="panels\LinkGrabberPanel.h" Condition="'$(EmuleHosterJd)'=='true'" />
     <QtMoc Include="dialogs\HosterPuzzleDialog.h" Condition="'$(EmuleHosterJd)'=='true'" />
     <QtMoc Include="dialogs\WebLinksDialog.h" />
     <QtMoc Include="dialogs\PeerPreviewDialog.h" />

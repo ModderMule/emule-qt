@@ -8,6 +8,9 @@
 
 #include <QCoreApplication>
 #include <QHostAddress>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QPointer>
 #include <QRegularExpression>
 #include <QTcpServer>
@@ -69,6 +72,44 @@ QStringList passwordsOf(const QList<std::pair<QString, QString>>& form)
             if (const QString t = line.trimmed(); !t.isEmpty() && !out.contains(t))
                 out << t;
     return out;
+}
+
+/// keys JD's RemoteAPI does not take as method parameters
+bool isApiControlKey(const QString& key)
+{
+    return key == u"callback" || key == u"signature" || key == u"rid" || key == u"_";
+}
+
+/// A JSON string, or a list of strings one per line.
+QString stringOrLines(const QJsonValue& v)
+{
+    if (v.isArray()) {
+        QStringList parts;
+        for (const QJsonValue& e : v.toArray())
+            if (e.isString())
+                parts << e.toString();
+        return parts.join(u'\n');
+    }
+    return v.toString();
+}
+
+/// The CnlQuery object of an application/json body: the object, [obj, ...] or {"params":[obj]}.
+QJsonObject cnlOfJsonBody(const QByteArray& body, bool* ok)
+{
+    QJsonParseError err;
+    const QJsonDocument doc = QJsonDocument::fromJson(body, &err);
+    *ok = err.error == QJsonParseError::NoError;
+    if (doc.isArray()) {
+        *ok = *ok && doc.array().at(0).isObject();
+        return doc.array().at(0).toObject();
+    }
+    const QJsonObject o = doc.object();
+    if (const QJsonValue params = o.value(u"params"); params.isArray()) {
+        *ok = *ok && params.toArray().at(0).isObject();
+        return params.toArray().at(0).toObject();
+    }
+    *ok = *ok && doc.isObject();
+    return o;
 }
 
 } // namespace
@@ -276,6 +317,10 @@ void ClickNLoadServer::handle(QTcpSocket* s, const QByteArray& method, const QBy
         respond(s, 200, "JDownloader\r\n");
         return;
     }
+    if (path == "/flash/addcnl") {
+        handleAddCnl(s, q < 0 ? QByteArray() : target.mid(q + 1), headers, body);
+        return;
+    }
 
     Post post;
     post.source = firstOf(form, u"source");
@@ -319,19 +364,22 @@ void ClickNLoadServer::handle(QTcpSocket* s, const QByteArray& method, const QBy
     respond(s, 404, {});
 }
 
-void ClickNLoadServer::handlePost(QTcpSocket* s, Post post)
+void ClickNLoadServer::handlePost(QTcpSocket* s, Post post, bool jsonp)
 {
     logInfo(QStringLiteral("Click'n'Load: a post from %1").arg(post.source.isEmpty() ? QStringLiteral("?") : post.source.left(200)));
     if (!m_handler) {
-        respond(s, 200, "failed\r\n");
+        respond(s, 200, jsonp ? QByteArray() : QByteArrayLiteral("failed\r\n"));
         return;
     }
     // the handler answers after the core did; the page may have gone by then
     QPointer<QTcpSocket> socket(s);
-    m_handler(post, [this, socket](bool ok, const QString& error) {
+    m_handler(post, [this, socket, jsonp](bool ok, const QString& error) {
         if (!socket)
             return;
-        respond(socket, 200, ok ? QByteArrayLiteral("success\r\n") : "failed " + error.toUtf8() + "\r\n");
+        if (jsonp)
+            respond(socket, 200, {}, QByteArrayLiteral("text/javascript; charset=utf-8"));
+        else
+            respond(socket, 200, ok ? QByteArrayLiteral("success\r\n") : "failed " + error.toUtf8() + "\r\n");
     });
 }
 
@@ -352,6 +400,65 @@ void ClickNLoadServer::respond(QTcpSocket* s, int code, const QByteArray& body, 
     out += body;
     s->write(out);
     s->disconnectFromHost();
+}
+
+void ClickNLoadServer::handleAddCnl(QTcpSocket* s, const QByteArray& query,
+                                    const QHash<QByteArray, QByteArray>& headers, const QByteArray& body)
+{
+    // JD's RemoteAPI: the object is the first parameter value, from the query, then the body
+    const QList<std::pair<QString, QString>> queryForm = parseForm(query);
+    const bool jsonp = !firstOf(queryForm, u"callback").isEmpty();
+    const bool jsonBody = headers.value("content-type").toLower().contains("application/json");
+    QList<std::pair<QString, QString>> params = queryForm;
+    if (!jsonBody && !headers.value("content-type").toLower().startsWith("multipart/"))
+        params += parseForm(body);
+    QJsonObject cnl;
+    bool ok = false;
+    const auto value = std::ranges::find_if(params, [](const auto& p) { return !isApiControlKey(p.first); });
+    if (value != params.end()) {
+        QJsonParseError err;
+        // "?{json}" has no '=': JD takes the lone part as the value
+        const QString text = value->second.isEmpty() ? value->first : value->second;
+        const QJsonDocument doc = QJsonDocument::fromJson(text.toUtf8(), &err);
+        ok = err.error == QJsonParseError::NoError && doc.isObject();
+        cnl = doc.object();
+    } else if (jsonBody) {
+        cnl = cnlOfJsonBody(body, &ok);
+    }
+    if (!ok) {
+        respond(s, 400, jsonp ? QByteArray() : QByteArrayLiteral("failed bad parameter\r\n"));
+        return;
+    }
+
+    Post post;
+    post.urls = stringOrLines(cnl.value(u"urls"));
+    // base64 has no spaces: a '+' decoded from a query or form came in as one
+    post.crypted = cnl.value(u"crypted").toString().trimmed().replace(u' ', u'+');
+    post.jk = cnl.value(u"jk").toString();
+    post.k = (cnl.contains(u"key") ? cnl.value(u"key") : cnl.value(u"k")).toString().trimmed();
+    if (post.jk.trimmed().isEmpty() && post.k.isEmpty())
+        post.crypted.clear();   // JD drops a list it can't decrypt
+    for (const QString& line : stringOrLines(cnl.value(u"passwords")).split(QRegularExpression(QStringLiteral("[\r\n]+"))))
+        if (const QString t = line.trimmed(); !t.isEmpty() && !post.passwords.contains(t))
+            post.passwords << t;
+    post.package = cleanPackageName(
+        (cnl.contains(u"packageName") ? cnl.value(u"packageName") : cnl.value(u"package")).toString());
+    post.source = cnl.value(u"source").toString();
+    if (post.source.isEmpty())
+        post.source = cnl.value(u"referrer").toString();
+    if (post.source.isEmpty())
+        post.source = QString::fromUtf8(headers.value("referer"));
+    if (post.source.isEmpty())
+        post.source = QString::fromUtf8(headers.value("origin"));
+    // comment, dir, autostart, permission: the "Add which?" dialog asks anyway
+
+    if (post.urls.trimmed().isEmpty() && post.crypted.isEmpty()) {
+        // JD: nothing to add is no error
+        respond(s, 200, jsonp ? QByteArray() : QByteArrayLiteral("success\r\n"),
+                jsonp ? QByteArrayLiteral("text/javascript; charset=utf-8") : QByteArrayLiteral("text/html; charset=utf-8"));
+        return;
+    }
+    handlePost(s, std::move(post), jsonp);
 }
 
 } // namespace eMule

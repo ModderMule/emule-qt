@@ -67,6 +67,8 @@ private slots:
 
     // Slot gating — acceptNewClient, USS off (the cap comes from thePrefs)
     void acceptNewClient_slotFloorAndCeiling();
+    void acceptNewClient_lowCapFloorIsThree();
+    void lowIdCallbackSlot_whenLineHasRoom();
     void acceptNewClient_lowIdGetsOneExtraSlot();
     void acceptNewClient_countsForeignSlots();
     void acceptNewClient_datarateGate();
@@ -922,6 +924,78 @@ void tst_UploadQueue::addClientToQueue_trackedClientsGate()
     theApp.clientList = nullptr;
 }
 
+// emule-qt#150: a free line and only LowID peers waiting. MFC leaves the slots empty
+// until one re-asks; the best one we can reach by callback is now dialled and holds the
+// slot in Connecting. One without any route is never picked.
+void tst_UploadQueue::lowIdCallbackSlot_whenLineHasRoom()
+{
+    qRegisterMetaType<eMule::UpDownClient*>("eMule::UpDownClient*");
+    SlotGateGuard guard;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxUpload(0);   // unlimited: the line always has room
+    thePrefs.setMaxGraphUploadRate(0);
+    const uint16 oldUdp = thePrefs.udpPort();
+    thePrefs.setUdpPort(4672);
+
+    KnownFileList knownFiles;
+    SharedFileList sharedFiles(&knownFiles);
+    theApp.sharedFileList = &sharedFiles;
+    uint8 fileHash[16];
+    std::memset(fileHash, 0x78, sizeof(fileHash));
+    auto* file = new KnownFile();
+    file->setFileHash(fileHash);
+    file->setFileName(QStringLiteral("shared.bin"));
+    QVERIFY(sharedFiles.safeAddKFile(file));
+
+    UploadQueue queue;
+    GlobalUploadQueue queueGuard(&queue);
+
+    const auto lowId = [&](UpDownClient& c, const QString& ip, uint8 hashByte, ClientCredits& cr) {
+        setupClient(c, ip, hashByte, 4000);
+        c.setUserIDHybrid(5);   // LowID
+        c.setCredits(&cr);
+        c.setUploadFileID(file);
+        c.setReqUpFileId(fileHash);
+        c.restoreWaitStartTime(SEC2MS(60));
+    };
+    uint8 h1[16]{};
+    std::memset(h1, 0xC1, sizeof(h1));
+    uint8 h2[16]{};
+    std::memset(h2, 0xC2, sizeof(h2));
+    ClientCredits cr1(h1);
+    ClientCredits cr2(h2);
+    UpDownClient noRoute;
+    lowId(noRoute, QStringLiteral("172.31.0.2"), 0xC1, cr1);
+    UpDownClient viaUdp;
+    lowId(viaUdp, QStringLiteral("172.31.0.3"), 0xC2, cr2);
+    viaUdp.setConnectAddress(Address::fromString(QStringLiteral("172.31.0.3")));
+    viaUdp.setKadPort(4672);
+    viaUdp.setDirectUDPCallbackSupport(true);
+    viaUdp.restoreWaitStartTime(SEC2MS(30));   // scores below noRoute: the route decides
+
+    QVERIFY(!noRoute.canCallBackForSlot());
+    QVERIFY(viaUdp.canCallBackForSlot());
+    QVERIFY(noRoute.score(false) > viaUdp.score(false));
+    QVERIFY(queue.addClientToQueue(&noRoute));
+    QVERIFY(queue.addClientToQueue(&viaUdp));
+    QCOMPARE(queue.waitingUserCount(), 2);
+
+    // the line must have had room for kUnderfillMs first
+    queue.process();
+    QCOMPARE(queue.uploadQueueLength(), 0);
+    QTest::qWait(UploadQueue::kUnderfillMs + 100);
+    queue.process();
+    QCOMPARE(queue.uploadQueueLength(), 1);
+    QVERIFY(queue.isDownloading(&viaUdp));
+    QCOMPARE(viaUdp.uploadState(), UploadState::Connecting);
+    QCOMPARE(queue.waitingUserCount(), 1);   // noRoute still waits
+
+    queue.removeFromUploadQueue(&viaUdp);
+    queue.removeFromWaitingQueue(&noRoute);
+    theApp.sharedFileList = nullptr;
+    thePrefs.setUdpPort(oldUdp);
+}
+
 // With separateIPv6Queue on and clients of both families waiting, each freed slot goes
 // to the family that did NOT get the previous one. Without it the higher-scoring family
 // wins every slot, which is how a small IPv6 population gets starved indefinitely.
@@ -1279,6 +1353,25 @@ void tst_UploadQueue::acceptNewClient_slotFloorAndCeiling()
 
     // ...and at MAX_UP_CLIENTS_ALLOWED nothing rescues it, however much headroom there is.
     QVERIFY(!queue.acceptNewClient(MAX_UP_CLIENTS_ALLOWED, 10'000'000));
+}
+
+// Report 25: MFC's floor of 4 slots is more than a low cap carries; up to 16 KB/s it is 3
+void tst_UploadQueue::acceptNewClient_lowCapFloorIsThree()
+{
+    SlotGateGuard guard;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxGraphUploadRate(0);
+    UploadQueue queue;
+
+    // datarate 0: only the floor lets a slot through
+    thePrefs.setMaxUpload(12);
+    QVERIFY(queue.acceptNewClient(2, 0));
+    QVERIFY(!queue.acceptNewClient(3, 0));
+    thePrefs.setMaxUpload(UploadQueue::kLowCapMaxKB);
+    QVERIFY(!queue.acceptNewClient(3, 0));
+    thePrefs.setMaxUpload(UploadQueue::kLowCapMaxKB + 1);
+    QVERIFY(queue.acceptNewClient(3, 0));
+    QVERIFY(!queue.acceptNewClient(4, 0));
 }
 
 // The one extra slot lowID users get: they are skipped when it was actually their turn,

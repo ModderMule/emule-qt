@@ -448,9 +448,11 @@ endif()
 # ---------------------------------------------------------------------------
 # libtorrent-rasterbar — BitTorrent engine of src/bt (docs/BitTorrentModule-Research.local.md)
 #
-# An installed one first (vcpkg, Homebrew, distro), else a static build of v2.1.2
-# against Boost headers and the OpenSSL found above (same libssl as ngtcp2/Qt).
-# Link the exported target only: it carries TORRENT_ABI_VERSION, which must be the
+# One libtorrent everywhere (local, CI, Docker, vcpkg): EMULE_LIBTORRENT_VERSION with
+# deprecated API off (TORRENT_ABI_VERSION=100). An installed one (vcpkg) is taken only
+# when it is exactly that; anything else (Homebrew = ABI 2, distro) falls back to a
+# static build of the same tag against Boost headers and the OpenSSL found above.
+# Link emule_libtorrent only: it carries TORRENT_ABI_VERSION, which must be the
 # same in the library and in every unit that includes its headers.
 #
 # Boost: headers only (libtorrent 2.x links no Boost library). A config package
@@ -460,19 +462,32 @@ endif()
 option(EMULE_BITTORRENT "Build the BitTorrent module (libtorrent-rasterbar)" ON)
 if(EMULE_BITTORRENT)
     set(_emule_bt_hint "Install Boost >= 1.74 headers (brew install boost, apt install libboost-dev, \
-vcpkg, or set BOOST_ROOT) or libtorrent-rasterbar >= 2.1, or pass -DEMULE_BITTORRENT=OFF")
-    # 2.1: pread_disk_io, torrent_info::layout() (src/bt/session/BtJoinDiskIo.cpp)
-    find_package(LibtorrentRasterbar 2.1 CONFIG QUIET)
+vcpkg, or set BOOST_ROOT) or pass -DEMULE_BITTORRENT=OFF")
+    # bump here, in src/vcpkg.json and src/vcpkg-ports/libtorrent together
+    set(EMULE_LIBTORRENT_VERSION 2.1.2)
+    find_package(LibtorrentRasterbar ${EMULE_LIBTORRENT_VERSION} EXACT CONFIG QUIET)
+    set(_emule_lt_installed OFF)
     if(LibtorrentRasterbar_FOUND)
-        message(STATUS "libtorrent-rasterbar ${LibtorrentRasterbar_VERSION}: installed")
-        # Its config adds TORRENT_USE_ASSERTS in Debug. Must match the linked lib or class
-        # layouts differ (stack corruption). Release-only package (Homebrew, distro): Debug
-        # links the Release lib, so strip it. Debug lib present (vcpkg): built with it, keep it
         get_target_property(_lt_real LibtorrentRasterbar::torrent-rasterbar ALIASED_TARGET)
         if(NOT _lt_real)
             set(_lt_real LibtorrentRasterbar::torrent-rasterbar)
         endif()
         get_target_property(_lt_defs ${_lt_real} INTERFACE_COMPILE_DEFINITIONS)
+        if("TORRENT_ABI_VERSION=100" IN_LIST _lt_defs)
+            set(_emule_lt_installed ON)
+        else()
+            message(STATUS "libtorrent-rasterbar ${LibtorrentRasterbar_VERSION} at ${LibtorrentRasterbar_DIR}: "
+                           "deprecated API on, not used")
+        endif()
+    elseif(LibtorrentRasterbar_CONSIDERED_VERSIONS)
+        message(STATUS "libtorrent-rasterbar ${LibtorrentRasterbar_CONSIDERED_VERSIONS} installed, "
+                       "need ${EMULE_LIBTORRENT_VERSION}: not used")
+    endif()
+    if(_emule_lt_installed)
+        message(STATUS "libtorrent-rasterbar ${LibtorrentRasterbar_VERSION}: installed")
+        # Its config adds TORRENT_USE_ASSERTS in Debug. Must match the linked lib or class
+        # layouts differ (stack corruption). Release-only package (Homebrew, distro): Debug
+        # links the Release lib, so strip it. Debug lib present (vcpkg): built with it, keep it
         get_target_property(_lt_configs ${_lt_real} IMPORTED_CONFIGURATIONS)
         if(_lt_defs AND NOT "DEBUG" IN_LIST _lt_configs)
             list(FILTER _lt_defs EXCLUDE REGEX "TORRENT_USE_ASSERTS")
@@ -502,7 +517,7 @@ vcpkg, or set BOOST_ROOT) or libtorrent-rasterbar >= 2.1, or pass -DEMULE_BITTOR
             # libtorrent's find_package(Boost) is module mode (FindBoost): hand it the tree
             set(Boost_INCLUDE_DIR "${EMULE_BOOST_INCLUDE_DIR}" CACHE PATH "Boost headers" FORCE)
         endif()
-        message(STATUS "libtorrent-rasterbar: FetchContent v2.1.2 (static, i2p patch)")
+        message(STATUS "libtorrent-rasterbar: FetchContent v${EMULE_LIBTORRENT_VERSION} (static, i2p patch)")
         # BUILD_SHARED_LIBS is global: off for libtorrent only. A normal variable:
         # it shadows any cache entry (CMP0126) and libtorrent's option() keeps it (CMP0077)
         set(_emule_saved_shared ${BUILD_SHARED_LIBS})
@@ -519,7 +534,7 @@ vcpkg, or set BOOST_ROOT) or libtorrent-rasterbar >= 2.1, or pass -DEMULE_BITTOR
         set(deprecated-functions OFF CACHE BOOL "" FORCE)
         FetchContent_Declare(libtorrent
             GIT_REPOSITORY https://github.com/arvidn/libtorrent.git
-            GIT_TAG        v2.1.2
+            GIT_TAG        v${EMULE_LIBTORRENT_VERSION}
             GIT_SHALLOW    TRUE
             # try_signal is in the library's source list; the other submodules are not needed
             GIT_SUBMODULES deps/try_signal
@@ -530,28 +545,24 @@ vcpkg, or set BOOST_ROOT) or libtorrent-rasterbar >= 2.1, or pass -DEMULE_BITTOR
         )
         FetchContent_MakeAvailable(libtorrent)
         set(BUILD_SHARED_LIBS ${_emule_saved_shared})
-        if(TARGET torrent-rasterbar AND NOT TARGET LibtorrentRasterbar::torrent-rasterbar)
-            add_library(LibtorrentRasterbar::torrent-rasterbar ALIAS torrent-rasterbar)
+        if(NOT TARGET torrent-rasterbar)
+            message(FATAL_ERROR "BitTorrent: libtorrent-rasterbar target missing. ${_emule_bt_hint}")
         endif()
+        set(_lt_real torrent-rasterbar)
+        # ahead of every other include dir: an installed copy (Homebrew's
+        # /opt/homebrew/include via other deps) must not shadow these headers
+        include_directories(BEFORE SYSTEM
+            ${libtorrent_SOURCE_DIR}/include ${libtorrent_BINARY_DIR}/include)
     endif()
 
     # libtorrent and Boost headers are not ours to warn about
-    foreach(_lt_target LibtorrentRasterbar::torrent-rasterbar torrent-rasterbar)
-        if(TARGET ${_lt_target})
-            get_target_property(_lt_real ${_lt_target} ALIASED_TARGET)
-            if(NOT _lt_real)
-                set(_lt_real ${_lt_target})
-            endif()
-            get_target_property(_lt_includes ${_lt_real} INTERFACE_INCLUDE_DIRECTORIES)
-            if(_lt_includes)
-                set_target_properties(${_lt_real} PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_lt_includes}")
-            endif()
-            break()
-        endif()
-    endforeach()
-    if(NOT TARGET LibtorrentRasterbar::torrent-rasterbar)
-        message(FATAL_ERROR "BitTorrent: libtorrent-rasterbar target missing. ${_emule_bt_hint}")
+    get_target_property(_lt_includes ${_lt_real} INTERFACE_INCLUDE_DIRECTORIES)
+    if(_lt_includes)
+        set_target_properties(${_lt_real} PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_lt_includes}")
     endif()
+    # the one libtorrent target src/bt links
+    add_library(emule_libtorrent INTERFACE)
+    target_link_libraries(emule_libtorrent INTERFACE ${_lt_real})
 endif()
 # The one place EMULE_HAVE_BITTORRENT is set: every target below inherits it
 if(EMULE_BITTORRENT)

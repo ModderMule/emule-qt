@@ -22,8 +22,9 @@ namespace eMule {
 
 class BtShareGuard {
 public:
-    /// The torrent's files, asked only when it turns done.
-    using FilesFn = std::function<QList<bt::BtFileRow>()>;
+    /// The torrent's files, asked only when it turns done; nullopt: not known yet, the
+    /// torrent comes again (BtSession::currentFiles)
+    using FilesFn = std::function<std::optional<QList<bt::BtFileRow>>()>;
 
     struct Change {
         QStringList released;    ///< folders to rescan: their files may be shared now

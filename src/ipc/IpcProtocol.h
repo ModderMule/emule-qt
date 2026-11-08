@@ -951,6 +951,36 @@ enum class IpcMsgType : int {
     /// starts as the autoConnect pref, ed3kEnabled still gates it
     SetEd3kConnected        = 1205,
 
+    // -- Link Grabber (1210-1219, hoster.md "Link Grabber"), Ed3kHosterBridge.cpp. A package:
+    // {id, name, passwords: [string], source, added (ms)}; a link: {id, packageId, url, name, host,
+    // size, status (Ed3kHosterJoin::LinkStatus: 0 checking, 1 online, 2 offline, 3 unknown),
+    // enabled, dupe (a hoster download already)}. Failure: [false, {error}]
+    /// [] -> [ok, {packages: [package], links: [link], crawling: int, deep: bool (crawls pages)}]
+    GetLinkGrabber          = 1210,
+    /// [text: string, source: string, deep: bool, package: string, passwords: [string], ask: bool,
+    ///  clipboard: bool] -> [ok, {token}]; crawls the http(s) links of text. ask: no list, the
+    /// links come back as PushHosterLinks item 0 with {token, grab: true, clipboard, source, code}
+    /// (the GUI asks which to add); clipboard: links no plugin takes are dropped silently.
+    /// Failure while hoster downloads or the resolver are off, or with no links
+    GrabLinks               = 1211,
+    /// [packageIds: [int], name: string (empty: kept), passwords?: [string]] -> [ok]
+    EditGrabberPackages     = 1212,
+    /// [linkIds: [int], enabled: bool] -> [ok]
+    SetGrabberLinksEnabled  = 1213,
+    /// [linkIds: [int], packageId: int (0: a new package), newName: string] -> [ok, {packageId}];
+    /// [[], 0, "", splitPackageIds: [int]]: one package per hoster of each
+    MoveGrabberLinks        = 1214,
+    /// [linkIds: [int], packageIds: [int], cleanup: string ("offline"|"disabled"|"dupes"|"all"; empty:
+    ///  the ids)] -> [ok]
+    RemoveGrabberLinks      = 1215,
+    /// [linkIds: [int], packageIds: [int]] -> [ok]; checks them again
+    RecheckGrabberLinks     = 1216,
+    /// [packageIds: [int], linkIds: [int], includeOffline: bool] -> [ok, {ids: [hoster item]}];
+    /// enabled links become hoster downloads, one package each, and leave the list
+    ConfirmGrabberLinks     = 1217,
+    /// [] -> [ok]; stops the crawls
+    AbortGrabberCrawls      = 1218,
+
     // hoster links (1100-1109, hoster.md), Ed3kHosterBridge.cpp. An item: {id, url, host,
     // name, size, done, speed, state (Ed3kHosterJoin::State), reason (Ed3kHosterJoin::Reason, the
     // GUI words it), reasonArg (technical, not localized), waitUntil (ms), verified, file, root,
@@ -1395,7 +1425,9 @@ enum class IpcMsgType : int {
     ///  fileName, code, text}] — a folder link: ask which to add (AddHosterLinks). Item 0 with
     ///  container: an OpenHosterContainer result; no links: it failed, code says why ("limit":
     ///  the DLC service refuses for a while, "invalid", "password", "noPlugin", "bad": the
-    ///  resolver is too old, "unavailable", "io", "failed"), text the plugin's words
+    ///  resolver is too old, "unavailable", "io", "failed"), text the plugin's words.
+    ///  container.grabbed: the links went to the Link Grabber (count), no dialog;
+    ///  container.grab: a GrabLinks ask result
     PushHosterLinks        = 1153,
     /// [host, user, {valid, premium, expires, trafficLeft, error}]
     PushHosterAccount      = 1154,
@@ -1406,6 +1438,11 @@ enum class IpcMsgType : int {
     // -- ed3k downloads (batch 12), see GetEd3kDownloads (1150-1154 were taken by the hoster links)
     /// [{...GetEd3kDownloads...}] — the ed3k download list changed (a state push, at most once a second)
     PushEd3kDownloads      = 1180,
+
+    // -- Link Grabber, see GetLinkGrabber
+    /// [{packages: [package], links: [link], removedPackages: [id], removedLinks: [id],
+    ///   crawling: int, all: bool (replace the whole list)}] — coalesced, at most every 200 ms
+    PushLinkGrabber        = 1190,
 
     // -- ed3k filter lists (batch 12), see GetEd3kFilters
     /// [] — followed lists, their versions or the own verdicts changed (a state push)

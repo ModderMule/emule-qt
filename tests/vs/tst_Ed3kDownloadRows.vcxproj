@@ -187,6 +187,7 @@
     <ClCompile Include="..\..\src\gui\utils\PriorityText.cpp" />
     <ClCompile Include="..\..\src\gui\utils\RatingIcons.cpp" />
     <ClCompile Include="..\..\src\gui\utils\FileTypeIcons.cpp" />
+    <ClCompile Include="..\..\src\gui\app\SkinIcons.cpp" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="..\..\src\gui\controls\DownloadListModel.h">
@@ -196,6 +197,9 @@
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\utils\CountryFlags.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\app\SkinIcons.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
   </ItemGroup>

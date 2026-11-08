@@ -39,6 +39,9 @@
 #include "app/AppConfig.h"
 #include "app/AppContext.h"
 #include "app/CoreSession.h"
+#include "PortTestRunner.h"
+#include "net/PortTestApi.h"
+#include "net/ReachabilityWatch.h"
 #include "ipfilter/IPFilter.h"
 #include "kademlia/KadLog.h"
 #include "net/BindAddress.h"
@@ -82,6 +85,7 @@
 #include "Ed3kTorrentJoin.h"
 #include "Ed3kEd2kJoin.h"
 #include "Ed3kHosterJoin.h"
+#include "Ed3kLinkGrabber.h"
 #ifdef EMULE_HAVE_HOSTER_JD
 #include "Ed3kJavaRuntime.h"
 #include "Ed3kStore.h"
@@ -122,6 +126,7 @@
 
 #include <openssl/rand.h>
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 
@@ -191,6 +196,22 @@ bool DaemonApp::start()
         });
     }
     m_coreSession->start();
+    // #156: the watch runs the website eD2K port test from here, like TestPorts
+    if (theApp.reachabilityWatch) {
+        theApp.reachabilityWatch->setPortTest([](ReachabilityWatch::PortTestDone done) {
+            PortTestRunner::run(int(PortTestApi::Network::Ed2k),
+                                [done](bool ok, const QCborMap& result, int, const QString& detail) {
+                if (!ok) {
+                    logDebug(QStringLiteral("Reachability watch: port test failed: %1").arg(detail));
+                    done(PortTestApi::Verdict::Unknown);
+                    return;
+                }
+                done(PortTestApi::tcpVerdict(result.value(QStringLiteral("targets")).toArray(),
+                                             result.value(QStringLiteral("obfuscated")).toBool(),
+                                             thePrefs.cryptLayerRequired()));
+            });
+        });
+    }
     MetaSearchService::instance();   // registers itself as theApp.metaSearch
 
     // Generate IPC auth token on first run
@@ -706,6 +727,32 @@ bool DaemonApp::start()
             if (m_ipcServer)
                 m_ipcServer->broadcast(msg);
         });
+        // the Link Grabber: crawls through the resolver, checks and downloads through the join
+        m_linkGrabber = std::make_unique<ed3k::Ed3kLinkGrabber>(thePrefs.configDir());
+        m_linkGrabber->setResolver(resolver);
+        {
+            ed3k::Ed3kLinkGrabber::Backend b;
+            auto* join = m_hosterJoin.get();
+            b.check = [join](const QStringList& urls) { return join->checkLinks(urls); };
+            b.add = [join](const QList<QStringList>& files, const QString& package, const QStringList& passwords) {
+                return join->addMirrored(files, package, 0, passwords);
+            };
+            b.isItem = [join](const QString& url) {
+                const auto items = join->items();
+                return std::any_of(items.cbegin(), items.cend(), [&url](const auto& it) { return it.url == url; });
+            };
+            m_linkGrabber->setBackend(std::move(b));
+        }
+        connect(m_hosterJoin.get(), &ed3k::Ed3kHosterJoin::linkChecked, m_linkGrabber.get(),
+                [g = m_linkGrabber.get()](const QString& url, const ed3k::Ed3kHosterJoin::LinkCheck& c) {
+                    g->onLinkChecked(url, int(c.status), c.host, c.name, c.size);
+                });
+        Ed3kHosterBridge::setGrabber(m_linkGrabber.get());
+        Ed3kHosterBridge::connectGrabberPushes(*m_linkGrabber, [this](const IpcMessage& msg) {
+            if (m_ipcServer)
+                m_ipcServer->broadcast(msg);
+        });
+        m_linkGrabber->load();
     }
     applyEd3kConfig();
     if (m_ed3kSession->isRunning())
@@ -730,7 +777,7 @@ bool DaemonApp::start()
             if (!m_btSession)
                 return;
             const auto change = m_btShareGuard.update(id, m_btSession->torrent(id),
-                                                      [this, id] { return m_btSession->files(id); });
+                                                      [this, id] { return m_btSession->currentFiles(id); });
             if (!theApp.sharedFileList)
                 return;
             if (change.blockedMore)
@@ -966,6 +1013,12 @@ void DaemonApp::stop()
     m_ed3kFilters.reset();
     Ed3kCreditBridge::setChain(nullptr);
     m_ed3kChain.reset();
+    Ed3kHosterBridge::setGrabber(nullptr);
+    if (m_linkGrabber) {
+        m_linkGrabber->abortCrawls();
+        m_linkGrabber->save();
+    }
+    m_linkGrabber.reset();
     Ed3kHosterBridge::setHoster(nullptr, nullptr, nullptr);
     if (m_hosterJoin) {
         m_hosterJoin->setCounters(nullptr);   // banked already
@@ -1455,18 +1508,49 @@ void DaemonApp::applyHosterConfig()
     const Ed3kHosterPrefs h = thePrefs.ed3kHoster();
     const QStringList temps = thePrefs.tempDirs();
     m_hosterJoin->setConfig(h, temps, thePrefs.incomingDir());
+    if (m_linkGrabber)
+        m_linkGrabber->setEnabled(h.linkGrabber, h.grabAll);
+    // the GUI shows the Link Grabber tab and watches the clipboard by these: tell it now
+    if (const int flags = (h.clipboard ? 1 : 0) | (h.linkGrabber ? 2 : 0) | (h.grabAll ? 4 : 0); flags != m_hosterUiFlags) {
+        const bool first = m_hosterUiFlags < 0;
+        m_hosterUiFlags = flags;
+        if (!first && m_ipcServer) {
+            IpcMessage msg(IpcMsgType::PushEd3kStatus, 0);
+            msg.append(Ed3kBridge::statusToCbor());
+            m_ipcServer->broadcast(msg);
+        }
+    }
 #ifdef EMULE_HAVE_HOSTER_JD
     if (!m_javaRuntime || !m_jdResolver)
         return;
     // nothing is fetched or unpacked unless hoster downloads are on (and so is the ed3k node
     // they run on); off stops a fetch and creates nothing under config/ed3k
     const bool on = thePrefs.hosterDownloadsOn() && !m_enginesHeld;
+    // sharedPluginDir (YAML only, relative: to the config folder): plugins, their updates and
+    // the Java runtime once for all instances. Read-only (filled by an admin): used as it is,
+    // no updates; read-only and empty: per instance
+    const QString sharedDir = h.sharedPluginDir.isEmpty()
+                                  ? QString()
+                                  : QDir::cleanPath(QDir(thePrefs.configDir()).absoluteFilePath(h.sharedPluginDir));
+    const QString instanceUpdates = QDir(thePrefs.configDir()).filePath(QStringLiteral("ed3k/resolver/update"));
+    const bool sharedWritable = on && !sharedDir.isEmpty() && ed3k::Ed3kJdResolver::dirWritable(sharedDir);
+    const bool sharedReadOnly = on && !sharedDir.isEmpty() && !sharedWritable;
+    const bool sharedPlugins = !sharedDir.isEmpty()
+                               && (!sharedReadOnly || !ed3k::Ed3kJdResolver::sharedVersion(sharedDir).isEmpty());
+    if (sharedReadOnly && m_hosterSharedWarned != sharedDir) {
+        m_hosterSharedWarned = sharedDir;
+        logHosterWarning(sharedPlugins
+                             ? QStringLiteral("hoster: %1 is read-only: its resolver plugins are used, not updated").arg(sharedDir)
+                             : QStringLiteral("hoster: %1 is read-only and holds no resolver plugins: per instance").arg(sharedDir));
+    }
     m_javaRuntime->setAllowed(on);
+    if (on)
+        m_javaRuntime->setSharedDir(sharedDir, sharedWritable);
     if (!on)
         m_javaLookedFor = QStringLiteral("\x01");
     // the runtime is looked for once the user switched hosters on, and again for a new path
-    if (on && m_javaLookedFor != h.java) {
-        m_javaLookedFor = h.java;
+    if (const QString key = h.java + u'\n' + sharedDir + (sharedWritable ? u'w' : u'r'); on && m_javaLookedFor != key) {
+        m_javaLookedFor = key;
         m_javaRuntime->locate(h.java);
     }
     QString proxy;
@@ -1490,15 +1574,23 @@ void DaemonApp::applyHosterConfig()
     if (const auto rt = m_javaRuntime->runtime())
         cfg.java = rt->java;
     cfg.dataDir = QDir(thePrefs.configDir()).filePath(QStringLiteral("ed3k/resolver"));
-    if (!h.sharedPluginDir.isEmpty())   // relative: to the config folder
-        cfg.sharedDir = QDir::cleanPath(QDir(thePrefs.configDir()).absoluteFilePath(h.sharedPluginDir));
+    if (sharedPlugins)
+        cfg.sharedDir = sharedDir;
     cfg.zip = ed3k::Ed3kJdResolver::findBundledZip();
     if (m_resolverUpdater) {
+        // shared: one update folder for all; the instance's own goes (its zip copied along)
+        if (on) {
+            m_resolverUpdater->setDir(sharedWritable ? QDir(sharedDir).filePath(QStringLiteral("update")) : instanceUpdates);
+            if (sharedWritable)
+                QDir(instanceUpdates).removeRecursively();
+        }
         // a fetched zip when newer than the bundled one and of our api
         m_resolverUpdater->setBundledZip(cfg.zip);
         cfg.zip = m_resolverUpdater->zipToUse();
-        m_resolverUpdater->setSchedule(on && h.autoUpdate, h.autoUpdateHours);
+        m_resolverUpdater->setSchedule(on && h.autoUpdate && !(sharedReadOnly && sharedPlugins), h.autoUpdateHours);
     }
+    if (sharedReadOnly && sharedPlugins)
+        cfg.zip.clear();   // nothing can go in: the best version there
     cfg.proxy = proxy;
     cfg.askPuzzles = h.askPuzzles;
     if (h.solversEnabled)

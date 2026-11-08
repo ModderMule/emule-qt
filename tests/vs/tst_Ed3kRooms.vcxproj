@@ -181,6 +181,7 @@
     <ClCompile Include="..\..\src\gui\panels\Ed3kRoomTab.cpp" />
     <ClCompile Include="..\..\src\gui\panels\ChatChannelView.cpp" />
     <ClCompile Include="..\..\src\gui\controls\LogTextView.cpp" />
+    <ClCompile Include="..\..\src\gui\app\SkinIcons.cpp" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="..\..\src\gui\panels\Ed3kRoomTab.h">
@@ -190,6 +191,9 @@
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\controls\LogTextView.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\app\SkinIcons.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
   </ItemGroup>

@@ -118,7 +118,7 @@ public:
     SocketSentBytes sendFileAndControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize) override;
     [[nodiscard]] bool hasControlQueue() const override;
     [[nodiscard]] uint64 getLastCalledSend() const override { return m_lastCalledSend; }
-    [[nodiscard]] uint32 getNeededBytes() override;
+    [[nodiscard]] uint32 getNeededBytes(uint32 paceBytesPerSec = 0) override;
     [[nodiscard]] bool isBusyExtensiveCheck() override;
     [[nodiscard]] bool isBusyQuickCheck() const override;
     [[nodiscard]] bool isEnoughFileDataQueued(uint32 nMinFilePayloadBytes) const override;
@@ -274,7 +274,8 @@ private:
 
     /// Threshold above which the socket is considered congested: the SO_SNDBUF
     /// size useBigSendBuffer() asks for. 1 MiB is the port's own value (MFC
-    /// 128 KiB) — deliberate, with the 3 s / 5 s pacing in getNeededBytes().
+    /// 128 KiB) — deliberate, with the 3 s / 5 s pacing in getNeededBytes()
+    /// (stretched on a capped line).
     static constexpr qint64 kBusyThreshold = 1024 * 1024;
 
 };

@@ -305,6 +305,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_autoUpdateServerListCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_smartLowIdCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_serverPreferIPv6Check, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_reachabilityWatchCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_manualHighPrioCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
 
     // Proxy page
@@ -1056,12 +1057,15 @@ QWidget* OptionsDialog::createGeneralPage()
     coreLayout->addRow(tr("Token:"), m_coreTokenEdit);
 
     // Remote cores' TLS certificates, pinned on first connect
-    m_trustedCoresTree = new QTreeWidget(coreGroup);
-    m_trustedCoresTree->setColumnCount(3);
-    m_trustedCoresTree->setHeaderLabels({tr("Core"), tr("Certificate (SHA-256)"), tr("First Seen")});
+    auto* trustedCores = new ListTreeWidget(coreGroup);
+    trustedCores->setColumnCount(3);
+    trustedCores->setHeaderLabels({tr("Core"), tr("Certificate (SHA-256)"), tr("First Seen")});
+    trustedCores->bindColumns(QStringLiteral("trustedCores"));
+    m_trustedCoresTree = trustedCores;
     m_trustedCoresTree->setRootIsDecorated(false);
     m_trustedCoresTree->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_trustedCoresTree->setMaximumHeight(90);
+    // after the restore: the certificate takes the spare width
     m_trustedCoresTree->header()->setStretchLastSection(false);
     m_trustedCoresTree->header()->setSectionResizeMode(1, QHeaderView::Stretch);
     auto* removeCoreBtn = new QPushButton(tr("Remove"), coreGroup);
@@ -1474,7 +1478,7 @@ QWidget* OptionsDialog::createConnectionPage()
     portLayout->addWidget(m_udpPortSpin, 1, 1);
 
     auto* testPortsBtn = new QPushButton(tr("Test Ports"), portGroup);
-    connect(testPortsBtn, &QPushButton::clicked, this, [this] { openPortTest(); });
+    connect(testPortsBtn, &QPushButton::clicked, this, [this, testPortsBtn] { openPortTest(testPortsBtn); });
     portLayout->addWidget(testPortsBtn, 1, 3);
 
     auto* routerBtn = new QPushButton(tr("Open Router"), portGroup);
@@ -1853,6 +1857,13 @@ QWidget* OptionsDialog::createServerPage()
     m_serverPreferIPv6Check->setToolTip(
         tr("Reconnect to a server over its IPv6 address when the IPv4 connection got a Low ID"));
     miscLayout->addWidget(m_serverPreferIPv6Check);
+
+    // #156: port opened after start
+    m_reachabilityWatchCheck = new QCheckBox(tr("Recheck a Low ID when the port opens later"), miscGroup);
+    m_reachabilityWatchCheck->setToolTip(
+        tr("While Low ID or Kad firewalled: recheck after 2, 10, 30 and 60 minutes and when a peer "
+           "reaches us, then get a High ID without disconnecting"));
+    miscLayout->addWidget(m_reachabilityWatchCheck);
 
     // "Safe Connect"
     m_safeServerConnectCheck = new QCheckBox(tr("Safe Connect"), miscGroup);
@@ -7586,6 +7597,8 @@ void OptionsDialog::saveSettings()
         req.append(m_smartLowIdCheck->isChecked());
         req.append(QStringLiteral("serverPreferIPv6"));
         req.append(m_serverPreferIPv6Check->isChecked());
+        req.append(QStringLiteral("reachabilityWatch"));
+        req.append(m_reachabilityWatchCheck->isChecked());
         req.append(QStringLiteral("manualServerHighPriority"));
         req.append(m_manualHighPrioCheck->isChecked());
 
@@ -8236,6 +8249,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setServerListURL(m_serverListURLValue);
         thePrefs.setSmartLowIdCheck(m_smartLowIdCheck->isChecked());
         thePrefs.setServerPreferIPv6(m_serverPreferIPv6Check->isChecked());
+        thePrefs.setReachabilityWatch(m_reachabilityWatchCheck->isChecked());
         thePrefs.setManualServerHighPriority(m_manualHighPrioCheck->isChecked());
 
         // Proxy page fallback
@@ -8494,6 +8508,8 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     auto tcpPort = static_cast<int>(prefs.value(QStringLiteral("port")).toInteger(5662));
     auto udpPort = static_cast<int>(prefs.value(QStringLiteral("udpPort")).toInteger(5672));
     m_tcpPortSpin->setValue(tcpPort);
+    m_loadedTcpPort = tcpPort;
+    m_loadedUdpPort = udpPort;
     if (udpPort != 0)
         m_udpPortSpin->setValue(udpPort);
     else if (m_udpPortSpin->value() <= 1)
@@ -8537,6 +8553,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_serverListURLValue = prefs.value(QStringLiteral("serverListURL")).toString();
     m_smartLowIdCheck->setChecked(prefs.value(QStringLiteral("smartLowIdCheck")).toBool(true));
     m_serverPreferIPv6Check->setChecked(prefs.value(QStringLiteral("serverPreferIPv6")).toBool(true));
+    m_reachabilityWatchCheck->setChecked(prefs.value(QStringLiteral("reachabilityWatch")).toBool(false));
     m_manualHighPrioCheck->setChecked(prefs.value(QStringLiteral("manualServerHighPriority")).toBool());
 
     // Proxy page
@@ -9104,7 +9121,7 @@ void OptionsDialog::updateWebEnabledStates()
 // Port test
 // ---------------------------------------------------------------------------
 
-void OptionsDialog::openPortTest()
+void OptionsDialog::openPortTest(QPushButton* button)
 {
     const int tcp = m_tcpPortSpin->value();
     const int udp = udpPortValue();
@@ -9120,7 +9137,13 @@ void OptionsDialog::openPortTest()
     // own public addresses for the other one — otherwise a v6-preferring browser silently leaves
     // IPv4 untested, and vice versa. The daemon is the authority here: it may run on a different
     // host than this GUI, in which case our own addresses would be the wrong ones to test.
-    PortTest::open(m_ipc, this, tcp, udp);
+    const auto browser = [this, tcp, udp] { PortTest::open(m_ipc, this, tcp, udp); };
+    // The core tests the ports it listens on (#156); edited, unsaved ones only the page can
+    if (tcp != m_loadedTcpPort || udp != m_loadedUdpPort) {
+        browser();
+        return;
+    }
+    PortTest::NetworkTest::run(m_ipc, this, button, PortTest::Network::Ed2k, browser);
 }
 
 void OptionsDialog::openRouterPage()

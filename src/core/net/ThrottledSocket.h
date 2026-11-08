@@ -40,7 +40,10 @@ public:
     virtual SocketSentBytes sendFileAndControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize) = 0;
     /// getTickCount() of the last send call — the throttler's own clock.
     [[nodiscard]] virtual uint64 getLastCalledSend() const = 0;
-    [[nodiscard]] virtual uint32 getNeededBytes() = 0;
+    /// Bytes the trickle pass sends to keep the current packet on schedule.
+    /// @p paceBytesPerSec: this slot's share of a capped line (stretches the
+    /// deadline so the trickle stays inside the limit); 0 = uncapped.
+    [[nodiscard]] virtual uint32 getNeededBytes(uint32 paceBytesPerSec = 0) = 0;
     [[nodiscard]] virtual bool isBusyExtensiveCheck() = 0;
     [[nodiscard]] virtual bool isBusyQuickCheck() const = 0;
     [[nodiscard]] virtual bool isEnoughFileDataQueued(uint32 nMinFilePayloadBytes) const = 0;

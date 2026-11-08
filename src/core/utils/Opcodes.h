@@ -236,6 +236,9 @@
 #define OP_GETSOURCES_IPV6          0x24    // client -> server: request IPv6 tag-block sources
 #define OP_FOUNDSOURCES_IPV6        0x25    // server -> client: IPv6 tag-block sources reply
 #define OP_CALLBACKREQUESTED_IPV6   0x26    // server -> client: IPv6 LowID callback (16B IPv6 + LE port)
+// eNode-go firewall recheck (flag SrvTcpFlag::FirewallRecheck): <tcp port 2> (0 = login port);
+// server re-tests the port and answers with a fresh OP_IDCHANGE (#156)
+#define OP_RECHECKFIREWALL          0x27    // client -> server
 
 // LowID<->LowID rendezvous, server TCP.
 // Lugdunum eserver: <ip 4><udp port 2><requester id 4><crypt flags 1>[<hash 16> if flags & 0x80]

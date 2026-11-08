@@ -91,6 +91,12 @@ public:
     static QString installShared(const QString& zip, const QString& sharedDir, QString* error);
     /// Removes what install() unpacked (@p dataDir/plugins and a left-over plugins.tmp)
     static void removePlugins(const QString& dataDir);
+    /// The best version unpacked in @p sharedDir: our api (or none told), highest revision,
+    /// then last used. Empty: none. Reads only (an admin-filled read-only folder works)
+    [[nodiscard]] static QString sharedVersion(const QString& sharedDir);
+    /// Whether this process can create files in @p dir (created when missing). A real
+    /// probe file: permission bits and ACLs lie
+    [[nodiscard]] static bool dirWritable(const QString& dir);
     /// The unpacked resolver folder in use (Core.jar, jd/plugins, libs); empty: none
     [[nodiscard]] QString pluginRoot() const { return m_root; }
     /// The command line the sidecar runs with (tests). Holds -Demuleqt.port while listening.
@@ -119,6 +125,9 @@ public:
     TaskId match(const QString& url) override;
     TaskId check(const QString& url, const std::optional<ResolverAccount>& account) override;
     TaskId expand(const QString& url) override;
+    TaskId expandDeep(const QString& url) override;
+    /// Until a sidecar said hello: assumed (an older one ignores the flag, a plain crawl)
+    [[nodiscard]] bool canDeepCrawl() const override { return m_deep; }
     TaskId openContainer(const QString& path) override;
     TaskId open(const QString& url, const std::optional<ResolverAccount>& account, const QString& dir,
                 std::uint64_t have) override;
@@ -190,6 +199,7 @@ private:
     QString m_installError;
     QString m_root;
     QString m_revision;   ///< JD revision number: the root's revision.txt or the sidecar's hello
+    bool m_deep = true;   ///< the sidecar crawls pages (hello "deep"; older ones do not say)
     TaskId m_nextId = 1;
     /// open tasks; pure requests (hello, setProxy) are not counted
     std::map<TaskId, bool> m_pending;

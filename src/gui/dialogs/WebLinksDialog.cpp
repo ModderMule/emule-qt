@@ -5,11 +5,13 @@
 #include "dialogs/WebLinksDialog.h"
 
 #include "app/IpcClient.h"
+#include "controls/AbstractListView.h"
 #include "controls/FileCheckButtons.h"
 #include "app/UiState.h"
 #include "prefs/Preferences.h"
 #include "utils/Clipboard.h"
 #include "utils/DialogSizing.h"
+#include "utils/HosterLinkStatus.h"
 #include "utils/Ed2kLinkImporter.h"
 #include "utils/MenuUtils.h"
 #include "utils/StatusBarNotifier.h"
@@ -32,6 +34,7 @@
 #include <QPolygonF>
 #include <QPointer>
 #include <QPushButton>
+#include <QShowEvent>
 #include <QMap>
 #include <QMenu>
 #include <QStandardPaths>
@@ -50,48 +53,17 @@ namespace {
 
 enum Column { ColFile, ColName, ColSize, ColHoster, ColStatus, ColAccount, ColLink };
 
-/// Ed3kHosterJoin::LinkStatus, as PushHosterLinkCheck carries it.
-enum LinkStatus { StatusChecking = 0, StatusOnline, StatusOffline, StatusUnknown };
+using gui::drawnIcon;
+
+/// Ed3kHosterJoin::LinkStatus (HosterLinkStatus.h)
+enum LinkStatus { StatusChecking = gui::LinkChecking, StatusOnline = gui::LinkOnline, StatusOffline = gui::LinkOffline,
+                  StatusUnknown = gui::LinkUnknown };
 
 /// Opening more than this at once asks first: each is a browser tab.
 constexpr int kOpenWithoutAsking = 5;
 
-/// 16 px icon, 1x and 2x, drawn by @p paint into a 16 x 16 box.
-QIcon drawnIcon(const std::function<void(QPainter&)>& paint)
-{
-    QIcon icon;
-    for (const int scale : {1, 2}) {
-        QPixmap pm(16 * scale, 16 * scale);
-        pm.setDevicePixelRatio(scale);
-        pm.fill(Qt::transparent);
-        QPainter p(&pm);
-        p.setRenderHint(QPainter::Antialiasing);
-        paint(p);
-        p.end();
-        icon.addPixmap(pm);
-    }
-    return icon;
-}
-
-/// The status dot: green online, red offline, grey unknown; none while checking.
-QIcon statusIcon(int status)
-{
-    QColor fill;
-    switch (status) {
-    case StatusOnline: fill = QColor(0x2E, 0xB8, 0x3C); break;
-    case StatusOffline: fill = QColor(0xD9, 0x30, 0x25); break;
-    case StatusUnknown: fill = QColor(0x9A, 0x9A, 0x9A); break;
-    default: return {};
-    }
-    static QHash<int, QIcon> cache;
-    if (const auto it = cache.constFind(status); it != cache.cend())
-        return *it;
-    return cache[status] = drawnIcon([fill](QPainter& p) {
-        p.setPen(QPen(fill.darker(140), 1.0));
-        p.setBrush(fill);
-        p.drawEllipse(QRectF(3.5, 3.5, 9, 9));
-    });
-}
+/// uistate.yml key of the list's column layout.
+const QString kStateKey = QStringLiteral("webLinks");
 
 /// A golden star, for a premium account.
 QIcon premiumIcon()
@@ -138,7 +110,7 @@ WebLinksDialog::WebLinksDialog(const QString& rowName, const QCborMap& links, co
     hint->setWordWrap(true);
     layout->addWidget(hint);
 
-    m_list = new QTreeWidget(this);
+    m_list = new ListTreeWidget(this);
     m_list->setRootIsDecorated(false);
     m_list->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_list->setHeaderLabels({tr("File"), tr("Name"), tr("Size"), tr("Hoster"), tr("Status"), tr("Account"), tr("Link")});
@@ -157,10 +129,16 @@ WebLinksDialog::WebLinksDialog(const QString& rowName, const QCborMap& links, co
         item->setTextAlignment(ColFile, Qt::AlignRight | Qt::AlignVCenter);
         item->setTextAlignment(ColSize, Qt::AlignRight | Qt::AlignVCenter);
     }
-    m_list->setColumnHidden(ColStatus, true);
-    m_list->setColumnHidden(ColAccount, true);
     for (int c = ColFile; c < ColLink; ++c)
         m_list->resizeColumnToContents(c);
+    // saved widths, order and hidden columns win over the fitted defaults
+    m_freshLayout = m_fitOnShow = !theUiState.hasHeaderState(kStateKey);
+    m_list->bindColumns(kStateKey);
+    m_wantStatus = !m_list->isColumnHidden(ColStatus);
+    m_wantAccount = !m_list->isColumnHidden(ColAccount);
+    // no data yet: startChecks() / setStatus() bring them back
+    lockColumn(ColStatus);
+    lockColumn(ColAccount);
     layout->addWidget(FileCheckButtons::create(this, [this](FileCheckButtons::Bulk mode) {
         FileCheckButtons::applyToLeaves(m_list, ColFile, mode);
     }));
@@ -208,9 +186,20 @@ WebLinksDialog::WebLinksDialog(const QString& rowName, const QCborMap& links, co
     layout->addWidget(buttons);
 
     DialogSizing::applySize(this, {}, QSize(720, 360), DialogSizing::Fit::Layout);
-    // a long name leaves the other columns in sight; the user can still widen it
-    m_list->setColumnWidth(ColName, std::min(m_list->columnWidth(ColName), width() * 3 / 4));
     startChecks();
+}
+
+WebLinksDialog::~WebLinksDialog()
+{
+    // Status/Account hidden for lack of data are not the user's choice: store their wish
+    const std::set<int>& locked = m_list->lockedColumns();
+    if (!locked.contains(ColStatus))
+        m_wantStatus = !m_list->isColumnHidden(ColStatus);
+    if (!locked.contains(ColAccount))
+        m_wantAccount = !m_list->isColumnHidden(ColAccount);
+    m_list->setColumnHidden(ColStatus, !m_wantStatus);
+    m_list->setColumnHidden(ColAccount, !m_wantAccount);
+    theUiState.captureHeaderState(m_list->header(), kStateKey);
 }
 
 QList<QStringList> WebLinksDialog::mirrorsByFile(const QCborArray& links)
@@ -224,9 +213,60 @@ QList<QStringList> WebLinksDialog::mirrorsByFile(const QCborArray& links)
     return byFile.values();
 }
 
+void WebLinksDialog::showEvent(QShowEvent* event)
+{
+    RememberedSizeDialog::showEvent(event);
+    // after the size restore: fit to the width the window opens at
+    if (m_fitOnShow && !event->spontaneous()) {
+        m_fitOnShow = false;
+        if (layout())
+            layout()->activate();
+        fitNameColumn();
+    }
+}
+
 // ---------------------------------------------------------------------------
 // private
 // ---------------------------------------------------------------------------
+
+void WebLinksDialog::fitNameColumn()
+{
+    auto* hdr = m_list->header();
+    // Status is in by now when the links get checked: startChecks() ran in the constructor
+    int others = 0;
+    for (const int c : {ColFile, ColSize, ColHoster, ColStatus, ColAccount})
+        if (!m_list->isColumnHidden(c))
+            others += hdr->sectionSize(c);
+    const int minName = m_list->fontMetrics().averageCharWidth() * 12;
+    const int room = m_list->viewport()->width() - others;
+    const int fitted = std::min(hdr->sectionSize(ColName), std::max(room, minName));
+    if (fitted != hdr->sectionSize(ColName))
+        m_list->setColumnWidth(ColName, fitted);
+}
+
+void WebLinksDialog::unlockColumn(int column, bool wanted)
+{
+    std::set<int> locked = m_list->lockedColumns();
+    if (!locked.erase(column))
+        return;
+    m_list->setLockedColumns(locked);
+    if (wanted) {
+        m_list->setColumnHidden(column, false);
+        if (m_freshLayout)
+            m_list->resizeColumnToContents(column);
+    }
+}
+
+void WebLinksDialog::lockColumn(int column)
+{
+    std::set<int> locked = m_list->lockedColumns();
+    // remember a choice made from the header menu while it was in there
+    if (!locked.contains(column))
+        (column == ColStatus ? m_wantStatus : m_wantAccount) = !m_list->isColumnHidden(column);
+    locked.insert(column);
+    m_list->setLockedColumns(locked);
+    m_list->setColumnHidden(column, true);
+}
 
 bool WebLinksDialog::hasOnionLink() const
 {
@@ -334,8 +374,7 @@ void WebLinksDialog::startChecks()
     }
     if (urls.isEmpty())
         return;
-    m_list->setColumnHidden(ColStatus, false);
-    m_list->resizeColumnToContents(ColStatus);
+    unlockColumn(ColStatus, m_wantStatus);
     connect(m_ipc, &IpcClient::hosterLinkChecked, this, &WebLinksDialog::onLinkChecked);
     Ipc::IpcMessage msg(Ipc::IpcMsgType::CheckHosterLinks);
     msg.append(urls);
@@ -343,8 +382,8 @@ void WebLinksDialog::startChecks()
     m_ipc->sendRequest(std::move(msg), [self](const Ipc::IpcMessage& resp) {
         // the daemon will not check (switched off there): nothing to show
         if (self && resp.isValid() && !resp.fieldBool(0)) {
-            self->m_list->setColumnHidden(ColStatus, true);
-            self->m_list->setColumnHidden(ColAccount, true);
+            self->lockColumn(ColStatus);
+            self->lockColumn(ColAccount);
         }
     });
 }
@@ -369,22 +408,24 @@ void WebLinksDialog::setStatus(QTreeWidgetItem* item, int status, int account)
     default: text = tr("Unknown"); break;
     }
     item->setText(ColStatus, text);
-    item->setIcon(ColStatus, statusIcon(status));
+    item->setIcon(ColStatus, gui::linkStatusIcon(status));
     // the login Download would use there
     const bool usable = status != StatusChecking && status != StatusOffline;
     item->setText(ColAccount, !usable ? QString() : account == 2 ? tr("Premium account") : account == 1 ? tr("Account") : QString());
     item->setIcon(ColAccount, usable && account == 2 ? premiumIcon() : QIcon());
-    if (usable && account > 0 && m_list->isColumnHidden(ColAccount)) {
-        m_list->setColumnHidden(ColAccount, false);
-        m_list->resizeColumnToContents(ColAccount);
-    }
+    if (usable && account > 0)
+        unlockColumn(ColAccount, m_wantAccount);
     // a dead link: greyed, Download puts it last
     const QVariant fg = status == StatusOffline ? QVariant(palette().brush(QPalette::Disabled, QPalette::Text)) : QVariant();
     for (int c = ColFile; c <= ColLink; ++c)
         item->setData(c, Qt::ForegroundRole, fg);
-    m_list->resizeColumnToContents(ColStatus);
-    if (!m_list->isColumnHidden(ColAccount))
-        m_list->resizeColumnToContents(ColAccount);
+    // a saved width is the user's
+    if (m_freshLayout) {
+        if (!m_list->isColumnHidden(ColStatus))
+            m_list->resizeColumnToContents(ColStatus);
+        if (!m_list->isColumnHidden(ColAccount))
+            m_list->resizeColumnToContents(ColAccount);
+    }
 }
 
 void WebLinksDialog::copyLinks()

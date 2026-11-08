@@ -181,6 +181,7 @@
     <ClCompile Include="archive\ArchiveScan.cpp" />
     <ClCompile Include="archive\ArchiveUnpack.cpp" />
     <ClCompile Include="net\ConnectionChecker.cpp" />
+    <ClCompile Include="net\ReachabilityWatch.cpp" />
     <ClCompile Include="net\HttpFileDownload.cpp" />
     <ClCompile Include="net\ScheduledUpdater.cpp" />
     <ClCompile Include="net\MetaFileCache.cpp" />
@@ -438,6 +439,7 @@
     <ClInclude Include="archive\ArchiveUnpack.h" />
     <ClInclude Include="net\HttpDefaults.h" />
     <ClInclude Include="net\ConnectionChecker.h" />
+    <ClInclude Include="net\ReachabilityWatch.h" />
     <ClInclude Include="net\HttpFileDownload.h" />
     <ClInclude Include="net\HttpValidators.h" />
     <ClInclude Include="net\MetaFileCache.h" />

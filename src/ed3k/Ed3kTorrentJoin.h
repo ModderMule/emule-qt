@@ -131,6 +131,8 @@ private:
     /// Serves reads a check asked for, then drains the join's events.
     void serveReads(const QString& id, const std::vector<::ed3k::TorrentRead>& reads);
     void drainEvents(const QString& id);
+    /// Tells the sink whether pieces need ed3k's look (BtJoinSink::judges).
+    void updateJudging(Join& j);
     void handleEvent(const QString& id, const ::ed3k::TorrentEvent& ev);
     /// Hands the verdict of a waiting piece back to libtorrent.
     void finishPiece(const QString& id, int piece, bool spoil);

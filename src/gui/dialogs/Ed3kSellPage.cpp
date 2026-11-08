@@ -3,6 +3,7 @@
 
 #include "pch.h"
 #include "dialogs/Ed3kSellPage.h"
+#include "controls/AbstractListView.h"
 
 #include "app/IpcClient.h"
 #include "dialogs/Ed3kSellDialogs.h"
@@ -28,14 +29,9 @@ using Ipc::IpcMsgType;
 
 namespace {
 
-QTreeWidget* makeTree(const QStringList& headers, QWidget* parent, int rows)
+QTreeWidget* makeTree(const QStringList& headers, const QString& stateKey, QWidget* parent, int rows)
 {
-    auto* t = new QTreeWidget(parent);
-    t->setHeaderLabels(headers);
-    t->setRootIsDecorated(false);
-    t->setUniformRowHeights(true);
-    t->setSelectionMode(QAbstractItemView::SingleSelection);
-    t->header()->setStretchLastSection(true);
+    auto* t = makeFlatList(headers, stateKey, parent);
     t->setFixedHeight(t->fontMetrics().lineSpacing() * rows);
     return t;
 }
@@ -65,7 +61,7 @@ Ed3kSellPage::Ed3kSellPage(IpcClient* ipc, QWidget* parent)
                                 saleGroup);
     saleNote->setWordWrap(true);
     saleLayout->addWidget(saleNote);
-    m_sales = makeTree({tr("Title"), tr("Kind"), tr("Price"), tr("Season"), tr("Passes"), tr("Own pass until")}, saleGroup, 7);
+    m_sales = makeTree({tr("Title"), tr("Kind"), tr("Price"), tr("Season"), tr("Passes"), tr("Own pass until")}, QStringLiteral("ed3kSales"), saleGroup, 7);
     saleLayout->addWidget(m_sales);
     auto* saleRow = new QHBoxLayout;
     m_issue = new QPushButton(tr("Issue pass…"), saleGroup);
@@ -95,7 +91,7 @@ Ed3kSellPage::Ed3kSellPage(IpcClient* ipc, QWidget* parent)
     // -- passes issued by hand (§9.3) of the selected subscription
     auto* passGroup = new QGroupBox(tr("Passes issued"), this);
     auto* passLayout = new QVBoxLayout(passGroup);
-    m_issued = makeTree({tr("Pass key"), tr("Valid until"), tr("Issued"), tr("Kind"), tr("Note")}, passGroup, 6);
+    m_issued = makeTree({tr("Pass key"), tr("Valid until"), tr("Issued"), tr("Kind"), tr("Note")}, QStringLiteral("ed3kIssuedPasses"), passGroup, 6);
     passLayout->addWidget(m_issued);
     auto* passRow = new QHBoxLayout;
     m_copyPass = new QPushButton(tr("Copy pass link"), passGroup);

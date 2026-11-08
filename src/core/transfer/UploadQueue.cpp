@@ -382,6 +382,10 @@ UpDownClient* UploadQueue::findBestClientInQueue()
     UpDownClient* bestV4 = nullptr;
     UpDownClient* bestV6 = nullptr;
     const uint64 curTick = getTickCount();
+    // LowID we can only reach by callback; asked for only when the line has room (#150)
+    const bool callbackSlot = callbackSlotAllowed(curTick);
+    uint64 bestCallbackScore = 0;
+    UpDownClient* callbackClient = nullptr;
 
     for (auto it = m_waitingList.begin(); it != m_waitingList.end(); ) {
         UpDownClient* cur = *it;
@@ -429,6 +433,12 @@ UpDownClient* UploadQueue::findBestClientInQueue()
             }
         }
 
+        if (callbackSlot && !connectable && curScore > bestCallbackScore
+            && !m_callbackAskedAt.contains(cur->userAddress()) && cur->canCallBackForSlot()) {
+            bestCallbackScore = curScore;
+            callbackClient = cur;
+        }
+
         if (curScore > bestScore) {
             if (connectable) {
                 bestScore = curScore;
@@ -447,6 +457,16 @@ UpDownClient* UploadQueue::findBestClientInQueue()
     // so slot fairness never changes who gets flagged for the next-connect shortcut.
     if (lowClient && bestLowScore > bestScore)
         lowClient->setAddNextConnect(true);
+
+    // Nobody reachable waits: ask the best LowID to call us. addUpNextClient() parks it
+    // in Connecting; the slot goes live on connect, or is freed when the callback times out.
+    if (!newClient && callbackClient) {
+        m_lastCallbackSlot = curTick;
+        m_callbackAskedAt[callbackClient->userAddress()] = curTick;
+        logDebug([&]() -> QString { return QStringLiteral("Upload slot: line has room, asking LowID %1 to call back")
+                     .arg(callbackClient->userName()); });
+        return callbackClient;
+    }
 
     // Alternate only when both families actually have a candidate — otherwise fall
     // through to the plain best, so a slot is never held back for an absent family.
@@ -474,12 +494,15 @@ bool UploadQueue::acceptNewClient(bool addOnNextConnect) const
 
 bool UploadQueue::acceptNewClient(int curUploadSlots, uint32 datarate) const
 {
-    if (curUploadSlots < std::max(static_cast<int>(MIN_UP_CLIENTS_ALLOWED), 4))
+    const uint32 maxSpeed = uploadCapKB();
+    // MFC's floor is 4 slots; at a low cap 3, as the ladder (report 25: more slots
+    // than the limit carries). UNLIMITED is above it; 0 is USS not measured yet.
+    const int minSlots = (maxSpeed > 0 && maxSpeed <= kLowCapMaxKB) ? 3 : 4;
+    if (curUploadSlots < std::max(static_cast<int>(MIN_UP_CLIENTS_ALLOWED), minSlots))
         return true;
     if (curUploadSlots >= MAX_UP_CLIENTS_ALLOWED)
         return false;
 
-    const uint32 maxSpeed = uploadCapKB();
     uint32 tgtRate = targetClientDataRate(false);
     uint32 minTgtRate = targetClientDataRate(true);
 
@@ -1332,6 +1355,25 @@ bool UploadQueue::isSlotCoolingDown(const UpDownClient* client, uint64 curTick) 
     return it != m_slotCooldowns.end() && curTick < it->second.until;
 }
 
+bool UploadQueue::callbackSlotAllowed(uint64 curTick)
+{
+    std::erase_if(m_callbackAskedAt, [curTick](const auto& entry) {
+        return curTick - entry.second >= kCallbackRetryMs;
+    });
+    if (m_lastCallbackSlot != 0 && curTick - m_lastCallbackSlot < kCallbackSlotMs)
+        return false;
+    // under the limit for a while (always, unlimited): recycleDeadSlots() keeps the stamp
+    return m_underfillSince != 0 && curTick - m_underfillSince >= kUnderfillMs;
+}
+
+bool UploadQueue::awaitsCallback(const UpDownClient* client, uint64 curTick) const
+{
+    if (client->uploadState() != UploadState::Connecting)
+        return false;
+    const auto it = m_callbackAskedAt.find(client->userAddress());
+    return it != m_callbackAskedAt.end() && curTick - it->second < kCallbackWaitMs;
+}
+
 // Rotating a slot that is taking data while the line has room costs throughput:
 // the next peer starts from nothing, and nobody was short of bandwidth.
 bool UploadQueue::keepsProductiveSlot(const UpDownClient* client) const
@@ -1467,6 +1509,10 @@ void UploadQueue::process()
             continue;
 
         if (!cur->socket()) {
+            // A callback slot has no socket until the peer calls in (#150); ClientList's
+            // connect timeout frees it, this reaps it if that never comes
+            if (awaitsCallback(cur, curTick))
+                continue;
             // Uploading to a client without a socket — MFC srchybrid/UploadQueue.cpp:315-318.
             removeFromUploadQueue(cur, QStringLiteral("Uploading to client without socket"));
             continue;

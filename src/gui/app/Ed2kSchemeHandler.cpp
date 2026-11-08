@@ -186,6 +186,29 @@ void applyDesktopIntegration(bool createLauncher)
         applyFileTypesNow(/*setDefault*/ false);   // moved install: new path, same claim
 }
 
+void adoptClaimedFileTypes()
+{
+    if (!gui::FileAssociation::isRuntimeRegistration() || theUiState.appliedFileTypes())
+        return;
+    // older builds saved the default switches (all on) as if chosen: take what our
+    // entries claim now as the choice, and write nothing (#153)
+    const auto claimed = gui::FileAssociation::claimedTypes();
+    theUiState.setAssociateNzbFiles(claimed.nzb);
+    theUiState.setAssociateTorrentFiles(claimed.torrent);
+    theUiState.setAssociateEd2kLinks(claimed.ed2k);
+    theUiState.setAssociateDlcFiles(claimed.dlc);
+    theUiState.setAppliedFileTypes(toBits(claimed));
+}
+
+void claimAllFileTypes()
+{
+    theUiState.setAssociateNzbFiles(true);
+    theUiState.setAssociateTorrentFiles(true);
+    theUiState.setAssociateEd2kLinks(true);
+    theUiState.setAssociateDlcFiles(true);
+    applyDesktopIntegration(/*createLauncher*/ true);
+}
+
 gui::FileAssociation::FileTypes fromBits(int bits)
 {
     return {.nzb = (bits & 1) != 0, .torrent = (bits & 2) != 0, .ed2k = (bits & 4) != 0, .dlc = (bits & 8) != 0};

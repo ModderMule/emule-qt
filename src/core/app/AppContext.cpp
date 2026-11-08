@@ -3,6 +3,7 @@
 /// @brief Global application context definition.
 
 #include "app/AppContext.h"
+#include "net/ReachabilityWatch.h"
 #include "client/UpDownClient.h"
 #include "kademlia/Kademlia.h"
 #include "net/BindAddress.h"
@@ -618,6 +619,16 @@ void AppContext::noteInboundIPv6Peer(const Address& peer)
     logInfo(QStringLiteral("IPv6: inbound connection from %1 — %2 is reachable")
                 .arg(peer.toString(), cur.toString()));
     setIPv6Reachability(IPv6Reachability::Reachable, IPv6ProofSource::InboundPeer);
+}
+
+void AppContext::noteInboundIPv4Peer(const Address& peer)
+{
+    if (!reachabilityWatch || !peer.isIPv4() || !peer.isPublicIP())
+        return;
+    // the server's own login test is not a peer
+    if (serverConnect && serverConnect->awaitingTestFromIP(peer.toNetworkUint32()))
+        return;
+    reachabilityWatch->onReachable(QStringLiteral("inbound connection from %1").arg(peer.toString()));
 }
 
 void AppContext::noteIPv6Pinhole(const Address& internal, bool ok)

@@ -12,6 +12,7 @@
 /// (their bytes go to the core).
 
 #include "app/ClickNLoadServer.h"
+#include "controls/AbstractListView.h"
 
 #include <QCborMap>
 #include <QMap>
@@ -27,6 +28,7 @@ class QDropEvent;
 class QInputDialog;
 class QLabel;
 class QMimeData;
+class QTabWidget;
 class QTreeWidget;
 class QTreeWidgetItem;
 
@@ -34,6 +36,7 @@ namespace eMule {
 
 class HosterPuzzleDialog;
 class IpcClient;
+class LinkGrabberPanel;
 class StatusFilterBar;
 
 namespace Ipc {
@@ -78,12 +81,23 @@ public:
     /// A Click'n'Load post of a page (ClickNLoadServer) to the core; @p done answers the page.
     /// The links come back to this GUI only, which asks which to add.
     void addClickNLoad(const ClickNLoadServer::Post& post, const ClickNLoadServer::Done& done);
+    /// Hoster links in @p text (the clipboard): into the Link Grabber when it is on, else
+    /// crawled and a dialog asks which to add. @p clipboard: links no plugin takes are ignored.
+    void grabLinks(const QString& text, const QString& source, bool clipboard);
+    /// The core's switch: the clipboard is watched for hoster links (ed3kHosterClipboard).
+    [[nodiscard]] bool watchesClipboard() const { return m_enabled && m_watchClipboard; }
+    /// The Link Grabber tab is there (ed3kHosterLinkGrabber).
+    [[nodiscard]] bool linkGrabberOn() const { return m_grabberOn; }
+    [[nodiscard]] LinkGrabberPanel* linkGrabber() const { return m_grabber; }
+    void showLinkGrabber();
 
 signals:
     /// hostersEnabled() changed
     void hostersEnabledChanged(bool on);
     /// The links of a Click'n'Load post are here: the window comes forward for the dialog.
     void clickNLoadArrived();
+    /// watchesClipboard()'s switch changed
+    void clipboardWatchChanged(bool on);
 
 protected:
     void dragEnterEvent(QDragEnterEvent* event) override;
@@ -112,6 +126,10 @@ private:
     /// Opens a complete item's folder.
     void openRow(QTreeWidgetItem* row);
     void copyLinks();
+    /// Pasted links: added, or into the Link Grabber with "open all links" there.
+    void pasteLinks(const QStringList& links);
+    /// Shows or hides the Link Grabber tab.
+    void setGrabberOn(bool on);
     /// Shows only the rows of filter @p filter (persisted in UiState).
     void setFilter(int filter);
     /// Hides item @p row unless it matches the filter; a hidden row is deselected.
@@ -121,7 +139,7 @@ private:
     void updateFilterCounts();
 
     QPointer<IpcClient> m_ipc;
-    QTreeWidget* m_tree = nullptr;
+    ListTreeWidget* m_tree = nullptr;
     QLabel* m_statusLabel = nullptr;
     StatusFilterBar* m_filterBar = nullptr;
     int m_filter = 0;
@@ -134,6 +152,12 @@ private:
     QMap<qint64, QCborMap> m_items;
     QMap<QString, QPointer<QInputDialog>> m_passwordAsks;   ///< open password dialogs by group
     QSet<qint64> m_cnlTokens;   ///< Click'n'Load posts of this GUI the core reads
+    QSet<qint64> m_grabTokens;  ///< copied links of this GUI the core crawls (GrabLinks ask)
+    QTabWidget* m_tabs = nullptr;
+    LinkGrabberPanel* m_grabber = nullptr;
+    bool m_grabberOn = false;
+    bool m_grabAll = false;
+    bool m_watchClipboard = false;
 };
 
 } // namespace eMule

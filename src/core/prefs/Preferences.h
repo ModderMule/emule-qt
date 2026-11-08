@@ -126,11 +126,14 @@ struct Ed3kHosterPrefs {
     bool checkSearchLinks = true;  ///< ed3kHosterCheckSearchLinks: a web row's links dialog checks its links
     bool extract = true;           ///< ed3kHosterExtract: unpack finished archives into incoming/<package>/
     bool deleteArchives = false;   ///< ed3kHosterDeleteArchives: delete the archives (kept in Temp) after a good unpack
+    bool clipboard = false;        ///< ed3kHosterClipboard: the GUI watches the clipboard for hoster links
+    bool linkGrabber = false;      ///< ed3kHosterLinkGrabber: links collect in the Link Grabber before downloading
+    bool grabAll = false;          ///< ed3kHosterGrabAll: Click'n'Load, Add Links and DLC go there too (needs linkGrabber)
     int checkMaxParallel = 30;     ///< YAML only: those link checks at once
     int checkMaxPerHost = 5;       ///< YAML only: of them at one hoster (its domains count as one)
     int recheckHours = 72;         ///< YAML only: a published link is checked again after this; 0: never
     int reportRecheckHours = 6;    ///< YAML only: 3 peers' dead-link reports check it at once, at most this often; 0: never
-    QString sharedPluginDir;       ///< YAML only: resolver plugins unpacked once for several instances; empty: per instance
+    QString sharedPluginDir;       ///< YAML only: resolver plugins, updates, Java once for several instances; empty: per instance
     bool autoUpdate = true;        ///< ed3kHosterAutoUpdate: fetch newer resolver.zip from the update manifest
     int autoUpdateHours = 24;      ///< YAML only: manifest check interval
     QList<Ed3kHosterAccount> accounts; ///< ed3kHosterAccounts
@@ -1930,6 +1933,13 @@ public:
 
     [[nodiscard]] bool smartLowIdCheck() const;
     void setSmartLowIdCheck(bool val);
+
+    /// #156: watch for the port opening while LowID / Kad firewalled.
+    [[nodiscard]] bool reachabilityWatch() const;
+    void setReachabilityWatch(bool val);
+    /// Epoch s of the last HighID or Kad TCP open; 0 = never.
+    [[nodiscard]] int64 lastHighIdAt() const;
+    void setLastHighIdAt(int64 epochSecs);
 
     [[nodiscard]] bool manualServerHighPriority() const;
     void setManualServerHighPriority(bool val);

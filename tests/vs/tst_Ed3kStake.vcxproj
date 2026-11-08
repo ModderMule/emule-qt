@@ -180,6 +180,7 @@
     <ClCompile Include="..\..\src\daemon\Ed3kBridge.cpp" />
     <ClCompile Include="..\..\src\daemon\Ed3kOwnSetsBridge.cpp" />
     <ClCompile Include="..\..\src\daemon\Ed3kLinksBridge.cpp" />
+    <ClCompile Include="..\..\src\daemon\Ed3kKadBridge.cpp" />
     <ClCompile Include="..\..\src\daemon\Ed3kFriendsBridge.cpp" />
     <ClCompile Include="..\..\src\daemon\Ed3kNamesBridge.cpp" />
     <ClCompile Include="..\..\src\daemon\Ed3kRoomsBridge.cpp" />
@@ -190,7 +191,6 @@
     <ClCompile Include="..\..\src\daemon\Ed3kSetsBridge.cpp" />
     <ClCompile Include="..\..\src\daemon\Ed3kPaidBridge.cpp" />
     <ClCompile Include="..\..\src\daemon\Ed3kPaidSellerBridge.cpp" />
-    <ClCompile Include="..\..\src\daemon\Ed3kHosterBridge.cpp" />
     <ClCompile Include="..\..\src\daemon\BandwidthCoordinator.cpp" />
   </ItemGroup>
   <ItemGroup>

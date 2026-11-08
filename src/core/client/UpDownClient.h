@@ -188,6 +188,10 @@ public:
     /// whether a *persisted* peer has a server or Kad route worth reloading, nor as
     /// tryToConnect()'s Kad firewall-check bypass, which is about probes we initiate.
     [[nodiscard]] bool isReachableForSlot() const;
+    /// A LowID peer isReachableForSlot() rejects but that we can ask to call us: direct
+    /// UDP, its Kad buddy, our server (canDoCallback), or a NAT rendezvous. The routes
+    /// tryToConnect() takes for it. Not MFC (emule-qt#150).
+    [[nodiscard]] bool canCallBackForSlot() const;
 
     [[nodiscard]] uint16 userPort() const { return m_userPort; }
     void setUserPort(uint16 port) { m_userPort = port; sourceIdentityChanged(); }

@@ -30,6 +30,7 @@
 #include <QFileInfo>
 #include <QHash>
 #include <QLockFile>
+#include <QScopeGuard>
 #include <QSet>
 #include <QSettings>
 #include <QSignalSpy>
@@ -2243,6 +2244,163 @@ private slots:
         QVERIFY(r.pluginRoot().startsWith(cfg.sharedDir));
     }
 
+    /// #155: mixed app versions share the folder: the best version of our api wins, by revision
+    void jdResolver_sharedVersionPicksOurApi()
+    {
+        QTemporaryDir tmp;
+        const QString shared = tmp.filePath(QStringLiteral("shared"));
+        const QString ours = tmp.filePath(QStringLiteral("ours.zip"));
+        const QString older = tmp.filePath(QStringLiteral("older.zip"));
+        const QString foreign = tmp.filePath(QStringLiteral("foreign.zip"));
+        const QByteArray api = QByteArray::number(Ed3kJdResolver::kProtocol);
+        QVERIFY(writeResolverZip(ours, "53800", api));
+        QVERIFY(writeResolverZip(older, "53700", api));
+        QVERIFY(writeResolverZip(foreign, "53900", QByteArray::number(Ed3kJdResolver::kProtocol + 1)));
+        QString error;
+        const QString rootOurs = Ed3kJdResolver::installShared(ours, shared, &error);
+        QVERIFY(!Ed3kJdResolver::installShared(older, shared, &error).isEmpty());   // used last
+        QVERIFY(!Ed3kJdResolver::installShared(foreign, shared, &error).isEmpty());
+        QCOMPARE(Ed3kJdResolver::sharedVersion(shared), rootOurs);
+        QVERIFY(Ed3kJdResolver::sharedVersion(tmp.filePath(QStringLiteral("none"))).isEmpty());
+    }
+
+#ifndef Q_OS_WIN
+    /// #155: a read-only shared folder (filled by an admin): a zip that cannot go in leaves
+    /// the resolver on the version there, never without plugins
+    void jdResolver_sharedDirReadOnlyKeepsInstalled()
+    {
+        QTemporaryDir tmp;
+        const QString shared = tmp.filePath(QStringLiteral("shared"));
+        const QString zip1 = tmp.filePath(QStringLiteral("r1.zip"));
+        const QString zip2 = tmp.filePath(QStringLiteral("r2.zip"));
+        QVERIFY(writeResolverZip(zip1, "53800"));
+        QVERIFY(writeResolverZip(zip2, "53900"));
+        QString error;
+        const QString root1 = Ed3kJdResolver::installShared(zip1, shared, &error);
+        QVERIFY(!root1.isEmpty());
+        QVERIFY(Ed3kJdResolver::dirWritable(shared));
+        QVERIFY(QFile::setPermissions(shared, QFileDevice::ReadOwner | QFileDevice::ExeOwner));
+        const auto restore = qScopeGuard([&] {
+            QFile::setPermissions(shared, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+        });
+        if (Ed3kJdResolver::dirWritable(shared))
+            QSKIP("running as root: permissions do not hold");
+        Ed3kJdResolver r;
+        JdResolverConfig cfg;
+        cfg.dataDir = tmp.filePath(QStringLiteral("a/ed3k/resolver"));
+        cfg.sharedDir = shared;
+        cfg.zip = zip2;
+        cfg.java = QStringLiteral("/usr/bin/java");
+        r.setConfig(cfg);
+        QVERIFY2(r.available(), qPrintable(r.unavailableReason()));
+        QCOMPARE(r.pluginRoot(), root1);
+        cfg.zip.clear();
+        r.setConfig(cfg);
+        QCOMPARE(r.pluginRoot(), root1);
+    }
+#endif
+
+    /// #155: instances on one sharedPluginDir fetch the zip once: one holds .fetch.lock, the
+    /// others wait and take its zip; a tick picks up what another instance fetched
+    void resolverUpdater_sharedDirFetchesOnce()
+    {
+        QTemporaryDir tmp;
+        const QString served = tmp.filePath(QStringLiteral("served.zip"));
+        QVERIFY(writeResolverZip(served, "53800", QByteArray::number(Ed3kJdResolver::kProtocol)));
+        QFile f(served);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        const QByteArray zipBytes = f.readAll();
+        f.close();
+        FakeHttpServer http;
+        QVERIFY(http.isListening());
+        int zipRequests = 0;
+        http.handler = [&](const QByteArray& path, const QByteArray&) -> FakeHttpServer::Response {
+            if (path == "/resolver.zip") {
+                ++zipRequests;
+                return {200, zipBytes};
+            }
+            const QJsonObject res{{QStringLiteral("url"), http.url(QStringLiteral("/resolver.zip")).toString()},
+                                  {QStringLiteral("sha256"), QString::fromLatin1(fileSha256(served))},
+                                  {QStringLiteral("size"), zipBytes.size()},
+                                  {QStringLiteral("jdRevision"), 53800},
+                                  {QStringLiteral("api"), Ed3kJdResolver::kProtocol}};
+            return {200, QJsonDocument(QJsonObject{{QStringLiteral("latest"), QStringLiteral("9.9.9")},
+                                                   {QStringLiteral("hosterResolver"), res}})
+                             .toJson()};
+        };
+        const QString dir = tmp.filePath(QStringLiteral("shared/update"));
+        const auto make = [&] {
+            auto u = std::make_unique<Ed3kResolverUpdater>(dir);
+            u->setManifestUrl(http.url(QStringLiteral("/emuleqt-version.json")));
+            u->setLockRetryMs(50);
+            u->setBundledZip({});
+            return u;
+        };
+        auto a = make();
+        auto b = make();
+        auto c = make();
+        // another instance fetches: b waits, asks nothing
+        QVERIFY(QDir().mkpath(dir));
+        auto other = std::make_unique<QLockFile>(dir + QStringLiteral("/.fetch.lock"));
+        QVERIFY(other->tryLock(0));
+        QSignalSpy readyB(b.get(), &Ed3kResolverUpdater::zipReady);
+        QVERIFY(b->fetchFirst());
+        QVERIFY(b->busy());
+        QTest::qWait(200);
+        QCOMPARE(http.requestCount(), 0);
+        // it ends; a fetches before b looks again (no event loop in between)
+        other.reset();
+        QSignalSpy readyA(a.get(), &Ed3kResolverUpdater::zipReady);
+        QVERIFY(a->fetchFirst());
+        QTRY_COMPARE_WITH_TIMEOUT(readyA.size(), 1, 10000);
+        // b takes a's zip instead of a second download
+        QTRY_COMPARE_WITH_TIMEOUT(readyB.size(), 1, 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(!b->busy(), 5000);
+        QCOMPARE(b->zipToUse(), a->zipToUse());
+        QCOMPARE(zipRequests, 1);
+        // c was up all along: its tick reads update.json, no request of its own
+        QSignalSpy readyC(c.get(), &Ed3kResolverUpdater::zipReady);
+        const int requests = http.requestCount();
+        c->setSchedule(true, 24);
+        QTRY_COMPARE_WITH_TIMEOUT(readyC.size(), 1, 5000);
+        QCOMPARE(c->fetchedRevision(), 53800);
+        QTest::qWait(200);
+        QCOMPARE(http.requestCount(), requests);   // a's check counts for c
+    }
+
+    /// #155: switching to a shared folder copies a fetched zip along; the old folder stays
+    /// (the caller drops an instance folder, never the shared one)
+    void resolverUpdater_setDirCopiesZip()
+    {
+        QTemporaryDir tmp;
+        const QString own = tmp.filePath(QStringLiteral("own"));
+        const QString shared = tmp.filePath(QStringLiteral("shared/update"));
+        QVERIFY(QDir().mkpath(own));
+        const QString zip = own + QStringLiteral("/resolver-r53800.zip");
+        QVERIFY(writeResolverZip(zip, "53800", QByteArray::number(Ed3kJdResolver::kProtocol)));
+        {
+            QFile st(own + QStringLiteral("/update.json"));
+            QVERIFY(st.open(QIODevice::WriteOnly));
+            st.write(QJsonDocument(QJsonObject{{QStringLiteral("file"), QStringLiteral("resolver-r53800.zip")},
+                                               {QStringLiteral("revision"), 53800},
+                                               {QStringLiteral("api"), Ed3kJdResolver::kProtocol}})
+                         .toJson());
+        }
+        Ed3kResolverUpdater u(own);
+        QCOMPARE(u.zipToUse(), zip);
+        u.setDir(shared);
+        QCOMPARE(u.dir(), shared);
+        QCOMPARE(u.zipToUse(), shared + QStringLiteral("/resolver-r53800.zip"));
+        QVERIFY(QFileInfo::exists(zip));
+        // a second instance sees it there
+        Ed3kResolverUpdater v(shared);
+        QCOMPARE(v.fetchedRevision(), 53800);
+        // and back: the shared zip is copied, not taken
+        u.setDir(own + QStringLiteral("2"));
+        QVERIFY(QFileInfo::exists(shared + QStringLiteral("/resolver-r53800.zip")));
+        QCOMPARE(u.fetchedRevision(), 53800);
+    }
+
     /// #88: the built resolver.zip packs JD's core; only plugins are loose files and the
     /// jars a headless resolver never loads stay out. Skips without a built zip.
     /// revision.txt, api.txt and the layout read from a zip; an old zip has no api
@@ -2598,6 +2756,93 @@ private slots:
         QCOMPARE(java.state(), Ed3kJavaRuntime::State::Unknown);
         QVERIFY(!QFileInfo::exists(java.runtimeDir() + QStringLiteral(".tmp")));
     }
+
+    /// #155: with sharedPluginDir the runtime goes to <shared>/java/jre; probed before the
+    /// instance's own; a read-only shared folder is probed but fetched into the instance's
+    void javaRuntime_sharedDir()
+    {
+#ifdef Q_OS_WIN
+        const QString kJavaExe = QStringLiteral("java.exe");
+#else
+        const QString kJavaExe = QStringLiteral("java");
+#endif
+        QTemporaryDir tmp;
+        const QString ed3kDir = tmp.filePath(QStringLiteral("Config/ed3k"));
+        const QString shared = tmp.filePath(QStringLiteral("shared"));
+        const auto fakeJava = [&kJavaExe](const QString& home) {
+            QVERIFY(QDir().mkpath(home + QStringLiteral("/bin")));
+            QFile j(home + QStringLiteral("/bin/") + kJavaExe);
+            QVERIFY(j.open(QIODevice::WriteOnly));
+        };
+        fakeJava(shared + QStringLiteral("/java/jre"));
+        fakeJava(ed3kDir + QStringLiteral("/java/jre"));
+        Ed3kJavaRuntime java(ed3kDir);
+        java.setSharedDir(shared, true);
+        QCOMPARE(java.runtimeDir(), shared + QStringLiteral("/java/jre"));
+        const QStringList c = java.candidates({});
+        const qsizetype s = c.indexOf(QDir::cleanPath(shared + QStringLiteral("/java/jre/bin/") + kJavaExe));
+        const qsizetype o = c.indexOf(QDir::cleanPath(ed3kDir + QStringLiteral("/java/jre/bin/") + kJavaExe));
+        QVERIFY(s >= 0 && o > s);
+        java.setSharedDir(shared, false);
+        QCOMPARE(java.runtimeDir(), ed3kDir + QStringLiteral("/java/jre"));
+    }
+
+    /// #155: an instance's own runtime moves into an empty shared folder, not fetched again
+    void javaRuntime_sharedDirAdoptsOwn()
+    {
+        QTemporaryDir tmp;
+        const QString ed3kDir = tmp.filePath(QStringLiteral("Config/ed3k"));
+        const QString shared = tmp.filePath(QStringLiteral("shared"));
+        QVERIFY(QDir().mkpath(ed3kDir + QStringLiteral("/java/jre/bin")));
+        {
+            QFile f(ed3kDir + QStringLiteral("/java/jre/release"));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+        }
+        Ed3kJavaRuntime java(ed3kDir);
+        java.setSharedDir(shared, true);
+        java.locate(QString());
+        QVERIFY(QFileInfo::exists(shared + QStringLiteral("/java/jre/release")));
+        QVERIFY(!QFileInfo::exists(ed3kDir + QStringLiteral("/java/jre")));
+        QTRY_VERIFY_WITH_TIMEOUT(java.state() != Ed3kJavaRuntime::State::Probing, 60000);
+    }
+
+#ifndef Q_OS_WIN
+    /// #155: another instance fetches into the shared folder: this one waits (no request of
+    /// its own), then probes what that one installed and drops its own copy
+    void javaRuntime_sharedDirWaitsForOtherFetch()
+    {
+        QTemporaryDir tmp;
+        const QString ed3kDir = tmp.filePath(QStringLiteral("Config/ed3k"));
+        const QString shared = tmp.filePath(QStringLiteral("shared"));
+        QVERIFY(QDir().mkpath(shared + QStringLiteral("/java")));
+        auto other = std::make_unique<QLockFile>(shared + QStringLiteral("/java/.install.lock"));
+        QVERIFY(other->tryLock(0));
+        // an own broken copy, kept until the shared one runs
+        QVERIFY(QDir().mkpath(ed3kDir + QStringLiteral("/java/jre")));
+        Ed3kJavaRuntime java(ed3kDir);
+        java.setLockRetryMs(50);
+        java.setSharedDir(shared, true);
+        java.setAllowed(true);
+        QVERIFY(java.download());
+        QCOMPARE(java.state(), Ed3kJavaRuntime::State::Downloading);
+        QTest::qWait(200);
+        QCOMPARE(java.state(), Ed3kJavaRuntime::State::Downloading);
+        QVERIFY(!QFileInfo::exists(shared + QStringLiteral("/java/jre.tmp")));
+        // the other instance installs a runtime (a script answering like java) and ends
+        const QString home = shared + QStringLiteral("/java/jre");
+        QVERIFY(QDir().mkpath(home + QStringLiteral("/bin")));
+        QFile j(home + QStringLiteral("/bin/java"));
+        QVERIFY(j.open(QIODevice::WriteOnly));
+        j.write(QStringLiteral("#!/bin/sh\necho 'java.specification.version = 21'\necho 'java.vendor = Test'\n"
+                               "echo 'os.arch = %1'\n").arg(Ed3kJavaRuntime::hostArch()).toUtf8());
+        j.close();
+        QVERIFY(j.setPermissions(j.permissions() | QFileDevice::ExeOwner));
+        other.reset();
+        QTRY_COMPARE_WITH_TIMEOUT(java.state(), Ed3kJavaRuntime::State::Ready, 15000);
+        QCOMPARE(java.runtime()->java, home + QStringLiteral("/bin/java"));
+        QVERIFY(!QFileInfo::exists(ed3kDir + QStringLiteral("/java/jre")));
+    }
+#endif
 
     void javaRuntime_parsesProperties()
     {

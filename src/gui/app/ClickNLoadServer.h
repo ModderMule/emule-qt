@@ -74,7 +74,11 @@ private:
     void onReadyRead(QTcpSocket* s);
     void handle(QTcpSocket* s, const QByteArray& method, const QByteArray& target,
                 const QHash<QByteArray, QByteArray>& headers, const QByteArray& body);
-    void handlePost(QTcpSocket* s, Post post);
+    /// flash/addcnl: JD's CnlQuery as JSON (query, form value or JSON body)
+    void handleAddCnl(QTcpSocket* s, const QByteArray& query, const QHash<QByteArray, QByteArray>& headers,
+                      const QByteArray& body);
+    /// @p jsonp: a callback was asked; answer as JD does, an empty script
+    void handlePost(QTcpSocket* s, Post post, bool jsonp = false);
     void respond(QTcpSocket* s, int code, const QByteArray& body,
                  const QByteArray& type = QByteArrayLiteral("text/html; charset=utf-8"),
                  const QList<std::pair<QByteArray, QByteArray>>& extra = {});

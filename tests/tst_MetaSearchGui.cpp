@@ -13,6 +13,8 @@
 #include "utils/Ed2kLinkImporter.h"
 #include "utils/ViewSelection.h"
 #include "IpcProtocol.h"
+#include "app/UiState.h"
+#include "controls/AbstractListView.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -93,6 +95,8 @@ private slots:
     void multiSelectionSurvivesReset();
     void networkFilterHidesForeignRows();
     void webAndContainerRows();
+    void webLinksDialog_longNamesLeaveStatusInView();   // first: needs no saved column layout
+    void webLinksDialog_keepsColumnLayout();
     void webLinksDialog_listsAndCopies();
     void webLinksDialog_listsOnionLinks();
     void webLinksDialog_downloadLabelAndMenu();
@@ -470,6 +474,68 @@ void tst_MetaSearchGui::webAndContainerRows()
     QCOMPARE(proxy.rowCount(), 5);   // the web page's file is the web's, not Kad's
     proxy.setNetworkFilter(SearchResultsProxy::NetworkFilter{.torrent = false});
     QCOMPARE(proxy.rowCount(), 3);
+}
+
+namespace {
+
+/// @p n links with names far wider than the dialog.
+QCborMap longNamedLinks(int n)
+{
+    QCborArray links;
+    for (int i = 0; i < n; ++i)
+        links.append(QCborMap{{QStringLiteral("url"), QStringLiteral("https://a.test/f/%1").arg(i)},
+                              {QStringLiteral("file"), i},
+                              {QStringLiteral("name"), QStringLiteral("SITE.TEST-1075%1_%2.mp4").arg(i).arg(QString(160, u'x'))},
+                              {QStringLiteral("size"), 4'050'000'000LL},
+                              {QStringLiteral("hoster"), QStringLiteral("hoster.test")}});
+    return QCborMap{{QStringLiteral("title"), QStringLiteral("Pack")}, {QStringLiteral("links"), links}};
+}
+
+enum WebCol { WebFile, WebName, WebSize, WebHoster, WebStatus, WebAccount, WebLink };
+
+} // namespace
+
+void tst_MetaSearchGui::webLinksDialog_longNamesLeaveStatusInView()
+{
+    QVERIFY(!theUiState.hasHeaderState(QStringLiteral("webLinks")));
+    WebLinksDialog dlg(QStringLiteral("row"), longNamedLinks(8), {}, QStringLiteral("row.txt"), nullptr);
+    auto* list = dlg.findChild<QTreeWidget*>();
+    QVERIFY(list);
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+    auto* hdr = list->header();
+    // the name is cut so the other columns fit (Status too, while links get checked)
+    QVERIFY(hdr->sectionSize(WebName) < 160 * list->fontMetrics().averageCharWidth());
+    QVERIFY(hdr->sectionViewportPosition(WebHoster) + hdr->sectionSize(WebHoster) <= list->viewport()->width());
+    shoot(&dlg, QStringLiteral("web-links-long.png"));
+}
+
+void tst_MetaSearchGui::webLinksDialog_keepsColumnLayout()
+{
+    const QString key = QStringLiteral("webLinks");
+    {
+        WebLinksDialog dlg(QStringLiteral("row"), longNamedLinks(2), {}, QStringLiteral("row.txt"), nullptr);
+        auto* list = dlg.findChild<QTreeWidget*>();
+        QVERIFY(list->isColumnHidden(WebStatus));   // no checks without IPC
+        QVERIFY(list->header()->sectionsMovable());
+        list->header()->resizeSection(WebSize, 123);
+        list->header()->moveSection(list->header()->visualIndex(WebHoster), 1);
+        list->setColumnHidden(WebLink, true);
+    }
+    // Status/Account were hidden for lack of data only: stored as shown, Link as hidden
+    {
+        ListTreeWidget probe;
+        probe.setColumnCount(7);
+        probe.bindColumns(key);
+        QVERIFY(!probe.isColumnHidden(WebStatus));
+        QVERIFY(!probe.isColumnHidden(WebAccount));
+        QVERIFY(probe.isColumnHidden(WebLink));
+    }
+    WebLinksDialog dlg(QStringLiteral("row"), longNamedLinks(2), {}, QStringLiteral("row.txt"), nullptr);
+    auto* list = dlg.findChild<QTreeWidget*>();
+    QCOMPARE(list->header()->sectionSize(WebSize), 123);
+    QCOMPARE(list->header()->visualIndex(WebHoster), 1);
+    QVERIFY(list->isColumnHidden(WebLink));
 }
 
 void tst_MetaSearchGui::webLinksDialog_listsAndCopies()

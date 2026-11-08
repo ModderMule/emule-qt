@@ -12,7 +12,9 @@
 /// No Boost.Asio call is made from here: posting to libtorrent's io_context from a unit of
 /// ours crashed (its scheduler read garbage, both with the Homebrew dylib and a static
 /// build; cause not found). A verdict that comes later is queued, and the pump plugin
-/// (pumpPlugin()) hands it back from libtorrent's own tick, on its network thread.
+/// (pumpPlugin()) hands it back on libtorrent's network thread: at once when setWake()
+/// gave a wake (BtSession: post_dht_stats, the pump runs on its alert), else at the tick.
+/// Waiting for the tick capped full checks at ~8 MB/s (#152).
 ///
 /// libtorrent headers only in src/bt (research doc §4): never include this outside.
 
@@ -46,6 +48,10 @@ public:
     /// back in place; a later one at the next tick (settings_pack::tick_interval,
     /// 500 ms), and dropped when the session is gone.
     virtual void pieceHashed(libtorrent::piece_index_t piece, std::vector<char> data, std::function<void(bool spoil)> done) = 0;
+
+    /// false: every piece would pass unseen now, so it is not read again nor asked (#152).
+    /// Any thread.
+    [[nodiscard]] virtual bool judges() const { return true; }
 };
 
 class BtJoinDiskIo final : public libtorrent::disk_interface {
@@ -63,6 +69,10 @@ public:
 
     /// Hands queued verdicts back. On libtorrent's network thread only.
     void pump();
+
+    /// Called (any thread, no lock held) when a late verdict is queued and none is asked
+    /// yet: makes libtorrent's thread call pump() soon. Thread-safe; empty = tick only.
+    void setWake(std::function<void()> wake);
 
     /// Routes the piece hashes of a torrent through `hook`, before or after it is added.
     /// Thread-safe.
@@ -113,6 +123,8 @@ private:
         std::mutex mutex;
         bool alive = true;
         std::vector<std::function<void()>> jobs;
+        std::function<void()> wake;
+        bool wakeAsked = false;   ///< cleared by pump()
     };
 
     [[nodiscard]] std::shared_ptr<BtJoinHook> hookOf(libtorrent::storage_index_t storage) const;

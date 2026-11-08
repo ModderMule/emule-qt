@@ -3,8 +3,9 @@
 /// @file PortTest.h
 /// @brief The connection test of the Connection page and the first-start wizard —
 ///        MFC TriggerPortTest (srchybrid/OtherFunctions.cpp:3105). Header-only.
-///        Also the BitTorrent and ed3k tests (runNetworkTest): the daemon calls the
-///        emule-qt.org API (TestPorts) and the answer is shown in a message box.
+///        Also the eD2K, BitTorrent and ed3k tests (NetworkTest::run): the daemon calls the
+///        emule-qt.org API (TestPorts) and the answer is shown in a message box. eD2K falls
+///        back to the browser page when the core or the website cannot run it.
 
 #include "app/AppConfig.h"
 #include "app/IpcClient.h"
@@ -23,6 +24,8 @@
 #include <QStringList>
 #include <QUrl>
 #include <QUrlQuery>
+
+#include <functional>
 
 namespace eMule::PortTest {
 
@@ -68,9 +71,10 @@ inline void open(IpcClient* ipc, QObject* context, int tcpPort, int udpPort)
 enum class Network : int {
     BitTorrent = 1,
     Ed3k = 2,
+    Ed2k = 3,
 };
 
-/// The BitTorrent and ed3k tests. A class only for tr() (context "PortTest").
+/// The eD2K, BitTorrent and ed3k tests. A class only for tr() (context "PortTest").
 class NetworkTest {
     Q_DECLARE_TR_FUNCTIONS(PortTest)
 
@@ -97,6 +101,12 @@ public:
             return tr("not tested: the address is not public");
         if (reason == QLatin1String("rate_limited"))
             return tr("not tested: too many tests, try again in a minute");
+        if (reason == QLatin1String("bad_reply"))
+            return tr("not reachable: something else answers on this port");
+        if (reason == QLatin1String("crypt_failed"))
+            return tr("not reachable: the encrypted connection failed");
+        if (reason == QLatin1String("udp_skipped"))
+            return tr("not tested: TCP failed first");
         return tr("not reachable (%1)").arg(reason);
     }
 
@@ -117,19 +127,25 @@ public:
             return tr("The test server refused the test.") + QStringLiteral("\n\n") + detail;
         case Failure::OldServer:
             return tr("The test server cannot test this port yet. Please try again later.");
+        case Failure::Ed2kNotListening:
+            return tr("eD2K is not listening on a TCP port, so it cannot be tested.");
         case Failure::UnknownNetwork:
         default:
             return tr("The core did not run the test.") + (detail.isEmpty() ? QString() : QStringLiteral("\n\n") + detail);
         }
     }
 
-    /// Whether a target has every port its network needs: TCP and UDP for BitTorrent, UDP for ed3k.
+    /// Whether a target has every port its network needs: TCP and UDP for BitTorrent and eD2K
+    /// (eD2K TCP only with UDP off), UDP for ed3k.
     [[nodiscard]] static bool targetReachable(Network network, const QCborMap& target)
     {
         const bool udp = target.value(QStringLiteral("udp")).toMap().value(QStringLiteral("open")).toBool();
         if (network == Network::Ed3k)
             return udp;
-        return udp && target.value(QStringLiteral("tcp")).toMap().value(QStringLiteral("open")).toBool();
+        const bool tcp = target.value(QStringLiteral("tcp")).toMap().value(QStringLiteral("open")).toBool();
+        if (network == Network::Ed2k && !target.contains(QStringLiteral("udp")))
+            return tcp;
+        return udp && tcp;
     }
 
     /// The message of a TestPorts result: the verdict first, then each address family.
@@ -149,7 +165,7 @@ public:
             any = any || ok;
             const QString family = t.value(QStringLiteral("family")).toInteger() == 6 ? QStringLiteral("IPv6") : QStringLiteral("IPv4");
             QString line = QStringLiteral("%1 (%2)").arg(family, t.value(QStringLiteral("ip")).toString());
-            if (network == Network::BitTorrent && t.contains(QStringLiteral("tcp")))
+            if (network != Network::Ed3k && t.contains(QStringLiteral("tcp")))
                 line += QLatin1Char('\n') + tr("TCP: %1").arg(reasonText(t.value(QStringLiteral("tcp")).toMap()));
             if (t.contains(QStringLiteral("udp")))
                 line += QLatin1Char('\n') + tr("UDP: %1").arg(reasonText(t.value(QStringLiteral("udp")).toMap()));
@@ -159,7 +175,18 @@ public:
             *allReachable = all;
 
         QString head;
-        if (network == Network::BitTorrent) {
+        if (network == Network::Ed2k) {
+            const qint64 tcpPort = result.value(QStringLiteral("tcpPort")).toInteger();
+            head = udpPort != 0 ? tr("eD2K TCP port %1, UDP port %2.").arg(tcpPort).arg(udpPort)
+                                : tr("eD2K TCP port %1 (UDP is off).").arg(tcpPort);
+            head += QStringLiteral("\n\n");
+            if (all)
+                head += tr("The ports are reachable: servers give you a High ID.");
+            else if (any)
+                head += tr("The ports are reachable over one address family only.");
+            else
+                head += tr("The ports are not reachable: servers give you a Low ID and Kad stays firewalled.");
+        } else if (network == Network::BitTorrent) {
             head = tr("BitTorrent port %1. TCP and UDP must both be reachable from the internet.").arg(udpPort);
             head += QStringLiteral("\n\n");
             if (all)
@@ -183,8 +210,15 @@ public:
 
     /// Runs the test of @p network on the daemon and shows the answer. @p button reads
     /// "Testing..." meanwhile; the port tested is the one the core uses now, not an unsaved one.
-    static void run(IpcClient* ipc, QWidget* parent, QPushButton* button, Network network)
+    /// @p fallback (eD2K: the browser page) runs instead of an error when the core or the
+    /// website cannot run the test.
+    static void run(IpcClient* ipc, QWidget* parent, QPushButton* button, Network network,
+                    std::function<void()> fallback = {})
     {
+        if ((!ipc || !ipc->isConnected()) && fallback) {
+            fallback();
+            return;
+        }
         if (!ipc || !ipc->isConnected()) {
             QMessageBox::warning(parent, tr("Test Ports"), tr("Not connected to the core."));
             return;
@@ -196,14 +230,21 @@ public:
         }
         Ipc::IpcMessage req(Ipc::IpcMsgType::TestPorts);
         req.append(static_cast<qint64>(network));
-        ipc->sendRequest(std::move(req), [guard = QPointer<QWidget>(parent), btn = QPointer<QPushButton>(button), label](
-                                             const Ipc::IpcMessage& resp) {
+        ipc->sendRequest(std::move(req), [guard = QPointer<QWidget>(parent), btn = QPointer<QPushButton>(button), label,
+                                          fallback = std::move(fallback)](const Ipc::IpcMessage& resp) {
             if (btn) {
                 btn->setEnabled(true);
                 btn->setText(label);
             }
             if (!guard)
                 return;
+            // an older core (unknown network) or website (no proto=ed2k)
+            const auto code = static_cast<PortTestApi::Failure>(resp.fieldInt(0));
+            if (fallback && resp.type() == Ipc::IpcMsgType::Error
+                && (code == PortTestApi::Failure::UnknownNetwork || code == PortTestApi::Failure::OldServer)) {
+                fallback();
+                return;
+            }
             if (resp.type() == Ipc::IpcMsgType::Error) {
                 QMessageBox::warning(guard, tr("Test Ports"), failureText(int(resp.fieldInt(0)), resp.fieldString(1)));
                 return;

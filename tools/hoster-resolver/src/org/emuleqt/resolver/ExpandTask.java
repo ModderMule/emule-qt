@@ -7,13 +7,15 @@ import java.util.Map;
 
 import jd.plugins.DownloadLink;
 
-/** expand: the links a folder or list link stands for. LinkCrawler runs its own threads. */
+/** expand: the links a folder or list link stands for (deep: every hoster link on a page). LinkCrawler runs its own threads. */
 final class ExpandTask extends Task {
     private final String url;
+    private final boolean deep;
 
-    ExpandTask(final long id, final String url) {
+    ExpandTask(final long id, final String url, final boolean deep) {
         super(id);
         this.url = url;
+        this.deep = deep;
     }
 
     @Override
@@ -23,7 +25,7 @@ final class ExpandTask extends Task {
 
     @Override
     void run() throws Throwable {
-        final List<DownloadLink> links = Jd.crawl(url);
+        final List<DownloadLink> links = Jd.crawl(url, deep);
         if (cancelled.get()) {
             Out.send(id, "cancelled");
             return;

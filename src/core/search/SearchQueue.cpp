@@ -199,6 +199,7 @@ void SearchQueue::onServerAnswer(bool moreResults, uint32 results, uint32 newFil
         return;
     // Port change (#92): some servers (ed2k-rust) stop at their cap without the flag.
     // Try one page, then go on only while a page brings a full cap of new files.
+    // ToDo (#154): ed2k-rust 586f085 (2026-11-08) never pages: 300 is its total, More answers empty
     if (!moreResults && results == kServerResultCap)
         moreResults = entry->moreRequests == 0 || newFiles == kServerResultCap;
     // MFC CSearchResultsWnd::LocalEd2kSearchEnd (srchybrid/SearchResultsWnd.cpp:470)

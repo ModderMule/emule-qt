@@ -11,6 +11,7 @@
 #include <QTcpSocket>
 #include <QTest>
 #include <QTimer>
+#include <QUrl>
 
 #include <memory>
 #include <optional>
@@ -40,11 +41,18 @@ QByteArray exchange(quint16 port, const QByteArray& request)
     return out;
 }
 
-QByteArray post(quint16 port, const QByteArray& path, const QByteArray& form, const QByteArray& extraHeaders = {})
+QByteArray post(quint16 port, const QByteArray& path, const QByteArray& form, const QByteArray& extraHeaders = {},
+               const QByteArray& type = "application/x-www-form-urlencoded")
 {
     return exchange(port, "POST " + path + " HTTP/1.1\r\nHost: 127.0.0.1:" + QByteArray::number(port)
-                              + "\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: "
+                              + "\r\nContent-Type: " + type + "\r\nContent-Length: "
                               + QByteArray::number(form.size()) + "\r\n" + extraHeaders + "\r\n" + form);
+}
+
+/// JSON written with ' for " (moc can't read raw strings)
+QByteArray json(const char* text)
+{
+    return QByteArray(text).replace('\'', '"');
 }
 
 QByteArray bodyOf(const QByteArray& response)
@@ -173,8 +181,77 @@ private slots:
 
     void unknownPathIs404()
     {
-        QVERIFY(exchange(m_port, "GET /flash/addcnl HTTP/1.1\r\n\r\n").startsWith("HTTP/1.1 404"));
+        QVERIFY(exchange(m_port, "GET /flash/addlinks HTTP/1.1\r\n\r\n").startsWith("HTTP/1.1 404"));
         QVERIFY(exchange(m_port, "GET /etc/passwd HTTP/1.1\r\n\r\n").startsWith("HTTP/1.1 404"));
+    }
+
+    /// JD's JSON endpoint: a CnlQuery object as an application/json body
+    void addcnl_jsonBody()
+    {
+        const QByteArray body = json("{'crypted':'ab+cd/ef==','jk':'function f(){return 31;}','passwords':['pw1','pw2'],'packageName':'Set - links.cc','source':'https://links.example/f/1','autostart':true}");
+        const QByteArray r = post(m_port, "/flash/addcnl", body, {}, "application/json");
+        QCOMPARE(bodyOf(r), QByteArray("success\r\n"));
+        QVERIFY(m_got);
+        QCOMPARE(int(m_got->kind), int(ClickNLoadServer::Post::Kind::Links));
+        QCOMPARE(m_got->crypted, QStringLiteral("ab+cd/ef=="));
+        QCOMPARE(m_got->jk, QStringLiteral("function f(){return 31;}"));
+        QCOMPARE(m_got->passwords, (QStringList{QStringLiteral("pw1"), QStringLiteral("pw2")}));
+        QCOMPARE(m_got->package, QStringLiteral("Set"));
+        QCOMPARE(m_got->source, QStringLiteral("https://links.example/f/1"));
+    }
+
+    /// [obj] and {"params":[obj]} carry the object too
+    void addcnl_wrappedForms()
+    {
+        QCOMPARE(bodyOf(post(m_port, "/flash/addcnl", json("[{'urls':'https://h.example/f/1'}]"), {}, "application/json")),
+                 QByteArray("success\r\n"));
+        QVERIFY(m_got);
+        QCOMPARE(m_got->urls, QStringLiteral("https://h.example/f/1"));
+        m_got.reset();
+        QCOMPARE(bodyOf(post(m_port, "/flash/addcnl", json("{'params':[{'urls':['https://h.example/f/2','https://h.example/f/3']}]}"),
+                             {}, "application/json")),
+                 QByteArray("success\r\n"));
+        QVERIFY(m_got);
+        QCOMPARE(m_got->urls, QStringLiteral("https://h.example/f/2\nhttps://h.example/f/3"));
+    }
+
+    /// a <script> tag GET with JSONP: JD answers an empty script and never calls back
+    void addcnl_getQueryWithCallback()
+    {
+        const QByteArray q = QUrl::toPercentEncoding(QString::fromUtf8(json("{'urls':'https://h.example/f/7','referrer':'https://site.example/'}")));
+        const QByteArray r = exchange(m_port, "GET /flash/addcnl?callback=cb&" + q + "&_=123 HTTP/1.1\r\n\r\n");
+        QVERIFY2(r.startsWith("HTTP/1.1 200"), r.constData());
+        QVERIFY(r.contains("Content-Type: text/javascript"));
+        QVERIFY(bodyOf(r).isEmpty());
+        QVERIFY(m_got);
+        QCOMPARE(m_got->urls, QStringLiteral("https://h.example/f/7"));
+        QCOMPARE(m_got->source, QStringLiteral("https://site.example/"));
+    }
+
+    /// a form value holds the object; "key" in place of jk; links and a list together
+    void addcnl_formValue()
+    {
+        const QByteArray q = QUrl::toPercentEncoding(QString::fromUtf8(
+            json("{'urls':'https://h.example/f/1','crypted':'AAAA+BBBB','key':'31323334353637383930313233343536','passwords':'a\\nb'}")));
+        QCOMPARE(bodyOf(post(m_port, "/flash/addcnl", "cnl=" + q)), QByteArray("success\r\n"));
+        QVERIFY(m_got);
+        QCOMPARE(m_got->urls, QStringLiteral("https://h.example/f/1"));
+        QCOMPARE(m_got->crypted, QStringLiteral("AAAA+BBBB"));
+        QCOMPARE(m_got->k, QStringLiteral("31323334353637383930313233343536"));
+        QVERIFY(m_got->jk.isEmpty());
+        QCOMPARE(m_got->passwords, (QStringList{QStringLiteral("a"), QStringLiteral("b")}));
+    }
+
+    void addcnl_badJsonAndEmpty()
+    {
+        QVERIFY(post(m_port, "/flash/addcnl", "{not json", {}, "application/json").startsWith("HTTP/1.1 400"));
+        QVERIFY(post(m_port, "/flash/addcnl", "[]", {}, "application/json").startsWith("HTTP/1.1 400"));
+        QVERIFY(!m_got);
+        // nothing to add, or a list without its key: no error, no dialog
+        QCOMPARE(bodyOf(post(m_port, "/flash/addcnl", "{}", {}, "application/json")), QByteArray("success\r\n"));
+        QCOMPARE(bodyOf(post(m_port, "/flash/addcnl", json("{'crypted':'AAAA'}"), {}, "application/json")),
+                 QByteArray("success\r\n"));
+        QVERIFY(!m_got);
     }
 
     void tooLargeRefused()

@@ -103,6 +103,8 @@ public final class ResolverMain {
             m.put("jdRevision", str(System.getProperty("emuleqt.jdRevision", "?")));
             m.put("hosts", Jd.hostPluginCount());
             m.put("crawlers", Jd.crawlerPluginCount());
+            // what this sidecar can do beyond its protocol (older ones send none)
+            m.put("deep", true);
             Out.send(m);
             break;
         }
@@ -143,7 +145,7 @@ public final class ResolverMain {
             start(new CheckTask(id, str(req.get("url")), Account.of(req)));
             break;
         case "expand":
-            start(new ExpandTask(id, str(req.get("url"))));
+            start(new ExpandTask(id, str(req.get("url")), Boolean.TRUE.equals(req.get("deep"))));
             break;
         case "container":
             start(new ContainerTask(id, str(req.get("path"))));

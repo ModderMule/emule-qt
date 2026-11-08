@@ -84,7 +84,9 @@ void ListenSocket::stopListening()
 
 bool ListenSocket::serverIsConnecting() const
 {
-    return theApp.serverConnect && theApp.serverConnect->isConnecting();
+    // a background login (handover, HighID recheck) is tested too
+    return theApp.serverConnect
+        && (theApp.serverConnect->isConnecting() || theApp.serverConnect->isHandoverLoggingIn());
 }
 
 bool ListenSocket::rebind(uint16 port)

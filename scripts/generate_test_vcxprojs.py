@@ -1,15 +1,23 @@
 #!/usr/bin/env python3
 """Generate per-test Visual Studio vcxproj files and update the solution.
 
-No args: rewrites every tests/vs project and the whole src/eMuleQt.sln.
---only tst_A tst_B: writes just those projects and adds them to the .sln in place.
+Tests, their extra sources, include dirs and Widgets use come from tests/CMakeLists.txt
+(emule_add_test / target_include_directories / target_link_libraries), so a source added
+there reaches the vcxproj too. TEST_EXTRAS adds what CMake can't say in MSBuild terms
+(defines, libs, .sln deps, solution folder). A project's existing GUID is kept.
+
+No args: writes every changed tests/vs project; the .sln gains missing tests and loses
+tests no longer in CMake. Other .sln projects are never touched.
+--only tst_A tst_B: just these tests.
+--check: list what would change, write nothing (exit 1 on drift).
 """
 
 import argparse
 import os
+import re
+import sys
 from dataclasses import dataclass, replace
 import uuid
-import glob
 import textwrap
 
 PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
@@ -27,14 +35,11 @@ EMULEUSENET_GUID = "{1BDD4987-DC42-5349-9E57-C6E045319FE7}"
 EMULEINDEXER_GUID = "{3F2A6C41-9D18-4B77-A5E4-6B0C1D2E8A73}"
 EMULEBT_GUID = "{EFB1FFAF-37F7-57F7-B433-11426F819533}"
 EMULEED3K_GUID = "{1C170FEE-EBD2-54F0-9048-AA6C9F7FE73A}"
-EMULEQT_MCP_GUID = "{3F250015-8D8C-5B5A-9D6F-9DBA63092320}"
-EMULEQT_UPDATER_GUID = "{0F06CD43-CBCD-4E5D-A90A-B3A4028B2A92}"
+SPECIALDLP_GUID = "{3A9EE43B-4961-4F30-A565-A48EB043B6C4}"
+EMULEQT_UPDATER_GUID ="{0F06CD43-CBCD-4E5D-A90A-B3A4028B2A92}"
 VS_CPP_PROJECT_TYPE = "{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}"
 VS_FOLDER_TYPE = "{2150E333-8FDC-42A3-9474-1A3956D46DE8}"
 TESTS_FOLDER_GUID = "{E0A0B5F0-0001-0001-0001-000000000001}"
-
-# Old test project to remove
-OLD_TEST_GUID = "{2C8CBF44-CFAF-3A30-AA4B-1B826A227B41}"
 
 
 def make_guid(name: str) -> str:
@@ -321,6 +326,10 @@ ED3K_EXTRAS = TestExtras(
 
 TEST_EXTRAS: dict[str, TestExtras] = {
     # runs the built updater exe; relative to the bin\<Config> run dir like the data dirs
+    # loads the real specialdlp.dll from the build tree (CMake: $<TARGET_FILE:specialdlp>)
+    "tst_Dlp": TestExtras(includes=("external/specialdlp/include",),
+                          defines='SPECIALDLP_LIB_PATH="../../../bin/$(Configuration)/specialdlp.dll";',
+                          deps=(SPECIALDLP_GUID,)),
     "tst_Updater": TestExtras(defines="EMULEQT_UPDATER_PATH=../../bin/$(Configuration)/emuleqt-updater.exe;",
                               deps=(EMULEQT_UPDATER_GUID,), folder="Daemon"),
     # compiles the daemon source standalone (tests/CMakeLists.txt)
@@ -658,14 +667,166 @@ TEST_EXTRAS: dict[str, TestExtras] = {
 NO_EXTRAS = TestExtras()
 
 
+@dataclass(frozen=True)
+class CMakeTest:
+    """One emule_add_test() with what tests/CMakeLists.txt adds to it. Repo-relative '/' paths."""
+    sources: tuple[str, ...] = ()   # besides tests/<name>.cpp
+    includes: tuple[str, ...] = ()
+    widgets: bool = False
+    libs: tuple[str, ...] = ()      # LIBRARIES + target_link_libraries, as written
+
+
+CMAKE_LISTS = os.path.join(TESTS_DIR, "CMakeLists.txt")
+
+
+def cmake_commands(text: str):
+    """(command, [args]) for every call in a CMake file; comments and quotes handled."""
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == "#":
+            i = text.find("\n", i)
+            i = n if i < 0 else i
+            continue
+        m = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*\(").match(text, i)
+        if not m or (i > 0 and (text[i - 1].isalnum() or text[i - 1] == "_")):
+            i += 1
+            continue
+        args, cur, depth, j = [], "", 1, m.end()
+        while j < n and depth:
+            ch = text[j]
+            if ch == '"':
+                k = j + 1
+                while k < n and text[k] != '"':
+                    k += 2 if text[k] == "\\" else 1
+                cur += text[j + 1:k]
+                j = k + 1
+                continue
+            if ch == "#":
+                j = text.find("\n", j)
+                j = n if j < 0 else j
+                continue
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if not depth:
+                    break
+            if ch.isspace() and depth == 1:
+                if cur:
+                    args.append(cur)
+                cur = ""
+            else:
+                cur += ch
+            j += 1
+        if cur:
+            args.append(cur)
+        yield m.group(1).lower(), args
+        i = j + 1
+
+
+def cmake_path(arg: str) -> str | None:
+    """Repo-relative path of a CMake path argument; None if it's a variable we can't resolve."""
+    arg = arg.replace("${CMAKE_SOURCE_DIR}/", "").replace("${PROJECT_SOURCE_DIR}/", "")
+    if arg.startswith("${CMAKE_CURRENT_SOURCE_DIR}"):
+        arg = "tests" + arg[len("${CMAKE_CURRENT_SOURCE_DIR}"):]
+    elif "$" in arg:
+        return None
+    elif not arg.startswith(("src/", "libs/", "resources/", "external/", "tests")):
+        arg = "tests/" + arg
+    return os.path.normpath(arg).replace(os.sep, "/")
+
+
+def parse_cmake_tests(path: str = CMAKE_LISTS) -> dict[str, CMakeTest]:
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    found: dict[str, dict] = {}
+    for cmd, args in cmake_commands(text):
+        if cmd == "emule_add_test" and args and args[0].startswith("tst_"):
+            name, srcs, mode = args[0], [], None
+            for a in args[1:]:
+                if a in ("SOURCES", "LIBRARIES", "FOLDER"):
+                    mode = a
+                elif mode == "SOURCES":
+                    p = cmake_path(a)
+                    if p and p != f"tests/{name}.cpp" and not p.endswith(".h"):
+                        srcs.append(p)
+                elif mode == "LIBRARIES":
+                    found.setdefault(name, {}).setdefault("libs", []).append(a)
+            t = found.setdefault(name, {})
+            t["sources"] = srcs
+            # as emule_add_test(): GUI sources pull in SkinIcons and Widgets
+            if any(s.startswith("src/gui/") for s in srcs):
+                if "src/gui/app/SkinIcons.cpp" not in srcs:
+                    srcs.append("src/gui/app/SkinIcons.cpp")
+                t["widgets"] = True
+        elif cmd in ("target_include_directories", "target_link_libraries", "target_sources") \
+                and args and args[0] in found:
+            t = found[args[0]]
+            vals = [a for a in args[1:] if a not in ("PRIVATE", "PUBLIC", "INTERFACE")]
+            if cmd == "target_link_libraries":
+                t.setdefault("libs", []).extend(vals)
+            elif cmd == "target_sources":
+                t["sources"] += [p for p in map(cmake_path, vals) if p and not p.endswith(".h")]
+            else:
+                t.setdefault("includes", []).extend(
+                    p for p in map(cmake_path, vals) if p and p != "tests")
+    return {n: CMakeTest(tuple(t.get("sources", ())), tuple(t.get("includes", ())),
+                         t.get("widgets", False) or any("Widgets" in a for a in t.get("libs", ())),
+                         tuple(t.get("libs", ())))
+            for n, t in found.items()}
+
+
+CMAKE_TESTS = parse_cmake_tests()
+
+
 def discover_tests() -> list[str]:
-    """Find all tst_*.cpp files and return sorted test names."""
-    pattern = os.path.join(TESTS_DIR, "tst_*.cpp")
-    names = []
-    for path in glob.glob(pattern):
-        name = os.path.splitext(os.path.basename(path))[0]
-        names.append(name)
-    return sorted(names)
+    """Tests CMake builds that have a tests/<name>.cpp."""
+    return sorted(n for n in CMAKE_TESTS if os.path.exists(os.path.join(TESTS_DIR, n + ".cpp")))
+
+
+def merged_extras(name: str) -> TestExtras:
+    """TEST_EXTRAS plus the sources, include dirs and Widgets CMake gives the test."""
+    cm = CMAKE_TESTS.get(name, CMakeTest())
+    extras = TEST_EXTRAS.get(name) or default_extras(cm)
+    sources = list(cm.sources) + [s for s in extras.sources if s not in cm.sources]
+    # the template already has tests and these
+    default = {"src/core", "src/ipc", "src/usenet", "src/indexer"}
+    includes = list(extras.includes) + [i for i in cm.includes
+                                        if i not in extras.includes and i not in default]
+    return replace(extras, sources=tuple(dict.fromkeys(sources)), includes=tuple(includes),
+                   widgets=extras.widgets or cm.widgets)
+
+
+def default_extras(cm: CMakeTest) -> TestExtras:
+    """For a test without a TEST_EXTRAS entry: the ed3k or BT switches when CMake links them."""
+    if "eMule::Ed3k" in cm.libs:
+        return ED3K_EXTRAS
+    if "eMule::Bt" in cm.libs:
+        return TestExtras(includes=BT_INCLUDES, defines=BT_DEFINES, libs=BT_LIBS,
+                          deps=(EMULEBT_GUID,), folder="BitTorrent")
+    return NO_EXTRAS
+
+
+def existing_guid(name: str) -> str | None:
+    """The GUID a project already has: its vcxproj, else its .sln entry."""
+    path = os.path.join(VS_DIR, f"{name}.vcxproj")
+    if os.path.exists(path):
+        with open(path, encoding="utf-8-sig", errors="replace") as f:
+            m = re.search(r"<ProjectGuid>(\{[0-9A-Fa-f-]+\})</ProjectGuid>", f.read())
+            if m:
+                return m.group(1).upper()
+    if os.path.exists(SLN_PATH):
+        with open(SLN_PATH, encoding="utf-8-sig", errors="replace") as f:
+            m = re.search(r'^Project\("[^"]+"\) = "' + re.escape(name) + r'", "[^"]+", "(\{[^}]+\})"',
+                          f.read(), re.M)
+            if m:
+                return m.group(1).upper()
+    return None
+
+
+def project_guid(name: str) -> str:
+    return existing_guid(name) or make_guid(name)
 
 
 def vs_path(repo_rel: str) -> str:
@@ -702,10 +863,10 @@ def sources_xml(extras: TestExtras) -> str:
 
 
 def generate_vcxproj(name: str) -> str:
-    extras = TEST_EXTRAS.get(name, NO_EXTRAS)
+    extras = merged_extras(name)
     return VCXPROJ_TEMPLATE.format(
         name=name,
-        guid=make_guid(name),
+        guid=project_guid(name),
         includes="".join(vs_path(i) + ";" for i in extras.includes),
         defines=extras.defines,
         libs=extras.libs,
@@ -715,7 +876,7 @@ def generate_vcxproj(name: str) -> str:
 
 
 def test_deps(name: str) -> list[str]:
-    extras = TEST_EXTRAS.get(name, NO_EXTRAS)
+    extras = merged_extras(name)
     return [EMULECORE_GUID, EMULEIPC_GUID, EMULEINDEXER_GUID, EMULEUSENET_GUID, *extras.deps]
 
 
@@ -725,13 +886,12 @@ def folder_guid(folder: str) -> str:
 
 def test_parent(name: str) -> str:
     """Solution folder a test sits in: Tests, or a sub-folder of it."""
-    folder = TEST_EXTRAS.get(name, NO_EXTRAS).folder
+    folder = merged_extras(name).folder
     return folder_guid(folder) if folder else TESTS_FOLDER_GUID
 
 
 def sub_folders(test_names: list[str]) -> list[str]:
-    return sorted({TEST_EXTRAS[t].folder for t in test_names
-                   if t in TEST_EXTRAS and TEST_EXTRAS[t].folder})
+    return sorted({f for t in test_names if (f := merged_extras(t).folder)})
 
 
 def project_lines(name: str, rel_path: str, guid: str, deps: list[str],
@@ -750,84 +910,29 @@ def config_lines(guid: str) -> list[str]:
             for cfg in ("Debug", "Release") for kind in ("ActiveCfg", "Build.0")]
 
 
-def generate_sln(test_names: list[str]) -> str:
-    """Generate a complete .sln file with all projects."""
-    lines = []
-    lines.append("Microsoft Visual Studio Solution File, Format Version 12.00")
-    lines.append("# Visual Studio Version 17")
-
-    # Existing projects (emulecore, emuleipc, emuleindexer, emuleusenet,
-    # emulecored, emuleqt).
-    # Anything absent from this list is dropped from the .sln on the next run,
-    # so a new library must be added here as well as to the solution.
-    existing_projects = [
-        ("emulecore", "core\\emulecore.vcxproj", EMULECORE_GUID, []),
-        ("emuleipc", "ipc\\emuleipc.vcxproj", EMULEIPC_GUID, []),
-        ("emuleindexer", "indexer\\emuleindexer.vcxproj", EMULEINDEXER_GUID,
-         [EMULECORE_GUID]),
-        ("emuleusenet", "usenet\\emuleusenet.vcxproj", EMULEUSENET_GUID, [EMULECORE_GUID]),
-        ("emulebt", "bt\\emulebt.vcxproj", EMULEBT_GUID, [EMULECORE_GUID]),
-        ("emuleed3k", "ed3k\\emuleed3k.vcxproj", EMULEED3K_GUID, [EMULECORE_GUID]),
-        ("emulecored", "daemon\\emulecored.vcxproj", "{4ECEE8D7-03DE-3DE1-A2C6-C56B3BD68584}",
-         [EMULECORE_GUID, EMULEIPC_GUID, EMULEINDEXER_GUID, EMULEUSENET_GUID, EMULEBT_GUID,
-          EMULEED3K_GUID]),
-        ("emuleqt-mcp", "mcpbridge\\emuleqt-mcp.vcxproj", EMULEQT_MCP_GUID,
-         [EMULECORE_GUID, EMULEIPC_GUID, EMULEINDEXER_GUID, EMULEUSENET_GUID]),
-        ("emuleqt-updater", "updater\\emuleqt-updater.vcxproj", EMULEQT_UPDATER_GUID, []),
-        ("emuleqt", "gui\\emuleqt.vcxproj", "{CEA0CD5B-F0C0-3EB9-8BEA-C9CEDA11C838}",
-         [EMULECORE_GUID, EMULEIPC_GUID, EMULEBT_GUID]),
-    ]
-
-    for name, path, guid, deps in existing_projects:
-        lines += project_lines(name, path, guid, deps)
-
-    # Tests solution folder and its sub-folders
-    lines += project_lines("Tests", "Tests", TESTS_FOLDER_GUID, [], VS_FOLDER_TYPE)
-    folders = sub_folders(test_names)
-    for folder in folders:
-        lines += project_lines(folder, folder, folder_guid(folder), [], VS_FOLDER_TYPE)
-
-    # Test projects
-    test_guids = []
-    for tname in test_names:
-        guid = make_guid(tname)
-        test_guids.append((tname, guid))
-        lines += project_lines(tname, f"..\\tests\\vs\\{tname}.vcxproj", guid, test_deps(tname))
-
-    # Global section
-    lines.append("Global")
-
-    # Solution configuration platforms
-    lines.append("\tGlobalSection(SolutionConfigurationPlatforms) = preSolution")
-    lines.append("\t\tDebug|x64 = Debug|x64")
-    lines.append("\t\tRelease|x64 = Release|x64")
-    lines.append("\tEndGlobalSection")
-
-    # Project configuration platforms
-    lines.append("\tGlobalSection(ProjectConfigurationPlatforms) = postSolution")
-    all_guids = [g for _, _, g, _ in existing_projects] + [g for _, g in test_guids]
-    for guid in all_guids:
-        lines += config_lines(guid)
-    lines.append("\tEndGlobalSection")
-
-    # Nested projects - put tests under Tests folder (or a sub-folder of it)
-    lines.append("\tGlobalSection(NestedProjects) = preSolution")
-    for folder in folders:
-        lines.append(f"\t\t{folder_guid(folder)} = {TESTS_FOLDER_GUID}")
-    for tname, guid in test_guids:
-        lines.append(f"\t\t{guid} = {test_parent(tname)}")
-    lines.append("\tEndGlobalSection")
-
-    lines.append("\tGlobalSection(ExtensibilityGlobals) = postSolution")
-    lines.append("\tEndGlobalSection")
-    lines.append("\tGlobalSection(ExtensibilityAddIns) = postSolution")
-    lines.append("\tEndGlobalSection")
-    lines.append("EndGlobal")
-
-    # Plain "\n" here on purpose: main() opens the file with newline="\r\n", which
-    # translates every "\n" on write. Joining with "\r\n" as well produced "\r\r\n" on
-    # every line — a solution file VS tolerates but git sees as a whole-file rewrite.
-    return "\n".join(lines) + "\n"
+def prune_sln(sln: str, keep: set[str]) -> tuple[str, list[str]]:
+    """Drop test projects (..\\tests\\vs\\*.vcxproj) not in @p keep, with their config and
+    nesting lines. Everything else stays."""
+    lines = sln.split("\n")
+    gone: dict[str, str] = {}
+    for line in lines:
+        m = re.match(r'Project\("[^"]+"\) = "([^"]+)", "\.\.\\tests\\vs\\[^"]+", "(\{[^}]+\})"', line)
+        if m and m.group(1) not in keep:
+            gone[m.group(2).upper()] = m.group(1)
+    if not gone:
+        return sln, []
+    out, skip = [], False
+    for line in lines:
+        if line.startswith("Project("):
+            skip = any(line.rstrip().upper().endswith(f'"{g}"') for g in gone)
+        if skip:
+            if line.strip() == "EndProject":
+                skip = False
+            continue
+        if any(line.strip().upper().startswith(g) for g in gone):
+            continue   # config and nesting lines start with the GUID
+        out.append(line)
+    return "\n".join(out), sorted(gone.values())
 
 
 def patch_sln(sln: str, test_names: list[str]) -> str:
@@ -835,9 +940,9 @@ def patch_sln(sln: str, test_names: list[str]) -> str:
     else as is. Entries already present are kept."""
     lines = sln.split("\n")
 
-    def present(guid: str) -> bool:
-        return any(line.startswith("Project(") and line.rstrip().endswith(f'"{guid}"')
-                   for line in lines)
+    def present(guid: str, name: str | None = None) -> bool:
+        return any(line.startswith("Project(") and (line.rstrip().upper().endswith(f'"{guid}"')
+                   or (name and f'= "{name}", ' in line)) for line in lines)
 
     new_projects, new_configs, new_nested = [], [], []
     for folder in sub_folders(test_names):
@@ -846,8 +951,8 @@ def patch_sln(sln: str, test_names: list[str]) -> str:
             new_projects += project_lines(folder, folder, guid, [], VS_FOLDER_TYPE)
             new_nested.append(f"\t\t{guid} = {TESTS_FOLDER_GUID}")
     for tname in test_names:
-        guid = make_guid(tname)
-        if present(guid):
+        guid = project_guid(tname)
+        if present(guid, tname):
             continue
         new_projects += project_lines(tname, f"..\\tests\\vs\\{tname}.vcxproj", guid,
                                       test_deps(tname))
@@ -868,45 +973,64 @@ def patch_sln(sln: str, test_names: list[str]) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--only", nargs="+", metavar="TEST",
-                        help="write just these tests' vcxproj files and add them to the "
-                             "existing .sln in place (keeps projects this script doesn't know)")
+                        help="just these tests; the .sln only gains them")
+    parser.add_argument("--check", action="store_true",
+                        help="list what would change, write nothing; exit 1 on drift")
     args = parser.parse_args()
 
-    test_names = discover_tests()
+    all_tests = discover_tests()
+    test_names = all_tests
     if args.only:
-        unknown = sorted(set(args.only) - set(test_names))
+        unknown = sorted(set(args.only) - set(all_tests))
         if unknown:
-            parser.error(f"no tests/<name>.cpp for: {', '.join(unknown)}")
+            parser.error(f"not an emule_add_test() in tests/CMakeLists.txt: {', '.join(unknown)}")
         test_names = sorted(args.only)
-    print(f"Found {len(test_names)} tests")
+    print(f"{len(test_names)} tests from tests/CMakeLists.txt")
 
-    os.makedirs(VS_DIR, exist_ok=True)
-
-    # Generate vcxproj files
+    changed = []
     for name in test_names:
         path = os.path.join(VS_DIR, f"{name}.vcxproj")
         content = generate_vcxproj(name)
-        with open(path, "w", encoding="utf-8", newline="\r\n") as f:
-            f.write(content)
+        old = None
+        if os.path.exists(path):
+            with open(path, encoding="utf-8-sig", newline="") as f:
+                old = f.read().replace("\r\n", "\n").rstrip("\n")
+        if old == content.rstrip("\n"):
+            continue
+        changed.append(name)
+        print(f"  {'new' if old is None else 'changed'}: {name}")
+        if not args.check:
+            os.makedirs(VS_DIR, exist_ok=True)
+            with open(path, "w", encoding="utf-8", newline="\r\n") as f:
+                f.write(content)
 
-    print(f"Generated {len(test_names)} vcxproj files in tests/vs/")
+    # utf-8-sig: keep the BOM VS writes; CRLFs kept as read
+    with open(SLN_PATH, encoding="utf-8-sig", newline="") as f:
+        sln = f.read()
+    crlf = "\r\n" in sln
+    new_sln = sln.replace("\r\n", "\n")
+    removed = []
+    if not args.only:
+        new_sln, removed = prune_sln(new_sln, set(all_tests))
+    new_sln = patch_sln(new_sln, test_names)
+    if crlf:
+        new_sln = new_sln.replace("\n", "\r\n")
+    for name in removed:
+        print(f"  .sln drops: {name}")
+    sln_changed = new_sln != sln
+    if sln_changed:
+        print(f"  .sln changed")
+        if not args.check:
+            with open(SLN_PATH, "w", encoding="utf-8-sig", newline="") as f:
+                f.write(new_sln)
 
-    # Update solution file
-    if args.only:
-        # utf-8-sig: keep the BOM VS writes; newline="" keeps the CRLFs as read
-        with open(SLN_PATH, encoding="utf-8-sig", newline="") as f:
-            sln = f.read()
-        sln_content = patch_sln(sln.replace("\r\n", "\n"), test_names).replace("\n", "\r\n")
-        with open(SLN_PATH, "w", encoding="utf-8-sig", newline="") as f:
-            f.write(sln_content)
-    else:
-        sln_content = generate_sln(test_names)
-        with open(SLN_PATH, "w", encoding="utf-8", newline="\r\n") as f:
-            f.write(sln_content)
-
-    print(f"Updated {SLN_PATH}")
+    verb = "would change" if args.check else "written"
+    print(f"{len(changed)} vcxproj {verb}; .sln {'changed' if sln_changed else 'unchanged'}")
+    if args.check and (changed or sln_changed):
+        sys.exit(1)
 
 
 if __name__ == "__main__":

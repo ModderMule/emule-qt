@@ -313,6 +313,8 @@ private slots:
     void onOptionsClicked();
     void showNetworkInfo();
     void onClipboardChanged();
+    /// http(s) hoster links in the clipboard (ed3kHosterClipboard): the Hoster tab crawls them
+    void checkHosterClipboard(const QString& text);
     void buildToolsMenu();
     void onOpenIncomingFolder();
     void onOpenDownloadsFolderInBrowser();
@@ -449,6 +451,11 @@ private:
 
     // Clipboard monitoring (MFC SearchClipboard equivalent)
     QString m_lastClipboardContents;
+    /// the hoster watcher's last text: copied again, nothing happens (seeded at start: JD's skip)
+    QString m_lastHosterClipboard;
+    /// while the hoster watcher is on: the clipboard read once a second, as JD does (macOS sends
+    /// dataChanged only when the app becomes active, links are copied in the browser)
+    QTimer* m_hosterClipboardPoll = nullptr;
     QPointer<FirstStartWizard> m_firstStartWizard;
     bool m_firstStartWizardAllowed = true;
 

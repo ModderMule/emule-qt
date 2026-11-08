@@ -40,7 +40,7 @@ class I2pRouter;
 
 namespace usenet { class UsenetSession; }
 namespace bt { class BtSession; struct BtSettings; }
-namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; class Ed3kTorrentJoin; class Ed3kEd2kJoin; class Ed3kShared; class SharedFileSource; class Ed3kFriends; class Ed3kRooms; class Ed3kBootstrap; class Ed3kNames; class Ed3kSiteServer; class Ed3kCredit; class Ed3kUploads; class Ed3kFilters; class Ed3kChain; class Ed3kHosterJoin; class Ed3kJdResolver; class Ed3kJavaRuntime; class Ed3kResolverUpdater; class Ed3kDownloads; class Ed3kSearch; class Ed3kSets; class Ed3kLive; class Ed3kLiveBroadcast; class Ed3kPaid; class Ed3kPaidSeller; class Ed3kOwnSets; }
+namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; class Ed3kTorrentJoin; class Ed3kEd2kJoin; class Ed3kShared; class SharedFileSource; class Ed3kFriends; class Ed3kRooms; class Ed3kBootstrap; class Ed3kNames; class Ed3kSiteServer; class Ed3kCredit; class Ed3kUploads; class Ed3kFilters; class Ed3kChain; class Ed3kHosterJoin; class Ed3kLinkGrabber; class Ed3kJdResolver; class Ed3kJavaRuntime; class Ed3kResolverUpdater; class Ed3kDownloads; class Ed3kSearch; class Ed3kSets; class Ed3kLive; class Ed3kLiveBroadcast; class Ed3kPaid; class Ed3kPaidSeller; class Ed3kOwnSets; }
 namespace indexer { class IndexerFeedList; class IndexerSearchList; }
 
 class DaemonApp : public QObject {
@@ -255,6 +255,11 @@ private:
     std::unique_ptr<ed3k::Ed3kLiveBroadcast> m_ed3kLiveBroadcast;
     /// downloads from hoster links (hoster.md, Ed3kHosterBridge, prefs ed3kHoster*); dies before the session
     std::unique_ptr<ed3k::Ed3kHosterJoin> m_hosterJoin;
+    /// the Link Grabber (hoster.md "Link Grabber"): links checked and edited before they become
+    /// hoster downloads; dies before the join and the resolver
+    std::unique_ptr<ed3k::Ed3kLinkGrabber> m_linkGrabber;
+    /// clipboard, linkGrabber and grabAll as last pushed (bits): a change pushes the status
+    int m_hosterUiFlags = -1;
     /// once a second: the node's totals into the ed3k statistics (Ed3kBridge::sampleCounters)
     QTimer* m_ed3kStatsTimer = nullptr;
 #ifdef EMULE_HAVE_HOSTER_JD
@@ -263,6 +268,7 @@ private:
     std::unique_ptr<ed3k::Ed3kJavaRuntime> m_javaRuntime;
     /// newer resolver.zip from the update manifest (ed3kHosterAutoUpdate)
     std::unique_ptr<ed3k::Ed3kResolverUpdater> m_resolverUpdater;
+    QString m_hosterSharedWarned;   ///< read-only sharedPluginDir already logged
     /// the java pref the last lookup was for
     QString m_javaLookedFor{QStringLiteral("\x01")};
 #endif

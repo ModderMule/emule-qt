@@ -72,7 +72,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..;..\..\src\core;..\..\external\specialdlp\include;..\..\src\ipc;..\..\src\usenet;..\..\src\indexer;..\..\src\vcpkg_installed\x64-windows\include;..\..\src\vcpkg_installed\x64-windows\include\miniupnpc;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\external\specialdlp\include;..;..\..\src\core;..\..\src\ipc;..\..\src\usenet;..\..\src\indexer;..\..\src\vcpkg_installed\x64-windows\include;..\..\src\vcpkg_installed\x64-windows\include\miniupnpc;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
       <AssemblerListingLocation>release\</AssemblerListingLocation>
       <BrowseInformation>false</BrowseInformation>
@@ -82,7 +82,7 @@
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <ObjectFileName>release\</ObjectFileName>
       <Optimization>MaxSpeed</Optimization>
-      <PreprocessorDefinitions>$(EmuleQuicDefines)_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;EMULE_TEST_DATA_DIR=../../tests/data/;EMULE_PROJECT_DATA_DIR=../../data/;SPECIALDLP_LIB_PATH="../../../bin/release/specialdlp.dll";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>SPECIALDLP_LIB_PATH="../../../bin/$(Configuration)/specialdlp.dll";$(EmuleQuicDefines)_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;EMULE_TEST_DATA_DIR=../../tests/data/;EMULE_PROJECT_DATA_DIR=../../data/;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessToFile>false</PreprocessToFile>
       <ProgramDataBaseFileName>
       </ProgramDataBaseFileName>
@@ -114,7 +114,7 @@
       <WarningLevel>0</WarningLevel>
     </Midl>
     <ResourceCompile>
-      <PreprocessorDefinitions>$(EmuleQuicDefines)_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>SPECIALDLP_LIB_PATH="../../../bin/$(Configuration)/specialdlp.dll";$(EmuleQuicDefines)_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;NDEBUG;QT_NO_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
     <QtMoc>
       <CompilerFlavor>msvc</CompilerFlavor>
@@ -127,7 +127,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..;..\..\src\core;..\..\external\specialdlp\include;..\..\src\ipc;..\..\src\usenet;..\..\src\indexer;..\..\src\vcpkg_installed\x64-windows\include;..\..\src\vcpkg_installed\x64-windows\include\miniupnpc;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\external\specialdlp\include;..;..\..\src\core;..\..\src\ipc;..\..\src\usenet;..\..\src\indexer;..\..\src\vcpkg_installed\x64-windows\include;..\..\src\vcpkg_installed\x64-windows\include\miniupnpc;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
       <AssemblerListingLocation>debug\</AssemblerListingLocation>
       <BrowseInformation>false</BrowseInformation>
@@ -137,7 +137,7 @@
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <ObjectFileName>debug\</ObjectFileName>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>$(EmuleQuicDefines)_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;EMULE_TEST_DATA_DIR=../../tests/data/;EMULE_PROJECT_DATA_DIR=../../data/;SPECIALDLP_LIB_PATH="../../../bin/debug/specialdlp.dll";_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>SPECIALDLP_LIB_PATH="../../../bin/$(Configuration)/specialdlp.dll";$(EmuleQuicDefines)_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;EMULE_TEST_DATA_DIR=../../tests/data/;EMULE_PROJECT_DATA_DIR=../../data/;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessToFile>false</PreprocessToFile>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -164,7 +164,7 @@
       <WarningLevel>0</WarningLevel>
     </Midl>
     <ResourceCompile>
-      <PreprocessorDefinitions>$(EmuleQuicDefines)_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>SPECIALDLP_LIB_PATH="../../../bin/$(Configuration)/specialdlp.dll";$(EmuleQuicDefines)_CONSOLE;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NOMINMAX;WIN32_LEAN_AND_MEAN;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
     <QtMoc>
       <CompilerFlavor>msvc</CompilerFlavor>

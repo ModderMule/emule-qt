@@ -108,6 +108,7 @@ private slots:
     void nestedPassDoesNotCorruptOuterBuffer();
     void sendQueue_overflowClosesTheSocket();
     void sendQueue_oneLargePacketIsKept();
+    void neededBytes_stretchedByThePace();
     void fullReceive_falseOnShortRead();
     void fullReceive_trueWhenBufferFilled();
     void fullReceive_trueUnderAThrottleThatCapsTheRead();
@@ -835,6 +836,33 @@ void tst_EMSocket::sendQueue_oneLargePacketIsKept()
     sock.sendPacket(std::make_unique<Packet>(OP_ASKSHAREDFILESANSWER, 9 * 1024 * 1024, OP_EDONKEYPROT), true);
     QTest::qWait(100);
     QCOMPARE(sock.lastErrorCode, 0);
+}
+
+// Report 25: a 32 KB packet over 3 s / 5 s is 6.5+ KB/s per slot, whatever the limit.
+// With a pace the deadline stretches to size / pace, at most MFC's 45 s / 90 s.
+void tst_EMSocket::neededBytes_stretchedByThePace()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    TestEMSocket sock;
+    sock.connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(server.waitForNewConnection(5000));
+    QVERIFY(sock.waitForConnected(5000));
+
+    constexpr uint32 kPayload = 32 * 1024;
+    sock.sendPacket(std::make_unique<Packet>(OP_SENDINGPART, kPayload, OP_EDONKEYPROT), false, kPayload);
+    QTest::qWait(1100);   // the first standard packet stamps the deadline's start
+
+    // ~1 s into a 3 s deadline: about a third of the packet is due
+    const uint32 unpaced = sock.getNeededBytes(0);
+    // 1228 B/s: 12 KB/s line, 5 slots, half of it -> ~27 s deadline, ~1.3 KB due
+    const uint32 paced = sock.getNeededBytes(12 * 1024 / 2 / 5);
+    // a pace that would ask for hours: MFC's 45 s bound, ~0.8 KB due
+    const uint32 floored = sock.getNeededBytes(1);
+    qInfo("needed: unpaced %u, paced %u, floored %u", unpaced, paced, floored);
+    QVERIFY(unpaced > 8 * 1024);
+    QVERIFY(paced > 0 && paced < 2 * 1024);
+    QVERIFY(floored > 0 && floored < paced);
 }
 
 // C75: the throttler thread sends straight to the kernel, the owner thread into

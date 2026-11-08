@@ -128,8 +128,13 @@ final class Jd {
 
     /** Runs the link through JD's crawler: decrypters first, then host plugins. */
     static List<DownloadLink> crawl(final String url) throws InterruptedException {
+        return crawl(url, false);
+    }
+
+    /** As crawl(url); deep: a page no plugin takes is loaded and every hoster link on it crawled. */
+    static List<DownloadLink> crawl(final String url, final boolean deep) throws InterruptedException {
         final LinkCrawler lc = new LinkCrawler(false, false);
-        lc.crawl(url);
+        lc.crawl(url, null, deep);
         lc.waitForCrawling();
         final List<DownloadLink> out = new ArrayList<DownloadLink>();
         for (final CrawledLink cl : lc.getCrawledLinks()) {

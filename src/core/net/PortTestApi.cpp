@@ -35,13 +35,15 @@ QUrl url(const Request& request)
 {
     QUrl result(QLatin1String(kWebsiteUrl) + QLatin1String(kPortTestApiPath));
     QUrlQuery query;
-    const bool bt = request.network == Network::BitTorrent;
+    const bool ed3k = request.network == Network::Ed3k;
     query.addQueryItem(QStringLiteral("proto"), protoName(request.network));
-    if (bt)
+    if (!ed3k)
         query.addQueryItem(QStringLiteral("tcpport"), QString::number(request.tcpPort));
     query.addQueryItem(QStringLiteral("udpport"), QString::number(request.udpPort));
-    if (!bt)
+    if (ed3k)
         query.addQueryItem(QStringLiteral("probe"), QString::fromLatin1(request.probe.toHex()));
+    if (request.network == Network::Ed2k && request.userHash.size() == 16)
+        query.addQueryItem(QStringLiteral("hash"), QString::fromLatin1(request.userHash.toHex()));
     if (!request.ip4.isEmpty())
         query.addQueryItem(QStringLiteral("ip4"), request.ip4);
     if (!request.ip6.isEmpty())
@@ -52,7 +54,12 @@ QUrl url(const Request& request)
 
 QString protoName(Network network)
 {
-    return network == Network::BitTorrent ? QStringLiteral("bt") : QStringLiteral("ed3k");
+    switch (network) {
+    case Network::BitTorrent: return QStringLiteral("bt");
+    case Network::Ed3k:       return QStringLiteral("ed3k");
+    case Network::Ed2k:       return QStringLiteral("ed2k");
+    }
+    return {};
 }
 
 Reply parseReply(const QByteArray& body, int httpStatus, Network network)
@@ -78,6 +85,7 @@ Reply parseReply(const QByteArray& body, int httpStatus, Network network)
         reply.error = QStringLiteral("no proto %1 in the reply").arg(protoName(network));
         return reply;
     }
+    reply.obfuscated = data.value(QStringLiteral("obfuscated")).toBool();
     const QJsonArray results = data.value(QStringLiteral("results")).toArray();
     for (const QJsonValue& r : results) {
         const QJsonObject o = r.toObject();
@@ -126,6 +134,24 @@ QCborArray applySeen(const QCborArray& targets, int seenFamilies)
         out.append(m);
     }
     return out;
+}
+
+Verdict tcpVerdict(const QCborArray& targets, bool obfuscated, bool cryptRequired)
+{
+    bool closed = false;
+    for (const QCborValue& t : targets) {
+        const QCborMap tcp = t.toMap().value(QStringLiteral("tcp")).toMap();
+        if (tcp.value(QStringLiteral("open")).toBool())
+            return Verdict::Open;
+        const QString reason = tcp.value(QStringLiteral("reason")).toString();
+        // a plain dial to a core that requires encryption is refused although the port is open
+        const bool plainRefused = !obfuscated && cryptRequired
+                                  && (reason == QLatin1String("bad_reply") || reason == QLatin1String("rejected"));
+        if (reason == QLatin1String("closed") || reason == QLatin1String("filtered")
+            || reason == QLatin1String("rejected") || reason == QLatin1String("bad_reply"))
+            closed = closed || !plainRefused;
+    }
+    return closed ? Verdict::Closed : Verdict::Unknown;
 }
 
 } // namespace eMule::PortTestApi

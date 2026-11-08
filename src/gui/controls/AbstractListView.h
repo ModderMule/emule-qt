@@ -11,9 +11,8 @@
 /// A right-click on the header pops the MFC CMuleListCtrl column menu: one
 /// checkable entry per column except the first, which can't be hidden.
 ///
-/// Two bases are supported because the GUI uses both model-backed lists
-/// (`QTreeView`) and item-backed lists (`QTreeWidget`); `QTreeWidget` derives
-/// from `QTreeView`, so one template covers both.
+/// Bases: model-backed lists (`QTreeView`), item-backed lists (`QTreeWidget`,
+/// derives from `QTreeView`) and tables (`QTableView`, horizontal header).
 ///
 /// @note The template intentionally carries no `Q_OBJECT` (templates can't, and
 /// it adds no new signals or slots). `showEvent()` is a plain virtual, not a
@@ -27,6 +26,8 @@
 #include <QPainter>
 #include <QShowEvent>
 #include <QString>
+#include <QStringList>
+#include <QTableView>
 #include <QTreeView>
 #include <QTreeWidget>
 
@@ -35,6 +36,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -50,6 +52,15 @@ template<class Base>
 class AbstractListView : public Base {
 public:
     using Base::Base;
+
+    /// Column header: `header()` on tree views, `horizontalHeader()` on tables.
+    [[nodiscard]] QHeaderView* listHeader() const
+    {
+        if constexpr (std::is_base_of_v<QTableView, Base>)
+            return this->horizontalHeader();
+        else
+            return this->header();
+    }
 
     /// Seed @p defaultWidths (pixels, per logical column; 0 or negative leaves a
     /// column at the header default), hide @p defaultHidden, and bind the header
@@ -67,7 +78,9 @@ public:
         m_defaultWidths.assign(defaultWidths);
         m_lockedColumns.clear();
 
-        auto* hdr = this->header();
+        auto* hdr = listHeader();
+        if constexpr (std::is_base_of_v<QTableView, Base>)
+            hdr->setSectionsMovable(true);   // tree headers are movable by default
         int column = 0;
         for (const int width : defaultWidths) {
             if (width > 0 && column < hdr->count())
@@ -138,6 +151,11 @@ public:
     {
         m_lockedColumns = columns;
     }
+    void setLockedColumns(const std::set<int>& columns)
+    {
+        m_lockedColumns = columns;
+    }
+    [[nodiscard]] const std::set<int>& lockedColumns() const { return m_lockedColumns; }
 
     /// Columns that exist only with "Show more controls": while it is off they are
     /// hidden and left out of the header menu. Survives bindColumns().
@@ -153,7 +171,7 @@ public:
     void applyExtColumns(bool show)
     {
         m_showExtColumns = show;
-        auto* hdr = this->header();
+        auto* hdr = listHeader();
         bool changed = false;
         if (show) {
             for (const int column : m_extHiddenByOff) {
@@ -220,7 +238,7 @@ protected:
         // resize must never be overwritten.
         if (!m_restoredOnShow && !m_stateKey.isEmpty()) {
             m_restoredOnShow = true;
-            theUiState.applyHeaderState(this->header(), m_stateKey);
+            theUiState.applyHeaderState(listHeader(), m_stateKey);
         }
     }
 
@@ -239,7 +257,7 @@ private:
             return;
         m_sortHookInstalled = true;
 
-        auto* hdr = this->header();
+        auto* hdr = listHeader();
         hdr->setStyle(new SortArrowStyle(hdr));
         QObject::connect(hdr, &QHeaderView::sectionPressed, this,
                          [this](int section) { m_pressedColumn = section; });
@@ -289,7 +307,7 @@ private:
     void updateSortArrow()
     {
         const auto value = m_sortValues.find(m_sortColumn);
-        auto* hdr = this->header();
+        auto* hdr = listHeader();
         hdr->setProperty(SortArrowStyle::kDoubleArrowProperty,
                          value != m_sortValues.end() && value->second.second);
         hdr->viewport()->update();
@@ -302,7 +320,7 @@ private:
             return;
         m_headerMenuInstalled = true;
 
-        auto* hdr = this->header();
+        auto* hdr = listHeader();
         hdr->setContextMenuPolicy(Qt::CustomContextMenu);
         QObject::connect(hdr, &QWidget::customContextMenuRequested, this,
                          [this](const QPoint& pos) { execHeaderMenu(pos); });
@@ -311,7 +329,7 @@ private:
     /// Built on open: the model and its columns may have changed since binding.
     void execHeaderMenu(const QPoint& pos)
     {
-        auto* hdr = this->header();
+        auto* hdr = listHeader();
         const auto* model = this->model();
         if (!model || hdr->count() < 2)
             return;
@@ -335,7 +353,7 @@ private:
 
     void toggleColumn(int column)
     {
-        auto* hdr = this->header();
+        auto* hdr = listHeader();
         if (column < 1 || column >= hdr->count())
             return;
 
@@ -349,7 +367,7 @@ private:
 
     void showColumn(int column)
     {
-        auto* hdr = this->header();
+        auto* hdr = listHeader();
         hdr->setSectionHidden(column, false);
         // A column hidden since first bind has no width of its own to come back to
         if (hdr->sectionSize(column) < hdr->minimumSectionSize()) {
@@ -384,5 +402,23 @@ using ListTreeView = AbstractListView<QTreeView>;
 
 /// Item-backed list with persistent column layout.
 using ListTreeWidget = AbstractListView<QTreeWidget>;
+
+/// Table with persistent column layout.
+using ListTableView = AbstractListView<QTableView>;
+
+/// Flat list: no root decoration, uniform rows, single selection, last column
+/// stretched; columns bound under @p stateKey with @p defaultWidths.
+inline ListTreeWidget* makeFlatList(const QStringList& headers, const QString& stateKey, QWidget* parent,
+                                    std::initializer_list<int> defaultWidths = {})
+{
+    auto* t = new ListTreeWidget(parent);
+    t->setHeaderLabels(headers);
+    t->setRootIsDecorated(false);
+    t->setUniformRowHeights(true);
+    t->setSelectionMode(QAbstractItemView::SingleSelection);
+    t->header()->setStretchLastSection(true);
+    t->bindColumns(stateKey, defaultWidths);
+    return t;
+}
 
 } // namespace eMule

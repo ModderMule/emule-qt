@@ -12,12 +12,13 @@ Downloads from links at file hosters, verified under ed3k roots. Spec:
 | `ed3k_link_id`, `ed3k_link_alias_same` | `libs/packmule/crates/packmule-ffi/src/pure.rs` | the id of a link (for the §4 lookup) and its `SAME` record (published when hoster links are published) |
 | `ed3k_link_share` | `libs/packmule/crates/packmule-ffi/src/links.rs` | §2/§4.1: the links of a shared root go with its `SOURCE` record and to downloaders (`FileStatus.links`); empty stops |
 | `Ed3kHosterJoin` | `src/ed3k/` | the host side: items, §4 lookup, answers to `LinkResolve`, feeds the resolver's part file in, writes verified blocks, moves the file to incoming |
-| `Ed3kResolver` | `src/ed3k/Ed3kResolver.h` | the interface: match, check, open, expand, accountCheck, sites, puzzles |
+| `Ed3kResolver` | `src/ed3k/Ed3kResolver.h` | the interface: match, check, open, expand (+ `expandDeep`), accountCheck, sites, puzzles |
+| `Ed3kLinkGrabber` | `src/ed3k/` | the Link Grabber list: crawls through the resolver, checks and downloads through the join, `linkgrabber.json` |
 | `Ed3kJdResolver` | `src/ed3k/` | the JDownloader sidecar: JSON lines over a loopback socket (token via stdin, then stdin closed); installs `resolver.zip` |
 | `Ed3kResolverUpdater` | `src/ed3k/` | newer `resolver.zip` from the update manifest (`hosterResolver`), see "Plugin updates" |
-| `Ed3kJavaRuntime` | `src/ed3k/` | finds Java 17+, else downloads Temurin 21 into `Config/ed3k/java/jre` (an older `<eMuleQt>/runtime/jre` is moved there) |
+| `Ed3kJavaRuntime` | `src/ed3k/` | finds Java 17+, else downloads Temurin 21 into `Config/ed3k/java/jre`, or `<sharedPluginDir>/java/jre` (an older `<eMuleQt>/runtime/jre` is moved there) |
 | sidecar driver | `tools/hoster-resolver/` | Java, GPL v3+: JD's plugins unmodified, `SingleDownloadController` subclass, puzzle solver |
-| IPC | `src/daemon/Ed3kHosterBridge.*` | requests 1100-1108 (1107 GetHosterStats, Statistics branch; 1108 CheckHosterLinks), pushes 1150-1154 and 1159 (PushHosterLinkCheck), `hoster` map in `GetEd3kStatus` |
+| IPC | `src/daemon/Ed3kHosterBridge.*` | requests 1100-1108 (1107 GetHosterStats, Statistics branch; 1108 CheckHosterLinks), 1210-1218 (Link Grabber), pushes 1150-1154, 1159 (PushHosterLinkCheck) and 1190 (PushLinkGrabber), `hoster` map in `GetEd3kStatus` |
 | GUI | `panels/HosterPanel`, `dialogs/HosterPuzzleDialog`, Options › ed3k › Hoster | list, add links (dialog, or Paste links from the clipboard), image puzzles, settings, accounts; web search rows' Download (`MetaResultActions`, `WebLinksDialog`) adds one item per file with its mirrors, only while `enabled` (else the links window, as Details... opens it); the links dialog checks its links (Status column; with the ed3k node off the resolver checks them itself, `pumpDirectChecks`); check boxes pick what its Download takes ("Download (all)" / "Download (n)"), and a context menu has Download, Check Selected and Uncheck Selected |
 
 ## Flow of a pasted link
@@ -133,11 +134,16 @@ JD `org/jdownloader/api/cnl2`). The **GUI** answers there, so the browser and th
 same machine even when the core runs elsewhere. Switch: Options › ed3k › Hoster › Desktop *Accept
 links from web pages (Click'n'Load)*, `uistate.yml` `clickNLoad`, **default on**. It listens only
 while hoster downloads are on (core status), on `127.0.0.1` and `::1`. A port in use (JDownloader
-runs) is logged once and tried again every minute.
+runs) is logged once and tried again every minute. Port: `uistate.yml` `clickNLoadPort`, default
+9666, no GUI (pages only post to 9666; other ports are for testing next to a running JD).
 
 - `ClickNLoadServer` (src/gui/app): `/jdcheck.js` (`jdownloader=true;`, what pages look for),
   `/jdcheckjson`, `/crossdomain.xml`, `/flash` (`JDownloader`), `/flash/add` (`urls`),
-  `/flash/addcrypted2` (`crypted` + `jk` or `k`), `/flash/addcrypted` (DLC as base64). Fields
+  `/flash/addcrypted2` (`crypted` + `jk` or `k`), `/flash/addcrypted` (DLC as base64),
+  `/flash/addcnl` (JD's `CnlQuery` JSON: `urls`, `crypted`, `jk`/`key`, `passwords`, `packageName`,
+  `source`/`referrer`; as the first query/form value or an `application/json` body, raw, `[obj]`
+  or `{"params":[obj]}`; `comment`/`dir`/`autostart` ignored; with `callback` an empty script, as
+  JD never calls back). Fields
   `passwords`/`passwords[]`, `package` (JD's ` - site.tld` cleanup), `source` (else Referer/Origin).
   CORS `*` and the Private Network Access preflight, like JD. Answer `success` / `failed <why>`
   after the core answered. Bodies over 6 MiB, chunked bodies and other paths are refused.
@@ -155,6 +161,71 @@ runs) is logged once and tried again every minute.
   a page can only ask. Failure: code `invalid` (nothing decrypted or no plugin takes the links).
 - Tests: `tst_ClickNLoadServer` (endpoints on real sockets), `tst_Ed3kHoster` `clickNLoad_*`,
   live `live_jdResolverClickNLoad` (an archive.org link encrypted with a known key, via `jk` and `k`).
+
+## Clipboard
+
+Options › ed3k › Hoster › Desktop *Watch the clipboard for hoster links (http/https)*,
+`clipboard` (`ed3kHosterClipboard`), **default off**. The GUI's watcher (`MainWindow::onClipboardChanged`,
+beside the eD2K one) sends new clipboard text with an http(s) link as `GrabLinks [text, "Clipboard",
+false, "", [], ask, clipboard: true]`. Skipped: the text that was there at start or when the switch
+went on (JD's "skip on startup"), the same text again, the app's own copies (`Clipboard::setText`).
+The core asks the resolver's `match` first (no network): links no plugin takes (any web page) are
+dropped quietly. The others are crawled (`expand`).
+
+- Link Grabber off (`ask`): `PushHosterLinks [0, links, {token, grab: true, source, code}]`; only the
+  GUI that sent it (token) opens *Copied hoster links* (the container dialog). None found: nothing.
+- Link Grabber on: into its list, the GUI does not come forward.
+
+## Link Grabber
+
+JDownloader's LinkGrabber: links are crawled, checked and edited before they become downloads.
+Options › ed3k › Hoster › Link Grabber: *Collect links in the Link Grabber before downloading*
+(`linkGrabber`, `ed3kHosterLinkGrabber`, **default off**) and *Open all links in the Link Grabber*
+(`grabAll`, `ed3kHosterGrabAll`, **default off**, greyed out without the first). On, the Hoster tab
+gets two tabs as the Kad window: **Downloads | Link Grabber (n)** (no tab bar while off).
+
+| Source | Grabber on | + grabAll |
+|---|---|---|
+| clipboard | list | list |
+| folder link found by a download (`linksExpanded`) | list (package: the folder item's name) | list |
+| Click'n'Load, Open DLC / drop / desktop | dialog | list (`container.grabbed`, GUI shows the tab; CNL raises the window) |
+| Add Links..., Ctrl+V, Paste links | add at once | list (the grabber's Add Links dialog) |
+| search results (web rows' Download, mirrors) | add at once | add at once, always |
+
+Core: `Ed3kLinkGrabber`, one per daemon, created with the join (DaemonApp), saved to
+`Config/ed3k/hoster/linkgrabber.json` (2 s after a change and at exit; nothing written while empty
+and no file). Running crawls are not saved; a check running at exit loads as unknown.
+
+- `grab(text)`: `Ed3kHosterJoin::linksIn` URLs (≤1 MiB text, ≤1000 queued), at most 3 `expand` tasks
+  at once; waits while the resolver is not available (asks for plugins). Links already in the list
+  are not crawled again. `deep`: `expandDeep` (see below).
+- `add(links)`: a URL in the list is skipped; a URL that is a hoster download already gets `dupe`
+  (*Already in downloads*, never started). Then `Ed3kHosterJoin::checkLinks` (the links dialog's
+  check, 30 min cache: a start soon after reuses it) fills status, name, size.
+- Packages: the link's own (container, CNL), else the one given (Add Links, folder name), else from
+  the file name: archive volumes of one set share one (`.partN.rar`, `.rNN`/`.zNN`, `.7z.001`,
+  `.NNN`), else the name without extension. Same name (any case) = same package; passwords merge.
+  A link without a name (crawler gave none) moves to its name's package once checked.
+- Edits: rename package, set passwords (replace), enable/disable links (check box), merge into a new
+  package, split by hoster (`<name> (<host>)`), remove links/packages, remove offline / disabled /
+  dupes, check again, stop crawling, clear (`all`).
+- Start (`confirm`): per package the enabled links that are not offline (unless asked) and not dupes
+  → `addMirrored(files, package, 0, passwords)`; they leave the list.
+- IPC (1210-1218, `Ed3kHosterBridge`, block grown in `Ed3kBridge::isEd3kRequest`): `GetLinkGrabber`,
+  `GrabLinks`, `EditGrabberPackages`, `SetGrabberLinksEnabled`, `MoveGrabberLinks` (also split),
+  `RemoveGrabberLinks` (ids or cleanup mode), `RecheckGrabberLinks`, `ConfirmGrabberLinks`,
+  `AbortGrabberCrawls`; push `PushLinkGrabber` (1190, coalesced 200 ms: changed packages/links,
+  removed ids, crawling count; `all` = whole list). Status map `hoster`: `clipboard`,
+  `linkGrabber`, `grabAll`, `deepCrawl`; a change of the three switches pushes the status.
+- GUI: `LinkGrabberPanel` (tab of `HosterPanel`): package rows *name (n)* with size, hosters and
+  online/offline counts, link rows with check box, size, hoster, status dot, URL. Enter = start
+  selection, Del, F2 = rename, Ctrl+C/V; *Start All*, *Clear*.
+
+Deep crawl (*Add Links › Deep crawl*): the sidecar's `expand` with `deep: true` runs
+`LinkCrawler.crawl(url, null, true)`: a page no plugin takes is loaded and every link on it is
+distributed; only links with a (non-generic) host plugin come back. The sidecar's `hello` says
+`deep: true`; protocol stays 2 (an older sidecar ignores the field and crawls plainly; its hello
+lacks it, so the GUI hides the box: `Ed3kResolver::canDeepCrawl`).
 
 ## Extraction and sharing
 
@@ -272,13 +343,16 @@ A stream that breaks goes on from where it stood instead of starting over:
 | `checkSearchLinks` | `ed3kHosterCheckSearchLinks` | on | a web search row's links dialog checks its links |
 | `extract` | `ed3kHosterExtract` | on | unpack archives into `<incoming>/<package>/`, archives stay in Temp |
 | `deleteArchives` | `ed3kHosterDeleteArchives` | off | delete archives after a good unpack; greyed out while `extract` is off |
+| `clipboard` | `ed3kHosterClipboard` | off | the GUI watches the clipboard for hoster links (see "Clipboard") |
+| `linkGrabber` | `ed3kHosterLinkGrabber` | off | the Link Grabber tab; copied and folder links go there |
+| `grabAll` | `ed3kHosterGrabAll` | off | Click'n'Load, Add Links and containers go there too; search results never |
 | `checkMaxParallel` | — (YAML only) | 30 | 1-256: those checks at once |
 | `checkMaxPerHost` | — (YAML only) | 5 | 1-64: of them at one hoster |
 | `recheckHours` | — (YAML only) | 72 | 0-8760: a published link is checked again after this; 0 = never |
 | `reportRecheckHours` | — (YAML only) | 6 | 0-8760: 3 dead-link reports check a published link at once, at most this often; 0 = reports never check |
 | `autoUpdate` | `ed3kHosterAutoUpdate` | on | fetch newer resolver plugins (see "Plugin updates"); Options › ed3k › Hoster, Java runtime group |
 | `autoUpdateHours` | — (YAML only) | 24 | 1-8760: manifest check interval |
-| `sharedPluginDir` | — (YAML only) | empty | resolver plugins unpacked once for several instances (see "Shared plugins" below); relative = to the config folder; empty = per instance |
+| `sharedPluginDir` | — (YAML only) | empty | resolver plugins, their updates and the Java runtime once for several instances (see "Shared plugins" below); relative = to the config folder; empty = per instance |
 | `accounts` | `ed3kHosterAccounts` | empty | `{host, user, passwordEncrypted}`; IPC never carries a password out |
 | `solversEnabled` | `ed3kHosterSolversEnabled` | on | puzzles go to the solver services below first |
 | `solvers` | `ed3kHosterSolvers` | empty | captcha solver services, `{host, user, passwordEncrypted}`; user empty for key-only ones (key = password). Same password rule as `accounts` |
@@ -347,6 +421,26 @@ it; an installed version is used without the lock (read-only share works). Prune
 `*.tmp` left-overs and versions whose `.lastused` (touched at each sidecar start) is >30 days old;
 an instance whose version went is unpacked again at its next start. Switching off leaves the shared
 copy; switching to shared removes the instance's own `plugins/`.
+
+With the shared folder (#155) the rest goes there too:
+- `update/`: the plugin updater's zips and `update.json`, one folder for all instances. One fetches
+  at a time (`update/.fetch.lock`, freed only when its holder dies); the others wait (30 s retries)
+  and take its zip from `update.json`. Every hourly tick reads `update.json` again, so another
+  instance's check counts and its new zip is swapped in. The instance's own
+  `Config/ed3k/resolver/update` is copied along (when newer) and removed.
+- `java/jre`: the downloaded Java runtime. Probed before the instance's own copy; one instance
+  fetches it (`java/.install.lock`), the others wait and probe what it installed. An instance's
+  own runtime is moved into an empty shared folder, or removed once the shared one runs.
+- Version choice without a zip, and whenever installing a zip fails: the unpacked version of this
+  daemon's api (`api.txt`; none told counts as ours) with the highest revision, then last used.
+  Mixed app versions never run each other's plugins, and a failed unpack never leaves the
+  resolver without plugins.
+- Read-only folder (filled by an admin, e.g. root-owned under `/opt`): its plugins are used as
+  they are, plugin updates are off, `.lastused` and pruning are skipped; logged once. Read-only
+  and holding no plugins: per instance, as if unset. Java is still probed there; a fetch then
+  goes to the instance's own `Config/ed3k/java/jre`.
+- Layout for an admin to fill: `<dir>/<any 12 hex>/resolver/` = the zip's `resolver/` folder,
+  `<dir>/java/jre/bin/java` = any Java 17+.
 
 Compile-time switch: CMake `-DEMULE_HOSTER_JD=OFF`, qmake `CONFIG+=no_emule_hoster_jd`, MSBuild
 `/p:EmuleHosterJd=false`. Off: no resolver, no Java lookup, no Hoster tab; ed3k still stores, passes
@@ -424,6 +518,8 @@ not `emule.ed3k`: the GUI's **Hoster** log tab after Torrent, shown while `hoste
 
 - `tst_Ed3kHoster`: the join on a real engine with a fake resolver (mirrors, link checks `probe_*`,
   order `rank_*`); the JD resolver's event parser; the Java probe and Adoptium parsing.
+- `tst_LinkGrabber`: the grabber with a fake resolver and backend (grouping, dupes, edits, confirm,
+  crawl, deep, clipboard match, coalesced changes, save/load). `tst_HosterPanel`: the tab, pushes.
 - Live, opt-in: `EMULE_HOSTER_LIVE=1` downloads a small archive.org file through the real sidecar
   and opens every container in `data/dlc`;
   `EMULE_HOSTER_LIVE_JAVA=1` fetches Temurin into a temp folder.
