@@ -114,7 +114,11 @@ void VersionChecker::onReplyFinished(QNetworkReply* reply)
     emit checkCompleted(m_lastCheck);
 
     const QString current = QCoreApplication::applicationVersion();
-    if (isNewer(info.latest, current)) {
+    if (info.isBelowMinimum(current)) {
+        logWarning(QStringLiteral("eMule Qt %1 is below the minimum version %2, update required (latest: %3)")
+                       .arg(current, info.minVersion, info.latest));
+        emit newVersionAvailable(info, manual);
+    } else if (isNewer(info.latest, current)) {
         logInfo(QStringLiteral("New version available: %1 (current: %2)")
                     .arg(info.latest, current));
         emit newVersionAvailable(info, manual);

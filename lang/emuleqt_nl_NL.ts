@@ -12611,23 +12611,23 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+116"/>
-        <location line="+746"/>
+        <location line="+768"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-608"/>
+        <location line="-630"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt afsluiten</translation>
     </message>
     <message>
         <location line="+45"/>
-        <location line="+23"/>
+        <location line="+31"/>
         <source>New Version Available</source>
         <translation>Nieuwe versie beschikbaar</translation>
     </message>
     <message>
-        <location line="-22"/>
+        <location line="-30"/>
         <source>eMule Qt %1 has been released.</source>
         <translation>eMule Qt %1 is uitgebracht.</translation>
     </message>
@@ -12642,7 +12642,16 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
         <translation>Versie %1 van eMule Qt is beschikbaar.</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+17"/>
+        <source>%1
+
+You are running %2, but at least %3 is required: this version may have major bugs. eMule Qt will exit now. Open the eMule Qt website?</source>
+        <translation>%1
+
+U gebruikt %2, maar minimaal %3 is vereist: deze versie kan ernstige fouten bevatten. eMule Qt wordt nu afgesloten. De eMule Qt-website openen?</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>%1
 
 You are running %2. Open the eMule Qt website?</source>
@@ -12651,7 +12660,17 @@ You are running %2. Open the eMule Qt website?</source>
 U gebruikt %2. De website van eMule Qt openen?</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+5"/>
+        <source>Update Required</source>
+        <translation>Update vereist</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Exit</source>
+        <translation>Afsluiten</translation>
+    </message>
+    <message>
+        <location line="+21"/>
         <location line="+7"/>
         <location line="+1062"/>
         <source>Version Check</source>

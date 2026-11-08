@@ -64,6 +64,11 @@ bool VersionDownload::isInstallable() const
     return isUsable() && hex64.match(sha256).hasMatch();
 }
 
+bool VersionManifestInfo::isBelowMinimum(const QString& local) const
+{
+    return !minVersion.isEmpty() && VersionManifest::isNewer(minVersion, local);
+}
+
 namespace VersionManifest {
 
 VersionManifestInfo parse(const QByteArray& json)

@@ -12968,18 +12968,18 @@ Other members see your nick and posts; your node takes part in passing the room&
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+116"/>
-        <location line="+746"/>
+        <location line="+768"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-563"/>
-        <location line="+23"/>
+        <location line="-585"/>
+        <location line="+31"/>
         <source>New Version Available</source>
         <translation>새 버전 사용 가능</translation>
     </message>
     <message>
-        <location line="+286"/>
+        <location line="+300"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K: 연결됨 (LowID)</translation>
     </message>
@@ -13073,7 +13073,7 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>버전 확인</translation>
     </message>
     <message>
-        <location line="-1148"/>
+        <location line="-1170"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt 종료</translation>
     </message>
@@ -13093,7 +13093,16 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>eMule Qt 버전 %1을(를) 사용할 수 있습니다.</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+17"/>
+        <source>%1
+
+You are running %2, but at least %3 is required: this version may have major bugs. eMule Qt will exit now. Open the eMule Qt website?</source>
+        <translation>%1
+
+현재 %2 버전을 사용 중이지만 최소 %3 버전이 필요합니다. 이 버전에는 심각한 버그가 있을 수 있습니다. eMule Qt가 지금 종료됩니다. eMule Qt 웹사이트를 여시겠습니까?</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>%1
 
 You are running %2. Open the eMule Qt website?</source>
@@ -13102,7 +13111,17 @@ You are running %2. Open the eMule Qt website?</source>
 현재 %2을(를) 사용 중입니다. eMule Qt 웹사이트를 여시겠습니까?</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+5"/>
+        <source>Update Required</source>
+        <translation>업데이트 필요</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Exit</source>
+        <translation>종료</translation>
+    </message>
+    <message>
+        <location line="+22"/>
         <source>You are running the latest version of eMule Qt (v%1).</source>
         <translation>최신 버전의 eMule Qt(v%1)를 사용 중입니다.</translation>
     </message>

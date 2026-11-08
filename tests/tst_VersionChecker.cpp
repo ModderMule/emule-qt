@@ -40,6 +40,7 @@ private slots:
 
     void malformedDateDoesNotFailTheParse();
     void isNewerComparesNumerically();
+    void belowMinimumVersionRequiresUpdate();
     void manifestUrlHonoursTheEnvironmentOverride();
 };
 
@@ -306,6 +307,21 @@ void TestVersionChecker::isNewerComparesNumerically()
     // Garbage on either side must never be read as "a new version exists".
     QVERIFY(!VersionChecker::isNewer(QStringLiteral("banana"), QStringLiteral("0.2.0")));
     QVERIFY(!VersionChecker::isNewer(QStringLiteral("9.9.9"), QString{}));
+}
+
+void TestVersionChecker::belowMinimumVersionRequiresUpdate()
+{
+    VersionChecker::Manifest info;
+    info.minVersion = QStringLiteral("0.7.10");
+    QVERIFY(info.isBelowMinimum(QStringLiteral("0.7.9")));
+    QVERIFY(!info.isBelowMinimum(QStringLiteral("0.7.10")));   // equal is fine
+    QVERIFY(!info.isBelowMinimum(QStringLiteral("0.10.0")));
+
+    // Absent or garbage never forces an update
+    info.minVersion.clear();
+    QVERIFY(!info.isBelowMinimum(QStringLiteral("0.0.1")));
+    info.minVersion = QStringLiteral("banana");
+    QVERIFY(!info.isBelowMinimum(QStringLiteral("0.0.1")));
 }
 
 void TestVersionChecker::manifestUrlHonoursTheEnvironmentOverride()

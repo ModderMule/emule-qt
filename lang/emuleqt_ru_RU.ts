@@ -12658,23 +12658,23 @@ Other members see your nick and posts; your node takes part in passing the room&
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+116"/>
-        <location line="+746"/>
+        <location line="+768"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-608"/>
+        <location line="-630"/>
         <source>Quit eMule Qt</source>
         <translation>Выйти из eMule Qt</translation>
     </message>
     <message>
         <location line="+45"/>
-        <location line="+23"/>
+        <location line="+31"/>
         <source>New Version Available</source>
         <translation>Доступна новая версия</translation>
     </message>
     <message>
-        <location line="-22"/>
+        <location line="-30"/>
         <source>eMule Qt %1 has been released.</source>
         <translation>Вышла версия eMule Qt %1.</translation>
     </message>
@@ -12689,7 +12689,16 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>Доступна версия %1 eMule Qt.</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+17"/>
+        <source>%1
+
+You are running %2, but at least %3 is required: this version may have major bugs. eMule Qt will exit now. Open the eMule Qt website?</source>
+        <translation>%1
+
+У вас версия %2, но требуется как минимум %3: в этой версии возможны серьёзные ошибки. eMule Qt сейчас будет закрыт. Открыть сайт eMule Qt?</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>%1
 
 You are running %2. Open the eMule Qt website?</source>
@@ -12698,7 +12707,17 @@ You are running %2. Open the eMule Qt website?</source>
 У вас версия %2. Открыть сайт eMule Qt?</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+5"/>
+        <source>Update Required</source>
+        <translation>Требуется обновление</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Exit</source>
+        <translation>Выход</translation>
+    </message>
+    <message>
+        <location line="+21"/>
         <location line="+7"/>
         <location line="+1062"/>
         <source>Version Check</source>

@@ -315,15 +315,37 @@ MainWindow::MainWindow(QWidget* parent)
                 head += QStringLiteral("<li>%1</li>").arg(line.toHtmlEscaped());
             head += QStringLiteral("</ul>");
         }
-        const QString body = tr("%1\n\nYou are running %2. Open the eMule Qt website?")
-                                 .arg(head, QCoreApplication::applicationVersion().toHtmlEscaped())
-                                 .replace(QLatin1Char('\n'), QStringLiteral("<br>"));
+        const QString current = QCoreApplication::applicationVersion();
+        // Below manifest "minVersion": possible major bugs, no "No" - both buttons quit
+        const bool required = info.isBelowMinimum(current);
+        const QString body = (required
+            ? tr("%1\n\nYou are running %2, but at least %3 is required: this version may "
+                 "have major bugs. eMule Qt will exit now. Open the eMule Qt website?")
+                  .arg(head, current.toHtmlEscaped(), info.minVersion.toHtmlEscaped())
+            : tr("%1\n\nYou are running %2. Open the eMule Qt website?")
+                  .arg(head, current.toHtmlEscaped()))
+            .replace(QLatin1Char('\n'), QStringLiteral("<br>"));
 
-        QMessageBox box(QMessageBox::Question, tr("New Version Available"), body,
-                        QMessageBox::Yes | QMessageBox::No, this);
+        QMessageBox box(required ? QMessageBox::Warning : QMessageBox::Question,
+                        required ? tr("Update Required") : tr("New Version Available"), body,
+                        required ? QMessageBox::Yes : QMessageBox::Yes | QMessageBox::No, this);
         box.setTextFormat(Qt::RichText);
-        if (box.exec() == QMessageBox::Yes)
+        if (required) {
+            QPushButton* exitButton = box.addButton(tr("Exit"), QMessageBox::RejectRole);
+            box.setEscapeButton(exitButton);
+            box.setDefaultButton(QMessageBox::Yes);
+        }
+        box.exec();
+        const bool yes = box.clickedButton() == box.button(QMessageBox::Yes);
+        if (yes)
             QDesktopServices::openUrl(QUrl(QString(kWebsiteUrl)));
+        if (required) {
+            // Yes, Exit, Esc and the title-bar close all end up here
+            logWarning(QStringLiteral("Exiting: eMule Qt %1 is below the required minimum %2")
+                           .arg(current, info.minVersion));
+            quitWithoutPrompt();
+            close();
+        }
     });
     connect(m_versionChecker, &VersionChecker::upToDate,
             this, [this](const QString& current, bool manual) {
