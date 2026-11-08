@@ -55,7 +55,7 @@ fetch() {
     local url="$1" sha="$2" file
     file="$WORK/$(basename "$url")"
     echo "=== $(basename "$url") ==="
-    curl -fsSL --retry 3 --retry-delay 5 -o "$file" "$url"
+    curl -fsSL --retry 8 --retry-delay 15 --retry-all-errors -o "$file" "$url"
     echo "$sha  $file" | sha256sum -c - >/dev/null || {
         echo "Error: checksum mismatch for $url" >&2
         exit 1
