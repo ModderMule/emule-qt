@@ -136,11 +136,14 @@ QCborArray applySeen(const QCborArray& targets, int seenFamilies)
     return out;
 }
 
-Verdict tcpVerdict(const QCborArray& targets, bool obfuscated, bool cryptRequired)
+Verdict tcpVerdict(const QCborArray& targets, bool obfuscated, bool cryptRequired, int family)
 {
     bool closed = false;
     for (const QCborValue& t : targets) {
-        const QCborMap tcp = t.toMap().value(QStringLiteral("tcp")).toMap();
+        const QCborMap m = t.toMap();
+        if (family != 0 && m.value(QStringLiteral("family")).toInteger() != family)
+            continue;
+        const QCborMap tcp = m.value(QStringLiteral("tcp")).toMap();
         if (tcp.value(QStringLiteral("open")).toBool())
             return Verdict::Open;
         const QString reason = tcp.value(QStringLiteral("reason")).toString();

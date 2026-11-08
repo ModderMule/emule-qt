@@ -130,6 +130,9 @@ public:
     bool addPiece(const QString& id, int piece, const QByteArray& data);
     /// Asks peers for these pieces first (a held piece waits for them).
     void raisePieces(const QString& id, const QList<int>& pieces);
+    /// Writes the blocks libtorrent holds in memory to disk; cacheFlushed follows. false:
+    /// unknown id (no signal).
+    bool flushCache(const QString& id);
     /// Pieces libtorrent has (hash passed); empty before the metadata or for an unknown id.
     /// From the last status update (≤ 1 s old) plus finished pieces; never waits.
     [[nodiscard]] QBitArray havePieces(const QString& id) const;
@@ -151,6 +154,8 @@ signals:
     /// libtorrent checked the files of a torrent with a join attached; follows the status
     /// update with the checked pieces, so havePieces is current.
     void torrentChecked(const QString& id);
+    /// Every block written before the last flushCache (or finish) is on disk.
+    void cacheFlushed(const QString& id);
 
 private slots:
     void drainAlerts();

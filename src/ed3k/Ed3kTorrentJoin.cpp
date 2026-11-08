@@ -100,6 +100,7 @@ struct Ed3kTorrentJoin::Join {
     struct Member {
         ffi::Bytes hashes;           ///< block values: own hash, or of a download's Hashes event
         bool hashing = false;
+        bool flushWait = false;      ///< hashed once libtorrent's cache is on disk
         quint64 generation = 0;
         int rehashTries = 0;
         std::set<std::uint64_t> received;   ///< ed3k blocks written (offsets)
@@ -130,6 +131,7 @@ Ed3kTorrentJoin::Ed3kTorrentJoin(Ed3kSession& session, bt::BtSession& bt, const 
     connect(&m_bt, &bt::BtSession::torrentRemoved, this, &Ed3kTorrentJoin::onTorrentRemoved);
     connect(&m_bt, &bt::BtSession::pieceResult, this, &Ed3kTorrentJoin::onPieceResult);
     connect(&m_bt, &bt::BtSession::torrentChecked, this, &Ed3kTorrentJoin::onTorrentChecked);
+    connect(&m_bt, &bt::BtSession::cacheFlushed, this, &Ed3kTorrentJoin::onCacheFlushed);
 }
 
 Ed3kTorrentJoin::~Ed3kTorrentJoin()
@@ -321,6 +323,16 @@ void Ed3kTorrentJoin::onPieceResult(const QString& id, int piece, bool passed)
         logDebug([&]() -> QString { return QStringLiteral("verdict on piece %1 of %2 not taken (error %3)").arg(piece).arg(id, errorName(ok.error())); });
     drainEvents(id);
     pumpSession();
+}
+
+void Ed3kTorrentJoin::onCacheFlushed(const QString& id)
+{
+    Join* j = findJoin(id);
+    if (!j)
+        return;
+    for (std::size_t m = 0; m < j->members.size(); ++m)
+        if (j->members[m].flushWait)
+            hashMember(id, int(m));
 }
 
 void Ed3kTorrentJoin::onTorrentChecked(const QString& id)
@@ -774,6 +786,28 @@ void Ed3kTorrentJoin::onMemberComplete(const QString& id, int index)
     if (const auto m = member(id, index); m && m->root)
         stopDownload(*m->root);
     Join::Member& m = j->members[std::size_t(index)];
+    if (m.hashing || m.flushWait)
+        return;
+    // its last blocks may still be in libtorrent's disk cache (pread_disk_io): a hash now
+    // reads a short or missing file
+    if (m_bt.flushCache(id)) {
+        m.flushWait = true;
+        QTimer::singleShot(kFlushWaitMs, this, [this, id, index] {
+            if (Join* w = findJoin(id); w && std::size_t(index) < w->members.size() && w->members[std::size_t(index)].flushWait)
+                hashMember(id, index);
+        });
+        return;
+    }
+    hashMember(id, index);
+}
+
+void Ed3kTorrentJoin::hashMember(const QString& id, int index)
+{
+    Join* j = findJoin(id);
+    if (!j || index < 0 || std::size_t(index) >= j->members.size())
+        return;
+    Join::Member& m = j->members[std::size_t(index)];
+    m.flushWait = false;
     if (m.hashing)
         return;
     m.hashing = true;

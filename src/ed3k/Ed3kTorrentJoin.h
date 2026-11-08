@@ -48,6 +48,8 @@ class Ed3kTorrentJoin : public Ed3kJoinBase {
 public:
     /// A held piece fails after this long (torrent-join.md: the host's timeout).
     static constexpr int kHoldTimeoutMs = 60 * 1000;
+    /// A complete member is hashed after libtorrent's cache flush, or after this long.
+    static constexpr int kFlushWaitMs = 30 * 1000;
 
     /// @p configDir: the joins go to <configDir>/ed3k/torrent. Both sessions must outlive this.
     Ed3kTorrentJoin(Ed3kSession& session, bt::BtSession& bt, const QString& configDir, QObject* parent = nullptr);
@@ -91,6 +93,8 @@ public slots:
     void onPieceResult(const QString& id, int piece, bool passed);
     /// libtorrent's resume check is done: its pieces are skipped on ed3k.
     void onTorrentChecked(const QString& id);
+    /// The torrent's blocks are on disk: complete members waiting for it are hashed.
+    void onCacheFlushed(const QString& id);
 
 signals:
     /// A member verified under its root and is shared.
@@ -138,6 +142,7 @@ private:
     void finishPiece(const QString& id, int piece, bool spoil);
     void onHoldTimeout(const QString& id, int piece);
     void onMemberComplete(const QString& id, int member);
+    void hashMember(const QString& id, int member);
     void onMemberHashed(const QString& id, int member, quint64 generation, const std::optional<FileHash>& hashed);
     void onMemberVerified(const QString& id, int member, const ::ed3k::Root& root);
     void onHaveChanged(const QString& id, int member);

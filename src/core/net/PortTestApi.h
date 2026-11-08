@@ -91,7 +91,10 @@ inline constexpr int kSeenIPv6 = 2;
 
 /// eD2K: the TCP verdict of the targets. Open when one target is open; closed only when the
 /// server reached a target and got no answer it could trust, otherwise unknown.
+/// @p family 4 or 6 = only targets of that family count; 0 = all. HighID checks pass 4:
+/// an open IPv6 port says nothing about the IPv4 one the server dials back.
 enum class Verdict : quint8 { Unknown, Open, Closed };
-[[nodiscard]] Verdict tcpVerdict(const QCborArray& targets, bool obfuscated, bool cryptRequired);
+[[nodiscard]] Verdict tcpVerdict(const QCborArray& targets, bool obfuscated, bool cryptRequired,
+                                 int family = 0);
 
 } // namespace eMule::PortTestApi

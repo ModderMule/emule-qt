@@ -416,10 +416,16 @@ void tst_ServerConnect::login_natTraversalTagAndBit()
     QFETCH(bool, withIPv6);
 
     theApp.setListeningPorts(4662, 4672);
-    if (withIPv6)
+    // the pref too: the login re-reads the override from it (updatePublicIPv6), which on a
+    // host without public IPv6 would drop an override set on theApp alone
+    const QString hadPrefOverride = thePrefs.publicIPv6Override();
+    if (withIPv6) {
+        thePrefs.setPublicIPv6Override(QStringLiteral("2a00:1450:4001:800::1"));
         theApp.setPublicIPv6Override(Address::fromString(QStringLiteral("2a00:1450:4001:800::1")));
-    const auto restore = qScopeGuard([] {
+    }
+    const auto restore = qScopeGuard([hadPrefOverride] {
         theApp.clearListeningPorts();
+        thePrefs.setPublicIPv6Override(hadPrefOverride);
         theApp.setPublicIPv6Override(Address());
     });
     // The bit follows the IPv6 handoff's precondition; a dual-stack host has it anyway.

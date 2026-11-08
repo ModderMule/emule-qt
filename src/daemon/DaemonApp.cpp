@@ -205,9 +205,11 @@ bool DaemonApp::start()
                 done(PortTestApi::Verdict::Unknown);
                 return;
             }
+            // IPv4 only: the server gives a HighID for the IPv4 port alone. An open IPv6
+            // port (no NAT, typical after the "prefer IPv6 on LowID" move) is no evidence.
             done(PortTestApi::tcpVerdict(result.value(QStringLiteral("targets")).toArray(),
                                          result.value(QStringLiteral("obfuscated")).toBool(),
-                                         thePrefs.cryptLayerRequired()));
+                                         thePrefs.cryptLayerRequired(), 4));
         });
     });
     m_coreSession->start();

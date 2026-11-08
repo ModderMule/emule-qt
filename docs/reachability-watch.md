@@ -21,7 +21,7 @@ Restart on network / interface change and on a changed mapped TCP port.
 | Kad TCP open | `Kademlia::firewallStatusChanged(false)` |
 | Kad UDP check passed | `UDPFirewallTester::isOpenAndVerified()` turns true |
 | direct inbound TCP from public IPv4 | `ClientReqSocket::checkHelloFirst` → `AppContext::noteInboundIPv4Peer` (NAT-T links and the login test excluded) |
-| port test TCP open | `PortTestApi::tcpVerdict` |
+| port test TCP open (IPv4 target only: open IPv6 says nothing about the HighID) | `PortTestApi::tcpVerdict(..., 4)` |
 
 Action: LowID → `ServerConnect::requestHighIdRecheck`; Kad firewalled → recheck (≥ 120 s apart).
 
