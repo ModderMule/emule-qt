@@ -122,7 +122,8 @@ void UiState::load(const QString& configDir)
             m_associateEd2kLinks = ed2k.as<bool>();
         if (const auto applied = root["appliedFileTypes"]; applied && applied.IsScalar())
             m_appliedFileTypes = applied.as<int>();
-        m_launcherInstalled = root["launcherInstalled"].as<bool>(m_launcherInstalled);
+        if (const auto menu = root["menuEntry"]; menu && menu.IsScalar())
+            m_menuEntry = menu.as<bool>();
         m_addLinksWithoutConfirm = root["addLinksWithoutConfirm"].as<bool>(m_addLinksWithoutConfirm);
         m_miniMuleAutoClose = root["miniMuleAutoClose"].as<bool>(m_miniMuleAutoClose);
         m_firstStartWizardDone = root["firstStartWizardDone"].as<bool>(m_firstStartWizardDone);
@@ -269,7 +270,8 @@ void UiState::save(const QString& configDir)
         out << YAML::Key << "associateEd2kLinks" << YAML::Value << *m_associateEd2kLinks;
     if (m_appliedFileTypes)
         out << YAML::Key << "appliedFileTypes" << YAML::Value << *m_appliedFileTypes;
-    out << YAML::Key << "launcherInstalled" << YAML::Value << m_launcherInstalled;
+    if (m_menuEntry)
+        out << YAML::Key << "menuEntry" << YAML::Value << *m_menuEntry;
     out << YAML::Key << "addLinksWithoutConfirm" << YAML::Value << m_addLinksWithoutConfirm;
     out << YAML::Key << "miniMuleAutoClose" << YAML::Value << m_miniMuleAutoClose;
     out << YAML::Key << "firstStartWizardDone" << YAML::Value << m_firstStartWizardDone;

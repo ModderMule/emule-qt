@@ -299,10 +299,12 @@ int main(int argc, char* argv[])
     // One default core per user, wherever it was installed: the setup's per-user
     // config and a portable copy each have a profile lock of their own. A --config
     // profile stays separate, unless it names the default one.
-    QLockFile userLock(eMule::AppConfig::userCoreLockPath());
-    userLock.setStaleLockTime(0);
+    // Only built in here: its path creates ~/eMuleQt, which a --config profile never needs (#153)
+    std::optional<QLockFile> userLockHolder;
     const eMule::AppConfig::UserCore lastUserCore = eMule::AppConfig::lastUserCore();
     if (cli.configOverride().isEmpty() || eMule::AppConfig::sameDir(configDir, lastUserCore.configDir)) {
+        QLockFile& userLock = userLockHolder.emplace(eMule::AppConfig::userCoreLockPath());
+        userLock.setStaleLockTime(0);
         // No wait: a holder with our profile was gone once the lock above was ours
         if (lockAfterStop(userLock, ipcHost, 0)) {
             eMule::AppConfig::writeUserCore({configDir, QCoreApplication::applicationFilePath(),
@@ -420,8 +422,8 @@ int main(int argc, char* argv[])
 
     if (eMule::DaemonApp::restartRequested()) {
         // The restarted core takes the locks again: same pid, or a new process
-        if (userLock.isLocked())
-            userLock.unlock();
+        if (userLockHolder && userLockHolder->isLocked())
+            userLockHolder->unlock();
         coreLock.unlock();
         // The first-start hold belongs to the first start only
         QStringList args = QCoreApplication::arguments().mid(1);

@@ -229,7 +229,8 @@ private:
     QLabel* m_accountLabel = nullptr;
 
     // Auto credits
-    QGroupBox* m_autoBidGroup = nullptr;
+    QCheckBox* m_autoBidCheck = nullptr;
+    QGroupBox* m_autoBidGroup = nullptr;   ///< enabled by m_autoBidCheck
     QDoubleSpinBox* m_autoFactorSpin = nullptr;
     QSpinBox* m_autoThresholdSpin = nullptr;
     QLabel* m_autoNoteLabel = nullptr;
@@ -281,7 +282,8 @@ private:
     };
     AccountList m_hosterAccounts;
     AccountList m_solverAccounts{.solvers = true};
-    QGroupBox* m_solversGroup = nullptr;   ///< checkable: ed3kHosterSolversEnabled
+    QCheckBox* m_solversCheck = nullptr;   ///< ed3kHosterSolversEnabled
+    QGroupBox* m_solversGroup = nullptr;   ///< enabled by m_solversCheck
 };
 
 } // namespace eMule

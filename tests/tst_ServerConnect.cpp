@@ -231,6 +231,8 @@ private slots:
     void recheck_opcodeStillLowIdIsThrottled();
     void recheck_reloginWithoutTheFlag();
     void recheck_highIdNeedsAPortChange();
+    void recheck_fromIPv6LogsInOverIPv4();
+    void recheck_fromIPv6StillLowIdGoesBackToIPv6();
 };
 
 // ---------------------------------------------------------------------------
@@ -2133,6 +2135,92 @@ void tst_ServerConnect::recheck_highIdNeedsAPortChange()
     QCOMPARE(recheckPortArrives(side), 4662);
     conn.disconnect();
     QVERIFY(!conn.isRecheckPending());
+}
+
+/// HandoverRig moved on to IPv6 with a LowID; the server advertises the recheck flag.
+static bool recheckOnIPv6(HandoverRig& rig)
+{
+    if (!rig.start())
+        return false;
+    writeIdChange(rig.side6, 0x00000043, SrvTcpFlag::FirewallRecheck);
+    return QTest::qWaitFor([&] { return rig.conn.sessionAddress().isIPv6(); }, 5000)
+        && rig.conn.isConnected() && rig.conn.isLowID();
+}
+
+void tst_ServerConnect::recheck_fromIPv6LogsInOverIPv4()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    HandoverRig rig;
+    if (!rig.dual.v4.entry)
+        QSKIP("no dual-stack loopback listener pair");
+    QVERIFY(recheckOnIPv6(rig));
+    rig.side6->readAll();
+
+    QSignalSpy finished(&rig.conn, &ServerConnect::highIdRecheckFinished);
+    bool everOffline = false;
+    connect(&rig.conn, &ServerConnect::stateChanged, &rig.conn,
+            [&] { everOffline = everOffline || !rig.conn.isConnected(); });
+
+    // flag or not: an IPv6 session can't get a HighID, so no opcode, a login over IPv4
+    QVERIFY(rig.conn.requestHighIdRecheck(QStringLiteral("test")));
+    QTcpSocket* again4 = acceptOn(rig.dual.v4.listener);
+    QVERIFY(again4);
+    QVERIFY(loginArrives(again4));
+    QVERIFY(rig.conn.isHandoverLoggingIn());
+    QVERIFY(rig.conn.awaitingTestFromIP(htonl(0x7F000001)));
+    QCOMPARE(rig.side6->bytesAvailable(), qint64{0});
+    writeIdChange(again4, 0x0100007f, SrvTcpFlag::FirewallRecheck);   // HighID 127.0.0.1
+
+    QVERIFY(QTest::qWaitFor([&] { return finished.count() == 1; }, 5000));
+    QCOMPARE(finished.at(0).at(0).toBool(), true);
+    QVERIFY(rig.conn.isConnected());
+    QVERIFY(rig.conn.sessionAddress().isIPv4());
+    QVERIFY(!rig.conn.isLowID());
+    QVERIFY(!everOffline);
+    QVERIFY(QTest::qWaitFor([&] { return rig.side6->state() == QAbstractSocket::UnconnectedState; }, 5000));
+    QTest::qWait(300);
+    QVERIFY(!rig.dual.v6.hasPendingConnections());   // a HighID stays on IPv4
+    rig.conn.disconnect();
+}
+
+void tst_ServerConnect::recheck_fromIPv6StillLowIdGoesBackToIPv6()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    HandoverRig rig;
+    if (!rig.dual.v4.entry)
+        QSKIP("no dual-stack loopback listener pair");
+    QVERIFY(recheckOnIPv6(rig));
+
+    QSignalSpy finished(&rig.conn, &ServerConnect::highIdRecheckFinished);
+    bool everOffline = false;
+    connect(&rig.conn, &ServerConnect::stateChanged, &rig.conn,
+            [&] { everOffline = everOffline || !rig.conn.isConnected(); });
+
+    QVERIFY(rig.conn.requestHighIdRecheck(QStringLiteral("test")));
+    QTcpSocket* again4 = acceptOn(rig.dual.v4.listener);
+    QVERIFY(again4);
+    QVERIFY(loginArrives(again4));
+    again4->readAll();
+    writeIdChange(again4, 0x00000044, SrvTcpFlag::FirewallRecheck);   // still LowID
+    QVERIFY(QTest::qWaitFor([&] { return finished.count() == 1; }, 5000));
+    QCOMPARE(finished.at(0).at(0).toBool(), false);
+
+    // then back to IPv6 in the background, like after a LowID login
+    QTcpSocket* again6 = acceptOn(rig.dual.v6);
+    QVERIFY(again6);
+    QVERIFY(loginArrives(again6));
+    writeIdChange(again6, 0x00000045, SrvTcpFlag::FirewallRecheck);
+    QVERIFY(QTest::qWaitFor([&] { return rig.conn.sessionAddress().isIPv6(); }, 5000));
+    QVERIFY(rig.conn.isConnected());
+    QCOMPARE(rig.conn.clientID(), uint32{0x45});
+    QVERIFY(!everOffline);
+    rig.conn.disconnect();
 }
 
 QTEST_MAIN(tst_ServerConnect)

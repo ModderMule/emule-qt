@@ -1516,10 +1516,16 @@ void MainWindow::onFirstTimeWizard()
         // Fresh install closed without Finish: the defaults, every type claimed. Old
         // profiles never get here, they adopt what is claimed (#153). A no-op when
         // reopened from Tools unchanged.
-        if (firstRun && result != QDialog::Accepted)
+        // A --config profile cancelled claims nothing: the entries start the default one.
+        const bool menuOn = m_firstStartWizard && m_firstStartWizard->menuEntryTurnedOn();
+        if (firstRun && result != QDialog::Accepted && isSecondaryProfile()) {
+            claimNoFileTypes();
+            applyDesktopIntegration();
+        } else if (firstRun && result != QDialog::Accepted) {
             claimAllFileTypes();
-        else
-            applyDesktopIntegration(firstRun);
+        } else {
+            applyDesktopIntegration(firstRun || menuOn);
+        }
         // Lists built on the old showExtControls pick up the wizard's choice
         if (result == QDialog::Accepted) {
             m_transferPanel->applyDisplayOptions();

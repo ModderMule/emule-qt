@@ -268,7 +268,7 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     m_sellFloorSpin->setValue(double(c.sellFloor) / kMicro);
     m_sellSlotsSpin->setValue(int(c.sellSlots));
     m_ledgerGroup->setEnabled(c.enabled);
-    m_autoBidGroup->setChecked(c.autoBid);
+    m_autoBidCheck->setChecked(c.autoBid);
     m_autoFactorSpin->setValue(c.autoFactor / 10.0);
     m_autoThresholdSpin->setValue(int(std::min<uint64>(c.autoThreshold, uint64(m_autoThresholdSpin->maximum()))));
     updateAutoCredits();
@@ -298,7 +298,7 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     for (const Ed3kHosterAccount& a : h.accounts)
         m_hosterAccounts.rows.append({a.host, a.user, {}, false, {}});
     fillAccounts(m_hosterAccounts);
-    m_solversGroup->setChecked(h.solversEnabled);
+    m_solversCheck->setChecked(h.solversEnabled);
     m_solverAccounts.rows.clear();
     for (const Ed3kHosterAccount& a : h.solvers)
         m_solverAccounts.rows.append({a.host, a.user, {}, false, {}});
@@ -1328,7 +1328,7 @@ Ed3kCreditPrefs Ed3kOptionsPages::creditPrefs() const
     c.sell = m_sellCheck->isChecked();
     c.sellFloor = uint64(microOf(m_sellFloorSpin));
     c.sellSlots = uint32(m_sellSlotsSpin->value());
-    c.autoBid = m_autoBidGroup->isChecked();
+    c.autoBid = m_autoBidCheck->isChecked();
     c.autoFactor = Ed3kCreditPrefs::autoFactorOf(m_autoFactorSpin->value());
     c.autoThreshold = uint64(m_autoThresholdSpin->value());
     return c;
@@ -1728,10 +1728,13 @@ void Ed3kOptionsPages::buildAccountList(AccountList& list, const QStringList& co
 
 void Ed3kOptionsPages::buildSolvers(QVBoxLayout* layout, QWidget* parent)
 {
-    m_solversGroup = new QGroupBox(tr("Solve puzzles with these services"), parent);
-    m_solversGroup->setCheckable(true);
-    m_solversGroup->setToolTip(tr("A hoster's image puzzle goes to these paid services first; the puzzle window "
+    // plain check box: a checkable group title draws small on macOS
+    m_solversCheck = new QCheckBox(tr("Solve puzzles with these services"), parent);
+    m_solversCheck->setToolTip(tr("A hoster's image puzzle goes to these paid services first; the puzzle window "
                                   "only comes when none of them answers."));
+    layout->addWidget(m_solversCheck);
+    m_solversGroup = new QGroupBox(parent);
+    m_solversGroup->setEnabled(false);
     auto* groupLayout = new QVBoxLayout(m_solversGroup);
     groupLayout->addWidget(noteLabel(tr("Captcha solver services solve the puzzles of hosters for a small fee each. "
                                         "An account needs credit at the service. Logins stay on this computer: "
@@ -1741,7 +1744,8 @@ void Ed3kOptionsPages::buildSolvers(QVBoxLayout* layout, QWidget* parent)
                      groupLayout, m_solversGroup);
     layout->addWidget(m_solversGroup);
     layout->addStretch();
-    connect(m_solversGroup, &QGroupBox::toggled, this, [this] {
+    connect(m_solversCheck, &QCheckBox::toggled, this, [this](bool on) {
+        m_solversGroup->setEnabled(on);
         if (!m_loading)
             emit changed();
     });
@@ -1903,7 +1907,7 @@ Ed3kHosterPrefs Ed3kOptionsPages::hosterPrefs() const
     h.grabAll = m_grabAllCheck->isChecked();
     for (const HosterAccountRow& a : m_hosterAccounts.rows)
         h.accounts.append({a.host, a.user, a.passwordSet ? a.password : QString()});
-    h.solversEnabled = m_solversGroup->isChecked();
+    h.solversEnabled = m_solversCheck->isChecked();
     h.solvers.clear();
     for (const HosterAccountRow& a : m_solverAccounts.rows)
         h.solvers.append({a.host, a.user, a.passwordSet ? a.password : QString()});
@@ -1927,12 +1931,12 @@ QWidget* Ed3kOptionsPages::buildAutoCredits(QWidget* parent)
     };
 
     // spends credits on its own: off by default
-    m_autoBidGroup = new QGroupBox(tr("Autostart highspeed download"), page);
-    m_autoBidGroup->setCheckable(true);
-    m_autoBidGroup->setChecked(false);
-    m_autoBidGroup->setToolTip(tr("Once the credit balance reaches the threshold, every ed3k download bids the credit "
+    m_autoBidCheck = new QCheckBox(tr("Autostart highspeed download"), page);
+    m_autoBidCheck->setToolTip(tr("Once the credit balance reaches the threshold, every ed3k download bids the credit "
                                   "factor for priority upload slots. It stops before about 20 credits are left, "
                                   "from what downloads spent in the past seconds, so the account is never overdrawn."));
+    layout->addWidget(m_autoBidCheck);
+    m_autoBidGroup = new QGroupBox(page);
     auto* groupLayout = new QVBoxLayout(m_autoBidGroup);
     auto* form = new QFormLayout;
     form->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
@@ -1957,7 +1961,10 @@ QWidget* Ed3kOptionsPages::buildAutoCredits(QWidget* parent)
     layout->addWidget(m_autoBidGroup);
     layout->addStretch();
 
-    connect(m_autoBidGroup, &QGroupBox::toggled, this, edited);
+    connect(m_autoBidCheck, &QCheckBox::toggled, this, [this, edited] {
+        updateAutoCredits();
+        edited();
+    });
     connect(m_autoFactorSpin, &QDoubleSpinBox::valueChanged, this, edited);
     connect(m_autoThresholdSpin, &QSpinBox::valueChanged, this, edited);
     // no effect while ed3k is off
@@ -1971,7 +1978,8 @@ void Ed3kOptionsPages::updateAutoCredits()
     if (!m_autoBidGroup)
         return;
     const bool ed3kOn = m_enabledCheck->isChecked();
-    m_autoBidGroup->setEnabled(ed3kOn);
+    m_autoBidCheck->setEnabled(ed3kOn);
+    m_autoBidGroup->setEnabled(ed3kOn && m_autoBidCheck->isChecked());
     if (!ed3kOn) {
         m_autoNoteLabel->setText(tr("ed3k is off: this has no effect."));
         return;

@@ -27,12 +27,23 @@ void registerEd2kUrlScheme();
 /// Launcher entry, icons and wantedFileTypes() with the desktop. Not before the first
 /// start wizard ran or was dismissed: nothing is claimed before the user could say no (#111).
 /// Touches the desktop only when the wanted types changed since the last time, or the
-/// install moved (#121). @p createLauncher: write the bare launcher if missing (first run only).
+/// install moved (#121). @p createLauncher: write the bare launcher if missing (just chosen).
+/// UiState::menuEntry() off removes the bare launcher and hides the claims entry.
 void applyDesktopIntegration(bool createLauncher = false);
+
+/// Started with --config naming another dir than the default profile: the desktop's
+/// entries are shared and start the default one, so such a profile leaves them alone
+/// unless the user picks types or the menu entry for it (#153).
+[[nodiscard]] bool isSecondaryProfile();
 
 /// Wizard done but nothing recorded (profile from before #121): takes what our entries
 /// claim now as the stored choice and the applied state. Writes nothing (#153).
+/// A secondary profile adopts nothing: claimNoFileTypes().
 void adoptClaimedFileTypes();
+
+/// Every switch off and recorded as applied, without touching the desktop: the
+/// entries there may belong to another profile (secondary profile, #153).
+void claimNoFileTypes();
 
 /// First start wizard closed without Finish on a fresh install: every switch on, every
 /// type of the enabled networks claimed (all of them by default), launcher created.

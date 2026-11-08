@@ -3,6 +3,7 @@
 /// @brief Platform-specific ed2k:// URL scheme registration, ed3k: with it.
 
 #include "app/Ed2kSchemeHandler.h"
+#include "app/AppConfig.h"
 #include "app/AutoStart.h"
 #include "app/UiState.h"
 #include "prefs/Preferences.h"
@@ -167,11 +168,20 @@ gui::FileAssociation::FileTypes wantedFileTypes()
     return savedFileTypes().masked(enabledNetworkTypes());
 }
 
+bool isSecondaryProfile()
+{
+    const QString dir = AppConfig::configDirOverride();
+    return !dir.isEmpty() && !AppConfig::sameDir(dir, AppConfig::defaultConfigDir());
+}
+
 void applyDesktopIntegration(bool createLauncher)
 {
-    if (createLauncher)
-        theUiState.setLauncherInstalled(true);
-    gui::FileAssociation::installLauncher(createLauncher);
+    const std::optional<bool> menu = theUiState.menuEntry();
+    gui::FileAssociation::setMenuEntry(menu.value_or(!isSecondaryProfile()));
+    if (menu == false)
+        gui::FileAssociation::removeLauncher();
+    else if (menu || !isSecondaryProfile())
+        gui::FileAssociation::installLauncher(createLauncher);   // not chosen: only what is there
     refreshAutoStart();   // an old entry started the bare .bin (#129)
 
     // macOS keeps the choice itself
@@ -190,6 +200,11 @@ void adoptClaimedFileTypes()
 {
     if (!gui::FileAssociation::isRuntimeRegistration() || theUiState.appliedFileTypes())
         return;
+    // the shared entries belong to the default profile: a --config one claims nothing
+    if (isSecondaryProfile()) {
+        claimNoFileTypes();
+        return;
+    }
     // older builds saved the default switches (all on) as if chosen: take what our
     // entries claim now as the choice, and write nothing (#153)
     const auto claimed = gui::FileAssociation::claimedTypes();
@@ -200,12 +215,22 @@ void adoptClaimedFileTypes()
     theUiState.setAppliedFileTypes(toBits(claimed));
 }
 
+void claimNoFileTypes()
+{
+    theUiState.setAssociateNzbFiles(false);
+    theUiState.setAssociateTorrentFiles(false);
+    theUiState.setAssociateEd2kLinks(false);
+    theUiState.setAssociateDlcFiles(false);
+    theUiState.setAppliedFileTypes(0);
+}
+
 void claimAllFileTypes()
 {
     theUiState.setAssociateNzbFiles(true);
     theUiState.setAssociateTorrentFiles(true);
     theUiState.setAssociateEd2kLinks(true);
     theUiState.setAssociateDlcFiles(true);
+    theUiState.setMenuEntry(true);
     applyDesktopIntegration(/*createLauncher*/ true);
 }
 

@@ -195,8 +195,10 @@ public:
 
     /// The port looks reachable now, or the mapped port changed: get a fresh ID from
     /// the live server without going offline. eNode-go (FirewallRecheck flag): one
-    /// OP_RECHECKFIREWALL; others: a background re-login to the same server.
-    /// @return false when nothing started (offline, HighID w/o port change, throttled, busy)
+    /// OP_RECHECKFIREWALL; others: a background re-login to the same server. An IPv6
+    /// session always re-logs in over IPv4 (only IPv4 gets a HighID), back to IPv6 on a LowID.
+    /// @return false when nothing started (offline, HighID w/o port change, throttled, busy,
+    ///         IPv6 session to a server without IPv4)
     bool requestHighIdRecheck(const QString& why, bool portChanged = false);
     /// A recheck was sent or a recheck re-login runs.
     [[nodiscard]] bool isRecheckPending() const;

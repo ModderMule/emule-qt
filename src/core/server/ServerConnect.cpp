@@ -1329,8 +1329,12 @@ void ServerConnect::startHandover(bool closeFirst)
         return;
     }
     const uint32 serverId = m_handoverServerId;
-    // Recheck: the address the live session dialed again; IPv6 switch: the other family
-    const Address dial = recheck ? m_connectedSocket->sessionAddress() : entry->ipv6Address();
+    // IPv6 switch: the server's IPv6. Recheck: the live session's address, but IPv4 when
+    // that is IPv6 (only an IPv4 session gets a HighID)
+    const Address session = m_connectedSocket->sessionAddress();
+    const Address dial = !recheck            ? entry->ipv6Address()
+                         : session.isIPv6() ? entry->ipv4Address()
+                                            : session;
 
     if (closeFirst) {
         // One session per user hash and no takeover: go offline for the new login
@@ -1380,8 +1384,19 @@ void ServerConnect::finishHandover(ServerSocket* socket)
     // The ordinary login path makes it the live session
     m_connecting = true;
     connectionEstablished(socket);
-    if (reason == HandoverReason::HighIdRecheck)
-        finishRecheck(!isLowID());
+    if (reason != HandoverReason::HighIdRecheck)
+        return;
+    finishRecheck(!isLowID());
+    // came over from IPv6 for the test and still LowID: back to IPv6, as after a login
+    if (isLowID() && entry && wantsIPv6Switch(socket, entry)) {
+        m_handoverServerId = entry->serverId();
+        QTimer::singleShot(0, this, [this] {
+            if (m_handoverSocket)
+                return;   // another handover took over meanwhile
+            m_handoverReason = HandoverReason::IPv6Switch;
+            startHandover(false);
+        });
+    }
 }
 
 void ServerConnect::failHandover(ServerSocket* socket, const QString& reason)
@@ -1469,7 +1484,11 @@ bool ServerConnect::requestHighIdRecheck(const QString& why, bool portChanged)
     if (!live || !entry)
         return false;
 
-    const bool viaOpcode = (live->tcpFlags() & SrvTcpFlag::FirewallRecheck) != 0;
+    // Only an IPv4 session gets a HighID: from IPv6, log in over IPv4 in the background
+    const bool fromIPv6 = m_connectedSocket->sessionAddress().isIPv6();
+    if (fromIPv6 && entry->ipv4Address().isNull())
+        return false;
+    const bool viaOpcode = !fromIPv6 && (live->tcpFlags() & SrvTcpFlag::FirewallRecheck) != 0;
     // Each recheck that kept a LowID doubles the wait, up to 4x
     const qint64 interval = (viaOpcode ? kRecheckOpcodeIntervalMs : kRecheckReloginIntervalMs)
                             << std::min(m_recheckLowIdResults, 2);
@@ -1496,8 +1515,8 @@ bool ServerConnect::requestHighIdRecheck(const QString& why, bool portChanged)
         return true;
     }
 
-    logInfo(QStringLiteral("HighID recheck (%1): logging in to %2 again in the background")
-                .arg(why, entry->name()));
+    logInfo(QStringLiteral("HighID recheck (%1): logging in to %2 again%3 in the background")
+                .arg(why, entry->name(), fromIPv6 ? QStringLiteral(" over IPv4") : QString()));
     m_handoverReason = HandoverReason::HighIdRecheck;
     m_handoverServerId = entry->serverId();
     startHandover(false);

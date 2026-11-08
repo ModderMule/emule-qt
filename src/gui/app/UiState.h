@@ -207,11 +207,12 @@ public:
         m_appliedFileTypes = bits;
         scheduleSave();
     }
-    /// The launcher entry was created once; a missing one is not put back (#121)
-    [[nodiscard]] bool launcherInstalled() const { return m_launcherInstalled; }
-    void setLauncherInstalled(bool on)
+    /// Linux application menu entry (wizard). Unset = never chosen: the default profile
+    /// keeps what is there, a --config profile writes none (#153)
+    [[nodiscard]] std::optional<bool> menuEntry() const { return m_menuEntry; }
+    void setMenuEntry(bool on)
     {
-        m_launcherInstalled = on;
+        m_menuEntry = on;
         scheduleSave();
     }
 
@@ -525,7 +526,7 @@ private:
     quint16 m_clickNLoadPort = 9666;
     std::optional<bool> m_associateEd2kLinks;
     std::optional<int> m_appliedFileTypes;
-    bool m_launcherInstalled = false;
+    std::optional<bool> m_menuEntry;
     bool m_addLinksWithoutConfirm = false;
     bool m_miniMuleAutoClose = false;
     bool m_firstStartWizardDone = false;
