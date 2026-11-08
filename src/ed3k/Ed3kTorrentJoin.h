@@ -91,6 +91,8 @@ public slots:
     void onPieceResult(const QString& id, int piece, bool passed);
     /// libtorrent's resume check is done: its pieces are skipped on ed3k.
     void onTorrentChecked(const QString& id);
+    /// libtorrent's flush @p ticket is done: members waiting for it are hashed.
+    void onTorrentFlushed(const QString& id, quint64 ticket);
 
 signals:
     /// A member verified under its root and is shared.
@@ -139,6 +141,7 @@ private:
     void onHoldTimeout(const QString& id, int piece);
     void onMemberComplete(const QString& id, int member);
     void onMemberHashed(const QString& id, int member, quint64 generation, const std::optional<FileHash>& hashed);
+    void hashMember(const QString& id, const Join& j, int member, quint64 generation);
     void onMemberVerified(const QString& id, int member, const ::ed3k::Root& root);
     void onHaveChanged(const QString& id, int member);
     void onClaimFalse(const QString& id, const ::ed3k::tev::ClaimFalse& ev);

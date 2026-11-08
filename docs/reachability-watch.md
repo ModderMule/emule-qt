@@ -34,6 +34,9 @@ Action: LowID → `ServerConnect::requestHighIdRecheck`; Kad firewalled → rech
 - IPv6 session (moved there by "prefer IPv6 on LowID"): only IPv4 gets a HighID, so no opcode —
   background re-login over the server's IPv4 (≥ 10 min apart). HighID → stays on IPv4; LowID →
   back to IPv6 in the background, as after a login. Server without IPv4: no recheck.
+  eNode-go (v0.5.21) lets an IPv4 login take over no IPv6 session → refused → close-first
+  re-login, offline ~2 s. Close-first keeps our public IPv4 (an IPv6 login never reports one),
+  else the website port test runs without it.
 - each recheck that keeps a LowID doubles the gap, up to 4×.
 - mid-session `OP_IDCHANGE` on the live socket: no smart-LowID bounce, no IPv6 move.
 - handover login and pending opcode count for `awaitingTestFromIP` (crypt-required lets the

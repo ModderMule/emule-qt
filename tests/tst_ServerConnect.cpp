@@ -1745,6 +1745,7 @@ void tst_ServerConnect::lowIdOnIPv4_refusedSecondSessionClosesIPv4First()
         QSKIP("no dual-stack loopback listener pair");
     QSignalSpy lost(&rig.conn, &ServerConnect::connectionLost);
     QVERIFY(rig.start());
+    theApp.setPublicIP(0x0403020A);   // what the IPv4 login reported
 
     // An unpatched eNode-go refuses a second session for the hash and closes it
     rig.side6->close();
@@ -1759,7 +1760,10 @@ void tst_ServerConnect::lowIdOnIPv4_refusedSecondSessionClosesIPv4First()
     QVERIFY(QTest::qWaitFor([&] { return rig.conn.isConnected(); }, 5000));
     QVERIFY(rig.conn.sessionAddress().isIPv6());
     QCOMPARE(lost.count(), 0);
+    // the IPv6 login reports no IPv4: the one from before the close is kept
+    QCOMPARE(theApp.ed2kSessionIP(), uint32{0x0403020A});
     rig.conn.disconnect();
+    QCOMPARE(theApp.ed2kSessionIP(), uint32{0});
 }
 
 void tst_ServerConnect::lowIdOnIPv4_staysWithoutThePref()

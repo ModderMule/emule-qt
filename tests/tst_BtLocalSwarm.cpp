@@ -188,6 +188,16 @@ void tst_BtLocalSwarm::seedAndLeech()
     QCOMPARE(readDownloaded(leecher, added.id), m_payload);
     QTRY_VERIFY_WITH_TIMEOUT(leecher.torrent(added.id)->state == BtState::Seeding, 5000);
     QCOMPARE(leecher.files(added.id).size(), 1);
+
+    // a join's flush: each ticket answered in turn (a member is hashed only after it)
+    QSignalSpy flushed(&leecher, &BtSession::torrentFlushed);
+    QCOMPARE(leecher.flushToDisk(QStringLiteral("bt:v1:none")), quint64(0));
+    const quint64 first = leecher.flushToDisk(added.id);
+    const quint64 second = leecher.flushToDisk(added.id);
+    QVERIFY(first > 0 && second == first + 1);
+    QTRY_COMPARE_WITH_TIMEOUT(flushed.count(), 2, kTimeoutMs);
+    QCOMPARE(flushed.at(0).at(1).toULongLong(), first);
+    QCOMPARE(flushed.at(1).at(1).toULongLong(), second);
     leecher.stop();
     seeder.stop();
 }

@@ -1342,7 +1342,10 @@ void ServerConnect::startHandover(bool closeFirst)
                     .arg(handoverName(), entry->name()));
         m_connecting = true;
         m_singleConnecting = true;
+        // our IPv4 outlives a re-login to the same server; an IPv6 login never reports it
+        const uint32 keepIP = theApp.ed2kSessionIP();
         disconnect();
+        m_handoverKeepIP = keepIP;
     }
 
     auto* socket = createServerSocket(false);
@@ -1368,6 +1371,7 @@ void ServerConnect::finishHandover(ServerSocket* socket)
     const bool closeFirst = m_handoverCloseFirst;
     const HandoverReason reason = m_handoverReason;
     const QString name = handoverName();
+    const uint32 keepIP = m_handoverKeepIP;
     resetHandover();
 
     // Still up: the server let the two overlap (ed2k-server keeps the old socket)
@@ -1384,6 +1388,8 @@ void ServerConnect::finishHandover(ServerSocket* socket)
     // The ordinary login path makes it the live session
     m_connecting = true;
     connectionEstablished(socket);
+    if (keepIP != 0 && theApp.ed2kSessionIP() == 0)
+        theApp.setPublicIP(keepIP);
     if (reason != HandoverReason::HighIdRecheck)
         return;
     finishRecheck(!isLowID());
@@ -1455,6 +1461,7 @@ void ServerConnect::resetHandover()
     m_handoverServerId = 0;
     m_handoverLoginSent = false;
     m_handoverCloseFirst = false;
+    m_handoverKeepIP = 0;
 }
 
 QString ServerConnect::handoverName() const

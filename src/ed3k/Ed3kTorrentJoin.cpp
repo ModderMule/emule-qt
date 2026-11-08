@@ -117,6 +117,14 @@ struct Ed3kTorrentJoin::Join {
     std::shared_ptr<Sink> sink;
     /// TORRENT_COMPLETE came before every member was hashed: complete() after the last
     bool completePending = false;
+    /// complete members hashed once libtorrent's flush with that ticket is done: a
+    /// passed piece may still be in its memory, not in the file
+    struct FlushWait {
+        quint64 ticket = 0;
+        int member = 0;
+        quint64 generation = 0;
+    };
+    std::vector<FlushWait> flushWait;
 };
 
 Ed3kTorrentJoin::Ed3kTorrentJoin(Ed3kSession& session, bt::BtSession& bt, const QString& configDir, QObject* parent)
@@ -130,6 +138,7 @@ Ed3kTorrentJoin::Ed3kTorrentJoin(Ed3kSession& session, bt::BtSession& bt, const 
     connect(&m_bt, &bt::BtSession::torrentRemoved, this, &Ed3kTorrentJoin::onTorrentRemoved);
     connect(&m_bt, &bt::BtSession::pieceResult, this, &Ed3kTorrentJoin::onPieceResult);
     connect(&m_bt, &bt::BtSession::torrentChecked, this, &Ed3kTorrentJoin::onTorrentChecked);
+    connect(&m_bt, &bt::BtSession::torrentFlushed, this, &Ed3kTorrentJoin::onTorrentFlushed);
 }
 
 Ed3kTorrentJoin::~Ed3kTorrentJoin()
@@ -778,10 +787,27 @@ void Ed3kTorrentJoin::onMemberComplete(const QString& id, int index)
         return;
     m.hashing = true;
     m.generation = ++m_hashGeneration;
-    const quint64 generation = m.generation;
-    hashInBackground(memberPath(*j, index), [this, id, index, generation](std::optional<FileHash> hashed) {
-        onMemberHashed(id, index, generation, hashed);
+    if (const quint64 ticket = m_bt.flushToDisk(id))
+        j->flushWait.push_back({ticket, index, m.generation});
+    else
+        hashMember(id, *j, index, m.generation);
+}
+
+void Ed3kTorrentJoin::onTorrentFlushed(const QString& id, quint64 ticket)
+{
+    Join* j = findJoin(id);
+    if (!j)
+        return;
+    std::vector<Join::FlushWait> due;
+    std::erase_if(j->flushWait, [&](const Join::FlushWait& w) {
+        if (w.ticket > ticket)
+            return false;
+        due.push_back(w);
+        return true;
     });
+    for (const auto& w : due)
+        if (std::size_t(w.member) < j->members.size() && j->members[std::size_t(w.member)].generation == w.generation)
+            hashMember(id, *j, w.member, w.generation);
 }
 
 void Ed3kTorrentJoin::onMemberHashed(const QString& id, int index, quint64 generation, const std::optional<FileHash>& hashed)
@@ -1048,6 +1074,13 @@ bool Ed3kTorrentJoin::piecesHad(const Join& j, std::uint64_t begin, std::uint64_
 QString Ed3kTorrentJoin::torrentDir() const
 {
     return joinDir(QStringLiteral("torrent"));
+}
+
+void Ed3kTorrentJoin::hashMember(const QString& id, const Join& j, int index, quint64 generation)
+{
+    hashInBackground(memberPath(j, index), [this, id, index, generation](std::optional<FileHash> hashed) {
+        onMemberHashed(id, index, generation, hashed);
+    });
 }
 
 } // namespace eMule::ed3k

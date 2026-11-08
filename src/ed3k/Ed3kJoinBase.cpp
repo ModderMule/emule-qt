@@ -1584,7 +1584,8 @@ void Ed3kJoinBase::shareKeptHashed(const QString& owner, int member, const ffi::
             return;
         }
         if (hashed->root != root || hashed->size != size) {
-            logInfo(QStringLiteral("kept member %1 of %2 changed: not shared any more").arg(member).arg(owner));
+            logInfo(QStringLiteral("kept member %1 of %2 changed: not shared any more (%3 B, %4; kept %5 B, %6)")
+                        .arg(member).arg(owner).arg(hashed->size).arg(hexOf(hashed->root.bytes)).arg(size).arg(hexOf(root.bytes)));
             Kept kept = readKept(owner);
             std::erase_if(kept.members, [&](const Kept::Member& m) { return m.member == member; });
             writeKept(owner, kept);

@@ -331,6 +331,13 @@ struct BtSession::Impl {
     /// finished, cache flush asked: pread_disk_io holds written blocks in memory, so
     /// torrentFinished waits for cache_flushed_alert (files complete on disk)
     QSet<QString> finishFlush;
+    /// flushToDisk tickets: last given, last answered. A cache_flushed_alert answers these
+    /// first: the only other ones are libtorrent's own at finish (covers every write) and ours
+    struct Flushes {
+        quint64 asked = 0;
+        quint64 answered = 0;
+    };
+    std::map<QString, Flushes> askedFlush;
     /// pieces libtorrent has, from its status updates: havePieces() never waits
     std::map<QString, QBitArray> have;
     /// checked, a join attached: torrentChecked waits for the status with the new pieces
@@ -724,6 +731,7 @@ void BtSession::stop()
     d->adding.clear();
     d->rows.clear();
     d->finishFlush.clear();
+    d->askedFlush.clear();
     d->have.clear();
     d->checkWaited.clear();
     d->outstandingResume = 0;
@@ -867,6 +875,7 @@ bool BtSession::remove(const QString& id, bool deleteFiles)
     d->limitOverride.remove(id);
     d->metaStopped.remove(id);
     d->finishFlush.remove(id);
+    d->askedFlush.erase(id);
     d->have.erase(id);
     d->checkWaited.remove(id);
     d->pendingPriorities.erase(id);
@@ -1178,6 +1187,15 @@ bool BtSession::addPiece(const QString& id, int piece, const QByteArray& data)
     return true;
 }
 
+quint64 BtSession::flushToDisk(const QString& id)
+{
+    const auto h = d->handle(id);
+    if (!h.is_valid())
+        return 0;
+    h.flush_cache();
+    return ++d->askedFlush[id].asked;
+}
+
 void BtSession::raisePieces(const QString& id, const QList<int>& pieces)
 {
     const auto h = d->handle(id);
@@ -1330,8 +1348,12 @@ void BtSession::drainAlerts()
         } else if (auto* cf = lt::alert_cast<lt::cache_flushed_alert>(a)) {
             // also posted on removal: only a torrent still in the list
             const QString id = BtTorrentView::idOf(cf->handle.info_hashes());
-            if (d->finishFlush.remove(id) && d->handles.contains(id))
+            if (!d->handles.contains(id)) {
+            } else if (auto it = d->askedFlush.find(id); it != d->askedFlush.end() && it->second.answered < it->second.asked) {
+                emit torrentFlushed(id, ++it->second.answered);
+            } else if (d->finishFlush.remove(id)) {
                 emit torrentFinished(id);
+            }
         } else if (auto* md = lt::alert_cast<lt::metadata_received_alert>(a)) {
             const QString id = BtTorrentView::idOf(md->handle.info_hashes());
             if (d->stopAtMeta.contains(id))
