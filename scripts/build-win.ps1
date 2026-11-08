@@ -34,6 +34,8 @@ param(
     [switch]$NoBuild,
     [switch]$BootstrapVcpkg,
     [switch]$NoVcpkg,
+    # Build only the shipped exes, no tests (much faster)
+    [switch]$AppsOnly,
     [ValidateSet('Release', 'Debug')][string]$Config = 'Release',
     [string]$QtDir,
     [string]$BuildDir
@@ -775,8 +777,10 @@ function Invoke-EMuleBuild {
 
 if ($MyInvocation.InvocationName -ne '.') {
     if (-not $BuildDir) { $BuildDir = Get-DefaultBuildDir }
+    $appTargets = if ($AppsOnly) { @('emuleqt', 'emulecored', 'emuleqt-mcp', 'emuleqt-updater') } else { @() }
     Invoke-EMuleBuild -Config $Config -QtDir $QtDir -BuildDir $BuildDir `
-        -NoBuild:$NoBuild -Clean:$Clean -BootstrapVcpkg:$BootstrapVcpkg -NoVcpkg:$NoVcpkg
+        -NoBuild:$NoBuild -Clean:$Clean -BootstrapVcpkg:$BootstrapVcpkg -NoVcpkg:$NoVcpkg `
+        -Target $appTargets
 
     if ($Bundle) {
         Write-Host ''

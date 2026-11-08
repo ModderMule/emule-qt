@@ -288,6 +288,24 @@ std::optional<Terminal> findTerminal()
 }
 #endif
 
+/// Setup or the uninstaller runs: it stops the core to replace its files, so a core
+/// started now would hold them open again (#157). Mutex names as in emuleqt.iss.
+bool installerRunning()
+{
+#ifdef Q_OS_WIN
+    for (const wchar_t* name : {L"eMuleQtSetupRunning", L"Global\\eMuleQtSetupRunning"}) {
+        if (HANDLE m = ::OpenMutexW(SYNCHRONIZE, FALSE, name)) {
+            ::CloseHandle(m);
+            return true;
+        }
+        // made by an elevated setup: exists, only not ours to open
+        if (::GetLastError() == ERROR_ACCESS_DENIED)
+            return true;
+    }
+#endif
+    return false;
+}
+
 /// Try to start the daemon process. Returns true if launched.
 /// @param holdConnect the first start wizard is about to run: the core must not
 ///        auto-connect before the ports are chosen.
@@ -297,6 +315,10 @@ bool launchDaemon(const QString& daemonPath, bool holdConnect, qint64& pid)
     pid = 0;
     if (daemonPath.isEmpty())
         return false;
+    if (installerRunning()) {
+        eMule::logWarning(QStringLiteral("Setup is running, core not started: %1").arg(daemonPath));
+        return false;
+    }
 
     eMule::logInfo(QStringLiteral("Launching daemon: %1").arg(daemonPath));
 
