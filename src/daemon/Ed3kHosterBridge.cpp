@@ -14,6 +14,7 @@
 #include <QCborArray>
 #include <QCborMap>
 #include <QFileInfo>
+#include <QHash>
 #include <QUrl>
 
 #include <algorithm>
@@ -39,6 +40,8 @@ ed3k::Ed3kHosterJoin* s_join = nullptr;
 ed3k::Ed3kResolver* s_resolver = nullptr;
 ed3k::Ed3kJavaRuntime* s_java = nullptr;
 ed3k::Ed3kLinkGrabber* s_grabber = nullptr;
+/// openContainerAndAdd() tokens: their results stay in the daemon, no GUI asks
+QHash<quint64, std::function<void(int, const QString&)>> s_quietContainers;
 /// item pushes come per block: one per item and window
 constexpr int kItemWindowMs = 500;
 
@@ -281,6 +284,36 @@ IpcMessage failure(int seqId, const QString& error)
     return IpcMessage::makeResult(seqId, false, QCborMap{{QStringLiteral("error"), error}});
 }
 
+#ifdef EMULE_HAVE_ED3K
+/// A container's links, one package per name with its passwords; with the Link Grabber
+/// taking all, into it instead. How many links went in.
+int addContainerLinks(const QList<ed3k::ResolverLink>& links, const QString& fileName)
+{
+    const QString fallback = QFileInfo(fileName).completeBaseName();
+    if (s_grabber && s_grabber->takesAll())
+        return s_grabber->add(links, fileName, fallback);
+    QStringList packages;
+    for (const auto& l : links)
+        if (!packages.contains(l.package))
+            packages << l.package;
+    int added = 0;
+    for (const QString& pkg : std::as_const(packages)) {
+        QList<QStringList> files;
+        QStringList passwords;
+        for (const auto& l : links) {
+            if (l.package != pkg)
+                continue;
+            files.append(QStringList{l.url});
+            for (const QString& pw : l.passwords)
+                if (!pw.isEmpty() && !passwords.contains(pw))
+                    passwords << pw;
+        }
+        added += int(s_join->addMirrored(files, pkg.isEmpty() ? fallback : pkg, 0, passwords).size());
+    }
+    return added;
+}
+#endif
+
 } // namespace
 
 void setHoster(ed3k::Ed3kHosterJoin* join, ed3k::Ed3kResolver* resolver, ed3k::Ed3kJavaRuntime* java)
@@ -300,6 +333,26 @@ void setGrabber(ed3k::Ed3kLinkGrabber* grabber)
     s_grabber = grabber;
 #else
     Q_UNUSED(grabber)
+#endif
+}
+
+void openContainerAndAdd(const QByteArray& data, const QString& fileName,
+                         std::function<void(int added, const QString& error)> done)
+{
+#ifdef EMULE_HAVE_ED3K
+    if (!thePrefs.hosterDownloadsOn() || !s_resolver || !s_join) {
+        done(0, QStringLiteral("hoster downloads are off"));
+        return;
+    }
+    const quint64 token = s_join->openContainer(data, fileName);
+    if (token == 0) {
+        done(0, data.isEmpty() ? QStringLiteral("empty file") : QStringLiteral("cannot open the container"));
+        return;
+    }
+    s_quietContainers.insert(token, std::move(done));
+#else
+    Q_UNUSED(data) Q_UNUSED(fileName)
+    done(0, QStringLiteral("hoster downloads are off"));
 #endif
 }
 
@@ -542,6 +595,13 @@ void connectPushes(ed3k::Ed3kHosterJoin& join, const std::function<void(const Ip
     QObject::connect(&join, &ed3k::Ed3kHosterJoin::containerOpened, &join,
                      [broadcast](quint64 token, const QString& fileName, const QList<ed3k::ResolverLink>& links,
                                  const QString& code, const QString& text) {
+                         if (const auto quiet = s_quietContainers.take(token)) {
+                             if (links.isEmpty())
+                                 quiet(0, text.isEmpty() ? code : code + QStringLiteral(": ") + text);
+                             else
+                                 quiet(addContainerLinks(links, fileName), QString());
+                             return;
+                         }
                          IpcMessage msg(IpcMsgType::PushHosterLinks, 0);
                          QCborMap c{{QStringLiteral("token"), qint64(token)},
                                     {QStringLiteral("fileName"), fileName},

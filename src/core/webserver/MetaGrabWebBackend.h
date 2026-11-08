@@ -9,6 +9,7 @@
 
 #include "utils/Types.h"
 
+#include <QList>
 #include <QString>
 
 #include <array>
@@ -20,8 +21,10 @@ class MetaGrabWebBackend {
 public:
     virtual ~MetaGrabWebBackend() = default;
 
-    /// Fetch the row's metafile and hand it to its engine. @p done runs once, later.
-    virtual void grab(uint32 searchID, const std::array<uint8, 16>& hash,
+    /// Fetch the metafile of @p rows (ticked rows of one release, the first fetched) and
+    /// hand it to its engine: with the selected-file-only prefs, file rows keep their own
+    /// files. A container's links go to Hoster. @p done runs once, later.
+    virtual void grab(uint32 searchID, const QList<std::array<uint8, 16>>& rows,
                       std::function<void(bool ok, const QString& message)> done) = 0;
 };
 

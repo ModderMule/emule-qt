@@ -1253,7 +1253,7 @@ Download it again?</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4567"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4696"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -28465,14 +28465,14 @@ A password is set for this release.</source>
         <translation>地址</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3829"/>
-        <location line="+3711"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3958"/>
+        <location line="+3840"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>会话已过期 — 请重新登录</translation>
     </message>
     <message>
-        <location line="-3756"/>
+        <location line="-3885"/>
         <source>Guests cannot add downloads</source>
         <translation>访客无法添加下载</translation>
     </message>
@@ -28559,7 +28559,7 @@ A password is set for this release.</source>
         <translation>下载此文件</translation>
     </message>
     <message>
-        <location line="+62"/>
+        <location line="+144"/>
         <source>Access denied — no password configured. Set a password in Options → Web Interface.</source>
         <translation>拒绝访问 — 未设置密码。请在“选项 → Web 界面”中设置密码。</translation>
     </message>
@@ -28577,7 +28577,7 @@ A password is set for this release.</source>
     </message>
     <message numerus="yes">
         <location line="+255"/>
-        <location line="+1038"/>
+        <location line="+1054"/>
         <source>%n download(s) added</source>
         <translation>
             <numerusform>已添加 %n 个下载</numerusform>
@@ -28588,7 +28588,7 @@ A password is set for this release.</source>
         <translation type="vanished">未连接 — 无法发送搜索。</translation>
     </message>
     <message>
-        <location line="-993"/>
+        <location line="-1009"/>
         <source>Not sent yet — the search is waiting (%1) and starts by itself.</source>
         <translation>尚未发送 — 搜索正在等待（%1），会自动开始。</translation>
     </message>
@@ -28626,12 +28626,12 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+2279"/>
+        <location line="+2326"/>
         <source>Web Control Panel</source>
         <translation>Web 控制面板</translation>
     </message>
     <message>
-        <location line="-2271"/>
+        <location line="-2318"/>
         <source>Not connected</source>
         <translation>未连接</translation>
     </message>
@@ -28726,38 +28726,38 @@ A password is set for this release.</source>
     <message>
         <location line="+44"/>
         <location line="+21"/>
-        <location line="+372"/>
+        <location line="+419"/>
         <location line="+1135"/>
         <source>Queued</source>
         <translation>排队中</translation>
     </message>
     <message>
-        <location line="-1524"/>
+        <location line="-1571"/>
         <location line="+19"/>
-        <location line="+371"/>
+        <location line="+418"/>
         <location line="+1133"/>
         <source>Downloading</source>
         <translation>正在下载</translation>
     </message>
     <message>
-        <location line="-1529"/>
+        <location line="-1576"/>
         <location line="+9"/>
         <location line="+18"/>
-        <location line="+370"/>
+        <location line="+417"/>
         <source>Paused</source>
         <translation>已暂停</translation>
     </message>
     <message>
-        <location line="-369"/>
-        <location line="+370"/>
+        <location line="-416"/>
+        <location line="+417"/>
         <location line="+967"/>
         <location line="+163"/>
         <source>Complete</source>
         <translation>已完成</translation>
     </message>
     <message>
-        <location line="-1496"/>
-        <location line="+367"/>
+        <location line="-1543"/>
+        <location line="+414"/>
         <source>Failed</source>
         <translation>失败</translation>
     </message>
@@ -28777,26 +28777,26 @@ A password is set for this release.</source>
         <translation>正在解压</translation>
     </message>
     <message>
-        <location line="-398"/>
+        <location line="-445"/>
         <location line="+18"/>
-        <location line="+381"/>
+        <location line="+428"/>
         <source>Checking</source>
         <translation>正在检查</translation>
     </message>
     <message>
-        <location line="-2351"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+118"/>
+        <location line="-2480"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+119"/>
         <source>Torrent</source>
         <translation>种子</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+19"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+20"/>
         <source>Web</source>
         <translation>网页</translation>
     </message>
     <message>
-        <location line="+1945"/>
+        <location line="+2027"/>
         <source>Error: %1</source>
         <translation>错误：%1</translation>
     </message>
@@ -28879,8 +28879,18 @@ A password is set for this release.</source>
             <numerusform>%n 个下载</numerusform>
         </translation>
     </message>
+    <message>
+        <location line="+28"/>
+        <source>%1: %2</source>
+        <translation>%1：%2</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>not added</source>
+        <translation>未添加</translation>
+    </message>
     <message numerus="yes">
-        <location line="+22"/>
+        <location line="+3"/>
         <source>%n torrent(s) added</source>
         <translation>
             <numerusform>已添加 %n 个种子</numerusform>
@@ -28892,12 +28902,31 @@ A password is set for this release.</source>
         <translation>%2 个种子中有 %1 个未执行。</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="+40"/>
         <source>%1 of %2 download(s) did not take it.</source>
         <translation>%2 个下载中有 %1 个未执行。</translation>
     </message>
     <message numerus="yes">
-        <location line="+22"/>
+        <location line="+7"/>
+        <source>Opening %n container(s)… refresh to see how it went.</source>
+        <translation>
+            <numerusform>正在打开 %n 个容器… 刷新即可查看结果。</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location line="+9"/>
+        <source>%1: %n link(s) added</source>
+        <translation>
+            <numerusform>%1：已添加 %n 个链接</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>%1: no links added: %2</source>
+        <translation>%1：未添加任何链接：%2</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+33"/>
         <source>Fetching %n result(s) from the server… refresh to see how it went.</source>
         <translation>
             <numerusform>正在从服务器获取 %n 个结果… 刷新即可查看结果。</numerusform>
@@ -29056,7 +29085,7 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+56"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-175"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-177"/>
         <source>All</source>
         <translation>全部</translation>
     </message>
@@ -29293,7 +29322,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>下载速度</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1748"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1795"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Downloads</source>
         <translation>下载</translation>
@@ -29384,7 +29413,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>语言</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Log</source>
         <translation>日志</translation>
     </message>
@@ -29444,13 +29473,13 @@ Whichever network is idle lends its share to the other.</source>
         <translation>NZB 文件：</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1255"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1337"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>名称</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-72"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-73"/>
         <source>Also ask</source>
         <translation>同时搜索</translation>
     </message>
@@ -29490,7 +29519,12 @@ Whichever network is idle lends its share to the other.</source>
         <translation>网盘链接，每行一个：</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+7"/>
+        <source>Link containers (DLC, RSDF, CCF):</source>
+        <translation>链接容器 (DLC, RSDF, CCF)：</translation>
+    </message>
+    <message>
+        <location line="+4"/>
         <source>Magnet links, one per line:</source>
         <translation>磁力链接，每行一个：</translation>
     </message>
@@ -29907,6 +29941,11 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location line="+2"/>
+        <source>Torrent files:</source>
+        <translation>种子文件：</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Torrents</source>
         <translation>种子</translation>
     </message>
@@ -29951,7 +29990,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>上传速度</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1252"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1334"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation>上传</translation>
@@ -29962,13 +30001,13 @@ Whichever network is idle lends its share to the other.</source>
         <translation>运行时间</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1818"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1900"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="+2592"/>
+        <location line="+2721"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet engine unavailable</source>
         <translation>Usenet 引擎不可用</translation>

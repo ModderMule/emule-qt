@@ -361,7 +361,29 @@ public:
         calls << QStringLiteral("%1:%2").arg(op).arg(id);
         return id == 7;
     }
+    void openContainer(const QByteArray& data, const QString& fileName,
+                       std::function<void(int, const QString&)> done) override
+    {
+        calls << QStringLiteral("container:%1:%2").arg(fileName, QString::fromLatin1(data));
+        if (data == "bad")
+            done(0, QStringLiteral("invalid"));
+        else
+            done(3, {});
+    }
 };
+
+/// A multipart/form-data body: text fields, then files as {field, file name, bytes}.
+QByteArray multipartBody(const QByteArray& boundary, const QList<std::pair<QByteArray, QByteArray>>& fields,
+                         const QList<std::tuple<QByteArray, QByteArray, QByteArray>>& files)
+{
+    QByteArray out;
+    for (const auto& [name, value] : fields)
+        out += "--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + name + "\"\r\n\r\n" + value + "\r\n";
+    for (const auto& [name, fileName, data] : files)
+        out += "--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + name + "\"; filename=\"" + fileName
+               + "\"\r\nContent-Type: application/octet-stream\r\n\r\n" + data + "\r\n";
+    return out + "--" + boundary + "--\r\n";
+}
 
 /// Records what the web server asked for. Categories 0-2 exist.
 class FakeUsenetBackend final : public UsenetWebBackend {
@@ -3844,7 +3866,7 @@ void tst_WebServer::webHosterPage_listsAndActs()
     const QString ses = webLogin(port, QStringLiteral("admin-pw"));
     QVERIFY(!ses.isEmpty());
 
-    const QString page = rawGetBody(port, QStringLiteral("/?ses=%1&w=hoster").arg(ses));
+    QString page = rawGetBody(port, QStringLiteral("/?ses=%1&w=hoster").arg(ses));
     QVERIFY(page.contains(QStringLiteral("nav-tab active\"><a href=\"?w=hoster\"")));
     QVERIFY(page.contains(QStringLiteral("&lt;i&gt;clip&lt;/i&gt;.mkv")));
     QVERIFY(page.contains(QStringLiteral("width:25.0%")));
@@ -3862,6 +3884,19 @@ void tst_WebServer::webHosterPage_listsAndActs()
             QByteArrayLiteral("w=hoster&op=add&package=Pack&links=") + QUrl::toPercentEncoding(
                 QStringLiteral("https://files.test/a\r\n\r\n https://files.test/b ")), form);
     QCOMPARE(fake.calls, QStringList{QStringLiteral("add:https://files.test/a\nhttps://files.test/b:Pack")});
+
+    // containers ride a multipart form; an empty file input sends a nameless part
+    fake.calls.clear();
+    const QByteArray boundary = "----b0und";
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses),
+            multipartBody(boundary, {{"w", "hoster"}, {"op", "add"}, {"links", ""}, {"package", ""}},
+                          {{"containers", "a.dlc", "good"}, {"containers", "b.rsdf", "bad"}, {"containers", "", ""}}),
+            "multipart/form-data; boundary=" + boundary);
+    QCOMPARE(fake.calls, (QStringList{QStringLiteral("container:a.dlc:good"), QStringLiteral("container:b.rsdf:bad")}));
+    page = rawGetBody(port, QStringLiteral("/?ses=%1&w=hoster").arg(ses));
+    QVERIFY(page.contains(QStringLiteral("a.dlc: 3 link(s) added")));
+    QVERIFY(page.contains(QStringLiteral("b.rsdf: no links added: invalid")));
+    QVERIFY(!page.contains(QStringLiteral("Opening")));
 
     // an unknown op does nothing
     fake.calls.clear();
@@ -3907,6 +3942,18 @@ void tst_WebServer::webTorrentsPage_listsAndActs()
     QVERIFY(fake.lastPaused);
     page = rawGetBody(port, QStringLiteral("/?ses=%1&w=torrents").arg(ses));
     QVERIFY(page.contains(QStringLiteral("1 torrent(s) added")));
+
+    // a .torrent upload: binary, CR LF inside, kept byte for byte
+    const QByteArray torrent = QByteArrayLiteral("d8:announce\r\n--x\0\xff\r\ne");
+    const QByteArray boundary = "----b0und";
+    fake.lastPaused = true;
+    sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses),
+            multipartBody(boundary, {{"w", "torrents"}, {"op", "add"}, {"links", ""}},
+                          {{"torrents", "x.torrent", torrent}}),
+            "multipart/form-data; boundary=" + boundary);
+    QCOMPARE(fake.lastFile, torrent);
+    QVERIFY(!fake.lastPaused);
+    QVERIFY(rawGetBody(port, QStringLiteral("/?ses=%1&w=torrents").arg(ses)).contains(QStringLiteral("1 torrent(s) added")));
 
     fake.isRunning = false;
     QVERIFY(rawGetBody(port, QStringLiteral("/?ses=%1&w=torrents").arg(ses)).contains(QStringLiteral("BitTorrent is off.")));

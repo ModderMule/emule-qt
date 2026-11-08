@@ -10,6 +10,8 @@
 #include <QCborArray>
 #include <QString>
 
+#include <functional>
+
 namespace eMule {
 
 class HosterWebBackend {
@@ -24,6 +26,10 @@ public:
     virtual int addLinks(const QString& text, const QString& package) = 0;
     /// "pause", "resume", "retry", "remove" or "delete" (HosterAction).
     virtual bool action(quint32 id, const QString& op) = 0;
+    /// A link container (DLC, RSDF, CCF): all its links added. @p done runs once, mostly later,
+    /// with the count added, else 0 and why.
+    virtual void openContainer(const QByteArray& data, const QString& fileName,
+                               std::function<void(int added, const QString& error)> done) = 0;
 };
 
 } // namespace eMule

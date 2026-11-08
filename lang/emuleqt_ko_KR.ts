@@ -1253,7 +1253,7 @@ Download it again?</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4567"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4696"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -28465,14 +28465,14 @@ A password is set for this release.</source>
         <translation>주소</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3829"/>
-        <location line="+3711"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3958"/>
+        <location line="+3840"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>세션이 만료되었습니다 — 다시 로그인하세요</translation>
     </message>
     <message>
-        <location line="-3756"/>
+        <location line="-3885"/>
         <source>Guests cannot add downloads</source>
         <translation>게스트는 다운로드를 추가할 수 없습니다</translation>
     </message>
@@ -28559,7 +28559,7 @@ A password is set for this release.</source>
         <translation>이 파일 다운로드</translation>
     </message>
     <message>
-        <location line="+62"/>
+        <location line="+144"/>
         <source>Access denied — no password configured. Set a password in Options → Web Interface.</source>
         <translation>접근 거부 — 비밀번호가 설정되지 않았습니다. 옵션 → 웹 인터페이스에서 비밀번호를 설정하세요.</translation>
     </message>
@@ -28577,7 +28577,7 @@ A password is set for this release.</source>
     </message>
     <message numerus="yes">
         <location line="+255"/>
-        <location line="+1038"/>
+        <location line="+1054"/>
         <source>%n download(s) added</source>
         <translation>
             <numerusform>다운로드 %n개를 추가했습니다</numerusform>
@@ -28588,7 +28588,7 @@ A password is set for this release.</source>
         <translation type="vanished">연결되지 않음 — 검색을 보낼 수 없습니다.</translation>
     </message>
     <message>
-        <location line="-993"/>
+        <location line="-1009"/>
         <source>Not sent yet — the search is waiting (%1) and starts by itself.</source>
         <translation>아직 전송되지 않음 — 검색이 대기 중이며(%1) 자동으로 시작됩니다.</translation>
     </message>
@@ -28626,12 +28626,12 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+2279"/>
+        <location line="+2326"/>
         <source>Web Control Panel</source>
         <translation>웹 제어판</translation>
     </message>
     <message>
-        <location line="-2271"/>
+        <location line="-2318"/>
         <source>Not connected</source>
         <translation>연결되지 않음</translation>
     </message>
@@ -28726,38 +28726,38 @@ A password is set for this release.</source>
     <message>
         <location line="+44"/>
         <location line="+21"/>
-        <location line="+372"/>
+        <location line="+419"/>
         <location line="+1135"/>
         <source>Queued</source>
         <translation>대기 중</translation>
     </message>
     <message>
-        <location line="-1524"/>
+        <location line="-1571"/>
         <location line="+19"/>
-        <location line="+371"/>
+        <location line="+418"/>
         <location line="+1133"/>
         <source>Downloading</source>
         <translation>다운로드 중</translation>
     </message>
     <message>
-        <location line="-1529"/>
+        <location line="-1576"/>
         <location line="+9"/>
         <location line="+18"/>
-        <location line="+370"/>
+        <location line="+417"/>
         <source>Paused</source>
         <translation>일시정지됨</translation>
     </message>
     <message>
-        <location line="-369"/>
-        <location line="+370"/>
+        <location line="-416"/>
+        <location line="+417"/>
         <location line="+967"/>
         <location line="+163"/>
         <source>Complete</source>
         <translation>완료</translation>
     </message>
     <message>
-        <location line="-1496"/>
-        <location line="+367"/>
+        <location line="-1543"/>
+        <location line="+414"/>
         <source>Failed</source>
         <translation>실패</translation>
     </message>
@@ -28777,26 +28777,26 @@ A password is set for this release.</source>
         <translation>압축 해제 중</translation>
     </message>
     <message>
-        <location line="-398"/>
+        <location line="-445"/>
         <location line="+18"/>
-        <location line="+381"/>
+        <location line="+428"/>
         <source>Checking</source>
         <translation>확인 중</translation>
     </message>
     <message>
-        <location line="-2351"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+118"/>
+        <location line="-2480"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+119"/>
         <source>Torrent</source>
         <translation>토렌트</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+19"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+20"/>
         <source>Web</source>
         <translation>웹</translation>
     </message>
     <message>
-        <location line="+1945"/>
+        <location line="+2027"/>
         <source>Error: %1</source>
         <translation>오류: %1</translation>
     </message>
@@ -28879,8 +28879,18 @@ A password is set for this release.</source>
             <numerusform>다운로드 %n개</numerusform>
         </translation>
     </message>
+    <message>
+        <location line="+28"/>
+        <source>%1: %2</source>
+        <translation>%1: %2</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>not added</source>
+        <translation>추가되지 않음</translation>
+    </message>
     <message numerus="yes">
-        <location line="+22"/>
+        <location line="+3"/>
         <source>%n torrent(s) added</source>
         <translation>
             <numerusform>토렌트 %n개를 추가했습니다</numerusform>
@@ -28892,12 +28902,31 @@ A password is set for this release.</source>
         <translation>토렌트 %2개 중 %1개에 적용되지 않았습니다.</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="+40"/>
         <source>%1 of %2 download(s) did not take it.</source>
         <translation>다운로드 %2개 중 %1개에 적용되지 않았습니다.</translation>
     </message>
     <message numerus="yes">
-        <location line="+22"/>
+        <location line="+7"/>
+        <source>Opening %n container(s)… refresh to see how it went.</source>
+        <translation>
+            <numerusform>컨테이너 %n개를 여는 중… 결과를 보려면 새로 고치세요.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location line="+9"/>
+        <source>%1: %n link(s) added</source>
+        <translation>
+            <numerusform>%1: 링크 %n개 추가됨</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>%1: no links added: %2</source>
+        <translation>%1: 추가된 링크 없음: %2</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+33"/>
         <source>Fetching %n result(s) from the server… refresh to see how it went.</source>
         <translation>
             <numerusform>서버에서 결과 %n개를 가져오는 중… 새로 고침하여 결과를 확인하세요.</numerusform>
@@ -29056,7 +29085,7 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+56"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-175"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-177"/>
         <source>All</source>
         <translation>전체</translation>
     </message>
@@ -29293,7 +29322,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>다운로드 속도</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1748"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1795"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Downloads</source>
         <translation>다운로드</translation>
@@ -29384,7 +29413,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>언어</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Log</source>
         <translation>로그</translation>
     </message>
@@ -29444,13 +29473,13 @@ Whichever network is idle lends its share to the other.</source>
         <translation>NZB 파일:</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1255"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1337"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>이름</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-72"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-73"/>
         <source>Also ask</source>
         <translation>함께 검색</translation>
     </message>
@@ -29490,7 +29519,12 @@ Whichever network is idle lends its share to the other.</source>
         <translation>호스터 링크, 한 줄에 하나씩:</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+7"/>
+        <source>Link containers (DLC, RSDF, CCF):</source>
+        <translation>링크 컨테이너 (DLC, RSDF, CCF):</translation>
+    </message>
+    <message>
+        <location line="+4"/>
         <source>Magnet links, one per line:</source>
         <translation>마그넷 링크, 한 줄에 하나씩:</translation>
     </message>
@@ -29907,6 +29941,11 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location line="+2"/>
+        <source>Torrent files:</source>
+        <translation>토렌트 파일:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Torrents</source>
         <translation>토렌트</translation>
     </message>
@@ -29951,7 +29990,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>업로드 속도</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1252"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1334"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation>업로드</translation>
@@ -29962,13 +30001,13 @@ Whichever network is idle lends its share to the other.</source>
         <translation>가동 시간</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1818"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1900"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="+2592"/>
+        <location line="+2721"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet engine unavailable</source>
         <translation>Usenet 엔진을 사용할 수 없음</translation>

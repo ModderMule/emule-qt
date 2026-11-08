@@ -119,6 +119,7 @@ SOURCES += \
     IpcServer.cpp \
     IpcTlsIdentity.cpp \
     main.cpp \
+    MetaRowFiles.cpp \
     MetaSearchService.cpp \
     AutoUpdater.cpp \
     PowerManager.cpp \
@@ -160,6 +161,7 @@ HEADERS += \
     IpcClientHandler.h \
     IpcServer.h \
     IpcTlsIdentity.h \
+    MetaRowFiles.h \
     MetaSearchService.h \
     AutoUpdater.h \
     PowerManager.h \

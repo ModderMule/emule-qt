@@ -34,6 +34,12 @@ bool DaemonHosterWebBackend::action(quint32 id, const QString& op)
     return ask(IpcMsgType::HosterAction, {qint64(id), op}).has_value();
 }
 
+void DaemonHosterWebBackend::openContainer(const QByteArray& data, const QString& fileName,
+                                           std::function<void(int added, const QString& error)> done)
+{
+    Ed3kHosterBridge::openContainerAndAdd(data, fileName, std::move(done));
+}
+
 std::optional<QCborValue> DaemonHosterWebBackend::ask(IpcMsgType type, const QCborArray& fields)
 {
     IpcMessage request(type, 1);

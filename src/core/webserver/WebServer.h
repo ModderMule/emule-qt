@@ -509,14 +509,22 @@ private:
     QHttpServerResponse handleStaticFile(const QString& path);
     QHttpServerResponse renderPage(const QString& page, const QString& sessionId,
                                    const QUrlQuery& query);
-    void dispatchActions(const QUrlQuery& query, const QString& page);
+    /// A file of a multipart/form-data POST.
+    struct WebUpload {
+        QString field;
+        QString fileName;
+        QByteArray data;
+    };
+    void dispatchActions(const QUrlQuery& query, const QString& page, const QList<WebUpload>& uploads = {});
     /// The search form, or the download boxes ticked in its result list.
     void webSearchAction(const QUrlQuery& form);
     void webOptionsAction(const QUrlQuery& form);
-    /// The Torrents page's add form and row buttons.
-    void webTorrentAction(const QUrlQuery& form);
-    /// The Hoster page's add form and row buttons.
-    void webHosterAction(const QUrlQuery& form);
+    /// The Torrents page's add form (magnets, .torrent files) and row buttons.
+    void webTorrentAction(const QUrlQuery& form, const QList<WebUpload>& uploads);
+    /// The Hoster page's add form (links, containers) and row buttons.
+    void webHosterAction(const QUrlQuery& form, const QList<WebUpload>& uploads);
+    /// Uploaded link containers: opened, all their links added (the notice says how it went).
+    void openWebContainers(const QList<WebUpload>& containers);
     /// The ticked meta rows of the web search: fetched and handed to their engines.
     void grabWebMetaRows(const QList<std::array<uint8, 16>>& hashes);
 

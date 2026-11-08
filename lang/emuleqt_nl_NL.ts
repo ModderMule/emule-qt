@@ -1189,7 +1189,7 @@ Heeft commentaren</translation>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4567"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4696"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -27680,26 +27680,26 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
 <context>
     <name>eMule::WebServer</name>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3829"/>
-        <location line="+3711"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3958"/>
+        <location line="+3840"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>Sessie verlopen — log opnieuw in</translation>
     </message>
     <message>
-        <location line="-3756"/>
+        <location line="-3885"/>
         <source>Guests cannot add downloads</source>
         <translation>Gasten kunnen geen downloads toevoegen</translation>
     </message>
     <message>
         <location line="+589"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+180"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+181"/>
         <source>Torrent</source>
         <translation>Torrent</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+19"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+20"/>
         <source>Web</source>
         <translation>Web</translation>
     </message>
@@ -27731,7 +27731,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+32"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-102"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-103"/>
         <source>Name</source>
         <translation>Naam</translation>
     </message>
@@ -27748,7 +27748,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+40"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-104"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-105"/>
         <source>Download</source>
         <translation>Downloaden</translation>
     </message>
@@ -27798,7 +27798,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
         <translation>Dit bestand downloaden</translation>
     </message>
     <message>
-        <location line="+62"/>
+        <location line="+144"/>
         <source>Access denied — no password configured. Set a password in Options → Web Interface.</source>
         <translation>Toegang geweigerd — geen wachtwoord ingesteld. Stel een wachtwoord in via Opties → Webinterface.</translation>
     </message>
@@ -27817,7 +27817,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message numerus="yes">
         <location line="+255"/>
-        <location line="+1038"/>
+        <location line="+1054"/>
         <source>%n download(s) added</source>
         <translation>
             <numerusform>%n download toegevoegd</numerusform>
@@ -27825,7 +27825,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
         </translation>
     </message>
     <message>
-        <location line="-993"/>
+        <location line="-1009"/>
         <source>Not sent yet — the search is waiting (%1) and starts by itself.</source>
         <translation>Nog niet verzonden — de zoekopdracht wacht (%1) en start vanzelf.</translation>
     </message>
@@ -27863,12 +27863,12 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+2279"/>
+        <location line="+2326"/>
         <source>Web Control Panel</source>
         <translation>Webbedieningspaneel</translation>
     </message>
     <message>
-        <location line="-2271"/>
+        <location line="-2318"/>
         <source>Not connected</source>
         <translation>Niet verbonden</translation>
     </message>
@@ -27904,7 +27904,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+126"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+128"/>
         <source>Uploads</source>
         <translation>Uploads</translation>
     </message>
@@ -27920,7 +27920,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-112"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-114"/>
         <source>KB/s</source>
         <translation>KB/s</translation>
     </message>
@@ -27987,43 +27987,43 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     <message>
         <location line="+4"/>
         <location line="+21"/>
-        <location line="+372"/>
+        <location line="+419"/>
         <location line="+1135"/>
         <source>Queued</source>
         <translation>In de wachtrij</translation>
     </message>
     <message>
-        <location line="-1525"/>
+        <location line="-1572"/>
         <source>Downloading metadata</source>
         <translation>Metadata downloaden</translation>
     </message>
     <message>
         <location line="+1"/>
         <location line="+19"/>
-        <location line="+371"/>
+        <location line="+418"/>
         <location line="+1133"/>
         <source>Downloading</source>
         <translation>Downloaden</translation>
     </message>
     <message>
-        <location line="-1529"/>
+        <location line="-1576"/>
         <location line="+9"/>
         <location line="+18"/>
-        <location line="+370"/>
+        <location line="+417"/>
         <source>Paused</source>
         <translation>Gepauzeerd</translation>
     </message>
     <message>
-        <location line="-369"/>
-        <location line="+370"/>
+        <location line="-416"/>
+        <location line="+417"/>
         <location line="+967"/>
         <location line="+163"/>
         <source>Complete</source>
         <translation>Voltooid</translation>
     </message>
     <message>
-        <location line="-1496"/>
-        <location line="+367"/>
+        <location line="-1543"/>
+        <location line="+414"/>
         <source>Failed</source>
         <translation>Mislukt</translation>
     </message>
@@ -28043,14 +28043,14 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
         <translation>Uitpakken</translation>
     </message>
     <message>
-        <location line="-398"/>
+        <location line="-445"/>
         <location line="+18"/>
-        <location line="+381"/>
+        <location line="+428"/>
         <source>Checking</source>
         <translation>Controleren</translation>
     </message>
     <message>
-        <location line="-396"/>
+        <location line="-443"/>
         <source>Finished</source>
         <translation>Voltooid</translation>
     </message>
@@ -28125,8 +28125,18 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
             <numerusform>%n downloads</numerusform>
         </translation>
     </message>
+    <message>
+        <location line="+28"/>
+        <source>%1: %2</source>
+        <translation>%1: %2</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>not added</source>
+        <translation>niet toegevoegd</translation>
+    </message>
     <message numerus="yes">
-        <location line="+22"/>
+        <location line="+3"/>
         <source>%n torrent(s) added</source>
         <translation>
             <numerusform>%n torrent toegevoegd</numerusform>
@@ -28139,12 +28149,33 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
         <translation>%1 van %2 torrent(s) hebben het niet overgenomen.</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="+40"/>
         <source>%1 of %2 download(s) did not take it.</source>
         <translation>%1 van %2 download(s) hebben het niet overgenomen.</translation>
     </message>
     <message numerus="yes">
-        <location line="+22"/>
+        <location line="+7"/>
+        <source>Opening %n container(s)… refresh to see how it went.</source>
+        <translation>
+            <numerusform>%n container openen… vernieuw om het resultaat te zien.</numerusform>
+            <numerusform>%n containers openen… vernieuw om het resultaat te zien.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location line="+9"/>
+        <source>%1: %n link(s) added</source>
+        <translation>
+            <numerusform>%1: %n link toegevoegd</numerusform>
+            <numerusform>%1: %n links toegevoegd</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>%1: no links added: %2</source>
+        <translation>%1: geen links toegevoegd: %2</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+33"/>
         <source>Fetching %n result(s) from the server… refresh to see how it went.</source>
         <translation>
             <numerusform>%n resultaat wordt van de server opgehaald… vernieuw om te zien hoe het ging.</numerusform>
@@ -28225,7 +28256,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+55"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+115"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+117"/>
         <source>Usenet engine unavailable</source>
         <translation>Usenet-engine niet beschikbaar</translation>
     </message>
@@ -28312,7 +28343,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+56"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-169"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-171"/>
         <source>All</source>
         <translation>Alle</translation>
     </message>
@@ -28705,6 +28736,11 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
         <location line="+1"/>
         <source>Language</source>
         <translation>Taal</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Link containers (DLC, RSDF, CCF):</source>
+        <translation>Linkcontainers (DLC, RSDF, CCF):</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -29178,6 +29214,11 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
     </message>
     <message>
         <location line="+2"/>
+        <source>Torrent files:</source>
+        <translation>Torrentbestanden:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Torrents</source>
         <translation>Torrents</translation>
     </message>
@@ -29227,7 +29268,7 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
         <translation>Uptime</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3565"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3694"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet</source>
         <translation>Usenet</translation>

@@ -1209,11 +1209,12 @@ unRestore();
  <span class="icon icon-h_torrent" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span>&nbsp; <b>{{Torrents}}</b>
 </div>
 <div class="search-form">
- <form action="/" method="POST">
+ <form action="/" method="POST" enctype="multipart/form-data">
   <input type="hidden" name="w" value="torrents">
   <input type="hidden" name="op" value="add">
   {{Magnet links, one per line:}}<br>
   <textarea name="links" rows="3" cols="70"></textarea><br>
+  {{Torrent files:}} <input type="file" name="torrents" accept=".torrent" multiple><br>
   <input type="checkbox" name="paused" value="1"> {{Add paused}}&nbsp;
   <input type="submit" value="{{Add}}" [FormOff]>
  </form>
@@ -1287,11 +1288,12 @@ unRestore();
  <span class="icon icon-h_hoster" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span>&nbsp; <b>{{Hoster}}</b>
 </div>
 <div class="search-form">
- <form action="/" method="POST">
+ <form action="/" method="POST" enctype="multipart/form-data">
   <input type="hidden" name="w" value="hoster">
   <input type="hidden" name="op" value="add">
   {{Hoster links, one per line:}}<br>
   <textarea name="links" rows="3" cols="70"></textarea><br>
+  {{Link containers (DLC, RSDF, CCF):}} <input type="file" name="containers" accept=".dlc,.rsdf,.ccf" multiple><br>
   {{Package:}} <input name="package" type="text" size="30">&nbsp;
   <input type="submit" value="{{Add}}" [FormOff]>
  </form>

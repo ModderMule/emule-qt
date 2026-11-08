@@ -2106,6 +2106,68 @@ QByteArray WebServer::renderIncomingPlayer(const QString& relPath, const QString
 
 namespace {
 [[nodiscard]] QUrlQuery formBody(const QByteArray& body);   // defined with the Usenet handlers
+
+/// One part of a multipart/form-data body.
+struct FormPart {
+    QString name;
+    std::optional<QString> fileName;   ///< set: a file input
+    QByteArray data;
+};
+
+/// The parts of a multipart/form-data body (RFC 7578); empty when it is none.
+[[nodiscard]] QList<FormPart> multipartParts(const QByteArray& contentType, const QByteArray& body)
+{
+    QList<FormPart> parts;
+    const qsizetype at = contentType.indexOf("boundary=");
+    if (!contentType.trimmed().toLower().startsWith("multipart/form-data") || at < 0)
+        return parts;
+    QByteArray boundary = contentType.mid(at + 9);
+    if (const qsizetype semi = boundary.indexOf(';'); semi >= 0)
+        boundary.truncate(semi);
+    boundary = boundary.trimmed();
+    if (boundary.size() > 1 && boundary.startsWith('"') && boundary.endsWith('"'))
+        boundary = boundary.mid(1, boundary.size() - 2);
+    if (boundary.isEmpty())
+        return parts;
+    const QByteArray delimiter = "--" + boundary;
+    const QByteArray nextDelimiter = "\r\n" + delimiter;
+    qsizetype pos = body.indexOf(delimiter);
+    while (pos >= 0) {
+        pos += delimiter.size();
+        if (body.mid(pos, 2) == "--")
+            break;   // closing delimiter
+        if (body.mid(pos, 2) == "\r\n")
+            pos += 2;
+        const qsizetype headEnd = body.indexOf("\r\n\r\n", pos);
+        if (headEnd < 0)
+            break;
+        const qsizetype next = body.indexOf(nextDelimiter, headEnd + 4);
+        if (next < 0)
+            break;
+        FormPart part;
+        for (const QByteArray& line : body.mid(pos, headEnd - pos).split('\n')) {
+            if (!line.trimmed().toLower().startsWith("content-disposition:"))
+                continue;
+            // name="…"; filename="…" — quoted, as browsers send them
+            const auto param = [&line](QByteArrayView key) -> std::optional<QString> {
+                const QByteArray want = "; " + key.toByteArray() + "=\"";
+                const qsizetype a = line.indexOf(want);
+                if (a < 0)
+                    return std::nullopt;
+                const qsizetype b = line.indexOf('"', a + want.size());
+                return b < 0 ? std::nullopt
+                             : std::optional(QString::fromUtf8(line.mid(a + want.size(), b - a - want.size())));
+            };
+            part.name = param("name").value_or(QString());
+            part.fileName = param("filename");
+        }
+        part.data = body.mid(headEnd + 4, next - headEnd - 4);
+        if (!part.name.isEmpty())
+            parts.append(std::move(part));
+        pos = next + 2;
+    }
+    return parts;
+}
 }
 
 QHttpServerResponse WebServer::handlePost(const QHttpServerRequest& request)
@@ -2115,7 +2177,27 @@ QHttpServerResponse WebServer::handlePost(const QHttpServerRequest& request)
             QByteArrayLiteral("Web interface not configured"),
             QHttpServerResponse::StatusCode::InternalServerError);
 
-    const QUrlQuery form = formBody(request.body());
+    // a file upload (Torrents, Hoster) is multipart: its text fields read as a form body
+    QList<WebUpload> uploads;
+    QUrlQuery form;
+    const QList<FormPart> parts =
+        multipartParts(request.headers().combinedValue(QByteArrayLiteral("Content-Type")), request.body());
+    if (parts.isEmpty()) {
+        form = formBody(request.body());
+    } else {
+        QStringList fields;
+        for (const FormPart& part : parts) {
+            if (part.fileName) {
+                // an empty file input still sends a nameless part
+                if (!part.fileName->isEmpty() && !part.data.isEmpty())
+                    uploads.append({part.name, *part.fileName, part.data});
+                continue;
+            }
+            fields << QString::fromLatin1(QUrl::toPercentEncoding(part.name)) + u'='
+                          + QString::fromLatin1(QUrl::toPercentEncoding(QString::fromUtf8(part.data)));
+        }
+        form = QUrlQuery(fields.join(u'&'));
+    }
     const WebSessionCheck ses = webSession(request);
     if (!ses.valid || form.hasQueryItem(QStringLiteral("p")))
         return handleLogin(request, form);
@@ -2140,7 +2222,7 @@ QHttpServerResponse WebServer::handlePost(const QHttpServerRequest& request)
     const TranslationRouter::Scope language(m_translations, webLanguage(ses.id));
     const QString activePage = page.isEmpty() ? QStringLiteral("transfer") : page;
     if (ses.admin)
-        dispatchActions(form, activePage);
+        dispatchActions(form, activePage, uploads);
 
     // Answer with a redirect, so a reload shows the page and repeats nothing.
     return redirectTo(QStringLiteral("/?w=%1").arg(QString::fromLatin1(QUrl::toPercentEncoding(activePage))));
@@ -2261,7 +2343,7 @@ QHttpServerResponse WebServer::handlePage(const QHttpServerRequest& request)
 // Action dispatch — execute URL param actions before rendering
 // ---------------------------------------------------------------------------
 
-void WebServer::dispatchActions(const QUrlQuery& query, const QString& page)
+void WebServer::dispatchActions(const QUrlQuery& query, const QString& page, const QList<WebUpload>& uploads)
 {
     // --- ED2K link addition (any page, param "ed2k") ---
     // First: the page branches below return early (MFC WebServer.cpp:1396 runs it unconditionally)
@@ -2383,11 +2465,11 @@ void WebServer::dispatchActions(const QUrlQuery& query, const QString& page)
         return;
     }
     if (page == QStringLiteral("torrents")) {
-        webTorrentAction(query);
+        webTorrentAction(query, uploads);
         return;
     }
     if (page == QStringLiteral("hoster")) {
-        webHosterAction(query);
+        webHosterAction(query, uploads);
         return;
     }
     if (page == QStringLiteral("options")) {
@@ -3427,7 +3509,7 @@ QString WebServer::buildHosterPage(bool isAdmin)
     return WebTemplateEngine::substitute(m_templateEngine->section(QStringLiteral("HOSTER")), vars);
 }
 
-void WebServer::webTorrentAction(const QUrlQuery& form)
+void WebServer::webTorrentAction(const QUrlQuery& form, const QList<WebUpload>& uploads)
 {
     if (!m_torrentBackend || !m_torrentBackend->running())
         return;
@@ -3442,6 +3524,15 @@ void WebServer::webTorrentAction(const QUrlQuery& form)
                 ++added;
             else if (!r.message.isEmpty())
                 errors << r.message;
+        }
+        for (const WebUpload& file : uploads) {
+            if (file.field != QLatin1String("torrents"))
+                continue;
+            const TorrentWebAddResult r = m_torrentBackend->addTorrentFile(file.data, {}, paused);
+            if (r.outcome == TorrentWebAddOutcome::Added)
+                ++added;
+            else
+                errors << tr("%1: %2").arg(file.fileName, r.message.isEmpty() ? tr("not added") : r.message);
         }
         m_webTorrentFailed = added == 0;
         m_webTorrentNotice = tr("%n torrent(s) added", nullptr, added);
@@ -3470,19 +3561,29 @@ void WebServer::webTorrentAction(const QUrlQuery& form)
     }
 }
 
-void WebServer::webHosterAction(const QUrlQuery& form)
+void WebServer::webHosterAction(const QUrlQuery& form, const QList<WebUpload>& uploads)
 {
     if (!m_hosterBackend || !m_hosterBackend->available())
         return;
     const QString op = form.queryItemValue(QStringLiteral("op"));
     if (op == QStringLiteral("add")) {
+        QList<WebUpload> containers;
+        for (const WebUpload& file : uploads)
+            if (file.field == QLatin1String("containers"))
+                containers.append(file);
         const QStringList links = pastedLines(form);
-        if (links.isEmpty())
+        if (links.isEmpty() && containers.isEmpty())
             return;
-        const int added = m_hosterBackend->addLinks(
-            links.join(QLatin1Char('\n')), form.queryItemValue(QStringLiteral("package"), QUrl::FullyDecoded).trimmed());
-        m_webHosterFailed = added == 0;
-        m_webHosterNotice = tr("%n download(s) added", nullptr, added);
+        m_webHosterFailed = false;
+        m_webHosterNotice.clear();
+        if (!links.isEmpty()) {
+            const int added = m_hosterBackend->addLinks(
+                links.join(QLatin1Char('\n')), form.queryItemValue(QStringLiteral("package"), QUrl::FullyDecoded).trimmed());
+            m_webHosterFailed = added == 0;
+            m_webHosterNotice = tr("%n download(s) added", nullptr, added);
+        }
+        if (!containers.isEmpty())
+            openWebContainers(containers);
         return;
     }
 
@@ -3500,21 +3601,49 @@ void WebServer::webHosterAction(const QUrlQuery& form)
     }
 }
 
+void WebServer::openWebContainers(const QList<WebUpload>& containers)
+{
+    // the resolver answers later; replaced by the first answer
+    const QString opening = tr("Opening %n container(s)… refresh to see how it went.", nullptr,
+                               int(containers.size()));
+    m_webHosterNotice = m_webHosterNotice.isEmpty() ? opening : m_webHosterNotice + QStringLiteral("; ") + opening;
+    for (const WebUpload& file : containers) {
+        QPointer<WebServer> self(this);
+        const QString name = file.fileName;
+        m_hosterBackend->openContainer(file.data, name, [self, name, opening](int added, const QString& error) {
+            if (!self)
+                return;
+            const QString line = added > 0 ? tr("%1: %n link(s) added", nullptr, added).arg(name)
+                                           : tr("%1: no links added: %2").arg(name, error);
+            if (added <= 0)
+                logWarning(QStringLiteral("Web hoster: container \"%1\" gave no links: %2").arg(name, error));
+            QString& notice = self->m_webHosterNotice;
+            notice.replace(opening, QString());
+            if (notice.endsWith(QStringLiteral("; ")))
+                notice.chop(2);
+            self->m_webHosterFailed = self->m_webHosterFailed || added <= 0;
+            notice = notice.isEmpty() ? line : notice + QStringLiteral("; ") + line;
+        });
+    }
+}
+
 void WebServer::grabWebMetaRows(const QList<std::array<uint8, 16>>& hashes)
 {
     if (!m_metaGrabBackend || !m_searchList)
         return;
-    // file rows of one release grab it once: their hash with the whole-set index
-    QList<std::array<uint8, 16>> picks;
-    QSet<QByteArray> releases;
+    // file rows of one release grab it once, together: their hash with the whole-set index
+    QList<QList<std::array<uint8, 16>>> picks;
+    QHash<QByteArray, qsizetype> releases;
     for (const auto& hash : hashes) {
         std::array<uint8, 16> whole = hash;
         whole[4] = 0xFF;
         whole[5] = 0xFF;
         const auto key = QByteArray(reinterpret_cast<const char*>(whole.data()), 16);
-        if (!releases.contains(key)) {
-            releases.insert(key);
-            picks.append(hash);
+        if (const auto it = releases.constFind(key); it != releases.cend()) {
+            picks[*it].append(hash);
+        } else {
+            releases.insert(key, picks.size());
+            picks.append({hash});
         }
     }
     // replaced by the first answer
@@ -3523,11 +3652,11 @@ void WebServer::grabWebMetaRows(const QList<std::array<uint8, 16>>& hashes)
     if (m_webSearchNotice.isEmpty())
         m_webSearchNotice = fetching;
 
-    for (const auto& hash : std::as_const(picks)) {
-        const SearchFile* row = m_searchList->searchFileByHash(hash.data(), m_webSearchID);
+    for (const auto& rows : std::as_const(picks)) {
+        const SearchFile* row = m_searchList->searchFileByHash(rows.front().data(), m_webSearchID);
         const QString name = row ? row->fileName() : QString();
         QPointer<WebServer> self(this);
-        m_metaGrabBackend->grab(m_webSearchID, hash, [self, name, fetching](bool ok, const QString& message) {
+        m_metaGrabBackend->grab(m_webSearchID, rows, [self, name, fetching](bool ok, const QString& message) {
             if (!self)
                 return;
             const QString line = ok ? tr("\"%1\" grabbed").arg(name)

@@ -6,12 +6,15 @@
 #include "BtBridge.h"
 #include "Ed3kHosterBridge.h"
 #include "IpcMessage.h"
+#include "MetaRowFiles.h"
 #include "MetaSearchService.h"
 #include "UsenetBridge.h"
+#include "nzb/NzbFile.h"
 #include "queue/UsenetHealth.h"
 
 #include "app/AppContext.h"
 #include "enodemeta/WebLinks.h"
+#include "prefs/Preferences.h"
 #include "search/SearchFile.h"
 #include "search/SearchList.h"
 
@@ -19,6 +22,9 @@
 #include <QCborMap>
 #include <QCoreApplication>
 #include <QMap>
+
+#include <algorithm>
+#include <vector>
 
 namespace eMule {
 
@@ -46,35 +52,61 @@ std::pair<bool, QCborValue> askBridge(Handler handler, IpcMsgType type, const QC
     return {ok, answer.fieldCount() > 1 ? answer.field(1) : QCborValue()};
 }
 
-/// An NZB file row's queue name: its whole-set row's, while the search is live.
-QString releaseName(const SearchFile& row, const std::array<uint8, 16>& hash, uint32 searchID)
+/// NZB files the picked rows keep; empty = all (a whole-set row, the pref off, no match).
+QList<int> keptNzbFiles(const QByteArray& content, const std::vector<MetaRow>& picked)
 {
-    if (row.meta().fileIndex == enodemeta::kFileIndexWholeSet32 || !theApp.searchList)
-        return row.fileName();
-    std::array<uint8, 16> whole = hash;
-    whole[4] = 0xFF;
-    whole[5] = 0xFF;
-    const SearchFile* f = theApp.searchList->searchFileByHash(whole.data(), searchID);
-    return f && f->isMetaResult() && !f->fileName().isEmpty() ? f->fileName() : row.fileName();
+    QList<int> kept;
+    if (picked.empty() || !thePrefs.usenetMetaSelectedFileOnly())
+        return kept;
+    usenet::NzbInfo nzb;
+    QString parseError;
+    if (!usenet::NzbFile::parse(content, nzb, parseError))
+        return kept;
+    for (const MetaRow& r : picked)
+        if (const auto f = resolveNzbFile(nzb, r); f && !kept.contains(*f))
+            kept.append(*f);
+    return kept;
 }
 
-void addFetched(enodemeta::Kind kind, const QString& name, const QByteArray& content,
-                const std::function<void(bool, const QString&)>& done)
+/// Torrent files the picked rows download; empty = all, as the GUI's grab: any row
+/// without its own file means the whole torrent.
+QCborArray wantedTorrentFiles(const QByteArray& content, const std::vector<MetaRow>& picked)
+{
+    if (picked.empty() || !thePrefs.btMetaSelectedFileOnly())
+        return {};
+    QString error;
+    const QCborArray files = BtBridge::inspectTorrent(content, error).value(QStringLiteral("files")).toArray();
+    QCborArray wanted;
+    for (const MetaRow& r : picked) {
+        const auto f = resolveTorrentFile(files, r);
+        if (!f)
+            return {};
+        if (!wanted.contains(*f))
+            wanted.append(*f);
+    }
+    return wanted;
+}
+
+void addFetched(const MetaRow& row, const std::vector<MetaRow>& picked, const QString& name,
+                const enodemeta::pb::MetaFile& file, const std::function<void(bool, const QString&)>& done)
 {
     using enodemeta::Kind;
-    switch (kind) {
+    const QByteArray& content = file.content();
+    switch (row.kind) {
     case Kind::Nzb: {
-        // ToDo: usenetMetaSelectedFileOnly — a file row grabs the whole release here
+        usenet::UsenetAddOptions options;
+        options.keptFiles = keptNzbFiles(content, picked);
         const UsenetBridge::AddResult r =
-            UsenetBridge::addNzbData(content, name, {}, usenet::UsenetAddOrigin::IndexerGrab);
+            UsenetBridge::addNzbData(content, name, options, usenet::UsenetAddOrigin::IndexerGrab);
         done(!r.itemId.isEmpty(), r.error);
         return;
     }
     case Kind::BtV1:
     case Kind::BtV2: {
-        // ToDo: btMetaSelectedFileOnly — a file row adds the whole torrent here
+        // fields 3, 4 null: I2P and stop-after-metadata as the prefs say
         const auto [ok, data] = askBridge(BtBridge::handleRequest, IpcMsgType::AddTorrentFile,
-                                          {content, QString(), false});
+                                          {content, QString(), false, QCborValue(), QCborValue(),
+                                           wantedTorrentFiles(content, picked)});
         const QCborMap m = data.toMap();
         // 0 Added, 1 Duplicate: either way it is in the list
         const qint64 outcome = m.value(QStringLiteral("outcome")).toInteger(4);
@@ -102,6 +134,10 @@ void addFetched(enodemeta::Kind kind, const QString& name, const QByteArray& con
         done(added, ok ? QString() : data.toMap().value(QStringLiteral("error")).toString());
         return;
     }
+    case Kind::Container:
+        Ed3kHosterBridge::openContainerAndAdd(content, suggestedFileName(row, file.contentType()),
+                                              [done](int added, const QString& error) { done(added > 0, error); });
+        return;
     default:
         done(false, QStringLiteral("unsupported result kind"));
         return;
@@ -110,37 +146,40 @@ void addFetched(enodemeta::Kind kind, const QString& name, const QByteArray& con
 
 } // namespace
 
-void DaemonMetaGrabWebBackend::grab(uint32 searchID, const std::array<uint8, 16>& hash,
+void DaemonMetaGrabWebBackend::grab(uint32 searchID, const QList<std::array<uint8, 16>>& rows,
                                     std::function<void(bool ok, const QString& message)> done)
 {
-    const SearchFile* row = theApp.searchList ? theApp.searchList->searchFileByHash(hash.data(), searchID)
-                                              : nullptr;
-    if (!row || !row->isMetaResult()) {
+    // the first row is fetched; all of them say which files to keep
+    std::vector<MetaRow> picked;
+    for (const auto& hash : rows) {
+        const SearchFile* f = theApp.searchList ? theApp.searchList->searchFileByHash(hash.data(), searchID)
+                                                : nullptr;
+        if (!f || !f->isMetaResult())
+            continue;
+        picked.push_back(metaRowOf(*f, QByteArray(reinterpret_cast<const char*>(hash.data()), 16)));
+    }
+    if (picked.empty()) {
         done(false, handlerText("The search result is gone."));
         return;
     }
-    auto& svc = MetaSearchService::instance();
-    const auto target = svc.targetForResult(*row);
-    if (!target) {
+    const MetaRow row = picked.front();
+    if (!row.target) {
         done(false, handlerText("The server of this result offers no download service."));
         return;
     }
-    const enodemeta::Kind kind = row->meta().kind;
-    if (kind == enodemeta::Kind::Container) {
-        done(false, QStringLiteral("a container opens in the app only"));
-        return;
-    }
-    const QString name = kind == enodemeta::Kind::Nzb ? releaseName(*row, hash, searchID) : row->fileName();
-    const QByteArray hash16(reinterpret_cast<const char*>(hash.data()), 16);
-    svc.fetch(*target, hash16, row->meta().catalogId, 0,
-              [kind, name, done = std::move(done)](Ipc::MetaStatus status, const QString& error,
-                                                   const QCborMap& /*meta*/,
-                                                   const enodemeta::pb::MetaFile& file) {
+    // a whole-set row among them: everything
+    if (std::ranges::any_of(picked, &MetaRow::isWholeSet))
+        picked.clear();
+    const QString name = row.isNzb() ? releaseName(row, searchID) : row.name;
+    MetaSearchService::instance().fetch(*row.target, row.hash16, row.catalogId, 0,
+              [row, picked, name, done = std::move(done)](Ipc::MetaStatus status, const QString& error,
+                                                          const QCborMap& /*meta*/,
+                                                          const enodemeta::pb::MetaFile& file) {
         if (status != Ipc::MetaStatus::Ok) {
             done(false, error);
             return;
         }
-        addFetched(kind, name, file.content(), done);
+        addFetched(row, picked, name, file, done);
     });
 }
 

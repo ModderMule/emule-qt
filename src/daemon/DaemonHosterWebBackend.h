@@ -24,6 +24,8 @@ public:
     [[nodiscard]] QCborArray items() const override;
     int addLinks(const QString& text, const QString& package) override;
     bool action(quint32 id, const QString& op) override;
+    void openContainer(const QByteArray& data, const QString& fileName,
+                       std::function<void(int added, const QString& error)> done) override;
 
 private:
     /// The data of a successful Result (null when it has none), else nullopt.
