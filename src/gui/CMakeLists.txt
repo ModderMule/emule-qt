@@ -2,6 +2,9 @@
 # emuleqt — GUI application executable
 #
 # Links against libemulecore + Qt6::Widgets.
+#
+# Everything but app/main.cpp lives in the static lib emulegui, so tests link
+# the objects instead of compiling their own copies.
 # ---------------------------------------------------------------------------
 
 # -- Sub-module source lists ------------------------------------------------
@@ -69,27 +72,31 @@ set(RESOURCES
     "${CMAKE_SOURCE_DIR}/resources/flags.qrc"
 )
 
-# -- Executable target ------------------------------------------------------
+# -- GUI library + executable ------------------------------------------------
 
-qt_add_executable(emuleqt
+set(GUI_MAIN "${CMAKE_CURRENT_SOURCE_DIR}/app/main.cpp")
+set(GUI_LIB_SOURCES
     ${APP_SOURCES}
     ${PANEL_SOURCES}
     ${CONTROL_SOURCES}
     ${DIALOG_SOURCES}
     ${GFX_SOURCES}
     ${GUI_UTIL_SOURCES}
-    ${RESOURCES}
 )
+list(REMOVE_ITEM GUI_LIB_SOURCES "${GUI_MAIN}")
 
-target_include_directories(emuleqt
-    PRIVATE
+add_library(emulegui STATIC ${GUI_LIB_SOURCES})
+add_library(eMule::Gui ALIAS emulegui)
+
+target_include_directories(emulegui
+    PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
 # EMULE_HAVE_BITTORRENT: inherited from the top-level switch; the GUI never links eMule::Bt
 
-target_link_libraries(emuleqt
-    PRIVATE
+target_link_libraries(emulegui
+    PUBLIC
         eMule::Core
         eMule::Ipc
         Qt6::Widgets
@@ -99,12 +106,25 @@ target_link_libraries(emuleqt
         eMule::CommonSettings
 )
 
+# Resources stay in the exe: rcc objects in a static lib need Q_INIT_RESOURCE
+qt_add_executable(emuleqt
+    "${GUI_MAIN}"
+    ${RESOURCES}
+)
+
+# Whole archive: the exe keeps every object, as when it compiled them itself
+target_link_libraries(emuleqt
+    PRIVATE
+        "$<LINK_LIBRARY:WHOLE_ARCHIVE,emulegui>"
+        eMule::CommonSettings
+)
+
 if(APPLE)
-    target_link_libraries(emuleqt PRIVATE "-framework IOKit" "-framework CoreFoundation" "-framework CoreServices")
+    target_link_libraries(emulegui PUBLIC "-framework IOKit" "-framework CoreFoundation" "-framework CoreServices")
 elseif(WIN32)
     # SHChangeNotify in FileAssociation.cpp -- Qt happens to drag shell32 in, but
     # not by contract. ole32/uuid: ITaskbarList3 in TaskbarProgressWin.cpp.
-    target_link_libraries(emuleqt PRIVATE shell32 ole32 uuid)
+    target_link_libraries(emulegui PUBLIC shell32 ole32 uuid)
 
     # Explorer / taskbar icon. Without it the exe has no icon of its own.
     set(APP_ICON_RC "${CMAKE_SOURCE_DIR}/resources/appicon.rc")
@@ -114,7 +134,7 @@ elseif(WIN32)
 elseif(LINUX)
     # Launcher progress (TaskbarProgressUnity.cpp)
     find_package(Qt6 REQUIRED COMPONENTS DBus)
-    target_link_libraries(emuleqt PRIVATE Qt6::DBus)
+    target_link_libraries(emulegui PUBLIC Qt6::DBus)
 endif()
 
 # macOS bundle icon
@@ -186,7 +206,7 @@ endif()
 # -- Precompiled header -------------------------------------------------------
 # Independent PCH for the GUI — cannot REUSE_FROM emulecore because emuleqt
 # links Qt6::Widgets (different include paths / compile flags).
-target_precompile_headers(emuleqt PRIVATE
+target_precompile_headers(emulegui PRIVATE
     # C++ standard library
     <algorithm>
     <vector>
@@ -239,11 +259,15 @@ target_precompile_headers(emuleqt PRIVATE
 file(GLOB TS_FILES "${CMAKE_SOURCE_DIR}/lang/emuleqt_*.ts")
 if(TS_FILES)
     find_package(Qt6 REQUIRED COMPONENTS LinguistTools)
+    # SOURCES: the strings live in emulegui, the exe only has main.cpp
     qt_add_translations(emuleqt
         TS_FILES ${TS_FILES}
+        SOURCES "${GUI_MAIN}" ${GUI_LIB_SOURCES}
         QM_FILES_OUTPUT_VARIABLE QM_FILES
     )
 endif()
+
+set_target_properties(emulegui PROPERTIES FOLDER "Gui")
 
 # Source groups for IDE navigation
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES
