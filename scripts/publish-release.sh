@@ -3,8 +3,8 @@ set -euo pipefail
 
 # Interactive release helper for eMuleQt.
 #
-# Reads the current version from CMakeLists.txt (the VERSION field), lets you
-# either tag that version as-is or pick a new one. When a new version is chosen
+# Reads the current version from CMakeLists.txt (the VERSION field), suggests the
+# next patch version (Enter accepts it) or tags the current one as-is if typed. When a new version is chosen
 # it delegates the multi-file version bump to scripts/bump-version.sh (which
 # keeps CMakeLists.txt, config_win.h and vcpkg.json in lockstep -- everything
 # else derives its version from those), then creates a release commit +
@@ -290,12 +290,12 @@ if [[ "$PUBLISH_ONLY" -eq 1 ]]; then
   echo "Publish-only: republishing the manifest for ${TAG} (no git changes)."
   echo
 else
-  echo "Press Enter to release the current version (${CURRENT}) as tag v${CURRENT},"
-  echo "or type a new version to bump to (suggested next: ${suggest})."
+  echo "Press Enter to bump to ${suggest}, or type a version"
+  echo "(${CURRENT} tags the current version as-is)."
   echo
 
-  read -r -p "Version to release [${CURRENT}]: " NEW
-  NEW="${NEW:-$CURRENT}"
+  read -r -p "New version [${suggest}]: " NEW
+  NEW="${NEW:-$suggest}"
   # normalize away a leading 'v'
   NEW="${NEW#v}"
 

@@ -214,8 +214,10 @@ private slots:
     // serverPreferIPv6: IPv6 only after an IPv4 LowID, moved over in the background
     void lowIdOnIPv4_handsOverWithoutGoingOffline();
     void lowIdOnIPv4_serverClosesIPv4BeforeAnswering();
+    void lowIdOnIPv4_handoverLoginSendsSessionToken();
     void lowIdOnIPv4_refusedSecondSessionClosesIPv4First();
     void lowIdOnIPv4_staysWithoutThePref();
+    void live_enodeTakesOverBothFamiliesByToken();
     void lowIdOnIPv4_staysOnIPv4WhenIPv6IsDead();
 
     // A dynIP name with several addresses
@@ -1642,6 +1644,8 @@ struct HandoverRig {
     ServerConnect conn{list};
     QTcpSocket* side4 = nullptr;
     QTcpSocket* side6 = nullptr;
+    QByteArray sessionToken;   ///< eNode-go ST_NATT_TOKEN sent after the IPv4 login; empty = none
+    QByteArray login6;         ///< the IPv6 handover login as received
 
     bool start()
     {
@@ -1656,12 +1660,37 @@ struct HandoverRig {
             return false;
         side4->readAll();
         writeIdChange(side4, 0x00000042);
+        if (!sessionToken.isEmpty())
+            writeServerIdentToken(side4, sessionToken);
         // Online on IPv4 at once: the IPv6 move runs behind it
         if (!QTest::qWaitFor([&] { return conn.isConnected(); }, 5000)
             || !conn.sessionAddress().isIPv4())
             return false;
         side6 = acceptOn(dual.v6);
-        return side6 && loginArrives(side6);
+        if (!side6 || !loginArrives(side6))
+            return false;
+        login6 = side6->peek(side6->bytesAvailable());
+        return true;
+    }
+
+    /// OP_SERVERIDENT with only ST_NATT_TOKEN (old-format hash tag).
+    static void writeServerIdentToken(QTcpSocket* sock, const QByteArray& token)
+    {
+        QByteArray body(16, '\x11');               // server hash
+        body.append(QByteArray(6, '\0'));          // ip, port
+        const uint32 tagCount = 1;
+        body.append(reinterpret_cast<const char*>(&tagCount), 4);
+        body.append(tokenTag(token));
+        writeRawPacket(sock, OP_EDONKEYPROT, OP_SERVERIDENT, body.constData(), body.size());
+    }
+
+    /// The token as an old-format hash tag: type, name length 1, id, 16 bytes.
+    static QByteArray tokenTag(const QByteArray& token = {})
+    {
+        QByteArray tag("\x01\x01\x00", 3);
+        tag.append(char(ST_NATT_TOKEN));
+        tag.append(token);
+        return tag;
     }
 };
 
@@ -1740,6 +1769,32 @@ void tst_ServerConnect::lowIdOnIPv4_serverClosesIPv4BeforeAnswering()
     rig.conn.disconnect();
 }
 
+// eNode-go: the handover login hands back the live session's token, so the server lets it
+// take that session over instead of refusing it
+void tst_ServerConnect::lowIdOnIPv4_handoverLoginSendsSessionToken()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    HandoverRig rig;
+    if (!rig.dual.v4.entry)
+        QSKIP("no dual-stack loopback listener pair");
+    rig.sessionToken = QByteArray::fromHex("00112233445566778899aabbccddeeff");
+    QVERIFY(rig.start());
+    QVERIFY(rig.login6.contains(HandoverRig::tokenTag(rig.sessionToken)));
+
+    writeIdChange(rig.side6, 0x00000043);
+    QVERIFY(QTest::qWaitFor([&] { return rig.conn.sessionAddress().isIPv6(); }, 5000));
+    rig.conn.disconnect();
+
+    // server sent no token: the handover login carries none
+    HandoverRig plain;
+    QVERIFY(plain.start());
+    QVERIFY(!plain.login6.contains(HandoverRig::tokenTag()));
+    plain.conn.disconnect();
+}
+
 void tst_ServerConnect::lowIdOnIPv4_refusedSecondSessionClosesIPv4First()
 {
     const bool hadLanFilter = thePrefs.filterLANIPs();
@@ -1751,6 +1806,7 @@ void tst_ServerConnect::lowIdOnIPv4_refusedSecondSessionClosesIPv4First()
         QSKIP("no dual-stack loopback listener pair");
     QSignalSpy lost(&rig.conn, &ServerConnect::connectionLost);
     QVERIFY(rig.start());
+    theApp.setPublicIP(0x0403020A);   // what the IPv4 login reported
 
     // An unpatched eNode-go refuses a second session for the hash and closes it
     rig.side6->close();
@@ -1765,7 +1821,64 @@ void tst_ServerConnect::lowIdOnIPv4_refusedSecondSessionClosesIPv4First()
     QVERIFY(QTest::qWaitFor([&] { return rig.conn.isConnected(); }, 5000));
     QVERIFY(rig.conn.sessionAddress().isIPv6());
     QCOMPARE(lost.count(), 0);
+    // the IPv6 login reports no IPv4: the one from before the close is kept
+    QCOMPARE(theApp.ed2kSessionIP(), uint32{0x0403020A});
     rig.conn.disconnect();
+    QCOMPARE(theApp.ed2kSessionIP(), uint32{0});
+}
+
+// Live, opt-in: EMULE_LIVE_ENODE_PORT = an eNode-go listening dual-stack on loopback
+// (127.0.0.1 + ::1). IPv4 LowID -> IPv6 -> HighID recheck over IPv4 -> back to IPv6,
+// each move a token takeover: never offline, never refused.
+void tst_ServerConnect::live_enodeTakesOverBothFamiliesByToken()
+{
+    const uint16 port = static_cast<uint16>(qEnvironmentVariableIntValue("EMULE_LIVE_ENODE_PORT"));
+    if (port == 0)
+        QSKIP("set EMULE_LIVE_ENODE_PORT to a local eNode-go");
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    ServerList list;
+    auto owned = std::make_unique<Server>(htonl(0x7F000001), port);
+    owned->setName(QStringLiteral("live eNode"));
+    owned->addAddress(Address::fromString(QStringLiteral("::1")));
+    Server* entry = list.addServer(std::move(owned));
+    QVERIFY(entry);
+
+    ServerConnect conn(list);
+    auto cfg = makeTestConfig();
+    cfg.preferIPv6OnLowID = true;
+    cfg.listenPort = 4669;   // nothing listens: the server's dial-back fails -> LowID
+    for (size_t i = 0; i < cfg.userHash.size(); ++i)
+        cfg.userHash[i] = static_cast<uint8>(0x5A ^ (i * 7));
+    cfg.userHash[5] = 0x0E;   // eMule marker bytes
+    cfg.userHash[14] = 0x6F;
+    conn.setConfig(cfg);
+
+    bool everOffline = false;
+    bool online = false;
+    connect(&conn, &ServerConnect::stateChanged, &conn, [&] {
+        online = online || conn.isConnected();
+        everOffline = everOffline || (online && !conn.isConnected());
+    });
+    QSignalSpy refused(&conn, &ServerConnect::connectionLost);
+
+    conn.connectToServer(entry, false, true);
+    QVERIFY(QTest::qWaitFor([&] { return conn.isConnected() && conn.isLowID(); }, 15000));
+    // to IPv6 in the background
+    QVERIFY(QTest::qWaitFor([&] { return conn.sessionAddress().isIPv6(); }, 15000));
+    QVERIFY(conn.isConnected());
+
+    // recheck: IPv4 re-login beside the IPv6 session; LowID again -> back to IPv6
+    QVERIFY(conn.requestHighIdRecheck(QStringLiteral("live test")));
+    QVERIFY(QTest::qWaitFor([&] { return conn.sessionAddress().isIPv4(); }, 15000));
+    QVERIFY(QTest::qWaitFor([&] { return conn.sessionAddress().isIPv6(); }, 15000));
+    QTest::qWait(500);
+    QVERIFY(conn.isConnected());
+    QVERIFY(!everOffline);
+    QCOMPARE(refused.count(), 0);
+    conn.disconnect();
 }
 
 void tst_ServerConnect::lowIdOnIPv4_staysWithoutThePref()

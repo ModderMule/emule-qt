@@ -72,6 +72,18 @@ enum class SearchType : uint8 {
     return type == SearchType::MetaUsenet || type == SearchType::MetaTorrent || type == SearchType::MetaWeb;
 }
 
+/// SearchParams::blendMeta bits: Meta API networks also asked beside an ED2K / Kad search.
+inline constexpr uint8 kBlendMetaUsenet  = 0x01;
+inline constexpr uint8 kBlendMetaTorrent = 0x02;
+inline constexpr uint8 kBlendMetaWeb     = 0x04;
+
+/// A search whose rows may be joined by Meta API rows (blendMeta).
+[[nodiscard]] constexpr bool canBlendMetaSearch(SearchType type)
+{
+    return type == SearchType::Automatic || type == SearchType::Ed2kServer
+        || type == SearchType::Ed2kGlobal || type == SearchType::Kademlia;
+}
+
 // ---------------------------------------------------------------------------
 // Automatic search-method resolution
 // ---------------------------------------------------------------------------
@@ -152,6 +164,9 @@ struct SearchParams {
     // Flags
     bool clientSharedFiles = false;
     bool matchKeywords = false;
+    /// kBlendMeta* bits: Meta API searches run beside an ED2K / Kad search, rows in the
+    /// same list (first page only). Not persisted.
+    uint8 blendMeta = 0;
     /// Core's own search (download size lookup): never shown in the GUI. Not persisted.
     bool internal = false;
 };

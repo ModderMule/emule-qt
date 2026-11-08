@@ -23,6 +23,7 @@
 #include "prefs/Preferences.h"
 #include "protocol/Tag.h"
 #include "utils/DiskLoadLimiter.h"
+#include "utils/ReadOnceHint.h"
 #include "utils/Log.h"
 
 #include <QBuffer>
@@ -1307,6 +1308,7 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
 
     const uint16 parts = partCount();
     uint64 remaining = length;
+    ReadOnceHint readOnce(file);   // read once: not kept in the page cache (report 30)
 
     for (uint16 part = 0; part < parts; ++part) {
         const uint64 partLength = std::min(remaining, static_cast<uint64>(PARTSIZE));
@@ -1323,6 +1325,7 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
         }
         md4HashSet.push_back(partHash);
         remaining -= partLength;
+        readOnce.readUpTo(static_cast<qint64>(length - remaining));
 
         if (progressCallback) {
             int percent = static_cast<int>((static_cast<uint64>(part) + 1) * 100 / parts);

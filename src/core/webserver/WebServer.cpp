@@ -61,6 +61,7 @@
 #include <QJsonObject>
 #include <QLocale>
 #include <QMimeDatabase>
+#include <QPointer>
 #include <QPromise>
 #include <QRegularExpression>
 #include <QSet>
@@ -1323,6 +1324,18 @@ QString incomingHref(const QString& path, const QString& token, const QString& l
     return htmlText(href);
 }
 
+/// Where a search row comes from: eD2K, or a network a server's catalogue holds.
+QString webResultNetwork(const SearchFile& f)
+{
+    if (!f.isMetaResult())
+        return QStringLiteral("eD2K");
+    if (f.meta().isNzb())
+        return WebServer::tr("Usenet");
+    if (f.meta().isTorrent())
+        return WebServer::tr("Torrent");
+    return WebServer::tr("Web");
+}
+
 /// The `filetype_*` sprite suffix for a name — MFC _GetWebImageNameForFileType
 /// (srchybrid/WebServer.cpp:4157-4188). Note IMAGE maps to "picture", not
 /// "image": that is what the shipped sprite is called.
@@ -2093,6 +2106,68 @@ QByteArray WebServer::renderIncomingPlayer(const QString& relPath, const QString
 
 namespace {
 [[nodiscard]] QUrlQuery formBody(const QByteArray& body);   // defined with the Usenet handlers
+
+/// One part of a multipart/form-data body.
+struct FormPart {
+    QString name;
+    std::optional<QString> fileName;   ///< set: a file input
+    QByteArray data;
+};
+
+/// The parts of a multipart/form-data body (RFC 7578); empty when it is none.
+[[nodiscard]] QList<FormPart> multipartParts(const QByteArray& contentType, const QByteArray& body)
+{
+    QList<FormPart> parts;
+    const qsizetype at = contentType.indexOf("boundary=");
+    if (!contentType.trimmed().toLower().startsWith("multipart/form-data") || at < 0)
+        return parts;
+    QByteArray boundary = contentType.mid(at + 9);
+    if (const qsizetype semi = boundary.indexOf(';'); semi >= 0)
+        boundary.truncate(semi);
+    boundary = boundary.trimmed();
+    if (boundary.size() > 1 && boundary.startsWith('"') && boundary.endsWith('"'))
+        boundary = boundary.mid(1, boundary.size() - 2);
+    if (boundary.isEmpty())
+        return parts;
+    const QByteArray delimiter = "--" + boundary;
+    const QByteArray nextDelimiter = "\r\n" + delimiter;
+    qsizetype pos = body.indexOf(delimiter);
+    while (pos >= 0) {
+        pos += delimiter.size();
+        if (body.mid(pos, 2) == "--")
+            break;   // closing delimiter
+        if (body.mid(pos, 2) == "\r\n")
+            pos += 2;
+        const qsizetype headEnd = body.indexOf("\r\n\r\n", pos);
+        if (headEnd < 0)
+            break;
+        const qsizetype next = body.indexOf(nextDelimiter, headEnd + 4);
+        if (next < 0)
+            break;
+        FormPart part;
+        for (const QByteArray& line : body.mid(pos, headEnd - pos).split('\n')) {
+            if (!line.trimmed().toLower().startsWith("content-disposition:"))
+                continue;
+            // name="…"; filename="…" — quoted, as browsers send them
+            const auto param = [&line](QByteArrayView key) -> std::optional<QString> {
+                const QByteArray want = "; " + key.toByteArray() + "=\"";
+                const qsizetype a = line.indexOf(want);
+                if (a < 0)
+                    return std::nullopt;
+                const qsizetype b = line.indexOf('"', a + want.size());
+                return b < 0 ? std::nullopt
+                             : std::optional(QString::fromUtf8(line.mid(a + want.size(), b - a - want.size())));
+            };
+            part.name = param("name").value_or(QString());
+            part.fileName = param("filename");
+        }
+        part.data = body.mid(headEnd + 4, next - headEnd - 4);
+        if (!part.name.isEmpty())
+            parts.append(std::move(part));
+        pos = next + 2;
+    }
+    return parts;
+}
 }
 
 QHttpServerResponse WebServer::handlePost(const QHttpServerRequest& request)
@@ -2102,7 +2177,27 @@ QHttpServerResponse WebServer::handlePost(const QHttpServerRequest& request)
             QByteArrayLiteral("Web interface not configured"),
             QHttpServerResponse::StatusCode::InternalServerError);
 
-    const QUrlQuery form = formBody(request.body());
+    // a file upload (Torrents, Hoster) is multipart: its text fields read as a form body
+    QList<WebUpload> uploads;
+    QUrlQuery form;
+    const QList<FormPart> parts =
+        multipartParts(request.headers().combinedValue(QByteArrayLiteral("Content-Type")), request.body());
+    if (parts.isEmpty()) {
+        form = formBody(request.body());
+    } else {
+        QStringList fields;
+        for (const FormPart& part : parts) {
+            if (part.fileName) {
+                // an empty file input still sends a nameless part
+                if (!part.fileName->isEmpty() && !part.data.isEmpty())
+                    uploads.append({part.name, *part.fileName, part.data});
+                continue;
+            }
+            fields << QString::fromLatin1(QUrl::toPercentEncoding(part.name)) + u'='
+                          + QString::fromLatin1(QUrl::toPercentEncoding(QString::fromUtf8(part.data)));
+        }
+        form = QUrlQuery(fields.join(u'&'));
+    }
     const WebSessionCheck ses = webSession(request);
     if (!ses.valid || form.hasQueryItem(QStringLiteral("p")))
         return handleLogin(request, form);
@@ -2127,7 +2222,7 @@ QHttpServerResponse WebServer::handlePost(const QHttpServerRequest& request)
     const TranslationRouter::Scope language(m_translations, webLanguage(ses.id));
     const QString activePage = page.isEmpty() ? QStringLiteral("transfer") : page;
     if (ses.admin)
-        dispatchActions(form, activePage);
+        dispatchActions(form, activePage, uploads);
 
     // Answer with a redirect, so a reload shows the page and repeats nothing.
     return redirectTo(QStringLiteral("/?w=%1").arg(QString::fromLatin1(QUrl::toPercentEncoding(activePage))));
@@ -2248,7 +2343,7 @@ QHttpServerResponse WebServer::handlePage(const QHttpServerRequest& request)
 // Action dispatch — execute URL param actions before rendering
 // ---------------------------------------------------------------------------
 
-void WebServer::dispatchActions(const QUrlQuery& query, const QString& page)
+void WebServer::dispatchActions(const QUrlQuery& query, const QString& page, const QList<WebUpload>& uploads)
 {
     // --- ED2K link addition (any page, param "ed2k") ---
     // First: the page branches below return early (MFC WebServer.cpp:1396 runs it unconditionally)
@@ -2369,6 +2464,14 @@ void WebServer::dispatchActions(const QUrlQuery& query, const QString& page)
         webSearchAction(query);
         return;
     }
+    if (page == QStringLiteral("torrents")) {
+        webTorrentAction(query, uploads);
+        return;
+    }
+    if (page == QStringLiteral("hoster")) {
+        webHosterAction(query, uploads);
+        return;
+    }
     if (page == QStringLiteral("options")) {
         if (query.hasQueryItem(QStringLiteral("saveprefs")))
             webOptionsAction(query);
@@ -2401,12 +2504,19 @@ void WebServer::webSearchAction(const QUrlQuery& form)
     const QStringList picks = form.allQueryItemValues(QStringLiteral("downloads"));
     if (!picks.isEmpty()) {
         int added = 0;
+        QList<std::array<uint8, 16>> metaRows;
         for (const QString& pick : picks) {
             std::array<uint8, 16> hash{};
-            if (pick.size() != 32 || decodeBase16(pick, hash.data(), 16) != 16 || !m_downloadQueue)
+            if (pick.size() != 32 || decodeBase16(pick, hash.data(), 16) != 16)
                 continue;
             const SearchFile* result = m_searchList->searchFileByHash(hash.data(), m_webSearchID);
             if (!result)
+                continue;
+            if (result->isMetaResult()) {
+                metaRows.append(hash);
+                continue;
+            }
+            if (!m_downloadQueue)
                 continue;
             if (m_downloadQueue->addDownloadFromED2KLink(result->getED2kLink(),
                                                          DownloadQueue::defaultTempDir()))
@@ -2414,8 +2524,11 @@ void WebServer::webSearchAction(const QUrlQuery& form)
             if (PartFile* file = m_downloadQueue->fileByID(hash.data()))
                 m_downloadQueue->seedFromSearchResult(file, *result);
         }
-        m_webSearchNotice = tr("%n download(s) added", nullptr, added);
         m_webSearchFailed = false;
+        if (metaRows.isEmpty() || added > 0)
+            m_webSearchNotice = tr("%n download(s) added", nullptr, added);
+        if (!metaRows.isEmpty())
+            grabWebMetaRows(metaRows);
         return;
     }
 
@@ -2432,6 +2545,15 @@ void WebServer::webSearchAction(const QUrlQuery& form)
     params.type = method == QStringLiteral("kademlia") ? SearchType::Kademlia
                 : method == QStringLiteral("global")   ? SearchType::Ed2kGlobal
                                                        : SearchType::Ed2kServer;
+    // the ticked networks: their servers' catalogues are asked too
+    if (canBlendMetaSearch(params.type)) {
+        const auto ticked = [&form](const char* key) {
+            return form.queryItemValue(QLatin1StringView(key)) == QLatin1String("1");
+        };
+        m_webBlendMeta = (ticked("usenet") ? kBlendMetaUsenet : 0) | (ticked("torrent") ? kBlendMetaTorrent : 0)
+                       | (ticked("web") ? kBlendMetaWeb : 0);
+        params.blendMeta = m_webBlendMeta;
+    }
 
     m_webSearchFailed = true;   // the notices below all say why nothing was sent
 
@@ -2580,7 +2702,7 @@ QHttpServerResponse WebServer::renderPage(const QString& page, const QString& se
         QStringLiteral("shared"), QStringLiteral("stats"), QStringLiteral("graphs"),
         QStringLiteral("options"), QStringLiteral("sinfo"), QStringLiteral("log"),
         QStringLiteral("debuglog"), QStringLiteral("kad"), QStringLiteral("myinfo"),
-        QStringLiteral("usenet")
+        QStringLiteral("usenet"), QStringLiteral("torrents"), QStringLiteral("hoster")
     };
     for (const auto& p : pages) {
         headerVars[QStringLiteral("Page_") + p] = (p == page)
@@ -2615,6 +2737,10 @@ QHttpServerResponse WebServer::renderPage(const QString& page, const QString& se
         content = buildMyInfoPage();
     else if (page == QStringLiteral("usenet"))
         content = buildUsenetPage(isAdmin, sessionId, query);
+    else if (page == QStringLiteral("torrents"))
+        content = buildTorrentsPage(isAdmin);
+    else if (page == QStringLiteral("hoster"))
+        content = buildHosterPage(isAdmin);
     else
         content = buildTransferPage(isAdmin, sessionId);
 
@@ -2869,6 +2995,12 @@ QString WebServer::buildSearchPage(bool isAdmin)
         : QStringLiteral("<p%1>%2</p>").arg(m_webSearchFailed ? QStringLiteral(" class=\"failed\"") : QString(),
                                             htmlText(std::exchange(m_webSearchNotice, {})));
     vars[QStringLiteral("SearchResults")] = QString();
+    const auto checked = [this](uint8 bit) {
+        return (m_webBlendMeta & bit) ? QStringLiteral(" checked") : QString();
+    };
+    vars[QStringLiteral("BlendUsenet")] = checked(kBlendMetaUsenet);
+    vars[QStringLiteral("BlendTorrent")] = checked(kBlendMetaTorrent);
+    vars[QStringLiteral("BlendWeb")] = checked(kBlendMetaWeb);
 
     if (m_webSearchID != 0 && m_searchList && m_searchList->hasSearch(m_webSearchID)) {
         // Best sourced first; a page is no place for thousands of rows.
@@ -2888,6 +3020,7 @@ QString WebServer::buildSearchPage(bool isAdmin)
             QHash<QString, QString> line;
             line[QStringLiteral("ResultName")] = htmlText(f->fileName());
             line[QStringLiteral("ResultFileType")] = webFileTypeToken(f->fileName());
+            line[QStringLiteral("ResultNetwork")] = htmlText(webResultNetwork(*f));
             line[QStringLiteral("ResultSize")] = formatByteSize(f->fileSize());
             line[QStringLiteral("ResultHash")] = md4str(f->fileHash());
             line[QStringLiteral("ResultSources")] = QString::number(f->sourceCount());
@@ -3203,6 +3336,340 @@ QString WebServer::buildMyInfoPage()
     }
     return WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("MYINFO")), vars);
+}
+
+// ---------------------------------------------------------------------------
+// Torrents and Hoster pages, meta-row grabs — web page only, no REST routes
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// "12.3" for a percentage bar.
+QString percentText(qint64 done, qint64 size)
+{
+    const double pct = size > 0 ? 100.0 * double(qBound<qint64>(0, done, size)) / double(size) : 0.0;
+    return QString::number(pct, 'f', 1);
+}
+
+QString speedText(qint64 bytesPerSec)
+{
+    return bytesPerSec > 0 ? formatByteRate(double(bytesPerSec)) : QString();
+}
+
+/// A GetTorrents row's state, as words (bt::BtState values).
+QString torrentStatusName(const QCborMap& row)
+{
+    if (const QString error = row.value(QStringLiteral("error")).toString(); !error.isEmpty())
+        return WebServer::tr("Error: %1").arg(error);
+    if (row.value(QStringLiteral("paused")).toBool())
+        return WebServer::tr("Paused");
+    switch (row.value(QStringLiteral("state")).toInteger()) {
+    case 0: return WebServer::tr("Queued");
+    case 1:
+    case 6: return WebServer::tr("Checking");
+    case 2: return WebServer::tr("Downloading metadata");
+    case 3: return WebServer::tr("Downloading");
+    case 4: return WebServer::tr("Finished");
+    case 5: return WebServer::tr("Seeding");
+    case 7: return WebServer::tr("Paused");
+    case 8: return WebServer::tr("Error");
+    case 9: return WebServer::tr("Moving");
+    default: return {};
+    }
+}
+
+/// A GetHosterItems row's state, as words (Ed3kHosterJoin::State values).
+QString hosterStatusName(int state)
+{
+    switch (state) {
+    case 0: return WebServer::tr("Matching");
+    case 1: return WebServer::tr("Looking up");
+    case 2: return WebServer::tr("Checking");
+    case 3: return WebServer::tr("Queued");
+    case 4: return WebServer::tr("Waiting");
+    case 5: return WebServer::tr("Downloading");
+    case 6: return WebServer::tr("Puzzle");
+    case 7: return WebServer::tr("Paused");
+    case 8: return WebServer::tr("Complete");
+    case 9: return WebServer::tr("Gone");
+    case 10: return WebServer::tr("Needs you");
+    case 11: return WebServer::tr("No resolver");
+    case 12: return WebServer::tr("Failed");
+    default: return {};
+    }
+}
+
+[[nodiscard]] QString noticeHtml(QString& notice, bool failed)
+{
+    return notice.isEmpty() ? QString()
+        : QStringLiteral("<p%1>%2</p>").arg(failed ? QStringLiteral(" class=\"failed\"") : QString(),
+                                            htmlText(std::exchange(notice, {})));
+}
+
+/// Non-empty lines of a pasted list.
+[[nodiscard]] QStringList pastedLines(const QUrlQuery& form)
+{
+    QStringList out;
+    const QString text = form.queryItemValue(QStringLiteral("links"), QUrl::FullyDecoded);
+    for (const QString& line : text.split(QRegularExpression(QStringLiteral("[\r\n]+")), Qt::SkipEmptyParts))
+        if (const QString t = line.trimmed(); !t.isEmpty())
+            out << t;
+    return out;
+}
+
+} // namespace
+
+QString WebServer::buildTorrentsPage(bool isAdmin)
+{
+    if (!m_torrentBackend || !m_torrentBackend->running())
+        return WebTemplateEngine::substitute(m_templateEngine->section(QStringLiteral("TORRENTS_UNAVAILABLE")));
+
+    QList<QCborMap> rows;
+    for (const QCborValue& v : m_torrentBackend->torrents())
+        rows.append(v.toMap());
+    std::ranges::sort(rows, [](const QCborMap& a, const QCborMap& b) {
+        return a.value(QStringLiteral("name")).toString().compare(b.value(QStringLiteral("name")).toString(),
+                                                                Qt::CaseInsensitive) < 0;
+    });
+
+    const QString lineTmpl = m_templateEngine->section(QStringLiteral("TORRENT_LINE"));
+    QString lines;
+    qint64 down = 0, up = 0;
+    for (const QCborMap& r : std::as_const(rows)) {
+        const qint64 size = r.value(QStringLiteral("size")).toInteger();
+        const qint64 downloaded = r.value(QStringLiteral("downloaded")).toInteger();
+        const qint64 uploaded = r.value(QStringLiteral("uploaded")).toInteger();
+        down += r.value(QStringLiteral("rateDown")).toInteger();
+        up += r.value(QStringLiteral("rateUp")).toInteger();
+        QHash<QString, QString> v;
+        v[QStringLiteral("TorrentId")] = htmlText(r.value(QStringLiteral("id")).toString());
+        v[QStringLiteral("TorrentName")] = htmlText(r.value(QStringLiteral("name")).toString());
+        v[QStringLiteral("TorrentTitle")] = htmlText(r.value(QStringLiteral("savePath")).toString());
+        v[QStringLiteral("TorrentSize")] = size > 0 ? formatByteSize(size) : QString();
+        v[QStringLiteral("TorrentPercent")] = percentText(r.value(QStringLiteral("done")).toInteger(), size);
+        v[QStringLiteral("TorrentStatus")] = htmlText(torrentStatusName(r));
+        v[QStringLiteral("TorrentDown")] = speedText(r.value(QStringLiteral("rateDown")).toInteger());
+        v[QStringLiteral("TorrentUp")] = speedText(r.value(QStringLiteral("rateUp")).toInteger());
+        v[QStringLiteral("TorrentSeeds")] = QStringLiteral("%1 (%2)").arg(r.value(QStringLiteral("seeds")).toInteger())
+                                                .arg(r.value(QStringLiteral("seedsTotal")).toInteger());
+        v[QStringLiteral("TorrentPeers")] = QStringLiteral("%1 (%2)").arg(r.value(QStringLiteral("peers")).toInteger())
+                                                .arg(r.value(QStringLiteral("peersTotal")).toInteger());
+        v[QStringLiteral("TorrentRatio")] = downloaded > 0
+            ? QString::number(double(uploaded) / double(downloaded), 'f', 2) : QString();
+        lines += WebTemplateEngine::substitute(lineTmpl, v);
+    }
+
+    QHash<QString, QString> vars;
+    vars[QStringLiteral("FormOff")] = isAdmin ? QString() : QStringLiteral("disabled");
+    vars[QStringLiteral("TorrentNotice")] = noticeHtml(m_webTorrentNotice, m_webTorrentFailed);
+    vars[QStringLiteral("TorrentSummary")] = htmlText(
+        tr("%n torrent(s)", nullptr, int(rows.size())) + QStringLiteral(" — ")
+        + tr("Down: %1, up: %2").arg(formatByteRate(double(down)), formatByteRate(double(up))));
+    vars[QStringLiteral("TorrentLines")] = lines;
+    return WebTemplateEngine::substitute(m_templateEngine->section(QStringLiteral("TORRENTS")), vars);
+}
+
+QString WebServer::buildHosterPage(bool isAdmin)
+{
+    if (!m_hosterBackend || !m_hosterBackend->available())
+        return WebTemplateEngine::substitute(m_templateEngine->section(QStringLiteral("HOSTER_UNAVAILABLE")));
+
+    const QCborArray items = m_hosterBackend->items();
+    const QString lineTmpl = m_templateEngine->section(QStringLiteral("HOSTER_LINE"));
+    QString lines;
+    qint64 rate = 0;
+    for (const QCborValue& item : items) {
+        const QCborMap r = item.toMap();
+        const qint64 size = r.value(QStringLiteral("size")).toInteger();
+        rate += r.value(QStringLiteral("speed")).toInteger();
+        QString name = r.value(QStringLiteral("name")).toString();
+        if (name.isEmpty())
+            name = r.value(QStringLiteral("url")).toString();
+        QHash<QString, QString> v;
+        v[QStringLiteral("HosterId")] = QString::number(r.value(QStringLiteral("id")).toInteger());
+        v[QStringLiteral("HosterName")] = htmlText(name);
+        v[QStringLiteral("HosterUrl")] = htmlText(r.value(QStringLiteral("url")).toString());
+        v[QStringLiteral("HosterHost")] = htmlText(r.value(QStringLiteral("host")).toString());
+        v[QStringLiteral("HosterPackage")] = htmlText(r.value(QStringLiteral("package")).toString());
+        v[QStringLiteral("HosterSize")] = size > 0 ? formatByteSize(size) : QString();
+        v[QStringLiteral("HosterPercent")] = percentText(r.value(QStringLiteral("done")).toInteger(), size);
+        v[QStringLiteral("HosterSpeed")] = speedText(r.value(QStringLiteral("speed")).toInteger());
+        v[QStringLiteral("HosterStatus")] = htmlText(hosterStatusName(int(r.value(QStringLiteral("state")).toInteger())));
+        // technical, not localized: what the GUI words from the reason
+        v[QStringLiteral("HosterStatusTitle")] = htmlText(r.value(QStringLiteral("reasonArg")).toString());
+        lines += WebTemplateEngine::substitute(lineTmpl, v);
+    }
+
+    QHash<QString, QString> vars;
+    vars[QStringLiteral("FormOff")] = isAdmin ? QString() : QStringLiteral("disabled");
+    vars[QStringLiteral("HosterNotice")] = noticeHtml(m_webHosterNotice, m_webHosterFailed);
+    vars[QStringLiteral("HosterSummary")] = htmlText(
+        tr("%n download(s)", nullptr, int(items.size())) + QStringLiteral(" — ") + formatByteRate(double(rate)));
+    vars[QStringLiteral("HosterLines")] = lines;
+    return WebTemplateEngine::substitute(m_templateEngine->section(QStringLiteral("HOSTER")), vars);
+}
+
+void WebServer::webTorrentAction(const QUrlQuery& form, const QList<WebUpload>& uploads)
+{
+    if (!m_torrentBackend || !m_torrentBackend->running())
+        return;
+    const QString op = form.queryItemValue(QStringLiteral("op"));
+    if (op == QStringLiteral("add")) {
+        const bool paused = form.queryItemValue(QStringLiteral("paused")) == QLatin1String("1");
+        int added = 0;
+        QStringList errors;
+        for (const QString& link : pastedLines(form)) {
+            const TorrentWebAddResult r = m_torrentBackend->addMagnet(link, {}, paused);
+            if (r.outcome == TorrentWebAddOutcome::Added)
+                ++added;
+            else if (!r.message.isEmpty())
+                errors << r.message;
+        }
+        for (const WebUpload& file : uploads) {
+            if (file.field != QLatin1String("torrents"))
+                continue;
+            const TorrentWebAddResult r = m_torrentBackend->addTorrentFile(file.data, {}, paused);
+            if (r.outcome == TorrentWebAddOutcome::Added)
+                ++added;
+            else
+                errors << tr("%1: %2").arg(file.fileName, r.message.isEmpty() ? tr("not added") : r.message);
+        }
+        m_webTorrentFailed = added == 0;
+        m_webTorrentNotice = tr("%n torrent(s) added", nullptr, added);
+        if (!errors.isEmpty())
+            m_webTorrentNotice += QStringLiteral(" — ") + errors.join(QStringLiteral("; "));
+        return;
+    }
+
+    const QStringList ids = form.allQueryItemValues(QStringLiteral("ids"), QUrl::FullyDecoded);
+    int done = 0;
+    for (const QString& id : ids) {
+        bool ok = false;
+        if (op == QStringLiteral("pause"))
+            ok = m_torrentBackend->pause(id);
+        else if (op == QStringLiteral("resume"))
+            ok = m_torrentBackend->resume(id);
+        else if (op == QStringLiteral("recheck"))
+            ok = m_torrentBackend->recheck(id);
+        else if (op == QStringLiteral("remove") || op == QStringLiteral("delete"))
+            ok = m_torrentBackend->remove(id, op == QStringLiteral("delete"));
+        done += ok ? 1 : 0;
+    }
+    if (!ids.isEmpty() && done < ids.size()) {
+        m_webTorrentFailed = true;
+        m_webTorrentNotice = tr("%1 of %2 torrent(s) did not take it.").arg(ids.size() - done).arg(ids.size());
+    }
+}
+
+void WebServer::webHosterAction(const QUrlQuery& form, const QList<WebUpload>& uploads)
+{
+    if (!m_hosterBackend || !m_hosterBackend->available())
+        return;
+    const QString op = form.queryItemValue(QStringLiteral("op"));
+    if (op == QStringLiteral("add")) {
+        QList<WebUpload> containers;
+        for (const WebUpload& file : uploads)
+            if (file.field == QLatin1String("containers"))
+                containers.append(file);
+        const QStringList links = pastedLines(form);
+        if (links.isEmpty() && containers.isEmpty())
+            return;
+        m_webHosterFailed = false;
+        m_webHosterNotice.clear();
+        if (!links.isEmpty()) {
+            const int added = m_hosterBackend->addLinks(
+                links.join(QLatin1Char('\n')), form.queryItemValue(QStringLiteral("package"), QUrl::FullyDecoded).trimmed());
+            m_webHosterFailed = added == 0;
+            m_webHosterNotice = tr("%n download(s) added", nullptr, added);
+        }
+        if (!containers.isEmpty())
+            openWebContainers(containers);
+        return;
+    }
+
+    static const QStringList kOps = {QStringLiteral("pause"), QStringLiteral("resume"), QStringLiteral("retry"),
+                                     QStringLiteral("remove"), QStringLiteral("delete")};
+    if (!kOps.contains(op))
+        return;
+    const QStringList ids = form.allQueryItemValues(QStringLiteral("ids"));
+    int done = 0;
+    for (const QString& id : ids)
+        done += m_hosterBackend->action(id.toUInt(), op) ? 1 : 0;
+    if (!ids.isEmpty() && done < ids.size()) {
+        m_webHosterFailed = true;
+        m_webHosterNotice = tr("%1 of %2 download(s) did not take it.").arg(ids.size() - done).arg(ids.size());
+    }
+}
+
+void WebServer::openWebContainers(const QList<WebUpload>& containers)
+{
+    // the resolver answers later; replaced by the first answer
+    const QString opening = tr("Opening %n container(s)… refresh to see how it went.", nullptr,
+                               int(containers.size()));
+    m_webHosterNotice = m_webHosterNotice.isEmpty() ? opening : m_webHosterNotice + QStringLiteral("; ") + opening;
+    for (const WebUpload& file : containers) {
+        QPointer<WebServer> self(this);
+        const QString name = file.fileName;
+        m_hosterBackend->openContainer(file.data, name, [self, name, opening](int added, const QString& error) {
+            if (!self)
+                return;
+            const QString line = added > 0 ? tr("%1: %n link(s) added", nullptr, added).arg(name)
+                                           : tr("%1: no links added: %2").arg(name, error);
+            if (added <= 0)
+                logWarning(QStringLiteral("Web hoster: container \"%1\" gave no links: %2").arg(name, error));
+            QString& notice = self->m_webHosterNotice;
+            notice.replace(opening, QString());
+            if (notice.endsWith(QStringLiteral("; ")))
+                notice.chop(2);
+            self->m_webHosterFailed = self->m_webHosterFailed || added <= 0;
+            notice = notice.isEmpty() ? line : notice + QStringLiteral("; ") + line;
+        });
+    }
+}
+
+void WebServer::grabWebMetaRows(const QList<std::array<uint8, 16>>& hashes)
+{
+    if (!m_metaGrabBackend || !m_searchList)
+        return;
+    // file rows of one release grab it once, together: their hash with the whole-set index
+    QList<QList<std::array<uint8, 16>>> picks;
+    QHash<QByteArray, qsizetype> releases;
+    for (const auto& hash : hashes) {
+        std::array<uint8, 16> whole = hash;
+        whole[4] = 0xFF;
+        whole[5] = 0xFF;
+        const auto key = QByteArray(reinterpret_cast<const char*>(whole.data()), 16);
+        if (const auto it = releases.constFind(key); it != releases.cend()) {
+            picks[*it].append(hash);
+        } else {
+            releases.insert(key, picks.size());
+            picks.append({hash});
+        }
+    }
+    // replaced by the first answer
+    const QString fetching = tr("Fetching %n result(s) from the server… refresh to see how it went.", nullptr,
+                                int(picks.size()));
+    if (m_webSearchNotice.isEmpty())
+        m_webSearchNotice = fetching;
+
+    for (const auto& rows : std::as_const(picks)) {
+        const SearchFile* row = m_searchList->searchFileByHash(rows.front().data(), m_webSearchID);
+        const QString name = row ? row->fileName() : QString();
+        QPointer<WebServer> self(this);
+        m_metaGrabBackend->grab(m_webSearchID, rows, [self, name, fetching](bool ok, const QString& message) {
+            if (!self)
+                return;
+            const QString line = ok ? tr("\"%1\" grabbed").arg(name)
+                                    : tr("\"%1\" could not be grabbed: %2").arg(name, message);
+            if (!ok)
+                logWarning(QStringLiteral("Web search: grab of \"%1\" failed: %2").arg(name, message));
+            QString& notice = self->m_webSearchNotice;
+            if (notice == fetching)
+                notice.clear();
+            self->m_webSearchFailed = self->m_webSearchFailed || !ok;
+            notice = notice.isEmpty() ? line : notice + QStringLiteral("; ") + line;
+        });
+    }
 }
 
 // ---------------------------------------------------------------------------

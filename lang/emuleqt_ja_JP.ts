@@ -779,7 +779,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+583"/>
+        <location filename="../src/gui/app/main.cpp" line="+605"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -1253,7 +1253,7 @@ Download it again?</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4229"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4696"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -5759,7 +5759,7 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+934"/>
-        <location line="+220"/>
+        <location line="+224"/>
         <source>Not valid</source>
         <translation>無効</translation>
     </message>
@@ -5820,7 +5820,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">フォワーダー:</translation>
     </message>
     <message>
-        <location line="-1402"/>
+        <location line="-1406"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>Usenet の投稿も ed3k で共有する</translation>
     </message>
@@ -5912,12 +5912,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1196"/>
+        <location line="+1200"/>
         <source> credits/MiB</source>
         <translation> クレジット/MiB</translation>
     </message>
     <message>
-        <location line="-1205"/>
+        <location line="-1209"/>
         <source>Never pay (receipts only)</source>
         <translation>支払わない（受領証のみ）</translation>
     </message>
@@ -6165,12 +6165,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1034"/>
+        <location line="+1042"/>
         <source>not read yet</source>
         <translation>未読み取り</translation>
     </message>
     <message>
-        <location line="-1032"/>
+        <location line="-1040"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>アカウントが残高不足（マイナス）です。続けるには新しいクレジットキーが必要です。</translation>
     </message>
@@ -6556,22 +6556,22 @@ Export?</source>
     </message>
     <message>
         <location line="+39"/>
-        <location line="+220"/>
+        <location line="+224"/>
         <source>Not reachable</source>
         <translation>接続できません</translation>
     </message>
     <message>
-        <location line="-139"/>
+        <location line="-142"/>
         <source>Solve puzzles with these services</source>
         <translation>これらのサービスでパズルを解く</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+1"/>
         <source>A hoster&apos;s image puzzle goes to these paid services first; the puzzle window only comes when none of them answers.</source>
         <translation>ホスターの画像パズルはまずこれらの有料サービスに送られます。どれも答えないときだけパズルの画面が表示されます。</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+6"/>
         <source>Captcha solver services solve the puzzles of hosters for a small fee each. An account needs credit at the service. Logins stay on this computer: never sent to another node, never logged.</source>
         <translation>キャプチャ解決サービスはホスターのパズルを1件ごとに少額で解きます。アカウントにはサービスのクレジットが必要です。ログイン情報はこのコンピューターに保存され、他のノードに送られることもログに残ることもありません。</translation>
     </message>
@@ -6581,7 +6581,7 @@ Export?</source>
         <translation>サービス</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+17"/>
         <source>Add captcha solver</source>
         <translation>キャプチャ解決サービスを追加</translation>
     </message>
@@ -6631,12 +6631,12 @@ Export?</source>
         <translation>高速ダウンロードを自動開始</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+1"/>
         <source>Once the credit balance reaches the threshold, every ed3k download bids the credit factor for priority upload slots. It stops before about 20 credits are left, from what downloads spent in the past seconds, so the account is never overdrawn.</source>
         <translation>クレジット残高がしきい値に達すると、すべての ed3k ダウンロードが優先アップロード枠にクレジット係数で入札します。直近数秒のダウンロードの消費から判断し、残りが約 20 クレジットになる前に停止するため、口座が赤字になることはありません。</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+15"/>
         <source>The most paid per MiB for a priority slot while the autostart runs.</source>
         <translation>自動開始の実行中に優先枠へ支払う 1 MiB あたりの上限。</translation>
     </message>
@@ -6661,7 +6661,7 @@ Export?</source>
         <translation>自動開始しきい値:</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+27"/>
         <source>ed3k is off: this has no effect.</source>
         <translation>ed3k はオフです: この設定は効果がありません。</translation>
     </message>
@@ -6700,7 +6700,7 @@ Export?</source>
         <translation>高速ダウンロードは停止中。残高: %1</translation>
     </message>
     <message>
-        <location line="-686"/>
+        <location line="-694"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -6932,18 +6932,18 @@ Export?</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+233"/>
+        <location line="+236"/>
         <source>User</source>
         <translation>ユーザー</translation>
     </message>
     <message>
-        <location line="-233"/>
-        <location line="+233"/>
+        <location line="-236"/>
+        <location line="+236"/>
         <source>Status</source>
         <translation>ステータス</translation>
     </message>
     <message>
-        <location line="-39"/>
+        <location line="-42"/>
         <source>Add...</source>
         <translation>追加...</translation>
     </message>
@@ -7030,7 +7030,7 @@ Export?</source>
         <translation type="vanished">ホスターリンクを共有</translation>
     </message>
     <message>
-        <location line="+90"/>
+        <location line="+94"/>
         <source>Add hoster account</source>
         <translation>ホスターアカウントを追加</translation>
     </message>
@@ -12968,18 +12968,18 @@ Other members see your nick and posts; your node takes part in passing the room&
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+116"/>
-        <location line="+746"/>
+        <location line="+768"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-563"/>
-        <location line="+23"/>
+        <location line="-585"/>
+        <location line="+31"/>
         <source>New Version Available</source>
         <translation>新しいバージョンが利用可能</translation>
     </message>
     <message>
-        <location line="+286"/>
+        <location line="+300"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K：接続済み (LowID)</translation>
     </message>
@@ -13073,7 +13073,7 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>バージョン確認</translation>
     </message>
     <message>
-        <location line="-1148"/>
+        <location line="-1170"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt を終了</translation>
     </message>
@@ -13093,7 +13093,16 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>eMule Qt のバージョン %1 が利用可能です。</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+17"/>
+        <source>%1
+
+You are running %2, but at least %3 is required: this version may have major bugs. eMule Qt will exit now. Open the eMule Qt website?</source>
+        <translation>%1
+
+現在のバージョンは %2 ですが、%3 以上が必要です。このバージョンには重大な不具合がある可能性があります。eMule Qt を終了します。eMule Qt のウェブサイトを開きますか？</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>%1
 
 You are running %2. Open the eMule Qt website?</source>
@@ -13102,7 +13111,17 @@ You are running %2. Open the eMule Qt website?</source>
 現在 %2 を使用しています。eMule Qt のウェブサイトを開きますか？</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+5"/>
+        <source>Update Required</source>
+        <translation>アップデートが必要です</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Exit</source>
+        <translation>終了</translation>
+    </message>
+    <message>
+        <location line="+22"/>
         <source>You are running the latest version of eMule Qt (v%1).</source>
         <translation>最新バージョンの eMule Qt (v%1) を使用しています。</translation>
     </message>
@@ -20619,14 +20638,14 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
     <name>eMule::SearchPanel</name>
     <message>
         <location filename="../src/gui/panels/SearchPanel.cpp" line="+392"/>
-        <location line="+1240"/>
+        <location line="+1244"/>
         <location line="+21"/>
         <location line="+602"/>
         <source>Download</source>
         <translation>ダウンロード</translation>
     </message>
     <message>
-        <location line="-1843"/>
+        <location line="-1847"/>
         <source>Close All Searches</source>
         <translation>すべての検索を閉じる</translation>
     </message>
@@ -20646,7 +20665,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>種類：</translation>
     </message>
     <message>
-        <location line="+846"/>
+        <location line="+850"/>
         <location line="+9"/>
         <source>Any</source>
         <translation>すべて</translation>
@@ -20693,7 +20712,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>コレクション</translation>
     </message>
     <message>
-        <location line="-858"/>
+        <location line="-862"/>
         <source>Method:</source>
         <translation>方法：</translation>
     </message>
@@ -20748,7 +20767,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>リセット</translation>
     </message>
     <message>
-        <location line="+35"/>
+        <location line="+38"/>
         <source>Web results</source>
         <translation>Web の結果</translation>
     </message>
@@ -20783,7 +20802,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>コーデック：</translation>
     </message>
     <message>
-        <location line="+3013"/>
+        <location line="+3020"/>
         <source>ed3k download added: %1</source>
         <translation>ed3k ダウンロードを追加しました: %1</translation>
     </message>
@@ -20797,7 +20816,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation type="vanished">最小ビットレート [kbps]：</translation>
     </message>
     <message>
-        <location line="-3006"/>
+        <location line="-3013"/>
         <source>Min. Length [s]:</source>
         <translation>最小長さ [秒]：</translation>
     </message>
@@ -20822,7 +20841,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>サーバーがこのネットワークで見つけた結果を表示</translation>
     </message>
     <message>
-        <location line="-257"/>
+        <location line="-260"/>
         <source>ed3k Channel (live)</source>
         <translation>ed3k チャンネル (ライブ)</translation>
     </message>
@@ -20832,7 +20851,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>関連</translation>
     </message>
     <message>
-        <location line="+216"/>
+        <location line="+219"/>
         <source>Usenet results</source>
         <translation>Usenet の結果</translation>
     </message>
@@ -20874,13 +20893,13 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
     <message>
         <location line="+34"/>
         <location line="+37"/>
-        <location line="+204"/>
+        <location line="+205"/>
         <source>Not connected to daemon — search cannot be started.</source>
         <translation>デーモンに接続していません — 検索を開始できません。</translation>
     </message>
     <message>
-        <location line="-225"/>
-        <location line="+54"/>
+        <location line="-226"/>
+        <location line="+55"/>
         <location line="+214"/>
         <source>Search</source>
         <translation>検索</translation>
@@ -20941,12 +20960,12 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>検索「%1」に失敗しました: %2</translation>
     </message>
     <message>
-        <location line="-721"/>
+        <location line="-725"/>
         <source>Usenet search</source>
         <translation>Usenet 検索</translation>
     </message>
     <message>
-        <location line="+965"/>
+        <location line="+969"/>
         <source>%1 results — %2 of %3 indexers</source>
         <translation>%1 件の結果 — %3 件中 %2 件のインデクサー</translation>
     </message>
@@ -21040,7 +21059,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>詳細...</translation>
     </message>
     <message>
-        <location line="-1570"/>
+        <location line="-1574"/>
         <source>Torrent search</source>
         <translation>Torrent 検索</translation>
     </message>
@@ -21050,7 +21069,12 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>Torrent (インデクサー)</translation>
     </message>
     <message>
-        <location line="+130"/>
+        <location line="+38"/>
+        <source>Show results the server found on this network. New eD2K and Kad searches also ask the servers&apos; catalogues of it.</source>
+        <translation>サーバーがこのネットワークで見つけた結果を表示します。新しい eD2K および Kad 検索では、サーバーのカタログにも問い合わせます。</translation>
+    </message>
+    <message>
+        <location line="+95"/>
         <source>Season:</source>
         <translation>シーズン:</translation>
     </message>
@@ -21080,7 +21104,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>映画のみ: imdb.com のアドレスにある映画の IMDb ID。リリース名に関係なく映画が見つかります。</translation>
     </message>
     <message>
-        <location line="+388"/>
+        <location line="+389"/>
         <source>No torrent indexer is configured.</source>
         <translation>Torrent インデクサーが設定されていません。</translation>
     </message>
@@ -21213,7 +21237,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>%1 からプレビューは送られませんでした</translation>
     </message>
     <message>
-        <location line="+391"/>
+        <location line="+397"/>
         <source>Asking servers: %1 / %2</source>
         <translation>サーバーに問い合わせ中：%1 / %2</translation>
     </message>
@@ -21285,7 +21309,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>フィルターリストで非表示の行を表示</translation>
     </message>
     <message>
-        <location line="-1885"/>
+        <location line="-1891"/>
         <location line="+15"/>
         <location line="+10"/>
         <source>Mark as Spam</source>
@@ -28460,19 +28484,19 @@ A password is set for this release.</source>
         <translation>アドレス</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3492"/>
-        <location line="+3374"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3958"/>
+        <location line="+3840"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>セッションの有効期限が切れました — 再度ログインしてください</translation>
     </message>
     <message>
-        <location line="-3419"/>
+        <location line="-3885"/>
         <source>Guests cannot add downloads</source>
         <translation>ゲストはダウンロードを追加できません</translation>
     </message>
     <message>
-        <location line="+649"/>
+        <location line="+661"/>
         <source>Looking for comments on Kad</source>
         <translation>Kad でコメントを検索中</translation>
     </message>
@@ -28504,7 +28528,7 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+40"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+36"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+39"/>
         <source>Download</source>
         <translation>ダウンロード</translation>
     </message>
@@ -28554,7 +28578,7 @@ A password is set for this release.</source>
         <translation>このファイルをダウンロード</translation>
     </message>
     <message>
-        <location line="+62"/>
+        <location line="+144"/>
         <source>Access denied — no password configured. Set a password in Options → Web Interface.</source>
         <translation>アクセスが拒否されました — パスワードが設定されていません。オプション → Web インターフェースでパスワードを設定してください。</translation>
     </message>
@@ -28571,7 +28595,8 @@ A password is set for this release.</source>
         <translation>ログインに失敗しました</translation>
     </message>
     <message numerus="yes">
-        <location line="+238"/>
+        <location line="+255"/>
+        <location line="+1054"/>
         <source>%n download(s) added</source>
         <translation>
             <numerusform>%n 件のダウンロードを追加しました</numerusform>
@@ -28582,7 +28607,7 @@ A password is set for this release.</source>
         <translation type="vanished">未接続 — 検索を送信できませんでした。</translation>
     </message>
     <message>
-        <location line="+35"/>
+        <location line="-1009"/>
         <source>Not sent yet — the search is waiting (%1) and starts by itself.</source>
         <translation>未送信 — 検索は待機中 (%1) で、自動的に開始されます。</translation>
     </message>
@@ -28620,12 +28645,12 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1981"/>
+        <location line="+2326"/>
         <source>Web Control Panel</source>
         <translation>Web コントロールパネル</translation>
     </message>
     <message>
-        <location line="-1973"/>
+        <location line="-2318"/>
         <source>Not connected</source>
         <translation>未接続</translation>
     </message>
@@ -28635,13 +28660,13 @@ A password is set for this release.</source>
         <translation>ブロック中: ネットワークインターフェースが利用できません</translation>
     </message>
     <message>
-        <location line="+299"/>
+        <location line="+303"/>
         <source>Connected</source>
         <translation>接続済み</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+335"/>
+        <location line="+342"/>
         <source>Disconnected</source>
         <translation>未接続</translation>
     </message>
@@ -28718,31 +28743,40 @@ A password is set for this release.</source>
         <translation>利用できません</translation>
     </message>
     <message>
-        <location line="+150"/>
+        <location line="+44"/>
+        <location line="+21"/>
+        <location line="+419"/>
         <location line="+1135"/>
         <source>Queued</source>
         <translation>キュー待ち</translation>
     </message>
     <message>
-        <location line="-1134"/>
+        <location line="-1571"/>
+        <location line="+19"/>
+        <location line="+418"/>
         <location line="+1133"/>
         <source>Downloading</source>
         <translation>ダウンロード中</translation>
     </message>
     <message>
-        <location line="-1132"/>
+        <location line="-1576"/>
+        <location line="+9"/>
+        <location line="+18"/>
+        <location line="+417"/>
         <source>Paused</source>
         <translation>一時停止</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-416"/>
+        <location line="+417"/>
         <location line="+967"/>
         <location line="+163"/>
         <source>Complete</source>
         <translation>完了</translation>
     </message>
     <message>
-        <location line="-1129"/>
+        <location line="-1543"/>
+        <location line="+414"/>
         <source>Failed</source>
         <translation>失敗</translation>
     </message>
@@ -28762,12 +28796,173 @@ A password is set for this release.</source>
         <translation>展開中</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-445"/>
+        <location line="+18"/>
+        <location line="+428"/>
         <source>Checking</source>
         <translation>確認中</translation>
     </message>
     <message>
+        <location line="-2480"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+119"/>
+        <source>Torrent</source>
+        <translation>トレント</translation>
+    </message>
+    <message>
         <location line="+1"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+20"/>
+        <source>Web</source>
+        <translation>Web</translation>
+    </message>
+    <message>
+        <location line="+2027"/>
+        <source>Error: %1</source>
+        <translation>エラー: %1</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Downloading metadata</source>
+        <translation>メタデータを取得中</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Finished</source>
+        <translation>完了</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Seeding</source>
+        <translation>シード中</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Error</source>
+        <translation>エラー</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Moving</source>
+        <translation>移動中</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Matching</source>
+        <translation>照合中</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Looking up</source>
+        <translation>検索中</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Waiting</source>
+        <translation>待機中</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Puzzle</source>
+        <translation>画像認証</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Gone</source>
+        <translation>削除済み</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Needs you</source>
+        <translation>要操作</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>No resolver</source>
+        <translation>リゾルバーなし</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+70"/>
+        <source>%n torrent(s)</source>
+        <translation>
+            <numerusform>%n 件のトレント</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Down: %1, up: %2</source>
+        <translation>下り: %1、上り: %2</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+40"/>
+        <source>%n download(s)</source>
+        <translation>
+            <numerusform>%n 件のダウンロード</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>%1: %2</source>
+        <translation>%1: %2</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>not added</source>
+        <translation>追加されませんでした</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+3"/>
+        <source>%n torrent(s) added</source>
+        <translation>
+            <numerusform>%n 件のトレントを追加しました</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+22"/>
+        <source>%1 of %2 torrent(s) did not take it.</source>
+        <translation>%2 件中 %1 件のトレントで実行できませんでした。</translation>
+    </message>
+    <message>
+        <location line="+40"/>
+        <source>%1 of %2 download(s) did not take it.</source>
+        <translation>%2 件中 %1 件のダウンロードで実行できませんでした。</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+7"/>
+        <source>Opening %n container(s)… refresh to see how it went.</source>
+        <translation>
+            <numerusform>%n 個のコンテナを開いています… 結果は再読み込みで確認できます。</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location line="+9"/>
+        <source>%1: %n link(s) added</source>
+        <translation>
+            <numerusform>%1: %n 件のリンクを追加しました</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>%1: no links added: %2</source>
+        <translation>%1: リンクは追加されませんでした: %2</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+33"/>
+        <source>Fetching %n result(s) from the server… refresh to see how it went.</source>
+        <translation>
+            <numerusform>サーバーから %n 件の結果を取得中… 結果は再読み込みで確認できます。</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+12"/>
+        <source>&quot;%1&quot; grabbed</source>
+        <translation>「%1」を取得しました</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>&quot;%1&quot; could not be grabbed: %2</source>
+        <translation>「%1」を取得できませんでした: %2</translation>
+    </message>
+    <message>
+        <location line="+153"/>
         <source>Unknown</source>
         <translation>不明</translation>
     </message>
@@ -28909,7 +29104,7 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+56"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-35"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-177"/>
         <source>All</source>
         <translation>すべて</translation>
     </message>
@@ -28977,7 +29172,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>アプリの言語 (%1)</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+2"/>
         <source>Any</source>
         <translation>すべて</translation>
     </message>
@@ -29021,7 +29216,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation type="vanished">CD イメージ (.iso .bin ...)</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
         <source>Cancel</source>
         <translation>キャンセル</translation>
     </message>
@@ -29141,12 +29336,12 @@ Whichever network is idle lends its share to the other.</source>
         <translation>ドキュメント (.doc .pdf ...)</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
         <source>Download Speed</source>
         <translation>ダウンロード速度</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1461"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1795"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Downloads</source>
         <translation>ダウンロード</translation>
@@ -29207,7 +29402,7 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location filename="../src/core/webserver/WebServer.cpp" line="+4"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+4"/>
         <source>KB/s</source>
         <translation>KB/s</translation>
     </message>
@@ -29237,7 +29432,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>言語</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Log</source>
         <translation>ログ</translation>
     </message>
@@ -29252,7 +29447,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>ログアウト</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Max Download (KB/s)</source>
         <translation>最大ダウンロード (KB/s)</translation>
     </message>
@@ -29297,13 +29492,23 @@ Whichever network is idle lends its share to the other.</source>
         <translation>NZB ファイル:</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1217"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1337"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>名前</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-57"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-73"/>
+        <source>Also ask</source>
+        <translation>併せて検索</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>BitTorrent is off.</source>
+        <translation>BitTorrent はオフです。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>CD-Image (.iso .bin ...)</source>
         <translation>CD イメージ (.iso .bin ...)</translation>
     </message>
@@ -29313,7 +29518,42 @@ Whichever network is idle lends its share to the other.</source>
         <translation>コレクション</translation>
     </message>
     <message>
-        <location line="+48"/>
+        <location line="+16"/>
+        <source>Down</source>
+        <translation>下り</translation>
+    </message>
+    <message>
+        <location line="+14"/>
+        <source>Hoster</source>
+        <translation>ホスター</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hoster downloads are off.</source>
+        <translation>ホスターのダウンロードはオフです。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hoster links, one per line:</source>
+        <translation>ホスターのリンク（1 行に 1 つ）:</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Link containers (DLC, RSDF, CCF):</source>
+        <translation>リンクコンテナ (DLC, RSDF, CCF):</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Magnet links, one per line:</source>
+        <translation>マグネットリンク（1 行に 1 つ）:</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Network</source>
+        <translation>ネットワーク</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Newsgroups:</source>
         <translation>ニュースグループ:</translation>
     </message>
@@ -29349,6 +29589,16 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location line="+1"/>
+        <source>Package</source>
+        <translation>パッケージ</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Package:</source>
+        <translation>パッケージ:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Password</source>
         <translation>パスワード</translation>
     </message>
@@ -29371,6 +29621,11 @@ Whichever network is idle lends its share to the other.</source>
         <location line="+1"/>
         <source>Pause All</source>
         <translation>すべて一時停止</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peers</source>
+        <translation>ピア</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -29479,6 +29734,16 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location line="+1"/>
+        <source>Ratio</source>
+        <translation>比率</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Recheck</source>
+        <translation>再チェック</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Recheck Firewall</source>
         <translation>ファイアウォールを再チェック</translation>
     </message>
@@ -29514,6 +29779,11 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location line="+1"/>
+        <source>Remove and delete files</source>
+        <translation>削除してファイルも消去</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Remove every Usenet download in &quot;%1&quot; and delete its files?</source>
         <translation>「%1」内のすべての Usenet ダウンロードを削除し、ファイルも消去しますか?</translation>
     </message>
@@ -29526,6 +29796,16 @@ Whichever network is idle lends its share to the other.</source>
         <location line="+1"/>
         <source>Remove the stored password for this download?</source>
         <translation>このダウンロードに保存されたパスワードを削除しますか?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove the ticked downloads and delete their files?</source>
+        <translation>チェックしたダウンロードを削除し、ファイルも消去しますか?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove the ticked torrents and delete their files?</source>
+        <translation>チェックしたトレントを削除し、ファイルも消去しますか?</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -29544,8 +29824,18 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location line="+1"/>
+        <source>Retry</source>
+        <translation>再試行</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Search</source>
         <translation>検索</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Seeds</source>
+        <translation>シード</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -29650,6 +29940,11 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location line="+1"/>
+        <source>The servers&apos; catalogues of these networks are asked too.</source>
+        <translation>これらのネットワークについてサーバーのカタログも検索します。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>These could not be added: %1</source>
         <translation>次のものは追加できませんでした: %1</translation>
     </message>
@@ -29662,6 +29957,16 @@ Whichever network is idle lends its share to the other.</source>
         <location line="+1"/>
         <source>This download is no longer in the queue.</source>
         <translation>このダウンロードはもうキューにありません。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Torrent files:</source>
+        <translation>Torrent ファイル:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Torrents</source>
+        <translation>Torrent</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -29695,11 +30000,16 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location line="+1"/>
+        <source>Up</source>
+        <translation>上り</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Upload Speed</source>
         <translation>アップロード速度</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1214"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1334"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation>アップロード</translation>
@@ -29710,12 +30020,13 @@ Whichever network is idle lends its share to the other.</source>
         <translation>稼働時間</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1900"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+487"/>
+        <location line="+2721"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet engine unavailable</source>
         <translation>Usenet エンジンを利用できません</translation>
@@ -29746,7 +30057,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>動画 (.avi .mkv ...)</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>You have already downloaded %1 of these. Download them again?</source>
         <translation>このうち %1 件はすでにダウンロード済みです。もう一度ダウンロードしますか?</translation>
     </message>

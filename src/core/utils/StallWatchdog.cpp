@@ -370,12 +370,31 @@ QString StallWatchdog::mainThreadKernelState() const
     // state D + a wchan like fuse_wait_answer / folio_wait_bit = waiting for the disk
     const QString task = QStringLiteral("/proc/self/task/%1/").arg(m_mainTid);
     QString state;
+    QString majorFaults;
     if (QFile f(task + QStringLiteral("stat")); f.open(QIODevice::ReadOnly)) {
         const QByteArray stat = f.readAll();
-        // "tid (comm) S ...": the state follows the last ')'
-        if (const qsizetype close = stat.lastIndexOf(')'); close >= 0 && close + 2 < stat.size())
-            state = QString::fromLatin1(stat.mid(close + 2, 1));
+        // "tid (comm) S ...": the state follows the last ')', majflt is the 10th field after it
+        if (const qsizetype close = stat.lastIndexOf(')'); close >= 0 && close + 2 < stat.size()) {
+            const QList<QByteArray> fields = stat.mid(close + 2).split(' ');
+            state = QString::fromLatin1(fields.value(0));
+            majorFaults = QString::fromLatin1(fields.value(9));
+        }
     }
+    // report 29: a page wait on a plain heap read = RAM ran out; show who holds it
+    const auto procFields = [](const QString& path, std::initializer_list<QByteArrayView> keys) {
+        QStringList parts;
+        QFile f(path);
+        if (!f.open(QIODevice::ReadOnly))
+            return parts;
+        for (const QByteArray& line : f.readAll().split('\n')) {
+            for (const QByteArrayView key : keys)
+                if (line.startsWith(key) && line.size() > key.size() && line.at(key.size()) == ':')
+                    parts.append(QString::fromLatin1(line.simplified()));
+        }
+        return parts;
+    };
+    QStringList memory = procFields(QStringLiteral("/proc/self/status"), {"VmRSS", "VmSwap"});
+    memory += procFields(QStringLiteral("/proc/meminfo"), {"MemTotal", "MemAvailable", "SwapTotal", "SwapFree", "Dirty", "Writeback"});
     QString wchan;
     if (QFile f(task + QStringLiteral("wchan")); f.open(QIODevice::ReadOnly))
         wchan = QString::fromLatin1(f.readAll()).trimmed();
@@ -385,6 +404,16 @@ QString StallWatchdog::mainThreadKernelState() const
     QString out = QStringLiteral("Kernel: state %1, wchan %2")
                       .arg(state.isEmpty() ? QStringLiteral("?") : state,
                            wchan.isEmpty() || wchan == u"0" ? QStringLiteral("-") : wchan);
+    if (!majorFaults.isEmpty())
+        out += QStringLiteral(", major faults %1").arg(majorFaults);
+    if (!memory.isEmpty())
+        out += QStringLiteral("\nMemory: ") + memory.join(QStringLiteral(", "));
+    // PSI: share of time tasks waited for memory / disk (kernel 4.20+)
+    for (const auto* kind : {"memory", "io"}) {
+        QFile f(QStringLiteral("/proc/pressure/%1").arg(QLatin1StringView(kind)));
+        if (f.open(QIODevice::ReadOnly))
+            out += QStringLiteral("\nPressure %1: %2").arg(QLatin1StringView(kind), QString::fromLatin1(f.readLine()).trimmed());
+    }
     if (!kernelStack.isEmpty())
         out += QStringLiteral("\nKernel stack:\n") + kernelStack;
     return out;

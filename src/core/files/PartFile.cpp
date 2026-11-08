@@ -28,6 +28,7 @@
 #include "stats/Statistics.h"
 #include "transfer/DownloadQueue.h"
 #include "utils/DiskLoadLimiter.h"
+#include "utils/ReadOnceHint.h"
 #include "utils/FileDate.h"
 #include "utils/Log.h"
 #include "utils/PathUtils.h"
@@ -1467,6 +1468,7 @@ QByteArray PartFile::verifyPartData(
 
     DiskLoadLimiter& diskLoad = DiskLoadLimiter::thisThread();
     diskLoad.setFile(partPath);
+    ReadOnceHint readOnce(file);
     for (uint32 part = 0; part < partCount; ++part) {
         const uint64 start = static_cast<uint64>(part) * PARTSIZE;
         if (start >= fileSize || (!singlePart && part >= partHashes.size()))
@@ -1484,6 +1486,7 @@ QByteArray PartFile::verifyPartData(
             logWarning(QStringLiteral("Rehash: short read in %1 at part %2").arg(partPath).arg(part));
             break;   // the rest stays unread
         }
+        readOnce.readUpTo(static_cast<qint64>(start + len));
 
         std::array<uint8, 16> actual{};
         AICHHashTree* aichPart = aichOut ? aichOut->m_hashTree.findHash(start, len) : nullptr;

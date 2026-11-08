@@ -762,7 +762,7 @@ Schakel de webinterface of REST API in onder Opties → Webinterface.</translati
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+583"/>
+        <location filename="../src/gui/app/main.cpp" line="+605"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -1189,7 +1189,7 @@ Heeft commentaren</translation>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4229"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4696"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -5497,7 +5497,7 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
     </message>
     <message>
         <location line="+934"/>
-        <location line="+220"/>
+        <location line="+224"/>
         <source>Not valid</source>
         <translation>Ongeldig</translation>
     </message>
@@ -5558,7 +5558,7 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
         <translation type="vanished">Doorstuurder:</translation>
     </message>
     <message>
-        <location line="-1402"/>
+        <location line="-1406"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>Usenet-posts ook via ed3k delen</translation>
     </message>
@@ -5650,12 +5650,12 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1196"/>
+        <location line="+1200"/>
         <source> credits/MiB</source>
         <translation> credits/MiB</translation>
     </message>
     <message>
-        <location line="-1205"/>
+        <location line="-1209"/>
         <source>Never pay (receipts only)</source>
         <translation>Nooit betalen (alleen ontvangstbewijzen)</translation>
     </message>
@@ -5903,12 +5903,12 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1034"/>
+        <location line="+1042"/>
         <source>not read yet</source>
         <translation>nog niet uitgelezen</translation>
     </message>
     <message>
-        <location line="-1032"/>
+        <location line="-1040"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Het account staat rood: een nieuwe creditsleutel is de weg verder.</translation>
     </message>
@@ -6294,22 +6294,22 @@ Exporteren?</translation>
     </message>
     <message>
         <location line="+39"/>
-        <location line="+220"/>
+        <location line="+224"/>
         <source>Not reachable</source>
         <translation>Niet bereikbaar</translation>
     </message>
     <message>
-        <location line="-139"/>
+        <location line="-142"/>
         <source>Solve puzzles with these services</source>
         <translation>Puzzels met deze diensten oplossen</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+1"/>
         <source>A hoster&apos;s image puzzle goes to these paid services first; the puzzle window only comes when none of them answers.</source>
         <translation>De afbeeldingspuzzel van een hoster gaat eerst naar deze betaalde diensten; het puzzelvenster komt alleen als geen ervan antwoordt.</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+6"/>
         <source>Captcha solver services solve the puzzles of hosters for a small fee each. An account needs credit at the service. Logins stay on this computer: never sent to another node, never logged.</source>
         <translation>Captcha-oplossers lossen de puzzels van hosters op voor een klein bedrag per stuk. Een account heeft tegoed bij de dienst nodig. Aanmeldgegevens blijven op deze computer: nooit naar een andere node gestuurd, nooit gelogd.</translation>
     </message>
@@ -6319,7 +6319,7 @@ Exporteren?</translation>
         <translation>Dienst</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+17"/>
         <source>Add captcha solver</source>
         <translation>Captcha-oplosser toevoegen</translation>
     </message>
@@ -6369,12 +6369,12 @@ Exporteren?</translation>
         <translation>Snelle download automatisch starten</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+1"/>
         <source>Once the credit balance reaches the threshold, every ed3k download bids the credit factor for priority upload slots. It stops before about 20 credits are left, from what downloads spent in the past seconds, so the account is never overdrawn.</source>
         <translation>Zodra het creditsaldo de drempel bereikt, biedt elke ed3k-download de creditfactor voor upload-slots met voorrang. Het stopt voordat er nog zo&apos;n 20 credits over zijn, op basis van wat downloads de afgelopen seconden uitgaven, zodat de rekening nooit rood staat.</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+15"/>
         <source>The most paid per MiB for a priority slot while the autostart runs.</source>
         <translation>Het meeste dat per MiB voor een voorrangsslot wordt betaald zolang de autostart loopt.</translation>
     </message>
@@ -6399,7 +6399,7 @@ Exporteren?</translation>
         <translation>Autostart-drempel:</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+27"/>
         <source>ed3k is off: this has no effect.</source>
         <translation>ed3k staat uit: dit heeft geen effect.</translation>
     </message>
@@ -6438,7 +6438,7 @@ Exporteren?</translation>
         <translation>Snelle download loopt niet. Saldo: %1</translation>
     </message>
     <message>
-        <location line="-686"/>
+        <location line="-694"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -6670,18 +6670,18 @@ Exporteren?</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+233"/>
+        <location line="+236"/>
         <source>User</source>
         <translation>Gebruiker</translation>
     </message>
     <message>
-        <location line="-233"/>
-        <location line="+233"/>
+        <location line="-236"/>
+        <location line="+236"/>
         <source>Status</source>
         <translation>Status</translation>
     </message>
     <message>
-        <location line="-39"/>
+        <location line="-42"/>
         <source>Add...</source>
         <translation>Toevoegen...</translation>
     </message>
@@ -6768,7 +6768,7 @@ Exporteren?</translation>
         <translation type="vanished">Hosterlinks delen</translation>
     </message>
     <message>
-        <location line="+90"/>
+        <location line="+94"/>
         <source>Add hoster account</source>
         <translation>Hosteraccount toevoegen</translation>
     </message>
@@ -12611,23 +12611,23 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+116"/>
-        <location line="+746"/>
+        <location line="+768"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-608"/>
+        <location line="-630"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt afsluiten</translation>
     </message>
     <message>
         <location line="+45"/>
-        <location line="+23"/>
+        <location line="+31"/>
         <source>New Version Available</source>
         <translation>Nieuwe versie beschikbaar</translation>
     </message>
     <message>
-        <location line="-22"/>
+        <location line="-30"/>
         <source>eMule Qt %1 has been released.</source>
         <translation>eMule Qt %1 is uitgebracht.</translation>
     </message>
@@ -12642,7 +12642,16 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
         <translation>Versie %1 van eMule Qt is beschikbaar.</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+17"/>
+        <source>%1
+
+You are running %2, but at least %3 is required: this version may have major bugs. eMule Qt will exit now. Open the eMule Qt website?</source>
+        <translation>%1
+
+U gebruikt %2, maar minimaal %3 is vereist: deze versie kan ernstige fouten bevatten. eMule Qt wordt nu afgesloten. De eMule Qt-website openen?</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>%1
 
 You are running %2. Open the eMule Qt website?</source>
@@ -12651,7 +12660,17 @@ You are running %2. Open the eMule Qt website?</source>
 U gebruikt %2. De website van eMule Qt openen?</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+5"/>
+        <source>Update Required</source>
+        <translation>Update vereist</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Exit</source>
+        <translation>Afsluiten</translation>
+    </message>
+    <message>
+        <location line="+21"/>
         <location line="+7"/>
         <location line="+1062"/>
         <source>Version Check</source>
@@ -20158,14 +20177,14 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
     </message>
     <message>
         <location line="+103"/>
-        <location line="+1240"/>
+        <location line="+1244"/>
         <location line="+21"/>
         <location line="+602"/>
         <source>Download</source>
         <translation>Downloaden</translation>
     </message>
     <message>
-        <location line="-1843"/>
+        <location line="-1847"/>
         <source>Close All Searches</source>
         <translation>Alle zoekopdrachten sluiten</translation>
     </message>
@@ -20185,7 +20204,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>Type:</translation>
     </message>
     <message>
-        <location line="+846"/>
+        <location line="+850"/>
         <location line="+9"/>
         <source>Any</source>
         <translation>Alle</translation>
@@ -20232,7 +20251,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>Collectie</translation>
     </message>
     <message>
-        <location line="-858"/>
+        <location line="-862"/>
         <source>Method:</source>
         <translation>Methode:</translation>
     </message>
@@ -20302,7 +20321,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>Herstellen</translation>
     </message>
     <message>
-        <location line="+24"/>
+        <location line="+27"/>
         <source>Show results the server found on this network</source>
         <translation>Resultaten tonen die de server op dit netwerk heeft gevonden</translation>
     </message>
@@ -20434,13 +20453,13 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
     <message>
         <location line="+34"/>
         <location line="+37"/>
-        <location line="+204"/>
+        <location line="+205"/>
         <source>Not connected to daemon — search cannot be started.</source>
         <translation>Niet verbonden met daemon — zoeken kan niet worden gestart.</translation>
     </message>
     <message>
-        <location line="-225"/>
-        <location line="+54"/>
+        <location line="-226"/>
+        <location line="+55"/>
         <location line="+214"/>
         <source>Search</source>
         <translation>Zoeken</translation>
@@ -20507,12 +20526,12 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>Zoeken naar &quot;%1&quot; mislukt: %2</translation>
     </message>
     <message>
-        <location line="-721"/>
+        <location line="-725"/>
         <source>Usenet search</source>
         <translation>Usenet zoeken</translation>
     </message>
     <message>
-        <location line="+965"/>
+        <location line="+969"/>
         <source>%1 results — %2 of %3 indexers</source>
         <translation>%1 resultaten — %2 van %3 indexers</translation>
     </message>
@@ -20621,7 +20640,12 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>Er is geen torrent-indexer ingesteld.</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-503"/>
+        <source>Show results the server found on this network. New eD2K and Kad searches also ask the servers&apos; catalogues of it.</source>
+        <translation>Resultaten tonen die de server op dit netwerk heeft gevonden. Nieuwe eD2K- en Kad-zoekopdrachten raadplegen ook de catalogi van de servers.</translation>
+    </message>
+    <message>
+        <location line="+504"/>
         <source>No Usenet indexer is configured.</source>
         <translation>Er is geen Usenet-indexer ingesteld.</translation>
     </message>
@@ -20781,7 +20805,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>Voorvertoning niet beschikbaar — webserver draait niet of streamtoken niet ontvangen.</translation>
     </message>
     <message>
-        <location line="+364"/>
+        <location line="+370"/>
         <source>Asking servers: %1 / %2</source>
         <translation>Servers bevragen: %1 / %2</translation>
     </message>
@@ -27675,19 +27699,31 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
 <context>
     <name>eMule::WebServer</name>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3492"/>
-        <location line="+3374"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3958"/>
+        <location line="+3840"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>Sessie verlopen — log opnieuw in</translation>
     </message>
     <message>
-        <location line="-3419"/>
+        <location line="-3885"/>
         <source>Guests cannot add downloads</source>
         <translation>Gasten kunnen geen downloads toevoegen</translation>
     </message>
     <message>
-        <location line="+649"/>
+        <location line="+589"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+181"/>
+        <source>Torrent</source>
+        <translation>Torrent</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+20"/>
+        <source>Web</source>
+        <translation>Web</translation>
+    </message>
+    <message>
+        <location line="+71"/>
         <source>Looking for comments on Kad</source>
         <translation>Zoeken naar commentaar op Kad</translation>
     </message>
@@ -27714,13 +27750,13 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+32"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+90"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-103"/>
         <source>Name</source>
         <translation>Naam</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+58"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+69"/>
         <source>Size</source>
         <translation>Grootte</translation>
     </message>
@@ -27731,7 +27767,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+40"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-89"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-105"/>
         <source>Download</source>
         <translation>Downloaden</translation>
     </message>
@@ -27781,7 +27817,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
         <translation>Dit bestand downloaden</translation>
     </message>
     <message>
-        <location line="+62"/>
+        <location line="+144"/>
         <source>Access denied — no password configured. Set a password in Options → Web Interface.</source>
         <translation>Toegang geweigerd — geen wachtwoord ingesteld. Stel een wachtwoord in via Opties → Webinterface.</translation>
     </message>
@@ -27799,7 +27835,8 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
         <translation>Aanmelden mislukt</translation>
     </message>
     <message numerus="yes">
-        <location line="+238"/>
+        <location line="+255"/>
+        <location line="+1054"/>
         <source>%n download(s) added</source>
         <translation>
             <numerusform>%n download toegevoegd</numerusform>
@@ -27807,7 +27844,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
         </translation>
     </message>
     <message>
-        <location line="+35"/>
+        <location line="-1009"/>
         <source>Not sent yet — the search is waiting (%1) and starts by itself.</source>
         <translation>Nog niet verzonden — de zoekopdracht wacht (%1) en start vanzelf.</translation>
     </message>
@@ -27845,12 +27882,12 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1981"/>
+        <location line="+2326"/>
         <source>Web Control Panel</source>
         <translation>Webbedieningspaneel</translation>
     </message>
     <message>
-        <location line="-1973"/>
+        <location line="-2318"/>
         <source>Not connected</source>
         <translation>Niet verbonden</translation>
     </message>
@@ -27860,13 +27897,13 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
         <translation>Geblokkeerd: netwerkinterface niet beschikbaar</translation>
     </message>
     <message>
-        <location line="+299"/>
+        <location line="+303"/>
         <source>Connected</source>
         <translation>Verbonden</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+335"/>
+        <location line="+342"/>
         <source>Disconnected</source>
         <translation>Verbinding verbroken</translation>
     </message>
@@ -27886,7 +27923,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+107"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+128"/>
         <source>Uploads</source>
         <translation>Uploads</translation>
     </message>
@@ -27902,7 +27939,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-96"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-114"/>
         <source>KB/s</source>
         <translation>KB/s</translation>
     </message>
@@ -27962,31 +27999,50 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
         <translation>Niet beschikbaar</translation>
     </message>
     <message>
-        <location line="+150"/>
+        <location line="+40"/>
+        <source>Error: %1</source>
+        <translation>Fout: %1</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <location line="+21"/>
+        <location line="+419"/>
         <location line="+1135"/>
         <source>Queued</source>
         <translation>In de wachtrij</translation>
     </message>
     <message>
-        <location line="-1134"/>
+        <location line="-1572"/>
+        <source>Downloading metadata</source>
+        <translation>Metadata downloaden</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+19"/>
+        <location line="+418"/>
         <location line="+1133"/>
         <source>Downloading</source>
         <translation>Downloaden</translation>
     </message>
     <message>
-        <location line="-1132"/>
+        <location line="-1576"/>
+        <location line="+9"/>
+        <location line="+18"/>
+        <location line="+417"/>
         <source>Paused</source>
         <translation>Gepauzeerd</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-416"/>
+        <location line="+417"/>
         <location line="+967"/>
         <location line="+163"/>
         <source>Complete</source>
         <translation>Voltooid</translation>
     </message>
     <message>
-        <location line="-1129"/>
+        <location line="-1543"/>
+        <location line="+414"/>
         <source>Failed</source>
         <translation>Mislukt</translation>
     </message>
@@ -28006,12 +28062,157 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
         <translation>Uitpakken</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-445"/>
+        <location line="+18"/>
+        <location line="+428"/>
         <source>Checking</source>
         <translation>Controleren</translation>
     </message>
     <message>
+        <location line="-443"/>
+        <source>Finished</source>
+        <translation>Voltooid</translation>
+    </message>
+    <message>
         <location line="+1"/>
+        <source>Seeding</source>
+        <translation>Seeden</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Error</source>
+        <translation>Fout</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Moving</source>
+        <translation>Verplaatsen</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Matching</source>
+        <translation>Koppelen</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Looking up</source>
+        <translation>Opzoeken</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Waiting</source>
+        <translation>Wachten</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Puzzle</source>
+        <translation>Puzzel</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Gone</source>
+        <translation>Verdwenen</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Needs you</source>
+        <translation>Actie vereist</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>No resolver</source>
+        <translation>Geen resolver</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+70"/>
+        <source>%n torrent(s)</source>
+        <translation>
+            <numerusform>%n torrent</numerusform>
+            <numerusform>%n torrents</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Down: %1, up: %2</source>
+        <translation>Down: %1, up: %2</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+40"/>
+        <source>%n download(s)</source>
+        <translation>
+            <numerusform>%n download</numerusform>
+            <numerusform>%n downloads</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>%1: %2</source>
+        <translation>%1: %2</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>not added</source>
+        <translation>niet toegevoegd</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+3"/>
+        <source>%n torrent(s) added</source>
+        <translation>
+            <numerusform>%n torrent toegevoegd</numerusform>
+            <numerusform>%n torrents toegevoegd</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+22"/>
+        <source>%1 of %2 torrent(s) did not take it.</source>
+        <translation>%1 van %2 torrent(s) hebben het niet overgenomen.</translation>
+    </message>
+    <message>
+        <location line="+40"/>
+        <source>%1 of %2 download(s) did not take it.</source>
+        <translation>%1 van %2 download(s) hebben het niet overgenomen.</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+7"/>
+        <source>Opening %n container(s)… refresh to see how it went.</source>
+        <translation>
+            <numerusform>%n container openen… vernieuw om het resultaat te zien.</numerusform>
+            <numerusform>%n containers openen… vernieuw om het resultaat te zien.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location line="+9"/>
+        <source>%1: %n link(s) added</source>
+        <translation>
+            <numerusform>%1: %n link toegevoegd</numerusform>
+            <numerusform>%1: %n links toegevoegd</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>%1: no links added: %2</source>
+        <translation>%1: geen links toegevoegd: %2</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+33"/>
+        <source>Fetching %n result(s) from the server… refresh to see how it went.</source>
+        <translation>
+            <numerusform>%n resultaat wordt van de server opgehaald… vernieuw om te zien hoe het ging.</numerusform>
+            <numerusform>%n resultaten worden van de server opgehaald… vernieuw om te zien hoe het ging.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+12"/>
+        <source>&quot;%1&quot; grabbed</source>
+        <translation>&quot;%1&quot; opgehaald</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>&quot;%1&quot; could not be grabbed: %2</source>
+        <translation>&quot;%1&quot; kon niet worden opgehaald: %2</translation>
+    </message>
+    <message>
+        <location line="+153"/>
         <source>Unknown</source>
         <translation>Onbekend</translation>
     </message>
@@ -28074,7 +28275,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+55"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+99"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+117"/>
         <source>Usenet engine unavailable</source>
         <translation>Usenet-engine niet beschikbaar</translation>
     </message>
@@ -28161,7 +28362,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+56"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-147"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-171"/>
         <source>All</source>
         <translation>Alle</translation>
     </message>
@@ -28277,6 +28478,11 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
     </message>
     <message>
         <location line="+2"/>
+        <source>Also ask</source>
+        <translation>Ook vragen</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Any</source>
         <translation>Alle</translation>
     </message>
@@ -28314,6 +28520,11 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
         <location line="+1"/>
         <source>Back to the queue</source>
         <translation>Terug naar de wachtrij</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>BitTorrent is off.</source>
+        <translation>BitTorrent staat uit.</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -28446,6 +28657,11 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
         <translation>Document (.doc .pdf ...)</translation>
     </message>
     <message>
+        <location line="+1"/>
+        <source>Down</source>
+        <translation>Down</translation>
+    </message>
+    <message>
         <location line="+2"/>
         <source>Download Speed</source>
         <translation>Downloadsnelheid</translation>
@@ -28501,6 +28717,21 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
         <translation>Gezondheid:</translation>
     </message>
     <message>
+        <location line="+1"/>
+        <source>Hoster</source>
+        <translation>Hoster</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hoster downloads are off.</source>
+        <translation>Hoster-downloads staan uit.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hoster links, one per line:</source>
+        <translation>Hoster-links, één per regel:</translation>
+    </message>
+    <message>
         <location line="+2"/>
         <source>Kad</source>
         <translation>Kad</translation>
@@ -28527,6 +28758,11 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>Link containers (DLC, RSDF, CCF):</source>
+        <translation>Linkcontainers (DLC, RSDF, CCF):</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Log</source>
         <translation>Log</translation>
     </message>
@@ -28539,6 +28775,11 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
         <location line="+1"/>
         <source>Logout</source>
         <translation>Afmelden</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Magnet links, one per line:</source>
+        <translation>Magnetlinks, één per regel:</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -28587,6 +28828,11 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
     </message>
     <message>
         <location line="+2"/>
+        <source>Network</source>
+        <translation>Netwerk</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Newsgroups:</source>
         <translation>Nieuwsgroepen:</translation>
     </message>
@@ -28622,6 +28868,16 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>Package</source>
+        <translation>Pakket</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Package:</source>
+        <translation>Pakket:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Password</source>
         <translation>Wachtwoord</translation>
     </message>
@@ -28644,6 +28900,11 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
         <location line="+1"/>
         <source>Pause All</source>
         <translation>Alles pauzeren</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peers</source>
+        <translation>Peers</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -28752,6 +29013,16 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>Ratio</source>
+        <translation>Ratio</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Recheck</source>
+        <translation>Opnieuw controleren</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Recheck Firewall</source>
         <translation>Firewall hertesten</translation>
     </message>
@@ -28787,6 +29058,11 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>Remove and delete files</source>
+        <translation>Verwijderen en bestanden wissen</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Remove every Usenet download in &quot;%1&quot; and delete its files?</source>
         <translation>Alle Usenet-downloads in &quot;%1&quot; verwijderen en hun bestanden wissen?</translation>
     </message>
@@ -28799,6 +29075,16 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
         <location line="+1"/>
         <source>Remove the stored password for this download?</source>
         <translation>Het opgeslagen wachtwoord voor deze download verwijderen?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove the ticked downloads and delete their files?</source>
+        <translation>De aangevinkte downloads verwijderen en hun bestanden wissen?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove the ticked torrents and delete their files?</source>
+        <translation>De aangevinkte torrents verwijderen en hun bestanden wissen?</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -28817,8 +29103,18 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>Retry</source>
+        <translation>Opnieuw</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Search</source>
         <translation>Zoeken</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Seeds</source>
+        <translation>Seeds</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -28917,6 +29213,11 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>The servers&apos; catalogues of these networks are asked too.</source>
+        <translation>De catalogi van de servers voor deze netwerken worden ook gevraagd.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>These could not be added: %1</source>
         <translation>Deze konden niet worden toegevoegd: %1</translation>
     </message>
@@ -28929,6 +29230,16 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
         <location line="+1"/>
         <source>This download is no longer in the queue.</source>
         <translation>Deze download staat niet meer in de wachtrij.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Torrent files:</source>
+        <translation>Torrentbestanden:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Torrents</source>
+        <translation>Torrents</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -28962,6 +29273,11 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>Up</source>
+        <translation>Up</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Upload Speed</source>
         <translation>Uploadsnelheid</translation>
     </message>
@@ -28971,12 +29287,13 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
         <translation>Uptime</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3694"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+2"/>
         <source>User</source>
         <translation>Gebruiker</translation>
     </message>
@@ -29001,7 +29318,7 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
         <translation>Video (.avi .mkv ...)</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>You have already downloaded %1 of these. Download them again?</source>
         <translation>U hebt %1 hiervan al gedownload. Opnieuw downloaden?</translation>
     </message>

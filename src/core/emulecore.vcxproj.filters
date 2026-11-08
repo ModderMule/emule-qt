@@ -399,6 +399,9 @@
     <ClCompile Include="utils\DiskLoadLimiter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\ReadOnceHint.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\StallWatchdog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -944,6 +947,12 @@
     <ClInclude Include="webserver\OpenApiWriter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="webserver\HosterWebBackend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="webserver\MetaGrabWebBackend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="webserver\TorrentWebBackend.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1134,6 +1143,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\DiskLoadLimiter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\ReadOnceHint.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\StallWatchdog.h">

@@ -302,6 +302,7 @@
     <ClCompile Include="files\SourceIndex.cpp" />
     <ClCompile Include="utils\BackgroundFileWriter.cpp" />
     <ClCompile Include="utils\DiskLoadLimiter.cpp" />
+    <ClCompile Include="utils\ReadOnceHint.cpp" />
     <ClCompile Include="utils\StallWatchdog.cpp" />
     <ClCompile Include="utils\FileDate.cpp" />
     <ClCompile Include="utils\CommandLine.cpp" />
@@ -522,6 +523,8 @@
     <ClInclude Include="webserver\ApiRegistry.h" />
     <ClInclude Include="webserver\ApiTypes.h" />
     <ClInclude Include="webserver\OpenApiWriter.h" />
+    <ClInclude Include="webserver\HosterWebBackend.h" />
+    <ClInclude Include="webserver\MetaGrabWebBackend.h" />
     <ClInclude Include="webserver\TorrentWebBackend.h" />
     <ClInclude Include="webserver\UsenetWebBackend.h" />
     <ClInclude Include="webserver\WebTemplateStrings.h" />
@@ -589,6 +592,7 @@
     <QtMoc Include="files\PartFileWriteThread.h" />
     <ClInclude Include="utils\BackgroundFileWriter.h" />
     <ClInclude Include="utils\DiskLoadLimiter.h" />
+    <ClInclude Include="utils\ReadOnceHint.h" />
     <ClInclude Include="utils\StallWatchdog.h" />
     <ClInclude Include="utils\FileDate.h" />
     <ClInclude Include="utils\CommandLine.h" />

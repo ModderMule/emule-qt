@@ -102,7 +102,7 @@ jobs:
         run: |
           set -euo pipefail
           zip="protoc-${PROTOC_VERSION}-osx-universal_binary.zip"
-          curl -fsSL --retry 3 --retry-delay 5 -o "$RUNNER_TEMP/$zip" \
+          curl -fsSL --retry 8 --retry-delay 15 --retry-all-errors -o "$RUNNER_TEMP/$zip" \
             "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/$zip"
           echo "${PROTOC_SHA256}  $RUNNER_TEMP/$zip" | shasum -a 256 -c -
           unzip -q "$RUNNER_TEMP/$zip" -d "$RUNNER_TEMP/protoc"

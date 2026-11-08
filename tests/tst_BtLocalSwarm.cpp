@@ -188,6 +188,16 @@ void tst_BtLocalSwarm::seedAndLeech()
     QCOMPARE(readDownloaded(leecher, added.id), m_payload);
     QTRY_VERIFY_WITH_TIMEOUT(leecher.torrent(added.id)->state == BtState::Seeding, 5000);
     QCOMPARE(leecher.files(added.id).size(), 1);
+
+    // a join's flush: one cacheFlushed once the last of two asks is done (a member is
+    // hashed only after it)
+    QSignalSpy flushed(&leecher, &BtSession::cacheFlushed);
+    QVERIFY(!leecher.flushCache(QStringLiteral("bt:v1:none")));
+    QVERIFY(leecher.flushCache(added.id) && leecher.flushCache(added.id));
+    QTRY_COMPARE_WITH_TIMEOUT(flushed.count(), 1, kTimeoutMs);
+    QTest::qWait(200);
+    QCOMPARE(flushed.count(), 1);
+    QCOMPARE(flushed.first().first().toString(), added.id);
     leecher.stop();
     seeder.stop();
 }

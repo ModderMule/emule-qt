@@ -7,6 +7,7 @@
 #include "Ed3kStore.h"
 
 #include "utils/DiskLoadLimiter.h"
+#include "utils/ReadOnceHint.h"
 #include "utils/Log.h"
 
 #include <QCoreApplication>
@@ -68,6 +69,7 @@ std::optional<std::pair<ffi::Hashed, ffi::Bytes>> hashFile(const QString& path, 
     // #136: under the eD2K hashing disk limit too; it read at full speed beside it
     DiskLoadLimiter& diskLoad = DiskLoadLimiter::thisThread();
     diskLoad.setFile(path);   // one budget with eD2K's hashing of the same disk
+    ReadOnceHint readOnce(f);
     while (!f.atEnd()) {
         if (cancel.load())
             return std::nullopt;
@@ -79,6 +81,7 @@ std::optional<std::pair<ffi::Hashed, ffi::Bytes>> hashFile(const QString& path, 
             return std::nullopt;
         if (!h.update({reinterpret_cast<const std::byte*>(chunk.constData()), std::size_t(chunk.size())}))
             return std::nullopt;
+        readOnce.readUpTo(f.pos());
     }
     auto done = h.finish();
     if (!done)
@@ -1584,7 +1587,8 @@ void Ed3kJoinBase::shareKeptHashed(const QString& owner, int member, const ffi::
             return;
         }
         if (hashed->root != root || hashed->size != size) {
-            logInfo(QStringLiteral("kept member %1 of %2 changed: not shared any more").arg(member).arg(owner));
+            logInfo(QStringLiteral("kept member %1 of %2 changed: not shared any more (%3 B, %4; kept %5 B, %6)")
+                        .arg(member).arg(owner).arg(hashed->size).arg(hexOf(hashed->root.bytes)).arg(size).arg(hexOf(root.bytes)));
             Kept kept = readKept(owner);
             std::erase_if(kept.members, [&](const Kept::Member& m) { return m.member == member; });
             writeKept(owner, kept);

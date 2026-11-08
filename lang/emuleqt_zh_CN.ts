@@ -779,7 +779,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+583"/>
+        <location filename="../src/gui/app/main.cpp" line="+605"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -1253,7 +1253,7 @@ Download it again?</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4229"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4696"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -5759,7 +5759,7 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+934"/>
-        <location line="+220"/>
+        <location line="+224"/>
         <source>Not valid</source>
         <translation>无效</translation>
     </message>
@@ -5820,7 +5820,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">转发器：</translation>
     </message>
     <message>
-        <location line="-1402"/>
+        <location line="-1406"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>同时通过 ed3k 共享 Usenet 帖子</translation>
     </message>
@@ -5912,12 +5912,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1196"/>
+        <location line="+1200"/>
         <source> credits/MiB</source>
         <translation> 信用/MiB</translation>
     </message>
     <message>
-        <location line="-1205"/>
+        <location line="-1209"/>
         <source>Never pay (receipts only)</source>
         <translation>从不支付（仅收据）</translation>
     </message>
@@ -6165,12 +6165,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1034"/>
+        <location line="+1042"/>
         <source>not read yet</source>
         <translation>尚未读取</translation>
     </message>
     <message>
-        <location line="-1032"/>
+        <location line="-1040"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>账户已透支：唯一的出路是新的信用密钥。</translation>
     </message>
@@ -6556,22 +6556,22 @@ Export?</source>
     </message>
     <message>
         <location line="+39"/>
-        <location line="+220"/>
+        <location line="+224"/>
         <source>Not reachable</source>
         <translation>无法连接</translation>
     </message>
     <message>
-        <location line="-139"/>
+        <location line="-142"/>
         <source>Solve puzzles with these services</source>
         <translation>用这些服务解答图片验证</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+1"/>
         <source>A hoster&apos;s image puzzle goes to these paid services first; the puzzle window only comes when none of them answers.</source>
         <translation>网盘的图片验证先交给这些付费服务；只有都没有回答时才弹出验证窗口。</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+6"/>
         <source>Captcha solver services solve the puzzles of hosters for a small fee each. An account needs credit at the service. Logins stay on this computer: never sent to another node, never logged.</source>
         <translation>验证码识别服务按次收取少量费用，替你解答网盘的验证。账户需要在该服务有余额。登录信息只保存在本机：不会发给其他节点，也不会写入日志。</translation>
     </message>
@@ -6581,7 +6581,7 @@ Export?</source>
         <translation>服务</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+17"/>
         <source>Add captcha solver</source>
         <translation>添加验证码识别服务</translation>
     </message>
@@ -6631,12 +6631,12 @@ Export?</source>
         <translation>自动开始高速下载</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+1"/>
         <source>Once the credit balance reaches the threshold, every ed3k download bids the credit factor for priority upload slots. It stops before about 20 credits are left, from what downloads spent in the past seconds, so the account is never overdrawn.</source>
         <translation>积分余额达到阈值后，每个 ed3k 下载都会按积分系数竞价优先上传槽。它会根据最近几秒下载的花费，在剩余约 20 积分之前停止，因此账户永远不会透支。</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+15"/>
         <source>The most paid per MiB for a priority slot while the autostart runs.</source>
         <translation>自动开始运行期间，每 MiB 为优先槽支付的最高金额。</translation>
     </message>
@@ -6661,7 +6661,7 @@ Export?</source>
         <translation>自动开始阈值：</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+27"/>
         <source>ed3k is off: this has no effect.</source>
         <translation>ed3k 已关闭：此设置无效。</translation>
     </message>
@@ -6700,7 +6700,7 @@ Export?</source>
         <translation>高速下载未运行。余额：%1</translation>
     </message>
     <message>
-        <location line="-686"/>
+        <location line="-694"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -6932,18 +6932,18 @@ Export?</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+233"/>
+        <location line="+236"/>
         <source>User</source>
         <translation>用户</translation>
     </message>
     <message>
-        <location line="-233"/>
-        <location line="+233"/>
+        <location line="-236"/>
+        <location line="+236"/>
         <source>Status</source>
         <translation>状态</translation>
     </message>
     <message>
-        <location line="-39"/>
+        <location line="-42"/>
         <source>Add...</source>
         <translation>添加...</translation>
     </message>
@@ -7030,7 +7030,7 @@ Export?</source>
         <translation type="vanished">共享网盘链接</translation>
     </message>
     <message>
-        <location line="+90"/>
+        <location line="+94"/>
         <source>Add hoster account</source>
         <translation>添加网盘账户</translation>
     </message>
@@ -12968,18 +12968,18 @@ Other members see your nick and posts; your node takes part in passing the room&
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+116"/>
-        <location line="+746"/>
+        <location line="+768"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-563"/>
-        <location line="+23"/>
+        <location line="-585"/>
+        <location line="+31"/>
         <source>New Version Available</source>
         <translation>有新版本可用</translation>
     </message>
     <message>
-        <location line="+286"/>
+        <location line="+300"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K：已连接 (LowID)</translation>
     </message>
@@ -13073,7 +13073,7 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>版本检查</translation>
     </message>
     <message>
-        <location line="-1148"/>
+        <location line="-1170"/>
         <source>Quit eMule Qt</source>
         <translation>退出 eMule Qt</translation>
     </message>
@@ -13093,7 +13093,16 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>eMule Qt 版本 %1 现已可用。</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+17"/>
+        <source>%1
+
+You are running %2, but at least %3 is required: this version may have major bugs. eMule Qt will exit now. Open the eMule Qt website?</source>
+        <translation>%1
+
+您正在运行 %2，但至少需要 %3：此版本可能存在严重错误。eMule Qt 现在将退出。是否打开 eMule Qt 网站？</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>%1
 
 You are running %2. Open the eMule Qt website?</source>
@@ -13102,7 +13111,17 @@ You are running %2. Open the eMule Qt website?</source>
 您正在运行 %2。是否打开 eMule Qt 网站？</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+5"/>
+        <source>Update Required</source>
+        <translation>需要更新</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Exit</source>
+        <translation>退出</translation>
+    </message>
+    <message>
+        <location line="+22"/>
         <source>You are running the latest version of eMule Qt (v%1).</source>
         <translation>您正在运行最新版本的 eMule Qt (v%1)。</translation>
     </message>
@@ -20619,14 +20638,14 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     <name>eMule::SearchPanel</name>
     <message>
         <location filename="../src/gui/panels/SearchPanel.cpp" line="+392"/>
-        <location line="+1240"/>
+        <location line="+1244"/>
         <location line="+21"/>
         <location line="+602"/>
         <source>Download</source>
         <translation>下载</translation>
     </message>
     <message>
-        <location line="-1843"/>
+        <location line="-1847"/>
         <source>Close All Searches</source>
         <translation>关闭所有搜索</translation>
     </message>
@@ -20646,7 +20665,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>类型：</translation>
     </message>
     <message>
-        <location line="+846"/>
+        <location line="+850"/>
         <location line="+9"/>
         <source>Any</source>
         <translation>任意</translation>
@@ -20693,7 +20712,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>合集</translation>
     </message>
     <message>
-        <location line="-858"/>
+        <location line="-862"/>
         <source>Method:</source>
         <translation>方法：</translation>
     </message>
@@ -20748,7 +20767,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>重置</translation>
     </message>
     <message>
-        <location line="+35"/>
+        <location line="+38"/>
         <source>Web results</source>
         <translation>网页结果</translation>
     </message>
@@ -20783,7 +20802,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>编解码器：</translation>
     </message>
     <message>
-        <location line="+3013"/>
+        <location line="+3020"/>
         <source>ed3k download added: %1</source>
         <translation>已添加 ed3k 下载：%1</translation>
     </message>
@@ -20797,7 +20816,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation type="vanished">最小比特率 [kbps]：</translation>
     </message>
     <message>
-        <location line="-3006"/>
+        <location line="-3013"/>
         <source>Min. Length [s]:</source>
         <translation>最小时长 [秒]：</translation>
     </message>
@@ -20822,7 +20841,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>显示服务器在此网络上找到的结果</translation>
     </message>
     <message>
-        <location line="-257"/>
+        <location line="-260"/>
         <source>ed3k Channel (live)</source>
         <translation>ed3k 频道（直播）</translation>
     </message>
@@ -20832,7 +20851,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>相关</translation>
     </message>
     <message>
-        <location line="+216"/>
+        <location line="+219"/>
         <source>Usenet results</source>
         <translation>Usenet 结果</translation>
     </message>
@@ -20874,13 +20893,13 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     <message>
         <location line="+34"/>
         <location line="+37"/>
-        <location line="+204"/>
+        <location line="+205"/>
         <source>Not connected to daemon — search cannot be started.</source>
         <translation>未连接到守护进程 — 无法开始搜索。</translation>
     </message>
     <message>
-        <location line="-225"/>
-        <location line="+54"/>
+        <location line="-226"/>
+        <location line="+55"/>
         <location line="+214"/>
         <source>Search</source>
         <translation>搜索</translation>
@@ -20941,12 +20960,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>搜索“%1”失败：%2</translation>
     </message>
     <message>
-        <location line="-721"/>
+        <location line="-725"/>
         <source>Usenet search</source>
         <translation>Usenet 搜索</translation>
     </message>
     <message>
-        <location line="+965"/>
+        <location line="+969"/>
         <source>%1 results — %2 of %3 indexers</source>
         <translation>%1 条结果 — %3 个索引器中的 %2 个</translation>
     </message>
@@ -21040,7 +21059,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>详情...</translation>
     </message>
     <message>
-        <location line="-1570"/>
+        <location line="-1574"/>
         <source>Torrent search</source>
         <translation>Torrent 搜索</translation>
     </message>
@@ -21050,7 +21069,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>Torrent（索引器）</translation>
     </message>
     <message>
-        <location line="+130"/>
+        <location line="+38"/>
+        <source>Show results the server found on this network. New eD2K and Kad searches also ask the servers&apos; catalogues of it.</source>
+        <translation>显示服务器在此网络上找到的结果。新的 eD2K 和 Kad 搜索也会查询服务器的目录。</translation>
+    </message>
+    <message>
+        <location line="+95"/>
         <source>Season:</source>
         <translation>季:</translation>
     </message>
@@ -21080,7 +21104,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>仅电影：影片的 IMDb ID，取自其 imdb.com 地址。无论发布名称如何都能找到该影片。</translation>
     </message>
     <message>
-        <location line="+388"/>
+        <location line="+389"/>
         <source>No torrent indexer is configured.</source>
         <translation>尚未配置 Torrent 索引器。</translation>
     </message>
@@ -21213,7 +21237,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>%1 未发送预览</translation>
     </message>
     <message>
-        <location line="+391"/>
+        <location line="+397"/>
         <source>Asking servers: %1 / %2</source>
         <translation>正在询问服务器：%1 / %2</translation>
     </message>
@@ -21285,7 +21309,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>显示被过滤列表隐藏的行</translation>
     </message>
     <message>
-        <location line="-1885"/>
+        <location line="-1891"/>
         <location line="+15"/>
         <location line="+10"/>
         <source>Mark as Spam</source>
@@ -28460,19 +28484,19 @@ A password is set for this release.</source>
         <translation>地址</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3492"/>
-        <location line="+3374"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3958"/>
+        <location line="+3840"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>会话已过期 — 请重新登录</translation>
     </message>
     <message>
-        <location line="-3419"/>
+        <location line="-3885"/>
         <source>Guests cannot add downloads</source>
         <translation>访客无法添加下载</translation>
     </message>
     <message>
-        <location line="+649"/>
+        <location line="+661"/>
         <source>Looking for comments on Kad</source>
         <translation>正在 Kad 上查找评论</translation>
     </message>
@@ -28504,7 +28528,7 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+40"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+36"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+39"/>
         <source>Download</source>
         <translation>下载</translation>
     </message>
@@ -28554,7 +28578,7 @@ A password is set for this release.</source>
         <translation>下载此文件</translation>
     </message>
     <message>
-        <location line="+62"/>
+        <location line="+144"/>
         <source>Access denied — no password configured. Set a password in Options → Web Interface.</source>
         <translation>拒绝访问 — 未设置密码。请在“选项 → Web 界面”中设置密码。</translation>
     </message>
@@ -28571,7 +28595,8 @@ A password is set for this release.</source>
         <translation>登录失败</translation>
     </message>
     <message numerus="yes">
-        <location line="+238"/>
+        <location line="+255"/>
+        <location line="+1054"/>
         <source>%n download(s) added</source>
         <translation>
             <numerusform>已添加 %n 个下载</numerusform>
@@ -28582,7 +28607,7 @@ A password is set for this release.</source>
         <translation type="vanished">未连接 — 无法发送搜索。</translation>
     </message>
     <message>
-        <location line="+35"/>
+        <location line="-1009"/>
         <source>Not sent yet — the search is waiting (%1) and starts by itself.</source>
         <translation>尚未发送 — 搜索正在等待（%1），会自动开始。</translation>
     </message>
@@ -28620,12 +28645,12 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1981"/>
+        <location line="+2326"/>
         <source>Web Control Panel</source>
         <translation>Web 控制面板</translation>
     </message>
     <message>
-        <location line="-1973"/>
+        <location line="-2318"/>
         <source>Not connected</source>
         <translation>未连接</translation>
     </message>
@@ -28635,13 +28660,13 @@ A password is set for this release.</source>
         <translation>已阻止：网络接口不可用</translation>
     </message>
     <message>
-        <location line="+299"/>
+        <location line="+303"/>
         <source>Connected</source>
         <translation>已连接</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+335"/>
+        <location line="+342"/>
         <source>Disconnected</source>
         <translation>已断开</translation>
     </message>
@@ -28718,31 +28743,40 @@ A password is set for this release.</source>
         <translation>不可用</translation>
     </message>
     <message>
-        <location line="+150"/>
+        <location line="+44"/>
+        <location line="+21"/>
+        <location line="+419"/>
         <location line="+1135"/>
         <source>Queued</source>
         <translation>排队中</translation>
     </message>
     <message>
-        <location line="-1134"/>
+        <location line="-1571"/>
+        <location line="+19"/>
+        <location line="+418"/>
         <location line="+1133"/>
         <source>Downloading</source>
         <translation>正在下载</translation>
     </message>
     <message>
-        <location line="-1132"/>
+        <location line="-1576"/>
+        <location line="+9"/>
+        <location line="+18"/>
+        <location line="+417"/>
         <source>Paused</source>
         <translation>已暂停</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-416"/>
+        <location line="+417"/>
         <location line="+967"/>
         <location line="+163"/>
         <source>Complete</source>
         <translation>已完成</translation>
     </message>
     <message>
-        <location line="-1129"/>
+        <location line="-1543"/>
+        <location line="+414"/>
         <source>Failed</source>
         <translation>失败</translation>
     </message>
@@ -28762,12 +28796,173 @@ A password is set for this release.</source>
         <translation>正在解压</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-445"/>
+        <location line="+18"/>
+        <location line="+428"/>
         <source>Checking</source>
         <translation>正在检查</translation>
     </message>
     <message>
+        <location line="-2480"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+119"/>
+        <source>Torrent</source>
+        <translation>种子</translation>
+    </message>
+    <message>
         <location line="+1"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+20"/>
+        <source>Web</source>
+        <translation>网页</translation>
+    </message>
+    <message>
+        <location line="+2027"/>
+        <source>Error: %1</source>
+        <translation>错误：%1</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Downloading metadata</source>
+        <translation>正在下载元数据</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Finished</source>
+        <translation>已完成</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Seeding</source>
+        <translation>做种中</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Error</source>
+        <translation>错误</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Moving</source>
+        <translation>正在移动</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Matching</source>
+        <translation>匹配中</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Looking up</source>
+        <translation>查找中</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Waiting</source>
+        <translation>等待中</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Puzzle</source>
+        <translation>验证码</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Gone</source>
+        <translation>已删除</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Needs you</source>
+        <translation>需要操作</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>No resolver</source>
+        <translation>无解析器</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+70"/>
+        <source>%n torrent(s)</source>
+        <translation>
+            <numerusform>%n 个种子</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Down: %1, up: %2</source>
+        <translation>下载：%1，上传：%2</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+40"/>
+        <source>%n download(s)</source>
+        <translation>
+            <numerusform>%n 个下载</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>%1: %2</source>
+        <translation>%1：%2</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>not added</source>
+        <translation>未添加</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+3"/>
+        <source>%n torrent(s) added</source>
+        <translation>
+            <numerusform>已添加 %n 个种子</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+22"/>
+        <source>%1 of %2 torrent(s) did not take it.</source>
+        <translation>%2 个种子中有 %1 个未执行。</translation>
+    </message>
+    <message>
+        <location line="+40"/>
+        <source>%1 of %2 download(s) did not take it.</source>
+        <translation>%2 个下载中有 %1 个未执行。</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+7"/>
+        <source>Opening %n container(s)… refresh to see how it went.</source>
+        <translation>
+            <numerusform>正在打开 %n 个容器… 刷新即可查看结果。</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location line="+9"/>
+        <source>%1: %n link(s) added</source>
+        <translation>
+            <numerusform>%1：已添加 %n 个链接</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>%1: no links added: %2</source>
+        <translation>%1：未添加任何链接：%2</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+33"/>
+        <source>Fetching %n result(s) from the server… refresh to see how it went.</source>
+        <translation>
+            <numerusform>正在从服务器获取 %n 个结果… 刷新即可查看结果。</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+12"/>
+        <source>&quot;%1&quot; grabbed</source>
+        <translation>已获取“%1”</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>&quot;%1&quot; could not be grabbed: %2</source>
+        <translation>无法获取“%1”：%2</translation>
+    </message>
+    <message>
+        <location line="+153"/>
         <source>Unknown</source>
         <translation>未知</translation>
     </message>
@@ -28909,7 +29104,7 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+56"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-35"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-177"/>
         <source>All</source>
         <translation>全部</translation>
     </message>
@@ -28977,7 +29172,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>应用语言（%1）</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+2"/>
         <source>Any</source>
         <translation>任意</translation>
     </message>
@@ -29021,7 +29216,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation type="vanished">光盘映像 (.iso .bin ...)</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
@@ -29141,12 +29336,12 @@ Whichever network is idle lends its share to the other.</source>
         <translation>文档 (.doc .pdf ...)</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
         <source>Download Speed</source>
         <translation>下载速度</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1461"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1795"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Downloads</source>
         <translation>下载</translation>
@@ -29207,7 +29402,7 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location filename="../src/core/webserver/WebServer.cpp" line="+4"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+4"/>
         <source>KB/s</source>
         <translation>KB/s</translation>
     </message>
@@ -29237,7 +29432,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>语言</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Log</source>
         <translation>日志</translation>
     </message>
@@ -29252,7 +29447,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>注销</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Max Download (KB/s)</source>
         <translation>最大下载 (KB/s)</translation>
     </message>
@@ -29297,13 +29492,23 @@ Whichever network is idle lends its share to the other.</source>
         <translation>NZB 文件：</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1217"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1337"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>名称</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-57"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-73"/>
+        <source>Also ask</source>
+        <translation>同时搜索</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>BitTorrent is off.</source>
+        <translation>BitTorrent 已关闭。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>CD-Image (.iso .bin ...)</source>
         <translation>CD 映像 (.iso .bin ...)</translation>
     </message>
@@ -29313,7 +29518,42 @@ Whichever network is idle lends its share to the other.</source>
         <translation>合集</translation>
     </message>
     <message>
-        <location line="+48"/>
+        <location line="+16"/>
+        <source>Down</source>
+        <translation>下载</translation>
+    </message>
+    <message>
+        <location line="+14"/>
+        <source>Hoster</source>
+        <translation>网盘</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hoster downloads are off.</source>
+        <translation>网盘下载已关闭。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hoster links, one per line:</source>
+        <translation>网盘链接，每行一个：</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Link containers (DLC, RSDF, CCF):</source>
+        <translation>链接容器 (DLC, RSDF, CCF)：</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Magnet links, one per line:</source>
+        <translation>磁力链接，每行一个：</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Network</source>
+        <translation>网络</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Newsgroups:</source>
         <translation>新闻组：</translation>
     </message>
@@ -29349,6 +29589,16 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location line="+1"/>
+        <source>Package</source>
+        <translation>包</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Package:</source>
+        <translation>包：</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Password</source>
         <translation>密码</translation>
     </message>
@@ -29371,6 +29621,11 @@ Whichever network is idle lends its share to the other.</source>
         <location line="+1"/>
         <source>Pause All</source>
         <translation>全部暂停</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peers</source>
+        <translation>下载数</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -29479,6 +29734,16 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location line="+1"/>
+        <source>Ratio</source>
+        <translation>分享率</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Recheck</source>
+        <translation>重新校验</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Recheck Firewall</source>
         <translation>重新检查防火墙</translation>
     </message>
@@ -29514,6 +29779,11 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location line="+1"/>
+        <source>Remove and delete files</source>
+        <translation>移除并删除文件</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Remove every Usenet download in &quot;%1&quot; and delete its files?</source>
         <translation>移除“%1”中的所有 Usenet 下载并删除其文件？</translation>
     </message>
@@ -29526,6 +29796,16 @@ Whichever network is idle lends its share to the other.</source>
         <location line="+1"/>
         <source>Remove the stored password for this download?</source>
         <translation>移除此下载已保存的密码？</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove the ticked downloads and delete their files?</source>
+        <translation>移除勾选的下载并删除其文件？</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove the ticked torrents and delete their files?</source>
+        <translation>移除勾选的种子并删除其文件？</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -29544,8 +29824,18 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location line="+1"/>
+        <source>Retry</source>
+        <translation>重试</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Search</source>
         <translation>搜索</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Seeds</source>
+        <translation>做种数</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -29650,6 +29940,11 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location line="+1"/>
+        <source>The servers&apos; catalogues of these networks are asked too.</source>
+        <translation>也会查询服务器上这些网络的目录。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>These could not be added: %1</source>
         <translation>以下项目无法添加：%1</translation>
     </message>
@@ -29662,6 +29957,16 @@ Whichever network is idle lends its share to the other.</source>
         <location line="+1"/>
         <source>This download is no longer in the queue.</source>
         <translation>此下载已不在队列中。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Torrent files:</source>
+        <translation>种子文件：</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Torrents</source>
+        <translation>种子</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -29695,11 +30000,16 @@ Whichever network is idle lends its share to the other.</source>
     </message>
     <message>
         <location line="+1"/>
+        <source>Up</source>
+        <translation>上传</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Upload Speed</source>
         <translation>上传速度</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1214"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1334"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation>上传</translation>
@@ -29710,12 +30020,13 @@ Whichever network is idle lends its share to the other.</source>
         <translation>运行时间</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1900"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+487"/>
+        <location line="+2721"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet engine unavailable</source>
         <translation>Usenet 引擎不可用</translation>
@@ -29746,7 +30057,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>视频 (.avi .mkv ...)</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>You have already downloaded %1 of these. Download them again?</source>
         <translation>其中 %1 个已下载过。要重新下载吗？</translation>
     </message>

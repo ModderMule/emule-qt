@@ -110,6 +110,8 @@ SOURCES += \
     Ed3kHideBridge.cpp \
     Ed3kHosterBridge.cpp \
     DaemonApiBackend.cpp \
+    DaemonHosterWebBackend.cpp \
+    DaemonMetaGrabWebBackend.cpp \
     DaemonTorrentWebBackend.cpp \
     DaemonUsenetWebBackend.cpp \
     IpcClientHandler.cpp \
@@ -117,6 +119,7 @@ SOURCES += \
     IpcServer.cpp \
     IpcTlsIdentity.cpp \
     main.cpp \
+    MetaRowFiles.cpp \
     MetaSearchService.cpp \
     AutoUpdater.cpp \
     PowerManager.cpp \
@@ -151,11 +154,14 @@ HEADERS += \
     Ed3kHideBridge.h \
     Ed3kHosterBridge.h \
     DaemonApiBackend.h \
+    DaemonHosterWebBackend.h \
+    DaemonMetaGrabWebBackend.h \
     DaemonTorrentWebBackend.h \
     DaemonUsenetWebBackend.h \
     IpcClientHandler.h \
     IpcServer.h \
     IpcTlsIdentity.h \
+    MetaRowFiles.h \
     MetaSearchService.h \
     AutoUpdater.h \
     PowerManager.h \

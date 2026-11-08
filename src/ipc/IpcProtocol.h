@@ -66,7 +66,7 @@ enum class IpcMsgType : int {
     ConnectToServer      = 141,  ///< [] or [ip: int64, port: int64, addr: string]
     DisconnectFromServer = 142,
     ReleaseConnectHold   = 143,  ///< [] — first start wizard closed: do the auto-connect a `--hold-connect` daemon deferred
-    StartSearch          = 150,  ///< [expression, fileType, method, minSize, maxSize, avail, ext, completeSrc]
+    StartSearch          = 150,  ///< [expression, fileType, method, minSize, maxSize, avail, ext, completeSrc, codec, minBitrate, minLength, title, album, artist, blendMeta]
     GetSearchResults     = 151,  ///< [searchID, since?: int64] — since = the stamp of the last answer: only rows changed after it. Answer: [ok, rows, stamp, total]
     StopSearch           = 152,  ///< [searchID: int]
     RemoveSearch         = 153,  ///< [searchID: int]

@@ -359,6 +359,7 @@ private:
     uint32 m_handoverServerId = 0;     ///< list entry to hand over to; 0 = none
     bool m_handoverLoginSent = false;
     bool m_handoverCloseFirst = false;
+    uint32 m_handoverKeepIP = 0;       ///< public IPv4 a close-first handover took offline
     HandoverReason m_handoverReason = HandoverReason::IPv6Switch;
 
     // HighID recheck (#156)

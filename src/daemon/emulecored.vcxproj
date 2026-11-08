@@ -183,6 +183,8 @@
     <ClCompile Include="DaemonApp.cpp" />
     <ClCompile Include="ApiEventFeeder.cpp" />
     <ClCompile Include="DaemonApiBackend.cpp" />
+    <ClCompile Include="DaemonHosterWebBackend.cpp" />
+    <ClCompile Include="DaemonMetaGrabWebBackend.cpp" />
     <ClCompile Include="DaemonTorrentWebBackend.cpp" />
     <ClCompile Include="DaemonUsenetWebBackend.cpp" />
     <ClCompile Include="IpcClientHandler.cpp" />
@@ -190,6 +192,7 @@
     <ClCompile Include="IpcServer.cpp" />
     <ClCompile Include="IpcTlsIdentity.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="MetaRowFiles.cpp" />
     <ClCompile Include="MetaSearchService.cpp" />
     <ClCompile Include="AutoUpdater.cpp" />
     <ClCompile Include="PowerManager.cpp" />
@@ -235,6 +238,9 @@
     <ClInclude Include="Ed3kHosterBridge.h" />
     <ClInclude Include="Ed3kKadBridge.h" />
     <ClInclude Include="Ed3kLinksBridge.h" />
+    <ClInclude Include="DaemonHosterWebBackend.h" />
+    <ClInclude Include="DaemonMetaGrabWebBackend.h" />
+    <ClInclude Include="MetaRowFiles.h" />
     <ClInclude Include="DaemonTorrentWebBackend.h" />
     <ClInclude Include="DaemonUsenetWebBackend.h" />
     <ClInclude Include="SharedFileRows.h" />

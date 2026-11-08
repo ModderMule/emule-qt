@@ -146,14 +146,14 @@ if [ "$DEPLOY_QT" = true ]; then
     # Download linuxdeploy if not cached
     if [ ! -x "$LINUXDEPLOY" ]; then
         echo "  Downloading linuxdeploy..."
-        curl -fsSL -o "$LINUXDEPLOY" \
+        curl -fsSL --retry 8 --retry-delay 15 --retry-all-errors -o "$LINUXDEPLOY" \
             "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-$ARCH.AppImage"
         chmod +x "$LINUXDEPLOY"
     fi
 
     if [ ! -x "$LINUXDEPLOY_QT" ]; then
         echo "  Downloading linuxdeploy-plugin-qt..."
-        curl -fsSL -o "$LINUXDEPLOY_QT" \
+        curl -fsSL --retry 8 --retry-delay 15 --retry-all-errors -o "$LINUXDEPLOY_QT" \
             "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-$ARCH.AppImage"
         chmod +x "$LINUXDEPLOY_QT"
     fi

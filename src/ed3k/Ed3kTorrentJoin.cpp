@@ -633,19 +633,27 @@ void Ed3kTorrentJoin::onPieceHashed(const QString& id, int piece, const QByteArr
     switch (check->verdict) {
     case ffi::PieceVerdict::Pass:
     case ffi::PieceVerdict::Unknown:
+    case ffi::PieceVerdict::Pending:
+        // only §4.1 holds; §4.2 waited here too, and a slow or failed read of ours failed
+        // a piece the torrent passed (report 31)
         if (!check->hold) {
             done(false);
             break;
         }
-        [[fallthrough]];
-    case ffi::PieceVerdict::Pending:
         if (auto old = j->waiting.find(piece); old != j->waiting.end())
             old->second(false);   // a second hash of the same piece: the first one goes
         j->waiting[piece] = std::move(done);
         break;
     case ffi::PieceVerdict::Fail:
-        logDebug([&]() -> QString { return QStringLiteral("piece %1 of \"%2\" failed under BLAKE3").arg(piece).arg(name(id)); });
-        done(true);
+        if (blakeJudges(*j)) {
+            logDebug([&]() -> QString { return QStringLiteral("piece %1 of \"%2\" failed under BLAKE3").arg(piece).arg(name(id)); });
+            done(true);
+        } else {
+            // §4.2: the torrent's hash judges, the Kad set is only a claim. Spoiling here
+            // failed good pieces on every recheck and the claim never proved false (report 31)
+            logDebug([&]() -> QString { return QStringLiteral("piece %1 of \"%2\" fails the claimed set; the torrent hash decides").arg(piece).arg(name(id)); });
+            done(false);
+        }
         break;
     }
     if (check->hold) {
@@ -1077,6 +1085,12 @@ bool Ed3kTorrentJoin::piecesHad(const Join& j, std::uint64_t begin, std::uint64_
         if (!j.have.testBit(qsizetype(p)))
             return false;
     return true;
+}
+
+bool Ed3kTorrentJoin::blakeJudges(const Join& j) const
+{
+    const auto info = j.torrent.info();
+    return info && info->judge == ffi::Judge::Blake3;
 }
 
 QString Ed3kTorrentJoin::torrentDir() const

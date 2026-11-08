@@ -69,6 +69,7 @@ struct SearchRequest {
     QString album;
     QString artist;
     QString tabTitle;        ///< empty → use expression (MFC's strSpecialTitle)
+    int blendMeta = 0;       ///< kBlendMeta* bits: Meta API networks asked beside ED2K / Kad
     // indexer methods only
     int indexerCategory = 0; ///< newznab top-level id, 0 = any
     int season = 0;          ///< TV: 0 = none

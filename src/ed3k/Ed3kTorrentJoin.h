@@ -13,7 +13,9 @@
 ///
 /// - Members are the torrent's files without padding, in order.
 /// - Piece checks: libtorrent's hash job waits for the verdict (BtJoinSink); reads are
-///   served from the member files; a held piece fails after kHoldTimeoutMs.
+///   served from the member files; a held piece fails after kHoldTimeoutMs. Only §4.1
+///   holds or spoils a piece: under §4.2 the torrent's hash alone fails one, and a claimed
+///   set that disagrees ends as CLAIM_FALSE (report 31).
 /// - §4.1 (link root): the link's manifest is fetched over ed3k first. §4.2: the ALIAS
 ///   records of the infohashes (btih/btmh, relation SET) name sets; at most 3 are tried.
 /// - Member downloads: ed3k blocks are written into the member files; each piece they
@@ -161,6 +163,8 @@ private:
     void saveJoin(const QString& id);
     /// Every piece over [begin, end) of the piece space is in libtorrent (Join::have).
     [[nodiscard]] bool piecesHad(const Join& j, std::uint64_t begin, std::uint64_t end) const;
+    /// §4.1: BLAKE3 may spoil a piece. §4.2: only the torrent's hash fails one.
+    [[nodiscard]] bool blakeJudges(const Join& j) const;
     [[nodiscard]] QString torrentDir() const;
 
     bt::BtSession& m_bt;

@@ -176,7 +176,7 @@ jobs:
           set -euo pipefail
           mkdir -p geoip
           # unique query = fresh Cloudflare cache key; an edge may hold the previous file for 4 h
-          curl -fsSL --retry 3 --retry-delay 5 -o geoip/GeoLite2-Country.mmdb "${GEOIP_URL}?t=$(date +%s%N)"
+          curl -fsSL --retry 8 --retry-delay 15 --retry-all-errors -o geoip/GeoLite2-Country.mmdb "${GEOIP_URL}?t=$(date +%s%N)"
           actual="$(sha256sum geoip/GeoLite2-Country.mmdb | awk '{print $1}')"
           if [ "$actual" != "$EXPECTED" ]; then
             echo "::error::${GEOIP_URL} is not the database tagged in ${TAG} (expected ${EXPECTED}, got ${actual}). A later publish may have replaced it -- re-upload the matching file."
@@ -200,7 +200,7 @@ jobs:
           set -euo pipefail
           mkdir -p resolver
           # unique query = fresh Cloudflare cache key, see Download above
-          curl -fsSL --retry 3 --retry-delay 5 -o resolver/resolver.zip "${RESOLVER_URL}?t=$(date +%s%N)"
+          curl -fsSL --retry 8 --retry-delay 15 --retry-all-errors -o resolver/resolver.zip "${RESOLVER_URL}?t=$(date +%s%N)"
           actual="$(sha256sum resolver/resolver.zip | awk '{print $1}')"
           if [ "$actual" != "$EXPECTED" ]; then
             echo "::error::${RESOLVER_URL} is not the resolver tagged in ${TAG} (expected ${EXPECTED}, got ${actual}). A later publish may have replaced it -- re-upload the matching file."

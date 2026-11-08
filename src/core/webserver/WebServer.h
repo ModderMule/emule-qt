@@ -9,6 +9,8 @@
 
 #include "utils/Types.h"
 #include "webserver/ApiRegistry.h"
+#include "webserver/HosterWebBackend.h"
+#include "webserver/MetaGrabWebBackend.h"
 #include "webserver/StreamTokenStore.h"
 #include "webserver/TorrentWebBackend.h"
 #include "webserver/UsenetWebBackend.h"
@@ -23,6 +25,7 @@
 #include <QObject>
 #include <QSet>
 
+#include <array>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -202,6 +205,12 @@ public:
     /// The /api/v1/torrents routes; they exist only in a BitTorrent build. Optional
     /// and not owned: without it they answer 503.
     void setTorrentBackend(TorrentWebBackend* backend) { m_torrentBackend = backend; }
+
+    /// The Hoster page. Optional and not owned; without it the page says unavailable.
+    void setHosterBackend(HosterWebBackend* backend) { m_hosterBackend = backend; }
+
+    /// Grabs of the search page's meta rows. Optional and not owned.
+    void setMetaGrabBackend(MetaGrabWebBackend* backend) { m_metaGrabBackend = backend; }
 
     /// Source of GET /api/v1/events. Optional and not owned; outlives this server.
     void setEventHub(ApiEventHub* hub) { m_eventHub = hub; }
@@ -500,10 +509,24 @@ private:
     QHttpServerResponse handleStaticFile(const QString& path);
     QHttpServerResponse renderPage(const QString& page, const QString& sessionId,
                                    const QUrlQuery& query);
-    void dispatchActions(const QUrlQuery& query, const QString& page);
+    /// A file of a multipart/form-data POST.
+    struct WebUpload {
+        QString field;
+        QString fileName;
+        QByteArray data;
+    };
+    void dispatchActions(const QUrlQuery& query, const QString& page, const QList<WebUpload>& uploads = {});
     /// The search form, or the download boxes ticked in its result list.
     void webSearchAction(const QUrlQuery& form);
     void webOptionsAction(const QUrlQuery& form);
+    /// The Torrents page's add form (magnets, .torrent files) and row buttons.
+    void webTorrentAction(const QUrlQuery& form, const QList<WebUpload>& uploads);
+    /// The Hoster page's add form (links, containers) and row buttons.
+    void webHosterAction(const QUrlQuery& form, const QList<WebUpload>& uploads);
+    /// Uploaded link containers: opened, all their links added (the notice says how it went).
+    void openWebContainers(const QList<WebUpload>& containers);
+    /// The ticked meta rows of the web search: fetched and handed to their engines.
+    void grabWebMetaRows(const QList<std::array<uint8, 16>>& hashes);
 
     // Template page builders
     [[nodiscard]] QString buildTransferPage(bool isAdmin, const QString& sessionId);
@@ -518,6 +541,8 @@ private:
     [[nodiscard]] QString buildKadPage(const QString& sessionId);
     [[nodiscard]] QString buildMyInfoPage();
     [[nodiscard]] QString buildGraphsPage();
+    [[nodiscard]] QString buildTorrentsPage(bool isAdmin);
+    [[nodiscard]] QString buildHosterPage(bool isAdmin);
 
     /// The Usenet page: toolbar, category tabs, the queue and the page script.
     [[nodiscard]] QString buildUsenetPage(bool isAdmin, const QString& sessionId,
@@ -579,6 +604,12 @@ private:
     QString m_webSearchTitle;
     QString m_webSearchNotice;      ///< shown once on the search page
     bool    m_webSearchFailed = false;
+    uint8   m_webBlendMeta = 0;         ///< kBlendMeta* the form ticked last
+    /// Notices shown once on the Torrents / Hoster pages
+    QString m_webTorrentNotice;
+    bool    m_webTorrentFailed = false;
+    QString m_webHosterNotice;
+    bool    m_webHosterFailed = false;
     QString m_webPrefsNotice;       ///< shown once on the options page
     bool    m_webPrefsFailed = false;
 
@@ -593,6 +624,10 @@ private:
 
     // BitTorrent engine (injected by DaemonApp; not owned)
     TorrentWebBackend* m_torrentBackend = nullptr;
+
+    // Hoster downloads and meta-row grabs (injected by DaemonApp; not owned)
+    HosterWebBackend* m_hosterBackend = nullptr;
+    MetaGrabWebBackend* m_metaGrabBackend = nullptr;
 
     // REST operation table, and its daemon-side half (not owned)
     api::Registry m_api;

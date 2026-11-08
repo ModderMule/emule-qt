@@ -34,6 +34,17 @@ Action: LowID → `ServerConnect::requestHighIdRecheck`; Kad firewalled → rech
 - IPv6 session (moved there by "prefer IPv6 on LowID"): only IPv4 gets a HighID, so no opcode —
   background re-login over the server's IPv4 (≥ 10 min apart). HighID → stays on IPv4; LowID →
   back to IPv6 in the background, as after a login. Server without IPv4: no recheck.
+  Close-first keeps our public IPv4 (an IPv6 login never reports one), else the website port
+  test runs without it.
+- session takeover (eNode-go after v0.5.21): the per-login `ST_NATT_TOKEN 0xAC` (hash16, same
+  token ed2k-server issues for the 0x9F proof; eNode-go gives every session one). Every handover
+  login sends it back as login tag `0xAC` → server replaces the live session, any family
+  (IPv4 ⇄ IPv6, also behind NAT66), no gap. Not sent from an obfuscated session over a plain
+  login: ed2k-server ignores the tag and keeps that token live. Token takeover keeps the old session's
+  IPv6 registered when the new login advertises none. Older eNode-go: refused → close-first,
+  offline ~2 s. Spec: eNode-go `docs/server-client-communication.md` § Session takeover.
+  Live test: `EMULE_LIVE_ENODE_PORT=<port> tst_ServerConnect live_enodeTakesOverBothFamiliesByToken`
+  (eNode-go dual-stack on loopback).
 - each recheck that keeps a LowID doubles the gap, up to 4×.
 - mid-session `OP_IDCHANGE` on the live socket: no smart-LowID bounce, no IPv6 move.
 - handover login and pending opcode count for `awaitingTestFromIP` (crypt-required lets the

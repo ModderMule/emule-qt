@@ -30,6 +30,12 @@ void setHoster(ed3k::Ed3kHosterJoin* join, ed3k::Ed3kResolver* resolver, ed3k::E
 /// Click'n'Load and container links too (connectPushes routes them).
 void setGrabber(ed3k::Ed3kLinkGrabber* grabber);
 
+/// Opens a container for an in-daemon caller (the web page) and adds all its links, as
+/// the GUI's Open DLC with every link ticked. No push, so no GUI asks. @p done runs once,
+/// mostly later: links added, else 0 and why.
+void openContainerAndAdd(const QByteArray& data, const QString& fileName,
+                         std::function<void(int added, const QString& error)> done);
+
 [[nodiscard]] bool isHosterRequest(Ipc::IpcMsgType type);
 /// Whether it carries a password: local IPC clients only.
 [[nodiscard]] bool carriesSecret(Ipc::IpcMsgType type);

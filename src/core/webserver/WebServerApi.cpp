@@ -653,6 +653,12 @@ void WebServer::buildApiTable()
             const SearchFile* result = m_searchList->searchFileByHash(raw.data(), searchID);
             if (!result)
                 return error(404, s("No such result in this search"));
+            if (result->isMetaResult()) {
+                const auto status = m_searchList->queue().status(searchID);
+                if (!status || !isMetaSearchType(status->type))
+                    return error(404, s("No such result in this search"));   // blended: not in the API
+                return error(400, s("Not an eD2K file: fetch it from the server's catalogue in the app"));
+            }
             const ops::AddOutcome out = ops::addDownloadFromSearch(
                 hash, result->fileName(), static_cast<uint64>(result->fileSize()), {},
                 c.integer(L("category")), searchID);
@@ -1872,9 +1878,16 @@ Result WebServer::apiSearchResults(const Call& call) const
         return unavailable("Search list");
 
     const auto searchID = static_cast<uint32>(call.integer(L("searchID")));
+    // rows blended into an eD2K / Kad search (web page, GUI) stay out of the API
+    const auto status = m_searchList->queue().status(searchID);
+    const bool keepMeta = status && isMetaSearchType(status->type);
     std::vector<const SearchFile*> files;
-    if (!m_searchList->forEachResult(searchID, [&files](const SearchFile* file) {
-            files.push_back(file);
+    qint64 hidden = 0;
+    if (!m_searchList->forEachResult(searchID, [&files, &hidden, keepMeta](const SearchFile* file) {
+            if (keepMeta || !file->isMetaResult())
+                files.push_back(file);
+            else
+                ++hidden;
         }))
         return error(404, s("Search not found"));
 
@@ -1887,10 +1900,11 @@ Result WebServer::apiSearchResults(const Call& call) const
     });
     QJsonObject body = result.body.toObject();
     body.insert(s("searchID"), static_cast<qint64>(searchID));
-    body.insert(s("foundFiles"), static_cast<qint64>(m_searchList->foundFiles(searchID)));
+    body.insert(s("foundFiles"),
+                std::max<qint64>(0, static_cast<qint64>(m_searchList->foundFiles(searchID)) - hidden));
     body.insert(s("foundSources"), static_cast<qint64>(m_searchList->foundSources(searchID)));
     // Whether there is more to wait for: queued / running / finished / failed.
-    if (const auto status = m_searchList->queue().status(searchID)) {
+    if (status) {
         body.insert(s("state"), searchRunStateName(status->state));
         if (!status->reason.isEmpty())
             body.insert(s("reason"), status->reason);

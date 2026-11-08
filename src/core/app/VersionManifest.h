@@ -47,6 +47,8 @@ struct VersionManifestInfo {
     QString error;         ///< why the document could not be used; empty on success
 
     [[nodiscard]] bool isValid() const { return error.isEmpty(); }
+    /// True when @p local is lower than "minVersion": that build must update. Empty/garbage = false.
+    [[nodiscard]] bool isBelowMinimum(const QString& local) const;
     /// Entry for @p key, empty when absent.
     [[nodiscard]] VersionDownload downloadFor(const QString& key) const { return downloads.value(key); }
 };

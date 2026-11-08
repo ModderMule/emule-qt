@@ -330,8 +330,9 @@ public:
     void setServerHash(const uint8* hash);
 
     /// ed2k-server 0.9.87 ST_NATT_TOKEN from OP_SERVERIDENT: appended to each 0x9F, which the
-    /// server then believes from any address. New on every login: runtime only, the
-    /// session's own copy of the server holds it.
+    /// server then believes from any address. eNode-go: a handover login sends it back to take
+    /// this session over without a gap. New on every login: runtime only, the session's own
+    /// copy of the server holds it.
     [[nodiscard]] bool hasNatToken() const              { return m_hasNatToken; }
     [[nodiscard]] const std::array<uint8, 16>& natToken() const { return m_natToken; }
     void setNatToken(const uint8* token);

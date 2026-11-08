@@ -1059,8 +1059,17 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
     const bool sendUdpPorts = natUdpPort != 0;
     const bool lugdunumNat = m_config.natTraversal && natt::NatRendezvous::hasDataPath();
 
-    // Tag count — base 4, plus CT_MOD_IP_V6 and CT_EMULE_UDPPORTS when sent.
-    data.writeUInt32(4u + (sendIPv6Tag ? 1u : 0u) + (sendUdpPorts ? 1u : 0u));
+    // eNode-go: a handover login hands back the live session's ST_NATT_TOKEN, so the server
+    // lets it take that session over (any family) instead of refusing a second one. Servers
+    // without takeover ignore it and keep the token live: never over a plainer link than the
+    // one it came on.
+    const Server* live = (socket == m_handoverSocket && m_connectedSocket)
+                             ? m_connectedSocket->currentServer() : nullptr;
+    const bool sendToken = live && live->hasNatToken()
+                           && (socket->isObfuscating() || !m_connectedSocket->isObfuscating());
+
+    // Tag count — base 4, plus CT_MOD_IP_V6, CT_EMULE_UDPPORTS and ST_NATT_TOKEN when sent.
+    data.writeUInt32(4u + (sendIPv6Tag ? 1u : 0u) + (sendUdpPorts ? 1u : 0u) + (sendToken ? 1u : 0u));
 
     // Tag: CT_NAME — user nick
     // Use old-format tags (writeTagToFile) in the login packet. The server hasn't
@@ -1115,6 +1124,11 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
         const uint32 kadPort = thePrefs.kadUsable() ? natUdpPort : 0u;
         Tag tagUdp(static_cast<uint8>(CT_EMULE_UDPPORTS), (kadPort << 16) | natUdpPort);
         tagUdp.writeTagToFile(data);
+    }
+
+    if (sendToken) {
+        Tag tagToken(static_cast<uint8>(ST_NATT_TOKEN), live->natToken().data());
+        tagToken.writeTagToFile(data);
     }
 
     auto packet = std::make_unique<Packet>(data);
@@ -1342,7 +1356,10 @@ void ServerConnect::startHandover(bool closeFirst)
                     .arg(handoverName(), entry->name()));
         m_connecting = true;
         m_singleConnecting = true;
+        // our IPv4 outlives a re-login to the same server; an IPv6 login never reports it
+        const uint32 keepIP = theApp.ed2kSessionIP();
         disconnect();
+        m_handoverKeepIP = keepIP;
     }
 
     auto* socket = createServerSocket(false);
@@ -1368,10 +1385,12 @@ void ServerConnect::finishHandover(ServerSocket* socket)
     const bool closeFirst = m_handoverCloseFirst;
     const HandoverReason reason = m_handoverReason;
     const QString name = handoverName();
+    uint32 keepIP = m_handoverKeepIP;
     resetHandover();
 
     // Still up: the server let the two overlap (ed2k-server keeps the old socket)
     if (m_connected && m_connectedSocket) {
+        keepIP = theApp.ed2kSessionIP();   // an IPv6 login never reports it
         destroySocket(m_connectedSocket);
         emit sessionHandedOver();
     }
@@ -1384,6 +1403,8 @@ void ServerConnect::finishHandover(ServerSocket* socket)
     // The ordinary login path makes it the live session
     m_connecting = true;
     connectionEstablished(socket);
+    if (keepIP != 0 && theApp.ed2kSessionIP() == 0)
+        theApp.setPublicIP(keepIP);
     if (reason != HandoverReason::HighIdRecheck)
         return;
     finishRecheck(!isLowID());
@@ -1455,6 +1476,7 @@ void ServerConnect::resetHandover()
     m_handoverServerId = 0;
     m_handoverLoginSent = false;
     m_handoverCloseFirst = false;
+    m_handoverKeepIP = 0;
 }
 
 QString ServerConnect::handoverName() const

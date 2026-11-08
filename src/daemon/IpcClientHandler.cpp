@@ -1101,6 +1101,9 @@ void IpcClientHandler::handleStartSearch(const IpcMessage& msg)
     params.title           = msg.fieldString(11);
     params.album           = msg.fieldString(12);
     params.artist          = msg.fieldString(13);
+    // Meta API networks asked beside an ED2K / Kad search (kBlendMeta* bits)
+    if (canBlendMetaSearch(params.type))
+        params.blendMeta = static_cast<uint8>(msg.fieldInt(14) & (kBlendMetaUsenet | kBlendMetaTorrent | kBlendMetaWeb));
 
     // Shared with REST and the web interface: search/SearchStarter.
     const SearchStartResult outcome = startSearch(*theApp.searchList, params);
