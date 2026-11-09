@@ -215,6 +215,8 @@ MainWindow::MainWindow(QWidget* parent)
         connect(m_trayIcon, &QSystemTrayIcon::activated,
                 this, &MainWindow::onTrayIconClicked);
         connect(m_trayIcon, &QSystemTrayIcon::messageClicked, this, [this]() {
+            logDebug(QStringLiteral("Pop-up clicked (%1)")
+                         .arg(m_notificationClick ? QStringLiteral("own action") : QStringLiteral("restore")));
             if (m_notificationClick)
                 m_notificationClick();
             else
