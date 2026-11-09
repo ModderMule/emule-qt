@@ -1230,9 +1230,15 @@ int main(int argc, char* argv[])
                     && ipcClient.isLocalConnection())
                     path = msg.fieldString(2);
                 onClick = [&mainWindow, path]() {
-                    if (!path.isEmpty() && QFileInfo::exists(path)
-                        && QDesktopServices::openUrl(QUrl::fromLocalFile(path)))
-                        return;
+                    // Logged: a click that silently falls back is hard to tell apart (#160)
+                    if (!path.isEmpty()) {
+                        if (!QFileInfo::exists(path))
+                            eMule::logDebug(QStringLiteral("Pop-up click: '%1' not found").arg(path));
+                        else if (QDesktopServices::openUrl(QUrl::fromLocalFile(path)))
+                            return eMule::logDebug(QStringLiteral("Pop-up click: opened '%1'").arg(path));
+                        else
+                            eMule::logDebug(QStringLiteral("Pop-up click: could not open '%1'").arg(path));
+                    }
                     mainWindow.restoreWindow();
                     mainWindow.switchToTab(eMule::MainWindow::TabTransfers);
                 };
