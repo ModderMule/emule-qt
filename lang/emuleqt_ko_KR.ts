@@ -12973,7 +12973,7 @@ Other members see your nick and posts; your node takes part in passing the room&
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+116"/>
-        <location line="+768"/>
+        <location line="+770"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
@@ -18284,14 +18284,13 @@ Enter what your provider&apos;s control panel says, or 0 to start again.</source
         <translation>검색 인덱서는 키워드 검색에 답하고 NZB를 돌려줍니다. 뉴스 서버와는 별개입니다. Usenet에서는 다운로드하는 제공업체와 검색하는 서비스가 서로 다른 사업자입니다.</translation>
     </message>
     <message>
-        <location line="+1428"/>
         <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.
 Auto follows the upload capacity: 2 below 1 Mbit/s, 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 100 Mbit/s, else 32.</source>
-        <translation>포트가 열려 있는 동안 eMule은 이 수만큼의 방화벽 뒤 Kad 노드를 위해 콜백 요청을 중계합니다. 각 노드가 연결 하나를 쓰므로 &quot;최대 연결 수&quot;의 10분의 1까지만 제공됩니다.
+        <translation type="vanished">포트가 열려 있는 동안 eMule은 이 수만큼의 방화벽 뒤 Kad 노드를 위해 콜백 요청을 중계합니다. 각 노드가 연결 하나를 쓰므로 &quot;최대 연결 수&quot;의 10분의 1까지만 제공됩니다.
 자동은 업로드 용량을 따릅니다: 1 Mbit/s 미만 2, 4 Mbit/s 미만 4, 20 Mbit/s 미만 8, 100 Mbit/s 미만 16, 그 이상 32.</translation>
     </message>
     <message>
-        <location line="+3617"/>
+        <location line="+5045"/>
         <location line="+5"/>
         <location line="+18"/>
         <location line="+13"/>
@@ -18832,7 +18831,14 @@ The Details window lets you choose the files either way.</source>
         <translation>토렌트의 모든 트래커에 피어를 요청합니다. 끄기: 각 계층에서 처음 작동하는 트래커만.</translation>
     </message>
     <message>
-        <location line="+314"/>
+        <location line="+165"/>
+        <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.
+Auto follows the upload capacity: 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 100 Mbit/s, 32 below 500 Mbit/s, 64 below 1 Gbit/s, else 128.</source>
+        <translation>포트가 열려 있는 동안 eMule은 이 수만큼의 방화벽 뒤 Kad 노드를 위해 콜백 요청을 중계합니다. 각 노드가 연결 하나를 쓰므로 &quot;최대 연결 수&quot;의 10분의 1까지만 제공됩니다.
+자동은 업로드 용량을 따릅니다: 4 Mbit/s 미만 4, 20 Mbit/s 미만 8, 100 Mbit/s 미만 16, 500 Mbit/s 미만 32, 1 Gbit/s 미만 64, 그 이상 128.</translation>
+    </message>
+    <message>
+        <location line="+149"/>
         <source>Log BitTorrent details (Torrent Verbose tab)</source>
         <translation>BitTorrent 상세 기록 (Torrent 상세 탭)</translation>
     </message>

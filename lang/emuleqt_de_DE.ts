@@ -13021,7 +13021,7 @@ Andere Mitglieder sehen Ihren Nickname und Ihre Beiträge; Ihr Knoten hilft beim
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+116"/>
-        <location line="+768"/>
+        <location line="+770"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
@@ -18337,14 +18337,13 @@ Geben Sie den Wert aus dem Kundenbereich Ihres Anbieters ein oder 0, um neu zu b
         <translation>Such-Indexer beantworten Stichwortsuchen und liefern eine NZB zurück. Sie sind von Ihren News-Servern getrennt: im Usenet sind der Anbieter, von dem Sie laden, und der Dienst, den Sie durchsuchen, verschiedene Unternehmen.</translation>
     </message>
     <message>
-        <location line="+1428"/>
         <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.
 Auto follows the upload capacity: 2 below 1 Mbit/s, 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 100 Mbit/s, else 32.</source>
-        <translation>Solange deine Ports offen sind, leitet eMule Rückrufanfragen für so viele Kad-Knoten hinter einer Firewall weiter. Jeder belegt eine Verbindung, daher wird höchstens ein Zehntel von &quot;Max. Verbindungen&quot; bedient.
+        <translation type="vanished">Solange deine Ports offen sind, leitet eMule Rückrufanfragen für so viele Kad-Knoten hinter einer Firewall weiter. Jeder belegt eine Verbindung, daher wird höchstens ein Zehntel von &quot;Max. Verbindungen&quot; bedient.
 Auto richtet sich nach der Upload-Kapazität: 2 unter 1 Mbit/s, 4 unter 4 Mbit/s, 8 unter 20 Mbit/s, 16 unter 100 Mbit/s, sonst 32.</translation>
     </message>
     <message>
-        <location line="+3617"/>
+        <location line="+5045"/>
         <location line="+5"/>
         <location line="+18"/>
         <location line="+13"/>
@@ -18887,7 +18886,14 @@ Im Details-Fenster kannst du die Dateien in jedem Fall wählen.</translation>
         <translation>Fragt jeden Tracker eines Torrents nach Peers. Aus: nur den ersten funktionierenden Tracker jeder Ebene.</translation>
     </message>
     <message>
-        <location line="+314"/>
+        <location line="+165"/>
+        <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.
+Auto follows the upload capacity: 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 100 Mbit/s, 32 below 500 Mbit/s, 64 below 1 Gbit/s, else 128.</source>
+        <translation>Solange deine Ports offen sind, leitet eMule Rückrufanfragen für so viele Kad-Knoten hinter einer Firewall weiter. Jeder belegt eine Verbindung, daher wird höchstens ein Zehntel von &quot;Max. Verbindungen&quot; bedient.
+Auto richtet sich nach der Upload-Kapazität: 4 unter 4 Mbit/s, 8 unter 20 Mbit/s, 16 unter 100 Mbit/s, 32 unter 500 Mbit/s, 64 unter 1 Gbit/s, sonst 128.</translation>
+    </message>
+    <message>
+        <location line="+149"/>
         <source>Log BitTorrent details (Torrent Verbose tab)</source>
         <translation>BitTorrent-Details protokollieren (Reiter „Torrent ausführlich“)</translation>
     </message>

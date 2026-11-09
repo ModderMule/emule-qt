@@ -12616,7 +12616,7 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+116"/>
-        <location line="+768"/>
+        <location line="+770"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
@@ -15403,7 +15403,14 @@ Weet u zeker dat u wilt doorgaan?</translation>
         <translation>Nu bijwerken</translation>
     </message>
     <message>
-        <location line="+8536"/>
+        <location line="+4949"/>
+        <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.
+Auto follows the upload capacity: 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 100 Mbit/s, 32 below 500 Mbit/s, 64 below 1 Gbit/s, else 128.</source>
+        <translation>Zolang je poorten open zijn, stuurt eMule terugbelverzoeken door voor zoveel Kad-nodes achter een firewall. Elke node gebruikt een verbinding, dus hooguit een tiende van &quot;Max. verbindingen&quot; wordt bediend.
+Auto volgt de uploadcapaciteit: 4 onder 4 Mbit/s, 8 onder 20 Mbit/s, 16 onder 100 Mbit/s, 32 onder 500 Mbit/s, 64 onder 1 Gbit/s, anders 128.</translation>
+    </message>
+    <message>
+        <location line="+3587"/>
         <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
         <translation>Bij elke release wordt een database meegeleverd. Een optioneel gratis &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt;-account houdt deze tussendoor actueel. Dit product bevat GeoLite2-gegevens gemaakt door MaxMind.</translation>
     </message>
@@ -18562,14 +18569,13 @@ In het venster Details kun je de bestanden altijd kiezen.</translation>
         <translation>Vraagt elke tracker van een torrent om peers. Uit: alleen de eerste werkende tracker van elk niveau.</translation>
     </message>
     <message>
-        <location line="+165"/>
         <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.
 Auto follows the upload capacity: 2 below 1 Mbit/s, 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 100 Mbit/s, else 32.</source>
-        <translation>Zolang je poorten open zijn, stuurt eMule terugbelverzoeken door voor zoveel Kad-nodes achter een firewall. Elke node gebruikt een verbinding, dus hooguit een tiende van &quot;Max. verbindingen&quot; wordt bediend.
+        <translation type="vanished">Zolang je poorten open zijn, stuurt eMule terugbelverzoeken door voor zoveel Kad-nodes achter een firewall. Elke node gebruikt een verbinding, dus hooguit een tiende van &quot;Max. verbindingen&quot; wordt bediend.
 Auto volgt de uploadcapaciteit: 2 onder 1 Mbit/s, 4 onder 4 Mbit/s, 8 onder 20 Mbit/s, 16 onder 100 Mbit/s, anders 32.</translation>
     </message>
     <message>
-        <location line="+149"/>
+        <location line="+314"/>
         <source>Log BitTorrent details (Torrent Verbose tab)</source>
         <translation>BitTorrent-details loggen (tabblad Torrent uitgebreid)</translation>
     </message>

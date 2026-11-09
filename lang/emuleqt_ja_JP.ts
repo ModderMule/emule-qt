@@ -12973,7 +12973,7 @@ Other members see your nick and posts; your node takes part in passing the room&
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+116"/>
-        <location line="+768"/>
+        <location line="+770"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
@@ -18284,14 +18284,13 @@ Enter what your provider&apos;s control panel says, or 0 to start again.</source
         <translation>検索インデクサーはキーワード検索に応答して NZB を返します。ニュースサーバーとは別物です: Usenet では、ダウンロード先のプロバイダーと検索に使うサービスは別の事業者です。</translation>
     </message>
     <message>
-        <location line="+1428"/>
         <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.
 Auto follows the upload capacity: 2 below 1 Mbit/s, 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 100 Mbit/s, else 32.</source>
-        <translation>ポートが開いている間、eMule はこの数のファイアウォール内の Kad ノードのためにコールバック要求を中継します。1 ノードごとに 1 接続を使うため、提供されるのは「最大接続数」の 10 分の 1 までです。
+        <translation type="vanished">ポートが開いている間、eMule はこの数のファイアウォール内の Kad ノードのためにコールバック要求を中継します。1 ノードごとに 1 接続を使うため、提供されるのは「最大接続数」の 10 分の 1 までです。
 自動はアップロード容量に従います: 1 Mbit/s 未満で 2、4 Mbit/s 未満で 4、20 Mbit/s 未満で 8、100 Mbit/s 未満で 16、それ以上で 32。</translation>
     </message>
     <message>
-        <location line="+3617"/>
+        <location line="+5045"/>
         <location line="+5"/>
         <location line="+18"/>
         <location line="+13"/>
@@ -18832,7 +18831,14 @@ The Details window lets you choose the files either way.</source>
         <translation>トレントのすべてのトラッカーにピアを問い合わせます。オフ: 各階層で最初に動作するトラッカーのみ。</translation>
     </message>
     <message>
-        <location line="+314"/>
+        <location line="+165"/>
+        <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.
+Auto follows the upload capacity: 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 100 Mbit/s, 32 below 500 Mbit/s, 64 below 1 Gbit/s, else 128.</source>
+        <translation>ポートが開いている間、eMule はこの数のファイアウォール内の Kad ノードのためにコールバック要求を中継します。1 ノードごとに 1 接続を使うため、提供されるのは「最大接続数」の 10 分の 1 までです。
+自動はアップロード容量に従います: 4 Mbit/s 未満で 4、20 Mbit/s 未満で 8、100 Mbit/s 未満で 16、500 Mbit/s 未満で 32、1 Gbit/s 未満で 64、それ以上で 128。</translation>
+    </message>
+    <message>
+        <location line="+149"/>
         <source>Log BitTorrent details (Torrent Verbose tab)</source>
         <translation>BitTorrent の詳細を記録（Torrent 詳細タブ）</translation>
     </message>

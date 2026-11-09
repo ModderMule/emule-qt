@@ -12973,7 +12973,7 @@ Other members see your nick and posts; your node takes part in passing the room&
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+116"/>
-        <location line="+768"/>
+        <location line="+770"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
@@ -18284,14 +18284,13 @@ Enter what your provider&apos;s control panel says, or 0 to start again.</source
         <translation>搜索索引器负责响应关键词搜索并返回 NZB。它们与您的新闻服务器是分开的：在 Usenet 上，您下载所用的提供商和您搜索所用的服务是两类不同的生意。</translation>
     </message>
     <message>
-        <location line="+1428"/>
         <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.
 Auto follows the upload capacity: 2 below 1 Mbit/s, 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 100 Mbit/s, else 32.</source>
-        <translation>端口开放时，eMule 为这么多防火墙后的 Kad 节点中继回调请求。每个节点占用一个连接，因此最多服务&quot;最大连接数&quot;的十分之一。
+        <translation type="vanished">端口开放时，eMule 为这么多防火墙后的 Kad 节点中继回调请求。每个节点占用一个连接，因此最多服务&quot;最大连接数&quot;的十分之一。
 自动按上传容量决定：低于 1 Mbit/s 为 2，低于 4 Mbit/s 为 4，低于 20 Mbit/s 为 8，低于 100 Mbit/s 为 16，否则为 32。</translation>
     </message>
     <message>
-        <location line="+3617"/>
+        <location line="+5045"/>
         <location line="+5"/>
         <location line="+18"/>
         <location line="+13"/>
@@ -18832,7 +18831,14 @@ The Details window lets you choose the files either way.</source>
         <translation>向种子的每个 Tracker 请求节点。关闭：每个层级只使用第一个可用的 Tracker。</translation>
     </message>
     <message>
-        <location line="+314"/>
+        <location line="+165"/>
+        <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.
+Auto follows the upload capacity: 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 100 Mbit/s, 32 below 500 Mbit/s, 64 below 1 Gbit/s, else 128.</source>
+        <translation>端口开放时，eMule 为这么多防火墙后的 Kad 节点中继回调请求。每个节点占用一个连接，因此最多服务&quot;最大连接数&quot;的十分之一。
+自动按上传容量决定：低于 4 Mbit/s 为 4，低于 20 Mbit/s 为 8，低于 100 Mbit/s 为 16，低于 500 Mbit/s 为 32，低于 1 Gbit/s 为 64，否则为 128。</translation>
+    </message>
+    <message>
+        <location line="+149"/>
         <source>Log BitTorrent details (Torrent Verbose tab)</source>
         <translation>记录 BitTorrent 详细信息（Torrent 详细标签页）</translation>
     </message>

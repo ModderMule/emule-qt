@@ -12569,7 +12569,7 @@ Other members see your nick and posts; your node takes part in passing the room&
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+116"/>
-        <location line="+768"/>
+        <location line="+770"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
@@ -15351,7 +15351,14 @@ Are you sure you want to continue?</source>
         <translation>立即更新</translation>
     </message>
     <message>
-        <location line="+8536"/>
+        <location line="+4949"/>
+        <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.
+Auto follows the upload capacity: 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 100 Mbit/s, 32 below 500 Mbit/s, 64 below 1 Gbit/s, else 128.</source>
+        <translation>連接埠開放時，eMule 會為這麼多防火牆後的 Kad 節點中繼回呼請求。每個節點佔用一個連線，因此最多服務「最大連線數」的十分之一。
+自動依上傳容量決定：低於 4 Mbit/s 為 4，低於 20 Mbit/s 為 8，低於 100 Mbit/s 為 16，低於 500 Mbit/s 為 32，低於 1 Gbit/s 為 64，否則為 128。</translation>
+    </message>
+    <message>
+        <location line="+3587"/>
         <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
         <translation>每個版本都附帶一個資料庫。可選用的免費 &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; 帳號能在版本之間保持資料庫為最新。本產品包含由 MaxMind 建立的 GeoLite2 資料。</translation>
     </message>
@@ -18509,14 +18516,13 @@ The Details window lets you choose the files either way.</source>
         <translation>向種子的每個 Tracker 請求節點。關閉：每個層級只使用第一個可用的 Tracker。</translation>
     </message>
     <message>
-        <location line="+165"/>
         <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.
 Auto follows the upload capacity: 2 below 1 Mbit/s, 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 100 Mbit/s, else 32.</source>
-        <translation>連接埠開放時，eMule 會為這麼多防火牆後的 Kad 節點中繼回呼請求。每個節點佔用一個連線，因此最多服務「最大連線數」的十分之一。
+        <translation type="vanished">連接埠開放時，eMule 會為這麼多防火牆後的 Kad 節點中繼回呼請求。每個節點佔用一個連線，因此最多服務「最大連線數」的十分之一。
 自動依上傳容量決定：低於 1 Mbit/s 為 2，低於 4 Mbit/s 為 4，低於 20 Mbit/s 為 8，低於 100 Mbit/s 為 16，否則為 32。</translation>
     </message>
     <message>
-        <location line="+149"/>
+        <location line="+314"/>
         <source>Log BitTorrent details (Torrent Verbose tab)</source>
         <translation>記錄 BitTorrent 詳細資訊（Torrent 詳細分頁）</translation>
     </message>

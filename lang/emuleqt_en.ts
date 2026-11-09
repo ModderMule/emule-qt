@@ -12164,7 +12164,7 @@ Other members see your nick and posts; your node takes part in passing the room&
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+116"/>
-        <location line="+768"/>
+        <location line="+770"/>
         <source>eMule Qt v%1</source>
         <translation type="unfinished"></translation>
     </message>
@@ -17750,7 +17750,13 @@ Enter what your provider&apos;s control panel says, or 0 to start again.</source
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+5045"/>
+        <location line="+1428"/>
+        <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.
+Auto follows the upload capacity: 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 100 Mbit/s, 32 below 500 Mbit/s, 64 below 1 Gbit/s, else 128.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+3617"/>
         <location line="+5"/>
         <location line="+18"/>
         <location line="+13"/>
@@ -18303,13 +18309,7 @@ The Details window lets you choose the files either way.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+165"/>
-        <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.
-Auto follows the upload capacity: 2 below 1 Mbit/s, 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 100 Mbit/s, else 32.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+149"/>
+        <location line="+314"/>
         <source>Log BitTorrent details (Torrent Verbose tab)</source>
         <translation type="unfinished"></translation>
     </message>

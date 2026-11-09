@@ -12663,7 +12663,7 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+116"/>
-        <location line="+768"/>
+        <location line="+770"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
@@ -15455,7 +15455,14 @@ Czy na pewno chcesz kontynuować?</translation>
         <translation>Aktualizuj teraz</translation>
     </message>
     <message>
-        <location line="+8536"/>
+        <location line="+4949"/>
+        <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.
+Auto follows the upload capacity: 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 100 Mbit/s, 32 below 500 Mbit/s, 64 below 1 Gbit/s, else 128.</source>
+        <translation>Gdy twoje porty są otwarte, eMule przekazuje żądania wywołania zwrotnego dla tylu węzłów Kad za zaporą. Każdy zajmuje jedno połączenie, więc obsługiwana jest najwyżej jedna dziesiąta wartości &quot;Maks. połączeń&quot;.
+Auto zależy od przepustowości wysyłania: 4 poniżej 4 Mbit/s, 8 poniżej 20 Mbit/s, 16 poniżej 100 Mbit/s, 32 poniżej 500 Mbit/s, 64 poniżej 1 Gbit/s, w innym razie 128.</translation>
+    </message>
+    <message>
+        <location line="+3587"/>
         <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
         <translation>Baza danych jest dołączona do każdego wydania. Opcjonalne darmowe konto &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; pozwala ją aktualizować pomiędzy wydaniami. Ten produkt zawiera dane GeoLite2 stworzone przez MaxMind.</translation>
     </message>
@@ -18615,14 +18622,13 @@ Okno Szczegóły pozwala wybrać pliki w każdym przypadku.</translation>
         <translation>Pyta każdy tracker torrenta o peerów. Wyłączone: tylko pierwszy działający tracker na każdym poziomie.</translation>
     </message>
     <message>
-        <location line="+165"/>
         <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.
 Auto follows the upload capacity: 2 below 1 Mbit/s, 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 100 Mbit/s, else 32.</source>
-        <translation>Gdy twoje porty są otwarte, eMule przekazuje żądania wywołania zwrotnego dla tylu węzłów Kad za zaporą. Każdy zajmuje jedno połączenie, więc obsługiwana jest najwyżej jedna dziesiąta wartości &quot;Maks. połączeń&quot;.
+        <translation type="vanished">Gdy twoje porty są otwarte, eMule przekazuje żądania wywołania zwrotnego dla tylu węzłów Kad za zaporą. Każdy zajmuje jedno połączenie, więc obsługiwana jest najwyżej jedna dziesiąta wartości &quot;Maks. połączeń&quot;.
 Auto zależy od przepustowości wysyłania: 2 poniżej 1 Mbit/s, 4 poniżej 4 Mbit/s, 8 poniżej 20 Mbit/s, 16 poniżej 100 Mbit/s, w innym razie 32.</translation>
     </message>
     <message>
-        <location line="+149"/>
+        <location line="+314"/>
         <source>Log BitTorrent details (Torrent Verbose tab)</source>
         <translation>Rejestruj szczegóły BitTorrent (karta Torrent szczegółowo)</translation>
     </message>

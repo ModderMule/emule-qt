@@ -13021,7 +13021,7 @@ Outros membros veem seu nick e suas mensagens; seu nó participa do repasse das 
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+116"/>
-        <location line="+768"/>
+        <location line="+770"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
@@ -18337,14 +18337,13 @@ Insira o que o painel de controle do seu provedor informa, ou 0 para começar de
         <translation>Os indexadores de busca respondem a buscas por palavra-chave e devolvem um NZB. Eles são separados dos seus servidores de notícias: na Usenet, o provedor de onde você baixa e o serviço em que você busca são negócios diferentes.</translation>
     </message>
     <message>
-        <location line="+1428"/>
         <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.
 Auto follows the upload capacity: 2 below 1 Mbit/s, 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 100 Mbit/s, else 32.</source>
-        <translation>Enquanto suas portas estiverem abertas, o eMule retransmite pedidos de retorno de chamada para esta quantidade de nós Kad atrás de firewall. Cada um usa uma conexão, então no máximo um décimo de &quot;Máx. conexões&quot; é atendido.
+        <translation type="vanished">Enquanto suas portas estiverem abertas, o eMule retransmite pedidos de retorno de chamada para esta quantidade de nós Kad atrás de firewall. Cada um usa uma conexão, então no máximo um décimo de &quot;Máx. conexões&quot; é atendido.
 Auto segue a capacidade de upload: 2 abaixo de 1 Mbit/s, 4 abaixo de 4 Mbit/s, 8 abaixo de 20 Mbit/s, 16 abaixo de 100 Mbit/s, senão 32.</translation>
     </message>
     <message>
-        <location line="+3617"/>
+        <location line="+5045"/>
         <location line="+5"/>
         <location line="+18"/>
         <location line="+13"/>
@@ -18887,7 +18886,14 @@ A janela Detalhes permite escolher os arquivos de qualquer forma.</translation>
         <translation>Pede pares a todos os trackers de um torrent. Desligado: apenas ao primeiro tracker funcional de cada nível.</translation>
     </message>
     <message>
-        <location line="+314"/>
+        <location line="+165"/>
+        <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.
+Auto follows the upload capacity: 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 100 Mbit/s, 32 below 500 Mbit/s, 64 below 1 Gbit/s, else 128.</source>
+        <translation>Enquanto suas portas estiverem abertas, o eMule retransmite pedidos de retorno de chamada para esta quantidade de nós Kad atrás de firewall. Cada um usa uma conexão, então no máximo um décimo de &quot;Máx. conexões&quot; é atendido.
+Auto segue a capacidade de upload: 4 abaixo de 4 Mbit/s, 8 abaixo de 20 Mbit/s, 16 abaixo de 100 Mbit/s, 32 abaixo de 500 Mbit/s, 64 abaixo de 1 Gbit/s, senão 128.</translation>
+    </message>
+    <message>
+        <location line="+149"/>
         <source>Log BitTorrent details (Torrent Verbose tab)</source>
         <translation>Registrar detalhes do BitTorrent (aba Torrent detalhado)</translation>
     </message>

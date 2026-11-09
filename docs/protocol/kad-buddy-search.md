@@ -252,7 +252,7 @@ link survives without the ping either way: a buddy socket times out after 40 s +
 ## An open eMuleQt node serves several buddies
 
 The search changes above only help a firewalled node look harder. They do not add buddy
-slots. An open eMuleQt node adds slots: it serves up to 32 firewalled nodes instead of one,
+slots. An open eMuleQt node adds slots: it serves up to 128 firewalled nodes instead of one,
 8 at the default upload capacity (see [Limits](#limits)).
 This is a deliberate departure from stock eMule.
 
@@ -330,7 +330,7 @@ A served buddy is dropped when:
 
 | | Value | Where |
 |---|---|---|
-| Served buddies | 0 = auto (default), else 1–32 | preference `maxServedBuddies`, Options → Extended |
+| Served buddies | 0 = auto (default), else 1–128 | preference `maxServedBuddies`, Options → Extended |
 | Auto value | by upload capacity, see below | `Preferences::autoServedBuddies()` |
 | Served buddies in effect | the preference or its auto value, at most a tenth of `maxConnections` (minimum 1) | `Preferences::servedBuddyLimit()` |
 | Pending claim (answered, not yet connected) | reserves nothing, released after 5 minutes | `kIncomingBuddyTimeoutSecs` |
@@ -399,18 +399,23 @@ connections and small relays the line can carry, and USS moves it all the time.
 | Upload capacity | Served buddies |
 |---|---|
 | unknown (0) | 8 |
-| below 128 KiB/s (about 1 Mbit/s) | 2 |
-| below 512 KiB/s (about 4 Mbit/s) | 4 |
+| below 500 KiB/s (4 Mbit/s) | 4 |
 | below 2,500 KiB/s (20 Mbit/s) | 8 |
 | below 12,500 KiB/s (100 Mbit/s) | 16 |
-| 12,500 KiB/s and above | 32 |
+| below 62,500 KiB/s (500 Mbit/s) | 32 |
+| below 125,000 KiB/s (1 Gbit/s) | 64 |
+| 125,000 KiB/s and above | 128 |
+
+Capacity 0 (unknown) is only reachable through `preferences.yml`, IPC or REST; the Options
+page and the first-start wizard set at least 1 KiB/s. USS reads 0 the same way.
 
 - A served buddy costs one idle connection and at most 60 small relayed packets a minute, so
   bandwidth is not what limits it. The tiers keep a slow line's connections for transfers.
-- 32 is the top tier because of the risks below: every node behind one buddy loses it at
-  once, and the callback flood limit grows with the slot count.
-- The cap of a tenth of `maxConnections` still applies on top.
-- A set value (1–32) overrides the tiers. Existing profiles keep their set value; only new
+- The risks below grow with the tier: every node behind one buddy loses it at once, and
+  the callback flood limit grows with the slot count.
+- The cap of a tenth of `maxConnections` still applies on top: at the default of 500
+  connections no node serves more than 50, so the 64 and 128 tiers need more connections.
+- A set value (1–128) overrides the tiers. Existing profiles keep their set value; only new
   ones start at auto.
 
 Suggested for other clients: the same tiers, or a fixed count no higher than the client's
@@ -426,7 +431,7 @@ get its extra slots.
 - It does not help a firewalled eMuleQt node directly. That node gains only when some open
   node elsewhere offers more slots.
 - Each open eMuleQt node serves 8 firewalled nodes of any client instead of one (at the
-  default capacity; 2 to 32 by line). The
+  default capacity; 4 to 128 by line). The
   firewalled node and the calling client need no change, so stock clients gain as well.
 - The gain grows in a straight line with deployment. If a share *p* of the open nodes runs
   eMuleQt, the number of slots rises by the factor 1 + 7*p*: 7 % more at a share of 1 %,
