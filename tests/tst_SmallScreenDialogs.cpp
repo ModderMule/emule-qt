@@ -194,14 +194,16 @@ void TestSmallScreenDialogs::everyDialogFits()
         QLayout*    layout    = dlg->layout();
         const QSize layoutMin = layout->totalMinimumSize();
         const int   need      = DialogSizing::neededHeight(layout, dlg->width());
+        // the minimum height is fitted at the minimum width, where wrapped text needs more
+        const int   needAtMin = DialogSizing::neededHeight(layout, dlg->minimumWidth());
         const bool  resizable = dlg->minimumSize() != dlg->maximumSize();
         const QString where =
-            QStringLiteral("%1: min %2x%3, size %4x%5, layout min %6x%7, needs %8")
+            QStringLiteral("%1: min %2x%3, size %4x%5, layout min %6x%7, needs %8 (%9 at min width)")
                 .arg(QLatin1StringView(c.name))
                 .arg(dlg->minimumWidth()).arg(dlg->minimumHeight())
                 .arg(dlg->width()).arg(dlg->height())
                 .arg(layoutMin.width()).arg(layoutMin.height())
-                .arg(need);
+                .arg(need).arg(needAtMin);
 
         QVERIFY2(layoutMin.height() <= budget.height(), qPrintable(where));
         QVERIFY2(layoutMin.width() <= budget.width(), qPrintable(where));
@@ -213,8 +215,8 @@ void TestSmallScreenDialogs::everyDialogFits()
             QVERIFY2(dlg->minimumHeight() < budget.height(), qPrintable(where));
 
         int cap = std::max(layoutMin.height(), budget.height() * 3 / 4);
-        if (need <= budget.height())
-            cap = std::max(cap, need);
+        if (needAtMin <= budget.height())
+            cap = std::max(cap, needAtMin);
         QVERIFY2(dlg->minimumHeight() <= cap, qPrintable(where));
     }
 }

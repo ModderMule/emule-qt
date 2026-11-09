@@ -274,14 +274,28 @@ void SharedFileList::setWatchingEnabled(bool enabled)
         delete m_watcher;
         m_watcher = nullptr;
         m_settleSecs = 0;
+        m_prelisted.clear();
         return;
     }
     m_settleSecs = 5;
     m_watcher = new SharedDirWatcher(this);
+    m_watcher->setLister(&SharedFileList::scanDirectory);
+    m_watcher->setPollInterval(m_pollMinutes * 60 * 1000);
+    connect(m_watcher, &SharedDirWatcher::directoryListed, this,
+            [this](const QString& dir, const DirListing& listing) {
+                m_prelisted.insert(pathKey(dir), {listing, QDateTime::currentMSecsSinceEpoch()});
+            });
     connect(m_watcher, &SharedDirWatcher::directoriesChanged,
             this, &SharedFileList::rescanDirectories);
     connect(m_watcher, &SharedDirWatcher::overflow, this, &SharedFileList::reload);
     m_watcher->setRoots(watchRoots());
+}
+
+void SharedFileList::setPollMinutes(int minutes)
+{
+    m_pollMinutes = std::max(minutes, 0);
+    if (m_watcher && m_watcher->pollInterval() != m_pollMinutes * 60 * 1000)
+        m_watcher->setPollInterval(m_pollMinutes * 60 * 1000);
 }
 
 void SharedFileList::republishFile(KnownFile* file)
@@ -604,23 +618,22 @@ SharedFileList::ShareRules SharedFileList::shareRules() const
 
     // #124: downloads land in subfolders (torrents, Usenet jobs, hoster packages).
     // Incoming dirs only: a separate BT download dir or a shared dir stays flat (#131)
-    if (thePrefs.shareIncomingSubdirs()) {
-        for (const QString& dir : thePrefs.allIncomingDirs()) {
-            if (dir.isEmpty())
-                continue;
-            const QString clean = QDir::cleanPath(QDir(dir).absolutePath());
-            if (!rules.treeRootKeys.contains(pathKey(clean))) {
-                rules.treeRoots.append(clean);
-                rules.treeRootKeys.append(pathKey(clean));
-            }
+    // Always on, no setting (#163): finished torrents/other networks' files need it; browsing stays gated by viewSharedFilesAccess
+    for (const QString& dir : thePrefs.allIncomingDirs()) {
+        if (dir.isEmpty())
+            continue;
+        const QString clean = QDir::cleanPath(QDir(dir).absolutePath());
+        if (!rules.treeRootKeys.contains(pathKey(clean))) {
+            rules.treeRoots.append(clean);
+            rules.treeRootKeys.append(pathKey(clean));
         }
-        // the app's own folders stay out, wherever they sit
-        QStringList own = thePrefs.tempDirs();
-        own << thePrefs.configDir() << thePrefs.usenetWatchDir();
-        for (const QString& dir : own)
-            if (!dir.isEmpty())
-                rules.treeExcluded.append(pathKey(QDir(dir).absolutePath()));
     }
+    // the app's own folders stay out, wherever they sit
+    QStringList own = thePrefs.tempDirs();
+    own << thePrefs.configDir() << thePrefs.usenetWatchDir();
+    for (const QString& dir : own)
+        if (!dir.isEmpty())
+            rules.treeExcluded.append(pathKey(QDir(dir).absolutePath()));
     return rules;
 }
 
@@ -1730,8 +1743,14 @@ QStringList SharedFileList::shareRoots(const ShareRules& rules) const
 
 void SharedFileList::listDirectory(const QString& dir, QHash<QString, DiskEntry>& out) const
 {
+    addListed(scanDirectory(dir), out);
+}
+
+QList<ListedFile> SharedFileList::scanDirectory(const QString& dir)
+{
+    QList<ListedFile> listing;
     if (!QDir(dir).exists())
-        return;
+        return listing;
 
 #ifdef Q_OS_WIN
     // Hidden files are shared as in MFC; system ones are dropped by isShareableFile()
@@ -1759,6 +1778,15 @@ void SharedFileList::listDirectory(const QString& dir, QHash<QString, DiskEntry>
 #endif
         if (!isShareableFile(fi))
             continue;
+        fi.lastModified();   // size and date cached for a reader on another thread
+        listing.append({std::move(fi), sharedDirectory});
+    }
+    return listing;
+}
+
+void SharedFileList::addListed(const QList<ListedFile>& listing, QHash<QString, DiskEntry>& out) const
+{
+    for (const auto& [fi, sharedDirectory] : listing) {
         // ed3k: an opened plain copy (setNeverShared): a known file would join unasked;
         // a torrent still downloading (setStillWriting)
         if (isNeverShared(fi.absoluteFilePath()))
@@ -1814,10 +1842,18 @@ void SharedFileList::rescan(const QStringList& onlyDirs)
     const time_t now = std::time(nullptr);
 
     // 1. What the disk offers. Deliberately unlocked: this walks the share from disk.
+    // A polled share was listed by the watcher a moment ago: not read again here.
     QHash<QString, DiskEntry> onDisk;
-    for (const QString& dir : roots)
-        if (full || scope.contains(pathKey(dir)))
+    for (const QString& dir : roots) {
+        if (!full && !scope.contains(pathKey(dir)))
+            continue;
+        if (auto listed = takePrelisted(dir))
+            addListed(*listed, onDisk);
+        else
             listDirectory(dir, onDisk);
+    }
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    m_prelisted.removeIf([nowMs](const auto& it) { return nowMs - it.value().atMs > kPrelistMaxAgeMs; });
 
     // Files shared individually, outside any shared directory — otherwise a reload
     // would silently drop them (srchybrid/SharedFileList.cpp:586-587).
@@ -2832,6 +2868,18 @@ bool SharedFileList::hasWrongSize(const KnownFile* file)
                               "larger file than its %2 bytes. Delete it and download it again.")
                    .arg(file->fileName()).arg(static_cast<uint64>(file->fileSize())));
     return true;
+}
+
+std::optional<QList<ListedFile>> SharedFileList::takePrelisted(const QString& dir)
+{
+    const auto it = m_prelisted.find(pathKey(dir));
+    if (it == m_prelisted.end())
+        return std::nullopt;
+    Prelisted entry = std::move(*it);
+    m_prelisted.erase(it);
+    if (QDateTime::currentMSecsSinceEpoch() - entry.atMs > kPrelistMaxAgeMs)
+        return std::nullopt;
+    return std::move(entry.listing);
 }
 
 } // namespace eMule

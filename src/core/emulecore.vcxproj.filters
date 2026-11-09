@@ -519,6 +519,9 @@
     <ClCompile Include="server\ServerConnect.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="server\DeadServers.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="server\ServerList.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -1272,6 +1275,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="search\SearchParams.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="server\DeadServers.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="server\Server.h">

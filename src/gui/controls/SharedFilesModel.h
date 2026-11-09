@@ -225,7 +225,7 @@ public:
     using QSortFilterProxyModel::QSortFilterProxyModel;
 
     /// @p withSubdirs: Incoming / Shared Directories split at the incoming tree, not
-    /// the folder alone (shareIncomingSubdirs, #124)
+    /// the folder alone (#124)
     void setFolderFilter(SharedFilterType type, const QString& path = {}, bool withSubdirs = false);
 
     /// MFC CSharedFilesCtrl::IsFilteredOut: every token must be in the text of

@@ -4,8 +4,31 @@
 
 #include "net/GuardedNetworkAccessManager.h"
 #include "net/BindAddress.h"
+#include "net/ProxySettings.h"
+#include "prefs/Preferences.h"
+
+#include <QNetworkProxyFactory>
 
 namespace eMule {
+
+namespace {
+
+/// The Proxy page's proxy, read at each request: a change applies to the next one.
+class PrefsProxyFactory : public QNetworkProxyFactory {
+public:
+    QList<QNetworkProxy> queryProxy(const QNetworkProxyQuery& query) override
+    {
+        return {toNetworkProxy(thePrefs.proxySettings(), query.peerHostName())};
+    }
+};
+
+} // namespace
+
+GuardedNetworkAccessManager::GuardedNetworkAccessManager(QObject* parent)
+    : QNetworkAccessManager(parent)
+{
+    setProxyFactory(new PrefsProxyFactory);   // owned by the manager
+}
 
 QNetworkReply* GuardedNetworkAccessManager::createRequest(Operation op, const QNetworkRequest& request,
                                                           QIODevice* outgoingData)

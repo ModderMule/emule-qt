@@ -216,6 +216,7 @@ private slots:
     void lowIdOnIPv4_serverClosesIPv4BeforeAnswering();
     void lowIdOnIPv4_handoverLoginSendsSessionToken();
     void lowIdOnIPv4_refusedSecondSessionClosesIPv4First();
+    void lowIdOnIPv4_unansweredHandoverLoginLogsInAgain();
     void lowIdOnIPv4_staysWithoutThePref();
     void live_enodeTakesOverBothFamiliesByToken();
     void lowIdOnIPv4_staysOnIPv4WhenIPv6IsDead();
@@ -1646,6 +1647,7 @@ struct HandoverRig {
     QTcpSocket* side6 = nullptr;
     QByteArray sessionToken;   ///< eNode-go ST_NATT_TOKEN sent after the IPv4 login; empty = none
     QByteArray login6;         ///< the IPv6 handover login as received
+    uint32 timeoutMs = 0;      ///< connectionTimeout (also the handover's); 0 = default
 
     bool start()
     {
@@ -1653,6 +1655,8 @@ struct HandoverRig {
             return false;
         auto cfg = makeTestConfig();
         cfg.preferIPv6OnLowID = true;
+        if (timeoutMs != 0)
+            cfg.connectionTimeout = timeoutMs;
         conn.setConfig(cfg);
         conn.connectToServer(dual.v4.entry, false, true);
         side4 = acceptOn(dual.v4.listener);
@@ -1825,6 +1829,31 @@ void tst_ServerConnect::lowIdOnIPv4_refusedSecondSessionClosesIPv4First()
     QCOMPARE(theApp.ed2kSessionIP(), uint32{0x0403020A});
     rig.conn.disconnect();
     QCOMPARE(theApp.ed2kSessionIP(), uint32{0});
+}
+
+void tst_ServerConnect::lowIdOnIPv4_unansweredHandoverLoginLogsInAgain()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    HandoverRig rig;
+    if (!rig.dual.v4.entry)
+        QSKIP("no dual-stack loopback listener pair");
+    rig.timeoutMs = 1500;
+    QVERIFY(rig.start());
+
+    // The IPv6 login got no answer: ed2k-server may have taken it and replaced the IPv4
+    // session, so the client drops that one and logs in again over IPv4
+    QVERIFY(QTest::qWaitFor([&] { return rig.side4->state() == QAbstractSocket::UnconnectedState; }, 5000));
+    QVERIFY(rig.dual.v4.entry->ipv6SwitchFailed());
+    QTcpSocket* again4 = acceptOn(rig.dual.v4.listener);
+    QVERIFY(again4);
+    QVERIFY(loginArrives(again4));
+    writeIdChange(again4, 0x00000042);
+    QVERIFY(QTest::qWaitFor([&] { return rig.conn.isConnected(); }, 5000));
+    QVERIFY(rig.conn.sessionAddress().isIPv4());
+    rig.conn.disconnect();
 }
 
 // Live, opt-in: EMULE_LIVE_ENODE_PORT = an eNode-go listening dual-stack on loopback

@@ -39,6 +39,7 @@ private slots:
     void failedRequest_isNotMarkedUsed();
     void queryNextClient_waitsForTheExternalPort();
     void useExternKadPort_trueBeforePortIsKnown();
+    void process_freesSilentTester();
 };
 
 void tst_KadFirewallTester::init()
@@ -329,6 +330,34 @@ void tst_KadFirewallTester::timeout_reportsFirewalledNotOpen()
     if (Kademlia::instance() && Kademlia::instance()->isFirewalled())
         QVERIFY(firewalled);
     QVERIFY(!UDPFirewallTester::isVerified());
+}
+
+void tst_KadFirewallTester::process_freesSilentTester()
+{
+    // Report 35: a tester that never answers held its slot until the 6-minute
+    // timeout. After 60 s the slot frees; a late open answer still counts.
+    const auto now = static_cast<uint32>(time(nullptr));
+    UDPFirewallTester::debugSetTestStart(now);
+    UDPFirewallTester::debugAddUsedTestClient(0x0A000001, 4672);
+    UDPFirewallTester::debugAddUsedTestClient(0x0A000002, 4672);
+    QCOMPARE(UDPFirewallTester::debugChecksRunning(), uint8{2});
+
+    UDPFirewallTester::process(now + 30);
+    QCOMPARE(UDPFirewallTester::debugChecksRunning(), uint8{2});
+
+    UDPFirewallTester::process(now + 61);
+    QCOMPARE(UDPFirewallTester::debugChecksRunning(), uint8{0});
+
+    // Late failure on a freed slot: ignored, not counted as firewalled.
+    UDPFirewallTester::setUDPFWCheckResult(false, false, 0x0A000001, 0);
+    QCOMPARE(UDPFirewallTester::debugChecksFinished(), uint8{0});
+    QVERIFY(UDPFirewallTester::isFWCheckUDPRunning());
+
+    // Late open answer: decides the check.
+    UDPFirewallTester::setUDPFWCheckResult(true, false, 0x0A000002, 4672);
+    QVERIFY(!UDPFirewallTester::isFWCheckUDPRunning());
+    QVERIFY(!UDPFirewallTester::isFirewalledUDP(false));
+    QVERIFY(UDPFirewallTester::isVerified());
 }
 
 QTEST_GUILESS_MAIN(tst_KadFirewallTester)

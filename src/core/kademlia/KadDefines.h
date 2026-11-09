@@ -77,6 +77,19 @@ inline constexpr uint32_t kSleepGap                     = 120;
 inline constexpr uint32_t kCatchUpSpread                = 300;
 inline constexpr uint32_t kCatchUpSmallTimer            = 25;   // 12 ticks per spread >= K contacts
 
+// Firewall recheck driving (not MFC, report 35). MFC waits for routine HELLOs to
+// carry the FIREWALLED_REQs, a few per minute on a quiet table: own HELLOs make
+// the 4 answers arrive in seconds. A running TCP recheck is not reset again
+// within kFwRecheckHold. Resume, network back and IP change recheck after kFwRecheckAfterWake.
+inline constexpr uint32_t kFwProbeHellos                = 6;
+inline constexpr uint32_t kFwProbeInterval              = 30;
+inline constexpr uint32_t kFwProbeRounds                = 6;
+inline constexpr uint32_t kFwRecheckHold                = 300;
+inline constexpr uint32_t kFwRecheckAfterWake           = 30;
+// The 4th FIREWALLED_RES ends the recheck; the acks trail it by a few seconds.
+// Keep showing an open last verdict this long so a recheck does not blink firewalled.
+inline constexpr uint32_t kFwAckDisplayGrace            = 20;
+
 // ---------------------------------------------------------------------------
 // External port consensus
 // ---------------------------------------------------------------------------

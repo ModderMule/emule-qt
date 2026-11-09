@@ -128,6 +128,10 @@ private:
     [[nodiscard]] int udpPortValue() const;
     /// TCP and UDP (and ed3k) on one number: one "TCP/UDP" field; never split again here.
     void setPortsJoined(bool joined);
+    /// Extended page: open the core's preferences.yml with the OS default app (same host only).
+    void openPreferencesFile();
+    /// Extended page: the core re-reads preferences.yml; the pages refill from it.
+    void reloadPreferencesFile();
     void setupSidebar();
     void setupPages();
     void setupButtons();
@@ -340,6 +344,7 @@ private:
     QCheckBox* m_showCatTabInfosCheck = nullptr;
     QCheckBox* m_autoRemoveFinishedCheck = nullptr;
     QCheckBox* m_showTransToolbarCheck = nullptr;
+    QCheckBox* m_downloadSecondarySortCheck = nullptr;   ///< downloads: previous sort column breaks ties
     QCheckBox* m_downloadStatusFilterCheck = nullptr;   ///< status filter rows: Transfers, Torrents, Hoster
     QCheckBox* m_torrentStatusFilterCheck = nullptr;
     QCheckBox* m_hosterStatusFilterCheck = nullptr;
@@ -424,6 +429,7 @@ private:
 
     // Server page controls
     QSpinBox*  m_deadServerRetriesSpin = nullptr;
+    QCheckBox* m_removeDeadServersCheck = nullptr;
     QCheckBox* m_autoUpdateServerListCheck = nullptr;
     QPushButton* m_listUrlBtn = nullptr;
     QString m_serverListURLValue;
@@ -466,6 +472,7 @@ private:
     QCheckBox* m_rememberCancelledCheck = nullptr;
     QCheckBox* m_autoRenameMajorityCheck = nullptr;
     QCheckBox* m_watchSharedDirsCheck = nullptr;
+    QSpinBox* m_sharedDirsPollSpin = nullptr;
     QCheckBox* m_seenFileIndexCheck = nullptr;
     QPlainTextEdit* m_archivePasswordsEdit = nullptr;
     QCheckBox* m_archiveRecursiveCheck = nullptr;
@@ -735,6 +742,7 @@ private:
     QCheckBox*    m_ed3kVerboseCheck = nullptr;
     QCheckBox*    m_usenetVerboseCheck = nullptr;
     QCheckBox*    m_sharedFilesVerboseCheck = nullptr;
+    QCheckBox*    m_ussVerboseCheck = nullptr;
     QCheckBox*    m_logBannedClientsCheck = nullptr;
     QCheckBox*    m_logRatingDescCheck = nullptr;
     QCheckBox*    m_logSecureIdentCheck = nullptr;
@@ -762,6 +770,8 @@ private:
     QSlider*      m_queueSizeSlider = nullptr;
     QLabel*       m_fileBufferLabel = nullptr;
     QLabel*       m_queueSizeLabel = nullptr;
+    QPushButton*  m_openPrefsFileBtn = nullptr;
+    QPushButton*  m_reloadPrefsFileBtn = nullptr;
 
     // USS (Upload SpeedSense) controls
     QCheckBox*    m_dynUpEnabledCheck = nullptr;

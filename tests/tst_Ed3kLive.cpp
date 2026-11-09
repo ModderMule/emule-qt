@@ -143,6 +143,13 @@ struct SegmentSpy {
     }
 };
 
+/// plays everything: the tests not about §2.3 must not hang on what this machine decodes
+/// (Qt's FFmpeg on Linux may lack H.264)
+QString playsAll(const QString&, const QString&)
+{
+    return {};
+}
+
 /// a refusing check for H.265 (§2.3 tests, whatever this machine plays)
 QString noHevc(const QString& media, const QString& codecs)
 {
@@ -198,6 +205,7 @@ void tst_Ed3kLive::aBroadcastIsServedOverLoopbackHttp()
     Ed3kSiteServer sites(b, names);
     QTRY_VERIFY_WITH_TIMEOUT(sites.isListening(), 5000);
     Ed3kLive live(b, sites);
+    live.setPlayCheck(playsAll);
     const auto id = live.watch(link);
     QVERIFY2(id, id ? "" : id.error().toUtf8().constData());
     QCOMPARE(*id, QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(stream->bytes.data()), 16).toHex()));
@@ -265,6 +273,7 @@ void tst_Ed3kLive::badLinksAndOtherHosts()
     Ed3kSiteServer sites(s, names);
     QTRY_VERIFY_WITH_TIMEOUT(sites.isListening(), 5000);
     Ed3kLive live(s, sites);
+    live.setPlayCheck(playsAll);
     QVERIFY(!live.watch(QStringLiteral("ed3k:live?key=abc")));
     QVERIFY(!live.leave(QStringLiteral("00")));
     // a stream not watched: 404; another host stays the website server's (421)
@@ -326,6 +335,7 @@ void tst_Ed3kLive::aGapOrNewInitRestartsTheViewers()
     Ed3kSiteServer sites(b, names);
     QTRY_VERIFY_WITH_TIMEOUT(sites.isListening(), 5000);
     Ed3kLive live(b, sites);
+    live.setPlayCheck(playsAll);
     const auto id = live.watch(link);
     QVERIFY(id);
     QVERIFY(live.addPeer(*id, sourceOf(a)));
@@ -425,6 +435,7 @@ void tst_Ed3kLive::aBroadcastFromAnHlsFolderIsWatched()
     Ed3kSiteServer sites(b, names);
     QTRY_VERIFY_WITH_TIMEOUT(sites.isListening(), 5000);
     Ed3kLive live(b, sites);
+    live.setPlayCheck(playsAll);
     const auto id = live.watch(started->link);
     QVERIFY(id);
     QCOMPARE(*id, started->id);
@@ -549,7 +560,7 @@ void tst_Ed3kLive::aChannelFileIsFoundByAChannelSearch()
     Ed3kSiteServer sites(c, names);
     QTRY_VERIFY_WITH_TIMEOUT(sites.isListening(), 5000);
     Ed3kLive live(c, sites);
-    live.setPlayCheck([](const QString&, const QString&) { return QString(); });
+    live.setPlayCheck(playsAll);
     Ed3kSearch search(c);
     search.setLiveFetch([&](const ::ed3k::Root& root, std::uint64_t size, Ed3kLiveFiles::Fetched done) {
         live.files().fetch(root, size, std::move(done), Ed3kSearch::kLiveFetchMs);
@@ -702,6 +713,7 @@ void tst_Ed3kLive::anOversizedInitIsSkippedOnceWithAGap()
     Ed3kSiteServer sites(b, names);
     QTRY_VERIFY_WITH_TIMEOUT(sites.isListening(), 5000);
     Ed3kLive live(b, sites);
+    live.setPlayCheck(playsAll);
     const auto id = live.watch(started->link);
     QVERIFY(id);
     QVERIFY(live.addPeer(*id, sourceOf(a)));

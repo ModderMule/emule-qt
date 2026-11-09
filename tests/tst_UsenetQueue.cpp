@@ -4367,6 +4367,12 @@ void tst_UsenetQueue::aWriteFailureFailsLocallyAndNeverBlamesTheServer()
     const QString locked = tmp.filePath(QStringLiteral("locked"));
     QVERIFY(QDir().mkpath(locked));
     QVERIFY(QFile::setPermissions(locked, QFileDevice::ReadOwner | QFileDevice::ExeOwner));
+    {
+        // root (a container) writes through the mode bits
+        QFile probe(QDir(locked).filePath(QStringLiteral("probe")));
+        if (probe.open(QIODevice::WriteOnly))
+            QSKIP("folder stays writable (running as root)");
+    }
     thePrefs.setTempDirs({locked});
 
     UsenetQueue queue;

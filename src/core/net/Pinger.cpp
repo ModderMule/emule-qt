@@ -8,6 +8,7 @@
 #include "utils/Log.h"
 
 #include <QElapsedTimer>
+#include <QtEndian>
 
 
 #ifndef Q_OS_WIN
@@ -430,7 +431,7 @@ bool Pinger::applyInterfacePin()
 
 #else // Q_OS_WIN
 
-// Windows implementation using IcmpSendEcho from the IP Helper API.
+// Windows implementation using IcmpSendEcho2Ex from the IP Helper API.
 
 #include <winsock2.h>
 #include <iphlpapi.h>
@@ -462,14 +463,28 @@ Pinger::~Pinger()
 
 PingStatus Pinger::ping(uint32 addr, uint8 ttl, bool /*useUdp*/)
 {
-    // IcmpSendEcho cannot be pinned to an interface: at least send nothing while the
-    // selected one is missing.
-    if (!BindAddress::outboundAllowed()) {
+    // Nothing goes out while the selected interface is missing
+    const BindAddress::Resolution r = BindAddress::current();
+    if (r.state == BindAddress::State::Blocked) {
         PingStatus blocked;
+        blocked.delay = static_cast<float>(kWinPingTimeout);
         blocked.error = static_cast<uint32>(ERROR_NETWORK_UNREACHABLE);
         return blocked;
     }
-    // Windows always uses ICMP via IcmpSendEcho (UDP traceroute not implemented)
+    // Bound: send from the interface's IPv4. Windows' strong host send model keeps the
+    // echo on the interface owning that address. No IPv4 there: nothing to ping with.
+    m_sourceAddress = 0;
+    if (r.state == BindAddress::State::Bound) {
+        const QHostAddress v4 = r.literal.isNull() ? r.v4 : r.literal;
+        if (v4.protocol() != QAbstractSocket::IPv4Protocol) {
+            PingStatus noV4;
+            noV4.delay = static_cast<float>(kWinPingTimeout);
+            noV4.error = static_cast<uint32>(ERROR_NETWORK_UNREACHABLE);
+            return noV4;
+        }
+        m_sourceAddress = qToBigEndian(v4.toIPv4Address());
+    }
+    // Windows always uses ICMP via IcmpSendEcho2Ex (UDP traceroute not implemented)
     return pingICMP(addr, ttl);
 }
 
@@ -493,8 +508,11 @@ PingStatus Pinger::pingICMP(uint32 addr, uint8 ttl)
     QElapsedTimer timer;
     timer.start();
 
-    DWORD replyCount = IcmpSendEcho(
+    // A zero source lets the stack pick, like IcmpSendEcho
+    DWORD replyCount = IcmpSendEcho2Ex(
         static_cast<HANDLE>(m_icmpHandle),
+        nullptr, nullptr, nullptr,  // synchronous
+        static_cast<IPAddr>(m_sourceAddress),
         addr,
         nullptr, 0,      // no payload
         &ipInfo,

@@ -594,6 +594,9 @@ void CoreSession::initUSS()
                     ips.push_back(ip);
             });
         }
+        logUssVerbose([&]() -> QString {
+            return QStringLiteral("USS: Server and client lists offer %1 IPv4 hosts").arg(ips.size());
+        });
         if (!ips.empty())
             m_lastCommonRouteFinder->addHostsToCheck(ips);
     });
@@ -2394,6 +2397,7 @@ void CoreSession::loadStep()
             ensureSeenFileIndex();   // our own shares are files we have seen
             theApp.sharedFileList->reload();
             m_sharedFilesScanned = true;
+            theApp.sharedFileList->setPollMinutes(thePrefs.sharedDirsPollMinutes());
             theApp.sharedFileList->setWatchingEnabled(thePrefs.watchSharedDirs());
 
             // MFC starts CAICHSyncThread once the shared list exists (srchybrid/EmuleDlg.cpp:641).

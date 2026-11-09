@@ -15,6 +15,22 @@
 
 using namespace eMule;
 
+namespace {
+
+// Linux holds through logind or the desktop's ScreenSaver over D-Bus; a container or a
+// bare build host has neither. macOS and Windows always can.
+bool noInhibitService(bool holding)
+{
+#ifdef Q_OS_LINUX
+    return !holding;
+#else
+    Q_UNUSED(holding);
+    return false;
+#endif
+}
+
+} // namespace
+
 class tst_PowerManager : public QObject {
     Q_OBJECT
 
@@ -49,6 +65,8 @@ void tst_PowerManager::prefOn_followsActivity()
 
     active = true;
     pm.evaluate();
+    if (noInhibitService(pm.isPreventingStandby()))
+        QSKIP("no logind or ScreenSaver D-Bus service");
     QVERIFY(pm.isPreventingStandby());
 
     active = false;
@@ -61,6 +79,8 @@ void tst_PowerManager::prefTurnedOff_releasesOnEvaluate()
     thePrefs.setPreventStandby(true);
     PowerManager pm([] { return true; });
     pm.start();
+    if (noInhibitService(pm.isPreventingStandby()))
+        QSKIP("no logind or ScreenSaver D-Bus service");
     QVERIFY(pm.isPreventingStandby());
 
     thePrefs.setPreventStandby(false);
@@ -77,6 +97,8 @@ void tst_PowerManager::destructor_releases()
     thePrefs.setPreventStandby(true);
     auto pm = std::make_unique<PowerManager>([] { return true; });
     pm->start();
+    if (noInhibitService(pm->isPreventingStandby()))
+        QSKIP("no logind or ScreenSaver D-Bus service");
     QVERIFY(pm->isPreventingStandby());
     pm.reset();  // must not leak the hold; checked live via `pmset -g assertions`
 }

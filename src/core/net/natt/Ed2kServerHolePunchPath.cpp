@@ -88,6 +88,7 @@ void Ed2kServerHolePunchPath::tick()
         m_session = {};
         m_sessionID = 0;
         m_sentObfuscated = false;
+        m_hadToken = false;
         return;
     }
     const Endpoint session(env().serverSessionAddress(), server->port());
@@ -101,7 +102,10 @@ void Ed2kServerHolePunchPath::tick()
         if (server->supportsHolePunchExtension() && session.address().isIPv4() && env().serverUdpCrypt().key == 0)
             env().refreshServerKey();
     }
-    if (!fresh && env().now() - m_lastKeepaliveMs < kKeepaliveMs)
+    // The ident's token arrived after login: the proof counts from any address, send now
+    const bool tokenArrived = server->hasNatToken() && !m_hadToken;
+    m_hadToken = server->hasNatToken();
+    if (!fresh && !tokenArrived && env().now() - m_lastKeepaliveMs < kKeepaliveMs)
         return;
     // Carrier NAT with one public IPv4 for TCP and another for UDP: the server drops
     // every 0x9F from an address other than the session's (ed2k-server#40), so the
@@ -157,6 +161,12 @@ QByteArray Ed2kServerHolePunchPath::proofMac(const std::array<uint8, 16>& token,
 bool Ed2kServerHolePunchPath::sendKeepalive(const Server& server, bool foreignWake)
 {
     m_lastKeepaliveMs = env().now();
+    // Background re-login to this server out: ed2k-server replaces the session and its token
+    // as soon as it takes the login, so our proof would count as bad. The new session sends.
+    if (env().serverReloginPending()) {
+        log(QStringLiteral("0x9F held: re-login to this server pending"));
+        return false;
+    }
     // From the client UDP socket. Extension servers take it server-key obfuscated
     // (IPv4 only), as does the burst after a foreign 0x37 (only ed2k-server sends one);
     // the others get it plain, to the server's UDP port (TCP + 4). Plain also while we

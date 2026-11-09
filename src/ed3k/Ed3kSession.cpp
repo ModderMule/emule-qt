@@ -596,6 +596,8 @@ void Ed3kSession::dispatch(ffi::Event& ev, ffi::KeyKind key)
     } else if (std::holds_alternative<e::FilterChanged>(ev)) {
         saveExport(m_engine->filterExportState(), kFilterFile);
     } else if (const auto* h = std::get_if<e::HttpRequest>(&ev)) {
+        // the Proxy page as it is now: a change needs no node restart (report 34)
+        m_http->setProxy(toNetworkProxy(thePrefs.proxySettings()));
         m_http->start(*h);
         return;
     } else if (const auto* c = std::get_if<e::IoCancel>(&ev)) {
@@ -655,6 +657,7 @@ bool Ed3kSession::startRpc(const ffi::event::RpcRequest& r)
     if (!m_http || index >= urls.size())
         return false;
     const QByteArray body(reinterpret_cast<const char*>(r.body.data()), qsizetype(r.body.size()));
+    m_http->setProxy(toNetworkProxy(thePrefs.proxySettings()));
     m_http->startRpc(r.id, urls.at(index), body);
     return true;
 }

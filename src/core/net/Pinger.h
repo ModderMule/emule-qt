@@ -150,6 +150,7 @@ private:
 
 #ifdef Q_OS_WIN
     void*  m_icmpHandle = nullptr;  ///< HANDLE from IcmpCreateFile().
+    uint32 m_sourceAddress = 0;     ///< bound interface's IPv4 (network order), 0 = any
     bool   m_udpStarted = false;
 #else
     int  m_icmpSocket = -1;  ///< SOCK_DGRAM + IPPROTO_ICMP (unprivileged ICMP echo).

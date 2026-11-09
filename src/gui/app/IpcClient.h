@@ -59,6 +59,8 @@ public:
     [[nodiscard]] qint64 corePid() const { return m_corePid; }
     /// The core runs with --autoupdate: it installs new releases by itself.
     [[nodiscard]] bool coreAutoUpdates() const { return m_coreAutoUpdate; }
+    /// The connected core's app version, from the handshake; empty = older core.
+    [[nodiscard]] QString coreVersion() const { return m_coreVersion; }
     /// A list that needs the row-update pushes of @p group (Ipc::PushGroup bits) came
     /// on screen (@p on) or left it. The core sends a group while anyone holds it;
     /// once any list has called this, a group nobody holds is dropped — the tray
@@ -628,6 +630,7 @@ private:
     QString m_loadStage;
     qint64 m_corePid = 0;
     bool m_coreAutoUpdate = false;
+    QString m_coreVersion;
     std::array<int, 16> m_pushGroupHolds{};   ///< per PushGroup bit
     bool m_pushGroupsHeld = false;            ///< a list has taken part
     int m_sentMask = -1;                      ///< -1 = nothing sent on this link

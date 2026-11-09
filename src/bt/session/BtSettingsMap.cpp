@@ -78,6 +78,8 @@ lt::settings_pack BtSettingsMap::toPack(const BtSettings& s)
     p.set_int(lt::settings_pack::i2p_inbound_quantity, quantity);
     p.set_int(lt::settings_pack::i2p_outbound_quantity, quantity);
 
+    applyProxy(p, s);
+
     // narrow: the log categories are a firehose (research doc §5.2)
     p.set_int(lt::settings_pack::alert_mask,
               static_cast<int>(static_cast<std::uint32_t>(lt::alert_category::error | lt::alert_category::status | lt::alert_category::storage
@@ -86,6 +88,37 @@ lt::settings_pack BtSettingsMap::toPack(const BtSettings& s)
                                                           // piece_finished_alert, for an ed3k join
                                                           | lt::alert_category::piece_progress)));
     return p;
+}
+
+void BtSettingsMap::applyProxy(lt::settings_pack& p, const BtSettings& s)
+{
+    using K = BtSettings::ProxyKind;
+    const bool auth = !s.proxyUser.isEmpty();
+    int type = lt::settings_pack::none;
+    if (!s.proxyHost.isEmpty() && s.proxyPort != 0) {
+        switch (s.proxyKind) {
+        case K::Socks4:
+            type = lt::settings_pack::socks4;
+            break;
+        case K::Socks5:
+            type = auth ? lt::settings_pack::socks5_pw : lt::settings_pack::socks5;
+            break;
+        case K::Http:
+            type = auth ? lt::settings_pack::http_pw : lt::settings_pack::http;
+            break;
+        case K::None:
+            break;
+        }
+    }
+    p.set_int(lt::settings_pack::proxy_type, type);
+    p.set_str(lt::settings_pack::proxy_hostname, type == lt::settings_pack::none ? std::string() : s.proxyHost.toStdString());
+    p.set_int(lt::settings_pack::proxy_port, type == lt::settings_pack::none ? 0 : s.proxyPort);
+    p.set_str(lt::settings_pack::proxy_username, auth ? s.proxyUser.toStdString() : std::string());
+    p.set_str(lt::settings_pack::proxy_password, auth ? s.proxyPassword.toStdString() : std::string());
+    // peers, trackers and web seeds through it; names resolved by the proxy (no DNS leak)
+    p.set_bool(lt::settings_pack::proxy_peer_connections, true);
+    p.set_bool(lt::settings_pack::proxy_tracker_connections, true);
+    p.set_bool(lt::settings_pack::proxy_hostnames, true);
 }
 
 int BtSettingsMap::rateBytes(quint32 kb)

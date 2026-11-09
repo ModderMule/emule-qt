@@ -32,6 +32,14 @@ struct ProxySettings {
 /// authentication is enabled.
 [[nodiscard]] QNetworkProxy toNetworkProxy(const ProxySettings& settings);
 
+/// Loopback, LAN and link-local hosts: a proxy out on the internet cannot reach them
+/// (a local Jackett, the I2P SAM bridge, a NAS indexer). Names other than "localhost"
+/// are not resolved and go through the proxy.
+[[nodiscard]] bool bypassesProxy(const QString& host);
+
+/// toNetworkProxy(), NoProxy for a host bypassesProxy() keeps local.
+[[nodiscard]] QNetworkProxy toNetworkProxy(const ProxySettings& settings, const QString& host);
+
 /// A type Qt can only approximate, see toNetworkProxy().
 [[nodiscard]] constexpr bool isSocks4ProxyType(int type)
 {

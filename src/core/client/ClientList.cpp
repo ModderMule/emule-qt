@@ -295,8 +295,18 @@ void ClientList::setBuddy(UpDownClient* buddy, BuddyStatus status)
         if (m_buddyStatus == BuddyStatus::Connected)
             kad::logKad(QStringLiteral("Kad: buddy lost — %1, held %2 s")
                             .arg(m_buddyInfo).arg(now - m_buddySince));
-        else if (m_buddyStatus == BuddyStatus::Connecting)
+        else if (m_buddyStatus == BuddyStatus::Connecting) {
             kad::logKad(QStringLiteral("Kad: buddy candidate %1 failed").arg(m_buddyCandidateInfo));
+            // Not a failure of the node when Kad itself stopped
+            const auto* kadInst = kad::Kademlia::instance();
+            if (m_buddyCandidateIp != 0 && kadInst && kadInst->isRunning()) {
+                m_failedBuddyCandidates[m_buddyCandidateIp] = now;
+                kad::logKad(QStringLiteral("Kad: not asking %1 again for %2 min")
+                                .arg(ipstr(Address::fromHostOrder(m_buddyCandidateIp)))
+                                .arg(kFailedBuddyBlockSecs / 60));
+            }
+        }
+        m_buddyCandidateIp = 0;
     }
 
     // Losing our buddy while firewalled — instantly re-trigger buddy search. Not MFC
@@ -463,6 +473,13 @@ bool ClientList::canServeAnotherBuddy() const
     return servedBuddyCount() < static_cast<int>(thePrefs.servedBuddyLimit());
 }
 
+bool ClientList::isFailedBuddyCandidate(uint32 ip) const
+{
+    const auto it = m_failedBuddyCandidates.find(ip);
+    return it != m_failedBuddyCandidates.end()
+           && std::time(nullptr) - it->second < kFailedBuddyBlockSecs;
+}
+
 void ClientList::requestBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
                                const uint8* clientID, uint8 connectOptions)
 {
@@ -478,6 +495,11 @@ void ClientList::requestBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
         return;
     if (isKadFirewallCheckIP(addr.toNetworkUint32()) || isBannedClient(addr))
         return;
+    if (isFailedBuddyCandidate(ip)) {
+        kad::logKad(QStringLiteral("Kad: buddy offer from %1 ignored — failed within the last hour")
+                        .arg(ipstr(addr)));
+        return;
+    }
 
     // Find existing client by IP+port, or create a new one.
     //
@@ -732,12 +754,23 @@ void ClientList::processKadList()
             break;
 
         case KadState::QueuedBuddy:
+            // Not MFC: an offer waiting behind failing candidates goes stale. The offering
+            // node lets its claim go (5 min here, 2 min in aMule); dialling it later would
+            // give us a "buddy" that relays nothing until the silence limit drops it.
+            if (std::time(nullptr) - client->kadStateSince()
+                > static_cast<std::time_t>(thePrefs.buddyOfferMaxAgeSecs())) {
+                kad::logKad(QStringLiteral("Kad: buddy candidate %1 dropped — offer older than %2 s")
+                                .arg(client->kadBuddyInfo()).arg(thePrefs.buddyOfferMaxAgeSecs()));
+                client->setKadState(KadState::None);
+                break;
+            }
             // We are firewalled and want this peer as our buddy — but only one attempt at a
             // time, so a second candidate waits until the first fails.
             if (m_buddyStatus == BuddyStatus::None) {
                 seen = BuddyStatus::Connecting;
                 m_buddyStatus = BuddyStatus::Connecting;
                 m_buddyCandidateInfo = client->kadBuddyInfo();
+                m_buddyCandidateIp = client->connectAddress().toUint32();
                 kad::logKad(QStringLiteral("Kad: dialling buddy candidate %1").arg(m_buddyCandidateInfo));
                 client->setKadState(KadState::ConnectingBuddy);
                 client->tryToConnect(true, /*noCallbacks*/ true);
@@ -1087,6 +1120,11 @@ void ClientList::cleanUpBannedList()
     const uint64 now64 = getTickCount();
     std::erase_if(m_handshakeFailures, [now64](const auto& pair) {
         return now64 - pair.second.windowStart >= HANDSHAKEFAIL_WINDOW;
+    });
+
+    const std::time_t nowSecs = std::time(nullptr);
+    std::erase_if(m_failedBuddyCandidates, [nowSecs](const auto& pair) {
+        return nowSecs - pair.second >= kFailedBuddyBlockSecs;
     });
 }
 

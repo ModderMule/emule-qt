@@ -29,6 +29,8 @@ Q_LOGGING_CATEGORY(lcEmuleServer,  "emule.server")
 Q_LOGGING_CATEGORY(lcEmuleServerVerbose, "emule.serverv")
 // Shared files: hashing, duplicates. Verbose tab, own switch (sharedFilesVerboseLog).
 Q_LOGGING_CATEGORY(lcEmuleSharedVerbose, "emule.sharedv")
+// Upload SpeedSense: host collection, route trace, pings. Verbose tab, own switch (ussVerboseLog).
+Q_LOGGING_CATEGORY(lcEmuleUssVerbose, "emule.uss")
 Q_LOGGING_CATEGORY(lcEmuleCrypto,  "emule.crypto")
 // MFC LOG_STATUSBAR: the GUI puts these in the main Log tab and the status bar.
 Q_LOGGING_CATEGORY(lcEmuleStatus,  "emule.status")

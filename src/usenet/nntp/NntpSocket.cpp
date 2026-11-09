@@ -150,6 +150,9 @@ void NntpSocket::connectToServer(const NewsServer& server)
         connect(m_socket, &QSslSocket::connected,     this, [this] {
             m_transportUp = true;
             applyBufferCaps();   // SO_RCVBUF needs the OS socket
+            // No Nagle: a pipelined BODY would wait for the ACK of the one ahead,
+            // which delayed ACK (Linux) holds until the answer comes
+            m_socket->setSocketOption(QAbstractSocket::LowDelayOption, 1);
         });
         connect(m_socket, &QSslSocket::readyRead,     this, &NntpSocket::onReadyRead);
         connect(m_socket, &QSslSocket::errorOccurred, this, &NntpSocket::onSocketError);

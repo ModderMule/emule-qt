@@ -12,6 +12,8 @@
 #include <QTest>
 #include <QThread>
 
+#include <atomic>
+
 using namespace eMule;
 
 class tst_SharedDirWatcher : public QObject {
@@ -25,6 +27,8 @@ private slots:
     void tooManyDirectoriesAtOnceIsAnOverflow();
     void aPollOverflowMayResetTheRoots();
     void aNetworkRootIsPolledEvenWhenWatched();
+    void aBusyShareSkipsThePoll();
+    void aZeroIntervalNeverPolls();
     void aMoveReportsBothDirectories();
     void aSlowOsWatchDoesNotBlockTheCaller();
 };
@@ -151,8 +155,8 @@ void tst_SharedDirWatcher::tooManyDirectoriesAtOnceIsAnOverflow()
     QCOMPARE(changed.count(), 0);
 }
 
-// More polled roots than kMaxPending overflow inside the poll; the owner's reload
-// then resets the roots while the poll is still walking them (#117).
+// More changed polled roots than kMaxPending overflow; the owner's reload then
+// resets the roots while poll answers are still coming in (#117).
 void tst_SharedDirWatcher::aPollOverflowMayResetTheRoots()
 {
     eMule::testing::TempDir tmp;
@@ -171,14 +175,21 @@ void tst_SharedDirWatcher::aPollOverflowMayResetTheRoots()
         watcher.setRoots({});        // what SharedFileList::reload() may do
         watcher.setRoots(dirs);
     });
+    QTest::qWait(300);   // first listings taken: all missing
+    QCOMPARE(overflows, 0);
 
-    QTRY_VERIFY_WITH_TIMEOUT(overflows >= 2, 5000);
-    // the reset roots are asked for again; polled once the worker answers
-    QTRY_COMPARE(watcher.polledRoots().size(), dirs.size());
+    for (const QString& dir : dirs) {
+        QDir().mkpath(dir);
+        touch(dir, QStringLiteral("f"));
+    }
+    QTRY_VERIFY_WITH_TIMEOUT(overflows >= 1, 5000);
+    // the reset roots are asked for again and exist now: watched
+    QTRY_VERIFY_WITH_TIMEOUT(watcher.polledRoots().isEmpty(), 5000);
 }
 
 // A watch on a network share is accepted and then tells little; such a root is
-// reported at intervals whatever the watch says.
+// listed at intervals whatever the watch says, and reported only when the listing
+// changed (#84: a NAS rescanned every poll froze the core).
 void tst_SharedDirWatcher::aNetworkRootIsPolledEvenWhenWatched()
 {
     eMule::testing::TempDir tmp;
@@ -186,6 +197,7 @@ void tst_SharedDirWatcher::aNetworkRootIsPolledEvenWhenWatched()
     const QString remote = tmp.filePath(QStringLiteral("remote"));
     QDir().mkpath(local);
     QDir().mkpath(remote);
+    touch(remote, QStringLiteral("old"));
 
     SharedDirWatcher watcher;
     watcher.setRemoteCheck([&](const QString& dir) { return dir == remote; });
@@ -194,12 +206,73 @@ void tst_SharedDirWatcher::aNetworkRootIsPolledEvenWhenWatched()
     QTRY_VERIFY(!watcher.watchesPending());
     QCOMPARE(watcher.polledRoots(), QStringList{remote});
     QSignalSpy changed(&watcher, &SharedDirWatcher::directoryChanged);
+    QSignalSpy listed(&watcher, &SharedDirWatcher::directoryListed);
 
-    // Nothing is touched: the reports come from the poll alone, and only for the
-    // remote root.
-    QTRY_VERIFY_WITH_TIMEOUT(changed.count() >= 2, 5000);
+    // nothing touched: several polls, no report
+    QTest::qWait(800);
+    QCOMPARE(changed.count(), 0);
+    QCOMPARE(listed.count(), 0);
+
+    // A file rewritten in place moves no directory date, but its own size: the
+    // poll sees it and hands its listing over.
+    {
+        QFile f(QDir(remote).filePath(QStringLiteral("old")));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("longer");
+    }
+    QTRY_VERIFY_WITH_TIMEOUT(!listed.isEmpty(), 5000);
+    QCOMPARE(listed.first().first().toString(), remote);
+    const auto listing = listed.first().at(1).value<DirListing>();
+    QCOMPARE(listing.size(), 1);
+    QCOMPARE(listing.first().info.size(), 6);
+    QTRY_VERIFY_WITH_TIMEOUT(!changed.isEmpty(), 5000);
     for (const auto& call : changed)
         QCOMPARE(call.first().toString(), remote);
+}
+
+// A share that hangs keeps its listing out on the worker: later polls skip it
+// rather than queue more listings behind it.
+void tst_SharedDirWatcher::aBusyShareSkipsThePoll()
+{
+    eMule::testing::TempDir tmp;
+    const QString remote = tmp.filePath(QStringLiteral("remote"));
+    QDir().mkpath(remote);
+
+    SharedDirWatcher watcher;
+    watcher.setRemoteCheck([](const QString&) { return true; });
+    std::atomic<int> probes = 0;
+    watcher.setBeforeProbeHook([&](const QString&) {
+        ++probes;
+        QThread::msleep(1500);
+    });
+    watcher.setTimings(50, 500, 50);
+    watcher.setRoots({remote});
+    QTRY_VERIFY(!watcher.watchesPending());
+
+    QTest::qWait(1000);   // ~20 poll rounds while the first listing hangs
+    QCOMPARE(probes.load(), 1);
+    QTRY_VERIFY_WITH_TIMEOUT(probes.load() >= 2, 5000);   // asked again once it answered
+}
+
+void tst_SharedDirWatcher::aZeroIntervalNeverPolls()
+{
+    eMule::testing::TempDir tmp;
+    const QString remote = tmp.filePath(QStringLiteral("remote"));
+    QDir().mkpath(remote);
+
+    SharedDirWatcher watcher;
+    watcher.setRemoteCheck([](const QString&) { return true; });
+    std::atomic<int> probes = 0;
+    watcher.setBeforeProbeHook([&](const QString&) { ++probes; });
+    watcher.setTimings(50, 500, 0);
+    watcher.setRoots({remote});
+    QTRY_VERIFY(!watcher.watchesPending());
+    QTest::qWait(400);
+    QCOMPARE(probes.load(), 0);
+
+    // turned on: listed at once, then at the interval
+    watcher.setPollInterval(50);
+    QTRY_VERIFY_WITH_TIMEOUT(probes.load() >= 2, 5000);
 }
 
 // Both ends of a move are reported, in batches — not necessarily the same one:

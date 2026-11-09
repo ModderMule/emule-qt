@@ -249,6 +249,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_showTransToolbarCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     for (QCheckBox* c : {m_downloadStatusFilterCheck, m_torrentStatusFilterCheck, m_hosterStatusFilterCheck})
         connect(c, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_downloadSecondarySortCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showSpeedGraphCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_speedGraphTimeSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_storeSearchesCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -302,6 +303,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_useServerPrioritiesCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_useUserSortedServerListCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_deadServerRetriesSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_removeDeadServersCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_autoUpdateServerListCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_smartLowIdCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_serverPreferIPv6Check, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -340,6 +342,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_rememberCancelledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_autoRenameMajorityCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_watchSharedDirsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_sharedDirsPollSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_seenFileIndexCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_archivePasswordsEdit, &QPlainTextEdit::textChanged, this, &OptionsDialog::markDirty);
     connect(m_archiveRecursiveCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -411,7 +414,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_logSourceExchangeCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_serverVerboseCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     for (auto* c : {m_btVerboseCheck, m_hosterVerboseCheck, m_ed3kVerboseCheck,
-                    m_usenetVerboseCheck, m_sharedFilesVerboseCheck})
+                    m_usenetVerboseCheck, m_sharedFilesVerboseCheck, m_ussVerboseCheck})
         connect(c, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logBannedClientsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logRatingDescCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -1223,6 +1226,12 @@ QWidget* OptionsDialog::createDisplayPage()
     statusFilterRow->addStretch();
     layout->addLayout(statusFilterRow);
 
+    m_downloadSecondarySortCheck = new QCheckBox(tr("Secondary sort in download list"), page);
+    m_downloadSecondarySortCheck->setToolTip(
+        tr("The column sorted before breaks ties of the current one: click Remaining, then Status, "
+           "to sort by status and by remaining time within each status"));
+    layout->addWidget(m_downloadSecondarySortCheck);
+
     m_showSpeedGraphCheck = new QCheckBox(tr("Show speed graph in toolbar"), page);
     layout->addWidget(m_showSpeedGraphCheck);
 
@@ -1798,9 +1807,9 @@ QWidget* OptionsDialog::createServerPage()
     auto* updateGroup = new QGroupBox(tr("Update"), page);
     auto* updateLayout = new QVBoxLayout(updateGroup);
 
-    // "Remove dead servers after [N] retries"
+    // "Disable dead servers after [N] retries" (MFC: "Remove"; a dead server is disabled, #161)
     auto* retriesRow = new QHBoxLayout;
-    auto* retriesLabel = new QLabel(tr("Remove dead servers after"), updateGroup);
+    auto* retriesLabel = new QLabel(tr("Disable dead servers after"), updateGroup);
     m_deadServerRetriesSpin = new QSpinBox(updateGroup);
     m_deadServerRetriesSpin->setRange(1, 99);
     m_deadServerRetriesSpin->setValue(20);
@@ -1812,6 +1821,17 @@ QWidget* OptionsDialog::createServerPage()
     retriesRow->addWidget(retriesSuffix);
     retriesRow->addStretch();
     updateLayout->addLayout(retriesRow);
+
+    // Remove the disabled ones; they stay out of the list for deadServerBlockDays (YAML)
+    auto* removeDeadRow = new QHBoxLayout;
+    m_removeDeadServersCheck = new QCheckBox(tr("Remove dead servers"), updateGroup);
+    m_removeDeadServersCheck->setChecked(true);
+    m_removeDeadServersCheck->setToolTip(
+        tr("Remove a disabled server from the list. Server lists cannot add it back for a while (7 days by default); adding it by hand still works."));
+    removeDeadRow->addSpacing(20);
+    removeDeadRow->addWidget(m_removeDeadServersCheck);
+    removeDeadRow->addStretch();
+    updateLayout->addLayout(removeDeadRow);
 
     // "Auto-update server list at startup" + "List..." button
     auto* autoUpdateRow = new QHBoxLayout;
@@ -2291,6 +2311,27 @@ QWidget* OptionsDialog::createFilesPage()
            "only picked up on restart or when you reload the shared files."));
     m_watchSharedDirsCheck->setVisible(thePrefs.showExtControls());
     miscLayout->addWidget(m_watchSharedDirsCheck);
+    // Advanced mode only
+    {
+        auto* pollRowWidget = new QWidget(miscGroup);
+        auto* pollRow = new QHBoxLayout(pollRowWidget);
+        pollRow->setContentsMargins(20, 0, 0, 0);
+        pollRow->addWidget(new QLabel(tr("Check network shares every:"), pollRowWidget));
+        m_sharedDirsPollSpin = new QSpinBox(pollRowWidget);
+        m_sharedDirsPollSpin->setRange(0, Preferences::kSharedDirsPollMinutesMax);
+        m_sharedDirsPollSpin->setSuffix(tr(" min"));
+        m_sharedDirsPollSpin->setSpecialValueText(tr("never"));
+        fitSpecialValue(m_sharedDirsPollSpin);
+        m_sharedDirsPollSpin->setToolTip(
+            tr("Shared folders on a NAS or other network share cannot be watched, so they are "
+               "checked at this interval. Only a folder whose contents changed is rescanned.\n\n"
+               "0 = never: new files there show up only after a reload or restart."));
+        pollRow->addWidget(m_sharedDirsPollSpin);
+        pollRow->addStretch();
+        pollRowWidget->setVisible(thePrefs.showExtControls());
+        miscLayout->addWidget(pollRowWidget);
+        connect(m_watchSharedDirsCheck, &QCheckBox::toggled, m_sharedDirsPollSpin, &QWidget::setEnabled);
+    }
 
     m_seenFileIndexCheck = new QCheckBox(tr("Remember files seen in search results"), miscGroup);
     m_seenFileIndexCheck->setToolTip(
@@ -6192,11 +6233,15 @@ QWidget* OptionsDialog::createExtendedPage()
     auto* tcpRow4 = new QHBoxLayout;
     tcpRow4->addWidget(new QLabel(tr("Max. firewalled Kad nodes served as buddy:"), tcpGroup));
     m_maxServedBuddiesSpin = new QSpinBox(tcpGroup);
-    m_maxServedBuddiesSpin->setRange(1, 32);
+    m_maxServedBuddiesSpin->setRange(0, Preferences::kMaxServedBuddiesLimit);
+    m_maxServedBuddiesSpin->setSpecialValueText(tr("Auto"));
+    fitSpecialValue(m_maxServedBuddiesSpin);
     m_maxServedBuddiesSpin->setToolTip(
         tr("While your ports are open, eMule relays callback requests for this many "
            "firewalled Kad nodes. Each one uses a connection, so at most a tenth of "
-           "\"Max. connections\" is served."));
+           "\"Max. connections\" is served.\n"
+           "Auto follows the upload capacity: 4 below 4 Mbit/s, 8 below 20 Mbit/s, "
+           "16 below 100 Mbit/s, 32 below 500 Mbit/s, 64 below 1 Gbit/s, else 128."));
     tcpRow4->addWidget(m_maxServedBuddiesSpin);
     tcpRow4->addStretch();
     tcpLayout->addLayout(tcpRow4);
@@ -6359,6 +6404,10 @@ QWidget* OptionsDialog::createExtendedPage()
     m_sharedFilesVerboseCheck->setToolTip(tr("A line for each file hashed and each duplicate not shared, "
                                              "in the Verbose tab."));
     verboseLayout->addWidget(m_sharedFilesVerboseCheck);
+    m_ussVerboseCheck = new QCheckBox(tr("Log Upload SpeedSense details"), verboseGroup);
+    m_ussVerboseCheck->setToolTip(tr("Host collection, route trace and every ping of Upload SpeedSense, "
+                                     "in the Verbose tab. Explains a status stuck at \"Preparing...\"."));
+    verboseLayout->addWidget(m_ussVerboseCheck);
 
     m_logBannedClientsCheck = new QCheckBox(tr("Log banned clients"), verboseGroup);
     verboseLayout->addWidget(m_logBannedClientsCheck);
@@ -6596,6 +6645,20 @@ QWidget* OptionsDialog::createExtendedPage()
         m_queueSizeLabel->setText(
             tr("Queue size: %1").arg(QLocale().toString(size)));
     });
+
+    // --- preferences.yml: edited by hand while the core runs ---
+    auto* prefsFileRow = new QHBoxLayout;
+    m_openPrefsFileBtn = new QPushButton(tr("Open preferences.yml"), page);
+    m_openPrefsFileBtn->setToolTip(tr("Open the core's preferences file with the default app for it"));
+    m_reloadPrefsFileBtn = new QPushButton(tr("Reload Preferences File"), page);
+    m_reloadPrefsFileBtn->setToolTip(
+        tr("Have the core read preferences.yml again and use the changed values without a restart"));
+    prefsFileRow->addWidget(m_openPrefsFileBtn);
+    prefsFileRow->addWidget(m_reloadPrefsFileBtn);
+    prefsFileRow->addStretch();
+    outerLayout->addLayout(prefsFileRow);
+    connect(m_openPrefsFileBtn, &QPushButton::clicked, this, &OptionsDialog::openPreferencesFile);
+    connect(m_reloadPrefsFileBtn, &QPushButton::clicked, this, &OptionsDialog::reloadPreferencesFile);
 
     // --- Enable/disable logic ---
     // Verbose sub-controls depend on verbose checkbox
@@ -7198,6 +7261,7 @@ void OptionsDialog::loadSettings()
     m_autoRemoveFinishedCheck->setChecked(thePrefs.autoRemoveFinishedDownloads());
     m_showTransToolbarCheck->setChecked(thePrefs.showTransToolbar());
     m_downloadStatusFilterCheck->setChecked(theUiState.showDownloadStatusFilter());
+    m_downloadSecondarySortCheck->setChecked(theUiState.downloadSecondarySort());
     m_torrentStatusFilterCheck->setChecked(theUiState.showTorrentStatusFilter());
     m_hosterStatusFilterCheck->setChecked(theUiState.showHosterStatusFilter());
     m_showSpeedGraphCheck->setChecked(thePrefs.showSpeedGraph());
@@ -7413,6 +7477,8 @@ void OptionsDialog::saveSettings()
     thePrefs.setShowTransToolbar(m_showTransToolbarCheck->isChecked());
     if (m_downloadStatusFilterCheck->isChecked() != theUiState.showDownloadStatusFilter())
         theUiState.setShowDownloadStatusFilter(m_downloadStatusFilterCheck->isChecked());
+    if (m_downloadSecondarySortCheck->isChecked() != theUiState.downloadSecondarySort())
+        theUiState.setDownloadSecondarySort(m_downloadSecondarySortCheck->isChecked());
     if (m_torrentStatusFilterCheck->isChecked() != theUiState.showTorrentStatusFilter())
         theUiState.setShowTorrentStatusFilter(m_torrentStatusFilterCheck->isChecked());
     if (m_hosterStatusFilterCheck->isChecked() != theUiState.showHosterStatusFilter())
@@ -7588,6 +7654,8 @@ void OptionsDialog::saveSettings()
         req.append(m_addServersFromClientsCheck->isChecked());
         req.append(QStringLiteral("deadServerRetries"));
         req.append(static_cast<qint64>(m_deadServerRetriesSpin->value()));
+        req.append(QStringLiteral("removeDeadServers"));
+        req.append(m_removeDeadServersCheck->isChecked());
         req.append(QStringLiteral("autoUpdateServerList"));
         req.append(m_autoUpdateServerListCheck->isChecked());
         req.append(QStringLiteral("serverListURL"));
@@ -7658,6 +7726,8 @@ void OptionsDialog::saveSettings()
         req.append(m_autoRenameMajorityCheck->isChecked());
         req.append(QStringLiteral("watchSharedDirs"));
         req.append(m_watchSharedDirsCheck->isChecked());
+        req.append(QStringLiteral("sharedDirsPollMinutes"));
+        req.append(static_cast<qint64>(m_sharedDirsPollSpin->value()));
         req.append(QStringLiteral("seenFileIndex"));
         req.append(m_seenFileIndexCheck->isChecked());
         req.append(QStringLiteral("archivePasswords"));
@@ -7999,6 +8069,8 @@ void OptionsDialog::saveSettings()
         req.append(m_usenetVerboseCheck->isChecked());
         req.append(QStringLiteral("sharedFilesVerboseLog"));
         req.append(m_sharedFilesVerboseCheck->isChecked());
+        req.append(QStringLiteral("ussVerboseLog"));
+        req.append(m_ussVerboseCheck->isChecked());
         req.append(QStringLiteral("logBannedClients"));
         req.append(m_logBannedClientsCheck->isChecked());
         req.append(QStringLiteral("logRatingDescReceived"));
@@ -8245,6 +8317,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setUseUserSortedServerList(m_useUserSortedServerListCheck->isChecked());
         thePrefs.setAddServersFromClients(m_addServersFromClientsCheck->isChecked());
         thePrefs.setDeadServerRetries(static_cast<uint32>(m_deadServerRetriesSpin->value()));
+        thePrefs.setRemoveDeadServers(m_removeDeadServersCheck->isChecked());
         thePrefs.setAutoUpdateServerList(m_autoUpdateServerListCheck->isChecked());
         thePrefs.setServerListURL(m_serverListURLValue);
         thePrefs.setSmartLowIdCheck(m_smartLowIdCheck->isChecked());
@@ -8280,6 +8353,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setRememberCancelledFiles(m_rememberCancelledCheck->isChecked());
         thePrefs.setAutoRenameToMajorityName(m_autoRenameMajorityCheck->isChecked());
         thePrefs.setWatchSharedDirs(m_watchSharedDirsCheck->isChecked());
+        thePrefs.setSharedDirsPollMinutes(m_sharedDirsPollSpin->value());
         thePrefs.setSeenFileIndex(m_seenFileIndexCheck->isChecked());
         thePrefs.setArchivePasswords(archivePasswordLines());
         thePrefs.setArchiveRecursiveExtract(m_archiveRecursiveCheck->isChecked());
@@ -8375,6 +8449,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setEd3kVerboseLog(m_ed3kVerboseCheck->isChecked());
         thePrefs.setUsenetVerboseLog(m_usenetVerboseCheck->isChecked());
         thePrefs.setSharedFilesVerboseLog(m_sharedFilesVerboseCheck->isChecked());
+        thePrefs.setUssVerboseLog(m_ussVerboseCheck->isChecked());
         thePrefs.setLogBannedClients(m_logBannedClientsCheck->isChecked());
         thePrefs.setLogRatingDescReceived(m_logRatingDescCheck->isChecked());
         thePrefs.setLogSecureIdent(m_logSecureIdentCheck->isChecked());
@@ -8549,6 +8624,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_useUserSortedServerListCheck->setChecked(prefs.value(QStringLiteral("useUserSortedServerList")).toBool());
     m_addServersFromClientsCheck->setChecked(prefs.value(QStringLiteral("addServersFromClients")).toBool());
     m_deadServerRetriesSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("deadServerRetries")).toInteger(20)));
+    m_removeDeadServersCheck->setChecked(prefs.value(QStringLiteral("removeDeadServers")).toBool(true));
     m_autoUpdateServerListCheck->setChecked(prefs.value(QStringLiteral("autoUpdateServerList")).toBool());
     m_serverListURLValue = prefs.value(QStringLiteral("serverListURL")).toString();
     m_smartLowIdCheck->setChecked(prefs.value(QStringLiteral("smartLowIdCheck")).toBool(true));
@@ -8604,6 +8680,8 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_rememberCancelledCheck->setChecked(prefs.value(QStringLiteral("rememberCancelledFiles")).toBool(true));
     m_autoRenameMajorityCheck->setChecked(prefs.value(QStringLiteral("autoRenameToMajorityName")).toBool(false));
     m_watchSharedDirsCheck->setChecked(prefs.value(QStringLiteral("watchSharedDirs")).toBool(true));
+    m_sharedDirsPollSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("sharedDirsPollMinutes")).toInteger(5)));
+    m_sharedDirsPollSpin->setEnabled(m_watchSharedDirsCheck->isChecked());
     m_seenFileIndexCheck->setChecked(prefs.value(QStringLiteral("seenFileIndex")).toBool(true));
     {
         QStringList pws;
@@ -8872,7 +8950,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     // Extended page
     m_maxConPerFiveSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxConsPerFive")).toInteger(20)));
     m_maxHalfOpenSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxHalfConnections")).toInteger(50)));
-    m_maxServedBuddiesSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxServedBuddies")).toInteger(8)));
+    m_maxServedBuddiesSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxServedBuddies")).toInteger(0)));
     m_serverKeepAliveSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("serverKeepAliveTimeout")).toInteger(0)) / 60000);
     m_useCreditSystemCheck->setChecked(prefs.value(QStringLiteral("useCreditSystem")).toBool(true));
     // toBool(true), not bare toBool(): the default is on, and an older daemon that does not
@@ -8908,6 +8986,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_ed3kVerboseCheck->setChecked(prefs.value(QStringLiteral("ed3kVerboseLog")).toBool());
     m_usenetVerboseCheck->setChecked(prefs.value(QStringLiteral("usenetVerboseLog")).toBool());
     m_sharedFilesVerboseCheck->setChecked(prefs.value(QStringLiteral("sharedFilesVerboseLog")).toBool());
+    m_ussVerboseCheck->setChecked(prefs.value(QStringLiteral("ussVerboseLog")).toBool());
     m_logBannedClientsCheck->setChecked(prefs.value(QStringLiteral("logBannedClients")).toBool(true));
     m_logBannedClientsCheck->setEnabled(verboseOn);
     m_logRatingDescCheck->setChecked(prefs.value(QStringLiteral("logRatingDescReceived")).toBool(true));
@@ -9769,6 +9848,105 @@ QStringList OptionsDialog::archivePasswordLines() const
             out.append(line);
     }
     return out;
+}
+
+void OptionsDialog::openPreferencesFile()
+{
+    const auto openPath = [this](const QString& path) {
+        if (path.isEmpty() || !QFileInfo::exists(path)) {
+            QMessageBox::warning(this, tr("Preferences File"),
+                                 tr("The preferences file was not found:\n%1").arg(QDir::toNativeSeparators(path)));
+            return;
+        }
+        if (!QDesktopServices::openUrl(QUrl::fromLocalFile(path)))
+            QMessageBox::warning(this, tr("Preferences File"),
+                                 tr("No application could open:\n%1").arg(QDir::toNativeSeparators(path)));
+    };
+
+    // Without a core the GUI's own copy is the file
+    if (!m_ipc || !m_ipc->isConnected()) {
+        openPath(thePrefs.filePath());
+        return;
+    }
+
+    Ipc::IpcMessage req(Ipc::IpcMsgType::GetPreferences);
+    m_ipc->sendRequest(std::move(req), [self = QPointer<OptionsDialog>(this), openPath](const Ipc::IpcMessage& resp) {
+        if (!self || !resp.isValid())
+            return;
+        const QString path = resp.fieldBool(0)
+            ? resp.fieldMap(1).value(QStringLiteral("preferencesFile")).toString() : QString();
+        // A core on another host: its file is there, not here
+        if (!self->m_ipc || !self->m_ipc->isLocalConnection()) {
+            QMessageBox::information(self, tr("Preferences File"),
+                path.isEmpty()
+                    ? tr("The core runs on another host. Open preferences.yml on that host.")
+                    : tr("The core runs on another host. Open preferences.yml on that host at:\n%1").arg(path));
+            return;
+        }
+        openPath(path);
+    });
+}
+
+void OptionsDialog::reloadPreferencesFile()
+{
+    if (!m_ipc || !m_ipc->isConnected()) {
+        QMessageBox::information(this, tr("Preferences File"), tr("Not connected to a core."));
+        return;
+    }
+    // Unsaved edits here would be replaced by the file's values
+    if (m_applyBtn->isEnabled()
+        && QMessageBox::question(this, tr("Preferences File"),
+                                 tr("Changes in this dialog that are not applied yet will be lost. Reload anyway?"))
+               != QMessageBox::Yes)
+        return;
+
+    m_reloadPrefsFileBtn->setEnabled(false);
+    m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::ReloadPreferences),
+                       [self = QPointer<OptionsDialog>(this), ipc = QPointer<IpcClient>(m_ipc)](
+                           const Ipc::IpcMessage& reload) {
+        if (!self)
+            return;
+        self->m_reloadPrefsFileBtn->setEnabled(true);
+        if (!reload.isValid())
+            return;   // connection dropped
+        if (reload.type() == Ipc::IpcMsgType::Error || !reload.fieldBool(0)) {
+            QMessageBox::warning(self, tr("Preferences File"),
+                                 tr("Reload failed: %1").arg(reload.fieldString(1)));
+            return;
+        }
+        const QCborArray changed = reload.fieldMap(1).value(QStringLiteral("changed")).toArray();
+        showPortChangeResult(self, reload, [ipc] {
+            if (ipc)
+                ipc->sendRestart();
+        });
+        if (changed.isEmpty()) {
+            QMessageBox::information(self, tr("Preferences File"),
+                                     tr("Preferences reloaded. No setting changed."));
+            return;
+        }
+        QStringList keys;
+        for (const QCborValue& k : changed)
+            keys.append(k.toString());
+        QMessageBox::information(self, tr("Preferences File"),
+                                 tr("Preferences reloaded. %n setting(s) changed:\n%1", nullptr, int(keys.size()))
+                                     .arg(keys.join(QStringLiteral(", "))));
+
+        // The pages show the new values; the GUI copy follows the core's
+        if (!ipc)
+            return;
+        ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::GetPreferences),
+                         [self](const Ipc::IpcMessage& prefs) {
+            if (!prefs.isValid() || !prefs.fieldBool(0))
+                return;
+            thePrefs.updateFromCbor(prefs.fieldMap(1));
+            if (!self)
+                return;
+            self->m_loading = true;
+            self->fillDaemonSettings(prefs.fieldMap(1));
+            self->m_loading = false;
+            self->m_applyBtn->setEnabled(false);
+        });
+    });
 }
 
 } // namespace eMule

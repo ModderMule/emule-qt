@@ -17,6 +17,7 @@
 #include <QObject>
 
 #include <cstdint>
+#include <ctime>
 #include <deque>
 #include <functional>
 #include <unordered_map>
@@ -152,6 +153,12 @@ public:
     /// Matches MFC CClientList::RequestBuddy (srchybrid/ClientList.cpp:694).
     void requestBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
                       const uint8* clientID, uint8 connectOptions);
+
+    /// Not MFC: a buddy candidate we could not connect to is not dialled or asked again
+    /// for this long. A buddy that connected and later went silent does not count.
+    static constexpr std::time_t kFailedBuddyBlockSecs = 60 * 60;
+    /// True while @p ip (host order) failed as buddy candidate within kFailedBuddyBlockSecs.
+    [[nodiscard]] bool isFailedBuddyCandidate(uint32 ip) const;
 
     /// Create a temporary client to request a UDP firewall check via TCP.
     /// Matches MFC CClientList::DoRequestFirewallCheckUDP (srchybrid/ClientList.cpp:767).
@@ -324,7 +331,10 @@ private:
     // For the Kad log: m_buddy may be gone by the time it is reported lost.
     QString m_buddyInfo;
     QString m_buddyCandidateInfo;
+    uint32 m_buddyCandidateIp = 0;      // host order, the candidate being dialled
     std::time_t m_buddySince = 0;
+    // host-order IP -> when its failed dial was noted
+    std::unordered_map<uint32, std::time_t> m_failedBuddyCandidates;
 };
 
 } // namespace eMule

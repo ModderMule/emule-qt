@@ -116,6 +116,7 @@ struct DownloadRow {
     bool hashsetNeeded = false;   ///< no part hashes yet
     int64_t lastReception = 0;
     int64_t addedOn = 0;
+    QString partMetName;          ///< "001.part.met" in Temp; empty for ed3k rows
     QString fileType;
     int64_t requests = 0;
     int64_t acceptedRequests = 0;
@@ -202,6 +203,7 @@ public:
         ColConfidence,       ///< file rows only: fake-file verdict
         ColTransferred,      ///< MFC column 2; appended so saved layouts keep their indexes
         ColEd3kKey,          ///< batch 15: ed3k rows' key (hops.md §1); appended
+        ColPartNumber,       ///< #162: the Temp part file's number; ext controls only
         ColCount
     };
 
@@ -292,8 +294,25 @@ class DownloadSortProxy : public SortValueProxy {
 public:
     using SortValueProxy::SortValueProxy;
 
+    /// Secondary sort (Display option, discussion #84): the column sorted before
+    /// the current one breaks its ties, e.g. Status, then Remaining.
+    void setSecondarySortEnabled(bool on);
+    [[nodiscard]] bool secondarySortEnabled() const { return m_secondaryEnabled; }
+    void setSecondarySort(int column, Qt::SortOrder order);
+    [[nodiscard]] int secondarySortColumn() const { return m_secondaryColumn; }
+    [[nodiscard]] Qt::SortOrder secondarySortOrder() const { return m_secondaryOrder; }
+
+    void sort(int column, Qt::SortOrder order = Qt::AscendingOrder) override;
+
 protected:
     [[nodiscard]] bool lessThan(const QModelIndex& left, const QModelIndex& right) const override;
+
+private:
+    [[nodiscard]] bool primaryLess(const QModelIndex& left, const QModelIndex& right) const;
+
+    bool m_secondaryEnabled = false;
+    int m_secondaryColumn = -1;
+    Qt::SortOrder m_secondaryOrder = Qt::AscendingOrder;
 };
 
 } // namespace eMule

@@ -183,6 +183,8 @@ private slots:
 
 private:
     bool writeDatagramNow(const QByteArray& data, const Endpoint& to);
+    /// False (and a debug line naming the opcode) for port 0 or a null address.
+    static bool hasRoute(const Endpoint& to, uint8 prot, uint8 opcode);
     void growReceiveBuffer();
 
     /// Filter, decrypt and dispatch one datagram. May throw — onReadyRead() catches.

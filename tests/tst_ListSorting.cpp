@@ -127,6 +127,7 @@ private slots:
     void sourceRowsFollowMfcColumns();
     void sourceStatusFollowsMfc();
     void a4afSourcesStayBelowAvailableOnes();
+    void downloadSecondarySortBreaksTies();
     void activeDownloadsAreBoldWhenEnabled();
     void sourcesSortByQueueRankWithDownloadingFirst();
     void sourcesSortByPartsAndBySoftware();
@@ -882,6 +883,45 @@ void tst_ListSorting::sourceStatusFollowsMfc()
 
     thePrefs.setShowExtControls(true);
     QCOMPARE(text(7), QStringLiteral("Asked for another file (No needed parts): \"other.avi\"*"));
+}
+
+void tst_ListSorting::downloadSecondarySortBreaksTies()
+{
+    // Discussion #84: Remaining, then Status -> by status, remaining time within it
+    QStandardItemModel model(0, 2);
+    const auto add = [&model](int status, int remaining) {
+        auto* s = new QStandardItem;
+        s->setData(status, Qt::UserRole);
+        auto* r = new QStandardItem;
+        r->setData(remaining, Qt::UserRole);
+        model.appendRow({s, r});
+    };
+    add(2, 30); add(1, 50); add(2, 10); add(1, 20);
+
+    DownloadSortProxy proxy;
+    proxy.setSourceModel(&model);
+    proxy.setSortRole(Qt::UserRole);
+    const auto order = [&proxy] {
+        QList<int> out;
+        for (int row = 0; row < proxy.rowCount(); ++row)
+            out << proxy.index(row, 1).data(Qt::UserRole).toInt();
+        return out;
+    };
+
+    proxy.sort(1, Qt::AscendingOrder);
+    proxy.sort(0, Qt::AscendingOrder);
+    QCOMPARE(proxy.secondarySortColumn(), 1);
+    // Off (default): ties keep no defined order beyond the primary
+    proxy.setSecondarySortEnabled(true);
+    QCOMPARE(order(), (QList<int>{20, 50, 10, 30}));
+
+    // Flipping the primary keeps the tie-breaker in its own order
+    proxy.sort(0, Qt::DescendingOrder);
+    QCOMPARE(order(), (QList<int>{10, 30, 20, 50}));
+
+    // Tie-breaker descending under a descending primary
+    proxy.setSecondarySort(1, Qt::DescendingOrder);
+    QCOMPARE(order(), (QList<int>{30, 10, 50, 20}));
 }
 
 void tst_ListSorting::a4afSourcesStayBelowAvailableOnes()

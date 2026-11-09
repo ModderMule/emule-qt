@@ -18,6 +18,7 @@
 
 #include <array>
 #include <ctime>
+#include <functional>
 #include <vector>
 
 namespace eMule::kad {
@@ -63,8 +64,10 @@ public:
 
     /// Drop missed and expired nodes, then pick up to kAskPerSearch not asked within
     /// kReaskSecs (any, with @p ignoreReask), most recent buddy first, and stamp them asked.
-    /// Most recent: last link up, then last offer.
-    [[nodiscard]] std::vector<Entry> takeDue(std::time_t now, bool ignoreReask = false);
+    /// Most recent: last link up, then last offer. Nodes @p skip returns true for (host-order
+    /// IP) are left out and keep their stamps.
+    [[nodiscard]] std::vector<Entry> takeDue(std::time_t now, bool ignoreReask = false,
+                                             const std::function<bool(uint32)>& skip = {});
 
     [[nodiscard]] const std::vector<Entry>& entries() const { return m_entries; }
 

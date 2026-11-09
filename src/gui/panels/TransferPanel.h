@@ -43,6 +43,7 @@ class CategoryTabBar;
 class ClientListModel;
 struct ClientRow;
 class DownloadListModel;
+class DownloadSortProxy;
 struct SourceRow;
 class IpcClient;
 class PanelPoller;
@@ -285,7 +286,7 @@ private:
     std::array<ClientSlot, ClientViewCount> m_clients{};
 
     // Proxy models
-    QSortFilterProxyModel* m_downloadProxy = nullptr;
+    DownloadSortProxy* m_downloadProxy = nullptr;
     QSortFilterProxyModel* m_categoryProxy = nullptr;
 
     // Download list view — the top pane's first mode, never shown at the bottom

@@ -15,10 +15,15 @@
 #include "prefs/Preferences.h"
 
 #include <QNetworkInterface>
+#include <QPointer>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTest>
+
+#ifdef Q_OS_LINUX
+#include <sys/socket.h>
+#endif
 
 using namespace eMule;
 using BindAddress::LocalInterface;
@@ -55,6 +60,16 @@ private:
 };
 
 namespace {
+
+#ifdef Q_OS_LINUX
+// The interface a socket is bound to (SO_BINDTOIFINDEX), 0 when none.
+int pinnedIfIndex(qintptr fd)
+{
+    int idx = 0;
+    socklen_t len = sizeof(idx);
+    return ::getsockopt(static_cast<int>(fd), SOL_SOCKET, SO_BINDTOIFINDEX, &idx, &len) == 0 ? idx : 0;
+}
+#endif
 
 QList<LocalInterface> sample()
 {
@@ -185,9 +200,16 @@ void tst_BindInterface::pin_confinesToLoopback()
     QVERIFY(outside.bind(QHostAddress(QHostAddress::Any), 0));
     QVERIFY(InterfacePin::pinToInterface(outside.socketDescriptor(), m_loopback.index(), m_loopback.name()));
     outside.connectToHost(QHostAddress(QStringLiteral("192.0.2.1")), 9);
+#ifdef Q_OS_LINUX
+    // Linux takes an unrouted destination as on-link of the bound device: the SYN goes
+    // out lo and dies there, a timeout and no refusal. The pin is what keeps it on lo.
+    QCOMPARE(pinnedIfIndex(outside.socketDescriptor()), m_loopback.index());
+    QVERIFY(!outside.waitForConnected(2000));
+#else
     QVERIFY(!outside.waitForConnected(2000));
     QVERIFY2(outside.error() != QAbstractSocket::SocketTimeoutError,
              "the connect was attempted instead of being refused by the pin");
+#endif
 
     QVERIFY(!InterfacePin::pinToInterface(-1, m_loopback.index(), m_loopback.name()));
     QVERIFY(!InterfacePin::pinToInterface(inside.socketDescriptor(), 0, QString()));
@@ -325,8 +347,18 @@ void tst_BindInterface::boundByName_refusesOtherRoutes()
     QSignalSpy connected(out, &QAbstractSocket::connected);
     QSignalSpy error(out, &QAbstractSocket::errorOccurred);
     out->connectToPeer(Address::fromQHostAddress(QHostAddress(QStringLiteral("192.0.2.1"))), 9);
+#ifdef Q_OS_LINUX
+    // no refusal on Linux (see pin_confinesToLoopback): pinned to lo, never connected
+    const QPointer<ClientReqSocket> guard(out);
+    QVERIFY(out->socketDescriptor() >= 0);
+    QCOMPARE(pinnedIfIndex(out->socketDescriptor()), m_loopback.index());
+    QTest::qWait(500);
+    QCOMPARE(connected.count(), 0);
+    delete guard.data();
+#else
     QTRY_VERIFY_WITH_TIMEOUT(error.count() > 0, 2000);   // may be raised inside the call
     QCOMPARE(connected.count(), 0);
+#endif
 }
 
 void tst_BindInterface::blocked_opensNothing_thenResumes()

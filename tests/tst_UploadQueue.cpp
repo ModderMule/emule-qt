@@ -990,6 +990,28 @@ void tst_UploadQueue::lowIdCallbackSlot_whenLineHasRoom()
     QCOMPARE(viaUdp.uploadState(), UploadState::Connecting);
     QCOMPARE(queue.waitingUserCount(), 1);   // noRoute still waits
 
+    // It never calls in: back on the waiting list, rank kept, object kept
+    const uint64 waitStart = viaUdp.waitStartTime();
+    QVERIFY(!viaUdp.disconnected(QStringLiteral("Connection try timeout")));
+    QCOMPARE(queue.uploadQueueLength(), 0);
+    QCOMPARE(queue.waitingUserCount(), 2);
+    QCOMPARE(viaUdp.uploadState(), UploadState::OnUploadQueue);
+    QCOMPARE(viaUdp.waitStartTime(), waitStart);
+
+    // ...and is not asked again while its route info is stale
+    QTest::qWait(UploadQueue::kCallbackSlotMs + 100);
+    queue.process();
+    QCOMPARE(queue.uploadQueueLength(), 0);
+
+    // until it asks us itself: a fresh hello clears the mark. A real re-ask comes on a
+    // live socket; without one the add-next-connect shortcut would dial it here instead.
+    viaUdp.setAddNextConnect(false);
+    QVERIFY(queue.addClientToQueue(&viaUdp));
+    QTest::qWait(UploadQueue::kCallbackSlotMs + 100);
+    queue.process();
+    QVERIFY(queue.isDownloading(&viaUdp));
+    QCOMPARE(viaUdp.uploadState(), UploadState::Connecting);
+
     queue.removeFromUploadQueue(&viaUdp);
     queue.removeFromWaitingQueue(&noRoute);
     theApp.sharedFileList = nullptr;
@@ -3652,3 +3674,4 @@ void tst_UploadQueue::underfillSlots_upToTwiceTheLadderWhileBelowTheLimit()
 
 QTEST_GUILESS_MAIN(tst_UploadQueue)
 #include "tst_UploadQueue.moc"
+

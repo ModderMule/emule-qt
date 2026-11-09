@@ -19,9 +19,10 @@ namespace eMule {
 /// Relayed packets per served buddy per minute — relay: UpDownClient::allowBuddyRelay().
 inline constexpr uint32 kMaxBuddyRelaysPerMin = 60;
 
-/// Default of the maxServedBuddies preference. A relay accepts that many
-/// KADEMLIA_CALLBACK_REQ per minute from one IP; the requester assumes the default.
-inline constexpr uint16 kDefaultMaxServedBuddies = 8;
+/// Served buddies the requester assumes a relay allows: the auto value at the default
+/// upload capacity (Preferences::autoServedBuddies()). A relay accepts that many
+/// KADEMLIA_CALLBACK_REQ per minute from one IP.
+inline constexpr uint16 kAssumedRelayServedBuddies = 8;
 
 enum class RelayRequest : uint8 {
     KadCallback,    ///< KADEMLIA_CALLBACK_REQ, relayed as OP_CALLBACK

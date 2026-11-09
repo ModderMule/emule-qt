@@ -126,7 +126,7 @@ bool ClientUDPSocket::sendPacket(std::unique_ptr<Packet> packet, const Endpoint&
                                  bool encrypt, const uint8* targetHash, bool isKad,
                                  uint32 receiverVerifyKey)
 {
-    if (!packet)
+    if (!packet || !hasRoute(dest, packet->prot, packet->opcode))
         return false;
 
     // MFC books per call site; the reask family is file-request overhead, also the
@@ -154,7 +154,7 @@ bool ClientUDPSocket::sendPacket(std::unique_ptr<Packet> packet, const Endpoint&
 bool ClientUDPSocket::sendServerPacket(std::unique_ptr<Packet> packet, const Endpoint& dest,
                                        uint32 serverKey)
 {
-    if (!packet)
+    if (!packet || !hasRoute(dest, packet->prot, packet->opcode))
         return false;
     if (auto* stats = theApp.statistics)
         stats->addUpDataOverheadServer(packet->size);
@@ -167,7 +167,7 @@ bool ClientUDPSocket::sendServerPacket(std::unique_ptr<Packet> packet, const End
 
 bool ClientUDPSocket::sendRawDatagram(const QByteArray& data, const Endpoint& dest)
 {
-    if (data.isEmpty())
+    if (data.isEmpty() || !hasRoute(dest, 0, 0))
         return false;
     if (auto* stats = theApp.statistics)
         stats->addUpDataOverheadServer(static_cast<uint32>(data.size()));
@@ -329,6 +329,8 @@ void ClientUDPSocket::flushSendQueue()
 bool ClientUDPSocket::sendNattFrameNow(uint8 type, const uint8* payload, size_t len, const Endpoint& to,
                                        const uint8* cryptHash)
 {
+    if (!hasRoute(to, OP_UDPRESERVEDPROT2, type))
+        return false;
     // header room: 8 bytes of obfuscation plus up to 15 of padding
     constexpr size_t kRoom = 8 + 15;
     std::vector<uint8> buf(kRoom + 2 + len);
@@ -385,6 +387,9 @@ void ClientUDPSocket::processDatagram(const QNetworkDatagram& datagram)
 {
     QByteArray data = datagram.data();
     if (data.size() < 2)
+        return;
+    // Source port 0 = scanner or forged packet; every answer would go to port 0 (#164)
+    if (datagram.senderPort() <= 0)
         return;
 
     // ed3k on the same port (§14.1): plain eD2K first bytes are never an ed3k salt; the rest
@@ -728,6 +733,22 @@ Address ClientUDPSocket::keyIPFor(const Endpoint& to)
 // ---------------------------------------------------------------------------
 // writeDatagramNow — one datagram out of the socket, owner thread
 // ---------------------------------------------------------------------------
+
+bool ClientUDPSocket::hasRoute(const Endpoint& to, uint8 prot, uint8 opcode)
+{
+    // Port 0 means "no UDP" on the wire (peer or Kad contact with UDP off); the OS refuses it (#164)
+    if (to.port() != 0 && !to.address().isNull())
+        return true;
+    static LogRepeatGate gate;
+    const QString key = QStringLiteral("%1/%2").arg(prot).arg(opcode);
+    if (const QString line = gate.filter(key, QStringLiteral("ClientUDPSocket: dropped packet 0x%1/0x%2 to %3 — no UDP endpoint")
+                                                  .arg(prot, 2, 16, QLatin1Char('0'))
+                                                  .arg(opcode, 2, 16, QLatin1Char('0'))
+                                                  .arg(to.toString()));
+        !line.isEmpty())
+        logDebug(line);
+    return false;
+}
 
 bool ClientUDPSocket::writeDatagramNow(const QByteArray& data, const Endpoint& to)
 {

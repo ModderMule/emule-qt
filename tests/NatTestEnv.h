@@ -54,6 +54,7 @@ public:
     uint8 connectOptions = CONNECT_OPT_CRYPT_SUPPORTED;
     std::optional<Server> server;
     Address sessionAddress;
+    bool reloginPending = false;      // serverReloginPending()
     qint64 sessionStartMs = 1;        // server login time (epoch ms) for Server::sessionKeyUDP()
     /// foreignServer(): servers by "ip:tcpPort"; probe() moves Unknown ones to Pending.
     std::map<QString, ForeignServer> foreignServers;
@@ -127,6 +128,7 @@ public:
     [[nodiscard]] bool enabled() const override { return isEnabled; }
     [[nodiscard]] const Server* currentServer() const override { return server ? &*server : nullptr; }
     [[nodiscard]] Address serverSessionAddress() const override { return sessionAddress; }
+    [[nodiscard]] bool serverReloginPending() const override { return reloginPending; }
     [[nodiscard]] ForeignServer foreignServer(const Address& addr, uint16 port, bool probe) override
     {
         const QString key = QStringLiteral("%1:%2").arg(addr.toString()).arg(port);

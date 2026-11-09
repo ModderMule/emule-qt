@@ -292,6 +292,11 @@ void logSharedVerbose(const QString& msg)
     qCDebug(lcEmuleSharedVerbose).noquote() << msg;
 }
 
+void logUssVerbose(const QString& msg)
+{
+    qCDebug(lcEmuleUssVerbose).noquote() << msg;
+}
+
 // ---------------------------------------------------------------------------
 // Repeat gate
 // ---------------------------------------------------------------------------

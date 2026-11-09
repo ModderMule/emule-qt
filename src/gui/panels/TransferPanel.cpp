@@ -1032,11 +1032,13 @@ QWidget* TransferPanel::createDownloadsSection()
     // Confidence, Transferred. Hidden by default as in MFC: Transferred, Last Seen
     // Complete, Last Reception, Category.
     downloadView->bindColumns(QStringLiteral("downloads"),
-        // + ed3k Key (batch 15, hops.md §1)
-        {220, 65, 65, 65, 170 /* MFC DFLT_PARTSTATUS_COL_WIDTH */, 65, 70, 65, 80, 80, 80, 60, 120, 100, 100, 65, 80},
+        // + ed3k Key (batch 15, hops.md §1), Part No. (#162)
+        {220, 65, 65, 65, 170 /* MFC DFLT_PARTSTATUS_COL_WIDTH */, 65, 70, 65, 80, 80, 80, 60, 120, 100, 100, 65, 80, 55},
         {DownloadListModel::ColSeenComplete, DownloadListModel::ColLastReception,
          DownloadListModel::ColCategory, DownloadListModel::ColCountry,
-         DownloadListModel::ColTransferred});
+         DownloadListModel::ColTransferred, DownloadListModel::ColPartNumber});
+    // #162: Part No. exists only with "Show more controls"
+    downloadView->setExtColumns({DownloadListModel::ColPartNumber}, thePrefs.showExtControls());
     // MFC DownloadListCtrl.cpp:1581-1613. Remaining has two values: time, then size.
     downloadView->setDescendingFirst({DownloadListModel::ColTransferred,
                                       DownloadListModel::ColCompleted, DownloadListModel::ColSpeed,
@@ -1045,6 +1047,15 @@ QWidget* TransferPanel::createDownloadsSection()
         m_downloadModel->setRemainingSortBySize(bySize);
         m_downloadProxy->invalidate();
     });
+    // Secondary sort (Display option): set after the layout restore, whose sorts
+    // would otherwise replace the saved tie-breaker; kept as the user sorts.
+    m_downloadProxy->setSecondarySort(theUiState.downloadSecondarySortColumn(),
+                                      theUiState.downloadSecondarySortOrder());
+    m_downloadProxy->setSecondarySortEnabled(theUiState.downloadSecondarySort());
+    connect(downloadView->header(), &QHeaderView::sortIndicatorChanged, this, [this] {
+        theUiState.setDownloadSecondarySortKey(m_downloadProxy->secondarySortColumn(),
+                                               m_downloadProxy->secondarySortOrder());
+    }, Qt::QueuedConnection);
     CountryFlags::bindFlagColumn(downloadView);
 
     // Hidden until mounted, for the reason given in createClientView().
@@ -1513,6 +1524,7 @@ void TransferPanel::requestDownloads()
             row.hashsetNeeded     = m.value(QStringLiteral("hashsetNeeded")).toBool();
             row.lastReception     = m.value(QStringLiteral("lastReception")).toInteger();
             row.addedOn           = m.value(QStringLiteral("addedOn")).toInteger();
+            row.partMetName       = m.value(QStringLiteral("partMetName")).toString();
             row.fileType          = m.value(QStringLiteral("fileType")).toString();
             row.requests          = m.value(QStringLiteral("requests")).toInteger();
             row.acceptedRequests  = m.value(QStringLiteral("acceptedReqs")).toInteger();
@@ -2685,7 +2697,9 @@ bool TransferPanel::isListDisabled(int clientView)
 
 void TransferPanel::applyExtColumns()
 {
-    // Shared List and ratio columns follow "Show more controls"
+    // Shared List, ratio and Part No. columns follow "Show more controls"
+    if (auto* view = dynamic_cast<ListTreeView*>(m_downloadView))
+        view->applyExtColumns(thePrefs.showExtControls());
     for (const auto& slot : m_clients) {
         if (auto* view = dynamic_cast<ListTreeView*>(slot.view))
             view->applyExtColumns(thePrefs.showExtControls());
@@ -2695,6 +2709,7 @@ void TransferPanel::applyExtColumns()
 void TransferPanel::applyDisplayOptions()
 {
     m_statusFilterBar->setRowOn(theUiState.showDownloadStatusFilter());
+    m_downloadProxy->setSecondarySortEnabled(theUiState.downloadSecondarySort());
     const bool buttons = thePrefs.showTransToolbar();
     m_toolbar1->setButtonsVisible(buttons);
     m_toolbar2->setButtonsVisible(buttons);

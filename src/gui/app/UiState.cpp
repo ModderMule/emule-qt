@@ -134,6 +134,10 @@ void UiState::load(const QString& configDir)
         m_showCountryFlags = root["showCountryFlags"].as<bool>(m_showCountryFlags);
         m_showTaskbarProgress = root["showTaskbarProgress"].as<bool>(m_showTaskbarProgress);
         m_showDownloadStatusFilter = root["showDownloadStatusFilter"].as<bool>(m_showDownloadStatusFilter);
+        m_downloadSecondarySort = root["downloadSecondarySort"].as<bool>(m_downloadSecondarySort);
+        m_downloadSecondarySortColumn = root["downloadSecondarySortColumn"].as<int>(m_downloadSecondarySortColumn);
+        m_downloadSecondarySortOrder = root["downloadSecondarySortDescending"].as<bool>(false)
+            ? Qt::DescendingOrder : Qt::AscendingOrder;
         m_showTorrentStatusFilter = root["showTorrentStatusFilter"].as<bool>(m_showTorrentStatusFilter);
         m_showHosterStatusFilter = root["showHosterStatusFilter"].as<bool>(m_showHosterStatusFilter);
         m_downloadStatusFilter = root["downloadStatusFilter"].as<int>(m_downloadStatusFilter);
@@ -282,6 +286,10 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "showCountryFlags" << YAML::Value << m_showCountryFlags;
     out << YAML::Key << "showTaskbarProgress" << YAML::Value << m_showTaskbarProgress;
     out << YAML::Key << "showDownloadStatusFilter" << YAML::Value << m_showDownloadStatusFilter;
+    out << YAML::Key << "downloadSecondarySort" << YAML::Value << m_downloadSecondarySort;
+    out << YAML::Key << "downloadSecondarySortColumn" << YAML::Value << m_downloadSecondarySortColumn;
+    out << YAML::Key << "downloadSecondarySortDescending" << YAML::Value
+        << (m_downloadSecondarySortOrder == Qt::DescendingOrder);
     out << YAML::Key << "showTorrentStatusFilter" << YAML::Value << m_showTorrentStatusFilter;
     out << YAML::Key << "showHosterStatusFilter" << YAML::Value << m_showHosterStatusFilter;
     out << YAML::Key << "downloadStatusFilter" << YAML::Value << m_downloadStatusFilter;
@@ -746,8 +754,10 @@ void UiState::importLegacySettings()
     // Default-constructed QSettings = the platform store, keyed by org/app name.
     // Reading a store that does not exist creates nothing.
 #ifdef Q_OS_LINUX
-    // Linux app name was "GUI" up to v0.6.22
-    QSettings legacy(QCoreApplication::organizationName(), QStringLiteral("GUI"));
+    // Linux app name was "GUI" up to v0.6.22. Native = INI here (~/.config/eMule/GUI.conf);
+    // say IniFormat so QSettings::setPath() redirects it too
+    QSettings legacy(QSettings::IniFormat, QSettings::UserScope,
+                     QCoreApplication::organizationName(), QStringLiteral("GUI"));
 #else
     QSettings legacy;
 #endif

@@ -3,6 +3,7 @@
 
 #include "Ed3kHttp.h"
 
+#include "net/ProxySettings.h"
 #include "utils/Log.h"
 
 #include <QHostInfo>
@@ -258,8 +259,8 @@ void Ed3kHttp::connectTo(Request& r, const QHostAddress& ip, std::uint16_t port)
         connect(s, &QTcpSocket::connected, this, [this, id] { onConnected(id); });
     }
     r.socket = s;
-    // the literal address goes to the proxy, never the name
-    s->setProxy(m_proxy);
+    // the literal address goes to the proxy, never the name; a LAN address goes direct
+    s->setProxy(bypassesProxy(ip.toString()) ? QNetworkProxy(QNetworkProxy::NoProxy) : m_proxy);
     connect(s, &QTcpSocket::readyRead, this, [this, id] { onReadyRead(id); });
     connect(s, &QTcpSocket::errorOccurred, this, [this, id](QAbstractSocket::SocketError) { onSocketError(id); });
     connect(s, &QTcpSocket::disconnected, this, [this, id] { onDisconnected(id); });

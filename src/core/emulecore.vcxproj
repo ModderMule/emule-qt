@@ -352,6 +352,7 @@
     </ClCompile>
     <ClCompile Include="server\Server.cpp" />
     <ClCompile Include="server\ServerConnect.cpp" />
+    <ClCompile Include="server\DeadServers.cpp" />
     <ClCompile Include="server\ServerList.cpp" />
     <ClCompile Include="server\UnlistedServers.cpp" />
     <ClCompile Include="net\ServerSocket.cpp" />
@@ -636,6 +637,7 @@
     <QtMoc Include="GeneratedFiles\enodemeta_proto\meta.qpb.h" />
     <QtMoc Include="GeneratedFiles\enodemeta_proto\api.qpb.h" />
     <ClInclude Include="server\Server.h" />
+    <ClInclude Include="server\DeadServers.h" />
     <ClInclude Include="server\UnlistedServers.h" />
     <ClInclude Include="server\ServerMsgType.h" />
     <QtMoc Include="server\ServerConnect.h" />

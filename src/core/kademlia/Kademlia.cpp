@@ -253,7 +253,11 @@ bool Kademlia::isFirewalled() const
         return true;
     if (shouldSkipFirewallChecks())
         return false;
-    return m_prefs->firewalled();
+    if (!m_prefs->firewalled())
+        return false;
+    // Not MFC: last cycle was open and the acks of this one may still come.
+    return m_prefs->lastFirewallState() || m_prefs->recheckIP()
+           || m_prefs->recheckSettled(kFwAckDisplayGrace);
 }
 
 bool Kademlia::isFirewalledVerified() const
@@ -276,25 +280,37 @@ RecheckFirewallResult Kademlia::recheckFirewalled()
     // Only one NodeFwCheckUDP lookup at a time — each one queries 11 contacts,
     // so an unguarded "Recheck Firewall" button stacks them up. The guard clears
     // itself: jumpStart() reaps the lookup after kSearchNodeLifetime.
-    if (SearchManager::isNodeFWCheckUDPSearchActive()) {
-        logKad(QStringLiteral("Kad: Firewall recheck ignored — a check is already running"));
-        return RecheckFirewallResult::AlreadyRunning;
-    }
+    // The TCP part below still runs: it has no lookup to stack.
+    const bool udpRunning = SearchManager::isNodeFWCheckUDPSearchActive();
+    if (udpRunning)
+        logKad(QStringLiteral("Kad: UDP firewall check already running — not restarted"));
 
     // Stop any pending buddy search and force a firewall re-check.
     // Matches MFC Kademlia.cpp:409-426.
-    m_prefs->setFindBuddy(false);
-    m_prefs->setRecheckIP();
-    UDPFirewallTester::reCheckFirewallUDP(false);
-
     const auto now = static_cast<time_t>(time(nullptr));
+    m_prefs->setFindBuddy(false);
+    // Not MFC: a TCP recheck still collecting answers keeps its counts. A second
+    // click reset them and threw away the TCP ACKs already in (report 35).
+    if (!m_prefs->recheckIP() || m_tcpRecheckStart == 0
+        || now - m_tcpRecheckStart >= static_cast<time_t>(kFwRecheckHold))
+    {
+        m_prefs->setRecheckIP();
+        m_tcpRecheckStart = now;
+    } else {
+        logKad(QStringLiteral("Kad: TCP firewall recheck still running — kept, asking more nodes"));
+    }
+    if (!udpRunning)
+        UDPFirewallTester::reCheckFirewallUDP(false);
+    m_fwProbeRounds = kFwProbeRounds;
+    probeFirewall(now);
+
     // Delay the next buddy search to at least 5 min so the firewall recheck has
     // time to complete and we don't start a buddy search based on stale
     // firewalled status. MFC Kademlia.cpp:422-423.
     if (m_nextFindBuddy < now + MIN2S(5))
         m_nextFindBuddy = now + MIN2S(5);
     m_nextFirewallCheck = now + HR2S(1);
-    return RecheckFirewallResult::Started;
+    return udpRunning ? RecheckFirewallResult::AlreadyRunning : RecheckFirewallResult::Started;
 }
 
 uint32 Kademlia::getKademliaUsers(bool newMethod) const
@@ -386,6 +402,7 @@ void Kademlia::notePacketReceived(uint32 ip)
     const time_t now = time(nullptr);
     if (m_netWatch.packetReceived(ip, now) == NetworkWatch::Event::BackOnline) {
         startCatchUp(now, QStringLiteral("network back"));
+        scheduleFirewallRecheck(now);
         emit networkOfflineChanged(false);
     }
 }
@@ -398,8 +415,12 @@ void Kademlia::noteRequestSent(uint32 ip)
 
 void Kademlia::onAddressChanged()
 {
-    if (m_running)
-        startCatchUp(time(nullptr), QStringLiteral("external IP changed"));
+    if (!m_running)
+        return;
+    const time_t now = time(nullptr);
+    startCatchUp(now, QStringLiteral("external IP changed"));
+    // new address = new NAT mapping: the old verdict says nothing about it
+    scheduleFirewallRecheck(now);
 }
 
 void Kademlia::addEvent(RoutingZone* zone)
@@ -538,6 +559,9 @@ void Kademlia::process()
     if (m_lastProcess != 0 && now - m_lastProcess > static_cast<time_t>(kSleepGap)) {
         m_netWatch.reset(now);
         startCatchUp(now, QStringLiteral("resumed after %1 s pause").arg(now - m_lastProcess));
+        // Not MFC: router may have dropped the port mapping or handed a new IP while
+        // asleep; the pre-sleep verdict otherwise stood for up to an hour (report 35).
+        scheduleFirewallRecheck(now);
     }
     m_lastProcess = now;
     m_netWatch.setLanMode(isRunningInLANMode());
@@ -630,6 +654,18 @@ void Kademlia::process()
         m_nextFirewallCheck = now + HR2S(1);
         (void)recheckFirewalled();
         UDPFirewallTester::connected();
+    }
+
+    // 5a. Keep the UDP check moving: free silent testers, refill the pool. Not MFC.
+    if (isConnected() && !shouldSkipFirewallChecks())
+        UDPFirewallTester::process(static_cast<uint32>(now));
+
+    // 5b. Keep the TCP recheck fed until its 4 answers are in. Not MFC.
+    if (m_fwProbeRounds > 0 && now >= m_nextFwProbe) {
+        if (m_prefs && m_prefs->recheckIP() && !shouldSkipFirewallChecks())
+            probeFirewall(now);
+        else
+            m_fwProbeRounds = 0;
     }
 
     // 6. Find buddy — set the one-shot flag on the timer; the actual search
@@ -789,6 +825,41 @@ void Kademlia::enterOffline(time_t now)
     emit networkOfflineChanged(true);
 }
 
+void Kademlia::scheduleFirewallRecheck(time_t now)
+{
+    const time_t at = now + static_cast<time_t>(kFwRecheckAfterWake);
+    if (m_nextFirewallCheck > at)
+        m_nextFirewallCheck = at;
+    // a recheck from before the pause is stale: let the new one reset it
+    m_tcpRecheckStart = 0;
+}
+
+void Kademlia::probeFirewall(time_t now)
+{
+    m_nextFwProbe = now + static_cast<time_t>(kFwProbeInterval);
+    if (m_fwProbeRounds > 0)
+        --m_fwProbeRounds;
+    if (!m_routingZone || !m_udpListener || !isConnected())
+        return;
+
+    // Keyed HELLO (v6+) like the routine ones; answered HELLO_RES sends the
+    // FIREWALLED_REQ (KadUDPListener). Type <= 2: answered before, likely alive.
+    std::set<uint32> asked;
+    for (uint32 tries = 0; asked.size() < kFwProbeHellos && tries < kFwProbeHellos * 4; ++tries) {
+        Contact* c = m_routingZone->getRandomContact(2, KADEMLIA_VERSION6_49aBETA);
+        if (!c)
+            break;
+        const uint32 ip = c->address().toUint32();
+        if (ip == 0 || !asked.insert(ip).second)
+            continue;
+        const UInt128 contactID = c->getClientID();
+        m_udpListener->sendMyDetails(KADEMLIA2_HELLO_REQ, ip, c->getUDPPort(),
+                                     c->getVersion(), c->getUDPKey(), &contactID, false);
+    }
+    logKad(QStringLiteral("Kad: firewall recheck — HELLO to %1 nodes, %2 rounds left")
+               .arg(asked.size()).arg(m_fwProbeRounds));
+}
+
 void Kademlia::startCatchUp(time_t now, const QString& why)
 {
     logKad(QStringLiteral("Kad: %1 — rechecking all contacts within %2 min")
@@ -863,7 +934,10 @@ void Kademlia::askRememberedBuddies(time_t now, bool ignoreReask)
 {
     if (!m_udpListener)
         return;
-    const auto due = m_buddyStore.takeDue(now, ignoreReask);
+    // A node whose buddy link failed lately is not asked (ClientList::isFailedBuddyCandidate)
+    const auto due = m_buddyStore.takeDue(now, ignoreReask, [](uint32 ip) {
+        return s_clientList && s_clientList->isFailedBuddyCandidate(ip);
+    });
     if (due.empty())
         return;
 

@@ -15,7 +15,7 @@ namespace {
 
 constexpr uint64 kWindow = MIN2MS(1);
 constexpr int64 kBucketMax = MIN2MS(1);                               // full bucket
-constexpr int64 kCallbackCost = kBucketMax / kDefaultMaxServedBuddies;
+constexpr int64 kCallbackCost = kBucketMax / kAssumedRelayServedBuddies;
 
 } // namespace
 

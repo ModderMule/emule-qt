@@ -88,9 +88,11 @@ using Kind = PrefSpec::Kind;
     t << number("maxSourcesPerFile", 1, 5000, "", "Hard limit of sources kept per download.");
     t << advanced(number("maxConsPerFive", 1, 50, "", "New connections allowed per 5 seconds."));
     t << advanced(number("maxHalfConnections", 1, 100, "", "Half-open connections allowed at once."));
-    t << advanced(number("maxServedBuddies", 1, 32, "", "Firewalled Kad nodes served as buddy at "
-                         "once while this node is reachable. In effect capped at a tenth of "
-                         "maxConnections."));
+    t << advanced(number("maxServedBuddies", 0, Preferences::kMaxServedBuddiesLimit, "",
+                         "Firewalled Kad nodes served as buddy at once while this node is "
+                         "reachable. 0 = auto by upload capacity: 4 below 500 KiB/s, 8 below 2500 "
+                         "or unknown, 16 below 12500, 32 below 62500, 64 below 125000, else 128. "
+                         "In effect capped at a tenth of maxConnections."));
     t << number("queueSize", 2000, 50000, "", "Upload queue length in clients.");
     t << number("uploadSlotTargetRate", 0, 256, "KiB/s",
                 "Target rate per upload slot; fewer slots at a higher rate. 0 = automatic, else 12-256.");
@@ -115,6 +117,8 @@ using Kind = PrefSpec::Kind;
     t << flag("addServersFromClients", "Add servers announced by other clients.");
     t << number("deadServerRetries", 1, 99, "", "Failed connection attempts before a server is "
                 "disabled.");
+    t << flag("removeDeadServers", "Remove a disabled dead server from the list; it is kept out "
+              "for deadServerBlockDays.");
     t << flag("autoUpdateServerList", "Fetch the server list from serverListURL at start.");
     t << text("serverListURL", 2048, "URL of a server.met file. Empty = built-in default.");
     t << text("nodesDatURL", 2048, "URL of a Kad nodes.dat file the Kad window offers for a "
@@ -139,8 +143,8 @@ using Kind = PrefSpec::Kind;
     t << flag("autoRenameToMajorityName", "Rename a download once to the name most of its sources use "
               "(at least 5 sources and 60%; never after a manual rename or for a suspected fake).");
     t << flag("watchSharedDirs", "Pick up files added to shared folders as they appear (OS file watcher).");
-    t << flag("shareIncomingSubdirs", "Share the subfolders of the incoming folders too (torrents, Usenet "
-              "jobs, unpacked hoster packages). Other shared folders stay flat.");
+    t << number("sharedDirsPollMinutes", 0, 1440, "min", "How often shared folders on a network share "
+                "(NAS), which the OS cannot watch, are checked for changes. 0 = never.");
     t << flag("seenFileIndex", "Keep a local index of files seen in search results.");
     t << flag("archiveRecursiveExtract", "Unpack archives found inside an unpacked archive too "
               "(Usenet and hoster downloads).");
@@ -319,6 +323,7 @@ using Kind = PrefSpec::Kind;
     t << advanced(flag("hosterVerboseLog", "Log hoster resolver details (Hoster Verbose tab)."));
     t << advanced(flag("usenetVerboseLog", "Log Usenet details (Usenet tab)."));
     t << advanced(flag("sharedFilesVerboseLog", "Log hashing and duplicates of shared files (Verbose tab)."));
+    t << advanced(flag("ussVerboseLog", "Log Upload SpeedSense route trace and pings (Verbose tab)."));
     t << advanced(flag("ed3kVerboseLog", "Log ed3k node details (ed3k Verbose tab)."));
     t << flag("logToDiskCore", "Write the core log to a file.");
     t << advanced(flag("logWebServer", "Log web server requests."));

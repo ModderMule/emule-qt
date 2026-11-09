@@ -50,19 +50,32 @@ private slots:
         QCOMPARE(prefs.maxConnections(), static_cast<uint16>(500));
         QCOMPARE(prefs.maxHalfConnections(), static_cast<uint16>(50)); // eMule 2026 bandwidth default
         // Kad: firewalled nodes served as buddy. MFC serves one.
-        QCOMPARE(prefs.maxServedBuddies(), static_cast<uint16>(8));
+        QCOMPARE(prefs.maxServedBuddies(), static_cast<uint16>(0));   // auto
         QVERIFY(prefs.toIpcMap().contains(QStringLiteral("maxServedBuddies")));
-        prefs.setMaxServedBuddies(0);
-        QCOMPARE(prefs.maxServedBuddies(), static_cast<uint16>(1));
-        prefs.setMaxServedBuddies(500);
-        QCOMPARE(prefs.maxServedBuddies(), static_cast<uint16>(32));
+        // Auto: tiered by upload capacity; the default capacity (10 Mbit/s) gives 8
+        QCOMPARE(prefs.maxGraphUploadRate(), kDefaultMaxGraphUploadRate);
+        QCOMPARE(prefs.servedBuddyLimit(), static_cast<uint16>(8));
+        QCOMPARE(Preferences::autoServedBuddies(0), static_cast<uint16>(8));      // unknown
+        QCOMPARE(Preferences::autoServedBuddies(1), static_cast<uint16>(4));
+        QCOMPARE(Preferences::autoServedBuddies(125), static_cast<uint16>(4));      // 1 Mbit/s
+        QCOMPARE(Preferences::autoServedBuddies(500), static_cast<uint16>(8));      // 4 Mbit/s
+        QCOMPARE(Preferences::autoServedBuddies(2500), static_cast<uint16>(16));    // 20 Mbit/s
+        QCOMPARE(Preferences::autoServedBuddies(12500), static_cast<uint16>(32));   // 100 Mbit/s
+        QCOMPARE(Preferences::autoServedBuddies(62500), static_cast<uint16>(64));   // 500 Mbit/s
+        QCOMPARE(Preferences::autoServedBuddies(125000), static_cast<uint16>(128)); // 1 Gbit/s
+        prefs.setMaxGraphUploadRate(12500);
+        QCOMPARE(prefs.servedBuddyLimit(), static_cast<uint16>(32));
         // In effect: at most a tenth of the connections, never below one
-        QCOMPARE(prefs.servedBuddyLimit(), static_cast<uint16>(32));   // 500 / 10 = 50
+        prefs.setMaxGraphUploadRate(125000);
+        QCOMPARE(prefs.servedBuddyLimit(), static_cast<uint16>(50));   // 500 / 10
+        prefs.setMaxServedBuddies(500);
+        QCOMPARE(prefs.maxServedBuddies(), static_cast<uint16>(128));
+        QCOMPARE(prefs.servedBuddyLimit(), static_cast<uint16>(50));
         prefs.setMaxConnections(100);
         QCOMPARE(prefs.servedBuddyLimit(), static_cast<uint16>(10));
         prefs.setMaxConnections(5);
         QCOMPARE(prefs.servedBuddyLimit(), static_cast<uint16>(1));
-        QCOMPARE(prefs.maxServedBuddies(), static_cast<uint16>(32));   // the setting stays
+        QCOMPARE(prefs.maxServedBuddies(), static_cast<uint16>(128));   // the setting stays
         // Default ON: IPv6 peers are a small population and would otherwise be outbid
         // on upload score by the IPv4 majority indefinitely.
         QCOMPARE(prefs.separateIPv6Queue(), true);
@@ -301,7 +314,7 @@ private slots:
 
         Preferences loaded;
         loaded.load(file);
-        QCOMPARE(loaded.maxServedBuddies(), static_cast<uint16>(1));   // not wrapped to 32
+        QCOMPARE(loaded.maxServedBuddies(), static_cast<uint16>(0));   // auto, not wrapped to 32
         QCOMPARE(loaded.queueSize(), uint32{2000});
         QCOMPARE(loaded.uploadSlotTargetRate(), uint32{12});
         QCOMPARE(loaded.deadServerRetries(), uint32{99});
@@ -423,32 +436,6 @@ private slots:
             QCOMPARE(loaded.btEnabled(), version < 3);
             QCOMPARE(loaded.startVersion(), 6u);
         }
-    }
-
-    // v4 (#124): incoming shared with its subfolders; a choice made after it is kept
-    void shareIncomingSubdirs_v4SwitchesOn()
-    {
-        TempDir tmp;
-        for (const uint32 version : {3u, 4u}) {
-            const auto file = tmp.filePath(QStringLiteral("v%1.yaml").arg(version));
-            {
-                Preferences prefs;
-                prefs.setStartVersion(version);
-                prefs.setShareIncomingSubdirs(false);
-                QVERIFY(prefs.saveTo(file));
-            }
-            Preferences loaded;
-            QVERIFY(loaded.load(file));
-            QCOMPARE(loaded.shareIncomingSubdirs(), version < 4);
-            QCOMPARE(loaded.startVersion(), 6u);
-        }
-        Preferences fresh;
-        QVERIFY(fresh.shareIncomingSubdirs());
-        // over IPC too
-        fresh.setShareIncomingSubdirs(false);
-        Preferences copy;
-        copy.updateFromCbor(fresh.toIpcMap());
-        QVERIFY(!copy.shareIncomingSubdirs());
     }
 
     // v5: MFC default nick replaced once; afterwards any nick is the user's choice

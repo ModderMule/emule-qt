@@ -2,6 +2,8 @@
 
 #include "net/ProxySettings.h"
 
+#include <QHostAddress>
+
 namespace eMule {
 
 QNetworkProxy toNetworkProxy(const ProxySettings& settings)
@@ -31,6 +33,26 @@ QNetworkProxy toNetworkProxy(const ProxySettings& settings)
         proxy.setPassword(settings.password);
     }
     return proxy;
+}
+
+bool bypassesProxy(const QString& host)
+{
+    if (host.compare(QLatin1StringView("localhost"), Qt::CaseInsensitive) == 0)
+        return true;
+    QString literal = host;
+    if (literal.startsWith(u'[') && literal.endsWith(u']'))
+        literal = literal.mid(1, literal.size() - 2);
+    const QHostAddress addr(literal);
+    if (addr.isNull())
+        return false;
+    return addr.isLoopback() || addr.isPrivateUse() || addr.isLinkLocal();
+}
+
+QNetworkProxy toNetworkProxy(const ProxySettings& settings, const QString& host)
+{
+    if (bypassesProxy(host))
+        return QNetworkProxy(QNetworkProxy::NoProxy);
+    return toNetworkProxy(settings);
 }
 
 } // namespace eMule

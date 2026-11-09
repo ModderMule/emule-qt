@@ -116,12 +116,15 @@ void BuddyStore::noteConnected(uint32 ip, uint16 tcpPort, std::time_t now)
     }
 }
 
-std::vector<BuddyStore::Entry> BuddyStore::takeDue(std::time_t now, bool ignoreReask)
+std::vector<BuddyStore::Entry> BuddyStore::takeDue(std::time_t now, bool ignoreReask,
+                                                   const std::function<bool(uint32)>& skip)
 {
     prune(now);
 
     std::vector<Entry*> due;
     for (Entry& e : m_entries) {
+        if (skip && skip(e.ip))
+            continue;
         if (ignoreReask || now - e.lastAsked >= kReaskSecs)
             due.push_back(&e);
     }

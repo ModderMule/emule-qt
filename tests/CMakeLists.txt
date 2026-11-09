@@ -373,6 +373,12 @@ emule_add_test(tst_ClientCensus    FOLDER "Stats")
 emule_add_test(tst_WebServer FOLDER "WebServer")
 # The stdio bridge is driven as a real process against the test server.
 add_dependencies(tst_WebServer emuleqt-mcp)
+# shippedGermanTranslatesTheWebContext reads the .qm; lrelease is only in ALL.
+# release_translations is created at the end of the root scope: test the .ts, not the target
+file(GLOB _emule_ts "${CMAKE_SOURCE_DIR}/lang/emuleqt_*.ts")
+if(_emule_ts)
+    add_dependencies(tst_WebServer release_translations)
+endif()
 target_compile_definitions(tst_WebServer PRIVATE
     "EMULE_MCP_BRIDGE_PATH=\"$<TARGET_FILE:emuleqt-mcp>\"")
 
@@ -1740,6 +1746,12 @@ if(EMULE_LIVE_TESTS)
     emule_add_test(tst_IrcLiveConnect FOLDER "LiveNetwork")
     set_tests_properties(tst_IrcLiveConnect PROPERTIES LABELS "live" TIMEOUT 30)
     set_property(TEST tst_IrcLiveConnect APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=30000")
+
+    # Proxy page vs a real proxy (report 34): HTTP, BitTorrent, IRC. Needs
+    # EMULE_TEST_PROXY (socks5://user:pass@host:port) in .env, skips without it.
+    emule_add_test(tst_ProxyLive FOLDER "LiveNetwork" LIBRARIES eMule::Bt)
+    set_tests_properties(tst_ProxyLive PROPERTIES LABELS "live" TIMEOUT 400)
+    set_property(TEST tst_ProxyLive APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=180000")
 
     # Needs EMULE_INDEXER_APIKEY / _URL / _QUERY, from .env or the environment,
     # and skips without them. Nothing about the account is checked in — no key,

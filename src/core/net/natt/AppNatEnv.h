@@ -39,6 +39,7 @@ public:
 
     [[nodiscard]] const Server* currentServer() const override;
     [[nodiscard]] Address serverSessionAddress() const override;
+    [[nodiscard]] bool serverReloginPending() const override;
     [[nodiscard]] ForeignServer foreignServer(const Address& addr, uint16 tcpPort, bool probe) override;
     void refreshForeignServerKey(const Address& addr, uint16 tcpPort) override;
 

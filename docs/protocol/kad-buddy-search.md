@@ -174,12 +174,21 @@ neighbourhood changes. That is the case the random target removes.
 3. **Retry every 10 minutes** instead of 20.
 4. **Up to 20 requests per search** instead of about 10 (`kSearchFindBuddyRequests`).
 5. **Nodes that offered are remembered** across restarts (see below).
+6. **A candidate we could not connect to is skipped for 1 hour.** Its offers are ignored and
+   it is left out of the remembered nodes we ask (`ClientList::isFailedBuddyCandidate()`).
+   Only a failed dial or handshake counts, not a buddy that connected and later went silent,
+   and not a dial cut short because Kad stopped.
+7. **A stale offer is dropped.** We dial one candidate at a time, and a dead one can hold
+   the turn for up to 160 s. An offer still queued after `buddyOfferMaxAgeSecs` (YAML only,
+   default 300 s, range 30–3600) is dropped: the offering node has let its claim go by then
+   (5 min on an eMuleQt node, 2 min on aMule 3.3), and a late dial would give us a buddy
+   that relays nothing until the 25-minute silence limit drops it.
 
 Code: `Kademlia::buddySearchTarget()` and step 6 of `Kademlia::process()`
 (`src/core/kademlia/Kademlia.cpp`), FindBuddy case of `Search::storePacket()`
 (`src/core/kademlia/KadSearch.cpp`).
 
-All five are deliberate departures from stock eMule. The extra load on the network is small:
+All seven are deliberate departures from stock eMule. The extra load on the network is small:
 at most 20 small UDP packets every 10 minutes, and only while the node is firewalled and
 without a buddy.
 
@@ -224,6 +233,8 @@ With Kad logging on, `emulecored_Kad.log` shows the buddy's state:
 | `Kad: buddy set — ip:tcp (UDP p) 'name' version` | we have a buddy |
 | `Kad: buddy lost — …, held N s` | it went away |
 | `Kad: buddy candidate … failed` | the dial or handshake failed |
+| `Kad: not asking … again for 60 min`, `Kad: buddy offer from … ignored — failed within the last hour` | the 1-hour skip |
+| `Kad: buddy candidate … dropped — offer older than N s` | a stale offer |
 | `Kad: buddy link … closed (reason) after N s` | socket closed; the reason tells who closed it |
 | `Kad: BUDDYPING → ip`, `Kad: BUDDYPONG from ip` | the 10-minute keep-alive |
 | `Kad: serving buddy …`, `Kad: stop serving buddy … — reason` | an open node's served buddies |
@@ -241,7 +252,8 @@ link survives without the ping either way: a buddy socket times out after 40 s +
 ## An open eMuleQt node serves several buddies
 
 The search changes above only help a firewalled node look harder. They do not add buddy
-slots. An open eMuleQt node adds slots: it serves up to 8 firewalled nodes instead of one.
+slots. An open eMuleQt node adds slots: it serves up to 32 firewalled nodes instead of one,
+8 at the default upload capacity (see [Limits](#limits)).
 This is a deliberate departure from stock eMule.
 
 ### Why no protocol change is needed
@@ -318,8 +330,9 @@ A served buddy is dropped when:
 
 | | Value | Where |
 |---|---|---|
-| Served buddies | 8, range 1–32 | preference `maxServedBuddies`, Options → Extended |
-| Served buddies in effect | the preference, at most a tenth of `maxConnections` (minimum 1) | `Preferences::servedBuddyLimit()` |
+| Served buddies | 0 = auto (default), else 1–32 | preference `maxServedBuddies`, Options → Extended |
+| Auto value | by upload capacity, see below | `Preferences::autoServedBuddies()` |
+| Served buddies in effect | the preference or its auto value, at most a tenth of `maxConnections` (minimum 1) | `Preferences::servedBuddyLimit()` |
 | Pending claim (answered, not yet connected) | reserves nothing, released after 5 minutes | `kIncomingBuddyTimeoutSecs` |
 | Pending claims per IP | 1 | `ClientList::incomingBuddy()` |
 | Pending claims in total | 64, a further one releases the oldest | `ClientList::kMaxPendingBuddyClaims` |
@@ -333,7 +346,7 @@ connections at most 10 nodes are served. Lowering `maxConnections` (the schedule
 that too) drops the newest served buddies over the new limit.
 
 The callback limit keeps the stock bucket and ban threshold; only the cost of one request
-changes. At the default of 8 a burst of 8 requests from one IP passes, the 9th is dropped,
+changes. At 8 slots a burst of 8 requests from one IP passes, the 9th is dropped,
 and the IP is banned at the 33rd. The limit for `KADEMLIA_FINDBUDDY_REQ` stays as in stock.
 
 A relay drops a request over these limits without an answer. The requesting node therefore
@@ -345,7 +358,8 @@ counts as well and does not send what would be dropped (`BuddyRelayBudget`, reac
 | `KADEMLIA_CALLBACK_REQ` per relay IP | the relay's bucket: 8 at once, then one per 7.5 s | `UpDownClient::tryToConnect()`, `FindSource` search |
 | `KADEMLIA_CALLBACK_REQ` and `OP_REASKCALLBACKUDP` per buddy ID | 60 in any 60 s | the two above and `UpDownClient::udpReaskForDownload()` |
 
-- The requester does not know the relay's `maxServedBuddies`, so it assumes the default of 8.
+- The requester does not know the relay's slot count, so it assumes 8, the auto value at the
+  default upload capacity (`kAssumedRelayServedBuddies`).
   A relay set lower still drops some requests; a relay set higher is used below its limit.
 - The per-buddy rule is a sliding window. The relay counts in a fixed minute whose start the
   requester cannot see, so only "60 in any minute" is sure to fit into it.
@@ -373,13 +387,46 @@ forged requests can neither fill the slots nor lock real nodes out of claiming.
 
 The Network Info dialog shows "Buddies served: n / limit" while the node is open.
 
+### Slot count by upload capacity
+
+The slot count follows the line, as DavidXanatos suggested in the
+[forum thread](https://forum.emule-project.net/index.php?showtopic=167269&pid=1111154&st=0&):
+a node on a 100 Mbit/s line can serve many buddies at no cost to itself. It is tiered on the
+configured upload *capacity* (`maxGraphUploadRate`, Options → Statistics), not on the upload
+limit. The limit is a user's choice to share less; it says nothing about how many idle
+connections and small relays the line can carry, and USS moves it all the time.
+
+| Upload capacity | Served buddies |
+|---|---|
+| unknown (0) | 8 |
+| below 128 KiB/s (about 1 Mbit/s) | 2 |
+| below 512 KiB/s (about 4 Mbit/s) | 4 |
+| below 2,500 KiB/s (20 Mbit/s) | 8 |
+| below 12,500 KiB/s (100 Mbit/s) | 16 |
+| 12,500 KiB/s and above | 32 |
+
+- A served buddy costs one idle connection and at most 60 small relayed packets a minute, so
+  bandwidth is not what limits it. The tiers keep a slow line's connections for transfers.
+- 32 is the top tier because of the risks below: every node behind one buddy loses it at
+  once, and the callback flood limit grows with the slot count.
+- The cap of a tenth of `maxConnections` still applies on top.
+- A set value (1–32) overrides the tiers. Existing profiles keep their set value; only new
+  ones start at auto.
+
+Suggested for other clients: the same tiers, or a fixed count no higher than the client's
+connection budget allows. aMule plans a fixed 4 (one kept for NAT-T nodes); a client that
+keeps a NAT-T slot should test both NAT-T bits of the connect options byte, `0x40` (QUIC)
+and `0x80` (uTP). eMuleAI tests only `0x80`, so QUIC-only nodes, eMuleQt among them, never
+get its extra slots.
+
 ### How much it helps
 
 - It adds slots only on nodes that run eMuleQt. Stock nodes keep one slot. The effect on
   the network grows with the share of open nodes that run eMuleQt.
 - It does not help a firewalled eMuleQt node directly. That node gains only when some open
   node elsewhere offers more slots.
-- Each open eMuleQt node serves up to 8 firewalled nodes of any client instead of one. The
+- Each open eMuleQt node serves 8 firewalled nodes of any client instead of one (at the
+  default capacity; 2 to 32 by line). The
   firewalled node and the calling client need no change, so stock clients gain as well.
 - The gain grows in a straight line with deployment. If a share *p* of the open nodes runs
   eMuleQt, the number of slots rises by the factor 1 + 7*p*: 7 % more at a share of 1 %,

@@ -1126,10 +1126,18 @@ bool EMSocket::useBigSendBuffer()
             using OptLen = socklen_t;
             const auto sock = static_cast<int>(fd);
 #endif
-            setsockopt(sock, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<const char*>(&optval), sizeof(optval));
-            // The kernel may give less without saying so: read it back (MFC :1112-1116).
             int got = 0;
             OptLen len = sizeof(got);
+            // Linux autotunes past 1 MiB, and a fixed SO_SNDBUF turns that off: never shrink
+            if (getsockopt(sock, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<char*>(&got), &len) == 0
+                && got >= bigSize) {
+                m_useBigSendBuffers = true;
+                return true;
+            }
+            setsockopt(sock, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<const char*>(&optval), sizeof(optval));
+            // The kernel may give less without saying so: read it back (MFC :1112-1116).
+            got = 0;
+            len = sizeof(got);
             if (getsockopt(sock, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<char*>(&got), &len) == 0
                 && got >= mfcBigSize)
                 m_useBigSendBuffers = true;

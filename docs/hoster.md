@@ -248,9 +248,9 @@ lacks it, so the GUI hides the box: `Ed3kResolver::canDeepCrawl`).
 - Extraction switched off: waiting and failed archives move to incoming as they are.
 - An interrupted unpack (`Unpacking` in items.json) runs again at the next start.
 - Sharing: every file that lands in incoming goes through `setPublishedHook` → daemon
-  `addFileInSharedLocation`, else `addSingleSharedFile`. With `shareIncomingSubdirs` (default on,
-  #124) a package subfolder is shared with incoming; off, it is no shared dir: single shared
-  files, sharedfiles.dat as MFC). Ed3kShared serves eD2K's list on ed3k.
+  `addFileInSharedLocation`, else `addSingleSharedFile`. Incoming is always shared with its
+  subfolders (#124, no setting since #163), so a package subfolder is shared with incoming.
+  Ed3kShared serves eD2K's list on ed3k.
 - Kept archives in Temp are not shared, so a hoster root of an archive is not served to ed3k peers.
 
 ## Link checks of a links dialog

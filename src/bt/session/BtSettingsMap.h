@@ -26,6 +26,10 @@ public:
 
     /// outgoing_interfaces: the bound addresses; empty = any.
     static std::string outgoingInterfaces(const BtSettings& s);
+
+private:
+    /// proxy_*: the Proxy page; none when no host or port.
+    static void applyProxy(libtorrent::settings_pack& p, const BtSettings& s);
 };
 
 } // namespace eMule::bt

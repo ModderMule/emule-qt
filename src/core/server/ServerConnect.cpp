@@ -917,6 +917,11 @@ bool ServerConnect::isHandoverLoggingIn() const
     return (m_handoverSocket && m_handoverLoginSent) || m_recheckAnswerTimer.isActive();
 }
 
+bool ServerConnect::isReloginPending() const
+{
+    return m_connected && m_connectedSocket && m_handoverSocket && m_handoverLoginSent;
+}
+
 bool ServerConnect::isConnectedObfuscated() const
 {
     return m_connectedSocket != nullptr && m_connectedSocket->isObfuscating();
@@ -1428,9 +1433,16 @@ void ServerConnect::failHandover(ServerSocket* socket, const QString& reason)
     const QString name = handoverName();
     // eNode-go refuses a second session for the hash with a message and a close
     const bool refused = m_handoverLoginSent && socket->connectionState() == ServerConnState::ServerFull;
+    // Any other failure after the login went out (timeout, reset): ed2k-server may have
+    // taken it, and a taken login replaces the live session at once (no sources, new
+    // 0x9F token, closed on its next frame). Log in again rather than keep it.
+    const bool mayBeReplaced = m_handoverLoginSent && !refused;
     destroySocket(socket);   // resets the handover state
 
-    if (m_connected && m_connectedSocket) {
+    if (m_connected && m_connectedSocket && mayBeReplaced)
+        logInfo(QStringLiteral("%1 to %2: login sent, no answer — the server may have replaced the current session")
+                    .arg(name, entry ? entry->name() : QString()));
+    if (m_connected && m_connectedSocket && !mayBeReplaced) {
         if (!entry) {
             if (recheck)
                 finishRecheck(!isLowID());
@@ -1452,8 +1464,9 @@ void ServerConnect::failHandover(ServerSocket* socket, const QString& reason)
         return;
     }
 
-    // The old session is gone already: back to it
+    // The old session is gone already (or replaced): back to it
     if (!entry) {
+        disconnect();
         stopConnectionTry();
         if (recheck)
             finishRecheck(false);

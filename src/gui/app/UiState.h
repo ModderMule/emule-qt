@@ -295,6 +295,23 @@ public:
         m_showDownloadStatusFilter = on;
         scheduleSave();
     }
+    /// Downloads list: the previous sort column breaks ties of the current one (#84)
+    [[nodiscard]] bool downloadSecondarySort() const { return m_downloadSecondarySort; }
+    void setDownloadSecondarySort(bool on)
+    {
+        m_downloadSecondarySort = on;
+        scheduleSave();
+    }
+    [[nodiscard]] int downloadSecondarySortColumn() const { return m_downloadSecondarySortColumn; }
+    [[nodiscard]] Qt::SortOrder downloadSecondarySortOrder() const { return m_downloadSecondarySortOrder; }
+    void setDownloadSecondarySortKey(int column, Qt::SortOrder order)
+    {
+        if (column == m_downloadSecondarySortColumn && order == m_downloadSecondarySortOrder)
+            return;
+        m_downloadSecondarySortColumn = column;
+        m_downloadSecondarySortOrder = order;
+        scheduleSave();
+    }
     [[nodiscard]] bool showTorrentStatusFilter() const { return m_showTorrentStatusFilter; }
     void setShowTorrentStatusFilter(bool on)
     {
@@ -536,6 +553,9 @@ private:
     bool m_showCountryFlags = true;
     bool m_showTaskbarProgress = true;
     bool m_showDownloadStatusFilter = false;
+    bool m_downloadSecondarySort = false;
+    int m_downloadSecondarySortColumn = -1;
+    Qt::SortOrder m_downloadSecondarySortOrder = Qt::AscendingOrder;
     bool m_showTorrentStatusFilter = true;
     bool m_showHosterStatusFilter = true;
     int m_downloadStatusFilter = 0;

@@ -6,6 +6,9 @@
 /// HTTP through Qt cannot be pinned to an interface, so it follows the default route.
 /// When the selected interface (BindAddress.h) is gone that route is the one the user
 /// wanted to avoid: every request then fails at once with a clear error instead.
+///
+/// Requests follow the Proxy page, read per request (report 34); local hosts go direct.
+/// An explicit setProxy() replaces that.
 
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -16,7 +19,7 @@ class GuardedNetworkAccessManager : public QNetworkAccessManager {
     Q_OBJECT
 
 public:
-    using QNetworkAccessManager::QNetworkAccessManager;
+    explicit GuardedNetworkAccessManager(QObject* parent = nullptr);
 
 protected:
     QNetworkReply* createRequest(Operation op, const QNetworkRequest& request,

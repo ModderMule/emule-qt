@@ -164,6 +164,11 @@ public:
     [[nodiscard]] bool callbackSlotAllowed(uint64 curTick);
     /// A Connecting slot handed out by callback, still within kCallbackWaitMs.
     [[nodiscard]] bool awaitsCallback(const UpDownClient* client, uint64 curTick) const;
+    /// #150: a callback slot whose peer never called in. Frees the slot and puts the peer
+    /// back on the waiting list with its wait time kept; its address is not asked again
+    /// for kCallbackFailedRetryMs or until it asks us itself. False if @p client holds no
+    /// callback slot.
+    bool requeueFailedCallback(UpDownClient* client, const QString& reason);
     /// True while the line has been underfilled (known limit) for kUnderfillMs and
     /// this slot is taking data: its session limits stretch to kSessionStretch times.
     [[nodiscard]] bool keepsProductiveSlot(const UpDownClient* client) const;
@@ -178,6 +183,9 @@ public:
     /// each address once per kCallbackRetryMs. MFC waits for the peer's next re-ask.
     static constexpr uint32 kCallbackSlotMs = 3'000;
     static constexpr uint32 kCallbackRetryMs = 10 * 60 * 1000;
+    /// A failed callback means stale route info (moved server, dead buddy); the peer's
+    /// own re-ask (~29 min) brings a fresh hello and clears this early.
+    static constexpr uint32 kCallbackFailedRetryMs = 60 * 60 * 1000;
     /// A callback slot without a socket is kept this long: two 45 s connect timeouts
     /// (server, then Kad buddy) and some slack.
     static constexpr uint32 kCallbackWaitMs = 100'000;
@@ -374,7 +382,11 @@ private:
     std::unordered_map<Address, SlotCooldown> m_slotCooldowns;
     // LowID callback slots (#150)
     uint64 m_lastCallbackSlot = 0;                          // 0: none yet
-    std::unordered_map<Address, uint64> m_callbackAskedAt;  // address -> tick asked
+    struct CallbackAsk {
+        uint64 askedAt = 0;
+        bool failed = false;    // never called in: kCallbackFailedRetryMs, not kCallbackRetryMs
+    };
+    std::unordered_map<Address, CallbackAsk> m_callbackAsks;
 
     /// Earliest tick at which the score kick may fire again. MFC seeds it with the current
     /// tick and pushes it 6 s ahead on every kick (srchybrid/UploadQueue.cpp:833), so a

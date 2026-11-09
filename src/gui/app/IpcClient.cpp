@@ -70,6 +70,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::GetStats:             return QStringLiteral("GetStats");
     case T::GetPreferences:       return QStringLiteral("GetPreferences");
     case T::SetPreferences:       return QStringLiteral("SetPreferences");
+    case T::ReloadPreferences:    return QStringLiteral("ReloadPreferences");
     case T::Subscribe:            return QStringLiteral("Subscribe");
     case T::GetKadContacts:       return QStringLiteral("GetKadContacts");
     case T::GetKadStatus:         return QStringLiteral("GetKadStatus");
@@ -1229,6 +1230,8 @@ void IpcClient::onMessageReceived(const IpcMessage& msg)
         m_corePid = msg.fieldInt(5);
         // Field 6: the core runs with --autoupdate
         m_coreAutoUpdate = msg.fieldBool(6);
+        // Field 7: the core's app version; empty from a core before 0.7.21
+        m_coreVersion = msg.fieldString(7);
         setCoreLink(msg.fieldBool(3) ? CoreLink::Loading : CoreLink::Ready);
         logInfo(QStringLiteral("IPC handshake complete — daemon version: %1")
                     .arg(msg.fieldString(0)));

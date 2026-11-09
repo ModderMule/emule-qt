@@ -2707,8 +2707,11 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
     // m_uploadingList on BOTH of its branches, so a client whose connect never completed
     // is still holding a slot. Clearing the state alone would leak it. MFC removes for
     // both states too (BaseClient.cpp:1118-1120).
-    if (m_uploadState == UploadState::Uploading
-        || m_uploadState == UploadState::Connecting)
+    // A callback slot (#150) whose peer never called in goes back to waiting instead.
+    const bool callbackRequeued = m_uploadState == UploadState::Connecting && theApp.uploadQueue
+        && theApp.uploadQueue->requeueFailedCallback(this, QStringLiteral("Callback failed: ") + reason);
+    if (!callbackRequeued
+        && (m_uploadState == UploadState::Uploading || m_uploadState == UploadState::Connecting))
     {
         setUploadState(UploadState::None);
         if (theApp.uploadQueue)
@@ -2772,7 +2775,9 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
                 if (m_reqFile && m_downloadState == DownloadState::None)
                     askForDownload();
             });
-        } else if (unanswered || unreachable) {
+        } else if ((unanswered || unreachable)
+                   // a failed upload callback with no download side is not a dead source
+                   && !(callbackRequeued && m_downloadState == DownloadState::None)) {
             sourceDied = unreachable;
             if (theApp.clientList)
                 theApp.clientList->globalDeadSourceList.addDeadSource(deadSourceKey(), hasLowID());

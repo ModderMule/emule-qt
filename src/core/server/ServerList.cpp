@@ -67,6 +67,11 @@ bool ServerList::init(const QString& configDir)
     const size_t before = serverCount();
     if (loadStaticServers(dir.filePath(QStringLiteral("staticservers.dat"))))
         logInfo(QStringLiteral("Loaded static servers (%1 new)").arg(serverCount() - before));
+
+    // Servers removed as dead (#161); not in server.met, which stays small.
+    const auto now = static_cast<uint32>(QDateTime::currentSecsSinceEpoch());
+    m_deadServers.load(dir.filePath(QStringLiteral("deadservers.dat")), now);
+    m_deadServers.prune(thePrefs.deadServerBlockDays(), now);
     m_dirty = false;   // just loaded from disk
     return ok;
 }
@@ -257,7 +262,7 @@ bool ServerList::loadStaticServers(const QString& filePath)
             existing->setStaticMember(true);
             existing->setPreference(priority);
         } else {
-            addServer(std::move(srv));
+            addServer(std::move(srv), ServerOrigin::Manual);   // user's own list
         }
     }
 
@@ -367,6 +372,15 @@ Server* ServerList::addServer(std::unique_ptr<Server> server, ServerOrigin origi
     // duplicate — CServerList::AddServer(), ServerList.cpp:230-234.) Name/description
     // are NOT refreshed here (an OP_SERVERLIST placeholder must not clobber a real
     // name); the load-merge path does that explicitly.
+    // #161: removed as dead, kept out while blocked; the user's own add lifts it.
+    const auto now = static_cast<uint32>(QDateTime::currentSecsSinceEpoch());
+    if (origin == ServerOrigin::Manual) {
+        if (m_deadServers.unblock(*server))
+            m_deadServers.save();
+    } else if (m_deadServers.isBlocked(*server, thePrefs.deadServerBlockDays(), now)) {
+        return nullptr;
+    }
+
     if (isDuplicate(*server)) {
         if (origin == ServerOrigin::Manual) {
             Server* existing = findByAddress(server->address(), server->port());
@@ -452,6 +466,31 @@ bool ServerList::removeServer(const Server* server)
         }
     }
     return false;
+}
+
+int ServerList::removeDeadServers()
+{
+    if (!thePrefs.removeDeadServers())
+        return 0;
+    const auto now = static_cast<uint32>(QDateTime::currentSecsSinceEpoch());
+    const uint32 days = thePrefs.deadServerBlockDays();
+    int removed = 0;
+    for (size_t i = m_servers.size(); i-- > 0;) {
+        Server* srv = m_servers[i].get();
+        // Static servers are never disabled; checked anyway, they are the user's own.
+        if (!srv->isDisabled() || srv->isStaticMember())
+            continue;
+        logInfo(QStringLiteral("Removing dead server %1 (%2, failed %3 times)%4")
+                    .arg(srv->name(), srv->addressWithPort()).arg(srv->failedCount())
+                    .arg(days > 0 ? QStringLiteral(", blocked for %1 days").arg(days) : QString()));
+        if (days > 0)
+            m_deadServers.block(*srv, now);
+        removeServer(srv);
+        ++removed;
+    }
+    if (removed > 0 && days > 0)
+        m_deadServers.save();
+    return removed;
 }
 
 int ServerList::removeFilteredServers()
@@ -1006,6 +1045,8 @@ void ServerList::process(const QString& metPath)
         m_lastServerMetSave = now;
         return;
     }
+    // Out of the socket callbacks that disable a server, so no caller holds it (#161).
+    removeDeadServers();
     const bool dirtyDue = m_dirty && now - m_dirtySince >= kDirtySaveDelay;
     if (dirtyDue || now - m_lastServerMetSave >= static_cast<uint32>(MIN2S(17))) {
         m_lastServerMetSave = now;

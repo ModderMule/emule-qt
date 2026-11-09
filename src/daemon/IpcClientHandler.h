@@ -186,6 +186,9 @@ private:
     void handleGetStatsHistory(const Ipc::IpcMessage& msg);
     void handleGetPreferences(const Ipc::IpcMessage& msg);
     void handleSetPreferences(const Ipc::IpcMessage& msg);
+    void handleReloadPreferences(const Ipc::IpcMessage& msg);
+    /// Tells the daemon what a preference apply moved (engines, web server, standby).
+    void emitPrefOutcome(const PrefApplyOutcome& outcome);
     void handleSubscribe(const Ipc::IpcMessage& msg);
     void handleGetKadContacts(const Ipc::IpcMessage& msg);
     void handleGetKadStatus(const Ipc::IpcMessage& msg);

@@ -53,6 +53,9 @@ public:
     [[nodiscard]] virtual const Server* currentServer() const = 0;
     /// The address the live session dialed.
     [[nodiscard]] virtual Address serverSessionAddress() const = 0;
+    /// A background re-login to the current server is out (IPv6 handover, HighID recheck):
+    /// the server may already have replaced the live session and its 0x9F token.
+    [[nodiscard]] virtual bool serverReloginPending() const = 0;
     /// A source's server for the foreign callback: the server list entry, else (pref
     /// natDialUnlistedServers) an unlisted one confirmed by one plain status ping, which
     /// @p probe sends when none went out yet. Never added to the server list.

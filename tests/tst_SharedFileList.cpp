@@ -101,6 +101,8 @@ private slots:
     void reload_doesNotHashAFileTwice();
     void hashFailure_isRetriedThenRememberedUntilTheFileChanges();
     void freshFile_isHeldBackWhileWatching();
+    void watching_aNetworkShareIsSharedFromThePoll();
+    void rescan_takesTheWatcherListingInsteadOfTheDisk();
     void watching_picksUpACopiedInFileWithoutAReload();
     void hashFinished_duplicateContentKeepsTheSharedFile();
     void rescan_duplicateIsNotHashedAgain();
@@ -1198,7 +1200,6 @@ void tst_SharedFileList::incomingTree_sharesSubfoldersButNotOwnOnes()
     const QString temp = QDir(incoming).filePath(QStringLiteral("temp"));
     const QStringList oldTemps = thePrefs.tempDirs();
     thePrefs.setTempDirs({temp});
-    thePrefs.setShareIncomingSubdirs(true);
     const QString deep = writeFile(incoming + QStringLiteral("/Torrent/CD1"), QStringLiteral("track.mp3"), QByteArray(700, 't'));
     const QString hidden = writeFile(incoming + QStringLiteral("/.cache"), QStringLiteral("h.bin"), QByteArray(710, 'h'));
     const QString inTemp = writeFile(temp + QStringLiteral("/sub"), QStringLiteral("x.bin"), QByteArray(720, 'x'));
@@ -1229,13 +1230,6 @@ void tst_SharedFileList::incomingTree_sharesSubfoldersButNotOwnOnes()
     QVERIFY(shared.addSingleSharedFile(deep));
     QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, deep), 10000);
 
-    // off: MFC, incoming alone
-    thePrefs.setShareIncomingSubdirs(false);
-    QVERIFY(!shared.shouldBeShared(QFileInfo(deep).absolutePath(), {}, false));
-    shared.reload();
-    QVERIFY(sharedAt(shared, top));
-    QVERIFY(!sharedAt(shared, deep));
-    thePrefs.setShareIncomingSubdirs(true);
     thePrefs.setTempDirs(oldTemps);
 }
 
@@ -1247,7 +1241,6 @@ void tst_SharedFileList::incomingTree_otherDirsStayFlat()
     const QString btDir = env.tmp.filePath(QStringLiteral("torrents"));
     const QString oldBt = thePrefs.btDownloadDir();
     thePrefs.setBtDownloadDir(btDir);
-    thePrefs.setShareIncomingSubdirs(true);
     const QString inBt = writeFile(btDir + QStringLiteral("/Torrent"), QStringLiteral("a.bin"), QByteArray(750, 'a'));
     const QString below = writeFile(env.shareDir + QStringLiteral("/sub"), QStringLiteral("b.bin"), QByteArray(760, 'b'));
     const QString flat = env.put(QStringLiteral("c.bin"), QByteArray(770, 'c'));
@@ -1269,7 +1262,6 @@ void tst_SharedFileList::incomingTree_otherDirsStayFlat()
 void tst_SharedFileList::stillWriting_keepsATorrentOutUntilDone()
 {
     ShareEnv env;
-    thePrefs.setShareIncomingSubdirs(true);
     const QString incoming = thePrefs.incomingDir();
     const QString file = writeFile(incoming + QStringLiteral("/Some Torrent"), QStringLiteral("a.bin"), QByteArray(900, 'b'));
     const QString other = writeFile(incoming, QStringLiteral("other.bin"), QByteArray(910, 'c'));
@@ -1299,7 +1291,6 @@ void tst_SharedFileList::stillWriting_keepsATorrentOutUntilDone()
 void tst_SharedFileList::stillWriting_blockedAfterScanIsNotHashed()
 {
     ShareEnv env;
-    thePrefs.setShareIncomingSubdirs(true);
     const QString incoming = thePrefs.incomingDir();
     QStringList files;
     for (int i = 0; i < 40; ++i)
@@ -1329,22 +1320,21 @@ void tst_SharedFileList::stillWriting_blockedAfterScanIsNotHashed()
 }
 
 // a finished ed3k set member / hoster package / Usenet job in incoming/<folder>/: shared by
-// the tree, and as a single shared file with shareIncomingSubdirs off (MFC shares downloads)
+// the tree; outside any shared location as a single shared file (MFC shares downloads)
 void tst_SharedFileList::completedDownload_sharedInAnIncomingSubfolderEitherWay()
 {
     ShareEnv env;
     const QString incoming = thePrefs.incomingDir();
     const QString inTree = writeFile(incoming + QStringLiteral("/Some Set"), QStringLiteral("a.bin"), QByteArray(920, 'a'));
-    const QString single = writeFile(incoming + QStringLiteral("/Other Set/CD1"), QStringLiteral("b.bin"), QByteArray(930, 'b'));
+    const QString single = writeFile(env.tmp.filePath(QStringLiteral("elsewhere/CD1")), QStringLiteral("b.bin"), QByteArray(930, 'b'));
     const QString top = writeFile(incoming, QStringLiteral("c.bin"), QByteArray(940, 'c'));
 
     KnownFileList knownFiles;
     SharedFileList shared(&knownFiles);
-    thePrefs.setShareIncomingSubdirs(true);
+    QVERIFY(shared.addFileInSharedLocation(inTree));
     QVERIFY(shared.shareCompletedFile(inTree));
     QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, inTree), 10000);
 
-    thePrefs.setShareIncomingSubdirs(false);
     QVERIFY(!shared.addFileInSharedLocation(single));
     QVERIFY(shared.shareCompletedFile(single));
     QVERIFY(shared.shareCompletedFile(top));
@@ -1352,7 +1342,6 @@ void tst_SharedFileList::completedDownload_sharedInAnIncomingSubfolderEitherWay(
     // a single shared file: it stays after a reload
     shared.reload();
     QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, single), 10000);
-    thePrefs.setShareIncomingSubdirs(true);
 }
 
 void tst_SharedFileList::reload_doesNotHashAFileTwice()
@@ -1870,6 +1859,65 @@ void tst_SharedFileList::watching_picksUpACopiedInFileWithoutAReload()
     thePrefs.setSharedDirs({});
     shared.reload();
     QCOMPARE(shared.watcher()->roots().size(), 1);
+}
+
+// A share the OS cannot watch (NAS) is listed by the watcher's poll; a file that
+// turns up there gets shared without a reload (#84).
+void tst_SharedFileList::watching_aNetworkShareIsSharedFromThePoll()
+{
+    ShareEnv env;
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    shared.reload();
+    shared.setPollMinutes(5);
+    shared.setWatchingEnabled(true);
+    shared.m_settleSecs = 0;
+    const QString share = env.shareDir;
+    shared.watcher()->setRemoteCheck([share](const QString& dir) { return dir == share; });
+    shared.watcher()->setTimings(100, 1000, 150);
+    // roots asked before the remote check was in place: ask again
+    shared.watcher()->setRoots({});
+    shared.reload();
+    QTRY_VERIFY(!shared.watcher()->watchesPending());
+    QVERIFY(shared.watcher()->polledRoots().contains(share));
+
+    const QString path = env.put(QStringLiteral("on the nas.bin"), QByteArray(2345, 'n'));
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 15000);
+    QVERIFY(sharedAt(shared, path));
+}
+
+// What the watcher listed off-thread stands in for the disk once, while fresh.
+void tst_SharedFileList::rescan_takesTheWatcherListingInsteadOfTheDisk()
+{
+    ShareEnv env;
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    shared.reload();
+    QCOMPARE(shared.getCount(), 0);
+
+    env.put(QStringLiteral("listed.bin"), QByteArray(700, 'l'));
+    const auto listing = SharedFileList::scanDirectory(env.shareDir);
+    QCOMPARE(listing.size(), 1);
+    env.put(QStringLiteral("after the listing.bin"), QByteArray(800, 'a'));
+
+    shared.m_prelisted.insert(SharedFileList::pathKey(env.shareDir),
+                              {listing, QDateTime::currentMSecsSinceEpoch()});
+    shared.rescanDirectory(env.shareDir);
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
+    QTest::qWait(300);
+    QCOMPARE(shared.getCount(), 1);   // the later file was not looked for
+    QVERIFY(shared.m_prelisted.isEmpty());
+
+    // taken once: the next rescan reads the disk
+    shared.rescanDirectory(env.shareDir);
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 2, 10000);
+
+    // a stale listing is not used
+    env.put(QStringLiteral("third.bin"), QByteArray(900, 't'));
+    shared.m_prelisted.insert(SharedFileList::pathKey(env.shareDir),
+                              {listing, QDateTime::currentMSecsSinceEpoch() - 120'000});
+    shared.rescanDirectory(env.shareDir);
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 3, 10000);
 }
 
 // MFC Reload() (srchybrid/SharedFileList.cpp:784-796). The map is emptied wholesale, so

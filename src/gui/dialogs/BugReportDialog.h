@@ -23,7 +23,8 @@ class BugReportDialog : public RememberedSizeDialog {
     Q_OBJECT
 
 public:
-    explicit BugReportDialog(LogWidget* logWidget, QWidget* parent = nullptr);
+    /// @p coreVersion: the connected core's app version, empty if not known
+    explicit BugReportDialog(LogWidget* logWidget, const QString& coreVersion = {}, QWidget* parent = nullptr);
 
 private slots:
     void onSubmitClicked();
@@ -34,6 +35,9 @@ private slots:
 
 private:
     void prefillCrashDump();
+    [[nodiscard]] QString versionLine() const;
+
+    QString m_coreVersion;
 
     QComboBox* m_typeCombo = nullptr;
     QLineEdit* m_titleEdit = nullptr;

@@ -17,6 +17,7 @@
 
 #include <QDateTime>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QTest>
 #include <QFile>
 #include <QTextStream>
@@ -62,6 +63,8 @@ private slots:
     void remove_success();
     void remove_nonexistent();
     void removeAll();
+    void removeDeadServers_blocksReAdd();
+    void removeDeadServers_offOrStaticKeeps();
 
     // Lookups
     void findByIPTcp_found();
@@ -2702,6 +2705,79 @@ void tst_ServerList::statPing_countsOnlyWithAFreshSignOfLife()
     QVERIFY(ServerList::statPingCounts(false, now - 30, now));    // Kad heard just now
     QVERIFY(!ServerList::statPingCounts(false, now - 600, now));  // Kad silent for 10 min
     QVERIFY(!ServerList::statPingCounts(false, 0, now));          // nothing at all
+}
+
+// #161: a disabled server is removed and kept out of announcements for the block days
+void tst_ServerList::removeDeadServers_blocksReAdd()
+{
+    const bool savedRemove = thePrefs.removeDeadServers();
+    const uint32 savedDays = thePrefs.deadServerBlockDays();
+    thePrefs.setRemoveDeadServers(true);
+    thePrefs.setDeadServerBlockDays(7);
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    {
+        ServerList list;
+        list.init(dir.path());
+        auto* dead = list.addServer(makeServer(0x08080808, 4661, QStringLiteral("dead")));
+        list.addServer(makeServer(0x08080404, 4661, QStringLiteral("alive")));
+        QVERIFY(dead);
+        dead->setDisabled(true);
+
+        QCOMPARE(list.removeDeadServers(), 1);
+        QCOMPARE(list.serverCount(), size_t{1});
+        QVERIFY(QFile::exists(dir.filePath(QStringLiteral("deadservers.dat"))));
+
+        // Announced again (server list / OP_SERVERLIST): refused
+        QVERIFY(list.addServer(makeServer(0x08080808, 4661)) == nullptr);
+        // Other port is another server
+        QVERIFY(list.addServer(makeServer(0x08080808, 4662)) != nullptr);
+    }
+    {
+        // Survives a restart
+        ServerList list;
+        list.init(dir.path());
+        QVERIFY(list.addServer(makeServer(0x08080808, 4661)) == nullptr);
+        // The user's own add lifts the block
+        QVERIFY(list.addServer(makeServer(0x08080808, 4661), ServerOrigin::Manual) != nullptr);
+        QCOMPARE(list.deadServers().count(), 0);
+        QVERIFY(!QFile::exists(dir.filePath(QStringLiteral("deadservers.dat"))));
+    }
+    {
+        // 0 days: removed, but not blocked
+        thePrefs.setDeadServerBlockDays(0);
+        ServerList list;
+        list.init(dir.path());
+        list.addServer(makeServer(0x08080808, 4661))->setDisabled(true);
+        QCOMPARE(list.removeDeadServers(), 1);
+        QVERIFY(list.addServer(makeServer(0x08080808, 4661)) != nullptr);
+    }
+
+    thePrefs.setRemoveDeadServers(savedRemove);
+    thePrefs.setDeadServerBlockDays(savedDays);
+}
+
+void tst_ServerList::removeDeadServers_offOrStaticKeeps()
+{
+    const bool savedRemove = thePrefs.removeDeadServers();
+    ServerList list;
+    auto* plain = list.addServer(makeServer(0x08080808, 4661));
+    auto* stat = list.addServer(makeServer(0x08080404, 4661));
+    plain->setDisabled(true);
+    stat->setDisabled(true);
+    stat->setStaticMember(true);
+
+    thePrefs.setRemoveDeadServers(false);
+    QCOMPARE(list.removeDeadServers(), 0);
+    QCOMPARE(list.serverCount(), size_t{2});
+
+    thePrefs.setRemoveDeadServers(true);
+    QCOMPARE(list.removeDeadServers(), 1);
+    QCOMPARE(list.serverCount(), size_t{1});
+    QVERIFY(list.serverAt(0)->isStaticMember());
+
+    thePrefs.setRemoveDeadServers(savedRemove);
 }
 
 QTEST_MAIN(tst_ServerList)

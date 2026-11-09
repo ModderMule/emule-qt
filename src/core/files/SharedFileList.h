@@ -10,6 +10,7 @@
 #include "files/KadPublishStore.h"
 #include "files/KnownFileList.h"
 #include "files/PublishKeywordList.h"
+#include "files/SharedDirWatcher.h"   // ListedFile
 #include "protocol/Tag.h"
 #include "utils/EntityMap.h"
 
@@ -26,6 +27,7 @@
 #include <functional>
 #include <vector>
 #include <list>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -158,6 +160,8 @@ public:
     void setWatchingEnabled(bool enabled);
     [[nodiscard]] SharedDirWatcher* watcher() const { return m_watcher; }
     [[nodiscard]] bool watchingEnabled() const { return m_watcher != nullptr; }
+    /// How often folders the OS cannot watch (network shares) are listed; 0 = never.
+    void setPollMinutes(int minutes);
 
     /// Add a file to the shared list.
     ///
@@ -214,7 +218,7 @@ public:
         QSet<QString> incomingDirs;
         QSet<QString> sharedDirs;
         QString usenetTempRoot;
-        /// shareIncomingSubdirs: roots shared with all their subfolders (incoming dirs
+        /// roots shared with all their subfolders (incoming dirs
         /// only, #131) and the folders below them that are not (temp, config)
         QStringList treeRoots;      ///< as on disk, to walk
         QStringList treeRootKeys;   ///< pathKey of each
@@ -269,7 +273,7 @@ public:
 
     /// A finished download (ed3k, hoster, Usenet): addFileInSharedLocation(), else a single
     /// shared file. Downloads land in incoming subfolders (sets, packages, jobs), which only
-    /// shareIncomingSubdirs shares; MFC shares every completed download wherever it is.
+    /// the incoming tree shares; MFC shares every completed download wherever it is.
     bool shareCompletedFile(const QString& filePath);
 
     /// Does this directory hold any individually-shared file?
@@ -420,8 +424,14 @@ private:
     [[nodiscard]] bool isNeverShared(const QString& filePath) const;
     /// The shareable files of one directory, by path key.
     void listDirectory(const QString& dir, QHash<QString, DiskEntry>& out) const;
+    /// The disk half of listDirectory(): thread-safe, the watcher runs it on its worker.
+    [[nodiscard]] static QList<ListedFile> scanDirectory(const QString& dir);
+    /// The in-memory half: what a scan found, minus what is not shared.
+    void addListed(const QList<ListedFile>& listing, QHash<QString, DiskEntry>& out) const;
+    /// What the watcher listed for @p dir a moment ago, if fresh; taken once.
+    [[nodiscard]] std::optional<QList<ListedFile>> takePrelisted(const QString& dir);
     /// Every directory a scan walks: incoming directories first, then shared ones.
-    /// With shareIncomingSubdirs the share trees' subfolders too.
+    /// The share trees' subfolders too.
     [[nodiscard]] QStringList shareRoots() const;
     [[nodiscard]] QStringList shareRoots(const ShareRules& rules) const;
     /// Point a shared file at the name and place it has on disk now.
@@ -619,6 +629,15 @@ private:
     static constexpr int kSettleRecheckSecs = 10;
 
     SharedDirWatcher* m_watcher = nullptr;
+    int m_pollMinutes = 5;
+    /// Polled folders the watcher listed off-thread, by path key: the rescan takes
+    /// them instead of reading a slow share again (#84).
+    struct Prelisted {
+        QList<ListedFile> listing;
+        qint64 atMs = 0;
+    };
+    QHash<QString, Prelisted> m_prelisted;
+    static constexpr qint64 kPrelistMaxAgeMs = 60'000;
 
     /// Set once a whole pass found every file resolved; cleared when a file joins the
     /// share. A part file whose first part has not landed never resolves and so keeps

@@ -6,6 +6,7 @@
 /// QObject-derived with Qt signals for decoupled notifications.
 /// Replaces CTypedPtrList<CPtrList, CServer*> with std::vector<std::unique_ptr<Server>>.
 
+#include "DeadServers.h"
 #include "Server.h"
 #include "UnlistedServers.h"
 #include "utils/Types.h"
@@ -72,6 +73,7 @@ public:
     /// Add a server. Returns raw pointer if added, nullptr on duplicate/bad IP.
     /// Takes ownership of the server. A duplicate is revived (failed count cleared,
     /// re-enabled) only for a Manual origin: being listed by someone is no sign of life.
+    /// An announced server removed as dead is refused while blocked; a Manual add lifts the block.
     Server* addServer(std::unique_ptr<Server> server,
                       ServerOrigin origin = ServerOrigin::Announced);
 
@@ -85,6 +87,13 @@ public:
 
     /// Remove all servers.
     void removeAllServers();
+
+    /// With removeDeadServers on, remove every disabled non-static server and block its
+    /// addresses for deadServerBlockDays (#161). Returns count removed.
+    int removeDeadServers();
+
+    /// Removed-as-dead servers, refused when announced again.
+    [[nodiscard]] DeadServers& deadServers() { return m_deadServers; }
 
     /// Does an unanswered stat ping count against the server? Only with fresh proof
     /// that our own line is up: a server connection or a recent Kad packet.
@@ -195,6 +204,7 @@ public:
     /// Periodic tick: persist server.met to `metPath` 30 s after the first unsaved
     /// change (add/remove/update), else every 17 minutes (MFC CServerList::Process()),
     /// so list state survives a kill/crash, not just a clean shutdown.
+    /// Also removes dead servers (removeDeadServers()).
     void process(const QString& metPath);
 
     /// Unsaved changes pending? Set by the list's own change signals.
@@ -258,6 +268,7 @@ private:
     uint32 m_dirtySince = 0;          ///< epoch-secs of first unsaved change
     bool m_dirty = false;
     UnlistedServers m_unlisted;
+    DeadServers m_deadServers;
 
     [[nodiscard]] bool isDuplicate(const Server& server) const;
     void adjustPositionsAfterRemoval(size_t removedIndex);

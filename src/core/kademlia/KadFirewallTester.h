@@ -35,6 +35,9 @@ public:
     static void reset();
     static void connected();
     static void queryNextClient();
+    /// Per-tick upkeep (not MFC): frees a tester that never answers and refills an
+    /// empty contact pool, so a check stuck after sleep finishes instead of timing out.
+    static void process(uint32 now);
 
     /// Test seam: backdate the check's start time so the 6-minute timeout can be
     /// exercised without waiting for it.
@@ -64,6 +67,8 @@ private:
     struct UsedClient {
         Contact contact;
         bool answered = false;
+        bool released = false;  // slot freed by process(), no answer yet
+        uint32 askedAt = 0;
     };
 
     static bool s_firewalledUDP;
@@ -76,6 +81,7 @@ private:
     static uint32 s_testStart;
     static uint32 s_lastSucceededTime;
     static uint32 s_lastVerdictTime;
+    static uint32 s_lastNodeSearch;
     static std::list<Contact> s_possibleTestClients;
     static std::list<UsedClient> s_usedTestClients;
 };

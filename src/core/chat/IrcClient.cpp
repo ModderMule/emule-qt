@@ -7,6 +7,7 @@
 #include "chat/IrcEmuleProto.h"
 #include "net/InterfacePin.h"
 #include "prefs/Preferences.h"
+#include "net/ProxySettings.h"
 #include "utils/Log.h"
 
 #include <QTcpSocket>
@@ -72,7 +73,10 @@ void IrcClient::connectToServer(const QString& serverAddress, const QString& nic
     QObject::connect(m_socket, &QTcpSocket::errorOccurred,
                      this, &IrcClient::onSocketError);
 
-    if (!InterfacePin::prepareOutgoing(*m_socket, false)) {
+    // MFC CIrcSocket: through the Proxy page's proxy
+    const QNetworkProxy proxy = toNetworkProxy(thePrefs.proxySettings(), host);
+    m_socket->setProxy(proxy);
+    if (!InterfacePin::prepareOutgoing(*m_socket, proxy.type() != QNetworkProxy::NoProxy)) {
         logWarning(QStringLiteral("IRC: not connecting — the selected network interface is not available"));
         m_socket->deleteLater();
         m_socket = nullptr;

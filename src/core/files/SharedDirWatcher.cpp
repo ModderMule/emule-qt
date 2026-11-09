@@ -6,6 +6,7 @@
 #include "utils/Log.h"
 
 #include <QDir>
+#include <QDirIterator>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
 #include <QSet>
@@ -28,6 +29,7 @@ SharedDirWatcher::SharedDirWatcher(QObject* parent)
     , m_thread(new QThread)
     , m_worker(new SharedDirWatchWorker)
 {
+    qRegisterMetaType<DirListing>();
     m_thread->setObjectName(QStringLiteral("SharedDirWatcher"));
     m_worker->moveToThread(m_thread);
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
@@ -35,12 +37,13 @@ SharedDirWatcher::SharedDirWatcher(QObject* parent)
             this, [this](const QString& dir) { onDirectoryEvent(dir); });
     connect(m_worker, &SharedDirWatchWorker::watched, this, &SharedDirWatcher::onWatched);
     connect(m_worker, &SharedDirWatchWorker::rewatched, this, &SharedDirWatcher::onRewatched);
+    connect(m_worker, &SharedDirWatchWorker::probed, this, &SharedDirWatcher::onProbed);
     m_thread->start(QThread::LowPriority);
 
     m_flushTimer.setInterval(250);
     connect(&m_flushTimer, &QTimer::timeout, this, &SharedDirWatcher::flush);
 
-    m_pollTimer.setInterval(5 * 60 * 1000);
+    m_pollTimer.setInterval(m_pollMs);
     connect(&m_pollTimer, &QTimer::timeout, this, &SharedDirWatcher::poll);
 }
 
@@ -106,12 +109,35 @@ void SharedDirWatcher::setBeforeAddHook(std::function<void(const QString&)> hook
     QMetaObject::invokeMethod(m_worker, [w = m_worker, hook = std::move(hook)] { w->beforeAdd = hook; });
 }
 
+void SharedDirWatcher::setBeforeProbeHook(std::function<void(const QString&)> hook)
+{
+    QMetaObject::invokeMethod(m_worker, [w = m_worker, hook = std::move(hook)] { w->beforeProbe = hook; });
+}
+
+void SharedDirWatcher::setLister(std::function<DirListing(const QString&)> lister)
+{
+    QMetaObject::invokeMethod(m_worker, [w = m_worker, lister = std::move(lister)] { w->lister = lister; });
+}
+
+void SharedDirWatcher::setPollInterval(int pollMs)
+{
+    m_pollMs = std::max(pollMs, 0);
+    if (m_pollMs > 0) {
+        m_pollTimer.setInterval(m_pollMs);   // restarts a running timer
+        // roots that came while polling was off: list them now, later polls compare
+        for (auto it = m_roots.begin(); it != m_roots.end(); ++it)
+            if (isPolled(*it) && !it->listed && !it->probing)
+                sendProbe(it.key(), *it);
+    }
+    updatePollTimer();
+}
+
 void SharedDirWatcher::setTimings(int settleMs, int maxHoldMs, int pollMs)
 {
     m_settleMs = settleMs;
     m_maxHoldMs = maxHoldMs;
     m_flushTimer.setInterval(std::clamp(settleMs / 4, 10, 250));
-    m_pollTimer.setInterval(pollMs);
+    setPollInterval(pollMs);
 }
 
 bool SharedDirWatcher::isOnNetworkShare(const QString& dir)
@@ -174,9 +200,44 @@ void SharedDirWatchWorker::rewatchIfLost(const QString& dir, quint64 request)
     emit rewatched(dir, m_watcher->addPath(dir), request);
 }
 
+void SharedDirWatchWorker::probe(const QString& dir, quint64 request)
+{
+    if (beforeProbe)
+        beforeProbe(dir);
+    const QDir d(dir);
+    if (!d.exists()) {
+        emit probed(dir, 0, {}, request);
+        return;
+    }
+    DirListing listing = lister ? lister(dir) : listFiles(dir);
+    // Order-free sum: the OS may list the same content in another order.
+    // Subfolders count too, a share tree grows by them.
+    quint64 fp = 1;
+    for (const ListedFile& f : listing)
+        fp += qHashMulti(1, f.info.absoluteFilePath(), f.info.size(),
+                         f.info.lastModified().toMSecsSinceEpoch());
+    for (const QString& sub : d.entryList(QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden))
+        fp += qHash(sub, 2);
+    fp = qHashMulti(fp, listing.size());
+    emit probed(dir, fp != 0 ? fp : 1, listing, request);
+}
+
 // ---------------------------------------------------------------------------
 // Private
 // ---------------------------------------------------------------------------
+
+DirListing SharedDirWatchWorker::listFiles(const QString& dir)
+{
+    DirListing out;
+    QDirIterator it(dir, QDir::Files | QDir::NoDotAndDotDot | QDir::Hidden);
+    while (it.hasNext()) {
+        it.next();
+        ListedFile f{it.fileInfo(), {}};
+        f.info.stat();   // cached for the receiver
+        out.append(std::move(f));
+    }
+    return out;
+}
 
 QFileSystemWatcher* SharedDirWatchWorker::watcher()
 {
@@ -245,23 +306,22 @@ void SharedDirWatcher::flush()
 
 void SharedDirWatcher::poll()
 {
-    // Keys first: a report can overflow, and the reload behind it replaces
-    // m_roots under a live iterator (#117).
-    QStringList due;
     for (auto it = m_roots.begin(); it != m_roots.end(); ++it) {
         if (!isPolled(*it))
             continue;
+        // a share that has not answered the last round is not asked again
+        if (it->probing) {
+            logDebug([&]() -> QString {
+                return QStringLiteral("Shared directory still busy from the last poll, skipped: %1").arg(it.key());
+            });
+            continue;
+        }
         // try the watch again: the directory may exist now, or the volume be back
         if (!it->watched)
             requestWatch(it.key(), *it, false);
-        due.append(it.key());
+        sendProbe(it.key(), *it);
     }
     sendWatches(false);
-    // Reported every time: the directory's own date does not move when a file
-    // is rewritten in place, and the rescan this leads to only stats.
-    for (const QString& dir : due)
-        if (!onDirectoryEvent(dir))
-            break;   // overflow: the full rescan covers the rest
 }
 
 void SharedDirWatcher::requestWatch(const QString& dir, Root& root, bool catchUp)
@@ -271,6 +331,35 @@ void SharedDirWatcher::requestWatch(const QString& dir, Root& root, bool catchUp
     root.request = m_nextRequest++;
     root.askedMs = QDateTime::currentMSecsSinceEpoch();
     m_toWatch.append({dir, root.request});
+}
+
+void SharedDirWatcher::sendProbe(const QString& dir, Root& root)
+{
+    root.probing = true;
+    root.probeRequest = m_nextRequest++;
+    QMetaObject::invokeMethod(m_worker, [w = m_worker, dir, req = root.probeRequest] {
+        w->probe(dir, req);
+    });
+}
+
+void SharedDirWatcher::onProbed(const QString& dir, quint64 fingerprint, const DirListing& listing,
+                                quint64 request)
+{
+    const auto it = m_roots.find(dir);
+    if (it == m_roots.end() || it->probeRequest != request)
+        return;   // dropped or asked again since
+    it->probing = false;
+    const bool first = !it->listed;
+    const bool same = it->fingerprint == fingerprint;
+    it->listed = true;
+    it->fingerprint = fingerprint;
+    // The first listing is what the scan behind setRoots() saw: nothing to report.
+    // The file dates count, so a file rewritten in place is a change too.
+    if (first || same)
+        return;
+    if (fingerprint != 0)
+        emit directoryListed(dir, listing);
+    onDirectoryEvent(dir);
 }
 
 void SharedDirWatcher::sendWatches(bool checkRemote)
@@ -303,6 +392,9 @@ void SharedDirWatcher::onWatched(const QString& dir, bool ok, bool remote, quint
     }
     if (tookMs > kSlowWatchMs)
         logDebug([&]() -> QString { return QStringLiteral("Watching shared directory took %1 ms: %2").arg(tookMs).arg(dir); });
+    // first listing of a polled root, the one later polls compare with
+    if (first && isPolled(*it) && !it->listed && !it->probing && m_pollMs > 0)
+        sendProbe(dir, *it);
     updatePollTimer();
     // changes made while the OS was busy setting up the watch were not seen
     if (first && ok && tookMs > kSlowWatchMs)
@@ -320,7 +412,7 @@ void SharedDirWatcher::onRewatched(const QString& dir, bool ok, quint64 request)
 
 void SharedDirWatcher::updatePollTimer()
 {
-    const bool anyPolled = std::ranges::any_of(m_roots, &SharedDirWatcher::isPolled);
+    const bool anyPolled = m_pollMs > 0 && std::ranges::any_of(m_roots, &SharedDirWatcher::isPolled);
     if (anyPolled && !m_pollTimer.isActive())
         m_pollTimer.start();
     else if (!anyPolled)

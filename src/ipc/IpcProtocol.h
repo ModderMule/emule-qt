@@ -105,6 +105,9 @@ enum class IpcMsgType : int {
     GetStats             = 180,
     GetPreferences       = 190,
     SetPreferences       = 191,  ///< [key, value, ...]
+    /// [] → [ok, {changed: [key...], prefs: map, path, ports, network, tcpPort, udpPort}]
+    /// Re-reads preferences.yml and applies what differs, as SetPreferences would.
+    ReloadPreferences    = 192,
     Subscribe            = 200,  ///< [eventMask: int] — PushGroup bits; pushes outside a group always go
     GetKadContacts       = 210,
     GetKadStatus         = 211,
@@ -1250,7 +1253,7 @@ enum class IpcMsgType : int {
 
     // -- Responses (Core -> GUI) ---------------------------------------------
 
-    HandshakeOk          = 300,  ///< [version, motd, sessionToken, loading: bool, loadStage: string, pid, autoUpdate: bool]
+    HandshakeOk          = 300,  ///< [version, motd, sessionToken, loading: bool, loadStage: string, pid, autoUpdate: bool, appVersion]
     Result               = 301,  ///< [success, data]
     Error                = 302,  ///< [code, message]
 

@@ -1608,7 +1608,7 @@ void MainWindow::onSchedulerToggle()
 
 void MainWindow::onSubmitBugReport()
 {
-    BugReportDialog dlg(m_serverPanel->logWidget(), this);
+    BugReportDialog dlg(m_serverPanel->logWidget(), m_ipc ? m_ipc->coreVersion() : QString(), this);
     dlg.exec();
 }
 

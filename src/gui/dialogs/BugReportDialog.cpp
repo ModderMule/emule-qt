@@ -36,6 +36,7 @@
 #include <QNetworkRequest>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QSysInfo>
 #include <QTextEdit>
 #include <QUuid>
 #include <QVBoxLayout>
@@ -47,11 +48,12 @@ static constexpr int kMaxLogChars = 60000; // MySQL TEXT column limit is 65,535 
 static constexpr auto kBaseUrl = "https://emule-qt.org";
 static constexpr auto kBugReportWebUrl = "https://emule-qt.org/submit-bug-report/";
 
-BugReportDialog::BugReportDialog(LogWidget* logWidget, QWidget* parent)
+BugReportDialog::BugReportDialog(LogWidget* logWidget, const QString& coreVersion, QWidget* parent)
     : RememberedSizeDialog(parent)
     , m_nam(new QNetworkAccessManager(this))
     , m_logWidget(logWidget)
 {
+    m_coreVersion = coreVersion;
     setWindowTitle(tr("Submit Bug Report"));
 
     auto* mainLayout = new QVBoxLayout(this);
@@ -228,14 +230,17 @@ void BugReportDialog::onSubmitClicked()
     addText("name", m_nameEdit->text().trimmed());
     addText("email", m_emailEdit->text().trimmed());
     addText("userToken", token);
+    addText("appVersion", versionLine());
 
-    // App config
+    // App config, always sent: version + OS as top comment (old plugins store only this part)
     const QString configPath = AppConfig::configDir() + QStringLiteral("/preferences.yml");
+    QString config = QStringLiteral("# ") + versionLine() + u'\n';
     QFile configFile(configPath);
-    if (configFile.open(QIODevice::ReadOnly)) {
-        addText("appConfig", QString::fromUtf8(configFile.readAll()));
-        configFile.close();
-    }
+    if (configFile.open(QIODevice::ReadOnly))
+        config += QString::fromUtf8(configFile.readAll());
+    else
+        config += QStringLiteral("# preferences.yml not readable\n");
+    addText("appConfig", config);
 
     // Log texts – send as file uploads so the server receives them via $_FILES
     auto addLogFile = [multiPart](const char* fieldName, const char* fileName, const QString& text) {
@@ -253,7 +258,8 @@ void BugReportDialog::onSubmitClicked()
         multiPart->append(part);
     };
     if (m_logWidget) {
-        addLogFile("logfile",     "logfile.txt",     truncateLog(m_logWidget->logText()));
+        // the version line survives the tail cut and servers without the appVersion field
+        addLogFile("logfile",     "logfile.txt",     versionLine() + u'\n' + truncateLog(m_logWidget->logText()));
         addLogFile("logVerbose",  "logVerbose.txt",  truncateLog(m_logWidget->verboseText()));
         addLogFile("logKad",      "logKad.txt",      truncateLog(m_logWidget->kadText()));
         addLogFile("logUsenet",   "logUsenet.txt",   truncateLog(m_logWidget->usenetText()));
@@ -403,6 +409,15 @@ void BugReportDialog::prefillCrashDump()
     QFileInfoList entries = crashDir.entryInfoList(filters, QDir::Files, QDir::Time);
     if (!entries.isEmpty())
         m_crashDumpEdit->setText(entries.first().absoluteFilePath());
+}
+
+/// "eMule Qt v0.7.21, core v0.7.21, macOS 26.1 (arm64)"
+QString BugReportDialog::versionLine() const
+{
+    return QStringLiteral("eMule Qt v%1, core %2, %3 (%4)")
+        .arg(QCoreApplication::applicationVersion(),
+             m_coreVersion.isEmpty() ? QStringLiteral("unknown") : u'v' + m_coreVersion,
+             QSysInfo::prettyProductName(), QSysInfo::currentCpuArchitecture());
 }
 
 } // namespace eMule

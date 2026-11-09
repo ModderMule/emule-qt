@@ -105,12 +105,10 @@ constexpr int kRolePath = Qt::UserRole + 1;
 /// Marks the category sub-nodes: 1 a category's incoming folder, 2 its part files.
 constexpr int kRoleCategoryNode = Qt::UserRole + 4;
 
-/// shareIncomingSubdirs (#124): a folder strictly below an incoming dir is shared by
-/// the core without being on the list (SharedFileList::inShareTree); not the BT dir (#131)
+/// #124: a folder strictly below an incoming dir is shared by the core without being
+/// on the list (SharedFileList::inShareTree); not the BT dir (#131)
 bool inIncomingTree(const QString& path)
 {
-    if (!thePrefs.shareIncomingSubdirs())
-        return false;
     const QString key = SharedDirState::dirKey(path);
     const QStringList roots = thePrefs.allIncomingDirs();
     for (const QString& root : roots) {
@@ -420,7 +418,7 @@ void SharedFilesPanel::onFolderSelectionChanged()
     const auto type = static_cast<SharedFilterType>(filterType);
     const bool byIncoming = type == SharedFilterType::Incoming || type == SharedFilterType::SharedDirs;
     m_proxy->setFolderFilter(type, byIncoming ? thePrefs.incomingDir() : path,
-                             byIncoming && thePrefs.shareIncomingSubdirs());
+                             byIncoming);
     requestSharedFiles();
 }
 
@@ -2088,9 +2086,9 @@ void SharedFilesPanel::onFolderContextMenu(const QPoint& pos)
     });
     // Incoming is shared on its own and refused as a list entry, but its subfolders
     // (torrent / Usenet download folders) can still go on the list (#124) — unless
-    // shareIncomingSubdirs shares them anyway
+    // the incoming tree shares them anyway
     const bool isIncoming = SharedDirState::dirKey(path) == SharedDirState::dirKey(thePrefs.incomingDir());
-    const bool treeCovers = inTree || (isIncoming && thePrefs.shareIncomingSubdirs());
+    const bool treeCovers = inTree || isIncoming;
     shareSubAct->setEnabled((shareable || isIncoming) && !treeCovers && hasSubdirectories(path));
 
     menu.addSeparator();

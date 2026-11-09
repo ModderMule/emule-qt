@@ -4658,6 +4658,10 @@ void tst_WebServer::shippedGermanTranslatesTheWebContext()
 {
     // The German catalogue the build compiles, found the way the daemon finds it.
     // Asserted, not skipped: a missing .qm is exactly what goes unnoticed otherwise.
+    // Only a packaging config (EMULE_SEED_FROM_SOURCE_TREE=OFF) has no way to find it.
+    if (QStringLiteral(EMULE_DEV_LANG_DIR).isEmpty()
+        && !QDir(QCoreApplication::applicationDirPath() + QStringLiteral("/lang")).exists())
+        QSKIP("EMULE_SEED_FROM_SOURCE_TREE=OFF: no build-tree catalogue");
     TranslationRouter router(AppConfig::langCandidates(QCoreApplication::applicationDirPath()));
     const QList<AppLanguage> languages = router.availableLanguages();
     QVERIFY2(std::ranges::any_of(languages,

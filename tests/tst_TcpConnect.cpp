@@ -286,8 +286,9 @@ void tst_TcpConnect::tryToConnect_establishesTcpConnection()
 
     // Connecting → Connected. Check the recorded transitions, not the current state: the
     // listener doesn't share test.bin, so its NOFIL answer may already have moved the client
-    // on to None before the poll above returns.
-    QVERIFY(stateSpy.count() >= 2);
+    // on to None before the poll above returns. Connected waits for the HELLO_ANSWER,
+    // which a fast loopback connect (Linux) can still be short of here.
+    QTRY_VERIFY_WITH_TIMEOUT(stateSpy.count() >= 2, 5000);
     QCOMPARE(stateSpy.at(0).at(0).value<DownloadState>(), DownloadState::Connecting);
     QCOMPARE(stateSpy.at(1).at(0).value<DownloadState>(), DownloadState::Connected);
 

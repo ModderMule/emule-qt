@@ -32,6 +32,12 @@ static constexpr uint32 kUDPFWCheckTimeoutSecs = 6 * 60;
 // blocked later stays advertised when no tester can be asked.
 static constexpr uint32 kVerificationMaxAgeSecs = 2 * 60 * 60 + kUDPFWCheckTimeoutSecs;
 
+// Not MFC (report 35): a tester that took the request but sent nothing back frees
+// its slot after this long, and an empty pool asks for new testers this often.
+// MFC waits for the TCP disconnect, or the 6-minute timeout, and never refills.
+static constexpr uint32 kUDPFWAnswerWaitSecs = 60;
+static constexpr uint32 kUDPFWNodeSearchRetrySecs = 60;
+
 // ---------------------------------------------------------------------------
 // Static data
 // ---------------------------------------------------------------------------
@@ -46,6 +52,7 @@ uint8 UDPFirewallTester::s_fwChecksFinished = 0;
 uint32 UDPFirewallTester::s_testStart = 0;
 uint32 UDPFirewallTester::s_lastSucceededTime = 0;
 uint32 UDPFirewallTester::s_lastVerdictTime = 0;
+uint32 UDPFirewallTester::s_lastNodeSearch = 0;
 std::list<Contact> UDPFirewallTester::s_possibleTestClients;
 std::list<UDPFirewallTester::UsedClient> UDPFirewallTester::s_usedTestClients;
 
@@ -91,6 +98,7 @@ void UDPFirewallTester::setUDPFWCheckResult(bool succeeded, bool testCancelled,
     // Only accept results from a client we actually asked. Without this any peer
     // can inject a verdict. MFC UDPFirewallTester.cpp:84-116.
     bool requested = false;
+    bool slotReleased = false;
     for (auto& used : s_usedTestClients) {
         if (used.contact.address().toUint32() != fromIP)
             continue;
@@ -113,6 +121,7 @@ void UDPFirewallTester::setUDPFWCheckResult(bool succeeded, bool testCancelled,
         }
         used.answered = true;
         requested = true;
+        slotReleased = used.released;
         break;
     }
 
@@ -125,9 +134,14 @@ void UDPFirewallTester::setUDPFWCheckResult(bool succeeded, bool testCancelled,
     if (!isFWCheckUDPRunning())
         return; // already decided
 
+    // A late answer on a slot process() already freed: only an open result still
+    // counts, the check went on without this tester.
+    if (slotReleased && !succeeded)
+        return;
+
     // Always release the slot, whatever the outcome — not doing this on failure
     // deadlocked the tester at running=1/finished=1 and the second test never ran.
-    if (s_fwChecksRunning > 0)
+    if (s_fwChecksRunning > 0 && !slotReleased)
         --s_fwChecksRunning;
 
     if (!testCancelled) {
@@ -189,12 +203,17 @@ void UDPFirewallTester::reCheckFirewallUDP(bool setUnverified)
 {
     logKad(QStringLiteral("Kad: UDP FW recheck requested (setUnverified=%1)")
                .arg(QLatin1StringView(setUnverified ? "yes" : "no")));
+    // Keep showing what was shown until the new check decides. MFC takes the last
+    // verdict here, so a check that had timed out to firewalled showed open again
+    // for 6 minutes on each recheck, then firewalled (report 35 flicker).
+    const bool shown = isFirewalledUDP(true);
     s_fwChecksRunning = 0;
     s_fwChecksFinished = 0;
     s_lastSucceededTime = 0;
     s_testStart = static_cast<uint32>(time(nullptr));
+    s_lastNodeSearch = s_testStart;
     s_timedOut = false;
-    s_firewalledLastStateUDP = s_firewalledUDP;
+    s_firewalledLastStateUDP = shown;
     s_isFWVerifiedUDP = s_isFWVerifiedUDP && !setUnverified;
     s_possibleTestClients.clear();
     // used clients are kept: an IP is asked once per session (MFC :168-181)
@@ -271,6 +290,7 @@ void UDPFirewallTester::reset()
     s_testStart = 0;
     s_lastSucceededTime = 0;
     s_lastVerdictTime = 0;
+    s_lastNodeSearch = 0;
     s_possibleTestClients.clear();
     // keep the list of used clients (MFC :212)
 
@@ -288,8 +308,40 @@ void UDPFirewallTester::connected()
     if (!s_nodeSearchStarted && isFWCheckUDPRunning()) {
         s_nodeSearchStarted = true;
         s_testStart = static_cast<uint32>(time(nullptr));
+        s_lastNodeSearch = s_testStart;
         s_timedOut = false;
         logKad(QStringLiteral("Kad: UDP FW tester connected — starting node search for test clients"));
+        SearchManager::findNodeFWCheckUDP();
+    }
+}
+
+void UDPFirewallTester::process(uint32 now)
+{
+    if (!isFWCheckUDPRunning() || s_testStart == 0)
+        return;
+
+    // Free testers that took the request but never answered.
+    bool freed = false;
+    for (auto& used : s_usedTestClients) {
+        if (used.answered || used.released || used.askedAt == 0
+            || now < used.askedAt + kUDPFWAnswerWaitSecs)
+            continue;
+        used.released = true;
+        if (s_fwChecksRunning > 0)
+            --s_fwChecksRunning;
+        freed = true;
+        logKad(QStringLiteral("Kad: UDP FW tester %1 sent no answer in %2 s — asking another")
+                   .arg(used.contact.address().toString()).arg(kUDPFWAnswerWaitSecs));
+    }
+    if (freed)
+        queryNextClient();
+
+    // Out of testers (lookup after sleep found none): look for new ones.
+    if (getUDPCheckClientsNeeded() && s_possibleTestClients.empty()
+        && now >= s_lastNodeSearch + kUDPFWNodeSearchRetrySecs
+        && !SearchManager::isNodeFWCheckUDPSearchActive()) {
+        s_lastNodeSearch = now;
+        logKad(QStringLiteral("Kad: UDP FW check has no testers left — new lookup"));
         SearchManager::findNodeFWCheckUDP();
     }
 }
@@ -310,6 +362,7 @@ void UDPFirewallTester::debugAddUsedTestClient(uint32 ip, uint16 udpPort)
     used.contact = Contact(UInt128(uint32{0}), ip, udpPort, 0, UInt128(uint32{0}),
                            KADEMLIA_VERSION, KadUDPKey(), false);
     used.answered = false;
+    used.askedAt = static_cast<uint32>(time(nullptr));
     s_usedTestClients.push_back(std::move(used));
     ++s_fwChecksRunning;
 }
@@ -404,6 +457,7 @@ void UDPFirewallTester::queryNextClient()
         UsedClient used;
         used.contact = testContact;
         used.answered = false;
+        used.askedAt = static_cast<uint32>(time(nullptr));
         s_usedTestClients.push_back(std::move(used));
         ++s_fwChecksRunning;
 

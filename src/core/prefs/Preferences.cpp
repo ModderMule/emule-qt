@@ -167,7 +167,8 @@ struct Preferences::Data {
     uint16 maxConnections = 500;
     // eMule 2026 bandwidth: modern OS handles hundreds of half-open connections. MFC default: 9
     uint16 maxHalfConnections = 50;
-    uint16 maxServedBuddies = kDefaultMaxServedBuddies;   // Kad: firewalled nodes we relay for; MFC serves 1
+    uint16 maxServedBuddies = 0;   // Kad: firewalled nodes we relay for, 0 = auto; MFC serves 1
+    uint32 buddyOfferMaxAgeSecs = 300;   // Kad: a queued buddy offer older than this is dropped
     QString bindAddress;
     QString publicIPv6Override;
     // How many distinct peers must independently report the same public IPv6 (via their
@@ -256,6 +257,7 @@ struct Preferences::Data {
     bool btVerboseLog = false;      // Torrent Verbose tab: emule.torrent debug lines
     bool usenetVerboseLog = false;  // emule.usenet debug lines
     bool sharedFilesVerboseLog = false; // emule.sharedv: hashing, duplicates
+    bool ussVerboseLog = false;     // emule.uss: Upload SpeedSense trace and pings
     bool hosterVerboseLog = false;  // Hoster Verbose tab: emule.hoster debug lines
     bool ed3kVerboseLog = false;    // ed3k Verbose tab: emule.ed3k debug lines, packmule Verbose level
     uint32 maxLogLines = 5000;  // Max lines kept per log tab in the GUI
@@ -286,7 +288,7 @@ struct Preferences::Data {
     bool rememberCancelledFiles = true;
     bool autoRenameToMajorityName = false;
     bool watchSharedDirs = true;   // OS file watcher on shared folders
-    bool shareIncomingSubdirs = true;   // incoming dirs shared with subfolders (#124, not BT dir #131)
+    int sharedDirsPollMinutes = 5;   // network shares the watcher cannot see; 0 = never
     bool seenFileIndex = true;   // remember files seen in search results (seenfiles.db)
     QStringList archivePasswords;        // tried on encrypted archives, all networks
     bool archiveRecursiveExtract = true; // unpack archives found inside archives
@@ -532,6 +534,8 @@ struct Preferences::Data {
     // Disable a server after N failed attempts (0 = never). MFC 1; deliberate, 2026-10: one failed
     // connect says little, and a wrongly disabled server is one the user has to find again.
     uint32 deadServerRetries = 20;
+    bool removeDeadServers = true;      // remove a disabled server (MFC removes at the limit, #161)
+    uint32 deadServerBlockDays = 7;     // removed ones stay out of the list this long; YAML-only, 0 = no block
     // A global UDP search stops asking eNode servers for catalogue rows (torrent, Usenet,
     // web, Kad) once this many servers have sent some; 0 asks every server. YAML-only, no UI.
     uint32 globalSearchCatalogueServers = 1;
@@ -975,13 +979,37 @@ void Preferences::setMaxHalfConnections(uint16 val) { set(&Data::maxHalfConnecti
 uint16 Preferences::maxServedBuddies() const { return get(&Data::maxServedBuddies); }
 void Preferences::setMaxServedBuddies(uint16 val)
 {
-    set(&Data::maxServedBuddies, std::clamp<uint16>(val, 1, 32));
+    set(&Data::maxServedBuddies, std::min<uint16>(val, kMaxServedBuddiesLimit));
+}
+
+uint32 Preferences::buddyOfferMaxAgeSecs() const { return get(&Data::buddyOfferMaxAgeSecs); }
+
+uint16 Preferences::autoServedBuddies(uint32 uploadCapacityKiB)
+{
+    // A served buddy costs one idle connection and a few small relayed packets; the tiers
+    // follow the line class, so a slow line keeps its connections for transfers.
+    if (uploadCapacityKiB == 0)
+        return kAssumedRelayServedBuddies;   // unknown capacity
+    // 1 Mbit/s = 125 KiB/s
+    if (uploadCapacityKiB < 500)      // < 4 Mbit/s
+        return 4;
+    if (uploadCapacityKiB < 2500)     // < 20 Mbit/s
+        return 8;
+    if (uploadCapacityKiB < 12500)    // < 100 Mbit/s
+        return 16;
+    if (uploadCapacityKiB < 62500)    // < 500 Mbit/s
+        return 32;
+    if (uploadCapacityKiB < 125000)   // < 1 Gbit/s
+        return 64;
+    return kMaxServedBuddiesLimit;
 }
 
 uint16 Preferences::servedBuddyLimit() const
 {
     const uint16 cap = std::max<uint16>(1, maxConnections() / 10);
-    return std::min(maxServedBuddies(), cap);
+    const uint16 wanted = maxServedBuddies() != 0 ? maxServedBuddies()
+                                                  : autoServedBuddies(maxGraphUploadRate());
+    return std::min(wanted, cap);
 }
 
 QString Preferences::bindAddress() const { return get(&Data::bindAddress); }
@@ -1326,6 +1354,10 @@ void Preferences::setUsenetVerboseLog(bool val) { set(&Data::usenetVerboseLog, v
 bool Preferences::sharedFilesVerboseLog() const { return get(&Data::sharedFilesVerboseLog); }
 
 void Preferences::setSharedFilesVerboseLog(bool val) { set(&Data::sharedFilesVerboseLog, val); }
+
+bool Preferences::ussVerboseLog() const { return get(&Data::ussVerboseLog); }
+
+void Preferences::setUssVerboseLog(bool val) { set(&Data::ussVerboseLog, val); }
 
 bool Preferences::hosterVerboseLog() const { return get(&Data::hosterVerboseLog); }
 
@@ -3245,6 +3277,14 @@ uint32 Preferences::deadServerRetries() const { return get(&Data::deadServerRetr
 
 void Preferences::setDeadServerRetries(uint32 val) { set(&Data::deadServerRetries, val); }
 
+bool Preferences::removeDeadServers() const { return get(&Data::removeDeadServers); }
+
+void Preferences::setRemoveDeadServers(bool val) { set(&Data::removeDeadServers, val); }
+
+uint32 Preferences::deadServerBlockDays() const { return get(&Data::deadServerBlockDays); }
+
+void Preferences::setDeadServerBlockDays(uint32 val) { set(&Data::deadServerBlockDays, val); }
+
 uint32 Preferences::globalSearchCatalogueServers() const { return get(&Data::globalSearchCatalogueServers); }
 
 void Preferences::setGlobalSearchCatalogueServers(uint32 val)
@@ -3419,9 +3459,14 @@ bool Preferences::watchSharedDirs() const { return get(&Data::watchSharedDirs); 
 
 void Preferences::setWatchSharedDirs(bool val) { set(&Data::watchSharedDirs, val); }
 
-bool Preferences::shareIncomingSubdirs() const { return get(&Data::shareIncomingSubdirs); }
+int Preferences::sharedDirsPollMinutes() const { return get(&Data::sharedDirsPollMinutes); }
 
-void Preferences::setShareIncomingSubdirs(bool val) { set(&Data::shareIncomingSubdirs, val); }
+void Preferences::setSharedDirsPollMinutes(int val)
+{
+    set(&Data::sharedDirsPollMinutes, std::clamp(val, 0, kSharedDirsPollMinutesMax));
+}
+
+
 bool Preferences::seenFileIndex() const { return get(&Data::seenFileIndex); }
 void Preferences::setSeenFileIndex(bool val) { set(&Data::seenFileIndex, val); }
 
@@ -3805,6 +3850,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("useUserSortedServerList"), useUserSortedServerList());
     prefs.insert(QStringLiteral("addServersFromClients"), addServersFromClients());
     prefs.insert(QStringLiteral("deadServerRetries"), static_cast<qint64>(deadServerRetries()));
+    prefs.insert(QStringLiteral("removeDeadServers"), removeDeadServers());
     prefs.insert(QStringLiteral("autoUpdateServerList"), autoUpdateServerList());
     prefs.insert(QStringLiteral("serverListURL"), serverListURL());
     prefs.insert(QStringLiteral("nodesDatURL"), nodesDatURL());
@@ -3835,7 +3881,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("rememberCancelledFiles"), rememberCancelledFiles());
     prefs.insert(QStringLiteral("autoRenameToMajorityName"), autoRenameToMajorityName());
     prefs.insert(QStringLiteral("watchSharedDirs"), watchSharedDirs());
-    prefs.insert(QStringLiteral("shareIncomingSubdirs"), shareIncomingSubdirs());
+    prefs.insert(QStringLiteral("sharedDirsPollMinutes"), sharedDirsPollMinutes());
     prefs.insert(QStringLiteral("seenFileIndex"), seenFileIndex());
     prefs.insert(QStringLiteral("archivePasswords"), QCborArray::fromStringList(archivePasswords()));
     prefs.insert(QStringLiteral("archiveRecursiveExtract"), archiveRecursiveExtract());
@@ -4063,6 +4109,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("btVerboseLog"), btVerboseLog());
     prefs.insert(QStringLiteral("usenetVerboseLog"), usenetVerboseLog());
     prefs.insert(QStringLiteral("sharedFilesVerboseLog"), sharedFilesVerboseLog());
+    prefs.insert(QStringLiteral("ussVerboseLog"), ussVerboseLog());
     prefs.insert(QStringLiteral("hosterVerboseLog"), hosterVerboseLog());
     prefs.insert(QStringLiteral("ed3kVerboseLog"), ed3kVerboseLog());
     prefs.insert(QStringLiteral("logPublicIP"), logPublicIP());
@@ -4186,6 +4233,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->useUserSortedServerList = p.value(QStringLiteral("useUserSortedServerList")).toBool();
     m_data->addServersFromClients   = p.value(QStringLiteral("addServersFromClients")).toBool();
     m_data->deadServerRetries       = static_cast<uint32>(p.value(QStringLiteral("deadServerRetries")).toInteger());
+    m_data->removeDeadServers       = p.value(QStringLiteral("removeDeadServers")).toBool(true);
     m_data->autoUpdateServerList    = p.value(QStringLiteral("autoUpdateServerList")).toBool();
     m_data->serverListURL           = urlOrDefault(p.value(QStringLiteral("serverListURL")).toString(),
                                                    kDefaultServerListURL);
@@ -4220,7 +4268,8 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->rememberCancelledFiles        = p.value(QStringLiteral("rememberCancelledFiles")).toBool();
     m_data->autoRenameToMajorityName      = p.value(QStringLiteral("autoRenameToMajorityName")).toBool(false);
     m_data->watchSharedDirs               = p.value(QStringLiteral("watchSharedDirs")).toBool(true);
-    m_data->shareIncomingSubdirs          = p.value(QStringLiteral("shareIncomingSubdirs")).toBool(true);
+    m_data->sharedDirsPollMinutes         = std::clamp(static_cast<int>(p.value(QStringLiteral("sharedDirsPollMinutes")).toInteger(5)),
+                                                       0, kSharedDirsPollMinutesMax);
     m_data->seenFileIndex                 = p.value(QStringLiteral("seenFileIndex")).toBool(true);
     if (p.contains(QStringLiteral("archivePasswords"))) {
         m_data->archivePasswords.clear();   // under m_lock: no setter here
@@ -4390,7 +4439,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     // Extended (PPgTweaks)
     m_data->maxConsPerFive              = static_cast<uint16>(p.value(QStringLiteral("maxConsPerFive")).toInteger());
     m_data->maxHalfConnections          = static_cast<uint16>(p.value(QStringLiteral("maxHalfConnections")).toInteger());
-    m_data->maxServedBuddies            = static_cast<uint16>(p.value(QStringLiteral("maxServedBuddies")).toInteger(kDefaultMaxServedBuddies));
+    m_data->maxServedBuddies            = static_cast<uint16>(p.value(QStringLiteral("maxServedBuddies")).toInteger(0));
     m_data->serverKeepAliveTimeout      = static_cast<uint32>(p.value(QStringLiteral("serverKeepAliveTimeout")).toInteger());
     m_data->filterLANIPs                = p.value(QStringLiteral("filterLANIPs")).toBool();
     m_data->skipFirewalledChecksInLanMode = p.value(QStringLiteral("skipFirewalledChecksInLanMode")).toBool();
@@ -4405,6 +4454,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->btVerboseLog                = p.value(QStringLiteral("btVerboseLog")).toBool();
     m_data->usenetVerboseLog            = p.value(QStringLiteral("usenetVerboseLog")).toBool();
     m_data->sharedFilesVerboseLog       = p.value(QStringLiteral("sharedFilesVerboseLog")).toBool();
+    m_data->ussVerboseLog               = p.value(QStringLiteral("ussVerboseLog")).toBool();
     m_data->hosterVerboseLog            = p.value(QStringLiteral("hosterVerboseLog")).toBool();
     m_data->ed3kVerboseLog              = p.value(QStringLiteral("ed3kVerboseLog")).toBool();
     m_data->closeUPnPOnExit             = p.value(QStringLiteral("closeUPnPOnExit")).toBool();
@@ -4535,8 +4585,8 @@ void Preferences::validate()
     // maxHalfConnections: clamp 1–100
     m_data->maxHalfConnections = std::clamp<uint16>(m_data->maxHalfConnections, 1, 100);
 
-    // maxServedBuddies: clamp 1–32
-    m_data->maxServedBuddies = std::clamp<uint16>(m_data->maxServedBuddies, 1, 32);
+    // maxServedBuddies: 0 = auto, else 1–128
+    m_data->maxServedBuddies = std::min<uint16>(m_data->maxServedBuddies, kMaxServedBuddiesLimit);
 
     // cryptTCPPaddingLength: clamp 0–254
     if (m_data->cryptTCPPaddingLength > 254)
@@ -4565,6 +4615,9 @@ void Preferences::validate()
 
     // deadServerRetries: max 99 (the Options spin box); 0 = never disable, left alone
     m_data->deadServerRetries = std::min<uint32>(m_data->deadServerRetries, 99);
+
+    // deadServerBlockDays: max one year; 0 = removed servers may come back at once
+    m_data->deadServerBlockDays = std::min<uint32>(m_data->deadServerBlockDays, 365);
 
     // globalSearchCatalogueServers: max 99; 0 = never decline catalogue rows
     m_data->globalSearchCatalogueServers = std::min<uint32>(m_data->globalSearchCatalogueServers, 99);
@@ -4726,6 +4779,8 @@ bool Preferences::load(const QString& filePath)
             m_data->addServersFromClients = s["addServersFromClients"].as<bool>(m_data->addServersFromClients);
             m_data->filterServerByIP = s["filterServerByIP"].as<bool>(m_data->filterServerByIP);
             m_data->deadServerRetries = s["deadServerRetries"].as<uint32>(m_data->deadServerRetries);
+            m_data->removeDeadServers = s["removeDeadServers"].as<bool>(m_data->removeDeadServers);
+            m_data->deadServerBlockDays = s["deadServerBlockDays"].as<uint32>(m_data->deadServerBlockDays);
             m_data->globalSearchCatalogueServers = s["globalSearchCatalogueServers"].as<uint32>(m_data->globalSearchCatalogueServers);
             m_data->autoUpdateServerList = s["autoUpdateServerList"].as<bool>(m_data->autoUpdateServerList);
             if (s["serverListURL"])
@@ -4755,7 +4810,10 @@ bool Preferences::load(const QString& filePath)
             m_data->maxHalfConnections = static_cast<uint16>(n["maxHalfConnections"].as<int>(m_data->maxHalfConnections));
             // clamp before narrowing: -1 would wrap to the maximum
             m_data->maxServedBuddies = static_cast<uint16>(
-                std::clamp(n["maxServedBuddies"].as<int>(m_data->maxServedBuddies), 1, 32));
+                std::clamp<int>(n["maxServedBuddies"].as<int>(m_data->maxServedBuddies), 0, kMaxServedBuddiesLimit));
+            m_data->buddyOfferMaxAgeSecs = std::clamp(
+                n["buddyOfferMaxAgeSecs"].as<uint32>(m_data->buddyOfferMaxAgeSecs),
+                kBuddyOfferMaxAgeSecsMin, kBuddyOfferMaxAgeSecsMax);
             m_data->bindAddress = QString::fromStdString(n["bindAddress"].as<std::string>(m_data->bindAddress.toStdString()));
             m_data->publicIPv6Override = QString::fromStdString(n["publicIPv6Override"].as<std::string>(m_data->publicIPv6Override.toStdString()));
             m_data->ipv6PublicPeerConfirmThreshold = static_cast<uint32>(n["ipv6PublicPeerConfirmThreshold"].as<int>(static_cast<int>(m_data->ipv6PublicPeerConfirmThreshold)));
@@ -4888,6 +4946,7 @@ bool Preferences::load(const QString& filePath)
             m_data->btVerboseLog = l["btVerboseLog"].as<bool>(m_data->btVerboseLog);
             m_data->usenetVerboseLog = l["usenetVerboseLog"].as<bool>(m_data->usenetVerboseLog);
             m_data->sharedFilesVerboseLog = l["sharedFilesVerboseLog"].as<bool>(m_data->sharedFilesVerboseLog);
+            m_data->ussVerboseLog = l["ussVerboseLog"].as<bool>(m_data->ussVerboseLog);
             m_data->hosterVerboseLog = l["hosterVerboseLog"].as<bool>(m_data->hosterVerboseLog);
             m_data->ed3kVerboseLog = l["ed3kVerboseLog"].as<bool>(m_data->ed3kVerboseLog);
             m_data->maxLogLines = l["maxLogLines"].as<uint32>(m_data->maxLogLines);
@@ -4919,7 +4978,8 @@ bool Preferences::load(const QString& filePath)
             m_data->rememberCancelledFiles = f["rememberCancelledFiles"].as<bool>(m_data->rememberCancelledFiles);
             m_data->autoRenameToMajorityName = f["autoRenameToMajorityName"].as<bool>(m_data->autoRenameToMajorityName);
             m_data->watchSharedDirs = f["watchSharedDirs"].as<bool>(m_data->watchSharedDirs);
-            m_data->shareIncomingSubdirs = f["shareIncomingSubdirs"].as<bool>(m_data->shareIncomingSubdirs);
+            m_data->sharedDirsPollMinutes = std::clamp(
+                f["sharedDirsPollMinutes"].as<int>(m_data->sharedDirsPollMinutes), 0, kSharedDirsPollMinutesMax);
             m_data->seenFileIndex = f["seenFileIndex"].as<bool>(m_data->seenFileIndex);
             if (const auto pws = f["archivePasswords"]; pws && pws.IsSequence()) {
                 m_data->archivePasswords.clear();
@@ -5886,9 +5946,11 @@ bool Preferences::load(const QString& filePath)
                        .arg(QString::fromStdString(ex.what())));
         // The next save() replaces the file with these defaults; keep what was there.
         const QString broken = filePath + QStringLiteral(".broken");
-        QFile::remove(broken);
-        if (QFile::copy(filePath, broken))
-            logWarning(QStringLiteral("Unreadable preferences kept as %1").arg(broken));
+        if (!m_peekOnly) {
+            QFile::remove(broken);
+            if (QFile::copy(filePath, broken))
+                logWarning(QStringLiteral("Unreadable preferences kept as %1").arg(broken));
+        }
         m_data = std::make_unique<Data>();
         newIdentity();
         resolveI2pRouterPort();
@@ -5904,10 +5966,14 @@ bool Preferences::load(const QString& filePath)
 
     // Resolve port=0 → random. A stored UDP port of 0 is the user's "disable UDP"
     // and stays; only a missing key gets a port (MFC Preferences.cpp:1957-1959).
-    if (m_data->port == 0)
+    if (m_data->port == 0) {
         m_data->port = randomTCPPort();
-    if (m_data->udpPort == 0 && !m_data->udpPortFromFile)
+        m_autoPicked << QStringLiteral("port");
+    }
+    if (m_data->udpPort == 0 && !m_data->udpPortFromFile) {
         m_data->udpPort = randomUDPPort();
+        m_autoPicked << QStringLiteral("udpPort");
+    }
     // ed3k: 0 = not picked yet, picked once and saved. The eD2K TCP port number (§14.1),
     // sharing the eD2K UDP socket when that has the same number; else random, never the
     // eD2K UDP or BT port
@@ -5935,6 +6001,12 @@ bool Preferences::load(const QString& filePath)
     resolveDefaultDirectories();
 
     const bool i2pRouterPortPicked = resolveI2pRouterPort();
+    if (ed3kPortPicked)
+        m_autoPicked << QStringLiteral("ed3kUdpPort");
+    if (ed3kSitePortPicked)
+        m_autoPicked << QStringLiteral("ed3kSitePort");
+    if (i2pRouterPortPicked)
+        m_autoPicked << QStringLiteral("btI2pRouterPort");
 
     if ((ed3kPortPicked || ed3kSitePortPicked || i2pRouterPortPicked) && !hashGenerated && !saveImpl(m_filePath))
         logWarning(QStringLiteral("ed3k UDP port could not be saved to %1").arg(m_filePath));
@@ -5946,6 +6018,7 @@ bool Preferences::load(const QString& filePath)
     // Generate REST API key if missing (existing installs with empty key)
     if (m_data->webServerApiKey.isEmpty()) {
         m_data->webServerApiKey = generateApiKey();
+        m_autoPicked << QStringLiteral("webServerApiKey");
         saveImpl(m_filePath);
     }
 
@@ -5967,9 +6040,7 @@ bool Preferences::load(const QString& filePath)
         if (m_data->startVersion < 3)
             m_data->btEnabled = true;
 
-        // v4: incoming subfolders shared; before, only the folder itself was
-        if (m_data->startVersion < 4)
-            m_data->shareIncomingSubdirs = true;
+        // v4: incoming subfolders shared — no longer a setting, always on (#163)
 
         // v5: MFC default nick (copied over from an MFC install) becomes ours
         if (m_data->startVersion < 5 && isMfcDefaultNick(m_data->nick))
@@ -5989,6 +6060,19 @@ bool Preferences::load(const QString& filePath)
 // ---------------------------------------------------------------------------
 // YAML persistence — save
 // ---------------------------------------------------------------------------
+
+QString Preferences::filePath() const
+{
+    QReadLocker lock(&m_lock);
+    return m_filePath;
+}
+
+bool Preferences::peek(const QString& filePath)
+{
+    m_peekOnly = true;
+    m_autoPicked.clear();
+    return load(filePath);
+}
 
 bool Preferences::save() const
 {
@@ -6172,6 +6256,8 @@ QString Preferences::generateApiKey()
 
 bool Preferences::saveImpl(const QString& filePath) const
 {
+    if (m_peekOnly)
+        return true;   // peek(): the file stays as the user left it
     YAML::Emitter out;
     out << YAML::Comment("eMule Qt Preferences");
     out << YAML::Newline;
@@ -6216,6 +6302,8 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "addServersFromClients" << YAML::Value << m_data->addServersFromClients;
     out << YAML::Key << "filterServerByIP" << YAML::Value << m_data->filterServerByIP;
     out << YAML::Key << "deadServerRetries" << YAML::Value << m_data->deadServerRetries;
+    out << YAML::Key << "removeDeadServers" << YAML::Value << m_data->removeDeadServers;
+    out << YAML::Key << "deadServerBlockDays" << YAML::Value << m_data->deadServerBlockDays;
     out << YAML::Key << "globalSearchCatalogueServers" << YAML::Value << m_data->globalSearchCatalogueServers;
     out << YAML::Key << "autoUpdateServerList" << YAML::Value << m_data->autoUpdateServerList;
     out << YAML::Key << "serverListURL" << YAML::Value << m_data->serverListURL.toStdString();
@@ -6239,6 +6327,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "maxConnections" << YAML::Value << static_cast<int>(m_data->maxConnections);
     out << YAML::Key << "maxHalfConnections" << YAML::Value << static_cast<int>(m_data->maxHalfConnections);
     out << YAML::Key << "maxServedBuddies" << YAML::Value << static_cast<int>(m_data->maxServedBuddies);
+    out << YAML::Key << "buddyOfferMaxAgeSecs" << YAML::Value << m_data->buddyOfferMaxAgeSecs;
     out << YAML::Key << "bindAddress" << YAML::Value << m_data->bindAddress.toStdString();
     out << YAML::Key << "publicIPv6Override" << YAML::Value << m_data->publicIPv6Override.toStdString();
     out << YAML::Key << "ipv6PublicPeerConfirmThreshold" << YAML::Value << static_cast<int>(m_data->ipv6PublicPeerConfirmThreshold);
@@ -6365,6 +6454,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "btVerboseLog" << YAML::Value << m_data->btVerboseLog;
     out << YAML::Key << "usenetVerboseLog" << YAML::Value << m_data->usenetVerboseLog;
     out << YAML::Key << "sharedFilesVerboseLog" << YAML::Value << m_data->sharedFilesVerboseLog;
+    out << YAML::Key << "ussVerboseLog" << YAML::Value << m_data->ussVerboseLog;
     out << YAML::Key << "hosterVerboseLog" << YAML::Value << m_data->hosterVerboseLog;
     out << YAML::Key << "ed3kVerboseLog" << YAML::Value << m_data->ed3kVerboseLog;
     out << YAML::Key << "maxLogLines" << YAML::Value << m_data->maxLogLines;
@@ -6396,7 +6486,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "rememberCancelledFiles" << YAML::Value << m_data->rememberCancelledFiles;
     out << YAML::Key << "autoRenameToMajorityName" << YAML::Value << m_data->autoRenameToMajorityName;
     out << YAML::Key << "watchSharedDirs" << YAML::Value << m_data->watchSharedDirs;
-    out << YAML::Key << "shareIncomingSubdirs" << YAML::Value << m_data->shareIncomingSubdirs;
+    out << YAML::Key << "sharedDirsPollMinutes" << YAML::Value << m_data->sharedDirsPollMinutes;
     out << YAML::Key << "seenFileIndex" << YAML::Value << m_data->seenFileIndex;
     out << YAML::Key << "archivePasswords" << YAML::Value << YAML::BeginSeq;
     for (const auto& pw : m_data->archivePasswords)

@@ -211,6 +211,20 @@ template <LogMessageMaker F> void logSharedVerbose(F&& make)
 }
 
 // ---------------------------------------------------------------------------
+// Upload SpeedSense verbose (host collection, route trace, pings)
+// ---------------------------------------------------------------------------
+//
+// emule.uss, debug level: the Verbose tab and the _Verbose file. Own switch
+// (ussVerboseLog), whatever the global verbose says.
+
+void logUssVerbose(const QString& msg);
+template <LogMessageMaker F> void logUssVerbose(F&& make)
+{
+    if (lcEmuleUssVerbose().isDebugEnabled())
+        logUssVerbose(QString(make()));
+}
+
+// ---------------------------------------------------------------------------
 // Repeat gate
 // ---------------------------------------------------------------------------
 

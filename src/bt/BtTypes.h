@@ -49,6 +49,16 @@ struct BtSettings {
     int versionMinor = 0;
     int versionRevision = 0;
 
+    // -- Proxy (the Proxy page, report 34) --
+    /// kind of proxy; None = direct
+    enum class ProxyKind : quint8 { None, Socks4, Socks5, Http };
+    ProxyKind proxyKind = ProxyKind::None;
+    QString proxyHost;
+    quint16 proxyPort = 0;
+    /// empty = no authentication
+    QString proxyUser;
+    QString proxyPassword;
+
     // -- I2P (libtorrent's SAM client) --
     /// I2P is on (a router mode is picked); torrents follow the I2P policy
     bool i2pEnabled = false;

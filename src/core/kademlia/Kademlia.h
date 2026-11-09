@@ -78,8 +78,8 @@ public:
     /// Firewalled and the TCP check finished: not just the default while rechecking.
     [[nodiscard]] bool isFirewalledVerified() const;
     /// Starts a firewall re-check. At most one NodeFwCheckUDP lookup may run at
-    /// a time; a request made while one is in flight is rejected rather than
-    /// stacking another lookup.
+    /// a time: while one is in flight only the TCP part runs (AlreadyRunning).
+    /// A TCP recheck younger than kFwRecheckHold keeps its counts.
     [[nodiscard]] RecheckFirewallResult recheckFirewalled();
 
     [[nodiscard]] uint32 getKademliaUsers(bool newMethod = false) const;
@@ -220,6 +220,10 @@ private:
     void enterOffline(time_t now);
     /// Recheck every contact and refresh every zone within kCatchUpSpread.
     void startCatchUp(time_t now, const QString& why);
+    /// HELLO_REQ to a few random contacts so their HELLO_RES carry FIREWALLED_REQs. Not MFC.
+    void probeFirewall(time_t now);
+    /// Run the firewall recheck within kFwRecheckAfterWake (sleep, network back, IP change).
+    void scheduleFirewallRecheck(time_t now);
 
     KadPrefs* m_prefs = nullptr;
     RoutingZone* m_routingZone = nullptr;
@@ -231,6 +235,9 @@ private:
     time_t m_nextSearchJumpStart = 0;
     time_t m_nextSelfLookup = 0;
     time_t m_nextFirewallCheck = 0;
+    time_t m_tcpRecheckStart = 0;   ///< last TCP recheck reset (setRecheckIP)
+    time_t m_nextFwProbe = 0;
+    uint32 m_fwProbeRounds = 0;     ///< probe rounds left for the running TCP recheck
     time_t m_nextFindBuddy = 0;
     uint32 m_buddySearchesWithoutBuddy = 0;
     BuddyStore m_buddyStore;

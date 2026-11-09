@@ -26,6 +26,26 @@ static constexpr uint32 kPrefsTimeoutMs = 180'000;    // 3 minutes
 static constexpr int kMaxPingTries = 60;              // then trace the route anew
 static constexpr uint32 kTraceUpload = 2 * 1024;      // upload held down while tracing
 
+// One ping result for the verbose log
+static QString describePing(uint32 address, uint8 ttl, bool useUdp, const PingStatus& ps)
+{
+    QString what;
+    if (!ps.success)
+        what = ps.error == kPingTimedOut ? QStringLiteral("timed out")
+                                         : QStringLiteral("failed, error %1").arg(ps.error);
+    else if (ps.status == kPingTTLExpired)
+        what = QStringLiteral("TTL expired at %1").arg(ipstr(ps.destinationAddress));
+    else if (ps.status == kPingSuccess)
+        what = QStringLiteral("answered itself");
+    else if (ps.status == kPingDestUnreachable)
+        what = QStringLiteral("unreachable (from %1)").arg(ipstr(ps.destinationAddress));
+    else
+        what = QStringLiteral("status %1 from %2").arg(ps.status).arg(ipstr(ps.destinationAddress));
+    return QStringLiteral("USS: %1 ping %2 TTL %3: %4, %5 ms")
+        .arg(useUdp ? QStringLiteral("UDP") : QStringLiteral("ICMP"), ipstr(address))
+        .arg(ttl).arg(what).arg(ps.delay, 0, 'f', 1);
+}
+
 // ---------------------------------------------------------------------------
 // Construction / destruction
 // ---------------------------------------------------------------------------
@@ -264,6 +284,7 @@ RouteProbe LastCommonRouteFinder::traceLastCommonHost(std::vector<uint32>& hosts
     for (int ttl = 1; keepGoing() && !probe.found && !failed
                       && ((curHost != 0 && ttl <= kMaxTTL) || (curHost == 0 && ttl < 5)); ++ttl)
     {
+        logUssVerbose([&]() -> QString { return QStringLiteral("USS: Pinging for TTL %1...").arg(ttl); });
         probe.useUdp = false;
         curHost = 0;
         uint32 lastSuccessfulPingAddress = 0;
@@ -281,6 +302,9 @@ RouteProbe LastCommonRouteFinder::traceLastCommonHost(std::vector<uint32>& hosts
             PingStatus status;
             for (int cnt = 0; keepGoing() && cnt < 2; ++cnt) {
                 status = ping(address, static_cast<uint8>(ttl), probe.useUdp);
+                logUssVerbose([&]() -> QString {
+                    return describePing(address, static_cast<uint8>(ttl), probe.useUdp, status);
+                });
                 if (status.success
                     && (status.status == kPingSuccess || status.status == kPingTTLExpired))
                     break;
@@ -300,6 +324,11 @@ RouteProbe LastCommonRouteFinder::traceLastCommonHost(std::vector<uint32>& hosts
                     break;
                 case kPingSuccess:           // answered itself: closer than the hop
                 case kPingDestUnreachable:
+                    logUssVerbose([&]() -> QString {
+                        return QStringLiteral("USS: Host %1 too close or unreachable at TTL %2, "
+                                              "removed (%3 left)")
+                            .arg(ipstr(address)).arg(ttl).arg(hosts.size() - 1);
+                    });
                     hosts.erase(hosts.begin() + static_cast<std::ptrdiff_t>(i));
                     removed = true;
                     break;
@@ -314,8 +343,12 @@ RouteProbe LastCommonRouteFinder::traceLastCommonHost(std::vector<uint32>& hosts
                 } else {
                     probe.useUdp = !probe.useUdp;
                 }
-                if (hosts.size() <= kTooFewHosts)
+                if (hosts.size() <= kTooFewHosts) {
+                    logUssVerbose([&]() -> QString {
+                        return QStringLiteral("USS: Too few hosts left to trace (%1)").arg(hosts.size());
+                    });
                     failed = true;
+                }
             }
             if (!removed)
                 ++i;
@@ -325,9 +358,17 @@ RouteProbe LastCommonRouteFinder::traceLastCommonHost(std::vector<uint32>& hosts
             break;
         if (curHost != 0 && lastDestinationAddress != 0) {
             if (lastDestinationAddress == curHost) {
+                logUssVerbose([&]() -> QString {
+                    return QStringLiteral("USS: Host at TTL %1: %2").arg(ttl).arg(ipstr(curHost));
+                });
                 probe.lastCommonHost = curHost;
                 probe.lastCommonTTL = static_cast<uint8>(ttl);
             } else {
+                logUssVerbose([&]() -> QString {
+                    return QStringLiteral("USS: Routes part at TTL %1 (%2 vs %3), host to ping %4")
+                        .arg(ttl).arg(ipstr(curHost), ipstr(lastDestinationAddress),
+                                      ipstr(lastSuccessfulPingAddress));
+                });
                 // The routes part here: ping a host behind the last shared router
                 probe.found = true;
                 probe.hostToPing = lastSuccessfulPingAddress;
@@ -338,6 +379,12 @@ RouteProbe LastCommonRouteFinder::traceLastCommonHost(std::vector<uint32>& hosts
                 }
             }
         } else {
+            logUssVerbose([&]() -> QString {
+                // nothing answered at this TTL: the first four may be silent
+                return ttl < 4
+                    ? QStringLiteral("USS: Could not ping at TTL %1, trying the next one").arg(ttl)
+                    : QStringLiteral("USS: Could not ping at TTL %1, giving up this try").arg(ttl);
+            });
             probe.lastCommonHost = 0;
         }
     }
@@ -441,6 +488,12 @@ void LastCommonRouteFinder::run()
                     std::unique_lock lock(m_hostsMutex);
                     m_hostsCV.wait_for(lock, std::chrono::milliseconds(kHostAskIntervalMs),
                                        [this] { return !m_run.load() || !m_needMoreHosts; });
+                    if (m_needMoreHosts)
+                        logUssVerbose([&]() -> QString {
+                            return QStringLiteral("USS: Try #%1: %2 of %3 hosts, asking the server "
+                                                  "and client lists again")
+                                .arg(tries).arg(m_hostsToTraceRoute.size()).arg(kHostsToTrace);
+                        });
                 }
                 if (!keepGoing())
                     break;
@@ -461,6 +514,12 @@ void LastCommonRouteFinder::run()
                 break;
 
             logDebug([&]() -> QString { return QStringLiteral("USS: Try #%1, tracing %2 hosts").arg(tries).arg(hosts.size()); });
+            logUssVerbose([&]() -> QString {
+                QStringList list;
+                for (const uint32 ip : hosts)
+                    list << ipstr(ip);
+                return QStringLiteral("USS: Hosts to trace: %1").arg(list.join(QStringLiteral(", ")));
+            });
             probe = traceLastCommonHost(hosts, pingFn, keepGoing,
                                         [this](uint32 ms) { waitWhileEnabled(ms); });
 
@@ -472,6 +531,11 @@ void LastCommonRouteFinder::run()
                 });
             }
 
+            if (!probe.found)
+                logUssVerbose([&]() -> QString {
+                    return QStringLiteral("USS: Try #%1 found no last common host, %2 hosts left")
+                        .arg(tries).arg(hosts.size());
+                });
             if (!probe.found && tries >= 3 && keepGoing()) {
                 logDebug(QStringLiteral("USS: Tracing failed several times, resting 3 minutes"));
                 {
@@ -522,6 +586,7 @@ void LastCommonRouteFinder::run()
         for (int i = 0; i < kBaselinePingCount && keepGoing(); ++i) {
             QThread::msleep(kBaselinePingInterval);
             const PingStatus ps = pinger.ping(hostToPing, lastCommonTTL, useUdp);
+            logUssVerbose([&]() -> QString { return describePing(hostToPing, lastCommonTTL, useUdp, ps); });
             if (ps.success && ps.status == kPingTTLExpired) {
                 foundWorkingPingMethod = true;
                 if (ps.delay > 0 && ps.delay < static_cast<float>(initialPing))
@@ -611,8 +676,12 @@ void LastCommonRouteFinder::run()
                     }
                     pingMs = static_cast<uint32>(ps.delay);
                     pinged = true;
-                } else if (tries > 3) {
-                    waitWhileEnabled(1000);
+                } else {
+                    logUssVerbose([&]() -> QString {
+                        return describePing(hostToPing, lastCommonTTL, useUdp, ps);
+                    });
+                    if (tries > 3)
+                        waitWhileEnabled(1000);
                 }
             }
             if (!m_run.load())

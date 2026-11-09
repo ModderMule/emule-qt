@@ -30,6 +30,7 @@ private slots:
     void torrentFiles();
     void inspectTorrentFile();
     void i2pSettingsMap();
+    void proxySettingsMap();
     void i2pAddPolicy();
     void stopAfterMetadataPolicy();
     void i2pPeerAddress();
@@ -280,6 +281,45 @@ void tst_BtSmoke::i2pSettingsMap()
     p = BtSettingsMap::toPack(s);
     QVERIFY(placeholder(p));
     QVERIFY(!p.get_bool(lt::settings_pack::allow_i2p_mixed));
+}
+
+void tst_BtSmoke::proxySettingsMap()
+{
+    namespace lt = libtorrent;
+    BtSettings s;
+    lt::settings_pack p = BtSettingsMap::toPack(s);
+    QCOMPARE(p.get_int(lt::settings_pack::proxy_type), int(lt::settings_pack::none));
+
+    // the Proxy page reaches BitTorrent (report 34)
+    s.proxyKind = BtSettings::ProxyKind::Socks5;
+    s.proxyHost = QStringLiteral("proxy.example");
+    s.proxyPort = 1080;
+    p = BtSettingsMap::toPack(s);
+    QCOMPARE(p.get_int(lt::settings_pack::proxy_type), int(lt::settings_pack::socks5));
+    QCOMPARE(p.get_str(lt::settings_pack::proxy_hostname), std::string("proxy.example"));
+    QCOMPARE(p.get_int(lt::settings_pack::proxy_port), 1080);
+    QVERIFY(p.get_bool(lt::settings_pack::proxy_peer_connections));
+    QVERIFY(p.get_bool(lt::settings_pack::proxy_tracker_connections));
+    QVERIFY(p.get_bool(lt::settings_pack::proxy_hostnames));
+
+    s.proxyUser = QStringLiteral("u");
+    s.proxyPassword = QStringLiteral("pw");
+    p = BtSettingsMap::toPack(s);
+    QCOMPARE(p.get_int(lt::settings_pack::proxy_type), int(lt::settings_pack::socks5_pw));
+    QCOMPARE(p.get_str(lt::settings_pack::proxy_username), std::string("u"));
+
+    s.proxyKind = BtSettings::ProxyKind::Http;
+    p = BtSettingsMap::toPack(s);
+    QCOMPARE(p.get_int(lt::settings_pack::proxy_type), int(lt::settings_pack::http_pw));
+
+    s.proxyKind = BtSettings::ProxyKind::Socks4;
+    p = BtSettingsMap::toPack(s);
+    QCOMPARE(p.get_int(lt::settings_pack::proxy_type), int(lt::settings_pack::socks4));
+
+    // no host: off again
+    s.proxyHost.clear();
+    p = BtSettingsMap::toPack(s);
+    QCOMPARE(p.get_int(lt::settings_pack::proxy_type), int(lt::settings_pack::none));
 }
 
 void tst_BtSmoke::i2pAddPolicy()

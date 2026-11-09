@@ -51,6 +51,8 @@ public:
     /// Not MFC: the recheck got its last FIREWALLED_RES at least `graceSecs` ago, so the
     /// TCP acks of those nodes had time to come in
     [[nodiscard]] bool recheckSettled(time_t graceSecs, time_t now = time(nullptr)) const;
+    /// Verdict of the cycle before the running/last recheck (true = firewalled).
+    [[nodiscard]] bool lastFirewallState() const { return m_lastFirewallState; }
 
     // -- Connection -----------------------------------------------------------
 

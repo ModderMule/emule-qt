@@ -190,6 +190,9 @@ public:
 
     /// A background login (IPv6 handover, HighID recheck) waits for the server's answer.
     [[nodiscard]] bool isHandoverLoggingIn() const;
+    /// A background login to the live session's server is out: the server may have
+    /// replaced the live session (new 0x9F token) before we see the answer.
+    [[nodiscard]] bool isReloginPending() const;
 
     // -- HighID recheck (#156) ------------------------------------------------
 

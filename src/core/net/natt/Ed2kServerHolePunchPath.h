@@ -28,6 +28,9 @@
 /// Proof (ed2k-server 0.9.88, ST_NATT_PROOF in OP_SERVERIDENT): the token never goes on UDP,
 /// 0x9F = <user hash 16><counter u32 LE><mac 16>, mac = HMAC-SHA256(token, hash | counter)[0..16].
 /// The counter must rise within a login; a captured 0x9F can't be replayed.
+/// A new login replaces the session and its token at once, so no 0x9F goes out while a
+/// background re-login to the same server is pending, and one goes out as soon as an
+/// ident brings a token.
 ///
 /// Own endpoint (ed2k-server 0.9.88, #40): a 0x61 of 36 bytes appends <own_ip 4><own_udp_port 2>,
 /// our UDP endpoint from our last accepted 0x9F. Our key IP toward that peer only (TCP and
@@ -83,6 +86,7 @@ private:
     bool m_sentObfuscated = false;  ///< plain 0x9F are ignored from here on
     uint32 m_proofCounter = 0;      ///< never reset: only has to rise within a login
     bool m_splitAddress = false;    ///< periodic 0x9F paused, see addressSplit()
+    bool m_hadToken = false;        ///< token seen last tick: a new one sends a 0x9F at once
 };
 
 } // namespace eMule::natt

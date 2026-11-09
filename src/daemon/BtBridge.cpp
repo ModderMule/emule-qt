@@ -6,6 +6,7 @@
 #include "ipfilter/IPFilter.h"
 #include "net/BindAddress.h"
 #include "net/I2pRouter.h"
+#include "net/ProxySettings.h"
 #include "prefs/Preferences.h"
 #include "stats/NetworkCounters.h"
 #include "stats/Statistics.h"
@@ -694,6 +695,32 @@ bt::BtSettings settingsFromPrefs()
     s.versionMajor = EMULE_VERSION_MAJOR;
     s.versionMinor = EMULE_VERSION_MINOR;
     s.versionRevision = EMULE_VERSION_PATCH;
+
+    // the Proxy page covers BitTorrent too (report 34)
+    if (const ProxySettings p = thePrefs.proxySettings(); p.useProxy && !p.host.isEmpty()) {
+        using K = bt::BtSettings::ProxyKind;
+        switch (p.type) {
+        case PROXYTYPE_SOCKS4:
+        case PROXYTYPE_SOCKS4A:
+            s.proxyKind = K::Socks4;
+            break;
+        case PROXYTYPE_SOCKS5:
+            s.proxyKind = K::Socks5;
+            break;
+        case PROXYTYPE_HTTP10:
+        case PROXYTYPE_HTTP11:
+            s.proxyKind = K::Http;
+            break;
+        default:
+            break;
+        }
+        s.proxyHost = p.host;
+        s.proxyPort = p.port;
+        if (p.enablePassword) {
+            s.proxyUser = p.user;
+            s.proxyPassword = p.password;
+        }
+    }
 
     const int mode = thePrefs.btI2pMode();
     s.i2pEnabled = mode != Preferences::kBtI2pOff;

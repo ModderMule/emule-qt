@@ -128,6 +128,7 @@ private slots:
     void keepalive_pausedWhileUdpAddressDiffers();
     void keepalive_tokenSentWhileUdpAddressDiffers();
     void keepalive_proofReplacesToken();
+    void keepalive_heldDuringRelogin();
     void ext_ipv6SessionWithToken_punchesOverIPv4();
     void connected_finishesAttempt();
     void info_repeatAfterConnect_ignored();
@@ -611,6 +612,42 @@ void tst_NatRendezvous::keepalive_proofReplacesToken()
         QCOMPARE(counter, static_cast<uint32>(i + 1));
         QCOMPARE(p.mid(20), Ed2kServerHolePunchPath::proofMac(token, f.env->hash, counter));
     }
+}
+
+void tst_NatRendezvous::keepalive_heldDuringRelogin()
+{
+    std::array<uint8, 16> oldToken{};
+    oldToken.fill(0x11);
+    std::array<uint8, 16> newToken{};
+    newToken.fill(0x22);
+    HubFixture f;
+    Server& s = logInExtension(f);
+    s.setNatToken(oldToken.data());
+    s.setNatProof(true);
+    f.hub->process();
+    QCOMPARE(f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE).size(), size_t{1});
+
+    // background re-login out: the server may have dropped the old token, send nothing
+    f.env->reloginPending = true;
+    f.advance(60000);
+    QVERIFY(f.hub->start(f.peerOnServer(79)));
+    QCOMPARE(f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE).size(), size_t{1});
+
+    // new session, before its ident: no token yet, nothing due
+    f.env->reloginPending = false;
+    Server& n = logInExtension(f);
+    f.advance(1000);
+    QCOMPARE(f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE).size(), size_t{1});
+
+    // ident brings the new token: a proof for it goes out at once
+    n.setNatToken(newToken.data());
+    n.setNatProof(true);
+    f.advance(1000);
+    const auto ka = f.env->udpWith(OP_EDONKEYPROT, OP_SERVER_NATT_KEEPALIVE);
+    QCOMPARE(ka.size(), size_t{2});
+    const QByteArray& p = ka.back().payload;
+    QCOMPARE(p.size(), 36);
+    QCOMPARE(p.mid(20), Ed2kServerHolePunchPath::proofMac(newToken, f.env->hash, peekUInt32(p.constData() + 16)));
 }
 
 void tst_NatRendezvous::ext_ipv6SessionWithToken_punchesOverIPv4()

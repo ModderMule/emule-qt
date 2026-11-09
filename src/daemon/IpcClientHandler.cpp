@@ -437,6 +437,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::RecoverArchivePreview: handleRecoverArchivePreview(msg); break;
     case IpcMsgType::GetPreferences:       handleGetPreferences(msg); break;
     case IpcMsgType::SetPreferences:       handleSetPreferences(msg); break;
+    case IpcMsgType::ReloadPreferences:    handleReloadPreferences(msg); break;
     case IpcMsgType::Subscribe:            handleSubscribe(msg); break;
     case IpcMsgType::GetKadContacts:       handleGetKadContacts(msg); break;
     case IpcMsgType::GetKadStatus:         handleGetKadStatus(msg); break;
@@ -613,6 +614,8 @@ void IpcClientHandler::handleHandshake(const IpcMessage& msg)
     reply.append(QCoreApplication::applicationPid());
     // Field 6: --autoupdate is on; the GUI then skips its "new version" box
     reply.append(DaemonApp::autoUpdateEnabled());
+    // Field 7: app version (field 0 is the IPC protocol); bug reports name it
+    reply.append(QCoreApplication::applicationVersion());
     sendMessage(reply);
     emit handshakeCompleted();
 }
@@ -2243,6 +2246,8 @@ void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
                  theApp.dlp ? static_cast<qint64>(theApp.dlp->rulesVersion()) : 0);
     // Read-only: the engine state now, a scheduled pause included (usenetPaused = saved)
     prefs.insert(QStringLiteral("usenetEnginePaused"), UsenetBridge::enginePaused());
+    // Read-only: the core's own file, for Extended > Open preferences.yml
+    prefs.insert(QStringLiteral("preferencesFile"), thePrefs.filePath());
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(prefs)));
 }
 
@@ -2254,6 +2259,67 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
         changes.append({msg.fieldString(i), msg.field(i + 1)});
 
     const PrefApplyOutcome outcome = applyPreferenceChanges(changes);
+    emitPrefOutcome(outcome);
+
+    QCborMap result;
+    insertPortResult(result, outcome);
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, result));
+}
+
+void IpcClientHandler::handleReloadPreferences(const IpcMessage& msg)
+{
+    // preferences.yml edited by hand while the core runs: read it into a scratch
+    // copy and apply what differs, so the side effects of SetPreferences fire and
+    // the next save no longer overwrites the edit. YAML-only keys need a restart.
+    const QString path = thePrefs.filePath();
+    if (path.isEmpty() || !QFile::exists(path)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 1,
+                                          QStringLiteral("Preferences file not found: %1").arg(path)));
+        return;
+    }
+    Preferences fromFile;
+    if (!fromFile.peek(path)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 2,
+                                          QStringLiteral("Preferences file could not be parsed: %1").arg(path)));
+        return;
+    }
+
+    // Stamps the core moves on its own: the file copy is only older
+    static const QSet<QString> kSkip = {
+        QStringLiteral("ipFilterLastUpdate"), QStringLiteral("geoIpLastCheck"),
+        QStringLiteral("webServerAdminPasswordSet"), QStringLiteral("webServerGuestPasswordSet"),
+    };
+    // a port the file leaves unset was drawn at random by peek(): not an edit
+    const QStringList autoPicked = fromFile.autoPickedKeys();
+    const QCborMap current = thePrefs.toIpcMap();
+    const QCborMap wanted = fromFile.toIpcMap();
+    PrefChanges changes;
+    QCborArray changedKeys;
+    for (auto it = wanted.cbegin(); it != wanted.cend(); ++it) {
+        const QString key = it.key().toString();
+        if (kSkip.contains(key) || autoPicked.contains(key) || current.value(key) == it.value())
+            continue;
+        changes.append({key, it.value()});
+        changedKeys.append(key);
+    }
+
+    PrefApplyOutcome outcome;
+    if (!changes.isEmpty()) {
+        outcome = applyPreferenceChanges(changes);
+        emitPrefOutcome(outcome);
+    }
+    logInfo(QStringLiteral("Preferences reloaded from %1: %2 changed")
+                .arg(path).arg(changes.size()));
+
+    QCborMap result;
+    insertPortResult(result, outcome);
+    result.insert(QStringLiteral("path"), path);
+    result.insert(QStringLiteral("changed"), changedKeys);
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, result));
+}
+
+void IpcClientHandler::emitPrefOutcome(const PrefApplyOutcome& outcome)
+{
     if (outcome.categoriesChanged)
         emit categoriesChanged();
     if (outcome.usenetChanged)
@@ -2267,10 +2333,6 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
     emit webServerConfigChanged();
     if (outcome.standbyChanged)
         emit standbyConfigChanged();
-
-    QCborMap result;
-    insertPortResult(result, outcome);
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true, result));
 }
 
 void IpcClientHandler::insertPortResult(QCborMap& map, const PrefApplyOutcome& outcome)
@@ -2348,6 +2410,12 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
         // the filter level also shapes BitTorrent's IP filter
         if (key == QLatin1StringView("ipFilterLevel") && before.value(key) != after.value(key))
             outcome.btChanged = true;
+        // the proxy covers every network: each engine picks the new one up (report 34)
+        if (key.startsWith(QLatin1StringView("proxy")) && before.value(key) != after.value(key)) {
+            outcome.usenetChanged = true;
+            outcome.btChanged = true;
+            outcome.ed3kChanged = true;
+        }
     }
 
     // MFC PPgSecurity::OnApply: a stricter server filter prunes the list at once
@@ -4070,6 +4138,8 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setAddServersFromClients(val.toBool());
     else if (key == QStringLiteral("deadServerRetries"))
         thePrefs.setDeadServerRetries(static_cast<uint32>(val.toInteger()));
+    else if (key == QStringLiteral("removeDeadServers"))
+        thePrefs.setRemoveDeadServers(val.toBool());
     else if (key == QStringLiteral("autoUpdateServerList"))
         thePrefs.setAutoUpdateServerList(val.toBool());
     else if (key == QStringLiteral("serverListURL"))
@@ -4117,11 +4187,10 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
                 theApp.sharedFileList->reload();   // catch what changed while off
         }
     }
-    else if (key == QStringLiteral("shareIncomingSubdirs")) {
-        const bool changed = thePrefs.shareIncomingSubdirs() != val.toBool();
-        thePrefs.setShareIncomingSubdirs(val.toBool());
-        if (changed && theApp.sharedFileList)
-            theApp.sharedFileList->reload();
+    else if (key == QStringLiteral("sharedDirsPollMinutes")) {
+        thePrefs.setSharedDirsPollMinutes(static_cast<int>(val.toInteger()));
+        if (theApp.sharedFileList)
+            theApp.sharedFileList->setPollMinutes(thePrefs.sharedDirsPollMinutes());
     }
     else if (key == QStringLiteral("seenFileIndex")) {
         thePrefs.setSeenFileIndex(val.toBool());
@@ -4319,7 +4388,7 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
     else if (key == QStringLiteral("maxHalfConnections"))
         thePrefs.setMaxHalfConnections(static_cast<uint16>(val.toInteger()));
     else if (key == QStringLiteral("maxServedBuddies"))
-        thePrefs.setMaxServedBuddies(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 1, 32)));
+        thePrefs.setMaxServedBuddies(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 0, Preferences::kMaxServedBuddiesLimit)));
     else if (key == QStringLiteral("serverKeepAliveTimeout"))
         thePrefs.setServerKeepAliveTimeout(static_cast<uint32>(val.toInteger()));
     else if (key == QStringLiteral("filterLANIPs")) {
@@ -4364,6 +4433,10 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
     }
     else if (key == QStringLiteral("sharedFilesVerboseLog")) {
         thePrefs.setSharedFilesVerboseLog(val.toBool());
+        DaemonApp::applyLogFilterRules();
+    }
+    else if (key == QStringLiteral("ussVerboseLog")) {
+        thePrefs.setUssVerboseLog(val.toBool());
         DaemonApp::applyLogFilterRules();
     }
     else if (key == QStringLiteral("ed3kVerboseLog")) {

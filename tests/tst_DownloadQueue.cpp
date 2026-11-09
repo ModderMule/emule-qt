@@ -38,6 +38,7 @@
 #include <QFileInfo>
 #include <QScopeGuard>
 #include <QSignalSpy>
+#include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -263,6 +264,22 @@ struct UdpSourceEnv {
         return list.addServer(std::move(srv));
     }
 };
+
+
+// Without an IPv6 route (a container, many CI hosts) dialling a v6 source fails inside
+// the call, and the failed dial drops the source's v6 route (openIPv6) at once.
+// Elsewhere the dial stays pending while the test looks.
+bool hostRoutesIPv6()
+{
+    static const bool routes = [] {
+        QTcpSocket probe;
+        probe.connectToHost(QHostAddress(QStringLiteral("2a01:4f8::1")), 4662);
+        const bool failedAtOnce = probe.state() == QAbstractSocket::UnconnectedState;
+        probe.abort();
+        return !failedAtOnce;
+    }();
+    return routes;
+}
 
 } // namespace
 
@@ -1604,9 +1621,10 @@ void tst_DownloadQueue::addServerSources_parsesIPv6Sentinel()
 
     bool foundIPv6 = false, foundHighID = false;
     for (const UpDownClient* src : pf->srcList()) {
-        if (src->openIPv6()) {
+        if (!src->userIPv6().isNull()) {
             foundIPv6 = true;
             QCOMPARE(src->userIPv6(), Address::fromIPv6Bytes(v6bytes.data()));
+            QVERIFY(src->openIPv6() || !hostRoutesIPv6());
         } else if (src->userIDHybrid() == Address::fromString(QStringLiteral("88.77.66.55")).toUint32()) {
             foundHighID = true;
         }
@@ -1873,6 +1891,10 @@ void tst_DownloadQueue::addKadSources_firewalledKeepsBuddylessIPv6Source()
     QCOMPARE(pf->sourceCount(), 1);
     UpDownClient* source = pf->srcList().front();
     QCOMPARE(source->userIPv6(), peerV6);
+    if (!hostRoutesIPv6()) {
+        dq.deleteAll();
+        QSKIP("no IPv6 route on this host: the dial fails at once");
+    }
 
     // Dialled over IPv6 when added, although the record's IPv4 endpoint (kept for
     // NAT-T) was set first: not sent to the buddy callback or NAT-T
@@ -1979,10 +2001,14 @@ void tst_DownloadQueue::linkSources_ipv6LiteralAdded()
 
     QCOMPARE(pf->sourceCount(), 1);
     const UpDownClient* src = pf->srcList().front();
-    QVERIFY(src->openIPv6());
     QCOMPARE(src->userIPv6(), v6);
-    QCOMPARE(src->userAddress(), v6);       // dialed directly over IPv6
     QCOMPARE(src->sourceFrom(), SourceFrom::Link);
+    if (!hostRoutesIPv6()) {
+        dq.deleteAll();
+        QSKIP("no IPv6 route on this host: the dial fails at once");
+    }
+    QVERIFY(src->openIPv6());
+    QCOMPARE(src->userAddress(), v6);       // dialed directly over IPv6
 
     dq.deleteAll();
 }
@@ -2029,7 +2055,8 @@ void tst_DownloadQueue::linkSources_dropsIpFilteredV4()
     const Address v6 = Address::fromString(QStringLiteral("2a01:4f8::1"));
     dq.addLinkPeerSource(pf, v4, v6, 4662);
     QCOMPARE(pf->sourceCount(), 1);
-    QVERIFY(pf->srcList().front()->openIPv6());
+    QCOMPARE(pf->srcList().front()->userIPv6(), v6);
+    QVERIFY(pf->srcList().front()->openIPv6() || !hostRoutesIPv6());
 
     dq.deleteAll();
 }

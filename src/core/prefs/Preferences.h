@@ -167,6 +167,14 @@ public:
     /// Save preferences to the file specified in load().
     bool save() const;
 
+    /// The file given to load(); empty before.
+    [[nodiscard]] QString filePath() const;
+
+    /// load() that never writes the file: for comparing it with live values.
+    /// Keys the file left unset and load() picked at random are in autoPickedKeys().
+    bool peek(const QString& filePath);
+    [[nodiscard]] QStringList autoPickedKeys() const { return m_autoPicked; }
+
     /// Save preferences to a specific file.
     bool saveTo(const QString& filePath) const;
 
@@ -265,12 +273,21 @@ public:
 
     [[nodiscard]] uint16 maxHalfConnections() const;
     void setMaxHalfConnections(uint16 val);
-    /// Kad: how many firewalled nodes we serve as buddy while open (1-32). MFC serves one.
+    /// Kad: how many firewalled nodes we serve as buddy while open (1-128, 0 = auto).
+    /// MFC serves one.
+    static constexpr uint16 kMaxServedBuddiesLimit = 128;
     [[nodiscard]] uint16 maxServedBuddies() const;
     void setMaxServedBuddies(uint16 val);
-    /// The limit in effect: maxServedBuddies(), capped at a tenth of maxConnections()
-    /// (min 1), as each served buddy holds a connection.
+    /// The auto value, tiered by upload capacity (maxGraphUploadRate, not the upload limit).
+    [[nodiscard]] static uint16 autoServedBuddies(uint32 uploadCapacityKiB);
+    /// The limit in effect: maxServedBuddies() or its auto value, capped at a tenth of
+    /// maxConnections() (min 1), as each served buddy holds a connection.
     [[nodiscard]] uint16 servedBuddyLimit() const;
+    /// Kad, firewalled side: a buddy offer not dialled within this many seconds is dropped
+    /// (30-3600, default 300). YAML only, no GUI.
+    [[nodiscard]] uint32 buddyOfferMaxAgeSecs() const;
+    static constexpr uint32 kBuddyOfferMaxAgeSecsMin = 30;
+    static constexpr uint32 kBuddyOfferMaxAgeSecsMax = 3600;
 
     /// One IPv4 or IPv6 literal every P2P socket binds to; empty = any. See BindAddress.h.
     [[nodiscard]] QString bindAddress() const;
@@ -562,6 +579,9 @@ public:
     /// Hashing and duplicate lines of the shared files (emule.sharedv, Verbose tab)
     [[nodiscard]] bool sharedFilesVerboseLog() const;
     void setSharedFilesVerboseLog(bool val);
+    /// Upload SpeedSense host collection, route trace and pings (emule.uss, Verbose tab)
+    [[nodiscard]] bool ussVerboseLog() const;
+    void setUssVerboseLog(bool val);
     [[nodiscard]] bool hosterVerboseLog() const;
     void setHosterVerboseLog(bool val);
     [[nodiscard]] bool ed3kVerboseLog() const;
@@ -653,11 +673,14 @@ public:
     /// Pick up files added to shared folders via the OS file watcher. On by default.
     [[nodiscard]] bool watchSharedDirs() const;
     void setWatchSharedDirs(bool val);
+    /// Minutes between listings of shared folders the OS cannot watch (network
+    /// shares); 0 = never. Default 5.
+    [[nodiscard]] int sharedDirsPollMinutes() const;
+    void setSharedDirsPollMinutes(int val);
+    static constexpr int kSharedDirsPollMinutesMax = 1440;
 
     /// Share the subfolders of every incoming dir and of the BT download dir too
     /// (torrent, Usenet and hoster folders). On by default; MFC shares incoming flat.
-    [[nodiscard]] bool shareIncomingSubdirs() const;
-    void setShareIncomingSubdirs(bool val);
 
     /// Keep a record of the files (and their names) seen in search results.
     [[nodiscard]] bool seenFileIndex() const;
@@ -1915,6 +1938,14 @@ public:
     [[nodiscard]] uint32 deadServerRetries() const;
     void setDeadServerRetries(uint32 val);
 
+    /// Remove a server once disabled as dead, instead of keeping it greyed (#161).
+    [[nodiscard]] bool removeDeadServers() const;
+    void setRemoveDeadServers(bool val);
+
+    /// Days a removed dead server is refused when announced again. YAML-only, 0 = no block.
+    [[nodiscard]] uint32 deadServerBlockDays() const;
+    void setDeadServerBlockDays(uint32 val);
+
     /// Servers that must send catalogue rows before a global UDP search declines them
     /// from the rest (SRVCAP_UDP_NO_META); 0 = never. YAML-only, no UI.
     [[nodiscard]] uint32 globalSearchCatalogueServers() const;
@@ -2377,6 +2408,8 @@ private:
 
     std::unique_ptr<Data> m_data;
     QString m_filePath;
+    bool m_peekOnly = false;      ///< peek(): saveImpl() writes nothing
+    QStringList m_autoPicked;     ///< peek(): IPC keys picked because the file had none
     mutable QReadWriteLock m_lock;
 };
 

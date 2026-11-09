@@ -664,6 +664,14 @@ void tst_UsenetPrefs::newsServersFollowTheProxyUnlessSwitchedOff()
     QCOMPARE(toNetworkProxy(p2.usenetProxySettings()).type(), QNetworkProxy::Socks5Proxy);
     p2.setProxyType(PROXYTYPE_NOPROXY);
     QCOMPARE(toNetworkProxy(p2.usenetProxySettings()).type(), QNetworkProxy::NoProxy);
+
+    // local hosts go direct: a proxy out on the internet cannot reach them (report 34)
+    p2.setProxyType(PROXYTYPE_SOCKS5);
+    const ProxySettings route = p2.proxySettings();
+    for (const char* host : {"localhost", "127.0.0.1", "[::1]", "192.168.1.5", "10.0.0.2", "fe80::1", "fd00::2"})
+        QCOMPARE(toNetworkProxy(route, QString::fromLatin1(host)).type(), QNetworkProxy::NoProxy);
+    for (const char* host : {"news.example", "203.0.113.7", "2001:db8::1"})
+        QCOMPARE(toNetworkProxy(route, QString::fromLatin1(host)).type(), QNetworkProxy::Socks5Proxy);
 }
 
 

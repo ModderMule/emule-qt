@@ -4100,7 +4100,7 @@ void UsenetQueue::publishStaged(ItemRuntime& rt, const UsenetPostResult& result)
         }
 
         // shared location first (incoming itself refuses a single share), else a
-        // single shared file: a job's subfolder of incoming with shareIncomingSubdirs off
+        // single shared file: a job folder outside the incoming tree
         if (theApp.sharedFileList && !theApp.sharedFileList->shareCompletedFile(finalPath)) {
             logUsenetWarning(QStringLiteral("Usenet: \"%1\" completed but is not in a shared "
                                       "location; it will not be offered to peers")

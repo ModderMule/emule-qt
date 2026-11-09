@@ -173,6 +173,11 @@ Address AppNatEnv::serverSessionAddress() const
     return theApp.serverConnect ? theApp.serverConnect->sessionAddress() : Address();
 }
 
+bool AppNatEnv::serverReloginPending() const
+{
+    return theApp.serverConnect && theApp.serverConnect->isReloginPending();
+}
+
 ForeignServer AppNatEnv::foreignServer(const Address& addr, uint16 tcpPort, bool probe)
 {
     ForeignServer out;

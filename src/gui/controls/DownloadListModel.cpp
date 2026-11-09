@@ -120,6 +120,12 @@ QString sourcesText(const DownloadRow& d)
     return text;
 }
 
+/// "001.part.met" → "001" (#162), the number the details' File Path ends in
+QString partNumberText(const QString& partMetName)
+{
+    return partMetName.section(QLatin1Char('.'), 0, 0);
+}
+
 /// MFC's LVCFMT_RIGHT columns (DownloadListCtrl.cpp:125-130), for files and sources.
 QVariant columnAlignment(int column)
 {
@@ -129,6 +135,7 @@ QVariant columnAlignment(int column)
     case DownloadListModel::ColCompleted:
     case DownloadListModel::ColSpeed:
     case DownloadListModel::ColSources:
+    case DownloadListModel::ColPartNumber:
         return static_cast<int>(Qt::AlignRight | Qt::AlignVCenter);
     default:
         return static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter);
@@ -509,6 +516,8 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             return formatByteSize(d.downTransferred);
         case ColEd3kKey:
             return ed3kKeyText(d.ed3kKey);
+        case ColPartNumber:
+            return partNumberText(d.partMetName);
         default: break;
         }
     }
@@ -579,6 +588,12 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         case ColConfidence: return confidenceSortKey(d.confidence, d.fakeScore);
         case ColTransferred: return QVariant::fromValue(d.downTransferred);
         case ColEd3kKey:    return d.ed3kKey;
+        // numeric where it is one; an odd name sorts after all numbers
+        case ColPartNumber: {
+            bool ok = false;
+            const qlonglong n = partNumberText(d.partMetName).toLongLong(&ok);
+            return ok ? QVariant::fromValue(n) : QVariant::fromValue(std::numeric_limits<qlonglong>::max());
+        }
         default: break;
         }
     }
@@ -645,6 +660,7 @@ QVariant DownloadListModel::headerData(int section, Qt::Orientation orientation,
     case ColConfidence:     return tr("Confidence");
     case ColTransferred:    return tr("Transferred");
     case ColEd3kKey:        return tr("ed3k Key");
+    case ColPartNumber:     return tr("Part No.");
     default:                return {};
     }
 }
@@ -975,7 +991,51 @@ void DownloadListModel::reindexRows()
 // DownloadSortProxy
 // ---------------------------------------------------------------------------
 
+void DownloadSortProxy::setSecondarySortEnabled(bool on)
+{
+    if (on == m_secondaryEnabled)
+        return;
+    m_secondaryEnabled = on;
+    if (sortColumn() >= 0 && m_secondaryColumn >= 0)
+        invalidate();
+}
+
+void DownloadSortProxy::setSecondarySort(int column, Qt::SortOrder order)
+{
+    m_secondaryColumn = column;
+    m_secondaryOrder = order;
+    if (m_secondaryEnabled && sortColumn() >= 0)
+        invalidate();
+}
+
+void DownloadSortProxy::sort(int column, Qt::SortOrder order)
+{
+    // A new column: the one sorted so far becomes the tie-breaker; its own
+    // column again only flips the order and keeps the tie-breaker.
+    if (column >= 0 && sortColumn() >= 0 && column != sortColumn()) {
+        m_secondaryColumn = sortColumn();
+        m_secondaryOrder = sortOrder();
+    }
+    SortValueProxy::sort(column, order);
+}
+
 bool DownloadSortProxy::lessThan(const QModelIndex& left, const QModelIndex& right) const
+{
+    if (primaryLess(left, right))
+        return true;
+    if (!m_secondaryEnabled || m_secondaryColumn < 0 || m_secondaryColumn == left.column()
+        || primaryLess(right, left))
+        return false;
+
+    // A tie: the secondary column decides, in its own order. Qt swaps the
+    // arguments for a descending primary, so a differing order swaps them back.
+    const QModelIndex l = left.siblingAtColumn(m_secondaryColumn);
+    const QModelIndex r = right.siblingAtColumn(m_secondaryColumn);
+    return m_secondaryOrder == sortOrder() ? SortValueProxy::lessThan(l, r)
+                                           : SortValueProxy::lessThan(r, l);
+}
+
+bool DownloadSortProxy::primaryLess(const QModelIndex& left, const QModelIndex& right) const
 {
     // Sources asking another file stay below the available ones, whatever the order
     // (MFC SortProc, srchybrid/DownloadListCtrl.cpp:1636-1637).

@@ -5,6 +5,7 @@
 
 #include "app/AppContext.h"
 #include "kademlia/Kademlia.h"
+#include "kademlia/KadDefines.h"
 #include "kademlia/KadBuddyStore.h"
 #include "kademlia/KadIndexed.h"
 #include "kademlia/KadPrefs.h"
@@ -40,11 +41,14 @@ private slots:
     void processPacket_dispatches();
     void process_refreshesTheStoreCountersEveryTick();
     void process_reportsALostConnection();
+    void recheckFirewalled_secondClickKeepsTcpCounts();
+    void isFirewalled_waitsForTrailingAcks();
     void buddySearchTarget_randomAfterTheFirstSearch();
     void buddyStore_roundTrip();
     void buddyStore_capEvictsOldestOffer();
     void buddyStore_dropsAfterOneMissOrExpiry();
     void buddyStore_takeDueNewestFirstAndSkipsRecent();
+    void buddyStore_takeDueLeavesSkippedNodesUnasked();
     void buddyStore_damagedFileLoadsEmpty();
     void buddyStore_sessionVerdictRoundTrip();
     void buddyStore_v1FileLoadsWithUnknownVerdict();
@@ -347,6 +351,53 @@ void tst_Kademlia::process_reportsALostConnection()
     kad.stop();
 }
 
+// Report 35: a second Recheck click within kFwRecheckHold reset the TCP counts, so
+// the ACK already in was lost and Kad stayed firewalled.
+void tst_Kademlia::recheckFirewalled_secondClickKeepsTcpCounts()
+{
+    Kademlia kad;
+    kad.start();
+    auto* prefs = kad.getPrefs();
+
+    QVERIFY(kad.recheckFirewalled() != RecheckFirewallResult::NotRunning);
+    QVERIFY(prefs->recheckIP());
+    prefs->incFirewalled();   // first TCP ACK
+    prefs->incRecheckIP();
+
+    (void)kad.recheckFirewalled();
+    QVERIFY(prefs->recheckIP());
+    prefs->incFirewalled();   // second ACK: open only if the first was kept
+    QVERIFY(!prefs->firewalled());
+
+    kad.stop();
+}
+
+// Live run: the 4 FIREWALLED_RES came before the acks and Kad blinked firewalled.
+void tst_Kademlia::isFirewalled_waitsForTrailingAcks()
+{
+    Kademlia kad;
+    kad.start();
+    auto* prefs = kad.getPrefs();
+    if (Kademlia::shouldSkipFirewallChecks())
+        QSKIP("firewall checks skipped in this environment");
+
+    prefs->incFirewalled();   // cycle 1 open
+    prefs->incFirewalled();
+    prefs->setRecheckIP();
+    const time_t now = time(nullptr);
+    for (uint32 i = 0; i < KADEMLIAFIREWALLCHECKS; ++i)
+        prefs->incRecheckIP(now);
+    QVERIFY(prefs->firewalled());   // MFC rule unchanged
+    QVERIFY(!kad.isFirewalled());   // acks still due
+
+    prefs->setRecheckIP();          // cycle 2 ended firewalled
+    for (uint32 i = 0; i < KADEMLIAFIREWALLCHECKS; ++i)
+        prefs->incRecheckIP(now - kFwAckDisplayGrace);
+    QVERIFY(kad.isFirewalled());
+
+    kad.stop();
+}
+
 // The first buddy search asks the neighbours of ~kadID as MFC; later ones go elsewhere.
 void tst_Kademlia::buddySearchTarget_randomAfterTheFirstSearch()
 {
@@ -417,6 +468,25 @@ void tst_Kademlia::buddyStore_capEvictsOldestOffer()
     // A repeated offer refreshes, it takes no second slot.
     store.noteOffer(buddyEntry(0x0A000002), now + 100);
     QCOMPARE(store.entries().size(), BuddyStore::kMaxEntries);
+}
+
+// A node the caller skips (failed buddy link) is neither asked nor stamped, so no miss drops it.
+void tst_Kademlia::buddyStore_takeDueLeavesSkippedNodesUnasked()
+{
+    BuddyStore store;
+    const std::time_t now = 1'800'000'000;
+    store.noteOffer(buddyEntry(0x0A000001), now);
+    store.noteOffer(buddyEntry(0x0A000002), now);
+
+    const std::time_t ask = now + BuddyStore::kReaskSecs;
+    const auto due = store.takeDue(ask, false, [](uint32 ip) { return ip == 0x0A000002; });
+    QCOMPARE(due.size(), size_t{1});
+    QCOMPARE(due.front().ip, uint32{0x0A000001});
+
+    // Not skipped any more: .2 is due at once and still known.
+    const auto later = store.takeDue(ask + 10);
+    QCOMPARE(later.size(), size_t{1});
+    QCOMPARE(later.front().ip, uint32{0x0A000002});
 }
 
 void tst_Kademlia::buddyStore_dropsAfterOneMissOrExpiry()

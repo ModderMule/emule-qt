@@ -526,7 +526,7 @@ bool DaemonApp::start()
         if (m_ed3kSets && m_ed3kSets->plainCopies().contains(done.path))
             return;
         // eD2K hashes it, Ed3kShared then serves it (releaseShare); set members sit in
-        // <incoming>/<set>/, single shared when shareIncomingSubdirs is off
+        // <incoming>/<set>/, shared by the incoming tree
         if (theApp.sharedFileList && !theApp.sharedFileList->shareCompletedFile(done.path))
             logDebug([&]() -> QString { return QStringLiteral("ed3k: %1 is not shared").arg(done.path); });
     });
@@ -674,7 +674,7 @@ bool DaemonApp::start()
     // hoster links (hoster.md); the resolver is the JDownloader sidecar when built in
     m_hosterJoin = std::make_unique<ed3k::Ed3kHosterJoin>(*m_ed3kSession, thePrefs.configDir());
     // done files and unpacked ones: eD2K shares them (Ed3kShared serves them on ed3k); a
-    // package's subfolder of incoming is a shared dir with shareIncomingSubdirs, else
+    // package's subfolder of incoming is in the share tree, else
     // those are single shared files
     m_hosterJoin->setPublishedHook([](const QStringList& files) {
         if (!theApp.sharedFileList)
@@ -1972,6 +1972,7 @@ void DaemonApp::applyLogFilterRules()
     // Usenet's were always on: its rate-share line alone was the biggest pattern (#139)
     own("emule.usenet", thePrefs.usenetVerboseLog());
     own("emule.sharedv", thePrefs.sharedFilesVerboseLog());
+    own("emule.uss", thePrefs.ussVerboseLog());
 
     QLoggingCategory::setFilterRules(rules.join(QLatin1Char('\n')));
 }
