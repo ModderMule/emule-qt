@@ -119,6 +119,19 @@ void tst_I2pRouter::arguments()
     QVERIFY(a.contains(QStringLiteral("--address6=fd00::2")));
     QVERIFY(!a.join(QLatin1Char(' ')).contains(QStringLiteral("--address4")));
     QVERIFY(a.join(QLatin1Char(' ')).contains(QStringLiteral("--certsdir=")));
+    // more than reg.i2p, or .i2p tracker names stay unknown (report 38)
+    const QString subs = QStringLiteral("--addressbook.subscriptions=")
+                         + I2pRouter::kAddressBookSubscriptions.join(QLatin1Char(','));
+    QVERIFY(a.contains(subs));
+
+    // the user's i2pd.conf choice wins
+    QTemporaryDir dir;
+    c.dataDir = dir.path();
+    QFile conf(dir.filePath(QStringLiteral("i2pd.conf")));
+    QVERIFY(conf.open(QIODevice::WriteOnly));
+    conf.write("[addressbook]\n  subscriptions = http://example.i2p/hosts.txt\n");
+    conf.close();
+    QVERIFY(!I2pRouter::arguments(c, 40000, {}).join(QLatin1Char(' ')).contains(QStringLiteral("subscriptions")));
 }
 
 void tst_I2pRouter::readyOnceSamAnswers()

@@ -67,6 +67,12 @@ enum class AppDir {
 /// full, and only the caller knows which way it wants to be wrong.
 [[nodiscard]] std::optional<std::uint64_t> tryFreeDiskSpace(const QString& path);
 
+/// QStorageInfo::rootPath() of @p dir, cached per path for the process, any thread.
+/// QStorageInfo stats every path element (canonicalFilePath): seconds on a busy
+/// or sleeping disk, so the main thread asks this instead (report 39). Empty when
+/// the volume could not be read; that answer is cached too.
+[[nodiscard]] QString cachedVolumeRoot(const QString& dir);
+
 /// Bytes @p path actually takes on disk: a sparse .part counts only its written
 /// blocks (MFC GetDiskFileSize). 0 when it cannot be read.
 [[nodiscard]] std::uint64_t diskFileSize(const QString& path);

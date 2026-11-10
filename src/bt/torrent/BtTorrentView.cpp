@@ -5,6 +5,7 @@
 
 #include <libtorrent/announce_entry.hpp>
 #include <libtorrent/error_code.hpp>
+#include <libtorrent/i2p_stream.hpp>
 #include <libtorrent/peer_info.hpp>
 #include <libtorrent/torrent_info.hpp>
 
@@ -345,7 +346,7 @@ QList<BtTrackerRow> BtTorrentView::trackers(const std::vector<lt::announce_entry
                 if (!ih.message.empty() && r.message.isEmpty())
                     r.message = QString::fromStdString(ih.message);
                 if (ih.last_error)
-                    error = QString::fromStdString(ih.last_error.message());
+                    error = errorText(ih.last_error);
                 else if (ih.fails == 0 && !ih.updating && ih.start_sent)
                     r.working = true;
                 r.seeds = std::max(r.seeds, ih.scrape_complete);
@@ -385,6 +386,24 @@ QByteArray BtTorrentView::availabilityMap(const std::vector<int>& avail, int buc
         out[b] = static_cast<char>(std::clamp(least, 0, 255));
     }
     return out;
+}
+
+QString BtTorrentView::errorText(const lt::error_code& ec)
+{
+    const QString text = QString::fromStdString(ec.message());
+    if (ec.category() != lt::i2p_category())
+        return text;
+    // i2pd answers INVALID_KEY when a name is not in its address book yet (a fresh router
+    // fetches it over I2P first) or the tracker's lease set is gone (report 38)
+    switch (ec.value()) {
+    case lt::i2p_error::invalid_key:
+    case lt::i2p_error::key_not_found:
+        return QStringLiteral("I2P name not in the address book yet, or tracker offline (%1)").arg(text);
+    case lt::i2p_error::cant_reach_peer:
+        return QStringLiteral("I2P tracker offline (%1)").arg(text);
+    default:
+        return text;
+    }
 }
 
 QByteArray BtTorrentView::pieceMap(const lt::typed_bitfield<lt::piece_index_t>& pieces, int buckets)

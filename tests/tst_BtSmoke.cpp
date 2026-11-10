@@ -7,6 +7,7 @@
 #include "session/BtSettingsMap.h"
 #include "torrent/BtTorrentView.h"
 
+#include <libtorrent/i2p_stream.hpp>
 #include <libtorrent/version.hpp>
 
 #include <QSignalSpy>
@@ -34,6 +35,7 @@ private slots:
     void i2pAddPolicy();
     void stopAfterMetadataPolicy();
     void i2pPeerAddress();
+    void i2pTrackerErrorText();
     void i2pTorrentIsFlagged();
     void peerFlagsChokeDirection();
     void addDoesNotWait();
@@ -412,6 +414,17 @@ void tst_BtSmoke::stopAfterMetadataPolicy()
     QVERIFY(file->flags & lt::torrent_flags::paused);
     QVERIFY(!(file->flags & lt::torrent_flags::auto_managed));
     QVERIFY(!(file->flags & lt::torrent_flags::default_dont_download));
+}
+
+void tst_BtSmoke::i2pTrackerErrorText()
+{
+    namespace lt = libtorrent;
+    // report 38: SAM's bare "invalid key" says what it means
+    const QString unknown = BtTorrentView::errorText(lt::error_code(lt::i2p_error::invalid_key, lt::i2p_category()));
+    QVERIFY(unknown.contains(QStringLiteral("address book")));
+    QVERIFY(unknown.contains(QStringLiteral("invalid key")));
+    const lt::error_code other = lt::errors::timed_out;
+    QCOMPARE(BtTorrentView::errorText(other), QString::fromStdString(other.message()));
 }
 
 void tst_BtSmoke::i2pPeerAddress()

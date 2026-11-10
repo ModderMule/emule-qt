@@ -107,6 +107,9 @@ jobs:
                        "-O", $qtDir, "--base", "https://ftp.fau.de/qtproject/")
           if (Get-Command 7z -ErrorAction SilentlyContinue) { $aqtArgs += @("--external", "7z") }
           for ($try = 1; $try -le 3; $try++) {
+            # parallel 7z.exe runs race on creating the shared output dir
+            # ("Cannot create output directory") -> create it up front
+            New-Item -ItemType Directory -Force "$qtDir\6.10.3\msvc2022_64" | Out-Null
             aqt @aqtArgs
             if ($LASTEXITCODE -eq 0) { break }
             if ($try -eq 3) { Write-Host "ERROR: aqt install-qt failed 3 times" -ForegroundColor Red; exit 1 }

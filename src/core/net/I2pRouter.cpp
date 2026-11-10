@@ -6,6 +6,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHostAddress>
+#include <QRegularExpression>
 #include <QTcpServer>
 #include <QTcpSocket>
 
@@ -31,6 +32,17 @@ void writeOnce(const QString& path, const QByteArray& text)
     QFile f(path);
     if (f.open(QIODevice::WriteOnly))
         f.write(text);
+}
+
+/// True when the user's i2pd.conf sets address book subscriptions itself.
+bool confSetsSubscriptions(const QString& path)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+        return false;
+    static const QRegularExpression re(QStringLiteral(R"(^\s*subscriptions\s*=)"),
+                                       QRegularExpression::MultilineOption);
+    return re.match(QString::fromUtf8(f.readAll())).hasMatch();
 }
 
 } // namespace
@@ -115,6 +127,10 @@ QStringList I2pRouter::arguments(const Config& config, quint16 samPort, const QS
         QStringLiteral("--i2cp.enabled=false"),
         QStringLiteral("--i2pcontrol.enabled=false"),
     };
+    // .i2p tracker names resolve only from the address book: i2pd's default subscribes
+    // reg.i2p alone, which misses many trackers → SAM "invalid key" (report 38)
+    if (!confSetsSubscriptions(data.filePath(QStringLiteral("i2pd.conf"))))
+        a << QStringLiteral("--addressbook.subscriptions=") + kAddressBookSubscriptions.join(QLatin1Char(','));
     if (!certsDir.isEmpty())
         a << QStringLiteral("--certsdir=") + QDir::toNativeSeparators(certsDir);
     if (!config.address4.isEmpty())

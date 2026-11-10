@@ -51,6 +51,13 @@ public:
     static constexpr int kReadyTimeoutMs = 90 * 1000;
     static constexpr int kPollMs = 500;
     static constexpr int kStopGraceMs = 5000;
+    /// hosts.txt feeds of the bundled router's address book; i2pd.conf may override
+    static inline const QStringList kAddressBookSubscriptions{
+        QStringLiteral("http://reg.i2p/hosts.txt"),
+        QStringLiteral("http://identiguy.i2p/hosts.txt"),
+        QStringLiteral("http://stats.i2p/cgi-bin/newhosts.txt"),
+        QStringLiteral("http://notbob.i2p/hosts.txt"),
+    };
     static constexpr int kFirstRestartMs = 5000;
     static constexpr int kMaxRestartMs = 5 * 60 * 1000;
 

@@ -4,11 +4,11 @@
 
 #include "utils/DiskLoadLimiter.h"
 #include "prefs/Preferences.h"
+#include "utils/PathUtils.h"
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QFile>
-#include <QStorageInfo>
 #include <QThread>
 
 #include <algorithm>
@@ -177,8 +177,7 @@ QString DiskLoadLimiter::volumeKey(const QString& path)
     if (::stat(QFile::encodeName(path).constData(), &st) == 0)
         return QStringLiteral("dev:%1").arg(quint64(st.st_dev));
 #endif
-    const QStorageInfo info(path);
-    return info.isValid() ? info.rootPath().toLower() : QString();
+    return cachedVolumeRoot(path).toLower();
 }
 
 } // namespace eMule

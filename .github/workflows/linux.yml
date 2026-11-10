@@ -55,20 +55,24 @@ jobs:
       # Before checkout: without git it falls back to a tarball, without submodules
       - name: Install system dependencies
         run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            ca-certificates curl file git squashfs-tools binutils \
-            gcc-12 g++-12 make perl ninja-build ccache pkg-config \
-            python3 python3-pip python3-venv \
-            protobuf-compiler \
-            zlib1g-dev \
-            libgl1-mesa-dev libegl1-mesa-dev libvulkan-dev \
-            libdbus-1-dev libglib2.0-dev libpulse-dev \
-            libfontconfig1-dev libfreetype6-dev \
-            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
-            libx11-dev libx11-xcb-dev libxext-dev libxrandr-dev libxrender-dev libxfixes-dev libxi-dev \
-            libxcb1-dev libxcb-cursor-dev libxcb-icccm4-dev libxcb-image0-dev libxcb-keysyms1-dev \
-            libxcb-render-util0-dev libxcb-shape0-dev libxcb-xinerama0-dev libxcb-xkb-dev libxcb-randr0-dev
+          # mirror can swap a package between update and fetch (404) -> fresh index, retry
+          for try in 1 2 3; do
+            apt-get update && apt-get install -y --no-install-recommends \
+              ca-certificates curl file git squashfs-tools binutils \
+              gcc-12 g++-12 make perl ninja-build ccache pkg-config \
+              python3 python3-pip python3-venv \
+              protobuf-compiler \
+              zlib1g-dev \
+              libgl1-mesa-dev libegl1-mesa-dev libvulkan-dev \
+              libdbus-1-dev libglib2.0-dev libpulse-dev \
+              libfontconfig1-dev libfreetype6-dev \
+              libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+              libx11-dev libx11-xcb-dev libxext-dev libxrandr-dev libxrender-dev libxfixes-dev libxi-dev \
+              libxcb1-dev libxcb-cursor-dev libxcb-icccm4-dev libxcb-image0-dev libxcb-keysyms1-dev \
+              libxcb-render-util0-dev libxcb-shape0-dev libxcb-xinerama0-dev libxcb-xkb-dev libxcb-randr0-dev && break
+            [ "$try" = 3 ] && { echo "apt install failed 3 times"; exit 1; }
+            echo "apt install failed, retry $try/2"; sleep 30
+          done
           # 22.04 ships CMake 3.22; the project needs 3.25+
           python3 -m venv /opt/tools
           /opt/tools/bin/pip install --quiet 'cmake~=3.31' aqtinstall

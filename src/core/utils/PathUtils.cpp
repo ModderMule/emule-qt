@@ -8,6 +8,8 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
+#include <QMutex>
 #include <QStandardPaths>
 #include <QStorageInfo>
 
@@ -160,6 +162,23 @@ std::optional<std::uint64_t> tryFreeDiskSpace(const QString& path)
         probe = parent;
     }
     return std::nullopt;
+}
+
+QString cachedVolumeRoot(const QString& dir)
+{
+    static QMutex mutex;
+    static QHash<QString, QString> roots;
+    const QString key = QDir::cleanPath(dir).toCaseFolded();
+    {
+        QMutexLocker locker(&mutex);
+        if (const auto it = roots.constFind(key); it != roots.constEnd())
+            return *it;
+    }
+    const QStorageInfo info(dir);   // outside the lock: may take seconds
+    const QString root = info.isValid() ? info.rootPath() : QString();
+    QMutexLocker locker(&mutex);
+    roots.insert(key, root);
+    return root;
 }
 
 std::uint64_t diskFileSize(const QString& path)

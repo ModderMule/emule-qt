@@ -1,3 +1,4 @@
+#include <QStorageInfo>
 #include <QTest>
 
 #include "TestHelpers.h"
@@ -167,6 +168,17 @@ private slots:
         const QString rel = QDir(sub.path()).dirName() + QStringLiteral("/helper.bin");
         QCOMPARE(eMule::findBundledFile("EMULE_TEST_NO_SUCH_VAR", {}, rel), QDir::cleanPath(file));
         QVERIFY(eMule::findBundledFile("EMULE_TEST_NO_SUCH_VAR", {}, QStringLiteral("no/such/helper.bin")).isEmpty());
+    }
+
+    /// Report 39: the root is QStorageInfo's, asked once per path; a missing dir answers empty.
+    void cachedVolumeRootMatchesStorageInfo()
+    {
+        QTemporaryDir tmp;
+        QVERIFY(tmp.isValid());
+        const QString root = eMule::cachedVolumeRoot(tmp.path());
+        QCOMPARE(root, QStorageInfo(tmp.path()).rootPath());
+        QCOMPARE(eMule::cachedVolumeRoot(tmp.path() + u'/'), root);   // same key after cleanPath
+        QVERIFY(eMule::cachedVolumeRoot(tmp.path() + QStringLiteral("/no/such/dir")).isEmpty());
     }
 };
 

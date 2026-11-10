@@ -35,6 +35,8 @@ public:
     /// The Flags column of a peer, as qBittorrent's (d/D, u/U, K, ?, ...).
     static QString peerFlags(const libtorrent::peer_info& p);
     static QList<BtTrackerRow> trackers(const std::vector<libtorrent::announce_entry>& list);
+    /// Text of a tracker error; SAM's terse I2P results explained.
+    static QString errorText(const libtorrent::error_code& ec);
     /// What a loaded .torrent holds, without a session.
     static BtTorrentPreview preview(const libtorrent::add_torrent_params& atp);
 

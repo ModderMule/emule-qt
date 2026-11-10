@@ -26,6 +26,7 @@
 #include "files/ShareDiskWorker.h"
 #include "transfer/DownloadQueue.h"
 #include "utils/FileDate.h"
+#include "utils/PathUtils.h"
 #include "utils/Log.h"
 
 #include <QDir>
@@ -33,7 +34,6 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
-#include <QStorageInfo>
 #include <QTextStream>
 
 #ifdef Q_OS_WIN
@@ -56,25 +56,6 @@ constexpr time_t kEd2kRepublishSecs = 60;
 /// GetSoftFiles() may lower this, never raise it (srchybrid/SharedFileList.cpp:832-834).
 constexpr uint32 kMaxOfferedFiles = 200;
 
-namespace {
-// QStorageInfo::rootPath by path key, for every thread: scanDirectory() fills it
-// off-thread so volumeKeyFor() does not stat a slow share (#84)
-QString volumeRoot(const QString& dir)
-{
-    static QMutex mutex;
-    static QHash<QString, QString> roots;
-    const QString key = SharedFileList::pathKey(dir);
-    {
-        QMutexLocker locker(&mutex);
-        if (const auto it = roots.constFind(key); it != roots.constEnd())
-            return *it;
-    }
-    const QString root = QStorageInfo(dir).rootPath();
-    QMutexLocker locker(&mutex);
-    roots.insert(key, root);
-    return root;
-}
-} // namespace
 
 // ===========================================================================
 // HashingThread
@@ -1234,7 +1215,7 @@ void SharedFileList::checkAndAddSingleFile(const QString& filePath)
         DiskEntry entry{fi.absolutePath(), fi.fileName(), {}, static_cast<uint64>(fi.size()),
                         static_cast<time_t>(fi.lastModified().toSecsSinceEpoch())};
         const bool localTime = isLocalTimeVolume(entry.directory);
-        static_cast<void>(volumeRoot(entry.directory));   // warm the cache
+        static_cast<void>(cachedVolumeRoot(entry.directory));   // warm the cache
         return [this, filePath, entry = std::move(entry), localTime] {
             addStattedSingleFile(filePath, entry, localTime);
         };
@@ -1407,7 +1388,7 @@ QString SharedFileList::volumeKeyFor(const QString& directory)
     const QString dirKey = pathKey(directory);
     if (const auto it = m_volumeOfDir.constFind(dirKey); it != m_volumeOfDir.constEnd())
         return *it;
-    QString volume = m_volumeKeyFn ? m_volumeKeyFn(directory) : volumeRoot(directory);
+    QString volume = m_volumeKeyFn ? m_volumeKeyFn(directory) : cachedVolumeRoot(directory);
     if (volume.isEmpty())
         volume = QStringLiteral("/");   // not mounted or gone: any worker will do
     m_volumeOfDir.insert(dirKey, volume);
@@ -1864,7 +1845,7 @@ QList<ListedFile> SharedFileList::scanDirectory(const QString& dir)
         if (const QString path = file.info.absolutePath(); !asked.contains(path)) {
             asked.insert(path);
             (void)isLocalTimeVolume(path);
-            (void)volumeRoot(path);
+            (void)cachedVolumeRoot(path);
         }
     return listing;
 }
