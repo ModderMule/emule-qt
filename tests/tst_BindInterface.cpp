@@ -39,6 +39,7 @@ private slots:
     void resolve_table();
     void resolve_literalNarrowsFamily();
     void resolve_wholeInterfaceKeepsBothFamilies();
+    void sourceAddress_forUnpinnableProcess();
     void pin_confinesToLoopback();
     void probe_v6RefusedKeepsIPv4();
     void probe_dualStackV4RefusedBindsIPv4();
@@ -178,6 +179,34 @@ void tst_BindInterface::resolve_wholeInterfaceKeepsBothFamilies()
     QVERIFY(!BindAddress::listenAddress());
     QVERIFY(!BindAddress::current().reason.isEmpty());
     QVERIFY(!BindAddress::refresh());   // unchanged
+}
+
+// One address for the hoster sidecar: literal, interface IPv4, else IPv6; loopback when blocked.
+void tst_BindInterface::sourceAddress_forUnpinnableProcess()
+{
+    BindAddress::setInterfaceSource(sample);
+    thePrefs.setBindAddress(QString());
+    QVERIFY(BindAddress::sourceAddress().isEmpty());
+
+    thePrefs.setBindAddress(QStringLiteral("2001:db8::20"));
+    QCOMPARE(BindAddress::sourceAddress(), QStringLiteral("2001:db8::20"));
+
+    thePrefs.setBindAddress(QStringLiteral("en0"));
+    QCOMPARE(BindAddress::sourceAddress(), QStringLiteral("192.168.1.20"));
+
+    // IPv4 cannot be pinned: the interface's IPv6, never the link-local one
+    BindAddress::setPinProbe([](int, const QString&) {
+        return BindAddress::PinProbe{.v4 = false, .v6 = true, .v4Error = 22, .v6Error = 0};
+    });
+    thePrefs.setBindAddress(QStringLiteral("utun4"));
+    thePrefs.setBindAddress(QStringLiteral("en0"));
+    QCOMPARE(BindAddress::sourceAddress(), QStringLiteral("2001:db8::20"));
+    BindAddress::setPinProbe({});
+
+    // the interface goes away: nothing may leave
+    BindAddress::setInterfaceSource([] { return QList<LocalInterface>{}; });
+    BindAddress::refresh();
+    QCOMPARE(BindAddress::sourceAddress(), QStringLiteral("127.0.0.1"));
 }
 
 // The raw option: a dual-stack socket pinned to loopback reaches loopback and nothing else.

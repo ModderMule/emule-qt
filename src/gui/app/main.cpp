@@ -961,6 +961,11 @@ int main(int argc, char* argv[])
                     info.value(QStringLiteral("connected")).toBool(),
                     info.value(QStringLiteral("firewalled")).toBool(),
                     info.value(QStringLiteral("firewalledVerified")).toBool());
+                mainWindow.setNetworkStats(
+                    static_cast<quint32>(info.value(QStringLiteral("ed2kUsers")).toInteger()),
+                    static_cast<quint32>(info.value(QStringLiteral("ed2kFiles")).toInteger()),
+                    static_cast<quint32>(info.value(QStringLiteral("users")).toInteger()),
+                    static_cast<quint32>(info.value(QStringLiteral("files")).toInteger()));
             });
 
             // Sync GUI thePrefs with daemon's live values so OptionsDialog
@@ -1189,6 +1194,8 @@ int main(int argc, char* argv[])
                 info.value(QStringLiteral("firewalled")).toBool(),
                 info.value(QStringLiteral("firewalledVerified")).toBool());
             mainWindow.setNetworkStats(
+                static_cast<quint32>(info.value(QStringLiteral("ed2kUsers")).toInteger()),
+                static_cast<quint32>(info.value(QStringLiteral("ed2kFiles")).toInteger()),
                 static_cast<quint32>(info.value(QStringLiteral("users")).toInteger()),
                 static_cast<quint32>(info.value(QStringLiteral("files")).toInteger()));
         });
@@ -1262,9 +1269,10 @@ int main(int argc, char* argv[])
             mainWindow.setEd2kStatus(false, false, false, false);
             mainWindow.setRelatedSearchSupported(false);
             mainWindow.setKadStatus(false, false, false);
-            mainWindow.setNetworkStats(0, 0);
+            mainWindow.setNetworkStats(0, 0, 0, 0);
             mainWindow.updateTransferRates(0.0, 0.0, 0.0, 0.0);
             mainWindow.clearTaskbarProgress();
+            mainWindow.setSaveFolderSpace({});
         });
 
         // Poll transfer rates for the status bar (1 second interval)
@@ -1317,6 +1325,7 @@ int main(int argc, char* argv[])
                 const qint64 freeSpace =
                     stats.value(QStringLiteral("freeTempSpace")).toInteger();
                 mainWindow.updateMiniMule(completedDl, freeSpace);
+                mainWindow.setSaveFolderSpace(stats.value(QStringLiteral("saveFolderSpace")).toMap());
 
                 // Taskbar / Dock progress over the whole download queue
                 auto num = [&](QLatin1StringView k) {
@@ -1494,8 +1503,9 @@ int main(int argc, char* argv[])
     // Queued: an import asks in a dialog, and this runs inside a socket signal.
     if (singleInstance) {
         QObject::connect(singleInstance.get(), &eMule::SingleInstance::activationRequested,
-                         &mainWindow, [&mainWindow, &linkHandler](const QStringList& args) {
-            QTimer::singleShot(0, &mainWindow, [&mainWindow, &linkHandler, args] {
+                         &mainWindow, [&mainWindow, &linkHandler](const QStringList& args,
+                                                                  const QString& token) {
+            QTimer::singleShot(0, &mainWindow, [&mainWindow, &linkHandler, args, token] {
                 // #119: a download link added without asking stays in the background; with
                 // the confirmation on, the link handler raises before its box. Other ed3k
                 // links (room, friend, node, ...) always ask, so they still raise here
@@ -1506,7 +1516,7 @@ int main(int argc, char* argv[])
                                || a.startsWith(QStringLiteral("magnet:"), Qt::CaseInsensitive);
                        });
                 if (!silentAdd)
-                    mainWindow.restoreWindow();
+                    mainWindow.restoreWindow(token);
                 eMule::CommandLineExec::openArguments(args, linkHandler);
             });
         });

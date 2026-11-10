@@ -57,9 +57,7 @@ Ed3kHide::~Ed3kHide()
 
 void Ed3kHide::setSettings(const Ed3kHideSettings& settings)
 {
-    Ed3kHideSettings s = settings;
-    s.hops = std::clamp(s.hops, 1, 3);
-    s.sharePercent = std::clamp(s.sharePercent, 1, 100);
+    const Ed3kHideSettings s = normalized(settings);
     if (s == m_settings)
         return;
     m_settings = s;
@@ -98,8 +96,14 @@ void Ed3kHide::apply()
             return;
         }
         (void)ownerOnly(QDir(m_dir).filePath(kSeedFile));
-        // one hop count for every connection and lookup type; gates at the core default
-        auto ok = e->anonStart(t, *seed, ffi::HideCfg::uniform(std::uint8_t(m_settings.hops)));
+        // one hop count for every use; gates at the core default
+        // was: auto ok = e->anonStart(t, *seed, ffi::HideCfg::uniform(std::uint8_t(m_settings.hops)));
+        auto ok = e->anonStart(t, *seed, hideCfg(m_settings.hops));
+        if (!ok && ok.error() == ffi::Error::Config && m_settings.hops == 0) {
+            // a core without 0 hops (ED3K_HOPS_OFF): 1 hop, as §2.6 does without HOP
+            logEd3kWarning(QStringLiteral("ed3k: 0 hops refused by the core; hiding with 1 hop"));
+            ok = e->anonStart(t, *seed, hideCfg(1));
+        }
         wipe(std::span<std::uint8_t>{*seed});
         if (!ok) {
             logEd3kWarning(QStringLiteral("ed3k: hiding not started (error %1)").arg(int(ok.error())));
@@ -159,6 +163,11 @@ std::optional<ffi::NodeId> Ed3kHide::anonId() const
         return std::nullopt;
     const auto id = e->anonId();
     return id ? *id : std::nullopt;
+}
+
+ffi::KeyKind Ed3kHide::keyForUse() const
+{
+    return hiding() ? ffi::KeyKind::Anon : ffi::KeyKind::Node;
 }
 
 ffi::KeyKind Ed3kHide::keyFor(const ffi::Root& root) const
@@ -258,6 +267,23 @@ void Ed3kHide::onEvent(const ffi::Event& ev)
 QString Ed3kHide::keyName(ffi::KeyKind key)
 {
     return key == ffi::KeyKind::Anon ? QStringLiteral("Anonymous") : QStringLiteral("Node");
+}
+
+Ed3kHideSettings Ed3kHide::normalized(Ed3kHideSettings s)
+{
+    s.hops = std::clamp(s.hops, 0, 3);
+    // §2.6: 0 only while forwarding for others; else its uses would go over 1 hop anyway
+    if (s.hops == 0 && !s.hopping)
+        s.hops = 1;
+    s.sharePercent = std::clamp(s.sharePercent, 1, 100);
+    return s;
+}
+
+ffi::HideCfg Ed3kHide::hideCfg(int hops)
+{
+    // out and in at @p hops (0: zero hops, §2.6); every per-use count 0 = takes hopsOut / hopsIn;
+    // never kHopsOff (off = no anonStart); nodeKeyUses 0
+    return ffi::HideCfg::uniform(std::uint8_t(std::clamp(hops, 0, 3)));
 }
 
 // ---------------------------------------------------------------------------

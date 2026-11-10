@@ -48,6 +48,8 @@ QCborMap toCbor(const ed3k::Ed3kOwnSets::Info& i)
         // a hidden set's link is a credential: GetEd3kOwnSetLink only (i.link is empty)
         {QStringLiteral("link"), i.link},
         {QStringLiteral("error"), i.error},
+        {QStringLiteral("key"), i.key},
+        {QStringLiteral("offerKey"), i.offerKey},
     };
 }
 
@@ -91,6 +93,10 @@ void answer(const IpcMessage& msg, const std::function<void(const IpcMessage&)>&
             break;
         case 3:
             r = sets.retitle(id, msg.fieldString(2));
+            break;
+        case 4:
+            // hops.md §1: the set under its files' key (the user agreed)
+            r = sets.shareUnderKey(id, msg.fieldString(2) == QLatin1String("Anonymous") ? ::ed3k::KeyKind::Anon : ::ed3k::KeyKind::Node);
             break;
         default:
             break;

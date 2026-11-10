@@ -16,8 +16,27 @@
 
 namespace eMule {
 
-/// Relayed packets per served buddy per minute — relay: UpDownClient::allowBuddyRelay().
-inline constexpr uint32 kMaxBuddyRelaysPerMin = 60;
+/// Relayed bytes per served buddy per minute — relay: UpDownClient::allowBuddyRelay().
+/// Bytes, not packets: a packet count high enough for a full queue let a flood of large
+/// reasks through. Same budget as aMule (#1809).
+inline constexpr uint32 kBuddyRelayBytesPerMin = 64 * 1024;
+
+/// OP_CALLBACK body a relayed KADEMLIA_CALLBACK_REQ becomes: BuddyID 16, file hash 16,
+/// caller IP 4, caller TCP port 2.
+inline constexpr uint32 kRelayedCallbackSize = 16 + 16 + 4 + 2;
+
+/// Largest OP_REASKCALLBACKUDP a relay forwards, the most the format can carry: BuddyID 16,
+/// file hash 16, part count 2, part bits for 65,535 parts 8,192, complete sources 2.
+/// Anything larger is no reask. Same cap as aMule (#1809).
+inline constexpr uint32 kMaxReaskCallbackUdpSize = 16 + 16 + 2 + (0xFFFF + 7) / 8 + 2;
+static_assert(kMaxReaskCallbackUdpSize == 8228);
+
+/// OP_REASKCALLBACKTCP body an OP_REASKCALLBACKUDP of `udpSize` becomes: BuddyID dropped,
+/// caller address added, 6 bytes for IPv4, 22 for IPv6 (0xFFFFFFFF, address 16, port 2).
+[[nodiscard]] constexpr uint32 relayedReaskSize(uint32 udpSize, bool ipv6)
+{
+    return udpSize - 16 + (ipv6 ? 22 : 6);
+}
 
 /// Served buddies the requester assumes a relay allows: the auto value at the default
 /// upload capacity (Preferences::autoServedBuddies()). A relay accepts that many
@@ -32,9 +51,10 @@ enum class RelayRequest : uint8 {
 class BuddyRelayBudget {
 public:
     /// Checks and charges one request to `relay` for the node with `buddyID` (16 bytes).
-    /// False: the relay would drop it, do not send. A refusal charges nothing.
+    /// `reaskSize`: the OP_REASKCALLBACKUDP size, for a reask only. False: the relay would
+    /// drop it, do not send. A refusal charges nothing.
     [[nodiscard]] bool tryCharge(const Address& relay, const uint8* buddyID,
-                                 RelayRequest kind, uint64 now);
+                                 RelayRequest kind, uint32 reaskSize, uint64 now);
 
     void clear();
 
@@ -50,7 +70,16 @@ private:
     void prune(uint64 now);
 
     std::unordered_map<Address, CallerBucket> m_callbackBuckets;  // by relay IP
-    std::map<BuddyID, std::deque<uint64>> m_relaySends;           // send ticks, last minute
+    struct RelaySend {
+        uint64 tick = 0;
+        uint32 bytes = 0;
+    };
+    struct BuddySends {
+        std::deque<RelaySend> sends;  // last minute
+        uint32 bytes = 0;             // sum of sends
+    };
+
+    std::map<BuddyID, BuddySends> m_relaySends;
     uint64 m_lastPrune = 0;
 };
 

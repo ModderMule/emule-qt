@@ -88,6 +88,7 @@
 #include "net/ProxySettings.h"
 #include "net/BindAddress.h"
 #include "net/DefaultGateway.h"
+#include "prefs/LegacyConfigImport.h"
 #include "prefs/PreferenceSchema.h"
 #include "prefs/Preferences.h"
 #include "net/Packet.h"
@@ -122,6 +123,9 @@
 #include <QProcess>
 #include <QSet>
 #include <QStorageInfo>
+#include <QThreadPool>
+
+#include <optional>
 
 #include <openssl/crypto.h>
 
@@ -135,6 +139,21 @@ namespace eMule {
 using namespace Ipc;
 
 namespace {
+
+/// Runs @p work on the pool and hands its result to @p reply on the core thread, if the
+/// handler still exists then. Folder reads off the core thread (#84).
+template <typename Work, typename Reply>
+void offCoreThread(IpcClientHandler* handler, Work work, Reply reply)
+{
+    QThreadPool::globalInstance()->start([self = QPointer<IpcClientHandler>(handler), work, reply] {
+        auto result = work();
+        QMetaObject::invokeMethod(QCoreApplication::instance(), [self, reply, result = std::move(result)] {
+            if (self)
+                reply(*self, result);
+        });
+    });
+}
+
 
 
 /// Open a filesystem path with the OS default handler. This runs from the
@@ -464,6 +483,8 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::SaveSchedules:        handleSaveSchedules(msg); break;
     case IpcMsgType::ScanImportFolder:     handleScanImportFolder(msg); break;
     case IpcMsgType::GetConvertJobs:       handleGetConvertJobs(msg); break;
+    case IpcMsgType::FindLegacyProfiles:   handleFindLegacyProfiles(msg); break;
+    case IpcMsgType::ImportLegacyProfile:  handleImportLegacyProfile(msg); break;
     case IpcMsgType::RemoveConvertJob:     handleRemoveConvertJob(msg); break;
     case IpcMsgType::RetryConvertJob:      handleRetryConvertJob(msg); break;
     case IpcMsgType::StopDownload:         handleStopDownload(msg); break;
@@ -2688,6 +2709,15 @@ void IpcClientHandler::handleGetNetworkInfo(const IpcMessage& msg)
     }
     info.insert(QStringLiteral("web"), webInfo);
 
+    // -- BitTorrent (external IPs, I2P) and the ed3k node: no MFC original -----
+    info.insert(QStringLiteral("bt"), BtBridge::statusToCbor());
+    QCborMap ed3k = Ed3kBridge::statusToCbor();
+    ed3k.insert(QStringLiteral("enabled"), thePrefs.ed3kEnabled());
+    // counters and sub-blocks the dialog does not show
+    for (const auto* key : {"stats", "session", "cumulative", "queue", "credit", "chain", "hoster", "hide"})
+        ed3k.remove(QString::fromLatin1(key));
+    info.insert(QStringLiteral("ed3k"), ed3k);
+
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(info)));
 }
 
@@ -2833,25 +2863,158 @@ void IpcClientHandler::handleScanImportFolder(const IpcMessage& msg)
 {
     const QString folder = msg.fieldString(0);
     const bool removeSource = msg.fieldBool(1);
+    const int seqId = msg.seqId();
 
-    PartFileConvert::scanFolderToAdd(folder, /*recursive=*/true, removeSource);
-    PartFileConvert::processQueue();
+    offCoreThread(this,
+        [folder, removeSource] { return PartFileConvert::findJobs(folder, /*recursive=*/true, removeSource); },
+        [seqId](IpcClientHandler& self, const std::vector<ConvertJob>& found) {
+            PartFileConvert::addJobs(found);
+            PartFileConvert::processQueue();
 
-    // Return the full job list
-    QCborArray arr;
-    const int count = PartFileConvert::jobCount();
-    for (int i = 0; i < count; ++i) {
-        const auto job = PartFileConvert::jobAt(i);
-        QCborMap m;
-        m.insert(QStringLiteral("filename"), job.filename);
-        m.insert(QStringLiteral("folder"), job.folder);
-        m.insert(QStringLiteral("state"), static_cast<int>(job.state));
-        m.insert(QStringLiteral("size"), static_cast<qint64>(job.size));
-        m.insert(QStringLiteral("fileHash"), job.fileHash);
-        m.insert(QStringLiteral("format"), job.format);
-        arr.append(QCborValue(m));
-    }
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(arr)));
+            // Return the full job list
+            QCborArray arr;
+            const int count = PartFileConvert::jobCount();
+            for (int i = 0; i < count; ++i) {
+                const auto job = PartFileConvert::jobAt(i);
+                QCborMap m;
+                m.insert(QStringLiteral("filename"), job.filename);
+                m.insert(QStringLiteral("folder"), job.folder);
+                m.insert(QStringLiteral("state"), static_cast<int>(job.state));
+                m.insert(QStringLiteral("size"), static_cast<qint64>(job.size));
+                m.insert(QStringLiteral("fileHash"), job.fileHash);
+                m.insert(QStringLiteral("format"), job.format);
+                arr.append(QCborValue(m));
+            }
+            self.sendMessage(IpcMessage::makeResult(seqId, true, QCborValue(arr)));
+        });
+}
+
+// ---------------------------------------------------------------------------
+// handleFindLegacyProfiles / handleImportLegacyProfile — first start wizard import
+// ---------------------------------------------------------------------------
+
+namespace {
+
+QCborMap legacySourceMap(const LegacyConfigImport::Source& src)
+{
+    QCborArray temps;
+    for (const QString& dir : src.tempDirs)
+        temps.append(dir);
+    QCborMap m;
+    m.insert(QStringLiteral("kind"), static_cast<int>(src.kind));
+    m.insert(QStringLiteral("dir"), src.configDir);
+    if (!src.winePrefix.isEmpty())
+        m.insert(QStringLiteral("wine"), src.winePrefix);
+    m.insert(QStringLiteral("nick"), src.nick);
+    m.insert(QStringLiteral("tempDirs"), temps);
+    m.insert(QStringLiteral("partFiles"), src.partFiles);
+    return m;
+}
+
+} // namespace
+
+void IpcClientHandler::handleFindLegacyProfiles(const IpcMessage& msg)
+{
+    const int seqId = msg.seqId();
+    offCoreThread(this,
+        [dir = msg.fieldString(0)] {
+            QCborArray arr;
+            if (!dir.isEmpty()) {
+                if (const auto src = LegacyConfigImport::probe(dir))
+                    arr.append(legacySourceMap(*src));
+            } else {
+                for (const auto& src : LegacyConfigImport::discover())
+                    arr.append(legacySourceMap(src));
+            }
+            return arr;
+        },
+        [seqId](IpcClientHandler& self, const QCborArray& arr) {
+            self.sendMessage(IpcMessage::makeResult(seqId, true, QCborValue(arr)));
+        });
+}
+
+void IpcClientHandler::handleImportLegacyProfile(const IpcMessage& msg)
+{
+    const bool settings = msg.fieldBool(1);
+    const bool parts = msg.fieldBool(2);
+    QStringList typedTemps;   // download folders the user typed in place of the detected ones
+    const bool hasTypedTemps = msg.field(3).isArray();
+    if (hasTypedTemps)
+        for (const QCborValue& v : msg.field(3).toArray())
+            typedTemps.append(QDir::cleanPath(QDir::fromNativeSeparators(v.toString().trimmed())));
+
+    // The probe, the folder checks, the request file and the part.met scan touch disk
+    struct Outcome {
+        QString error;
+        bool restart = false;
+        QString configDir;
+        std::vector<ConvertJob> jobs;
+    };
+    const int seqId = msg.seqId();
+    offCoreThread(this,
+        [dir = msg.fieldString(0), settings, parts, typedTemps, hasTypedTemps,
+         configDir = thePrefs.configDir()] {
+            Outcome out;
+            auto src = LegacyConfigImport::probe(dir);
+            if (!src && settings) {
+                out.error = QStringLiteral("no eMule or aMule configuration in this folder");
+                return out;
+            }
+            if (!src)
+                src.emplace();
+            if (hasTypedTemps) {
+                src->tempDirs.clear();
+                for (const QString& temp : typedTemps) {
+                    if (temp.isEmpty())
+                        continue;
+                    if (!QDir(temp).exists()) {
+                        out.error = QStringLiteral("download folder not found: %1").arg(QDir::toNativeSeparators(temp));
+                        return out;
+                    }
+                    if (!src->tempDirs.contains(temp))
+                        src->tempDirs.append(temp);
+                }
+            }
+
+            if (settings) {
+                // Carried out before the core reads its config dir: known.met, credits and
+                // the user hash load as copied
+                if (!LegacyConfigImport::writeRequest(configDir, *src, parts))
+                    out.error = QStringLiteral("could not write the import request");
+                out.restart = out.error.isEmpty();
+                out.configDir = src->configDir;
+                return out;
+            }
+
+            if (parts) {
+                for (const QString& temp : src->tempDirs) {
+                    logInfo(QStringLiteral("Importing unfinished downloads from %1").arg(temp));
+                    // Moved: the old client must not run the same download
+                    auto found = PartFileConvert::findJobs(temp, /*recursive=*/false, /*removeSource=*/true);
+                    std::ranges::move(found, std::back_inserter(out.jobs));
+                }
+            }
+            return out;
+        },
+        [seqId](IpcClientHandler& self, const Outcome& out) {
+            if (!out.error.isEmpty()) {
+                self.sendMessage(IpcMessage::makeResult(seqId, false, out.error));
+                return;
+            }
+            if (out.restart) {
+                logInfo(QStringLiteral("Import of %1 requested, restarting").arg(out.configDir));
+                self.sendMessage(IpcMessage::makeResult(seqId, true,
+                                                        QCborMap{{QStringLiteral("restart"), true}}));
+                DaemonApp::requestRestart();
+                return;
+            }
+            const int before = PartFileConvert::jobCount();
+            PartFileConvert::addJobs(out.jobs);
+            PartFileConvert::processQueue();
+            self.sendMessage(IpcMessage::makeResult(seqId, true,
+                                                    QCborMap{{QStringLiteral("restart"), false},
+                                                             {QStringLiteral("queued"), PartFileConvert::jobCount() - before}}));
+        });
 }
 
 // ---------------------------------------------------------------------------
@@ -3450,69 +3613,92 @@ void IpcClientHandler::handleBrowseDirectory(const IpcMessage& msg)
         sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Shared files unavailable")));
         return;
     }
-    QDir dir(dirPath);
-    if (dirPath.isEmpty() || !dir.exists()) {
+    if (dirPath.isEmpty()) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Directory not found")));
         return;
     }
 
-    // A directory eMule uses for its own storage can hold no shared file at all, so
-    // every row in it is unshared and locked (MFC's CBS_UNCHECKEDDISABLED). The
-    // Usenet scratch tree is the same case: SharedFileList refuses it outright, so
-    // offering a checkbox there would be a control that silently does nothing.
-    const bool dirShareable = thePrefs.isShareableDirectory(dirPath)
-                              && !thePrefs.isUsenetTempPath(dirPath);
+    // The folder and the file heads are read off the core thread: a folder on a NAS
+    // held up every client while it answered (#84).
+    struct Row {
+        QString name;
+        QString path;
+        qint64 size = 0;
+        ContainerCheck check;
+    };
+    const QPointer<IpcClientHandler> self(this);
+    const int seqId = msg.seqId();
+    QThreadPool::globalInstance()->start([self, seqId, dirPath] {
+        std::optional<QList<Row>> rows;   // none: no such folder
+        if (const QDir dir(dirPath); dir.exists()) {
+            rows.emplace();
+            for (const QFileInfo& fi : dir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot)) {
+                const QString name = fi.fileName();
+                if (fi.size() == 0
+                    || name.endsWith(QStringLiteral(".part"), Qt::CaseInsensitive)
+                    || name.endsWith(QStringLiteral(".part.met"), Qt::CaseInsensitive)
+                    || name.endsWith(Preferences::kUsenetPartSuffix, Qt::CaseInsensitive)
+                    || name.endsWith(Preferences::kCompletingSuffix, Qt::CaseInsensitive))
+                    continue;
+                // The fake-file mark. Read here and now rather than from the background
+                // sweep: a browsed row may not be shared at all, so there is often no
+                // KnownFile to ask, and one directory is bounded.
+                const QString path = fi.absoluteFilePath();
+                rows->append({name, path, fi.size(), checkFile(path, name)});
+            }
+        }
+        QMetaObject::invokeMethod(QCoreApplication::instance(), [self, seqId, dirPath, rows = std::move(rows)] {
+            if (!self)
+                return;
+            if (!rows || !theApp.sharedFileList) {
+                self->sendMessage(IpcMessage::makeError(seqId, 404, QStringLiteral("Directory not found")));
+                return;
+            }
 
-    // One pass over the share, not one per file: the browsed directory can hold
-    // thousands of entries and forEachFile() holds the map lock for its duration.
-    QHash<QString, QString> hashByPath;
-    theApp.sharedFileList->forEachFile([&](KnownFile* f) {
-        if (!f->filePath().isEmpty())
-            hashByPath.insert(f->filePath().toLower(), md4str(f->fileHash()));
-    });
+            // A directory eMule uses for its own storage can hold no shared file at all, so
+            // every row in it is unshared and locked (MFC's CBS_UNCHECKEDDISABLED). The
+            // Usenet scratch tree is the same case: SharedFileList refuses it outright, so
+            // offering a checkbox there would be a control that silently does nothing.
+            const bool dirShareable = thePrefs.isShareableDirectory(dirPath)
+                                      && !thePrefs.isUsenetTempPath(dirPath);
 
-    const SharedFileList::ShareRules rules = theApp.sharedFileList->shareRules();
+            // One pass over the share, not one per file: the browsed directory can hold
+            // thousands of entries and forEachFile() holds the map lock for its duration.
+            QHash<QString, QString> hashByPath;
+            theApp.sharedFileList->forEachFile([&](KnownFile* f) {
+                if (!f->filePath().isEmpty())
+                    hashByPath.insert(f->filePath().toLower(), md4str(f->fileHash()));
+            });
 
-    QCborArray files;
-    for (const QFileInfo& fi : dir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot)) {
-        const QString filePath = fi.absoluteFilePath();
-        const QString name = fi.fileName();
-        if (fi.size() == 0
-            || name.endsWith(QStringLiteral(".part"), Qt::CaseInsensitive)
-            || name.endsWith(QStringLiteral(".part.met"), Qt::CaseInsensitive)
-            || name.endsWith(Preferences::kUsenetPartSuffix, Qt::CaseInsensitive)
-            || name.endsWith(Preferences::kCompletingSuffix, Qt::CaseInsensitive))
-            continue;
+            const SharedFileList::ShareRules rules = theApp.sharedFileList->shareRules();
 
-        const bool isShared = theApp.sharedFileList->shouldBeShared(rules, dirPath, filePath, false);
-        // Forced on for the incoming directory, forced off where sharing is impossible.
-        const bool forcedOn = theApp.sharedFileList->shouldBeShared(rules, dirPath, filePath, true);
-        const bool canToggle = !forcedOn && dirShareable;
+            QCborArray files;
+            for (const Row& row : *rows) {
+                const bool isShared = theApp.sharedFileList->shouldBeShared(rules, dirPath, row.path, false);
+                // Forced on for the incoming directory, forced off where sharing is impossible.
+                const bool forcedOn = theApp.sharedFileList->shouldBeShared(rules, dirPath, row.path, true);
+                const bool canToggle = !forcedOn && dirShareable;
 
-        // Only known once the file has been hashed and shared; the GUI uses it to line
-        // a browsed row up with the shared-files list.
-        const QString hash = hashByPath.value(filePath.toLower());
+                // Only known once the file has been hashed and shared; the GUI uses it to line
+                // a browsed row up with the shared-files list.
+                const QString hash = hashByPath.value(row.path.toLower());
 
-        // The fake-file mark. Read here and now rather than from the background sweep:
-        // a browsed row may not be shared at all, so there is often no KnownFile to ask,
-        // and one directory is bounded — the same trade the web incoming listing makes.
-        const ContainerCheck check = checkFile(filePath, name);
-
-        files.append(QCborMap{
-            {QStringLiteral("name"),      name},
-            {QStringLiteral("path"),      filePath},
-            {QStringLiteral("size"),      static_cast<qint64>(fi.size())},
-            {QStringLiteral("shared"),    isShared},
-            {QStringLiteral("canToggle"), canToggle},
-            {QStringLiteral("hash"),      hash},
-            {QStringLiteral("containerSuspect"),  check.isSuspect()},
-            {QStringLiteral("containerMislabelled"), check.isMislabelled()},
-            {QStringLiteral("containerExpected"), check.expected},
-            {QStringLiteral("containerActual"),   check.actual},
+                files.append(QCborMap{
+                    {QStringLiteral("name"),      row.name},
+                    {QStringLiteral("path"),      row.path},
+                    {QStringLiteral("size"),      row.size},
+                    {QStringLiteral("shared"),    isShared},
+                    {QStringLiteral("canToggle"), canToggle},
+                    {QStringLiteral("hash"),      hash},
+                    {QStringLiteral("containerSuspect"),  row.check.isSuspect()},
+                    {QStringLiteral("containerMislabelled"), row.check.isMislabelled()},
+                    {QStringLiteral("containerExpected"), row.check.expected},
+                    {QStringLiteral("containerActual"),   row.check.actual},
+                });
+            }
+            self->sendMessage(IpcMessage::makeResult(seqId, true, QCborValue(files)));
         });
-    }
-
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(files)));
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -4676,6 +4862,8 @@ bool IpcClientHandler::applyPreferenceC(const QString& key, const QCborValue& va
         thePrefs.setShowActiveDownloadsBold(val.toBool());
     else if (key == QStringLiteral("showRatesInTitle"))
         thePrefs.setShowRatesInTitle(val.toBool());
+    else if (key == QStringLiteral("showStatusBarFreeSpace"))
+        thePrefs.setShowStatusBarFreeSpace(val.toBool());
     else if (key == QStringLiteral("showCatTabInfos"))
         thePrefs.setShowCatTabInfos(val.toBool());
     else if (key == QStringLiteral("autoRemoveFinishedDownloads"))
@@ -4887,7 +5075,7 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
     else if (key == QStringLiteral("ed3kHide"))
         thePrefs.setEd3kHide(val.toBool());
     else if (key == QStringLiteral("ed3kHops"))
-        thePrefs.setEd3kHops(static_cast<int>(std::clamp<qint64>(val.toInteger(), 1, 3)));
+        thePrefs.setEd3kHops(static_cast<int>(std::clamp<qint64>(val.toInteger(), 0, 3)));
     else if (key == QStringLiteral("ed3kHopping"))
         thePrefs.setEd3kHopping(val.toBool());
     else if (key == QStringLiteral("ed3kHopShare"))

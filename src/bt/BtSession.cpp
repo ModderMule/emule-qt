@@ -293,8 +293,13 @@ struct BtSession::Impl {
     int peersIdx = lt::find_metric_idx("peer.num_peers_connected");
     bool listening = false;
     int dhtNodes = 0;
+    /// one DHT node per listen socket (v4 + v6): routing table size per local endpoint
+    std::map<lt::udp::endpoint, int> dhtNodesBySocket;
     /// last SAM error; cleared when the SAM bridge changes
     QString i2pError;
+    /// external_ip_alert: our address as peers, trackers and DHT see it
+    QString externalIPv4;
+    QString externalIPv6;
     /// ed3k joins by id; attached to each disk I/O the session makes
     std::map<QString, std::shared_ptr<BtJoinSink>> joins;
     /// ed3k:file links by id (kLinksFile)
@@ -737,6 +742,9 @@ void BtSession::stop()
     d->outstandingResume = 0;
     d->listening = false;
     d->dhtNodes = 0;
+    d->dhtNodesBySocket.clear();
+    d->externalIPv4.clear();
+    d->externalIPv6.clear();
     d->rateSamples.clear();
     d->meta.clear();
     logInfo(QStringLiteral("BitTorrent: stopped"));
@@ -763,6 +771,7 @@ void BtSession::applySettings(const BtSettings& settings)
         d->listening = false;
     }
     d->ses->apply_settings(d->pack(settings));
+    d->dhtNodesBySocket.clear();   // listen sockets may have changed; next dht_stats refills
     if (!settings.networkBlocked && wasBlocked)
         d->ses->resume();
     // torrents on the old default follow the new one; a custom limit stays
@@ -1119,10 +1128,21 @@ BtStatus BtSession::status() const
     s.i2pEnabled = d->settings.i2pEnabled;
     s.i2pSam = d->settings.hasSam();
     s.i2pError = d->i2pError;
+    s.i2pSamHost = d->settings.i2pSamHost;
+    s.i2pSamPort = d->settings.i2pSamPort;
+    s.i2pMixed = d->settings.i2pMixed;
+    s.i2pTunnelLength = d->settings.i2pTunnelLength;
+    s.i2pTunnelQuantity = d->settings.i2pTunnelQuantity;
+    s.externalIPv4 = d->externalIPv4;
+    s.externalIPv6 = d->externalIPv6;
     s.torrents = static_cast<int>(d->rows.size());
     for (const auto& [id, row] : d->rows) {
         s.rateDown += row.rateDown;
         s.rateUp += row.rateUp;
+        if (row.i2p) {
+            ++s.i2pTorrents;
+            s.i2pPeers += row.peers;
+        }
     }
     return s;
 }
@@ -1400,6 +1420,13 @@ void BtSession::drainAlerts()
             // one per interface and transport: the port is in the start line
             d->listening = true;
             emit statusChanged();
+        } else if (auto* ex = lt::alert_cast<lt::external_ip_alert>(a)) {
+            const lt::address addr = ex->external_address;
+            QString& slot = addr.is_v6() ? d->externalIPv6 : d->externalIPv4;
+            if (const QString ip = QString::fromStdString(addr.to_string()); ip != slot) {
+                slot = ip;
+                emit statusChanged();
+            }
         } else if (auto* lf = lt::alert_cast<lt::listen_failed_alert>(a)) {
             logWarning(QStringLiteral("BitTorrent: %1").arg(message(lf)));
             emit statusChanged();
@@ -1417,10 +1444,19 @@ void BtSession::drainAlerts()
             if (pb->reason == lt::peer_blocked_alert::ip_filter)
                 ++d->blockedPeers;
         } else if (auto* ds = lt::alert_cast<lt::dht_stats_alert>(a)) {
-            int nodes = 0;
-            for (const auto& bucket : ds->routing_table)
-                nodes += bucket.num_nodes;
-            d->dhtNodes = nodes;
+            // one alert per DHT instance; an empty endpoint = no DHT running
+            const lt::udp::endpoint ep = ds->local_endpoint;
+            if (ep == lt::udp::endpoint{}) {
+                d->dhtNodesBySocket.clear();
+            } else {
+                int nodes = 0;
+                for (const auto& bucket : ds->routing_table)
+                    nodes += bucket.num_nodes;
+                d->dhtNodesBySocket[ep] = nodes;
+            }
+            d->dhtNodes = 0;
+            for (const auto& [_, n] : d->dhtNodesBySocket)
+                d->dhtNodes += n;
         } else if (auto* fp = lt::alert_cast<lt::file_prio_alert>(a)) {
             d->filePrioritiesApplied(BtTorrentView::idOf(fp->handle.info_hashes()));
             if (fp->error)

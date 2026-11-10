@@ -165,8 +165,10 @@ void Ed3kJdResolver::setConfig(const JdResolverConfig& config)
         m_pendingVersion.clear();
     }
     const bool restart = next.enabled != m_config.enabled || next.java != m_config.java || next.zip != m_config.zip
-                         || next.dataDir != m_config.dataDir || next.sharedDir != m_config.sharedDir;
+                         || next.dataDir != m_config.dataDir || next.sharedDir != m_config.sharedDir
+                         || next.loopbackHosters != m_config.loopbackHosters;
     const bool proxy = next.proxy != m_config.proxy;
+    const bool bind = next.bindAddress != m_config.bindAddress;
     const bool puzzles = next.askPuzzles != m_config.askPuzzles;
     const bool solvers = next.solvers != m_config.solvers;
     m_config = next;
@@ -185,6 +187,8 @@ void Ed3kJdResolver::setConfig(const JdResolverConfig& config)
     }
     if (proxy)
         setProxy(m_config.proxy);
+    if (bind)
+        setBindAddress(m_config.bindAddress);
     if (puzzles)
         setAskPuzzles(m_config.askPuzzles);
     // not running: sent with the next start
@@ -375,6 +379,8 @@ QStringList Ed3kJdResolver::arguments() const
                      QStringLiteral("-Dfile.encoding=UTF-8"),
                      QStringLiteral("-DROOT=") + QDir(m_config.dataDir).filePath(QStringLiteral("jd")),
                      QStringLiteral("-Demuleqt.jdRevision=") + rev};
+    if (m_config.loopbackHosters)
+        args << QStringLiteral("-Demuleqt.loopbackHosters=true");
     if (m_server && m_server->isListening())
         args << QStringLiteral("-Demuleqt.port=") + QString::number(m_server->serverPort());
     args << QStringLiteral("-cp") << cp << QStringLiteral("org.emuleqt.resolver.ResolverMain");
@@ -534,6 +540,14 @@ void Ed3kJdResolver::setProxy(const QString& url)
         request({{QStringLiteral("op"), QStringLiteral("setProxy")}, {QStringLiteral("url"), url}}, false);
 }
 
+void Ed3kJdResolver::setBindAddress(const QString& address)
+{
+    m_config.bindAddress = address;
+    // an older sidecar answers "unknown op": harmless, it stays on the default route
+    if (running())
+        request({{QStringLiteral("op"), QStringLiteral("setBind")}, {QStringLiteral("address"), address}}, false);
+}
+
 std::optional<std::pair<Ed3kResolver::TaskId, ResolverEvent>> Ed3kJdResolver::parseEvent(const QByteArray& line)
 {
     const QJsonObject o = QJsonDocument::fromJson(line).object();
@@ -599,6 +613,7 @@ std::optional<std::pair<Ed3kResolver::TaskId, ResolverEvent>> Ed3kJdResolver::pa
     e.premium = o.value(QStringLiteral("premium")).toBool();
     e.expires = o.value(QStringLiteral("expires")).toInteger(0);
     e.trafficLeft = o.contains(QStringLiteral("trafficLeft")) ? o.value(QStringLiteral("trafficLeft")).toInteger(-1) : -1;
+    e.maxDownloads = int(o.value(QStringLiteral("maxDownloads")).toInteger(0));
     e.balance = o.value(QStringLiteral("balance")).toDouble(-1);
     e.currency = str("currency");
     if (e.kind == K::Solved) {
@@ -791,6 +806,8 @@ bool Ed3kJdResolver::ensureStarted()
     request({{QStringLiteral("op"), QStringLiteral("hello")}}, false);
     if (!m_config.proxy.isEmpty())
         request({{QStringLiteral("op"), QStringLiteral("setProxy")}, {QStringLiteral("url"), m_config.proxy}}, false);
+    if (!m_config.bindAddress.isEmpty())
+        request({{QStringLiteral("op"), QStringLiteral("setBind")}, {QStringLiteral("address"), m_config.bindAddress}}, false);
     if (!m_config.askPuzzles)
         request({{QStringLiteral("op"), QStringLiteral("setPuzzles")}, {QStringLiteral("mode"), QStringLiteral("never")}}, false);
     if (!m_config.solvers.isEmpty())
@@ -1130,9 +1147,12 @@ void Ed3kJdResolver::logEvent(TaskId id, const QString& ev, const ResolverEvent&
         d = e.text.isEmpty() ? e.code : QStringLiteral("%1: %2").arg(e.code, e.text);
         break;
     case K::Account:
-        d = QStringLiteral("valid %1, premium %2%3%4").arg(e.valid ? QStringLiteral("yes") : QStringLiteral("no"), e.premium ? QStringLiteral("yes") : QStringLiteral("no"))
+        d = QStringLiteral("valid %1, premium %2%3%4%5").arg(e.valid ? QStringLiteral("yes") : QStringLiteral("no"), e.premium ? QStringLiteral("yes") : QStringLiteral("no"))
                 .arg(e.expires ? QStringLiteral(", expires ") + QDateTime::fromSecsSinceEpoch(e.expires).toString(Qt::ISODate) : QString())
-                .arg(e.trafficLeft >= 0 ? QStringLiteral(", %1 B traffic left").arg(e.trafficLeft) : QString());
+                .arg(e.trafficLeft >= 0 ? QStringLiteral(", %1 B traffic left").arg(e.trafficLeft) : QString())
+                .arg(e.maxDownloads > 0    ? QStringLiteral(", %1 downloads at once").arg(e.maxDownloads)
+                     : e.maxDownloads < 0 ? QStringLiteral(", downloads at once unlimited")
+                                          : QString());
         break;
     case K::Solvers: {
         QStringList parts;

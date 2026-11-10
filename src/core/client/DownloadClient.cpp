@@ -1606,11 +1606,18 @@ void UpDownClient::udpReaskForDownload()
         if (!theApp.clientUDP)
             return;   // nothing to send through — see the direct branch above
 
+        SafeMemFile data;
+        data.writeHash16(m_buddyID.data());             // buddy ID (16 bytes)
+        data.writeHash16(m_reqFile->fileHash());         // file hash (16 bytes)
+
+        writeReaskFileInfo(data);
+
         // Not MFC: over the relay's limit the reask would be dropped unanswered. Not sent
         // and not counted, so it is no failed UDP packet; the next pass asks again.
         if (theApp.clientList
             && !theApp.clientList->allowRelayRequest(m_buddyAddress, m_buddyID.data(),
-                                                     RelayRequest::ReaskCallback))
+                                                     RelayRequest::ReaskCallback,
+                                                     static_cast<uint32>(data.length())))
         {
             logDebug([&]() -> QString { return QStringLiteral("udpReaskForDownload: relay limit of buddy %1 reached, reask to %2 held back")
                          .arg(m_buddyAddress.toString(), userName()); });
@@ -1619,12 +1626,6 @@ void UpDownClient::udpReaskForDownload()
 
         m_udpPending = true;
         m_totalUDPPackets++;
-
-        SafeMemFile data;
-        data.writeHash16(m_buddyID.data());             // buddy ID (16 bytes)
-        data.writeHash16(m_reqFile->fileHash());         // file hash (16 bytes)
-
-        writeReaskFileInfo(data);
 
         auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_REASKCALLBACKUDP);
         if (theApp.downloadQueue)

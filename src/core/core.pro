@@ -202,6 +202,7 @@ SOURCES += \
     server/ServerList.cpp \
     stats/Statistics.cpp \
     stats/StatsHistory.cpp \
+    stats/SaveFolderSpace.cpp \
     stats/StatsSnapshot.cpp \
     transfer/BandwidthSplit.cpp \
     transfer/DownloadQueue.cpp \
@@ -393,6 +394,7 @@ HEADERS += \
     stats/NetworkCounters.h \
     stats/Statistics.h \
     stats/StatsHistory.h \
+    stats/SaveFolderSpace.h \
     stats/StatsSnapshot.h \
     transfer/BandwidthSplit.h \
     transfer/DownloadQueue.h \

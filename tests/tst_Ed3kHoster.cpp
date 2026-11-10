@@ -115,6 +115,7 @@ public:
     int checkDelayMs = 0;        ///< check() answers this much later
     QSet<QString> hosts{QStringLiteral("fake.example")};   ///< hosters match() takes
     QSet<QString> premiumHosts;  ///< accountCheck() says premium for these
+    QHash<QString, int> maxDownloads;   ///< accountCheck() tells JD's downloads at once
     QList<QStringList> siteGroups;   ///< one hoster's domains, main first (match() and sites())
     QHash<QString, int> runningChecks;   ///< check() by url host, until it answers
     QHash<QString, int> maxRunningChecks;
@@ -291,6 +292,7 @@ public:
         e.kind = ResolverEvent::Kind::Account;
         e.valid = true;
         e.premium = premiumHosts.contains(host);
+        e.maxDownloads = maxDownloads.value(host);
         later(t, e);
         return t;
     }
@@ -1730,6 +1732,46 @@ private slots:
         // checked again only after hours, not on every dialog
         QVERIFY(r.join->checkLinks({none}));
         QCOMPARE(r.resolver.accountChecks, 2);
+    }
+
+    /// streams per hoster: a premium account JD's limit (capped by maxStreams), a free one 1
+    void streams_premiumAccountLimit()
+    {
+        Rig r;
+        r.resolver.hosts += {QStringLiteral("free.example"), QStringLiteral("prem.example"), QStringLiteral("open.example")};
+        r.resolver.premiumHosts = {QStringLiteral("prem.example"), QStringLiteral("open.example")};
+        r.resolver.maxDownloads = {{QStringLiteral("prem.example"), 3}, {QStringLiteral("open.example"), -1}};
+        r.resolver.openSteps = {QStringLiteral("hoster")};
+        r.resolver.holdAfterSteps = true;
+        r.prefs.maxStreams = 16;
+        r.prefs.accounts = {{QStringLiteral("free.example"), QStringLiteral("u"), QStringLiteral("p")},
+                            {QStringLiteral("prem.example"), QStringLiteral("u"), QStringLiteral("p")},
+                            {QStringLiteral("open.example"), QStringLiteral("u"), QStringLiteral("p")}};
+        QVERIFY(r.start(true));
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->accountTier(QStringLiteral("open.example")), 2, 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->accountTier(QStringLiteral("prem.example")), 2, 10000);
+        QCOMPARE(r.join->streamsAt(QStringLiteral("prem.example")), 3);
+        QCOMPARE(r.join->streamsAt(QStringLiteral("www.prem.example")), 3);
+        QCOMPARE(r.join->streamsAt(QStringLiteral("open.example")), 16);   // unlimited: maxStreams
+        QCOMPARE(r.join->streamsAt(QStringLiteral("free.example")), 1);
+        QCOMPARE(r.join->streamsAt(QStringLiteral("fake.example")), 1);
+        QString links;
+        for (int i = 0; i < 4; ++i)
+            links += QStringLiteral("https://prem.example/s/%1 https://free.example/s/%1 ").arg(i);
+        const auto ids = r.join->addLinks(links);
+        QCOMPARE(ids.size(), 8);
+        const auto openedAt = [&r](const QString& host) {
+            return int(std::ranges::count_if(r.resolver.opened, [&host](const QString& u) { return QUrl(u).host() == host; }));
+        };
+        QTRY_COMPARE_WITH_TIMEOUT(openedAt(QStringLiteral("prem.example")), 3, 60000);
+        QTRY_COMPARE_WITH_TIMEOUT(openedAt(QStringLiteral("free.example")), 1, 60000);
+        QTest::qWait(1000);
+        QCOMPARE(openedAt(QStringLiteral("prem.example")), 3);
+        QCOMPARE(openedAt(QStringLiteral("free.example")), 1);
+        // maxStreams over all hosters still caps a premium limit
+        r.prefs.maxStreams = 2;
+        r.join->setConfig(r.prefs, r.tmp.filePath(QStringLiteral("temp")), r.tmp.filePath(QStringLiteral("incoming")));
+        QCOMPARE(r.join->streamsAt(QStringLiteral("prem.example")), 2);
     }
 
     /// a login stored under one domain of a hoster counts for its others (JD's aliases)

@@ -2,7 +2,7 @@
 
 /// @file Ed3kHidingGroup.h
 /// @brief The "Hiding" group of Options → ed3k → General (hops.md §1, §5, §6): the global
-/// switch, one hop count for every connection and lookup type, forwarding for others and its
+/// switch, one hop count for every use (0 to 3; 0 only while forwarding), forwarding for others and its
 /// share, "New anonymous key…", and what hiding does and does not give (§6).
 
 #include <QCborMap>
@@ -54,6 +54,7 @@ private:
     QCheckBox* m_hideCheck = nullptr;
     QSpinBox* m_hopsSpin = nullptr;
     QCheckBox* m_hoppingCheck = nullptr;
+    QLabel* m_zeroHint = nullptr;   ///< "0 = deniable, not hidden" (§2.6)
     QSpinBox* m_shareSpin = nullptr;
     QPushButton* m_newKeyBtn = nullptr;
     QLabel* m_statusLabel = nullptr;

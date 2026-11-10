@@ -3,6 +3,9 @@
 
 #include "TestHelpers.h"
 #include "transfer/UploadDiskIOThread.h"
+
+#include <QElapsedTimer>
+#include <QSemaphore>
 #include "client/UpDownClient.h"
 #include "files/KnownFile.h"
 #include "net/Packet.h"
@@ -35,6 +38,9 @@ private slots:
     void releaseFile_letsGoAndServesTheNewContent();
     void releaseClient_and_idleClose_dropTheReader();
     void shortTail_andPastTheEnd();
+    void stalledDrive_doesNotHoldUpTheOthers();
+    void releaseClient_doesNotWaitForAStalledRead();
+    void driveOf_mountTable();
 };
 
 void tst_UploadDiskIOThread::construction_defaults()
@@ -365,6 +371,77 @@ void tst_UploadDiskIOThread::shortTail_andPastTheEnd()
     rig.ask(path, 100, 200);
     QTRY_COMPARE_WITH_TIMEOUT(rig.ready.count(), 3, 3000);
     QCOMPARE(rig.payload(2), QByteArray(100, 'a'));
+}
+
+// A USB drive stalling on one read used to starve every slot, on every drive
+void tst_UploadDiskIOThread::stalledDrive_doesNotHoldUpTheOthers()
+{
+    QTemporaryDir dir;
+    const QString slow = writeBlocks(dir, QStringLiteral("slow.bin"), 1);
+    const QString fast = writeBlocks(dir, QStringLiteral("fast.bin"), 1, 0, 'x');
+    ReadRig rig;
+    QSemaphore stall;
+    rig.thread.setDriveResolver([](const QString& path) {
+        return path.endsWith(QStringLiteral("slow.bin")) ? QStringLiteral("usb") : QStringLiteral("ssd");
+    });
+    rig.thread.setBeforeReadHook([&stall](const QString& path) {
+        if (path.endsWith(QStringLiteral("slow.bin")))
+            (void)stall.tryAcquire(1, 10'000);
+    });
+    rig.thread.setReadWarnMs(100, 200);
+
+    UpDownClient other;
+    rig.ask(slow, 0, EMBLOCKSIZE);
+    rig.ask(fast, 0, EMBLOCKSIZE, false, &other);
+    QTRY_COMPARE_WITH_TIMEOUT(rig.ready.count(), 1, 3000);
+    QCOMPARE(rig.payload(0), QByteArray(EMBLOCKSIZE, 'x'));
+    QCOMPARE(rig.thread.driveWorkerCount(), std::size_t{2});
+
+    // still running: logged as stuck, then as slow once it is done
+    QTRY_COMPARE_WITH_TIMEOUT(rig.thread.slowReadWarnings(), uint64{1}, 3000);
+    stall.release();
+    QTRY_COMPARE_WITH_TIMEOUT(rig.ready.count(), 2, 3000);
+    QCOMPARE(rig.payload(1), QByteArray(EMBLOCKSIZE, 'a'));
+    QCOMPARE(rig.thread.slowReadWarnings(), uint64{2});
+    QCOMPARE(rig.error.count(), 0);
+}
+
+// Called on the main thread when a slot ends: it must not freeze with the drive
+void tst_UploadDiskIOThread::releaseClient_doesNotWaitForAStalledRead()
+{
+    QTemporaryDir dir;
+    const QString path = writeBlocks(dir, QStringLiteral("held.bin"), 2);
+    ReadRig rig;
+    rig.ask(path, 0, EMBLOCKSIZE);
+    QTRY_COMPARE_WITH_TIMEOUT(rig.ready.count(), 1, 3000);
+
+    QSemaphore entered;
+    QSemaphore stall;
+    rig.thread.setBeforeReadHook([&](const QString&) {
+        entered.release();
+        (void)stall.tryAcquire(1, 10'000);
+    });
+    rig.ask(path, EMBLOCKSIZE, 2 * EMBLOCKSIZE);
+    QVERIFY(entered.tryAcquire(1, 3000));
+
+    QElapsedTimer timer;
+    timer.start();
+    rig.thread.releaseClient(&rig.client);
+    QVERIFY2(timer.elapsed() < 500, qPrintable(QString::number(timer.elapsed())));
+    QCOMPARE(rig.thread.cachedReaderCount(), std::size_t{0});
+
+    stall.release();
+    QTRY_COMPARE_WITH_TIMEOUT(rig.ready.count(), 2, 3000);
+    QCOMPARE(rig.payload(1), QByteArray(EMBLOCKSIZE, 'b'));
+}
+
+void tst_UploadDiskIOThread::driveOf_mountTable()
+{
+    QTemporaryDir dir;
+    const QString drive = UploadDiskIOThread::driveOf(dir.path());
+    QVERIFY(!drive.isEmpty());
+    // a file below is on the same drive
+    QCOMPARE(UploadDiskIOThread::driveOf(dir.path() + QStringLiteral("/sub/file.bin")), drive);
 }
 
 QTEST_GUILESS_MAIN(tst_UploadDiskIOThread)

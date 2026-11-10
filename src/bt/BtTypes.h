@@ -295,6 +295,18 @@ struct BtStatus {
     bool i2pEnabled = false;
     bool i2pSam = false;
     QString i2pError;
+    /// SAM bridge in use and the tunnel shape (applied settings)
+    QString i2pSamHost;
+    quint16 i2pSamPort = 0;
+    bool i2pMixed = false;
+    int i2pTunnelLength = 0;
+    int i2pTunnelQuantity = 0;
+    /// I2P torrents and their connected peers
+    int i2pTorrents = 0;
+    int i2pPeers = 0;
+    /// last external address libtorrent voted for (external_ip_alert); empty = none yet
+    QString externalIPv4;
+    QString externalIPv6;
 };
 
 } // namespace eMule::bt

@@ -275,6 +275,7 @@
     <ClCompile Include="controls\FileCheckButtons.cpp" />
     <ClCompile Include="controls\TorrentFileTree.cpp" />
     <ClCompile Include="dialogs\FirstStartWizard.cpp" />
+    <ClCompile Include="dialogs\LegacyImportPage.cpp" />
     <ClCompile Include="controls\FriendListModel.cpp" />
     <ClCompile Include="dialogs\ImportDownloadsDialog.cpp" />
     <ClCompile Include="dialogs\IPFilterDialog.cpp" />
@@ -350,6 +351,7 @@
     <ClCompile Include="app\SkinEngine.cpp" />
     <ClCompile Include="app\SkinColors.cpp" />
     <ClCompile Include="app\SkinIcons.cpp" />
+    <ClCompile Include="app\ToolbarButtonSizer.cpp" />
     <ClCompile Include="app\ToolbarSkin.cpp" />
     <ClCompile Include="app\main.cpp" />
     <ClCompile Include="utils\DialogSizing.cpp" />
@@ -446,6 +448,7 @@
     <ClInclude Include="utils\WebServices.h" />
     <ClInclude Include="app\SkinEngine.h" />
     <QtMoc Include="app\SkinIcons.h" />
+    <ClInclude Include="app\ToolbarButtonSizer.h" />
     <ClInclude Include="app\ToolbarSkin.h" />
     <QtMoc Include="dialogs\AddFriendDialog.h" />
     <QtMoc Include="dialogs\RememberedSizeDialog.h" />
@@ -482,6 +485,7 @@
     <QtMoc Include="dialogs\SearchDetailDialog.h" />
     <QtMoc Include="dialogs\MetaResultDetailDialog.h" />
     <QtMoc Include="dialogs\FirstStartWizard.h" />
+    <QtMoc Include="dialogs\LegacyImportPage.h" />
     <QtMoc Include="controls\FriendListModel.h" />
     <QtMoc Include="dialogs\ImportDownloadsDialog.h" />
     <QtMoc Include="dialogs\IPFilterDialog.h" />

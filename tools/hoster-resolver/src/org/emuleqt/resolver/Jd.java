@@ -3,6 +3,7 @@
 package org.emuleqt.resolver;
 
 import java.io.InterruptedIOException;
+import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -91,14 +92,39 @@ final class Jd {
         }
     }
 
+    private static String proxyUrl = "";
+    private static String bindAddress = "";
+
     /** null = direct. "http://host:port", "socks5://user:pass@host:port". */
-    static void setProxy(final String url) {
-        if (url == null || url.isEmpty()) {
+    static synchronized void setProxy(final String url) {
+        proxyUrl = url == null ? "" : url;
+        applyRoute();
+    }
+
+    /** The core's interface selection: direct connections leave from this address; empty = any. */
+    static synchronized void setBind(final String address) {
+        bindAddress = address == null ? "" : address;
+        applyRoute();
+    }
+
+    /** A proxy wins (the user's chosen route); else direct, bound to the selected address. */
+    private static void applyRoute() {
+        if (!proxyUrl.isEmpty()) {
+            final HTTPProxy proxy = HTTPProxy.parseHTTPProxy(proxyUrl);
+            Browser.setGlobalProxy(proxy == null ? null : new StaticProxySelector(proxy));
+            return;
+        }
+        if (bindAddress.isEmpty()) {
             Browser.setGlobalProxy(null);
             return;
         }
-        final HTTPProxy proxy = HTTPProxy.parseHTTPProxy(url);
-        Browser.setGlobalProxy(proxy == null ? null : new StaticProxySelector(proxy));
+        try {
+            Browser.setGlobalProxy(new StaticProxySelector(new HTTPProxy(InetAddress.getByName(bindAddress))));
+        } catch (final Exception e) {
+            // a literal never resolves: refuse rather than leak through the default route
+            Out.log("bad bind address: " + e.getClass().getSimpleName());
+            Browser.setGlobalProxy(new StaticProxySelector(new HTTPProxy(InetAddress.getLoopbackAddress())));
+        }
     }
 
     static int hostPluginCount() {
@@ -109,8 +135,30 @@ final class Jd {
         return CrawlerPluginController.getInstance().list().size();
     }
 
+    /** Tests only (-Demuleqt.loopbackHosters=true): JD's DirectHTTP takes loopback URLs as a hoster. */
+    static final boolean LOOPBACK_HOSTERS = Boolean.getBoolean("emuleqt.loopbackHosters");
+
+    /** A loopback http(s) URL while LOOPBACK_HOSTERS is on. */
+    static boolean loopbackHoster(final String url) {
+        if (!LOOPBACK_HOSTERS || url == null) {
+            return false;
+        }
+        try {
+            final java.net.URI u = new java.net.URI(url);
+            final String scheme = u.getScheme();
+            final String host = u.getHost();
+            return host != null && ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))
+                    && (host.equals("127.0.0.1") || host.equalsIgnoreCase("localhost") || host.equals("[::1]"));
+        } catch (final java.net.URISyntaxException e) {
+            return false;
+        }
+    }
+
     /** Plugin that would take the link, crawler first as LinkCrawler does. No network. */
     static String match(final String url) {
+        if (loopbackHoster(url)) {
+            return "DirectHTTP";
+        }
         for (final LazyCrawlerPlugin p : CrawlerPluginController.getInstance().list()) {
             if (!p.isHasConfig() && "httpdirectorycrawler".equalsIgnoreCase(p.getDisplayName())) {
                 continue;
@@ -133,13 +181,14 @@ final class Jd {
 
     /** As crawl(url); deep: a page no plugin takes is loaded and every hoster link on it crawled. */
     static List<DownloadLink> crawl(final String url, final boolean deep) throws InterruptedException {
+        final boolean loopback = loopbackHoster(url);
         final LinkCrawler lc = new LinkCrawler(false, false);
-        lc.crawl(url, null, deep);
+        lc.crawl(loopback ? "directhttp://" + url : url, null, deep);
         lc.waitForCrawling();
         final List<DownloadLink> out = new ArrayList<DownloadLink>();
         for (final CrawledLink cl : lc.getCrawledLinks()) {
             final DownloadLink dl = cl.getDownloadLink();
-            if (dl != null && dl.getDefaultPlugin() != null && !isGeneric(dl.getDefaultPlugin().getHost())) {
+            if (dl != null && dl.getDefaultPlugin() != null && (loopback || !isGeneric(dl.getDefaultPlugin().getHost()))) {
                 out.add(dl);
             }
         }

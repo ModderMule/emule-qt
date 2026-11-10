@@ -18,6 +18,7 @@
 #include "utils/Opcodes.h"
 #include "utils/TimeUtils.h"
 
+#include <QDateTime>
 #include <QFile>
 #include <QObject>
 #include <QThread>
@@ -83,6 +84,22 @@ enum class PartFileLoadResult {
     FailedOther    = 0,
     LoadSuccess    = 1,
     CheckSuccess   = 2
+};
+
+/// What loadPartFile() needs from disk, read ahead on a worker thread
+/// (#84: a NAS temp dir must not stall the core at startup).
+struct PartMetPreload {
+    QString metPath;
+    std::optional<QByteArray> met;   ///< nullopt: unreadable, the load reads it itself
+    std::optional<QByteArray> bak;   ///< the .part.met.bak, when there is one
+    bool partExists = false;
+    qint64 partSize = -1;
+    QDateTime partBorn;
+    qint64 partMtime = 0;            ///< secs since epoch
+    bool localTimeVolume = false;
+
+    /// Reads it all. Thread-safe.
+    [[nodiscard]] static PartMetPreload read(const QString& metPath);
 };
 
 enum class PartFileOp : uint8 {
@@ -582,8 +599,10 @@ public:
     /// @param checkFormat  non-null: only identify the file (hash, name, size and
     ///        format are read; the .part is not touched) and return CheckSuccess.
     ///        Used by the import of other clients' downloads.
+    /// @param preload  non-null: met bytes and .part stats already read off-thread.
     PartFileLoadResult loadPartFile(const QString& directory, const QString& filename,
-                                    PartFileFormat* checkFormat = nullptr);
+                                    PartFileFormat* checkFormat = nullptr,
+                                    const PartMetPreload* preload = nullptr);
 
     /// Import: forget what a check-load or createPartFile() left, before the real load
     /// (MFC PartFileConvert.cpp:346-350).
@@ -731,9 +750,13 @@ private:
     void finishPendingFlush(bool forceICH, bool noAICH);
     /// A write failed: keep the buffer, pause (out of space) or pause as Error.
     void handleWriteFailure(const QString& error, bool diskFull);
-    /// A Shareaza ".sd" download description (MFC ImportShareazaTempfile).
+    /// A Shareaza ".sd" download description (MFC ImportShareazaTempfile). Parses
+    /// @p preload's bytes when given, the disk otherwise.
     PartFileLoadResult importShareazaTempFile(const QString& directory, const QString& filename,
-                                              PartFileFormat* checkFormat);
+                                              PartFileFormat* checkFormat,
+                                              const PartMetPreload* preload = nullptr);
+    /// The .part.met as savePartFile() writes it
+    void writePartMet(FileDataIO& file);
     void resumeIdleSources();
     /// completeFile(), unless a changed part could not be read back for its check.
     void completeIfVerified();

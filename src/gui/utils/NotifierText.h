@@ -51,6 +51,10 @@ struct NotifierText {
     case Ipc::NotifierEvent::PortBindFailed:      // IDS_MAIN_SOCKETERROR
         return {true, QCoreApplication::translate("Notifier", "Port not available"),
                 QCoreApplication::translate("Notifier", "Fatal Error: Unable to create socket on port %1").arg(arg)};
+    case Ipc::NotifierEvent::Ed3kAnonExposed:     // ed3k hops.md §1: no MFC counterpart
+        return {true, QCoreApplication::translate("Notifier", "Hidden file not hidden"),
+                QCoreApplication::translate("Notifier", "\"%1\" is shared under the anonymous key and on eD2K/Kad too: "
+                                                        "sources there show your address.").arg(arg)};
     }
     return {};
 }

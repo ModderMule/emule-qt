@@ -538,6 +538,7 @@ StatsSnapshot collectStatsSnapshot()
     // Free space, each temp volume once (MFC GetFreeTempSpace(-1)). Measured on a worker:
     // a sleeping or network temp disk held the core 8 s per GetStats (report 24).
     out.freeTempSpace = cachedFreeTempSpace(thePrefs.tempDirs());
+    out.saveFolders = saveFolderSpace();
 
     // Connections
     if (const auto* ls = theApp.listenSocket) {
@@ -704,6 +705,7 @@ QCborMap toCborMap(const StatsSnapshot& s)
     put(QStringLiteral("downDeadSourcesPerFile"), s.downDeadSourcesPerFile);
     if (s.freeTempSpace)
         put(QStringLiteral("freeTempSpace"), *s.freeTempSpace);
+    m.insert(QStringLiteral("saveFolderSpace"), saveFolderSpaceToCbor(s.saveFolders));
     put(QStringLiteral("totalDownNeeded"), s.totalDownNeeded);
 
     // Connections

@@ -25,6 +25,7 @@
 #include <QCborArray>
 #include <QCborMap>
 #include <QDateTime>
+#include <QDir>
 #include <QFile>
 #include <QFileDialog>
 #include <QHBoxLayout>
@@ -696,6 +697,10 @@ void StatisticsPanel::buildTree()
     m_itemTotalDownLeft = new QTreeWidgetItem(totalDown);
     m_itemTotalDownFreeSpace = new QTreeWidgetItem(totalDown);
     m_itemTotalDownNeeded = new QTreeWidgetItem(totalDown);
+    for (auto& item : m_itemSaveFolderSpace) {
+        item = new QTreeWidgetItem(totalDown);
+        item->setHidden(true);
+    }
 
     // ===== Kademlia ===== (not in MFC, which shows Kad only as overhead lines)
     buildKademliaBranch(detailIcon, cumulativeIcon);
@@ -1686,6 +1691,24 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
         m_itemTotalDownFreeSpace->setText(0, freeText);
         m_itemTotalDownNeeded->setText(0,
             tr("Additional Space Needed for Downloads: %1").arg(formatByteSize(needed)));
+    }
+
+    // Free space per network's save folder (#165); a network that is off has no entry
+    {
+        const QCborMap space = stats.value(QStringLiteral("saveFolderSpace")).toMap();
+        static constexpr std::array kKeys{"incoming", "torrent", "usenet", "hoster"};
+        const std::array labels{tr("Free Space in Incoming: %1"), tr("Free Space for Torrents: %1"),
+                                tr("Free Space for Usenet: %1"), tr("Free Space for Hoster: %1")};
+        for (size_t i = 0; i < kKeys.size(); ++i) {
+            const QCborMap folder = space.value(QLatin1StringView(kKeys[i])).toMap();
+            QTreeWidgetItem* item = m_itemSaveFolderSpace[i];
+            item->setHidden(folder.isEmpty());
+            if (folder.isEmpty())
+                continue;
+            const QCborValue free = folder.value(QStringLiteral("free"));
+            item->setText(0, labels[i].arg(free.isInteger() ? formatByteSize(free.toInteger()) : tr("N/A")));
+            item->setToolTip(0, QDir::toNativeSeparators(folder.value(QStringLiteral("path")).toString()));
+        }
     }
 }
 

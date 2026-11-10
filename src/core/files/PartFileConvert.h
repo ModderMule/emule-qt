@@ -16,6 +16,7 @@
 #include <QWaitCondition>
 
 #include <list>
+#include <vector>
 
 namespace eMule {
 
@@ -82,6 +83,10 @@ public:
     ~PartFileConvert() override;
 
     static void scanFolderToAdd(const QString& folder, bool recursive = false, bool removeSource = false);
+    /// scanFolderToAdd()'s disk half, for any thread: lists and reads the file heads.
+    [[nodiscard]] static std::vector<ConvertJob> findJobs(const QString& folder, bool recursive,
+                                                          bool removeSource);
+    static void addJobs(std::vector<ConvertJob> jobs);
     static void addJob(ConvertJob job);
     static void removeJob(int index);
     static void removeAllJobs();

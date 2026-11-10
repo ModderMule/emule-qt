@@ -5,6 +5,7 @@
 
 #include "app/AppConfig.h"
 
+#include <QFuture>
 #include <QList>
 #include <QString>
 #include <QStringList>
@@ -69,6 +70,7 @@ private:
 
     QStringList m_dirs;
     std::map<QString, std::unique_ptr<QTranslator>> m_translators;
+    QFuture<QList<AppLanguage>> m_listed;   ///< the .qm listing, made on the pool
     mutable std::optional<QList<AppLanguage>> m_available;
 };
 

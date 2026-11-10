@@ -2068,7 +2068,7 @@ void KademliaUDPListener::process_KADEMLIA_CALLBACK_REQ(const uint8* data, uint3
                    .arg(ipToString(ip)));
         return;
     }
-    if (!buddy->allowBuddyRelay()) {
+    if (!buddy->allowBuddyRelay(kRelayedCallbackSize)) {
         logKad(QStringLiteral("Kad: CALLBACK_REQ from %1 — relay limit for that buddy reached")
                    .arg(ipToString(ip)));
         return;

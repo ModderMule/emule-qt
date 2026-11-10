@@ -2,7 +2,8 @@
 /// @brief The ed3k upload queue view (Ed3kUploads, Ed3kUploadsBridge): the queue events as
 /// rows, observed only (never handled); real nodes on loopback: a file of A fetched by three
 /// nodes over two slots shows holders and a waiting node (the engine's rank and address,
-/// queueList), named, and the rows end.
+/// queueList), named, and the rows end. The anonymous node's queue (hops.md §1): its rows by
+/// key, no address, "Anonymous" in GetUploads; stats of both nodes summed while hiding.
 
 #include "Ed3kJoinBase.h"
 #include "Ed3kSession.h"
@@ -110,6 +111,8 @@ private slots:
     void cleanup();
     void eventsBecomeRowsAndStayUnhandled();
     void aQueueOfRealNodesShowsAndEnds();
+    void anonymousRowsAreKeptApart();
+    void statsSumBothNodesWhileHiding();
 };
 
 void tst_Ed3kUploads::cleanup()
@@ -255,6 +258,94 @@ void tst_Ed3kUploads::aQueueOfRealNodesShowsAndEnds()
     // an idle slot ends after about a minute (SlotEnd::Idle) when the close is not seen
     QTRY_COMPARE_WITH_TIMEOUT(up.uploading().size(), std::size_t(0), 150000);
     shared.stop();
+}
+
+void tst_Ed3kUploads::anonymousRowsAreKeptApart()
+{
+    namespace e = ::ed3k::event;
+    using ::ed3k::KeyKind;
+    Ed3kSession s;   // not started: the events by hand
+    Ed3kUploads up(s);
+    ::ed3k::Root root;
+    root.bytes.fill(9);
+    const auto sendNode = [&s](const ::ed3k::Event& ev) {
+        bool handled = false;
+        emit s.eventPolled(ev, &handled);
+        emit s.keyedEventPolled(ev, KeyKind::Node, &handled);   // the session emits both for the node key
+        return handled;
+    };
+    const auto sendAnon = [&s](const ::ed3k::Event& ev) {
+        bool handled = false;
+        emit s.keyedEventPolled(ev, KeyKind::Anon, &handled);
+        return handled;
+    };
+    // the same downloader ID at both nodes: two rows, each of its key; node-key events once
+    QVERIFY(!sendNode(e::FileRequested{node(5), root, std::nullopt, true, false, false}));
+    QVERIFY(!sendAnon(e::FileRequested{node(5), root, std::nullopt, true, false, false}));
+    QCOMPARE(up.size(), std::size_t(2));
+    const auto w = up.waiting();
+    QCOMPARE(w.size(), std::size_t(2));
+    QCOMPARE(std::ranges::count(w, KeyKind::Anon, &Ed3kUploads::Row::key), 1);
+    // §14.2 hint: node key only
+    std::array<std::uint8_t, 12> prefix{};
+    prefix.fill(5);
+    QVERIFY(up.hasNodeStarting(prefix));
+    // the anonymous slot is the anonymous row's
+    QVERIFY(!sendAnon(e::SlotUsed{node(5), 1000, false}));
+    QCOMPARE(up.uploading().size(), std::size_t(1));
+    QCOMPARE(up.uploading().front().key, KeyKind::Anon);
+    QCOMPARE(up.waiting().size(), std::size_t(1));
+    QCOMPARE(up.waiting().front().key, KeyKind::Node);
+
+    // GetUploads: the key, no address for the anonymous one
+    Ed3kUploadsBridge::setUploads(&up);
+    QCborArray uploading, waiting;
+    Ed3kUploadsBridge::appendRows(uploading, waiting);
+    QCOMPARE(uploading.size(), 1);
+    QCOMPARE(waiting.size(), 1);
+    QCOMPARE(uploading.at(0).toMap().value(QStringLiteral("key")).toString(), QStringLiteral("Anonymous"));
+    QVERIFY(uploading.at(0).toMap().value(QStringLiteral("addr")).toString().isEmpty());
+    QCOMPARE(waiting.at(0).toMap().value(QStringLiteral("key")).toString(), QStringLiteral("Node"));
+
+    // hiding stops: the anonymous node's rows go
+    QSignalSpy changed(&up, &Ed3kUploads::changed);
+    emit s.hide().stopped();
+    QCOMPARE(changed.count(), 1);
+    QCOMPARE(up.size(), std::size_t(1));
+    QVERIFY(up.uploading().empty());
+}
+
+void tst_Ed3kUploads::statsSumBothNodesWhileHiding()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    Ed3kSession s;
+    QVERIFY(s.start(loopback(dir.path())));
+    s.setUploadSlots(3);
+    const auto plain = s.uploadQueueStats();
+    QVERIFY(plain);
+    QCOMPARE(plain->slotCount, 3u);
+    Ed3kHideSettings h;
+    h.on = true;
+    s.setHideSettings(h);
+    QVERIFY(s.hide().hiding());
+    auto* eng = s.engine();
+    QVERIFY(eng);
+    // the anonymous node's policy runs with the full limit (Ed3kHide::started)
+    const auto anon = eng->queueStats(::ed3k::KeyKind::Anon);
+    QVERIFY(anon);
+    QCOMPARE(anon->slotCount, 3u);
+    const auto nodeStats = eng->queueStats();
+    QVERIFY(nodeStats);
+    const auto both = s.uploadQueueStats();
+    QVERIFY(both);
+    QCOMPARE(both->holders, nodeStats->holders + anon->holders);
+    QCOMPARE(both->waiting, nodeStats->waiting + anon->waiting);
+    QCOMPARE(both->slotCount, std::max(nodeStats->slotCount, anon->slotCount));   // one upload limit
+    // the view lists both queues (empty here) without failing
+    Ed3kUploads up(s);
+    QVERIFY(up.uploading().empty() && up.waiting().empty());
+    s.stop();
 }
 
 QTEST_GUILESS_MAIN(tst_Ed3kUploads)

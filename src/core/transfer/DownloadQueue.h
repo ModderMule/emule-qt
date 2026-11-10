@@ -33,6 +33,7 @@ class HostResolver;
 class IPFilter;
 class KnownFileList;
 class PartFile;
+struct PartMetPreload;
 class SafeMemFile;
 class SearchFile;
 class Server;
@@ -81,7 +82,8 @@ public:
     /// event loop to keep alive in between.
     [[nodiscard]] static QStringList partMetFiles(const QStringList& tempDirs);
     /// Load one of them, falling back to its .bak.
-    void loadPartMet(const QString& metPath);
+    /// @param preload  met bytes and .part stats read off-thread (PartMetPreload::read)
+    void loadPartMet(const QString& metPath, const PartMetPreload* preload = nullptr);
 
     /// Re-register every eligible part file with SharedFileList.
     ///

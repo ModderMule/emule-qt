@@ -33,6 +33,7 @@
 #include <set>
 #include <span>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 class QLoggingCategory;
@@ -231,8 +232,11 @@ protected:
     // -- serving -----------------------------------------------------------
 
     /// Shares @p data from memory under its root; logs when it is not @p expect. Its root;
-    /// nullopt: not shared.
-    std::optional<ffi::Root> shareBlob(const QByteArray& data, const QString& name, std::optional<ffi::Root> expect);
+    /// nullopt: not shared. @p key: Anon opens and publishes it on the anonymous node
+    /// (anonFileOpen, anonPublish; State while not hiding), recorded when anonCapable().
+    // was: std::optional<ffi::Root> shareBlob(const QByteArray& data, const QString& name, std::optional<ffi::Root> expect);
+    std::optional<ffi::Root> shareBlob(const QByteArray& data, const QString& name, std::optional<ffi::Root> expect,
+                                       ffi::KeyKind key = ffi::KeyKind::Node);
     /// Opens a member file on the engine (complete or partial). false: refused (logged).
     bool shareMember(const ffi::SharedFile& file, const QString& owner, int member);
     void unshare(const ffi::Root& root);
@@ -367,6 +371,9 @@ private:
     struct Kept;
     /// Per session: the download holding each source node, and those waiting for it.
     struct NodeTurns;
+    /// A source node as one key of this machine sees it: the node and the anonymous node are
+    /// two downloaders to an uploader (§12.5 per key).
+    using TurnNode = std::pair<ffi::KeyKind, ffi::NodeId>;
     struct ReadBatch {
         std::vector<FileRead> reads;
         std::function<void(ReadResults)> done;
@@ -427,23 +434,25 @@ private:
     /// Another download holds the node of @p source: @p root waits for its turn (true).
     bool waitTurn(const ffi::Root& root, const ffi::Source& source);
     /// The node a stream of this join holds.
-    [[nodiscard]] std::optional<ffi::NodeId> nodeHeldBy(std::uint64_t stream) const;
+    [[nodiscard]] std::optional<TurnNode> nodeHeldBy(std::uint64_t stream) const;
+    /// @p node under the key the download of @p root is under.
+    [[nodiscard]] TurnNode turnNode(const ffi::Root& root, const ffi::NodeId& node) const;
     /// The node is free: the next waiting download takes it (its FileRequest replaces an
     /// open stream at the core, §12.5: the slot or position stays). false: none took it.
-    bool passTurn(const ffi::NodeId& node);
+    bool passTurn(const TurnNode& node);
     /// @p root of this join gets its turn at the node of @p source. false: not opened.
     bool grantTurn(const ffi::Root& root, const ffi::Source& source);
     /// The stream of @p root gives its node to the next waiting download and waits again
     /// itself (round robin). false: none waits, nothing changed.
     bool switchTurn(const ffi::Root& root, std::uint64_t stream);
     /// The waiters of @p node lose it (unreachable): asked again after a source search.
-    void dropWaiters(const ffi::NodeId& node);
+    void dropWaiters(const TurnNode& node);
     /// The wait of @p root at @p node ended without a turn.
     void turnLost(const ffi::Root& root, const ffi::NodeId& node);
     /// Every turn and wait of this join; @p pass: held nodes go to the next waiter.
     void dropTurns(bool pass);
     /// The holder of @p node switches to a waiter of higher priority, if one waits. true: switched.
-    bool yieldToHigher(const ffi::NodeId& node);
+    bool yieldToHigher(const TurnNode& node);
 
     // -- priority shares (the session's downloads, every join) ------------------
 

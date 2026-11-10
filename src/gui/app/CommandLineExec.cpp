@@ -46,6 +46,7 @@ void CommandLineExec::parse(QApplication& app)
     m_parser.addOption(m_delayOption);
     m_parser.addOption(m_optionsOption);
     m_parser.addOption(m_clientDetailsOption);
+    m_parser.addOption(m_networkInfoOption);
     m_parser.addOption(m_configOption);
     m_parser.addOption(m_logLevelOption);   // read early by consoleLogLevelFromArgs
     m_parser.addOption(m_newInstanceOption);
@@ -68,6 +69,7 @@ void CommandLineExec::parse(QApplication& app)
     m_afterUpdate = m_parser.isSet(m_afterUpdateOption);
     m_screenshotDelay = m_parser.value(m_delayOption).toInt();
     m_clientDetailsHash = m_parser.value(m_clientDetailsOption);
+    m_networkInfo = m_parser.isSet(m_networkInfoOption);
     m_positionalArgs = m_parser.positionalArguments();
 
     // Parse --tab
@@ -189,6 +191,18 @@ void CommandLineExec::setupScreenshotTimer(QApplication& app, MainWindow& mainWi
         IpcClient* ipc = mainWindow.ipcClient();
         const QString hash = m_clientDetailsHash;
         auto open = [&mainWindow, ipc, hash] { showClientDetails(&mainWindow, ipc, hash); };
+        if (ipc && ipc->isConnected())
+            open();
+        else if (ipc)
+            QObject::connect(ipc, &IpcClient::connected, &mainWindow, open,
+                             Qt::SingleShotConnection);
+    }
+    if (m_networkInfo) {
+        // modal: queued so the connect handler returns; the screenshot grabs the modal widget
+        IpcClient* ipc = mainWindow.ipcClient();
+        auto open = [&mainWindow] {
+            QMetaObject::invokeMethod(&mainWindow, "showNetworkInfo", Qt::QueuedConnection);
+        };
         if (ipc && ipc->isConnected())
             open();
         else if (ipc)

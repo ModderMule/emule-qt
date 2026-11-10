@@ -1183,7 +1183,7 @@ void tst_CallbackAndQueueRank::udpReaskViaCallback_sendsRealPacket()
     delete client;
 }
 
-// The relay drops what exceeds 60 packets per minute for one buddy, without an answer.
+// The relay drops what exceeds 64 KiB per minute for one buddy, without an answer.
 // The reask is then not sent and not left pending, or it would be booked as failed.
 void tst_CallbackAndQueueRank::udpReaskViaCallback_heldBackOverTheRelayLimit()
 {
@@ -1222,14 +1222,18 @@ void tst_CallbackAndQueueRank::udpReaskViaCallback_heldBackOverTheRelayLimit()
     client->setDownloadState(DownloadState::OnQueue);
     m_clientList->addClient(client);
 
-    // One below the limit: the reask itself takes the last slot and goes out
-    for (uint32 i = 0; i + 1 < kMaxBuddyRelaysPerMin; ++i)
-        QVERIFY(m_clientList->allowRelayRequest(buddyAddr, buddyId, RelayRequest::ReaskCallback));
+    // Budget almost used up, the reask still fits and goes out
+    for (int i = 0; i < 7; ++i)
+        QVERIFY(m_clientList->allowRelayRequest(buddyAddr, buddyId, RelayRequest::ReaskCallback,
+                                                kMaxReaskCallbackUdpSize));
     client->udpReaskForDownload();
     QVERIFY(client->udpPacketPending());
     flushUDPSocket(m_receiverUDP);
     QTRY_VERIFY_WITH_TIMEOUT(buddyReceiver.hasPendingDatagrams(), 3000);
     buddyReceiver.receiveDatagram();
+
+    // Fill the rest: not even the smallest reask fits
+    while (m_clientList->allowRelayRequest(buddyAddr, buddyId, RelayRequest::ReaskCallback, 17)) {}
 
     // Limit used up: nothing pending, nothing on the wire
     client->udpReaskACK(0);

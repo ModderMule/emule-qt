@@ -22,10 +22,25 @@ Ed3kUploads::Ed3kUploads(Ed3kSession& session, QObject* parent)
     , m_session(session)
 {
     // observe only: the joins and the queue policy answer these events
-    // ToDo: the anonymous node's uploads (hops.md §1; keyedEventPolled, no queueList of that
+    // was: ToDo: the anonymous node's uploads (hops.md §1; keyedEventPolled, no queueList of that
     // node in the FFI): eventPolled has the node key's only, so they are not shown yet
-    connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kUploads::onEventPolled, Qt::DirectConnection);
+    // (done: keyedEventPolled for KeyKind::Anon, queueList(Anon) in listed())
+    // was: connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kUploads::onEventPolled, Qt::DirectConnection);
+    connect(&m_session, &Ed3kSession::eventPolled, this,
+            [this](const ffi::Event& ev, bool* handled) { onEventPolled(ev, ffi::KeyKind::Node, handled); },
+            Qt::DirectConnection);
+    connect(&m_session, &Ed3kSession::keyedEventPolled, this,
+            [this](const ffi::Event& ev, ffi::KeyKind key, bool* handled) {
+                if (key == ffi::KeyKind::Anon)
+                    onEventPolled(ev, key, handled);
+            },
+            Qt::DirectConnection);
     connect(&m_session, &Ed3kSession::statusChanged, this, &Ed3kUploads::onSessionStatus);
+    // hiding stopped: the anonymous node's queue is gone
+    connect(&m_session.hide(), &Ed3kHide::stopped, this, [this] {
+        if (std::erase_if(m_rows, [](const auto& r) { return r.first.first == ffi::KeyKind::Anon; }) > 0)
+            emit changed();
+    });
 }
 
 Ed3kUploads::~Ed3kUploads() = default;
@@ -35,8 +50,9 @@ bool Ed3kUploads::hasNodeStarting(const std::array<std::uint8_t, 12>& prefix) co
     // map order: the first node not below the prefix is the only candidate
     ::ed3k::NodeId low{};
     std::copy(prefix.begin(), prefix.end(), low.bytes.begin());
-    const auto it = m_rows.lower_bound(low);
-    return it != m_rows.end() && std::equal(prefix.begin(), prefix.end(), it->first.bytes.begin());
+    const auto it = m_rows.lower_bound({ffi::KeyKind::Node, low});
+    return it != m_rows.end() && it->first.first == ffi::KeyKind::Node
+        && std::equal(prefix.begin(), prefix.end(), it->first.second.bytes.begin());
 }
 
 std::vector<Ed3kUploads::Row> Ed3kUploads::uploading() const
@@ -84,18 +100,32 @@ std::optional<std::vector<Ed3kUploads::Row>> Ed3kUploads::listed() const
     auto* eng = m_session.engine();
     if (!eng)
         return std::nullopt;
-    auto list = eng->queueList();
-    if (!list)
+    std::vector<Row> out;
+    if (!appendListed(ffi::KeyKind::Node, out))
         return std::nullopt;
+    // hops.md §1: the anonymous node's queue while it runs
+    if (m_session.hide().hiding())
+        appendListed(ffi::KeyKind::Anon, out);
+    return out;
+}
+
+bool Ed3kUploads::appendListed(ffi::KeyKind key, std::vector<Row>& out) const
+{
+    auto* eng = m_session.engine();
+    if (!eng)
+        return false;
+    auto list = eng->queueList(key);
+    if (!list)
+        return false;
     const qint64 nowWall = nowMs();
     const std::uint64_t nowMono = m_session.now().monoUs;
-    std::vector<Row> out;
-    out.reserve(list->size());
+    out.reserve(out.size() + list->size());
     for (const auto& q : *list) {
         Row row;
-        if (const auto it = m_rows.find(q.node); it != m_rows.end() && it->second.root == q.root)
+        if (const auto it = m_rows.find({key, q.node}); it != m_rows.end() && it->second.root == q.root)
             row = it->second;   // name, LAN, due
         row.node = q.node;
+        row.key = key;
         if (row.root != q.root || (row.fileName.isEmpty() && m_names)) {
             row.root = q.root;
             if (m_names)
@@ -111,7 +141,8 @@ std::optional<std::vector<Ed3kUploads::Row>> Ed3kUploads::listed() const
         // monotonic µs → ms since the epoch
         const std::uint64_t ago = nowMono > q.waitingSinceUs ? (nowMono - q.waitingSinceUs) / 1000 : 0;
         row.since = nowWall - qint64(std::min<std::uint64_t>(ago, std::uint64_t(nowWall)));
-        if (q.endpoint) {
+        // an anonymous downloader has no address to show (hops.md §1)
+        if (q.endpoint && key == ffi::KeyKind::Node) {
             row.address = toQHostAddress(*q.endpoint).toString();
             row.port = q.endpoint->port;
         } else {
@@ -120,18 +151,19 @@ std::optional<std::vector<Ed3kUploads::Row>> Ed3kUploads::listed() const
         }
         out.push_back(std::move(row));
     }
-    return out;
+    return true;
 }
 
-void Ed3kUploads::onEventPolled(const ffi::Event& ev, bool* handled)
+void Ed3kUploads::onEventPolled(const ffi::Event& ev, ffi::KeyKind key, bool* handled)
 {
     Q_UNUSED(handled)   // never set: others answer these
     namespace e = ffi::event;
     if (const auto* r = std::get_if<e::FileRequested>(&ev)) {
-        auto [it, added] = m_rows.try_emplace(r->node);
+        auto [it, added] = m_rows.try_emplace({key, r->node});
         Row& row = it->second;
         if (added) {
             row.node = r->node;
+            row.key = key;
             row.since = nowMs();
         }
         if (added || row.root != r->root) {
@@ -146,7 +178,7 @@ void Ed3kUploads::onEventPolled(const ffi::Event& ev, bool* handled)
         }
         row.lan = r->lan;
     } else if (const auto* o = std::get_if<e::SlotOfferResult>(&ev)) {
-        const auto it = m_rows.find(o->node);
+        const auto it = m_rows.find({key, o->node});
         if (it == m_rows.end() || !o->ok)
             return;   // a failed offer: still waiting
         if (!it->second.holding) {
@@ -155,10 +187,12 @@ void Ed3kUploads::onEventPolled(const ffi::Event& ev, bool* handled)
             it->second.bytes = 0;
         }
     } else if (const auto* u = std::get_if<e::SlotUsed>(&ev)) {
-        auto [it, added] = m_rows.try_emplace(u->node);
+        auto [it, added] = m_rows.try_emplace({key, u->node});
         Row& row = it->second;
-        if (added)
+        if (added) {
             row.node = u->node;   // a slot of a request not seen (a restart of this view)
+            row.key = key;
+        }
         if (!row.holding || added) {
             row.holding = true;
             row.since = nowMs();
@@ -166,14 +200,14 @@ void Ed3kUploads::onEventPolled(const ffi::Event& ev, bool* handled)
         row.bytes = u->bytes;
         row.due = u->due;
     } else if (const auto* se = std::get_if<e::SlotEnded>(&ev)) {
-        if (m_rows.erase(se->node) == 0)
+        if (m_rows.erase({key, se->node}) == 0)
             return;
         logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: upload slot of %1 ended (why %2, %3 B)")
                          .arg(QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(se->node.bytes.data()), 4).toHex()))
                          .arg(int(se->why))
                          .arg(se->bytes); });
     } else if (const auto* q = std::get_if<e::QueueEntryEnded>(&ev)) {
-        const auto it = m_rows.find(q->node);
+        const auto it = m_rows.find({key, q->node});
         if (it == m_rows.end() || it->second.holding)
             return;   // a holder's end comes as SlotEnded
         m_rows.erase(it);

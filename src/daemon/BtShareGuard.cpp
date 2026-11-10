@@ -5,7 +5,6 @@
 #include "files/SharedFileList.h"
 
 #include <QDir>
-#include <QDirIterator>
 #include <QFileInfo>
 
 namespace eMule {
@@ -74,17 +73,12 @@ BtShareGuard::Change BtShareGuard::update(const QString& id, const std::optional
         for (qsizetype i = 0; i < it->keys.size(); ++i) {
             if (next.keys.contains(it->keys.at(i)))
                 continue;
-            const QFileInfo fi(it->paths.at(i));
-            const QString dir = fi.isDir() ? fi.absoluteFilePath() : fi.absolutePath();
-            if (!change.released.contains(dir))
-                change.released.append(dir);
-            // a torrent folder: its nested ones were scanned while blocked too
-            if (fi.isDir()) {
-                QDirIterator sub(dir, QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
-                while (sub.hasNext())
-                    if (const QString d = sub.next(); !change.released.contains(d))
-                        change.released.append(d);
-            }
+            // a file or a torrent folder: not stat'ed here (#84), both rescanned; the
+            // share list adds the folders below (rescanTrees)
+            const QString path = it->paths.at(i);
+            for (const QString& dir : {path, QFileInfo(path).absolutePath()})
+                if (!change.released.contains(dir))
+                    change.released.append(dir);
         }
     }
     for (const QString& key : std::as_const(next.keys))

@@ -24,6 +24,7 @@
 #include "utils/TimeUtils.h"
 
 #include <QScopeGuard>
+#include <QSemaphore>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -147,6 +148,7 @@ private slots:
     void upSlotActivity_tellsIdleFromStalledFromBusy();
     void upSlotActivity_busyWhileThePeerIsStillReceiving();
     void upSlotActivity_stalledWhenUnackedStopsMoving();
+    void upSlotActivity_busyWhileOurDiskReadIsOut();
     void deadSlot_goesToAWaitingClient();
     void deadSlot_staysWithoutSomeoneToTakeIt();
     void deadSlot_keptWhileThePeerIsStillReceiving();
@@ -3189,6 +3191,45 @@ void tst_UploadQueue::upSlotActivity_busyWhileThePeerIsStillReceiving()
     QVERIFY2(sock->sendBacklog() != 0, "fixture needs unacked bytes");
     QCOMPARE(client->upSlotActivity(0), Activity::Busy);
     QCOMPARE(client->upSlotActivity(60'000), Activity::Busy);
+}
+
+// A USB drive stalling is no fault of the peer's: the slot is not given away for it
+void tst_UploadQueue::upSlotActivity_busyWhileOurDiskReadIsOut()
+{
+    QueueRankEnv env;
+    UploadQueue queue;
+    env.wire(queue);
+    GlobalUploadQueue queueGuard(&queue);
+    UploadDiskIOThread diskIO;
+    QSemaphore entered;
+    QSemaphore stall;
+    diskIO.setBeforeReadHook([&](const QString&) {
+        entered.release();
+        (void)stall.tryAcquire(1, 10'000);
+    });
+    const auto letGo = qScopeGuard([&] { stall.release(10); });
+    queue.setDiskIOThread(&diskIO);
+    const auto unwire = qScopeGuard([&] { queue.setDiskIOThread(nullptr); });
+
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QStringLiteral("movie.avi"));
+    {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(QByteArray(EMBLOCKSIZE, 'm'));
+    }
+    KnownFile* file = env.addNamedFile(0xEA, QStringLiteral("movie.avi"), EMBLOCKSIZE);
+    file->setFilePath(path);
+    auto* client = env.makeClient(87, file);
+    QVERIFY(env.connectSocket(client));
+    QVERIFY(queue.addClientToQueue(client));
+    QCOMPARE(client->uploadState(), UploadState::Uploading);
+
+    using Activity = UpDownClient::UpSlotActivity;
+    client->addReqBlock(uploadBlock(file, 0, EMBLOCKSIZE));
+    QVERIFY(entered.tryAcquire(1, 3000));   // the read is out, the drive does not answer
+    QCOMPARE(client->upDatarate(), 0u);
+    QCOMPARE(client->upSlotActivity(UpDownClient::kUpSlotWarmupMs + 1), Activity::Busy);
 }
 
 // #58: unacked bytes that never go down are not reaching the peer (PMTU black hole).

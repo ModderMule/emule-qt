@@ -119,7 +119,7 @@ struct Ed3kHosterPrefs {
     bool enabled = true;           ///< ed3kHosterEnabled: the user allowed downloads from hosters
     QString java;                  ///< ed3kHosterJava: path of `java`; empty = find one
     bool autoJava = true;          ///< ed3kHosterAutoJava: download a runtime when none is found
-    uint32 maxStreams = 2;         ///< ed3kHosterMaxStreams: hoster streams at once, 1..16
+    uint32 maxStreams = 8;         ///< ed3kHosterMaxStreams: hoster streams at once, 1..16 (JD runs 8)
     bool askPuzzles = true;        ///< ed3kHosterPuzzles: show image puzzles; off = skip them
     bool publishLinks = true;      ///< ed3kHosterPublishLinks: publish and hand out vouched links (§4.1)
     bool fromPeers = true;         ///< ed3kHosterFromPeers: use links that peers name
@@ -283,11 +283,6 @@ public:
     /// The limit in effect: maxServedBuddies() or its auto value, capped at a tenth of
     /// maxConnections() (min 1), as each served buddy holds a connection.
     [[nodiscard]] uint16 servedBuddyLimit() const;
-    /// Kad, firewalled side: a buddy offer not dialled within this many seconds is dropped
-    /// (30-3600, default 300). YAML only, no GUI.
-    [[nodiscard]] uint32 buddyOfferMaxAgeSecs() const;
-    static constexpr uint32 kBuddyOfferMaxAgeSecsMin = 30;
-    static constexpr uint32 kBuddyOfferMaxAgeSecsMax = 3600;
 
     /// One IPv4 or IPv6 literal every P2P socket binds to; empty = any. See BindAddress.h.
     [[nodiscard]] QString bindAddress() const;
@@ -1586,7 +1581,8 @@ public:
     /// the anonymous key while on; files keep their key. Default off; live. IPC/REST `ed3kHide`.
     [[nodiscard]] bool ed3kHide() const;
     void setEd3kHide(bool val);
-    /// Hops 1 to 3 for every connection and lookup type while hiding. Default 1. `ed3kHops`.
+    /// Hops 0 to 3 for every use while hiding (0 = deniable, not hidden; only while hopping,
+    /// else 1 is used: hops.md §2.6). Default 1. `ed3kHops`.
     [[nodiscard]] int ed3kHops() const;
     void setEd3kHops(int val);
     /// Forward for others' paths while hiding (hops.md §5). Default on. `ed3kHopping`.
@@ -2132,6 +2128,10 @@ public:
     [[nodiscard]] bool showRatesInTitle() const;
     void setShowRatesInTitle(bool val);
 
+    /// Free space of the current window's save folder in the status bar (#165)
+    [[nodiscard]] bool showStatusBarFreeSpace() const;
+    void setShowStatusBarFreeSpace(bool val);
+
     [[nodiscard]] bool showCatTabInfos() const;
     void setShowCatTabInfos(bool val);
 
@@ -2318,6 +2318,8 @@ public:
     /// §14.2). Set by the daemon before load(); unset or nullopt = random (generateUserHash).
     using UserHashSource = std::function<std::optional<std::array<uint8, 16>>()>;
     static void setUserHashSource(UserHashSource source);
+    /// That source's hash; nullopt when unset or it fails (no random fallback).
+    [[nodiscard]] static std::optional<std::array<uint8, 16>> derivedUserHash();
     /// The GUI: a new config gets no user hash here; the core mints it (with the source above).
     static void setDeferUserHash(bool defer);
 

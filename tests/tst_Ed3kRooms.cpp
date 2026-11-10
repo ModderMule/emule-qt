@@ -21,6 +21,7 @@
 #include <QTest>
 
 using namespace eMule;
+using eMule::ed3k::Ed3kHideSettings;
 using eMule::ed3k::Ed3kRooms;
 using eMule::ed3k::Ed3kSession;
 using eMule::ed3k::Ed3kSettings;
@@ -154,6 +155,7 @@ private slots:
     void replyRoundTripShowsTheQuotedLine();
     void muteIsKeptAndHidesPosts();
     void roomMemberShowsTheMemberKey();
+    void anonymousRoomKeepsItsKey();
 };
 
 void tst_Ed3kRooms::cleanup()
@@ -629,6 +631,77 @@ void tst_Ed3kRooms::roomMemberShowsTheMemberKey()
     openTab->setRow(rowOf(ra, *openRoom));
     QVERIFY(openTab->row().value(QStringLiteral("private")).toBool());
     QVERIFY(!openTab->admitImportable());
+}
+
+// hops.md §1: a room made while hiding is under the anonymous key and stays there: its calls
+// and events go to that node, it waits (listed) while hiding is off, the key is kept
+void tst_Ed3kRooms::anonymousRoomKeepsItsKey()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    Ed3kHideSettings hide;
+    hide.on = true;
+    Ed3kSession a;
+    a.setHideSettings(hide);
+    QVERIFY(a.start(loopback(dir.path())));
+    QVERIFY(a.hide().hiding());
+    auto ra = std::make_unique<Ed3kRooms>(a);
+
+    const IpcMessage made = create(*ra, QStringLiteral("Hidden"), 0, QStringLiteral("anon"));
+    QVERIFY(made.fieldBool(0));
+    const QString link = made.fieldMap(1).value(QStringLiteral("link")).toString();
+    const auto room = Ed3kRooms::roomFrom(made.fieldMap(1).value(QStringLiteral("room")).toString());
+    QVERIFY(room.has_value());
+    QCOMPARE(ra->find(*room)->key, ::ed3k::KeyKind::Anon);
+    QCOMPARE(rowOf(*ra, *room).value(QStringLiteral("key")).toString(), QStringLiteral("Anonymous"));
+    // the anonymous node has the room: a post goes there
+    QVERIFY(post(*ra, *room, QStringLiteral("hello")).fieldBool(0));
+
+    // keyed events: the node key's event for this room is not this room's
+    bool handled = false;
+    emit a.eventPolled(::ed3k::Event{::ed3k::event::RoomKeyMissing{*room, 7}}, &handled);
+    QVERIFY(!ra->find(*room)->keyMissing);
+    handled = false;
+    emit a.keyedEventPolled(::ed3k::Event{::ed3k::event::RoomKeyMissing{*room, 7}}, ::ed3k::KeyKind::Anon, &handled);
+    QVERIFY(handled);
+    QVERIFY(ra->find(*room)->keyMissing);
+
+    // hiding off: listed, waiting; nothing falls back to the node key
+    a.setHideSettings(Ed3kHideSettings{});
+    QVERIFY(!a.hide().hiding());
+    QVERIFY(ra->find(*room));
+    QVERIFY(ra->find(*room)->waitingHide);
+    QVERIFY(rowOf(*ra, *room).value(QStringLiteral("waitingHide")).toBool());
+    QVERIFY(!post(*ra, *room, QStringLiteral("not now")).fieldBool(0));
+    QVERIFY(!join(*ra, link, QStringLiteral("anon")).fieldBool(0));
+
+    // hiding on: joined again under the anonymous key
+    a.setHideSettings(hide);
+    QVERIFY(a.hide().hiding());
+    QVERIFY(!ra->find(*room)->waitingHide);
+    QCOMPARE(ra->find(*room)->key, ::ed3k::KeyKind::Anon);
+    QVERIFY(post(*ra, *room, QStringLiteral("back")).fieldBool(0));
+
+    // the key is kept across a restart: without hiding it waits, with hiding it is joined
+    a.stop();
+    a.setHideSettings(Ed3kHideSettings{});
+    QVERIFY(a.start(loopback(dir.path())));
+    ra = std::make_unique<Ed3kRooms>(a);
+    QVERIFY(ra->find(*room));
+    QVERIFY(ra->find(*room)->waitingHide);
+    QCOMPARE(ra->find(*room)->key, ::ed3k::KeyKind::Anon);
+    QCOMPARE(ra->find(*room)->title, QStringLiteral("Hidden"));
+    a.setHideSettings(hide);
+    QVERIFY(!ra->find(*room)->waitingHide);
+
+    // made without hiding: the node key
+    a.setHideSettings(Ed3kHideSettings{});
+    const IpcMessage plain = create(*ra, QStringLiteral("Plain"), 0, QStringLiteral("me"));
+    QVERIFY(plain.fieldBool(0));
+    const auto plainRoom = Ed3kRooms::roomFrom(plain.fieldMap(1).value(QStringLiteral("room")).toString());
+    QVERIFY(plainRoom.has_value());
+    QCOMPARE(ra->find(*plainRoom)->key, ::ed3k::KeyKind::Node);
+    QCOMPARE(rowOf(*ra, *plainRoom).value(QStringLiteral("key")).toString(), QStringLiteral("Node"));
 }
 
 QTEST_MAIN(tst_Ed3kRooms)   // the room tab is a widget

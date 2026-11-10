@@ -118,6 +118,10 @@ private:
         QStringLiteral("Open Client Details for a user hash once the core is connected (with --screenshot)."),
         QStringLiteral("hash")};
 
+    QCommandLineOption m_networkInfoOption{
+        QStringLiteral("network-info"),
+        QStringLiteral("Open Network Info once the core is connected (with --screenshot).")};
+
     QCommandLineOption m_logLevelOption{
         QStringLiteral("log-level"),
         QStringLiteral("Console output: 0 silent, 1 errors and server/status lines, 2 also the "
@@ -155,6 +159,7 @@ private:
     int m_screenshotDelay = 3000;
     int m_optionsPage = -1;
     QString m_clientDetailsHash;
+    bool m_networkInfo = false;
     MainWindow::Tab m_activeTab = MainWindow::TabKad;
     bool m_hasTab = false;
     bool m_hasSubtab = false;

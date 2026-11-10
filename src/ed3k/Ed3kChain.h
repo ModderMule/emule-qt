@@ -19,6 +19,9 @@
 ///   ED3K_CHAIN_GAS_LOW. Logged, kept as lastRefusal() for the status (GetEd3kStatus
 ///   "chain"); the node's text is plain text from strangers.
 ///   was (batch 12 #6): refused only when every provider answered with the same JSON-RPC error.
+/// - Unknown (batch 16, ChainTxUnknown): a sent or watched write no longer followed (local
+///   stop: 30 min, log span, no or wrong chain) may still land: shown as unknown, not failed,
+///   never sent again by the client. Kept as lastUnknown() for the status.
 
 #include "Ed3kFfi.h"
 
@@ -57,10 +60,16 @@ public:
     [[nodiscard]] QString lastRefusal() const { return m_lastRefusal; }
     /// What a ChainFailed / ChainTxFailed tells the user; empty: not a refusal (tests).
     [[nodiscard]] static QString refusalText(std::uint32_t why, const QString& message);
+    /// The last write whose outcome is unknown (ChainTxUnknown), for the user; empty: none.
+    [[nodiscard]] QString lastUnknown() const { return m_lastUnknown; }
+    /// What a ChainTxUnknown of @p tx tells the user.
+    [[nodiscard]] static QString unknownText(std::uint64_t tx);
 
 signals:
     /// A read or write was refused (lastRefusal() changed).
     void refused(const QString& text);
+    /// A write's outcome is unknown, it may still land (lastUnknown() changed).
+    void txUnknown(std::uint64_t tx, const QString& text);
 
 private:
     void onEventPolled(const ::ed3k::Event& event, bool* handled);
@@ -76,6 +85,7 @@ private:
     /// the one-remote-endpoint notice was logged (once per run)
     bool m_toldSingle = false;
     QString m_lastRefusal;
+    QString m_lastUnknown;
 };
 
 } // namespace eMule::ed3k

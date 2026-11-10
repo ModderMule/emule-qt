@@ -290,11 +290,19 @@ bool DaemonApp::start()
 
     // The bound interface went away, came back or was changed: the session has closed
     // the P2P sockets; the parts it does not own follow here.
-    theApp.onNetworkSuspended = [this](bool) {
+    theApp.onNetworkSuspended = [this](bool suspended) {
         if (m_usenetSession)
             m_usenetSession->onNetworkRouteChanged();
         // libtorrent opens its own sockets: rebind to the new interface, pause when gone
         applyBtConfig();
+#ifdef EMULE_HAVE_HOSTER_JD
+        // the sidecar cannot pin: its direct connections leave from the selected address
+        if (m_jdResolver)
+            m_jdResolver->setBindAddress(BindAddress::sourceAddress());
+#endif
+        // the ed3k node's own socket is pinned at start: once the eD2K sockets are back
+        if (!suspended)
+            applyEd3kConfig();
         if (m_notifierBridge)
             m_notifierBridge->pushNetworkState();
     };
@@ -406,6 +414,9 @@ bool DaemonApp::start()
         m_ed3kSharedSource = ed3k::Ed3kShared::listAdapter(*theApp.sharedFileList);
         m_ed3kShared = std::make_unique<ed3k::Ed3kShared>(*m_ed3kSession, *m_ed3kSharedSource, thePrefs.configDir());
         m_ed3kShared->connectList(*theApp.sharedFileList);
+        // hops.md §1: an anonymous-key file also on eD2K/Kad: a pop-up
+        connect(m_ed3kShared.get(), &ed3k::Ed3kShared::anonExposed, m_notifierBridge.get(),
+                &CoreNotifierBridge::onEd3kAnonExposed);
         Ed3kBridge::setShared(m_ed3kShared.get());
         // a completed download stays the same object: no fileAdded
         if (theApp.downloadQueue)
@@ -506,13 +517,16 @@ bool DaemonApp::start()
     m_ed3kChain = std::make_unique<ed3k::Ed3kChain>(*m_ed3kSession);
     // batch 13 (W): a refused chain read/write and the one-endpoint note in GetEd3kStatus "chain"
     Ed3kCreditBridge::setChain(m_ed3kChain.get());
-    connect(m_ed3kChain.get(), &ed3k::Ed3kChain::refused, this, [this] {
+    const auto pushChainStatus = [this] {
         if (!m_ipcServer)
             return;
         IpcMessage msg(IpcMsgType::PushEd3kStatus, 0);
         msg.append(Ed3kBridge::statusToCbor());
         m_ipcServer->broadcast(msg);
-    });
+    };
+    connect(m_ed3kChain.get(), &ed3k::Ed3kChain::refused, this, pushChainStatus);
+    // batch 16: a write of unknown outcome is pushed like a refusal
+    connect(m_ed3kChain.get(), &ed3k::Ed3kChain::txUnknown, this, pushChainStatus);
     // plain ed3k downloads; after Ed3kShared (it starts first on statusChanged and takes the
     // complete files of the share list: those are not shared twice)
     m_ed3kDownloads = std::make_unique<ed3k::Ed3kDownloads>(*m_ed3kSession, thePrefs.configDir());
@@ -786,7 +800,7 @@ bool DaemonApp::start()
             if (change.blockedMore)
                 theApp.sharedFileList->dropNeverShared();
             if (!change.released.isEmpty())
-                theApp.sharedFileList->rescanDirectories(change.released);
+                theApp.sharedFileList->rescanTrees(change.released);
             for (const QString& f : change.finished)
                 if (!theApp.sharedFileList->shouldBeShared(QFileInfo(f).absolutePath(), f, false)
                     && !theApp.sharedFileList->addSingleSharedFile(f))
@@ -1391,6 +1405,9 @@ void DaemonApp::applyEd3kConfig()
     if (!m_ed3kSession)
         return;
     // hiding (hops.md §1): live, no restart; applied at start too
+    // §2.6: 0 hops only while forwarding for others; hopping off at 0 gives 1
+    if (thePrefs.ed3kHops() == 0 && !thePrefs.ed3kHopping())
+        thePrefs.setEd3kHops(1);
     m_ed3kSession->setHideSettings(
         {thePrefs.ed3kHide(), thePrefs.ed3kHops(), thePrefs.ed3kHopping(), thePrefs.ed3kHopShare()});
     // ed3kEnabled = the feature; connectWanted = autoConnect at start, then the Connect button
@@ -1425,6 +1442,7 @@ void DaemonApp::applyEd3kConfig()
     const bool startChanged = m_ed3kSession->isRunning()
                               && (running.extOff != extOff || running.lan != thePrefs.ed3kLan()
                                   || (bind && running.bindAddress != *bind)
+                                  || (!running.sharedSocket && !BindAddress::sameBinding(BindAddress::current(), m_ed3kBind))
                                   || running.sharedSocket.data() != shared);
     if (m_ed3kSession->isRunning() && !holdNode
         && (!enabled || !bind || startChanged || (port != 0 && m_ed3kSession->udpPort() != port)))
@@ -1444,6 +1462,7 @@ void DaemonApp::applyEd3kConfig()
         settings.lan = thePrefs.ed3kLan();
         if (bind) {
             settings.bindAddress = *bind;
+            m_ed3kBind = BindAddress::current();
             m_ed3kSession->start(settings);
             // a node started later (Connect) brings the hoster downloads back
             if (m_hosterJoin && m_ed3kSession->isRunning())
@@ -1603,6 +1622,7 @@ void DaemonApp::applyHosterConfig()
     if (sharedReadOnly && sharedPlugins)
         cfg.zip.clear();   // nothing can go in: the best version there
     cfg.proxy = proxy;
+    cfg.bindAddress = BindAddress::sourceAddress();
     cfg.askPuzzles = h.askPuzzles;
     if (h.solversEnabled)
         for (const Ed3kHosterAccount& a : h.solvers)

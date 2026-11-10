@@ -7,6 +7,7 @@
 #include "app/AppContext.h"
 #include "files/SharedFileList.h"
 #include "transfer/DownloadQueue.h"
+#include "utils/BackgroundFileWriter.h"
 #include "utils/OtherFunctions.h"
 #include "utils/PathUtils.h"
 #include "prefs/Preferences.h"
@@ -111,9 +112,14 @@ PartFileConvert::~PartFileConvert()
 
 void PartFileConvert::scanFolderToAdd(const QString& folder, bool recursive, bool removeSource)
 {
-    QDir dir(folder);
-    if (!dir.exists())
-        return;
+    addJobs(findJobs(folder, recursive, removeSource));
+}
+
+std::vector<ConvertJob> PartFileConvert::findJobs(const QString& folder, bool recursive, bool removeSource)
+{
+    std::vector<ConvertJob> found;
+    if (!QDir(folder).exists())
+        return found;
 
     auto flags = recursive
                      ? QDirIterator::Subdirectories
@@ -135,8 +141,15 @@ void PartFileConvert::scanFolderToAdd(const QString& folder, bool recursive, boo
         job.format = detectFormat(fi.absoluteFilePath());
         job.removeSource = removeSource;
         job.state = ConvertStatus::Queued;
-        addJob(std::move(job));
+        found.push_back(std::move(job));
     }
+    return found;
+}
+
+void PartFileConvert::addJobs(std::vector<ConvertJob> jobs)
+{
+    for (ConvertJob& job : jobs)
+        addJob(std::move(job));
 }
 
 // ---------------------------------------------------------------------------
@@ -409,6 +422,7 @@ ConvertStatus PartFileConvert::performConvertToeMule(ConvertJob& job)
     bool dataMoved = false;     // the source data now lives under newPart
     const auto abandon = [&](ConvertStatus status) {
         runOnMain([&] { delete file; });    // first: it may still write its met
+        BackgroundFileWriter::instance().discard(newMet);   // ... queued, not yet written
         if (dataMoved)
             moveFile(newPart, oldData);     // give it back
         else
@@ -452,7 +466,9 @@ ConvertStatus PartFileConvert::performConvertToeMule(ConvertJob& job)
             return abandon(ConvertStatus::Failed);
     }
 
-    // 5. The metadata: always a copy, so a file that does not load costs nothing
+    // 5. The metadata: always a copy, so a file that does not load costs nothing.
+    //    The new file's first save is still queued: it must not land over the copy.
+    BackgroundFileWriter::instance().discard(newMet);
     QFile::remove(newMet);
     if (!QFile::copy(metPath, newMet))
         return abandon(ConvertStatus::Failed);

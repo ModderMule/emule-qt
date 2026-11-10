@@ -55,7 +55,7 @@ public:
         Matching = 0,   ///< asking which plugin takes the link
         Looking,        ///< §4 lookup of the link's ALIAS record
         Checking,       ///< the resolver checks name and size
-        Queued,         ///< waits for a stream (one per hoster, maxStreams)
+        Queued,         ///< waits for a stream (streamsAt() per hoster, maxStreams)
         Waiting,        ///< a hoster timer or quota; until waitUntil
         Downloading,
         Puzzle,         ///< an image puzzle waits for the user
@@ -244,6 +244,9 @@ public:
     bool checkLinks(const QStringList& urls);
     /// 2: an account at @p host that is premium with traffic left, 1: any other account, 0: none.
     [[nodiscard]] int accountTier(const QString& host) const;
+    /// hoster.md §3: streams at once at @p host: with a premium account (tier 2) JD's limit for
+    /// it, capped at maxStreams (maxStreams when JD names none); else 1.
+    [[nodiscard]] int streamsAt(const QString& host) const;
     /// @p urls (mirrors of one file) best first: offline last, then accountTier(), then
     /// checked online before unchecked; else in their order.
     [[nodiscard]] QStringList rankMirrors(const QStringList& urls) const;
@@ -347,6 +350,7 @@ private:
         bool premium = false;
         qint64 expires = 0;
         qint64 trafficLeft = -1;
+        int maxDownloads = 0;        ///< JD's downloads at once; -1 unlimited, 0 unknown
         qint64 at = 0;
     };
     void pumpProbes();

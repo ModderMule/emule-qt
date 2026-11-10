@@ -210,6 +210,8 @@ private:
     void handleSaveSchedules(const Ipc::IpcMessage& msg);
     void handleScanImportFolder(const Ipc::IpcMessage& msg);
     void handleGetConvertJobs(const Ipc::IpcMessage& msg);
+    void handleFindLegacyProfiles(const Ipc::IpcMessage& msg);
+    void handleImportLegacyProfile(const Ipc::IpcMessage& msg);
     void handleRemoveConvertJob(const Ipc::IpcMessage& msg);
     void handleRetryConvertJob(const Ipc::IpcMessage& msg);
     void handleStopDownload(const Ipc::IpcMessage& msg);

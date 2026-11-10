@@ -455,6 +455,8 @@ void UpDownClient::startBlockReads()
         diskIO->queueBlockRead(std::move(readReq));
 
         block->readQueued = true;
+        if (m_blockReadBytesQueued == 0)
+            m_readWaitSinceTick = getTickCount();
         m_blockReadBytesQueued += block->endOffset - block->startOffset;
         ++it;
     }
@@ -591,6 +593,14 @@ UpDownClient::UpSlotActivity UpDownClient::upSlotActivity(uint32 slotAgeMs) cons
             return m_slotUnackedStuckMs >= kUnackedStuckMs ? UpSlotActivity::Stalled : UpSlotActivity::Busy;
         return UpSlotActivity::Idle;
     }
+    // Nothing to send because our own read has not come back: a stalling drive (USB),
+    // not the peer. Giving the slot away would only queue the next peer behind it.
+    if (m_blockReadBytesQueued != 0 && payloadInBuffer() == 0 && m_readWaitSinceTick != 0
+        && getTickCount() - m_readWaitSinceTick < kDiskWaitMaxMs) {
+        const EMSocket* sock = getFileUploadSocket();
+        if (!sock || sock->sendBacklog() == 0)
+            return UpSlotActivity::Busy;
+    }
     // m_upDatarate is an average over ten seconds: zero means nothing left in all of them.
     if (slotAgeMs > kUpSlotWarmupMs && m_upDatarate == 0)
         return UpSlotActivity::Stalled;
@@ -657,6 +667,7 @@ void UpDownClient::flushSendBlocks()
         delete block;
     m_blockRequests.clear();
     m_blockReadBytesQueued = 0;
+    m_readWaitSinceTick = 0;
 
     for (auto* block : m_doneBlocks)
         delete block;
@@ -691,6 +702,8 @@ bool UpDownClient::requeueBlockRead(const uint8* fileId, uint64 startOffset, uin
         return false;
     (*it)->readQueued = false;
     m_blockReadBytesQueued -= std::min(m_blockReadBytesQueued, endOffset - startOffset);
+    if (m_blockReadBytesQueued == 0)
+        m_readWaitSinceTick = 0;
     return true;
 }
 
@@ -705,6 +718,8 @@ bool UpDownClient::markBlockDone(const uint8* fileId, uint64 startOffset, uint64
     if ((*it)->readQueued) {
         const uint64 len = endOffset - startOffset;
         m_blockReadBytesQueued -= std::min(m_blockReadBytesQueued, len);
+        // A read came back: the wait for the rest starts over
+        m_readWaitSinceTick = m_blockReadBytesQueued == 0 ? 0 : getTickCount();
     }
     m_doneBlocks.push_front(*it);
     noteSentRange(**it);

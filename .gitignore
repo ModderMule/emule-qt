@@ -5,6 +5,7 @@ build/
 build2/
 build-vs/
 build_test_check/
+build-*/
 bin/
 cmake-build-*/
 out/

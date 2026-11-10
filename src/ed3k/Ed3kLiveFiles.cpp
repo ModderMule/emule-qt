@@ -84,9 +84,10 @@ void Ed3kLiveFiles::start()
     if (m_started)
         return;
     beginStart();
-    // the engine is new: what was published goes out again
+    // the engine is new: what was published goes out again (the anonymous key's while hiding)
     for (const auto& [root, p] : m_published)
-        (void)shareOne(p);
+        if (p.key == ffi::KeyKind::Node || m_session.hide().hiding())
+            (void)shareOne(p);
 }
 
 void Ed3kLiveFiles::stop()
@@ -146,15 +147,28 @@ QString Ed3kLiveFiles::fileNameOf(const QString& title)
     return safeName(title, QStringLiteral("channel")) + kSuffix;
 }
 
-std::optional<ffi::Root> Ed3kLiveFiles::publish(const QByteArray& file, const QString& name)
+std::optional<ffi::Root> Ed3kLiveFiles::publish(const QByteArray& file, const QString& name, ffi::KeyKind key)
 {
-    const Published p{file, name};
-    const auto root = shareOne(p);
-    if (!root)
+    const Published p{file, name, key};
+    // hops.md §1: its key recorded before it is opened (keyOf follows it)
+    ffi::Hasher h;
+    if (file.isEmpty() || !h.update(spanOf(file)))
         return std::nullopt;
-    m_published[*root] = p;
-    keep(*root, file);
-    return root;
+    const auto hashed = h.finish();
+    if (!hashed)
+        return std::nullopt;
+    m_session.hide().record(hashed->root, key);
+    m_published[hashed->root] = p;
+    keep(hashed->root, file);
+    // the anonymous key's while hiding is off: shared when it runs (onHideChanged)
+    if (key == ffi::KeyKind::Anon && !m_session.hide().hiding())
+        return hashed->root;
+    // was: const auto root = shareOne(p); if (!root) return std::nullopt;
+    if (!shareOne(p)) {
+        m_published.erase(hashed->root);
+        return std::nullopt;
+    }
+    return hashed->root;
 }
 
 void Ed3kLiveFiles::withdraw(const ffi::Root& root)
@@ -162,8 +176,9 @@ void Ed3kLiveFiles::withdraw(const ffi::Root& root)
     if (m_published.erase(root) == 0)
         return;
     // its records withdrawn, not served from here any more
-    if (auto* e = m_session.engine())
-        (void)e->unpublish(m_session.now(), root);
+    // was: if (auto* e = m_session.engine()) (void)e->unpublish(m_session.now(), root);
+    if (isShared(root))
+        unpublishShared(root, ffi::Publish::Both);   // under its key
     unshare(root);
     pumpSession();
 }
@@ -248,6 +263,16 @@ void Ed3kLiveFiles::saveOwner(const QString& owner)
     Q_UNUSED(owner)
 }
 
+void Ed3kLiveFiles::onHideChanged(bool hiding)
+{
+    // stopped: the base forgot the anonymous shares; they wait for hiding (never node key)
+    if (!hiding)
+        return;
+    for (const auto& [root, p] : m_published)
+        if (p.key == ffi::KeyKind::Anon && !isShared(root))
+            (void)shareOne(p);
+}
+
 // ---------------------------------------------------------------------------
 // Private
 // ---------------------------------------------------------------------------
@@ -275,7 +300,8 @@ std::optional<ffi::Root> Ed3kLiveFiles::shareOne(const Published& p)
 {
     if (!m_started)
         return std::nullopt;
-    const auto root = shareBlob(p.file, p.name, std::nullopt);
+    // was: const auto root = shareBlob(p.file, p.name, std::nullopt);
+    const auto root = shareBlob(p.file, p.name, std::nullopt, p.key);   // hops.md §1: the broadcast's key
     if (!root)
         return std::nullopt;
     const QByteArray n = p.name.toUtf8();

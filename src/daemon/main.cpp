@@ -36,6 +36,7 @@
 #include <QLockFile>
 #include <QTcpServer>
 #include <QProcess>
+#include <QThreadPool>
 #include <QLoggingCategory>
 
 #include <atomic>
@@ -340,19 +341,22 @@ int main(int argc, char* argv[])
 
     eMule::logInfo(QStringLiteral("eMule Core Daemon starting..."));
 
-    // Installer asked for an import of an MFC eMule config dir: copy it in first,
-    // so the identity import below finds its preferences.dat. Once per user.
-    (void)eMule::LegacyConfigImport::run(eMule::LegacyConfigImport::requestFilePath(),
-                                         configDir, eMule::thePrefs);
+    // First start wizard asked for an import of an eMule / aMule config dir: copy it
+    // in first, so the identity import below finds its preferences.dat.
+    (void)eMule::LegacyConfigImport::run(configDir, eMule::thePrefs);
 
     // MFC preferences.dat dropped into the config dir: take over its user hash
     // before anything reads ours. Logs its own outcome; a rejected file changes nothing.
     (void)eMule::LegacyIdentityImport::run(configDir, eMule::thePrefs);
 
     // Windows setup left a copy of itself next to the exe: share it from Incoming.
-    // After the MFC import, which may have changed the Incoming dir.
-    (void)eMule::InstallerCopy::run(eMule::InstallerCopy::stagedDir(), configDir,
-                                    eMule::thePrefs.incomingDir());
+    // After the MFC import, which may have changed the Incoming dir. On the pool:
+    // Incoming may be a NAS (#84); the share scan picks the file up once renamed.
+    QThreadPool::globalInstance()->start(
+        [staged = eMule::InstallerCopy::stagedDir(), configDir,
+         incoming = eMule::thePrefs.incomingDir()] {
+            (void)eMule::InstallerCopy::run(staged, configDir, incoming);
+        });
 
     // The web UI answers each session in its own language through this. It
     // translates nothing outside a web request, so logs and IPC stay as they are.
@@ -385,15 +389,23 @@ int main(int argc, char* argv[])
     std::optional<eMule::StallWatchdog> stallWatchdog;
     stallWatchdog.emplace(eMule::CrashHandler::crashDir());
 
-    // Second half of the MFC import: unfinished downloads of the old temp dirs.
-    // Copied, not moved -- the old install keeps its part files.
+    // Second half of the eMule / aMule import: unfinished downloads of the old temp dirs.
+    // Moved, not copied: no disk doubled, and the old client cannot run the same download.
     if (const QStringList oldTemps = eMule::LegacyConfigImport::takePendingTempDirs(configDir);
         !oldTemps.isEmpty()) {
-        for (const QString& dir : oldTemps) {
-            eMule::logInfo(QStringLiteral("Importing unfinished eMule downloads from %1").arg(dir));
-            eMule::PartFileConvert::scanFolderToAdd(dir, /*recursive=*/false, /*removeSource=*/false);
-        }
-        eMule::PartFileConvert::processQueue();
+        // Listed on the pool, queued back on the core thread
+        QThreadPool::globalInstance()->start([oldTemps] {
+            std::vector<eMule::ConvertJob> jobs;
+            for (const QString& dir : oldTemps) {
+                eMule::logInfo(QStringLiteral("Importing unfinished downloads from %1").arg(dir));
+                std::ranges::move(eMule::PartFileConvert::findJobs(dir, /*recursive=*/false, /*removeSource=*/true),
+                                  std::back_inserter(jobs));
+            }
+            QMetaObject::invokeMethod(QCoreApplication::instance(), [jobs = std::move(jobs)] {
+                eMule::PartFileConvert::addJobs(jobs);
+                eMule::PartFileConvert::processQueue();
+            });
+        });
     }
 
     // Once, whoever gets there first: the event loop ending, or Windows ending the

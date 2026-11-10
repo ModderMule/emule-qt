@@ -107,7 +107,7 @@ bool SingleInstance::forwardToPrimary(const QStringList& args, int timeoutMs) co
     {
         QDataStream out(&payload, QIODevice::WriteOnly);
         out.setVersion(QDataStream::Qt_6_0);
-        out << args;
+        out << args << qEnvironmentVariable("XDG_ACTIVATION_TOKEN");
     }
 
     // The primary takes the lock a moment before it listens: retry briefly
@@ -166,15 +166,18 @@ void SingleInstance::onNewConnection()
                 return;   // more to come
 
             QStringList args;
+            QString token;
             QDataStream inner(payload);
             inner.setVersion(QDataStream::Qt_6_0);
             inner >> args;
+            if (!inner.atEnd())
+                inner >> token;
             socket->putChar(kAck);
             socket->flush();
             socket->disconnectFromServer();
             logInfo(QStringLiteral("Another start of this profile handed over %1 argument(s)")
                         .arg(args.size()));
-            emit activationRequested(args);
+            emit activationRequested(args, token);
         });
     }
 }

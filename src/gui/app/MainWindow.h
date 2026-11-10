@@ -14,6 +14,7 @@
 
 #include "utils/Ed2kLinkImporter.h"
 
+#include <QCborMap>
 #include <QCloseEvent>
 #include <QElapsedTimer>
 #include <QMainWindow>
@@ -30,7 +31,6 @@
 
 class QAction;
 class QActionGroup;
-class QCborMap;
 class QLabel;
 class QMenu;
 class QMimeData;
@@ -51,6 +51,7 @@ class FirstStartWizard;
 class IpcClient;
 class IrcPanel;
 class SpeedGraph;
+class ToolbarButtonSizer;
 class TrayMenuManager;
 class VersionChecker;
 class ClickNLoadServer;
@@ -225,12 +226,15 @@ public:
 
     /// Bring the window back from the tray or the taskbar in the state it was left
     /// in (normal, maximized, fullscreen), raised and active.
-    void restoreWindow();
+    /// @param activationToken Wayland xdg-activation token of the launch that asked
+    ///        (a second start from the dock); empty: none
+    void restoreWindow(const QString& activationToken = {});
     /// Click'n'Load listens while its switch (Options) and hoster downloads are on.
     void updateClickNLoad();
 
     /// Update the Users/Files label in the footer with Kad network estimates.
-    void setNetworkStats(quint32 users, quint32 files);
+    /// MFC status bar counts: eD2K working servers and Kad estimate
+    void setNetworkStats(quint32 ed2kUsers, quint32 ed2kFiles, quint32 kadUsers, quint32 kadFiles);
 
     /// Update the Up/Down rate labels in the status bar (values in KB/s).
     void updateTransferRates(double upKBs, double downKBs,
@@ -251,6 +255,10 @@ public:
 
     /// Update MiniMule popup stats (called from rate polling timer).
     void updateMiniMule(int completedCount, qint64 freeBytes);
+
+    /// GetStats "saveFolderSpace": free space per network's save folder (#165).
+    /// Empty (core gone) hides the status bar read-out.
+    void setSaveFolderSpace(const QCborMap& space);
 
     /// Overall download progress on the taskbar button / Dock / launcher (MFC
     /// UpdateStatusBarProgress). Totals are over the whole download queue.
@@ -334,6 +342,7 @@ private slots:
     void raiseBlockingDialog();
 
 private:
+    void updateNetworkStatsLabel();
     /// Status bar text for the load stage the core reports.
     [[nodiscard]] QString coreLoadingText() const;
     void rebuildToolbar();
@@ -354,6 +363,8 @@ private:
     QString skinsDir() const;
     void applySkinProfile(const QString& path);
     void setupStatusBar();
+    /// m_statusFreeSpace for the current page: torrent, Usenet, hoster or incoming folder
+    void updateFreeSpaceLabel();
     void updateAttachIndicator();   ///< status bar core attach/detach icon
     /// GetEd3kStatus once per connection; pushes keep it current.
     void requestEd3kStatus();
@@ -404,6 +415,7 @@ private:
 
     QStackedWidget* m_pages = nullptr;
     QToolBar* m_toolbar = nullptr;
+    ToolbarButtonSizer* m_toolbarSizer = nullptr;   ///< even widths, owned by m_toolbar
     QAction* m_connectAction = nullptr;
     QActionGroup* m_tabGroup = nullptr;
     IpcClient* m_ipc = nullptr;
@@ -429,6 +441,7 @@ private:
     QLabel* m_statusMsg = nullptr;
     QWidget* m_statusUsersWidget = nullptr;   // container for user icon + label
     QLabel* m_statusUsersLabel = nullptr;
+    quint32 m_ed2kUsers = 0, m_ed2kFiles = 0, m_kadUsers = 0, m_kadFiles = 0;
     QWidget* m_statusUpDownWidget = nullptr;  // container for up/down icon + labels
     QLabel* m_statusUpDownIcon = nullptr;     // Up[01]down[01] state icon
     int m_transferStateIcon = -1;             // last index shown, -1 = none
@@ -436,6 +449,8 @@ private:
     QLabel* m_statusDownLabel = nullptr;
     QLabel* m_statusEd2k = nullptr;
     QLabel* m_statusUss = nullptr;    ///< Upload SpeedSense ping, MFC SBarUSS
+    QLabel* m_statusFreeSpace = nullptr;   ///< free space of the current window's save folder (#165)
+    QCborMap m_saveFolderSpace;
     QString m_ed2kServerName;
     qint64 m_ed2kServerUsers = 0;
     QLabel* m_statusKad = nullptr;

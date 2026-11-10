@@ -520,6 +520,17 @@ void Ed3kShared::share(File& f, const Hashed& h)
         logDebug([&]() -> QString { return QStringLiteral("publish of \"%1\" failed (error %2)").arg(f.entry.name, errorName(ok.error())); });
     else
         f.keywords = *ok == ffi::Publish::Both;
+    // hops.md §1 SHOULD: every file here is in eD2K's share list too, its sources there show
+    // the address and tie the anonymous key to it: the user is told once
+    // ToDo: the same for a file under the anonymous key downloaded or seeded over BitTorrent or
+    // HTTP (Ed3kDownloads::add of an anonymous root vs. the torrent list and the eD2K/HTTP
+    // download queue); needs a root/MD4 lookup across the other networks' lists
+    if (anon && m_exposedTold.insert(h.root).second) {
+        const QString networks = QStringLiteral("eD2K/Kad");
+        logWarning(QStringLiteral("\"%1\" is shared under the anonymous key and on %2 too: sources there show this "
+                                  "address (hops.md §1). Unshare it there or move it to the node key.").arg(f.entry.name, networks));
+        emit anonExposed(f.entry.name, networks);
+    }
     // alias.md §3: the root is shared here and both names come from these bytes; never for a
     // file of the anonymous key (ffi.md: eD2K is never anonymous)
     // was: if (!m_holdBack) {

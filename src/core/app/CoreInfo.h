@@ -11,6 +11,10 @@ namespace eMule::ops {
 /// `netBlocked`, `netBlockReason`, `boundInterface`: the bound-interface state.
 void insertBindState(QCborMap& info);
 
+/// `ed2kUsers`, `ed2kFiles`: users/files of the working servers (MFC GetUserFileStatus),
+/// 0 while not on a server. The status bar and Network Information show these.
+void insertEd2kCounts(QCborMap& info);
+
 /// Sections `client`, `ed2k`, `kad` and `portmap` of the network information.
 [[nodiscard]] QCborMap networkInfo();
 

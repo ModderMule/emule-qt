@@ -67,6 +67,7 @@ struct ClientRow {
     bool isFriend = false;
     bool isUrl = false;            ///< HTTP source, not an eD2K client
     ClientNetwork network = ClientNetwork::Ed2k;   ///< ed3k: a node of the ed3k upload queue, no eD2K actions
+    bool anonymous = false;     ///< ed3k: the anonymous node's queue (hops.md §1), no address
     bool noViewShared = false;     ///< peer refuses "View Shared Files"
     int64_t upDatarate = 0;       // bytes/sec upload rate
     int64_t downDatarate = 0;     // bytes/sec download rate

@@ -68,8 +68,22 @@ Ed3kRooms::Ed3kRooms(Ed3kSession& session, QObject* parent)
     : QObject(parent)
     , m_session(session)
 {
-    connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kRooms::onEventPolled, Qt::DirectConnection);
+    // was: connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kRooms::onEventPolled, Qt::DirectConnection);
+    // node key from eventPolled, the anonymous node's from keyedEventPolled: each event once
+    connect(&m_session, &Ed3kSession::eventPolled, this,
+            [this](const ffi::Event& ev, bool* handled) { onEventPolled(ev, ffi::KeyKind::Node, handled); }, Qt::DirectConnection);
+    connect(&m_session, &Ed3kSession::keyedEventPolled, this,
+            [this](const ffi::Event& ev, ffi::KeyKind key, bool* handled) {
+                if (key == ffi::KeyKind::Anon)
+                    onEventPolled(ev, key, handled);
+            },
+            Qt::DirectConnection);
     connect(&m_session, &Ed3kSession::statusChanged, this, &Ed3kRooms::onSessionStatus);
+    connect(&m_session.hide(), &Ed3kHide::started, this, [this] {
+        if (m_attached)
+            rejoinSaved(ffi::KeyKind::Anon);
+    });
+    connect(&m_session.hide(), &Ed3kHide::stopped, this, &Ed3kRooms::hideStopped);
     onSessionStatus();
 }
 
@@ -118,14 +132,17 @@ ffi::Result<ffi::Room> Ed3kRooms::create(const QString& title, const QString& ab
     const QByteArray t = title.toUtf8();
     const QByteArray a = about.toUtf8();
     const std::array<ffi::Key32, 1> mods{*memberPub};
-    auto made = e->roomCreate(m_session.now(), roomKey.expose(), member.expose(), viewOf(n), id, flags, viewOf(t), viewOf(a), mods);
+    // hops.md §1: under the anonymous key while hiding, and it stays there
+    const ffi::KeyKind key = m_session.hide().keyForUse();
+    // was: auto made = e->roomCreate(m_session.now(), roomKey.expose(), ...);
+    auto made = e->roomCreate(key, m_session.now(), roomKey.expose(), member.expose(), viewOf(n), id, flags, viewOf(t), viewOf(a), mods);
     if (!made) {
         m_session.pump();
         return std::unexpected(made.error());
     }
     // tracked before the pump: the room's first events come with it
     const auto linkText = made->link.text();
-    Room& r = track(made->room, QString::fromUtf8(linkText.data(), qsizetype(linkText.size())), nick);
+    Room& r = track(made->room, QString::fromUtf8(linkText.data(), qsizetype(linkText.size())), nick, key);
     r.owner = true;
     r.memberKey = *memberPub;
     r.title = title;
@@ -138,7 +155,7 @@ ffi::Result<ffi::Room> Ed3kRooms::create(const QString& title, const QString& ab
         || !replaceSecret(roomsDir(), memberFile(made->room), member.expose(), &err)) {
         // a room whose keys are lost cannot be joined again: leave it
         logEd3kWarning(QStringLiteral("ed3k: room keys not stored (%1)").arg(err));
-        (void)e->roomLeave(m_session.now(), made->room);
+        (void)e->roomLeave(key, m_session.now(), made->room);
         m_rooms.erase(made->room);
         m_saved.erase(made->room);
         m_session.pump();
@@ -146,7 +163,7 @@ ffi::Result<ffi::Room> Ed3kRooms::create(const QString& title, const QString& ab
     }
     m_session.pump();
     save();
-    logEd3k(QStringLiteral("ed3k: room %1 made").arg(roomHex(made->room)));
+    logEd3k(QStringLiteral("ed3k: room %1 made (%2 key)").arg(roomHex(made->room), Ed3kHide::keyName(key)));
     emit roomsChanged();
     return made->room;
 }
@@ -157,13 +174,19 @@ ffi::Result<ffi::Room> Ed3kRooms::join(const QString& link, const QString& nick)
         return std::unexpected(ffi::Error::State);
     const QString l = link.trimmed();
     for (const auto& [room, r] : m_rooms)
-        if (r.link == l)
+        if (r.link == l) {
+            // hops.md §1: a room of the anonymous key is not joined under the node key
+            if (r.waitingHide)
+                return std::unexpected(ffi::Error::State);
             return room;
-    auto room = joinWith(l, nick);
+        }
+    // was: auto room = joinWith(l, nick);
+    const ffi::KeyKind key = m_session.hide().keyForUse();
+    auto room = joinWith(l, nick, key);
     if (!room)
         return room;
     save();
-    logEd3k(QStringLiteral("ed3k: room %1 joined").arg(roomHex(*room)));
+    logEd3k(QStringLiteral("ed3k: room %1 joined (%2 key)").arg(roomHex(*room), Ed3kHide::keyName(key)));
     emit roomsChanged();
     return room;
 }
@@ -173,10 +196,15 @@ ffi::Result<> Ed3kRooms::leave(const ffi::Room& room)
     auto* e = m_session.engine();
     if (!e)
         return std::unexpected(ffi::Error::State);
-    auto ok = e->roomLeave(m_session.now(), room);
-    m_session.pump();
-    if (!ok && ok.error() != ffi::Error::NotFound)
-        return ok;
+    // a waiting anonymous room is not on any node: only forgotten here
+    const auto key = keyOf(room);
+    if (key) {
+        // was: auto ok = e->roomLeave(m_session.now(), room);
+        auto ok = e->roomLeave(*key, m_session.now(), room);
+        m_session.pump();
+        if (!ok && ok.error() != ffi::Error::NotFound)
+            return ok;
+    }
     // the member key goes with the room (a new one for a new join, §1.1); the room key stays
     QFile::remove(QDir(roomsDir()).filePath(memberFile(room)));
     m_rooms.erase(room);
@@ -192,7 +220,10 @@ ffi::Result<> Ed3kRooms::connectPeer(const ffi::Room& room, const ffi::Source& p
     auto* e = m_session.engine();
     if (!e)
         return std::unexpected(ffi::Error::State);
-    auto ok = e->roomConnect(m_session.now(), room, peer);
+    const auto key = keyOf(room);
+    if (!key)
+        return std::unexpected(key.error());
+    auto ok = e->roomConnect(*key, m_session.now(), room, peer);
     m_session.pump();
     return ok;
 }
@@ -202,8 +233,11 @@ ffi::Result<std::vector<ffi::PostId>> Ed3kRooms::post(const ffi::Room& room, con
     auto* e = m_session.engine();
     if (!e)
         return std::unexpected(ffi::Error::State);
+    const auto key = keyOf(room);
+    if (!key)
+        return std::unexpected(key.error());
     const QByteArray t = text.toUtf8();
-    auto ids = e->roomPost(m_session.now(), room, viewOf(t), replyTo);
+    auto ids = e->roomPost(*key, m_session.now(), room, viewOf(t), replyTo);
     m_session.pump();
     return ids;
 }
@@ -213,8 +247,11 @@ ffi::Result<> Ed3kRooms::setNick(const ffi::Room& room, const QString& nick)
     auto* e = m_session.engine();
     if (!e)
         return std::unexpected(ffi::Error::State);
+    const auto key = keyOf(room);
+    if (!key)
+        return std::unexpected(key.error());
     const QByteArray n = nick.toUtf8();
-    auto ok = e->roomSetNick(m_session.now(), room, viewOf(n));
+    auto ok = e->roomSetNick(*key, m_session.now(), room, viewOf(n));
     m_session.pump();
     if (!ok)
         return ok;
@@ -233,9 +270,12 @@ ffi::Result<> Ed3kRooms::setInfo(const ffi::Room& room, const QString& title, co
     auto* e = m_session.engine();
     if (!e)
         return std::unexpected(ffi::Error::State);
+    const auto key = keyOf(room);
+    if (!key)
+        return std::unexpected(key.error());
     const QByteArray t = title.toUtf8();
     const QByteArray a = about.toUtf8();
-    auto ok = e->roomSetInfo(m_session.now(), room, flags & (ED3K_ROOM_CLOSED | ED3K_ROOM_MODERATED), viewOf(t), viewOf(a), mods);
+    auto ok = e->roomSetInfo(*key, m_session.now(), room, flags & (ED3K_ROOM_CLOSED | ED3K_ROOM_MODERATED), viewOf(t), viewOf(a), mods);
     m_session.pump();
     return ok;
 }
@@ -245,7 +285,10 @@ ffi::Result<QString> Ed3kRooms::admit(const ffi::Room& room, const ffi::Key32& m
     auto* e = m_session.engine();
     if (!e)
         return std::unexpected(ffi::Error::State);
-    auto item = e->roomAdmit(m_session.now(), room, member, until);
+    const auto key = keyOf(room);
+    if (!key)
+        return std::unexpected(key.error());
+    auto item = e->roomAdmit(*key, m_session.now(), room, member, until);
     m_session.pump();
     if (!item)
         return std::unexpected(item.error());
@@ -264,7 +307,10 @@ ffi::Result<ffi::Room> Ed3kRooms::importAdmit(const QString& text)
     const auto& [room, item] = *parsed;
     if (!m_rooms.contains(room))
         return std::unexpected(ffi::Error::NotFound);
-    auto ok = e->roomImportItem(m_session.now(), room, std::as_bytes(std::span{item.constData(), std::size_t(item.size())}));
+    const auto key = keyOf(room);
+    if (!key)
+        return std::unexpected(key.error());
+    auto ok = e->roomImportItem(*key, m_session.now(), room, std::as_bytes(std::span{item.constData(), std::size_t(item.size())}));
     m_session.pump();
     if (!ok)
         return std::unexpected(ok.error());
@@ -277,10 +323,13 @@ ffi::Result<> Ed3kRooms::ban(const ffi::Room& room, const ffi::Key32& member, st
     auto* e = m_session.engine();
     if (!e)
         return std::unexpected(ffi::Error::State);
+    const auto key = keyOf(room);
+    if (!key)
+        return std::unexpected(key.error());
     const ffi::Now t = m_session.now();
     // at most 30 days on (§2.3): the core refuses more
     until = std::min(until, t.unixS + kBanMax);
-    auto ok = e->roomBan(t, room, member, until);
+    auto ok = e->roomBan(*key, t, room, member, until);
     m_session.pump();
     return ok;
 }
@@ -296,7 +345,10 @@ ffi::Result<std::uint64_t> Ed3kRooms::startGeneration(const ffi::Room& room)
     auto* e = m_session.engine();
     if (!e)
         return std::unexpected(ffi::Error::State);
-    auto g = e->roomStartGeneration(m_session.now(), room);
+    const auto key = keyOf(room);
+    if (!key)
+        return std::unexpected(key.error());
+    auto g = e->roomStartGeneration(*key, m_session.now(), room);
     m_session.pump();
     return g;
 }
@@ -381,12 +433,13 @@ std::optional<std::pair<ffi::Room, QByteArray>> Ed3kRooms::parseAdmitText(const 
 // Private
 // ---------------------------------------------------------------------------
 
-void Ed3kRooms::onEventPolled(const ffi::Event& ev, bool* handled)
+void Ed3kRooms::onEventPolled(const ffi::Event& ev, ffi::KeyKind key, bool* handled)
 {
     namespace e = ffi::event;
-    const auto roomOf = [this](const ffi::Room& r) -> Room* {
+    // a room's events come from the node it is joined under (hops.md §1)
+    const auto roomOf = [this, key](const ffi::Room& r) -> Room* {
         const auto it = m_rooms.find(r);
-        return it == m_rooms.end() ? nullptr : &it->second;
+        return it == m_rooms.end() || it->second.key != key ? nullptr : &it->second;
     };
     const auto noticeOf = [this](const ffi::Room& r, Notice kind, quint64 value, bool flag, const QByteArray& who) {
         emit notice(bytesOf(r.bytes), int(kind), value, flag, who);
@@ -521,10 +574,26 @@ void Ed3kRooms::attach()
 {
     m_attached = true;
     loadSaved();
+    rejoinSaved(std::nullopt);
+}
+
+void Ed3kRooms::rejoinSaved(std::optional<ffi::KeyKind> only)
+{
+    const bool hiding = m_session.hide().hiding();
     // the rooms of the last run: their State::Rooms blob is in the engine already
     const auto saved = m_saved;
     for (const auto& [room, s] : saved) {
-        auto joined = joinWith(s.link, s.nick);
+        if (only && s.key != *only)
+            continue;
+        if (const auto it = m_rooms.find(room); it != m_rooms.end() && !it->second.waitingHide)
+            continue;
+        // hops.md §1: hiding off, nothing falls back to the node key: listed, waits
+        if (s.key == ffi::KeyKind::Anon && !hiding) {
+            trackWaiting(room, s);
+            continue;
+        }
+        // was: auto joined = joinWith(s.link, s.nick);
+        auto joined = joinWith(s.link, s.nick, s.key);
         if (!joined) {
             logEd3kWarning(QStringLiteral("ed3k: room %1 not joined again (error %2)").arg(roomHex(room)).arg(int(joined.error())));
             continue;
@@ -534,26 +603,77 @@ void Ed3kRooms::attach()
             m_saved.erase(room);
             m_saved[*joined] = s;
         }
-        if (auto it = m_rooms.find(*joined); it != m_rooms.end())
+        if (auto it = m_rooms.find(*joined); it != m_rooms.end()) {
             it->second.muted = s.muted;
-        // the info of the last run until a neighbour sends a newer one
-        if (auto it = m_rooms.find(*joined); it != m_rooms.end() && it->second.title.isEmpty() && !s.info.isEmpty()) {
-            Room& r = it->second;
-            r.title = s.info.value(QStringLiteral("title")).toString();
-            r.about = s.info.value(QStringLiteral("about")).toString();
-            r.closed = s.info.value(QStringLiteral("closed")).toBool();
-            r.moderated = s.info.value(QStringLiteral("moderated")).toBool();
-            r.mods.clear();
-            for (const QCborValue& v : s.info.value(QStringLiteral("mods")).toArray())
-                if (const auto k = keyFromText(v.toString()))
-                    r.mods.push_back(*k);
+            // the info of the last run until a neighbour sends a newer one
+            applySavedInfo(it->second, s);
         }
     }
     save();
     emit roomsChanged();
 }
 
-ffi::Result<ffi::Room> Ed3kRooms::joinWith(const QString& link, const QString& nick)
+void Ed3kRooms::hideStopped()
+{
+    // the anonymous node took its rooms along: they wait, listed (rejoinSaved at the next start)
+    bool any = false;
+    for (auto& [room, r] : m_rooms) {
+        if (r.key != ffi::KeyKind::Anon || r.waitingHide)
+            continue;
+        r.waitingHide = true;
+        r.joined = false;
+        r.neighbours = 0;
+        r.present.clear();
+        r.keyHeld = false;
+        any = true;
+    }
+    if (any) {
+        logEd3k(QStringLiteral("ed3k: hiding stopped; rooms of the anonymous key wait until it is on again"));
+        emit roomsChanged();
+    }
+}
+
+ffi::Result<ffi::KeyKind> Ed3kRooms::keyOf(const ffi::Room& room) const
+{
+    const Room* r = find(room);
+    if (!r)
+        return ffi::KeyKind::Node;   // not tracked: the core answers (NotFound)
+    if (r->waitingHide || (r->key == ffi::KeyKind::Anon && !m_session.hide().hiding()))
+        return std::unexpected(ffi::Error::State);
+    return r->key;
+}
+
+void Ed3kRooms::trackWaiting(const ffi::Room& room, const Saved& s)
+{
+    Room& r = track(room, s.link, s.nick, s.key);
+    r.waitingHide = true;
+    r.muted = s.muted;
+    if (const auto roomKey = linkKey(s.link))
+        r.owner = QFile::exists(QDir(roomsDir()).filePath(ownerFile(*roomKey)));
+    if (auto seed = loadSecret(roomsDir(), memberFile(room))) {
+        const Secret member(*seed);
+        wipe(std::span<std::uint8_t>{*seed});
+        if (const auto pub = ffi::roomMemberKey(member.expose()))
+            r.memberKey = *pub;
+    }
+    applySavedInfo(r, s);
+}
+
+void Ed3kRooms::applySavedInfo(Room& r, const Saved& s)
+{
+    if (!r.title.isEmpty() || s.info.isEmpty())
+        return;
+    r.title = s.info.value(QStringLiteral("title")).toString();
+    r.about = s.info.value(QStringLiteral("about")).toString();
+    r.closed = s.info.value(QStringLiteral("closed")).toBool();
+    r.moderated = s.info.value(QStringLiteral("moderated")).toBool();
+    r.mods.clear();
+    for (const QCborValue& v : s.info.value(QStringLiteral("mods")).toArray())
+        if (const auto k = keyFromText(v.toString()))
+            r.mods.push_back(*k);
+}
+
+ffi::Result<ffi::Room> Ed3kRooms::joinWith(const QString& link, const QString& nick, ffi::KeyKind key)
 {
     auto* e = m_session.engine();
     if (!e)
@@ -575,8 +695,8 @@ ffi::Result<ffi::Room> Ed3kRooms::joinWith(const QString& link, const QString& n
     wipe(std::span<std::uint8_t>{*seed});
     // owner: the room key of the link's key is held
     std::optional<Seed> ownerSeed;
-    if (const auto key = linkKey(link))
-        ownerSeed = loadSecret(roomsDir(), ownerFile(*key));
+    if (const auto roomKey = linkKey(link))
+        ownerSeed = loadSecret(roomsDir(), ownerFile(*roomKey));
     std::optional<Secret> owner;
     if (ownerSeed) {
         owner.emplace(*ownerSeed);
@@ -585,7 +705,8 @@ ffi::Result<ffi::Room> Ed3kRooms::joinWith(const QString& link, const QString& n
 
     const QByteArray l = link.toUtf8();
     const QByteArray n = nick.toUtf8();
-    auto room = e->roomJoin(m_session.now(), viewOf(l), member.expose(), viewOf(n), owner ? &owner->expose() : nullptr);
+    // was: auto room = e->roomJoin(m_session.now(), viewOf(l), member.expose(), viewOf(n), owner ? &owner->expose() : nullptr);
+    auto room = e->roomJoin(key, m_session.now(), viewOf(l), member.expose(), viewOf(n), owner ? &owner->expose() : nullptr);
     if (!room) {
         m_session.pump();
         return room;
@@ -594,13 +715,14 @@ ffi::Result<ffi::Room> Ed3kRooms::joinWith(const QString& link, const QString& n
         QString err;
         if (!replaceSecret(roomsDir(), memberFile(*room), member.expose(), &err)) {
             logEd3kWarning(QStringLiteral("ed3k: room member key not stored (%1)").arg(err));
-            (void)e->roomLeave(m_session.now(), *room);
+            (void)e->roomLeave(key, m_session.now(), *room);
             m_session.pump();
             return std::unexpected(ffi::Error::Io);
         }
     }
     // tracked before the pump: the room's info and history come with it
-    Room& r = track(*room, link, nick);
+    Room& r = track(*room, link, nick, key);
+    r.waitingHide = false;
     r.owner = owner.has_value();
     if (const auto pub = ffi::roomMemberKey(member.expose()))
         r.memberKey = *pub;
@@ -608,16 +730,18 @@ ffi::Result<ffi::Room> Ed3kRooms::joinWith(const QString& link, const QString& n
     return room;
 }
 
-Ed3kRooms::Room& Ed3kRooms::track(const ffi::Room& room, const QString& link, const QString& nick)
+Ed3kRooms::Room& Ed3kRooms::track(const ffi::Room& room, const QString& link, const QString& nick, ffi::KeyKind key)
 {
     Room& r = m_rooms[room];
     r.room = room;
     r.link = link;
     r.nick = nick;
+    r.key = key;
     r.isPrivate = QUrlQuery(link.mid(link.indexOf(QLatin1Char('?')) + 1)).hasQueryItem(QStringLiteral("s"));
     Saved& s = m_saved[room];
     s.link = link;
     s.nick = nick;
+    s.key = key;
     return r;
 }
 
@@ -654,7 +778,8 @@ void Ed3kRooms::loadSaved()
         const QString link = m.value(QStringLiteral("link")).toString();
         if (!room || !link.startsWith(QLatin1String("ed3k:room?"), Qt::CaseInsensitive))
             continue;
-        Saved saved{link, m.value(QStringLiteral("nick")).toString(), m.value(QStringLiteral("info")).toMap(), {}};
+        Saved saved{link, m.value(QStringLiteral("nick")).toString(), m.value(QStringLiteral("info")).toMap(), {},
+                    m.value(QStringLiteral("key")).toString() == QLatin1String("anon") ? ffi::KeyKind::Anon : ffi::KeyKind::Node};
         for (const QCborValue& id : m.value(QStringLiteral("muted")).toArray()) {
             const QByteArray raw = QByteArray::fromHex(id.toString().toLatin1());
             std::array<std::uint8_t, 16> mid{};
@@ -686,13 +811,16 @@ void Ed3kRooms::save() const
         QCborArray muted;
         for (const auto& id : s.muted)
             muted.append(QString::fromLatin1(bytesOf(id).toHex()));
-        list.append(QCborMap{
+        QCborMap m{
             {QStringLiteral("room"), roomHex(room)},
             {QStringLiteral("link"), s.link},
             {QStringLiteral("nick"), s.nick},
             {QStringLiteral("info"), info},
             {QStringLiteral("muted"), muted},
-        });
+        };
+        if (s.key == ffi::KeyKind::Anon)
+            m.insert(QStringLiteral("key"), QStringLiteral("anon"));
+        list.append(m);
     }
     QByteArray blob = list.toCborValue().toCbor();
     if (!writeBlob(QDir(roomsDir()).filePath(kJoinedFile), std::as_bytes(std::span{blob.constData(), std::size_t(blob.size())})))

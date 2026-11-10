@@ -14,6 +14,8 @@
 ///   (done: uploading()/waiting() read Engine::queueList: the engine's rank as the place, the
 ///   endpoint, since when, the turn's bytes, connected; the events add name, LAN and due.
 ///   Without an engine the event rows, place by waiting time.)
+/// - Both nodes (hops.md §1): the anonymous node's queue too while hiding (queueList(Anon),
+///   keyed events); its rows carry KeyKind::Anon and never an address.
 
 #include "Ed3kFfi.h"
 
@@ -25,6 +27,7 @@
 #include <array>
 #include <map>
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace eMule::ed3k {
@@ -39,6 +42,7 @@ public:
     struct Row {
         ::ed3k::NodeId node{};
         ::ed3k::Root root{};
+        ::ed3k::KeyKind key = ::ed3k::KeyKind::Node;   ///< the queue of this node: Anon shows no address
         QString fileName;            ///< empty: not known (the name lookup knows no such root)
         std::uint64_t fileSize = 0;
         QString address;             ///< literal IP; empty: not known (relays only)
@@ -64,7 +68,7 @@ public:
     /// Oldest first; place set.
     [[nodiscard]] std::vector<Row> waiting() const;
     [[nodiscard]] std::size_t size() const { return m_rows.size(); }
-    /// A node whose ID starts with @p prefix waits or holds a slot (ed3k §14.2 hint).
+    /// A node whose ID starts with @p prefix waits or holds a slot at the node key (ed3k §14.2 hint).
     [[nodiscard]] bool hasNodeStarting(const std::array<std::uint8_t, 12>& prefix) const;
 
 signals:
@@ -74,13 +78,16 @@ signals:
 private:
     /// The engine's queue (queueList) merged with what the events told; nullopt: no engine.
     [[nodiscard]] std::optional<std::vector<Row>> listed() const;
-    void onEventPolled(const ::ed3k::Event& event, bool* handled);
+    /// queueList of one node's queue, merged with the event rows of that key. false: no list.
+    bool appendListed(::ed3k::KeyKind key, std::vector<Row>& out) const;
+    void onEventPolled(const ::ed3k::Event& event, ::ed3k::KeyKind key, bool* handled);
     void onSessionStatus();
     [[nodiscard]] static qint64 nowMs();
 
     Ed3kSession& m_session;
     NameLookup m_names;
-    std::map<::ed3k::NodeId, Row> m_rows;
+    /// by (key, node): the two nodes' queues may hold the same downloader ID
+    std::map<std::pair<::ed3k::KeyKind, ::ed3k::NodeId>, Row> m_rows;
 };
 
 } // namespace eMule::ed3k

@@ -105,11 +105,16 @@ public final class ResolverMain {
             m.put("crawlers", Jd.crawlerPluginCount());
             // what this sidecar can do beyond its protocol (older ones send none)
             m.put("deep", true);
+            m.put("bind", true);
             Out.send(m);
             break;
         }
         case "setProxy":
             Jd.setProxy(str(req.get("url")));
+            Out.send(id, "ok");
+            break;
+        case "setBind":
+            Jd.setBind(str(req.get("address")));
             Out.send(id, "ok");
             break;
         case "setPuzzles":

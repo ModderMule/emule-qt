@@ -20,7 +20,7 @@ constexpr int64 kCallbackCost = kBucketMax / kAssumedRelayServedBuddies;
 } // namespace
 
 bool BuddyRelayBudget::tryCharge(const Address& relay, const uint8* buddyID,
-                                 RelayRequest kind, uint64 now)
+                                 RelayRequest kind, uint32 reaskSize, uint64 now)
 {
     if (!buddyID)
         return false;
@@ -31,12 +31,20 @@ bool BuddyRelayBudget::tryCharge(const Address& relay, const uint8* buddyID,
     BuddyID id;
     std::memcpy(id.data(), buddyID, id.size());
 
+    // The relayed size. A reask is charged in its IPv6 form: which family the relay
+    // sees us on is unknown here, and the larger one always fits.
+    const uint32 bytes = kind == RelayRequest::KadCallback
+                             ? kRelayedCallbackSize
+                             : relayedReaskSize(std::max<uint32>(reaskSize, 17), true);
+
     // Per served buddy: a sliding window. The relay counts in a fixed one whose start is
-    // unknown here, so only "60 in any minute" fits into it for certain.
-    auto& sends = m_relaySends[id];
-    while (!sends.empty() && now - sends.front() >= kWindow)
-        sends.pop_front();
-    if (sends.size() >= kMaxBuddyRelaysPerMin)
+    // unknown here, so only "64 KiB in any minute" fits into it for certain.
+    auto& buddy = m_relaySends[id];
+    while (!buddy.sends.empty() && now - buddy.sends.front().tick >= kWindow) {
+        buddy.bytes -= buddy.sends.front().bytes;
+        buddy.sends.pop_front();
+    }
+    if (buddy.bytes + bytes > kBuddyRelayBytesPerMin)
         return false;
 
     // Per caller IP: the relay limits only the Kad request
@@ -56,7 +64,8 @@ bool BuddyRelayBudget::tryCharge(const Address& relay, const uint8* buddyID,
         it->second.tokens -= kCallbackCost;
     }
 
-    sends.push_back(now);
+    buddy.sends.push_back({now, bytes});
+    buddy.bytes += bytes;
     return true;
 }
 
@@ -79,7 +88,7 @@ void BuddyRelayBudget::prune(uint64 now)
         return now - entry.second.latest >= kWindow;
     });
     std::erase_if(m_relaySends, [now](const auto& entry) {
-        return entry.second.empty() || now - entry.second.back() >= kWindow;
+        return entry.second.sends.empty() || now - entry.second.sends.back().tick >= kWindow;
     });
 }
 

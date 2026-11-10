@@ -7,6 +7,7 @@
 #include "app/CoreOps.h"
 #include "TestFixtures.h"
 #include "TestHelpers.h"
+#include "utils/BackgroundFileWriter.h"
 #include "utils/TimeUtils.h"
 #include "app/AppContext.h"
 #include "files/KnownFileList.h"
@@ -358,6 +359,7 @@ QString fileLinkFor(const uint8* hash, const QString& name)
 
 int partMetCount(const QString& dir)
 {
+    BackgroundFileWriter::instance().flush();   // mets are saved on the writer thread
     return static_cast<int>(QDir(dir).entryList({QStringLiteral("*.part.met")}, QDir::Files).size());
 }
 
@@ -1206,6 +1208,7 @@ void tst_DownloadQueue::init_scansDirectory()
     pf.setFileHash(hash);
 
     QVERIFY(pf.createPartFile(tempDir));
+    BackgroundFileWriter::instance().flush();
 
     const QString metFileName = pf.partMetFileName();
     QVERIFY(QFile::exists(tempDir + QDir::separator() + metFileName));

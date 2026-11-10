@@ -20,7 +20,7 @@ that statement and the two changes eMuleQt makes to the search.
    - it does not already know the asking client.
    Otherwise it stays silent. There is no "no" answer.
 3. The asker checks that the reply echoes its BuddyID (`echo ^ ~0 == KadID`) and opens a
-   TCP connection to the offering node.
+   TCP connection to the offering node. Stock eMule queues offers and dials one at a time.
 
 Stock eMule always walks to the target `~KadID`, asks about ten nodes there, and repeats
 every 20 minutes. The neighbourhood of `~KadID` hardly changes between two searches, so
@@ -178,11 +178,11 @@ neighbourhood changes. That is the case the random target removes.
    it is left out of the remembered nodes we ask (`ClientList::isFailedBuddyCandidate()`).
    Only a failed dial or handshake counts, not a buddy that connected and later went silent,
    and not a dial cut short because Kad stopped.
-7. **A stale offer is dropped.** We dial one candidate at a time, and a dead one can hold
-   the turn for up to 160 s. An offer still queued after `buddyOfferMaxAgeSecs` (YAML only,
-   default 300 s, range 30–3600) is dropped: the offering node has let its claim go by then
-   (5 min on an eMuleQt node, 2 min on aMule 3.3), and a late dial would give us a buddy
-   that relays nothing until the 25-minute silence limit drops it.
+7. **Every offer is dialled at once.** Stock eMule dials one candidate at a time, so a dead
+   one held the next for up to 160 s. By then the offering node may have let its claim go
+   (5 min on an eMuleQt node, 2 min on aMule 3.3), and a late dial gave a buddy that relays
+   nothing. The first candidate to connect becomes our buddy; the others are let go and their
+   links close on the normal idle timeout (`ClientList::requestBuddy()`, `processKadList()`).
 
 Code: `Kademlia::buddySearchTarget()` and step 6 of `Kademlia::process()`
 (`src/core/kademlia/Kademlia.cpp`), FindBuddy case of `Search::storePacket()`
@@ -234,7 +234,8 @@ With Kad logging on, `emulecored_Kad.log` shows the buddy's state:
 | `Kad: buddy lost — …, held N s` | it went away |
 | `Kad: buddy candidate … failed` | the dial or handshake failed |
 | `Kad: not asking … again for 60 min`, `Kad: buddy offer from … ignored — failed within the last hour` | the 1-hour skip |
-| `Kad: buddy candidate … dropped — offer older than N s` | a stale offer |
+| `Kad: buddy candidate … released — buddy already set` | a second candidate connected too |
+| `Kad: no buddy candidate left` | every dialled candidate failed |
 | `Kad: buddy link … closed (reason) after N s` | socket closed; the reason tells who closed it |
 | `Kad: BUDDYPING → ip`, `Kad: BUDDYPONG from ip` | the 10-minute keep-alive |
 | `Kad: serving buddy …`, `Kad: stop serving buddy … — reason` | an open node's served buddies |
@@ -334,9 +335,10 @@ A served buddy is dropped when:
 | Auto value | by upload capacity, see below | `Preferences::autoServedBuddies()` |
 | Served buddies in effect | the preference or its auto value, at most a tenth of `maxConnections` (minimum 1) | `Preferences::servedBuddyLimit()` |
 | Pending claim (answered, not yet connected) | reserves nothing, released after 5 minutes | `kIncomingBuddyTimeoutSecs` |
-| Pending claims per IP | 1 | `ClientList::incomingBuddy()` |
+| Served buddies per IP | 1, pending or connected; a second one that connects is released | `ClientList::incomingBuddy()`, `processKadList()` |
 | Pending claims in total | 64, a further one releases the oldest | `ClientList::kMaxPendingBuddyClaims` |
-| Relayed packets per served buddy | 60 per minute | `UpDownClient::allowBuddyRelay()` |
+| Relayed bytes per served buddy | 64 KiB per minute, both kinds on one budget | `UpDownClient::allowBuddyRelay()`, `kBuddyRelayBytesPerMin` |
+| `OP_REASKCALLBACKUDP` size | at most 8,228 bytes, the format maximum (65,535 parts); larger is dropped | `kMaxReaskCallbackUdpSize` |
 | `KADEMLIA_CALLBACK_REQ` per caller IP | the limit in effect per minute (stock: 1) | `PacketTracking::inTrackListIsAllowedPacket()` |
 
 Each served buddy holds one idle TCP connection, kept open by its ping every 10 minutes, and
@@ -349,6 +351,21 @@ The callback limit keeps the stock bucket and ban threshold; only the cost of on
 changes. At 8 slots a burst of 8 requests from one IP passes, the 9th is dropped,
 and the IP is banned at the 33rd. The limit for `KADEMLIA_FINDBUDDY_REQ` stays as in stock.
 
+The budget counts the bytes relayed to the served node, the body of the TCP packet it gets:
+
+| Relayed packet | Bytes | Fit in 64 KiB |
+|---|---|---|
+| `OP_CALLBACK` from a `KADEMLIA_CALLBACK_REQ` | 38 | about 1,700 |
+| `OP_REASKCALLBACKTCP`, IPv4, 700 MB file | about 45 | about 1,450 |
+| same, 4 GiB file | 92 | about 710 |
+| same, largest `OP_REASKCALLBACKUDP` (8,228 B) | 8,218 (IPv6 8,234) | 7 |
+
+Bytes, not packets: a packet count high enough for a full eMuleAI queue (20,000 waiting, a
+reask every 15 min, about 1,333 a minute) let a flood of large forged reasks take hundreds of
+KB/s. The byte budget holds a flood to 1.1 KB/s per served node. A dropped reask is not lost:
+the downloader falls back to a callback request. Same budget as aMule 3.3
+([#1809](https://github.com/amule-org/amule/issues/1809)).
+
 A relay drops a request over these limits without an answer. The requesting node therefore
 counts as well and does not send what would be dropped (`BuddyRelayBudget`, reached through
 `ClientList::allowRelayRequest()`):
@@ -356,13 +373,13 @@ counts as well and does not send what would be dropped (`BuddyRelayBudget`, reac
 | | Requester-side rule | Sent from |
 |---|---|---|
 | `KADEMLIA_CALLBACK_REQ` per relay IP | the relay's bucket: 8 at once, then one per 7.5 s | `UpDownClient::tryToConnect()`, `FindSource` search |
-| `KADEMLIA_CALLBACK_REQ` and `OP_REASKCALLBACKUDP` per buddy ID | 60 in any 60 s | the two above and `UpDownClient::udpReaskForDownload()` |
+| `KADEMLIA_CALLBACK_REQ` and `OP_REASKCALLBACKUDP` per buddy ID | 64 KiB relayed in any 60 s, a reask charged in its IPv6 form | the two above and `UpDownClient::udpReaskForDownload()` |
 
 - The requester does not know the relay's slot count, so it assumes 8, the auto value at the
   default upload capacity (`kAssumedRelayServedBuddies`).
   A relay set lower still drops some requests; a relay set higher is used below its limit.
 - The per-buddy rule is a sliding window. The relay counts in a fixed minute whose start the
-  requester cannot see, so only "60 in any minute" is sure to fit into it.
+  requester cannot see, so only "64 KiB in any minute" is sure to fit into it.
 - A held-back callback request leaves the source waiting for the callback, and the attempt
   ends by the usual timeout, as it does when the relay drops the packet. A held-back reask
   is not counted as a sent UDP packet and is tried again on the next pass.
@@ -380,6 +397,10 @@ The number of served buddies is kept small on purpose:
 - every slot costs a TCP connection and relay traffic.
 
 A node that uses a buddy itself offers no slot.
+
+One served buddy per IP: the TCP connection proves the IP, so this bounds what one host takes
+from one node. A subnet rule would refuse neighbours behind one carrier NAT pool, the users
+this is for.
 
 `KADEMLIA_FINDBUDDY_REQ` is one unverified UDP packet, so its sender address can be forged.
 That is why a claim reserves nothing and the total is bounded by release, not by refusal:
@@ -399,30 +420,42 @@ connections and small relays the line can carry, and USS moves it all the time.
 | Upload capacity | Served buddies |
 |---|---|
 | unknown (0) | 8 |
-| below 500 KiB/s (4 Mbit/s) | 4 |
-| below 2,500 KiB/s (20 Mbit/s) | 8 |
-| below 12,500 KiB/s (100 Mbit/s) | 16 |
-| below 62,500 KiB/s (500 Mbit/s) | 32 |
-| below 125,000 KiB/s (1 Gbit/s) | 64 |
-| 125,000 KiB/s and above | 128 |
+| below 4 Mbit/s (488 KiB/s) | 4 |
+| below 20 Mbit/s (2,441 KiB/s) | 8 |
+| below 100 Mbit/s (12,207 KiB/s) | 16 |
+| below 500 Mbit/s (61,035 KiB/s) | 32 |
+| below 1 Gbit/s (122,070 KiB/s) | 64 |
+| 1 Gbit/s and above | 128 |
+
+KiB/s are 1,024 bytes a second, as the first-start wizard converts a line (`mbitToKiB()`).
 
 Capacity 0 (unknown) is only reachable through `preferences.yml`, IPC or REST; the Options
 page and the first-start wizard set at least 1 KiB/s. USS reads 0 the same way.
 
-- A served buddy costs one idle connection and at most 60 small relayed packets a minute, so
-  bandwidth is not what limits it. The tiers keep a slow line's connections for transfers.
+- A served buddy costs one idle connection and at most 64 KiB of relays a minute (about
+  1.1 KB/s, 8.7 KB/s at 8 slots), so bandwidth is not what limits it. The tiers keep a slow line's connections for transfers.
 - The risks below grow with the tier: every node behind one buddy loses it at once, and
   the callback flood limit grows with the slot count.
 - The cap of a tenth of `maxConnections` still applies on top: at the default of 500
-  connections no node serves more than 50, so the 64 and 128 tiers need more connections.
+  connections no node serves more than 50. The first-start wizard therefore raises the
+  connection limit for a fast upload line, never lowers it (`connectionsForLine()`,
+  `ConnectionPresets.h`):
+
+  | Upload line | `maxConnections` at least | Buddies it allows |
+  |---|---|---|
+  | up to 100 Mbit/s | unchanged (default 500) | 50 |
+  | above 100 Mbit/s | 1,000 | 100 |
+  | 1 Gbit/s and above | 1,500 | 150 |
+
+  A capacity typed into Options leaves the connection limit alone.
 - A set value (1–128) overrides the tiers. Existing profiles keep their set value; only new
   ones start at auto.
 
 Suggested for other clients: the same tiers, or a fixed count no higher than the client's
-connection budget allows. aMule plans a fixed 4 (one kept for NAT-T nodes); a client that
-keeps a NAT-T slot should test both NAT-T bits of the connect options byte, `0x40` (QUIC)
-and `0x80` (uTP). eMuleAI tests only `0x80`, so QUIC-only nodes, eMuleQt among them, never
-get its extra slots.
+connection budget allows. aMule 3.3 plans 4–16 (default 8, advanced setting), a third of them
+kept for NAT-T nodes, and tests both NAT-T bits of the connect options byte, `0x40` (QUIC)
+and `0x80` (uTP) ([#1809](https://github.com/amule-org/amule/issues/1809)). eMuleAI tests
+only `0x80`, so QUIC-only nodes, eMuleQt among them, never get its extra slots.
 
 ### How much it helps
 

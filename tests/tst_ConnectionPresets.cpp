@@ -33,6 +33,22 @@ private slots:
         QCOMPARE(s.maxUp, 3906u);
     }
 
+    void connectionsRaisedForFastUploads()
+    {
+        // Up to 100 Mbit/s up: unchanged
+        QCOMPARE(connectionsForLine(mbitToKiB(100), 500), 500u);
+        QCOMPARE(connectionsForLine(limitsForLine(1000, 50).capUp, 500), 500u);   // Cable 1000
+        // Above 100 Mbit/s: 1000, from 1 Gbit/s: 1500
+        QCOMPARE(connectionsForLine(limitsForLine(300, 150).capUp, 500), kFastLineConnections);
+        QCOMPARE(connectionsForLine(limitsForLine(1000, 500).capUp, 500), kFastLineConnections);
+        QCOMPARE(connectionsForLine(limitsForLine(1000, 1000).capUp, 500), kGigabitLineConnections);
+        // A higher limit the user set stays
+        QCOMPARE(connectionsForLine(mbitToKiB(1000), 2000), 2000u);
+        // Enough for the auto buddy slots: a tenth of the connections
+        QVERIFY(kFastLineConnections / 10 >= 64);
+        QVERIFY(kGigabitLineConnections / 10 >= Preferences::kMaxServedBuddiesLimit);
+    }
+
     void limitsNeverReachZero()
     {
         // 0 would mean "unlimited" — the opposite of what a tiny line asked for

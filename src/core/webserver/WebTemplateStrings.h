@@ -66,6 +66,7 @@ inline constexpr const char* kWebTemplateStrings[] = {
     QT_TRANSLATE_NOOP("eMule::WebServer", "File Name"),
     QT_TRANSLATE_NOOP("eMule::WebServer", "Files"),
     QT_TRANSLATE_NOOP("eMule::WebServer", "Files:"),
+    QT_TRANSLATE_NOOP("eMule::WebServer", "Free Disk Space"),
     QT_TRANSLATE_NOOP("eMule::WebServer", "General"),
     QT_TRANSLATE_NOOP("eMule::WebServer", "Global"),
     QT_TRANSLATE_NOOP("eMule::WebServer", "Graphs"),

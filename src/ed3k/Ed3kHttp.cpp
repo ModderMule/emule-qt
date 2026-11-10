@@ -3,6 +3,7 @@
 
 #include "Ed3kHttp.h"
 
+#include "net/InterfacePin.h"
 #include "net/ProxySettings.h"
 #include "utils/Log.h"
 
@@ -261,6 +262,13 @@ void Ed3kHttp::connectTo(Request& r, const QHostAddress& ip, std::uint16_t port)
     r.socket = s;
     // the literal address goes to the proxy, never the name; a LAN address goes direct
     s->setProxy(bypassesProxy(ip.toString()) ? QNetworkProxy(QNetworkProxy::NoProxy) : m_proxy);
+    // the bindAddress pref: leave through the selected interface or not at all (loopback stays local)
+    const bool proxied = s->proxy().type() != QNetworkProxy::NoProxy;
+    if (!ip.isLoopback() && !InterfacePin::prepareOutgoing(*s, proxied)) {
+        logEd3kDebug([&]() -> QString { return QStringLiteral("http %1: the selected network interface is not available").arg(id); });
+        QTimer::singleShot(0, this, [this, id] { fail(id); });
+        return;
+    }
     connect(s, &QTcpSocket::readyRead, this, [this, id] { onReadyRead(id); });
     connect(s, &QTcpSocket::errorOccurred, this, [this, id](QAbstractSocket::SocketError) { onSocketError(id); });
     connect(s, &QTcpSocket::disconnected, this, [this, id] { onDisconnected(id); });

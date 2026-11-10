@@ -15,6 +15,11 @@
 /// - A closed room's admit goes out of band (batch 10 reading 1): the newcomer copies its
 ///   member key (memberKeyText), the moderator's core signs an Admit (admit: the admit
 ///   text), the newcomer imports it (importAdmit).
+/// - Key (hops.md §1): a room is made or joined under Ed3kHide::keyForUse() and stays under
+///   it (joined.cbor "key"); every call and event goes to that key's node. An anonymous room
+///   waits while hiding is off (listed, not joined; nothing falls back to the node key) and
+///   is joined again when hiding starts. The anonymous node's room state is not in
+///   State::Rooms: generation keys come again from members.
 
 #include "Ed3kFfi.h"
 #include "Ed3kStore.h"
@@ -90,6 +95,10 @@ public:
         std::set<std::array<std::uint8_t, 16>> muted;
         /// a member answered ROOM_MEMBER (§4.2 step 4): a closed room not admitted yet (#17)
         bool notAdmitted = false;
+        /// the node it is joined under (hops.md §1), kept
+        ::ed3k::KeyKind key = ::ed3k::KeyKind::Node;
+        /// anonymous room while hiding is off: listed, not joined
+        bool waitingHide = false;
 
         [[nodiscard]] bool isModerator(const ::ed3k::Key32& member) const;
         /// This member may admit, ban and start generations.
@@ -161,14 +170,29 @@ private:
         QString nick;
         QCborMap info;   ///< the last room info (title, about, closed, moderated, mods): shown before a neighbour sends one
         std::set<std::array<std::uint8_t, 16>> muted;   ///< member IDs muted (§6)
+        ::ed3k::KeyKind key = ::ed3k::KeyKind::Node;   ///< hops.md §1
     };
 
-    void onEventPolled(const ::ed3k::Event& event, bool* handled);
+    // was: void onEventPolled(const ::ed3k::Event& event, bool* handled);
+    void onEventPolled(const ::ed3k::Event& event, ::ed3k::KeyKind key, bool* handled);
     void onSessionStatus();
     void attach();
+    /// Joins the saved rooms of @p key again (attach, hiding started); anonymous ones wait
+    /// while hiding is off.
+    void rejoinSaved(std::optional<::ed3k::KeyKind> only);
+    /// Hiding stopped: the anonymous node's rooms are gone, they wait (listed).
+    void hideStopped();
+    /// The key of a tracked room that can act now; State: an anonymous room while hiding is off.
+    [[nodiscard]] ::ed3k::Result<::ed3k::KeyKind> keyOf(const ::ed3k::Room& room) const;
     /// Joins with the stored member key (made when missing); owner when its room key is held.
-    ::ed3k::Result<::ed3k::Room> joinWith(const QString& link, const QString& nick);
-    Room& track(const ::ed3k::Room& room, const QString& link, const QString& nick);
+    // was: ::ed3k::Result<::ed3k::Room> joinWith(const QString& link, const QString& nick);
+    ::ed3k::Result<::ed3k::Room> joinWith(const QString& link, const QString& nick, ::ed3k::KeyKind key);
+    /// A saved room of @p key listed while it waits for hiding.
+    void trackWaiting(const ::ed3k::Room& room, const Saved& s);
+    // was: Room& track(const ::ed3k::Room& room, const QString& link, const QString& nick);
+    Room& track(const ::ed3k::Room& room, const QString& link, const QString& nick, ::ed3k::KeyKind key);
+    /// The saved info (title, about, closed, moderated, mods) into @p r while it has none.
+    static void applySavedInfo(Room& r, const Saved& s);
     void onPost(const ::ed3k::event::RoomPost& p);
     void loadSaved();
     void save() const;

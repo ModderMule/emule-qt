@@ -44,6 +44,12 @@ QString ipFromEd2k(qint64 ip)
     return QHostAddress(swapped).toString();
 }
 
+/// One label/value row of the info tables.
+QString row(const QString& label, const QString& value)
+{
+    return QStringLiteral("<tr><td>%1</td><td>%2</td></tr>").arg(label, value);
+}
+
 } // anonymous namespace
 
 // ---------------------------------------------------------------------------
@@ -403,6 +409,9 @@ QString NetworkInfoDialog::infoHtml(const QCborMap& info, bool extended)
     }
     html += QStringLiteral("</table><br>");
 
+    html += ed3kHtml(info.value(QStringLiteral("ed3k")).toMap());
+    html += bitTorrentHtml(info.value(QStringLiteral("bt")).toMap());
+
     // -----------------------------------------------------------------------
     // Web Interface
     // -----------------------------------------------------------------------
@@ -434,6 +443,126 @@ QString NetworkInfoDialog::infoHtml(const QCborMap& info, bool extended)
 
     html += QStringLiteral("</body></html>");
     return html;
+}
+
+// ---------------------------------------------------------------------------
+// ed3k and BitTorrent sections (no MFC original)
+// ---------------------------------------------------------------------------
+
+QString NetworkInfoDialog::ed3kHtml(const QCborMap& ed3k)
+{
+    // a core without ed3k, or from before the section
+    if (ed3k.isEmpty() || !ed3k.value(QStringLiteral("available")).toBool())
+        return {};
+    QString html = QStringLiteral("<b>%1</b><br><table cellpadding='1'>").arg(tr("ed3k Network"));
+    const bool running = ed3k.value(QStringLiteral("running")).toBool();
+    if (!running) {
+        html += row(tr("Status:"), ed3k.value(QStringLiteral("enabled")).toBool() ? tr("Not running")
+                                                                                 : tr("Disabled"));
+        return html + QStringLiteral("</table><br>");
+    }
+    const qint64 contacts = ed3k.value(QStringLiteral("contacts")).toInteger();
+    html += row(tr("Status:"), contacts > 0 ? tr("Connected") : tr("Connecting"));
+    html += row(tr("UDP Port:"), QString::number(ed3k.value(QStringLiteral("udpPort")).toInteger()));
+
+    // 0 unknown, 1 open, 2 cone, 3 symmetric; bit 0 IPv4 / bit 1 IPv6 of natChecking
+    const qint64 checking = ed3k.value(QStringLiteral("natChecking")).toInteger();
+    const qint64 offline = ed3k.value(QStringLiteral("kadOffline")).toInteger();
+    const auto reach = [&](qint64 nat, int bit) -> QString {
+        if (offline & bit)
+            return tr("Offline");
+        if (checking & bit)
+            return tr("Checking");
+        switch (nat) {
+        case 1: return tr("Open");
+        case 2: return tr("Cone NAT");
+        case 3: return tr("Symmetric NAT");
+        default: return tr("Unknown");
+        }
+    };
+    const auto family = [&](const QString& label, const QString& key, const QString& endpoint, int bit) {
+        const QString ep = ed3k.value(endpoint).toString();
+        const QString state = reach(ed3k.value(key).toInteger(), bit);
+        html += row(label, ep.isEmpty() ? state : QStringLiteral("%1 (%2)").arg(ep.toHtmlEscaped(), state));
+    };
+    family(tr("IPv4:"), QStringLiteral("class4"), QStringLiteral("endpoint4"), 1);
+    family(tr("IPv6:"), QStringLiteral("class6"), QStringLiteral("endpoint6"), 2);
+    html += row(tr("Router:"), ed3k.value(QStringLiteral("router")).toBool() ? tr("Yes") : tr("No"));
+    html += row(tr("Contacts:"), formatNumber(contacts));
+    html += row(tr("Node ID:"), ed3k.value(QStringLiteral("nodeId")).toString().toHtmlEscaped());
+    return html + QStringLiteral("</table><br>");
+}
+
+QString NetworkInfoDialog::bitTorrentHtml(const QCborMap& bt)
+{
+    // a core built without BitTorrent, or from before the section
+    if (bt.isEmpty() || !bt.value(QStringLiteral("available")).toBool())
+        return {};
+    QString html = QStringLiteral("<b>%1</b><br><table cellpadding='1'>").arg(tr("BitTorrent"));
+    if (!bt.value(QStringLiteral("running")).toBool()) {
+        html += row(tr("Status:"), bt.value(QStringLiteral("enabled")).toBool() ? tr("Not running")
+                                                                               : tr("Disabled"));
+        return html + QStringLiteral("</table><br>");
+    }
+    const quint16 port = static_cast<quint16>(bt.value(QStringLiteral("listenPort")).toInteger());
+    html += row(tr("Status:"), bt.value(QStringLiteral("listening")).toBool()
+                                   ? tr("Listening on port %1").arg(port)
+                                   : tr("Not listening"));
+    // libtorrent's vote from peers, trackers, DHT and the router (external_ip_alert)
+    const QString v4 = bt.value(QStringLiteral("externalIPv4")).toString();
+    const QString v6 = bt.value(QStringLiteral("externalIPv6")).toString();
+    html += row(tr("External IPv4:"), v4.isEmpty() ? tr("Unknown") : v4.toHtmlEscaped());
+    if (!v6.isEmpty())
+        html += row(tr("External IPv6:"), v6.toHtmlEscaped());
+    html += row(tr("DHT Nodes:"), formatNumber(bt.value(QStringLiteral("dhtNodes")).toInteger()));
+    html += row(tr("Torrents:"), formatNumber(bt.value(QStringLiteral("torrents")).toInteger()));
+    html += QStringLiteral("</table><br>");
+    return html + i2pHtml(bt);
+}
+
+QString NetworkInfoDialog::i2pHtml(const QCborMap& bt)
+{
+    // Preferences::kBtI2pOff / kBtI2pBundled / kBtI2pExternal
+    const qint64 mode = bt.value(QStringLiteral("i2pMode")).toInteger();
+    if (mode == 0 || !bt.value(QStringLiteral("i2pEnabled")).toBool())
+        return {};
+    QString html = QStringLiteral("<b>%1</b><br><table cellpadding='1'>").arg(tr("BitTorrent over I2P"));
+    html += row(tr("Router:"), mode == 1 ? tr("Bundled (i2pd)") : tr("External"));
+    if (mode == 1) {
+        // I2pRouter::State: Stopped, Starting, Ready, Failed, Downloading
+        QString state;
+        switch (bt.value(QStringLiteral("i2pRouter")).toInteger()) {
+        case 1: state = tr("Starting"); break;
+        case 2: state = tr("Ready"); break;
+        case 3: state = tr("Failed"); break;
+        case 4: state = tr("Downloading (%1%)").arg(bt.value(QStringLiteral("i2pRouterProgress")).toInteger()); break;
+        default: state = tr("Stopped"); break;
+        }
+        if (const QString err = bt.value(QStringLiteral("i2pRouterError")).toString(); !err.isEmpty())
+            state += QStringLiteral(": ") + err.toHtmlEscaped();
+        html += row(tr("Router Status:"), state);
+        html += row(tr("Router Port:"), QString::number(bt.value(QStringLiteral("i2pRouterPort")).toInteger()));
+        html += row(tr("Bandwidth Shared:"), QStringLiteral("%1%").arg(bt.value(QStringLiteral("i2pShare")).toInteger()));
+    }
+    const QString samHost = bt.value(QStringLiteral("i2pSamHost")).toString();
+    const qint64 samPort = bt.value(QStringLiteral("i2pSamPort")).toInteger();
+    const QString samError = bt.value(QStringLiteral("i2pError")).toString();
+    QString sam;
+    if (!bt.value(QStringLiteral("i2pSam")).toBool())
+        sam = tr("Not set");
+    else
+        sam = QStringLiteral("%1:%2").arg(samHost.toHtmlEscaped()).arg(samPort);
+    if (!samError.isEmpty())
+        sam += QStringLiteral(" (%1)").arg(samError.toHtmlEscaped());
+    html += row(tr("SAM Bridge:"), sam);
+    html += row(tr("Tunnels:"), tr("%1 hops, %2 each way")
+                                    .arg(bt.value(QStringLiteral("i2pTunnelLength")).toInteger())
+                                    .arg(bt.value(QStringLiteral("i2pTunnelQuantity")).toInteger()));
+    html += row(tr("Mixed Mode:"), bt.value(QStringLiteral("i2pMixed")).toBool() ? tr("Yes") : tr("No"));
+    html += row(tr("I2P Torrents:"), tr("%1 (%2 peers)")
+                                         .arg(formatNumber(bt.value(QStringLiteral("i2pTorrents")).toInteger()),
+                                              formatNumber(bt.value(QStringLiteral("i2pPeers")).toInteger())));
+    return html + QStringLiteral("</table><br>");
 }
 
 } // namespace eMule

@@ -21,6 +21,7 @@
 
 #include "app/AppConfig.h"
 #include "app/TranslationRouter.h"
+#include "utils/BackgroundFileWriter.h"
 #include "friends/FriendList.h"
 #include "prefs/Preferences.h"
 #include "search/SearchFile.h"
@@ -31,6 +32,7 @@
 #include "server/Server.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
+#include "stats/SaveFolderSpace.h"
 #include "stats/Statistics.h"
 #include "stats/StatsHistory.h"
 #include "transfer/DownloadQueue.h"
@@ -589,6 +591,7 @@ private slots:
 
     // Stats tests
     void getStats();
+    void saveFolderSpace_followsNetworks();
 
     // Downloads tests
     void getDownloadsEmpty();
@@ -1047,6 +1050,54 @@ void tst_WebServer::getStats()
                             "avgDownTime", "avgUpTime", "cumDownAvg", "cumUpAvg",
                             "maxCumDown", "maxCumUp", "maxCumDownAvg", "maxCumUpAvg"})
         QVERIFY2(obj.value(QLatin1StringView(key)).isDouble(), key);
+    // #165: the incoming folder is always listed
+    const QJsonObject incoming =
+        obj.value(QStringLiteral("saveFolderSpace")).toObject().value(QStringLiteral("incoming")).toObject();
+    QCOMPARE(incoming.value(QStringLiteral("path")).toString(), thePrefs.incomingDir());
+}
+
+// #165: a row per network that is on; the torrent row falls back to incoming
+void tst_WebServer::saveFolderSpace_followsNetworks()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString incomingBefore = thePrefs.incomingDir();
+    const bool btBefore = thePrefs.btEnabled();
+    const bool usenetBefore = thePrefs.usenetEnabled();
+    const QString btDirBefore = thePrefs.btDownloadDir();
+    const auto restore = qScopeGuard([&] {
+        thePrefs.setIncomingDir(incomingBefore);
+        thePrefs.setBtEnabled(btBefore);
+        thePrefs.setUsenetEnabled(usenetBefore);
+        thePrefs.setBtDownloadDir(btDirBefore);
+    });
+    thePrefs.setIncomingDir(dir.path());
+    thePrefs.setBtDownloadDir({});
+    thePrefs.setUsenetEnabled(false);
+
+    const auto keys = [] {
+        QStringList out;
+        for (const auto& r : saveFolderSpace())
+            out.append(r.key);
+        return out;
+    };
+    thePrefs.setBtEnabled(false);
+    QVERIFY(!keys().contains(QStringLiteral("torrent")));
+    QCOMPARE(keys().first(), QStringLiteral("incoming"));
+
+    thePrefs.setBtEnabled(true);
+    const auto rows = saveFolderSpace();
+    const auto torrent = std::ranges::find(rows, QStringLiteral("torrent"), &SaveFolderSpace::key);
+    QVERIFY(torrent != rows.end());
+    QCOMPARE(torrent->path, dir.path());   // empty torrent folder = incoming
+
+    // measured on a worker: the first read may have nothing yet
+    QTRY_VERIFY(saveFolderSpace().front().free.has_value());
+    QVERIFY(*saveFolderSpace().front().free > 0);
+
+    const QCborMap cbor = saveFolderSpaceToCbor(saveFolderSpace());
+    QCOMPARE(cbor.value(QStringLiteral("incoming")).toMap().value(QStringLiteral("path")).toString(), dir.path());
+    QVERIFY(cbor.value(QStringLiteral("torrent")).toMap().value(QStringLiteral("free")).isInteger());
 }
 
 // ---------------------------------------------------------------------------
@@ -3662,6 +3713,7 @@ void tst_WebServer::webActions_needAPostFromOurOwnPages()
 
     // Cancel takes the download out of the queue, not just its files off the disk —
     // a listed entry would write its .part.met again on the next save.
+    BackgroundFileWriter::instance().flush();   // mets are saved on the writer thread
     QVERIFY(!QDir(temp.path()).entryList({QStringLiteral("*.part.met")}).isEmpty());
     r = sendRaw(port, QByteArrayLiteral("POST"), QStringLiteral("/?ses=%1").arg(admin),
                 QByteArrayLiteral("w=transfer&op=cancel&file=") + md4str(md4).toLatin1(), form);
@@ -3995,6 +4047,7 @@ void tst_WebServer::webEd2kActionRefusesAMetaHash()
     const uint8 md4[16] = {0x57, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
     addLink(md4, QStringLiteral("plain.bin"));
     QCOMPARE(m_downloadQueue->fileCount(), 1);
+    BackgroundFileWriter::instance().flush();
     QCOMPARE(QDir(temp.path()).entryList({QStringLiteral("*.part.met")}, QDir::Files).size(), 1);
 
     server->stop();

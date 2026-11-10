@@ -7,6 +7,7 @@
 #include <QDateTime>
 
 #ifdef EMULE_HAVE_ED3K
+#include "Ed3kHide.h"
 #include "Ed3kUploads.h"
 #endif
 
@@ -42,6 +43,8 @@ QCborMap rowToCbor(const ed3k::Ed3kUploads::Row& r, qint64 nowMs)
         {QStringLiteral("isConnected"), r.connected},
         {QStringLiteral("lan"), r.lan},
         {QStringLiteral("due"), r.due},
+        // hops.md §1: "Anonymous" rows have no address; the GUI shows them as anonymous
+        {QStringLiteral("key"), ed3k::Ed3kHide::keyName(r.key)},
     };
 }
 #endif

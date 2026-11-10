@@ -346,6 +346,7 @@ private slots:
     void aPaidChannelIsFollowedWhileWatched();
     void aPassIsCheckedPerScopeAndAskedOncePerSet();
     void aPassByHandIsRenewedOnlyOnRequest();
+    void anAnonymousScopeTakesItsKeyedEvents();
     void cleanup() { QTest::qWait(10); }
 };
 
@@ -886,6 +887,57 @@ void tst_Ed3kPaid::aPassByHandIsRenewedOnlyOnRequest()
     QVERIFY(ok);
     Ed3kPaidBridge::setPaid(nullptr);
     paid.reset();
+    b.stop();
+}
+
+// hops.md §1: a scope bought for the anonymous key runs on the anonymous node: its Paid*
+// events come keyed (the node key's are not its own), unfollow goes there too
+void tst_Ed3kPaid::anAnonymousScopeTakesItsKeyedEvents()
+{
+    QTemporaryDir db;
+    Ed3kSession b;
+    Ed3kHideSettings hide;
+    hide.on = true;
+    b.setHideSettings(hide);
+    QVERIFY(b.start(loopback(db.path())));
+    QVERIFY(b.hide().hiding());
+
+    Signer pub;
+    pub.seed.fill(0x35);
+    const auto scope = ::ed3k::paidScope(3, pub.key(), {});
+    QVERIFY(scope);
+    const QByteArray scopeRaw = raw(scope->bytes);
+    const std::uint64_t now = b.now().unixS;
+    const std::uint32_t period = 3600;
+    const std::uint64_t t0 = now - 10 * period;
+    const Season season = makeSeason(pub, scopeRaw, (now - t0) / period, 24);
+    const QByteArray offer = makeOffer(pub, season, now - 60, t0, period, QStringLiteral("https://127.0.0.1:1/pay"),
+                                       QStringLiteral("https://127.0.0.1:1/pass"));
+
+    auto paid = std::make_unique<Ed3kPaid>(b, db.path());
+    paid->follow(pub.key(), *scope, Ed3kPaid::Kind::HiddenSet, QStringLiteral("Anon Pass"));
+    QVERIFY(paid->setOffer(*scope, offer));
+    const QString scopeHex = Ed3kPaid::hexOf(*scope);
+    (void)paid->buy(scopeHex, true);   // waits for the user's word (§5.1)
+    QVERIFY(paid->info(scopeHex)->anon);
+    // followed on the anonymous node, with its offer
+    auto held = b.engine()->paidOffer(b.now(), *scope, ::ed3k::KeyKind::Anon);
+    QVERIFY(held && *held);
+
+    QSignalSpy keys(paid.get(), &Ed3kPaid::keysArrived);
+    const ::ed3k::Event ev{::ed3k::event::PaidKeys{*scope, *b.nodeId(), {5}}};
+    bool handled = false;
+    emit b.eventPolled(ev, &handled);   // the node key's: not this scope's
+    QVERIFY(!handled);
+    QCOMPARE(keys.count(), 0);
+    emit b.keyedEventPolled(ev, ::ed3k::KeyKind::Anon, &handled);
+    QVERIFY(handled);
+    QCOMPARE(keys.count(), 1);
+
+    // unfollowed on the anonymous node (was: skipped)
+    paid->unfollow(*scope);
+    held = b.engine()->paidOffer(b.now(), *scope, ::ed3k::KeyKind::Anon);
+    QVERIFY(!held || !*held);
     b.stop();
 }
 

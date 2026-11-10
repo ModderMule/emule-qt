@@ -125,6 +125,7 @@ QCborMap toCbor(const ed3k::Ed3kLive::Info& i)
         {QStringLiteral("url"), i.url},
         {QStringLiteral("paidScope"), i.paidScope},   // batch 14: a paid channel (GetEd3kPaid row)
         {QStringLiteral("error"), i.error},           // batch 14: why not played (state 5)
+        {QStringLiteral("key"), i.anon ? QStringLiteral("Anonymous") : QStringLiteral("Node")},   // hops.md §1
     };
 }
 
@@ -149,6 +150,7 @@ QCborMap toCbor(const ed3k::Ed3kLiveBroadcast::Info& i)
         {QStringLiteral("resumed"), i.resumed},
         {QStringLiteral("channelFile"), i.channelFile},
         {QStringLiteral("channel"), i.channel},   // batch 15: the channel id (delete)
+        {QStringLiteral("key"), i.anon ? QStringLiteral("Anonymous") : QStringLiteral("Node")},   // hops.md §1
     };
 }
 

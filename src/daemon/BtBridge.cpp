@@ -560,7 +560,21 @@ QCborMap statusToCbor()
     out.insert(QStringLiteral("i2pEnabled"), s.i2pEnabled);
     out.insert(QStringLiteral("i2pSam"), s.i2pSam);
     out.insert(QStringLiteral("i2pError"), s.i2pError);
+    out.insert(QStringLiteral("i2pSamHost"), s.i2pSamHost);
+    out.insert(QStringLiteral("i2pSamPort"), s.i2pSamPort);
+    out.insert(QStringLiteral("i2pMixed"), s.i2pMixed);
+    out.insert(QStringLiteral("i2pTunnelLength"), s.i2pTunnelLength);
+    out.insert(QStringLiteral("i2pTunnelQuantity"), s.i2pTunnelQuantity);
+    out.insert(QStringLiteral("i2pTorrents"), s.i2pTorrents);
+    out.insert(QStringLiteral("i2pPeers"), s.i2pPeers);
+    out.insert(QStringLiteral("externalIPv4"), s.externalIPv4);
+    out.insert(QStringLiteral("externalIPv6"), s.externalIPv6);
 #endif
+    out.insert(QStringLiteral("enabled"), thePrefs.btEnabled());
+    // I2P mode (Preferences::kBtI2p*) and the bundled router's own settings
+    out.insert(QStringLiteral("i2pMode"), thePrefs.btI2pMode());
+    out.insert(QStringLiteral("i2pRouterPort"), thePrefs.btI2pRouterPort());
+    out.insert(QStringLiteral("i2pShare"), thePrefs.btI2pShare());
     // the bundled router, also while the engine is off
     out.insert(QStringLiteral("i2pBundled"), s_router && s_router->available());
     out.insert(QStringLiteral("i2pRouter"), s_router ? static_cast<int>(s_router->state()) : 0);

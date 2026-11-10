@@ -402,6 +402,16 @@ HTTP-cache wordt ingeschakeld en deze sleutel wordt voor uploads opgeslagen.</tr
         <source>Fatal Error: Unable to create socket on port %1</source>
         <translation>Fatale fout: kan geen socket openen voor poort %1</translation>
     </message>
+    <message>
+        <location line="+2"/>
+        <source>Hidden file not hidden</source>
+        <translation>Verborgen bestand niet verborgen</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>&quot;%1&quot; is shared under the anonymous key and on eD2K/Kad too: sources there show your address.</source>
+        <translation>&quot;%1&quot; wordt onder de anonieme sleutel en ook op eD2K/Kad gedeeld: bronnen daar tonen je adres.</translation>
+    </message>
 </context>
 <context>
     <name>PortChange</name>
@@ -804,7 +814,7 @@ Het nieuwe certificaat vertrouwen?</translation>
         <translation type="vanished">Er is een nieuwe download toegevoegd.</translation>
     </message>
     <message>
-        <location line="+390"/>
+        <location line="+397"/>
         <source>Message from %1</source>
         <translation>Bericht van %1</translation>
     </message>
@@ -943,12 +953,12 @@ Het nieuwe certificaat vertrouwen?</translation>
         <translation>Normaal</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3661"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3668"/>
         <source>Test</source>
         <translation>Testen</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/StatisticsPanel.cpp" line="+355"/>
+        <location filename="../src/gui/panels/StatisticsPanel.cpp" line="+356"/>
         <source>Total Overhead (Packets): 0 Bytes (0)</source>
         <translation>Totale overhead (pakketten): 0 Bytes (0)</translation>
     </message>
@@ -1189,7 +1199,7 @@ Heeft commentaren</translation>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4696"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4880"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -2862,6 +2872,11 @@ De downloads ervan behouden hun bestanden en gaan naar Alle.</translation>
         <translation>%1 (ed3k)</translation>
     </message>
     <message>
+        <location line="+0"/>
+        <source>anonymous (ed3k)</source>
+        <translation>anoniem (ed3k)</translation>
+    </message>
+    <message>
         <location line="+2"/>
         <source>place %1</source>
         <translation>plaats %1</translation>
@@ -4469,13 +4484,13 @@ Geüpload:	%12</translation>
     <name>eMule::Ed3kHidingGroup</name>
     <message>
         <location filename="../src/gui/dialogs/Ed3kHidingGroup.cpp" line="+25"/>
-        <location line="+141"/>
+        <location line="+152"/>
         <location line="+16"/>
         <source>Hiding</source>
         <translation>Verbergen</translation>
     </message>
     <message>
-        <location line="-152"/>
+        <location line="-163"/>
         <source>Hide my node</source>
         <translation>Mijn node verbergen</translation>
     </message>
@@ -4490,9 +4505,18 @@ Geüpload:	%12</translation>
         <translation>Hops:</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Nodes between you and the others, for every connection and search. More hops hide better and are slower.</source>
-        <translation>Nodes tussen u en de anderen, voor elke verbinding en zoekopdracht. Meer hops verbergen beter en zijn trager.</translation>
+        <translation type="vanished">Nodes tussen u en de anderen, voor elke verbinding en zoekopdracht. Meer hops verbergen beter en zijn trager.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Nodes between you and the others, for every connection and search. More hops hide better and are slower. 0 (only while forwarding for others): deniable, not hidden - nobody stands in between.</source>
+        <translation>Knooppunten tussen jou en de anderen, voor elke verbinding en zoekopdracht. Meer hops verbergen beter en zijn trager. 0 (alleen tijdens doorsturen voor anderen): ontkenbaar, niet verborgen - niemand staat ertussen.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>0 = deniable, not hidden</source>
+        <translation>0 = ontkenbaar, niet verborgen</translation>
     </message>
     <message>
         <location line="+5"/>
@@ -4520,7 +4544,7 @@ Geüpload:	%12</translation>
         <translation>Een nieuwe anonieme identiteit. Wachtrijplaatsen en wat uploaders onthouden gaan verloren.</translation>
     </message>
     <message numerus="yes">
-        <location line="+59"/>
+        <location line="+65"/>
         <source>Not hiding. %n file(s) under the anonymous key wait until hiding is on.</source>
         <translation>
             <numerusform>Niet verborgen. %n bestand onder de anonieme sleutel wacht tot verbergen aan staat.</numerusform>
@@ -5347,7 +5371,7 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
     <message>
         <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+423"/>
         <location line="+11"/>
-        <location line="+559"/>
+        <location line="+564"/>
         <location line="+11"/>
         <location line="+23"/>
         <location line="+19"/>
@@ -5358,7 +5382,7 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
         <translation>ed3k-credits</translation>
     </message>
     <message>
-        <location line="-670"/>
+        <location line="-675"/>
         <source>The ledger contract is an address: 0x and 40 hexadecimal digits.</source>
         <translation>Het grootboekcontract is een adres: 0x en 40 hexadecimale cijfers.</translation>
     </message>
@@ -5501,7 +5525,7 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
         <translation>Chain ID:</translation>
     </message>
     <message>
-        <location line="+934"/>
+        <location line="+939"/>
         <location line="+224"/>
         <source>Not valid</source>
         <translation>Ongeldig</translation>
@@ -5563,7 +5587,7 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
         <translation type="vanished">Doorstuurder:</translation>
     </message>
     <message>
-        <location line="-1406"/>
+        <location line="-1411"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>Usenet-posts ook via ed3k delen</translation>
     </message>
@@ -5655,12 +5679,12 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1200"/>
+        <location line="+1205"/>
         <source> credits/MiB</source>
         <translation> credits/MiB</translation>
     </message>
     <message>
-        <location line="-1209"/>
+        <location line="-1214"/>
         <source>Never pay (receipts only)</source>
         <translation>Nooit betalen (alleen ontvangstbewijzen)</translation>
     </message>
@@ -5731,23 +5755,23 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+163"/>
+        <location line="+168"/>
         <source>Not known while credits are off.</source>
         <translation>Onbekend zolang credits uit staan.</translation>
     </message>
     <message>
-        <location line="-155"/>
+        <location line="-160"/>
         <source>What switching credits on means</source>
         <translation>Wat het inschakelen van credits betekent</translation>
     </message>
     <message>
         <location line="+50"/>
-        <location line="+271"/>
+        <location line="+276"/>
         <source>Changes on this page take effect at once.</source>
         <translation>Wijzigingen op deze pagina gelden meteen.</translation>
     </message>
     <message>
-        <location line="-255"/>
+        <location line="-260"/>
         <source>Pinned names</source>
         <translation>Vastgezette namen</translation>
     </message>
@@ -5816,12 +5840,12 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
     <message>
         <location line="+1"/>
         <location line="+6"/>
-        <location line="+816"/>
+        <location line="+821"/>
         <source>Remove</source>
         <translation>Verwijderen</translation>
     </message>
     <message>
-        <location line="-812"/>
+        <location line="-817"/>
         <source>Followed name lists (the first one wins)</source>
         <translation>Gevolgde namenlijsten (de eerste wint)</translation>
     </message>
@@ -5882,7 +5906,7 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
         <translation>De node is niet actief.</translation>
     </message>
     <message>
-        <location line="+14"/>
+        <location line="+19"/>
         <source>No credit key yet: one is made when credits are switched on.</source>
         <translation>Nog geen creditsleutel: er wordt er een gemaakt wanneer credits worden ingeschakeld.</translation>
     </message>
@@ -6448,7 +6472,7 @@ Exporteren?</translation>
         <translation>ed3k</translation>
     </message>
     <message>
-        <location line="-839"/>
+        <location line="-844"/>
         <source>Runs the ed3k node (packmule) in the core, on the eD2K UDP port or one of its own. It finds other nodes over Kad and serves the shared files.</source>
         <translation>Draait de ed3k-node (packmule) in de core, op de eD2K-UDP-poort of een eigen poort. Hij vindt andere nodes via Kad en biedt de gedeelde bestanden aan.</translation>
     </message>
@@ -6458,7 +6482,7 @@ Exporteren?</translation>
     </message>
     <message>
         <location line="+26"/>
-        <location line="+738"/>
+        <location line="+743"/>
         <location line="+6"/>
         <location line="+9"/>
         <location line="+13"/>
@@ -6468,7 +6492,7 @@ Exporteren?</translation>
         <translation>eD2K-compatibiliteit</translation>
     </message>
     <message>
-        <location line="-774"/>
+        <location line="-779"/>
         <source>One port for eD2K and ed3k, and a user hash that tells eD2K peers this client also speaks ed3k.</source>
         <translation>Eén poort voor eD2K en ed3k, en een gebruikershash die eD2K-peers vertelt dat deze client ook ed3k spreekt.</translation>
     </message>
@@ -6528,7 +6552,7 @@ Exporteren?</translation>
         <translation>Slechts één extern eindpunt: niets controleert zijn antwoorden. Twee eindpunten van onafhankelijke aanbieders worden aanbevolen, of een chain-node op deze computer.</translation>
     </message>
     <message>
-        <location line="+665"/>
+        <location line="+670"/>
         <source>%1 failed: %2</source>
         <translation>%1 mislukt: %2</translation>
     </message>
@@ -7002,7 +7026,7 @@ Verkoop hem via Mijn ed3k-sets.</translation>
 <context>
     <name>eMule::Ed3kOwnSetsView</name>
     <message>
-        <location filename="../src/gui/panels/Ed3kOwnSetsView.cpp" line="+43"/>
+        <location filename="../src/gui/panels/Ed3kOwnSetsView.cpp" line="+44"/>
         <source>Hidden</source>
         <translation>Verborgen</translation>
     </message>
@@ -7065,12 +7089,12 @@ Verkoop hem via Mijn ed3k-sets.</translation>
     </message>
     <message>
         <location line="+15"/>
-        <location line="+108"/>
+        <location line="+121"/>
         <source>Copy Link</source>
         <translation>Link kopiëren</translation>
     </message>
     <message>
-        <location line="-107"/>
+        <location line="-120"/>
         <source>Rename...</source>
         <translation>Hernoemen...</translation>
     </message>
@@ -7091,12 +7115,22 @@ Verkoop hem via Mijn ed3k-sets.</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+163"/>
+        <location line="+176"/>
         <source>Stop Selling</source>
         <translation>Verkoop stoppen</translation>
     </message>
     <message>
-        <location line="-160"/>
+        <location line="-171"/>
+        <source>Share Under Anonymous Key...</source>
+        <translation>Delen onder anonieme sleutel...</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Share Under Node Key...</source>
+        <translation>Delen onder knooppuntsleutel...</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Unpublish...</source>
         <translation>Publicatie intrekken...</translation>
     </message>
@@ -7121,7 +7155,12 @@ Verkoop hem via Mijn ed3k-sets.</translation>
         <translation>%1 (mislukt)</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+6"/>
+        <source>%1 (anonymous)</source>
+        <translation>%1 (anoniem)</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Not sold</source>
         <translation>Niet te koop</translation>
     </message>
@@ -7136,7 +7175,7 @@ Verkoop hem via Mijn ed3k-sets.</translation>
         <translation>Te koop</translation>
     </message>
     <message>
-        <location line="+38"/>
+        <location line="+44"/>
         <source>The set was not unpublished.</source>
         <translation>De publicatie van de set is niet ingetrokken.</translation>
     </message>
@@ -7209,27 +7248,38 @@ Its files are no longer shared here; what the network holds of it runs out. &quo
 De bestanden worden hier niet meer gedeeld; wat het netwerk ervan bewaart, verloopt. &quot;Nieuwe versie publiceren&quot; brengt het terug.</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+16"/>
+        <location line="+14"/>
         <source>My ed3k Sets</source>
         <translation>Mijn ed3k-sets</translation>
+    </message>
+    <message>
+        <location line="-13"/>
+        <source>&quot;%1&quot;: %2</source>
+        <translation>&quot;%1&quot;: %2</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>The set was not moved to the other key.</source>
+        <translation>De set is niet naar de andere sleutel verplaatst.</translation>
     </message>
 </context>
 <context>
     <name>eMule::Ed3kRoomList</name>
     <message>
         <location filename="../src/gui/panels/Ed3kRoomList.cpp" line="+29"/>
-        <location line="+100"/>
+        <location line="+105"/>
         <source>Join by link...</source>
         <translation>Toetreden via link...</translation>
     </message>
     <message>
-        <location line="-99"/>
-        <location line="+100"/>
+        <location line="-104"/>
+        <location line="+105"/>
         <source>Create...</source>
         <translation>Aanmaken...</translation>
     </message>
     <message>
-        <location line="-90"/>
+        <location line="-95"/>
         <source>Room</source>
         <translation>Ruimte</translation>
     </message>
@@ -7274,6 +7324,11 @@ De bestanden worden hier niet meer gedeeld; wat het netwerk ervan bewaart, verlo
         <translation>gemodereerd</translation>
     </message>
     <message>
+        <location line="+3"/>
+        <source>anonymous</source>
+        <translation>anoniem</translation>
+    </message>
+    <message>
         <location line="+2"/>
         <source>owner</source>
         <translation>eigenaar</translation>
@@ -7285,6 +7340,11 @@ De bestanden worden hier niet meer gedeeld; wat het netwerk ervan bewaart, verlo
     </message>
     <message>
         <location line="+5"/>
+        <source>Waiting for hiding to be on</source>
+        <translation>Wacht tot verbergen aan staat</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Not admitted: send your member key to a moderator</source>
         <translation>Niet toegelaten: stuur uw ledensleutel naar een moderator</translation>
     </message>
@@ -9726,34 +9786,34 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+57"/>
-        <location line="+384"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+60"/>
+        <location line="+404"/>
         <source>Unlimited</source>
         <translation>Onbeperkt</translation>
     </message>
     <message>
-        <location line="-375"/>
+        <location line="-395"/>
         <source>eMule First Runtime Wizard</source>
         <translation>eMule-instellingenwizard voor eerste keer</translation>
     </message>
     <message>
-        <location line="+577"/>
+        <location line="+616"/>
         <source>eMule uses two ports for communication with servers and clients. These ports must be free and available for remote clients. The TCP port must be available to ensure the main functionality of eMule. The UDP port is used for Kad (serverless network) and to reduce network usage (Overhead).</source>
         <translation>eMule gebruikt twee poorten voor communicatie met servers en cliënten. Deze poorten moeten vrij zijn en beschikbaar voor cliënten van buiten. De TCP-poort moet beschikbaar zijn voor de hoofdfunctionaliteit van eMule. De UDP-poort wordt gebruikt voor Kad (serverloos netwerk) en om netwerkgebruik te verminderen (overhead).</translation>
     </message>
     <message>
-        <location line="-478"/>
+        <location line="-497"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>U kunt de poorten hier wijzigen zolang er nog geen netwerkactiviteiten zijn gestart.</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+460"/>
+        <location line="+479"/>
         <source>TCP:</source>
         <translation>TCP:</translation>
     </message>
     <message>
-        <location line="-456"/>
+        <location line="-475"/>
         <source>UDP:</source>
         <translation>UDP:</translation>
     </message>
@@ -9974,22 +10034,32 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
     </message>
     <message>
         <location line="+2"/>
-        <location line="+28"/>
+        <location line="+34"/>
         <source>Next &gt;</source>
         <translation>Volgende &gt;</translation>
     </message>
     <message>
-        <location line="-25"/>
+        <location line="-31"/>
         <source>Cancel</source>
         <translation>Annuleren</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Help</source>
         <translation>Help</translation>
     </message>
     <message>
-        <location line="+21"/>
+        <location line="+22"/>
+        <source>Import</source>
+        <translation>Importeren</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>From eMule or aMule</source>
+        <translation>Uit eMule of aMule</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Connection Speed</source>
         <translation>Verbindingssnelheid</translation>
     </message>
@@ -10009,7 +10079,7 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
         <translation>Verbinding</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
         <source>Finish</source>
         <translation>Afronden</translation>
     </message>
@@ -10024,7 +10094,7 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
         <translation>Kad heeft UDP nodig, maar dat is uitgeschakeld in het configuratiebestand</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+96"/>
         <source>TCP/UDP:</source>
         <translation>TCP/UDP:</translation>
     </message>
@@ -10034,7 +10104,7 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
         <translation>eMule gebruikt één poortnummer voor TCP en UDP, voor eD2K, Kad en ed3k. Het moet vrij zijn en via TCP en UDP bereikbaar voor externe clients. TCP is nodig voor de hoofdfuncties van eMule; UDP voor Kad (serverloos netwerk), ed3k en om het netwerkgebruik (overhead) te verminderen.</translation>
     </message>
     <message>
-        <location line="+98"/>
+        <location line="+101"/>
         <source>The ports are forwarded when the core starts.</source>
         <translation>De poorten worden doorgestuurd wanneer de core start.</translation>
     </message>
@@ -12203,6 +12273,164 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
     </message>
 </context>
 <context>
+    <name>eMule::LegacyImportPage</name>
+    <message>
+        <location filename="../src/gui/dialogs/LegacyImportPage.cpp" line="+45"/>
+        <source> (Wine)</source>
+        <translation> (Wine)</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+4"/>
+        <source>(%n unfinished download(s))</source>
+        <translation>
+            <numerusform>(%n onvoltooide download)</numerusform>
+            <numerusform>(%n onvoltooide downloads)</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Take over the settings and unfinished downloads of eMule or aMule. Their files are only read, so the old client keeps working.</source>
+        <translation type="vanished">Neemt de instellingen en onvoltooide downloads van eMule of aMule over. Hun bestanden worden alleen gelezen, dus de oude client blijft werken.</translation>
+    </message>
+    <message>
+        <location line="+32"/>
+        <source>Searching for eMule and aMule...</source>
+        <translation>Zoeken naar eMule en aMule...</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>Import settings (nick, ports, limits, categories, shared folders, credits and user hash)</source>
+        <translation>Instellingen importeren (bijnaam, poorten, limieten, categorieën, gedeelde mappen, credits en gebruikershash)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The core restarts to load them. Files it replaces are moved to an import-backup folder in the config folder.</source>
+        <translation>De core herstart om ze te laden. Bestanden die worden vervangen, gaan naar een map import-backup in de configuratiemap.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Settings folder:</source>
+        <translation>Instellingenmap:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Folder with preferences.ini or amule.conf</source>
+        <translation>Map met preferences.ini of amule.conf</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <location line="+10"/>
+        <source>Browse...</source>
+        <translation>Bladeren...</translation>
+    </message>
+    <message>
+        <source>Import unfinished downloads (copied, not moved)</source>
+        <translation type="vanished">Onvoltooide downloads importeren (gekopieerd, niet verplaatst)</translation>
+    </message>
+    <message>
+        <location line="-43"/>
+        <source>Take over the settings and unfinished downloads of eMule or aMule. The settings are only read. Unfinished downloads are moved here, so the old client no longer has them.</source>
+        <translation>Neem de instellingen en onvoltooide downloads van eMule of aMule over. De instellingen worden alleen gelezen. Onvoltooide downloads worden hierheen verplaatst, dus de oude client heeft ze daarna niet meer.</translation>
+    </message>
+    <message>
+        <location line="+37"/>
+        <source>Import unfinished downloads (moved, not copied)</source>
+        <translation>Onvoltooide downloads importeren (verplaatst, niet gekopieerd)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Download folders:</source>
+        <translation>Downloadmappen:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Temp folders with .part.met files, separated by ;</source>
+        <translation>Tijdelijke mappen met .part.met-bestanden, gescheiden door ;</translation>
+    </message>
+    <message>
+        <location line="+42"/>
+        <source>Not connected to the core.</source>
+        <translation>Niet verbonden met de core.</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Pick the settings folder of eMule or aMule.</source>
+        <translation>Kies de instellingenmap van eMule of aMule.</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>Importing... the core restarts to load the settings.</source>
+        <translation>Importeren... de core herstart om de instellingen te laden.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Importing unfinished downloads...</source>
+        <translation>Onvoltooide downloads importeren...</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Import from eMule</source>
+        <translation>Importeren uit eMule</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Nothing was imported.</source>
+        <translation>Er is niets geïmporteerd.</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+11"/>
+        <source>%n unfinished download(s) queued for import. Tools &gt; Import Downloads shows their progress.</source>
+        <translation>
+            <numerusform>%n onvoltooide download in de wachtrij voor import. Extra &gt; Downloads importeren toont de voortgang.</numerusform>
+            <numerusform>%n onvoltooide downloads in de wachtrij voor import. Extra &gt; Downloads importeren toont de voortgang.</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>Not connected to the core: type the folders below.</source>
+        <translation>Niet verbonden met de core: typ de mappen hieronder.</translation>
+    </message>
+    <message>
+        <location line="+17"/>
+        <source>No eMule or aMule installation found. To import from one anyway, enter its folders below.</source>
+        <translation>Geen eMule- of aMule-installatie gevonden. Om er toch uit te importeren, vul hieronder de mappen in.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Found:</source>
+        <translation>Gevonden:</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Found: %1</source>
+        <translation>Gevonden: %1</translation>
+    </message>
+    <message>
+        <location line="+30"/>
+        <source>No preferences.ini or amule.conf in this folder.</source>
+        <translation>Geen preferences.ini of amule.conf in deze map.</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Settings folder of eMule or aMule</source>
+        <translation>Instellingenmap van eMule of aMule</translation>
+    </message>
+    <message>
+        <location line="+12"/>
+        <source>Download folder of eMule or aMule</source>
+        <translation>Downloadmap van eMule of aMule</translation>
+    </message>
+    <message>
+        <location line="+64"/>
+        <source>Imported. The pages that follow show the imported settings.</source>
+        <translation>Geïmporteerd. De volgende pagina&apos;s tonen de geïmporteerde instellingen.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>The core did not come back. Its log tells what happened.</source>
+        <translation>De core kwam niet terug. Het logboek ervan vertelt wat er gebeurde.</translation>
+    </message>
+</context>
+<context>
     <name>eMule::LinkGrabberPanel</name>
     <message>
         <location filename="../src/gui/panels/LinkGrabberPanel.cpp" line="+103"/>
@@ -12615,13 +12843,13 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
 <context>
     <name>eMule::MainWindow</name>
     <message>
-        <location filename="../src/gui/app/MainWindow.cpp" line="+116"/>
-        <location line="+770"/>
+        <location filename="../src/gui/app/MainWindow.cpp" line="+118"/>
+        <location line="+776"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-630"/>
+        <location line="-636"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt afsluiten</translation>
     </message>
@@ -12677,12 +12905,12 @@ U gebruikt %2. De website van eMule Qt openen?</translation>
     <message>
         <location line="+21"/>
         <location line="+7"/>
-        <location line="+1062"/>
+        <location line="+1079"/>
         <source>Version Check</source>
         <translation>Versiecontrole</translation>
     </message>
     <message>
-        <location line="-1068"/>
+        <location line="-1085"/>
         <source>You are running the latest version of eMule Qt (v%1).</source>
         <translation>U gebruikt de nieuwste versie van eMule Qt (v%1).</translation>
     </message>
@@ -12715,7 +12943,7 @@ Schakel er minstens één in onder Opties → Verbinding om te verbinden.</trans
         <translation>eMule versie %1 is klaar</translation>
     </message>
     <message>
-        <location line="+91"/>
+        <location line="+93"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K: verbonden (laag-ID)</translation>
     </message>
@@ -12741,12 +12969,12 @@ Schakel er minstens één in onder Opties → Verbinding om te verbinden.</trans
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1580"/>
+        <location line="+1611"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: verbinding verbroken</translation>
     </message>
     <message>
-        <location line="-1571"/>
+        <location line="-1602"/>
         <source>eD2K Server: %1  (%2 Users)</source>
         <translation>eD2K-server: %1  (%2 gebruikers)</translation>
     </message>
@@ -12771,7 +12999,7 @@ Schakel er minstens één in onder Opties → Verbinding om te verbinden.</trans
         <translation>Netwerkinterface: %1 — er wordt geen verbinding geopend tot deze beschikbaar is</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+24"/>
         <source>Kad: Connected</source>
         <translation>Kad: verbonden</translation>
     </message>
@@ -12787,12 +13015,12 @@ Schakel er minstens één in onder Opties → Verbinding om te verbinden.</trans
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1500"/>
+        <location line="+1530"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: verbinding verbroken</translation>
     </message>
     <message>
-        <location line="-1459"/>
+        <location line="-1489"/>
         <source>ed3k: Connected</source>
         <translation>ed3k: verbonden</translation>
     </message>
@@ -12862,12 +13090,12 @@ Router: %6</translation>
         <translation>verborgen (%1/%2 paden)</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+2231"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Gebruikers: %1 | Bestanden: %2</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="-2187"/>
         <source>Up: %1(%2)</source>
         <translation>Uit: %1(%2)</translation>
     </message>
@@ -12996,7 +13224,7 @@ De core is losgekoppeld: hij blijft draaien met alle downloads en uploads. Open 
         <translation>Logregel</translation>
     </message>
     <message>
-        <location line="+149"/>
+        <location line="+160"/>
         <source>eMule Log</source>
         <translation>eMule-log</translation>
     </message>
@@ -13125,12 +13353,12 @@ Schakel hem in onder Opties → Webinterface en probeer het opnieuw.</translatio
         <translation>Opties openen</translation>
     </message>
     <message>
-        <location line="+214"/>
+        <location line="+222"/>
         <source>Main</source>
         <translation>Hoofdmenu</translation>
     </message>
     <message>
-        <location line="+158"/>
+        <location line="+160"/>
         <source>Toolbar Skins</source>
         <translation>Werkbalkskins</translation>
     </message>
@@ -13247,7 +13475,7 @@ Schakel hem in onder Opties → Webinterface en probeer het opnieuw.</translatio
         <translation>Gereed</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+24"/>
         <source>Users: 0 | Files: 0</source>
         <translation>Gebruikers: 0 | Bestanden: 0</translation>
     </message>
@@ -13272,7 +13500,17 @@ Schakel hem in onder Opties → Webinterface en probeer het opnieuw.</translatio
         <translation>Nieuw bericht — dubbelklik om te lezen</translation>
     </message>
     <message>
-        <location line="-299"/>
+        <location line="+23"/>
+        <source>Free space: %1</source>
+        <translation>Vrije ruimte: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>N/A</source>
+        <translation>n.v.t.</translation>
+    </message>
+    <message>
+        <location line="-323"/>
         <source>eD2K Link</source>
         <translation>eD2K-verwijzing</translation>
     </message>
@@ -14547,7 +14785,7 @@ Opnieuw downloaden?</translation>
 <context>
     <name>eMule::NetworkInfoDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+57"/>
+        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+63"/>
         <source>Network Information</source>
         <translation>Netwerkinformatie</translation>
     </message>
@@ -14585,29 +14823,32 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="+2"/>
+        <location line="+324"/>
         <source>UDP Port:</source>
         <translation>UDP-poort:</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="-313"/>
         <source>eD2K Network</source>
         <translation>eD2K-netwerk</translation>
     </message>
     <message>
         <location line="+6"/>
         <location line="+188"/>
+        <location line="+118"/>
         <source>Connected</source>
         <translation>Verbonden</translation>
     </message>
     <message>
-        <location line="-186"/>
+        <location line="-304"/>
         <location line="+145"/>
         <location line="+39"/>
+        <location line="+120"/>
         <source>Connecting</source>
         <translation>Verbinden</translation>
     </message>
     <message>
-        <location line="-182"/>
+        <location line="-302"/>
         <location line="+145"/>
         <source>Disconnected</source>
         <translation>Verbinding verbroken</translation>
@@ -14615,12 +14856,16 @@ Opnieuw downloaden?</translation>
     <message>
         <location line="-144"/>
         <location line="+145"/>
-        <location line="+114"/>
+        <location line="+117"/>
+        <location line="+34"/>
+        <location line="+5"/>
+        <location line="+38"/>
+        <location line="+5"/>
         <source>Status:</source>
         <translation>Status:</translation>
     </message>
     <message>
-        <location line="-253"/>
+        <location line="-338"/>
         <location line="+65"/>
         <location line="+156"/>
         <source>Users:</source>
@@ -14643,11 +14888,13 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="-150"/>
+        <location line="+302"/>
+        <location line="+34"/>
         <source>Unknown</source>
         <translation>Onbekend</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="-329"/>
         <location line="+147"/>
         <source>ID:</source>
         <translation>ID:</translation>
@@ -14667,11 +14914,12 @@ Opnieuw downloaden?</translation>
         <location line="+1"/>
         <location line="+96"/>
         <location line="+17"/>
+        <location line="+158"/>
         <source>Open</source>
         <translation>Open</translation>
     </message>
     <message>
-        <location line="-111"/>
+        <location line="-269"/>
         <location line="+94"/>
         <location line="+15"/>
         <source>Firewalled</source>
@@ -14684,11 +14932,12 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="-109"/>
+        <location line="+277"/>
         <source>IPv6:</source>
         <translation>IPv6:</translation>
     </message>
     <message>
-        <location line="-13"/>
+        <location line="-290"/>
         <source>server verified</source>
         <translation>door server gecontroleerd</translation>
     </message>
@@ -14846,16 +15095,20 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="+3"/>
+        <location line="+208"/>
+        <location line="+71"/>
         <source>Yes</source>
         <translation>Ja</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="-279"/>
+        <location line="+208"/>
+        <location line="+71"/>
         <source>No</source>
         <translation>Nee</translation>
     </message>
     <message>
-        <location line="+14"/>
+        <location line="-265"/>
         <source>Kad Network</source>
         <translation>Kad-netwerk</translation>
     </message>
@@ -14920,7 +15173,7 @@ Opnieuw downloaden?</translation>
         <translation>Belasting:</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+12"/>
         <source>Web Interface</source>
         <translation>Webinterface</translation>
     </message>
@@ -14931,11 +15184,13 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="+0"/>
+        <location line="+38"/>
+        <location line="+43"/>
         <source>Disabled</source>
         <translation>Uitgeschakeld</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-79"/>
         <source>not running</source>
         <translation>niet actief</translation>
     </message>
@@ -14951,6 +15206,183 @@ Opnieuw downloaden?</translation>
         <location line="+10"/>
         <source>URL:</source>
         <translation>URL:</translation>
+    </message>
+    <message>
+        <location line="+18"/>
+        <source>ed3k Network</source>
+        <translation>ed3k-netwerk</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <location line="+43"/>
+        <source>Not running</source>
+        <translation>Niet actief</translation>
+    </message>
+    <message>
+        <location line="-30"/>
+        <source>Offline</source>
+        <translation>Offline</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Checking</source>
+        <translation>Controleren</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Cone NAT</source>
+        <translation>Cone-NAT</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Symmetric NAT</source>
+        <translation>Symmetrische NAT</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>IPv4:</source>
+        <translation>IPv4:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <location line="+40"/>
+        <source>Router:</source>
+        <translation>Router:</translation>
+    </message>
+    <message>
+        <location line="-39"/>
+        <source>Contacts:</source>
+        <translation>Contacten:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Node ID:</source>
+        <translation>Node-ID:</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>BitTorrent</source>
+        <translation>BitTorrent</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Listening on port %1</source>
+        <translation>Luistert op poort %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Not listening</source>
+        <translation>Luistert niet</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>External IPv4:</source>
+        <translation>Externe IPv4:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>External IPv6:</source>
+        <translation>Externe IPv6:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>DHT Nodes:</source>
+        <translation>DHT-nodes:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Torrents:</source>
+        <translation>Torrents:</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>BitTorrent over I2P</source>
+        <translation>BitTorrent via I2P</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Bundled (i2pd)</source>
+        <translation>Meegeleverd (i2pd)</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>External</source>
+        <translation>Extern</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Starting</source>
+        <translation>Bezig met starten</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Ready</source>
+        <translation>Gereed</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Failed</source>
+        <translation>Mislukt</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Downloading (%1%)</source>
+        <translation>Bezig met downloaden (%1%)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Stopped</source>
+        <translation>Gestopt</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Router Status:</source>
+        <translation>Routerstatus:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Router Port:</source>
+        <translation>Routerpoort:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Bandwidth Shared:</source>
+        <translation>Gedeelde bandbreedte:</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Not set</source>
+        <translation>Niet ingesteld</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>SAM Bridge:</source>
+        <translation>SAM-bridge:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Tunnels:</source>
+        <translation>Tunnels:</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>%1 hops, %2 each way</source>
+        <translation>%1 hops, %2 per richting</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Mixed Mode:</source>
+        <translation>Gemengde modus:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>I2P Torrents:</source>
+        <translation>I2P-torrents:</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>%1 (%2 peers)</source>
+        <translation>%1 (%2 peers)</translation>
     </message>
 </context>
 <context>
@@ -15010,36 +15442,36 @@ Opnieuw downloaden?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3539"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3546"/>
         <source>Options</source>
         <translation>Opties</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2448"/>
+        <location line="+2455"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-2447"/>
-        <location line="+2448"/>
+        <location line="-2454"/>
+        <location line="+2455"/>
         <source>Cancel</source>
         <translation>Annuleren</translation>
     </message>
     <message>
-        <location line="-2447"/>
-        <location line="+6597"/>
+        <location line="-2454"/>
+        <location line="+6604"/>
         <source>Apply</source>
         <translation>Toepassen</translation>
     </message>
     <message>
-        <location line="-6596"/>
+        <location line="-6603"/>
         <source>Help</source>
         <translation>Help</translation>
     </message>
     <message>
-        <location line="+288"/>
-        <location line="+2427"/>
+        <location line="+289"/>
+        <location line="+2433"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -15051,7 +15483,7 @@ Opnieuw downloaden?</translation>
         <translation>IP-filter</translation>
     </message>
     <message>
-        <location line="-2542"/>
+        <location line="-2548"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP-filter opnieuw geladen: %1 regels.</translation>
     </message>
@@ -15078,37 +15510,37 @@ Opnieuw downloaden?</translation>
     <message>
         <location line="-64"/>
         <location line="+65"/>
-        <location line="+6273"/>
+        <location line="+6279"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="-6333"/>
+        <location line="-6339"/>
         <location line="+62"/>
-        <location line="+6273"/>
-        <location line="+2737"/>
+        <location line="+6279"/>
+        <location line="+2741"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-8890"/>
+        <location line="-8900"/>
         <source>User Name</source>
         <translation>Gebruikersnaam</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6519"/>
+        <location line="+6526"/>
         <source>Language</source>
         <translation>Taal</translation>
     </message>
     <message>
-        <location line="-6516"/>
+        <location line="-6523"/>
         <source>System Default</source>
         <translation>Systeemstandaard</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+944"/>
+        <location line="+950"/>
         <location line="+391"/>
         <location line="+529"/>
         <location line="+299"/>
@@ -15116,7 +15548,7 @@ Opnieuw downloaden?</translation>
         <translation>Diversen</translation>
     </message>
     <message>
-        <location line="-2160"/>
+        <location line="-2166"/>
         <source>Bring to front on link click</source>
         <translation>Naar voren brengen bij klik op verwijzing</translation>
     </message>
@@ -15213,25 +15645,25 @@ Opnieuw downloaden?</translation>
     <message>
         <location line="+8"/>
         <location line="+40"/>
-        <location line="+6396"/>
+        <location line="+6403"/>
         <source>Core</source>
         <translation>Kern</translation>
     </message>
     <message>
-        <location line="-6409"/>
+        <location line="-6416"/>
         <source>Address:</source>
         <translation>Adres:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1545"/>
+        <location line="+1551"/>
         <location line="+775"/>
         <location line="+427"/>
         <source>Port:</source>
         <translation>Poort:</translation>
     </message>
     <message>
-        <location line="-2744"/>
+        <location line="-2750"/>
         <source>authentication token</source>
         <translation>authenticatietoken</translation>
     </message>
@@ -15318,7 +15750,7 @@ Weet u zeker dat u wilt doorgaan?</translation>
         <translation>Overdrachtssnelheden in titelbalk tonen</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+9"/>
         <source>Show download info on category tabs</source>
         <translation>Downloadinformatie op categorietabbladen tonen</translation>
     </message>
@@ -15410,12 +15842,12 @@ Auto follows the upload capacity: 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 
 Auto volgt de uploadcapaciteit: 4 onder 4 Mbit/s, 8 onder 20 Mbit/s, 16 onder 100 Mbit/s, 32 onder 500 Mbit/s, 64 onder 1 Gbit/s, anders 128.</translation>
     </message>
     <message>
-        <location line="+3587"/>
+        <location line="+3591"/>
         <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
         <translation>Bij elke release wordt een database meegeleverd. Een optioneel gratis &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt;-account houdt deze tussendoor actueel. Dit product bevat GeoLite2-gegevens gemaakt door MaxMind.</translation>
     </message>
     <message>
-        <location line="-8516"/>
+        <location line="-8520"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation>CPU- &amp;&amp; geheugengebruik besparen</translation>
     </message>
@@ -15564,12 +15996,12 @@ Auto volgt de uploadcapaciteit: 4 onder 4 Mbit/s, 8 onder 20 Mbit/s, 16 onder 10
     </message>
     <message>
         <location line="-4528"/>
-        <location line="+8274"/>
+        <location line="+8278"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-8268"/>
+        <location line="-8272"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -15601,22 +16033,22 @@ Auto volgt de uploadcapaciteit: 4 onder 4 Mbit/s, 8 onder 20 Mbit/s, 16 onder 10
     <message>
         <location line="+4"/>
         <location line="+1839"/>
-        <location line="+5983"/>
+        <location line="+5987"/>
         <source>Any</source>
         <translation>Alle</translation>
     </message>
     <message>
-        <location line="-7820"/>
+        <location line="-7824"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Alleen deze netwerkinterface gebruiken, bijvoorbeeld een VPN-tunnel. Kies er een uit de lijst, of typ een IP-adres of een subnet zoals 10.64.0.0/10 (de interface met een adres daarbinnen). Verbindingen via een proxy worden niet gebonden.</translation>
     </message>
     <message>
-        <location line="+7717"/>
+        <location line="+7721"/>
         <source>While the selected interface is not available, all P2P, Usenet and update connections stay closed.</source>
         <translation>Zolang de geselecteerde interface niet beschikbaar is, blijven alle P2P-, Usenet- en updateverbindingen gesloten.</translation>
     </message>
     <message>
-        <location line="-7703"/>
+        <location line="-7707"/>
         <source>Max. Sources/File</source>
         <translation>Max. bronnen/bestand</translation>
     </message>
@@ -15692,8 +16124,8 @@ Auto volgt de uploadcapaciteit: 4 onder 4 Mbit/s, 8 onder 20 Mbit/s, 16 onder 10
         <translation>Verbinden met IPv6-peers en -servers vanaf het wisselende tijdelijke adres (RFC 4941). Uit: altijd het vaste adres gebruiken, zodat peers het adres dat we bekendmaken kunnen bereiken.</translation>
     </message>
     <message>
-        <location line="-930"/>
-        <location line="+1020"/>
+        <location line="-936"/>
+        <location line="+1026"/>
         <location line="+1631"/>
         <source>General</source>
         <translation>Algemeen</translation>
@@ -16160,15 +16592,15 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <translation>SMTP-serverinstellingen</translation>
     </message>
     <message>
-        <location line="-1892"/>
+        <location line="-1898"/>
         <location line="+23"/>
         <location line="+7"/>
-        <location line="+1865"/>
+        <location line="+1871"/>
         <source>Connection</source>
         <translation>Verbinding</translation>
     </message>
     <message>
-        <location line="-1866"/>
+        <location line="-1872"/>
         <location line="+58"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
@@ -16185,12 +16617,12 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
     </message>
     <message>
         <location line="-1"/>
-        <location line="+488"/>
+        <location line="+494"/>
         <source>Hoster</source>
         <translation>Hoster</translation>
     </message>
     <message>
-        <location line="-486"/>
+        <location line="-492"/>
         <source>Filters</source>
         <translation>Filters</translation>
     </message>
@@ -16297,7 +16729,7 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <translation>Eén eenvoudige balk gevuld tot het voltooide percentage, zonder details van de delen.</translation>
     </message>
     <message>
-        <location line="+28"/>
+        <location line="+34"/>
         <source>Show status filter row:</source>
         <translation>Statusfilterrij tonen:</translation>
     </message>
@@ -16480,13 +16912,13 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <translation>UTF-8 activeren</translation>
     </message>
     <message>
-        <location line="-2007"/>
-        <location line="+2038"/>
+        <location line="-2013"/>
+        <location line="+2044"/>
         <source>Server</source>
         <translation>Server</translation>
     </message>
     <message>
-        <location line="-2040"/>
+        <location line="-2046"/>
         <source>Display</source>
         <translation>Weergave</translation>
     </message>
@@ -16531,7 +16963,7 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <translation>Uitgebreid</translation>
     </message>
     <message>
-        <location line="+754"/>
+        <location line="+760"/>
         <source>More slots while below the upload limit</source>
         <translation>Meer slots onder de uploadlimiet</translation>
     </message>
@@ -17204,23 +17636,23 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <location line="+1076"/>
         <location line="+164"/>
         <location line="+2043"/>
-        <location line="+2499"/>
+        <location line="+2503"/>
         <source>Add</source>
         <translation>Toevoegen</translation>
     </message>
     <message>
-        <location line="-8467"/>
-        <location line="+2686"/>
+        <location line="-8477"/>
+        <location line="+2692"/>
         <location line="+1076"/>
         <location line="+164"/>
         <location line="+1702"/>
         <location line="+406"/>
-        <location line="+2439"/>
+        <location line="+2443"/>
         <source>Remove</source>
         <translation>Verwijderen</translation>
     </message>
     <message>
-        <location line="-5766"/>
+        <location line="-5770"/>
         <source>Display name (optional)</source>
         <translation>Weergavenaam (optioneel)</translation>
     </message>
@@ -17298,7 +17730,7 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <translation>Bandbreedte</translation>
     </message>
     <message>
-        <location line="-4888"/>
+        <location line="-4894"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>Downloads die gegevens ontvangen, en de bronnen die ze sturen, worden vet weergegeven. Een bron onder een ander bestand (A4AF) is ook vet zolang hij overdraagt. De verbonden server en het gekozen categorietabblad zijn ook vet.</translation>
     </message>
@@ -17311,7 +17743,7 @@ Elke Usenet-verbinding loopt dan via de proxy, dus de snelheid ervan begrenst de
         <translation type="vanished">Maakt eMule Qt de standaardapp voor ed2k://-links. Uitgeschakeld gaan ze naar een andere app die ze opent, als die er is.</translation>
     </message>
     <message>
-        <location line="+300"/>
+        <location line="+306"/>
         <location line="+4535"/>
         <source>Open Router</source>
         <translation>Router openen</translation>
@@ -17680,7 +18112,17 @@ Het antwoord is nooit een oordeel. Niets hiervan kan verhinderen dat een artikel
         <translation>nooit</translation>
     </message>
     <message>
-        <location line="-3040"/>
+        <location line="-4164"/>
+        <source>Show free disk space in status bar</source>
+        <translation>Vrije schijfruimte in de statusbalk tonen</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Free space of the save folder of the current window: the torrent folder in Torrents, the Usenet and hoster targets in theirs, the incoming folder everywhere else.</source>
+        <translation>Vrije ruimte van de opslagmap van het huidige venster: de torrentmap bij Torrents, de Usenet- en hosterdoelen bij die van hen, elders de map voor binnenkomende bestanden.</translation>
+    </message>
+    <message>
+        <location line="+1122"/>
         <source>Check network shares every:</source>
         <translation>Netwerkshares controleren elke:</translation>
     </message>
@@ -18100,8 +18542,8 @@ Voer in wat het controlepaneel van uw provider aangeeft, of 0 om opnieuw te begi
         <translation>Zoekindexers beantwoorden zoekopdrachten op trefwoord en geven een NZB terug. Ze staan los van uw nieuwsservers: op Usenet zijn de provider waarvan u downloadt en de dienst die u doorzoekt verschillende bedrijven.</translation>
     </message>
     <message>
-        <location line="-4098"/>
-        <location line="+4105"/>
+        <location line="-4104"/>
+        <location line="+4111"/>
         <location line="+395"/>
         <location line="+541"/>
         <source>Indexers</source>
@@ -18233,8 +18675,8 @@ Elke pagina is een API-aanroep ten laste van het tegoed van uw account, dus dit 
         <translation>Een feed is een zoekopdracht die vanzelf draait en in de wachtrij zet wat hij vindt. Zijn eerste controle voegt niets toe — hij noteert alleen wat de indexer al toont, omdat een nieuwe feed anders alles zou downloaden wat nog op de server staat.</translation>
     </message>
     <message>
-        <location line="-4260"/>
-        <location line="+4268"/>
+        <location line="-4266"/>
+        <location line="+4274"/>
         <location line="+325"/>
         <location line="+277"/>
         <source>Feeds</source>
@@ -18605,7 +19047,7 @@ Auto volgt de uploadcapaciteit: 2 onder 1 Mbit/s, 4 onder 4 Mbit/s, 8 onder 20 M
         <translation>Debuguitvoer van de ed3k-node. Het tabblad is zichtbaar zolang ed3k aan staat.</translation>
     </message>
     <message>
-        <location line="+2865"/>
+        <location line="+2869"/>
         <source>This interface has no default route (split-tunnel VPN?): servers and peers outside its subnets are unreachable. Route all traffic through it, or choose another interface.</source>
         <translation>Deze interface heeft geen standaardroute (split-tunnel-VPN?): servers en peers buiten de subnetten zijn onbereikbaar. Leid al het verkeer erdoor of kies een andere interface.</translation>
     </message>
@@ -18688,7 +19130,7 @@ Auto volgt de uploadcapaciteit: 2 onder 1 Mbit/s, 4 onder 4 Mbit/s, 8 onder 20 M
         <translation type="vanished">Gebruikt voor zowel TCP als UDP. Moet verschillen van de eD2K-poorten.</translation>
     </message>
     <message>
-        <location line="-3758"/>
+        <location line="-3762"/>
         <source>Listen port (TCP/UDP):</source>
         <translation>Luisterpoort (TCP/UDP):</translation>
     </message>
@@ -18832,7 +19274,7 @@ Auto volgt de uploadcapaciteit: 2 onder 1 Mbit/s, 4 onder 4 Mbit/s, 8 onder 20 M
         <translation>Downloads worden altijd gecontroleerd en gelogd. Gedeelde bestanden worden bij elke start opnieuw gecontroleerd.</translation>
     </message>
     <message>
-        <location line="+2064"/>
+        <location line="+2068"/>
         <source>Could not update the file associations: %1</source>
         <translation>De bestandskoppelingen konden niet worden bijgewerkt: %1</translation>
     </message>
@@ -18871,8 +19313,8 @@ Zoek de &quot;standaardgateway&quot; op in de netwerkinstellingen van deze compu
         <translation type="vanished">Routerpagina openen</translation>
     </message>
     <message>
-        <location line="-9037"/>
-        <location line="+8967"/>
+        <location line="-9047"/>
+        <location line="+8977"/>
         <location line="+52"/>
         <source>Directories</source>
         <translation>Mappen</translation>
@@ -18943,7 +19385,7 @@ Aanmaken?</translation>
 %1</translation>
     </message>
     <message>
-        <location line="-3494"/>
+        <location line="-3498"/>
         <source>Disabled</source>
         <translation>Uitgeschakeld</translation>
     </message>
@@ -19787,7 +20229,7 @@ Torrents van een torznab-indexer gaan in plaats daarvan naar de BitTorrent-downl
         <translation>De instellingenpagina %1 is nog niet geïmplementeerd.</translation>
     </message>
     <message>
-        <location line="+2656"/>
+        <location line="+2660"/>
         <location line="+5"/>
         <location line="+18"/>
         <location line="+13"/>
@@ -19856,8 +20298,8 @@ Torrents van een torznab-indexer gaan in plaats daarvan naar de BitTorrent-downl
         </translation>
     </message>
     <message>
-        <location line="-9226"/>
-        <location line="+6694"/>
+        <location line="-9236"/>
+        <location line="+6701"/>
         <source>Proxy</source>
         <translation>Proxy</translation>
     </message>
@@ -19883,7 +20325,7 @@ Verbindingen met nieuwsservers schakelen direct om.</translation>
         <translation>De instellingen voor de kernverbinding worden van kracht na een herstart van het programma.</translation>
     </message>
     <message>
-        <location line="+45"/>
+        <location line="+46"/>
         <source>Icons</source>
         <translation>Pictogrammen</translation>
     </message>
@@ -19913,8 +20355,8 @@ Verbindingen met nieuwsservers schakelen direct om.</translation>
         <translation>De wijziging van de lettergrootte wordt van kracht na een herstart van het programma.</translation>
     </message>
     <message>
-        <location line="-6823"/>
-        <location line="+7246"/>
+        <location line="-6831"/>
+        <location line="+7254"/>
         <source>Web Interface</source>
         <translation>Webinterface</translation>
     </message>
@@ -19924,7 +20366,7 @@ Verbindingen met nieuwsservers schakelen direct om.</translation>
         <translation>„%1” is geen IP-adres. Het luisteradres is niet gewijzigd.</translation>
     </message>
     <message>
-        <location line="+555"/>
+        <location line="+557"/>
         <source>File types</source>
         <translation>Bestandstypen</translation>
     </message>
@@ -22491,25 +22933,25 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1132"/>
+        <location line="+1136"/>
         <source>Statistics last reset: %1</source>
         <translation>Statistieken laatst gereset: %1</translation>
     </message>
     <message>
-        <location line="-1132"/>
+        <location line="-1136"/>
         <location line="+318"/>
-        <location line="+636"/>
+        <location line="+640"/>
         <location line="+167"/>
         <location line="+8"/>
         <location line="+67"/>
         <location line="+69"/>
-        <location line="+284"/>
+        <location line="+302"/>
         <location line="+1104"/>
         <source>Unknown</source>
         <translation>Onbekend</translation>
     </message>
     <message>
-        <location line="-2626"/>
+        <location line="-2648"/>
         <location line="+11"/>
         <source>Session average</source>
         <translation>Sessiegemiddelde</translation>
@@ -22522,12 +22964,12 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     </message>
     <message>
         <location line="-9"/>
-        <location line="+2408"/>
+        <location line="+2430"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="-2405"/>
+        <location line="-2427"/>
         <source>Download Speed</source>
         <translation>Downloadsnelheid</translation>
     </message>
@@ -22573,46 +23015,46 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     </message>
     <message>
         <location line="+3"/>
-        <location line="+747"/>
+        <location line="+751"/>
         <location line="+45"/>
-        <location line="+1168"/>
+        <location line="+1186"/>
         <source>Waiting...</source>
         <translation>Wachten...</translation>
     </message>
     <message>
-        <location line="-1959"/>
-        <location line="+682"/>
+        <location line="-1981"/>
+        <location line="+686"/>
         <source>Session UL:DL Ratio: %1</source>
         <translation>Sessie UL:DL-ratio: %1</translation>
     </message>
     <message>
-        <location line="-680"/>
-        <location line="+682"/>
+        <location line="-684"/>
+        <location line="+686"/>
         <source>Session UL:DL Ratio (Friends UL excluded): %1</source>
         <translation>Sessie UL:DL-ratio (exclusief vrienden-UL): %1</translation>
     </message>
     <message>
-        <location line="-681"/>
-        <location line="+683"/>
+        <location line="-685"/>
+        <location line="+687"/>
         <source>Cumulative UL:DL Ratio: %1</source>
         <translation>Gezamenlijke UL:DL-ratio: %1</translation>
     </message>
     <message>
-        <location line="-680"/>
+        <location line="-684"/>
         <location line="+165"/>
         <location line="+25"/>
-        <location line="+398"/>
-        <location line="+2040"/>
+        <location line="+402"/>
+        <location line="+2058"/>
         <source>Uploads</source>
         <translation>Uploads</translation>
     </message>
     <message>
-        <location line="-2624"/>
+        <location line="-2646"/>
         <location line="+67"/>
         <location line="+83"/>
         <location line="+56"/>
         <location line="+43"/>
-        <location line="+1782"/>
+        <location line="+1804"/>
         <location line="+90"/>
         <location line="+76"/>
         <location line="+129"/>
@@ -22622,7 +23064,7 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <translation>Sessie</translation>
     </message>
     <message>
-        <location line="-2610"/>
+        <location line="-2632"/>
         <location line="+35"/>
         <source>Uploaded Data: 0 Bytes</source>
         <translation>Geüploade data: 0 bytes</translation>
@@ -22633,12 +23075,12 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <location line="+32"/>
         <location line="+43"/>
         <location line="+114"/>
-        <location line="+346"/>
+        <location line="+350"/>
         <source>Clients</source>
         <translation>Cliënten</translation>
     </message>
     <message>
-        <location line="-567"/>
+        <location line="-571"/>
         <location line="+35"/>
         <location line="+32"/>
         <location line="+43"/>
@@ -22651,12 +23093,12 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <location line="+32"/>
         <location line="+43"/>
         <location line="+119"/>
-        <location line="+341"/>
+        <location line="+345"/>
         <source>Port</source>
         <translation>Poort</translation>
     </message>
     <message>
-        <location line="-569"/>
+        <location line="-573"/>
         <location line="+35"/>
         <location line="+32"/>
         <location line="+43"/>
@@ -22674,12 +23116,12 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     <message>
         <location line="-109"/>
         <location line="+35"/>
-        <location line="+543"/>
+        <location line="+547"/>
         <source>Data Source</source>
         <translation>Databron</translation>
     </message>
     <message>
-        <location line="-577"/>
+        <location line="-581"/>
         <location line="+35"/>
         <source>Complete File: 0 Bytes</source>
         <translation>Compleet bestand: 0 bytes</translation>
@@ -22698,14 +23140,14 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     <message>
         <location line="+6"/>
         <location line="+28"/>
-        <location line="+542"/>
+        <location line="+546"/>
         <location line="+141"/>
         <location line="+45"/>
         <source>Upload Sessions</source>
         <translation>Uploadsessies</translation>
     </message>
     <message>
-        <location line="-751"/>
+        <location line="-755"/>
         <location line="+28"/>
         <source>Average Upload Per Session: 0 Bytes</source>
         <translation>Gemiddelde upload per sessie: 0 bytes</translation>
@@ -22722,7 +23164,7 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <location line="+66"/>
         <location line="+41"/>
         <location line="+32"/>
-        <location line="+1787"/>
+        <location line="+1809"/>
         <location line="+90"/>
         <location line="+76"/>
         <location line="+129"/>
@@ -22732,18 +23174,18 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <translation>Cumulatief</translation>
     </message>
     <message>
-        <location line="-2555"/>
+        <location line="-2577"/>
         <location line="+105"/>
         <location line="+24"/>
-        <location line="+407"/>
-        <location line="+1485"/>
+        <location line="+411"/>
+        <location line="+1503"/>
         <location line="+164"/>
         <location line="+380"/>
         <source>Downloads</source>
         <translation>Downloads</translation>
     </message>
     <message>
-        <location line="-2558"/>
+        <location line="-2580"/>
         <location line="+43"/>
         <source>Downloaded Data: 0 Bytes</source>
         <translation>Gedownloade data: 0 bytes</translation>
@@ -22767,14 +23209,14 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     <message>
         <location line="+3"/>
         <location line="+34"/>
-        <location line="+481"/>
+        <location line="+485"/>
         <location line="+270"/>
         <location line="+10"/>
         <source>Download Sessions</source>
         <translation>Downloadsessies</translation>
     </message>
     <message>
-        <location line="-790"/>
+        <location line="-794"/>
         <location line="+34"/>
         <source>Average Download Per Session: 0 Bytes</source>
         <translation>Gemiddelde download per sessie: 0 bytes</translation>
@@ -22811,7 +23253,7 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     <message>
         <location line="+7"/>
         <location line="+26"/>
-        <location line="+1796"/>
+        <location line="+1818"/>
         <location line="+87"/>
         <location line="+86"/>
         <location line="+79"/>
@@ -22819,15 +23261,15 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <translation>Algemeen</translation>
     </message>
     <message>
-        <location line="-2072"/>
+        <location line="-2094"/>
         <location line="+26"/>
-        <location line="+770"/>
+        <location line="+774"/>
         <location line="+33"/>
         <source>Reconnects: %1</source>
         <translation>Herstelde verbindingen: %1</translation>
     </message>
     <message>
-        <location line="-821"/>
+        <location line="-825"/>
         <source>Upload Speed: 0 KB/s</source>
         <translation>Uploadsnelheid: 0 KB/s</translation>
     </message>
@@ -22877,13 +23319,13 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     </message>
     <message>
         <location line="+3"/>
-        <location line="+805"/>
+        <location line="+809"/>
         <location line="+5"/>
         <source>Statistics Last Reset: %1</source>
         <translation>Statistieken laatst gereset: %1</translation>
     </message>
     <message>
-        <location line="-808"/>
+        <location line="-812"/>
         <source>Time Since Last Reset: -</source>
         <translation>Tijd sinds laatste reset: -</translation>
     </message>
@@ -22938,12 +23380,12 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     </message>
     <message>
         <location line="+3"/>
-        <location line="+2234"/>
+        <location line="+2256"/>
         <source>Network</source>
         <translation>Netwerk</translation>
     </message>
     <message>
-        <location line="-2228"/>
+        <location line="-2250"/>
         <source>Low ID: 0 (0.0%)</source>
         <translation>Laag-ID: 0 (0.0%)</translation>
     </message>
@@ -22974,12 +23416,12 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     </message>
     <message>
         <location line="+2"/>
-        <location line="+2203"/>
+        <location line="+2225"/>
         <source>By Country</source>
         <translation>Per land</translation>
     </message>
     <message>
-        <location line="-2202"/>
+        <location line="-2224"/>
         <source>Clients by the country of the address they connected from.</source>
         <translation>Cliënten per land van het adres waarvandaan ze verbonden.</translation>
     </message>
@@ -23041,17 +23483,17 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     </message>
     <message>
         <location line="+2"/>
-        <location line="+970"/>
+        <location line="+974"/>
         <source>Number of Shared Files: %1</source>
         <translation>Aantal gedeelde bestanden: %1</translation>
     </message>
     <message>
-        <location line="-957"/>
+        <location line="-961"/>
         <source>Disk Space</source>
         <translation>Schijfruimte</translation>
     </message>
     <message>
-        <location line="+231"/>
+        <location line="+235"/>
         <source>Projected Averages</source>
         <translation>Geprojecteerde gemiddelden</translation>
     </message>
@@ -23180,12 +23622,12 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     <message>
         <location line="+68"/>
         <location line="+74"/>
-        <location line="+1237"/>
+        <location line="+1255"/>
         <source>Uploaded Data: %1</source>
         <translation>Geüploade data: %1</translation>
     </message>
     <message>
-        <location line="-1300"/>
+        <location line="-1318"/>
         <location line="+73"/>
         <location line="+57"/>
         <location line="+99"/>
@@ -23272,14 +23714,14 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     <message>
         <location line="+68"/>
         <location line="+99"/>
-        <location line="+1080"/>
+        <location line="+1098"/>
         <location line="+80"/>
         <location line="+166"/>
         <source>Downloaded Data: %1</source>
         <translation>Gedownloade data: %1</translation>
     </message>
     <message>
-        <location line="-1407"/>
+        <location line="-1425"/>
         <source>Active Downloads (chunks): %1</source>
         <translation>Actieve downloads (delen): %1</translation>
     </message>
@@ -23315,12 +23757,12 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     </message>
     <message>
         <location line="+0"/>
-        <location line="+732"/>
+        <location line="+750"/>
         <source>Connecting</source>
         <translation>Verbinden</translation>
     </message>
     <message>
-        <location line="-732"/>
+        <location line="-750"/>
         <source>Connecting via server</source>
         <translation>Verbinden via server</translation>
     </message>
@@ -23383,13 +23825,13 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     <message>
         <location line="+5"/>
         <location line="+61"/>
-        <location line="+1074"/>
+        <location line="+1092"/>
         <location line="+84"/>
         <source>Completed Downloads: %1</source>
         <translation>Voltooide downloads: %1</translation>
     </message>
     <message>
-        <location line="-1208"/>
+        <location line="-1226"/>
         <location line="+10"/>
         <source>Average Download Per Session: %1</source>
         <translation>Gemiddelde download per sessie: %1</translation>
@@ -23458,28 +23900,28 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1002"/>
+        <location line="+1020"/>
         <location line="+175"/>
         <source>Upload Speed: %1</source>
         <translation>Uploadsnelheid: %1</translation>
     </message>
     <message>
-        <location line="-1176"/>
+        <location line="-1194"/>
         <location line="+17"/>
-        <location line="+988"/>
+        <location line="+1006"/>
         <location line="+173"/>
         <source>Max Upload Rate: %1</source>
         <translation>Max. uploadsnelheid: %1</translation>
     </message>
     <message>
-        <location line="-1177"/>
+        <location line="-1195"/>
         <location line="+17"/>
         <source>Max Average Upload Rate: %1</source>
         <translation>Max. gemiddelde uploadsnelheid: %1</translation>
     </message>
     <message>
         <location line="-16"/>
-        <location line="+998"/>
+        <location line="+1016"/>
         <location line="+87"/>
         <location line="+86"/>
         <location line="+79"/>
@@ -23487,9 +23929,9 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <translation>Downloadsnelheid: %1</translation>
     </message>
     <message>
-        <location line="-1249"/>
+        <location line="-1267"/>
         <location line="+17"/>
-        <location line="+983"/>
+        <location line="+1001"/>
         <location line="+86"/>
         <location line="+86"/>
         <location line="+79"/>
@@ -23497,21 +23939,21 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <translation>Max. downloadsnelheid: %1</translation>
     </message>
     <message>
-        <location line="-1250"/>
+        <location line="-1268"/>
         <location line="+17"/>
         <source>Max Average Download Rate: %1</source>
         <translation>Max. gemiddelde downloadsnelheid: %1</translation>
     </message>
     <message>
         <location line="-5"/>
-        <location line="+988"/>
+        <location line="+1006"/>
         <location line="+173"/>
         <source>Average Upload Rate: %1</source>
         <translation>Gemiddelde uploadsnelheid: %1</translation>
     </message>
     <message>
-        <location line="-1158"/>
-        <location line="+983"/>
+        <location line="-1176"/>
+        <location line="+1001"/>
         <location line="+86"/>
         <location line="+86"/>
         <location line="+79"/>
@@ -23519,7 +23961,7 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <translation>Gemiddelde downloadsnelheid: %1</translation>
     </message>
     <message>
-        <location line="-1221"/>
+        <location line="-1239"/>
         <location line="+5"/>
         <source>Time Since Last Reset: %1</source>
         <translation>Tijd sinds laatste reset: %1</translation>
@@ -23538,15 +23980,15 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     <message>
         <location line="-18"/>
         <location line="+20"/>
-        <location line="+930"/>
+        <location line="+948"/>
         <location line="+173"/>
         <source>Upload Time: %1 %2</source>
         <translation>Uploadtijd: %1 %2</translation>
     </message>
     <message>
-        <location line="-1121"/>
+        <location line="-1139"/>
         <location line="+20"/>
-        <location line="+927"/>
+        <location line="+945"/>
         <location line="+84"/>
         <location line="+89"/>
         <location line="+76"/>
@@ -23554,7 +23996,7 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <translation>Downloadtijd: %1 %2</translation>
     </message>
     <message>
-        <location line="-1194"/>
+        <location line="-1212"/>
         <source>Current Server Duration: %1 %2</source>
         <translation>Tijd op actieve server: %1 %2</translation>
     </message>
@@ -23707,20 +24149,20 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     </message>
     <message>
         <location line="+10"/>
-        <location line="+1016"/>
+        <location line="+1034"/>
         <source>Number of Downloads: %1</source>
         <translation>Aantal downloads: %1</translation>
     </message>
     <message>
-        <location line="-1015"/>
-        <location line="+729"/>
+        <location line="-1033"/>
+        <location line="+747"/>
         <location line="+90"/>
         <location line="+204"/>
         <source>Total Size of Downloads: %1</source>
         <translation>Totale grootte van downloads: %1</translation>
     </message>
     <message>
-        <location line="-1022"/>
+        <location line="-1040"/>
         <source>Total Completed Size: %1 (%2%)</source>
         <translation>Totaal voltooid: %1 (%2%)</translation>
     </message>
@@ -23745,7 +24187,32 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <translation>Extra benodigde ruimte voor downloads: %1</translation>
     </message>
     <message>
-        <location line="+125"/>
+        <location line="+7"/>
+        <source>Free Space in Incoming: %1</source>
+        <translation>Vrije ruimte in binnenkomend: %1</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Free Space for Torrents: %1</source>
+        <translation>Vrije ruimte voor torrents: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Free Space for Usenet: %1</source>
+        <translation>Vrije ruimte voor Usenet: %1</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Free Space for Hoster: %1</source>
+        <translation>Vrije ruimte voor hosters: %1</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>N/A</source>
+        <translation>n.v.t.</translation>
+    </message>
+    <message>
+        <location line="+127"/>
         <source>Status: Running on UDP port %1</source>
         <translation>Status: Actief op UDP-poort %1</translation>
     </message>
@@ -24094,9 +24561,9 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>Fout: %1</translation>
     </message>
     <message>
-        <location line="-2191"/>
+        <location line="-2213"/>
         <location line="+11"/>
-        <location line="+2101"/>
+        <location line="+2123"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
@@ -24508,9 +24975,9 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>Verzoeken in wachtrij: %1</translation>
     </message>
     <message>
-        <location line="-2266"/>
+        <location line="-2288"/>
         <location line="+11"/>
-        <location line="+2262"/>
+        <location line="+2284"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -26439,7 +26906,7 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+391"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+395"/>
         <location line="+341"/>
         <source>Priority (Download)</source>
         <translation>Prioriteit (download)</translation>
@@ -27864,20 +28331,20 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
 <context>
     <name>eMule::WebServer</name>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3958"/>
-        <location line="+3840"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-4110"/>
+        <location line="+3992"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>Sessie verlopen — log opnieuw in</translation>
     </message>
     <message>
-        <location line="-3885"/>
+        <location line="-4037"/>
         <source>Guests cannot add downloads</source>
         <translation>Gasten kunnen geen downloads toevoegen</translation>
     </message>
     <message>
         <location line="+589"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+181"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+182"/>
         <source>Torrent</source>
         <translation>Torrent</translation>
     </message>
@@ -27903,18 +28370,18 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
         <translation>Heeft commentaar</translation>
     </message>
     <message>
-        <location line="+429"/>
+        <location line="+573"/>
         <location line="+1"/>
         <source>Incoming</source>
         <translation>Binnenkomend</translation>
     </message>
     <message>
-        <location line="+27"/>
+        <location line="+24"/>
         <source>Nothing has finished downloading yet.</source>
         <translation>Er is nog niets klaar met downloaden.</translation>
     </message>
     <message>
-        <location line="+32"/>
+        <location line="+31"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="-103"/>
         <source>Name</source>
         <translation>Naam</translation>
@@ -27932,7 +28399,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+40"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-105"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-106"/>
         <source>Download</source>
         <translation>Downloaden</translation>
     </message>
@@ -27942,7 +28409,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
         <translation>Afspelen</translation>
     </message>
     <message>
-        <location line="+94"/>
+        <location line="+90"/>
         <source>Open this URL in VLC or another player:</source>
         <translation>Open deze URL in VLC of een andere speler:</translation>
     </message>
@@ -28001,7 +28468,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message numerus="yes">
         <location line="+255"/>
-        <location line="+1054"/>
+        <location line="+1070"/>
         <source>%n download(s) added</source>
         <translation>
             <numerusform>%n download toegevoegd</numerusform>
@@ -28009,7 +28476,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
         </translation>
     </message>
     <message>
-        <location line="-1009"/>
+        <location line="-1025"/>
         <source>Not sent yet — the search is waiting (%1) and starts by itself.</source>
         <translation>Nog niet verzonden — de zoekopdracht wacht (%1) en start vanzelf.</translation>
     </message>
@@ -28047,12 +28514,12 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+2326"/>
+        <location line="+2342"/>
         <source>Web Control Panel</source>
         <translation>Webbedieningspaneel</translation>
     </message>
     <message>
-        <location line="-2318"/>
+        <location line="-2334"/>
         <source>Not connected</source>
         <translation>Niet verbonden</translation>
     </message>
@@ -28068,12 +28535,12 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+342"/>
+        <location line="+358"/>
         <source>Disconnected</source>
         <translation>Verbinding verbroken</translation>
     </message>
     <message numerus="yes">
-        <location line="-282"/>
+        <location line="-298"/>
         <source>&quot;%1&quot;: %n result(s)</source>
         <translation>
             <numerusform>&quot;%1&quot;: %n resultaat</numerusform>
@@ -28081,14 +28548,14 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
         </translation>
     </message>
     <message>
-        <location line="+193"/>
+        <location line="+209"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+2"/>
         <source>Downloads</source>
         <translation>Downloads</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+128"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+129"/>
         <source>Uploads</source>
         <translation>Uploads</translation>
     </message>
@@ -28234,7 +28701,12 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
         <translation>Controleren</translation>
     </message>
     <message>
-        <location line="-443"/>
+        <location line="-715"/>
+        <source>Incoming (eD2K)</source>
+        <translation>Binnenkomend (eD2K)</translation>
+    </message>
+    <message>
+        <location line="+272"/>
         <source>Finished</source>
         <translation>Voltooid</translation>
     </message>
@@ -28527,7 +28999,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+56"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-171"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-172"/>
         <source>All</source>
         <translation>Alle</translation>
     </message>
@@ -28853,6 +29325,11 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>Free Disk Space</source>
+        <translation>Vrije schijfruimte</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>General</source>
         <translation>Algemeen</translation>
     </message>
@@ -28882,12 +29359,13 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
         <translation>Gezondheid:</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1921"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Hoster</source>
         <translation>Hoster</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Hoster downloads are off.</source>
         <translation>Hoster-downloads staan uit.</translation>
     </message>
@@ -29402,12 +29880,13 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
         <translation>Torrentbestanden:</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-4"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Torrents</source>
         <translation>Torrents</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Total</source>
         <translation>Totaal</translation>
     </message>
@@ -29452,7 +29931,8 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
         <translation>Uptime</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3694"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1921"/>
+        <location line="+1923"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet</source>
         <translation>Usenet</translation>

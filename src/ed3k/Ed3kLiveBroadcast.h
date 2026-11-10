@@ -28,6 +28,10 @@
 ///   seq, the time of the cut); back within kResumeS of the cut it goes on at the next seq of
 ///   the same start (the core sets `gap`), later as a new broadcast. Only stop() ends it.
 ///
+/// - Key (hops.md §1): a channel is broadcast under Ed3kHide::keyForUse() at its first start and
+///   keeps that key (channels.json `key`), its channel file too. One of the anonymous key is
+///   refused while hiding is off; hiding stopped cuts it (resumed when hiding runs again).
+///
 /// was: (Not resumed after a restart of the daemon: the user starts again.)
 /// was: ToDo: a paid channel (subscription.md §7: offer, passes for its own nodes) is not offered.
 /// (done: an open channel sold in Ed3kPaidSeller: setOfferSource, `paid` + offer, `paid=1` in
@@ -109,6 +113,7 @@ public:
         QString error;            ///< the last problem, localized; empty = none
         bool paid = false;        ///< subscription.md §7: sealed, an offer (Ed3kPaidSeller)
         QString channel;          ///< the channel `id` (hex, 32), deleteChannel()
+        bool anon = false;        ///< broadcast under the anonymous key (hops.md §1)
     };
     /// A channel kept here (channels.json), on air or not.
     struct ChannelInfo {
@@ -205,6 +210,7 @@ private:
         QByteArray channelId;                ///< 16 B
         // std::optional<::ed3k::Root> channelFile;   (was; now m_channelFiles, kept off air)
         bool paid = false;                   ///< broadcast with an offer (subscription.md §7)
+        ::ed3k::KeyKind key = ::ed3k::KeyKind::Node;   ///< hops.md §1: the node broadcasting it
     };
     struct Channel {
         QByteArray id;            ///< 16 B, the channel `id`
@@ -218,12 +224,18 @@ private:
         bool operator==(const Desc&) const = default;
     };
 
-    void onEventPolled(const ::ed3k::Event& event, bool* handled);
+    // was: void onEventPolled(const ::ed3k::Event& event, bool* handled);
+    void onEventPolled(const ::ed3k::Event& event, ::ed3k::KeyKind key, bool* handled);
     void onSessionStatus();
+    /// Hiding stopped: the anonymous key's broadcasts are cut (kept for a resume).
+    void onHideStopped();
+    /// The key channel @p channelId is broadcast under (channels.json); nullopt: none yet.
+    [[nodiscard]] std::optional<::ed3k::KeyKind> channelKeyOf(const QByteArray& channelId) const;
     void scanOne(Running& r);
     bool push(Running& r, const Ed3kHlsPlaylist::Entry& e, const QString& dir, bool gap);
     [[nodiscard]] QString playlistOf(const Running& r) const;
-    Running* find(const ::ed3k::Stream& stream);
+    /// @p key: only a broadcast of that node (events); nullopt: either.
+    Running* find(const ::ed3k::Stream& stream, std::optional<::ed3k::KeyKind> key = std::nullopt);
     [[nodiscard]] Info infoOf(const Running& r) const;
     void markChanged();
     /// The channel of @p title (made and saved when new).

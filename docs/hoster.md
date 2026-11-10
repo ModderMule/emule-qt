@@ -82,6 +82,13 @@ links checked online before unchecked ones, else the page's order. Pasted links 
 change and with a link check, at most every 6 h; the manual check in Options fills the same cache.
 In memory only. A login that failed to check counts as an account (1), one found not valid as none.
 
+**Streams per hoster** (`streamsAt`): tier 2 opens as many links at that hoster at once as JD
+allows the account (`maxDownloads` of the account check: `getMaxSimultanDownload`, i.e. what the
+plugin's `fetchAccountInfo` set, else `getMaxSimultanPremiumDownloadNum`), capped by `maxStreams`;
+unlimited or unknown → `maxStreams`. Any other tier, or a login not checked yet: 1. The join tells
+the core before each open (`ed3k_link_streams`; the core keeps 1 otherwise). Lifetime accounts
+count as premium. One connection per file (`setChunks(1)`): the part file is read in order.
+
 **Hoster domains**: a login matches its domain, subdomains and "www.", and every other domain of
 the same hoster. The resolver names them from JD's plugin (`LazyHostPlugin.getSitesSupported`):
 `sites` for each account host (on start / account change, once), and `match` adds `sites` for a
@@ -336,7 +343,7 @@ A stream that breaks goes on from where it stood instead of starting over:
 | `enabled` | `ed3kHosterEnabled` | on | the user's switch (§3); needs `ed3k.enabled` (also on by default) |
 | `java` | `ed3kHosterJava` | empty | path of `java`; empty = find one |
 | `autoJava` | `ed3kHosterAutoJava` | on | download Temurin when none is found |
-| `maxStreams` | `ed3kHosterMaxStreams` | 2 | 1-16; one per hoster and account in any case |
+| `maxStreams` | `ed3kHosterMaxStreams` | 8 | 1-16 over all hosters (JDownloader also runs 8); per hoster 1 without an account or with a free one, with a premium one JD's limit for that account (`getMaxSimultanDownload`, from the account check), capped by this; configs from before v7 with the old default 2 are raised once |
 | `puzzles` | `ed3kHosterPuzzles` | on | show image puzzles |
 | `publishLinks` | `ed3kHosterPublishLinks` | **on** | §4.1: vouched links get an `ALIAS` record and are handed out; switching on asks first. Off = holding links back; on is the `hoster.md` §4.1 default |
 | `fromPeers` | `ed3kHosterFromPeers` | on | use links peers name |
@@ -356,6 +363,12 @@ A stream that breaks goes on from where it stood instead of starting over:
 | `accounts` | `ed3kHosterAccounts` | empty | `{host, user, passwordEncrypted}`; IPC never carries a password out |
 | `solversEnabled` | `ed3kHosterSolversEnabled` | on | puzzles go to the solver services below first |
 | `solvers` | `ed3kHosterSolvers` | empty | captcha solver services, `{host, user, passwordEncrypted}`; user empty for key-only ones (key = password). Same password rule as `accounts` |
+
+Network interface (Connection › bind address): core-side hoster HTTP (`Ed3kHttp`) pins each socket like
+eD2K. The sidecar cannot pin: op `setBind {address}` (hello `bind: true`) makes JD connect direct from
+`BindAddress::sourceAddress()` (literal, else the interface's IPv4, else its IPv6; `127.0.0.1` while
+blocked). Sent at start and on every interface change. A proxy wins over it. Older sidecars answer
+"unknown op" and stay on the default route.
 
 ## Captcha solvers
 
@@ -523,6 +536,14 @@ not `emule.ed3k`: the GUI's **Hoster** log tab after Torrent, shown while `hoste
 - Live, opt-in: `EMULE_HOSTER_LIVE=1` downloads a small archive.org file through the real sidecar
   and opens every container in `data/dlc`;
   `EMULE_HOSTER_LIVE_JAVA=1` fetches Temurin into a temp folder.
+- `tst_HosterSpeed`: speed over real HTTP, no internet. `MockHosterServer` (own thread, `/file/x`
+  302 → `/dl/x`, Range, keep-alive) behind JD's DirectHTTP, allowed for loopback URLs only by
+  `JdResolverConfig::loopbackHosters` (`-Demuleqt.loopbackHosters=true`, tests only). Sidecar alone
+  and the whole join (idle and with a busy main thread) must reach `EMULE_HOSTER_MIN_MIBS`
+  (default 50, JD's speed on one connection); size `EMULE_HOSTER_SPEED_MIB` (512). Skips without
+  a resolver.zip or Java. 2026-11-10 on an M-series Mac: sidecar ~1.2 GiB/s, join 320–680 MiB/s.
+  Waits with a real `QEventLoop`: QTRY's `qWait` naps 10 ms per event batch and cut the join to
+  ~35–70 MiB/s, which is the test, not the daemon.
 
 ## Status column
 

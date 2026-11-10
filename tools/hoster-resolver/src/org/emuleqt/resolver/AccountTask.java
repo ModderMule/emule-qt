@@ -12,7 +12,10 @@ import org.jdownloader.plugins.controller.LazyPlugin;
 import org.jdownloader.plugins.controller.PluginClassLoader;
 import org.jdownloader.plugins.controller.host.LazyHostPlugin;
 
-/** accountCheck: is a login valid, premium, until when, how much traffic; a solver service's credit. */
+/**
+ * accountCheck: is a login valid, premium, until when, how much traffic, downloads at once; a
+ * solver service's credit.
+ */
 final class AccountTask extends Task {
     private final String host;
     private final Account account;
@@ -51,7 +54,13 @@ final class AccountTask extends Task {
             final AccountInfo ai = plugin.fetchAccountInfo(acc);
             final boolean expired = ai != null && ai.isExpired();
             m.put("valid", ai != null && !expired);
-            m.put("premium", acc.getType() != null && acc.getType().name().equals("PREMIUM"));
+            final jd.plugins.Account.AccountType type = acc.getType();
+            m.put("premium", type == jd.plugins.Account.AccountType.PREMIUM || type == jd.plugins.Account.AccountType.LIFETIME);
+            // JD's downloads at once for this account (what fetchAccountInfo set, else the plugin's)
+            final Integer max = maxDownloads(plugin, acc);
+            if (max != null) {
+                m.put("maxDownloads", max);
+            }
             if (ai != null && ai.getValidUntil() > 0) {
                 m.put("expires", ai.getValidUntil() / 1000);
             }
@@ -70,5 +79,16 @@ final class AccountTask extends Task {
             plugin.clean();
         }
         Out.send(m);
+    }
+
+    /** JD's getMaxSimultanDownload for @p acc without a link: -1 unlimited, null unknown. */
+    private static Integer maxDownloads(final PluginForHost plugin, final jd.plugins.Account acc) {
+        try {
+            final int n = plugin.getMaxSimultanDownload(null, acc, null);
+            return n == Integer.MAX_VALUE ? -1 : Math.max(n, 0);
+        } catch (final Throwable e) {
+            // a plugin that needs the link
+            return null;
+        }
     }
 }

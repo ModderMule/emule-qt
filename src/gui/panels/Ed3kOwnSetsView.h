@@ -5,9 +5,11 @@
 /// sets as rows (title, files, size, version, kind, sale) in place of the file list while the
 /// tree node is selected. Row menu: Publish New Version, Copy Link (a hidden set's link is a
 /// key: fetched with GetEd3kOwnSetLink, never logged), Rename, Sell… / Change Terms…, Stop
-/// Selling / Resume Selling (Ed3kSellControl 4/5), Unpublish (asks).
+/// Selling / Resume Selling (Ed3kSellControl 4/5), Unpublish (asks), Share Under … Key (hops.md
+/// §1: a version refused for files under the other key; asked once when the refusal arrives).
 
 #include <QCborArray>
+#include <QSet>
 #include <QWidget>
 
 class QMenu;
@@ -48,11 +50,15 @@ private:
     void sell(const QString& id);
     void stopOrResume(const QString& id);
     void unpublish(const QString& id);
+    /// Asks, then Ed3kOwnSetControl 4: the set under @p key ("Node" / "Anonymous").
+    void shareUnderKey(const QString& id, const QString& key);
     void showError(const QString& what, const Ipc::IpcMessage& reply);
 
     IpcClient* m_ipc = nullptr;
     QTreeWidget* m_list = nullptr;
     QCborArray m_rows;
+    /// "id/key" of refusals asked about already (each once)
+    QSet<QString> m_keyAsked;
 };
 
 } // namespace eMule

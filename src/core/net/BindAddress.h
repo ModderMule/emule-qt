@@ -120,6 +120,11 @@ bool refresh();
 /// (ED2K local IP, UPnP discovery).
 [[nodiscard]] QString ipv4Literal();
 
+/// One source address for a process that cannot pin its sockets (the hoster sidecar):
+/// the literal, else the interface's IPv4 if pinnable, else its first non-link-local IPv6.
+/// Empty when nothing is selected; 127.0.0.1 while blocked, so nothing gets out.
+[[nodiscard]] QString sourceAddress();
+
 /// True when the selection leaves no IPv6 to use.
 [[nodiscard]] bool isIPv4Only();
 

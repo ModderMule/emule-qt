@@ -75,7 +75,9 @@ private slots:
     void kadFirewallAck_oncePerAskedAddress();
     void requestTCP_reusesTheClientAndRefusesRepeats();
     void processKadList_releasesAStaleIncomingBuddy();
-    void processKadList_dropsAStaleBuddyOffer();
+    void requestBuddy_dialsEveryOfferAtOnce();
+    void processKadList_releasesASecondConnectedCandidate();
+    void incomingBuddy_oneServedBuddyPerIP();
     void requestBuddy_skipsAFailedCandidateForAnHour();
     void setBuddy_lossRearmsTheSearchWhileUdpIsUnverified();
     void infoPackets_neverReplaceAConnectedBuddy();
@@ -84,8 +86,9 @@ private slots:
     void incomingBuddy_pendingClaimsAreBounded();
     void callbackPacket_onlyFromBuddyToAVettedTarget();
     void relayBudget_callbackBucketPerRelayIP();
-    void relayBudget_sixtyPerBuddyInAnyMinute();
+    void relayBudget_bytesPerBuddyInAnyMinute();
     void relayBudget_staysInsideTheRelaysWindow();
+    void allowBuddyRelay_countsBytes();
     void ban_coversTheIPv6Prefix();
     void removeBannedClient();
     void bannedCount();
@@ -474,35 +477,63 @@ void tst_ClientList::processKadList_releasesAStaleIncomingBuddy()
     list.deleteAll();
 }
 
-// An offer queued behind a slow candidate goes stale: the offering node has let its claim go.
-void tst_ClientList::processKadList_dropsAStaleBuddyOffer()
+// Not MFC: every offer is dialled when it arrives, not queued behind a slow candidate.
+void tst_ClientList::requestBuddy_dialsEveryOfferAtOnce()
 {
     eMule::testing::KadFixture kadFixture;
-    QCOMPARE(thePrefs.buddyOfferMaxAgeSecs(), uint32{300});
     ClientList list;
     const uint8 id[16] = {0xB3};
+    const uint32 first = 0xC000020B, second = 0xC000020C;   // TEST-NET-1
 
-    // A candidate is being dialled, so the next one waits in the queue.
-    auto* dialling = new UpDownClient();
-    dialling->setConnectAddress(Address::fromHostOrder(0x0A070005));
-    dialling->setKadState(KadState::ConnectingBuddy);
-    list.addClient(dialling);
-    list.setBuddy(nullptr, BuddyStatus::Connecting);
-
-    list.requestBuddy(0x4D0A0B0C, 4662, 4672, id, 0);
-    UpDownClient* queued = list.findByConnIP(qToBigEndian(uint32{0x4D0A0B0C}), 4662);
-    QVERIFY(queued != nullptr);
-    QCOMPARE(queued->kadState(), KadState::QueuedBuddy);
-
-    queued->setKadStateSince(std::time(nullptr) - 4 * 60);
-    list.processKadList();
-    QCOMPARE(queued->kadState(), KadState::QueuedBuddy);
-
-    queued->setKadStateSince(std::time(nullptr) - 6 * 60);
-    list.processKadList();
-    QCOMPARE(queued->kadState(), KadState::None);
+    list.requestBuddy(first, 4662, 4672, id, 0);
+    list.requestBuddy(second, 4662, 4672, id, 0);
+    UpDownClient* a = list.findByConnIP(qToBigEndian(first), 4662);
+    UpDownClient* b = list.findByConnIP(qToBigEndian(second), 4662);
+    QVERIFY(a != nullptr && b != nullptr);
+    QCOMPARE(a->kadState(), KadState::ConnectingBuddy);
+    QCOMPARE(b->kadState(), KadState::ConnectingBuddy);
     QCOMPARE(list.buddyStatus(), BuddyStatus::Connecting);
 
+    // One fails, the other is still being dialled
+    list.noteFailedBuddyCandidate(*a);
+    a->setKadState(KadState::None);
+    list.processKadList();
+    QCOMPARE(list.buddyStatus(), BuddyStatus::Connecting);
+    QCOMPARE(b->kadState(), KadState::ConnectingBuddy);
+
+    // The last one fails too
+    list.noteFailedBuddyCandidate(*b);
+    b->setKadState(KadState::None);
+    list.processKadList();
+    QCOMPARE(list.buddyStatus(), BuddyStatus::None);
+
+    list.deleteAll();
+}
+
+// Two candidates dialled at once can both connect: the second is let go.
+void tst_ClientList::processKadList_releasesASecondConnectedCandidate()
+{
+    eMule::testing::KadFixture kadFixture;
+    ClientList list;
+    const uint8 id[16] = {0xB5};
+
+    kadFixture.kadPrefs().setLastContact();
+    list.requestBuddy(0xC000020D, 4662, 4672, id, 0);
+    list.requestBuddy(0xC000020E, 4662, 4672, id, 0);
+    UpDownClient* a = list.findByConnIP(qToBigEndian(uint32{0xC000020D}), 4662);
+    UpDownClient* b = list.findByConnIP(qToBigEndian(uint32{0xC000020E}), 4662);
+    QVERIFY(a != nullptr && b != nullptr);
+    a->setKadState(KadState::ConnectedBuddy);
+    b->setKadState(KadState::ConnectedBuddy);
+    b->setKadStateSince(a->kadStateSince() + 1);
+
+    list.processKadList();
+    QCOMPARE(list.buddyStatus(), BuddyStatus::Connected);
+    QCOMPARE(list.getBuddy(), a);
+    QCOMPARE(b->kadState(), KadState::None);
+    QVERIFY(!list.isFailedBuddyCandidate(0xC000020E));
+
+    list.setBuddy(nullptr, BuddyStatus::None);
     list.deleteAll();
 }
 
@@ -517,12 +548,12 @@ void tst_ClientList::requestBuddy_skipsAFailedCandidateForAnHour()
     list.requestBuddy(node, 4662, 4672, id, 0);
     UpDownClient* candidate = list.findByConnIP(qToBigEndian(node), 4662);
     QVERIFY(candidate != nullptr);
-    list.processKadList();
     QCOMPARE(candidate->kadState(), KadState::ConnectingBuddy);
     QCOMPARE(list.buddyStatus(), BuddyStatus::Connecting);
     QVERIFY(!list.isFailedBuddyCandidate(node));
 
-    // The dial failed
+    // The dial failed (UpDownClient::disconnected())
+    list.noteFailedBuddyCandidate(*candidate);
     candidate->setKadState(KadState::None);
     list.processKadList();
     QCOMPARE(list.buddyStatus(), BuddyStatus::None);
@@ -589,14 +620,14 @@ void tst_ClientList::relayBudget_callbackBucketPerRelayIP()
     uint8 id[16] = {};
     const auto callback = [&](const Address& to) {
         ++id[0];
-        return budget.tryCharge(to, id, RelayRequest::KadCallback, now);
+        return budget.tryCharge(to, id, RelayRequest::KadCallback, 0, now);
     };
 
     for (int i = 0; i < kAssumedRelayServedBuddies; ++i)
         QVERIFY(callback(relay));
     QVERIFY(!callback(relay));
     QVERIFY(callback(otherRelay));                                       // per IP
-    QVERIFY(budget.tryCharge(relay, id, RelayRequest::ReaskCallback, now));   // not limited per IP
+    QVERIFY(budget.tryCharge(relay, id, RelayRequest::ReaskCallback, 50, now));   // not limited per IP
 
     now += 7'499;
     QVERIFY(!callback(relay));
@@ -610,8 +641,9 @@ void tst_ClientList::relayBudget_callbackBucketPerRelayIP()
     QVERIFY(!callback(relay));
 }
 
-// 60 relayed packets per served buddy, both kinds on one counter.
-void tst_ClientList::relayBudget_sixtyPerBuddyInAnyMinute()
+// 64 KiB relayed per served buddy in any minute, both kinds on one budget, charged at
+// the relayed size (a reask in its IPv6 form).
+void tst_ClientList::relayBudget_bytesPerBuddyInAnyMinute()
 {
     BuddyRelayBudget budget;
     const Address relay = Address::fromHostOrder(0x4D050607);
@@ -620,25 +652,34 @@ void tst_ClientList::relayBudget_sixtyPerBuddyInAnyMinute()
     fillHash(otherID, 0x22);
     uint64 now = 1'000'000;
 
-    // 8 callbacks (all the relay IP takes at once) and 52 reasks, one per second
-    for (uint32 i = 0; i < kMaxBuddyRelaysPerMin; ++i, now += 1'000) {
-        const auto kind = i < kAssumedRelayServedBuddies ? RelayRequest::KadCallback
-                                                       : RelayRequest::ReaskCallback;
-        QVERIFY(budget.tryCharge(relay, buddyID, kind, now));
-    }
-    now -= 1'000;           // tick of the 60th send = first send + 59 s
-    QVERIFY(!budget.tryCharge(relay, buddyID, RelayRequest::ReaskCallback, now));
-    QVERIFY(budget.tryCharge(relay, otherID, RelayRequest::ReaskCallback, now));   // per buddy
+    static_assert(relayedReaskSize(kMaxReaskCallbackUdpSize, true) == 8234);
+    static_assert(relayedReaskSize(kMaxReaskCallbackUdpSize, false) == 8218);
 
-    now += 999;
-    QVERIFY(!budget.tryCharge(relay, buddyID, RelayRequest::ReaskCallback, now));
+    // 7 of the largest reasks fit (57,638 B), an 8th does not
+    for (int i = 0; i < 7; ++i, now += 1'000)
+        QVERIFY(budget.tryCharge(relay, buddyID, RelayRequest::ReaskCallback,
+                                 kMaxReaskCallbackUdpSize, now));
+    QVERIFY(!budget.tryCharge(relay, buddyID, RelayRequest::ReaskCallback,
+                              kMaxReaskCallbackUdpSize, now));
+    QVERIFY(budget.tryCharge(relay, otherID, RelayRequest::ReaskCallback,
+                             kMaxReaskCallbackUdpSize, now));                    // per buddy
+
+    // What is left still takes small ones: 7,898 B
+    QVERIFY(budget.tryCharge(relay, buddyID, RelayRequest::KadCallback, 0, now));       // 38
+    QVERIFY(budget.tryCharge(relay, buddyID, RelayRequest::ReaskCallback, 7'854, now)); // 7,860
+    QVERIFY(!budget.tryCharge(relay, buddyID, RelayRequest::ReaskCallback, 17, now));
+
+    now = 1'000'000 + MIN2MS(1) - 1;
+    QVERIFY(!budget.tryCharge(relay, buddyID, RelayRequest::ReaskCallback,
+                              kMaxReaskCallbackUdpSize, now));
     now += 1;               // the first send is a minute old
-    QVERIFY(budget.tryCharge(relay, buddyID, RelayRequest::ReaskCallback, now));
-    QVERIFY(!budget.tryCharge(relay, buddyID, RelayRequest::ReaskCallback, now));
+    QVERIFY(budget.tryCharge(relay, buddyID, RelayRequest::ReaskCallback,
+                             kMaxReaskCallbackUdpSize, now));
+    QVERIFY(!budget.tryCharge(relay, buddyID, RelayRequest::ReaskCallback, 17, now));
 }
 
-// What the budget lets out must pass the relay's own counter (allowBuddyRelay(): 60 per
-// fixed minute), wherever that minute happens to start.
+// What the budget lets out must pass the relay's own counter (allowBuddyRelay(): 64 KiB
+// per fixed minute), wherever that minute happens to start.
 void tst_ClientList::relayBudget_staysInsideTheRelaysWindow()
 {
     BuddyRelayBudget budget;
@@ -646,28 +687,47 @@ void tst_ClientList::relayBudget_staysInsideTheRelaysWindow()
     uint8 buddyID[16];
     fillHash(buddyID, 0x11);
 
-    // Ask every 100 ms for five minutes, with a pause that shifts the bursts
-    std::vector<uint64> sent;
-    for (uint64 now = 1'000'000; now < 1'000'000 + MIN2MS(5); now += 100) {
+    // Ask every 100 ms for five minutes with mixed sizes, and a pause that shifts the bursts
+    struct Sent { uint64 tick; uint32 bytes; };
+    std::vector<Sent> sent;
+    uint32 i = 0;
+    for (uint64 now = 1'000'000; now < 1'000'000 + MIN2MS(5); now += 100, ++i) {
         if (now > 1'090'000 && now < 1'127'300)
             continue;
-        if (budget.tryCharge(relay, buddyID, RelayRequest::ReaskCallback, now))
-            sent.push_back(now);
+        const uint32 size = 17 + (i * 2'741) % (kMaxReaskCallbackUdpSize - 16);
+        if (budget.tryCharge(relay, buddyID, RelayRequest::ReaskCallback, size, now))
+            sent.push_back({now, relayedReaskSize(size, true)});
     }
-    QVERIFY(sent.size() > 4 * kMaxBuddyRelaysPerMin);
+    QVERIFY(sent.size() > 4 * 10);
 
     for (uint64 offset = 0; offset < MIN2MS(1); offset += 50) {
-        uint64 windowStart = sent.front() - offset;
-        uint32 count = 0;
-        for (const uint64 tick : sent) {
-            if (tick - windowStart >= MIN2MS(1)) {
-                windowStart = tick;
-                count = 0;
+        uint64 windowStart = sent.front().tick - offset;
+        uint32 bytes = 0;
+        for (const auto& s : sent) {
+            if (s.tick - windowStart >= MIN2MS(1)) {
+                windowStart = s.tick;
+                bytes = 0;
             }
-            QVERIFY2(count < kMaxBuddyRelaysPerMin, "the relay would have dropped a packet");
-            ++count;
+            bytes += s.bytes;
+            QVERIFY2(bytes <= kBuddyRelayBytesPerMin, "the relay would have dropped a packet");
         }
     }
+}
+
+// The relay side: 64 KiB of relayed bytes per served buddy and minute; a refusal costs nothing.
+void tst_ClientList::allowBuddyRelay_countsBytes()
+{
+    UpDownClient buddy;
+    const uint32 largest = relayedReaskSize(kMaxReaskCallbackUdpSize, false);   // 8,218
+    for (int i = 0; i < 7; ++i)
+        QVERIFY(buddy.allowBuddyRelay(largest));
+    QVERIFY(!buddy.allowBuddyRelay(largest));                          // 65,744 > 65,536
+    QVERIFY(buddy.allowBuddyRelay(kRelayedCallbackSize));
+    QVERIFY(buddy.allowBuddyRelay(kBuddyRelayBytesPerMin - 7 * largest - kRelayedCallbackSize));
+    QVERIFY(!buddy.allowBuddyRelay(1));
+
+    UpDownClient other;                                                  // per served buddy
+    QVERIFY(other.allowBuddyRelay(largest));
 }
 
 // OP_CALLBACK makes us dial an address taken from the packet. Its check value (our Kad
@@ -1294,6 +1354,35 @@ UpDownClient* addServedBuddy(ClientList& list, uint32 ipHost, uint8 idByte, std:
 }
 
 } // namespace
+
+// One served buddy per IP, pending or connected; a second one that connects is released.
+void tst_ClientList::incomingBuddy_oneServedBuddyPerIP()
+{
+    eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Open);
+    kadFixture.kadPrefs().setLastContact();
+    ClientList list;
+    const uint8 id[16] = {0xB6};
+    const uint32 pendingIP = 0x4D090A0B, connectedIP = 0x4D090A0C;
+
+    // Same IP, other port: refused while the first claim is pending
+    QVERIFY(list.incomingBuddy(pendingIP, 4662, 4672, id, id));
+    QVERIFY(!list.incomingBuddy(pendingIP, 4663, 4673, id, id));
+
+    // ... and while one from that IP is connected
+    const std::time_t now = std::time(nullptr);
+    auto* first = addServedBuddy(list, connectedIP, 0xE4, now - 100);
+    QVERIFY(!list.incomingBuddy(connectedIP, 4663, 4673, id, id));
+    // Another IP is fine
+    QVERIFY(list.incomingBuddy(connectedIP + 1, 4662, 4672, id, id));
+
+    // A second one from that IP that connected anyway is released, the older one stays
+    auto* second = addServedBuddy(list, connectedIP, 0xE5, now - 10);
+    list.processKadList();
+    QCOMPARE(first->kadState(), KadState::ConnectedBuddy);
+    QCOMPARE(second->kadState(), KadState::None);
+
+    list.deleteAll();
+}
 
 void tst_ClientList::servedBuddies_claimsUpToTheLimit()
 {

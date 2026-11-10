@@ -390,8 +390,9 @@ jobs:
         run: scripts\installer-win.ps1 -InstallInno
 
       # The setup script is Pascal that no other job compiles or runs: install,
-      # check what landed, upgrade with a faked eMule config to exercise the
-      # detection, uninstall.  The runner is an administrator without UAC.
+      # check what landed, upgrade over a stale import request, uninstall.  The
+      # runner is an administrator without UAC.  Importing from eMule is the app's
+      # own first start wizard now (tst_LegacyConfigImport).
       - name: Verify installer
         shell: pwsh
         timeout-minutes: 10
@@ -402,7 +403,6 @@ jobs:
           $setup = (Get-Item "build\eMuleQt-v$env:APP_VERSION-win64-setup.exe").FullName
           $app = Join-Path $env:RUNNER_TEMP 'emuleqt-install'
           $request = Join-Path $app 'config\mfc-import.yml'
-          $mfcConfig = Join-Path $env:LOCALAPPDATA 'eMule\config'
           $desktop = Join-Path $env:PUBLIC 'Desktop\eMule Qt.lnk'
           $startMenu = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\eMule Qt.lnk'
 
@@ -417,10 +417,8 @@ jobs:
             }
           }
 
-          # 1. Fresh install, no eMule on the machine: asking for the import must
-          #    not produce a request.
-          if (Test-Path $mfcConfig) { throw "Runner already has $mfcConfig" }
-          Invoke-Setup 'desktopicon,startmenuicon,importemule' 'setup-1.log'
+          # 1. Fresh install.
+          Invoke-Setup 'desktopicon,startmenuicon' 'setup-1.log'
 
           foreach ($f in 'emuleqt.exe', 'emulecored.exe', 'emuleqt-mcp.exe', 'LICENSE.txt',
                          'config\eMule.tmpl', 'unins000.exe') {
@@ -432,7 +430,7 @@ jobs:
           foreach ($lnk in $desktop, $startMenu) {
             if (-not (Test-Path $lnk)) { throw "Shortcut missing: $lnk" }
           }
-          if (Test-Path $request) { throw 'Import request written although no eMule config exists' }
+          if (Test-Path $request) { throw 'Setup wrote an import request' }
           # Copy for the daemon to share from Incoming; outside config\, which gets seeded.
           $setupCopy = Join-Path $app "setup\eMuleQt-v$env:APP_VERSION-win64-setup.exe"
           if (-not (Test-Path $setupCopy)) { throw "Setup copy missing: $setupCopy" }
@@ -442,23 +440,12 @@ jobs:
           & (Join-Path $app 'emuleqt-mcp.exe') --version
           if ($LASTEXITCODE -ne 0) { throw "installed emuleqt-mcp.exe --version exited with $LASTEXITCODE" }
 
-          # 2. Upgrade in place with an eMule config in its default location.
-          New-Item -ItemType Directory -Force $mfcConfig | Out-Null
-          Set-Content (Join-Path $mfcConfig 'preferences.ini') "[eMule]`r`nNick=ci"
-          Invoke-Setup 'importemule' 'setup-2.log'
-          if (-not (Test-Path $request)) { throw 'Import request missing although an eMule config exists' }
-          $source = Get-Content $request -Raw
-          # Unexpanded on purpose: resolved by whoever runs the daemon.
-          if (-not $source.Contains("source: '%LOCALAPPDATA%\eMule\config'")) {
-            throw "Unexpected import request:`n$source"
-          }
+          # 2. Upgrade in place over the request an older setup left: removed.
+          Set-Content $request "source: 'C:\old'"
+          Invoke-Setup '' 'setup-2.log'
+          if (Test-Path $request) { throw 'Stale import request survived an upgrade' }
 
-          # 3. Declined on a later run: the request goes away again.
-          Invoke-Setup '' 'setup-3.log'
-          if (Test-Path $request) { throw 'Import request survived a run that declined it' }
-          Remove-Item (Split-Path $mfcConfig) -Recurse -Force
-
-          # 4. Uninstall leaves nothing behind.
+          # 3. Uninstall leaves nothing behind.
           $p = Start-Process -FilePath (Join-Path $app 'unins000.exe') -Wait -PassThru `
                  -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
           if ($p.ExitCode -ne 0) { throw "uninstaller exited with $($p.ExitCode)" }
@@ -470,7 +457,7 @@ jobs:
           foreach ($lnk in $desktop, $startMenu) {
             if (Test-Path $lnk) { throw "Shortcut left behind: $lnk" }
           }
-          Write-Host 'OK: install, import request, upgrade and uninstall verified.'
+          Write-Host 'OK: install, upgrade and uninstall verified.'
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6

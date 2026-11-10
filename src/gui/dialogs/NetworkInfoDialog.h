@@ -3,8 +3,8 @@
 /// @file NetworkInfoDialog.h
 /// @brief Network Information dialog matching the MFC eMule Network Info popup.
 ///
-/// Shows client info, eD2K network/server details, Kad network status,
-/// and web interface status in a rich-text browser. Opens via double-click
+/// Shows client info, eD2K network/server details, Kad network status, the ed3k
+/// node, BitTorrent (external IPs, I2P) and web interface status in a rich-text browser. Opens via double-click
 /// on the status bar connection area.
 
 #include <QCborMap>
@@ -31,6 +31,10 @@ private:
     void requestNetworkInfo();
     void populateInfo(const QCborMap& info);
     static QString formatNumber(qint64 value);
+    /// GetNetworkInfo "ed3k" / "bt" blocks; empty for a core without them
+    static QString ed3kHtml(const QCborMap& ed3k);
+    static QString bitTorrentHtml(const QCborMap& bt);
+    static QString i2pHtml(const QCborMap& bt);
 
     IpcClient* m_ipc = nullptr;
     QTextBrowser* m_browser = nullptr;

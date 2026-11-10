@@ -7,6 +7,7 @@
 /// and verifies the file can be added to a DownloadQueue instance.
 
 #include "TestHelpers.h"
+#include "utils/BackgroundFileWriter.h"
 #include "files/PartFile.h"
 #include "transfer/DownloadQueue.h"
 #include "prefs/Preferences.h"
@@ -27,6 +28,7 @@ private slots:
     void initTestCase();
     void loadPartFile_fromProjectData();
     void loadPartFile_hasValidMetadata();
+    void loadPartFile_fromPreloadMatchesDisk();
     void loadPartFile_downloadProgress();
     void addLoadedPartFile_toDownloadQueue();
 
@@ -92,6 +94,40 @@ void tst_PartFileData::loadPartFile_fromProjectData()
     logDebug(QStringLiteral("Loaded part file: %1 (size: %2)")
                  .arg(pf.fileName())
                  .arg(static_cast<uint64>(pf.fileSize())));
+}
+
+// ---------------------------------------------------------------------------
+// Test: startup reads the met off-thread (#84); parsing it from memory is the same load
+// ---------------------------------------------------------------------------
+
+void tst_PartFileData::loadPartFile_fromPreloadMatchesDisk()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/temp");
+    const QString metPath = tempDir + QStringLiteral("/002.part.met");
+    BackgroundFileWriter::instance().flush();   // earlier tests' saves land first
+    if (!QFile::exists(metPath))
+        QVERIFY(copyPartFiles());
+
+    const PartMetPreload pre = PartMetPreload::read(metPath);
+    QVERIFY(pre.met.has_value());
+    QVERIFY(pre.partExists);
+    QCOMPARE(pre.partSize, QFileInfo(tempDir + QStringLiteral("/002.part")).size());
+
+    // The met is gone from disk: only the preloaded bytes can load it
+    QVERIFY(QFile::rename(metPath, metPath + QStringLiteral(".away")));
+    PartFile fromMemory;
+    QCOMPARE(fromMemory.loadPartFile(tempDir, QStringLiteral("002.part.met"), nullptr, &pre),
+             PartFileLoadResult::LoadSuccess);
+    QVERIFY(QFile::rename(metPath + QStringLiteral(".away"), metPath));
+
+    PartFile fromDisk;
+    QCOMPARE(fromDisk.loadPartFile(tempDir, QStringLiteral("002.part.met")), PartFileLoadResult::LoadSuccess);
+    QCOMPARE(fromMemory.fileName(), fromDisk.fileName());
+    QCOMPARE(static_cast<uint64>(fromMemory.fileSize()), static_cast<uint64>(fromDisk.fileSize()));
+    QCOMPARE(QByteArray(reinterpret_cast<const char*>(fromMemory.fileHash()), 16),
+             QByteArray(reinterpret_cast<const char*>(fromDisk.fileHash()), 16));
+    QCOMPARE(fromMemory.gapList().size(), fromDisk.gapList().size());
+    QCOMPARE(static_cast<int>(fromMemory.status()), static_cast<int>(fromDisk.status()));
 }
 
 // ---------------------------------------------------------------------------

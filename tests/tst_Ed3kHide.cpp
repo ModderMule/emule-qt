@@ -112,6 +112,8 @@ private slots:
     void cleanup();
     void prefStartsAndStopsTheAnonymousNode();
     void oneHopCountForEveryUse();
+    void zeroHopsOnlyWhileHopping();
+    void newUsesFollowTheSwitch();
     void keyedEventsReachOnlyAnonCapableJoins();
     void newSharesGoAnonymousOldOnesKeepTheirKey();
     void movingAFileClosesItUnderTheOtherKey();
@@ -172,7 +174,7 @@ void tst_Ed3kHide::prefStartsAndStopsTheAnonymousNode()
 
 void tst_Ed3kHide::oneHopCountForEveryUse()
 {
-    // the single option is HideCfg::uniform: out and in, every per-type count inherits (0)
+    // HideCfg::uniform: out and in, every per-type count inherits (0); Ed3kHide names each (below)
     const auto cfg = ::ed3k::HideCfg::uniform(2);
     QCOMPARE(int(cfg.hopsOut), 2);
     QCOMPARE(int(cfg.hopsIn), 2);
@@ -188,13 +190,72 @@ void tst_Ed3kHide::oneHopCountForEveryUse()
         QVERIFY2(s.hide().hiding(), qPrintable(QString::number(hops)));
         QCOMPARE(s.status().hide.hops, hops);
     }
-    // out of range: 1 to 3 only
+    // out of range: 0 to 3 only
     s.setHideSettings(hidden(7));
     QCOMPARE(s.hide().settings().hops, 3);
+    // was: hidden(0) gave 1 (now 0 while hopping, zeroHopsOnlyWhileHopping)
+    s.stop();
+
+    // what anonStart is given: every use at the one count (0 inherits), nothing under the node key
+    const auto two = Ed3kHide::hideCfg(2);
+    QCOMPARE(int(two.hopsOut), 2);
+    QCOMPARE(int(two.hopsIn), 2);
+    QCOMPARE(int(two.gates), 1);
+    for (const auto per : {two.lookupHops, two.downloadHops, two.shareHops, two.publishHops, two.roomHops, two.paidHops})
+        QCOMPARE(int(per), 0);
+    QCOMPARE(int(two.nodeKeyUses), 0);
+    QVERIFY(Ed3kHide::hideCfg(9).hopsOut != ::ed3k::HideCfg::kHopsOff);
+}
+
+// hops.md §2.6: 0 = deniable, not hidden; offered only while forwarding for others
+void tst_Ed3kHide::zeroHopsOnlyWhileHopping()
+{
+    // hopping defaults on with hiding (§1)
+    QVERIFY(Ed3kHideSettings{}.hopping);
+    Ed3kHideSettings h = hidden(0);
+    QCOMPARE(Ed3kHide::normalized(h).hops, 0);
+    h.hopping = false;
+    QCOMPARE(Ed3kHide::normalized(h).hops, 1);   // hopping off at 0: 1
+    h.hops = -3;
+    QCOMPARE(Ed3kHide::normalized(h).hops, 1);
+    h.hopping = true;
+    QCOMPARE(Ed3kHide::normalized(h).hops, 0);
+    const auto zero = Ed3kHide::hideCfg(0);
+    QCOMPARE(int(zero.hopsOut), 0);
+    QCOMPARE(int(zero.hopsIn), 0);
+
+    QTemporaryDir dir;
+    Ed3kSession s;
+    QVERIFY(s.start(loopback(dir.path())));
     s.setHideSettings(hidden(0));
+    QCOMPARE(s.hide().settings().hops, 0);
+    // hiding runs (a core without 0 hops yet takes 1)
+    QVERIFY(s.hide().hiding());
+    Ed3kHideSettings noHop = hidden(0);
+    noHop.hopping = false;
+    s.setHideSettings(noHop);
     QCOMPARE(s.hide().settings().hops, 1);
     QVERIFY(s.hide().hiding());
     s.stop();
+}
+
+// hops.md §1: a new use (search, live, set, room, paid) goes under the anonymous key while
+// hiding runs, else the node key; nothing under the anonymous key while off
+void tst_Ed3kHide::newUsesFollowTheSwitch()
+{
+    QTemporaryDir dir;
+    Ed3kSession s;
+    QCOMPARE(s.hide().keyForUse(), ::ed3k::KeyKind::Node);
+    QVERIFY(s.start(loopback(dir.path())));
+    QCOMPARE(s.hide().keyForUse(), ::ed3k::KeyKind::Node);
+    s.setHideSettings(hidden());
+    QCOMPARE(s.hide().keyForUse(), ::ed3k::KeyKind::Anon);
+    Ed3kHideSettings off = hidden();
+    off.on = false;
+    s.setHideSettings(off);
+    QCOMPARE(s.hide().keyForUse(), ::ed3k::KeyKind::Node);
+    s.stop();
+    QCOMPARE(s.hide().keyForUse(), ::ed3k::KeyKind::Node);
 }
 
 void tst_Ed3kHide::keyedEventsReachOnlyAnonCapableJoins()

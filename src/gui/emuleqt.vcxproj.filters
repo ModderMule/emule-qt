@@ -133,6 +133,9 @@
     <ClCompile Include="dialogs\FirstStartWizard.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="dialogs\LegacyImportPage.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="controls\FriendListModel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -173,6 +176,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="app\SkinIcons.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\ToolbarButtonSizer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="app\ToolbarSkin.cpp">
@@ -744,6 +750,9 @@
     <QtMoc Include="dialogs\FirstStartWizard.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="dialogs\LegacyImportPage.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="controls\FriendListModel.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -975,6 +984,9 @@
     <QtMoc Include="app\SkinIcons.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <ClInclude Include="app\ToolbarButtonSizer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="app\ToolbarSkin.h">
       <Filter>Header Files</Filter>
     </ClInclude>

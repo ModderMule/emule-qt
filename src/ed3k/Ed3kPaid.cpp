@@ -194,7 +194,18 @@ Ed3kPaid::Ed3kPaid(Ed3kSession& session, const QString& configDir, QObject* pare
     , m_configDir(configDir)
 {
     load();
-    connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kPaid::onEventPolled, Qt::DirectConnection);
+    // was: connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kPaid::onEventPolled, Qt::DirectConnection);
+    // node key from eventPolled, the anonymous node's from keyedEventPolled: each event once
+    connect(&m_session, &Ed3kSession::eventPolled, this,
+            [this](const ffi::Event& ev, bool* handled) { onEventPolled(ev, ffi::KeyKind::Node, handled); }, Qt::DirectConnection);
+    connect(&m_session, &Ed3kSession::keyedEventPolled, this,
+            [this](const ffi::Event& ev, ffi::KeyKind key, bool* handled) {
+                if (key == ffi::KeyKind::Anon)
+                    onEventPolled(ev, key, handled);
+            },
+            Qt::DirectConnection);
+    connect(&m_session.hide(), &Ed3kHide::started, this, [this] { hideChanged(true); });
+    connect(&m_session.hide(), &Ed3kHide::stopped, this, [this] { hideChanged(false); });
     connect(&m_session, &Ed3kSession::statusChanged, this, &Ed3kPaid::onSessionStatus);
     onSessionStatus();
 }
@@ -228,9 +239,9 @@ void Ed3kPaid::unfollow(const ffi::Scope& scope)
     Sub* s = find(scope);
     if (!s)
         return;
-    if (auto* e = m_session.engine(); e && s->onEngine && !s->anon)
-        (void)e->paidUnfollow(scope);
-    s->onEngine = false;
+    // was: if (auto* e = m_session.engine(); e && s->onEngine && !s->anon)
+    //     (void)e->paidUnfollow(scope);
+    detachSub(*s);
     s->followed = false;
     // a bought pass stays (its holder key, a renewal)
     if (!s->holder)
@@ -297,10 +308,10 @@ std::expected<QString, QString> Ed3kPaid::buy(const QString& scopeHex, bool anon
     }
     if (anon != s->anon) {
         // the pass is held under one key only (§5.1)
-        if (auto* e = m_session.engine(); e && s->onEngine && !s->anon)
-            (void)e->paidUnfollow(s->scope);
+        // was: if (auto* e = m_session.engine(); e && s->onEngine && !s->anon)
+        //     (void)e->paidUnfollow(s->scope);
+        detachSub(*s);
         s->anon = anon;
-        s->onEngine = false;
         attach(*s);
     }
     s->began = m_session.now().unixS;
@@ -558,7 +569,9 @@ bool Ed3kPaid::requestKeys(const QString& scopeHex, const ffi::Source& node)
     auto* e = m_session.engine();
     if (!scope || !e || !find(*scope))
         return false;
-    const auto ok = e->paidRequestKeys(m_session.now(), node, *scope);
+    // was: const auto ok = e->paidRequestKeys(m_session.now(), node, *scope);
+    const auto ok = find(*scope)->anon ? e->paidAnonRequestKeys(m_session.now(), node, *scope)
+                                       : e->paidRequestKeys(m_session.now(), node, *scope);
     m_session.pump();
     return ok.has_value();
 }
@@ -589,11 +602,14 @@ QString Ed3kPaid::statePath() const
 // Private
 // ---------------------------------------------------------------------------
 
-void Ed3kPaid::onEventPolled(const ffi::Event& event, bool* handled)
+void Ed3kPaid::onEventPolled(const ffi::Event& event, ffi::KeyKind key, bool* handled)
 {
     namespace e = ffi::event;
+    // a scope's key events come from the node it runs on (hops.md §1); the pass polls
+    // (PaidAnonWarn, Pass*) go by scope and holder, whichever node reports them
+    const auto keyed = [this, key](const ffi::Scope& scope) { return findKeyed(scope, key); };
     if (const auto* k = std::get_if<e::PaidKeys>(&event)) {
-        if (Sub* s = find(k->scope)) {
+        if (Sub* s = keyed(k->scope)) {
             *handled = true;
             s->keys = true;
             for (const auto ep : k->epochs)
@@ -603,7 +619,7 @@ void Ed3kPaid::onEventPolled(const ffi::Event& event, bool* handled)
             markChanged();
         }
     } else if (const auto* o = std::get_if<e::PaidOffer>(&event)) {
-        if (Sub* s = find(o->scope)) {
+        if (Sub* s = keyed(o->scope)) {
             *handled = true;
             // was: ToDo: read the offer the core holds (done: paidOffer; a hidden set's comes
             // from pass holders, §6.2)
@@ -612,12 +628,12 @@ void Ed3kPaid::onEventPolled(const ffi::Event& event, bool* handled)
             markChanged();
         }
     } else if (const auto* r = std::get_if<e::PaidRefused>(&event)) {
-        if (find(r->scope)) {
+        if (keyed(r->scope)) {
             *handled = true;
             logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: paid scope %1: no key (refusal %2)").arg(hexOf(r->scope)).arg(r->refusal); });
         }
     } else if (const auto* f = std::get_if<e::PaidFault>(&event)) {
-        if (find(f->scope)) {
+        if (keyed(f->scope)) {
             *handled = true;
             logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: paid scope %1: a key that failed; that node is no source for 24 h").arg(hexOf(f->scope)); });
         }
@@ -681,6 +697,9 @@ void Ed3kPaid::attach(Sub& s)
     // a pass link's scope not followed yet (no publisher); a channel while watched only
     if (!s.known || (s.kind == Kind::Channel && !s.watching))
         return;
+    // hops.md §1: an anonymous scope waits while hiding is off (hideChanged follows it then)
+    if (s.anon && !m_session.hide().hiding())
+        return;
     const auto t = m_session.now();
     const auto ok = s.anon ? e->paidAnonFollow(t, s.publisher, s.scope) : e->paidFollow(s.publisher, s.scope);
     if (!ok && ok.error() != ffi::Error::State) {
@@ -699,7 +718,7 @@ void Ed3kPaid::attach(Sub& s)
     // channel's come from its mesh (§7)
     // if (s.followed && s.kind != Kind::Channel && (s.offer.isEmpty() || !s.pass.isEmpty()))
     if (s.followed && s.kind != Kind::Channel && (s.offer.isEmpty() || checked))
-        (void)e->paidWantKeys(t, s.scope);
+        wantKeys(s);   // was: (void)e->paidWantKeys(t, s.scope);
     // §9.1 "at each start": a purchase polled again; §9.2: the renewal (of a pass checked)
     if (s.state == State::Buying)
         (void)startPoll(s, true);
@@ -897,7 +916,7 @@ void Ed3kPaid::checkPass(Sub& s, bool attaching)
     if (s.check != Check::Ok || attaching)
         return;
     if (s.kind != Kind::Channel)
-        (void)e->paidWantKeys(m_session.now(), s.scope);
+        wantKeys(s);   // was: (void)e->paidWantKeys(m_session.now(), s.scope);
     startRenewal(s);
 }
 
@@ -990,6 +1009,53 @@ const Ed3kPaid::Sub* Ed3kPaid::find(const ffi::Scope& scope) const
 {
     const auto it = m_subs.find(scope);
     return it == m_subs.end() ? nullptr : &it->second;
+}
+
+Ed3kPaid::Sub* Ed3kPaid::findKeyed(const ffi::Scope& scope, ffi::KeyKind key)
+{
+    Sub* s = find(scope);
+    return s && s->anon == (key == ffi::KeyKind::Anon) ? s : nullptr;
+}
+
+void Ed3kPaid::hideChanged(bool hiding)
+{
+    bool any = false;
+    for (auto& [scope, s] : m_subs) {
+        if (!s.anon)
+            continue;
+        any = true;
+        if (hiding) {
+            if (m_attached)
+                attach(s);
+        } else {
+            // the anonymous node took the scope along; nothing falls back to the node key
+            s.onEngine = false;
+            s.anonWait = false;
+        }
+    }
+    if (any)
+        markChanged();
+}
+
+void Ed3kPaid::detachSub(Sub& s)
+{
+    auto* e = m_session.engine();
+    if (e && s.onEngine) {
+        // was: skipped for the anonymous key
+        const auto ok = s.anon ? e->paidAnonUnfollow(m_session.now(), s.scope) : e->paidUnfollow(s.scope);
+        if (!ok && ok.error() != ffi::Error::NotFound && ok.error() != ffi::Error::State)
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: paid scope %1 not unfollowed (error %2)").arg(hexOf(s.scope)).arg(int(ok.error())); });
+    }
+    s.onEngine = false;
+}
+
+void Ed3kPaid::wantKeys(Sub& s)
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return;
+    const auto t = m_session.now();
+    (void)(s.anon ? e->paidAnonWantKeys(t, s.scope) : e->paidWantKeys(t, s.scope));
 }
 
 Ed3kPaid::Info Ed3kPaid::infoOf(const Sub& s) const

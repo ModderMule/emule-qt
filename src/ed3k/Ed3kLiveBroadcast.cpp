@@ -3,6 +3,7 @@
 
 #include "Ed3kLiveBroadcast.h"
 
+#include "Ed3kHide.h"
 #include "Ed3kLiveFiles.h"
 #include "Ed3kPlumbing.h"
 #include "Ed3kSession.h"
@@ -137,8 +138,23 @@ Ed3kLiveBroadcast::Ed3kLiveBroadcast(Ed3kSession& session, const QString& config
 {
     // first: its start (ed3k up) comes before resumeSaved() publishes through it
     m_files = std::make_unique<Ed3kLiveFiles>(session, configDir, QStringLiteral("live"));
-    connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kLiveBroadcast::onEventPolled, Qt::DirectConnection);
+    // was: connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kLiveBroadcast::onEventPolled, Qt::DirectConnection);
+    // node key's events as before; the anonymous node's from keyedEventPolled (each once)
+    connect(&m_session, &Ed3kSession::eventPolled, this,
+            [this](const ffi::Event& ev, bool* handled) { onEventPolled(ev, ffi::KeyKind::Node, handled); }, Qt::DirectConnection);
+    connect(&m_session, &Ed3kSession::keyedEventPolled, this,
+            [this](const ffi::Event& ev, ffi::KeyKind key, bool* handled) {
+                if (key == ffi::KeyKind::Anon)
+                    onEventPolled(ev, key, handled);
+            },
+            Qt::DirectConnection);
     connect(&m_session, &Ed3kSession::statusChanged, this, &Ed3kLiveBroadcast::onSessionStatus);
+    connect(&m_session.hide(), &Ed3kHide::stopped, this, &Ed3kLiveBroadcast::onHideStopped);
+    // the anonymous key's channels go on (§4 resume) and their files are shared again
+    connect(&m_session.hide(), &Ed3kHide::started, this, [this] {
+        resumeSaved();
+        publishSaved();
+    });
     m_timer.setInterval(500);
     connect(&m_timer, &QTimer::timeout, this, &Ed3kLiveBroadcast::scan);
     if (m_session.isRunning()) {
@@ -186,6 +202,10 @@ std::expected<Ed3kLiveBroadcast::Info, QString> Ed3kLiveBroadcast::start(const O
     const auto ch = channelOf(title, o.isPrivate);
     if (!ch)
         return std::unexpected(tr("The channel key could not be made."));
+    // hops.md §1: the key of its first broadcast, else the one in use now
+    const ffi::KeyKind key = channelKeyOf(ch->id).value_or(m_session.hide().keyForUse());
+    if (key == ffi::KeyKind::Anon && !m_session.hide().hiding())
+        return std::unexpected(tr("The channel \"%1\" is broadcast under the anonymous key: turn hiding on to broadcast it.").arg(title));
     ffi::LiveBroadcast b;
     const WipeChannel wiper{b};
     if (!loadChannel(*ch, o, b))
@@ -203,24 +223,24 @@ std::expected<Ed3kLiveBroadcast::Info, QString> Ed3kLiveBroadcast::start(const O
     }
     if (saved)
         b.resume = resumeOf(*saved, now.unixS);
-    auto stream = e->liveBroadcast(now, b);
+    auto stream = e->liveBroadcast(now, b, key);
     if (!stream && b.resume) {
         logEd3kWarning(QStringLiteral("ed3k: live channel %1 not resumed (error %2): a new broadcast").arg(title).arg(int(stream.error())));
         b.resume.reset();
-        stream = e->liveBroadcast(now, b);
+        stream = e->liveBroadcast(now, b, key);
     }
     // wipe(std::span<std::uint8_t>{b.seed});   (was: here; now WipeChannel, the channel file needs it)
     m_session.pump();
     if (!stream)
         return std::unexpected(stream.error() == ffi::Error::Unsupported ? tr("Live streams are turned off for ed3k.")
                                                                          : tr("The broadcast could not start."));
-    const auto key = ffi::roomMemberKey(b.seed);   // the Ed25519 key of the seed
-    if (!key) {
-        (void)e->liveEnd(m_session.now(), *stream);
+    const auto channelKey = ffi::roomMemberKey(b.seed);   // the Ed25519 key of the seed
+    if (!channelKey) {
+        (void)e->liveEnd(m_session.now(), *stream, key);
         return std::unexpected(tr("The broadcast could not start."));
     }
     // live.md §1.3, §10: key, id, s base32 lower case
-    QString link = QStringLiteral("ed3k:live?key=%1&id=%2").arg(base32(*key), base32(u8Of(ch->id)));
+    QString link = QStringLiteral("ed3k:live?key=%1&id=%2").arg(base32(*channelKey), base32(u8Of(ch->id)));
     if (b.paid)
         link += QStringLiteral("&paid=1");   // subscription.md §7
     if (b.secret)
@@ -233,6 +253,11 @@ std::expected<Ed3kLiveBroadcast::Info, QString> Ed3kLiveBroadcast::start(const O
     r.link = link;
     r.channelId = ch->id;
     r.paid = b.paid;
+    r.key = key;
+    // the channel keeps its key (and its channel file with it)
+    (void)editChannel(ch->id, [key](QJsonObject& c) {
+        c.insert(QStringLiteral("key"), key == ffi::KeyKind::Anon ? QStringLiteral("anon") : QStringLiteral("node"));
+    });
     if (b.resume) {
         r.start = b.resume->start;
         r.nextSeq = b.resume->seq;
@@ -266,7 +291,7 @@ bool Ed3kLiveBroadcast::stop(const QString& id)
     if (it == m_running.end())
         return false;
     if (auto* e = m_session.engine())
-        (void)e->liveEnd(m_session.now(), it->first);
+        (void)e->liveEnd(m_session.now(), it->first, it->second.key);
     // ended: not resumed; its channel file stays shared while the channel is kept (§1.2,
     // batch 15 #5; deleteChannel() withdraws it)
     // if (it->second.channelFile)
@@ -320,6 +345,9 @@ void Ed3kLiveBroadcast::resumeSaved()
         o.title = c.value(QStringLiteral("title")).toString();
         o.isPrivate = c.value(QStringLiteral("private")).toBool();
         if (std::ranges::any_of(m_running, [&](const auto& kv) { return kv.second.options.title == o.title; }))
+            continue;
+        // hops.md §1: the anonymous key's waits for hiding (Ed3kHide::started), never node key
+        if (c.value(QStringLiteral("key")).toString() == QLatin1String("anon") && !m_session.hide().hiding())
             continue;
         o.folder = a.value(QStringLiteral("folder")).toString();
         o.playlist = a.value(QStringLiteral("playlist")).toString();
@@ -500,9 +528,11 @@ std::optional<Ed3kLiveBroadcast::Options> Ed3kLiveBroadcast::optionsOf(const QSt
 // Private
 // ---------------------------------------------------------------------------
 
-void Ed3kLiveBroadcast::onEventPolled(const ffi::Event& event, bool* handled)
+void Ed3kLiveBroadcast::onEventPolled(const ffi::Event& event, ffi::KeyKind key, bool* handled)
 {
     namespace e = ffi::event;
+    // a broadcast of the node the event is of (hops.md §1)
+    const auto find = [this, key](const ffi::Stream& stream) { return this->find(stream, key); };
     if (const auto* n = std::get_if<e::LiveNeighbour>(&event)) {
         if (Running* r = find(n->stream)) {
             *handled = true;
@@ -542,6 +572,42 @@ void Ed3kLiveBroadcast::onSessionStatus()
     m_running.clear();
     m_timer.stop();
     markChanged();
+}
+
+void Ed3kLiveBroadcast::onHideStopped()
+{
+    // the anonymous node is gone with its broadcasts: a cut, resumed when hiding runs (§4)
+    bool any = false;
+    for (auto it = m_running.begin(); it != m_running.end();) {
+        if (it->second.key != ffi::KeyKind::Anon) {
+            ++it;
+            continue;
+        }
+        saveOnAir(it->second);
+        logEd3k(QStringLiteral("ed3k: live broadcast %1 cut: hiding stopped").arg(idOf(it->first)));
+        it = m_running.erase(it);
+        any = true;
+    }
+    if (m_running.empty())
+        m_timer.stop();
+    if (any)
+        markChanged();
+}
+
+std::optional<ffi::KeyKind> Ed3kLiveBroadcast::channelKeyOf(const QByteArray& channelId) const
+{
+    for (const QJsonValue& v : readChannels()) {
+        const QJsonObject c = v.toObject();
+        if (QByteArray::fromHex(c.value(QStringLiteral("id")).toString().toLatin1()) != channelId)
+            continue;
+        const QString k = c.value(QStringLiteral("key")).toString();
+        if (k == QLatin1String("anon"))
+            return ffi::KeyKind::Anon;
+        if (k == QLatin1String("node"))
+            return ffi::KeyKind::Node;
+        return std::nullopt;
+    }
+    return std::nullopt;
 }
 
 void Ed3kLiveBroadcast::scanOne(Running& r)
@@ -622,7 +688,7 @@ bool Ed3kLiveBroadcast::push(Running& r, const Ed3kHlsPlaylist::Entry& e, const 
     if (data.isEmpty())
         return false;
     gap = gap || r.gapNext;
-    const auto seq = eng->livePushSegment(m_session.now(), r.stream, spanOf(data), e.ms, gap, spanOf(r.init));
+    const auto seq = eng->livePushSegment(m_session.now(), r.stream, spanOf(data), e.ms, gap, spanOf(r.init), r.key);
     m_session.pump();
     if (!seq) {
         // TOO_LARGE: the core sets gap on the next one itself (#11)
@@ -650,10 +716,12 @@ QString Ed3kLiveBroadcast::playlistOf(const Running& r) const
     return files.isEmpty() ? QString() : files.first().absoluteFilePath();
 }
 
-Ed3kLiveBroadcast::Running* Ed3kLiveBroadcast::find(const ffi::Stream& stream)
+Ed3kLiveBroadcast::Running* Ed3kLiveBroadcast::find(const ffi::Stream& stream, std::optional<ffi::KeyKind> key)
 {
     const auto it = m_running.find(stream);
-    return it == m_running.end() ? nullptr : &it->second;
+    if (it == m_running.end() || (key && it->second.key != *key))
+        return nullptr;
+    return &it->second;
 }
 
 Ed3kLiveBroadcast::Info Ed3kLiveBroadcast::infoOf(const Running& r) const
@@ -675,6 +743,7 @@ Ed3kLiveBroadcast::Info Ed3kLiveBroadcast::infoOf(const Running& r) const
     i.error = r.error;
     i.paid = r.paid;
     i.channel = QString::fromLatin1(r.channelId.toHex());
+    i.anon = r.key == ffi::KeyKind::Anon;
     return i;
 }
 
@@ -807,7 +876,9 @@ void Ed3kLiveBroadcast::publishChannelFile(const QByteArray& channelId, const Op
     const auto had = m_channelFiles.find(channelId);
     if (had != m_channelFiles.end() && had->second.bytes == bytes && m_files->isPublished(had->second.root))
         return;
-    const auto root = m_files->publish(bytes, Ed3kLiveFiles::fileNameOf(d.title));
+    // hops.md §1: under the channel's key (a record naming it under the other would tie them)
+    // was: const auto root = m_files->publish(bytes, Ed3kLiveFiles::fileNameOf(d.title));
+    const auto root = m_files->publish(bytes, Ed3kLiveFiles::fileNameOf(d.title), channelKeyOf(channelId).value_or(ffi::KeyKind::Node));
     if (!root) {
         logEd3kWarning(QStringLiteral("ed3k: the channel file of live channel %1 is not shared").arg(idHex));
         return;

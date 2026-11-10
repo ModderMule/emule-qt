@@ -23,6 +23,12 @@
 ///   again: the version kept when nothing changed (its head re-signed), else a new one.
 /// - unpublish(): ed3k_set_unpublish (no keywords, MEMBER records nor 24 h head any more), the
 ///   files no longer shared; the set stays listed, "Publish New Version" brings it back.
+/// - Key (hops.md §1): a set is under the key of its member files (Ed3kHide::keyOf); files of
+///   neither key take the set's, a new set's is Ed3kHide::keyForUse(). Members under both
+///   keys, or under the other key than the set's, are refused (no version); for the latter the
+///   set is offered under the files' key (offerKey, shareUnderKey). State from the core's set
+///   calls is the same refusal. Manifest, members and records go under the set's key; one of
+///   the anonymous key is published only while hiding runs.
 /// - Persisted: Config/ed3k/own-sets.json (owner-only) and Config/ed3k/own-sets/: <id>.key
 ///   (the set key, a secret), <id>.secret (a hidden set's link secret), <id>.manifest (the
 ///   version published), <id>/.sealed/ (sealed members).
@@ -75,6 +81,10 @@ public:
         bool stopped = false;
         QString link;             ///< open only
         QString error;            ///< of the last version made, localized
+        /// "Node" / "Anonymous" (Ed3kHide::keyName); empty: none chosen yet
+        QString key;
+        /// a version was refused for files under this key: the set may move there (shareUnderKey)
+        QString offerKey;
     };
 
     /// @p configDir: Config/ (ed3k/own-sets.json and ed3k/own-sets/ below it), loaded here.
@@ -101,6 +111,9 @@ public:
     /// Sells the set (Ed3kPaidSeller, kind 2, its key the publisher) with @p terms; a set sold
     /// already: new terms. Its members are sealed in the next version. The scope.
     std::expected<QString, QString> sell(const QString& id, const Ed3kPaidSeller::Terms& terms);
+    /// The user agreed to share the set under @p key (hops.md §1, the key its files are under):
+    /// taken back under the old key, a new version under @p key.
+    std::expected<void, QString> shareUnderKey(const QString& id, ::ed3k::KeyKind key);
 
     [[nodiscard]] bool has(const QString& id) const;
     [[nodiscard]] std::vector<Info> list() const;
@@ -129,6 +142,9 @@ protected:
     [[nodiscard]] bool sharedGone(const Shared& s) const override;
     [[nodiscard]] bool hasOwner(const QString& owner) const override;
     void saveOwner(const QString& owner) override;
+    /// members and manifests go under the set's key (hops.md §1)
+    [[nodiscard]] bool anonCapable() const override { return true; }
+    void onHideChanged(bool hiding) override;
 
 private:
     struct Member {
@@ -157,6 +173,10 @@ private:
         std::optional<::ed3k::Root> manifest;   ///< shared now (sealed for hidden)
         std::optional<::ed3k::Topic> head;
         QString error;
+        /// the key it is published under (hops.md §1); nullopt: none chosen yet
+        std::optional<::ed3k::KeyKind> key;
+        /// offered after a refusal: the key its files are under (not kept)
+        std::optional<::ed3k::KeyKind> offerKey;
     };
     struct Build;
 
@@ -171,6 +191,11 @@ private:
     bool publishVersion(Set& s, Build& b, QString* error);
     /// The members of @p b shared (open: SOURCE and keywords; sealed: SOURCE only).
     void shareMembers(Set& s, Build& b);
+    /// The key of the version @p b (hops.md §1): that of its files; nullopt: refused, why in
+    /// @p error, the key offered in s.offerKey.
+    [[nodiscard]] std::optional<::ed3k::KeyKind> versionKey(Set& s, const Build& b, QString* error);
+    /// "the files are under @p files, the set under @p set: share the set under @p files?"
+    [[nodiscard]] static QString keyRefusal(::ed3k::KeyKind files, ::ed3k::KeyKind set);
     void unshareSet(Set& s);
     /// the files of @p s now: (path in the set, file)
     [[nodiscard]] std::vector<std::pair<QString, QString>> scan(const Set& s) const;

@@ -29,6 +29,9 @@ enum class NotifierEvent : int {
     OutOfDiskSpace   = 2,   ///< text: file name (MFC PartFile.cpp:4292)
     PortBindFailed   = 3,   ///< text: port number (MFC emuleDlg.cpp:718-730)
     DownloadAdded    = 4,   ///< text: file names, '\n' separated, batched ~1 s (MFC DownloadQueue.cpp:317)
+    /// text: file name, field 2: networks ("eD2K/Kad"): an ed3k file of the anonymous key is
+    /// also shared there, its address shows (ed3k hops.md §1 SHOULD warn)
+    Ed3kAnonExposed  = 5,
 };
 
 enum class IpcMsgType : int {
@@ -48,6 +51,8 @@ enum class IpcMsgType : int {
     GetDownloadSources   = 117,  ///< [hash: string] — source clients for one download
     RenameDownload       = 118,  ///< [hash: string, newName: string] — rename an unfinished download
     RenameFiles          = 119,  ///< [[hash, newName]...] → [[hash, ok, error]...] — Mass Rename
+    /// → [ok, {uploading[], waiting[]}]: client maps; ed3k rows (network "ed3k") add root, queueRank,
+    /// lan, due and key ("Node" / "Anonymous": the anonymous node's queue, no addr, hops.md §1)
     GetUploads           = 120,
     GetDownloadClients   = 121,  ///< [] — source clients we are downloading from
     GetKnownClients      = 122,  ///< [] — all known clients
@@ -127,6 +132,15 @@ enum class IpcMsgType : int {
     /// Error [PortTestApi::Failure, English detail].
     /// Runs the emule-qt.org port test from the daemon (PortTestRunner); takes up to ~20 s.
     TestPorts            = 224,
+    /// [dir?: string] → [ok, [{kind: 0 eMule | 1 aMule, dir, wine?, nick, tempDirs: [string],
+    /// partFiles: int}]]. eMule / aMule installs on the daemon's host, the likely one first;
+    /// with a dir only that one (a picked folder, its parent or a Wine prefix).
+    FindLegacyProfiles   = 225,
+    /// [dir: string, settings: bool, parts: bool, tempDirs?: [string]] → [ok, {restart: bool,
+    /// queued: int}] or [false, error text]. tempDirs replaces the detected download folders.
+    /// Settings: imported on a core restart that follows the reply (parts with it).
+    /// Parts only: the download folders are queued for conversion now; dir may be empty.
+    ImportLegacyProfile  = 226,
     SaveSchedules        = 222,  ///< [enabled: bool, schedules: CborArray] — replace all
     ScanImportFolder     = 230,  ///< [folder: string, removeSource: bool] → scan + queue + return jobs
     GetConvertJobs       = 231,  ///< [] → current job list with statuses
@@ -840,7 +854,8 @@ enum class IpcMsgType : int {
     ///   stats: {connections, lookups, records, recordBytes, published, queueLen,
     ///           bannedNodes, bannedHosts, sentFile, sentOther, recvFile, recvOther},
     ///   session, cumulative: Ed3kCounters (stats/NetworkCounters.h; session = this daemon run),
-    ///   queue: {slotCount, holders, waiting} (engine's upload queue policy, while running),
+    ///   queue: {slotCount, holders, waiting} (engine's upload queue policy, while running;
+    ///          holders, waiting of both nodes while hiding),
     ///   credit: {enabled, configured, endpoints, address, problem, balance (µ, -1 unknown),
     ///           mature, overdrawn, lastTxWhat, lastTxState, lastTxRevert, lastTx,
     ///           receiptsSigned, kibSigned, receiptsTaken, kibTaken, slotHints, lateBids,
@@ -1216,14 +1231,16 @@ enum class IpcMsgType : int {
     // A kind: 1 open, 2 hidden, 3 paid (a catalogue; published once sold: SellEd3k kind 2 with
     // target = the set id). A set: {id, title, folder ("" a list of files), files, size, seq (0
     // none yet), kind, published, building, scope (paid, "" not sold), sold, stopped, link (open
-    // and paid only: a hidden set's link is a credential, GetEd3kOwnSetLink), error}.
+    // and paid only: a hidden set's link is a credential, GetEd3kOwnSetLink), error, key ("Node" /
+    // "Anonymous", "" none yet), offerKey (hops.md §1: a version was refused for files under that
+    // key; action 4 shares the set there after the user agreed, "" none)}.
     /// [] -> [ok, {running, sets: [set]}]
     GetEd3kOwnSets          = 1145,
     /// [folder ("" = files), files: [path], title, kind] -> [ok, {id, link}] — published at once
     /// (a paid one waits for SellEd3k); link "" for a hidden set
     PublishEd3kOwnSet       = 1146,
-    /// [action (1 publish a new version: folder scanned again, seq + 1; 2 unpublish; 3 retitle),
-    /// id, title (3)] -> [ok]
+    /// [action (1 publish a new version: folder scanned again, seq + 1; 2 unpublish; 3 retitle;
+    /// 4 share under key: title = "Node" / "Anonymous"), id, title (3, 4)] -> [ok]
     Ed3kOwnSetControl       = 1147,
     /// [id] -> [ok, {link, hidden}] — a hidden set's carries `s` (a credential: never logged)
     GetEd3kOwnSetLink       = 1148,

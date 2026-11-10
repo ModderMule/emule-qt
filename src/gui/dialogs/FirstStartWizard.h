@@ -3,9 +3,10 @@
 /// @file FirstStartWizard.h
 /// @brief First Runtime Wizard dialog matching the MFC eMule wizard.
 ///
-/// Two pages: ports + network selection (all six networks) + what it opens, then connection speed (MFC's separate
-/// connection wizard, with 2026 line types). Shown once on first start and
-/// accessible via Tools > "eMule First Runtime Wizard...".
+/// Three pages: import from eMule / aMule, ports + network selection (all six networks)
+/// + what it opens, then connection speed (MFC's separate connection wizard, with 2026
+/// line types). Shown once on first start and accessible via Tools > "eMule First
+/// Runtime Wizard...".
 
 #include "dialogs/ConnectionPresets.h"
 #include "utils/FileAssociation.h"
@@ -34,16 +35,17 @@ class QTreeWidgetItem;
 namespace eMule {
 
 class IpcClient;
+class LegacyImportPage;
 
 class FirstStartWizard : public QDialog {
     Q_OBJECT
 
 public:
     /// The page it opens on (the Connection page's wizard button uses Speed).
-    enum class StartPage { Ports, Speed };
+    enum class StartPage { Import, Ports, Speed };
 
     explicit FirstStartWizard(IpcClient* ipc, QWidget* parent = nullptr,
-                              StartPage startPage = StartPage::Ports);
+                              StartPage startPage = StartPage::Import);
 
     /// Cancel takes back the ports a UPnP attempt or a port test pushed to the core
     /// (MFC CPShtWiz1 restores them, PShtWiz1.cpp:821-829).
@@ -84,6 +86,8 @@ private:
     /// The UDP port to send: the TCP one when joined, 0 when off.
     [[nodiscard]] int udpPortValue() const;
     [[nodiscard]] bool networksValid();
+    /// Import page, or the ports page when nothing was found to import from.
+    [[nodiscard]] int firstPage() const;
     [[nodiscard]] std::optional<BandwidthSettings> selectedBandwidth() const;
     [[nodiscard]] std::optional<BandwidthSettings> chosenBandwidth() const;
     void requestPortMapStatus();
@@ -101,6 +105,8 @@ private:
     QLabel* m_titleLabel = nullptr;
     QLabel* m_subtitleLabel = nullptr;
     QStackedWidget* m_pages = nullptr;
+    LegacyImportPage* m_importPage = nullptr;
+    bool m_importSkipped = false;   ///< no eMule / aMule found: page left out
 
     // Port controls
     QSpinBox* m_tcpPortSpin = nullptr;
@@ -153,10 +159,12 @@ private:
     QSpinBox* m_limitUpSpin = nullptr;
     bool m_limitsEdited = false;   ///< typed limits override the line's derived ones
     BandwidthSettings m_current;   ///< what the daemon runs with now
+    uint32 m_currentMaxConnections = 0;
 
     // Button row
     QPushButton* m_backBtn = nullptr;
     QPushButton* m_nextBtn = nullptr;
+    QPushButton* m_cancelBtn = nullptr;
 
     QCborMap m_applied;
 };

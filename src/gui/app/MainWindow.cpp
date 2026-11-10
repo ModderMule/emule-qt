@@ -9,6 +9,7 @@
 #include "app/Ed2kSchemeHandler.h"
 #include "app/IpcClient.h"
 #include "app/SkinColors.h"
+#include "app/ToolbarButtonSizer.h"
 #include "app/TrayMenuManager.h"
 #include "app/VersionChecker.h"
 #include "app/ClickNLoadServer.h"
@@ -54,6 +55,7 @@
 #include "utils/TorrentLinks.h"
 #endif
 #include "utils/StatusBarNotifier.h"
+#include "utils/StringUtils.h"
 #include "utils/TaskbarProgress.h"
 
 #include "dialogs/PasteLinksDialog.h"
@@ -597,6 +599,7 @@ void MainWindow::showOptionsDialog(int page)
     m_searchPanel->setEd3kMethodVisible(thePrefs.ed3kEnabled());
     applyFeatureTabs();
     m_serverPanel->refreshUpdateUrl();   // Options "List..." edits the same URL
+    updateFreeSpaceLabel();
 
     // The daemon reacts to logToDiskCore over IPC; logToDiskGui is ours to act on.
     LogWidget::applyLogFileSettings();
@@ -625,6 +628,7 @@ void MainWindow::setEd2kStatus(bool connected, bool connecting, bool firewalled,
     m_ed2kConnecting = connecting && !connected;
     m_ed2kFirewalled = firewalled;
     m_ed2kLowID = lowID;
+    updateNetworkStatsLabel();
 
     if (connected) {
         // Orange for LowID, green for HighID — same convention as setKadStatus().
@@ -717,6 +721,7 @@ void MainWindow::setKadStatus(bool running, bool kadConnected, bool firewalled,
     m_kadConnected = kadConnected;
     m_kadFirewalled = firewalled;
     m_kadFirewalledVerified = firewalledVerified;
+    updateNetworkStatsLabel();
     if (m_transferPanel)
         m_transferPanel->setKadStatus(running, kadConnected);
 
@@ -824,11 +829,14 @@ void MainWindow::setEd3kStatus(const QCborMap& status)
     m_statusEd3k->show();
 }
 
-void MainWindow::setNetworkStats(quint32 users, quint32 files)
+void MainWindow::setNetworkStats(quint32 ed2kUsers, quint32 ed2kFiles,
+                                 quint32 kadUsers, quint32 kadFiles)
 {
-    m_statusUsersLabel->setText(tr("Users: %1 | Files: %2")
-        .arg(QLocale().toString(users))
-        .arg(QLocale().toString(files)));
+    m_ed2kUsers = ed2kUsers;
+    m_ed2kFiles = ed2kFiles;
+    m_kadUsers = kadUsers;
+    m_kadFiles = kadFiles;
+    updateNetworkStatsLabel();
 }
 
 void MainWindow::setStatusMessage(const QString& text)
@@ -1134,8 +1142,19 @@ void MainWindow::startMinimized(bool maximized)
     showMinimized();
 }
 
-void MainWindow::restoreWindow()
+void MainWindow::restoreWindow(const QString& activationToken)
 {
+    // Wayland (GNOME): no request un-minimizes a window, Qt never learns it was
+    // minimized, and activation needs a token from the user's click. From the tray
+    // the window just stayed down. With a token the compositor raises it (Qt reads
+    // the variable in requestActivate); without one, remap it: a new map comes up.
+    if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"))) {
+        if (!activationToken.isEmpty())
+            qputenv("XDG_ACTIVATION_TOKEN", activationToken.toUtf8());
+        else if (isVisible() && !isActiveWindow() && !QApplication::activeModalWidget())
+            hide();
+    }
+
     // Not showNormal(): that drops maximized/fullscreen, so every restore came back
     // at the normal size. Only the minimized bit goes.
     Qt::WindowStates state = (windowState() | m_stateBeforeMinimize) & ~Qt::WindowMinimized;
@@ -1690,6 +1709,14 @@ void MainWindow::clearTaskbarProgress()
     m_taskbarProgress->clear();
 }
 
+void MainWindow::setSaveFolderSpace(const QCborMap& space)
+{
+    if (space == m_saveFolderSpace)
+        return;
+    m_saveFolderSpace = space;
+    updateFreeSpaceLabel();
+}
+
 void MainWindow::updateMiniMule(int completedCount, qint64 freeBytes)
 {
     m_cachedCompleted = completedCount;
@@ -1726,6 +1753,7 @@ void MainWindow::rebuildToolbar()
         m_toolbar->setContextMenuPolicy(Qt::CustomContextMenu);
         connect(m_toolbar, &QToolBar::customContextMenuRequested,
                 this, &MainWindow::onToolbarContextMenu);
+        m_toolbarSizer = new ToolbarButtonSizer(m_toolbar);
     } else {
         m_toolbar->clear();
     }
@@ -1827,6 +1855,7 @@ void MainWindow::rebuildToolbar()
     }
 
     applyFeatureTabs();
+    m_toolbarSizer->update();   // style may have changed: no layout request then
 }
 
 void MainWindow::loadToolbarSkin(const QString& path)
@@ -2169,6 +2198,12 @@ void MainWindow::setupStatusBar()
     // Clipped, as MFC's pane: sized to its text, a long log line widened the window
     m_statusMsg->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     sb->addWidget(m_statusMsg, 1);
+
+    // Free space of the current window's save folder (#165, as qBittorrent's)
+    m_statusFreeSpace = new QLabel(this);
+    m_statusFreeSpace->hide();
+    sb->addPermanentWidget(m_statusFreeSpace);
+    connect(m_pages, &QStackedWidget::currentChanged, this, &MainWindow::updateFreeSpaceLabel);
 
     // Users/Files indicator with green person icon (matching MFC status bar)
     m_statusUsersWidget = new QWidget(this);
@@ -2969,6 +3004,54 @@ void MainWindow::showChatState(int state)
                                          : QStringLiteral(":/icons/MessagePending.ico"))
                          .pixmap(16, 16));
     m_statusChat->setToolTip(state == 0 ? QString() : tr("New message — double-click to read"));
+}
+
+void MainWindow::updateFreeSpaceLabel()
+{
+    if (!m_statusFreeSpace)
+        return;
+    QString key = QStringLiteral("incoming");
+    switch (m_pages ? m_pages->currentIndex() : -1) {
+    case TabTorrents: key = QStringLiteral("torrent"); break;
+    case TabUsenet: key = QStringLiteral("usenet"); break;
+    case TabHoster: key = QStringLiteral("hoster"); break;
+    default: break;
+    }
+    // a network that is off has no row: its window is hidden anyway
+    QCborMap folder = m_saveFolderSpace.value(key).toMap();
+    if (folder.isEmpty())
+        folder = m_saveFolderSpace.value(QStringLiteral("incoming")).toMap();
+    if (!thePrefs.showStatusBarFreeSpace() || folder.isEmpty()) {
+        m_statusFreeSpace->hide();
+        return;
+    }
+    const QCborValue free = folder.value(QStringLiteral("free"));
+    m_statusFreeSpace->setText(tr("Free space: %1")
+                                   .arg(free.isInteger() ? formatByteSize(free.toInteger()) : tr("N/A")));
+    m_statusFreeSpace->setToolTip(QDir::toNativeSeparators(folder.value(QStringLiteral("path")).toString()));
+    m_statusFreeSpace->show();
+}
+
+// MFC CemuleDlg::ShowUserCount: "Users:ed2k(kad)|Files:ed2k(kad)" when both are up
+void MainWindow::updateNetworkStatsLabel()
+{
+    if (!m_statusUsersLabel)
+        return;
+    const auto n = [](quint32 v) { return formatShortNumber(v, 1); };
+    QString users, files;
+    if (m_ed2kConnected && m_kadConnected) {
+        users = QStringLiteral("%1 (%2)").arg(n(m_ed2kUsers), n(m_kadUsers));
+        files = QStringLiteral("%1 (%2)").arg(n(m_ed2kFiles), n(m_kadFiles));
+    } else if (m_ed2kConnected) {
+        users = n(m_ed2kUsers);
+        files = n(m_ed2kFiles);
+    } else if (m_kadConnected) {
+        users = n(m_kadUsers);
+        files = n(m_kadFiles);
+    } else {
+        users = files = QStringLiteral("0");
+    }
+    m_statusUsersLabel->setText(tr("Users: %1 | Files: %2").arg(users, files));
 }
 
 } // namespace eMule

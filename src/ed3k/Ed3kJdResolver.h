@@ -48,12 +48,15 @@ struct JdResolverConfig {
     QString sharedDir;
     QString zip;           ///< resolver.zip to install from; empty: use what is installed
     QString proxy;         ///< for every request; empty = direct
+    QString bindAddress;   ///< local source address while direct (bindAddress pref); empty = any
     bool askPuzzles = true;
     /// captcha solver accounts; sent after every start (the sidecar forgets them when it ends)
     QList<SolverAccount> solvers;
     /// hoster downloads on: plugins unpacked, sidecar may start. Off: nothing is created and
     /// the unpacked plugins are removed (derived from zip; unpacked again when switched on)
     bool enabled = true;
+    /// tests only: JD's DirectHTTP takes http://127.0.0.1 links as a hoster (mock hoster)
+    bool loopbackHosters = false;
 };
 
 class Ed3kJdResolver : public Ed3kResolver {
@@ -139,6 +142,7 @@ public:
     void cancel(TaskId task) override;
     void setAskPuzzles(bool on) override;
     void setProxy(const QString& url) override;
+    void setBindAddress(const QString& address);
 
     /// Parses one event line of the sidecar (tests). nullopt: not an event of a task.
     [[nodiscard]] static std::optional<std::pair<TaskId, ResolverEvent>> parseEvent(const QByteArray& line);

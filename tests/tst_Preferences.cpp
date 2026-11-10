@@ -25,6 +25,8 @@
 #include <QTextStream>
 #include <QUdpSocket>
 
+#include <tuple>
+
 using namespace eMule;
 using namespace eMule::testing;
 
@@ -57,12 +59,15 @@ private slots:
         QCOMPARE(prefs.servedBuddyLimit(), static_cast<uint16>(8));
         QCOMPARE(Preferences::autoServedBuddies(0), static_cast<uint16>(8));      // unknown
         QCOMPARE(Preferences::autoServedBuddies(1), static_cast<uint16>(4));
-        QCOMPARE(Preferences::autoServedBuddies(125), static_cast<uint16>(4));      // 1 Mbit/s
-        QCOMPARE(Preferences::autoServedBuddies(500), static_cast<uint16>(8));      // 4 Mbit/s
-        QCOMPARE(Preferences::autoServedBuddies(2500), static_cast<uint16>(16));    // 20 Mbit/s
-        QCOMPARE(Preferences::autoServedBuddies(12500), static_cast<uint16>(32));   // 100 Mbit/s
-        QCOMPARE(Preferences::autoServedBuddies(62500), static_cast<uint16>(64));   // 500 Mbit/s
-        QCOMPARE(Preferences::autoServedBuddies(125000), static_cast<uint16>(128)); // 1 Gbit/s
+        // KiB/s as the wizard stores a line (mbitToKiB)
+        QCOMPARE(Preferences::autoServedBuddies(122), static_cast<uint16>(4));      // 1 Mbit/s
+        QCOMPARE(Preferences::autoServedBuddies(487), static_cast<uint16>(4));
+        QCOMPARE(Preferences::autoServedBuddies(488), static_cast<uint16>(8));      // 4 Mbit/s
+        QCOMPARE(Preferences::autoServedBuddies(2441), static_cast<uint16>(16));    // 20 Mbit/s
+        QCOMPARE(Preferences::autoServedBuddies(12207), static_cast<uint16>(32));   // 100 Mbit/s
+        QCOMPARE(Preferences::autoServedBuddies(61035), static_cast<uint16>(64));   // 500 Mbit/s
+        QCOMPARE(Preferences::autoServedBuddies(122069), static_cast<uint16>(64));
+        QCOMPARE(Preferences::autoServedBuddies(122070), static_cast<uint16>(128)); // 1 Gbit/s
         prefs.setMaxGraphUploadRate(12500);
         QCOMPARE(prefs.servedBuddyLimit(), static_cast<uint16>(32));
         // In effect: at most a tenth of the connections, never below one
@@ -434,7 +439,7 @@ private slots:
             Preferences loaded;
             QVERIFY(loaded.load(file));
             QCOMPARE(loaded.btEnabled(), version < 3);
-            QCOMPARE(loaded.startVersion(), 6u);
+            QCOMPARE(loaded.startVersion(), 7u);
         }
     }
 
@@ -463,7 +468,30 @@ private slots:
             QVERIFY(loaded.load(file));
             QCOMPARE(loaded.nick(), version < 5 ? Preferences::defaultNick()
                                                 : QStringLiteral("https://emule-project.net"));
-            QCOMPARE(loaded.startVersion(), 6u);
+            QCOMPARE(loaded.startVersion(), 7u);
+        }
+    }
+
+    // v7: hoster streams old default 2 raised to 8 once; other values kept
+    void hosterStreams_v7Raised()
+    {
+        QCOMPARE(Ed3kHosterPrefs{}.maxStreams, uint32{8});
+        TempDir tmp;
+        for (const auto& [version, stored, expected] :
+             {std::tuple{6u, 2u, 8u}, std::tuple{6u, 3u, 3u}, std::tuple{7u, 2u, 2u}}) {
+            const auto file = tmp.filePath(QStringLiteral("streams%1-%2.yaml").arg(version).arg(stored));
+            {
+                Preferences prefs;
+                prefs.setStartVersion(version);
+                Ed3kHosterPrefs h = prefs.ed3kHoster();
+                h.maxStreams = stored;
+                prefs.setEd3kHoster(h);
+                QVERIFY(prefs.saveTo(file));
+            }
+            Preferences loaded;
+            QVERIFY(loaded.load(file));
+            QCOMPARE(loaded.ed3kHoster().maxStreams, uint32(expected));
+            QCOMPARE(loaded.startVersion(), 7u);
         }
     }
 
@@ -865,6 +893,8 @@ private slots:
             p1.setUseICH(false);
             p1.setStatsSaveInterval(120);
             p1.setStatsLastReset(1700000000);
+            QVERIFY(!p1.showStatusBarFreeSpace());   // #165: off by default, as qBittorrent
+            p1.setShowStatusBarFreeSpace(true);
             p1.setIncomingDir(QStringLiteral("/tmp/incoming"));
             p1.setTempDirs({QStringLiteral("/tmp/t1"), QStringLiteral("/tmp/t2")});
             p1.setBindAddress(QStringLiteral("192.168.1.100"));
@@ -909,6 +939,7 @@ private slots:
         QCOMPARE(p2.useICH(), false);
         QCOMPARE(p2.statsSaveInterval(), 120u);
         QCOMPARE(p2.statsLastReset(), uint64{1700000000});
+        QCOMPARE(p2.showStatusBarFreeSpace(), true);
         QCOMPARE(p2.incomingDir(), QStringLiteral("/tmp/incoming"));
         QCOMPARE(p2.tempDirs(), QStringList({QStringLiteral("/tmp/t1"), QStringLiteral("/tmp/t2")}));
         QCOMPARE(p2.bindAddress(), QStringLiteral("192.168.1.100"));

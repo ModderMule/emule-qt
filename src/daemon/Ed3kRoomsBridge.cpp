@@ -7,6 +7,7 @@
 #include <QCborMap>
 
 #ifdef EMULE_HAVE_ED3K
+#include "Ed3kHide.h"
 #include "Ed3kRooms.h"
 
 #include <QObject>
@@ -100,6 +101,8 @@ QCborMap roomToCbor(const Rooms::Room& r)
         {QStringLiteral("members"), members},
         {QStringLiteral("muted"), muted},
         {QStringLiteral("notAdmitted"), r.notAdmitted},
+        {QStringLiteral("key"), ed3k::Ed3kHide::keyName(r.key)},   // hops.md §1: shown
+        {QStringLiteral("waitingHide"), r.waitingHide},
     };
 }
 

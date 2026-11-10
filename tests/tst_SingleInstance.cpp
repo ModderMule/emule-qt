@@ -45,6 +45,7 @@ public:
     std::atomic_bool ready{false};
     std::atomic_bool primary{false};
     QStringList received;   // read after wait()
+    QString receivedToken;
 
 protected:
     void run() override
@@ -52,8 +53,9 @@ protected:
         SingleInstance instance(m_appDir, m_configDir);
         primary = instance.tryBecomePrimary();
         QObject::connect(&instance, &SingleInstance::activationRequested, &instance,
-                         [this](const QStringList& args) {
+                         [this](const QStringList& args, const QString& token) {
             received = args;
+            receivedToken = token;
             quit();
         });
         ready = true;
@@ -128,13 +130,17 @@ void tst_SingleInstance::forwardReachesThePrimary()
     QTRY_VERIFY(thread.ready);
     QVERIFY(thread.primary);
 
+    // GNOME dock start: its token lets the running window take the focus
+    qputenv("XDG_ACTIVATION_TOKEN", "dock-token-1");
     SingleInstance second(m_app->path(), m_config->path());
     QVERIFY(!second.tryBecomePrimary());
     const QStringList args{QStringLiteral("ed2k://|file|a.bin|1|00000000000000000000000000000000|/"),
                            QStringLiteral("/tmp/x.nzb")};
     QVERIFY(second.forwardToPrimary(args));
     QVERIFY(thread.wait(5000));
+    qunsetenv("XDG_ACTIVATION_TOKEN");
     QCOMPARE(thread.received, args);
+    QCOMPARE(thread.receivedToken, QStringLiteral("dock-token-1"));
 }
 
 void tst_SingleInstance::forwardWithoutPrimaryFails()

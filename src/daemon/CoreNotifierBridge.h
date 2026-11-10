@@ -129,6 +129,8 @@ public slots:
     void onPortMapStatusChanged(eMule::PortMapStatus status);
     /// A listen port did not open: an urgent event (CoreSession::portBindFailed).
     void onPortBindFailed(int port);
+    /// An ed3k file of the anonymous key is shared on @p networks too: an urgent event.
+    void onEd3kAnonExposed(const QString& name, const QString& networks);
 
 private:
     /// Full Kad state snapshot. Built at send time rather than at signal time, so a

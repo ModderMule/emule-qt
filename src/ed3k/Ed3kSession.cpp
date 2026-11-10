@@ -73,6 +73,8 @@ Ed3kSession::Ed3kSession(QObject* parent)
     m_timer.setSingleShot(true);
     m_timer.setTimerType(Qt::PreciseTimer);
     connect(&m_timer, &QTimer::timeout, this, &Ed3kSession::onTimer);
+    // the anonymous node's queue policy runs from its start (hops.md §1)
+    connect(m_hide.get(), &Ed3kHide::started, this, &Ed3kSession::applyUploadSlots);
     // the engine's timer may sleep a minute when idle; the pin is looked at more often
     m_pinTimer.setInterval(5000);
     connect(&m_pinTimer, &QTimer::timeout, this, [this] {
@@ -289,6 +291,8 @@ void Ed3kSession::stop()
     m_socket.clear();
     m_engine.reset();
     m_port = 0;
+    m_endpoint4.clear();
+    m_endpoint6.clear();
     m_hide->detach();
     logEd3k(QStringLiteral("ed3k node stopped"));
     emit statusChanged();
@@ -362,6 +366,8 @@ Ed3kStatus Ed3kSession::status() const
         st.natChecking = s->nat_checking;
     }
     st.hide = m_hide->status();
+    st.endpoint4 = m_endpoint4;
+    st.endpoint6 = m_endpoint6;
     return st;
 }
 
@@ -408,7 +414,16 @@ std::optional<ffi::QueueStats> Ed3kSession::uploadQueueStats()
     if (!m_engine)
         return std::nullopt;
     auto s = m_engine->queueStats();
-    return s ? std::optional(*s) : std::nullopt;
+    if (!s)
+        return std::nullopt;
+    // hops.md §1: the anonymous node's queue too; both take slots from the one upload limit
+    if (m_hide->hiding())
+        if (auto a = m_engine->queueStats(ffi::KeyKind::Anon)) {
+            s->slotCount = std::max(s->slotCount, a->slotCount);
+            s->holders += a->holders;
+            s->waiting += a->waiting;
+        }
+    return *s;
 }
 
 void Ed3kSession::setRpcEndpoints(ffi::RpcClass cls, const QStringList& urls)
@@ -624,6 +639,17 @@ void Ed3kSession::dispatch(ffi::Event& ev, ffi::KeyKind key)
     } else if (const auto* n = std::get_if<e::NatClass>(&ev)) {
         logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: IPv%1 class %2").arg(n->family).arg(n->natClass); });
         emit statusChanged();
+    } else if (const auto* ep = std::get_if<e::Endpoint>(&ev)) {
+        QString text;
+        if (ep->endpoint) {
+            const QHostAddress ip = toQHostAddress(*ep->endpoint);
+            text = ep->endpoint->isV4() ? QStringLiteral("%1:%2").arg(ip.toString()).arg(ep->endpoint->port)
+                                        : QStringLiteral("[%1]:%2").arg(ip.toString()).arg(ep->endpoint->port);
+        }
+        (ep->family == 6 ? m_endpoint6 : m_endpoint4) = text;
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: IPv%1 endpoint %2").arg(ep->family)
+                            .arg(text.isEmpty() ? QStringLiteral("none") : text); });
+        emit statusChanged();
     } else if (const auto* r = std::get_if<e::Router>(&ev)) {
         logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: router %1").arg(r->on ? 1 : 0); });
         emit statusChanged();
@@ -680,6 +706,10 @@ void Ed3kSession::applyUploadSlots()
         return;
     if (auto ok = m_engine->queueAuto(now(), true, m_uploadSlots); !ok)
         logEd3kWarning(QStringLiteral("ed3k: upload queue not set (error %1)").arg(errorName(ok.error())));
+    // the anonymous node's queue with the full limit too (both count from one upload limit)
+    if (m_hide->hiding())
+        if (auto ok = m_engine->queueAuto(now(), true, m_uploadSlots, ffi::KeyKind::Anon); !ok)
+            logEd3kWarning(QStringLiteral("ed3k: anonymous upload queue not set (error %1)").arg(errorName(ok.error())));
 }
 
 void Ed3kSession::applyHide()
@@ -897,6 +927,8 @@ void Ed3kSession::die(ffi::Error error)
     m_trafficBase = traffic();   // if the dead engine still reads
     m_engine.reset();
     m_port = 0;
+    m_endpoint4.clear();
+    m_endpoint6.clear();
     m_hide->detach();
     emit statusChanged();
 }

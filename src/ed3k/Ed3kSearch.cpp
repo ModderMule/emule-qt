@@ -185,8 +185,10 @@ void Ed3kSearch::startMetaSearch(uint32 searchID, SearchType type, const SearchP
         filter.maxSize = filter.maxSize == 0 ? Ed3kLiveFiles::kFileMax : std::min<std::uint64_t>(filter.maxSize, Ed3kLiveFiles::kFileMax);
     }
     // hops.md §1 global switch: while hiding the anonymous node searches (through a last hop).
-    // ToDo: channel searches under the anonymous key (live has no anonymous FFI): node key
-    const bool anon = !live && m_session.hide().hiding();
+    // was: ToDo: channel searches under the anonymous key (live has no anonymous FFI): node key
+    // const bool anon = !live && m_session.hide().hiding();
+    // (done: channel searches too; the files are fetched and watched under the same key)
+    const bool anon = m_session.hide().keyForUse() == ::ed3k::KeyKind::Anon;
     const std::string_view text(query.constData(), std::size_t(query.size()));
     // was: auto lookup = e->search(m_session.now(), text, filter);
     auto lookup = anon ? e->anonSearch(m_session.now(), text, filter) : e->search(m_session.now(), text, filter);

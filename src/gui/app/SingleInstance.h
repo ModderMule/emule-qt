@@ -38,6 +38,8 @@ public:
     [[nodiscard]] bool tryBecomePrimary();
 
     /// Hand @p args to the running instance. False when it did not answer.
+    /// Also hands over our launcher's Wayland activation token: GNOME lets only its
+    /// holder take the focus, and the dock started us, not the running window.
     [[nodiscard]] bool forwardToPrimary(const QStringList& args, int timeoutMs = 3000) const;
 
     /// Positional args made independent of this process's working dir.
@@ -48,7 +50,8 @@ public:
 
 signals:
     /// Another start forwarded its positional args (may be empty: just come to front).
-    void activationRequested(const QStringList& args);
+    /// @p activationToken: xdg-activation token of that start, empty if none
+    void activationRequested(const QStringList& args, const QString& activationToken);
 
 private:
     void onNewConnection();

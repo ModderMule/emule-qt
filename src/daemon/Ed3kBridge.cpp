@@ -344,6 +344,8 @@ QCborMap statusToCbor()
     out.insert(QStringLiteral("class6"), qint64(st.class6));
     out.insert(QStringLiteral("router"), st.router);
     out.insert(QStringLiteral("natChecking"), qint64(st.natChecking));
+    out.insert(QStringLiteral("endpoint4"), st.endpoint4);
+    out.insert(QStringLiteral("endpoint6"), st.endpoint6);
     out.insert(QStringLiteral("wireSent"), qint64(t.sent));
     out.insert(QStringLiteral("wireRecv"), qint64(t.recv));
     const auto* bw = BandwidthCoordinator::instance();

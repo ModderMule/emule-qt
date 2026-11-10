@@ -12,6 +12,7 @@
 /// Deliberately not the PartFileStatus enum — see the comment on PartFile::canBeShared().
 
 #include "TestHelpers.h"
+#include "utils/BackgroundFileWriter.h"
 #include "app/AppContext.h"
 #include "crypto/FileIdentifier.h"
 #include "files/KnownFile.h"
@@ -283,7 +284,9 @@ void tst_PartFileSharing::sharedPartFileSurvivesReload()
     // because the scan skips *.part outright.
     m_queue->addDownload(file);
 
+    QSignalSpy scanned(m_shared.get(), &SharedFileList::scanned);
     m_shared->reload();
+    QVERIFY(scanned.wait(10000));   // folders are listed off-thread first (#84)
 
     QCOMPARE(m_shared->getCount(), 1);
     QCOMPARE(m_shared->getFileByID(file->fileHash()), static_cast<KnownFile*>(file));
@@ -341,6 +344,7 @@ void tst_PartFileSharing::changedPartFileIsRehashedAndLosesTheBadPart()
     // Let go of the object, as a restart would.
     m_shared->removeFile(file);
     m_file.reset();
+    BackgroundFileWriter::instance().flush();   // its last save stamps the met first
 
     // Something else wrote to the .part — an unclean shutdown, a stray tool. The bytes
     // no longer match what the .part.met says is there.

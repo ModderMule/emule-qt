@@ -5,6 +5,10 @@
 /// Creates and wires the upload pipeline components on start().
 
 #include "app/CoreSession.h"
+
+#include <QCoreApplication>
+#include <QPointer>
+#include <QThreadPool>
 #include "crypto/AICHData.h"
 #include "crypto/AICHHashSet.h"
 #include "crypto/AICHSyncThread.h"
@@ -17,6 +21,7 @@
 #include "client/ClientCensus.h"
 #include "client/DlpLoader.h"
 #include "client/ClientCredits.h"
+#include "client/BuddyRelayBudget.h"
 #include "client/ClientList.h"
 #include "files/CollectionKeys.h"
 #include "client/UpDownClient.h"
@@ -1262,12 +1267,13 @@ void CoreSession::initClientUDP()
         this, [](const Endpoint& senderEP, const uint8* data, uint32 size) {
             if (!theApp.clientList)
                 return;
-            if (size < 17)
+            if (size < 17 || size > kMaxReaskCallbackUdpSize)
                 return;
             // First 16 bytes = buddy ID, which picks the served node (MFC compares it
             // with its one buddy)
             auto* buddy = theApp.clientList->findServedBuddy(data);
-            if (!buddy || !buddy->allowBuddyRelay())
+            if (!buddy || !buddy->allowBuddyRelay(
+                              relayedReaskSize(size, senderEP.address().isIPv6())))
                 return;
             // Strip the 16-byte buddy ID and prepend the requester's address, producing the
             // OP_REASKCALLBACKTCP body processReaskCallbackTCP expects:
@@ -2395,27 +2401,55 @@ void CoreSession::loadStep()
         // Initial scan of shared files
         if (theApp.sharedFileList) {
             ensureSeenFileIndex();   // our own shares are files we have seen
-            theApp.sharedFileList->reload();
-            m_sharedFilesScanned = true;
-            theApp.sharedFileList->setPollMinutes(thePrefs.sharedDirsPollMinutes());
-            theApp.sharedFileList->setWatchingEnabled(thePrefs.watchSharedDirs());
-
-            // MFC starts CAICHSyncThread once the shared list exists (srchybrid/EmuleDlg.cpp:641).
-            m_aichSync = std::make_unique<AICHSyncThread>(thePrefs.configDir(), theApp.sharedFileList);
-            m_aichSync->setPurgeSource(theApp.knownFileList);
-            m_aichSync->start(QThread::LowPriority);
+            // The folders are listed off-thread (#84): the list exists once the first
+            // full pass applied. MFC starts CAICHSyncThread then (srchybrid/EmuleDlg.cpp:641).
+            auto* shared = theApp.sharedFileList;
+            auto first = std::make_shared<QMetaObject::Connection>();
+            *first = connect(shared, &SharedFileList::scanned, this, [this, shared, first](bool full) {
+                if (!full || m_aichSync)
+                    return;
+                disconnect(*first);
+                m_sharedFilesScanned = true;
+                m_aichSync = std::make_unique<AICHSyncThread>(thePrefs.configDir(), shared);
+                m_aichSync->setPurgeSource(theApp.knownFileList);
+                m_aichSync->start(QThread::LowPriority);
+            });
+            shared->reload();
+            shared->setPollMinutes(thePrefs.sharedDirsPollMinutes());
+            shared->setWatchingEnabled(thePrefs.watchSharedDirs());
         }
-        // Existing .part files from the configured temp directories
-        m_pendingPartMets = DownloadQueue::partMetFiles(thePrefs.tempDirs());
+        // Existing .part files from the configured temp directories, listed and read off-thread
+        m_partMetsListed = false;
+        QThreadPool::globalInstance()->start([self = QPointer<CoreSession>(this), dirs = thePrefs.tempDirs()] {
+            std::vector<PartMetPreload> mets;
+            for (const QString& path : DownloadQueue::partMetFiles(dirs))
+                mets.push_back(PartMetPreload::read(path));
+            QMetaObject::invokeMethod(QCoreApplication::instance(), [self, mets = std::move(mets)]() mutable {
+                if (!self)
+                    return;
+                self->m_pendingPartMets = std::move(mets);
+                self->m_nextPartMet = 0;
+                self->m_partMetsListed = true;
+                if (std::exchange(self->m_partMetsAwaited, false))
+                    self->loadStep();   // it stopped to wait for us
+            });
+        });
         m_loadStage = LoadStage::PartFiles;
         break;
 
     case LoadStage::PartFiles: {
+        if (!m_partMetsListed) {
+            m_partMetsAwaited = true;
+            return;   // the listing calls loadStep() when it lands
+        }
         QElapsedTimer slice;
         slice.start();
-        while (!m_pendingPartMets.isEmpty() && slice.elapsed() < kSliceMs)
-            m_downloadQueue->loadPartMet(m_pendingPartMets.takeFirst());
-        if (m_pendingPartMets.isEmpty()) {
+        while (m_nextPartMet < m_pendingPartMets.size() && slice.elapsed() < kSliceMs) {
+            const PartMetPreload& pre = m_pendingPartMets[m_nextPartMet++];
+            m_downloadQueue->loadPartMet(pre.metPath, &pre);
+        }
+        if (m_nextPartMet >= m_pendingPartMets.size()) {
+            m_pendingPartMets.clear();
             m_downloadQueue->sortByPriority();
             logInfo(QStringLiteral("DownloadQueue initialized — %1 files loaded")
                         .arg(m_downloadQueue->fileCount()));

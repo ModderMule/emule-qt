@@ -99,17 +99,32 @@ QStringList DownloadQueue::partMetFiles(const QStringList& tempDirs)
     return files;
 }
 
-void DownloadQueue::loadPartMet(const QString& metFile)
+void DownloadQueue::loadPartMet(const QString& metFile, const PartMetPreload* preload)
 {
     const QFileInfo info(metFile);
     const QString filename = info.fileName();
     const QString directory = info.absolutePath();
 
     auto* partFile = new PartFile;
-    auto result = partFile->loadPartFile(directory, filename);
+    auto result = partFile->loadPartFile(directory, filename, nullptr, preload);
 
-    // MFC CDownloadQueue::Init: if .met is corrupt, try .bak backup
-    if (result != PartFileLoadResult::LoadSuccess) {
+    // MFC CDownloadQueue::Init: if .met is corrupt, try .bak backup. A preload
+    // carries the backup's bytes: parsed from memory, the save rewrites the .met.
+    if (result != PartFileLoadResult::LoadSuccess && preload) {
+        if (preload->bak) {
+            logInfo(QStringLiteral("Trying backup for: %1").arg(filename));
+            PartMetPreload fromBak = *preload;
+            fromBak.met = preload->bak;
+            delete partFile;
+            partFile = new PartFile;
+            result = partFile->loadPartFile(directory, filename, nullptr, &fromBak);
+            if (result == PartFileLoadResult::LoadSuccess) {
+                // else the save would rotate the corrupt .met over the good .bak
+                QFile::remove(preload->metPath);
+                partFile->savePartFile();
+            }
+        }
+    } else if (result != PartFileLoadResult::LoadSuccess) {
         const QString metPath = directory + QDir::separator() + filename;
         const QString bakPath = metPath + QStringLiteral(".bak");
         if (QFile::exists(bakPath)) {

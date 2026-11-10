@@ -5,8 +5,11 @@
 #include "app/TranslationRouter.h"
 
 #include <QLocale>
+#include <QPromise>
+#include <QThreadPool>
 
 #include <algorithm>
+#include <memory>
 
 namespace eMule {
 
@@ -26,6 +29,19 @@ TranslationRouter::TranslationRouter(QStringList searchDirs, QObject* parent)
     : QTranslator(parent)
     , m_dirs(std::move(searchDirs))
 {
+    // Listed off the core thread: the first web request would otherwise wait on it
+    auto promise = std::make_shared<QPromise<QList<AppLanguage>>>();
+    m_listed = promise->future();
+    promise->start();
+    if (m_dirs.isEmpty()) {
+        promise->addResult(QList<AppLanguage>{});
+        promise->finish();
+        return;
+    }
+    QThreadPool::globalInstance()->start([promise, dirs = m_dirs] {
+        promise->addResult(AppConfig::availableLanguages(dirs));
+        promise->finish();
+    });
 }
 
 TranslationRouter::~TranslationRouter() = default;
@@ -33,7 +49,7 @@ TranslationRouter::~TranslationRouter() = default;
 QList<AppLanguage> TranslationRouter::availableLanguages() const
 {
     if (!m_available) {
-        m_available = AppConfig::availableLanguages(m_dirs);
+        m_available = m_listed.result();   // waits only if asked before it is done
         // An injected translator counts as installed.
         for (const auto& [code, translator] : m_translators) {
             const bool listed = std::ranges::any_of(

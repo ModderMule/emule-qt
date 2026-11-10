@@ -649,28 +649,67 @@ ToDo (credits):
 `Ed3kHide` (hops.md, batch 15), made by `Ed3kSession`; `applyHide()` runs after `applyLogLevel`
 (entry hops from `hops.dat` loaded first) and on every pref change, live, no restart.
 
-- **Prefs:** `ed3kHide` (off), `ed3kHops` 1–3 (1): one hop count for every use, handed as
-  `HideCfg::uniform(hops)` (packmule takes one per use, 0 = per direction; gates at the core
-  default); `ed3kHopping` (on, forward for others), `ed3kHopShare` 25 %.
+- **Prefs:** `ed3kHide` (off), `ed3kHops` 0–3 (1): one hop count for every use, handed as
+  `Ed3kHide::hideCfg(hops)`: out, in and every per-use count (lookup, download, share, publish,
+  room, paid) set to it, `nodeKeyUses` 0, gates at the core default. Off = hiding off, no
+  `anonStart` (`ED3K_HOPS_OFF` is never sent). `ed3kHopping` (on, forward for others),
+  `ed3kHopShare` 25 %.
+- **0 hops** (hops.md §2.6): deniable, not hidden: the node is its own last hop and gate.
+  Offered only while "Forward traffic for others" is on (the spin's minimum is 0 then, else 1,
+  with the hint "0 = deniable, not hidden"); turning forwarding off at 0 gives 1
+  (`Ed3kHide::normalized`, also in the daemon). A core without 0 hops refuses it (`Config`):
+  hiding then starts with 1 (logged). Hopping is on by default and is switched on again when
+  the user turns hiding on (§1 "a client turns HOP on by default").
+- **Key per use** (§1): `Ed3kHide::keyForUse()` = anonymous key while hiding runs, else node
+  key, taken when a use starts and remembered with it: searches, live streams and channel
+  searches, followed sets, rooms, paid scopes. Files keep `keyFor(root)` (recorded in
+  `keys.json`). An own set goes under the key of its member files (`keyOf`); mixed keys are
+  refused with the offer to share the set under the files' key (also for `ED3K_ERR_STATE`).
+  Hiding off: nothing runs under the anonymous key, nothing falls back to the node key.
 - **Keys:** the seed is `anon.key` (owner-only secret). While hiding, new ed3k keyword
   searches, downloads and new shares use the anonymous key (`ed3k_anon_*`); existing files keep
   theirs, kept in `keys.json`. A file is never under both keys. "Move to Anonymous/Node ed3k
   Key..." (Shared Files, Transfers) asks first (hops §1), IPC 1048. "New anonymous key..." asks
   (queue places lost), 1047. Hiding off: anonymous files are not served and wait for it.
 - **Events:** the pump uses `pollKeyedEvent`; `eventPolled` gets node-key events only,
-  `keyedEventPolled` all; only `Ed3kShared` and `Ed3kDownloads` (`anonCapable()`) handle the
-  anonymous key (an anonymous `FILE_REQUESTED` → `anonQueueSet`).
+  `keyedEventPolled` all. Each class that runs uses under the anonymous key connects both:
+  `eventPolled` as `Node`, `keyedEventPolled` only for `Anon` (each event once). Lookup ids of
+  the two nodes may be equal: anonymous ones are kept with bit 63 (`lookupKey`). Joins:
+  `Ed3kShared`, `Ed3kDownloads` (`anonCapable()`; an anonymous `FILE_REQUESTED` → `anonQueueSet`).
+- **Turns at a source** (Protocol.md §12.5): `NodeTurns` by `(KeyKind, NodeId)`: to an
+  uploader the node and the anonymous node are two downloaders; anonymous downloads take turns
+  like the node's; their turns end with the anonymous node.
+- **Exposed files** (§1 SHOULD): a file shared under the anonymous key is in eD2K's share list
+  too (Ed3kShared shares that list): a warning in the log and an urgent pop-up
+  (`NotifierEvent::Ed3kAnonExposed`), once per file a run. BitTorrent/HTTP: ToDo in
+  `Ed3kShared::share`.
+- **HTTP proxy:** eMuleQt runs packmule in mode A (`Engine::create`, `Ed3kSession::start`) and
+  does every HTTP request itself in `Ed3kHttp`, through `QNetworkProxy` from
+  `thePrefs.proxySettings()`; nothing of the anonymous key goes over HTTP (§1).
 - **Never anonymous:** HTTP, hoster, eD2K, LAN; no ed2k `ALIAS` or MD4 for an anonymous file.
   eD2K still shares the file itself (question 11 of batch 15).
 - **Status:** GetEd3kStatus `hide {on, running, nodeId, hops, paths, built, waitingForHops,
   anonFiles}` and `kadOffline`; push 1081; status-bar tooltip "hidden (n/m paths)".
+- **Chain writes of unknown outcome** (batch 16 `ChainTxUnknown`): not failed, not sent again;
+  `Ed3kChain::lastUnknown()`, GetEd3kStatus `chain.unknown`, pushed like a refusal, shown
+  under the chain settings.
 - **GUI:** Options → ed3k → General, "Hiding" (`Ed3kHidingGroup`): the switch, Hops, forwarding
   and share, a new key, the §6 notes. An "ed3k Key" column in Shared Files and Transfers.
 - `Ed3kCredit::applyAnonKey()` runs on each `Ed3kHide::started`.
 
-ToDo (hiding): topics, live, rooms and paid under the anonymous key (no FFI routing for live and
-topics; they stay on the node key); turns at a source node (§12.5) for anonymous downloads; the
-anonymous node's uploads in the upload list; live and channel searches under the anonymous key.
+- **Per use** (batch 16): live streams and broadcasts (key per stream, `channels.json` `key`),
+  channel search; followed sets (`sets.json` `anon`, `under` of setFollow*, `setUnfollow(key)`,
+  `paidMemberKey(anon)`, `paidAnonWantKeys`); own sets (`own-sets.json` `key`, manifest blob via
+  `anonFileOpen`/`anonPublish`, "Share Under ... Key..." in My ed3k Sets); rooms
+  (`rooms/joined.cbor` `key`, KeyKind overloads, waiting while hiding is off); paid
+  (`paidAnonUnfollow`, `paidAnonWantKeys`, `paidAnonRequestKeys`, keyed `Paid*` events); the
+  upload queue (`queueList`/`queueStats`/`queueAuto` of both nodes, rows with `key`, shown as
+  "anonymous (ed3k)", no address). Anonymous uses wait while hiding is off.
+
+ToDo (hiding): a paid channel watched anonymously is followed under the node key; members of a
+followed set download by the hiding switch, not the set's key; `shareUnderKey` moves the set,
+not its members; followed sets' key not shown in the GUI; the exposed-file warning for
+BitTorrent/HTTP.
 
 **Kad offline** (Protocol.md §10 "Own network down", in packmule): `ED3K_EV_KAD_OFFLINE` is
 logged and refreshes the status (`kadOffline` bits, "Kad offline (IPv4/IPv6)" in the tooltip).

@@ -11,6 +11,9 @@
 /// - Fetched files are kept by root (the newest kCacheMax): a watch after a search fetches
 ///   nothing again.
 /// - What is published is published again when ed3k starts again.
+/// - Key (hops.md §1): an own channel file goes under the key of its broadcast (recorded in
+///   Ed3kHide); one of the anonymous key is shared only while hiding runs. Fetches follow the
+///   hiding switch (anonCapable: Ed3kHide::keyFor), like the channel search that found them.
 
 #include "Ed3kJoinBase.h"
 
@@ -68,7 +71,11 @@ public:
 
     /// Shares @p file under its root and publishes it with its keywords (name @p name). Its
     /// root; nullopt: not shared.
-    std::optional<::ed3k::Root> publish(const QByteArray& file, const QString& name);
+    // was: std::optional<::ed3k::Root> publish(const QByteArray& file, const QString& name);
+    /// @p key: the key it is shared under (the broadcast's); Anon while not hiding: kept,
+    /// shared once hiding runs.
+    std::optional<::ed3k::Root> publish(const QByteArray& file, const QString& name,
+                                        ::ed3k::KeyKind key = ::ed3k::KeyKind::Node);
     /// No longer shared nor published again.
     void withdraw(const ::ed3k::Root& root);
     [[nodiscard]] bool isPublished(const ::ed3k::Root& root) const { return m_published.contains(root); }
@@ -88,6 +95,10 @@ protected:
     [[nodiscard]] std::optional<FileRead> sharedRead(const Shared& s, std::uint64_t offset, std::uint32_t len) const override;
     [[nodiscard]] bool hasOwner(const QString& owner) const override;
     void saveOwner(const QString& owner) override;
+    /// Fetches and own files follow the hiding switch (hops.md §1).
+    [[nodiscard]] bool anonCapable() const override { return true; }
+    /// Hiding started: the anonymous key's own files are shared again.
+    void onHideChanged(bool hiding) override;
 
 private:
     struct Pending {
@@ -97,6 +108,7 @@ private:
     struct Published {
         QByteArray file;
         QString name;
+        ::ed3k::KeyKind key = ::ed3k::KeyKind::Node;
     };
 
     /// Gives @p file (nullopt: failed) to everyone waiting for @p root.

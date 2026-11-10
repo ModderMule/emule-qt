@@ -23,6 +23,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QPointer>
+#include <QTimer>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
@@ -132,6 +133,11 @@ void Ed3kOwnSetsView::addSetActions(QMenu* menu, const QString& id)
         menu->addAction(sold ? tr("Change Terms...") : tr("Sell..."), this, [this, id] { sell(id); })->setEnabled(sellable);
         menu->addAction(stopped ? tr("Resume Selling") : tr("Stop Selling"), this, [this, id] { stopOrResume(id); })->setEnabled(sold);
     }
+    // hops.md §1: refused for files under the other key: the set may go there
+    const QString offerKey = row.value(QStringLiteral("offerKey")).toString();
+    if (!offerKey.isEmpty())
+        menu->addAction(offerKey == QLatin1String("Anonymous") ? tr("Share Under Anonymous Key...") : tr("Share Under Node Key..."),
+                        this, [this, id, offerKey] { shareUnderKey(id, offerKey); });
     menu->addSeparator();
     menu->addAction(menuIcon("Delete.ico"), tr("Unpublish..."), this, [this, id] { unpublish(id); })->setEnabled(have && published);
 }
@@ -170,7 +176,9 @@ void Ed3kOwnSetsView::showRows(const QCborArray& sets)
         item->setText(ColVersion, version);
         item->setData(ColVersion, SortRole, seq);
         const qint64 kind = m.value(QStringLiteral("kind")).toInteger();
-        item->setText(ColKind, kindText(kind));
+        // hops.md §1: the user sees which key a set is under
+        const bool anon = m.value(QStringLiteral("key")).toString() == QLatin1String("Anonymous");
+        item->setText(ColKind, anon ? tr("%1 (anonymous)").arg(kindText(kind)) : kindText(kind));
         if (kind == 3) {
             const bool hasScope = !m.value(QStringLiteral("scope")).toString().isEmpty();
             item->setText(ColSale, !hasScope                                     ? tr("Not sold")
@@ -180,6 +188,12 @@ void Ed3kOwnSetsView::showRows(const QCborArray& sets)
         m_list->addTopLevelItem(item);
         if (id == current)
             m_list->setCurrentItem(item);
+        // a refusal offering another key: asked once
+        const QString offerKey = m.value(QStringLiteral("offerKey")).toString();
+        if (!offerKey.isEmpty() && !m_keyAsked.contains(id + QLatin1Char('/') + offerKey)) {
+            m_keyAsked.insert(id + QLatin1Char('/') + offerKey);
+            QTimer::singleShot(0, this, [this, id, offerKey] { shareUnderKey(id, offerKey); });
+        }
     }
     m_list->setSortingEnabled(true);
 }
@@ -321,6 +335,24 @@ void Ed3kOwnSetsView::unpublish(const QString& id)
         != QMessageBox::Yes)
         return;
     control(2, id);
+}
+
+void Ed3kOwnSetsView::shareUnderKey(const QString& id, const QString& key)
+{
+    const QCborMap row = rowOf(id);
+    if (row.isEmpty() || !m_ipc)
+        return;
+    // hops.md §1: never moved unasked
+    const QString text = row.value(QStringLiteral("error")).toString();
+    if (QMessageBox::question(this, tr("My ed3k Sets"),
+                              tr("\"%1\": %2").arg(row.value(QStringLiteral("title")).toString(), text),
+                              QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+        != QMessageBox::Yes)
+        return;
+    m_ipc->controlEd3kOwnSet(4, id, key, [self = QPointer(this)](const IpcMessage& r) {
+        if (self && !r.fieldBool(0))
+            self->showError(tr("The set was not moved to the other key."), r);
+    });
 }
 
 void Ed3kOwnSetsView::showError(const QString& what, const IpcMessage& reply)

@@ -321,6 +321,7 @@ private slots:
     void initTestCase();
     void aManifestIsReadWithLocalNames();
     void linksAreCheckedBeforeFollowing();
+    void aSetFollowedWhileHidingKeepsTheAnonymousKey();
     void aFollowedSetIsDownloadedWhole();
     void aChosenPartIsDownloaded();
     void aNewVersionWaitsUnderAskAcrossARestart();
@@ -494,6 +495,38 @@ void tst_Ed3kSets::linksAreCheckedBeforeFollowing()
 #endif
     QVERIFY(sets.unfollow(*hidden));
     QVERIFY(!sets.info(*hidden));
+}
+
+// hops.md §1: a set followed while hiding goes under the anonymous key (keyForUse) and keeps it
+// across a restart (sets.json); hiding off follows nothing under it
+void tst_Ed3kSets::aSetFollowedWhileHidingKeepsTheAnonymousKey()
+{
+    QTemporaryDir d;
+    std::uint32_t id = 0;
+    {
+        Ed3kSession s;
+        s.setHideSettings(Ed3kHideSettings{true, 1, true, 25});
+        QVERIFY(s.start(loopback(d.path())));
+        QVERIFY(s.hide().hiding());
+        Ed3kDownloads dl(s, d.path());
+        Ed3kSets sets(s, dl, d.path());
+        const auto r = sets.follow(m_link, Ed3kSets::Policy::Ask);
+        QVERIFY(r);
+        id = *r;
+        QCOMPARE(sets.info(id)->key, ::ed3k::KeyKind::Anon);
+        // a set followed before hiding: node key
+        s.setHideSettings(Ed3kHideSettings{false, 1, true, 25});
+        const auto node = sets.follow(Ed3kSets::setLink(m_author.key(), "other"), Ed3kSets::Policy::Ask);
+        QVERIFY(node);
+        QCOMPARE(sets.info(*node)->key, ::ed3k::KeyKind::Node);
+        s.stop();
+    }
+    Ed3kSession off;
+    Ed3kDownloads dl(off, d.path());
+    Ed3kSets sets(off, dl, d.path());
+    QVERIFY(sets.info(id));
+    QCOMPARE(sets.info(id)->key, ::ed3k::KeyKind::Anon);
+    QVERIFY(!sets.info(id)->followed);
 }
 
 // file-set.md §5.3: followed by its link; every member downloaded below the set's folder

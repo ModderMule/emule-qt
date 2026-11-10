@@ -124,6 +124,9 @@ public slots:
 signals:
     /// @p md4 is shared and published under @p root.
     void fileShared(const QByteArray& md4);
+    /// hops.md §1 SHOULD: a file shared under the anonymous key is also on @p networks
+    /// (eD2K/Kad: the share list is eD2K's): sources there show the address. Once per file a run.
+    void anonExposed(const QString& name, const QString& networks);
 
 protected:
     [[nodiscard]] std::vector<std::uint64_t> wantedBlocks(const Download& d) const override;
@@ -180,6 +183,8 @@ private:
     SharedFileSource& m_source;
     bool m_enabled = true;
     std::map<QByteArray, File> m_files;
+    /// anonExposed told for these roots (once per file a run)
+    std::set<::ed3k::Root> m_exposedTold;
     std::map<int, QByteArray> m_members;
     int m_nextMember = 0;
     /// md4 → what was hashed (loaded from shared.dat, kept while the path exists)

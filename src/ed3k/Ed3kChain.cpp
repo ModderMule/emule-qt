@@ -91,6 +91,11 @@ QString Ed3kChain::refusalText(std::uint32_t why, const QString& message)
     return {};
 }
 
+QString Ed3kChain::unknownText(std::uint64_t tx)
+{
+    return tr("Chain write %1: outcome unknown, it may still land. Not failed and not sent again.").arg(tx);
+}
+
 // ---------------------------------------------------------------------------
 // Private
 // ---------------------------------------------------------------------------
@@ -107,6 +112,12 @@ void Ed3kChain::onEventPolled(const ffi::Event& ev, bool* handled)
     } else if (const auto* t = std::get_if<e::ChainTxFailed>(&ev)) {
         why = t->why;
         message = t->message;
+    } else if (const auto* u = std::get_if<e::ChainTxUnknown>(&ev)) {
+        // batch 16: not failed, not resent (the user may send it again himself)
+        m_lastUnknown = unknownText(u->tx);
+        logEd3k(QStringLiteral("ed3k: chaintube: write %1 not followed further; it may still land").arg(u->tx));
+        emit txUnknown(u->tx, m_lastUnknown);
+        return;
     } else {
         return;
     }

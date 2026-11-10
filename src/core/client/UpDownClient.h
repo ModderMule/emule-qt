@@ -822,8 +822,9 @@ public:
     /// ClientList::getBuddy(), the buddy we use ourselves. Cleared with the Kad state.
     [[nodiscard]] bool isServedBuddy() const { return m_servedBuddy; }
     void setServedBuddy(bool val) { m_servedBuddy = val; }
-    /// Counts one relayed packet; false once the per-minute limit is used up.
-    [[nodiscard]] bool allowBuddyRelay();
+    /// Charges `bytes` relayed to this served buddy; false (nothing charged) when they
+    /// would pass the per-minute byte budget.
+    [[nodiscard]] bool allowBuddyRelay(uint32 bytes);
 
     // -- Phase 3 — upload (UploadClient.cpp) --------------------------------
 
@@ -874,7 +875,8 @@ public:
 
     /// What an upload slot is doing, for the queue's dead-slot check.
     enum class UpSlotActivity {
-        Busy,      ///< data is asked for and moving, or the slot is still warming up
+        Busy,      ///< data is asked for and moving, the slot is still warming up,
+                   ///< or it waits on our disk read (up to kDiskWaitMaxMs)
         Idle,      ///< the peer has asked for nothing: no request, nothing buffered or unacked, no read pending
         Stalled    ///< data is waiting to go out and none has for the whole rate window,
                    ///< or sent data has sat unacked for kUnackedStuckMs
@@ -885,6 +887,9 @@ public:
     /// Unacked bytes that have not gone down for this long are not reaching the peer
     /// (e.g. a PMTU black hole on its path, emule-qt#58).
     static constexpr uint32 kUnackedStuckMs = 120'000;
+    /// A slot whose only lack is our own disk read stays Busy this long: a drive
+    /// stalling is no fault of the peer's. Past it, a hung drive counts as stalled.
+    static constexpr uint32 kDiskWaitMaxMs = 120'000;
     /// Sample the upload socket's unacked bytes; called per slot from UploadQueue::process().
     /// @p curTick is passed in so a test can move time.
     void noteSendBacklog(uint64 curTick);
@@ -1402,7 +1407,7 @@ private:
     uint64 m_lastIncomingBuddyPing = 0;   ///< last incoming ping answered; own 3-min limit
     bool m_servedBuddy = false;
     uint64 m_buddyRelayWindowStart = 0;
-    uint32 m_buddyRelayCount = 0;
+    uint32 m_buddyRelayBytes = 0;
     uint64 m_lastRefreshedDLDisplay = 0;
     uint64 m_lastRefreshedULDisplay = 0;
     uint32 m_randomUpdateWait = 0;
@@ -1479,6 +1484,7 @@ private:
     std::vector<std::pair<uint64, uint64>> m_sentRanges;  // all of m_doneBlocks ever, merged
     std::array<uint8, 16> m_sentRangesFileId{};           // file m_sentRanges belongs to
     uint64 m_blockReadBytesQueued = 0;      // bytes of m_blockRequests the disk thread holds
+    uint64 m_readWaitSinceTick = 0;         // reads out, none back since; 0: none out
     // Slot diagnostics for upSlotDebugInfo(); reset by flushSendBlocks()
     uint32 m_slotBlocksAsked = 0;           // block requests received while Uploading
     uint32 m_slotBlocksAccepted = 0;        // ... that were queued (not dup or dropped)

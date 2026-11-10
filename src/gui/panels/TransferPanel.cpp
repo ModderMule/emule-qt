@@ -135,6 +135,10 @@ ClientRow parseClient(const QCborMap& m, bool downloadSide = false)
         row.network = ClientNetwork::Ed3k;
         row.noViewShared = true;
         row.remoteQueueRank = static_cast<int>(m.value(QStringLiteral("queueRank")).toInteger());
+        // the anonymous node's queue (hops.md §1): shown as anonymous, no address
+        row.anonymous = m.value(QStringLiteral("key")).toString() == QLatin1String("Anonymous");
+        if (row.anonymous)
+            row.addr.clear();
     }
 
     // New fields for TODO columns

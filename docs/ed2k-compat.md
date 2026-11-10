@@ -28,7 +28,9 @@ State 2026-10-31. Spec: `docs/ed3k-spec/Protocol.md` §14, optional tags `docs/e
 | Docker: one port 4662 for TCP and UDP (new containers; `EMULEQT_UDP_PORT` still splits) | `docker/emuleqt/{Dockerfile,entrypoint.sh,compose.yml}`, `docs/docker.md` |
 
 Existing configs keep their hash and ports until the user migrates. An MFC identity import
-(`LegacyIdentityImport`) keeps the imported hash on purpose (credits).
+(`LegacyIdentityImport`) keeps the imported hash on purpose (credits). The wizard's eMule /
+aMule import (`LegacyConfigImport`) always joins the ports on the imported TCP port and, when
+the source has no hash pair, sets the derived hash (docs/legacy-import.md).
 
 Tests: `tests/tst_Ed3kEd2kJoin.cpp` (three loopback nodes: fed download + trust, false pair by
 part, false pair by FileStatus, hinted source preferred, unanswered hint, client wait/fallback).

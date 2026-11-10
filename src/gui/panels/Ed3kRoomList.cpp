@@ -81,6 +81,9 @@ void Ed3kRoomList::setRooms(const QCborArray& rooms)
             kind << tr("Public");
         if (r.value(QStringLiteral("moderated")).toBool())
             kind << tr("moderated");
+        // hops.md §1: which key the room is under
+        if (r.value(QStringLiteral("key")).toString() == QLatin1String("Anonymous"))
+            kind << tr("anonymous");
         if (r.value(QStringLiteral("owner")).toBool())
             kind << tr("owner");
         else if (r.value(QStringLiteral("moderator")).toBool())
@@ -88,7 +91,9 @@ void Ed3kRoomList::setRooms(const QCborArray& rooms)
         item->setText(3, kind.join(QStringLiteral(", ")));
         QString state;
         const int neighbours = int(r.value(QStringLiteral("neighbours")).toInteger());
-        if (r.value(QStringLiteral("notAdmitted")).toBool())
+        if (r.value(QStringLiteral("waitingHide")).toBool())
+            state = tr("Waiting for hiding to be on");
+        else if (r.value(QStringLiteral("notAdmitted")).toBool())
             state = tr("Not admitted: send your member key to a moderator");
         else if (r.value(QStringLiteral("keyMissing")).toBool())
             state = tr("Waiting for the room key");

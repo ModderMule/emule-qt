@@ -94,6 +94,7 @@ private slots:
     void addressParsing();
     void oneRemoteChainEndpointIsNoted();
     void aRefusedChainAnswerIsShown();
+    void aChainTxOfUnknownOutcomeIsShown();
     void autoBidStartsAtThresholdAndRunsDown();
     void autoBidStopsBeforeOverdraw();
     void autoBidNeverWithoutNodeOrRead();
@@ -353,6 +354,29 @@ void tst_Ed3kCredit::aRefusedChainAnswerIsShown()
     const QString t = Ed3kChain::refusalText(ED3K_CHAIN_REFUSED, QString(500, QLatin1Char('a')) + QStringLiteral("\nb"));
     QVERIFY(!t.contains(QLatin1Char('\n')));
     QVERIFY(t.size() < 300);
+}
+
+// batch 16: a write not followed further may still land: shown as unknown, not as a refusal
+void tst_Ed3kCredit::aChainTxOfUnknownOutcomeIsShown()
+{
+    using eMule::ed3k::Ed3kChain;
+    Ed3kSession s;
+    Ed3kChain chain(s);
+    Ed3kCreditBridge::setChain(&chain);
+    QSignalSpy unknown(&chain, &Ed3kChain::txUnknown);
+    QSignalSpy refused(&chain, &Ed3kChain::refused);
+    bool handled = false;
+    emit s.eventPolled(::ed3k::Event{::ed3k::event::ChainTxUnknown{42}}, &handled);
+    QCOMPARE(unknown.count(), 1);
+    QCOMPARE(unknown.at(0).at(0).toULongLong(), 42ull);
+    QCOMPARE(refused.count(), 0);
+    QVERIFY(chain.lastRefusal().isEmpty());
+    QCOMPARE(chain.lastUnknown(), Ed3kChain::unknownText(42));
+    QVERIFY(chain.lastUnknown().contains(QStringLiteral("42")));
+    const QCborMap st = Ed3kCreditBridge::chainStatusToCbor();
+    QCOMPARE(st.value(QStringLiteral("unknown")).toString(), Ed3kChain::unknownText(42));
+    QCOMPARE(st.value(QStringLiteral("refused")).toString(), QString());
+    Ed3kCreditBridge::setChain(nullptr);
 }
 
 Ed3kSettings tst_Ed3kCredit::loopback(const QString& dir)

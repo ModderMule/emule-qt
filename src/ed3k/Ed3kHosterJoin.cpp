@@ -739,6 +739,17 @@ int Ed3kHosterJoin::accountTier(const QString& host) const
     return st.premium && !expired && st.trafficLeft != 0 ? 2 : 1;
 }
 
+int Ed3kHosterJoin::streamsAt(const QString& host) const
+{
+    const int max = std::max(1, int(m_prefs.maxStreams));
+    if (accountTier(host) < 2)
+        return 1;
+    const Ed3kHosterAccount* a = accountEntry(host);
+    const auto it = m_accountStatus.find(a->host + QLatin1Char('|') + a->user);
+    const int jd = it->second.maxDownloads;
+    return jd > 0 ? std::min(jd, max) : max;
+}
+
 QStringList Ed3kHosterJoin::rankMirrors(const QStringList& urls) const
 {
     struct Ranked {
@@ -1179,11 +1190,13 @@ void Ed3kHosterJoin::askOpen(Entry& e)
         setState(e, State::Queued);
         return;
     }
+    // the account's streams at its hoster (1 without a premium one)
+    (void)eng->linkStreams(e.link, std::uint32_t(streamsAt(e.item.host)));
     // a rootless link resumes where its hash stands (the core picks the offset); a rooted
     // one after the blocks held from 0
     if (auto ok = eng->linkAsk(m_session.now(), e.link, ED3K_LINK_OPEN, resumeOffset(e)); !ok) {
         if (ok.error() == ffi::Error::Busy) {
-            // one stream per hoster: a peer's link elsewhere may go now
+            // the hoster's streams in use: a peer's link elsewhere may go now
             if (tryPeerLink(e))
                 return;
             e.nextAskAt = nowMs() + 15000;
@@ -1400,6 +1413,7 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
             st.premium = ev.premium;
             st.expires = ev.expires;
             st.trafficLeft = ev.trafficLeft;
+            st.maxDownloads = ev.maxDownloads;
         }
         emit accountChecked(host, user, ev);
         return;
@@ -1996,6 +2010,7 @@ bool Ed3kHosterJoin::tryPeerLink(Entry& e)
         if (p.item != e.item.id || e.peerTried.contains(link))
             continue;
         const std::uint64_t offset = p.offset == 0 ? resumeOffset(e) : 0;
+        (void)eng->linkStreams(link, std::uint32_t(streamsAt(QUrl(p.url).host())));
         if (auto ok = eng->linkAsk(m_session.now(), link, ED3K_LINK_OPEN, offset); !ok) {
             if (ok.error() != ffi::Error::Busy)
                 e.peerTried.insert(link);

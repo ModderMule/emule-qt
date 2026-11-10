@@ -14,6 +14,7 @@
 /// exception is freeTempSpace, whose storage path can genuinely be unreadable at
 /// runtime. A reader that finds a key missing treats it as 0.
 
+#include "stats/SaveFolderSpace.h"
 #include "stats/Statistics.h"
 #include "utils/Types.h"
 
@@ -158,6 +159,8 @@ struct StatsSnapshot {
     /// Free space summed over the distinct temp volumes (MFC GetFreeTempSpace(-1));
     /// absent when no temp path is readable.
     std::optional<qint64> freeTempSpace;
+    /// default save folder per network with its free space (#165): "saveFolderSpace"
+    std::vector<SaveFolderSpace> saveFolders;
     qint64 totalDownNeeded = 0;     ///< disk space the downloads still have to take
 
     // --- Connections ---

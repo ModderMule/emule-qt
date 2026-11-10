@@ -156,7 +156,8 @@ QCborMap chainStatusToCbor()
         return {};
     return QCborMap{{QStringLiteral("configured"), s_chain->isConfigured()},
                     {QStringLiteral("singleRemote"), s_chain->isSingleRemote()},
-                    {QStringLiteral("refused"), s_chain->lastRefusal()}};
+                    {QStringLiteral("refused"), s_chain->lastRefusal()},
+                    {QStringLiteral("unknown"), s_chain->lastUnknown()}};
 #else
     return {};
 #endif

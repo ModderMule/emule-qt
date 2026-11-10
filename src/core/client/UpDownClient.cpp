@@ -2844,6 +2844,8 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
                                                                        : QStringLiteral("buddy"),
                              kadBuddyInfo(), reason)
                         .arg(std::time(nullptr) - m_kadStateSince));
+        if (m_kadState == KadState::ConnectingBuddy && !m_servedBuddy && theApp.clientList)
+            theApp.clientList->noteFailedBuddyCandidate(*this);
     }
     setKadState(KadState::None);
 
@@ -4506,16 +4508,16 @@ void UpDownClient::setLastBuddyPingPongTime()
 }
 
 // Not MFC: with several served buddies the relay load is bounded per buddy.
-bool UpDownClient::allowBuddyRelay()
+bool UpDownClient::allowBuddyRelay(uint32 bytes)
 {
     const uint64 now = getTickCount();
     if (now - m_buddyRelayWindowStart >= MIN2MS(1)) {
         m_buddyRelayWindowStart = now;
-        m_buddyRelayCount = 0;
+        m_buddyRelayBytes = 0;
     }
-    if (m_buddyRelayCount >= kMaxBuddyRelaysPerMin)
+    if (bytes > kBuddyRelayBytesPerMin - m_buddyRelayBytes)
         return false;
-    ++m_buddyRelayCount;
+    m_buddyRelayBytes += bytes;
     return true;
 }
 

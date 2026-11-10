@@ -346,6 +346,8 @@ private:
     QTreeWidgetItem* m_itemTotalDownLeft = nullptr;
     QTreeWidgetItem* m_itemTotalDownFreeSpace = nullptr;
     QTreeWidgetItem* m_itemTotalDownNeeded = nullptr;
+    /// free space per network's save folder (#165): incoming, torrent, usenet, hoster
+    std::array<QTreeWidgetItem*, 4> m_itemSaveFolderSpace{};
 
     // --- Usenet ---
     //

@@ -22,6 +22,8 @@
 #include "transfer/UploadQueue.h"
 #include "utils/TimeUtils.h"
 
+#include <unordered_set>
+
 
 
 namespace eMule {
@@ -295,18 +297,8 @@ void ClientList::setBuddy(UpDownClient* buddy, BuddyStatus status)
         if (m_buddyStatus == BuddyStatus::Connected)
             kad::logKad(QStringLiteral("Kad: buddy lost — %1, held %2 s")
                             .arg(m_buddyInfo).arg(now - m_buddySince));
-        else if (m_buddyStatus == BuddyStatus::Connecting) {
-            kad::logKad(QStringLiteral("Kad: buddy candidate %1 failed").arg(m_buddyCandidateInfo));
-            // Not a failure of the node when Kad itself stopped
-            const auto* kadInst = kad::Kademlia::instance();
-            if (m_buddyCandidateIp != 0 && kadInst && kadInst->isRunning()) {
-                m_failedBuddyCandidates[m_buddyCandidateIp] = now;
-                kad::logKad(QStringLiteral("Kad: not asking %1 again for %2 min")
-                                .arg(ipstr(Address::fromHostOrder(m_buddyCandidateIp)))
-                                .arg(kFailedBuddyBlockSecs / 60));
-            }
-        }
-        m_buddyCandidateIp = 0;
+        else if (m_buddyStatus == BuddyStatus::Connecting)
+            kad::logKad(QStringLiteral("Kad: no buddy candidate left"));
     }
 
     // Losing our buddy while firewalled — instantly re-trigger buddy search. Not MFC
@@ -380,10 +372,16 @@ bool ClientList::incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
     if (isKadFirewallCheckIP(addr.toNetworkUint32()))
         return false;
 
-    // One pending claim per IP
+    // One served buddy per IP, pending or connected. The TCP link proves the IP, so this
+    // bounds what one host takes from us; a subnet rule would refuse carrier NAT neighbours.
     for (const auto* other : m_items) {
-        if (other->kadState() == KadState::IncomingBuddy && other->connectAddress() == addr)
+        if (other->isServedBuddy() && other->connectAddress() == addr
+            && (other->kadState() == KadState::IncomingBuddy
+                || other->kadState() == KadState::ConnectedBuddy)) {
+            kad::logKad(QStringLiteral("Kad: buddy claim from %1 refused — IP already served")
+                            .arg(ipstr(addr)));
             return false;
+        }
     }
 
     // Check if we already know this client (the lookup takes network order)
@@ -473,6 +471,19 @@ bool ClientList::canServeAnotherBuddy() const
     return servedBuddyCount() < static_cast<int>(thePrefs.servedBuddyLimit());
 }
 
+void ClientList::noteFailedBuddyCandidate(const UpDownClient& candidate)
+{
+    // Not a failure of the node when Kad itself stopped
+    const auto* kadInst = kad::Kademlia::instance();
+    const uint32 ip = candidate.connectAddress().toUint32();
+    kad::logKad(QStringLiteral("Kad: buddy candidate %1 failed").arg(candidate.kadBuddyInfo()));
+    if (ip == 0 || !kadInst || !kadInst->isRunning())
+        return;
+    m_failedBuddyCandidates[ip] = std::time(nullptr);
+    kad::logKad(QStringLiteral("Kad: not asking %1 again for %2 min")
+                    .arg(ipstr(candidate.connectAddress())).arg(kFailedBuddyBlockSecs / 60));
+}
+
 bool ClientList::isFailedBuddyCandidate(uint32 ip) const
 {
     const auto it = m_failedBuddyCandidates.find(ip);
@@ -519,20 +530,24 @@ void ClientList::requestBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
 
     // Already busy with this client in some other Kad exchange — don't disturb it.
     // MFC srchybrid/ClientList.cpp:709-710.
-    if (client->kadState() != KadState::None && client->kadState() != KadState::QueuedBuddy)
+    if (client->kadState() != KadState::None)
         return;
 
     client->setKadPort(udpPort);
     client->setUserHash(clientID);
-    client->setKadState(KadState::QueuedBuddy);
     client->setConnectOptions(connectOptions, true, false);
 
-    // Deliberately no dial and no status change here. processKadList() owns the
-    // QueuedBuddy -> ConnectingBuddy transition, exactly as MFC's ProcessKadList does
-    // (srchybrid/ClientList.cpp:530-538) — which is what enforces "one buddy attempt at a
-    // time" and what lets a second candidate be tried when the first fails. Dialling
-    // inline, as this used to, both bypassed that gate and marked us Connecting even when
-    // the dial had failed, so m_buddyStatus could stick at Connecting forever.
+    // Not MFC: dial every offer at once. MFC queues them and dials one at a time
+    // (ClientList.cpp:530-538), so a dead candidate held the next for up to 160 s, by when
+    // the offering node may have let its claim go (aMule: 2 min). The first to connect
+    // becomes our buddy; processKadList() lets the others go. A failed dial is noted in
+    // UpDownClient::disconnected(), and processKadList() sets the status back to None
+    // once no candidate is left.
+    kad::logKad(QStringLiteral("Kad: dialling buddy candidate %1").arg(client->kadBuddyInfo()));
+    client->setKadState(KadState::ConnectingBuddy);
+    if (m_buddyStatus == BuddyStatus::None)
+        m_buddyStatus = BuddyStatus::Connecting;
+    client->tryToConnect(true, /*noCallbacks*/ true);
 }
 
 // ===========================================================================
@@ -706,6 +721,8 @@ void ClientList::processKadList()
     const bool needsOwnBuddy = kadRunning && kadInst->isFirewalled()
                                && !kad::UDPFirewallTester::isOpenAndVerified();
     int servedSeen = 0;
+    // One served buddy per IP; oldest first, so a second one from that IP is released.
+    std::unordered_set<uint32> servedIPs;
 
     // A copy: the transitions below dial, disconnect and re-enter the queue, any of which
     // can add or remove clients. MFC iterates a dedicated m_KadList; here the Kad clients
@@ -753,36 +770,12 @@ void ClientList::processKadList()
                 client->setKadState(KadState::None);
             break;
 
-        case KadState::QueuedBuddy:
-            // Not MFC: an offer waiting behind failing candidates goes stale. The offering
-            // node lets its claim go (5 min here, 2 min in aMule); dialling it later would
-            // give us a "buddy" that relays nothing until the silence limit drops it.
-            if (std::time(nullptr) - client->kadStateSince()
-                > static_cast<std::time_t>(thePrefs.buddyOfferMaxAgeSecs())) {
-                kad::logKad(QStringLiteral("Kad: buddy candidate %1 dropped — offer older than %2 s")
-                                .arg(client->kadBuddyInfo()).arg(thePrefs.buddyOfferMaxAgeSecs()));
-                client->setKadState(KadState::None);
-                break;
-            }
-            // We are firewalled and want this peer as our buddy — but only one attempt at a
-            // time, so a second candidate waits until the first fails.
-            if (m_buddyStatus == BuddyStatus::None) {
-                seen = BuddyStatus::Connecting;
-                m_buddyStatus = BuddyStatus::Connecting;
-                m_buddyCandidateInfo = client->kadBuddyInfo();
-                m_buddyCandidateIp = client->connectAddress().toUint32();
-                kad::logKad(QStringLiteral("Kad: dialling buddy candidate %1").arg(m_buddyCandidateInfo));
-                client->setKadState(KadState::ConnectingBuddy);
-                client->tryToConnect(true, /*noCallbacks*/ true);
-            } else if (m_buddyStatus == BuddyStatus::Connected) {
-                client->setKadState(KadState::None);
-            }
-            break;
-
         case KadState::ConnectingBuddy:
+            // requestBuddy() dials every offer at once (not MFC); once one connected the
+            // rest are let go, and an open link then closes on the normal idle timeout.
             if (m_buddyStatus == BuddyStatus::Connected)
                 client->setKadState(KadState::None);
-            else
+            else if (seen != BuddyStatus::Connected)
                 seen = BuddyStatus::Connecting;
             break;
 
@@ -794,6 +787,8 @@ void ClientList::processKadList()
                 const char* why = needsOwnBuddy               ? "we need a buddy ourselves"
                                   : !kadInst->isConnected()   ? "Kad not connected"
                                   : !client->hasLowID()       ? "it is no longer LowID"
+                                  : !servedIPs.insert(client->connectAddress().toUint32()).second
+                                                              ? "IP already served"
                                   : ++servedSeen > static_cast<int>(thePrefs.servedBuddyLimit())
                                                               ? "over the served-buddy limit"
                                                               : nullptr;
@@ -802,6 +797,13 @@ void ClientList::processKadList()
                                     .arg(client->kadBuddyInfo(), QLatin1StringView(why)));
                     client->setKadState(KadState::None);
                 }
+                break;
+            }
+            // Not MFC: candidates are dialled at once, so a second one can connect too
+            if (m_buddyStatus == BuddyStatus::Connected && m_buddy && m_buddy != client) {
+                kad::logKad(QStringLiteral("Kad: buddy candidate %1 released — buddy already set")
+                                .arg(client->kadBuddyInfo()));
+                client->setKadState(KadState::None);
                 break;
             }
             seen = BuddyStatus::Connected;
@@ -1097,9 +1099,10 @@ bool ClientList::allowCallbackRequest(const Address& addr) const
     return getTickCount() >= it->second + SEC2MS(180);
 }
 
-bool ClientList::allowRelayRequest(const Address& relay, const uint8* buddyID, RelayRequest kind)
+bool ClientList::allowRelayRequest(const Address& relay, const uint8* buddyID, RelayRequest kind,
+                                   uint32 reaskSize)
 {
-    return m_relayBudget.tryCharge(relay, buddyID, kind, getTickCount());
+    return m_relayBudget.tryCharge(relay, buddyID, kind, reaskSize, getTickCount());
 }
 
 // ===========================================================================

@@ -84,7 +84,7 @@ void tst_BtShareGuard::done_releasesTheTreeAndKeepsSkippedFilesOut()
     const auto c = guard.update(QStringLiteral("t"), row(save, QStringLiteral("Album"), 1.0, BtState::Seeding), files);
     QCOMPARE(asked, 1);
     QVERIFY(c.released.contains(QDir::cleanPath(save + QStringLiteral("/Album"))));
-    QVERIFY2(c.released.contains(QDir::cleanPath(save + QStringLiteral("/Album/CD1"))), "nested folders too");
+    QVERIFY2(c.released.contains(QDir::cleanPath(save)), "a single-file torrent's folder");
     QVERIFY(!guard.blocks(save + QStringLiteral("/Album/CD1/01.mp3")));
     QVERIFY(guard.blocks(save + QStringLiteral("/Album/extras.zip")));
 

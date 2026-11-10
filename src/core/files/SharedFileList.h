@@ -22,6 +22,7 @@
 #include <QWaitCondition>
 
 #include <array>
+#include <memory>
 #include <atomic>
 #include <deque>
 #include <functional>
@@ -37,11 +38,13 @@ class tst_SharedFileList;
 
 namespace eMule {
 
+class Collection;
 class KnownFile;
 class KnownFileList;
 class PartFile;
 class Server;
 class SharedDirWatcher;
+class ShareDiskWorker;
 class ServerConnect;
 
 // ---------------------------------------------------------------------------
@@ -90,7 +93,9 @@ public:
 
 signals:
     void hashingFinished(eMule::KnownFile* file, uint64 generation);
-    void hashingFailed(const QString& directory, const QString& filename, uint64 generation);
+    /// @p size -1: the file is gone. Stat taken here, off the core thread.
+    void hashingFailed(const QString& directory, const QString& filename, uint64 generation,
+                       qint64 size, qint64 mtime);
     /// The file is not what the scan saw any more; nothing was read.
     void hashingDeferred(const QString& directory, const QString& filename, uint64 generation);
     void hashingProgress(int percent);
@@ -98,7 +103,7 @@ signals:
     /// partOk holds one PartFile::PartVerdict value per part.
     void partFileRehashed(const QByteArray& fileHash, const QByteArray& partOk, uint64 token);
     /// A fullRehash job is done. @p fresh is null when the file could not be read
-    /// (@p changed: it was not what the job expected, not a read error).
+    /// (@p changed: it was not what the job expected or is gone, not a read error).
     void fullRehashDone(eMule::KnownFile* fresh, const QString& directory,
                         const QString& filename, bool changed);
 
@@ -155,6 +160,9 @@ public:
     void rescanDirectory(const QString& dir);
     /// Several changed directories as one diff, so a move between them is a move.
     void rescanDirectories(const QStringList& dirs);
+    /// rescanDirectories() of @p dirs and every share folder below them, as the last
+    /// tree walk found them; no disk read here.
+    void rescanTrees(const QStringList& dirs);
     /// Follow the shared directories on disk from now on (the daemon; a unit test
     /// reloads by hand). Also holds back files that were written a moment ago.
     void setWatchingEnabled(bool enabled);
@@ -162,6 +170,10 @@ public:
     [[nodiscard]] bool watchingEnabled() const { return m_watcher != nullptr; }
     /// How often folders the OS cannot watch (network shares) are listed; 0 = never.
     void setPollMinutes(int minutes);
+    /// A walk of the share trees' subfolders runs or waits (they join once it is done).
+    [[nodiscard]] bool treeWalkPending() const;
+    /// Any off-thread disk job (tree walk, move probe, single file stats) runs or waits.
+    [[nodiscard]] bool diskJobsPending() const;
 
     /// Add a file to the shared list.
     ///
@@ -371,6 +383,8 @@ signals:
     void fileChanged(const QByteArray& fileHash);
     /// A part-file rehash result was applied (not emitted for a stale or orphaned one).
     void partFileRehashApplied(const QByteArray& fileHash, const QByteArray& partOk);
+    /// A rescan was applied; @p full: the whole share (reload()).
+    void scanned(bool full);
 
 private:
     /// A file whose hashset proves its size wrong: offering it would spread that size
@@ -406,41 +420,67 @@ private:
         time_t mtime = 0;
     };
 
+    /// What a rescan may ask the disk thread for afterwards.
+    struct RescanFollowUps {
+        bool walkTrees = true;     ///< a scan touching a share tree walks it again
+        bool probeMoves = true;    ///< files gone from a partial scope are looked for elsewhere
+        bool statSingles = true;   ///< files shared one by one in scope are stat'ed again
+    };
     /// The diff behind reload() (@p onlyDirs empty) and rescanDirectories().
-    void rescan(const QStringList& onlyDirs);
+    void rescan(const QStringList& onlyDirs) { rescan(onlyDirs, RescanFollowUps{}); }
+    void rescan(const QStringList& onlyDirs, RescanFollowUps follow);
     /// A record matched a file whose date shifted without the file changing.
     void adoptDiskDate(KnownFile* file, time_t onDisk);
-    /// Add to @p scope every root that now holds a file gone from a directory in it.
-    void widenScopeForMoves(QSet<QString>& scope, const QStringList& roots) const;
-    /// A changed folder of a share tree brings its subfolders along: new ones are
-    /// listed, files of removed ones leave.
-    void widenScopeForTrees(QSet<QString>& scope, const ShareRules& rules,
-                            const QStringList& roots) const;
     /// What the watcher looks at: the scan roots plus the directories of files
     /// shared one by one.
     [[nodiscard]] QStringList watchRoots() const;
     [[nodiscard]] QStringList watchRoots(const QStringList& shareRoots) const;
     /// setNeverShared or setStillWriting names @p filePath.
     [[nodiscard]] bool isNeverShared(const QString& filePath) const;
-    /// The shareable files of one directory, by path key.
-    void listDirectory(const QString& dir, QHash<QString, DiskEntry>& out) const;
-    /// The disk half of listDirectory(): thread-safe, the watcher runs it on its worker.
+    /// The shareable files of one directory, from disk. Thread-safe: runs on the
+    /// watcher's worker and the disk thread.
     [[nodiscard]] static QList<ListedFile> scanDirectory(const QString& dir);
     /// The in-memory half: what a scan found, minus what is not shared.
     void addListed(const QList<ListedFile>& listing, QHash<QString, DiskEntry>& out) const;
-    /// What the watcher listed for @p dir a moment ago, if fresh; taken once.
+    /// What was listed off-thread for @p dir a moment ago, if fresh; taken once.
     [[nodiscard]] std::optional<QList<ListedFile>> takePrelisted(const QString& dir);
+    [[nodiscard]] bool hasPrelisted(const QString& dir) const;
     /// Every directory a scan walks: incoming directories first, then shared ones.
-    /// The share trees' subfolders too.
+    /// The share trees' subfolders as the last walk found them; nothing read from disk.
     [[nodiscard]] QStringList shareRoots() const;
     [[nodiscard]] QStringList shareRoots(const ShareRules& rules) const;
+    /// The subfolders of the share trees, from disk. Thread-safe: runs on the walker.
+    [[nodiscard]] static QStringList walkShareTrees(const ShareRules& rules);
+    /// What a tree walk depends on; a cached walk for other rules is not used.
+    [[nodiscard]] static QString treeKey(const ShareRules& rules);
+    /// Walk the share trees off-thread; the result rescans the folders that came or went.
+    void requestTreeWalk(const ShareRules& rules);
+    void onTreeWalked(const QString& key, const QStringList& folders);
+    /// A shared file gone from a scanned directory, looked for in the other roots.
+    struct MoveCandidate {
+        QString path;
+        QString filename;
+        uint64 size = 0;
+        time_t mtime = 0;
+    };
+    /// Off-thread: the other roots that hold a gone file join the scope, which is then
+    /// listed there and rescanned. Nothing changes until then.
+    void probeMoves(const QStringList& scopeDirs, std::vector<MoveCandidate> gone, QStringList others);
+    /// Off-thread: list @p listDirs, then rescan @p scopeDirs (empty: all) from that
+    /// listing. Merged into a listing still waiting.
+    void listThenRescan(const QStringList& scopeDirs, const QStringList& listDirs, RescanFollowUps follow);
+    /// Off-thread: stat the files shared one by one; the ones that changed are rescanned.
+    void requestSingleStats();
+    [[nodiscard]] ShareDiskWorker* diskWorker();
     /// Point a shared file at the name and place it has on disk now.
     void relocateFile(KnownFile* file, const DiskEntry& entry);
     /// Hash retries and held-back directories that have come due.
     void stepDeferredScans();
     /// Queue one explicitly-shared file for hashing (or re-add it if already known).
-    /// Port of srchybrid/SharedFileList.cpp:1468.
+    /// Port of srchybrid/SharedFileList.cpp:1468. Stats on the disk thread.
     void checkAndAddSingleFile(const QString& filePath);
+    /// checkAndAddSingleFile()'s core-thread half.
+    void addStattedSingleFile(const QString& filePath, const DiskEntry& entry, bool localTime);
     /// Top up every worker with waiting files of its volume, up to kMaxJobsPerWorker
     /// files or kMaxBytesPerWorker bytes. m_hashMutex held.
     void hashNextFile();
@@ -470,7 +510,8 @@ private:
 
     void onHashingFinished(KnownFile* file, uint64 generation);
     void onPartFileRehashed(const QByteArray& fileHash, const QByteArray& partOk, uint64 token);
-    void onHashingFailed(const QString& directory, const QString& filename, uint64 generation);
+    void onHashingFailed(const QString& directory, const QString& filename, uint64 generation,
+                         qint64 size, qint64 mtime);
     void onHashingDeferred(const QString& directory, const QString& filename, uint64 generation);
     void onFullRehashDone(KnownFile* fresh, const QString& directory, const QString& filename,
                           bool changed);
@@ -504,9 +545,12 @@ private:
     void publishDueNotes(time_t tProbe);
     void publishDueKeyword(time_t tProbe);
 
-    /// Parse an .emulecollection into the file, if it is one. Does disk I/O, so it
-    /// runs outside the map lock — see the hook contract in EntityMap.h.
+    /// Parse an .emulecollection into the file, if it is one. Read on the disk
+    /// worker, attached later by applyCollection().
     void detectCollection(KnownFile* file);
+    /// Core half of detectCollection(): attach if the file is still shared there.
+    void applyCollection(const std::array<uint8, 16>& hash, const QString& path,
+                         std::unique_ptr<Collection> coll);
 
     /// Settle a few files' container verdicts per tick, off the IPC poll path.
     ///
@@ -546,7 +590,22 @@ private:
     QHash<QString, QString> m_singleExcludedFiles;
     std::function<bool(const QString&)> m_neverShared;   ///< setNeverShared
     std::function<bool(const QString&)> m_stillWriting;  ///< setStillWriting
-    QSet<QString> m_lastRootKeys;   ///< scan roots of the last rescan (widenScopeForTrees)
+    /// The share trees' subfolders as the last walk found them, and for which rules
+    QStringList m_treeFolders;
+    QString m_treeFoldersKey;
+    ShareDiskWorker* m_diskWorker = nullptr;
+    /// m_singleSharedFiles as last stat'ed off-thread, by path key; nullopt = not
+    /// there or not shareable. A file not stat'ed yet is left as it is.
+    QHash<QString, std::optional<DiskEntry>> m_singleStats;
+    /// The listing job still waiting on the disk thread; requests merge into it.
+    struct ListRequest {
+        bool full = false;
+        QStringList scopeDirs;
+        QStringList listDirs;
+        QSet<QString> listKeys;
+        RescanFollowUps follow{false, false, false};
+    };
+    ListRequest m_listWaiting;
 
     /// Pseudo name -> directory, as last sent to a browsing client. Main thread only.
     QHash<QString, QString> m_pseudoDirNames;
@@ -630,8 +689,8 @@ private:
 
     SharedDirWatcher* m_watcher = nullptr;
     int m_pollMinutes = 5;
-    /// Polled folders the watcher listed off-thread, by path key: the rescan takes
-    /// them instead of reading a slow share again (#84).
+    /// Folders listed off-thread (watcher poll or disk thread), by path key: the
+    /// rescan takes them instead of reading the disk itself (#84).
     struct Prelisted {
         QList<ListedFile> listing;
         qint64 atMs = 0;

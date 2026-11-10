@@ -216,7 +216,7 @@ void tst_KadUDPListener::findBuddyRes_unrequestedIsIgnored()
     deliver(buddyAnswer(), kNodeIP);
     UpDownClient* buddy = clients.findByConnIP(qToBigEndian(kNodeIP), kNodeTcp);
     QVERIFY(buddy != nullptr);
-    QCOMPARE(buddy->kadState(), KadState::QueuedBuddy);
+    QCOMPARE(buddy->kadState(), KadState::ConnectingBuddy);   // dialled at once
 
     clients.deleteAll();
     Kademlia::setClientList(nullptr);
@@ -261,10 +261,19 @@ void tst_KadUDPListener::buddySearch_asksRememberedNodeAfterRestart()
     Kademlia::setClientList(&clients);
     eMule::testing::KadFixture kadFixture;   // TCP firewalled, UDP unverified
 
-    Kademlia::getInstanceUDPListener()->sendFindBuddyReq(kNodeIP, kNodeUdp, KadUDPKey(0), nullptr);
-    deliver(buddyAnswer(), kNodeIP);
-    QCOMPARE(Kademlia::buddyStore()->entries().size(), size_t{1});
-    clients.deleteAll();
+    // The offer is dialled at once, which marks the list Connecting; deleteAll() does not
+    // reset that. A separate list keeps it out of the restarted session.
+    {
+        ClientList offerClients;
+        theApp.clientList = &offerClients;
+        Kademlia::setClientList(&offerClients);
+        Kademlia::getInstanceUDPListener()->sendFindBuddyReq(kNodeIP, kNodeUdp, KadUDPKey(0), nullptr);
+        deliver(buddyAnswer(), kNodeIP);
+        QCOMPARE(Kademlia::buddyStore()->entries().size(), size_t{1});
+        offerClients.deleteAll();
+        theApp.clientList = &clients;
+        Kademlia::setClientList(&clients);
+    }
 
     kadFixture.kad().stop();
     kadFixture.kad().start(&kadFixture.kadPrefs());
@@ -306,7 +315,7 @@ void tst_KadUDPListener::buddySearch_asksRememberedNodeAfterRestart()
     deliver(buddyAnswer(), kNodeIP);
     UpDownClient* buddy = clients.findByConnIP(qToBigEndian(kNodeIP), kNodeTcp);
     QVERIFY(buddy != nullptr);
-    QCOMPARE(buddy->kadState(), KadState::QueuedBuddy);
+    QCOMPARE(buddy->kadState(), KadState::ConnectingBuddy);   // dialled at once
     QVERIFY(Kademlia::buddyStore()->entries().front().lastOffered >= askedAt);
 
     clients.deleteAll();

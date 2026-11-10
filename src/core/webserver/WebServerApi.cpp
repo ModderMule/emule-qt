@@ -27,6 +27,7 @@
 #include "server/Server.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
+#include "stats/SaveFolderSpace.h"
 #include "stats/Statistics.h"
 #include "transfer/DownloadQueue.h"
 #include "transfer/UploadQueue.h"
@@ -1158,7 +1159,10 @@ void WebServer::buildApiTable()
         Operation op = make("stats.get", Method::Get, "/api/v1/stats", "Diagnostics",
                             "Transfer statistics",
                             "Rates are KiB per second; byte counters cover this session. *Time is the "
-                            "average over the configured statistics window, cum* spans all sessions.");
+                            "average over the configured statistics window, cum* spans all sessions. "
+                            "saveFolderSpace has the default save folder of each network that is on "
+                            "(incoming, torrent, usenet, hoster) with its free bytes; free is missing "
+                            "while unknown.");
         op.flags = ReadOnly;
         op.mcpTool = s("stats_get");
         op.handler = [this](const Call&) {
@@ -1185,6 +1189,7 @@ void WebServer::buildApiTable()
                 {s("sessionSentBytes"), static_cast<qint64>(m_statistics->sessionSentBytes())},
                 {s("reconnects"), m_statistics->reconnects()},
                 {s("uptimeSeconds"), static_cast<qint64>(m_statistics->uptimeSecs())},
+                {s("saveFolderSpace"), saveFolderSpaceToJson(saveFolderSpace())},
             });
         };
         add(op);

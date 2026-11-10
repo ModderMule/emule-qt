@@ -1,5 +1,5 @@
 /// @file tst_LegacyConfigImport.cpp
-/// @brief Tests for prefs/LegacyConfigImport — installer-requested import of an MFC config dir.
+/// @brief Tests for prefs/LegacyConfigImport — wizard-requested import of an eMule / aMule config dir.
 
 #include "TestHelpers.h"
 #include "prefs/DownloadCategory.h"
@@ -8,6 +8,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QScopeGuard>
 #include <QTest>
 
 using namespace eMule;
@@ -105,18 +106,18 @@ struct MfcInstall {
     }
 };
 
-/// Fresh eMule Qt profile plus the installer's request pointing at @p source.
+/// Fresh eMule Qt profile plus a request pointing at @p source.
 struct Profile {
     TempDir dir;
     QString request;
     Preferences prefs;
 
     explicit Profile(const QString& source)
-        : request(dir.filePath(QStringLiteral("request/mfc-import.yml")))
+        : request(LegacyConfigImport::requestFilePath(dir.path()))
     {
         prefs.load(dir.filePath(QStringLiteral("preferences.yml")));
         QVERIFY(prefs.save());
-        // Single-quoted, as the installer writes it
+        // Hand-written form: kind and parts default to eMule, on
         writeFile(request, "source: '" + source.toUtf8() + "'\n");
     }
 
@@ -124,7 +125,61 @@ struct Profile {
 
     [[nodiscard]] LegacyConfigImport::Outcome run()
     {
-        return LegacyConfigImport::run(request, dir.path(), prefs);
+        return LegacyConfigImport::run(dir.path(), prefs);
+    }
+};
+
+/// An aMule config dir: amule.conf, Temp/ inside it, an incoming and a shared dir.
+struct AmuleInstall {
+    TempDir root;
+    QString config;
+    QString incoming;
+    QString temp;
+    QString shared;
+
+    AmuleInstall()
+        : config(root.filePath(QStringLiteral(".aMule")))
+        , incoming(root.filePath(QStringLiteral("Downloads")))
+        , temp(root.filePath(QStringLiteral(".aMule/Temp")))
+        , shared(root.filePath(QStringLiteral("Bücher")))
+    {
+        for (const QString& dir : {config, incoming, temp, shared})
+            QDir().mkpath(dir);
+    }
+
+    [[nodiscard]] QString file(const QString& name) const { return config + u'/' + name; }
+
+    /// wxFileConfig: UTF-8, backslash escaped, the default category not written.
+    [[nodiscard]] QByteArray conf() const
+    {
+        return QStringLiteral(
+                   "[eMule]\n"
+                   "Nick=Back\\\\slash \\\"Mule\\\"\n"
+                   "Port=4662\n"
+                   "UDPPort=4672\n"
+                   "UDPEnable=0\n"
+                   "MaxUpload=0\n"
+                   "MaxDownload=120\n"
+                   "DownloadCapacity=3000\n"
+                   "UploadCapacity=400\n"
+                   "MaxConnections=300\n"
+                   "MaxSourcesPerFile=250\n"
+                   "Autoconnect=1\n"
+                   "Reconnect=1\n"
+                   "ConnectToKad=0\n"
+                   "ConnectToED2K=1\n"
+                   "IncomingDir=%1\n"
+                   "TempDir=%2\n"
+                   "[General]\n"
+                   "Count=2\n"
+                   "[Cat#1]\n"
+                   "Title=Bücher\n"
+                   "Incoming=%3\n"
+                   "Comment=ebooks\n"
+                   "[Cat#2]\n"
+                   "Title=\n")
+            .arg(incoming, temp, shared)
+            .toUtf8();
     }
 };
 
@@ -140,13 +195,20 @@ private slots:
     void import_readsAnsiIniWithUtf8NickAndUnlimited();
     void import_categoriesAndSharedDirs();
     void import_identityNeedsBothFiles();
+    void import_noHashTakesDerivedOne();
     void import_carriesSchedulesOnly();
-    void import_runsOnlyOnce();
+    void import_requestIsConsumed();
     void import_expandsEnvironmentInTheRequest();
     void import_skipsMfcDefaultNick();
-    void usedProfile_isLeftAlone();
+    void usedProfile_isBackedUp();
     void missingSource_isRecordedAndSkipped();
     void pendingTempDirs_areHandedOutOnce();
+    void request_withoutParts_queuesNothing();
+    void request_chosenTempDirsWin();
+    void amule_confCategoriesAndSharedDirs();
+    void discover_windowsLayout();
+    void discover_amuleAndWine();
+    void probe_acceptsParentAndPrefix();
 };
 
 void tst_LegacyConfigImport::noRequest_doesNothing()
@@ -155,8 +217,7 @@ void tst_LegacyConfigImport::noRequest_doesNothing()
     Preferences prefs;
     prefs.load(tmp.filePath(QStringLiteral("preferences.yml")));
 
-    const auto out = LegacyConfigImport::run(tmp.filePath(QStringLiteral("mfc-import.yml")),
-                                             tmp.path(), prefs);
+    const auto out = LegacyConfigImport::run(tmp.path(), prefs);
     QCOMPARE(out.result, LegacyConfigImport::Result::NoRequest);
     QVERIFY(!QFile::exists(tmp.filePath(QLatin1StringView(LegacyConfigImport::kStateFileName))));
     QVERIFY(LegacyConfigImport::takePendingTempDirs(tmp.path()).isEmpty());
@@ -179,6 +240,8 @@ void tst_LegacyConfigImport::import_copiesDataFilesAndMapsPreferences()
     const auto out = profile.run();
     QCOMPARE(out.result, LegacyConfigImport::Result::Imported);
     QCOMPARE(out.filesCopied, 4);
+    QCOMPARE(out.filesBackedUp, 1);   // the seeded server.met
+    QVERIFY(!QFile::exists(profile.request));
     QCOMPARE(readFile(profile.file(QStringLiteral("known.met"))), QByteArrayLiteral("known"));
     QCOMPARE(readFile(profile.file(QStringLiteral("clients.met"))), QByteArrayLiteral("credits"));
     QCOMPARE(readFile(profile.file(QStringLiteral("server.met"))), QByteArrayLiteral("mfc servers"));
@@ -187,7 +250,8 @@ void tst_LegacyConfigImport::import_copiesDataFilesAndMapsPreferences()
     const Preferences& p = profile.prefs;
     QCOMPARE(p.nick(), QStringLiteral("OldMule"));
     QCOMPARE(p.port(), uint16{41234});
-    QCOMPARE(p.udpPort(), uint16{41235});
+    QCOMPARE(p.udpPort(), uint16{41234});   // one port: UDPPort dropped
+    QCOMPARE(p.ed3kUdpPort(), uint16{41234});
     QCOMPARE(p.maxGraphDownloadRate(), 2000u);
     QCOMPARE(p.maxGraphUploadRate(), 500u);
     QCOMPARE(p.maxUpload(), 80u);
@@ -252,8 +316,8 @@ void tst_LegacyConfigImport::import_readsAnsiIniWithUtf8NickAndUnlimited()
     QCOMPARE(profile.prefs.nick(), QStringLiteral("Jürgen, der Esel"));
     QCOMPARE(profile.prefs.maxUpload(), 0u);          // old 0xFFFF UNLIMITED
     QCOMPARE(profile.prefs.maxDownload(), 300u);
-    QCOMPARE(profile.prefs.udpPort(), uint16{0});     // UDP off is a setting
     QCOMPARE(profile.prefs.port(), portBefore);       // 0 = "pick one", ours stays
+    QCOMPARE(profile.prefs.udpPort(), portBefore);    // one port, never UDP off
 }
 
 void tst_LegacyConfigImport::import_categoriesAndSharedDirs()
@@ -317,6 +381,33 @@ void tst_LegacyConfigImport::import_identityNeedsBothFiles()
     QCOMPARE(readFile(both.file(QStringLiteral("preferences.dat"))), QByteArrayLiteral("mfc hash"));
 }
 
+void tst_LegacyConfigImport::import_noHashTakesDerivedOne()
+{
+    std::array<uint8, 16> derived{};
+    derived.fill(0x42);
+    Preferences::setUserHashSource([derived] { return std::optional(derived); });
+    const auto reset = qScopeGuard([] { Preferences::setUserHashSource({}); });
+
+    MfcInstall mfc;
+    writeFile(mfc.file(QStringLiteral("preferences.ini")), utf16(mfc.prefsIni()));
+
+    // No hash in the source: ours becomes the ed3k-derived one (eD2K compat)
+    Profile none(mfc.config);
+    none.prefs.setUserHash(Preferences::generateUserHash());
+    const auto outNone = none.run();
+    QVERIFY(outNone.userHashDerived);
+    QVERIFY(none.prefs.userHash() == derived);
+
+    // A hash pair in the source: left to LegacyIdentityImport (credits)
+    writeFile(mfc.file(QStringLiteral("preferences.dat")), "mfc hash");
+    writeFile(mfc.file(QStringLiteral("cryptkey.dat")), "mfc key");
+    Profile both(mfc.config);
+    const auto before = Preferences::generateUserHash();
+    both.prefs.setUserHash(before);
+    QVERIFY(!both.run().userHashDerived);
+    QVERIFY(both.prefs.userHash() == before);
+}
+
 void tst_LegacyConfigImport::import_carriesSchedulesOnly()
 {
     MfcInstall mfc;
@@ -334,7 +425,7 @@ void tst_LegacyConfigImport::import_carriesSchedulesOnly()
     QVERIFY(!ini.contains("[WebServer]"));
 }
 
-void tst_LegacyConfigImport::import_runsOnlyOnce()
+void tst_LegacyConfigImport::import_requestIsConsumed()
 {
     MfcInstall mfc;
     writeFile(mfc.file(QStringLiteral("preferences.ini")), utf16(mfc.prefsIni()));
@@ -342,9 +433,9 @@ void tst_LegacyConfigImport::import_runsOnlyOnce()
     Profile profile(mfc.config);
     QCOMPARE(profile.run().result, LegacyConfigImport::Result::Imported);
 
-    // The request sits in Program Files and outlives the import
+    // Next start: nothing asked for, nothing changed
     profile.prefs.setNick(QStringLiteral("renamed since"));
-    QCOMPARE(profile.run().result, LegacyConfigImport::Result::AlreadyDone);
+    QCOMPARE(profile.run().result, LegacyConfigImport::Result::NoRequest);
     QCOMPARE(profile.prefs.nick(), QStringLiteral("renamed since"));
 }
 
@@ -355,8 +446,8 @@ void tst_LegacyConfigImport::import_expandsEnvironmentInTheRequest()
     qputenv("EMULE_TST_APPDATA", mfc.root.path().toUtf8());
 
     Profile profile(QStringLiteral("%EMULE_TST_APPDATA%/config"));
-    // Setup saves the request as UTF-8 with BOM
-    writeFile(profile.request, "\xEF\xBB\xBF# Written by setup\r\n"
+    // Hand-written in Notepad: UTF-8 with BOM, CRLF
+    writeFile(profile.request, "\xEF\xBB\xBF# Written by hand\r\n"
                                "source: '%EMULE_TST_APPDATA%/config'\r\n");
     const auto out = profile.run();
     qunsetenv("EMULE_TST_APPDATA");
@@ -383,7 +474,8 @@ void tst_LegacyConfigImport::import_skipsMfcDefaultNick()
     }
 }
 
-void tst_LegacyConfigImport::usedProfile_isLeftAlone()
+// Asked for on a used profile (wizard reopened from Tools): ours is kept aside
+void tst_LegacyConfigImport::usedProfile_isBackedUp()
 {
     MfcInstall mfc;
     writeFile(mfc.file(QStringLiteral("preferences.ini")), utf16(mfc.prefsIni()));
@@ -391,13 +483,16 @@ void tst_LegacyConfigImport::usedProfile_isLeftAlone()
 
     Profile profile(mfc.config);
     writeFile(profile.file(QStringLiteral("known.met")), "ours");
-    const QString nick = profile.prefs.nick();
+    writeFile(profile.file(QStringLiteral("clients.met")), "our credits");
 
-    QCOMPARE(profile.run().result, LegacyConfigImport::Result::ProfileInUse);
-    QCOMPARE(readFile(profile.file(QStringLiteral("known.met"))), QByteArrayLiteral("ours"));
-    QCOMPARE(profile.prefs.nick(), nick);
-    // Decided once, not re-examined at every start
-    QCOMPARE(profile.run().result, LegacyConfigImport::Result::AlreadyDone);
+    const auto out = profile.run();
+    QCOMPARE(out.result, LegacyConfigImport::Result::Imported);
+    QCOMPARE(readFile(profile.file(QStringLiteral("known.met"))), QByteArrayLiteral("mfc known"));
+    QCOMPARE(out.filesBackedUp, 1);
+    QCOMPARE(readFile(QDir(out.backupDir).filePath(QStringLiteral("known.met"))),
+             QByteArrayLiteral("ours"));
+    // Not in the source: left where it is
+    QCOMPARE(readFile(profile.file(QStringLiteral("clients.met"))), QByteArrayLiteral("our credits"));
 }
 
 void tst_LegacyConfigImport::missingSource_isRecordedAndSkipped()
@@ -408,7 +503,7 @@ void tst_LegacyConfigImport::missingSource_isRecordedAndSkipped()
 
     QCOMPARE(profile.run().result, LegacyConfigImport::Result::SourceMissing);
     QCOMPARE(profile.prefs.nick(), nick);
-    QCOMPARE(profile.run().result, LegacyConfigImport::Result::AlreadyDone);
+    QCOMPARE(profile.run().result, LegacyConfigImport::Result::NoRequest);
 }
 
 void tst_LegacyConfigImport::pendingTempDirs_areHandedOutOnce()
@@ -421,8 +516,168 @@ void tst_LegacyConfigImport::pendingTempDirs_areHandedOutOnce()
 
     QCOMPARE(LegacyConfigImport::takePendingTempDirs(profile.dir.path()), QStringList{mfc.temp});
     QVERIFY(LegacyConfigImport::takePendingTempDirs(profile.dir.path()).isEmpty());
-    // Still marked done
-    QCOMPARE(profile.run().result, LegacyConfigImport::Result::AlreadyDone);
+    QCOMPARE(profile.run().result, LegacyConfigImport::Result::NoRequest);
+}
+
+void tst_LegacyConfigImport::request_withoutParts_queuesNothing()
+{
+    MfcInstall mfc;
+    writeFile(mfc.file(QStringLiteral("preferences.ini")), utf16(mfc.prefsIni()));
+    const auto src = LegacyConfigImport::probe(mfc.config);
+    QVERIFY(src);
+
+    Profile profile(mfc.config);
+    QVERIFY(LegacyConfigImport::writeRequest(profile.dir.path(), *src, /*parts=*/false));
+    const auto out = profile.run();
+    QCOMPARE(out.result, LegacyConfigImport::Result::Imported);
+    QVERIFY(out.pendingTempDirs.isEmpty());
+    QCOMPARE(profile.prefs.nick(), QStringLiteral("OldMule"));
+    QVERIFY(LegacyConfigImport::takePendingTempDirs(profile.dir.path()).isEmpty());
+}
+
+// Download folders edited in the wizard replace the detected ones
+void tst_LegacyConfigImport::request_chosenTempDirsWin()
+{
+    MfcInstall mfc;
+    writeFile(mfc.file(QStringLiteral("preferences.ini")), utf16(mfc.prefsIni()));
+    auto src = LegacyConfigImport::probe(mfc.config);
+    QVERIFY(src);
+    src->tempDirs = {mfc.shared, mfc.missing};
+
+    Profile profile(mfc.config);
+    QVERIFY(LegacyConfigImport::writeRequest(profile.dir.path(), *src, /*parts=*/true));
+    const auto out = profile.run();
+    QCOMPARE(out.result, LegacyConfigImport::Result::Imported);
+    // A folder gone by now is dropped
+    QCOMPARE(out.pendingTempDirs, QStringList{mfc.shared});
+}
+
+void tst_LegacyConfigImport::amule_confCategoriesAndSharedDirs()
+{
+    AmuleInstall am;
+    writeFile(am.file(QStringLiteral("amule.conf")), am.conf());
+    writeFile(am.file(QStringLiteral("shareddir.dat")), (am.shared + QStringLiteral("\n")).toUtf8());
+    writeFile(am.file(QStringLiteral("known.met")), "amule known");
+    writeFile(am.file(QStringLiteral("preferences.dat")), "amule hash");
+    writeFile(am.file(QStringLiteral("cryptkey.dat")), "amule key");
+    writeFile(am.temp + QStringLiteral("/001.part.met"), "part");
+    writeFile(am.temp + QStringLiteral("/001.part"), "data");
+
+    const auto src = LegacyConfigImport::probe(am.config);
+    QVERIFY(src);
+    QCOMPARE(src->kind, LegacyConfigImport::SourceKind::Amule);
+    QCOMPARE(src->tempDirs, QStringList{am.temp});
+    QCOMPARE(src->partFiles, 1);
+
+    Profile profile(QString{});
+    QVERIFY(LegacyConfigImport::writeRequest(profile.dir.path(), *src, /*parts=*/true));
+    const auto out = profile.run();
+    QCOMPARE(out.result, LegacyConfigImport::Result::Imported);
+    QCOMPARE(out.filesCopied, 3);
+    QCOMPARE(readFile(profile.file(QStringLiteral("known.met"))), QByteArrayLiteral("amule known"));
+
+    const Preferences& p = profile.prefs;
+    QCOMPARE(p.nick(), QStringLiteral("Back\\slash \"Mule\""));
+    QCOMPARE(p.port(), uint16{4662});
+    QCOMPARE(p.udpPort(), uint16{4662});   // UDPEnable=0 dropped: one port
+    QCOMPARE(p.maxUpload(), 0u);
+    QCOMPARE(p.maxDownload(), 120u);
+    QCOMPARE(p.maxGraphDownloadRate(), 3000u);
+    QCOMPARE(p.maxGraphUploadRate(), 400u);
+    QCOMPARE(p.maxConnections(), uint16{300});
+    QVERIFY(!p.kadEnabled());
+    QVERIFY(p.networkED2K());
+    QCOMPARE(p.incomingDir(), am.incoming);
+
+    // Cat#2 has no title: aMule skips it as well
+    QCOMPARE(out.categories, 1);
+    const auto cats = p.categories();
+    QCOMPARE(cats.size(), 2);
+    QCOMPARE(cats[1].title, QStringLiteral("Bücher"));
+    QCOMPARE(cats[1].incomingPath, am.shared);
+    QCOMPARE(cats[1].comment, QStringLiteral("ebooks"));
+
+    QCOMPARE(out.pendingTempDirs, QStringList{am.temp});
+}
+
+void tst_LegacyConfigImport::discover_windowsLayout()
+{
+    TempDir localAppData;   // %LOCALAPPDATA%/eMule/config
+    MfcInstall program;     // Program Files/eMule, found through the ed2k handler
+    AmuleInstall am;
+    TempDir appData;        // %APPDATA%/aMule
+    const QString local = localAppData.filePath(QStringLiteral("eMule/config"));
+    writeFile(local + QStringLiteral("/preferences.ini"), utf16(QStringLiteral("[eMule]\nNick=Local\n")));
+    writeFile(program.file(QStringLiteral("preferences.ini")), utf16(program.prefsIni()));
+    writeFile(appData.filePath(QStringLiteral("aMule/amule.conf")), am.conf());
+
+    LegacyConfigImport::SearchRoots roots;
+    roots.windowsLayout = true;
+    roots.localAppData = localAppData.path();
+    roots.emuleExeDirs = {program.root.path()};
+    roots.appData = appData.path();
+
+    const auto found = LegacyConfigImport::discover(roots);
+    QCOMPARE(found.size(), 3);
+    QCOMPARE(found[0].kind, LegacyConfigImport::SourceKind::Emule);
+    QCOMPARE(found[0].configDir, QFileInfo(local).canonicalFilePath());
+    QCOMPARE(found[0].nick, QStringLiteral("Local"));
+    QCOMPARE(found[1].configDir, QFileInfo(program.config).canonicalFilePath());
+    QCOMPARE(found[1].nick, QStringLiteral("OldMule"));
+    QCOMPARE(found[2].kind, LegacyConfigImport::SourceKind::Amule);
+}
+
+void tst_LegacyConfigImport::discover_amuleAndWine()
+{
+#ifdef Q_OS_WIN
+    QSKIP("Unix layout");
+#else
+    TempDir home;
+    // ~/.aMule
+    const QString amule = home.filePath(QStringLiteral(".aMule"));
+    writeFile(amule + QStringLiteral("/amule.conf"),
+              QStringLiteral("[eMule]\nNick=Linux\nTempDir=%1/Temp\n").arg(amule).toUtf8());
+    writeFile(amule + QStringLiteral("/Temp/1.part.met"), "x");
+
+    // ~/.wine with eMule per user, C: through dosdevices
+    const QString prefix = home.filePath(QStringLiteral(".wine"));
+    const QString user = prefix + QStringLiteral("/drive_c/users/bob");
+    QDir().mkpath(prefix + QStringLiteral("/dosdevices"));
+    QVERIFY(QFile::link(QStringLiteral("../drive_c"), prefix + QStringLiteral("/dosdevices/c:")));
+    writeFile(user + QStringLiteral("/AppData/Local/eMule/config/preferences.ini"),
+              utf16(QStringLiteral("[eMule]\nNick=Wino\nTempDir=C:\\users\\bob\\Temp\\\n"
+                                   "IncomingDir=C:\\users\\bob\\Incoming\\\n")));
+    writeFile(user + QStringLiteral("/Temp/2.part.met"), "y");
+    writeFile(user + QStringLiteral("/Temp/3.part.met"), "z");
+
+    LegacyConfigImport::SearchRoots roots;
+    roots.unixLayout = true;
+    roots.home = home.path();
+    const auto found = LegacyConfigImport::discover(roots);
+    QCOMPARE(found.size(), 2);
+    QCOMPARE(found[0].kind, LegacyConfigImport::SourceKind::Amule);
+    QCOMPARE(found[0].partFiles, 1);
+    QCOMPARE(found[1].kind, LegacyConfigImport::SourceKind::Emule);
+    QCOMPARE(found[1].nick, QStringLiteral("Wino"));
+    QCOMPARE(found[1].winePrefix, prefix);
+    QCOMPARE(found[1].tempDirs,
+             QStringList{QFileInfo(user + QStringLiteral("/Temp")).canonicalFilePath()});
+    QCOMPARE(found[1].partFiles, 2);
+#endif
+}
+
+void tst_LegacyConfigImport::probe_acceptsParentAndPrefix()
+{
+    MfcInstall mfc;
+    writeFile(mfc.file(QStringLiteral("preferences.ini")), utf16(mfc.prefsIni()));
+    // The install folder, not its config/
+    const auto src = LegacyConfigImport::probe(mfc.root.path());
+    QVERIFY(src);
+    QCOMPARE(src->configDir, mfc.config);
+    QCOMPARE(src->tempDirs, QStringList{mfc.temp});
+
+    TempDir empty;
+    QVERIFY(!LegacyConfigImport::probe(empty.path()));
 }
 
 QTEST_MAIN(tst_LegacyConfigImport)

@@ -90,8 +90,9 @@ using Kind = PrefSpec::Kind;
     t << advanced(number("maxHalfConnections", 1, 100, "", "Half-open connections allowed at once."));
     t << advanced(number("maxServedBuddies", 0, Preferences::kMaxServedBuddiesLimit, "",
                          "Firewalled Kad nodes served as buddy at once while this node is "
-                         "reachable. 0 = auto by upload capacity: 4 below 500 KiB/s, 8 below 2500 "
-                         "or unknown, 16 below 12500, 32 below 62500, 64 below 125000, else 128. "
+                         "reachable. 0 = auto by upload capacity: 4 below 4 Mbit/s (488 KiB/s), 8 "
+                         "below 20 Mbit/s or unknown, 16 below 100, 32 below 500, 64 below 1000, "
+                         "else 128. "
                          "In effect capped at a tenth of maxConnections."));
     t << number("queueSize", 2000, 50000, "", "Upload queue length in clients.");
     t << number("uploadSlotTargetRate", 0, 256, "KiB/s",
@@ -262,7 +263,8 @@ using Kind = PrefSpec::Kind;
     t << flag("ed3kLan", "Find ed3k nodes in the local network (LAN discovery). Restarts the node.");
     t << flag("ed3kHide", "Hide this node (ed3k hops.md §1): new ed3k searches, downloads and shares go under the "
                           "anonymous key, through paths of other nodes. Files keep the key they have.");
-    t << number("ed3kHops", 1, 3, "", "Hops of every path while hiding (1 = a relay that sees everything, not anonymity).");
+    t << number("ed3kHops", 0, 3, "", "Hops of every path while hiding (0 = deniable, not hidden: only while forwarding for "
+                                      "others; 1 = a relay that sees everything, not anonymity).");
     t << flag("ed3kHopping", "While hiding, forward traffic for other hiding nodes (hops.md §5).");
     t << number("ed3kHopShare", 1, 100, "%", "Share of the upload limit given to the paths of others.");
     t << advanced(number("ed3kSitePort", 1, 65535, "", "TCP port of the local ed3k website server (loopback only). "

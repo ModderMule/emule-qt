@@ -39,8 +39,13 @@ Ed3kHidingGroup::Ed3kHidingGroup(IpcClient* ipc, QWidget* parent)
     m_hopsSpin = new QSpinBox(this);
     m_hopsSpin->setRange(1, 3);
     m_hopsSpin->setToolTip(tr("Nodes between you and the others, for every connection and search. More hops "
-                              "hide better and are slower."));
+                              "hide better and are slower. 0 (only while forwarding for others): deniable, "
+                              "not hidden - nobody stands in between."));
     hopsRow->addWidget(m_hopsSpin);
+    // hops.md §2.6: the client tells the user what 0 gives
+    m_zeroHint = new QLabel(tr("0 = deniable, not hidden"), this);
+    m_zeroHint->setEnabled(false);
+    hopsRow->addWidget(m_zeroHint);
     hopsRow->addStretch();
     layout->addLayout(hopsRow);
     m_hoppingCheck = new QCheckBox(tr("Forward traffic for others"), this);
@@ -68,6 +73,11 @@ Ed3kHidingGroup::Ed3kHidingGroup(IpcClient* ipc, QWidget* parent)
     notes->setTextFormat(Qt::RichText);
     layout->addWidget(notes);
 
+    // hops.md §1: forwarding for others is on by default while hiding is on
+    connect(m_hideCheck, &QCheckBox::toggled, this, [this](bool on) {
+        if (on && !m_loading)
+            m_hoppingCheck->setChecked(true);
+    });
     for (QCheckBox* box : {m_hideCheck, m_hoppingCheck})
         connect(box, &QCheckBox::toggled, this, [this] {
             updateEnabled();
@@ -87,8 +97,9 @@ void Ed3kHidingGroup::load(const QCborMap& p)
 {
     m_loading = true;
     m_hideCheck->setChecked(p.value(QStringLiteral("ed3kHide")).toBool(false));
-    m_hopsSpin->setValue(int(p.value(QStringLiteral("ed3kHops")).toInteger(1)));
     m_hoppingCheck->setChecked(p.value(QStringLiteral("ed3kHopping")).toBool(true));
+    updateEnabled();   // the hops range follows hopping (0 only with it)
+    m_hopsSpin->setValue(int(p.value(QStringLiteral("ed3kHops")).toInteger(1)));
     m_shareSpin->setValue(int(p.value(QStringLiteral("ed3kHopShare")).toInteger(25)));
     updateEnabled();
     m_loading = false;
@@ -186,9 +197,13 @@ void Ed3kHidingGroup::newAnonKey()
 void Ed3kHidingGroup::updateEnabled()
 {
     const bool on = m_hideCheck->isChecked();
+    const bool hopping = m_hoppingCheck->isChecked();
     m_hopsSpin->setEnabled(on);
+    // hops.md §2.6: 0 only while forwarding for others; turning that off at 0 gives 1
+    m_hopsSpin->setMinimum(hopping ? 0 : 1);
+    m_zeroHint->setVisible(hopping);
     m_hoppingCheck->setEnabled(on);
-    m_shareSpin->setEnabled(on && m_hoppingCheck->isChecked());
+    m_shareSpin->setEnabled(on && hopping);
 }
 
 } // namespace eMule

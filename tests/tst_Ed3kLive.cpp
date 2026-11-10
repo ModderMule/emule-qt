@@ -10,7 +10,10 @@
 /// skipped once and the next segment has gap (#11); what can't be played is not joined (§2.3).
 /// Batch 15: the channel file is kept shared off air and after a restart (the same bytes), and
 /// Delete Channel withdraws it (#5); no codecs named is left to the player (#7).
+/// Hiding (hops.md §1): streams and channels go under Ed3kHide::keyForUse() and keep it; events
+/// of the other node's key are not theirs; an anonymous channel waits for hiding.
 
+#include "Ed3kHide.h"
 #include "Ed3kLive.h"
 #include "Ed3kLiveBroadcast.h"
 #include "Ed3kLiveFiles.h"
@@ -143,6 +146,31 @@ struct SegmentSpy {
     }
 };
 
+Ed3kHideSettings hidden()
+{
+    Ed3kHideSettings h;
+    h.on = true;
+    h.hops = 1;
+    return h;
+}
+
+::ed3k::Stream streamOfHex(const QString& hex)
+{
+    ::ed3k::Stream s{};
+    const QByteArray raw = QByteArray::fromHex(hex.toLatin1());
+    std::copy_n(reinterpret_cast<const std::uint8_t*>(raw.constData()), std::min<qsizetype>(raw.size(), qsizetype(s.bytes.size())),
+                s.bytes.begin());
+    return s;
+}
+
+::ed3k::Root rootOfHex(const QString& hex)
+{
+    ::ed3k::Root r{};
+    const QByteArray raw = QByteArray::fromHex(hex.toLatin1());
+    std::copy_n(reinterpret_cast<const std::uint8_t*>(raw.constData()), std::min<qsizetype>(raw.size(), 32), r.bytes.begin());
+    return r;
+}
+
 /// plays everything: the tests not about §2.3 must not hang on what this machine decodes
 /// (Qt's FFmpeg on Linux may lack H.264)
 QString playsAll(const QString&, const QString&)
@@ -175,6 +203,8 @@ private slots:
     void anOversizedInitIsSkippedOnceWithAGap();
     void whatCannotBePlayedIsNotJoined();
     void theChannelFileIsKeptOffAirAndAfterARestart();
+    void streamsKeepTheKeyTheyStartedUnder();
+    void anAnonymousChannelWaitsForHiding();
     void cleanup() { QTest::qWait(10); }
 };
 
@@ -873,6 +903,107 @@ void tst_Ed3kLive::theChannelFileIsKeptOffAirAndAfterARestart()
     // not published at the next start
     Ed3kLiveBroadcast later(a, da.path());
     QVERIFY(later.channels().empty());
+}
+
+void tst_Ed3kLive::streamsKeepTheKeyTheyStartedUnder()
+{
+    QTemporaryDir da, db, hls;
+    Ed3kSession a, b;
+    QVERIFY(a.start(loopback(da.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    HlsFolder folder(hls.path());
+    folder.add();
+    // not hiding: the node key, kept in channels.json; the channel file recorded under it
+    Ed3kLiveBroadcast caster(a, da.path());
+    Ed3kLiveBroadcast::Options o;
+    o.folder = hls.path();
+    o.title = QStringLiteral("Node TV");
+    o.codecs = QStringLiteral("avc1.64001f");
+    const auto started = caster.start(o);
+    QVERIFY2(started, started ? "" : started.error().toUtf8().constData());
+    QVERIFY(!started->anon);
+    QCOMPARE(channelsOf(da.path()).at(0).toObject().value(QStringLiteral("key")).toString(), QStringLiteral("node"));
+    QCOMPARE(a.hide().recorded(rootOfHex(started->channelFile)), std::optional(::ed3k::KeyKind::Node));
+
+    Ed3kNames names(b, db.path());
+    names.start();
+    Ed3kSiteServer sites(b, names);
+    Ed3kLive live(b, sites);
+    live.setPlayCheck(playsAll);
+    const auto id = live.watch(started->link);
+    QVERIFY(id);
+    QVERIFY(!live.info(*id)->anon);
+    // an event of the anonymous node naming the stream is not the node key's stream's
+    const ::ed3k::Stream stream = streamOfHex(*id);
+    bool handled = false;
+    emit b.keyedEventPolled(::ed3k::Event{::ed3k::event::LiveNeighbour{stream, *a.nodeId()}}, ::ed3k::KeyKind::Anon, &handled);
+    QVERIFY(!handled);
+    QCOMPARE(live.info(*id)->neighbours, 0);
+    emit b.eventPolled(::ed3k::Event{::ed3k::event::LiveNeighbour{stream, *a.nodeId()}}, &handled);
+    QVERIFY(handled);
+    QCOMPARE(live.info(*id)->neighbours, 1);
+    QVERIFY(live.leave(*id));
+
+    // hiding on B: a stream watched now goes under the anonymous key and stays there
+    b.setHideSettings(hidden());
+    QVERIFY(b.hide().hiding());
+    QCOMPARE(b.hide().keyForUse(), ::ed3k::KeyKind::Anon);
+    const auto anonId = live.watch(started->link);
+    QVERIFY2(anonId, anonId ? "" : anonId.error().toUtf8().constData());
+    QVERIFY(live.info(*anonId)->anon);
+    handled = false;
+    emit b.eventPolled(::ed3k::Event{::ed3k::event::LiveNeighbour{streamOfHex(*anonId), *a.nodeId()}}, &handled);
+    QVERIFY(!handled);   // the node key's events are not the anonymous stream's
+    emit b.keyedEventPolled(::ed3k::Event{::ed3k::event::LiveNeighbour{streamOfHex(*anonId), *a.nodeId()}}, ::ed3k::KeyKind::Anon,
+                            &handled);
+    QVERIFY(handled);
+    QCOMPARE(live.info(*anonId)->neighbours, 1);
+    // hiding stopped: the anonymous stream is gone (never falls back to the node key)
+    Ed3kHideSettings off;
+    b.setHideSettings(off);
+    QVERIFY(!live.info(*anonId));
+    QVERIFY(caster.stop(started->id));
+    names.stop();
+}
+
+void tst_Ed3kLive::anAnonymousChannelWaitsForHiding()
+{
+    QTemporaryDir da, hls;
+    Ed3kSession a;
+    QVERIFY(a.start(loopback(da.path())));
+    HlsFolder folder(hls.path());
+    folder.add();
+    a.setHideSettings(hidden());
+    QVERIFY(a.hide().hiding());
+    Ed3kLiveBroadcast caster(a, da.path());
+    Ed3kLiveBroadcast::Options o;
+    o.folder = hls.path();
+    o.title = QStringLiteral("Hidden TV");
+    o.codecs = QStringLiteral("avc1.64001f");
+    const auto started = caster.start(o);
+    QVERIFY2(started, started ? "" : started.error().toUtf8().constData());
+    QVERIFY(started->anon);
+    QCOMPARE(channelsOf(da.path()).at(0).toObject().value(QStringLiteral("key")).toString(), QStringLiteral("anon"));
+    const auto root = rootOfHex(started->channelFile);
+    QCOMPARE(a.hide().recorded(root), std::optional(::ed3k::KeyKind::Anon));
+    // its channel file is never held under the node key
+    const auto held = a.engine()->fileKey(root);
+    QVERIFY(held);
+    QVERIFY(!*held || **held == ::ed3k::KeyKind::Anon);
+    // hiding off: the broadcast is cut (kept for a resume), a start is refused
+    Ed3kHideSettings off;
+    a.setHideSettings(off);
+    QVERIFY(!caster.isBroadcast(started->id));
+    QVERIFY(!onAirOf(da.path(), o.title).isEmpty());
+    QVERIFY(!caster.start(o));
+    const auto offKey = a.engine()->fileKey(root);
+    QVERIFY(offKey && !*offKey);   // not shared while hiding is off
+    // hiding again: it goes on under the anonymous key
+    a.setHideSettings(hidden());
+    QTRY_VERIFY_WITH_TIMEOUT(!caster.list().empty(), 5000);
+    QVERIFY(caster.list().front().anon);
+    QCOMPARE(caster.list().front().title, o.title);
+    QVERIFY(caster.stop(caster.list().front().id));
 }
 
 QTEST_GUILESS_MAIN(tst_Ed3kLive)

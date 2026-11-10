@@ -48,6 +48,7 @@ namespace natt { class NatRendezvous; }
 class ServerConnect;
 class ServerList;
 class SharedFileList;
+struct PartMetPreload;
 class Scheduler;
 class Statistics;
 class StatsHistory;
@@ -254,7 +255,10 @@ private:
 
     enum class LoadStage { IpFilter, Credits, KnownFiles, SharedFiles, PartFiles, Network, Done };
     LoadStage m_loadStage = LoadStage::Done;
-    QStringList m_pendingPartMets;    ///< .part.met files loadStep() has yet to read
+    std::vector<PartMetPreload> m_pendingPartMets;   ///< read on the pool, loadStep() parses
+    std::size_t m_nextPartMet = 0;    ///< next of m_pendingPartMets to load
+    bool m_partMetsListed = false;    ///< m_pendingPartMets came back from the pool
+    bool m_partMetsAwaited = false;   ///< loadStep() stopped to wait for that
     bool m_knownFilesLoaded = false;  ///< known.met was read: saving it is safe
     bool m_sharedFilesScanned = false;  ///< the share is listed: a shared-only save is safe
     bool m_creditsLoaded = false;     ///< same for clients.met

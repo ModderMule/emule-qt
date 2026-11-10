@@ -924,9 +924,14 @@ void Ed3kOptionsPages::applyStatus(const QCborMap& st)
     applyHosterStatus(st.value(QStringLiteral("hoster")).toMap());
     m_hiding->applyStatus(running ? st.value(QStringLiteral("hide")).toMap() : QCborMap{});
     // batch 13: the last chain read/write the node refused (its text is plain text of a stranger)
-    const QString chainRefused = st.value(QStringLiteral("chain")).toMap().value(QStringLiteral("refused")).toString();
-    m_chainRefusedLabel->setText(chainRefused);
-    m_chainRefusedLabel->setVisible(!chainRefused.isEmpty());
+    const QCborMap chain = st.value(QStringLiteral("chain")).toMap();
+    // batch 16: and the last write of unknown outcome (may still land, not failed)
+    QStringList chainNotes;
+    for (const auto* key : {"refused", "unknown"})
+        if (const QString t = chain.value(QLatin1String(key)).toString(); !t.isEmpty())
+            chainNotes << t;
+    m_chainRefusedLabel->setText(chainNotes.join(QLatin1Char('\n')));
+    m_chainRefusedLabel->setVisible(!chainNotes.isEmpty());
 
     const QCborMap c = st.value(QStringLiteral("credit")).toMap();
     m_creditStatus = c;

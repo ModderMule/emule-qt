@@ -135,6 +135,7 @@ SOURCES += \
     dialogs/FileDetailDialog.cpp \
     dialogs/FindInListDialog.cpp \
     dialogs/FirstStartWizard.cpp \
+    dialogs/LegacyImportPage.cpp \
     dialogs/ImportDownloadsDialog.cpp \
     dialogs/IPFilterDialog.cpp \
     dialogs/MetadataPage.cpp \
@@ -258,6 +259,7 @@ HEADERS += \
     dialogs/PortChangeNotice.h \
     dialogs/PortMapStatusText.h \
     dialogs/FirstStartWizard.h \
+    dialogs/LegacyImportPage.h \
     dialogs/ImportDownloadsDialog.h \
     dialogs/IPFilterDialog.h \
     dialogs/MetadataPage.h \

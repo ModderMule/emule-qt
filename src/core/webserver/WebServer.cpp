@@ -32,6 +32,7 @@
 #include "server/Server.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
+#include "stats/SaveFolderSpace.h"
 #include "stats/Statistics.h"
 #include "stats/StatsHistory.h"
 #include "transfer/DownloadQueue.h"
@@ -69,6 +70,7 @@
 #include <QSslKey>
 #include <QSslServer>
 #include <QTcpServer>
+#include <QThreadPool>
 #include <QTimer>
 #include <QUrlQuery>
 #include <QUuid>
@@ -153,66 +155,96 @@ constexpr int kStreamPollMs = 250;
     return err;
 }
 
-/// A read-only window [start, start+length) onto a file.
+/// A read-only window onto a file, read ahead on the pool (#84).
 ///
-/// What lets the incoming stream route answer a Range without assembling the
-/// body in memory the way serveRange has to. QHttpServerResponder writes a
-/// device to its end and takes Content-Length off size(), so the window has to
-/// live inside the device: a bare QFile seeked to the offset would over-report
-/// both.
-class RangeFileDevice : public QIODevice     // no Q_OBJECT: adds no signals
+/// QHttpServerResponder reads the device it writes on this thread, a chunk per
+/// readyRead or bytesWritten, so a QFile here would read a NAS on the core
+/// thread. This one hands out what the pool read ahead and asks for more; while
+/// nothing is buffered a read returns 0 and readyRead says when to try again.
+/// Not sequential, so the responder still sends size() as Content-Length.
+class PrefetchFileDevice : public QIODevice     // no Q_OBJECT: adds no signals
 {
 public:
-    RangeFileDevice(const QString& path, qint64 start, qint64 length, QObject* parent)
-        : QIODevice(parent), m_file(path), m_start(start), m_length(length)
+    static constexpr qint64 kChunk = 256 * 1024;
+    static constexpr qint64 kAhead = 1024 * 1024;
+
+    /// @p file already open and seeked, with no thread affinity; @p first read from it.
+    PrefetchFileDevice(std::shared_ptr<QFile> file, qint64 length, QByteArray first, QObject* parent)
+        : QIODevice(parent), m_file(std::move(file)), m_length(length), m_buf(std::move(first)),
+          m_fetched(m_buf.size())
     {
     }
 
-    bool open(OpenMode mode) override
-    {
-        if (!m_file.open(QIODevice::ReadOnly) || !m_file.seek(m_start)) {
-            m_file.close();
-            return false;
-        }
-        return QIODevice::open(mode);
-    }
+    bool open(OpenMode mode) override { return QIODevice::open(mode | QIODevice::Unbuffered); }
 
-    void close() override
-    {
-        QIODevice::close();
-        m_file.close();
-    }
-
-    /// The window, not the file. Everything else follows from this: QIODevice
-    /// derives bytesAvailable() and atEnd() from it, and the responder sends it
-    /// as Content-Length.
+    /// The window, sent as Content-Length
     qint64 size() const override { return m_length; }
-
     bool isSequential() const override { return false; }
+    qint64 bytesAvailable() const override { return m_buf.size() - m_bufPos; }
+    bool atEnd() const override { return m_failed || pos() >= m_length; }
 
-    bool seek(qint64 pos) override
-    {
-        if (pos < 0 || pos > m_length || !m_file.seek(m_start + pos))
-            return false;
-        return QIODevice::seek(pos);
-    }
+    /// Forward only: nothing behind is kept
+    bool seek(qint64 pos) override { return pos == this->pos() && QIODevice::seek(pos); }
 
 protected:
     qint64 readData(char* data, qint64 maxSize) override
     {
-        // pos() is where this read starts -- QIODevice advances it afterwards.
-        const qint64 left = m_length - pos();
-        if (left <= 0)
-            return 0;
-        return m_file.read(data, qMin(maxSize, left));
+        const qint64 n = qMin(maxSize, bytesAvailable());
+        std::memcpy(data, m_buf.constData() + m_bufPos, static_cast<size_t>(n));
+        m_bufPos += n;
+        if (m_bufPos == m_buf.size()) {
+            m_buf.clear();
+            m_bufPos = 0;
+        }
+        requestMore();
+        return n;
     }
 
     qint64 writeData(const char*, qint64) override { return -1; }
 
 private:
-    QFile  m_file;
-    qint64 m_start;
+    void requestMore()
+    {
+        if (m_reading || m_failed || m_fetched >= m_length || bytesAvailable() >= kAhead)
+            return;
+        m_reading = true;
+        const qint64 want = qMin(kChunk, m_length - m_fetched);
+        QThreadPool::globalInstance()->start([self = QPointer<QObject>(this), file = m_file, want] {
+            QByteArray data = file->read(want);
+            QMetaObject::invokeMethod(QCoreApplication::instance(), [self, data = std::move(data), want] {
+                if (self)
+                    static_cast<PrefetchFileDevice*>(self.data())->onRead(data, want);
+            });
+        });
+    }
+
+    void onRead(const QByteArray& data, qint64 want)
+    {
+        m_reading = false;
+        if (data.size() < want) {
+            // Shrunk or unreadable: the promised length cannot be kept
+            logWarning(QStringLiteral("Incoming: read failed at %1 of %2 bytes").arg(m_fetched).arg(m_length));
+            m_failed = true;
+            emit readChannelFinished();
+            return;
+        }
+        if (m_bufPos > 0) {
+            m_buf.remove(0, m_bufPos);
+            m_bufPos = 0;
+        }
+        m_buf.append(data);
+        m_fetched += data.size();
+        emit readyRead();
+        requestMore();
+    }
+
+    std::shared_ptr<QFile> m_file;   ///< read by one pool task at a time
     qint64 m_length;
+    QByteArray m_buf;
+    qint64 m_bufPos = 0;
+    qint64 m_fetched;                ///< bytes of the window read so far
+    bool m_reading = false;
+    bool m_failed = false;
 };
 
 QHttpServerResponse jsonError(int code, const QString& message)
@@ -1454,48 +1486,178 @@ QString pageHead(const QString& title, const QString& extraCss = {})
 
 } // namespace
 
-QHttpServerResponse WebServer::handleIncomingListing(const QHttpServerRequest& req)
+QFuture<QHttpServerResponse> WebServer::handleIncomingListing(const QHttpServerRequest& req)
 {
-    if (auto refusal = streamTokenRefusal(req, u"Incoming"))
-        return std::move(*refusal);
+    auto promise = std::make_shared<QPromise<QHttpServerResponse>>();
+    promise->start();
+    QFuture<QHttpServerResponse> future = promise->future();
+
+    if (auto refusal = streamTokenRefusal(req, u"Incoming")) {
+        promise->addResult(std::move(*refusal));
+        promise->finish();
+        return future;
+    }
 
     const QUrlQuery query(req.query());
     const QString token = query.queryItemValue(QStringLiteral("token"));
-
+    // ?play= is the same route on purpose: the player page is one <video> tag and
+    // a back link, not a surface of its own.
+    const QString play = query.queryItemValue(QStringLiteral("play"), QUrl::FullyDecoded);
+    const QString rel = query.queryItemValue(QStringLiteral("path"), QUrl::FullyDecoded);
     // No session on a token route, so the web UI's pages name their language. Kept
     // only when usable, and handed on to every link the page draws.
     QString lang = query.queryItemValue(QStringLiteral("lang"));
     if (!m_translations || !m_translations->isUsable(lang))
         lang.clear();
+
+    QThreadPool::globalInstance()->start(
+        [self = QPointer<WebServer>(this), dirs = incomingDirs(), play, rel, token, lang, promise] {
+            IncomingLookup found = lookUpIncoming(dirs, play.isEmpty() ? rel : play, !play.isEmpty());
+            QMetaObject::invokeMethod(QCoreApplication::instance(),
+                [self, found = std::move(found), play, rel, token, lang, promise] {
+                    promise->addResult(self ? self->incomingListingResponse(found, play, rel, token, lang)
+                                            : jsonError(503, QStringLiteral("Shutting down")));
+                    promise->finish();
+                });
+        });
+    return future;
+}
+
+QHttpServerResponse WebServer::incomingListingResponse(const IncomingLookup& found, const QString& play,
+                                                       const QString& rel, const QString& token,
+                                                       const QString& lang)
+{
     const TranslationRouter::Scope language(m_translations, webLanguage({}, lang));
 
-    // ?play= is the same route on purpose: the player page is one <video> tag and
-    // a back link, not a surface of its own.
-    const QString play = query.queryItemValue(QStringLiteral("play"), QUrl::FullyDecoded);
     if (!play.isEmpty()) {
-        const QString abs = resolveIncomingPath(play);
-        if (abs.isEmpty() || !QFileInfo(abs).isFile()) {
+        if (found.abs.isEmpty() || !found.isFile) {
             logWarning(QStringLiteral("Incoming: 404 — cannot play %1").arg(play));
             return jsonError(404, QStringLiteral("File not found"));
         }
         return QHttpServerResponse(QByteArrayLiteral("text/html; charset=utf-8"),
-                                   renderIncomingPlayer(play, QFileInfo(abs).fileName(), token, lang));
+                                   renderIncomingPlayer(play, QFileInfo(found.abs).fileName(), found.check,
+                                                        token, lang));
     }
 
-    const QString rel = query.queryItemValue(QStringLiteral("path"), QUrl::FullyDecoded);
-    const QString abs = resolveIncomingPath(rel);
-    if (abs.isEmpty()) {
+    if (found.abs.isEmpty()) {
         logWarning(QStringLiteral("Incoming: 404 — no such folder: %1")
                        .arg(rel.isEmpty() ? QStringLiteral("<incoming>") : rel));
         return jsonError(404, QStringLiteral("Folder not found"));
     }
-    if (!QFileInfo(abs).isDir()) {
+    if (!found.isDir) {
         logWarning(QStringLiteral("Incoming: 400 — not a folder: %1").arg(rel));
         return jsonError(400, QStringLiteral("Not a folder"));
     }
 
     return QHttpServerResponse(QByteArrayLiteral("text/html; charset=utf-8"),
-                               renderIncomingListing(abs, rel, token, lang));
+                               renderIncomingListing(found, rel, token, lang));
+}
+
+WebServer::IncomingLookup WebServer::lookUpIncoming(const IncomingDirs& dirs, const QString& relPath,
+                                                    bool wantFile)
+{
+    IncomingLookup found;
+    found.selected = splitIncomingPath(dirs, relPath);
+    found.abs = resolveIncomingPath(dirs, relPath);
+    if (found.abs.isEmpty())
+        return found;
+
+    const QFileInfo info(found.abs);
+    found.isDir = info.isDir();
+    found.isFile = info.isFile();
+    if (wantFile) {
+        if (found.isFile)
+            found.check = checkFile(found.abs, info.fileName());
+        return found;
+    }
+    if (!found.isDir)
+        return found;
+
+    const QString configured = found.selected.categoryIndex > 0
+                                   ? dirs.categories.value(found.selected.categoryIndex)
+                                   : dirs.global;
+    found.spelled = QDir::cleanPath(found.selected.remainder.isEmpty()
+                                        ? configured
+                                        : configured + QLatin1Char('/') + found.selected.remainder);
+
+    const QFileInfoList entries = QDir(found.abs).entryInfoList(
+        QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot, QDir::DirsFirst | QDir::Name);
+    for (const QFileInfo& fi : entries) {
+        IncomingEntry entry{fi.fileName(), fi.canonicalFilePath(), fi.absoluteFilePath(), fi.isDir(),
+                            fi.size(), fi.lastModified(), {}};
+        // Read for every file: whether the share has settled it is only known back on
+        // the core thread, and checkFile() costs nothing for an extension it promises
+        // nothing about
+        if (!entry.dir)
+            entry.check = checkFile(entry.absolute, entry.name);
+        found.entries.append(std::move(entry));
+    }
+    return found;
+}
+
+struct WebServer::IncomingSend {
+    QString abs;             ///< empty: not a file
+    QString name;
+    QString suffix;
+    QString rel;
+    qint64 size = -1;
+    ContainerCheck check;    ///< stream only
+    bool hasRange = false;
+    bool badRange = false;   ///< 416
+    qint64 start = 0;
+    qint64 end = -1;
+    std::shared_ptr<QFile> file;   ///< open at start, no thread affinity; null: could not open
+    QByteArray first;              ///< read from it already
+};
+
+std::shared_ptr<WebServer::IncomingSend> WebServer::prepareIncomingSend(const IncomingDirs& dirs,
+                                                                        const QString& relPath,
+                                                                        const QByteArray* rangeHeader)
+{
+    auto send = std::make_shared<IncomingSend>();
+    send->rel = relPath;
+    const QString abs = resolveIncomingPath(dirs, relPath);
+    const QFileInfo info(abs);
+    if (abs.isEmpty() || !info.isFile())
+        return send;
+    send->abs = abs;
+    send->name = info.fileName();
+    send->suffix = info.suffix().toLower();
+    send->size = info.size();
+    if (send->size <= 0)
+        return send;
+    send->end = send->size - 1;
+
+    if (rangeHeader) {
+        send->check = checkFile(abs, send->name);
+        send->hasRange = !rangeHeader->isEmpty();
+        if (send->hasRange) {
+            qint64 parsedEnd = -1;
+            if (!parseRange(*rangeHeader, send->start, parsedEnd)) {
+                send->badRange = true;
+                return send;
+            }
+            send->end = parsedEnd < 0 ? send->size - 1 : parsedEnd;
+            // RFC 7233 §2.1: clamp last-byte-pos to file size
+            if (send->end >= send->size)
+                send->end = send->size - 1;
+            if (send->start >= send->size || send->start > send->end) {
+                send->badRange = true;
+                return send;
+            }
+        }
+    }
+
+    auto file = std::make_shared<QFile>(abs);
+    if (!file->open(QIODevice::ReadOnly) || !file->seek(send->start))
+        return send;
+    const qint64 length = send->end - send->start + 1;
+    send->first = file->read(qMin(PrefetchFileDevice::kChunk, length));
+    if (send->first.isEmpty())
+        return send;
+    file->moveToThread(nullptr);   // read on the pool from now on, freed anywhere
+    send->file = std::move(file);
+    return send;
 }
 
 void WebServer::handleIncomingStream(const QHttpServerRequest& req,
@@ -1508,17 +1670,31 @@ void WebServer::handleIncomingStream(const QHttpServerRequest& req,
 
     const QUrlQuery query(req.query());
     const QString rel = query.queryItemValue(QStringLiteral("file"), QUrl::FullyDecoded);
-    const QString abs = resolveIncomingPath(rel);
-    const QFileInfo info(abs);
-    if (abs.isEmpty() || !info.isFile()) {
-        logWarning(QStringLiteral("Incoming: 404 — cannot stream %1").arg(rel));
+    const QByteArray rangeHeader = req.headers().combinedValue(QByteArrayLiteral("Range"));
+
+    // Resolve, stat, sniff and open on the pool; answer back here
+    auto pending = std::make_shared<QHttpServerResponder>(std::move(responder));
+    QThreadPool::globalInstance()->start([self = QPointer<WebServer>(this), dirs = incomingDirs(), rel,
+                                          rangeHeader, pending]() mutable {
+        auto send = prepareIncomingSend(dirs, rel, &rangeHeader);
+        // Moved, not copied: the responder must die on the core thread
+        QMetaObject::invokeMethod(QCoreApplication::instance(), [self, send = std::move(send),
+                                                                 pending = std::move(pending)] {
+            if (self)
+                self->sendIncomingStream(*pending, *send);
+        });
+    });
+}
+
+void WebServer::sendIncomingStream(QHttpServerResponder& responder, IncomingSend& send)
+{
+    if (send.size < 0) {
+        logWarning(QStringLiteral("Incoming: 404 — cannot stream %1").arg(send.rel));
         responder.sendResponse(jsonError(404, QStringLiteral("File not found")));
         return;
     }
-
-    const qint64 fileSize = info.size();
-    if (fileSize <= 0) {
-        logWarning(QStringLiteral("Incoming: 404 — nothing to stream in %1").arg(rel));
+    if (send.size == 0) {
+        logWarning(QStringLiteral("Incoming: 404 — nothing to stream in %1").arg(send.rel));
         responder.sendResponse(jsonError(404, QStringLiteral("File not available")));
         return;
     }
@@ -1529,44 +1705,26 @@ void WebServer::handleIncomingStream(const QHttpServerRequest& req,
     // that carried no Range at all, which a browser then saves as a truncated
     // download. A finished file is one contiguous file on disk with no holes, so
     // it streams straight off the device and a range-less GET gets its 200.
-    const QByteArray rangeHeader = req.headers().combinedValue(QByteArrayLiteral("Range"));
-
-    qint64 start = 0;
-    qint64 end   = fileSize - 1;
-    const bool hasRange = !rangeHeader.isEmpty();
-
-    if (hasRange) {
-        qint64 parsedEnd = -1;
-        if (!parseRange(rangeHeader, start, parsedEnd)) {
-            logWarning(QStringLiteral("Incoming: 416 — malformed Range header: %1")
-                           .arg(QString::fromLatin1(rangeHeader)));
-            responder.sendResponse(rangeNotSatisfiable(fileSize));
-            return;
-        }
-        end = parsedEnd < 0 ? fileSize - 1 : parsedEnd;
-        // RFC 7233 §2.1: clamp last-byte-pos to file size
-        if (end >= fileSize)
-            end = fileSize - 1;
-        if (start >= fileSize || start > end) {
-            logWarning(QStringLiteral("Incoming: 416 — out of bounds: start=%1 end=%2 size=%3")
-                           .arg(start).arg(end).arg(fileSize));
-            responder.sendResponse(rangeNotSatisfiable(fileSize));
-            return;
-        }
+    if (send.badRange) {
+        logWarning(QStringLiteral("Incoming: 416 — bad Range for %1 (size %2)").arg(send.rel).arg(send.size));
+        responder.sendResponse(rangeNotSatisfiable(send.size));
+        return;
+    }
+    if (!send.file) {
+        logWarning(QStringLiteral("Incoming: 500 — cannot open %1").arg(send.abs));
+        responder.sendResponse(jsonError(500, QStringLiteral("Cannot open file")));
+        return;
     }
 
     // Parented rather than owned outright, same as the download route: the
     // responder documents that it takes the device, and a parent makes the other
     // reading harmless instead of a leak per request.
-    auto* device = new RangeFileDevice(abs, start, end - start + 1, this);
-    if (!device->open(QIODevice::ReadOnly)) {
-        logWarning(QStringLiteral("Incoming: 500 — cannot open %1").arg(abs));
-        delete device;
-        responder.sendResponse(jsonError(500, QStringLiteral("Cannot open file")));
-        return;
-    }
+    auto* device = new PrefetchFileDevice(std::move(send.file), send.end - send.start + 1,
+                                          std::move(send.first), this);
+    device->open(QIODevice::ReadOnly);
 
-    const QString name = info.fileName();
+    const QString& name = send.name;
+    const ContainerCheck& real = send.check;
     QMimeDatabase mimeDb;
 
     // The extension decides the type, not the content: QMimeDatabase content
@@ -1575,12 +1733,12 @@ void WebServer::handleIncomingStream(const QHttpServerRequest& req,
     // contradicts its name -- an incoming folder is full of those, and sending
     // the type it really is turns a player stuck at 0:00 into one that plays.
     QString mimeName = mimeDb.mimeTypeForFile(name, QMimeDatabase::MatchExtension).name();
-    if (const ContainerCheck real = checkFile(abs, name); real.isSuspect()) {
+    if (real.isSuspect()) {
         // Only a container we positively identified may change the type. Knowing
         // the file is not what it claims is not the same as knowing what it is,
         // and guessing there would just trade one wrong type for another.
         logWarning(QStringLiteral("Incoming: %1 is named .%2 but contains %3")
-                       .arg(name, info.suffix().toLower(),
+                       .arg(name, send.suffix,
                             real.actual.isEmpty() ? QStringLiteral("no recognised container")
                                                   : real.actual));
         if (!real.mimeType.isEmpty())
@@ -1591,9 +1749,9 @@ void WebServer::handleIncomingStream(const QHttpServerRequest& req,
     headers.append(QHttpHeaders::WellKnownHeader::ContentType, mimeName);
     // Unlike the download route this one keeps the promise, so it may make it.
     headers.append(QByteArrayLiteral("Accept-Ranges"), QStringLiteral("bytes"));
-    if (hasRange) {
+    if (send.hasRange) {
         headers.append(QByteArrayLiteral("Content-Range"),
-                       QStringLiteral("bytes %1-%2/%3").arg(start).arg(end).arg(fileSize));
+                       QStringLiteral("bytes %1-%2/%3").arg(send.start).arg(send.end).arg(send.size));
     }
     // inline, not attachment: this route exists to be played. Quoted the same way
     // the download route quotes it — a name carrying a quote would otherwise end
@@ -1604,8 +1762,8 @@ void WebServer::handleIncomingStream(const QHttpServerRequest& req,
                             QString::fromLatin1(QUrl::toPercentEncoding(name))));
 
     responder.write(device, headers,
-                    hasRange ? static_cast<QHttpServerResponse::StatusCode>(206)
-                             : QHttpServerResponse::StatusCode::Ok);
+                    send.hasRange ? static_cast<QHttpServerResponse::StatusCode>(206)
+                                  : QHttpServerResponse::StatusCode::Ok);
 }
 
 void WebServer::handleIncomingDownload(const QHttpServerRequest& req,
@@ -1618,27 +1776,28 @@ void WebServer::handleIncomingDownload(const QHttpServerRequest& req,
 
     const QUrlQuery query(req.query());
     const QString rel = query.queryItemValue(QStringLiteral("file"), QUrl::FullyDecoded);
-    const QString abs = resolveIncomingPath(rel);
-    if (abs.isEmpty() || !QFileInfo(abs).isFile()) {
-        logWarning(QStringLiteral("Incoming: 404 — cannot download %1").arg(rel));
+
+    // Resolve, stat and open on the pool; answer back here
+    auto pending = std::make_shared<QHttpServerResponder>(std::move(responder));
+    QThreadPool::globalInstance()->start([self = QPointer<WebServer>(this), dirs = incomingDirs(), rel, pending]() mutable {
+        auto send = prepareIncomingSend(dirs, rel, nullptr);
+        QMetaObject::invokeMethod(QCoreApplication::instance(), [self, send = std::move(send),
+                                                                 pending = std::move(pending)] {
+            if (self)
+                self->sendIncomingDownload(*pending, *send);
+        });
+    });
+}
+
+void WebServer::sendIncomingDownload(QHttpServerResponder& responder, IncomingSend& send)
+{
+    if (send.abs.isEmpty()) {
+        logWarning(QStringLiteral("Incoming: 404 — cannot download %1").arg(send.rel));
         responder.sendResponse(jsonError(404, QStringLiteral("File not found")));
         return;
     }
-
-    // Parented rather than owned outright: the responder documents that it takes
-    // the device, and a parent makes the other reading harmless instead of a leak
-    // per download.
-    auto* file = new QFile(abs, this);
-    if (!file->open(QIODevice::ReadOnly)) {
-        logWarning(QStringLiteral("Incoming: 500 — cannot open %1").arg(abs));
-        delete file;
-        responder.sendResponse(jsonError(500, QStringLiteral("Cannot open file")));
-        return;
-    }
-
-    const QString name = QFileInfo(abs).fileName();
+    const QString& name = send.name;
     QMimeDatabase mimeDb;
-
     QHttpHeaders headers;
     headers.append(QHttpHeaders::WellKnownHeader::ContentType,
                    mimeDb.mimeTypeForFile(name, QMimeDatabase::MatchExtension).name());
@@ -1650,7 +1809,22 @@ void WebServer::handleIncomingDownload(const QHttpServerRequest& req,
                        .arg(QString(name).remove(QLatin1Char('"')).remove(QLatin1Char('\\')),
                             QString::fromLatin1(QUrl::toPercentEncoding(name))));
 
-    responder.write(file, headers, QHttpServerResponse::StatusCode::Ok);
+    if (send.size == 0) {
+        responder.write(QByteArray(), headers, QHttpServerResponse::StatusCode::Ok);
+        return;
+    }
+    if (!send.file) {
+        logWarning(QStringLiteral("Incoming: 500 — cannot open %1").arg(send.abs));
+        responder.sendResponse(jsonError(500, QStringLiteral("Cannot open file")));
+        return;
+    }
+
+    // Parented rather than owned outright: the responder documents that it takes
+    // the device, and a parent makes the other reading harmless instead of a leak
+    // per download.
+    auto* device = new PrefetchFileDevice(std::move(send.file), send.size, std::move(send.first), this);
+    device->open(QIODevice::ReadOnly);
+    responder.write(device, headers, QHttpServerResponse::StatusCode::Ok);
 }
 
 bool WebServer::streamTokenValid(const QHttpServerRequest& req)
@@ -1689,16 +1863,24 @@ std::optional<QHttpServerResponse> WebServer::streamTokenRefusal(const QHttpServ
     return jsonError(401, QStringLiteral("Invalid or missing stream token"));
 }
 
-QString WebServer::incomingRoot() const
+WebServer::IncomingDirs WebServer::incomingDirs() const
 {
+    IncomingDirs dirs;
     if (!m_preferences)
-        return {};
-
-    const QString dir = m_preferences->incomingDir();
-    return dir.isEmpty() ? QString{} : QFileInfo(dir).canonicalFilePath();
+        return dirs;
+    dirs.global = m_preferences->incomingDir();
+    const auto categories = m_preferences->categories();
+    for (int i = 1; i < categories.size(); ++i) {
+        // Only a category with a folder of its own is addressable as "!N". One that
+        // falls back to the global dir is already reachable at the plain root, and
+        // giving it a second address would let the same file appear twice.
+        if (!categories.at(i).incomingPath.isEmpty())
+            dirs.categories.insert(i, m_preferences->incomingDirForCategory(i));
+    }
+    return dirs;
 }
 
-WebServer::IncomingRoot WebServer::splitIncomingPath(const QString& relPath) const
+WebServer::IncomingRoot WebServer::splitIncomingPath(const IncomingDirs& dirs, const QString& relPath)
 {
     // Windows clients send backslashes; normalise before anything is inspected,
     // or "..\\.." walks straight past the component check in the caller.
@@ -1706,30 +1888,23 @@ WebServer::IncomingRoot WebServer::splitIncomingPath(const QString& relPath) con
     rel.replace(QLatin1Char('\\'), QLatin1Char('/'));
 
     if (!rel.startsWith(QLatin1Char('!')))
-        return {incomingRoot(), rel, -1};
+        return {dirs.global.isEmpty() ? QString{} : QFileInfo(dirs.global).canonicalFilePath(), rel, -1};
 
     const qsizetype cut = rel.indexOf(QLatin1Char('/'));
     const QStringView token = cut < 0 ? QStringView{rel}.mid(1)
                                       : QStringView{rel}.mid(1, cut - 1);
     bool ok = false;
     const int index = token.toInt(&ok);
-    if (!ok || index <= 0 || !m_preferences)
+    if (!ok || index <= 0 || !dirs.categories.contains(index))
         return {};
 
-    // Only a category with a folder of its own is addressable this way. One that
-    // falls back to the global dir is already reachable at the plain root, and
-    // giving it a second address would let the same file appear twice.
-    const QString dir = m_preferences->category(index).incomingPath;
-    if (dir.isEmpty())
-        return {};
-
-    return {QFileInfo(m_preferences->incomingDirForCategory(index)).canonicalFilePath(),
+    return {QFileInfo(dirs.categories.value(index)).canonicalFilePath(),
             cut < 0 ? QString{} : rel.mid(cut + 1), index};
 }
 
-QString WebServer::resolveIncomingPath(const QString& relPath) const
+QString WebServer::resolveIncomingPath(const IncomingDirs& dirs, const QString& relPath)
 {
-    const IncomingRoot selected = splitIncomingPath(relPath);
+    const IncomingRoot selected = splitIncomingPath(dirs, relPath);
     const QString root = selected.root;
     if (root.isEmpty())
         return {};
@@ -1828,12 +2003,13 @@ QString WebServer::ratingSpriteCss() const
     return *m_ratingSpriteCss;
 }
 
-QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString& relPath,
+QByteArray WebServer::renderIncomingListing(const IncomingLookup& found, const QString& relPath,
                                             const QString& token, const QString& lang) const
 {
     // A category root is addressed as "!N/...", which is an implementation
     // detail the breadcrumb should not show — name the category instead.
-    const IncomingRoot selected = splitIncomingPath(relPath);
+    const IncomingRoot& selected = found.selected;
+    const QList<IncomingEntry>& entries = found.entries;
     const QString rootLabel =
         selected.categoryIndex > 0 && m_preferences
             ? tr("Incoming") + QLatin1Char('/') + m_preferences->category(selected.categoryIndex).title
@@ -1845,9 +2021,6 @@ QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString
     QString html = pageHead(here, spriteCss);
 
     html += QStringLiteral("<h1>%1</h1>").arg(htmlText(here));
-
-    const QFileInfoList entries = QDir(absDir).entryInfoList(
-        QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot, QDir::DirsFirst | QDir::Name);
 
     // Every category with a folder of its own shows at the top level as a
     // directory. They are not *inside* the global incoming folder, so nothing
@@ -1873,25 +2046,24 @@ QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString
     // lock for its duration, and a finished-downloads folder can hold thousands of
     // files. Same trick, for the same reason, as handleBrowseDirectory().
     //
-    // Matched on the canonical path, because the two sides spell it differently: the
-    // share stores the path as configured, incomingRoot() hands back the canonical
-    // form, and on macOS a temp or symlinked folder is /var here and /private/var
-    // there. canonicalFilePath() is a syscall, so it runs only for shared files whose
-    // *name* occurs in this directory — bounded by the listing, not by the share.
+    // Matched by folder spelling, no syscall here: the share stores the path as
+    // configured, the listing's folder is canonical, and on macOS a temp or symlinked
+    // folder is /var in one and /private/var in the other. The pool hands back both.
     QSet<QString> namesHere;
-    for (const QFileInfo& fi : entries) {
-        if (!fi.isDir())
-            namesHere.insert(fi.fileName().toLower());
+    for (const IncomingEntry& entry : entries) {
+        if (!entry.dir)
+            namesHere.insert(entry.name.toLower());
     }
-    QHash<QString, KnownFile*> sharedByPath;
+    const QSet<QString> dirSpellings{QDir::cleanPath(found.abs).toLower(), found.spelled.toLower()};
+    QHash<QString, KnownFile*> sharedByName;
     if (m_sharedFiles && !namesHere.isEmpty()) {
         m_sharedFiles->forEachFile([&](KnownFile* file) {
             if (!file || file->filePath().isEmpty()
                 || !namesHere.contains(file->fileName().toLower()))
                 return;
-            const QString canonical = QFileInfo(file->filePath()).canonicalFilePath();
-            if (!canonical.isEmpty())
-                sharedByPath.insert(canonical.toLower(), file);
+            const QString path = QDir::cleanPath(file->filePath());
+            if (dirSpellings.contains(path.section(QLatin1Char('/'), 0, -2).toLower()))
+                sharedByName.insert(path.section(QLatin1Char('/'), -1).toLower(), file);
         });
     }
 
@@ -1918,13 +2090,13 @@ QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString
                                       QStringLiteral("path"), up));
     }
 
-    for (const QFileInfo& fi : entries) {
-        const QString name = fi.fileName();
+    for (const IncomingEntry& entry : entries) {
+        const QString& name = entry.name;
         const QString rel = relPath.isEmpty() ? name
                                               : relPath + QLatin1Char('/') + name;
-        const QString modified = fi.lastModified().toString(QStringLiteral("yyyy-MM-dd HH:mm"));
+        const QString modified = entry.modified.toString(QStringLiteral("yyyy-MM-dd HH:mm"));
 
-        if (fi.isDir()) {
+        if (entry.dir) {
             html += QStringLiteral("<tr><td><a href=\"%1\">%2/</a></td><td class=\"n\"></td>"
                                    "<td class=\"n\">%3</td><td class=\"a\"></td></tr>")
                         .arg(incomingHref(QStringLiteral("/api/v1/incoming"), token, lang,
@@ -1960,16 +2132,13 @@ QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString
         //
         // Prefer the shared file's own verdict where there is one — the daemon's sweep
         // has usually settled it already, and it is the same answer either way.
-        const KnownFile* known = sharedByPath.value(fi.canonicalFilePath().toLower(), nullptr);
+        const KnownFile* known = sharedByName.value(name.toLower(), nullptr);
         ContainerCheck check;
         if (known)
             check = known->containerCheckIfResolved();
-        // Nothing has settled it yet — read it. One directory is bounded, and going
-        // quiet until the sweep gets round to it would lose a mark this page has
-        // always drawn. checkFile() costs nothing for an extension we promise
-        // nothing about, which is what Unchecked also means here.
+        // Nothing has settled it yet: the pool's read (lookUpIncoming)
         if (check.verdict == ContainerVerdict::Unchecked)
-            check = checkFile(fi.absoluteFilePath(), name);
+            check = entry.check;
         QString marker;
         if (check.isSuspect()) {
             const QString why = htmlText(containerWarningText(check, name));
@@ -1998,7 +2167,7 @@ QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString
 
         html += QStringLiteral("<tr><td>%1%2%3</td><td class=\"n\">%4</td><td class=\"n\">%5</td>"
                                "<td class=\"a\">%6</td></tr>")
-                    .arg(marker, rating, htmlText(name), formatByteSize(fi.size()), modified,
+                    .arg(marker, rating, htmlText(name), formatByteSize(entry.size), modified,
                          actions);
     }
 
@@ -2007,6 +2176,7 @@ QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString
 }
 
 QByteArray WebServer::renderIncomingPlayer(const QString& relPath, const QString& fileName,
+                                           const ContainerCheck& real,
                                            const QString& token, const QString& lang) const
 {
     const qsizetype cut = relPath.lastIndexOf(QLatin1Char('/'));
@@ -2016,8 +2186,6 @@ QByteArray WebServer::renderIncomingPlayer(const QString& relPath, const QString
     // A file whose magic contradicts its name decides its own element -- the fake
     // .wmv that prompted this is an MP3, and a <video> tag can only ever show a
     // black rectangle for it.
-    const QString absPath = resolveIncomingPath(relPath);
-    const ContainerCheck real = checkFile(absPath, fileName);
     const QString realMime = real.mimeType;
     const bool audio = realMime.isEmpty()
                            ? getED2KFileTypeID(fileName) == ED2KFileType::Audio
@@ -3108,6 +3276,22 @@ QString WebServer::buildStatisticsPage()
         vars[QStringLiteral("Reconnects")] = QString::number(m_statistics->reconnects());
         vars[QStringLiteral("Uptime")] = formatDuration(std::chrono::seconds(m_statistics->uptimeSecs()));
     }
+    // free space per network's default save folder (#165)
+    QString rows;
+    for (const SaveFolderSpace& f : saveFolderSpace()) {
+        QString label;
+        if (f.key == QLatin1StringView("incoming"))
+            label = tr("Incoming (eD2K)");
+        else if (f.key == QLatin1StringView("torrent"))
+            label = tr("Torrents");
+        else if (f.key == QLatin1StringView("usenet"))
+            label = tr("Usenet");
+        else
+            label = tr("Hoster");
+        rows += QStringLiteral("<tr><td class=\"pref-row\">%1</td><td class=\"pref-row\">%2 &nbsp;<small>%3</small></td></tr>\n")
+                    .arg(htmlText(label), f.free ? formatByteSize(*f.free) : QStringLiteral("?"), htmlText(f.path));
+    }
+    vars[QStringLiteral("SaveFolderSpaceRows")] = rows;
     return WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("STATS")), vars);
 }

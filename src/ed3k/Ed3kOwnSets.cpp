@@ -240,7 +240,9 @@ std::expected<void, QString> Ed3kOwnSets::unpublish(const QString& id)
     m_builds.erase(ownerOf(s->id));
     if (auto* e = m_session.engine(); e && s->manifest) {
         // file-set.md: no keywords, MEMBER records nor head stored again; what Kad holds runs out
-        if (auto r = e->setUnpublish(m_session.now(), *s->manifest); !r && r.error() != ffi::Error::NotFound)
+        // was: if (auto r = e->setUnpublish(m_session.now(), *s->manifest); !r && r.error() != ffi::Error::NotFound)
+        if (auto r = e->setUnpublish(m_session.now(), *s->manifest, s->key.value_or(ffi::KeyKind::Node));
+            !r && r.error() != ffi::Error::NotFound && r.error() != ffi::Error::State)
             logWarning(QStringLiteral("set %1 not unpublished (error %2)").arg(id, errorName(r.error())));
     }
     unshareSet(*s);
@@ -280,6 +282,35 @@ std::expected<QString, QString> Ed3kOwnSets::sell(const QString& id, const Ed3kP
     startBuild(*s, false);
     markChanged();
     return *scope;
+}
+
+std::expected<void, QString> Ed3kOwnSets::shareUnderKey(const QString& id, ffi::KeyKind key)
+{
+    Set* s = find(id);
+    if (!s)
+        return std::unexpected(tr("This set is not yours."));
+    if (!m_started)
+        return std::unexpected(tr("ed3k is not running."));
+    if (key == ffi::KeyKind::Anon && !m_session.hide().hiding())
+        return std::unexpected(tr("Hiding is off: nothing is shared under the anonymous key."));
+    s->offerKey.reset();
+    if (s->key == key) {
+        startBuild(*s, false);
+        markChanged();
+        return {};
+    }
+    m_builds.erase(ownerOf(s->id));
+    // taken back under the old key: its head and records end there
+    if (auto* e = m_session.engine(); e && s->manifest && s->key)
+        (void)e->setUnpublish(m_session.now(), *s->manifest, *s->key);
+    unshareSet(*s);
+    s->head.reset();
+    s->key = key;
+    logEd3k(QStringLiteral("ed3k: own set %1 moves to the %2 key").arg(id, Ed3kHide::keyName(key)));
+    save();
+    startBuild(*s, false);
+    markChanged();
+    return {};
 }
 
 bool Ed3kOwnSets::has(const QString& id) const
@@ -382,6 +413,24 @@ void Ed3kOwnSets::saveOwner(const QString& owner)
 {
     Q_UNUSED(owner)
     save();
+}
+
+void Ed3kOwnSets::onHideChanged(bool hiding)
+{
+    for (auto& [id, s] : m_sets) {
+        if (s.key != ffi::KeyKind::Anon)
+            continue;
+        if (!hiding) {
+            // the anonymous node ended with its shares and heads (the base forgot them)
+            m_builds.erase(ownerOf(s.id));
+            s.manifest.reset();
+            s.head.reset();
+        } else if (s.published && !m_builds.contains(ownerOf(s.id))) {
+            // back under the anonymous key: the version kept, published again
+            startBuild(s, true);
+        }
+    }
+    markChanged();
 }
 
 // ---------------------------------------------------------------------------
@@ -618,6 +667,19 @@ void Ed3kOwnSets::finishBuild(const QString& owner)
     Build& b = *it->second;
     const std::vector<Member> old = s->members;
     const std::optional<ffi::Root> oldManifest = s->manifest;
+    // hops.md §1: the set goes under its files' key; one of the other key is refused
+    QString keyError;
+    const auto key = versionKey(*s, b, &keyError);
+    if (!key) {
+        buildFailed(owner, keyError);
+        return;
+    }
+    s->key = *key;
+    s->offerKey.reset();
+    // new member files (not held yet) go under the set's key
+    for (const Member& m : b.members)
+        if (!m_session.hide().keyOf(m.root))
+            m_session.hide().record(m.root, *key);
     shareMembers(*s, b);
     QString error;
     if (!publishVersion(*s, b, &error)) {
@@ -684,6 +746,9 @@ bool Ed3kOwnSets::publishVersion(Set& s, Build& b, QString* error)
     }
     const auto t = m_session.now();
     const QString link = s.kind == Kind::Hidden ? hiddenLink(s) : QString();
+    const ffi::KeyKind setKey = s.key.value_or(ffi::KeyKind::Node);
+    // State of a set call: a member held under the other key (hops.md §1)
+    bool keyState = false;
 
     // the version kept: shared and published again as it was (the core signs its head again)
     const auto publish = [&](const QByteArray& file) -> bool {
@@ -698,11 +763,14 @@ bool Ed3kOwnSets::publishVersion(Set& s, Build& b, QString* error)
             const auto wire = hashed ? ffi::sealedName(*hashed) : ffi::Result<std::string>(std::unexpected(ffi::Error::State));
             if (!wire)
                 return false;
-            const auto root = shareBlob(file, QString::fromStdString(*wire), hashed);
+            // was: const auto root = shareBlob(file, QString::fromStdString(*wire), hashed);
+            const auto root = shareBlob(file, QString::fromStdString(*wire), hashed, setKey);
             if (!root)
                 return false;
-            auto head = e->setPublishHidden(t, utf8(link), key.expose(), spanOf(file), *root);
+            // was: auto head = e->setPublishHidden(t, utf8(link), key.expose(), spanOf(file), *root);
+            auto head = e->setPublishHidden(t, utf8(link), key.expose(), spanOf(file), *root, setKey);
             if (!head) {
+                keyState = keyState || head.error() == ffi::Error::State;
                 logDebug([&]() -> QString { return QStringLiteral("hidden set %1 not published (error %2)").arg(idHex, errorName(head.error())); });
                 if (root != s.manifest)
                     unshare(*root);
@@ -713,11 +781,14 @@ bool Ed3kOwnSets::publishVersion(Set& s, Build& b, QString* error)
             return true;
         }
         const QString name = safeName(s.title, QStringLiteral("set")) + QStringLiteral(".ed3kset");
-        const auto root = shareBlob(file, name, std::nullopt);
+        // was: const auto root = shareBlob(file, name, std::nullopt);
+        const auto root = shareBlob(file, name, std::nullopt, setKey);
         if (!root)
             return false;
-        auto head = e->setPublish(t, spanOf(file), *root, utf8(name), ffi::SetSigner::Seed, &key.expose());
+        // was: auto head = e->setPublish(t, spanOf(file), *root, utf8(name), ffi::SetSigner::Seed, &key.expose());
+        auto head = e->setPublish(t, spanOf(file), *root, utf8(name), ffi::SetSigner::Seed, &key.expose(), setKey);
         if (!head) {
+            keyState = keyState || head.error() == ffi::Error::State;
             logDebug([&]() -> QString { return QStringLiteral("set %1 not published (error %2)").arg(idHex, errorName(head.error())); });
             if (root != s.manifest)
                 unshare(*root);
@@ -768,7 +839,14 @@ bool Ed3kOwnSets::publishVersion(Set& s, Build& b, QString* error)
         file = qbytes(sealed->bytes());
     }
     if (!publish(file)) {
-        *error = tr("The set could not be published.");
+        // was: *error = tr("The set could not be published.");
+        if (keyState) {
+            const ffi::KeyKind other = setKey == ffi::KeyKind::Anon ? ffi::KeyKind::Node : ffi::KeyKind::Anon;
+            s.offerKey = other;
+            *error = keyRefusal(other, setKey);
+        } else {
+            *error = tr("The set could not be published.");
+        }
         return false;
     }
     s.seq = f.seq;
@@ -803,7 +881,9 @@ void Ed3kOwnSets::shareMembers(Set& s, Build& b)
         const ffi::FileInfo info{m.root, m.size, utf8(name), std::nullopt, 0, 0, 0, 0, 0, 0};
         if (sealed) {
             // §8.1, §4.3: a SOURCE record, no KEYWORD or MEMBER record
-            if (auto ok = e->publish(t, info, ffi::Publish::Source); !ok)
+            // was: if (auto ok = e->publish(t, info, ffi::Publish::Source); !ok)
+            const bool anon = s.key == ffi::KeyKind::Anon;
+            if (auto ok = anon ? e->anonPublish(t, info, ffi::Publish::Source) : e->publish(t, info, ffi::Publish::Source); !ok)
                 logDebug([&]() -> QString { return QStringLiteral("a sealed member's source not published (error %1)").arg(errorName(ok.error())); });
         } else if (auto ok = publishShared(info); !ok) {
             logDebug([&]() -> QString { return QStringLiteral("member %1 not published (error %2)").arg(m.path, errorName(ok.error())); });
@@ -908,6 +988,10 @@ Ed3kOwnSets::Info Ed3kOwnSets::infoOf(const Set& s) const
     if (s.kind != Kind::Hidden)
         i.link = linkOf(i.id);
     i.error = s.error;
+    if (s.key)
+        i.key = Ed3kHide::keyName(*s.key);
+    if (s.offerKey)
+        i.offerKey = Ed3kHide::keyName(*s.offerKey);
     return i;
 }
 
@@ -989,6 +1073,8 @@ void Ed3kOwnSets::load()
         s.scope = o.value(QStringLiteral("scope")).toString();
         s.offer = QByteArray::fromBase64(o.value(QStringLiteral("offer")).toString().toLatin1());
         s.published = o.value(QStringLiteral("published")).toBool();
+        if (const QString k = o.value(QStringLiteral("key")).toString(); !k.isEmpty())
+            s.key = k == QLatin1String("anon") ? ffi::KeyKind::Anon : ffi::KeyKind::Node;
         for (const auto& mv : o.value(QStringLiteral("members")).toArray()) {
             const QJsonObject mo = mv.toObject();
             const auto r = fromHex<32>(mo.value(QStringLiteral("root")).toString());
@@ -1043,6 +1129,7 @@ void Ed3kOwnSets::save() const
             {QStringLiteral("offer"), QString::fromLatin1(s.offer.toBase64())},
             {QStringLiteral("published"), s.published},
             {QStringLiteral("members"), members},
+            {QStringLiteral("key"), !s.key ? QString() : *s.key == ffi::KeyKind::Anon ? QStringLiteral("anon") : QStringLiteral("node")},
         });
     }
     const QByteArray out = QJsonDocument(QJsonObject{{QStringLiteral("sets"), sets}}).toJson(QJsonDocument::Compact);
@@ -1054,6 +1141,55 @@ void Ed3kOwnSets::save() const
 QString Ed3kOwnSets::ownDir() const
 {
     return QDir(stateDir(m_configDir)).filePath(kOwnDir);
+}
+
+std::optional<ffi::KeyKind> Ed3kOwnSets::versionKey(Set& s, const Build& b, QString* error)
+{
+    // the keys its files are held under now (ed3k_file_key, else keys.json)
+    std::set<ffi::KeyKind> held;
+    for (const Member& m : b.members)
+        if (const auto k = m_session.hide().keyOf(m.root))
+            held.insert(*k);
+    if (held.size() > 1 && s.key) {
+        // §1: a file of the other key in a published set: refused, the set offered under that
+        // key (its files of the set's key must move too before that version goes out)
+        const ffi::KeyKind other = *s.key == ffi::KeyKind::Anon ? ffi::KeyKind::Node : ffi::KeyKind::Anon;
+        s.offerKey = other;
+        *error = keyRefusal(other, *s.key);
+        return std::nullopt;
+    }
+    if (held.size() > 1) {
+        s.offerKey.reset();
+        *error = tr("Some files of this set are shared under the node key, others under the anonymous key. A set lists "
+                    "files of one key only: move them to one key in Shared Files first.");
+        return std::nullopt;
+    }
+    ffi::KeyKind key = s.key.value_or(m_session.hide().keyForUse());
+    if (held.size() == 1) {
+        const ffi::KeyKind files = *held.begin();
+        // a set never published takes its files' key; a published one is not moved unasked (§1)
+        if (s.key && *s.key != files) {
+            s.offerKey = files;
+            *error = keyRefusal(files, *s.key);
+            return std::nullopt;
+        }
+        key = files;
+    }
+    // hops.md §1: hiding off, nothing under the anonymous key
+    if (key == ffi::KeyKind::Anon && !m_session.hide().hiding()) {
+        s.offerKey.reset();
+        *error = tr("This set is under the anonymous key: it is published only while hiding is on.");
+        return std::nullopt;
+    }
+    return key;
+}
+
+QString Ed3kOwnSets::keyRefusal(ffi::KeyKind files, ffi::KeyKind set)
+{
+    const auto name = [](ffi::KeyKind k) { return k == ffi::KeyKind::Anon ? tr("anonymous") : tr("node"); };
+    return tr("Files of this set are shared under the %1 key, the set under the %2 key: a set lists only files of its "
+              "own key. Share the set under the %1 key instead?")
+        .arg(name(files), name(set));
 }
 
 } // namespace eMule::ed3k

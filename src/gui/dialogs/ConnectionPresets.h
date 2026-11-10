@@ -79,6 +79,22 @@ struct BandwidthSettings {
             kDefaultMaxDownload, kDefaultMaxUpload};
 }
 
+/// Connection limit for a fast upload: each served Kad buddy holds a connection, and at
+/// most a tenth of the limit is served (Preferences::servedBuddyLimit()). Above 100 Mbit/s
+/// the auto slots reach 64, from 1 Gbit/s 128. Never lowers @p current.
+inline constexpr uint32 kFastLineConnections = 1000;      // up > 100 Mbit/s: 100 buddies
+inline constexpr uint32 kGigabitLineConnections = 1500;   // up >= 1 Gbit/s: 150 buddies
+
+[[nodiscard]] inline uint32 connectionsForLine(uint32 capUpKiB, uint32 current)
+{
+    uint32 wanted = 0;
+    if (capUpKiB >= mbitToKiB(1000))
+        wanted = kGigabitLineConnections;
+    else if (capUpKiB > mbitToKiB(100))
+        wanted = kFastLineConnections;
+    return std::max(current, wanted);
+}
+
 /// Defaults shipped before the wizard had a speed page; an install still on exactly
 /// these never tuned its bandwidth.
 [[nodiscard]] constexpr BandwidthSettings legacyDefaultBandwidth()

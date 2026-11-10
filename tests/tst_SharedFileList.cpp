@@ -14,6 +14,7 @@
 #include "app/AppContext.h"
 #include "files/SharedDirWatcher.h"
 #include "files/SharedFileList.h"
+#include "files/ShareDiskWorker.h"
 #include "utils/FileDate.h"
 #include "client/UpDownClient.h"
 
@@ -33,6 +34,15 @@
 #include <atomic>
 #include <cstring>
 #include <thread>
+
+// A rescan lists its folders on the disk thread first (#84): runs the call and waits
+// until its pass applied.
+#define RESCAN(list, call)                                                         \
+    do {                                                                           \
+        QSignalSpy scanSpy(&(list), &eMule::SharedFileList::scanned);              \
+        (list).call;                                                               \
+        QVERIFY2(!scanSpy.isEmpty() || scanSpy.wait(10000), "rescan never applied"); \
+    } while (false)
 
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
@@ -103,6 +113,10 @@ private slots:
     void freshFile_isHeldBackWhileWatching();
     void watching_aNetworkShareIsSharedFromThePoll();
     void rescan_takesTheWatcherListingInsteadOfTheDisk();
+    void incomingTree_isWalkedOffTheCoreThread();
+    void moveProbe_runsOffTheCoreThread();
+    void singleSharedFiles_areStatedOffTheCoreThread();
+    void rescanTrees_coversTheFoldersBelow();
     void watching_picksUpACopiedInFileWithoutAReload();
     void hashFinished_duplicateContentKeepsTheSharedFile();
     void rescan_duplicateIsNotHashedAgain();
@@ -485,7 +499,7 @@ void tst_SharedFileList::neverShared_anOpenedPlainCopyStaysOut()
     QVERIFY2(shared.shouldBeShared(shareDir, otherPath, false), "the rule names one file, not its directory");
 
     // a rescan does not bring it back
-    shared.reload();
+    RESCAN(shared, reload());
     bool sawPlain = false;
     shared.forEachFile([&](KnownFile* f) {
         if (SharedFileList::pathKey(f->filePath()) == SharedFileList::pathKey(plainPath))
@@ -605,7 +619,7 @@ void tst_SharedFileList::directoryIndex_followsAddRemoveAndMove()
     QVERIFY(shared.filesInDirectory(QStringLiteral("/share/one")).empty());
     QCOMPARE(shared.sharedDirectories().size(), size_t{2});
 
-    shared.reload();   // nothing on disk: everything goes
+    RESCAN(shared, reload());   // nothing on disk: everything goes
     QVERIFY(shared.sharedDirectories().empty());
 }
 
@@ -632,7 +646,7 @@ void tst_SharedFileList::excludeFile_survivesReload()
 
     // The point of the whole exercise: a rescan must not put it back. The in-memory
     // hash set never survived this, which is why unsharing looked permanent and wasn't.
-    shared.reload();
+    RESCAN(shared, reload());
     bool sawDropped = false;
     shared.forEachFile([&](KnownFile* f) {
         if (f->filePath().compare(dropPath, Qt::CaseInsensitive) == 0)
@@ -760,7 +774,7 @@ void tst_SharedFileList::scan_skipsAFileStillBeingDelivered()
 
     KnownFileList knownFiles;
     SharedFileList shared(&knownFiles);
-    shared.reload();
+    RESCAN(shared, reload());
 
     QCOMPARE(shared.getCount(), 0);
     QCOMPARE(shared.getHashingCount(), 0);
@@ -784,7 +798,7 @@ void tst_SharedFileList::scan_skipsThumbsDbAndOversizedFiles()
 
     KnownFileList knownFiles;
     SharedFileList shared(&knownFiles);
-    shared.reload();
+    RESCAN(shared, reload());
 
     QCOMPARE(shared.getCount(), 0);
     QCOMPARE(shared.getHashingCount(), 0);
@@ -818,7 +832,7 @@ void tst_SharedFileList::scan_winSkipsSystemAndTemporarySharesHidden()
 
     KnownFileList knownFiles;
     SharedFileList shared(&knownFiles);
-    shared.reload();
+    RESCAN(shared, reload());
     QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
     QCOMPARE(shared.getHashingCount(), 0);
     bool hiddenShared = false;
@@ -853,7 +867,7 @@ void tst_SharedFileList::scan_winShellLinkFollowsTheOption()
         thePrefs.setResolveShellLinks(false);
         KnownFileList knownFiles;
         SharedFileList shared(&knownFiles);
-        shared.reload();
+        RESCAN(shared, reload());
         QTest::qWait(300);
         QCOMPARE(shared.getCount(), 0);
         QCOMPARE(shared.getHashingCount(), 0);
@@ -862,7 +876,7 @@ void tst_SharedFileList::scan_winShellLinkFollowsTheOption()
         thePrefs.setResolveShellLinks(true);
         KnownFileList knownFiles;
         SharedFileList shared(&knownFiles);
-        shared.reload();
+        RESCAN(shared, reload());
         QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
         KnownFile* found = nullptr;
         shared.forEachFile([&](KnownFile* f) { found = f; });
@@ -904,7 +918,7 @@ void tst_SharedFileList::rescan_addsKeywordsThroughTheFrontDoor()
     knownFiles.safeAddKFile(known);
 
     QSignalSpy addedSpy(&shared, &SharedFileList::fileAdded);
-    shared.reload();
+    RESCAN(shared, reload());
 
     QVERIFY2(shared.getFileByID(hash) != nullptr, "the rescan must find the known file");
     QCOMPARE(addedSpy.count(), 1);
@@ -975,7 +989,7 @@ void tst_SharedFileList::kadPublishTimes_surviveARestartUntilTheFilesChange()
     {
         SharedFileList shared(&knownFiles);
         shared.setKadPublishStorePath(storePath);
-        shared.reload();
+        RESCAN(shared, reload());
         QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 2, 10000);
 
         PublishKeyword* holiday = keywordNamed(shared.m_keywords, QStringLiteral("holiday"));
@@ -992,7 +1006,7 @@ void tst_SharedFileList::kadPublishTimes_surviveARestartUntilTheFilesChange()
     {
         SharedFileList shared(&knownFiles);
         shared.setKadPublishStorePath(storePath);
-        shared.reload();
+        RESCAN(shared, reload());
         QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 2, 10000);
 
         PublishKeyword* holiday = keywordNamed(shared.m_keywords, QStringLiteral("holiday"));
@@ -1008,7 +1022,7 @@ void tst_SharedFileList::kadPublishTimes_surviveARestartUntilTheFilesChange()
     {
         SharedFileList shared(&knownFiles);
         shared.setKadPublishStorePath(storePath);
-        shared.reload();
+        RESCAN(shared, reload());
         QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 3, 10000);
 
         PublishKeyword* holiday = keywordNamed(shared.m_keywords, QStringLiteral("holiday"));
@@ -1071,7 +1085,7 @@ void tst_SharedFileList::reload_leavesUnchangedFilesAlone()
 
     KnownFileList knownFiles;
     SharedFileList shared(&knownFiles);
-    shared.reload();
+    RESCAN(shared, reload());
     QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 2, 10000);
     KnownFile* const fa = sharedAt(shared, a);
     KnownFile* const fb = sharedAt(shared, b);
@@ -1081,7 +1095,7 @@ void tst_SharedFileList::reload_leavesUnchangedFilesAlone()
     QSignalSpy added(&shared, &SharedFileList::fileAdded);
     QSignalSpy removed(&shared, &SharedFileList::fileRemoved);
     const int keywords = shared.m_keywords.keywordCount();
-    shared.reload();
+    RESCAN(shared, reload());
     QTest::qWait(200);
 
     QCOMPARE(added.count(), 0);
@@ -1102,7 +1116,7 @@ void tst_SharedFileList::reload_aShiftedDateOnALocalTimeVolumeIsNotAChangedFile(
 
     KnownFileList knownFiles;
     SharedFileList shared(&knownFiles);
-    shared.reload();
+    RESCAN(shared, reload());
     QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
     KnownFile* const file = sharedAt(shared, a);
     QVERIFY(file);
@@ -1122,7 +1136,7 @@ void tst_SharedFileList::reload_aShiftedDateOnALocalTimeVolumeIsNotAChangedFile(
     QVERIFY(shiftBy(3600));
     QSignalSpy added(&shared, &SharedFileList::fileAdded);
     QSignalSpy removed(&shared, &SharedFileList::fileRemoved);
-    shared.reload();
+    RESCAN(shared, reload());
     QTest::qWait(200);
 
     QCOMPARE(removed.count(), 0);
@@ -1136,12 +1150,12 @@ void tst_SharedFileList::reload_aShiftedDateOnALocalTimeVolumeIsNotAChangedFile(
     // other shift is a changed file.
     setLocalTimeVolumeProbe([](const QString&) { return false; });
     QVERIFY(shiftBy(-3600));
-    shared.reload();
+    RESCAN(shared, reload());
     QTest::qWait(200);
     QCOMPARE(removed.count(), 0);
     QCOMPARE(file->utcFileDate(), hashedDate);
     QVERIFY(shiftBy(1800));
-    shared.reload();
+    RESCAN(shared, reload());
     QTRY_VERIFY_WITH_TIMEOUT(removed.count() == 1, 10000);
 }
 
@@ -1154,7 +1168,7 @@ void tst_SharedFileList::reload_followsDeleteChangeAndRename()
 
     KnownFileList knownFiles;
     SharedFileList shared(&knownFiles);
-    shared.reload();
+    RESCAN(shared, reload());
     QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 3, 10000);
     KnownFile* const renamed = sharedAt(shared, before);
     QVERIFY(renamed);
@@ -1168,9 +1182,10 @@ void tst_SharedFileList::reload_followsDeleteChangeAndRename()
 
     QSignalSpy removed(&shared, &SharedFileList::fileRemoved);
     QSignalSpy relocated(&shared, &SharedFileList::fileRelocated);
-    shared.rescanDirectory(env.shareDir);
+    RESCAN(shared, rescanDirectory(env.shareDir));
+    QTRY_VERIFY(!shared.diskJobsPending());   // gone files are probed for a move first
 
-    // deleted: gone at once
+    // deleted: gone once the probe found it nowhere
     QVERIFY(!sharedAt(shared, gone));
     // renamed: the same object, no hashing, new name and keywords
     QCOMPARE(relocated.count(), 1);
@@ -1207,7 +1222,7 @@ void tst_SharedFileList::incomingTree_sharesSubfoldersButNotOwnOnes()
 
     KnownFileList knownFiles;
     SharedFileList shared(&knownFiles);
-    shared.reload();
+    RESCAN(shared, reload());
     QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, deep) && sharedAt(shared, top), 10000);
     QVERIFY(!sharedAt(shared, hidden));
     QVERIFY(!sharedAt(shared, inTemp));
@@ -1219,12 +1234,12 @@ void tst_SharedFileList::incomingTree_sharesSubfoldersButNotOwnOnes()
 
     // a new folder: a rescan of incoming alone finds it
     const QString fresh = writeFile(incoming + QStringLiteral("/Usenet Job/Sample"), QStringLiteral("movie.mkv"), QByteArray(740, 'm'));
-    shared.rescanDirectory(incoming);
+    RESCAN(shared, rescanDirectory(incoming));
     QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, fresh), 10000);
-    // a removed one: its files leave
+    // a removed one: its files leave once the walk is back
     QVERIFY(QDir(incoming + QStringLiteral("/Usenet Job")).removeRecursively());
-    shared.rescanDirectory(incoming);
-    QVERIFY(!sharedAt(shared, fresh));
+    RESCAN(shared, rescanDirectory(incoming));
+    QTRY_VERIFY_WITH_TIMEOUT(!sharedAt(shared, fresh), 10000);
 
     // shared again: the exclusion goes
     QVERIFY(shared.addSingleSharedFile(deep));
@@ -1248,7 +1263,7 @@ void tst_SharedFileList::incomingTree_otherDirsStayFlat()
 
     KnownFileList knownFiles;
     SharedFileList shared(&knownFiles);
-    shared.reload();
+    RESCAN(shared, reload());
     QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, flat) && sharedAt(shared, deep), 10000);
     QVERIFY(!sharedAt(shared, inBt));
     QVERIFY(!sharedAt(shared, below));
@@ -1270,13 +1285,13 @@ void tst_SharedFileList::stillWriting_keepsATorrentOutUntilDone()
     SharedFileList shared(&knownFiles);
     bool writing = true;
     shared.setStillWriting([&](const QString& p) { return writing && p.contains(QStringLiteral("Some Torrent")); });
-    shared.reload();
+    RESCAN(shared, reload());
     QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, other), 10000);
     QVERIFY(!sharedAt(shared, file));
     QVERIFY(!shared.addFileInSharedLocation(file));
 
     writing = false;
-    shared.rescanDirectory(QFileInfo(file).absolutePath());
+    RESCAN(shared, rescanDirectory(QFileInfo(file).absolutePath()));
     QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, file), 10000);
 
     writing = true;   // e.g. a skipped file picked again
@@ -1302,7 +1317,7 @@ void tst_SharedFileList::stillWriting_blockedAfterScanIsNotHashed()
     SharedFileList shared(&knownFiles);
     bool writing = false;
     shared.setStillWriting([&](const QString& p) { return writing && p.contains(QStringLiteral("Late Torrent")); });
-    shared.reload();   // queues all of them
+    RESCAN(shared, reload());   // queues all of them
     writing = true;    // the torrent shows up
     shared.dropNeverShared();
 
@@ -1314,7 +1329,7 @@ void tst_SharedFileList::stillWriting_blockedAfterScanIsNotHashed()
     }
 
     writing = false;   // done: shared once its folder is scanned again
-    shared.rescanDirectory(QFileInfo(files.first()).absolutePath());
+    RESCAN(shared, rescanDirectory(QFileInfo(files.first()).absolutePath()));
     QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, files.first()) && sharedAt(shared, files.last()), 20000);
     shared.setStillWriting({});
 }
@@ -1340,7 +1355,7 @@ void tst_SharedFileList::completedDownload_sharedInAnIncomingSubfolderEitherWay(
     QVERIFY(shared.shareCompletedFile(top));
     QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, single) && sharedAt(shared, top), 10000);
     // a single shared file: it stays after a reload
-    shared.reload();
+    RESCAN(shared, reload());
     QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, single), 10000);
 }
 
@@ -1353,7 +1368,7 @@ void tst_SharedFileList::reload_doesNotHashAFileTwice()
     KnownFileList knownFiles;
     SharedFileList shared(&knownFiles);
     QSignalSpy added(&shared, &SharedFileList::fileAdded);
-    shared.reload();
+    RESCAN(shared, reload());
     // while the first ones are on the worker or done, and the rest still wait
     for (int i = 0; i < 5; ++i) {
         QTest::qWait(1);
@@ -1381,7 +1396,7 @@ void tst_SharedFileList::hashFailure_isRetriedThenRememberedUntilTheFileChanges(
     shared.m_hashRetrySecs = {0, 0, 0};
     const QString key = SharedFileList::pathKey(locked);
 
-    shared.reload();
+    RESCAN(shared, reload());
     QTRY_VERIFY_WITH_TIMEOUT(shared.m_hashFailures.contains(key), 5000);
     // three more tries, each started by the tick
     for (int i = 0; i < 200 && !shared.m_hashFailures.value(key).givenUp; ++i) {
@@ -1393,14 +1408,14 @@ void tst_SharedFileList::hashFailure_isRetriedThenRememberedUntilTheFileChanges(
 
     // remembered: neither the tick nor a reload queues it again
     shared.process();
-    shared.reload();
+    RESCAN(shared, reload());
     QCOMPARE(shared.getHashingCount(), 0);
     QCOMPARE(shared.getCount(), 0);
 
     // readable, and changed: hashed
     QVERIFY(QFile::setPermissions(locked, QFileDevice::ReadOwner | QFileDevice::WriteOwner));
     QVERIFY(!env.put(QStringLiteral("locked.bin"), QByteArray(450, 'l')).isEmpty());
-    shared.reload();
+    RESCAN(shared, reload());
     QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
     QVERIFY(!shared.m_hashFailures.contains(key));
 }
@@ -1430,7 +1445,7 @@ void tst_SharedFileList::hashing_aFileChangedSinceTheScanIsNotAFailure()
     QVERIFY(shared.m_settleDirs.contains(fi.absolutePath()));
 
     // The next look at the directory takes it as it is now.
-    shared.rescanDirectory(fi.absolutePath());
+    RESCAN(shared, rescanDirectory(fi.absolutePath()));
     QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
 }
 
@@ -1465,14 +1480,14 @@ void tst_SharedFileList::hashFailure_givenUpSurvivesARestart()
         SharedFileList shared(&knownFiles);
         shared.setHashFailureStorePath(storePath);
         QVERIFY(shared.m_hashFailures.value(key).givenUp);
-        shared.reload();
+        RESCAN(shared, reload());
         QCOMPARE(shared.getHashingCount(), 0);     // left alone
         QTest::qWait(100);
         QCOMPARE(shared.getCount(), 0);
 
         // Changed: worth another look.
         QVERIFY(!env.put(QStringLiteral("bad.bin"), QByteArray(450, 'b')).isEmpty());
-        shared.reload();
+        RESCAN(shared, reload());
         QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
         QVERIFY(!shared.m_hashFailures.contains(key));
     }
@@ -1539,7 +1554,7 @@ void tst_SharedFileList::hashing_volumesRunSideBySideOneVolumeInSequence()
         KnownFileList knownFiles;
         SharedFileList shared(&knownFiles);
         shared.m_volumeKeyFn = [](const QString& dir) { return QFileInfo(dir).fileName(); };
-        shared.reload();   // dispatches before any worker result is delivered
+        RESCAN(shared, reload());   // dispatches before any worker result is delivered
 
         // Each worker is handed its whole volume ahead: small files need no round trip
         QCOMPARE(shared.m_hashWorkers.size(), size_t{2});
@@ -1562,7 +1577,7 @@ void tst_SharedFileList::hashing_volumesRunSideBySideOneVolumeInSequence()
         KnownFileList knownFiles;
         SharedFileList shared(&knownFiles);
         shared.m_volumeKeyFn = [](const QString&) { return QStringLiteral("one"); };
-        shared.reload();
+        RESCAN(shared, reload());
         QCOMPARE(shared.m_hashWorkers.size(), size_t{1});
         QCOMPARE(shared.m_hashing.size(), 6);
         QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 6, 10000);
@@ -1642,7 +1657,7 @@ void tst_SharedFileList::hashing_bigFilesAreNotHandedOutAhead()
 
     KnownFileList knownFiles;
     SharedFileList shared(&knownFiles);
-    shared.reload();
+    RESCAN(shared, reload());
     QCOMPARE(shared.m_hashing.size(), 2);
     QCOMPARE(shared.getHashingCount(), 3);
     QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 3, 60000);
@@ -1665,7 +1680,7 @@ void tst_SharedFileList::reload_nameWithWindowsReservedCharsIsNotRehashed()
 
     KnownFileList knownFiles;
     SharedFileList shared(&knownFiles);
-    shared.reload();
+    RESCAN(shared, reload());
     QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
     QTRY_COMPARE_WITH_TIMEOUT(shared.getHashingCount(), 0, 10000);
     KnownFile* file = nullptr;
@@ -1673,7 +1688,7 @@ void tst_SharedFileList::reload_nameWithWindowsReservedCharsIsNotRehashed()
     QVERIFY(file);
     QCOMPARE(file->fileName(), name);
 
-    shared.reload();
+    RESCAN(shared, reload());
     QCOMPARE(shared.getHashingCount(), 0);
     QCOMPARE(shared.getCount(), 1);
 #endif
@@ -1708,7 +1723,7 @@ void tst_SharedFileList::moveBetweenSharedDirs_keepsTheFileAndHashesNothing()
 
     KnownFileList knownFiles;
     SharedFileList shared(&knownFiles);
-    shared.reload();
+    RESCAN(shared, reload());
     QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 2, 10000);
     KnownFile* const file = sharedAt(shared, before);
     QVERIFY(file);
@@ -1725,6 +1740,7 @@ void tst_SharedFileList::moveBetweenSharedDirs_keepsTheFileAndHashesNothing()
         else
             shared.rescanDirectories({report == QLatin1String("a") ? dirA : dirB});
     }
+    QTRY_VERIFY(!shared.diskJobsPending());   // the move probe runs off-thread
 
     QCOMPARE(removed.count(), 0);
     QCOMPARE(added.count(), 0);
@@ -1758,7 +1774,7 @@ void tst_SharedFileList::singleSharedFile_itsDirectoryIsWatchedAndRescanned()
     // Rewritten in place: what the watcher's report leads to. Only that file is
     // looked at — its neighbour is not shared and stays out.
     QVERIFY(!writeFile(outside, QStringLiteral("lonely.bin"), QByteArray(640, 'L')).isEmpty());
-    shared.rescanDirectories({outside});
+    RESCAN(shared, rescanDirectories({outside}));
     QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, single) != nullptr
                                  && QByteArray(reinterpret_cast<const char*>(
                                         sharedAt(shared, single)->fileHash()), 16) != firstHash,
@@ -1780,7 +1796,7 @@ void tst_SharedFileList::staleMediaStamp_isBroughtUpToDateInTheBackground()
     KnownFileList knownFiles;
     {
         SharedFileList shared(&knownFiles);
-        shared.reload();
+        RESCAN(shared, reload());
         QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 2, 10000);
         QVERIFY2(shared.m_metaRebuildQueue.empty(), "just hashed: already up to date");
 
@@ -1794,7 +1810,7 @@ void tst_SharedFileList::staleMediaStamp_isBroughtUpToDateInTheBackground()
     }
 
     SharedFileList shared(&knownFiles);
-    shared.reload();
+    RESCAN(shared, reload());
     QCOMPARE(shared.getCount(), 2);
     QCOMPARE(shared.m_metaRebuildQueue.size(), size_t{2});
     for (int i = 0; i < 100 && !shared.m_metaRebuildQueue.empty(); ++i)
@@ -1818,7 +1834,7 @@ void tst_SharedFileList::freshFile_isHeldBackWhileWatching()
         QVERIFY(f.setFileTime(QDateTime::currentDateTime().addSecs(-3600), QFileDevice::FileModificationTime));
     }
 
-    shared.reload();
+    RESCAN(shared, reload());
     QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
     QVERIFY(sharedAt(shared, old));
     QVERIFY2(shared.m_settleDirs.contains(env.shareDir), "the directory is looked at again later");
@@ -1840,7 +1856,7 @@ void tst_SharedFileList::watching_picksUpACopiedInFileWithoutAReload()
     ShareEnv env;
     KnownFileList knownFiles;
     SharedFileList shared(&knownFiles);
-    shared.reload();
+    RESCAN(shared, reload());
     shared.setWatchingEnabled(true);
     shared.m_settleSecs = 0;
     QVERIFY(shared.watcher());
@@ -1857,7 +1873,7 @@ void tst_SharedFileList::watching_picksUpACopiedInFileWithoutAReload()
 
     // a directory that stops being shared stops being watched
     thePrefs.setSharedDirs({});
-    shared.reload();
+    RESCAN(shared, reload());
     QCOMPARE(shared.watcher()->roots().size(), 1);
 }
 
@@ -1868,7 +1884,7 @@ void tst_SharedFileList::watching_aNetworkShareIsSharedFromThePoll()
     ShareEnv env;
     KnownFileList knownFiles;
     SharedFileList shared(&knownFiles);
-    shared.reload();
+    RESCAN(shared, reload());
     shared.setPollMinutes(5);
     shared.setWatchingEnabled(true);
     shared.m_settleSecs = 0;
@@ -1877,7 +1893,7 @@ void tst_SharedFileList::watching_aNetworkShareIsSharedFromThePoll()
     shared.watcher()->setTimings(100, 1000, 150);
     // roots asked before the remote check was in place: ask again
     shared.watcher()->setRoots({});
-    shared.reload();
+    RESCAN(shared, reload());
     QTRY_VERIFY(!shared.watcher()->watchesPending());
     QVERIFY(shared.watcher()->polledRoots().contains(share));
 
@@ -1892,7 +1908,7 @@ void tst_SharedFileList::rescan_takesTheWatcherListingInsteadOfTheDisk()
     ShareEnv env;
     KnownFileList knownFiles;
     SharedFileList shared(&knownFiles);
-    shared.reload();
+    RESCAN(shared, reload());
     QCOMPARE(shared.getCount(), 0);
 
     env.put(QStringLiteral("listed.bin"), QByteArray(700, 'l'));
@@ -1902,22 +1918,154 @@ void tst_SharedFileList::rescan_takesTheWatcherListingInsteadOfTheDisk()
 
     shared.m_prelisted.insert(SharedFileList::pathKey(env.shareDir),
                               {listing, QDateTime::currentMSecsSinceEpoch()});
-    shared.rescanDirectory(env.shareDir);
+    RESCAN(shared, rescanDirectory(env.shareDir));
     QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
     QTest::qWait(300);
     QCOMPARE(shared.getCount(), 1);   // the later file was not looked for
     QVERIFY(shared.m_prelisted.isEmpty());
 
     // taken once: the next rescan reads the disk
-    shared.rescanDirectory(env.shareDir);
+    RESCAN(shared, rescanDirectory(env.shareDir));
     QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 2, 10000);
 
     // a stale listing is not used
     env.put(QStringLiteral("third.bin"), QByteArray(900, 't'));
     shared.m_prelisted.insert(SharedFileList::pathKey(env.shareDir),
                               {listing, QDateTime::currentMSecsSinceEpoch() - 120'000});
-    shared.rescanDirectory(env.shareDir);
+    RESCAN(shared, rescanDirectory(env.shareDir));
     QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 3, 10000);
+}
+
+// #84: the tree walk runs on its own thread; a rescan uses the last walk and does
+// not wait for a new one. Subfolders join when it is back.
+void tst_SharedFileList::incomingTree_isWalkedOffTheCoreThread()
+{
+    ShareEnv env;
+    const QString incoming = thePrefs.incomingDir();
+    const QString deep = writeFile(incoming + QStringLiteral("/Job/CD1"), QStringLiteral("a.bin"), QByteArray(610, 'a'));
+    const QString top = writeFile(incoming, QStringLiteral("b.bin"), QByteArray(620, 'b'));
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    shared.reload();
+    QVERIFY2(shared.diskJobsPending(), "listing handed to the disk thread");
+    QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, deep) && sharedAt(shared, top), 10000);
+    QTRY_VERIFY(!shared.treeWalkPending());
+    QVERIFY(shared.shareRoots().contains(QFileInfo(deep).absolutePath()));
+
+    // a walk that hangs (a NAS): rescans still answer from the last walk
+    const QString later = writeFile(incoming + QStringLiteral("/Later"), QStringLiteral("c.bin"), QByteArray(630, 'c'));
+    shared.diskWorker()->run({}, [] {
+        QThread::msleep(1500);
+        return ShareDiskApply{};
+    });
+    QElapsedTimer timer;
+    timer.start();
+    shared.rescanDirectory(incoming);   // the walk it asks for waits behind the slow one
+    shared.reload();
+    QVERIFY2(timer.elapsed() < 1000, "rescan waited for the tree walk");
+    QVERIFY(sharedAt(shared, deep));   // from the last walk
+    QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, later), 15000);
+    QTRY_VERIFY(!shared.treeWalkPending());
+}
+
+// #84: a file gone from a scanned folder is looked for in the other roots on the
+// disk thread; a rescan does not wait for that, and nothing changes until it is back.
+void tst_SharedFileList::moveProbe_runsOffTheCoreThread()
+{
+    eMule::testing::TempDir tmp;
+    const QString dirA = tmp.filePath(QStringLiteral("a"));
+    const QString dirB = tmp.filePath(QStringLiteral("b"));
+    QDir().mkpath(dirB);
+    const QString before = writeFile(dirA, QStringLiteral("travels.bin"), QByteArray(900, 't'));
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({dirA, dirB});
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    RESCAN(shared, reload());
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
+    QTRY_VERIFY(!shared.diskJobsPending());
+    KnownFile* const file = sharedAt(shared, before);
+    QVERIFY(file);
+    const QString after = QDir(dirB).filePath(QStringLiteral("travels.bin"));
+    QVERIFY(QFile::rename(before, after));
+
+    // a share that hangs: the probe waits behind it
+    shared.diskWorker()->run({}, [] {
+        QThread::msleep(1500);
+        return ShareDiskApply{};
+    });
+    QSignalSpy removed(&shared, &SharedFileList::fileRemoved);
+    QElapsedTimer timer;
+    timer.start();
+    shared.rescanDirectories({dirA});
+    QVERIFY2(timer.elapsed() < 1000, "rescan waited for the move probe");
+    QCOMPARE(sharedAt(shared, before), file);   // untouched until the probe is back
+    QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, after) == file, 10000);
+    QCOMPARE(removed.count(), 0);
+}
+
+// #84: files shared one by one are stat'ed on the disk thread; a rescan uses the
+// last stats, and one not stat'ed yet is left as it is.
+void tst_SharedFileList::singleSharedFiles_areStatedOffTheCoreThread()
+{
+    ShareEnv env;
+    const QString outside = env.tmp.filePath(QStringLiteral("elsewhere"));
+    const QString single = writeFile(outside, QStringLiteral("lonely.bin"), QByteArray(600, 'l'));
+
+    KnownFileList knownFiles;
+    {
+        SharedFileList shared(&knownFiles);
+        QVERIFY(shared.addSingleSharedFile(single));
+        QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(shared.getHashingCount(), 0, 10000);
+        shared.reload();
+        QCOMPARE(shared.getCount(), 1);   // not stat'ed yet: kept
+        QTRY_VERIFY(!shared.diskJobsPending());
+        QVERIFY(sharedAt(shared, single));
+    }
+
+    // a fresh start reads sharedfiles.dat: the file joins once its stat is back
+    SharedFileList shared(&knownFiles);
+    shared.reload();
+    QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, single) != nullptr, 10000);
+
+    // a stat that hangs does not hold up the rescan; the file leaves once it is back
+    QVERIFY(QFile::remove(single));
+    shared.diskWorker()->run({}, [] {
+        QThread::msleep(1500);
+        return ShareDiskApply{};
+    });
+    QElapsedTimer timer;
+    timer.start();
+    shared.rescanDirectories({outside});
+    QVERIFY2(timer.elapsed() < 1000, "rescan waited for the stat");
+    QVERIFY(sharedAt(shared, single));   // last stat said it is there
+    QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, single) == nullptr, 10000);
+}
+
+// #84: a torrent folder released by BtShareGuard: the folders below come from the
+// last tree walk, not from a walk on the core thread.
+void tst_SharedFileList::rescanTrees_coversTheFoldersBelow()
+{
+    ShareEnv env;
+    const QString incoming = thePrefs.incomingDir();
+    const QString deep = writeFile(incoming + QStringLiteral("/Album/CD1"), QStringLiteral("01.bin"), QByteArray(640, 'd'));
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    bool blocked = true;
+    shared.setNeverShared([&](const QString& p) { return blocked && p.contains(QStringLiteral("/Album/")); });
+    RESCAN(shared, reload());
+    QTRY_VERIFY(!shared.diskJobsPending());
+    QVERIFY(!sharedAt(shared, deep));
+    QVERIFY(shared.shareRoots().contains(QFileInfo(deep).absolutePath()));
+
+    blocked = false;
+    shared.rescanTrees({incoming + QStringLiteral("/Album")});
+    QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, deep) != nullptr, 10000);
 }
 
 // MFC Reload() (srchybrid/SharedFileList.cpp:784-796). The map is emptied wholesale, so
@@ -1957,13 +2105,13 @@ void tst_SharedFileList::reload_dropsKeywordsOfFilesNoLongerShared()
     makeKnown(QStringLiteral("staying.bin"), 0xC1, true);
     KnownFile* gone = makeKnown(QStringLiteral("vanished.bin"), 0xC2, false);
 
-    shared.reload();
+    RESCAN(shared, reload());
     QVERIFY(shared.safeAddKFile(gone));   // shared by hand, in no shared directory
     QCOMPARE(shared.getCount(), 2);
     const int both = shared.m_keywords.keywordCount();
     QVERIFY(both >= 2);
 
-    shared.reload();                      // the rescan does not find "vanished"
+    RESCAN(shared, reload());                      // the rescan does not find "vanished"
     QCOMPARE(shared.getCount(), 1);
     QVERIFY2(shared.m_keywords.keywordCount() < both,
              "keywords of a file that is no longer shared must be purged");
@@ -2073,12 +2221,12 @@ void tst_SharedFileList::rescan_duplicateIsNotHashedAgain()
     KnownFileList knownFiles;
     SharedFileList shared(&knownFiles);
     theApp.sharedFileList = &shared;
-    shared.reload();
+    RESCAN(shared, reload());
     QTRY_COMPARE_WITH_TIMEOUT(shared.getHashingCount(), 0, 10000);
     QCOMPARE(shared.getCount(), 1);
 
     // Nothing changed: nothing to hash
-    shared.reload();
+    RESCAN(shared, reload());
     QCOMPARE(shared.getHashingCount(), 0);
 
     // After a restart neither: duplicates.dat remembers the copy
@@ -2087,7 +2235,7 @@ void tst_SharedFileList::rescan_duplicateIsNotHashedAgain()
         SharedFileList first(&knownFiles);
         first.setDuplicateStorePath(store);
         theApp.sharedFileList = &first;
-        first.reload();
+        RESCAN(first, reload());
         QTRY_COMPARE_WITH_TIMEOUT(first.getHashingCount(), 0, 10000);
         QCOMPARE(first.getCount(), 1);
     }   // saved on destruction
@@ -2095,7 +2243,7 @@ void tst_SharedFileList::rescan_duplicateIsNotHashedAgain()
         SharedFileList second(&knownFiles);
         second.setDuplicateStorePath(tmp.filePath(QStringLiteral("duplicates.dat")));
         theApp.sharedFileList = &second;
-        second.reload();
+        RESCAN(second, reload());
         QCOMPARE(second.getHashingCount(), 0);
         QCOMPARE(second.getCount(), 1);
     }
@@ -2107,7 +2255,7 @@ void tst_SharedFileList::rescan_duplicateIsNotHashedAgain()
     QVERIFY(kept);
     const QString keptPath = kept->filePath();
     QVERIFY(QFile::remove(keptPath));
-    shared.reload();
+    RESCAN(shared, reload());
     QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
     KnownFile* now = nullptr;
     shared.forEachFile([&](KnownFile* f) { now = f; });
@@ -2552,7 +2700,7 @@ void tst_SharedFileList::rehashAllFiles_rebuildsKnownMetAtTheEnd()
     KnownFileList knownFiles;
     knownFiles.init(tmp.path());
     SharedFileList shared(&knownFiles);
-    shared.reload();
+    RESCAN(shared, reload());
     QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 3, 10000);
     QTRY_COMPARE_WITH_TIMEOUT(shared.getHashingCount(), 0, 5000);
 
@@ -2869,13 +3017,14 @@ void tst_SharedFileList::attachCollection_parsesAFileSharedBeforeItWasComplete()
     QVERIFY(file->collection() == nullptr);
 
     shared.attachCollection(file);
-    QVERIFY(file->collection() != nullptr);
+    QTRY_VERIFY(file->collection() != nullptr);   // read on the disk worker
     QCOMPARE(file->collection()->fileCount(), 2);
 
     // Not a collection by name: left alone.
     auto* other = makeFileOnDisk(knownFiles, shared, 0x52, dir.path(), QStringLiteral("x.txt"),
                                  "ed2k://|file|one.bin|1000|0123456789ABCDEF0123456789ABCDEF|/\n");
     shared.attachCollection(other);
+    QTRY_VERIFY(!shared.diskJobsPending());
     QVERIFY(other->collection() == nullptr);
 }
 

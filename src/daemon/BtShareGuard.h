@@ -27,7 +27,7 @@ public:
     using FilesFn = std::function<std::optional<QList<bt::BtFileRow>>()>;
 
     struct Change {
-        QStringList released;    ///< folders to rescan: their files may be shared now
+        QStringList released;    ///< paths to rescan with their folders below (SharedFileList::rescanTrees)
         bool blockedMore = false;  ///< drop shared files that are blocked now
         /// its complete files, once, when a torrent seen downloading turns done (#131):
         /// shared one by one outside a shared folder

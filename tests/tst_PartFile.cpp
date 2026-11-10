@@ -3,6 +3,7 @@
 ///        priority, persistence, block selection, source tracking.
 
 #include "TestHelpers.h"
+#include "utils/BackgroundFileWriter.h"
 #include "TestFixtures.h"
 #include "app/AppContext.h"
 #include "files/PartFile.h"
@@ -1094,7 +1095,8 @@ void tst_PartFile::createPartFile_createsFiles()
     QVERIFY(pf.createPartFile(tempDir));
     QVERIFY(!pf.partMetFileName().isEmpty());
 
-    // Verify .part.met file exists
+    // Verify .part.met file exists, once the writer thread saved it
+    BackgroundFileWriter::instance().flush();
     QVERIFY(QFile::exists(pf.fullName()));
 }
 

@@ -27,6 +27,7 @@
 #include "protocol/Tag.h"
 #include "stats/Statistics.h"
 #include "transfer/DownloadQueue.h"
+#include "utils/BackgroundFileWriter.h"
 #include "utils/DiskLoadLimiter.h"
 #include "utils/ReadOnceHint.h"
 #include "utils/FileDate.h"
@@ -43,6 +44,9 @@
 #include "server/Server.h"
 
 
+#include <QBuffer>
+#include <QCoreApplication>
+#include <QPointer>
 #include <QScopeGuard>
 #include <QTimer>
 #include <QtEndian>
@@ -1707,6 +1711,7 @@ void PartFile::stopFile(bool cancel)
         if (partPath.endsWith(QStringLiteral(".met")))
             partPath.chop(4);
 
+        BackgroundFileWriter::instance().discard(metPath);   // no save lands after this
         QFile::remove(partPath);                              // NNN.part
         QFile::remove(metPath);                               // NNN.part.met
         QFile::remove(metPath + QStringLiteral(".bak"));      // NNN.part.met.bak
@@ -2237,16 +2242,53 @@ bool PartFile::createPartFile(const QString& tempDir)
 // Persistence — LoadPartFile
 // ===========================================================================
 
+PartMetPreload PartMetPreload::read(const QString& metPath)
+{
+    PartMetPreload pre;
+    pre.metPath = metPath;
+    if (QFile met(metPath); met.open(QIODevice::ReadOnly))
+        pre.met = met.readAll();
+    if (QFile bak(metPath + QStringLiteral(".bak")); bak.open(QIODevice::ReadOnly))
+        pre.bak = bak.readAll();
+    QString partPath = metPath;
+    if (partPath.endsWith(QStringLiteral(".met")))
+        partPath.chop(4);
+    if (const QFileInfo info(partPath); info.exists()) {
+        pre.partExists = true;
+        pre.partSize = info.size();
+        pre.partBorn = info.birthTime();
+        pre.partMtime = info.lastModified().toSecsSinceEpoch();
+        pre.localTimeVolume = isLocalTimeVolume(info.absolutePath());
+    }
+    return pre;
+}
+
 PartFileLoadResult PartFile::loadPartFile(const QString& directory,
                                            const QString& filename,
-                                           PartFileFormat* checkFormat)
+                                           PartFileFormat* checkFormat,
+                                           const PartMetPreload* preload)
 {
     m_tmpPath = directory;
     m_partMetFilename = filename;
     m_fullName = directory + QDir::separator() + filename;
 
     const QString metPath = m_fullName;
-    SafeFile file(metPath, QIODevice::ReadOnly);
+    // Preloaded bytes for a preload of this very file; the disk otherwise
+    if (preload && (!preload->met || preload->metPath != metPath))
+        preload = nullptr;
+    std::optional<SafeFile> diskMet;
+    std::optional<SafeMemFile> memMet;
+    // A save still queued for the writer is newer than the disk
+    std::optional<QByteArray> queued;
+    if (!preload)
+        queued = BackgroundFileWriter::instance().pending(metPath);
+    if (preload)
+        memMet.emplace(*preload->met);
+    else if (queued)
+        memMet.emplace(*queued);
+    else
+        diskMet.emplace(metPath, QIODevice::ReadOnly);
+    FileDataIO& file = memMet ? static_cast<FileDataIO&>(*memMet) : *diskMet;
 
     // The eDonkey layouts an import can meet (MFC PartFile.cpp:739-771): "new style"
     // files have no priorities worth keeping, carry their hashes at the end, and
@@ -2272,9 +2314,9 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
             version != PARTFILE_SPLITTEDVERSION)
         {
             if (version == 'S') {   // "SDL…": a Shareaza download
-                file.close();       // it is rewritten in place; Windows refuses while open
+                diskMet.reset();    // it is rewritten in place; Windows refuses while open
                 const PartFileLoadResult result =
-                    importShareazaTempFile(directory, filename, checkFormat);
+                    importShareazaTempFile(directory, filename, checkFormat, preload);
                 loaded = result == PartFileLoadResult::LoadSuccess;
                 return result;
             }
@@ -2569,7 +2611,7 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
     if (partPath.endsWith(QStringLiteral(".met")))
         partPath.chop(4);
 
-    if (!QFile::exists(partPath)) {
+    if (preload ? !preload->partExists : !QFile::exists(partPath)) {
         logError(QStringLiteral("PartFile::loadPartFile: .part file missing: %1").arg(partPath));
         return PartFileLoadResult::FailedNoAccess;
     }
@@ -2577,7 +2619,7 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
     // MFC safety: if .part file is shorter than expected, add gap for missing tail.
     // Normal for a file that grows with its writes (Windows), so only data lost is news.
     {
-        const uint64 partFileLen = static_cast<uint64>(QFileInfo(partPath).size());
+        const uint64 partFileLen = static_cast<uint64>(preload ? preload->partSize : QFileInfo(partPath).size());
         const uint64 fs = static_cast<uint64>(fileSize());
         if (fs > 0 && partFileLen < fs && !isPureGap(partFileLen, fs - 1)) {
             logWarning(QStringLiteral("PartFile::loadPartFile: .part file truncated (%1 < %2), adding gap for tail")
@@ -2625,7 +2667,7 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
 
     // "Added On" is when the .part came to be, not when this run began
     // (MFC srchybrid/PartFile.cpp LoadPartFile: m_tCreated = st_ctime).
-    if (const QDateTime born = QFileInfo(partPath).birthTime(); born.isValid())
+    if (const QDateTime born = preload ? preload->partBorn : QFileInfo(partPath).birthTime(); born.isValid())
         m_tCreated = static_cast<time_t>(born.toSecsSinceEpoch());
 
     // Did the .part change behind our back — an unclean shutdown, or something else
@@ -2634,10 +2676,10 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
     // MFC srchybrid/PartFile.cpp:1129-1145.
     if (m_status != PartFileStatus::Completing && !m_md4HashsetNeeded && !newStyle) {
         const QFileInfo partInfo(partPath);
-        const qint64 onDisk = partInfo.lastModified().toSecsSinceEpoch();
+        const qint64 onDisk = preload ? preload->partMtime : partInfo.lastModified().toSecsSinceEpoch();
         if (onDisk > 0
             && !sameFileDate(m_tLastModified, static_cast<time_t>(onDisk),
-                             isLocalTimeVolume(partInfo.absolutePath()))) {
+                             preload ? preload->localTimeVolume : isLocalTimeVolume(partInfo.absolutePath()))) {
             logWarning(QStringLiteral("Part file changed since last run, rehashing: %1")
                            .arg(fileName()));
             m_status = PartFileStatus::WaitingForHash;
@@ -2660,6 +2702,12 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
 // Persistence — SavePartFile
 // ===========================================================================
 
+namespace {
+/// @p met with the .part's date at byte 1, as loadPartFile() compares it
+[[nodiscard]] QByteArray stampPartMet(QByteArray met, const QString& partPath);
+[[nodiscard]] QByteArray stampPartMet(QByteArray met, qint64 mtime);
+} // namespace
+
 bool PartFile::savePartFile()
 {
     if (m_fullName.isEmpty())
@@ -2670,240 +2718,55 @@ bool PartFile::savePartFile()
     if (m_status == PartFileStatus::WaitingForHash || m_status == PartFileStatus::Hashing)
         return false;
 
-    // Stamp the date of the .part we are describing. This is what loadPartFile()
-    // compares against to notice the data was changed behind our back; without it the
-    // field written below is meaningless (MFC srchybrid/PartFile.cpp:1174-1180).
-    {
-        // A file open for writing has no final date yet: NTFS settles the last-write
-        // time when the handle closes, so a stamp taken before that differs from what
-        // the next start finds, and every such file was rehashed in full. Whoever
-        // needs the handle next reopens it.
-        if (m_partFileHandle.isOpen())
-            m_partFileHandle.close();
-        const QFileInfo partInfo(partDataPath());
-        if (partInfo.exists()) {
-            const qint64 mtime = partInfo.lastModified().toSecsSinceEpoch();
-            m_tLastModified = mtime > 0 ? static_cast<time_t>(mtime) : static_cast<time_t>(-1);
-        }
-    }
+    // A file open for writing has no final date yet: NTFS settles the last-write
+    // time when the handle closes, so a stamp taken before that differs from what
+    // the next start finds, and every such file was rehashed in full. Whoever
+    // needs the handle next reopens it.
+    if (m_partFileHandle.isOpen())
+        m_partFileHandle.close();
 
-    // Write to temp file first, then atomic rename
-    const QString tempPath = m_fullName + QStringLiteral(".backup");
-
+    SafeMemFile mem;
     try {
-        SafeFile file(tempPath, QIODevice::WriteOnly);
-
-        // Version
-        const bool largeFile = isLargeFile();
-        file.writeUInt8(largeFile ? PARTFILE_VERSION_LARGEFILE : PARTFILE_VERSION);
-
-        // Timestamp
-        file.writeUInt32(static_cast<uint32>(m_tLastModified));
-
-        // MD4 hash
-        file.writeHash16(fileHash());
-
-        // Part hashes (hashset)
-        const uint16 hashCount = fileIdentifier().getAvailableMD4PartHashCount();
-        file.writeUInt16(hashCount);
-        for (uint16 i = 0; i < hashCount; ++i) {
-            const uint8* partHash = fileIdentifier().getMD4PartHash(i);
-            if (partHash)
-                file.writeHash16(partHash);
-            else {
-                uint8 zeroHash[16] = {};
-                file.writeHash16(zeroHash);
-            }
-        }
-
-        // Tag count — written as placeholder, patched at the end after all tags
-        // (including buffered-data-as-gaps which we don't know the count of upfront)
-        uint32 tagCount = 0;
-        const auto tagCountPos = file.position();
-        file.writeUInt32(0); // placeholder
-
-        // -- Write tags --
-
-        // Filename
-        Tag(FT_FILENAME, fileName()).writeNewEd2kTag(file, UTF8Mode::OptBOM);
-        tagCount++;
-
-        // File size
-        if (largeFile) {
-            Tag(FT_FILESIZE, static_cast<uint32>(static_cast<uint64>(fileSize()) & 0xFFFFFFFFu))
-                .writeNewEd2kTag(file);
-            tagCount++;
-            Tag(FT_FILESIZE_HI, static_cast<uint32>(static_cast<uint64>(fileSize()) >> 32))
-                .writeNewEd2kTag(file);
-            tagCount++;
-        } else {
-            Tag(FT_FILESIZE, static_cast<uint32>(fileSize()))
-                .writeNewEd2kTag(file);
-            tagCount++;
-        }
-
-        // Transferred
-        if (m_transferred > UINT32_MAX) {
-            Tag(FT_TRANSFERRED, static_cast<uint64>(m_transferred))
-                .writeNewEd2kTag(file);
-        } else {
-            Tag(FT_TRANSFERRED, static_cast<uint32>(m_transferred))
-                .writeNewEd2kTag(file);
-        }
-        tagCount++;
-
-        // Priority
-        Tag(FT_DLPRIORITY,
-            static_cast<uint32>(m_autoDownPriority ? kPrAuto : m_downPriority))
-            .writeNewEd2kTag(file);
-        tagCount++;
-
-        // Upload priority (MFC PartFile.cpp:1250)
-        Tag(FT_ULPRIORITY, upPriorityTagValue()).writeNewEd2kTag(file);
-        tagCount++;
-
-        // Status (paused)
-        Tag(FT_STATUS, static_cast<uint32>(m_paused ? 1u : 0u))
-            .writeNewEd2kTag(file);
-        tagCount++;
-
-        // Category
-        Tag(FT_CATEGORY, m_category).writeNewEd2kTag(file);
-        tagCount++;
-
-        // Corruption loss
-        if (m_corruptionLoss > 0) {
-            Tag(FT_CORRUPTED, static_cast<uint32>(m_corruptionLoss))
-                .writeNewEd2kTag(file);
-            tagCount++;
-        }
-
-        // Compression gain
-        if (m_compressionGain > 0) {
-            Tag(FT_COMPRESSION, static_cast<uint32>(m_compressionGain))
-                .writeNewEd2kTag(file);
-            tagCount++;
-        }
-
-        // Active download time
-        if (const uint32 activeTime = dlActiveTime(); activeTime > 0) {
-            Tag(FT_DL_ACTIVE_TIME, activeTime).writeNewEd2kTag(file);
-            tagCount++;
-        }
-
-        if (m_lastSeenComplete > 0) {
-            Tag(FT_LASTSEENCOMPLETE, static_cast<uint32>(m_lastSeenComplete)).writeNewEd2kTag(file);
-            tagCount++;
-        }
-
-        if (m_privateMaxSources > 0) {
-            Tag(FT_MAXSOURCES, m_privateMaxSources).writeNewEd2kTag(file);
-            tagCount++;
-        }
-
-        if (m_nameLocked) {
-            Tag(FT_NAMELOCKED, uint32{1}).writeNewEd2kTag(file);
-            tagCount++;
-        }
-
-        for (const QString& url : m_webSeeds) {
-            Tag(FT_WEBSEED, url).writeNewEd2kTag(file, UTF8Mode::OptBOM);
-            tagCount++;
-        }
-
-        // Bit 0 preview priority, bit 1 pause on preview (MFC PartFile.cpp:1284-1289)
-        if (m_previewPrio || m_pauseOnPreview) {
-            Tag(FT_DL_PREVIEW, static_cast<uint32>((m_pauseOnPreview ? 2 : 0) | (m_previewPrio ? 1 : 0)))
-                .writeNewEd2kTag(file);
-            tagCount++;
-        }
-
-        // Corrupted parts list
-        if (!m_corruptedParts.empty()) {
-            QString partList;
-            for (size_t i = 0; i < m_corruptedParts.size(); ++i) {
-                if (i > 0) partList += u',';
-                partList += QString::number(m_corruptedParts[i]);
-            }
-            Tag(FT_CORRUPTEDPARTS, partList).writeNewEd2kTag(file, UTF8Mode::Raw);
-            tagCount++;
-        }
-
-        // AICH hash (base32 encoded)
-        if (fileIdentifier().hasAICHHash()) {
-            Tag(FT_AICH_HASH, fileIdentifier().getAICHHash().getString())
-                .writeNewEd2kTag(file, UTF8Mode::Raw);
-            tagCount++;
-        }
-
-        // AICH part hashset (binary blob)
-        if (fileIdentifier().hasExpectedAICHHashCount()) {
-            SafeMemFile aichFile;
-            fileIdentifier().writeAICHHashsetToFile(aichFile);
-            Tag(FT_AICHHASHSET, aichFile.buffer()).writeNewEd2kTag(file);
-            tagCount++;
-        }
-
-        // Cached Kad notes (filenames/comments) — eMuleQt private blob tag
-        if (!kadNotes().empty()) {
-            Tag(FT_KADNOTECACHE, serializeKadNotes()).writeNewEd2kTag(file);
-            tagCount++;
-        }
-
-        // Gaps, the way eMule and aMule read them: a string name made of the
-        // FT_GAPSTART/FT_GAPEND byte and the gap's index, and an end that is the first
-        // byte after the gap (MFC PartFile.cpp:1371-1391).
-        uint32 gapIndex = 0;
-        const auto writeGap = [&](uint64 start, uint64 end) {
-            const QByteArray index = QByteArray::number(gapIndex++);
-            const QByteArray startName = QByteArray(1, static_cast<char>(FT_GAPSTART)) + index;
-            const QByteArray endName = QByteArray(1, static_cast<char>(FT_GAPEND)) + index;
-            if (largeFile) {
-                Tag(startName, start).writeTagToFile(file);
-                Tag(endName, end + 1).writeTagToFile(file);
-            } else {
-                Tag(startName, static_cast<uint32>(start)).writeTagToFile(file);
-                Tag(endName, static_cast<uint32>(end + 1)).writeTagToFile(file);
-            }
-            tagCount += 2;
-        };
-        for (const auto& gap : m_gapList)
-            writeGap(gap.start, gap.end);
-
-        // Write buffered (not-yet-flushed) data ranges as gaps too.
-        // This data exists only in RAM — if we crash before flushing,
-        // the reload must re-request these ranges. (MFC PartFile.cpp:1392-1433)
-        // Data handed to the disk worker is no further along: same treatment.
-        for (const auto* pending : {&m_bufferedData, &m_flushingData}) {
-            auto it = pending->begin();
-            while (it != pending->end()) {
-                uint64 bStart = it->start;
-                uint64 bEnd   = it->end;
-                ++it;
-                // Merge contiguous entries
-                while (it != pending->end() && it->start == bEnd + 1) {
-                    bEnd = it->end;
-                    ++it;
-                }
-                writeGap(bStart, bEnd);
-            }
-        }
-
-        // Patch the tag count at the recorded position
-        const auto endPos = file.position();
-        file.seek(tagCountPos, SEEK_SET);
-        file.writeUInt32(tagCount);
-        file.seek(endPos, SEEK_SET);
-
-        // A full disk only shows up here; a short .part.met must never replace a good one.
-        commitAndReplace(file, tempPath, m_fullName, theApp.commitFilesNow());
-
+        writePartMet(mem);
     } catch (const FileException& ex) {
-        logError(QStringLiteral("PartFile::savePartFile: error writing %1: %2")
-                     .arg(tempPath, QString::fromStdString(ex.what())));
-        QFile::remove(tempPath);
+        logError(QStringLiteral("PartFile::savePartFile: cannot encode %1: %2")
+                     .arg(m_fullName, QString::fromStdString(ex.what())));
         return false;
     }
+
+    // Stamped, written and committed on the writer thread: the stat and the sync held
+    // the core thread, for seconds with Temp on a NAS (#84). The stamp is the .part's
+    // date, what loadPartFile() compares to notice data changed behind our back
+    // (MFC srchybrid/PartFile.cpp:1174-1180).
+    const QString partPath = partDataPath();
+    const bool sync = theApp.commitFilesNow();
+    const QPointer<PartFileNotifier> alive(&m_partNotifier);
+    BackgroundFileWriter::instance().writeProduced(
+        m_fullName,
+        [bytes = mem.takeBuffer(), partPath] { return stampPartMet(bytes, partPath); },
+        [this, alive, sync](const QString& path, const QByteArray& data) {
+            const QString tempPath = path + QStringLiteral(".backup");
+            try {
+                SafeFile file(tempPath, QIODevice::WriteOnly);
+                file.write(data.constData(), data.size());
+                // A full disk only shows up here; a short .part.met must never replace a good one.
+                commitAndReplace(file, tempPath, path, sync);
+            } catch (const FileException& ex) {
+                logError(QStringLiteral("PartFile::savePartFile: error writing %1: %2")
+                             .arg(tempPath, QString::fromStdString(ex.what())));
+                QFile::remove(tempPath);
+                return false;
+            }
+            const uint32 raw = qFromLittleEndian<uint32>(data.constData() + 1);
+            const time_t stamp = raw == 0xFFFFFFFFu ? static_cast<time_t>(-1) : static_cast<time_t>(raw);
+            if (QCoreApplication* app = QCoreApplication::instance()) {   // gone: written at exit
+                QMetaObject::invokeMethod(app, [this, alive, stamp] {
+                    if (alive)
+                        m_tLastModified = stamp;
+                });
+            }
+            return true;
+        });
 
     return true;
 }
@@ -3806,7 +3669,8 @@ void PartFile::performFileMove(const QString& srcPath, const QString& destPath, 
         m_completionRunning = false;
         m_fileOp = PartFileOp::None;
         if (success) {
-            // Delete .part.met and .bak
+            // Delete .part.met and .bak, after any save still queued
+            BackgroundFileWriter::instance().discard(m_fullName);
             QFile::remove(m_fullName);
             QFile::remove(m_fullName + QStringLiteral(".bak"));
             QFile::remove(m_fullName + QStringLiteral(".backup"));
@@ -4954,7 +4818,7 @@ namespace {
 /// The little of MFC's CArchive an .sd file needs.
 class ArchiveReader {
 public:
-    explicit ArchiveReader(QFile& file) : m_file(file) {}
+    explicit ArchiveReader(QIODevice& file) : m_file(file) {}
 
     void read(void* dest, qint64 len)
     {
@@ -4995,11 +4859,27 @@ public:
     }
 
 private:
-    QFile& m_file;
+    QIODevice& m_file;
 };
 
+QByteArray stampPartMet(QByteArray met, const QString& partPath)
+{
+    if (const QFileInfo partInfo(partPath); partInfo.exists())
+        met = stampPartMet(std::move(met), partInfo.lastModified().toSecsSinceEpoch());
+    return met;
+}
+
+QByteArray stampPartMet(QByteArray met, qint64 mtime)
+{
+    if (met.size() >= 5) {
+        const auto stamp = qToLittleEndian(static_cast<uint32>(mtime > 0 ? mtime : -1));
+        met.replace(1, 4, reinterpret_cast<const char*>(&stamp), 4);
+    }
+    return met;
+}
+
 /// Position @p file just behind the next occurrence of @p needle (MFC gotostring).
-bool seekBehind(QFile& file, const QByteArray& needle)
+bool seekBehind(QIODevice& file, const QByteArray& needle)
 {
     const qint64 start = file.pos();
     const QByteArray rest = file.readAll();
@@ -5055,10 +4935,16 @@ void PartFile::handleWriteFailure(const QString& error, bool diskFull)
 // this does not parse and are found by searching for the file size and the file hash.
 PartFileLoadResult PartFile::importShareazaTempFile(const QString& directory,
                                                     const QString& filename,
-                                                    PartFileFormat* checkFormat)
+                                                    PartFileFormat* checkFormat,
+                                                    const PartMetPreload* preload)
 {
     const QString sdPath = directory + QDir::separator() + filename;
-    QFile sd(sdPath);
+    // The preloaded bytes when the startup read has them, else the disk
+    QFile sdFile(sdPath);
+    QBuffer sdBuffer;
+    QIODevice& sd = preload ? static_cast<QIODevice&>(sdBuffer) : sdFile;
+    if (preload)
+        sdBuffer.setData(*preload->met);
     if (!sd.open(QIODevice::ReadOnly)) {
         logError(QStringLiteral("Failed to open %1: %2").arg(sdPath, sd.errorString()));
         return PartFileLoadResult::FailedNoAccess;
@@ -5184,9 +5070,20 @@ PartFileLoadResult PartFile::importShareazaTempFile(const QString& directory,
     if (!savePartFile())
         return PartFileLoadResult::FailedOther;
 
+    // Reloaded from what was just written, not read back from the disk
+    std::optional<PartMetPreload> written;
+    if (preload) {
+        written = *preload;
+        SafeMemFile mem;
+        writePartMet(mem);
+        // with the .part's date the save stamps too: a reload without it rehashes
+        written->met = preload->partExists ? stampPartMet(mem.takeBuffer(), preload->partMtime)
+                                           : mem.takeBuffer();
+        written->bak.reset();
+    }
     fileIdentifier().deleteMD4Hashset();
     m_gapList.clear();
-    return loadPartFile(directory, filename);
+    return loadPartFile(directory, filename, nullptr, written ? &*written : nullptr);
 }
 
 
@@ -5197,6 +5094,212 @@ void PartFile::requestSizeLookup()
     const auto size = static_cast<uint64>(fileSize());
     theApp.partFileSizeLookup->request(
         QByteArray(reinterpret_cast<const char*>(fileHash()), 16), size, size + PARTSIZE);
+}
+
+/// The .part.met layout savePartFile() writes; also serialises to memory.
+void PartFile::writePartMet(FileDataIO& file)
+{
+    // Version
+    const bool largeFile = isLargeFile();
+    file.writeUInt8(largeFile ? PARTFILE_VERSION_LARGEFILE : PARTFILE_VERSION);
+
+    // Timestamp
+    file.writeUInt32(static_cast<uint32>(m_tLastModified));
+
+    // MD4 hash
+    file.writeHash16(fileHash());
+
+    // Part hashes (hashset)
+    const uint16 hashCount = fileIdentifier().getAvailableMD4PartHashCount();
+    file.writeUInt16(hashCount);
+    for (uint16 i = 0; i < hashCount; ++i) {
+        const uint8* partHash = fileIdentifier().getMD4PartHash(i);
+        if (partHash)
+            file.writeHash16(partHash);
+        else {
+            uint8 zeroHash[16] = {};
+            file.writeHash16(zeroHash);
+        }
+    }
+
+    // Tag count — written as placeholder, patched at the end after all tags
+    // (including buffered-data-as-gaps which we don't know the count of upfront)
+    uint32 tagCount = 0;
+    const auto tagCountPos = file.position();
+    file.writeUInt32(0); // placeholder
+
+    // -- Write tags --
+
+    // Filename
+    Tag(FT_FILENAME, fileName()).writeNewEd2kTag(file, UTF8Mode::OptBOM);
+    tagCount++;
+
+    // File size
+    if (largeFile) {
+        Tag(FT_FILESIZE, static_cast<uint32>(static_cast<uint64>(fileSize()) & 0xFFFFFFFFu))
+            .writeNewEd2kTag(file);
+        tagCount++;
+        Tag(FT_FILESIZE_HI, static_cast<uint32>(static_cast<uint64>(fileSize()) >> 32))
+            .writeNewEd2kTag(file);
+        tagCount++;
+    } else {
+        Tag(FT_FILESIZE, static_cast<uint32>(fileSize()))
+            .writeNewEd2kTag(file);
+        tagCount++;
+    }
+
+    // Transferred
+    if (m_transferred > UINT32_MAX) {
+        Tag(FT_TRANSFERRED, static_cast<uint64>(m_transferred))
+            .writeNewEd2kTag(file);
+    } else {
+        Tag(FT_TRANSFERRED, static_cast<uint32>(m_transferred))
+            .writeNewEd2kTag(file);
+    }
+    tagCount++;
+
+    // Priority
+    Tag(FT_DLPRIORITY,
+        static_cast<uint32>(m_autoDownPriority ? kPrAuto : m_downPriority))
+        .writeNewEd2kTag(file);
+    tagCount++;
+
+    // Upload priority (MFC PartFile.cpp:1250)
+    Tag(FT_ULPRIORITY, upPriorityTagValue()).writeNewEd2kTag(file);
+    tagCount++;
+
+    // Status (paused)
+    Tag(FT_STATUS, static_cast<uint32>(m_paused ? 1u : 0u))
+        .writeNewEd2kTag(file);
+    tagCount++;
+
+    // Category
+    Tag(FT_CATEGORY, m_category).writeNewEd2kTag(file);
+    tagCount++;
+
+    // Corruption loss
+    if (m_corruptionLoss > 0) {
+        Tag(FT_CORRUPTED, static_cast<uint32>(m_corruptionLoss))
+            .writeNewEd2kTag(file);
+        tagCount++;
+    }
+
+    // Compression gain
+    if (m_compressionGain > 0) {
+        Tag(FT_COMPRESSION, static_cast<uint32>(m_compressionGain))
+            .writeNewEd2kTag(file);
+        tagCount++;
+    }
+
+    // Active download time
+    if (const uint32 activeTime = dlActiveTime(); activeTime > 0) {
+        Tag(FT_DL_ACTIVE_TIME, activeTime).writeNewEd2kTag(file);
+        tagCount++;
+    }
+
+    if (m_lastSeenComplete > 0) {
+        Tag(FT_LASTSEENCOMPLETE, static_cast<uint32>(m_lastSeenComplete)).writeNewEd2kTag(file);
+        tagCount++;
+    }
+
+    if (m_privateMaxSources > 0) {
+        Tag(FT_MAXSOURCES, m_privateMaxSources).writeNewEd2kTag(file);
+        tagCount++;
+    }
+
+    if (m_nameLocked) {
+        Tag(FT_NAMELOCKED, uint32{1}).writeNewEd2kTag(file);
+        tagCount++;
+    }
+
+    for (const QString& url : m_webSeeds) {
+        Tag(FT_WEBSEED, url).writeNewEd2kTag(file, UTF8Mode::OptBOM);
+        tagCount++;
+    }
+
+    // Bit 0 preview priority, bit 1 pause on preview (MFC PartFile.cpp:1284-1289)
+    if (m_previewPrio || m_pauseOnPreview) {
+        Tag(FT_DL_PREVIEW, static_cast<uint32>((m_pauseOnPreview ? 2 : 0) | (m_previewPrio ? 1 : 0)))
+            .writeNewEd2kTag(file);
+        tagCount++;
+    }
+
+    // Corrupted parts list
+    if (!m_corruptedParts.empty()) {
+        QString partList;
+        for (size_t i = 0; i < m_corruptedParts.size(); ++i) {
+            if (i > 0) partList += u',';
+            partList += QString::number(m_corruptedParts[i]);
+        }
+        Tag(FT_CORRUPTEDPARTS, partList).writeNewEd2kTag(file, UTF8Mode::Raw);
+        tagCount++;
+    }
+
+    // AICH hash (base32 encoded)
+    if (fileIdentifier().hasAICHHash()) {
+        Tag(FT_AICH_HASH, fileIdentifier().getAICHHash().getString())
+            .writeNewEd2kTag(file, UTF8Mode::Raw);
+        tagCount++;
+    }
+
+    // AICH part hashset (binary blob)
+    if (fileIdentifier().hasExpectedAICHHashCount()) {
+        SafeMemFile aichFile;
+        fileIdentifier().writeAICHHashsetToFile(aichFile);
+        Tag(FT_AICHHASHSET, aichFile.buffer()).writeNewEd2kTag(file);
+        tagCount++;
+    }
+
+    // Cached Kad notes (filenames/comments) — eMuleQt private blob tag
+    if (!kadNotes().empty()) {
+        Tag(FT_KADNOTECACHE, serializeKadNotes()).writeNewEd2kTag(file);
+        tagCount++;
+    }
+
+    // Gaps, the way eMule and aMule read them: a string name made of the
+    // FT_GAPSTART/FT_GAPEND byte and the gap's index, and an end that is the first
+    // byte after the gap (MFC PartFile.cpp:1371-1391).
+    uint32 gapIndex = 0;
+    const auto writeGap = [&](uint64 start, uint64 end) {
+        const QByteArray index = QByteArray::number(gapIndex++);
+        const QByteArray startName = QByteArray(1, static_cast<char>(FT_GAPSTART)) + index;
+        const QByteArray endName = QByteArray(1, static_cast<char>(FT_GAPEND)) + index;
+        if (largeFile) {
+            Tag(startName, start).writeTagToFile(file);
+            Tag(endName, end + 1).writeTagToFile(file);
+        } else {
+            Tag(startName, static_cast<uint32>(start)).writeTagToFile(file);
+            Tag(endName, static_cast<uint32>(end + 1)).writeTagToFile(file);
+        }
+        tagCount += 2;
+    };
+    for (const auto& gap : m_gapList)
+        writeGap(gap.start, gap.end);
+
+    // Write buffered (not-yet-flushed) data ranges as gaps too.
+    // This data exists only in RAM — if we crash before flushing,
+    // the reload must re-request these ranges. (MFC PartFile.cpp:1392-1433)
+    // Data handed to the disk worker is no further along: same treatment.
+    for (const auto* pending : {&m_bufferedData, &m_flushingData}) {
+        auto it = pending->begin();
+        while (it != pending->end()) {
+            uint64 bStart = it->start;
+            uint64 bEnd   = it->end;
+            ++it;
+            // Merge contiguous entries
+            while (it != pending->end() && it->start == bEnd + 1) {
+                bEnd = it->end;
+                ++it;
+            }
+            writeGap(bStart, bEnd);
+        }
+    }
+
+    // Patch the tag count at the recorded position
+    const auto endPos = file.position();
+    file.seek(tagCountPos, SEEK_SET);
+    file.writeUInt32(tagCount);
+    file.seek(endPos, SEEK_SET);
 }
 
 } // namespace eMule

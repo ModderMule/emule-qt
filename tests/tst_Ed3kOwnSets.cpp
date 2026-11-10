@@ -4,7 +4,9 @@
 /// a follower C downloads it by its link and sees a new version; a hidden set's link only
 /// through GetEd3kOwnSetLink, its sealed members opened by a follower with the link; a paid
 /// catalogue's members sealed into .sealed/ (no plain root shared), a voucher holder opens one;
-/// a restart publishes the version kept; unpublish ends the head (setUnpublish).
+/// a restart publishes the version kept; unpublish ends the head (setUnpublish); hops.md §1: a set
+/// goes under its files' key, mixed keys refused, a file of the other key offers that key, a set of
+/// a hiding node goes out under the anonymous key.
 
 #include "Ed3kDownloads.h"
 #include "Ed3kOwnSets.h"
@@ -169,6 +171,9 @@ private slots:
     void aPaidCatalogueIsSealedAndAPassHolderOpensIt();
     void theIpcListsPublishesAndRetitles();
     void unpublishEndsTheHead();
+    void aSetOfFilesOfBothKeysIsRefused();
+    void aFileOfTheOtherKeyOffersThatKey();
+    void aHidingNodePublishesUnderTheAnonymousKey();
     void cleanupTestCase();
     void cleanup() { QTest::qWait(10); }
 
@@ -533,6 +538,92 @@ void tst_Ed3kOwnSets::unpublishEndsTheHead()
     QTRY_COMPARE_WITH_TIMEOUT(done.count(), 1, 60000);
     QVERIFY(m_own->info(m_openId)->published);
     QCOMPARE(m_own->info(m_openId)->seq, std::uint64_t(3));
+}
+
+// hops.md §1: an own set never lists files of both keys
+void tst_Ed3kOwnSets::aSetOfFilesOfBothKeysIsRefused()
+{
+    const QString folder = QDir(m_files.path()).filePath(QStringLiteral("Mixed"));
+    const QByteArray x = payload(70 * 1024 + 1, 11);
+    const QByteArray y = payload(90 * 1024 + 2, 12);
+    QVERIFY(writeFile(QDir(folder).filePath(QStringLiteral("x.bin")), x));
+    QVERIFY(writeFile(QDir(folder).filePath(QStringLiteral("y.bin")), y));
+    m_a.hide().record(rootOf(x), ::ed3k::KeyKind::Anon);
+    m_a.hide().record(rootOf(y), ::ed3k::KeyKind::Node);
+    const auto id = m_own->create(QStringLiteral("Mixed"), folder, {}, Ed3kOwnSets::Kind::Open);
+    QVERIFY(id);
+    QVERIFY(!waitVersion(*id));
+    const auto info = m_own->info(*id);
+    QVERIFY(info);
+    QVERIFY(!info->published);
+    QVERIFY(info->error.contains(QStringLiteral("anonymous key")));
+    QVERIFY(info->offerKey.isEmpty());   // nothing to offer: move the files first
+    QVERIFY(info->key.isEmpty());
+}
+
+// a published set (node key) whose new version lists a file of the anonymous key: refused, the
+// anonymous key offered; moving there needs hiding (§1: nothing under it while off)
+void tst_Ed3kOwnSets::aFileOfTheOtherKeyOffersThatKey()
+{
+    QCOMPARE(m_own->info(m_openId)->key, QStringLiteral("Node"));
+    const QByteArray d = payload(60 * 1024 + 7, 13);
+    QVERIFY(writeFile(QDir(m_folder).filePath(QStringLiteral("d.bin")), d));
+    m_a.hide().record(rootOf(d), ::ed3k::KeyKind::Anon);
+    const auto seq = m_own->info(m_openId)->seq;
+    QVERIFY(m_own->publishNewVersion(m_openId));
+    QVERIFY(!waitVersion(m_openId));
+    auto info = m_own->info(m_openId);
+    QCOMPARE(info->seq, seq);
+    QCOMPARE(info->offerKey, QStringLiteral("Anonymous"));
+    QVERIFY(info->error.contains(QStringLiteral("anonymous key")));
+    // the offer over IPC: refused while hiding is off
+    IpcMessage ctl(IpcMsgType::Ed3kOwnSetControl);
+    ctl.append(qint64(4));
+    ctl.append(m_openId);
+    ctl.append(QStringLiteral("Anonymous"));
+    const IpcMessage r = ask(&Ed3kOwnSetsBridge::handleRequest, std::move(ctl));
+    QVERIFY(!r.fieldBool(0));
+    // the file taken out again: published under the node key as before
+    QVERIFY(QFile::remove(QDir(m_folder).filePath(QStringLiteral("d.bin"))));
+    QVERIFY(m_own->publishNewVersion(m_openId));
+    QVERIFY(waitVersion(m_openId));
+    info = m_own->info(m_openId);
+    QCOMPARE(info->seq, seq + 1);
+    QVERIFY(info->offerKey.isEmpty());
+}
+
+// hiding: a new set of new files goes under the anonymous key (Ed3kHide::keyForUse): its
+// manifest and members held there, none under the node key
+void tst_Ed3kOwnSets::aHidingNodePublishesUnderTheAnonymousKey()
+{
+    QVERIFY(m_dd.isValid());
+    Ed3kSession d;
+    d.setHideSettings(Ed3kHideSettings{true, 1, true, 25});
+    QVERIFY(d.start(loopback(m_dd.path())));
+    QVERIFY(d.hide().hiding());
+    Ed3kOwnSets own(d, m_dd.path());
+    QVERIFY(own.isStarted());
+    const QString folder = QDir(m_files.path()).filePath(QStringLiteral("Hidden"));
+    const QByteArray z = payload(50 * 1024 + 3, 14);
+    QVERIFY(writeFile(QDir(folder).filePath(QStringLiteral("z.bin")), z));
+    QSignalSpy done(&own, &Ed3kOwnSets::versionDone);
+    const auto id = own.create(QStringLiteral("Hidden"), folder, {}, Ed3kOwnSets::Kind::Open);
+    QVERIFY(id);
+    QTRY_COMPARE_WITH_TIMEOUT(done.count(), 1, 60000);
+    const auto info = own.info(*id);
+    QVERIFY2(done.at(0).at(2).toBool(), qPrintable(info ? info->error : QString()));
+    QCOMPARE(info->key, QStringLiteral("Anonymous"));
+    const auto manifest = own.manifestOf(*id);
+    QVERIFY(manifest);
+    QCOMPARE(d.engine()->fileKey(*manifest).value_or(std::nullopt), std::optional(::ed3k::KeyKind::Anon));
+    QCOMPARE(d.engine()->fileKey(rootOf(z)).value_or(std::nullopt), std::optional(::ed3k::KeyKind::Anon));
+    QCOMPARE(d.hide().recorded(rootOf(z)), std::optional(::ed3k::KeyKind::Anon));
+    // hiding off: the anonymous node took the set's shares along; nothing under the node key
+    d.setHideSettings(Ed3kHideSettings{false, 1, true, 25});
+    QVERIFY(!own.manifestOf(*id));
+    QVERIFY(!d.engine()->fileKey(rootOf(z)).value_or(std::nullopt));
+    own.stop();
+    d.stop();
 }
 
 QTEST_GUILESS_MAIN(tst_Ed3kOwnSets)

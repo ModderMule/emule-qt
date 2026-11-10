@@ -537,6 +537,9 @@
     <ClCompile Include="files\SharedDirWatcher.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="files\ShareDiskWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="files\SharedFileList.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -574,6 +577,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="stats\StatsHistory.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="stats\SaveFolderSpace.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="stats\StatsSnapshot.cpp">
@@ -1316,6 +1322,9 @@
     <QtMoc Include="files\SharedDirWatcher.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="files\ShareDiskWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="files\SharedFileList.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -1358,6 +1367,9 @@
     <QtMoc Include="stats\StatsHistory.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <ClInclude Include="stats\SaveFolderSpace.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="stats\StatsSnapshot.h">
       <Filter>Header Files</Filter>
     </ClInclude>

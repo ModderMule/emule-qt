@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "dialogs/FirstStartWizard.h"
 
+#include "dialogs/LegacyImportPage.h"
 #include "dialogs/PortChangeNotice.h"
 #include "dialogs/PortTest.h"
 #include "dialogs/RouterPage.h"
@@ -46,10 +47,12 @@ constexpr int kRowKeep = -3;
 constexpr int kRowRecommended = -2;
 constexpr int kRowCustom = -1;
 
-// Two pages, on purpose (2026-10): MFC CPShtWiz1 has seven (PShtWiz1.cpp:775-797) —
+// Few pages, on purpose (2026-10): MFC CPShtWiz1 has seven (PShtWiz1.cpp:775-797) —
 // nick, autoconnect, priorities, obfuscation and safe connect are left to Options.
-constexpr int kPagePorts = 0;
-constexpr int kPageSpeed = 1;
+// Import first: what it brings in shows on the pages after it.
+constexpr int kPageImport = 0;
+constexpr int kPagePorts = 1;
+constexpr int kPageSpeed = 2;
 
 // A limit in KiB/s as shown in the list; 0 = unlimited.
 QString limitText(uint32 kib)
@@ -73,6 +76,8 @@ FirstStartWizard::FirstStartWizard(IpcClient* ipc, QWidget* parent, StartPage st
     setupHeader();
 
     m_pages = new QStackedWidget(this);
+    m_importPage = new LegacyImportPage(m_ipc, this);
+    m_pages->addWidget(m_importPage);
     m_pages->addWidget(setupPortPage());
     m_pages->addWidget(setupSpeedPage());
     mainLayout->addWidget(m_pages, 1);
@@ -83,7 +88,25 @@ FirstStartWizard::FirstStartWizard(IpcClient* ipc, QWidget* parent, StartPage st
     fillFromSettings(thePrefs.toIpcMap());
     requestDaemonSettings();
 
-    showPage(startPage == StartPage::Speed ? kPageSpeed : kPagePorts);
+    showPage(startPage == StartPage::Speed   ? kPageSpeed
+             : startPage == StartPage::Ports ? kPagePorts
+                                             : kPageImport);
+    // No Back, Next or Cancel while the core restarts for the import
+    connect(m_importPage, &LegacyImportPage::busyChanged, this, [this](bool busy) {
+        m_nextBtn->setEnabled(!busy);
+        m_backBtn->setEnabled(!busy && m_pages->currentIndex() > firstPage());
+        m_cancelBtn->setEnabled(!busy);
+    });
+    // Nothing to import from: the page is left out
+    connect(m_importPage, &LegacyImportPage::searchFinished, this, [this](bool found) {
+        if (found || m_importSkipped)
+            return;
+        m_importSkipped = true;
+        if (m_pages->currentIndex() == kPageImport)
+            showPage(kPagePorts);
+        else
+            m_backBtn->setEnabled(m_pages->currentIndex() > firstPage());
+    });
 
     // Fixed like the MFC wizard, but never smaller than its own explanatory text.
     DialogSizing::applyFixedSize(this, QSize(530, 460));
@@ -481,7 +504,8 @@ void FirstStartWizard::setupButtons()
     m_nextBtn = new QPushButton(tr("Next >"), this);
     m_nextBtn->setDefault(true);
 
-    auto* cancelBtn = new QPushButton(tr("Cancel"), this);
+    m_cancelBtn = new QPushButton(tr("Cancel"), this);
+    auto* cancelBtn = m_cancelBtn;
     auto* helpBtn = new QPushButton(tr("Help"), this);
 
     btnLayout->addStretch();
@@ -503,9 +527,14 @@ void FirstStartWizard::showPage(int page)
 {
     m_pages->setCurrentIndex(page);
     const bool speed = page == kPageSpeed;
-    m_titleLabel->setText(speed ? tr("Connection Speed") : tr("Ports and Connection"));
-    m_subtitleLabel->setText(speed ? tr("Bandwidth") : tr("Connection"));
-    m_backBtn->setEnabled(speed);
+    if (page == kPageImport) {
+        m_titleLabel->setText(tr("Import"));
+        m_subtitleLabel->setText(tr("From eMule or aMule"));
+    } else {
+        m_titleLabel->setText(speed ? tr("Connection Speed") : tr("Ports and Connection"));
+        m_subtitleLabel->setText(speed ? tr("Bandwidth") : tr("Connection"));
+    }
+    m_backBtn->setEnabled(page > firstPage());
     m_nextBtn->setText(speed ? tr("Finish") : tr("Next >"));
 }
 
@@ -561,6 +590,7 @@ void FirstStartWizard::fillFromSettings(const QCborMap& prefs)
     m_extControlsCheck->setChecked(prefs.value(QLatin1StringView("showExtControls")).toBool(true));
     syncFileTypeBoxes();
 
+    m_currentMaxConnections = number(QLatin1StringView("maxConnections"));
     m_current = {number(QLatin1StringView("maxGraphDownloadRate")),
                  number(QLatin1StringView("maxGraphUploadRate")),
                  number(QLatin1StringView("maxDownload")),
@@ -584,12 +614,24 @@ void FirstStartWizard::fillFromSettings(const QCborMap& prefs)
 
 void FirstStartWizard::onBack()
 {
-    showPage(std::max(m_pages->currentIndex() - 1, kPagePorts));
+    showPage(std::max(m_pages->currentIndex() - 1, firstPage()));
 }
 
 void FirstStartWizard::onNext()
 {
     const int page = m_pages->currentIndex();
+    if (page == kPageImport) {
+        m_importPage->apply([self = QPointer<FirstStartWizard>(this)](bool ok, bool restarted) {
+            if (!self || !ok)
+                return;
+            // The imported port (one for TCP, UDP and ed3k), networks and limits
+            // fill the pages that follow
+            if (restarted)
+                self->requestDaemonSettings();
+            self->showPage(kPagePorts);
+        });
+        return;
+    }
     // Leaving the ports page, and at the end: at least one network
     if ((page == kPagePorts || page == kPageSpeed) && !networksValid())
         return;
@@ -710,6 +752,9 @@ void FirstStartWizard::onPortTest()
 
 void FirstStartWizard::reject()
 {
+    // The core restarts for the import: closing now would leave it half done
+    if (m_importPage && m_importPage->busy())
+        return;
     // The ports only: a mapping that worked stays, as in MFC (PShtWiz1.cpp:821-829)
     if (!m_portsBefore.isEmpty() && m_ipc && m_ipc->isConnected()) {
         Ipc::IpcMessage req(Ipc::IpcMsgType::SetPreferences);
@@ -866,6 +911,12 @@ void FirstStartWizard::finish()
         m_applied.insert(QStringLiteral("maxDownload"), bandwidth->maxDown);
         m_applied.insert(QStringLiteral("maxUpload"), bandwidth->maxUp);
     }
+    // A fast upload gets more connections, so its auto Kad buddy slots are not capped
+    const uint32 maxConnections = bandwidth ? connectionsForLine(bandwidth->capUp, m_currentMaxConnections)
+                                            : m_currentMaxConnections;
+    const bool raiseConnections = maxConnections > m_currentMaxConnections;
+    if (raiseConnections)
+        m_applied.insert(QStringLiteral("maxConnections"), maxConnections);
 
     // GUI's in-memory copy, so this session reads what was just chosen
     thePrefs.setPort(tcpPort);
@@ -889,6 +940,8 @@ void FirstStartWizard::finish()
         thePrefs.setMaxDownload(bandwidth->maxDown);
         thePrefs.setMaxUpload(bandwidth->maxUp);
     }
+    if (raiseConnections)
+        thePrefs.setMaxConnections(static_cast<uint16>(maxConnections));
 
     if (m_ipc && m_ipc->isConnected()) {
         Ipc::IpcMessage req(Ipc::IpcMsgType::SetPreferences);
@@ -920,6 +973,8 @@ void FirstStartWizard::finish()
             send("maxDownload", bandwidth->maxDown);
             send("maxUpload", bandwidth->maxUp);
         }
+        if (raiseConnections)
+            send("maxConnections", maxConnections);
         // The wizard is gone by the time this answers: the notice goes to its parent
         m_ipc->sendRequest(std::move(req), [parent = QPointer<QWidget>(parentWidget()),
                                             ipc = QPointer<IpcClient>(m_ipc)](
@@ -1022,6 +1077,11 @@ void FirstStartWizard::syncFileTypeBoxes()
     sync(m_assocTorrentCheck, m_btCheck->isChecked(), m_shownTypes.torrent);
     sync(m_assocEd2kCheck, m_kadCheck->isChecked() || m_ed2kCheck->isChecked() || m_ed3kCheck->isChecked(),
          m_shownTypes.ed2k);
+}
+
+int FirstStartWizard::firstPage() const
+{
+    return m_importSkipped ? kPagePorts : kPageImport;
 }
 
 } // namespace eMule

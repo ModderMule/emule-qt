@@ -7,16 +7,22 @@
 /// - Global switch: while hiding, new ed3k searches, downloads and new shares go under the
 ///   anonymous key; files held before keep their key (keys.json, Config/ed3k). A file is
 ///   never under both keys (packmule refuses it) and moves only after the user was asked (§1).
-/// - One hop count for every connection and lookup type (HideCfg::uniform); gates at the
-///   core default. packmule takes per-type counts too (HideCfg), unused here.
+/// - One hop count for every use (lookups, downloads, shares, publish, rooms, paid), 0 to 3;
+///   gates at the core default; nodeKeyUses 0. 0 = deniable, not hidden (§2.6): only while
+///   hopping, else 1 is taken. packmule takes per-use counts too (HideCfg), not offered here.
+/// - Key per use (§1): keyForUse() = anonymous while hiding runs, else node key; a file keeps
+///   keyFor(root). Hiding off: nothing under the anonymous key, nothing falls back.
 /// - The seed is Config/ed3k/anon.key (owner-only, a secret, never logged).
 /// - Files of the anonymous key are not served while hiding is off: nothing of them goes
 ///   under the node key behind the user's back.
 /// - HTTP, hoster, eD2K and LAN never go anonymous (ffi.md MUST): only the joins that say
 ///   so (Ed3kJoinBase::anonCapable) use the anonymous key.
-/// - ToDo: topics (sets) and live under the anonymous key: the FFI has no anonymous routing
-///   for them, so they stay on the node key; rooms (ed3k_room_anon_*) and paid
-///   (paidAnon*) under the anonymous key are not switched by this either.
+/// - was: ToDo: topics (sets) and live under the anonymous key; rooms and paid not switched
+///   (done, batch 16: live, channel search, followed and own sets, rooms, paid and the upload
+///   queue take keyForUse() / the files' key and keyed events).
+/// - ToDo: a paid channel watched anonymously is followed under the node key
+///   (Ed3kPaid::followChannel has no key); members of a followed set download by the hiding
+///   switch, not the set's key (Ed3kDownloadSpec has no key).
 
 #include "Ed3kFfi.h"
 
@@ -35,7 +41,7 @@ class Ed3kSession;
 /// The prefs of hiding (ed3kHide, ed3kHops, ed3kHopping, ed3kHopShare).
 struct Ed3kHideSettings {
     bool on = false;
-    int hops = 1;             ///< 1 to 3, every use (HideCfg::uniform)
+    int hops = 1;             ///< 0 to 3, every use; 0 only with hopping (§2.6), else 1
     bool hopping = true;      ///< forward for others while hiding (§1 "Recommended", §5)
     int sharePercent = 25;    ///< of the upload limit for others' paths (§5)
 
@@ -82,6 +88,9 @@ public:
 
     // -- which key a file is under -------------------------------------------
 
+    /// The key a new use goes under (search, live, followed set, room, paid, §1): the
+    /// anonymous key while hiding runs, else the node key.
+    [[nodiscard]] ::ed3k::KeyKind keyForUse() const;
     /// The key a file of an anon-capable join goes under: its recorded one; a new one under
     /// the anonymous key while hiding, else the node key.
     [[nodiscard]] ::ed3k::KeyKind keyFor(const ::ed3k::Root& root) const;
@@ -103,6 +112,10 @@ public:
 
     /// "Node" / "Anonymous" for the GUI (not localized: an IPC value).
     [[nodiscard]] static QString keyName(::ed3k::KeyKind key);
+    /// @p s as applied: hops 0 to 3, 0 only with hopping (§2.6: else 1), share 1 to 100.
+    [[nodiscard]] static Ed3kHideSettings normalized(Ed3kHideSettings s);
+    /// The HideCfg of @p hops: every use at that count, nothing under the node key.
+    [[nodiscard]] static ::ed3k::HideCfg hideCfg(int hops);
 
 signals:
     /// The anonymous node started (also again under a new key): Ed3kCredit::applyAnonKey.

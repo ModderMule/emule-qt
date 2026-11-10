@@ -52,7 +52,9 @@ namespace {
 ///       `enabled: false` was only the old default
 ///   4 — incoming shared with its subfolders (torrents, Usenet, hoster packages; #124)
 ///   5 — MFC default nick (emule-project.net URL) replaced by ours
-constexpr uint32 kCurrentPrefsVersion = 6;
+///   6 — NZB search file row downloads that file only
+///   7 — hoster downloads at once: old default 2 raised to 8 (JD's default)
+constexpr uint32 kCurrentPrefsVersion = 7;
 
 /// See Preferences::usenetSubjectPatternsRevision().
 ///
@@ -168,7 +170,6 @@ struct Preferences::Data {
     // eMule 2026 bandwidth: modern OS handles hundreds of half-open connections. MFC default: 9
     uint16 maxHalfConnections = 50;
     uint16 maxServedBuddies = 0;   // Kad: firewalled nodes we relay for, 0 = auto; MFC serves 1
-    uint32 buddyOfferMaxAgeSecs = 300;   // Kad: a queued buddy offer older than this is dropped
     QString bindAddress;
     QString publicIPv6Override;
     // How many distinct peers must independently report the same public IPv6 (via their
@@ -603,6 +604,7 @@ struct Preferences::Data {
     int downloadBarMode = 0;                // DownloadBarMode, 0 = MFC
     bool showActiveDownloadsBold = false;   // MFC ShowActiveDownloadsBold, INI only, off; MorphXT on
     bool showRatesInTitle = false;
+    bool showStatusBarFreeSpace = false;   // #165, as qBittorrent: off
     bool showCatTabInfos = false;
     bool autoRemoveFinishedDownloads = false;
     bool showTransToolbar = true;
@@ -769,7 +771,7 @@ struct Preferences::Data {
     QStringList ed3kExtOff;            // extension names off at start
     bool ed3kLan = true;               // LAN discovery
     bool ed3kHide = false;             // hiding (hops.md §1): new searches, downloads, shares anonymous
-    int ed3kHops = 1;                  // 1 to 3, every connection and lookup type
+    int ed3kHops = 1;                  // 0 to 3, every use (0: only while hopping, hops.md §2.6)
     bool ed3kHopping = true;           // forward for others while hiding (§1 "Recommended")
     int ed3kHopShare = 25;             // % of the upload limit for others' paths (§5)
     QStringList ed3kNodeLists;         // ed3k:nodes links (bootstrap.md §3)
@@ -982,7 +984,6 @@ void Preferences::setMaxServedBuddies(uint16 val)
     set(&Data::maxServedBuddies, std::min<uint16>(val, kMaxServedBuddiesLimit));
 }
 
-uint32 Preferences::buddyOfferMaxAgeSecs() const { return get(&Data::buddyOfferMaxAgeSecs); }
 
 uint16 Preferences::autoServedBuddies(uint32 uploadCapacityKiB)
 {
@@ -990,16 +991,17 @@ uint16 Preferences::autoServedBuddies(uint32 uploadCapacityKiB)
     // follow the line class, so a slow line keeps its connections for transfers.
     if (uploadCapacityKiB == 0)
         return kAssumedRelayServedBuddies;   // unknown capacity
-    // 1 Mbit/s = 125 KiB/s
-    if (uploadCapacityKiB < 500)      // < 4 Mbit/s
+    // Mbit/s -> KiB/s as the first start wizard converts (mbitToKiB): 1 Gbit/s = 122070
+    constexpr auto kib = [](uint64 mbit) { return static_cast<uint32>(mbit * 1'000'000 / 8 / 1024); };
+    if (uploadCapacityKiB < kib(4))
         return 4;
-    if (uploadCapacityKiB < 2500)     // < 20 Mbit/s
+    if (uploadCapacityKiB < kib(20))
         return 8;
-    if (uploadCapacityKiB < 12500)    // < 100 Mbit/s
+    if (uploadCapacityKiB < kib(100))
         return 16;
-    if (uploadCapacityKiB < 62500)    // < 500 Mbit/s
+    if (uploadCapacityKiB < kib(500))
         return 32;
-    if (uploadCapacityKiB < 125000)   // < 1 Gbit/s
+    if (uploadCapacityKiB < kib(1000))
         return 64;
     return kMaxServedBuddiesLimit;
 }
@@ -2585,7 +2587,7 @@ void Preferences::setEd3kLan(bool val) { set(&Data::ed3kLan, val); }
 bool Preferences::ed3kHide() const { return get(&Data::ed3kHide); }
 void Preferences::setEd3kHide(bool val) { set(&Data::ed3kHide, val); }
 int Preferences::ed3kHops() const { return get(&Data::ed3kHops); }
-void Preferences::setEd3kHops(int val) { set(&Data::ed3kHops, std::clamp(val, 1, 3)); }
+void Preferences::setEd3kHops(int val) { set(&Data::ed3kHops, std::clamp(val, 0, 3)); }
 bool Preferences::ed3kHopping() const { return get(&Data::ed3kHopping); }
 void Preferences::setEd3kHopping(bool val) { set(&Data::ed3kHopping, val); }
 int Preferences::ed3kHopShare() const { return get(&Data::ed3kHopShare); }
@@ -3602,6 +3604,10 @@ bool Preferences::showRatesInTitle() const { return get(&Data::showRatesInTitle)
 
 void Preferences::setShowRatesInTitle(bool val) { set(&Data::showRatesInTitle, val); }
 
+bool Preferences::showStatusBarFreeSpace() const { return get(&Data::showStatusBarFreeSpace); }
+
+void Preferences::setShowStatusBarFreeSpace(bool val) { set(&Data::showStatusBarFreeSpace, val); }
+
 bool Preferences::showCatTabInfos() const { return get(&Data::showCatTabInfos); }
 
 void Preferences::setShowCatTabInfos(bool val) { set(&Data::showCatTabInfos, val); }
@@ -4402,7 +4408,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->ed3kExtOff = rpcUrlList(p.value(QStringLiteral("ed3kExtOff")));
     m_data->ed3kLan = p.value(QStringLiteral("ed3kLan")).toBool(true);
     m_data->ed3kHide = p.value(QStringLiteral("ed3kHide")).toBool(false);
-    m_data->ed3kHops = static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kHops")).toInteger(1), 1, 3));
+    m_data->ed3kHops = static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kHops")).toInteger(1), 0, 3));
     m_data->ed3kHopping = p.value(QStringLiteral("ed3kHopping")).toBool(true);
     m_data->ed3kHopShare = static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kHopShare")).toInteger(25), 1, 100));
     m_data->ed3kNodeLists = rpcUrlList(p.value(QStringLiteral("ed3kNodeLists")));
@@ -4811,9 +4817,6 @@ bool Preferences::load(const QString& filePath)
             // clamp before narrowing: -1 would wrap to the maximum
             m_data->maxServedBuddies = static_cast<uint16>(
                 std::clamp<int>(n["maxServedBuddies"].as<int>(m_data->maxServedBuddies), 0, kMaxServedBuddiesLimit));
-            m_data->buddyOfferMaxAgeSecs = std::clamp(
-                n["buddyOfferMaxAgeSecs"].as<uint32>(m_data->buddyOfferMaxAgeSecs),
-                kBuddyOfferMaxAgeSecsMin, kBuddyOfferMaxAgeSecsMax);
             m_data->bindAddress = QString::fromStdString(n["bindAddress"].as<std::string>(m_data->bindAddress.toStdString()));
             m_data->publicIPv6Override = QString::fromStdString(n["publicIPv6Override"].as<std::string>(m_data->publicIPv6Override.toStdString()));
             m_data->ipv6PublicPeerConfirmThreshold = static_cast<uint32>(n["ipv6PublicPeerConfirmThreshold"].as<int>(static_cast<int>(m_data->ipv6PublicPeerConfirmThreshold)));
@@ -5309,6 +5312,7 @@ bool Preferences::load(const QString& filePath)
                 m_data->downloadBarMode = 1;
             m_data->showActiveDownloadsBold = d["showActiveDownloadsBold"].as<bool>(m_data->showActiveDownloadsBold);
             m_data->showRatesInTitle = d["showRatesInTitle"].as<bool>(m_data->showRatesInTitle);
+            m_data->showStatusBarFreeSpace = d["showStatusBarFreeSpace"].as<bool>(m_data->showStatusBarFreeSpace);
             m_data->showCatTabInfos = d["showCatTabInfos"].as<bool>(m_data->showCatTabInfos);
             m_data->autoRemoveFinishedDownloads = d["autoRemoveFinishedDownloads"].as<bool>(m_data->autoRemoveFinishedDownloads);
             m_data->showTransToolbar = d["showTransToolbar"].as<bool>(m_data->showTransToolbar);
@@ -5717,7 +5721,7 @@ bool Preferences::load(const QString& filePath)
             m_data->ed3kExtOff = urls(e3["extOff"]);
             m_data->ed3kLan = e3["lan"].as<bool>(m_data->ed3kLan);
             m_data->ed3kHide = e3["hide"].as<bool>(m_data->ed3kHide);
-            m_data->ed3kHops = std::clamp(e3["hops"].as<int>(m_data->ed3kHops), 1, 3);
+            m_data->ed3kHops = std::clamp(e3["hops"].as<int>(m_data->ed3kHops), 0, 3);
             m_data->ed3kHopping = e3["hopping"].as<bool>(m_data->ed3kHopping);
             m_data->ed3kHopShare = std::clamp(e3["hopShare"].as<int>(m_data->ed3kHopShare), 1, 100);
             m_data->ed3kNodeLists = urls(e3["nodeLists"]);
@@ -6050,6 +6054,10 @@ bool Preferences::load(const QString& filePath)
         if (m_data->startVersion < 6)
             m_data->usenetMetaSelectedFileOnly = true;
 
+        // v7: hoster streams default 2 -> 8; only the old default is rewritten
+        if (m_data->startVersion < 7 && m_data->ed3kHoster.maxStreams == 2)
+            m_data->ed3kHoster.maxStreams = 8;
+
         m_data->startVersion = kCurrentPrefsVersion;
         saveImpl(m_filePath);
     }
@@ -6180,6 +6188,12 @@ Preferences::UserHashSource& userHashSource()
 void Preferences::setUserHashSource(UserHashSource source)
 {
     userHashSource() = std::move(source);
+}
+
+std::optional<std::array<uint8, 16>> Preferences::derivedUserHash()
+{
+    const auto& source = userHashSource();
+    return source ? source() : std::nullopt;
 }
 
 namespace {
@@ -6327,7 +6341,6 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "maxConnections" << YAML::Value << static_cast<int>(m_data->maxConnections);
     out << YAML::Key << "maxHalfConnections" << YAML::Value << static_cast<int>(m_data->maxHalfConnections);
     out << YAML::Key << "maxServedBuddies" << YAML::Value << static_cast<int>(m_data->maxServedBuddies);
-    out << YAML::Key << "buddyOfferMaxAgeSecs" << YAML::Value << m_data->buddyOfferMaxAgeSecs;
     out << YAML::Key << "bindAddress" << YAML::Value << m_data->bindAddress.toStdString();
     out << YAML::Key << "publicIPv6Override" << YAML::Value << m_data->publicIPv6Override.toStdString();
     out << YAML::Key << "ipv6PublicPeerConfirmThreshold" << YAML::Value << static_cast<int>(m_data->ipv6PublicPeerConfirmThreshold);
@@ -6800,6 +6813,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "downloadBarMode" << YAML::Value << m_data->downloadBarMode;
     out << YAML::Key << "showActiveDownloadsBold" << YAML::Value << m_data->showActiveDownloadsBold;
     out << YAML::Key << "showRatesInTitle" << YAML::Value << m_data->showRatesInTitle;
+    out << YAML::Key << "showStatusBarFreeSpace" << YAML::Value << m_data->showStatusBarFreeSpace;
     out << YAML::Key << "showCatTabInfos" << YAML::Value << m_data->showCatTabInfos;
     out << YAML::Key << "autoRemoveFinishedDownloads" << YAML::Value << m_data->autoRemoveFinishedDownloads;
     out << YAML::Key << "showTransToolbar" << YAML::Value << m_data->showTransToolbar;

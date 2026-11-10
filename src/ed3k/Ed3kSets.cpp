@@ -88,7 +88,18 @@ Ed3kSets::Ed3kSets(Ed3kSession& session, Ed3kDownloads& downloads, const QString
         notePlainCopies(s);
     // a sealed member opened: the list shows it complete
     connect(m_opener.get(), &Ed3kSealedOpener::opened, this, [this](const QString&, bool) { markChanged(); });
-    connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kSets::onEventPolled, Qt::DirectConnection);
+    // was: connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kSets::onEventPolled, Qt::DirectConnection);
+    // node key's events as before; the anonymous node's from keyedEventPolled: each once
+    connect(&m_session, &Ed3kSession::eventPolled, this,
+            [this](const ffi::Event& ev, bool* handled) { onEventPolled(ev, ffi::KeyKind::Node, handled); }, Qt::DirectConnection);
+    connect(&m_session, &Ed3kSession::keyedEventPolled, this,
+            [this](const ffi::Event& ev, ffi::KeyKind key, bool* handled) {
+                if (key == ffi::KeyKind::Anon)
+                    onEventPolled(ev, key, handled);
+            },
+            Qt::DirectConnection);
+    connect(&m_session.hide(), &Ed3kHide::started, this, [this] { onHideChanged(true); });
+    connect(&m_session.hide(), &Ed3kHide::stopped, this, [this] { onHideChanged(false); });
     connect(&m_session, &Ed3kSession::statusChanged, this, &Ed3kSets::onSessionStatus);
     // member progress shows in the list; a member's end gives the next its turn
     connect(&m_downloads, &Ed3kDownloads::changed, this, [this] {
@@ -142,6 +153,8 @@ std::expected<std::uint32_t, QString> Ed3kSets::follow(const QString& link, Poli
     s.parsed = *parsed;
     s.policy = policy;
     s.title = parsed->name;
+    // hops.md §1: under the key of a new use, kept for good
+    s.key = m_session.hide().keyForUse();
     auto [it, inserted] = m_sets.emplace(s.id, std::move(s));
     // the link of a hidden set is a credential: never in a log line
     logEd3k(QStringLiteral("ed3k: set %1 followed (%2)").arg(it->first).arg(it->second.parsed.hidden ? QStringLiteral("hidden") : hexOf(it->second.parsed.key).left(8)));
@@ -158,8 +171,8 @@ bool Ed3kSets::unfollow(std::uint32_t id)
     if (it == m_sets.end())
         return false;
     Set& s = it->second;
-    if (auto* e = m_session.engine(); e && s.topic)
-        (void)e->setUnfollow(*s.topic);
+    // was: if (auto* e = m_session.engine(); e && s.topic) (void)e->setUnfollow(*s.topic);
+    unfollowOnEngine(s);
     if (const auto scope = paidScopeOf(s); scope && m_paid)
         m_paid->unfollow(*scope);
     std::erase_if(m_mountTopics, [id](const auto& kv) { return kv.second.first == id; });
@@ -316,10 +329,14 @@ void Ed3kSets::setPaid(Ed3kPaid* paid)
 // Private
 // ---------------------------------------------------------------------------
 
-void Ed3kSets::onEventPolled(const ffi::Event& event, bool* handled)
+void Ed3kSets::onEventPolled(const ffi::Event& event, ffi::KeyKind key, bool* handled)
 {
     namespace e = ffi::event;
     QString mount;
+    // the sets followed under the key of the node that had the event
+    const auto setOfTopic = [this, key](const ffi::Topic& topic, QString* mountPath = nullptr) {
+        return this->setOfTopic(topic, key, mountPath);
+    };
     if (const auto* h = std::get_if<e::SetHead>(&event)) {
         if (Set* s = setOfTopic(h->set)) {
             *handled = true;
@@ -438,6 +455,12 @@ bool Ed3kSets::followOnEngine(Set& s)
     auto* e = m_session.engine();
     if (!e)
         return false;
+    const auto under = s.key;
+    // hops.md §1: hiding off, nothing under the anonymous key (and nothing falls back)
+    if (under == ffi::KeyKind::Anon && !m_session.hide().hiding()) {
+        s.error = QStringLiteral("anonymous key: followed while hiding is on");
+        return false;
+    }
     const auto t = m_session.now();
     // the engine only tells; members are chosen here (see the header)
     constexpr auto kEngine = ffi::SetPolicy::Ask;
@@ -451,19 +474,19 @@ bool Ed3kSets::followOnEngine(Set& s)
         // paid set takes none (packmule batch 13)
         const auto& held = s.pending ? s.pending : s.applied;
         if (held && !s.parsed.paid)
-            topic = e->setFollowHidden(t, link, spanOf(held->file), &held->root, kEngine);
+            topic = e->setFollowHidden(t, link, spanOf(held->file), &held->root, kEngine, under);
         // topic = e->setFollowHidden(t, link, {}, nullptr, kEngine);   (was: the newest fetched again)
         if (!topic)
-            topic = e->setFollowHidden(t, link, {}, nullptr, kEngine);
+            topic = e->setFollowHidden(t, link, {}, nullptr, kEngine, under);
     } else if (s.parsed.b3) {
-        topic = e->setFollowPinned(t, s.parsed.key, spanOf(s.parsed.id), *s.parsed.b3, s.parsed.sz, kEngine);
+        topic = e->setFollowPinned(t, s.parsed.key, spanOf(s.parsed.id), *s.parsed.b3, s.parsed.sz, kEngine, under);
     } else {
         // the newest version held: only newer heads are fetched
         const auto& held = s.pending ? s.pending : s.applied;
         if (held)
-            topic = e->setFollow(t, s.parsed.key, spanOf(s.parsed.id), spanOf(held->file), &held->root, kEngine);
+            topic = e->setFollow(t, s.parsed.key, spanOf(s.parsed.id), spanOf(held->file), &held->root, kEngine, under);
         if (!topic)
-            topic = e->setFollow(t, s.parsed.key, spanOf(s.parsed.id), {}, nullptr, kEngine);
+            topic = e->setFollow(t, s.parsed.key, spanOf(s.parsed.id), {}, nullptr, kEngine, under);
     }
     if (!topic) {
         s.error = QStringLiteral("not followed (error %1)").arg(int(topic.error()));
@@ -476,17 +499,50 @@ bool Ed3kSets::followOnEngine(Set& s)
     return true;
 }
 
-Ed3kSets::Set* Ed3kSets::setOfTopic(const ffi::Topic& topic, QString* mountPath)
+Ed3kSets::Set* Ed3kSets::setOfTopic(const ffi::Topic& topic, ffi::KeyKind key, QString* mountPath)
 {
     for (auto& [id, s] : m_sets)
-        if (s.topic == topic)
+        if (s.topic == topic && s.key == key)
             return &s;
     if (const auto it = m_mountTopics.find(topic); it != m_mountTopics.end()) {
+        Set* s = find(it->second.first);
+        if (!s || s->key != key)
+            return nullptr;
         if (mountPath)
             *mountPath = it->second.second;
-        return find(it->second.first);
+        return s;
     }
     return nullptr;
+}
+
+void Ed3kSets::unfollowOnEngine(Set& s)
+{
+    auto* e = m_session.engine();
+    if (!e || !s.topic)
+        return;
+    // the anonymous node's topic only while it runs (gone with it otherwise)
+    if (s.key == ffi::KeyKind::Anon && !m_session.hide().hiding())
+        return;
+    (void)e->setUnfollow(m_session.now(), *s.topic, s.key);
+}
+
+void Ed3kSets::onHideChanged(bool hiding)
+{
+    bool any = false;
+    for (auto& [id, s] : m_sets) {
+        if (s.key != ffi::KeyKind::Anon)
+            continue;
+        any = true;
+        if (!hiding) {
+            // the anonymous node took its topics along
+            s.topic.reset();
+            std::erase_if(m_mountTopics, [id](const auto& kv) { return kv.second.first == id; });
+        } else if (m_attached && !s.topic) {
+            (void)followOnEngine(s);
+        }
+    }
+    if (any)
+        markChanged();
 }
 
 Ed3kSets::Set* Ed3kSets::find(std::uint32_t id)
@@ -720,6 +776,7 @@ Ed3kSets::Info Ed3kSets::infoOf(const Set& s) const
     i.pinned = s.parsed.b3.has_value();
     i.followed = s.topic.has_value();
     i.policy = s.policy;
+    i.key = s.key;
     if (s.applied)
         i.seq = s.applied->seq;
     if (s.pending)
@@ -919,6 +976,7 @@ void Ed3kSets::load()
             continue;
         s.parsed = *parsed;
         s.policy = o.value(QStringLiteral("policy")).toInt() == int(Policy::Download) ? Policy::Download : Policy::Ask;
+        s.key = o.value(QStringLiteral("anon")).toBool() ? ffi::KeyKind::Anon : ffi::KeyKind::Node;
         s.title = o.value(QStringLiteral("title")).toString();
         s.dir = o.value(QStringLiteral("dir")).toString();
         for (const QJsonValue& p : o.value(QStringLiteral("skipped")).toArray())
@@ -980,6 +1038,7 @@ void Ed3kSets::save() const
             {QStringLiteral("mounts"), mounts},
             {QStringLiteral("pendingMounts"), pendingMounts},
             {QStringLiteral("queued"), queued},
+            {QStringLiteral("anon"), s.key == ffi::KeyKind::Anon},
         });
     }
     const QByteArray out = QJsonDocument(QJsonObject{{QStringLiteral("next"), qint64(m_nextId)}, {QStringLiteral("sets"), sets}})
@@ -1016,8 +1075,8 @@ void Ed3kSets::onPaidKeys(const ffi::Scope& scope)
         if (!s.parsed.paid || s.applied || s.pending || paidScopeOf(s) != scope)
             continue;
         // §8.3: the record opens with a key covering its epoch: looked up again now
-        if (s.topic)
-            (void)e->setUnfollow(*s.topic);
+        // was: if (s.topic) (void)e->setUnfollow(*s.topic);
+        unfollowOnEngine(s);
         s.topic.reset();
         if (m_attached)
             (void)followOnEngine(s);
@@ -1104,7 +1163,8 @@ bool Ed3kSets::openMember(Set& s, const Ed3kSetEntry& m, const QString& sealedPa
         const auto scope = paidScopeOf(s);
         if (!scope)
             return false;
-        bool anon = false;
+        // the key the pass was bought for; else the set's
+        bool anon = s.key == ffi::KeyKind::Anon;
         if (m_paid)
             if (const auto i = m_paid->info(Ed3kPaid::hexOf(*scope)))
                 anon = i->anon;
@@ -1116,7 +1176,8 @@ bool Ed3kSets::openMember(Set& s, const Ed3kSetEntry& m, const QString& sealedPa
         if (!*got) {
             // no key covering the epoch yet: asked for, opened on PAID_KEYS (onPaidKeys)
             if (m_keysAsked.insert(*scope).second) {
-                (void)e->paidWantKeys(m_session.now(), *scope);
+                // was: (void)e->paidWantKeys(m_session.now(), *scope);
+                (void)(anon ? e->paidAnonWantKeys(m_session.now(), *scope) : e->paidWantKeys(m_session.now(), *scope));
                 m_session.pump();
                 logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: set %1: a sealed member waits for the key of epoch %2").arg(s.id).arg(*m.epoch); });
             }

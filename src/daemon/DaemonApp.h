@@ -8,6 +8,7 @@
 
 #include "BtShareGuard.h"
 #include "LogRelay.h"
+#include "net/BindAddress.h"
 
 #include <QObject>
 #include <QString>
@@ -217,6 +218,8 @@ private:
 #ifdef EMULE_HAVE_ED3K
     /// The ed3k node (packmule); started after Usenet, stopped before it
     std::unique_ptr<ed3k::Ed3kSession> m_ed3kSession;
+    /// the interface selection the node's own socket was pinned under (an adapter switch restarts it)
+    BindAddress::Resolution m_ed3kBind;
     /// the usenet join (usenet-join-host.md): needs both sessions; dies before them
     std::unique_ptr<ed3k::UsenetJoinQueue> m_usenetJoinQueue;
     std::unique_ptr<ed3k::Ed3kUsenetJoin> m_usenetJoin;

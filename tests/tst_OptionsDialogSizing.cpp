@@ -148,6 +148,7 @@ private slots:
     void theWizardOffersTheNewDefaultsToAnUntunedInstall();
     void theWizardLeavesTunedLimitsAndADisabledUdpPortAlone();
     void aWizardLineTypeBecomesCapacityAndLimits();
+    void aFastUploadRaisesTheConnectionLimit();
     void theWizardRateFieldsFollowTheLineAndSwitchToCustom();
     void theWizardLimitFieldsFollowTheLineAndTakeAnEdit();
     void theWizardNeedsANetwork();
@@ -714,9 +715,11 @@ struct WizardPrefsGuard {
     bool bt = thePrefs.btEnabled();
     bool ed3k = thePrefs.ed3kEnabled();
     Ed3kHosterPrefs hoster = thePrefs.ed3kHoster();
+    uint16 maxConnections = thePrefs.maxConnections();
 
     ~WizardPrefsGuard()
     {
+        thePrefs.setMaxConnections(maxConnections);
         thePrefs.setUsenetEnabled(usenet);
         thePrefs.setBtEnabled(bt);
         thePrefs.setEd3kEnabled(ed3k);
@@ -890,6 +893,43 @@ void TestOptionsDialogSizing::aWizardLineTypeBecomesCapacityAndLimits()
     // have been cut to the old 900.
     QCOMPARE(thePrefs.maxUpload(), 3906u);
     QCOMPARE(thePrefs.maxGraphUploadRate(), 4883u);
+}
+
+// More connections for a fast upload, so the auto Kad buddy slots are not capped by them
+void TestOptionsDialogSizing::aFastUploadRaisesTheConnectionLimit()
+{
+    const WizardPrefsGuard guard;
+    thePrefs.setMaxConnections(500);
+
+    {   // 40 Mbit/s up: left alone
+        FirstStartWizard wizard(nullptr, nullptr, FirstStartWizard::StartPage::Speed);
+        QVERIFY(selectLine(wizard, QStringLiteral("VDSL 100")));
+        wizardButton(wizard, QStringLiteral("Finish"))->click();
+        QVERIFY(!wizard.appliedSettings().contains(QStringLiteral("maxConnections")));
+        QCOMPARE(thePrefs.maxConnections(), uint16(500));
+    }
+    {   // 500 Mbit/s up
+        FirstStartWizard wizard(nullptr, nullptr, FirstStartWizard::StartPage::Speed);
+        QVERIFY(selectLine(wizard, QStringLiteral("Fiber 1000")));
+        wizardButton(wizard, QStringLiteral("Finish"))->click();
+        QCOMPARE(wizard.appliedSettings().value(QStringLiteral("maxConnections")).toInteger(),
+                 qint64{kFastLineConnections});
+        QCOMPARE(thePrefs.maxConnections(), uint16(kFastLineConnections));
+        QCOMPARE(thePrefs.servedBuddyLimit(), uint16(64));
+    }
+    {   // 1 Gbit/s up
+        FirstStartWizard wizard(nullptr, nullptr, FirstStartWizard::StartPage::Speed);
+        QVERIFY(selectLine(wizard, QStringLiteral("Fiber symmetric")));
+        wizardButton(wizard, QStringLiteral("Finish"))->click();
+        QCOMPARE(thePrefs.maxConnections(), uint16(kGigabitLineConnections));
+        QCOMPARE(thePrefs.servedBuddyLimit(), uint16(128));
+    }
+    {   // a slower line never lowers it again
+        FirstStartWizard wizard(nullptr, nullptr, FirstStartWizard::StartPage::Speed);
+        QVERIFY(selectLine(wizard, QStringLiteral("ADSL2+")));
+        wizardButton(wizard, QStringLiteral("Finish"))->click();
+        QCOMPARE(thePrefs.maxConnections(), uint16(kGigabitLineConnections));
+    }
 }
 
 void TestOptionsDialogSizing::theWizardRateFieldsFollowTheLineAndSwitchToCustom()

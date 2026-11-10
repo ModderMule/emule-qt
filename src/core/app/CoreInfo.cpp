@@ -42,6 +42,16 @@ void insertBindState(QCborMap& info)
     info.insert(QStringLiteral("offlineSince"), theApp.connectionOfflineSince);
 }
 
+void insertEd2kCounts(QCborMap& info)
+{
+    // MFC skips failed servers: their counts are stale (ServerList.cpp GetUserFileStatus)
+    ServerListStats st;
+    if (theApp.serverList && theApp.serverConnect && theApp.serverConnect->isConnected())
+        st = theApp.serverList->stats();
+    info.insert(QStringLiteral("ed2kUsers"), static_cast<qint64>(st.users));
+    info.insert(QStringLiteral("ed2kFiles"), static_cast<qint64>(st.files));
+}
+
 QCborMap networkInfo()
 {
     QCborMap info;
@@ -90,16 +100,11 @@ QCborMap networkInfo()
         ed2k.insert(QStringLiteral("publicIP"),
                      static_cast<qint64>(theApp.publicIP()));
 
-        // Total users/files across all servers
-        if (theApp.serverList) {
-            uint32 totalUsers = 0, totalFiles = 0;
-            for (const auto& srv : theApp.serverList->servers()) {
-                totalUsers += srv->users();
-                totalFiles += srv->files();
-            }
-            ed2k.insert(QStringLiteral("totalUsers"), static_cast<qint64>(totalUsers));
-            ed2k.insert(QStringLiteral("totalFiles"), static_cast<qint64>(totalFiles));
-        }
+        // Working servers only, like the status bar (#167)
+        QCborMap counts;
+        insertEd2kCounts(counts);
+        ed2k.insert(QStringLiteral("totalUsers"), counts.value(QStringLiteral("ed2kUsers")));
+        ed2k.insert(QStringLiteral("totalFiles"), counts.value(QStringLiteral("ed2kFiles")));
 
         // Current server details
         const auto* srv = theApp.serverConnect->currentServer();
@@ -364,6 +369,8 @@ QCborMap kadStatus()
                               ? prefs->externalKadPort() : 0);
         }
     }
+    // status bar shows eD2K and Kad counts side by side
+    insertEd2kCounts(status);
     return status;
 }
 

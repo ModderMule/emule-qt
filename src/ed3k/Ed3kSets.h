@@ -23,6 +23,9 @@
 /// - Only the Set* events of its own topics are taken (Ed3kNames follows website sets, the
 ///   cores of name and filter lists follow theirs).
 /// - The engine follows once the node has contacts (a HEAD search without any waits 5 min).
+/// - Key (hops.md §1): a set is followed under Ed3kHide::keyForUse() at follow() and keeps
+///   that key ("anon" in sets.json); one of the anonymous key is followed only while hiding
+///   runs (nothing falls back to the node key), its events come keyed.
 /// - Persisted: Config/ed3k/sets.json (links, policy, selection, versions; owner-only) and
 ///   the manifests in Config/ed3k/sets/<root hex>.manifest; followed again at each start.
 ///
@@ -118,6 +121,7 @@ public:
         std::uint64_t totalSize = 0;
         QStringList pendingMounts;   ///< mounts with a new version waiting for the user (Ask)
         QString paidScope;           ///< 32 hex digits of a paid set's scope; empty = not paid
+        ::ed3k::KeyKind key = ::ed3k::KeyKind::Node;   ///< followed under (hops.md §1)
     };
 
     /// @p configDir: Config/ (ed3k/sets.json and ed3k/sets/ below it), loaded here.
@@ -199,9 +203,14 @@ private:
         std::vector<Part> parts;
         std::optional<::ed3k::Topic> topic;
         QString error;
+        /// the key it is followed under (hops.md §1), chosen at follow()
+        ::ed3k::KeyKind key = ::ed3k::KeyKind::Node;
     };
 
-    void onEventPolled(const ::ed3k::Event& event, bool* handled);
+    // was: void onEventPolled(const ::ed3k::Event& event, bool* handled);
+    void onEventPolled(const ::ed3k::Event& event, ::ed3k::KeyKind key, bool* handled);
+    /// hiding started / stopped: the sets of the anonymous key followed / dropped
+    void onHideChanged(bool hiding);
     void onSessionStatus();
     /// keys of a paid scope: a hidden paid set without a version is followed again
     void onPaidKeys(const ::ed3k::Scope& scope);
@@ -220,7 +229,11 @@ private:
     [[nodiscard]] QString sealedPathOf(const Set& s, const Ed3kSetEntry& m) const;
     void attach();
     bool followOnEngine(Set& s);
-    Set* setOfTopic(const ::ed3k::Topic& topic, QString* mountPath = nullptr);
+    // was: Set* setOfTopic(const ::ed3k::Topic& topic, QString* mountPath = nullptr);
+    /// the set of @p topic followed under @p key
+    Set* setOfTopic(const ::ed3k::Topic& topic, ::ed3k::KeyKind key, QString* mountPath = nullptr);
+    /// setUnfollow under the set's key
+    void unfollowOnEngine(Set& s);
     Set* find(std::uint32_t id);
     const Set* find(std::uint32_t id) const;
     void onManifest(Set& s, const ::ed3k::Root& root, const ::ed3k::Bytes& file, std::uint64_t seq);

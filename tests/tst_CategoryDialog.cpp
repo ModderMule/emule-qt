@@ -77,6 +77,8 @@ private slots:
     // --- NetworkInfoDialog ---------------------------------------------------
     void networkInfo_listsServerFeaturesAndLanMode();
     void networkInfo_listsServedBuddies();
+    void networkInfo_showsEd3kNode();
+    void networkInfo_showsTorrentIpsAndI2p();
 
 private:
     QTemporaryDir m_dir;
@@ -466,6 +468,79 @@ void tst_CategoryDialog::networkInfo_listsServedBuddies()
     QVERIFY(firewalled.contains(QStringLiteral("Buddy:")));
     QVERIFY(!firewalled.contains(QStringLiteral("Buddies served")));
     QVERIFY(!firewalled.contains(QStringLiteral("192.0.2.7")));
+}
+
+// Not MFC: the ed3k node, with its public endpoint and NAT class per family (#165)
+void tst_CategoryDialog::networkInfo_showsEd3kNode()
+{
+    const auto textOf = [](const QString& html) {
+        QTextDocument doc;
+        doc.setHtml(html);
+        return doc.toPlainText();
+    };
+    const QCborMap running{{QStringLiteral("available"), true}, {QStringLiteral("running"), true},
+                           {QStringLiteral("udpPort"), 6600}, {QStringLiteral("contacts"), 12},
+                           {QStringLiteral("class4"), 2}, {QStringLiteral("class6"), 1},
+                           {QStringLiteral("natChecking"), 0}, {QStringLiteral("kadOffline"), 0},
+                           {QStringLiteral("router"), true}, {QStringLiteral("nodeId"), QStringLiteral("ab12")},
+                           {QStringLiteral("endpoint4"), QStringLiteral("192.0.2.5:6600")},
+                           {QStringLiteral("endpoint6"), QString()}};
+    const QString on = textOf(NetworkInfoDialog::infoHtml({{QStringLiteral("ed3k"), running}}, false));
+    QVERIFY2(on.contains(QStringLiteral("ed3k Network")), qPrintable(on));
+    QVERIFY(on.contains(QRegularExpression(QStringLiteral("IPv4:\\s+192\\.0\\.2\\.5:6600 \\(Cone NAT\\)"))));
+    QVERIFY(on.contains(QRegularExpression(QStringLiteral("IPv6:\\s+Open"))));
+    QVERIFY(on.contains(QRegularExpression(QStringLiteral("Router:\\s+Yes"))));
+    QVERIFY(on.contains(QRegularExpression(QStringLiteral("UDP Port:\\s+6600"))));
+
+    const QCborMap off{{QStringLiteral("available"), true}, {QStringLiteral("running"), false},
+                       {QStringLiteral("enabled"), false}};
+    const QString disabled = textOf(NetworkInfoDialog::infoHtml({{QStringLiteral("ed3k"), off}}, false));
+    QVERIFY(disabled.contains(QRegularExpression(QStringLiteral("ed3k Network\\s+Status:\\s+Disabled"))));
+
+    // a core without ed3k, or from before the section: nothing
+    const QString none = textOf(NetworkInfoDialog::infoHtml({}, false));
+    QVERIFY(!none.contains(QStringLiteral("ed3k")));
+}
+
+// Not MFC: BitTorrent's external IPs (external_ip_alert) and the I2P state (#165)
+void tst_CategoryDialog::networkInfo_showsTorrentIpsAndI2p()
+{
+    const auto textOf = [](const QString& html) {
+        QTextDocument doc;
+        doc.setHtml(html);
+        return doc.toPlainText();
+    };
+    QCborMap bt{{QStringLiteral("available"), true}, {QStringLiteral("running"), true},
+                {QStringLiteral("enabled"), true}, {QStringLiteral("listening"), true},
+                {QStringLiteral("listenPort"), 6588}, {QStringLiteral("dhtNodes"), 300},
+                {QStringLiteral("torrents"), 4},
+                {QStringLiteral("externalIPv4"), QStringLiteral("198.51.100.7")},
+                {QStringLiteral("externalIPv6"), QStringLiteral("2001:db8::7")},
+                {QStringLiteral("i2pMode"), 1}, {QStringLiteral("i2pEnabled"), true},
+                {QStringLiteral("i2pSam"), true}, {QStringLiteral("i2pSamHost"), QStringLiteral("127.0.0.1")},
+                {QStringLiteral("i2pSamPort"), 7656}, {QStringLiteral("i2pError"), QString()},
+                {QStringLiteral("i2pRouter"), 2}, {QStringLiteral("i2pRouterPort"), 23456},
+                {QStringLiteral("i2pShare"), 50}, {QStringLiteral("i2pTunnelLength"), 3},
+                {QStringLiteral("i2pTunnelQuantity"), 2}, {QStringLiteral("i2pMixed"), false},
+                {QStringLiteral("i2pTorrents"), 1}, {QStringLiteral("i2pPeers"), 5}};
+    const QString on = textOf(NetworkInfoDialog::infoHtml({{QStringLiteral("bt"), bt}}, false));
+    QVERIFY2(on.contains(QRegularExpression(QStringLiteral("Status:\\s+Listening on port 6588"))), qPrintable(on));
+    QVERIFY(on.contains(QRegularExpression(QStringLiteral("External IPv4:\\s+198\\.51\\.100\\.7"))));
+    QVERIFY(on.contains(QRegularExpression(QStringLiteral("External IPv6:\\s+2001:db8::7"))));
+    QVERIFY(on.contains(QStringLiteral("BitTorrent over I2P")));
+    QVERIFY(on.contains(QRegularExpression(QStringLiteral("Router Status:\\s+Ready"))));
+    QVERIFY(on.contains(QRegularExpression(QStringLiteral("SAM Bridge:\\s+127\\.0\\.0\\.1:7656"))));
+    QVERIFY(on.contains(QRegularExpression(QStringLiteral("Tunnels:\\s+3 hops, 2 each way"))));
+    QVERIFY(on.contains(QRegularExpression(QStringLiteral("I2P Torrents:\\s+1 \\(5 peers\\)"))));
+
+    // no vote yet: IPv4 unknown, no IPv6 row; I2P off: no I2P section
+    bt.insert(QStringLiteral("externalIPv4"), QString());
+    bt.insert(QStringLiteral("externalIPv6"), QString());
+    bt.insert(QStringLiteral("i2pMode"), 0);
+    const QString plain = textOf(NetworkInfoDialog::infoHtml({{QStringLiteral("bt"), bt}}, false));
+    QVERIFY(plain.contains(QRegularExpression(QStringLiteral("External IPv4:\\s+Unknown"))));
+    QVERIFY(!plain.contains(QStringLiteral("External IPv6")));
+    QVERIFY(!plain.contains(QStringLiteral("I2P")));
 }
 
 // checkbox was never read and the downloads went uncategorised.

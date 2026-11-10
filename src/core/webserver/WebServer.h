@@ -7,6 +7,7 @@
 /// Provides CRUD access to downloads, uploads, servers, search, shared files,
 /// friends, statistics, and preferences.
 
+#include "media/ContainerSniffer.h"
 #include "utils/Types.h"
 #include "webserver/ApiRegistry.h"
 #include "webserver/HosterWebBackend.h"
@@ -15,6 +16,7 @@
 #include "webserver/TorrentWebBackend.h"
 #include "webserver/UsenetWebBackend.h"
 
+#include <QDateTime>
 #include <QFuture>
 #include <QHash>
 #include <QHttpHeaders>
@@ -370,16 +372,27 @@ private:
     // Range-capable stream for players, and a plain attachment download. They
     // sit on the stream token, not on the web-UI session or the API key, because
     // like preview they must work with both of those surfaces switched off.
-    QHttpServerResponse handleIncomingListing(const QHttpServerRequest& req);
+    /// The three read the folder on the pool and answer back on this thread (#84).
+    QFuture<QHttpServerResponse> handleIncomingListing(const QHttpServerRequest& req);
     void handleIncomingStream(const QHttpServerRequest& req,
                               QHttpServerResponder& responder);
     void handleIncomingDownload(const QHttpServerRequest& req, QHttpServerResponder& responder);
+    /// What the pool found and opened for a stream or download (WebServer.cpp).
+    struct IncomingSend;
+    /// The two routes' core-thread halves.
+    void sendIncomingStream(QHttpServerResponder& responder, IncomingSend& send);
+    void sendIncomingDownload(QHttpServerResponder& responder, IncomingSend& send);
 
     /// True when the request carries a live stream token. No back-off here.
     [[nodiscard]] bool streamTokenValid(const QHttpServerRequest& req);
 
-    /// The canonical global incoming directory, or empty when there is none.
-    [[nodiscard]] QString incomingRoot() const;
+    /// The incoming folders as configured, read from the prefs without touching disk,
+    /// so the paths can be resolved off this thread.
+    struct IncomingDirs {
+        QString global;
+        QHash<int, QString> categories;   ///< only categories with a folder of their own
+    };
+    [[nodiscard]] IncomingDirs incomingDirs() const;
 
     /// The root a client-supplied path is relative to, and what is left of the
     /// path once that root is taken off.
@@ -395,7 +408,8 @@ private:
         QString remainder;
         int categoryIndex = -1;
     };
-    [[nodiscard]] IncomingRoot splitIncomingPath(const QString& relPath) const;
+    /// Canonicalises: any thread.
+    [[nodiscard]] static IncomingRoot splitIncomingPath(const IncomingDirs& dirs, const QString& relPath);
 
     /// Turn a client-supplied path relative to the incoming folder into an
     /// absolute one, or return empty if it may not be served.
@@ -406,7 +420,40 @@ private:
     /// folder from pointing out of it. Empty for anything that does not exist.
     /// Containment is against the one root the path selected, never against all
     /// of them: a `!1/` path may not escape into the global folder either.
-    [[nodiscard]] QString resolveIncomingPath(const QString& relPath) const;
+    [[nodiscard]] static QString resolveIncomingPath(const IncomingDirs& dirs, const QString& relPath);
+
+    /// One row of an incoming folder, read on the pool.
+    struct IncomingEntry {
+        QString name;
+        QString canonical;
+        QString absolute;
+        bool dir = false;
+        qint64 size = 0;
+        QDateTime modified;
+        ContainerCheck check;   ///< read for files only
+    };
+    /// What the pool found for one incoming request.
+    struct IncomingLookup {
+        IncomingRoot selected;
+        QString abs;       ///< canonical; empty: missing or not servable
+        QString spelled;   ///< the same folder as configured, how the share spells it
+        bool isDir = false;
+        bool isFile = false;
+        QList<IncomingEntry> entries;
+        ContainerCheck check;   ///< the file's own (player page)
+    };
+    /// Resolves @p relPath and, for a folder, lists it. Disk only: any thread.
+    [[nodiscard]] static IncomingLookup lookUpIncoming(const IncomingDirs& dirs, const QString& relPath,
+                                                       bool wantFile);
+    /// Resolves, stats and opens a file for the stream (@p rangeHeader set) or the
+    /// download route, and reads its first chunk. Disk only: any thread.
+    [[nodiscard]] static std::shared_ptr<IncomingSend> prepareIncomingSend(const IncomingDirs& dirs,
+                                                                           const QString& relPath,
+                                                                           const QByteArray* rangeHeader);
+    /// handleIncomingListing()'s core-thread half.
+    [[nodiscard]] QHttpServerResponse incomingListingResponse(const IncomingLookup& found,
+                                                              const QString& play, const QString& rel,
+                                                              const QString& token, const QString& lang);
 
     /// Absolute path to the static asset named @p fileName, or empty if there is
     /// none that may be served.
@@ -436,9 +483,10 @@ private:
 
     /// @p lang, when set, rides along in every link the page draws: these routes
     /// have no session to remember the web UI's language.
-    [[nodiscard]] QByteArray renderIncomingListing(const QString& absDir, const QString& relPath,
+    [[nodiscard]] QByteArray renderIncomingListing(const IncomingLookup& found, const QString& relPath,
                                                    const QString& token, const QString& lang) const;
     [[nodiscard]] QByteArray renderIncomingPlayer(const QString& relPath, const QString& fileName,
+                                                  const ContainerCheck& real,
                                                   const QString& token, const QString& lang) const;
 
     // Endpoint handlers — Usenet queue (REST API)

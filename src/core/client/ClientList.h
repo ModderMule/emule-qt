@@ -159,6 +159,9 @@ public:
     static constexpr std::time_t kFailedBuddyBlockSecs = 60 * 60;
     /// True while @p ip (host order) failed as buddy candidate within kFailedBuddyBlockSecs.
     [[nodiscard]] bool isFailedBuddyCandidate(uint32 ip) const;
+    /// A candidate's dial or handshake failed: skip its IP for kFailedBuddyBlockSecs.
+    /// Not counted while Kad is stopped.
+    void noteFailedBuddyCandidate(const UpDownClient& candidate);
 
     /// Create a temporary client to request a UDP firewall check via TCP.
     /// Matches MFC CClientList::DoRequestFirewallCheckUDP (srchybrid/ClientList.cpp:767).
@@ -258,9 +261,10 @@ public:
 
     // -- Buddy relay requests we send ---------------------------------------
     /// Whether a request to `relay` for the node with `buddyID` may be sent now; counts
-    /// it if so. Mirrors the relay's limits, which drop without an answer. Not MFC.
+    /// it if so. `reaskSize`: the OP_REASKCALLBACKUDP size, for a reask only. Mirrors the
+    /// relay's limits, which drop without an answer. Not MFC.
     [[nodiscard]] bool allowRelayRequest(const Address& relay, const uint8* buddyID,
-                                         RelayRequest kind);
+                                         RelayRequest kind, uint32 reaskSize = 0);
 
     // -- Public member (matches MFC pattern) --------------------------------
 
@@ -330,8 +334,6 @@ private:
     BuddyStatus m_buddyStatus = BuddyStatus::None;
     // For the Kad log: m_buddy may be gone by the time it is reported lost.
     QString m_buddyInfo;
-    QString m_buddyCandidateInfo;
-    uint32 m_buddyCandidateIp = 0;      // host order, the candidate being dialled
     std::time_t m_buddySince = 0;
     // host-order IP -> when its failed dial was noted
     std::unordered_map<uint32, std::time_t> m_failedBuddyCandidates;

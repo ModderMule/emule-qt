@@ -83,6 +83,9 @@ struct Ed3kStatus {
     /// reach test without a verdict yet: bit 0 IPv4, bit 1 IPv6 (class 2/3 may still turn open)
     std::uint32_t natChecking = 0;
     Ed3kHideStatus hide;         ///< hiding (hops.md §1)
+    /// public endpoint the engine adopted per family ("ip:port"); empty = none yet
+    QString endpoint4;
+    QString endpoint6;
 };
 
 /// Datagram payload bytes since this object was made (wire_sent / wire_recv of ed3k_stats,
@@ -233,6 +236,9 @@ private:
     QElapsedTimer m_clock;
     QString m_dir;
     std::uint16_t m_port = 0;
+    /// ED3K_EV_ENDPOINT per family, for status()
+    QString m_endpoint4;
+    QString m_endpoint6;
     bool m_pumping = false;
     bool m_pumpQueued = false;   ///< a pump after offered datagrams is on its way
     bool m_pumpAgain = false;

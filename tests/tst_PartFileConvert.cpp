@@ -2,6 +2,7 @@
 /// @brief Tests for files/PartFileConvert — format detection, job management.
 
 #include "TestHelpers.h"
+#include "utils/BackgroundFileWriter.h"
 #include "app/AppContext.h"
 #include "files/PartFile.h"
 #include "files/PartFileConvert.h"
@@ -39,6 +40,8 @@ private slots:
     void import_splitChunksLandAtTheirParts();
     void import_shareazaDescription();
     void import_runsOnTheWorkerThread();
+    void loadPartMet_shareazaFromPreload();
+    void loadPartMet_bakFromPreload();
     void startStopThread();
     void processQueue_startsThread();
 };
@@ -174,6 +177,36 @@ QByteArray pattern(int len, char seed)
     return data;
 }
 
+/// A Shareaza .sd: the first 1500 bytes done, one part, no hash list.
+QByteArray shareazaSd(const std::array<uint8, 16>& hash, quint64 size, const QString& name)
+{
+    QByteArray sd("SDL");
+    const auto put = [&sd](auto value) {
+        const auto le = qToLittleEndian(value);
+        sd.append(reinterpret_cast<const char*>(&le), sizeof le);
+    };
+    put(qint32{32});                                       // version
+    sd.append("\xFF\xFE\xFF", 3).append(static_cast<char>(name.size()));
+    sd.append(reinterpret_cast<const char*>(name.utf16()), name.size() * 2);
+    put(size);
+    put(qint32{0}); put(qint32{0});                        // SHA1: none, trusted
+    put(qint32{0}); put(qint32{0});                        // Tiger
+    put(qint32{0}); put(qint32{0});                        // MD5
+    put(qint32{1});                                        // eD2K
+    sd.append(reinterpret_cast<const char*>(hash.data()), 16);
+    put(qint32{1});
+    sd.append(QByteArray(37, '\x55'));                     // sources, unparsed
+    put(size); put(quint64{size - 1500});                  // total, remaining
+    put(quint32{2});                                       // two fragments missing
+    put(quint64{1500});   put(quint64{98'500});
+    put(quint64{100'000}); put(quint64{100'000});
+    sd.append(QByteArray(21, '\x66'));                     // torrent info, tiger tree
+    put(quint32{0});                                       // hash set: one part, no list
+    sd.append(reinterpret_cast<const char*>(hash.data()), 16);
+    sd.append(QByteArray(9, '\x77'));
+    return sd;
+}
+
 /// A gap as eMule names it: tag byte + index, end exclusive.
 void writeGap(SafeMemFile& mem, int index, uint32 start, uint32 endExclusive)
 {
@@ -205,23 +238,34 @@ QString makeEmuleDownload(const QString& dir, const std::array<uint8, 16>& hash,
                           const QString& name, const QByteArray& head)
 {
     QDir().mkpath(dir);
-    PartFile pf;
-    pf.setFileName(name, true);
-    pf.setFileSize(300'000);
-    pf.setFileHash(hash.data());
-    if (!pf.createPartFile(dir))
-        return {};
-    pf.writeToBuffer(static_cast<uint64>(head.size()),
-                     reinterpret_cast<const uint8*>(head.constData()), 0,
-                     static_cast<uint64>(head.size()) - 1, nullptr);
-    pf.flushBuffer();
-    pf.savePartFile();
-    return pf.partMetFileName();
+    QString metName;
+    {
+        PartFile pf;
+        pf.setFileName(name, true);
+        pf.setFileSize(300'000);
+        pf.setFileHash(hash.data());
+        if (!pf.createPartFile(dir))
+            return {};
+        pf.writeToBuffer(static_cast<uint64>(head.size()),
+                         reinterpret_cast<const uint8*>(head.constData()), 0,
+                         static_cast<uint64>(head.size()) - 1, nullptr);
+        pf.flushBuffer();
+        pf.savePartFile();
+        metName = pf.partMetFileName();
+    }
+    BackgroundFileWriter::instance().flush();   // the met is saved on the writer thread
+    return metName;
 }
 
 /// A download queue of our own and a temp directory to import into.
+/// Lets the queue's last saves land before the temp dir goes
+struct FlushWriter {
+    ~FlushWriter() { BackgroundFileWriter::instance().flush(); }
+};
+
 struct ImportEnv {
     eMule::testing::TempDir temp;
+    FlushWriter flushBeforeTempGoes;
     DownloadQueue queue;
     DownloadQueue* const savedQueue = theApp.downloadQueue;
     const QStringList savedTempDirs = thePrefs.tempDirs();
@@ -348,6 +392,7 @@ void tst_PartFileConvert::import_emuleFormatGetsANewNumberAndIsQueued()
     QVERIFY(QFile::exists(src.filePath(met)));
 
     // The same download again
+    BackgroundFileWriter::instance().flush();   // its saves land before counting
     const auto before = QDir(env.temp.path()).entryList(QDir::Files).size();
     QCOMPARE(env.import(src.path(), met, false), ConvertStatus::AlreadyExists);
     QCOMPARE(QDir(env.temp.path()).entryList(QDir::Files).size(), before);
@@ -447,30 +492,7 @@ void tst_PartFileConvert::import_shareazaDescription()
     const QString name = QStringLiteral("Shared Movie.avi");
     const QByteArray data = pattern(1500, 4);
 
-    QByteArray sd("SDL");
-    const auto put = [&sd](auto value) {
-        const auto le = qToLittleEndian(value);
-        sd.append(reinterpret_cast<const char*>(&le), sizeof le);
-    };
-    put(qint32{32});                                       // version
-    sd.append("\xFF\xFE\xFF", 3).append(static_cast<char>(name.size()));
-    sd.append(reinterpret_cast<const char*>(name.utf16()), name.size() * 2);
-    put(size);
-    put(qint32{0}); put(qint32{0});                        // SHA1: none, trusted
-    put(qint32{0}); put(qint32{0});                        // Tiger
-    put(qint32{0}); put(qint32{0});                        // MD5
-    put(qint32{1});                                        // eD2K
-    sd.append(reinterpret_cast<const char*>(hash.data()), 16);
-    put(qint32{1});
-    sd.append(QByteArray(37, '\x55'));                     // sources, unparsed
-    put(size); put(quint64{size - 1500});                  // total, remaining
-    put(quint32{2});                                       // two fragments missing
-    put(quint64{1500});   put(quint64{98'500});
-    put(quint64{100'000}); put(quint64{100'000});
-    sd.append(QByteArray(21, '\x66'));                     // torrent info, tiger tree
-    put(quint32{0});                                       // hash set: one part, no list
-    sd.append(reinterpret_cast<const char*>(hash.data()), 16);
-    sd.append(QByteArray(9, '\x77'));
+    const QByteArray sd = shareazaSd(hash, size, name);
 
     QVERIFY(writeFile(src.filePath(QStringLiteral("dl.partial.sd")), sd));
     QVERIFY(writeFile(src.filePath(QStringLiteral("dl.partial")), data + QByteArray(100, '\0')));
@@ -500,6 +522,70 @@ void tst_PartFileConvert::import_shareazaDescription()
     QVERIFY(QFile::exists(src.filePath(QStringLiteral("dl.partial"))));
     QCOMPARE(PartFileConvert::detectFormat(imported->fullName()),
              static_cast<int>(PartFileFormat::DefaultOld));
+}
+
+// Startup reads each met on the pool (#84): an .sd is parsed and reloaded from memory
+void tst_PartFileConvert::loadPartMet_shareazaFromPreload()
+{
+    ImportEnv env;
+    const auto hash = hashOf(0x52);
+    const quint64 size = 200'000;
+    const QString name = QStringLiteral("Preloaded Movie.avi");
+    const QString metPath = env.temp.filePath(QStringLiteral("001.part.met"));
+    QVERIFY(writeFile(metPath, shareazaSd(hash, size, name)));
+    QVERIFY(writeFile(env.temp.filePath(QStringLiteral("001.part")),
+                      pattern(1500, 4) + QByteArray(100, '\0')));
+
+    const PartMetPreload pre = PartMetPreload::read(metPath);
+    QVERIFY(QFile::remove(metPath));   // only the preloaded bytes can load it now
+    env.queue.loadPartMet(metPath, &pre);
+
+    PartFile* loaded = env.queue.fileByID(hash.data());
+    QVERIFY(loaded != nullptr);
+    QCOMPARE(loaded->fileName(), name);
+    QCOMPARE(static_cast<uint64>(loaded->fileSize()), size);
+    QVERIFY(loaded->isComplete(0, 1499));
+    QVERIFY(!loaded->isComplete(1500, size - 1));
+    // the reload carries the .part's date: no rehash of an unchanged file
+    QVERIFY(loaded->status() != PartFileStatus::Hashing
+            && loaded->status() != PartFileStatus::WaitingForHash);
+    BackgroundFileWriter::instance().flush();
+    QCOMPARE(PartFileConvert::detectFormat(metPath), static_cast<int>(PartFileFormat::DefaultOld));
+}
+
+// A corrupt met falls back to the .bak bytes the startup read took along
+void tst_PartFileConvert::loadPartMet_bakFromPreload()
+{
+    ImportEnv env;
+    const auto hash = hashOf(0x53);
+    const quint64 size = 200'000;
+    const QString name = QStringLiteral("Backed Up.avi");
+    const QString metPath = env.temp.filePath(QStringLiteral("001.part.met"));
+    const QString bakPath = metPath + QStringLiteral(".bak");
+    QVERIFY(writeFile(metPath, shareazaSd(hash, size, name)));
+    QVERIFY(writeFile(env.temp.filePath(QStringLiteral("001.part")),
+                      pattern(1500, 4) + QByteArray(100, '\0')));
+    {
+        PartFile convert;   // rewrites the .sd as our met
+        QCOMPARE(convert.loadPartFile(env.temp.path(), QStringLiteral("001.part.met")),
+                 PartFileLoadResult::LoadSuccess);
+    }
+    BackgroundFileWriter::instance().flush();   // else its last save rotates the .bak below
+    QFile::remove(bakPath);
+    QVERIFY(QFile::copy(metPath, bakPath));
+    QVERIFY(writeFile(metPath, QByteArray("\xFFjunk")));
+
+    const PartMetPreload pre = PartMetPreload::read(metPath);
+    QVERIFY(pre.bak.has_value());
+    QVERIFY(QFile::remove(bakPath));   // only the preloaded backup can restore it now
+    env.queue.loadPartMet(metPath, &pre);
+
+    PartFile* loaded = env.queue.fileByID(hash.data());
+    QVERIFY(loaded != nullptr);
+    QCOMPARE(loaded->fileName(), name);
+    QVERIFY(loaded->isComplete(0, 1499));
+    // the restored met replaced the corrupt one
+    QCOMPARE(PartFileConvert::detectFormat(metPath), static_cast<int>(PartFileFormat::DefaultOld));
 }
 
 // The dialog's path: scan, queue, worker thread. The worker hands the queue work

@@ -3,6 +3,7 @@
 
 #include "Ed3kLive.h"
 
+#include "Ed3kHide.h"
 #include "Ed3kLiveFiles.h"
 #include "Ed3kPaid.h"
 #include "Ed3kSession.h"
@@ -156,8 +157,18 @@ Ed3kLive::Ed3kLive(Ed3kSession& session, Ed3kSiteServer& sites, QObject* parent)
     , m_sites(sites)
     , m_files(std::make_unique<Ed3kLiveFiles>(session, QString(), QStringLiteral("live files")))
 {
-    connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kLive::onEventPolled, Qt::DirectConnection);
+    // was: connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kLive::onEventPolled, Qt::DirectConnection);
+    // node key's events as before; the anonymous node's from keyedEventPolled (each once)
+    connect(&m_session, &Ed3kSession::eventPolled, this,
+            [this](const ffi::Event& ev, bool* handled) { onEventPolled(ev, ffi::KeyKind::Node, handled); }, Qt::DirectConnection);
+    connect(&m_session, &Ed3kSession::keyedEventPolled, this,
+            [this](const ffi::Event& ev, ffi::KeyKind key, bool* handled) {
+                if (key == ffi::KeyKind::Anon)
+                    onEventPolled(ev, key, handled);
+            },
+            Qt::DirectConnection);
     connect(&m_session, &Ed3kSession::statusChanged, this, &Ed3kLive::onSessionStatus);
+    connect(&m_session.hide(), &Ed3kHide::stopped, this, &Ed3kLive::onHideStopped);
     m_sites.setHostHandler([this](const QHttpServerRequest& req, QHttpServerResponder& resp) { return onRequest(req, resp); });
 }
 
@@ -174,15 +185,20 @@ std::expected<QString, QString> Ed3kLive::watch(const QString& link)
     if (!e)
         return std::unexpected(tr("ed3k is not running."));
     const QByteArray utf8 = link.trimmed().toUtf8();
-    auto stream = e->liveWatchLink(m_session.now(), std::string_view(utf8.constData(), std::size_t(utf8.size())));
+    // hops.md §1: under the anonymous key while hiding runs
+    const ffi::KeyKind key = m_session.hide().keyForUse();
+    auto stream = e->liveWatchLink(m_session.now(), std::string_view(utf8.constData(), std::size_t(utf8.size())), key);
     m_session.pump();
     if (!stream) {
         if (stream.error() == ffi::Error::Unsupported)
             return std::unexpected(tr("Live streams are turned off for ed3k."));
+        if (stream.error() == ffi::Error::State)
+            return std::unexpected(tr("This live stream is watched under the other key already."));
         return std::unexpected(tr("This is not a valid ed3k live link."));
     }
     Watched& w = m_streams[*stream];
     w.stream = *stream;
+    w.key = key;
     if (w.title.isEmpty()) {
         const qsizetype q = link.indexOf(QLatin1Char('?'));
         w.title = q < 0 ? QString() : QUrlQuery(link.mid(q + 1)).queryItemValue(QStringLiteral("dn"), QUrl::FullyDecoded);
@@ -207,8 +223,9 @@ std::expected<QString, QString> Ed3kLive::watchFile(const QByteArray& file)
     const QString media = info->media.isEmpty() ? QStringLiteral("video/mp4") : info->media;
     if (const QString why = m_playCheck ? m_playCheck(media, info->codecs) : canPlay(media, info->codecs); !why.isEmpty())
         return std::unexpected(why);
+    const ffi::KeyKind key = m_session.hide().keyForUse();
     auto stream = e->liveWatchFile(m_session.now(), std::span<const std::byte>(reinterpret_cast<const std::byte*>(file.constData()),
-                                                                              std::size_t(file.size())));
+                                                                              std::size_t(file.size())), key);
     m_session.pump();
     if (!stream) {
         if (stream.error() == ffi::Error::Unsupported)
@@ -217,18 +234,20 @@ std::expected<QString, QString> Ed3kLive::watchFile(const QByteArray& file)
     }
     Watched& w = m_streams[*stream];
     w.stream = *stream;
+    w.key = key;
     w.title = info->title;
     w.media = media;
     w.codecs = info->codecs;
     // §7: a channel file with an offer: the core followed its scope with that offer
     if (info->key.size() == 32 && !info->id.isEmpty()) {
-        ffi::Key32 key{};
-        std::memcpy(key.data(), info->key.constData(), key.size());
-        const auto scope = ffi::paidScope(1, key, std::span<const std::byte>(reinterpret_cast<const std::byte*>(info->id.constData()),
+        ffi::Key32 channelKey{};
+        std::memcpy(channelKey.data(), info->key.constData(), channelKey.size());
+        const auto scope = ffi::paidScope(1, channelKey, std::span<const std::byte>(reinterpret_cast<const std::byte*>(info->id.constData()),
                                                                              std::size_t(info->id.size())));
         if (scope)
-            if (const auto offer = e->paidOffer(*scope); offer && *offer)
-                followPaid(w, key, *scope);
+            // was: if (const auto offer = e->paidOffer(*scope); offer && *offer)
+            if (const auto offer = e->paidOffer(m_session.now(), *scope, key); offer && *offer)
+                followPaid(w, channelKey, *scope);
     }
     logEd3k(QStringLiteral("ed3k: watching live stream %1 (channel file)").arg(idOf(*stream)));
     markChanged();
@@ -283,7 +302,7 @@ bool Ed3kLive::leave(const QString& id)
     if (it == m_streams.end())
         return false;
     if (auto* e = m_session.engine(); e && !it->second.left)
-        (void)e->liveLeave(m_session.now(), *s);
+        (void)e->liveLeave(m_session.now(), *s, it->second.key);
     endViewers(it->second);
     if (m_paid && it->second.paidScope)
         m_paid->leaveChannel(*it->second.paidScope);
@@ -320,9 +339,10 @@ bool Ed3kLive::addPeer(const QString& id, const ffi::Source& peer)
 {
     const auto s = streamOf(id);
     auto* e = m_session.engine();
-    if (!s || !e || !m_streams.contains(*s))
+    const auto it = s ? m_streams.find(*s) : m_streams.end();
+    if (!e || it == m_streams.end())
         return false;
-    const auto ok = e->liveAddPeer(m_session.now(), *s, peer);
+    const auto ok = e->liveAddPeer(m_session.now(), *s, peer, it->second.key);
     m_session.pump();
     return ok.has_value();
 }
@@ -331,9 +351,11 @@ bool Ed3kLive::addPeer(const QString& id, const ffi::Source& peer)
 // Private
 // ---------------------------------------------------------------------------
 
-void Ed3kLive::onEventPolled(const ffi::Event& event, bool* handled)
+void Ed3kLive::onEventPolled(const ffi::Event& event, ffi::KeyKind key, bool* handled)
 {
     namespace e = ffi::event;
+    // a stream of the node the event is of (hops.md §1)
+    const auto find = [this, key](const ffi::Stream& stream) { return this->find(stream, key); };
     if (const auto* n = std::get_if<e::LiveNeighbour>(&event)) {
         if (Watched* w = find(n->stream)) {
             *handled = true;
@@ -366,7 +388,7 @@ void Ed3kLive::onEventPolled(const ffi::Event& event, bool* handled)
             const QString why = m_playCheck ? m_playCheck(w->media, w->codecs) : canPlay(w->media, w->codecs);
             if (!why.isEmpty())
                 QTimer::singleShot(0, this, [this, stream = c->stream, why] {
-                    if (Watched* again = find(stream))
+                    if (Watched* again = this->find(stream))
                         refuse(*again, why);
                 });
             markChanged();
@@ -429,6 +451,26 @@ void Ed3kLive::onSessionStatus()
         endViewers(w);
     m_streams.clear();
     markChanged();
+}
+
+void Ed3kLive::onHideStopped()
+{
+    // hops.md §1: nothing under the anonymous key falls back to the node key
+    bool any = false;
+    for (auto it = m_streams.begin(); it != m_streams.end();) {
+        if (it->second.key != ffi::KeyKind::Anon) {
+            ++it;
+            continue;
+        }
+        endViewers(it->second);
+        if (m_paid && it->second.paidScope)
+            m_paid->leaveChannel(*it->second.paidScope);
+        logEd3k(QStringLiteral("ed3k: live stream %1 ended: hiding stopped").arg(idOf(it->first)));
+        it = m_streams.erase(it);
+        any = true;
+    }
+    if (any)
+        markChanged();
 }
 
 bool Ed3kLive::onRequest(const QHttpServerRequest& req, QHttpServerResponder& resp)
@@ -522,7 +564,7 @@ void Ed3kLive::refuse(Watched& w, const QString& why)
     if (w.state == State::Unsupported)
         return;
     if (auto* e = m_session.engine(); e && !w.left)
-        (void)e->liveLeave(m_session.now(), w.stream);
+        (void)e->liveLeave(m_session.now(), w.stream, w.key);
     endViewers(w);
     w.left = true;
     w.state = State::Unsupported;
@@ -636,10 +678,12 @@ void Ed3kLive::answerPage(QHttpServerResponder& r, const QString& id) const
     r.write(page, h, QHttpServerResponder::StatusCode::Ok);
 }
 
-Ed3kLive::Watched* Ed3kLive::find(const ffi::Stream& stream)
+Ed3kLive::Watched* Ed3kLive::find(const ffi::Stream& stream, std::optional<ffi::KeyKind> key)
 {
     const auto it = m_streams.find(stream);
-    return it == m_streams.end() ? nullptr : &it->second;
+    if (it == m_streams.end() || (key && it->second.key != *key))
+        return nullptr;
+    return &it->second;
 }
 
 Ed3kLive::Info Ed3kLive::infoOf(const Watched& w) const
@@ -659,6 +703,7 @@ Ed3kLive::Info Ed3kLive::infoOf(const Watched& w) const
     if (w.paidScope)
         i.paidScope = Ed3kPaid::hexOf(*w.paidScope);
     i.error = w.error;
+    i.anon = w.key == ffi::KeyKind::Anon;
     return i;
 }
 

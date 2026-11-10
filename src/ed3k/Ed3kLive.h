@@ -24,6 +24,9 @@
 ///   channel file's at once (refused, not joined), a link's when the first peer tells it
 ///   (LiveChannel): then the stream is left, State::Unsupported with the reason.
 ///
+/// - Key (hops.md §1): a stream is watched under Ed3kHide::keyForUse() (anonymous while hiding
+///   runs) and stays under it; its events come keyed. Hiding stopped: its anonymous streams end.
+///
 /// - Paid channels (subscription.md §7: link `paid=1`, a channel file with an offer): followed
 ///   in Ed3kPaid (setPaid) while watched, which buys or takes the pass; the core opens the
 ///   sealed segments once keys come.
@@ -83,6 +86,7 @@ public:
         QString url;              ///< empty while the website server does not listen
         QString error;            ///< why it is not played (Unsupported), localized
         QString paidScope;        ///< a paid channel's scope, 32 hex digits; empty: not paid
+        bool anon = false;        ///< watched under the anonymous key (hops.md §1)
     };
     /// §2.3: whether @p media / @p codecs (RFC 6381) can be played here; empty: yes, else
     /// why not (localized).
@@ -153,9 +157,13 @@ private:
         std::vector<std::unique_ptr<Viewer>> viewers;
         QString error;
         std::optional<::ed3k::Scope> paidScope;
+        ::ed3k::KeyKind key = ::ed3k::KeyKind::Node;   ///< hops.md §1: the node watching it
     };
 
-    void onEventPolled(const ::ed3k::Event& event, bool* handled);
+    // was: void onEventPolled(const ::ed3k::Event& event, bool* handled);
+    void onEventPolled(const ::ed3k::Event& event, ::ed3k::KeyKind key, bool* handled);
+    /// Hiding stopped: the anonymous node's streams are gone.
+    void onHideStopped();
     void onSessionStatus();
     bool onRequest(const QHttpServerRequest& request, QHttpServerResponder& responder);
     void onSegment(Watched& w, const ::ed3k::event::LiveSegment& s);
@@ -176,7 +184,8 @@ private:
     [[nodiscard]] static QByteArray initOf(const Watched& w, const std::optional<::ed3k::Root>& r);
     /// The player page (HTML) of a stream: it reconnects when a response ends.
     void answerPage(QHttpServerResponder& r, const QString& id) const;
-    Watched* find(const ::ed3k::Stream& stream);
+    /// @p key: only a stream of that node (events); nullopt: either.
+    Watched* find(const ::ed3k::Stream& stream, std::optional<::ed3k::KeyKind> key = std::nullopt);
     [[nodiscard]] Info infoOf(const Watched& w) const;
     void markChanged();
     [[nodiscard]] static QString idOf(const ::ed3k::Stream& stream);

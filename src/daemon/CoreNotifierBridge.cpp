@@ -10,6 +10,7 @@
 #include "PushCoalescer.h"
 
 #include "app/AppContext.h"
+#include "app/CoreInfo.h"
 #include "net/SmtpClient.h"
 #include "prefs/Preferences.h"
 #include "client/ClientList.h"
@@ -26,6 +27,7 @@
 #include "search/SearchList.h"
 #include "server/Server.h"
 #include "server/ServerConnect.h"
+#include "server/ServerList.h"
 #include "stats/Statistics.h"
 #include "transfer/DownloadQueue.h"
 #include "transfer/UploadQueue.h"
@@ -149,12 +151,26 @@ void CoreNotifierBridge::connectAll()
     if (theApp.serverConnect) {
         connect(theApp.serverConnect, &ServerConnect::stateChanged,
                 this, &CoreNotifierBridge::onServerStateChanged);
+        connect(theApp.serverConnect, &ServerConnect::stateChanged,
+                this, &CoreNotifierBridge::onKadStateChanged);
         connect(theApp.serverConnect, &ServerConnect::serverMessageReceived,
                 this, &CoreNotifierBridge::onServerMessage);
         connect(theApp.serverConnect, &ServerConnect::connectionLost, this,
                 [this](const QString& serverName) {
             raiseNotifierEvent(Ipc::NotifierEvent::ConnectionLost, serverName);
         });
+    }
+
+    // Server counts feed the status bar via the coalesced Kad push
+    if (theApp.serverList) {
+        connect(theApp.serverList, &ServerList::serverUpdated,
+                this, [this](Server*) { onKadStateChanged(); });
+        connect(theApp.serverList, &ServerList::serverAdded,
+                this, [this](Server*) { onKadStateChanged(); });
+        connect(theApp.serverList, &ServerList::serverAboutToBeRemoved,
+                this, [this](const Server*) { onKadStateChanged(); });
+        connect(theApp.serverList, &ServerList::listReloaded,
+                this, &CoreNotifierBridge::onKadStateChanged);
     }
 
     // Statistics
@@ -331,6 +347,11 @@ void CoreNotifierBridge::onPortBindFailed(int port)
     raiseNotifierEvent(Ipc::NotifierEvent::PortBindFailed, QString::number(port));
 }
 
+void CoreNotifierBridge::onEd3kAnonExposed(const QString& name, const QString& networks)
+{
+    raiseNotifierEvent(Ipc::NotifierEvent::Ed3kAnonExposed, name, networks);
+}
+
 void CoreNotifierBridge::raiseNotifierEvent(Ipc::NotifierEvent kind, const QString& text,
                                             const QCborValue& extra)
 {
@@ -372,6 +393,8 @@ void CoreNotifierBridge::raiseNotifierEvent(Ipc::NotifierEvent kind, const QStri
         subject = QStringLiteral("eMule: Port not available");
         body = QStringLiteral("Fatal Error: Unable to create socket on port %1").arg(text);
         break;
+    case Ipc::NotifierEvent::Ed3kAnonExposed:
+        return;   // pop-up only: a mail naming a hidden file is no better place for it
     }
     if (wanted && thePrefs.notifyEmailEnabled())
         sendEmailNotification(subject, body);
@@ -675,6 +698,8 @@ IpcMessage CoreNotifierBridge::buildKadUpdate()
     info.insert(QStringLiteral("firewalledVerified"), kad && kad->isFirewalledVerified());
     info.insert(QStringLiteral("users"),  static_cast<qint64>(kad ? kad->getKademliaUsers() : 0));
     info.insert(QStringLiteral("files"),  static_cast<qint64>(kad ? kad->getKademliaFiles() : 0));
+    // Status bar shows eD2K (Kad) counts from this one push (#167)
+    ops::insertEd2kCounts(info);
     if (kadConnected && kad) {
         info.insert(QStringLiteral("usersExperimental"),
                     static_cast<qint64>(kad->getKademliaUsers(true)));

@@ -343,6 +343,26 @@ QString ipv4Literal()
     return r.v4.isNull() ? QString() : r.v4.toString();
 }
 
+QString sourceAddress()
+{
+    const Resolution r = current();
+    if (r.state == State::Unrestricted)
+        return {};
+    if (r.state == State::Blocked)
+        return QStringLiteral("127.0.0.1");
+    if (!r.literal.isNull())
+        return r.literal.toString();
+    if (r.pin.v4 && !r.v4.isNull())
+        return r.v4.toString();
+    if (r.pin.v6)
+        for (const LocalInterface& li : localInterfaces())
+            if (li.index == r.index)
+                for (const QHostAddress& a : li.addresses)
+                    if (a.protocol() == QAbstractSocket::IPv6Protocol && !a.isLinkLocal())
+                        return a.toString();
+    return QStringLiteral("127.0.0.1");   // nothing usable on it: as blocked
+}
+
 bool isIPv4Only()
 {
     const Resolution r = current();

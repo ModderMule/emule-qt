@@ -16,6 +16,9 @@
 ///   core says ANON_WARN / DENIED: anonWarning() → the user is told the seller sees an
 ///   address → confirmAnon() (paidAnonConfirm, ED3K_STATE_PAID saved) → the poll goes ahead.
 /// - §5.3: share reports on by default, the user's switch (setReports, ed3k_pass_set_reports).
+/// - Key (hops.md §1): a scope bought for the anonymous key runs on the anonymous node
+///   (paidAnon*: follow, unfollow, want/request keys), its Paid* / PaidAnonWarn events come
+///   keyed (keyedEventPolled); it waits while hiding is off and is followed again at its start.
 /// - Persisted: Config/ed3k/paid.json (scopes, offers, passes, polls; owner-only) and the
 ///   holder seeds in Config/ed3k/paid/<scope hex>.holder (Secret files, 0600, never logged).
 ///
@@ -231,9 +234,16 @@ private:
         bool renewAsked = false;  ///< renewNow() waits for the anonymous warning
     };
 
-    void onEventPolled(const ::ed3k::Event& event, bool* handled);
+    // was: void onEventPolled(const ::ed3k::Event& event, bool* handled);
+    void onEventPolled(const ::ed3k::Event& event, ::ed3k::KeyKind key, bool* handled);
     void onSessionStatus();
     void attach(Sub& s);
+    /// Hiding started (true) or stopped: the anonymous scopes follow it.
+    void hideChanged(bool hiding);
+    /// The scope off the node it is followed on (paidUnfollow / paidAnonUnfollow).
+    void detachSub(Sub& s);
+    /// paidWantKeys under the scope's key.
+    void wantKeys(Sub& s);
     /// false: refused (the error), or waits for the user (anonWait)
     bool startPoll(Sub& s, bool resume, QString* error = nullptr);
     void startRenewal(Sub& s);
@@ -260,6 +270,8 @@ private:
     bool readOffer(Sub& s);
     Sub* find(const ::ed3k::Scope& scope);
     const Sub* find(const ::ed3k::Scope& scope) const;
+    /// find() when the scope runs under @p key (an event of that node); else null.
+    Sub* findKeyed(const ::ed3k::Scope& scope, ::ed3k::KeyKind key);
     [[nodiscard]] Info infoOf(const Sub& s) const;
     [[nodiscard]] QString holderFile(const Sub& s) const;
     [[nodiscard]] QString paidDir() const;
