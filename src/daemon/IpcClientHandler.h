@@ -289,6 +289,7 @@ private:
     void handleInspectNzb(const Ipc::IpcMessage& msg);
     void handleClearUsenetCompleted(const Ipc::IpcMessage& msg);
     void handleFetchNzbImages(const Ipc::IpcMessage& msg);
+    void handleFetchNzbNfo(const Ipc::IpcMessage& msg);
 
     // eNode meta search (750-754) — IpcClientHandlerMeta.cpp
     void handleFetchMetaFile(const Ipc::IpcMessage& msg);

@@ -10,31 +10,14 @@
 /// at the end). A RAR'd video is decompressed from the head of its first volume;
 /// stored or compressed both work, since only the start of the stream is read.
 ///
-/// Runs on the daemon thread with its own small pool (kLanes per server), so
-/// a busy queue's connection budget is not touched beyond that.
+/// Runs on the daemon thread; the fetching is UsenetArticleGrab's.
 
-#include "nzb/NzbInfo.h"
-#include "nntp/NntpError.h"
-#include "prefs/NewsServer.h"
+#include "stream/UsenetArticleGrab.h"
 
-#include <QHash>
 #include <QList>
-#include <QMap>
-#include <QNetworkProxy>
-#include <QObject>
 #include <QString>
-#include <QTemporaryDir>
-
-#include <functional>
-#include <memory>
-#include <vector>
 
 namespace eMule::usenet {
-
-class ArticleFetcher;
-class ArticleWriter;
-class NntpServerPool;
-class NntpSocket;
 
 struct UsenetPreviewImage {
     enum class Kind { Posted, Frame, Cover };
@@ -50,7 +33,7 @@ struct UsenetPreviewPlan {
     bool videoInArchive = false;
 };
 
-class UsenetImagePreview : public QObject {
+class UsenetImagePreview : public UsenetArticleGrab {
     Q_OBJECT
 
 public:
@@ -60,11 +43,9 @@ public:
     static constexpr int kTailSegments = 4;                     ///< mp4 with moov at the end
     static constexpr int kFrames = 6;
     static constexpr int kFrameWidth = 1280;
-    static constexpr int kLanes = 3;   ///< connections per server, articles in flight
 
     UsenetImagePreview(QList<NewsServer> servers, const QNetworkProxy& proxy,
                        QObject* parent = nullptr);
-    ~UsenetImagePreview() override;
 
     [[nodiscard]] static UsenetPreviewPlan plan(const NzbInfo& nzb);
 
@@ -79,54 +60,25 @@ public:
 signals:
     void finished(const QList<eMule::usenet::UsenetPreviewImage>& images, const QString& note);
 
-private:
-    /// One article.
-    struct Job {
-        int file = -1;
-        int segment = -1;
-    };
-    /// One connection working through the jobs.
-    struct Lane {
-        std::unique_ptr<ArticleFetcher> fetcher;
-        std::unique_ptr<ArticleWriter> writer;
-        NntpSocket* socket = nullptr;
-        Job job;
-        int level = 0;
-        int retries = 0;
-        bool busy = false;   ///< connecting or fetching
-    };
+protected:
+    [[nodiscard]] QString targetPath(int file) const override;
+    void articleDone(const Job& job, const ArticleFetcher& fetcher) override;
 
-    void fetchJobs(QList<Job> jobs, std::function<void()> done);
-    void runLane(Lane& lane);
-    void onFetchFinished(Lane& lane, NntpError error, const QString& text);
-    void kickIdleLanes();
-    void dropSocket(Lane& lane, bool reusable);
-    [[nodiscard]] bool laneHasServer(int level) const;
-    [[nodiscard]] QString targetPath(int file) const;
-    /// Decoded bytes of @p file that arrived; @p contiguous = readable from 0.
-    qint64 received(int file, qint64* contiguous = nullptr) const;
+private:
     void collectImages();
     void startVideo();
+    void onArchivePeek();
     void onVideoHead();
     void grabFrames(const QString& path, double span);
     void finish(const QString& note = {});
 
-    std::unique_ptr<NntpServerPool> m_pool;
-    QTemporaryDir m_dir;
-    NzbInfo m_nzb;
     UsenetPreviewPlan m_plan;
     QList<UsenetPreviewImage> m_images;
-    std::vector<std::unique_ptr<Lane>> m_lanes;
-    QList<Job> m_jobs;
-    std::function<void()> m_jobsDone;
-    QHash<int, QMap<qint64, qint64>> m_ranges;   ///< file -> decoded offset -> length
-    int m_missing = 0;
     qint64 m_videoSize = 0;     ///< declared size of the video file (=ybegin size)
     QString m_videoPath;
     QString m_videoName;
     qint64 m_videoContiguous = 0;   ///< head bytes readable from 0
     bool m_tailFetched = false;
-    bool m_done = false;
 };
 
 } // namespace eMule::usenet

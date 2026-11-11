@@ -11698,7 +11698,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1181"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1182"/>
         <source>The core&apos;s certificate changed</source>
         <translation>核心的证书已更改</translation>
     </message>
@@ -14893,6 +14893,7 @@ Download it again?</source>
     </message>
     <message>
         <location line="+212"/>
+        <location line="+20"/>
         <source>Not connected to the core.</source>
         <translation>未连接到核心。</translation>
     </message>
@@ -14903,7 +14904,7 @@ Download it again?</source>
         </translation>
     </message>
     <message>
-        <location line="-209"/>
+        <location line="-229"/>
         <source>Could not add the links of &quot;%1&quot;: downloads from hosters are off.</source>
         <translation>无法添加“%1”的链接：网盘下载已关闭。</translation>
     </message>
@@ -14936,7 +14937,7 @@ Download it again?</source>
 <context>
     <name>eMule::MetaResultDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/MetaResultDetailDialog.cpp" line="+67"/>
+        <location filename="../src/gui/dialogs/MetaResultDetailDialog.cpp" line="+74"/>
         <source>Details: %1</source>
         <translation>详情：%1</translation>
     </message>
@@ -14958,31 +14959,31 @@ Download it again?</source>
     <message>
         <location line="+2"/>
         <location line="+2"/>
-        <location line="+164"/>
+        <location line="+192"/>
         <source>Name</source>
         <translation>名称</translation>
     </message>
     <message>
-        <location line="-166"/>
+        <location line="-194"/>
         <location line="+2"/>
-        <location line="+168"/>
+        <location line="+196"/>
         <source>Size</source>
         <translation>大小</translation>
     </message>
     <message>
-        <location line="-168"/>
-        <location line="+201"/>
+        <location line="-196"/>
+        <location line="+229"/>
         <source>Articles</source>
         <translation>文章</translation>
     </message>
     <message>
-        <location line="-201"/>
-        <location line="+165"/>
+        <location line="-229"/>
+        <location line="+193"/>
         <source>Type</source>
         <translation>类型</translation>
     </message>
     <message>
-        <location line="-157"/>
+        <location line="-185"/>
         <source>Unchecked files are not downloaded. You can change this later in the Torrents tab.</source>
         <translation>未勾选的文件不会下载。之后可在“种子”标签页中更改。</translation>
     </message>
@@ -14994,12 +14995,12 @@ Download it again?</source>
     <message>
         <location line="+16"/>
         <location line="+2"/>
-        <location line="+144"/>
+        <location line="+172"/>
         <source>Files</source>
         <translation>文件</translation>
     </message>
     <message>
-        <location line="-142"/>
+        <location line="-170"/>
         <source>URL</source>
         <translation>URL</translation>
     </message>
@@ -15019,32 +15020,52 @@ Download it again?</source>
         <translation>图片</translation>
     </message>
     <message>
+        <location line="+3"/>
+        <source>NFO</source>
+        <translation>NFO</translation>
+    </message>
+    <message>
         <location line="+6"/>
         <source>Download</source>
         <translation>下载</translation>
     </message>
     <message>
-        <location line="+41"/>
+        <location line="+44"/>
         <source>The file could not be read.</source>
         <translation>无法读取文件。</translation>
     </message>
     <message>
-        <location line="+15"/>
         <source>This release has no images and no video to take pictures from.</source>
-        <translation>此发布没有图片，也没有可截取画面的视频。</translation>
+        <translation type="vanished">此发布没有图片，也没有可截取画面的视频。</translation>
     </message>
     <message>
-        <location line="+7"/>
         <source>The images could not be fetched.</source>
-        <translation>无法获取图片。</translation>
+        <translation type="vanished">无法获取图片。</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+14"/>
+        <location line="+6"/>
+        <source>Images not available.</source>
+        <translation>没有可用的图片。</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <location line="+5"/>
+        <source>NFO not available.</source>
+        <translation>没有可用的 NFO。</translation>
+    </message>
+    <message>
+        <location line="+21"/>
+        <source>Fetching the NFO from the news server...</source>
+        <translation>正在从新闻服务器获取 NFO...</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Fetching images from the news server...</source>
         <translation>正在从新闻服务器获取图片...</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+20"/>
         <source>Keep at least one file of &quot;%1&quot;.</source>
         <translation>请为“%1”至少保留一个文件。</translation>
     </message>
@@ -21319,7 +21340,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::PreviewImageView</name>
     <message>
-        <location filename="../src/gui/controls/PreviewImageView.cpp" line="+48"/>
+        <location filename="../src/gui/controls/PreviewImageView.cpp" line="+37"/>
         <source>Previous image</source>
         <translation>上一张图片</translation>
     </message>
@@ -21329,7 +21350,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>下一张图片</translation>
     </message>
     <message>
-        <location line="+85"/>
+        <location line="+74"/>
         <source>%1 (%2 of %3)</source>
         <translation>%1 (第 %2 / %3 张)</translation>
     </message>

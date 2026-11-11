@@ -11743,7 +11743,7 @@ Falls der Internetanbieter eMule drosselt oder blockiert, hilft die Verschleieru
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1181"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1182"/>
         <source>The core&apos;s certificate changed</source>
         <translation>Das Zertifikat des Kerns hat sich geändert</translation>
     </message>
@@ -14946,6 +14946,7 @@ Erneut herunterladen?</translation>
     </message>
     <message>
         <location line="+212"/>
+        <location line="+20"/>
         <source>Not connected to the core.</source>
         <translation>Nicht mit dem Kern verbunden.</translation>
     </message>
@@ -14957,7 +14958,7 @@ Erneut herunterladen?</translation>
         </translation>
     </message>
     <message>
-        <location line="-209"/>
+        <location line="-229"/>
         <source>Could not add the links of &quot;%1&quot;: downloads from hosters are off.</source>
         <translation>Die Links von „%1“ konnten nicht hinzugefügt werden: Downloads von Hostern sind aus.</translation>
     </message>
@@ -14990,7 +14991,7 @@ Erneut herunterladen?</translation>
 <context>
     <name>eMule::MetaResultDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/MetaResultDetailDialog.cpp" line="+67"/>
+        <location filename="../src/gui/dialogs/MetaResultDetailDialog.cpp" line="+74"/>
         <source>Details: %1</source>
         <translation>Details: %1</translation>
     </message>
@@ -15012,31 +15013,31 @@ Erneut herunterladen?</translation>
     <message>
         <location line="+2"/>
         <location line="+2"/>
-        <location line="+164"/>
+        <location line="+192"/>
         <source>Name</source>
         <translation>Name</translation>
     </message>
     <message>
-        <location line="-166"/>
+        <location line="-194"/>
         <location line="+2"/>
-        <location line="+168"/>
+        <location line="+196"/>
         <source>Size</source>
         <translation>Größe</translation>
     </message>
     <message>
-        <location line="-168"/>
-        <location line="+201"/>
+        <location line="-196"/>
+        <location line="+229"/>
         <source>Articles</source>
         <translation>Artikel</translation>
     </message>
     <message>
-        <location line="-201"/>
-        <location line="+165"/>
+        <location line="-229"/>
+        <location line="+193"/>
         <source>Type</source>
         <translation>Typ</translation>
     </message>
     <message>
-        <location line="-157"/>
+        <location line="-185"/>
         <source>Unchecked files are not downloaded. You can change this later in the Torrents tab.</source>
         <translation>Nicht markierte Dateien werden nicht heruntergeladen. Das lässt sich später im Tab Torrents ändern.</translation>
     </message>
@@ -15048,12 +15049,12 @@ Erneut herunterladen?</translation>
     <message>
         <location line="+16"/>
         <location line="+2"/>
-        <location line="+144"/>
+        <location line="+172"/>
         <source>Files</source>
         <translation>Dateien</translation>
     </message>
     <message>
-        <location line="-142"/>
+        <location line="-170"/>
         <source>URL</source>
         <translation>URL</translation>
     </message>
@@ -15073,32 +15074,52 @@ Erneut herunterladen?</translation>
         <translation>Bilder</translation>
     </message>
     <message>
+        <location line="+3"/>
+        <source>NFO</source>
+        <translation>NFO</translation>
+    </message>
+    <message>
         <location line="+6"/>
         <source>Download</source>
         <translation>Download</translation>
     </message>
     <message>
-        <location line="+41"/>
+        <location line="+44"/>
         <source>The file could not be read.</source>
         <translation>Die Datei konnte nicht gelesen werden.</translation>
     </message>
     <message>
-        <location line="+15"/>
         <source>This release has no images and no video to take pictures from.</source>
-        <translation>Diese Veröffentlichung enthält keine Bilder und kein Video, aus dem Bilder erstellt werden könnten.</translation>
+        <translation type="vanished">Diese Veröffentlichung enthält keine Bilder und kein Video, aus dem Bilder erstellt werden könnten.</translation>
     </message>
     <message>
-        <location line="+7"/>
         <source>The images could not be fetched.</source>
-        <translation>Die Bilder konnten nicht abgerufen werden.</translation>
+        <translation type="vanished">Die Bilder konnten nicht abgerufen werden.</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+14"/>
+        <location line="+6"/>
+        <source>Images not available.</source>
+        <translation>Keine Bilder verfügbar.</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <location line="+5"/>
+        <source>NFO not available.</source>
+        <translation>Keine NFO verfügbar.</translation>
+    </message>
+    <message>
+        <location line="+21"/>
+        <source>Fetching the NFO from the news server...</source>
+        <translation>NFO wird vom News-Server geladen...</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Fetching images from the news server...</source>
         <translation>Bilder werden vom News-Server abgerufen...</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+20"/>
         <source>Keep at least one file of &quot;%1&quot;.</source>
         <translation>Behalten Sie mindestens eine Datei von „%1“.</translation>
     </message>
@@ -21379,7 +21400,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
 <context>
     <name>eMule::PreviewImageView</name>
     <message>
-        <location filename="../src/gui/controls/PreviewImageView.cpp" line="+48"/>
+        <location filename="../src/gui/controls/PreviewImageView.cpp" line="+37"/>
         <source>Previous image</source>
         <translation>Vorheriges Bild</translation>
     </message>
@@ -21389,7 +21410,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>Nächstes Bild</translation>
     </message>
     <message>
-        <location line="+85"/>
+        <location line="+74"/>
         <source>%1 (%2 of %3)</source>
         <translation>%1 (%2 von %3)</translation>
     </message>

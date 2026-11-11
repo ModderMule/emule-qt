@@ -11410,7 +11410,7 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1181"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1182"/>
         <source>The core&apos;s certificate changed</source>
         <translation>Certyfikat rdzenia się zmienił</translation>
     </message>
@@ -14589,6 +14589,7 @@ Pobrać ponownie?</translation>
     </message>
     <message>
         <location line="+212"/>
+        <location line="+20"/>
         <source>Not connected to the core.</source>
         <translation>Brak połączenia z rdzeniem.</translation>
     </message>
@@ -14601,7 +14602,7 @@ Pobrać ponownie?</translation>
         </translation>
     </message>
     <message>
-        <location line="-209"/>
+        <location line="-229"/>
         <source>Could not add the links of &quot;%1&quot;: downloads from hosters are off.</source>
         <translation>Nie można dodać linków z „%1”: pobieranie z hostingów jest wyłączone.</translation>
     </message>
@@ -14634,7 +14635,7 @@ Pobrać ponownie?</translation>
 <context>
     <name>eMule::MetaResultDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/MetaResultDetailDialog.cpp" line="+67"/>
+        <location filename="../src/gui/dialogs/MetaResultDetailDialog.cpp" line="+74"/>
         <source>Details: %1</source>
         <translation>Szczegóły: %1</translation>
     </message>
@@ -14656,31 +14657,31 @@ Pobrać ponownie?</translation>
     <message>
         <location line="+2"/>
         <location line="+2"/>
-        <location line="+164"/>
+        <location line="+192"/>
         <source>Name</source>
         <translation>Nazwa</translation>
     </message>
     <message>
-        <location line="-166"/>
+        <location line="-194"/>
         <location line="+2"/>
-        <location line="+168"/>
+        <location line="+196"/>
         <source>Size</source>
         <translation>Rozmiar</translation>
     </message>
     <message>
-        <location line="-168"/>
-        <location line="+201"/>
+        <location line="-196"/>
+        <location line="+229"/>
         <source>Articles</source>
         <translation>Artykuły</translation>
     </message>
     <message>
-        <location line="-201"/>
-        <location line="+165"/>
+        <location line="-229"/>
+        <location line="+193"/>
         <source>Type</source>
         <translation>Typ</translation>
     </message>
     <message>
-        <location line="-157"/>
+        <location line="-185"/>
         <source>Unchecked files are not downloaded. You can change this later in the Torrents tab.</source>
         <translation>Niezaznaczone pliki nie są pobierane. Możesz to później zmienić na karcie Torrenty.</translation>
     </message>
@@ -14692,12 +14693,12 @@ Pobrać ponownie?</translation>
     <message>
         <location line="+16"/>
         <location line="+2"/>
-        <location line="+144"/>
+        <location line="+172"/>
         <source>Files</source>
         <translation>Pliki</translation>
     </message>
     <message>
-        <location line="-142"/>
+        <location line="-170"/>
         <source>URL</source>
         <translation>URL</translation>
     </message>
@@ -14717,32 +14718,52 @@ Pobrać ponownie?</translation>
         <translation>Obrazy</translation>
     </message>
     <message>
+        <location line="+3"/>
+        <source>NFO</source>
+        <translation>NFO</translation>
+    </message>
+    <message>
         <location line="+6"/>
         <source>Download</source>
         <translation>Pobierz</translation>
     </message>
     <message>
-        <location line="+41"/>
+        <location line="+44"/>
         <source>The file could not be read.</source>
         <translation>Nie można odczytać pliku.</translation>
     </message>
     <message>
-        <location line="+15"/>
         <source>This release has no images and no video to take pictures from.</source>
-        <translation>To wydanie nie zawiera obrazów ani wideo, z którego można by pobrać kadry.</translation>
+        <translation type="vanished">To wydanie nie zawiera obrazów ani wideo, z którego można by pobrać kadry.</translation>
     </message>
     <message>
-        <location line="+7"/>
         <source>The images could not be fetched.</source>
-        <translation>Nie można pobrać obrazów.</translation>
+        <translation type="vanished">Nie można pobrać obrazów.</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+14"/>
+        <location line="+6"/>
+        <source>Images not available.</source>
+        <translation>Brak dostępnych obrazów.</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <location line="+5"/>
+        <source>NFO not available.</source>
+        <translation>Brak dostępnego pliku NFO.</translation>
+    </message>
+    <message>
+        <location line="+21"/>
+        <source>Fetching the NFO from the news server...</source>
+        <translation>Pobieranie NFO z serwera grup dyskusyjnych...</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Fetching images from the news server...</source>
         <translation>Pobieranie obrazów z serwera news...</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+20"/>
         <source>Keep at least one file of &quot;%1&quot;.</source>
         <translation>Zachowaj co najmniej jeden plik z &quot;%1&quot;.</translation>
     </message>
@@ -20917,7 +20938,7 @@ Przeliczyć teraz hash wszystkich udostępnianych plików?</translation>
 <context>
     <name>eMule::PreviewImageView</name>
     <message>
-        <location filename="../src/gui/controls/PreviewImageView.cpp" line="+48"/>
+        <location filename="../src/gui/controls/PreviewImageView.cpp" line="+37"/>
         <source>Previous image</source>
         <translation>Poprzedni obraz</translation>
     </message>
@@ -20927,7 +20948,7 @@ Przeliczyć teraz hash wszystkich udostępnianych plików?</translation>
         <translation>Następny obraz</translation>
     </message>
     <message>
-        <location line="+85"/>
+        <location line="+74"/>
         <source>%1 (%2 of %3)</source>
         <translation>%1 (%2 z %3)</translation>
     </message>

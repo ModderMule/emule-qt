@@ -85,10 +85,15 @@ void addNzbUrl(QObject* context, const QString& url, const usenet::UsenetAddOpti
 
 /// FetchNzbImages: posted images, video frames and @p coverUrl of an NZB that
 /// inspectNzb() handed out a `previewToken` for (kept 3 h). Runs once per token;
+/// accounts over their allowance are skipped and the bytes go on the meters;
 /// later calls get the cached answer. @p done: true + {images: [{name, kind, data}],
 /// note}, or false + error.
 void fetchPreviewImages(const QString& token, const QUrl& coverUrl,
                         std::function<void(bool ok, const QCborValue& result)> done);
+
+/// FetchNzbNfo: the .nfo text of a previewToken's NZB, the same way.
+/// @p done: true + {nfos: [{name, text}], note}, or false + error.
+void fetchPreviewNfo(const QString& token, std::function<void(bool ok, const QCborValue& result)> done);
 
 /// Pause, resume (Bulk intent) or cancel every release in @p category, 0 being
 /// all of them. Returns how many it acted on, -1 for an unknown category.

@@ -11698,7 +11698,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1181"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1182"/>
         <source>The core&apos;s certificate changed</source>
         <translation>코어 인증서가 변경되었습니다</translation>
     </message>
@@ -14893,6 +14893,7 @@ Download it again?</source>
     </message>
     <message>
         <location line="+212"/>
+        <location line="+20"/>
         <source>Not connected to the core.</source>
         <translation>코어에 연결되지 않았습니다.</translation>
     </message>
@@ -14903,7 +14904,7 @@ Download it again?</source>
         </translation>
     </message>
     <message>
-        <location line="-209"/>
+        <location line="-229"/>
         <source>Could not add the links of &quot;%1&quot;: downloads from hosters are off.</source>
         <translation>&quot;%1&quot;의 링크를 추가할 수 없습니다: 호스터 다운로드가 꺼져 있습니다.</translation>
     </message>
@@ -14936,7 +14937,7 @@ Download it again?</source>
 <context>
     <name>eMule::MetaResultDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/MetaResultDetailDialog.cpp" line="+67"/>
+        <location filename="../src/gui/dialogs/MetaResultDetailDialog.cpp" line="+74"/>
         <source>Details: %1</source>
         <translation>상세: %1</translation>
     </message>
@@ -14958,31 +14959,31 @@ Download it again?</source>
     <message>
         <location line="+2"/>
         <location line="+2"/>
-        <location line="+164"/>
+        <location line="+192"/>
         <source>Name</source>
         <translation>이름</translation>
     </message>
     <message>
-        <location line="-166"/>
+        <location line="-194"/>
         <location line="+2"/>
-        <location line="+168"/>
+        <location line="+196"/>
         <source>Size</source>
         <translation>크기</translation>
     </message>
     <message>
-        <location line="-168"/>
-        <location line="+201"/>
+        <location line="-196"/>
+        <location line="+229"/>
         <source>Articles</source>
         <translation>기사</translation>
     </message>
     <message>
-        <location line="-201"/>
-        <location line="+165"/>
+        <location line="-229"/>
+        <location line="+193"/>
         <source>Type</source>
         <translation>유형</translation>
     </message>
     <message>
-        <location line="-157"/>
+        <location line="-185"/>
         <source>Unchecked files are not downloaded. You can change this later in the Torrents tab.</source>
         <translation>체크하지 않은 파일은 다운로드되지 않습니다. 나중에 토렌트 탭에서 바꿀 수 있습니다.</translation>
     </message>
@@ -14994,12 +14995,12 @@ Download it again?</source>
     <message>
         <location line="+16"/>
         <location line="+2"/>
-        <location line="+144"/>
+        <location line="+172"/>
         <source>Files</source>
         <translation>파일</translation>
     </message>
     <message>
-        <location line="-142"/>
+        <location line="-170"/>
         <source>URL</source>
         <translation>URL</translation>
     </message>
@@ -15019,32 +15020,52 @@ Download it again?</source>
         <translation>이미지</translation>
     </message>
     <message>
+        <location line="+3"/>
+        <source>NFO</source>
+        <translation>NFO</translation>
+    </message>
+    <message>
         <location line="+6"/>
         <source>Download</source>
         <translation>다운로드</translation>
     </message>
     <message>
-        <location line="+41"/>
+        <location line="+44"/>
         <source>The file could not be read.</source>
         <translation>파일을 읽을 수 없습니다.</translation>
     </message>
     <message>
-        <location line="+15"/>
         <source>This release has no images and no video to take pictures from.</source>
-        <translation>이 릴리스에는 이미지도, 이미지를 추출할 동영상도 없습니다.</translation>
+        <translation type="vanished">이 릴리스에는 이미지도, 이미지를 추출할 동영상도 없습니다.</translation>
     </message>
     <message>
-        <location line="+7"/>
         <source>The images could not be fetched.</source>
-        <translation>이미지를 가져올 수 없습니다.</translation>
+        <translation type="vanished">이미지를 가져올 수 없습니다.</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+14"/>
+        <location line="+6"/>
+        <source>Images not available.</source>
+        <translation>이미지가 없습니다.</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <location line="+5"/>
+        <source>NFO not available.</source>
+        <translation>NFO가 없습니다.</translation>
+    </message>
+    <message>
+        <location line="+21"/>
+        <source>Fetching the NFO from the news server...</source>
+        <translation>뉴스 서버에서 NFO를 가져오는 중...</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Fetching images from the news server...</source>
         <translation>뉴스 서버에서 이미지를 가져오는 중...</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+20"/>
         <source>Keep at least one file of &quot;%1&quot;.</source>
         <translation>&quot;%1&quot;의 파일은 최소 한 개를 남겨 두세요.</translation>
     </message>
@@ -21319,7 +21340,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::PreviewImageView</name>
     <message>
-        <location filename="../src/gui/controls/PreviewImageView.cpp" line="+48"/>
+        <location filename="../src/gui/controls/PreviewImageView.cpp" line="+37"/>
         <source>Previous image</source>
         <translation>이전 이미지</translation>
     </message>
@@ -21329,7 +21350,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>다음 이미지</translation>
     </message>
     <message>
-        <location line="+85"/>
+        <location line="+74"/>
         <source>%1 (%2 of %3)</source>
         <translation>%1 (%2 / %3)</translation>
     </message>

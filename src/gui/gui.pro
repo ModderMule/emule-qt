@@ -114,6 +114,8 @@ SOURCES += \
     controls/DownloadProgressDelegate.cpp \
     controls/Ed3kDownloadRows.cpp \
     controls/PreviewImageView.cpp \
+    controls/PreviewNfoView.cpp \
+    controls/PreviewTabView.cpp \
     controls/UsenetFileCheckList.cpp \
     controls/UsenetProgressDelegate.cpp \
     controls/FriendListModel.cpp \
@@ -240,6 +242,8 @@ HEADERS += \
     controls/BarShader.h \
     controls/PartBarPainter.h \
     controls/PreviewImageView.h \
+    controls/PreviewNfoView.h \
+    controls/PreviewTabView.h \
     controls/UsenetFileCheckList.h \
     controls/UsenetProgressDelegate.h \
     controls/FriendListModel.h \

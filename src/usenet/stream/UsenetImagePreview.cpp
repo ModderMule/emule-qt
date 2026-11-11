@@ -7,10 +7,7 @@
 #include "archive/ArchiveUnpack.h"
 #include "media/FrameGrabThread.h"
 #include "nntp/ArticleFetcher.h"
-#include "nntp/NntpServerPool.h"
-#include "nntp/NntpSocket.h"
 #include "post/UsenetUnpacker.h"
-#include "queue/ArticleWriter.h"
 #include "utils/Log.h"
 
 #include <QBuffer>
@@ -116,23 +113,8 @@ int segmentsFor(const NzbFileInfo& f, qint64 budget)
 
 UsenetImagePreview::UsenetImagePreview(QList<NewsServer> servers, const QNetworkProxy& proxy,
                                        QObject* parent)
-    : QObject(parent)
-    , m_pool(std::make_unique<NntpServerPool>())
+    : UsenetArticleGrab(std::move(servers), proxy, parent)
 {
-    for (NewsServer& s : servers)
-        s.maxConnections = std::clamp(s.maxConnections, 1, kLanes);
-    m_pool->setProxy(proxy);
-    m_pool->setIdleTimeout(15'000);
-    m_pool->setServers(std::move(servers));
-}
-
-UsenetImagePreview::~UsenetImagePreview()
-{
-    for (auto& lane : m_lanes) {
-        lane->fetcher.reset();   // no finished() into a dying object
-        if (lane->socket)
-            m_pool->release(std::exchange(lane->socket, nullptr), false);
-    }
 }
 
 UsenetPreviewPlan UsenetImagePreview::plan(const NzbInfo& nzb)
@@ -191,23 +173,18 @@ void UsenetImagePreview::start(const NzbInfo& nzb)
 {
     m_nzb = nzb;
     m_plan = plan(nzb);
-    if (!m_dir.isValid()) {
-        finish(tr("No temporary folder."));
-        return;
-    }
-    if (m_pool->servers().isEmpty()) {
-        finish(tr("No news server is configured."));
-        return;
-    }
     if (m_plan.images.isEmpty() && m_plan.video < 0) {
         finish();
+        return;
+    }
+    if (QString note; !canStart(note)) {
+        finish(note);
         return;
     }
 
     QList<Job> jobs;
     for (int fi : std::as_const(m_plan.images))
-        for (int s = 0; s < m_nzb.files.at(fi).segments.size(); ++s)
-            jobs.append({fi, s});
+        jobs.append(allSegments(fi));
     QPointer<UsenetImagePreview> self(this);
     fetchJobs(std::move(jobs), [self] {
         if (!self)
@@ -217,197 +194,22 @@ void UsenetImagePreview::start(const NzbInfo& nzb)
     });
 }
 
-void UsenetImagePreview::fetchJobs(QList<Job> jobs, std::function<void()> done)
-{
-    m_jobs = std::move(jobs);
-    m_jobsDone = std::move(done);
-    if (m_lanes.empty()) {
-        for (int i = 0; i < kLanes; ++i) {
-            auto lane = std::make_unique<Lane>();
-            lane->fetcher = std::make_unique<ArticleFetcher>();
-            Lane* raw = lane.get();
-            connect(lane->fetcher.get(), &ArticleFetcher::finished, this,
-                    [this, raw](NntpError error, const QString& text) { onFetchFinished(*raw, error, text); });
-            m_lanes.push_back(std::move(lane));
-        }
-    }
-    for (auto& lane : m_lanes)
-        runLane(*lane);
-}
-
-void UsenetImagePreview::runLane(Lane& lane)
-{
-    if (m_done || lane.busy)
-        return;
-    if (lane.job.file < 0) {
-        if (m_jobs.isEmpty()) {
-            // the batch is over when no lane holds a job any more
-            const bool idle = std::ranges::none_of(m_lanes, [](const auto& l) { return l->job.file >= 0; });
-            if (idle) {
-                if (auto done = std::exchange(m_jobsDone, {}))
-                    done();
-            }
-            return;
-        }
-        lane.job = m_jobs.takeFirst();
-        lane.level = 0;
-        lane.retries = 0;
-    }
-    if (lane.level > m_pool->maxLevel()) {
-        // no server has it
-        ++m_missing;
-        lane.job = {};
-        runLane(lane);
-        return;
-    }
-    if (!lane.socket) {
-        lane.socket = m_pool->acquire(lane.level);
-        if (!lane.socket) {
-            // this rung is full or absent: a lane past the first waits for its turn
-            if (&lane != m_lanes.front().get() && lane.level == 0 && m_pool->maxLevel() >= 0
-                && !m_pool->servers().isEmpty() && laneHasServer(lane.level)) {
-                m_jobs.prepend(std::exchange(lane.job, {}));
-                return;
-            }
-            ++lane.level;
-            runLane(lane);
-            return;
-        }
-        if (!lane.socket->isReady()) {
-            lane.busy = true;
-            QPointer<UsenetImagePreview> self(this);
-            Lane* raw = &lane;
-            NntpSocket* socket = lane.socket;
-            auto readyConn = std::make_shared<QMetaObject::Connection>();
-            auto failConn = std::make_shared<QMetaObject::Connection>();
-            *readyConn = connect(socket, &NntpSocket::ready, this, [self, raw, readyConn, failConn] {
-                disconnect(*readyConn);
-                disconnect(*failConn);
-                if (!self)
-                    return;
-                raw->busy = false;
-                self->runLane(*raw);
-            });
-            *failConn = connect(socket, &NntpSocket::failed, this,
-                                [self, raw, readyConn, failConn](NntpError, const QString& text) {
-                disconnect(*readyConn);
-                disconnect(*failConn);
-                if (!self)
-                    return;
-                logUsenetWarning(QStringLiteral("Usenet: preview connection failed: %1").arg(text));
-                raw->busy = false;
-                self->dropSocket(*raw, false);
-                ++raw->level;   // try the next rung's server
-                self->runLane(*raw);
-            });
-            return;
-        }
-    }
-    // a writer per lane on the file itself: each keeps its own position
-    lane.writer = std::make_unique<ArticleWriter>();
-    QString error;
-    if (!lane.writer->open(targetPath(lane.job.file), error)) {
-        logUsenetWarning(QStringLiteral("Usenet: preview: %1").arg(error));
-        ++m_missing;
-        lane.job = {};
-        lane.writer.reset();
-        runLane(lane);
-        return;
-    }
-    lane.busy = true;
-    const NzbFileInfo& file = m_nzb.files.at(lane.job.file);
-    lane.fetcher->fetch(lane.socket, file.segments.at(lane.job.segment), lane.writer.get(), file.groups);
-}
-
-bool UsenetImagePreview::laneHasServer(int level) const
-{
-    for (const NewsServer& s : m_pool->servers())
-        if (s.enabled && s.isValid() && m_pool->levelOf(s.key()) == level)
-            return true;
-    return false;
-}
-
-void UsenetImagePreview::onFetchFinished(Lane& lane, NntpError error, const QString& text)
-{
-    lane.busy = false;
-    if (m_done || lane.job.file < 0)
-        return;
-    QString flushError;
-    if (lane.writer) {
-        (void) lane.writer->flush(flushError);
-        lane.writer->close();
-        lane.writer.reset();
-    }
-    if (error == NntpError::None) {
-        // ToDo: count these bytes in UsenetUsage and honour account quotas
-        // the video's real size, for the head fraction
-        if (lane.job.file == m_plan.video && m_videoSize <= 0)
-            m_videoSize = lane.fetcher->declaredFileSize();
-        m_ranges[lane.job.file].insert(lane.fetcher->decodedOffset(), lane.fetcher->decodedBytes());
-        lane.job = {};
-        runLane(lane);
-        kickIdleLanes();
-        return;
-    }
-    if (escalatesToNextLevel(error)) {
-        dropSocket(lane, true);
-        ++lane.level;
-        runLane(lane);
-        return;
-    }
-    // the connection went wrong: a fresh one, twice, then skip the article
-    dropSocket(lane, false);
-    if (++lane.retries > 2) {
-        logUsenetWarning(QStringLiteral("Usenet: preview article skipped: %1").arg(text));
-        ++m_missing;
-        lane.job = {};
-    }
-    runLane(lane);
-}
-
-void UsenetImagePreview::kickIdleLanes()
-{
-    for (auto& l : m_lanes)
-        if (!l->busy && l->job.file < 0)
-            runLane(*l);
-}
-
-void UsenetImagePreview::dropSocket(Lane& lane, bool reusable)
-{
-    if (lane.socket)
-        m_pool->release(std::exchange(lane.socket, nullptr), reusable);
-}
-
 QString UsenetImagePreview::targetPath(int file) const
 {
-    return file == m_plan.video ? m_videoPath : m_dir.filePath(QStringLiteral("img%1").arg(file));
+    return file == m_plan.video ? m_videoPath : UsenetArticleGrab::targetPath(file);
 }
 
-qint64 UsenetImagePreview::received(int file, qint64* contiguous) const
+void UsenetImagePreview::articleDone(const Job& job, const ArticleFetcher& fetcher)
 {
-    qint64 total = 0;
-    qint64 end = 0;   // bytes readable from 0 without a hole
-    const auto ranges = m_ranges.value(file);
-    for (auto it = ranges.cbegin(); it != ranges.cend(); ++it) {
-        total += it.value();
-        if (it.key() <= end)
-            end = std::max(end, it.key() + it.value());
-    }
-    if (contiguous)
-        *contiguous = end;
-    return total;
+    // the video's real size, for the head fraction
+    if (job.file == m_plan.video && m_videoSize <= 0)
+        m_videoSize = fetcher.declaredFileSize();
 }
 
 void UsenetImagePreview::collectImages()
 {
     for (int fi : std::as_const(m_plan.images)) {
-        const QString path = targetPath(fi);
-        if (received(fi) <= 0)
-            continue;
-        QFile f(path);
-        if (!f.open(QIODevice::ReadOnly))
-            continue;
-        const QByteArray data = f.readAll();
+        const QByteArray data = readReceived(fi);
         // a missing article leaves a hole: only what decodes is shown
         if (!looksLikeImage(data))
             continue;
@@ -425,9 +227,46 @@ void UsenetImagePreview::startVideo()
     const NzbFileInfo& file = m_nzb.files.at(m_plan.video);
     const QString ext = m_plan.videoInArchive ? QStringLiteral("rar") : extOf(fileNameOf(file));
     m_videoPath = m_dir.filePath(QStringLiteral("video.") + ext);
+    QPointer<UsenetImagePreview> self(this);
+    if (m_plan.videoInArchive) {
+        // an archive may hold anything: its first article names the entry, the rest only for a video
+        fetchJobs({{m_plan.video, 0}}, [self] {
+            if (self)
+                self->onArchivePeek();
+        });
+        return;
+    }
     QList<Job> jobs;
     const int n = segmentsFor(file, kHeadBytes);
     for (int s = 0; s < n; ++s)
+        jobs.append({m_plan.video, s});
+    fetchJobs(std::move(jobs), [self] {
+        if (self)
+            self->onVideoHead();
+    });
+}
+
+void UsenetImagePreview::onArchivePeek()
+{
+    const QByteArray head = readReceived(m_plan.video);
+    if (head.isEmpty()) {
+        finish(tr("The video is not on the server."));
+        return;
+    }
+    const ArchiveHead peek = readArchiveHead(head, 64 * 1024);
+    if (peek.entryName.isEmpty() && peek.data.isEmpty()) {
+        // encrypted, 7z, or not an archive we read
+        finish();
+        return;
+    }
+    if (!peek.entryName.isEmpty() && !kVideoExts.contains(extOf(peek.entryName))) {
+        m_videoName = peek.entryName;
+        finish(tr("The archive holds %1, not a video.").arg(QFileInfo(peek.entryName).fileName()));
+        return;
+    }
+    QList<Job> jobs;
+    const int n = segmentsFor(m_nzb.files.at(m_plan.video), kHeadBytes);
+    for (int s = 1; s < n; ++s)
         jobs.append({m_plan.video, s});
     QPointer<UsenetImagePreview> self(this);
     fetchJobs(std::move(jobs), [self] {
@@ -561,14 +400,8 @@ void UsenetImagePreview::grabFrames(const QString& path, double span)
 
 void UsenetImagePreview::finish(const QString& note)
 {
-    if (m_done)
-        return;
-    m_done = true;
-    for (auto& lane : m_lanes)
-        dropSocket(*lane, true);
-    if (m_missing > 0)
-        logUsenet(QStringLiteral("Usenet: preview skipped %1 missing article(s)").arg(m_missing));
-    emit finished(m_images, note);
+    if (stop())
+        emit finished(m_images, note);
 }
 
 } // namespace eMule::usenet

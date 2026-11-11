@@ -1520,6 +1520,14 @@ bool UsenetQueue::isOverQuota(const NewsServer& s) const
     return m_overQuota.contains(s.key());
 }
 
+void UsenetQueue::chargeUsage(const QString& accountId, qint64 bytes)
+{
+    if (accountId.isEmpty() || bytes <= 0)
+        return;
+    m_usage.add(accountId, bytes);
+    refreshQuotaState();
+}
+
 bool UsenetQueue::hasActiveDownloads() const
 {
     // A paused engine asks nothing of the line, so eD2K gets all of it.

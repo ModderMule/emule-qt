@@ -180,6 +180,8 @@
     <ClCompile Include="..\..\src\gui\app\SkinColors.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\MetaResultDetailDialog.cpp" />
     <ClCompile Include="..\..\src\gui\controls\PreviewImageView.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\PreviewNfoView.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\PreviewTabView.cpp" />
     <ClCompile Include="..\..\src\gui\controls\TorrentFileTree.cpp" />
     <ClCompile Include="..\..\src\gui\controls\UsenetFileCheckList.cpp" />
     <ClCompile Include="..\..\src\gui\controls\FileCheckButtons.cpp" />
@@ -206,6 +208,12 @@
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\controls\PreviewImageView.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\controls\PreviewNfoView.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\controls\PreviewTabView.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\controls\UsenetFileCheckList.h">

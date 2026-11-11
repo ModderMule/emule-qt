@@ -91,6 +91,12 @@
     <ClCompile Include="controls\PreviewImageView.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="controls\PreviewNfoView.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\PreviewTabView.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="controls\UsenetFileCheckList.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -748,6 +754,12 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\PreviewImageView.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\PreviewNfoView.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\PreviewTabView.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\UsenetFileCheckList.h">

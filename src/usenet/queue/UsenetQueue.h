@@ -513,6 +513,10 @@ public:
     /// anything the old figure had stalled.
     bool setAccountUsage(const QString& accountId, qint64 periodBytes, qint64 totalBytes);
 
+    /// Bytes read outside the queue (search Details › Images / NFO), charged to
+    /// @p accountId's meter like an article's. The next dispatch round sees it.
+    void chargeUsage(const QString& accountId, qint64 bytes);
+
 signals:
     /// Progress or state moved. Coalesced by the daemon before it reaches a GUI.
     void itemChanged(const QString& id);

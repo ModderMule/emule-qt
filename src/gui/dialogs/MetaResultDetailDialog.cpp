@@ -8,6 +8,7 @@
 #include "controls/AbstractListView.h"
 #include "controls/FileCheckButtons.h"
 #include "controls/PreviewImageView.h"
+#include "controls/PreviewNfoView.h"
 #include "controls/SortableItems.h"
 #include "controls/TorrentFileTree.h"
 #include "controls/UsenetFileCheckList.h"
@@ -50,6 +51,12 @@ QString dateText(qint64 secs)
 {
     return secs > 0 ? QLocale().toString(QDateTime::fromSecsSinceEpoch(secs), QLocale::ShortFormat)
                     : QString();
+}
+
+/// "Images not available." plus why, when the daemon said.
+QString notAvailable(const QString& headline, const QString& why)
+{
+    return why.isEmpty() ? headline : headline + QStringLiteral("\n\n") + why;
 }
 
 QString sizeText(qint64 bytes)
@@ -119,6 +126,9 @@ MetaResultDetailDialog::MetaResultDetailDialog(const RowInfo& row, QWidget* pare
     m_images = new PreviewImageView(m_tabs);
     m_tabs->addTab(m_images, tr("Images"));
     m_tabs->setTabVisible(TabImages, false);
+    m_nfo = new PreviewNfoView(m_tabs);
+    m_tabs->addTab(m_nfo, tr("NFO"));
+    m_tabs->setTabVisible(TabNfo, false);
     connect(m_tabs, &QTabWidget::currentChanged, this, &MetaResultDetailDialog::onTabChanged);
     m_stack->addWidget(m_tabs);
     contentLayout()->addWidget(m_stack);
@@ -155,7 +165,10 @@ void MetaResultDetailDialog::setDetails(const QCborMap& details)
         buildTrackers(inspection);
     m_previewToken = torrent ? QString() : inspection.value(QStringLiteral("previewToken")).toString();
     m_coverUrl = details.value(QStringLiteral("coverUrl")).toString();
-    m_tabs->setTabVisible(TabImages, !m_previewToken.isEmpty());
+    // only when the NZB gives reason to expect something; an empty fetch says so
+    const bool nzbImages = inspection.value(QStringLiteral("hasImages")).toBool();
+    m_tabs->setTabVisible(TabImages, !m_previewToken.isEmpty() && (nzbImages || !m_coverUrl.isEmpty()));
+    m_tabs->setTabVisible(TabNfo, !m_previewToken.isEmpty() && inspection.value(QStringLiteral("hasNfo")).toBool());
 
     m_stack->setCurrentWidget(m_tabs);
     m_download->setEnabled(true);
@@ -178,16 +191,30 @@ void MetaResultDetailDialog::setPreviewImages(const QCborMap& result)
         images.append({m.value(QStringLiteral("name")).toString(), m.value(QStringLiteral("kind")).toString(),
                        m.value(QStringLiteral("data")).toByteArray()});
     }
-    const QString note = result.value(QStringLiteral("note")).toString();
-    m_images->setImages(images, note.isEmpty() ? tr("This release has no images and no video to take "
-                                                    "pictures from.")
-                                               : note);
+    m_images->setImages(images, notAvailable(tr("Images not available."),
+                                             result.value(QStringLiteral("note")).toString()));
 }
 
 void MetaResultDetailDialog::setPreviewImagesError(const QString& error)
 {
-    m_images->showMessage(error.isEmpty() ? tr("The images could not be fetched.") : error);
+    m_images->showMessage(notAvailable(tr("Images not available."), error));
     m_imagesRequested = false;   // another try when the tab is opened again
+}
+
+void MetaResultDetailDialog::setPreviewNfo(const QCborMap& result)
+{
+    QList<PreviewNfoView::Nfo> nfos;
+    for (const QCborValue& v : result.value(QStringLiteral("nfos")).toArray()) {
+        const QCborMap m = v.toMap();
+        nfos.append({m.value(QStringLiteral("name")).toString(), m.value(QStringLiteral("text")).toString()});
+    }
+    m_nfo->setNfos(nfos, notAvailable(tr("NFO not available."), result.value(QStringLiteral("note")).toString()));
+}
+
+void MetaResultDetailDialog::setPreviewNfoError(const QString& error)
+{
+    m_nfo->showMessage(notAvailable(tr("NFO not available."), error));
+    m_nfoRequested = false;   // another try when the tab is opened again
 }
 
 // ---------------------------------------------------------------------------
@@ -196,15 +223,23 @@ void MetaResultDetailDialog::setPreviewImagesError(const QString& error)
 
 void MetaResultDetailDialog::onTabChanged(int index)
 {
-    if (index != TabImages || m_imagesRequested || m_previewToken.isEmpty())
+    if (m_previewToken.isEmpty() || (index != TabImages && index != TabNfo))
         return;
-    m_imagesRequested = true;
-    m_images->showMessage(tr("Fetching images from the news server..."));
-    // pictures want room
+    bool& requested = index == TabImages ? m_imagesRequested : m_nfoRequested;
+    if (requested)
+        return;
+    requested = true;
+    // pictures and 80-column NFO art want room
     const QSize want(qMax(width(), 760), qMax(height(), 560));
     if (want != size())
         resize(want);
-    emit imagesRequested(m_previewToken, m_coverUrl);
+    if (index == TabNfo) {
+        m_nfo->showMessage(tr("Fetching the NFO from the news server..."));
+        emit nfoRequested(m_previewToken);
+    } else {
+        m_images->showMessage(tr("Fetching images from the news server..."));
+        emit imagesRequested(m_previewToken, m_coverUrl);
+    }
 }
 
 void MetaResultDetailDialog::onDownload()

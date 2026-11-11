@@ -543,6 +543,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::InspectNzb:          handleInspectNzb(msg); break;
     case IpcMsgType::ClearUsenetCompleted: handleClearUsenetCompleted(msg); break;
     case IpcMsgType::FetchNzbImages:      handleFetchNzbImages(msg); break;
+    case IpcMsgType::FetchNzbNfo:         handleFetchNzbNfo(msg); break;
     case IpcMsgType::FetchMetaFile:       handleFetchMetaFile(msg); break;
     case IpcMsgType::DownloadMetaResult:  handleDownloadMetaResult(msg); break;
     case IpcMsgType::GetMetaAuthStatus:   handleGetMetaAuthStatus(msg); break;
@@ -6982,6 +6983,16 @@ void IpcClientHandler::handleFetchNzbImages(const IpcMessage& msg)
     const int seqId = msg.seqId();
     UsenetBridge::fetchPreviewImages(msg.fieldString(0), QUrl(msg.fieldString(1)),
                                      [self, seqId](bool ok, const QCborValue& result) {
+        if (self)
+            self->sendMessage(IpcMessage::makeResult(seqId, ok, result));
+    });
+}
+
+void IpcClientHandler::handleFetchNzbNfo(const IpcMessage& msg)
+{
+    QPointer<IpcClientHandler> self(this);
+    const int seqId = msg.seqId();
+    UsenetBridge::fetchPreviewNfo(msg.fieldString(0), [self, seqId](bool ok, const QCborValue& result) {
         if (self)
             self->sendMessage(IpcMessage::makeResult(seqId, ok, result));
     });

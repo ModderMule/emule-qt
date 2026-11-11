@@ -56,6 +56,8 @@ SOURCES += \
     stream/RarReader.cpp \
     stream/UsenetEncryptedPreview.cpp \
     stream/UsenetImagePreview.cpp \
+    stream/UsenetArticleGrab.cpp \
+    stream/UsenetNfoPreview.cpp \
     stream/UsenetStreamIndex.cpp
 
 HEADERS += \
@@ -95,4 +97,6 @@ HEADERS += \
     stream/RarReader.h \
     stream/UsenetEncryptedPreview.h \
     stream/UsenetImagePreview.h \
+    stream/UsenetArticleGrab.h \
+    stream/UsenetNfoPreview.h \
     stream/UsenetStreamIndex.h

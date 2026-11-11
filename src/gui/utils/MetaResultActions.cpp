@@ -651,7 +651,7 @@ MetaResultDetailDialog* MetaResultActions::openDetails(const MetaResultDetailDia
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     if (onDownload)
         connect(dlg, &MetaResultDetailDialog::downloadRequested, this, std::move(onDownload));
-    // Images tab: fetched only once it is opened
+    // Images / NFO tabs: fetched only once opened
     QPointer<MetaResultDetailDialog> guard(dlg);
     connect(dlg, &MetaResultDetailDialog::imagesRequested, this,
             [this, guard](const QString& token, const QString& coverUrl) {
@@ -672,6 +672,25 @@ MetaResultDetailDialog* MetaResultActions::openDetails(const MetaResultDetailDia
                 guard->setPreviewImagesError(resp.fieldString(1));
             else
                 guard->setPreviewImages(resp.fieldMap(1));
+        });
+    });
+    connect(dlg, &MetaResultDetailDialog::nfoRequested, this, [this, guard](const QString& token) {
+        if (!m_ipc || !m_ipc->isConnected()) {
+            if (guard)
+                guard->setPreviewNfoError(tr("Not connected to the core."));
+            return;
+        }
+        IpcMessage msg(IpcMsgType::FetchNzbNfo);
+        msg.append(token);
+        m_ipc->sendRequest(std::move(msg), [guard](const IpcMessage& resp) {
+            if (!guard)
+                return;
+            if (!resp.isValid())
+                guard->setPreviewNfoError({});
+            else if (!resp.fieldBool(0))
+                guard->setPreviewNfoError(resp.fieldString(1));
+            else
+                guard->setPreviewNfo(resp.fieldMap(1));
         });
     });
     dlg->show();

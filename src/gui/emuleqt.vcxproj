@@ -260,6 +260,8 @@
     <ClCompile Include="controls\DownloadProgressDelegate.cpp" />
     <ClCompile Include="controls\Ed3kDownloadRows.cpp" />
     <ClCompile Include="controls\PreviewImageView.cpp" />
+    <ClCompile Include="controls\PreviewNfoView.cpp" />
+    <ClCompile Include="controls\PreviewTabView.cpp" />
     <ClCompile Include="controls\UsenetFileCheckList.cpp" />
     <ClCompile Include="controls\UsenetProgressDelegate.cpp" />
     <ClCompile Include="app\Ed2kSchemeHandler.cpp" />
@@ -483,6 +485,8 @@
     <QtMoc Include="controls\DownloadListModel.h" />
     <QtMoc Include="controls\DownloadProgressDelegate.h" />
     <QtMoc Include="controls\PreviewImageView.h" />
+    <QtMoc Include="controls\PreviewNfoView.h" />
+    <QtMoc Include="controls\PreviewTabView.h" />
     <QtMoc Include="controls\UsenetFileCheckList.h" />
     <QtMoc Include="controls\UsenetProgressDelegate.h" />
     <ClInclude Include="app\Ed2kSchemeHandler.h" />

@@ -191,6 +191,8 @@
     <ClCompile Include="stream\RarReader.cpp" />
     <ClCompile Include="stream\UsenetEncryptedPreview.cpp" />
     <ClCompile Include="stream\UsenetImagePreview.cpp" />
+    <ClCompile Include="stream\UsenetArticleGrab.cpp" />
+    <ClCompile Include="stream\UsenetNfoPreview.cpp" />
     <ClCompile Include="stream\UsenetStreamIndex.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -231,6 +233,8 @@
     <QtMoc Include="queue\UsenetWorker.h" />
     <QtMoc Include="stream\UsenetEncryptedPreview.h" />
     <QtMoc Include="stream\UsenetImagePreview.h" />
+    <QtMoc Include="stream\UsenetArticleGrab.h" />
+    <QtMoc Include="stream\UsenetNfoPreview.h" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="debug\moc_predefs.h.cbt">

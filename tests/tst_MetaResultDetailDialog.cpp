@@ -6,6 +6,7 @@
 #include "controls/TorrentFileTree.h"
 
 #include "controls/PreviewImageView.h"
+#include "controls/PreviewNfoView.h"
 #include "controls/UsenetFileCheckList.h"
 
 #include <QApplication>
@@ -44,9 +45,10 @@ private slots:
     void torrentChecksAllByDefault();
     void torrentFileRowChecksOnlyItsFile();
     void torrentSelectNoneThenFolderCheck();
-    void imagesTabOnlyForAnNzbWithAToken();
+    void previewTabsOnlyWhenTheNzbPromisesThem();
     void imagesAreAskedForOnceWhenTheTabOpens();
     void imagesShowOrAMessage();
+    void nfoIsAskedForOnceAndShownAsDrawn();
 };
 
 namespace {
@@ -349,11 +351,14 @@ void tst_MetaResultDetailDialog::torrentSelectNoneThenFolderCheck()
 
 namespace {
 
-QCborMap nzbWithToken(const QString& token, const QString& coverUrl = {})
+QCborMap nzbWithToken(const QString& token, const QString& coverUrl = {}, bool hasImages = true,
+                      bool hasNfo = false)
 {
     QCborMap details = nzbChooseDetails(-1);
     QCborMap inspection = details.value(QStringLiteral("inspection")).toMap();
     inspection.insert(QStringLiteral("previewToken"), token);
+    inspection.insert(QStringLiteral("hasImages"), hasImages);
+    inspection.insert(QStringLiteral("hasNfo"), hasNfo);
     details.insert(QStringLiteral("inspection"), inspection);
     if (!coverUrl.isEmpty())
         details.insert(QStringLiteral("coverUrl"), coverUrl);
@@ -373,7 +378,7 @@ QByteArray pngBytes(QColor color)
 
 } // namespace
 
-void tst_MetaResultDetailDialog::imagesTabOnlyForAnNzbWithAToken()
+void tst_MetaResultDetailDialog::previewTabsOnlyWhenTheNzbPromisesThem()
 {
     MetaResultDetailDialog torrent({.name = QStringLiteral("demo"), .torrent = true});
     torrent.setDetails(torrentDetails());
@@ -386,6 +391,19 @@ void tst_MetaResultDetailDialog::imagesTabOnlyForAnNzbWithAToken()
     MetaResultDetailDialog nzb({.name = QStringLiteral("R")});
     nzb.setDetails(nzbWithToken(QStringLiteral("abc")));
     QVERIFY(nzb.tabs()->isTabVisible(MetaResultDetailDialog::TabImages));
+    QVERIFY(!nzb.tabs()->isTabVisible(MetaResultDetailDialog::TabNfo));
+
+    // no image, no video, no .nfo: neither tab
+    MetaResultDetailDialog bare({.name = QStringLiteral("R")});
+    bare.setDetails(nzbWithToken(QStringLiteral("abc"), {}, false, false));
+    QVERIFY(!bare.tabs()->isTabVisible(MetaResultDetailDialog::TabImages));
+    QVERIFY(!bare.tabs()->isTabVisible(MetaResultDetailDialog::TabNfo));
+
+    // the indexer's cover alone is reason enough; an .nfo shows its tab
+    MetaResultDetailDialog cover({.name = QStringLiteral("R")});
+    cover.setDetails(nzbWithToken(QStringLiteral("abc"), QStringLiteral("https://example.org/c.jpg"), false, true));
+    QVERIFY(cover.tabs()->isTabVisible(MetaResultDetailDialog::TabImages));
+    QVERIFY(cover.tabs()->isTabVisible(MetaResultDetailDialog::TabNfo));
 }
 
 void tst_MetaResultDetailDialog::imagesAreAskedForOnceWhenTheTabOpens()
@@ -408,7 +426,7 @@ void tst_MetaResultDetailDialog::imagesAreAskedForOnceWhenTheTabOpens()
 
     // a failure asks again on the next visit
     dlg.setPreviewImagesError(QStringLiteral("down"));
-    QCOMPARE(dlg.imagesView()->message(), QStringLiteral("down"));
+    QVERIFY(dlg.imagesView()->message().contains(QStringLiteral("down")));
     dlg.tabs()->setCurrentIndex(MetaResultDetailDialog::TabGeneral);
     dlg.tabs()->setCurrentIndex(MetaResultDetailDialog::TabImages);
     QCOMPARE(asked.size(), 2);
@@ -435,7 +453,44 @@ void tst_MetaResultDetailDialog::imagesShowOrAMessage()
 
     dlg.setPreviewImages({{QStringLiteral("images"), QCborArray{}}});
     QCOMPARE(dlg.imagesView()->imageCount(), 0);
-    QVERIFY(!dlg.imagesView()->message().isEmpty());
+    QCOMPARE(dlg.imagesView()->message(), MetaResultDetailDialog::tr("Images not available."));
+}
+
+void tst_MetaResultDetailDialog::nfoIsAskedForOnceAndShownAsDrawn()
+{
+    MetaResultDetailDialog dlg({.name = QStringLiteral("R")});
+    QSignalSpy images(&dlg, &MetaResultDetailDialog::imagesRequested);
+    QSignalSpy asked(&dlg, &MetaResultDetailDialog::nfoRequested);
+    dlg.setDetails(nzbWithToken(QStringLiteral("abc"), {}, true, true));
+    QCOMPARE(asked.size(), 0);
+
+    dlg.tabs()->setCurrentIndex(MetaResultDetailDialog::TabNfo);
+    QCOMPARE(asked.size(), 1);
+    QCOMPARE(images.size(), 0);   // only the tab opened
+    QCOMPARE(asked.first().at(0).toString(), QStringLiteral("abc"));
+    QVERIFY(!dlg.nfoView()->message().isEmpty());   // "Fetching..."
+    dlg.tabs()->setCurrentIndex(MetaResultDetailDialog::TabGeneral);
+    dlg.tabs()->setCurrentIndex(MetaResultDetailDialog::TabNfo);
+    QCOMPARE(asked.size(), 1);
+
+    const QString art = QStringLiteral("  ▄▄█▀▀█▄▄  \n General\n Format : Matroska");
+    dlg.setPreviewNfo({{QStringLiteral("nfos"),
+                        QCborArray{QCborMap{{QStringLiteral("name"), QStringLiteral("r.nfo")},
+                                            {QStringLiteral("text"), art}}}}});
+    QVERIFY(dlg.nfoView()->message().isEmpty());
+    QCOMPARE(dlg.nfoView()->text(), art);
+
+    // nothing came back: the tab says so, with the daemon's reason
+    dlg.setPreviewNfo({{QStringLiteral("nfos"), QCborArray{}},
+                       {QStringLiteral("note"), QStringLiteral("not on the server")}});
+    QVERIFY(dlg.nfoView()->message().startsWith(MetaResultDetailDialog::tr("NFO not available.")));
+    QVERIFY(dlg.nfoView()->message().contains(QStringLiteral("not on the server")));
+
+    // a failure asks again on the next visit
+    dlg.setPreviewNfoError(QStringLiteral("down"));
+    dlg.tabs()->setCurrentIndex(MetaResultDetailDialog::TabGeneral);
+    dlg.tabs()->setCurrentIndex(MetaResultDetailDialog::TabNfo);
+    QCOMPARE(asked.size(), 2);
 }
 
 QTEST_MAIN(tst_MetaResultDetailDialog)

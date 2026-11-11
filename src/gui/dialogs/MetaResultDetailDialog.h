@@ -26,13 +26,14 @@ class QTreeWidget;
 namespace eMule {
 
 class PreviewImageView;
+class PreviewNfoView;
 class UsenetFileCheckList;
 
 class MetaResultDetailDialog : public DetailDialog {
     Q_OBJECT
 
 public:
-    enum Tab { TabGeneral = 0, TabFiles, TabTrackers, TabImages };
+    enum Tab { TabGeneral = 0, TabFiles, TabTrackers, TabImages, TabNfo };
     enum NzbColumn { NzbName = 0, NzbSize, NzbArticles, NzbType, NzbColCount };
     enum TorrentColumn { TorrentName = 0, TorrentSize, TorrentColCount };
 
@@ -67,18 +68,25 @@ public:
     [[nodiscard]] QPushButton* downloadButton() const { return m_download; }
     [[nodiscard]] UsenetFileCheckList* fileChecks() const { return m_checks; }
     [[nodiscard]] PreviewImageView* imagesView() const { return m_images; }
+    [[nodiscard]] PreviewNfoView* nfoView() const { return m_nfo; }
 
     /// FetchNzbImages answer: {images: [{name, kind, data}], note}.
     void setPreviewImages(const QCborMap& result);
     void setPreviewImagesError(const QString& error);
+    /// FetchNzbNfo answer: {nfos: [{name, text}], note}.
+    void setPreviewNfo(const QCborMap& result);
+    void setPreviewNfoError(const QString& error);
 
 signals:
     /// Download pressed: the panel adds the row as its own Download would.
     /// @p unchecked: NZB file indices left out (chooseFiles), else empty.
     /// @p kept: the checked files (NZB without PAR2, or torrent); empty = all.
     void downloadRequested(const QList<int>& unchecked, const QList<int>& kept);
-    /// The Images tab was opened the first time (NZB with a previewToken only).
+    /// The Images tab was opened the first time. Shown only for an NZB whose
+    /// inspection says hasImages, or with a cover URL.
     void imagesRequested(const QString& previewToken, const QString& coverUrl);
+    /// The NFO tab was opened the first time; shown only when the NZB lists an .nfo.
+    void nfoRequested(const QString& previewToken);
 
 private:
     void buildGeneral(const QCborMap& inspection, bool torrent);
@@ -99,9 +107,11 @@ private:
     QPushButton* m_download = nullptr;
     UsenetFileCheckList* m_checks = nullptr;
     PreviewImageView* m_images = nullptr;
+    PreviewNfoView* m_nfo = nullptr;
     QString m_previewToken;
     QString m_coverUrl;
     bool m_imagesRequested = false;
+    bool m_nfoRequested = false;
 };
 
 } // namespace eMule

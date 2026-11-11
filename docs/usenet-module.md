@@ -2588,8 +2588,9 @@ Requests `720–799`, pushes `910–949`.
 | `GetUsenetStats = 738` | `[]` → `[ok, map]`. The Statistics window's Usenet branch: session and cumulative counter blocks, live figures, the queue summary and one row per account (the `GetNewsServers` row plus its session figures). Its own request because `GetStats` is polled every second for the status bar; this one only while the panel is on screen. See "Statistics" |
 | `SetUsenetFilesSkipped = 739` | `[itemId, [fileIndex…], skipped]` → `[ok]` or `409 why`. Widened to whole archive sets; refuses PAR2 files, every payload file at once, and a release post-processing or complete. See "A skipped file is fetched only when a repair needs it" |
 | `SetUsenetPaused = 740` | `[paused]` → `[ok]`. The engine-wide pause; persisted as `usenet.paused` and **not** settable through `SetPreferences`. Needs no running engine |
-| `InspectNzb = 741` | `[bytes, name]` → `[ok, {name, files: [{index, name, size, isPar2, setKey, segments, missingSegments}], poster, groups, date, articles, totalSize, password, previewToken}]` or `[false, error]`. Parses without queueing, for the Add NZB chooser and search row Details; `setKey` groups an archive set's volumes; `previewToken` names the NZB for `FetchNzbImages` (FetchMetaFile/InspectIndexerResult inspections carry it too) |
-| `FetchNzbImages = 743` | `[previewToken, coverUrl]` → `[true, {images: [{name, kind: posted\|frame\|cover, data}], note}]` or `[false, error]`. Search Details › Images, see "Release images" |
+| `InspectNzb = 741` | `[bytes, name]` → `[ok, {name, files: [{index, name, size, isPar2, setKey, segments, missingSegments}], poster, groups, date, articles, totalSize, password, previewToken, hasImages, hasNfo}]` or `[false, error]`. Parses without queueing, for the Add NZB chooser and search row Details; `setKey` groups an archive set's volumes; `previewToken` names the NZB for `FetchNzbImages`/`FetchNzbNfo` (FetchMetaFile/InspectIndexerResult inspections carry it too); `hasImages`/`hasNfo` say whether Details shows those tabs |
+| `FetchNzbImages = 743` | `[previewToken, coverUrl]` → `[true, {images: [{name, kind: posted\|frame\|cover, data}], note}]` or `[false, error]`. Search Details › Images, see "Release images and NFO" |
+| `FetchNzbNfo = 744` | `[previewToken]` → `[true, {nfos: [{name, text}], note}]` or `[false, error]`. Search Details › NFO, decoded text |
 | `GetUsenetItemDetails = 734` | `[itemId]` → `[ok, map]`. The queue row plus everything it leaves out: per-file article tallies, poster, date, newsgroups, the NZB's own subject and part counter, and the scratch path. On-demand and **never pushed** — `PushUsenetQueueItem` fires every 250 ms per changing item, and a newsgroup list plus a per-file segment tally on each of those is a continuous cost for a dialog nobody has open. Built on `usenetItemToCbor()` rather than beside it, so the list and the details view cannot disagree about a field they share |
 | `PushUsenetQueueItem = 910` | one item, coalesced on its id |
 | `PushUsenetItemRemoved = 911` | uncoalesced — a removal behind a later change would be dropped |
@@ -2624,24 +2625,39 @@ survives only as a 410 telling an old GUI so.
 non-core object through it would mean linking `eMule::Usenet` into a class whose
 whole job is core.
 
-## Release images
+## Release images and NFO
 
 Search Details (indexer and eNode NZB rows) has an **Images** tab, like
-NewsHosting's Images + Screenshots in one. Nothing is fetched until the tab is
-opened: the GUI then sends `FetchNzbImages` with the `previewToken` of the
-inspected NZB (SHA-1 prefix; the daemon keeps the NZB 3 h, 32 at most, see
-`UsenetBridge::fetchPreviewImages`). The answer is cached per token, so a second
-open is instant.
+NewsHosting's Images + Screenshots in one, and an **NFO** tab. Each is shown
+only when the inspection gives reason to expect something: `hasImages` (a
+posted image, a video, or a RAR set that may hold one) or an indexer
+`coverurl`; `hasNfo` (an `.nfo` file listed). Nothing is fetched until a tab is
+opened: the GUI then sends `FetchNzbImages` / `FetchNzbNfo` with the
+`previewToken` of the inspected NZB (SHA-1 prefix; the daemon keeps the NZB 3 h,
+32 at most, see `UsenetBridge::fetchPreviewImages`). Each answer is cached per
+token, so a second open is instant. When a shown tab finds nothing it says
+"Images not available." / "NFO not available." plus the daemon's reason.
 
-`UsenetImagePreview` (`stream/`) does the work, on the daemon thread with its
-own `NntpServerPool` (`kLanes` = 3 connections a server, articles in flight on
-3 lanes, failover ladder as usual):
+Both grabs derive from `UsenetArticleGrab` (`stream/`): on the daemon thread with
+its own `NntpServerPool` (`kLanes` = 3 connections a server, articles in flight
+on 3 lanes, failover ladder as usual). Every byte read is reported by
+`bytesUsed(accountId, bytes)` and charged with `UsenetQueue::chargeUsage()` to
+the account meter, like a queue article; accounts already over their allowance
+are switched off for the grab, so a preview never spends a spent quota.
+
+`UsenetNfoPreview` reads every `.nfo` (up to 4, 2 MB each) whole and decodes it:
+UTF-8 when valid, else CP437 (the DOS code page NFO art is drawn in). Shown in a
+fixed-width font, unwrapped. A MediaInfo NFO (one article) takes about 2 s.
+
+`UsenetImagePreview` collects:
 
 - **posted images** — `.jpg/.png/.gif/.webp/.bmp` files of the NZB, up to 12,
   8 MB each, fetched whole (e.g. `preview.jpg` contact sheets). Checked by magic,
   since the daemon may ship no image plugins.
 - **video frames** — the biggest video file, else the opening volume of the
-  biggest RAR set. Only the first `kHeadBytes` (24 MB encoded) are fetched. A RAR
+  biggest RAR set. Only the first `kHeadBytes` (24 MB encoded) are fetched. Of a
+  RAR set the first article is read alone first: when its entry is no video
+  (an ISO, a .vdi) the grab stops there with a note. A RAR
   head is decompressed with `readArchiveHead()` (libarchive, stored or
   compressed; 7z needs its end header and is skipped). An mp4 whose `moov` box
   is at the end also gets its last 4 articles, written at their offsets into a
@@ -2654,7 +2670,6 @@ own `NntpServerPool` (`kLanes` = 3 connections a server, articles in flight on
 Measured 2026-11-12 against one provider: a plain faststart mp4 release (posted
 `preview.jpg` + 6 frames) 11–13 s, a compressed RAR4 release 9–15 s.
 
-Preview articles are not counted in the account usage meter yet.
 
 ## Streaming preview
 

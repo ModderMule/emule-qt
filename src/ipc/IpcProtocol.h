@@ -710,7 +710,7 @@ enum class IpcMsgType : int {
 
     /// [nzbBytes, name] -> [ok, {name, files: [{index, name, size, isPar2,
     /// setKey, segments, missingSegments}], poster, groups, date, articles,
-    /// totalSize, password: bool}] or [false, error]. Parse an .nzb without
+    /// totalSize, password: bool, previewToken, hasImages, hasNfo}] or [false, error]. Parse an .nzb without
     /// queueing it, so the Add NZB dialog can offer its files. `index` is what
     /// AddNzb's field 8 names; `setKey` groups the volumes of one archive set,
     /// empty for other files.
@@ -723,6 +723,10 @@ enum class IpcMsgType : int {
     /// an NZB that InspectNzb/FetchMetaFile/InspectIndexerResult returned a
     /// `previewToken` for. Fetches only the articles needed; once per token (3 h).
     FetchNzbImages          = 743,
+    /// [previewToken] -> [true, {nfos: [{name, text}], note}] or [false, error].
+    /// Search Details › NFO: the .nfo files of the NZB, decoded (UTF-8 or CP437).
+    /// Shown when the inspection says `hasNfo`; once per token (3 h).
+    FetchNzbNfo             = 744,
 
     // -- eNode meta search (750-754) -------------------------------------------
     //

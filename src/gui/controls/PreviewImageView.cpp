@@ -11,7 +11,6 @@
 #include <QLabel>
 #include <QListWidget>
 #include <QPixmap>
-#include <QStackedWidget>
 #include <QStyle>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -25,19 +24,9 @@ constexpr int kThumbHeight = 72;
 } // namespace
 
 PreviewImageView::PreviewImageView(QWidget* parent)
-    : QWidget(parent)
+    : PreviewTabView(parent)
 {
-    auto* outer = new QVBoxLayout(this);
-    outer->setContentsMargins(0, 0, 0, 0);
-    m_stack = new QStackedWidget(this);
-    outer->addWidget(m_stack);
-
-    m_message = new QLabel(m_stack);
-    m_message->setAlignment(Qt::AlignCenter);
-    m_message->setWordWrap(true);
-    m_stack->addWidget(m_message);
-
-    auto* page = new QWidget(m_stack);
+    auto* page = new QWidget(this);
     auto* layout = new QVBoxLayout(page);
     layout->setContentsMargins(0, 0, 0, 0);
 
@@ -75,7 +64,7 @@ PreviewImageView::PreviewImageView(QWidget* parent)
     m_strip->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     m_strip->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     layout->addWidget(m_strip);
-    m_stack->addWidget(page);
+    setContentPage(page);
 
     connect(m_prev, &QToolButton::clicked, this, [this] { showImage(m_current - 1); });
     connect(m_next, &QToolButton::clicked, this, [this] { showImage(m_current + 1); });
@@ -83,17 +72,6 @@ PreviewImageView::PreviewImageView(QWidget* parent)
         if (r >= 0 && r != m_current)
             showImage(r);
     });
-}
-
-void PreviewImageView::showMessage(const QString& text)
-{
-    m_message->setText(text);
-    m_stack->setCurrentWidget(m_message);
-}
-
-QString PreviewImageView::message() const
-{
-    return m_stack->currentWidget() == m_message ? m_message->text() : QString();
 }
 
 void PreviewImageView::setImages(const QList<Image>& images, const QString& emptyText)
@@ -123,7 +101,7 @@ void PreviewImageView::setImages(const QList<Image>& images, const QString& empt
         item->setToolTip(s.caption);
     }
     m_strip->setVisible(m_images.size() > 1);
-    m_stack->setCurrentIndex(1);
+    showContent();
     showImage(0);
 }
 

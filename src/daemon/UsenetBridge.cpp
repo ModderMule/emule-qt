@@ -13,6 +13,7 @@
 #include "queue/UsenetQueue.h"
 #include "queue/UsenetQueueItem.h"
 #include "stream/UsenetImagePreview.h"
+#include "stream/UsenetNfoPreview.h"
 
 #include "net/HttpDefaults.h"
 #include "net/ProxySettings.h"
@@ -32,6 +33,7 @@
 #include <QUrl>
 
 #include <algorithm>
+#include <optional>
 
 namespace eMule::UsenetBridge {
 
@@ -399,14 +401,24 @@ QString recheck(const QString& itemId)
 
 namespace {
 
-/// NZBs Details may ask images of, and what they gave. Daemon thread only.
+using PreviewWaiter = std::function<void(bool, const QCborValue&)>;
+
+/// One Details tab's fetch: running (waiters) or done (result).
+struct PreviewPending {
+    bool done = false;
+    QCborMap result;
+    std::vector<PreviewWaiter> waiters;
+};
+
+/// NZBs Details may ask images or NFO of, and what they gave. Daemon thread only.
 struct PreviewEntry {
     QByteArray nzb;
     qint64 at = 0;
-    bool done = false;
-    QCborMap result;
-    std::vector<std::function<void(bool, const QCborValue&)>> waiters;
+    PreviewPending images;
+    PreviewPending nfo;
+    [[nodiscard]] bool busy() const { return !images.waiters.empty() || !nfo.waiters.empty(); }
 };
+using PreviewSlot = PreviewPending PreviewEntry::*;
 constexpr qint64 kPreviewKeepSecs = 3 * 3600;
 constexpr int kPreviewMaxEntries = 32;
 
@@ -421,7 +433,7 @@ void prunePreviewEntries()
     auto& entries = previewEntries();
     const qint64 now = QDateTime::currentSecsSinceEpoch();
     for (auto it = entries.begin(); it != entries.end();) {
-        if (it->waiters.empty() && now - it->at > kPreviewKeepSecs)
+        if (!it->busy() && now - it->at > kPreviewKeepSecs)
             it = entries.erase(it);
         else
             ++it;
@@ -430,7 +442,7 @@ void prunePreviewEntries()
     while (entries.size() > kPreviewMaxEntries) {
         auto oldest = entries.end();
         for (auto it = entries.begin(); it != entries.end(); ++it)
-            if (it->waiters.empty() && (oldest == entries.end() || it->at < oldest->at))
+            if (!it->busy() && (oldest == entries.end() || it->at < oldest->at))
                 oldest = it;
         if (oldest == entries.end())
             break;
@@ -450,18 +462,72 @@ QString rememberPreviewNzb(const QByteArray& data)
     return token;
 }
 
-void finishPreview(const QString& token, const QCborMap& result)
+void finishPreview(const QString& token, PreviewSlot slot, const QCborMap& result)
 {
     auto& entries = previewEntries();
     const auto it = entries.find(token);
     if (it == entries.end())
         return;
-    it->done = true;
-    it->result = result;
+    PreviewPending& p = (*it).*slot;
+    p.done = true;
+    p.result = result;
     it->at = QDateTime::currentSecsSinceEpoch();
-    auto waiters = std::exchange(it->waiters, {});
+    auto waiters = std::exchange(p.waiters, {});
     for (auto& w : waiters)
         w(true, result);
+}
+
+/// Answers @p done from the cache or joins a running fetch; returns the NZB
+/// only when the caller has to start the fetch.
+std::optional<usenet::NzbInfo> beginPreview(const QString& token, PreviewSlot slot, PreviewWaiter done)
+{
+    auto& entries = previewEntries();
+    const auto it = entries.find(token);
+    if (it == entries.end() || it->nzb.isEmpty()) {
+        done(false, QCoreApplication::translate("eMule::usenet::UsenetQueue",
+                                                "The NZB is no longer known. Open the Details again."));
+        return std::nullopt;
+    }
+    PreviewPending& p = (*it).*slot;
+    if (p.done) {
+        it->at = QDateTime::currentSecsSinceEpoch();
+        done(true, p.result);
+        return std::nullopt;
+    }
+    const bool running = !p.waiters.empty();
+    p.waiters.push_back(std::move(done));
+    if (running)
+        return std::nullopt;
+
+    usenet::NzbInfo nzb;
+    QString error;
+    if (!usenet::NzbFile::parse(it->nzb, nzb, error)) {
+        auto waiters = std::exchange(p.waiters, {});
+        for (auto& w : waiters)
+            w(false, error);
+        return std::nullopt;
+    }
+    return nzb;
+}
+
+/// The configured accounts, those over their allowance switched off; every byte
+/// the grab reads is charged to its account like the queue's own.
+template <typename Grab>
+Grab* makePreviewGrab()
+{
+    QList<NewsServer> servers = thePrefs.usenetServers();
+    auto* q = queue();
+    for (NewsServer& s : servers)
+        if (q && q->isOverQuota(s))
+            s.enabled = false;
+    auto* job = new Grab(std::move(servers), toNetworkProxy(thePrefs.usenetProxySettings()),
+                         QCoreApplication::instance());
+    QObject::connect(job, &usenet::UsenetArticleGrab::bytesUsed, job,
+                     [](const QString& accountId, qint64 bytes) {
+        if (auto* q = queue())
+            q->chargeUsage(accountId, bytes);
+    });
+    return job;
 }
 
 QCborMap imageMap(const usenet::UsenetPreviewImage& img)
@@ -524,45 +590,29 @@ QCborMap inspectNzb(const QByteArray& data, const QString& name, QString& error)
         {QStringLiteral("totalSize"), static_cast<qint64>(nzb.totalEncodedBytes())},
         {QStringLiteral("password"),  !nzb.password.isEmpty()},
         {QStringLiteral("previewToken"), rememberPreviewNzb(data)},
+        // which Details tabs have something to show: posted images or a video, an .nfo
+        {QStringLiteral("hasImages"), [&nzb] {
+             const auto plan = usenet::UsenetImagePreview::plan(nzb);
+             return !plan.images.isEmpty() || plan.video >= 0;
+         }()},
+        {QStringLiteral("hasNfo"), !usenet::UsenetNfoPreview::plan(nzb).isEmpty()},
     };
 }
 
 void fetchPreviewImages(const QString& token, const QUrl& coverUrl,
                         std::function<void(bool ok, const QCborValue& result)> done)
 {
-    auto& entries = previewEntries();
-    const auto it = entries.find(token);
-    if (it == entries.end() || it->nzb.isEmpty()) {
-        done(false, QCoreApplication::translate("eMule::usenet::UsenetQueue",
-                                                "The NZB is no longer known. Open the Details again."));
+    const auto parsed = beginPreview(token, &PreviewEntry::images, std::move(done));
+    if (!parsed)
         return;
-    }
-    if (it->done) {
-        it->at = QDateTime::currentSecsSinceEpoch();
-        done(true, it->result);
-        return;
-    }
-    const bool running = !it->waiters.empty();
-    it->waiters.push_back(std::move(done));
-    if (running)
-        return;
-
-    usenet::NzbInfo nzb;
-    QString error;
-    if (!usenet::NzbFile::parse(it->nzb, nzb, error)) {
-        auto waiters = std::exchange(it->waiters, {});
-        for (auto& w : waiters)
-            w(false, error);
-        return;
-    }
+    const usenet::NzbInfo nzb = *parsed;
 
     auto* app = QCoreApplication::instance();
     auto images = std::make_shared<QList<usenet::UsenetPreviewImage>>();
     // cover first (cheap, HTTP), then the articles
-    auto runArticles = [token, nzb, images, app] {
-        auto* job = new usenet::UsenetImagePreview(thePrefs.usenetServers(),
-                                                   toNetworkProxy(thePrefs.usenetProxySettings()), app);
-        QObject::connect(job, &usenet::UsenetImagePreview::finished, app,
+    auto runArticles = [token, nzb, images] {
+        auto* job = makePreviewGrab<usenet::UsenetImagePreview>();
+        QObject::connect(job, &usenet::UsenetImagePreview::finished, job,
                          [token, images, job](const QList<usenet::UsenetPreviewImage>& found,
                                               const QString& note) {
             images->append(found);
@@ -570,8 +620,8 @@ void fetchPreviewImages(const QString& token, const QUrl& coverUrl,
             for (const auto& img : std::as_const(*images))
                 list.append(imageMap(img));
             logUsenet(QStringLiteral("Usenet: preview found %1 image(s)").arg(images->size()));
-            finishPreview(token, QCborMap{{QStringLiteral("images"), list},
-                                          {QStringLiteral("note"), note}});
+            finishPreview(token, &PreviewEntry::images,
+                          QCborMap{{QStringLiteral("images"), list}, {QStringLiteral("note"), note}});
             job->deleteLater();
         });
         job->start(nzb);
@@ -599,6 +649,25 @@ void fetchPreviewImages(const QString& token, const QUrl& coverUrl,
         nam->deleteLater();
         runArticles();
     });
+}
+
+void fetchPreviewNfo(const QString& token, std::function<void(bool ok, const QCborValue& result)> done)
+{
+    const auto parsed = beginPreview(token, &PreviewEntry::nfo, std::move(done));
+    if (!parsed)
+        return;
+    auto* job = makePreviewGrab<usenet::UsenetNfoPreview>();
+    QObject::connect(job, &usenet::UsenetNfoPreview::finished, job,
+                     [token, job](const QList<usenet::UsenetNfoText>& nfos, const QString& note) {
+        QCborArray list;
+        for (const auto& nfo : nfos)
+            list.append(QCborMap{{QStringLiteral("name"), nfo.name}, {QStringLiteral("text"), nfo.text}});
+        logUsenet(QStringLiteral("Usenet: preview found %1 NFO(s)").arg(nfos.size()));
+        finishPreview(token, &PreviewEntry::nfo,
+                      QCborMap{{QStringLiteral("nfos"), list}, {QStringLiteral("note"), note}});
+        job->deleteLater();
+    });
+    job->start(*parsed);
 }
 
 void setEnginePaused(bool paused)
