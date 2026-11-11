@@ -79,11 +79,25 @@ The app's `IPFilter` stays the source of truth. `BtBridge::applyIpFilter()` hand
 the ranges it blocks for eD2K (level below `ipFilterLevel`, the rule of `isFiltered`; the
 table is merged already), IPv4 and IPv6, as one `lt::ip_filter`
 (`BtSession::setIpFilter`). The session keeps it across stop/start (session state does not
-save it). Applied at start, on `IPFilter::filterLoaded`, on the new `filterCleared` (every
-reload, and a reload that finds no file, which emits no `filterLoaded`), and when an options
-save changes `ipFilterLevel` (that key also raises `btConfigChanged`). Each blocked peer
-(`peer_blocked_alert`, category `ip_block`) is counted (`blockedPeers()`) and logged at debug
-level (Torrent Verbose). Torrents keep libtorrent's default `apply_ip_filter`.
+save it). Applied at start, on `IPFilter::filterChanged` (a load, a clear, ranges removed in
+the IP Filter window; #177), and when an options save changes `ipFilterLevel` (that key also
+raises `btConfigChanged`). libtorrent applies it to TCP and uTP alike and drops connected peers
+the new filter blocks. Each blocked peer (`peer_blocked_alert`, category `ip_block`) is counted
+(`blockedPeers()`) and logged at debug level (Torrent Verbose). Every added torrent gets
+`apply_ip_filter` set (`defaultConnections`), also one whose resume data had it off.
+
+## Sharing finished torrents on eD2K (#124, #177)
+
+Torrents in incoming are shared like other completed downloads; outside a shared folder the
+finished files are shared one by one (`BtShareGuard::Change::finished`). Pref
+`btShareMode` (YAML `bittorrent: shareMode`; Options → BitTorrent → "Share finished torrents
+on eD2K and Kad"): 0 = don't share, 1 = public torrents only, 2 = all (default). Public = not
+private-flagged (private tracker torrents, "ALT") and not an I2P torrent. A torrent the mode leaves out keeps its file or folder
+(`BtShareGuard::m_roots`, kept after removal for the session) out of the eD2K / Kad / ed3k
+share through `SharedFileList::setStillWriting`, also inside incoming. A narrower mode drops
+them at once (`dropNeverShared`), a wider one runs `SharedFileList::reload()`; a torrent that
+turns out private once its metadata arrives is dropped then (`Change::blockedMore`). Seeding is not affected, nor
+the ed3k torrent join.
 
 ## ed3k join (torrent.md §4, Part C)
 

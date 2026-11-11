@@ -130,6 +130,8 @@ The `ed3k:` block in `preferences.yml`, with IPC/REST keys `ed3kEnabled` and `ed
 | `nodeListMaxAgeDays` | `30` | IPC/REST `ed3kNodeListMaxAgeDays`: fetched or opened lists older than this are refused (§2 "MAY"); 0 = no limit; the shipped list has none. No restart |
 | `seedFromEd2k` | `true` | IPC/REST `ed3kSeedFromEd2k`: eD2K peers with a derived user hash seed ed3k Kad while it has < 10 contacts (§1 source 4). No restart |
 | `credit:` | | `enabled` (`false`, §9), `chainId` (0 = none), `contract` (empty = none; no defaults, §7.1), `quorum` (2, held to 1..endpoints), `bidMaxPrice` (µ/MiB per download, 0 = receipts only), `sell` (`false`), `sellFloor` (µ/MiB), `sellSlots` (0 = the queue's); IPC/REST `ed3kCreditEnabled`, `ed3kCreditChainId` (decimal text: a u64), `ed3kCreditContract`, `ed3kCreditQuorum`, `ed3kCreditBidMaxPrice`, `ed3kCreditSell`, `ed3kCreditSellFloor`, `ed3kCreditSellSlots` (`Preferences::applyEd3kCreditKey`). No restart |
+| `ownSetsWatch` | `true` | IPC/REST `ed3kOwnSetsWatch`, Options "Publish a new version of my sets when their folders change": `Ed3kOwnSets::setWatchFolders`. No restart |
+| `reportProxy:` | | `type` (0 off, 3 SOCKS5, 5 HTTP), `host`, `port`, `user`, `password`; IPC `ed3kReportProxyType`, `…Host`, `…Port`, `…User`, `…Password` (REST: type, host, port). The proxy of share reports under the anonymous key (subscription.md §5.3), see "Hiding". No restart |
 | `shareUsenetPosts` | `true` | IPC/REST `ed3kShareUsenetPosts`, Options "Share Usenet posts over ed3k too". Off holds Usenet posts back (usenet.md §6): no article lists, post sets or `nzb`/`nzb-file` records; the members are shared all the same. A change restarts the usenet join; switching off withdraws the kept `ALIAS` records (`unpublishAlias`) |
 
 The port is mapped as `PortMapPurpose::Ed3kUdp` while `ed3kEnabled`.
@@ -196,6 +198,12 @@ The session follows `libs/packmule/docs/ffi.md` "The loop" and mode A of `socket
     goes on to eD2K. One pump per burst (queued). At start the node waits for the eD2K socket
     (`DaemonApp::onCoreLoaded` applies again); `theApp.yieldEd3kUdpPort` stops a node on its own
     socket when eD2K UDP moves onto its port. One port mapping (`Ed3kUdp` is skipped).
+  - **IP filter (#177):** `Ed3kSession::setPeerFilter` (DaemonApp: the app's `IPFilter` at
+    `ipFilterLevel`, read live) drops datagrams from a filtered sender on the own socket,
+    leaves them to `ClientUDPSocket`'s filter on the shared one (`offerDatagram` false), and
+    sends nothing to a filtered address (`writeDatagram`; the engine sees a loss). LAN
+    discovery in and unicast out too. Relays forward signalling only (Protocol §9.4), so
+    file data always comes from the peer's own address. Hoster links (HTTP) are not filtered.
   - **Bind address:** `BindAddress::listenAddress()` (the `bindAddress` pref); a selection that
     does not resolve does not start the node; a selected interface pins the socket
     (`InterfacePin::pin`). A change restarts the node.
@@ -681,15 +689,27 @@ ToDo (credits):
   like the node's; their turns end with the anonymous node.
 - **Exposed files** (§1 SHOULD): a file shared under the anonymous key is in eD2K's share list
   too (Ed3kShared shares that list): a warning in the log and an urgent pop-up
-  (`NotifierEvent::Ed3kAnonExposed`), once per file a run. BitTorrent/HTTP: ToDo in
-  `Ed3kShared::share`.
+  (`NotifierEvent::Ed3kAnonExposed`, field 2 the networks), once per file a run
+  (`Ed3kShared::tellExposed`). Also when an eD2K download of such a file starts
+  (`DownloadQueue::fileAdded` → `tellDownloadElsewhere`, DaemonApp) and when an ed3k download
+  under the anonymous key starts of a file in the eD2K queue (the link's `ed2k` MD4,
+  `fileByID`) or the hoster list (root hex) (`Ed3kDownloads::setAnonAddedHook`).
+  BitTorrent / plain HTTP: ToDo in `Ed3kShared::share`.
 - **HTTP proxy:** eMuleQt runs packmule in mode A (`Engine::create`, `Ed3kSession::start`) and
   does every HTTP request itself in `Ed3kHttp`, through `QNetworkProxy` from
-  `thePrefs.proxySettings()`; nothing of the anonymous key goes over HTTP (§1).
+  `thePrefs.proxySettings()`; nothing of the anonymous key goes over HTTP (§1), except:
+- **Report proxy** (subscription.md §5.3): share reports under the anonymous key only with a
+  proxy the user set up for them (`reportProxy:` pref, "Proxy for anonymous share reports" in
+  the Hiding group; `Ed3kHideSettings::reportProxy`). `Ed3kHide::applyReports` calls
+  `anonReports(true)` only while it is set and hiding runs, else `false`. Their `HttpRequest`
+  has `via` `ED3K_HTTP_VIA_ANON_REPORT_PROXY`: `Ed3kHttp` sends it through that proxy alone (no
+  LAN bypass, never the normal proxy, never direct); without one `httpFailed`.
 - **Never anonymous:** HTTP, hoster, eD2K, LAN; no ed2k `ALIAS` or MD4 for an anonymous file.
   eD2K still shares the file itself (question 11 of batch 15).
 - **Status:** GetEd3kStatus `hide {on, running, nodeId, hops, paths, built, waitingForHops,
-  anonFiles}` and `kadOffline`; push 1081; status-bar tooltip "hidden (n/m paths)".
+  anonFiles, hop, router, shares}` (the last three from `anonState()`) and `kadOffline`; push
+  1081; status-bar tooltip "hidden (n/m paths)". At 0 hops without `shares` the Hiding group
+  says "this computer (not a router) shares nothing under the anonymous key" (§2.6 Inwards).
 - **Chain writes of unknown outcome** (batch 16 `ChainTxUnknown`): not failed, not sent again;
   `Ed3kChain::lastUnknown()`, GetEd3kStatus `chain.unknown`, pushed like a refusal, shown
   under the chain settings.
@@ -706,10 +726,15 @@ ToDo (credits):
   upload queue (`queueList`/`queueStats`/`queueAuto` of both nodes, rows with `key`, shown as
   "anonymous (ed3k)", no address). Anonymous uses wait while hiding is off.
 
-ToDo (hiding): a paid channel watched anonymously is followed under the node key; members of a
-followed set download by the hiding switch, not the set's key; `shareUnderKey` moves the set,
-not its members; followed sets' key not shown in the GUI; the exposed-file warning for
-BitTorrent/HTTP.
+- **Batch 17:** a paid channel follows the key of its live watch (`Ed3kPaid::followChannel(...,
+  KeyKind)`, moved like `buy()`); set members download under the set's key
+  (`Ed3kDownloadSpec::key`: Anon refused while not hiding, a root held/recorded under the other
+  key refused, else recorded) and its parts by `setAnonPartDownload`; `shareUnderKey` moves the
+  members along (unshared under the old key, recorded under the new), refused when one of the
+  other key is held in Shared Files, the downloads (`setHeldElsewhere`) or another own set.
+
+ToDo (hiding): followed sets' key not shown in the GUI; the exposed-file warning for
+BitTorrent/plain HTTP.
 
 **Kad offline** (Protocol.md §10 "Own network down", in packmule): `ED3K_EV_KAD_OFFLINE` is
 logged and refreshes the status (`kadOffline` bits, "Kad offline (IPv4/IPv6)" in the tooltip).
@@ -947,8 +972,11 @@ ToDo (sets and live):
   offline key store, private paid channels, a GUI to sell an own set (no own-set GUI; IPC only).
   (done, batch 15: private paid channels (S2); own sets: `Ed3kOwnSets`, My ed3k Sets in Shared
   Files, Sell… on a row → `SellEd3k` kind 2 with the set id.) Still ToDo: a paid hidden set
-  (kind 3, `paid=1`) of the user's own; own sets are not watched (a changed folder needs
-  "Publish New Version").
+  (kind 3, `paid=1`) of the user's own. (was: own sets are not watched; done, batch 17:
+  `Ed3kOwnSets::setWatchFolders`, pref `ed3kOwnSetsWatch`: a `SharedDirWatcher` on the folder of
+  each published set and every subfolder (dot names left out); a change whose scan differs from
+  the last version (or the one being built) runs `publishNewVersion`; the list is refreshed after
+  each version and change; watching on again catches up.)
 - was: The sealed members of a paid catalogue (§8.1 `epoch`) download sealed; they are not opened
   with the epoch key. (done, batch 14: `Ed3kSealedOpener`.) The plain copy lands in the set's
   folder; if that is under a folder eMule shares, ed2k shares it plainly on a rescan. (done,

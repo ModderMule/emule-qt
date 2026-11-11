@@ -258,6 +258,13 @@ lacks it, so the GUI hides the box: `Ed3kResolver::canDeepCrawl`).
   `addFileInSharedLocation`, else `addSingleSharedFile`. Incoming is always shared with its
   subfolders (#124, no setting since #163), so a package subfolder is shared with incoming.
   Ed3kShared serves eD2K's list on ed3k.
+- `ed3kHosterShareFiles` (YAML `ed3k: hoster: shareFiles`, default on; Options → Hoster):
+  off shares nothing that landed. The daemon remembers every landed file either way in
+  `Config/ed3k/hoster/landed.txt` (`LandedFiles`, cap 200,000), and while off they are
+  `setNeverShared` for eD2K, Kad and ed3k, also inside incoming. Off drops them at once, on
+  again runs `SharedFileList::reload()` (#177).
+- The app's IP filter is not applied to hosters: links are HTTP to the hoster's servers, not
+  peers. ed3k peers of a verified link are filtered at the node's socket.
 - Kept archives in Temp are not shared, so a hoster root of an archive is not served to ed3k peers.
 
 ## Link checks of a links dialog

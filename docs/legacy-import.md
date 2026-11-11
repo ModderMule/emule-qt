@@ -10,15 +10,19 @@ Windows installer's "Import settings from eMule" task (report 36: users looked f
 2. User picks an install (combo when more than one), can edit the settings folder and the
    download (temp) folders (`;`-separated). Editing the settings folder re-probes it
    (`FindLegacyProfiles [dir]`) and refills the download folders unless the user typed them.
-3. Next sends `ImportLegacyProfile` (226) `[dir, settings, parts, tempDirs]`:
-   - settings: core writes `<config>/mfc-import.yml` and restarts itself
-     (`DaemonApp::requestRestart`, same args, so the first-start connect hold stays). On start
-     `LegacyConfigImport::run()` imports before anything reads the config dir, then
-     `takePendingTempDirs()` queues the download folders with `PartFileConvert`. The wizard waits
-     for `IpcClient::connected`, re-reads the prefs, shows the ports page with imported values
-     (one "TCP/UDP" field, see below).
-   - parts only: folders queued with `PartFileConvert` at once, no restart.
-4. Done once per wizard run; Back + Next does not repeat it, the page's inputs stay locked.
+3. Next imports settings only: `ImportLegacyProfile` (226) `[dir, true, false, []]`. Core writes
+   `<config>/mfc-import.yml` and restarts itself (`DaemonApp::requestRestart`, same args, so the
+   first-start connect hold stays). On start `LegacyConfigImport::run()` imports before anything
+   reads the config dir. The wizard waits for `IpcClient::connected`, re-reads the prefs, shows the
+   ports page with imported values (one "TCP/UDP" field, see below).
+4. Downloads wait for Finish: `LegacyImportPage::importDownloads()` sends
+   `[dir, false, true, tempDirs]`, fire and forget, outcome in the status bar. Core lists the
+   folders off its thread and queues them with `PartFileConvert`; the convert thread reads the old
+   .part.met itself, only the parse + queueing runs on the core main thread (`PartMetPreload`).
+   Cancel sends nothing, the old client keeps its downloads. (A request file with parts from an
+   older GUI still works: `takePendingTempDirs()` at start.)
+   Settings done once per wizard run: Back + Next does not repeat it, settings inputs stay locked;
+   download inputs stay editable until Finish.
 5. Nothing auto-detected (or no core to ask): the page is left out, the wizard starts on the
    ports page and Back stops there (`LegacyImportPage::searchFinished(false)`).
 
@@ -38,7 +42,9 @@ installer (eMule's `GetDefaultDirectory`).
 - data files: preferences.dat + cryptkey.dat (only as a pair), clients.met, known.met,
   known2_64.met, cancelled.met, emfriends.met, server.met, staticservers.dat, addresses.dat,
   nodes.dat, preferencesKad.dat, ipfilter.dat, fileinfo.ini, webservices.dat. Our own copies
-  go to `<config>/import-backup-<date>/` first.
+  go to `<config>/import-backup-<date>/` first (moved).
+- settings backup: preferences.yml, uistate.yml (GUI layout, when it shares the config dir) and
+  preferences.ini (scheduler) are copied to the same folder before anything is changed.
 - port: the TCP port becomes the one port for eD2K TCP, eD2K UDP and ed3k UDP (eD2K compat,
   ed3k Protocol.md §14.1); the old UDP port and aMule's `UDPEnable=0` are dropped.
 - user hash: preferences.dat + cryptkey.dat in the source → taken over (`LegacyIdentityImport`,

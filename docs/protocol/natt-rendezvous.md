@@ -317,6 +317,8 @@ publishes Kad type 6 (MFC). A firewalled downloader drops stock type 6 records (
   were read as a `0.x.x.x` HighID and dropped, eMuleAI's included.
 - A received LowID is kept while we are firewalled when a path can serve it, mostly the
   foreign callback (the record names its server).
+- 2026-11-12: ExtSX also carries LowIDs we met (address + UDP ports) and LowIDs with a buddy
+  (buddy IP/port/ID), plus a buddy offer to a LowID requester. See `extxs-buddy-route.md`.
 
 ## Punch and IPv6 handoff
 
