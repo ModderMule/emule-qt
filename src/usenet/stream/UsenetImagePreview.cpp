@@ -303,11 +303,10 @@ void UsenetImagePreview::runLane(Lane& lane)
             return;
         }
     }
-    // one file per article: lanes never share a writer
+    // a writer per lane on the file itself: each keeps its own position
     lane.writer = std::make_unique<ArticleWriter>();
-    lane.piecePath = m_dir.filePath(QStringLiteral("p%1").arg(++m_pieceCounter));
     QString error;
-    if (!lane.writer->open(lane.piecePath, error)) {
+    if (!lane.writer->open(targetPath(lane.job.file), error)) {
         logUsenetWarning(QStringLiteral("Usenet: preview: %1").arg(error));
         ++m_missing;
         lane.job = {};
@@ -340,16 +339,16 @@ void UsenetImagePreview::onFetchFinished(Lane& lane, NntpError error, const QStr
         lane.writer.reset();
     }
     if (error == NntpError::None) {
+        // ToDo: count these bytes in UsenetUsage and honour account quotas
         // the video's real size, for the head fraction
         if (lane.job.file == m_plan.video && m_videoSize <= 0)
             m_videoSize = lane.fetcher->declaredFileSize();
-        m_pieces[lane.job.file].insert(lane.fetcher->decodedOffset(), lane.piecePath);
+        m_ranges[lane.job.file].insert(lane.fetcher->decodedOffset(), lane.fetcher->decodedBytes());
         lane.job = {};
         runLane(lane);
         kickIdleLanes();
         return;
     }
-    QFile::remove(lane.piecePath);
     if (escalatesToNextLevel(error)) {
         dropSocket(lane, true);
         ++lane.level;
@@ -379,37 +378,31 @@ void UsenetImagePreview::dropSocket(Lane& lane, bool reusable)
         m_pool->release(std::exchange(lane.socket, nullptr), reusable);
 }
 
-qint64 UsenetImagePreview::assemble(int file, const QString& path, qint64* contiguous)
+QString UsenetImagePreview::targetPath(int file) const
 {
-    QFile out(path);
-    if (!out.open(QIODevice::ReadWrite))
-        return -1;
-    qint64 written = 0;
+    return file == m_plan.video ? m_videoPath : m_dir.filePath(QStringLiteral("img%1").arg(file));
+}
+
+qint64 UsenetImagePreview::received(int file, qint64* contiguous) const
+{
+    qint64 total = 0;
     qint64 end = 0;   // bytes readable from 0 without a hole
-    const auto pieces = m_pieces.take(file);
-    for (auto it = pieces.cbegin(); it != pieces.cend(); ++it) {
-        QFile in(it.value());
-        if (!in.open(QIODevice::ReadOnly))
-            continue;
-        const QByteArray data = in.readAll();
-        in.close();
-        QFile::remove(it.value());
-        if (!out.seek(it.key()) || out.write(data) != data.size())
-            return -1;
-        written += data.size();
+    const auto ranges = m_ranges.value(file);
+    for (auto it = ranges.cbegin(); it != ranges.cend(); ++it) {
+        total += it.value();
         if (it.key() <= end)
-            end = std::max(end, it.key() + data.size());
+            end = std::max(end, it.key() + it.value());
     }
     if (contiguous)
         *contiguous = end;
-    return written;
+    return total;
 }
 
 void UsenetImagePreview::collectImages()
 {
     for (int fi : std::as_const(m_plan.images)) {
-        const QString path = m_dir.filePath(QStringLiteral("img%1").arg(fi));
-        if (assemble(fi, path) <= 0)
+        const QString path = targetPath(fi);
+        if (received(fi) <= 0)
             continue;
         QFile f(path);
         if (!f.open(QIODevice::ReadOnly))
@@ -447,7 +440,7 @@ void UsenetImagePreview::onVideoHead()
 {
     const NzbFileInfo& file = m_nzb.files.at(m_plan.video);
     qint64 contiguous = 0;
-    const qint64 written = assemble(m_plan.video, m_videoPath, &contiguous);
+    const qint64 written = received(m_plan.video, &contiguous);
     if (!m_tailFetched) {
         if (written <= 0 || contiguous <= 0) {
             finish(tr("The video is not on the server."));

@@ -20917,7 +20917,7 @@ Rehash all shared files now?</source>
 <context>
     <name>eMule::PreviewImageView</name>
     <message>
-        <location filename="../src/gui/controls/PreviewImageView.cpp" line="+47"/>
+        <location filename="../src/gui/controls/PreviewImageView.cpp" line="+48"/>
         <source>Previous image</source>
         <translation>Предыдущее изображение</translation>
     </message>
@@ -20927,7 +20927,7 @@ Rehash all shared files now?</source>
         <translation>Следующее изображение</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+85"/>
         <source>%1 (%2 of %3)</source>
         <translation>%1 (%2 из %3)</translation>
     </message>

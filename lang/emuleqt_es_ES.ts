@@ -21379,7 +21379,7 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
 <context>
     <name>eMule::PreviewImageView</name>
     <message>
-        <location filename="../src/gui/controls/PreviewImageView.cpp" line="+47"/>
+        <location filename="../src/gui/controls/PreviewImageView.cpp" line="+48"/>
         <source>Previous image</source>
         <translation>Imagen anterior</translation>
     </message>
@@ -21389,7 +21389,7 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
         <translation>Imagen siguiente</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+85"/>
         <source>%1 (%2 of %3)</source>
         <translation>%1 (%2 de %3)</translation>
     </message>

@@ -20858,7 +20858,7 @@ Alle gedeelde bestanden nu opnieuw hashen?</translation>
 <context>
     <name>eMule::PreviewImageView</name>
     <message>
-        <location filename="../src/gui/controls/PreviewImageView.cpp" line="+47"/>
+        <location filename="../src/gui/controls/PreviewImageView.cpp" line="+48"/>
         <source>Previous image</source>
         <translation>Vorige afbeelding</translation>
     </message>
@@ -20868,7 +20868,7 @@ Alle gedeelde bestanden nu opnieuw hashen?</translation>
         <translation>Volgende afbeelding</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+85"/>
         <source>%1 (%2 of %3)</source>
         <translation>%1 (%2 van %3)</translation>
     </message>

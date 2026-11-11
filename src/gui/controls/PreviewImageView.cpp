@@ -5,6 +5,7 @@
 
 #include "controls/PreviewImageView.h"
 
+#include <QEvent>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
@@ -53,9 +54,11 @@ PreviewImageView::PreviewImageView(QWidget* parent)
     m_large->setAlignment(Qt::AlignCenter);
     m_large->setMinimumSize(160, 120);
     m_large->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
-    row->addWidget(m_prev);
+    row->addWidget(m_prev, 0, Qt::AlignVCenter);
     row->addWidget(m_large, 1);
-    row->addWidget(m_next);
+    row->addWidget(m_next, 0, Qt::AlignVCenter);
+    // the label's own size, not ours: it settles after the layout runs
+    m_large->installEventFilter(this);
     layout->addLayout(row, 1);
 
     m_caption = new QLabel(page);
@@ -138,10 +141,11 @@ void PreviewImageView::showImage(int index)
     updateLarge();
 }
 
-void PreviewImageView::resizeEvent(QResizeEvent* event)
+bool PreviewImageView::eventFilter(QObject* watched, QEvent* event)
 {
-    QWidget::resizeEvent(event);
-    updateLarge();
+    if (watched == m_large && event->type() == QEvent::Resize)
+        updateLarge();
+    return QWidget::eventFilter(watched, event);
 }
 
 // ---------------------------------------------------------------------------

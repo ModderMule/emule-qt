@@ -20799,7 +20799,7 @@ Rehash all shared files now?</source>
 <context>
     <name>eMule::PreviewImageView</name>
     <message>
-        <location filename="../src/gui/controls/PreviewImageView.cpp" line="+47"/>
+        <location filename="../src/gui/controls/PreviewImageView.cpp" line="+48"/>
         <source>Previous image</source>
         <translation>上一張圖片</translation>
     </message>
@@ -20809,7 +20809,7 @@ Rehash all shared files now?</source>
         <translation>下一張圖片</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+85"/>
         <source>%1 (%2 of %3)</source>
         <translation>%1 (第 %2 / %3 張)</translation>
     </message>

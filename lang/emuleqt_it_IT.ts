@@ -21379,7 +21379,7 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
 <context>
     <name>eMule::PreviewImageView</name>
     <message>
-        <location filename="../src/gui/controls/PreviewImageView.cpp" line="+47"/>
+        <location filename="../src/gui/controls/PreviewImageView.cpp" line="+48"/>
         <source>Previous image</source>
         <translation>Immagine precedente</translation>
     </message>
@@ -21389,7 +21389,7 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
         <translation>Immagine successiva</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+85"/>
         <source>%1 (%2 of %3)</source>
         <translation>%1 (%2 di %3)</translation>
     </message>

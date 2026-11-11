@@ -21379,7 +21379,7 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
 <context>
     <name>eMule::PreviewImageView</name>
     <message>
-        <location filename="../src/gui/controls/PreviewImageView.cpp" line="+47"/>
+        <location filename="../src/gui/controls/PreviewImageView.cpp" line="+48"/>
         <source>Previous image</source>
         <translation>Imagem anterior</translation>
     </message>
@@ -21389,7 +21389,7 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
         <translation>Próxima imagem</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+85"/>
         <source>%1 (%2 of %3)</source>
         <translation>%1 (%2 de %3)</translation>
     </message>

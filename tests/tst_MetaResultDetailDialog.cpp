@@ -5,10 +5,13 @@
 #include "dialogs/MetaResultDetailDialog.h"
 #include "controls/TorrentFileTree.h"
 
+#include "controls/PreviewImageView.h"
 #include "controls/UsenetFileCheckList.h"
 
 #include <QApplication>
+#include <QBuffer>
 #include <QCborArray>
+#include <QImage>
 #include <QMap>
 #include <QMessageBox>
 #include <QTimer>
@@ -41,6 +44,9 @@ private slots:
     void torrentChecksAllByDefault();
     void torrentFileRowChecksOnlyItsFile();
     void torrentSelectNoneThenFolderCheck();
+    void imagesTabOnlyForAnNzbWithAToken();
+    void imagesAreAskedForOnceWhenTheTabOpens();
+    void imagesShowOrAMessage();
 };
 
 namespace {
@@ -339,6 +345,97 @@ void tst_MetaResultDetailDialog::torrentSelectNoneThenFolderCheck()
     QVERIFY(dir);
     dir->setCheckState(MetaResultDetailDialog::TorrentName, Qt::Checked);
     QCOMPARE(TorrentFileTree::checkedFiles(tree, MetaResultDetailDialog::TorrentName), (QList<int>{0}));
+}
+
+namespace {
+
+QCborMap nzbWithToken(const QString& token, const QString& coverUrl = {})
+{
+    QCborMap details = nzbChooseDetails(-1);
+    QCborMap inspection = details.value(QStringLiteral("inspection")).toMap();
+    inspection.insert(QStringLiteral("previewToken"), token);
+    details.insert(QStringLiteral("inspection"), inspection);
+    if (!coverUrl.isEmpty())
+        details.insert(QStringLiteral("coverUrl"), coverUrl);
+    return details;
+}
+
+QByteArray pngBytes(QColor color)
+{
+    QImage img(64, 36, QImage::Format_RGB32);
+    img.fill(color);
+    QByteArray out;
+    QBuffer buf(&out);
+    buf.open(QIODevice::WriteOnly);
+    img.save(&buf, "PNG");
+    return out;
+}
+
+} // namespace
+
+void tst_MetaResultDetailDialog::imagesTabOnlyForAnNzbWithAToken()
+{
+    MetaResultDetailDialog torrent({.name = QStringLiteral("demo"), .torrent = true});
+    torrent.setDetails(torrentDetails());
+    QVERIFY(!torrent.tabs()->isTabVisible(MetaResultDetailDialog::TabImages));
+
+    MetaResultDetailDialog plain({.name = QStringLiteral("R")});
+    plain.setDetails(nzbChooseDetails(-1));
+    QVERIFY(!plain.tabs()->isTabVisible(MetaResultDetailDialog::TabImages));
+
+    MetaResultDetailDialog nzb({.name = QStringLiteral("R")});
+    nzb.setDetails(nzbWithToken(QStringLiteral("abc")));
+    QVERIFY(nzb.tabs()->isTabVisible(MetaResultDetailDialog::TabImages));
+}
+
+void tst_MetaResultDetailDialog::imagesAreAskedForOnceWhenTheTabOpens()
+{
+    MetaResultDetailDialog dlg({.name = QStringLiteral("R")});
+    QSignalSpy asked(&dlg, &MetaResultDetailDialog::imagesRequested);
+    dlg.setDetails(nzbWithToken(QStringLiteral("abc"), QStringLiteral("https://example.org/c.jpg")));
+    dlg.tabs()->setCurrentIndex(MetaResultDetailDialog::TabFiles);
+    QCOMPARE(asked.size(), 0);   // nothing fetched before the tab is opened
+
+    dlg.tabs()->setCurrentIndex(MetaResultDetailDialog::TabImages);
+    QCOMPARE(asked.size(), 1);
+    QCOMPARE(asked.first().at(0).toString(), QStringLiteral("abc"));
+    QCOMPARE(asked.first().at(1).toString(), QStringLiteral("https://example.org/c.jpg"));
+    QVERIFY(!dlg.imagesView()->message().isEmpty());   // "Fetching..."
+
+    dlg.tabs()->setCurrentIndex(MetaResultDetailDialog::TabGeneral);
+    dlg.tabs()->setCurrentIndex(MetaResultDetailDialog::TabImages);
+    QCOMPARE(asked.size(), 1);
+
+    // a failure asks again on the next visit
+    dlg.setPreviewImagesError(QStringLiteral("down"));
+    QCOMPARE(dlg.imagesView()->message(), QStringLiteral("down"));
+    dlg.tabs()->setCurrentIndex(MetaResultDetailDialog::TabGeneral);
+    dlg.tabs()->setCurrentIndex(MetaResultDetailDialog::TabImages);
+    QCOMPARE(asked.size(), 2);
+}
+
+void tst_MetaResultDetailDialog::imagesShowOrAMessage()
+{
+    MetaResultDetailDialog dlg({.name = QStringLiteral("R")});
+    dlg.setDetails(nzbWithToken(QStringLiteral("abc")));
+    dlg.tabs()->setCurrentIndex(MetaResultDetailDialog::TabImages);
+
+    const auto image = [](const char* name, const char* kind, const QByteArray& data) {
+        return QCborMap{{QStringLiteral("name"), QLatin1StringView(name)},
+                        {QStringLiteral("kind"), QLatin1StringView(kind)},
+                        {QStringLiteral("data"), data}};
+    };
+    dlg.setPreviewImages({{QStringLiteral("images"),
+                           QCborArray{image("Frame 1", "frame", pngBytes(Qt::red)),
+                                      image("preview.jpg", "posted", pngBytes(Qt::blue)),
+                                      image("broken", "posted", QByteArray("nope"))}}});
+    QCOMPARE(dlg.imagesView()->imageCount(), 2);   // the undecodable one dropped
+    QCOMPARE(dlg.imagesView()->currentIndex(), 0);
+    QVERIFY(dlg.imagesView()->message().isEmpty());
+
+    dlg.setPreviewImages({{QStringLiteral("images"), QCborArray{}}});
+    QCOMPARE(dlg.imagesView()->imageCount(), 0);
+    QVERIFY(!dlg.imagesView()->message().isEmpty());
 }
 
 QTEST_MAIN(tst_MetaResultDetailDialog)

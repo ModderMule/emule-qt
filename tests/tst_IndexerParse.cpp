@@ -173,6 +173,7 @@ const QByteArray kUsenetCrawlerSearch = R"(<?xml version="1.0" encoding="UTF-8"?
     <newznab:attr name="files" value="42"/>
     <newznab:attr name="poster" value="yenc@power-post"/>
     <newznab:attr name="group" value="alt.binaries.teevee"/>
+    <newznab:attr name="coverurl" value="https://indexer.example.invalid/covers/tv/123.jpg"/>
     <newznab:attr name="grabs" value="7"/>
     <newznab:attr name="comments" value="0"/>
     <newznab:attr name="password" value="0"/>
@@ -875,6 +876,7 @@ void tst_IndexerParse::usenetCrawler_searchIsFullyReadable()
     QCOMPARE(row.grabs, 7);
     QCOMPARE(row.poster, QStringLiteral("yenc@power-post"));
     QCOMPARE(row.group, QStringLiteral("alt.binaries.teevee"));
+    QCOMPARE(row.coverUrl, QUrl(QStringLiteral("https://indexer.example.invalid/covers/tv/123.jpg")));
 
     // Parent then leaf, both present.
     QCOMPARE(row.categoryIds.size(), 2);

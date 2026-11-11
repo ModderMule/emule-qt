@@ -21319,7 +21319,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::PreviewImageView</name>
     <message>
-        <location filename="../src/gui/controls/PreviewImageView.cpp" line="+47"/>
+        <location filename="../src/gui/controls/PreviewImageView.cpp" line="+48"/>
         <source>Previous image</source>
         <translation>이전 이미지</translation>
     </message>
@@ -21329,7 +21329,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>다음 이미지</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+85"/>
         <source>%1 (%2 of %3)</source>
         <translation>%1 (%2 / %3)</translation>
     </message>

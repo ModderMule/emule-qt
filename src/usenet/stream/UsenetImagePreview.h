@@ -91,7 +91,6 @@ private:
         std::unique_ptr<ArticleWriter> writer;
         NntpSocket* socket = nullptr;
         Job job;
-        QString piecePath;
         int level = 0;
         int retries = 0;
         bool busy = false;   ///< connecting or fetching
@@ -103,8 +102,9 @@ private:
     void kickIdleLanes();
     void dropSocket(Lane& lane, bool reusable);
     [[nodiscard]] bool laneHasServer(int level) const;
-    /// Fetched pieces of @p file into @p path at their offsets; bytes written, -1 on error.
-    qint64 assemble(int file, const QString& path, qint64* contiguous = nullptr);
+    [[nodiscard]] QString targetPath(int file) const;
+    /// Decoded bytes of @p file that arrived; @p contiguous = readable from 0.
+    qint64 received(int file, qint64* contiguous = nullptr) const;
     void collectImages();
     void startVideo();
     void onVideoHead();
@@ -119,8 +119,7 @@ private:
     std::vector<std::unique_ptr<Lane>> m_lanes;
     QList<Job> m_jobs;
     std::function<void()> m_jobsDone;
-    QHash<int, QMap<qint64, QString>> m_pieces;   ///< file -> offset -> piece path
-    int m_pieceCounter = 0;
+    QHash<int, QMap<qint64, qint64>> m_ranges;   ///< file -> decoded offset -> length
     int m_missing = 0;
     qint64 m_videoSize = 0;     ///< declared size of the video file (=ybegin size)
     QString m_videoPath;
