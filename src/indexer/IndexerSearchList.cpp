@@ -258,7 +258,7 @@ std::optional<IndexerSearchList::GrabSource> IndexerSearchList::grabSource(quint
 {
     if (const auto it = m_searches.constFind(searchId); it != m_searches.constEnd()) {
         if (const IndexerResult* r = (*it)->find(resultId))
-            return GrabSource{r->indexerName, r->guid, r->title, r->downloadUrl};
+            return GrabSource{r->indexerName, r->guid, r->title, r->downloadUrl, r->coverUrl};
     }
     const auto cached = m_grabCache.constFind(resultId);
     if (cached == m_grabCache.constEnd())

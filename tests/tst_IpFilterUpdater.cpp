@@ -6,6 +6,7 @@
 #include "TestHelpers.h"
 #include "ipfilter/IPFilter.h"
 #include "ipfilter/IpFilterUpdater.h"
+#include "utils/BackgroundFileWriter.h"
 #include "prefs/Preferences.h"
 
 #include <QDateTime>
@@ -94,6 +95,7 @@ void tst_IpFilterUpdater::scheduled_downloadsAndStoresValidators()
 
     QCOMPARE(m_server->requestCount(), 1);
     QVERIFY(m_server->header("If-None-Match").isEmpty());   // nothing on disk yet
+    BackgroundFileWriter::instance().flush();
     QVERIFY(QFile::exists(listPath()));
     QCOMPARE(m_filter->entryCount(), 1);
     QVERIFY(thePrefs.ipFilterLastUpdate() > 0);
@@ -154,6 +156,7 @@ void tst_IpFilterUpdater::scheduled_missingFileSendsNoValidators()
     QVERIFY(runScheduled(ok, message));
     QVERIFY2(ok, qPrintable(message));
     QVERIFY(m_server->header("If-None-Match").isEmpty());
+    BackgroundFileWriter::instance().flush();
     QVERIFY(QFile::exists(listPath()));
 }
 

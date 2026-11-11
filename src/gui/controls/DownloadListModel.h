@@ -294,13 +294,17 @@ class DownloadSortProxy : public SortValueProxy {
 public:
     using SortValueProxy::SortValueProxy;
 
-    /// Secondary sort (Display option, discussion #84): the column sorted before
-    /// the current one breaks its ties, e.g. Status, then Remaining.
-    void setSecondarySortEnabled(bool on);
-    [[nodiscard]] bool secondarySortEnabled() const { return m_secondaryEnabled; }
-    void setSecondarySort(int column, Qt::SortOrder order);
-    [[nodiscard]] int secondarySortColumn() const { return m_secondaryColumn; }
-    [[nodiscard]] Qt::SortOrder secondarySortOrder() const { return m_secondaryOrder; }
+    /// Sort history (Display option, discussions #84/#174): the columns sorted
+    /// before the current one break its ties, newest first (MFC CMuleListCtrl
+    /// keeps 4 incl. the current one; we keep 3 levels).
+    using SortKey = std::pair<int, Qt::SortOrder>;
+    static constexpr qsizetype kMaxTieBreakers = 2;
+
+    void setSortHistoryEnabled(bool on);
+    [[nodiscard]] bool sortHistoryEnabled() const { return m_historyEnabled; }
+    /// Tie-breakers, newest first; extra or invalid entries are dropped
+    void setSortHistory(const QList<SortKey>& tieBreakers);
+    [[nodiscard]] const QList<SortKey>& sortHistory() const { return m_tieBreakers; }
 
     void sort(int column, Qt::SortOrder order = Qt::AscendingOrder) override;
 
@@ -309,10 +313,11 @@ protected:
 
 private:
     [[nodiscard]] bool primaryLess(const QModelIndex& left, const QModelIndex& right) const;
+    [[nodiscard]] bool keyLess(const QModelIndex& left, const QModelIndex& right,
+                               const SortKey& key) const;
 
-    bool m_secondaryEnabled = false;
-    int m_secondaryColumn = -1;
-    Qt::SortOrder m_secondaryOrder = Qt::AscendingOrder;
+    bool m_historyEnabled = false;
+    QList<SortKey> m_tieBreakers;   ///< newest first, never the current sort column
 };
 
 } // namespace eMule

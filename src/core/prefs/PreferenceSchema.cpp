@@ -191,6 +191,7 @@ using Kind = PrefSpec::Kind;
     t << flag("usenetCleanupAfterUnpack", "Delete archives and PAR2 files after a good unpack.");
     t << flag("usenetAutoAddPaused", "Add automatically grabbed releases paused.");
     t << flag("usenetMetaSelectedFileOnly", "A search result row for one file of an NZB downloads only that file.");
+    t << flag("usenetShareFiles", "Share finished Usenet downloads on eD2K/Kad (and ed3k). Off keeps them out, also ones already done.");
     t << number("usenetDownloadSharePercent", 1, 99, "%", "Share of the download limit Usenet may "
                 "use while eD2K is downloading too.");
     t << flag("usenetDeobfuscateNames", "Rename an obfuscated release (random file names, no PAR2 "
@@ -209,6 +210,8 @@ using Kind = PrefSpec::Kind;
     t << number("btMaxDownloadKb", 0, kMaxU32, "KiB/s", "BitTorrent download limit. 0 = unlimited.");
     t << number("btMaxUploadKb", 0, kMaxU32, "KiB/s", "BitTorrent upload limit. 0 = unlimited.");
     t << flag("btStopAfterMetadata", "Stop new torrents once their file list is known, to pick files first.");
+    t << number("btShareMode", 0, 2, "", "Finished torrents shared on eD2K/Kad (and ed3k): 0 = none (also "
+                "kept out inside incoming), 1 = public only (no private tracker (ALT) or I2P torrents), 2 = all.");
     t << flag("btMetaSelectedFileOnly", "A search result row for one file of a torrent downloads only that file.");
     t << flag("btDht", "Find BitTorrent peers through the DHT.");
     t << flag("btLsd", "Find BitTorrent peers on the local network (local service discovery).");
@@ -254,6 +257,7 @@ using Kind = PrefSpec::Kind;
     t << flag("ed3kJointDownloads", "eD2K downloads also fetch from ed3k peers (found by the ed2k hash); a source with a derived user hash is asked over ed3k first.");
     t << flag("ed3kShareUsenetPosts", "Share Usenet posts over ed3k too. Off: the files are still shared, but "
                                       "not their article lists, post sets or nzb records (usenet.md §6).");
+    t << flag("ed3kOwnSetsWatch", "Watch the folders of own ed3k sets: a change publishes a new version of the set.");
     t << advanced(text("ed3kCreditRpc", 4096, "JSON-RPC endpoints of the credit ledger (https URLs, separated by "
                                               "spaces; operator n = the n-th). Empty = off."));
     t << advanced(text("ed3kChaintubeRpc", 4096, "JSON-RPC endpoints of the chaintube chain (https URLs, or http to "
@@ -267,6 +271,10 @@ using Kind = PrefSpec::Kind;
                                       "others; 1 = a relay that sees everything, not anonymity).");
     t << flag("ed3kHopping", "While hiding, forward traffic for other hiding nodes (hops.md §5).");
     t << number("ed3kHopShare", 1, 100, "%", "Share of the upload limit given to the paths of others.");
+    t << advanced(number("ed3kReportProxyType", 0, 5, "", "Proxy for share reports under the anonymous key (0 = off: "
+                                                          "none sent; 3 = SOCKS5, 5 = HTTP). They never go directly."));
+    t << advanced(text("ed3kReportProxyHost", 255, "Host of the proxy for share reports under the anonymous key."));
+    t << advanced(number("ed3kReportProxyPort", 0, 65535, "", "Port of the proxy for share reports under the anonymous key."));
     t << advanced(number("ed3kSitePort", 1, 65535, "", "TCP port of the local ed3k website server (loopback only). "
                                                       "Part of every site's address: a change loses what sites stored."));
     t << advanced(text("ed3kNodeLists", 8192, "Node list sources for the first ed3k contact (ed3k:nodes?url=...&key=... "
@@ -313,6 +321,8 @@ using Kind = PrefSpec::Kind;
     t << flag("ed3kHosterFromPeers", "Use hoster links that peers and Kad name for a download.");
     t << flag("ed3kHosterExtract", "Unpack finished hoster archives into incoming/<package>/ and share the files. "
                                    "The archives stay in Temp.");
+    t << flag("ed3kHosterShareFiles", "Share finished hoster downloads (and what their archives held) on eD2K/Kad "
+                                     "(and ed3k). Off: never shared there, also inside incoming.");
     t << flag("ed3kHosterDeleteArchives", "Delete hoster archives after a good unpack (only with ed3kHosterExtract).");
     t << flag("ed3kHosterClipboard", "The GUI watches the clipboard for http/https hoster links.");
     t << flag("ed3kHosterLinkGrabber", "Hoster links collect in the Link Grabber (crawled, checked, editable) before downloading.");

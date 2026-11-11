@@ -62,6 +62,14 @@ QString percentText(double share)
     return QStringLiteral("%1%").arg(share * 100.0, 0, 'f', 1);
 }
 
+/// qBittorrent's Availability text: "N/A" below 0 (seeding)
+QString availabilityText(double share)
+{
+    if (share < 0)
+        return TorrentListsPane::tr("N/A");
+    return share >= 1.0 ? QStringLiteral("100%") : percentText(share);
+}
+
 QString rateText(qint64 rate)
 {
     return rate > 0 ? formatByteRate(rate) : QString();
@@ -262,14 +270,16 @@ void TorrentListsPane::buildUi()
     auto* files = new ListTreeWidget(m_tabs);
     m_files = files;
     files->setColumnCount(FileColCount);
-    files->setHeaderLabels({tr("Name"), tr("Size"), tr("Progress"), tr("Download"), tr("Priority")});
+    files->setHeaderLabels({tr("Name"), tr("Size"), tr("Progress"), tr("Download"), tr("Priority"),
+                            tr("Availability")});
+    files->headerItem()->setToolTip(FileAvailability, tr("Share of the file's pieces that connected peers have"));
     files->setAlternatingRowColors(true);
     files->setUniformRowHeights(true);
     files->setSelectionMode(QAbstractItemView::ExtendedSelection);
     files->setSortingEnabled(true);
     files->setContextMenuPolicy(Qt::CustomContextMenu);
-    files->setDescendingFirst({FileSize, FileProgress});
-    files->bindColumns(QStringLiteral("torrentPaneFiles"), {360, 90, 80, 70, 80});
+    files->setDescendingFirst({FileSize, FileProgress, FileAvailability});
+    files->bindColumns(QStringLiteral("torrentPaneFiles"), {360, 90, 80, 70, 80, 80});
     connect(files, &QWidget::customContextMenuRequested, this,
             &TorrentListsPane::onFilesContextMenu);
     connect(files, &QTreeWidget::itemChanged, this, &TorrentListsPane::onFileItemChanged);
@@ -528,6 +538,9 @@ void TorrentListsPane::applyFiles(const QCborArray& files)
         item->setToolTip(FileName, path);
         item->setData(FileSize, kKeyRole, size);
         item->setData(FileProgress, kKeyRole, done);
+        const double avail = f.value(QStringLiteral("availability")).toDouble(-1.0);
+        item->setData(FileAvailability, kKeyRole, avail);
+        setCell(item, FileAvailability, availabilityText(avail), avail, true);
         setCell(item, FileSize, formatByteSize(size), QVariant::fromValue(size), true);
         setCell(item, FileProgress, percentText(share), share, true);
         item->setCheckState(FileDownload, priority > 0 ? Qt::Checked : Qt::Unchecked);
@@ -562,28 +575,42 @@ QTreeWidgetItem* TorrentListsPane::folderItem(const QString& path,
 
 void TorrentListsPane::sumFolders()
 {
-    // post-order: sizes, progress and the check state of every folder from its files
-    std::function<void(QTreeWidgetItem*, qint64&, qint64&)> sum =
-        [&](QTreeWidgetItem* item, qint64& size, qint64& done) {
-            if (item->data(FileName, kFileIndexRole).toInt() >= 0) {
-                size += item->data(FileSize, kKeyRole).toLongLong();
-                done += item->data(FileProgress, kKeyRole).toLongLong();
-                return;
+    // post-order: sizes, progress and the check state of every folder from its files;
+    // availability size-weighted over children that have one, as qBittorrent
+    struct Sum {
+        qint64 size = 0;
+        qint64 done = 0;
+        double availBytes = 0;   // availability × size
+        qint64 availSize = 0;    // size of children with availability
+    };
+    std::function<void(QTreeWidgetItem*, Sum&)> sum = [&](QTreeWidgetItem* item, Sum& total) {
+        if (item->data(FileName, kFileIndexRole).toInt() >= 0) {
+            const qint64 size = item->data(FileSize, kKeyRole).toLongLong();
+            const double avail = item->data(FileAvailability, kKeyRole).toDouble();
+            total.size += size;
+            total.done += item->data(FileProgress, kKeyRole).toLongLong();
+            if (avail >= 0) {
+                total.availBytes += avail * double(size);
+                total.availSize += size;
             }
-            qint64 s = 0;
-            qint64 d = 0;
-            for (int i = 0; i < item->childCount(); ++i)
-                sum(item->child(i), s, d);
-            const double share = s > 0 ? double(d) / double(s) : 1.0;
-            setCell(item, FileSize, formatByteSize(s), QVariant::fromValue(s), true);
-            setCell(item, FileProgress, percentText(share), share, true);
-            size += s;
-            done += d;
-        };
+            return;
+        }
+        Sum s;
+        for (int i = 0; i < item->childCount(); ++i)
+            sum(item->child(i), s);
+        const double share = s.size > 0 ? double(s.done) / double(s.size) : 1.0;
+        const double avail = s.availSize > 0 ? std::min(1.0, s.availBytes / double(s.availSize)) : -1.0;
+        setCell(item, FileSize, formatByteSize(s.size), QVariant::fromValue(s.size), true);
+        setCell(item, FileProgress, percentText(share), share, true);
+        setCell(item, FileAvailability, availabilityText(avail), avail, true);
+        total.size += s.size;
+        total.done += s.done;
+        total.availBytes += s.availBytes;
+        total.availSize += s.availSize;
+    };
     for (int i = 0; i < m_files->topLevelItemCount(); ++i) {
-        qint64 s = 0;
-        qint64 d = 0;
-        sum(m_files->topLevelItem(i), s, d);
+        Sum s;
+        sum(m_files->topLevelItem(i), s);
     }
 }
 

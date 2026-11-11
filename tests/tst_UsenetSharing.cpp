@@ -15,8 +15,12 @@
 ///   3. shouldBeShared() refuses the Usenet tree ahead of the incoming-directory
 ///      rule, which otherwise returns true unconditionally.
 ///   4. A file that has completed into the incoming directory is shared normally.
+///   5. usenetShareFiles off (#177): landed files leave the share, a rescan of
+///      incoming does not bring them back, and on shares them again.
 
 #include "TestHelpers.h"
+
+#include "LandedFiles.h"
 
 #include "files/KnownFile.h"
 #include "files/KnownFileList.h"
@@ -42,6 +46,16 @@ QString writeFile(const QString& dir, const QString& name, const QByteArray& con
     return QDir(dir).filePath(name);
 }
 
+bool isShared(const SharedFileList& shared, const QString& name)
+{
+    bool found = false;
+    shared.forEachFile([&](KnownFile* f) {
+        if (f->fileName() == name)
+            found = true;
+    });
+    return found;
+}
+
 } // namespace
 
 class tst_UsenetSharing : public QObject {
@@ -54,6 +68,7 @@ private slots:
     void partSuffixIsSkippedByTheShareScan();
     void completedFileInIncomingIsShared();
     void inProgressFileCannotBeSharedByHand();
+    void shareSwitchKeepsLandedFilesOutUntilSwitchedBackOn();
 };
 
 void tst_UsenetSharing::tempDirIsDerivedFromTheFirstTempDir()
@@ -203,6 +218,67 @@ void tst_UsenetSharing::inProgressFileCannotBeSharedByHand()
     // would land in sharedfiles.dat, persist, and share nothing.
     QVERIFY2(!shared.addSingleSharedFile(scratch),
              "an in-progress Usenet file must be refused, not silently ignored");
+}
+
+/// The daemon wiring (DaemonApp: m_usenetLanded + setNeverShared), switched both
+/// ways. Incoming is always shared, so without the block the next scan would
+/// bring a finished Usenet file straight back.
+void tst_UsenetSharing::shareSwitchKeepsLandedFilesOutUntilSwitchedBackOn()
+{
+    eMule::testing::TempDir tmp;
+    const QString incoming = tmp.filePath(QStringLiteral("incoming"));
+    const QString usenetFile = writeFile(incoming, QStringLiteral("usenet.mkv"),
+                                         QByteArray(4096, 'n'));
+    const QString otherFile = writeFile(incoming, QStringLiteral("other.bin"),
+                                        QByteArray(4096, 'o'));
+    QVERIFY(!usenetFile.isEmpty() && !otherFile.isEmpty());
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setIncomingDir(incoming);
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setSharedDirs({});
+
+    const QString listPath = tmp.filePath(QStringLiteral("Usenet/landed.txt"));
+    LandedFiles landed(listPath);
+    landed.load();
+    landed.add({usenetFile});   // UsenetQueue::filesPublished, recorded with sharing on too
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    shared.setNeverShared([&landed](const QString& path) { return landed.blocks(path); });
+
+    // on (default): both shared
+    shared.reload();
+    QTRY_VERIFY_WITH_TIMEOUT(isShared(shared, QStringLiteral("usenet.mkv"))
+                             && isShared(shared, QStringLiteral("other.bin")), 15000);
+
+    // off: dropped at once, the other file stays
+    QVERIFY(landed.setBlocking(true));
+    QVERIFY2(!landed.setBlocking(true), "unchanged reports false, so the daemon skips the rescan");
+    shared.dropNeverShared();
+    QVERIFY2(!isShared(shared, QStringLiteral("usenet.mkv")), "switching off must unshare now");
+    QVERIFY(isShared(shared, QStringLiteral("other.bin")));
+
+    // a rescan of incoming does not bring it back
+    shared.reload();
+    QTRY_VERIFY_WITH_TIMEOUT(isShared(shared, QStringLiteral("other.bin")), 15000);
+    QTest::qWait(200);
+    QVERIFY2(!isShared(shared, QStringLiteral("usenet.mkv")), "the incoming scan must skip it");
+    QVERIFY2(!shared.addFileInSharedLocation(usenetFile), "nor may a single add share it");
+
+    // after a restart the list still names it
+    LandedFiles reloaded(listPath);
+    reloaded.load();
+    QVERIFY(reloaded.contains(usenetFile));
+    reloaded.setBlocking(true);
+    QVERIFY(reloaded.blocks(usenetFile));
+    QVERIFY(!reloaded.blocks(otherFile));
+
+    // on again: rescan shares it
+    QVERIFY(landed.setBlocking(false));
+    shared.reload();
+    QTRY_VERIFY_WITH_TIMEOUT(isShared(shared, QStringLiteral("usenet.mkv")), 15000);
+    QVERIFY(isShared(shared, QStringLiteral("other.bin")));
 }
 
 QTEST_MAIN(tst_UsenetSharing)

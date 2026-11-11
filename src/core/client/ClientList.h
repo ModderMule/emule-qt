@@ -136,12 +136,38 @@ public:
     [[nodiscard]] UpDownClient* findServedBuddy(const uint8* buddyID) const;
     /// Connected below Preferences::servedBuddyLimit(). Pending claims take no slot.
     [[nodiscard]] bool canServeAnotherBuddy() const;
+    /// Our Kad UDP port if we would accept a KADEMLIA_FINDBUDDY_REQ from @p requester right
+    /// now (LowID, runs Kad, has no buddy; we are open, verified and have a slot), else 0.
+    /// Sent as CT_MOD_BUDDY_OFFER in ExtSX answers.
+    [[nodiscard]] uint16 buddyOfferPort(const UpDownClient& requester) const;
 
     /// A Kad node asked us to test its TCP port. Returns the client queued for the
     /// dial, or nullptr when the request is refused (ourselves, or a client that is
     /// already in a Kad state or connected). @p ip host order. MFC RequestTCP.
     UpDownClient* requestTCP(uint32 ip, uint16 tcpPort, uint16 udpPort,
                              const uint8* userHash, uint8 connectOptions);
+
+    // Buddy claim over an open TCP link (OP_BUDDYCLAIM), answering an ExtSX buddy offer.
+    // See docs/protocol/extxs-buddy-route.md.
+
+    /// The claim gets no answer within this long: the offerer counts as failed.
+    static constexpr std::time_t kBuddyClaimTimeoutSecs = 30;
+    /// We (firewalled, no buddy) got CT_MOD_BUDDY_OFFER from @p offerer over its open link.
+    /// Sends OP_BUDDYCLAIM and returns true when a claim started.
+    bool takeBuddyOffer(UpDownClient& offerer, uint16 kadPort);
+    /// A connected LowID claims us as its buddy. 0 = accepted (now a served ConnectedBuddy),
+    /// else a BUDDYCLAIM_REFUSE_* reason.
+    [[nodiscard]] uint8 acceptBuddyClaim(UpDownClient& claimer, const uint8* buddyID);
+    /// Our claim at @p offerer ended: accepted makes it our buddy. Either way the held sources
+    /// are dialled at once. The caller leaves the Kad state alone on failure only if it
+    /// clears it itself (disconnect).
+    void endBuddyClaim(UpDownClient& offerer, bool accepted, const QString& why);
+    /// One of our claims is waiting for its answer.
+    [[nodiscard]] bool buddyClaimPending() const;
+    /// Mark a LowID source to wait for the pending claim (UpDownClient::heldForBuddyClaim).
+    void holdForBuddyClaim(UpDownClient& source);
+    /// Clear every hold and ask each released source for its download right away.
+    void releaseBuddyHeldSources();
 
     /// Called when a remote node wants to become our buddy.
     /// Returns true if accepted.
@@ -196,6 +222,10 @@ public:
 
     /// Offer every idle source with other files its best one (MFC ProcessA4AFClients).
     void processA4AFClients() const;
+    /// Cuts connected clients the IP filter blocks now (a list reloaded or edited, #177):
+    /// accept and connect check the filter, an open connection was never asked again.
+    /// The number cut.
+    int disconnectFilteredClients();
 
     /// Periodic cleanup — removes idle clients that serve no purpose.
     /// Called every ~1s from CoreSession::onTimer().
@@ -277,6 +307,9 @@ signals:
     void clientRemoved(UpDownClient* client);
 
 private:
+    /// Shared gates for a node claiming us as buddy: slot free, not ourselves, not under a
+    /// firewall check, IP not served yet. Empty when it passes, else the reason for the log.
+    [[nodiscard]] QString buddyServeRefusal(const Address& addr, uint16 tcpPort) const;
     void cleanUpBannedList();
     void cleanUpTrackedList();
 
@@ -337,6 +370,8 @@ private:
     std::time_t m_buddySince = 0;
     // host-order IP -> when its failed dial was noted
     std::unordered_map<uint32, std::time_t> m_failedBuddyCandidates;
+    // Some source waits for a buddy claim (UpDownClient::heldForBuddyClaim)
+    bool m_haveHeldSources = false;
 };
 
 } // namespace eMule

@@ -523,6 +523,10 @@ void Ed3kSession::onReadyRead()
         const QNetworkDatagram d = m_ownSocket->receiveDatagram();
         if (!d.isValid())
             break;
+        if (peerFiltered(d.senderAddress())) {
+            ++m_filtered;
+            continue;
+        }
         const QByteArray data = d.data();
         const auto ours = m_engine->datagramIn(now(), toAddress(d.senderAddress(), std::uint16_t(d.senderPort())),
                                                spanOf(data));
@@ -542,6 +546,9 @@ void Ed3kSession::onReadyRead()
 bool Ed3kSession::offerDatagram(const QNetworkDatagram& d)
 {
     if (!m_engine || m_ownSocket)
+        return false;
+    // the owner (ClientUDPSocket) drops it with its own filter check and counts it
+    if (peerFiltered(d.senderAddress()))
         return false;
     const QByteArray data = d.data();
     const auto ours = m_engine->datagramIn(now(), toAddress(d.senderAddress(), std::uint16_t(d.senderPort())), spanOf(data));
@@ -613,6 +620,7 @@ void Ed3kSession::dispatch(ffi::Event& ev, ffi::KeyKind key)
     } else if (const auto* h = std::get_if<e::HttpRequest>(&ev)) {
         // the Proxy page as it is now: a change needs no node restart (report 34)
         m_http->setProxy(toNetworkProxy(thePrefs.proxySettings()));
+        m_http->setReportProxy(m_hide->settings().reportProxy);
         m_http->start(*h);
         return;
     } else if (const auto* c = std::get_if<e::IoCancel>(&ev)) {
@@ -888,6 +896,11 @@ void Ed3kSession::writeDatagram(const char* data, qint64 len, const ffi::Address
     if (!m_socket)
         return;   // the shared socket went with the eD2K core
     const QHostAddress ip = toQHostAddress(to);
+    // nothing to a filtered address: the engine sees a lost datagram
+    if (peerFiltered(ip)) {
+        ++m_filtered;
+        return;
+    }
     // §8.3: global IPv6 peers see the address advertised; loopback, link-local and
     // unique-local ones get the system's source
     if (!m_ipv6Source.isNull() && !to.isV4() && Address::fromQHostAddress(ip).isPublicIP()) {

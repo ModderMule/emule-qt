@@ -410,6 +410,9 @@ void SharedFilesPanel::onFolderSelectionChanged()
     m_model->setBrowseMode(browse);
 
     if (browse) {
+        // The listing is the whole folder: drop the last node's filter (Incomplete,
+        // a category, another dir), or it hides every browsed row
+        m_proxy->setFolderFilter(SharedFilterType::AllShared, {}, false);
         requestBrowseDirectory(path);
         return;
     }
@@ -446,9 +449,8 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
     const std::vector<const SharedFileRow*> sel = rowsForHashes(hashes);
     const SharedFileRow* single = (singleSel && !sel.empty()) ? sel.front() : nullptr;
 
-    // A part file is an unfinished download: deleting it destroys the transfer, and it
-    // cannot be unshared either (MFC greys both, srchybrid/SharedFilesCtrl.cpp:768-769).
-    const bool allComplete = hasSel && std::ranges::none_of(sel, &SharedFileRow::isPartFile);
+    // A part file is an unfinished download: it cannot be unshared (MFC greys it,
+    // srchybrid/SharedFilesCtrl.cpp:768-769); Delete cancels it after asking.
     QStringList completeHashes;
     for (const SharedFileRow* f : sel) {
         if (!f->isPartFile)
@@ -509,12 +511,11 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
         act->setEnabled(hasSel);
     }
 
-    // Delete From Disk — every selected file must be complete, or an in-progress
-    // download would be destroyed (the daemon's handler has no such guard).
+    // Delete From Disk — unfinished files are cancelled downloads; the question says so
     {
         auto* act = m_contextMenu->addAction(menuIcon("Delete.ico"), tr("Delete From Disk"), this,
                                              [this, hashes]() { sendDeleteFilesBatch(hashes); });
-        act->setEnabled(hasSel && allComplete);
+        act->setEnabled(hasSel);
     }
 
     // Unshare — acts on the complete files in the selection; part files stay put.
@@ -1552,12 +1553,23 @@ void SharedFilesPanel::sendDeleteFilesBatch(const QStringList& hashes)
     if (hashes.isEmpty() || !m_ipc || !m_ipc->isConnected())
         return;
 
+    // Unfinished files are downloads: deleting one cancels it (its .part goes)
+    QStringList complete;
+    QStringList partial;
+    for (const QString& hash : hashes) {
+        const SharedFileRow* f = m_model->findByHash(hash);
+        (f && f->isPartFile ? partial : complete) << hash;
+    }
+
     const SharedFileRow* first = m_model->findByHash(hashes.value(0));
-    const QString question = (hashes.size() == 1)
+    QString question = (hashes.size() == 1)
         ? tr("Are you sure you want to permanently delete \"%1\" from disk?")
               .arg(first ? first->fileName : hashes.constFirst())
         : tr("Are you sure you want to permanently delete %n selected file(s) from disk?",
              nullptr, static_cast<int>(hashes.size()));
+    if (!partial.isEmpty())
+        question += QStringLiteral("\n\n") + tr("%n unfinished download(s) will be cancelled.", nullptr,
+                                     static_cast<int>(partial.size()));
 
     if (QMessageBox::warning(this,
                              hashes.size() == 1 ? tr("Delete File") : tr("Delete Files"),
@@ -1567,11 +1579,30 @@ void SharedFilesPanel::sendDeleteFilesBatch(const QStringList& hashes)
 
     logInfo(tr("Deleting %n shared file(s) from disk", nullptr, static_cast<int>(hashes.size())));
 
-    m_ipc->sendBatchRequest(hashes, [](const QString& hash) {
-        IpcMessage msg(IpcMsgType::DeleteSharedFile);
-        msg.append(hash);
-        return msg;
-    }, this, [this]() { requestSharedFiles(); });
+    // Failures were silent: name them in the log and the status bar
+    QPointer<SharedFilesPanel> self(this);
+    const auto onEach = [self](const QString& hash, const IpcMessage& reply) {
+        if (reply.type() == IpcMsgType::Result && reply.fieldBool(0))
+            return;
+        const SharedFileRow* f = self ? self->m_model->findByHash(hash) : nullptr;
+        const QString why = reply.isValid() ? reply.fieldString(1) : tr("not connected");
+        const QString text = tr("Could not delete \"%1\": %2").arg(f ? f->fileName : hash, why);
+        logWarning(text);
+        StatusBarNotifier::post(text, 8000);
+    };
+    const auto build = [](IpcMsgType type) {
+        return [type](const QString& hash) {
+            IpcMessage msg(type);
+            msg.append(hash);
+            return msg;
+        };
+    };
+    if (!complete.isEmpty())
+        m_ipc->sendBatchRequest(complete, build(IpcMsgType::DeleteSharedFile), this,
+                                [this]() { requestSharedFiles(); }, onEach);
+    if (!partial.isEmpty())
+        m_ipc->sendBatchRequest(partial, build(IpcMsgType::CancelDownload), this,
+                                [this]() { requestSharedFiles(); }, onEach);
 }
 
 void SharedFilesPanel::sendUnshareBatch(const QStringList& hashes)
@@ -2686,15 +2717,9 @@ void SharedFilesPanel::renameSelectedFile()
 
 void SharedFilesPanel::deleteSelectedFiles()
 {
-    // Part files are skipped, as in MFC (SharedFilesCtrl.cpp:936) — deleting one here
-    // would destroy an in-progress download. sendDeleteFilesBatch() asks first.
-    QStringList complete;
-    for (const QString& hash : selectedHashes()) {
-        if (const SharedFileRow* f = m_model->findByHash(hash); f && !f->isPartFile)
-            complete << hash;
-    }
-    if (!complete.isEmpty())
-        sendDeleteFilesBatch(complete);
+    // MFC skips part files here (SharedFilesCtrl.cpp:936), silently — the key looked
+    // broken. Here they are cancelled, after the question in sendDeleteFilesBatch().
+    sendDeleteFilesBatch(selectedHashes());
 }
 
 void SharedFilesPanel::moveEd3kKey(const QStringList& hashes, bool toAnon)

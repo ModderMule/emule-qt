@@ -51,9 +51,12 @@ class FirstStartWizard;
 class IpcClient;
 class IrcPanel;
 class SpeedGraph;
+class SpeedLimitPopup;
 class ToolbarButtonSizer;
 class TrayMenuManager;
 class VersionChecker;
+class SkinBrowserDialog;
+class SkinInstaller;
 class ClickNLoadServer;
 class KadPanel;
 class MessagesPanel;
@@ -158,6 +161,11 @@ public:
 
     /// Open the Options dialog, optionally at a specific page index.
     void showOptionsDialog(int page = -1);
+    /// Options asked for from outside the window (tray, MiniMule, speed pop-up): the app
+    /// and its window come to the front first, else macOS only bounces the Dock icon.
+    void showOptionsFromOutside(int page = -1);
+    /// Status bar speed icon tooltip: the limits in force
+    void updateSpeedLimitTip();
 
     /// Set the IPC client (needed for Options dialog).
     void setIpcClient(IpcClient* ipc);
@@ -362,6 +370,14 @@ private:
     void clearToolbarSkin();
     QString skinsDir() const;
     void applySkinProfile(const QString& path);
+    /// Browse Skins window (toolbar context menu)
+    void openSkinBrowser();
+    /// Installed manifest skin @p id: its profile + toolbar strip
+    void applyInstalledSkin(const QString& id);
+    /// No profile, no toolbar strip
+    void restoreDefaultSkin();
+    /// SkinInstaller done: an updated active skin is applied again
+    void onSkinInstalled(const QString& id, bool ok);
     void setupStatusBar();
     /// m_statusFreeSpace for the current page: torrent, Usenet, hoster or incoming folder
     void updateFreeSpaceLabel();
@@ -406,6 +422,8 @@ private:
     /// Skin profile [Icons] changed: redraw what holds a copy of an icon.
     void refreshSkinIcons();
     void showChatState(int state);
+    /// Status bar speed pop-up, made on first use
+    void showSpeedPopup();
 
     /// Ask the daemon for toolbar-graph samples newer than m_speedSeq.
     void pollSpeedHistory();
@@ -456,6 +474,8 @@ private:
     QLabel* m_statusKad = nullptr;
     QLabel* m_statusEd3k = nullptr;   ///< ed3k node, hidden while off
     Ed3kStatusIcon* m_statusEd3kIcon = nullptr;   ///< globe + arrow in front of m_statusEd3k
+    QLabel* m_statusSpeed = nullptr;  ///< speed limits; double-click opens m_speedPopup
+    SpeedLimitPopup* m_speedPopup = nullptr;
     QLabel* m_statusChat = nullptr;   ///< unread-message icon, MFC SBarChatMsg
     int m_statusChatState = 0;        ///< 0 none, 1 new, 2 pending (blink)
     QLabel* m_statusAttach = nullptr;   ///< core attached/detached (#106)
@@ -463,6 +483,9 @@ private:
 
     // Version checker
     VersionChecker* m_versionChecker = nullptr;
+    // Manifest skins: install/auto-update, Browse Skins window
+    SkinInstaller* m_skinInstaller = nullptr;
+    QPointer<SkinBrowserDialog> m_skinBrowser;
 
     // Clipboard monitoring (MFC SearchClipboard equivalent)
     QString m_lastClipboardContents;
@@ -526,6 +549,7 @@ private:
     // What the tray icon currently shows, so an unchanged picture costs nothing.
     int     m_trayMeterLevel = -1;
     QString m_trayIconPath;
+    int m_dockLowId = -1;   // dock icon state, -1 = not set yet
     QColor  m_trayMeterColor;
     QString m_trayToolTip;
 

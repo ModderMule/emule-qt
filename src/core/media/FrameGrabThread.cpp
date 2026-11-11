@@ -71,7 +71,7 @@ void FrameGrabWorker::grabFrames(eMule::FrameGrabRequest request)
         }
 
         if (!loaded && !loadError) {
-            QTimer::singleShot(10'000, &loop, &QEventLoop::quit); // 10s timeout
+            QTimer::singleShot(request.loadTimeoutMs, &loop, &QEventLoop::quit);
             loop.exec();
         }
 
@@ -84,7 +84,9 @@ void FrameGrabWorker::grabFrames(eMule::FrameGrabRequest request)
         }
     }
 
-    const qint64 durationMs = player.duration();
+    qint64 durationMs = player.duration();
+    if (request.spanFraction > 0.0 && request.spanFraction < 1.0)
+        durationMs = static_cast<qint64>(double(durationMs) * request.spanFraction);
     if (durationMs <= 0) {
         emit error(QStringLiteral("Cannot determine media duration: %1").arg(request.filePath));
         return;

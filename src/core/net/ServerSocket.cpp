@@ -144,6 +144,7 @@ void ServerSocket::sendPacket(std::unique_ptr<Packet> packet, bool controlPacket
         stats->addUpDataOverheadServer(packet->size);
 
     m_lastTransmission = getTickCount();
+    m_lastSent = m_lastTransmission;
     EMSocket::sendPacket(std::move(packet), controlPacket, actualPayloadSize, forceImmediateSend);
 }
 
@@ -796,6 +797,7 @@ void ServerSocket::onSocketConnected()
                 .arg(Endpoint(Address::fromQHostAddress(peerAddress()), peerPort()).toString())
                 .arg(isServerCryptEnabledConnection()));
     m_lastTransmission = getTickCount();
+    m_lastSent = m_lastTransmission;
 
     if (isServerCryptEnabledConnection()) {
         // Defer WaitForLogin until DH handshake completes —

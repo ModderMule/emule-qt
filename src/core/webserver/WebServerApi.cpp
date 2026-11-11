@@ -134,8 +134,8 @@ using L = QLatin1StringView;
     if (capped) {
         o.insert(s("hint"),
                  s("Download limited to %1 KB/s by the upload limit of %2 KB/s: below 20 KB/s "
-                   "upload the download may be at most %3x the upload (3x under 4 KB/s, 4x up "
-                   "to 12 KB/s, 5x above). Set the upload limit to 20 KB/s or more to lift it.")
+                   "upload the download may be at most %3x the upload (3x under 4 KB/s, 4x under "
+                   "10 KB/s, 5x above). Set the upload limit to 20 KB/s or more to lift it.")
                      .arg(effectiveKb).arg(upKb).arg(capBytes / (uint64{upKb} * 1024)));
     }
     return o;
@@ -1295,8 +1295,8 @@ void WebServer::buildApiTable()
                             "(interface missing: nothing connects until it appears). "
                             "\"downloadLimit\": {configuredKb, effectiveKb, ratioCapped, hint?} "
                             "is the download limit in force (KB/s, 0 = unlimited): with an upload "
-                            "limit under 20 KB/s the download is capped at 3x (under 4), 4x (up "
-                            "to 12) or 5x the upload; \"hint\" explains it when that cap applies.");
+                            "limit under 20 KB/s the download is capped at 3x (under 4), 4x (under "
+                            "10) or 5x the upload; a change to either limit is held to that ratio; \"hint\" explains it when that cap applies.");
         op.flags = FreeBody;
         op.mcpTool = s("preferences_set");
         op.handler = [this](const Call& c) {

@@ -2324,6 +2324,15 @@ and refuses the incoming directory outright, because `isShareableDirectory()`
 excludes it. Using the wrong one logs a warning and shares nothing until the next
 full rescan. `tst_UsenetSharing` covers all of it.
 
+**`usenetShareFiles`** (YAML `usenet: shareFiles`, default on; Options → Usenet →
+"Share finished downloads on eD2K and Kad"). The queue emits
+`UsenetQueue::filesPublished` for every release; the daemon remembers the paths in
+`Config/Usenet/landed.txt` (`LandedFiles`, seeded once from the queue's
+`publishedPaths`) whether sharing is on or not. Off: the queue skips
+`shareCompletedFile()` and `SharedFileList::setNeverShared` (`DaemonApp::neverShared`)
+keeps the remembered files out of eD2K/Kad and ed3k, earlier downloads included.
+Switching off drops them at once, on rescans them in.
+
 ## Bandwidth
 
 There is no download-side throttler in the repo: `UploadBandwidthThrottler` and

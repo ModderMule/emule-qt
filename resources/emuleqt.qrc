@@ -155,6 +155,12 @@
         <file alias="app/emuleqt-64.png">icons/app/emuleqt-64.png</file>
         <file alias="app/emuleqt-128.png">icons/app/emuleqt-128.png</file>
         <file alias="app/emuleqt-256.png">icons/app/emuleqt-256.png</file>
+        <file alias="app/emuleqt-lowid-16.png">icons/app/emuleqt-lowid-16.png</file>
+        <file alias="app/emuleqt-lowid-32.png">icons/app/emuleqt-lowid-32.png</file>
+        <file alias="app/emuleqt-lowid-48.png">icons/app/emuleqt-lowid-48.png</file>
+        <file alias="app/emuleqt-lowid-64.png">icons/app/emuleqt-lowid-64.png</file>
+        <file alias="app/emuleqt-lowid-128.png">icons/app/emuleqt-lowid-128.png</file>
+        <file alias="app/emuleqt-lowid-256.png">icons/app/emuleqt-lowid-256.png</file>
         <!-- Tray icons -->
         <file alias="TrayConnected.ico">icons/TrayConnected.ico</file>
         <file alias="TrayDisconnected.ico">icons/TrayDisconnected.ico</file>

@@ -121,6 +121,38 @@ std::optional<QColor> SkinEngine::color(const QString& key) const
     return it.value();
 }
 
+QString SkinEngine::profileValue(const QString& iniPath, const QString& key)
+{
+    QFile file(iniPath);
+    if (iniPath.isEmpty() || !file.open(QIODevice::ReadOnly))
+        return {};
+    const auto sections = parseIni(decodeIni(file.readAll()));
+    const QString k = key.toLower();
+    if (const QString v = sections.value(QStringLiteral("skin")).value(k); !v.isEmpty())
+        return v;
+    for (const auto& values : sections) {
+        if (const QString v = values.value(k); !v.isEmpty())
+            return v;
+    }
+    return {};
+}
+
+QString SkinEngine::previewImage(const QString& iniPath)
+{
+    if (iniPath.isEmpty())
+        return {};
+    const QDir dir = QFileInfo(iniPath).absoluteDir();
+    if (const QString path = dir.filePath(QStringLiteral("preview/overview.png"));
+        QImageReader(path).canRead())
+        return path;
+    QString spec = profileValue(iniPath, QStringLiteral("Preview"));
+    if (spec.isEmpty())
+        return {};
+    spec.replace(QLatin1Char('\\'), QLatin1Char('/'));
+    const QString path = QDir::isAbsolutePath(spec) ? spec : dir.filePath(spec);
+    return QImageReader(path).canRead() ? path : QString{};
+}
+
 QHash<QString, QHash<QString, QString>> SkinEngine::parseIni(const QString& text)
 {
     // Not QSettings: it splits values at commas ("255,0,0", "file.dll,3") and treats

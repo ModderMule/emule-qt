@@ -26,6 +26,7 @@
 #include "utils/StatusBarNotifier.h"
 #include "utils/ContainerDrop.h"
 #include "utils/TorrentLinks.h"
+#include "utils/ModalHost.h"
 
 #include <QDesktopServices>
 #include <QEvent>
@@ -565,7 +566,7 @@ void ExternalLinkHandler::tellEd3kSetVersion(const Ipc::IpcMessage& msg)
         if (b == show && window && ipc)
             Ed3kSetsDialog::showDialog(window, ipc)->selectSet(id);
     });
-    box->open();
+    ModalHost::open(box);
 }
 
 void ExternalLinkHandler::openEd3kFriend(const QString& link)

@@ -4,6 +4,7 @@
 #include "app/IpcClient.h"
 #include "utils/NzbAdd.h"
 #include "utils/StatusBarNotifier.h"
+#include "utils/ScrollMessageBox.h"
 
 #include <QCoreApplication>
 #include <QMessageBox>
@@ -73,7 +74,7 @@ void AddNzbUrlDialog::onAccepted()
             return;
         }
 
-        QMessageBox::warning(self, tr("Add NZB from URL"),
+        ScrollMessageBox::warning(self, tr("Add NZB from URL"),
                              tr("These links could not be added:\n\n%1")
                                  .arg(failures->join(QLatin1Char('\n'))));
 
@@ -145,7 +146,7 @@ void AddNzbUrlDialog::onAccepted()
             // One question for the whole paste. Asking per URL would put a modal
             // in front of the user once per line of something they pasted once.
             const bool again =
-                QMessageBox::question(
+                ScrollMessageBox::question(
                     self, tr("Add NZB from URL"),
                     tr("You have already downloaded %n of these. Download them again?\n\n%1",
                        "", static_cast<int>(alreadyHave->size()))

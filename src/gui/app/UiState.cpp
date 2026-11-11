@@ -21,6 +21,7 @@
 #include "utils/Log.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <limits>
 
 namespace eMule {
@@ -134,10 +135,14 @@ void UiState::load(const QString& configDir)
         m_showCountryFlags = root["showCountryFlags"].as<bool>(m_showCountryFlags);
         m_showTaskbarProgress = root["showTaskbarProgress"].as<bool>(m_showTaskbarProgress);
         m_showDownloadStatusFilter = root["showDownloadStatusFilter"].as<bool>(m_showDownloadStatusFilter);
-        m_downloadSecondarySort = root["downloadSecondarySort"].as<bool>(m_downloadSecondarySort);
-        m_downloadSecondarySortColumn = root["downloadSecondarySortColumn"].as<int>(m_downloadSecondarySortColumn);
-        m_downloadSecondarySortOrder = root["downloadSecondarySortDescending"].as<bool>(false)
-            ? Qt::DescendingOrder : Qt::AscendingOrder;
+        m_downloadSortHistory = root["downloadSortHistory"].as<bool>(m_downloadSortHistory);
+        // column + 1, negative = descending
+        m_downloadSortHistoryKeys.clear();
+        for (int v : readIntList(root, "downloadSortHistoryKeys")) {
+            if (v != 0)
+                m_downloadSortHistoryKeys.append({std::abs(v) - 1,
+                                                  v < 0 ? Qt::DescendingOrder : Qt::AscendingOrder});
+        }
         m_showTorrentStatusFilter = root["showTorrentStatusFilter"].as<bool>(m_showTorrentStatusFilter);
         m_showHosterStatusFilter = root["showHosterStatusFilter"].as<bool>(m_showHosterStatusFilter);
         m_downloadStatusFilter = root["downloadStatusFilter"].as<int>(m_downloadStatusFilter);
@@ -286,10 +291,13 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "showCountryFlags" << YAML::Value << m_showCountryFlags;
     out << YAML::Key << "showTaskbarProgress" << YAML::Value << m_showTaskbarProgress;
     out << YAML::Key << "showDownloadStatusFilter" << YAML::Value << m_showDownloadStatusFilter;
-    out << YAML::Key << "downloadSecondarySort" << YAML::Value << m_downloadSecondarySort;
-    out << YAML::Key << "downloadSecondarySortColumn" << YAML::Value << m_downloadSecondarySortColumn;
-    out << YAML::Key << "downloadSecondarySortDescending" << YAML::Value
-        << (m_downloadSecondarySortOrder == Qt::DescendingOrder);
+    out << YAML::Key << "downloadSortHistory" << YAML::Value << m_downloadSortHistory;
+    {
+        QList<int> keys;
+        for (const auto& [column, order] : m_downloadSortHistoryKeys)
+            keys.append(order == Qt::DescendingOrder ? -(column + 1) : column + 1);
+        writeIntList(out, "downloadSortHistoryKeys", keys);
+    }
     out << YAML::Key << "showTorrentStatusFilter" << YAML::Value << m_showTorrentStatusFilter;
     out << YAML::Key << "showHosterStatusFilter" << YAML::Value << m_showHosterStatusFilter;
     out << YAML::Key << "downloadStatusFilter" << YAML::Value << m_downloadStatusFilter;

@@ -1199,6 +1199,9 @@
     <ClInclude Include="prefs\NewsServer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="prefs\SpeedRules.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="prefs\UsenetSubjectPattern.h">
       <Filter>Header Files</Filter>
     </ClInclude>

@@ -566,7 +566,7 @@ void CoreSession::onTimer()
             && m_tickCounter - m_lastStatsFlushTick >= interval * 10) {
             m_lastStatsFlushTick = m_tickCounter;
             flushCumulativeStats(thePrefs);
-            thePrefs.save();
+            thePrefs.saveInBackground();   // fsync off the main thread (#169)
         }
     }
 }
@@ -684,6 +684,14 @@ void CoreSession::initServerConnect()
     if (theApp.ipFilter)
         connect(theApp.ipFilter, &IPFilter::filterLoaded, m_serverList.get(),
                 [list = m_serverList.get()](int) { list->removeFilteredServers(); });
+    // 1a'. Any filter change cuts connected peers it blocks now (#177): accept and
+    // connect check the filter, an open connection never did again. Queued: a reload
+    // clears first, and the IPC handler that edits the list is still running.
+    if (theApp.ipFilter)
+        connect(theApp.ipFilter, &IPFilter::filterChanged, m_serverList.get(), [] {
+            if (theApp.clientList)
+                theApp.clientList->disconnectFilteredClients();
+        }, Qt::QueuedConnection);
 
     // 1b. Auto-update server list from URL if configured
     if (thePrefs.autoUpdateServerList() && !thePrefs.serverListURL().isEmpty())

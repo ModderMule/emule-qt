@@ -6,7 +6,8 @@
 /// The daemon finds the installs on its own host (discover()). Settings go through
 /// a request file in the config dir and a core restart: run() carries it out before
 /// anything reads the config dir, so known.met, credits and the user hash load as
-/// copied. Data files already there are moved to a backup folder first. The old temp
+/// copied. Data files already there are moved to a backup folder first; the settings
+/// files (preferences.yml, uistate.yml, preferences.ini) are copied there too. The old temp
 /// dirs are handed to PartFileConvert once the daemon runs. The source is only read,
 /// so the old client keeps working.
 
@@ -67,8 +68,9 @@ struct Outcome {
     Result result = Result::NoRequest;
     QString sourceDir;
     int filesCopied = 0;
-    int filesBackedUp = 0;
-    QString backupDir;      ///< where this profile's own data files went, if any
+    int filesBackedUp = 0;      ///< own data files moved aside (replaced by the source's)
+    int settingsBackedUp = 0;   ///< preferences.yml, uistate.yml, preferences.ini copied
+    QString backupDir;      ///< where this profile's own files went, if any
     int prefsApplied = 0;
     int categories = 0;     ///< without the implicit "All"
     int sharedDirs = 0;

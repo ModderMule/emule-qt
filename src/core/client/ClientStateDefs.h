@@ -56,7 +56,8 @@ enum class KadState : uint8 {
     ConnectedBuddy,
     QueuedFwCheckUDP,
     FwCheckUDP,
-    ConnectingFwCheckUDP
+    ConnectingFwCheckUDP,
+    ClaimingBuddy           // not MFC: OP_BUDDYCLAIM sent over an open link, awaiting the answer
 };
 
 enum class ClientSoftware : uint8 {

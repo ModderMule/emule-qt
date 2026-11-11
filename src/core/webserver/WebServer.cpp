@@ -2906,7 +2906,7 @@ QHttpServerResponse WebServer::renderPage(const QString& page, const QString& se
     else if (page == QStringLiteral("usenet"))
         content = buildUsenetPage(isAdmin, sessionId, query);
     else if (page == QStringLiteral("torrents"))
-        content = buildTorrentsPage(isAdmin);
+        content = buildTorrentsPage(isAdmin, query);
     else if (page == QStringLiteral("hoster"))
         content = buildHosterPage(isAdmin);
     else
@@ -3562,6 +3562,30 @@ QString torrentStatusName(const QCborMap& row)
     }
 }
 
+/// A torrent file's priority, the Qt Files tab's words.
+QString torrentFilePriorityText(int priority)
+{
+    if (priority <= 0)
+        return WebServer::tr("Skip");
+    if (priority <= 2)
+        return WebServer::tr("Low");
+    if (priority <= 4)
+        return WebServer::tr("Normal");
+    if (priority <= 6)
+        return WebServer::tr("High");
+    return WebServer::tr("Maximum");
+}
+
+/// Share of a file's pieces peers have, qBittorrent style; below 0 = N/A (seeding).
+QString torrentAvailabilityText(double availability)
+{
+    if (availability < 0)
+        return WebServer::tr("N/A");
+    if (availability >= 1.0)
+        return QStringLiteral("100%");
+    return QString::number(100.0 * availability, 'f', 1) + QLatin1Char('%');
+}
+
 /// A GetHosterItems row's state, as words (Ed3kHosterJoin::State values).
 QString hosterStatusName(int state)
 {
@@ -3603,7 +3627,7 @@ QString hosterStatusName(int state)
 
 } // namespace
 
-QString WebServer::buildTorrentsPage(bool isAdmin)
+QString WebServer::buildTorrentsPage(bool isAdmin, const QUrlQuery& query)
 {
     if (!m_torrentBackend || !m_torrentBackend->running())
         return WebTemplateEngine::substitute(m_templateEngine->section(QStringLiteral("TORRENTS_UNAVAILABLE")));
@@ -3627,6 +3651,8 @@ QString WebServer::buildTorrentsPage(bool isAdmin)
         up += r.value(QStringLiteral("rateUp")).toInteger();
         QHash<QString, QString> v;
         v[QStringLiteral("TorrentId")] = htmlText(r.value(QStringLiteral("id")).toString());
+        v[QStringLiteral("TorrentIdUrl")] = htmlText(QString::fromLatin1(
+            QUrl::toPercentEncoding(r.value(QStringLiteral("id")).toString())));
         v[QStringLiteral("TorrentName")] = htmlText(r.value(QStringLiteral("name")).toString());
         v[QStringLiteral("TorrentTitle")] = htmlText(r.value(QStringLiteral("savePath")).toString());
         v[QStringLiteral("TorrentSize")] = size > 0 ? formatByteSize(size) : QString();
@@ -3650,6 +3676,8 @@ QString WebServer::buildTorrentsPage(bool isAdmin)
         tr("%n torrent(s)", nullptr, int(rows.size())) + QStringLiteral(" — ")
         + tr("Down: %1, up: %2").arg(formatByteRate(double(down)), formatByteRate(double(up))));
     vars[QStringLiteral("TorrentLines")] = lines;
+    vars[QStringLiteral("TorrentFiles")] =
+        buildTorrentFiles(query.queryItemValue(QStringLiteral("id"), QUrl::FullyDecoded));
     return WebTemplateEngine::substitute(m_templateEngine->section(QStringLiteral("TORRENTS")), vars);
 }
 
@@ -5215,6 +5243,46 @@ QString WebServer::languageOptions(const QString& sessionId) const
             html += option(lang.code, lang.label);
     }
     return html;
+}
+
+QString WebServer::buildTorrentFiles(const QString& id)
+{
+    if (id.isEmpty())
+        return {};
+    const QCborMap d = m_torrentBackend->details(id);
+    const QCborMap row = m_torrentBackend->torrent(id);
+    if (d.isEmpty() || row.isEmpty())
+        return {};
+
+    const QString lineTmpl = m_templateEngine->section(QStringLiteral("TORRENT_FILE_LINE"));
+    QString lines;
+    for (const auto& fv : d.value(QStringLiteral("files")).toArray()) {
+        const QCborMap f = fv.toMap();
+        if (f.value(QStringLiteral("pad")).toBool())
+            continue;   // alignment padding, not a real file
+        const QString path = f.value(QStringLiteral("path")).toString();
+        const qint64 size = f.value(QStringLiteral("size")).toInteger();
+        const int priority = int(f.value(QStringLiteral("priority")).toInteger(4));
+        QHash<QString, QString> v;
+        v[QStringLiteral("TorrentFileName")] = htmlText(path.section(QLatin1Char('/'), -1));
+        v[QStringLiteral("TorrentFileTitle")] = htmlText(path);
+        v[QStringLiteral("TorrentFileType")] = webFileTypeToken(path);
+        v[QStringLiteral("TorrentFileSize")] = formatByteSize(size);
+        v[QStringLiteral("TorrentFilePercent")] =
+            percentText(f.value(QStringLiteral("done")).toInteger(), size);
+        v[QStringLiteral("TorrentFilePriority")] = htmlText(torrentFilePriorityText(priority));
+        v[QStringLiteral("TorrentFileClass")] = priority <= 0 ? QStringLiteral("tf-skip") : QString();
+        v[QStringLiteral("TorrentFileAvailability")] = htmlText(
+            torrentAvailabilityText(f.value(QStringLiteral("availability")).toDouble(-1.0)));
+        lines += WebTemplateEngine::substitute(lineTmpl, v);
+    }
+
+    QHash<QString, QString> vars;
+    vars[QStringLiteral("TorrentName")] = htmlText(row.value(QStringLiteral("name")).toString());
+    vars[QStringLiteral("TorrentIdUrl")] = htmlText(QString::fromLatin1(QUrl::toPercentEncoding(id)));
+    vars[QStringLiteral("TorrentFileLines")] = lines;
+    return WebTemplateEngine::substitute(m_templateEngine->section(QStringLiteral("TORRENT_FILES")),
+                                         vars);
 }
 
 } // namespace eMule

@@ -93,6 +93,9 @@ public:
     /// getTickCount() of the last packet sent or received.
     [[nodiscard]] uint64 lastTransmission() const { return m_lastTransmission; }
 
+    /// getTickCount() of the last packet we sent (servers reap on client silence only).
+    [[nodiscard]] uint64 lastSent() const { return m_lastSent; }
+
     /// Whether this is a manually-initiated single-server connection.
     [[nodiscard]] bool isManualSingleConnect() const { return m_manualSingleConnect; }
 
@@ -240,6 +243,7 @@ private:
     ServerConnState m_connectionState = ServerConnState::NotConnected;
     ServerFailure m_lastFailure;
     uint64 m_lastTransmission = 0;
+    uint64 m_lastSent = 0;
     bool m_manualSingleConnect = false;
     bool m_startNewMessageLog = true;
     QString m_loginRejectReason;

@@ -165,8 +165,10 @@ public:
     /// §9.2 (#11): polls pass_url of the offer for the pass held now (a by-hand one too: the
     /// user asked; it shows an address to the seller). The error is user-visible.
     std::expected<void, QString> renewNow(const QString& scopeHex);
-    /// §7: a paid channel watched (Ed3kLive); followed while watched only.
-    void followChannel(const ::ed3k::Key32& key, const ::ed3k::Scope& scope, const QString& title);
+    /// §7: a paid channel watched (Ed3kLive); followed while watched only, under the key the
+    /// stream is watched under (@p use; hops.md §1).
+    void followChannel(const ::ed3k::Key32& key, const ::ed3k::Scope& scope, const QString& title,
+                       ::ed3k::KeyKind use = ::ed3k::KeyKind::Node);
     void leaveChannel(const ::ed3k::Scope& scope);
     /// nullopt: no paid live link (no `paid=1`, or not one).
     [[nodiscard]] static std::optional<ChannelLink> channelOfLink(const QString& link);

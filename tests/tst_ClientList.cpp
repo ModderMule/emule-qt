@@ -10,6 +10,7 @@
 #include "files/PartFile.h"
 #include "kademlia/KadIO.h"
 #include "kademlia/KadPrefs.h"
+#include "prefs/Preferences.h"
 #include "transfer/DownloadQueue.h"
 #include "utils/SafeFile.h"
 #include "net/Address.h"
@@ -121,6 +122,10 @@ private slots:
     void servedBuddies_droppedWhenWeNeedABuddy();
     void servedBuddies_droppedWhenKadLosesContact();
     void servedBuddies_refusedWhileWeUseABuddy();
+    // OP_BUDDYCLAIM: buddy offer from ExtSX claimed over the open link
+    void tcpBuddyClaim_servedOverTheOpenLink();
+    void tcpBuddyClaim_answerEndsTheClaim();
+    void tcpBuddyClaim_takeGatesAndTimeout();
 
     // The reaper and the chat state — MFC CClientList::Process()
     void process_reapsAChatterOnceTheSessionEnds();
@@ -1561,6 +1566,212 @@ void tst_ClientList::servedBuddies_refusedWhileWeUseABuddy()
     QVERIFY(!list.incomingBuddy(0x4D070851, 4662, 4672, id, id));
 
     list.deleteAll();
+}
+
+// ---------------------------------------------------------------------------
+// OP_BUDDYCLAIM — docs/protocol/extxs-buddy-route.md
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Open on Kad with UDP verified: what buddyOfferPort() asks of the serving side. Own IPs:
+/// the tester keeps its used-client list across reset() and ignores a second answer.
+void verifyOpenUdp()
+{
+    kad::UDPFirewallTester::reset();
+    kad::UDPFirewallTester::debugAddUsedTestClient(0x0A0000F1, 4672);
+    kad::UDPFirewallTester::setUDPFWCheckResult(true, false, 0x0A0000F1, 4672);
+    kad::UDPFirewallTester::debugAddUsedTestClient(0x0A0000F2, 4672);
+    kad::UDPFirewallTester::setUDPFWCheckResult(true, false, 0x0A0000F2, 4672);
+}
+
+UpDownClient* makeClaimClient(ClientList& list, const char* ip, uint32 hybridId, uint16 port = 4662)
+{
+    auto* c = new UpDownClient();
+    const Address addr = Address::fromString(QLatin1StringView(ip));
+    c->setUserAddress(addr);
+    c->setConnectAddress(addr);
+    c->setUserIDHybrid(hybridId == 0 ? addr.toUint32() : hybridId);   // 0 = HighID at its IP
+    c->setUserPort(port);
+    c->setKadPort(4672);
+    c->setKadVersion(9);
+    list.addClient(c);
+    return c;
+}
+
+} // namespace
+
+void tst_ClientList::tcpBuddyClaim_servedOverTheOpenLink()
+{
+    eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Connected);
+    verifyOpenUdp();
+    const uint16 savedUdp = thePrefs.udpPort();
+    thePrefs.setUdpPort(4672);   // our Kad port: what the offer advertises
+    const auto resetTester = qScopeGuard([savedUdp] {
+        kad::UDPFirewallTester::reset();
+        thePrefs.setUdpPort(savedUdp);
+    });
+    QVERIFY(kad::UDPFirewallTester::isVerified());
+    QVERIFY(UpDownClient::ownAdvertisedKadPort() != 0);
+
+    ClientList list;
+    theApp.clientList = &list;
+    const auto restore = qScopeGuard([&list] { theApp.clientList = nullptr; list.deleteAll(); });
+
+    const uint8 id1[16] = {0xC1, 0x01};
+    const uint8 id2[16] = {0xC1, 0x02};
+
+    // A known LowID on Kad without buddy: served at once, no new client
+    auto* first = makeClaimClient(list, "77.1.1.1", 0x201);
+    QCOMPARE(list.acceptBuddyClaim(*first, id1), uint8{0});
+    QVERIFY(first->isServedBuddy());
+    QCOMPARE(first->kadState(), KadState::ConnectedBuddy);
+    QVERIFY(md4equ(first->buddyID(), id1));
+    QCOMPARE(list.servedBuddyCount(), 1);
+    QCOMPARE(list.clientCount(), 1);
+
+    // Same IP, other port: one served buddy per IP
+    auto* sameIp = makeClaimClient(list, "77.1.1.1", 0x202, 4663);
+    QCOMPARE(list.acceptBuddyClaim(*sameIp, id2), uint8{BUDDYCLAIM_REFUSE_DUP});
+    // Same buddy ID from another IP
+    auto* sameId = makeClaimClient(list, "77.1.1.3", 0x203);
+    QCOMPARE(list.acceptBuddyClaim(*sameId, id1), uint8{BUDDYCLAIM_REFUSE_DUP});
+    QVERIFY(!sameId->isServedBuddy());
+
+    // Not eligible: HighID, busy in another Kad state, no Kad port, no Kad version
+    auto* high = makeClaimClient(list, "77.1.1.4", 0);
+    QCOMPARE(list.acceptBuddyClaim(*high, id2), uint8{BUDDYCLAIM_REFUSE_STATE});
+    auto* busy = makeClaimClient(list, "77.1.1.5", 0x205);
+    busy->setKadState(KadState::QueuedFwCheck);
+    QCOMPARE(list.acceptBuddyClaim(*busy, id2), uint8{BUDDYCLAIM_REFUSE_STATE});
+    QCOMPARE(busy->kadState(), KadState::QueuedFwCheck);
+    auto* noKadPort = makeClaimClient(list, "77.1.1.6", 0x206);
+    noKadPort->setKadPort(0);
+    QCOMPARE(list.acceptBuddyClaim(*noKadPort, id2), uint8{BUDDYCLAIM_REFUSE_STATE});
+    auto* noKadVer = makeClaimClient(list, "77.1.1.7", 0x207);
+    noKadVer->setKadVersion(0);
+    QCOMPARE(list.acceptBuddyClaim(*noKadVer, id2), uint8{BUDDYCLAIM_REFUSE_STATE});
+
+    // A short claim packet is dropped without an answer or state change
+    auto* shortClaim = makeClaimClient(list, "77.1.1.8", 0x208);
+    const uint8 bare[] = {BUDDYCLAIM_CLAIM, 0x01};
+    shortClaim->processBuddyClaim(bare, sizeof(bare));
+    QVERIFY(!shortClaim->isServedBuddy());
+
+    // The full packet path serves the next one
+    auto* viaPacket = makeClaimClient(list, "77.1.1.9", 0x209);
+    uint8 claim[17] = {BUDDYCLAIM_CLAIM};
+    std::memcpy(claim + 1, id2, 16);
+    viaPacket->processBuddyClaim(claim, sizeof(claim));
+    QVERIFY(viaPacket->isServedBuddy());
+    QCOMPARE(viaPacket->kadState(), KadState::ConnectedBuddy);
+}
+
+void tst_ClientList::tcpBuddyClaim_answerEndsTheClaim()
+{
+    eMule::testing::KadFixture kadFixture;   // firewalled
+    kadFixture.kadPrefs().setLastContact();
+    kad::UDPFirewallTester::reset();
+
+    ClientList list;
+    theApp.clientList = &list;
+    const auto restore = qScopeGuard([&list] { theApp.clientList = nullptr; list.deleteAll(); });
+
+    const uint8 accept[] = {BUDDYCLAIM_ACCEPT};
+    const uint8 refuse[] = {BUDDYCLAIM_REFUSE, BUDDYCLAIM_REFUSE_BUSY};
+
+    // Refused: failed candidate for an hour, the held source is let go
+    auto* refuser = makeClaimClient(list, "88.1.1.3", 0);
+    refuser->setKadState(KadState::ClaimingBuddy);
+    auto* held = makeClaimClient(list, "88.2.2.2", 0x302);
+    list.holdForBuddyClaim(*held);
+    QVERIFY(list.buddyClaimPending());
+    refuser->processBuddyClaim(refuse, sizeof(refuse));
+    QCOMPARE(refuser->kadState(), KadState::None);
+    QVERIFY(list.isFailedBuddyCandidate(refuser->connectAddress().toUint32()));
+    QVERIFY(!held->heldForBuddyClaim());
+    QVERIFY(!list.buddyClaimPending());
+
+    // An answer without our claim is ignored
+    auto* stranger = makeClaimClient(list, "88.1.1.2", 0);
+    stranger->processBuddyClaim(accept, sizeof(accept));
+    QCOMPARE(stranger->kadState(), KadState::None);
+    QCOMPARE(list.getBuddy(), nullptr);
+
+    // Accepted: our buddy now, before the next processKadList pass, and the hold ends
+    auto* offerer = makeClaimClient(list, "88.1.1.1", 0);
+    offerer->setKadState(KadState::ClaimingBuddy);
+    list.holdForBuddyClaim(*held);
+    offerer->processBuddyClaim(accept, sizeof(accept));
+    QCOMPARE(offerer->kadState(), KadState::ConnectedBuddy);
+    QCOMPARE(list.getBuddy(), offerer);
+    QCOMPARE(list.buddyStatus(), BuddyStatus::Connected);
+    QVERIFY(!offerer->isServedBuddy());
+    QVERIFY(!held->heldForBuddyClaim());
+
+    list.processKadList();
+    QCOMPARE(list.getBuddy(), offerer);
+    QCOMPARE(offerer->kadState(), KadState::ConnectedBuddy);
+}
+
+void tst_ClientList::tcpBuddyClaim_takeGatesAndTimeout()
+{
+    eMule::testing::KadFixture kadFixture;   // firewalled
+    kadFixture.kadPrefs().setLastContact();
+    kad::UDPFirewallTester::reset();
+
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    auto* link = new ClientReqSocket();
+    link->connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(link->waitForConnected(5000));
+    QCoreApplication::processEvents();
+
+    ClientList list;
+    auto* offerer = makeClaimClient(list, "88.3.3.1", 0);
+    auto* second = makeClaimClient(list, "88.3.3.2", 0);
+    const auto restore = qScopeGuard([&] {
+        offerer->setSocket(nullptr);
+        second->setSocket(nullptr);
+        list.deleteAll();
+        link->deleteLater();
+        QCoreApplication::processEvents();
+    });
+
+    // No open link: nothing to claim over
+    QVERIFY(!list.takeBuddyOffer(*offerer, 4673));
+    QCOMPARE(offerer->kadState(), KadState::None);
+
+    offerer->setSocket(link);
+    QVERIFY(offerer->socket()->isConnected());
+    QVERIFY(list.takeBuddyOffer(*offerer, 4673));
+    QCOMPARE(offerer->kadState(), KadState::ClaimingBuddy);
+    QCOMPARE(offerer->kadPort(), uint16{4673});
+    QCOMPARE(list.buddyStatus(), BuddyStatus::Connecting);
+
+    // One claim at a time
+    second->setSocket(link);
+    QVERIFY(!list.takeBuddyOffer(*second, 4673));
+    QCOMPARE(second->kadState(), KadState::None);
+
+    auto* held = makeClaimClient(list, "88.4.4.4", 0x404);
+    list.holdForBuddyClaim(*held);
+
+    // Waits up to kBuddyClaimTimeoutSecs, then fails and lets the held sources go
+    list.processKadList();
+    QCOMPARE(offerer->kadState(), KadState::ClaimingBuddy);
+    QCOMPARE(list.buddyStatus(), BuddyStatus::Connecting);
+    QVERIFY(held->heldForBuddyClaim());
+
+    offerer->setKadStateSince(std::time(nullptr) - ClientList::kBuddyClaimTimeoutSecs - 1);
+    list.processKadList();
+    QCOMPARE(offerer->kadState(), KadState::None);
+    QVERIFY(list.isFailedBuddyCandidate(offerer->connectAddress().toUint32()));
+    QVERIFY(!held->heldForBuddyClaim());
+    QCOMPARE(list.buddyStatus(), BuddyStatus::None);
+
+    // A failed offerer is not claimed again
+    QVERIFY(!list.takeBuddyOffer(*offerer, 4673));
 }
 
 // A client kept alive only by its chat state is never collected (ClientList.cpp:465-466),

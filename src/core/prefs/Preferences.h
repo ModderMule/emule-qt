@@ -125,6 +125,7 @@ struct Ed3kHosterPrefs {
     bool fromPeers = true;         ///< ed3kHosterFromPeers: use links that peers name
     bool checkSearchLinks = true;  ///< ed3kHosterCheckSearchLinks: a web row's links dialog checks its links
     bool extract = true;           ///< ed3kHosterExtract: unpack finished archives into incoming/<package>/
+    bool shareFiles = true;        ///< ed3kHosterShareFiles: share landed files on eD2K/Kad (and ed3k)
     bool deleteArchives = false;   ///< ed3kHosterDeleteArchives: delete the archives (kept in Temp) after a good unpack
     bool clipboard = false;        ///< ed3kHosterClipboard: the GUI watches the clipboard for hoster links
     bool linkGrabber = false;      ///< ed3kHosterLinkGrabber: links collect in the Link Grabber before downloading
@@ -166,6 +167,9 @@ public:
 
     /// Save preferences to the file specified in load().
     bool save() const;
+    /// save() on the BackgroundFileWriter: for periodic saves on the main thread (#169).
+    /// A later save() or load() supersedes / waits for it.
+    void saveInBackground() const;
 
     /// The file given to load(); empty before.
     [[nodiscard]] QString filePath() const;
@@ -370,6 +374,10 @@ public:
     /// Stored limits, without the scheduler layer
     [[nodiscard]] uint32 configuredMaxUpload() const;
     [[nodiscard]] uint32 configuredMaxDownload() const;
+    /// Holds the stored limit pair to MFC's UL:DL ratio (SpeedRules.h): a moved download
+    /// raises the upload (CheckDown), then the download is capped by it (CheckUp).
+    /// @return true when a limit was changed
+    bool enforceSpeedRatio(bool downloadMoved);
     [[nodiscard]] uint16 configuredMaxConnections() const;
     [[nodiscard]] uint16 configuredMaxSourcesPerFile() const;
     [[nodiscard]] uint16 configuredMaxConsPerFive() const;
@@ -1275,6 +1283,9 @@ public:
     /// PAR2 is off, or this build has no PAR2 support.
     [[nodiscard]] bool usenetSfvCheck() const;
     void setUsenetSfvCheck(bool val);
+    /// Share finished Usenet downloads on eD2K/Kad (and ed3k). Off keeps them out of the share.
+    [[nodiscard]] bool usenetShareFiles() const;
+    void setUsenetShareFiles(bool val);
 
     /// A download that provably cannot be repaired: more blocks damaged than
     /// its whole recovery set holds.
@@ -1423,6 +1434,10 @@ public:
     /// fetches its metadata, a .torrent is added stopped.
     [[nodiscard]] bool btStopAfterMetadata() const;
     void setBtStopAfterMetadata(bool val);
+    /// Finished torrents shared on eD2K/Kad (and ed3k): 0 none, 1 public (not private/ALT, not I2P), 2 all.
+    /// Left out: kept out also inside incoming.
+    [[nodiscard]] int btShareMode() const;
+    void setBtShareMode(int val);
 
     /// A meta search file row (one file of a torrent) downloads only that file; the
     /// others start skipped. Off: the whole torrent. Default on.
@@ -1555,6 +1570,9 @@ public:
     /// post set or nzb/nzb-file ALIAS records go out; the members are shared all the same. Default on.
     [[nodiscard]] bool ed3kShareUsenetPosts() const;
     void setEd3kShareUsenetPosts(bool val);
+    /// Own ed3k sets' folders watched: a changed folder publishes a new version. Default on.
+    [[nodiscard]] bool ed3kOwnSetsWatch() const;
+    void setEd3kOwnSetsWatch(bool val);
 
     /// JSON-RPC endpoints of the credit ledger / the chaintube chain (https, or http to
     /// a loopback node); operator n of a call is the n-th. Empty = calls answered failed.
@@ -1591,6 +1609,23 @@ public:
     /// Share of the upload limit for others' paths, 1 to 100 %. Default 25. `ed3kHopShare`.
     [[nodiscard]] int ed3kHopShare() const;
     void setEd3kHopShare(int val);
+    /// The proxy share reports under the anonymous key go through (subscription.md §5.3,
+    /// ED3K_HTTP_VIA_ANON_REPORT_PROXY), never directly; type 0 = off (no reports there).
+    /// Types: PROXYTYPE_SOCKS5, PROXYTYPE_HTTP11.
+    [[nodiscard]] int ed3kReportProxyType() const;
+    void setEd3kReportProxyType(int val);
+    [[nodiscard]] QString ed3kReportProxyHost() const;
+    void setEd3kReportProxyHost(const QString& val);
+    [[nodiscard]] int ed3kReportProxyPort() const;
+    void setEd3kReportProxyPort(int val);
+    [[nodiscard]] QString ed3kReportProxyUser() const;
+    void setEd3kReportProxyUser(const QString& val);
+    [[nodiscard]] QString ed3kReportProxyPassword() const;
+    void setEd3kReportProxyPassword(const QString& val);
+    /// The report proxy as ProxySettings; useProxy only with a type, host and port.
+    [[nodiscard]] ProxySettings ed3kReportProxy() const;
+    /// @p type if a report proxy type (SOCKS5, HTTP), else PROXYTYPE_NOPROXY.
+    [[nodiscard]] static int reportProxyType(int type);
     /// Node list sources for the first contact (bootstrap.md §3) as `ed3k:nodes?url=…&key=…`
     /// links. IPC/REST key `ed3kNodeLists`: links separated by spaces. Default: none.
     [[nodiscard]] QStringList ed3kNodeLists() const;
@@ -2407,6 +2442,8 @@ private:
     [[nodiscard]] static std::array<uint8, 16> newUserHash();
     void resolveDefaultVideoPlayer();
     bool saveImpl(const QString& filePath) const;
+    /// The YAML file's bytes; lock held.
+    [[nodiscard]] QByteArray encode() const;
 
     std::unique_ptr<Data> m_data;
     QString m_filePath;

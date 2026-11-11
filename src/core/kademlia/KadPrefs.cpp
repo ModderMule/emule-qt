@@ -13,9 +13,10 @@
 #include "client/ClientList.h"
 #include "crypto/MD5Hash.h"
 #include "prefs/Preferences.h"
+#include "utils/BackgroundFileWriter.h"
 
 #include <QFile>
-#include <QSaveFile>
+#include <QByteArray>
 
 
 namespace eMule::kad {
@@ -467,6 +468,8 @@ void KadPrefs::setRoutingZone(RoutingZone* zone)
 
 void KadPrefs::readFile()
 {
+    if (BackgroundFileWriter::instance().pending(m_filename))
+        BackgroundFileWriter::instance().flush();   // Kad restarted before the last write landed
     QFile file(m_filename);
     if (!file.exists())
         return;
@@ -516,13 +519,8 @@ void KadPrefs::readFile()
 
 void KadPrefs::writeFile()
 {
-    QSaveFile file(m_filename);
-    if (!file.open(QIODevice::WriteOnly)) {
-        logKad(QStringLiteral("Failed to write Kad preferences file: %1").arg(m_filename));
-        return;
-    }
-
-    QDataStream out(&file);
+    QByteArray data;
+    QDataStream out(&data, QIODevice::WriteOnly);
     out.setByteOrder(QDataStream::LittleEndian);
 
     out << m_ip << uint16{0};
@@ -532,9 +530,12 @@ void KadPrefs::writeFile()
 
     out << uint8{0}; // tag count
 
-    if (!file.commit()) {
-        logKad(QStringLiteral("Failed to commit Kad preferences file: %1").arg(m_filename));
+    if (out.status() != QDataStream::Ok) {
+        logKad(QStringLiteral("Failed to encode Kad preferences file: %1").arg(m_filename));
+        return;
     }
+    // fsync off the main thread (#169); the writer logs a failed write
+    BackgroundFileWriter::instance().write(m_filename, std::move(data), {});
 }
 
 } // namespace eMule::kad

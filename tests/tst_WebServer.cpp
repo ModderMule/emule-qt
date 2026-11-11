@@ -283,7 +283,8 @@ public:
         for (qsizetype i = 0; i < priorities.size(); ++i)
             files.append(QCborMap{{QStringLiteral("index"), i},
                                   {QStringLiteral("path"), QStringLiteral("f%1").arg(i)},
-                                  {QStringLiteral("priority"), priorities.at(i)}});
+                                  {QStringLiteral("priority"), priorities.at(i)},
+                                  {QStringLiteral("availability"), i == 0 ? 0.25 : -1.0}});
         QCborArray trackers;
         for (const QString& url : trackerUrls)
             trackers.append(QCborMap{{QStringLiteral("url"), url}, {QStringLiteral("tier"), 0}});
@@ -1648,10 +1649,10 @@ void tst_WebServer::rest_patchReportsRatioCappedDownload()
         return r.json.object().value(QStringLiteral("downloadLimit")).toObject();
     };
 
-    // 12 KB/s up: 4x
-    QJsonObject o = limit(R"({"maxUpload":12,"maxDownload":500})");
+    // 9 KB/s up: 4x
+    QJsonObject o = limit(R"({"maxUpload":9,"maxDownload":500})");
     QCOMPARE(o.value(QStringLiteral("configuredKb")).toInt(), 500);
-    QCOMPARE(o.value(QStringLiteral("effectiveKb")).toInt(), 48);
+    QCOMPARE(o.value(QStringLiteral("effectiveKb")).toInt(), 36);
     QVERIFY(o.value(QStringLiteral("ratioCapped")).toBool());
     QVERIFY(o.value(QStringLiteral("hint")).toString().contains(QStringLiteral("4x")));
 
@@ -3980,6 +3981,17 @@ void tst_WebServer::webTorrentsPage_listsAndActs()
     QVERIFY(page.contains(QStringLiteral("Seeding")));
     QVERIFY(page.contains(QStringLiteral("width:40.0%")));
     QVERIFY(!page.contains(QStringLiteral("[Torrent")));
+    QVERIFY(!page.contains(QStringLiteral("Availability")));   // no file table until one is picked
+
+    // the name links to its file table, with qBittorrent's availability column
+    const QString idUrl = QString::fromLatin1(QUrl::toPercentEncoding(FakeTorrentBackend::idA()));
+    QVERIFY(page.contains(QStringLiteral("?w=torrents&amp;id=") + idUrl));
+    page = rawGetBody(port, QStringLiteral("/?ses=%1&w=torrents&id=%2").arg(ses, idUrl));
+    QVERIFY(page.contains(QStringLiteral("Availability")));
+    QVERIFY(page.contains(QStringLiteral(">25.0%<")));
+    QVERIFY(page.contains(QStringLiteral(">N/A<")));
+    QVERIFY(!page.contains(QStringLiteral("[TorrentFile")));
+    fake.calls.clear();
 
     const QByteArray form = QByteArrayLiteral("application/x-www-form-urlencoded");
     sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses),

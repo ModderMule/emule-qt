@@ -112,6 +112,7 @@ private slots:
     void theUploadQueueServesInTurn();
     void keywordsArePublishedUnlessHeldBack();
     void anUnreadableFileIsHashedAgainLater();
+    void anAnonymousFileDownloadedElsewhereIsToldOnce();
     void cleanup();
 };
 
@@ -426,6 +427,45 @@ void tst_Ed3kShared::anUnreadableFileIsHashedAgainLater()
     QCOMPARE(*shared.rootOf(md4), rootOf(data));
     shared.stop();
 #endif
+}
+
+// hops.md §1 SHOULD: a file of the anonymous key starting on eD2K too: the user is told once
+void tst_Ed3kShared::anAnonymousFileDownloadedElsewhereIsToldOnce()
+{
+    const QByteArray data = payload(int(kBlock / 2 + 77), 9);
+    const QByteArray other = payload(int(kBlock / 2 + 99), 10);
+    QTemporaryDir da;
+    QVERIFY(da.isValid());
+    const QString path = QDir(da.path()).filePath(QStringLiteral("anon.bin"));
+    const QString path2 = QDir(da.path()).filePath(QStringLiteral("node.bin"));
+    QVERIFY(writeFile(path, data));
+    QVERIFY(writeFile(path2, other));
+    Ed3kSession a;
+    QVERIFY(a.start(loopback(da.path())));
+    // under the anonymous key, hiding off: hashed, not shared (nothing told yet)
+    a.hide().record(rootOf(data), ::ed3k::KeyKind::Anon);
+    FakeSource src;
+    const QByteArray md4(16, char(0x44));
+    const QByteArray md4b(16, char(0x45));
+    src.entries.push_back(SharedEntry{md4, path, QStringLiteral("anon.bin"), std::uint64_t(data.size())});
+    src.entries.push_back(SharedEntry{md4b, path2, QStringLiteral("node.bin"), std::uint64_t(other.size())});
+    Ed3kShared shared(a, src, da.path());
+    QSignalSpy told(&shared, &Ed3kShared::anonExposed);
+    shared.start();
+    QTRY_VERIFY_WITH_TIMEOUT(shared.hashedRootOf(md4) && shared.hashedRootOf(md4b), 20000);
+    QVERIFY(shared.holdsRoot(rootOf(data)));
+    QCOMPARE(told.count(), 0);
+    QCOMPARE(shared.keyOfFile(md4), std::optional(::ed3k::KeyKind::Anon));
+    // the node key's file: nothing
+    QVERIFY(!shared.tellDownloadElsewhere(md4b, QStringLiteral("node.bin"), QStringLiteral("eD2K")));
+    QVERIFY(!shared.tellDownloadElsewhere(QByteArray(16, char(0x46)), QStringLiteral("x"), QStringLiteral("eD2K")));
+    // the anonymous one: once
+    QVERIFY(shared.tellDownloadElsewhere(md4, QStringLiteral("anon.bin"), QStringLiteral("eD2K")));
+    QVERIFY(!shared.tellDownloadElsewhere(md4, QStringLiteral("anon.bin"), QStringLiteral("eD2K")));
+    QCOMPARE(told.count(), 1);
+    QCOMPARE(told.at(0).at(1).toString(), QStringLiteral("eD2K"));
+    shared.stop();
+    a.stop();
 }
 
 QTEST_GUILESS_MAIN(tst_Ed3kShared)

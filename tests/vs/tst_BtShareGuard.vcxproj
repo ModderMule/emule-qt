@@ -178,6 +178,7 @@
   <ItemGroup>
     <ClCompile Include="..\tst_BtShareGuard.cpp" />
     <ClCompile Include="..\..\src\daemon\BtShareGuard.cpp" />
+    <ClCompile Include="..\..\src\daemon\LandedFiles.cpp" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="..\tst_BtShareGuard.cpp.moc.cbt">

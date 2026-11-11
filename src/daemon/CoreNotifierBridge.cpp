@@ -312,11 +312,17 @@ void CoreNotifierBridge::flushAddedNames()
     m_addedCount = 0;
 }
 
-void CoreNotifierBridge::onDownloadRemoved()
+void CoreNotifierBridge::onDownloadRemoved(PartFile* file)
 {
     m_pushes->post(IpcMsgType::PushDownloadRemoved,
                    [] { return IpcMessage(IpcMsgType::PushDownloadRemoved, 0); },
                    kPushWindowMs);
+    // GetSharedFiles also lists part files not in the shared map yet (some data, no
+    // full part): no fileRemoved from SharedFileList for those, so the Shared Files
+    // row stayed until the next resync. A file still shared (Clear Completed) stays.
+    if (file && file->isPartFile() && MD4Key(file->fileHash()) != m_lastSharedRemoved
+        && !(theApp.sharedFileList && theApp.sharedFileList->getFileByID(file->fileHash())))
+        onSharedFileRemoved(file);
 }
 
 void CoreNotifierBridge::onDownloadCompleted(PartFile* file)
@@ -587,6 +593,7 @@ void CoreNotifierBridge::onSharedFileRemoved(KnownFile* file)
     if (!file)
         return;
     m_dirtySharedFiles.erase(MD4Key(file->fileHash()));
+    m_lastSharedRemoved = MD4Key(file->fileHash());
     // Not held back: an update for the same file that is sent later must find the
     // removal already delivered.
     IpcMessage msg(IpcMsgType::PushSharedFileRemoved, 0);

@@ -3,6 +3,7 @@
 /// @brief Central preferences with YAML persistence — implementation.
 
 #include "prefs/Preferences.h"
+#include "prefs/SpeedRules.h"
 #include "net/SmtpClient.h"
 #include "utils/OtherFunctions.h"
 
@@ -12,6 +13,7 @@
 #include "crypto/SecretCompare.h"
 #include "net/EMSocket.h"
 #include "net/ListenConflict.h"
+#include "utils/BackgroundFileWriter.h"
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
 
@@ -708,6 +710,7 @@ struct Preferences::Data {
     bool usenetPaused = false;
     bool usenetUseProxy = true;
     bool usenetSfvCheck = true;
+    bool usenetShareFiles = true;      // finished Usenet downloads shared on eD2K/Kad (and ed3k)
     int usenetUnrepairableAction = 1;  // 0 keep going, 1 pause, 2 fail
     bool usenetDeobfuscateNames = true;     // rename obfuscated payload to the job name
     int usenetPropagationDelayMinutes = 0;  // hold fresh posts, 0 = off
@@ -731,6 +734,7 @@ struct Preferences::Data {
     uint16 btListenPort = Preferences::kDefaultBtListenPort;
     QString btDownloadDir;             // empty = incomingDir
     bool btStopAfterMetadata = false;  // new torrents stop once their file list is known
+    int btShareMode = 2;               // finished torrents shared on eD2K/Kad (and ed3k): 0 none, 1 public, 2 all
     bool btMetaSelectedFileOnly = true; // search file row of a torrent = that file only
     uint32 btMaxDownloadKb = 0;        // 0 = unlimited
     uint32 btMaxUploadKb = 0;
@@ -766,6 +770,7 @@ struct Preferences::Data {
     bool ed3kShareFiles = true;        // eMule's shared files over ed3k
     bool ed3kJointDownloads = true;    // eD2K downloads from ed3k too (§14.4)
     bool ed3kShareUsenetPosts = true;  // off = hold back, usenet.md §6
+    bool ed3kOwnSetsWatch = true;      // own sets' folders watched: a change publishes a new version
     QStringList ed3kCreditRpc;         // JSON-RPC endpoints; empty = off
     QStringList ed3kChaintubeRpc;
     QStringList ed3kExtOff;            // extension names off at start
@@ -774,6 +779,12 @@ struct Preferences::Data {
     int ed3kHops = 1;                  // 0 to 3, every use (0: only while hopping, hops.md §2.6)
     bool ed3kHopping = true;           // forward for others while hiding (§1 "Recommended")
     int ed3kHopShare = 25;             // % of the upload limit for others' paths (§5)
+    // share reports under the anonymous key (subscription.md §5.3): only through this proxy
+    int ed3kReportProxyType = 0;       // 0 off, PROXYTYPE_SOCKS5, PROXYTYPE_HTTP11
+    QString ed3kReportProxyHost;
+    int ed3kReportProxyPort = 0;
+    QString ed3kReportProxyUser;
+    QString ed3kReportProxyPassword;
     QStringList ed3kNodeLists;         // ed3k:nodes links (bootstrap.md §3)
     bool ed3kNodeListAuto = true;      // fetch lists by themselves (bootstrap.md §1)
     int ed3kNodeListMaxAgeDays = 30;   // §2 "MAY refuse"; 0 = no limit
@@ -1091,6 +1102,21 @@ void Preferences::setScheduledLimits(const ScheduledLimits& limits)
 }
 
 void Preferences::setMaxDownload(uint32 val) { set(&Data::maxDownload, val); }
+
+bool Preferences::enforceSpeedRatio(bool downloadMoved)
+{
+    const uint32 up = configuredMaxUpload();
+    const uint32 down = configuredMaxDownload();
+    uint32 newUp = up;
+    if (downloadMoved)
+        newUp = SpeedRules::raiseUpForDown(up, down, maxGraphUploadRate());
+    const uint32 newDown = SpeedRules::clampDownForUp(newUp, down);
+    if (newUp == up && newDown == down)
+        return false;
+    setMaxUpload(newUp);
+    setMaxDownload(newDown);
+    return true;
+}
 
 uint32 Preferences::minUpload() const { return get(&Data::minUpload); }
 
@@ -2198,6 +2224,9 @@ void Preferences::setUsenetSfvCheck(bool val)
     set(&Data::usenetSfvCheck, val);
 }
 
+bool Preferences::usenetShareFiles() const { return get(&Data::usenetShareFiles); }
+void Preferences::setUsenetShareFiles(bool val) { set(&Data::usenetShareFiles, val); }
+
 int Preferences::usenetUnrepairableAction() const
 {
     return get(&Data::usenetUnrepairableAction);
@@ -2431,6 +2460,8 @@ void Preferences::setBtMaxUploadKb(uint32 val) { set(&Data::btMaxUploadKb, val);
 
 bool Preferences::btStopAfterMetadata() const { return get(&Data::btStopAfterMetadata); }
 void Preferences::setBtStopAfterMetadata(bool val) { set(&Data::btStopAfterMetadata, val); }
+int Preferences::btShareMode() const { return get(&Data::btShareMode); }
+void Preferences::setBtShareMode(int val) { set(&Data::btShareMode, std::clamp(val, 0, 2)); }
 bool Preferences::btMetaSelectedFileOnly() const { return get(&Data::btMetaSelectedFileOnly); }
 void Preferences::setBtMetaSelectedFileOnly(bool val) { set(&Data::btMetaSelectedFileOnly, val); }
 bool Preferences::btDht() const { return get(&Data::btDht); }
@@ -2575,6 +2606,8 @@ bool Preferences::ed3kJointDownloads() const { return get(&Data::ed3kJointDownlo
 void Preferences::setEd3kJointDownloads(bool val) { set(&Data::ed3kJointDownloads, val); }
 bool Preferences::ed3kShareUsenetPosts() const { return get(&Data::ed3kShareUsenetPosts); }
 void Preferences::setEd3kShareUsenetPosts(bool val) { set(&Data::ed3kShareUsenetPosts, val); }
+bool Preferences::ed3kOwnSetsWatch() const { return get(&Data::ed3kOwnSetsWatch); }
+void Preferences::setEd3kOwnSetsWatch(bool val) { set(&Data::ed3kOwnSetsWatch, val); }
 
 QStringList Preferences::ed3kCreditRpc() const { return get(&Data::ed3kCreditRpc); }
 void Preferences::setEd3kCreditRpc(const QStringList& urls) { set(&Data::ed3kCreditRpc, urls); }
@@ -2592,6 +2625,35 @@ bool Preferences::ed3kHopping() const { return get(&Data::ed3kHopping); }
 void Preferences::setEd3kHopping(bool val) { set(&Data::ed3kHopping, val); }
 int Preferences::ed3kHopShare() const { return get(&Data::ed3kHopShare); }
 void Preferences::setEd3kHopShare(int val) { set(&Data::ed3kHopShare, std::clamp(val, 1, 100)); }
+int Preferences::ed3kReportProxyType() const { return get(&Data::ed3kReportProxyType); }
+void Preferences::setEd3kReportProxyType(int val) { set(&Data::ed3kReportProxyType, reportProxyType(val)); }
+QString Preferences::ed3kReportProxyHost() const { return get(&Data::ed3kReportProxyHost); }
+void Preferences::setEd3kReportProxyHost(const QString& val) { set(&Data::ed3kReportProxyHost, val.trimmed()); }
+int Preferences::ed3kReportProxyPort() const { return get(&Data::ed3kReportProxyPort); }
+void Preferences::setEd3kReportProxyPort(int val) { set(&Data::ed3kReportProxyPort, std::clamp(val, 0, 65535)); }
+QString Preferences::ed3kReportProxyUser() const { return get(&Data::ed3kReportProxyUser); }
+void Preferences::setEd3kReportProxyUser(const QString& val) { set(&Data::ed3kReportProxyUser, val); }
+QString Preferences::ed3kReportProxyPassword() const { return get(&Data::ed3kReportProxyPassword); }
+void Preferences::setEd3kReportProxyPassword(const QString& val) { set(&Data::ed3kReportProxyPassword, val); }
+
+ProxySettings Preferences::ed3kReportProxy() const
+{
+    QReadLocker lock(&m_lock);
+    ProxySettings ps;
+    ps.type = m_data->ed3kReportProxyType;
+    ps.host = m_data->ed3kReportProxyHost;
+    ps.port = static_cast<uint16>(m_data->ed3kReportProxyPort);
+    ps.useProxy = ps.type != PROXYTYPE_NOPROXY && !ps.host.isEmpty() && ps.port != 0;
+    ps.enablePassword = !m_data->ed3kReportProxyUser.isEmpty();
+    ps.user = m_data->ed3kReportProxyUser;
+    ps.password = m_data->ed3kReportProxyPassword;
+    return ps;
+}
+
+int Preferences::reportProxyType(int type)
+{
+    return type == PROXYTYPE_SOCKS5 || type == PROXYTYPE_HTTP11 ? type : PROXYTYPE_NOPROXY;
+}
 QStringList Preferences::ed3kNodeLists() const { return get(&Data::ed3kNodeLists); }
 void Preferences::setEd3kNodeLists(const QStringList& links) { set(&Data::ed3kNodeLists, links); }
 bool Preferences::ed3kNodeListAuto() const { return get(&Data::ed3kNodeListAuto); }
@@ -2730,6 +2792,8 @@ bool Preferences::applyEd3kHosterKey(Ed3kHosterPrefs& h, const QString& key, con
         h.checkSearchLinks = val.toBool(h.checkSearchLinks);
     else if (key == QLatin1StringView("ed3kHosterExtract"))
         h.extract = val.toBool(h.extract);
+    else if (key == QLatin1StringView("ed3kHosterShareFiles"))
+        h.shareFiles = val.toBool(h.shareFiles);
     else if (key == QLatin1StringView("ed3kHosterDeleteArchives"))
         h.deleteArchives = val.toBool(h.deleteArchives);
     else if (key == QLatin1StringView("ed3kHosterClipboard"))
@@ -3967,6 +4031,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("usenetPaused"), usenetPaused());
     prefs.insert(QStringLiteral("usenetUseProxy"), usenetUseProxy());
     prefs.insert(QStringLiteral("usenetSfvCheck"), usenetSfvCheck());
+    prefs.insert(QStringLiteral("usenetShareFiles"), usenetShareFiles());
     prefs.insert(QStringLiteral("usenetUnrepairableAction"),
                  static_cast<qint64>(usenetUnrepairableAction()));
     prefs.insert(QStringLiteral("usenetDeobfuscateNames"), usenetDeobfuscateNames());
@@ -3996,6 +4061,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("btMaxDownloadKb"), static_cast<qint64>(configuredBtMaxDownloadKb()));
     prefs.insert(QStringLiteral("btMaxUploadKb"), static_cast<qint64>(configuredBtMaxUploadKb()));
     prefs.insert(QStringLiteral("btStopAfterMetadata"), btStopAfterMetadata());
+    prefs.insert(QStringLiteral("btShareMode"), btShareMode());
     prefs.insert(QStringLiteral("btMetaSelectedFileOnly"), btMetaSelectedFileOnly());
     prefs.insert(QStringLiteral("btDht"), btDht());
     prefs.insert(QStringLiteral("btLsd"), btLsd());
@@ -4034,6 +4100,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("ed3kShareFiles"), ed3kShareFiles());
     prefs.insert(QStringLiteral("ed3kJointDownloads"), ed3kJointDownloads());
     prefs.insert(QStringLiteral("ed3kShareUsenetPosts"), ed3kShareUsenetPosts());
+    prefs.insert(QStringLiteral("ed3kOwnSetsWatch"), ed3kOwnSetsWatch());
     prefs.insert(QStringLiteral("ed3kCreditRpc"), ed3kCreditRpc().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("ed3kChaintubeRpc"), ed3kChaintubeRpc().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("ed3kExtOff"), ed3kExtOff().join(QLatin1Char(' ')));
@@ -4042,6 +4109,11 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("ed3kHops"), static_cast<qint64>(ed3kHops()));
     prefs.insert(QStringLiteral("ed3kHopping"), ed3kHopping());
     prefs.insert(QStringLiteral("ed3kHopShare"), static_cast<qint64>(ed3kHopShare()));
+    prefs.insert(QStringLiteral("ed3kReportProxyType"), static_cast<qint64>(ed3kReportProxyType()));
+    prefs.insert(QStringLiteral("ed3kReportProxyHost"), ed3kReportProxyHost());
+    prefs.insert(QStringLiteral("ed3kReportProxyPort"), static_cast<qint64>(ed3kReportProxyPort()));
+    prefs.insert(QStringLiteral("ed3kReportProxyUser"), ed3kReportProxyUser());
+    prefs.insert(QStringLiteral("ed3kReportProxyPassword"), ed3kReportProxyPassword());
     prefs.insert(QStringLiteral("ed3kNodeLists"), ed3kNodeLists().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("ed3kNodeListAuto"), ed3kNodeListAuto());
     prefs.insert(QStringLiteral("ed3kNodeListMaxAgeDays"), static_cast<qint64>(ed3kNodeListMaxAgeDays()));
@@ -4081,6 +4153,7 @@ QCborMap Preferences::toIpcMap() const
         prefs.insert(QStringLiteral("ed3kHosterFromPeers"), h.fromPeers);
         prefs.insert(QStringLiteral("ed3kHosterCheckSearchLinks"), h.checkSearchLinks);
         prefs.insert(QStringLiteral("ed3kHosterExtract"), h.extract);
+        prefs.insert(QStringLiteral("ed3kHosterShareFiles"), h.shareFiles);
         prefs.insert(QStringLiteral("ed3kHosterDeleteArchives"), h.deleteArchives);
         prefs.insert(QStringLiteral("ed3kHosterClipboard"), h.clipboard);
         prefs.insert(QStringLiteral("ed3kHosterLinkGrabber"), h.linkGrabber);
@@ -4346,6 +4419,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
         int(p.value(QStringLiteral("usenetRetryIntervalSeconds")).toInteger(60));
     m_data->usenetMetaSelectedFileOnly =
         p.value(QStringLiteral("usenetMetaSelectedFileOnly")).toBool(true);
+    m_data->usenetShareFiles          = p.value(QStringLiteral("usenetShareFiles")).toBool(true);
 
     // BitTorrent. Defaults for a key an older daemon does not send.
     {
@@ -4360,6 +4434,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
         m_data->btMaxDownloadKb = static_cast<uint32>(num("btMaxDownloadKb", 0, 0, kMaxU32));
         m_data->btMaxUploadKb   = static_cast<uint32>(num("btMaxUploadKb", 0, 0, kMaxU32));
         m_data->btStopAfterMetadata = p.value(QStringLiteral("btStopAfterMetadata")).toBool(false);
+        m_data->btShareMode = static_cast<int>(num("btShareMode", 2, 0, 2));
         m_data->btMetaSelectedFileOnly =
             p.value(QStringLiteral("btMetaSelectedFileOnly")).toBool(true);
         m_data->btDht = p.value(QStringLiteral("btDht")).toBool(true);
@@ -4403,6 +4478,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->ed3kShareFiles = p.value(QStringLiteral("ed3kShareFiles")).toBool(true);
     m_data->ed3kJointDownloads = p.value(QStringLiteral("ed3kJointDownloads")).toBool(true);
     m_data->ed3kShareUsenetPosts = p.value(QStringLiteral("ed3kShareUsenetPosts")).toBool(true);
+    m_data->ed3kOwnSetsWatch = p.value(QStringLiteral("ed3kOwnSetsWatch")).toBool(true);
     m_data->ed3kCreditRpc = rpcUrlList(p.value(QStringLiteral("ed3kCreditRpc")));
     m_data->ed3kChaintubeRpc = rpcUrlList(p.value(QStringLiteral("ed3kChaintubeRpc")));
     m_data->ed3kExtOff = rpcUrlList(p.value(QStringLiteral("ed3kExtOff")));
@@ -4411,6 +4487,11 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->ed3kHops = static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kHops")).toInteger(1), 0, 3));
     m_data->ed3kHopping = p.value(QStringLiteral("ed3kHopping")).toBool(true);
     m_data->ed3kHopShare = static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kHopShare")).toInteger(25), 1, 100));
+    m_data->ed3kReportProxyType = reportProxyType(static_cast<int>(p.value(QStringLiteral("ed3kReportProxyType")).toInteger(0)));
+    m_data->ed3kReportProxyHost = p.value(QStringLiteral("ed3kReportProxyHost")).toString().trimmed();
+    m_data->ed3kReportProxyPort = static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kReportProxyPort")).toInteger(0), 0, 65535));
+    m_data->ed3kReportProxyUser = p.value(QStringLiteral("ed3kReportProxyUser")).toString();
+    m_data->ed3kReportProxyPassword = p.value(QStringLiteral("ed3kReportProxyPassword")).toString();
     m_data->ed3kNodeLists = rpcUrlList(p.value(QStringLiteral("ed3kNodeLists")));
     m_data->ed3kNodeListAuto = p.value(QStringLiteral("ed3kNodeListAuto")).toBool(true);
     m_data->ed3kNodeListMaxAgeDays =
@@ -4713,6 +4794,9 @@ void Preferences::resolveDefaultVideoPlayer()
 
 bool Preferences::load(const QString& filePath)
 {
+    // a saveInBackground() still queued is newer than the file
+    if (BackgroundFileWriter::instance().pending(filePath))
+        BackgroundFileWriter::instance().flush();
     QWriteLocker lock(&m_lock);
     const SubjectRevisionBump bumpOnExit;
 
@@ -5502,6 +5586,7 @@ bool Preferences::load(const QString& filePath)
             m_data->usenetPaused = un["paused"].as<bool>(m_data->usenetPaused);
             m_data->usenetUseProxy = un["useProxy"].as<bool>(m_data->usenetUseProxy);
             m_data->usenetSfvCheck = un["sfvCheck"].as<bool>(m_data->usenetSfvCheck);
+            m_data->usenetShareFiles = un["shareFiles"].as<bool>(m_data->usenetShareFiles);
             m_data->usenetUnrepairableAction = std::clamp(
                 un["unrepairableAction"].as<int>(m_data->usenetUnrepairableAction), 0, 2);
             m_data->usenetDeobfuscateNames =
@@ -5649,6 +5734,7 @@ bool Preferences::load(const QString& filePath)
             m_data->btMaxUploadKb = static_cast<uint32>(std::max<long long>(
                 0, bt["maxUploadKb"].as<long long>(m_data->btMaxUploadKb)));
             m_data->btStopAfterMetadata = bt["stopAfterMetadata"].as<bool>(m_data->btStopAfterMetadata);
+            m_data->btShareMode = std::clamp(bt["shareMode"].as<int>(m_data->btShareMode), 0, 2);
             m_data->btMetaSelectedFileOnly =
                 bt["selectedFileOnly"].as<bool>(m_data->btMetaSelectedFileOnly);
             m_data->btDht = bt["dht"].as<bool>(m_data->btDht);
@@ -5708,6 +5794,7 @@ bool Preferences::load(const QString& filePath)
             m_data->ed3kShareFiles = e3["shareFiles"].as<bool>(m_data->ed3kShareFiles);
             m_data->ed3kJointDownloads = e3["jointDownloads"].as<bool>(m_data->ed3kJointDownloads);
             m_data->ed3kShareUsenetPosts = e3["shareUsenetPosts"].as<bool>(m_data->ed3kShareUsenetPosts);
+            m_data->ed3kOwnSetsWatch = e3["ownSetsWatch"].as<bool>(m_data->ed3kOwnSetsWatch);
             const auto urls = [](const YAML::Node& n) {
                 QStringList out;
                 if (n && n.IsSequence())
@@ -5724,6 +5811,13 @@ bool Preferences::load(const QString& filePath)
             m_data->ed3kHops = std::clamp(e3["hops"].as<int>(m_data->ed3kHops), 0, 3);
             m_data->ed3kHopping = e3["hopping"].as<bool>(m_data->ed3kHopping);
             m_data->ed3kHopShare = std::clamp(e3["hopShare"].as<int>(m_data->ed3kHopShare), 1, 100);
+            if (auto rp = e3["reportProxy"]) {
+                m_data->ed3kReportProxyType = reportProxyType(rp["type"].as<int>(m_data->ed3kReportProxyType));
+                m_data->ed3kReportProxyHost = QString::fromStdString(rp["host"].as<std::string>(m_data->ed3kReportProxyHost.toStdString())).trimmed();
+                m_data->ed3kReportProxyPort = std::clamp(rp["port"].as<int>(m_data->ed3kReportProxyPort), 0, 65535);
+                m_data->ed3kReportProxyUser = QString::fromStdString(rp["user"].as<std::string>(m_data->ed3kReportProxyUser.toStdString()));
+                m_data->ed3kReportProxyPassword = QString::fromStdString(rp["password"].as<std::string>(m_data->ed3kReportProxyPassword.toStdString()));
+            }
             m_data->ed3kNodeLists = urls(e3["nodeLists"]);
             m_data->ed3kNodeListAuto = e3["nodeListAuto"].as<bool>(m_data->ed3kNodeListAuto);
             m_data->ed3kNodeListMaxAgeDays = std::clamp(e3["nodeListMaxAgeDays"].as<int>(m_data->ed3kNodeListMaxAgeDays), 0, 3650);
@@ -5773,6 +5867,7 @@ bool Preferences::load(const QString& filePath)
                 h.fromPeers = ho["fromPeers"].as<bool>(h.fromPeers);
                 h.checkSearchLinks = ho["checkSearchLinks"].as<bool>(h.checkSearchLinks);
                 h.extract = ho["extract"].as<bool>(h.extract);
+                h.shareFiles = ho["shareFiles"].as<bool>(h.shareFiles);
                 h.deleteArchives = ho["deleteArchives"].as<bool>(h.deleteArchives);
                 h.clipboard = ho["clipboard"].as<bool>(h.clipboard);
                 h.linkGrabber = ho["linkGrabber"].as<bool>(h.linkGrabber);
@@ -6090,6 +6185,16 @@ bool Preferences::save() const
     return saveImpl(m_filePath);
 }
 
+void Preferences::saveInBackground() const
+{
+    QReadLocker lock(&m_lock);
+    if (m_filePath.isEmpty() || m_peekOnly)
+        return;
+    // Encoded here, synced + renamed on the writer: fdatasync on a busy ext4 held the
+    // main thread for seconds (#169). Newest queued copy wins.
+    BackgroundFileWriter::instance().write(m_filePath, encode(), {});
+}
+
 bool Preferences::saveTo(const QString& filePath) const
 {
     QReadLocker lock(&m_lock);
@@ -6272,6 +6377,28 @@ bool Preferences::saveImpl(const QString& filePath) const
 {
     if (m_peekOnly)
         return true;   // peek(): the file stays as the user left it
+    // older background copy queued: must not land after this one
+    BackgroundFileWriter::instance().discard(filePath);
+
+    const QByteArray bytes = encode();
+    QSaveFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        logError(QStringLiteral("Failed to open preferences file for writing: %1").arg(filePath));
+        return false;
+    }
+
+    file.write(bytes);
+
+    if (!file.commit()) {
+        logError(QStringLiteral("Failed to commit preferences file: %1").arg(filePath));
+        return false;
+    }
+
+    return true;
+}
+
+QByteArray Preferences::encode() const
+{
     YAML::Emitter out;
     out << YAML::Comment("eMule Qt Preferences");
     out << YAML::Newline;
@@ -6981,6 +7108,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "paused" << YAML::Value << m_data->usenetPaused;
     out << YAML::Key << "useProxy" << YAML::Value << m_data->usenetUseProxy;
     out << YAML::Key << "sfvCheck" << YAML::Value << m_data->usenetSfvCheck;
+    out << YAML::Key << "shareFiles" << YAML::Value << m_data->usenetShareFiles;
     out << YAML::Key << "unrepairableAction" << YAML::Value << m_data->usenetUnrepairableAction;
     out << YAML::Key << "deobfuscateNames" << YAML::Value << m_data->usenetDeobfuscateNames;
     out << YAML::Key << "propagationDelayMinutes" << YAML::Value
@@ -7069,6 +7197,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "maxDownloadKb" << YAML::Value << m_data->btMaxDownloadKb;
     out << YAML::Key << "maxUploadKb" << YAML::Value << m_data->btMaxUploadKb;
     out << YAML::Key << "stopAfterMetadata" << YAML::Value << m_data->btStopAfterMetadata;
+    out << YAML::Key << "shareMode" << YAML::Value << m_data->btShareMode;
     out << YAML::Key << "selectedFileOnly" << YAML::Value << m_data->btMetaSelectedFileOnly;
     out << YAML::Key << "dht" << YAML::Value << m_data->btDht;
     out << YAML::Key << "lsd" << YAML::Value << m_data->btLsd;
@@ -7107,12 +7236,20 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "shareFiles" << YAML::Value << m_data->ed3kShareFiles;
     out << YAML::Key << "jointDownloads" << YAML::Value << m_data->ed3kJointDownloads;
     out << YAML::Key << "shareUsenetPosts" << YAML::Value << m_data->ed3kShareUsenetPosts;
+    out << YAML::Key << "ownSetsWatch" << YAML::Value << m_data->ed3kOwnSetsWatch;
     out << YAML::Key << "udpPort" << YAML::Value << static_cast<int>(m_data->ed3kUdpPort);
     out << YAML::Key << "lan" << YAML::Value << m_data->ed3kLan;
     out << YAML::Key << "hide" << YAML::Value << m_data->ed3kHide;
     out << YAML::Key << "hops" << YAML::Value << m_data->ed3kHops;
     out << YAML::Key << "hopping" << YAML::Value << m_data->ed3kHopping;
     out << YAML::Key << "hopShare" << YAML::Value << m_data->ed3kHopShare;
+    out << YAML::Key << "reportProxy" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "type" << YAML::Value << m_data->ed3kReportProxyType;
+    out << YAML::Key << "host" << YAML::Value << m_data->ed3kReportProxyHost.toStdString();
+    out << YAML::Key << "port" << YAML::Value << m_data->ed3kReportProxyPort;
+    out << YAML::Key << "user" << YAML::Value << m_data->ed3kReportProxyUser.toStdString();
+    out << YAML::Key << "password" << YAML::Value << m_data->ed3kReportProxyPassword.toStdString();
+    out << YAML::EndMap;
     out << YAML::Key << "nodeListAuto" << YAML::Value << m_data->ed3kNodeListAuto;
     out << YAML::Key << "nodeListMaxAgeDays" << YAML::Value << m_data->ed3kNodeListMaxAgeDays;
     out << YAML::Key << "seedFromEd2k" << YAML::Value << m_data->ed3kSeedFromEd2k;
@@ -7171,6 +7308,7 @@ bool Preferences::saveImpl(const QString& filePath) const
         out << YAML::Key << "fromPeers" << YAML::Value << h.fromPeers;
         out << YAML::Key << "checkSearchLinks" << YAML::Value << h.checkSearchLinks;
         out << YAML::Key << "extract" << YAML::Value << h.extract;
+        out << YAML::Key << "shareFiles" << YAML::Value << h.shareFiles;
         out << YAML::Key << "deleteArchives" << YAML::Value << h.deleteArchives;
         out << YAML::Key << "clipboard" << YAML::Value << h.clipboard;
         out << YAML::Key << "linkGrabber" << YAML::Value << h.linkGrabber;
@@ -7292,22 +7430,9 @@ bool Preferences::saveImpl(const QString& filePath) const
 
     out << YAML::EndMap;
 
-    // Atomic write via QSaveFile (temp file + rename)
-    QSaveFile file(filePath);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        logError(QStringLiteral("Failed to open preferences file for writing: %1").arg(filePath));
-        return false;
-    }
-
-    file.write(out.c_str(), static_cast<qint64>(out.size()));
-    file.write("\n", 1);
-
-    if (!file.commit()) {
-        logError(QStringLiteral("Failed to commit preferences file: %1").arg(filePath));
-        return false;
-    }
-
-    return true;
+    QByteArray bytes(out.c_str(), static_cast<qsizetype>(out.size()));
+    bytes.append('\n');
+    return bytes;
 }
 
 bool Preferences::writeStatsBackup(const Data& d, const QString& filePath)

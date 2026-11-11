@@ -14,6 +14,7 @@
 
 #include "stats/CardinalitySketch.h"
 
+#include <QByteArray>
 #include <QList>
 #include <QString>
 
@@ -69,6 +70,8 @@ private:
     [[nodiscard]] uint64 hashOf(uint64 lo, uint64 hi) const;
     [[nodiscard]] Tally cumulative() const;
     [[nodiscard]] bool writeTo(const QString& path, const Tally& tally) const;
+    /// File bytes; empty on a stream error.
+    [[nodiscard]] QByteArray encode(const Tally& tally) const;
     [[nodiscard]] bool readFrom(const QString& path, Tally& tally, bool adoptSalt);
     void newSalt();
 

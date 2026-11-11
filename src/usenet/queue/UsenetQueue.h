@@ -525,6 +525,10 @@ signals:
     /// and collapsing it inside a coalescing window loses it entirely.
     void itemFinished(const QString& id, bool success, const QString& message);
 
+    /// Files a release just put into incoming under their final names (the daemon
+    /// remembers them for usenetShareFiles, #177)
+    void filesPublished(const QStringList& paths);
+
     /// setEnginePaused() changed the answer.
     void enginePausedChanged(bool paused);
 

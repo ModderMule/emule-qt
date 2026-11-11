@@ -7,6 +7,7 @@
 
 #include "controls/AbstractListView.h"
 #include "controls/FileCheckButtons.h"
+#include "controls/PreviewImageView.h"
 #include "controls/SortableItems.h"
 #include "controls/TorrentFileTree.h"
 #include "controls/UsenetFileCheckList.h"
@@ -114,6 +115,11 @@ MetaResultDetailDialog::MetaResultDetailDialog(const RowInfo& row, QWidget* pare
     m_trackers->setRootIsDecorated(false);
     m_tabs->addTab(m_trackers, tr("Trackers"));
     m_tabs->setTabVisible(TabTrackers, row.torrent);
+    // posted images + video frames; fetched when first opened, NZB only
+    m_images = new PreviewImageView(m_tabs);
+    m_tabs->addTab(m_images, tr("Images"));
+    m_tabs->setTabVisible(TabImages, false);
+    connect(m_tabs, &QTabWidget::currentChanged, this, &MetaResultDetailDialog::onTabChanged);
     m_stack->addWidget(m_tabs);
     contentLayout()->addWidget(m_stack);
 
@@ -147,6 +153,9 @@ void MetaResultDetailDialog::setDetails(const QCborMap& details)
     m_tabs->setTabVisible(TabTrackers, torrent);
     if (torrent)
         buildTrackers(inspection);
+    m_previewToken = torrent ? QString() : inspection.value(QStringLiteral("previewToken")).toString();
+    m_coverUrl = details.value(QStringLiteral("coverUrl")).toString();
+    m_tabs->setTabVisible(TabImages, !m_previewToken.isEmpty());
 
     m_stack->setCurrentWidget(m_tabs);
     m_download->setEnabled(true);
@@ -161,9 +170,42 @@ void MetaResultDetailDialog::setError(const QString& error)
     m_download->setEnabled(false);
 }
 
+void MetaResultDetailDialog::setPreviewImages(const QCborMap& result)
+{
+    QList<PreviewImageView::Image> images;
+    for (const QCborValue& v : result.value(QStringLiteral("images")).toArray()) {
+        const QCborMap m = v.toMap();
+        images.append({m.value(QStringLiteral("name")).toString(), m.value(QStringLiteral("kind")).toString(),
+                       m.value(QStringLiteral("data")).toByteArray()});
+    }
+    const QString note = result.value(QStringLiteral("note")).toString();
+    m_images->setImages(images, note.isEmpty() ? tr("This release has no images and no video to take "
+                                                    "pictures from.")
+                                               : note);
+}
+
+void MetaResultDetailDialog::setPreviewImagesError(const QString& error)
+{
+    m_images->showMessage(error.isEmpty() ? tr("The images could not be fetched.") : error);
+    m_imagesRequested = false;   // another try when the tab is opened again
+}
+
 // ---------------------------------------------------------------------------
 // private
 // ---------------------------------------------------------------------------
+
+void MetaResultDetailDialog::onTabChanged(int index)
+{
+    if (index != TabImages || m_imagesRequested || m_previewToken.isEmpty())
+        return;
+    m_imagesRequested = true;
+    m_images->showMessage(tr("Fetching images from the news server..."));
+    // pictures want room
+    const QSize want(qMax(width(), 760), qMax(height(), 560));
+    if (want != size())
+        resize(want);
+    emit imagesRequested(m_previewToken, m_coverUrl);
+}
 
 void MetaResultDetailDialog::onDownload()
 {

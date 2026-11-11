@@ -127,7 +127,7 @@ private slots:
     void sourceRowsFollowMfcColumns();
     void sourceStatusFollowsMfc();
     void a4afSourcesStayBelowAvailableOnes();
-    void downloadSecondarySortBreaksTies();
+    void downloadSortHistoryBreaksTies();
     void activeDownloadsAreBoldWhenEnabled();
     void sourcesSortByQueueRankWithDownloadingFirst();
     void sourcesSortByPartsAndBySoftware();
@@ -885,18 +885,22 @@ void tst_ListSorting::sourceStatusFollowsMfc()
     QCOMPARE(text(7), QStringLiteral("Asked for another file (No needed parts): \"other.avi\"*"));
 }
 
-void tst_ListSorting::downloadSecondarySortBreaksTies()
+void tst_ListSorting::downloadSortHistoryBreaksTies()
 {
-    // Discussion #84: Remaining, then Status -> by status, remaining time within it
-    QStandardItemModel model(0, 2);
-    const auto add = [&model](int status, int remaining) {
-        auto* s = new QStandardItem;
-        s->setData(status, Qt::UserRole);
-        auto* r = new QStandardItem;
-        r->setData(remaining, Qt::UserRole);
-        model.appendRow({s, r});
+    // Discussions #84/#174: Progress, Remaining, then Status -> by status,
+    // remaining time within it, then progress
+    using Key = DownloadSortProxy::SortKey;
+    QStandardItemModel model(0, 3);
+    const auto add = [&model](int status, int remaining, int progress) {
+        QList<QStandardItem*> row;
+        for (int v : {status, remaining, progress}) {
+            auto* item = new QStandardItem;
+            item->setData(v, Qt::UserRole);
+            row << item;
+        }
+        model.appendRow(row);
     };
-    add(2, 30); add(1, 50); add(2, 10); add(1, 20);
+    add(2, 30, 1); add(1, 50, 2); add(2, 10, 3); add(1, 20, 4); add(1, 20, 5); add(2, 10, 6);
 
     DownloadSortProxy proxy;
     proxy.setSourceModel(&model);
@@ -904,24 +908,32 @@ void tst_ListSorting::downloadSecondarySortBreaksTies()
     const auto order = [&proxy] {
         QList<int> out;
         for (int row = 0; row < proxy.rowCount(); ++row)
-            out << proxy.index(row, 1).data(Qt::UserRole).toInt();
+            out << proxy.index(row, 2).data(Qt::UserRole).toInt();
         return out;
     };
 
+    proxy.sort(2, Qt::AscendingOrder);
     proxy.sort(1, Qt::AscendingOrder);
     proxy.sort(0, Qt::AscendingOrder);
-    QCOMPARE(proxy.secondarySortColumn(), 1);
+    QCOMPARE(proxy.sortHistory(), (QList<Key>{{1, Qt::AscendingOrder}, {2, Qt::AscendingOrder}}));
     // Off (default): ties keep no defined order beyond the primary
-    proxy.setSecondarySortEnabled(true);
-    QCOMPARE(order(), (QList<int>{20, 50, 10, 30}));
+    proxy.setSortHistoryEnabled(true);
+    QCOMPARE(order(), (QList<int>{4, 5, 2, 3, 6, 1}));
 
-    // Flipping the primary keeps the tie-breaker in its own order
+    // Flipping the primary keeps the tie-breakers in their own order
     proxy.sort(0, Qt::DescendingOrder);
-    QCOMPARE(order(), (QList<int>{10, 30, 20, 50}));
+    QCOMPARE(proxy.sortHistory().size(), 2);
+    QCOMPARE(order(), (QList<int>{3, 6, 1, 4, 5, 2}));
 
-    // Tie-breaker descending under a descending primary
-    proxy.setSecondarySort(1, Qt::DescendingOrder);
-    QCOMPARE(order(), (QList<int>{30, 10, 50, 20}));
+    // Tie-breakers descending under a descending primary
+    proxy.setSortHistory({{1, Qt::DescendingOrder}, {2, Qt::DescendingOrder}});
+    QCOMPARE(order(), (QList<int>{1, 6, 3, 2, 5, 4}));
+
+    // Re-sorting a history column moves it out of the history; three levels only
+    proxy.sort(1, Qt::AscendingOrder);
+    QCOMPARE(proxy.sortHistory(), (QList<Key>{{0, Qt::DescendingOrder}, {2, Qt::DescendingOrder}}));
+    proxy.setSortHistory({{0, Qt::AscendingOrder}, {1, Qt::AscendingOrder}, {2, Qt::AscendingOrder}});
+    QCOMPARE(proxy.sortHistory(), (QList<Key>{{0, Qt::AscendingOrder}, {2, Qt::AscendingOrder}}));
 }
 
 void tst_ListSorting::a4afSourcesStayBelowAvailableOnes()

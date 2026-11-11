@@ -74,6 +74,11 @@ void applyAttr(IndexerResult& row, QStringView key, QStringView value)
         row.poster = value.toString();
     } else if (key == QLatin1String("group")) {
         row.group = value.toString();
+    } else if (key == QLatin1String("coverurl")) {
+        // http(s) only: the daemon fetches it
+        if (const QUrl url(value.trimmed().toString());
+            url.isValid() && url.scheme().startsWith(QLatin1String("http")))
+            row.coverUrl = url;
     } else if (key == QLatin1String("password")) {
         // The field is specified as a flag — 0 none, 1 maybe, 2 yes — and "-1"
         // is common in the wild. But indexers also put the real passphrase here,

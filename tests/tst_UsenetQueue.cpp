@@ -23,6 +23,10 @@
 #include "queue/UsenetQueueStore.h"
 #include "queue/UsenetStateWriter.h"
 
+#include "app/AppContext.h"
+#include "files/KnownFile.h"
+#include "files/KnownFileList.h"
+#include "files/SharedFileList.h"
 #include "prefs/Preferences.h"
 
 #include <QDir>
@@ -125,8 +129,9 @@ QByteArray makeNzb(const QString& fileName, int parts, qint64 date = 1700000000,
 /// An NZB whose files are named, in the order given. Distinct from
 /// makeMultiFileNzb() because the point here is that NZB order and *name* order
 /// disagree — the payload list is sorted by name, so a positional match between
-/// the two is wrong exactly when the two orders differ.
-QByteArray makeNamedFilesNzb(const QStringList& names, int partsPerFile)
+/// the two is wrong exactly when the two orders differ. @p firstIndex offsets
+/// the message-ids (n<index>p<part>), so a second NZB can name other articles.
+QByteArray makeNamedFilesNzb(const QStringList& names, int partsPerFile, int firstIndex = 0)
 {
     QByteArray xml;
     xml += R"(<?xml version="1.0" encoding="iso-8859-1" ?>)"
@@ -142,7 +147,7 @@ QByteArray makeNamedFilesNzb(const QStringList& names, int partsPerFile)
             xml += QStringLiteral(
                        "      <segment bytes=\"3500\" number=\"%1\">n%2p%1@example.com"
                        "</segment>\n")
-                       .arg(p).arg(f).toUtf8();
+                       .arg(p).arg(firstIndex + f).toUtf8();
         }
         xml += "    </segments>\n  </file>\n";
     }
@@ -294,6 +299,7 @@ private slots:
     void changingTheServerListDoesNotStrandACheckingItem();
     void probeBytesAreBilledToTheAccountThatAnsweredThem();
     void aPublishedFileIsAttributedToTheNzbFileItCameFrom();
+    void shareSwitchOffPublishesWithoutSharing();
     void aRetryAsksOnlyForTheArticlesThatWereMissing();
     void aRetryKeepsTheHoleCountUntilTheBytesActuallyArrive();
     void aRetryThatFindsNothingFailsAgainAndSaysWhatItLearned();
@@ -3739,6 +3745,82 @@ void tst_UsenetQueue::aPublishedFileIsAttributedToTheNzbFileItCameFrom()
         publishedNames << QFileInfo(path).fileName();
     publishedNames.sort();
     QCOMPARE(publishedNames, QStringList({QStringLiteral("aaa.bin"), QStringLiteral("zzz.bin")}));
+
+    queue.stop();
+}
+
+/// usenetShareFiles off (#177): the release still lands in incoming and is
+/// announced through filesPublished (the daemon records it in landed.txt), but
+/// it is not put into the share. On shares it on completion.
+void tst_UsenetQueue::shareSwitchOffPublishesWithoutSharing()
+{
+    constexpr int kFileParts = 2;
+    const QByteArray whole = payload(kPartSize * kFileParts);
+
+    FakeNntpServer server;
+    server.addGroup(QStringLiteral("alt.binaries.test"), 100, 1, 100);
+    const QStringList names{QStringLiteral("off.bin"), QStringLiteral("on.bin")};
+    for (int f = 0; f < names.size(); ++f) {
+        for (int p = 1; p <= kFileParts; ++p) {
+            server.addArticle(QStringLiteral("n%1p%2@example.com").arg(f).arg(p),
+                              makeArticle(whole, p, kFileParts, names.at(f)));
+        }
+    }
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    theApp.sharedFileList = &shared;
+    const auto restore = qScopeGuard([] {
+        theApp.sharedFileList = nullptr;
+        thePrefs.setUsenetShareFiles(true);
+    });
+
+    const auto sharedNames = [&shared] {
+        QStringList out;
+        shared.forEachFile([&](KnownFile* f) { out << f->fileName(); });
+        return out;
+    };
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 4)}, 60);
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QSignalSpy published(&queue, &UsenetQueue::filesPublished);
+
+    // off
+    thePrefs.setUsenetShareFiles(false);
+    QString error;
+    QVERIFY2(!queue.addNzb(makeNamedFilesNzb({names.at(0)}, kFileParts, 0),
+                           QStringLiteral("off"), error).isEmpty(), qPrintable(error));
+    QVERIFY2(finished.wait(30000), "the download never reported a terminal outcome");
+    QVERIFY2(finished.at(0).at(1).toBool(), qPrintable(finished.at(0).at(2).toString()));
+
+    QCOMPARE(published.size(), 1);
+    const QStringList offPaths = published.at(0).at(0).toStringList();
+    QCOMPARE(offPaths.size(), 1);
+    QCOMPARE(QFileInfo(offPaths.at(0)).fileName(), names.at(0));
+    QVERIFY2(QFileInfo::exists(offPaths.at(0)), "the file still lands in incoming");
+    QTest::qWait(500);
+    QVERIFY2(!sharedNames().contains(names.at(0)), "off must not share the finished file");
+
+    // on
+    thePrefs.setUsenetShareFiles(true);
+    QVERIFY2(!queue.addNzb(makeNamedFilesNzb({names.at(1)}, kFileParts, 1),
+                           QStringLiteral("on"), error).isEmpty(), qPrintable(error));
+    QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 2, 30000);
+    QVERIFY2(finished.at(1).at(1).toBool(), qPrintable(finished.at(1).at(2).toString()));
+    QCOMPARE(published.size(), 2);
+    QTRY_VERIFY_WITH_TIMEOUT(sharedNames().contains(names.at(1)), 15000);
+    QVERIFY(!sharedNames().contains(names.at(0)));
 
     queue.stop();
 }

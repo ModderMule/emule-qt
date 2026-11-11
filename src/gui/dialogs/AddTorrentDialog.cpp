@@ -9,6 +9,7 @@
 #include "utils/StatusBarNotifier.h"
 #include "utils/TorrentAdd.h"
 #include "utils/TorrentLinks.h"
+#include "utils/ScrollMessageBox.h"
 
 #include <QCoreApplication>
 #include <QFile>
@@ -100,7 +101,7 @@ void AddTorrentDialog::onAccepted()
         }
         keys.removeDuplicates();
         if (!notMagnets.isEmpty()) {
-            QMessageBox::warning(this, windowTitle(),
+            ScrollMessageBox::warning(this, windowTitle(),
                                  tr("These lines are not BitTorrent magnet links:\n\n%1")
                                      .arg(notMagnets.join(QLatin1Char('\n'))));
             setLines(notMagnets + keys);
@@ -117,7 +118,7 @@ void AddTorrentDialog::onAccepted()
             keys << path;
         }
         if (!unreadable.isEmpty()) {
-            QMessageBox::warning(this, windowTitle(),
+            ScrollMessageBox::warning(this, windowTitle(),
                                  tr("Cannot read:\n\n%1").arg(unreadable.join(QLatin1Char('\n'))));
         }
     }
@@ -125,7 +126,7 @@ void AddTorrentDialog::onAccepted()
     if (keys.isEmpty())
         return;
     if (keys.size() > kMaxItems) {
-        QMessageBox::warning(this, windowTitle(),
+        ScrollMessageBox::warning(this, windowTitle(),
                              tr("Please add at most %1 torrents at a time.").arg(kMaxItems));
         return;
     }
@@ -146,6 +147,7 @@ void AddTorrentDialog::sendAll(const QStringList& keys, const QHash<QString, QBy
 
     auto added = std::make_shared<int>(0);
     auto problems = std::make_shared<QStringList>();
+    auto duplicates = std::make_shared<QStringList>();   // one line each, not a sentence (#176)
     const QPointer<AddTorrentDialog> self(this);
 
     auto titleOf = [files](const QString& key) {
@@ -160,25 +162,33 @@ void AddTorrentDialog::sendAll(const QStringList& keys, const QHash<QString, QBy
                          : gui::magnetRequest(key, savePath, paused, i2pOnly, stop);
         },
         this,
-        [self, added, problems] {
+        [self, added, problems, duplicates] {
             // Off the reply's stack before anything modal opens (NzbAdd.h)
-            QTimer::singleShot(0, qApp, [self, added, problems] {
+            QTimer::singleShot(0, qApp, [self, added, problems, duplicates] {
                 if (!self)
                     return;
                 self->setBusy(false);
                 if (*added > 0)
                     StatusBarNotifier::post(tr("Added %n torrent(s).", "", *added), 5000);
+                if (!duplicates->isEmpty()) {
+                    problems->append(tr("%n torrent(s) already in the torrent list:", "", int(duplicates->size()))
+                                     + QLatin1Char('\n') + duplicates->join(QLatin1Char('\n')));
+                }
                 if (!problems->isEmpty()) {
-                    QMessageBox::warning(self, self->windowTitle(),
+                    ScrollMessageBox::warning(self, self->windowTitle(),
                                          problems->join(QStringLiteral("\n\n")));
                 }
                 self->accept();
             });
         },
-        [added, problems, titleOf](const QString& key, const Ipc::IpcMessage& reply) {
+        [added, problems, duplicates, titleOf](const QString& key, const Ipc::IpcMessage& reply) {
             const gui::BtAddReply r = gui::decodeTorrentAddReply(reply);
             if (r.outcome == gui::BtAddOutcome::Added) {
                 ++(*added);
+                return;
+            }
+            if (!r.dropped && r.outcome == gui::BtAddOutcome::Duplicate) {
+                duplicates->append(titleOf(key));
                 return;
             }
             problems->append(r.dropped ? tr("Could not reach the eMule core.")

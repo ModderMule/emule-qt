@@ -13,6 +13,8 @@
 #include <QUrl>
 #include <QVersionNumber>
 
+#include <algorithm>
+
 // Key this build uses in the manifest's "downloads" map (windows-x64, mac-arm64, ...).
 #if defined(Q_OS_WIN)
 #  define EMULE_MANIFEST_OS "windows"
@@ -62,6 +64,12 @@ bool VersionDownload::isInstallable() const
 {
     static const QRegularExpression hex64(QStringLiteral("^[0-9a-f]{64}$"));
     return isUsable() && hex64.match(sha256).hasMatch();
+}
+
+bool SkinRelease::isValidId(const QString& id)
+{
+    static const QRegularExpression re(QStringLiteral("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"));
+    return re.match(id).hasMatch();
 }
 
 bool VersionManifestInfo::isBelowMinimum(const QString& local) const
@@ -121,6 +129,37 @@ VersionManifestInfo parse(const QByteArray& json)
         info.hosterResolver.jdRevision = int(res.value(QStringLiteral("jdRevision")).toInteger(0));
         info.hosterResolver.api = int(res.value(QStringLiteral("api")).toInteger(0));
     }
+
+    const auto readDownload = [](const QJsonObject& e) {
+        VersionDownload d;
+        d.url = e.value(QStringLiteral("url")).toString();
+        d.sha256 = e.value(QStringLiteral("sha256")).toString().toLower();
+        d.size = e.value(QStringLiteral("size")).toInteger(0);
+        return d;
+    };
+    const QJsonObject skins = obj.value(QStringLiteral("skins")).toObject();
+    for (auto it = skins.begin(); it != skins.end(); ++it) {
+        const QJsonObject e = it.value().toObject();
+        SkinRelease s;
+        s.id = it.key();
+        s.file = readDownload(e);
+        // skip what could not be installed anyway
+        if (!SkinRelease::isValidId(s.id) || !s.file.isInstallable())
+            continue;
+        s.name = e.value(QStringLiteral("name")).toString().trimmed();
+        if (s.name.isEmpty())
+            s.name = s.id;
+        s.author = e.value(QStringLiteral("author")).toString().trimmed();
+        s.description = e.value(QStringLiteral("description")).toString().trimmed();
+        s.date = QDateTime::fromString(e.value(QStringLiteral("date")).toString(), Qt::ISODate);
+        if (const VersionDownload p = readDownload(e.value(QStringLiteral("preview")).toObject());
+            p.isInstallable())
+            s.preview = p;
+        info.skins.append(s);
+    }
+    std::ranges::sort(info.skins, [](const SkinRelease& a, const SkinRelease& b) {
+        return a.name.compare(b.name, Qt::CaseInsensitive) < 0;
+    });
 
     const QString key = platformKey();
     if (const VersionDownload d = info.downloadFor(key); !key.isEmpty() && d.isUsable())

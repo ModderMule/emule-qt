@@ -7,6 +7,7 @@
 
 #include "IpcMessage.h"
 #include "IpcProtocol.h"
+#include "utils/ModalHost.h"
 
 #include <QCborArray>
 #include <QDateTime>
@@ -241,7 +242,7 @@ void Ed3kNameOpener::onFriendList(const Ipc::IpcMessage& msg)
                 logWarning(QStringLiteral("ed3k: the friend's name list was not followed"));
         });
     });
-    box->show();
+    ModalHost::show(box);
 }
 
 } // namespace eMule

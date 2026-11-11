@@ -1,11 +1,12 @@
 #include "stats/CountryCensus.h"
 
+#include "utils/BackgroundFileWriter.h"
 #include "utils/Log.h"
 
+#include <QDataStream>
 #include <QFile>
 #include <QFileInfo>
 #include <QRandomGenerator>
-#include <QSaveFile>
 
 #include <algorithm>
 
@@ -51,6 +52,8 @@ CountryCensus::CountryCensus(const QString& dir, const QString& baseName, quint3
 {
     // The salt has to outlive the session: sketches hashed with another one
     // cannot be merged. A lost or unreadable file therefore starts clean.
+    if (!m_dir.isEmpty() && BackgroundFileWriter::instance().pending(filePath()))
+        BackgroundFileWriter::instance().flush();   // queued copy is newer than the file
     if (m_dir.isEmpty() || !QFileInfo::exists(filePath()) || !readFrom(filePath(), m_base, true)) {
         m_base = {};
         newSalt();
@@ -103,8 +106,11 @@ bool CountryCensus::save()
 {
     if (m_dir.isEmpty() || !m_dirty)
         return true;
-    if (!writeTo(filePath(), cumulative()))
+    // Synced on the writer: commit() on the main thread stalled it 8 s on ext4 (#169)
+    const QByteArray bytes = encode(cumulative());
+    if (bytes.isEmpty())
         return false;
+    BackgroundFileWriter::instance().write(filePath(), bytes, {});
     m_dirty = false;
     return true;
 }
@@ -171,11 +177,14 @@ CountryCensus::Tally CountryCensus::cumulative() const
 
 bool CountryCensus::writeTo(const QString& path, const Tally& tally) const
 {
-    QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly))
-        return false;
+    const QByteArray bytes = encode(tally);
+    return !bytes.isEmpty() && BackgroundFileWriter::saveFile(path, bytes);
+}
 
-    QDataStream out(&file);
+QByteArray CountryCensus::encode(const Tally& tally) const
+{
+    QByteArray bytes;
+    QDataStream out(&bytes, QIODevice::WriteOnly);
     out.setVersion(QDataStream::Qt_6_0);
     out.setByteOrder(QDataStream::LittleEndian);
     out << m_magic << kFormatVersion << static_cast<quint8>(CardinalitySketch::kPrecision)
@@ -186,7 +195,7 @@ bool CountryCensus::writeTo(const QString& path, const Tally& tally) const
         out << static_cast<quint16>(key);
         sketch.write(out);
     }
-    return out.status() == QDataStream::Ok && file.commit();
+    return out.status() == QDataStream::Ok ? bytes : QByteArray();
 }
 
 bool CountryCensus::readFrom(const QString& path, Tally& tally, bool adoptSalt)

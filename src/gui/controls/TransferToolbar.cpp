@@ -38,6 +38,11 @@ TransferToolbar::TransferToolbar(QWidget* parent)
     m_label->setFont(bold);
     m_layout->addWidget(m_label);
 
+    // Icon + label act as MFC's IDC_DOWNLOAD_ICO / IDC_UPLOAD_ICO button: a click
+    // shows the next list, with or without the buttons
+    m_iconLabel->setCursor(Qt::PointingHandCursor);
+    m_label->setCursor(Qt::PointingHandCursor);
+
     // Trailing stretch — buttons are inserted before this via addButton()
     m_layout->addStretch(1);
 
@@ -100,7 +105,10 @@ void TransferToolbar::changeEvent(QEvent* event)
 
 void TransferToolbar::mouseReleaseEvent(QMouseEvent* event)
 {
-    if (!m_buttonsVisible && event->button() == Qt::LeftButton)
+    // Without buttons the whole header cycles; with them only the icon + label do
+    if (event->button() == Qt::LeftButton
+        && rect().contains(event->position().toPoint())
+        && (!m_buttonsVisible || event->position().x() <= m_label->geometry().right()))
         emit cycleRequested();
     QWidget::mouseReleaseEvent(event);
 }

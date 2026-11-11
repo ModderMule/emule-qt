@@ -54,6 +54,13 @@ public:
     /// [Colors] <key>BkImg list watermarks: lower-cased key → readable file.
     [[nodiscard]] const QHash<QString, QString>& listImages() const { return m_listImages; }
 
+    /// [Skin] @p key of the profile at @p iniPath, else that key in any section; empty if none.
+    [[nodiscard]] static QString profileValue(const QString& iniPath, const QString& key);
+
+    /// Preview image of a skin bundle: preview/overview.png next to the profile, else
+    /// its [Skin] Preview= file. Empty when neither is a readable image.
+    [[nodiscard]] static QString previewImage(const QString& iniPath);
+
     /// @return The directory containing the skin profile INI (for relative paths).
     [[nodiscard]] const QString& skinDir() const { return m_skinDir; }
 

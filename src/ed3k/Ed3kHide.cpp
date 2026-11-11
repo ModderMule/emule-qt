@@ -69,62 +69,8 @@ void Ed3kHide::setSettings(const Ed3kHideSettings& settings)
 
 void Ed3kHide::apply()
 {
-    auto* e = m_session.engine();
-    if (!e)
-        return;
-    const auto t = m_session.now();
-    // §5: forwarding for others while hiding (others' traffic covers its own, §1)
-    const bool hopping = m_settings.on && m_settings.hopping;
-    if (m_appliedHopping != hopping) {
-        if (auto ok = e->hopsSetHopping(t, hopping); ok)
-            m_appliedHopping = hopping;
-        else if (ok.error() != ffi::Error::Unsupported)
-            logEd3kWarning(QStringLiteral("ed3k: hopping not set (error %1)").arg(int(ok.error())));
-    }
-    if (m_appliedShare != m_settings.sharePercent) {
-        if (auto ok = e->hopsSetShare(t, std::uint32_t(m_settings.sharePercent), 100); ok)
-            m_appliedShare = m_settings.sharePercent;
-    }
-
-    if (m_settings.on) {
-        if (m_appliedHops == m_settings.hops)
-            return;
-        QString err;
-        auto seed = loadOrCreateSecret(m_dir, kSeedFile, nullptr, &err);
-        if (!seed) {
-            logEd3kError(QStringLiteral("ed3k: no anonymous key (%1); not hiding").arg(err));
-            return;
-        }
-        (void)ownerOnly(QDir(m_dir).filePath(kSeedFile));
-        // one hop count for every use; gates at the core default
-        // was: auto ok = e->anonStart(t, *seed, ffi::HideCfg::uniform(std::uint8_t(m_settings.hops)));
-        auto ok = e->anonStart(t, *seed, hideCfg(m_settings.hops));
-        if (!ok && ok.error() == ffi::Error::Config && m_settings.hops == 0) {
-            // a core without 0 hops (ED3K_HOPS_OFF): 1 hop, as §2.6 does without HOP
-            logEd3kWarning(QStringLiteral("ed3k: 0 hops refused by the core; hiding with 1 hop"));
-            ok = e->anonStart(t, *seed, hideCfg(1));
-        }
-        wipe(std::span<std::uint8_t>{*seed});
-        if (!ok) {
-            logEd3kWarning(QStringLiteral("ed3k: hiding not started (error %1)").arg(int(ok.error())));
-            return;
-        }
-        const bool was = m_appliedHops.has_value();
-        m_appliedHops = m_settings.hops;
-        const auto id = anonId();
-        logEd3k(QStringLiteral("ed3k: hiding with %1 hop(s), anonymous node %2")
-                    .arg(m_settings.hops)
-                    .arg(id ? hexOf(id->bytes).left(8) : QString()));
-        if (!was)
-            emit started();
-        emit changed();
-    } else if (m_appliedHops) {
-        (void)e->anonStop(t);
-        m_appliedHops.reset();
-        logEd3k(QStringLiteral("ed3k: hiding stopped; files of the anonymous key are not shared until it is on again"));
-        emit stopped();
-        emit changed();
-    }
+    applyNode();
+    applyReports();
 }
 
 void Ed3kHide::attach()
@@ -133,6 +79,7 @@ void Ed3kHide::attach()
     m_appliedHops.reset();
     m_appliedHopping.reset();
     m_appliedShare = -1;
+    m_appliedReports.reset();
     if (!m_loaded)
         load();
 }
@@ -143,6 +90,7 @@ void Ed3kHide::detach()
     m_appliedHops.reset();
     m_appliedHopping.reset();
     m_appliedShare = -1;
+    m_appliedReports.reset();
     if (m_saveTimer.isActive()) {
         m_saveTimer.stop();
         save();
@@ -247,6 +195,12 @@ Ed3kHideStatus Ed3kHide::status() const
             st.built = int(std::ranges::count_if(*paths, [](const auto& p) { return p.built; }));
         }
     st.waitingForHops = st.built == 0;
+    if (auto* e = m_session.engine())
+        if (auto a = e->anonState(); a && a->running) {
+            st.hop = a->hop;
+            st.router = a->router;
+            st.shares = a->shares;
+        }
     return st;
 }
 
@@ -329,6 +283,84 @@ void Ed3kHide::scheduleSave()
 {
     if (!m_saveTimer.isActive())
         m_saveTimer.start();
+}
+
+void Ed3kHide::applyNode()
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return;
+    const auto t = m_session.now();
+    // §5: forwarding for others while hiding (others' traffic covers its own, §1)
+    const bool hopping = m_settings.on && m_settings.hopping;
+    if (m_appliedHopping != hopping) {
+        if (auto ok = e->hopsSetHopping(t, hopping); ok)
+            m_appliedHopping = hopping;
+        else if (ok.error() != ffi::Error::Unsupported)
+            logEd3kWarning(QStringLiteral("ed3k: hopping not set (error %1)").arg(int(ok.error())));
+    }
+    if (m_appliedShare != m_settings.sharePercent) {
+        if (auto ok = e->hopsSetShare(t, std::uint32_t(m_settings.sharePercent), 100); ok)
+            m_appliedShare = m_settings.sharePercent;
+    }
+
+    if (m_settings.on) {
+        if (m_appliedHops == m_settings.hops)
+            return;
+        QString err;
+        auto seed = loadOrCreateSecret(m_dir, kSeedFile, nullptr, &err);
+        if (!seed) {
+            logEd3kError(QStringLiteral("ed3k: no anonymous key (%1); not hiding").arg(err));
+            return;
+        }
+        (void)ownerOnly(QDir(m_dir).filePath(kSeedFile));
+        // one hop count for every use; gates at the core default
+        // was: auto ok = e->anonStart(t, *seed, ffi::HideCfg::uniform(std::uint8_t(m_settings.hops)));
+        auto ok = e->anonStart(t, *seed, hideCfg(m_settings.hops));
+        if (!ok && ok.error() == ffi::Error::Config && m_settings.hops == 0) {
+            // a core without 0 hops (ED3K_HOPS_OFF): 1 hop, as §2.6 does without HOP
+            logEd3kWarning(QStringLiteral("ed3k: 0 hops refused by the core; hiding with 1 hop"));
+            ok = e->anonStart(t, *seed, hideCfg(1));
+        }
+        wipe(std::span<std::uint8_t>{*seed});
+        if (!ok) {
+            logEd3kWarning(QStringLiteral("ed3k: hiding not started (error %1)").arg(int(ok.error())));
+            return;
+        }
+        const bool was = m_appliedHops.has_value();
+        m_appliedHops = m_settings.hops;
+        const auto id = anonId();
+        logEd3k(QStringLiteral("ed3k: hiding with %1 hop(s), anonymous node %2")
+                    .arg(m_settings.hops)
+                    .arg(id ? hexOf(id->bytes).left(8) : QString()));
+        if (!was)
+            emit started();
+        emit changed();
+    } else if (m_appliedHops) {
+        (void)e->anonStop(t);
+        m_appliedHops.reset();
+        logEd3k(QStringLiteral("ed3k: hiding stopped; files of the anonymous key are not shared until it is on again"));
+        emit stopped();
+        emit changed();
+    }
+}
+
+void Ed3kHide::applyReports()
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return;
+    // subscription.md §5.3: share reports of the anonymous key only through the user's proxy
+    const bool want = m_settings.reportProxy.has_value() && hiding();
+    if (m_appliedReports == want)
+        return;
+    if (auto ok = e->anonReports(m_session.now(), want); ok || !want) {
+        m_appliedReports = want;
+        logEd3k(QStringLiteral("ed3k: share reports under the anonymous key %1").arg(want ? QStringLiteral("on (report proxy)")
+                                                                                             : QStringLiteral("off")));
+    } else if (ok.error() != ffi::Error::Unsupported) {
+        logEd3kWarning(QStringLiteral("ed3k: share reports under the anonymous key not turned on (error %1)").arg(int(ok.error())));
+    }
 }
 
 } // namespace eMule::ed3k

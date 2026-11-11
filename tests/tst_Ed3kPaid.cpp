@@ -347,6 +347,7 @@ private slots:
     void aPassIsCheckedPerScopeAndAskedOncePerSet();
     void aPassByHandIsRenewedOnlyOnRequest();
     void anAnonymousScopeTakesItsKeyedEvents();
+    void aChannelWatchedAnonymouslyIsFollowedAnonymously();
     void cleanup() { QTest::qWait(10); }
 };
 
@@ -936,6 +937,61 @@ void tst_Ed3kPaid::anAnonymousScopeTakesItsKeyedEvents()
 
     // unfollowed on the anonymous node (was: skipped)
     paid->unfollow(*scope);
+    held = b.engine()->paidOffer(b.now(), *scope, ::ed3k::KeyKind::Anon);
+    QVERIFY(!held || !*held);
+    b.stop();
+}
+
+void tst_Ed3kPaid::aChannelWatchedAnonymouslyIsFollowedAnonymously()
+{
+    QTemporaryDir db;
+    Ed3kSession b;
+    Ed3kHideSettings hide;
+    hide.on = true;
+    b.setHideSettings(hide);
+    QVERIFY(b.start(loopback(db.path())));
+    QVERIFY(b.hide().hiding());
+    Signer channel;
+    channel.seed.fill(0x36);
+    const QByteArray id("av");
+    const auto scope = ::ed3k::paidScope(1, channel.key(), spanOf(id));
+    QVERIFY(scope);
+    const QString link = QStringLiteral("ed3k:live?key=%1&id=%2&paid=1&dn=Anon%20TV")
+                             .arg(base32(channel.key()), base32(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(id.constData()), 2)));
+    auto paid = std::make_unique<Ed3kPaid>(b, db.path());
+    Ed3kNames names(b, db.path());
+    names.start();
+    Ed3kSiteServer sites(b, names);
+    Ed3kLive live(b, sites);
+    live.setPaid(paid.get());
+    const QString hex = Ed3kPaid::hexOf(*scope);
+    // watched under keyForUse() (anonymous): the channel's scope follows that key
+    const auto watched = live.watch(link);
+    QVERIFY2(watched, watched ? "" : watched.error().toUtf8().constData());
+    QVERIFY(paid->info(hex));
+    QVERIFY(paid->info(hex)->anon);
+    const std::uint64_t now = b.now().unixS;
+    const Season season = makeSeason(channel, raw(scope->bytes), 0, 24);
+    const QByteArray offer = makeOffer(channel, season, now - 60, now - 3600, 3600, QStringLiteral("https://shop.example/pay"),
+                                       QStringLiteral("https://shop.example/pass"));
+    QVERIFY(paid->setOffer(*scope, offer));
+    auto held = b.engine()->paidOffer(b.now(), *scope, ::ed3k::KeyKind::Anon);
+    QVERIFY(held && *held);
+    held = b.engine()->paidOffer(b.now(), *scope, ::ed3k::KeyKind::Node);
+    QVERIFY(!held || !*held);
+    // the anonymous node's events are this scope's, the node key's not
+    QSignalSpy keys(paid.get(), &Ed3kPaid::keysArrived);
+    const ::ed3k::Event ev{::ed3k::event::PaidKeys{*scope, *b.nodeId(), {5}}};
+    bool handled = false;
+    emit b.eventPolled(ev, &handled);
+    QVERIFY(!handled);
+    emit b.keyedEventPolled(ev, ::ed3k::KeyKind::Anon, &handled);
+    QVERIFY(handled);
+    QCOMPARE(keys.count(), 1);
+    // watched again under the node key: moved there (one key holds the scope)
+    QVERIFY(live.leave(*watched));
+    paid->followChannel(channel.key(), *scope, QStringLiteral("Anon TV"), ::ed3k::KeyKind::Node);
+    QVERIFY(!paid->info(hex)->anon);
     held = b.engine()->paidOffer(b.now(), *scope, ::ed3k::KeyKind::Anon);
     QVERIFY(!held || !*held);
     b.stop();

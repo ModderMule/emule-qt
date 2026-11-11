@@ -8,6 +8,7 @@
 #include "torrent/BtTorrentView.h"
 
 #include <libtorrent/i2p_stream.hpp>
+#include <libtorrent/load_torrent.hpp>
 #include <libtorrent/version.hpp>
 
 #include <QSignalSpy>
@@ -29,6 +30,7 @@ private slots:
     void ids();
     void magnets();
     void torrentFiles();
+    void fileAvailability();
     void inspectTorrentFile();
     void i2pSettingsMap();
     void proxySettingsMap();
@@ -201,6 +203,30 @@ void tst_BtSmoke::torrentFiles()
     QVERIFY(!BtAddSource::fromTorrentFile({}).has_value());
     QVERIFY(!BtAddSource::fromTorrentFile(QByteArray("not bencode")).has_value());
     QVERIFY(!BtAddSource::fromTorrentFile(QByteArray("d4:infod4:name1:aee")).has_value());
+}
+
+void tst_BtSmoke::fileAvailability()
+{
+    // a.bin = piece 0, b.bin = pieces 1-2 (16 KiB pieces)
+    const QByteArray info = QByteArray("d5:filesl"
+                                       "d6:lengthi16384e4:pathl5:a.binee"
+                                       "d6:lengthi16385e4:pathl5:b.binee"
+                                       "e4:name4:demo12:piece lengthi16384e6:pieces60:")
+                            + QByteArray(60, 'x') + QByteArray("e");
+    const QByteArray torrent = QByteArray("d4:info") + info + QByteArray("e");
+    const lt::add_torrent_params atp =
+        lt::load_torrent_buffer(lt::span<char const>(torrent.constData(), torrent.size()));
+    QVERIFY(atp.ti && atp.ti->num_pieces() == 3);
+
+    auto rows = BtTorrentView::files(*atp.ti, {}, {}, {2, 0, 1});
+    QCOMPARE(rows.size(), 2);
+    QCOMPARE(rows.at(0).availability, 1.0);
+    QCOMPARE(rows.at(1).availability, 0.5);   // piece 1 missing, piece 2 has a peer
+
+    // seeding: libtorrent sends no counts → N/A
+    rows = BtTorrentView::files(*atp.ti, {}, {}, {});
+    QCOMPARE(rows.at(0).availability, -1.0);
+    QCOMPARE(rows.at(1).availability, -1.0);
 }
 
 void tst_BtSmoke::inspectTorrentFile()

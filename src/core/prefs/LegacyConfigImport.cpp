@@ -102,6 +102,7 @@ void discoverWine(const QString& prefix, const std::function<void(const QString&
 bool writeState(const QString& configDir, const QString& sourceDir, const QStringList& pending);
 [[nodiscard]] bool hasIdentity(const QDir& source);
 void applyDerivedUserHash(Preferences& prefs, Outcome& out);
+void backupSettings(const QDir& config, Outcome& out);
 [[nodiscard]] int copyDataFiles(const QDir& source, const QDir& config, Outcome& out);
 void copySchedules(const LegacyIni& ini, const QDir& config);
 [[nodiscard]] QString nickFrom(const LegacyIni& ini, SourceKind kind);
@@ -322,6 +323,7 @@ Outcome run(const QString& configDir, Preferences& prefs)
     }
 
     const QDir source(src->configDir);
+    backupSettings(config, out);
     out.filesCopied = copyDataFiles(source, config, out);
     if (!hasIdentity(source))
         applyDerivedUserHash(prefs, out);
@@ -342,14 +344,16 @@ Outcome run(const QString& configDir, Preferences& prefs)
     writeState(configDir, out.sourceDir, out.pendingTempDirs);
 
     out.result = Result::Imported;
-    logInfo(QStringLiteral("Imported %1 settings from %2: %3 files (%4 own ones moved to %5), "
-                           "%6 preferences, %7 categories, %8 shared folders, %9 temp folders queued")
+    logInfo(QStringLiteral("Imported %1 settings from %2: %3 files (%4 own ones + %10 settings files "
+                           "backed up to %5), %6 preferences, %7 categories, %8 shared folders, "
+                           "%9 temp folders queued")
                 .arg(kind == SourceKind::Amule ? QStringLiteral("aMule") : QStringLiteral("eMule"),
                      out.sourceDir)
                 .arg(out.filesCopied).arg(out.filesBackedUp)
                 .arg(out.backupDir.isEmpty() ? QStringLiteral("-") : out.backupDir)
                 .arg(out.prefsApplied).arg(out.categories).arg(out.sharedDirs)
-                .arg(out.pendingTempDirs.size()));
+                .arg(out.pendingTempDirs.size())
+                .arg(out.settingsBackedUp));
     return out;
 }
 
@@ -680,6 +684,34 @@ void applyDerivedUserHash(Preferences& prefs, Outcome& out)
     out.userHashDerived = true;
 }
 
+/// Settings files the import edits or the GUI keeps next to them: copied, not moved
+constexpr std::array kSettingsFiles{"preferences.yml", "uistate.yml", "preferences.ini"};
+
+/// Created on first use; one per import
+QString backupDir(const QDir& config, Outcome& out)
+{
+    if (out.backupDir.isEmpty()) {
+        out.backupDir = config.filePath(QStringLiteral("import-backup-")
+            + QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss")));
+        QDir().mkpath(out.backupDir);
+    }
+    return out.backupDir;
+}
+
+/// This profile's settings as they were, before anything is changed
+void backupSettings(const QDir& config, Outcome& out)
+{
+    for (const char* name : kSettingsFiles) {
+        const QString file = QString::fromLatin1(name);
+        if (!config.exists(file))
+            continue;
+        if (QFile::copy(config.filePath(file), QDir(backupDir(config, out)).filePath(file)))
+            ++out.settingsBackedUp;
+        else
+            logWarning(QStringLiteral("Import: could not back up %1").arg(config.filePath(file)));
+    }
+}
+
 int copyDataFiles(const QDir& source, const QDir& config, Outcome& out)
 {
     const bool identity = hasIdentity(source);
@@ -700,12 +732,7 @@ int copyDataFiles(const QDir& source, const QDir& config, Outcome& out)
     for (const QString& name : std::as_const(names)) {
         if (!config.exists(name))
             continue;
-        if (out.backupDir.isEmpty()) {
-            out.backupDir = config.filePath(QStringLiteral("import-backup-")
-                + QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss")));
-            QDir().mkpath(out.backupDir);
-        }
-        if (QFile::rename(config.filePath(name), QDir(out.backupDir).filePath(name)))
+        if (QFile::rename(config.filePath(name), QDir(backupDir(config, out)).filePath(name)))
             ++out.filesBackedUp;
         else
             QFile::remove(config.filePath(name));

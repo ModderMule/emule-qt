@@ -349,20 +349,23 @@ ConvertStatus PartFileConvert::performConvertToeMule(ConvertJob& job)
     uint64 size = 0;
     bool duplicate = false;
     QString tempDir;
-    runOnMain([&] {
+    {
+        // A local probe, read here: the old temp dir may be slow (NAS, Wine drive)
         PartFile probe;
         checked = probe.loadPartFile(job.folder, job.filename, &format);
-        if (checked != PartFileLoadResult::CheckSuccess)
-            return;
-        md4cpy(hash.data(), probe.fileHash());
-        name = probe.fileName();
-        size = static_cast<uint64>(probe.fileSize());
-        duplicate = theApp.downloadQueue && theApp.downloadQueue->fileByID(hash.data());
-        tempDir = DownloadQueue::defaultTempDir();
-    });
+        if (checked == PartFileLoadResult::CheckSuccess) {
+            md4cpy(hash.data(), probe.fileHash());
+            name = probe.fileName();
+            size = static_cast<uint64>(probe.fileSize());
+        }
+    }
     if (checked != PartFileLoadResult::CheckSuccess || format == PartFileFormat::Unknown
         || format == PartFileFormat::BadFormat || size == 0)
         return ConvertStatus::BadFormat;
+    runOnMain([&] {
+        duplicate = theApp.downloadQueue && theApp.downloadQueue->fileByID(hash.data());
+        tempDir = DownloadQueue::defaultTempDir();
+    });
 
     {
         QMutexLocker locker(&s_mutex);
@@ -474,10 +477,12 @@ ConvertStatus PartFileConvert::performConvertToeMule(ConvertJob& job)
         return abandon(ConvertStatus::Failed);
     QFile::setPermissions(newMet, QFile::permissions(newMet) | QFile::WriteOwner);
 
+    // Disk read here, only the parse on the main thread
+    const PartMetPreload preload = PartMetPreload::read(newMet);
     PartFileLoadResult loaded = PartFileLoadResult::FailedOther;
     runOnMain([&] {
         file->resetForImportLoad();
-        loaded = file->loadPartFile(tempDir, QFileInfo(newMet).fileName());
+        loaded = file->loadPartFile(tempDir, QFileInfo(newMet).fileName(), nullptr, &preload);
         if (loaded != PartFileLoadResult::LoadSuccess)
             return;
         if (format == PartFileFormat::NewOld || format == PartFileFormat::Splitted)

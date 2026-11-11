@@ -49,6 +49,7 @@ static void unixSignalHandler(int)
 #endif
 
 #include "app/AppConfig.h"
+#include "app/AppIcon.h"
 #include "app/CommandLineExec.h"
 #include "app/CoreAttachment.h"
 #include "app/CoreStartWatch.h"
@@ -85,6 +86,7 @@ static void unixSignalHandler(int)
 #include "utils/BundleEnvironment.h"
 #include "utils/CrashHandler.h"
 #include "utils/Log.h"
+#include "utils/ModalHost.h"
 
 #include "IpcMessage.h"
 
@@ -444,16 +446,6 @@ void terminateUnreachableDaemon(qint64 pid, bool launchedByUs, const QString& co
         eMule::logWarning(QStringLiteral("Core not reachable at exit, left running (pid %1)").arg(pid));
 }
 
-/// The donkey at every size we have art for. One file per size rather than
-/// Mule.ico: the taskbar and Alt-Tab ask for 48 and up, which that one lacks.
-QIcon appIcon()
-{
-    QIcon icon;
-    for (const int size : {16, 32, 48, 64, 128, 256})
-        icon.addFile(QStringLiteral(":/icons/app/emuleqt-%1.png").arg(size), QSize(size, size));
-    return icon;
-}
-
 } // anonymous namespace
 
 int main(int argc, char* argv[])
@@ -482,7 +474,7 @@ int main(int argc, char* argv[])
 #endif
     QApplication::setApplicationVersion(eMule::kAppVersion);
     QApplication::setOrganizationName(QStringLiteral("eMule"));
-    app.setWindowIcon(appIcon());
+    app.setWindowIcon(eMule::appIcon());
 #ifdef Q_OS_LINUX
     // Wayland has no per-window icon: the compositor looks up <app id>.desktop.
     QGuiApplication::setDesktopFileName(QLatin1String(eMule::gui::FileAssociation::kDesktopId));
@@ -991,6 +983,7 @@ int main(int argc, char* argv[])
                     stats->applySettings();
                 // The update-URL fields show daemon-owned prefs.
                 mainWindow.serverPanel()->refreshUpdateUrl();
+                mainWindow.updateSpeedLimitTip();
                 mainWindow.kadPanel()->refreshNodesUrl();
                 // The folder tree marks what sharedDirs just named.
                 mainWindow.sharedFilesPanel()->refreshSharedDirs();
@@ -1101,7 +1094,7 @@ int main(int argc, char* argv[])
                     ipcClient.connectToDaemon(QHostAddress(coreDialHost(dlg->address())), dlg->port());
                 });
                 QObject::connect(dlg, &QDialog::rejected, &mainWindow, &eMule::MainWindow::forceQuit);
-                dlg->open();
+                eMule::ModalHost::open(dlg);   // usable over Options too
             });
             QObject::connect(&ipcClient, &eMule::IpcClient::connected,
                              &mainWindow, [&ipcClient, lastCore, connectDlg]() {
@@ -1220,7 +1213,8 @@ int main(int argc, char* argv[])
             const auto kind = static_cast<NotifierEvent>(msg.fieldInt(0));
             const bool added = kind == NotifierEvent::DownloadAdded;
             const eMule::NotifierText note = eMule::notifierEventText(
-                kind, msg.fieldString(1), added ? msg.fieldInt(2) : 0);
+                kind, msg.fieldString(1), added ? msg.fieldInt(2) : 0,
+                kind == NotifierEvent::Ed3kAnonExposed ? msg.fieldString(2) : QString());
             const bool wanted = added ? eMule::thePrefs.notifyOnDownloadAdded()
                               : note.urgent ? eMule::thePrefs.notifyOnUrgent()
                                             : eMule::thePrefs.notifyOnDownloadFinished();

@@ -399,7 +399,9 @@ void WebServer::addTorrentOperations()
         Operation op = make("torrents.files", Method::Get, "/api/v1/torrents/{id}/files",
                             "Files of a torrent",
                             "index, path, size, done (bytes) and priority: 0 = not downloaded, "
-                            "1 = low, 4 = normal, 7 = high. \"pad\" marks alignment padding.");
+                            "1 = low, 4 = normal, 7 = high. \"pad\" marks alignment padding. "
+                            "\"availability\": share of the file's pieces some connected peer has, "
+                            "0..1; -1 = N/A (seeding).");
         op.flags = ReadOnly;
         op.mcpTool = s("torrents_files");
         op.params = {idParam()};

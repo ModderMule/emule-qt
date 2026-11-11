@@ -14,7 +14,9 @@
 #include "webserver/UsenetWebBackend.h"
 
 #include <QCborMap>
+#include <QCborValue>
 #include <QString>
+#include <QUrl>
 
 #include <functional>
 
@@ -80,6 +82,13 @@ void addNzbUrl(QObject* context, const QString& url, const usenet::UsenetAddOpti
 /// InspectNzb: the files of an .nzb, without queueing it. Empty with @p error
 /// set when it does not parse.
 [[nodiscard]] QCborMap inspectNzb(const QByteArray& data, const QString& name, QString& error);
+
+/// FetchNzbImages: posted images, video frames and @p coverUrl of an NZB that
+/// inspectNzb() handed out a `previewToken` for (kept 3 h). Runs once per token;
+/// later calls get the cached answer. @p done: true + {images: [{name, kind, data}],
+/// note}, or false + error.
+void fetchPreviewImages(const QString& token, const QUrl& coverUrl,
+                        std::function<void(bool ok, const QCborValue& result)> done);
 
 /// Pause, resume (Bulk intent) or cancel every release in @p category, 0 being
 /// all of them. Returns how many it acted on, -1 for an unknown category.

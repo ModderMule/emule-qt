@@ -161,6 +161,9 @@ struct BtFileRow {
     /// libtorrent priority 0 (skip) .. 7 (top)
     int priority = 4;
     bool pad = false;
+    /// share of the file's pieces some connected peer has, 0..1 (qBittorrent's
+    /// Availability); -1 = N/A (libtorrent sends no piece counts while seeding)
+    double availability = -1.0;
 };
 
 struct BtPeerRow {

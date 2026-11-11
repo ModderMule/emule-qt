@@ -4,10 +4,10 @@
 
 #include "DeadServers.h"
 #include "Server.h"
-#include "utils/Log.h"
+#include "utils/BackgroundFileWriter.h"
 
+#include <QByteArray>
 #include <QFile>
-#include <QSaveFile>
 #include <QTextStream>
 
 namespace eMule {
@@ -27,6 +27,8 @@ void DeadServers::load(const QString& filePath, uint32 now)
     m_blocked.clear();
     if (m_path.isEmpty())
         return;
+    if (BackgroundFileWriter::instance().pending(m_path))
+        BackgroundFileWriter::instance().flush();
     QFile file(m_path);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
         return;
@@ -51,22 +53,21 @@ bool DeadServers::save() const
 {
     if (m_path.isEmpty())
         return true;
+    auto& writer = BackgroundFileWriter::instance();
     if (m_blocked.isEmpty()) {
+        writer.discard(m_path);   // a queued older list must not land after the remove
         QFile::remove(m_path);
         return true;
     }
-    QSaveFile file(m_path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        logWarning(QStringLiteral("Failed to save %1").arg(m_path));
-        return false;
-    }
-    QTextStream out(&file);
+    QByteArray data;
+    QTextStream out(&data);
     for (auto it = m_blocked.cbegin(); it != m_blocked.cend(); ++it) {
         // key is "<address>\t<port>"
         out << it.value() << u'\t' << it.key() << u'\n';
     }
     out.flush();
-    return file.commit();
+    writer.write(m_path, std::move(data), {});   // fsync off the main thread (#169)
+    return true;
 }
 
 void DeadServers::block(const Server& server, uint32 now)

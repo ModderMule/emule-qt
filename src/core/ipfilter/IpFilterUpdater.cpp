@@ -6,10 +6,10 @@
 #include "ipfilter/IPFilter.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
+#include "utils/BackgroundFileWriter.h"
 
 #include <QDir>
 #include <QFileInfo>
-#include <QSaveFile>
 #include <QUrl>
 
 #include <utility>
@@ -67,8 +67,10 @@ void IpFilterUpdater::run(const QString& source, bool conditional)
                            QStringLiteral("guarding.p2p"),
                            QStringLiteral("guardian.p2p")};
     opts.timeoutMs = kTimeoutMs;
-    // Only skip the download while the list it would replace is on disk
-    if (conditional && QFileInfo::exists(QDir(m_configDir).filePath(QStringLiteral("ipfilter.dat"))))
+    // Only skip the download while the list it would replace is on disk (or queued)
+    const QString listPath = QDir(m_configDir).filePath(QStringLiteral("ipfilter.dat"));
+    if (conditional
+        && (QFileInfo::exists(listPath) || BackgroundFileWriter::instance().pending(listPath)))
         opts.validators = thePrefs.downloadValidators(QString::fromLatin1(kValidatorKey), source);
 
     logInfo(opts.validators.isEmpty()
@@ -96,12 +98,9 @@ void IpFilterUpdater::onDownloaded(const QString& source, const HttpFileDownload
         return;
     }
 
-    // Write beside, then replace: a half-written list must never be loaded
-    QSaveFile file(QDir(m_configDir).filePath(QStringLiteral("ipfilter.dat")));
-    if (!file.open(QIODevice::WriteOnly) || file.write(r.data) != r.data.size() || !file.commit()) {
-        finish(false, 0, QStringLiteral("cannot save ipfilter.dat: %1").arg(file.errorString()));
-        return;
-    }
+    // Atomic write off the main thread (#169); the load below reads the queued bytes
+    BackgroundFileWriter::instance().write(
+        QDir(m_configDir).filePath(QStringLiteral("ipfilter.dat")), r.data, {});
 
     const int entries = m_filter ? m_filter->loadFromDefaultFile(m_configDir) : 0;
     thePrefs.setIpFilterLastUpdate(QDateTime::currentSecsSinceEpoch());

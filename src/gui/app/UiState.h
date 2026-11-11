@@ -295,21 +295,23 @@ public:
         m_showDownloadStatusFilter = on;
         scheduleSave();
     }
-    /// Downloads list: the previous sort column breaks ties of the current one (#84)
-    [[nodiscard]] bool downloadSecondarySort() const { return m_downloadSecondarySort; }
-    void setDownloadSecondarySort(bool on)
+    /// Downloads list: the columns sorted before break ties of the current one (#84, #174)
+    [[nodiscard]] bool downloadSortHistory() const { return m_downloadSortHistory; }
+    void setDownloadSortHistory(bool on)
     {
-        m_downloadSecondarySort = on;
+        m_downloadSortHistory = on;
         scheduleSave();
     }
-    [[nodiscard]] int downloadSecondarySortColumn() const { return m_downloadSecondarySortColumn; }
-    [[nodiscard]] Qt::SortOrder downloadSecondarySortOrder() const { return m_downloadSecondarySortOrder; }
-    void setDownloadSecondarySortKey(int column, Qt::SortOrder order)
+    /// Tie-breakers, newest first
+    [[nodiscard]] const QList<std::pair<int, Qt::SortOrder>>& downloadSortHistoryKeys() const
     {
-        if (column == m_downloadSecondarySortColumn && order == m_downloadSecondarySortOrder)
+        return m_downloadSortHistoryKeys;
+    }
+    void setDownloadSortHistoryKeys(const QList<std::pair<int, Qt::SortOrder>>& keys)
+    {
+        if (keys == m_downloadSortHistoryKeys)
             return;
-        m_downloadSecondarySortColumn = column;
-        m_downloadSecondarySortOrder = order;
+        m_downloadSortHistoryKeys = keys;
         scheduleSave();
     }
     [[nodiscard]] bool showTorrentStatusFilter() const { return m_showTorrentStatusFilter; }
@@ -553,9 +555,8 @@ private:
     bool m_showCountryFlags = true;
     bool m_showTaskbarProgress = true;
     bool m_showDownloadStatusFilter = false;
-    bool m_downloadSecondarySort = false;
-    int m_downloadSecondarySortColumn = -1;
-    Qt::SortOrder m_downloadSecondarySortOrder = Qt::AscendingOrder;
+    bool m_downloadSortHistory = false;
+    QList<std::pair<int, Qt::SortOrder>> m_downloadSortHistoryKeys;
     bool m_showTorrentStatusFilter = true;
     bool m_showHosterStatusFilter = true;
     int m_downloadStatusFilter = 0;

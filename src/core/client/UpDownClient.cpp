@@ -454,7 +454,7 @@ UpDownClient::NatRoute UpDownClient::natRoute() const
     return NatRoute::None;
 }
 
-void UpDownClient::setBuddyID(const uint8* id)
+void UpDownClient::setBuddyID(const uint8* id, bool relayable)
 {
     if (id) {
         std::memcpy(m_buddyID.data(), id, 16);
@@ -463,6 +463,55 @@ void UpDownClient::setBuddyID(const uint8* id)
         md4clr(m_buddyID.data());
         m_buddyIDValid = false;
     }
+    m_buddyIDRelayable = m_buddyIDValid && relayable;
+}
+
+bool UpDownClient::hasRelayableBuddyRoute() const
+{
+    if (!buddyIDRelayable() || m_buddyPort == 0)
+        return false;
+    return (m_buddyAddress.isIPv4() && isGoodIP(m_buddyAddress))
+           || (m_buddyIPv6.isIPv6() && m_buddyIPv6.isPublicIP());
+}
+
+void UpDownClient::adoptExchangedRoute(const UpDownClient& from)
+{
+    // A LowID only: a HighID is reached at its ID, the route fields mean nothing there
+    if (!hasLowID() || !from.hasLowID())
+        return;
+    if (!m_buddyIDValid && from.m_buddyIDValid)
+        setBuddyID(from.m_buddyID.data(), from.m_buddyIDRelayable);
+    if (m_buddyAddress.isNull() && m_buddyPort == 0 && !from.m_buddyAddress.isNull()) {
+        m_buddyAddress = from.m_buddyAddress;
+        m_buddyPort = from.m_buddyPort;
+    }
+    if (m_buddyIPv6.isNull())
+        m_buddyIPv6 = from.m_buddyIPv6;
+    // Ports and address only while unconnected: a live socket knows better
+    if (m_socket && m_socket->isConnected())
+        return;
+    if (m_connectAddress.isNull() && !from.m_connectAddress.isNull())
+        m_connectAddress = from.m_connectAddress;
+    if (m_kadPort == 0 && from.m_kadPort != 0) {
+        m_kadPort = from.m_kadPort;
+        m_directUDPCallback = m_directUDPCallback || from.m_directUDPCallback;
+    }
+    if (m_udpPort == 0)
+        m_udpPort = from.m_udpPort;
+}
+
+uint16 UpDownClient::ownAdvertisedKadPort()
+{
+    auto* kadInst = kad::Kademlia::instance();
+    if (!kadInst || !kadInst->isConnected())
+        return 0;
+    auto* kadPrefs = kad::Kademlia::getInstancePrefs();
+    if (!kadPrefs)
+        return 0;
+    if (kadPrefs->externalKadPort() != 0 && kadPrefs->useExternKadPort()
+        && kad::UDPFirewallTester::isVerified())
+        return kadPrefs->externalKadPort();
+    return kadPrefs->internKadPort();
 }
 
 void UpDownClient::setReqUpFileId(const uint8* id)
@@ -914,7 +963,7 @@ QString UpDownClient::dbgGetKadState(KadState state)
     static constexpr const char* names[] = {
         "None", "FwCheckQueued", "FwCheckConnecting", "FwCheckConnected",
         "BuddyQueued", "BuddyIncoming", "BuddyConnecting", "BuddyConnected",
-        "QueuedFWCheckUDP", "FWCheckUDP", "FwCheckConnectingUDP"
+        "QueuedFWCheckUDP", "FWCheckUDP", "FwCheckConnectingUDP", "BuddyClaiming"
     };
     const auto idx = static_cast<int>(state);
     if (idx >= 0 && idx < static_cast<int>(std::size(names)))
@@ -1508,18 +1557,7 @@ void UpDownClient::sendHelloTypePacket(SafeMemFile& data)
 
     // CT_EMULE_UDPPORTS — (kadPort << 16) | udpPort
     // MFC: Kad port is 0 when not connected; uses external port when connected + verified
-    uint16 kadPortVal = 0;
-    if (auto* kadInst = kad::Kademlia::instance(); kadInst && kadInst->isConnected()) {
-        if (auto* kadPrefs = kad::Kademlia::getInstancePrefs()) {
-            if (kadPrefs->externalKadPort() != 0
-                && kadPrefs->useExternKadPort()
-                && kad::UDPFirewallTester::isVerified()) {
-                kadPortVal = kadPrefs->externalKadPort();
-            } else {
-                kadPortVal = kadPrefs->internKadPort();
-            }
-        }
-    }
+    const uint16 kadPortVal = ownAdvertisedKadPort();
     const uint32 udpPorts = (static_cast<uint32>(kadPortVal) << 16) | theApp.advertisedUdpPort();
     Tag(CT_EMULE_UDPPORTS, udpPorts).writeTagToFile(data);
 
@@ -2846,6 +2884,8 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
                         .arg(std::time(nullptr) - m_kadStateSince));
         if (m_kadState == KadState::ConnectingBuddy && !m_servedBuddy && theApp.clientList)
             theApp.clientList->noteFailedBuddyCandidate(*this);
+    } else if (m_kadState == KadState::ClaimingBuddy && theApp.clientList) {
+        theApp.clientList->endBuddyClaim(*this, false, QStringLiteral("link closed (%1)").arg(reason));
     }
     setKadState(KadState::None);
 
@@ -2892,6 +2932,9 @@ void UpDownClient::resetFileStatusInfo()
 
 void UpDownClient::onInfoPacketsReceived()
 {
+    // ExtSX hands on LowIDs we have met (KnownFile::buildSrcInfoPacket)
+    m_connectedOnce = true;
+
     // Not MFC: MFC sets the buddy only in ProcessKadList (ClientList.cpp:559-562). This is the
     // same rule a tick early, so never replaces a connected buddy. A served buddy (we relay
     // for it) is not our own buddy.
@@ -4477,6 +4520,69 @@ void UpDownClient::processBuddyPong()
 }
 
 // ===========================================================================
+// OP_BUDDYCLAIM — not MFC. A firewalled LowID that got our ExtSX buddy offer claims us over
+// this open link; TCP proved the IP and the hello the user hash, so unlike FINDBUDDY_REQ
+// the known client is adopted in place. See docs/protocol/extxs-buddy-route.md.
+// ===========================================================================
+
+bool UpDownClient::sendBuddyClaim()
+{
+    auto* prefs = kad::Kademlia::getInstancePrefs();
+    if (!prefs)
+        return false;
+    // ~KadID in ToByteArray form, the same value FINDBUDDY_REQ carries
+    kad::UInt128 buddyID(true);
+    buddyID.xorWith(prefs->kadId());
+    uint8 id[16];
+    buddyID.toByteArray(id);
+
+    SafeMemFile data;
+    data.writeUInt8(BUDDYCLAIM_CLAIM);
+    data.writeHash16(id);
+    sendPacket(std::make_unique<Packet>(data, OP_EMULEPROT, OP_BUDDYCLAIM));
+    return true;
+}
+
+void UpDownClient::processBuddyClaim(const uint8* data, uint32 size)
+{
+    if (size < 1 || !theApp.clientList)
+        return;
+    const uint8 subop = data[0];
+
+    if (subop == BUDDYCLAIM_CLAIM) {
+        // Needs the hello for user hash, LowID state and Kad port
+        if (size < 17 || !checkHandshakeFinished()) {
+            kad::logKad(QStringLiteral("Kad: TCP buddy claim from %1 ignored — %2")
+                            .arg(ipstr(m_connectAddress),
+                                 size < 17 ? QStringLiteral("short") : QStringLiteral("before hello")));
+            return;
+        }
+        const uint8 reason = theApp.clientList->acceptBuddyClaim(*this, data + 1);
+        SafeMemFile answer;
+        answer.writeUInt8(reason == 0 ? BUDDYCLAIM_ACCEPT : BUDDYCLAIM_REFUSE);
+        if (reason != 0)
+            answer.writeUInt8(reason);
+        sendPacket(std::make_unique<Packet>(answer, OP_EMULEPROT, OP_BUDDYCLAIM));
+        return;
+    }
+
+    // An answer counts only while our claim at this peer is open
+    if (m_kadState != KadState::ClaimingBuddy) {
+        kad::logKad(QStringLiteral("Kad: unsolicited buddy claim answer from %1")
+                        .arg(ipstr(m_connectAddress)));
+        return;
+    }
+    if (subop == BUDDYCLAIM_ACCEPT) {
+        kad::logKad(QStringLiteral("Kad: buddy claim accepted by %1").arg(kadBuddyInfo()));
+        theApp.clientList->endBuddyClaim(*this, true, {});
+    } else {
+        const int reason = (subop == BUDDYCLAIM_REFUSE && size >= 2) ? data[1] : -1;
+        theApp.clientList->endBuddyClaim(*this, false,
+                                         QStringLiteral("refused (%1)").arg(reason));
+    }
+}
+
+// ===========================================================================
 // Buddy ping/pong scheduling — MFC srchybrid/UpdownClient.h:180-182
 //
 // m_lastBuddyPingPongTime holds the *next allowed* time of our own ping (every 10 min).
@@ -4683,6 +4789,10 @@ void UpDownClient::onExtPacketReceived(const uint8* data, uint32 size, uint8 opc
 
     case OP_HTTPCACHE:
         processHttpCachePacket(data, size);
+        break;
+
+    case OP_BUDDYCLAIM:
+        processBuddyClaim(data, size);
         break;
 
     case OP_MULTIPACKET:

@@ -484,6 +484,8 @@ void tst_LegacyConfigImport::usedProfile_isBackedUp()
     Profile profile(mfc.config);
     writeFile(profile.file(QStringLiteral("known.met")), "ours");
     writeFile(profile.file(QStringLiteral("clients.met")), "our credits");
+    writeFile(profile.file(QStringLiteral("preferences.yml")), "our prefs");
+    writeFile(profile.file(QStringLiteral("uistate.yml")), "our layout");
 
     const auto out = profile.run();
     QCOMPARE(out.result, LegacyConfigImport::Result::Imported);
@@ -493,6 +495,13 @@ void tst_LegacyConfigImport::usedProfile_isBackedUp()
              QByteArrayLiteral("ours"));
     // Not in the source: left where it is
     QCOMPARE(readFile(profile.file(QStringLiteral("clients.met"))), QByteArrayLiteral("our credits"));
+    // Settings as they were before the import: copied, the import then edits ours
+    QCOMPARE(out.settingsBackedUp, 2);
+    QCOMPARE(readFile(QDir(out.backupDir).filePath(QStringLiteral("preferences.yml"))),
+             QByteArrayLiteral("our prefs"));
+    QCOMPARE(readFile(QDir(out.backupDir).filePath(QStringLiteral("uistate.yml"))),
+             QByteArrayLiteral("our layout"));
+    QCOMPARE(readFile(profile.file(QStringLiteral("uistate.yml"))), QByteArrayLiteral("our layout"));
 }
 
 void tst_LegacyConfigImport::missingSource_isRecordedAndSkipped()

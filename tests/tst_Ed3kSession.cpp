@@ -27,12 +27,14 @@ private slots:
     void keyFileCreatedOnceAndReused();
     void twoNodesFindEachOther();
     void sharedSocketCarriesBothProtocols();
+    void peerFilterDropsBothWays();
     void derivedUserHashIsTheNodes();
     void stateSavedOnStopAndLoaded();
     void brokenKeyFileIsNotReplaced();
     void httpAnswersFromLiteralAddress_data();
     void httpAnswersFromLiteralAddress();
     void httpResolvesNameAndAsksFirst();
+    void httpAnonReportsGoOnlyThroughTheReportProxy();
     void rpcUrlRule();
     void rpcCancelDropsTheCall();
     void rpcPostedToTheConfiguredEndpoint();
@@ -138,6 +140,41 @@ void tst_Ed3kSession::sharedSocketCarriesBothProtocols()
     // stop leaves the socket to its owner
     a.stop();
     QVERIFY(shared.state() == QAbstractSocket::BoundState);
+    b.stop();
+}
+
+// #177: the app's IP filter on ed3k: nothing from or to a filtered address
+void tst_Ed3kSession::peerFilterDropsBothWays()
+{
+    QTemporaryDir da, db;
+    QVERIFY(da.isValid() && db.isValid());
+    Ed3kSession a, b;
+    bool blockLoopback = true;
+    const auto filter = [&blockLoopback](const QHostAddress& addr) { return blockLoopback && addr.isLoopback(); };
+    b.setPeerFilter(filter);
+    QVERIFY(a.start(loopback(da.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    const auto bId = b.nodeId();
+    QVERIFY(bId.has_value());
+    const ::ed3k::Node bNode{*bId, ::ed3k::Address::v4(127, 0, 0, 1, b.udpPort())};
+    a.post([&](::ed3k::Engine& e, ::ed3k::Now now) { QVERIFY(e.bootstrap(now, std::span<const ::ed3k::Node>{&bNode, 1})); });
+    // B drops A's datagrams: A learns nobody
+    QTRY_VERIFY_WITH_TIMEOUT(b.filteredDatagrams() > 0, 5000);
+    QTest::qWait(1500);
+    QCOMPARE(a.contactCount(), std::uint64_t(0));
+    QCOMPARE(b.contactCount(), std::uint64_t(0));
+
+    // A filtering: its own sends to B stay home
+    a.setPeerFilter(filter);
+    b.setPeerFilter({});
+    a.post([&](::ed3k::Engine& e, ::ed3k::Now now) { QVERIFY(e.bootstrap(now, std::span<const ::ed3k::Node>{&bNode, 1})); });
+    QTRY_VERIFY_WITH_TIMEOUT(a.filteredDatagrams() > 0, 5000);
+    QCOMPARE(b.contactCount(), std::uint64_t(0));
+
+    // a filter change takes effect at once
+    blockLoopback = false;
+    QVERIFY(connectPair(a, b));
+    a.stop();
     b.stop();
 }
 
@@ -312,6 +349,51 @@ void tst_Ed3kSession::httpResolvesNameAndAsksFirst()
     QVERIFY(!server.hasPendingConnections());
     QCOMPARE(answers + failures, 0);   // over: IoCancel follows from the core
     QCOMPARE(http.pending(), std::size_t(0));
+}
+
+// subscription.md §5.3: a share report of the anonymous key only through the report proxy;
+// none set: failed, never direct (a loopback target is not bypassed either)
+void tst_Ed3kSession::httpAnonReportsGoOnlyThroughTheReportProxy()
+{
+    QTcpServer target, proxy;
+    QVERIFY(target.listen(QHostAddress::LocalHost));
+    QVERIFY(proxy.listen(QHostAddress::LocalHost));
+    QByteArray proxied;
+    connect(&proxy, &QTcpServer::newConnection, this, [&] {
+        QTcpSocket* c = proxy.nextPendingConnection();
+        connect(c, &QTcpSocket::readyRead, c, [&, c] { proxied += c->readAll(); });
+    });
+    int failures = 0, answers = 0;
+    Ed3kHttp http({[](std::uint64_t, const ::ed3k::Address&) { return true; }, [](std::uint64_t) {},
+                   [&](std::uint64_t, std::uint16_t, const QByteArray&, const QByteArray&) { ++answers; },
+                   [&](std::uint64_t) { ++failures; }},
+                  QStringLiteral("eMuleQt/test"));
+    ::ed3k::event::HttpRequest req{};
+    req.id = 11;
+    req.method = ED3K_HTTP_POST;
+    req.url = "http://report.example:" + std::to_string(target.serverPort()) + "/report";
+    req.addr = ::ed3k::Address::v4(127, 0, 0, 1, target.serverPort());
+    req.port = target.serverPort();
+    req.maxLen = 100;
+    req.timeoutS = 5;
+    req.via = ED3K_HTTP_VIA_ANON_REPORT_PROXY;
+    // no report proxy: failed at once, nothing sent
+    http.start(req);
+    QCOMPARE(failures, 1);
+    QCOMPARE(http.pending(), std::size_t(0));
+    // an unknown route: failed too
+    req.id = 12;
+    req.via = 7;
+    http.start(req);
+    QCOMPARE(failures, 2);
+    // through the report proxy alone, though the normal proxy is direct and the target local
+    http.setReportProxy(QNetworkProxy(QNetworkProxy::HttpProxy, QStringLiteral("127.0.0.1"), proxy.serverPort()));
+    req.id = 13;
+    req.via = ED3K_HTTP_VIA_ANON_REPORT_PROXY;
+    http.start(req);
+    QTRY_VERIFY_WITH_TIMEOUT(proxied.contains("CONNECT 127.0.0.1:"), 5000);
+    QVERIFY(!target.hasPendingConnections());
+    http.clear();
 }
 
 void tst_Ed3kSession::rpcUrlRule()

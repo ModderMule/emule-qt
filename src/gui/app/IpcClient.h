@@ -324,6 +324,9 @@ public:
         m_usenetEnginePaused = paused;
         emit usenetEnginePausedChanged(paused);
     }
+    /// Ask the daemon to pause or resume the whole Usenet engine. The state follows
+    /// its push, not this call, so a refused request leaves nothing lying.
+    void requestUsenetPause(bool paused);
 
 signals:
     /// Emitted when connection + handshake succeeds.

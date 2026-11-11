@@ -21,6 +21,10 @@
 /// An unfinished item lives in Temp: <key>.hoster.part and <key>.hoster.part.met (its state,
 /// JSON); both copied into any temp dir of another node carry the download over. Complete items
 /// are saved in Config/ed3k/hoster/items.json; account data never is.
+///
+/// The app's IP filter is not applied to hosters: their links are HTTP to the hoster's
+/// servers (CDNs, often in ranges a peer list blocks), not peers. ed3k peers a verified
+/// link joins are filtered at the node's socket (Ed3kSession::setPeerFilter).
 
 #include "Ed3kHosterUnpack.h"
 #include "Ed3kJoinBase.h"

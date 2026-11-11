@@ -17,7 +17,7 @@ class tst_WebServicesData : public QObject {
 
 private slots:
     void loadShippedFile();
-    void shippedFile_hasEmuleFaq();
+    void shippedFile_hasHomepage();
     void parseComments();
     void parseFileMacros();
     void emptyAndMalformed();
@@ -41,10 +41,10 @@ void tst_WebServicesData::loadShippedFile()
 }
 
 // ---------------------------------------------------------------------------
-// Test: verify the known "eMule FAQ" entry is present
+// Test: verify the known "eMule Qt Homepage" entry is present
 // ---------------------------------------------------------------------------
 
-void tst_WebServicesData::shippedFile_hasEmuleFaq()
+void tst_WebServicesData::shippedFile_hasHomepage()
 {
     const QString srcPath = projectDataDir() + QStringLiteral("/config/webservices.dat");
     WebServices ws;
@@ -52,16 +52,16 @@ void tst_WebServicesData::shippedFile_hasEmuleFaq()
 
     bool found = false;
     for (const auto& svc : ws.services()) {
-        if (svc.label.contains(QStringLiteral("eMule FAQ"), Qt::CaseInsensitive)) {
+        if (svc.label.contains(QStringLiteral("eMule Qt Homepage"), Qt::CaseInsensitive)) {
             found = true;
-            QVERIFY2(svc.urlTemplate.contains(QStringLiteral("emule-project.org")),
-                     "eMule FAQ URL should point to emule-project.org");
+            QVERIFY2(svc.urlTemplate.contains(QStringLiteral("emule-qt.org")),
+                     "Homepage URL should point to emule-qt.org");
             QVERIFY2(!svc.hasFileMacros,
-                     "eMule FAQ entry should not have file macros");
+                     "Homepage entry should not have file macros");
             break;
         }
     }
-    QVERIFY2(found, "Expected to find 'eMule FAQ' entry in webservices.dat");
+    QVERIFY2(found, "Expected to find 'eMule Qt Homepage' entry in webservices.dat");
 }
 
 // ---------------------------------------------------------------------------
@@ -189,7 +189,7 @@ void tst_WebServicesData::servicesFilePathFollowsTheConfigDir()
 }
 
 // MFC lists only the macro-free entries under Tools -> Links (WEBSVC_GEN_URLS,
-// srchybrid/OtherFunctions.cpp:1013-1030); the shipped "eMule FAQ" is one.
+// srchybrid/OtherFunctions.cpp:1013-1030); the shipped "eMule Qt Homepage" is one.
 void tst_WebServicesData::generalServicesAreTheOnesWithoutFileMacros()
 {
     QTemporaryDir dir;

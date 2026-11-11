@@ -186,6 +186,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::SetUsenetPaused:      return QStringLiteral("SetUsenetPaused");
     case T::InspectNzb:           return QStringLiteral("InspectNzb");
     case T::ClearUsenetCompleted: return QStringLiteral("ClearUsenetCompleted");
+    case T::FetchNzbImages: return QStringLiteral("FetchNzbImages");
     case T::GetTorrents:          return QStringLiteral("GetTorrents");
     case T::AddTorrentFile:       return QStringLiteral("AddTorrentFile");
     case T::AddMagnet:            return QStringLiteral("AddMagnet");
@@ -592,6 +593,15 @@ void IpcClient::expectDaemonStart()
 bool IpcClient::daemonStarting() const
 {
     return !m_startDeadline.hasExpired();
+}
+
+void IpcClient::requestUsenetPause(bool paused)
+{
+    if (!isConnected())
+        return;
+    IpcMessage msg(IpcMsgType::SetUsenetPaused);
+    msg.append(paused);
+    sendRequest(std::move(msg));
 }
 
 int IpcClient::sendRequest(IpcMessage msg, ResponseCallback callback)

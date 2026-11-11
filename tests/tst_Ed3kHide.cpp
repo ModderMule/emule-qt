@@ -527,6 +527,12 @@ void tst_Ed3kHide::statusOverIpc()
     QCOMPARE(h.value(QStringLiteral("built")).toInteger(), 0);
     QVERIFY(h.value(QStringLiteral("waitingForHops")).toBool());
     QCOMPARE(Ed3kHideBridge::statusToCbor(), h);
+    // anonState(): HOP, ROUTER, whether its files can be found (§2.6 Inwards)
+    const auto a = s.engine()->anonState();
+    QVERIFY(a && a->running);
+    QCOMPARE(h.value(QStringLiteral("hop")).toBool(), a->hop);
+    QCOMPARE(h.value(QStringLiteral("router")).toBool(), a->router);
+    QCOMPARE(h.value(QStringLiteral("shares")).toBool(), a->shares);
     // the status of the session carries the engine's kad_offline bits
     QCOMPARE(qint64(s.status().kadOffline), st.value(QStringLiteral("kadOffline")).toInteger());
 

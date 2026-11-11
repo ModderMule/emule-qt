@@ -3,6 +3,7 @@
 
 #include "app/IpcClient.h"
 #include "utils/Ed2kLinkImporter.h"
+#include "utils/ScrollMessageBox.h"
 
 #include <QMessageBox>
 #include <QPointer>
@@ -54,7 +55,7 @@ void PasteLinksDialog::onAccepted()
                 return;
 
             if (!result.invalid.isEmpty()) {
-                QMessageBox::warning(self, tr("Invalid Links"),
+                ScrollMessageBox::warning(self, tr("Invalid Links"),
                     tr("The following links could not be parsed:\n\n%1")
                         .arg(result.invalid.join(QLatin1Char('\n'))));
             }

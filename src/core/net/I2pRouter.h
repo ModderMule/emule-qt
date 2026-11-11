@@ -51,12 +51,40 @@ public:
     static constexpr int kReadyTimeoutMs = 90 * 1000;
     static constexpr int kPollMs = 500;
     static constexpr int kStopGraceMs = 5000;
-    /// hosts.txt feeds of the bundled router's address book; i2pd.conf may override
+    /// hosts.txt feeds of the bundled router's address book; i2pd.conf may override.
+    /// i2pd fetches one random feed per 12 h. identiguy.i2p dropped: no lease set (#168)
     static inline const QStringList kAddressBookSubscriptions{
         QStringLiteral("http://reg.i2p/hosts.txt"),
-        QStringLiteral("http://identiguy.i2p/hosts.txt"),
         QStringLiteral("http://stats.i2p/cgi-bin/newhosts.txt"),
         QStringLiteral("http://notbob.i2p/hosts.txt"),
+    };
+    struct SeedHost {
+        const char* name;
+        const char* b32;   // without ".b32.i2p"
+    };
+    /// Names merged into i2pd's address book before each start (#168): a fresh router
+    /// fetches its first book ~3-20 min after start, and that one (78 hosts) lacks most
+    /// trackers; the feeds above follow one per 12 h. Feed hosts + trackers of ngosang's
+    /// trackers_all_i2p and i2psnark. From notbob/Java I2P hosts.txt, 2026-11-10
+    static constexpr SeedHost kSeedHosts[] = {
+        {"reg.i2p", "shx5vqsw7usdaunyzr2qmes2fq37oumybpudrd4jjj4e4vk4uusa"},
+        {"stats.i2p", "kqypgjpjwrphnzebod5ev3ts2vtii6e5tntrg4rnfijqc7rypldq"},
+        {"notbob.i2p", "nytzrhrjjfsutowojvxi7hphesskpqqr65wpistz6wa7cpajhp7a"},
+        {"btracker.i2p", "btrackrqkjp6kgelov5a3uxisis77ofxqt5nvy5hvvtoybjpmq4q"},
+        {"freetracker.i2p", "px7uban46x62n3iekxtt4qtdzhee6qu4j5xpbbyaqiruvva2mjha"},
+        {"kyu.i2p", "vyqfcpq3cx5svfnr77annk73zfrhumcjeswbnllfxlpjb4564sna"},
+        {"opentracker.dg2.i2p", "w7tpbzncbcocrqtwwm3nezhnnsw4ozadvi2hmvzdhrqzfxfum7wa"},
+        {"opentracker.fattydove.i2p", "svece3bxv4vqlt2zuut5ww4ztkwunfcnab55pmnjjb6zfei3noha"},
+        {"opentracker.localcache.i2p", "trackfmu3by6nhkibnw5exyhibjrvxl6k3e4y54wmjy4bvqgs3ha"},
+        {"opentracker.r4sas.i2p", "punzipidirfqspstvzpj6gb4tkuykqp6quurj6e23bgxcxhdoe7q"},
+        {"opentracker.simp.i2p", "wc4sciqgkceddn6twerzkfod6p2npm733p7z3zwsjfzhc4yulita"},
+        {"opentracker.skank.i2p", "by7luzwhx733fhc5ug2o75dcaunblq2ztlshzd7qvptaoa73nqua"},
+        {"surfsup.i2p", "surfsupqyw6a3zegz7ia7ez7pkz7nbuiffqzpeewqlghj7jetmgq"},
+        {"tracker.gellegery.i2p", "bvdwskacx5pnldseo6gw7ccuadvsbma5hzoth4athvpsm3jxhdra"},
+        {"tracker.insulaocculta.i2p", "2rv2kch37xsn2fqdz6huyevq76njop4inumscnspklh3ufo7mkwa"},
+        {"tracker.queke.i2p", "j4nrlimeg2loq5sfslb3c6nmnvbucet4gyrmog66igxrk5l5fxla"},
+        {"tracker2.postman.i2p", "6a4kxkg5wp33p25qqhgwl6sj4yh4xuf5b3p3qldwgclebchm3eea"},
+        {"yet-another-public-tracker.i2p", "ybi4axxg4bduwsenutmsynz2plfdb4jzr2vhapvprvzcxskx2foa"},
     };
     static constexpr int kFirstRestartMs = 5000;
     static constexpr int kMaxRestartMs = 5 * 60 * 1000;
@@ -72,6 +100,9 @@ public:
     [[nodiscard]] static QString findCertificates(const QString& binary);
     /// i2pd's command line for @p config.
     [[nodiscard]] static QStringList arguments(const Config& config, quint16 samPort, const QString& certsDir);
+    /// Appends kSeedHosts names missing from <dataDir>/addressbook/addresses.csv; a name
+    /// already there keeps its address. Router must not run. Returns the count added.
+    static int seedAddressBook(const QString& dataDir);
 
     /// A router can be had: $EMULE_I2PD, or a release to download for this OS/CPU.
     [[nodiscard]] bool available() const;

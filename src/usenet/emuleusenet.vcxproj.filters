@@ -117,6 +117,9 @@
     <ClCompile Include="stream\UsenetEncryptedPreview.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="stream\UsenetImagePreview.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="stream\UsenetStreamIndex.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -228,6 +231,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="stream\UsenetEncryptedPreview.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="stream\UsenetImagePreview.h">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>

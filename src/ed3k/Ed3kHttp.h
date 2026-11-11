@@ -16,6 +16,10 @@
 /// configured (ed3k.creditRpc / ed3k.chaintubeRpc), as mode B does (packmule_udp::http):
 /// application/json, at most 16 MiB back, 30 s; a 2xx body goes to rpcAnswer, the rest to
 /// rpcFailed. The user's URL: its name is resolved here and not offered to the core.
+///
+/// Anonymous share reports (via ED3K_HTTP_VIA_ANON_REPORT_PROXY, subscription.md §5.3) go
+/// only through the report proxy (setReportProxy), never directly nor the normal proxy;
+/// without one they fail.
 
 #include "Ed3kFfi.h"
 
@@ -29,6 +33,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 
 namespace eMule::ed3k {
 
@@ -58,6 +63,9 @@ public:
 
     /// The user's proxy (NoProxy = direct). Requests out keep the old one.
     void setProxy(const QNetworkProxy& proxy) { m_proxy = proxy; }
+    /// The proxy of anonymous share reports (via ED3K_HTTP_VIA_ANON_REPORT_PROXY, §5.3): those
+    /// go through it alone; nullopt: they fail. Requests out keep the old one.
+    void setReportProxy(std::optional<QNetworkProxy> proxy) { m_reportProxy = std::move(proxy); }
 
     /// Starts @p req. Failures are answered through Answers, maybe at once.
     void start(const ::ed3k::event::HttpRequest& req);
@@ -98,6 +106,7 @@ private:
     Answers m_answers;
     QString m_userAgent;
     QNetworkProxy m_proxy{QNetworkProxy::NoProxy};
+    std::optional<QNetworkProxy> m_reportProxy;
     std::map<std::uint64_t, std::unique_ptr<Request>> m_requests;
 };
 

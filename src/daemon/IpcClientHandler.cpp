@@ -542,6 +542,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::SetUsenetFilesSkipped: handleSetUsenetFilesSkipped(msg); break;
     case IpcMsgType::InspectNzb:          handleInspectNzb(msg); break;
     case IpcMsgType::ClearUsenetCompleted: handleClearUsenetCompleted(msg); break;
+    case IpcMsgType::FetchNzbImages:      handleFetchNzbImages(msg); break;
     case IpcMsgType::FetchMetaFile:       handleFetchMetaFile(msg); break;
     case IpcMsgType::DownloadMetaResult:  handleDownloadMetaResult(msg); break;
     case IpcMsgType::GetMetaAuthStatus:   handleGetMetaAuthStatus(msg); break;
@@ -2284,6 +2285,10 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
 
     QCborMap result;
     insertPortResult(result, outcome);
+    if (outcome.speedRatioHeld) {   // the limits in force, for the sender to show
+        result.insert(QStringLiteral("maxUpload"), static_cast<qint64>(thePrefs.configuredMaxUpload()));
+        result.insert(QStringLiteral("maxDownload"), static_cast<qint64>(thePrefs.configuredMaxDownload()));
+    }
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, result));
 }
 
@@ -2417,6 +2422,18 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
     }
 
     outcome.categoriesChanged = rebaseCategoryDirs(oldIncomingDir);
+
+    // MFC's UL:DL ratio holds whoever sets the limits (GUI, web, REST, MCP)
+    const auto hasKey = [&](QLatin1StringView name) {
+        return std::ranges::any_of(changes, [&](const auto& c) { return c.first == name; });
+    };
+    const bool upMoved = hasKey(QLatin1StringView("maxUpload"));
+    const bool downMoved = hasKey(QLatin1StringView("maxDownload"));
+    if ((upMoved || downMoved) && thePrefs.enforceSpeedRatio(downMoved && !upMoved)) {
+        outcome.speedRatioHeld = true;
+        logInfo(QStringLiteral("Speed limits held to the UL:DL ratio: upload %1 KB/s, download %2 KB/s")
+                    .arg(thePrefs.configuredMaxUpload()).arg(thePrefs.configuredMaxDownload()));
+    }
 
     const QCborMap after = thePrefs.toIpcMap();
     for (const auto& [key, val] : changes) {
@@ -2851,7 +2868,7 @@ void IpcClientHandler::handleSaveSchedules(const IpcMessage& msg)
             theApp.scheduler->check(true);
     }
 
-    thePrefs.save();
+    thePrefs.saveInBackground();
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
@@ -3448,7 +3465,7 @@ void IpcClientHandler::handleApplyHttpCacheConfig(const IpcMessage& msg)
 
             thePrefs.setHttpCacheEnabled(true);
             thePrefs.setHttpCacheAllowUpload(true);
-            thePrefs.save();
+            thePrefs.saveInBackground();
 
             // No restart needed: HttpCacheManager is always constructed and reads
             // the list every tick (CoreSession.cpp), and a changed credential
@@ -4525,6 +4542,8 @@ bool IpcClientHandler::applyPreferenceNotify(const QString& key, const QCborValu
         thePrefs.setUsenetUseProxy(val.toBool());
     else if (key == QStringLiteral("usenetSfvCheck"))
         thePrefs.setUsenetSfvCheck(val.toBool());
+    else if (key == QStringLiteral("usenetShareFiles"))
+        thePrefs.setUsenetShareFiles(val.toBool());
     else if (key == QStringLiteral("usenetUnrepairableAction"))
         thePrefs.setUsenetUnrepairableAction(int(val.toInteger()));
     else if (key == QStringLiteral("usenetDeobfuscateNames"))
@@ -4994,6 +5013,8 @@ bool IpcClientHandler::applyPreferenceBt(const QString& key, const QCborValue& v
         thePrefs.setBtMaxUploadKb(static_cast<uint32>(std::max<qint64>(0, val.toInteger())));
     else if (key == QStringLiteral("btStopAfterMetadata"))
         thePrefs.setBtStopAfterMetadata(val.toBool());
+    else if (key == QStringLiteral("btShareMode"))
+        thePrefs.setBtShareMode(static_cast<int>(val.toInteger()));
     else if (key == QStringLiteral("btMetaSelectedFileOnly"))
         thePrefs.setBtMetaSelectedFileOnly(val.toBool());
     else if (key == QStringLiteral("btDht"))
@@ -5062,6 +5083,8 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
         thePrefs.setEd3kJointDownloads(val.toBool());
     else if (key == QStringLiteral("ed3kShareUsenetPosts"))
         thePrefs.setEd3kShareUsenetPosts(val.toBool());
+    else if (key == QStringLiteral("ed3kOwnSetsWatch"))
+        thePrefs.setEd3kOwnSetsWatch(val.toBool());
     else if (key == QStringLiteral("ed3kUdpPort"))
         thePrefs.setEd3kUdpPort(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 1, 65535)));
     else if (key == QStringLiteral("ed3kCreditRpc"))
@@ -5080,6 +5103,16 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
         thePrefs.setEd3kHopping(val.toBool());
     else if (key == QStringLiteral("ed3kHopShare"))
         thePrefs.setEd3kHopShare(static_cast<int>(std::clamp<qint64>(val.toInteger(), 1, 100)));
+    else if (key == QStringLiteral("ed3kReportProxyType"))
+        thePrefs.setEd3kReportProxyType(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("ed3kReportProxyHost"))
+        thePrefs.setEd3kReportProxyHost(val.toString());
+    else if (key == QStringLiteral("ed3kReportProxyPort"))
+        thePrefs.setEd3kReportProxyPort(static_cast<int>(std::clamp<qint64>(val.toInteger(), 0, 65535)));
+    else if (key == QStringLiteral("ed3kReportProxyUser"))
+        thePrefs.setEd3kReportProxyUser(val.toString());
+    else if (key == QStringLiteral("ed3kReportProxyPassword"))
+        thePrefs.setEd3kReportProxyPassword(val.toString());
     else if (key == QStringLiteral("ed3kNodeLists"))
         thePrefs.setEd3kNodeLists(Preferences::rpcUrlList(val));
     else if (key == QStringLiteral("ed3kNodeListAuto"))
@@ -5983,9 +6016,11 @@ void IpcClientHandler::handleInspectIndexerResult(const IpcMessage& msg)
     QPointer<IpcClientHandler> self(this);
     const int seqId = msg.seqId();
 
+    const auto source = indexer::theIndexerSearchList->grabSource(searchId, resultId);
+    const QString coverUrl = source ? source->coverUrl.toString() : QString();
     indexer::theIndexerSearchList->grab(
         searchId, resultId,
-        [self, seqId, raw](bool ok, const QByteArray& payload, const QString& name, const QString&,
+        [self, seqId, raw, coverUrl](bool ok, const QByteArray& payload, const QString& name, const QString&,
                            const QString& error) {
         if (!self)
             return;
@@ -6029,7 +6064,8 @@ void IpcClientHandler::handleInspectIndexerResult(const IpcMessage& msg)
         self->sendMessage(IpcMessage::makeResult(
             seqId, true,
             QCborMap{{QStringLiteral("kind"), torrent ? QStringLiteral("torrent") : QStringLiteral("nzb")},
-                     {QStringLiteral("inspection"), inspection}}));
+                     {QStringLiteral("inspection"), inspection},
+                     {QStringLiteral("coverUrl"), coverUrl}}));
     });
 }
 
@@ -6938,6 +6974,17 @@ void IpcClientHandler::handleClearUsenetCompleted(const IpcMessage& msg)
     IpcMessage reply = IpcMessage::makeResult(msg.seqId(), true);
     reply.append(static_cast<qint64>(queue->clearCompleted()));
     sendMessage(reply);
+}
+
+void IpcClientHandler::handleFetchNzbImages(const IpcMessage& msg)
+{
+    QPointer<IpcClientHandler> self(this);
+    const int seqId = msg.seqId();
+    UsenetBridge::fetchPreviewImages(msg.fieldString(0), QUrl(msg.fieldString(1)),
+                                     [self, seqId](bool ok, const QCborValue& result) {
+        if (self)
+            self->sendMessage(IpcMessage::makeResult(seqId, ok, result));
+    });
 }
 
 void IpcClientHandler::handleSetUsenetFilesSkipped(const IpcMessage& msg)

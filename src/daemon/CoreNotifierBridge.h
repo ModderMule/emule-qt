@@ -71,7 +71,7 @@ public:
 private slots:
     // DownloadQueue signals
     void onDownloadAdded(eMule::PartFile* file);
-    void onDownloadRemoved();
+    void onDownloadRemoved(eMule::PartFile* file);
     void onDownloadCompleted(eMule::PartFile* file);
 
     // ServerConnect signals
@@ -168,6 +168,7 @@ private:
     /// flushSharedFiles(); the file is looked up by hash then, so one that left
     /// meanwhile is simply skipped.
     std::unordered_set<MD4Key> m_dirtySharedFiles;
+    MD4Key m_lastSharedRemoved{};   // a download leaving the queue unshares itself first
     QTimer m_sharedFlushTimer;
     QTimer m_sharedRatesTimer;
     int m_sharedHashingSent = -1;   ///< last PushSharedHashing count; -1 = send again

@@ -5,11 +5,14 @@
 #include "dialogs/Ed3kHidingGroup.h"
 #include "app/IpcClient.h"
 #include "prefs/Preferences.h"
+#include "utils/Opcodes.h"
 #include "IpcMessage.h"
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QPointer>
 #include <QPushButton>
@@ -60,6 +63,39 @@ Ed3kHidingGroup::Ed3kHidingGroup(IpcClient* ipc, QWidget* parent)
     shareRow->addStretch();
     layout->addLayout(shareRow);
 
+    // subscription.md §5.3: share reports of the anonymous key only through a proxy of their own
+    auto* reportRow = new QHBoxLayout;
+    reportRow->addWidget(new QLabel(tr("Proxy for anonymous share reports:"), this));
+    m_reportProxyType = new QComboBox(this);
+    m_reportProxyType->addItem(tr("None (no reports)"), PROXYTYPE_NOPROXY);
+    m_reportProxyType->addItem(QStringLiteral("HTTP"), PROXYTYPE_HTTP11);
+    m_reportProxyType->addItem(QStringLiteral("SOCKS5"), PROXYTYPE_SOCKS5);
+    m_reportProxyType->setToolTip(tr("Paid sets ask holders for share reports. Under the anonymous key they are sent "
+                                     "only through this proxy, never directly nor through the normal proxy. "
+                                     "None: no reports under the anonymous key."));
+    reportRow->addWidget(m_reportProxyType);
+    reportRow->addStretch();
+    layout->addLayout(reportRow);
+    auto* hostRow = new QHBoxLayout;
+    hostRow->addWidget(new QLabel(tr("Host:"), this));
+    m_reportProxyHost = new QLineEdit(this);
+    hostRow->addWidget(m_reportProxyHost, 1);
+    hostRow->addWidget(new QLabel(tr("Port:"), this));
+    m_reportProxyPort = new QSpinBox(this);
+    m_reportProxyPort->setRange(0, 65535);
+    hostRow->addWidget(m_reportProxyPort);
+    layout->addLayout(hostRow);
+    auto* userRow = new QHBoxLayout;
+    userRow->addWidget(new QLabel(tr("User:"), this));
+    m_reportProxyUser = new QLineEdit(this);
+    m_reportProxyUser->setPlaceholderText(tr("optional"));
+    userRow->addWidget(m_reportProxyUser, 1);
+    userRow->addWidget(new QLabel(tr("Password:"), this));
+    m_reportProxyPass = new QLineEdit(this);
+    m_reportProxyPass->setEchoMode(QLineEdit::Password);
+    userRow->addWidget(m_reportProxyPass, 1);
+    layout->addLayout(userRow);
+
     m_statusLabel = new QLabel(this);
     m_statusLabel->setWordWrap(true);
     layout->addWidget(m_statusLabel);
@@ -84,11 +120,21 @@ Ed3kHidingGroup::Ed3kHidingGroup(IpcClient* ipc, QWidget* parent)
             if (!m_loading)
                 emit changed();
         });
-    for (QSpinBox* spin : {m_hopsSpin, m_shareSpin})
+    for (QSpinBox* spin : {m_hopsSpin, m_shareSpin, m_reportProxyPort})
         connect(spin, &QSpinBox::valueChanged, this, [this] {
             if (!m_loading)
                 emit changed();
         });
+    for (QLineEdit* edit : {m_reportProxyHost, m_reportProxyUser, m_reportProxyPass})
+        connect(edit, &QLineEdit::textEdited, this, [this] {
+            if (!m_loading)
+                emit changed();
+        });
+    connect(m_reportProxyType, &QComboBox::currentIndexChanged, this, [this] {
+        updateEnabled();
+        if (!m_loading)
+            emit changed();
+    });
     applyStatus({});
     updateEnabled();
 }
@@ -101,6 +147,12 @@ void Ed3kHidingGroup::load(const QCborMap& p)
     updateEnabled();   // the hops range follows hopping (0 only with it)
     m_hopsSpin->setValue(int(p.value(QStringLiteral("ed3kHops")).toInteger(1)));
     m_shareSpin->setValue(int(p.value(QStringLiteral("ed3kHopShare")).toInteger(25)));
+    const int type = Preferences::reportProxyType(int(p.value(QStringLiteral("ed3kReportProxyType")).toInteger(0)));
+    m_reportProxyType->setCurrentIndex(std::max(0, m_reportProxyType->findData(type)));
+    m_reportProxyHost->setText(p.value(QStringLiteral("ed3kReportProxyHost")).toString());
+    m_reportProxyPort->setValue(int(p.value(QStringLiteral("ed3kReportProxyPort")).toInteger(0)));
+    m_reportProxyUser->setText(p.value(QStringLiteral("ed3kReportProxyUser")).toString());
+    m_reportProxyPass->setText(p.value(QStringLiteral("ed3kReportProxyPassword")).toString());
     updateEnabled();
     m_loading = false;
 }
@@ -115,6 +167,16 @@ void Ed3kHidingGroup::appendTo(IpcMessage& req) const
     req.append(m_hoppingCheck->isChecked());
     req.append(QStringLiteral("ed3kHopShare"));
     req.append(qint64(m_shareSpin->value()));
+    req.append(QStringLiteral("ed3kReportProxyType"));
+    req.append(qint64(m_reportProxyType->currentData().toInt()));
+    req.append(QStringLiteral("ed3kReportProxyHost"));
+    req.append(m_reportProxyHost->text().trimmed());
+    req.append(QStringLiteral("ed3kReportProxyPort"));
+    req.append(qint64(m_reportProxyPort->value()));
+    req.append(QStringLiteral("ed3kReportProxyUser"));
+    req.append(m_reportProxyUser->text());
+    req.append(QStringLiteral("ed3kReportProxyPassword"));
+    req.append(m_reportProxyPass->text());
 }
 
 void Ed3kHidingGroup::saveLocal() const
@@ -123,6 +185,11 @@ void Ed3kHidingGroup::saveLocal() const
     thePrefs.setEd3kHops(m_hopsSpin->value());
     thePrefs.setEd3kHopping(m_hoppingCheck->isChecked());
     thePrefs.setEd3kHopShare(m_shareSpin->value());
+    thePrefs.setEd3kReportProxyType(m_reportProxyType->currentData().toInt());
+    thePrefs.setEd3kReportProxyHost(m_reportProxyHost->text());
+    thePrefs.setEd3kReportProxyPort(m_reportProxyPort->value());
+    thePrefs.setEd3kReportProxyUser(m_reportProxyUser->text());
+    thePrefs.setEd3kReportProxyPassword(m_reportProxyPass->text());
 }
 
 void Ed3kHidingGroup::applyStatus(const QCborMap& h)
@@ -142,6 +209,9 @@ void Ed3kHidingGroup::applyStatus(const QCborMap& h)
                        .arg(paths);
     if (h.value(QStringLiteral("waitingForHops")).toBool())
         text += QLatin1Char(' ') + tr("Waiting for enough hops (20 known nodes that forward) before the first path.");
+    // hops.md §2.6 Inwards: a leaf at 0 hops has no gate; the client tells its user so
+    if (h.value(QStringLiteral("hops")).toInteger(1) == 0 && !h.value(QStringLiteral("shares")).toBool())
+        text += QLatin1Char(' ') + tr("At 0 hops this computer (not a router) shares nothing under the anonymous key.");
     m_statusLabel->setText(text);
 }
 
@@ -204,6 +274,9 @@ void Ed3kHidingGroup::updateEnabled()
     m_zeroHint->setVisible(hopping);
     m_hoppingCheck->setEnabled(on);
     m_shareSpin->setEnabled(on && hopping);
+    const bool proxy = m_reportProxyType->currentData().toInt() != PROXYTYPE_NOPROXY;
+    for (QWidget* w : std::initializer_list<QWidget*>{m_reportProxyHost, m_reportProxyPort, m_reportProxyUser, m_reportProxyPass})
+        w->setEnabled(proxy);
 }
 
 } // namespace eMule

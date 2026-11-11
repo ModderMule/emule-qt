@@ -270,6 +270,7 @@ emule_add_test(tst_SafeKadFastKad    FOLDER "Kademlia")
 # Module 29o: Preferences & configuration
 emule_add_test(tst_ConfigSeeding   FOLDER "Prefs" LIBRARIES yaml-cpp::yaml-cpp)
 emule_add_test(tst_Preferences     FOLDER "Prefs")
+emule_add_test(tst_SpeedRules      FOLDER "Prefs")
 emule_add_test(tst_LegacyConfigImport FOLDER "Prefs")
 emule_add_test(tst_InstallerCopy   FOLDER "Prefs")
 emule_add_test(tst_CategoryPrefs   FOLDER "Prefs")
@@ -439,6 +440,7 @@ if(EMULE_BITTORRENT)
     # unfinished torrents kept out of the share (#124)
     emule_add_test(tst_BtShareGuard FOLDER "BitTorrent"
         SOURCES tst_BtShareGuard.cpp "${CMAKE_SOURCE_DIR}/src/daemon/BtShareGuard.cpp"
+                "${CMAKE_SOURCE_DIR}/src/daemon/LandedFiles.cpp"
         LIBRARIES eMule::Bt eMule::Core)
     target_include_directories(tst_BtShareGuard PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
 endif()
@@ -708,7 +710,11 @@ emule_add_test(tst_UsenetYenc FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetNzbParse FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetSubjectPatterns FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetArticleFetch FOLDER "Usenet" LIBRARIES eMule::Usenet)
-emule_add_test(tst_UsenetSharing FOLDER "Usenet" LIBRARIES eMule::Usenet)
+# usenetShareFiles switch (#177): LandedFiles from the daemon
+emule_add_test(tst_UsenetSharing FOLDER "Usenet"
+    SOURCES tst_UsenetSharing.cpp "${CMAKE_SOURCE_DIR}/src/daemon/LandedFiles.cpp"
+    LIBRARIES eMule::Usenet)
+target_include_directories(tst_UsenetSharing PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
 emule_add_test(tst_UsenetQueue FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetWatchFolder FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_UsenetNzbUrl FOLDER "Usenet" LIBRARIES eMule::Usenet)
@@ -729,6 +735,7 @@ emule_add_test(tst_UsenetStatistics FOLDER "Usenet" LIBRARIES eMule::Usenet)
 # scheduler asks in, not on the file that comes out; the two would otherwise
 # share fixtures whose part sizes each wants to choose for itself.
 emule_add_test(tst_UsenetStream FOLDER "Usenet" LIBRARIES eMule::Usenet)
+emule_add_test(tst_UsenetImagePreview FOLDER "Usenet" LIBRARIES eMule::Usenet)
 emule_add_test(tst_RarReader FOLDER "Usenet" LIBRARIES eMule::Usenet)
 
 # The par2 cases build their own recovery sets with Par2::par2create, so this one
@@ -786,6 +793,23 @@ emule_add_test(tst_ToolbarSkin FOLDER "GUI"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Smileys.cpp")
 target_include_directories(tst_ToolbarSkin PRIVATE "${CMAKE_SOURCE_DIR}/src/gui")
 target_link_libraries(tst_ToolbarSkin PRIVATE eMule::Core Qt6::Widgets)
+
+# Manifest skins: download, sha256, unpack into skins/<id>/, auto-update (loopback HTTP)
+emule_add_test(tst_SkinInstaller FOLDER "GUI"
+    SOURCES tst_SkinInstaller.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/SkinInstaller.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/SkinEngine.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/VersionChecker.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/SkinBrowserDialog.cpp")
+target_include_directories(tst_SkinInstaller PRIVATE "${CMAKE_SOURCE_DIR}/src/gui")
+target_link_libraries(tst_SkinInstaller PRIVATE eMule::Core Qt6::Widgets Qt6::Network archive_static)
+
+# Transfer header click cycles lists (#171)
+emule_add_test(tst_TransferToolbar FOLDER "GUI"
+    SOURCES tst_TransferToolbar.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/TransferToolbar.cpp")
+target_include_directories(tst_TransferToolbar PRIVATE "${CMAKE_SOURCE_DIR}/src/gui")
+target_link_libraries(tst_TransferToolbar PRIVATE eMule::Core Qt6::Widgets)
 
 # Data file integration tests — verify real server.met / nodes.dat / .part loading
 emule_add_test(tst_ServerMetData  FOLDER "DataFiles")
@@ -1131,6 +1155,7 @@ emule_add_test(tst_MetaResultDetailDialog FOLDER "Gui"
     SOURCES tst_MetaResultDetailDialog.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/MetaResultDetailDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/PreviewImageView.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentFileTree.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetFileCheckList.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/FileCheckButtons.cpp"
@@ -1785,6 +1810,11 @@ if(EMULE_LIVE_TESTS)
     emule_add_test(tst_UsenetLivePreview FOLDER "LiveNetwork" LIBRARIES eMule::Usenet)
     set_tests_properties(tst_UsenetLivePreview PROPERTIES LABELS "live" TIMEOUT 1800)
     set_property(TEST tst_UsenetLivePreview APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=900000")
+
+    # search Details › Images: posted images + video head frames per .nzb
+    emule_add_test(tst_UsenetLivePreviewImages FOLDER "LiveNetwork" LIBRARIES eMule::Usenet)
+    set_tests_properties(tst_UsenetLivePreviewImages PROPERTIES LABELS "live" TIMEOUT 1800)
+    set_property(TEST tst_UsenetLivePreviewImages APPEND PROPERTY ENVIRONMENT "QTEST_FUNCTION_TIMEOUT=900000")
 
     emule_add_test(tst_SmtpSendEmail FOLDER "LiveNetwork")
     set_tests_properties(tst_SmtpSendEmail PROPERTIES LABELS "live" TIMEOUT 60)

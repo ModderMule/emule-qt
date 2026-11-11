@@ -25,13 +25,14 @@ class QTreeWidget;
 
 namespace eMule {
 
+class PreviewImageView;
 class UsenetFileCheckList;
 
 class MetaResultDetailDialog : public DetailDialog {
     Q_OBJECT
 
 public:
-    enum Tab { TabGeneral = 0, TabFiles, TabTrackers };
+    enum Tab { TabGeneral = 0, TabFiles, TabTrackers, TabImages };
     enum NzbColumn { NzbName = 0, NzbSize, NzbArticles, NzbType, NzbColCount };
     enum TorrentColumn { TorrentName = 0, TorrentSize, TorrentColCount };
 
@@ -65,12 +66,19 @@ public:
     [[nodiscard]] QLabel* noteLabel() const { return m_note; }
     [[nodiscard]] QPushButton* downloadButton() const { return m_download; }
     [[nodiscard]] UsenetFileCheckList* fileChecks() const { return m_checks; }
+    [[nodiscard]] PreviewImageView* imagesView() const { return m_images; }
+
+    /// FetchNzbImages answer: {images: [{name, kind, data}], note}.
+    void setPreviewImages(const QCborMap& result);
+    void setPreviewImagesError(const QString& error);
 
 signals:
     /// Download pressed: the panel adds the row as its own Download would.
     /// @p unchecked: NZB file indices left out (chooseFiles), else empty.
     /// @p kept: the checked files (NZB without PAR2, or torrent); empty = all.
     void downloadRequested(const QList<int>& unchecked, const QList<int>& kept);
+    /// The Images tab was opened the first time (NZB with a previewToken only).
+    void imagesRequested(const QString& previewToken, const QString& coverUrl);
 
 private:
     void buildGeneral(const QCborMap& inspection, bool torrent);
@@ -79,6 +87,7 @@ private:
     void buildTrackers(const QCborMap& inspection);
     void addRowFacts(QFormLayout* form) const;
     void onDownload();
+    void onTabChanged(int index);
 
     RowInfo m_row;
     QStackedWidget* m_stack = nullptr;
@@ -89,6 +98,10 @@ private:
     QTreeWidget* m_trackers = nullptr;
     QPushButton* m_download = nullptr;
     UsenetFileCheckList* m_checks = nullptr;
+    PreviewImageView* m_images = nullptr;
+    QString m_previewToken;
+    QString m_coverUrl;
+    bool m_imagesRequested = false;
 };
 
 } // namespace eMule

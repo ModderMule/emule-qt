@@ -15,9 +15,9 @@
 #
 # Example 
 # -------
-# eMule Homepage,http://www.emule-project.net
+# eMule Qt Homepage,https://emule-qt.org
 # Testservice,http://www.webservice.com/search?p=ed2k:#filesize:#hashid
 #
 # Comment lines begin with # or /
 
-eMule FAQ,http://www.emule-project.org/faq/
+eMule Qt Homepage,https://emule-qt.org

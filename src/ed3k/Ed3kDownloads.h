@@ -66,6 +66,10 @@ struct Ed3kDownloadSpec {
     bool paused = false;
     /// eMule's download priority (kPr*: 0 low, 1 normal, 2 high, 3 very high, 4 very low)
     int priority = 1;
+    /// the key it goes under (a followed set's, hops.md §1); nullopt: Ed3kHide::keyFor
+    std::optional<::ed3k::KeyKind> key;
+    /// the eD2K hash (16 B) the link names, if any (the anonymous-key exposure check)
+    QByteArray md4;
 };
 
 /// One download as the list shows it.
@@ -124,6 +128,10 @@ public:
     void setCompletedHook(std::function<void(const Ed3kDownloadInfo&)> hook) { m_completedHook = std::move(hook); }
     /// Whether another sharer serves @p root already: a complete file is not shared again here.
     void setSharedElsewhere(std::function<bool(const ::ed3k::Root&)> pred) { m_sharedElsewhere = std::move(pred); }
+    /// hops.md §1 SHOULD: a download added under the anonymous key; the hook tells the user
+    /// when the file is on another network too (eD2K queue, hoster). @p md4 may be empty.
+    using AnonAddedHook = std::function<void(const ::ed3k::Root& root, const QByteArray& md4, const QString& name)>;
+    void setAnonAddedHook(AnonAddedHook hook) { m_anonAdded = std::move(hook); }
 
     // -- the list ------------------------------------------------------------
 
@@ -232,6 +240,7 @@ private:
     QString m_incomingDir;
     std::function<void(const Ed3kDownloadInfo&)> m_completedHook;
     std::function<bool(const ::ed3k::Root&)> m_sharedElsewhere;
+    AnonAddedHook m_anonAdded;
     std::function<QString(int)> m_categoryDir;
     QTimer m_tick;
     bool m_changed = false;

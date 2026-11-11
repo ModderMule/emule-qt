@@ -174,6 +174,8 @@ private slots:
     void aSetOfFilesOfBothKeysIsRefused();
     void aFileOfTheOtherKeyOffersThatKey();
     void aHidingNodePublishesUnderTheAnonymousKey();
+    void shareUnderKeyMovesTheFilesAlong();
+    void aChangedFolderPublishesANewVersion();
     void cleanupTestCase();
     void cleanup() { QTest::qWait(10); }
 
@@ -624,6 +626,101 @@ void tst_Ed3kOwnSets::aHidingNodePublishesUnderTheAnonymousKey()
     QVERIFY(!d.engine()->fileKey(rootOf(z)).value_or(std::nullopt));
     own.stop();
     d.stop();
+}
+
+// hops.md §1: the set moves to its files' key with its files (unless held elsewhere)
+void tst_Ed3kOwnSets::shareUnderKeyMovesTheFilesAlong()
+{
+    QTemporaryDir dir;
+    Ed3kSession e;
+    QVERIFY(e.start(loopback(dir.path())));
+    Ed3kOwnSets own(e, dir.path());
+    QVERIFY(own.isStarted());
+    const QString folder = QDir(m_files.path()).filePath(QStringLiteral("Move"));
+    const QByteArray x = payload(40 * 1024 + 5, 21);
+    QVERIFY(writeFile(QDir(folder).filePath(QStringLiteral("x.bin")), x));
+    QSignalSpy done(&own, &Ed3kOwnSets::versionDone);
+    const auto id = own.create(QStringLiteral("Move"), folder, {}, Ed3kOwnSets::Kind::Open);
+    QVERIFY(id);
+    QTRY_COMPARE_WITH_TIMEOUT(done.count(), 1, 60000);
+    QVERIFY(done.at(0).at(2).toBool());
+    QCOMPARE(own.info(*id)->key, QStringLiteral("Node"));
+    QCOMPARE(e.hide().recorded(rootOf(x)), std::optional(::ed3k::KeyKind::Node));
+    // hiding; a file of the anonymous key added: refused, that key offered
+    e.setHideSettings(Ed3kHideSettings{true, 1, true, 25});
+    QVERIFY(e.hide().hiding());
+    const QByteArray y = payload(30 * 1024 + 9, 22);
+    QVERIFY(writeFile(QDir(folder).filePath(QStringLiteral("y.bin")), y));
+    e.hide().record(rootOf(y), ::ed3k::KeyKind::Anon);
+    QVERIFY(own.publishNewVersion(*id));
+    QTRY_COMPARE_WITH_TIMEOUT(done.count(), 2, 60000);
+    QVERIFY(!done.at(1).at(2).toBool());
+    QCOMPARE(own.info(*id)->offerKey, QStringLiteral("Anonymous"));
+    // x.bin held elsewhere (Shared Files) under the node key: not moved
+    own.setHeldElsewhere([&](const ::ed3k::Root& r) { return r == rootOf(x); });
+    const auto refused = own.shareUnderKey(*id, ::ed3k::KeyKind::Anon);
+    QVERIFY(!refused);
+    QVERIFY(refused.error().contains(QStringLiteral("Shared Files")));
+    QCOMPARE(own.info(*id)->key, QStringLiteral("Node"));
+    // held nowhere else: x.bin moves along, the version goes out under the anonymous key
+    own.setHeldElsewhere({});
+    QVERIFY(own.shareUnderKey(*id, ::ed3k::KeyKind::Anon));
+    QTRY_COMPARE_WITH_TIMEOUT(done.count(), 3, 60000);
+    const auto info = own.info(*id);
+    QVERIFY2(done.at(2).at(2).toBool(), qPrintable(info->error));
+    QCOMPARE(info->key, QStringLiteral("Anonymous"));
+    QCOMPARE(e.hide().recorded(rootOf(x)), std::optional(::ed3k::KeyKind::Anon));
+    QCOMPARE(e.engine()->fileKey(rootOf(x)).value_or(std::nullopt), std::optional(::ed3k::KeyKind::Anon));
+    QCOMPARE(e.engine()->fileKey(rootOf(y)).value_or(std::nullopt), std::optional(::ed3k::KeyKind::Anon));
+    own.stop();
+    e.stop();
+}
+
+// Ed3kOwnSets::setWatchFolders: a file added to the folder (or a new subfolder) publishes a
+// new version; nothing while not watched
+void tst_Ed3kOwnSets::aChangedFolderPublishesANewVersion()
+{
+    QTemporaryDir dir;
+    Ed3kSession e;
+    QVERIFY(e.start(loopback(dir.path())));
+    Ed3kOwnSets own(e, dir.path());
+    own.setWatchTimings(100, 500);
+    own.setWatchFolders(true);
+    const QString folder = QDir(m_files.path()).filePath(QStringLiteral("Watched"));
+    QVERIFY(writeFile(QDir(folder).filePath(QStringLiteral("sub/w1.bin")), payload(20 * 1024 + 1, 31)));
+    QVERIFY(writeFile(QDir(folder).filePath(QStringLiteral(".hidden/no.bin")), payload(1024, 32)));
+    const auto id = own.create(QStringLiteral("Watched"), folder, {}, Ed3kOwnSets::Kind::Open);
+    QVERIFY(id);
+    QTRY_COMPARE_WITH_TIMEOUT(own.info(*id)->seq, std::uint64_t(1), 60000);
+    QTRY_VERIFY_WITH_TIMEOUT(own.watchedDirs().contains(QDir(folder).filePath(QStringLiteral("sub"))), 5000);
+    QVERIFY(own.watchedDirs().contains(QDir(folder).absolutePath()));
+    QVERIFY(!own.watchedDirs().contains(QDir(folder).filePath(QStringLiteral(".hidden"))));
+    QTest::qWait(1500);   // the watches settle (fseventsd)
+    // a file added in a subfolder: version 2
+    QVERIFY(writeFile(QDir(folder).filePath(QStringLiteral("sub/w2.bin")), payload(21 * 1024 + 2, 33)));
+    QTRY_COMPARE_WITH_TIMEOUT(own.info(*id)->seq, std::uint64_t(2), 60000);
+    QCOMPARE(own.info(*id)->files, 2);
+    // a new subfolder: watched from now on, its file in version 3
+    QVERIFY(writeFile(QDir(folder).filePath(QStringLiteral("new/w3.bin")), payload(22 * 1024 + 3, 34)));
+    QTRY_COMPARE_WITH_TIMEOUT(own.info(*id)->seq, std::uint64_t(3), 60000);
+    QTRY_VERIFY_WITH_TIMEOUT(own.watchedDirs().contains(QDir(folder).filePath(QStringLiteral("new"))), 5000);
+    QCOMPARE(own.info(*id)->files, 3);
+    // a change in a hidden folder: no version
+    QVERIFY(writeFile(QDir(folder).filePath(QStringLiteral(".hidden/no2.bin")), payload(1024, 35)));
+    QTest::qWait(2000);
+    QCOMPARE(own.info(*id)->seq, std::uint64_t(3));
+    // not watched: nothing
+    own.setWatchFolders(false);
+    QVERIFY(own.watchedDirs().isEmpty());
+    QVERIFY(QFile::remove(QDir(folder).filePath(QStringLiteral("sub/w2.bin"))));
+    QTest::qWait(2000);
+    QCOMPARE(own.info(*id)->seq, std::uint64_t(3));
+    // watched again: what changed meanwhile goes out
+    own.setWatchFolders(true);
+    QTRY_COMPARE_WITH_TIMEOUT(own.info(*id)->seq, std::uint64_t(4), 60000);
+    QCOMPARE(own.info(*id)->files, 2);
+    own.stop();
+    e.stop();
 }
 
 QTEST_GUILESS_MAIN(tst_Ed3kOwnSets)

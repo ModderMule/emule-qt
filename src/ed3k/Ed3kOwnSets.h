@@ -34,7 +34,9 @@
 ///   version published), <id>/.sealed/ (sealed members).
 ///
 /// ToDo: kind 3 of subscription.md §2 (a paid hidden set, `paid=1`) is not offered.
-/// ToDo: members are not watched: a changed folder needs "Publish New Version" (or a restart).
+/// - was: ToDo: members are not watched: a changed folder needs "Publish New Version" (or a
+///   restart) (done: setWatchFolders, pref ed3kOwnSetsWatch: the folders of published sets and
+///   their subfolders on a SharedDirWatcher; a change whose scan differs publishes a new version).
 
 #include "Ed3kJoinBase.h"
 #include "Ed3kPaidSeller.h"
@@ -52,6 +54,10 @@
 #include <memory>
 #include <optional>
 #include <vector>
+
+namespace eMule {
+class SharedDirWatcher;
+}
 
 namespace eMule::ed3k {
 
@@ -98,6 +104,16 @@ public:
     void setSeller(Ed3kPaidSeller* seller);
     /// Roots another sharer serves (eMule's share list over ed3k): not opened here again.
     void setSharedElsewhere(std::function<bool(const ::ed3k::Root&)> f) { m_sharedElsewhere = std::move(f); }
+    /// Watches the folders of published sets (and their subfolders) while the node runs: a
+    /// change that alters the members publishes a new version (as publishNewVersion).
+    void setWatchFolders(bool on);
+    [[nodiscard]] bool watchesFolders() const { return m_watch; }
+    /// The watcher's quiet time and longest hold (tests shorten them).
+    void setWatchTimings(int settleMs, int maxHoldMs);
+    /// The directories watched now (tests).
+    [[nodiscard]] QStringList watchedDirs() const;
+    /// Roots Shared Files or the downloads hold (shareUnderKey: not moved from there).
+    void setHeldElsewhere(std::function<bool(const ::ed3k::Root&)> f) { m_heldElsewhere = std::move(f); }
 
     /// A new set of @p folder (every file below it) or @p files, published at once (a paid
     /// one once sold: sell()). The id. The error is user-visible.
@@ -112,7 +128,8 @@ public:
     /// already: new terms. Its members are sealed in the next version. The scope.
     std::expected<QString, QString> sell(const QString& id, const Ed3kPaidSeller::Terms& terms);
     /// The user agreed to share the set under @p key (hops.md §1, the key its files are under):
-    /// taken back under the old key, a new version under @p key.
+    /// taken back under the old key, its files moved along, a new version under @p key. A file
+    /// of the other key held elsewhere (Shared Files, downloads, another own set) refuses it.
     std::expected<void, QString> shareUnderKey(const QString& id, ::ed3k::KeyKind key);
 
     [[nodiscard]] bool has(const QString& id) const;
@@ -197,6 +214,12 @@ private:
     /// "the files are under @p files, the set under @p set: share the set under @p files?"
     [[nodiscard]] static QString keyRefusal(::ed3k::KeyKind files, ::ed3k::KeyKind set);
     void unshareSet(Set& s);
+    /// The watcher follows the published folder sets (and their subfolders now); none while off.
+    void updateWatch();
+    /// @p dir changed (empty: anything, an overflow): sets whose files changed get a version.
+    void onFolderChanged(const QString& dir);
+    /// The files of @p s differ from its last version (or the one being built).
+    [[nodiscard]] bool filesChanged(const Set& s) const;
     /// the files of @p s now: (path in the set, file)
     [[nodiscard]] std::vector<std::pair<QString, QString>> scan(const Set& s) const;
     [[nodiscard]] std::optional<Seed> keyOf(const Set& s) const;
@@ -222,9 +245,14 @@ private:
     int m_nextServe = 1;
     QPointer<Ed3kPaidSeller> m_seller;
     std::function<bool(const ::ed3k::Root&)> m_sharedElsewhere;
+    std::function<bool(const ::ed3k::Root&)> m_heldElsewhere;
     std::unique_ptr<Ed3kSealedSealer> m_sealer;
     QTimer m_offerTimer;
     bool m_changePending = false;
+    bool m_watch = false;
+    int m_watchSettleMs = 2000;
+    int m_watchMaxHoldMs = 10000;
+    SharedDirWatcher* m_watcher = nullptr;
 };
 
 } // namespace eMule::ed3k

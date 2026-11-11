@@ -1,11 +1,15 @@
 /// @file tst_BtShareGuard.cpp
-/// @brief Unfinished torrents stay out of the eD2K / ed3k share (#124).
+/// @brief Unfinished torrents stay out of the eD2K / ed3k share (#124); with sharing
+/// switched off finished torrents and hoster downloads do too (#177).
 
 #include "BtShareGuard.h"
+#include "LandedFiles.h"
+#include "files/SharedFileList.h"
 
 #include "TestHelpers.h"
 
 #include <QDir>
+#include <QFile>
 #include <QTest>
 
 using namespace eMule;
@@ -20,6 +24,9 @@ private slots:
     void removed_keepsItsBlocks();
     void finished_listsCompleteFilesOnce();
     void restart_completedStaysSharedWhileChecked();
+    void shareFinishedOff_blocksDoneTorrents();
+    void shareModePublic_blocksPrivateAndI2p();
+    void landedFiles_blockOnlyWhileOff();
 };
 
 namespace {
@@ -180,6 +187,90 @@ void tst_BtShareGuard::restart_completedStaysSharedWhileChecked()
     BtShareGuard fresh;
     QVERIFY(fresh.update(id, row(QStringLiteral("/bt"), QStringLiteral("Album"), 0.0, BtState::CheckingResume), files).blockedMore);
     QVERIFY(fresh.blocks(QStringLiteral("/bt/Album/01.mp3")));
+}
+
+void tst_BtShareGuard::shareFinishedOff_blocksDoneTorrents()
+{
+    const auto files = [] {
+        BtFileRow f;
+        f.path = QStringLiteral("Album/01.mp3");
+        f.size = f.done = 100;
+        return QList<BtFileRow>{f};
+    };
+    BtShareGuard guard;
+    const QString id = QStringLiteral("t");
+    guard.update(id, row(QStringLiteral("/in"), QStringLiteral("Album"), 0.5, BtState::Downloading), files);
+    const auto done = guard.update(id, row(QStringLiteral("/in"), QStringLiteral("Album"), 1.0, BtState::Seeding), files);
+    QCOMPARE(done.finished, QStringList{QStringLiteral("/in/Album/01.mp3")});
+    QVERIFY(!guard.blocks(QStringLiteral("/in/Album/01.mp3")));
+
+    QVERIFY(guard.setShareMode(BtShareMode::Off));
+    QVERIFY(!guard.setShareMode(BtShareMode::Off));   // unchanged
+    QVERIFY(guard.blocks(QStringLiteral("/in/Album/01.mp3")));
+    QVERIFY(guard.blocks(QStringLiteral("/in/Album/new/02.mp3")));
+    QVERIFY(!guard.blocks(QStringLiteral("/in/Album 2/01.mp3")));
+    QVERIFY(!guard.blocks(QStringLiteral("/in/other.mkv")));
+
+    // a single-file torrent, and one loaded complete at a restart (no entry: checking)
+    BtTorrentRow checking = row(QStringLiteral("/in"), QStringLiteral("movie.mkv"), 0.0, BtState::CheckingResume);
+    checking.completedAt = 1'700'000'000;
+    guard.update(QStringLiteral("u"), checking, files);
+    QVERIFY(guard.blocks(QStringLiteral("/in/movie.mkv")));
+    // removed: still out for the session
+    guard.update(id, std::nullopt, files);
+    QVERIFY(guard.blocks(QStringLiteral("/in/Album/01.mp3")));
+
+    QVERIFY(guard.setShareMode(BtShareMode::All));
+    QVERIFY(!guard.blocks(QStringLiteral("/in/Album/01.mp3")));
+    QVERIFY(!guard.blocks(QStringLiteral("/in/movie.mkv")));
+}
+
+void tst_BtShareGuard::shareModePublic_blocksPrivateAndI2p()
+{
+    const auto files = [] { return QList<BtFileRow>{}; };
+    BtShareGuard guard;
+    QVERIFY(guard.setShareMode(BtShareMode::Public));
+    BtTorrentRow pub = row(QStringLiteral("/in"), QStringLiteral("Public"), 1.0, BtState::Seeding);
+    BtTorrentRow priv = row(QStringLiteral("/in"), QStringLiteral("Private"), 1.0, BtState::Seeding);
+    priv.isPrivate = true;
+    BtTorrentRow i2p = row(QStringLiteral("/in"), QStringLiteral("Anon.mkv"), 1.0, BtState::Seeding);
+    i2p.i2p = true;
+    QVERIFY(!guard.update(QStringLiteral("a"), pub, files).blockedMore);
+    QVERIFY(guard.update(QStringLiteral("b"), priv, files).blockedMore);   // shared before: drop now
+    QVERIFY(guard.update(QStringLiteral("c"), i2p, files).blockedMore);
+    QVERIFY(!guard.update(QStringLiteral("b"), priv, files).blockedMore);  // no news
+    QVERIFY(!guard.blocks(QStringLiteral("/in/Public/01.mp3")));
+    QVERIFY(guard.blocks(QStringLiteral("/in/Private/01.mp3")));
+    QVERIFY(guard.blocks(QStringLiteral("/in/Anon.mkv")));
+
+    QVERIFY(guard.setShareMode(BtShareMode::Off));
+    QVERIFY(guard.blocks(QStringLiteral("/in/Public/01.mp3")));
+    QVERIFY(guard.setShareMode(BtShareMode::All));
+    QVERIFY(!guard.blocks(QStringLiteral("/in/Private/01.mp3")));
+    QVERIFY(!guard.blocks(QStringLiteral("/in/Anon.mkv")));
+}
+
+void tst_BtShareGuard::landedFiles_blockOnlyWhileOff()
+{
+    eMule::testing::TempDir tmp;
+    const QString list = tmp.path() + QStringLiteral("/ed3k/hoster/landed.txt");
+    {
+        LandedFiles landed(list);
+        landed.load();   // no file yet
+        QCOMPARE(landed.size(), 0);
+        landed.add({QStringLiteral("/in/pkg/a.bin"), QStringLiteral("/in/b.bin"), QStringLiteral("/IN/B.BIN"), QString()});
+        QVERIFY(QFile::exists(list));
+        QVERIFY(landed.contains(QStringLiteral("/in/b.bin")));
+        QVERIFY(!landed.blocks(QStringLiteral("/in/b.bin")));   // sharing on by default
+        QVERIFY(landed.setBlocking(true));
+        QVERIFY(landed.blocks(QStringLiteral("/in/pkg/a.bin")));
+        QVERIFY(!landed.blocks(QStringLiteral("/in/pkg/c.bin")));
+    }
+    LandedFiles again(list);
+    again.load();
+    QVERIFY(again.contains(QStringLiteral("/in/pkg/a.bin")));
+    QVERIFY(again.contains(QStringLiteral("/in/b.bin")));
+    QCOMPARE(again.size(), SharedFileList::pathKey(QStringLiteral("/in/b.bin")) == SharedFileList::pathKey(QStringLiteral("/IN/B.BIN")) ? 2 : 3);
 }
 
 QTEST_GUILESS_MAIN(tst_BtShareGuard)

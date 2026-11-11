@@ -201,7 +201,8 @@ BtTorrentRow BtTorrentView::row(const lt::torrent_status& st)
 }
 
 QList<BtFileRow> BtTorrentView::files(const lt::torrent_info& ti, const std::vector<std::int64_t>& progress,
-                                      const std::vector<lt::download_priority_t>& prio)
+                                      const std::vector<lt::download_priority_t>& prio,
+                                      const std::vector<int>& avail)
 {
     QList<BtFileRow> out;
     // no metadata yet (magnet): empty stub
@@ -218,6 +219,7 @@ QList<BtFileRow> BtTorrentView::files(const lt::torrent_info& ti, const std::vec
         f.done = idx < static_cast<int>(progress.size()) ? progress[static_cast<std::size_t>(idx)] : 0;
         f.priority = idx < static_cast<int>(prio.size()) ? static_cast<int>(static_cast<std::uint8_t>(prio[static_cast<std::size_t>(idx)])) : 4;
         f.pad = fs.pad_file_at(i);
+        f.availability = fileAvailability(fs, i, avail);
         out.append(f);
     }
     return out;
@@ -393,12 +395,14 @@ QString BtTorrentView::errorText(const lt::error_code& ec)
     const QString text = QString::fromStdString(ec.message());
     if (ec.category() != lt::i2p_category())
         return text;
-    // i2pd answers INVALID_KEY when a name is not in its address book yet (a fresh router
-    // fetches it over I2P first) or the tracker's lease set is gone (report 38)
+    // i2pd answers INVALID_KEY both for a name not in its address book and for a known
+    // name whose lease set lookup failed (fresh router, tracker offline). Report 38, #168;
+    // BtSession re-asks these
     switch (ec.value()) {
     case lt::i2p_error::invalid_key:
     case lt::i2p_error::key_not_found:
-        return QStringLiteral("I2P name not in the address book yet, or tracker offline (%1)").arg(text);
+        return QStringLiteral("I2P tracker not reachable yet: router still starting, name not in its address book, "
+                              "or tracker offline (%1)").arg(text);
     case lt::i2p_error::cant_reach_peer:
         return QStringLiteral("I2P tracker offline (%1)").arg(text);
     default:
@@ -423,6 +427,26 @@ QByteArray BtTorrentView::pieceMap(const lt::typed_bitfield<lt::piece_index_t>& 
         out[b] = static_cast<char>(to > from ? have * 255 / (to - from) : 0);
     }
     return out;
+}
+
+double BtTorrentView::fileAvailability(const lt::file_storage& fs, lt::file_index_t file,
+                                       const std::vector<int>& avail)
+{
+    // as qBittorrent: pieces of the file some peer has / pieces of the file
+    if (avail.empty())
+        return -1.0;   // seeding: libtorrent keeps no counts
+    if (fs.file_size(file) <= 0)
+        return 1.0;    // no pieces: available by default
+    const lt::peer_request first = fs.map_file(file, 0, 1);
+    const lt::peer_request last = fs.map_file(file, fs.file_size(file) - 1, 1);
+    const int from = static_cast<int>(first.piece);
+    const int to = std::min(static_cast<int>(last.piece), static_cast<int>(avail.size()) - 1);
+    if (to < from)
+        return -1.0;
+    int have = 0;
+    for (int p = from; p <= to; ++p)
+        have += avail[static_cast<std::size_t>(p)] > 0 ? 1 : 0;
+    return static_cast<double>(have) / (to - from + 1);
 }
 
 } // namespace eMule::bt

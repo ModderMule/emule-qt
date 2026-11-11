@@ -8,6 +8,7 @@
 #include "Ed3kSets.h"
 #include "Ed3kStore.h"
 
+#include "files/SharedDirWatcher.h"
 #include "utils/Log.h"
 
 #include <QDateTime>
@@ -118,7 +119,12 @@ Ed3kOwnSets::Ed3kOwnSets(Ed3kSession& session, const QString& configDir, QObject
         start();
 }
 
-Ed3kOwnSets::~Ed3kOwnSets() = default;
+Ed3kOwnSets::~Ed3kOwnSets()
+{
+    // its worker thread first, before the sets go
+    delete m_watcher;
+    m_watcher = nullptr;
+}
 
 void Ed3kOwnSets::start()
 {
@@ -129,6 +135,7 @@ void Ed3kOwnSets::start()
     for (auto& [id, s] : m_sets)
         if (s.published || (s.kind == Kind::Paid && !s.scope.isEmpty() && s.seq == 0))
             startBuild(s, true);
+    updateWatch();
 }
 
 void Ed3kOwnSets::stop()
@@ -144,6 +151,32 @@ void Ed3kOwnSets::stop()
     m_serveOf.clear();
     for (auto& [id, s] : m_sets)
         s.manifest.reset();
+    updateWatch();
+}
+
+void Ed3kOwnSets::setWatchFolders(bool on)
+{
+    if (m_watch == on)
+        return;
+    m_watch = on;
+    logEd3k(QStringLiteral("ed3k: own set folders %1").arg(on ? QStringLiteral("watched") : QStringLiteral("not watched")));
+    updateWatch();
+    // what changed while not watched
+    if (on && m_started)
+        onFolderChanged(QString());
+}
+
+void Ed3kOwnSets::setWatchTimings(int settleMs, int maxHoldMs)
+{
+    m_watchSettleMs = settleMs;
+    m_watchMaxHoldMs = maxHoldMs;
+    if (m_watcher)
+        m_watcher->setTimings(settleMs, maxHoldMs, m_watcher->pollInterval());
+}
+
+QStringList Ed3kOwnSets::watchedDirs() const
+{
+    return m_watcher ? m_watcher->roots() : QStringList{};
 }
 
 void Ed3kOwnSets::setSeller(Ed3kPaidSeller* seller)
@@ -249,6 +282,7 @@ std::expected<void, QString> Ed3kOwnSets::unpublish(const QString& id)
     s->published = false;
     s->head.reset();
     logEd3k(QStringLiteral("ed3k: own set %1 unpublished").arg(id));
+    updateWatch();
     save();
     pumpSession();
     markChanged();
@@ -299,13 +333,36 @@ std::expected<void, QString> Ed3kOwnSets::shareUnderKey(const QString& id, ffi::
         markChanged();
         return {};
     }
+    // §1: never under both keys: a file of the other key held elsewhere stays there
+    const auto heldElsewhere = [&](const ffi::Root& root) {
+        if (m_heldElsewhere && m_heldElsewhere(root))
+            return true;
+        return std::ranges::any_of(m_sets, [&](const auto& kv) {
+            return kv.first != s->id && std::ranges::any_of(kv.second.members, [&](const Member& o) { return o.root == root; });
+        });
+    };
+    for (const Member& m : s->members) {
+        const auto held = m_session.hide().keyOf(m.root);
+        if (held && *held != key && heldElsewhere(m.root)) {
+            logEd3kWarning(QStringLiteral("ed3k: own set %1 not moved to the %2 key: a file is held elsewhere under the other key")
+                               .arg(id, Ed3kHide::keyName(key)));
+            return std::unexpected(tr("Some files of this set are shared under the node key, others under the anonymous key. A set lists "
+                                      "files of one key only: move them to one key in Shared Files first."));
+        }
+    }
     m_builds.erase(ownerOf(s->id));
     // taken back under the old key: its head and records end there
     if (auto* e = m_session.engine(); e && s->manifest && s->key)
         (void)e->setUnpublish(m_session.now(), *s->manifest, *s->key);
+    // its members' records too: published under the old key they stay held there (fileKey)
+    for (const Member& m : s->members)
+        unpublishShared(m.root, m.sealedPath.isEmpty() ? ffi::Publish::Both : ffi::Publish::Source);
     unshareSet(*s);
     s->head.reset();
     s->key = key;
+    // its files move along (closed above under the old key; versionKey finds them under the new)
+    for (const Member& m : s->members)
+        m_session.hide().record(m.root, key);
     logEd3k(QStringLiteral("ed3k: own set %1 moves to the %2 key").arg(id, Ed3kHide::keyName(key)));
     save();
     startBuild(*s, false);
@@ -713,6 +770,7 @@ void Ed3kOwnSets::finishBuild(const QString& owner)
     s->error.clear();
     const bool again = b.again;
     m_builds.erase(it);
+    updateWatch();   // a new set, new subfolders
     save();
     pumpSession();
     const QString idHex = QString::fromLatin1(s->id.toHex());
@@ -1152,7 +1210,7 @@ std::optional<ffi::KeyKind> Ed3kOwnSets::versionKey(Set& s, const Build& b, QStr
             held.insert(*k);
     if (held.size() > 1 && s.key) {
         // §1: a file of the other key in a published set: refused, the set offered under that
-        // key (its files of the set's key must move too before that version goes out)
+        // key (shareUnderKey moves its files of the set's key along)
         const ffi::KeyKind other = *s.key == ffi::KeyKind::Anon ? ffi::KeyKind::Node : ffi::KeyKind::Anon;
         s.offerKey = other;
         *error = keyRefusal(other, *s.key);
@@ -1190,6 +1248,81 @@ QString Ed3kOwnSets::keyRefusal(ffi::KeyKind files, ffi::KeyKind set)
     return tr("Files of this set are shared under the %1 key, the set under the %2 key: a set lists only files of its "
               "own key. Share the set under the %1 key instead?")
         .arg(name(files), name(set));
+}
+
+void Ed3kOwnSets::updateWatch()
+{
+    if (!m_watch || !m_started) {
+        delete m_watcher;
+        m_watcher = nullptr;
+        return;
+    }
+    // SharedDirWatcher is not recursive: the folder and every subfolder (dot names left out,
+    // as scan() does)
+    QStringList dirs;
+    for (const auto& [id, s] : m_sets) {
+        if (!s.published || s.folder.isEmpty() || !QFileInfo(s.folder).isDir())
+            continue;
+        dirs << s.folder;
+        const QDir root(s.folder);
+        QDirIterator it(s.folder, QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            const QString d = it.next();
+            const QStringList parts = root.relativeFilePath(d).split(QLatin1Char('/'));
+            if (std::ranges::none_of(parts, [](const QString& c) { return c.startsWith(QLatin1Char('.')); }))
+                dirs << d;
+        }
+    }
+    dirs.removeDuplicates();
+    if (!m_watcher) {
+        m_watcher = new SharedDirWatcher(this);
+        m_watcher->setTimings(m_watchSettleMs, m_watchMaxHoldMs, SharedDirWatcher::kDefaultPollMs);
+        connect(m_watcher, &SharedDirWatcher::directoryChanged, this, &Ed3kOwnSets::onFolderChanged);
+        connect(m_watcher, &SharedDirWatcher::overflow, this, [this] { onFolderChanged(QString()); });
+    }
+    m_watcher->setRoots(dirs);
+}
+
+void Ed3kOwnSets::onFolderChanged(const QString& dir)
+{
+    if (!m_started)
+        return;
+    const QString changed = QDir::cleanPath(dir);
+    bool refresh = false;
+    for (auto& [id, s] : m_sets) {
+        if (!s.published || s.folder.isEmpty())
+            continue;
+        const QString folder = QDir::cleanPath(s.folder);
+        if (!dir.isEmpty() && changed != folder && !changed.startsWith(folder + QLatin1Char('/')))
+            continue;
+        refresh = true;
+        if (!filesChanged(s))
+            continue;
+        const QString idHex = QString::fromLatin1(s.id.toHex());
+        logEd3k(QStringLiteral("ed3k: own set %1: its folder changed, a new version").arg(idHex));
+        // the GUI's "Publish New Version"
+        if (auto ok = publishNewVersion(idHex); !ok)
+            logEd3kWarning(QStringLiteral("ed3k: own set %1: no new version (%2)").arg(idHex, ok.error()));
+    }
+    // subfolders made or gone
+    if (refresh)
+        updateWatch();
+}
+
+bool Ed3kOwnSets::filesChanged(const Set& s) const
+{
+    const auto b = m_builds.find(ownerOf(s.id));
+    const std::vector<Member>& members = b != m_builds.end() ? b->second->members : s.members;
+    const auto files = scan(s);
+    if (files.size() != members.size())
+        return true;
+    return std::ranges::any_of(files, [&](const auto& pf) {
+        const auto m = std::ranges::find_if(members, [&](const Member& o) { return o.path == pf.first && o.file == pf.second; });
+        if (m == members.end())
+            return true;
+        const QFileInfo fi(pf.second);
+        return m->fileSize != fi.size() || m->mtimeMs != fi.lastModified().toMSecsSinceEpoch();
+    });
 }
 
 } // namespace eMule::ed3k

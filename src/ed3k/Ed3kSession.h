@@ -111,7 +111,15 @@ public:
     /// The bound UDP port; 0 when not running.
     [[nodiscard]] std::uint16_t udpPort() const;
     /// A datagram from the shared socket (settings().sharedSocket): true = ed3k took it.
+    /// A filtered sender's is false: the owner drops it (its own filter check).
     bool offerDatagram(const QNetworkDatagram& d);
+    /// The app's IP filter (#177): true = no datagram from or to that address, on the node's
+    /// socket and LAN discovery. ed3k relays forward signalling only (Protocol §9.4), so file
+    /// data always comes straight from the peer's address. Survives stop/start.
+    void setPeerFilter(std::function<bool(const QHostAddress&)> filter) { m_peerFilter = std::move(filter); }
+    [[nodiscard]] bool peerFiltered(const QHostAddress& addr) const { return m_peerFilter && m_peerFilter(addr); }
+    /// Datagrams dropped by the peer filter since construction (in and out)
+    [[nodiscard]] std::uint64_t filteredDatagrams() const { return m_filtered; }
     /// The node ID in hex (public); empty when not running.
     [[nodiscard]] QString nodeIdHex() const;
     [[nodiscard]] std::optional<::ed3k::NodeId> nodeId() const;
@@ -245,6 +253,8 @@ private:
     bool m_badDirty = false;
     std::vector<std::function<void(::ed3k::Engine&, ::ed3k::Now)>> m_posted;
     std::uint64_t m_notOurs = 0;
+    std::function<bool(const QHostAddress&)> m_peerFilter;
+    std::uint64_t m_filtered = 0;
     QStringList m_creditRpc;
     QStringList m_chaintubeRpc;
     ::ed3k::Limits m_limits{};

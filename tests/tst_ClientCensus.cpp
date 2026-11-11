@@ -6,6 +6,7 @@
 
 #include "client/ClientCensus.h"
 #include "kademlia/KadNodeCensus.h"
+#include "utils/BackgroundFileWriter.h"
 
 #include <QFile>
 #include <QTemporaryDir>
@@ -142,6 +143,7 @@ void tst_ClientCensus::doesNotReadTheKadCensus()
         kad::KadNodeCensus kadCensus(dir.path());
         kadCensus.noteContacted(kad::UInt128(uint32{7}), QStringLiteral("DE"));
         QVERIFY(kadCensus.save());
+        BackgroundFileWriter::instance().flush();   // save() queues the write
         QVERIFY(QFile::copy(kadCensus.filePath(), dir.filePath(QStringLiteral("clientcensus.dat"))));
     }
 

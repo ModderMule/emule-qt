@@ -321,7 +321,10 @@ QCborMap hideToCbor()
                     {QStringLiteral("paths"), h.paths},
                     {QStringLiteral("built"), h.built},
                     {QStringLiteral("waitingForHops"), h.waitingForHops},
-                    {QStringLiteral("anonFiles"), h.anonFiles}};
+                    {QStringLiteral("anonFiles"), h.anonFiles},
+                    {QStringLiteral("hop"), h.hop},
+                    {QStringLiteral("router"), h.router},
+                    {QStringLiteral("shares"), h.shares}};
 #else
     return {};
 #endif

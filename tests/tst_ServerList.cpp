@@ -5,6 +5,7 @@
 #include "app/AppContext.h"
 #include "prefs/Preferences.h"
 #include "server/ServerList.h"
+#include "utils/BackgroundFileWriter.h"
 #include "server/Server.h"
 #include "server/ServerConnect.h"
 #include "kademlia/Kademlia.h"
@@ -2727,6 +2728,7 @@ void tst_ServerList::removeDeadServers_blocksReAdd()
 
         QCOMPARE(list.removeDeadServers(), 1);
         QCOMPARE(list.serverCount(), size_t{1});
+        BackgroundFileWriter::instance().flush();
         QVERIFY(QFile::exists(dir.filePath(QStringLiteral("deadservers.dat"))));
 
         // Announced again (server list / OP_SERVERLIST): refused

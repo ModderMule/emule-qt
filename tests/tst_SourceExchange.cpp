@@ -11,10 +11,13 @@
 #include "TestFixtures.h"
 #include "TestHelpers.h"
 #include "app/AppContext.h"
+#include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "files/KnownFile.h"
+#include "kademlia/KadFirewallTester.h"
 #include "files/PartFile.h"
 #include "net/Address.h"
+#include "net/ClientReqSocket.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
 #include "protocol/Tag.h"
@@ -23,6 +26,8 @@
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
 
+#include <QScopeGuard>
+#include <QTcpServer>
 #include <QTest>
 
 #include <cstring>
@@ -239,6 +244,14 @@ private slots:
     void extSX_ipv6OnlySourceSurvivesRoundTrip();
     void extSX_userHashAndCryptTagsOnlyForTolerantPeer();
     void extSX_userHashAndCryptTagsRoundTrip();
+    void extSX_lowIdWeMetCarriesAddressAndPorts();
+    void extSX_lowIdNeitherMetNorBuddied_staysOut();
+    void extSX_buddyTagsRoundTrip_relayableOnlyFromTolerantPeer();
+    void extSX_unrelayableBuddyIdIsNotHandedOn();
+    void extSX_duplicateAdoptsBuddyRoute();
+    void extSX_buddyOffer_onlyToLowIdWithoutBuddy();
+    void extSX_buddyOfferRecordIsNotASource();
+    void extSX_buddyOfferTakenHoldsNewLowIds();
 
     // Received sources wait for PartFile::process() — MFC PartFile.cpp:3927
     void receivedSources_areQueuedNotDialled();
@@ -1099,6 +1112,349 @@ void tst_SourceExchange::extSX_ipv6OnlySourceSurvivesRoundTrip()
 
     theApp.downloadQueue = nullptr;
     queue.deleteAll();
+}
+
+// ---------------------------------------------------------------------------
+// ExtSX LowID routes and buddy offer (docs/protocol/extxs-buddy-route.md)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A PartFile owned by @p queue, which is installed as theApp.downloadQueue.
+PartFile* addTestPartFile(DownloadQueue& queue, uint8 fill)
+{
+    theApp.downloadQueue = &queue;
+    auto* pf = new PartFile;
+    uint8 hash[16];
+    std::memset(hash, fill, sizeof(hash));
+    pf->setFileHash(hash);
+    queue.addDownload(pf);
+    return pf;
+}
+
+void parseExtSX(PartFile& pf, const Packet& packet, UpDownClient* sender)
+{
+    SafeMemFile io(reinterpret_cast<const uint8*>(packet.pBuffer + kHeaderSize),
+                   packet.size - kHeaderSize);
+    pf.addClientSources(io, SOURCEEXCHANGEEXT_VERSION, /*isSX2*/ true, sender);
+}
+
+const std::array<uint8, 16> kBuddyId = { 0xF0, 0xE1, 0xD2, 0xC3, 0xB4, 0xA5, 0x96, 0x87,
+                                         0x78, 0x69, 0x5A, 0x4B, 0x3C, 0x2D, 0x1E, 0x0F };
+
+/// A LowID with a Kad buddy, never met.
+UpDownClient* makeBuddiedLowIdClient(uint32 lowId, bool relayable)
+{
+    auto* c = makeLowIdClient(lowId);
+    c->setBuddyID(kBuddyId.data(), relayable);
+    c->setBuddyAddress(Address::fromString(QStringLiteral("70.80.90.100")));
+    c->setBuddyPort(5000);
+    return c;
+}
+
+} // namespace
+
+void tst_SourceExchange::extSX_lowIdWeMetCarriesAddressAndPorts()
+{
+    // A LowID we met goes out with no buddy and no server we share: its address and UDP
+    // ports make it a direct-callback target for the receiver.
+    eMule::testing::KadFixture kadFixture{eMule::testing::KadMode::Connected};
+    QVERIFY(!theApp.isFirewalled());
+
+    auto* met = track(makeLowIdClient(0x00000123));
+    met->setServerAddress(Address{});
+    met->setServerPort(0);
+    met->setKadPort(4672);
+    met->setUDPPort(4673);
+    met->setConnectOptions(0x09, true, true);   // crypt + direct UDP callback
+    met->setConnectedOnce(true);
+
+    auto* peer = track(makeRequester());
+    peer->setSupportsExtendedXS(true);
+    peer->setSupportsExtSXSkipTags(true);
+
+    auto file = makeFile({ met });
+    auto packet = srcInfoFor(*file, peer, SOURCEEXCHANGEEXT_VERSION);
+    QVERIFY(packet != nullptr);
+    QCOMPARE(readU16(packet->pBuffer, kHeaderSize), uint16(1));
+
+    DownloadQueue queue;
+    auto* pf = addTestPartFile(queue, 0x61);
+    parseExtSX(*pf, *packet, peer);
+
+    QCOMPARE(pf->sourceCount(), 1);
+    auto* learned = pf->srcList().front();
+    QVERIFY(learned->hasLowID());
+    QCOMPARE(learned->connectAddress().toString(), QStringLiteral("5.6.7.8"));
+    QCOMPARE(learned->kadPort(), uint16(4672));
+    QCOMPARE(learned->udpPort(), uint16(4673));
+    QVERIFY(learned->supportsDirectUDPCallback());
+
+    theApp.downloadQueue = nullptr;
+    queue.deleteAll();
+}
+
+void tst_SourceExchange::extSX_lowIdNeitherMetNorBuddied_staysOut()
+{
+    auto* stranger = track(makeLowIdClient(0x00000124));
+    auto* peer = track(makeRequester());
+    peer->setSupportsExtendedXS(true);
+    peer->setSupportsExtSXSkipTags(true);
+
+    auto file = makeFile({ stranger });
+    QVERIFY(srcInfoFor(*file, peer, SOURCEEXCHANGEEXT_VERSION) == nullptr);
+
+    // A classic peer never gets a met LowID: it has no tags to carry the route
+    stranger->setConnectedOnce(true);
+    auto* classic = track(makeRequester());
+    QVERIFY(srcInfoFor(*file, classic, 4) == nullptr);
+}
+
+void tst_SourceExchange::extSX_buddyTagsRoundTrip_relayableOnlyFromTolerantPeer()
+{
+    eMule::testing::KadFixture kadFixture{eMule::testing::KadMode::Connected};
+    QVERIFY(!theApp.isFirewalled());
+
+    auto* src = track(makeBuddiedLowIdClient(0x00000125, /*relayable*/ true));
+    auto file = makeFile({ src });
+
+    for (const bool tolerant : { true, false }) {
+        auto* peer = track(makeRequester());
+        peer->setSupportsExtendedXS(true);
+        peer->setSupportsExtSXSkipTags(tolerant);
+        auto packet = srcInfoFor(*file, peer, SOURCEEXCHANGEEXT_VERSION);
+        QVERIFY(packet != nullptr);
+
+        DownloadQueue queue;
+        auto* pf = addTestPartFile(queue, tolerant ? 0x62 : 0x63);
+        parseExtSX(*pf, *packet, peer);
+
+        QCOMPARE(pf->sourceCount(), 1);
+        auto* learned = pf->srcList().front();
+        QVERIFY(learned->hasValidBuddyID());
+        QCOMPARE(std::memcmp(learned->buddyID(), kBuddyId.data(), 16), 0);
+        QCOMPARE(learned->buddyAddress().toString(), QStringLiteral("70.80.90.100"));
+        QCOMPARE(learned->buddyPort(), uint16(5000));
+        // Only a peer that relays the ~KadID form alone is trusted to hand it on
+        QCOMPARE(learned->buddyIDRelayable(), tolerant);
+
+        theApp.downloadQueue = nullptr;
+        queue.deleteAll();
+    }
+}
+
+void tst_SourceExchange::extSX_unrelayableBuddyIdIsNotHandedOn()
+{
+    auto* src = track(makeBuddiedLowIdClient(0x00000126, /*relayable*/ false));
+    auto* peer = track(makeRequester());
+    peer->setSupportsExtendedXS(true);
+
+    auto file = makeFile({ src });
+    QVERIFY(srcInfoFor(*file, peer, SOURCEEXCHANGEEXT_VERSION) == nullptr);
+}
+
+void tst_SourceExchange::extSX_duplicateAdoptsBuddyRoute()
+{
+    // A source we know without a buddy picks the route up from an SX duplicate
+    eMule::testing::KadFixture kadFixture{eMule::testing::KadMode::Connected};
+    QVERIFY(!theApp.isFirewalled());
+
+    DownloadQueue queue;
+    auto* pf = addTestPartFile(queue, 0x64);
+    auto* known = makeLowIdClient(0x00000127);
+    known->setServerPort(4661);
+    QCOMPARE(queue.checkAndAddSource(pf, known), known);
+    QVERIFY(!known->hasValidBuddyID());
+
+    auto* src = track(makeBuddiedLowIdClient(0x00000127, true));
+    auto* peer = track(makeRequester());
+    peer->setSupportsExtendedXS(true);
+    peer->setSupportsExtSXSkipTags(true);
+    auto file = makeFile({ src });
+    auto packet = srcInfoFor(*file, peer, SOURCEEXCHANGEEXT_VERSION);
+    QVERIFY(packet != nullptr);
+    parseExtSX(*pf, *packet, peer);
+
+    QCOMPARE(pf->sourceCount(), 1);
+    QVERIFY(known->hasValidBuddyID());
+    QVERIFY(known->buddyIDRelayable());
+    QCOMPARE(known->buddyPort(), uint16(5000));
+
+    theApp.downloadQueue = nullptr;
+    queue.deleteAll();
+}
+
+void tst_SourceExchange::extSX_buddyOffer_onlyToLowIdWithoutBuddy()
+{
+    // We are open on Kad, UDP verified, with a slot free: a LowID requester on Kad without
+    // a buddy gets our own record with CT_MOD_BUDDY_OFFER on the end.
+    eMule::testing::KadFixture kadFixture{eMule::testing::KadMode::Connected};
+    kad::UDPFirewallTester::reset();
+    kad::UDPFirewallTester::debugAddUsedTestClient(0x0A000001, 4672);
+    kad::UDPFirewallTester::setUDPFWCheckResult(true, false, 0x0A000001, 4672);
+    kad::UDPFirewallTester::debugAddUsedTestClient(0x0A000002, 4672);
+    kad::UDPFirewallTester::setUDPFWCheckResult(true, false, 0x0A000002, 4672);
+    const auto resetTester = qScopeGuard([] { kad::UDPFirewallTester::reset(); });
+    QVERIFY(kad::UDPFirewallTester::isVerified());
+    QVERIFY(!kad::UDPFirewallTester::isFirewalledUDP(true));
+
+    ClientList list;
+    theApp.clientList = &list;
+    const uint32 ownIp = Address::fromString(QStringLiteral("81.82.83.84")).toNetworkUint32();
+    theApp.setPublicIP(ownIp);
+    const uint16 savedUdp = thePrefs.udpPort();
+    thePrefs.setUdpPort(4672);
+    const auto restore = qScopeGuard([savedUdp] {
+        theApp.clientList = nullptr;
+        theApp.setPublicIP(0);
+        thePrefs.setUdpPort(savedUdp);
+    });
+
+    auto* src = track(makeHighIdClient(QStringLiteral("60.70.80.91"), 4662));
+    auto file = makeFile({ src });
+
+    const auto lastRecordOffer = [&](UpDownClient* asker) -> uint16 {
+        auto packet = srcInfoFor(*file, asker, SOURCEEXCHANGEEXT_VERSION);
+        Q_ASSERT(packet != nullptr);
+        const uint16 count = readU16(packet->pBuffer, kHeaderSize);
+        if (count != 2)
+            return 0;
+        SafeMemFile io(reinterpret_cast<const uint8*>(packet->pBuffer + kHeaderSize + 2),
+                       packet->size - kHeaderSize - 2);
+        for (uint16 i = 0; i < count; ++i) {
+            const uint32 id = io.readUInt32();
+            io.readUInt16();
+            const uint8 tagCount = io.readUInt8();
+            for (uint8 t = 0; t < tagCount; ++t) {
+                Tag tag(io, true);
+                if (tag.nameId() == CT_MOD_BUDDY_OFFER && id == ownIp)
+                    return static_cast<uint16>(tag.intValue());
+            }
+        }
+        return 0;
+    };
+
+    auto* lowAsker = track(makeLowIdClient(0x00000200));
+    lowAsker->setKadPort(4672);
+    lowAsker->setSupportsExtendedXS(true);
+    lowAsker->setSupportsExtSXSkipTags(true);
+    lowAsker->setSupportsSourceExchange2(true);
+    QVERIFY(UpDownClient::ownAdvertisedKadPort() != 0);
+    QCOMPARE(lastRecordOffer(lowAsker), UpDownClient::ownAdvertisedKadPort());
+
+    // Already has a buddy: no offer
+    lowAsker->setBuddyAddress(Address::fromString(QStringLiteral("70.80.90.101")));
+    QCOMPARE(lastRecordOffer(lowAsker), uint16(0));
+    lowAsker->setBuddyAddress(Address{});
+
+    // No skip-tags bit: no offer
+    lowAsker->setSupportsExtSXSkipTags(false);
+    QCOMPARE(lastRecordOffer(lowAsker), uint16(0));
+    lowAsker->setSupportsExtSXSkipTags(true);
+
+    // HighID asker: no offer
+    auto* highAsker = track(makeRequester());
+    highAsker->setSupportsExtendedXS(true);
+    highAsker->setSupportsExtSXSkipTags(true);
+    highAsker->setKadPort(4672);
+    QCOMPARE(lastRecordOffer(highAsker), uint16(0));
+}
+
+void tst_SourceExchange::extSX_buddyOfferRecordIsNotASource()
+{
+    eMule::testing::KadFixture kadFixture{eMule::testing::KadMode::Connected};
+    DownloadQueue queue;
+    auto* pf = addTestPartFile(queue, 0x65);
+
+    auto* sender = track(makeRequester());
+    sender->setSupportsExtendedXS(true);
+    sender->setSupportsExtSXSkipTags(true);
+
+    SafeMemFile w;
+    w.writeUInt16(2);
+    // A real source
+    w.writeUInt32(Address::fromString(QStringLiteral("50.60.70.81")).toNetworkUint32());
+    w.writeUInt16(4662);
+    w.writeUInt8(0);
+    // The sender's own record with the offer
+    w.writeUInt32(sender->connectAddress().toNetworkUint32());
+    w.writeUInt16(sender->userPort());
+    w.writeUInt8(1);
+    Tag(CT_MOD_BUDDY_OFFER, uint32(4672)).writeNewEd2kTag(w);
+
+    const QByteArray body = w.buffer();
+    SafeMemFile io(reinterpret_cast<const uint8*>(body.constData()), body.size());
+    pf->addClientSources(io, SOURCEEXCHANGEEXT_VERSION, /*isSX2*/ true, sender);
+
+    QCOMPARE(pf->sourceCount(), 1);
+    QCOMPARE(pf->srcList().front()->connectAddress().toString(), QStringLiteral("50.60.70.81"));
+
+    theApp.downloadQueue = nullptr;
+    queue.deleteAll();
+}
+
+void tst_SourceExchange::extSX_buddyOfferTakenHoldsNewLowIds()
+{
+    // Firewalled on Kad without a buddy: the offer is claimed over the sender's open link,
+    // and the LowID sources from the same answer wait until the claim ends.
+    eMule::testing::KadFixture kadFixture{eMule::testing::KadMode::Firewalled};
+    kad::UDPFirewallTester::reset();
+
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    auto* link = new ClientReqSocket();
+    link->connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(link->waitForConnected(5000));
+    QCoreApplication::processEvents();
+
+    ClientList list;
+    theApp.clientList = &list;
+    DownloadQueue queue;
+    queue.setClientList(&list);
+    auto* pf = addTestPartFile(queue, 0x66);
+
+    auto* sender = makeRequester();   // owned by the list
+    sender->setConnectAddress(sender->userAddress());
+    sender->setSupportsExtendedXS(true);
+    sender->setSupportsExtSXSkipTags(true);
+    sender->setSocket(link);
+    list.addClient(sender);
+    const auto restore = qScopeGuard([&] {
+        sender->setSocket(nullptr);
+        theApp.clientList = nullptr;
+        theApp.downloadQueue = nullptr;
+        queue.deleteAll();
+        list.deleteAll();
+        link->deleteLater();
+        QCoreApplication::processEvents();
+    });
+
+    SafeMemFile w;
+    w.writeUInt16(2);
+    // A LowID reachable over public IPv6, so a firewalled receiver keeps it
+    w.writeUInt32(0x00000300);
+    w.writeUInt16(4662);
+    w.writeUInt8(2);
+    const Address v6 = Address::fromString(QStringLiteral("2606:4700::77"));
+    Tag(CT_MOD_IP_V6, v6.ipv6Bytes().data()).writeNewEd2kTag(w);
+    uint8 hash[16];
+    std::memset(hash, 0x3C, sizeof(hash));
+    Tag(CT_EMULE_USERHASH, hash).writeNewEd2kTag(w);
+    // The sender's own record with the offer
+    w.writeUInt32(sender->connectAddress().toNetworkUint32());
+    w.writeUInt16(sender->userPort());
+    w.writeUInt8(1);
+    Tag(CT_MOD_BUDDY_OFFER, uint32(4672)).writeNewEd2kTag(w);
+
+    const QByteArray body = w.buffer();
+    SafeMemFile io(reinterpret_cast<const uint8*>(body.constData()), body.size());
+    pf->addClientSources(io, SOURCEEXCHANGEEXT_VERSION, /*isSX2*/ true, sender);
+
+    QCOMPARE(sender->kadState(), KadState::ClaimingBuddy);
+    QCOMPARE(sender->kadPort(), uint16{4672});
+    QCOMPARE(pf->sourceCount(), 1);
+    QVERIFY(pf->srcList().front()->hasLowID());
+    QVERIFY(pf->srcList().front()->heldForBuddyClaim());
 }
 
 // ---------------------------------------------------------------------------

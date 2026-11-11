@@ -220,6 +220,7 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     m_shareFilesCheck->setChecked(p.value(QStringLiteral("ed3kShareFiles")).toBool(true));
     m_jointDownloadsCheck->setChecked(p.value(QStringLiteral("ed3kJointDownloads")).toBool(true));
     m_shareUsenetCheck->setChecked(p.value(QStringLiteral("ed3kShareUsenetPosts")).toBool(true));
+    m_ownSetsWatchCheck->setChecked(p.value(QStringLiteral("ed3kOwnSetsWatch")).toBool(true));
     const QStringList off = Preferences::rpcUrlList(p.value(QStringLiteral("ed3kExtOff")));
     for (QCheckBox* box : m_extChecks)
         box->setChecked(!off.contains(box->text()));
@@ -285,6 +286,7 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     m_hosterCheckLinksCheck->setChecked(h.checkSearchLinks);
     m_hosterExtractCheck->setChecked(h.extract);
     m_hosterDeleteArchivesCheck->setChecked(h.deleteArchives);
+    m_hosterShareCheck->setChecked(h.shareFiles);
     m_hosterDeleteArchivesCheck->setEnabled(h.extract);
     m_hosterClipboardCheck->setChecked(h.clipboard);
     m_linkGrabberCheck->setChecked(h.linkGrabber);
@@ -316,6 +318,7 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kShareFiles", m_shareFilesCheck->isChecked());
     put("ed3kJointDownloads", m_jointDownloadsCheck->isChecked());
     put("ed3kShareUsenetPosts", m_shareUsenetCheck->isChecked());
+    put("ed3kOwnSetsWatch", m_ownSetsWatchCheck->isChecked());
     put("ed3kExtOff", extOff().join(QLatin1Char(' ')));
     if (!m_portJoined)   // joined: the Connection page sends it
         put("ed3kUdpPort", qint64(m_udpPortSpin->value()));
@@ -359,6 +362,7 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kHosterFromPeers", h.fromPeers);
     put("ed3kHosterCheckSearchLinks", h.checkSearchLinks);
     put("ed3kHosterExtract", h.extract);
+    put("ed3kHosterShareFiles", h.shareFiles);
     put("ed3kHosterDeleteArchives", h.deleteArchives);
     put("ed3kHosterClipboard", h.clipboard);
     put("ed3kHosterLinkGrabber", h.linkGrabber);
@@ -386,6 +390,7 @@ void Ed3kOptionsPages::saveLocal() const
     thePrefs.setEd3kShareFiles(m_shareFilesCheck->isChecked());
     thePrefs.setEd3kJointDownloads(m_jointDownloadsCheck->isChecked());
     thePrefs.setEd3kShareUsenetPosts(m_shareUsenetCheck->isChecked());
+    thePrefs.setEd3kOwnSetsWatch(m_ownSetsWatchCheck->isChecked());
     thePrefs.setEd3kExtOff(extOff());
     if (!m_portJoined && m_udpPortSpin->value() > 0)
         thePrefs.setEd3kUdpPort(uint16(m_udpPortSpin->value()));
@@ -478,6 +483,10 @@ QWidget* Ed3kOptionsPages::buildGeneral(QWidget* parent)
     m_shareUsenetCheck->setToolTip(tr("Off: the files of Usenet downloads are still shared, but not their article "
                                       "lists, post sets or nzb records."));
     shareLayout->addWidget(m_shareUsenetCheck);
+    m_ownSetsWatchCheck = new QCheckBox(tr("Publish a new version of my sets when their folders change"), shareGroup);
+    m_ownSetsWatchCheck->setToolTip(tr("Watches the folders of My ed3k Sets: files added, changed or removed there "
+                                       "publish a new version of the set."));
+    shareLayout->addWidget(m_ownSetsWatchCheck);
     layout->addWidget(shareGroup);
 
     // batch 15, hops.md §1: the global switch, one hop count for every use
@@ -526,7 +535,7 @@ QWidget* Ed3kOptionsPages::buildGeneral(QWidget* parent)
     // layout->addWidget(extGroup);
     layout->addStretch();
 
-    for (QCheckBox* box : {m_enabledCheck, m_shareFilesCheck, m_shareUsenetCheck, m_jointDownloadsCheck})
+    for (QCheckBox* box : {m_enabledCheck, m_shareFilesCheck, m_shareUsenetCheck, m_ownSetsWatchCheck, m_jointDownloadsCheck})
         connect(box, &QCheckBox::toggled, this, [this] {
             if (!m_loading)
                 emit changed();
@@ -1443,6 +1452,11 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
     dlLayout->addWidget(m_hosterExtractCheck);
     m_hosterDeleteArchivesCheck = new QCheckBox(tr("Delete archives after successful extraction"), dlGroup);
     dlLayout->addWidget(m_hosterDeleteArchivesCheck);
+    m_hosterShareCheck = new QCheckBox(tr("Share finished hoster downloads on eD2K and Kad"), dlGroup);
+    m_hosterShareCheck->setToolTip(tr("Finished files and what their archives held are shared like other completed "
+                                      "downloads, also on ed3k.\n\nOff: they are never shared there, also inside "
+                                      "the incoming folder."));
+    dlLayout->addWidget(m_hosterShareCheck);
     layout->addWidget(dlGroup);
 
     auto* javaGroup = new QGroupBox(tr("Java runtime"), page);
@@ -1579,7 +1593,7 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
         emit changed();
     });
     for (QCheckBox* box : {m_hosterPuzzlesCheck, m_hosterPeersCheck, m_hosterCheckLinksCheck, m_autoJavaCheck,
-                           m_hosterExtractCheck, m_hosterDeleteArchivesCheck, m_resolverAutoUpdateCheck})
+                           m_hosterExtractCheck, m_hosterDeleteArchivesCheck, m_hosterShareCheck, m_resolverAutoUpdateCheck})
         connect(box, &QCheckBox::toggled, this, edited);
     connect(m_hosterExtractCheck, &QCheckBox::toggled, m_hosterDeleteArchivesCheck, &QWidget::setEnabled);
     connect(m_hosterStreamsSpin, &QSpinBox::valueChanged, this, edited);
@@ -1907,6 +1921,7 @@ Ed3kHosterPrefs Ed3kOptionsPages::hosterPrefs() const
     h.checkSearchLinks = m_hosterCheckLinksCheck->isChecked();
     h.extract = m_hosterExtractCheck->isChecked();
     h.deleteArchives = m_hosterDeleteArchivesCheck->isChecked();
+    h.shareFiles = m_hosterShareCheck->isChecked();
     h.clipboard = m_hosterClipboardCheck->isChecked();
     h.linkGrabber = m_linkGrabberCheck->isChecked();
     h.grabAll = m_grabAllCheck->isChecked();

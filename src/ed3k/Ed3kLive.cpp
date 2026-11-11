@@ -580,7 +580,7 @@ void Ed3kLive::followPaid(Watched& w, const ffi::Key32& key, const ffi::Scope& s
 {
     w.paidScope = scope;
     if (m_paid)
-        m_paid->followChannel(key, scope, w.title);
+        m_paid->followChannel(key, scope, w.title, w.key);
 }
 
 void Ed3kLive::begin(Watched& w, Viewer& v)

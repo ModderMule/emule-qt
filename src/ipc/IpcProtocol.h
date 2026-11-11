@@ -718,6 +718,11 @@ enum class IpcMsgType : int {
     /// [] -> [ok, count]. Remove every Complete item from the list, files kept.
     /// The Usenet twin of ClearCompleted.
     ClearUsenetCompleted    = 742,
+    /// [previewToken, (coverUrl)] -> [true, {images: [{name, kind: posted|frame|cover,
+    /// data: bytes}], note}] or [false, error]. Search Details › Images: pictures of
+    /// an NZB that InspectNzb/FetchMetaFile/InspectIndexerResult returned a
+    /// `previewToken` for. Fetches only the articles needed; once per token (3 h).
+    FetchNzbImages          = 743,
 
     // -- eNode meta search (750-754) -------------------------------------------
     //
@@ -1257,7 +1262,8 @@ enum class IpcMsgType : int {
     DescribeEd3kLive        = 1046,
 
     // -- ed3k hiding (batch 15, hops.md §1), Ed3kHideBridge.cpp. Status: GetEd3kStatus "hide"
-    // {on, running, nodeId (8 hex), hops, paths, built, waitingForHops, anonFiles}
+    // {on, running, nodeId (8 hex), hops, paths, built, waitingForHops, anonFiles, hop, router,
+    //  shares (false: nothing under the anonymous key can be found, hops.md §2.6)}
     /// [] -> [ok] — a new anonymous key (the GUI asked: queue places are lost, §1); the
     /// anonymous node restarts under it while hiding. PushEd3kHideChanged follows
     NewEd3kAnonKey          = 1047,

@@ -12,6 +12,7 @@
 
 #include "utils/CrashHandler.h"
 #include "utils/DialogSizing.h"
+#include "utils/ScrollMessageBox.h"
 
 #include <QApplication>
 #include <QBuffer>
@@ -364,7 +365,7 @@ void BugReportDialog::onAddScreenshots()
         item->setData(Qt::UserRole + 1, QByteArray("image/" + fmt));
     }
     if (!rejected.isEmpty()) {
-        QMessageBox::warning(this, tr("Invalid Files"),
+        ScrollMessageBox::warning(this, tr("Invalid Files"),
                              tr("The following files are not valid images and were skipped:\n%1")
                                  .arg(rejected.join(QStringLiteral(", "))));
     }

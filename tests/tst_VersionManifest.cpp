@@ -4,6 +4,7 @@
 #include "app/VersionManifest.h"
 
 #include <QTest>
+#include <QTimeZone>
 
 using namespace eMule;
 
@@ -43,6 +44,7 @@ private slots:
     void notesDefaultEmpty();
     void parsesDescriptionAndChangelog();
     void parsesHosterResolver();
+    void parsesSkins();
 };
 
 void TestVersionManifest::parsesEveryEntry()
@@ -114,6 +116,34 @@ void TestVersionManifest::parsesHosterResolver()
     info = VersionManifest::parse(kManifest);
     QVERIFY(info.hosterResolver.file.url.isEmpty());
     QCOMPARE(info.hosterResolver.api, 0);
+}
+
+void TestVersionManifest::parsesSkins()
+{
+    // written by scripts/publish-skin.py; bad id / no hash / bad preview are dropped or emptied
+    const auto info = VersionManifest::parse(
+        "{\"latest\": \"0.8.1\", \"skins\": {"
+        " \"Zeta\": {\"name\": \"Zeta Skin\", \"url\": \"https://emule-qt.org/pub/skins/Zeta.zip\","
+        "  \"sha256\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"size\": 10,"
+        "  \"date\": \"2026-11-06T13:41:40Z\", \"author\": \"me\","
+        "  \"preview\": {\"url\": \"https://emule-qt.org/pub/skins/Zeta.preview.png\","
+        "   \"sha256\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\", \"size\": 5}},"
+        " \"Alpha\": {\"url\": \"https://emule-qt.org/pub/skins/Alpha.zip\","
+        "  \"sha256\": \"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\", \"size\": 20,"
+        "  \"preview\": {\"url\": \"https://x/p.png\", \"sha256\": \"\", \"size\": 5}},"
+        " \"../evil\": {\"url\": \"https://emule-qt.org/pub/skins/e.zip\","
+        "  \"sha256\": \"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\", \"size\": 20},"
+        " \"NoHash\": {\"url\": \"https://emule-qt.org/pub/skins/n.zip\", \"size\": 20}}}");
+    QVERIFY(info.isValid());
+    QCOMPARE(info.skins.size(), 2);
+    QCOMPARE(info.skins[0].id, QStringLiteral("Alpha"));   // sorted by name, id when unnamed
+    QCOMPARE(info.skins[0].name, QStringLiteral("Alpha"));
+    QVERIFY(info.skins[0].preview.url.isEmpty());
+    QCOMPARE(info.skins[1].name, QStringLiteral("Zeta Skin"));
+    QCOMPARE(info.skins[1].file.sha256, QString(64, QLatin1Char('a')));
+    QCOMPARE(info.skins[1].date, QDateTime(QDate(2026, 11, 6), QTime(13, 41, 40), QTimeZone::UTC));
+    QVERIFY(info.skins[1].preview.isInstallable());
+    QVERIFY(VersionManifest::parse(kManifest).skins.isEmpty());
 }
 
 QTEST_GUILESS_MAIN(TestVersionManifest)

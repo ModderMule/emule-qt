@@ -115,7 +115,7 @@ private:
     /// Ask the daemon to share or unshare one file, then refetch.
     void sendSetFileShared(const QString& filePath, bool shared);
     void sendSetPriorityBatch(const QStringList& hashes, int priority, bool isAuto);
-    void sendDeleteFilesBatch(const QStringList& hashes);   ///< confirms once, then deletes
+    void sendDeleteFilesBatch(const QStringList& hashes);   ///< confirms once, deletes; cancels part files
     void sendUnshareBatch(const QStringList& hashes);       ///< confirms once, then unshares
     void updateStatsTab();
     void updateContentTab();
@@ -137,7 +137,7 @@ private:
 
     // MFC CSharedFilesCtrl::OnCommand, shared by the context menu and the list keys.
     void renameSelectedFile();        ///< MP_RENAME / MPG_F2
-    void deleteSelectedFiles();       ///< MPG_DELETE (Del, ⌫) — complete files only, confirmed
+    void deleteSelectedFiles();       ///< MPG_DELETE (Del, ⌫) — confirmed; part files are cancelled
     [[nodiscard]] std::vector<const SharedFileRow*> rowsForHashes(const QStringList& hashes) const;
     [[nodiscard]] int computePopularityRank(int64_t value,
                                             int64_t (SharedFileRow::*field)) const;

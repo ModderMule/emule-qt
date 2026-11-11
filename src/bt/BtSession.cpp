@@ -16,6 +16,7 @@
 #include <libtorrent/extensions/smart_ban.hpp>
 #include <libtorrent/extensions/ut_metadata.hpp>
 #include <libtorrent/extensions/ut_pex.hpp>
+#include <libtorrent/i2p_stream.hpp>
 #include <libtorrent/ip_filter.hpp>
 #include <libtorrent/kademlia/dht_state.hpp>
 #include <libtorrent/read_resume_data.hpp>
@@ -58,6 +59,9 @@ constexpr int kResumeEveryTicks = 300;
 /// marks the totals changed each second a torrent is active, so every seed counted as
 /// modified and re-saved with its info dict every 5 min (report 28)
 constexpr int kCountersEveryTicks = 1800;
+/// .i2p trackers SAM could not resolve yet: asked again every 2 min, for 1 h (#168)
+constexpr int kI2pNameRetryTicks = 120;
+constexpr int kI2pNameRetries = 30;
 /// stop() waits this long for resume data
 constexpr qint64 kStopWaitMs = 5000;
 /// Counter samples kept for demand(): the longest rate window plus a sample
@@ -297,6 +301,9 @@ struct BtSession::Impl {
     std::map<lt::udp::endpoint, int> dhtNodesBySocket;
     /// last SAM error; cleared when the SAM bridge changes
     QString i2pError;
+    /// .i2p tracker urls by torrent SAM could not resolve (INVALID_KEY: unknown name or no
+    /// lease set yet) → re-asks so far. libtorrent's backoff grows towards an hour
+    std::map<QString, std::map<std::string, int>> i2pNameMisses;
     /// external_ip_alert: our address as peers, trackers and DHT see it
     QString externalIPv4;
     QString externalIPv6;
@@ -492,7 +499,7 @@ struct BtSession::Impl {
         const auto ti = torrentFile(id);
         if (!ti)
             return {};
-        QList<BtFileRow> out = BtTorrentView::files(*ti, dt.progress, dt.priorities);
+        QList<BtFileRow> out = BtTorrentView::files(*ti, dt.progress, dt.priorities, dt.availability);
         // report what was asked for until libtorrent has applied it
         if (auto it = pendingPriorities.find(id); it != pendingPriorities.end()) {
             constexpr qint64 kPendingCapMs = 10'000;   // no alert (unchanged / failed): trust libtorrent again
@@ -533,6 +540,10 @@ struct BtSession::Impl {
     /// switch @p wanted files of a listed torrent on, the others as they are
     void wantFiles(const lt::torrent_handle& h, const QString& id, const QList<int>& wanted);
     void enforceSeedLimits(const lt::torrent_status& st, const BtTorrentRow& row);
+    /// tracker alerts of .i2p trackers: remember an INVALID_KEY, forget it on a reply
+    void noteI2pName(const lt::alert* a);
+    /// announce the remembered misses again, past libtorrent's backoff
+    void retryI2pNames();
     /// settings as a pack, with the setRateLimits() caps over the configured ones
     [[nodiscard]] lt::settings_pack pack(const BtSettings& s) const;
     /// bytes/s of one counter over at least @p windowMs, from rateSamples
@@ -565,11 +576,13 @@ struct BtSession::Impl {
         }
         return r;
     }
-    /// unset or unlimited per-torrent connections → the configured default
+    /// unset or unlimited per-torrent connections → the configured default; IP filter on
     void defaultConnections(lt::add_torrent_params& atp) const
     {
         if (atp.max_connections <= 0 || atp.max_connections >= kLtNoLimit)
             atp.max_connections = settings.maxConnectionsPerTorrent;
+        // the app's IP filter for every torrent, also one whose resume data had it off (#177)
+        atp.flags |= lt::torrent_flags::apply_ip_filter;
     }
 };
 
@@ -739,6 +752,7 @@ void BtSession::stop()
     d->flushing.clear();
     d->have.clear();
     d->checkWaited.clear();
+    d->i2pNameMisses.clear();
     d->outstandingResume = 0;
     d->listening = false;
     d->dhtNodes = 0;
@@ -889,6 +903,7 @@ bool BtSession::remove(const QString& id, bool deleteFiles)
     d->checkWaited.remove(id);
     d->pendingPriorities.erase(id);
     d->details.erase(id);
+    d->i2pNameMisses.erase(id);
     if (d->links.erase(id) > 0)
         d->saveLinks();
     if (d->stopAtMeta.remove(id))
@@ -1263,6 +1278,7 @@ void BtSession::drainAlerts()
                 emit statusChanged();
             }
         }
+        d->noteI2pName(a);
         if (auto* ss = lt::alert_cast<lt::session_stats_alert>(a)) {
             const auto counters = ss->counters();
             if (!d->rateClock.isValid())
@@ -1500,6 +1516,8 @@ void BtSession::tick()
         for (const auto& [id, h] : d->handles)
             d->saveResume(h, flags);
     }
+    if (d->ticks % kI2pNameRetryTicks == 0)
+        d->retryI2pNames();
 }
 
 BtAddResult BtSession::Impl::add(BtSession& q, lt::add_torrent_params atp, const QString& savePath, bool paused,
@@ -1619,6 +1637,46 @@ void BtSession::Impl::stopAtMetadata(const lt::torrent_handle& h, const QString&
     metaStopped.insert(id);
     logInfo(QStringLiteral("BitTorrent: %1 stopped after its metadata: untick the files to skip, then resume")
                 .arg(ti ? QString::fromStdString(ti->name()) : id));
+}
+
+void BtSession::Impl::noteI2pName(const lt::alert* a)
+{
+    const auto* ta = lt::alert_cast<lt::tracker_error_alert>(a);
+    const auto* tr = lt::alert_cast<lt::tracker_reply_alert>(a);
+    const lt::tracker_alert* t = ta ? static_cast<const lt::tracker_alert*>(ta) : tr;
+    if (!t || !BtAddSource::isI2pTracker(t->tracker_url()))
+        return;
+    const QString id = BtTorrentView::idOf(t->handle.info_hashes());
+    if (tr) {
+        if (auto it = i2pNameMisses.find(id); it != i2pNameMisses.end()) {
+            it->second.erase(t->tracker_url());
+            if (it->second.empty())
+                i2pNameMisses.erase(it);
+        }
+        return;
+    }
+    if (ta->error.category() == lt::i2p_category() && ta->error.value() == lt::i2p_error::invalid_key
+        && handles.contains(id))
+        i2pNameMisses[id].try_emplace(ta->tracker_url(), 0);
+}
+
+void BtSession::Impl::retryI2pNames()
+{
+    if (!settings.hasSam())
+        return;
+    for (auto it = i2pNameMisses.begin(); it != i2pNameMisses.end();) {
+        const lt::torrent_handle h = handle(it->first);
+        auto& urls = it->second;
+        for (auto u = urls.begin(); u != urls.end();) {
+            if (!h.is_valid() || ++u->second > kI2pNameRetries) {
+                u = urls.erase(u);
+                continue;
+            }
+            h.force_reannounce(0, u->first, lt::torrent_handle::ignore_min_interval);
+            ++u;
+        }
+        it = urls.empty() ? i2pNameMisses.erase(it) : std::next(it);
+    }
 }
 
 void BtSession::Impl::loadSeedLimits()

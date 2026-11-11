@@ -391,6 +391,18 @@
 // the sub-opcode space open for later message types at no namespace cost.
 #define OP_HTTPCACHE                0xBC
 
+// Buddy claim over an open TCP connection, answering a CT_MOD_BUDDY_OFFER from ExtSX.
+// Layout: <subop 1>[payload]. Sent only to a peer that sent us the offer, so no capability bit.
+// 0xBD is unclaimed as OP_ in stock, MorphXT and the compatibility target (0xB3-0xBB there).
+// See docs/protocol/extxs-buddy-route.md.
+#define OP_BUDDYCLAIM               0xBD
+#define BUDDYCLAIM_CLAIM            0x00    // R->S <buddy id 16> = ~KadID(R), ToByteArray order
+#define BUDDYCLAIM_ACCEPT           0x01    // S->R (no payload)
+#define BUDDYCLAIM_REFUSE           0x02    // S->R <reason 1>
+#define BUDDYCLAIM_REFUSE_BUSY      0x01    // no slot, or we use a buddy ourselves
+#define BUDDYCLAIM_REFUSE_STATE     0x02    // claimer not eligible (HighID, no Kad, has a buddy, other Kad state)
+#define BUDDYCLAIM_REFUSE_DUP       0x03    // IP or buddy ID already served
+
 // Extended protocol: Client <-> Client UDP opcodes
 #define OP_REASKFILEPING            0x90
 #define OP_REASKACK                 0x91
@@ -781,6 +793,14 @@
 // ever implement it.
 #define CT_EMULE_USERHASH           0xBC    // hash16: source's user hash (ExtSX tag block)
 #define CT_EMULE_CONOPTS            0xBE    // uint8: source's crypt/connect options (ExtSX tag block)
+// LowID route tags, the compatibility target's "MOD SX" set; its reader knows all of them, so
+// they go to every ExtSX peer. Buddy IP/UDP reuse CT_EMULE_BUDDYIP/BUDDYUDP (0xfc/0xfd) and
+// CT_EMULE_SERVINGBUDDYIPV6 (0xA0). Tag ids, not opcodes: 0xB0 is also OP_MULTIPACKETANSWER_EXT2.
+#define CT_EMULE_ADDRESS            0xB0    // uint32: LowID source's public IPv4, network order
+#define CT_EMULE_SERVINGBUDDYID     0xBF    // hash16: source's buddy ID (~KadID, ToByteArray form). Ignored in hello: the target sends its plain KadID there
+// Our own: rides on an extra record describing the answerer itself. Only to a LowID requester
+// with MODMISC_EXTXS_SKIPTAGS and no buddy. Free in the target, MorphXT, Xtreme, aMule, stock.
+#define CT_MOD_BUDDY_OFFER          0xBD    // uint32: bits 0-15 our Kad UDP port, 16-31 reserved (0). See docs/protocol/extxs-buddy-route.md
 #define CT_EMULECOMPAT_OPTIONS1     0xef
 #define CT_EMULE_RESERVED1          0xf0
 #define CT_EMULE_RESERVED2          0xf1

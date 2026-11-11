@@ -140,7 +140,7 @@ void Ed3kLan::drain()
 void Ed3kLan::datagramIn(std::uint32_t iface, const QHostAddress& from, std::uint16_t port, const QByteArray& data)
 {
     auto* e = m_session.engine();
-    if (!m_started || !e)
+    if (!m_started || !e || m_session.peerFiltered(withoutScope(from)))
         return;
     const auto ok = e->lanDatagramIn(m_session.now(), iface, toAddress(withoutScope(from), port),
                                       {reinterpret_cast<const std::byte*>(data.constData()), std::size_t(data.size())});
@@ -261,6 +261,9 @@ void Ed3kLan::rescan()
 
 void Ed3kLan::sendOne(std::uint32_t iface, const QHostAddress& to, std::uint16_t port, const QByteArray& data)
 {
+    // a reply to a filtered LAN peer stays home; the group address is never filtered
+    if (!to.isMulticast() && m_session.peerFiltered(to))
+        return;
     if (m_hooks.send) {
         m_hooks.send(iface, to, port, data);
         return;

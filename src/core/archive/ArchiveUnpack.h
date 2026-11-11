@@ -46,4 +46,16 @@ struct UnwrapResult {
                                           const QStringList& preferredNames = {},
                                           uint64 maxBytes = kMaxUnpackedBytes);
 
+/// What readArchiveHead() got out of the first file entry.
+struct ArchiveHead {
+    QByteArray data;          ///< leading bytes of the entry, possibly cut short
+    QString    entryName;
+    qint64     entrySize = -1;///< unpacked size the header states; -1 unknown
+};
+
+/// Decompress the start of the first regular file in a RAR/RAR5/ZIP @p data that may
+/// be cut off anywhere (head of volume one). Stops at @p maxBytes or where the input
+/// ends; whatever decoded so far is kept. Empty data = not such an archive.
+[[nodiscard]] ArchiveHead readArchiveHead(const QByteArray& data, qint64 maxBytes);
+
 } // namespace eMule

@@ -1051,14 +1051,12 @@ QWidget* TransferPanel::createDownloadsSection()
         m_downloadModel->setRemainingSortBySize(bySize);
         m_downloadProxy->invalidate();
     });
-    // Secondary sort (Display option): set after the layout restore, whose sorts
-    // would otherwise replace the saved tie-breaker; kept as the user sorts.
-    m_downloadProxy->setSecondarySort(theUiState.downloadSecondarySortColumn(),
-                                      theUiState.downloadSecondarySortOrder());
-    m_downloadProxy->setSecondarySortEnabled(theUiState.downloadSecondarySort());
+    // Sort history (Display option): set after the layout restore, whose sorts
+    // would otherwise replace the saved tie-breakers; kept as the user sorts.
+    m_downloadProxy->setSortHistory(theUiState.downloadSortHistoryKeys());
+    m_downloadProxy->setSortHistoryEnabled(theUiState.downloadSortHistory());
     connect(downloadView->header(), &QHeaderView::sortIndicatorChanged, this, [this] {
-        theUiState.setDownloadSecondarySortKey(m_downloadProxy->secondarySortColumn(),
-                                               m_downloadProxy->secondarySortOrder());
+        theUiState.setDownloadSortHistoryKeys(m_downloadProxy->sortHistory());
     }, Qt::QueuedConnection);
     CountryFlags::bindFlagColumn(downloadView);
 
@@ -1794,11 +1792,26 @@ void TransferPanel::sendDownloadActionBatch(const QStringList& hashesIn, int act
     default: return;
     }
 
+    // A refused row was silent: the list just stayed as it was (log + status bar now)
+    QPointer<TransferPanel> self(this);
+    const auto onEach = [self, action](const QString& hash, const IpcMessage& reply) {
+        if (reply.type() == IpcMsgType::Result && reply.fieldBool(0))
+            return;
+        const DownloadRow* dl = self ? self->m_downloadModel->findByHash(hash) : nullptr;
+        const QString why = reply.isValid() ? reply.fieldString(1) : tr("not connected");
+        const QString name = dl ? dl->fileName : hash;
+        const QString text = action == 2 ? tr("Could not cancel \"%1\": %2").arg(name, why)
+                           : action == 1 ? tr("Could not resume \"%1\": %2").arg(name, why)
+                                         : tr("Could not pause \"%1\": %2").arg(name, why);
+        logWarning(text);
+        StatusBarNotifier::post(text, 8000);
+    };
+    logDebug(QStringLiteral("Download action %1 for %2 file(s)").arg(action).arg(hashes.size()));
     m_ipc->sendBatchRequest(hashes, [msgType](const QString& hash) {
         IpcMessage msg(msgType);
         msg.append(hash);
         return msg;
-    }, this, [this]() { requestDownloads(); });
+    }, this, [this]() { requestDownloads(); }, onEach);
 }
 
 void TransferPanel::sendSetPriority(const QString& hash, int priority, bool isAuto)
@@ -2713,7 +2726,7 @@ void TransferPanel::applyExtColumns()
 void TransferPanel::applyDisplayOptions()
 {
     m_statusFilterBar->setRowOn(theUiState.showDownloadStatusFilter());
-    m_downloadProxy->setSecondarySortEnabled(theUiState.downloadSecondarySort());
+    m_downloadProxy->setSortHistoryEnabled(theUiState.downloadSortHistory());
     const bool buttons = thePrefs.showTransToolbar();
     m_toolbar1->setButtonsVisible(buttons);
     m_toolbar2->setButtonsVisible(buttons);

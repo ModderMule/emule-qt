@@ -638,7 +638,7 @@ public:
     /// version byte and its real version is inferred from the record size, whereas SX2
     /// states its version up front and must match it exactly.
     void addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool isSX2,
-                          const UpDownClient* sender);
+                          UpDownClient* sender);
 
     // -- Category -------------------------------------------------------------
 

@@ -991,30 +991,42 @@ void DownloadListModel::reindexRows()
 // DownloadSortProxy
 // ---------------------------------------------------------------------------
 
-void DownloadSortProxy::setSecondarySortEnabled(bool on)
+void DownloadSortProxy::setSortHistoryEnabled(bool on)
 {
-    if (on == m_secondaryEnabled)
+    if (on == m_historyEnabled)
         return;
-    m_secondaryEnabled = on;
-    if (sortColumn() >= 0 && m_secondaryColumn >= 0)
+    m_historyEnabled = on;
+    if (sortColumn() >= 0 && !m_tieBreakers.isEmpty())
         invalidate();
 }
 
-void DownloadSortProxy::setSecondarySort(int column, Qt::SortOrder order)
+void DownloadSortProxy::setSortHistory(const QList<SortKey>& tieBreakers)
 {
-    m_secondaryColumn = column;
-    m_secondaryOrder = order;
-    if (m_secondaryEnabled && sortColumn() >= 0)
+    m_tieBreakers.clear();
+    for (const SortKey& key : tieBreakers) {
+        if (m_tieBreakers.size() >= kMaxTieBreakers)
+            break;
+        const bool taken = std::ranges::any_of(m_tieBreakers, [&key](const SortKey& k) {
+            return k.first == key.first;
+        });
+        if (key.first >= 0 && key.first != sortColumn() && !taken)
+            m_tieBreakers.append(key);
+    }
+    if (m_historyEnabled && sortColumn() >= 0)
         invalidate();
 }
 
 void DownloadSortProxy::sort(int column, Qt::SortOrder order)
 {
-    // A new column: the one sorted so far becomes the tie-breaker; its own
-    // column again only flips the order and keeps the tie-breaker.
+    // A new column: the one sorted so far becomes the newest tie-breaker (MFC
+    // UpdateSortHistory); its own column again only flips the order.
     if (column >= 0 && sortColumn() >= 0 && column != sortColumn()) {
-        m_secondaryColumn = sortColumn();
-        m_secondaryOrder = sortOrder();
+        m_tieBreakers.removeIf([column, prev = sortColumn()](const SortKey& k) {
+            return k.first == column || k.first == prev;
+        });
+        m_tieBreakers.prepend({sortColumn(), sortOrder()});
+        if (m_tieBreakers.size() > kMaxTieBreakers)
+            m_tieBreakers.resize(kMaxTieBreakers);
     }
     SortValueProxy::sort(column, order);
 }
@@ -1023,16 +1035,19 @@ bool DownloadSortProxy::lessThan(const QModelIndex& left, const QModelIndex& rig
 {
     if (primaryLess(left, right))
         return true;
-    if (!m_secondaryEnabled || m_secondaryColumn < 0 || m_secondaryColumn == left.column()
-        || primaryLess(right, left))
+    if (!m_historyEnabled || m_tieBreakers.isEmpty() || primaryLess(right, left))
         return false;
 
-    // A tie: the secondary column decides, in its own order. Qt swaps the
-    // arguments for a descending primary, so a differing order swaps them back.
-    const QModelIndex l = left.siblingAtColumn(m_secondaryColumn);
-    const QModelIndex r = right.siblingAtColumn(m_secondaryColumn);
-    return m_secondaryOrder == sortOrder() ? SortValueProxy::lessThan(l, r)
-                                           : SortValueProxy::lessThan(r, l);
+    // A tie: each older column decides in turn, in its own order
+    for (const SortKey& key : m_tieBreakers) {
+        if (key.first == left.column())
+            continue;
+        if (keyLess(left, right, key))
+            return true;
+        if (keyLess(right, left, key))
+            return false;
+    }
+    return false;
 }
 
 bool DownloadSortProxy::primaryLess(const QModelIndex& left, const QModelIndex& right) const
@@ -1046,6 +1061,16 @@ bool DownloadSortProxy::primaryLess(const QModelIndex& left, const QModelIndex& 
             return (sortOrder() == Qt::AscendingOrder) ? rightA4af : leftA4af;
     }
     return SortValueProxy::lessThan(left, right);
+}
+
+bool DownloadSortProxy::keyLess(const QModelIndex& left, const QModelIndex& right,
+                                const SortKey& key) const
+{
+    // Qt swaps the arguments for a descending primary, so a differing order swaps them back
+    const QModelIndex l = left.siblingAtColumn(key.first);
+    const QModelIndex r = right.siblingAtColumn(key.first);
+    return key.second == sortOrder() ? SortValueProxy::lessThan(l, r)
+                                     : SortValueProxy::lessThan(r, l);
 }
 
 } // namespace eMule

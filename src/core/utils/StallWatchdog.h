@@ -6,7 +6,8 @@
 /// A monitor thread posts a heartbeat to the main thread every second. Unanswered for
 /// the stall limit, it writes the main thread's stack to `<crashDir>/stall-<time>.stall`
 /// and logs it (report 20: the core went silent, nothing told why). Once the loop runs
-/// again, the stall's length is logged too.
+/// again, the stall's length is logged too. A thread asleep in the kernel answers the
+/// stack signal only once its call returns (#169): that stack is added to the file then.
 
 #include <QString>
 
@@ -56,11 +57,15 @@ private:
     void watch();
     void postBeat();
     void report(std::chrono::milliseconds stalledFor);
+    /// Appends the stack the main thread gave once its kernel call returned, if any came.
+    void reportLateStack(bool loopRan);
     void pruneReports() const;
     /// The main thread's frames, symbolized; a note when the platform cannot tell.
     [[nodiscard]] QString mainThreadStack() const;
     /// Linux: the main thread's run state and kernel wait channel, empty elsewhere.
     [[nodiscard]] QString mainThreadKernelState() const;
+    /// Linux: the system call the main thread waits in, with the file it names (#169).
+    [[nodiscard]] QString mainThreadSyscall() const;
 
     const QString m_crashDir;
     const std::chrono::milliseconds m_limit;
@@ -71,6 +76,7 @@ private:
     std::condition_variable m_cv;
     bool m_stop = false;
     QString m_lastReport;
+    bool m_lateStackPending = false;   ///< watcher thread only: the stack signal went unanswered
 
 #ifdef Q_OS_WIN
     void* m_mainThread = nullptr;   ///< HANDLE of the watched thread, may suspend + read context

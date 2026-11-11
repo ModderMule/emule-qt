@@ -183,6 +183,7 @@ private:
     QCheckBox* m_shareFilesCheck = nullptr;
     QCheckBox* m_jointDownloadsCheck = nullptr;
     QCheckBox* m_shareUsenetCheck = nullptr;
+    QCheckBox* m_ownSetsWatchCheck = nullptr;   ///< ed3kOwnSetsWatch
     Ed3kHidingGroup* m_hiding = nullptr;   ///< batch 15: hops.md §1
     QList<QCheckBox*> m_extChecks;   ///< text = the extension name
     QLabel* m_compatLabel = nullptr;
@@ -259,6 +260,7 @@ private:
     QCheckBox* m_hosterCheckLinksCheck = nullptr;
     QCheckBox* m_hosterExtractCheck = nullptr;
     QCheckBox* m_hosterDeleteArchivesCheck = nullptr;   ///< greyed out while extraction is off
+    QCheckBox* m_hosterShareCheck = nullptr;            ///< ed3kHosterShareFiles
     QCheckBox* m_associateDlcCheck = nullptr;
     QCheckBox* m_clickNLoadCheck = nullptr;
     QCheckBox* m_hosterClipboardCheck = nullptr;

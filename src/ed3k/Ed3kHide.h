@@ -20,12 +20,14 @@
 /// - was: ToDo: topics (sets) and live under the anonymous key; rooms and paid not switched
 ///   (done, batch 16: live, channel search, followed and own sets, rooms, paid and the upload
 ///   queue take keyForUse() / the files' key and keyed events).
-/// - ToDo: a paid channel watched anonymously is followed under the node key
+/// - was: ToDo: a paid channel watched anonymously is followed under the node key
 ///   (Ed3kPaid::followChannel has no key); members of a followed set download by the hiding
-///   switch, not the set's key (Ed3kDownloadSpec has no key).
+///   switch, not the set's key (Ed3kDownloadSpec has no key) (done: followChannel takes the
+///   stream's key; Ed3kDownloadSpec::key = the set's, refused for the other/held key).
 
 #include "Ed3kFfi.h"
 
+#include <QNetworkProxy>
 #include <QObject>
 #include <QString>
 #include <QTimer>
@@ -38,12 +40,15 @@ namespace eMule::ed3k {
 
 class Ed3kSession;
 
-/// The prefs of hiding (ed3kHide, ed3kHops, ed3kHopping, ed3kHopShare).
+/// The prefs of hiding (ed3kHide, ed3kHops, ed3kHopping, ed3kHopShare, ed3kReportProxy*).
 struct Ed3kHideSettings {
     bool on = false;
     int hops = 1;             ///< 0 to 3, every use; 0 only with hopping (§2.6), else 1
     bool hopping = true;      ///< forward for others while hiding (§1 "Recommended", §5)
     int sharePercent = 25;    ///< of the upload limit for others' paths (§5)
+    /// share reports under the anonymous key (subscription.md §5.3) go through this proxy
+    /// alone; nullopt: none are sent (anonReports off)
+    std::optional<QNetworkProxy> reportProxy;
 
     friend bool operator==(const Ed3kHideSettings&, const Ed3kHideSettings&) = default;
 };
@@ -58,6 +63,11 @@ struct Ed3kHideStatus {
     int built = 0;              ///< of them built
     bool waitingForHops = false;   ///< hiding, no path built yet (20 hops needed first)
     int anonFiles = 0;          ///< files recorded under the anonymous key
+    bool hop = false;           ///< the anonymous node sets HOP (anonState)
+    bool router = false;        ///< it sets ROUTER
+    /// running with a gate: its files can be found; false while running at 0 hops on a
+    /// leaf: nothing under the anonymous key is found (§2.6 Inwards, the user is told)
+    bool shares = false;
 };
 
 class Ed3kHide : public QObject {
@@ -126,6 +136,10 @@ signals:
     void changed();
 
 private:
+    /// The anonymous node started or stopped as the settings say.
+    void applyNode();
+    /// anonReports on only while a report proxy is set and hiding runs.
+    void applyReports();
     void load();
     void save();
     void scheduleSave();
@@ -136,6 +150,7 @@ private:
     std::optional<int> m_appliedHops;
     std::optional<bool> m_appliedHopping;
     int m_appliedShare = -1;
+    std::optional<bool> m_appliedReports;
     std::map<::ed3k::Root, ::ed3k::KeyKind> m_keys;
     QString m_dir;
     bool m_loaded = false;

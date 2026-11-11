@@ -15,15 +15,16 @@
 #include <QMessageBox>
 #include <QString>
 
+#include "utils/ScrollMessageBox.h"
+
 namespace eMule::AsyncMessageBox {
 
-/// Show a window-modal box with an OK button and return immediately.
+/// Show a window-modal box with an OK button and return immediately (non-modal over Options).
+/// Text taller than the screen scrolls (#176).
 inline void show(QMessageBox::Icon icon, QWidget* parent, const QString& title,
                  const QString& text)
 {
-    auto* box = new QMessageBox(icon, title, text, QMessageBox::Ok, parent);
-    box->setAttribute(Qt::WA_DeleteOnClose);
-    box->open();
+    ScrollMessageBox::open(icon, parent, title, text);
 }
 
 inline void warning(QWidget* parent, const QString& title, const QString& text)

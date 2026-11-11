@@ -55,6 +55,7 @@ SOURCES += \
     queue/UsenetWorker.cpp \
     stream/RarReader.cpp \
     stream/UsenetEncryptedPreview.cpp \
+    stream/UsenetImagePreview.cpp \
     stream/UsenetStreamIndex.cpp
 
 HEADERS += \
@@ -93,4 +94,5 @@ HEADERS += \
     queue/UsenetWorker.h \
     stream/RarReader.h \
     stream/UsenetEncryptedPreview.h \
+    stream/UsenetImagePreview.h \
     stream/UsenetStreamIndex.h

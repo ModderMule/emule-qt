@@ -88,6 +88,8 @@ public:
     [[nodiscard]] std::optional<::ed3k::Root> rootOf(const QByteArray& md4) const;
     /// The shared file served under @p root; nullopt: none (the upload queue view names files).
     [[nodiscard]] std::optional<SharedEntry> entryOfRoot(const ::ed3k::Root& root) const;
+    /// A file of the list was hashed to @p root (shared, or waiting for its key).
+    [[nodiscard]] bool holdsRoot(const ::ed3k::Root& root) const;
     /// The `ed2k` ALIAS record of @p md4 is published.
     [[nodiscard]] bool aliasPublished(const QByteArray& md4) const;
     /// @p md4 is published with its keywords (Publish::Both: found by ed3k search), not only
@@ -98,6 +100,12 @@ public:
     void setNeverShared(std::function<bool(const QString& path)> check) { m_neverShared = std::move(check); }
     /// The key @p md4 is shared under (hops.md §1, shown to the user); nullopt: not hashed yet.
     [[nodiscard]] std::optional<::ed3k::KeyKind> keyOfFile(const QByteArray& md4) const;
+    /// hops.md §1 SHOULD: @p md4 starts downloading on @p networks (eD2K) and is shared here
+    /// under the anonymous key: the user is told once (anonExposed). true: told now.
+    bool tellDownloadElsewhere(const QByteArray& md4, const QString& name, const QString& networks);
+    /// The user is told once per run that @p root (anonymous key) is on @p networks too.
+    /// true: told now; false: told before.
+    bool tellExposed(const ::ed3k::Root& root, const QString& name, const QString& networks);
     /// The root @p md4 was hashed to, shared or not (a file of the anonymous key waits while
     /// hiding is off); nullopt: not hashed yet.
     [[nodiscard]] std::optional<::ed3k::Root> hashedRootOf(const QByteArray& md4) const;

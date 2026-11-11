@@ -10,6 +10,7 @@
 #include "utils/OtherFunctions.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/TorrentLinks.h"
+#include "utils/ScrollMessageBox.h"
 
 #include <QApplication>
 #include <QCborArray>
@@ -153,7 +154,7 @@ bool confirmDownload(const std::vector<ParsedLink>& links, QWidget* parent,
     if (beforePrompt)
         beforePrompt();
 
-    return QMessageBox::question(
+    return ScrollMessageBox::question(
                parent, QObject::tr("eD2K Link"),
                QObject::tr("Do you want to download the following file(s)?\n\n%1")
                    .arg(describe(links).join(QLatin1Char('\n'))),
@@ -173,7 +174,7 @@ bool confirmDownload(const std::vector<ParsedLink>& links, QWidget* parent,
     if (beforePrompt)
         beforePrompt();
 
-    return QMessageBox::question(
+    return ScrollMessageBox::question(
                parent, QObject::tr("eD2K Link"),
                QObject::tr("You have already downloaded the following file(s). "
                            "Download them again?\n\n%1")

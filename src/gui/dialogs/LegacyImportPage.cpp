@@ -9,6 +9,7 @@
 #include "utils/DialogSizing.h"
 #include "utils/IpcFeedback.h"
 #include "utils/Log.h"
+#include "utils/StatusBarNotifier.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -107,6 +108,7 @@ LegacyImportPage::LegacyImportPage(IpcClient* ipc, QWidget* parent)
     grid->addWidget(m_settingsBrowse, 1, 2);
 
     m_partsCheck = new QCheckBox(tr("Import unfinished downloads (moved, not copied)"), this);
+    m_partsCheck->setToolTip(tr("Moved once you click Finish. Cancel leaves them where they are."));
     grid->addWidget(m_partsCheck, 2, 0, 1, 3);
     grid->addWidget(new QLabel(tr("Download folders:"), this), 3, 0);
     m_partsEdit = new QLineEdit(this);
@@ -145,9 +147,11 @@ LegacyImportPage::LegacyImportPage(IpcClient* ipc, QWidget* parent)
 
 void LegacyImportPage::apply(std::function<void(bool ok, bool restarted)> done)
 {
-    const bool settings = m_settingsCheck->isChecked();
-    const bool parts = m_partsCheck->isChecked();
-    if (m_done || (!settings && !parts)) {
+    const bool settings = m_settingsCheck->isChecked() && !m_settingsDone;
+    const bool parts = m_partsCheck->isChecked() && !downloadDirs().isEmpty();
+    if (!settings) {
+        if (parts)
+            m_statusLabel->setText(tr("Unfinished downloads are moved once you click Finish."));
         done(true, false);
         return;
     }
@@ -157,28 +161,25 @@ void LegacyImportPage::apply(std::function<void(bool ok, bool restarted)> done)
         return;
     }
     const QString dir = QDir::fromNativeSeparators(m_settingsEdit->text().trimmed());
-    if (settings && dir.isEmpty()) {
+    if (dir.isEmpty()) {
         m_statusLabel->setText(tr("Pick the settings folder of eMule or aMule."));
         done(false, false);
         return;
     }
 
-    QCborArray temps;
-    for (const QString& d : downloadDirs())
-        temps.append(d);
+    // Settings only: the downloads wait for Finish
     Ipc::IpcMessage req(Ipc::IpcMsgType::ImportLegacyProfile);
     req.append(dir);
-    req.append(settings);
-    req.append(parts);
-    req.append(temps);
-    setBusy(true, settings ? tr("Importing... the core restarts to load the settings.")
-                           : tr("Importing unfinished downloads..."));
-    m_ipc->sendRequest(std::move(req), [self = QPointer<LegacyImportPage>(this), done,
-                                        settings](const Ipc::IpcMessage& resp) {
+    req.append(true);
+    req.append(false);
+    req.append(QCborArray{});
+    setBusy(true, tr("Importing settings... the core restarts to load them."));
+    m_ipc->sendRequest(std::move(req), [self = QPointer<LegacyImportPage>(this), done](
+                                           const Ipc::IpcMessage& resp) {
         if (!self)
             return;
         // A restart may drop the link before the reply: the request was written anyway
-        if (!resp.isValid() && settings) {
+        if (!resp.isValid()) {
             self->waitForCore(done);
             return;
         }
@@ -187,16 +188,39 @@ void LegacyImportPage::apply(std::function<void(bool ok, bool restarted)> done)
             done(false, false);
             return;
         }
-        const QCborMap result = resp.fieldMap(1);
-        if (result.value(QLatin1StringView("restart")).toBool()) {
-            self->waitForCore(done);
+        self->waitForCore(done);
+    });
+}
+
+void LegacyImportPage::importDownloads()
+{
+    if (!m_partsCheck->isChecked() || !m_ipc || !m_ipc->isConnected())
+        return;
+    const QStringList dirs = downloadDirs();
+    if (dirs.isEmpty())
+        return;
+    QCborArray temps;
+    for (const QString& d : dirs)
+        temps.append(d);
+    Ipc::IpcMessage req(Ipc::IpcMsgType::ImportLegacyProfile);
+    req.append(QDir::fromNativeSeparators(m_settingsEdit->text().trimmed()));
+    req.append(false);
+    req.append(true);
+    req.append(temps);
+    logInfo(QStringLiteral("Import: %1 download folder(s) handed to the core").arg(dirs.size()));
+    // The wizard is gone by the reply: the outcome goes to the status bar
+    m_ipc->sendRequest(std::move(req), [](const Ipc::IpcMessage& resp) {
+        if (!resp.isValid())
+            return;
+        if (!resp.fieldBool(0)) {
+            const QString error = resp.fieldString(1);
+            logWarning(QStringLiteral("Import of unfinished downloads failed: %1").arg(error));
+            StatusBarNotifier::post(tr("Import of unfinished downloads failed: %1").arg(error));
             return;
         }
-        self->m_done = true;
-        const int queued = static_cast<int>(result.value(QLatin1StringView("queued")).toInteger());
-        self->setBusy(false, tr("%n unfinished download(s) queued for import. Tools > Import "
-                                "Downloads shows their progress.", nullptr, queued));
-        done(true, false);
+        const int queued = static_cast<int>(resp.fieldMap(1).value(QLatin1StringView("queued")).toInteger());
+        StatusBarNotifier::post(tr("%n unfinished download(s) queued for import. Tools > Import "
+                                   "Downloads shows their progress.", nullptr, queued));
     });
 }
 
@@ -312,14 +336,15 @@ void LegacyImportPage::fillFromProfile(const QCborMap& profile)
 
 void LegacyImportPage::updateEnabled()
 {
-    const bool idle = !m_busy && !m_done;   // done: Next does not import again
-    m_profileCombo->setEnabled(idle);
-    m_settingsCheck->setEnabled(idle);
-    m_partsCheck->setEnabled(idle);
-    m_settingsEdit->setEnabled(idle);
-    m_settingsBrowse->setEnabled(idle);
-    m_partsEdit->setEnabled(idle);
-    m_partsBrowse->setEnabled(idle);
+    // Settings imported: Next does not import them again. Downloads wait for Finish.
+    const bool settingsIdle = !m_busy && !m_settingsDone;
+    m_profileCombo->setEnabled(settingsIdle);
+    m_settingsCheck->setEnabled(settingsIdle);
+    m_settingsEdit->setEnabled(settingsIdle);
+    m_settingsBrowse->setEnabled(settingsIdle);
+    m_partsCheck->setEnabled(!m_busy);
+    m_partsEdit->setEnabled(!m_busy);
+    m_partsBrowse->setEnabled(!m_busy);
 }
 
 void LegacyImportPage::setBusy(bool busy, const QString& status)
@@ -353,8 +378,8 @@ void LegacyImportPage::waitForCore(std::function<void(bool ok, bool restarted)> 
         self->m_restartTimeout->stop();
         self->m_restartTimeout->disconnect();
         if (ok) {
-            self->m_done = true;
-            self->setBusy(false, tr("Imported. The pages that follow show the imported settings."));
+            self->m_settingsDone = true;
+            self->setBusy(false, tr("Settings imported. The pages that follow show them."));
         } else {
             self->setBusy(false, tr("The core did not come back. Its log tells what happened."));
         }

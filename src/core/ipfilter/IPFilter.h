@@ -147,6 +147,9 @@ signals:
     /// Emitted when every range was dropped (also before each reload, and when the
     /// reload finds no file, which emits no filterLoaded).
     void filterCleared();
+    /// Any change of the ranges: a load, a clear or ranges removed. Networks that keep
+    /// their own copy (BitTorrent) or open connections (eD2K peers) re-check on it.
+    void filterChanged();
 
     /// Emitted when an IP is blocked. Address-typed so IPv6 hits can be reported too.
     void ipBlocked(const Address& addr, const QString& description);

@@ -10,6 +10,7 @@
 #include "prefs/Preferences.h"
 #include "net/EMSocket.h"
 #include "net/EncryptedStreamSocket.h"
+#include "utils/BackgroundFileWriter.h"
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
 
@@ -848,6 +849,33 @@ private slots:
     }
 
     // -- Load / Save ----------------------------------------------------------
+
+    // #169: the periodic save queues; a later save() wins, a load() sees the queued copy
+    void saveInBackground_neverBeatsALaterSave()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("prefs.yaml"));
+        Preferences p;
+        p.load(file);
+
+        p.setNick(QStringLiteral("Queued"));
+        p.saveInBackground();
+        {
+            Preferences reader;
+            reader.load(file);
+            QCOMPARE(reader.nick(), QStringLiteral("Queued"));
+        }
+
+        p.setNick(QStringLiteral("Background"));
+        p.saveInBackground();
+        p.setNick(QStringLiteral("Direct"));
+        QVERIFY(p.save());
+        BackgroundFileWriter::instance().flush();
+
+        Preferences reader;
+        reader.load(file);
+        QCOMPARE(reader.nick(), QStringLiteral("Direct"));
+    }
 
     void loadSave_roundTrip()
     {

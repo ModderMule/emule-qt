@@ -651,6 +651,29 @@ MetaResultDetailDialog* MetaResultActions::openDetails(const MetaResultDetailDia
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     if (onDownload)
         connect(dlg, &MetaResultDetailDialog::downloadRequested, this, std::move(onDownload));
+    // Images tab: fetched only once it is opened
+    QPointer<MetaResultDetailDialog> guard(dlg);
+    connect(dlg, &MetaResultDetailDialog::imagesRequested, this,
+            [this, guard](const QString& token, const QString& coverUrl) {
+        if (!m_ipc || !m_ipc->isConnected()) {
+            if (guard)
+                guard->setPreviewImagesError(tr("Not connected to the core."));
+            return;
+        }
+        IpcMessage msg(IpcMsgType::FetchNzbImages);
+        msg.append(token);
+        msg.append(coverUrl);
+        m_ipc->sendRequest(std::move(msg), [guard](const IpcMessage& resp) {
+            if (!guard)
+                return;
+            if (!resp.isValid())
+                guard->setPreviewImagesError({});
+            else if (!resp.fieldBool(0))
+                guard->setPreviewImagesError(resp.fieldString(1));
+            else
+                guard->setPreviewImages(resp.fieldMap(1));
+        });
+    });
     dlg->show();
     return dlg;
 }

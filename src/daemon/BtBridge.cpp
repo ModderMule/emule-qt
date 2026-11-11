@@ -227,6 +227,7 @@ QCborMap detailsToCbor(const QString& id)
             {QStringLiteral("done"), f.done},
             {QStringLiteral("priority"), f.priority},
             {QStringLiteral("pad"), f.pad},
+            {QStringLiteral("availability"), f.availability},
         });
     QCborArray peers;
     for (const auto& p : s_session->peers(id))

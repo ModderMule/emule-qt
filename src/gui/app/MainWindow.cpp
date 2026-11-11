@@ -5,18 +5,23 @@
 #include "app/MiniMuleWidget.h"
 #endif
 #include "app/AppConfig.h"
+#include "app/AppIcon.h"
 #include "app/CoreAttachment.h"
 #include "app/Ed2kSchemeHandler.h"
 #include "app/IpcClient.h"
 #include "app/SkinColors.h"
 #include "app/ToolbarButtonSizer.h"
 #include "app/TrayMenuManager.h"
+#include "app/SkinInstaller.h"
 #include "app/VersionChecker.h"
 #include "app/ClickNLoadServer.h"
 #include "app/UiState.h"
 #include "controls/LogWidget.h"
 #include "controls/SpeedGraph.h"
+#include "controls/SpeedLimitPopup.h"
+#include "controls/SpeedLimitWidget.h"
 #include "controls/TrayMeterIcon.h"
+#include "dialogs/SkinBrowserDialog.h"
 #include "dialogs/NetworkInfoDialog.h"
 #include "dialogs/ImportDownloadsDialog.h"
 #include "dialogs/IPFilterDialog.h"
@@ -55,12 +60,14 @@
 #include "utils/TorrentLinks.h"
 #endif
 #include "utils/StatusBarNotifier.h"
+#include "utils/AppActivation.h"
 #include "utils/StringUtils.h"
 #include "utils/TaskbarProgress.h"
 
 #include "dialogs/PasteLinksDialog.h"
 #include "dialogs/ToolbarCustomizeDialog.h"
 #include "app/SkinIcons.h"
+#include "utils/ModalHost.h"
 
 #include <QAction>
 #include <QMimeData>
@@ -110,6 +117,21 @@ namespace eMule {
 
 namespace {
 bool s_quitWithoutPrompt = false;   // set by quitWithoutPrompt()
+
+/// Files matching @p filters in @p dir and one folder below (downloaded skin bundles)
+QStringList skinFilesIn(const QString& dir, const QStringList& filters)
+{
+    QStringList out;
+    const QDir root(dir);
+    for (const QString& f : root.entryList(filters, QDir::Files, QDir::Name))
+        out << root.filePath(f);
+    for (const QString& sub : root.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
+        const QDir d(root.filePath(sub));
+        for (const QString& f : d.entryList(filters, QDir::Files, QDir::Name))
+            out << d.filePath(f);
+    }
+    return out;
+}
 } // namespace
 
 MainWindow::MainWindow(QWidget* parent)
@@ -238,7 +260,8 @@ MainWindow::MainWindow(QWidget* parent)
         connect(m_trayMenu, &TrayMenuManager::disconnectRequested,
                 this, &MainWindow::onConnectToggle);
         connect(m_trayMenu, &TrayMenuManager::optionsRequested,
-                this, &MainWindow::onOptionsClicked);
+                this, [this] { showOptionsFromOutside(); });
+        connect(m_trayMenu, &QMenu::aboutToHide, this, &MainWindow::updateSpeedLimitTip);
         connect(m_trayMenu, &TrayMenuManager::exitRequested,
                 this, &MainWindow::forceQuit);
 #ifndef Q_OS_WIN
@@ -372,6 +395,15 @@ MainWindow::MainWindow(QWidget* parent)
         // check, so this is the only store the GUI can write (see UiState.h).
         theUiState.setLastVersionCheck(whenSecs);
     });
+
+    // Installed manifest skins follow their published sha256
+    m_skinInstaller = new SkinInstaller(this);
+    connect(m_versionChecker, &VersionChecker::manifestReceived,
+            this, [this](const VersionChecker::Manifest& info) {
+        m_skinInstaller->updateInstalled(info.skins);
+    });
+    connect(m_skinInstaller, &SkinInstaller::finished,
+            this, [this](const QString& id, bool ok, const QString&) { onSkinInstalled(id, ok); });
 }
 
 MainWindow::~MainWindow()
@@ -483,6 +515,8 @@ void MainWindow::setIpcClient(IpcClient* ipc)
     m_ipc = ipc;
     if (m_trayMenu)
         m_trayMenu->setIpcClient(ipc);
+    if (m_speedPopup)
+        m_speedPopup->setIpcClient(ipc);
 
     // A link sitting in the clipboard at startup reaches onClipboardChanged() before there
     // is a daemon to import it into, and that check leaves such text unrecorded on purpose.
@@ -534,6 +568,15 @@ void MainWindow::setIpcClient(IpcClient* ipc)
 
 void MainWindow::showOptionsDialog(int page)
 {
+    // tray or MiniMule while Options is open: that one, not a second
+    if (auto* open = findChild<OptionsDialog*>(Qt::FindDirectChildrenOnly)) {
+        if (page >= 0 && page < OptionsDialog::PageCount)
+            open->selectPage(page);
+        activateApp();
+        open->raise();
+        open->activateWindow();
+        return;
+    }
     OptionsDialog dlg(m_ipc, m_statsPanel, this);
     if (page >= 0 && page < OptionsDialog::PageCount)
         dlg.selectPage(page);
@@ -552,6 +595,7 @@ void MainWindow::showOptionsDialog(int page)
     const bool hadHoster = !isTabHidden(TabHoster);
 
     dlg.exec();
+    updateSpeedLimitTip();
 
     // a feature switched on brings its button back, even one removed from a customized toolbar
     bool toolbarChanged = false;
@@ -619,6 +663,28 @@ void MainWindow::showOptionsDialog(int page)
 void MainWindow::onOptionsClicked()
 {
     showOptionsDialog();
+}
+
+void MainWindow::showOptionsFromOutside(int page)
+{
+    // Deferred: from inside a tray menu's triggered() the menu still owns the input
+    QMetaObject::invokeMethod(this, [this, page] {
+        restoreWindow();
+        activateApp();
+        showOptionsDialog(page);
+    }, Qt::QueuedConnection);
+}
+
+void MainWindow::updateSpeedLimitTip()
+{
+    if (!m_statusSpeed)
+        return;
+    const auto text = [](uint32 kb) {
+        return kb == 0 ? tr("Unlimited") : tr("%1 KB/s").arg(kb);
+    };
+    m_statusSpeed->setToolTip(tr("Download limit: %1\nUpload limit: %2\nDouble-click to change")
+                                  .arg(text(thePrefs.configuredMaxDownload()),
+                                       text(thePrefs.configuredMaxUpload())));
 }
 
 void MainWindow::setEd2kStatus(bool connected, bool connecting, bool firewalled,
@@ -1101,8 +1167,7 @@ void MainWindow::showCoreStartProblem(CoreStartWatch::Problem problem)
     });
     connect(quit, &QAbstractButton::clicked, this, &MainWindow::forceQuit);
     m_coreProblemBox = box;
-    box->show();
-    box->raise();
+    ModalHost::show(box);   // over Options too
 }
 
 void MainWindow::notifyLogEntry(const QString& text)
@@ -1269,6 +1334,10 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
             switchToTab(TabMessages);
             return true;
         }
+        if (obj == m_statusSpeed) {
+            showSpeedPopup();
+            return true;
+        }
         // MFC CMuleStatusBarCtrl::OnLButtonDblClk (MuleStatusBarCtrl.cpp:53-59, :70-71)
         if (obj == m_statusMsg) {
             QMessageBox::information(this, tr("eMule Log"), m_statusMsg->text());
@@ -1385,14 +1454,14 @@ void MainWindow::buildToolsMenu()
         this, &MainWindow::onOpenDownloadsFolderInBrowser);
 
     m_toolsMenu->addAction(
-        skinIcon(QStringLiteral(":/icons/Convert.ico")),
-        tr("Import Downloads (eM,eD,ON)..."),
-        this, &MainWindow::onImportDownloads);
-
-    m_toolsMenu->addAction(
         skinIcon(QStringLiteral(":/icons/Wizard.ico")),
         tr("eMule First Runtime Wizard..."),
         this, &MainWindow::onFirstTimeWizard);
+
+    m_toolsMenu->addAction(
+        skinIcon(QStringLiteral(":/icons/Convert.ico")),
+        tr("Import Downloads (eM,eD,ON)..."),
+        this, &MainWindow::onImportDownloads);
 
     m_toolsMenu->addAction(
         skinIcon(QStringLiteral(":/icons/IPFilter.ico")),
@@ -1675,7 +1744,7 @@ void MainWindow::onTrayIconClicked(QSystemTrayIcon::ActivationReason reason)
             connect(m_miniMule, &MiniMuleWidget::openIncomingRequested,
                     this, &MainWindow::onOpenIncomingFolder);
             connect(m_miniMule, &MiniMuleWidget::optionsRequested,
-                    this, &MainWindow::onOptionsClicked);
+                    this, [this] { showOptionsFromOutside(); });
         }
 
         // Toggle: hide if already visible, otherwise show
@@ -1905,6 +1974,10 @@ void MainWindow::onToolbarContextMenu(const QPoint& pos)
 {
     QMenu menu(this);
 
+    menu.addAction(skinIcon(QStringLiteral(":/icons/Display.ico")), tr("Browse Skins..."),
+                   this, &MainWindow::openSkinBrowser);
+    menu.addSeparator();
+
     // --- Toolbar Skins submenu ---
     auto* skinsMenu = menu.addMenu(tr("Toolbar Skins"));
 
@@ -1950,20 +2023,17 @@ void MainWindow::onToolbarContextMenu(const QPoint& pos)
     // Scan skins directory for *.eMuleToolbar.kad02.{bmp,png,gif} files
     const QString skDir = skinsDir();
     if (!skDir.isEmpty()) {
-        QDir d(skDir);
-        const QStringList bmpFiles = d.entryList(
+        const QStringList bmpFiles = skinFilesIn(skDir,
             {QStringLiteral("*.eMuleToolbar.kad02.bmp"),
              QStringLiteral("*.eMuleToolbar.kad02.gif"),
-             QStringLiteral("*.eMuleToolbar.kad02.png")},
-            QDir::Files, QDir::Name);
-        for (const QString& fileName : bmpFiles) {
-            QString displayName = fileName;
+             QStringLiteral("*.eMuleToolbar.kad02.png")});
+        for (const QString& fullPath : bmpFiles) {
+            QString displayName = QFileInfo(fullPath).fileName();
             const auto idx = displayName.indexOf(
                 QStringLiteral(".eMuleToolbar.kad02."), 0, Qt::CaseInsensitive);
             if (idx > 0)
                 displayName.truncate(idx);
 
-            const QString fullPath = d.filePath(fileName);
             auto* act = skinsMenu->addAction(displayName, this, [this, fullPath]() {
                 theUiState.setToolbarSkinPath(fullPath);
                 clearToolbarSkin();
@@ -2009,17 +2079,14 @@ void MainWindow::onToolbarContextMenu(const QPoint& pos)
 
     // Scan skins directory for *.eMuleSkin.ini files
     if (!skDir.isEmpty()) {
-        QDir d(skDir);
-        const QStringList iniFiles = d.entryList(
-            {QStringLiteral("*.eMuleSkin.ini")}, QDir::Files, QDir::Name);
-        for (const QString& fileName : iniFiles) {
-            QString displayName = fileName;
+        const QStringList iniFiles = skinFilesIn(skDir, {QStringLiteral("*.eMuleSkin.ini")});
+        for (const QString& fullPath : iniFiles) {
+            QString displayName = QFileInfo(fullPath).fileName();
             const auto idx = displayName.indexOf(
                 QStringLiteral(".eMuleSkin.ini"), 0, Qt::CaseInsensitive);
             if (idx > 0)
                 displayName.truncate(idx);
 
-            const QString fullPath = d.filePath(fileName);
             auto* act = profilesMenu->addAction(displayName, this, [this, fullPath]() {
                 applySkinProfile(fullPath);
             });
@@ -2146,14 +2213,22 @@ QColor MainWindow::trayMeterColor() const
 
 void MainWindow::updateTrayIcon(bool force)
 {
+    const bool connected = m_ed2kConnected || m_kadConnected;
+    const bool lowId = (m_ed2kConnected && m_ed2kFirewalled)
+                    || (m_kadConnected && m_kadFirewalled);
+
+    // dock/taskbar donkey droops its ears while LowID
+    if (force || m_dockLowId != int(lowId)) {
+        m_dockLowId = int(lowId);
+        QApplication::setWindowIcon(appIcon(lowId));
+    }
+
     if (!m_trayIcon)
         return;
 
     // Base icon: the same three states the icon has always had.
     QString iconPath = QStringLiteral(":/icons/TrayDisconnected.ico");
-    if (m_ed2kConnected || m_kadConnected) {
-        const bool lowId = (m_ed2kConnected && m_ed2kFirewalled)
-                        || (m_kadConnected && m_kadFirewalled);
+    if (connected) {
         iconPath = lowId ? QStringLiteral(":/icons/TrayLowID.ico")
                          : QStringLiteral(":/icons/TrayConnected.ico");
     }
@@ -2282,6 +2357,15 @@ void MainWindow::setupStatusBar()
     m_statusEd3k->installEventFilter(this);
     m_statusEd3k->hide();
     sb->addPermanentWidget(m_statusEd3k);
+
+    // Speed limits, right of the networks: double-click for the tray menu's sliders
+    m_statusSpeed = new QLabel(this);
+    m_statusSpeed->setFixedSize(16, 16);
+    m_statusSpeed->setScaledContents(true);
+    setSkinPixmap(m_statusSpeed, QStringLiteral(":/icons/Speed.ico"));
+    m_statusSpeed->installEventFilter(this);
+    sb->addPermanentWidget(m_statusSpeed);
+    updateSpeedLimitTip();
 
     // Upload SpeedSense (MFC SBarUSS): shown only while the option is on
     m_statusUss = new QLabel(this);
@@ -2611,6 +2695,57 @@ void MainWindow::applySkinProfile(const QString& path)
     if (SkinIcons::instance().setFiles(m_skinEngine.iconFiles()))
         refreshSkinIcons();
     rebuildToolbar();
+}
+
+void MainWindow::openSkinBrowser()
+{
+    if (m_skinBrowser) {
+        m_skinBrowser->show();
+        m_skinBrowser->raise();
+        m_skinBrowser->activateWindow();
+        return;
+    }
+    m_skinBrowser = new SkinBrowserDialog(m_versionChecker, m_skinInstaller, this);
+    m_skinBrowser->setAttribute(Qt::WA_DeleteOnClose);
+    connect(m_skinBrowser, &SkinBrowserDialog::applySkin, this, &MainWindow::applyInstalledSkin);
+    connect(m_skinBrowser, &SkinBrowserDialog::restoreDefaultSkin, this, &MainWindow::restoreDefaultSkin);
+    m_skinBrowser->show();
+}
+
+void MainWindow::applyInstalledSkin(const QString& id)
+{
+    const QString profile = SkinInstaller::profilePath(id);
+    if (profile.isEmpty())
+        return;
+    // the bundle's strip, else drop one left by another bundle; a hand-picked strip stays
+    const QString strip = SkinInstaller::toolbarStripPath(SkinInstaller::skinDir(id));
+    if (!strip.isEmpty()) {
+        theUiState.setToolbarSkinPath(strip);
+        clearToolbarSkin();
+    } else if (!SkinInstaller::bundleIdOf(theUiState.toolbarSkinPath()).isEmpty()) {
+        theUiState.setToolbarSkinPath(QString{});
+        clearToolbarSkin();
+    }
+    applySkinProfile(profile);   // rebuilds the toolbar
+    logInfo(QStringLiteral("Skin %1 applied").arg(id));
+}
+
+void MainWindow::restoreDefaultSkin()
+{
+    theUiState.setToolbarSkinPath(QString{});
+    clearToolbarSkin();
+    applySkinProfile(QString{});
+}
+
+void MainWindow::onSkinInstalled(const QString& id, bool ok)
+{
+    // bundleIdOf needs the installed copy, so compare the folder instead
+    const QString dir = QDir::cleanPath(SkinInstaller::skinDir(id)) + QLatin1Char('/');
+    const QString active = QDir::cleanPath(theUiState.skinProfilePath());
+    if (ok && active.startsWith(dir))
+        applyInstalledSkin(id);
+    if (m_skinBrowser)
+        m_skinBrowser->refreshStates();
 }
 
 // ---------------------------------------------------------------------------
@@ -2993,6 +3128,19 @@ void MainWindow::refreshSkinIcons()
         m_statusEd3kIcon->refreshSkin();
     for (QWidget* widget : QApplication::allWidgets())
         widget->update();
+}
+
+void MainWindow::showSpeedPopup()
+{
+    if (!m_speedPopup) {
+        m_speedPopup = new SpeedLimitPopup(this);
+        m_speedPopup->setIpcClient(m_ipc);
+        connect(m_speedPopup, &SpeedLimitPopup::optionsRequested, this,
+                [this] { showOptionsFromOutside(OptionsDialog::PageConnection); });
+        connect(m_speedPopup->speedWidget(), &SpeedLimitWidget::limitsChanged,
+                this, &MainWindow::updateSpeedLimitTip);
+    }
+    m_speedPopup->showAbove(m_statusSpeed);
 }
 
 void MainWindow::showChatState(int state)

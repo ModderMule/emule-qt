@@ -2946,6 +2946,12 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
                 // A web seed may also run on ed3k alone.
                 const bool online = client->isUrlClient() ? theApp.isConnectedAnyNetwork()
                                                           : theApp.isConnected();
+                // Waits for our buddy claim to end (ClientList::releaseBuddyHeldSources dials
+                // it then). LowID->LowID does not use OUR buddy, but they learn it for later.
+                if (client->heldForBuddyClaim()) {
+                    ++i;
+                    continue;
+                }
                 if (!online || client->timeUntilReask(this) > 0) {
                     ++i;
                     continue;
@@ -4165,7 +4171,7 @@ std::unique_ptr<Packet> PartFile::createSrcInfoPacket(
 // ===========================================================================
 
 void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool isSX2,
-                                const UpDownClient* sender)
+                                UpDownClient* sender)
 {
     if (isStopped())
         return;
@@ -4238,6 +4244,8 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
 
     // The ExtSX per-source record is variable length and carries no size check, so a
     // truncated packet is caught here (FileException) rather than over-reading.
+    bool buddyClaimStarted = false;
+    std::vector<UpDownClient*> addedLowIds;   // new LowID sources from this answer
     try {
     for (uint16 i = 0; i < srcCount; ++i) {
         uint32 userId = data.readUInt32();
@@ -4249,6 +4257,16 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
         bool haveUserHash = false;
         bool haveCryptFlags = false;
         Address userIPv6;   // set only when a valid CT_MOD_IP_V6 tag is present
+        // LowID routes (ExtSX only), checked after the tag loop
+        uint32 lowIdAddress = 0;      // CT_EMULE_ADDRESS, network order
+        uint16 kadPort = 0;
+        uint16 udpPort = 0;
+        uint32 buddyIP = 0;           // network order
+        uint16 buddyPort = 0;
+        Address buddyIPv6;
+        std::array<uint8, 16> buddyID{};
+        bool haveBuddyID = false;
+        uint16 buddyOfferPort = 0;
 
         if (extSX) {
             // Variable tag block: serverIP/port ride as tags; a reachable public IPv6
@@ -4285,6 +4303,36 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
                         haveCryptFlags = true;
                     }
                     break;
+                case CT_EMULE_ADDRESS:
+                    if (tag.isInt()) lowIdAddress = tag.intValue();
+                    break;
+                case CT_EMULE_UDPPORTS:
+                    if (tag.isInt()) {
+                        kadPort = static_cast<uint16>(tag.intValue() >> 16);
+                        udpPort = static_cast<uint16>(tag.intValue());
+                    }
+                    break;
+                case CT_EMULE_BUDDYIP:
+                    if (tag.isInt()) buddyIP = tag.intValue();
+                    break;
+                case CT_EMULE_BUDDYUDP:
+                    if (tag.isInt()) buddyPort = static_cast<uint16>(tag.intValue());
+                    break;
+                case CT_EMULE_SERVINGBUDDYIPV6:
+                    if (tag.isHash()) {
+                        const Address a = Address::fromIPv6Bytes(tag.hashValue());
+                        if (a.isPublicIP()) buddyIPv6 = a;
+                    }
+                    break;
+                case CT_EMULE_SERVINGBUDDYID:
+                    if (tag.isHash()) {
+                        std::memcpy(buddyID.data(), tag.hashValue(), 16);
+                        haveBuddyID = !isnulmd4(buddyID.data());
+                    }
+                    break;
+                case CT_MOD_BUDDY_OFFER:
+                    if (tag.isInt()) buddyOfferPort = static_cast<uint16>(tag.intValue());
+                    break;
                 default:
                     break;   // skip unknown tag by type
                 }
@@ -4296,6 +4344,20 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
                 data.readHash16(userHash.data());
             if (version >= 4)
                 cryptFlags = data.readUInt8();
+        }
+
+        // The sender's own record with its buddy offer: not a source
+        if (buddyOfferPort != 0) {
+            const bool fromSender = sender && !sender->hasLowID()
+                                    && sender->connectAddress().isIPv4()
+                                    && userId == sender->connectAddress().toNetworkUint32();
+            if (fromSender && thePrefs.wantsSourceExchangeLog())
+                logDebug([&]() -> QString { return QStringLiteral("SXRecv: buddy offer from %1, Kad port %2")
+                             .arg(sender->userName()).arg(buddyOfferPort); });
+            // Claimed over this link (OP_BUDDYCLAIM); see docs/protocol/extxs-buddy-route.md
+            if (fromSender && theApp.clientList)
+                buddyClaimStarted |= theApp.clientList->takeBuddyOffer(*sender, buddyOfferPort);
+            continue;
         }
 
         // v3+ clients send IDs in hybrid (host order) format so high-ID clients
@@ -4311,17 +4373,55 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
             ? (isLowID(userId) ? userId : htonl(userId))
             : userId;
 
+        // LowID routes: drop any part we must not dial (bogus, filtered, banned). A HighID
+        // is reached at its ID, so the route tags mean nothing there.
+        const bool lowId = isLowID(userIdHybrid);
+        const auto usableV4 = [](uint32 ip) {
+            if (!isGoodIP(ip))
+                return false;
+            if (theApp.ipFilter && theApp.ipFilter->isFiltered(ip)) {
+                theApp.ipFilter->logLastHit(u"exchanged source route");
+                return false;
+            }
+            return !(theApp.clientList
+                     && theApp.clientList->isBannedClient(Address::fromNetworkOrder(ip)));
+        };
+        if (!lowId || (lowIdAddress != 0 && !usableV4(lowIdAddress))) {
+            lowIdAddress = 0;
+            kadPort = udpPort = 0;
+        }
+        if (!lowId || (buddyIP != 0 && !usableV4(buddyIP)))
+            buddyIP = 0;
+        if (!lowId || (!buddyIPv6.isNull()
+                       && (!isGoodIP(buddyIPv6)
+                           || (theApp.clientList && theApp.clientList->isBannedClient(buddyIPv6)))))
+            buddyIPv6 = Address{};
+        if (buddyPort == 0 || (buddyIP == 0 && buddyIPv6.isNull())) {
+            buddyIP = 0;
+            buddyIPv6 = Address{};
+            buddyPort = 0;
+        }
+        if (!lowId)
+            haveBuddyID = false;
+
         // If we're firewalled too, neither side can accept the other's connection,
         // so a low-ID source is dead weight — unless it has a reachable public IPv6,
         // which we can connect to directly.
-        if (isLowID(userIdHybrid) && theApp.isFirewalled() && userIPv6.isNull()) {
-            // ...or a NAT rendezvous on the same server can introduce us (net/natt).
+        if (lowId && theApp.isFirewalled() && userIPv6.isNull()) {
+            // ...or a NAT rendezvous on the same server or via its buddy can introduce us (net/natt).
             natt::PeerInfo peer;
             peer.clientID = userIdHybrid;
             peer.serverAddress = Address::fromNetworkOrder(serverIP);
             peer.serverPort = serverPort;
             peer.hash = userHash;
             peer.hashKnown = std::ranges::any_of(userHash, [](uint8 b) { return b != 0; });
+            if (lowIdAddress != 0 && kadPort != 0)
+                peer.kadEndpoint = Endpoint(Address::fromNetworkOrder(lowIdAddress), kadPort);
+            if (haveBuddyID && buddyIP != 0) {
+                peer.buddyEndpoint = Endpoint(Address::fromNetworkOrder(buddyIP), buddyPort);
+                std::memcpy(peer.buddyID.data(), buddyID.data(), 16);
+                peer.buddyValid = true;
+            }
             if (!natt::NatRendezvous::keepLowIdSource(peer))
                 continue;
         }
@@ -4383,15 +4483,49 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
         if (extSX ? haveUserHash : (version >= 2))
             client->setUserHash(userHash.data());
 
+        // The direct-callback bit counts only with the address and Kad port to act on it
         if (extSX ? haveCryptFlags : (version >= 4))
-            client->setConnectOptions(cryptFlags, true, false);
+            client->setConnectOptions(cryptFlags, true, lowIdAddress != 0 && kadPort != 0);
+
+        if (lowIdAddress != 0) {
+            // Connect address only: TCP still goes via a callback (as for a Kad LowID source)
+            client->setConnectAddress(Address::fromNetworkOrder(lowIdAddress));
+            client->setKadPort(kadPort);
+            client->setUDPPort(udpPort);
+        }
+        if (buddyPort != 0) {
+            if (buddyIP != 0)
+                client->setBuddyAddress(Address::fromNetworkOrder(buddyIP));
+            client->setBuddyIPv6(buddyIPv6);
+            client->setBuddyPort(buddyPort);
+        }
+        // A peer with MODMISC_EXTXS_SKIPTAGS relays only Kad-learned (~KadID) buddy IDs. The
+        // compatibility target also relays its hello 0xBF, a plain KadID in raw word order:
+        // usable for our own callback attempt, but not handed on.
+        if (haveBuddyID)
+            client->setBuddyID(buddyID.data(), sender && sender->supportsExtSXSkipTags());
 
         // Queued, not dialled — MFC PartFile.cpp:3927. process() reaches it through
         // askForDownload(), which owns the socket cap, the re-ask throttle, the LowID
         // handling and the A4AF swap that a direct tryToConnect() skipped.
         // A result other than `client` means it was rejected or folded into a known one.
-        if (!theApp.downloadQueue || theApp.downloadQueue->checkAndAddSource(this, client) != client)
+        if (!theApp.downloadQueue || theApp.downloadQueue->checkAndAddSource(this, client) != client) {
+            // Known already: keep the routes it lacked
+            if (auto* known = findSourceLike(client); known && known != client)
+                known->adoptExchangedRoute(*client);
             delete client;
+        } else if (lowId) {
+            addedLowIds.push_back(client);
+        }
+    }
+
+    // The offer record comes last, so the hold is applied here. Dialled once the claim ends.
+    // LowID->LowID does not use OUR buddy, but they learn it for later.
+    if (buddyClaimStarted && theApp.clientList) {
+        for (auto* added : addedLowIds) {
+            if (theApp.clientList->isValidClient(added))
+                theApp.clientList->holdForBuddyClaim(*added);
+        }
     }
     } catch (...) {
         logWarning(QStringLiteral("Truncated or corrupt source-exchange packet for %1").arg(fileName()));

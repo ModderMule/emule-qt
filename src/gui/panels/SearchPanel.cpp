@@ -35,6 +35,7 @@
 #include "IpcMessage.h"
 #include "app/Ed3kLiveWatch.h"
 #include "app/SkinIcons.h"
+#include "utils/ScrollMessageBox.h"
 
 #include <set>
 #include <QMouseEvent>
@@ -2255,7 +2256,7 @@ void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category
         // safe here — unlike the reply handlers, which must defer one event-loop
         // turn (see Ed2kLinkImporter's note on nested loops).
         downloadKnown =
-            QMessageBox::question(
+            ScrollMessageBox::question(
                 this, tr("Download"),
                 tr("You have already downloaded the following file(s). "
                    "Download them again?\n\n%1")

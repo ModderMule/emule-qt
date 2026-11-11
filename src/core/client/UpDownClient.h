@@ -208,8 +208,27 @@ public:
     void setBuddyPort(uint16 port) { m_buddyPort = port; }
 
     [[nodiscard]] const uint8* buddyID() const { return m_buddyID.data(); }
-    void setBuddyID(const uint8* id);
+    /// @p relayable: known to be the ~KadID form (Kad, FINDBUDDY_REQ, or an ExtSX peer that
+    /// relays only that form), so we may hand it on in ExtSX.
+    void setBuddyID(const uint8* id, bool relayable = true);
     [[nodiscard]] bool hasValidBuddyID() const { return m_buddyIDValid; }
+    [[nodiscard]] bool buddyIDRelayable() const { return m_buddyIDValid && m_buddyIDRelayable; }
+    /// A relayable buddy ID plus a buddy endpoint: enough for a KADEMLIA_CALLBACK_REQ.
+    [[nodiscard]] bool hasRelayableBuddyRoute() const;
+    /// Fill route fields this client lacks (buddy, Kad/UDP ports, LowID address) from a
+    /// duplicate learned by source exchange. Never overwrites what we already know.
+    void adoptExchangedRoute(const UpDownClient& from);
+
+    /// A hello handshake with this client completed at least once. Not reset on disconnect.
+    [[nodiscard]] bool hasConnectedOnce() const { return m_connectedOnce; }
+    void setConnectedOnce(bool v) { m_connectedOnce = v; }
+    /// LowID source held back from dialling until our pending buddy claim ends.
+    [[nodiscard]] bool heldForBuddyClaim() const { return m_heldForBuddyClaim; }
+    void setHeldForBuddyClaim(bool v) { m_heldForBuddyClaim = v; }
+
+    /// Our Kad UDP port as peers should dial it; 0 when Kad is not connected.
+    /// MFC: external port once verified, else the internal one.
+    [[nodiscard]] static uint16 ownAdvertisedKadPort();
 
     // Socket / credits / friend
     [[nodiscard]] EMSocket* socket() const { return m_socket; }
@@ -810,6 +829,10 @@ public:
     void processReaskCallbackTCP(const uint8* data, uint32 size);
     void processBuddyPing();
     void processBuddyPong();
+    /// OP_BUDDYCLAIM: claim (we serve) or its answer (we claimed). See ClientList::takeBuddyOffer.
+    void processBuddyClaim(const uint8* data, uint32 size);
+    /// Send OP_BUDDYCLAIM CLAIM with our buddy ID (~KadID). False without Kad prefs.
+    bool sendBuddyClaim();
     [[nodiscard]] bool allowIncomingBuddyPingPong() const;
     [[nodiscard]] bool sendBuddyPingPong() const;
     void setLastBuddyPingPongTime();
@@ -1252,6 +1275,9 @@ private:
     uint16 m_buddyPort = 0;
     std::array<uint8, 16> m_buddyID{};
     bool m_buddyIDValid = false;
+    bool m_buddyIDRelayable = false;
+    bool m_connectedOnce = false;
+    bool m_heldForBuddyClaim = false;
     Address m_userIPv6;              // peer's advertised public IPv6
     Address m_buddyIPv6;             // serving buddy's public IPv6
 

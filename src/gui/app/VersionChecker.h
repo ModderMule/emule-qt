@@ -60,6 +60,15 @@ public:
     /// the comparison is wall-clock, so sleeping the machine cannot skip a check.
     void startPeriodicChecks();
 
+    /// Fetch the manifest without any version dialog or interval reset (Browse Skins).
+    /// Emits manifestReceived or manifestFetchFailed. A check already in flight is reused.
+    void fetchManifest();
+
+    /// Last usable manifest of this session; @ref hasManifest false before the first one.
+    [[nodiscard]] const Manifest& lastManifest() const { return m_lastManifest; }
+    [[nodiscard]] bool hasManifest() const { return m_hasManifest; }
+    [[nodiscard]] bool isFetching() const { return m_inFlight; }
+
 signals:
     /// @p manual distinguishes the menu item from the interval timer: an automatic
     /// check that finds nothing must not interrupt the user.
@@ -72,14 +81,22 @@ signals:
     /// offline session retries on the next tick instead of waiting out the interval.
     void checkCompleted(qint64 whenSecs);
 
+    /// Any fetch (check or fetchManifest) produced a usable manifest.
+    void manifestReceived(const eMule::VersionChecker::Manifest& info);
+    /// Any fetch failed.
+    void manifestFetchFailed(const QString& reason);
+
 private:
-    void start(bool manual);
+    enum class Mode { Auto, Manual, Quiet };
+    void start(Mode mode);
     void onReplyFinished(QNetworkReply* reply);
 
     QNetworkAccessManager* m_nam = nullptr;
     QTimer* m_periodicTimer = nullptr;
+    Manifest m_lastManifest;
     int64_t m_lastCheck = 0;
     bool m_inFlight = false;
+    bool m_hasManifest = false;
 };
 
 } // namespace eMule

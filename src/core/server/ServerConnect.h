@@ -103,6 +103,11 @@ class ServerConnect : public QObject {
 public:
     /// TCP keep-alive while the server wakes us for PR_NAT (no UDP keepalives then).
     static constexpr uint64 kNatWakeKeepAliveMs = 20 * 60 * 1000;
+    /// Keep-alive even when disabled: servers drop a client silent for 60 min (eNode-go).
+    static constexpr uint64 kIdleKeepAliveMs = 58 * 60 * 1000;
+
+    /// Effective keep-alive interval (ms) for the configured value; never 0.
+    [[nodiscard]] static uint64 keepAliveInterval(uint64 configured, bool natWake);
 
     explicit ServerConnect(ServerList& serverList, QObject* parent = nullptr);
     ~ServerConnect() override;

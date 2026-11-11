@@ -4,7 +4,9 @@
 /// @brief emuleqt-version.json parsing, shared by the GUI version check and the core auto-updater.
 
 #include <QDate>
+#include <QDateTime>
 #include <QHash>
+#include <QList>
 #include <QMetaType>
 #include <QString>
 #include <QStringList>
@@ -30,6 +32,20 @@ struct HosterResolverRelease {
     int api = 0;          ///< sidecar protocol (ResolverMain.PROTOCOL); 0 = not given, never auto-installed
 };
 
+/// One "skins" entry, written by scripts/publish-skin.py. Keyed by id in the manifest.
+struct SkinRelease {
+    QString id;            ///< ini base name, [A-Za-z0-9][A-Za-z0-9._-]{0,63}
+    QString name;          ///< display name
+    QString author;        ///< empty = not given
+    QString description;   ///< empty = not given
+    QDateTime date;        ///< zip mtime (UTC), invalid when absent
+    VersionDownload file;  ///< the zip
+    VersionDownload preview; ///< preview image, empty url = none
+
+    /// Id a skin folder may carry (path safe on every OS).
+    [[nodiscard]] static bool isValidId(const QString& id);
+};
+
 /// Everything emuleqt-version.json advertises.
 ///
 /// Fields the document omits stay empty; @ref error is the only thing that makes the
@@ -44,6 +60,7 @@ struct VersionManifestInfo {
     QString downloadUrl;   ///< this platform's usable "downloads" URL, empty otherwise
     QHash<QString, VersionDownload> downloads; ///< every entry, keyed "mac-arm64", ...
     HosterResolverRelease hosterResolver;      ///< empty file.url: none
+    QList<SkinRelease> skins;  ///< installable ones only, sorted by name
     QString error;         ///< why the document could not be used; empty on success
 
     [[nodiscard]] bool isValid() const { return error.isEmpty(); }

@@ -25,8 +25,9 @@ struct NotifierText {
 };
 
 /// @p total: DownloadAdded only, how many were added (arg lists the first few)
+/// @p arg2: Ed3kAnonExposed only, the other networks (empty: eD2K/Kad)
 [[nodiscard]] inline NotifierText notifierEventText(Ipc::NotifierEvent kind, const QString& arg,
-                                                   qint64 total = 0)
+                                                   qint64 total = 0, const QString& arg2 = {})
 {
     // translate() spelled out each time: lupdate reads the context from the call.
     switch (kind) {
@@ -53,8 +54,9 @@ struct NotifierText {
                 QCoreApplication::translate("Notifier", "Fatal Error: Unable to create socket on port %1").arg(arg)};
     case Ipc::NotifierEvent::Ed3kAnonExposed:     // ed3k hops.md §1: no MFC counterpart
         return {true, QCoreApplication::translate("Notifier", "Hidden file not hidden"),
-                QCoreApplication::translate("Notifier", "\"%1\" is shared under the anonymous key and on eD2K/Kad too: "
-                                                        "sources there show your address.").arg(arg)};
+                QCoreApplication::translate("Notifier", "\"%1\" is under the anonymous key and on %2 too: "
+                                                        "sources there show your address.")
+                    .arg(arg, arg2.isEmpty() ? QStringLiteral("eD2K/Kad") : arg2)};
     }
     return {};
 }

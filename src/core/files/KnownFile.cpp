@@ -1105,11 +1105,17 @@ std::unique_ptr<Packet> KnownFile::buildSrcInfoPacket(
         // for a QUIC NAT-T requester a LowID with its IPv4 server, which the receiver
         // needs for a rendezvous or foreign callback.
         // Intentional: any LowID with a server, not only NAT-capable ones (unlike eMuleAI): a HighID receiver can still use a same-server callback
+        //
+        // On ExtSX also every LowID we met (it goes out with its address and UDP ports, a
+        // direct callback or NAT-T target), with or without a buddy or a shared server, and
+        // one with a relayable buddy (Kad callback via the buddy tags).
         const bool lowIdV6 = extSX && client->openIPv6();
         const bool lowIdNat = forClient->supportsNatTQuic() && client->serverAddress().isIPv4()
                               && client->serverAddress().toNetworkUint32() != 0
                               && client->serverPort() != 0;
-        if (client->hasLowID() && !lowIdV6 && !lowIdNat)
+        const bool lowIdRoute = extSX
+                                && (client->hasConnectedOnce() || client->hasRelayableBuddyRoute());
+        if (client->hasLowID() && !lowIdV6 && !lowIdNat && !lowIdRoute)
             continue;
 
         // An address-less client can't be described — except on the ExtSX path, where
@@ -1168,6 +1174,23 @@ std::unique_ptr<Packet> KnownFile::buildSrcInfoPacket(
         ++count;
     }
 
+    // Our own record carrying CT_MOD_BUDDY_OFFER, for a LowID requester without a buddy.
+    // A receiver that knows the tag takes it as the offer, an older one as a duplicate of us.
+    if (extSX && forClient->supportsExtSXSkipTags() && count < maxSources) {
+        const uint16 offerPort = theApp.clientList ? theApp.clientList->buddyOfferPort(*forClient) : 0;
+        const uint32 ownIp = theApp.publicIP();
+        if (offerPort != 0 && isGoodIP(ownIp)) {
+            data.writeUInt32(ownIp);   // = htonl(hybrid), as for every ExtSX record
+            data.writeUInt16(theApp.advertisedTcpPort());
+            data.writeUInt8(1);
+            Tag(CT_MOD_BUDDY_OFFER, static_cast<uint32>(offerPort)).writeNewEd2kTag(data);
+            ++count;
+            if (thePrefs.wantsSourceExchangeLog())
+                logDebug([&]() -> QString { return QStringLiteral("SXSend: buddy offer (Kad port %1) to %2")
+                             .arg(offerPort).arg(forClient->userName()); });
+        }
+    }
+
     if (count == 0)
         return nullptr;
 
@@ -1204,6 +1227,30 @@ void KnownFile::writeExtendedSourceExchangeData(SafeMemFile& data, const UpDownC
     if (src->openIPv6() && src->userIPv6().isIPv6() && src->userIPv6().isPublicIP())
         tags.emplace_back(CT_MOD_IP_V6, src->userIPv6().ipv6Bytes().data());
 
+    // LowID routes. All tags the compatibility target reads itself, so no skip-tags gate.
+    // Address and UDP ports: the public IPv4 we met it on, for a direct UDP callback or
+    // a NAT-T punch.
+    bool sentDirectRoute = false;
+    if (src->hasLowID()) {
+        const Address& seen = src->connectAddress();
+        if (seen.isIPv4() && isGoodIP(seen)) {
+            tags.emplace_back(CT_EMULE_ADDRESS, seen.toNetworkUint32());
+            if (src->kadPort() != 0 || src->udpPort() != 0) {
+                tags.emplace_back(CT_EMULE_UDPPORTS, (static_cast<uint32>(src->kadPort()) << 16)
+                                                         | src->udpPort());
+                sentDirectRoute = src->kadPort() != 0;
+            }
+        }
+        if (src->hasRelayableBuddyRoute()) {
+            if (src->buddyAddress().isIPv4())
+                tags.emplace_back(CT_EMULE_BUDDYIP, src->buddyAddress().toNetworkUint32());
+            if (src->buddyIPv6().isIPv6() && src->buddyIPv6().isPublicIP())
+                tags.emplace_back(CT_EMULE_SERVINGBUDDYIPV6, src->buddyIPv6().ipv6Bytes().data());
+            tags.emplace_back(CT_EMULE_BUDDYUDP, static_cast<uint32>(src->buddyPort()));
+            tags.emplace_back(CT_EMULE_SERVINGBUDDYID, src->buddyID());
+        }
+    }
+
     // The user hash and crypt options lived in the classic record's version-gated tail
     // (>= 2 and >= 4). ExtSX pins the version at 1, so a source learned this way arrives
     // with no hash — breaking credits, secure identification and obfuscated-UDP keying to
@@ -1218,8 +1265,8 @@ void KnownFile::writeExtendedSourceExchangeData(SafeMemFile& data, const UpDownC
         if (src->hasValidHash())
             tags.emplace_back(CT_EMULE_USERHASH, src->userHash());
 
-        // Same bit layout as the classic v4 tail; bit 3 (direct UDP callback) is deliberately
-        // never set, since the record carries no Kad UDP port for the receiver to act on.
+        // Same bit layout as the classic v4 tail. Bit 3 (direct UDP callback) only when the
+        // record carries the address and Kad port the receiver needs to act on it.
         uint8 cryptOpts = 0;
         if (src->supportsCryptLayer())
             cryptOpts |= 0x01;
@@ -1227,6 +1274,8 @@ void KnownFile::writeExtendedSourceExchangeData(SafeMemFile& data, const UpDownC
             cryptOpts |= 0x02;
         if (src->requiresCryptLayer())
             cryptOpts |= 0x04;
+        if (sentDirectRoute && src->supportsDirectUDPCallback())
+            cryptOpts |= 0x08;
         if (cryptOpts != 0)
             tags.emplace_back(CT_EMULE_CONOPTS, static_cast<uint32>(cryptOpts));
     }

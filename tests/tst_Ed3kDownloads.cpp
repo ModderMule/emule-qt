@@ -146,6 +146,7 @@ private slots:
     void aHigherPriorityGetsMoreBlocks();
     void aRaisedPriorityTakesTheSource();
     void queuedPrioritySwitchesWaitThirtyMinutes();
+    void aDownloadGoesUnderTheKeyItIsGiven();
     void cleanup() { QTest::qWait(10); }
 };
 
@@ -566,6 +567,66 @@ void tst_Ed3kDownloads::queuedPrioritySwitchesWaitThirtyMinutes()
     QVERIFY(!Ed3kJoinBase::switchAllowed(true, now - minutes(29), now));
     QVERIFY(Ed3kJoinBase::switchAllowed(true, now - minutes(30), now));
     QVERIFY(Ed3kJoinBase::switchAllowed(false, now - seconds(1), now));
+}
+
+// hops.md §1: a set's member goes under the set's key, never under both keys
+void tst_Ed3kDownloads::aDownloadGoesUnderTheKeyItIsGiven()
+{
+    QTemporaryDir db;
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    Ed3kDownloads d(b, db.path());
+    d.setSearchEnabled(false);
+    d.setDirs(QDir(db.path()).filePath(QStringLiteral("temp")), QDir(db.path()).filePath(QStringLiteral("in")));
+    d.start();
+    std::vector<std::pair<::ed3k::Root, QByteArray>> anonAdded;
+    d.setAnonAddedHook([&](const ::ed3k::Root& r, const QByteArray& md4, const QString&) { anonAdded.emplace_back(r, md4); });
+    const auto rootOf = [](std::uint8_t n) {
+        ::ed3k::Root r{};
+        r.bytes.fill(n);
+        return r;
+    };
+    Ed3kDownloadSpec spec;
+    spec.size = 1000;
+    spec.paused = true;
+    // hiding off: nothing under the anonymous key
+    spec.root = rootOf(0x51);
+    spec.name = QStringLiteral("a.bin");
+    spec.key = ::ed3k::KeyKind::Anon;
+    QVERIFY(!d.add(spec));
+    QVERIFY(!d.contains(spec.root));
+    // the node key: recorded
+    spec.key = ::ed3k::KeyKind::Node;
+    QVERIFY(d.add(spec));
+    QCOMPARE(b.hide().recorded(spec.root), std::optional(::ed3k::KeyKind::Node));
+    QVERIFY(anonAdded.empty());
+    // hiding on: a root recorded under the other key is refused
+    b.setHideSettings(Ed3kHideSettings{true, 1, true, 25});
+    QVERIFY(b.hide().hiding());
+    spec.root = rootOf(0x52);
+    spec.name = QStringLiteral("b.bin");
+    b.hide().record(spec.root, ::ed3k::KeyKind::Node);
+    spec.key = ::ed3k::KeyKind::Anon;
+    QVERIFY(!d.add(spec));
+    // a new one under the anonymous key while hiding (the set's, not the switch's)
+    spec.root = rootOf(0x53);
+    spec.name = QStringLiteral("c.bin");
+    spec.md4 = QByteArray(16, char(0x7e));
+    QVERIFY(d.add(spec));
+    QCOMPARE(b.hide().recorded(spec.root), std::optional(::ed3k::KeyKind::Anon));
+    QCOMPARE(d.keyOfRoot(spec.root), ::ed3k::KeyKind::Anon);
+    // the exposure check is asked with the link's MD4 (hops.md §1 SHOULD)
+    QCOMPARE(anonAdded.size(), std::size_t(1));
+    QCOMPARE(anonAdded.front().second, spec.md4);
+    // a node-key set member while hiding: the node key, not the switch's
+    spec.root = rootOf(0x54);
+    spec.name = QStringLiteral("d.bin");
+    spec.key = ::ed3k::KeyKind::Node;
+    QVERIFY(d.add(spec));
+    QCOMPARE(d.keyOfRoot(spec.root), ::ed3k::KeyKind::Node);
+    QCOMPARE(anonAdded.size(), std::size_t(1));
+    d.stop();
+    b.stop();
 }
 
 QTEST_GUILESS_MAIN(tst_Ed3kDownloads)

@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 
 #ifndef Q_OS_WIN
 #include <csignal>
@@ -27,6 +28,7 @@
 #endif
 #ifdef Q_OS_LINUX
 #include <sys/syscall.h>
+#include <sys/uio.h>
 #endif
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
@@ -55,6 +57,95 @@ void captureStackHandler(int)
     // (its first call loads libgcc_s): done in the constructor
     s_frameCount.store(::backtrace(s_frames, kMaxFrames));
     s_captured.store(true);
+}
+
+/// The frames the handler caught, symbolized
+QString capturedStackText()
+{
+    const int count = s_frameCount.load();
+    QString out;
+    if (char** symbols = ::backtrace_symbols(s_frames, count)) {
+        // frames 0-1 are the handler and the signal trampoline
+        for (int i = 0; i < count; ++i)
+            out += QStringLiteral("#%1 %2\n").arg(i).arg(QString::fromLocal8Bit(symbols[i]));
+        ::free(symbols);
+    }
+    return out;
+}
+#endif
+
+#ifdef Q_OS_LINUX
+/// A system call the main thread may wait in; which argument names a file
+struct SyscallInfo {
+    long nr;
+    const char* name;
+    int fdArg;     ///< -1: none
+    int pathArg;   ///< -1: none; *at calls: the dir fd is the argument before
+};
+
+// Only what the core thread does with files; the rest prints as a number
+constexpr SyscallInfo kSyscalls[] = {
+    {SYS_read, "read", 0, -1},
+    {SYS_write, "write", 0, -1},
+    {SYS_pread64, "pread64", 0, -1},
+    {SYS_pwrite64, "pwrite64", 0, -1},
+    {SYS_readv, "readv", 0, -1},
+    {SYS_writev, "writev", 0, -1},
+    {SYS_fsync, "fsync", 0, -1},
+    {SYS_fdatasync, "fdatasync", 0, -1},
+    {SYS_ftruncate, "ftruncate", 0, -1},
+    {SYS_fallocate, "fallocate", 0, -1},
+    {SYS_close, "close", 0, -1},
+    {SYS_fstat, "fstat", 0, -1},
+    {SYS_getdents64, "getdents64", 0, -1},
+    {SYS_sync_file_range, "sync_file_range", 0, -1},
+    {SYS_openat, "openat", -1, 1},
+    {SYS_newfstatat, "newfstatat", -1, 1},
+    {SYS_statx, "statx", -1, 1},
+    {SYS_renameat, "renameat", -1, 1},
+    {SYS_renameat2, "renameat2", -1, 1},
+    {SYS_unlinkat, "unlinkat", -1, 1},
+    {SYS_mkdirat, "mkdirat", -1, 1},
+    {SYS_statfs, "statfs", -1, 0},
+#ifdef SYS_open
+    {SYS_open, "open", -1, 0},
+    {SYS_stat, "stat", -1, 0},
+    {SYS_rename, "rename", -1, 0},
+    {SYS_unlink, "unlink", -1, 0},
+    {SYS_mkdir, "mkdir", -1, 0},
+#endif
+};
+
+/// What /proc/self/fd/<fd> points at
+QString fdTarget(long fd)
+{
+    char buf[1024];
+    const QByteArray link = QByteArray("/proc/self/fd/") + QByteArray::number(fd);
+    const ssize_t n = ::readlink(link.constData(), buf, sizeof(buf));
+    return n > 0 ? QString::fromLocal8Bit(buf, static_cast<qsizetype>(n)) : QStringLiteral("?");
+}
+
+/// A C string in this process; a bad pointer reads as "?" instead of crashing
+QString readOwnString(unsigned long long addr)
+{
+    if (addr == 0)
+        return QStringLiteral("?");
+    char buf[1024];
+    std::size_t got = 0;
+    while (got < sizeof(buf)) {
+        // up to the page end: the next page may be unmapped
+        const std::size_t room = 4096 - ((addr + got) % 4096);
+        iovec local{buf + got, std::min(room, sizeof(buf) - got)};
+        iovec remote{reinterpret_cast<void*>(addr + got), local.iov_len};
+        const ssize_t n = ::process_vm_readv(::getpid(), &local, 1, &remote, 1, 0);
+        if (n <= 0)
+            break;
+        if (std::memchr(buf + got, 0, static_cast<std::size_t>(n)))
+            return QString::fromLocal8Bit(buf);
+        got += static_cast<std::size_t>(n);
+    }
+    return got > 0 ? QString::fromLocal8Bit(buf, static_cast<qsizetype>(got)) + QStringLiteral("…")
+                   : QStringLiteral("?");
 }
 #endif
 
@@ -257,7 +348,11 @@ void StallWatchdog::watch()
             const auto ms = (last - stallFromNs) / 1'000'000;
             logWarning(QStringLiteral("Core main thread ran again after a %1 ms stall").arg(ms));
             stallFromNs = 0;
+            if (m_lateStackPending)
+                reportLateStack(true);
         }
+        if (m_lateStackPending)
+            reportLateStack(false);
         if (!m_beat->pending.load())
             postBeat();
         const auto stalled = std::chrono::milliseconds((nowNs() - m_beat->lastNs.load()) / 1'000'000);
@@ -292,7 +387,12 @@ void StallWatchdog::report(std::chrono::milliseconds stalledFor)
                 .arg(QDateTime::currentDateTime().toString(Qt::ISODateWithMs));
     if (const QString kernel = mainThreadKernelState(); !kernel.isEmpty())
         text += kernel + u'\n';
+    if (const QString call = mainThreadSyscall(); !call.isEmpty())
+        text += call + u'\n';
     text += QStringLiteral("\nMain thread stack:\n") + mainThreadStack();
+#ifdef EMULE_STALL_HAVE_BACKTRACE
+    m_lateStackPending = !s_captured.load();
+#endif
 
     QString path;
     if (!m_crashDir.isEmpty() && QDir().mkpath(m_crashDir)) {
@@ -319,6 +419,34 @@ void StallWatchdog::report(std::chrono::milliseconds stalledFor)
         logWarning(QStringLiteral("  stall: ") + line);
 }
 
+void StallWatchdog::reportLateStack(bool loopRan)
+{
+#ifdef EMULE_STALL_HAVE_BACKTRACE
+    // the signal stays pending while the call sleeps, the handler runs as it returns:
+    // its frames are the caller of the blocked call
+    QString stack;
+    if (s_captured.load())
+        stack = capturedStackText();
+    else if (loopRan)
+        stack = QStringLiteral("(the main thread never answered)\n");
+    else
+        return;
+    m_lateStackPending = false;
+
+    const QString text = QStringLiteral("\nMain thread stack once the kernel call returned:\n") + stack;
+    if (const QString path = lastReportPath(); !path.isEmpty()) {
+        QFile f(path);
+        if (f.open(QIODevice::WriteOnly | QIODevice::Append))
+            f.write(text.toUtf8());
+    }
+    for (const QString& line : text.split(u'\n', Qt::SkipEmptyParts).mid(0, 40))
+        logWarning(QStringLiteral("  stall: ") + line);
+#else
+    Q_UNUSED(loopRan);
+    m_lateStackPending = false;
+#endif
+}
+
 void StallWatchdog::pruneReports() const
 {
     QDir dir(m_crashDir);
@@ -339,17 +467,8 @@ QString StallWatchdog::mainThreadStack() const
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     if (!s_captured.load())
         return QStringLiteral("(no answer in 2 s: blocked in an uninterruptible kernel call, "
-                              "see the state above)\n");
-
-    const int count = s_frameCount.load();
-    QString out;
-    if (char** symbols = ::backtrace_symbols(s_frames, count)) {
-        // frames 0-1 are the handler and the signal trampoline
-        for (int i = 0; i < count; ++i)
-            out += QStringLiteral("#%1 %2\n").arg(i).arg(QString::fromLocal8Bit(symbols[i]));
-        ::free(symbols);
-    }
-    return out;
+                              "see the state above; the stack follows once the call returns)\n");
+    return capturedStackText();
 #elif defined(EMULE_STALL_HAVE_WIN_UNWIND)
     // a thread waiting in the kernel can be suspended too: its stack shows the call it waits in
     if (!m_mainThread)
@@ -416,6 +535,48 @@ QString StallWatchdog::mainThreadKernelState() const
     }
     if (!kernelStack.isEmpty())
         out += QStringLiteral("\nKernel stack:\n") + kernelStack;
+    return out;
+#else
+    return {};
+#endif
+}
+
+QString StallWatchdog::mainThreadSyscall() const
+{
+#ifdef Q_OS_LINUX
+    // "nr arg1..arg6 sp pc" while in a call, "-1 sp pc" when blocked outside one (a
+    // page fault), "running" otherwise. Its own process may read it without ptrace rights.
+    QFile f(QStringLiteral("/proc/self/task/%1/syscall").arg(m_mainTid));
+    if (!f.open(QIODevice::ReadOnly))
+        return {};
+    const QList<QByteArray> fields = f.readAll().trimmed().split(' ');
+    bool ok = false;
+    const long nr = fields.value(0).toLong(&ok);
+    if (!ok)
+        return QStringLiteral("Syscall: %1").arg(QString::fromLatin1(fields.value(0)));
+    if (nr < 0)
+        return QStringLiteral("Syscall: none (a page fault or a kernel wait outside a call)");
+    const auto arg = [&fields](int i) { return fields.value(1 + i).toULongLong(nullptr, 0); };
+
+    const auto* info = std::find_if(std::begin(kSyscalls), std::end(kSyscalls),
+                                    [nr](const SyscallInfo& sc) { return sc.nr == nr; });
+    if (info == std::end(kSyscalls))
+        return QStringLiteral("Syscall: %1").arg(nr);
+    QString out = QStringLiteral("Syscall: %1").arg(QLatin1StringView(info->name));
+    if (info->fdArg >= 0) {
+        const auto fd = static_cast<long>(arg(info->fdArg));
+        out += QStringLiteral(" fd %1 → %2").arg(fd).arg(fdTarget(fd));
+    }
+    if (info->pathArg >= 0) {
+        out += QStringLiteral(" \"%1\"").arg(readOwnString(arg(info->pathArg)));
+        if (info->pathArg > 0) {   // *at: relative to a dir fd (AT_FDCWD = -100)
+            const auto dirFd = static_cast<long>(static_cast<int>(arg(info->pathArg - 1)));
+            if (dirFd >= 0)
+                out += QStringLiteral(" in %1").arg(fdTarget(dirFd));
+        }
+        if (nr == SYS_renameat || nr == SYS_renameat2)
+            out += QStringLiteral(" → \"%1\"").arg(readOwnString(arg(3)));
+    }
     return out;
 #else
     return {};

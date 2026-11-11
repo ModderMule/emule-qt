@@ -10,6 +10,7 @@
 #include "IpcMessage.h"
 #include "utils/Log.h"
 #include "utils/StringUtils.h"
+#include "utils/ModalHost.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -89,9 +90,7 @@ Ed3kSetsDialog* Ed3kSetsDialog::showDialog(QWidget* parent, IpcClient* ipc, Tab 
         s_dialog->setAttribute(Qt::WA_DeleteOnClose);
     }
     s_dialog->m_tabs->setCurrentIndex(tab);
-    s_dialog->show();
-    s_dialog->raise();
-    s_dialog->activateWindow();
+    ModalHost::show(s_dialog, parent);   // also from links and pushes while Options is open
     return s_dialog;
 }
 

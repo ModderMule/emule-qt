@@ -74,6 +74,7 @@ public:
         bool usenetChanged = false;   ///< a usenet* value moved: the session re-reads them
         bool btChanged = false;       ///< a bt* value moved: the BitTorrent engine re-reads them
         bool ed3kChanged = false;     ///< an ed3k* value moved: the ed3k node restarts or stops
+        bool speedRatioHeld = false;  ///< maxUpload/maxDownload changed to fit the UL:DL ratio
     };
     static PrefApplyOutcome applyPreferenceChanges(const PrefChanges& changes);
     /// {ports, network, tcpPort, udpPort}: what became of a port change (PortChangeNotice)
@@ -287,6 +288,7 @@ private:
     void handleSetUsenetFilesSkipped(const Ipc::IpcMessage& msg);
     void handleInspectNzb(const Ipc::IpcMessage& msg);
     void handleClearUsenetCompleted(const Ipc::IpcMessage& msg);
+    void handleFetchNzbImages(const Ipc::IpcMessage& msg);
 
     // eNode meta search (750-754) — IpcClientHandlerMeta.cpp
     void handleFetchMetaFile(const Ipc::IpcMessage& msg);

@@ -120,7 +120,8 @@ target_link_libraries(emuleqt
 )
 
 if(APPLE)
-    target_link_libraries(emulegui PUBLIC "-framework IOKit" "-framework CoreFoundation" "-framework CoreServices")
+    # objc: NSApp activation in utils/AppActivation.cpp
+    target_link_libraries(emulegui PUBLIC "-framework IOKit" "-framework CoreFoundation" "-framework CoreServices" objc)
 elseif(WIN32)
     # SHChangeNotify in FileAssociation.cpp -- Qt happens to drag shell32 in, but
     # not by contract. ole32/uuid: ITaskbarList3 in TaskbarProgressWin.cpp.

@@ -7,6 +7,7 @@
 #include <QFileInfo>
 #include <QHostAddress>
 #include <QRegularExpression>
+#include <QSet>
 #include <QTcpServer>
 #include <QTcpSocket>
 
@@ -140,6 +141,41 @@ QStringList I2pRouter::arguments(const Config& config, quint16 samPort, const QS
     return a;
 }
 
+int I2pRouter::seedAddressBook(const QString& dataDir)
+{
+    // i2pd's index: "name,b32" lines; names resolve from it alone (lease set by hash)
+    const QDir book(QDir(dataDir).filePath(QStringLiteral("addressbook")));
+    if (!book.mkpath(QStringLiteral(".")))
+        return 0;
+    QFile f(book.filePath(QStringLiteral("addresses.csv")));
+    QByteArray have;
+    if (f.exists()) {
+        if (!f.open(QIODevice::ReadOnly))
+            return 0;
+        have = f.readAll();
+        f.close();
+    }
+    QSet<QByteArray> names;
+    for (const QByteArray& line : have.split('\n'))
+        if (const qsizetype comma = line.indexOf(','); comma > 0)
+            names.insert(line.left(comma).trimmed());
+    QByteArray add;
+    int count = 0;
+    for (const SeedHost& h : kSeedHosts) {
+        if (names.contains(QByteArray(h.name)))
+            continue;
+        add += QByteArray(h.name) + ',' + h.b32 + '\n';
+        ++count;
+    }
+    if (count == 0)
+        return 0;
+    if (!have.isEmpty() && !have.endsWith('\n'))
+        add.prepend('\n');
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Append))
+        return 0;
+    return f.write(add) == add.size() ? count : 0;
+}
+
 bool I2pRouter::available() const
 {
     return !m_binary.isEmpty() || I2pdInstaller::supported();
@@ -214,6 +250,8 @@ void I2pRouter::launch()
     writeOnce(data.filePath(QStringLiteral("tunnels.conf")), "# no tunnels: libtorrent opens its own over SAM\n");
     data.mkpath(QStringLiteral("tunnels.d"));
     stopStaleRouter(m_config.dataDir);
+    if (const int seeded = seedAddressBook(m_config.dataDir); seeded > 0)
+        logTorrent(QStringLiteral("I2P: %1 tracker names added to the router's address book").arg(seeded));
     const QString certs = findCertificates(m_binary);
     if (certs.isEmpty())
         logTorrentWarning(QStringLiteral("I2P: no reseed certificates beside %1; a first start may not find the network")

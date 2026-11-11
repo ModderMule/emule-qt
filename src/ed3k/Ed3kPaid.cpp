@@ -493,12 +493,23 @@ std::expected<void, QString> Ed3kPaid::renewNow(const QString& scopeHex)
     return {};
 }
 
-void Ed3kPaid::followChannel(const ffi::Key32& key, const ffi::Scope& scope, const QString& title)
+void Ed3kPaid::followChannel(const ffi::Key32& key, const ffi::Scope& scope, const QString& title, ffi::KeyKind use)
 {
     // attached while watched only: a private channel's key requests prove its secret, which
     // only the live watch gives the core (paidFollowPrivate there)
-    m_subs[scope].watching = true;
+    Sub& s = m_subs[scope];
+    s.watching = true;
+    // hops.md §1: the channel follows the stream's key; one key holds the scope (as buy())
+    const bool anon = use == ffi::KeyKind::Anon;
+    const bool moved = anon != s.anon;
+    if (moved) {
+        detachSub(s);
+        s.anon = anon;
+        logEd3k(QStringLiteral("ed3k: paid scope %1 followed under the %2 key").arg(hexOf(scope), anon ? QStringLiteral("anonymous") : QStringLiteral("node")));
+    }
     follow(key, scope, Kind::Channel, title);
+    if (moved)
+        save();
 }
 
 void Ed3kPaid::leaveChannel(const ffi::Scope& scope)

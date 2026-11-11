@@ -801,20 +801,15 @@ void ServerConnect::keepConnectionAlive()
     if (!m_connected || !m_connectedSocket)
         return;
 
-    // With the PR_NAT wake-up we send no keepalives over UDP, and those also counted as
-    // activity for this session on eNode-go (idle limit 3600 s). An empty OP_OFFERFILES
-    // after 20 min of silence replaces them: 10 bytes instead of ~200 a minute.
-    uint64 timeout = m_config.serverKeepAliveTimeout;
     const Server* cur = m_connectedSocket->currentServer();
-    if (cur && cur->supportsNatWake() && (timeout == 0 || timeout > kNatWakeKeepAliveMs))
-        timeout = kNatWakeKeepAliveMs;
-    if (timeout == 0)
-        return;
+    const uint64 timeout = keepAliveInterval(m_config.serverKeepAliveTimeout,
+                                             cur && cur->supportsNatWake());
 
+    // Only our own sends count: the server's idle deadline ignores what it sends us.
     // Same clock as the socket's stamp; two separate timers put the idle time off by
     // however long after us the socket was created.
     const uint64 elapsed = getTickCount();
-    const uint64 lastTx = m_connectedSocket->lastTransmission();
+    const uint64 lastTx = m_connectedSocket->lastSent();
 
     if (elapsed >= lastTx + timeout) {
         // "Ping" the server with an empty publish files packet
@@ -827,6 +822,15 @@ void ServerConnect::keepConnectionAlive()
                              .arg(elapsed - lastTx); });
         m_connectedSocket->sendPacket(std::move(packet));
     }
+}
+
+uint64 ServerConnect::keepAliveInterval(uint64 configured, bool natWake)
+{
+    // With the PR_NAT wake-up we send no keepalives over UDP, and those also counted as
+    // activity for this session on eNode-go. An empty OP_OFFERFILES after 20 min of
+    // silence replaces them: 10 bytes instead of ~200 a minute.
+    const uint64 cap = natWake ? kNatWakeKeepAliveMs : kIdleKeepAliveMs;
+    return (configured == 0 || configured > cap) ? cap : configured;
 }
 
 // ---------------------------------------------------------------------------

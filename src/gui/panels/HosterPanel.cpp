@@ -15,6 +15,7 @@
 #include "utils/FileTypeIcons.h"
 #include "utils/ListActivation.h"
 #include "utils/MenuUtils.h"
+#include "utils/ModalHost.h"
 #include "utils/StringUtils.h"
 #include "IpcMessage.h"
 #include "app/SkinIcons.h"
@@ -875,6 +876,7 @@ void HosterPanel::onPuzzle(const IpcMessage& msg)
     auto* dlg = new HosterPuzzleDialog(image, msg.fieldString(3), name, msg.fieldString(4), int(msg.field(5).toInteger()),
                                        window());
     dlg->setAttribute(Qt::WA_DeleteOnClose);
+    ModalHost::adopt(dlg);   // usable while Options is open
     connect(dlg, &HosterPuzzleDialog::answered, this, [this, puzzle, dlg](const QString& text, bool skipHoster) {
         m_puzzleDialogs.removeAll(dlg);
         if (skipHoster) {

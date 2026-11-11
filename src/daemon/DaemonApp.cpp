@@ -381,6 +381,26 @@ bool DaemonApp::start()
                        : 0.0f;
         });
     }
+    // usenetShareFiles (#177): published files are remembered either way, so switching
+    // sharing off later covers earlier downloads too; off keeps them out of the share
+    m_usenetLanded.setListPath(QDir(thePrefs.configDir()).filePath(QStringLiteral("Usenet/landed.txt")));
+    m_usenetLanded.load();
+    m_usenetLanded.setBlocking(!thePrefs.usenetShareFiles());
+    if (theApp.sharedFileList)
+        theApp.sharedFileList->setNeverShared([this](const QString& path) { return neverShared(path); });
+    if (auto* queue = m_usenetSession->queue()) {
+        // releases done before the list existed
+        QStringList done;
+        for (const auto* item : queue->items())
+            done += item->publishedPaths;
+        m_usenetLanded.add(done);
+        connect(queue, &usenet::UsenetQueue::filesPublished, this, [this](const QStringList& paths) {
+            m_usenetLanded.add(paths);
+            // a folder scan may have taken them meanwhile
+            if (m_usenetLanded.blocking() && theApp.sharedFileList)
+                theApp.sharedFileList->dropNeverShared();
+        });
+    }
     if (thePrefs.usenetEnabled() && !m_enginesHeld)
         m_usenetSession->start();
 
@@ -389,6 +409,16 @@ bool DaemonApp::start()
 #ifdef EMULE_HAVE_ED3K
     m_ed3kSession = std::make_unique<ed3k::Ed3kSession>();
     Ed3kBridge::setSession(m_ed3kSession.get());
+    // the app's IP filter on ed3k too (#177), read live: no copy to refresh on a change.
+    // Not on hoster downloads: those are HTTP to hoster servers, not peers
+    m_ed3kSession->setPeerFilter([](const QHostAddress& addr) {
+        if (!theApp.ipFilter || theApp.ipFilter->isEmpty())
+            return false;
+        if (!theApp.ipFilter->isFiltered(Address::fromQHostAddress(addr), thePrefs.ipFilterLevel()))
+            return false;
+        theApp.ipFilter->logLastHit(u"ed3k datagram");
+        return true;
+    });
     // eD2K UDP takes the port of ed3k's own socket: ed3k lets go and comes back shared (§14.1)
     theApp.yieldEd3kUdpPort = [this](uint16 port) {
         if (m_ed3kSession && m_ed3kSession->isRunning() && !m_ed3kSession->settings().sharedSocket
@@ -418,6 +448,13 @@ bool DaemonApp::start()
         connect(m_ed3kShared.get(), &ed3k::Ed3kShared::anonExposed, m_notifierBridge.get(),
                 &CoreNotifierBridge::onEd3kAnonExposed);
         Ed3kBridge::setShared(m_ed3kShared.get());
+        // hops.md §1 SHOULD: an eD2K download of a file shared under the anonymous key
+        if (theApp.downloadQueue)
+            connect(theApp.downloadQueue, &DownloadQueue::fileAdded, m_ed3kShared.get(), [s = m_ed3kShared.get()](PartFile* f) {
+                if (f)
+                    (void)s->tellDownloadElsewhere(QByteArray(reinterpret_cast<const char*>(f->fileHash()), 16), f->fileName(),
+                                                   QStringLiteral("eD2K"));
+            });
         // a completed download stays the same object: no fileAdded
         if (theApp.downloadQueue)
             connect(theApp.downloadQueue, &DownloadQueue::fileCompleted, m_ed3kShared.get(), [s = m_ed3kShared.get()](PartFile* f) {
@@ -472,7 +509,7 @@ bool DaemonApp::start()
             return;
         links.append(link);
         thePrefs.setEd3kNodeLists(links);
-        thePrefs.save();
+        thePrefs.saveInBackground();
     });
     Ed3kBridge::setBootstrap(m_ed3kBootstrap.get());
     // readable names (DNS duty, name lists) and the local website server; attach on statusChanged
@@ -577,18 +614,20 @@ bool DaemonApp::start()
     m_ed3kSets->setPaid(m_ed3kPaid.get());
     // batch 15 #12 (hidden-set.md §4.2 MUST): opened plain copies of sealed members are never
     // shared, by eD2K nor ed3k; the sealed copy is
+    // (neverShared()); also hoster downloads while ed3kHosterShareFiles is off (#177)
     {
-        const QPointer<ed3k::Ed3kPlainCopies> plain(&m_ed3kSets->plainCopies());
-        const auto neverShared = [plain](const QString& path) { return plain && plain->contains(path); };
+        m_hosterLanded.setListPath(QDir(ed3k::stateDir(thePrefs.configDir())).filePath(QStringLiteral("hoster/landed.txt")));
+        m_hosterLanded.load();
+        m_hosterLanded.setBlocking(!thePrefs.ed3kHoster().shareFiles);
         if (theApp.sharedFileList) {
-            theApp.sharedFileList->setNeverShared(neverShared);
-            connect(plain, &ed3k::Ed3kPlainCopies::added, this, [] {
+            connect(&m_ed3kSets->plainCopies(), &ed3k::Ed3kPlainCopies::added, this, [] {
                 if (theApp.sharedFileList)
                     theApp.sharedFileList->dropNeverShared();
             });
+            theApp.sharedFileList->dropNeverShared();
         }
         if (m_ed3kShared)
-            m_ed3kShared->setNeverShared(neverShared);
+            m_ed3kShared->setNeverShared([this](const QString& path) { return neverShared(path); });
     }
     // name.md §6.4: a set the user follows stays in the website cache, followed (batch 14)
     m_ed3kNames->keepUserSets(m_ed3kSets.get());
@@ -608,8 +647,13 @@ bool DaemonApp::start()
     // My ed3k Sets (batch 15): published again at each ed3k start; sold through the seller
     m_ed3kOwnSets = std::make_unique<ed3k::Ed3kOwnSets>(*m_ed3kSession, thePrefs.configDir());
     m_ed3kOwnSets->setSeller(m_ed3kSeller.get());
+    m_ed3kOwnSets->setWatchFolders(thePrefs.ed3kOwnSetsWatch());
     if (m_ed3kShared)
         m_ed3kOwnSets->setSharedElsewhere([s = m_ed3kShared.get()](const ::ed3k::Root& root) { return s->sharesRoot(root); });
+    // shareUnderKey (hops.md §1): a file Shared Files or the downloads hold is not moved
+    m_ed3kOwnSets->setHeldElsewhere([s = m_ed3kShared.get(), d = m_ed3kDownloads.get()](const ::ed3k::Root& root) {
+        return (s && s->holdsRoot(root)) || (d && d->contains(root));
+    });
     Ed3kOwnSetsBridge::setOwnSets(m_ed3kOwnSets.get());
     Ed3kPaidSellerBridge::setOwnSets(m_ed3kOwnSets.get());
     Ed3kOwnSetsBridge::connectPushes(*m_ed3kOwnSets, [this](const IpcMessage& msg) {
@@ -687,11 +731,28 @@ bool DaemonApp::start()
     }
     // hoster links (hoster.md); the resolver is the JDownloader sidecar when built in
     m_hosterJoin = std::make_unique<ed3k::Ed3kHosterJoin>(*m_ed3kSession, thePrefs.configDir());
+    // hops.md §1 SHOULD: an ed3k download under the anonymous key of a file in the eD2K queue
+    // or a hoster download: the user is told (once, Ed3kShared::tellExposed)
+    if (m_ed3kShared)
+        m_ed3kDownloads->setAnonAddedHook([s = m_ed3kShared.get(), h = m_hosterJoin.get()](const ::ed3k::Root& root, const QByteArray& md4,
+                                                                                          const QString& name) {
+            QStringList on;
+            if (md4.size() == 16 && theApp.downloadQueue
+                && theApp.downloadQueue->fileByID(reinterpret_cast<const uint8*>(md4.constData())))
+                on << QStringLiteral("eD2K");
+            const QString hex = QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(root.bytes.data()), qsizetype(root.bytes.size())).toHex());
+            if (h && std::ranges::any_of(h->items(), [&](const auto& it) { return it.rootHex.compare(hex, Qt::CaseInsensitive) == 0; }))
+                on << QStringLiteral("HTTP (hoster)");
+            if (!on.isEmpty())
+                (void)s->tellExposed(root, name, on.join(QStringLiteral(", ")));
+        });
     // done files and unpacked ones: eD2K shares them (Ed3kShared serves them on ed3k); a
     // package's subfolder of incoming is in the share tree, else
     // those are single shared files
-    m_hosterJoin->setPublishedHook([](const QStringList& files) {
-        if (!theApp.sharedFileList)
+    m_hosterJoin->setPublishedHook([this](const QStringList& files) {
+        // remembered either way: switching sharing off later covers these too
+        m_hosterLanded.add(files);
+        if (!theApp.sharedFileList || m_hosterLanded.blocking())
             return;
         for (const QString& f : files)
             if (!theApp.sharedFileList->shareCompletedFile(f))
@@ -787,6 +848,8 @@ bool DaemonApp::start()
     // #124: libtorrent writes under the final names, so an unfinished torrent's files
     // stay out of the eD2K / ed3k share; a finished one's folder is scanned again, and
     // outside a shared folder (own BT dir, #131) its files are shared one by one
+    // btShareMode (#177): finished torrents the mode leaves out stay out as well
+    m_btShareGuard.setShareMode(static_cast<BtShareMode>(thePrefs.btShareMode()));
     if (theApp.sharedFileList)
         theApp.sharedFileList->setStillWriting([this](const QString& p) { return m_btShareGuard.blocks(p); });
     {
@@ -801,8 +864,8 @@ bool DaemonApp::start()
                 theApp.sharedFileList->dropNeverShared();
             if (!change.released.isEmpty())
                 theApp.sharedFileList->rescanTrees(change.released);
-            for (const QString& f : change.finished)
-                if (!theApp.sharedFileList->shouldBeShared(QFileInfo(f).absolutePath(), f, false)
+            for (const QString& f : std::as_const(change.finished))
+                if (!m_btShareGuard.blocks(f) && !theApp.sharedFileList->shouldBeShared(QFileInfo(f).absolutePath(), f, false)
                     && !theApp.sharedFileList->addSingleSharedFile(f))
                     logDebug([&]() -> QString { return QStringLiteral("BitTorrent: %1 is not shared").arg(f); });
         };
@@ -831,10 +894,10 @@ bool DaemonApp::start()
     connectBtPushes();
     // the app's IP filter (§7.6): kept by the session across stop/start
     BtBridge::applyIpFilter();
-    if (theApp.ipFilter) {
-        connect(theApp.ipFilter, &IPFilter::filterLoaded, this, [] { BtBridge::applyIpFilter(); });
-        connect(theApp.ipFilter, &IPFilter::filterCleared, this, [] { BtBridge::applyIpFilter(); });
-    }
+    // any change: a load, a clear, ranges removed in the IP Filter window (#177).
+    // libtorrent drops the connected peers the new filter blocks (TCP and uTP alike)
+    if (theApp.ipFilter)
+        connect(theApp.ipFilter, &IPFilter::filterChanged, this, [] { BtBridge::applyIpFilter(); });
     if (thePrefs.btEnabled() && !m_enginesHeld)
         m_btSession->start(BtBridge::settingsFromPrefs());
     applyI2pRouter(BtBridge::settingsFromPrefs());
@@ -1368,6 +1431,14 @@ void DaemonApp::applyBtConfig()
         m_torrentJoin->setI2pJoins(thePrefs.btI2pEd3kJoin());
 #endif
     BtBridge::applyIpFilter(true);
+    // btShareMode: narrower drops the shared torrent files now, wider scans them in again
+    const auto oldShareMode = m_btShareGuard.shareMode();
+    if (m_btShareGuard.setShareMode(static_cast<BtShareMode>(thePrefs.btShareMode())) && theApp.sharedFileList) {
+        if (m_btShareGuard.shareMode() > oldShareMode)
+            theApp.sharedFileList->reload();
+        else
+            theApp.sharedFileList->dropNeverShared();
+    }
     // port, enable switch or btPortMapping may have changed; diff-based, cheap
     if (m_coreSession)
         m_coreSession->updatePortMappings();
@@ -1408,8 +1479,12 @@ void DaemonApp::applyEd3kConfig()
     // §2.6: 0 hops only while forwarding for others; hopping off at 0 gives 1
     if (thePrefs.ed3kHops() == 0 && !thePrefs.ed3kHopping())
         thePrefs.setEd3kHops(1);
-    m_ed3kSession->setHideSettings(
-        {thePrefs.ed3kHide(), thePrefs.ed3kHops(), thePrefs.ed3kHopping(), thePrefs.ed3kHopShare()});
+    ed3k::Ed3kHideSettings hide{thePrefs.ed3kHide(), thePrefs.ed3kHops(), thePrefs.ed3kHopping(), thePrefs.ed3kHopShare()};
+    // subscription.md §5.3: anonymous share reports only through the report proxy (off: none)
+    if (const ProxySettings rp = thePrefs.ed3kReportProxy(); rp.useProxy)
+        if (const QNetworkProxy p = toNetworkProxy(rp); p.type() != QNetworkProxy::NoProxy)
+            hide.reportProxy = p;
+    m_ed3kSession->setHideSettings(hide);
     // ed3kEnabled = the feature; connectWanted = autoConnect at start, then the Connect button
     const bool enabled = thePrefs.ed3kEnabled() && Ed3kBridge::connectWanted() && !m_enginesHeld;
     const uint16 port = thePrefs.ed3kUdpPort();
@@ -1500,6 +1575,9 @@ void DaemonApp::applyEd3kConfig()
     // ed3kShareUsenetPosts: a change restarts the usenet join (kept lists and records follow)
     if (m_usenetJoin)
         m_usenetJoin->setHoldBack(!thePrefs.ed3kShareUsenetPosts());
+    // ed3kOwnSetsWatch: no restart
+    if (m_ed3kOwnSets)
+        m_ed3kOwnSets->setWatchFolders(thePrefs.ed3kOwnSetsWatch());
     // ed3kHoster*: no restart
     applyHosterConfig();
     if (m_coreSession)
@@ -1538,6 +1616,13 @@ void DaemonApp::applyHosterConfig()
     const Ed3kHosterPrefs h = thePrefs.ed3kHoster();
     const QStringList temps = thePrefs.tempDirs();
     m_hosterJoin->setConfig(h, temps, thePrefs.incomingDir());
+    // shareFiles: off drops the shared hoster files now, on scans them in again (#177)
+    if (m_hosterLanded.setBlocking(!h.shareFiles) && theApp.sharedFileList) {
+        if (h.shareFiles)
+            theApp.sharedFileList->reload();
+        else
+            theApp.sharedFileList->dropNeverShared();
+    }
     if (m_linkGrabber)
         m_linkGrabber->setEnabled(h.linkGrabber, h.grabAll);
     // the GUI shows the Link Grabber tab and watches the clipboard by these: tell it now
@@ -1640,6 +1725,14 @@ void DaemonApp::applyUsenetServers()
         return;
 
     m_usenetSession->applyPreferences();
+
+    // usenetShareFiles: off drops the shared Usenet files now, on scans them in again (#177)
+    if (m_usenetLanded.setBlocking(!thePrefs.usenetShareFiles()) && theApp.sharedFileList) {
+        if (thePrefs.usenetShareFiles())
+            theApp.sharedFileList->reload();
+        else
+            theApp.sharedFileList->dropNeverShared();
+    }
 
     // The enable switch can flip in the same save that changed the servers.
     const bool enabled = thePrefs.usenetEnabled() && !m_enginesHeld;
@@ -2029,6 +2122,20 @@ void DaemonApp::releaseEngines()
     Ed3kBridge::setConnectWanted(thePrefs.autoConnect());
     // waits for the eD2K UDP socket while the core loads (onCoreLoaded comes back); hosters too
     applyEd3kConfig();
+}
+
+bool DaemonApp::neverShared(const QString& path) const
+{
+    if (m_usenetLanded.blocks(path))
+        return true;
+#ifdef EMULE_HAVE_ED3K
+    // batch 15 #12 (hidden-set.md §4.2): opened plain copies of sealed set members
+    if (m_ed3kSets && m_ed3kSets->plainCopies().contains(path))
+        return true;
+    if (m_hosterLanded.blocks(path))
+        return true;
+#endif
+    return false;
 }
 
 } // namespace eMule

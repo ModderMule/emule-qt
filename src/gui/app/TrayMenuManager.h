@@ -6,15 +6,11 @@
 #include <QMenu>
 
 class QAction;
-class QSlider;
-class QSpinBox;
-class QTimer;
-
-namespace Ipc { class IpcMessage; }
 
 namespace eMule {
 
 class IpcClient;
+class SpeedLimitWidget;
 
 /// Manages the system tray context menu: speed sliders, connect/disconnect,
 /// restore, options, and exit actions.
@@ -29,6 +25,10 @@ public:
     /// Refresh slider ranges/values and connect action state.
     void updateState(bool ed2kConnected, bool kadRunning, bool ipcConnected);
 
+protected:
+    /// Throttle steps down per click: it keeps the menu open
+    void mouseReleaseEvent(QMouseEvent* event) override;
+
 signals:
     void restoreRequested();
     void connectRequested();
@@ -38,19 +38,15 @@ signals:
 
 private:
     void buildMenu();
-    void syncSliderSpin(QSlider* slider, QSpinBox* spin);
-    void sendSpeedChange();
+    void updateThrottleAction();
 
     IpcClient* m_ipc = nullptr;
 
     QAction* m_connectAction = nullptr;
     QAction* m_disconnectAction = nullptr;
     QAction* m_usenetPauseAction = nullptr;
-    QSlider* m_upSlider = nullptr;
-    QSpinBox* m_upSpin = nullptr;
-    QSlider* m_downSlider = nullptr;
-    QSpinBox* m_downSpin = nullptr;
-    QTimer* m_speedDebounce = nullptr;
+    QAction* m_throttleAction = nullptr;
+    SpeedLimitWidget* m_speed = nullptr;
 };
 
 } // namespace eMule

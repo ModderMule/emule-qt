@@ -6,7 +6,8 @@
 /// The core looks for installs on its own host (IPC FindLegacyProfiles) and does the
 /// import (ImportLegacyProfile). Both folders are prefilled and can be changed.
 /// Unfinished downloads are moved, settings only read.
-/// Settings make the core restart; the page waits for it to come back.
+/// Settings are taken on Next and make the core restart; the page waits for it to
+/// come back. Downloads wait for Finish (importDownloads()); Cancel drops them.
 
 #include <QCborArray>
 #include <QCborMap>
@@ -31,9 +32,13 @@ class LegacyImportPage : public QWidget {
 public:
     explicit LegacyImportPage(IpcClient* ipc, QWidget* parent = nullptr);
 
-    /// Carry out what is ticked; @p done(true, restarted) once it is safe to go on.
-    /// Nothing ticked, or done before: at once. done(false, …) stays on the page.
+    /// Import the settings if ticked; @p done(true, restarted) once it is safe to go on.
+    /// Nothing to do, or done before: at once. done(false, …) stays on the page.
     void apply(std::function<void(bool ok, bool restarted)> done);
+
+    /// Wizard finished: hand the ticked download folders to the core. Fire and forget,
+    /// the core moves them on its convert thread.
+    void importDownloads();
 
     /// Waiting for the import or the core restart: no leaving the page.
     [[nodiscard]] bool busy() const { return m_busy; }
@@ -72,7 +77,7 @@ private:
     QString m_probedDir;          ///< settings dir the download folders were filled from
     bool m_partsEdited = false;   ///< user typed download folders: not refilled
     bool m_busy = false;
-    bool m_done = false;          ///< imported once: Back + Next does not repeat it
+    bool m_settingsDone = false;  ///< imported once: Back + Next does not repeat it
 };
 
 } // namespace eMule

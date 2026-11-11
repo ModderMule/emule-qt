@@ -1234,13 +1234,10 @@ void UsenetPanel::updateSummary()
 
 void UsenetPanel::onToggleEnginePause()
 {
-    if (!m_ipc || !m_ipc->isConnected())
-        return;
     // The label follows the push, not the click, so a refused or lost request
     // cannot leave the button lying.
-    Ipc::IpcMessage msg(Ipc::IpcMsgType::SetUsenetPaused);
-    msg.append(!m_ipc->usenetEnginePaused());
-    m_ipc->sendRequest(std::move(msg));
+    if (m_ipc)
+        m_ipc->requestUsenetPause(!m_ipc->usenetEnginePaused());
 }
 
 void UsenetPanel::updateEngineAction()

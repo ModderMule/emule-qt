@@ -46,7 +46,7 @@ public:
         TrackerUrl = 0, TrackerTier, TrackerStatus, TrackerNext, TrackerSeeds, TrackerPeers,
         TrackerDownloaded, TrackerColCount
     };
-    enum FileColumn { FileName = 0, FileSize, FileProgress, FileDownload, FilePriority, FileColCount };
+    enum FileColumn { FileName = 0, FileSize, FileProgress, FileDownload, FilePriority, FileAvailability, FileColCount };
 
     explicit TorrentListsPane(QWidget* parent = nullptr);
 

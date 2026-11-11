@@ -70,6 +70,7 @@ private slots:
     void invalidServersAreDropped();
     void listIsCapped();
     void defaultsAreSaneWithNoUsenetBlock();
+    void shareFilesDefaultsOnAndRoundTrips();
     void quotaFieldsRoundTrip();
     void aConfigWithoutQuotasLoadsUnmeteredWithAnId();
     void healthCheckSettingsRoundTrip();
@@ -558,6 +559,25 @@ void tst_UsenetPrefs::aPatternWithTrailingWhitespaceIsNotSilentlyTrimmed()
 }
 
 QTEST_MAIN(tst_UsenetPrefs)
+
+/// usenetShareFiles (#177): on by default, off survives a save and load.
+void tst_UsenetPrefs::shareFilesDefaultsOnAndRoundTrips()
+{
+    {
+        Preferences p;
+        QCOMPARE(p.usenetShareFiles(), true);
+        p.setUsenetShareFiles(false);
+        QVERIFY(p.saveTo(m_file));
+    }
+    QVERIFY(readAll(m_file).contains(QStringLiteral("shareFiles")));
+
+    Preferences p;
+    QVERIFY(p.load(m_file));
+    QCOMPARE(p.usenetShareFiles(), false);
+
+    // the GUI reads it from the IPC map
+    QCOMPARE(p.toIpcMap().value(QStringLiteral("usenetShareFiles")).toBool(), false);
+}
 
 void tst_UsenetPrefs::quotaFieldsRoundTrip()
 {

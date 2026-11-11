@@ -90,6 +90,7 @@ class tst_I2pRouter : public QObject {
 
 private slots:
     void arguments();
+    void seedAddressBook();
     void readyOnceSamAnswers();
     void crashRestartsWithPause();
     void stopEndsIt();
@@ -132,6 +133,36 @@ void tst_I2pRouter::arguments()
     conf.write("[addressbook]\n  subscriptions = http://example.i2p/hosts.txt\n");
     conf.close();
     QVERIFY(!I2pRouter::arguments(c, 40000, {}).join(QLatin1Char(' ')).contains(QStringLiteral("subscriptions")));
+}
+
+void tst_I2pRouter::seedAddressBook()
+{
+    // #168: tracker names resolve before i2pd's first book download, also in an old book
+    QTemporaryDir dir;
+    const int all = static_cast<int>(std::size(I2pRouter::kSeedHosts));
+    QCOMPARE(I2pRouter::seedAddressBook(dir.path()), all);
+    QCOMPARE(I2pRouter::seedAddressBook(dir.path()), 0);   // idempotent
+    const QString csv = dir.filePath(QStringLiteral("addressbook/addresses.csv"));
+    QFile f(csv);
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    const QByteArray fresh = f.readAll();
+    f.close();
+    QCOMPARE(fresh.count('\n'), all);
+    QVERIFY(fresh.contains("tracker2.postman.i2p,6a4kxkg5wp33p25qqhgwl6sj4yh4xuf5b3p3qldwgclebchm3eea\n"));
+
+    // an existing book: its entries stay (also a seeded name with another address), no
+    // newline at the end is fine
+    QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    f.write("other.i2p,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+            "reg.i2p,bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    f.close();
+    QCOMPARE(I2pRouter::seedAddressBook(dir.path()), all - 1);
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    const QList<QByteArray> lines = f.readAll().split('\n');
+    QVERIFY(lines.contains("other.i2p,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+    QVERIFY(lines.contains("reg.i2p,bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"));
+    QVERIFY(lines.contains("surfsup.i2p,surfsupqyw6a3zegz7ia7ez7pkz7nbuiffqzpeewqlghj7jetmgq"));
+    QCOMPARE(lines.count(QByteArray()), 1);   // the final newline only
 }
 
 void tst_I2pRouter::readyOnceSamAnswers()

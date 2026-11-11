@@ -2,6 +2,7 @@
 /// @brief Distinct Kad nodes by country: counting, persistence, reset and restore.
 
 #include "kademlia/KadNodeCensus.h"
+#include "utils/BackgroundFileWriter.h"
 
 #include <QFile>
 #include <QTemporaryDir>
@@ -143,6 +144,7 @@ void tst_KadNodeCensus::savingTwiceChangesNothing()
     KadNodeCensus census(dir.path());
     contact(census, 0, 500, QStringLiteral("DE"));
     QVERIFY(census.save());
+    BackgroundFileWriter::instance().flush();   // save() queues the write
 
     QFile file(census.filePath());
     QVERIFY(file.open(QIODevice::ReadOnly));
@@ -151,6 +153,7 @@ void tst_KadNodeCensus::savingTwiceChangesNothing()
 
     census.noteContacted(node(7), QStringLiteral("DE"));   // seen before: dirty, same content
     QVERIFY(census.save());
+    BackgroundFileWriter::instance().flush();
     QVERIFY(file.open(QIODevice::ReadOnly));
     QCOMPARE(file.readAll(), first);
 }
@@ -165,6 +168,7 @@ void tst_KadNodeCensus::aLostOrBrokenFileStartsClean()
         QVERIFY(census.save());
         path = census.filePath();
     }
+    BackgroundFileWriter::instance().flush();
 
     QFile file(path);
     QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));

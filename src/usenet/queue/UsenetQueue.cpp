@@ -4100,8 +4100,10 @@ void UsenetQueue::publishStaged(ItemRuntime& rt, const UsenetPostResult& result)
         }
 
         // shared location first (incoming itself refuses a single share), else a
-        // single shared file: a job folder outside the incoming tree
-        if (theApp.sharedFileList && !theApp.sharedFileList->shareCompletedFile(finalPath)) {
+        // single shared file: a job folder outside the incoming tree. Not with
+        // usenetShareFiles off (#177)
+        if (theApp.sharedFileList && thePrefs.usenetShareFiles()
+            && !theApp.sharedFileList->shareCompletedFile(finalPath)) {
             logUsenetWarning(QStringLiteral("Usenet: \"%1\" completed but is not in a shared "
                                       "location; it will not be offered to peers")
                            .arg(QFileInfo(finalPath).fileName()));
@@ -4131,6 +4133,8 @@ void UsenetQueue::publishStaged(ItemRuntime& rt, const UsenetPostResult& result)
     // What the release actually published, which `files` cannot answer for an
     // unpacked one. This is what "Open File" opens.
     rt.item->publishedPaths = published;
+    if (!published.isEmpty())
+        emit filesPublished(published);
 }
 
 void UsenetQueue::failItem(ItemRuntime& rt, const QString& message)

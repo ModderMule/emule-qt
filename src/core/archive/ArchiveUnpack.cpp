@@ -10,6 +10,7 @@
 #include <archive.h>
 #include <archive_entry.h>
 
+#include <algorithm>
 #include <vector>
 
 namespace eMule {
@@ -210,6 +211,58 @@ UnwrapResult unwrapDownload(const QByteArray& data, const QStringList& preferred
                        .arg(members.size()));
     }
     return result;
+}
+
+// ---------------------------------------------------------------------------
+// readArchiveHead
+// ---------------------------------------------------------------------------
+
+ArchiveHead readArchiveHead(const QByteArray& data, qint64 maxBytes)
+{
+    ArchiveHead head;
+    auto* ar = archive_read_new();
+    if (!ar)
+        return head;
+    // streaming formats only: 7z wants its end header, raw would pass anything
+    archive_read_support_format_rar(ar);
+    archive_read_support_format_rar5(ar);
+    archive_read_support_format_zip_streamable(ar);
+    if (archive_read_open_memory(ar, data.constData(), static_cast<size_t>(data.size())) != ARCHIVE_OK) {
+        archive_read_free(ar);
+        return head;
+    }
+    struct archive_entry* entry = nullptr;
+    while (archive_read_next_header(ar, &entry) >= ARCHIVE_WARN) {
+        if (archive_entry_filetype(entry) != AE_IFREG) {
+            archive_read_data_skip(ar);
+            continue;
+        }
+        const char* name = archive_entry_pathname_utf8(entry);
+        if (!name)
+            name = archive_entry_pathname(entry);
+        head.entryName = name ? QString::fromUtf8(name) : QString();
+        if (archive_entry_size_is_set(entry))
+            head.entrySize = archive_entry_size(entry);
+        // a cut-off volume ends in an error: keep what came before it
+        for (;;) {
+            const void* buf = nullptr;
+            size_t size = 0;
+            la_int64_t offset = 0;
+            if (archive_read_data_block(ar, &buf, &size, &offset) != ARCHIVE_OK)
+                break;
+            // sparse/seek gaps would shift bytes; stop at the first one
+            if (offset != head.data.size())
+                break;
+            const qint64 room = maxBytes - head.data.size();
+            head.data.append(static_cast<const char*>(buf),
+                             static_cast<qsizetype>(std::min<qint64>(room, qint64(size))));
+            if (head.data.size() >= maxBytes)
+                break;
+        }
+        break;
+    }
+    archive_read_free(ar);
+    return head;
 }
 
 } // namespace eMule

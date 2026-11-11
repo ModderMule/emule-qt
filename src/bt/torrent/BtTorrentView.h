@@ -28,9 +28,11 @@ public:
 
     static BtTorrentRow row(const libtorrent::torrent_status& st);
     /// Rows of @p ti's files; progress and priorities by file index, missing = 0 / normal.
+    /// @p avail = peers per piece (piece_availability); empty: availability N/A.
     /// Plain data in: the handle's own calls wait for libtorrent's thread (report 27)
     static QList<BtFileRow> files(const libtorrent::torrent_info& ti, const std::vector<std::int64_t>& progress,
-                                  const std::vector<libtorrent::download_priority_t>& priorities);
+                                  const std::vector<libtorrent::download_priority_t>& priorities,
+                                  const std::vector<int>& avail = {});
     static QList<BtPeerRow> peers(const std::vector<libtorrent::peer_info>& list);
     /// The Flags column of a peer, as qBittorrent's (d/D, u/U, K, ?, ...).
     static QString peerFlags(const libtorrent::peer_info& p);
@@ -46,6 +48,11 @@ public:
 
     /// The part map of a row: up to `buckets` values 0..255.
     static QByteArray pieceMap(const libtorrent::typed_bitfield<libtorrent::piece_index_t>& pieces, int buckets = 256);
+
+private:
+    /// share of @p file's pieces with a peer count > 0; -1 when @p avail is empty
+    static double fileAvailability(const libtorrent::file_storage& fs, libtorrent::file_index_t file,
+                                   const std::vector<int>& avail);
 };
 
 } // namespace eMule::bt

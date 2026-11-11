@@ -26,7 +26,7 @@ unix:!macx {
     QT += dbus
 }
 macx {
-    LIBS += -framework IOKit -framework CoreFoundation -framework CoreServices
+    LIBS += -framework IOKit -framework CoreFoundation -framework CoreServices -lobjc
     ICON = ../../resources/icons/eMule.icns
     QMAKE_INFO_PLIST = Info.plist.in
 }
@@ -94,8 +94,13 @@ SOURCES += \
     app/main.cpp \
     app/MainWindow.cpp \
     app/MiniMuleWidget.cpp \
+    controls/SpeedLimitPopup.cpp \
+    controls/SpeedLimitWidget.cpp \
+    utils/AppActivation.cpp \
     app/UiState.cpp \
     app/VersionChecker.cpp \
+    app/SkinInstaller.cpp \
+    dialogs/SkinBrowserDialog.cpp \
     app/ClickNLoadServer.cpp \
     controls/AccordionSidebar.cpp \
     controls/ClientListModel.cpp \
@@ -108,6 +113,7 @@ SOURCES += \
     controls/BarShader.cpp \
     controls/DownloadProgressDelegate.cpp \
     controls/Ed3kDownloadRows.cpp \
+    controls/PreviewImageView.cpp \
     controls/UsenetFileCheckList.cpp \
     controls/UsenetProgressDelegate.cpp \
     controls/FriendListModel.cpp \
@@ -207,9 +213,14 @@ HEADERS += \
     app/Ed3kNameOpener.h \
     app/MainWindow.h \
     app/MiniMuleWidget.h \
+    controls/SpeedLimitPopup.h \
+    controls/SpeedLimitWidget.h \
+    utils/AppActivation.h \
     app/PendingOpenQueue.h \
     app/UiState.h \
     app/VersionChecker.h \
+    app/SkinInstaller.h \
+    dialogs/SkinBrowserDialog.h \
     app/ClickNLoadServer.h \
     controls/AccordionSidebar.h \
     controls/AbstractListView.h \
@@ -228,6 +239,7 @@ HEADERS += \
     controls/Ed3kDownloadRows.h \
     controls/BarShader.h \
     controls/PartBarPainter.h \
+    controls/PreviewImageView.h \
     controls/UsenetFileCheckList.h \
     controls/UsenetProgressDelegate.h \
     controls/FriendListModel.h \

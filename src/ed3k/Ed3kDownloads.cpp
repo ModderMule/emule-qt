@@ -142,6 +142,19 @@ std::expected<void, QString> Ed3kDownloads::add(const Ed3kDownloadSpec& spec)
         return std::unexpected(tr("No incoming directory for ed3k downloads."));
     if (m_tempDirs.isEmpty())
         return std::unexpected(tr("No temporary directory for ed3k downloads."));
+    // hops.md §1: a set's member goes under the set's key; never under both keys
+    if (spec.key) {
+        const auto& hide = m_session.hide();
+        if (*spec.key == ffi::KeyKind::Anon && !hide.hiding()) {
+            logWarning(QStringLiteral("download of %1 refused: hiding is off (anonymous key)").arg(hexOf(spec.root.bytes)));
+            return std::unexpected(tr("Hiding is off: nothing is downloaded under the anonymous key."));
+        }
+        if (const auto held = hide.keyOf(spec.root); held && *held != *spec.key) {
+            logWarning(QStringLiteral("download of %1 refused: held under the %2 key").arg(hexOf(spec.root.bytes), Ed3kHide::keyName(*held)));
+            return std::unexpected(tr("This file is held under the other key already."));
+        }
+        m_session.hide().record(spec.root, *spec.key);
+    }
 
     Entry e;
     e.id = m_nextId++;
@@ -166,6 +179,9 @@ std::expected<void, QString> Ed3kDownloads::add(const Ed3kDownloadSpec& spec)
     if (it->second.info.state == Ed3kDownloadInfo::State::Downloading)
         openEntry(it->second);
     saveNow();
+    // hops.md §1 SHOULD: the same file on eD2K/hoster ties the anonymous key to this address
+    if (m_anonAdded && keyFor(spec.root) == ffi::KeyKind::Anon)
+        m_anonAdded(spec.root, spec.md4, name);
     emit added(spec.root);
     markChanged();
     pumpSession();
@@ -186,6 +202,8 @@ std::expected<ffi::Root, QString> Ed3kDownloads::addLink(const QString& link, in
     spec.size = parsed->size;
     if (parsed->name)
         spec.name = QString::fromUtf8(parsed->name->data(), qsizetype(parsed->name->size()));
+    if (parsed->ed2k)
+        spec.md4 = QByteArray(reinterpret_cast<const char*>(parsed->ed2k->data()), qsizetype(parsed->ed2k->size()));
     spec.category = category;
     spec.paused = paused;
     if (auto ok = add(spec); !ok)

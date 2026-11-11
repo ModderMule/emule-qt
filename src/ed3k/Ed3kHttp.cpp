@@ -69,6 +69,8 @@ struct Ed3kHttp::Request {
     qsizetype nextAddr = 0;
     bool literal = false;        ///< the event had addr: no other address
     bool rpc = false;            ///< a JSON-RPC call (startRpc): rpcAnswer/rpcFailed, no httpResolved
+    /// ED3K_HTTP_VIA_ANON_REPORT_PROXY: the report proxy, always (no bypass, never direct)
+    std::optional<QNetworkProxy> reportProxy;
     QTcpSocket* socket = nullptr;
     QTimer timer;
     bool tcpUp = false;      ///< TCP connected (TLS may still fail)
@@ -115,6 +117,19 @@ void Ed3kHttp::start(const ::ed3k::event::HttpRequest& req)
     if (!r->url.isValid() || r->url.host().isEmpty() || (!r->tls && scheme != QLatin1String("http"))
         || methodName(req.method).isEmpty()) {
         logEd3kDebug([&]() -> QString { return QStringLiteral("http %1: unusable request").arg(id); });
+        m_answers.failed(id);
+        return;
+    }
+    // subscription.md §5.3: an anonymous share report goes through the report proxy alone
+    if (req.via == ED3K_HTTP_VIA_ANON_REPORT_PROXY) {
+        if (!m_reportProxy) {
+            logEd3kDebug([&]() -> QString { return QStringLiteral("http %1: anonymous report without a report proxy").arg(id); });
+            m_answers.failed(id);
+            return;
+        }
+        r->reportProxy = m_reportProxy;
+    } else if (req.via != ED3K_HTTP_VIA_NORMAL) {
+        logEd3kDebug([&]() -> QString { return QStringLiteral("http %1: unknown route %2").arg(id).arg(int(req.via)); });
         m_answers.failed(id);
         return;
     }
@@ -260,8 +275,12 @@ void Ed3kHttp::connectTo(Request& r, const QHostAddress& ip, std::uint16_t port)
         connect(s, &QTcpSocket::connected, this, [this, id] { onConnected(id); });
     }
     r.socket = s;
-    // the literal address goes to the proxy, never the name; a LAN address goes direct
-    s->setProxy(bypassesProxy(ip.toString()) ? QNetworkProxy(QNetworkProxy::NoProxy) : m_proxy);
+    // the literal address goes to the proxy, never the name; a LAN address goes direct; an
+    // anonymous report through its proxy only
+    if (r.reportProxy)
+        s->setProxy(*r.reportProxy);
+    else
+        s->setProxy(bypassesProxy(ip.toString()) ? QNetworkProxy(QNetworkProxy::NoProxy) : m_proxy);
     // the bindAddress pref: leave through the selected interface or not at all (loopback stays local)
     const bool proxied = s->proxy().type() != QNetworkProxy::NoProxy;
     if (!ip.isLoopback() && !InterfacePin::prepareOutgoing(*s, proxied)) {

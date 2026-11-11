@@ -23,6 +23,7 @@
 #include "panels/StatisticsPanel.h"
 #include "net/HttpFileDownload.h"
 #include "prefs/Preferences.h"
+#include "prefs/SpeedRules.h"
 #include "net/SmtpClient.h"
 #include "dialogs/PortTest.h"
 #include "dialogs/RouterPage.h"
@@ -62,6 +63,7 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include "utils/OtherFunctions.h"
+#include "utils/ScrollMessageBox.h"
 
 #include <QInputDialog>
 #include <QListWidget>
@@ -250,7 +252,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_showTransToolbarCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     for (QCheckBox* c : {m_downloadStatusFilterCheck, m_torrentStatusFilterCheck, m_hosterStatusFilterCheck})
         connect(c, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
-    connect(m_downloadSecondarySortCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_downloadSortHistoryCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showSpeedGraphCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_speedGraphTimeSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_storeSearchesCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -1233,11 +1235,11 @@ QWidget* OptionsDialog::createDisplayPage()
     statusFilterRow->addStretch();
     layout->addLayout(statusFilterRow);
 
-    m_downloadSecondarySortCheck = new QCheckBox(tr("Secondary sort in download list"), page);
-    m_downloadSecondarySortCheck->setToolTip(
-        tr("The column sorted before breaks ties of the current one: click Remaining, then Status, "
-           "to sort by status and by remaining time within each status"));
-    layout->addWidget(m_downloadSecondarySortCheck);
+    m_downloadSortHistoryCheck = new QCheckBox(tr("Sort history in download list (3 levels)"), page);
+    m_downloadSortHistoryCheck->setToolTip(
+        tr("The two columns sorted before break ties of the current one: click Progress, Remaining, "
+           "then Status to sort by status, then remaining time, then progress"));
+    layout->addWidget(m_downloadSortHistoryCheck);
 
     m_showSpeedGraphCheck = new QCheckBox(tr("Show speed graph in toolbar"), page);
     layout->addWidget(m_showSpeedGraphCheck);
@@ -1704,6 +1706,12 @@ QWidget* OptionsDialog::createConnectionPage()
     connect(m_uploadLimitSlider, &QSlider::valueChanged, this, &OptionsDialog::updateSlotRateLabel);
     connect(m_uploadLimitCheck, &QCheckBox::toggled, this, &OptionsDialog::updateSlotRateLabel);
     updateSlotRateLabel();
+
+    // UL:DL ratio, live while sliding (MFC CPPgConnection::OnHScroll)
+    connect(m_uploadLimitSlider, &QSlider::valueChanged, this, &OptionsDialog::linkDownToUp);
+    connect(m_uploadLimitCheck, &QCheckBox::toggled, this, &OptionsDialog::linkDownToUp);
+    connect(m_downloadLimitCheck, &QCheckBox::toggled, this, &OptionsDialog::linkDownToUp);
+    connect(m_downloadLimitSlider, &QSlider::valueChanged, this, &OptionsDialog::linkUpToDown);
 
     return page;
 }
@@ -4204,6 +4212,15 @@ QWidget* OptionsDialog::createUsenetPage()
            "files with eD2K peers, who have no use for them."));
     postLayout->addWidget(m_usenetCleanupCheck);
 
+    m_usenetShareCheck = new QCheckBox(tr("Share finished downloads on eD2K and Kad"), postGroup);
+    m_usenetShareCheck->setToolTip(
+        tr("Finished Usenet downloads land in the incoming folder, which is always "
+           "shared, and ed3k shares them too when it is on.\n\n"
+           "With this off they stay out of the share, also the ones downloaded "
+           "before."));
+    m_usenetShareCheck->setChecked(true);
+    postLayout->addWidget(m_usenetShareCheck);
+
     auto* checksForm = new QFormLayout;
     m_usenetUnrepairableCombo = new QComboBox(postGroup);
     m_usenetUnrepairableCombo->addItem(tr("Keep downloading"));   // 0
@@ -4246,7 +4263,8 @@ QWidget* OptionsDialog::createUsenetPage()
 
     for (QCheckBox* box : {m_usenetPar2Check, m_usenetRenameCheck, m_usenetUnpackCheck,
                            m_usenetDirectUnpackCheck, m_usenetEncryptedPreviewCheck,
-                           m_usenetCleanupCheck, m_usenetSfvCheck, m_usenetDeobfuscateCheck}) {
+                           m_usenetCleanupCheck, m_usenetSfvCheck, m_usenetDeobfuscateCheck,
+                           m_usenetShareCheck}) {
         connect(box, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     }
     connect(m_usenetPropagationSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
@@ -5888,7 +5906,9 @@ QWidget* OptionsDialog::createBitTorrentPage()
 
     // -- Folder -------------------------------------------------------------
     auto* dirGroup = new QGroupBox(tr("Download folder"), page);
-    auto* dirRow = new QHBoxLayout(dirGroup);
+    auto* dirLayout = new QVBoxLayout(dirGroup);
+    auto* dirRow = new QHBoxLayout;
+    dirLayout->addLayout(dirRow);
     m_btDownloadDirEdit = new QLineEdit(dirGroup);
     m_btDownloadDirEdit->setPlaceholderText(tr("Incoming folder"));
     m_btDownloadDirEdit->setToolTip(tr("Leave empty to save torrents to the incoming folder."));
@@ -5896,6 +5916,28 @@ QWidget* OptionsDialog::createBitTorrentPage()
     m_btDownloadDirBrowse = new QPushButton(tr("Browse…"), dirGroup);
     dirRow->addWidget(m_btDownloadDirBrowse);
     mainLayout->addWidget(dirGroup);
+
+    // -- Sharing on eD2K / Kad (btShareMode) --------------------------------
+    auto* shareGroup = new QGroupBox(tr("Share finished torrents on eD2K and Kad"), page);
+    shareGroup->setToolTip(
+        tr("Finished torrents are shared like other completed downloads, also on ed3k.\n\n"
+           "Torrent files left out are never shared there, also inside the incoming folder. "
+           "Seeding on BitTorrent goes on either way."));
+    auto* shareLayout = new QVBoxLayout(shareGroup);
+    m_btShareGroup = new QButtonGroup(shareGroup);
+    {
+        auto* none = new QRadioButton(tr("Don't share"), shareGroup);
+        auto* pub = new QRadioButton(tr("Share public torrents"), shareGroup);
+        pub->setToolTip(tr("Private tracker torrents (ALT) and I2P torrents are not shared."));
+        auto* all = new QRadioButton(tr("Share all torrents, including private tracker (ALT) and I2P torrents"), shareGroup);
+        int id = 0;
+        for (QRadioButton* r : {none, pub, all}) {
+            m_btShareGroup->addButton(r, id++);
+            shareLayout->addWidget(r);
+        }
+        all->setChecked(true);
+    }
+    mainLayout->addWidget(shareGroup);
 
     // -- New torrents -------------------------------------------------------
     auto* addGroup = new QGroupBox(tr("New torrents"), page);
@@ -5989,6 +6031,7 @@ QWidget* OptionsDialog::createBitTorrentPage()
     connect(m_btSeedRatioSpin, &QDoubleSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_btDownloadDirEdit, &QLineEdit::textEdited, this, &OptionsDialog::markDirty);
     connect(m_btStopAfterMetadataCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_btShareGroup, &QButtonGroup::idClicked, this, &OptionsDialog::markDirty);
     connect(m_btSelectedFileOnlyCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_btDownloadDirBrowse, &QPushButton::clicked, this, [this] {
         const QString dir = QFileDialog::getExistingDirectory(
@@ -7269,7 +7312,7 @@ void OptionsDialog::loadSettings()
     m_autoRemoveFinishedCheck->setChecked(thePrefs.autoRemoveFinishedDownloads());
     m_showTransToolbarCheck->setChecked(thePrefs.showTransToolbar());
     m_downloadStatusFilterCheck->setChecked(theUiState.showDownloadStatusFilter());
-    m_downloadSecondarySortCheck->setChecked(theUiState.downloadSecondarySort());
+    m_downloadSortHistoryCheck->setChecked(theUiState.downloadSortHistory());
     m_torrentStatusFilterCheck->setChecked(theUiState.showTorrentStatusFilter());
     m_hosterStatusFilterCheck->setChecked(theUiState.showHosterStatusFilter());
     m_showSpeedGraphCheck->setChecked(thePrefs.showSpeedGraph());
@@ -7486,8 +7529,8 @@ void OptionsDialog::saveSettings()
     thePrefs.setShowTransToolbar(m_showTransToolbarCheck->isChecked());
     if (m_downloadStatusFilterCheck->isChecked() != theUiState.showDownloadStatusFilter())
         theUiState.setShowDownloadStatusFilter(m_downloadStatusFilterCheck->isChecked());
-    if (m_downloadSecondarySortCheck->isChecked() != theUiState.downloadSecondarySort())
-        theUiState.setDownloadSecondarySort(m_downloadSecondarySortCheck->isChecked());
+    if (m_downloadSortHistoryCheck->isChecked() != theUiState.downloadSortHistory())
+        theUiState.setDownloadSortHistory(m_downloadSortHistoryCheck->isChecked());
     if (m_torrentStatusFilterCheck->isChecked() != theUiState.showTorrentStatusFilter())
         theUiState.setShowTorrentStatusFilter(m_torrentStatusFilterCheck->isChecked());
     if (m_hosterStatusFilterCheck->isChecked() != theUiState.showHosterStatusFilter())
@@ -7857,6 +7900,8 @@ void OptionsDialog::saveSettings()
         req.append(m_usenetCleanupCheck->isChecked());
         req.append(QStringLiteral("usenetSfvCheck"));
         req.append(m_usenetSfvCheck->isChecked());
+        req.append(QStringLiteral("usenetShareFiles"));
+        req.append(m_usenetShareCheck->isChecked());
         req.append(QStringLiteral("usenetUnrepairableAction"));
         req.append(static_cast<qint64>(m_usenetUnrepairableCombo->currentIndex()));
         req.append(QStringLiteral("usenetDeobfuscateNames"));
@@ -7903,6 +7948,8 @@ void OptionsDialog::saveSettings()
         req.append(m_btDownloadDirEdit->text().trimmed());
         req.append(QStringLiteral("btStopAfterMetadata"));
         req.append(m_btStopAfterMetadataCheck->isChecked());
+        req.append(QStringLiteral("btShareMode"));
+        req.append(qint64(m_btShareGroup->checkedId()));
         req.append(QStringLiteral("btMetaSelectedFileOnly"));
         req.append(m_btSelectedFileOnlyCheck->isChecked());
         req.append(QStringLiteral("btMaxDownloadKb"));
@@ -8805,6 +8852,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_usenetUnpackerEdit->setText(
         prefs.value(QStringLiteral("usenetExternalUnpacker")).toString());
     m_usenetSfvCheck->setChecked(prefs.value(QStringLiteral("usenetSfvCheck")).toBool(true));
+    m_usenetShareCheck->setChecked(prefs.value(QStringLiteral("usenetShareFiles")).toBool(true));
     m_usenetUnrepairableCombo->setCurrentIndex(
         int(prefs.value(QStringLiteral("usenetUnrepairableAction")).toInteger(1)));
     m_usenetDeobfuscateCheck->setChecked(
@@ -8889,6 +8937,8 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
                                    .toInteger(Preferences::kDefaultBtListenPort)));
     m_btDownloadDirEdit->setText(prefs.value(QStringLiteral("btDownloadDir")).toString());
     m_btStopAfterMetadataCheck->setChecked(prefs.value(QStringLiteral("btStopAfterMetadata")).toBool(false));
+    if (auto* r = m_btShareGroup->button(int(prefs.value(QStringLiteral("btShareMode")).toInteger(2))))
+        r->setChecked(true);
     m_btSelectedFileOnlyCheck->setChecked(prefs.value(QStringLiteral("btMetaSelectedFileOnly")).toBool(true));
     m_btMaxDownSpin->setValue(int(prefs.value(QStringLiteral("btMaxDownloadKb")).toInteger(0)));
     m_btMaxUpSpin->setValue(int(prefs.value(QStringLiteral("btMaxUploadKb")).toInteger(0)));
@@ -9938,7 +9988,7 @@ void OptionsDialog::reloadPreferencesFile()
         QStringList keys;
         for (const QCborValue& k : changed)
             keys.append(k.toString());
-        QMessageBox::information(self, tr("Preferences File"),
+        ScrollMessageBox::information(self, tr("Preferences File"),
                                  tr("Preferences reloaded. %n setting(s) changed:\n%1", nullptr, int(keys.size()))
                                      .arg(keys.join(QStringLiteral(", "))));
 
@@ -9958,6 +10008,42 @@ void OptionsDialog::reloadPreferencesFile()
             self->m_applyBtn->setEnabled(false);
         });
     });
+}
+
+void OptionsDialog::linkDownToUp()
+{
+    // Unlimited upload: no ratio
+    if (m_loading || m_linkingLimits || !m_uploadLimitCheck->isChecked())
+        return;
+    const auto up = static_cast<uint32>(m_uploadLimitSlider->value());
+    const bool downLimited = m_downloadLimitCheck->isChecked();
+    const auto down = downLimited ? static_cast<uint32>(m_downloadLimitSlider->value()) : 0u;
+    const uint32 held = SpeedRules::clampDownForUp(up, down);
+    if (held == down)
+        return;
+    m_linkingLimits = true;
+    if (!downLimited)   // an unlimited download is capped all the same: show it
+        m_downloadLimitCheck->setChecked(true);
+    m_downloadLimitSlider->setValue(static_cast<int>(held));
+    m_linkingLimits = false;
+}
+
+void OptionsDialog::linkUpToDown()
+{
+    if (m_loading || m_linkingLimits || !m_uploadLimitCheck->isChecked()
+        || !m_downloadLimitCheck->isChecked())
+        return;
+    const auto up = static_cast<uint32>(m_uploadLimitSlider->value());
+    const auto down = static_cast<uint32>(m_downloadLimitSlider->value());
+    const uint32 raised = SpeedRules::raiseUpForDown(up, down,
+                                                     static_cast<uint32>(m_uploadLimitSlider->maximum()));
+    m_linkingLimits = true;
+    if (raised != up)
+        m_uploadLimitSlider->setValue(static_cast<int>(raised));
+    // The capacity held the upload below what the download needs
+    if (const uint32 held = SpeedRules::clampDownForUp(raised, down); held != down)
+        m_downloadLimitSlider->setValue(static_cast<int>(held));
+    m_linkingLimits = false;
 }
 
 } // namespace eMule

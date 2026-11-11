@@ -12,11 +12,20 @@
 #include "queue/UsenetHealth.h"
 #include "queue/UsenetQueue.h"
 #include "queue/UsenetQueueItem.h"
+#include "stream/UsenetImagePreview.h"
 
+#include "net/HttpDefaults.h"
+#include "net/ProxySettings.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 
 #include <QCborArray>
+#include <QCryptographicHash>
+#include <QDateTime>
+#include <QHash>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QPointer>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
@@ -388,6 +397,85 @@ QString recheck(const QString& itemId)
                                   : trIpc("This download cannot be checked right now.");
 }
 
+namespace {
+
+/// NZBs Details may ask images of, and what they gave. Daemon thread only.
+struct PreviewEntry {
+    QByteArray nzb;
+    qint64 at = 0;
+    bool done = false;
+    QCborMap result;
+    std::vector<std::function<void(bool, const QCborValue&)>> waiters;
+};
+constexpr qint64 kPreviewKeepSecs = 3 * 3600;
+constexpr int kPreviewMaxEntries = 32;
+
+QHash<QString, PreviewEntry>& previewEntries()
+{
+    static QHash<QString, PreviewEntry> entries;
+    return entries;
+}
+
+void prunePreviewEntries()
+{
+    auto& entries = previewEntries();
+    const qint64 now = QDateTime::currentSecsSinceEpoch();
+    for (auto it = entries.begin(); it != entries.end();) {
+        if (it->waiters.empty() && now - it->at > kPreviewKeepSecs)
+            it = entries.erase(it);
+        else
+            ++it;
+    }
+    // oldest idle first
+    while (entries.size() > kPreviewMaxEntries) {
+        auto oldest = entries.end();
+        for (auto it = entries.begin(); it != entries.end(); ++it)
+            if (it->waiters.empty() && (oldest == entries.end() || it->at < oldest->at))
+                oldest = it;
+        if (oldest == entries.end())
+            break;
+        entries.erase(oldest);
+    }
+}
+
+QString rememberPreviewNzb(const QByteArray& data)
+{
+    const QString token = QString::fromLatin1(
+        QCryptographicHash::hash(data, QCryptographicHash::Sha1).toHex().left(32));
+    auto& entry = previewEntries()[token];
+    if (entry.nzb.isEmpty())
+        entry.nzb = data;
+    entry.at = QDateTime::currentSecsSinceEpoch();
+    prunePreviewEntries();
+    return token;
+}
+
+void finishPreview(const QString& token, const QCborMap& result)
+{
+    auto& entries = previewEntries();
+    const auto it = entries.find(token);
+    if (it == entries.end())
+        return;
+    it->done = true;
+    it->result = result;
+    it->at = QDateTime::currentSecsSinceEpoch();
+    auto waiters = std::exchange(it->waiters, {});
+    for (auto& w : waiters)
+        w(true, result);
+}
+
+QCborMap imageMap(const usenet::UsenetPreviewImage& img)
+{
+    using K = usenet::UsenetPreviewImage::Kind;
+    return QCborMap{{QStringLiteral("name"), img.name},
+                    {QStringLiteral("kind"), img.kind == K::Cover   ? QStringLiteral("cover")
+                                             : img.kind == K::Frame ? QStringLiteral("frame")
+                                                                    : QStringLiteral("posted")},
+                    {QStringLiteral("data"), img.data}};
+}
+
+} // namespace
+
 QCborMap inspectNzb(const QByteArray& data, const QString& name, QString& error)
 {
     usenet::NzbInfo nzb;
@@ -435,7 +523,82 @@ QCborMap inspectNzb(const QByteArray& data, const QString& name, QString& error)
         {QStringLiteral("articles"),  nzb.segmentCount()},
         {QStringLiteral("totalSize"), static_cast<qint64>(nzb.totalEncodedBytes())},
         {QStringLiteral("password"),  !nzb.password.isEmpty()},
+        {QStringLiteral("previewToken"), rememberPreviewNzb(data)},
     };
+}
+
+void fetchPreviewImages(const QString& token, const QUrl& coverUrl,
+                        std::function<void(bool ok, const QCborValue& result)> done)
+{
+    auto& entries = previewEntries();
+    const auto it = entries.find(token);
+    if (it == entries.end() || it->nzb.isEmpty()) {
+        done(false, QCoreApplication::translate("eMule::usenet::UsenetQueue",
+                                                "The NZB is no longer known. Open the Details again."));
+        return;
+    }
+    if (it->done) {
+        it->at = QDateTime::currentSecsSinceEpoch();
+        done(true, it->result);
+        return;
+    }
+    const bool running = !it->waiters.empty();
+    it->waiters.push_back(std::move(done));
+    if (running)
+        return;
+
+    usenet::NzbInfo nzb;
+    QString error;
+    if (!usenet::NzbFile::parse(it->nzb, nzb, error)) {
+        auto waiters = std::exchange(it->waiters, {});
+        for (auto& w : waiters)
+            w(false, error);
+        return;
+    }
+
+    auto* app = QCoreApplication::instance();
+    auto images = std::make_shared<QList<usenet::UsenetPreviewImage>>();
+    // cover first (cheap, HTTP), then the articles
+    auto runArticles = [token, nzb, images, app] {
+        auto* job = new usenet::UsenetImagePreview(thePrefs.usenetServers(),
+                                                   toNetworkProxy(thePrefs.usenetProxySettings()), app);
+        QObject::connect(job, &usenet::UsenetImagePreview::finished, app,
+                         [token, images, job](const QList<usenet::UsenetPreviewImage>& found,
+                                              const QString& note) {
+            images->append(found);
+            QCborArray list;
+            for (const auto& img : std::as_const(*images))
+                list.append(imageMap(img));
+            logUsenet(QStringLiteral("Usenet: preview found %1 image(s)").arg(images->size()));
+            finishPreview(token, QCborMap{{QStringLiteral("images"), list},
+                                          {QStringLiteral("note"), note}});
+            job->deleteLater();
+        });
+        job->start(nzb);
+    };
+
+    if (!coverUrl.isValid() || !coverUrl.scheme().startsWith(QLatin1String("http"))) {
+        runArticles();
+        return;
+    }
+    auto* nam = new QNetworkAccessManager(app);
+    QNetworkRequest request = Http::makeRequest(coverUrl);
+    request.setTransferTimeout(20'000);
+    QNetworkReply* reply = nam->get(request);
+    QObject::connect(reply, &QNetworkReply::finished, app, [reply, nam, images, coverUrl, runArticles] {
+        constexpr qint64 kMaxCover = 8 * 1024 * 1024;
+        if (reply->error() == QNetworkReply::NoError) {
+            const QByteArray data = reply->read(kMaxCover);
+            if (!data.isEmpty())
+                images->append({QFileInfo(coverUrl.path()).fileName(),
+                                usenet::UsenetPreviewImage::Kind::Cover, data});
+        } else {
+            logUsenetWarning(QStringLiteral("Usenet: cover not fetched: %1").arg(reply->errorString()));
+        }
+        reply->deleteLater();
+        nam->deleteLater();
+        runArticles();
+    });
 }
 
 void setEnginePaused(bool paused)
@@ -444,7 +607,7 @@ void setEnginePaused(bool paused)
     // GetPreferences in reaction must see the new value.
     if (thePrefs.usenetPaused() != paused) {
         thePrefs.setUsenetPaused(paused);
-        thePrefs.save();
+        thePrefs.saveInBackground();
     }
     if (auto* q = queue())
         q->setEnginePaused(paused);

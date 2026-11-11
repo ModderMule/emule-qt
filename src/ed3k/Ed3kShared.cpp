@@ -233,6 +233,14 @@ std::optional<SharedEntry> Ed3kShared::entryOfRoot(const ffi::Root& root) const
     return std::nullopt;
 }
 
+bool Ed3kShared::holdsRoot(const ffi::Root& root) const
+{
+    return std::ranges::any_of(m_files, [&](const auto& kv) {
+        const auto c = m_cache.find(kv.first);
+        return c != m_cache.end() && c->second.root == root;
+    });
+}
+
 bool Ed3kShared::aliasPublished(const QByteArray& md4) const
 {
     const auto f = m_files.find(md4);
@@ -249,6 +257,22 @@ std::optional<ffi::KeyKind> Ed3kShared::keyOfFile(const QByteArray& md4) const
 {
     const auto root = hashedRootOf(md4);
     return root ? std::optional(keyOf(*root)) : std::nullopt;
+}
+
+bool Ed3kShared::tellDownloadElsewhere(const QByteArray& md4, const QString& name, const QString& networks)
+{
+    const auto root = hashedRootOf(md4);
+    return root && keyOf(*root) == ffi::KeyKind::Anon && tellExposed(*root, name, networks);
+}
+
+bool Ed3kShared::tellExposed(const ffi::Root& root, const QString& name, const QString& networks)
+{
+    if (!m_exposedTold.insert(root).second)
+        return false;
+    logWarning(QStringLiteral("\"%1\" is under the anonymous key and on %2 too: sources there show this "
+                              "address (hops.md §1). Remove it there or move it to the node key.").arg(name, networks));
+    emit anonExposed(name, networks);
+    return true;
 }
 
 std::optional<ffi::Root> Ed3kShared::hashedRootOf(const QByteArray& md4) const
@@ -522,15 +546,14 @@ void Ed3kShared::share(File& f, const Hashed& h)
         f.keywords = *ok == ffi::Publish::Both;
     // hops.md §1 SHOULD: every file here is in eD2K's share list too, its sources there show
     // the address and tie the anonymous key to it: the user is told once
-    // ToDo: the same for a file under the anonymous key downloaded or seeded over BitTorrent or
-    // HTTP (Ed3kDownloads::add of an anonymous root vs. the torrent list and the eD2K/HTTP
-    // download queue); needs a root/MD4 lookup across the other networks' lists
-    if (anon && m_exposedTold.insert(h.root).second) {
-        const QString networks = QStringLiteral("eD2K/Kad");
-        logWarning(QStringLiteral("\"%1\" is shared under the anonymous key and on %2 too: sources there show this "
-                                  "address (hops.md §1). Unshare it there or move it to the node key.").arg(f.entry.name, networks));
-        emit anonExposed(f.entry.name, networks);
-    }
+    // was: ToDo: the same for a file under the anonymous key downloaded over eD2K or a hoster
+    // (done: DaemonApp, DownloadQueue::fileAdded → tellDownloadElsewhere; Ed3kDownloads::add
+    // of an anonymous root → setAnonAddedHook → tellExposed)
+    // ToDo: BitTorrent / HTTP: a file under the anonymous key downloaded or seeded over
+    // BitTorrent (TorrentSession add, by its ed3k root/MD4) or a plain HTTP download is not
+    // checked; DaemonApp's anon hooks (next to setAnonAddedHook) are the place
+    if (anon)
+        (void)tellExposed(h.root, f.entry.name, QStringLiteral("eD2K/Kad"));
     // alias.md §3: the root is shared here and both names come from these bytes; never for a
     // file of the anonymous key (ffi.md: eD2K is never anonymous)
     // was: if (!m_holdBack) {

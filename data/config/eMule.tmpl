@@ -474,6 +474,7 @@ img { border: 0; }
 .un-table tr.un-file td { background:#2A86B8; }
 .un-table td.un-fname { padding-left:34px; }
 .data-table tr.un-par2 td { color:#B8C8D4; }
+.data-table tr.tf-skip td { color:#888888; }
 .un-table .progress-bar { width:110px; }
 .un-expander { display:inline-block; width:14px; text-align:center; cursor:pointer; }
 .un-lock { margin-right:3px; }
@@ -1247,13 +1248,50 @@ unRestore();
  <button type="submit" name="op" value="remove" [FormOff]>{{Remove}}</button>
  <button type="submit" name="op" value="delete" [FormOff] onclick="return confirm('{{js:Remove the ticked torrents and delete their files?}}')">{{Remove and delete files}}</button>
 </form>
+[TorrentFiles]
 <--TMPL_TORRENTS_END-->
+
+
+<--TMPL_TORRENT_FILES-->
+<br>
+<p><b>{{Files:}}</b> [TorrentName] &nbsp; <a href="?w=torrents&amp;id=[TorrentIdUrl]">{{Refresh}}</a> &nbsp; <a href="?w=torrents">{{Close}}</a></p>
+<table class="data-table">
+ <thead>
+  <tr>
+   <th class="left">{{Name}}</th>
+   <th>{{Size}}</th>
+   <th>{{Progress}}</th>
+   <th>{{Priority}}</th>
+   <th title="{{Share of the file's pieces that connected peers have}}">{{Availability}}</th>
+  </tr>
+ </thead>
+ <tbody>
+[TorrentFileLines]
+ </tbody>
+</table>
+<--TMPL_TORRENT_FILES_END-->
+
+
+<--TMPL_TORRENT_FILE_LINE-->
+<tr class="[TorrentFileClass]">
+ <td class="left" title="[TorrentFileTitle]"><span class="icon icon-filetype_[TorrentFileType]" style="vertical-align:middle"></span>&nbsp;[TorrentFileName]</td>
+ <td class="right">[TorrentFileSize]</td>
+ <td class="center">
+  <div class="progress-bar">
+   <div class="progress-fill" style="width:[TorrentFilePercent]%"></div>
+   <div class="progress-text">[TorrentFilePercent]%</div>
+  </div>
+ </td>
+ <td class="center">[TorrentFilePriority]</td>
+ <td class="center">[TorrentFileAvailability]</td>
+</tr>
+<--TMPL_TORRENT_FILE_LINE_END-->
 
 
 <--TMPL_TORRENT_LINE-->
 <tr>
  <td class="center"><input type="checkbox" name="ids" value="[TorrentId]"></td>
- <td class="left" title="[TorrentTitle]">[TorrentName]</td>
+ <td class="left" title="[TorrentTitle]"><a href="?w=torrents&amp;id=[TorrentIdUrl]">[TorrentName]</a></td>
  <td class="right">[TorrentSize]</td>
  <td class="center">
   <div class="progress-bar">

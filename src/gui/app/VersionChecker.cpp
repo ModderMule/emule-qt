@@ -38,7 +38,12 @@ VersionChecker::VersionChecker(QObject* parent)
 
 void VersionChecker::checkNow()
 {
-    start(true);
+    start(Mode::Manual);
+}
+
+void VersionChecker::fetchManifest()
+{
+    start(Mode::Quiet);
 }
 
 void VersionChecker::checkIfDue()
@@ -54,7 +59,7 @@ void VersionChecker::checkIfDue()
     if (m_lastCheck > 0 && m_lastCheck <= now && (now - m_lastCheck) < intervalSecs)
         return;
 
-    start(false);
+    start(Mode::Auto);
 }
 
 void VersionChecker::startPeriodicChecks()
@@ -74,7 +79,7 @@ void VersionChecker::startPeriodicChecks()
 // Private
 // ---------------------------------------------------------------------------
 
-void VersionChecker::start(bool manual)
+void VersionChecker::start(Mode mode)
 {
     if (m_inFlight)
         return;   // an hourly tick must not stack requests behind a slow reply
@@ -84,7 +89,8 @@ void VersionChecker::start(bool manual)
     QNetworkReply* reply = m_nam->get(req);
     // Per-reply, not a member: a menu check firing while an hourly one is in flight
     // would otherwise relabel it and pop a dialog nobody asked for.
-    reply->setProperty("emuleManualCheck", manual);
+    reply->setProperty("emuleManualCheck", mode == Mode::Manual);
+    reply->setProperty("emuleQuietFetch", mode == Mode::Quiet);
     m_inFlight = true;
 }
 
@@ -94,19 +100,31 @@ void VersionChecker::onReplyFinished(QNetworkReply* reply)
     m_inFlight = false;
 
     const bool manual = reply->property("emuleManualCheck").toBool();
+    const bool quiet = reply->property("emuleQuietFetch").toBool();
 
     if (reply->error() != QNetworkReply::NoError) {
         logWarning(QStringLiteral("Version check failed: %1").arg(reply->errorString()));
-        emit checkFailed(reply->errorString(), manual);
+        emit manifestFetchFailed(reply->errorString());
+        if (!quiet)
+            emit checkFailed(reply->errorString(), manual);
         return;
     }
 
     const Manifest info = parse(reply->readAll());
     if (!info.isValid()) {
         logWarning(QStringLiteral("Version check: %1").arg(info.error));
-        emit checkFailed(info.error, manual);
+        emit manifestFetchFailed(info.error);
+        if (!quiet)
+            emit checkFailed(info.error, manual);
         return;
     }
+
+    m_lastManifest = info;
+    m_hasManifest = true;
+    emit manifestReceived(info);
+    // skin list only: no dialogs, the version interval stays as it is
+    if (quiet)
+        return;
 
     // Only a usable manifest resets the interval. A network failure deliberately does
     // not, so an offline session retries on the next tick.

@@ -54,6 +54,8 @@ struct IndexerResult {
     int files = -1;
     QString poster;
     QString group;
+    /// newznab `coverurl`: poster art for movies/TV, shown in Details › Images only.
+    QUrl coverUrl;
     /// Shown as a warning colour. Any non-zero flag, until PasswordFlagTally finds
     /// the indexer puts that value on most of its rows.
     bool passwordProtected = false;

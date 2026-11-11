@@ -609,6 +609,7 @@
     <ClInclude Include="prefs\CategoryView.h" />
     <ClInclude Include="prefs\IndexerFeed.h" />
     <ClInclude Include="prefs\NewsServer.h" />
+    <ClInclude Include="prefs\SpeedRules.h" />
     <ClInclude Include="prefs\UsenetSubjectPattern.h" />
     <ClInclude Include="prefs\Preferences.h" />
     <ClInclude Include="media\PreviewApps.h" />

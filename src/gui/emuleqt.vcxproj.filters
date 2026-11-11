@@ -88,6 +88,9 @@
     <ClCompile Include="controls\Ed3kDownloadRows.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="controls\PreviewImageView.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="controls\UsenetFileCheckList.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -170,6 +173,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="app\SkinEngine.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\SkinInstaller.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\SkinBrowserDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="app\SkinColors.cpp">
@@ -325,6 +334,9 @@
     <ClCompile Include="panels\MessagesPanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="app\AppIcon.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="app\MiniMuleWidget.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -407,6 +419,15 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="controls\FilterEdit.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\SpeedLimitPopup.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\SpeedLimitWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\AppActivation.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="controls\ServerListModel.cpp">
@@ -543,10 +564,16 @@
     <ClInclude Include="controls\PartBarPainter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="app\AppIcon.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="controls\TrayMeterIcon.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\TaskbarProgress.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\AppActivation.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="dialogs\FindInListDialog.h">
@@ -628,6 +655,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\AsyncMessageBox.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\ScrollMessageBox.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\ViewNavigation.h">
@@ -715,6 +745,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\DownloadProgressDelegate.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\PreviewImageView.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\UsenetFileCheckList.h">
@@ -897,6 +930,12 @@
     <QtMoc Include="dialogs\PasteTextDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="app\SkinInstaller.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\SkinBrowserDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="controls\TorrentListModel.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -943,6 +982,12 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\FilterEdit.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\SpeedLimitPopup.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\SpeedLimitWidget.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\ServerListModel.h">

@@ -27,6 +27,8 @@ struct FrameGrabRequest {
     double startTimeSec = 0.0;
     bool reduceColor = false;
     uint16 maxWidth = 0;       // 0 = no limit
+    double spanFraction = 1.0; // frames only from the first part of the clip (a fetched head)
+    uint16 loadTimeoutMs = 10'000;
 };
 
 struct FrameGrabResult {

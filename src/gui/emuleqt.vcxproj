@@ -259,6 +259,7 @@
     <ClCompile Include="controls\BarShader.cpp" />
     <ClCompile Include="controls\DownloadProgressDelegate.cpp" />
     <ClCompile Include="controls\Ed3kDownloadRows.cpp" />
+    <ClCompile Include="controls\PreviewImageView.cpp" />
     <ClCompile Include="controls\UsenetFileCheckList.cpp" />
     <ClCompile Include="controls\UsenetProgressDelegate.cpp" />
     <ClCompile Include="app\Ed2kSchemeHandler.cpp" />
@@ -304,6 +305,7 @@
     <ClCompile Include="app\MainWindow.cpp" />
     <ClCompile Include="panels\ChatNetwork.cpp" />
     <ClCompile Include="panels\MessagesPanel.cpp" />
+    <ClCompile Include="app\AppIcon.cpp" />
     <ClCompile Include="app\MiniMuleWidget.cpp" />
     <ClCompile Include="dialogs\NetworkInfoDialog.cpp" />
     <ClCompile Include="dialogs\OptionsDialog.cpp" />
@@ -331,6 +333,9 @@
     <ClCompile Include="controls\SearchResultsModel.cpp" />
     <ClCompile Include="controls\SearchResultsProxy.cpp" />
     <ClCompile Include="controls\FilterEdit.cpp" />
+    <ClCompile Include="controls\SpeedLimitPopup.cpp" />
+    <ClCompile Include="controls\SpeedLimitWidget.cpp" />
+    <ClCompile Include="utils\AppActivation.cpp" />
     <ClCompile Include="controls\ServerListModel.cpp" />
     <ClCompile Include="panels\ServerPanel.cpp" />
     <ClCompile Include="controls\SharedFilesModel.cpp" />
@@ -349,6 +354,8 @@
     <ClCompile Include="app\VersionChecker.cpp" />
     <ClCompile Include="app\ClickNLoadServer.cpp" />
     <ClCompile Include="app\SkinEngine.cpp" />
+    <ClCompile Include="app\SkinInstaller.cpp" />
+    <ClCompile Include="dialogs\SkinBrowserDialog.cpp" />
     <ClCompile Include="app\SkinColors.cpp" />
     <ClCompile Include="app\SkinIcons.cpp" />
     <ClCompile Include="app\ToolbarButtonSizer.cpp" />
@@ -389,6 +396,7 @@
     <ClInclude Include="controls\BarShader.h" />
     <ClInclude Include="controls\PartBarPainter.h" />
     <ClInclude Include="controls\AbstractTableModel.h" />
+    <ClInclude Include="app\AppIcon.h" />
     <ClInclude Include="controls\TrayMeterIcon.h" />
     <ClInclude Include="utils\TaskbarProgress.h" />
     <ClInclude Include="dialogs\ConnectionPresets.h" />
@@ -431,9 +439,11 @@
     <ClInclude Include="app\Ed3kLinkActions.h" />
     <ClInclude Include="utils\MassRenameAction.h" />
     <ClInclude Include="utils\AsyncMessageBox.h" />
+    <ClInclude Include="utils\ScrollMessageBox.h" />
     <ClInclude Include="utils\InputHistory.h" />
     <ClInclude Include="utils\UrlPrefField.h" />
     <ClInclude Include="utils\ListActivation.h" />
+    <ClInclude Include="utils\AppActivation.h" />
     <ClInclude Include="utils\MenuUtils.h" />
     <ClInclude Include="utils\Appearance.h" />
     <ClInclude Include="utils\ColorUtils.h" />
@@ -472,6 +482,7 @@
     <QtMoc Include="controls\CategoryTabBar.h" />
     <QtMoc Include="controls\DownloadListModel.h" />
     <QtMoc Include="controls\DownloadProgressDelegate.h" />
+    <QtMoc Include="controls\PreviewImageView.h" />
     <QtMoc Include="controls\UsenetFileCheckList.h" />
     <QtMoc Include="controls\UsenetProgressDelegate.h" />
     <ClInclude Include="app\Ed2kSchemeHandler.h" />
@@ -555,6 +566,8 @@
     <QtMoc Include="controls\SearchResultsModel.h" />
     <QtMoc Include="controls\SearchResultsProxy.h" />
     <QtMoc Include="controls\FilterEdit.h" />
+    <QtMoc Include="controls\SpeedLimitPopup.h" />
+    <QtMoc Include="controls\SpeedLimitWidget.h" />
     <QtMoc Include="controls\ServerListModel.h" />
     <QtMoc Include="panels\ServerPanel.h" />
     <QtMoc Include="controls\SharedFilesModel.h" />
@@ -571,6 +584,8 @@
     <ClInclude Include="app\UiState.h" />
     <QtMoc Include="app\SkinColors.h" />
     <QtMoc Include="app\VersionChecker.h" />
+    <QtMoc Include="app\SkinInstaller.h" />
+    <QtMoc Include="dialogs\SkinBrowserDialog.h" />
     <QtMoc Include="app\ClickNLoadServer.h" />
   </ItemGroup>
   <ItemGroup>

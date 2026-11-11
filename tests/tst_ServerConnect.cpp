@@ -144,6 +144,7 @@ private slots:
     void failedConnect_insideTheDialLeavesNoStaleAttempt();
     void constructionDefaults();
     void setConfig_updatesMaxSimCons();
+    void keepAliveInterval_neverLetsTheServerReapUs();
 
     // State queries
     void initialState_notConnecting();
@@ -2369,6 +2370,18 @@ void tst_ServerConnect::recheck_fromIPv6StillLowIdGoesBackToIPv6()
     QCOMPARE(rig.conn.clientID(), uint32{0x45});
     QVERIFY(!everOffline);
     rig.conn.disconnect();
+}
+
+// Report 40: keepalive 0 left a quiet client silent past eNode-go's 60 min idle limit.
+void tst_ServerConnect::keepAliveInterval_neverLetsTheServerReapUs()
+{
+    constexpr uint64 min = 60 * 1000;
+    QCOMPARE(ServerConnect::keepAliveInterval(0, false), 58 * min);       // disabled → idle fallback
+    QCOMPARE(ServerConnect::keepAliveInterval(90 * min, false), 58 * min); // too long → capped
+    QCOMPARE(ServerConnect::keepAliveInterval(10 * min, false), 10 * min); // user value kept
+    QCOMPARE(ServerConnect::keepAliveInterval(0, true), 20 * min);        // PR_NAT wake
+    QCOMPARE(ServerConnect::keepAliveInterval(30 * min, true), 20 * min);
+    QCOMPARE(ServerConnect::keepAliveInterval(5 * min, true), 5 * min);
 }
 
 QTEST_MAIN(tst_ServerConnect)

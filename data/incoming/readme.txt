@@ -23,7 +23,7 @@ Welcome to eMule, a filesharing client based on the eDonkey2000(C) network.
 
 
 Visit us at
- https://www.emule-project.net
+ https://emule-qt.org
 and
  https://sourceforge.net/projects/emule
 or
@@ -38,7 +38,7 @@ dicussion.
 
 
 If you have questions or serious problems, please read the FAQ first :) It can 
-be found at www.emule-project.net. A small collection of questions is also 
+be found at https://emule-qt.org. A small collection of questions is also 
 discussed later in this document.
 
 
@@ -46,7 +46,7 @@ If you didn't find an answer, SEARCH the forum for a topic related to your
 problem, DO NOT open a new topic at once, most likely someone else had the 
 same problem before.
 
-The official Forum is also at https://www.emule-project.net Please use only 
+The official Forum is also at https://emule-qt.org Please use only 
 English there, except for the language-specific sections. (PLEASE do not 
 report bugs that are already posted by someone else, and keep the "Bug 
 Reports", "Feature Requests" and "Development" sections clean and shiny)
@@ -133,7 +133,7 @@ don't touch it.
 
 
 
-FAQ: (for more, see https://www.emule-project.net/faq/ )
+FAQ: (for more, see https://emule-qt.org )
 ----
 
 --"Will I lose my credits when switching to a new version of eMule?"
@@ -180,7 +180,7 @@ FAQ: (for more, see https://www.emule-project.net/faq/ )
 
 --"Why do I always have a low ID (means: firewalled) ??? What can I do against that?"
 
- Look here: https://www.emule-project.net/faq/ports.htm
+ Look here: https://emule-qt.org
 
 
 

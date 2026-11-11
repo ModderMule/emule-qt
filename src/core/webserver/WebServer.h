@@ -589,7 +589,10 @@ private:
     [[nodiscard]] QString buildKadPage(const QString& sessionId);
     [[nodiscard]] QString buildMyInfoPage();
     [[nodiscard]] QString buildGraphsPage();
-    [[nodiscard]] QString buildTorrentsPage(bool isAdmin);
+    /// The torrent list; `id=` adds that torrent's file table below it.
+    [[nodiscard]] QString buildTorrentsPage(bool isAdmin, const QUrlQuery& query);
+    /// One torrent's files with availability; empty for no or an unknown @p id.
+    [[nodiscard]] QString buildTorrentFiles(const QString& id);
     [[nodiscard]] QString buildHosterPage(bool isAdmin);
 
     /// The Usenet page: toolbar, category tabs, the queue and the page script.

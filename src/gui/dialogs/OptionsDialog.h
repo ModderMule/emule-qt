@@ -190,6 +190,9 @@ private:
     void fillDaemonSettingsFromPrefs();
     /// Value text for the slot-rate slider and the slot count it yields.
     void updateSlotRateLabel();
+    /// MFC CheckUp/CheckDown: the limit sliders held to the UL:DL ratio while moved
+    void linkDownToUp();
+    void linkUpToDown();
     void applyWizardResult(const QCborMap& applied);
     void loadSchedulerData();
     void saveSchedulerData();
@@ -304,6 +307,7 @@ private:
     QLabel* m_pageHeader = nullptr;
     QPushButton* m_applyBtn = nullptr;
     bool m_loading = false;              // true while IPC callback populates widgets
+    bool m_linkingLimits = false;        // one limit slider is moving the other
     bool m_daemonSettingsLoaded = false;  // true after IPC GetPreferences callback
     Ed3kOptionsPages* m_ed3kPages = nullptr;   ///< the ed3k group's pages
 
@@ -345,7 +349,7 @@ private:
     QCheckBox* m_showCatTabInfosCheck = nullptr;
     QCheckBox* m_autoRemoveFinishedCheck = nullptr;
     QCheckBox* m_showTransToolbarCheck = nullptr;
-    QCheckBox* m_downloadSecondarySortCheck = nullptr;   ///< downloads: previous sort column breaks ties
+    QCheckBox* m_downloadSortHistoryCheck = nullptr;   ///< downloads: earlier sort columns break ties
     QCheckBox* m_downloadStatusFilterCheck = nullptr;   ///< status filter rows: Transfers, Torrents, Hoster
     QCheckBox* m_torrentStatusFilterCheck = nullptr;
     QCheckBox* m_hosterStatusFilterCheck = nullptr;
@@ -565,6 +569,7 @@ private:
     gui::FileAssociation::FileTypes m_claimedTypes;  // macOS: what the dialog was loaded with
     QCheckBox*    m_usenetCleanupCheck = nullptr;
     QCheckBox*    m_usenetSfvCheck = nullptr;
+    QCheckBox*    m_usenetShareCheck = nullptr;   ///< usenetShareFiles
     QCheckBox*    m_usenetDeobfuscateCheck = nullptr;
     QSpinBox*     m_usenetPropagationSpin = nullptr;
     QComboBox*    m_usenetEpisodeDupesCombo = nullptr;
@@ -603,6 +608,7 @@ private:
     QLineEdit*      m_btDownloadDirEdit = nullptr;
     QCheckBox*      m_btStopAfterMetadataCheck = nullptr;
     QCheckBox*      m_btSelectedFileOnlyCheck = nullptr;
+    QButtonGroup*   m_btShareGroup = nullptr;   ///< btShareMode: ids 0 none, 1 public, 2 all
     QPushButton*    m_btDownloadDirBrowse = nullptr;
     QSpinBox*       m_btMaxDownSpin = nullptr;
     QSpinBox*       m_btMaxUpSpin = nullptr;

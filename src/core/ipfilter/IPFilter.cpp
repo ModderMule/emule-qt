@@ -7,7 +7,9 @@
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 #include "utils/TimeUtils.h"
+#include "utils/BackgroundFileWriter.h"
 
+#include <QBuffer>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -238,7 +240,7 @@ int IPFilter::loadFromDefaultFile(const QString& configDir)
     m_modified = false;
     const QString path = QDir(configDir).filePath(
         QString::fromLatin1(kDefaultIPFilterFilename));
-    if (!QFileInfo::exists(path)) {
+    if (!QFileInfo::exists(path) && !BackgroundFileWriter::instance().pending(path)) {
         logInfo(QStringLiteral("IP filter not loaded: \"%1\" not found, 0 entries").arg(path));
         return 0;
     }
@@ -249,7 +251,15 @@ int IPFilter::loadFromFile(const QString& filePath)
 {
     const auto startTime = getTickCount();
 
-    QFile file(filePath);
+    // A fresh download may still sit in the writer queue: read those bytes
+    QFile disk(filePath);
+    QBuffer queued;
+    QIODevice* dev = &disk;
+    if (auto data = BackgroundFileWriter::instance().pending(filePath)) {
+        queued.setData(std::move(*data));
+        dev = &queued;
+    }
+    QIODevice& file = *dev;
     if (!file.open(QIODevice::ReadOnly)) {
         logWarning(QStringLiteral("IP filter not loaded: can't open \"%1\" (%2)")
                        .arg(filePath, file.errorString()));
@@ -425,6 +435,7 @@ int IPFilter::loadFromFile(const QString& filePath)
                 .arg(elapsed));
 
     emit filterLoaded(entryCount());
+    emit filterChanged();
     return entryCount();
 }
 
@@ -613,6 +624,7 @@ void IPFilter::removeAllFilters()
     m_lastHit6 = nullptr;
     m_modified = false;
     emit filterCleared();
+    emit filterChanged();
 }
 
 int IPFilter::removeRanges(std::vector<uint32> starts4, std::vector<std::array<uint8, 16>> starts6)
@@ -632,6 +644,7 @@ int IPFilter::removeRanges(std::vector<uint32> starts4, std::vector<std::array<u
         m_lastHit = nullptr;
         m_lastHit6 = nullptr;
         m_modified = true;
+        emit filterChanged();
     }
     return removed;
 }

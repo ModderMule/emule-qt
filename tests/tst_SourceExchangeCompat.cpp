@@ -629,7 +629,7 @@ private:
     /// Run a body through PartFile::addClientSources with a live download queue, and
     /// hand the resulting PartFile to `check` before tearing the queue back down.
     static void parseInto(const QByteArray& body, uint8 clientSXVersion, bool isSX2,
-                          const UpDownClient* sender,
+                          UpDownClient* sender,
                           const std::function<void(PartFile&)>& check);
 };
 
@@ -649,7 +649,7 @@ void tst_SourceExchangeCompat::cleanup()
 }
 
 void tst_SourceExchangeCompat::parseInto(const QByteArray& body, uint8 clientSXVersion,
-                                         bool isSX2, const UpDownClient* sender,
+                                         bool isSX2, UpDownClient* sender,
                                          const std::function<void(PartFile&)>& check)
 {
     DownloadQueue queue;

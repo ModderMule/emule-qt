@@ -40,17 +40,19 @@ TorrentRow makeRow(const QString& id, TorrentState state)
     return r;
 }
 
-QCborMap file(int index, const QString& path, qint64 size, qint64 done, int priority, bool pad = false)
+QCborMap file(int index, const QString& path, qint64 size, qint64 done, int priority, bool pad = false,
+              double availability = -1.0)
 {
     return QCborMap{{QStringLiteral("index"), index}, {QStringLiteral("path"), path},
                     {QStringLiteral("size"), size},   {QStringLiteral("done"), done},
-                    {QStringLiteral("priority"), priority}, {QStringLiteral("pad"), pad}};
+                    {QStringLiteral("priority"), priority}, {QStringLiteral("pad"), pad},
+                    {QStringLiteral("availability"), availability}};
 }
 
 QCborMap details()
 {
-    QCborArray files{file(0, QStringLiteral("Show/S01/e1.mkv"), 300, 300, 4),
-                     file(1, QStringLiteral("Show/S01/e2.mkv"), 100, 0, 0),
+    QCborArray files{file(0, QStringLiteral("Show/S01/e1.mkv"), 300, 300, 4, false, 1.0),
+                     file(1, QStringLiteral("Show/S01/e2.mkv"), 100, 0, 0, false, 0.25),
                      file(2, QStringLiteral("Show/.pad/0"), 7, 0, 4, true),
                      file(3, QStringLiteral("Show/readme.txt"), 50, 25, 7)};
     QCborArray peers{QCborMap{{QStringLiteral("address"), QStringLiteral("10.1.2.3:6881")},
@@ -175,6 +177,21 @@ void tst_TorrentDetailsGui::filesTree()
     // one wanted, one skipped: the folder is partly checked
     QCOMPARE(s01->checkState(TorrentListsPane::FileDownload), Qt::PartiallyChecked);
     QCOMPARE(pane.tabs()->tabText(TorrentListsPane::TabFiles), QStringLiteral("Files (3)"));
+    // Availability as qBittorrent: per file, folders size-weighted, N/A without counts
+    QCOMPARE(tree->headerItem()->text(TorrentListsPane::FileAvailability), QStringLiteral("Availability"));
+    QTreeWidgetItem* e2 = nullptr;
+    QTreeWidgetItem* readme = nullptr;
+    for (int i = 0; i < s01->childCount(); ++i)
+        if (s01->child(i)->text(TorrentListsPane::FileName) == QLatin1String("e2.mkv"))
+            e2 = s01->child(i);
+    for (int i = 0; i < show->childCount(); ++i)
+        if (show->child(i)->text(TorrentListsPane::FileName) == QLatin1String("readme.txt"))
+            readme = show->child(i);
+    QVERIFY(e2 && readme);
+    QCOMPARE(e2->text(TorrentListsPane::FileAvailability), QStringLiteral("25.0%"));
+    QCOMPARE(readme->text(TorrentListsPane::FileAvailability), QStringLiteral("N/A"));
+    QCOMPARE(s01->text(TorrentListsPane::FileAvailability), QStringLiteral("81.3%"));   // (300 + 25) / 400
+    QCOMPARE(show->text(TorrentListsPane::FileAvailability), QStringLiteral("81.3%"));   // readme has none
 
     // a second poll updates in place: same items
     QTreeWidgetItem* before = s01->child(0);

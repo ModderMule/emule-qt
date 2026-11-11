@@ -59,6 +59,7 @@
 
 #include "net/Address.h"
 #include "friends/FriendConnectProgress.h"
+#include "utils/ModalHost.h"
 
 namespace eMule {
 
@@ -1215,7 +1216,7 @@ void MessagesPanel::askEd3kFriendRequest(const QString& key, const QString& node
                 self->requestFriendList();
         });
     });
-    box->show();
+    ModalHost::show(box);
 }
 
 void MessagesPanel::copyMyEd3kLink()

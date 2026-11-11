@@ -108,6 +108,7 @@ public:
         QString guid;
         QString title;
         QUrl downloadUrl;
+        QUrl coverUrl;   ///< live search only; the grab cache keeps none
     };
     [[nodiscard]] std::optional<GrabSource> grabSource(quint32 searchId,
                                                        const QString& resultId) const;

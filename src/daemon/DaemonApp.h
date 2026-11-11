@@ -7,6 +7,7 @@
 /// Manages startup and shutdown sequence.
 
 #include "BtShareGuard.h"
+#include "LandedFiles.h"
 #include "LogRelay.h"
 #include "net/BindAddress.h"
 
@@ -147,6 +148,9 @@ private:
     /// Re-apply the news-server list after an Options save. Reached from any
     /// IPC client through IpcServer::usenetConfigChanged.
     void applyUsenetServers();
+    /// Files never shared on eD2K/Kad and ed3k: ed3k plain copies, hoster and Usenet
+    /// downloads while their share switch is off (#177)
+    [[nodiscard]] bool neverShared(const QString& path) const;
 
     /// Re-apply the BitTorrent settings after an Options save, starting or stopping
     /// the engine. Reached through IpcServer::btConfigChanged.
@@ -208,6 +212,8 @@ private:
     ApiEventFeeder* m_eventFeeder = nullptr;
     std::unique_ptr<WebServer> m_webServer;
     std::unique_ptr<usenet::UsenetSession> m_usenetSession;
+    /// finished Usenet downloads in incoming: kept out of the share while usenetShareFiles is off
+    LandedFiles m_usenetLanded;
 #ifdef EMULE_HAVE_BITTORRENT
     std::unique_ptr<bt::BtSession> m_btSession;
     /// files of unfinished torrents stay out of the share (#124)
@@ -216,6 +222,8 @@ private:
     std::unique_ptr<I2pRouter> m_i2pRouter;
 #endif
 #ifdef EMULE_HAVE_ED3K
+    /// hoster downloads in incoming: kept out of the share while ed3kHosterShareFiles is off
+    LandedFiles m_hosterLanded;
     /// The ed3k node (packmule); started after Usenet, stopped before it
     std::unique_ptr<ed3k::Ed3kSession> m_ed3kSession;
     /// the interface selection the node's own socket was pinned under (an adapter switch restarts it)

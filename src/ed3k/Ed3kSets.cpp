@@ -256,7 +256,11 @@ bool Ed3kSets::downloadParts(std::uint32_t id, const std::optional<ffi::Key32>& 
     auto* e = m_session.engine();
     if (!s || !s->topic || !e)
         return false;
-    const auto ok = e->setPartDownload(m_session.now(), *s->topic, author ? &*author : nullptr);
+    // hops.md §1: a set followed on the anonymous node downloads its parts there
+    // was: const auto ok = e->setPartDownload(m_session.now(), *s->topic, author ? &*author : nullptr);
+    const auto* by = author ? &*author : nullptr;
+    const auto ok = s->key == ffi::KeyKind::Anon ? e->setAnonPartDownload(m_session.now(), *s->topic, by)
+                                                 : e->setPartDownload(m_session.now(), *s->topic, by);
     m_session.pump();
     if (!ok)
         logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: parts of set %1 not downloaded (error %2)").arg(id).arg(int(ok.error())); });
@@ -707,6 +711,7 @@ bool Ed3kSets::addMember(Set& s, const ffi::Root& root, std::uint64_t size, cons
     spec.name = fi.fileName();
     spec.targetPath = local;
     spec.owner = ownerOf(s.id);
+    spec.key = s.key;   // hops.md §1: under the set's key, not the hiding switch
     // spec.paused = true;
     if (auto ok = m_downloads.add(spec); !ok) {
         logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: set %1: a member not added (%2)").arg(s.id).arg(ok.error()); });

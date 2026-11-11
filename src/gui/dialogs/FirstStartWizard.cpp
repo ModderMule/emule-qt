@@ -990,6 +990,10 @@ void FirstStartWizard::finish()
 
     applyFileTypes();
 
+    // Downloads of the old client only now: Cancel leaves them where they are
+    if (m_importPage && !m_importSkipped)
+        m_importPage->importDownloads();
+
     m_portsBefore = {};   // finished: nothing to take back
     accept();
 }

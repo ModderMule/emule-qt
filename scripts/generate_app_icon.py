@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Generate the application icon for Windows and Linux from the art we have.
 
+Superseded by generate_donkey_icons.py (avatar donkey). Running this one
+puts the classic mule back into MuleApp.ico and app/emuleqt-<N>.png.
+
 resources/icons/Mule.ico is the classic donkey, but it stops at 64x64 and is
 only ever loaded through Qt. Nothing puts an icon *into* emuleqt.exe, so
 Explorer and the taskbar fall back to the generic one, and Linux has no
