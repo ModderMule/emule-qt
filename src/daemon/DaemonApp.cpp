@@ -1524,7 +1524,7 @@ void DaemonApp::applyEd3kConfig()
     }
     const auto& running = m_ed3kSession->settings();
     const bool startChanged = m_ed3kSession->isRunning()
-                              && (running.extOff != extOff || running.lan != thePrefs.ed3kLan()
+                              && (running.extOff != extOff || running.lan != thePrefs.ed3kLan() || running.forceOpen != thePrefs.ed3kForceOpen()
                                   || (bind && running.bindAddress != *bind)
                                   || (!running.sharedSocket && !BindAddress::sameBinding(BindAddress::current(), m_ed3kBind))
                                   || running.sharedSocket.data() != shared);
@@ -1544,6 +1544,7 @@ void DaemonApp::applyEd3kConfig()
         settings.nick = thePrefs.nick();
         settings.extOff = extOff;
         settings.lan = thePrefs.ed3kLan();
+        settings.forceOpen = thePrefs.ed3kForceOpen();
         if (bind) {
             settings.bindAddress = *bind;
             m_ed3kBind = BindAddress::current();

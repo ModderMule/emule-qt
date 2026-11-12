@@ -662,6 +662,7 @@
 // UModMiscOptions block currently ends at bit 4, and packing straight against it
 // would leave it no room to grow. HTTP Cache starts a fresh run at bit 10.
 #define MODMISC_HTTPCACHE           (1u << 10)  // supports HTTP Cache chunk offers
+// Bit 11 kept for an ed3k bit, idea only, not sent: docs/ed3k-spec/docs/ed2k-signals.md section 6
 
 // Connect-option byte (server callback, Kad, OP_DIRECTCALLBACKREQ, OP_RENDEZVOUS).
 #define CONNECT_OPT_CRYPT_SUPPORTED     0x01

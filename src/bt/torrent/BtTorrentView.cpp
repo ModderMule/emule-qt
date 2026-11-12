@@ -401,8 +401,8 @@ QString BtTorrentView::errorText(const lt::error_code& ec)
     switch (ec.value()) {
     case lt::i2p_error::invalid_key:
     case lt::i2p_error::key_not_found:
-        return QStringLiteral("I2P tracker not reachable yet: router still starting, name not in its address book, "
-                              "or tracker offline (%1)").arg(text);
+        return QStringLiteral("I2P tracker not reachable: tracker offline, name not in the router's address book, "
+                              "or router still starting (%1)").arg(text);
     case lt::i2p_error::cant_reach_peer:
         return QStringLiteral("I2P tracker offline (%1)").arg(text);
     default:

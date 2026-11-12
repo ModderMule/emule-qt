@@ -4629,6 +4629,8 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
         thePrefs.setBtVerboseLog(val.toBool());
         DaemonApp::applyLogFilterRules();
     }
+    else if (key == QStringLiteral("btPeerConnectLog"))
+        thePrefs.setBtPeerConnectLog(val.toBool());   // alert mask: btConfigChanged
     else if (key == QStringLiteral("hosterVerboseLog")) {
         thePrefs.setHosterVerboseLog(val.toBool());
         DaemonApp::applyLogFilterRules();

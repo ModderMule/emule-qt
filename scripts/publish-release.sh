@@ -35,6 +35,11 @@ set -euo pipefail
 # in scripts/packmule.ref: its HEAD must be pushed, and is written there and
 # committed with the release. CI checks out that commit with PACKMULE_TOKEN.
 #
+# The ed3k node list every bundle ships (data/config/nodes.ed3knod, bootstrap.md §1 source 5)
+# is exported right before the release commit by scripts/ed3k-seed.local.py generate-bootstrap:
+# a random seed node from scripts/ed3k-seeds.local.json signs its live contacts. A failed
+# export (or no script) keeps the committed file; the release goes on.
+#
 # Tags use the vMAJOR.MINOR.PATCH form to match existing tags (v0.1.6, ...).
 #
 # Requires these keys in the project-root .env (gitignored):
@@ -55,7 +60,7 @@ set -euo pipefail
 # SHA256SUMS.txt attached -- and then publishes the update manifest.
 # Nothing needs to be started by hand.
 #
-# Usage: scripts/publish-release.sh [--publish-only] [--no-build] [--skip-resolver]
+# Usage: scripts/publish-release.sh [--publish-only] [--no-build] [--skip-resolver] [--skip-ed3k-nodes]
 #
 #   --publish-only   Skip the whole git side (no bump, no commit, no tag, no push)
 #                    and do what CI's manifest job does, for the version already in
@@ -68,17 +73,20 @@ set -euo pipefail
 #                    resolver.zip left in build/hoster-resolver by the last build.
 #   --skip-resolver  Leave the resolver alone: no build, no upload, no publish-resolver.sh
 #                    (the manifest keeps its entry).
+#   --skip-ed3k-nodes Keep data/config/nodes.ed3knod as committed; no export from a seed node.
 
 # --- arguments --------------------------------------------------------------
 PUBLISH_ONLY=0
 NO_BUILD=0
 SKIP_RESOLVER=0
+SKIP_ED3K_NODES=0
 for arg in "$@"; do
   case "$arg" in
     --publish-only) PUBLISH_ONLY=1 ;;
     --no-build)      NO_BUILD=1 ;;
     --skip-resolver) SKIP_RESOLVER=1 ;;
-    *) echo "usage: $0 [--publish-only] [--no-build] [--skip-resolver]" >&2; exit 1 ;;
+    --skip-ed3k-nodes) SKIP_ED3K_NODES=1 ;;
+    *) echo "usage: $0 [--publish-only] [--no-build] [--skip-resolver] [--skip-ed3k-nodes]" >&2; exit 1 ;;
   esac
 done
 
@@ -127,6 +135,8 @@ fi
 # every platform build after the tag push.
 PM_DIR="libs/packmule"
 PM_REF_FILE="scripts/packmule.ref"
+ED3K_SEED_SCRIPT="scripts/ed3k-seed.local.py"
+ED3K_NODES_FILE="data/config/nodes.ed3knod"
 PM_COMMIT=""
 if [[ "$PUBLISH_ONLY" -eq 0 ]]; then
   if [[ ! -f "$PM_DIR/Cargo.toml" ]]; then
@@ -356,6 +366,13 @@ else
     echo "  jd svn   : svn update ${JD_REPOS[*]##*/}"
     echo "  resolver : scripts/build-hoster-resolver.sh (${JD_SRC}) -> rsync to ${PUBLISH_REMOTE_PATH}"
   fi
+  if [[ "$SKIP_ED3K_NODES" -eq 1 ]]; then
+    echo "  ed3k     : (skipped -- --skip-ed3k-nodes; ${ED3K_NODES_FILE} as committed)"
+  elif [[ -f "$ED3K_SEED_SCRIPT" ]]; then
+    echo "  ed3k     : ${ED3K_SEED_SCRIPT} generate-bootstrap -> ${ED3K_NODES_FILE} (in the release commit)"
+  else
+    echo "  ed3k     : (no ${ED3K_SEED_SCRIPT}; ${ED3K_NODES_FILE} as committed)"
+  fi
   echo "  packmule : ${PM_COMMIT:0:12} (CI checks out ${PM_REF_FILE})"
   echo "  tag      : ${TAG}  (annotated, carries the GeoLite2 + resolver SHA-256)"
   echo "  push     : ${REMOTE} ${BRANCH}  and  ${REMOTE} ${TAG}"
@@ -440,6 +457,22 @@ if [[ "$DO_RESOLVER" -eq 1 && "$BUNDLE_RESOLVER" -eq 1 ]]; then
          "$RESOLVER_ZIP" \
          "${PUBLISH_SSH_USER}@${PUBLISH_SSH_HOST}:${PUBLISH_REMOTE_PATH}"; then
     abort_before_tag "resolver upload failed"
+  fi
+fi
+
+# --- ed3k node list -----------------------------------------------------------
+# Last step before the commit: nothing after it aborts, so no stray file is left behind.
+if [[ "$PUBLISH_ONLY" -eq 0 && "$SKIP_ED3K_NODES" -eq 0 ]]; then
+  if [[ -f "$ED3K_SEED_SCRIPT" ]]; then
+    echo "Exporting the ed3k node list from a seed node ..."
+    if python3 "$ED3K_SEED_SCRIPT" generate-bootstrap --out "$ED3K_NODES_FILE"; then
+      # the release commit carries it, also when only tagging the current version
+      [[ -n "$(git status --porcelain -- "$ED3K_NODES_FILE")" ]] && BUMPED=1
+    else
+      echo "warning: no seed node could export a node list; ${ED3K_NODES_FILE} stays as committed" >&2
+    fi
+  else
+    echo "note: no ${ED3K_SEED_SCRIPT}; ${ED3K_NODES_FILE} stays as committed"
   fi
 fi
 

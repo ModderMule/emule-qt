@@ -1,6 +1,6 @@
 # eD2K compat mode (ed3k Protocol.md §14)
 
-State 2026-10-31. Spec: `docs/ed3k-spec/Protocol.md` §14, optional tags `docs/ed3k-spec/docs/ed2k-tags.md`.
+State 2026-10-31. Spec: `docs/ed3k-spec/Protocol.md` §14, optional tags `docs/ed3k-spec/docs/ed2k-signals.md`.
 
 ## Done
 
@@ -37,7 +37,7 @@ part, false pair by FileStatus, hinted source preferred, unanswered hint, client
 
 ## Skipped
 
-1. **Explicit tags (ed2k-tags.md):** `CT_ED3K` / `ST_ED3K` in hello, ext SX, login, server ident;
+1. **Explicit tags (ed2k-signals.md):** `CT_ED3K` / `ST_ED3K` in hello, ext SX, login, server ident;
    server rendezvous as ed3k punch signal (§5). Proposal only; a dual client works without them.
 2. **Remote UIs:** web UI / REST have no migrate action, no joint-download option, and still
    show two port fields.

@@ -416,7 +416,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_verboseCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logSourceExchangeCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_serverVerboseCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
-    for (auto* c : {m_btVerboseCheck, m_hosterVerboseCheck, m_ed3kVerboseCheck,
+    for (auto* c : {m_btVerboseCheck, m_btPeerConnectCheck, m_hosterVerboseCheck, m_ed3kVerboseCheck,
                     m_usenetVerboseCheck, m_sharedFilesVerboseCheck, m_ussVerboseCheck})
         connect(c, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logBannedClientsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -1347,6 +1347,11 @@ QWidget* OptionsDialog::createDisplayPage()
     m_speedGraphBgCombo->addItem(tr("Follow theme"), 2);
     m_speedGraphBgCombo->setToolTip(tr("Background of the speed graph in the toolbar."));
     appearanceGrid->addWidget(m_speedGraphBgCombo, 2, 1);
+    appearanceGrid->addWidget(new QLabel(tr("Skin:"), appearanceGroup), 3, 0);
+    auto* changeSkinBtn = new QPushButton(tr("Change Skin..."), appearanceGroup);
+    changeSkinBtn->setToolTip(tr("Browse, install and apply skins."));
+    appearanceGrid->addWidget(changeSkinBtn, 3, 1, Qt::AlignLeft);
+    connect(changeSkinBtn, &QPushButton::clicked, this, &OptionsDialog::changeSkinRequested);
     appearanceGrid->setColumnStretch(2, 1);
     connect(m_colorSchemeCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
     connect(m_fontScaleCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
@@ -6440,6 +6445,17 @@ QWidget* OptionsDialog::createExtendedPage()
     m_btVerboseCheck->setToolTip(tr("libtorrent's DHT, IP filter and performance notes. "
                                     "The tab shows while BitTorrent is on."));
     verboseLayout->addWidget(m_btVerboseCheck);
+    // extended control: needs Torrent Verbose, indented below it
+    m_btPeerConnectCheck = new QCheckBox(tr("Log torrent peer connect failures and disconnects"), verboseGroup);
+    m_btPeerConnectCheck->setToolTip(tr("Why peers do not connect: timeout, refused, no route. "
+                                        "Many lines on busy torrents."));
+    m_btPeerConnectCheck->setEnabled(false);
+    m_btPeerConnectCheck->setVisible(thePrefs.showExtControls());
+    connect(m_btVerboseCheck, &QCheckBox::toggled, m_btPeerConnectCheck, &QWidget::setEnabled);
+    auto* peerConnectRow = new QHBoxLayout;
+    peerConnectRow->setContentsMargins(20, 0, 0, 0);
+    peerConnectRow->addWidget(m_btPeerConnectCheck);
+    verboseLayout->addLayout(peerConnectRow);
     m_hosterVerboseCheck = new QCheckBox(tr("Log hoster resolver details (Hoster Verbose tab)"), verboseGroup);
     m_hosterVerboseCheck->setToolTip(tr("Requests to and answers from the hoster resolver. "
                                         "The tab shows while hoster downloads are on."));
@@ -8117,6 +8133,8 @@ void OptionsDialog::saveSettings()
         req.append(m_serverVerboseCheck->isChecked());
         req.append(QStringLiteral("btVerboseLog"));
         req.append(m_btVerboseCheck->isChecked());
+        req.append(QStringLiteral("btPeerConnectLog"));
+        req.append(m_btPeerConnectCheck->isChecked());
         req.append(QStringLiteral("hosterVerboseLog"));
         req.append(m_hosterVerboseCheck->isChecked());
         req.append(QStringLiteral("ed3kVerboseLog"));
@@ -8503,6 +8521,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setLogSourceExchange(m_logSourceExchangeCheck->isChecked());
         thePrefs.setServerVerboseLog(m_serverVerboseCheck->isChecked());
         thePrefs.setBtVerboseLog(m_btVerboseCheck->isChecked());
+        thePrefs.setBtPeerConnectLog(m_btPeerConnectCheck->isChecked());
         thePrefs.setHosterVerboseLog(m_hosterVerboseCheck->isChecked());
         thePrefs.setEd3kVerboseLog(m_ed3kVerboseCheck->isChecked());
         thePrefs.setUsenetVerboseLog(m_usenetVerboseCheck->isChecked());
@@ -9043,6 +9062,8 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     // Independent channel — stays enabled regardless of the verbose master toggle.
     m_serverVerboseCheck->setChecked(prefs.value(QStringLiteral("serverVerboseLog")).toBool());
     m_btVerboseCheck->setChecked(prefs.value(QStringLiteral("btVerboseLog")).toBool());
+    m_btPeerConnectCheck->setChecked(prefs.value(QStringLiteral("btPeerConnectLog")).toBool());
+    m_btPeerConnectCheck->setEnabled(m_btVerboseCheck->isChecked());
     m_hosterVerboseCheck->setChecked(prefs.value(QStringLiteral("hosterVerboseLog")).toBool());
     m_ed3kVerboseCheck->setChecked(prefs.value(QStringLiteral("ed3kVerboseLog")).toBool());
     m_usenetVerboseCheck->setChecked(prefs.value(QStringLiteral("usenetVerboseLog")).toBool());

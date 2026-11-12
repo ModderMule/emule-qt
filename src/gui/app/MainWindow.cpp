@@ -580,6 +580,7 @@ void MainWindow::showOptionsDialog(int page)
     OptionsDialog dlg(m_ipc, m_statsPanel, this);
     if (page >= 0 && page < OptionsDialog::PageCount)
         dlg.selectPage(page);
+    connect(&dlg, &OptionsDialog::changeSkinRequested, this, &MainWindow::openSkinBrowser);
     connect(&dlg, &OptionsDialog::testNotificationRequested, this, [this](const QString& soundFile) {
         // MFC IDS_MAIN_READY
         showNotification(QStringLiteral("eMule Qt"),
@@ -2709,17 +2710,14 @@ void MainWindow::applySkinProfile(const QString& path)
 
 void MainWindow::openSkinBrowser()
 {
-    if (m_skinBrowser) {
-        m_skinBrowser->show();
-        m_skinBrowser->raise();
-        m_skinBrowser->activateWindow();
-        return;
+    if (!m_skinBrowser) {
+        m_skinBrowser = new SkinBrowserDialog(m_versionChecker, m_skinInstaller, this);
+        m_skinBrowser->setAttribute(Qt::WA_DeleteOnClose);
+        connect(m_skinBrowser, &SkinBrowserDialog::applySkin, this, &MainWindow::applyInstalledSkin);
+        connect(m_skinBrowser, &SkinBrowserDialog::restoreDefaultSkin, this, &MainWindow::restoreDefaultSkin);
     }
-    m_skinBrowser = new SkinBrowserDialog(m_versionChecker, m_skinInstaller, this);
-    m_skinBrowser->setAttribute(Qt::WA_DeleteOnClose);
-    connect(m_skinBrowser, &SkinBrowserDialog::applySkin, this, &MainWindow::applyInstalledSkin);
-    connect(m_skinBrowser, &SkinBrowserDialog::restoreDefaultSkin, this, &MainWindow::restoreDefaultSkin);
-    m_skinBrowser->show();
+    // from Options (Display page): hosted on it, else the modal blocks it
+    ModalHost::show(m_skinBrowser, this);
 }
 
 void MainWindow::applyInstalledSkin(const QString& id)

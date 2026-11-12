@@ -95,15 +95,14 @@ Ed3kKadContactsModel::Ed3kKadContactsModel(QObject* parent)
 {
     m_columns = {
         {tr("Node ID"), [](const QCborMap& m) { return value(m, "id"); }, {}},
-        {tr("Address"),
-         [](const QCborMap& m) {
-             const QString ip = value(m, "ip");
-             return (ip.contains(u':') ? QStringLiteral("[%1]:%2") : QStringLiteral("%1:%2")).arg(ip).arg(number(m, "port"));
-         },
-         {}},
         {tr("Country"), [](const QCborMap& m) { return CountryFlags::columnText(value(m, "cc")); }, {}},
-        {tr("Family"), [](const QCborMap& m) { return QStringLiteral("IPv%1").arg(number(m, "family")); },
-         [](const QCborMap& m) { return QVariant(number(m, "family")); }},
+        // family dialled first; "dual" when the node is in both tables
+        {tr("Family"),
+         [](const QCborMap& m) {
+             const QString f = QStringLiteral("IPv%1").arg(number(m, "family"));
+             return m.value(QStringLiteral("dual")).toBool() ? tr("%1 dual").arg(f) : f;
+         },
+         [](const QCborMap& m) { return QVariant(number(m, "family") * 2 + (m.value(QStringLiteral("dual")).toBool() ? 1 : 0)); }},
         {tr("Distance"), [](const QCborMap& m) { return value(m, "distance"); }, {}},
         {tr("Fails"), [](const QCborMap& m) { return QString::number(number(m, "fails")); },
          [](const QCborMap& m) { return QVariant(number(m, "fails")); }},

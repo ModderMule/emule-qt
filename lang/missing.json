@@ -1,0 +1,32 @@
+{
+ "Log torrent peer connect failures and disconnects": {
+  "_context": "eMule::OptionsDialog",
+  "de_DE": "Torrent-Peer-Verbindungsfehler und Trennungen protokollieren",
+  "es_ES": "Registrar fallos de conexión y desconexiones de pares de torrent",
+  "fr_FR": "Journaliser les échecs de connexion et déconnexions des pairs torrent",
+  "it_IT": "Registra connessioni fallite e disconnessioni dei peer torrent",
+  "ja_JP": "トレントピアの接続失敗と切断を記録",
+  "ko_KR": "토렌트 피어 연결 실패 및 연결 끊김 기록",
+  "nl_NL": "Mislukte verbindingen en verbroken verbindingen van torrent-peers loggen",
+  "pl_PL": "Rejestruj nieudane połączenia i rozłączenia peerów torrent",
+  "pt_BR": "Registrar falhas de conexão e desconexões de pares de torrent",
+  "ru_RU": "Записывать сбои подключения и отключения пиров торрентов",
+  "zh_CN": "记录种子节点连接失败和断开",
+  "zh_TW": "記錄種子節點連線失敗與中斷"
+ },
+ "Why peers do not connect: timeout, refused, no route. Many lines on busy torrents.": {
+  "_context": "eMule::OptionsDialog",
+  "de_DE": "Warum Peers nicht verbinden: Zeitüberschreitung, abgelehnt, keine Route. Viele Zeilen bei aktiven Torrents.",
+  "es_ES": "Por qué los pares no conectan: tiempo agotado, rechazado, sin ruta. Muchas líneas en torrents activos.",
+  "fr_FR": "Pourquoi les pairs ne se connectent pas : délai dépassé, refusé, pas de route. Beaucoup de lignes sur les torrents actifs.",
+  "it_IT": "Perché i peer non si connettono: timeout, rifiutato, nessuna route. Molte righe sui torrent attivi.",
+  "ja_JP": "ピアが接続しない理由: タイムアウト、拒否、経路なし。活発なトレントでは多くの行が出ます。",
+  "ko_KR": "피어가 연결되지 않는 이유: 시간 초과, 거부, 경로 없음. 활발한 토렌트에서는 많은 줄이 기록됩니다.",
+  "nl_NL": "Waarom peers niet verbinden: time-out, geweigerd, geen route. Veel regels bij drukke torrents.",
+  "pl_PL": "Dlaczego peery się nie łączą: przekroczony czas, odmowa, brak trasy. Wiele wierszy przy aktywnych torrentach.",
+  "pt_BR": "Por que os pares não conectam: tempo esgotado, recusado, sem rota. Muitas linhas em torrents ativos.",
+  "ru_RU": "Почему пиры не подключаются: тайм-аут, отказ, нет маршрута. Много строк на активных торрентах.",
+  "zh_CN": "节点无法连接的原因：超时、被拒绝、无路由。活跃的种子会产生大量日志。",
+  "zh_TW": "節點無法連線的原因：逾時、被拒絕、無路由。活躍的種子會產生大量記錄。"
+ }
+}

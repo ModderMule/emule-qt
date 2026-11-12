@@ -577,6 +577,9 @@ public:
     /// Debug lines of BitTorrent, hoster and ed3k: own Verbose tabs, independent of verbose()
     [[nodiscard]] bool btVerboseLog() const;
     void setBtVerboseLog(bool val);
+    /// with btVerboseLog: peer connect failures and disconnects (libtorrent connect/peer alerts)
+    [[nodiscard]] bool btPeerConnectLog() const;
+    void setBtPeerConnectLog(bool val);
     /// Usenet debug lines (Usenet tab, _Usenet file)
     [[nodiscard]] bool usenetVerboseLog() const;
     void setUsenetVerboseLog(bool val);
@@ -1619,6 +1622,11 @@ public:
     /// the node. IPC/REST key `ed3kLan`.
     [[nodiscard]] bool ed3kLan() const;
     void setEd3kLan(bool val);
+    /// Operator declares the node open in both families (Protocol.md §9.2 "The first nodes of a
+    /// network"): ROUTER without reach tests. For seed nodes only. Default off; a change restarts
+    /// the node. IPC/REST key `ed3kForceOpen`.
+    [[nodiscard]] bool ed3kForceOpen() const;
+    void setEd3kForceOpen(bool val);
     /// Hiding (hops.md §1), the global switch: new ed3k searches, downloads and shares go under
     /// the anonymous key while on; files keep their key. Default off; live. IPC/REST `ed3kHide`.
     [[nodiscard]] bool ed3kHide() const;

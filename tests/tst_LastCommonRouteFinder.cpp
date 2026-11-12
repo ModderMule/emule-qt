@@ -31,6 +31,7 @@ private slots:
     void trace_dropsHostsThatAreTooCloseOrUnreachable();
     void trace_skipsASilentHopAndGivesUpWithoutRouters();
     void trace_endsWhenTooFewHostsAreLeft();
+    void trace_fallsBackToTheLastPublicHop();
     void trace_retriesAFailedPingWithTheOtherMethod();
     void trace_takesADivergingFirstHopOnTrust();
     void setPrefs_staysOffAfterGivingUpUntilSwitchedOff();
@@ -360,6 +361,36 @@ void tst_LastCommonRouteFinder::trace_skipsASilentHopAndGivesUpWithoutRouters()
     QVERIFY(!probe.found);
     QCOMPARE(probe.lastCommonHost, 0u);
     QCOMPARE(maxTtl, 4);
+}
+
+// Some ISPs drop "TTL exceeded" past their first router: MFC gave up there and so
+// turned USS off. The last public hop all routes share is past the upload line.
+void tst_LastCommonRouteFinder::trace_fallsBackToTheLastPublicHop()
+{
+    constexpr uint32 kIspHop = 0x81F1975D;   // 93.151.241.129
+    std::vector<uint32> hosts = makeHosts(10);
+    const uint32 last = hosts[9];
+    const auto ping = [&](uint32, uint8 ttl, bool) {
+        if (ttl == 1) return expired(kR1);
+        if (ttl == 2) return expired(kIspHop);
+        return timedOut();
+    };
+    RouteProbe probe = LastCommonRouteFinder::traceLastCommonHost(hosts, ping, kAlways, kNoPause);
+    QVERIFY(probe.found);
+    QCOMPARE(probe.lastCommonHost, kIspHop);
+    QCOMPARE(probe.lastCommonTTL, uint8{2});
+    QCOMPARE(probe.hostToPing, last);
+    QVERIFY(!probe.useUdp);
+
+    // Only LAN hops answered: no telling where the upload line is
+    const auto lanOnly = [&](uint32, uint8 ttl, bool) {
+        if (ttl == 1) return expired(kR1);
+        if (ttl == 2) return expired(kR2);
+        return timedOut();
+    };
+    probe = LastCommonRouteFinder::traceLastCommonHost(hosts, lanOnly, kAlways, kNoPause);
+    QVERIFY(!probe.found);
+    QCOMPARE(probe.lastCommonHost, 0u);
 }
 
 void tst_LastCommonRouteFinder::trace_endsWhenTooFewHostsAreLeft()

@@ -277,6 +277,7 @@ RouteProbe LastCommonRouteFinder::traceLastCommonHost(std::vector<uint32>& hosts
                                                       const std::function<void(uint32)>& pause)
 {
     RouteProbe probe;
+    RouteProbe fallback;  // deepest public hop all routes shared, for silent routers past it
     bool failed = false;
     uint32 curHost = 0;   // router answering at this TTL
 
@@ -289,6 +290,7 @@ RouteProbe LastCommonRouteFinder::traceLastCommonHost(std::vector<uint32>& hosts
         curHost = 0;
         uint32 lastSuccessfulPingAddress = 0;
         uint32 lastDestinationAddress = 0;
+        bool lastSuccessUdp = false;
         uint32 hostCounter = 0;
         bool failedThisTtl = false;
 
@@ -321,6 +323,7 @@ RouteProbe LastCommonRouteFinder::traceLastCommonHost(std::vector<uint32>& hosts
                         curHost = status.destinationAddress;
                     lastSuccessfulPingAddress = address;
                     lastDestinationAddress = status.destinationAddress;
+                    lastSuccessUdp = probe.useUdp;
                     break;
                 case kPingSuccess:           // answered itself: closer than the hop
                 case kPingDestUnreachable:
@@ -363,6 +366,14 @@ RouteProbe LastCommonRouteFinder::traceLastCommonHost(std::vector<uint32>& hosts
                 });
                 probe.lastCommonHost = curHost;
                 probe.lastCommonTTL = static_cast<uint8>(ttl);
+                // A public hop is past the home network, so past the upload line
+                if (!isLanIP(curHost)) {
+                    fallback.found = true;
+                    fallback.lastCommonHost = curHost;
+                    fallback.lastCommonTTL = static_cast<uint8>(ttl);
+                    fallback.hostToPing = lastSuccessfulPingAddress;
+                    fallback.useUdp = lastSuccessUdp;
+                }
             } else {
                 logUssVerbose([&]() -> QString {
                     return QStringLiteral("USS: Routes part at TTL %1 (%2 vs %3), host to ping %4")
@@ -387,6 +398,14 @@ RouteProbe LastCommonRouteFinder::traceLastCommonHost(std::vector<uint32>& hosts
             });
             probe.lastCommonHost = 0;
         }
+    }
+    if (!probe.found && fallback.found && keepGoing()) {
+        // Routers past it drop "TTL exceeded" (some ISPs do): ping through the last one that answered
+        logUssVerbose([&]() -> QString {
+            return QStringLiteral("USS: Routers past TTL %1 stay silent, using hop %2 as last common host")
+                .arg(fallback.lastCommonTTL).arg(ipstr(fallback.lastCommonHost));
+        });
+        return fallback;
     }
     if (!probe.found)
         probe.lastCommonHost = 0;

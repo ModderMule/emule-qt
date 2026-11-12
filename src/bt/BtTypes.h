@@ -77,6 +77,9 @@ struct BtSettings {
     /// added to I2P torrents, and to all torrents while mixed
     QStringList i2pTrackers;
 
+    /// Torrent Verbose + btPeerConnectLog: peer connect failures and disconnects in the log
+    bool peerConnectLog = false;
+
     /// A SAM bridge to use now: I2P on and the router reachable.
     [[nodiscard]] bool hasSam() const { return i2pEnabled && i2pSamPort != 0 && !i2pSamHost.isEmpty(); }
 };

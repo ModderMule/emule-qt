@@ -15,7 +15,10 @@
 #include "Ed3kSession.h"
 #include "geo/IP2Country.h"
 
+#include <algorithm>
 #include <cstring>
+#include <map>
+#include <vector>
 #endif
 
 namespace eMule::Ed3kKadBridge {
@@ -46,21 +49,41 @@ QString hexOf(const std::uint8_t (&b)[N])
     return QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(b), qsizetype(N)).toHex());
 }
 
-QCborArray contactsToCbor(const std::vector<ed3k_kad_contact>& all)
+/// One row per node: a node in both tables is "dual", shown with the family dialled first
+/// (IPv6, 250 ms ahead of IPv4, packmule dial.rs §8.3) unless IPv6 Kad is offline.
+QCborArray contactsToCbor(const std::vector<ed3k_kad_contact>& all, bool v6First)
 {
-    QCborArray out;
+    std::map<QByteArray, std::vector<const ed3k_kad_contact*>> byId;
+    std::vector<QByteArray> order;
     for (const auto& c : all) {
-        const QHostAddress ip = ed3k::toQHostAddress(ffi::Address::from(c.addr));
+        QByteArray id(reinterpret_cast<const char*>(c.id), qsizetype(sizeof c.id));
+        auto& rows = byId[id];
+        if (rows.empty())
+            order.push_back(id);
+        rows.push_back(&c);
+    }
+    QCborArray out;
+    for (const auto& id : order) {
+        const auto& rows = byId[id];
+        const bool dual = rows.size() > 1;
+        const ed3k_kad_contact* c = rows.front();
+        for (const auto* r : rows)
+            if (r->family == (v6First ? 6u : 4u))
+                c = r;
+        const QHostAddress ip = ed3k::toQHostAddress(ffi::Address::from(c->addr));
+        // all zero = own address of that family not adopted yet (no node is its own contact)
+        const bool known = std::ranges::any_of(c->distance, [](std::uint8_t b) { return b != 0; });
         out.append(QCborMap{
-            {QStringLiteral("id"), hexOf(c.id)},
+            {QStringLiteral("id"), hexOf(c->id)},
             {QStringLiteral("ip"), ip.toString()},
-            {QStringLiteral("port"), qint64(c.addr.port)},
-            {QStringLiteral("family"), qint64(c.family)},
+            {QStringLiteral("port"), qint64(c->addr.port)},
+            {QStringLiteral("family"), qint64(c->family)},
+            {QStringLiteral("dual"), dual},
             {QStringLiteral("cc"), countryCodeOf(ip)},
-            {QStringLiteral("distance"), hexOf(c.distance)},
-            {QStringLiteral("fails"), qint64(c.fails)},
-            {QStringLiteral("dialledIn"), c.dialled_in != 0},
-            {QStringLiteral("checkInS"), qint64(c.check_in_s)},
+            {QStringLiteral("distance"), known ? hexOf(c->distance) : QString()},
+            {QStringLiteral("fails"), qint64(c->fails)},
+            {QStringLiteral("dialledIn"), c->dialled_in != 0},
+            {QStringLiteral("checkInS"), qint64(c->check_in_s)},
         });
     }
     return out;
@@ -145,8 +168,11 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
     const auto now = s_session->now();
     switch (t) {
     case IpcMsgType::GetEd3kKadContacts:
-        if (auto all = e->kadContacts(now))
-            reply(IpcMessage::makeResult(seq, true, contactsToCbor(*all)));
+        if (auto all = e->kadContacts(now)) {
+            const auto stats = e->stats(now);
+            const bool v6First = !stats || (stats->kad_offline & 2u) == 0;
+            reply(IpcMessage::makeResult(seq, true, contactsToCbor(*all, v6First)));
+        }
         else
             reply(failure(seq, int(all.error())));
         break;

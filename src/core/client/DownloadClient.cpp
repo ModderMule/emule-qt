@@ -126,6 +126,9 @@ bool UpDownClient::askForDownload()
             }
         } else if (m_ed3kRoute == Ed3kRoute::Untried && hasValidHash()) {
             const auto hint = theApp.ed3kHint(*this, !connected);
+            // a derived hash taken over ed3k never sends an eD2K hello: seed Kad here too
+            if (hint != AppContext::Ed3kHint::NoHint)
+                maybeSeedEd3kFromPeer();
             if (hint == AppContext::Ed3kHint::NoHint) {
                 m_ed3kRoute = Ed3kRoute::Failed;
             } else if (hint == AppContext::Ed3kHint::Started) {

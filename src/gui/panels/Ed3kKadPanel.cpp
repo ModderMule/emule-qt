@@ -81,7 +81,8 @@ Ed3kKadPanel::Ed3kKadPanel(QWidget* parent)
     QWidget* contacts = buildListPanel(m_contactsModel, tr("▸ Contacts (0)"), {}, m_contactsView, m_contactsLabel);
     auto* contactsView = static_cast<ListTreeView*>(m_contactsView);
     contactsView->setDefaultSort(Ed3kKadContactsModel::ColDistance, Qt::AscendingOrder);
-    contactsView->bindColumns(QStringLiteral("ed3kKadContacts"), {260, 190, 110, 60, 260, 50, 80},
+    // "2": the Address column is gone, an older saved layout would shift the columns
+    contactsView->bindColumns(QStringLiteral("ed3kKadContacts2"), {260, 110, 90, 260, 50, 80},
                               {Ed3kKadContactsModel::ColCountry});
     CountryFlags::bindFlagColumn(contactsView);
     m_contactsView->setFont(QFont(QStringLiteral("Courier New"), scaledPointSize(9)));

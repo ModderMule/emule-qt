@@ -271,6 +271,8 @@ using Kind = PrefSpec::Kind;
     t << advanced(text("ed3kExtOff", 1024, "Optional ed3k extensions turned off (names of their documents, e.g. "
                                            "lan-discovery chat, separated by spaces). Restarts the node."));
     t << flag("ed3kLan", "Find ed3k nodes in the local network (LAN discovery). Restarts the node.");
+    t << advanced(flag("ed3kForceOpen", "Declare the ed3k node reachable (no NAT tests): a network's first routers, "
+                                        "seed nodes only. Restarts the node."));
     t << flag("ed3kHide", "Hide this node (ed3k hops.md §1): new ed3k searches, downloads and shares go under the "
                           "anonymous key, through paths of other nodes. Files keep the key they have.");
     t << number("ed3kHops", 0, 3, "", "Hops of every path while hiding (0 = deniable, not hidden: only while forwarding for "
@@ -338,6 +340,7 @@ using Kind = PrefSpec::Kind;
     // --- Logging ---
     t << flag("verbose", "Write verbose (debug) log lines.");
     t << advanced(flag("btVerboseLog", "Log BitTorrent details (Torrent Verbose tab)."));
+    t << advanced(flag("btPeerConnectLog", "With btVerboseLog: log peer connect failures and disconnects."));
     t << advanced(flag("hosterVerboseLog", "Log hoster resolver details (Hoster Verbose tab)."));
     t << advanced(flag("usenetVerboseLog", "Log Usenet details (Usenet tab)."));
     t << advanced(flag("sharedFilesVerboseLog", "Log hashing and duplicates of shared files (Verbose tab)."));

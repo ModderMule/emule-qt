@@ -108,6 +108,8 @@ signals:
     /// "Test" on the Notifications page: show a pop-up the way these settings
     /// would, saved or not. @p soundFile is empty for "No sound".
     void testNotificationRequested(const QString& soundFile);
+    /// "Change Skin..." on the Display page: open the Browse Skins window.
+    void changeSkinRequested();
 
 protected:
     /// Capture the active sidebar page on every close path (OK, Cancel, Esc,
@@ -745,6 +747,7 @@ private:
     QCheckBox*    m_logSourceExchangeCheck = nullptr;
     QCheckBox*    m_serverVerboseCheck = nullptr;
     QCheckBox*    m_btVerboseCheck = nullptr;
+    QCheckBox*    m_btPeerConnectCheck = nullptr;
     QCheckBox*    m_hosterVerboseCheck = nullptr;
     QCheckBox*    m_ed3kVerboseCheck = nullptr;
     QCheckBox*    m_usenetVerboseCheck = nullptr;

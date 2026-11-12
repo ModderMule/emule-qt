@@ -52,7 +52,7 @@ struct Ed3kSettings {
     QString configDir;           ///< state goes to <configDir>/ed3k
     QHostAddress bindAddress{QHostAddress::Any};   ///< Any = dual stack
     QString network;             ///< empty = the public network; tests only; a secret
-    bool forceOpen = false;      ///< tests: treat the address as open (no NAT tests)
+    bool forceOpen = false;      ///< operator/tests: address open, no NAT tests (§9.2 first nodes)
     /// JSON-RPC endpoints (ed3k.creditRpc / ed3k.chaintubeRpc): operator 0 of a call is the
     /// first, n the n-th (as mode B, packmule_udp::http). Empty: calls answered failed.
     QStringList creditRpc;

@@ -259,6 +259,7 @@ struct Preferences::Data {
     bool kadVerboseLog = true;
     bool serverVerboseLog = false;  // Gated server TCP/UDP/search handshake logging
     bool btVerboseLog = false;      // Torrent Verbose tab: emule.torrent debug lines
+    bool btPeerConnectLog = false;  // with btVerboseLog: peer connect failures
     bool usenetVerboseLog = false;  // emule.usenet debug lines
     bool sharedFilesVerboseLog = false; // emule.sharedv: hashing, duplicates
     bool ussVerboseLog = false;     // emule.uss: Upload SpeedSense trace and pings
@@ -783,6 +784,7 @@ struct Preferences::Data {
     QStringList ed3kChaintubeRpc;
     QStringList ed3kExtOff;            // extension names off at start
     bool ed3kLan = true;               // LAN discovery
+    bool ed3kForceOpen = false;        // operator: node reachable, no NAT tests (§9.2 first nodes)
     bool ed3kHide = false;             // hiding (hops.md §1): new searches, downloads, shares anonymous
     int ed3kHops = 1;                  // 0 to 3, every use (0: only while hopping, hops.md §2.6)
     bool ed3kHopping = true;           // forward for others while hiding (§1 "Recommended")
@@ -1382,6 +1384,10 @@ void Preferences::setServerVerboseLog(bool val) { set(&Data::serverVerboseLog, v
 bool Preferences::btVerboseLog() const { return get(&Data::btVerboseLog); }
 
 void Preferences::setBtVerboseLog(bool val) { set(&Data::btVerboseLog, val); }
+
+bool Preferences::btPeerConnectLog() const { return get(&Data::btPeerConnectLog); }
+
+void Preferences::setBtPeerConnectLog(bool val) { set(&Data::btPeerConnectLog, val); }
 
 bool Preferences::usenetVerboseLog() const { return get(&Data::usenetVerboseLog); }
 
@@ -2649,6 +2655,8 @@ QStringList Preferences::ed3kExtOff() const { return get(&Data::ed3kExtOff); }
 void Preferences::setEd3kExtOff(const QStringList& names) { set(&Data::ed3kExtOff, names); }
 bool Preferences::ed3kLan() const { return get(&Data::ed3kLan); }
 void Preferences::setEd3kLan(bool val) { set(&Data::ed3kLan, val); }
+bool Preferences::ed3kForceOpen() const { return get(&Data::ed3kForceOpen); }
+void Preferences::setEd3kForceOpen(bool val) { set(&Data::ed3kForceOpen, val); }
 bool Preferences::ed3kHide() const { return get(&Data::ed3kHide); }
 void Preferences::setEd3kHide(bool val) { set(&Data::ed3kHide, val); }
 int Preferences::ed3kHops() const { return get(&Data::ed3kHops); }
@@ -4162,6 +4170,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("ed3kChaintubeRpc"), ed3kChaintubeRpc().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("ed3kExtOff"), ed3kExtOff().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("ed3kLan"), ed3kLan());
+    prefs.insert(QStringLiteral("ed3kForceOpen"), ed3kForceOpen());
     prefs.insert(QStringLiteral("ed3kHide"), ed3kHide());
     prefs.insert(QStringLiteral("ed3kHops"), static_cast<qint64>(ed3kHops()));
     prefs.insert(QStringLiteral("ed3kHopping"), ed3kHopping());
@@ -4243,6 +4252,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("verbose"), verbose());
     prefs.insert(QStringLiteral("serverVerboseLog"), serverVerboseLog());
     prefs.insert(QStringLiteral("btVerboseLog"), btVerboseLog());
+    prefs.insert(QStringLiteral("btPeerConnectLog"), btPeerConnectLog());
     prefs.insert(QStringLiteral("usenetVerboseLog"), usenetVerboseLog());
     prefs.insert(QStringLiteral("sharedFilesVerboseLog"), sharedFilesVerboseLog());
     prefs.insert(QStringLiteral("ussVerboseLog"), ussVerboseLog());
@@ -4548,6 +4558,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->ed3kChaintubeRpc = rpcUrlList(p.value(QStringLiteral("ed3kChaintubeRpc")));
     m_data->ed3kExtOff = rpcUrlList(p.value(QStringLiteral("ed3kExtOff")));
     m_data->ed3kLan = p.value(QStringLiteral("ed3kLan")).toBool(true);
+    m_data->ed3kForceOpen = p.value(QStringLiteral("ed3kForceOpen")).toBool(false);
     m_data->ed3kHide = p.value(QStringLiteral("ed3kHide")).toBool(false);
     m_data->ed3kHops = static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kHops")).toInteger(1), 0, 3));
     m_data->ed3kHopping = p.value(QStringLiteral("ed3kHopping")).toBool(true);
@@ -4604,6 +4615,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->logFakeCheckShared          = p.value(QStringLiteral("logFakeCheckShared")).toBool();
     m_data->serverVerboseLog            = p.value(QStringLiteral("serverVerboseLog")).toBool();
     m_data->btVerboseLog                = p.value(QStringLiteral("btVerboseLog")).toBool();
+    m_data->btPeerConnectLog            = p.value(QStringLiteral("btPeerConnectLog")).toBool();
     m_data->usenetVerboseLog            = p.value(QStringLiteral("usenetVerboseLog")).toBool();
     m_data->sharedFilesVerboseLog       = p.value(QStringLiteral("sharedFilesVerboseLog")).toBool();
     m_data->ussVerboseLog               = p.value(QStringLiteral("ussVerboseLog")).toBool();
@@ -5096,6 +5108,7 @@ bool Preferences::load(const QString& filePath)
             m_data->kadVerboseLog = l["kadVerboseLog"].as<bool>(m_data->kadVerboseLog);
             m_data->serverVerboseLog = l["serverVerboseLog"].as<bool>(m_data->serverVerboseLog);
             m_data->btVerboseLog = l["btVerboseLog"].as<bool>(m_data->btVerboseLog);
+            m_data->btPeerConnectLog = l["btPeerConnectLog"].as<bool>(m_data->btPeerConnectLog);
             m_data->usenetVerboseLog = l["usenetVerboseLog"].as<bool>(m_data->usenetVerboseLog);
             m_data->sharedFilesVerboseLog = l["sharedFilesVerboseLog"].as<bool>(m_data->sharedFilesVerboseLog);
             m_data->ussVerboseLog = l["ussVerboseLog"].as<bool>(m_data->ussVerboseLog);
@@ -5890,6 +5903,7 @@ bool Preferences::load(const QString& filePath)
             m_data->ed3kChaintubeRpc = urls(e3["chaintubeRpc"]);
             m_data->ed3kExtOff = urls(e3["extOff"]);
             m_data->ed3kLan = e3["lan"].as<bool>(m_data->ed3kLan);
+            m_data->ed3kForceOpen = e3["forceOpen"].as<bool>(m_data->ed3kForceOpen);
             m_data->ed3kHide = e3["hide"].as<bool>(m_data->ed3kHide);
             m_data->ed3kHops = std::clamp(e3["hops"].as<int>(m_data->ed3kHops), 0, 3);
             m_data->ed3kHopping = e3["hopping"].as<bool>(m_data->ed3kHopping);
@@ -6675,6 +6689,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "kadVerboseLog" << YAML::Value << m_data->kadVerboseLog;
     out << YAML::Key << "serverVerboseLog" << YAML::Value << m_data->serverVerboseLog;
     out << YAML::Key << "btVerboseLog" << YAML::Value << m_data->btVerboseLog;
+    out << YAML::Key << "btPeerConnectLog" << YAML::Value << m_data->btPeerConnectLog;
     out << YAML::Key << "usenetVerboseLog" << YAML::Value << m_data->usenetVerboseLog;
     out << YAML::Key << "sharedFilesVerboseLog" << YAML::Value << m_data->sharedFilesVerboseLog;
     out << YAML::Key << "ussVerboseLog" << YAML::Value << m_data->ussVerboseLog;
@@ -7329,6 +7344,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "ownSetsWatch" << YAML::Value << m_data->ed3kOwnSetsWatch;
     out << YAML::Key << "udpPort" << YAML::Value << static_cast<int>(m_data->ed3kUdpPort);
     out << YAML::Key << "lan" << YAML::Value << m_data->ed3kLan;
+    out << YAML::Key << "forceOpen" << YAML::Value << m_data->ed3kForceOpen;
     out << YAML::Key << "hide" << YAML::Value << m_data->ed3kHide;
     out << YAML::Key << "hops" << YAML::Value << m_data->ed3kHops;
     out << YAML::Key << "hopping" << YAML::Value << m_data->ed3kHopping;

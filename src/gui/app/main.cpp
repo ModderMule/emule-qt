@@ -17,6 +17,7 @@
 #include <QMessageBox>
 #include <QPainter>
 #include <QPixmap>
+#include <QElapsedTimer>
 #include <QPointer>
 #include <QProcess>
 #include <QSocketNotifier>
@@ -37,6 +38,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <optional>
+#include <utility>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -121,8 +123,10 @@ QString bundledDaemonPath()
 QPixmap splashPixmap()
 {
     QPixmap pm(QStringLiteral(":/images/Splash.png"));
-    if (pm.isNull())
+    if (pm.isNull()) {
+        eMule::logWarning(QStringLiteral("Splash image :/images/Splash.png not found"));
         return pm;
+    }
 
     const QRect area(0, 0, qRound(pm.width() / pm.devicePixelRatio()),
                      qRound(pm.height() / pm.devicePixelRatio()));
@@ -142,6 +146,54 @@ QPixmap splashPixmap()
     p.drawText(QRect(0, 283, area.width(), 12), Qt::AlignHCenter | Qt::AlignVCenter,
                QStringLiteral("Copyright (C) 2002-2026 eMule Qt team (GPL v2)"));
     return pm;
+}
+
+/// Keeps the splash past the main window while the first core connect is pending.
+/// Gone on connect, on a failure that is no core still launching, under any modal
+/// dialog (connect/start-problem), on a click, or after kSplashMaxMs.
+/// ipc null: IPC off, nothing to wait for.
+void holdSplashForFirstConnect(QSplashScreen* splash, eMule::IpcClient* ipc)
+{
+    if (!splash)
+        return;
+    constexpr int kSplashMaxMs = 10'000;
+    constexpr int kSplashPollMs = 100;
+
+    QPointer<QSplashScreen> guard(splash);
+    auto elapsed = std::make_shared<QElapsedTimer>();
+    elapsed->start();
+    auto closed = std::make_shared<bool>(false);   // poll may fire once more before deleteLater
+    const auto done = [guard, elapsed, closed](const char* why) {
+        if (!guard || std::exchange(*closed, true))
+            return;
+        const QPixmap pm = guard->pixmap();
+        eMule::logInfo(QStringLiteral("Splash %1x%2 @%3x closed %4 ms after main window (%5)")
+                           .arg(pm.width()).arg(pm.height()).arg(pm.devicePixelRatio())
+                           .arg(elapsed->elapsed()).arg(QLatin1StringView(why)));
+        guard->close();
+        guard->deleteLater();
+    };
+    if (!ipc) {
+        done("no core connect");
+        return;
+    }
+
+    // Context = splash: every connection goes with it
+    QObject::connect(ipc, &eMule::IpcClient::connected, splash, [done] { done("connected"); });
+    QObject::connect(ipc, &eMule::IpcClient::connectionFailed, splash, [ipc, done] {
+        if (!ipc->daemonStarting())
+            done("connect failed");   // a dialog or the offline state follows
+    });
+    auto* poll = new QTimer(splash);
+    QObject::connect(poll, &QTimer::timeout, splash, [guard, elapsed, done] {
+        if (!guard || !guard->isVisible())
+            done("clicked");   // QSplashScreen hides itself on a click
+        else if (QApplication::activeModalWidget())
+            done("dialog");
+        else if (elapsed->hasExpired(kSplashMaxMs))
+            done("timeout");
+    });
+    poll->start(kSplashPollMs);
 }
 
 /// Resolve the daemon binary path.
@@ -716,12 +768,6 @@ int main(int argc, char* argv[])
     else
         mainWindow.show();
 
-    if (splash) {
-        splash->finish(&mainWindow);
-        delete splash;
-        splash = nullptr;
-    }
-
     // Apply custom font on startup
     if (!eMule::thePrefs.logFont().isEmpty()) {
         QFont f;
@@ -740,6 +786,11 @@ int main(int argc, char* argv[])
 
     // Releases anything the link handler queued while the daemon was still starting.
     linkHandler.setIpcClient(&ipcClient);
+
+    // Before the connect dialog below: its modal loop closes the splash
+    holdSplashForFirstConnect(splash, eMule::thePrefs.ipcEnabled() && !cli.screenshotMode()
+                                          ? &ipcClient : nullptr);
+    splash = nullptr;   // owned by its hold now
 
     if (eMule::thePrefs.ipcEnabled()) {
         ipcClient.setRemotePollingMs(eMule::thePrefs.ipcRemotePollingMs());

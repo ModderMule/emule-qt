@@ -762,6 +762,7 @@ bt::BtSettings settingsFromPrefs()
     s.i2pTunnelLength = thePrefs.btI2pTunnelLength();
     s.i2pTunnelQuantity = thePrefs.btI2pTunnelQuantity();
     s.i2pTrackers = thePrefs.btI2pTrackers();
+    s.peerConnectLog = thePrefs.btVerboseLog() && thePrefs.btPeerConnectLog();
     return s;
 }
 

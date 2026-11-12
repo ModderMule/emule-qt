@@ -175,6 +175,24 @@ bool performanceDue(const lt::performance_alert* pa)
     return true;
 }
 
+/// A connect/peer alert to the Torrent Verbose log. Connect attempts and
+/// snub/request chatter are skipped: failures and disconnects only.
+void logPeerAlert(const lt::alert* a)
+{
+    if (!lcEmuleTorrent().isDebugEnabled())
+        return;
+    if (const auto* d = lt::alert_cast<lt::peer_disconnected_alert>(a)) {
+        // op connect = the dial failed (timeout, refused, no route); else a dropped session
+        const bool dial = d->op == lt::operation_t::connect || d->op == lt::operation_t::sock_open
+                          || d->op == lt::operation_t::sock_bind;
+        logTorrentDebug((dial ? QStringLiteral("peer connect failed: ") : QStringLiteral("peer disconnected: "))
+                        + message(a));
+        return;
+    }
+    if (lt::alert_cast<lt::peer_error_alert>(a) || lt::alert_cast<lt::incoming_connection_alert>(a))
+        logTorrentDebug(QString::fromLatin1(a->what()) + QStringLiteral(": ") + message(a));
+}
+
 /// libtorrent's own line of @p a to the Torrent tab. Skips the per-piece/block,
 /// stats and incoming-DHT alerts: a firehose, and polled anyway.
 void forwardAlert(const lt::alert* a)
@@ -189,6 +207,11 @@ void forwardAlert(const lt::alert* a)
     const lt::alert_category_t cat = a->category();
     if (cat & lt::alert_category::piece_progress)
         return;
+    // peer connect log only (alert mask): connect failures, disconnects, peer errors
+    if (cat & (lt::alert_category::connect | lt::alert_category::peer)) {
+        logPeerAlert(a);
+        return;
+    }
     QString line = QString::fromLatin1(a->what()) + QStringLiteral(": ") + message(a);
     // The same line again within a minute is dropped: a failing i2p or listen
     // socket repeats each second (#139). Performance alerts have their own gate.

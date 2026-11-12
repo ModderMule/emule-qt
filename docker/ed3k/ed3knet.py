@@ -8,11 +8,13 @@ rust container and mounted into a slim image. All run in the named test network 
 Topology (no RFC 1918 address anywhere: a private address in a named network is adopted as
 the own endpoint, Protocol.md §9.2, and would hide the NAT):
 
-    ed3kpub   11.79.0.0/16   one /24 per host, so each is a site of its own (ip-diversity.md
-                             §1): pubN 11.79.N.10; pub1-pub12 --force-open (a new network's
-                             first routers, operator-declared), pub13-pub14 must earn
-                             ROUTER; seed 11.79.20.10 (--no-router: reachable leaf);
-                             router A 11.79.21.1, router B 11.79.22.1
+    ed3kpub   11.0.0.0/8     one /16 per host, so each is a block of its own (ip-diversity.md
+                             §1: a table holds ≤ 20 per /16, an answer ≤ 4):
+                             pubN 11.N.0.10, N = 1..--nodes (default 14); the last
+                             max(2, N/10) must earn ROUTER, the others are --force-open (a
+                             new network's first routers, operator-declared);
+                             seed 11.200.0.10 (--no-router: reachable leaf);
+                             router A 11.201.0.1, router B 11.202.0.1
     ed3klanA  12.79.1.0/24   router A .254, nodeA .11
     ed3klanB  12.79.2.0/24   router B .254, nodeB .12, nodeF .13
 
@@ -26,8 +28,8 @@ Checks, in order:
                   no ROUTER, so it is asked like a LAN peer; nodeF must get contacts
     4  lowid      nodeB (behind router B) bootstraps, finds nodeA's file in Kad and downloads
                   it: both LowID, the data path is the NAT traversal / relay of the engine
-    5  promotion  of pub13-pub14, started with check 1, one or both became ROUTER by reach
-                  tests (§9.2).
+    5  promotion  of the testers (pub13-pub14 by default), started with check 1, at least
+                  one became ROUTER by reach tests (§9.2).
                   A PROBE counts only from a host the tester sent nothing to for 60 min, and
                   B never probes a node it is connected to (§9.3): in a network so small
                   that a newcomer's lookups touch every router this takes the hour
@@ -35,11 +37,13 @@ Checks, in order:
 Usage:
     python3 docker/ed3k/ed3knet.py --build        # build binary + images, run once
     python3 docker/ed3k/ed3knet.py                # reuse the image, rebuild the binary
+    python3 docker/ed3k/ed3knet.py --nodes 60     # 60 public nodes (54 forced, 6 testers)
     python3 docker/ed3k/ed3knet.py --keep         # leave it running afterwards
     python3 docker/ed3k/ed3knet.py --down         # tear down
 """
 import argparse
 import hashlib
+import random
 import os
 import re
 import subprocess
@@ -62,21 +66,33 @@ BINARY = os.path.join(PACKMULE, TARGET_SUB, "release", "packmule-node")
 LAB = "ed3klab"
 PORT = 5662
 PREFIX = "ed3knet"
-PUB_NET, PUB_SUBNET, PUB = "ed3kpub", "11.79.0.0/16", "11.79"
+PUB_NET, PUB_SUBNET, PUB = "ed3kpub", "11.0.0.0/8", "11"
 # name: (container, public IP, LAN network, LAN subnet, docker gateway, router LAN IP)
 ROUTERS = {
-    "A": (f"{PREFIX}-routerA", f"{PUB}.21.1", "ed3klanA", "12.79.1.0/24", "12.79.1.1", "12.79.1.254"),
-    "B": (f"{PREFIX}-routerB", f"{PUB}.22.1", "ed3klanB", "12.79.2.0/24", "12.79.2.1", "12.79.2.254"),
+    "A": (f"{PREFIX}-routerA", f"{PUB}.201.0.1", "ed3klanA", "12.79.1.0/24", "12.79.1.1", "12.79.1.254"),
+    "B": (f"{PREFIX}-routerB", f"{PUB}.202.0.1", "ed3klanB", "12.79.2.0/24", "12.79.2.1", "12.79.2.254"),
 }
-PUBLIC = {f"pub{i}": f"{PUB}.{i}.10" for i in range(1, 15)}
-FORCED = tuple(f"pub{i}" for i in range(1, 13))
-TESTERS = tuple(n for n in PUBLIC if n not in FORCED)
-SEED_IP = f"{PUB}.20.10"
+SEED_IP = f"{PUB}.200.0.10"
+MIN_NODES, MAX_NODES = 10, 199          # pubN lives in 11.N.0.0/16, below the seed's /16
+BOOT_LINKS = 8                          # --bootstrap links per forced router
 # NAT nodes: name -> (router, IP)
 NATTED = {"nodeA": ("A", "12.79.1.11"), "nodeB": ("B", "12.79.2.12"), "nodeF": ("B", "12.79.2.13")}
-ALL_NODES = [*PUBLIC, "seed", *NATTED]
+PUBLIC: dict[str, str] = {}
+FORCED: tuple[str, ...] = ()
+TESTERS: tuple[str, ...] = ()
+ALL_NODES: list[str] = []
 SHARE_MB = 4
 MIN_CONTACTS = 3
+
+
+def configure(nodes: int) -> None:
+    """Public nodes pub1..pubN: the last max(2, N/10) are testers, the others forced routers."""
+    global PUBLIC, FORCED, TESTERS, ALL_NODES
+    testers = max(2, nodes // 10)
+    PUBLIC = {f"pub{i}": f"{PUB}.{i}.0.10" for i in range(1, nodes + 1)}
+    FORCED = tuple(f"pub{i}" for i in range(1, nodes - testers + 1))
+    TESTERS = tuple(n for n in PUBLIC if n not in FORCED)
+    ALL_NODES = [*PUBLIC, "seed", *NATTED]
 
 
 def log(msg: str) -> None:
@@ -139,9 +155,9 @@ def container(name: str) -> str:
 
 
 def down() -> None:
-    names = [container(n) for n in ALL_NODES] + [r[0] for r in ROUTERS.values()]
+    # by prefix: a rig of another --nodes may be left over
     existing = docker("ps", "-a", "--format", "{{.Names}}").stdout.split()
-    present = [n for n in names if n in existing]
+    present = [n for n in existing if n.startswith(f"{PREFIX}-")]
     if present:
         docker("rm", "-f", *present, check=False)
     for net in (PUB_NET, *[r[2] for r in ROUTERS.values()]):
@@ -253,16 +269,23 @@ class Rig:
         start_node("pub1", "--force-open")
         first = link_of("pub1")
         log(f"pub1 = {first}")
-        # the operator-declared routers first, each given the ones before it (a lookup returns
-        # only contacts closer than the answerer, §10.3: in a network this small a router
-        # found nobody else until its hourly bucket refresh, §10.2)
+        # the operator-declared routers first, each given up to BOOT_LINKS of the ones before
+        # it (a lookup returns only contacts closer than the answerer, §10.3: in a network
+        # this small a router found nobody else until its hourly bucket refresh, §10.2)
+        pick = random.Random(len(FORCED))
         for i, name in enumerate(FORCED[1:], 1):
-            start_node(name, "--force-open", *boot_args(FORCED[:i]))
-        ok = wait_for("forced routers know each other", lambda: all(contacts(n) >= 3 for n in FORCED), 90, 1)
+            earlier = FORCED[:i]
+            boot = earlier if i <= BOOT_LINKS else pick.sample(earlier, BOOT_LINKS)
+            start_node(name, "--force-open", *boot_args(boot))
+        ok = wait_for("forced routers know each other", lambda: all(contacts(n) >= 3 for n in FORCED),
+                      90 + 2 * len(FORCED), 2)
         # the others as from a shipped node list: three of them; checked last (promotion)
         for name in TESTERS:
             start_node(name, *boot_args(FORCED[:3]))
-        detail = ", ".join(f"{n}: {contacts(n)}" for n in FORCED)
+        counts = [contacts(n) for n in FORCED]
+        detail = (", ".join(f"{n}: {c}" for n, c in zip(FORCED, counts)) if len(FORCED) <= 16 else
+                  f"{len(FORCED)} routers, min {min(counts)}, median {sorted(counts)[len(counts) // 2]}, "
+                  f"max {max(counts)}")
         return self.result("routers", ok and all(is_router(n) for n in FORCED), f"contacts {detail}")
 
     def promotion(self) -> bool:
@@ -322,12 +345,17 @@ def sha256(path: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--nodes", type=int, default=14,
+                        help=f"public nodes, {MIN_NODES}-{MAX_NODES} (default 14: 12 forced routers, 2 testers)")
     parser.add_argument("--build", action="store_true", help="rebuild the images too")
     parser.add_argument("--no-binary", action="store_true", help="reuse the built packmule-node")
     parser.add_argument("--keep", action="store_true", help="leave the rig running afterwards")
     parser.add_argument("--timeout", type=int, default=420, help="seconds per check (default 420)")
     parser.add_argument("--down", action="store_true", help="tear the rig down and exit")
     args = parser.parse_args()
+    if not MIN_NODES <= args.nodes <= MAX_NODES:
+        parser.error(f"--nodes must be {MIN_NODES}-{MAX_NODES}")
+    configure(args.nodes)
 
     down()
     if args.down:

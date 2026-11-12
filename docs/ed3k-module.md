@@ -125,6 +125,7 @@ The `ed3k:` block in `preferences.yml`, with IPC/REST keys `ed3kEnabled` and `ed
 | `sitePort` | `0` | IPC/REST `ed3kSitePort`: TCP port of the website server (name.md §6.2); 0 = a random free port, picked once at load and saved (it is part of every site's origin) |
 | `extOff` | `[]` | IPC/REST `ed3kExtOff` (names separated by spaces): optional extensions turned off (`Preferences::ed3kExtensionNames()`: the names of `extensions/*.md`, `lan` = `lan-discovery`) → `Config::extOff`; unknown names are logged and ignored. A change restarts the node |
 | `lan` | `true` | IPC/REST `ed3kLan`: LAN discovery (`Ed3kLan`). A change restarts the node |
+| `forceOpen` | `false` | IPC/REST `ed3kForceOpen`: the operator declares the node open in both families, `ROUTER` without reach tests (Protocol.md §9.2 "The first nodes of a network"). Seed nodes only. A change restarts the node |
 | `nodeLists` | `[]` | IPC/REST `ed3kNodeLists` (links separated by spaces): node list sources as `ed3k:nodes?url=…&key=…` links (`Ed3kBootstrap`); a source the user said yes to is added. No restart |
 | `nodeListAuto` | `true` | IPC/REST `ed3kNodeListAuto`: node lists fetched automatically when < 10 nodes answer (bootstrap.md §1). No restart |
 | `nodeListMaxAgeDays` | `30` | IPC/REST `ed3kNodeListMaxAgeDays`: fetched or opened lists older than this are refused (§2 "MAY"); 0 = no limit; the shipped list has none. No restart |

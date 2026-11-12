@@ -43,12 +43,12 @@ private:
     std::vector<QCborMap> m_rows;
 };
 
-/// The routing table: Node ID, Address, Country, Family, Distance, Fails, Check in.
+/// The routing table, one row per node: Node ID, Country, Family, Distance, Fails, Check in.
 class Ed3kKadContactsModel : public Ed3kKadTableModel {
     Q_OBJECT
 
 public:
-    enum Column { ColId = 0, ColAddress, ColCountry, ColFamily, ColDistance, ColFails, ColCheck };
+    enum Column { ColId = 0, ColCountry, ColFamily, ColDistance, ColFails, ColCheck };
     explicit Ed3kKadContactsModel(QObject* parent = nullptr);
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
 };
