@@ -1109,7 +1109,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3681"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3683"/>
         <source>Test</source>
         <translation>테스트</translation>
     </message>
@@ -3946,7 +3946,7 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::CoreAttachment</name>
     <message>
-        <location filename="../src/gui/app/CoreAttachment.cpp" line="+140"/>
+        <location filename="../src/gui/app/CoreAttachment.cpp" line="+104"/>
         <source>Remote core at %1</source>
         <translation>%1의 원격 코어</translation>
     </message>
@@ -5794,7 +5794,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">ed3k 노드는 일반 페이지의 닉네임을 사용합니다: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+429"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+439"/>
         <location line="+11"/>
         <location line="+568"/>
         <location line="+11"/>
@@ -6114,12 +6114,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1211"/>
+        <location line="+1247"/>
         <source> credits/MiB</source>
         <translation> 크레딧/MiB</translation>
     </message>
     <message>
-        <location line="-1220"/>
+        <location line="-1256"/>
         <source>Never pay (receipts only)</source>
         <translation>지불 안 함(영수증만)</translation>
     </message>
@@ -6367,12 +6367,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1048"/>
+        <location line="+1084"/>
         <source>not read yet</source>
         <translation>아직 읽지 않음</translation>
     </message>
     <message>
-        <location line="-1046"/>
+        <location line="-1082"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>계정이 초과 인출 상태입니다. 계속하려면 새 크레딧 키가 필요합니다.</translation>
     </message>
@@ -6842,7 +6842,49 @@ Off: they are never shared there, also inside the incoming folder.</source>
         <translation>%1의 비밀번호:</translation>
     </message>
     <message>
-        <location line="+95"/>
+        <location line="+90"/>
+        <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
+        <translation>경고: 무엇을 하고 있는지 알지 못하는 한 이 설정을 변경하지 마세요. 그렇지 않으면 상황을 쉽게 악화시킬 수 있습니다. eMule은 이 설정을 조정하지 않아도 정상적으로 작동합니다.</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Hashing</source>
+        <translation>해시 계산 중</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Block hash RAM</source>
+        <translation>블록 해시 RAM</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Auto</source>
+        <translation>자동</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>RAM for the ed3k block hashes of shared files (32 bytes per 256 KiB, about 128 MiB per TiB shared). Hashes over it that no upload uses are dropped from RAM and read from disk again when a peer asks.
+Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
+        <translation>공유 파일의 ed3k 블록 해시에 쓰는 RAM(256 KiB당 32바이트, 공유 1 TiB당 약 128 MiB). 이를 넘고 어떤 업로드에도 쓰이지 않는 해시는 RAM에서 내려지고, 피어가 요청하면 디스크에서 다시 읽습니다.
+자동: RAM의 2 %, 최소 64 MiB, 최대 512 MiB.</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Keep only hashes in use below free RAM</source>
+        <translation>여유 RAM이 이 값 미만이면 사용 중인 해시만 유지</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Never</source>
+        <translation>안 함</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>While the free RAM is below this share of the total, only block hashes in use stay in RAM.</source>
+        <translation>여유 RAM이 전체의 이 비율보다 적은 동안에는 사용 중인 블록 해시만 RAM에 남습니다.</translation>
+    </message>
+    <message>
+        <location line="+22"/>
         <source>Autostart highspeed download</source>
         <translation>고속 다운로드 자동 시작</translation>
     </message>
@@ -6916,7 +6958,7 @@ Off: they are never shared there, also inside the incoming folder.</source>
         <translation>고속 다운로드가 실행 중이 아닙니다. 잔액: %1</translation>
     </message>
     <message>
-        <location line="-700"/>
+        <location line="-736"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -16075,36 +16117,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3557"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3559"/>
         <source>Options</source>
         <translation>옵션</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2466"/>
+        <location line="+2468"/>
         <source>OK</source>
         <translation>확인</translation>
     </message>
     <message>
-        <location line="-2465"/>
-        <location line="+2466"/>
+        <location line="-2467"/>
+        <location line="+2468"/>
         <source>Cancel</source>
         <translation>취소</translation>
     </message>
     <message>
-        <location line="-2465"/>
-        <location line="+6661"/>
+        <location line="-2467"/>
+        <location line="+6663"/>
         <source>Apply</source>
         <translation>적용</translation>
     </message>
     <message>
-        <location line="-6660"/>
+        <location line="-6662"/>
         <source>Help</source>
         <translation>도움말</translation>
     </message>
     <message>
         <location line="+289"/>
-        <location line="+2444"/>
+        <location line="+2446"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -16116,7 +16158,7 @@ Download it again?</source>
         <translation>IP 필터</translation>
     </message>
     <message>
-        <location line="-2559"/>
+        <location line="-2561"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP 필터 다시 로드됨: %1개 항목.</translation>
     </message>
@@ -16126,12 +16168,12 @@ Download it again?</source>
         <translation>옵션 -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+5572"/>
+        <location line="+5574"/>
         <source>Bandwidth</source>
         <translation>대역폭</translation>
     </message>
     <message>
-        <location line="-5357"/>
+        <location line="-5358"/>
         <source>General options</source>
         <translation>일반 옵션</translation>
     </message>
@@ -16141,9 +16183,9 @@ Download it again?</source>
         <translation>고급 옵션</translation>
     </message>
     <message>
-        <location line="-64"/>
-        <location line="+65"/>
-        <location line="+6336"/>
+        <location line="-65"/>
+        <location line="+66"/>
+        <location line="+6337"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
@@ -16418,12 +16460,12 @@ Are you sure you want to continue?</source>
         <translation>CPU &amp;&amp; 메모리 사용량 절약</translation>
     </message>
     <message>
-        <location line="-596"/>
+        <location line="-598"/>
         <source>I2P</source>
         <translation>I2P</translation>
     </message>
     <message>
-        <location line="+450"/>
+        <location line="+452"/>
         <source>Download progress bar</source>
         <translation>다운로드 진행 막대</translation>
     </message>
@@ -16787,14 +16829,14 @@ Are you sure you want to continue?</source>
         <translation>Kad가 꺼져 있습니다: URL을 설정하지 않으면 확인이 동작하지 않습니다.</translation>
     </message>
     <message>
-        <location line="-963"/>
-        <location line="+1037"/>
+        <location line="-965"/>
+        <location line="+1039"/>
         <location line="+1631"/>
         <source>General</source>
         <translation>일반</translation>
     </message>
     <message>
-        <location line="-2667"/>
+        <location line="-2669"/>
         <source>Display</source>
         <translation>표시</translation>
     </message>
@@ -16835,11 +16877,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
+        <location line="+23"/>
         <source>Extended</source>
         <translation>확장</translation>
     </message>
     <message>
-        <location line="+765"/>
+        <location line="+744"/>
         <source>More slots while below the upload limit</source>
         <translation>업로드 제한 미만일 때 슬롯 늘리기</translation>
     </message>
@@ -17356,8 +17399,8 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>사용자 이름:</translation>
     </message>
     <message>
-        <location line="-1944"/>
-        <location line="+2055"/>
+        <location line="-1946"/>
+        <location line="+2057"/>
         <source>Server</source>
         <translation>서버</translation>
     </message>
@@ -17800,10 +17843,10 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>검색에 나타난 파일과 그때의 이름을 로컬에 기록하여, 이후 검색에서 이전에 본 항목을 표시할 수 있게 합니다.</translation>
     </message>
     <message>
-        <location line="-1659"/>
+        <location line="-1661"/>
         <location line="+23"/>
         <location line="+7"/>
-        <location line="+1882"/>
+        <location line="+1884"/>
         <source>Connection</source>
         <translation>연결</translation>
     </message>
@@ -18272,9 +18315,9 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>엄격</translation>
     </message>
     <message>
-        <location line="-3164"/>
-        <location line="+62"/>
-        <location line="+6336"/>
+        <location line="-3166"/>
+        <location line="+63"/>
+        <location line="+6337"/>
         <location line="+2753"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
@@ -19113,8 +19156,8 @@ Auto follows the upload capacity: 2 below 1 Mbit/s, 4 below 4 Mbit/s, 8 below 20
         </translation>
     </message>
     <message>
-        <location line="-9296"/>
-        <location line="+4132"/>
+        <location line="-9298"/>
+        <location line="+4134"/>
         <location line="+395"/>
         <location line="+541"/>
         <source>Indexers</source>
@@ -19246,8 +19289,8 @@ Every page is an API call against the allowance your account has, so this is a s
         <translation>피드는 스스로 실행되어 찾아낸 것을 대기열에 추가하는 검색입니다. 첫 확인에서는 아무것도 추가하지 않고 인덱서에 이미 올라와 있는 항목을 기록만 합니다 — 그렇게 하지 않으면 새 피드가 서버에 남아 있는 모든 것을 내려받게 되기 때문입니다.</translation>
     </message>
     <message>
-        <location line="-4287"/>
-        <location line="+4295"/>
+        <location line="-4289"/>
+        <location line="+4297"/>
         <location line="+325"/>
         <location line="+277"/>
         <source>Feeds</source>
@@ -20108,8 +20151,8 @@ Look up the &quot;default gateway&quot; in this computer&apos;s network settings
         <translation type="vanished">라우터 페이지 열기</translation>
     </message>
     <message>
-        <location line="-9116"/>
-        <location line="+9046"/>
+        <location line="-9118"/>
+        <location line="+9048"/>
         <location line="+52"/>
         <source>Directories</source>
         <translation>폴더</translation>
@@ -20258,13 +20301,13 @@ Create it?</source>
         <translation>더 많은 컨트롤 표시(고급 모드)</translation>
     </message>
     <message>
-        <location line="-542"/>
-        <location line="+58"/>
+        <location line="-544"/>
+        <location line="+59"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
     <message>
-        <location line="-54"/>
+        <location line="-55"/>
         <source>Credits</source>
         <translation>크레딧</translation>
     </message>
@@ -20275,12 +20318,12 @@ Create it?</source>
     </message>
     <message>
         <location line="-1"/>
-        <location line="+494"/>
+        <location line="+496"/>
         <source>Hoster</source>
         <translation>호스터</translation>
     </message>
     <message>
-        <location line="-492"/>
+        <location line="-494"/>
         <source>Filters</source>
         <translation>필터</translation>
     </message>
@@ -20289,7 +20332,7 @@ Create it?</source>
         <translation type="vanished">판매</translation>
     </message>
     <message>
-        <location line="+225"/>
+        <location line="+227"/>
         <source>Open eD2K and ed3k links with eMule Qt</source>
         <translation>eD2K 및 ed3k 링크를 eMule Qt로 열기</translation>
     </message>
@@ -20838,8 +20881,8 @@ News server connections switch over immediately.</source>
 뉴스 서버 연결은 즉시 전환됩니다.</translation>
     </message>
     <message>
-        <location line="-6755"/>
-        <location line="+7315"/>
+        <location line="-6757"/>
+        <location line="+7317"/>
         <source>Web Interface</source>
         <translation>웹 인터페이스</translation>
     </message>
@@ -21304,8 +21347,8 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>설정 페이지 %1은(는) 아직 구현되지 않았습니다.</translation>
     </message>
     <message>
-        <location line="-6559"/>
-        <location line="+6758"/>
+        <location line="-6561"/>
+        <location line="+6760"/>
         <source>Proxy</source>
         <translation>프록시</translation>
     </message>

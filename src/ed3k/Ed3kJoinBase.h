@@ -158,6 +158,11 @@ protected:
     [[nodiscard]] virtual bool sharedGone(const Shared& s) const { Q_UNUSED(s) return false; }
     /// Engine events the base leaves alone (AliasFound of searches not startSetSearch's ...).
     virtual void onOtherEvent(const ffi::Event& event) { Q_UNUSED(event) }
+    /// event::WantHashes of a shared root opened with hashesStored: true when taken (answer
+    /// later with hashesProvide / hashesFail, by @p id); false: failed for it.
+    [[nodiscard]] virtual bool answerHashes(std::uint64_t id, const ffi::Root& root) { Q_UNUSED(id) Q_UNUSED(root) return false; }
+    /// event::HashesLost: the stored values of a shared root failed (hash it again).
+    virtual void onHashesLost(const ffi::Root& root) { Q_UNUSED(root) }
     /// A file stream of a download was opened to @p source (FileRequest sent).
     virtual void onStreamOpened(const ffi::Root& root, std::uint64_t stream, const ffi::Source& source)
     {
@@ -328,6 +333,8 @@ protected:
     // -- state -------------------------------------------------------------
 
     void scheduleSave(const QString& owner);
+    /// The same, saved after @p delayMs at the latest (a hash run: fewer index rewrites).
+    void scheduleSave(const QString& owner, int delayMs);
     void dropDirty(const QString& owner) { m_dirty.remove(owner); }
     /// Marks started, a fresh cancel flag.
     void beginStart();

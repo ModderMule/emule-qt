@@ -1589,10 +1589,15 @@ public:
     /// eMule's shared files served over ed3k (Ed3kShared); only while ed3k runs. Default on.
     [[nodiscard]] bool ed3kShareFiles() const;
     void setEd3kShareFiles(bool val);
-    /// Free RAM below this % of total: Ed3kShared keeps block hashes on disk only. 0 = always
-    /// in RAM. Default 20; preferences.yml only (ed3k.hashCacheLowRamPercent).
+    /// Free RAM below this % of total: the ed3k engine keeps only block hashes in use, the rest
+    /// is read from disk when needed. 0 = off. Default 20 (ed3k.hashCacheLowRamPercent).
     [[nodiscard]] int ed3kHashCacheLowRamPercent() const;
     void setEd3kHashCacheLowRamPercent(int val);
+    /// RAM of the ed3k engine for block hashes of shared files, MiB; idle ones over it are
+    /// read from disk again when needed. 0 = auto: 2 % of RAM, 64–512 MiB (ed3k.hashRamMiB).
+    [[nodiscard]] int ed3kHashRamMiB() const;
+    void setEd3kHashRamMiB(int val);
+    static constexpr int kMaxEd3kHashRamMiB = 65536;
     /// eD2K downloads also fetch from ed3k peers, dual peers over ed3k (Protocol.md §14.4)
     [[nodiscard]] bool ed3kJointDownloads() const;
     void setEd3kJointDownloads(bool val);
@@ -1881,7 +1886,7 @@ public:
     /// every interface, both families; "" or a name = loopback; else the literal.
     [[nodiscard]] static QHostAddress ipcBindAddressOf(const QString& value);
     /// Every address the core listens at: ipcBindAddressOf(), for a name followed by
-    /// its own addresses, one per family (DNS, up to OwnAddress::kLookupTimeoutMs).
+    /// all its own addresses (DNS, up to OwnAddress::kLookupTimeoutMs).
     /// nullopt = the lookup timed out.
     [[nodiscard]] static std::optional<QList<QHostAddress>> ipcBindAddressesOf(const QString& value);
     /// Where a client on this machine dials a core listening at @p value: a wildcard

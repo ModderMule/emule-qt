@@ -10,6 +10,7 @@
 #include "app/AppContext.h"
 #include "files/SharedFileList.h"
 #include "files/Collection.h"
+#include "files/SideHasher.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "crypto/AICHHashSet.h"
@@ -1292,7 +1293,7 @@ void KnownFile::writeExtendedSourceExchangeData(SafeMemFile& data, const UpDownC
 bool KnownFile::createFromFile(const QString& directory, const QString& filename,
                                std::function<void(int)> progressCallback,
                                const FileStamp* scanned, bool* changedSinceScan,
-                               const std::atomic<bool>* cancel)
+                               const std::atomic<bool>* cancel, SideHash* side)
 {
     if (changedSinceScan)
         *changedSinceScan = false;
@@ -1366,7 +1367,7 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
         AICHHashTree* partTree = aichHashSet.m_hashTree.findHash(
             static_cast<uint64>(part) * PARTSIZE, partLength);
 
-        if (!createHash(file, partLength, partHash.data(), partTree, cancel)) {
+        if (!createHash(file, partLength, partHash.data(), partTree, cancel, side)) {
             // shutting down while still hashing: not an error
             if (!cancelled())
                 logError(QStringLiteral("KnownFile::createFromFile: read error in '%1'").arg(fullPath));
@@ -1503,7 +1504,7 @@ bool KnownFile::adoptAndStoreAICHHashSet(AICHRecoveryHashSet& hashSet)
 
 bool KnownFile::createHash(QIODevice& device, uint64 length,
                            uint8* md4HashOut, AICHHashTree* aichTree,
-                           const std::atomic<bool>* cancel)
+                           const std::atomic<bool>* cancel, SideHash* side)
 {
     static constexpr uint32 kReadBlockSize = 64 * 1024;
     // the AICH split below handles one block boundary per read
@@ -1534,6 +1535,8 @@ bool KnownFile::createHash(QIODevice& device, uint64 length,
             break;
 
         md4Hasher.add(buf, static_cast<std::size_t>(got));
+        if (side)
+            side->update({reinterpret_cast<const std::byte*>(buf), static_cast<std::size_t>(got)});
 
         // An AICH block is a hash of exactly EMBLOCKSIZE bytes, and the read size does not divide
         // it, so a read that straddles the boundary has to be split — the tail belongs to

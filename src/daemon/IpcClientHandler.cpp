@@ -5094,6 +5094,10 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
         thePrefs.setEd3kEnabled(val.toBool());
     else if (key == QStringLiteral("ed3kShareFiles"))
         thePrefs.setEd3kShareFiles(val.toBool());
+    else if (key == QStringLiteral("ed3kHashRamMiB"))
+        thePrefs.setEd3kHashRamMiB(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("ed3kHashCacheLowRamPercent"))
+        thePrefs.setEd3kHashCacheLowRamPercent(static_cast<int>(val.toInteger()));
     else if (key == QStringLiteral("ed3kJointDownloads"))
         thePrefs.setEd3kJointDownloads(val.toBool());
     else if (key == QStringLiteral("ed3kShareUsenetPosts"))

@@ -39,6 +39,7 @@ class QPlainTextEdit;
 class QPushButton;
 class QSpinBox;
 class QTreeWidget;
+class QTreeWidgetItem;
 class QVBoxLayout;
 class QWidget;
 
@@ -50,6 +51,7 @@ struct Ed3kChainPrefs;
 class Ed3kFilterPage;
 class Ed3kSellPage;
 class Ed3kHidingGroup;
+class OptionsTree;
 struct Ed3kHosterPrefs;
 
 namespace Ipc {
@@ -73,6 +75,8 @@ public:
     /// Selling paid subscriptions (Ed3kSellPage): acts at once over IPC.
     [[nodiscard]] QWidget* sellingPage() const;
     [[nodiscard]] QWidget* hosterPage() const { return m_hoster; }
+    /// Extended: an MFC-style settings tree (hashing, ...).
+    [[nodiscard]] QWidget* extendedPage() const { return m_extended; }
     /// Hoster page "Open .dlc files with eMule Qt": GUI-only (uistate.yml), OptionsDialog
     /// loads and applies it with the other file types.
     [[nodiscard]] QCheckBox* associateDlcCheck() const { return m_associateDlcCheck; }
@@ -161,6 +165,7 @@ private:
     void applyAccountCheck(const QString& host, const QString& user, const QCborMap& result);
     [[nodiscard]] Ed3kHosterPrefs hosterPrefs() const;
     QWidget* buildAutoCredits(QWidget* parent);
+    QWidget* buildExtended(QWidget* parent);
     /// m_autoNoteLabel and the group's enabled state: ed3k on, credits in use, running.
     void updateAutoCredits();
 
@@ -176,6 +181,10 @@ private:
     Ed3kFilterPage* m_filters = nullptr;
     Ed3kSellPage* m_selling = nullptr;
     QWidget* m_hoster = nullptr;
+    QWidget* m_extended = nullptr;
+    OptionsTree* m_extTree = nullptr;
+    QTreeWidgetItem* m_hashRamItem = nullptr;
+    QTreeWidgetItem* m_lowRamItem = nullptr;
 
     // General
     QLabel* m_runningLabel = nullptr;

@@ -1117,7 +1117,7 @@ Tem comentários</translation>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3681"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3683"/>
         <source>Test</source>
         <translation>Testar</translation>
     </message>
@@ -3963,7 +3963,7 @@ Seus downloads mantêm os arquivos e vão para Todas.</translation>
 <context>
     <name>eMule::CoreAttachment</name>
     <message>
-        <location filename="../src/gui/app/CoreAttachment.cpp" line="+140"/>
+        <location filename="../src/gui/app/CoreAttachment.cpp" line="+104"/>
         <source>Remote core at %1</source>
         <translation>Núcleo remoto em %1</translation>
     </message>
@@ -5814,7 +5814,7 @@ Os nomes dela serão resolvidos depois das listas que você já segue.</translat
         <translation type="vanished">O nó ed3k usa o apelido da página Geral: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+429"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+439"/>
         <location line="+11"/>
         <location line="+568"/>
         <location line="+11"/>
@@ -6134,12 +6134,12 @@ Os nomes dela serão resolvidos depois das listas que você já segue.</translat
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1211"/>
+        <location line="+1247"/>
         <source> credits/MiB</source>
         <translation> créditos/MiB</translation>
     </message>
     <message>
-        <location line="-1220"/>
+        <location line="-1256"/>
         <source>Never pay (receipts only)</source>
         <translation>Nunca pagar (somente recibos)</translation>
     </message>
@@ -6387,12 +6387,12 @@ Os nomes dela serão resolvidos depois das listas que você já segue.</translat
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1048"/>
+        <location line="+1084"/>
         <source>not read yet</source>
         <translation>ainda não lido</translation>
     </message>
     <message>
-        <location line="-1046"/>
+        <location line="-1082"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>A conta está no negativo: uma nova chave de créditos é o caminho a seguir.</translation>
     </message>
@@ -6862,7 +6862,49 @@ Desligado: nunca são compartilhados lá, nem dentro da pasta de entrada.</trans
         <translation>Senha de %1:</translation>
     </message>
     <message>
-        <location line="+95"/>
+        <location line="+90"/>
+        <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
+        <translation>Aviso: Não altere estas configurações a menos que saiba o que está fazendo. Caso contrário, você pode facilmente piorar as coisas. O eMule funcionará bem sem ajustar nenhuma dessas configurações.</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Hashing</source>
+        <translation>Calculando hash</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Block hash RAM</source>
+        <translation>RAM para hashes de blocos</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Auto</source>
+        <translation>Auto</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>RAM for the ed3k block hashes of shared files (32 bytes per 256 KiB, about 128 MiB per TiB shared). Hashes over it that no upload uses are dropped from RAM and read from disk again when a peer asks.
+Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
+        <translation>RAM para os hashes de blocos ed3k dos arquivos compartilhados (32 bytes a cada 256 KiB, cerca de 128 MiB por TiB compartilhado). Hashes acima disso que nenhum upload usa são removidos da RAM e lidos do disco de novo quando um par os pede.
+Auto: 2 % da RAM, no mínimo 64 MiB e no máximo 512 MiB.</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Keep only hashes in use below free RAM</source>
+        <translation>Manter só hashes em uso abaixo da RAM livre</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Never</source>
+        <translation>Nunca</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>While the free RAM is below this share of the total, only block hashes in use stay in RAM.</source>
+        <translation>Enquanto a RAM livre estiver abaixo desta parte do total, só os hashes de blocos em uso ficam na RAM.</translation>
+    </message>
+    <message>
+        <location line="+22"/>
         <source>Autostart highspeed download</source>
         <translation>Iniciar download de alta velocidade automaticamente</translation>
     </message>
@@ -6936,7 +6978,7 @@ Desligado: nunca são compartilhados lá, nem dentro da pasta de entrada.</trans
         <translation>Download de alta velocidade parado. Saldo: %1</translation>
     </message>
     <message>
-        <location line="-700"/>
+        <location line="-736"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -16131,36 +16173,36 @@ Baixar novamente?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3557"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3559"/>
         <source>Options</source>
         <translation>Opções</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+2466"/>
+        <location line="+2468"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-2465"/>
-        <location line="+2466"/>
+        <location line="-2467"/>
+        <location line="+2468"/>
         <source>Cancel</source>
         <translation>Cancelar</translation>
     </message>
     <message>
-        <location line="-2465"/>
-        <location line="+6661"/>
+        <location line="-2467"/>
+        <location line="+6663"/>
         <source>Apply</source>
         <translation>Aplicar</translation>
     </message>
     <message>
-        <location line="-6660"/>
+        <location line="-6662"/>
         <source>Help</source>
         <translation>Ajuda</translation>
     </message>
     <message>
         <location line="+289"/>
-        <location line="+2444"/>
+        <location line="+2446"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -16172,7 +16214,7 @@ Baixar novamente?</translation>
         <translation>Filtro IP</translation>
     </message>
     <message>
-        <location line="-2559"/>
+        <location line="-2561"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>Filtro IP recarregado: %1 entradas.</translation>
     </message>
@@ -16182,12 +16224,12 @@ Baixar novamente?</translation>
         <translation>Opções -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+5572"/>
+        <location line="+5574"/>
         <source>Bandwidth</source>
         <translation>Largura de banda</translation>
     </message>
     <message>
-        <location line="-5357"/>
+        <location line="-5358"/>
         <source>General options</source>
         <translation>Opções gerais</translation>
     </message>
@@ -16197,9 +16239,9 @@ Baixar novamente?</translation>
         <translation>Opções avançadas</translation>
     </message>
     <message>
-        <location line="-64"/>
-        <location line="+65"/>
-        <location line="+6336"/>
+        <location line="-65"/>
+        <location line="+66"/>
+        <location line="+6337"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
@@ -16474,12 +16516,12 @@ Tem certeza de que deseja continuar?</translation>
         <translation>Economizar CPU &amp;&amp; memória</translation>
     </message>
     <message>
-        <location line="-596"/>
+        <location line="-598"/>
         <source>I2P</source>
         <translation>I2P</translation>
     </message>
     <message>
-        <location line="+450"/>
+        <location line="+452"/>
         <source>Download progress bar</source>
         <translation>Barra de progresso do download</translation>
     </message>
@@ -16843,14 +16885,14 @@ Tem certeza de que deseja continuar?</translation>
         <translation>O Kad está desligado: defina uma URL, ou a verificação não fará nada.</translation>
     </message>
     <message>
-        <location line="-963"/>
-        <location line="+1037"/>
+        <location line="-965"/>
+        <location line="+1039"/>
         <location line="+1631"/>
         <source>General</source>
         <translation>Geral</translation>
     </message>
     <message>
-        <location line="-2667"/>
+        <location line="-2669"/>
         <source>Display</source>
         <translation>Exibição</translation>
     </message>
@@ -16891,11 +16933,12 @@ Tem certeza de que deseja continuar?</translation>
     </message>
     <message>
         <location line="+2"/>
+        <location line="+23"/>
         <source>Extended</source>
         <translation>Estendido</translation>
     </message>
     <message>
-        <location line="+765"/>
+        <location line="+744"/>
         <source>More slots while below the upload limit</source>
         <translation>Mais slots abaixo do limite de upload</translation>
     </message>
@@ -17412,8 +17455,8 @@ Cada regra substitui um padrão regex por uma string de substituição.</transla
         <translation>Nome de usuário:</translation>
     </message>
     <message>
-        <location line="-1944"/>
-        <location line="+2055"/>
+        <location line="-1946"/>
+        <location line="+2057"/>
         <source>Server</source>
         <translation>Servidor</translation>
     </message>
@@ -17856,10 +17899,10 @@ Toda conexão Usenet passa então pelo proxy, de modo que a velocidade dele limi
         <translation>Mantém um registro local dos arquivos que apareceram nas suas buscas e dos nomes que tinham, para que buscas posteriores mostrem o que você já viu.</translation>
     </message>
     <message>
-        <location line="-1659"/>
+        <location line="-1661"/>
         <location line="+23"/>
         <location line="+7"/>
-        <location line="+1882"/>
+        <location line="+1884"/>
         <source>Connection</source>
         <translation>Conexão</translation>
     </message>
@@ -18328,9 +18371,9 @@ Toda conexão Usenet passa então pelo proxy, de modo que a velocidade dele limi
         <translation>Estrita</translation>
     </message>
     <message>
-        <location line="-3164"/>
-        <location line="+62"/>
-        <location line="+6336"/>
+        <location line="-3166"/>
+        <location line="+63"/>
+        <location line="+6337"/>
         <location line="+2753"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
@@ -19171,8 +19214,8 @@ Auto segue a capacidade de upload: 2 abaixo de 1 Mbit/s, 4 abaixo de 4 Mbit/s, 8
         </translation>
     </message>
     <message>
-        <location line="-9296"/>
-        <location line="+4132"/>
+        <location line="-9298"/>
+        <location line="+4134"/>
         <location line="+395"/>
         <location line="+541"/>
         <source>Indexers</source>
@@ -19304,8 +19347,8 @@ Cada página é uma chamada de API contra a franquia da sua conta, então isto �
         <translation>Um feed é uma busca que roda sozinha e enfileira o que encontra. Sua primeira verificação não adiciona nada — apenas registra o que o indexador já lista, porque do contrário um feed novo baixaria tudo que ainda está no servidor.</translation>
     </message>
     <message>
-        <location line="-4287"/>
-        <location line="+4295"/>
+        <location line="-4289"/>
+        <location line="+4297"/>
         <location line="+325"/>
         <location line="+277"/>
         <source>Feeds</source>
@@ -20167,8 +20210,8 @@ Procure o &quot;gateway padrão&quot; nas configurações de rede deste computad
         <translation type="vanished">Abrir página do roteador</translation>
     </message>
     <message>
-        <location line="-9116"/>
-        <location line="+9046"/>
+        <location line="-9118"/>
+        <location line="+9048"/>
         <location line="+52"/>
         <source>Directories</source>
         <translation>Diretórios</translation>
@@ -20317,13 +20360,13 @@ Criá-la?</translation>
         <translation>Mostrar mais controles (controles de modo avançado)</translation>
     </message>
     <message>
-        <location line="-542"/>
-        <location line="+58"/>
+        <location line="-544"/>
+        <location line="+59"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
     <message>
-        <location line="-54"/>
+        <location line="-55"/>
         <source>Credits</source>
         <translation>Créditos</translation>
     </message>
@@ -20334,12 +20377,12 @@ Criá-la?</translation>
     </message>
     <message>
         <location line="-1"/>
-        <location line="+494"/>
+        <location line="+496"/>
         <source>Hoster</source>
         <translation>Hospedagem</translation>
     </message>
     <message>
-        <location line="-492"/>
+        <location line="-494"/>
         <source>Filters</source>
         <translation>Filtros</translation>
     </message>
@@ -20348,7 +20391,7 @@ Criá-la?</translation>
         <translation type="vanished">Venda</translation>
     </message>
     <message>
-        <location line="+225"/>
+        <location line="+227"/>
         <source>Open eD2K and ed3k links with eMule Qt</source>
         <translation>Abrir links eD2K e ed3k com o eMule Qt</translation>
     </message>
@@ -20897,8 +20940,8 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
 As conexões com servidores de notícias mudam imediatamente.</translation>
     </message>
     <message>
-        <location line="-6755"/>
-        <location line="+7315"/>
+        <location line="-6757"/>
+        <location line="+7317"/>
         <source>Web Interface</source>
         <translation>Interface web</translation>
     </message>
@@ -21364,8 +21407,8 @@ Defina um valor um pouco abaixo do seu plano. O volume é medido aqui, então fi
         <translation>A página de configurações %1 ainda não foi implementada.</translation>
     </message>
     <message>
-        <location line="-6559"/>
-        <location line="+6758"/>
+        <location line="-6561"/>
+        <location line="+6760"/>
         <source>Proxy</source>
         <translation>Proxy</translation>
     </message>

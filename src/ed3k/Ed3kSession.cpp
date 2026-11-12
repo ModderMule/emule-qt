@@ -758,6 +758,8 @@ void Ed3kSession::answerUnhandled(const ffi::Event& ev)
         logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: block %1 refused, root not shared").arg(w->id); });
     } else if (const auto* v = std::get_if<e::VerifyBlock>(&ev)) {
         (void)m_engine->blockFail(t, v->id);
+    } else if (const auto* wh = std::get_if<e::WantHashes>(&ev)) {
+        (void)m_engine->hashesFail(t, wh->id);
     } else if (const auto* r = std::get_if<e::RpcRequest>(&ev)) {
         // was: ToDo: chain RPC endpoints (credit, chaintube) (done: ed3k.creditRpc /
         // ed3k.chaintubeRpc, startRpc); here none is configured for its class and operator

@@ -1175,6 +1175,9 @@
     <ClInclude Include="utils\BackgroundFileWriter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="files\SideHasher.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\DiskLoadLimiter.h">
       <Filter>Header Files</Filter>
     </ClInclude>

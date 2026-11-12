@@ -404,6 +404,32 @@ private slots:
         QCOMPARE(mirror.uploadSlotTargetRate(), uint32{40});
     }
 
+    // ed3k block hash RAM: 0 = auto, clamped; both round-trip through YAML and IPC
+    void ed3kHashRam_roundTrips()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("prefs.yaml"));
+
+        Preferences prefs;
+        QCOMPARE(prefs.ed3kHashRamMiB(), 0);
+        QCOMPARE(prefs.ed3kHashCacheLowRamPercent(), 20);
+        prefs.setEd3kHashRamMiB(Preferences::kMaxEd3kHashRamMiB + 1);
+        QCOMPARE(prefs.ed3kHashRamMiB(), Preferences::kMaxEd3kHashRamMiB);
+        prefs.setEd3kHashRamMiB(300);
+        prefs.setEd3kHashCacheLowRamPercent(10);
+        QVERIFY(prefs.saveTo(file));
+
+        Preferences loaded;
+        loaded.load(file);
+        QCOMPARE(loaded.ed3kHashRamMiB(), 300);
+        QCOMPARE(loaded.ed3kHashCacheLowRamPercent(), 10);
+
+        Preferences mirror;
+        mirror.updateFromCbor(loaded.toIpcMap());
+        QCOMPARE(mirror.ed3kHashRamMiB(), 300);
+        QCOMPARE(mirror.ed3kHashCacheLowRamPercent(), 10);
+    }
+
     // -- BitTorrent -----------------------------------------------------------
 
     void bittorrent_defaults()

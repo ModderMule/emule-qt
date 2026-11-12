@@ -98,6 +98,7 @@ public:
         PageEd3kAutoCredits, // "Credits" in the sidebar: autostart highspeed download
         PageEd3kSelling,    // selling paid subscriptions (Ed3kSellPage), not in the sidebar for now (hasPage)
         PageBtI2p,          // BitTorrent over I2P (BtI2pPage); empty slot without EMULE_HAVE_BITTORRENT
+        PageEd3kExtended,   // ed3k settings tree (Ed3kOptionsPages::extendedPage); last: stored indices stay put
         PageCount
     };
 

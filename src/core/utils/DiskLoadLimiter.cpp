@@ -154,6 +154,17 @@ qint64 DiskLoadLimiter::pauseNs(qint64 busyNs, int percent)
     return std::min(busyNs * (100 - p) / p, kMaxPauseNs);
 }
 
+QString DiskLoadLimiter::volumeKey(const QString& path)
+{
+#ifndef Q_OS_WIN
+    // the device: cheap, and right for bind mounts and nested mount points
+    struct stat st {};
+    if (::stat(QFile::encodeName(path).constData(), &st) == 0)
+        return QStringLiteral("dev:%1").arg(quint64(st.st_dev));
+#endif
+    return cachedVolumeRoot(path).toLower();
+}
+
 // ---------------------------------------------------------------------------
 // private
 // ---------------------------------------------------------------------------
@@ -167,17 +178,6 @@ std::shared_ptr<DiskLoadLimiter::Ledger> DiskLoadLimiter::ledgerFor(const QStrin
     if (!ledger)
         ledger = std::make_shared<Ledger>();
     return ledger;
-}
-
-QString DiskLoadLimiter::volumeKey(const QString& path)
-{
-#ifndef Q_OS_WIN
-    // the device: cheap, and right for bind mounts and nested mount points
-    struct stat st {};
-    if (::stat(QFile::encodeName(path).constData(), &st) == 0)
-        return QStringLiteral("dev:%1").arg(quint64(st.st_dev));
-#endif
-    return cachedVolumeRoot(path).toLower();
 }
 
 } // namespace eMule

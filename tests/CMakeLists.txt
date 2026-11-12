@@ -1276,6 +1276,13 @@ endif()
 
 # The add/edit category dialog. Constructed directly with a DownloadCategory, so
 # it needs the real dialog and DialogSizing but no daemon and no panel.
+# The MFC-style settings tree of the ed3k Extended page.
+emule_add_test(tst_OptionsTree FOLDER "Gui"
+    SOURCES tst_OptionsTree.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/OptionsTree.cpp")
+target_include_directories(tst_OptionsTree PRIVATE "${CMAKE_SOURCE_DIR}/src/gui")
+target_link_libraries(tst_OptionsTree PRIVATE Qt6::Widgets)
+
 emule_add_test(tst_CategoryDialog FOLDER "Gui"
     SOURCES tst_CategoryDialog.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
@@ -1307,6 +1314,7 @@ emule_add_test(tst_OptionsDialogSizing FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kOptionsPages.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/OptionsTree.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/BtI2pPage.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/ClientIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kFilterPage.cpp"
@@ -1560,6 +1568,7 @@ emule_add_test(tst_SmallScreenDialogs FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/MetaAccountDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kOptionsPages.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/OptionsTree.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/BtI2pPage.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/ClientIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kFilterPage.cpp"

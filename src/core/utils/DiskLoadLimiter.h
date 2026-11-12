@@ -56,6 +56,8 @@ public:
     void setFile(const QString& path);
     /// The same by volume key (tests; empty: own budget).
     void setVolume(const QString& key);
+    /// The volume @p path is on, as setFile keys it (ed3k hashes one file per volume).
+    [[nodiscard]] static QString volumeKey(const QString& path);
 
     void beginRead();
     void endRead();
@@ -72,7 +74,6 @@ private:
     /// One volume's timeline: reads of every limiter on it reserve their share of it.
     struct Ledger;
     [[nodiscard]] static std::shared_ptr<Ledger> ledgerFor(const QString& key);
-    [[nodiscard]] static QString volumeKey(const QString& path);
 
     Hooks m_hooks;
     std::shared_ptr<Ledger> m_ledger;

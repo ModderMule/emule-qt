@@ -17,6 +17,9 @@
 #include "dialogs/PortTest.h"
 #include "dialogs/RouterPage.h"
 #include "controls/ContentScrollArea.h"
+#include "controls/OptionsTree.h"
+#include "app/SkinIcons.h"
+#include "utils/Appearance.h"
 #include "utils/DialogSizing.h"
 #include "prefs/Preferences.h"
 #include "IpcMessage.h"
@@ -200,6 +203,7 @@ Ed3kOptionsPages::Ed3kOptionsPages(IpcClient* ipc, QWidget* parent)
     m_filters = new Ed3kFilterPage(ipc, parent);   // acts at once over IPC (filter-list.md)
     m_selling = new Ed3kSellPage(ipc, parent);     // acts at once over IPC (subscription.md, batch 14)
     m_hoster = buildHoster(parent);
+    m_extended = buildExtended(parent);
     if (m_ipc) {
         connect(m_ipc, &IpcClient::hosterAccountChecked, this, [this](const IpcMessage& msg) {
             applyAccountCheck(msg.fieldString(0), msg.fieldString(1), msg.fieldMap(2));
@@ -222,6 +226,8 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     m_jointDownloadsCheck->setChecked(p.value(QStringLiteral("ed3kJointDownloads")).toBool(true));
     m_shareUsenetCheck->setChecked(p.value(QStringLiteral("ed3kShareUsenetPosts")).toBool(true));
     m_ownSetsWatchCheck->setChecked(p.value(QStringLiteral("ed3kOwnSetsWatch")).toBool(true));
+    m_extTree->setValue(m_hashRamItem, int(p.value(QStringLiteral("ed3kHashRamMiB")).toInteger(0)));
+    m_extTree->setValue(m_lowRamItem, int(p.value(QStringLiteral("ed3kHashCacheLowRamPercent")).toInteger(20)));
     const QStringList off = Preferences::rpcUrlList(p.value(QStringLiteral("ed3kExtOff")));
     for (QCheckBox* box : m_extChecks)
         box->setChecked(!off.contains(box->text()));
@@ -320,6 +326,8 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kJointDownloads", m_jointDownloadsCheck->isChecked());
     put("ed3kShareUsenetPosts", m_shareUsenetCheck->isChecked());
     put("ed3kOwnSetsWatch", m_ownSetsWatchCheck->isChecked());
+    put("ed3kHashRamMiB", qint64(m_extTree->value(m_hashRamItem)));
+    put("ed3kHashCacheLowRamPercent", qint64(m_extTree->value(m_lowRamItem)));
     put("ed3kExtOff", extOff().join(QLatin1Char(' ')));
     if (!m_portJoined)   // joined: the Connection page sends it
         put("ed3kUdpPort", qint64(m_udpPortSpin->value()));
@@ -392,6 +400,8 @@ void Ed3kOptionsPages::saveLocal() const
     thePrefs.setEd3kJointDownloads(m_jointDownloadsCheck->isChecked());
     thePrefs.setEd3kShareUsenetPosts(m_shareUsenetCheck->isChecked());
     thePrefs.setEd3kOwnSetsWatch(m_ownSetsWatchCheck->isChecked());
+    thePrefs.setEd3kHashRamMiB(m_extTree->value(m_hashRamItem));
+    thePrefs.setEd3kHashCacheLowRamPercent(m_extTree->value(m_lowRamItem));
     thePrefs.setEd3kExtOff(extOff());
     if (!m_portJoined && m_udpPortSpin->value() > 0)
         thePrefs.setEd3kUdpPort(uint16(m_udpPortSpin->value()));
@@ -1939,6 +1949,42 @@ void Ed3kOptionsPages::updateChainNote()
 {
     if (m_chainSingleNote)
         m_chainSingleNote->setVisible(singleRemoteEndpoint(linesOf(m_chaintubeRpcEdit)));
+}
+
+QWidget* Ed3kOptionsPages::buildExtended(QWidget* parent)
+{
+    auto* page = new QWidget(parent);
+    auto* layout = new QVBoxLayout(page);
+    layout->setContentsMargins(4, 4, 4, 4);
+    // as eMule's Extended page: the warning, then the tree
+    auto* warning = new QLabel(tr("Warning: Do not change these settings unless you know what you are doing. "
+                                  "Otherwise you can easily make things worse for yourself. eMule will run fine "
+                                  "without adjusting any of these settings."), page);
+    warning->setWordWrap(true);
+    auto pal = warning->palette();
+    pal.setColor(QPalette::WindowText, themed(QColor(0x80, 0x00, 0x00), QColor(0xFF, 0x6B, 0x6B)));
+    warning->setPalette(pal);
+    layout->addWidget(warning);
+
+    m_extTree = new OptionsTree(page);
+    QTreeWidgetItem* hashing = m_extTree->addGroup(tr("Hashing"), skinIcon(QStringLiteral(":/icons/HardDisk.ico")));
+    m_hashRamItem = m_extTree->addSpin(hashing, tr("Block hash RAM"), 0, Preferences::kMaxEd3kHashRamMiB, tr("Auto"),
+                                       QStringLiteral("MiB"));
+    m_hashRamItem->setToolTip(0, tr("RAM for the ed3k block hashes of shared files (32 bytes per 256 KiB, about "
+                                    "128 MiB per TiB shared). Hashes over it that no upload uses are dropped from "
+                                    "RAM and read from disk again when a peer asks.\n"
+                                    "Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB."));
+    m_lowRamItem = m_extTree->addSpin(hashing, tr("Keep only hashes in use below free RAM"), 0, 100, tr("Never"),
+                                      QStringLiteral("%"));
+    m_lowRamItem->setToolTip(0, tr("While the free RAM is below this share of the total, only block hashes in use "
+                                   "stay in RAM."));
+    m_extTree->setValue(m_lowRamItem, 20);
+    connect(m_extTree, &OptionsTree::changed, this, [this] {
+        if (!m_loading)
+            emit changed();
+    });
+    layout->addWidget(m_extTree, 1);
+    return page;
 }
 
 QWidget* Ed3kOptionsPages::buildAutoCredits(QWidget* parent)

@@ -466,12 +466,24 @@ node stops. `applyEd3kConfig` switches it with the pref.
   owner-only): per MD4 the path, size, mtime (ms), root and where the block values are in
   `shared-hashes.dat` (append-only, checked per entry, compacted at start). A file whose path,
   size and mtime match is shared at once. Otherwise it is hashed on a worker
-  (`hashInBackground`), **one file at a time**, and dropped when it changed while hashed. An
-  entry of a file not listed is kept while its path exists (the list may load later).
-  Block values stay in RAM only during a hash run (packmule holds its own copy; its `Tree`
-  shares level 0 and keeps levels ≥ 4), or not at all below `ed3k.hashCacheLowRamPercent`
-  free RAM. Log: count at start and again after the share list's first full scan, progress
-  once a minute, a summary when the run ends.
+  (`hashInBackground`), **one file per disk at a time** (disks in parallel, keyed as
+  `DiskLoadLimiter::volumeKey`, so eD2K and ed3k hashing of one disk share its budget; each
+  disk's queue in path order), and dropped when it changed while hashed. A file eD2K hashes
+  new is read once: `SharedFileList::setSideHasher(sideHasherFactory())` feeds eD2K's read
+  into a BLAKE3 hasher on the same worker, and the result (`primeHash`) is in the cache before
+  the list adds the file. While hashing, the index is saved every 30 s (values are on disk at
+  once; `stop()` saves). An entry of a file not listed is kept while its path exists (the
+  list may load later).
+  Block values on disk are opened with `hashesStored` and no blob: a start reads none of
+  them. packmule asks for them (`WantHashes` → `answerHashes`, read on the base's read pool,
+  MD5 checked) when a peer's `HashRequest` or a `BadBlock` needs them, and keeps them in RAM
+  within its budget (`ed3k_hash_ram_set`): `ed3k.hashRamMiB` (0 = auto: 2 % of RAM, 64–512
+  MiB), 0 while free RAM is below `ed3k.hashCacheLowRamPercent`. Over it, values idle 60 s and
+  not in use go back to disk, least recently used first. No copy here once stored (its `Tree`
+  shares level 0 and keeps levels ≥ 4). Values that fail on load (`HashesLost`): the file is
+  hashed again. Both prefs: Options › ed3k › Extended (tree, group "Hashing"). Log: count at
+  start and again after the share list's first full scan, progress once a minute, a summary
+  when the run ends, "block hash RAM budget N MiB (auto|set|low RAM)" when it changes.
 - **Sharing:** `shareMember` with `SharedFile{root, size, name, ed2k = MD4, no note, complete,
   block values}`, `publish(Both)` (keywords too, so ed3k search finds it; `Source` while
   holding back), and an `ed2k` ALIAS record (alias.md §2: id = MD4 ‖ size

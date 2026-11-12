@@ -63,6 +63,7 @@ private slots:
     void getDataSize();
     void hashingThread_completesFile();
     void hashingThread_failsGracefully();
+    void hashingThread_feedsTheSideHashFromItsRead();
     void getCount();
     void sendListToServer_noServerConnect_noop();
     void sendListToServer_notConnected_noop();
@@ -342,6 +343,73 @@ void tst_SharedFileList::hashingThread_completesFile()
     QVERIFY(kf != nullptr);
     QVERIFY(!kf->hasNullHash());
     delete kf;
+
+    thread.requestStop();
+    thread.wait();
+}
+
+// ed3k's hash from eD2K's read: every byte, then the MD4; none for a full rehash
+void tst_SharedFileList::hashingThread_feedsTheSideHashFromItsRead()
+{
+    struct Seen {
+        QByteArray bytes;
+        QByteArray md4;
+        quint64 size = 0;
+        int made = 0;
+    };
+    auto seen = std::make_shared<Seen>();
+    class Recorder final : public SideHash {
+    public:
+        explicit Recorder(std::shared_ptr<Seen> s) : m_s(std::move(s)) {}
+        void update(std::span<const std::byte> data) override
+        {
+            m_s->bytes.append(reinterpret_cast<const char*>(data.data()), qsizetype(data.size()));
+        }
+        void finish(const QByteArray& md4, const QString&, quint64 size, qint64) override
+        {
+            m_s->md4 = md4;
+            m_s->size = size;
+        }
+    private:
+        std::shared_ptr<Seen> m_s;
+    };
+
+    eMule::testing::TempDir tmpDir;
+    const QString filename = QStringLiteral("side.bin");
+    QByteArray data(300 * 1024 + 7, Qt::Uninitialized);
+    for (qsizetype i = 0; i < data.size(); ++i)
+        data[i] = char((i * 7 + (i >> 9)) & 0xFF);
+    QFile f(tmpDir.filePath(filename));
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    f.write(data);
+    f.close();
+
+    auto slot = std::make_shared<SideHasherSlot>();
+    slot->set([seen](const QString&, quint64) -> std::unique_ptr<SideHash> {
+        ++seen->made;
+        return std::make_unique<Recorder>(seen);
+    });
+    HashingThread thread;
+    thread.setSideHasher(slot);
+    QSignalSpy finishedSpy(&thread, &HashingThread::hashingFinished);
+    QSignalSpy rehashSpy(&thread, &HashingThread::fullRehashDone);
+    thread.start();
+    thread.enqueue({tmpDir.path(), filename, {}});
+    QVERIFY(finishedSpy.wait(5000));
+    auto* kf = finishedSpy.at(0).at(0).value<KnownFile*>();
+    QVERIFY(kf != nullptr);
+    QCOMPARE(seen->made, 1);
+    QVERIFY(seen->bytes == data);
+    QCOMPARE(seen->size, quint64(data.size()));
+    QCOMPARE(seen->md4, QByteArray(reinterpret_cast<const char*>(kf->fileHash()), 16));
+    delete kf;
+
+    HashingThread::Job again{tmpDir.path(), filename, {}};
+    again.fullRehash = true;
+    thread.enqueue(std::move(again));
+    QVERIFY(rehashSpy.wait(5000));
+    delete rehashSpy.at(0).at(0).value<KnownFile*>();
+    QCOMPARE(seen->made, 1);
 
     thread.requestStop();
     thread.wait();

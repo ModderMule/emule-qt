@@ -48,7 +48,7 @@ private slots:
     void dialHostOfLiterals_data();
     void dialHostOfLiterals();
     void dialHostResolvesOnce();
-    void bindOfNameIsLoopbackPlusOwnPerFamily();
+    void bindOfNameIsLoopbackPlusAllOwn();
     void bindOfNameDropsForeignAndLoopback();
     void bindOfForeignOrUnresolvedNameIsLoopback();
     void bindSkipsLinkLocal();
@@ -251,27 +251,20 @@ void tst_CoreAddress::dialHostResolvesOnce()
     QCOMPARE(m_asked.size(), 1);
 }
 
-void tst_CoreAddress::bindOfNameIsLoopbackPlusOwnPerFamily()
+void tst_CoreAddress::bindOfNameIsLoopbackPlusAllOwn()
 {
-    QHostAddress own4, own6;
-    for (const QHostAddress& own : QNetworkInterface::allAddresses()) {
-        if (own.isLoopback() || own.isLinkLocal())
-            continue;
-        QHostAddress& slot = own.protocol() == QAbstractSocket::IPv4Protocol ? own4 : own6;
-        if (slot.isNull())
-            slot = own;
-    }
-    if (own4.isNull() && own6.isNull())
-        QSKIP("no routable interface address");
-    // loopback first, as macOS answers for its own .local name; each family once
+    // loopback first, as macOS answers for its own .local name; each address once
     QList<QHostAddress> answer{QHostAddress(QStringLiteral("::1"))};
     QList<QHostAddress> expected{QHostAddress(QHostAddress::LocalHost)};
-    for (const QHostAddress& own : {own4, own6}) {
-        if (own.isNull())
+    for (QHostAddress own : QNetworkInterface::allAddresses()) {
+        own.setScopeId({});
+        if (own.isLoopback() || own.isLinkLocal() || expected.contains(own))
             continue;
         answer << own << own;
         expected << own;
     }
+    if (expected.size() == 1)
+        QSKIP("no routable interface address");
     m_dns.insert(QStringLiteral("me.example"), answer);
     const auto bind = Preferences::ipcBindAddressesOf(QStringLiteral(" Me.Example. "));
     QVERIFY(bind);

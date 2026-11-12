@@ -145,12 +145,17 @@ void HashingThread::run()
         auto* kf = new KnownFile();
         const KnownFile::FileStamp scanned{job.scannedSize, job.scannedMtime};
         bool changedSinceScan = false;
+        const QString path = job.directory + u'/' + job.filename;
+        // new files only: one read for eD2K and ed3k (a full rehash keeps what ed3k has)
+        std::unique_ptr<SideHash> side;
+        if (m_side && !job.fullRehash)
+            side = m_side->make(path, job.scannedSize);
         bool ok = kf->createFromFile(job.directory, job.filename,
                                      [this](int percent) {
                                          emit hashingProgress(percent);
                                      },
                                      job.scannedMtime != 0 ? &scanned : nullptr,
-                                     &changedSinceScan, &m_cancel);
+                                     &changedSinceScan, &m_cancel, side.get());
 
         // Stopped mid-file: neither hashed nor failed, it is hashed at the next start
         if (m_cancel.load(std::memory_order_relaxed)) {
@@ -174,6 +179,12 @@ void HashingThread::run()
                          .arg(kf->fileSize()); });
             if (!job.sharedDirectory.isEmpty())
                 kf->setSharedDirectory(job.sharedDirectory);
+            // before hashingFinished: queued to the same thread, its result is there first
+            if (side && !kf->hasNullHash()) {
+                const QFileInfo fi(path);
+                side->finish(QByteArray(reinterpret_cast<const char*>(kf->fileHash()), 16), path,
+                             static_cast<quint64>(kf->fileSize()), fi.lastModified().toMSecsSinceEpoch());
+            }
             emit hashingFinished(kf, job.generation);
         } else {
             delete kf;
@@ -1403,6 +1414,7 @@ HashingThread* SharedFileList::workerFor(const QString& volume)
     HashingThread* worker = nullptr;
     if (static_cast<int>(m_hashWorkers.size()) < kMaxHashWorkers) {
         worker = new HashingThread(this);
+        worker->setSideHasher(m_sideHasher);
         connect(worker, &HashingThread::hashingFinished,
                 this, &SharedFileList::onHashingFinished, Qt::QueuedConnection);
         connect(worker, &HashingThread::hashingFailed,

@@ -32,6 +32,7 @@ class FileDataIO;
 class Packet;
 class UpDownClient;
 class SafeMemFile;
+class SideHash;
 
 // ---------------------------------------------------------------------------
 // FileNotifier — lightweight QObject signal emitter owned by KnownFile.
@@ -259,10 +260,12 @@ public:
     /// @param cancel        Set from another thread to stop reading; the call then
     ///                      returns false without logging (MFC IsClosing() checks,
     ///                      srchybrid/KnownFile.cpp:413).
+    /// @param side          Fed every byte read (ed3k's hash from the same read); the
+    ///                      caller finishes it when this returns true.
     bool createFromFile(const QString& directory, const QString& filename,
                         std::function<void(int)> progressCallback = {},
                         const FileStamp* scanned = nullptr, bool* changedSinceScan = nullptr,
-                        const std::atomic<bool>* cancel = nullptr);
+                        const std::atomic<bool>* cancel = nullptr, SideHash* side = nullptr);
     bool createAICHHashSetOnly();
     /// Read @p path and build its complete AICH recovery set into @p out. Touches no
     /// KnownFile, so it is safe on a worker thread.
@@ -274,7 +277,7 @@ public:
     /// @param cancel  checked before every read; a cancelled call returns false
     static bool createHash(QIODevice& device, uint64 length,
                            uint8* md4HashOut, AICHHashTree* aichTree,
-                           const std::atomic<bool>* cancel = nullptr);
+                           const std::atomic<bool>* cancel = nullptr, SideHash* side = nullptr);
     static bool createHashFromFile(const QString& filePath, uint64 length,
                                    uint8* md4HashOut, AICHHashTree* aichTree);
     static bool createHashFromMemory(const uint8* data, uint32 size,

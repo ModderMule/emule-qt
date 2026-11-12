@@ -285,6 +285,7 @@ HEADERS += \
     files/CollectionFile.h \
     files/KnownFile.h \
     files/KnownFileList.h \
+    files/SideHasher.h \
     files/PartFile.h \
     files/PartFileConvert.h \
     files/PartFileSizeLookup.h \

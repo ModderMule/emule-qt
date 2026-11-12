@@ -38,8 +38,8 @@ inline constexpr int kLookupTimeoutMs = 2000;
 /// one, done(false). With a test seam it answers at once.
 void refresh(const QString& name, const QObject* context, std::function<void(bool answered)> done);
 
-/// The own addresses a server for @p name binds: per family the first one @p name
-/// resolves to that is ours, not loopback and needs no scope id. Empty = none
+/// The own addresses a server for @p name binds: every one @p name resolves to
+/// that is ours, not loopback and needs no scope id, in DNS order. Empty = none
 /// (localhost too), nullopt = the lookup timed out.
 [[nodiscard]] std::optional<QList<QHostAddress>> ownBindAddressesOf(const QString& name);
 

@@ -11,6 +11,7 @@
 #include "files/KnownFileList.h"
 #include "files/PublishKeywordList.h"
 #include "files/SharedDirWatcher.h"   // ListedFile
+#include "files/SideHasher.h"
 #include "protocol/Tag.h"
 #include "utils/EntityMap.h"
 
@@ -83,6 +84,8 @@ public:
     };
 
     explicit HashingThread(QObject* parent = nullptr);
+    /// A second hash fed from the same read (ed3k); set before start().
+    void setSideHasher(std::shared_ptr<const SideHasherSlot> slot) { m_side = std::move(slot); }
 
     void enqueue(Job job);
     /// Drop queued work. Rehash jobs are kept: a share reload has nothing to do with
@@ -121,6 +124,7 @@ private:
     bool m_stopRequested = false;
     /// m_stopRequested for the job being read: checked there without the mutex
     std::atomic<bool> m_cancel{false};
+    std::shared_ptr<const SideHasherSlot> m_side;
 };
 
 // ---------------------------------------------------------------------------
@@ -170,6 +174,9 @@ public:
     [[nodiscard]] bool watchingEnabled() const { return m_watcher != nullptr; }
     /// How often folders the OS cannot watch (network shares) are listed; 0 = never.
     void setPollMinutes(int minutes);
+    /// New files feed this second hash from eD2K's read (ed3k: one read for both); an
+    /// empty factory: none. Any thread; a file being read keeps the one it started with.
+    void setSideHasher(SideHasherFactory factory) { m_sideHasher->set(std::move(factory)); }
     /// A walk of the share trees' subfolders runs or waits (they join once it is done).
     [[nodiscard]] bool treeWalkPending() const;
     /// Any off-thread disk job (tree walk, move probe, single file stats) runs or waits.
@@ -636,6 +643,8 @@ private:
     QHash<QString, QString> m_volumeOfDir;
     /// Test seam: which volume a directory counts as (default: its mount point).
     std::function<QString(const QString&)> m_volumeKeyFn;
+    /// shared with every worker (they outlive no SharedFileList, but read it unlocked)
+    std::shared_ptr<SideHasherSlot> m_sideHasher = std::make_shared<SideHasherSlot>();
     ServerConnect* m_serverConnect = nullptr;
 
     /// Guards the hashing pipeline below — and nothing else. Deliberately separate

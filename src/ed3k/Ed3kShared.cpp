@@ -8,6 +8,7 @@
 
 #include "files/KnownFile.h"
 #include "files/SharedFileList.h"
+#include "utils/DiskLoadLimiter.h"
 #include "utils/OwnerOnly.h"
 #include "utils/SystemMemory.h"
 
@@ -18,6 +19,7 @@
 #include <QFile>
 #include <QElapsedTimer>
 #include <QFileInfo>
+#include <QPointer>
 
 #include <algorithm>
 #include <cstring>
@@ -41,8 +43,16 @@ constexpr qint64 kHashesMagicLen = 8;
 /// rewritten when the dead values are at least this much and more than the live ones
 constexpr qint64 kCompactMinDead = 4 << 20;
 constexpr qint64 kCopyChunk = 1 << 20;
+/// the index while hashing: rewritten at most this often (values are on disk at once)
+constexpr int kHashRunSaveDelayMs = 30'000;
 /// the RAM check (a syscall) at most this often
 constexpr qint64 kLowRamCheckMs = 5000;
+/// auto budget of the engine's block values: this share of RAM, within the bounds
+constexpr std::uint64_t kAutoHashRamPercent = 2;
+constexpr std::uint64_t kAutoHashRamMin = 64ull << 20;
+constexpr std::uint64_t kAutoHashRamMax = 512ull << 20;
+/// read queue of stored block values (WantHashes); never an owner id
+const QString kHashReads = QStringLiteral("\x01hashes");
 /// guards against a broken file; a share list this big is not served from the cache
 constexpr quint32 kMaxCacheEntries = 1u << 20;
 /// alias.md §3: `name` at most 255 B of UTF-8
@@ -131,6 +141,7 @@ Ed3kShared::Ed3kShared(Ed3kSession& session, SharedFileSource& source, const QSt
     connect(&m_priorityTimer, &QTimer::timeout, this, [this] {
         refreshPriorities();
         releaseRamHashes();
+        applyHashRamBudget();
         logHashProgress();
     });
 }
@@ -192,13 +203,23 @@ void Ed3kShared::start()
     if (m_started || !m_enabled || !m_session.isRunning())
         return;
     beginStart();
-    m_hashing = false;
+    m_hashingVolumes.clear();
     m_scanLogged = false;
     loadCache();
     for (const SharedEntry& e : m_source.files())
         add(e);
-    logInfo(QStringLiteral("%1 file(s) of the share list, %2 to hash").arg(m_files.size()).arg(m_hashQueue.size()));
+    // a disk read folder by folder: fewer seeks between small files
+    for (auto& [volume, queue] : m_hashQueues)
+        std::ranges::sort(queue, {}, [this](const QByteArray& md4) {
+            const auto it = m_files.find(md4);
+            return it == m_files.end() ? QString() : it->second.entry.path;
+        });
+    logInfo(QStringLiteral("%1 file(s) of the share list, %2 to hash on %3 disk(s)")
+                .arg(m_files.size()).arg(hashQueueSize()).arg(m_hashQueues.size()));
+    m_sideOn->store(true);
     hashNext();
+    m_hashRamSent.reset();
+    applyHashRamBudget();
     m_priorityTimer.start();
     pumpSession();
 }
@@ -208,6 +229,7 @@ void Ed3kShared::stop()
     if (!m_started)
         return;
     m_priorityTimer.stop();
+    m_sideOn->store(false);
     saveCache();
     if (auto* e = m_session.engine()) {
         const auto t = m_session.now();
@@ -224,8 +246,8 @@ void Ed3kShared::stop()
     closeAll();
     m_files.clear();
     m_members.clear();
-    m_hashQueue.clear();
-    m_hashing = false;
+    m_hashQueues.clear();
+    m_hashingVolumes.clear();
     m_runTimer.invalidate();
     m_suspects.clear();
     m_recheckTimer.stop();
@@ -370,6 +392,84 @@ std::size_t Ed3kShared::hashesInRam() const
     return std::size_t(std::ranges::count_if(m_cache, [](const auto& c) { return c.second.inRam; }));
 }
 
+void Ed3kShared::setLowRamPercent(int percent)
+{
+    m_lowRamPercent = percent;
+    m_lowRamCheckedMs = 0;
+    applyHashRamBudget();
+}
+
+void Ed3kShared::setHashRamMiB(int mib)
+{
+    m_hashRamMiB = std::max(0, mib);
+    applyHashRamBudget();
+}
+
+std::uint64_t Ed3kShared::hashRamBudget()
+{
+    if (lowRam())
+        return 0;
+    if (m_hashRamMiB > 0)
+        return std::uint64_t(m_hashRamMiB) << 20;
+    const auto mem = systemMemory();
+    return autoHashRam(mem ? mem->total : 0);
+}
+
+std::uint64_t Ed3kShared::autoHashRam(std::uint64_t totalRam)
+{
+    if (totalRam == 0)
+        return 256ull << 20;   // unknown: a middle value
+    return std::clamp(totalRam / 100 * kAutoHashRamPercent, kAutoHashRamMin, kAutoHashRamMax);
+}
+
+/// One file's ed3k hash, fed from eD2K's read on its hashing worker.
+class Ed3kShared::SideSink final : public SideHash {
+public:
+    explicit SideSink(QPointer<Ed3kShared> owner) : m_owner(std::move(owner)) {}
+
+    void update(std::span<const std::byte> data) override
+    {
+        if (m_ok && !m_hasher.update(data))
+            m_ok = false;
+    }
+
+    void finish(const QByteArray& md4, const QString& path, quint64 size, qint64 mtimeMs) override
+    {
+        if (!m_ok)
+            return;
+        auto done = m_hasher.finish();
+        if (!done || done->size != size)
+            return;
+        const auto bytes = done->hashes.bytes();
+        FileHash hashed{done->root, done->size, ffi::Bytes(bytes.begin(), bytes.end())};
+        // queued to the owner's thread ahead of the share list's hashingFinished
+        QMetaObject::invokeMethod(
+            m_owner.data(),
+            [owner = m_owner, md4, path, mtimeMs, hashed = std::move(hashed)] {
+                if (owner)
+                    owner->primeHash(md4, path, mtimeMs, hashed);
+            },
+            Qt::QueuedConnection);
+    }
+
+private:
+    QPointer<Ed3kShared> m_owner;
+    ffi::Hasher m_hasher;
+    bool m_ok = true;
+};
+
+SideHasherFactory Ed3kShared::sideHasherFactory()
+{
+    QPointer<Ed3kShared> self(this);
+    return [self, on = m_sideOn](const QString& path, quint64 size) -> std::unique_ptr<SideHash> {
+        Q_UNUSED(path)
+        // a hasher only while serving (size 0: never shared)
+        if (!on->load() || size == 0)
+            return nullptr;
+        return std::make_unique<SideSink>(self);
+    };
+}
+
 ffi::Bytes Ed3kShared::ed2kAlias(const QByteArray& md4, std::uint64_t size, const ffi::Root& root, const QString& name)
 {
     // Alias (proto): scheme 1, id 2, rel 3 (SAME = 0, left out), root 4, size 5, name 6
@@ -439,7 +539,7 @@ void Ed3kShared::onListScanned(bool full)
     if (!m_started || !full || std::exchange(m_scanLogged, true))
         return;
     logInfo(QStringLiteral("%1 file(s) of the share list after its scan, %2 to hash")
-                .arg(m_files.size()).arg(m_hashQueue.size() + (m_hashing ? 1 : 0)));
+                .arg(m_files.size()).arg(hashQueueSize() + m_hashingVolumes.size()));
 }
 
 void Ed3kShared::onFileChanged(const QByteArray& md4)
@@ -481,6 +581,58 @@ std::optional<Ed3kJoinBase::FileRead> Ed3kShared::sharedRead(const Shared& s, st
 {
     const File* f = fileOfMember(s.member);
     return f ? f->entry.priority : ::ed3k::UploadPriority::Normal;
+}
+
+bool Ed3kShared::answerHashes(std::uint64_t id, const ffi::Root& root)
+{
+    auto* e = m_session.engine();
+    const auto c = cacheOfRoot(root);
+    if (!e || c == m_cache.end())
+        return false;
+    const Hashed& h = c->second;
+    if (h.inRam) {
+        (void)e->hashesProvide(m_session.now(), id, std::span<const std::byte>{h.hashes});
+        return true;
+    }
+    if (h.diskOffset < kHashesMagicLen)
+        return false;
+    // on a worker: a big file's values are MiB, the main thread must not wait for the disk
+    const QByteArray md4 = c->first;
+    const QByteArray check = h.diskCheck;
+    readInBackground(kHashReads, {FileRead{hashesPath(), std::uint64_t(h.diskOffset), h.diskLen}},
+                     [this, id, md4, check](ReadResults r) {
+        auto* e = m_session.engine();
+        if (!e)
+            return;
+        std::optional<ffi::Bytes> blob;
+        if (!r.empty() && r.front()) {
+            const auto* b = reinterpret_cast<const std::byte*>(r.front()->constData());
+            const std::span<const std::byte> bytes{b, std::size_t(r.front()->size())};
+            if (checkOf(bytes) == check)
+                blob = ffi::Bytes(bytes.begin(), bytes.end());
+        }
+        // compacted meanwhile (moved): read again where it is now
+        if (const auto c = m_cache.find(md4); !blob && c != m_cache.end())
+            blob = loadHashes(c->second);
+        const auto t = m_session.now();
+        if (blob)
+            (void)e->hashesProvide(t, id, std::span<const std::byte>{*blob});
+        else
+            (void)e->hashesFail(t, id);
+        pumpSession();
+    });
+    return true;
+}
+
+void Ed3kShared::onHashesLost(const ffi::Root& root)
+{
+    const auto c = cacheOfRoot(root);
+    if (c == m_cache.end())
+        return;
+    logWarning(QStringLiteral("stored block hashes of \"%1\" unreadable, hashed again").arg(c->second.path));
+    // dropped and taken again on the next turn (recheck): hashed, as a cache miss
+    m_suspects.insert(c->first);
+    m_recheckTimer.start();
 }
 
 bool Ed3kShared::sharedGone(const Shared& s) const
@@ -568,42 +720,43 @@ void Ed3kShared::share(File& f, Hashed& h)
     auto* e = m_session.engine();
     if (!e)
         return;
-    // values not in RAM: read for this call (the engine keeps its own copy)
-    std::optional<ffi::Bytes> fromDisk;
-    if (!h.inRam) {
-        fromDisk = loadHashes(h);
-        if (!fromDisk) {
-            logWarning(QStringLiteral("cached block hashes of \"%1\" unreadable, hashed again").arg(f.entry.name));
-            m_cache.erase(f.entry.md4);   // h is gone
-            scheduleSave(kOwner);
-            enqueueHash(f);
-            hashNext();
-            return;
-        }
+    // values on disk: the engine asks for them when a peer needs them (answerHashes), so
+    // a start reads nothing of shared-hashes.dat
+    // was: std::optional<ffi::Bytes> fromDisk;
+    // was: if (!h.inRam) {
+    // was:     fromDisk = loadHashes(h);
+    // was:     if (!fromDisk) {
+    const bool stored = h.diskOffset >= kHashesMagicLen;
+    if (!h.inRam && !stored) {
+        logWarning(QStringLiteral("cached block hashes of \"%1\" unreadable, hashed again").arg(f.entry.name));
+        m_cache.erase(f.entry.md4);   // h is gone
+        scheduleSave(kOwner);
+        enqueueHash(f);
+        hashNext();
+        return;
     }
-    const ffi::Bytes& hashes = fromDisk ? *fromDisk : h.hashes;
+    // was: const ffi::Bytes& hashes = fromDisk ? *fromDisk : h.hashes;
+    const std::span<const std::byte> hashes = h.inRam ? std::span<const std::byte>{h.hashes} : std::span<const std::byte>{};
     const std::string name = utf8(f.entry.name);
     // hops.md §1: under the anonymous key nothing names it for eD2K (no MD4, no ALIAS)
     const bool anon = keyOf(h.root) == ffi::KeyKind::Anon;
     // was: const auto ed2k = ed2kOf(f.entry.md4);
     const auto ed2k = anon ? std::nullopt : ed2kOf(f.entry.md4);
     // the MD4 is eMule's of the same file (the share list checks size and date)
-    if (!shareMember(ffi::SharedFile{h.root, h.size, name, ed2k, std::nullopt, ffi::Have::complete(), std::span{hashes}}, kOwner,
-                     f.member)) {
+    // was: if (!shareMember(ffi::SharedFile{h.root, h.size, name, ed2k, std::nullopt, ffi::Have::complete(), std::span{hashes}}, kOwner,
+    ffi::SharedFile file{h.root, h.size, name, ed2k, std::nullopt, ffi::Have::complete(), hashes};
+    file.hashesStored = stored;
+    if (!shareMember(file, kOwner, f.member)) {
         logWarning(QStringLiteral("cannot share \"%1\"").arg(f.entry.name));
         return;
     }
     f.shared = true;
-    // the second copy (packmule holds its own): in RAM only during a hash run, unless RAM is short
-    // was: if (lowRam()) {
-    if (!m_runTimer.isValid() || lowRam()) {
-        if (h.inRam && h.diskOffset >= 0) {
-            ffi::Bytes().swap(h.hashes);
-            h.inRam = false;
-        }
-    } else if (fromDisk) {
-        h.hashes = std::move(*fromDisk);
-        h.inRam = true;
+    // no second copy: packmule holds the values within its RAM budget, read back from disk
+    // was: if (!m_runTimer.isValid() || lowRam()) {
+    // was:     if (h.inRam && h.diskOffset >= 0) { drop } } else if (fromDisk) { keep }
+    if (h.inRam && stored) {
+        ffi::Bytes().swap(h.hashes);
+        h.inRam = false;
     }
     const auto t = m_session.now();
     const ffi::FileInfo info{h.root, h.size, name, ed2k, 0, 0, 0, 0, 0, 0};
@@ -645,50 +798,59 @@ void Ed3kShared::enqueueHash(File& f)
     if (f.queued)
         return;
     f.queued = true;
-    m_hashQueue.push_back(f.entry.md4);
+    m_hashQueues[volumeOf(f.entry.path)].push_back(f.entry.md4);
 }
 
 void Ed3kShared::hashNext()
 {
-    while (!m_hashing && m_started && !m_hashQueue.empty()) {
-        const QByteArray md4 = m_hashQueue.front();
-        m_hashQueue.pop_front();
-        const auto it = m_files.find(md4);
-        if (it == m_files.end() || !it->second.queued)
+    if (!m_started)
+        return;
+    // was: one file at a time over all disks; now one per disk, disks in parallel
+    for (auto& [volume, queue] : m_hashQueues) {
+        if (m_hashingVolumes.contains(volume))
             continue;
-        File& f = it->second;
-        f.queued = false;
-        m_hashing = true;
-        ++m_hashCount;
-        const QString path = f.entry.path;
-        const qint64 mtime = f.mtimeMs;
-        if (!m_runTimer.isValid()) {
-            m_runTimer.start();
-            m_runFiles = 0;
-            m_runBytes = 0;
-            logInfo(QStringLiteral("hashing %1 file(s)").arg(m_hashQueue.size() + 1));
-        }
-        // per file like eD2K's "Hashing file": own switch, a big share floods the log
-        if (lcEmuleSharedVerbose().isDebugEnabled())
-            logInfo(QStringLiteral("Hashing file: \"%1\"").arg(QDir::toNativeSeparators(path)));
-        QElapsedTimer fileTimer;
-        fileTimer.start();
-        hashInBackground(path, [this, md4, path, mtime, fileTimer](std::optional<FileHash> hashed) {
-            m_hashing = false;
-            if (hashed) {
-                ++m_runFiles;
-                m_runBytes += static_cast<qint64>(hashed->size);
-                if (lcEmuleSharedVerbose().isDebugEnabled())
-                    logInfo(QStringLiteral("Hashed \"%1\" (%2 bytes) in %3 ms")
-                                .arg(QDir::toNativeSeparators(path)).arg(hashed->size).arg(fileTimer.elapsed()));
+        while (!queue.empty()) {
+            const QByteArray md4 = queue.front();
+            queue.pop_front();
+            const auto it = m_files.find(md4);
+            if (it == m_files.end() || !it->second.queued)
+                continue;
+            File& f = it->second;
+            f.queued = false;
+            m_hashingVolumes.insert(volume);
+            ++m_hashCount;
+            const QString path = f.entry.path;
+            const qint64 mtime = f.mtimeMs;
+            if (!m_runTimer.isValid()) {
+                m_runTimer.start();
+                m_runFiles = 0;
+                m_runBytes = 0;
+                logInfo(QStringLiteral("hashing %1 file(s)").arg(hashQueueSize() + 1));
             }
-            onHashed(md4, path, mtime, hashed);
-            hashNext();
-            if (!m_hashing)
-                endHashRun();
-            pumpSession();
-        });
+            // per file like eD2K's "Hashing file": own switch, a big share floods the log
+            if (lcEmuleSharedVerbose().isDebugEnabled())
+                logInfo(QStringLiteral("Hashing file: \"%1\"").arg(QDir::toNativeSeparators(path)));
+            QElapsedTimer fileTimer;
+            fileTimer.start();
+            hashInBackground(path, [this, md4, path, mtime, fileTimer, volume](std::optional<FileHash> hashed) {
+                m_hashingVolumes.erase(volume);
+                if (hashed) {
+                    ++m_runFiles;
+                    m_runBytes += static_cast<qint64>(hashed->size);
+                    if (lcEmuleSharedVerbose().isDebugEnabled())
+                        logInfo(QStringLiteral("Hashed \"%1\" (%2 bytes) in %3 ms")
+                                    .arg(QDir::toNativeSeparators(path)).arg(hashed->size).arg(fileTimer.elapsed()));
+                }
+                onHashed(md4, path, mtime, hashed);
+                hashNext();
+                if (m_hashingVolumes.empty())
+                    endHashRun();
+                pumpSession();
+            });
+            break;
+        }
     }
+    std::erase_if(m_hashQueues, [this](const auto& q) { return q.second.empty() && !m_hashingVolumes.contains(q.first); });
 }
 
 void Ed3kShared::onHashed(const QByteArray& md4, const QString& path, qint64 mtimeMs, const std::optional<FileHash>& hashed)
@@ -718,19 +880,7 @@ void Ed3kShared::onHashed(const QByteArray& md4, const QString& path, qint64 mti
         logDebug([&]() -> QString { return QStringLiteral("\"%1\" changed while hashed, left out").arg(path); });
         return;
     }
-    Hashed& h = m_cache[md4];
-    h = Hashed{};
-    h.path = path;
-    h.size = hashed->size;
-    h.mtimeMs = mtimeMs;
-    h.root = hashed->root;
-    h.hashes = hashed->hashes;
-    h.inRam = true;
-    // on disk before the index names it; a failed store keeps it in RAM (hashed again next start)
-    if (!storeHashes(h, std::span<const std::byte>{h.hashes}))
-        logWarning(QStringLiteral("cannot store block hashes of \"%1\" in %2").arg(f.entry.name, hashesPath()));
-    scheduleSave(kOwner);
-    share(f, h);
+    share(f, remember(md4, path, mtimeMs, *hashed));
 }
 
 void Ed3kShared::rehash(const QByteArray& md4)
@@ -1039,8 +1189,8 @@ bool Ed3kShared::lowRam()
     const bool was = m_lowRam;
     m_lowRam = systemMemoryLow(m_lowRamPercent);
     if (m_lowRam != was)
-        logInfo(m_lowRam ? QStringLiteral("free RAM below %1 %: block hashes of shared files kept on disk only").arg(m_lowRamPercent)
-                         : QStringLiteral("free RAM above %1 % again: block hashes kept in RAM once read").arg(m_lowRamPercent));
+        logInfo(m_lowRam ? QStringLiteral("free RAM below %1 %: only block hashes in use kept in RAM").arg(m_lowRamPercent)
+                         : QStringLiteral("free RAM above %1 % again: block hashes kept in RAM within the budget").arg(m_lowRamPercent));
     return m_lowRam;
 }
 
@@ -1071,14 +1221,95 @@ void Ed3kShared::endHashRun()
     releaseRamHashes();
 }
 
+void Ed3kShared::applyHashRamBudget()
+{
+    auto* e = m_session.engine();
+    if (!m_started || !e)
+        return;
+    const std::uint64_t budget = hashRamBudget();
+    if (m_hashRamSent == budget)
+        return;
+    if (!e->hashRamSet(m_session.now(), budget))
+        return;
+    m_hashRamSent = budget;
+    const QString why = lowRam() ? QStringLiteral("low RAM") : m_hashRamMiB > 0 ? QStringLiteral("set") : QStringLiteral("auto");
+    logInfo(QStringLiteral("block hash RAM budget %1 MiB (%2)").arg(budget >> 20).arg(why));
+}
+
+Ed3kShared::CacheIt Ed3kShared::cacheOfRoot(const ffi::Root& root)
+{
+    return std::ranges::find_if(m_cache, [&](const auto& c) { return c.second.root == root; });
+}
+
 void Ed3kShared::logHashProgress()
 {
     if (!m_runTimer.isValid())
         return;
     const double secs = static_cast<double>(std::max<qint64>(1, m_runTimer.elapsed())) / 1000.0;
     logInfo(QStringLiteral("hashing: %1 file(s) done, %2 left, %3 MiB/s")
-                .arg(m_runFiles).arg(m_hashQueue.size() + (m_hashing ? 1 : 0))
+                .arg(m_runFiles).arg(hashQueueSize() + m_hashingVolumes.size())
                 .arg(static_cast<double>(m_runBytes >> 20) / secs, 0, 'f', 1));
+}
+
+
+std::size_t Ed3kShared::hashQueueSize() const
+{
+    std::size_t n = 0;
+    for (const auto& [volume, queue] : m_hashQueues)
+        n += queue.size();
+    return n;
+}
+
+QString Ed3kShared::volumeOf(const QString& path)
+{
+    const QString dir = QFileInfo(path).path();
+    if (const auto it = m_volumeOfDir.find(dir); it != m_volumeOfDir.end())
+        return it->second;
+    // the limiter's key: eD2K and ed3k hashing of one disk share its budget
+    QString volume = m_volumeKeyFn ? m_volumeKeyFn(dir) : DiskLoadLimiter::volumeKey(dir);
+    if (volume.isEmpty())
+        volume = QStringLiteral("/");
+    m_volumeOfDir.emplace(dir, volume);
+    return volume;
+}
+
+void Ed3kShared::primeHash(const QByteArray& md4, const QString& path, qint64 mtimeMs, const FileHash& hashed)
+{
+    if (!m_started || (m_neverShared && m_neverShared(path)))
+        return;
+    if (const auto c = m_cache.find(md4);
+        c != m_cache.end() && c->second.path == path && c->second.size == hashed.size && c->second.mtimeMs == mtimeMs)
+        return;   // known already
+    if (!unchanged(path, hashed.size, mtimeMs))
+        return;   // written since eD2K read it: hashed here when listed
+    Hashed& h = remember(md4, path, mtimeMs, hashed);
+    // listed before this came (a rescan): shared now, its queue entry is skipped
+    if (const auto it = m_files.find(md4); it != m_files.end() && !it->second.shared && it->second.entry.path == path) {
+        File& f = it->second;
+        f.queued = false;
+        f.mtimeMs = mtimeMs;
+        share(f, h);
+        pumpSession();
+    }
+}
+
+Ed3kShared::Hashed& Ed3kShared::remember(const QByteArray& md4, const QString& path, qint64 mtimeMs, const FileHash& hashed)
+{
+    Hashed& h = m_cache[md4];
+    h = Hashed{};
+    h.path = path;
+    h.size = hashed.size;
+    h.mtimeMs = mtimeMs;
+    h.root = hashed.root;
+    h.hashes = hashed.hashes;
+    h.inRam = true;
+    // on disk before the index names it; a failed store keeps it in RAM (hashed again next start)
+    if (!storeHashes(h, std::span<const std::byte>{h.hashes}))
+        logWarning(QStringLiteral("cannot store block hashes of \"%1\" in %2").arg(QFileInfo(path).fileName(), hashesPath()));
+    // was: scheduleSave(kOwner);
+    // the index of 16k files is MBs: rewritten every 30 s while hashing, at stop() anyway
+    scheduleSave(kOwner, kHashRunSaveDelayMs);
+    return h;
 }
 
 } // namespace eMule::ed3k

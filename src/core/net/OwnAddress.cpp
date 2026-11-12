@@ -113,13 +113,12 @@ std::optional<QList<QHostAddress>> ownBindAddressesOf(const QString& name)
     if (!addrs)
         return std::nullopt;
     QList<QHostAddress> result;
-    for (const QHostAddress& addr : *addrs) {
+    for (QHostAddress addr : *addrs) {
         // fe80:: binds only with its interface's scope id; loopback the caller adds
         if (addr.isLoopback() || addr.isLinkLocal() || !isOwn(addr))
             continue;
-        if (std::ranges::none_of(result, [&](const QHostAddress& have) {
-                return have.protocol() == addr.protocol();
-            }))
+        addr.setScopeId({});
+        if (!std::ranges::contains(result, addr))   // DNS may repeat one
             result.append(addr);
     }
     return result;

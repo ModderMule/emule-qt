@@ -52,7 +52,9 @@ QThreadPool* hashPool()
     static QThreadPool* pool = [] {
         // the app's child: waited for at exit, as the global pool was
         auto* p = new QThreadPool(QCoreApplication::instance());
-        p->setMaxThreadCount(2);
+        // was: p->setMaxThreadCount(2);
+        // ed3k's share list hashes one file per disk (as eD2K, up to 4 disks); the joins too
+        p->setMaxThreadCount(4);
         return p;
     }();
     return pool;
@@ -947,11 +949,17 @@ QString Ed3kJoinBase::keptDir(const QString& owner) const
 
 void Ed3kJoinBase::scheduleSave(const QString& owner)
 {
+    scheduleSave(owner, kSaveDelayMs);
+}
+
+void Ed3kJoinBase::scheduleSave(const QString& owner, int delayMs)
+{
     if (!hasOwner(owner))
         return;
     m_dirty.insert(owner);
-    if (!m_saveTimer.isActive())
-        m_saveTimer.start(kSaveDelayMs);
+    // a save due sooner stays sooner
+    if (!m_saveTimer.isActive() || m_saveTimer.remainingTime() > delayMs)
+        m_saveTimer.start(delayMs);
 }
 
 void Ed3kJoinBase::beginStart()
@@ -1170,6 +1178,13 @@ void Ed3kJoinBase::onEventPolled(const ffi::Event& event, ffi::KeyKind key, bool
         onKadFound(*kf, key);
     } else if (const auto* af = std::get_if<ev::AliasFound>(&event); af && !anon && m_setSearches.contains(af->search)) {
         onSetAliasFound(*af);
+    } else if (const auto* wh = std::get_if<ev::WantHashes>(&event)) {
+        // stored values of a shared root: read back (else answerUnhandled fails it)
+        if (m_shared.contains(wh->root) && answerHashes(wh->id, wh->root) && handled)
+            *handled = true;
+    } else if (const auto* hl = std::get_if<ev::HashesLost>(&event)) {
+        if (m_shared.contains(hl->root))
+            onHashesLost(hl->root);
     } else if (!anon) {
         // the joins' own events are of the node key (sets, aliases, ...)
         onOtherEvent(event);

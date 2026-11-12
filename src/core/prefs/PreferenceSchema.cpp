@@ -260,6 +260,11 @@ using Kind = PrefSpec::Kind;
     t << flag("ed3kEnabled", "Enable the ed3k node (packmule).");
     t << number("ed3kUdpPort", 1, 65535, "", "UDP port of the ed3k node. Equal to the eD2K UDP port: one shared socket (ed3k Protocol.md §14.1).");
     t << flag("ed3kShareFiles", "Serve the shared files over ed3k too (while the ed3k node runs).");
+    t << advanced(number("ed3kHashRamMiB", 0, Preferences::kMaxEd3kHashRamMiB, "MiB",
+                         "RAM for the block hashes of shared files; idle ones over it are read from disk "
+                         "again when needed. 0 = auto (2 % of RAM, 64-512 MiB)."));
+    t << advanced(number("ed3kHashCacheLowRamPercent", 0, 100, "%",
+                         "Free RAM below this share: only block hashes in use stay in RAM. 0 = off."));
     t << flag("ed3kJointDownloads", "eD2K downloads also fetch from ed3k peers (found by the ed2k hash); a source with a derived user hash is asked over ed3k first.");
     t << flag("ed3kShareUsenetPosts", "Share Usenet posts over ed3k too. Off: the files are still shared, but "
                                       "not their article lists, post sets or nzb records (usenet.md §6).");

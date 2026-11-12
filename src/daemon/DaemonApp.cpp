@@ -458,7 +458,10 @@ bool DaemonApp::start()
         m_ed3kSharedSource = ed3k::Ed3kShared::listAdapter(*theApp.sharedFileList);
         m_ed3kShared = std::make_unique<ed3k::Ed3kShared>(*m_ed3kSession, *m_ed3kSharedSource, thePrefs.configDir());
         m_ed3kShared->connectList(*theApp.sharedFileList);
+        // a new file is read once: eD2K's hashing read hashes it for ed3k too
+        theApp.sharedFileList->setSideHasher(m_ed3kShared->sideHasherFactory());
         m_ed3kShared->setLowRamPercent(thePrefs.ed3kHashCacheLowRamPercent());
+        m_ed3kShared->setHashRamMiB(thePrefs.ed3kHashRamMiB());
         // hops.md §1: an anonymous-key file also on eD2K/Kad: a pop-up
         connect(m_ed3kShared.get(), &ed3k::Ed3kShared::anonExposed, m_notifierBridge.get(),
                 &CoreNotifierBridge::onEd3kAnonExposed);
@@ -1086,6 +1089,8 @@ void DaemonApp::stop()
     m_ed3kDownloads.reset();
     if (m_ed3kShared)
         m_ed3kShared->stop();
+    if (theApp.sharedFileList)
+        theApp.sharedFileList->setSideHasher({});
     Ed3kBridge::setShared(nullptr);
     m_ed3kShared.reset();
     m_ed3kSharedSource.reset();
@@ -1597,6 +1602,7 @@ void DaemonApp::applyEd3kConfig()
     // ed3kShareFiles: on/off while the node runs (starts with it otherwise)
     if (m_ed3kShared) {
         m_ed3kShared->setLowRamPercent(thePrefs.ed3kHashCacheLowRamPercent());
+        m_ed3kShared->setHashRamMiB(thePrefs.ed3kHashRamMiB());
         m_ed3kShared->setEnabled(thePrefs.ed3kShareFiles());
     }
     // ed3kJointDownloads: on/off while the node runs

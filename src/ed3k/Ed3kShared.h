@@ -9,20 +9,26 @@
 ///   (Ed3kJoinBase), owner "shared", member = a stable index per file.
 /// - Hash cache: Config/ed3k/shared-index.dat, keyed by MD4 + size + mtime + path, holds the
 ///   root and where the block values are in shared-hashes.dat (append-only, compacted at
-///   start); a hit shares at once. Misses are hashed on a worker, one at a time (a big share
-///   list must not flood the thread pool). shared.dat (v1, values inline) is migrated.
-/// - Block values in RAM: read from disk when shared, kept after (re-shares) unless free RAM
-///   is below lowRamPercent of the total; then only the engine holds them.
+///   start); a hit shares at once. Misses are hashed on a worker, one file per disk at a time
+///   (disks in parallel, as eD2K). A file eD2K hashes new comes with its ed3k hash from the
+///   same read (sideHasherFactory). shared.dat (v1, values inline) is migrated.
+/// - Block values: written to disk once hashed; the engine holds them in RAM within its
+///   budget (hashRamMiB, 0 = auto: 2 % of RAM, 64–512 MiB; 0 while free RAM is below
+///   lowRamPercent) and asks for them again (WantHashes) when a peer needs them. A start
+///   reads none of them. No copy here once stored.
 /// - Removed files are unshared and unpublished; a moved file keeps its root when its size
 ///   and date did not change.
 
 #include "Ed3kJoinBase.h"
+
+#include "files/SideHasher.h"
 
 #include <QByteArray>
 #include <QElapsedTimer>
 #include <QString>
 #include <QTimer>
 
+#include <atomic>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -121,12 +127,29 @@ public:
     void setRehashDelay(int ms) { m_rehashMs = ms; }
     /// Files hashed since construction (cache misses).
     [[nodiscard]] int hashCount() const { return m_hashCount; }
+    /// Files being hashed now (one per disk at most).
+    [[nodiscard]] int hashingNow() const { return int(m_hashingVolumes.size()); }
+    /// Tests: which disk a directory counts as (default: DiskLoadLimiter::volumeKey).
+    void setVolumeKeyFn(std::function<QString(const QString& dir)> fn)
+    {
+        m_volumeKeyFn = std::move(fn);
+        m_volumeOfDir.clear();
+    }
+    /// For SharedFileList::setSideHasher: eD2K's read of a new file hashes it for ed3k too.
+    /// Nothing while stopped; the result comes back on this thread before the list adds the file.
+    [[nodiscard]] SideHasherFactory sideHasherFactory();
     /// The index of the hash cache (shared-index.dat).
     [[nodiscard]] QString cachePath() const;
     /// The block values of the hash cache (shared-hashes.dat).
     [[nodiscard]] QString hashesPath() const;
-    /// Free RAM below @p percent of the total: block values not kept in RAM. 0 = always kept.
-    void setLowRamPercent(int percent) { m_lowRamPercent = percent; }
+    /// Free RAM below @p percent of the total: the engine keeps only block values in use. 0 = off.
+    void setLowRamPercent(int percent);
+    /// The engine's RAM for block values, MiB; 0 = auto (2 % of RAM, 64–512 MiB).
+    void setHashRamMiB(int mib);
+    /// The budget the engine gets now, bytes (0 while RAM is low).
+    [[nodiscard]] std::uint64_t hashRamBudget();
+    /// Auto budget for @p totalRam bytes of RAM (0 = unknown).
+    [[nodiscard]] static std::uint64_t autoHashRam(std::uint64_t totalRam);
     /// Tests: replaces the RAM check (true = low).
     void setLowRamCheck(std::function<bool()> check) { m_lowRamCheck = std::move(check); }
     /// Cache entries whose block values are in RAM now.
@@ -165,6 +188,8 @@ protected:
     /// The share list follows the hiding switch (no eD2K ALIAS under the anonymous key).
     [[nodiscard]] bool anonCapable() const override { return true; }
     void onHideChanged(bool hiding) override;
+    [[nodiscard]] bool answerHashes(std::uint64_t id, const ::ed3k::Root& root) override;
+    void onHashesLost(const ::ed3k::Root& root) override;
 
 private:
     /// What was hashed: the cache entry of one file.
@@ -195,8 +220,18 @@ private:
     /// Shares @p f; values from disk when not in RAM. An unreadable entry is dropped and
     /// @p f hashed again (@p h is gone then).
     void share(File& f, Hashed& h);
+    class SideSink;
     void enqueueHash(File& f);
+    /// one file per disk in flight
     void hashNext();
+    /// files waiting, all disks
+    [[nodiscard]] std::size_t hashQueueSize() const;
+    /// the disk of @p path (cached per directory)
+    [[nodiscard]] QString volumeOf(const QString& path);
+    /// The hash of a file eD2K just read (SideSink): cached, and shared when listed.
+    void primeHash(const QByteArray& md4, const QString& path, qint64 mtimeMs, const FileHash& hashed);
+    /// @p hashed into the cache: values stored on disk first, then the index.
+    Hashed& remember(const QByteArray& md4, const QString& path, qint64 mtimeMs, const FileHash& hashed);
     /// queue drained: one summary line, run reset
     void endHashRun();
     /// once a minute while a run lasts: done, left, rate
@@ -229,6 +264,11 @@ private:
     [[nodiscard]] bool lowRam();
     /// Values stored on disk leave RAM: after a hash run, or any time RAM is low.
     void releaseRamHashes();
+    /// hashRamBudget() to the engine when it changed.
+    void applyHashRamBudget();
+    /// The cache entry of @p root.
+    using CacheIt = std::map<QByteArray, Hashed>::iterator;
+    [[nodiscard]] CacheIt cacheOfRoot(const ::ed3k::Root& root);
 
     SharedFileSource& m_source;
     bool m_enabled = true;
@@ -239,8 +279,13 @@ private:
     int m_nextMember = 0;
     /// md4 → what was hashed (loaded from shared-index.dat, kept while the path exists)
     std::map<QByteArray, Hashed> m_cache;
-    std::deque<QByteArray> m_hashQueue;
-    bool m_hashing = false;
+    /// disk → md4s waiting; one file per disk in m_hashingVolumes
+    std::map<QString, std::deque<QByteArray>> m_hashQueues;
+    std::set<QString> m_hashingVolumes;
+    std::map<QString, QString> m_volumeOfDir;
+    std::function<QString(const QString&)> m_volumeKeyFn;
+    /// read by SideSink factories on hashing workers
+    std::shared_ptr<std::atomic<bool>> m_sideOn = std::make_shared<std::atomic<bool>>(false);
     int m_hashCount = 0;
     /// current hash run (queue busy → empty): files, bytes, time; logged when done
     int m_runFiles = 0;
@@ -258,6 +303,9 @@ private:
     std::function<bool()> m_lowRamCheck;
     qint64 m_lowRamCheckedMs = 0;
     bool m_lowRam = false;
+    int m_hashRamMiB = 0;
+    /// last budget given to the engine; reset at start()
+    std::optional<std::uint64_t> m_hashRamSent;
 };
 
 } // namespace eMule::ed3k

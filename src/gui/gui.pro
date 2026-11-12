@@ -108,6 +108,7 @@ SOURCES += \
     controls/ClientListModel.cpp \
     controls/ContactsGraph.cpp \
     controls/ContentScrollArea.cpp \
+    controls/OptionsTree.cpp \
     controls/CategoryFilterProxy.cpp \
     controls/CategoryTabBar.cpp \
     controls/FitTextTabBar.cpp \
@@ -237,6 +238,7 @@ HEADERS += \
     controls/ClientListModel.h \
     controls/ContactsGraph.h \
     controls/ContentScrollArea.h \
+    controls/OptionsTree.h \
     controls/CategoryFilterProxy.h \
     controls/CategoryTabBar.h \
     controls/FitTextTabBar.h \

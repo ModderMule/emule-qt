@@ -733,6 +733,7 @@ void OptionsDialog::setupSidebar()
         {PageEd3kHoster,     QT_TR_NOOP("Hoster"),     QStyle::SP_ArrowDown,             "Hoster.ico"},
         {PageEd3kNames,      QT_TR_NOOP("Names"),      QStyle::SP_FileDialogContentsView, "Friends1.ico"},
         {PageEd3kFilters,    QT_TR_NOOP("Filters"),    QStyle::SP_MessageBoxWarning,     "IPFilter.ico"},
+        {PageEd3kExtended,   QT_TR_NOOP("Extended"),   QStyle::SP_DialogCancelButton,    "Tweak.ico"},
         // ToDo: decide if/how selling is used; the page is built but hidden (hasPage)
         // {PageEd3kSelling,    QT_TR_NOOP("Selling"),    QStyle::SP_ArrowUp,               "Upload.ico"},
     };
@@ -866,6 +867,7 @@ void OptionsDialog::setupPages()
 #else
     addPage(PageBtI2p,          new QWidget(this));
 #endif
+    addPage(PageEd3kExtended,   m_ed3kPages->extendedPage());
     connect(m_ed3kPages, &Ed3kOptionsPages::changed, this, &OptionsDialog::markDirty);
     connect(m_ed3kPages, &Ed3kOptionsPages::portsJoined, this, [this](int port) {
         // applied by the core already: the fields follow

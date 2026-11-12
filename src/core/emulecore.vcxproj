@@ -602,6 +602,7 @@
     <ClInclude Include="utils\OwnerOnly.h" />
     <ClInclude Include="utils\SystemMemory.h" />
     <ClInclude Include="utils\BackgroundFileWriter.h" />
+    <ClInclude Include="files\SideHasher.h" />
     <ClInclude Include="utils\DiskLoadLimiter.h" />
     <ClInclude Include="utils\ReadOnceHint.h" />
     <ClInclude Include="utils\StallWatchdog.h" />
