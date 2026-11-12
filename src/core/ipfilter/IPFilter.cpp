@@ -7,6 +7,7 @@
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 #include "utils/TimeUtils.h"
+#include "utils/AtomicFile.h"
 #include "utils/BackgroundFileWriter.h"
 
 #include <QBuffer>
@@ -444,7 +445,6 @@ int IPFilter::loadFromFile(const QString& filePath)
 
 bool IPFilter::saveToFile(const QString& filePath) const
 {
-    // queued for the background writer (report 43): loadFromFile reads it back meanwhile
     QByteArray out;
 
     for (const auto& entry : m_entries) {
@@ -476,7 +476,15 @@ bool IPFilter::saveToFile(const QString& filePath) const
         out += buf;
     }
 
-    BackgroundFileWriter::instance().write(filePath, std::move(out), {});   // the writer logs a failure
+    // the caller wants the result (IPC reply): written here, no disk sync (AtomicFile),
+    // an older queued copy dropped so it cannot land after this one
+    BackgroundFileWriter::instance().discard(filePath);
+    QDir().mkpath(QFileInfo(filePath).absolutePath());
+    AtomicFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly) || file.write(out) != out.size() || !file.commit()) {
+        logError(QStringLiteral("Failed to write IP filter file %1: %2").arg(filePath, file.errorString()));
+        return false;
+    }
     return true;
 }
 

@@ -254,6 +254,11 @@ void flushBlobWrites()
     BackgroundFileWriter::instance().flush();
 }
 
+bool blobWriteFailed(const QString& path)
+{
+    return BackgroundFileWriter::instance().failed(path);
+}
+
 void wipe(std::span<std::uint8_t> buf)
 {
     if (!buf.empty())

@@ -6,6 +6,8 @@
 /// QSaveFile::commit() syncs and renames: seconds on a busy disk, and the core's main
 /// thread stood still meanwhile (report 23: resume data, ed3k joins). Writes queue here
 /// instead, newest data per path wins, and pending() reads them back before they land.
+/// A failed write is tried again a few times (Windows: a scanner or indexer holding the
+/// file blocks the rename); failed() tells a caller to write it again later.
 
 #include <QByteArray>
 #include <QString>
@@ -16,6 +18,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <thread>
 
 namespace eMule {
@@ -50,6 +53,9 @@ public:
     void discardUnder(const QString& dir);
     /// Waits until everything queued is written.
     void flush();
+    /// The last write of @p path failed after its retries and nothing newer is queued:
+    /// the caller writes it again (e.g. on its next save).
+    [[nodiscard]] bool failed(const QString& path) const;
 
     /// QSaveFile with folders made: the default WriteFn.
     static bool saveFile(const QString& path, const QByteArray& data);
@@ -67,6 +73,9 @@ private:
     void enqueue(const QString& path, Job job);
 
     void run();
+    /// Writes one job, retried while it fails and nothing newer or a discard came; lock held
+    /// on entry and exit.
+    bool writeWithRetries(std::unique_lock<std::mutex>& lock, const QString& path, const Job& job);
     /// Waits, lock held, until @p path is not being written.
     void waitNotWriting(std::unique_lock<std::mutex>& lock, const std::function<bool(const QString&)>& match);
 
@@ -77,6 +86,8 @@ private:
     std::deque<QString> m_order;      ///< paths in queue order
     std::optional<QString> m_writing;
     Job m_writingJob;   ///< what m_writing writes, for pending()
+    bool m_writingDropped = false;   ///< discard() of m_writing: no more retries
+    std::set<QString> m_failed;      ///< last write failed, nothing newer queued
     bool m_stop = false;
     std::thread m_thread;
 };

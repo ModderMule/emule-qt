@@ -2,12 +2,8 @@
 
 /// @file Ed3kKeyFile.h
 /// @brief Owner-only access for files that hold a secret (node.key, credit keys, paid holder
-/// and seller keys, rooms' keys): one helper for all of them.
-///
-/// - Windows: a protected DACL with one ACE, all access for the current user, nothing
-///   inherited from the folder (SetNamedSecurityInfoW, as packmule-node disk.rs `win_acl`).
-/// - Elsewhere: mode 0600 when the file has any group/other bit (the files are made 0600
-///   already; this mends one copied in).
+/// and seller keys, rooms' keys): one helper for all of them, core's makeOwnerOnly
+/// (utils/OwnerOnly.h; Windows DACL as packmule-node disk.rs `win_acl`).
 
 #include <QString>
 

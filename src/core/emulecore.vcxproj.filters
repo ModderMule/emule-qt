@@ -396,6 +396,9 @@
     <ClCompile Include="utils\AtomicFile.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\OwnerOnly.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\BackgroundFileWriter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -1152,6 +1155,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="utils\AtomicFile.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\OwnerOnly.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\BackgroundFileWriter.h">

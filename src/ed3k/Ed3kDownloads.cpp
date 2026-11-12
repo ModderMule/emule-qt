@@ -393,8 +393,8 @@ void Ed3kDownloads::saveNow()
     QDir().mkpath(stateDir(m_configDir));
     writeBlobLater(statePath(), spanOf(raw));
     for (auto& [root, e] : m_entries)
-        if (e.metDirty && e.info.state != Ed3kDownloadInfo::State::Complete)
-            writeMet(e);
+        if ((e.metDirty || blobWriteFailed(metPathOf(e))) && e.info.state != Ed3kDownloadInfo::State::Complete)
+            writeMet(e);   // a failed background write: again
 }
 
 // ---------------------------------------------------------------------------

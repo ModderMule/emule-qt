@@ -77,8 +77,8 @@ public:
     /// Clear and reload from the default ipfilter.dat in configDir.
     int loadFromDefaultFile(const QString& configDir);
 
-    /// Save current filter list to a file in FilterDat format, on the background writer
-    /// (loadFromFile reads a queued copy); the writer logs a failed write.
+    /// Save current filter list to a file in FilterDat format, atomically (no disk sync);
+    /// false: not written, the old file stays.
     bool saveToFile(const QString& filePath) const;
 
     // -- Filtering ------------------------------------------------------------
