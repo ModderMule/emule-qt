@@ -102,6 +102,7 @@ private slots:
     void filterBuckets();
     void filterProxyHidesRows();
     void filesTree();
+    void filesTreeDropsGoneFolders();
     void filesChecksToPriorities();
     void peersAndFlags();
     void trackersBackupToggle();
@@ -202,6 +203,28 @@ void tst_TorrentDetailsGui::filesTree()
         for (int j = 0; j < tree->topLevelItem(0)->child(i)->childCount(); ++j)
             same = same || tree->topLevelItem(0)->child(i)->child(j) == before;
     QVERIFY(same);
+}
+
+void tst_TorrentDetailsGui::filesTreeDropsGoneFolders()
+{
+    // nested folders gone at once: the subfolder dies with its parent, never read
+    // after (report 46). Alternated so the hash order varies
+    TorrentListsPane pane;
+    QCborMap flat = details();
+    flat.insert(QStringLiteral("files"),
+                QCborArray{QCborMap{{QStringLiteral("index"), 0},
+                                    {QStringLiteral("path"), QStringLiteral("other.bin")},
+                                    {QStringLiteral("size"), 10}}});
+    QTreeWidget* tree = pane.filesTree();
+    for (int round = 0; round < 20; ++round) {
+        pane.applyDetails(details());
+        QCOMPARE(tree->topLevelItemCount(), 1);
+        QCOMPARE(tree->topLevelItem(0)->text(TorrentListsPane::FileName), QStringLiteral("Show"));
+        pane.applyDetails(flat);
+        QCOMPARE(tree->topLevelItemCount(), 1);
+        QCOMPARE(tree->topLevelItem(0)->text(TorrentListsPane::FileName), QStringLiteral("other.bin"));
+        QCOMPARE(tree->topLevelItem(0)->childCount(), 0);
+    }
 }
 
 void tst_TorrentDetailsGui::filesChecksToPriorities()

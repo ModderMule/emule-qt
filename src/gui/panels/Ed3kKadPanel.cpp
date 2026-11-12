@@ -82,7 +82,10 @@ Ed3kKadPanel::Ed3kKadPanel(QWidget* parent)
     auto* contactsView = static_cast<ListTreeView*>(m_contactsView);
     contactsView->setDefaultSort(Ed3kKadContactsModel::ColDistance, Qt::AscendingOrder);
     // "2": the Address column is gone, an older saved layout would shift the columns
-    contactsView->bindColumns(QStringLiteral("ed3kKadContacts2"), {260, 110, 90, 260, 50, 80},
+    // contactsView->bindColumns(QStringLiteral("ed3kKadContacts2"), {260, 110, 90, 260, 50, 80},
+    //                           {Ed3kKadContactsModel::ColCountry});
+    // "3": Type column in front, as eD2K Kad
+    contactsView->bindColumns(QStringLiteral("ed3kKadContacts3"), {110, 260, 110, 90, 260, 50, 80},
                               {Ed3kKadContactsModel::ColCountry});
     CountryFlags::bindFlagColumn(contactsView);
     m_contactsView->setFont(QFont(QStringLiteral("Courier New"), scaledPointSize(9)));
@@ -153,11 +156,12 @@ void Ed3kKadPanel::refreshPrefs()
 
 void Ed3kKadPanel::refresh()
 {
+    // Lookup first: the contacts reply is the big one and would queue ahead of it
+    if (lookupTabShown())
+        requestLookupHistory();
     requestStatus();
     requestContacts();
     requestLookups();
-    if (lookupTabShown())
-        requestLookupHistory();
 }
 
 void Ed3kKadPanel::requestLookupHistory()
@@ -199,11 +203,8 @@ void Ed3kKadPanel::requestLookupHistory()
         // a graph type as the eD2K page has it: node lookups 0, the rest "file" (2)
         const int kind = row >= 0 ? static_cast<int>(m_lookupsModel->row(row).value(QStringLiteral("kind")).toInteger()) : 0;
         m_lookupGraph->setLookup(std::move(entries), kind == 0 ? 0 : 2);
-        if (row >= 0) {
-            const QCborMap& l = m_lookupsModel->row(row);
-            setLookupTabTitle(QStringLiteral("%1 %2").arg(l.value(QStringLiteral("purpose")).toString(),
-                                                         shortHex(l.value(QStringLiteral("target")).toString())));
-        }
+        if (row >= 0)
+            setLookupTabTitle(lookupTitle(id));
     });
 }
 
@@ -231,6 +232,7 @@ void Ed3kKadPanel::autoPickLookup()
     if (pick == 0)
         return;
     m_graphSearchId = pick;
+    setLookupTabTitle(lookupTitle(pick));
     if (lookupTabShown())
         markSearchRow(m_lookupsModel->rowOf(pick));
     requestLookupHistory();
@@ -253,6 +255,16 @@ void Ed3kKadPanel::clearAll()
 std::uint64_t Ed3kKadPanel::searchIdAtRow(int sourceRow) const
 {
     return m_lookupsModel->idAt(sourceRow);
+}
+
+QString Ed3kKadPanel::lookupTitle(std::uint64_t id) const
+{
+    const int row = m_lookupsModel->rowOf(id);
+    if (row < 0)
+        return {};
+    const QCborMap& l = m_lookupsModel->row(row);
+    return QStringLiteral("%1 %2").arg(l.value(QStringLiteral("purpose")).toString(),
+                                       shortHex(l.value(QStringLiteral("target")).toString()));
 }
 
 // ---------------------------------------------------------------------------
@@ -403,8 +415,11 @@ void Ed3kKadPanel::requestContacts()
         for (const auto& v : rows)
             ids.append(v.toMap().value(QStringLiteral("id")).toString());
         m_networkGraph->setIds(ids);
+        setContactCount(static_cast<int>(ids.size()));
+        // hidden list: skip the reset + re-sort of every row each poll
+        if (!contactsTabShown())
+            return;
         m_contactsModel->setRows(rows);
-        setContactCount(m_contactsModel->count());
         m_contactsView->verticalScrollBar()->setValue(scroll);
     });
 }

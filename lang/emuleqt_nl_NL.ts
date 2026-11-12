@@ -89,7 +89,7 @@
 <context>
     <name>Ed3kKadModels</name>
     <message>
-        <location filename="../src/gui/controls/Ed3kKadModels.cpp" line="+25"/>
+        <location filename="../src/gui/controls/Ed3kKadModels.cpp" line="+28"/>
         <source>%1 s</source>
         <translation>%1 s</translation>
     </message>
@@ -776,7 +776,7 @@ Schakel de webinterface of REST API in onder Opties → Webinterface.</translati
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+676"/>
+        <location filename="../src/gui/app/main.cpp" line="+660"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -790,7 +790,7 @@ Start it with --new-instance or --config &lt;dir&gt; to open another window.</so
 Start het met --new-instance of --config &lt;dir&gt; om een ander venster te openen.</translation>
     </message>
     <message>
-        <location line="+209"/>
+        <location line="+213"/>
         <source>Core Certificate Changed</source>
         <translation>Certificaat van de core gewijzigd</translation>
     </message>
@@ -818,7 +818,7 @@ Het nieuwe certificaat vertrouwen?</translation>
         <translation type="vanished">Er is een nieuwe download toegevoegd.</translation>
     </message>
     <message>
-        <location line="+398"/>
+        <location line="+399"/>
         <source>Message from %1</source>
         <translation>Bericht van %1</translation>
     </message>
@@ -2277,14 +2277,14 @@ M	gecomprimeerde gegevens nog niet volledig gedownload
 <context>
     <name>eMule::BugReportDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/BugReportDialog.cpp" line="+58"/>
+        <location filename="../src/gui/dialogs/BugReportDialog.cpp" line="+60"/>
         <location line="+139"/>
-        <location line="+132"/>
+        <location line="+144"/>
         <source>Submit Bug Report</source>
         <translation>Foutrapport versturen</translation>
     </message>
     <message>
-        <location line="-266"/>
+        <location line="-278"/>
         <source>Report Details</source>
         <translation>Rapportdetails</translation>
     </message>
@@ -2386,7 +2386,7 @@ M	gecomprimeerde gegevens nog niet volledig gedownload
         <translation>Vul zowel de titel als de beschrijving in.</translation>
     </message>
     <message>
-        <location line="+127"/>
+        <location line="+139"/>
         <source>Bug report submitted successfully.</source>
         <translation>Foutrapport succesvol verstuurd.</translation>
     </message>
@@ -3714,7 +3714,7 @@ De downloads ervan behouden hun bestanden en gaan naar Alle.</translation>
 <context>
     <name>eMule::CoreAttachment</name>
     <message>
-        <location filename="../src/gui/app/CoreAttachment.cpp" line="+55"/>
+        <location filename="../src/gui/app/CoreAttachment.cpp" line="+140"/>
         <source>Remote core at %1</source>
         <translation>Externe core op %1</translation>
     </message>
@@ -4165,21 +4165,21 @@ Geüpload:	%12</translation>
 <context>
     <name>eMule::Ed2kKadPanel</name>
     <message>
-        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+220"/>
-        <location line="+120"/>
+        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+226"/>
+        <location line="+129"/>
         <location line="+154"/>
         <source>▸ Contacts (0)</source>
         <translation>▸ Contacten (0)</translation>
     </message>
     <message>
-        <location line="-273"/>
-        <location line="+243"/>
-        <location line="+72"/>
+        <location line="-282"/>
+        <location line="+252"/>
+        <location line="+84"/>
         <source>▸ Current Searches (0)</source>
         <translation>▸ Huidige zoekopdrachten (0)</translation>
     </message>
     <message>
-        <location line="-260"/>
+        <location line="-272"/>
         <source>The URL is invalid.</source>
         <translation>De URL is ongeldig.</translation>
     </message>
@@ -4208,12 +4208,12 @@ Geüpload:	%12</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+213"/>
+        <location line="+225"/>
         <source>Connect</source>
         <translation>Verbinden</translation>
     </message>
     <message>
-        <location line="-195"/>
+        <location line="-207"/>
         <source>IP or Address:</source>
         <translation>IP of adres:</translation>
     </message>
@@ -4233,7 +4233,7 @@ Geüpload:	%12</translation>
         <translation>Van bekende cliënten</translation>
     </message>
     <message>
-        <location line="+145"/>
+        <location line="+157"/>
         <source>▸ Current Searches (%1)</source>
         <translation>▸ Huidige zoekopdrachten (%1)</translation>
     </message>
@@ -4873,7 +4873,7 @@ Een nieuwe anonieme sleutel maken?</translation>
 <context>
     <name>eMule::Ed3kKadContactsModel</name>
     <message>
-        <location filename="../src/gui/controls/Ed3kKadModels.cpp" line="+69"/>
+        <location filename="../src/gui/controls/Ed3kKadModels.cpp" line="+83"/>
         <source>Node ID</source>
         <translation>Node-ID</translation>
     </message>
@@ -4882,7 +4882,12 @@ Een nieuwe anonieme sleutel maken?</translation>
         <translation type="vanished">Adres</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-9"/>
+        <source>Type</source>
+        <translation>Type</translation>
+    </message>
+    <message>
+        <location line="+10"/>
         <source>Country</source>
         <translation>Land</translation>
     </message>
@@ -4911,11 +4916,16 @@ Een nieuwe anonieme sleutel maken?</translation>
         <source>Next check</source>
         <translation>Volgende controle</translation>
     </message>
+    <message>
+        <location line="+24"/>
+        <source>Not connected since restart</source>
+        <translation>Niet verbonden sinds herstart</translation>
+    </message>
 </context>
 <context>
     <name>eMule::Ed3kKadLookupsModel</name>
     <message>
-        <location line="+26"/>
+        <location line="+33"/>
         <source>Number</source>
         <translation>Nummer</translation>
     </message>
@@ -5063,9 +5073,9 @@ Een nieuwe anonieme sleutel maken?</translation>
         <translation>▸ Contacten (0)</translation>
     </message>
     <message>
-        <location line="+9"/>
-        <location line="+159"/>
-        <location line="+170"/>
+        <location line="+12"/>
+        <location line="+158"/>
+        <location line="+183"/>
         <source>▸ Current Lookups (0)</source>
         <translation>▸ Huidige zoekopdrachten (0)</translation>
     </message>
@@ -5081,13 +5091,13 @@ Een nieuwe anonieme sleutel maken?</translation>
         </translation>
     </message>
     <message>
-        <location line="-143"/>
-        <location line="+306"/>
+        <location line="-146"/>
+        <location line="+309"/>
         <source>Connect</source>
         <translation>Verbinden</translation>
     </message>
     <message>
-        <location line="-296"/>
+        <location line="-299"/>
         <source>ed3k:node link:</source>
         <translation>ed3k:node-link:</translation>
     </message>
@@ -5110,7 +5120,7 @@ Een nieuwe anonieme sleutel maken?</translation>
         <translation type="vanished">Bronnen bewerken...</translation>
     </message>
     <message>
-        <location line="-162"/>
+        <location line="-171"/>
         <source>No sources</source>
         <translation>Geen bronnen</translation>
     </message>
@@ -5123,7 +5133,7 @@ Een nieuwe anonieme sleutel maken?</translation>
         </translation>
     </message>
     <message>
-        <location line="+141"/>
+        <location line="+150"/>
         <source>From sources</source>
         <translation>Uit bronnen</translation>
     </message>
@@ -5193,7 +5203,7 @@ Een nieuwe anonieme sleutel maken?</translation>
         <translation>Slaat de knooppunten die dit knooppunt kent op als ondertekend knooppuntlijstbestand, om iemand te helpen die geen ed3k-knooppunt vindt.</translation>
     </message>
     <message>
-        <location line="+66"/>
+        <location line="+69"/>
         <source>▸ Current Lookups (%1)</source>
         <translation>▸ Huidige zoekopdrachten (%1)</translation>
     </message>
@@ -12336,7 +12346,7 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
     <message>
         <location line="+6"/>
         <location line="+2"/>
-        <location line="+85"/>
+        <location line="+87"/>
         <source>▸ Search Details</source>
         <translation>▸ Zoekdetails</translation>
     </message>
@@ -13044,12 +13054,12 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+140"/>
-        <location line="+821"/>
+        <location line="+826"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-680"/>
+        <location line="-685"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt afsluiten</translation>
     </message>
@@ -13105,12 +13115,12 @@ U gebruikt %2. De website van eMule Qt openen?</translation>
     <message>
         <location line="+21"/>
         <location line="+7"/>
-        <location line="+1130"/>
+        <location line="+1135"/>
         <source>Version Check</source>
         <translation>Versiecontrole</translation>
     </message>
     <message>
-        <location line="-1136"/>
+        <location line="-1141"/>
         <source>You are running the latest version of eMule Qt (v%1).</source>
         <translation>U gebruikt de nieuwste versie van eMule Qt (v%1).</translation>
     </message>
@@ -13169,12 +13179,12 @@ Schakel er minstens één in onder Opties → Verbinding om te verbinden.</trans
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1630"/>
+        <location line="+1640"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: verbinding verbroken</translation>
     </message>
     <message>
-        <location line="-1621"/>
+        <location line="-1631"/>
         <source>eD2K Server: %1  (%2 Users)</source>
         <translation>eD2K-server: %1  (%2 gebruikers)</translation>
     </message>
@@ -13215,17 +13225,17 @@ Schakel er minstens één in onder Opties → Verbinding om te verbinden.</trans
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1549"/>
+        <location line="+1559"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: verbinding verbroken</translation>
     </message>
     <message>
-        <location line="-1508"/>
+        <location line="-1515"/>
         <source>ed3k: Connected</source>
         <translation>ed3k: verbonden</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>ed3k: Connected (Firewalled)</source>
         <translation>ed3k: verbonden (gefirewalled)</translation>
     </message>
@@ -13235,7 +13245,7 @@ Schakel er minstens één in onder Opties → Verbinding om te verbinden.</trans
         <translation>ed3k: verbinden...</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+7"/>
         <source>open</source>
         <translation>open</translation>
     </message>
@@ -13290,12 +13300,12 @@ Router: %6</translation>
         <translation>verborgen (%1/%2 paden)</translation>
     </message>
     <message>
-        <location line="+2320"/>
+        <location line="+2325"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Gebruikers: %1 | Bestanden: %2</translation>
     </message>
     <message>
-        <location line="-2276"/>
+        <location line="-2281"/>
         <source>Up: %1(%2)</source>
         <translation>Uit: %1(%2)</translation>
     </message>
@@ -13454,7 +13464,7 @@ De core is losgekoppeld: hij blijft draaien met alle downloads en uploads. Open 
         <translation>eMule-instellingenwizard voor eerste keer...</translation>
     </message>
     <message>
-        <location line="-779"/>
+        <location line="-784"/>
         <source>Unlimited</source>
         <translation>Onbeperkt</translation>
     </message>
@@ -13473,7 +13483,7 @@ Uploadlimiet: %2
 Dubbelklik om te wijzigen</translation>
     </message>
     <message>
-        <location line="+787"/>
+        <location line="+792"/>
         <source>IP Filter...</source>
         <translation>IP-filter...</translation>
     </message>
@@ -13572,7 +13582,7 @@ Schakel hem in onder Opties → Webinterface en probeer het opnieuw.</translatio
         <translation>Opties openen</translation>
     </message>
     <message>
-        <location line="+222"/>
+        <location line="+227"/>
         <source>Main</source>
         <translation>Hoofdmenu</translation>
     </message>
@@ -15093,32 +15103,32 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+325"/>
+        <location line="+326"/>
         <source>UDP Port:</source>
         <translation>UDP-poort:</translation>
     </message>
     <message>
-        <location line="-314"/>
+        <location line="-315"/>
         <source>eD2K Network</source>
         <translation>eD2K-netwerk</translation>
     </message>
     <message>
         <location line="+6"/>
         <location line="+188"/>
-        <location line="+119"/>
+        <location line="+120"/>
         <source>Connected</source>
         <translation>Verbonden</translation>
     </message>
     <message>
-        <location line="-305"/>
+        <location line="-306"/>
         <location line="+145"/>
         <location line="+39"/>
-        <location line="+121"/>
+        <location line="+122"/>
         <source>Connecting</source>
         <translation>Verbinden</translation>
     </message>
     <message>
-        <location line="-303"/>
+        <location line="-304"/>
         <location line="+145"/>
         <source>Disconnected</source>
         <translation>Verbinding verbroken</translation>
@@ -15128,14 +15138,14 @@ Opnieuw downloaden?</translation>
         <location line="+145"/>
         <location line="+117"/>
         <location line="+35"/>
-        <location line="+5"/>
+        <location line="+6"/>
         <location line="+38"/>
         <location line="+5"/>
         <source>Status:</source>
         <translation>Status:</translation>
     </message>
     <message>
-        <location line="-339"/>
+        <location line="-340"/>
         <location line="+65"/>
         <location line="+156"/>
         <source>Users:</source>
@@ -15158,13 +15168,13 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="-150"/>
-        <location line="+303"/>
+        <location line="+304"/>
         <location line="+34"/>
         <source>Unknown</source>
         <translation>Onbekend</translation>
     </message>
     <message>
-        <location line="-330"/>
+        <location line="-331"/>
         <location line="+147"/>
         <source>ID:</source>
         <translation>ID:</translation>
@@ -15184,12 +15194,12 @@ Opnieuw downloaden?</translation>
         <location line="+1"/>
         <location line="+96"/>
         <location line="+17"/>
-        <location line="+159"/>
+        <location line="+160"/>
         <source>Open</source>
         <translation>Open</translation>
     </message>
     <message>
-        <location line="-270"/>
+        <location line="-271"/>
         <location line="+94"/>
         <location line="+15"/>
         <source>Firewalled</source>
@@ -15202,12 +15212,12 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="-109"/>
-        <location line="+278"/>
+        <location line="+279"/>
         <source>IPv6:</source>
         <translation>IPv6:</translation>
     </message>
     <message>
-        <location line="-291"/>
+        <location line="-292"/>
         <source>server verified</source>
         <translation>door server gecontroleerd</translation>
     </message>
@@ -15365,20 +15375,20 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+209"/>
+        <location line="+210"/>
         <location line="+71"/>
         <source>Yes</source>
         <translation>Ja</translation>
     </message>
     <message>
-        <location line="-280"/>
-        <location line="+209"/>
+        <location line="-281"/>
+        <location line="+210"/>
         <location line="+71"/>
         <source>No</source>
         <translation>Nee</translation>
     </message>
     <message>
-        <location line="-266"/>
+        <location line="-267"/>
         <source>Kad Network</source>
         <translation>Kad-netwerk</translation>
     </message>
@@ -15455,12 +15465,12 @@ Opnieuw downloaden?</translation>
     <message>
         <location line="+0"/>
         <location line="+39"/>
-        <location line="+43"/>
+        <location line="+44"/>
         <source>Disabled</source>
         <translation>Uitgeschakeld</translation>
     </message>
     <message>
-        <location line="-80"/>
+        <location line="-81"/>
         <source>not running</source>
         <translation>niet actief</translation>
     </message>
@@ -15484,7 +15494,7 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+43"/>
+        <location line="+44"/>
         <source>Not running</source>
         <translation>Niet actief</translation>
     </message>
@@ -27040,18 +27050,18 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
     </message>
     <message>
         <location line="+0"/>
-        <location line="+358"/>
+        <location line="+361"/>
         <source>Download</source>
         <translation>Downloaden</translation>
     </message>
     <message>
-        <location line="-358"/>
-        <location line="+349"/>
+        <location line="-361"/>
+        <location line="+352"/>
         <source>Priority</source>
         <translation>Prioriteit</translation>
     </message>
     <message>
-        <location line="-348"/>
+        <location line="-351"/>
         <source>Availability</source>
         <translation>Beschikbaarheid</translation>
     </message>
@@ -27156,7 +27166,7 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>Trackers (%1)</translation>
     </message>
     <message>
-        <location line="+97"/>
+        <location line="+100"/>
         <source>Files (%1)</source>
         <translation>Bestanden (%1)</translation>
     </message>

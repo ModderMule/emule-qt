@@ -276,6 +276,7 @@
     <ClCompile Include="portmap\UPnPWorker.cpp" />
     <ClCompile Include="net\HostResolver.cpp" />
     <ClCompile Include="net\LocalIPv6.cpp" />
+    <ClCompile Include="net\OwnAddress.cpp" />
     <ClCompile Include="net\BindAddress.cpp" />
     <ClCompile Include="net\IPv6SourcePin.cpp" />
     <ClCompile Include="utils\CrashHandler.cpp" />
@@ -302,6 +303,7 @@
     <ClCompile Include="files\SourceIndex.cpp" />
     <ClCompile Include="utils\AtomicFile.cpp" />
     <ClCompile Include="utils\OwnerOnly.cpp" />
+    <ClCompile Include="utils\SystemMemory.cpp" />
     <ClCompile Include="utils\BackgroundFileWriter.cpp" />
     <ClCompile Include="utils\DiskLoadLimiter.cpp" />
     <ClCompile Include="utils\ReadOnceHint.cpp" />
@@ -587,6 +589,7 @@
     <ClInclude Include="portmap\NatPmpMessages.h" />
     <ClInclude Include="portmap\PcpMessages.h" />
     <ClInclude Include="net\LocalIPv6.h" />
+    <ClInclude Include="net\OwnAddress.h" />
     <ClInclude Include="net\BindAddress.h" />
     <ClInclude Include="net\IPv6SourcePin.h" />
     <ClInclude Include="net\Packet.h" />
@@ -597,6 +600,7 @@
     <QtMoc Include="files\PartFileWriteThread.h" />
     <ClInclude Include="utils\AtomicFile.h" />
     <ClInclude Include="utils\OwnerOnly.h" />
+    <ClInclude Include="utils\SystemMemory.h" />
     <ClInclude Include="utils\BackgroundFileWriter.h" />
     <ClInclude Include="utils\DiskLoadLimiter.h" />
     <ClInclude Include="utils\ReadOnceHint.h" />

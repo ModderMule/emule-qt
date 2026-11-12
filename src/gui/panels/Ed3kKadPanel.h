@@ -48,6 +48,7 @@ protected:
     void autoPickLookup() override;
     void clearAll() override;
     [[nodiscard]] std::uint64_t searchIdAtRow(int sourceRow) const override;
+    [[nodiscard]] QString lookupTitle(std::uint64_t id) const override;
 
 private:
     QWidget* createControlsPanel();

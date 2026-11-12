@@ -823,7 +823,9 @@ void MainWindow::setEd3kStatus(const QCborMap& status)
     if (m_sharedFilesPanel)
         m_sharedFilesPanel->setEd3kKeyState(keyState);
     const bool running = status.value(QStringLiteral("running")).toBool();
-    const bool connected = running && status.value(QStringLiteral("contacts")).toInteger() > 0;
+    // const bool connected = running && status.value(QStringLiteral("contacts")).toInteger() > 0;
+    // connected once node lookups got enough answers (as eMule Kad publishes), not at 1 contact
+    const bool connected = running && status.value(QStringLiteral("kadConnected")).toBool();
     if (running != m_ed3kRunning || connected != m_ed3kConnected) {
         m_ed3kRunning = running;
         m_ed3kConnected = connected;
@@ -845,19 +847,22 @@ void MainWindow::setEd3kStatus(const QCborMap& status)
     const bool natChecking = status.value(QStringLiteral("natChecking")).toInteger() != 0;
     const bool firewalled = !router && !natChecking && class4 != 1 && class6 != 1
         && (class4 > 1 || class6 > 1);
-    if (contacts > 0 && !firewalled) {
+    // if (contacts > 0 && !firewalled) {
+    if (connected && !firewalled) {
         m_statusEd3k->setText(tr("ed3k: Connected"));
         setStatusRole(m_statusEd3k, static_cast<int>(TextRole::Good));
         m_statusEd3kIcon->setState(ConnectionStatusWidget::Connected);
-    } else if (contacts > 0) {
+    // } else if (contacts > 0) {
+    } else if (connected) {
         m_statusEd3k->setText(tr("ed3k: Connected (Firewalled)"));
         setStatusRole(m_statusEd3k, static_cast<int>(TextRole::Caution));
         m_statusEd3kIcon->setState(ConnectionStatusWidget::Firewalled);
     } else {
-        // like Kad: connecting shows red, no contacts yet
+        // like Kad: connecting shows orange (as firewalled), too few answers yet
         m_statusEd3k->setText(tr("ed3k: Connecting..."));
         setStatusRole(m_statusEd3k, static_cast<int>(TextRole::Caution));
-        m_statusEd3kIcon->setState(ConnectionStatusWidget::Disconnected);
+        // m_statusEd3kIcon->setState(ConnectionStatusWidget::Disconnected);
+        m_statusEd3kIcon->setState(ConnectionStatusWidget::Firewalled);
     }
     const auto className = [](qint64 c) {
         switch (c) {
@@ -1703,7 +1708,12 @@ void MainWindow::onSchedulerToggle()
 
 void MainWindow::onSubmitBugReport()
 {
-    BugReportDialog dlg(m_serverPanel->logWidget(), m_ipc ? m_ipc->coreVersion() : QString(), this);
+    // a hidden Statistics tab doesn't poll: fetch now, the replies land before Submit
+    QPointer<StatisticsPanel> stats = m_statsPanel;
+    if (stats)
+        stats->refreshTree();
+    BugReportDialog dlg(m_serverPanel->logWidget(), m_ipc ? m_ipc->coreVersion() : QString(),
+                        [stats] { return stats ? stats->treeText(false) : QString(); }, this);
     dlg.exec();
 }
 

@@ -21,6 +21,16 @@ class CoreAttachment : public QObject {
 public:
     static CoreAttachment& instance();
 
+    /// The core address @p host is another machine: nothing to discover or launch here.
+    /// Wildcards (0.0.0.0, ::, *), loopback and own addresses are local (#120). A
+    /// hostname is local when it names this machine or every address it resolves to
+    /// is ours; unresolvable is remote. Blocks up to OwnAddress::kLookupTimeoutMs.
+    [[nodiscard]] static bool isRemoteAddress(const QString& host);
+    /// Where to dial a core configured at @p host. Remote: as given (re-resolved per
+    /// connect, TLS pin stays the name). Local: the address the core binds for that
+    /// value, loopback for wildcards.
+    [[nodiscard]] static QString dialHost(const QString& host);
+
     /// Where the core is. @p remote = another machine.
     void setTarget(const QString& host, uint16_t port, bool remote);
     /// This GUI started the core (shown in the location text)

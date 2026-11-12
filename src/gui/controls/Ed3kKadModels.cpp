@@ -2,6 +2,9 @@
 #include "controls/Ed3kKadModels.h"
 
 #include "utils/CountryFlags.h"
+#include "app/SkinIcons.h"
+
+#include <algorithm>
 
 namespace eMule {
 
@@ -93,7 +96,21 @@ void Ed3kKadTableModel::clear()
 Ed3kKadContactsModel::Ed3kKadContactsModel(QObject* parent)
     : Ed3kKadTableModel(parent)
 {
+    // as eD2K Kad (KadContactsModel): Contact0-4, SrcUnknown is res\Client4.ico
+    for (int i = 0; i < 5; ++i)
+        m_icons[static_cast<size_t>(i)] = skinIcon(QStringLiteral(":/icons/Contact%1.ico").arg(i));
+    m_icons[5] = skinIcon(QStringLiteral(":/icons/Client4.ico"));
     m_columns = {
+        // "fails(version)" as eD2K Kad's "type(version)"
+        {tr("Type"),
+         [](const QCborMap& m) {
+             const QString agent = value(m, "agent");
+             return agent.isEmpty() ? QString::number(number(m, "fails"))
+                                    : QStringLiteral("%1(%2)").arg(number(m, "fails")).arg(versionOf(agent));
+         },
+         [](const QCborMap& m) {
+             return QVariant(QStringLiteral("%1 %2").arg(number(m, "fails"), 10, 10, QLatin1Char('0')).arg(versionOf(value(m, "agent"))));
+         }},
         {tr("Node ID"), [](const QCborMap& m) { return value(m, "id"); }, {}},
         {tr("Country"), [](const QCborMap& m) { return CountryFlags::columnText(value(m, "cc")); }, {}},
         // family dialled first; "dual" when the node is in both tables
@@ -117,11 +134,42 @@ Ed3kKadContactsModel::Ed3kKadContactsModel(QObject* parent)
 
 QVariant Ed3kKadContactsModel::data(const QModelIndex& index, int role) const
 {
-    if (role == Qt::DecorationRole && index.isValid() && index.column() == ColId && index.row() < count())
-        return CountryFlags::withFlag({}, value(row(index.row()), "cc"));
-    if (role == Qt::ToolTipRole && index.isValid() && index.column() == ColCountry && index.row() < count())
-        return CountryFlags::tooltip(value(row(index.row()), "cc"));
+    // if (role == Qt::DecorationRole && index.isValid() && index.column() == ColId && index.row() < count())
+    //     return CountryFlags::withFlag({}, value(row(index.row()), "cc"));
+    // status dot + flag on Type, as eD2K Kad; the flag delegate widens logical column 0
+    if (role == Qt::DecorationRole && index.isValid() && index.column() == ColType && index.row() < count()) {
+        const QCborMap& m = row(index.row());
+        return CountryFlags::withFlag(m_icons[static_cast<size_t>(contactImage(m))], value(m, "cc"));
+    }
+    if (role == Qt::ToolTipRole && index.isValid() && index.row() < count()) {
+        const QCborMap& m = row(index.row());
+        if (index.column() == ColCountry)
+            return CountryFlags::tooltip(value(m, "cc"));
+        if (index.column() == ColType) {
+            const QString agent = value(m, "agent");
+            const QString tip = agent.isEmpty() ? tr("Not connected since restart") : agent;
+            const QString cc = CountryFlags::tooltip(value(m, "cc"));
+            return cc.isEmpty() ? tip : tip + QLatin1Char('\n') + cc;
+        }
+    }
     return Ed3kKadTableModel::data(index, role);
+}
+
+QString Ed3kKadContactsModel::versionOf(const QString& agent)
+{
+    // last word that starts with a digit: "eMuleQt 0.7.25", "packmule-node 0.1.0"
+    const QStringList words = agent.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    for (auto it = words.crbegin(); it != words.crend(); ++it)
+        if (it->front().isDigit())
+            return *it;
+    return agent;
+}
+
+int Ed3kKadContactsModel::contactImage(const QCborMap& m) const
+{
+    if (value(m, "agent").isEmpty())
+        return 5;
+    return static_cast<int>(std::min<qint64>(number(m, "fails"), 4));
 }
 
 // ---------------------------------------------------------------------------

@@ -407,6 +407,15 @@ target_include_directories(tst_IpcBusyStates PRIVATE
 target_link_libraries(tst_IpcBusyStates PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
 
+# Core address local vs remote: wildcards, own addresses, hostnames via a DNS seam.
+emule_add_test(tst_CoreAddress FOLDER "Ipc"
+    SOURCES tst_CoreAddress.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/CoreAttachment.cpp")
+target_include_directories(tst_CoreAddress PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_CoreAddress PRIVATE eMule::Core Qt6::Widgets)
+
 # GUI <-> core TLS: pinned certificate, token only inside TLS, plain loopback kept.
 emule_add_test(tst_IpcTls FOLDER "Ipc"
     SOURCES tst_IpcTls.cpp

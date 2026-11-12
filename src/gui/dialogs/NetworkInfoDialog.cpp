@@ -469,7 +469,8 @@ QString NetworkInfoDialog::ed3kHtml(const QCborMap& ed3k)
         return html + QStringLiteral("</table><br>");
     }
     const qint64 contacts = ed3k.value(QStringLiteral("contacts")).toInteger();
-    html += row(tr("Status:"), contacts > 0 ? tr("Connected") : tr("Connecting"));
+    // html += row(tr("Status:"), contacts > 0 ? tr("Connected") : tr("Connecting"));
+    html += row(tr("Status:"), ed3k.value(QStringLiteral("kadConnected")).toBool() ? tr("Connected") : tr("Connecting"));
     html += row(tr("UDP Port:"), QString::number(ed3k.value(QStringLiteral("udpPort")).toInteger()));
 
     // 0 unknown, 1 open, 2 cone, 3 symmetric; bit 0 IPv4 / bit 1 IPv6 of natChecking

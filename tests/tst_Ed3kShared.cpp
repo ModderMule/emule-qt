@@ -7,7 +7,9 @@
 #include "Ed3kSession.h"
 #include "Ed3kShared.h"
 
+#include <QDataStream>
 #include <QDir>
+#include <QFileInfo>
 #include <QFile>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -114,6 +116,9 @@ private slots:
     void keywordsArePublishedUnlessHeldBack();
     void anUnreadableFileIsHashedAgainLater();
     void anAnonymousFileDownloadedElsewhereIsToldOnce();
+    void lowRamKeepsBlockHashesOnDiskOnly();
+    void aVersion1CacheIsMigrated();
+    void tornBlockHashesAreHashedAgain();
     void cleanup();
 };
 
@@ -173,7 +178,7 @@ void tst_Ed3kShared::aSharedFileIsFetchedByItsRoot()
     shared.stop();
 }
 
-// shared.dat: a second start shares from the cache; a file written since is hashed again
+// hash cache: a second start shares from the cache; a file written since is hashed again
 void tst_Ed3kShared::theCacheSparesAHashAfterARestart()
 {
     const QByteArray data = payload(int(kBlock + 999), 2);
@@ -379,7 +384,8 @@ void tst_Ed3kShared::keywordsArePublishedUnlessHeldBack()
         shared.start();
         QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
         QVERIFY(shared.keywordsPublished(md4));
-        QTRY_VERIFY_WITH_TIMEOUT(keywordFiles > 0, 30000);
+        // 2 nodes = small network: Kad stores held SMALL_NET_S (45 s) after the first answer
+        QTRY_VERIFY_WITH_TIMEOUT(keywordFiles > 0, 60000);
         shared.stop();
     }
     {
@@ -467,6 +473,167 @@ void tst_Ed3kShared::anAnonymousFileDownloadedElsewhereIsToldOnce()
     QCOMPARE(told.count(), 1);
     QCOMPARE(told.at(0).at(1).toString(), QStringLiteral("eD2K"));
     shared.stop();
+    a.stop();
+}
+
+// low RAM: the engine's copy only; shared and served from shared-hashes.dat, also after a restart
+void tst_Ed3kShared::lowRamKeepsBlockHashesOnDiskOnly()
+{
+    const QByteArray data = payload(int(3 * kBlock + 777), 5);
+    QTemporaryDir da, db;
+    QVERIFY(da.isValid() && db.isValid());
+    const QString path = QDir(da.path()).filePath(QStringLiteral("low.bin"));
+    QVERIFY(writeFile(path, data));
+    Ed3kSession a, b;
+    QVERIFY(a.start(loopback(da.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    FakeSource src;
+    const QByteArray md4(16, char(0x51));
+    src.entries.push_back(SharedEntry{md4, path, QStringLiteral("low.bin"), std::uint64_t(data.size())});
+    {
+        Ed3kShared shared(a, src, da.path());
+        shared.setLowRamCheck([] { return true; });
+        QSignalSpy spy(&shared, &Ed3kShared::fileShared);
+        shared.start();
+        QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+        QCOMPARE(shared.hashesInRam(), std::size_t(0));
+        QVERIFY(QFileInfo(shared.hashesPath()).size() > 8);
+        shared.stop();
+        eMule::BackgroundFileWriter::instance().flush();
+    }
+    {
+        Ed3kShared shared(a, src, da.path());
+        shared.setLowRamCheck([] { return true; });
+        QSignalSpy spy(&shared, &Ed3kShared::fileShared);
+        shared.start();
+        QCOMPARE(spy.count(), 1);   // from the cache, values read from disk
+        QCOMPARE(shared.hashCount(), 0);
+        QCOMPARE(shared.hashesInRam(), std::size_t(0));
+        QCOMPARE(*shared.rootOf(md4), rootOf(data));
+        Fetcher fetch(b, db.path());
+        fetch.setSearchEnabled(false);
+        fetch.start();
+        QVERIFY(fetch.fetch(*shared.rootOf(md4), std::uint64_t(data.size()), sourceOf(a)));
+        QTRY_COMPARE_WITH_TIMEOUT(fetch.got.size(), data.size(), 30000);
+        QVERIFY(fetch.got == data);
+        fetch.stop();
+        shared.stop();
+        eMule::BackgroundFileWriter::instance().flush();
+    }
+    {
+        // enough RAM, no hash run: not kept (the engine holds its own)
+        // was: kept once read (hashesInRam 1)
+        Ed3kShared shared(a, src, da.path());
+        shared.setLowRamCheck([] { return false; });
+        shared.start();
+        QVERIFY(shared.rootOf(md4).has_value());
+        QCOMPARE(shared.hashesInRam(), std::size_t(0));
+        shared.stop();
+    }
+    {
+        // enough RAM: kept while hashing, dropped when the run ends
+        QTemporaryDir dc;
+        QVERIFY(dc.isValid());
+        Ed3kShared shared(a, src, dc.path());
+        shared.setLowRamCheck([] { return false; });
+        QSignalSpy spy(&shared, &Ed3kShared::fileShared);
+        shared.start();
+        QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+        QCOMPARE(shared.hashCount(), 1);
+        QTRY_COMPARE(shared.hashesInRam(), std::size_t(0));
+        shared.stop();
+    }
+    a.stop();
+    b.stop();
+}
+
+// shared.dat (v1, values inline) becomes index + values file without a hash
+// ToDo: remove with Ed3kShared::migrateV1
+void tst_Ed3kShared::aVersion1CacheIsMigrated()
+{
+    const QByteArray data = payload(int(2 * kBlock + 1234), 7);
+    QTemporaryDir da;
+    QVERIFY(da.isValid());
+    const QString path = QDir(da.path()).filePath(QStringLiteral("v1.bin"));
+    QVERIFY(writeFile(path, data));
+    Ed3kSession a;
+    QVERIFY(a.start(loopback(da.path())));
+    FakeSource src;
+    const QByteArray md4(16, char(0x61));
+    src.entries.push_back(SharedEntry{md4, path, QStringLiteral("v1.bin"), std::uint64_t(data.size())});
+
+    ::ed3k::Hasher hasher;
+    QVERIFY(hasher.update({reinterpret_cast<const std::byte*>(data.constData()), std::size_t(data.size())}));
+    auto done = hasher.finish();
+    QVERIFY(done.has_value());
+    const auto hashBytes = done->hashes.bytes();
+    {
+        Ed3kShared shared(a, src, da.path());
+        const QString old = QFileInfo(shared.cachePath()).dir().filePath(QStringLiteral("shared.dat"));
+        QVERIFY(QDir().mkpath(QFileInfo(old).absolutePath()));
+        QFile f(old);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        QDataStream out(&f);
+        out.setVersion(QDataStream::Qt_6_0);
+        out << quint32(0x45335348) << quint32(1) << quint32(1);
+        out << md4 << path << quint64(data.size()) << QFileInfo(path).lastModified().toMSecsSinceEpoch()
+            << QByteArray(reinterpret_cast<const char*>(done->root.bytes.data()), qsizetype(done->root.bytes.size()))
+            << QByteArray(reinterpret_cast<const char*>(hashBytes.data()), qsizetype(hashBytes.size()));
+        f.close();
+
+        QSignalSpy spy(&shared, &Ed3kShared::fileShared);
+        shared.start();
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(shared.hashCount(), 0);
+        QCOMPARE(*shared.rootOf(md4), done->root);
+        QVERIFY(!QFile::exists(old));
+        QVERIFY(QFile::exists(shared.cachePath()));
+        QCOMPARE(QFileInfo(shared.hashesPath()).size(), qint64(8 + hashBytes.size()));
+        shared.stop();
+    }
+    a.stop();
+}
+
+// values that do not match their check (a torn write): read as a miss, hashed again
+void tst_Ed3kShared::tornBlockHashesAreHashedAgain()
+{
+    const QByteArray data = payload(int(2 * kBlock + 99), 9);
+    QTemporaryDir da;
+    QVERIFY(da.isValid());
+    const QString path = QDir(da.path()).filePath(QStringLiteral("torn.bin"));
+    QVERIFY(writeFile(path, data));
+    Ed3kSession a;
+    QVERIFY(a.start(loopback(da.path())));
+    FakeSource src;
+    const QByteArray md4(16, char(0x71));
+    src.entries.push_back(SharedEntry{md4, path, QStringLiteral("torn.bin"), std::uint64_t(data.size())});
+    QString hashes;
+    {
+        Ed3kShared shared(a, src, da.path());
+        QSignalSpy spy(&shared, &Ed3kShared::fileShared);
+        shared.start();
+        QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+        hashes = shared.hashesPath();
+        shared.stop();
+        eMule::BackgroundFileWriter::instance().flush();
+    }
+    {
+        QFile f(hashes);
+        QVERIFY(f.open(QIODevice::ReadWrite));
+        QVERIFY(f.size() > 8);
+        QVERIFY(f.seek(8));
+        QCOMPARE(f.write(QByteArray(int(f.size() - 8), char(0x5A))), f.size() - 8);
+    }
+    {
+        Ed3kShared shared(a, src, da.path());
+        shared.setLowRamCheck([] { return true; });
+        QSignalSpy spy(&shared, &Ed3kShared::fileShared);
+        shared.start();
+        QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+        QCOMPARE(shared.hashCount(), 1);
+        QCOMPARE(*shared.rootOf(md4), rootOf(data));
+        shared.stop();
+    }
     a.stop();
 }
 

@@ -1,15 +1,64 @@
 #include "app/CoreAttachment.h"
 
+#include "net/OwnAddress.h"
+#include "prefs/Preferences.h"
+#include "utils/Log.h"
+
+#include <QHash>
 #include <QHostAddress>
 #include <QPainter>
 #include <QPixmap>
 
+#include <algorithm>
+
 namespace eMule {
+
+namespace {
+QHash<QString, bool> g_loggedVerdict;   ///< name -> remote, as last logged
+} // namespace
 
 CoreAttachment& CoreAttachment::instance()
 {
     static CoreAttachment link;
     return link;
+}
+
+bool CoreAttachment::isRemoteAddress(const QString& host)
+{
+    const QString h = host.trimmed();
+    if (h.isEmpty() || h == u'*')
+        return false;
+    if (const QHostAddress addr(h); !addr.isNull())
+        return !OwnAddress::isOwn(addr);
+
+    // This machine by name: no DNS round trip
+    const QString name = OwnAddress::normalizedName(h);
+    if (OwnAddress::isLocalhostName(name) || OwnAddress::isSelfName(name))
+        return false;
+
+    const auto addrs = OwnAddress::resolve(name);   // cached
+    bool remote = true;
+    if (!addrs)
+        logWarning(QStringLiteral("Core host %1 did not resolve within %2 ms, taken as remote")
+                       .arg(h).arg(OwnAddress::kLookupTimeoutMs));
+    else if (!addrs->isEmpty())
+        remote = !std::ranges::all_of(*addrs, &OwnAddress::isOwn);
+    if (const auto it = g_loggedVerdict.constFind(name);
+        addrs && (it == g_loggedVerdict.cend() || *it != remote)) {
+        g_loggedVerdict.insert(name, remote);
+        if (addrs->isEmpty())
+            logWarning(QStringLiteral("Core host %1 does not resolve, taken as remote").arg(h));
+        else
+            logInfo(QStringLiteral("Core host %1 is %2").arg(h, remote ? u"remote" : u"local"));
+    }
+    return remote;
+}
+
+QString CoreAttachment::dialHost(const QString& host)
+{
+    if (isRemoteAddress(host))
+        return host.trimmed();
+    return Preferences::ipcDialHostOf(host);
 }
 
 void CoreAttachment::setTarget(const QString& host, uint16_t port, bool remote)

@@ -8,6 +8,7 @@
 #include "IpcConnection.h"
 #include "IpcMessage.h"
 #include "IpcProtocol.h"
+#include "net/OwnAddress.h"
 #include "prefs/Preferences.h"
 
 #include <QCborMap>
@@ -154,7 +155,13 @@ private slots:
         QCOMPARE(Preferences::ipcBindAddressOf(QString()), QHostAddress(QHostAddress::LocalHost));
         QCOMPARE(Preferences::ipcBindAddressOf(QStringLiteral("0.0.0.0")), QHostAddress(QHostAddress::AnyIPv4));
         QCOMPARE(Preferences::ipcBindAddressOf(QStringLiteral("::")), QHostAddress(QHostAddress::AnyIPv6));
+        // a name that does not resolve: loopback (no real DNS)
+        eMule::OwnAddress::setLookup([](const QString&, int) {
+            return std::optional{QList<QHostAddress>{}};
+        });
         QCOMPARE(Preferences::ipcBindAddressOf(QStringLiteral("no.such")), QHostAddress(QHostAddress::LocalHost));
+        QCOMPARE(Preferences::ipcDialHostOf(QStringLiteral("no.such")), QStringLiteral("127.0.0.1"));
+        eMule::OwnAddress::setLookup({});
         QCOMPARE(Preferences::ipcDialHostOf(QStringLiteral("*")), QStringLiteral("127.0.0.1"));
         QCOMPARE(Preferences::ipcDialHostOf(QString()), QStringLiteral("127.0.0.1"));
         QCOMPARE(Preferences::ipcDialHostOf(QStringLiteral("::")), QStringLiteral("::1"));

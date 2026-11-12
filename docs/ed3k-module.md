@@ -160,7 +160,9 @@ The port is mapped as `PortMapPurpose::Ed3kUdp` while `ed3kEnabled`.
 | `names.dat` | `ED3K_STATE_NAMES` (petnames, pins, own zones, followed lists) | on `StateChanged` and at stop |
 | `name-lists.dat` | `id<TAB>label<TAB>link` of the followed name lists in the user's order (`Ed3kNames`); not a credential | on follow, unfollow, move |
 | `name-petnames.dat` | `text<TAB>zone hex<TAB>shareable` of the petnames set here (the core lists none); owner-only | on set, remove |
-| `shared.dat` | hash cache of the shared files (`Ed3kShared`) | 5 s after a change, and at stop |
+| `shared-index.dat` | hash cache index of the shared files (`Ed3kShared`): per MD4 path, size, mtime, root, offset into `shared-hashes.dat` | 5 s after a change, and at stop |
+| `shared-hashes.dat` | block values of those files, append-only, compacted at start | when a file is hashed |
+| `shared.dat` | old single-file hash cache, read once and moved into the two files above (ToDo: drop the migration later) | never |
 | `stake-claims.json` | the claims of own burns and of ids claimed (credit.md §6.7): `[{id, to, amount (uint256 hex), readyAt, state (0 waiting, 1 claiming, 2 paid), burnTx, claimTx (hash hex, "" unknown)}]`, u64 as text; public on the chain, not a secret | on a burn, a claim, a read of a claim |
 | `site-cache/` | websites kept across restarts (name.md §6.4, `Ed3kSiteCache`): `s-…` manifests, `m-…` members, 2 GiB, LRU; not secrets | on a manifest or a member in |
 | `sets.json` | the followed sets (`Ed3kSets`): id, link (a hidden set's is a credential), policy, title, folder, members left out, the version applied and the one waiting (root, seq), inner manifests and mounts; owner-only, never logged | on follow, unfollow, policy, selection, a version |
@@ -460,11 +462,16 @@ node stops. `applyEd3kConfig` switches it with the pref.
 - **Files:** every complete file of the list (no part files). `fileAdded`, `fileRemoved`
   (direct), `fileRelocated`, and `fileChanged` / `DownloadQueue::fileCompleted` (a completed
   download stays the same object, so no `fileAdded`).
-- **Hash cache** `Config/ed3k/shared.dat` (versioned `QDataStream`, `writeBlob`: `QSaveFile`,
-  owner-only): per MD4 the path, size, mtime (ms), root and block values. A file whose path,
+- **Hash cache** `Config/ed3k/shared-index.dat` (versioned `QDataStream`, `writeBlob`: `QSaveFile`,
+  owner-only): per MD4 the path, size, mtime (ms), root and where the block values are in
+  `shared-hashes.dat` (append-only, checked per entry, compacted at start). A file whose path,
   size and mtime match is shared at once. Otherwise it is hashed on a worker
   (`hashInBackground`), **one file at a time**, and dropped when it changed while hashed. An
   entry of a file not listed is kept while its path exists (the list may load later).
+  Block values stay in RAM only during a hash run (packmule holds its own copy; its `Tree`
+  shares level 0 and keeps levels ≥ 4), or not at all below `ed3k.hashCacheLowRamPercent`
+  free RAM. Log: count at start and again after the share list's first full scan, progress
+  once a minute, a summary when the run ends.
 - **Sharing:** `shareMember` with `SharedFile{root, size, name, ed2k = MD4, no note, complete,
   block values}`, `publish(Both)` (keywords too, so ed3k search finds it; `Source` while
   holding back), and an `ed2k` ALIAS record (alias.md §2: id = MD4 ‖ size

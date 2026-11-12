@@ -16,16 +16,14 @@ namespace eMule {
 IpcServer::IpcServer(QObject* parent)
     : QObject(parent)
 {
-    connect(&m_tcpServer, &Ipc::IpcTlsServer::ready, this, &IpcServer::onSocketReady);
-    connect(&m_tcpServer, &Ipc::IpcTlsServer::rejected, this,
-            [](const QString& peer, const QString& reason) {
-                logWarning(QStringLiteral("IPC client %1 dropped: %2").arg(peer, reason));
-            });
 }
 
 void IpcServer::setTlsIdentity(const QSslCertificate& cert, const QSslKey& key)
 {
-    m_tcpServer.setIdentity(cert, key);
+    m_cert = cert;
+    m_key = key;
+    for (const auto& server : m_tcpServers)
+        server->setIdentity(cert, key);
 }
 
 IpcServer::~IpcServer()
@@ -33,56 +31,74 @@ IpcServer::~IpcServer()
     stop();
 }
 
-bool IpcServer::start(const QHostAddress& address, uint16_t port)
+bool IpcServer::start(const QList<QHostAddress>& addresses, uint16_t port)
 {
-    if (m_tcpServer.isListening())
-        stop();
+    stop();
     m_errorText.clear();
+    m_port = port;
 
-    // A wildcard listen succeeds even if another program holds the port on one
-    // local address; a local GUI would then talk to that program.
-    if (const auto held = heldLocalAddresses(address, port); !held.isEmpty()) {
-        m_errorText = QStringLiteral("IPC port %1 is already used by another program on %2. "
-                                     "Change the IPC port in preferences.yml.")
-                          .arg(port).arg(addressListText(held));
+    QStringList failed;
+    for (const QHostAddress& address : addresses) {
+        QString error;
+        if (openListener(address, &error))
+            continue;
+        if (m_errorText.isEmpty())
+            m_errorText = error;
+        failed.append(error);
+    }
+    if (m_tcpServers.empty()) {
         logError(QStringLiteral("IPC server: ") + m_errorText);
         return false;
     }
-
-    if (!m_tcpServer.listen(address, port)) {
-        m_errorText = QStringLiteral("Cannot listen on IPC port %1:%2: %3")
-                          .arg(address.toString()).arg(port).arg(m_tcpServer.errorString());
-        switch (m_tcpServer.serverError()) {
-        case QAbstractSocket::AddressInUseError:
-            m_errorText += QStringLiteral(". Another program uses the port; "
-                                          "change the IPC port in preferences.yml.");
-            break;
-        case QAbstractSocket::SocketAccessError:
-#ifdef Q_OS_WIN
-            // WSAEACCES: Hyper-V, WSL2 or Docker reserved a range holding the port
-            m_errorText += QStringLiteral(". Windows may reserve this port (check "
-                                          "'netsh int ipv4 show excludedportrange protocol=tcp'); "
-                                          "change the IPC port in preferences.yml.");
-#endif
-            break;
-        default:
-            break;
-        }
-        logError(QStringLiteral("IPC server: ") + m_errorText);
-        return false;
-    }
+    for (const QString& error : std::as_const(failed))
+        logWarning(QStringLiteral("IPC server: ") + error);
+    m_errorText.clear();
     return true;
+}
+
+void IpcServer::relisten(const QList<QHostAddress>& addresses)
+{
+    // Listeners no longer wanted go; clients stay (theirs is gone with the address anyway)
+    for (auto it = m_tcpServers.begin(); it != m_tcpServers.end();) {
+        if (addresses.contains((*it)->serverAddress())) {
+            ++it;
+            continue;
+        }
+        logInfo(QStringLiteral("IPC server: no longer listening on %1")
+                    .arg((*it)->serverAddress().toString()));
+        (*it)->close();
+        it->release()->deleteLater();   // may hold sockets mid-handshake
+        it = m_tcpServers.erase(it);
+    }
+    const QList<QHostAddress> have = listenAddresses();
+    for (const QHostAddress& address : addresses) {
+        if (have.contains(address))
+            continue;
+        QString error;
+        if (openListener(address, &error))
+            logInfo(QStringLiteral("IPC server: now listening on %1").arg(address.toString()));
+        else
+            logWarning(QStringLiteral("IPC server: ") + error);
+    }
+}
+
+QList<QHostAddress> IpcServer::listenAddresses() const
+{
+    QList<QHostAddress> result;
+    for (const auto& server : m_tcpServers)
+        result.append(server->serverAddress());
+    return result;
 }
 
 void IpcServer::stop()
 {
-    m_tcpServer.close();
+    m_tcpServers.clear();
     m_clients.clear();
 }
 
 bool IpcServer::isListening() const
 {
-    return m_tcpServer.isListening();
+    return !m_tcpServers.empty();
 }
 
 void IpcServer::broadcast(const Ipc::IpcMessage& msg)
@@ -228,6 +244,50 @@ void IpcServer::onClientDisconnected(IpcClientHandler* handler)
     // A GUI that quit mid-wizard must not leave the core held offline
     if (wasClient && m_clients.empty() && theApp.releaseConnectHold)
         theApp.releaseConnectHold();
+}
+
+bool IpcServer::openListener(const QHostAddress& address, QString* error)
+{
+    // A wildcard listen succeeds even if another program holds the port on one
+    // local address; a local GUI would then talk to that program.
+    if (const auto held = heldLocalAddresses(address, m_port); !held.isEmpty()) {
+        *error = QStringLiteral("IPC port %1 is already used by another program on %2. "
+                                "Change the IPC port in preferences.yml.")
+                     .arg(m_port).arg(addressListText(held));
+        return false;
+    }
+
+    auto server = std::make_unique<Ipc::IpcTlsServer>();
+    server->setIdentity(m_cert, m_key);
+    connect(server.get(), &Ipc::IpcTlsServer::ready, this, &IpcServer::onSocketReady);
+    connect(server.get(), &Ipc::IpcTlsServer::rejected, this,
+            [](const QString& peer, const QString& reason) {
+                logWarning(QStringLiteral("IPC client %1 dropped: %2").arg(peer, reason));
+            });
+    if (server->listen(address, m_port)) {
+        m_tcpServers.push_back(std::move(server));
+        return true;
+    }
+
+    *error = QStringLiteral("Cannot listen on IPC port %1:%2: %3")
+                 .arg(address.toString()).arg(m_port).arg(server->errorString());
+    switch (server->serverError()) {
+    case QAbstractSocket::AddressInUseError:
+        *error += QStringLiteral(". Another program uses the port; "
+                                 "change the IPC port in preferences.yml.");
+        break;
+    case QAbstractSocket::SocketAccessError:
+#ifdef Q_OS_WIN
+        // WSAEACCES: Hyper-V, WSL2 or Docker reserved a range holding the port
+        *error += QStringLiteral(". Windows may reserve this port (check "
+                                 "'netsh int ipv4 show excludedportrange protocol=tcp'); "
+                                 "change the IPC port in preferences.yml.");
+#endif
+        break;
+    default:
+        break;
+    }
+    return false;
 }
 
 } // namespace eMule

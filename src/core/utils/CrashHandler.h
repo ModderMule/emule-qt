@@ -4,7 +4,9 @@
 /// @brief Cross-platform crash dump handler.
 ///
 /// Catches fatal signals (Unix) or unhandled exceptions (Windows) and writes
-/// a crash dump file to a configurable directory before terminating.
+/// a crash dump file to a configurable directory before terminating. Also
+/// std::terminate (uncaught exception, its text in the file) and, on Windows,
+/// abort / pure virtual call / invalid CRT parameter, which bypass the filter.
 
 #include <QString>
 

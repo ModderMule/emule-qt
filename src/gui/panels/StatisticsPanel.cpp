@@ -2242,7 +2242,7 @@ QString StatisticsPanel::itemsText(bool onlyVisible, QTreeWidgetItem* parent, QT
         parent = m_tree->invisibleRootItem();
     for (int i = 0; i < parent->childCount(); ++i) {
         QTreeWidgetItem* item = parent->child(i);
-        if (only && item != only)
+        if ((only && item != only) || item->isHidden())   // hidden: core lacks the branch
             continue;
         out += QString(3 * level, QLatin1Char(' ')) + item->text(0);
         if (lineBreaks)

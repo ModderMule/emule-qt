@@ -189,6 +189,7 @@
     <ClCompile Include="DaemonUsenetWebBackend.cpp" />
     <ClCompile Include="IpcClientHandler.cpp" />
     <ClCompile Include="IpcClientHandlerMeta.cpp" />
+    <ClCompile Include="IpcListenWatch.cpp" />
     <ClCompile Include="IpcServer.cpp" />
     <ClCompile Include="IpcTlsIdentity.cpp" />
     <ClCompile Include="main.cpp" />
@@ -230,6 +231,7 @@
     <QtMoc Include="CoreNotifierBridge.h" />
     <QtMoc Include="DaemonApp.h" />
     <QtMoc Include="IpcClientHandler.h" />
+    <QtMoc Include="IpcListenWatch.h" />
     <QtMoc Include="IpcServer.h" />
     <QtMoc Include="MetaSearchService.h" />
     <QtMoc Include="AutoUpdater.h" />

@@ -26,6 +26,7 @@ class BandwidthCoordinator;
 class ScheduleNetworkBridge;
 class UsenetRetryGrabber;
 class CoreSession;
+class IpcListenWatch;
 class ApiEventFeeder;
 class ApiEventHub;
 class DaemonApiBackend;
@@ -198,6 +199,7 @@ private:
     bool m_enginesHeld = false;
     quint16 m_ipcPortOverride = 0;
     std::unique_ptr<IpcServer> m_ipcServer;
+    std::unique_ptr<IpcListenWatch> m_ipcListenWatch;   ///< only for a host name listen value
     std::unique_ptr<CoreNotifierBridge> m_notifierBridge;
     /// Declared before m_webServer so the server that points at it dies first.
     std::unique_ptr<DaemonUsenetWebBackend> m_usenetWebBackend;

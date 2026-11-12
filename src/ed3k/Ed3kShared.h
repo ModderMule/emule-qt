@@ -7,15 +7,19 @@
 ///
 /// - Serving (WantBlock/VerifyBlock) and the upload slot (FileRequested) are the base's
 ///   (Ed3kJoinBase), owner "shared", member = a stable index per file.
-/// - Hash cache: Config/ed3k/shared.dat, keyed by MD4 + size + mtime + path, holds the root
-///   and the block values; a hit shares at once. Misses are hashed on a worker, one at a
-///   time (a big share list must not flood the thread pool).
+/// - Hash cache: Config/ed3k/shared-index.dat, keyed by MD4 + size + mtime + path, holds the
+///   root and where the block values are in shared-hashes.dat (append-only, compacted at
+///   start); a hit shares at once. Misses are hashed on a worker, one at a time (a big share
+///   list must not flood the thread pool). shared.dat (v1, values inline) is migrated.
+/// - Block values in RAM: read from disk when shared, kept after (re-shares) unless free RAM
+///   is below lowRamPercent of the total; then only the engine holds them.
 /// - Removed files are unshared and unpublished; a moved file keeps its root when its size
 ///   and date did not change.
 
 #include "Ed3kJoinBase.h"
 
 #include <QByteArray>
+#include <QElapsedTimer>
 #include <QString>
 #include <QTimer>
 
@@ -26,6 +30,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <span>
 #include <vector>
 
 namespace eMule {
@@ -63,7 +68,7 @@ public:
     /// Owner of every shared file in the base.
     static inline const QString kOwner = QStringLiteral("shared");
 
-    /// @p configDir: the cache goes to <configDir>/ed3k/shared.dat. Both must outlive this.
+    /// @p configDir: the cache goes to <configDir>/ed3k/shared-index.dat + shared-hashes.dat. Both must outlive this.
     Ed3kShared(Ed3kSession& session, SharedFileSource& source, const QString& configDir, QObject* parent = nullptr);
     ~Ed3kShared() override;
 
@@ -116,7 +121,16 @@ public:
     void setRehashDelay(int ms) { m_rehashMs = ms; }
     /// Files hashed since construction (cache misses).
     [[nodiscard]] int hashCount() const { return m_hashCount; }
+    /// The index of the hash cache (shared-index.dat).
     [[nodiscard]] QString cachePath() const;
+    /// The block values of the hash cache (shared-hashes.dat).
+    [[nodiscard]] QString hashesPath() const;
+    /// Free RAM below @p percent of the total: block values not kept in RAM. 0 = always kept.
+    void setLowRamPercent(int percent) { m_lowRamPercent = percent; }
+    /// Tests: replaces the RAM check (true = low).
+    void setLowRamCheck(std::function<bool()> check) { m_lowRamCheck = std::move(check); }
+    /// Cache entries whose block values are in RAM now.
+    [[nodiscard]] std::size_t hashesInRam() const;
     /// The `ed2k` Alias message (proto) of a file (alias.md §2): MD4 ‖ size as 8 B big endian.
     [[nodiscard]] static ::ed3k::Bytes ed2kAlias(const QByteArray& md4, std::uint64_t size, const ::ed3k::Root& root,
                                                  const QString& name);
@@ -128,6 +142,9 @@ public slots:
     void onFileRelocated(const eMule::ed3k::SharedEntry& entry);
     /// Something of the file changed (a download completed): shared when it is complete now.
     void onFileChanged(const QByteArray& md4);
+    /// The share list's scan is done; @p full: the whole share. The first full one after
+    /// start() logs the count again (start() runs before the startup scan filled the list).
+    void onListScanned(bool full);
 
 signals:
     /// @p md4 is shared and published under @p root.
@@ -156,7 +173,11 @@ private:
         std::uint64_t size = 0;
         qint64 mtimeMs = 0;
         ::ed3k::Root root;
-        ::ed3k::Bytes hashes;
+        ::ed3k::Bytes hashes;   ///< valid while inRam
+        bool inRam = false;     ///< false: on disk only (diskOffset)
+        qint64 diskOffset = -1; ///< in shared-hashes.dat; -1: not stored
+        quint32 diskLen = 0;
+        QByteArray diskCheck;   ///< MD5 of the stored values (a torn write reads as a miss)
     };
     struct File {
         SharedEntry entry;
@@ -171,9 +192,15 @@ private:
 
     void add(const SharedEntry& entry);
     void remove(const QByteArray& md4);
-    void share(File& f, const Hashed& h);
+    /// Shares @p f; values from disk when not in RAM. An unreadable entry is dropped and
+    /// @p f hashed again (@p h is gone then).
+    void share(File& f, Hashed& h);
     void enqueueHash(File& f);
     void hashNext();
+    /// queue drained: one summary line, run reset
+    void endHashRun();
+    /// once a minute while a run lasts: done, left, rate
+    void logHashProgress();
     void onHashed(const QByteArray& md4, const QString& path, qint64 mtimeMs, const std::optional<FileHash>& hashed);
     /// An unreadable file's hash once more (kRehashMs after it failed).
     void rehash(const QByteArray& md4);
@@ -187,6 +214,21 @@ private:
     [[nodiscard]] static qint64 mtimeOf(const QString& path);
     void loadCache();
     void saveCache();
+    /// Appends @p data (@p h's values) to shared-hashes.dat and notes where. false: not stored.
+    bool storeHashes(Hashed& h, std::span<const std::byte> data) const;
+    /// shared-index.dat of the entries stored on disk.
+    [[nodiscard]] QByteArray indexBlob() const;
+    /// @p h's values from shared-hashes.dat; nullopt: missing or torn.
+    [[nodiscard]] std::optional<::ed3k::Bytes> loadHashes(const Hashed& h) const;
+    /// shared.dat (v1) into the index and the values file, streamed (no whole-file read).
+    /// ToDo: remove later, with the v1 magic
+    void migrateV1();
+    /// shared-hashes.dat rewritten with the live values when mostly dead.
+    void compactHashes();
+    /// Free RAM below m_lowRamPercent (checked at most every few seconds).
+    [[nodiscard]] bool lowRam();
+    /// Values stored on disk leave RAM: after a hash run, or any time RAM is low.
+    void releaseRamHashes();
 
     SharedFileSource& m_source;
     bool m_enabled = true;
@@ -195,17 +237,27 @@ private:
     std::set<::ed3k::Root> m_exposedTold;
     std::map<int, QByteArray> m_members;
     int m_nextMember = 0;
-    /// md4 → what was hashed (loaded from shared.dat, kept while the path exists)
+    /// md4 → what was hashed (loaded from shared-index.dat, kept while the path exists)
     std::map<QByteArray, Hashed> m_cache;
     std::deque<QByteArray> m_hashQueue;
     bool m_hashing = false;
     int m_hashCount = 0;
+    /// current hash run (queue busy → empty): files, bytes, time; logged when done
+    int m_runFiles = 0;
+    qint64 m_runBytes = 0;
+    QElapsedTimer m_runTimer;
+    /// the count after the share list's first full scan was logged (per start)
+    bool m_scanLogged = false;
     int m_rehashMs = kRehashMs;
     /// reported by sharedGone() (const): handled on the next turn
     mutable std::set<QByteArray> m_suspects;
     mutable QTimer m_recheckTimer;
     QTimer m_priorityTimer;
     std::function<bool(const QString&)> m_neverShared;
+    int m_lowRamPercent = 20;
+    std::function<bool()> m_lowRamCheck;
+    qint64 m_lowRamCheckedMs = 0;
+    bool m_lowRam = false;
 };
 
 } // namespace eMule::ed3k

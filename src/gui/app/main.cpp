@@ -11,7 +11,6 @@
 #include <QUrl>
 #include <QFont>
 #include <QHostAddress>
-#include <QNetworkInterface>
 #include <QLibraryInfo>
 #include <QLocale>
 #include <QMessageBox>
@@ -151,8 +150,10 @@ QPixmap splashPixmap()
 /// Keeps the splash past the main window while the first core connect is pending.
 /// Gone on connect, on a failure that is no core still launching, under any modal
 /// dialog (connect/start-problem), on a click, or after kSplashMaxMs.
+/// Connect/failure/no-core closes wait until minShownMs since the splash went up.
 /// ipc null: IPC off, nothing to wait for.
-void holdSplashForFirstConnect(QSplashScreen* splash, eMule::IpcClient* ipc)
+void holdSplashForFirstConnect(QSplashScreen* splash, const QElapsedTimer& shown, int minShownMs,
+                               eMule::IpcClient* ipc)
 {
     if (!splash)
         return;
@@ -163,35 +164,47 @@ void holdSplashForFirstConnect(QSplashScreen* splash, eMule::IpcClient* ipc)
     auto elapsed = std::make_shared<QElapsedTimer>();
     elapsed->start();
     auto closed = std::make_shared<bool>(false);   // poll may fire once more before deleteLater
-    const auto done = [guard, elapsed, closed](const char* why) {
+    auto pending = std::make_shared<const char*>(nullptr);   // close held for the minimum
+    const auto close = [guard, elapsed, shown, closed](const char* why) {
         if (!guard || std::exchange(*closed, true))
             return;
         const QPixmap pm = guard->pixmap();
-        eMule::logInfo(QStringLiteral("Splash %1x%2 @%3x closed %4 ms after main window (%5)")
+        eMule::logInfo(QStringLiteral("Splash %1x%2 @%3x closed %4 ms after main window, %5 ms shown (%6)")
                            .arg(pm.width()).arg(pm.height()).arg(pm.devicePixelRatio())
-                           .arg(elapsed->elapsed()).arg(QLatin1StringView(why)));
+                           .arg(elapsed->elapsed()).arg(shown.elapsed()).arg(QLatin1StringView(why)));
         guard->close();
         guard->deleteLater();
     };
-    if (!ipc) {
-        done("no core connect");
-        return;
-    }
+    // Ready closes: held until the splash was up minShownMs
+    const auto done = [shown, minShownMs, pending, close](const char* why) {
+        if (shown.hasExpired(minShownMs))
+            close(why);
+        else if (!*pending)
+            *pending = why;
+    };
 
-    // Context = splash: every connection goes with it
-    QObject::connect(ipc, &eMule::IpcClient::connected, splash, [done] { done("connected"); });
-    QObject::connect(ipc, &eMule::IpcClient::connectionFailed, splash, [ipc, done] {
-        if (!ipc->daemonStarting())
-            done("connect failed");   // a dialog or the offline state follows
-    });
+    if (ipc) {
+        // Context = splash: every connection goes with it
+        QObject::connect(ipc, &eMule::IpcClient::connected, splash, [done] { done("connected"); });
+        QObject::connect(ipc, &eMule::IpcClient::connectionFailed, splash, [ipc, done] {
+            if (!ipc->daemonStarting())
+                done("connect failed");   // a dialog or the offline state follows
+        });
+    } else {
+        done("no core connect");
+        if (*closed)
+            return;
+    }
     auto* poll = new QTimer(splash);
-    QObject::connect(poll, &QTimer::timeout, splash, [guard, elapsed, done] {
+    QObject::connect(poll, &QTimer::timeout, splash, [guard, elapsed, shown, minShownMs, pending, close] {
         if (!guard || !guard->isVisible())
-            done("clicked");   // QSplashScreen hides itself on a click
+            close("clicked");   // QSplashScreen hides itself on a click
         else if (QApplication::activeModalWidget())
-            done("dialog");
+            close("dialog");    // never cover a dialog, minimum or not
+        else if (*pending && shown.hasExpired(minShownMs))
+            close(*pending);
         else if (elapsed->hasExpired(kSplashMaxMs))
-            done("timeout");
+            close("timeout");
     });
     poll->start(kSplashPollMs);
 }
@@ -211,35 +224,6 @@ QString resolveDaemonPath()
         return path;
 
     return bundledDaemonPath();
-}
-
-/// The configured core address is another machine: nothing to discover or launch here.
-/// A wildcard (0.0.0.0, ::) or one of this machine's own addresses is local (#120):
-/// taken as remote, the core could not be attached, and GUI exit wrote its stale
-/// preferences.yml over the core's own.
-bool isRemoteCoreAddress(const QString& host)
-{
-    QHostAddress addr(host);   // "" and "localhost" parse as null
-    if (addr.isNull() || addr.isLoopback() || addr == QHostAddress::AnyIPv4
-        || addr == QHostAddress::AnyIPv6 || addr == QHostAddress::Any)
-        return false;
-    addr.setScopeId({});
-    for (QHostAddress own : QNetworkInterface::allAddresses()) {
-        own.setScopeId({});
-        if (own.isEqual(addr, QHostAddress::TolerantConversion))
-            return false;
-    }
-    return true;
-}
-
-/// Where to dial the core: a wildcard listen address is reached over loopback,
-/// where the core trusts the GUI without a token (and Windows refuses 0.0.0.0).
-QString coreDialHost(const QString& host)
-{
-    // a hostname stays as given (the Connect dialog)
-    if (const QString h = host.trimmed(); !h.isEmpty() && h != u'*' && QHostAddress(h).isNull())
-        return host;
-    return eMule::Preferences::ipcDialHostOf(host);
 }
 
 /// Nothing listens on the local IPC port, so no core is running. A bind probe, as
@@ -656,7 +640,7 @@ int main(int argc, char* argv[])
     // "local" core, or --new-instance each get a window of their own.
     std::unique_ptr<eMule::SingleInstance> singleInstance;
     if (!cli.screenshotMode() && !cli.newInstance() && eMule::thePrefs.ipcEnabled()
-        && !isRemoteCoreAddress(eMule::thePrefs.ipcListenAddress())) {
+        && !eMule::CoreAttachment::isRemoteAddress(eMule::thePrefs.ipcListenAddress())) {
         const QString ownedPath = resolveDaemonPath();
         if (!ownedPath.isEmpty() && ownedPath != QStringLiteral("local")) {
             const bool profile = !cli.configOverride().isEmpty();
@@ -703,7 +687,7 @@ int main(int argc, char* argv[])
     auto daemonPid = std::make_shared<qint64>(0);
     // The last core still holds its profile while saving on the way out
     bool previousCoreStopping = false;
-    if (eMule::thePrefs.ipcEnabled() && !isRemoteCoreAddress(eMule::thePrefs.ipcListenAddress())) {
+    if (eMule::thePrefs.ipcEnabled() && !eMule::CoreAttachment::isRemoteAddress(eMule::thePrefs.ipcListenAddress())) {
         const QString earlyPath = resolveDaemonPath();
         const bool ownsCore = !earlyPath.isEmpty() && earlyPath != QStringLiteral("local");
         if (ownsCore)
@@ -751,9 +735,11 @@ int main(int argc, char* argv[])
 
     // Splash screen
     QSplashScreen* splash = nullptr;
+    QElapsedTimer splashShown;
     if (eMule::thePrefs.showSplashScreen() && !startMinimized) {
         splash = new QSplashScreen(splashPixmap());
         splash->show();
+        splashShown.start();
         QApplication::processEvents();
     }
 
@@ -788,8 +774,10 @@ int main(int argc, char* argv[])
     linkHandler.setIpcClient(&ipcClient);
 
     // Before the connect dialog below: its modal loop closes the splash
-    holdSplashForFirstConnect(splash, eMule::thePrefs.ipcEnabled() && !cli.screenshotMode()
-                                          ? &ipcClient : nullptr);
+    // Shown at least 2 s even with the GUI ready; not in screenshot mode
+    holdSplashForFirstConnect(splash, splashShown, cli.screenshotMode() ? 0 : 2'000,
+                              eMule::thePrefs.ipcEnabled() && !cli.screenshotMode()
+                                  ? &ipcClient : nullptr);
     splash = nullptr;   // owned by its hold now
 
     if (eMule::thePrefs.ipcEnabled()) {
@@ -807,7 +795,7 @@ int main(int argc, char* argv[])
         uint16_t port = eMule::thePrefs.ipcPort();
         QString daemonPath;
 
-        if (isRemoteCoreAddress(connectHost)) {
+        if (eMule::CoreAttachment::isRemoteAddress(connectHost)) {
             // FAST PATH: remote address configured — skip daemon discovery
             isRemote = true;
             eMule::logInfo(QStringLiteral("Remote core configured at %1:%2 — skipping local daemon discovery.")
@@ -837,7 +825,7 @@ int main(int argc, char* argv[])
                 eMule::logInfo(QStringLiteral("Local mode — connecting to localhost:%1").arg(port));
             }
             if (!isRemote)
-                connectHost = coreDialHost(connectHost);
+                connectHost = eMule::CoreAttachment::dialHost(connectHost);
         }
 
         // Send auth token only when we don't own the daemon process, or when the
@@ -1152,7 +1140,7 @@ int main(int argc, char* argv[])
                                  &mainWindow, [&ipcClient, lastCore, startLocalCoreIfDown] {
                     eMule::logInfo(QStringLiteral("Retrying last core at %1:%2...")
                                        .arg(lastCore->host).arg(lastCore->port));
-                    const bool remote = isRemoteCoreAddress(lastCore->host);
+                    const bool remote = eMule::CoreAttachment::isRemoteAddress(lastCore->host);
                     eMule::CoreAttachment::instance().setTarget(lastCore->host, lastCore->port, remote);
                     ipcClient.setAuthToken(lastCore->token);
                     if (!remote)
@@ -1162,14 +1150,15 @@ int main(int argc, char* argv[])
                 QObject::connect(dlg, &QDialog::accepted, &mainWindow, [dlg, &ipcClient, startLocalCoreIfDown] {
                     eMule::thePrefs.setIpcListenAddress(dlg->address());
                     eMule::thePrefs.setIpcPort(dlg->port());
-                    eMule::CoreAttachment::instance().setTarget(dlg->address(), dlg->port(),
-                                                          isRemoteCoreAddress(dlg->address()));
+                    const bool remote = eMule::CoreAttachment::isRemoteAddress(dlg->address());
+                    eMule::CoreAttachment::instance().setTarget(dlg->address(), dlg->port(), remote);
                     ipcClient.setAuthToken(dlg->token());
                     if (dlg->saveToken() && !dlg->token().isEmpty())
                         eMule::thePrefs.setIpcTokens({dlg->token()});
-                    if (!isRemoteCoreAddress(dlg->address()))
+                    if (!remote)
                         startLocalCoreIfDown();
-                    ipcClient.connectToDaemon(QHostAddress(coreDialHost(dlg->address())), dlg->port());
+                    // QString overload: a remote hostname is no QHostAddress
+                    ipcClient.connectToDaemon(eMule::CoreAttachment::dialHost(dlg->address()), dlg->port());
                 });
                 QObject::connect(dlg, &QDialog::rejected, &mainWindow, &eMule::MainWindow::forceQuit);
                 eMule::ModalHost::open(dlg);   // usable over Options too

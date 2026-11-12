@@ -89,7 +89,7 @@
 <context>
     <name>Ed3kKadModels</name>
     <message>
-        <location filename="../src/gui/controls/Ed3kKadModels.cpp" line="+25"/>
+        <location filename="../src/gui/controls/Ed3kKadModels.cpp" line="+28"/>
         <source>%1 s</source>
         <translation>%1 s</translation>
     </message>
@@ -800,7 +800,7 @@ Aktivieren Sie unter Optionen → Weboberfläche die Weboberfläche oder die RES
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+676"/>
+        <location filename="../src/gui/app/main.cpp" line="+660"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -814,7 +814,7 @@ Start it with --new-instance or --config &lt;dir&gt; to open another window.</so
 Mit --new-instance oder --config &lt;Ordner&gt; starten, um ein weiteres Fenster zu öffnen.</translation>
     </message>
     <message>
-        <location line="+209"/>
+        <location line="+213"/>
         <source>Core Certificate Changed</source>
         <translation>Zertifikat des Kerns geändert</translation>
     </message>
@@ -842,7 +842,7 @@ Dem neuen Zertifikat vertrauen?</translation>
         <translation type="vanished">Ein neuer Download wurde hinzugefügt.</translation>
     </message>
     <message>
-        <location line="+398"/>
+        <location line="+399"/>
         <source>Message from %1</source>
         <translation>Nachricht von %1</translation>
     </message>
@@ -2419,14 +2419,14 @@ M	komprimierte Daten noch nicht vollständig heruntergeladen
 <context>
     <name>eMule::BugReportDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/BugReportDialog.cpp" line="+58"/>
+        <location filename="../src/gui/dialogs/BugReportDialog.cpp" line="+60"/>
         <location line="+139"/>
-        <location line="+132"/>
+        <location line="+144"/>
         <source>Submit Bug Report</source>
         <translation>Fehlerbericht senden</translation>
     </message>
     <message>
-        <location line="-266"/>
+        <location line="-278"/>
         <source>Report Details</source>
         <translation>Berichtdetails</translation>
     </message>
@@ -2528,7 +2528,7 @@ M	komprimierte Daten noch nicht vollständig heruntergeladen
         <translation>Bitte füllen Sie sowohl den Titel als auch die Beschreibung aus.</translation>
     </message>
     <message>
-        <location line="+127"/>
+        <location line="+139"/>
         <source>Bug report submitted successfully.</source>
         <translation>Fehlerbericht erfolgreich gesendet.</translation>
     </message>
@@ -3963,7 +3963,7 @@ Ihre Downloads behalten ihre Dateien und wechseln zu Alle.</translation>
 <context>
     <name>eMule::CoreAttachment</name>
     <message>
-        <location filename="../src/gui/app/CoreAttachment.cpp" line="+55"/>
+        <location filename="../src/gui/app/CoreAttachment.cpp" line="+140"/>
         <source>Remote core at %1</source>
         <translation>Remote-Core unter %1</translation>
     </message>
@@ -4446,21 +4446,21 @@ Hochgeladen:	%12</translation>
 <context>
     <name>eMule::Ed2kKadPanel</name>
     <message>
-        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+220"/>
-        <location line="+120"/>
+        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+226"/>
+        <location line="+129"/>
         <location line="+154"/>
         <source>▸ Contacts (0)</source>
         <translation>▸ Kontakte (0)</translation>
     </message>
     <message>
-        <location line="-273"/>
-        <location line="+243"/>
-        <location line="+72"/>
+        <location line="-282"/>
+        <location line="+252"/>
+        <location line="+84"/>
         <source>▸ Current Searches (0)</source>
         <translation>▸ Aktuelle Suchen (0)</translation>
     </message>
     <message>
-        <location line="-260"/>
+        <location line="-272"/>
         <source>The URL is invalid.</source>
         <translation>Die URL ist ungültig.</translation>
     </message>
@@ -4489,12 +4489,12 @@ Hochgeladen:	%12</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+213"/>
+        <location line="+225"/>
         <source>Connect</source>
         <translation>Verbinden</translation>
     </message>
     <message>
-        <location line="-195"/>
+        <location line="-207"/>
         <source>IP or Address:</source>
         <translation>IP oder Adresse:</translation>
     </message>
@@ -4514,7 +4514,7 @@ Hochgeladen:	%12</translation>
         <translation>Von bekannten Clients</translation>
     </message>
     <message>
-        <location line="+145"/>
+        <location line="+157"/>
         <source>▸ Current Searches (%1)</source>
         <translation>▸ Aktuelle Suchen (%1)</translation>
     </message>
@@ -5154,7 +5154,7 @@ Neuen anonymen Schlüssel erstellen?</translation>
 <context>
     <name>eMule::Ed3kKadContactsModel</name>
     <message>
-        <location filename="../src/gui/controls/Ed3kKadModels.cpp" line="+69"/>
+        <location filename="../src/gui/controls/Ed3kKadModels.cpp" line="+83"/>
         <source>Node ID</source>
         <translation>Knoten-ID</translation>
     </message>
@@ -5163,7 +5163,12 @@ Neuen anonymen Schlüssel erstellen?</translation>
         <translation type="vanished">Adresse</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-9"/>
+        <source>Type</source>
+        <translation>Typ</translation>
+    </message>
+    <message>
+        <location line="+10"/>
         <source>Country</source>
         <translation>Land</translation>
     </message>
@@ -5192,11 +5197,16 @@ Neuen anonymen Schlüssel erstellen?</translation>
         <source>Next check</source>
         <translation>Nächste Prüfung</translation>
     </message>
+    <message>
+        <location line="+24"/>
+        <source>Not connected since restart</source>
+        <translation>Seit dem Neustart nicht verbunden</translation>
+    </message>
 </context>
 <context>
     <name>eMule::Ed3kKadLookupsModel</name>
     <message>
-        <location line="+26"/>
+        <location line="+33"/>
         <source>Number</source>
         <translation>Nummer</translation>
     </message>
@@ -5344,9 +5354,9 @@ Neuen anonymen Schlüssel erstellen?</translation>
         <translation>▸ Kontakte (0)</translation>
     </message>
     <message>
-        <location line="+9"/>
-        <location line="+159"/>
-        <location line="+170"/>
+        <location line="+12"/>
+        <location line="+158"/>
+        <location line="+183"/>
         <source>▸ Current Lookups (0)</source>
         <translation>▸ Aktuelle Suchen (0)</translation>
     </message>
@@ -5362,13 +5372,13 @@ Neuen anonymen Schlüssel erstellen?</translation>
         </translation>
     </message>
     <message>
-        <location line="-143"/>
-        <location line="+306"/>
+        <location line="-146"/>
+        <location line="+309"/>
         <source>Connect</source>
         <translation>Verbinden</translation>
     </message>
     <message>
-        <location line="-296"/>
+        <location line="-299"/>
         <source>ed3k:node link:</source>
         <translation>ed3k:node-Link:</translation>
     </message>
@@ -5391,7 +5401,7 @@ Neuen anonymen Schlüssel erstellen?</translation>
         <translation type="vanished">Quellen bearbeiten...</translation>
     </message>
     <message>
-        <location line="-162"/>
+        <location line="-171"/>
         <source>No sources</source>
         <translation>Keine Quellen</translation>
     </message>
@@ -5404,7 +5414,7 @@ Neuen anonymen Schlüssel erstellen?</translation>
         </translation>
     </message>
     <message>
-        <location line="+141"/>
+        <location line="+150"/>
         <source>From sources</source>
         <translation>Aus Quellen</translation>
     </message>
@@ -5474,7 +5484,7 @@ Neuen anonymen Schlüssel erstellen?</translation>
         <translation>Speichert die diesem Knoten bekannten Knoten als signierte Knotenlistendatei, um jemandem zu helfen, der keinen ed3k-Knoten findet.</translation>
     </message>
     <message>
-        <location line="+66"/>
+        <location line="+69"/>
         <source>▸ Current Lookups (%1)</source>
         <translation>▸ Aktuelle Suchen (%1)</translation>
     </message>
@@ -12737,7 +12747,7 @@ Andere Mitglieder sehen Ihren Nickname und Ihre Beiträge; Ihr Knoten hilft beim
     <message>
         <location line="+6"/>
         <location line="+2"/>
-        <location line="+85"/>
+        <location line="+87"/>
         <source>▸ Search Details</source>
         <translation>▸ Suchdetails</translation>
     </message>
@@ -13449,12 +13459,12 @@ Andere Mitglieder sehen Ihren Nickname und Ihre Beiträge; Ihr Knoten hilft beim
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+140"/>
-        <location line="+821"/>
+        <location line="+826"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-635"/>
+        <location line="-640"/>
         <location line="+31"/>
         <source>New Version Available</source>
         <translation>Neue Version verfügbar</translation>
@@ -13476,12 +13486,12 @@ Andere Mitglieder sehen Ihren Nickname und Ihre Beiträge; Ihr Knoten hilft beim
     </message>
     <message>
         <location line="+12"/>
-        <location line="+1630"/>
+        <location line="+1640"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: Getrennt</translation>
     </message>
     <message>
-        <location line="-1557"/>
+        <location line="-1567"/>
         <source>Kad: Connected</source>
         <translation>Kad: Verbunden</translation>
     </message>
@@ -13497,7 +13507,7 @@ Andere Mitglieder sehen Ihren Nickname und Ihre Beiträge; Ihr Knoten hilft beim
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1549"/>
+        <location line="+1559"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: Getrennt</translation>
     </message>
@@ -13507,7 +13517,7 @@ Andere Mitglieder sehen Ihren Nickname und Ihre Beiträge; Ihr Knoten hilft beim
         <translation>Benutzer: %1 | Dateien: %2</translation>
     </message>
     <message>
-        <location line="-1760"/>
+        <location line="-1765"/>
         <source>Open Incoming Folder...</source>
         <translation>Eingangsordner öffnen...</translation>
     </message>
@@ -13547,14 +13557,14 @@ Andere Mitglieder sehen Ihren Nickname und Ihre Beiträge; Ihr Knoten hilft beim
         <translation>Funktionen</translation>
     </message>
     <message>
-        <location line="-1134"/>
+        <location line="-1139"/>
         <location line="+7"/>
-        <location line="+1130"/>
+        <location line="+1135"/>
         <source>Version Check</source>
         <translation>Versionsprüfung</translation>
     </message>
     <message>
-        <location line="-1238"/>
+        <location line="-1243"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt beenden</translation>
     </message>
@@ -13689,12 +13699,12 @@ Doppelklick zum Ändern</translation>
         <translation>Netzwerkschnittstelle: %1 — bis sie verfügbar ist, wird keine Verbindung aufgebaut</translation>
     </message>
     <message>
-        <location line="+77"/>
+        <location line="+80"/>
         <source>ed3k: Connected</source>
         <translation>ed3k: Verbunden</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>ed3k: Connected (Firewalled)</source>
         <translation>ed3k: Verbunden (Firewall)</translation>
     </message>
@@ -13704,7 +13714,7 @@ Doppelklick zum Ändern</translation>
         <translation>ed3k: Verbinde...</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+7"/>
         <source>open</source>
         <translation>offen</translation>
     </message>
@@ -13977,7 +13987,7 @@ Aktivieren Sie sie unter Optionen → Weboberfläche und versuchen Sie es erneut
         <translation>Optionen öffnen</translation>
     </message>
     <message>
-        <location line="+222"/>
+        <location line="+227"/>
         <source>Main</source>
         <translation>Hauptfenster</translation>
     </message>
@@ -15502,32 +15512,32 @@ Erneut herunterladen?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+325"/>
+        <location line="+326"/>
         <source>UDP Port:</source>
         <translation>UDP-Port:</translation>
     </message>
     <message>
-        <location line="-314"/>
+        <location line="-315"/>
         <source>eD2K Network</source>
         <translation>eD2K-Netzwerk</translation>
     </message>
     <message>
         <location line="+6"/>
         <location line="+188"/>
-        <location line="+119"/>
+        <location line="+120"/>
         <source>Connected</source>
         <translation>Verbunden</translation>
     </message>
     <message>
-        <location line="-305"/>
+        <location line="-306"/>
         <location line="+145"/>
         <location line="+39"/>
-        <location line="+121"/>
+        <location line="+122"/>
         <source>Connecting</source>
         <translation>Verbinde</translation>
     </message>
     <message>
-        <location line="-303"/>
+        <location line="-304"/>
         <location line="+145"/>
         <source>Disconnected</source>
         <translation>Getrennt</translation>
@@ -15537,14 +15547,14 @@ Erneut herunterladen?</translation>
         <location line="+145"/>
         <location line="+117"/>
         <location line="+35"/>
-        <location line="+5"/>
+        <location line="+6"/>
         <location line="+38"/>
         <location line="+5"/>
         <source>Status:</source>
         <translation>Status:</translation>
     </message>
     <message>
-        <location line="-339"/>
+        <location line="-340"/>
         <location line="+65"/>
         <location line="+156"/>
         <source>Users:</source>
@@ -15559,13 +15569,13 @@ Erneut herunterladen?</translation>
     </message>
     <message>
         <location line="-215"/>
-        <location line="+303"/>
+        <location line="+304"/>
         <location line="+34"/>
         <source>Unknown</source>
         <translation>Unbekannt</translation>
     </message>
     <message>
-        <location line="-337"/>
+        <location line="-338"/>
         <location line="+2"/>
         <location line="+50"/>
         <location line="+98"/>
@@ -15615,12 +15625,12 @@ Erneut herunterladen?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+278"/>
+        <location line="+279"/>
         <source>IPv6:</source>
         <translation>IPv6:</translation>
     </message>
     <message>
-        <location line="-276"/>
+        <location line="-277"/>
         <source>IPv6 Status:</source>
         <translation>IPv6-Status:</translation>
     </message>
@@ -15753,20 +15763,20 @@ Erneut herunterladen?</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+209"/>
+        <location line="+210"/>
         <location line="+71"/>
         <source>Yes</source>
         <translation>Ja</translation>
     </message>
     <message>
-        <location line="-280"/>
-        <location line="+209"/>
+        <location line="-281"/>
+        <location line="+210"/>
         <location line="+71"/>
         <source>No</source>
         <translation>Nein</translation>
     </message>
     <message>
-        <location line="-266"/>
+        <location line="-267"/>
         <source>Kad Network</source>
         <translation>Kad-Netzwerk</translation>
     </message>
@@ -15860,7 +15870,7 @@ Erneut herunterladen?</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+43"/>
+        <location line="+44"/>
         <source>Not running</source>
         <translation>Nicht gestartet</translation>
     </message>
@@ -16031,7 +16041,7 @@ Erneut herunterladen?</translation>
         <translation>%1 (%2 Peers)</translation>
     </message>
     <message>
-        <location line="-355"/>
+        <location line="-356"/>
         <location line="+94"/>
         <location line="+15"/>
         <source>Firewalled</source>
@@ -16042,12 +16052,12 @@ Erneut herunterladen?</translation>
         <location line="+1"/>
         <location line="+96"/>
         <location line="+17"/>
-        <location line="+159"/>
+        <location line="+160"/>
         <source>Open</source>
         <translation>Offen</translation>
     </message>
     <message>
-        <location line="-157"/>
+        <location line="-158"/>
         <source>unverified</source>
         <translation>unbestätigt</translation>
     </message>
@@ -16059,7 +16069,7 @@ Erneut herunterladen?</translation>
     <message>
         <location line="+66"/>
         <location line="+39"/>
-        <location line="+43"/>
+        <location line="+44"/>
         <source>Disabled</source>
         <translation>Deaktiviert</translation>
     </message>
@@ -27829,18 +27839,18 @@ Ein erneuter Klick auf „Statistiken wiederherstellen“ lädt Ihre aktuellen S
     </message>
     <message>
         <location line="+0"/>
-        <location line="+358"/>
+        <location line="+361"/>
         <source>Download</source>
         <translation>Download</translation>
     </message>
     <message>
-        <location line="-358"/>
-        <location line="+349"/>
+        <location line="-361"/>
+        <location line="+352"/>
         <source>Priority</source>
         <translation>Priorität</translation>
     </message>
     <message>
-        <location line="-348"/>
+        <location line="-351"/>
         <source>Availability</source>
         <translation>Verfügbarkeit</translation>
     </message>
@@ -27945,7 +27955,7 @@ Ein erneuter Klick auf „Statistiken wiederherstellen“ lädt Ihre aktuellen S
         <translation>Tracker (%1)</translation>
     </message>
     <message>
-        <location line="+97"/>
+        <location line="+100"/>
         <source>Files (%1)</source>
         <translation>Dateien (%1)</translation>
     </message>

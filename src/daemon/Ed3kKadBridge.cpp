@@ -84,6 +84,8 @@ QCborArray contactsToCbor(const std::vector<ed3k_kad_contact>& all, bool v6First
             {QStringLiteral("fails"), qint64(c->fails)},
             {QStringLiteral("dialledIn"), c->dialled_in != 0},
             {QStringLiteral("checkInS"), qint64(c->check_in_s)},
+            {QStringLiteral("agent"), QString::fromUtf8(reinterpret_cast<const char*>(c->agent),
+                                                        qsizetype(strnlen(reinterpret_cast<const char*>(c->agent), sizeof c->agent)))},
         });
     }
     return out;

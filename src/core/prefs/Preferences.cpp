@@ -14,6 +14,7 @@
 #include "crypto/SecretCompare.h"
 #include "net/EMSocket.h"
 #include "net/ListenConflict.h"
+#include "net/OwnAddress.h"
 #include "utils/BackgroundFileWriter.h"
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
@@ -528,6 +529,7 @@ struct Preferences::Data {
     QString ipcListenAddress = QStringLiteral("127.0.0.1");
     QString ipcDaemonPath;  // Empty = show dialog; "local" = connect to localhost
     int ipcRemotePollingMs = 1500;
+    int ipcListenRecheckMinutes = 60;   // name listen value: re-resolve period, 0 = changes only
     QStringList ipcTokens;
 
     // Web Server
@@ -811,6 +813,7 @@ struct Preferences::Data {
     bool ed3kEnabled = true;
     uint16 ed3kUdpPort = 0;            // 0 = random, resolved at load
     bool ed3kShareFiles = true;        // eMule's shared files over ed3k
+    int ed3kHashCacheLowRamPercent = 20;  // free RAM below: block hashes read from disk, not kept (YAML only)
     bool ed3kJointDownloads = true;    // eD2K downloads from ed3k too (§14.4)
     bool ed3kShareUsenetPosts = true;  // off = hold back, usenet.md §6
     bool ed3kOwnSetsWatch = true;      // own sets' folders watched: a change publishes a new version
@@ -2682,6 +2685,8 @@ void Preferences::setEd3kUdpPort(uint16 val) { set(&Data::ed3kUdpPort, val); }
 
 bool Preferences::ed3kShareFiles() const { return get(&Data::ed3kShareFiles); }
 void Preferences::setEd3kShareFiles(bool val) { set(&Data::ed3kShareFiles, val); }
+int Preferences::ed3kHashCacheLowRamPercent() const { return get(&Data::ed3kHashCacheLowRamPercent); }
+void Preferences::setEd3kHashCacheLowRamPercent(int val) { set(&Data::ed3kHashCacheLowRamPercent, std::clamp(val, 0, 100)); }
 bool Preferences::ed3kJointDownloads() const { return get(&Data::ed3kJointDownloads); }
 void Preferences::setEd3kJointDownloads(bool val) { set(&Data::ed3kJointDownloads, val); }
 bool Preferences::ed3kShareUsenetPosts() const { return get(&Data::ed3kShareUsenetPosts); }
@@ -3258,7 +3263,21 @@ QHostAddress Preferences::ipcBindAddressOf(const QString& value)
     if (v == u'*')
         return QHostAddress(QHostAddress::Any);   // dual stack; "::" alone is IPv6 only
     const QHostAddress addr(v);
-    return addr.isNull() ? QHostAddress(QHostAddress::LocalHost) : addr;
+    return addr.isNull() ? QHostAddress(QHostAddress::LocalHost) : addr;   // a name too
+}
+
+std::optional<QList<QHostAddress>> Preferences::ipcBindAddressesOf(const QString& value)
+{
+    const QString v = value.trimmed();
+    const QHostAddress first = ipcBindAddressOf(v);
+    if (v.isEmpty() || !QHostAddress(v).isNull() || v == u'*')
+        return QList{first};
+    // A name: also its own addresses, so remote GUIs reach the core by it
+    auto own = OwnAddress::ownBindAddressesOf(v);
+    if (!own)
+        return std::nullopt;
+    own->prepend(first);
+    return own;
 }
 
 QString Preferences::ipcDialHostOf(const QString& value)
@@ -3267,7 +3286,7 @@ QString Preferences::ipcDialHostOf(const QString& value)
     if (addr == QHostAddress::AnyIPv6)
         return QStringLiteral("::1");
     if (addr == QHostAddress::AnyIPv4 || addr == QHostAddress::Any || addr == QHostAddress::LocalHost)
-        return QStringLiteral("127.0.0.1");
+        return QStringLiteral("127.0.0.1");   // a name too: the core listens there as well
     return value.trimmed();
 }
 
@@ -3276,6 +3295,8 @@ QString Preferences::ipcDaemonPath() const { return get(&Data::ipcDaemonPath); }
 void Preferences::setIpcDaemonPath(const QString& val) { set(&Data::ipcDaemonPath, val); }
 
 int Preferences::ipcRemotePollingMs() const { return get(&Data::ipcRemotePollingMs); }
+
+int Preferences::ipcListenRecheckMinutes() const { return get(&Data::ipcListenRecheckMinutes); }
 
 void Preferences::setIpcRemotePollingMs(int val)
 {
@@ -5492,6 +5513,7 @@ bool Preferences::load(const QString& filePath)
             m_data->ipcListenAddress = QString::fromStdString(ipc["listenAddress"].as<std::string>(m_data->ipcListenAddress.toStdString()));
             m_data->ipcDaemonPath = QString::fromStdString(ipc["daemonPath"].as<std::string>(m_data->ipcDaemonPath.toStdString()));
             m_data->ipcRemotePollingMs = std::clamp(ipc["remotePollingMs"].as<int>(m_data->ipcRemotePollingMs), 200, 10000);
+            m_data->ipcListenRecheckMinutes = std::clamp(ipc["listenRecheckMinutes"].as<int>(m_data->ipcListenRecheckMinutes), 0, 10080);
             if (auto tok = ipc["tokens"]) {
                 m_data->ipcTokens.clear();
                 for (std::size_t i = 0; i < tok.size(); ++i)
@@ -5971,6 +5993,8 @@ bool Preferences::load(const QString& filePath)
             const int port = e3["udpPort"].as<int>(m_data->ed3kUdpPort);
             m_data->ed3kUdpPort = (port >= 0 && port <= 65535) ? static_cast<uint16>(port) : 0;
             m_data->ed3kShareFiles = e3["shareFiles"].as<bool>(m_data->ed3kShareFiles);
+            m_data->ed3kHashCacheLowRamPercent =
+                std::clamp(e3["hashCacheLowRamPercent"].as<int>(m_data->ed3kHashCacheLowRamPercent), 0, 100);
             m_data->ed3kJointDownloads = e3["jointDownloads"].as<bool>(m_data->ed3kJointDownloads);
             m_data->ed3kShareUsenetPosts = e3["shareUsenetPosts"].as<bool>(m_data->ed3kShareUsenetPosts);
             m_data->ed3kOwnSetsWatch = e3["ownSetsWatch"].as<bool>(m_data->ed3kOwnSetsWatch);
@@ -7072,6 +7096,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "listenAddress" << YAML::Value << m_data->ipcListenAddress.toStdString();
     out << YAML::Key << "daemonPath" << YAML::Value << m_data->ipcDaemonPath.toStdString();
     out << YAML::Key << "remotePollingMs" << YAML::Value << m_data->ipcRemotePollingMs;
+    out << YAML::Key << "listenRecheckMinutes" << YAML::Value << m_data->ipcListenRecheckMinutes;
     out << YAML::Key << "tokens" << YAML::Value << YAML::BeginSeq;
     for (const auto& t : m_data->ipcTokens)
         out << t.toStdString();
@@ -7429,6 +7454,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "ed3k" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "enabled" << YAML::Value << m_data->ed3kEnabled;
     out << YAML::Key << "shareFiles" << YAML::Value << m_data->ed3kShareFiles;
+    out << YAML::Key << "hashCacheLowRamPercent" << YAML::Value << m_data->ed3kHashCacheLowRamPercent;
     out << YAML::Key << "jointDownloads" << YAML::Value << m_data->ed3kJointDownloads;
     out << YAML::Key << "shareUsenetPosts" << YAML::Value << m_data->ed3kShareUsenetPosts;
     out << YAML::Key << "ownSetsWatch" << YAML::Value << m_data->ed3kOwnSetsWatch;

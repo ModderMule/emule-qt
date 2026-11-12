@@ -123,6 +123,8 @@ void KadPanelBase::buildLayout(QWidget* contacts, QWidget* controls, QWidget* se
         if (index == 1) {
             autoPickLookup();
             requestLookupHistory();
+        } else if (index == 0 && m_poller) {
+            m_poller->refreshNow();   // contacts list is only filled while shown
         }
     });
 }
@@ -187,6 +189,11 @@ bool KadPanelBase::lookupTabShown() const
     return m_topTabWidget && m_topTabWidget->currentIndex() == 1;
 }
 
+bool KadPanelBase::contactsTabShown() const
+{
+    return m_topTabWidget && m_topTabWidget->currentIndex() == 0;
+}
+
 std::uint64_t KadPanelBase::selectedSearchId() const
 {
     const auto selection = m_searchesView->selectionModel()->selectedRows();
@@ -222,6 +229,9 @@ void KadPanelBase::onSearchSelectionChanged()
     if (id == 0 || id == m_graphSearchId)
         return;
     m_graphSearchId = id;
+    // title and blank graph at once, the picture follows with the reply (MFC UpdateButtonTitle)
+    setLookupTabTitle(lookupTitle(id));
+    m_lookupGraph->clear();
     requestLookupHistory();
 }
 

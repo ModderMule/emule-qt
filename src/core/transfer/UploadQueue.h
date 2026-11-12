@@ -147,7 +147,7 @@ public:
     /// Give the slot of a peer that is taking nothing to someone who is waiting.
     ///
     /// Only while the line is not full (rate + 2 % under the limit for kUnderfillMs,
-    /// or no limit at all) and a reachable client is waiting. A slot counts as dead
+    /// or no limit at all) and a reachable client, or a LowID we can call back, is waiting. A slot counts as dead
     /// when the peer has had all we sent and asked for nothing for kDeadSlotMs, or has data queued and
     /// took none of it after the warm-up, or sent data has gone unacked for
     /// UpDownClient::kUnackedStuckMs (UpDownClient::upSlotActivity). Without this

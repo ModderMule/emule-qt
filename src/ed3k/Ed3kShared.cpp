@@ -8,14 +8,21 @@
 
 #include "files/KnownFile.h"
 #include "files/SharedFileList.h"
+#include "utils/OwnerOnly.h"
+#include "utils/SystemMemory.h"
 
+#include <QCryptographicHash>
 #include <QDataStream>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QElapsedTimer>
 #include <QFileInfo>
 
+#include <algorithm>
 #include <cstring>
+#include <filesystem>
+#include <limits>
 #include <utility>
 
 namespace eMule::ed3k {
@@ -24,8 +31,18 @@ namespace ffi = ::ed3k;
 
 namespace {
 
-constexpr quint32 kCacheMagic = 0x45335348;   // "E3SH"
+constexpr quint32 kCacheMagic = 0x45335348;   // "E3SH", shared.dat v1 (values inline)
 constexpr quint32 kCacheVersion = 1;
+constexpr quint32 kIndexMagic = 0x45335349;   // "E3SI", shared-index.dat
+constexpr quint32 kIndexVersion = 2;
+/// head of shared-hashes.dat; offsets count from the file start
+constexpr char kHashesMagic[] = "E3SHASH1";
+constexpr qint64 kHashesMagicLen = 8;
+/// rewritten when the dead values are at least this much and more than the live ones
+constexpr qint64 kCompactMinDead = 4 << 20;
+constexpr qint64 kCopyChunk = 1 << 20;
+/// the RAM check (a syscall) at most this often
+constexpr qint64 kLowRamCheckMs = 5000;
 /// guards against a broken file; a share list this big is not served from the cache
 constexpr quint32 kMaxCacheEntries = 1u << 20;
 /// alias.md §3: `name` at most 255 B of UTF-8
@@ -79,6 +96,12 @@ std::span<const std::uint8_t> u8(const QByteArray& b)
     return {reinterpret_cast<const std::uint8_t*>(b.constData()), std::size_t(b.size())};
 }
 
+QByteArray checkOf(std::span<const std::byte> data)
+{
+    return QCryptographicHash::hash(QByteArrayView(reinterpret_cast<const char*>(data.data()), qsizetype(data.size())),
+                                    QCryptographicHash::Md5);
+}
+
 std::optional<ffi::Ed2kHash> ed2kOf(const QByteArray& md4)
 {
     if (md4.size() != 16)
@@ -105,7 +128,11 @@ Ed3kShared::Ed3kShared(Ed3kSession& session, SharedFileSource& source, const QSt
     connect(&m_recheckTimer, &QTimer::timeout, this, &Ed3kShared::recheck);
     // no signal for a priority change (auto priority moves by itself): read once a minute
     m_priorityTimer.setInterval(60 * 1000);
-    connect(&m_priorityTimer, &QTimer::timeout, this, &Ed3kShared::refreshPriorities);
+    connect(&m_priorityTimer, &QTimer::timeout, this, [this] {
+        refreshPriorities();
+        releaseRamHashes();
+        logHashProgress();
+    });
 }
 
 Ed3kShared::~Ed3kShared()
@@ -157,6 +184,7 @@ void Ed3kShared::connectList(SharedFileList& list)
     // Queued: fileChanged may fire with the list's lock held, and the lookup takes it
     connect(&list, &SharedFileList::fileChanged, this, &Ed3kShared::onFileChanged,
             Qt::QueuedConnection);
+    connect(&list, &SharedFileList::scanned, this, &Ed3kShared::onListScanned);
 }
 
 void Ed3kShared::start()
@@ -165,6 +193,7 @@ void Ed3kShared::start()
         return;
     beginStart();
     m_hashing = false;
+    m_scanLogged = false;
     loadCache();
     for (const SharedEntry& e : m_source.files())
         add(e);
@@ -197,6 +226,7 @@ void Ed3kShared::stop()
     m_members.clear();
     m_hashQueue.clear();
     m_hashing = false;
+    m_runTimer.invalidate();
     m_suspects.clear();
     m_recheckTimer.stop();
     pumpSession();
@@ -327,7 +357,17 @@ void Ed3kShared::onHideChanged(bool hiding)
 
 QString Ed3kShared::cachePath() const
 {
-    return joinDir(QStringLiteral("shared.dat"));
+    return joinDir(QStringLiteral("shared-index.dat"));
+}
+
+QString Ed3kShared::hashesPath() const
+{
+    return joinDir(QStringLiteral("shared-hashes.dat"));
+}
+
+std::size_t Ed3kShared::hashesInRam() const
+{
+    return std::size_t(std::ranges::count_if(m_cache, [](const auto& c) { return c.second.inRam; }));
 }
 
 ffi::Bytes Ed3kShared::ed2kAlias(const QByteArray& md4, std::uint64_t size, const ffi::Root& root, const QString& name)
@@ -392,6 +432,14 @@ void Ed3kShared::onFileRelocated(const SharedEntry& entry)
     }
     remove(entry.md4);
     onFileAdded(entry);
+}
+
+void Ed3kShared::onListScanned(bool full)
+{
+    if (!m_started || !full || std::exchange(m_scanLogged, true))
+        return;
+    logInfo(QStringLiteral("%1 file(s) of the share list after its scan, %2 to hash")
+                .arg(m_files.size()).arg(m_hashQueue.size() + (m_hashing ? 1 : 0)));
 }
 
 void Ed3kShared::onFileChanged(const QByteArray& md4)
@@ -515,23 +563,48 @@ void Ed3kShared::remove(const QByteArray& md4)
     // a queued hash of it finds no file and is skipped
 }
 
-void Ed3kShared::share(File& f, const Hashed& h)
+void Ed3kShared::share(File& f, Hashed& h)
 {
     auto* e = m_session.engine();
     if (!e)
         return;
+    // values not in RAM: read for this call (the engine keeps its own copy)
+    std::optional<ffi::Bytes> fromDisk;
+    if (!h.inRam) {
+        fromDisk = loadHashes(h);
+        if (!fromDisk) {
+            logWarning(QStringLiteral("cached block hashes of \"%1\" unreadable, hashed again").arg(f.entry.name));
+            m_cache.erase(f.entry.md4);   // h is gone
+            scheduleSave(kOwner);
+            enqueueHash(f);
+            hashNext();
+            return;
+        }
+    }
+    const ffi::Bytes& hashes = fromDisk ? *fromDisk : h.hashes;
     const std::string name = utf8(f.entry.name);
     // hops.md §1: under the anonymous key nothing names it for eD2K (no MD4, no ALIAS)
     const bool anon = keyOf(h.root) == ffi::KeyKind::Anon;
     // was: const auto ed2k = ed2kOf(f.entry.md4);
     const auto ed2k = anon ? std::nullopt : ed2kOf(f.entry.md4);
     // the MD4 is eMule's of the same file (the share list checks size and date)
-    if (!shareMember(ffi::SharedFile{h.root, h.size, name, ed2k, std::nullopt, ffi::Have::complete(), std::span{h.hashes}}, kOwner,
+    if (!shareMember(ffi::SharedFile{h.root, h.size, name, ed2k, std::nullopt, ffi::Have::complete(), std::span{hashes}}, kOwner,
                      f.member)) {
         logWarning(QStringLiteral("cannot share \"%1\"").arg(f.entry.name));
         return;
     }
     f.shared = true;
+    // the second copy (packmule holds its own): in RAM only during a hash run, unless RAM is short
+    // was: if (lowRam()) {
+    if (!m_runTimer.isValid() || lowRam()) {
+        if (h.inRam && h.diskOffset >= 0) {
+            ffi::Bytes().swap(h.hashes);
+            h.inRam = false;
+        }
+    } else if (fromDisk) {
+        h.hashes = std::move(*fromDisk);
+        h.inRam = true;
+    }
     const auto t = m_session.now();
     const ffi::FileInfo info{h.root, h.size, name, ed2k, 0, 0, 0, 0, 0, 0};
     // was: ToDo: keywords (Publish::Both) for files the user wants found over ed3k search
@@ -589,10 +662,30 @@ void Ed3kShared::hashNext()
         ++m_hashCount;
         const QString path = f.entry.path;
         const qint64 mtime = f.mtimeMs;
-        hashInBackground(path, [this, md4, path, mtime](std::optional<FileHash> hashed) {
+        if (!m_runTimer.isValid()) {
+            m_runTimer.start();
+            m_runFiles = 0;
+            m_runBytes = 0;
+            logInfo(QStringLiteral("hashing %1 file(s)").arg(m_hashQueue.size() + 1));
+        }
+        // per file like eD2K's "Hashing file": own switch, a big share floods the log
+        if (lcEmuleSharedVerbose().isDebugEnabled())
+            logInfo(QStringLiteral("Hashing file: \"%1\"").arg(QDir::toNativeSeparators(path)));
+        QElapsedTimer fileTimer;
+        fileTimer.start();
+        hashInBackground(path, [this, md4, path, mtime, fileTimer](std::optional<FileHash> hashed) {
             m_hashing = false;
+            if (hashed) {
+                ++m_runFiles;
+                m_runBytes += static_cast<qint64>(hashed->size);
+                if (lcEmuleSharedVerbose().isDebugEnabled())
+                    logInfo(QStringLiteral("Hashed \"%1\" (%2 bytes) in %3 ms")
+                                .arg(QDir::toNativeSeparators(path)).arg(hashed->size).arg(fileTimer.elapsed()));
+            }
             onHashed(md4, path, mtime, hashed);
             hashNext();
+            if (!m_hashing)
+                endHashRun();
             pumpSession();
         });
     }
@@ -626,7 +719,16 @@ void Ed3kShared::onHashed(const QByteArray& md4, const QString& path, qint64 mti
         return;
     }
     Hashed& h = m_cache[md4];
-    h = Hashed{path, hashed->size, mtimeMs, hashed->root, hashed->hashes};
+    h = Hashed{};
+    h.path = path;
+    h.size = hashed->size;
+    h.mtimeMs = mtimeMs;
+    h.root = hashed->root;
+    h.hashes = hashed->hashes;
+    h.inRam = true;
+    // on disk before the index names it; a failed store keeps it in RAM (hashed again next start)
+    if (!storeHashes(h, std::span<const std::byte>{h.hashes}))
+        logWarning(QStringLiteral("cannot store block hashes of \"%1\" in %2").arg(f.entry.name, hashesPath()));
     scheduleSave(kOwner);
     share(f, h);
 }
@@ -695,16 +797,136 @@ void Ed3kShared::loadCache()
 {
     m_cache.clear();
     const QByteArray blob = readBlob(cachePath());
-    if (blob.isEmpty())
+    if (blob.isEmpty()) {
+        // ToDo: remove the shared.dat (v1) migration later
+        if (QFile::exists(joinDir(QStringLiteral("shared.dat"))))
+            migrateV1();
         return;
+    }
     QDataStream in(blob);
     in.setVersion(QDataStream::Qt_6_0);
     quint32 magic = 0, version = 0, count = 0;
     in >> magic >> version >> count;
-    if (magic != kCacheMagic || version != kCacheVersion || count > kMaxCacheEntries) {
+    if (magic != kIndexMagic || version != kIndexVersion || count > kMaxCacheEntries) {
         logWarning(QStringLiteral("%1 is not a hash cache, ignored").arg(cachePath()));
         return;
     }
+    // values stay on disk: read when shared (share())
+    for (quint32 i = 0; i < count && in.status() == QDataStream::Ok; ++i) {
+        QByteArray md4, root;
+        Hashed h;
+        quint64 size = 0;
+        in >> md4 >> h.path >> size >> h.mtimeMs >> root >> h.diskOffset >> h.diskLen >> h.diskCheck;
+        if (in.status() != QDataStream::Ok || md4.size() != 16 || root.size() != qsizetype(h.root.bytes.size()))
+            break;
+        h.size = size;
+        std::memcpy(h.root.bytes.data(), root.constData(), h.root.bytes.size());
+        m_cache[md4] = std::move(h);
+    }
+    if (in.status() != QDataStream::Ok)
+        logWarning(QStringLiteral("%1 is cut short, %2 entries kept").arg(cachePath()).arg(m_cache.size()));
+    compactHashes();
+}
+
+void Ed3kShared::saveCache()
+{
+    // entries of files not listed (yet) stay while their path exists: the list may load later
+    std::erase_if(m_cache, [&](const auto& c) { return !m_files.contains(c.first) && !QFileInfo::exists(c.second.path); });
+    const QByteArray blob = indexBlob();
+    QDir().mkpath(stateDir(m_configDir));
+    writeBlobLater(cachePath(), spanOf(blob));
+    dropDirty(kOwner);
+}
+
+QByteArray Ed3kShared::indexBlob() const
+{
+    // the values are in shared-hashes.dat: the index stays small (a few hundred B a file)
+    const auto stored = [](const Hashed& h) { return h.diskOffset >= 0; };
+    QByteArray blob;
+    QDataStream out(&blob, QIODevice::WriteOnly);
+    out.setVersion(QDataStream::Qt_6_0);
+    out << kIndexMagic << kIndexVersion
+        << quint32(std::ranges::count_if(m_cache, [&](const auto& c) { return stored(c.second); }));
+    for (const auto& [md4, h] : m_cache) {
+        if (!stored(h))
+            continue;
+        const QByteArray root(reinterpret_cast<const char*>(h.root.bytes.data()), qsizetype(h.root.bytes.size()));
+        out << md4 << h.path << quint64(h.size) << h.mtimeMs << root << h.diskOffset << h.diskLen << h.diskCheck;
+    }
+    return blob;
+}
+
+bool Ed3kShared::storeHashes(Hashed& h, std::span<const std::byte> data) const
+{
+    if (data.size() > std::numeric_limits<quint32>::max())
+        return false;
+    QDir().mkpath(stateDir(m_configDir));
+    QFile f(hashesPath());
+    const bool fresh = !f.exists();
+    if (!f.open(QIODevice::ReadWrite))
+        return false;
+    if (fresh)
+        f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+    // a foreign or torn head: started over (entries naming the old values fail their check)
+    if (f.size() < kHashesMagicLen || f.read(kHashesMagicLen) != QByteArrayView(kHashesMagic, kHashesMagicLen)) {
+        if (!f.resize(0) || !f.seek(0) || f.write(kHashesMagic, kHashesMagicLen) != kHashesMagicLen)
+            return false;
+    }
+    const qint64 at = f.size();
+    if (!f.seek(at))
+        return false;
+    const auto len = qint64(data.size());
+    if (f.write(reinterpret_cast<const char*>(data.data()), len) != len) {
+        (void)f.resize(at);
+        return false;
+    }
+    f.close();
+    if (f.error() != QFileDevice::NoError)
+        return false;
+#ifdef Q_OS_WIN
+    if (fresh)
+        (void)makeOwnerOnly(hashesPath());
+#endif
+    h.diskOffset = at;
+    h.diskLen = quint32(len);
+    h.diskCheck = checkOf(data);
+    return true;
+}
+
+std::optional<ffi::Bytes> Ed3kShared::loadHashes(const Hashed& h) const
+{
+    if (h.diskOffset < kHashesMagicLen)
+        return std::nullopt;
+    QFile f(hashesPath());
+    if (!f.open(QIODevice::ReadOnly) || h.diskOffset + qint64(h.diskLen) > f.size() || !f.seek(h.diskOffset))
+        return std::nullopt;
+    const QByteArray data = f.read(qint64(h.diskLen));
+    if (data.size() != qsizetype(h.diskLen))
+        return std::nullopt;
+    const auto* b = reinterpret_cast<const std::byte*>(data.constData());
+    const std::span<const std::byte> bytes{b, std::size_t(data.size())};
+    if (checkOf(bytes) != h.diskCheck)
+        return std::nullopt;
+    return ffi::Bytes(bytes.begin(), bytes.end());
+}
+
+// ToDo: remove migrateV1 + kCacheMagic/kCacheVersion once no profile has shared.dat left
+void Ed3kShared::migrateV1()
+{
+    const QString old = joinDir(QStringLiteral("shared.dat"));
+    QFile f(old);
+    if (!f.open(QIODevice::ReadOnly))
+        return;
+    // streamed: one file's values in RAM at a time (a big v1 file on a machine short of RAM)
+    QDataStream in(&f);
+    in.setVersion(QDataStream::Qt_6_0);
+    quint32 magic = 0, version = 0, count = 0;
+    in >> magic >> version >> count;
+    if (magic != kCacheMagic || version != kCacheVersion || count > kMaxCacheEntries) {
+        logWarning(QStringLiteral("%1 is not a hash cache, ignored").arg(old));
+        return;
+    }
+    int moved = 0;
     for (quint32 i = 0; i < count && in.status() == QDataStream::Ok; ++i) {
         QByteArray md4, root, hashes;
         Hashed h;
@@ -714,30 +936,149 @@ void Ed3kShared::loadCache()
             break;
         h.size = size;
         std::memcpy(h.root.bytes.data(), root.constData(), h.root.bytes.size());
-        const auto* b = reinterpret_cast<const std::byte*>(hashes.constData());
-        h.hashes.assign(b, b + hashes.size());
+        if (!storeHashes(h, std::as_bytes(std::span{hashes.constData(), std::size_t(hashes.size())})))
+            continue;   // hashed again when listed
         m_cache[md4] = std::move(h);
+        ++moved;
     }
-    if (in.status() != QDataStream::Ok)
-        logWarning(QStringLiteral("%1 is cut short, %2 entries kept").arg(cachePath()).arg(m_cache.size()));
+    f.close();
+    // the index first: a crash before it keeps shared.dat for the next try
+    forgetBlobWrites(cachePath());
+    if (!writeBlob(cachePath(), spanOf(indexBlob()))) {
+        logWarning(QStringLiteral("cannot write %1, %2 kept").arg(cachePath(), old));
+        return;
+    }
+    forgetBlobWrites(old);
+    QFile::remove(old);
+    logInfo(QStringLiteral("hash cache: %1 of %2 entries moved from shared.dat").arg(moved).arg(count));
 }
 
-void Ed3kShared::saveCache()
+void Ed3kShared::compactHashes()
 {
-    // entries of files not listed (yet) stay while their path exists: the list may load later
-    std::erase_if(m_cache, [&](const auto& c) { return !m_files.contains(c.first) && !QFileInfo::exists(c.second.path); });
-    QByteArray blob;
-    QDataStream out(&blob, QIODevice::WriteOnly);
-    out.setVersion(QDataStream::Qt_6_0);
-    out << kCacheMagic << kCacheVersion << quint32(m_cache.size());
-    for (const auto& [md4, h] : m_cache) {
-        const QByteArray root(reinterpret_cast<const char*>(h.root.bytes.data()), qsizetype(h.root.bytes.size()));
-        const QByteArray hashes(reinterpret_cast<const char*>(h.hashes.data()), qsizetype(h.hashes.size()));
-        out << md4 << h.path << quint64(h.size) << h.mtimeMs << root << hashes;
+    QFile src(hashesPath());
+    if (!src.open(QIODevice::ReadOnly))
+        return;
+    std::vector<Hashed*> live;
+    qint64 liveBytes = 0;
+    for (auto& [md4, h] : m_cache)
+        if (h.diskOffset >= kHashesMagicLen && h.diskOffset + qint64(h.diskLen) <= src.size()) {
+            live.push_back(&h);
+            liveBytes += h.diskLen;
+        }
+    const qint64 dead = src.size() - kHashesMagicLen - liveBytes;
+    if (dead < kCompactMinDead || dead < liveBytes)
+        return;
+    QElapsedTimer timer;
+    timer.start();
+    std::ranges::sort(live, {}, &Hashed::diskOffset);
+    const QString tmpPath = hashesPath() + QStringLiteral(".tmp");
+    QFile dst(tmpPath);
+    if (!dst.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return;
+    dst.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+    const auto fail = [&] {
+        dst.close();
+        QFile::remove(tmpPath);
+    };
+    if (dst.write(kHashesMagic, kHashesMagicLen) != kHashesMagicLen)
+        return fail();
+    // chunked copy: never more than kCopyChunk in RAM
+    std::vector<std::pair<Hashed*, qint64>> moved;
+    moved.reserve(live.size());
+    for (Hashed* h : live) {
+        const qint64 at = dst.pos();
+        if (!src.seek(h->diskOffset))
+            return fail();
+        for (qint64 left = h->diskLen; left > 0;) {
+            const QByteArray chunk = src.read(std::min(left, kCopyChunk));
+            if (chunk.isEmpty() || dst.write(chunk) != chunk.size())
+                return fail();
+            left -= chunk.size();
+        }
+        moved.emplace_back(h, at);
     }
-    QDir().mkpath(stateDir(m_configDir));
-    writeBlobLater(cachePath(), spanOf(blob));
-    dropDirty(kOwner);
+    dst.close();
+    src.close();
+    if (dst.error() != QFileDevice::NoError)
+        return fail();
+    // the index with the new offsets, then the file under them (a crash between: checks fail, hashed again)
+    std::vector<qint64> before;
+    before.reserve(moved.size());
+    for (auto& [h, at] : moved) {
+        before.push_back(h->diskOffset);
+        h->diskOffset = at;
+    }
+    forgetBlobWrites(cachePath());
+    std::error_code ec;
+    if (!writeBlob(cachePath(), spanOf(indexBlob()))
+        || (std::filesystem::rename(std::filesystem::path(tmpPath.toStdU16String()),
+                                    std::filesystem::path(hashesPath().toStdU16String()), ec),
+            ec)) {
+        for (std::size_t i = 0; i < moved.size(); ++i)
+            moved[i].first->diskOffset = before[i];
+        (void)writeBlob(cachePath(), spanOf(indexBlob()));
+        logWarning(QStringLiteral("cannot compact %1").arg(hashesPath()));
+        return fail();
+    }
+#ifdef Q_OS_WIN
+    (void)makeOwnerOnly(hashesPath());
+#endif
+    logInfo(QStringLiteral("hash cache compacted: %1 MiB dead dropped in %2 ms").arg(dead >> 20).arg(timer.elapsed()));
+}
+
+bool Ed3kShared::lowRam()
+{
+    if (m_lowRamCheck)
+        return m_lowRamCheck();
+    if (m_lowRamPercent <= 0)
+        return false;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (m_lowRamCheckedMs != 0 && now - m_lowRamCheckedMs < kLowRamCheckMs)
+        return m_lowRam;
+    m_lowRamCheckedMs = now;
+    const bool was = m_lowRam;
+    m_lowRam = systemMemoryLow(m_lowRamPercent);
+    if (m_lowRam != was)
+        logInfo(m_lowRam ? QStringLiteral("free RAM below %1 %: block hashes of shared files kept on disk only").arg(m_lowRamPercent)
+                         : QStringLiteral("free RAM above %1 % again: block hashes kept in RAM once read").arg(m_lowRamPercent));
+    return m_lowRam;
+}
+
+void Ed3kShared::releaseRamHashes()
+{
+    // was: if (!m_started || !lowRam())
+    if (!m_started || (m_runTimer.isValid() && !lowRam()))
+        return;
+    std::size_t released = 0;
+    for (auto& [md4, h] : m_cache)
+        if (h.inRam && h.diskOffset >= 0) {
+            ffi::Bytes().swap(h.hashes);
+            h.inRam = false;
+            ++released;
+        }
+    if (released)
+        logDebug([&]() -> QString { return QStringLiteral("%1 block hash list(s) left RAM").arg(released); });
+}
+
+void Ed3kShared::endHashRun()
+{
+    if (!m_runTimer.isValid())
+        return;
+    const qint64 ms = m_runTimer.elapsed();
+    m_runTimer.invalidate();
+    logInfo(QStringLiteral("hashing done: %1 file(s), %2 MiB in %3 s")
+                .arg(m_runFiles).arg(m_runBytes >> 20).arg(static_cast<double>(ms) / 1000.0, 0, 'f', 1));
+    releaseRamHashes();
+}
+
+void Ed3kShared::logHashProgress()
+{
+    if (!m_runTimer.isValid())
+        return;
+    const double secs = static_cast<double>(std::max<qint64>(1, m_runTimer.elapsed())) / 1000.0;
+    logInfo(QStringLiteral("hashing: %1 file(s) done, %2 left, %3 MiB/s")
+                .arg(m_runFiles).arg(m_hashQueue.size() + (m_hashing ? 1 : 0))
+                .arg(static_cast<double>(m_runBytes >> 20) / secs, 0, 'f', 1));
 }
 
 } // namespace eMule::ed3k

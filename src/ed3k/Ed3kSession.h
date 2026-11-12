@@ -82,6 +82,8 @@ struct Ed3kStatus {
     std::uint32_t kadOffline = 0;
     /// reach test without a verdict yet: bit 0 IPv4, bit 1 IPv6 (class 2/3 may still turn open)
     std::uint32_t natChecking = 0;
+    /// Kad node lookups got enough answers: searches and publishing run (not just contacts > 0)
+    bool kadConnected = false;
     Ed3kHideStatus hide;         ///< hiding (hops.md §1)
     /// public endpoint the engine adopted per family ("ip:port"); empty = none yet
     QString endpoint4;

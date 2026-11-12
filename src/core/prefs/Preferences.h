@@ -1589,6 +1589,10 @@ public:
     /// eMule's shared files served over ed3k (Ed3kShared); only while ed3k runs. Default on.
     [[nodiscard]] bool ed3kShareFiles() const;
     void setEd3kShareFiles(bool val);
+    /// Free RAM below this % of total: Ed3kShared keeps block hashes on disk only. 0 = always
+    /// in RAM. Default 20; preferences.yml only (ed3k.hashCacheLowRamPercent).
+    [[nodiscard]] int ed3kHashCacheLowRamPercent() const;
+    void setEd3kHashCacheLowRamPercent(int val);
     /// eD2K downloads also fetch from ed3k peers, dual peers over ed3k (Protocol.md §14.4)
     [[nodiscard]] bool ed3kJointDownloads() const;
     void setEd3kJointDownloads(bool val);
@@ -1873,11 +1877,15 @@ public:
     [[nodiscard]] QString ipcListenAddress() const;
     void setIpcListenAddress(const QString& val);
 
-    /// The address the core listens at for an ipc.listenAddress value: "*" = every
-    /// interface, both families; "" or no address = loopback.
+    /// The first address the core listens at for an ipc.listenAddress value: "*" =
+    /// every interface, both families; "" or a name = loopback; else the literal.
     [[nodiscard]] static QHostAddress ipcBindAddressOf(const QString& value);
+    /// Every address the core listens at: ipcBindAddressOf(), for a name followed by
+    /// its own addresses, one per family (DNS, up to OwnAddress::kLookupTimeoutMs).
+    /// nullopt = the lookup timed out.
+    [[nodiscard]] static std::optional<QList<QHostAddress>> ipcBindAddressesOf(const QString& value);
     /// Where a client on this machine dials a core listening at @p value: a wildcard
-    /// ("*", 0.0.0.0, ::) or "" over loopback.
+    /// ("*", 0.0.0.0, ::), "" or a name over loopback.
     [[nodiscard]] static QString ipcDialHostOf(const QString& value);
 
     /// Path to emulecored binary. Empty = search next to GUI executable.
@@ -1887,6 +1895,10 @@ public:
     /// Remote IPC polling interval in milliseconds (default 1500).
     [[nodiscard]] int ipcRemotePollingMs() const;
     void setIpcRemotePollingMs(int val);
+
+    /// ipc.listenRecheckMinutes: a name listen value is looked up again this often
+    /// (default 60, 0 = only on adapter or host name changes). No UI.
+    [[nodiscard]] int ipcListenRecheckMinutes() const;
 
     /// IPC authentication tokens (array for future multi-token support).
     [[nodiscard]] QStringList ipcTokens() const;

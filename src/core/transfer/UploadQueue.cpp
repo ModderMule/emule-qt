@@ -1454,8 +1454,13 @@ void UploadQueue::recycleDeadSlots(uint64 curTick)
         return;
 
     // Only for someone: with nobody to take it, the slot is no use to anyone freed.
+    // A LowID we can call back counts too: findBestClientInQueue() asks it when nobody
+    // reachable waits. Without it a LowID-only queue held dead slots for the 160 s timeout.
     const bool replacement = std::ranges::any_of(m_waitingList, [&](const UpDownClient* c) {
-        return c->isReachableForSlot() && !isSlotCoolingDown(c, curTick);
+        if (isSlotCoolingDown(c, curTick))
+            return false;
+        return c->isReachableForSlot()
+            || (c->canCallBackForSlot() && !m_callbackAsks.contains(c->userAddress()));
     });
     if (!replacement)
         return;

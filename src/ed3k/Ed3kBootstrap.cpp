@@ -26,8 +26,8 @@ namespace {
 constexpr int kAskTimeoutMs = 5 * 60 * 1000;
 const QString kLastFile = QStringLiteral("bootstrap.dat");
 const QString kShippedName = QStringLiteral("nodes.ed3knod");
-constexpr qint64 kSeedAgainMs = 10 * 60 * 1000;  // each address once in 10 min
-constexpr std::uint64_t kSeedBelow = 10;         // contacts (packmule ED2K_SEED_BELOW)
+// constexpr qint64 kSeedAgainMs = 10 * 60 * 1000;  // each address once in 10 min (packmule decides now)
+// constexpr std::uint64_t kSeedBelow = 10;         // contacts (packmule ED2K_SEED_BELOW; decides now)
 constexpr qsizetype kSeedTriedMax = 4096;
 
 QString errorName(ffi::Error e)
@@ -115,20 +115,24 @@ bool Ed3kBootstrap::offerEd2kPeer(const std::array<std::uint8_t, 16>& userHash, 
     auto* e = m_session.engine();
     if (!m_seedFromEd2k || !e || tcpPort == 0 || ip.isNull())
         return false;
-    // cheap checks first: most hashes are no hint, most of the time Kad is full
+    // cheap check first: most hashes are no hint
     const auto hint = ffi::userHashHint(userHash);
-    if (!hint || m_session.contactCount() >= kSeedBelow)
+    // if (!hint || m_session.contactCount() >= kSeedBelow)
+    if (!hint)
         return false;
     const qint64 now = m_seedClock.elapsed();
     const QString key = ip.toString();
-    if (const auto it = m_seedTried.constFind(key); it != m_seedTried.cend() && now - *it < kSeedAgainMs)
-        return false;
+    // every hint goes to packmule, also with Kad full or the address tried: it marks the host
+    // as sent to, so a node seeding from our hello and dialling back is no unasked
+    // connection (§9.2). packmule dials only below 10 contacts, each address once
+    // if (const auto it = m_seedTried.constFind(key); it != m_seedTried.cend() && now - *it < kSeedAgainMs)
+    //     return false;
     // no pacing here: packmule caps the seed dials (SEED_DIALS); a gate here dropped most
     // peers of a burst of hellos for good
     const auto dialled = e->kadSeedHint(m_session.now(), *hint, toAddress(ip, tcpPort));
-    m_session.pump();
     if (!dialled || !*dialled)
         return false;   // not marked: the next hello of this peer may try again
+    m_session.pump();
     if (m_seedTried.size() >= kSeedTriedMax)
         m_seedTried.clear();
     m_seedTried.insert(key, now);

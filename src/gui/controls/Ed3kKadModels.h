@@ -7,8 +7,10 @@
 #include <QAbstractTableModel>
 #include <QCborArray>
 #include <QCborMap>
+#include <QIcon>
 #include <QString>
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <vector>
@@ -43,14 +45,23 @@ private:
     std::vector<QCborMap> m_rows;
 };
 
-/// The routing table, one row per node: Node ID, Country, Family, Distance, Fails, Check in.
+/// The routing table, one row per node: Type, Node ID, Country, Family, Distance, Fails,
+/// Check in.
 class Ed3kKadContactsModel : public Ed3kKadTableModel {
     Q_OBJECT
 
 public:
-    enum Column { ColId = 0, ColCountry, ColFamily, ColDistance, ColFails, ColCheck };
+    enum Column { ColType = 0, ColId, ColCountry, ColFamily, ColDistance, ColFails, ColCheck };
     explicit Ed3kKadContactsModel(QObject* parent = nullptr);
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
+
+    /// Version of a Hello.agent ("eMuleQt 0.7.25" -> "0.7.25"); the whole agent without one.
+    [[nodiscard]] static QString versionOf(const QString& agent);
+
+private:
+    /// Contact0-4 by failed checks as eD2K Kad's type; SrcUnknown while not met since restart.
+    [[nodiscard]] int contactImage(const QCborMap& m) const;
+    std::array<QIcon, 6> m_icons;
 };
 
 /// Running and ended lookups: Number, Purpose, Target, Kind, Asked, Answered, Candidates, State.

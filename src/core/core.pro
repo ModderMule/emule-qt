@@ -145,6 +145,7 @@ SOURCES += \
     media/PreviewApps.cpp \
     media/PreviewThread.cpp \
     net/BindAddress.cpp \
+    net/OwnAddress.cpp \
     net/I2pRouter.cpp \
     net/I2pdInstaller.cpp \
     net/ClientReqSocket.cpp \
@@ -219,6 +220,7 @@ SOURCES += \
     utils/DebugUtils.cpp \
     utils/AtomicFile.cpp \
     utils/OwnerOnly.cpp \
+    utils/SystemMemory.cpp \
     utils/BackgroundFileWriter.cpp \
     utils/DiskLoadLimiter.cpp \
     utils/ReadOnceHint.cpp \
@@ -330,6 +332,7 @@ HEADERS += \
     media/PreviewApps.h \
     media/PreviewThread.h \
     net/BindAddress.h \
+    net/OwnAddress.h \
     net/I2pRouter.h \
     net/I2pdInstaller.h \
     net/I2pdRelease.h \
@@ -419,6 +422,7 @@ HEADERS += \
     utils/DebugUtils.h \
     utils/AtomicFile.h \
     utils/OwnerOnly.h \
+    utils/SystemMemory.h \
     utils/BackgroundFileWriter.h \
     utils/DiskLoadLimiter.h \
     utils/ReadOnceHint.h \

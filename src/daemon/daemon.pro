@@ -117,6 +117,7 @@ SOURCES += \
     DaemonUsenetWebBackend.cpp \
     IpcClientHandler.cpp \
     IpcClientHandlerMeta.cpp \
+    IpcListenWatch.cpp \
     IpcServer.cpp \
     IpcTlsIdentity.cpp \
     main.cpp \
@@ -161,6 +162,7 @@ HEADERS += \
     DaemonTorrentWebBackend.h \
     DaemonUsenetWebBackend.h \
     IpcClientHandler.h \
+    IpcListenWatch.h \
     IpcServer.h \
     IpcTlsIdentity.h \
     MetaRowFiles.h \

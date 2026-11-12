@@ -43,6 +43,16 @@ namespace eMule {
 
 using namespace Ipc;
 
+namespace {
+
+/// MFC CKadLookupGraph::GetCurrentLookupTitle: quoted name, else type
+QString lookupTitleOf(const QString& name, int typeId)
+{
+    return name.isEmpty() ? KadSearchesModel::typeText(typeId) : QStringLiteral("\"%1\"").arg(name);
+}
+
+} // namespace
+
 Ed2kKadPanel::Ed2kKadPanel(QWidget* parent)
     : KadPanelBase(parent)
 {
@@ -110,13 +120,12 @@ bool Ed2kKadPanel::eventFilter(QObject* watched, QEvent* event)
 
 void Ed2kKadPanel::refresh()
 {
+    // Lookup first: the contacts reply is the big one and would queue ahead of it
+    if (lookupTabShown())
+        requestLookupHistory();
     requestContacts();
     requestSearches();
     requestStatus();
-
-    // Only fetch lookup history when the Search Details tab is visible
-    if (lookupTabShown())
-        requestLookupHistory();
 }
 
 void Ed2kKadPanel::requestLookupHistory()
@@ -167,11 +176,7 @@ void Ed2kKadPanel::requestLookupHistory()
 
         const int typeId = static_cast<int>(meta.value(QStringLiteral("typeId")).toInteger(-1));
         m_lookupGraph->setLookup(std::move(entries), typeId);
-
-        // MFC CKadLookupGraph::GetCurrentLookupTitle: quoted name, else type
-        const QString name = meta.value(QStringLiteral("name")).toString();
-        setLookupTabTitle(name.isEmpty() ? KadSearchesModel::typeText(typeId)
-                                         : QStringLiteral("\"%1\"").arg(name));
+        setLookupTabTitle(lookupTitleOf(meta.value(QStringLiteral("name")).toString(), typeId));
     });
 }
 
@@ -203,6 +208,7 @@ void Ed2kKadPanel::autoPickLookup()
     if (pick == 0)
         return;
     m_graphSearchId = pick;
+    setLookupTabTitle(lookupTitle(pick));
 
     // Mark it in the list only while the graph shows (MFC bMark)
     if (lookupTabShown())
@@ -224,6 +230,15 @@ void Ed2kKadPanel::clearAll()
 std::uint64_t Ed2kKadPanel::searchIdAtRow(int sourceRow) const
 {
     return m_searchesModel->data(m_searchesModel->index(sourceRow, KadSearchesModel::ColNumber), Qt::UserRole).toUInt();
+}
+
+QString Ed2kKadPanel::lookupTitle(std::uint64_t id) const
+{
+    const int row = m_searchesModel->rowOf(static_cast<uint32_t>(id));
+    if (row < 0)
+        return {};
+    const KadSearchRow& s = m_searchesModel->searches()[static_cast<size_t>(row)];
+    return lookupTitleOf(s.name, s.typeId);
 }
 
 // ---------------------------------------------------------------------------
@@ -496,6 +511,18 @@ void Ed2kKadPanel::requestContacts()
         }
 
         const QCborArray arr = resp.fieldArray(1);
+        // Hidden list: the histogram and count need the ids only; a full reset +
+        // re-sort of thousands of rows every poll stalled the page
+        if (!contactsTabShown()) {
+            QStringList ids;
+            ids.reserve(arr.size());
+            for (const auto& val : arr)
+                ids.append(val.toMap().value(QStringLiteral("clientId")).toString());
+            m_kadNetworkGraph->setIds(ids);
+            setContactCount(static_cast<int>(ids.size()));
+            return;
+        }
+
         std::vector<KadContactRow> rows;
         rows.reserve(static_cast<size_t>(arr.size()));
 

@@ -10,6 +10,7 @@
 #include "IpcTls.h"
 
 #include <QHostAddress>
+#include <QList>
 #include <QObject>
 #include <QStringList>
 
@@ -31,8 +32,15 @@ public:
     /// TLS identity for remote GUIs. Without one only loopback clients get in.
     void setTlsIdentity(const QSslCertificate& cert, const QSslKey& key);
 
-    /// Start listening on the given address and port.
-    bool start(const QHostAddress& address, uint16_t port);
+    /// Start listening on each of @p addresses at @p port. Fails only when none
+    /// listens; the others are logged.
+    bool start(const QList<QHostAddress>& addresses, uint16_t port);
+    bool start(const QHostAddress& address, uint16_t port) { return start(QList{address}, port); }
+    /// Listen on @p addresses from now on, same port: clients and the listeners
+    /// still wanted stay.
+    void relisten(const QList<QHostAddress>& addresses);
+    /// Where it listens now.
+    [[nodiscard]] QList<QHostAddress> listenAddresses() const;
     /// Why the last start() failed, with a hint where one helps.
     [[nodiscard]] QString errorText() const { return m_errorText; }
 
@@ -106,7 +114,13 @@ private slots:
     void onClientDisconnected(IpcClientHandler* handler);
 
 private:
-    Ipc::IpcTlsServer m_tcpServer;
+    /// Opens and keeps a listener on @p address at m_port; else why not in @p error.
+    bool openListener(const QHostAddress& address, QString* error);
+
+    std::vector<std::unique_ptr<Ipc::IpcTlsServer>> m_tcpServers;   ///< one per address
+    QSslCertificate m_cert;
+    QSslKey m_key;
+    uint16_t m_port = 0;
     std::vector<std::unique_ptr<IpcClientHandler>> m_clients;
     std::function<void(const Ipc::IpcMessage&)> m_pushTap;
     QString m_errorText;

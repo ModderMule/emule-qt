@@ -54,6 +54,9 @@
     <ClCompile Include="IpcClientHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="IpcListenWatch.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="IpcServer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -168,6 +171,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="IpcClientHandler.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="IpcListenWatch.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="IpcServer.h">

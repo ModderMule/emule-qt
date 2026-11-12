@@ -10,6 +10,7 @@
 #include "prefs/Preferences.h"
 #include "stats/NetworkCounters.h"
 #include "stats/Statistics.h"
+#include "utils/Log.h"
 
 #include <QCborArray>
 #include <QDir>
@@ -280,6 +281,9 @@ QCborMap detailsToCbor(const QString& id)
     return out;
 }
 
+/// the request switch; handleRequest() guards it against exceptions
+void dispatchRequest(const IpcMessage& msg, const std::function<void(const IpcMessage&)>& reply);
+
 #endif // EMULE_HAVE_BITTORRENT
 
 } // namespace
@@ -351,106 +355,15 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
             reply(unavailable(msg));
         return true;
     }
-    const QString id = msg.fieldString(0);
-    auto boolResult = [&](bool ok) {
-        reply(ok ? IpcMessage::makeResult(seq, true, true) : IpcMessage::makeError(seq, 404, QStringLiteral("Torrent not found")));
-    };
-    switch (msg.type()) {
-    case IpcMsgType::GetTorrents: {
-        QCborArray rows;
-        for (const auto& r : s_session->torrents())
-            rows.append(toCbor(r));
-        reply(IpcMessage::makeResult(seq, true, rows));
-        break;
-    }
-    case IpcMsgType::AddTorrentFile: {
-        const QByteArray data = msg.field(0).toByteArray();
-        const auto added = s_session->addTorrentFile(data, msg.fieldString(1), msg.fieldBool(2), i2pOnlyOf(msg),
-                                                     stopAfterMetadataOf(msg), wantedFilesOf(msg));
-        reply(IpcMessage::makeResult(seq, true, addResultToCbor(added)));
-        break;
-    }
-    case IpcMsgType::AddMagnet: {
-        const auto added = s_session->addMagnet(id, msg.fieldString(1), msg.fieldBool(2), i2pOnlyOf(msg),
-                                                stopAfterMetadataOf(msg));
-        reply(IpcMessage::makeResult(seq, true, addResultToCbor(added)));
-        break;
-    }
-    case IpcMsgType::RemoveTorrent: boolResult(s_session->remove(id, msg.fieldBool(1))); break;
-    case IpcMsgType::PauseTorrent: boolResult(s_session->pause(id)); break;
-    case IpcMsgType::ResumeTorrent: boolResult(s_session->resume(id)); break;
-    case IpcMsgType::RecheckTorrent: boolResult(s_session->recheck(id)); break;
-    case IpcMsgType::ReannounceTorrent: boolResult(s_session->reannounce(id)); break;
-    case IpcMsgType::GetTorrentDetails:
-        if (!s_session->torrent(id))
-            boolResult(false);
-        else
-            reply(IpcMessage::makeResult(seq, true, detailsToCbor(id)));
-        break;
-    case IpcMsgType::SetTorrentFilePriorities: {
-        QList<int> prio;
-        for (const auto& v : msg.fieldArray(1))
-            prio.append(static_cast<int>(v.toInteger()));
-        boolResult(s_session->setFilePriorities(id, prio));
-        break;
-    }
-    case IpcMsgType::SetTorrentOptions:
-        boolResult(s_session->setOptions(id, optionsFromCbor(msg.fieldMap(1))));
-        break;
-    case IpcMsgType::AddTorrentTrackers:
-        boolResult(s_session->addTrackers(id, stringsOf(msg.fieldArray(1))));
-        break;
-    case IpcMsgType::RemoveTorrentTrackers:
-        boolResult(s_session->removeTrackers(id, stringsOf(msg.fieldArray(1))));
-        break;
-    case IpcMsgType::GetTorrentOptionsMany: {
-        QCborMap all;
-        for (const QString& tid : stringsOf(msg.fieldArray(0)))
-            if (const auto o = s_session->options(tid))
-                all.insert(tid, optionsToCbor(*o));
-        reply(IpcMessage::makeResult(seq, true, all));
-        break;
-    }
-    case IpcMsgType::SetTorrentOptionsMany: {
-        const QCborMap sent = msg.fieldMap(1);
-        int changed = 0;
-        for (const QString& tid : stringsOf(msg.fieldArray(0))) {
-            const auto cur = s_session->options(tid);
-            if (!cur)
-                continue;
-            const bt::BtTorrentOptions next = mergeOptions(*cur, sent);
-            if (next != *cur && s_session->setOptions(tid, next))
-                ++changed;
-        }
-        reply(IpcMessage::makeResult(seq, true, changed));
-        break;
-    }
-    case IpcMsgType::GetTorrentTrackerUrls: {
-        QCborMap lists;
-        for (const QString& tid : stringsOf(msg.fieldArray(0))) {
-            if (!s_session->torrent(tid))
-                continue;
-            QCborArray urls;
-            for (const auto& t : s_session->trackers(tid))
-                urls.append(t.url);
-            lists.insert(tid, urls);
-        }
-        reply(IpcMessage::makeResult(seq, true, lists));
-        break;
-    }
-    case IpcMsgType::EditTorrentTrackers: {
-        const bt::BtTrackerEdit edit{stringsOf(msg.fieldArray(1)), stringsOf(msg.fieldArray(2)),
-                                     msg.fieldBool(3)};
-        int changed = 0;
-        for (const QString& tid : stringsOf(msg.fieldArray(0)))
-            if (s_session->editTrackers(tid, edit).value_or(false))
-                ++changed;
-        reply(IpcMessage::makeResult(seq, true, changed));
-        break;
-    }
-    default:
-        reply(IpcMessage::makeError(seq, 400, QStringLiteral("Unknown BitTorrent request")));
-        break;
+    // libtorrent throws on a handle that went stale between check and call: one
+    // failed request, not a core taken down by std::terminate (report 46)
+    try {
+        dispatchRequest(msg, reply);
+    } catch (const std::exception& e) {
+        logWarning(QStringLiteral("BitTorrent request %1 failed: %2")
+                       .arg(static_cast<int>(msg.type()))
+                       .arg(QString::fromLocal8Bit(e.what())));
+        reply(IpcMessage::makeError(seq, 500, QString::fromLocal8Bit(e.what())));
     }
     return true;
 #endif
@@ -772,5 +685,117 @@ bool wantsI2pRouter(const bt::BtSettings& s, bool enginesHeld)
            && !s.networkBlocked;
 }
 #endif
+
+#ifdef EMULE_HAVE_BITTORRENT
+namespace {
+
+void dispatchRequest(const IpcMessage& msg, const std::function<void(const IpcMessage&)>& reply)
+{
+    const int seq = msg.seqId();
+    const QString id = msg.fieldString(0);
+    auto boolResult = [&](bool ok) {
+        reply(ok ? IpcMessage::makeResult(seq, true, true) : IpcMessage::makeError(seq, 404, QStringLiteral("Torrent not found")));
+    };
+    switch (msg.type()) {
+    case IpcMsgType::GetTorrents: {
+        QCborArray rows;
+        for (const auto& r : s_session->torrents())
+            rows.append(toCbor(r));
+        reply(IpcMessage::makeResult(seq, true, rows));
+        break;
+    }
+    case IpcMsgType::AddTorrentFile: {
+        const QByteArray data = msg.field(0).toByteArray();
+        const auto added = s_session->addTorrentFile(data, msg.fieldString(1), msg.fieldBool(2), i2pOnlyOf(msg),
+                                                     stopAfterMetadataOf(msg), wantedFilesOf(msg));
+        reply(IpcMessage::makeResult(seq, true, addResultToCbor(added)));
+        break;
+    }
+    case IpcMsgType::AddMagnet: {
+        const auto added = s_session->addMagnet(id, msg.fieldString(1), msg.fieldBool(2), i2pOnlyOf(msg),
+                                                stopAfterMetadataOf(msg));
+        reply(IpcMessage::makeResult(seq, true, addResultToCbor(added)));
+        break;
+    }
+    case IpcMsgType::RemoveTorrent: boolResult(s_session->remove(id, msg.fieldBool(1))); break;
+    case IpcMsgType::PauseTorrent: boolResult(s_session->pause(id)); break;
+    case IpcMsgType::ResumeTorrent: boolResult(s_session->resume(id)); break;
+    case IpcMsgType::RecheckTorrent: boolResult(s_session->recheck(id)); break;
+    case IpcMsgType::ReannounceTorrent: boolResult(s_session->reannounce(id)); break;
+    case IpcMsgType::GetTorrentDetails:
+        if (!s_session->torrent(id))
+            boolResult(false);
+        else
+            reply(IpcMessage::makeResult(seq, true, detailsToCbor(id)));
+        break;
+    case IpcMsgType::SetTorrentFilePriorities: {
+        QList<int> prio;
+        for (const auto& v : msg.fieldArray(1))
+            prio.append(static_cast<int>(v.toInteger()));
+        boolResult(s_session->setFilePriorities(id, prio));
+        break;
+    }
+    case IpcMsgType::SetTorrentOptions:
+        boolResult(s_session->setOptions(id, optionsFromCbor(msg.fieldMap(1))));
+        break;
+    case IpcMsgType::AddTorrentTrackers:
+        boolResult(s_session->addTrackers(id, stringsOf(msg.fieldArray(1))));
+        break;
+    case IpcMsgType::RemoveTorrentTrackers:
+        boolResult(s_session->removeTrackers(id, stringsOf(msg.fieldArray(1))));
+        break;
+    case IpcMsgType::GetTorrentOptionsMany: {
+        QCborMap all;
+        for (const QString& tid : stringsOf(msg.fieldArray(0)))
+            if (const auto o = s_session->options(tid))
+                all.insert(tid, optionsToCbor(*o));
+        reply(IpcMessage::makeResult(seq, true, all));
+        break;
+    }
+    case IpcMsgType::SetTorrentOptionsMany: {
+        const QCborMap sent = msg.fieldMap(1);
+        int changed = 0;
+        for (const QString& tid : stringsOf(msg.fieldArray(0))) {
+            const auto cur = s_session->options(tid);
+            if (!cur)
+                continue;
+            const bt::BtTorrentOptions next = mergeOptions(*cur, sent);
+            if (next != *cur && s_session->setOptions(tid, next))
+                ++changed;
+        }
+        reply(IpcMessage::makeResult(seq, true, changed));
+        break;
+    }
+    case IpcMsgType::GetTorrentTrackerUrls: {
+        QCborMap lists;
+        for (const QString& tid : stringsOf(msg.fieldArray(0))) {
+            if (!s_session->torrent(tid))
+                continue;
+            QCborArray urls;
+            for (const auto& t : s_session->trackers(tid))
+                urls.append(t.url);
+            lists.insert(tid, urls);
+        }
+        reply(IpcMessage::makeResult(seq, true, lists));
+        break;
+    }
+    case IpcMsgType::EditTorrentTrackers: {
+        const bt::BtTrackerEdit edit{stringsOf(msg.fieldArray(1)), stringsOf(msg.fieldArray(2)),
+                                     msg.fieldBool(3)};
+        int changed = 0;
+        for (const QString& tid : stringsOf(msg.fieldArray(0)))
+            if (s_session->editTrackers(tid, edit).value_or(false))
+                ++changed;
+        reply(IpcMessage::makeResult(seq, true, changed));
+        break;
+    }
+    default:
+        reply(IpcMessage::makeError(seq, 400, QStringLiteral("Unknown BitTorrent request")));
+        break;
+    }
+}
+
+} // namespace
+#endif // EMULE_HAVE_BITTORRENT
 
 } // namespace eMule::BtBridge

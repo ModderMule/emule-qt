@@ -49,8 +49,10 @@ static constexpr int kMaxLogChars = 60000; // MySQL TEXT column limit is 65,535 
 static constexpr auto kBaseUrl = "https://emule-qt.org";
 static constexpr auto kBugReportWebUrl = "https://emule-qt.org/submit-bug-report/";
 
-BugReportDialog::BugReportDialog(LogWidget* logWidget, const QString& coreVersion, QWidget* parent)
+BugReportDialog::BugReportDialog(LogWidget* logWidget, const QString& coreVersion,
+                                 std::function<QString()> statsText, QWidget* parent)
     : RememberedSizeDialog(parent)
+    , m_statsText(std::move(statsText))
     , m_nam(new QNetworkAccessManager(this))
     , m_logWidget(logWidget)
 {
@@ -264,7 +266,19 @@ void BugReportDialog::onSubmitClicked()
         addLogFile("logVerbose",  "logVerbose.txt",  truncateLog(m_logWidget->verboseText()));
         addLogFile("logKad",      "logKad.txt",      truncateLog(m_logWidget->kadText()));
         addLogFile("logUsenet",   "logUsenet.txt",   truncateLog(m_logWidget->usenetText()));
+        // tabs that are off stay empty and aren't sent (plugins before 1.6.2 drop these)
+        addLogFile("logLeecher",        "logLeecher.txt",        truncateLog(m_logWidget->leecherText()));
+        addLogFile("logTorrent",        "logTorrent.txt",        truncateLog(m_logWidget->torrentText()));
+        addLogFile("logTorrentVerbose", "logTorrentVerbose.txt", truncateLog(m_logWidget->torrentVerboseText()));
+        addLogFile("logHoster",         "logHoster.txt",         truncateLog(m_logWidget->hosterText()));
+        addLogFile("logHosterVerbose",  "logHosterVerbose.txt",  truncateLog(m_logWidget->hosterVerboseText()));
+        addLogFile("logEd3k",           "logEd3k.txt",           truncateLog(m_logWidget->ed3kText()));
+        addLogFile("logEd3kVerbose",    "logEd3kVerbose.txt",    truncateLog(m_logWidget->ed3kVerboseText()));
+        addLogFile("logEd3kKad",        "logEd3kKad.txt",        truncateLog(m_logWidget->ed3kKadText()));
     }
+    // Statistics tree, every node (plugins before 1.6.2 drop it)
+    if (m_statsText)
+        addLogFile("statistics", "statistics.txt", m_statsText());
 
     // Screenshot files
     for (int i = 0; i < m_screenshotList->count(); ++i) {

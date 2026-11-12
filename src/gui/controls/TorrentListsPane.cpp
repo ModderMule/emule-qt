@@ -553,10 +553,13 @@ void TorrentListsPane::applyFiles(const QCborArray& files)
     for (auto it = existing.cbegin(); it != existing.cend(); ++it)
         if (!seen.contains(it.key()))
             delete it.value();
-    // only the topmost unused folder: deleting it takes its subfolders along
+    // only the topmost unused folder: deleting it takes its subfolders along. Picked
+    // before any delete: in hash order a subfolder may come after its parent's delete
+    QList<QTreeWidgetItem*> staleFolders;
     for (auto* folder : oldFolders)
         if (!usedFolders.contains(folder) && (!folder->parent() || usedFolders.contains(folder->parent())))
-            delete folder;
+            staleFolders.append(folder);
+    qDeleteAll(staleFolders);
     sumFolders();
     m_files->setSortingEnabled(true);
     m_updating = false;   // folders start collapsed

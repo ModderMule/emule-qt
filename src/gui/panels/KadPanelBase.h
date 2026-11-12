@@ -57,11 +57,14 @@ protected:
     virtual void clearAll() = 0;
     /// The lookup id of a row of the searches list (source model row); 0: none.
     [[nodiscard]] virtual std::uint64_t searchIdAtRow(int sourceRow) const = 0;
+    /// Search Details title of lookup @p id from the local list (no IPC); empty: none.
+    [[nodiscard]] virtual QString lookupTitle(std::uint64_t id) const = 0;
 
     /// Contacts label and tab title.
     void setContactCount(int count);
     void setLookupTabTitle(const QString& lookupTitle);
     [[nodiscard]] bool lookupTabShown() const;
+    [[nodiscard]] bool contactsTabShown() const;
     /// The selected row of the searches list, 0: none.
     [[nodiscard]] std::uint64_t selectedSearchId() const;
     /// Select the row of @p sourceRow in the searches list without the selection signal.

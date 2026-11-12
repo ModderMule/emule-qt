@@ -342,6 +342,9 @@
     <ClCompile Include="net\LocalIPv6.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="net\OwnAddress.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\Log.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -397,6 +400,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="utils\OwnerOnly.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\SystemMemory.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="utils\BackgroundFileWriter.cpp">
@@ -1136,6 +1142,9 @@
     <ClInclude Include="net\LocalIPv6.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="net\OwnAddress.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="net\Packet.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1158,6 +1167,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\OwnerOnly.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\SystemMemory.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\BackgroundFileWriter.h">

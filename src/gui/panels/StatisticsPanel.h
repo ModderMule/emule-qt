@@ -67,6 +67,9 @@ public:
     /// Apply one GetClientStats reply to Clients > Session / Cumulative. Public for tests.
     void applyClientStats(const class QCborMap& data);
 
+    /// Fetch every branch once, also while the panel is hidden (bug report).
+    void refreshTree() { requestStats(); }
+
     /// Apply one GetStats reply to the tree. Public for tests.
     void updateTree(const class QCborMap& stats);
 

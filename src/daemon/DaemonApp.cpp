@@ -37,6 +37,7 @@
 
 #include "IpcMessage.h"
 #include "LogRelay.h"
+#include "IpcListenWatch.h"
 
 #include "app/AppConfig.h"
 #include "app/AppContext.h"
@@ -50,6 +51,8 @@
 #include "net/ClientUDPSocket.h"
 #include "net/HttpDefaults.h"
 #include "net/I2pRouter.h"
+#include "net/ListenConflict.h"
+#include "net/OwnAddress.h"
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
 #include "stats/StatsHistory.h"
@@ -261,18 +264,31 @@ bool DaemonApp::start()
         logError(QStringLiteral("IPC TLS: %1 — remote GUIs cannot connect").arg(tlsError));
     }
 
-    const QHostAddress addr = Preferences::ipcBindAddressOf(thePrefs.ipcListenAddress());
+    const QString listenHost = thePrefs.ipcListenAddress().trimmed();
+    const bool byName = !listenHost.isEmpty() && listenHost != u'*' && QHostAddress(listenHost).isNull();
+    const QList<QHostAddress> addrs = Preferences::ipcBindAddressesOf(listenHost)
+                                          .value_or(QList{Preferences::ipcBindAddressOf(listenHost)});
+    if (byName) {
+        if (addrs.size() == 1)
+            logWarning(QStringLiteral("IPC listen host %1 is no address of this machine: "
+                                      "listening on loopback only").arg(listenHost));
+        else
+            logInfo(QStringLiteral("IPC listen host %1 is %2").arg(listenHost, addressListText(addrs)));
+    }
     const uint16 port = m_ipcPortOverride != 0 ? m_ipcPortOverride : thePrefs.ipcPort();
 
-    if (!m_ipcServer->start(addr, port)) {
-        logError(QStringLiteral("Failed to start IPC server on %1:%2")
-                     .arg(addr.toString()).arg(port));
+    if (!m_ipcServer->start(addrs, port)) {
+        logError(QStringLiteral("Failed to start IPC server on %1 port %2")
+                     .arg(addressListText(addrs)).arg(port));
         m_startError = m_ipcServer->errorText();
         m_coreSession->stop();
         m_coreSession.reset();
         removeLogForwarder();
         return false;
     }
+    // A name follows its addresses: DHCP, a new network, a renamed host
+    if (byName && !OwnAddress::isLocalhostName(OwnAddress::normalizedName(listenHost)))
+        m_ipcListenWatch = std::make_unique<IpcListenWatch>(m_ipcServer.get(), listenHost);
 
     // Connect core signals to IPC push events
     m_notifierBridge = std::make_unique<CoreNotifierBridge>(m_ipcServer.get(), this);
@@ -442,6 +458,7 @@ bool DaemonApp::start()
         m_ed3kSharedSource = ed3k::Ed3kShared::listAdapter(*theApp.sharedFileList);
         m_ed3kShared = std::make_unique<ed3k::Ed3kShared>(*m_ed3kSession, *m_ed3kSharedSource, thePrefs.configDir());
         m_ed3kShared->connectList(*theApp.sharedFileList);
+        m_ed3kShared->setLowRamPercent(thePrefs.ed3kHashCacheLowRamPercent());
         // hops.md §1: an anonymous-key file also on eD2K/Kad: a pop-up
         connect(m_ed3kShared.get(), &ed3k::Ed3kShared::anonExposed, m_notifierBridge.get(),
                 &CoreNotifierBridge::onEd3kAnonExposed);
@@ -972,8 +989,8 @@ bool DaemonApp::start()
     m_powerManager->start();
 
     m_running = true;
-    logInfo(QStringLiteral("Daemon started — IPC server on %1:%2")
-                .arg(addr.toString()).arg(port));
+    logInfo(QStringLiteral("Daemon started — IPC server on %1 port %2")
+                .arg(addressListText(m_ipcServer->listenAddresses())).arg(port));
     return true;
 }
 
@@ -1162,6 +1179,7 @@ void DaemonApp::stop()
     theApp.onConnectionOfflineChanged = nullptr;
     m_notifierBridge.reset();
 
+    m_ipcListenWatch.reset();
     if (m_ipcServer)
         m_ipcServer->stop();
     m_ipcServer.reset();
@@ -1577,8 +1595,10 @@ void DaemonApp::applyEd3kConfig()
         m_ed3kBootstrap->setSeedFromEd2k(thePrefs.ed3kSeedFromEd2k());
     }
     // ed3kShareFiles: on/off while the node runs (starts with it otherwise)
-    if (m_ed3kShared)
+    if (m_ed3kShared) {
+        m_ed3kShared->setLowRamPercent(thePrefs.ed3kHashCacheLowRamPercent());
         m_ed3kShared->setEnabled(thePrefs.ed3kShareFiles());
+    }
     // ed3kJointDownloads: on/off while the node runs
     if (m_ed2kJoin)
         m_ed2kJoin->setEnabled(thePrefs.ed3kJointDownloads());

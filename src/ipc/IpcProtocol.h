@@ -963,7 +963,8 @@ enum class IpcMsgType : int {
 
     // ed3k Kad window (1200-1209), Ed3kKadBridge.cpp. Failure: [false, {error}], 0 = no node.
     /// [] -> [ok, [{id, ip, port, family (4|6, dialled first), dual, cc, distance (hex, "" = own
-    /// address unknown), fails, dialledIn, checkInS}]] — one row per node
+    /// address unknown), fails, dialledIn, checkInS, agent (Hello.agent, "" = not met since
+    /// restart)}]] — one row per node
     GetEd3kKadContacts      = 1200,
     /// [] -> [ok, [{id, purpose, target (hex), kind, store, answered, asked, candidates,
     /// ended, endedAgoMs}]] — running lookups, then up to 32 ended, newest first

@@ -5,6 +5,8 @@
 
 #include "dialogs/RememberedSizeDialog.h"
 
+#include <functional>
+
 class QComboBox;
 class QDialogButtonBox;
 class QLabel;
@@ -23,8 +25,10 @@ class BugReportDialog : public RememberedSizeDialog {
     Q_OBJECT
 
 public:
-    /// @p coreVersion: the connected core's app version, empty if not known
-    explicit BugReportDialog(LogWidget* logWidget, const QString& coreVersion = {}, QWidget* parent = nullptr);
+    /// @p coreVersion: the connected core's app version, empty if not known.
+    /// @p statsText: the full statistics tree as text, read at submit time
+    explicit BugReportDialog(LogWidget* logWidget, const QString& coreVersion = {},
+                             std::function<QString()> statsText = {}, QWidget* parent = nullptr);
 
 private slots:
     void onSubmitClicked();
@@ -38,6 +42,7 @@ private:
     [[nodiscard]] QString versionLine() const;
 
     QString m_coreVersion;
+    std::function<QString()> m_statsText;
 
     QComboBox* m_typeCombo = nullptr;
     QLineEdit* m_titleEdit = nullptr;

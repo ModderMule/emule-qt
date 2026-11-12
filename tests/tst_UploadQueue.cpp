@@ -151,6 +151,7 @@ private slots:
     void upSlotActivity_busyWhileOurDiskReadIsOut();
     void deadSlot_goesToAWaitingClient();
     void deadSlot_staysWithoutSomeoneToTakeIt();
+    void deadSlot_goesToALowIdWeCanCallBack();
     void deadSlot_keptWhileThePeerIsStillReceiving();
     void deadSlot_cooldownDoublesAndKeepsThePeerOutOfTheNextPick();
     void sessionLimit_waitsWhileTheSlotIsProductiveAndTheLineHasRoom();
@@ -3452,6 +3453,46 @@ void tst_UploadQueue::deadSlot_staysWithoutSomeoneToTakeIt()
     queue.addClientToQueue(reachable);
     queue.recycleDeadSlots(t0 + 62'000);
     QCOMPARE(ended.count(), 1);
+}
+
+// A LowID-only queue: the slot picker calls one back, so a dead slot goes to it too
+// instead of waiting for the 160 s socket timeout.
+void tst_UploadQueue::deadSlot_goesToALowIdWeCanCallBack()
+{
+    SlotGateGuard gates;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxUpload(100);
+    const uint16 oldUdp = thePrefs.udpPort();
+    const auto restoreUdp = qScopeGuard([&] { thePrefs.setUdpPort(oldUdp); });
+    thePrefs.setUdpPort(4672);
+
+    QueueRankEnv env;
+    UploadQueue queue;
+    env.wire(queue);
+    GlobalUploadQueue queueGuard(&queue);
+
+    KnownFile* file = env.addNamedFile(0xEA, QStringLiteral("movie.avi"), 10u * 1024 * 1024);
+    auto* idle = env.makeClient(88, file);
+    QVERIFY(env.connectSocket(idle));
+    QVERIFY(queue.addClientToQueue(idle));
+
+    auto* lowId = env.makeClient(89, file);
+    lowId->setUserIDHybrid(5);
+    queue.addClientToQueue(lowId);
+    QCOMPARE(lowId->uploadState(), UploadState::OnUploadQueue);
+    // the route after it queued: with one already, the free line hands it a slot at once
+    lowId->setConnectAddress(lowId->userAddress());
+    lowId->setKadPort(4672);
+    lowId->setDirectUDPCallbackSupport(true);
+    QVERIFY(!lowId->isReachableForSlot());
+    QVERIFY(lowId->canCallBackForSlot());
+
+    QSignalSpy ended(&queue, &UploadQueue::uploadEnded);
+    const uint64 t0 = getTickCount();
+    queue.recycleDeadSlots(t0);
+    queue.recycleDeadSlots(t0 + UploadQueue::kDeadSlotMs);
+    QCOMPARE(ended.count(), 1);
+    QCOMPARE(ended.at(0).at(0).value<eMule::UpDownClient*>(), idle);
 }
 
 void tst_UploadQueue::deadSlot_cooldownDoublesAndKeepsThePeerOutOfTheNextPick()

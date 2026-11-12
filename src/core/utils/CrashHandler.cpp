@@ -7,6 +7,11 @@
 
 #include <QDir>
 
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <exception>
+#include <string>
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096
@@ -16,6 +21,15 @@
 // without any heap allocation or Qt calls.
 static char s_crashDir[PATH_MAX] = {};
 static char s_crashDirQString[PATH_MAX] = {};
+// Why std::terminate / abort ran, for the crash file; empty = a plain signal/exception
+static char s_fatalReason[512] = {};
+
+static void setFatalReason(const char* reason)
+{
+    if (!reason || s_fatalReason[0])
+        return;   // the first reason wins: abort() after terminate keeps the exception text
+    std::strncpy(s_fatalReason, reason, sizeof(s_fatalReason) - 1);
+}
 
 // ---------------------------------------------------------------------------
 // Async-signal-safe helpers (Unix only)
@@ -146,6 +160,10 @@ void crashSignalHandler(int sig)
 
     writeStr(fd, "Time: ");
     writeStr(fd, ts);
+    if (s_fatalReason[0]) {
+        writeStr(fd, "\nReason: ");
+        writeStr(fd, s_fatalReason);
+    }
     writeStr(fd, "\n\nStack trace:\n");
 
     // Capture stack trace
@@ -174,20 +192,45 @@ void crashSignalHandler(int sig)
 
 #include <qt_windows.h>
 
-// Forward declarations for dbghelp types loaded dynamically
+#include <csignal>
+
+// dbghelp types, loaded dynamically. dbghelp.h declares them under pack(4): on x64
+// the pointers sit at offset 4, not 8
+#pragma pack(push, 4)
+struct DumpExceptionInfo {
+    DWORD ThreadId;
+    PEXCEPTION_POINTERS ExceptionPointers;
+    BOOL ClientPointers;
+};
+struct DumpUserStream {
+    ULONG32 Type;
+    ULONG BufferSize;
+    PVOID Buffer;
+};
+struct DumpUserStreamInfo {
+    ULONG UserStreamCount;
+    DumpUserStream* UserStreamArray;
+};
+#pragma pack(pop)
 using MINIDUMP_TYPE = ULONG;
 using MiniDumpWriteDumpFunc = BOOL(WINAPI*)(
     HANDLE hProcess, DWORD ProcessId, HANDLE hFile,
     MINIDUMP_TYPE DumpType,
     PVOID ExceptionParam, PVOID UserStreamParam, PVOID CallbackParam);
 
-static LONG WINAPI crashExceptionFilter(EXCEPTION_POINTERS* exInfo)
+constexpr ULONG32 kCommentStreamA = 10;
+/// raised by fatalExit() so the dump gets a context like any crash
+constexpr DWORD kFatalExitCode = 0xE0E0E0E1;
+
+namespace {
+
+void writeDump(EXCEPTION_POINTERS* exInfo)
 {
     // Build crash file path
     char path[PATH_MAX];
     size_t dirLen = strlen(s_crashDir);
     if (dirLen == 0 || dirLen >= PATH_MAX - 40)
-        return EXCEPTION_CONTINUE_SEARCH;
+        return;
 
     SYSTEMTIME st;
     GetLocalTime(&st);
@@ -199,35 +242,101 @@ static LONG WINAPI crashExceptionFilter(EXCEPTION_POINTERS* exInfo)
     HANDLE hFile = CreateFileA(path, GENERIC_WRITE, 0, nullptr,
                                CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (hFile == INVALID_HANDLE_VALUE)
-        return EXCEPTION_CONTINUE_SEARCH;
+        return;
 
     HMODULE dbgHelp = LoadLibraryA("dbghelp.dll");
     if (dbgHelp) {
-        auto writeDump = reinterpret_cast<MiniDumpWriteDumpFunc>(
+        auto writeDumpFn = reinterpret_cast<MiniDumpWriteDumpFunc>(
             GetProcAddress(dbgHelp, "MiniDumpWriteDump"));
-        if (writeDump) {
-            // MINIDUMP_EXCEPTION_INFORMATION
-            struct {
-                DWORD  ThreadId;
-                PEXCEPTION_POINTERS ExceptionPointers;
-                BOOL   ClientPointers;
-            } mei;
-            mei.ThreadId = GetCurrentThreadId();
-            mei.ExceptionPointers = exInfo;
-            mei.ClientPointers = FALSE;
-
+        if (writeDumpFn) {
+            DumpExceptionInfo mei{GetCurrentThreadId(), exInfo, FALSE};
+            // the terminate/abort reason as the dump's comment
+            DumpUserStream comment{kCommentStreamA, static_cast<ULONG>(strlen(s_fatalReason) + 1), s_fatalReason};
+            DumpUserStreamInfo streams{s_fatalReason[0] ? 1UL : 0UL, &comment};
             // MiniDumpNormal = 0x00000000
-            writeDump(GetCurrentProcess(), GetCurrentProcessId(),
-                      hFile, 0, &mei, nullptr, nullptr);
+            writeDumpFn(GetCurrentProcess(), GetCurrentProcessId(),
+                        hFile, 0, exInfo ? &mei : nullptr, s_fatalReason[0] ? &streams : nullptr, nullptr);
         }
         FreeLibrary(dbgHelp);
     }
     CloseHandle(hFile);
+}
 
+LONG WINAPI crashExceptionFilter(EXCEPTION_POINTERS* exInfo)
+{
+    writeDump(exInfo);
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+#ifdef _MSC_VER
+LONG fatalFilter(EXCEPTION_POINTERS* exInfo)
+{
+    writeDump(exInfo);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+#endif
+
+/// abort, terminate, purecall: the CRT ends these with __fastfail, which no
+/// unhandled-exception filter sees, so the program just closed without a dump
+[[noreturn]] void fatalExit(const char* reason)
+{
+    setFatalReason(reason);
+#ifdef _MSC_VER
+    __try {
+        RaiseException(kFatalExitCode, EXCEPTION_NONCONTINUABLE, 0, nullptr);
+    } __except (fatalFilter(GetExceptionInformation())) {
+    }
+#else
+    writeDump(nullptr);
+#endif
+    TerminateProcess(GetCurrentProcess(), 3);
+    std::_Exit(3);
+}
+
+void abortHandler(int)
+{
+    fatalExit("abort()");
+}
+
+void purecallHandler()
+{
+    fatalExit("pure virtual function call");
+}
+
+void invalidParameterHandler(const wchar_t*, const wchar_t*, const wchar_t*, unsigned, uintptr_t)
+{
+    fatalExit("invalid parameter passed to a CRT function");
+}
+
+} // anonymous namespace
+
 #endif // Q_OS_WIN
+
+namespace {
+
+/// an uncaught exception or a noexcept violation: its text into the crash file
+[[noreturn]] void terminateHandler()
+{
+    std::string reason = "std::terminate without an active exception";
+    if (const std::exception_ptr ep = std::current_exception()) {
+        try {
+            std::rethrow_exception(ep);
+        } catch (const std::exception& e) {
+            reason = std::string("uncaught exception: ") + e.what();
+        } catch (...) {
+            reason = "uncaught exception of unknown type";
+        }
+    }
+    setFatalReason(reason.c_str());
+    std::fprintf(stderr, "%s\n", reason.c_str());
+#ifdef Q_OS_WIN
+    fatalExit(nullptr);
+#else
+    std::abort();   // the SIGABRT handler writes the .crash with the reason
+#endif
+}
+
+} // anonymous namespace
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -266,7 +375,14 @@ void CrashHandler::install(const QString& crashDir)
     sigaction(SIGFPE,  &sa, nullptr);
 #else
     SetUnhandledExceptionFilter(crashExceptionFilter);
+    // the CRT's fatal exits skip that filter (report 46: closed, no dump)
+    std::signal(SIGABRT, abortHandler);
+    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+    _set_purecall_handler(purecallHandler);
+    _set_invalid_parameter_handler(invalidParameterHandler);
 #endif
+    // MSVC keeps this per thread: covers the main thread, where Qt runs events
+    std::set_terminate(terminateHandler);
 
     logInfo(QStringLiteral("CrashHandler installed — dumps will be written to %1").arg(crashDir));
 }
