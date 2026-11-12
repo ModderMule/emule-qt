@@ -406,7 +406,7 @@ if [[ "$PUBLISH_ONLY" -eq 0 ]]; then
 
   echo "Uploading GeoLite2-Country.mmdb (sha256 ${GEOIP_SHA}) ..."
   if ! SSHPASS="$PUBLISH_SSH_PASS" rsync -avz \
-         -e 'sshpass -e ssh -o StrictHostKeyChecking=accept-new' \
+         -e 'sshpass -e ssh -o StrictHostKeyChecking=accept-new -o PubkeyAuthentication=no -o PreferredAuthentications=password,keyboard-interactive' \
          "$GEOIP_DB" \
          "${PUBLISH_SSH_USER}@${PUBLISH_SSH_HOST}:${PUBLISH_REMOTE_PATH}"; then
     abort_before_tag "GeoLite2 upload failed"
@@ -436,7 +436,7 @@ if [[ "$DO_RESOLVER" -eq 1 && "$BUNDLE_RESOLVER" -eq 1 ]]; then
 
   echo "Uploading resolver.zip (sha256 ${RESOLVER_SHA}) ..."
   if ! SSHPASS="$PUBLISH_SSH_PASS" rsync -avz \
-         -e 'sshpass -e ssh -o StrictHostKeyChecking=accept-new' \
+         -e 'sshpass -e ssh -o StrictHostKeyChecking=accept-new -o PubkeyAuthentication=no -o PreferredAuthentications=password,keyboard-interactive' \
          "$RESOLVER_ZIP" \
          "${PUBLISH_SSH_USER}@${PUBLISH_SSH_HOST}:${PUBLISH_REMOTE_PATH}"; then
     abort_before_tag "resolver upload failed"
@@ -486,7 +486,7 @@ if [[ "$PUBLISH_ONLY" -eq 0 ]]; then
 fi
 
 # --publish-only: the same as CI's manifest job, from local tools
-SSH_CMD='sshpass -e ssh -o StrictHostKeyChecking=accept-new'
+SSH_CMD='sshpass -e ssh -o StrictHostKeyChecking=accept-new -o PubkeyAuthentication=no -o PreferredAuthentications=password,keyboard-interactive'
 REMOTE_JSON="${PUBLISH_SSH_USER}@${PUBLISH_SSH_HOST}:${PUBLISH_REMOTE_PATH%/}/emuleqt-version.json"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT

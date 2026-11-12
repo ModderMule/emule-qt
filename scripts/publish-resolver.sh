@@ -90,7 +90,7 @@ echo "new entry: ${ENTRY}"
 [[ "$DRY" -eq 0 ]] || exit 0
 
 # --- upload ----------------------------------------------------------------------
-SSH_CMD='sshpass -e ssh -o StrictHostKeyChecking=accept-new'
+SSH_CMD='sshpass -e ssh -o StrictHostKeyChecking=accept-new -o PubkeyAuthentication=no -o PreferredAuthentications=password,keyboard-interactive'
 REMOTE="${PUBLISH_SSH_USER}@${PUBLISH_SSH_HOST}:${PUBLISH_REMOTE_PATH%/}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
