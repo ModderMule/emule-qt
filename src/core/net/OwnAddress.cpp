@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "net/OwnAddress.h"
+#include "net/LocalIPv6.h"
 
 #include <QHash>
 #include <QHostInfo>
@@ -104,7 +105,7 @@ void refresh(const QString& name, const QObject* context, std::function<void(boo
     });
 }
 
-std::optional<QList<QHostAddress>> ownBindAddressesOf(const QString& name)
+std::optional<QList<QHostAddress>> ownBindAddressesOf(const QString& name, bool withTemporary)
 {
     const QString n = normalizedName(name);
     if (isLocalhostName(n))
@@ -112,14 +113,27 @@ std::optional<QList<QHostAddress>> ownBindAddressesOf(const QString& name)
     const auto addrs = resolve(n);
     if (!addrs)
         return std::nullopt;
+    const QList<QHostAddress> temporary = withTemporary ? QList<QHostAddress>{} : temporaryIPv6();
     QList<QHostAddress> result;
     for (QHostAddress addr : *addrs) {
         // fe80:: binds only with its interface's scope id; loopback the caller adds
         if (addr.isLoopback() || addr.isLinkLocal() || !isOwn(addr))
             continue;
         addr.setScopeId({});
-        if (!std::ranges::contains(result, addr))   // DNS may repeat one
+        if (temporary.contains(addr))   // rotates: a listener there soon goes stale
+            continue;
+        if (!result.contains(addr))   // DNS may repeat one
             result.append(addr);
+    }
+    return result;
+}
+
+QList<QHostAddress> temporaryIPv6()
+{
+    QList<QHostAddress> result;
+    for (const LocalIPv6Address& local : scanLocalIPv6().addresses) {
+        if (local.kind == IPv6AddressKind::Temporary)
+            result.append(local.address.toQHostAddress());
     }
     return result;
 }

@@ -39,9 +39,14 @@ inline constexpr int kLookupTimeoutMs = 2000;
 void refresh(const QString& name, const QObject* context, std::function<void(bool answered)> done);
 
 /// The own addresses a server for @p name binds: every one @p name resolves to
-/// that is ours, not loopback and needs no scope id, in DNS order. Empty = none
-/// (localhost too), nullopt = the lookup timed out.
-[[nodiscard]] std::optional<QList<QHostAddress>> ownBindAddressesOf(const QString& name);
+/// that is ours, not loopback and needs no scope id, in DNS order. RFC 4941 temporary
+/// IPv6 addresses only with @p withTemporary. Empty = none (localhost too), nullopt =
+/// the lookup timed out.
+[[nodiscard]] std::optional<QList<QHostAddress>> ownBindAddressesOf(const QString& name,
+                                                                    bool withTemporary = false);
+
+/// This machine's RFC 4941 temporary IPv6 addresses, no scope id.
+[[nodiscard]] QList<QHostAddress> temporaryIPv6();
 
 /// Test seam: replaces DNS and clears the cache; empty = system lookup again.
 void setLookup(Lookup lookup);

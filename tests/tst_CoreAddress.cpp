@@ -52,6 +52,7 @@ private slots:
     void bindOfNameDropsForeignAndLoopback();
     void bindOfForeignOrUnresolvedNameIsLoopback();
     void bindSkipsLinkLocal();
+    void bindSkipsTemporaryUnlessEnabled();
     void dialHostOfLanNameIsLoopback();
     void refreshReplacesCachedAnswer();
     void failedRefreshKeepsCachedAnswer();
@@ -253,15 +254,18 @@ void tst_CoreAddress::dialHostResolvesOnce()
 
 void tst_CoreAddress::bindOfNameIsLoopbackPlusAllOwn()
 {
-    // loopback first, as macOS answers for its own .local name; each address once
+    // loopback first, as macOS answers for its own .local name; each address once,
+    // no privacy address
+    const QList<QHostAddress> temporary = OwnAddress::temporaryIPv6();
     QList<QHostAddress> answer{QHostAddress(QStringLiteral("::1"))};
     QList<QHostAddress> expected{QHostAddress(QHostAddress::LocalHost)};
     for (QHostAddress own : QNetworkInterface::allAddresses()) {
         own.setScopeId({});
-        if (own.isLoopback() || own.isLinkLocal() || expected.contains(own))
+        if (own.isLoopback() || own.isLinkLocal() || answer.contains(own))
             continue;
         answer << own << own;
-        expected << own;
+        if (!temporary.contains(own))
+            expected << own;
     }
     if (expected.size() == 1)
         QSKIP("no routable interface address");
@@ -311,6 +315,20 @@ void tst_CoreAddress::bindSkipsLinkLocal()
     m_dns.insert(QStringLiteral("me.example"), {linkLocal});
     QCOMPARE(Preferences::ipcBindAddressesOf(QStringLiteral("me.example")),
              QList{QHostAddress(QHostAddress::LocalHost)});
+}
+
+void tst_CoreAddress::bindSkipsTemporaryUnlessEnabled()
+{
+    const QList<QHostAddress> temporary = OwnAddress::temporaryIPv6();
+    if (temporary.isEmpty())
+        QSKIP("no temporary IPv6 address");
+    const QHostAddress loop(QHostAddress::LocalHost);
+    m_dns.insert(QStringLiteral("me.example"), {temporary.first()});
+    QCOMPARE(Preferences::ipcBindAddressesOf(QStringLiteral("me.example")), QList{loop});
+    eMule::thePrefs.setIpcListenTemporaryIpv6(true);
+    const auto bind = Preferences::ipcBindAddressesOf(QStringLiteral("me.example"));
+    eMule::thePrefs.setIpcListenTemporaryIpv6(false);
+    QCOMPARE(bind, (QList{loop, temporary.first()}));
 }
 
 void tst_CoreAddress::dialHostOfLanNameIsLoopback()

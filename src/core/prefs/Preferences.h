@@ -1886,7 +1886,8 @@ public:
     /// every interface, both families; "" or a name = loopback; else the literal.
     [[nodiscard]] static QHostAddress ipcBindAddressOf(const QString& value);
     /// Every address the core listens at: ipcBindAddressOf(), for a name followed by
-    /// all its own addresses (DNS, up to OwnAddress::kLookupTimeoutMs).
+    /// all its own addresses, temporary IPv6 ones only with ipcListenTemporaryIpv6()
+    /// (DNS, up to OwnAddress::kLookupTimeoutMs).
     /// nullopt = the lookup timed out.
     [[nodiscard]] static std::optional<QList<QHostAddress>> ipcBindAddressesOf(const QString& value);
     /// Where a client on this machine dials a core listening at @p value: a wildcard
@@ -1904,6 +1905,10 @@ public:
     /// ipc.listenRecheckMinutes: a name listen value is looked up again this often
     /// (default 60, 0 = only on adapter or host name changes). No UI.
     [[nodiscard]] int ipcListenRecheckMinutes() const;
+    /// ipc.listenTemporaryIpv6: a name listen value also binds RFC 4941 temporary IPv6
+    /// addresses (default off: they rotate). No UI.
+    [[nodiscard]] bool ipcListenTemporaryIpv6() const;
+    void setIpcListenTemporaryIpv6(bool val);
 
     /// IPC authentication tokens (array for future multi-token support).
     [[nodiscard]] QStringList ipcTokens() const;

@@ -476,7 +476,8 @@ node stops. `applyEd3kConfig` switches it with the pref.
   list may load later).
   Block values on disk are opened with `hashesStored` and no blob: a start reads none of
   them. packmule asks for them (`WantHashes` → `answerHashes`, read on the base's read pool,
-  MD5 checked) when a peer's `HashRequest` or a `BadBlock` needs them, and keeps them in RAM
+  MD5 checked) when a peer's `HashRequest`, a `BadBlock` or a download of the file needs them
+  (the download then gets `Hashes` as from peers; peers are asked only if the load fails), and keeps them in RAM
   within its budget (`ed3k_hash_ram_set`): `ed3k.hashRamMiB` (0 = auto: 2 % of RAM, 64–512
   MiB), 0 while free RAM is below `ed3k.hashCacheLowRamPercent`. Over it, values idle 60 s and
   not in use go back to disk, least recently used first. No copy here once stored (its `Tree`

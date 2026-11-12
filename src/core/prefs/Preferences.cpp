@@ -530,6 +530,7 @@ struct Preferences::Data {
     QString ipcDaemonPath;  // Empty = show dialog; "local" = connect to localhost
     int ipcRemotePollingMs = 1500;
     int ipcListenRecheckMinutes = 60;   // name listen value: re-resolve period, 0 = changes only
+    bool ipcListenTemporaryIpv6 = false;   // name listen value: also bind privacy addresses
     QStringList ipcTokens;
 
     // Web Server
@@ -3276,7 +3277,7 @@ std::optional<QList<QHostAddress>> Preferences::ipcBindAddressesOf(const QString
     if (v.isEmpty() || !QHostAddress(v).isNull() || v == u'*')
         return QList{first};
     // A name: also its own addresses, so remote GUIs reach the core by it
-    auto own = OwnAddress::ownBindAddressesOf(v);
+    auto own = OwnAddress::ownBindAddressesOf(v, thePrefs.ipcListenTemporaryIpv6());
     if (!own)
         return std::nullopt;
     own->prepend(first);
@@ -3300,6 +3301,8 @@ void Preferences::setIpcDaemonPath(const QString& val) { set(&Data::ipcDaemonPat
 int Preferences::ipcRemotePollingMs() const { return get(&Data::ipcRemotePollingMs); }
 
 int Preferences::ipcListenRecheckMinutes() const { return get(&Data::ipcListenRecheckMinutes); }
+bool Preferences::ipcListenTemporaryIpv6() const { return get(&Data::ipcListenTemporaryIpv6); }
+void Preferences::setIpcListenTemporaryIpv6(bool val) { set(&Data::ipcListenTemporaryIpv6, val); }
 
 void Preferences::setIpcRemotePollingMs(int val)
 {
@@ -5523,6 +5526,7 @@ bool Preferences::load(const QString& filePath)
             m_data->ipcDaemonPath = QString::fromStdString(ipc["daemonPath"].as<std::string>(m_data->ipcDaemonPath.toStdString()));
             m_data->ipcRemotePollingMs = std::clamp(ipc["remotePollingMs"].as<int>(m_data->ipcRemotePollingMs), 200, 10000);
             m_data->ipcListenRecheckMinutes = std::clamp(ipc["listenRecheckMinutes"].as<int>(m_data->ipcListenRecheckMinutes), 0, 10080);
+            m_data->ipcListenTemporaryIpv6 = ipc["listenTemporaryIpv6"].as<bool>(m_data->ipcListenTemporaryIpv6);
             if (auto tok = ipc["tokens"]) {
                 m_data->ipcTokens.clear();
                 for (std::size_t i = 0; i < tok.size(); ++i)
@@ -7107,6 +7111,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "daemonPath" << YAML::Value << m_data->ipcDaemonPath.toStdString();
     out << YAML::Key << "remotePollingMs" << YAML::Value << m_data->ipcRemotePollingMs;
     out << YAML::Key << "listenRecheckMinutes" << YAML::Value << m_data->ipcListenRecheckMinutes;
+    out << YAML::Key << "listenTemporaryIpv6" << YAML::Value << m_data->ipcListenTemporaryIpv6;
     out << YAML::Key << "tokens" << YAML::Value << YAML::BeginSeq;
     for (const auto& t : m_data->ipcTokens)
         out << t.toStdString();
