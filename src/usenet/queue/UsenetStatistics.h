@@ -54,6 +54,10 @@ public:
 
     void noteItemFinished(bool success, qint64 bytes);
 
+    /// Raw bytes a search Details preview (Images, NFO) read from @p accountId.
+    /// Network traffic like any other, kept apart so it is not taken for overhead.
+    void notePreview(const QString& accountId, qint64 bytes);
+
     /// A post-processing round came back. Counts the terminal verify and the
     /// unpack; a NeedMoreBlocks round is not terminal and counts nothing.
     void notePostFinished(const UsenetPostResult& result);

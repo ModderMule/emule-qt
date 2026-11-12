@@ -24035,27 +24035,27 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
         <location line="+165"/>
         <location line="+25"/>
         <location line="+402"/>
-        <location line="+2058"/>
+        <location line="+2061"/>
         <source>Uploads</source>
         <translation>Upload</translation>
     </message>
     <message>
-        <location line="-2646"/>
+        <location line="-2649"/>
         <location line="+67"/>
         <location line="+83"/>
         <location line="+56"/>
         <location line="+43"/>
-        <location line="+1804"/>
+        <location line="+1806"/>
         <location line="+90"/>
         <location line="+76"/>
-        <location line="+129"/>
+        <location line="+130"/>
         <location line="+166"/>
         <location line="+121"/>
         <source>Session</source>
         <translation>Sessione</translation>
     </message>
     <message>
-        <location line="-2632"/>
+        <location line="-2635"/>
         <location line="+35"/>
         <source>Uploaded Data: 0 Bytes</source>
         <translation>Dati caricati: 0 Bytes</translation>
@@ -24107,14 +24107,14 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
         <location line="+105"/>
         <location line="+24"/>
         <location line="+411"/>
-        <location line="+1503"/>
-        <location line="+164"/>
+        <location line="+1505"/>
+        <location line="+165"/>
         <location line="+380"/>
         <source>Downloads</source>
         <translation>Download</translation>
     </message>
     <message>
-        <location line="-2580"/>
+        <location line="-2583"/>
         <location line="+43"/>
         <source>Downloaded Data: 0 Bytes</source>
         <translation>Dati scaricati: 0 Bytes</translation>
@@ -24255,17 +24255,17 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
         <location line="+66"/>
         <location line="+41"/>
         <location line="+32"/>
-        <location line="+1809"/>
+        <location line="+1811"/>
         <location line="+90"/>
         <location line="+76"/>
-        <location line="+129"/>
+        <location line="+130"/>
         <location line="+162"/>
         <location line="+125"/>
         <source>Cumulative</source>
         <translation>Cumulativo</translation>
     </message>
     <message>
-        <location line="-2561"/>
+        <location line="-2564"/>
         <location line="+43"/>
         <source>Completed Downloads: 0</source>
         <translation>Download completati: 0</translation>
@@ -24312,7 +24312,7 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
     <message>
         <location line="+15"/>
         <location line="+26"/>
-        <location line="+1818"/>
+        <location line="+1820"/>
         <location line="+87"/>
         <location line="+86"/>
         <location line="+79"/>
@@ -24324,7 +24324,7 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
         <translation type="vanished">Connessioni medie: 0.0</translation>
     </message>
     <message>
-        <location line="-2086"/>
+        <location line="-2088"/>
         <source>Upload Speed: 0 KB/s</source>
         <translation>Velocità di upload: 0 KB/s</translation>
     </message>
@@ -24390,13 +24390,13 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
         <location line="+8"/>
         <location line="+67"/>
         <location line="+69"/>
-        <location line="+302"/>
-        <location line="+1104"/>
+        <location line="+304"/>
+        <location line="+1105"/>
         <source>Unknown</source>
         <translation>Sconosciuto</translation>
     </message>
     <message>
-        <location line="-2682"/>
+        <location line="-2685"/>
         <source>Statistics Tree</source>
         <translation>Albero statistiche</translation>
     </message>
@@ -24408,20 +24408,20 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
     </message>
     <message>
         <location line="-1105"/>
-        <location line="+2430"/>
+        <location line="+2433"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="-2356"/>
+        <location line="-2359"/>
         <location line="+751"/>
         <location line="+45"/>
-        <location line="+1186"/>
+        <location line="+1188"/>
         <source>Waiting...</source>
         <translation>In attesa...</translation>
     </message>
     <message>
-        <location line="-1979"/>
+        <location line="-1981"/>
         <location line="+686"/>
         <source>Session UL:DL Ratio (Friends UL excluded): %1</source>
         <translation>Rapporto UL:DL sessione (escluso slot amico): %1</translation>
@@ -24432,7 +24432,7 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
         <translation>Richieste file UDP ripetute: 0, fallite: 0 (0.0%)</translation>
     </message>
     <message>
-        <location line="+2180"/>
+        <location line="+2183"/>
         <source>Corrupt (Failed yEnc Check): %1</source>
         <translation>Corrotti (controllo yEnc fallito): %1</translation>
     </message>
@@ -24462,7 +24462,7 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
         <translation type="vanished">Blocchi recuperati: 0</translation>
     </message>
     <message>
-        <location line="-2411"/>
+        <location line="-2414"/>
         <source>Run Time: 0:00:00</source>
         <translation>Tempo di esecuzione: 0:00:00</translation>
     </message>
@@ -24632,12 +24632,12 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
     <message>
         <location line="+3"/>
         <location line="+74"/>
-        <location line="+1255"/>
+        <location line="+1257"/>
         <source>Uploaded Data: %1</source>
         <translation>Dati caricati: %1</translation>
     </message>
     <message>
-        <location line="-1318"/>
+        <location line="-1320"/>
         <location line="+73"/>
         <location line="+57"/>
         <location line="+99"/>
@@ -24683,13 +24683,13 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
         <translation type="vanished">Riusciti: %1%2</translation>
     </message>
     <message>
-        <location line="+1568"/>
+        <location line="+1571"/>
         <location line="+49"/>
         <source>Failed: %1</source>
         <translation>Falliti: %1</translation>
     </message>
     <message>
-        <location line="-1593"/>
+        <location line="-1596"/>
         <location line="+45"/>
         <source>Average Upload Per Session: %1</source>
         <translation>Upload medio per sessione: %1</translation>
@@ -24773,7 +24773,7 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
     <message>
         <location line="-132"/>
         <location line="+99"/>
-        <location line="+1098"/>
+        <location line="+1100"/>
         <location line="+80"/>
         <location line="+166"/>
         <source>Downloaded Data: %1</source>
@@ -24784,7 +24784,7 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
         <translation type="vanished">Download attivi: %1</translation>
     </message>
     <message>
-        <location line="-1422"/>
+        <location line="-1424"/>
         <source>Found Sources: %1</source>
         <translation>Fonti trovate: %1</translation>
     </message>
@@ -24796,13 +24796,13 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
     <message>
         <location line="+5"/>
         <location line="+61"/>
-        <location line="+1092"/>
+        <location line="+1094"/>
         <location line="+84"/>
         <source>Completed Downloads: %1</source>
         <translation>Download completati: %1</translation>
     </message>
     <message>
-        <location line="-1207"/>
+        <location line="-1209"/>
         <location line="+36"/>
         <source>Gain Due To Compression: %1 %2</source>
         <translation>Guadagno dovuto alla compressione: %1 %2</translation>
@@ -24820,7 +24820,7 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
         <translation>Parti salvate grazie a ICH: %1</translation>
     </message>
     <message>
-        <location line="+1315"/>
+        <location line="+1317"/>
         <source>Active Connections: %1</source>
         <translation>Connessioni attive: %1</translation>
     </message>
@@ -24835,7 +24835,7 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
         <translation type="vanished">Limite max. connessioni raggiunto: %1</translation>
     </message>
     <message>
-        <location line="-2101"/>
+        <location line="-2103"/>
         <location line="+26"/>
         <location line="+774"/>
         <location line="+33"/>
@@ -24848,28 +24848,28 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
     </message>
     <message>
         <location line="-9"/>
-        <location line="+1020"/>
+        <location line="+1022"/>
         <location line="+175"/>
         <source>Upload Speed: %1</source>
         <translation>Velocità di upload: %1</translation>
     </message>
     <message>
-        <location line="-1194"/>
+        <location line="-1196"/>
         <location line="+17"/>
-        <location line="+1006"/>
+        <location line="+1008"/>
         <location line="+173"/>
         <source>Max Upload Rate: %1</source>
         <translation>Velocità massima di upload: %1</translation>
     </message>
     <message>
-        <location line="-1195"/>
+        <location line="-1197"/>
         <location line="+17"/>
         <source>Max Average Upload Rate: %1</source>
         <translation>Velocità media massima di upload: %1</translation>
     </message>
     <message>
         <location line="-16"/>
-        <location line="+1016"/>
+        <location line="+1018"/>
         <location line="+87"/>
         <location line="+86"/>
         <location line="+79"/>
@@ -24877,9 +24877,9 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
         <translation>Velocità di download: %1</translation>
     </message>
     <message>
-        <location line="-1267"/>
+        <location line="-1269"/>
         <location line="+17"/>
-        <location line="+1001"/>
+        <location line="+1003"/>
         <location line="+86"/>
         <location line="+86"/>
         <location line="+79"/>
@@ -24887,7 +24887,7 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
         <translation>Velocità massima di download: %1</translation>
     </message>
     <message>
-        <location line="-1268"/>
+        <location line="-1270"/>
         <location line="+17"/>
         <source>Max Average Download Rate: %1</source>
         <translation>Velocità media massima di download: %1</translation>
@@ -24902,14 +24902,14 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
     </message>
     <message>
         <location line="-5"/>
-        <location line="+1006"/>
+        <location line="+1008"/>
         <location line="+173"/>
         <source>Average Upload Rate: %1</source>
         <translation>Velocità media di upload: %1</translation>
     </message>
     <message>
-        <location line="-1176"/>
-        <location line="+1001"/>
+        <location line="-1178"/>
+        <location line="+1003"/>
         <location line="+86"/>
         <location line="+86"/>
         <location line="+79"/>
@@ -24917,7 +24917,7 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
         <translation>Velocità media di download: %1</translation>
     </message>
     <message>
-        <location line="-1239"/>
+        <location line="-1241"/>
         <location line="+5"/>
         <source>Time Since Last Reset: %1</source>
         <translation>Tempo dall&apos;ultimo ripristino: %1</translation>
@@ -24936,15 +24936,15 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
     <message>
         <location line="-18"/>
         <location line="+20"/>
-        <location line="+948"/>
+        <location line="+950"/>
         <location line="+173"/>
         <source>Upload Time: %1 %2</source>
         <translation>Tempo di upload: %1 %2</translation>
     </message>
     <message>
-        <location line="-1139"/>
+        <location line="-1141"/>
         <location line="+20"/>
-        <location line="+945"/>
+        <location line="+947"/>
         <location line="+84"/>
         <location line="+89"/>
         <location line="+76"/>
@@ -24956,7 +24956,7 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
         <translation type="vanished">Durata server: %1 %2</translation>
     </message>
     <message>
-        <location line="-1200"/>
+        <location line="-1202"/>
         <source>Run Time: %1</source>
         <translation>Tempo di esecuzione: %1</translation>
     </message>
@@ -25112,29 +25112,29 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
     </message>
     <message>
         <location line="+14"/>
-        <location line="+1034"/>
+        <location line="+1037"/>
         <source>Number of Downloads: %1</source>
         <translation>Numero di download: %1</translation>
     </message>
     <message>
-        <location line="-1033"/>
-        <location line="+747"/>
+        <location line="-1036"/>
+        <location line="+749"/>
         <location line="+90"/>
-        <location line="+204"/>
+        <location line="+205"/>
         <source>Total Size of Downloads: %1</source>
         <translation>Dimensione totale dei download: %1</translation>
     </message>
     <message>
-        <location line="-293"/>
+        <location line="-294"/>
         <location line="+90"/>
-        <location line="+204"/>
+        <location line="+205"/>
         <source>Total Size Downloaded: %1</source>
         <translation>Dimensione totale scaricata: %1</translation>
     </message>
     <message>
-        <location line="-293"/>
+        <location line="-294"/>
         <location line="+90"/>
-        <location line="+204"/>
+        <location line="+205"/>
         <source>Total Size Left to Download: %1</source>
         <translation>Dimensione totale ancora da scaricare: %1</translation>
     </message>
@@ -25143,7 +25143,7 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
         <translation type="vanished">Spazio libero su disco: %1</translation>
     </message>
     <message>
-        <location line="-801"/>
+        <location line="-802"/>
         <source>Clients Seen: ≈%1</source>
         <translation>Client visti: ≈%1</translation>
     </message>
@@ -25158,13 +25158,13 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
         <translation>Non in esecuzione</translation>
     </message>
     <message>
-        <location line="-748"/>
-        <location line="+750"/>
+        <location line="-750"/>
+        <location line="+752"/>
         <source>Connecting</source>
         <translation>Connessione</translation>
     </message>
     <message>
-        <location line="-1791"/>
+        <location line="-1793"/>
         <location line="+113"/>
         <source>Average (%1 mins)</source>
         <translation>Media (%1 min)</translation>
@@ -25547,7 +25547,7 @@ Verranno pubblicati con l&apos;indirizzo di questo nodo: chiunque può vedere ch
         <translation>N/D</translation>
     </message>
     <message>
-        <location line="+127"/>
+        <location line="+129"/>
         <source>Status: Running on UDP port %1</source>
         <translation>Stato: in esecuzione sulla porta UDP %1</translation>
     </message>
@@ -25881,20 +25881,20 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
         <translation>Errore: %1</translation>
     </message>
     <message>
-        <location line="-2213"/>
+        <location line="-2215"/>
         <location line="+11"/>
-        <location line="+2123"/>
+        <location line="+2125"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
         <location line="+204"/>
-        <location line="+507"/>
+        <location line="+508"/>
         <source>Open Connections: %1</source>
         <translation>Connessioni aperte: %1</translation>
     </message>
     <message>
-        <location line="-503"/>
+        <location line="-504"/>
         <source>Network Traffic: %1</source>
         <translation>Traffico di rete: %1</translation>
     </message>
@@ -25911,7 +25911,12 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
         <translation>Massimo di record pubblicati: %1</translation>
     </message>
     <message>
-        <location line="+62"/>
+        <location line="+61"/>
+        <source>Release Previews: %1 %2</source>
+        <translation>Anteprime delle release: %1 %2</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Articles</source>
         <translation>Articoli</translation>
     </message>
@@ -26144,34 +26149,34 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
         <translation>Corrispondenze dei feed: %1</translation>
     </message>
     <message>
-        <location line="-282"/>
+        <location line="-283"/>
         <location line="+88"/>
-        <location line="+205"/>
+        <location line="+206"/>
         <source>Downloading: %1</source>
         <translation>In download: %1</translation>
     </message>
     <message>
-        <location line="-291"/>
+        <location line="-292"/>
         <location line="+87"/>
-        <location line="+205"/>
+        <location line="+206"/>
         <source>Queued: %1</source>
         <translation>In coda: %1</translation>
     </message>
     <message>
-        <location line="-291"/>
+        <location line="-292"/>
         <location line="+89"/>
-        <location line="+203"/>
+        <location line="+204"/>
         <source>Paused: %1</source>
         <translation>In pausa: %1</translation>
     </message>
     <message>
-        <location line="-291"/>
-        <location line="+292"/>
+        <location line="-292"/>
+        <location line="+293"/>
         <source>Checking: %1</source>
         <translation>In controllo: %1</translation>
     </message>
     <message>
-        <location line="-151"/>
+        <location line="-152"/>
         <source>Connections: %1</source>
         <translation>Connessioni: %1</translation>
     </message>
@@ -26254,9 +26259,9 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
         <translation>Richieste in coda: %1</translation>
     </message>
     <message>
-        <location line="-2288"/>
+        <location line="-2290"/>
         <location line="+11"/>
-        <location line="+2284"/>
+        <location line="+2286"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -26362,7 +26367,7 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
         <translation>Crediti</translation>
     </message>
     <message>
-        <location line="+102"/>
+        <location line="+103"/>
         <source>Post-Processing: %1</source>
         <translation>Post-elaborazione: %1</translation>
     </message>
@@ -26418,8 +26423,8 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
         <translation>Tipo 4, morto: %1 %2</translation>
     </message>
     <message>
-        <location line="-206"/>
-        <location line="+207"/>
+        <location line="-207"/>
+        <location line="+208"/>
         <source>Most Contacts: %1</source>
         <translation>Massimo di contatti: %1</translation>
     </message>
@@ -26604,8 +26609,8 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
         <translation>Nodi</translation>
     </message>
     <message>
-        <location line="-2222"/>
-        <location line="+2225"/>
+        <location line="-2225"/>
+        <location line="+2228"/>
         <source>By Country</source>
         <translation>Per paese</translation>
     </message>
@@ -26615,8 +26620,8 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
         <translation>Nodi che ci hanno inviato un pacchetto, in base al paese dell&apos;indirizzo di provenienza.</translation>
     </message>
     <message>
-        <location line="-2252"/>
-        <location line="+2256"/>
+        <location line="-2255"/>
+        <location line="+2259"/>
         <source>Network</source>
         <translation>Rete</translation>
     </message>
@@ -26711,12 +26716,12 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
         <translation>Blocchi trovati in Kad: %1</translation>
     </message>
     <message>
-        <location line="-1168"/>
+        <location line="-1169"/>
         <location line="+56"/>
         <location line="+1"/>
         <location line="+1"/>
         <location line="+10"/>
-        <location line="+1189"/>
+        <location line="+1190"/>
         <source>n/a</source>
         <translation>n/d</translation>
     </message>

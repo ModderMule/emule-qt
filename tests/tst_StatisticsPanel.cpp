@@ -45,10 +45,11 @@ QCborMap server(const QString& id, const QString& name, NntpQuotaKind kind, qint
 }
 
 /// A busy session, in the shape handleGetUsenetStats() sends.
-QCborMap reply(bool withBlockAccount = true)
+QCborMap reply(bool withBlockAccount = true, qint64 previewBytes = 0)
 {
     UsenetCounters s;
-    s.wireBytes = 1'650'000'000;
+    s.wireBytes = 1'650'000'000 + previewBytes;
+    s.previewBytes = previewBytes;
     s.decodedBytes = 1'600'000'000;
     s.downloadTimeMs = 3'600'000;
     s.maxDownRate = 6'000'000;
@@ -252,6 +253,7 @@ private slots:
     void hosterBranchCarriesCountersAndLinks();
     void ed3kBranchShowsStatusQueueAndCredits();
     void sessionRowsCarryValuesAndShares();
+    void previewTrafficIsNeitherOverheadNorRate();
     void cumulativeLeavesOutTheLiveRows();
     void newsServersAreUpdatedInPlace();
     void ratioReadsFromTheLargerSide();
@@ -1238,11 +1240,13 @@ QTreeWidgetItem* path(QTreeWidget* tree, const QStringList& names)
     return item;
 }
 
+/// The rows a user sees: hidden ones (e.g. a save folder of a network that is off) left out.
 QStringList childTexts(QTreeWidgetItem* parent)
 {
     QStringList out;
     for (int i = 0; parent && i < parent->childCount(); ++i)
-        out << parent->child(i)->text(0);
+        if (!parent->child(i)->isHidden())
+            out << parent->child(i)->text(0);
     return out;
 }
 
@@ -1519,6 +1523,19 @@ void tst_StatisticsPanel::diskSpaceShowsShareAndShortfall()
                               .arg(formatByteSize(4 * gib), formatByteSize(2 * gib)),
                           QStringLiteral("Additional Space Needed for Downloads: %1")
                               .arg(formatByteSize(6 * gib))}));
+
+    // a save folder per network that is on; unknown free space reads N/A
+    panel.updateTree(QCborMap{
+        {QStringLiteral("saveFolderSpace"),
+         QCborMap{{QStringLiteral("incoming"),
+                   QCborMap{{QStringLiteral("path"), QStringLiteral("/data/Incoming")},
+                            {QStringLiteral("free"), 3 * gib}}},
+                  {QStringLiteral("usenet"), QCborMap{{QStringLiteral("path"), QStringLiteral("/data/Usenet")}}}}},
+    });
+    const QStringList rows = childTexts(disk);
+    QCOMPARE(rows.size(), 8);
+    QCOMPARE(rows.at(6), QStringLiteral("Free Space in Incoming: %1").arg(formatByteSize(3 * gib)));
+    QCOMPARE(rows.at(7), QStringLiteral("Free Space for Usenet: N/A"));
 }
 
 // MFC OScopeCtrl.cpp:137-139, 598-608: a sample is a pixel and the newest one sits at
@@ -1663,6 +1680,23 @@ void tst_StatisticsPanel::treeRemembersExpansionThreeLevelsDeep()
     StatisticsPanel again;
     QVERIFY(!path(again)[2]->isExpanded());
     QVERIFY(path(again)[1]->isExpanded());
+}
+
+void tst_StatisticsPanel::previewTrafficIsNeitherOverheadNorRate()
+{
+    StatisticsPanel panel;
+    panel.applyUsenetStats(reply(true, 350'000'000));   // 2 GB on the wire
+    auto* tree = panel.findChild<QTreeWidget*>();
+    QTreeWidgetItem* general = childNamed(usenetRoot(tree)->child(0), QStringLiteral("General"));
+    QTreeWidgetItem* traffic = childNamed(general, QStringLiteral("Network Traffic:"));
+    QCOMPARE(traffic->text(0), QStringLiteral("Network Traffic: %1").arg(formatByteSize(2'000'000'000)));
+    QCOMPARE(childNamed(traffic, QStringLiteral("Release Previews:"))->text(0),
+             QStringLiteral("Release Previews: %1 (17.5%)").arg(formatByteSize(350'000'000)));
+    // same 50 MB overhead and rate as without previews
+    QCOMPARE(childNamed(traffic, QStringLiteral("Overhead:"))->text(0),
+             QStringLiteral("Overhead: %1 (2.5%)").arg(formatByteSize(50'000'000)));
+    QCOMPARE(childNamed(general, QStringLiteral("Average Download Rate:"))->text(0),
+             QStringLiteral("Average Download Rate: %1").arg(formatByteRate(1'650'000'000 / 3600)));
 }
 
 QTEST_MAIN(tst_StatisticsPanel)

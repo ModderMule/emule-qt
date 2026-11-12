@@ -110,7 +110,7 @@ emuleqt (GUI)  ←—  IPC/CBOR over TCP  —→  emulecored (Daemon)
 
 - Report bugs and suggest features via [GitHub Issues](https://github.com/ModderMule/emule-qt/issues)
 - Submit pull requests
-- Add translations using Qt Linguist (see `lang/`)
+- run nodes 24/7 to support the new ed3k network!
 
 ## License
 

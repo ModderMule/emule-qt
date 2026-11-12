@@ -23520,13 +23520,13 @@ They are then published with this node&apos;s address: anyone can see that this 
         <location line="+8"/>
         <location line="+67"/>
         <location line="+69"/>
-        <location line="+302"/>
-        <location line="+1104"/>
+        <location line="+304"/>
+        <location line="+1105"/>
         <source>Unknown</source>
         <translation>Неизвестно</translation>
     </message>
     <message>
-        <location line="-2648"/>
+        <location line="-2651"/>
         <location line="+11"/>
         <source>Session average</source>
         <translation>Среднее за сессию</translation>
@@ -23539,12 +23539,12 @@ They are then published with this node&apos;s address: anyone can see that this 
     </message>
     <message>
         <location line="-9"/>
-        <location line="+2430"/>
+        <location line="+2433"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="-2427"/>
+        <location line="-2430"/>
         <source>Download Speed</source>
         <translation>Скорость приёма</translation>
     </message>
@@ -23592,12 +23592,12 @@ They are then published with this node&apos;s address: anyone can see that this 
         <location line="+3"/>
         <location line="+751"/>
         <location line="+45"/>
-        <location line="+1186"/>
+        <location line="+1188"/>
         <source>Waiting...</source>
         <translation>Ожидание...</translation>
     </message>
     <message>
-        <location line="-1981"/>
+        <location line="-1983"/>
         <location line="+686"/>
         <source>Session UL:DL Ratio: %1</source>
         <translation>Соотношение От:Пр сессии: %1</translation>
@@ -23619,27 +23619,27 @@ They are then published with this node&apos;s address: anyone can see that this 
         <location line="+165"/>
         <location line="+25"/>
         <location line="+402"/>
-        <location line="+2058"/>
+        <location line="+2061"/>
         <source>Uploads</source>
         <translation>Отдача</translation>
     </message>
     <message>
-        <location line="-2646"/>
+        <location line="-2649"/>
         <location line="+67"/>
         <location line="+83"/>
         <location line="+56"/>
         <location line="+43"/>
-        <location line="+1804"/>
+        <location line="+1806"/>
         <location line="+90"/>
         <location line="+76"/>
-        <location line="+129"/>
+        <location line="+130"/>
         <location line="+166"/>
         <location line="+121"/>
         <source>Session</source>
         <translation>Сессия</translation>
     </message>
     <message>
-        <location line="-2632"/>
+        <location line="-2635"/>
         <location line="+35"/>
         <source>Uploaded Data: 0 Bytes</source>
         <translation>Отданные данные: 0 байт</translation>
@@ -23739,28 +23739,28 @@ They are then published with this node&apos;s address: anyone can see that this 
         <location line="+66"/>
         <location line="+41"/>
         <location line="+32"/>
-        <location line="+1809"/>
+        <location line="+1811"/>
         <location line="+90"/>
         <location line="+76"/>
-        <location line="+129"/>
+        <location line="+130"/>
         <location line="+162"/>
         <location line="+125"/>
         <source>Cumulative</source>
         <translation>Суммарное</translation>
     </message>
     <message>
-        <location line="-2577"/>
+        <location line="-2580"/>
         <location line="+105"/>
         <location line="+24"/>
         <location line="+411"/>
-        <location line="+1503"/>
-        <location line="+164"/>
+        <location line="+1505"/>
+        <location line="+165"/>
         <location line="+380"/>
         <source>Downloads</source>
         <translation>Приём</translation>
     </message>
     <message>
-        <location line="-2580"/>
+        <location line="-2583"/>
         <location line="+43"/>
         <source>Downloaded Data: 0 Bytes</source>
         <translation>Принятые данные: 0 байт</translation>
@@ -23828,7 +23828,7 @@ They are then published with this node&apos;s address: anyone can see that this 
     <message>
         <location line="+7"/>
         <location line="+26"/>
-        <location line="+1818"/>
+        <location line="+1820"/>
         <location line="+87"/>
         <location line="+86"/>
         <location line="+79"/>
@@ -23836,7 +23836,7 @@ They are then published with this node&apos;s address: anyone can see that this 
         <translation>Основные</translation>
     </message>
     <message>
-        <location line="-2094"/>
+        <location line="-2096"/>
         <location line="+26"/>
         <location line="+774"/>
         <location line="+33"/>
@@ -23955,12 +23955,12 @@ They are then published with this node&apos;s address: anyone can see that this 
     </message>
     <message>
         <location line="+3"/>
-        <location line="+2256"/>
+        <location line="+2259"/>
         <source>Network</source>
         <translation>Сеть</translation>
     </message>
     <message>
-        <location line="-2250"/>
+        <location line="-2253"/>
         <source>Low ID: 0 (0.0%)</source>
         <translation>Low ID: 0 (0.0%)</translation>
     </message>
@@ -23991,12 +23991,12 @@ They are then published with this node&apos;s address: anyone can see that this 
     </message>
     <message>
         <location line="+2"/>
-        <location line="+2225"/>
+        <location line="+2228"/>
         <source>By Country</source>
         <translation>По странам</translation>
     </message>
     <message>
-        <location line="-2224"/>
+        <location line="-2227"/>
         <source>Clients by the country of the address they connected from.</source>
         <translation>Клиенты по стране адреса, с которого они соединились.</translation>
     </message>
@@ -24197,12 +24197,12 @@ They are then published with this node&apos;s address: anyone can see that this 
     <message>
         <location line="+68"/>
         <location line="+74"/>
-        <location line="+1255"/>
+        <location line="+1257"/>
         <source>Uploaded Data: %1</source>
         <translation>Отданные данные: %1</translation>
     </message>
     <message>
-        <location line="-1318"/>
+        <location line="-1320"/>
         <location line="+73"/>
         <location line="+57"/>
         <location line="+99"/>
@@ -24289,14 +24289,14 @@ They are then published with this node&apos;s address: anyone can see that this 
     <message>
         <location line="+68"/>
         <location line="+99"/>
-        <location line="+1098"/>
+        <location line="+1100"/>
         <location line="+80"/>
         <location line="+166"/>
         <source>Downloaded Data: %1</source>
         <translation>Принятые данные: %1</translation>
     </message>
     <message>
-        <location line="-1425"/>
+        <location line="-1427"/>
         <source>Active Downloads (chunks): %1</source>
         <translation>Активно на приём (части): %1</translation>
     </message>
@@ -24332,12 +24332,12 @@ They are then published with this node&apos;s address: anyone can see that this 
     </message>
     <message>
         <location line="+0"/>
-        <location line="+750"/>
+        <location line="+752"/>
         <source>Connecting</source>
         <translation>Соединение</translation>
     </message>
     <message>
-        <location line="-750"/>
+        <location line="-752"/>
         <source>Connecting via server</source>
         <translation>Соединение через сервер</translation>
     </message>
@@ -24400,13 +24400,13 @@ They are then published with this node&apos;s address: anyone can see that this 
     <message>
         <location line="+5"/>
         <location line="+61"/>
-        <location line="+1092"/>
+        <location line="+1094"/>
         <location line="+84"/>
         <source>Completed Downloads: %1</source>
         <translation>Завершённые загрузки: %1</translation>
     </message>
     <message>
-        <location line="-1226"/>
+        <location line="-1228"/>
         <location line="+10"/>
         <source>Average Download Per Session: %1</source>
         <translation>Средний приём за сеанс: %1</translation>
@@ -24475,28 +24475,28 @@ They are then published with this node&apos;s address: anyone can see that this 
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1020"/>
+        <location line="+1022"/>
         <location line="+175"/>
         <source>Upload Speed: %1</source>
         <translation>Скорость отдачи: %1</translation>
     </message>
     <message>
-        <location line="-1194"/>
+        <location line="-1196"/>
         <location line="+17"/>
-        <location line="+1006"/>
+        <location line="+1008"/>
         <location line="+173"/>
         <source>Max Upload Rate: %1</source>
         <translation>Макс. скорость отдачи: %1</translation>
     </message>
     <message>
-        <location line="-1195"/>
+        <location line="-1197"/>
         <location line="+17"/>
         <source>Max Average Upload Rate: %1</source>
         <translation>Макс. средняя скорость отдачи: %1</translation>
     </message>
     <message>
         <location line="-16"/>
-        <location line="+1016"/>
+        <location line="+1018"/>
         <location line="+87"/>
         <location line="+86"/>
         <location line="+79"/>
@@ -24504,9 +24504,9 @@ They are then published with this node&apos;s address: anyone can see that this 
         <translation>Скорость приёма: %1</translation>
     </message>
     <message>
-        <location line="-1267"/>
+        <location line="-1269"/>
         <location line="+17"/>
-        <location line="+1001"/>
+        <location line="+1003"/>
         <location line="+86"/>
         <location line="+86"/>
         <location line="+79"/>
@@ -24514,21 +24514,21 @@ They are then published with this node&apos;s address: anyone can see that this 
         <translation>Макс. скорость приёма: %1</translation>
     </message>
     <message>
-        <location line="-1268"/>
+        <location line="-1270"/>
         <location line="+17"/>
         <source>Max Average Download Rate: %1</source>
         <translation>Макс. средняя скорость приёма: %1</translation>
     </message>
     <message>
         <location line="-5"/>
-        <location line="+1006"/>
+        <location line="+1008"/>
         <location line="+173"/>
         <source>Average Upload Rate: %1</source>
         <translation>Средняя скорость отдачи: %1</translation>
     </message>
     <message>
-        <location line="-1176"/>
-        <location line="+1001"/>
+        <location line="-1178"/>
+        <location line="+1003"/>
         <location line="+86"/>
         <location line="+86"/>
         <location line="+79"/>
@@ -24536,7 +24536,7 @@ They are then published with this node&apos;s address: anyone can see that this 
         <translation>Средняя скорость приёма: %1</translation>
     </message>
     <message>
-        <location line="-1239"/>
+        <location line="-1241"/>
         <location line="+5"/>
         <source>Time Since Last Reset: %1</source>
         <translation>Прошло с момента сброса статистики: %1</translation>
@@ -24555,15 +24555,15 @@ They are then published with this node&apos;s address: anyone can see that this 
     <message>
         <location line="-18"/>
         <location line="+20"/>
-        <location line="+948"/>
+        <location line="+950"/>
         <location line="+173"/>
         <source>Upload Time: %1 %2</source>
         <translation>Время отдачи: %1 %2</translation>
     </message>
     <message>
-        <location line="-1139"/>
+        <location line="-1141"/>
         <location line="+20"/>
-        <location line="+945"/>
+        <location line="+947"/>
         <location line="+84"/>
         <location line="+89"/>
         <location line="+76"/>
@@ -24571,7 +24571,7 @@ They are then published with this node&apos;s address: anyone can see that this 
         <translation>Время приёма: %1 %2</translation>
     </message>
     <message>
-        <location line="-1212"/>
+        <location line="-1214"/>
         <source>Current Server Duration: %1 %2</source>
         <translation>Соединён с текущим сервером: %1 %2</translation>
     </message>
@@ -24724,20 +24724,20 @@ They are then published with this node&apos;s address: anyone can see that this 
     </message>
     <message>
         <location line="+10"/>
-        <location line="+1034"/>
+        <location line="+1037"/>
         <source>Number of Downloads: %1</source>
         <translation>Число загрузок: %1</translation>
     </message>
     <message>
-        <location line="-1033"/>
-        <location line="+747"/>
+        <location line="-1036"/>
+        <location line="+749"/>
         <location line="+90"/>
-        <location line="+204"/>
+        <location line="+205"/>
         <source>Total Size of Downloads: %1</source>
         <translation>Общий размер загрузок: %1</translation>
     </message>
     <message>
-        <location line="-1040"/>
+        <location line="-1043"/>
         <source>Total Completed Size: %1 (%2%)</source>
         <translation>Всего загружено: %1 (%2%)</translation>
     </message>
@@ -24787,7 +24787,7 @@ They are then published with this node&apos;s address: anyone can see that this 
         <translation>н/д</translation>
     </message>
     <message>
-        <location line="+127"/>
+        <location line="+129"/>
         <source>Status: Running on UDP port %1</source>
         <translation>Статус: Работает на UDP-порту %1</translation>
     </message>
@@ -25136,20 +25136,20 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>Ошибка: %1</translation>
     </message>
     <message>
-        <location line="-2213"/>
+        <location line="-2215"/>
         <location line="+11"/>
-        <location line="+2123"/>
+        <location line="+2125"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
         <location line="+204"/>
-        <location line="+507"/>
+        <location line="+508"/>
         <source>Open Connections: %1</source>
         <translation>Открытые соединения: %1</translation>
     </message>
     <message>
-        <location line="-506"/>
+        <location line="-507"/>
         <source>Active Connections: %1</source>
         <translation>Активные соединения: %1</translation>
     </message>
@@ -25172,7 +25172,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>Служебный трафик: %1 %2</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
         <source>Articles</source>
         <translation>Статьи</translation>
     </message>
@@ -25416,29 +25416,29 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>Совпадения в лентах: %1</translation>
     </message>
     <message>
-        <location line="-282"/>
+        <location line="-283"/>
         <location line="+88"/>
-        <location line="+205"/>
+        <location line="+206"/>
         <source>Downloading: %1</source>
         <translation>Загружается: %1</translation>
     </message>
     <message>
-        <location line="-291"/>
+        <location line="-292"/>
         <location line="+87"/>
-        <location line="+205"/>
+        <location line="+206"/>
         <source>Queued: %1</source>
         <translation>В очереди: %1</translation>
     </message>
     <message>
-        <location line="-291"/>
+        <location line="-292"/>
         <location line="+89"/>
-        <location line="+203"/>
+        <location line="+204"/>
         <source>Paused: %1</source>
         <translation>На паузе: %1</translation>
     </message>
     <message>
-        <location line="-291"/>
-        <location line="+292"/>
+        <location line="-292"/>
+        <location line="+293"/>
         <source>Checking: %1</source>
         <translation>Проверяется: %1</translation>
     </message>
@@ -25453,21 +25453,21 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>Завершено: %1</translation>
     </message>
     <message>
-        <location line="-292"/>
+        <location line="-293"/>
         <location line="+90"/>
-        <location line="+204"/>
+        <location line="+205"/>
         <source>Total Size Downloaded: %1</source>
         <translation>Всего загружено: %1</translation>
     </message>
     <message>
-        <location line="-293"/>
+        <location line="-294"/>
         <location line="+90"/>
-        <location line="+204"/>
+        <location line="+205"/>
         <source>Total Size Left to Download: %1</source>
         <translation>Осталось загрузить: %1</translation>
     </message>
     <message>
-        <location line="-157"/>
+        <location line="-158"/>
         <source>Connections: %1</source>
         <translation>Соединения: %1</translation>
     </message>
@@ -25550,9 +25550,9 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>Запросов в очереди: %1</translation>
     </message>
     <message>
-        <location line="-2288"/>
+        <location line="-2290"/>
         <location line="+11"/>
-        <location line="+2284"/>
+        <location line="+2286"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -25658,7 +25658,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>Кредиты</translation>
     </message>
     <message>
-        <location line="+130"/>
+        <location line="+131"/>
         <source>News Servers</source>
         <translation>News-серверы</translation>
     </message>
@@ -25704,18 +25704,23 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>Тип 4, мёртвый: %1 %2</translation>
     </message>
     <message>
-        <location line="-206"/>
-        <location line="+207"/>
+        <location line="-207"/>
+        <location line="+208"/>
         <source>Most Contacts: %1</source>
         <translation>Макс. контактов: %1</translation>
     </message>
     <message>
-        <location line="-190"/>
+        <location line="-191"/>
         <source>Most Records Published: %1</source>
         <translation>Максимум опубликованных записей: %1</translation>
     </message>
     <message>
-        <location line="+191"/>
+        <location line="+61"/>
+        <source>Release Previews: %1 %2</source>
+        <translation>Предпросмотр релизов: %1 %2</translation>
+    </message>
+    <message>
+        <location line="+131"/>
         <source>Contacts Added: %1</source>
         <translation>Добавлено контактов: %1</translation>
     </message>
@@ -25995,12 +26000,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>HTTP Cache</translation>
     </message>
     <message>
-        <location line="-1181"/>
+        <location line="-1182"/>
         <location line="+56"/>
         <location line="+1"/>
         <location line="+1"/>
         <location line="+10"/>
-        <location line="+1189"/>
+        <location line="+1190"/>
         <source>n/a</source>
         <translation>н/д</translation>
     </message>

@@ -1525,6 +1525,7 @@ void UsenetQueue::chargeUsage(const QString& accountId, qint64 bytes)
     if (accountId.isEmpty() || bytes <= 0)
         return;
     m_usage.add(accountId, bytes);
+    m_stats.notePreview(accountId, bytes);
     refreshQuotaState();
 }
 

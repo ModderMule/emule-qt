@@ -127,6 +127,19 @@ void UsenetStatistics::noteResult(const UsenetFetchResult& result)
         ++server->errors;
 }
 
+void UsenetStatistics::notePreview(const QString& accountId, qint64 bytes)
+{
+    const uint64 raw = nonNegative(bytes);
+    if (raw == 0)
+        return;
+    if (UsenetCounters* c = counters()) {
+        c->wireBytes += raw;
+        c->previewBytes += raw;
+    }
+    if (!accountId.isEmpty())
+        m_servers[accountId].wireBytes += raw;
+}
+
 void UsenetStatistics::noteItemFinished(bool success, qint64 bytes)
 {
     UsenetCounters* c = counters();

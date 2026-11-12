@@ -23447,13 +23447,13 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <location line="+8"/>
         <location line="+67"/>
         <location line="+69"/>
-        <location line="+302"/>
-        <location line="+1104"/>
+        <location line="+304"/>
+        <location line="+1105"/>
         <source>Unknown</source>
         <translation>Onbekend</translation>
     </message>
     <message>
-        <location line="-2648"/>
+        <location line="-2651"/>
         <location line="+11"/>
         <source>Session average</source>
         <translation>Sessiegemiddelde</translation>
@@ -23466,12 +23466,12 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     </message>
     <message>
         <location line="-9"/>
-        <location line="+2430"/>
+        <location line="+2433"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="-2427"/>
+        <location line="-2430"/>
         <source>Download Speed</source>
         <translation>Downloadsnelheid</translation>
     </message>
@@ -23519,12 +23519,12 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <location line="+3"/>
         <location line="+751"/>
         <location line="+45"/>
-        <location line="+1186"/>
+        <location line="+1188"/>
         <source>Waiting...</source>
         <translation>Wachten...</translation>
     </message>
     <message>
-        <location line="-1981"/>
+        <location line="-1983"/>
         <location line="+686"/>
         <source>Session UL:DL Ratio: %1</source>
         <translation>Sessie UL:DL-ratio: %1</translation>
@@ -23546,27 +23546,27 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <location line="+165"/>
         <location line="+25"/>
         <location line="+402"/>
-        <location line="+2058"/>
+        <location line="+2061"/>
         <source>Uploads</source>
         <translation>Uploads</translation>
     </message>
     <message>
-        <location line="-2646"/>
+        <location line="-2649"/>
         <location line="+67"/>
         <location line="+83"/>
         <location line="+56"/>
         <location line="+43"/>
-        <location line="+1804"/>
+        <location line="+1806"/>
         <location line="+90"/>
         <location line="+76"/>
-        <location line="+129"/>
+        <location line="+130"/>
         <location line="+166"/>
         <location line="+121"/>
         <source>Session</source>
         <translation>Sessie</translation>
     </message>
     <message>
-        <location line="-2632"/>
+        <location line="-2635"/>
         <location line="+35"/>
         <source>Uploaded Data: 0 Bytes</source>
         <translation>Geüploade data: 0 bytes</translation>
@@ -23666,28 +23666,28 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <location line="+66"/>
         <location line="+41"/>
         <location line="+32"/>
-        <location line="+1809"/>
+        <location line="+1811"/>
         <location line="+90"/>
         <location line="+76"/>
-        <location line="+129"/>
+        <location line="+130"/>
         <location line="+162"/>
         <location line="+125"/>
         <source>Cumulative</source>
         <translation>Cumulatief</translation>
     </message>
     <message>
-        <location line="-2577"/>
+        <location line="-2580"/>
         <location line="+105"/>
         <location line="+24"/>
         <location line="+411"/>
-        <location line="+1503"/>
-        <location line="+164"/>
+        <location line="+1505"/>
+        <location line="+165"/>
         <location line="+380"/>
         <source>Downloads</source>
         <translation>Downloads</translation>
     </message>
     <message>
-        <location line="-2580"/>
+        <location line="-2583"/>
         <location line="+43"/>
         <source>Downloaded Data: 0 Bytes</source>
         <translation>Gedownloade data: 0 bytes</translation>
@@ -23755,7 +23755,7 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     <message>
         <location line="+7"/>
         <location line="+26"/>
-        <location line="+1818"/>
+        <location line="+1820"/>
         <location line="+87"/>
         <location line="+86"/>
         <location line="+79"/>
@@ -23763,7 +23763,7 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <translation>Algemeen</translation>
     </message>
     <message>
-        <location line="-2094"/>
+        <location line="-2096"/>
         <location line="+26"/>
         <location line="+774"/>
         <location line="+33"/>
@@ -23882,12 +23882,12 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     </message>
     <message>
         <location line="+3"/>
-        <location line="+2256"/>
+        <location line="+2259"/>
         <source>Network</source>
         <translation>Netwerk</translation>
     </message>
     <message>
-        <location line="-2250"/>
+        <location line="-2253"/>
         <source>Low ID: 0 (0.0%)</source>
         <translation>Laag-ID: 0 (0.0%)</translation>
     </message>
@@ -23918,12 +23918,12 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     </message>
     <message>
         <location line="+2"/>
-        <location line="+2225"/>
+        <location line="+2228"/>
         <source>By Country</source>
         <translation>Per land</translation>
     </message>
     <message>
-        <location line="-2224"/>
+        <location line="-2227"/>
         <source>Clients by the country of the address they connected from.</source>
         <translation>Cliënten per land van het adres waarvandaan ze verbonden.</translation>
     </message>
@@ -24124,12 +24124,12 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     <message>
         <location line="+68"/>
         <location line="+74"/>
-        <location line="+1255"/>
+        <location line="+1257"/>
         <source>Uploaded Data: %1</source>
         <translation>Geüploade data: %1</translation>
     </message>
     <message>
-        <location line="-1318"/>
+        <location line="-1320"/>
         <location line="+73"/>
         <location line="+57"/>
         <location line="+99"/>
@@ -24216,14 +24216,14 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     <message>
         <location line="+68"/>
         <location line="+99"/>
-        <location line="+1098"/>
+        <location line="+1100"/>
         <location line="+80"/>
         <location line="+166"/>
         <source>Downloaded Data: %1</source>
         <translation>Gedownloade data: %1</translation>
     </message>
     <message>
-        <location line="-1425"/>
+        <location line="-1427"/>
         <source>Active Downloads (chunks): %1</source>
         <translation>Actieve downloads (delen): %1</translation>
     </message>
@@ -24259,12 +24259,12 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     </message>
     <message>
         <location line="+0"/>
-        <location line="+750"/>
+        <location line="+752"/>
         <source>Connecting</source>
         <translation>Verbinden</translation>
     </message>
     <message>
-        <location line="-750"/>
+        <location line="-752"/>
         <source>Connecting via server</source>
         <translation>Verbinden via server</translation>
     </message>
@@ -24327,13 +24327,13 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     <message>
         <location line="+5"/>
         <location line="+61"/>
-        <location line="+1092"/>
+        <location line="+1094"/>
         <location line="+84"/>
         <source>Completed Downloads: %1</source>
         <translation>Voltooide downloads: %1</translation>
     </message>
     <message>
-        <location line="-1226"/>
+        <location line="-1228"/>
         <location line="+10"/>
         <source>Average Download Per Session: %1</source>
         <translation>Gemiddelde download per sessie: %1</translation>
@@ -24402,28 +24402,28 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1020"/>
+        <location line="+1022"/>
         <location line="+175"/>
         <source>Upload Speed: %1</source>
         <translation>Uploadsnelheid: %1</translation>
     </message>
     <message>
-        <location line="-1194"/>
+        <location line="-1196"/>
         <location line="+17"/>
-        <location line="+1006"/>
+        <location line="+1008"/>
         <location line="+173"/>
         <source>Max Upload Rate: %1</source>
         <translation>Max. uploadsnelheid: %1</translation>
     </message>
     <message>
-        <location line="-1195"/>
+        <location line="-1197"/>
         <location line="+17"/>
         <source>Max Average Upload Rate: %1</source>
         <translation>Max. gemiddelde uploadsnelheid: %1</translation>
     </message>
     <message>
         <location line="-16"/>
-        <location line="+1016"/>
+        <location line="+1018"/>
         <location line="+87"/>
         <location line="+86"/>
         <location line="+79"/>
@@ -24431,9 +24431,9 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <translation>Downloadsnelheid: %1</translation>
     </message>
     <message>
-        <location line="-1267"/>
+        <location line="-1269"/>
         <location line="+17"/>
-        <location line="+1001"/>
+        <location line="+1003"/>
         <location line="+86"/>
         <location line="+86"/>
         <location line="+79"/>
@@ -24441,21 +24441,21 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <translation>Max. downloadsnelheid: %1</translation>
     </message>
     <message>
-        <location line="-1268"/>
+        <location line="-1270"/>
         <location line="+17"/>
         <source>Max Average Download Rate: %1</source>
         <translation>Max. gemiddelde downloadsnelheid: %1</translation>
     </message>
     <message>
         <location line="-5"/>
-        <location line="+1006"/>
+        <location line="+1008"/>
         <location line="+173"/>
         <source>Average Upload Rate: %1</source>
         <translation>Gemiddelde uploadsnelheid: %1</translation>
     </message>
     <message>
-        <location line="-1176"/>
-        <location line="+1001"/>
+        <location line="-1178"/>
+        <location line="+1003"/>
         <location line="+86"/>
         <location line="+86"/>
         <location line="+79"/>
@@ -24463,7 +24463,7 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <translation>Gemiddelde downloadsnelheid: %1</translation>
     </message>
     <message>
-        <location line="-1239"/>
+        <location line="-1241"/>
         <location line="+5"/>
         <source>Time Since Last Reset: %1</source>
         <translation>Tijd sinds laatste reset: %1</translation>
@@ -24482,15 +24482,15 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     <message>
         <location line="-18"/>
         <location line="+20"/>
-        <location line="+948"/>
+        <location line="+950"/>
         <location line="+173"/>
         <source>Upload Time: %1 %2</source>
         <translation>Uploadtijd: %1 %2</translation>
     </message>
     <message>
-        <location line="-1139"/>
+        <location line="-1141"/>
         <location line="+20"/>
-        <location line="+945"/>
+        <location line="+947"/>
         <location line="+84"/>
         <location line="+89"/>
         <location line="+76"/>
@@ -24498,7 +24498,7 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <translation>Downloadtijd: %1 %2</translation>
     </message>
     <message>
-        <location line="-1212"/>
+        <location line="-1214"/>
         <source>Current Server Duration: %1 %2</source>
         <translation>Tijd op actieve server: %1 %2</translation>
     </message>
@@ -24651,20 +24651,20 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
     </message>
     <message>
         <location line="+10"/>
-        <location line="+1034"/>
+        <location line="+1037"/>
         <source>Number of Downloads: %1</source>
         <translation>Aantal downloads: %1</translation>
     </message>
     <message>
-        <location line="-1033"/>
-        <location line="+747"/>
+        <location line="-1036"/>
+        <location line="+749"/>
         <location line="+90"/>
-        <location line="+204"/>
+        <location line="+205"/>
         <source>Total Size of Downloads: %1</source>
         <translation>Totale grootte van downloads: %1</translation>
     </message>
     <message>
-        <location line="-1040"/>
+        <location line="-1043"/>
         <source>Total Completed Size: %1 (%2%)</source>
         <translation>Totaal voltooid: %1 (%2%)</translation>
     </message>
@@ -24714,7 +24714,7 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <translation>n.v.t.</translation>
     </message>
     <message>
-        <location line="+127"/>
+        <location line="+129"/>
         <source>Status: Running on UDP port %1</source>
         <translation>Status: Actief op UDP-poort %1</translation>
     </message>
@@ -25063,20 +25063,20 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>Fout: %1</translation>
     </message>
     <message>
-        <location line="-2213"/>
+        <location line="-2215"/>
         <location line="+11"/>
-        <location line="+2123"/>
+        <location line="+2125"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
         <location line="+204"/>
-        <location line="+507"/>
+        <location line="+508"/>
         <source>Open Connections: %1</source>
         <translation>Open verbindingen: %1</translation>
     </message>
     <message>
-        <location line="-506"/>
+        <location line="-507"/>
         <source>Active Connections: %1</source>
         <translation>Actieve verbindingen: %1</translation>
     </message>
@@ -25099,7 +25099,7 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>Overhead: %1 %2</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
         <source>Articles</source>
         <translation>Artikelen</translation>
     </message>
@@ -25343,29 +25343,29 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>Feedtreffers: %1</translation>
     </message>
     <message>
-        <location line="-282"/>
+        <location line="-283"/>
         <location line="+88"/>
-        <location line="+205"/>
+        <location line="+206"/>
         <source>Downloading: %1</source>
         <translation>Downloaden: %1</translation>
     </message>
     <message>
-        <location line="-291"/>
+        <location line="-292"/>
         <location line="+87"/>
-        <location line="+205"/>
+        <location line="+206"/>
         <source>Queued: %1</source>
         <translation>In wachtrij: %1</translation>
     </message>
     <message>
-        <location line="-291"/>
+        <location line="-292"/>
         <location line="+89"/>
-        <location line="+203"/>
+        <location line="+204"/>
         <source>Paused: %1</source>
         <translation>Gepauzeerd: %1</translation>
     </message>
     <message>
-        <location line="-291"/>
-        <location line="+292"/>
+        <location line="-292"/>
+        <location line="+293"/>
         <source>Checking: %1</source>
         <translation>Controleren: %1</translation>
     </message>
@@ -25380,21 +25380,21 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>Voltooid: %1</translation>
     </message>
     <message>
-        <location line="-292"/>
+        <location line="-293"/>
         <location line="+90"/>
-        <location line="+204"/>
+        <location line="+205"/>
         <source>Total Size Downloaded: %1</source>
         <translation>Totaal gedownload: %1</translation>
     </message>
     <message>
-        <location line="-293"/>
+        <location line="-294"/>
         <location line="+90"/>
-        <location line="+204"/>
+        <location line="+205"/>
         <source>Total Size Left to Download: %1</source>
         <translation>Nog te downloaden: %1</translation>
     </message>
     <message>
-        <location line="-157"/>
+        <location line="-158"/>
         <source>Connections: %1</source>
         <translation>Verbindingen: %1</translation>
     </message>
@@ -25477,9 +25477,9 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>Verzoeken in wachtrij: %1</translation>
     </message>
     <message>
-        <location line="-2288"/>
+        <location line="-2290"/>
         <location line="+11"/>
-        <location line="+2284"/>
+        <location line="+2286"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -25585,7 +25585,7 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>Credits</translation>
     </message>
     <message>
-        <location line="+130"/>
+        <location line="+131"/>
         <source>News Servers</source>
         <translation>Nieuwsservers</translation>
     </message>
@@ -25631,18 +25631,23 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>Type 4, dood: %1 %2</translation>
     </message>
     <message>
-        <location line="-206"/>
-        <location line="+207"/>
+        <location line="-207"/>
+        <location line="+208"/>
         <source>Most Contacts: %1</source>
         <translation>Max. contacten: %1</translation>
     </message>
     <message>
-        <location line="-190"/>
+        <location line="-191"/>
         <source>Most Records Published: %1</source>
         <translation>Meeste gepubliceerde records: %1</translation>
     </message>
     <message>
-        <location line="+191"/>
+        <location line="+61"/>
+        <source>Release Previews: %1 %2</source>
+        <translation>Release-voorbeelden: %1 %2</translation>
+    </message>
+    <message>
+        <location line="+131"/>
         <source>Contacts Added: %1</source>
         <translation>Contacten toegevoegd: %1</translation>
     </message>
@@ -25922,12 +25927,12 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>HTTP-cache</translation>
     </message>
     <message>
-        <location line="-1181"/>
+        <location line="-1182"/>
         <location line="+56"/>
         <location line="+1"/>
         <location line="+1"/>
         <location line="+10"/>
-        <location line="+1189"/>
+        <location line="+1190"/>
         <source>n/a</source>
         <translation>n.v.t.</translation>
     </message>

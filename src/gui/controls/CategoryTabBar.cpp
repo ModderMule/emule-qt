@@ -35,7 +35,12 @@ namespace {
 /// on, and makes that tab wide enough for it. Wraps the app style like the list headers.
 class BoldCurrentTabStyle : public TooltipDelayStyle {
 public:
-    explicit BoldCurrentTabStyle(QObject* parent) { setParent(parent); }
+    // App base style, not the desktop one: Win10 dark Fusion fallback (report #42)
+    explicit BoldCurrentTabStyle(QObject* parent)
+        : TooltipDelayStyle(createAppBaseStyle())
+    {
+        setParent(parent);
+    }
 
     void drawControl(ControlElement element, const QStyleOption* option, QPainter* painter,
                      const QWidget* widget) const override

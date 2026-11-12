@@ -514,7 +514,8 @@ public:
     bool setAccountUsage(const QString& accountId, qint64 periodBytes, qint64 totalBytes);
 
     /// Bytes read outside the queue (search Details › Images / NFO), charged to
-    /// @p accountId's meter like an article's. The next dispatch round sees it.
+    /// @p accountId's meter like an article's, and counted in Statistics as
+    /// preview traffic. The next dispatch round sees it.
     void chargeUsage(const QString& accountId, qint64 bytes);
 
 signals:

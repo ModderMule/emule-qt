@@ -23961,27 +23961,27 @@ They are then published with this node&apos;s address: anyone can see that this 
         <location line="+165"/>
         <location line="+25"/>
         <location line="+402"/>
-        <location line="+2058"/>
+        <location line="+2061"/>
         <source>Uploads</source>
         <translation>업로드</translation>
     </message>
     <message>
-        <location line="-2646"/>
+        <location line="-2649"/>
         <location line="+67"/>
         <location line="+83"/>
         <location line="+56"/>
         <location line="+43"/>
-        <location line="+1804"/>
+        <location line="+1806"/>
         <location line="+90"/>
         <location line="+76"/>
-        <location line="+129"/>
+        <location line="+130"/>
         <location line="+166"/>
         <location line="+121"/>
         <source>Session</source>
         <translation>세션</translation>
     </message>
     <message>
-        <location line="-2632"/>
+        <location line="-2635"/>
         <location line="+35"/>
         <source>Uploaded Data: 0 Bytes</source>
         <translation>업로드된 데이터: 0 Bytes</translation>
@@ -24033,14 +24033,14 @@ They are then published with this node&apos;s address: anyone can see that this 
         <location line="+105"/>
         <location line="+24"/>
         <location line="+411"/>
-        <location line="+1503"/>
-        <location line="+164"/>
+        <location line="+1505"/>
+        <location line="+165"/>
         <location line="+380"/>
         <source>Downloads</source>
         <translation>다운로드</translation>
     </message>
     <message>
-        <location line="-2580"/>
+        <location line="-2583"/>
         <location line="+43"/>
         <source>Downloaded Data: 0 Bytes</source>
         <translation>다운로드된 데이터: 0 Bytes</translation>
@@ -24181,17 +24181,17 @@ They are then published with this node&apos;s address: anyone can see that this 
         <location line="+66"/>
         <location line="+41"/>
         <location line="+32"/>
-        <location line="+1809"/>
+        <location line="+1811"/>
         <location line="+90"/>
         <location line="+76"/>
-        <location line="+129"/>
+        <location line="+130"/>
         <location line="+162"/>
         <location line="+125"/>
         <source>Cumulative</source>
         <translation>누적</translation>
     </message>
     <message>
-        <location line="-2561"/>
+        <location line="-2564"/>
         <location line="+43"/>
         <source>Completed Downloads: 0</source>
         <translation>완료된 다운로드: 0</translation>
@@ -24238,7 +24238,7 @@ They are then published with this node&apos;s address: anyone can see that this 
     <message>
         <location line="+15"/>
         <location line="+26"/>
-        <location line="+1818"/>
+        <location line="+1820"/>
         <location line="+87"/>
         <location line="+86"/>
         <location line="+79"/>
@@ -24250,7 +24250,7 @@ They are then published with this node&apos;s address: anyone can see that this 
         <translation type="vanished">평균 연결 수: 0.0</translation>
     </message>
     <message>
-        <location line="-2086"/>
+        <location line="-2088"/>
         <source>Upload Speed: 0 KB/s</source>
         <translation>업로드 속도: 0 KB/s</translation>
     </message>
@@ -24316,13 +24316,13 @@ They are then published with this node&apos;s address: anyone can see that this 
         <location line="+8"/>
         <location line="+67"/>
         <location line="+69"/>
-        <location line="+302"/>
-        <location line="+1104"/>
+        <location line="+304"/>
+        <location line="+1105"/>
         <source>Unknown</source>
         <translation>알 수 없음</translation>
     </message>
     <message>
-        <location line="-2682"/>
+        <location line="-2685"/>
         <source>Statistics Tree</source>
         <translation>통계 트리</translation>
     </message>
@@ -24334,20 +24334,20 @@ They are then published with this node&apos;s address: anyone can see that this 
     </message>
     <message>
         <location line="-1105"/>
-        <location line="+2430"/>
+        <location line="+2433"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="-2356"/>
+        <location line="-2359"/>
         <location line="+751"/>
         <location line="+45"/>
-        <location line="+1186"/>
+        <location line="+1188"/>
         <source>Waiting...</source>
         <translation>대기 중...</translation>
     </message>
     <message>
-        <location line="-1979"/>
+        <location line="-1981"/>
         <location line="+686"/>
         <source>Session UL:DL Ratio (Friends UL excluded): %1</source>
         <translation>세션 UL:DL 비율 (친구 업로드 제외): %1</translation>
@@ -24358,7 +24358,7 @@ They are then published with this node&apos;s address: anyone can see that this 
         <translation>UDP 파일 재요청: 0, 실패: 0 (0.0%)</translation>
     </message>
     <message>
-        <location line="+2180"/>
+        <location line="+2183"/>
         <source>Corrupt (Failed yEnc Check): %1</source>
         <translation>손상됨 (yEnc 검사 실패): %1</translation>
     </message>
@@ -24388,7 +24388,7 @@ They are then published with this node&apos;s address: anyone can see that this 
         <translation type="vanished">가져온 청크: 0</translation>
     </message>
     <message>
-        <location line="-2411"/>
+        <location line="-2414"/>
         <source>Run Time: 0:00:00</source>
         <translation>실행 시간: 0:00:00</translation>
     </message>
@@ -24558,12 +24558,12 @@ They are then published with this node&apos;s address: anyone can see that this 
     <message>
         <location line="+3"/>
         <location line="+74"/>
-        <location line="+1255"/>
+        <location line="+1257"/>
         <source>Uploaded Data: %1</source>
         <translation>업로드된 데이터: %1</translation>
     </message>
     <message>
-        <location line="-1318"/>
+        <location line="-1320"/>
         <location line="+73"/>
         <location line="+57"/>
         <location line="+99"/>
@@ -24609,13 +24609,13 @@ They are then published with this node&apos;s address: anyone can see that this 
         <translation type="vanished">성공: %1%2</translation>
     </message>
     <message>
-        <location line="+1568"/>
+        <location line="+1571"/>
         <location line="+49"/>
         <source>Failed: %1</source>
         <translation>실패: %1</translation>
     </message>
     <message>
-        <location line="-1593"/>
+        <location line="-1596"/>
         <location line="+45"/>
         <source>Average Upload Per Session: %1</source>
         <translation>세션당 평균 업로드: %1</translation>
@@ -24699,7 +24699,7 @@ They are then published with this node&apos;s address: anyone can see that this 
     <message>
         <location line="-132"/>
         <location line="+99"/>
-        <location line="+1098"/>
+        <location line="+1100"/>
         <location line="+80"/>
         <location line="+166"/>
         <source>Downloaded Data: %1</source>
@@ -24710,7 +24710,7 @@ They are then published with this node&apos;s address: anyone can see that this 
         <translation type="vanished">활성 다운로드: %1</translation>
     </message>
     <message>
-        <location line="-1422"/>
+        <location line="-1424"/>
         <source>Found Sources: %1</source>
         <translation>발견된 소스: %1</translation>
     </message>
@@ -24722,13 +24722,13 @@ They are then published with this node&apos;s address: anyone can see that this 
     <message>
         <location line="+5"/>
         <location line="+61"/>
-        <location line="+1092"/>
+        <location line="+1094"/>
         <location line="+84"/>
         <source>Completed Downloads: %1</source>
         <translation>완료된 다운로드: %1</translation>
     </message>
     <message>
-        <location line="-1207"/>
+        <location line="-1209"/>
         <location line="+36"/>
         <source>Gain Due To Compression: %1 %2</source>
         <translation>압축으로 인한 이득: %1 %2</translation>
@@ -24746,7 +24746,7 @@ They are then published with this node&apos;s address: anyone can see that this 
         <translation>ICH로 복구된 파트: %1</translation>
     </message>
     <message>
-        <location line="+1315"/>
+        <location line="+1317"/>
         <source>Active Connections: %1</source>
         <translation>활성 연결: %1</translation>
     </message>
@@ -24761,7 +24761,7 @@ They are then published with this node&apos;s address: anyone can see that this 
         <translation type="vanished">최대 연결 제한 도달: %1</translation>
     </message>
     <message>
-        <location line="-2101"/>
+        <location line="-2103"/>
         <location line="+26"/>
         <location line="+774"/>
         <location line="+33"/>
@@ -24774,28 +24774,28 @@ They are then published with this node&apos;s address: anyone can see that this 
     </message>
     <message>
         <location line="-9"/>
-        <location line="+1020"/>
+        <location line="+1022"/>
         <location line="+175"/>
         <source>Upload Speed: %1</source>
         <translation>업로드 속도: %1</translation>
     </message>
     <message>
-        <location line="-1194"/>
+        <location line="-1196"/>
         <location line="+17"/>
-        <location line="+1006"/>
+        <location line="+1008"/>
         <location line="+173"/>
         <source>Max Upload Rate: %1</source>
         <translation>최대 업로드 속도: %1</translation>
     </message>
     <message>
-        <location line="-1195"/>
+        <location line="-1197"/>
         <location line="+17"/>
         <source>Max Average Upload Rate: %1</source>
         <translation>최대 평균 업로드 속도: %1</translation>
     </message>
     <message>
         <location line="-16"/>
-        <location line="+1016"/>
+        <location line="+1018"/>
         <location line="+87"/>
         <location line="+86"/>
         <location line="+79"/>
@@ -24803,9 +24803,9 @@ They are then published with this node&apos;s address: anyone can see that this 
         <translation>다운로드 속도: %1</translation>
     </message>
     <message>
-        <location line="-1267"/>
+        <location line="-1269"/>
         <location line="+17"/>
-        <location line="+1001"/>
+        <location line="+1003"/>
         <location line="+86"/>
         <location line="+86"/>
         <location line="+79"/>
@@ -24813,7 +24813,7 @@ They are then published with this node&apos;s address: anyone can see that this 
         <translation>최대 다운로드 속도: %1</translation>
     </message>
     <message>
-        <location line="-1268"/>
+        <location line="-1270"/>
         <location line="+17"/>
         <source>Max Average Download Rate: %1</source>
         <translation>최대 평균 다운로드 속도: %1</translation>
@@ -24828,14 +24828,14 @@ They are then published with this node&apos;s address: anyone can see that this 
     </message>
     <message>
         <location line="-5"/>
-        <location line="+1006"/>
+        <location line="+1008"/>
         <location line="+173"/>
         <source>Average Upload Rate: %1</source>
         <translation>평균 업로드 속도: %1</translation>
     </message>
     <message>
-        <location line="-1176"/>
-        <location line="+1001"/>
+        <location line="-1178"/>
+        <location line="+1003"/>
         <location line="+86"/>
         <location line="+86"/>
         <location line="+79"/>
@@ -24843,7 +24843,7 @@ They are then published with this node&apos;s address: anyone can see that this 
         <translation>평균 다운로드 속도: %1</translation>
     </message>
     <message>
-        <location line="-1239"/>
+        <location line="-1241"/>
         <location line="+5"/>
         <source>Time Since Last Reset: %1</source>
         <translation>마지막 초기화 이후 시간: %1</translation>
@@ -24862,15 +24862,15 @@ They are then published with this node&apos;s address: anyone can see that this 
     <message>
         <location line="-18"/>
         <location line="+20"/>
-        <location line="+948"/>
+        <location line="+950"/>
         <location line="+173"/>
         <source>Upload Time: %1 %2</source>
         <translation>업로드 시간: %1 %2</translation>
     </message>
     <message>
-        <location line="-1139"/>
+        <location line="-1141"/>
         <location line="+20"/>
-        <location line="+945"/>
+        <location line="+947"/>
         <location line="+84"/>
         <location line="+89"/>
         <location line="+76"/>
@@ -24882,7 +24882,7 @@ They are then published with this node&apos;s address: anyone can see that this 
         <translation type="vanished">서버 접속 시간: %1 %2</translation>
     </message>
     <message>
-        <location line="-1200"/>
+        <location line="-1202"/>
         <source>Run Time: %1</source>
         <translation>실행 시간: %1</translation>
     </message>
@@ -25038,29 +25038,29 @@ They are then published with this node&apos;s address: anyone can see that this 
     </message>
     <message>
         <location line="+14"/>
-        <location line="+1034"/>
+        <location line="+1037"/>
         <source>Number of Downloads: %1</source>
         <translation>다운로드 수: %1</translation>
     </message>
     <message>
-        <location line="-1033"/>
-        <location line="+747"/>
+        <location line="-1036"/>
+        <location line="+749"/>
         <location line="+90"/>
-        <location line="+204"/>
+        <location line="+205"/>
         <source>Total Size of Downloads: %1</source>
         <translation>다운로드 총 크기: %1</translation>
     </message>
     <message>
-        <location line="-293"/>
+        <location line="-294"/>
         <location line="+90"/>
-        <location line="+204"/>
+        <location line="+205"/>
         <source>Total Size Downloaded: %1</source>
         <translation>다운로드된 총 크기: %1</translation>
     </message>
     <message>
-        <location line="-293"/>
+        <location line="-294"/>
         <location line="+90"/>
-        <location line="+204"/>
+        <location line="+205"/>
         <source>Total Size Left to Download: %1</source>
         <translation>남은 다운로드 크기: %1</translation>
     </message>
@@ -25069,7 +25069,7 @@ They are then published with this node&apos;s address: anyone can see that this 
         <translation type="vanished">드라이브 여유 공간: %1</translation>
     </message>
     <message>
-        <location line="-801"/>
+        <location line="-802"/>
         <source>Clients Seen: ≈%1</source>
         <translation>확인한 클라이언트: ≈%1</translation>
     </message>
@@ -25084,13 +25084,13 @@ They are then published with this node&apos;s address: anyone can see that this 
         <translation>실행 중 아님</translation>
     </message>
     <message>
-        <location line="-748"/>
-        <location line="+750"/>
+        <location line="-750"/>
+        <location line="+752"/>
         <source>Connecting</source>
         <translation>연결 중</translation>
     </message>
     <message>
-        <location line="-1791"/>
+        <location line="-1793"/>
         <location line="+113"/>
         <source>Average (%1 mins)</source>
         <translation>평균 (%1분)</translation>
@@ -25473,7 +25473,7 @@ They are then published with this node&apos;s address: anyone can see that this 
         <translation>N/A</translation>
     </message>
     <message>
-        <location line="+127"/>
+        <location line="+129"/>
         <source>Status: Running on UDP port %1</source>
         <translation>상태: UDP 포트 %1에서 실행 중</translation>
     </message>
@@ -25807,20 +25807,20 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>오류: %1</translation>
     </message>
     <message>
-        <location line="-2213"/>
+        <location line="-2215"/>
         <location line="+11"/>
-        <location line="+2123"/>
+        <location line="+2125"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
         <location line="+204"/>
-        <location line="+507"/>
+        <location line="+508"/>
         <source>Open Connections: %1</source>
         <translation>열린 연결: %1</translation>
     </message>
     <message>
-        <location line="-503"/>
+        <location line="-504"/>
         <source>Network Traffic: %1</source>
         <translation>네트워크 트래픽: %1</translation>
     </message>
@@ -25837,7 +25837,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>최대 게시 레코드: %1</translation>
     </message>
     <message>
-        <location line="+62"/>
+        <location line="+61"/>
+        <source>Release Previews: %1 %2</source>
+        <translation>릴리스 미리보기: %1 %2</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Articles</source>
         <translation>기사</translation>
     </message>
@@ -26070,34 +26075,34 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>피드 일치: %1</translation>
     </message>
     <message>
-        <location line="-282"/>
+        <location line="-283"/>
         <location line="+88"/>
-        <location line="+205"/>
+        <location line="+206"/>
         <source>Downloading: %1</source>
         <translation>다운로드 중: %1</translation>
     </message>
     <message>
-        <location line="-291"/>
+        <location line="-292"/>
         <location line="+87"/>
-        <location line="+205"/>
+        <location line="+206"/>
         <source>Queued: %1</source>
         <translation>대기 중: %1</translation>
     </message>
     <message>
-        <location line="-291"/>
+        <location line="-292"/>
         <location line="+89"/>
-        <location line="+203"/>
+        <location line="+204"/>
         <source>Paused: %1</source>
         <translation>일시정지됨: %1</translation>
     </message>
     <message>
-        <location line="-291"/>
-        <location line="+292"/>
+        <location line="-292"/>
+        <location line="+293"/>
         <source>Checking: %1</source>
         <translation>확인 중: %1</translation>
     </message>
     <message>
-        <location line="-151"/>
+        <location line="-152"/>
         <source>Connections: %1</source>
         <translation>연결: %1</translation>
     </message>
@@ -26180,9 +26185,9 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>대기열의 요청: %1</translation>
     </message>
     <message>
-        <location line="-2288"/>
+        <location line="-2290"/>
         <location line="+11"/>
-        <location line="+2284"/>
+        <location line="+2286"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -26288,7 +26293,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>크레딧</translation>
     </message>
     <message>
-        <location line="+102"/>
+        <location line="+103"/>
         <source>Post-Processing: %1</source>
         <translation>후처리: %1</translation>
     </message>
@@ -26344,8 +26349,8 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>유형 4, 응답 없음: %1 %2</translation>
     </message>
     <message>
-        <location line="-206"/>
-        <location line="+207"/>
+        <location line="-207"/>
+        <location line="+208"/>
         <source>Most Contacts: %1</source>
         <translation>최대 연락처: %1</translation>
     </message>
@@ -26530,8 +26535,8 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>노드</translation>
     </message>
     <message>
-        <location line="-2222"/>
-        <location line="+2225"/>
+        <location line="-2225"/>
+        <location line="+2228"/>
         <source>By Country</source>
         <translation>국가별</translation>
     </message>
@@ -26541,8 +26546,8 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>우리에게 패킷을 보낸 노드를 보낸 주소의 국가별로 표시합니다.</translation>
     </message>
     <message>
-        <location line="-2252"/>
-        <location line="+2256"/>
+        <location line="-2255"/>
+        <location line="+2259"/>
         <source>Network</source>
         <translation>네트워크</translation>
     </message>
@@ -26637,12 +26642,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>Kad에서 찾은 청크: %1</translation>
     </message>
     <message>
-        <location line="-1168"/>
+        <location line="-1169"/>
         <location line="+56"/>
         <location line="+1"/>
         <location line="+1"/>
         <location line="+10"/>
-        <location line="+1189"/>
+        <location line="+1190"/>
         <source>n/a</source>
         <translation>데이터 없음</translation>
     </message>

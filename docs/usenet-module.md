@@ -2644,6 +2644,10 @@ on 3 lanes, failover ladder as usual). Every byte read is reported by
 `bytesUsed(accountId, bytes)` and charged with `UsenetQueue::chargeUsage()` to
 the account meter, like a queue article; accounts already over their allowance
 are switched off for the grab, so a preview never spends a spent quota.
+`chargeUsage()` also books the bytes in Statistics (`UsenetStatistics::notePreview`):
+in Network Traffic and the account's Session Traffic, and as their own
+`previewBytes` counter ("Release Previews"), which is left out of Overhead and of
+the average download rate.
 
 `UsenetNfoPreview` reads every `.nfo` (up to 4, 2 MB each) whole and decodes it:
 UTF-8 when valid, else CP437 (the DOS code page NFO art is drawn in). Shown in a

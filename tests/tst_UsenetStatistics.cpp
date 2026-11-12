@@ -90,6 +90,7 @@ private slots:
     void noteResult_classifies_data();
     void noteResult_classifies();
     void noteResult_withoutStatisticsIsANoOp();
+    void notePreview_isTrafficOfItsAccount();
     void tick_countsTimeOnlyWhileReceivingAndPeaksAfterWarmup();
     void noteAdd_countsOriginsAndSkipsFailed();
     void notePostFinished_countsOnlyTerminalVerifies();
@@ -189,6 +190,24 @@ void tst_UsenetStatistics::noteResult_withoutStatisticsIsANoOp()
     usenet.tick(250, 1000, 3);
     usenet.bump(&UsenetCounters::articlesMissing);
     QCOMPARE(usenet.servers().value(QString::fromLatin1(kAccount)).articles, uint64(1));
+}
+
+void tst_UsenetStatistics::notePreview_isTrafficOfItsAccount()
+{
+    ScopedStatistics stats;
+    UsenetStatistics usenet;
+    usenet.notePreview(QString::fromLatin1(kAccount), 24'626);
+    usenet.notePreview(QString(), 100);   // no account: engine-wide only
+    usenet.notePreview(QString::fromLatin1(kAccount), -5);
+
+    const UsenetCounters& c = stats->usenetSession();
+    QCOMPARE(c.wireBytes, uint64(24'726));
+    QCOMPARE(c.previewBytes, uint64(24'726));
+    QCOMPARE(c.decodedBytes, uint64(0));
+    QCOMPARE(c.articlesDownloaded, uint64(0));
+    const UsenetServerCounters server = usenet.servers().value(QString::fromLatin1(kAccount));
+    QCOMPARE(server.wireBytes, uint64(24'626));
+    QCOMPARE(server.articles, uint64(0));
 }
 
 void tst_UsenetStatistics::tick_countsTimeOnlyWhileReceivingAndPeaksAfterWarmup()

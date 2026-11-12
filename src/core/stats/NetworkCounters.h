@@ -35,6 +35,7 @@ struct UsenetCounters {
     // Traffic
     uint64 wireBytes = 0;          ///< NNTP bytes as read: incl. 430s, probes, handshakes
     uint64 decodedBytes = 0;       ///< yEnc payload written to disk
+    uint64 previewBytes = 0;       ///< search Details › Images/NFO; also in wireBytes
     uint64 downloadTimeMs = 0;     ///< time the engine was actually receiving
     uint64 maxDownRate = 0;        ///< Max
     uint64 peakConnections = 0;    ///< Max, open NNTP connections
@@ -88,6 +89,7 @@ struct UsenetCounters {
         using C = UsenetCounters;
         f("wireBytes", &C::wireBytes, CounterAgg::Sum);
         f("decodedBytes", &C::decodedBytes, CounterAgg::Sum);
+        f("previewBytes", &C::previewBytes, CounterAgg::Sum);
         f("downloadTimeMs", &C::downloadTimeMs, CounterAgg::Sum);
         f("maxDownRate", &C::maxDownRate, CounterAgg::Max);
         f("peakConnections", &C::peakConnections, CounterAgg::Max);

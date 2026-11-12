@@ -1725,11 +1725,13 @@ void StatisticsPanel::applyUsenetStats(const QCborMap& data)
     const auto scopeValues = [&](const QString& scope, qint64 runtimeSecs) {
         QHash<QString, qint64> v = counterValues(usenet.value(scope).toMap());
         v.insert(counterValues(indexer.value(scope).toMap()));
+        // previews are traffic, but neither overhead nor part of the download time
         const qint64 wire = v.value(QStringLiteral("wireBytes"));
+        const qint64 queueWire = std::max<qint64>(0, wire - v.value(QStringLiteral("previewBytes")));
         const qint64 timeMs = v.value(QStringLiteral("downloadTimeMs"));
         v.insert(QStringLiteral("overheadBytes"),
-                 std::max<qint64>(0, wire - v.value(QStringLiteral("decodedBytes"))));
-        v.insert(QStringLiteral("avgDownRate"), timeMs > 0 ? wire * 1000 / timeMs : 0);
+                 std::max<qint64>(0, queueWire - v.value(QStringLiteral("decodedBytes"))));
+        v.insert(QStringLiteral("avgDownRate"), timeMs > 0 ? queueWire * 1000 / timeMs : 0);
         v.insert(QStringLiteral("itemsFinished"), v.value(QStringLiteral("itemsCompleted"))
                                                       + v.value(QStringLiteral("itemsFailed")));
         v.insert(QStringLiteral("postTimeMs"), v.value(QStringLiteral("verifyMs"))
@@ -2647,6 +2649,7 @@ std::span<const StatisticsPanel::CounterRow> StatisticsPanel::usenetCounterRows(
         {QT_TR_NOOP("Downloaded Data: %1"), "decodedBytes", F::Bytes, nullptr, 1},
         {QT_TR_NOOP("Network Traffic: %1"), "wireBytes", F::Bytes, nullptr, 1},
         {QT_TR_NOOP("Overhead: %1 %2"), "overheadBytes", F::Bytes, "wireBytes", 2},
+        {QT_TR_NOOP("Release Previews: %1 %2"), "previewBytes", F::Bytes, "wireBytes", 2},
 
         {QT_TR_NOOP("Articles"), nullptr},
         {QT_TR_NOOP("Downloaded: %1"), "articlesDownloaded", F::Count, nullptr, 1},
