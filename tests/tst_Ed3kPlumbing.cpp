@@ -2,6 +2,7 @@
 /// @brief Preferences → ed3k node (src/ed3k): extension switches, the IPv6 source, filter and
 /// hops state across a restart, LAN discovery between two nodes, node list links and asks.
 
+#include "utils/BackgroundFileWriter.h"
 #include "Ed3kBootstrap.h"
 #include "Ed3kLan.h"
 #include "Ed3kPlumbing.h"
@@ -224,6 +225,7 @@ void tst_Ed3kPlumbing::filterStateKeptAcrossRestart()
         namesBefore = bytes(*blob);
         s.stop();
     }
+    eMule::BackgroundFileWriter::instance().flush();   // saves are queued (report 43)
     QVERIFY(QFile::exists(file));
     QVERIFY(QFile::exists(names));
 #ifdef Q_OS_UNIX

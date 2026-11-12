@@ -3,6 +3,7 @@
 
 #include "pch.h"
 #include "dialogs/Ed3kOptionsPages.h"
+#include "utils/Clipboard.h"
 #include "controls/AbstractListView.h"
 
 #include "app/Ed3kNameOpener.h"
@@ -1180,7 +1181,7 @@ void Ed3kOptionsPages::followList()
         return;
     bool ok = false;
     const QString link = QInputDialog::getText(m_parent, tr("Follow name list"), tr("Link of the name list (ed3k:set?…):"),
-                                               QLineEdit::Normal, QString(), &ok).trimmed();
+                                               QLineEdit::Normal, Clipboard::firstLink(QLatin1StringView("ed3k:set?")), &ok).trimmed();
     if (!ok || link.isEmpty())
         return;
     const QString label = QInputDialog::getText(m_parent, tr("Follow name list"), tr("Label:"), QLineEdit::Normal, QString(), &ok).trimmed();

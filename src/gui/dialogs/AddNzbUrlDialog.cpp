@@ -2,6 +2,7 @@
 #include "dialogs/AddNzbUrlDialog.h"
 
 #include "app/IpcClient.h"
+#include "utils/Clipboard.h"
 #include "utils/NzbAdd.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/ScrollMessageBox.h"
@@ -28,6 +29,7 @@ AddNzbUrlDialog::AddNzbUrlDialog(IpcClient* ipc, const QStringList& categories,
           parent)
     , m_ipc(ipc)
 {
+    prefill(Clipboard::httpLinksIn(Clipboard::text()));
 }
 
 void AddNzbUrlDialog::onAccepted()

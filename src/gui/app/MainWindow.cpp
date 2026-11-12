@@ -1322,7 +1322,11 @@ bool MainWindow::nativeEvent(const QByteArray& eventType, void* message, qintptr
 bool MainWindow::eventFilter(QObject* obj, QEvent* event)
 {
     if (event->type() == QEvent::MouseButtonDblClick) {
-        if (obj == m_statusEd2k || obj == m_statusKad || obj == m_statusEd3k || obj == m_statusUsersWidget) {
+        if (obj == m_statusEd3k) {
+            showEd3kNetworkInfo();
+            return true;
+        }
+        if (obj == m_statusEd2k || obj == m_statusKad || obj == m_statusUsersWidget) {
             showNetworkInfo();
             return true;
         }
@@ -2264,6 +2268,12 @@ void MainWindow::showNetworkInfo()
     dlg.exec();
 }
 
+void MainWindow::showEd3kNetworkInfo()
+{
+    NetworkInfoDialog dlg(m_ipc, this, QString::fromLatin1(NetworkInfoDialog::kEd3kAnchor));
+    dlg.exec();
+}
+
 void MainWindow::setupStatusBar()
 {
     auto* sb = statusBar();
@@ -2350,7 +2360,7 @@ void MainWindow::setupStatusBar()
     // ed3k node: no MFC original; shown like Kad's while it runs
     m_statusEd3kIcon = new Ed3kStatusIcon(this);
     m_statusEd3kIcon->hide();
-    connect(m_statusEd3kIcon, &Ed3kStatusIcon::doubleClicked, this, &MainWindow::showNetworkInfo);
+    connect(m_statusEd3kIcon, &Ed3kStatusIcon::doubleClicked, this, &MainWindow::showEd3kNetworkInfo);
     sb->addPermanentWidget(m_statusEd3kIcon);
 
     m_statusEd3k = new QLabel(this);

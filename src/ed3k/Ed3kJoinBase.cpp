@@ -162,7 +162,8 @@ std::vector<ffi::Bytes> readRecords(const QString& path)
     return out;
 }
 
-bool writeRecords(const QString& path, const std::vector<ffi::Bytes>& records)
+/// On the background writer (report 43); readRecords reads a queued copy back.
+void writeRecords(const QString& path, const std::vector<ffi::Bytes>& records)
 {
     std::vector<std::byte> out;
     for (const auto& r : records) {
@@ -171,7 +172,7 @@ bool writeRecords(const QString& path, const std::vector<ffi::Bytes>& records)
             out.push_back(std::byte((len >> (8 * i)) & 0xff));
         out.insert(out.end(), r.begin(), r.end());
     }
-    return writeBlob(path, out);
+    writeBlobLater(path, out);
 }
 
 /// a name in one TSV field
@@ -896,8 +897,7 @@ void Ed3kJoinBase::keepRecords(const QString& owner, std::optional<ffi::Root> se
         if (std::ranges::find(records, a) == records.end())
             records.push_back(a);
     QDir().mkpath(keptDir(owner));
-    if (!writeRecords(path, records))
-        logWarning(QStringLiteral("cannot write %1").arg(path));
+    writeRecords(path, records);
 }
 
 void Ed3kJoinBase::shareKept()
@@ -1544,8 +1544,7 @@ void Ed3kJoinBase::writeKept(const QString& owner, const Kept& kept)
     const QString dir = keptDir(owner);
     QDir().mkpath(dir);
     const QByteArray utf8 = out.toUtf8();
-    if (!writeBlob(QDir(dir).filePath(kKeptIndex), spanOf(utf8)))
-        logWarning(QStringLiteral("cannot write %1").arg(QDir(dir).filePath(kKeptIndex)));
+    writeBlobLater(QDir(dir).filePath(kKeptIndex), spanOf(utf8));
 }
 
 void Ed3kJoinBase::shareKeptMember(const QString& owner, int member, const ffi::Root& root, std::uint64_t size,

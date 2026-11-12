@@ -30,6 +30,9 @@
     <ClCompile Include="session\BtJoinDiskIo.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="session\BtPeerGate.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="session\BtSettingsMap.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -54,6 +57,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="session\BtJoinDiskIo.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="session\BtPeerGate.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="session\BtSettingsMap.h">

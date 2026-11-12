@@ -4,6 +4,7 @@
 /// Hash, NZB and web vectors are the cross-repository ones from
 /// external/enodemeta/testdata — every implementation must reproduce them.
 
+#include "utils/BackgroundFileWriter.h"
 #include "TestHelpers.h"
 #include "enodemeta/GrpcWeb.h"
 #include "enodemeta/LinkContainer.h"
@@ -566,6 +567,7 @@ void tst_EnodeMeta::accountStore_roundTrip()
     MetaAccountStore store(path);
     QCOMPARE(store.account(origin).username, QStringLiteral("alice"));
     QCOMPARE(store.account(origin).token, QStringLiteral("tok123"));
+    eMule::BackgroundFileWriter::instance().flush();   // saves are queued (report 43)
     QVERIFY(QFile::permissions(path) & QFileDevice::ReadOwner);
 #ifndef Q_OS_WIN
     // Windows: setPermissions() only maps to the read-only attribute; access is the

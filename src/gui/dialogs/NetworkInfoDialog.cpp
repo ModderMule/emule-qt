@@ -19,6 +19,7 @@
 #include <QLocale>
 #include <QPointer>
 #include <QTextBrowser>
+#include <QTimer>
 #include <QVBoxLayout>
 
 namespace eMule {
@@ -56,9 +57,10 @@ QString row(const QString& label, const QString& value)
 // Construction
 // ---------------------------------------------------------------------------
 
-NetworkInfoDialog::NetworkInfoDialog(IpcClient* ipc, QWidget* parent)
+NetworkInfoDialog::NetworkInfoDialog(IpcClient* ipc, QWidget* parent, const QString& anchor)
     : RememberedSizeDialog(parent)
     , m_ipc(ipc)
+    , m_anchor(anchor)
 {
     setWindowTitle(tr("Network Information"));
 
@@ -117,6 +119,10 @@ QString NetworkInfoDialog::formatNumber(qint64 value)
 void NetworkInfoDialog::populateInfo(const QCborMap& info)
 {
     m_browser->setHtml(infoHtml(info, thePrefs.showExtControls()));
+    if (m_anchor.isEmpty())
+        return;
+    // after layout, else the anchor's position is not known yet
+    QTimer::singleShot(0, this, [this] { m_browser->scrollToAnchor(m_anchor); });
 }
 
 QString NetworkInfoDialog::infoHtml(const QCborMap& info, bool extended)
@@ -454,7 +460,8 @@ QString NetworkInfoDialog::ed3kHtml(const QCborMap& ed3k)
     // a core without ed3k, or from before the section
     if (ed3k.isEmpty() || !ed3k.value(QStringLiteral("available")).toBool())
         return {};
-    QString html = QStringLiteral("<b>%1</b><br><table cellpadding='1'>").arg(tr("ed3k Network"));
+    QString html = QStringLiteral("<a name='%1'></a><b>%2</b><br><table cellpadding='1'>")
+                       .arg(QLatin1StringView(kEd3kAnchor), tr("ed3k Network"));
     const bool running = ed3k.value(QStringLiteral("running")).toBool();
     if (!running) {
         html += row(tr("Status:"), ed3k.value(QStringLiteral("enabled")).toBool() ? tr("Not running")

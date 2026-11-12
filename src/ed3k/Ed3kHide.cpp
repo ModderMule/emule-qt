@@ -275,8 +275,7 @@ void Ed3kHide::save()
     const QByteArray raw = QJsonDocument(QJsonObject{{QStringLiteral("node"), node}, {QStringLiteral("anon"), anon}})
                                .toJson(QJsonDocument::Compact);
     // which files are hidden: owner-only like the keys
-    if (!writeBlob(QDir(m_dir).filePath(kKeysFile), std::as_bytes(std::span{raw.constData(), std::size_t(raw.size())})))
-        logEd3kWarning(QStringLiteral("ed3k: cannot write %1").arg(kKeysFile));
+    writeBlobLater(QDir(m_dir).filePath(kKeysFile), std::as_bytes(std::span{raw.constData(), std::size_t(raw.size())}));
 }
 
 void Ed3kHide::scheduleSave()

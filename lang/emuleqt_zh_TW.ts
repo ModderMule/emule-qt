@@ -769,7 +769,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+597"/>
+        <location filename="../src/gui/app/main.cpp" line="+626"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -1538,15 +1538,15 @@ There is already a friend with same IP address and port available.</source>
 <context>
     <name>eMule::AddNzbUrlDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/AddNzbUrlDialog.cpp" line="+19"/>
-        <location line="+27"/>
+        <location filename="../src/gui/dialogs/AddNzbUrlDialog.cpp" line="+20"/>
+        <location line="+28"/>
         <location line="+31"/>
         <location line="+73"/>
         <source>Add NZB from URL</source>
         <translation>從 URL 加入 NZB</translation>
     </message>
     <message>
-        <location line="-129"/>
+        <location line="-130"/>
         <source>NZB URLs:</source>
         <translation>NZB 連結：</translation>
     </message>
@@ -1566,7 +1566,7 @@ There is already a friend with same IP address and port available.</source>
         <translation>密碼：</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+12"/>
         <source>Not Connected</source>
         <translation>未連線</translation>
     </message>
@@ -1660,7 +1660,7 @@ There is already a friend with same IP address and port available.</source>
 <context>
     <name>eMule::AddTorrentDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/AddTorrentDialog.cpp" line="+31"/>
+        <location filename="../src/gui/dialogs/AddTorrentDialog.cpp" line="+32"/>
         <source>Add Magnet Links</source>
         <translation>加入磁力連結</translation>
     </message>
@@ -1729,7 +1729,7 @@ There is already a friend with same IP address and port available.</source>
         <translation type="vanished">請先在 選項 &gt; BitTorrent &gt; 連線 中啟用 I2P。</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+19"/>
         <source>Not Connected</source>
         <translation>未連線</translation>
     </message>
@@ -1935,7 +1935,7 @@ M	壓縮資料尚未完全下載
 <context>
     <name>eMule::BtI2pPage</name>
     <message>
-        <location filename="../src/gui/dialogs/BtI2pPage.cpp" line="+46"/>
+        <location filename="../src/gui/dialogs/BtI2pPage.cpp" line="+49"/>
         <source>I2P Trackers</source>
         <translation>I2P Tracker</translation>
     </message>
@@ -1965,12 +1965,12 @@ M	壓縮資料尚未完全下載
     </message>
     <message>
         <location line="+19"/>
-        <location line="+187"/>
+        <location line="+296"/>
         <source>Off</source>
         <translation>關閉</translation>
     </message>
     <message>
-        <location line="-187"/>
+        <location line="-296"/>
         <source>Torrents use direct connections only.</source>
         <translation>種子僅使用直接連線。</translation>
     </message>
@@ -1985,7 +1985,62 @@ M	壓縮資料尚未完全下載
         <translation>eMule 執行自己的 I2P 路由器。首次啟動需要幾分鐘加入網路。</translation>
     </message>
     <message>
+        <location line="+10"/>
+        <source>Set your browser&apos;s HTTP proxy to 127.0.0.1 and this port on the core&apos;s computer to open .i2p sites, e.g. torrent trackers. It uses its own I2P address, not the torrents&apos; one.</source>
+        <translation>在核心所在的電腦上將瀏覽器的 HTTP 代理設為 127.0.0.1 和此連接埠，即可開啟 .i2p 網站，例如種子 Tracker。它使用自己的 I2P 位址，而非種子的位址。</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Port of the browser proxy</source>
+        <translation>瀏覽器代理連接埠</translation>
+    </message>
+    <message>
         <location line="+8"/>
+        <source>Router status page</source>
+        <translation>路由器狀態頁</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Open http://127.0.0.1 and this port on the core&apos;s computer to see the router&apos;s status, tunnels and peers. Its buttons can also stop the router.</source>
+        <translation>在核心所在的電腦上開啟 http://127.0.0.1 和此連接埠，可查看路由器的狀態、通道和節點。頁面上的按鈕也可以停止路由器。</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Port of the status page</source>
+        <translation>狀態頁連接埠</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Open Status Page</source>
+        <translation>開啟狀態頁</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>User name of the status page. Empty: i2pd</source>
+        <translation>狀態頁的使用者名稱。留空：i2pd</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>none</source>
+        <translation>無</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>With a password, the status page asks for user name and password.</source>
+        <translation>設定密碼後，狀態頁會要求輸入使用者名稱和密碼。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>User:</source>
+        <translation>使用者：</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Password:</source>
+        <translation>密碼：</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>External I2P router</source>
         <translation>外部 I2P 路由器</translation>
     </message>
@@ -1995,7 +2050,36 @@ M	壓縮資料尚未完全下載
         <translation>你自行執行的路由器 (i2pd 或 Java I2P)，需開啟 SAM 橋接。</translation>
     </message>
     <message>
-        <location line="+136"/>
+        <location line="+24"/>
+        <source>The default of the &quot;I2P only&quot; box when adding torrents. Not together with mixed mode, which lets I2P torrents use direct peers.</source>
+        <translation>新增種子時「僅 I2P」核取方塊的預設值。不能與混合模式同時使用，混合模式允許 I2P 種子使用直接節點。</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>I2P torrents also use the DHT, normal trackers and direct peers, and normal torrents get the I2P trackers too, so both swarms share the files. Not together with &quot;Add new torrents as I2P only&quot;.</source>
+        <translation>I2P 種子也使用 DHT、一般 Tracker 和直接節點，一般種子也會加入 I2P Tracker，兩個群組共享檔案。不能與「新種子預設僅 I2P」同時使用。</translation>
+    </message>
+    <message>
+        <location line="+49"/>
+        <source>The I2P router status page listens on the core&apos;s computer, on 127.0.0.1 by default: browsers on this computer cannot reach it. To use it from here, set bittorrent &gt; i2p &gt; browserProxyAddress in the core&apos;s preferences.yml to an address this computer can reach, and set a password.</source>
+        <translation>I2P 路由器狀態頁在核心所在的電腦上監聽，預設為 127.0.0.1：此電腦上的瀏覽器無法連線。要從這裡使用，請將核心 preferences.yml 中的 bittorrent &gt; i2p &gt; browserProxyAddress 設為此電腦可連線的位址，並設定密碼。</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>The I2P browser proxy listens on the core&apos;s computer, on 127.0.0.1 by default: browsers on this computer cannot reach it. To use it from here, set bittorrent &gt; i2p &gt; browserProxyAddress in the core&apos;s preferences.yml to an address this computer can reach.</source>
+        <translation>I2P 瀏覽器代理在核心所在的電腦上監聽，預設為 127.0.0.1：此電腦上的瀏覽器無法連線。若要在此使用，請在核心的 preferences.yml 中將 bittorrent &gt; i2p &gt; browserProxyAddress 設為此電腦可連線的位址。</translation>
+    </message>
+    <message>
+        <source>The I2P browser proxy runs on the core&apos;s computer: browsers on this computer cannot use it.</source>
+        <translation type="vanished">I2P 瀏覽器代理執行於核心所在的電腦上：此電腦上的瀏覽器無法使用它。</translation>
+    </message>
+    <message>
+        <location line="+81"/>
+        <source>I2P router is on, but no torrent uses it: check &quot;Add new torrents as I2P only&quot; or &quot;Mixed mode&quot; in Options &gt; BitTorrent &gt; I2P.</source>
+        <translation>I2P 路由器已開啟，但沒有種子使用它：請在 選項 &gt; BitTorrent &gt; I2P 中勾選「新種子預設僅 I2P」或「混合模式」。</translation>
+    </message>
+    <message>
+        <location line="+16"/>
         <source>eMule runs its own I2P router, downloaded (about 10 MB) when first switched on. The first start takes a few minutes to join the network.</source>
         <translation>eMule 執行自己的 I2P 路由器，首次啟用時下載（約 10 MB）。首次啟動需要幾分鐘才能加入網路。</translation>
     </message>
@@ -2009,12 +2093,14 @@ M	壓縮資料尚未完全下載
         <translation type="vanished">路由器：</translation>
     </message>
     <message>
-        <location line="-133"/>
+        <location line="-181"/>
         <source>Host of the external router&apos;s SAM bridge</source>
         <translation>外部路由器 SAM 橋接的主機</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-49"/>
+        <location line="+14"/>
+        <location line="+37"/>
         <source>Port:</source>
         <translation>連接埠：</translation>
     </message>
@@ -2024,7 +2110,7 @@ M	壓縮資料尚未完全下載
         <translation>SAM 橋接：</translation>
     </message>
     <message>
-        <location line="-16"/>
+        <location line="-70"/>
         <source>TCP and UDP port of the bundled router. Mapped with UPnP when the BitTorrent port is.</source>
         <translation>內建路由器的 TCP 與 UDP 連接埠。BitTorrent 連接埠使用 UPnP 對應時也會一併對應。</translation>
     </message>
@@ -2034,7 +2120,7 @@ M	壓縮資料尚未完全下載
         <translation>路由器連接埠：</translation>
     </message>
     <message>
-        <location line="+51"/>
+        <location line="+107"/>
         <source>Routers each tunnel passes. More is more anonymous and slower.</source>
         <translation>每條通道經過的路由器數。越多越匿名，也越慢。</translation>
     </message>
@@ -2056,14 +2142,13 @@ M	壓縮資料尚未完全下載
         <translation type="vanished">通道：</translation>
     </message>
     <message>
-        <location line="-28"/>
+        <location line="-29"/>
         <source>Mixed mode: I2P torrents also use direct peers (less anonymous)</source>
         <translation>混合模式：I2P 種子也使用直接節點 (匿名性較低)</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>I2P torrents also use the DHT, normal trackers and direct peers, and normal torrents get the I2P trackers too, so both swarms share the files.</source>
-        <translation>I2P 種子也使用 DHT、一般 tracker 和直接節點，一般種子也會加入 I2P tracker，兩個群組共享檔案。</translation>
+        <translation type="vanished">I2P 種子也使用 DHT、一般 tracker 和直接節點，一般種子也會加入 I2P tracker，兩個群組共享檔案。</translation>
     </message>
     <message>
         <location line="-4"/>
@@ -2071,12 +2156,11 @@ M	壓縮資料尚未完全下載
         <translation>新種子預設僅 I2P</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>The default of the &quot;I2P only&quot; box when adding torrents.</source>
-        <translation>加入種子時「僅 I2P」核取方塊的預設值。</translation>
+        <translation type="vanished">加入種子時「僅 I2P」核取方塊的預設值。</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+9"/>
         <source>I2P torrents may also download over ed3k</source>
         <translation>I2P 種子也可透過 ed3k 下載</translation>
     </message>
@@ -2091,22 +2175,31 @@ M	壓縮資料尚未完全下載
         <translation>I2P Tracker...</translation>
     </message>
     <message>
-        <location line="-18"/>
+        <location line="-20"/>
         <source>Status:</source>
         <translation>狀態：</translation>
     </message>
     <message>
-        <location line="-40"/>
+        <location line="-94"/>
         <source>Router</source>
         <translation>路由器</translation>
     </message>
     <message>
-        <location line="+44"/>
+        <location line="+23"/>
+        <source>HTTP proxy for browsing .i2p sites</source>
+        <translation>用於瀏覽 .i2p 網站的 HTTP 代理</translation>
+    </message>
+    <message>
+        <source>Set your browser&apos;s HTTP proxy to 127.0.0.1 port 4444 on the core&apos;s computer to open .i2p sites, e.g. torrent trackers. It uses its own I2P address, not the torrents&apos; one.</source>
+        <translation type="vanished">在核心所在的電腦上將瀏覽器的 HTTP 代理設為 127.0.0.1 連接埠 4444，即可開啟 .i2p 網站，例如種子 Tracker。它使用自己的 I2P 位址，而非種子的位址。</translation>
+    </message>
+    <message>
+        <location line="+75"/>
         <source>Torrents</source>
         <translation>種子</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+25"/>
         <source>Tunnels</source>
         <translation>隧道</translation>
     </message>
@@ -2125,7 +2218,7 @@ M	壓縮資料尚未完全下載
         <translation type="vanished">此版本未內建 I2P 路由器 (emuleqt-i2pd)。</translation>
     </message>
     <message>
-        <location line="+122"/>
+        <location line="+175"/>
         <source>BitTorrent is off</source>
         <translation>BitTorrent 已關閉</translation>
     </message>
@@ -2461,7 +2554,7 @@ M	壓縮資料尚未完全下載
 <context>
     <name>eMule::CategoryTabBar</name>
     <message>
-        <location filename="../src/gui/controls/CategoryTabBar.cpp" line="+86"/>
+        <location filename="../src/gui/controls/CategoryTabBar.cpp" line="+91"/>
         <location line="+49"/>
         <location line="+63"/>
         <location line="+20"/>
@@ -10483,7 +10576,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>檔案空間下載</translation>
     </message>
     <message>
-        <location line="+815"/>
+        <location line="+809"/>
         <source>Clipboard</source>
         <translation>剪貼簿</translation>
     </message>
@@ -10591,7 +10684,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation type="vanished">新增連結...</translation>
     </message>
     <message>
-        <location line="-430"/>
+        <location line="-422"/>
         <source>Retry</source>
         <translation>重試</translation>
     </message>
@@ -10605,7 +10698,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation type="vanished">選項...</translation>
     </message>
     <message>
-        <location line="-733"/>
+        <location line="-735"/>
         <source>File Name</source>
         <translation>檔案名稱</translation>
     </message>
@@ -10653,12 +10746,12 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
     </message>
     <message>
         <location line="+100"/>
-        <location line="+39"/>
+        <location line="+41"/>
         <source>Hoster links</source>
         <translation>檔案空間連結</translation>
     </message>
     <message>
-        <location line="-26"/>
+        <location line="-28"/>
         <source>Add hoster links</source>
         <translation>新增檔案空間連結</translation>
     </message>
@@ -10668,24 +10761,24 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>檔案空間檔案連結,每行一個:</translation>
     </message>
     <message>
-        <location line="+6"/>
-        <location line="+778"/>
+        <location line="+8"/>
+        <location line="+770"/>
         <source>Package Name:</source>
         <translation>套件名稱：</translation>
     </message>
     <message>
-        <location line="-776"/>
+        <location line="-768"/>
         <source>optional</source>
         <translation>選填</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+778"/>
+        <location line="+770"/>
         <source>The links download under one entry, into a folder of this name</source>
         <translation>這些連結以一個項目下載到以此命名的資料夾中</translation>
     </message>
     <message>
-        <location line="-763"/>
+        <location line="-755"/>
         <location line="+11"/>
         <location line="+16"/>
         <source>Not connected to the eMule core.</source>
@@ -10698,12 +10791,12 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <location line="+4"/>
         <location line="+9"/>
         <location line="+42"/>
-        <location line="+603"/>
+        <location line="+595"/>
         <source>Open DLC</source>
         <translation>開啟 DLC</translation>
     </message>
     <message>
-        <location line="-668"/>
+        <location line="-660"/>
         <location line="+14"/>
         <source>Cannot read %1.</source>
         <translation>無法讀取 %1。</translation>
@@ -10784,13 +10877,13 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>繼續</translation>
     </message>
     <message>
-        <location line="-479"/>
-        <location line="+484"/>
+        <location line="-481"/>
+        <location line="+486"/>
         <source>Remove</source>
         <translation>移除</translation>
     </message>
     <message>
-        <location line="-594"/>
+        <location line="-596"/>
         <source>The archive needs a password (Set Password…)</source>
         <translation>壓縮檔需要密碼（設定密碼…）</translation>
     </message>
@@ -10816,34 +10909,34 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
     </message>
     <message>
         <location line="+1"/>
-        <location line="+834"/>
+        <location line="+828"/>
         <source>Link Grabber (%1)</source>
         <translation>LinkGrabber (%1)</translation>
     </message>
     <message>
-        <location line="-820"/>
-        <location line="+535"/>
+        <location line="-814"/>
+        <location line="+537"/>
         <source>Add Links...</source>
         <translation>新增連結...</translation>
     </message>
     <message>
-        <location line="-534"/>
+        <location line="-536"/>
         <source>Links to files at hosters, one per line</source>
         <translation>檔案空間上檔案的連結，每行一個</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+533"/>
+        <location line="+535"/>
         <source>Open DLC...</source>
         <translation>開啟 DLC...</translation>
     </message>
     <message>
-        <location line="-532"/>
+        <location line="-534"/>
         <source>Adds the links of a link container (.dlc, .rsdf, .ccf); you can also drop one here</source>
         <translation>新增連結容器（.dlc、.rsdf、.ccf）中的連結；也可以將其拖放到此處</translation>
     </message>
     <message>
-        <location line="+523"/>
+        <location line="+525"/>
         <source>Set Password…</source>
         <translation>設定密碼…</translation>
     </message>
@@ -12491,7 +12584,7 @@ Other members see your nick and posts; your node takes part in passing the room&
     <name>eMule::LinkGrabberPanel</name>
     <message>
         <location filename="../src/gui/panels/LinkGrabberPanel.cpp" line="+103"/>
-        <location line="+116"/>
+        <location line="+119"/>
         <location line="+15"/>
         <location line="+366"/>
         <location line="+2"/>
@@ -12500,13 +12593,13 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>LinkGrabber</translation>
     </message>
     <message>
-        <location line="-603"/>
-        <location line="+365"/>
+        <location line="-606"/>
+        <location line="+368"/>
         <source>Add Links...</source>
         <translation>新增連結...</translation>
     </message>
     <message>
-        <location line="-364"/>
+        <location line="-367"/>
         <source>Links to crawl into the list, one per line</source>
         <translation>要解析到清單中的連結，每行一個</translation>
     </message>
@@ -12577,7 +12670,7 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>連結，或包含連結的文字：</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+8"/>
         <source>Package Name:</source>
         <translation>套件名稱：</translation>
     </message>
@@ -12958,12 +13051,12 @@ You are running %2. Open the eMule Qt website?</source>
     <message>
         <location line="+21"/>
         <location line="+7"/>
-        <location line="+1125"/>
+        <location line="+1129"/>
         <source>Version Check</source>
         <translation>版本檢查</translation>
     </message>
     <message>
-        <location line="-1131"/>
+        <location line="-1135"/>
         <source>You are running the latest version of eMule Qt (v%1).</source>
         <translation>您正在執行最新版本的 eMule Qt (v%1)。</translation>
     </message>
@@ -13022,12 +13115,12 @@ Enable at least one under Options → Connection to connect.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1620"/>
+        <location line="+1630"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K：已中斷連線</translation>
     </message>
     <message>
-        <location line="-1611"/>
+        <location line="-1621"/>
         <source>eD2K Server: %1  (%2 Users)</source>
         <translation>eD2K 伺服器：%1  (%2 位使用者)</translation>
     </message>
@@ -13068,12 +13161,12 @@ Enable at least one under Options → Connection to connect.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1539"/>
+        <location line="+1549"/>
         <source>Kad: Disconnected</source>
         <translation>Kad：已中斷連線</translation>
     </message>
     <message>
-        <location line="-1498"/>
+        <location line="-1508"/>
         <source>ed3k: Connected</source>
         <translation>ed3k：已連線</translation>
     </message>
@@ -13143,12 +13236,12 @@ IPv6：%5
         <translation>已隱匿 (%1/%2 條路徑)</translation>
     </message>
     <message>
-        <location line="+2313"/>
+        <location line="+2323"/>
         <source>Users: %1 | Files: %2</source>
         <translation>使用者：%1 | 檔案：%2</translation>
     </message>
     <message>
-        <location line="-2269"/>
+        <location line="-2279"/>
         <source>Up: %1(%2)</source>
         <translation>上傳: %1(%2)</translation>
     </message>
@@ -13277,7 +13370,7 @@ The core is detached: it keeps running with all downloads and uploads. Open eMul
         <translation>記錄項目</translation>
     </message>
     <message>
-        <location line="+164"/>
+        <location line="+168"/>
         <source>eMule Log</source>
         <translation>eMule 記錄</translation>
     </message>
@@ -13307,7 +13400,7 @@ The core is detached: it keeps running with all downloads and uploads. Open eMul
         <translation>eMule 首次執行精靈...</translation>
     </message>
     <message>
-        <location line="-775"/>
+        <location line="-779"/>
         <source>Unlimited</source>
         <translation>無限制</translation>
     </message>
@@ -13326,7 +13419,7 @@ Double-click to change</source>
 按兩下以變更</translation>
     </message>
     <message>
-        <location line="+783"/>
+        <location line="+787"/>
         <source>IP Filter...</source>
         <translation>IP 過濾器...</translation>
     </message>
@@ -13547,7 +13640,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>連線</translation>
     </message>
     <message>
-        <location line="+92"/>
+        <location line="+98"/>
         <source>Ready</source>
         <translation>就緒</translation>
     </message>
@@ -14904,7 +14997,7 @@ Download it again?</source>
 <context>
     <name>eMule::NetworkInfoDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+63"/>
+        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+65"/>
         <source>Network Information</source>
         <translation>網路資訊</translation>
     </message>
@@ -14920,7 +15013,7 @@ Download it again?</source>
         <translation>&lt;b&gt;未連線到常駐程式。&lt;/b&gt;</translation>
     </message>
     <message>
-        <location line="+33"/>
+        <location line="+37"/>
         <source>Client</source>
         <translation>客戶端</translation>
     </message>
@@ -14942,32 +15035,32 @@ Download it again?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+324"/>
+        <location line="+325"/>
         <source>UDP Port:</source>
         <translation>UDP 連接埠：</translation>
     </message>
     <message>
-        <location line="-313"/>
+        <location line="-314"/>
         <source>eD2K Network</source>
         <translation>eD2K 網路</translation>
     </message>
     <message>
         <location line="+6"/>
         <location line="+188"/>
-        <location line="+118"/>
+        <location line="+119"/>
         <source>Connected</source>
         <translation>已連線</translation>
     </message>
     <message>
-        <location line="-304"/>
+        <location line="-305"/>
         <location line="+145"/>
         <location line="+39"/>
-        <location line="+120"/>
+        <location line="+121"/>
         <source>Connecting</source>
         <translation>連線中</translation>
     </message>
     <message>
-        <location line="-302"/>
+        <location line="-303"/>
         <location line="+145"/>
         <source>Disconnected</source>
         <translation>已中斷連線</translation>
@@ -14976,7 +15069,7 @@ Download it again?</source>
         <location line="-144"/>
         <location line="+145"/>
         <location line="+117"/>
-        <location line="+34"/>
+        <location line="+35"/>
         <location line="+5"/>
         <location line="+38"/>
         <location line="+5"/>
@@ -14984,7 +15077,7 @@ Download it again?</source>
         <translation>狀態：</translation>
     </message>
     <message>
-        <location line="-338"/>
+        <location line="-339"/>
         <location line="+65"/>
         <location line="+156"/>
         <source>Users:</source>
@@ -15007,13 +15100,13 @@ Download it again?</source>
     </message>
     <message>
         <location line="-150"/>
-        <location line="+302"/>
+        <location line="+303"/>
         <location line="+34"/>
         <source>Unknown</source>
         <translation>未知</translation>
     </message>
     <message>
-        <location line="-329"/>
+        <location line="-330"/>
         <location line="+147"/>
         <source>ID:</source>
         <translation>ID：</translation>
@@ -15033,12 +15126,12 @@ Download it again?</source>
         <location line="+1"/>
         <location line="+96"/>
         <location line="+17"/>
-        <location line="+158"/>
+        <location line="+159"/>
         <source>Open</source>
         <translation>開放</translation>
     </message>
     <message>
-        <location line="-269"/>
+        <location line="-270"/>
         <location line="+94"/>
         <location line="+15"/>
         <source>Firewalled</source>
@@ -15051,12 +15144,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="-109"/>
-        <location line="+277"/>
+        <location line="+278"/>
         <source>IPv6:</source>
         <translation>IPv6：</translation>
     </message>
     <message>
-        <location line="-290"/>
+        <location line="-291"/>
         <source>server verified</source>
         <translation>伺服器已驗證</translation>
     </message>
@@ -15214,20 +15307,20 @@ Download it again?</source>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+208"/>
+        <location line="+209"/>
         <location line="+71"/>
         <source>Yes</source>
         <translation>是</translation>
     </message>
     <message>
-        <location line="-279"/>
-        <location line="+208"/>
+        <location line="-280"/>
+        <location line="+209"/>
         <location line="+71"/>
         <source>No</source>
         <translation>否</translation>
     </message>
     <message>
-        <location line="-265"/>
+        <location line="-266"/>
         <source>Kad Network</source>
         <translation>Kad 網路</translation>
     </message>
@@ -15303,13 +15396,13 @@ Download it again?</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+38"/>
+        <location line="+39"/>
         <location line="+43"/>
         <source>Disabled</source>
         <translation>已停用</translation>
     </message>
     <message>
-        <location line="-79"/>
+        <location line="-80"/>
         <source>not running</source>
         <translation>未執行</translation>
     </message>
@@ -15326,7 +15419,7 @@ Download it again?</source>
         <translation>網址：</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+19"/>
         <source>ed3k Network</source>
         <translation>ed3k 網路</translation>
     </message>
@@ -20691,7 +20784,7 @@ Rehash all shared files now?</source>
 <context>
     <name>eMule::PasteLinksDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/PasteLinksDialog.cpp" line="+17"/>
+        <location filename="../src/gui/dialogs/PasteLinksDialog.cpp" line="+18"/>
         <source>Paste eD2K Links</source>
         <translation>貼上 eD2K 連結</translation>
     </message>
@@ -20711,7 +20804,7 @@ Rehash all shared files now?</source>
         <translation>下載</translation>
     </message>
     <message>
-        <location line="+19"/>
+        <location line="+25"/>
         <source>Not Connected</source>
         <translation>未連線</translation>
     </message>
@@ -20779,7 +20872,7 @@ Rehash all shared files now?</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="+109"/>
+        <location line="+117"/>
         <source>Working…</source>
         <translation>處理中…</translation>
     </message>
@@ -26021,7 +26114,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="vanished">檔案</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/TorrentDetailsDialog.cpp" line="+47"/>
+        <location filename="../src/gui/dialogs/TorrentDetailsDialog.cpp" line="+48"/>
         <source>N/A</source>
         <translation>N/A</translation>
     </message>
@@ -26268,6 +26361,11 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>剩餘</translation>
     </message>
     <message>
+        <location line="+68"/>
+        <source>I2P is off: torrents set to use I2P get no I2P peers until the router is switched on in Options &gt; BitTorrent &gt; I2P.</source>
+        <translation>I2P 已關閉：設定為使用 I2P 的種子在 選項 &gt; BitTorrent &gt; I2P 中開啟路由器之前不會取得 I2P 節點。</translation>
+    </message>
+    <message>
         <source>Speed</source>
         <translation type="vanished">速度</translation>
     </message>
@@ -26316,7 +26414,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="vanished">最大同儕數：</translation>
     </message>
     <message>
-        <location line="+74"/>
+        <location line="+9"/>
         <source>Could not change the torrent options.</source>
         <translation>無法變更 Torrent 選項。</translation>
     </message>
@@ -26328,7 +26426,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         </translation>
     </message>
     <message>
-        <location line="-142"/>
+        <location line="-145"/>
         <location line="+37"/>
         <source>Progress</source>
         <translation>進度</translation>
@@ -26625,7 +26723,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
 <context>
     <name>eMule::TorrentListsPane</name>
     <message>
-        <location filename="../src/gui/controls/TorrentListsPane.cpp" line="+95"/>
+        <location filename="../src/gui/controls/TorrentListsPane.cpp" line="+96"/>
         <source>Tracker</source>
         <translation>追蹤器</translation>
     </message>
@@ -26988,7 +27086,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>追蹤器 URL，每行一個：</translation>
     </message>
     <message>
-        <location line="+41"/>
+        <location line="+43"/>
         <source>Could not change the trackers.</source>
         <translation>無法變更追蹤器。</translation>
     </message>
@@ -27011,7 +27109,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
 <context>
     <name>eMule::TorrentOptionsForm</name>
     <message>
-        <location filename="../src/gui/controls/TorrentOptionsForm.cpp" line="+40"/>
+        <location filename="../src/gui/controls/TorrentOptionsForm.cpp" line="+44"/>
         <source>Use global settings</source>
         <translation>使用全域設定</translation>
     </message>
@@ -27086,7 +27184,37 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>最大同儕數：</translation>
     </message>
     <message>
-        <location line="+128"/>
+        <location line="+3"/>
+        <source>Direct only</source>
+        <translation>僅直連</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>I2P only</source>
+        <translation>僅 I2P</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>I2P and direct</source>
+        <translation>I2P 和直連</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peers this torrent uses. Peers of a kind no longer wanted are disconnected.</source>
+        <translation>此種子使用的節點。不再需要的那類節點會被中斷連線。</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>I2P:</source>
+        <translation>I2P:</translation>
+    </message>
+    <message>
+        <location line="+121"/>
+        <source>Not while mixed mode is on in Options &gt; BitTorrent &gt; I2P.</source>
+        <translation>在 選項 &gt; BitTorrent &gt; I2P 中開啟混合模式時無法使用。</translation>
+    </message>
+    <message>
+        <location line="+27"/>
         <source>Varies</source>
         <translation>不同</translation>
     </message>
@@ -27099,7 +27227,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
 <context>
     <name>eMule::TorrentPanel</name>
     <message>
-        <location filename="../src/gui/panels/TorrentPanel.cpp" line="+123"/>
+        <location filename="../src/gui/panels/TorrentPanel.cpp" line="+126"/>
         <source>Torrent download completed: %1</source>
         <translation>種子下載完成：%1</translation>
     </message>
@@ -27117,12 +27245,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <location line="+14"/>
         <location line="+15"/>
         <location line="+11"/>
-        <location line="+671"/>
+        <location line="+675"/>
         <source>Not connected to the eMule core.</source>
         <translation>未連線到 eMule 核心。</translation>
     </message>
     <message>
-        <location line="-722"/>
+        <location line="-726"/>
         <source>Cannot read %1.</source>
         <translation>無法讀取 %1。</translation>
     </message>
@@ -27143,7 +27271,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>種子檔案 (*.torrent);;所有檔案 (*)</translation>
     </message>
     <message>
-        <location line="+75"/>
+        <location line="+76"/>
         <source>Add Torrent…</source>
         <translation>加入種子…</translation>
     </message>
@@ -27272,7 +27400,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>無法讀取種子選項。</translation>
     </message>
     <message>
-        <location line="+34"/>
+        <location line="+26"/>
+        <source>I2P is off: torrents set to use I2P get no I2P peers until the router is switched on in Options &gt; BitTorrent &gt; I2P.</source>
+        <translation>I2P 已關閉：設定為使用 I2P 的種子在 選項 &gt; BitTorrent &gt; I2P 中開啟路由器之前不會取得 I2P 節點。</translation>
+    </message>
+    <message>
+        <location line="+11"/>
         <source>Could not change the torrent options.</source>
         <translation>無法變更 Torrent 選項。</translation>
     </message>
@@ -27310,8 +27443,13 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <source>BitTorrent is off — enable it in Options.</source>
         <translation>BitTorrent 已關閉 — 請在選項中啟用。</translation>
     </message>
-    <message numerus="yes">
+    <message>
         <location line="+20"/>
+        <source>%1 v4 / %2 v6</source>
+        <translation>%1 v4 / %2 v6</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+5"/>
         <source>%n torrent(s), %1 active — Down: %2, Up: %3 — DHT: %4 nodes — Port %5 %6</source>
         <translation>
             <numerusform>%n 個種子，%1 個使用中 — 下載：%2，上傳：%3 — DHT：%4 個節點 — 連接埠 %5 %6</numerusform>

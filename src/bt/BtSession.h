@@ -162,6 +162,9 @@ private slots:
     void tick();
 
 private:
+    /// I2P flag, I2P trackers and the peers of the dropped kind (setOptions)
+    void setI2pMode(const QString& id, BtI2pMode mode);
+
     struct Impl;
     std::unique_ptr<Impl> d;
 };

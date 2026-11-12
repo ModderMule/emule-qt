@@ -482,8 +482,7 @@ void Ed3kFilters::saveOwn() const
         out += QStringLiteral("%1\t%2\t%3\t%4\n").arg(int(o.subject)).arg(hexOf(o.id)).arg(int(o.verdict)).arg(field(o.reason));
     const QByteArray data = out.toUtf8();
     QDir().mkpath(stateDir(m_configDir));
-    if (!writeBlob(localPath(kOwnFile), spanOf(data)))
-        logEd3kWarning(QStringLiteral("ed3k: %1 not written").arg(kOwnFile));
+    writeBlobLater(localPath(kOwnFile), spanOf(data));
 }
 
 QString Ed3kFilters::localPath(const QString& name) const

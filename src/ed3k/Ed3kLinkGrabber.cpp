@@ -5,6 +5,7 @@
 
 #include "Ed3kHosterJoin.h"
 #include "Ed3kStore.h"
+#include "utils/BackgroundFileWriter.h"
 #include "utils/Log.h"
 
 #include <QDateTime>
@@ -15,7 +16,6 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
-#include <QSaveFile>
 #include <QUrl>
 
 #include <algorithm>
@@ -492,10 +492,10 @@ void Ed3kLinkGrabber::load()
     if (m_loaded)
         return;
     m_loaded = true;
-    QFile f(file());
-    if (!f.open(QIODevice::ReadOnly))
+    const auto raw = BackgroundFileWriter::readFile(file());   // a queued save is newer
+    if (!raw)
         return;
-    const QJsonObject root = QJsonDocument::fromJson(f.readAll()).object();
+    const QJsonObject root = QJsonDocument::fromJson(*raw).object();
     for (const QJsonValue& v : root.value(QStringLiteral("packages")).toArray()) {
         const QJsonObject o = v.toObject();
         Package p;
@@ -561,16 +561,14 @@ void Ed3kLinkGrabber::save()
         links.append(o);
     }
     // none kept and no file yet: create nothing under config/ed3k (#105)
-    if (links.isEmpty() && pkgs.isEmpty() && !QFileInfo::exists(file()))
+    auto& writer = BackgroundFileWriter::instance();
+    if (links.isEmpty() && pkgs.isEmpty() && !QFileInfo::exists(file()) && !writer.pending(file()))
         return;
-    QDir().mkpath(QFileInfo(file()).absolutePath());
-    QSaveFile f(file());
-    if (!f.open(QIODevice::WriteOnly))
-        return;
-    f.write(QJsonDocument(QJsonObject{{QStringLiteral("packages"), pkgs}, {QStringLiteral("links"), links}})
-                .toJson(QJsonDocument::Indented));
-    if (!f.commit())
-        logHosterWarning(QStringLiteral("link grabber: cannot write %1").arg(file()));
+    // off the main thread (report 43); the writer logs a failed write
+    writer.write(file(),
+                 QJsonDocument(QJsonObject{{QStringLiteral("packages"), pkgs}, {QStringLiteral("links"), links}})
+                     .toJson(QJsonDocument::Indented),
+                 {});
 }
 
 // ---- private ----

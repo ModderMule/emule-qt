@@ -1214,8 +1214,7 @@ void Ed3kPaid::save() const
             .toJson(QJsonDocument::Compact);
     QDir().mkpath(stateDir(m_configDir));
     // a pass is no credential without its holder key (a file of its own); owner-only all the same
-    if (!writeBlob(statePath(), spanOf(out)))
-        logEd3kWarning(QStringLiteral("ed3k: %1 not written").arg(statePath()));
+    writeBlobLater(statePath(), spanOf(out));
 }
 
 } // namespace eMule::ed3k

@@ -120,14 +120,38 @@ QStringList I2pRouter::arguments(const Config& config, quint16 samPort, const QS
         QStringLiteral("--sam.enabled=true"),
         QStringLiteral("--sam.address=127.0.0.1"),
         QStringLiteral("--sam.port=%1").arg(samPort),
-        // no other client service: nothing else listens
-        QStringLiteral("--http.enabled=false"),
-        QStringLiteral("--httpproxy.enabled=false"),
+        // no other client service: nothing else listens (browser proxy, status page below, opt-in)
         QStringLiteral("--socksproxy.enabled=false"),
         QStringLiteral("--bob.enabled=false"),
         QStringLiteral("--i2cp.enabled=false"),
         QStringLiteral("--i2pcontrol.enabled=false"),
     };
+    // browser proxy: own (transient) destination, not the torrents' SAM one; loopback unless
+    // preferences.yml binds elsewhere
+    if (config.browserProxyPort != 0)
+        a << QStringLiteral("--httpproxy.enabled=true")
+          << QStringLiteral("--httpproxy.address=")
+                 + (config.browserProxyAddress.isEmpty() ? QStringLiteral("127.0.0.1") : config.browserProxyAddress)
+          << QStringLiteral("--httpproxy.port=%1").arg(config.browserProxyPort);
+    else
+        a << QStringLiteral("--httpproxy.enabled=false");
+    // status page = i2pd webconsole, on the proxy's host
+    if (config.statusPagePort != 0) {
+        const QString bind = config.statusPageAddress.isEmpty() ? QStringLiteral("127.0.0.1") : config.statusPageAddress;
+        a << QStringLiteral("--http.enabled=true") << QStringLiteral("--http.address=") + bind
+          << QStringLiteral("--http.port=%1").arg(config.statusPagePort);
+        // strict Host check passes "localhost" and the bind address; a wildcard bind has no
+        // fixed name, so the check would refuse every LAN request
+        if (const QHostAddress h(bind); h == QHostAddress::AnyIPv4 || h == QHostAddress::AnyIPv6)
+            a << QStringLiteral("--http.strictheaders=false");
+        if (!config.statusPagePassword.isEmpty())
+            a << QStringLiteral("--http.auth=true")
+              << QStringLiteral("--http.user=")
+                     + (config.statusPageUser.isEmpty() ? QStringLiteral("i2pd") : config.statusPageUser)
+              << QStringLiteral("--http.pass=") + config.statusPagePassword;
+    } else {
+        a << QStringLiteral("--http.enabled=false");
+    }
     // .i2p tracker names resolve only from the address book: i2pd's default subscribes
     // reg.i2p alone, which misses many trackers → SAM "invalid key" (report 38)
     if (!confSetsSubscriptions(data.filePath(QStringLiteral("i2pd.conf"))))

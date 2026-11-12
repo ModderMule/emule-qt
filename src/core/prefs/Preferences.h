@@ -20,6 +20,7 @@
 #include <functional>
 #include <QByteArray>
 #include <QCborMap>
+#include <QHostAddress>
 #include <QList>
 #include <QMap>
 #include <QReadWriteLock>
@@ -1526,6 +1527,25 @@ public:
     /// Share of the bundled router's bandwidth for others' tunnels, percent 0–100.
     [[nodiscard]] int btI2pShare() const;
     void setBtI2pShare(int val);
+    /// Bundled router serves an HTTP proxy for browsers on btI2pBrowserProxyAddress:Port.
+    [[nodiscard]] bool btI2pBrowserProxy() const;
+    void setBtI2pBrowserProxy(bool val);
+    /// Bind address of that proxy: YAML only (bittorrent.i2p.browserProxyAddress), no UI.
+    /// Default 127.0.0.1; a bad address falls back to it. Port default 4444.
+    [[nodiscard]] QString btI2pBrowserProxyAddress() const;
+    void setBtI2pBrowserProxyAddress(const QString& val);
+    [[nodiscard]] uint16 btI2pBrowserProxyPort() const;
+    void setBtI2pBrowserProxyPort(uint16 val);
+    /// Bundled router serves its status page (i2pd webconsole) on btI2pBrowserProxyAddress.
+    [[nodiscard]] bool btI2pStatusPage() const;
+    void setBtI2pStatusPage(bool val);
+    [[nodiscard]] uint16 btI2pStatusPagePort() const;
+    void setBtI2pStatusPagePort(uint16 val);
+    /// Basic auth of the status page: on with a password; empty user = i2pd's "i2pd".
+    [[nodiscard]] QString btI2pStatusPageUser() const;
+    void setBtI2pStatusPageUser(const QString& val);
+    [[nodiscard]] QString btI2pStatusPagePassword() const;
+    void setBtI2pStatusPagePassword(const QString& val);
     /// The public I2P trackers of issue #118 (http only: no UDP over SAM in libtorrent).
     [[nodiscard]] static QStringList defaultBtI2pTrackers();
 
@@ -1533,6 +1553,10 @@ public:
     static constexpr int kBtI2pBundled = 1;
     static constexpr int kBtI2pExternal = 2;
     static constexpr uint16 kDefaultBtI2pSamPort = 7656;
+    /// i2pd's and Java I2P's usual HTTP proxy port
+    static constexpr uint16 kDefaultBtI2pBrowserProxyPort = 4444;
+    /// i2pd's webconsole port
+    static constexpr uint16 kDefaultBtI2pStatusPagePort = 7070;
     /// i2pd's own pick range for its router port
     static constexpr uint16 kBtI2pRouterPortMin = 9111;
     static constexpr uint16 kBtI2pRouterPortMax = 30777;
@@ -1840,6 +1864,13 @@ public:
 
     [[nodiscard]] QString ipcListenAddress() const;
     void setIpcListenAddress(const QString& val);
+
+    /// The address the core listens at for an ipc.listenAddress value: "*" = every
+    /// interface, both families; "" or no address = loopback.
+    [[nodiscard]] static QHostAddress ipcBindAddressOf(const QString& value);
+    /// Where a client on this machine dials a core listening at @p value: a wildcard
+    /// ("*", 0.0.0.0, ::) or "" over loopback.
+    [[nodiscard]] static QString ipcDialHostOf(const QString& value);
 
     /// Path to emulecored binary. Empty = search next to GUI executable.
     [[nodiscard]] QString ipcDaemonPath() const;

@@ -328,6 +328,7 @@ private slots:
     void onTrayIconClicked(QSystemTrayIcon::ActivationReason reason);
     void onOptionsClicked();
     void showNetworkInfo();
+    void showEd3kNetworkInfo();
     void onClipboardChanged();
     /// http(s) hoster links in the clipboard (ed3kHosterClipboard): the Hoster tab crawls them
     void checkHosterClipboard(const QString& text);

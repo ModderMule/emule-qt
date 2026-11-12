@@ -2,6 +2,7 @@
 
 #include "IndexerCapsStore.h"
 
+#include "utils/BackgroundFileWriter.h"
 #include "utils/Log.h"
 
 #include <QCryptographicHash>
@@ -10,7 +11,6 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRandomGenerator>
-#include <QSaveFile>
 #include <QTimer>
 
 namespace eMule::indexer {
@@ -80,17 +80,13 @@ void PasswordFlagStore::flush()
                                               {QStringLiteral("flags"), flags}});
     }
 
-    QSaveFile file(m_path);
-    if (!file.open(QIODevice::WriteOnly)
-        || file.write(QJsonDocument(QJsonObject{
-                                        {QStringLiteral("version"), kVersion},
-                                        {QStringLiteral("salt"), QString::fromLatin1(m_salt.toHex())},
-                                        {QStringLiteral("indexers"), indexers}})
-                          .toJson(QJsonDocument::Compact)) < 0
-        || !file.commit()) {
-        logWarning(QStringLiteral("Indexers: could not store the password flag counts: %1")
-                       .arg(file.errorString()));
-    }
+    // off the main thread (report 43); the writer logs a failed write
+    BackgroundFileWriter::instance().write(m_path,
+                                           QJsonDocument(QJsonObject{{QStringLiteral("version"), kVersion},
+                                                                     {QStringLiteral("salt"), QString::fromLatin1(m_salt.toHex())},
+                                                                     {QStringLiteral("indexers"), indexers}})
+                                               .toJson(QJsonDocument::Compact),
+                                           {});
 }
 
 // ---------------------------------------------------------------------------
@@ -101,10 +97,10 @@ void PasswordFlagStore::load()
 {
     if (m_path.isEmpty())
         return;
-    QFile file(m_path);
-    if (!file.open(QIODevice::ReadOnly))
+    const auto raw = BackgroundFileWriter::readFile(m_path);   // a queued save is newer
+    if (!raw)
         return;
-    const QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
+    const QJsonObject root = QJsonDocument::fromJson(*raw).object();
     if (root.value(QStringLiteral("version")).toInt() != kVersion)
         return;
     m_salt = QByteArray::fromHex(root.value(QStringLiteral("salt")).toString().toLatin1());

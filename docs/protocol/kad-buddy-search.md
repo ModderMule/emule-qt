@@ -299,8 +299,10 @@ Two points differ from stock, both on the serving node only:
   (`PacketTracking.cpp:144-146`). A fifth request in one burst bans that IP
   (`PacketTracking.cpp:187-192`). With one buddy per node a caller never needs more. With
   several, a caller that wants two nodes behind the same buddy would lose its second request,
-  and a caller that wants five would be banned. eMuleQt allows one request per minute for
-  each buddy slot (`maxServedBuddies`). With the limit set to 1 this is the stock rule.
+  and a caller that wants five would be banned. eMuleQt allows 100 requests per minute for
+  each buddy slot (`maxServedBuddies`) from one IP, and relays 100 per minute from one IP to
+  each served buddy, more while all served buddies together use under half the combined
+  budget. aMule 3.3 relays 1 per minute per IP and buddy.
 
 ### How eMuleQt does it
 
@@ -339,7 +341,10 @@ A served buddy is dropped when:
 | Pending claims in total | 64, a further one releases the oldest | `ClientList::kMaxPendingBuddyClaims` |
 | Relayed bytes per served buddy | 64 KiB per minute, both kinds on one budget | `UpDownClient::allowBuddyRelay()`, `kBuddyRelayBytesPerMin` |
 | `OP_REASKCALLBACKUDP` size | at most 8,228 bytes, the format maximum (65,535 parts); larger is dropped | `kMaxReaskCallbackUdpSize` |
-| `KADEMLIA_CALLBACK_REQ` per caller IP | the limit in effect per minute (stock: 1) | `PacketTracking::inTrackListIsAllowedPacket()` |
+| `KADEMLIA_CALLBACK_REQ` per caller IP | 100 × the limit in effect per minute (stock: 1) | `PacketTracking::inTrackListIsAllowedPacket()` |
+| `KADEMLIA_CALLBACK_REQ` per caller IP and served buddy | 100 per minute; more while the combined budget is under half used | `UpDownClient::callbackSenderUnderLimit()`, `kCallbacksPerSenderPerMin` |
+| Combined relay budget | 64 KiB per minute for each slot in effect, filled or not | `ClientList::servedRelayBudget()`, `servedRelayBelowHalf()` |
+| Silent link (≥ 15 min, no ping, nothing relayed) | that IP is not served for 30 min | `ClientList::noteSilentServedBuddy()`, `kSilentBuddyCoolOffSecs` |
 
 Each served buddy holds one idle TCP connection, kept open by its ping every 10 minutes, and
 counts against the connection limit. That is why the limit in effect is at most a tenth of
@@ -348,8 +353,23 @@ connections at most 10 nodes are served. Lowering `maxConnections` (the schedule
 that too) drops the newest served buddies over the new limit.
 
 The callback limit keeps the stock bucket and ban threshold; only the cost of one request
-changes. At 8 slots a burst of 8 requests from one IP passes, the 9th is dropped,
-and the IP is banned at the 33rd. The limit for `KADEMLIA_FINDBUDDY_REQ` stays as in stock.
+changes. At 8 slots a burst of 800 requests from one IP passes, the 801st is dropped,
+and the IP is banned at the 3,201st. The limit for `KADEMLIA_FINDBUDDY_REQ` stays as in stock.
+
+The relay then counts per caller IP and served buddy: 100 a minute, and above that only
+while all served buddies together use under half the combined budget (64 KiB a minute for
+each slot: 512 KiB at 8 slots, 8 MiB at 128). Each buddy's own 64 KiB still applies. A relayed `OP_CALLBACK` makes the
+served node dial the address in the request, and an unkeyed UDP sender address can be
+forged, so one IP cannot take a buddy's whole budget. aMule 3.3 relays 1 a minute per IP and
+buddy and counted 6 drops by it in 23 h, 3 of them from its own network
+([#1809](https://github.com/amule-org/amule/issues/1809)). 1 is too few for many callers
+behind one carrier NAT address.
+
+A served node that holds its link for 15 minutes without one `OP_BUDDYPING` and without
+anything relayed to it gains nothing from the slot. aMule saw two 2.3.1 nodes re-link about
+2 minutes after each 25-minute silence timeout, 46 times in 23 h, holding 6 % of the buddy
+time. When such a link ends, its IP is refused for 30 minutes, by Kad request and by TCP claim, and
+gets no ExtSX buddy offer. Kad v0 nodes never ping and are exempt.
 
 The budget counts the bytes relayed to the served node, the body of the TCP packet it gets:
 
@@ -373,6 +393,7 @@ counts as well and does not send what would be dropped (`BuddyRelayBudget`, reac
 | | Requester-side rule | Sent from |
 |---|---|---|
 | `KADEMLIA_CALLBACK_REQ` per relay IP | the relay's bucket: 8 at once, then one per 7.5 s | `UpDownClient::tryToConnect()`, `FindSource` search |
+| `KADEMLIA_CALLBACK_REQ` per relay IP and buddy ID | 1 per minute, aMule's relay rule | the two above |
 | `KADEMLIA_CALLBACK_REQ` and `OP_REASKCALLBACKUDP` per buddy ID | 64 KiB relayed in any 60 s, a reask charged in its IPv6 form | the two above and `UpDownClient::udpReaskForDownload()` |
 
 - The requester does not know the relay's slot count, so it assumes 8, the auto value at the
@@ -383,7 +404,13 @@ counts as well and does not send what would be dropped (`BuddyRelayBudget`, reac
 - A held-back callback request leaves the source waiting for the callback, and the attempt
   ends by the usual timeout, as it does when the relay drops the packet. A held-back reask
   is not counted as a sent UDP packet and is tried again on the next pass.
-- The stock limit of one callback request per minute and IP is not mirrored.
+- The stock limit of one callback request per minute and IP is not mirrored. A stock relay
+  serves one buddy, so the per-buddy rule covers it. The per-buddy rule mirrors aMule's
+  relay, the strictest; an eMuleQt relay allows more, but one caller rarely needs more than
+  one callback a minute from one node. ToDo: raise it toward eMuleQt relays only once
+  eMuleQt is common. The requester never talks to the relay and the buddy route carries no
+  client kind, so the firewalled node would set an "eMuleQt relay" bit in our LowID route
+  tags (ExtSX and own hello, `extxs-buddy-route.md`) when its buddy is eMuleQt.
 
 The number of served buddies is kept small on purpose:
 
@@ -392,8 +419,8 @@ The number of served buddies is kept small on purpose:
 - other nodes drop a source whose buddy IP they have banned or filtered
   (`KademliaUDPListener.cpp:1345-1356`, `DownloadQueue.cpp:1560-1565`). One ban of the buddy
   hides every node behind it;
-- every slot raises the callback limit above, so the node accepts more unverified UDP
-  requests from one IP before it drops or bans;
+- every slot raises the callback limit above by 100 a minute, so the node accepts more
+  unverified UDP requests from one IP before it drops or bans;
 - every slot costs a TCP connection and relay traffic.
 
 A node that uses a buddy itself offers no slot.

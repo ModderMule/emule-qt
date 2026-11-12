@@ -1137,8 +1137,7 @@ void Ed3kPaidSeller::save() const
                                .toJson(QJsonDocument::Compact);
     QDir().mkpath(sellDir());
     // no secret here (the seeds are files of their own); owner-only all the same
-    if (!writeBlob(statePath(), spanOf(out)))
-        logEd3kWarning(QStringLiteral("ed3k: %1 not written").arg(statePath()));
+    writeBlobLater(statePath(), spanOf(out));
 }
 
 } // namespace eMule::ed3k

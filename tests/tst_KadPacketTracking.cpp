@@ -167,26 +167,24 @@ void tst_KadPacketTracking::flood_validReceiverKeyDoesNotBypass()
 
 void tst_KadPacketTracking::flood_callbackBudgetScalesWithServedBuddies()
 {
-    // Not MFC: a caller may want several nodes behind one buddy, so the budget
-    // is one CALLBACK_REQ per served-buddy slot instead of MFC's 1/min.
+    // Not MFC (1/min): kCallbacksPerSenderPerMin (100) per served-buddy slot. The relay
+    // counts per sender and buddy itself (UpDownClient::callbackSenderUnderLimit).
     const uint16 saved = thePrefs.maxServedBuddies();
 
     thePrefs.setMaxServedBuddies(8);
     {
         TestablePacketTracking pt;
-        for (int i = 0; i < 8; ++i)
-            QCOMPARE(pt.inTrackListIsAllowedPacket(0x0A000001, KADEMLIA_CALLBACK_REQ, false), 0);
+        QCOMPARE(drain(pt, 0x0A000001, KADEMLIA_CALLBACK_REQ, 800), 0);
         QCOMPARE(pt.inTrackListIsAllowedPacket(0x0A000001, KADEMLIA_CALLBACK_REQ, false), 1);
-        // 7500 ms a packet: the ban needs a deficit beyond 180000 ms, i.e. packet 33.
-        QCOMPARE(drain(pt, 0x0A000001, KADEMLIA_CALLBACK_REQ, 23), 1);
+        // 75 ms a packet: the ban needs a deficit beyond 180000 ms, i.e. packet 3201.
+        QCOMPARE(drain(pt, 0x0A000001, KADEMLIA_CALLBACK_REQ, 2399), 1);
         QCOMPARE(pt.inTrackListIsAllowedPacket(0x0A000001, KADEMLIA_CALLBACK_REQ, false), 2);
     }
 
-    // One slot is MFC's budget: packet 2 is over.
     thePrefs.setMaxServedBuddies(1);
     {
         TestablePacketTracking pt;
-        QCOMPARE(pt.inTrackListIsAllowedPacket(0x0A000001, KADEMLIA_CALLBACK_REQ, false), 0);
+        QCOMPARE(drain(pt, 0x0A000001, KADEMLIA_CALLBACK_REQ, 100), 0);
         QCOMPARE(pt.inTrackListIsAllowedPacket(0x0A000001, KADEMLIA_CALLBACK_REQ, false), 1);
     }
 

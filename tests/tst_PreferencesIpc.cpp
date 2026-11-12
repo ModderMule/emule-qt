@@ -146,6 +146,21 @@ private:
     }
 
 private slots:
+    /// "*" = every interface, both families; wildcards dialled over loopback
+    void ipcListenAddress_wildcards()
+    {
+        using eMule::Preferences;
+        QCOMPARE(Preferences::ipcBindAddressOf(QStringLiteral("*")), QHostAddress(QHostAddress::Any));
+        QCOMPARE(Preferences::ipcBindAddressOf(QString()), QHostAddress(QHostAddress::LocalHost));
+        QCOMPARE(Preferences::ipcBindAddressOf(QStringLiteral("0.0.0.0")), QHostAddress(QHostAddress::AnyIPv4));
+        QCOMPARE(Preferences::ipcBindAddressOf(QStringLiteral("::")), QHostAddress(QHostAddress::AnyIPv6));
+        QCOMPARE(Preferences::ipcBindAddressOf(QStringLiteral("no.such")), QHostAddress(QHostAddress::LocalHost));
+        QCOMPARE(Preferences::ipcDialHostOf(QStringLiteral("*")), QStringLiteral("127.0.0.1"));
+        QCOMPARE(Preferences::ipcDialHostOf(QString()), QStringLiteral("127.0.0.1"));
+        QCOMPARE(Preferences::ipcDialHostOf(QStringLiteral("::")), QStringLiteral("::1"));
+        QCOMPARE(Preferences::ipcDialHostOf(QStringLiteral("192.0.2.7")), QStringLiteral("192.0.2.7"));
+    }
+
     void initTestCase()
     {
         QVERIFY(m_tmpDir.isValid());

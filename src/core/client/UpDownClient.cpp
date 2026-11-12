@@ -2643,8 +2643,7 @@ void UpDownClient::onHandshakeCompleted()
 void UpDownClient::maybeBootstrapKadFromPeer()
 {
     // ed3k Kad first: its own checks (derived user hash, few contacts) are in the hook
-    if (theApp.ed3kKadSeed && hasValidHash())
-        theApp.ed3kKadSeed(*this);
+    maybeSeedEd3kFromPeer();
 
     if (m_kadPort == 0 || m_kadVersion < KADEMLIA_VERSION2_47a)
         return;
@@ -2884,8 +2883,16 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
                         .arg(std::time(nullptr) - m_kadStateSince));
         if (m_kadState == KadState::ConnectingBuddy && !m_servedBuddy && theApp.clientList)
             theApp.clientList->noteFailedBuddyCandidate(*this);
+        if (servedBuddyLinkWasSilent() && theApp.clientList)
+            theApp.clientList->noteSilentServedBuddy(*this);
     } else if (m_kadState == KadState::ClaimingBuddy && theApp.clientList) {
         theApp.clientList->endBuddyClaim(*this, false, QStringLiteral("link closed (%1)").arg(reason));
+    }
+    // Dial to re-claim our lost buddy failed
+    if (m_reclaimBuddyPort != 0) {
+        m_reclaimBuddyPort = 0;
+        if (theApp.clientList)
+            theApp.clientList->noteFailedBuddyCandidate(*this);
     }
     setKadState(KadState::None);
 
@@ -2941,6 +2948,14 @@ void UpDownClient::onInfoPacketsReceived()
     if (m_kadState == KadState::ConnectedBuddy && !m_servedBuddy && theApp.clientList
         && theApp.clientList->buddyStatus() != BuddyStatus::Connected) {
         theApp.clientList->setBuddy(this, BuddyStatus::Connected);
+    }
+
+    // Our lost claimed buddy, dialled again: claim it on this link
+    if (m_reclaimBuddyPort != 0 && theApp.clientList) {
+        const uint16 kadPort = std::exchange(m_reclaimBuddyPort, 0);
+        if (!theApp.clientList->takeBuddyOffer(*this, kadPort))
+            kad::logKad(QStringLiteral("Kad: lost buddy %1 reached, no claim sent (buddy found "
+                                       "meanwhile or no longer eligible)").arg(kadBuddyInfo()));
     }
 
     // Send SecureIdent state packet once per connection, only after BOTH
@@ -4480,6 +4495,8 @@ void UpDownClient::processBuddyPing()
 
     // The firewalled side pings, so on an open node the sender is a served buddy.
     const bool served = m_servedBuddy && m_kadState == KadState::ConnectedBuddy;
+    if (served)
+        m_buddyPingHeard = true;   // even one too early: the link is in use
 
     // Verify: sender must be a buddy, with valid Kad version, not too frequent
     if ((buddy != this && !served) || m_kadVersion == 0 || !allowIncomingBuddyPingPong()) {
@@ -4624,7 +4641,31 @@ bool UpDownClient::allowBuddyRelay(uint32 bytes)
     if (bytes > kBuddyRelayBytesPerMin - m_buddyRelayBytes)
         return false;
     m_buddyRelayBytes += bytes;
+    m_buddyLinkRelayed = true;
     return true;
+}
+
+uint32 UpDownClient::buddyRelayBytesUsed() const
+{
+    return getTickCount() - m_buddyRelayWindowStart >= MIN2MS(1) ? 0 : m_buddyRelayBytes;
+}
+
+bool UpDownClient::callbackSenderUnderLimit(uint32 senderIp) const
+{
+    return m_callbackSenders.isOpen(senderIp, getTickCount(), kCallbacksPerSenderPerMin);
+}
+
+void UpDownClient::noteCallbackRelayed(uint32 senderIp)
+{
+    m_callbackSenders.pass(senderIp, getTickCount());
+}
+
+bool UpDownClient::servedBuddyLinkWasSilent() const
+{
+    // Kad v0 never pings; under 15 min a 10-min pinger may not have pinged yet
+    return m_servedBuddy && m_kadState == KadState::ConnectedBuddy && m_kadVersion > 0
+           && !m_buddyPingHeard && !m_buddyLinkRelayed
+           && std::time(nullptr) - m_kadStateSince >= ClientList::kSilentBuddyMinLinkSecs;
 }
 
 // ===========================================================================
@@ -5041,6 +5082,9 @@ void UpDownClient::onHelloReceived(const uint8* data, uint32 size, uint8 opcode)
         // InfoPacketsReceived() — the reverse of the OP_HELLO ordering above. This is the
         // point at which an outgoing connection's handshake is actually complete.
         onHandshakeCompleted();
+        // not in MFC (no eD2K Kad bootstrap here): outgoing connections, i.e. download
+        // sources, are most eMuleQt peers met; ed3k seeds need them too
+        maybeSeedEd3kFromPeer();
     }
 }
 
@@ -6134,6 +6178,16 @@ bool UpDownClient::serverCallbackKnownStale() const
     return m_staleCallbackUserID != 0 && m_staleCallbackUserID == m_userIDHybrid
         && m_staleCallbackServerPort == m_serverPort
         && m_staleCallbackServer == m_serverAddress;
+}
+
+// ===========================================================================
+// maybeSeedEd3kFromPeer — ed3k Kad seed (bootstrap.md §1 source 4)
+// ===========================================================================
+
+void UpDownClient::maybeSeedEd3kFromPeer()
+{
+    if (theApp.ed3kKadSeed && hasValidHash())
+        theApp.ed3kKadSeed(*this);
 }
 
 } // namespace eMule

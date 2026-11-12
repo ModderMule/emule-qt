@@ -2068,11 +2068,20 @@ void KademliaUDPListener::process_KADEMLIA_CALLBACK_REQ(const uint8* data, uint3
                    .arg(ipToString(ip)));
         return;
     }
+    // Per sender and buddy: the buddy dials the sender's address, which UDP can forge.
+    // The per-IP Kad bucket stays as the coarse limit.
+    // Over the count only while all buddies together use under half the combined budget
+    if (!buddy->callbackSenderUnderLimit(ip) && !clientList->servedRelayBelowHalf()) {
+        logKad(QStringLiteral("Kad: CALLBACK_REQ from %1 — per-sender limit for that buddy reached")
+                   .arg(ipToString(ip)));
+        return;
+    }
     if (!buddy->allowBuddyRelay(kRelayedCallbackSize)) {
         logKad(QStringLiteral("Kad: CALLBACK_REQ from %1 — relay limit for that buddy reached")
                    .arg(ipToString(ip)));
         return;
     }
+    buddy->noteCallbackRelayed(ip);
 
     // Build OP_CALLBACK TCP packet: original fields + sender's IP and port
     SafeMemFile relayPacket;

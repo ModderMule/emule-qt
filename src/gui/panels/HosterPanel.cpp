@@ -412,7 +412,9 @@ void HosterPanel::promptAddLinks(const QStringList& prefill)
     dlg.setWindowTitle(tr("Add hoster links"));
     auto* layout = new QVBoxLayout(&dlg);
     layout->addWidget(new QLabel(tr("Links to files at hosters, one per line:"), &dlg));
-    auto* edit = new QPlainTextEdit(prefill.join(QLatin1Char('\n')), &dlg);
+    // nothing handed in: the clipboard's http(s) links, if any
+    auto* edit = new QPlainTextEdit((prefill.isEmpty() ? clipboardLinks() : prefill).join(QLatin1Char('\n')), &dlg);
+    edit->selectAll();
     edit->setMinimumSize(520, 180);
     layout->addWidget(edit);
     // optional: the links download as one package, into a folder of that name
@@ -1026,15 +1028,7 @@ QList<qint64> HosterPanel::selectedIds() const
 
 QStringList HosterPanel::clipboardLinks()
 {
-    QStringList links;
-    const QString text = QApplication::clipboard()->text();
-    for (const QStringView line : QStringView(text).split(QLatin1Char('\n'))) {
-        const QString t = line.trimmed().toString();
-        if (t.startsWith(QLatin1StringView("http://"), Qt::CaseInsensitive)
-            || t.startsWith(QLatin1StringView("https://"), Qt::CaseInsensitive))
-            links << t;
-    }
-    return links;
+    return Clipboard::httpLinksIn(Clipboard::text());
 }
 
 void HosterPanel::openRow(QTreeWidgetItem* row)

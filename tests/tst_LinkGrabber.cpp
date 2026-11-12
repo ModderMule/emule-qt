@@ -2,6 +2,7 @@
 /// @brief The Link Grabber (Ed3kLinkGrabber, hoster.md "Link Grabber"): crawls through a fake
 /// resolver, checks and downloads through a fake backend; grouping, edits, confirm, saving.
 
+#include "utils/BackgroundFileWriter.h"
 #include "Ed3kLinkGrabber.h"
 #include "Ed3kResolver.h"
 
@@ -421,6 +422,7 @@ private slots:
                   {QStringLiteral("pw")});
             g.setLinksEnabled({byName(g, QStringLiteral("gone.bin"))->id}, false);
         }   // the destructor writes what waits
+        eMule::BackgroundFileWriter::instance().flush();   // saves are queued (report 43)
         QVERIFY(QFileInfo::exists(tmp.filePath(QStringLiteral("ed3k/hoster/linkgrabber.json"))));
         Ed3kLinkGrabber g(tmp.path());
         g.load();

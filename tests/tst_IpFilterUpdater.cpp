@@ -111,7 +111,9 @@ void tst_IpFilterUpdater::scheduled_notModifiedKeepsFile()
     QString message;
     QVERIFY(runScheduled(ok, message));
     QVERIFY2(ok, qPrintable(message));
+    BackgroundFileWriter::instance().flush();   // the list is written off the main thread
     const QDateTime written = QFileInfo(listPath()).lastModified();
+    QVERIFY(written.isValid());
 
     thePrefs.setIpFilterLastUpdate(0);   // due again
     QVERIFY(runScheduled(ok, message));
@@ -151,6 +153,7 @@ void tst_IpFilterUpdater::scheduled_missingFileSendsNoValidators()
     QVERIFY2(ok, qPrintable(message));
 
     // A 304 would leave the user with no list at all
+    BackgroundFileWriter::instance().flush();
     QVERIFY(QFile::remove(listPath()));
     thePrefs.setIpFilterLastUpdate(0);
     QVERIFY(runScheduled(ok, message));

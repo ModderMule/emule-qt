@@ -3,6 +3,7 @@
 /// node A shares a file of a fake share list, node B downloads it by its root into a part
 /// file, verifies, moves and shares it; pause/resume; a part file taken up after a restart.
 
+#include "utils/BackgroundFileWriter.h"
 #include "Ed3kDownloads.h"
 #include "Ed3kDownloadsBridge.h"
 #include "Ed3kSession.h"
@@ -300,6 +301,7 @@ void tst_Ed3kDownloads::aCopiedPartFileGoesOnElsewhere()
     const QString in2 = QDir(second.path()).filePath(QStringLiteral("in"));
     QVERIFY(QDir().mkpath(temp2));
     const QString name = QFileInfo(part).fileName();
+    eMule::BackgroundFileWriter::instance().flush();   // saves are queued (report 43)
     QVERIFY(QFile::copy(part, QDir(temp2).filePath(name)));
     QVERIFY(QFile::copy(part + QStringLiteral(".met"), QDir(temp2).filePath(name + QStringLiteral(".met"))));
 
@@ -351,6 +353,7 @@ void tst_Ed3kDownloads::anOldStateFileMovesToMetFiles()
     {
         Ed3kDownloads d(b, db.path());
         d.setDirs(temp, in);
+        eMule::BackgroundFileWriter::instance().flush();   // saves are queued (report 43)
         QVERIFY(QFile::exists(part + QStringLiteral(".met")));
     }
     // the .met alone carries it now

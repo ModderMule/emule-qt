@@ -542,6 +542,18 @@ vcpkg, or set BOOST_ROOT) or pass -DEMULE_BITTORRENT=OFF")
             PATCH_COMMAND ${CMAKE_COMMAND}
                 -DPATCH=${CMAKE_SOURCE_DIR}/src/vcpkg-ports/libtorrent/fix-i2p-stream-buffer-uaf.patch
                 -P ${CMAKE_SOURCE_DIR}/cmake/ApplyPatch.cmake
+            # I2P peer sockets skip the outgoing interface bind (docs/torrent/libtorrent-i2p-stream-uaf.md)
+            COMMAND ${CMAKE_COMMAND}
+                -DPATCH=${CMAKE_SOURCE_DIR}/src/vcpkg-ports/libtorrent/fix-i2p-outgoing-bind.patch
+                -P ${CMAKE_SOURCE_DIR}/cmake/ApplyPatch.cmake
+            # incoming I2P comes back after a router restart (docs/torrent/libtorrent-i2p-stream-uaf.md)
+            COMMAND ${CMAKE_COMMAND}
+                -DPATCH=${CMAKE_SOURCE_DIR}/src/vcpkg-ports/libtorrent/fix-i2p-accept-after-router-restart.patch
+                -P ${CMAKE_SOURCE_DIR}/cmake/ApplyPatch.cmake
+            # SAM bridge retries back off instead of 1 s forever (docs/torrent/libtorrent-i2p-stream-uaf.md)
+            COMMAND ${CMAKE_COMMAND}
+                -DPATCH=${CMAKE_SOURCE_DIR}/src/vcpkg-ports/libtorrent/fix-i2p-reconnect-backoff.patch
+                -P ${CMAKE_SOURCE_DIR}/cmake/ApplyPatch.cmake
         )
         FetchContent_MakeAvailable(libtorrent)
         set(BUILD_SHARED_LIBS ${_emule_saved_shared})

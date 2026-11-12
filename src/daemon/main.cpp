@@ -104,9 +104,8 @@ void armQuitDeadline()
 /// Nothing listens on the IPC port: a bind probe, as the GUI's.
 bool ipcPortFree(const QString& host, uint16_t port)
 {
-    const QHostAddress addr(host);
     QTcpServer probe;
-    return probe.listen(addr.isNull() ? QHostAddress(QHostAddress::LocalHost) : addr, port);
+    return probe.listen(eMule::Preferences::ipcBindAddressOf(host), port);
 }
 
 /// Take @p lock. A holder that serves no IPC on @p ipcPort is a core still shutting
@@ -264,9 +263,7 @@ int main(int argc, char* argv[])
     };
 
     // Determine IPC target, also for the lock wait below
-    QString ipcHost = eMule::thePrefs.ipcListenAddress();
-    if (ipcHost.isEmpty())
-        ipcHost = QStringLiteral("127.0.0.1");
+    const QString ipcHost = eMule::thePrefs.ipcListenAddress();
     uint16_t ipcPort = eMule::thePrefs.ipcPort();
     if (cli.portOverride() != 0)
         ipcPort = cli.portOverride();
@@ -381,7 +378,7 @@ int main(int argc, char* argv[])
     }
 
     eMule::logInfo(QStringLiteral("Daemon running. IPC listening on %1:%2")
-                       .arg(ipcHost)
+                       .arg(ipcHost.isEmpty() ? QStringLiteral("127.0.0.1") : ipcHost)
                        .arg(ipcPort));
 
     // A stuck event loop leaves its stack in crashes/ (report 20). After start():

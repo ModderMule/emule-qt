@@ -6,6 +6,7 @@
 
 #include "app/IpcClient.h"
 #include "prefs/Preferences.h"
+#include "utils/Clipboard.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/TorrentAdd.h"
 #include "utils/TorrentLinks.h"
@@ -77,6 +78,9 @@ AddTorrentDialog::AddTorrentDialog(IpcClient* ipc, Mode mode, const QStringList&
         setLines(names);
     } else if (!items.isEmpty()) {
         setLines(items);
+    } else {
+        // the clipboard's magnets, if any
+        prefill(gui::bitTorrentMagnetsIn(Clipboard::text()));
     }
 }
 

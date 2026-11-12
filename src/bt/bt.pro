@@ -29,6 +29,7 @@ SOURCES += \
     BtTrackerList.cpp \
     add/BtAddSource.cpp \
     session/BtJoinDiskIo.cpp \
+    session/BtPeerGate.cpp \
     session/BtSettingsMap.cpp \
     torrent/BtTorrentView.cpp
 
@@ -40,5 +41,6 @@ HEADERS += \
     BtTypes.h \
     add/BtAddSource.h \
     session/BtJoinDiskIo.h \
+    session/BtPeerGate.h \
     session/BtSettingsMap.h \
     torrent/BtTorrentView.h

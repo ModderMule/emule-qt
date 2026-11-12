@@ -24,7 +24,7 @@ class TorrentOptionsForm : public QWidget {
 
 public:
     /// One setting; a setting is one or two map keys.
-    enum Field { FieldDown = 0, FieldUp, FieldRatio, FieldSeedTime, FieldMaxPeers, FieldCount };
+    enum Field { FieldDown = 0, FieldUp, FieldRatio, FieldSeedTime, FieldMaxPeers, FieldI2p, FieldCount };
 
     explicit TorrentOptionsForm(QWidget* parent = nullptr);
 
@@ -40,6 +40,8 @@ public:
     [[nodiscard]] bool varies(Field field) const { return m_varies[field]; }
     /// Rate spins top out at the global / BitTorrent limits.
     void applyRateMaxima();
+    /// True once after the user picked an I2P mode while the I2P router is off.
+    [[nodiscard]] bool takeI2pRouterWarning();
 
     /// The keys of @p field.
     [[nodiscard]] static QList<QString> keysOf(Field field);
@@ -63,12 +65,17 @@ private:
     QComboBox* m_seedTimeMode = nullptr;
     QSpinBox* m_seedMinutes = nullptr;
     QSpinBox* m_maxPeers = nullptr;
+    QComboBox* m_i2pMode = nullptr;
     QLabel* m_variesLabel[FieldCount] = {};
 
     bool m_varies[FieldCount] = {};
     bool m_edited[FieldCount] = {};
     /// a fill is under way: changes are not the user's
     bool m_filling = false;
+    /// from the last fill: the router is on / the session mixes (no "I2P only" then)
+    bool m_i2pEnabled = true;
+    bool m_i2pMixed = false;
+    bool m_i2pWarn = false;
 };
 
 } // namespace eMule

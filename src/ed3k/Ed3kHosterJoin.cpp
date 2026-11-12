@@ -5,6 +5,7 @@
 #include "decode/YencDecoder.h"
 #include "post/UsenetUnpacker.h"
 #include "prefs/Preferences.h"
+#include "utils/BackgroundFileWriter.h"
 #include "utils/Log.h"
 
 #include <QCryptographicHash>
@@ -18,7 +19,6 @@
 #include <QRegularExpression>
 #include <QPointer>
 #include <QRandomGenerator>
-#include <QSaveFile>
 #include <QThreadPool>
 #include <QUrl>
 
@@ -552,8 +552,10 @@ void Ed3kHosterJoin::remove(quint32 id, bool deleteFile)
     publishShared(*e);
     m_aliasPending.erase(id);
     release(*e, false);
-    if (!complete)
+    if (!complete) {
+        forgetBlobWrites(metPathOf(*e));   // a queued save lands after the remove otherwise
         QFile::remove(metPathOf(*e));
+    }
     if (!complete || deleteFile) {
         QFile::remove(e->item.file);
         // a package folder goes with its last file (rmdir only takes an empty one)
@@ -2067,6 +2069,7 @@ void Ed3kHosterJoin::finish(Entry& e)
         return;
     }
     QDir(workDir(e.item.id)).removeRecursively();
+    forgetBlobWrites(metPathOf(e));   // a queued save lands after the remove otherwise
     QFile::remove(metPathOf(e));
     e.item.file = to;
     e.item.done = e.item.size;
@@ -2815,10 +2818,10 @@ bool Ed3kHosterJoin::reportDue(const SharedLink& l, qint64 now) const
 void Ed3kHosterJoin::load()
 {
     // complete items; an unfinished one is in its .met in Temp (scanTempDirs)
-    QFile f(itemsFile());
-    if (!f.open(QIODevice::ReadOnly))
+    const auto raw = BackgroundFileWriter::readFile(itemsFile());   // a queued save is newer
+    if (!raw)
         return;
-    const QJsonArray list = QJsonDocument::fromJson(f.readAll()).array();
+    const QJsonArray list = QJsonDocument::fromJson(*raw).array();
     for (const QJsonValue& v : list) {
         const QJsonObject o = v.toObject();
         auto e = std::make_unique<Entry>();
@@ -2863,14 +2866,9 @@ void Ed3kHosterJoin::save()
         list.append(o);
     }
     // none kept and no file yet: create nothing under config/ed3k (#105)
-    if (!list.isEmpty() || QFileInfo::exists(itemsFile())) {
-        QDir().mkpath(QFileInfo(itemsFile()).absolutePath());
-        QSaveFile f(itemsFile());
-        if (f.open(QIODevice::WriteOnly)) {
-            f.write(QJsonDocument(list).toJson(QJsonDocument::Indented));
-            f.commit();
-        }
-    }
+    auto& writer = BackgroundFileWriter::instance();
+    if (!list.isEmpty() || QFileInfo::exists(itemsFile()) || writer.pending(itemsFile()))
+        writer.write(itemsFile(), QJsonDocument(list).toJson(QJsonDocument::Indented), {});   // off the main thread (report 43)
     for (auto& [id, e] : m_items)
         if (e->metDirty && e->item.state != State::Complete)
             writeMet(*e);
@@ -2916,6 +2914,7 @@ void Ed3kHosterJoin::touch(Entry& e)
 
 void Ed3kHosterJoin::scanTempDirs()
 {
+    flushBlobWrites();   // a .met still queued is listed too
     for (const QString& metPath : metFilesIn(m_tempDirs, kMetSuffix)) {
         const QString key = QFileInfo(metPath).fileName().chopped(kMetSuffix.size());
         if (std::ranges::any_of(m_items, [&key](const auto& p) { return p.second->key == key; }))
@@ -3084,10 +3083,8 @@ void Ed3kHosterJoin::writeMet(Entry& e)
     o.insert(QStringLiteral("v"), kMetVersion);
     const QString path = metPathOf(e);
     QDir().mkpath(QFileInfo(path).path());
-    if (writeBlob(path, spanOf(QJsonDocument(o).toJson(QJsonDocument::Indented))))
-        e.metDirty = false;
-    else
-        logWarning(QStringLiteral("cannot write %1").arg(path));
+    writeBlobLater(path, spanOf(QJsonDocument(o).toJson(QJsonDocument::Indented)));   // the writer logs a failure
+    e.metDirty = false;
 }
 
 QString Ed3kHosterJoin::partPathFor(const QString& key) const

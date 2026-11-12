@@ -3,6 +3,7 @@
 /// @brief "Add..." dialog implementation — matches MFC eMule layout.
 
 #include "dialogs/AddFriendDialog.h"
+#include "utils/Clipboard.h"
 #include "net/Address.h"
 
 #include <QPointer>
@@ -108,6 +109,14 @@ AddFriendDialog::AddFriendDialog(QWidget* parent)
 void AddFriendDialog::setEd3kAvailable(bool on)
 {
     m_ed3kGroup->setVisible(on && m_ed3kSubmitter);
+    // the clipboard's friend link, if any; not over a link handed in
+    if (on && m_ed3kSubmitter && !m_ed3kLinkEdit->isReadOnly() && m_ed3kLinkEdit->text().isEmpty())
+        if (const QString link = Clipboard::firstLink(QLatin1StringView("ed3k:friend?")); !link.isEmpty()) {
+            m_ed3kLinkEdit->setText(link);
+            // §2: the secret of an open link is a credential: not shown
+            if (isOpenFriendLink(link))
+                m_ed3kLinkEdit->setEchoMode(QLineEdit::Password);
+        }
     DialogSizing::applyFixedSize(this, QSize(340, on ? 330 : 260));
 }
 

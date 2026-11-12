@@ -13,6 +13,7 @@
 #include <deque>
 #include <map>
 #include <unordered_map>
+#include <utility>
 
 namespace eMule {
 
@@ -43,6 +44,58 @@ static_assert(kMaxReaskCallbackUdpSize == 8228);
 /// KADEMLIA_CALLBACK_REQ per minute from one IP.
 inline constexpr uint16 kAssumedRelayServedBuddies = 8;
 
+/// Relay: KADEMLIA_CALLBACK_REQ relayed per sender IP to one served buddy per minute.
+/// Above it only while the combined budget of all buddies is under half used
+/// (ClientList::servedRelayBelowHalf()). A relayed callback makes
+/// the buddy dial the sender's address, which UDP can forge, so it stays bounded per sender.
+inline constexpr uint32 kCallbacksPerSenderPerMin = 100;
+
+/// Passes per key in a fixed minute that starts with the key's first pass. With a limit of
+/// 1 this is "one in any minute". Relay: KADEMLIA_CALLBACK_REQ per sender IP and served
+/// buddy; requester: the mirror per relay IP and buddy ID.
+template <typename Key>
+class MinuteGate {
+public:
+    static constexpr uint64 kWindowMs = 60 * 1000;
+
+    /// Passes of @p key in its current minute, 0 when it has none.
+    [[nodiscard]] uint32 count(const Key& key, uint64 now) const
+    {
+        const auto it = m_windows.find(key);
+        return it == m_windows.end() || now - it->second.start >= kWindowMs ? 0 : it->second.count;
+    }
+    [[nodiscard]] bool isOpen(const Key& key, uint64 now, uint32 limit = 1) const
+    {
+        return count(key, now) < limit;
+    }
+    /// Record a pass; windows older than a minute are pruned once a minute.
+    void pass(const Key& key, uint64 now)
+    {
+        if (now - m_lastPrune >= kWindowMs) {
+            m_lastPrune = now;
+            std::erase_if(m_windows, [now](const auto& e) { return now - e.second.start >= kWindowMs; });
+        }
+        auto& w = m_windows[key];
+        if (w.count == 0 || now - w.start >= kWindowMs)
+            w = {now, 0};
+        ++w.count;
+    }
+    void clear()
+    {
+        m_windows.clear();
+        m_lastPrune = 0;
+    }
+    [[nodiscard]] size_t size() const { return m_windows.size(); }
+
+private:
+    struct Window {
+        uint64 start = 0;
+        uint32 count = 0;
+    };
+    std::map<Key, Window> m_windows;
+    uint64 m_lastPrune = 0;
+};
+
 enum class RelayRequest : uint8 {
     KadCallback,    ///< KADEMLIA_CALLBACK_REQ, relayed as OP_CALLBACK
     ReaskCallback   ///< OP_REASKCALLBACKUDP, relayed as OP_REASKCALLBACKTCP
@@ -70,6 +123,7 @@ private:
     void prune(uint64 now);
 
     std::unordered_map<Address, CallerBucket> m_callbackBuckets;  // by relay IP
+    MinuteGate<std::pair<Address, BuddyID>> m_callbackPerBuddy;   // by relay IP and buddy
     struct RelaySend {
         uint64 tick = 0;
         uint32 bytes = 0;

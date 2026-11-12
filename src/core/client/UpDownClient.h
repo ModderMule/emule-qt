@@ -10,6 +10,7 @@
 /// Phase 3: connection management, secure identity, chat, preview, firewall,
 ///          upload methods, download methods.
 
+#include "client/BuddyRelayBudget.h"
 #include "client/DeadSourceList.h"
 #include "client/ClientStateDefs.h"
 #include "client/ClientStructs.h"
@@ -300,8 +301,14 @@ public:
     {
         m_kadState = state;
         m_kadStateSince = std::time(nullptr);
-        if (state == KadState::None)
+        // Per-link buddy use starts over with each state
+        m_buddyPingHeard = false;
+        m_buddyLinkRelayed = false;
+        m_callbackSenders.clear();
+        if (state == KadState::None) {
             m_servedBuddy = false;
+            m_buddyViaClaim = false;
+        }
     }
     [[nodiscard]] std::time_t kadStateSince() const { return m_kadStateSince; }
     void setKadStateSince(std::time_t t) { m_kadStateSince = t; }
@@ -848,6 +855,25 @@ public:
     /// Charges `bytes` relayed to this served buddy; false (nothing charged) when they
     /// would pass the per-minute byte budget.
     [[nodiscard]] bool allowBuddyRelay(uint32 bytes);
+    /// Served buddy: bytes relayed to it in its current minute.
+    [[nodiscard]] uint32 buddyRelayBytesUsed() const;
+    /// Served buddy: fewer than kCallbacksPerSenderPerMin KADEMLIA_CALLBACK_REQ from
+    /// @p senderIp relayed to it this minute. noteCallbackRelayed() records one.
+    /// Not MFC; aMule allows 1 (#1809).
+    [[nodiscard]] bool callbackSenderUnderLimit(uint32 senderIp) const;
+    void noteCallbackRelayed(uint32 senderIp);
+    /// Served buddy that held its link for a while without one ping and nothing relayed:
+    /// the slot did it no good (aMule #1809 run 7: re-links every few minutes).
+    [[nodiscard]] bool servedBuddyLinkWasSilent() const;
+
+    /// Our buddy came from an ExtSX offer claimed over TCP (OP_BUDDYCLAIM), not a Kad
+    /// FINDBUDDY_RES. Cleared with the Kad state.
+    [[nodiscard]] bool buddyViaClaim() const { return m_buddyViaClaim; }
+    void setBuddyViaClaim(bool v) { m_buddyViaClaim = v; }
+    /// Kad port of our lost claimed buddy: dialled to claim it again, sent once the hello
+    /// is done. 0 = none. See ClientList::reclaimLostBuddy().
+    [[nodiscard]] uint16 reclaimBuddyPort() const { return m_reclaimBuddyPort; }
+    void setReclaimBuddyPort(uint16 port) { m_reclaimBuddyPort = port; }
 
     // -- Phase 3 — upload (UploadClient.cpp) --------------------------------
 
@@ -1152,6 +1178,8 @@ protected:
     uint32 writeHttpData(uint64 pos, const uint8* data, uint32 size);
 
 private:
+    /// ed3k Kad seed hook for a peer with a valid hash (bootstrap.md §1 source 4).
+    void maybeSeedEd3kFromPeer();
     /// Kad callback route usable: buddy ID valid, Kad connected, buddy address or a file.
     [[nodiscard]] bool kadCallbackAvailable() const;
     /// Fill a missing buddy address from the Kad routing table. True when one is known.
@@ -1434,6 +1462,11 @@ private:
     bool m_servedBuddy = false;
     uint64 m_buddyRelayWindowStart = 0;
     uint32 m_buddyRelayBytes = 0;
+    MinuteGate<uint32> m_callbackSenders;  ///< served: callback senders of the last minute
+    bool m_buddyPingHeard = false;         ///< served: pinged on this link
+    bool m_buddyLinkRelayed = false;       ///< served: something relayed on this link
+    bool m_buddyViaClaim = false;
+    uint16 m_reclaimBuddyPort = 0;
     uint64 m_lastRefreshedDLDisplay = 0;
     uint64 m_lastRefreshedULDisplay = 0;
     uint32 m_randomUpdateWait = 0;

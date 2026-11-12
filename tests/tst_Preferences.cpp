@@ -530,6 +530,13 @@ private slots:
                                     QStringLiteral("http://a.i2p/a")});
             prefs.setBtI2pRouterPort(23456);
             prefs.setBtI2pShare(10);
+            prefs.setBtI2pBrowserProxy(true);
+            prefs.setBtI2pBrowserProxyAddress(QStringLiteral(" 192.0.2.7 "));
+            prefs.setBtI2pBrowserProxyPort(4545);
+            prefs.setBtI2pStatusPage(true);
+            prefs.setBtI2pStatusPagePort(7171);
+            prefs.setBtI2pStatusPageUser(QStringLiteral(" admin "));
+            prefs.setBtI2pStatusPagePassword(QStringLiteral("pa ss"));
             QVERIFY(prefs.saveTo(file));
         }
         QFile f(file);
@@ -566,8 +573,16 @@ private slots:
             QCOMPARE(p.btI2pTrackers(), (QStringList{QStringLiteral("http://a.i2p/a"), QStringLiteral("http://b.i2p/a")}));
             QCOMPARE(p.btI2pRouterPort(), uint16{23456});
             QCOMPARE(p.btI2pShare(), 10);
+            QCOMPARE(p.btI2pBrowserProxy(), true);
+            QCOMPARE(p.btI2pBrowserProxyPort(), uint16{4545});
+            QCOMPARE(p.btI2pStatusPage(), true);
+            QCOMPARE(p.btI2pStatusPagePort(), uint16{7171});
+            QCOMPARE(p.btI2pStatusPageUser(), QStringLiteral("admin"));
+            QCOMPARE(p.btI2pStatusPagePassword(), QStringLiteral("pa ss"));
         };
         check(loaded);
+        // YAML only, not over IPC
+        QCOMPARE(loaded.btI2pBrowserProxyAddress(), QStringLiteral("192.0.2.7"));
         if (QTest::currentTestFailed())
             return;
 

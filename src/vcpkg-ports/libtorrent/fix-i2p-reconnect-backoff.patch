@@ -1,0 +1,16 @@
+--- a/src/session_impl.cpp
++++ b/src/session_impl.cpp
+@@ -2607,8 +2607,12 @@
+ 			session_log("attempting i2p reconnection");
+ #endif
+ 
+-		// Attempt to reconnect
++		// Attempt to reconnect. update_i2p_bridge() resets the backoff (meant for a
++		// settings change); keep the doubled delay so a dead bridge backs off.
++		// on_i2p_open() resets it on success
++		auto const delay = m_i2p_reconnect_delay;
+ 		update_i2p_bridge();
++		m_i2p_reconnect_delay = delay;
+ 	}
+ #endif
+ 

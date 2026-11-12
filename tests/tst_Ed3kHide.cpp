@@ -7,6 +7,7 @@
 /// (hide, kadOffline) over IPC. One node on loopback: no hop nodes, so paths stay unbuilt
 /// ("waitingForHops").
 
+#include "utils/BackgroundFileWriter.h"
 #include "Ed3kBridge.h"
 #include "Ed3kCredit.h"
 #include "Ed3kDownloads.h"
@@ -365,6 +366,7 @@ void tst_Ed3kHide::newSharesGoAnonymousOldOnesKeepTheirKey()
     // a restart keeps each key (keys.json)
     shared.stop();
     s.stop();
+    eMule::BackgroundFileWriter::instance().flush();   // saves are queued (report 43)
     QVERIFY(QFile::exists(QDir(dir.path()).filePath(QStringLiteral("ed3k/") + Ed3kHide::kKeysFile)));
     QVERIFY(s.start(loopback(dir.path())));
     shared.start();

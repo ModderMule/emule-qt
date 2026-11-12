@@ -13,13 +13,16 @@
 #include "controls/TorrentFilterProxy.h"
 #include "controls/TorrentListModel.h"
 #include "controls/TorrentListsPane.h"
+#include "controls/TorrentOptionsForm.h"
 #include "controls/TorrentProgressDelegate.h"
 #include "dialogs/AddTorrentDialog.h"
 #include "dialogs/EditTrackersDialog.h"
 #include "dialogs/TorrentOptionsDialog.h"
 #include "dialogs/TorrentDetailsDialog.h"
+#include "prefs/Preferences.h"
 #include "utils/Clipboard.h"
 #include "utils/ListActivation.h"
+#include "utils/Log.h"
 #include "utils/MenuUtils.h"
 #include "utils/PanelPoller.h"
 #include "utils/StatusBarNotifier.h"
@@ -239,6 +242,7 @@ bool TorrentPanel::engineRunning() const
 void TorrentPanel::applyDisplayOptions()
 {
     m_filterBar->setRowOn(theUiState.showTorrentStatusFilter());
+    updateSummary();   // DHT v4/v6 split follows ext controls
 }
 
 void TorrentPanel::dragEnterEvent(QDragEnterEvent* event)
@@ -687,6 +691,9 @@ void TorrentPanel::editOptions(const QStringList& ids, const QList<QCborMap>& op
     if (dlg.exec() != QDialog::Accepted || !m_ipc || !m_ipc->isConnected())
         return;
     const QCborMap edited = dlg.changedOptions();
+    if (dlg.form()->takeI2pRouterWarning())
+        logStatusError(tr("I2P is off: torrents set to use I2P get no I2P peers until the router is switched on in "
+                          "Options > BitTorrent > I2P."));
     if (edited.isEmpty())
         return;
     IpcMessage msg(IpcMsgType::SetTorrentOptionsMany);
@@ -888,7 +895,12 @@ void TorrentPanel::updateSummary()
         }
         const qint64 port = m_status.value(QStringLiteral("listenPort")).toInteger();
         const bool listening = m_status.value(QStringLiteral("listening")).toBool();
-        const qint64 dht = m_status.value(QStringLiteral("dhtNodes")).toInteger();
+        // ext controls: v4 / v6 apart (one DHT per listen socket family)
+        const QString dht = thePrefs.showExtControls()
+            ? tr("%1 v4 / %2 v6")
+                  .arg(m_status.value(QStringLiteral("dhtNodesV4")).toInteger())
+                  .arg(m_status.value(QStringLiteral("dhtNodesV6")).toInteger())
+            : QString::number(m_status.value(QStringLiteral("dhtNodes")).toInteger());
         m_summary->setText(
             tr("%n torrent(s), %1 active — Down: %2, Up: %3 — DHT: %4 nodes — Port %5 %6", nullptr,
                m_model->count())

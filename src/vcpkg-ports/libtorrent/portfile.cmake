@@ -44,6 +44,12 @@ vcpkg_from_github(
         fix-shared-extra-exports.patch
         # emuleqt: i2p_stream frees m_buffer under a pending SAM write (docs/torrent/libtorrent-i2p-stream-uaf.md)
         fix-i2p-stream-buffer-uaf.patch
+        # emuleqt: I2P peer sockets must not bind to outgoing_interfaces (SAM bridge is local)
+        fix-i2p-outgoing-bind.patch
+        # emuleqt: a failed SAM accept left a stale listen socket, incoming I2P dead after router restart
+        fix-i2p-accept-after-router-restart.patch
+        # emuleqt: retry timer reset the SAM bridge backoff, retried every 1 s forever
+        fix-i2p-reconnect-backoff.patch
 )
 
 vcpkg_from_github(

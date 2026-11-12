@@ -8,6 +8,7 @@
 #include "net/MetaFileCache.h"
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
+#include "utils/BackgroundFileWriter.h"
 #include "utils/Log.h"
 
 #include <QDateTime>
@@ -17,7 +18,6 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QPointer>
-#include <QSaveFile>
 #include <QTimer>
 
 #include <algorithm>
@@ -291,14 +291,11 @@ void IndexerSearchList::flushGrabCache()
         });
     }
 
-    QSaveFile file(grabCachePath());
-    if (!file.open(QIODevice::WriteOnly)
-        || file.write(QJsonDocument(QJsonObject{{QStringLiteral("version"), 1},
-                                                {QStringLiteral("grabs"), arr}})
-                          .toJson(QJsonDocument::Compact)) < 0
-        || !file.commit()) {
-        logWarning(QStringLiteral("Indexers: could not store the grab cache: %1").arg(file.errorString()));
-    }
+    // off the main thread (report 43); the writer logs a failed write
+    BackgroundFileWriter::instance().write(
+        grabCachePath(),
+        QJsonDocument(QJsonObject{{QStringLiteral("version"), 1}, {QStringLiteral("grabs"), arr}}).toJson(QJsonDocument::Compact),
+        {});
 }
 
 // ---------------------------------------------------------------------------
@@ -319,10 +316,10 @@ void IndexerSearchList::rememberGrabs(const QList<IndexerResult>& rows)
 
 void IndexerSearchList::loadGrabCache()
 {
-    QFile file(grabCachePath());
-    if (!file.open(QIODevice::ReadOnly))
+    const auto raw = BackgroundFileWriter::readFile(grabCachePath());   // a queued save is newer
+    if (!raw)
         return;
-    const QJsonObject root = QJsonDocument::fromJson(file.readAll()).object();
+    const QJsonObject root = QJsonDocument::fromJson(*raw).object();
     if (root.value(QStringLiteral("version")).toInt() != 1)
         return;
 

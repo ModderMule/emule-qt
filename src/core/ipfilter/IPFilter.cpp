@@ -13,7 +13,6 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QSaveFile>
 
 #include <algorithm>
 #include <queue>
@@ -445,11 +444,8 @@ int IPFilter::loadFromFile(const QString& filePath)
 
 bool IPFilter::saveToFile(const QString& filePath) const
 {
-    QSaveFile file(filePath);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        logError(QStringLiteral("Failed to open IP filter file for writing: %1").arg(filePath));
-        return false;
-    }
+    // queued for the background writer (report 43): loadFromFile reads it back meanwhile
+    QByteArray out;
 
     for (const auto& entry : m_entries) {
         // Convert host-order IPs to dotted decimal via network byte order
@@ -462,7 +458,7 @@ bool IPFilter::saveToFile(const QString& filePath) const
         std::snprintf(buf, sizeof(buf), "%-15s - %-15s , %3u , %s\n",
                       startStr.constData(), endStr.constData(),
                       entry.level, entry.desc.c_str());
-        file.write(buf);
+        out += buf;
     }
 
     // IPv6 ranges in the same shape, so parseIPv6Line reads back what we wrote. Written
@@ -477,14 +473,10 @@ bool IPFilter::saveToFile(const QString& filePath) const
         std::snprintf(buf, sizeof(buf), "%s - %s , %3u , %s\n",
                       startStr.constData(), endStr.constData(),
                       entry.level, entry.desc.c_str());
-        file.write(buf);
+        out += buf;
     }
 
-    if (!file.commit()) {
-        logError(QStringLiteral("Failed to commit IP filter file: %1").arg(filePath));
-        return false;
-    }
-
+    BackgroundFileWriter::instance().write(filePath, std::move(out), {});   // the writer logs a failure
     return true;
 }
 

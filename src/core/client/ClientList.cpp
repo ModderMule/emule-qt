@@ -24,6 +24,7 @@
 #include "transfer/UploadQueue.h"
 #include "utils/TimeUtils.h"
 
+#include <algorithm>
 #include <unordered_set>
 
 
@@ -288,19 +289,29 @@ UpDownClient* ClientList::findByIP_KadPort(uint32 ip, uint16 kadPort) const
 void ClientList::setBuddy(UpDownClient* buddy, BuddyStatus status)
 {
     const std::time_t now = std::time(nullptr);
+    const auto originName = [](BuddyOrigin o) {
+        return o == BuddyOrigin::Claim ? QStringLiteral("ExtSX claim") : QStringLiteral("Kad offer");
+    };
+    const BuddyOrigin lostOrigin = m_buddyOrigin;
     if (status == BuddyStatus::Connected && buddy
         && (m_buddyStatus != BuddyStatus::Connected || m_buddy != buddy)) {
+        m_buddyOrigin = buddy->buddyViaClaim() ? BuddyOrigin::Claim : BuddyOrigin::KadOffer;
         m_buddyInfo = buddy->kadBuddyInfo();
         m_buddySince = now;
-        kad::logKad(QStringLiteral("Kad: buddy set — %1").arg(m_buddyInfo));
+        m_buddyEndpoint = {buddy->connectAddress(), buddy->userPort(), buddy->kadPort(), {}};
+        std::copy_n(buddy->userHash(), 16, m_buddyEndpoint.userHash.begin());
+        m_lostClaimBuddy.reset();
+        kad::logKad(QStringLiteral("Kad: buddy set — %1 (%2)")
+                        .arg(m_buddyInfo, originName(m_buddyOrigin)));
         if (auto* store = kad::Kademlia::buddyStore())
             store->noteConnected(buddy->connectAddress().toUint32(), buddy->userPort(), now);
     } else if (status == BuddyStatus::None) {
         if (m_buddyStatus == BuddyStatus::Connected)
-            kad::logKad(QStringLiteral("Kad: buddy lost — %1, held %2 s")
-                            .arg(m_buddyInfo).arg(now - m_buddySince));
+            kad::logKad(QStringLiteral("Kad: buddy lost — %1 (%2), held %3 s")
+                            .arg(m_buddyInfo, originName(lostOrigin)).arg(now - m_buddySince));
         else if (m_buddyStatus == BuddyStatus::Connecting)
             kad::logKad(QStringLiteral("Kad: no buddy candidate left"));
+        m_buddyOrigin = BuddyOrigin::None;
     }
 
     // Losing our buddy while firewalled — instantly re-trigger buddy search. Not MFC
@@ -313,6 +324,9 @@ void ClientList::setBuddy(UpDownClient* buddy, BuddyStatus status)
             {
                 if (auto* prefs = kad::Kademlia::getInstancePrefs())
                     prefs->setFindBuddy(true);
+                // A claimed buddy is not near ~KadID: no search finds it, so claim it again
+                if (m_buddyStatus == BuddyStatus::Connected && lostOrigin == BuddyOrigin::Claim)
+                    m_lostClaimBuddy = m_buddyEndpoint;
             }
         }
     }
@@ -440,7 +454,9 @@ uint8 ClientList::acceptBuddyClaim(UpDownClient& claimer, const uint8* buddyID)
     uint8 reason = 0;
     QString text = why;
     if (!why.isEmpty()) {
-        reason = canServeAnotherBuddy() ? BUDDYCLAIM_REFUSE_DUP : BUDDYCLAIM_REFUSE_BUSY;
+        // A silent last link has no slot for now
+        reason = canServeAnotherBuddy() && silentBuddyCoolOffLeft(addr) == 0
+                     ? BUDDYCLAIM_REFUSE_DUP : BUDDYCLAIM_REFUSE_BUSY;
     } else if (buddyOfferPort(claimer) == 0 || claimer.kadState() != KadState::None
                || claimer.kadVersion() == 0) {
         // The offer's gates again (they may have changed since), plus a free Kad state
@@ -474,6 +490,7 @@ void ClientList::endBuddyClaim(UpDownClient& offerer, bool accepted, const QStri
 {
     if (accepted) {
         offerer.setKadState(KadState::ConnectedBuddy);
+        offerer.setBuddyViaClaim(true);
         // Now, not on the next processKadList pass: the held sources dial right below
         setBuddy(&offerer, BuddyStatus::Connected);
     } else {
@@ -545,6 +562,26 @@ int ClientList::pendingBuddyClaims() const
     }));
 }
 
+uint64 ClientList::servedRelayBudget() const
+{
+    return uint64{kBuddyRelayBytesPerMin} * std::max<uint64>(1, thePrefs.servedBuddyLimit());
+}
+
+uint64 ClientList::servedRelayBytesUsed() const
+{
+    uint64 used = 0;
+    for (const auto* client : m_items) {
+        if (client->isServedBuddy() && client->kadState() == KadState::ConnectedBuddy)
+            used += client->buddyRelayBytesUsed();
+    }
+    return used;
+}
+
+bool ClientList::servedRelayBelowHalf() const
+{
+    return servedRelayBytesUsed() < servedRelayBudget() / 2;
+}
+
 UpDownClient* ClientList::findServedBuddy(const uint8* buddyID) const
 {
     if (!buddyID)
@@ -576,7 +613,8 @@ uint16 ClientList::buddyOfferPort(const UpDownClient& requester) const
     // Our side: the same gates process_KADEMLIA_FINDBUDDY_REQ applies
     auto* prefs = kad::Kademlia::getInstancePrefs();
     if (!prefs || prefs->firewalled() || kad::UDPFirewallTester::isFirewalledUDP(true)
-        || !kad::UDPFirewallTester::isVerified() || !canServeAnotherBuddy())
+        || !kad::UDPFirewallTester::isVerified() || !canServeAnotherBuddy()
+        || silentBuddyCoolOffLeft(requester.connectAddress()) > 0)
         return 0;
     return UpDownClient::ownAdvertisedKadPort();
 }
@@ -592,6 +630,29 @@ void ClientList::noteFailedBuddyCandidate(const UpDownClient& candidate)
     m_failedBuddyCandidates[ip] = std::time(nullptr);
     kad::logKad(QStringLiteral("Kad: not asking %1 again for %2 min")
                     .arg(ipstr(candidate.connectAddress())).arg(kFailedBuddyBlockSecs / 60));
+}
+
+void ClientList::noteSilentServedBuddy(const UpDownClient& served)
+{
+    const Address addr = served.connectAddress();
+    if (addr.isNull())
+        return;
+    const std::time_t now = std::time(nullptr);
+    std::erase_if(m_silentServedBuddies, [now](const auto& e) {
+        return now - e.second >= kSilentBuddyCoolOffSecs;
+    });
+    m_silentServedBuddies[addr] = now;
+    kad::logKad(QStringLiteral("Kad: served buddy %1 silent on its link (no ping, nothing relayed), "
+                               "not served for %2 min")
+                    .arg(served.kadBuddyInfo()).arg(kSilentBuddyCoolOffSecs / 60));
+}
+
+std::time_t ClientList::silentBuddyCoolOffLeft(const Address& addr) const
+{
+    const auto it = m_silentServedBuddies.find(addr);
+    if (it == m_silentServedBuddies.end())
+        return 0;
+    return std::max<std::time_t>(0, it->second + kSilentBuddyCoolOffSecs - std::time(nullptr));
 }
 
 bool ClientList::isFailedBuddyCandidate(uint32 ip) const
@@ -978,6 +1039,8 @@ void ClientList::processKadList()
     if (seen == BuddyStatus::None && (m_buddyStatus != BuddyStatus::None || m_buddy))
         setBuddy(nullptr, BuddyStatus::None);
 
+    reclaimLostBuddy(needsOwnBuddy);
+
     // A claim that ended some other way (Kad stopped, buddy found elsewhere) frees its holds
     if (m_haveHeldSources && !buddyClaimPending())
         releaseBuddyHeldSources();
@@ -1311,6 +1374,9 @@ QString ClientList::buddyServeRefusal(const Address& addr, uint16 tcpPort) const
     if (isKadFirewallCheckIP(addr.toNetworkUint32()))
         return QStringLiteral("firewall check running with it");
 
+    if (const std::time_t left = silentBuddyCoolOffLeft(addr); left > 0)
+        return QStringLiteral("its last link was silent, %1 min cool-off left").arg((left + 59) / 60);
+
     // One served buddy per IP, pending or connected. The TCP link proves the IP, so this
     // bounds what one host takes from us; a subnet rule would refuse carrier NAT neighbours.
     for (const auto* other : m_items) {
@@ -1320,6 +1386,41 @@ QString ClientList::buddyServeRefusal(const Address& addr, uint16 tcpPort) const
             return QStringLiteral("IP already served");
     }
     return {};
+}
+
+void ClientList::reclaimLostBuddy(bool needsOwnBuddy)
+{
+    if (!m_lostClaimBuddy)
+        return;
+    // One try, on the pass after the loss
+    const BuddyEndpoint target = *std::exchange(m_lostClaimBuddy, std::nullopt);
+    if (!needsOwnBuddy || m_buddyStatus == BuddyStatus::Connected || buddyClaimPending()
+        || thePrefs.cryptLayerRequired() || !target.addr.isIPv4() || target.kadPort == 0)
+        return;
+    if (isFailedBuddyCandidate(target.addr.toUint32()) || isBannedClient(target.addr))
+        return;
+
+    auto* client = findByConnIP(target.addr.toNetworkUint32(), target.tcpPort);
+    if (!client) {
+        client = new UpDownClient(target.tcpPort, target.addr.toUint32(), 0, 0, nullptr);
+        client->setConnectAddress(target.addr);
+        client->setUserHash(target.userHash.data());
+        addClient(client);
+    }
+    if (client->kadState() != KadState::None)
+        return;
+
+    // Still connected (lost by Kad state, not by the link): claim at once
+    if (client->socket() && client->socket()->isConnected() && client->checkHandshakeFinished()) {
+        kad::logKad(QStringLiteral("Kad: claiming lost buddy %1 again on its open link")
+                        .arg(client->kadBuddyInfo()));
+        takeBuddyOffer(*client, target.kadPort);
+        return;
+    }
+    kad::logKad(QStringLiteral("Kad: dialling lost buddy %1 to claim it again")
+                    .arg(client->kadBuddyInfo()));
+    client->setReclaimBuddyPort(target.kadPort);
+    client->tryToConnect(true, /*noCallbacks*/ true);
 }
 
 } // namespace eMule

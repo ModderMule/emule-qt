@@ -249,6 +249,12 @@ using Kind = PrefSpec::Kind;
     t << advanced(number("btI2pRouterPort", 1, 65535, "", "TCP and UDP port of the bundled I2P router."));
     t << advanced(number("btI2pShare", 0, 100, "%", "Share of the bundled I2P router's bandwidth "
                          "used for other routers' tunnels."));
+    t << flag("btI2pBrowserProxy", "The bundled I2P router serves an HTTP proxy for browsing .i2p sites "
+              "(on 127.0.0.1 unless preferences.yml sets browserProxyAddress).");
+    t << advanced(number("btI2pBrowserProxyPort", 1, 65535, "", "Port of the bundled I2P router's browser proxy."));
+    t << flag("btI2pStatusPage", "The bundled I2P router serves its status page (i2pd webconsole) on the "
+              "browser proxy's address.");
+    t << advanced(number("btI2pStatusPagePort", 1, 65535, "", "Port of the bundled I2P router's status page."));
 
     // --- ed3k (packmule) ---
     t << flag("ed3kEnabled", "Enable the ed3k node (packmule).");

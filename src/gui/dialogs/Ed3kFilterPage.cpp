@@ -3,6 +3,7 @@
 
 #include "pch.h"
 #include "dialogs/Ed3kFilterPage.h"
+#include "utils/Clipboard.h"
 #include "controls/AbstractListView.h"
 
 #include "app/IpcClient.h"
@@ -265,7 +266,7 @@ void Ed3kFilterPage::follow()
         return;
     bool ok = false;
     const QString link = QInputDialog::getText(this, tr("Follow filter list"), tr("Link of the filter list (ed3k:set?…):"),
-                                               QLineEdit::Normal, QString(), &ok).trimmed();
+                                               QLineEdit::Normal, Clipboard::firstLink(QLatin1StringView("ed3k:set?")), &ok).trimmed();
     if (!ok || link.isEmpty())
         return;
     const QString label = QInputDialog::getText(this, tr("Follow filter list"), tr("Label:"), QLineEdit::Normal, QString(), &ok).trimmed();

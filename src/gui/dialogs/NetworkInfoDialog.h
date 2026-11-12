@@ -20,8 +20,11 @@ class NetworkInfoDialog : public RememberedSizeDialog {
     Q_OBJECT
 
 public:
-    explicit NetworkInfoDialog(IpcClient* ipc, QWidget* parent = nullptr);
+    /// @p anchor: section to scroll to once loaded (kEd3kAnchor), empty = top
+    explicit NetworkInfoDialog(IpcClient* ipc, QWidget* parent = nullptr, const QString& anchor = {});
     ~NetworkInfoDialog() override;
+
+    static constexpr auto kEd3kAnchor = "ed3k";
 
     /// The page for a GetNetworkInfo reply. @p extended: advanced controls, which
     /// add the server's feature list (MFC NetworkInfoDlg.cpp:182).
@@ -38,6 +41,7 @@ private:
 
     IpcClient* m_ipc = nullptr;
     QTextBrowser* m_browser = nullptr;
+    QString m_anchor;
 };
 
 } // namespace eMule

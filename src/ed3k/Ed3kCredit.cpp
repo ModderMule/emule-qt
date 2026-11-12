@@ -6,6 +6,7 @@
 #include "Ed3kKeyFile.h"
 #include "Ed3kSession.h"
 #include "Ed3kStore.h"
+#include "utils/BackgroundFileWriter.h"
 
 #include "utils/Log.h"
 
@@ -677,14 +678,11 @@ void Ed3kCredit::onStakeEvent(const ffi::Event& ev)
 void Ed3kCredit::loadClaims()
 {
     m_status.claims.clear();
-    QFile f(QDir(m_dir).filePath(kClaimsFile));
-    if (!f.exists())
+    // a saveClaims still queued is read back
+    const auto raw = BackgroundFileWriter::readFile(QDir(m_dir).filePath(kClaimsFile));
+    if (!raw)
         return;
-    if (!f.open(QIODevice::ReadOnly)) {
-        logEd3kWarning(QStringLiteral("ed3k: %1 not readable").arg(kClaimsFile));
-        return;
-    }
-    const QJsonDocument doc = QJsonDocument::fromJson(f.read(4 * 1024 * 1024));
+    const QJsonDocument doc = QJsonDocument::fromJson(raw->left(4 * 1024 * 1024));
     if (!doc.isArray()) {
         logEd3kWarning(QStringLiteral("ed3k: %1 does not parse, ignored").arg(kClaimsFile));
         return;
@@ -731,8 +729,7 @@ void Ed3kCredit::saveClaims() const
                                {QStringLiteral("claimTx"), c.claimTx}});
     const QByteArray data = QJsonDocument(out).toJson(QJsonDocument::Indented);
     QDir().mkpath(m_dir);
-    if (!writeBlob(QDir(m_dir).filePath(kClaimsFile), std::as_bytes(std::span{data.constData(), std::size_t(data.size())})))
-        logEd3kWarning(QStringLiteral("ed3k: %1 not written").arg(kClaimsFile));
+    writeBlobLater(QDir(m_dir).filePath(kClaimsFile), std::as_bytes(std::span{data.constData(), std::size_t(data.size())}));
 }
 
 Ed3kCredit::StakeClaim* Ed3kCredit::claim(std::uint64_t id)

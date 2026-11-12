@@ -149,6 +149,10 @@ QCborMap optionsToCbor(const bt::BtTorrentOptions& o)
         {QStringLiteral("ratioPercent"), o.ratioPercent},
         {QStringLiteral("seedTimeMode"), static_cast<int>(o.seedTimeMode)},
         {QStringLiteral("seedTimeMinutes"), o.seedTimeMinutes},
+        {QStringLiteral("i2pMode"), static_cast<int>(o.i2pMode.value_or(bt::BtI2pMode::Direct))},
+        // read only: the form greys "I2P only" while mixed, warns while the router is off
+        {QStringLiteral("i2pEnabled"), thePrefs.btI2pMode() != Preferences::kBtI2pOff},
+        {QStringLiteral("i2pMixed"), thePrefs.btI2pMixed()},
     };
 }
 
@@ -173,6 +177,8 @@ bt::BtTorrentOptions optionsFromCbor(const QCborMap& m)
     o.ratioPercent = static_cast<int>(m.value(QStringLiteral("ratioPercent")).toInteger(100));
     o.seedTimeMode = limitModeOf(m.value(QStringLiteral("seedTimeMode")).toInteger());
     o.seedTimeMinutes = static_cast<int>(m.value(QStringLiteral("seedTimeMinutes")).toInteger(60));
+    if (const QCborValue v = m.value(QStringLiteral("i2pMode")); v.isInteger())
+        o.i2pMode = static_cast<bt::BtI2pMode>(std::clamp<qint64>(v.toInteger(), 0, 2));
     return o;
 }
 
@@ -196,6 +202,8 @@ bt::BtTorrentOptions mergeOptions(const bt::BtTorrentOptions& base, const QCborM
         o.seedTimeMode = sent.seedTimeMode;
     if (has("seedTimeMinutes"))
         o.seedTimeMinutes = sent.seedTimeMinutes;
+    if (sent.i2pMode)
+        o.i2pMode = sent.i2pMode;
     return o;
 }
 
@@ -555,6 +563,8 @@ QCborMap statusToCbor()
     out.insert(QStringLiteral("listenPort"), s.listenPort);
     out.insert(QStringLiteral("listening"), s.listening);
     out.insert(QStringLiteral("dhtNodes"), s.dhtNodes);
+    out.insert(QStringLiteral("dhtNodesV4"), s.dhtNodesV4);
+    out.insert(QStringLiteral("dhtNodesV6"), s.dhtNodesV6);
     out.insert(QStringLiteral("torrents"), s.torrents);
     out.insert(QStringLiteral("rateDown"), s.rateDown);
     out.insert(QStringLiteral("rateUp"), s.rateUp);

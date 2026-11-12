@@ -2,6 +2,7 @@
 /// @brief Unfinished torrents stay out of the eD2K / ed3k share (#124); with sharing
 /// switched off finished torrents and hoster downloads do too (#177).
 
+#include "utils/BackgroundFileWriter.h"
 #include "BtShareGuard.h"
 #include "LandedFiles.h"
 #include "files/SharedFileList.h"
@@ -259,6 +260,7 @@ void tst_BtShareGuard::landedFiles_blockOnlyWhileOff()
         landed.load();   // no file yet
         QCOMPARE(landed.size(), 0);
         landed.add({QStringLiteral("/in/pkg/a.bin"), QStringLiteral("/in/b.bin"), QStringLiteral("/IN/B.BIN"), QString()});
+        eMule::BackgroundFileWriter::instance().flush();   // saves are queued (report 43)
         QVERIFY(QFile::exists(list));
         QVERIFY(landed.contains(QStringLiteral("/in/b.bin")));
         QVERIFY(!landed.blocks(QStringLiteral("/in/b.bin")));   // sharing on by default

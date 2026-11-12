@@ -811,8 +811,7 @@ void Ed3kNames::saveLists() const
     QByteArray out;
     for (const List& l : m_lists)
         out += QByteArray::number(l.id) + '\t' + field(l.label).toUtf8() + '\t' + field(l.link).toUtf8() + '\n';
-    if (!writeBlob(localPath(kListsFile), spanOf(out)))
-        logEd3kWarning(QStringLiteral("ed3k: %1 not written").arg(kListsFile));
+    writeBlobLater(localPath(kListsFile), spanOf(out));
 }
 
 void Ed3kNames::savePetnames() const
@@ -820,8 +819,7 @@ void Ed3kNames::savePetnames() const
     QByteArray out;
     for (const Petname& p : m_petnames)
         out += field(p.text).toUtf8() + '\t' + toBytes(p.zone).toHex() + '\t' + (p.shareable ? "1" : "0") + '\n';
-    if (!writeBlob(localPath(kPetnamesFile), spanOf(out)))
-        logEd3kWarning(QStringLiteral("ed3k: %1 not written").arg(kPetnamesFile));
+    writeBlobLater(localPath(kPetnamesFile), spanOf(out));
 }
 
 QString Ed3kNames::localPath(const QString& name) const

@@ -9,6 +9,7 @@
 #include <QStringList>
 
 #include <array>
+#include <optional>
 
 namespace eMule::bt {
 
@@ -209,8 +210,15 @@ enum class BtLimitMode : quint8 {
     Custom = 2,
 };
 
+/// Peers a torrent takes. Values are IPC: append only.
+enum class BtI2pMode : quint8 {
+    Direct = 0,    ///< no I2P trackers, I2P peers dropped
+    I2pOnly = 1,   ///< i2p_torrent flag: I2P peers only (session mixed mode off)
+    Mixed = 2,     ///< I2P trackers on a normal torrent: both kinds
+};
+
 /// Per-torrent options. Speeds and peers live in libtorrent's resume data, the seed
-/// limits in BT/torrent-options.json.
+/// limits in BT/torrent-options.json, the I2P mode in the flag and trackers.
 struct BtTorrentOptions {
     /// KiB/s, 0 = no own limit
     int downloadLimitKb = 0;
@@ -221,6 +229,8 @@ struct BtTorrentOptions {
     int ratioPercent = 100;
     BtLimitMode seedTimeMode = BtLimitMode::Global;
     int seedTimeMinutes = 0;
+    /// nullopt = leave as is (a client that does not know the key)
+    std::optional<BtI2pMode> i2pMode;
 
     bool operator==(const BtTorrentOptions&) const = default;
 };
@@ -291,6 +301,9 @@ struct BtStatus {
     quint16 listenPort = 0;
     bool listening = false;
     int dhtNodes = 0;
+    /// dhtNodes split by listen socket family
+    int dhtNodesV4 = 0;
+    int dhtNodesV6 = 0;
     int torrents = 0;
     qint64 rateDown = 0;
     qint64 rateUp = 0;

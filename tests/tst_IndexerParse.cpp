@@ -6,6 +6,7 @@
 /// disagrees with `<enclosure length>`, caps booleans spelled "yes", and an
 /// attribute namespace under a prefix the spec never promised.
 
+#include "utils/BackgroundFileWriter.h"
 #include "IndexerCaps.h"
 #include "IndexerResult.h"
 #include "PasswordFlagStore.h"
@@ -724,6 +725,7 @@ void tst_IndexerParse::passwordFlagStore_keepsCountsAndNoText()
     }   // the destructor writes
 
     // Counts only: no indexer name and no flag text in the file.
+    eMule::BackgroundFileWriter::instance().flush();   // saves are queued (report 43)
     const QByteArray stored = readFile();
     QVERIFY(!stored.isEmpty());
     QVERIFY(!stored.contains("crawler"));
@@ -751,6 +753,7 @@ void tst_IndexerParse::passwordFlagStore_keepsCountsAndNoText()
 
         store.forget(crawler);
     }
+    eMule::BackgroundFileWriter::instance().flush();
     const QJsonObject after = QJsonDocument::fromJson(readFile()).object();
     QCOMPARE(after.value(QStringLiteral("indexers")).toObject().size(), qsizetype(1));
     QCOMPARE(after.value(QStringLiteral("salt")), root.value(QStringLiteral("salt")));
@@ -770,6 +773,7 @@ void tst_IndexerParse::passwordFlagStore_keepsCountsAndNoText()
         IndexerSearchPage page = flagPage(QStringLiteral("1"), 3);
         store.apply(other, page);
     }
+    eMule::BackgroundFileWriter::instance().flush();
     QFile second(path2);
     QVERIFY(second.open(QIODevice::ReadOnly));
     const QJsonObject root2 = QJsonDocument::fromJson(second.readAll()).object();
@@ -789,6 +793,7 @@ void tst_IndexerParse::passwordFlagStore_keepsCountsAndNoText()
             store.apply(crawler, page);
             QCOMPARE(markedRows(page), 0);
         }
+        eMule::BackgroundFileWriter::instance().flush();
         QCOMPARE(QJsonDocument::fromJson(readFile()).object().value(QStringLiteral("version")).toInt(), 1);
     }
 }

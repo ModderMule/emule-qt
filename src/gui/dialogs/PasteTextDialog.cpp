@@ -212,6 +212,14 @@ void PasteTextDialog::setLines(const QStringList& lines)
     m_edit->setPlainText(lines.join(QLatin1Char('\n')));
 }
 
+void PasteTextDialog::prefill(const QStringList& links)
+{
+    if (!links.isEmpty() && m_edit->toPlainText().trimmed().isEmpty()) {
+        setLines(links);
+        m_edit->selectAll();   // typing replaces it
+    }
+}
+
 void PasteTextDialog::setBusy(bool busy)
 {
     m_edit->setReadOnly(busy || m_readOnlyText);

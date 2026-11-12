@@ -6,6 +6,7 @@
 #include "utils/Log.h"
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QSaveFile>
 
@@ -98,6 +99,16 @@ bool BackgroundFileWriter::saveFile(const QString& path, const QByteArray& data)
         return false;
     }
     return f.commit();
+}
+
+std::optional<QByteArray> BackgroundFileWriter::readFile(const QString& path)
+{
+    if (auto queued = instance().pending(path))
+        return queued;
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly))
+        return std::nullopt;
+    return f.readAll();
 }
 
 // ---------------------------------------------------------------------------

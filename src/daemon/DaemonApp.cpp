@@ -261,9 +261,7 @@ bool DaemonApp::start()
         logError(QStringLiteral("IPC TLS: %1 — remote GUIs cannot connect").arg(tlsError));
     }
 
-    const QHostAddress addr = thePrefs.ipcListenAddress().isEmpty()
-        ? QHostAddress::LocalHost
-        : QHostAddress(thePrefs.ipcListenAddress());
+    const QHostAddress addr = Preferences::ipcBindAddressOf(thePrefs.ipcListenAddress());
     const uint16 port = m_ipcPortOverride != 0 ? m_ipcPortOverride : thePrefs.ipcPort();
 
     if (!m_ipcServer->start(addr, port)) {
@@ -1458,6 +1456,17 @@ void DaemonApp::applyI2pRouter(const bt::BtSettings& settings)
     c.dataDir = QDir(thePrefs.configDir()).filePath(QStringLiteral("I2P"));
     c.routerPort = thePrefs.btI2pRouterPort();
     c.share = thePrefs.btI2pShare();
+    if (thePrefs.btI2pBrowserProxy()) {
+        c.browserProxyAddress = thePrefs.btI2pBrowserProxyAddress();
+        c.browserProxyPort = thePrefs.btI2pBrowserProxyPort();
+    }
+    // status page on the proxy's host
+    if (thePrefs.btI2pStatusPage()) {
+        c.statusPageAddress = thePrefs.btI2pBrowserProxyAddress();
+        c.statusPagePort = thePrefs.btI2pStatusPagePort();
+        c.statusPageUser = thePrefs.btI2pStatusPageUser();
+        c.statusPagePassword = thePrefs.btI2pStatusPagePassword();
+    }
     // the bind selection, as libtorrent's: one address per family
     for (const QString& a : settings.bindAddresses) {
         QString& slot = a.contains(QLatin1Char(':')) ? c.address6 : c.address4;

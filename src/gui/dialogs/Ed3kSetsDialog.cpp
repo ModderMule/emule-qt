@@ -8,6 +8,7 @@
 
 #include "app/IpcClient.h"
 #include "IpcMessage.h"
+#include "utils/Clipboard.h"
 #include "utils/Log.h"
 #include "utils/StringUtils.h"
 #include "utils/ModalHost.h"
@@ -491,10 +492,9 @@ void Ed3kSetsDialog::enterPass(QWidget* parent, IpcClient* ipc)
 {
     if (!ipc)
         return;
-    const QString clip = QApplication::clipboard()->text().trimmed();
     bool ok = false;
     const QString link = QInputDialog::getText(parent, tr("Enter ed3k Pass"), tr("ed3k:pass link or voucher:"), QLineEdit::Normal,
-                                               clip.startsWith(QStringLiteral("ed3k:pass?"), Qt::CaseInsensitive) ? clip : QString(), &ok)
+                                               Clipboard::firstLink(QLatin1StringView("ed3k:pass?")), &ok)
                              .trimmed();
     if (ok && !link.isEmpty())
         addPassLink(parent, ipc, link);
@@ -707,10 +707,9 @@ void Ed3kSetsDialog::followLink()
 {
     if (!m_ipc)
         return;
-    const QString clip = QApplication::clipboard()->text().trimmed();
     bool ok = false;
     const QString link = QInputDialog::getText(this, tr("Follow ed3k Set"), tr("ed3k:set link:"), QLineEdit::Normal,
-                                               clip.startsWith(QStringLiteral("ed3k:set?"), Qt::CaseInsensitive) ? clip : QString(), &ok)
+                                               Clipboard::firstLink(QLatin1StringView("ed3k:set?")), &ok)
                              .trimmed();
     if (!ok || link.isEmpty())
         return;
@@ -782,10 +781,9 @@ void Ed3kSetsDialog::watchLink()
 {
     if (!m_ipc)
         return;
-    const QString clip = QApplication::clipboard()->text().trimmed();
     bool ok = false;
     const QString link = QInputDialog::getText(this, tr("Watch ed3k Live Stream"), tr("ed3k:live link:"), QLineEdit::Normal,
-                                               clip.startsWith(QStringLiteral("ed3k:live?"), Qt::CaseInsensitive) ? clip : QString(), &ok)
+                                               Clipboard::firstLink(QLatin1StringView("ed3k:live?")), &ok)
                              .trimmed();
     if (!ok || link.isEmpty())
         return;

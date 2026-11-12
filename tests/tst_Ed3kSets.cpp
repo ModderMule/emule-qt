@@ -8,6 +8,7 @@
 /// Batch 14: a paid catalogue's sealed member (subscription.md §8.1 `epoch`) downloaded sealed,
 /// opened with the epoch key once a voucher's pass got it (Ed3kPaid), the sealed copy kept.
 
+#include "utils/BackgroundFileWriter.h"
 #include "Ed3kDownloads.h"
 #include "Ed3kNames.h"
 #include "Ed3kPlumbing.h"
@@ -489,6 +490,7 @@ void tst_Ed3kSets::linksAreCheckedBeforeFollowing()
     QCOMPARE(sets.info(*paidSet)->paidScope, Ed3kPaid::hexOf(*::ed3k::paidScope(3, m_author.key(), {})));
     QVERIFY(sets.unfollow(*paidSet));
     // kept owner-only (the hidden link is a credential)
+    eMule::BackgroundFileWriter::instance().flush();   // saves are queued (report 43)
     QVERIFY(QFile::exists(sets.statePath()));
 #ifndef Q_OS_WIN
     QCOMPARE(QFile::permissions(sets.statePath()) & (QFile::ReadGroup | QFile::ReadOther), QFileDevice::Permissions{});

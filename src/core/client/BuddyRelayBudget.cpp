@@ -47,8 +47,15 @@ bool BuddyRelayBudget::tryCharge(const Address& relay, const uint8* buddyID,
     if (buddy.bytes + bytes > kBuddyRelayBytesPerMin)
         return false;
 
-    // Per caller IP: the relay limits only the Kad request
+    // Per caller IP, and per caller IP and buddy: the relay limits only the Kad request
+    const std::pair perBuddyKey{relay.peerKey(), id};
     if (kind == RelayRequest::KadCallback) {
+        // ToDo: raise to kCallbacksPerSenderPerMin for eMuleQt relays only, once eMuleQt is
+        // common; 1 is aMule's relay rule. The requester never talks to the relay, so the
+        // buddy route must carry its kind: an "eMuleQt relay" bit in our LowID route tags
+        // (ExtSX + own hello), set by the firewalled node whose buddy is eMuleQt.
+        if (!m_callbackPerBuddy.isOpen(perBuddyKey, now))
+            return false;
         const Address key = relay.peerKey();
         auto it = m_callbackBuckets.find(key);
         if (it == m_callbackBuckets.end()) {
@@ -62,6 +69,7 @@ bool BuddyRelayBudget::tryCharge(const Address& relay, const uint8* buddyID,
         if (it->second.tokens < kCallbackCost)
             return false;
         it->second.tokens -= kCallbackCost;
+        m_callbackPerBuddy.pass(perBuddyKey, now);
     }
 
     buddy.sends.push_back({now, bytes});
@@ -72,6 +80,7 @@ bool BuddyRelayBudget::tryCharge(const Address& relay, const uint8* buddyID,
 void BuddyRelayBudget::clear()
 {
     m_callbackBuckets.clear();
+    m_callbackPerBuddy.clear();
     m_relaySends.clear();
     m_lastPrune = 0;
 }

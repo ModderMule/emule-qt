@@ -6,6 +6,7 @@
 #include "net/GuardedNetworkAccessManager.h"
 #include "net/HttpFileDownload.h"
 #include "net/HttpStreamDownload.h"
+#include "utils/BackgroundFileWriter.h"
 #include "utils/Log.h"
 
 #include <QDir>
@@ -15,7 +16,6 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
-#include <QSaveFile>
 
 namespace eMule::ed3k {
 
@@ -310,10 +310,10 @@ void Ed3kResolverUpdater::finish(bool ok, const QString& message)
 
 void Ed3kResolverUpdater::loadState()
 {
-    QFile f(QDir(m_dir).filePath(QLatin1StringView(kStateFile)));
-    if (!f.open(QIODevice::ReadOnly))
+    const auto raw = BackgroundFileWriter::readFile(QDir(m_dir).filePath(QLatin1StringView(kStateFile)));
+    if (!raw)
         return;
-    const QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
+    const QJsonObject o = QJsonDocument::fromJson(*raw).object();
     m_checked = QDateTime::fromString(o.value(QStringLiteral("checked")).toString(), Qt::ISODate);
     // only a name of ours: the file can be edited by hand
     static const QRegularExpression name(QStringLiteral("^resolver-r[0-9]+\\.zip$"));
@@ -369,8 +369,6 @@ void Ed3kResolverUpdater::clearFetched()
 
 void Ed3kResolverUpdater::saveState() const
 {
-    if (!QDir().mkpath(m_dir))
-        return;
     QJsonObject o{{QStringLiteral("checked"), m_checked.toString(Qt::ISODate)}};
     if (!m_fetched.isEmpty()) {
         o.insert(QStringLiteral("file"), m_fetched);
@@ -378,11 +376,8 @@ void Ed3kResolverUpdater::saveState() const
         o.insert(QStringLiteral("api"), m_fetchedApi);
         o.insert(QStringLiteral("sha256"), m_fetchedSha);
     }
-    QSaveFile f(QDir(m_dir).filePath(QLatin1StringView(kStateFile)));
-    if (f.open(QIODevice::WriteOnly)) {
-        f.write(QJsonDocument(o).toJson());
-        f.commit();
-    }
+    // off the main thread (report 43); the writer makes the folder
+    BackgroundFileWriter::instance().write(QDir(m_dir).filePath(QLatin1StringView(kStateFile)), QJsonDocument(o).toJson(), {});
 }
 
 void Ed3kResolverUpdater::pruneZips(const QString& keep) const

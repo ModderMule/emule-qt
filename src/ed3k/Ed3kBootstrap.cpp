@@ -26,7 +26,6 @@ namespace {
 constexpr int kAskTimeoutMs = 5 * 60 * 1000;
 const QString kLastFile = QStringLiteral("bootstrap.dat");
 const QString kShippedName = QStringLiteral("nodes.ed3knod");
-constexpr qint64 kSeedEveryMs = 1000;            // eD2K seeds: one a second
 constexpr qint64 kSeedAgainMs = 10 * 60 * 1000;  // each address once in 10 min
 constexpr std::uint64_t kSeedBelow = 10;         // contacts (packmule ED2K_SEED_BELOW)
 constexpr qsizetype kSeedTriedMax = 4096;
@@ -124,17 +123,17 @@ bool Ed3kBootstrap::offerEd2kPeer(const std::array<std::uint8_t, 16>& userHash, 
     const QString key = ip.toString();
     if (const auto it = m_seedTried.constFind(key); it != m_seedTried.cend() && now - *it < kSeedAgainMs)
         return false;
-    if (!m_seedTried.isEmpty() && now - m_lastSeedMs < kSeedEveryMs)
-        return false;
+    // no pacing here: packmule caps the seed dials (SEED_DIALS); a gate here dropped most
+    // peers of a burst of hellos for good
+    const auto dialled = e->kadSeedHint(m_session.now(), *hint, toAddress(ip, tcpPort));
+    m_session.pump();
+    if (!dialled || !*dialled)
+        return false;   // not marked: the next hello of this peer may try again
     if (m_seedTried.size() >= kSeedTriedMax)
         m_seedTried.clear();
     m_seedTried.insert(key, now);
-    m_lastSeedMs = now;
-    const auto dialled = e->kadSeedHint(m_session.now(), *hint, toAddress(ip, tcpPort));
-    m_session.pump();
-    if (dialled && *dialled)
-        logEd3kKadDebug([&]() -> QString { return QStringLiteral("ed3k: Kad seed from eD2K peer %1:%2").arg(key).arg(tcpPort); });
-    return dialled && *dialled;
+    logEd3kKadDebug([&]() -> QString { return QStringLiteral("ed3k: Kad seed from eD2K peer %1:%2").arg(key).arg(tcpPort); });
+    return true;
 }
 
 std::expected<QByteArray, QString> Ed3kBootstrap::exportList(const QString& comment) const
@@ -301,8 +300,7 @@ void Ed3kBootstrap::saveLast()
     for (int i = 0; i < 8; ++i)
         b[i] = char((*m_last >> (8 * i)) & 0xff);
     QDir().mkpath(m_session.stateDir());
-    if (!writeBlob(lastFile(), {reinterpret_cast<const std::byte*>(b.constData()), std::size_t(b.size())}))
-        logEd3kWarning(QStringLiteral("ed3k: cannot write %1").arg(lastFile()));
+    writeBlobLater(lastFile(), {reinterpret_cast<const std::byte*>(b.constData()), std::size_t(b.size())});
 }
 
 } // namespace eMule::ed3k

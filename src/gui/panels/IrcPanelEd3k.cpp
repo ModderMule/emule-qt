@@ -5,6 +5,7 @@
 ///
 /// A room link with `s` is a credential (§1.3): never logged, never in an error line.
 
+#include "utils/Clipboard.h"
 #include "panels/IrcPanel.h"
 
 #include "app/IpcClient.h"
@@ -612,7 +613,7 @@ void IrcPanel::joinEd3kRoom(const QString& link)
     if (l.isEmpty()) {
         bool ok = false;
         l = QInputDialog::getText(this, tr("Join an ed3k room"), tr("Room link (ed3k:room?...):"), QLineEdit::Normal,
-                                  QString(), &ok).trimmed();
+                                  Clipboard::firstLink(QLatin1StringView("ed3k:room?")), &ok).trimmed();
         if (!ok || l.isEmpty())
             return;
     }

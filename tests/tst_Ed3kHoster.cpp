@@ -5,6 +5,7 @@
 /// user's switch (§3), no plugin, a removed file. And the pure parts of the JD resolver and
 /// the Java runtime lookup.
 
+#include "utils/BackgroundFileWriter.h"
 #include "TestHelpers.h"
 
 #include "Ed3kHosterJoin.h"
@@ -460,6 +461,7 @@ struct Rig {
     {
         join->stop();
         join.reset();
+        eMule::BackgroundFileWriter::instance().flush();   // items.json is queued (report 43)
         QString itemsPath;
         for (QDirIterator it(tmp.path(), {QStringLiteral("items.json")}, QDir::Files, QDirIterator::Subdirectories); it.hasNext();)
             itemsPath = it.next();
@@ -1898,6 +1900,7 @@ private slots:
         QVERIFY(id != 0);
         QCOMPARE(a.state(id), Ed3kHosterJoin::State::Paused);
         a.join->stop();
+        eMule::BackgroundFileWriter::instance().flush();   // the .met is queued (report 43)
         const QString part = a.join->item(id)->file;
         QVERIFY(part.endsWith(QStringLiteral("00000000000000c1.hoster.part")));
         QVERIFY(QFileInfo::exists(part + QStringLiteral(".met")));

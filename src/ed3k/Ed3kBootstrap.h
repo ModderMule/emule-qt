@@ -110,7 +110,6 @@ private:
     QString m_shippedPath;
     bool m_seedFromEd2k = true;
     QElapsedTimer m_seedClock;          ///< clock of the eD2K seeds
-    qint64 m_lastSeedMs = 0;
     QHash<QString, qint64> m_seedTried; ///< address → when (ms of m_seedClock)
 };
 

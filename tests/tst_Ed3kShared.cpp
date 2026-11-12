@@ -2,6 +2,7 @@
 /// @brief eMule's shared files over ed3k (src/ed3k/Ed3kShared): node A shares a file of a
 /// fake share list, node B fetches it by its root; the hash cache spares a re-hash.
 
+#include "utils/BackgroundFileWriter.h"
 #include "Ed3kJoinBase.h"
 #include "Ed3kSession.h"
 #include "Ed3kShared.h"
@@ -195,6 +196,7 @@ void tst_Ed3kShared::theCacheSparesAHashAfterARestart()
         QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
         first = *shared.rootOf(md4);
         shared.stop();
+        eMule::BackgroundFileWriter::instance().flush();   // saves are queued (report 43)
         QVERIFY(QFile::exists(shared.cachePath()));
 #ifdef Q_OS_UNIX
         // Windows: Qt maps only the read-only bit, no owner-only DACL yet (Ed3kStore ToDo)

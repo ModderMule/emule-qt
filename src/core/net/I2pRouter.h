@@ -6,7 +6,7 @@
 /// Not shipped: I2pdInstaller fetches the pinned release into <config>/I2P/bin the first
 /// time it is wanted (or when a newer one is pinned). Runs i2pd as a child with its data under <config>/I2P, SAM on a free loopback port,
 /// every other client service off. Ready once the SAM port answers; libtorrent gets the
-/// bridge only then. A crash restarts it with a growing pause.
+/// bridge only then. Opt-in: an HTTP proxy for browsers, loopback by default. A crash restarts it with a growing pause.
 
 #include "net/I2pdInstaller.h"
 #include "utils/SidecarProcess.h"
@@ -44,6 +44,14 @@ public:
         /// bind selection; empty = any
         QString address4;
         QString address6;
+        /// HTTP proxy for browsers; port 0 = off. Bind from preferences.yml, default loopback
+        QString browserProxyAddress = QStringLiteral("127.0.0.1");
+        quint16 browserProxyPort = 0;
+        /// i2pd webconsole; port 0 = off. Basic auth when the password is set
+        QString statusPageAddress = QStringLiteral("127.0.0.1");
+        quint16 statusPagePort = 0;
+        QString statusPageUser;
+        QString statusPagePassword;
 
         bool operator==(const Config&) const = default;
     };

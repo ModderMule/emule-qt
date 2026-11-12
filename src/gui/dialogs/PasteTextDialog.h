@@ -113,6 +113,10 @@ protected:
     /// so a retry does not re-send the ones that worked.
     void setLines(const QStringList& lines);
 
+    /// Fill the empty box with @p links, the clipboard's links for this dialog;
+    /// an empty list (nothing this dialog takes) leaves the box empty.
+    void prefill(const QStringList& links);
+
     /// Hold the accept button while requests are out. Both subclasses send over
     /// IPC and wait, and without this a second click queues everything twice.
     void setBusy(bool busy);

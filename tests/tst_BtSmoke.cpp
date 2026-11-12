@@ -39,6 +39,7 @@ private slots:
     void i2pPeerAddress();
     void i2pTrackerErrorText();
     void i2pTorrentIsFlagged();
+    void i2pModeSwitchesAfterAdd();
     void peerFlagsChokeDirection();
     void addDoesNotWait();
     void stopRightAfterAddKeepsIt();
@@ -378,6 +379,8 @@ void tst_BtSmoke::i2pAddPolicy()
     QCOMPARE(atp.tracker_tiers.size(), std::size_t(3));
     QCOMPARE(atp.trackers[1], i2pTracker.toStdString());
     QVERIFY(atp.tracker_tiers[1] > atp.tracker_tiers[0]);
+    // each in a tier of its own: one shared tier stopped at the first answer
+    QVERIFY(atp.tracker_tiers[2] > atp.tracker_tiers[1]);
 
     // the new-torrent default, and an explicit "no" beating it
     s.i2pOnlyNew = true;
@@ -403,6 +406,14 @@ void tst_BtSmoke::i2pAddPolicy()
     QVERIFY(BtAddSource::isI2pTracker("http://opentracker.dg2.i2p:80/a"));
     QVERIFY(BtAddSource::isI2pTracker("http://btrackrqkjp6kgelov5a3uxisis77ofxqt5nvy5hvvtoybjpmq4q.b32.i2p/announce"));
     QVERIFY(!BtAddSource::isI2pTracker("http://tracker.example.org/i2p"));
+
+    // resume data of older runs: the shared I2P tier is spread, clearnet tiers stay
+    const std::vector<std::string> urls{"http://a.example.org/a", "http://x.i2p/a", "http://b.example.org/a",
+                                        "http://y.i2p/a", "http://z.i2p/a"};
+    std::vector<int> tiers{0, 2, 1, 2, 2};
+    QVERIFY(BtAddSource::spreadI2pTiers(urls, tiers));
+    QCOMPARE(tiers, (std::vector<int>{0, 2, 1, 3, 4}));
+    QVERIFY(!BtAddSource::spreadI2pTiers(urls, tiers));
 }
 
 void tst_BtSmoke::stopAfterMetadataPolicy()
@@ -487,6 +498,55 @@ void tst_BtSmoke::i2pTorrentIsFlagged()
     QVERIFY(!session.torrent(plain.id)->i2p);
     QVERIFY(session.status().i2pEnabled);
     QVERIFY(!session.status().i2pSam);
+    session.stop();
+}
+
+// Options: flag and I2P trackers follow the mode; mixed sessions have no "I2P only"
+void tst_BtSmoke::i2pModeSwitchesAfterAdd()
+{
+    QTemporaryDir dir;
+    BtSettings s;
+    s.listenPort = 0;
+    s.dht = false;
+    s.lsd = false;
+    s.stateDir = dir.filePath(QStringLiteral("BT"));
+    s.downloadDir = dir.filePath(QStringLiteral("Incoming"));
+    s.i2pEnabled = true;
+    s.i2pTrackers = {QStringLiteral("http://tracker.example.i2p/a")};
+    BtSession session;
+    session.start(s);
+    const auto added = session.addMagnet(
+        QStringLiteral("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&tr=http%3A%2F%2Ftracker.example.org%2Fa"),
+        {}, true, false);
+    QCOMPARE(added.outcome, BtAddOutcome::Added);
+    QTRY_VERIFY(session.options(added.id).has_value());
+    QCOMPARE(session.options(added.id)->i2pMode, BtI2pMode::Direct);
+
+    const auto setMode = [&](BtI2pMode m) {
+        BtTorrentOptions o = *session.options(added.id);
+        o.i2pMode = m;
+        QVERIFY(session.setOptions(added.id, o));
+    };
+    setMode(BtI2pMode::I2pOnly);
+    QVERIFY(session.torrent(added.id)->i2p);
+    QCOMPARE(session.trackers(added.id).size(), 2);
+    QCOMPARE(session.options(added.id)->i2pMode, BtI2pMode::I2pOnly);
+
+    setMode(BtI2pMode::Mixed);
+    QVERIFY(!session.torrent(added.id)->i2p);
+    QCOMPARE(session.options(added.id)->i2pMode, BtI2pMode::Mixed);
+
+    setMode(BtI2pMode::Direct);
+    QCOMPARE(session.trackers(added.id).size(), 1);
+    QCOMPARE(session.options(added.id)->i2pMode, BtI2pMode::Direct);
+
+    // nullopt leaves the mode alone
+    setMode(BtI2pMode::I2pOnly);
+    BtTorrentOptions keep = *session.options(added.id);
+    keep.i2pMode.reset();
+    keep.maxPeers = 7;
+    QVERIFY(session.setOptions(added.id, keep));
+    QCOMPARE(session.options(added.id)->i2pMode, BtI2pMode::I2pOnly);
     session.stop();
 }
 

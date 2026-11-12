@@ -217,6 +217,7 @@ SOURCES += \
     upnp/UPnPManager.cpp \
     utils/BlockRuns.cpp \
     utils/DebugUtils.cpp \
+    utils/AtomicFile.cpp \
     utils/BackgroundFileWriter.cpp \
     utils/DiskLoadLimiter.cpp \
     utils/ReadOnceHint.cpp \
@@ -415,6 +416,7 @@ HEADERS += \
     utils/CorroborationTally.h \
     utils/BlockRuns.h \
     utils/DebugUtils.h \
+    utils/AtomicFile.h \
     utils/BackgroundFileWriter.h \
     utils/DiskLoadLimiter.h \
     utils/ReadOnceHint.h \

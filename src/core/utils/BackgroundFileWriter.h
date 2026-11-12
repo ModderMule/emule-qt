@@ -53,6 +53,9 @@ public:
 
     /// QSaveFile with folders made: the default WriteFn.
     static bool saveFile(const QString& path, const QByteArray& data);
+    /// What @p path holds once the queue is written: the queued copy, else the file;
+    /// nullopt: neither (missing or unreadable).
+    [[nodiscard]] static std::optional<QByteArray> readFile(const QString& path);
 
 private:
     struct Job {

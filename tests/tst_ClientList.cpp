@@ -126,6 +126,11 @@ private slots:
     void tcpBuddyClaim_servedOverTheOpenLink();
     void tcpBuddyClaim_answerEndsTheClaim();
     void tcpBuddyClaim_takeGatesAndTimeout();
+    void relayBudget_callbackOncePerMinutePerRelayAndBuddy();
+    void callbackRelay_perSenderAndBuddy();
+    void servedRelay_combinedBudget();
+    void silentServedBuddy_coolOff();
+    void claimedBuddyLoss_isClaimedAgain();
 
     // The reaper and the chat state — MFC CClientList::Process()
     void process_reapsAChatterOnceTheSessionEnds();
@@ -1967,6 +1972,198 @@ void tst_ClientList::fruitlessLedger_isBounded()
     now += Ledger::kEntryTtlMs + Ledger::kMaxEntries;
     ledger.noteFruitlessSession(ledgerHash(2).data(), now);
     QCOMPARE(ledger.count(), std::size_t{1});
+}
+
+// The requester mirrors the relay's one KADEMLIA_CALLBACK_REQ a minute per sender and buddy.
+void tst_ClientList::relayBudget_callbackOncePerMinutePerRelayAndBuddy()
+{
+    BuddyRelayBudget budget;
+    const Address relay = Address::fromHostOrder(0xC0000214);       // TEST-NET-1
+    const Address otherRelay = Address::fromHostOrder(0xC0000215);
+    uint8 id[16], otherId[16];
+    fillHash(id, 0x31);
+    fillHash(otherId, 0x32);
+    const uint64 start = 1'000'000;
+    constexpr uint64 window = MinuteGate<uint32>::kWindowMs;
+
+    QVERIFY(budget.tryCharge(relay, id, RelayRequest::KadCallback, 0, start));
+    QVERIFY(!budget.tryCharge(relay, id, RelayRequest::KadCallback, 0, start + 1'000));
+    QVERIFY(budget.tryCharge(relay, otherId, RelayRequest::KadCallback, 0, start));   // other buddy
+    QVERIFY(budget.tryCharge(otherRelay, id, RelayRequest::KadCallback, 0, start));   // other relay
+    QVERIFY(budget.tryCharge(relay, id, RelayRequest::ReaskCallback, 50, start));     // reask: no such rule
+    QVERIFY(!budget.tryCharge(relay, id, RelayRequest::KadCallback, 0, start + window - 1));
+    QVERIFY(budget.tryCharge(relay, id, RelayRequest::KadCallback, 0, start + window));
+}
+
+// Relay: kCallbacksPerSenderPerMin KADEMLIA_CALLBACK_REQ a minute per sender for each served
+// buddy; more while all served buddies together use under half the combined budget.
+void tst_ClientList::callbackRelay_perSenderAndBuddy()
+{
+    UpDownClient buddy, otherBuddy;
+    const uint32 sender = 0xC0000220;
+    for (uint32 i = 0; i < kCallbacksPerSenderPerMin; ++i) {
+        QVERIFY(buddy.callbackSenderUnderLimit(sender));
+        buddy.noteCallbackRelayed(sender);
+    }
+    QVERIFY(!buddy.callbackSenderUnderLimit(sender));
+    QVERIFY(buddy.callbackSenderUnderLimit(sender + 1));              // other sender
+    QVERIFY(otherBuddy.callbackSenderUnderLimit(sender));             // other buddy
+    buddy.setKadState(KadState::ConnectedBuddy);                     // a new link starts over
+    QVERIFY(buddy.callbackSenderUnderLimit(sender));
+
+    MinuteGate<uint32> gate;
+    gate.pass(1, 1'000);
+    QVERIFY(!gate.isOpen(1, 1'000 + MinuteGate<uint32>::kWindowMs - 1));
+    QVERIFY(gate.isOpen(1, 1'000 + MinuteGate<uint32>::kWindowMs));
+    QVERIFY(gate.isOpen(2, 1'000));
+    gate.pass(1, 2'000);                                              // same window as the first
+    QCOMPARE(gate.count(1, 2'000), uint32{2});
+    QVERIFY(gate.isOpen(1, 2'000, 3));
+    QVERIFY(!gate.isOpen(1, 2'000, 2));
+    gate.pass(1, 61'000);                                             // a new window
+    QCOMPARE(gate.count(1, 61'000), uint32{1});
+    gate.pass(2, 200'000);                                            // prunes the old pass
+    QCOMPARE(gate.size(), size_t{1});
+}
+
+// A served buddy that held its link 15 min without a ping and with nothing relayed is not
+// served again for 30 min (aMule #1809 run 7: silent 2.3.1 nodes re-link every few minutes).
+void tst_ClientList::silentServedBuddy_coolOff()
+{
+    eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Open);
+    kadFixture.kadPrefs().setLastContact();
+    ClientList list;
+    theApp.clientList = &list;
+    const auto restore = qScopeGuard([&list] { theApp.clientList = nullptr; list.deleteAll(); });
+
+    const std::time_t longAgo = std::time(nullptr) - ClientList::kSilentBuddyMinLinkSecs;
+    const uint32 base = 0xC0000230;
+    const auto served = [&](uint32 ip, uint8 idByte, uint8 kadVersion) {
+        auto* c = addServedBuddy(list, ip, idByte, longAgo);
+        c->setKadVersion(kadVersion);
+        return c;
+    };
+
+    auto* silent = served(base, 0xF1, 9);
+    QVERIFY(silent->servedBuddyLinkWasSilent());
+    auto* young = served(base + 1, 0xF2, 9);
+    young->setKadStateSince(longAgo + 60);
+    QVERIFY(!young->servedBuddyLinkWasSilent());
+    auto* kadV0 = served(base + 2, 0xF3, 0);                          // never pings
+    QVERIFY(!kadV0->servedBuddyLinkWasSilent());
+    auto* relayed = served(base + 3, 0xF4, 9);
+    QVERIFY(relayed->allowBuddyRelay(kRelayedCallbackSize));
+    QVERIFY(!relayed->servedBuddyLinkWasSilent());
+    auto* pinged = served(base + 4, 0xF5, 9);
+    pinged->processBuddyPing();
+    QVERIFY(!pinged->servedBuddyLinkWasSilent());
+
+    // Links end: only the silent one's IP cools off
+    for (auto* c : {silent, young, kadV0, relayed, pinged})
+        c->disconnected(QStringLiteral("test"));
+    const Address silentAddr = Address::fromHostOrder(base);
+    QVERIFY(list.silentBuddyCoolOffLeft(silentAddr) > ClientList::kSilentBuddyCoolOffSecs - 5);
+    for (uint32 i = 1; i < 5; ++i)
+        QCOMPARE(list.silentBuddyCoolOffLeft(Address::fromHostOrder(base + i)), std::time_t{0});
+
+    const uint8 id[16] = {0xB7};
+    QVERIFY(!list.incomingBuddy(base, 4662, 4672, id, id));
+    QVERIFY(list.incomingBuddy(base + 1, 4662, 4672, id, id));
+}
+
+// A claimed buddy is not near ~KadID, so no Kad search finds it again: on loss it is dialled
+// and claimed once more. A Kad-found buddy is left to the search.
+void tst_ClientList::claimedBuddyLoss_isClaimedAgain()
+{
+    eMule::testing::KadFixture kadFixture;   // firewalled
+    kadFixture.kadPrefs().setLastContact();
+    kad::UDPFirewallTester::reset();
+
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    auto* link = new ClientReqSocket();
+    link->connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(link->waitForConnected(5000));
+    QCoreApplication::processEvents();
+
+    ClientList list;
+    theApp.clientList = &list;
+    UpDownClient* reached = nullptr;
+    const auto restore = qScopeGuard([&] {
+        if (reached)
+            reached->setSocket(nullptr);
+        theApp.clientList = nullptr;
+        list.deleteAll();
+        link->deleteLater();
+        QCoreApplication::processEvents();
+    });
+    const uint8 accept[] = {BUDDYCLAIM_ACCEPT};
+
+    // From a Kad offer: lost, not dialled
+    auto* kadBuddy = makeClaimClient(list, "192.0.2.40", 0);
+    kadBuddy->setKadState(KadState::ConnectedBuddy);
+    list.setBuddy(kadBuddy, BuddyStatus::Connected);
+    QCOMPARE(list.buddyOrigin(), BuddyOrigin::KadOffer);
+    kadBuddy->setKadState(KadState::None);
+    list.processKadList();
+    QCOMPARE(list.buddyStatus(), BuddyStatus::None);
+    QCOMPARE(list.buddyOrigin(), BuddyOrigin::None);
+    QCOMPARE(kadBuddy->reclaimBuddyPort(), uint16{0});
+
+    // Claimed: lost, dialled to claim it again
+    auto* claimed = makeClaimClient(list, "192.0.2.41", 0);
+    claimed->setKadState(KadState::ClaimingBuddy);
+    claimed->processBuddyClaim(accept, sizeof(accept));
+    QCOMPARE(list.buddyOrigin(), BuddyOrigin::Claim);
+    claimed->setKadState(KadState::None);                            // link closed
+    list.processKadList();
+    QCOMPARE(list.buddyStatus(), BuddyStatus::None);
+    QCOMPARE(claimed->reclaimBuddyPort(), uint16{4672});
+
+    // The dial failed: a failed candidate, not dialled again
+    claimed->disconnected(QStringLiteral("test"));
+    QCOMPARE(claimed->reclaimBuddyPort(), uint16{0});
+    QVERIFY(list.isFailedBuddyCandidate(claimed->connectAddress().toUint32()));
+
+    // Reached: the claim goes out once the hello is done
+    reached = makeClaimClient(list, "192.0.2.42", 0);
+    reached->setSocket(link);
+    reached->setReclaimBuddyPort(4673);
+    reached->onInfoPacketsReceived();
+    QCOMPARE(reached->reclaimBuddyPort(), uint16{0});
+    QCOMPARE(reached->kadState(), KadState::ClaimingBuddy);
+    QCOMPARE(reached->kadPort(), uint16{4673});
+}
+
+// The combined relay budget is 64 KiB a minute for each served-buddy slot, filled or not.
+void tst_ClientList::servedRelay_combinedBudget()
+{
+    eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Open);
+    const uint16 saved = thePrefs.maxServedBuddies();
+    thePrefs.setMaxServedBuddies(4);
+    ClientList list;
+    const auto restore = qScopeGuard([&] { thePrefs.setMaxServedBuddies(saved); list.deleteAll(); });
+
+    QCOMPARE(thePrefs.servedBuddyLimit(), uint16{4});
+    const uint64 budget = list.servedRelayBudget();
+    QCOMPARE(budget, uint64{kBuddyRelayBytesPerMin} * thePrefs.servedBuddyLimit());
+    const std::time_t now = std::time(nullptr);
+    auto* a = addServedBuddy(list, 0xC0000240, 0xA1, now);
+    auto* b = addServedBuddy(list, 0xC0000241, 0xA2, now);
+    QVERIFY(list.servedRelayBelowHalf());
+
+    // Just under half: still below; one byte more is not
+    const uint64 half = budget / 2;
+    QVERIFY(a->allowBuddyRelay(kBuddyRelayBytesPerMin));
+    QVERIFY(b->allowBuddyRelay(static_cast<uint32>(half - kBuddyRelayBytesPerMin - 1)));
+    QCOMPARE(list.servedRelayBytesUsed(), half - 1);
+    QVERIFY(list.servedRelayBelowHalf());
+    QVERIFY(b->allowBuddyRelay(1));
+    QVERIFY(!list.servedRelayBelowHalf());
+
+    // A buddy no longer served stops counting
+    b->setKadState(KadState::None);
+    QVERIFY(list.servedRelayBelowHalf());
 }
 
 QTEST_MAIN(tst_ClientList)

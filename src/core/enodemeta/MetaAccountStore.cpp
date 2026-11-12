@@ -5,11 +5,13 @@
 #include "enodemeta/MetaAccountStore.h"
 
 #include "prefs/Preferences.h"
+#include "utils/BackgroundFileWriter.h"
 #include "utils/Log.h"
 
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QSaveFile>
 
 #include <yaml-cpp/yaml.h>
@@ -54,10 +56,11 @@ void MetaAccountStore::clearToken(const QString& origin)
 void MetaAccountStore::load()
 {
     m_accounts.clear();
-    if (!QFile::exists(m_path))
+    const auto raw = BackgroundFileWriter::readFile(m_path);   // a queued save is newer
+    if (!raw)
         return;
     try {
-        const YAML::Node root = YAML::LoadFile(m_path.toStdString());
+        const YAML::Node root = YAML::Load(raw->toStdString());
         const YAML::Node servers = root["servers"];
         if (!servers || !servers.IsMap())
             return;
@@ -91,16 +94,19 @@ void MetaAccountStore::save() const
     }
     out << YAML::EndMap << YAML::EndMap;
 
-    QSaveFile file(m_path);
-    if (!file.open(QIODevice::WriteOnly)) {
-        logWarning(QStringLiteral("Meta API: cannot write %1").arg(m_path));
-        return;
-    }
-    file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);   // holds tokens
-    file.write(out.c_str());
-    if (!file.commit())
-        logWarning(QStringLiteral("Meta API: cannot write %1").arg(m_path));
-    QFile::setPermissions(m_path, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+    // off the main thread (report 43); the writer logs a failed write
+    BackgroundFileWriter::instance().write(m_path, QByteArray(out.c_str()), [](const QString& path, const QByteArray& data) {
+        constexpr auto kOwnerOnly = QFileDevice::ReadOwner | QFileDevice::WriteOwner;   // holds tokens
+        QDir().mkpath(QFileInfo(path).absolutePath());
+        QSaveFile file(path);
+        if (!file.open(QIODevice::WriteOnly))
+            return false;
+        file.setPermissions(kOwnerOnly);
+        if (file.write(data) != data.size() || !file.commit())
+            return false;
+        QFile::setPermissions(path, kOwnerOnly);
+        return true;
+    });
 }
 
 } // namespace eMule::enodemeta

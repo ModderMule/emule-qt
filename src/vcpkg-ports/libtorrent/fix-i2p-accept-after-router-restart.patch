@@ -1,0 +1,52 @@
+diff --git a/include/libtorrent/aux_/session_impl.hpp b/include/libtorrent/aux_/session_impl.hpp
+index 5de95a2..f4ceb29 100644
+--- a/include/libtorrent/aux_/session_impl.hpp
++++ b/include/libtorrent/aux_/session_impl.hpp
+@@ -756,7 +756,7 @@ namespace aux {
+ 
+ 			void on_i2p_open(error_code const& ec);
+ 			void open_new_incoming_i2p_connection();
+-			void on_i2p_accept(error_code const& e);
++			void on_i2p_accept(error_code const& e, std::string const& sid);
+ 			void schedule_i2p_reconnect();
+ 			void on_i2p_reconnect_timer(error_code const& ec);
+ #endif
+diff --git a/src/session_impl.cpp b/src/session_impl.cpp
+index 43f9f31..be44620 100644
+--- a/src/session_impl.cpp
++++ b/src/session_impl.cpp
+@@ -2515,15 +2515,32 @@ retry:
+ 		s.set_session_id(m_i2p_conn.session_id());
+ 
+ 		s.async_connect(tcp::endpoint()
+-			, std::bind(&session_impl::on_i2p_accept, this, _1));
++			, [this, sid = std::string(m_i2p_conn.session_id())](error_code const& ec)
++			{ on_i2p_accept(ec, sid); });
+ 	}
+ 
+-	void session_impl::on_i2p_accept(error_code const& e)
++	void session_impl::on_i2p_accept(error_code const& e, std::string const& sid)
+ 	{
+ 		COMPLETE_ASYNC("session_impl::on_i2p_accept");
+ 		if (e == boost::asio::error::operation_aborted) return;
+ 		if (e)
+ 		{
++			// drop the dead accept socket, or open_new_incoming_i2p_connection()
++			// returns early forever and incoming I2P stays off until restart
++			m_i2p_listen_socket.reset();
++			if (m_i2p_conn.is_open() && sid == m_i2p_conn.session_id())
++			{
++				// our SAM session is gone (router restart). Nobody reads the
++				// control socket, so it still looks open: close it and let the
++				// second tick reconnect with backoff
++				error_code ignore;
++				m_i2p_conn.close(ignore);
++			}
++			else
++			{
++				// accept from an older session; the current one needs its own
++				open_new_incoming_i2p_connection();
++			}
+ 			if (m_alerts.should_post<listen_failed_alert>())
+ 			{
+ 				m_alerts.emplace_alert<listen_failed_alert>("i2p"

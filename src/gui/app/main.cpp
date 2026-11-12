@@ -15,6 +15,7 @@
 #include <QLibraryInfo>
 #include <QLocale>
 #include <QMessageBox>
+#include <QPainter>
 #include <QPixmap>
 #include <QPointer>
 #include <QProcess>
@@ -63,6 +64,7 @@ static void unixSignalHandler(int)
 #include "app/SingleInstance.h"
 #include "app/UiState.h"
 #include "utils/Appearance.h"
+#include "utils/BackgroundFileWriter.h"
 #include "utils/ColumnTooltip.h"
 #include "utils/CountryFlags.h"
 #include "utils/FileAssociation.h"
@@ -114,6 +116,34 @@ QString bundledDaemonPath()
     return {};
 }
 
+/// Splash art (scripts/generate_splash.py) + version/copyright in its empty bottom strip,
+/// like MFC CSplashScreen::OnPaint. QPixmap picks Splash@2x/@3x on HiDPI; logical 350x300.
+QPixmap splashPixmap()
+{
+    QPixmap pm(QStringLiteral(":/images/Splash.png"));
+    if (pm.isNull())
+        return pm;
+
+    const QRect area(0, 0, qRound(pm.width() / pm.devicePixelRatio()),
+                     qRound(pm.height() / pm.devicePixelRatio()));
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::TextAntialiasing);
+    p.setPen(QColor(0x8f, 0xa3, 0xb8));
+
+    QFont font(QStringLiteral("Arial"));
+    font.setPixelSize(11);
+    p.setFont(font);
+    p.drawText(QRect(0, 266, area.width(), 16), Qt::AlignHCenter | Qt::AlignVCenter,
+               QStringLiteral("eMule Qt v%1").arg(eMule::kAppVersion));
+
+    font.setPixelSize(8);
+    p.setFont(font);
+    p.setOpacity(0.7);
+    p.drawText(QRect(0, 283, area.width(), 12), Qt::AlignHCenter | Qt::AlignVCenter,
+               QStringLiteral("Copyright (C) 2002-2026 eMule Qt team (GPL v2)"));
+    return pm;
+}
+
 /// Resolve the daemon binary path.
 /// Priority: 1) "local" = assume daemon is running  2) explicit path
 /// 3) the attached core's own binary  4) next to GUI binary.
@@ -154,21 +184,18 @@ bool isRemoteCoreAddress(const QString& host)
 /// where the core trusts the GUI without a token (and Windows refuses 0.0.0.0).
 QString coreDialHost(const QString& host)
 {
-    const QHostAddress addr(host);
-    if (addr == QHostAddress::AnyIPv6)
-        return QStringLiteral("::1");
-    if (addr == QHostAddress::AnyIPv4 || addr == QHostAddress::Any)
-        return QStringLiteral("127.0.0.1");
-    return host;
+    // a hostname stays as given (the Connect dialog)
+    if (const QString h = host.trimmed(); !h.isEmpty() && h != u'*' && QHostAddress(h).isNull())
+        return host;
+    return eMule::Preferences::ipcDialHostOf(host);
 }
 
 /// Nothing listens on the local IPC port, so no core is running. A bind probe, as
 /// the daemon's own: a connect would show up there as a client.
 bool ipcPortFree(const QString& host, uint16_t port)
 {
-    const QHostAddress addr(host);
     QTcpServer probe;
-    return probe.listen(addr.isNull() ? QHostAddress(QHostAddress::LocalHost) : addr, port);
+    return probe.listen(eMule::Preferences::ipcBindAddressOf(host), port);
 }
 
 /// This profile's core is not running, but another program holds its ports. A new
@@ -673,7 +700,7 @@ int main(int argc, char* argv[])
     // Splash screen
     QSplashScreen* splash = nullptr;
     if (eMule::thePrefs.showSplashScreen() && !startMinimized) {
-        splash = new QSplashScreen(QPixmap(QStringLiteral(":/images/Logo.jpg")));
+        splash = new QSplashScreen(splashPixmap());
         splash->show();
         QApplication::processEvents();
     }
@@ -1541,5 +1568,7 @@ int main(int argc, char* argv[])
     if (isRemote)
         eMule::thePrefs.save();
 
+    // uistate.yml, StoredSearches.json: queued, on disk before the process goes
+    eMule::BackgroundFileWriter::instance().flush();
     return result;
 }

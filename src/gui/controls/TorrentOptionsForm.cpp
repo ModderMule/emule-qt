@@ -15,9 +15,11 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QSpinBox>
+#include <QStandardItemModel>
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <utility>
 
 namespace eMule {
 
@@ -25,6 +27,8 @@ namespace {
 
 /// Modes of the seed limit combos: BtLimitMode on the wire
 enum LimitMode { ModeGlobal = 0, ModeUnlimited = 1, ModeCustom = 2 };
+/// BtI2pMode on the wire
+enum I2pMode { I2pDirect = 0, I2pOnly = 1, I2pMixed = 2 };
 
 QFormLayout* makeForm(QWidget* parent)
 {
@@ -122,6 +126,21 @@ TorrentOptionsForm::TorrentOptionsForm(QWidget* parent)
     peerRow->addStretch(1);
     peerForm->addRow(tr("Maximum peers:"), peerRow);
     connect(m_maxPeers, &QSpinBox::valueChanged, this, [this] { markEdited(FieldMaxPeers); });
+    m_i2pMode = new QComboBox(peers);
+    m_i2pMode->addItem(tr("Direct only"), I2pDirect);
+    m_i2pMode->addItem(tr("I2P only"), I2pOnly);
+    m_i2pMode->addItem(tr("I2P and direct"), I2pMixed);
+    m_i2pMode->setToolTip(tr("Peers this torrent uses. Peers of a kind no longer wanted are disconnected."));
+    auto* i2pRow = new QHBoxLayout;
+    i2pRow->addWidget(m_i2pMode);
+    i2pRow->addWidget(addVariesLabel(FieldI2p, peers));
+    i2pRow->addStretch(1);
+    peerForm->addRow(tr("I2P:"), i2pRow);
+    connect(m_i2pMode, &QComboBox::currentIndexChanged, this, [this] {
+        if (!m_filling && !m_i2pEnabled && m_i2pMode->currentData().toInt() != I2pDirect)
+            m_i2pWarn = true;
+        markEdited(FieldI2p);
+    });
     layout->addWidget(peers);
     layout->addStretch(1);
 
@@ -158,6 +177,7 @@ QCborMap TorrentOptionsForm::options() const
         {QStringLiteral("ratioPercent"), qRound(m_ratio100->value() * 100.0)},
         {QStringLiteral("seedTimeMode"), m_seedTimeMode->currentData().toInt()},
         {QStringLiteral("seedTimeMinutes"), m_seedMinutes->value()},
+        {QStringLiteral("i2pMode"), m_i2pMode->currentData().toInt()},
     };
 }
 
@@ -186,6 +206,11 @@ void TorrentOptionsForm::applyRateMaxima()
     m_limitUpKb->setMaximum(ceiling(thePrefs.maxUpload(), thePrefs.btMaxUploadKb()));
 }
 
+bool TorrentOptionsForm::takeI2pRouterWarning()
+{
+    return std::exchange(m_i2pWarn, false);
+}
+
 QList<QString> TorrentOptionsForm::keysOf(Field field)
 {
     switch (field) {
@@ -194,6 +219,7 @@ QList<QString> TorrentOptionsForm::keysOf(Field field)
     case FieldRatio: return {QStringLiteral("ratioMode"), QStringLiteral("ratioPercent")};
     case FieldSeedTime: return {QStringLiteral("seedTimeMode"), QStringLiteral("seedTimeMinutes")};
     case FieldMaxPeers: return {QStringLiteral("maxPeers")};
+    case FieldI2p: return {QStringLiteral("i2pMode")};
     case FieldCount: break;
     }
     return {};
@@ -224,6 +250,15 @@ void TorrentOptionsForm::fill(const QCborMap& options)
     selectMode(m_seedTimeMode, int(options.value(QStringLiteral("seedTimeMode")).toInteger()));
     if (const qint64 minutes = options.value(QStringLiteral("seedTimeMinutes")).toInteger(); minutes > 0)
         m_seedMinutes->setValue(int(minutes));
+    m_i2pEnabled = options.value(QStringLiteral("i2pEnabled")).toBool(true);
+    m_i2pMixed = options.value(QStringLiteral("i2pMixed")).toBool(false);
+    // session mixed mode lets I2P torrents take direct peers: no "I2P only" then
+    if (auto* model = qobject_cast<QStandardItemModel*>(m_i2pMode->model()))
+        if (QStandardItem* item = model->item(m_i2pMode->findData(I2pOnly))) {
+            item->setEnabled(!m_i2pMixed);
+            item->setToolTip(m_i2pMixed ? tr("Not while mixed mode is on in Options > BitTorrent > I2P.") : QString());
+        }
+    selectMode(m_i2pMode, int(options.value(QStringLiteral("i2pMode")).toInteger()));
     updateEnables();
     m_filling = false;
 }

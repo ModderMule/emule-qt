@@ -4,6 +4,7 @@
 /// a piece makes libtorrent fetch it again, with a verdict at once or later from another
 /// thread; and the resume data of a restart.
 
+#include "utils/BackgroundFileWriter.h"
 #include "BtSession.h"
 #include "session/BtJoinDiskIo.h"
 
@@ -67,6 +68,29 @@ private:
     bool m_deferred;
 };
 
+/// Holds every verdict until release(): the download never completes meanwhile.
+class HoldHook final : public BtJoinHook {
+public:
+    void pieceHashed(lt::piece_index_t, std::vector<char>, std::function<void(bool)> done) override
+    {
+        std::scoped_lock lock(mutex);
+        held.push_back(std::move(done));
+    }
+    void release()
+    {
+        std::vector<std::function<void(bool)>> out;
+        {
+            std::scoped_lock lock(mutex);
+            out.swap(held);
+        }
+        for (auto& done : out)
+            done(false);
+    }
+
+    std::mutex mutex;
+    std::vector<std::function<void(bool)>> held;
+};
+
 /// A join sink with nothing to judge: libtorrent alone decides.
 class IdleSink final : public BtJoinSink {
 public:
@@ -128,6 +152,7 @@ private slots:
     void resumeAfterRestart();
     void peersTrackersAndOptions();
     void ipFilterBlocksPeer();
+    void i2pOnlyDropsDirectPeers();
     void stopAfterMetadata();
     void addWithWantedFiles();
 
@@ -431,6 +456,7 @@ void tst_BtLocalSwarm::peersTrackersAndOptions()
     QCOMPARE(cleared->uploadLimitKb, 0);
     QCOMPARE(cleared->maxPeers, 0);
     QCOMPARE(cleared->ratioMode, BtLimitMode::Global);
+    eMule::BackgroundFileWriter::instance().flush();   // saves are queued (report 43)
     QFile json(m_dir.filePath(QStringLiteral("seeder%1/BT/torrent-options.json").arg(m_seeders)));
     QVERIFY(json.open(QIODevice::ReadOnly));
     QVERIFY(!json.readAll().contains(seedId.toUtf8()));
@@ -459,6 +485,36 @@ void tst_BtLocalSwarm::ipFilterBlocksPeer()
     seeder.stop();
 }
 
+// switched to I2P only after the add: the direct peer is disconnected and stays out
+void tst_BtLocalSwarm::i2pOnlyDropsDirectPeers()
+{
+    BtSession seeder;
+    quint16 port = 0;
+    startSeeder(seeder, m_v1, port);
+    const QString seedId = seeder.torrents().first().id;
+
+    BtSession leecher;
+    leecher.start(settingsIn(m_dir, QStringLiteral("leechI2pDrop")));
+    auto hook = std::make_shared<HoldHook>();
+    leecher.diskIo()->attach(m_v1.hashes, hook);
+    const BtAddResult added = leecher.addMagnet(magnet(m_v1, port));
+    QCOMPARE(added.outcome, BtAddOutcome::Added);
+    QTRY_VERIFY_WITH_TIMEOUT(!seeder.peers(seedId).isEmpty() && !leecher.peers(added.id).isEmpty(), kTimeoutMs);
+
+    BtTorrentOptions o = *seeder.options(seedId);
+    QCOMPARE(o.i2pMode, BtI2pMode::Direct);
+    o.i2pMode = BtI2pMode::I2pOnly;
+    QVERIFY(seeder.setOptions(seedId, o));
+    QTRY_VERIFY_WITH_TIMEOUT(seeder.peers(seedId).isEmpty(), 5000);
+    // the leecher redials: an I2P torrent without mixed mode takes no direct peer
+    QTest::qWait(3000);
+    QVERIFY(seeder.peers(seedId).isEmpty());
+
+    hook->release();
+    leecher.stop();
+    seeder.stop();
+}
+
 void tst_BtLocalSwarm::stopAfterMetadata()
 {
     BtSession seeder;
@@ -476,6 +532,7 @@ void tst_BtLocalSwarm::stopAfterMetadata()
         const BtAddResult added = leecher.addMagnet(magnet(m_v1, port), {}, false, std::nullopt, true);
         QCOMPARE(added.outcome, BtAddOutcome::Added);
         id = added.id;
+        eMule::BackgroundFileWriter::instance().flush();   // saves are queued (report 43)
         QVERIFY(QFile::exists(stopsFile));
 
         QTRY_VERIFY_WITH_TIMEOUT(metadata.count() > 0, kTimeoutMs);

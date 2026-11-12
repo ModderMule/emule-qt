@@ -10,6 +10,7 @@
 #include "controls/SortableItems.h"
 #include "controls/TorrentFileTree.h"
 #include "utils/ClientIcons.h"
+#include "utils/Clipboard.h"
 #include "utils/MenuUtils.h"
 #include "utils/PanelPoller.h"
 #include "utils/StatusBarNotifier.h"
@@ -688,7 +689,9 @@ void TorrentListsPane::onAddTrackers()
         return;
     bool ok = false;
     const QString text = QInputDialog::getMultiLineText(
-        this, tr("Add Trackers"), tr("Tracker URLs, one per line:"), QString(), &ok);
+        this, tr("Add Trackers"), tr("Tracker URLs, one per line:"),
+        // the clipboard's tracker URLs, if any
+        Clipboard::trackerLinksIn(Clipboard::text()).join(QLatin1Char('\n')), &ok);
     if (!ok)
         return;
     QStringList urls;

@@ -1050,8 +1050,7 @@ void Ed3kSets::save() const
                                .toJson(QJsonDocument::Compact);
     QDir().mkpath(stateDir(m_configDir));
     // links of hidden sets are credentials: owner-only (writeBlob)
-    if (!writeBlob(statePath(), spanOf(out)))
-        logEd3kWarning(QStringLiteral("ed3k: %1 not written").arg(statePath()));
+    writeBlobLater(statePath(), spanOf(out));
 }
 
 void Ed3kSets::storeManifest(const ffi::Root& root, const QByteArray& file) const

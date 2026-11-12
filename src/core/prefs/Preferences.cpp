@@ -5,6 +5,7 @@
 #include "prefs/Preferences.h"
 #include "prefs/SpeedRules.h"
 #include "net/SmtpClient.h"
+#include "utils/AtomicFile.h"
 #include "utils/OtherFunctions.h"
 
 #include "app/AppConfig.h"
@@ -25,9 +26,9 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHostAddress>
 #include <QRandomGenerator>
 #include <QRegularExpression>
-#include <QSaveFile>
 #include <QSet>
 #include <QStandardPaths>
 #include <QTcpServer>
@@ -763,6 +764,13 @@ struct Preferences::Data {
     QStringList btI2pTrackers = Preferences::defaultBtI2pTrackers();
     uint16 btI2pRouterPort = 0;        // 0 = random, resolved at load
     int btI2pShare = 50;
+    bool btI2pBrowserProxy = false;
+    QString btI2pBrowserProxyAddress = QStringLiteral("127.0.0.1");
+    uint16 btI2pBrowserProxyPort = Preferences::kDefaultBtI2pBrowserProxyPort;
+    bool btI2pStatusPage = false;
+    uint16 btI2pStatusPagePort = Preferences::kDefaultBtI2pStatusPagePort;
+    QString btI2pStatusPageUser;
+    QString btI2pStatusPagePassword;
 
     // -- ed3k (packmule) ------------------------------------------------------
     bool ed3kEnabled = true;
@@ -2572,6 +2580,30 @@ void Preferences::setBtI2pRouterPort(uint16 val) { set(&Data::btI2pRouterPort, v
 
 int Preferences::btI2pShare() const { return get(&Data::btI2pShare); }
 void Preferences::setBtI2pShare(int val) { set(&Data::btI2pShare, std::clamp(val, 0, 100)); }
+bool Preferences::btI2pBrowserProxy() const { return get(&Data::btI2pBrowserProxy); }
+void Preferences::setBtI2pBrowserProxy(bool val) { set(&Data::btI2pBrowserProxy, val); }
+QString Preferences::btI2pBrowserProxyAddress() const { return get(&Data::btI2pBrowserProxyAddress); }
+void Preferences::setBtI2pBrowserProxyAddress(const QString& val)
+{
+    const QString a = val.trimmed();
+    set(&Data::btI2pBrowserProxyAddress, QHostAddress(a).isNull() ? QStringLiteral("127.0.0.1") : a);
+}
+uint16 Preferences::btI2pBrowserProxyPort() const { return get(&Data::btI2pBrowserProxyPort); }
+void Preferences::setBtI2pBrowserProxyPort(uint16 val)
+{
+    set(&Data::btI2pBrowserProxyPort, val != 0 ? val : kDefaultBtI2pBrowserProxyPort);
+}
+bool Preferences::btI2pStatusPage() const { return get(&Data::btI2pStatusPage); }
+void Preferences::setBtI2pStatusPage(bool val) { set(&Data::btI2pStatusPage, val); }
+uint16 Preferences::btI2pStatusPagePort() const { return get(&Data::btI2pStatusPagePort); }
+void Preferences::setBtI2pStatusPagePort(uint16 val)
+{
+    set(&Data::btI2pStatusPagePort, val != 0 ? val : kDefaultBtI2pStatusPagePort);
+}
+QString Preferences::btI2pStatusPageUser() const { return get(&Data::btI2pStatusPageUser); }
+void Preferences::setBtI2pStatusPageUser(const QString& val) { set(&Data::btI2pStatusPageUser, val.trimmed()); }
+QString Preferences::btI2pStatusPagePassword() const { return get(&Data::btI2pStatusPagePassword); }
+void Preferences::setBtI2pStatusPagePassword(const QString& val) { set(&Data::btI2pStatusPagePassword, val); }
 
 QStringList Preferences::defaultBtI2pTrackers()
 {
@@ -3169,6 +3201,25 @@ void Preferences::setIpcPort(uint16 val) { set(&Data::ipcPort, val); }
 QString Preferences::ipcListenAddress() const { return get(&Data::ipcListenAddress); }
 
 void Preferences::setIpcListenAddress(const QString& val) { set(&Data::ipcListenAddress, val); }
+
+QHostAddress Preferences::ipcBindAddressOf(const QString& value)
+{
+    const QString v = value.trimmed();
+    if (v == u'*')
+        return QHostAddress(QHostAddress::Any);   // dual stack; "::" alone is IPv6 only
+    const QHostAddress addr(v);
+    return addr.isNull() ? QHostAddress(QHostAddress::LocalHost) : addr;
+}
+
+QString Preferences::ipcDialHostOf(const QString& value)
+{
+    const QHostAddress addr = ipcBindAddressOf(value);
+    if (addr == QHostAddress::AnyIPv6)
+        return QStringLiteral("::1");
+    if (addr == QHostAddress::AnyIPv4 || addr == QHostAddress::Any || addr == QHostAddress::LocalHost)
+        return QStringLiteral("127.0.0.1");
+    return value.trimmed();
+}
 
 QString Preferences::ipcDaemonPath() const { return get(&Data::ipcDaemonPath); }
 
@@ -4093,6 +4144,12 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("btI2pTrackers"), btI2pTrackers().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("btI2pRouterPort"), static_cast<qint64>(btI2pRouterPort()));
     prefs.insert(QStringLiteral("btI2pShare"), static_cast<qint64>(btI2pShare()));
+    prefs.insert(QStringLiteral("btI2pBrowserProxy"), btI2pBrowserProxy());
+    prefs.insert(QStringLiteral("btI2pBrowserProxyPort"), static_cast<qint64>(btI2pBrowserProxyPort()));
+    prefs.insert(QStringLiteral("btI2pStatusPage"), btI2pStatusPage());
+    prefs.insert(QStringLiteral("btI2pStatusPagePort"), static_cast<qint64>(btI2pStatusPagePort()));
+    prefs.insert(QStringLiteral("btI2pStatusPageUser"), btI2pStatusPageUser());
+    prefs.insert(QStringLiteral("btI2pStatusPagePassword"), btI2pStatusPagePassword());
 
     // ed3k
     prefs.insert(QStringLiteral("ed3kEnabled"), ed3kEnabled());
@@ -4469,6 +4526,14 @@ void Preferences::updateFromCbor(const QCborMap& p)
             m_data->btI2pTrackers = rpcUrlList(p.value(QStringLiteral("btI2pTrackers")));
         m_data->btI2pRouterPort = static_cast<uint16>(num("btI2pRouterPort", 0, 0, 65535));
         m_data->btI2pShare = int(num("btI2pShare", 50, 0, 100));
+        m_data->btI2pBrowserProxy = p.value(QStringLiteral("btI2pBrowserProxy")).toBool(false);
+        m_data->btI2pBrowserProxyPort =
+            static_cast<uint16>(num("btI2pBrowserProxyPort", kDefaultBtI2pBrowserProxyPort, 1, 65535));
+        m_data->btI2pStatusPage = p.value(QStringLiteral("btI2pStatusPage")).toBool(false);
+        m_data->btI2pStatusPagePort =
+            static_cast<uint16>(num("btI2pStatusPagePort", kDefaultBtI2pStatusPagePort, 1, 65535));
+        m_data->btI2pStatusPageUser = p.value(QStringLiteral("btI2pStatusPageUser")).toString();
+        m_data->btI2pStatusPagePassword = p.value(QStringLiteral("btI2pStatusPagePassword")).toString();
     }
 
     // ed3k. Defaults for a key an older daemon does not send.
@@ -5784,6 +5849,24 @@ bool Preferences::load(const QString& filePath)
                 const int routerPort = i2p["routerPort"].as<int>(m_data->btI2pRouterPort);
                 m_data->btI2pRouterPort = (routerPort >= 0 && routerPort <= 65535) ? static_cast<uint16>(routerPort) : 0;
                 m_data->btI2pShare = std::clamp(i2p["share"].as<int>(m_data->btI2pShare), 0, 100);
+                m_data->btI2pBrowserProxy = i2p["browserProxy"].as<bool>(m_data->btI2pBrowserProxy);
+                {
+                    const QString bind = QString::fromStdString(i2p["browserProxyAddress"].as<std::string>(
+                                                                    m_data->btI2pBrowserProxyAddress.toStdString()))
+                                             .trimmed();
+                    m_data->btI2pBrowserProxyAddress = QHostAddress(bind).isNull() ? QStringLiteral("127.0.0.1") : bind;
+                }
+                const int proxyPort = i2p["browserProxyPort"].as<int>(m_data->btI2pBrowserProxyPort);
+                m_data->btI2pBrowserProxyPort = (proxyPort >= 1 && proxyPort <= 65535) ? static_cast<uint16>(proxyPort)
+                                                                                     : kDefaultBtI2pBrowserProxyPort;
+                m_data->btI2pStatusPage = i2p["statusPage"].as<bool>(m_data->btI2pStatusPage);
+                const int pagePort = i2p["statusPagePort"].as<int>(m_data->btI2pStatusPagePort);
+                m_data->btI2pStatusPagePort = (pagePort >= 1 && pagePort <= 65535) ? static_cast<uint16>(pagePort)
+                                                                                   : kDefaultBtI2pStatusPagePort;
+                m_data->btI2pStatusPageUser = QString::fromStdString(
+                    i2p["statusPageUser"].as<std::string>(m_data->btI2pStatusPageUser.toStdString())).trimmed();
+                m_data->btI2pStatusPagePassword = QString::fromStdString(
+                    i2p["statusPagePassword"].as<std::string>(m_data->btI2pStatusPagePassword.toStdString()));
             }
         }
 
@@ -6381,7 +6464,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     BackgroundFileWriter::instance().discard(filePath);
 
     const QByteArray bytes = encode();
-    QSaveFile file(filePath);
+    AtomicFile file(filePath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         logError(QStringLiteral("Failed to open preferences file for writing: %1").arg(filePath));
         return false;
@@ -7228,6 +7311,13 @@ QByteArray Preferences::encode() const
     out << YAML::EndSeq;
     out << YAML::Key << "routerPort" << YAML::Value << static_cast<int>(m_data->btI2pRouterPort);
     out << YAML::Key << "share" << YAML::Value << m_data->btI2pShare;
+    out << YAML::Key << "browserProxy" << YAML::Value << m_data->btI2pBrowserProxy;
+    out << YAML::Key << "browserProxyAddress" << YAML::Value << m_data->btI2pBrowserProxyAddress.toStdString();
+    out << YAML::Key << "browserProxyPort" << YAML::Value << static_cast<int>(m_data->btI2pBrowserProxyPort);
+    out << YAML::Key << "statusPage" << YAML::Value << m_data->btI2pStatusPage;
+    out << YAML::Key << "statusPagePort" << YAML::Value << static_cast<int>(m_data->btI2pStatusPagePort);
+    out << YAML::Key << "statusPageUser" << YAML::Value << m_data->btI2pStatusPageUser.toStdString();
+    out << YAML::Key << "statusPagePassword" << YAML::Value << m_data->btI2pStatusPagePassword.toStdString();
     out << YAML::EndMap;
     out << YAML::EndMap;
 
@@ -7451,7 +7541,7 @@ bool Preferences::writeStatsBackup(const Data& d, const QString& filePath)
 
     out << YAML::EndMap;
 
-    QSaveFile file(filePath);
+    AtomicFile file(filePath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         logError(QStringLiteral("Failed to open statistics backup for writing: %1").arg(filePath));
         return false;

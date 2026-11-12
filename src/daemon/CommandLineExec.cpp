@@ -59,9 +59,7 @@ bool CommandLineExec::hasCommand() const
 int CommandLineExec::execCommand(QCoreApplication& app)
 {
     // Determine IPC target
-    QString ipcHost = thePrefs.ipcListenAddress();
-    if (ipcHost.isEmpty())
-        ipcHost = QStringLiteral("127.0.0.1");
+    const QString ipcHost = Preferences::ipcDialHostOf(thePrefs.ipcListenAddress());
     uint16_t ipcPort = thePrefs.ipcPort();
     if (portOverride() != 0)
         ipcPort = portOverride();

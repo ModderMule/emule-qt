@@ -4,6 +4,7 @@
 
 #include "kademlia/KadPacketTracking.h"
 #include "app/AppContext.h"
+#include "client/BuddyRelayBudget.h"
 #include "client/ClientList.h"
 #include "kademlia/KadLog.h"
 #include "kademlia/KadMiscUtils.h"
@@ -127,8 +128,10 @@ int PacketTracking::inTrackListIsAllowedPacket(uint32 ip, uint8 opcode,
         token = kTokenBucketMax / 2;
         break;
     case KADEMLIA_CALLBACK_REQ:
-        // Not MFC (1/min): one request per served buddy, see docs/protocol/kad-buddy-search.md
-        token = kTokenBucketMax / std::max<int64>(1, thePrefs.servedBuddyLimit());
+        // Not MFC (1/min): kCallbacksPerSenderPerMin per served buddy; the relay applies the
+        // per-buddy count. See docs/protocol/kad-buddy-search.md
+        token = std::max<int64>(1, kTokenBucketMax / (std::max<int64>(1, thePrefs.servedBuddyLimit())
+                                                     * kCallbacksPerSenderPerMin));
         break;
     case KADEMLIA2_PING:
         token = kTokenBucketMax / 2;

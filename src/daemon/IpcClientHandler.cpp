@@ -5068,6 +5068,18 @@ bool IpcClientHandler::applyPreferenceBt(const QString& key, const QCborValue& v
         thePrefs.setBtI2pRouterPort(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 1, 65535)));
     else if (key == QStringLiteral("btI2pShare"))
         thePrefs.setBtI2pShare(int(val.toInteger()));
+    else if (key == QStringLiteral("btI2pBrowserProxy"))
+        thePrefs.setBtI2pBrowserProxy(val.toBool());
+    else if (key == QStringLiteral("btI2pBrowserProxyPort"))
+        thePrefs.setBtI2pBrowserProxyPort(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 1, 65535)));
+    else if (key == QStringLiteral("btI2pStatusPage"))
+        thePrefs.setBtI2pStatusPage(val.toBool());
+    else if (key == QStringLiteral("btI2pStatusPagePort"))
+        thePrefs.setBtI2pStatusPagePort(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 1, 65535)));
+    else if (key == QStringLiteral("btI2pStatusPageUser"))
+        thePrefs.setBtI2pStatusPageUser(val.toString());
+    else if (key == QStringLiteral("btI2pStatusPagePassword"))
+        thePrefs.setBtI2pStatusPagePassword(val.toString());
     else
         return false;
     return true;

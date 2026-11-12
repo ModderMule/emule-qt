@@ -8,10 +8,12 @@
 #include "dialogs/RememberedSizeDialog.h"
 #include "prefs/Preferences.h"
 #include "utils/ClientIcons.h"
+#include "utils/Log.h"
 #include "IpcMessage.h"
 
 #include <QButtonGroup>
 #include <QCheckBox>
+#include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QGroupBox>
@@ -25,6 +27,7 @@
 #include <QRegularExpression>
 #include <QSignalBlocker>
 #include <QSpinBox>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -121,6 +124,60 @@ BtI2pPage::BtI2pPage(IpcClient* ipc, QWidget* parent)
     m_routerPortSpin->setToolTip(tr("TCP and UDP port of the bundled router. Mapped with UPnP when the "
                                     "BitTorrent port is."));
     routerForm->addRow(tr("Router port:"), m_routerPortSpin);
+    // bind address in preferences.yml only (bittorrent.i2p.browserProxyAddress), default 127.0.0.1
+    m_browserProxyCheck = new QCheckBox(tr("HTTP proxy for browsing .i2p sites"), routerGroup);
+    m_browserProxyCheck->setToolTip(tr("Set your browser's HTTP proxy to 127.0.0.1 and this port on the core's "
+                                       "computer to open .i2p sites, e.g. torrent trackers. It uses its own I2P "
+                                       "address, not the torrents' one."));
+    m_browserProxyPortSpin = new QSpinBox(routerGroup);
+    m_browserProxyPortSpin->setRange(1, 65535);
+    m_browserProxyPortSpin->setValue(Preferences::kDefaultBtI2pBrowserProxyPort);
+    m_browserProxyPortSpin->setToolTip(tr("Port of the browser proxy"));
+    auto* proxyRow = new QHBoxLayout;
+    proxyRow->addWidget(m_browserProxyCheck);
+    proxyRow->addWidget(new QLabel(tr("Port:"), routerGroup));
+    proxyRow->addWidget(m_browserProxyPortSpin);
+    proxyRow->addStretch();
+    routerForm->addRow(proxyRow);
+    // i2pd webconsole on the proxy's host
+    m_statusPageCheck = new QCheckBox(tr("Router status page"), routerGroup);
+    m_statusPageCheck->setToolTip(tr("Open http://127.0.0.1 and this port on the core's computer to see the "
+                                     "router's status, tunnels and peers. Its buttons can also stop the router."));
+    m_statusPagePortSpin = new QSpinBox(routerGroup);
+    m_statusPagePortSpin->setRange(1, 65535);
+    m_statusPagePortSpin->setValue(Preferences::kDefaultBtI2pStatusPagePort);
+    m_statusPagePortSpin->setToolTip(tr("Port of the status page"));
+    auto* pageRow = new QHBoxLayout;
+    pageRow->addWidget(m_statusPageCheck);
+    pageRow->addWidget(new QLabel(tr("Port:"), routerGroup));
+    pageRow->addWidget(m_statusPagePortSpin);
+    m_statusPageBtn = new QPushButton(tr("Open Status Page"), routerGroup);
+    connect(m_statusPageBtn, &QPushButton::clicked, this, [this] {
+        // remote core: its host, which works once browserProxyAddress binds a reachable address
+        const QString host = (!m_ipc || m_ipc->isLocalConnection()) ? QStringLiteral("127.0.0.1") : m_ipc->daemonHost();
+        QUrl url;
+        url.setScheme(QStringLiteral("http"));
+        url.setHost(host);
+        url.setPort(m_statusPagePortSpin->value());
+        url.setPath(QStringLiteral("/"));
+        QDesktopServices::openUrl(url);
+    });
+    pageRow->addWidget(m_statusPageBtn);
+    pageRow->addStretch();
+    routerForm->addRow(pageRow);
+    m_statusPageUserEdit = new QLineEdit(routerGroup);
+    m_statusPageUserEdit->setPlaceholderText(QStringLiteral("i2pd"));
+    m_statusPageUserEdit->setToolTip(tr("User name of the status page. Empty: i2pd"));
+    m_statusPagePassEdit = new QLineEdit(routerGroup);
+    m_statusPagePassEdit->setEchoMode(QLineEdit::Password);
+    m_statusPagePassEdit->setPlaceholderText(tr("none"));
+    m_statusPagePassEdit->setToolTip(tr("With a password, the status page asks for user name and password."));
+    auto* authRow = new QHBoxLayout;
+    authRow->addWidget(new QLabel(tr("User:"), routerGroup));
+    authRow->addWidget(m_statusPageUserEdit, 1);
+    authRow->addWidget(new QLabel(tr("Password:"), routerGroup));
+    authRow->addWidget(m_statusPagePassEdit, 1);
+    routerForm->addRow(authRow);
     modeRadio(tr("External I2P router"),
               tr("A router you run yourself (i2pd or Java I2P) with its SAM bridge on."), Preferences::kBtI2pExternal);
     m_modeGroup->button(Preferences::kBtI2pOff)->setChecked(true);
@@ -146,11 +203,13 @@ BtI2pPage::BtI2pPage(IpcClient* ipc, QWidget* parent)
     auto* torrentGroup = new QGroupBox(tr("Torrents"), this);
     auto* torrentForm = new QFormLayout(torrentGroup);
     m_onlyNewCheck = new QCheckBox(tr("Add new torrents as I2P only"), torrentGroup);
-    m_onlyNewCheck->setToolTip(tr("The default of the \"I2P only\" box when adding torrents."));
+    m_onlyNewCheck->setToolTip(tr("The default of the \"I2P only\" box when adding torrents. "
+                                 "Not together with mixed mode, which lets I2P torrents use direct peers."));
     torrentForm->addRow(m_onlyNewCheck);
     m_mixedCheck = new QCheckBox(tr("Mixed mode: I2P torrents also use direct peers (less anonymous)"), torrentGroup);
     m_mixedCheck->setToolTip(tr("I2P torrents also use the DHT, normal trackers and direct peers, and normal "
-                                "torrents get the I2P trackers too, so both swarms share the files."));
+                                "torrents get the I2P trackers too, so both swarms share the files. "
+                                "Not together with \"Add new torrents as I2P only\"."));
     torrentForm->addRow(m_mixedCheck);
     m_ed3kJoinCheck = new QCheckBox(tr("I2P torrents may also download over ed3k"), torrentGroup);
     m_ed3kJoinCheck->setToolTip(tr("Their info hash then goes out over ed3k. How anonymous that is follows "
@@ -182,15 +241,41 @@ BtI2pPage::BtI2pPage(IpcClient* ipc, QWidget* parent)
 
     mainLayout->addStretch();
 
-    connect(m_modeGroup, &QButtonGroup::idToggled, this, [this](int, bool on) {
+    connect(m_modeGroup, &QButtonGroup::idToggled, this, [this](int id, bool on) {
         if (!on)
             return;
+        // router on with neither box: no torrent would use it
+        if (id != Preferences::kBtI2pOff && !m_onlyNewCheck->isChecked() && !m_mixedCheck->isChecked())
+            m_onlyNewCheck->setChecked(true);
         updateEnabled();
         emit changed();
     });
-    for (QCheckBox* box : {m_mixedCheck, m_onlyNewCheck, m_ed3kJoinCheck})
+    for (QCheckBox* box : {m_mixedCheck, m_onlyNewCheck, m_ed3kJoinCheck, m_browserProxyCheck, m_statusPageCheck})
         connect(box, &QCheckBox::toggled, this, &BtI2pPage::changed);
-    for (QSpinBox* box : {m_portSpin, m_routerPortSpin, m_lengthSpin, m_quantitySpin})
+    connect(m_browserProxyCheck, &QCheckBox::toggled, this, &BtI2pPage::updateEnabled);
+    connect(m_statusPageCheck, &QCheckBox::toggled, this, &BtI2pPage::updateEnabled);
+    connect(m_statusPageCheck, &QCheckBox::toggled, this, [this](bool on) {
+        if (on && m_ipc && m_ipc->isConnected() && !m_ipc->isLocalConnection())
+            logStatusWarning(tr("The I2P router status page listens on the core's computer, on 127.0.0.1 by "
+                                "default: browsers on this computer cannot reach it. To use it from here, set "
+                                "bittorrent > i2p > browserProxyAddress in the core's preferences.yml to an "
+                                "address this computer can reach, and set a password."));
+    });
+    for (QLineEdit* edit : {m_statusPageUserEdit, m_statusPagePassEdit})
+        connect(edit, &QLineEdit::textEdited, this, &BtI2pPage::changed);
+    connect(m_browserProxyCheck, &QCheckBox::toggled, this, [this](bool on) {
+        // the proxy binds on the core's host (loopback by default): this GUI's browser can't reach it
+        if (on && m_ipc && m_ipc->isConnected() && !m_ipc->isLocalConnection())
+            logStatusWarning(tr("The I2P browser proxy listens on the core's computer, on 127.0.0.1 by default: "
+                                "browsers on this computer cannot reach it. To use it from here, set "
+                                "bittorrent > i2p > browserProxyAddress in the core's preferences.yml to an "
+                                "address this computer can reach."));
+    });
+    // exclusive: mixed lets I2P torrents use direct peers, so "I2P only" would not hold
+    for (QCheckBox* box : {m_mixedCheck, m_onlyNewCheck})
+        connect(box, &QCheckBox::toggled, this, &BtI2pPage::updateEnabled);
+    for (QSpinBox* box :
+         {m_portSpin, m_routerPortSpin, m_lengthSpin, m_quantitySpin, m_browserProxyPortSpin, m_statusPagePortSpin})
         connect(box, &QSpinBox::valueChanged, this, &BtI2pPage::changed);
     connect(m_hostEdit, &QLineEdit::textEdited, this, &BtI2pPage::changed);
     if (m_ipc)
@@ -202,9 +287,11 @@ void BtI2pPage::load(const QCborMap& prefs)
 {
     const QSignalBlocker blockGroup(m_modeGroup);
     std::vector<QSignalBlocker> blockers;
-    blockers.reserve(8);
+    blockers.reserve(14);
     for (QObject* o : std::initializer_list<QObject*>{m_hostEdit, m_portSpin, m_routerPortSpin, m_lengthSpin,
-                                                      m_quantitySpin, m_mixedCheck, m_onlyNewCheck, m_ed3kJoinCheck})
+                                                      m_quantitySpin, m_mixedCheck, m_onlyNewCheck, m_ed3kJoinCheck,
+                                                      m_browserProxyCheck, m_browserProxyPortSpin, m_statusPageCheck,
+                                                      m_statusPagePortSpin, m_statusPageUserEdit, m_statusPagePassEdit})
         blockers.emplace_back(o);
 
     const int mode = std::clamp(int(prefs.value(QStringLiteral("btI2pMode")).toInteger(Preferences::kBtI2pOff)),
@@ -217,8 +304,17 @@ void BtI2pPage::load(const QCborMap& prefs)
     m_lengthSpin->setValue(int(prefs.value(QStringLiteral("btI2pTunnelLength")).toInteger(3)));
     m_quantitySpin->setValue(int(prefs.value(QStringLiteral("btI2pTunnelQuantity")).toInteger(3)));
     m_mixedCheck->setChecked(prefs.value(QStringLiteral("btI2pMixed")).toBool(false));
-    m_onlyNewCheck->setChecked(prefs.value(QStringLiteral("btI2pOnlyNew")).toBool(false));
+    // both on (older profile): mixed is what libtorrent did with it
+    m_onlyNewCheck->setChecked(prefs.value(QStringLiteral("btI2pOnlyNew")).toBool(false) && !m_mixedCheck->isChecked());
     m_ed3kJoinCheck->setChecked(prefs.value(QStringLiteral("btI2pEd3kJoin")).toBool(true));
+    m_browserProxyCheck->setChecked(prefs.value(QStringLiteral("btI2pBrowserProxy")).toBool(false));
+    m_browserProxyPortSpin->setValue(int(prefs.value(QStringLiteral("btI2pBrowserProxyPort"))
+                                             .toInteger(Preferences::kDefaultBtI2pBrowserProxyPort)));
+    m_statusPageCheck->setChecked(prefs.value(QStringLiteral("btI2pStatusPage")).toBool(false));
+    m_statusPagePortSpin->setValue(int(prefs.value(QStringLiteral("btI2pStatusPagePort"))
+                                           .toInteger(Preferences::kDefaultBtI2pStatusPagePort)));
+    m_statusPageUserEdit->setText(prefs.value(QStringLiteral("btI2pStatusPageUser")).toString());
+    m_statusPagePassEdit->setText(prefs.value(QStringLiteral("btI2pStatusPagePassword")).toString());
     if (prefs.contains(QStringLiteral("btI2pTrackers")))
         m_trackers = prefs.value(QStringLiteral("btI2pTrackers"))
                          .toString()
@@ -243,7 +339,16 @@ void BtI2pPage::appendTo(IpcMessage& req) const
     put("btI2pMixed", m_mixedCheck->isChecked());
     put("btI2pOnlyNew", m_onlyNewCheck->isChecked());
     put("btI2pEd3kJoin", m_ed3kJoinCheck->isChecked());
+    put("btI2pBrowserProxy", m_browserProxyCheck->isChecked());
+    put("btI2pBrowserProxyPort", qint64(m_browserProxyPortSpin->value()));
+    put("btI2pStatusPage", m_statusPageCheck->isChecked());
+    put("btI2pStatusPagePort", qint64(m_statusPagePortSpin->value()));
+    put("btI2pStatusPageUser", m_statusPageUserEdit->text().trimmed());
+    put("btI2pStatusPagePassword", m_statusPagePassEdit->text());
     put("btI2pTrackers", m_trackers.join(QLatin1Char(' ')));
+    if (m_modeGroup->checkedId() != Preferences::kBtI2pOff && !m_onlyNewCheck->isChecked() && !m_mixedCheck->isChecked())
+        logStatusError(tr("I2P router is on, but no torrent uses it: check \"Add new torrents as I2P only\" or "
+                          "\"Mixed mode\" in Options > BitTorrent > I2P."));
 }
 
 // ---------------------------------------------------------------------------
@@ -265,9 +370,16 @@ void BtI2pPage::updateEnabled()
     m_hostEdit->setEnabled(mode == Preferences::kBtI2pExternal);
     m_portSpin->setEnabled(mode == Preferences::kBtI2pExternal);
     m_routerPortSpin->setEnabled(mode == Preferences::kBtI2pBundled);
-    for (QWidget* w : std::initializer_list<QWidget*>{m_lengthSpin, m_quantitySpin, m_mixedCheck, m_onlyNewCheck,
-                                                      m_trackersBtn})
+    m_browserProxyCheck->setEnabled(mode == Preferences::kBtI2pBundled);
+    m_browserProxyPortSpin->setEnabled(mode == Preferences::kBtI2pBundled && m_browserProxyCheck->isChecked());
+    m_statusPageCheck->setEnabled(mode == Preferences::kBtI2pBundled);
+    for (QWidget* w : std::initializer_list<QWidget*>{m_statusPagePortSpin, m_statusPageUserEdit, m_statusPagePassEdit})
+        w->setEnabled(mode == Preferences::kBtI2pBundled && m_statusPageCheck->isChecked());
+    m_statusPageBtn->setVisible(mode == Preferences::kBtI2pBundled && m_statusPageCheck->isChecked());
+    for (QWidget* w : std::initializer_list<QWidget*>{m_lengthSpin, m_quantitySpin, m_trackersBtn})
         w->setEnabled(on);
+    m_onlyNewCheck->setEnabled(on && !m_mixedCheck->isChecked());
+    m_mixedCheck->setEnabled(on && !m_onlyNewCheck->isChecked());
     m_ed3kJoinCheck->setEnabled(on && m_ed3kOn);
 }
 

@@ -173,6 +173,7 @@ std::expected<void, QString> Ed3kDownloads::add(const Ed3kDownloadSpec& spec)
     e.metDirty = true;
     // an earlier part file of this root (cancelled, list lost) is not trusted
     QFile::remove(e.info.partPath);
+    forgetBlobWrites(metPathOf(e));   // a queued save lands after the remove otherwise
     QFile::remove(metPathOf(e));
     auto [it, inserted] = m_entries.emplace(spec.root, std::move(e));
     logInfo(QStringLiteral("download of \"%1\" (%2 B) added as %3").arg(name).arg(spec.size).arg(hexOf(spec.root.bytes)));
@@ -249,6 +250,7 @@ bool Ed3kDownloads::cancel(const ffi::Root& root)
         if (isShared(root))
             unshare(root);
         QFile::remove(e.info.partPath);
+        forgetBlobWrites(metPathOf(e));   // a queued save lands after the remove otherwise
         QFile::remove(metPathOf(e));
         logInfo(QStringLiteral("download of \"%1\" cancelled").arg(e.info.name));
     } else if (isShared(root)) {
@@ -389,8 +391,7 @@ void Ed3kDownloads::saveNow()
         }
     }
     QDir().mkpath(stateDir(m_configDir));
-    if (!writeBlob(statePath(), spanOf(raw)))
-        logWarning(QStringLiteral("cannot write %1").arg(statePath()));
+    writeBlobLater(statePath(), spanOf(raw));
     for (auto& [root, e] : m_entries)
         if (e.metDirty && e.info.state != Ed3kDownloadInfo::State::Complete)
             writeMet(e);
@@ -601,6 +602,7 @@ void Ed3kDownloads::verified(const ffi::Root& root, const std::optional<FileHash
     e->info.path = path;
     e->info.state = Ed3kDownloadInfo::State::Complete;
     e->info.completedOn = QDateTime::currentSecsSinceEpoch();
+    forgetBlobWrites(metPathOf(*e));   // a queued save lands after the remove otherwise
     QFile::remove(metPathOf(*e));
     shareComplete(*e, std::span{hashed->hashes});
     saveNow();
@@ -786,6 +788,7 @@ void Ed3kDownloads::load()
 
 void Ed3kDownloads::scanTempDirs()
 {
+    flushBlobWrites();   // a .met still queued is listed too
     for (const QString& metPath : metFilesIn(m_tempDirs, kMetSuffix)) {
         auto e = readMet(metPath);
         if (!e) {
@@ -891,10 +894,8 @@ void Ed3kDownloads::writeMet(Entry& e)
     }
     const QString path = metPathOf(e);
     QDir().mkpath(QFileInfo(path).absolutePath());
-    if (writeBlob(path, spanOf(raw)))
-        e.metDirty = false;
-    else
-        logWarning(QStringLiteral("cannot write %1").arg(path));
+    writeBlobLater(path, spanOf(raw));   // the writer logs a failed write
+    e.metDirty = false;
 }
 
 QString Ed3kDownloads::partPathOf(const ffi::Root& root) const

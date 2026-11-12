@@ -161,6 +161,7 @@
     <ClCompile Include="BtTrackerList.cpp" />
     <ClCompile Include="add\BtAddSource.cpp" />
     <ClCompile Include="session\BtJoinDiskIo.cpp" />
+    <ClCompile Include="session\BtPeerGate.cpp" />
     <ClCompile Include="session\BtSettingsMap.cpp" />
     <ClCompile Include="torrent\BtTorrentView.cpp" />
   </ItemGroup>
@@ -171,6 +172,7 @@
     <ClInclude Include="BtTypes.h" />
     <ClInclude Include="add\BtAddSource.h" />
     <ClInclude Include="session\BtJoinDiskIo.h" />
+    <ClInclude Include="session\BtPeerGate.h" />
     <ClInclude Include="session\BtSettingsMap.h" />
     <ClInclude Include="torrent\BtTorrentView.h" />
   </ItemGroup>

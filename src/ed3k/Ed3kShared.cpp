@@ -736,8 +736,7 @@ void Ed3kShared::saveCache()
         out << md4 << h.path << quint64(h.size) << h.mtimeMs << root << hashes;
     }
     QDir().mkpath(stateDir(m_configDir));
-    if (!writeBlob(cachePath(), spanOf(blob)))
-        logWarning(QStringLiteral("cannot write %1").arg(cachePath()));
+    writeBlobLater(cachePath(), spanOf(blob));
     dropDirty(kOwner);
 }
 

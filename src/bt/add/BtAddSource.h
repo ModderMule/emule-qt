@@ -14,6 +14,7 @@
 #include <expected>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace eMule::bt {
 
@@ -52,6 +53,11 @@ public:
 
     /// An announce URL on an .i2p host.
     static bool isI2pTracker(const std::string& url);
+
+    /// Each .i2p tracker in a tier of its own, after the others. libtorrent announces
+    /// only the first working tracker of a tier unless announce_to_all_trackers, so a
+    /// shared I2P tier stopped at the first answer. Returns whether a tier moved.
+    static bool spreadI2pTiers(const std::vector<std::string>& urls, std::vector<int>& tiers);
 };
 
 } // namespace eMule::bt

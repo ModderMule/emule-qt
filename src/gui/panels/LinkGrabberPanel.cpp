@@ -183,7 +183,10 @@ void LinkGrabberPanel::promptAddLinks(const QStringList& prefill)
     dlg.setWindowTitle(tr("Add links to the Link Grabber"));
     auto* layout = new QVBoxLayout(&dlg);
     layout->addWidget(new QLabel(tr("Links, or text with links in it:"), &dlg));
-    auto* edit = new QPlainTextEdit(prefill.join(QLatin1Char('\n')), &dlg);
+    // nothing handed in: the clipboard's http(s) links, if any
+    const QStringList links = prefill.isEmpty() ? Clipboard::httpLinksIn(Clipboard::text()) : prefill;
+    auto* edit = new QPlainTextEdit(links.join(QLatin1Char('\n')), &dlg);
+    edit->selectAll();
     edit->setMinimumSize(520, 180);
     layout->addWidget(edit);
     auto* packageRow = new QHBoxLayout;

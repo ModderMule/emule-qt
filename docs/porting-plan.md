@@ -353,7 +353,7 @@ Replace the MFC application framework with Qt Widgets. The GUI connects to the `
 - [x] Port `ToolbarWnd.cpp/h` / `MuleToolBarCtrl.cpp/h` → `QToolBar` — integrated into `MainWindow` (tab buttons: Kad, Servers, Transfers, Search, SharedFiles, Messages, IRC, Statistics + Connect/Disconnect)
 - [x] Port `MuleStatusBarCtrl.cpp/h` → `QStatusBar` — integrated into `MainWindow` (status message, users, up/down speeds, eD2k, Kad labels)
 - [x] IPC client for daemon communication — `gui/app/IpcClient.h/.cpp` (connects to daemon, request/callback pattern with seqId, push event dispatch, auto-subscribe)
-- [x] Port `SplashScreen.cpp/h` → `QSplashScreen` — implemented in `gui/app/main.cpp` (Logo.jpg splash on startup)
+- [x] Port `SplashScreen.cpp/h` → `QSplashScreen` — implemented in `gui/app/main.cpp` (avatar-style `Splash.png` from `scripts/generate_splash.py`, version drawn at runtime)
 - [x] Port `Wizard.cpp/h` → `QWizard` — `gui/dialogs/FirstStartWizard.h/.cpp`
 - [x] Port `MiniMule.cpp/h` → `QWidget` (floating info window) — `gui/app/MiniMuleWidget.h/.cpp`
 - [x] Port `MuleSystrayDlg.cpp/h` → `QSystemTrayIcon` — integrated into MainWindow (tray icon with connection status icons, double-click restore, single-click MiniMule)

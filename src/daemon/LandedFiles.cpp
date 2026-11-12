@@ -1,11 +1,11 @@
 #include "LandedFiles.h"
 
 #include "files/SharedFileList.h"
+#include "utils/BackgroundFileWriter.h"
 
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QSaveFile>
 
 namespace eMule {
 
@@ -18,11 +18,13 @@ void LandedFiles::load()
 {
     m_paths.clear();
     m_keys.clear();
-    QFile f(m_listPath);
-    if (m_listPath.isEmpty() || !f.open(QIODevice::ReadOnly | QIODevice::Text))
+    if (m_listPath.isEmpty())
         return;
-    while (!f.atEnd()) {
-        const QString path = QString::fromUtf8(f.readLine()).trimmed();
+    const auto raw = BackgroundFileWriter::readFile(m_listPath);   // a queued save is newer
+    if (!raw)
+        return;
+    for (const QByteArray& line : raw->split('\n')) {
+        const QString path = QString::fromUtf8(line).trimmed();
         if (path.isEmpty())
             continue;
         const QString key = SharedFileList::pathKey(path);
@@ -74,13 +76,10 @@ void LandedFiles::save() const
 {
     if (m_listPath.isEmpty())
         return;
-    QDir().mkpath(QFileInfo(m_listPath).absolutePath());
-    QSaveFile f(m_listPath);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Text))
-        return;
+    QByteArray out;
     for (const QString& p : m_paths)
-        f.write(p.toUtf8() + '\n');
-    f.commit();
+        out += p.toUtf8() + '\n';
+    BackgroundFileWriter::instance().write(m_listPath, std::move(out), {});   // off the main thread (report 43)
 }
 
 } // namespace eMule

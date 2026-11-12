@@ -125,6 +125,41 @@ void tst_I2pRouter::arguments()
                          + I2pRouter::kAddressBookSubscriptions.join(QLatin1Char(','));
     QVERIFY(a.contains(subs));
 
+    // browser proxy: opt-in, loopback unless preferences.yml binds elsewhere
+    c.browserProxyPort = 4444;
+    QStringList p = I2pRouter::arguments(c, 40000, {});
+    QVERIFY(p.contains(QStringLiteral("--httpproxy.enabled=true")));
+    QVERIFY(p.contains(QStringLiteral("--httpproxy.address=127.0.0.1")));
+    QVERIFY(p.contains(QStringLiteral("--httpproxy.port=4444")));
+    QVERIFY(!p.contains(QStringLiteral("--httpproxy.enabled=false")));
+    QVERIFY(p.contains(QStringLiteral("--http.enabled=false")));
+    c.browserProxyAddress = QStringLiteral("192.0.2.7");
+    p = I2pRouter::arguments(c, 40000, {});
+    QVERIFY(p.contains(QStringLiteral("--httpproxy.address=192.0.2.7")));
+    c.browserProxyPort = 0;
+
+    // status page: opt-in webconsole, auth only with a password, user defaults to i2pd
+    c.statusPagePort = 7071;
+    p = I2pRouter::arguments(c, 40000, {});
+    QVERIFY(p.contains(QStringLiteral("--http.enabled=true")));
+    QVERIFY(p.contains(QStringLiteral("--http.address=127.0.0.1")));
+    QVERIFY(p.contains(QStringLiteral("--http.port=7071")));
+    QVERIFY(!p.contains(QStringLiteral("--http.enabled=false")));
+    QVERIFY(!p.join(QLatin1Char(' ')).contains(QStringLiteral("--http.auth")));
+    QVERIFY(!p.join(QLatin1Char(' ')).contains(QStringLiteral("strictheaders")));
+    c.statusPagePassword = QStringLiteral("s3cret");
+    p = I2pRouter::arguments(c, 40000, {});
+    QVERIFY(p.contains(QStringLiteral("--http.auth=true")));
+    QVERIFY(p.contains(QStringLiteral("--http.user=i2pd")));
+    QVERIFY(p.contains(QStringLiteral("--http.pass=s3cret")));
+    c.statusPageUser = QStringLiteral("me");
+    c.statusPageAddress = QStringLiteral("0.0.0.0");
+    p = I2pRouter::arguments(c, 40000, {});
+    QVERIFY(p.contains(QStringLiteral("--http.user=me")));
+    QVERIFY(p.contains(QStringLiteral("--http.address=0.0.0.0")));
+    QVERIFY(p.contains(QStringLiteral("--http.strictheaders=false")));
+    c.statusPagePort = 0;
+
     // the user's i2pd.conf choice wins
     QTemporaryDir dir;
     c.dataDir = dir.path();

@@ -91,8 +91,7 @@ void Ed3kPlainCopies::save() const
     const QByteArray out = QJsonDocument(QJsonObject{{QStringLiteral("plain"), QJsonArray::fromStringList(paths())}}).toJson(QJsonDocument::Compact);
     QDir().mkpath(stateDir(m_configDir));
     // owner-only: the member paths of a hidden set tell what it holds
-    if (!writeBlob(statePath(), {reinterpret_cast<const std::byte*>(out.constData()), std::size_t(out.size())}))
-        logEd3kWarning(QStringLiteral("ed3k: %1 not written").arg(statePath()));
+    writeBlobLater(statePath(), {reinterpret_cast<const std::byte*>(out.constData()), std::size_t(out.size())});
 }
 
 } // namespace eMule::ed3k

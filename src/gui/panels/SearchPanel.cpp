@@ -16,6 +16,7 @@
 #include "controls/IndexerResultsModel.h"
 #include "controls/SearchResultsModel.h"
 #include "dialogs/FindInListDialog.h"
+#include "utils/BackgroundFileWriter.h"
 #include "utils/CountryFlags.h"
 #include "utils/IpcFeedback.h"
 #include "utils/ListActivation.h"
@@ -47,7 +48,6 @@
 #include <QDateTime>
 #include <QCompleter>
 #include <QFile>
-#include <QSaveFile>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QIcon>
@@ -2801,6 +2801,7 @@ void SearchPanel::saveSearches()
     const QString path = thePrefs.configDir() + QStringLiteral("/StoredSearches.json");
 
     if (!thePrefs.storeSearches() || m_tabs.empty()) {
+        BackgroundFileWriter::instance().discard(path);
         QFile::remove(path);
         return;
     }
@@ -2836,13 +2837,9 @@ void SearchPanel::saveSearches()
     root[QStringLiteral("version")] = 1;
     root[QStringLiteral("searches")] = searchesArr;
 
-    // QSaveFile: a crash mid-write keeps the previous file, not a truncated one
-    QSaveFile file(path);
-    if (file.open(QIODevice::WriteOnly)
-        && file.write(QJsonDocument(root).toJson(QJsonDocument::Compact)) >= 0 && file.commit())
-        logDebug([&]() -> QString { return QStringLiteral("Stored %1 searches to %2").arg(searchesArr.size()).arg(path); });
-    else
-        logWarning(QStringLiteral("Could not store searches to %1: %2").arg(path, file.errorString()));
+    // atomic, off the GUI thread: a commit waits for the disk (report 43); the writer logs a failure
+    BackgroundFileWriter::instance().write(path, QJsonDocument(root).toJson(QJsonDocument::Compact), {});
+    logDebug([&]() -> QString { return QStringLiteral("Stored %1 searches to %2").arg(searchesArr.size()).arg(path); });
 }
 
 void SearchPanel::loadSearches()
@@ -2852,11 +2849,11 @@ void SearchPanel::loadSearches()
         return;
 
     const QString path = thePrefs.configDir() + QStringLiteral("/StoredSearches.json");
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly))
+    const auto raw = BackgroundFileWriter::readFile(path);   // a queued save is newer
+    if (!raw)
         return;
 
-    const auto doc = QJsonDocument::fromJson(file.readAll());
+    const auto doc = QJsonDocument::fromJson(*raw);
     if (!doc.isObject())
         return;
 

@@ -1455,7 +1455,13 @@
     <None Include="..\..\resources\icons\Log.ico">
       <Filter>Resource Files</Filter>
     </None>
-    <None Include="..\..\resources\images\Logo.jpg">
+    <None Include="..\..\resources\images\Splash.png">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\images\Splash@2x.png">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\images\Splash@3x.png">
       <Filter>Resource Files</Filter>
     </None>
     <None Include="..\..\resources\icons\MediaInfo.ico">

@@ -12,12 +12,12 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QSaveFile>
 #include <QCoreApplication>
 #include <QSettings>
 
 #include <yaml-cpp/yaml.h>
 
+#include "utils/BackgroundFileWriter.h"
 #include "utils/Log.h"
 
 #include <algorithm>
@@ -52,6 +52,14 @@ static void writeIntList(YAML::Emitter& out, const char* key, const QList<int>& 
 
 /// "auto" stands for an invalid QColor — the tray meter slot, which follows the
 /// system colour scheme until the user picks something.
+/// YAML::LoadFile, a save still queued on the background writer read instead.
+static YAML::Node loadQueued(const QString& path)
+{
+    if (auto queued = BackgroundFileWriter::instance().pending(path))
+        return YAML::Load(queued->toStdString());
+    return YAML::LoadFile(path.toStdString());
+}
+
 static constexpr const char* kAutoColor = "auto";
 
 static QColor readColor(const YAML::Node& node, const QColor& fallback)
@@ -75,7 +83,7 @@ void UiState::load(const QString& configDir)
     const QString path = configDir + QStringLiteral("/uistate.yml");
 
     try {
-        YAML::Node root = YAML::LoadFile(path.toStdString());
+        YAML::Node root = loadQueued(path);
         if (!root.IsMap())
             root = YAML::Node(YAML::NodeType::Map);   // empty file: defaults, still import below
 
@@ -241,7 +249,7 @@ void UiState::save(const QString& configDir)
     // Another GUI window on this config may have ticked "Don't show this again" (#146)
     if (!m_lowIdHintDisabled) {
         try {
-            m_lowIdHintDisabled = YAML::LoadFile(path.toStdString())["lowIdHintDisabled"].as<bool>(false);
+            m_lowIdHintDisabled = loadQueued(path)["lowIdHintDisabled"].as<bool>(false);
         } catch (const YAML::Exception&) {
             // no file yet or unreadable: nothing to keep
         }
@@ -377,17 +385,10 @@ void UiState::save(const QString& configDir)
 
     out << YAML::EndMap;
 
-    QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        logError(QStringLiteral("Failed to open uistate.yml for writing: %1").arg(path));
-        return;
-    }
-
-    file.write(out.c_str(), static_cast<qint64>(out.size()));
-    file.write("\n", 1);
-
-    if (!file.commit())
-        logError(QStringLiteral("Failed to commit uistate.yml: %1").arg(path));
+    // off the GUI thread: a commit waits for the disk (report 43); the writer logs a failure
+    QByteArray bytes(out.c_str(), static_cast<qsizetype>(out.size()));
+    bytes.append('\n');
+    BackgroundFileWriter::instance().write(path, std::move(bytes), {});
 }
 
 // ---------------------------------------------------------------------------

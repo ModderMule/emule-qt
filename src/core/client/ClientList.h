@@ -16,10 +16,13 @@
 
 #include <QObject>
 
+#include <array>
 #include <cstdint>
 #include <ctime>
 #include <deque>
 #include <functional>
+#include <map>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -37,6 +40,13 @@ enum class BuddyStatus : uint8_t {
     None,        ///< No buddy
     Connecting,  ///< Buddy request in progress
     Connected    ///< Buddy is active
+};
+
+/// How our buddy was found. A claimed one is not near ~KadID, so no Kad search finds it again.
+enum class BuddyOrigin : uint8_t {
+    None,
+    KadOffer,   ///< FINDBUDDY_RES: Kad search or a remembered buddy
+    Claim       ///< ExtSX offer claimed over TCP (OP_BUDDYCLAIM)
 };
 
 class ClientList : public EntityList<UpDownClient> {
@@ -119,6 +129,8 @@ public:
 
     [[nodiscard]] UpDownClient* getBuddy() const { return m_buddy; }
     [[nodiscard]] BuddyStatus buddyStatus() const { return m_buddyStatus; }
+    /// Origin of the connected buddy, None without one.
+    [[nodiscard]] BuddyOrigin buddyOrigin() const { return m_buddyOrigin; }
     void setBuddy(UpDownClient* buddy, BuddyStatus status);
 
     // Served buddies: the firewalled nodes we relay for while we are open. Not MFC, which
@@ -132,6 +144,13 @@ public:
     static constexpr int kMaxPendingBuddyClaims = 64;
     /// Nodes we answered with FINDBUDDY_RES that have not connected yet.
     [[nodiscard]] int pendingBuddyClaims() const;
+    /// Combined relay budget: kBuddyRelayBytesPerMin for each served-buddy slot
+    /// (Preferences::servedBuddyLimit()), whether filled or not.
+    [[nodiscard]] uint64 servedRelayBudget() const;
+    /// Bytes relayed to all served buddies in their current minutes.
+    [[nodiscard]] uint64 servedRelayBytesUsed() const;
+    /// Under half of servedRelayBudget() used: a sender may pass kCallbacksPerSenderPerMin.
+    [[nodiscard]] bool servedRelayBelowHalf() const;
     /// The connected served buddy with this BuddyID, or nullptr.
     [[nodiscard]] UpDownClient* findServedBuddy(const uint8* buddyID) const;
     /// Connected below Preferences::servedBuddyLimit(). Pending claims take no slot.
@@ -188,6 +207,15 @@ public:
     /// A candidate's dial or handshake failed: skip its IP for kFailedBuddyBlockSecs.
     /// Not counted while Kad is stopped.
     void noteFailedBuddyCandidate(const UpDownClient& candidate);
+
+    /// Not MFC: a served buddy that held its link this long with no ping and nothing relayed
+    /// (UpDownClient::servedBuddyLinkWasSilent) is not served again for kSilentBuddyCoolOffSecs.
+    static constexpr std::time_t kSilentBuddyMinLinkSecs = 15 * 60;
+    static constexpr std::time_t kSilentBuddyCoolOffSecs = 30 * 60;
+    /// The served buddy's link ended silent: refuse its IP for kSilentBuddyCoolOffSecs.
+    void noteSilentServedBuddy(const UpDownClient& served);
+    /// Seconds of cool-off left for @p addr, 0 = none.
+    [[nodiscard]] std::time_t silentBuddyCoolOffLeft(const Address& addr) const;
 
     /// Create a temporary client to request a UDP firewall check via TCP.
     /// Matches MFC CClientList::DoRequestFirewallCheckUDP (srchybrid/ClientList.cpp:767).
@@ -310,6 +338,9 @@ private:
     /// Shared gates for a node claiming us as buddy: slot free, not ourselves, not under a
     /// firewall check, IP not served yet. Empty when it passes, else the reason for the log.
     [[nodiscard]] QString buddyServeRefusal(const Address& addr, uint16 tcpPort) const;
+    /// Our claimed buddy was lost while we still need one: dial it and claim it again, once.
+    /// A Kad search cannot find it (not near ~KadID); the search runs alongside.
+    void reclaimLostBuddy(bool needsOwnBuddy);
     void cleanUpBannedList();
     void cleanUpTrackedList();
 
@@ -365,9 +396,21 @@ private:
     std::deque<KadFirewallRequest> m_kadFirewallRequests;
     UpDownClient* m_buddy = nullptr;
     BuddyStatus m_buddyStatus = BuddyStatus::None;
+    BuddyOrigin m_buddyOrigin = BuddyOrigin::None;
     // For the Kad log: m_buddy may be gone by the time it is reported lost.
     QString m_buddyInfo;
     std::time_t m_buddySince = 0;
+    // Endpoint of the connected buddy, kept for a re-claim (m_buddy may be gone by then)
+    struct BuddyEndpoint {
+        Address addr;
+        uint16 tcpPort = 0;
+        uint16 kadPort = 0;
+        std::array<uint8, 16> userHash{};
+    };
+    BuddyEndpoint m_buddyEndpoint;
+    std::optional<BuddyEndpoint> m_lostClaimBuddy;   // waiting for reclaimLostBuddy()
+    // served IP -> when its silent link ended
+    std::map<Address, std::time_t> m_silentServedBuddies;
     // host-order IP -> when its failed dial was noted
     std::unordered_map<uint32, std::time_t> m_failedBuddyCandidates;
     // Some source waits for a buddy claim (UpDownClient::heldForBuddyClaim)

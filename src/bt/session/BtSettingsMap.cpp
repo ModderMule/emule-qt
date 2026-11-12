@@ -65,7 +65,8 @@ lt::settings_pack BtSettingsMap::toPack(const BtSettings& s)
     // I2P. No SAM yet (router starting or failed, or I2P off): a bridge nothing answers on
     // loopback port 0, never an empty hostname. Empty, libtorrent fetches .i2p trackers as
     // plain HTTP: a DNS lookup of the .i2p name, and the announce in clear if anything
-    // resolves it. With a bridge set they wait for it; libtorrent retries it with backoff.
+    // resolves it. With a bridge set they wait for it; libtorrent retries it with backoff
+    // 1 s doubling to 5 min (fix-i2p-reconnect-backoff.patch, unpatched 2.1.2 retries every 1 s).
     // Mixed only while I2P is on: with it off an I2P torrent waits rather than going clearnet
     const bool sam = s.hasSam();
     p.set_str(lt::settings_pack::i2p_hostname, sam ? s.i2pSamHost.toStdString() : std::string("127.0.0.1"));

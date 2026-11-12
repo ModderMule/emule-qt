@@ -783,7 +783,7 @@ Włącz interfejs WWW lub REST API w Opcje → Interfejs WWW.</translation>
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+597"/>
+        <location filename="../src/gui/app/main.cpp" line="+626"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -1558,15 +1558,15 @@ Istnieje już znajomy o tym samym adresie IP i porcie.</translation>
 <context>
     <name>eMule::AddNzbUrlDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/AddNzbUrlDialog.cpp" line="+19"/>
-        <location line="+27"/>
+        <location filename="../src/gui/dialogs/AddNzbUrlDialog.cpp" line="+20"/>
+        <location line="+28"/>
         <location line="+31"/>
         <location line="+73"/>
         <source>Add NZB from URL</source>
         <translation>Dodaj NZB z URL</translation>
     </message>
     <message>
-        <location line="-129"/>
+        <location line="-130"/>
         <source>NZB URLs:</source>
         <translation>Adresy URL NZB:</translation>
     </message>
@@ -1586,7 +1586,7 @@ Istnieje już znajomy o tym samym adresie IP i porcie.</translation>
         <translation>Hasło:</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+12"/>
         <source>Not Connected</source>
         <translation>Nie podłączony</translation>
     </message>
@@ -1688,7 +1688,7 @@ Istnieje już znajomy o tym samym adresie IP i porcie.</translation>
 <context>
     <name>eMule::AddTorrentDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/AddTorrentDialog.cpp" line="+31"/>
+        <location filename="../src/gui/dialogs/AddTorrentDialog.cpp" line="+32"/>
         <source>Add Magnet Links</source>
         <translation>Dodaj linki magnet</translation>
     </message>
@@ -1757,7 +1757,7 @@ Istnieje już znajomy o tym samym adresie IP i porcie.</translation>
         <translation type="vanished">Najpierw włącz I2P w Opcje &gt; BitTorrent &gt; Połączenie.</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+19"/>
         <source>Not Connected</source>
         <translation>Nie podłączony</translation>
     </message>
@@ -1967,7 +1967,7 @@ M	skompresowane dane nie zostały jeszcze w pełni pobrane
 <context>
     <name>eMule::BtI2pPage</name>
     <message>
-        <location filename="../src/gui/dialogs/BtI2pPage.cpp" line="+46"/>
+        <location filename="../src/gui/dialogs/BtI2pPage.cpp" line="+49"/>
         <source>I2P Trackers</source>
         <translation>Trackery I2P</translation>
     </message>
@@ -1997,12 +1997,12 @@ M	skompresowane dane nie zostały jeszcze w pełni pobrane
     </message>
     <message>
         <location line="+19"/>
-        <location line="+187"/>
+        <location line="+296"/>
         <source>Off</source>
         <translation>Wyłączone</translation>
     </message>
     <message>
-        <location line="-187"/>
+        <location line="-296"/>
         <source>Torrents use direct connections only.</source>
         <translation>Torrenty używają tylko połączeń bezpośrednich.</translation>
     </message>
@@ -2017,7 +2017,62 @@ M	skompresowane dane nie zostały jeszcze w pełni pobrane
         <translation>eMule uruchamia własny router I2P. Przy pierwszym starcie dołączenie do sieci trwa kilka minut.</translation>
     </message>
     <message>
+        <location line="+10"/>
+        <source>Set your browser&apos;s HTTP proxy to 127.0.0.1 and this port on the core&apos;s computer to open .i2p sites, e.g. torrent trackers. It uses its own I2P address, not the torrents&apos; one.</source>
+        <translation>Ustaw proxy HTTP przeglądarki na 127.0.0.1 i ten port na komputerze rdzenia, aby otwierać strony .i2p, np. trackery torrentów. Używa własnego adresu I2P, nie adresu torrentów.</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Port of the browser proxy</source>
+        <translation>Port proxy przeglądarki</translation>
+    </message>
+    <message>
         <location line="+8"/>
+        <source>Router status page</source>
+        <translation>Strona stanu routera</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Open http://127.0.0.1 and this port on the core&apos;s computer to see the router&apos;s status, tunnels and peers. Its buttons can also stop the router.</source>
+        <translation>Otwórz http://127.0.0.1 z tym portem na komputerze rdzenia, aby zobaczyć stan, tunele i węzły routera. Jej przyciski mogą też zatrzymać router.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Port of the status page</source>
+        <translation>Port strony stanu</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Open Status Page</source>
+        <translation>Otwórz stronę stanu</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>User name of the status page. Empty: i2pd</source>
+        <translation>Nazwa użytkownika strony stanu. Puste: i2pd</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>none</source>
+        <translation>brak</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>With a password, the status page asks for user name and password.</source>
+        <translation>Z hasłem strona stanu pyta o nazwę użytkownika i hasło.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>User:</source>
+        <translation>Użytkownik:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Password:</source>
+        <translation>Hasło:</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>External I2P router</source>
         <translation>Zewnętrzny router I2P</translation>
     </message>
@@ -2027,7 +2082,36 @@ M	skompresowane dane nie zostały jeszcze w pełni pobrane
         <translation>Router uruchamiany samodzielnie (i2pd lub Java I2P) z włączonym mostem SAM.</translation>
     </message>
     <message>
-        <location line="+136"/>
+        <location line="+24"/>
+        <source>The default of the &quot;I2P only&quot; box when adding torrents. Not together with mixed mode, which lets I2P torrents use direct peers.</source>
+        <translation>Domyślny stan pola „Tylko I2P” przy dodawaniu torrentów. Nie razem z trybem mieszanym, w którym torrenty I2P używają bezpośrednich peerów.</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>I2P torrents also use the DHT, normal trackers and direct peers, and normal torrents get the I2P trackers too, so both swarms share the files. Not together with &quot;Add new torrents as I2P only&quot;.</source>
+        <translation>Torrenty I2P używają też DHT, zwykłych trackerów i bezpośrednich peerów, a zwykłe torrenty również dostają trackery I2P, więc oba roje dzielą się plikami. Nie razem z „Dodawaj nowe torrenty jako tylko I2P”.</translation>
+    </message>
+    <message>
+        <location line="+49"/>
+        <source>The I2P router status page listens on the core&apos;s computer, on 127.0.0.1 by default: browsers on this computer cannot reach it. To use it from here, set bittorrent &gt; i2p &gt; browserProxyAddress in the core&apos;s preferences.yml to an address this computer can reach, and set a password.</source>
+        <translation>Strona stanu routera I2P nasłuchuje na komputerze rdzenia, domyślnie na 127.0.0.1: przeglądarki na tym komputerze nie mogą się z nią połączyć. Aby używać jej stąd, ustaw bittorrent &gt; i2p &gt; browserProxyAddress w preferences.yml rdzenia na adres osiągalny z tego komputera i ustaw hasło.</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>The I2P browser proxy listens on the core&apos;s computer, on 127.0.0.1 by default: browsers on this computer cannot reach it. To use it from here, set bittorrent &gt; i2p &gt; browserProxyAddress in the core&apos;s preferences.yml to an address this computer can reach.</source>
+        <translation>Proxy przeglądarki I2P nasłuchuje na komputerze rdzenia, domyślnie na 127.0.0.1: przeglądarki na tym komputerze nie mogą się z nim połączyć. Aby używać go stąd, ustaw bittorrent &gt; i2p &gt; browserProxyAddress w preferences.yml rdzenia na adres osiągalny z tego komputera.</translation>
+    </message>
+    <message>
+        <source>The I2P browser proxy runs on the core&apos;s computer: browsers on this computer cannot use it.</source>
+        <translation type="vanished">Proxy przeglądarki I2P działa na komputerze rdzenia: przeglądarki na tym komputerze nie mogą z niego korzystać.</translation>
+    </message>
+    <message>
+        <location line="+81"/>
+        <source>I2P router is on, but no torrent uses it: check &quot;Add new torrents as I2P only&quot; or &quot;Mixed mode&quot; in Options &gt; BitTorrent &gt; I2P.</source>
+        <translation>Router I2P jest włączony, ale żaden torrent go nie używa: zaznacz „Dodawaj nowe torrenty jako tylko I2P” lub „Tryb mieszany” w Opcje &gt; BitTorrent &gt; I2P.</translation>
+    </message>
+    <message>
+        <location line="+16"/>
         <source>eMule runs its own I2P router, downloaded (about 10 MB) when first switched on. The first start takes a few minutes to join the network.</source>
         <translation>eMule uruchamia własny router I2P, pobierany (około 10 MB) przy pierwszym włączeniu. Pierwsze uruchomienie trwa kilka minut, zanim router dołączy do sieci.</translation>
     </message>
@@ -2041,12 +2125,14 @@ M	skompresowane dane nie zostały jeszcze w pełni pobrane
         <translation type="vanished">Router:</translation>
     </message>
     <message>
-        <location line="-133"/>
+        <location line="-181"/>
         <source>Host of the external router&apos;s SAM bridge</source>
         <translation>Host mostu SAM zewnętrznego routera</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-49"/>
+        <location line="+14"/>
+        <location line="+37"/>
         <source>Port:</source>
         <translation>Port:</translation>
     </message>
@@ -2056,7 +2142,7 @@ M	skompresowane dane nie zostały jeszcze w pełni pobrane
         <translation>Most SAM:</translation>
     </message>
     <message>
-        <location line="-16"/>
+        <location line="-70"/>
         <source>TCP and UDP port of the bundled router. Mapped with UPnP when the BitTorrent port is.</source>
         <translation>Port TCP i UDP wbudowanego routera. Mapowany przez UPnP, gdy port BitTorrent jest mapowany.</translation>
     </message>
@@ -2066,7 +2152,7 @@ M	skompresowane dane nie zostały jeszcze w pełni pobrane
         <translation>Port routera:</translation>
     </message>
     <message>
-        <location line="+51"/>
+        <location line="+107"/>
         <source>Routers each tunnel passes. More is more anonymous and slower.</source>
         <translation>Routery, przez które przechodzi każdy tunel. Więcej to większa anonimowość i wolniej.</translation>
     </message>
@@ -2088,14 +2174,13 @@ M	skompresowane dane nie zostały jeszcze w pełni pobrane
         <translation type="vanished">Tunele:</translation>
     </message>
     <message>
-        <location line="-28"/>
+        <location line="-29"/>
         <source>Mixed mode: I2P torrents also use direct peers (less anonymous)</source>
         <translation>Tryb mieszany: torrenty I2P używają też bezpośrednich peerów (mniej anonimowo)</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>I2P torrents also use the DHT, normal trackers and direct peers, and normal torrents get the I2P trackers too, so both swarms share the files.</source>
-        <translation>Torrenty I2P używają też DHT, zwykłych trackerów i bezpośrednich peerów, a zwykłe torrenty dostają też trackery I2P, więc oba roje współdzielą pliki.</translation>
+        <translation type="vanished">Torrenty I2P używają też DHT, zwykłych trackerów i bezpośrednich peerów, a zwykłe torrenty dostają też trackery I2P, więc oba roje współdzielą pliki.</translation>
     </message>
     <message>
         <location line="-4"/>
@@ -2103,12 +2188,11 @@ M	skompresowane dane nie zostały jeszcze w pełni pobrane
         <translation>Dodawaj nowe torrenty jako tylko I2P</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>The default of the &quot;I2P only&quot; box when adding torrents.</source>
-        <translation>Domyślny stan pola „Tylko I2P” przy dodawaniu torrentów.</translation>
+        <translation type="vanished">Domyślny stan pola „Tylko I2P” przy dodawaniu torrentów.</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+9"/>
         <source>I2P torrents may also download over ed3k</source>
         <translation>Torrenty I2P mogą też pobierać przez ed3k</translation>
     </message>
@@ -2123,22 +2207,31 @@ M	skompresowane dane nie zostały jeszcze w pełni pobrane
         <translation>Trackery I2P...</translation>
     </message>
     <message>
-        <location line="-18"/>
+        <location line="-20"/>
         <source>Status:</source>
         <translation>Status:</translation>
     </message>
     <message>
-        <location line="-40"/>
+        <location line="-94"/>
         <source>Router</source>
         <translation>Router</translation>
     </message>
     <message>
-        <location line="+44"/>
+        <location line="+23"/>
+        <source>HTTP proxy for browsing .i2p sites</source>
+        <translation>Proxy HTTP do przeglądania stron .i2p</translation>
+    </message>
+    <message>
+        <source>Set your browser&apos;s HTTP proxy to 127.0.0.1 port 4444 on the core&apos;s computer to open .i2p sites, e.g. torrent trackers. It uses its own I2P address, not the torrents&apos; one.</source>
+        <translation type="vanished">Ustaw proxy HTTP przeglądarki na 127.0.0.1, port 4444, na komputerze rdzenia, aby otwierać strony .i2p, np. trackery torrentów. Używa własnego adresu I2P, nie adresu torrentów.</translation>
+    </message>
+    <message>
+        <location line="+75"/>
         <source>Torrents</source>
         <translation>Torrenty</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+25"/>
         <source>Tunnels</source>
         <translation>Tunele</translation>
     </message>
@@ -2157,7 +2250,7 @@ M	skompresowane dane nie zostały jeszcze w pełni pobrane
         <translation type="vanished">Ta wersja nie zawiera wbudowanego routera I2P (emuleqt-i2pd).</translation>
     </message>
     <message>
-        <location line="+122"/>
+        <location line="+175"/>
         <source>BitTorrent is off</source>
         <translation>BitTorrent jest wyłączony</translation>
     </message>
@@ -2493,7 +2586,7 @@ M	skompresowane dane nie zostały jeszcze w pełni pobrane
 <context>
     <name>eMule::CategoryTabBar</name>
     <message>
-        <location filename="../src/gui/controls/CategoryTabBar.cpp" line="+86"/>
+        <location filename="../src/gui/controls/CategoryTabBar.cpp" line="+91"/>
         <location line="+49"/>
         <location line="+63"/>
         <location line="+20"/>
@@ -10557,7 +10650,7 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
         <translation>Pobierania z hostingów</translation>
     </message>
     <message>
-        <location line="+815"/>
+        <location line="+809"/>
         <source>Clipboard</source>
         <translation>Schowek</translation>
     </message>
@@ -10671,7 +10764,7 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
         <translation type="vanished">Dodaj linki...</translation>
     </message>
     <message>
-        <location line="-430"/>
+        <location line="-422"/>
         <source>Retry</source>
         <translation>Ponów</translation>
     </message>
@@ -10685,7 +10778,7 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
         <translation type="vanished">Opcje...</translation>
     </message>
     <message>
-        <location line="-733"/>
+        <location line="-735"/>
         <source>File Name</source>
         <translation>Nazwa pliku</translation>
     </message>
@@ -10735,12 +10828,12 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
     </message>
     <message>
         <location line="+100"/>
-        <location line="+39"/>
+        <location line="+41"/>
         <source>Hoster links</source>
         <translation>Linki hostingów</translation>
     </message>
     <message>
-        <location line="-26"/>
+        <location line="-28"/>
         <source>Add hoster links</source>
         <translation>Dodaj linki hostingów</translation>
     </message>
@@ -10750,24 +10843,24 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
         <translation>Linki do plików w hostingach, jeden na wiersz:</translation>
     </message>
     <message>
-        <location line="+6"/>
-        <location line="+778"/>
+        <location line="+8"/>
+        <location line="+770"/>
         <source>Package Name:</source>
         <translation>Nazwa pakietu:</translation>
     </message>
     <message>
-        <location line="-776"/>
+        <location line="-768"/>
         <source>optional</source>
         <translation>opcjonalnie</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+778"/>
+        <location line="+770"/>
         <source>The links download under one entry, into a folder of this name</source>
         <translation>Linki są pobierane jako jedna pozycja, do folderu o tej nazwie</translation>
     </message>
     <message>
-        <location line="-763"/>
+        <location line="-755"/>
         <location line="+11"/>
         <location line="+16"/>
         <source>Not connected to the eMule core.</source>
@@ -10780,12 +10873,12 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
         <location line="+4"/>
         <location line="+9"/>
         <location line="+42"/>
-        <location line="+603"/>
+        <location line="+595"/>
         <source>Open DLC</source>
         <translation>Otwórz DLC</translation>
     </message>
     <message>
-        <location line="-668"/>
+        <location line="-660"/>
         <location line="+14"/>
         <source>Cannot read %1.</source>
         <translation>Nie można odczytać %1.</translation>
@@ -10870,13 +10963,13 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
         <translation>Wznów</translation>
     </message>
     <message>
-        <location line="-479"/>
-        <location line="+484"/>
+        <location line="-481"/>
+        <location line="+486"/>
         <source>Remove</source>
         <translation>Usuń</translation>
     </message>
     <message>
-        <location line="-594"/>
+        <location line="-596"/>
         <source>The archive needs a password (Set Password…)</source>
         <translation>Archiwum wymaga hasła (Ustaw hasło…)</translation>
     </message>
@@ -10902,34 +10995,34 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
     </message>
     <message>
         <location line="+1"/>
-        <location line="+834"/>
+        <location line="+828"/>
         <source>Link Grabber (%1)</source>
         <translation>LinkGrabber (%1)</translation>
     </message>
     <message>
-        <location line="-820"/>
-        <location line="+535"/>
+        <location line="-814"/>
+        <location line="+537"/>
         <source>Add Links...</source>
         <translation>Dodaj linki...</translation>
     </message>
     <message>
-        <location line="-534"/>
+        <location line="-536"/>
         <source>Links to files at hosters, one per line</source>
         <translation>Linki do plików w hostingach, jeden w wierszu</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+533"/>
+        <location line="+535"/>
         <source>Open DLC...</source>
         <translation>Otwórz DLC...</translation>
     </message>
     <message>
-        <location line="-532"/>
+        <location line="-534"/>
         <source>Adds the links of a link container (.dlc, .rsdf, .ccf); you can also drop one here</source>
         <translation>Dodaje linki z kontenera linków (.dlc, .rsdf, .ccf); możesz go też upuścić tutaj</translation>
     </message>
     <message>
-        <location line="+523"/>
+        <location line="+525"/>
         <source>Set Password…</source>
         <translation>Ustaw hasło…</translation>
     </message>
@@ -12583,7 +12676,7 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
     <name>eMule::LinkGrabberPanel</name>
     <message>
         <location filename="../src/gui/panels/LinkGrabberPanel.cpp" line="+103"/>
-        <location line="+116"/>
+        <location line="+119"/>
         <location line="+15"/>
         <location line="+366"/>
         <location line="+2"/>
@@ -12592,13 +12685,13 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
         <translation>LinkGrabber</translation>
     </message>
     <message>
-        <location line="-603"/>
-        <location line="+365"/>
+        <location line="-606"/>
+        <location line="+368"/>
         <source>Add Links...</source>
         <translation>Dodaj linki...</translation>
     </message>
     <message>
-        <location line="-364"/>
+        <location line="-367"/>
         <source>Links to crawl into the list, one per line</source>
         <translation>Linki do przeanalizowania na listę, jeden w wierszu</translation>
     </message>
@@ -12669,7 +12762,7 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
         <translation>Linki lub tekst z linkami:</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+8"/>
         <source>Package Name:</source>
         <translation>Nazwa pakietu:</translation>
     </message>
@@ -13058,12 +13151,12 @@ Używasz wersji %2. Otworzyć stronę eMule Qt?</translation>
     <message>
         <location line="+21"/>
         <location line="+7"/>
-        <location line="+1125"/>
+        <location line="+1129"/>
         <source>Version Check</source>
         <translation>Sprawdzanie wersji</translation>
     </message>
     <message>
-        <location line="-1131"/>
+        <location line="-1135"/>
         <source>You are running the latest version of eMule Qt (v%1).</source>
         <translation>Używasz najnowszej wersji eMule Qt (v%1).</translation>
     </message>
@@ -13122,12 +13215,12 @@ Włącz co najmniej jedną w Opcje → Połączenie, aby się połączyć.</tran
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1620"/>
+        <location line="+1630"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: Rozłączony</translation>
     </message>
     <message>
-        <location line="-1611"/>
+        <location line="-1621"/>
         <source>eD2K Server: %1  (%2 Users)</source>
         <translation>Serwer eD2K: %1  (%2 użytkowników)</translation>
     </message>
@@ -13168,12 +13261,12 @@ Włącz co najmniej jedną w Opcje → Połączenie, aby się połączyć.</tran
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1539"/>
+        <location line="+1549"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: Rozłączony</translation>
     </message>
     <message>
-        <location line="-1498"/>
+        <location line="-1508"/>
         <source>ed3k: Connected</source>
         <translation>ed3k: Podłączony</translation>
     </message>
@@ -13243,12 +13336,12 @@ Router: %6</translation>
         <translation>ukryty (%1/%2 ścieżek)</translation>
     </message>
     <message>
-        <location line="+2313"/>
+        <location line="+2323"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Użytkownicy: %1 | Pliki: %2</translation>
     </message>
     <message>
-        <location line="-2269"/>
+        <location line="-2279"/>
         <source>Up: %1(%2)</source>
         <translation>Wysł.: %1(%2)</translation>
     </message>
@@ -13377,7 +13470,7 @@ Rdzeń jest odłączony: działa dalej ze wszystkimi pobieraniami i wysyłaniami
         <translation>Wpis logu</translation>
     </message>
     <message>
-        <location line="+164"/>
+        <location line="+168"/>
         <source>eMule Log</source>
         <translation>Log eMule</translation>
     </message>
@@ -13407,7 +13500,7 @@ Rdzeń jest odłączony: działa dalej ze wszystkimi pobieraniami i wysyłaniami
         <translation>Kreator pierwszego uruchomienia eMule...</translation>
     </message>
     <message>
-        <location line="-775"/>
+        <location line="-779"/>
         <source>Unlimited</source>
         <translation>Bez limitu</translation>
     </message>
@@ -13426,7 +13519,7 @@ Limit wysyłania: %2
 Kliknij dwukrotnie, aby zmienić</translation>
     </message>
     <message>
-        <location line="+783"/>
+        <location line="+787"/>
         <source>IP Filter...</source>
         <translation>Filtr IP...</translation>
     </message>
@@ -13647,7 +13740,7 @@ Włącz go w Opcje → Interfejs WWW i spróbuj ponownie.</translation>
         <translation>Podłącz</translation>
     </message>
     <message>
-        <location line="+92"/>
+        <location line="+98"/>
         <source>Ready</source>
         <translation>Gotowy</translation>
     </message>
@@ -15012,7 +15105,7 @@ Pobrać ponownie?</translation>
 <context>
     <name>eMule::NetworkInfoDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+63"/>
+        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+65"/>
         <source>Network Information</source>
         <translation>Informacje o sieci</translation>
     </message>
@@ -15028,7 +15121,7 @@ Pobrać ponownie?</translation>
         <translation>&lt;b&gt;Brak połączenia z demonem.&lt;/b&gt;</translation>
     </message>
     <message>
-        <location line="+33"/>
+        <location line="+37"/>
         <source>Client</source>
         <translation>Klient</translation>
     </message>
@@ -15050,32 +15143,32 @@ Pobrać ponownie?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+324"/>
+        <location line="+325"/>
         <source>UDP Port:</source>
         <translation>Port UDP:</translation>
     </message>
     <message>
-        <location line="-313"/>
+        <location line="-314"/>
         <source>eD2K Network</source>
         <translation>Sieć eD2K</translation>
     </message>
     <message>
         <location line="+6"/>
         <location line="+188"/>
-        <location line="+118"/>
+        <location line="+119"/>
         <source>Connected</source>
         <translation>Podłączony</translation>
     </message>
     <message>
-        <location line="-304"/>
+        <location line="-305"/>
         <location line="+145"/>
         <location line="+39"/>
-        <location line="+120"/>
+        <location line="+121"/>
         <source>Connecting</source>
         <translation>Podłączanie</translation>
     </message>
     <message>
-        <location line="-302"/>
+        <location line="-303"/>
         <location line="+145"/>
         <source>Disconnected</source>
         <translation>Rozłączony</translation>
@@ -15084,7 +15177,7 @@ Pobrać ponownie?</translation>
         <location line="-144"/>
         <location line="+145"/>
         <location line="+117"/>
-        <location line="+34"/>
+        <location line="+35"/>
         <location line="+5"/>
         <location line="+38"/>
         <location line="+5"/>
@@ -15092,7 +15185,7 @@ Pobrać ponownie?</translation>
         <translation>Status:</translation>
     </message>
     <message>
-        <location line="-338"/>
+        <location line="-339"/>
         <location line="+65"/>
         <location line="+156"/>
         <source>Users:</source>
@@ -15115,13 +15208,13 @@ Pobrać ponownie?</translation>
     </message>
     <message>
         <location line="-150"/>
-        <location line="+302"/>
+        <location line="+303"/>
         <location line="+34"/>
         <source>Unknown</source>
         <translation>Nieznany</translation>
     </message>
     <message>
-        <location line="-329"/>
+        <location line="-330"/>
         <location line="+147"/>
         <source>ID:</source>
         <translation>ID:</translation>
@@ -15141,12 +15234,12 @@ Pobrać ponownie?</translation>
         <location line="+1"/>
         <location line="+96"/>
         <location line="+17"/>
-        <location line="+158"/>
+        <location line="+159"/>
         <source>Open</source>
         <translation>Otwarty</translation>
     </message>
     <message>
-        <location line="-269"/>
+        <location line="-270"/>
         <location line="+94"/>
         <location line="+15"/>
         <source>Firewalled</source>
@@ -15159,12 +15252,12 @@ Pobrać ponownie?</translation>
     </message>
     <message>
         <location line="-109"/>
-        <location line="+277"/>
+        <location line="+278"/>
         <source>IPv6:</source>
         <translation>IPv6:</translation>
     </message>
     <message>
-        <location line="-290"/>
+        <location line="-291"/>
         <source>server verified</source>
         <translation>sprawdzone przez serwer</translation>
     </message>
@@ -15322,20 +15415,20 @@ Pobrać ponownie?</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+208"/>
+        <location line="+209"/>
         <location line="+71"/>
         <source>Yes</source>
         <translation>Tak</translation>
     </message>
     <message>
-        <location line="-279"/>
-        <location line="+208"/>
+        <location line="-280"/>
+        <location line="+209"/>
         <location line="+71"/>
         <source>No</source>
         <translation>Nie</translation>
     </message>
     <message>
-        <location line="-265"/>
+        <location line="-266"/>
         <source>Kad Network</source>
         <translation>Sieć Kad</translation>
     </message>
@@ -15411,13 +15504,13 @@ Pobrać ponownie?</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+38"/>
+        <location line="+39"/>
         <location line="+43"/>
         <source>Disabled</source>
         <translation>Wyłączony</translation>
     </message>
     <message>
-        <location line="-79"/>
+        <location line="-80"/>
         <source>not running</source>
         <translation>nie działa</translation>
     </message>
@@ -15436,7 +15529,7 @@ Pobrać ponownie?</translation>
         <translation>URL:</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+19"/>
         <source>ed3k Network</source>
         <translation>Sieć ed3k</translation>
     </message>
@@ -20809,7 +20902,7 @@ Przeliczyć teraz hash wszystkich udostępnianych plików?</translation>
 <context>
     <name>eMule::PasteLinksDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/PasteLinksDialog.cpp" line="+17"/>
+        <location filename="../src/gui/dialogs/PasteLinksDialog.cpp" line="+18"/>
         <source>Paste eD2K Links</source>
         <translation>Wklej linki eD2K</translation>
     </message>
@@ -20829,7 +20922,7 @@ Przeliczyć teraz hash wszystkich udostępnianych plików?</translation>
         <translation>Pobierz</translation>
     </message>
     <message>
-        <location line="+19"/>
+        <location line="+25"/>
         <source>Not Connected</source>
         <translation>Nie podłączony</translation>
     </message>
@@ -20897,7 +20990,7 @@ Przeliczyć teraz hash wszystkich udostępnianych plików?</translation>
         <translation>Anuluj</translation>
     </message>
     <message>
-        <location line="+109"/>
+        <location line="+117"/>
         <source>Working…</source>
         <translation>Przetwarzanie…</translation>
     </message>
@@ -26167,7 +26260,7 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
         <translation type="vanished">Plik</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/TorrentDetailsDialog.cpp" line="+47"/>
+        <location filename="../src/gui/dialogs/TorrentDetailsDialog.cpp" line="+48"/>
         <source>N/A</source>
         <translation>n/d</translation>
     </message>
@@ -26418,6 +26511,11 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
         <translation>Pozostało</translation>
     </message>
     <message>
+        <location line="+68"/>
+        <source>I2P is off: torrents set to use I2P get no I2P peers until the router is switched on in Options &gt; BitTorrent &gt; I2P.</source>
+        <translation>I2P jest wyłączone: torrenty ustawione na I2P nie dostaną peerów I2P, dopóki router nie zostanie włączony w Opcje &gt; BitTorrent &gt; I2P.</translation>
+    </message>
+    <message>
         <source>Speed</source>
         <translation type="vanished">Prędkość</translation>
     </message>
@@ -26466,7 +26564,7 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
         <translation type="vanished">Maksymalna liczba peerów:</translation>
     </message>
     <message>
-        <location line="+74"/>
+        <location line="+9"/>
         <source>Could not change the torrent options.</source>
         <translation>Nie można zmienić opcji torrenta.</translation>
     </message>
@@ -26480,7 +26578,7 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
         </translation>
     </message>
     <message>
-        <location line="-142"/>
+        <location line="-145"/>
         <location line="+37"/>
         <source>Progress</source>
         <translation>Postęp</translation>
@@ -26777,7 +26875,7 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
 <context>
     <name>eMule::TorrentListsPane</name>
     <message>
-        <location filename="../src/gui/controls/TorrentListsPane.cpp" line="+95"/>
+        <location filename="../src/gui/controls/TorrentListsPane.cpp" line="+96"/>
         <source>Tracker</source>
         <translation>Tracker</translation>
     </message>
@@ -27140,7 +27238,7 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
         <translation>Adresy URL trackerów, po jednym w wierszu:</translation>
     </message>
     <message>
-        <location line="+41"/>
+        <location line="+43"/>
         <source>Could not change the trackers.</source>
         <translation>Nie można zmienić trackerów.</translation>
     </message>
@@ -27165,7 +27263,7 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
 <context>
     <name>eMule::TorrentOptionsForm</name>
     <message>
-        <location filename="../src/gui/controls/TorrentOptionsForm.cpp" line="+40"/>
+        <location filename="../src/gui/controls/TorrentOptionsForm.cpp" line="+44"/>
         <source>Use global settings</source>
         <translation>Użyj ustawień globalnych</translation>
     </message>
@@ -27240,7 +27338,37 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
         <translation>Maksymalna liczba peerów:</translation>
     </message>
     <message>
-        <location line="+128"/>
+        <location line="+3"/>
+        <source>Direct only</source>
+        <translation>Tylko bezpośrednio</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>I2P only</source>
+        <translation>Tylko I2P</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>I2P and direct</source>
+        <translation>I2P i bezpośrednio</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peers this torrent uses. Peers of a kind no longer wanted are disconnected.</source>
+        <translation>Peery używane przez ten torrent. Peery niechcianego już rodzaju zostają rozłączone.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>I2P:</source>
+        <translation>I2P:</translation>
+    </message>
+    <message>
+        <location line="+121"/>
+        <source>Not while mixed mode is on in Options &gt; BitTorrent &gt; I2P.</source>
+        <translation>Niedostępne, gdy tryb mieszany jest włączony w Opcje &gt; BitTorrent &gt; I2P.</translation>
+    </message>
+    <message>
+        <location line="+27"/>
         <source>Varies</source>
         <translation>Różne</translation>
     </message>
@@ -27253,7 +27381,7 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
 <context>
     <name>eMule::TorrentPanel</name>
     <message>
-        <location filename="../src/gui/panels/TorrentPanel.cpp" line="+123"/>
+        <location filename="../src/gui/panels/TorrentPanel.cpp" line="+126"/>
         <source>Torrent download completed: %1</source>
         <translation>Ukończono pobieranie torrenta: %1</translation>
     </message>
@@ -27271,12 +27399,12 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
         <location line="+14"/>
         <location line="+15"/>
         <location line="+11"/>
-        <location line="+671"/>
+        <location line="+675"/>
         <source>Not connected to the eMule core.</source>
         <translation>Brak połączenia z rdzeniem eMule.</translation>
     </message>
     <message>
-        <location line="-722"/>
+        <location line="-726"/>
         <source>Cannot read %1.</source>
         <translation>Nie można odczytać %1.</translation>
     </message>
@@ -27297,7 +27425,7 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
         <translation>Pliki torrent (*.torrent);;Wszystkie pliki (*)</translation>
     </message>
     <message>
-        <location line="+75"/>
+        <location line="+76"/>
         <source>Add Torrent…</source>
         <translation>Dodaj torrent…</translation>
     </message>
@@ -27430,7 +27558,12 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
         <translation>Nie można odczytać opcji torrenta.</translation>
     </message>
     <message>
-        <location line="+34"/>
+        <location line="+26"/>
+        <source>I2P is off: torrents set to use I2P get no I2P peers until the router is switched on in Options &gt; BitTorrent &gt; I2P.</source>
+        <translation>I2P jest wyłączone: torrenty ustawione na I2P nie dostaną peerów I2P, dopóki router nie zostanie włączony w Opcje &gt; BitTorrent &gt; I2P.</translation>
+    </message>
+    <message>
+        <location line="+11"/>
         <source>Could not change the torrent options.</source>
         <translation>Nie można zmienić opcji torrenta.</translation>
     </message>
@@ -27472,8 +27605,13 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
         <source>BitTorrent is off — enable it in Options.</source>
         <translation>BitTorrent jest wyłączony — włącz go w Opcjach.</translation>
     </message>
-    <message numerus="yes">
+    <message>
         <location line="+20"/>
+        <source>%1 v4 / %2 v6</source>
+        <translation>%1 v4 / %2 v6</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+5"/>
         <source>%n torrent(s), %1 active — Down: %2, Up: %3 — DHT: %4 nodes — Port %5 %6</source>
         <translation>
             <numerusform>%n torrent, aktywne: %1 — Pobieranie: %2, Wysyłanie: %3 — DHT: węzły: %4 — Port %5 %6</numerusform>

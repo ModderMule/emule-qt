@@ -161,6 +161,24 @@ S is not near ~KadID(R) (got3nks, #1809), so a `FINDSOURCE` on R's buddy ID neve
 Fine while the buddy endpoint travels with the ID (Kad record, hello, ExtSX); only the
 endpoint-less fallback misses.
 
+### Losing a claimed buddy
+
+R keeps the buddy's origin (`ClientList::buddyOrigin()`: Kad offer or claim) and logs it
+with "buddy set" and "buddy lost". A claimed S is not near ~KadID(R), and S never answered a
+`FINDBUDDY_REQ`, so it is not in the remembered buddies either: no Kad search finds it again.
+
+On loss while R still needs a buddy (same gate as the search re-arm in `setBuddy`):
+
+- the Kad buddy search re-arms as for any buddy, and runs alongside;
+- `ClientList::reclaimLostBuddy()` dials S once (`reclaimBuddyPort`) and sends CLAIM as soon
+  as the hello is done (`onInfoPacketsReceived` → `takeBuddyOffer`). Still connected: claims
+  at once. Skipped when S failed within 1 h or is banned, a buddy or claim is already there,
+  or RequireCrypt is on;
+- dial failure or REFUSE → failed candidate for 1 h, as any claim.
+
+S needs no change: it takes the claim as any other (`acceptBuddyClaim`), if it still has a slot.
+A Kad-found buddy is not re-dialled; the remembered-buddy store covers it.
+
 ### Also open
 
 - Our own hello tag with R's ~KadID (`ToByteArray` order), so peers that meet R can relay

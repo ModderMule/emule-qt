@@ -1192,8 +1192,7 @@ void Ed3kOwnSets::save() const
     }
     const QByteArray out = QJsonDocument(QJsonObject{{QStringLiteral("sets"), sets}}).toJson(QJsonDocument::Compact);
     QDir().mkpath(stateDir(m_configDir));
-    if (!writeBlob(statePath(), spanOf(out)))
-        logEd3kWarning(QStringLiteral("ed3k: %1 not written").arg(kStateFile));
+    writeBlobLater(statePath(), spanOf(out));
 }
 
 QString Ed3kOwnSets::ownDir() const

@@ -7,6 +7,7 @@
 /// Batch 14 (§9.1): the anonymous credit key: made, shown, never a burn's `to`, handed to the
 /// hiding node and replaced with the anonymous key only.
 
+#include "utils/BackgroundFileWriter.h"
 #include "Ed3kBridge.h"
 #include "Ed3kCredit.h"
 #include "Ed3kCreditBridge.h"
@@ -394,6 +395,7 @@ void tst_Ed3kStake::aClaimSentBeforeARestartIsSentAgain()
         QVERIFY(c.claims().front().state == Ed3kCredit::ClaimState::Claiming);
         s.stop();
     }
+    eMule::BackgroundFileWriter::instance().flush();   // saves are queued (report 43)
     QFile f(claimsPath(dir.path()));
     QVERIFY(f.open(QIODevice::ReadOnly));
     const QJsonObject o = QJsonDocument::fromJson(f.readAll()).array().at(0).toObject();

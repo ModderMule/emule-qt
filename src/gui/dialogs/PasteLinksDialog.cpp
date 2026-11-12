@@ -2,6 +2,7 @@
 #include "dialogs/PasteLinksDialog.h"
 
 #include "app/IpcClient.h"
+#include "utils/Clipboard.h"
 #include "utils/Ed2kLinkImporter.h"
 #include "utils/ScrollMessageBox.h"
 
@@ -32,6 +33,12 @@ PasteLinksDialog::PasteLinksDialog(IpcClient* ipc, const QStringList& categories
     : PasteTextDialog(pasteLinksChrome(categories), parent)
     , m_ipc(ipc)
 {
+    // the clipboard's eD2K / ed3k links, if any
+    QStringList links;
+    for (const QString& candidate : Ed2kLinkImporter::splitLinks(Clipboard::text()))
+        if (Ed2kLinkImporter::linkKindsIn(candidate) && !links.contains(candidate))
+            links << candidate;
+    prefill(links);
 }
 
 void PasteLinksDialog::onAccepted()

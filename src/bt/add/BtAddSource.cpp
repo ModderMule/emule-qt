@@ -121,16 +121,15 @@ bool BtAddSource::applyI2p(lt::add_torrent_params& atp, const BtSettings& s, std
     const bool isPrivate = atp.ti && atp.ti->priv();
     if (!s.i2pEnabled || isPrivate || (!i2p && !s.i2pMixed))
         return i2p;
-    // a tier of their own after the torrent's: tried after its trackers within a tier
     atp.tracker_tiers.resize(atp.trackers.size(), 0);
-    const int tier = atp.tracker_tiers.empty() ? 0 : std::ranges::max(atp.tracker_tiers) + 1;
     for (const QString& url : s.i2pTrackers) {
         const std::string u = url.trimmed().toStdString();
         if (u.empty() || std::ranges::find(atp.trackers, u) != atp.trackers.end())
             continue;
         atp.trackers.push_back(u);
-        atp.tracker_tiers.push_back(tier);
+        atp.tracker_tiers.push_back(0);
     }
+    spreadI2pTiers(atp.trackers, atp.tracker_tiers);
     return i2p;
 }
 
@@ -153,6 +152,25 @@ bool BtAddSource::isI2pTracker(const std::string& url)
 {
     const QString host = QUrl(QString::fromStdString(url)).host();
     return host.endsWith(QLatin1StringView(".i2p"), Qt::CaseInsensitive);
+}
+
+bool BtAddSource::spreadI2pTiers(const std::vector<std::string>& urls, std::vector<int>& tiers)
+{
+    tiers.resize(urls.size(), 0);
+    int base = -1;   // highest clearnet tier
+    for (std::size_t i = 0; i < urls.size(); ++i)
+        if (!isI2pTracker(urls[i]))
+            base = std::max(base, tiers[i]);
+    bool changed = false;
+    int next = base + 1;
+    for (std::size_t i = 0; i < urls.size(); ++i) {
+        if (!isI2pTracker(urls[i]))
+            continue;
+        const int tier = std::min(next++, 255);   // announce_entry::tier is a byte
+        changed |= tiers[i] != tier;
+        tiers[i] = tier;
+    }
+    return changed;
 }
 
 } // namespace eMule::bt

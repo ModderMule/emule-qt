@@ -9,6 +9,7 @@
 #include "controls/TorrentOptionsForm.h"
 #include "controls/TorrentPieceGrid.h"
 #include "utils/Clipboard.h"
+#include "utils/Log.h"
 #include "utils/MenuUtils.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/StringUtils.h"
@@ -426,6 +427,9 @@ void TorrentDetailsDialog::sendOptions()
     m_optionsDirty = false;
     const QCborMap options = optionsFromUi();
     emit optionsSent(options);
+    if (m_optionsForm->takeI2pRouterWarning())
+        logStatusError(tr("I2P is off: torrents set to use I2P get no I2P peers until the router is switched on in "
+                       "Options > BitTorrent > I2P."));
     if (!m_ipc || !m_ipc->isConnected() || m_id.isEmpty())
         return;
     Ipc::IpcMessage msg(Ipc::IpcMsgType::SetTorrentOptions);

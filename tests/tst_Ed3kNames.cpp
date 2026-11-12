@@ -9,6 +9,7 @@
 /// Batch 15 (#16): a held site not followed is followed on any request, which waits for its
 /// head check (SetHeadChecked) or a newer manifest; 504 when neither comes in time.
 
+#include "utils/BackgroundFileWriter.h"
 #include "Ed3kBridge.h"
 #include "Ed3kDownloads.h"
 #include "Ed3kJoinBase.h"
@@ -819,6 +820,7 @@ void tst_Ed3kNames::theIpcAnswersNamesAndPetnames()
     set.append(base32(zone));
     set.append(true);
     QVERIFY(call(set).fieldBool(0));
+    eMule::BackgroundFileWriter::instance().flush();   // saves are queued (report 43)
     QVERIFY(QFile::exists(QDir(stateDir(d.path())).filePath(QStringLiteral("name-petnames.dat"))));
 
     const IpcMessage got = call(IpcMessage(IpcMsgType::GetEd3kNames, 7));

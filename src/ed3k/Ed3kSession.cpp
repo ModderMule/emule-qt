@@ -851,8 +851,7 @@ void Ed3kSession::saveSlot(ffi::State slot, const QString& file)
     }
     if (blob->empty())
         return;
-    if (!writeBlob(filePath(file), blob->bytes()))
-        logEd3kWarning(QStringLiteral("ed3k: cannot write %1").arg(filePath(file)));
+    writeBlobLater(filePath(file), blob->bytes());
 }
 
 void Ed3kSession::saveFriends()
@@ -860,8 +859,7 @@ void Ed3kSession::saveFriends()
     auto blob = m_engine->friendExportState();
     if (!blob || blob->empty())
         return;
-    if (!writeBlob(filePath(kFriendFile), blob->bytes()))
-        logEd3kWarning(QStringLiteral("ed3k: cannot write %1").arg(filePath(kFriendFile)));
+    writeBlobLater(filePath(kFriendFile), blob->bytes());
 }
 
 void Ed3kSession::saveExport(const ffi::Result<ffi::Buffer>& blob, const QString& file)
@@ -869,8 +867,7 @@ void Ed3kSession::saveExport(const ffi::Result<ffi::Buffer>& blob, const QString
     // Unsupported: the extension is off; empty: nothing to keep (an old file stays)
     if (!blob || blob->empty())
         return;
-    if (!writeBlob(filePath(file), blob->bytes()))
-        logEd3kWarning(QStringLiteral("ed3k: cannot write %1").arg(filePath(file)));
+    writeBlobLater(filePath(file), blob->bytes());
 }
 
 void Ed3kSession::followIPv6Pin()

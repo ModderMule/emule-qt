@@ -493,8 +493,7 @@ void Ed3kFriends::saveNames() const
         clean.replace(QLatin1Char('\n'), QLatin1Char(' ')).replace(QLatin1Char('\t'), QLatin1Char(' '));
         blob += toBytes(key).toHex() + '\t' + clean.toUtf8() + '\n';
     }
-    if (!writeBlob(namesPath(), {reinterpret_cast<const std::byte*>(blob.constData()), std::size_t(blob.size())}))
-        logEd3kWarning(QStringLiteral("ed3k: cannot write %1").arg(namesPath()));
+    writeBlobLater(namesPath(), {reinterpret_cast<const std::byte*>(blob.constData()), std::size_t(blob.size())});
 }
 
 QString Ed3kFriends::namesPath() const

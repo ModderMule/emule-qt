@@ -1,0 +1,53 @@
+diff --git a/src/peer_connection.cpp b/src/peer_connection.cpp
+index b8499321..567bf267 100644
+--- a/src/peer_connection.cpp
++++ b/src/peer_connection.cpp
+@@ -6360,8 +6360,13 @@ namespace {
+ 		}
+ 
+ 		// if there are outgoing interfaces specified, verify this
+-		// peer is correctly bound to one of them
+-		if (!m_settings.get_str(settings_pack::outgoing_interfaces).empty())
++		// peer is correctly bound to one of them. Not an I2P socket: its local
++		// end talks to the SAM bridge (often loopback), not to the peer
++		if (!m_settings.get_str(settings_pack::outgoing_interfaces).empty()
++#if TORRENT_USE_I2P
++			&& std::get_if<i2p_stream>(&m_socket.var()) == nullptr
++#endif
++			)
+ 		{
+ 			if (!m_ses.verify_bound_address(m_local.address(), is_utp(m_socket)))
+ 			{
+diff --git a/src/session_impl.cpp b/src/session_impl.cpp
+index 5fdf0a05..43f9f31d 100644
+--- a/src/session_impl.cpp
++++ b/src/session_impl.cpp
+@@ -3138,8 +3138,13 @@ retry:
+ 		}
+ 
+ 		// if there are outgoing interfaces specified, verify this
+-		// peer is correctly bound to one of them
+-		if (!m_outgoing_interfaces.empty())
++		// peer is correctly bound to one of them. Not an I2P socket: it is
++		// accepted through the SAM bridge, its local end is the bridge link
++		if (!m_outgoing_interfaces.empty()
++#if TORRENT_USE_I2P
++			&& std::get_if<i2p_stream>(&s.var()) == nullptr
++#endif
++			)
+ 		{
+ 			tcp::endpoint local = s.local_endpoint(ec);
+ 			if (ec)
+@@ -5364,6 +5369,12 @@ retry:
+ 		, address const& remote_address, error_code& ec) const
+ 	{
+ 		tcp::endpoint bind_ep(address_v4(), 0);
++#if TORRENT_USE_I2P
++		// an I2P peer socket connects to the SAM bridge, not to the peer. Binding
++		// it to an outgoing interface (a LAN address) makes the connect to a
++		// loopback bridge fail, so every I2P peer was lost while trackers worked
++		if (std::get_if<i2p_stream>(&s.var()) != nullptr) return bind_ep;
++#endif
+ 		if (m_settings.get_int(settings_pack::outgoing_port) > 0)
+ 		{
+ #ifdef TORRENT_WINDOWS

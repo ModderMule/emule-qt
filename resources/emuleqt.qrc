@@ -297,7 +297,9 @@
     </qresource>
     <qresource prefix="/images">
         <file alias="mule_wiz_hdr.gif">images/mule_wiz_hdr.gif</file>
-        <file alias="Logo.jpg">images/Logo.jpg</file>
+        <file alias="Splash.png">images/Splash.png</file>
+        <file alias="Splash@2x.png">images/Splash@2x.png</file>
+        <file alias="Splash@3x.png">images/Splash@3x.png</file>
     </qresource>
     <!-- Tahoma fallback for systems without it (see fonts/WineTahoma.LICENSE.txt) -->
     <qresource prefix="/fonts">

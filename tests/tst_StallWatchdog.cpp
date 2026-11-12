@@ -1,12 +1,15 @@
 /// @file tst_StallWatchdog.cpp
 /// @brief Tests for StallWatchdog — a blocked main thread is reported once, with a file —
-/// and BackgroundFileWriter, which keeps file syncs off the main thread (report 23).
+/// and BackgroundFileWriter, which keeps file syncs off the main thread (report 23), and
+/// AtomicFile, the main thread's save without the sync (report 43).
 
 #include "TestHelpers.h"
 
+#include "utils/AtomicFile.h"
 #include "utils/BackgroundFileWriter.h"
 #include "utils/StallWatchdog.h"
 
+#include <QDir>
 #include <QFile>
 #include <QTemporaryDir>
 #include <QTest>
@@ -56,6 +59,9 @@ private slots:
     void backgroundWriter_newestWinsAndReadsBack();
     void backgroundWriter_discardDropsQueued();
     void backgroundWriter_producedOnWorker();
+    void atomicFile_replacesWholeLeavesNoTemp();
+    void atomicFile_cancelKeepsOldFile();
+    void backgroundWriter_readFileSeesQueued();
 };
 
 void tst_StallWatchdog::runningLoop_noReport()
@@ -262,6 +268,71 @@ void tst_StallWatchdog::backgroundWriter_producedOnWorker()
     QCOMPARE(made.load(), 2);
     QVERIFY(!madeOnCaller.load());   // the write made it on the worker
     QVERIFY(!writer.pending(path));
+}
+
+void tst_StallWatchdog::atomicFile_replacesWholeLeavesNoTemp()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath(QStringLiteral("state.dat"));
+    for (const QByteArray data : {QByteArray("first, the longer one"), QByteArray("second")}) {
+        AtomicFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        QCOMPARE(f.write(data), data.size());
+        QVERIFY(!QFile::exists(path) || fileBytes(path) != data);   // not there before commit
+        QVERIFY(f.commit());
+        QCOMPARE(fileBytes(path), data);
+    }
+    {
+        AtomicFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("third");
+        QVERIFY(f.commit());
+    }
+    QCOMPARE(fileBytes(path), QByteArray("third"));
+    QCOMPARE(QDir(dir.path()).entryList(QDir::Files), QStringList{QStringLiteral("state.dat")});
+}
+
+void tst_StallWatchdog::backgroundWriter_readFileSeesQueued()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath(QStringLiteral("sub/state.json"));
+    QVERIFY(!BackgroundFileWriter::readFile(path));   // neither queued nor on disk
+    auto& writer = BackgroundFileWriter::instance();
+    writer.write(path, QByteArray("one"), {});
+    writer.write(path, QByteArray("two"), {});   // newest wins
+    QCOMPARE(BackgroundFileWriter::readFile(path).value_or(QByteArray()), QByteArray("two"));
+    writer.flush();
+    QCOMPARE(fileBytes(path), QByteArray("two"));   // folder made, file landed
+    QCOMPARE(BackgroundFileWriter::readFile(path).value_or(QByteArray()), QByteArray("two"));
+}
+
+void tst_StallWatchdog::atomicFile_cancelKeepsOldFile()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath(QStringLiteral("state.dat"));
+    {
+        AtomicFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("kept");
+        QVERIFY(f.commit());
+    }
+    {
+        AtomicFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("dropped");
+        f.cancelWriting();
+        QVERIFY(!f.commit());
+    }
+    {
+        AtomicFile f(path);   // never committed: the destructor drops it
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("dropped too");
+    }
+    QCOMPARE(fileBytes(path), QByteArray("kept"));
+    QCOMPARE(QDir(dir.path()).entryList(QDir::Files), QStringList{QStringLiteral("state.dat")});
 }
 
 QTEST_GUILESS_MAIN(tst_StallWatchdog)

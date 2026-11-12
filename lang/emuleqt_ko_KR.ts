@@ -793,7 +793,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+597"/>
+        <location filename="../src/gui/app/main.cpp" line="+626"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -1667,15 +1667,15 @@ There is already a friend with same IP address and port available.</source>
 <context>
     <name>eMule::AddNzbUrlDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/AddNzbUrlDialog.cpp" line="+19"/>
-        <location line="+27"/>
+        <location filename="../src/gui/dialogs/AddNzbUrlDialog.cpp" line="+20"/>
+        <location line="+28"/>
         <location line="+31"/>
         <location line="+73"/>
         <source>Add NZB from URL</source>
         <translation>URL에서 NZB 추가</translation>
     </message>
     <message>
-        <location line="-129"/>
+        <location line="-130"/>
         <source>NZB URLs:</source>
         <translation>NZB URL:</translation>
     </message>
@@ -1695,7 +1695,7 @@ There is already a friend with same IP address and port available.</source>
         <translation>비밀번호:</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+12"/>
         <source>Not Connected</source>
         <translation>연결되지 않음</translation>
     </message>
@@ -1789,7 +1789,7 @@ There is already a friend with same IP address and port available.</source>
 <context>
     <name>eMule::AddTorrentDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/AddTorrentDialog.cpp" line="+31"/>
+        <location filename="../src/gui/dialogs/AddTorrentDialog.cpp" line="+32"/>
         <source>Add Magnet Links</source>
         <translation>마그넷 링크 추가</translation>
     </message>
@@ -1858,7 +1858,7 @@ There is already a friend with same IP address and port available.</source>
         <translation type="vanished">먼저 옵션 &gt; BitTorrent &gt; 연결에서 I2P를 켜세요.</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+19"/>
         <source>Not Connected</source>
         <translation>연결되지 않음</translation>
     </message>
@@ -2076,7 +2076,7 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
 <context>
     <name>eMule::BtI2pPage</name>
     <message>
-        <location filename="../src/gui/dialogs/BtI2pPage.cpp" line="+46"/>
+        <location filename="../src/gui/dialogs/BtI2pPage.cpp" line="+49"/>
         <source>I2P Trackers</source>
         <translation>I2P 트래커</translation>
     </message>
@@ -2106,12 +2106,12 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
     </message>
     <message>
         <location line="+19"/>
-        <location line="+187"/>
+        <location line="+296"/>
         <source>Off</source>
         <translation>꺼짐</translation>
     </message>
     <message>
-        <location line="-187"/>
+        <location line="-296"/>
         <source>Torrents use direct connections only.</source>
         <translation>토렌트는 직접 연결만 사용합니다.</translation>
     </message>
@@ -2126,7 +2126,62 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
         <translation>eMule이 자체 I2P 라우터를 실행합니다. 처음 시작할 때 네트워크 참여에 몇 분이 걸립니다.</translation>
     </message>
     <message>
+        <location line="+10"/>
+        <source>Set your browser&apos;s HTTP proxy to 127.0.0.1 and this port on the core&apos;s computer to open .i2p sites, e.g. torrent trackers. It uses its own I2P address, not the torrents&apos; one.</source>
+        <translation>.i2p 사이트(예: 토렌트 트래커)를 열려면 코어 컴퓨터에서 브라우저의 HTTP 프록시를 127.0.0.1과 이 포트로 설정하세요. 토렌트와 다른 자체 I2P 주소를 사용합니다.</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Port of the browser proxy</source>
+        <translation>브라우저 프록시 포트</translation>
+    </message>
+    <message>
         <location line="+8"/>
+        <source>Router status page</source>
+        <translation>라우터 상태 페이지</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Open http://127.0.0.1 and this port on the core&apos;s computer to see the router&apos;s status, tunnels and peers. Its buttons can also stop the router.</source>
+        <translation>코어 컴퓨터에서 http://127.0.0.1 과 이 포트를 열면 라우터의 상태, 터널, 피어를 볼 수 있습니다. 페이지의 버튼으로 라우터를 중지할 수도 있습니다.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Port of the status page</source>
+        <translation>상태 페이지 포트</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Open Status Page</source>
+        <translation>상태 페이지 열기</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>User name of the status page. Empty: i2pd</source>
+        <translation>상태 페이지의 사용자 이름. 비어 있으면: i2pd</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>none</source>
+        <translation>없음</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>With a password, the status page asks for user name and password.</source>
+        <translation>비밀번호를 설정하면 상태 페이지가 사용자 이름과 비밀번호를 묻습니다.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>User:</source>
+        <translation>사용자:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Password:</source>
+        <translation>비밀번호:</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>External I2P router</source>
         <translation>외부 I2P 라우터</translation>
     </message>
@@ -2136,7 +2191,36 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
         <translation>직접 실행하는 라우터 (i2pd 또는 Java I2P), SAM 브리지가 켜져 있어야 합니다.</translation>
     </message>
     <message>
-        <location line="+136"/>
+        <location line="+24"/>
+        <source>The default of the &quot;I2P only&quot; box when adding torrents. Not together with mixed mode, which lets I2P torrents use direct peers.</source>
+        <translation>토렌트 추가 시 &quot;I2P 전용&quot; 상자의 기본값입니다. I2P 토렌트가 직접 피어를 사용하게 하는 혼합 모드와 함께 쓸 수 없습니다.</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>I2P torrents also use the DHT, normal trackers and direct peers, and normal torrents get the I2P trackers too, so both swarms share the files. Not together with &quot;Add new torrents as I2P only&quot;.</source>
+        <translation>I2P 토렌트도 DHT, 일반 트래커, 직접 피어를 사용하고 일반 토렌트에도 I2P 트래커가 추가되어 두 스웜이 파일을 공유합니다. &quot;새 토렌트를 I2P 전용으로 추가&quot;와 함께 쓸 수 없습니다.</translation>
+    </message>
+    <message>
+        <location line="+49"/>
+        <source>The I2P router status page listens on the core&apos;s computer, on 127.0.0.1 by default: browsers on this computer cannot reach it. To use it from here, set bittorrent &gt; i2p &gt; browserProxyAddress in the core&apos;s preferences.yml to an address this computer can reach, and set a password.</source>
+        <translation>I2P 라우터 상태 페이지는 코어 컴퓨터에서 대기합니다 (기본값 127.0.0.1). 이 컴퓨터의 브라우저는 접속할 수 없습니다. 여기서 사용하려면 코어의 preferences.yml에서 bittorrent &gt; i2p &gt; browserProxyAddress를 이 컴퓨터가 접속할 수 있는 주소로 설정하고 비밀번호를 지정하세요.</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>The I2P browser proxy listens on the core&apos;s computer, on 127.0.0.1 by default: browsers on this computer cannot reach it. To use it from here, set bittorrent &gt; i2p &gt; browserProxyAddress in the core&apos;s preferences.yml to an address this computer can reach.</source>
+        <translation>I2P 브라우저 프록시는 코어 컴퓨터에서 대기합니다(기본값 127.0.0.1). 이 컴퓨터의 브라우저에서는 접근할 수 없습니다. 여기서 사용하려면 코어의 preferences.yml에서 bittorrent &gt; i2p &gt; browserProxyAddress를 이 컴퓨터가 접근할 수 있는 주소로 설정하세요.</translation>
+    </message>
+    <message>
+        <source>The I2P browser proxy runs on the core&apos;s computer: browsers on this computer cannot use it.</source>
+        <translation type="vanished">I2P 브라우저 프록시는 코어 컴퓨터에서 실행됩니다: 이 컴퓨터의 브라우저에서는 사용할 수 없습니다.</translation>
+    </message>
+    <message>
+        <location line="+81"/>
+        <source>I2P router is on, but no torrent uses it: check &quot;Add new torrents as I2P only&quot; or &quot;Mixed mode&quot; in Options &gt; BitTorrent &gt; I2P.</source>
+        <translation>I2P 라우터가 켜져 있지만 사용하는 토렌트가 없습니다: 옵션 &gt; BitTorrent &gt; I2P에서 &quot;새 토렌트를 I2P 전용으로 추가&quot; 또는 &quot;혼합 모드&quot;를 선택하세요.</translation>
+    </message>
+    <message>
+        <location line="+16"/>
         <source>eMule runs its own I2P router, downloaded (about 10 MB) when first switched on. The first start takes a few minutes to join the network.</source>
         <translation>eMule은 자체 I2P 라우터를 실행하며, 처음 켤 때 다운로드됩니다(약 10MB). 첫 시작 시 네트워크에 참여하는 데 몇 분이 걸립니다.</translation>
     </message>
@@ -2150,12 +2234,14 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
         <translation type="vanished">라우터:</translation>
     </message>
     <message>
-        <location line="-133"/>
+        <location line="-181"/>
         <source>Host of the external router&apos;s SAM bridge</source>
         <translation>외부 라우터 SAM 브리지의 호스트</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-49"/>
+        <location line="+14"/>
+        <location line="+37"/>
         <source>Port:</source>
         <translation>포트:</translation>
     </message>
@@ -2165,7 +2251,7 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
         <translation>SAM 브리지:</translation>
     </message>
     <message>
-        <location line="-16"/>
+        <location line="-70"/>
         <source>TCP and UDP port of the bundled router. Mapped with UPnP when the BitTorrent port is.</source>
         <translation>내장 라우터의 TCP 및 UDP 포트. BitTorrent 포트가 UPnP로 매핑되면 함께 매핑됩니다.</translation>
     </message>
@@ -2175,7 +2261,7 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
         <translation>라우터 포트:</translation>
     </message>
     <message>
-        <location line="+51"/>
+        <location line="+107"/>
         <source>Routers each tunnel passes. More is more anonymous and slower.</source>
         <translation>각 터널이 거치는 라우터 수. 많을수록 더 익명이지만 느려집니다.</translation>
     </message>
@@ -2197,14 +2283,13 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
         <translation type="vanished">터널:</translation>
     </message>
     <message>
-        <location line="-28"/>
+        <location line="-29"/>
         <source>Mixed mode: I2P torrents also use direct peers (less anonymous)</source>
         <translation>혼합 모드: I2P 토렌트도 직접 피어 사용 (익명성 낮음)</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>I2P torrents also use the DHT, normal trackers and direct peers, and normal torrents get the I2P trackers too, so both swarms share the files.</source>
-        <translation>I2P 토렌트도 DHT, 일반 트래커, 직접 피어를 사용하고, 일반 토렌트에도 I2P 트래커가 추가되어 두 스웜이 파일을 공유합니다.</translation>
+        <translation type="vanished">I2P 토렌트도 DHT, 일반 트래커, 직접 피어를 사용하고, 일반 토렌트에도 I2P 트래커가 추가되어 두 스웜이 파일을 공유합니다.</translation>
     </message>
     <message>
         <location line="-4"/>
@@ -2212,12 +2297,11 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
         <translation>새 토렌트를 I2P 전용으로 추가</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>The default of the &quot;I2P only&quot; box when adding torrents.</source>
-        <translation>토렌트를 추가할 때 &quot;I2P 전용&quot; 상자의 기본값입니다.</translation>
+        <translation type="vanished">토렌트를 추가할 때 &quot;I2P 전용&quot; 상자의 기본값입니다.</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+9"/>
         <source>I2P torrents may also download over ed3k</source>
         <translation>I2P 토렌트도 ed3k로 다운로드 허용</translation>
     </message>
@@ -2232,22 +2316,31 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
         <translation>I2P 트래커...</translation>
     </message>
     <message>
-        <location line="-18"/>
+        <location line="-20"/>
         <source>Status:</source>
         <translation>상태:</translation>
     </message>
     <message>
-        <location line="-40"/>
+        <location line="-94"/>
         <source>Router</source>
         <translation>라우터</translation>
     </message>
     <message>
-        <location line="+44"/>
+        <location line="+23"/>
+        <source>HTTP proxy for browsing .i2p sites</source>
+        <translation>.i2p 사이트 탐색용 HTTP 프록시</translation>
+    </message>
+    <message>
+        <source>Set your browser&apos;s HTTP proxy to 127.0.0.1 port 4444 on the core&apos;s computer to open .i2p sites, e.g. torrent trackers. It uses its own I2P address, not the torrents&apos; one.</source>
+        <translation type="vanished">.i2p 사이트(예: 토렌트 트래커)를 열려면 코어 컴퓨터에서 브라우저의 HTTP 프록시를 127.0.0.1 포트 4444로 설정하세요. 토렌트와 다른 자체 I2P 주소를 사용합니다.</translation>
+    </message>
+    <message>
+        <location line="+75"/>
         <source>Torrents</source>
         <translation>토렌트</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+25"/>
         <source>Tunnels</source>
         <translation>터널</translation>
     </message>
@@ -2266,7 +2359,7 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
         <translation type="vanished">이 빌드에는 내장 I2P 라우터(emuleqt-i2pd)가 없습니다.</translation>
     </message>
     <message>
-        <location line="+122"/>
+        <location line="+175"/>
         <source>BitTorrent is off</source>
         <translation>BitTorrent가 꺼져 있음</translation>
     </message>
@@ -2610,7 +2703,7 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
 <context>
     <name>eMule::CategoryTabBar</name>
     <message>
-        <location filename="../src/gui/controls/CategoryTabBar.cpp" line="+86"/>
+        <location filename="../src/gui/controls/CategoryTabBar.cpp" line="+91"/>
         <location line="+49"/>
         <location line="+63"/>
         <location line="+20"/>
@@ -10859,7 +10952,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>호스터 다운로드</translation>
     </message>
     <message>
-        <location line="+815"/>
+        <location line="+809"/>
         <source>Clipboard</source>
         <translation>클립보드</translation>
     </message>
@@ -10967,7 +11060,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation type="vanished">링크 추가...</translation>
     </message>
     <message>
-        <location line="-430"/>
+        <location line="-422"/>
         <source>Retry</source>
         <translation>다시 시도</translation>
     </message>
@@ -10981,7 +11074,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation type="vanished">옵션...</translation>
     </message>
     <message>
-        <location line="-733"/>
+        <location line="-735"/>
         <source>File Name</source>
         <translation>파일 이름</translation>
     </message>
@@ -11029,12 +11122,12 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
     </message>
     <message>
         <location line="+100"/>
-        <location line="+39"/>
+        <location line="+41"/>
         <source>Hoster links</source>
         <translation>호스터 링크</translation>
     </message>
     <message>
-        <location line="-26"/>
+        <location line="-28"/>
         <source>Add hoster links</source>
         <translation>호스터 링크 추가</translation>
     </message>
@@ -11044,24 +11137,24 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>호스터의 파일 링크(한 줄에 하나씩):</translation>
     </message>
     <message>
-        <location line="+6"/>
-        <location line="+778"/>
+        <location line="+8"/>
+        <location line="+770"/>
         <source>Package Name:</source>
         <translation>패키지 이름:</translation>
     </message>
     <message>
-        <location line="-776"/>
+        <location line="-768"/>
         <source>optional</source>
         <translation>선택 사항</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+778"/>
+        <location line="+770"/>
         <source>The links download under one entry, into a folder of this name</source>
         <translation>링크가 하나의 항목 아래 이 이름의 폴더로 다운로드됩니다</translation>
     </message>
     <message>
-        <location line="-763"/>
+        <location line="-755"/>
         <location line="+11"/>
         <location line="+16"/>
         <source>Not connected to the eMule core.</source>
@@ -11074,12 +11167,12 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <location line="+4"/>
         <location line="+9"/>
         <location line="+42"/>
-        <location line="+603"/>
+        <location line="+595"/>
         <source>Open DLC</source>
         <translation>DLC 열기</translation>
     </message>
     <message>
-        <location line="-668"/>
+        <location line="-660"/>
         <location line="+14"/>
         <source>Cannot read %1.</source>
         <translation>%1을(를) 읽을 수 없습니다.</translation>
@@ -11160,13 +11253,13 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>재개</translation>
     </message>
     <message>
-        <location line="-479"/>
-        <location line="+484"/>
+        <location line="-481"/>
+        <location line="+486"/>
         <source>Remove</source>
         <translation>제거</translation>
     </message>
     <message>
-        <location line="-594"/>
+        <location line="-596"/>
         <source>The archive needs a password (Set Password…)</source>
         <translation>압축 파일에 비밀번호가 필요합니다 (비밀번호 설정…)</translation>
     </message>
@@ -11192,34 +11285,34 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
     </message>
     <message>
         <location line="+1"/>
-        <location line="+834"/>
+        <location line="+828"/>
         <source>Link Grabber (%1)</source>
         <translation>LinkGrabber (%1)</translation>
     </message>
     <message>
-        <location line="-820"/>
-        <location line="+535"/>
+        <location line="-814"/>
+        <location line="+537"/>
         <source>Add Links...</source>
         <translation>링크 추가...</translation>
     </message>
     <message>
-        <location line="-534"/>
+        <location line="-536"/>
         <source>Links to files at hosters, one per line</source>
         <translation>호스터의 파일 링크, 한 줄에 하나씩</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+533"/>
+        <location line="+535"/>
         <source>Open DLC...</source>
         <translation>DLC 열기...</translation>
     </message>
     <message>
-        <location line="-532"/>
+        <location line="-534"/>
         <source>Adds the links of a link container (.dlc, .rsdf, .ccf); you can also drop one here</source>
         <translation>링크 컨테이너(.dlc, .rsdf, .ccf)의 링크를 추가합니다. 여기에 끌어다 놓을 수도 있습니다</translation>
     </message>
     <message>
-        <location line="+523"/>
+        <location line="+525"/>
         <source>Set Password…</source>
         <translation>비밀번호 설정…</translation>
     </message>
@@ -12895,7 +12988,7 @@ Other members see your nick and posts; your node takes part in passing the room&
     <name>eMule::LinkGrabberPanel</name>
     <message>
         <location filename="../src/gui/panels/LinkGrabberPanel.cpp" line="+103"/>
-        <location line="+116"/>
+        <location line="+119"/>
         <location line="+15"/>
         <location line="+366"/>
         <location line="+2"/>
@@ -12904,13 +12997,13 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>LinkGrabber</translation>
     </message>
     <message>
-        <location line="-603"/>
-        <location line="+365"/>
+        <location line="-606"/>
+        <location line="+368"/>
         <source>Add Links...</source>
         <translation>링크 추가...</translation>
     </message>
     <message>
-        <location line="-364"/>
+        <location line="-367"/>
         <source>Links to crawl into the list, one per line</source>
         <translation>목록으로 분석할 링크, 한 줄에 하나씩</translation>
     </message>
@@ -12981,7 +13074,7 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>링크 또는 링크가 포함된 텍스트:</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+8"/>
         <source>Package Name:</source>
         <translation>패키지 이름:</translation>
     </message>
@@ -13328,12 +13421,12 @@ Other members see your nick and posts; your node takes part in passing the room&
     </message>
     <message>
         <location line="+12"/>
-        <location line="+1620"/>
+        <location line="+1630"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: 연결 해제됨</translation>
     </message>
     <message>
-        <location line="-1547"/>
+        <location line="-1557"/>
         <source>Kad: Connected</source>
         <translation>Kad: 연결됨</translation>
     </message>
@@ -13349,7 +13442,7 @@ Other members see your nick and posts; your node takes part in passing the room&
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1539"/>
+        <location line="+1549"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: 연결 해제됨</translation>
     </message>
@@ -13359,7 +13452,7 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>사용자: %1 | 파일: %2</translation>
     </message>
     <message>
-        <location line="-1757"/>
+        <location line="-1763"/>
         <source>Open Incoming Folder...</source>
         <translation>수신 폴더 열기...</translation>
     </message>
@@ -13399,14 +13492,14 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>기능</translation>
     </message>
     <message>
-        <location line="-1129"/>
+        <location line="-1133"/>
         <location line="+7"/>
-        <location line="+1125"/>
+        <location line="+1129"/>
         <source>Version Check</source>
         <translation>버전 확인</translation>
     </message>
     <message>
-        <location line="-1233"/>
+        <location line="-1237"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt 종료</translation>
     </message>
@@ -13740,7 +13833,7 @@ The core is detached: it keeps running with all downloads and uploads. Open eMul
         <translation>로그 항목</translation>
     </message>
     <message>
-        <location line="+164"/>
+        <location line="+168"/>
         <source>eMule Log</source>
         <translation>eMule 로그</translation>
     </message>
@@ -13951,7 +14044,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>연결</translation>
     </message>
     <message>
-        <location line="+92"/>
+        <location line="+98"/>
         <source>Ready</source>
         <translation>준비됨</translation>
     </message>
@@ -15312,7 +15405,7 @@ Download it again?</source>
 <context>
     <name>eMule::NetworkInfoDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+63"/>
+        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+65"/>
         <source>Network Information</source>
         <translation>네트워크 정보</translation>
     </message>
@@ -15328,7 +15421,7 @@ Download it again?</source>
         <translation>&lt;b&gt;데몬에 연결되지 않았습니다.&lt;/b&gt;</translation>
     </message>
     <message>
-        <location line="+33"/>
+        <location line="+37"/>
         <source>Client</source>
         <translation>클라이언트</translation>
     </message>
@@ -15350,32 +15443,32 @@ Download it again?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+324"/>
+        <location line="+325"/>
         <source>UDP Port:</source>
         <translation>UDP 포트:</translation>
     </message>
     <message>
-        <location line="-313"/>
+        <location line="-314"/>
         <source>eD2K Network</source>
         <translation>eD2K 네트워크</translation>
     </message>
     <message>
         <location line="+6"/>
         <location line="+188"/>
-        <location line="+118"/>
+        <location line="+119"/>
         <source>Connected</source>
         <translation>연결됨</translation>
     </message>
     <message>
-        <location line="-304"/>
+        <location line="-305"/>
         <location line="+145"/>
         <location line="+39"/>
-        <location line="+120"/>
+        <location line="+121"/>
         <source>Connecting</source>
         <translation>연결 중</translation>
     </message>
     <message>
-        <location line="-302"/>
+        <location line="-303"/>
         <location line="+145"/>
         <source>Disconnected</source>
         <translation>연결 해제됨</translation>
@@ -15384,7 +15477,7 @@ Download it again?</source>
         <location line="-144"/>
         <location line="+145"/>
         <location line="+117"/>
-        <location line="+34"/>
+        <location line="+35"/>
         <location line="+5"/>
         <location line="+38"/>
         <location line="+5"/>
@@ -15392,7 +15485,7 @@ Download it again?</source>
         <translation>상태:</translation>
     </message>
     <message>
-        <location line="-338"/>
+        <location line="-339"/>
         <location line="+65"/>
         <location line="+156"/>
         <source>Users:</source>
@@ -15407,13 +15500,13 @@ Download it again?</source>
     </message>
     <message>
         <location line="-215"/>
-        <location line="+302"/>
+        <location line="+303"/>
         <location line="+34"/>
         <source>Unknown</source>
         <translation>알 수 없음</translation>
     </message>
     <message>
-        <location line="-336"/>
+        <location line="-337"/>
         <location line="+2"/>
         <location line="+50"/>
         <location line="+98"/>
@@ -15463,12 +15556,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+277"/>
+        <location line="+278"/>
         <source>IPv6:</source>
         <translation>IPv6:</translation>
     </message>
     <message>
-        <location line="-275"/>
+        <location line="-276"/>
         <source>IPv6 Status:</source>
         <translation>IPv6 상태:</translation>
     </message>
@@ -15601,20 +15694,20 @@ Download it again?</source>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+208"/>
+        <location line="+209"/>
         <location line="+71"/>
         <source>Yes</source>
         <translation>예</translation>
     </message>
     <message>
-        <location line="-279"/>
-        <location line="+208"/>
+        <location line="-280"/>
+        <location line="+209"/>
         <location line="+71"/>
         <source>No</source>
         <translation>아니오</translation>
     </message>
     <message>
-        <location line="-265"/>
+        <location line="-266"/>
         <source>Kad Network</source>
         <translation>Kad 네트워크</translation>
     </message>
@@ -15701,7 +15794,7 @@ Download it again?</source>
         <translation>URL:</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+19"/>
         <source>ed3k Network</source>
         <translation>ed3k 네트워크</translation>
     </message>
@@ -15878,7 +15971,7 @@ Download it again?</source>
         <translation>%1 (피어 %2개)</translation>
     </message>
     <message>
-        <location line="-354"/>
+        <location line="-355"/>
         <location line="+94"/>
         <location line="+15"/>
         <source>Firewalled</source>
@@ -15889,12 +15982,12 @@ Download it again?</source>
         <location line="+1"/>
         <location line="+96"/>
         <location line="+17"/>
-        <location line="+158"/>
+        <location line="+159"/>
         <source>Open</source>
         <translation>개방</translation>
     </message>
     <message>
-        <location line="-156"/>
+        <location line="-157"/>
         <source>unverified</source>
         <translation>미확인</translation>
     </message>
@@ -15905,7 +15998,7 @@ Download it again?</source>
     </message>
     <message>
         <location line="+66"/>
-        <location line="+38"/>
+        <location line="+39"/>
         <location line="+43"/>
         <source>Disabled</source>
         <translation>비활성화됨</translation>
@@ -21207,7 +21300,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::PasteLinksDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/PasteLinksDialog.cpp" line="+17"/>
+        <location filename="../src/gui/dialogs/PasteLinksDialog.cpp" line="+18"/>
         <source>Paste eD2K Links</source>
         <translation>eD2K 링크 붙여넣기</translation>
     </message>
@@ -21231,7 +21324,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation type="vanished">취소</translation>
     </message>
     <message>
-        <location line="+19"/>
+        <location line="+25"/>
         <source>Not Connected</source>
         <translation>연결되지 않음</translation>
     </message>
@@ -21299,7 +21392,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>취소</translation>
     </message>
     <message>
-        <location line="+109"/>
+        <location line="+117"/>
         <source>Working…</source>
         <translation>처리 중…</translation>
     </message>
@@ -26809,7 +26902,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="vanished">파일</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/TorrentDetailsDialog.cpp" line="+47"/>
+        <location filename="../src/gui/dialogs/TorrentDetailsDialog.cpp" line="+48"/>
         <source>N/A</source>
         <translation>N/A</translation>
     </message>
@@ -27056,6 +27149,11 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>남은 시간</translation>
     </message>
     <message>
+        <location line="+68"/>
+        <source>I2P is off: torrents set to use I2P get no I2P peers until the router is switched on in Options &gt; BitTorrent &gt; I2P.</source>
+        <translation>I2P가 꺼져 있습니다: I2P를 사용하도록 설정한 토렌트는 옵션 &gt; BitTorrent &gt; I2P에서 라우터를 켤 때까지 I2P 피어를 받지 못합니다.</translation>
+    </message>
+    <message>
         <source>Speed</source>
         <translation type="vanished">속도</translation>
     </message>
@@ -27104,7 +27202,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="vanished">최대 피어 수:</translation>
     </message>
     <message>
-        <location line="+74"/>
+        <location line="+9"/>
         <source>Could not change the torrent options.</source>
         <translation>토렌트 옵션을 변경할 수 없습니다.</translation>
     </message>
@@ -27116,7 +27214,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         </translation>
     </message>
     <message>
-        <location line="-142"/>
+        <location line="-145"/>
         <location line="+37"/>
         <source>Progress</source>
         <translation>진행률</translation>
@@ -27413,7 +27511,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
 <context>
     <name>eMule::TorrentListsPane</name>
     <message>
-        <location filename="../src/gui/controls/TorrentListsPane.cpp" line="+95"/>
+        <location filename="../src/gui/controls/TorrentListsPane.cpp" line="+96"/>
         <source>Tracker</source>
         <translation>트래커</translation>
     </message>
@@ -27776,7 +27874,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>트래커 URL (한 줄에 하나씩):</translation>
     </message>
     <message>
-        <location line="+41"/>
+        <location line="+43"/>
         <source>Could not change the trackers.</source>
         <translation>트래커를 변경할 수 없습니다.</translation>
     </message>
@@ -27799,7 +27897,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
 <context>
     <name>eMule::TorrentOptionsForm</name>
     <message>
-        <location filename="../src/gui/controls/TorrentOptionsForm.cpp" line="+40"/>
+        <location filename="../src/gui/controls/TorrentOptionsForm.cpp" line="+44"/>
         <source>Use global settings</source>
         <translation>전역 설정 사용</translation>
     </message>
@@ -27874,7 +27972,37 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>최대 피어 수:</translation>
     </message>
     <message>
-        <location line="+128"/>
+        <location line="+3"/>
+        <source>Direct only</source>
+        <translation>직접 전용</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>I2P only</source>
+        <translation>I2P 전용</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>I2P and direct</source>
+        <translation>I2P 및 직접</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Peers this torrent uses. Peers of a kind no longer wanted are disconnected.</source>
+        <translation>이 토렌트가 사용하는 피어입니다. 더 이상 원하지 않는 종류의 피어는 연결이 끊깁니다.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>I2P:</source>
+        <translation>I2P:</translation>
+    </message>
+    <message>
+        <location line="+121"/>
+        <source>Not while mixed mode is on in Options &gt; BitTorrent &gt; I2P.</source>
+        <translation>옵션 &gt; BitTorrent &gt; I2P에서 혼합 모드가 켜져 있는 동안에는 사용할 수 없습니다.</translation>
+    </message>
+    <message>
+        <location line="+27"/>
         <source>Varies</source>
         <translation>다름</translation>
     </message>
@@ -27887,7 +28015,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
 <context>
     <name>eMule::TorrentPanel</name>
     <message>
-        <location filename="../src/gui/panels/TorrentPanel.cpp" line="+123"/>
+        <location filename="../src/gui/panels/TorrentPanel.cpp" line="+126"/>
         <source>Torrent download completed: %1</source>
         <translation>토렌트 다운로드 완료: %1</translation>
     </message>
@@ -27905,12 +28033,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <location line="+14"/>
         <location line="+15"/>
         <location line="+11"/>
-        <location line="+671"/>
+        <location line="+675"/>
         <source>Not connected to the eMule core.</source>
         <translation>eMule 코어에 연결되지 않았습니다.</translation>
     </message>
     <message>
-        <location line="-722"/>
+        <location line="-726"/>
         <source>Cannot read %1.</source>
         <translation>%1을(를) 읽을 수 없습니다.</translation>
     </message>
@@ -27931,7 +28059,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>토렌트 파일 (*.torrent);;모든 파일 (*)</translation>
     </message>
     <message>
-        <location line="+75"/>
+        <location line="+76"/>
         <source>Add Torrent…</source>
         <translation>토렌트 추가…</translation>
     </message>
@@ -28060,7 +28188,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>토렌트 옵션을 읽을 수 없습니다.</translation>
     </message>
     <message>
-        <location line="+34"/>
+        <location line="+26"/>
+        <source>I2P is off: torrents set to use I2P get no I2P peers until the router is switched on in Options &gt; BitTorrent &gt; I2P.</source>
+        <translation>I2P가 꺼져 있습니다: I2P를 사용하도록 설정한 토렌트는 옵션 &gt; BitTorrent &gt; I2P에서 라우터를 켤 때까지 I2P 피어를 받지 못합니다.</translation>
+    </message>
+    <message>
+        <location line="+11"/>
         <source>Could not change the torrent options.</source>
         <translation>토렌트 옵션을 변경할 수 없습니다.</translation>
     </message>
@@ -28098,8 +28231,13 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <source>BitTorrent is off — enable it in Options.</source>
         <translation>BitTorrent가 꺼져 있습니다 — 옵션에서 활성화하세요.</translation>
     </message>
-    <message numerus="yes">
+    <message>
         <location line="+20"/>
+        <source>%1 v4 / %2 v6</source>
+        <translation>%1 v4 / %2 v6</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+5"/>
         <source>%n torrent(s), %1 active — Down: %2, Up: %3 — DHT: %4 nodes — Port %5 %6</source>
         <translation>
             <numerusform>토렌트 %n개, 활성 %1개 — 다운: %2, 업: %3 — DHT: 노드 %4개 — 포트 %5 %6</numerusform>

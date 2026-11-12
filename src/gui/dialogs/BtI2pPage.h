@@ -4,7 +4,7 @@
 /// @brief Options > BitTorrent > I2P (issue #118).
 ///
 /// Router: off, the bundled i2pd or an external router's SAM bridge. Mixed mode, new
-/// torrents I2P only, ed3k joins of I2P torrents, tunnels and the I2P tracker list.
+/// torrents I2P only, the bundled router's browser proxy, ed3k joins of I2P torrents, tunnels and the I2P tracker list.
 /// The router's state comes from GetBtStatus / PushBtStatus. No MFC original.
 
 #include <QCborMap>
@@ -56,6 +56,13 @@ private:
     QCheckBox* m_mixedCheck = nullptr;
     QCheckBox* m_onlyNewCheck = nullptr;
     QCheckBox* m_ed3kJoinCheck = nullptr;
+    QCheckBox* m_browserProxyCheck = nullptr;
+    QSpinBox* m_browserProxyPortSpin = nullptr;
+    QCheckBox* m_statusPageCheck = nullptr;
+    QSpinBox* m_statusPagePortSpin = nullptr;
+    QPushButton* m_statusPageBtn = nullptr;
+    QLineEdit* m_statusPageUserEdit = nullptr;
+    QLineEdit* m_statusPagePassEdit = nullptr;
     QPushButton* m_trackersBtn = nullptr;
     QLabel* m_statusLabel = nullptr;
     QStringList m_trackers;

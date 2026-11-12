@@ -152,7 +152,7 @@ private slots:
     void theWizardRateFieldsFollowTheLineAndSwitchToCustom();
     void theWizardLimitFieldsFollowTheLineAndTakeAnEdit();
     void theWizardNeedsANetwork();
-    void theWizardHasTwoPages();
+    void theWizardHasTwoSettingsPages();
     void theWizardTicksKadWhileUdpIsOn();
     void theWizardSetsAdvancedControls();
     void theWizardSwitchesEveryNetwork();
@@ -996,9 +996,10 @@ void TestOptionsDialogSizing::theWizardLimitFieldsFollowTheLineAndTakeAnEdit()
     QCOMPARE(thePrefs.maxUpload(), 6000u);
 }
 
-/// G32, deliberate: two pages. MFC's seven (PShtWiz1.cpp:775-797) were tried and taken
-/// back — nick, autoconnect, priorities and obfuscation stay in Options.
-void TestOptionsDialogSizing::theWizardHasTwoPages()
+/// G32, deliberate: two settings pages. MFC's seven (PShtWiz1.cpp:775-797) were tried and
+/// taken back — nick, autoconnect, priorities and obfuscation stay in Options.
+/// Before them the legacy import page, left out when nothing is found (no core here).
+void TestOptionsDialogSizing::theWizardHasTwoSettingsPages()
 {
     const WizardPrefsGuard guard;
     thePrefs.setKadEnabled(true);
@@ -1008,8 +1009,11 @@ void TestOptionsDialogSizing::theWizardHasTwoPages()
     FirstStartWizard wizard(nullptr);
     auto* pages = wizard.findChild<QStackedWidget*>();
     QVERIFY(pages);
-    QCOMPARE(pages->count(), 2);
+    QCOMPARE(pages->count(), 3);   // import, ports, speed
     QCOMPARE(pages->currentIndex(), 0);
+    QTRY_COMPARE(pages->currentIndex(), 1);   // queued "nothing to import" skips it
+    const QPushButton* back = wizardButton(wizard, QStringLiteral("< Back"));
+    QVERIFY(back && !back->isEnabled());   // no way back to the skipped page
     QCOMPARE(walkToLastPage(wizard), 1);
     QVERIFY(wizardButton(wizard, QStringLiteral("Finish")));
 
@@ -1021,7 +1025,7 @@ void TestOptionsDialogSizing::theWizardHasTwoPages()
         QVERIFY2(!applied.contains(QString::fromLatin1(key)), key);
 
     FirstStartWizard speed(nullptr, nullptr, FirstStartWizard::StartPage::Speed);
-    QCOMPARE(speed.findChild<QStackedWidget*>()->currentIndex(), 1);
+    QCOMPARE(speed.findChild<QStackedWidget*>()->currentIndex(), 2);
 }
 
 /// The Display page's "Show more controls" switch, offered on the first page too.
@@ -1036,7 +1040,7 @@ void TestOptionsDialogSizing::theWizardSetsAdvancedControls()
     auto* ext = wizard.findChild<QCheckBox*>(QStringLiteral("wizardExtControls"));
     QVERIFY(ext);
     QVERIFY(ext->isChecked());
-    QVERIFY(ext->isVisibleTo(wizard.findChild<QStackedWidget*>()->widget(0)));
+    QVERIFY(ext->isVisibleTo(wizard.findChild<QStackedWidget*>()->widget(1)));   // ports page
 
     ext->setChecked(false);
     walkToLastPage(wizard);

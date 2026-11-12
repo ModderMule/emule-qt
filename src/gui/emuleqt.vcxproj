@@ -737,7 +737,9 @@
     <None Include="..\..\resources\icons\ListAdd.ico" />
     <None Include="..\..\resources\icons\ListRemove.ico" />
     <None Include="..\..\resources\icons\Log.ico" />
-    <None Include="..\..\resources\images\Logo.jpg" />
+    <None Include="..\..\resources\images\Splash.png" />
+    <None Include="..\..\resources\images\Splash@2x.png" />
+    <None Include="..\..\resources\images\Splash@3x.png" />
     <None Include="..\..\resources\icons\MediaInfo.ico" />
     <None Include="..\..\resources\icons\Messages.ico" />
     <None Include="..\..\resources\icons\MetaData.ico" />
