@@ -42,6 +42,8 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include <expected>
+
 
 namespace eMule {
 
@@ -128,6 +130,38 @@ QString urlOrDefault(const QString& value, QLatin1StringView fallback)
 {
     const QString trimmed = value.trimmed();
     return trimmed.isEmpty() ? QString(fallback) : trimmed;
+}
+
+/// The YAML map in @p path, its bytes in @p raw; else what is wrong with the file.
+/// AtomicFile does not sync: after a crash or power loss the rename can be on disk without
+/// the data (an empty or zero-filled file). Via QFile: YAML::LoadFile opens the ANSI code
+/// page path on Windows.
+std::expected<YAML::Node, QString> readIntactYaml(const QString& path, QByteArray* raw = nullptr)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly))
+        return std::unexpected(QStringLiteral("not readable (%1)").arg(f.errorString()));
+    QByteArray bytes = f.readAll();
+    if (bytes.trimmed().isEmpty())
+        return std::unexpected(QStringLiteral("empty"));
+    if (bytes.contains('\0'))
+        return std::unexpected(QStringLiteral("zero bytes in it"));
+    try {
+        YAML::Node root = YAML::Load(bytes.toStdString());
+        if (!root.IsMap())
+            return std::unexpected(QStringLiteral("no settings map"));
+        if (raw)
+            *raw = std::move(bytes);
+        return root;
+    } catch (const YAML::Exception& ex) {
+        return std::unexpected(QString::fromStdString(ex.what()));
+    }
+}
+
+/// The last preferences file that loaded: what load() falls back to.
+QString prefsBackupPath(const QString& filePath)
+{
+    return filePath + QStringLiteral(".bak");
 }
 
 } // namespace
@@ -1973,8 +2007,16 @@ bool Preferences::restoreCumulativeStats()
     if (!writeStatsBackup(d, tmpPath))
         return false;
 
+    // a damaged backup (crash before the OS wrote it) is not restored
+    const auto parsed = readIntactYaml(path);
+    if (!parsed) {
+        logError(QStringLiteral("Failed to read statistics backup %1: %2").arg(path, parsed.error()));
+        QFile::remove(tmpPath);
+        return false;
+    }
+
     try {
-        const YAML::Node root = YAML::LoadFile(path.toStdString());
+        const YAML::Node& root = *parsed;
 
         forEachCumulativeStat(d, [&root](const char* key, auto& value) {
             value = readStatValue(root[key], value);
@@ -4885,8 +4927,49 @@ bool Preferences::load(const QString& filePath)
         return true;
     }
 
+    // The damaged file is kept for the user; the next save() replaces it
+    const auto keepBroken = [this, &filePath] {
+        const QString broken = filePath + QStringLiteral(".broken");
+        if (m_peekOnly)
+            return;
+        QFile::remove(broken);
+        if (QFile::copy(filePath, broken))
+            logWarning(QStringLiteral("Unreadable preferences kept as %1").arg(broken));
+    };
+    const auto useDefaults = [this] {
+        m_data = std::make_unique<Data>();
+        newIdentity();
+        resolveI2pRouterPort();
+        validate();
+        resolveDefaultDirectories();
+    };
+
+    // Damaged (a crash before the OS wrote it: AtomicFile does not sync, the rename can
+    // land without the data): the last good copy instead, else defaults
+    const QString backupPath = prefsBackupPath(filePath);
+    QByteArray raw;
+    bool fromBackup = false;
+    auto parsed = readIntactYaml(filePath, &raw);
+    if (!parsed) {
+        logWarning(QStringLiteral("Preferences %1 unusable: %2").arg(filePath, parsed.error()));
+        keepBroken();
+        if (QFileInfo::exists(backupPath)) {
+            parsed = readIntactYaml(backupPath, &raw);
+            if (parsed)
+                logWarning(QStringLiteral("Preferences restored from %1").arg(backupPath));
+            else
+                logWarning(QStringLiteral("Preferences backup %1 unusable too: %2").arg(backupPath, parsed.error()));
+        }
+        if (!parsed) {
+            logWarning(QStringLiteral("Preferences: using defaults"));
+            useDefaults();
+            return false;
+        }
+        fromBackup = true;
+    }
+
     try {
-        const YAML::Node root = YAML::LoadFile(filePath.toStdString());
+        const YAML::Node& root = *parsed;
 
         // General
         if (auto g = root["general"]) {
@@ -6126,18 +6209,9 @@ bool Preferences::load(const QString& filePath)
     } catch (const YAML::Exception& ex) {
         logWarning(QStringLiteral("Failed to parse preferences YAML: %1 — using defaults")
                        .arg(QString::fromStdString(ex.what())));
-        // The next save() replaces the file with these defaults; keep what was there.
-        const QString broken = filePath + QStringLiteral(".broken");
-        if (!m_peekOnly) {
-            QFile::remove(broken);
-            if (QFile::copy(filePath, broken))
-                logWarning(QStringLiteral("Unreadable preferences kept as %1").arg(broken));
-        }
-        m_data = std::make_unique<Data>();
-        newIdentity();
-        resolveI2pRouterPort();
-        validate();
-        resolveDefaultDirectories();
+        if (!fromBackup)
+            keepBroken();
+        useDefaults();
         return false;
     }
 
@@ -6240,6 +6314,22 @@ bool Preferences::load(const QString& filePath)
         saveImpl(m_filePath);
     }
 
+    if (m_peekOnly)
+        return true;
+    if (fromBackup) {
+        // the damaged file goes, the backup stays as it is
+        if (!saveImpl(m_filePath))
+            logWarning(QStringLiteral("Restored preferences could not be saved to %1").arg(m_filePath));
+    } else {
+        // this file loaded: the next damaged one falls back to it. Synced, off the main
+        // thread (QSaveFile on the writer); only when it changed
+        const bool same = [&] {
+            QFile bak(backupPath);   // closed before the writer replaces it (Windows)
+            return bak.open(QIODevice::ReadOnly) && bak.readAll() == raw;
+        }();
+        if (!same)
+            BackgroundFileWriter::instance().write(backupPath, std::move(raw), {});
+    }
     return true;
 }
 

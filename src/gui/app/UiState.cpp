@@ -50,16 +50,17 @@ static void writeIntList(YAML::Emitter& out, const char* key, const QList<int>& 
     out << YAML::EndSeq;
 }
 
-/// "auto" stands for an invalid QColor — the tray meter slot, which follows the
-/// system colour scheme until the user picks something.
-/// YAML::LoadFile, a save still queued on the background writer read instead.
+/// The file's YAML, a save still queued on the background writer read instead; Null when
+/// missing. Via QFile: YAML::LoadFile opens the ANSI code page path on Windows (non-ASCII
+/// profile folders failed).
 static YAML::Node loadQueued(const QString& path)
 {
-    if (auto queued = BackgroundFileWriter::instance().pending(path))
-        return YAML::Load(queued->toStdString());
-    return YAML::LoadFile(path.toStdString());
+    const auto raw = BackgroundFileWriter::readFile(path);
+    return raw ? YAML::Load(raw->toStdString()) : YAML::Node();
 }
 
+/// "auto" stands for an invalid QColor — the tray meter slot, which follows the
+/// system colour scheme until the user picks something.
 static constexpr const char* kAutoColor = "auto";
 
 static QColor readColor(const YAML::Node& node, const QColor& fallback)
@@ -209,8 +210,6 @@ void UiState::load(const QString& configDir)
             for (const auto& item : ste)
                 m_statsTreeExpanded.insert(QString::fromStdString(item.as<std::string>()));
         }
-    } catch (const YAML::BadFile&) {
-        // File doesn't exist yet — use defaults
     } catch (const YAML::Exception& ex) {
         logWarning(QStringLiteral("Failed to parse uistate.yml: %1 — using defaults")
                        .arg(QString::fromStdString(ex.what())));

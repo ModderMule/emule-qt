@@ -2870,8 +2870,8 @@ void Ed3kHosterJoin::save()
     if (!list.isEmpty() || QFileInfo::exists(itemsFile()) || writer.pending(itemsFile()))
         writer.write(itemsFile(), QJsonDocument(list).toJson(QJsonDocument::Indented), {});   // off the main thread (report 43)
     for (auto& [id, e] : m_items)
-        if (e->metDirty && e->item.state != State::Complete)
-            writeMet(*e);
+        if ((e->metDirty || blobWriteFailed(metPathOf(*e))) && e->item.state != State::Complete)
+            writeMet(*e);   // a failed background write: again
 }
 
 QString Ed3kHosterJoin::itemsFile() const

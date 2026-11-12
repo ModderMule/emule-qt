@@ -7,6 +7,7 @@
 #include "prefs/Preferences.h"
 #include "utils/BackgroundFileWriter.h"
 #include "utils/Log.h"
+#include "utils/OwnerOnly.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -104,7 +105,12 @@ void MetaAccountStore::save() const
         file.setPermissions(kOwnerOnly);
         if (file.write(data) != data.size() || !file.commit())
             return false;
-        QFile::setPermissions(path, kOwnerOnly);
+        // Windows: setPermissions only flips read-only, the ACL makes it owner-only
+        QString error;
+        if (!makeOwnerOnly(path, &error)) {
+            logWarning(QStringLiteral("Meta API: %1").arg(error));
+            return false;
+        }
         return true;
     });
 }

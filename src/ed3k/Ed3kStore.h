@@ -57,6 +57,8 @@ void writeBlobLater(const QString& path, std::span<const std::byte> data);
 void forgetBlobWrites(const QString& path);
 /// Waits until every writeBlobLater is on disk (a stop).
 void flushBlobWrites();
+/// The last writeBlobLater of @p path failed (after the writer's retries): write it again.
+[[nodiscard]] bool blobWriteFailed(const QString& path);
 
 /// Overwrites @p buf with zeros in a way the compiler keeps.
 void wipe(std::span<std::uint8_t> buf);

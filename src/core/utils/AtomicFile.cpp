@@ -8,6 +8,9 @@
 #include <QRandomGenerator>
 
 #ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #else
 #include <cstdio>
@@ -91,8 +94,19 @@ bool AtomicFile::replaceTarget()
     // no MOVEFILE_WRITE_THROUGH: that would wait for the disk again
     const QString from = QDir::toNativeSeparators(fileName());
     const QString to = QDir::toNativeSeparators(m_target);
-    return MoveFileExW(reinterpret_cast<LPCWSTR>(from.utf16()), reinterpret_cast<LPCWSTR>(to.utf16()),
-                       MOVEFILE_REPLACE_EXISTING) != 0;
+    // a scanner, indexer or reader holding either file without FILE_SHARE_DELETE blocks the
+    // rename for a moment: a few short tries (main thread, ~150 ms at most)
+    for (const DWORD waitMs : {0u, 5u, 10u, 20u, 40u, 80u}) {
+        if (waitMs != 0)
+            Sleep(waitMs);
+        if (MoveFileExW(reinterpret_cast<LPCWSTR>(from.utf16()), reinterpret_cast<LPCWSTR>(to.utf16()),
+                        MOVEFILE_REPLACE_EXISTING))
+            return true;
+        const DWORD err = GetLastError();
+        if (err != ERROR_ACCESS_DENIED && err != ERROR_SHARING_VIOLATION && err != ERROR_LOCK_VIOLATION)
+            return false;
+    }
+    return false;
 #else
     return std::rename(QFile::encodeName(fileName()).constData(), QFile::encodeName(m_target).constData()) == 0;
 #endif

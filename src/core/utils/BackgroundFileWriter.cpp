@@ -11,8 +11,16 @@
 #include <QSaveFile>
 
 #include <algorithm>
+#include <array>
+#include <chrono>
 
 namespace eMule {
+
+namespace {
+// between the tries of a failed write: a scanner's or indexer's handle is gone by then
+constexpr std::array kRetryDelays{std::chrono::milliseconds(100), std::chrono::milliseconds(400),
+                                  std::chrono::milliseconds(1500)};
+} // namespace
 
 BackgroundFileWriter::BackgroundFileWriter()
     : m_thread([this] { run(); })
@@ -67,6 +75,11 @@ void BackgroundFileWriter::discard(const QString& path)
     std::unique_lock lock(m_mutex);
     if (m_jobs.erase(path) > 0)
         std::erase(m_order, path);
+    m_failed.erase(path);
+    if (m_writing && *m_writing == path) {
+        m_writingDropped = true;   // a retry waiting ends now
+        m_wake.notify_all();
+    }
     m_idle.notify_all();   // a flush may wait for what was dropped
     waitNotWriting(lock, [&path](const QString& p) { return p == path; });
 }
@@ -78,6 +91,11 @@ void BackgroundFileWriter::discardUnder(const QString& dir)
     std::unique_lock lock(m_mutex);
     std::erase_if(m_jobs, [&under](const auto& j) { return under(j.first); });
     std::erase_if(m_order, under);
+    std::erase_if(m_failed, under);
+    if (m_writing && under(*m_writing)) {
+        m_writingDropped = true;
+        m_wake.notify_all();
+    }
     m_idle.notify_all();
     waitNotWriting(lock, under);
 }
@@ -86,6 +104,12 @@ void BackgroundFileWriter::flush()
 {
     std::unique_lock lock(m_mutex);
     m_idle.wait(lock, [this] { return m_jobs.empty() && !m_writing; });
+}
+
+bool BackgroundFileWriter::failed(const QString& path) const
+{
+    std::lock_guard lock(m_mutex);
+    return m_failed.contains(path);
 }
 
 bool BackgroundFileWriter::saveFile(const QString& path, const QByteArray& data)
@@ -130,16 +154,40 @@ void BackgroundFileWriter::run()
         Job job = std::move(node.mapped());
         m_writing = path;
         m_writingJob = job;
-        lock.unlock();
-        const QByteArray data = job.produce ? job.produce() : job.data;
-        const WriteFn& fn = job.fn ? job.fn : WriteFn(&BackgroundFileWriter::saveFile);
-        if (!fn(path, data))
-            logWarning(QStringLiteral("Cannot write %1").arg(path));
-        lock.lock();
+        m_writingDropped = false;
+        const bool ok = writeWithRetries(lock, path, job);
+        // newer data queued meanwhile: that write decides
+        if (ok || m_writingDropped || m_jobs.contains(path))
+            m_failed.erase(path);
+        else
+            m_failed.insert(path);
         m_writing.reset();
         m_writingJob = {};
+        m_writingDropped = false;
         m_idle.notify_all();
     }
+}
+
+bool BackgroundFileWriter::writeWithRetries(std::unique_lock<std::mutex>& lock, const QString& path, const Job& job)
+{
+    lock.unlock();
+    const QByteArray data = job.produce ? job.produce() : job.data;
+    const WriteFn fn = job.fn ? job.fn : WriteFn(&BackgroundFileWriter::saveFile);
+    bool ok = fn(path, data);
+    lock.lock();
+    for (const auto delay : kRetryDelays) {
+        if (ok)
+            return true;
+        // a discard or newer data ends the tries; a stop does not (the last data still lands)
+        if (m_wake.wait_for(lock, delay, [&] { return m_writingDropped || m_jobs.contains(path); }))
+            return false;
+        lock.unlock();
+        ok = fn(path, data);
+        lock.lock();
+    }
+    if (!ok && !m_writingDropped && !m_jobs.contains(path))
+        logWarning(QStringLiteral("Cannot write %1 (%2 tries)").arg(path).arg(kRetryDelays.size() + 1));
+    return ok;
 }
 
 void BackgroundFileWriter::enqueue(const QString& path, Job job)
@@ -149,8 +197,9 @@ void BackgroundFileWriter::enqueue(const QString& path, Job job)
         const auto [it, added] = m_jobs.insert_or_assign(path, std::move(job));
         if (added)
             m_order.push_back(path);
+        m_failed.erase(path);
     }
-    m_wake.notify_one();
+    m_wake.notify_all();   // the worker: idle, or a retry of this path that can end
 }
 
 void BackgroundFileWriter::waitNotWriting(std::unique_lock<std::mutex>& lock,

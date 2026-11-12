@@ -10,6 +10,7 @@
 #include "utils/StallWatchdog.h"
 
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QTemporaryDir>
 #include <QTest>
@@ -62,6 +63,8 @@ private slots:
     void atomicFile_replacesWholeLeavesNoTemp();
     void atomicFile_cancelKeepsOldFile();
     void backgroundWriter_readFileSeesQueued();
+    void backgroundWriter_retriesThenReportsFailure();
+    void backgroundWriter_discardEndsRetries();
 };
 
 void tst_StallWatchdog::runningLoop_noReport()
@@ -333,6 +336,64 @@ void tst_StallWatchdog::atomicFile_cancelKeepsOldFile()
     }
     QCOMPARE(fileBytes(path), QByteArray("kept"));
     QCOMPARE(QDir(dir.path()).entryList(QDir::Files), QStringList{QStringLiteral("state.dat")});
+}
+
+void tst_StallWatchdog::backgroundWriter_retriesThenReportsFailure()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath(QStringLiteral("state.dat"));
+    std::atomic<int> tries{0};
+    BackgroundFileWriter writer;
+    // fails twice (Windows: a scanner holding the file), then lands
+    writer.write(path, "a", [&tries](const QString& p, const QByteArray& d) {
+        return ++tries > 2 && BackgroundFileWriter::saveFile(p, d);
+    });
+    writer.flush();
+    QCOMPARE(tries.load(), 3);
+    QCOMPARE(fileBytes(path), QByteArray("a"));
+    QVERIFY(!writer.failed(path));
+
+    // never lands: failed after all tries, the old file stays
+    tries = 0;
+    writer.write(path, "b", [&tries](const QString&, const QByteArray&) {
+        ++tries;
+        return false;
+    });
+    writer.flush();
+    QCOMPARE(tries.load(), 4);
+    QVERIFY(writer.failed(path));
+    QCOMPARE(fileBytes(path), QByteArray("a"));
+
+    // newer data clears it
+    writer.write(path, "c", &BackgroundFileWriter::saveFile);
+    QVERIFY(!writer.failed(path));
+    writer.flush();
+    QCOMPARE(fileBytes(path), QByteArray("c"));
+    QVERIFY(!writer.failed(path));
+}
+
+void tst_StallWatchdog::backgroundWriter_discardEndsRetries()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath(QStringLiteral("state.dat"));
+    std::counting_semaphore<16> tried(0);
+    std::atomic<int> tries{0};
+    BackgroundFileWriter writer;
+    writer.write(path, "x", [&](const QString&, const QByteArray&) {
+        ++tries;
+        tried.release();
+        return false;
+    });
+    tried.acquire();   // the first try failed, the retries wait
+    QElapsedTimer timer;
+    timer.start();
+    writer.discard(path);   // the caller removes the file next: no more tries
+    QVERIFY2(timer.elapsed() < 1000, "discard waited for all retries");
+    QVERIFY(tries.load() <= 2);   // 1, unless the 100 ms retry won the race
+    QVERIFY(!writer.failed(path));
+    QVERIFY(!QFile::exists(path));
 }
 
 QTEST_GUILESS_MAIN(tst_StallWatchdog)

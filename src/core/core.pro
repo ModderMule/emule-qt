@@ -218,6 +218,7 @@ SOURCES += \
     utils/BlockRuns.cpp \
     utils/DebugUtils.cpp \
     utils/AtomicFile.cpp \
+    utils/OwnerOnly.cpp \
     utils/BackgroundFileWriter.cpp \
     utils/DiskLoadLimiter.cpp \
     utils/ReadOnceHint.cpp \
@@ -417,6 +418,7 @@ HEADERS += \
     utils/BlockRuns.h \
     utils/DebugUtils.h \
     utils/AtomicFile.h \
+    utils/OwnerOnly.h \
     utils/BackgroundFileWriter.h \
     utils/DiskLoadLimiter.h \
     utils/ReadOnceHint.h \

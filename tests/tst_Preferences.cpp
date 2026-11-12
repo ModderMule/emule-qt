@@ -2065,6 +2065,82 @@ private slots:
         QVERIFY(prefs.load(file));
         QCOMPARE(prefs.maxConsPerFive(), static_cast<uint16>(1));
     }
+
+    // AtomicFile does not sync: a crash after its rename can leave the file empty or
+    // zero-filled. The last good copy (.bak) loads, the damaged file is kept as .broken
+    // and replaced.
+    void load_damagedFileRestoredFromBackup()
+    {
+        TempDir tmp;
+        const QString file = tmp.filePath(QStringLiteral("preferences.yml"));
+        const QString bak = file + QStringLiteral(".bak");
+        const QString broken = file + QStringLiteral(".broken");
+        {
+            Preferences p;
+            p.load(file);   // first run
+            p.setNick(QStringLiteral("survivor"));
+            QVERIFY(p.save());
+        }
+        {
+            Preferences p;
+            QVERIFY(p.load(file));   // a good load: its bytes become the backup
+        }
+        BackgroundFileWriter::instance().flush();
+        QVERIFY(QFile::exists(bak));
+
+        for (const QByteArray& damage : {QByteArray(), QByteArray(4096, '\0'), QByteArray("\r\n  \r\n"),
+                                         QByteArray("general: [unclosed")}) {
+            writeRaw(file, damage);
+            Preferences p;
+            QVERIFY(p.load(file));
+            QCOMPARE(p.nick(), QStringLiteral("survivor"));
+            QCOMPARE(readRaw(broken), damage);
+            Preferences again;   // the damaged file was replaced
+            QVERIFY(again.load(file));
+            QCOMPARE(again.nick(), QStringLiteral("survivor"));
+        }
+    }
+
+    // Damaged and no usable backup: defaults, the damaged file kept
+    void load_damagedWithoutBackupUsesDefaults()
+    {
+        TempDir tmp;
+        const QString file = tmp.filePath(QStringLiteral("preferences.yml"));
+        writeRaw(file, QByteArray(1024, '\0'));
+        writeRaw(file + QStringLiteral(".bak"), QByteArray());   // damaged too
+        Preferences p;
+        QVERIFY(!p.load(file));
+        QCOMPARE(p.nick(), Preferences().nick());
+        QCOMPARE(readRaw(file + QStringLiteral(".broken")), QByteArray(1024, '\0'));
+    }
+
+    // peek() (the GUI) neither keeps .broken nor writes a backup
+    void peek_damagedFileTouchesNothing()
+    {
+        TempDir tmp;
+        const QString file = tmp.filePath(QStringLiteral("preferences.yml"));
+        writeRaw(file, QByteArray());
+        Preferences p;
+        QVERIFY(!p.peek(file));
+        BackgroundFileWriter::instance().flush();
+        QVERIFY(!QFile::exists(file + QStringLiteral(".broken")));
+        QVERIFY(!QFile::exists(file + QStringLiteral(".bak")));
+        QCOMPARE(readRaw(file), QByteArray());
+    }
+
+private:
+    static void writeRaw(const QString& path, const QByteArray& data)
+    {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        QCOMPARE(f.write(data), data.size());
+    }
+
+    static QByteArray readRaw(const QString& path)
+    {
+        QFile f(path);
+        return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray("<missing>");
+    }
 };
 
 // MFC CPreferences::IsDynUpEnabled (Preferences.cpp:2742).
