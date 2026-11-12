@@ -109,6 +109,7 @@ SOURCES += \
     files/PartFileWriteThread.cpp \
     files/PublishKeywordList.cpp \
     files/ShareableFile.cpp \
+    files/ShareDiskWorker.cpp \
     files/SharedFileList.cpp \
     files/SourceSaver.cpp \
     files/StatisticFile.cpp \
@@ -197,6 +198,7 @@ SOURCES += \
     search/SearchList.cpp \
     search/SearchParams.cpp \
     search/SearchStarter.cpp \
+    server/DeadServers.cpp \
     server/Server.cpp \
     server/ServerConnect.cpp \
     server/ServerList.cpp \
@@ -285,6 +287,7 @@ HEADERS += \
     files/PartFileWriteThread.h \
     files/PublishKeywordList.h \
     files/ShareableFile.h \
+    files/ShareDiskWorker.h \
     files/SharedFileList.h \
     files/SourceSaver.h \
     files/StatisticFile.h \
@@ -371,6 +374,7 @@ HEADERS += \
     prefs/IndexerConfig.h \
     prefs/IndexerFeed.h \
     prefs/Preferences.h \
+    prefs/SpeedRules.h \
     prefs/UsenetSubjectPattern.h \
     protocol/ED2KLink.h \
     protocol/Tag.h \
@@ -388,6 +392,7 @@ HEADERS += \
     search/SearchList.h \
     search/SearchParams.h \
     search/SearchStarter.h \
+    server/DeadServers.h \
     server/Server.h \
     server/ServerConnect.h \
     server/ServerList.h \

@@ -2661,7 +2661,8 @@ fixed-width font, unwrapped. A MediaInfo NFO (one article) takes about 2 s.
   head is decompressed with `readArchiveHead()` (libarchive, stored or
   compressed; 7z needs its end header and is skipped). An mp4 whose `moov` box
   is at the end also gets its last 4 articles, written at their offsets into a
-  sparse file — not on Windows (ToDo). `FrameGrabThread` (QMediaPlayer/FFmpeg)
+  sparse file (Windows: marked sparse first via `markFileSparse()`; on FAT32/exFAT
+  temp the tail is skipped). `FrameGrabThread` (QMediaPlayer/FFmpeg)
   then takes 9 frames within the fetched span (`spanFraction`); the one at 0 s
   and near-uniform fades are dropped, at most 6 kept, JPEG 1280 px.
 - **cover** — newznab `coverurl`, fetched over HTTP by the daemon (indexer rows

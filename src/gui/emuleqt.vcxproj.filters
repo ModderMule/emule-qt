@@ -1041,9 +1041,9 @@
     <QtMoc Include="app\SkinIcons.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <ClInclude Include="app\ToolbarButtonSizer.h">
+    <QtMoc Include="app\ToolbarButtonSizer.h">
       <Filter>Header Files</Filter>
-    </ClInclude>
+    </QtMoc>
     <ClInclude Include="app\ToolbarSkin.h">
       <Filter>Header Files</Filter>
     </ClInclude>

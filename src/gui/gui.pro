@@ -81,6 +81,7 @@ TRANSLATIONS += \
     ../../lang/emuleqt_zh_TW.ts
 
 SOURCES += \
+    app/AppIcon.cpp \
     app/AutoStart.cpp \
     app/CommandLineExec.cpp \
     app/Ed2kSchemeHandler.cpp \
@@ -99,6 +100,7 @@ SOURCES += \
     utils/AppActivation.cpp \
     app/UiState.cpp \
     app/VersionChecker.cpp \
+    app/ToolbarButtonSizer.cpp \
     app/SkinInstaller.cpp \
     dialogs/SkinBrowserDialog.cpp \
     app/ClickNLoadServer.cpp \
@@ -203,6 +205,7 @@ SOURCES += \
     panels/TransferPanel.cpp
 
 HEADERS += \
+    app/AppIcon.h \
     app/AutoStart.h \
     app/CommandLineExec.h \
     app/Ed2kSchemeHandler.h \
@@ -221,6 +224,7 @@ HEADERS += \
     app/PendingOpenQueue.h \
     app/UiState.h \
     app/VersionChecker.h \
+    app/ToolbarButtonSizer.h \
     app/SkinInstaller.h \
     dialogs/SkinBrowserDialog.h \
     app/ClickNLoadServer.h \

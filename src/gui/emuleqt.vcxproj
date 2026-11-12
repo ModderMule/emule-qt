@@ -460,7 +460,7 @@
     <ClInclude Include="utils\WebServices.h" />
     <ClInclude Include="app\SkinEngine.h" />
     <QtMoc Include="app\SkinIcons.h" />
-    <ClInclude Include="app\ToolbarButtonSizer.h" />
+    <QtMoc Include="app\ToolbarButtonSizer.h" />
     <ClInclude Include="app\ToolbarSkin.h" />
     <QtMoc Include="dialogs\AddFriendDialog.h" />
     <QtMoc Include="dialogs\RememberedSizeDialog.h" />

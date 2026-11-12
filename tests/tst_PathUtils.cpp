@@ -180,6 +180,40 @@ private slots:
         QCOMPARE(eMule::cachedVolumeRoot(tmp.path() + u'/'), root);   // same key after cleanPath
         QVERIFY(eMule::cachedVolumeRoot(tmp.path() + QStringLiteral("/no/such/dir")).isEmpty());
     }
+
+    /// Usenet preview mp4 tail: a file with data already in it, marked sparse, then written
+    /// 1 GiB past EOF, must leave the gap a hole (no 1 GiB of zeros on disk).
+    void aFileWithDataMarkedSparseLeavesAHoleBeforeAFarWrite()
+    {
+#ifndef Q_OS_WIN
+        QSKIP("only Windows needs marking a file sparse");
+#else
+        QTemporaryDir tmp;
+        QVERIFY(tmp.isValid());
+        const QString path = tmp.filePath(QStringLiteral("video.mp4"));
+        {
+            QFile f(path);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            QCOMPARE(f.write(QByteArray(64 * 1024, 'h')), 64 * 1024);
+        }
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::ReadWrite));
+        if (!eMule::markFileSparse(f))
+            QSKIP("temp volume cannot hold sparse files (FAT32/exFAT)");
+        f.close();
+
+        QFile w(path);
+        QVERIFY(w.open(QIODevice::ReadWrite));
+        constexpr qint64 kGap = qint64(1) << 30;
+        QVERIFY(w.seek(kGap));
+        QCOMPARE(w.write(QByteArray(64 * 1024, 't')), 64 * 1024);
+        w.close();
+
+        QCOMPARE(QFileInfo(path).size(), kGap + 64 * 1024);
+        QVERIFY2(eMule::diskFileSize(path) < 16 * 1024 * 1024,
+                 qPrintable(QString::number(eMule::diskFileSize(path))));
+#endif
+    }
 };
 
 QTEST_MAIN(PathUtilsTest)

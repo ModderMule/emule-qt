@@ -9,6 +9,7 @@
 #include "nntp/ArticleFetcher.h"
 #include "post/UsenetUnpacker.h"
 #include "utils/Log.h"
+#include "utils/PathUtils.h"
 
 #include <QBuffer>
 #include <QFile>
@@ -93,6 +94,24 @@ bool isBlankFrame(const QImage& img)
     const double mean = sum / n;
     const double sd = std::sqrt(std::max(0.0, sq / n - mean * mean));
     return sd < 24.0 || mean < 20.0 || mean > 240.0;
+}
+
+/// Whether writing the tail far past EOF leaves a hole instead of writing the gap out.
+/// Windows: only once the file is marked sparse (NTFS; FAT32/exFAT refuse).
+bool canLeaveGap(const QString& path)
+{
+#ifdef Q_OS_WIN
+    QFile f(path);
+    if (!f.open(QIODevice::ReadWrite))
+        return false;
+    if (markFileSparse(f))
+        return true;
+    logUsenet(QStringLiteral("Usenet: preview temp file cannot be sparse, mp4 index at the end skipped"));
+    return false;
+#else
+    Q_UNUSED(path);
+    return true;
+#endif
 }
 
 /// Encoded bytes of @p f's leading segments, until @p budget.
@@ -319,14 +338,13 @@ void UsenetImagePreview::onVideoHead()
         return;
     }
 
-#ifndef Q_OS_WIN
-    // ToDo: Windows files are not sparse, the gap would be written out; fetch the tail there too
     // moov at the end: the last articles too, ffmpeg reads them at their offsets
     if (!m_tailFetched) {
         QFile f(m_videoPath);
         const QByteArray head = f.open(QIODevice::ReadOnly) ? f.read(std::min<qint64>(contiguous, 4 << 20))
                                                             : QByteArray();
-        if (mp4MoovFirst(head) == false) {
+        f.close();
+        if (mp4MoovFirst(head) == false && canLeaveGap(m_videoPath)) {
             m_tailFetched = true;
             QList<Job> jobs;
             const int count = int(file.segments.size());
@@ -340,7 +358,6 @@ void UsenetImagePreview::onVideoHead()
             return;
         }
     }
-#endif
     m_videoName = QFileInfo(fileNameOf(file)).fileName();
     const double span = m_videoSize > 0 ? double(contiguous) / double(m_videoSize) : 0.0;
     grabFrames(m_videoPath, span);
