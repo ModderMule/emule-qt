@@ -7,6 +7,7 @@
 #include <QCborArray>
 #include <QCborMap>
 #include <QCoreApplication>
+#include <QFileInfo>
 
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kDownloads.h"
@@ -199,6 +200,26 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
     else
         reply(failure(msg.seqId(), noNode()));
     return true;
+}
+
+bool downloadOf([[maybe_unused]] const QByteArray& root, bool& inProgress, QString& folder)
+{
+#ifdef EMULE_HAVE_ED3K
+    ffi::Root r;
+    if (!s_downloads || root.size() != qsizetype(r.bytes.size()))
+        return false;
+    std::memcpy(r.bytes.data(), root.constData(), r.bytes.size());
+    const auto info = s_downloads->info(r);
+    if (!info || info->state == ed3k::Ed3kDownloadInfo::State::Failed)
+        return false;
+    inProgress = info->state != ed3k::Ed3kDownloadInfo::State::Complete;
+    folder = QFileInfo(info->path).absolutePath();
+    return true;
+#else
+    (void)inProgress;
+    (void)folder;
+    return false;
+#endif
 }
 
 QCborMap listToCbor()

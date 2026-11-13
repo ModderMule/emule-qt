@@ -451,6 +451,8 @@ private:
 
     // IPC
     IpcClient* m_ipc = nullptr;
+    /// ed3k downloads as "root:state" from the last push: known types asked again on a change
+    QSet<QString> m_ed3kDownloadKeys;
     MetaResultActions* m_metaActions = nullptr;   ///< lazily, once m_ipc is set
 
     /// Coalescing window for result refreshes. The daemon pushes one event per

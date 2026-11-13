@@ -5,6 +5,7 @@
 #include "BandwidthCoordinator.h"
 #include "BtBridge.h"
 #include "Ed3kBridge.h"
+#include "Ed3kDownloadsBridge.h"
 #include "Ed3kUploadsBridge.h"
 #include "Ed3kCreditBridge.h"
 #include "Ed3kHosterBridge.h"
@@ -234,6 +235,39 @@ QString localFolderOf(const uint8* hash)
             return kf->path();
     }
     return {};
+}
+
+/// determineKnownType() for an ed3k row: its 16 B hash is half the root, no MD4. An ed3k
+/// download of the root, else the MD4 (the row's alias, or a shared file hashed to that
+/// root) through the eD2K lists. @p sharedRoots: Ed3kBridge::sharedRootIndex(), built lazily.
+SearchFile::KnownType determineEd3kKnownType(const QByteArray& root, QByteArray md4,
+                                             std::optional<QHash<QByteArray, QByteArray>>& sharedRoots,
+                                             QString& folder)
+{
+    bool inProgress = false;
+    QString dlFolder;
+    const bool downloaded = Ed3kDownloadsBridge::downloadOf(root, inProgress, dlFolder);
+    if (downloaded && inProgress) {
+        folder = dlFolder;
+        return SearchFile::KnownType::Downloading;
+    }
+    if (md4.size() != 16) {
+        if (!sharedRoots)
+            sharedRoots = Ed3kBridge::sharedRootIndex();
+        md4 = sharedRoots->value(root);
+    }
+    if (md4.size() == 16) {
+        const auto* h = reinterpret_cast<const uint8*>(md4.constData());
+        if (const auto t = determineKnownType(h); t != SearchFile::KnownType::Unknown) {
+            folder = localFolderOf(h);
+            return t;
+        }
+    }
+    if (downloaded) {
+        folder = dlFolder;
+        return SearchFile::KnownType::Downloaded;
+    }
+    return SearchFile::KnownType::Unknown;
 }
 
 /// Helper: decode a hex hash string to a 16-byte array, returns false on error.
@@ -1174,14 +1208,22 @@ void IpcClientHandler::handleGetSearchResults(const IpcMessage& msg)
 
     QCborArray results;
     qint64 total = 0;
-    theApp.searchList->forEachResult(searchID, [&results, &total, since](const SearchFile* sf) {
+    std::optional<QHash<QByteArray, QByteArray>> sharedRoots;
+    theApp.searchList->forEachResult(searchID, [&results, &total, since, &sharedRoots](const SearchFile* sf) {
         ++total;
         if (since != 0 && sf->changeSeq() <= since)
             return;
         QCborMap m = toCbor(*sf);
-        m.insert(QStringLiteral("knownType"),
-                 static_cast<int>(determineKnownType(sf->fileHash())));
-        m.insert(QStringLiteral("localFolder"), localFolderOf(sf->fileHash()));
+        if (sf->isEd3kResult()) {
+            QString folder;
+            const auto t = determineEd3kKnownType(sf->ed3kRoot(), sf->ed3kEd2k(), sharedRoots, folder);
+            m.insert(QStringLiteral("knownType"), static_cast<int>(t));
+            m.insert(QStringLiteral("localFolder"), folder);
+        } else {
+            m.insert(QStringLiteral("knownType"),
+                     static_cast<int>(determineKnownType(sf->fileHash())));
+            m.insert(QStringLiteral("localFolder"), localFolderOf(sf->fileHash()));
+        }
         results.append(m);
     });
     // total lets the client notice a row that left: a delta cannot say so
@@ -1378,9 +1420,17 @@ void IpcClientHandler::handleGetKnownTypes(const IpcMessage& msg)
     QCborArray folders;
     uint8 hashBuf[16]{};
 
+    std::optional<QHash<QByteArray, QByteArray>> sharedRoots;
     for (const auto& val : hashes) {
         const QString hashStr = val.toString();
-        if (hexToHash(hashStr, hashBuf)) {
+        // ed3k row: "<root hex>" or "<root hex>:<MD4 hex>"
+        if (hashStr.size() == 64 || (hashStr.size() == 97 && hashStr.at(64) == u':')) {
+            const QByteArray root = QByteArray::fromHex(hashStr.left(64).toLatin1());
+            const QByteArray md4 = hashStr.size() == 97 ? QByteArray::fromHex(hashStr.mid(65).toLatin1()) : QByteArray();
+            QString folder;
+            types.append(static_cast<int>(determineEd3kKnownType(root, md4, sharedRoots, folder)));
+            folders.append(folder);
+        } else if (hexToHash(hashStr, hashBuf)) {
             types.append(static_cast<int>(determineKnownType(hashBuf)));
             folders.append(localFolderOf(hashBuf));
         } else {

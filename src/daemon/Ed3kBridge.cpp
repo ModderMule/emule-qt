@@ -155,6 +155,18 @@ void appendSharedCounts([[maybe_unused]] QCborMap& shared)
 #endif
 }
 
+QHash<QByteArray, QByteArray> sharedRootIndex()
+{
+    QHash<QByteArray, QByteArray> index;
+#ifdef EMULE_HAVE_ED3K
+    if (s_shared)
+        s_shared->forEachSharedRoot([&index](const QByteArray& md4, const ::ed3k::Root& root) {
+            index.insert(QByteArray(reinterpret_cast<const char*>(root.bytes.data()), qsizetype(root.bytes.size())), md4);
+        });
+#endif
+    return index;
+}
+
 void appendSharedInfo([[maybe_unused]] QCborMap& details, [[maybe_unused]] const QByteArray& md4)
 {
 #ifdef EMULE_HAVE_ED3K

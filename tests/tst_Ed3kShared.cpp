@@ -185,6 +185,14 @@ void tst_Ed3kShared::aSharedFileIsFetchedByItsRoot()
     QVERIFY(root);
     QCOMPARE(*root, rootOf(data));
     QVERIFY(shared.aliasPublished(md4));
+    // search rows find the share by root (Ed3kBridge::sharedRootIndex)
+    int seen = 0;
+    shared.forEachSharedRoot([&](const QByteArray& m, const ::ed3k::Root& r) {
+        ++seen;
+        QCOMPARE(m, md4);
+        QCOMPARE(r, *root);
+    });
+    QCOMPARE(seen, 1);
 
     Fetcher fetch(b, db.path());
     fetch.setSearchEnabled(false);

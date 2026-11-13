@@ -184,6 +184,19 @@ void SearchPanel::setIpcClient(IpcClient* client)
             &SearchPanel::onIndexerFinishedPush);
     connect(m_ipc, &IpcClient::downloadAdded, this, [this]{ refreshKnownTypes(); });
     connect(m_ipc, &IpcClient::downloadRemoved, this, [this]{ refreshKnownTypes(); });
+    // ed3k downloads push on every tick: ask again only when one came, went or changed state
+    connect(m_ipc, &IpcClient::ed3kDownloadsChanged, this, [this](const IpcMessage& msg) {
+        QSet<QString> keys;
+        for (const auto& v : msg.fieldMap(0).value(QStringLiteral("downloads")).toArray()) {
+            const QCborMap d = v.toMap();
+            keys.insert(d.value(QStringLiteral("root")).toString() + u':'
+                        + QString::number(d.value(QStringLiteral("state")).toInteger()));
+        }
+        if (keys == m_ed3kDownloadKeys)
+            return;
+        m_ed3kDownloadKeys = std::move(keys);
+        refreshKnownTypes();
+    });
     // Terminal events only. PushUsenetQueueItem fires continuously while a release
     // downloads, and re-asking on every one of those would be a lookup per tick.
     connect(m_ipc, &IpcClient::usenetItemFinished, this,
@@ -2082,6 +2095,7 @@ void SearchPanel::requestSearchResults(uint32_t searchID, bool whole)
             row.metaCatalogId      = m.value(QStringLiteral("metaCatalogId")).toString();
             row.metaServers        = m.value(QStringLiteral("metaServers")).toArray();
             row.ed3kRoot           = m.value(QStringLiteral("ed3kRoot")).toString();
+            row.ed3kEd2k           = m.value(QStringLiteral("ed3kEd2k")).toString();
             row.ed3kAuthor         = m.value(QStringLiteral("ed3kAuthor")).toString();
             row.ed3kVerdict        = static_cast<int>(m.value(QStringLiteral("ed3kVerdict")).toInteger());
             row.ed3kHidden         = m.value(QStringLiteral("ed3kHidden")).toBool();
@@ -2621,8 +2635,11 @@ QJsonObject ed2kRowToJson(const SearchResultRow& row)
         o[QStringLiteral("metaAge")]       = static_cast<qint64>(row.metaAgeDays);
         o[QStringLiteral("metaIndexer")]   = row.metaIndexer;
         o[QStringLiteral("metaCatalogId")] = row.metaCatalogId;
-        if (row.isEd3k())
+        if (row.isEd3k()) {
             o[QStringLiteral("ed3kRoot")] = row.ed3kRoot;
+            if (!row.ed3kEd2k.isEmpty())
+                o[QStringLiteral("ed3kEd2k")] = row.ed3kEd2k;
+        }
         o[QStringLiteral("metaServers")]   = row.metaServers.toJsonArray();
     }
     return o;
@@ -2682,6 +2699,7 @@ SearchResultRow ed2kRowFromJson(const QJsonObject& r)
         row.fakeReasons.push_back(reason.toString());
     row.metaKind            = r[QStringLiteral("metaKind")].toInt();
     row.ed3kRoot            = r[QStringLiteral("ed3kRoot")].toString();
+    row.ed3kEd2k            = r[QStringLiteral("ed3kEd2k")].toString();
     row.magnet              = r[QStringLiteral("magnet")].toString();
     row.metaFlags           = static_cast<qint64>(r[QStringLiteral("metaFlags")].toDouble());
     row.metaAgeDays         = static_cast<qint64>(r[QStringLiteral("metaAge")].toDouble());
@@ -3104,17 +3122,26 @@ void SearchPanel::refreshKnownTypes()
         // the model's rows at reply time — a result push resets them in between.
         // Usenet rows skipped: their hash is no MD4, the daemon would answer
         // Unknown and wipe the queue's answer (refreshUsenetKnownTypes()).
+        // An ed3k row's hash is half its root, no MD4: asked by root (and MD4 alias).
         QStringList sent;
+        QStringList asked;
         sent.reserve(count);
+        asked.reserve(count);
         for (int r = 0; r < count; ++r) {
-            if (const auto* row = tab.model->resultAt(r); row && !row->isUsenet())
-                sent.append(row->hash);
+            const auto* row = tab.model->resultAt(r);
+            if (!row || row->isUsenet())
+                continue;
+            sent.append(row->hash);
+            if (row->isEd3k() && row->ed3kRoot.size() == 64)
+                asked.append(row->ed3kEd2k.size() == 32 ? row->ed3kRoot + u':' + row->ed3kEd2k : row->ed3kRoot);
+            else
+                asked.append(row->hash);
         }
         if (sent.isEmpty())
             continue;
 
         IpcMessage msg(IpcMsgType::GetKnownTypes);
-        msg.append(QCborValue(QCborArray::fromStringList(sent)));
+        msg.append(QCborValue(QCborArray::fromStringList(asked)));
 
         const QPointer<SearchResultsModel> model(tab.model);
         m_ipc->sendRequest(std::move(msg), [model, sent](const IpcMessage& resp) {

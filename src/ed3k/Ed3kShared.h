@@ -99,6 +99,8 @@ public:
     [[nodiscard]] std::optional<::ed3k::Root> rootOf(const QByteArray& md4) const;
     /// The shared file served under @p root; nullopt: none (the upload queue view names files).
     [[nodiscard]] std::optional<SharedEntry> entryOfRoot(const ::ed3k::Root& root) const;
+    /// @p fn(md4, root) for every file open on the engine (shared and published).
+    void forEachSharedRoot(const std::function<void(const QByteArray& md4, const ::ed3k::Root& root)>& fn) const;
     /// A file of the list was hashed to @p root (shared, or waiting for its key).
     [[nodiscard]] bool holdsRoot(const ::ed3k::Root& root) const;
     /// The `ed2k` ALIAS record of @p md4 is published.

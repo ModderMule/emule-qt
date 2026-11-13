@@ -76,6 +76,7 @@ struct SearchResultRow {
     QString metaCatalogId;   ///< FT_META_ID, echoed on the metafile fetch
     QCborArray metaServers;  ///< answering servers, [[ip, port], …]
     QString ed3kRoot;        ///< ed3k row (metaKind 7): the file's root, 64 hex digits
+    QString ed3kEd2k;        ///< ed3k row: the file's MD4 (its `ed2k` alias), 32 hex digits; empty unknown
     QString ed3kAuthor;      ///< ed3k row: the record's publisher (node ID hex); empty none
     // ed3k filter lists (filter-list.md §3): verdict 0 none, 1 fake, 2 harmful, 3 spam, 4 good
     int ed3kVerdict = 0;

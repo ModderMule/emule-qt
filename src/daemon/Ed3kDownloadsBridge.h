@@ -31,6 +31,10 @@ void setDownloads(ed3k::Ed3kDownloads* downloads);
 /// Answers a downloads request through `reply`. False: not one of them.
 bool handleRequest(const Ipc::IpcMessage& msg, const std::function<void(const Ipc::IpcMessage&)>& reply);
 
+/// An ed3k download of @p root (32 B): `inProgress` set true unless it is complete, `folder`
+/// to where its file is. false: none (or no node).
+[[nodiscard]] bool downloadOf(const QByteArray& root, bool& inProgress, QString& folder);
+
 /// GetEd3kDownloads, also what PushEd3kDownloads carries.
 [[nodiscard]] QCborMap listToCbor();
 

@@ -283,6 +283,16 @@ std::optional<SharedEntry> Ed3kShared::entryOfRoot(const ffi::Root& root) const
     return std::nullopt;
 }
 
+void Ed3kShared::forEachSharedRoot(const std::function<void(const QByteArray&, const ffi::Root&)>& fn) const
+{
+    for (const auto& [md4, f] : m_files) {
+        if (!f.shared)
+            continue;
+        if (const auto c = m_cache.find(md4); c != m_cache.end())
+            fn(md4, c->second.root);
+    }
+}
+
 bool Ed3kShared::holdsRoot(const ffi::Root& root) const
 {
     return std::ranges::any_of(m_files, [&](const auto& kv) {
