@@ -52,6 +52,7 @@ qt_standard_project_setup()
 # Global C++23 settings and compiler hardening
 # ---------------------------------------------------------------------------
 include(cmake/CompilerSettings.cmake)
+include(cmake/WinResources.cmake)
 
 # ---------------------------------------------------------------------------
 # Platform feature detection → generates config.h

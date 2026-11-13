@@ -437,24 +437,22 @@ void classifyByPrefixLifetime(std::vector<LocalIPv6Address>& addrs)
         if (group.size() < 2)
             continue;   // nothing to compare against — leave Unknown
 
-        std::size_t shortest = group.front();
-        bool tie = false;
-        for (const std::size_t idx : group) {
-            if (idx == shortest)
-                continue;
-            if (addrs[idx].validLifetimeSecs < addrs[shortest].validLifetimeSecs) {
-                shortest = idx;
-                tie = false;
-            } else if (addrs[idx].validLifetimeSecs == addrs[shortest].validLifetimeSecs) {
-                tie = true;
-            }
-        }
-        if (tie)
-            continue;   // equal lifetimes carry no signal — do not guess
-
+        // The stable one is refreshed to the full RA lifetime; every temporary one is
+        // capped below it. Windows keeps older (deprecated) temporaries for up to 7 days,
+        // so a /64 often holds several: all but the longest-lived are temporary.
+        uint32 longest = 0;
         for (const std::size_t idx : group)
-            addrs[idx].kind = (idx == shortest) ? IPv6AddressKind::Temporary
-                                                : IPv6AddressKind::Stable;
+            longest = std::max(longest, addrs[idx].validLifetimeSecs);
+        const auto atLongest = std::ranges::count_if(group, [&](std::size_t idx) {
+            return addrs[idx].validLifetimeSecs == longest;
+        });
+        for (const std::size_t idx : group) {
+            if (addrs[idx].validLifetimeSecs < longest)
+                addrs[idx].kind = IPv6AddressKind::Temporary;
+            else if (atLongest == 1)
+                addrs[idx].kind = IPv6AddressKind::Stable;
+            // tied at the top (short RA lifetimes): no signal, stays Unknown
+        }
     }
 }
 

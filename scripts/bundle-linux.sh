@@ -409,6 +409,11 @@ DOC_DST="$STAGE_DIR/doc"
 mkdir -p "$DOC_DST"
 cp "$REPO_ROOT/docs/openapi.json" "$REPO_ROOT/docs/rest-api.md" "$DOC_DST/"
 
+# AppStream metadata (name, developer, license, homepage) for distro packagers
+METAINFO="org.emule_qt.emuleqt.metainfo.xml"
+mkdir -p "$STAGE_DIR/share/metainfo"
+cp "$REPO_ROOT/resources/linux/$METAINFO" "$STAGE_DIR/share/metainfo/"
+
 # -- Audit direct dependencies -----------------------------------------------
 # Our executables may only need bundled libs or libs every desktop has. v0.5.2
 # linked libOpenGL.so.0/libGLX.so.0 (GLVND) and died where libopengl0 is absent.

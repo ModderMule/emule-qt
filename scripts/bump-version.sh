@@ -45,7 +45,8 @@ echo "Bumping $OLD → $NEW"
 
 # These three are the only places the version is written by hand. Everything
 # else derives from them: CMakeLists.txt generates config.h from config.h.in,
-# config_win.h is its hand-maintained twin for the non-CMake MSVC build, and
+# config_win.h is its hand-maintained twin for the non-CMake MSVC build (also the
+# exes' VERSIONINFO via resources/versioninfo.rc, in both builds), and
 # AppConfig.h/LogWidget.cpp/tst_Smoke.cpp all read EMULE_VERSION_STRING.
 
 # 1. CMakeLists.txt

@@ -1,0 +1,4 @@
+// emuleqt-mcp.exe: version info
+#define APP_FILE_DESC "eMule Qt MCP bridge"
+#define APP_EXE_NAME  "emuleqt-mcp.exe"
+#include "versioninfo.rc"

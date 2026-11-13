@@ -291,6 +291,6 @@
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="..\..\resources\appicon.rc" />
+    <ResourceCompile Include="..\..\resources\emulecored.rc" />
   </ItemGroup>
 </Project>

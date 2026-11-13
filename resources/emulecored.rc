@@ -1,0 +1,5 @@
+// emulecored.exe: icon + version info
+#define APP_FILE_DESC "eMule Qt core daemon"
+#define APP_EXE_NAME  "emulecored.exe"
+#include "appicon.rc"
+#include "versioninfo.rc"

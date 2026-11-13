@@ -91,6 +91,8 @@ private slots:
     void lifetime_shortestInPrefixIsTemporary();
     void lifetime_singleMember_staysUnknown();
     void lifetime_equalLifetimes_stayUnknown();
+    void lifetime_olderTemporaries_allTemporary();
+    void lifetime_tiedAtTop_shorterStillTemporary();
     void lifetime_differentPrefixes_notGrouped();
     void lifetime_differentInterfaces_notGrouped();
 
@@ -383,6 +385,34 @@ void tst_LocalIPv6::lifetime_equalLifetimes_stayUnknown()
     classifyByPrefixLifetime(addrs);
     QCOMPARE(addrs[0].kind, IPv6AddressKind::Unknown);
     QCOMPARE(addrs[1].kind, IPv6AddressKind::Unknown);
+}
+
+void tst_LocalIPv6::lifetime_olderTemporaries_allTemporary()
+{
+    // Windows keeps deprecated temporaries: stable 30d, current temp 6d, older temp 2d
+    std::vector<LocalIPv6Address> addrs{
+        makeEntry(kStable, IPv6AddressKind::Unknown, false, false, "en0", 2592000),
+        makeEntry(kTemporary, IPv6AddressKind::Unknown, false, false, "en0", 518400),
+        makeEntry("2a0d:3344:15db:3200:1111:2222:3333:4444", IPv6AddressKind::Unknown, true, false, "en0", 172800),
+    };
+    classifyByPrefixLifetime(addrs);
+    QCOMPARE(addrs[0].kind, IPv6AddressKind::Stable);
+    QCOMPARE(addrs[1].kind, IPv6AddressKind::Temporary);
+    QCOMPARE(addrs[2].kind, IPv6AddressKind::Temporary);
+}
+
+void tst_LocalIPv6::lifetime_tiedAtTop_shorterStillTemporary()
+{
+    // short RA lifetime: stable and current temp tie, the older temp is shorter
+    std::vector<LocalIPv6Address> addrs{
+        makeEntry(kStable, IPv6AddressKind::Unknown, false, false, "en0", 86400),
+        makeEntry(kTemporary, IPv6AddressKind::Unknown, false, false, "en0", 86400),
+        makeEntry("2a0d:3344:15db:3200:1111:2222:3333:4444", IPv6AddressKind::Unknown, true, false, "en0", 3600),
+    };
+    classifyByPrefixLifetime(addrs);
+    QCOMPARE(addrs[0].kind, IPv6AddressKind::Unknown);
+    QCOMPARE(addrs[1].kind, IPv6AddressKind::Unknown);
+    QCOMPARE(addrs[2].kind, IPv6AddressKind::Temporary);
 }
 
 void tst_LocalIPv6::lifetime_differentPrefixes_notGrouped()

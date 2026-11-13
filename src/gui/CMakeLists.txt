@@ -127,11 +127,8 @@ elseif(WIN32)
     # not by contract. ole32/uuid: ITaskbarList3 in TaskbarProgressWin.cpp.
     target_link_libraries(emulegui PUBLIC shell32 ole32 uuid)
 
-    # Explorer / taskbar icon. Without it the exe has no icon of its own.
-    set(APP_ICON_RC "${CMAKE_SOURCE_DIR}/resources/appicon.rc")
-    target_sources(emuleqt PRIVATE "${APP_ICON_RC}")
-    set_source_files_properties("${APP_ICON_RC}" PROPERTIES
-        OBJECT_DEPENDS "${CMAKE_SOURCE_DIR}/resources/icons/MuleApp.ico")
+    # Explorer / taskbar icon + version info. Without it the exe has no icon of its own.
+    emule_add_win_resources(emuleqt "${CMAKE_SOURCE_DIR}/resources/emuleqt.rc")
 elseif(LINUX)
     # Launcher progress (TaskbarProgressUnity.cpp)
     find_package(Qt6 REQUIRED COMPONENTS DBus)
@@ -161,6 +158,8 @@ set_target_properties(emuleqt PROPERTIES
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
     MACOSX_BUNDLE_ICON_FILE "Mule.icns"
+    MACOSX_BUNDLE_COPYRIGHT "Copyright (C) eMuleQt team. GPL-2.0"
+    MACOSX_BUNDLE_INFO_STRING "eMule Qt ${PROJECT_VERSION}, eMuleQt team, https://emule-qt.org"
     WIN32_EXECUTABLE TRUE
 )
 

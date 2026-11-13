@@ -1,0 +1,50 @@
+// VERSIONINFO shared by all Windows exes; included by the per-exe .rc
+// (emuleqt.rc, emulecored.rc, ...), which define APP_FILE_DESC and APP_EXE_NAME.
+// Explorer's Details tab shows it; AV heuristics score exes without it higher (#179).
+// Version: config_win.h, kept in sync with CMakeLists.txt by scripts/bump-version.sh.
+
+#include <winver.h>
+#include "../src/core/config_win.h"
+
+#ifndef APP_FILE_DESC
+#error "define APP_FILE_DESC before including versioninfo.rc"
+#endif
+#ifndef APP_EXE_NAME
+#error "define APP_EXE_NAME before including versioninfo.rc"
+#endif
+
+#ifdef _DEBUG
+#define APP_FILE_FLAGS VS_FF_DEBUG
+#else
+#define APP_FILE_FLAGS 0x0L
+#endif
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION    EMULE_VERSION_MAJOR,EMULE_VERSION_MINOR,EMULE_VERSION_PATCH,0
+ PRODUCTVERSION EMULE_VERSION_MAJOR,EMULE_VERSION_MINOR,EMULE_VERSION_PATCH,0
+ FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
+ FILEFLAGS      APP_FILE_FLAGS
+ FILEOS         VOS_NT_WINDOWS32
+ FILETYPE       VFT_APP
+ FILESUBTYPE    VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"   // en-US, Unicode
+        BEGIN
+            VALUE "CompanyName",      "eMuleQt team"
+            VALUE "FileDescription",  APP_FILE_DESC
+            VALUE "FileVersion",      EMULE_VERSION_STRING
+            VALUE "InternalName",     APP_EXE_NAME
+            VALUE "LegalCopyright",   "Copyright (C) eMuleQt team. GPL-2.0"
+            VALUE "OriginalFilename", APP_EXE_NAME
+            VALUE "ProductName",      "eMule Qt"
+            VALUE "ProductVersion",   EMULE_VERSION_STRING
+            VALUE "Comments",         "https://emule-qt.org"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

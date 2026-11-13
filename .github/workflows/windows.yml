@@ -34,6 +34,11 @@ env:
   # ed3k: packmule is the private ModderMule/packmule; without the secret
   # (forks, 3rd party) it is skipped and EMULE_ED3K turns itself off
   HAS_PACKMULE_TOKEN: ${{ secrets.PACKMULE_TOKEN != '' }}
+  # Code signing via SignPath Foundation. Release builds only
+  # (release.yml passes the tag as ref); without the secret (forks) unsigned as before
+  SIGN_RELEASE: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' && inputs.ref != '' }}
+  SIGNPATH_PROJECT: ${{ vars.SIGNPATH_PROJECT_SLUG || 'emule-qt' }}
+  SIGNPATH_POLICY: ${{ vars.SIGNPATH_POLICY_SLUG || 'release-signing' }}
 
 jobs:
   build:
@@ -386,11 +391,95 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "emuleqt-mcp.exe --version exited with $LASTEXITCODE" }
           Write-Host "Resolved from the OS at runtime ($($external.Count)): $((($external.Keys | Sort-Object) -join ', '))"
 
+      # --- Code signing (#179) -------------------------------------------------
+      # Unsigned exes score high with AV ML heuristics. Only our own exes: the Qt
+      # and vcpkg DLLs are third party, SignPath Foundation won't sign them.
+      # Artifact names must not match eMuleQt-v*: release.yml publishes those.
+      - name: Upload unsigned binaries
+        id: unsigned-bin
+        if: env.SIGN_RELEASE == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: unsigned-binaries-win64
+          path: |
+            stage/eMule/emuleqt.exe
+            stage/eMule/emulecored.exe
+            stage/eMule/emuleqt-mcp.exe
+            stage/eMule/emuleqt-updater.exe
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Sign binaries
+        if: env.SIGN_RELEASE == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY }}
+          artifact-configuration-slug: binaries
+          github-artifact-id: ${{ steps.unsigned-bin.outputs.artifact-id }}
+          wait-for-completion: true
+          # Foundation requests may wait for manual approval
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: build/signed-bin
+
+      # Signed exes back into the stage, zip rebuilt from it (as bundle-win.ps1 does)
+      - name: Restage signed binaries
+        if: env.SIGN_RELEASE == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($exe in 'emuleqt.exe', 'emulecored.exe', 'emuleqt-mcp.exe', 'emuleqt-updater.exe') {
+            $signed = Join-Path 'build\signed-bin' $exe
+            if ((Get-AuthenticodeSignature $signed).Status -ne 'Valid') { throw "Not validly signed: $exe" }
+            Copy-Item $signed (Join-Path 'stage\eMule' $exe) -Force
+          }
+          $zip = "build\eMuleQt-v$env:APP_VERSION-win64.zip"
+          Remove-Item $zip -Force
+          7z a -tzip -mx=7 $zip stage\eMule
+          if ($LASTEXITCODE -ne 0) { throw '7z reported an error.' }
+
       # Wraps the tree the Bundle step staged (stage\eMule) -- the same files the
       # zip was just verified with.
       - name: Build installer
         shell: pwsh
         run: scripts\installer-win.ps1 -InstallInno
+
+      - name: Upload unsigned installer
+        id: unsigned-setup
+        if: env.SIGN_RELEASE == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: unsigned-setup-win64
+          path: build/eMuleQt-v${{ env.APP_VERSION }}-win64-setup.exe
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Sign installer
+        if: env.SIGN_RELEASE == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.unsigned-setup.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: build/signed-setup
+
+      # Verify installer below then runs the signed setup
+      - name: Replace installer with signed one
+        if: env.SIGN_RELEASE == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $name = "eMuleQt-v$env:APP_VERSION-win64-setup.exe"
+          $signed = Join-Path 'build\signed-setup' $name
+          if ((Get-AuthenticodeSignature $signed).Status -ne 'Valid') { throw "Not validly signed: $name" }
+          Copy-Item $signed (Join-Path 'build' $name) -Force
 
       # The setup script is Pascal that no other job compiles or runs: install,
       # check what landed, upgrade over a stale import request, uninstall.  The
