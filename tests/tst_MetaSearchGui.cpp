@@ -94,6 +94,7 @@ private slots:
     void magnetLinkForMetaRows();
     void multiSelectionSurvivesReset();
     void networkFilterHidesForeignRows();
+    void hideRelatedContentHidesOtherFiles();
     void webAndContainerRows();
     void webLinksDialog_longNamesLeaveStatusInView();   // first: needs no saved column layout
     void webLinksDialog_keepsColumnLayout();
@@ -358,6 +359,46 @@ void tst_MetaSearchGui::loginDialog_acceptsWhenActive()
     ok.insert(QStringLiteral("state"), 2);
     dlg.updateMeta(ok);
     QCOMPARE(accepted.count(), 1);
+}
+
+void tst_MetaSearchGui::hideRelatedContentHidesOtherFiles()
+{
+    using namespace Qt::StringLiterals;
+    QCOMPARE(SearchResultsProxy::keywordsOf(u"vmware  Fusion -keygen NOT crack AND \"pro 13\""_s),
+             QStringList({u"vmware"_s, u"fusion"_s, u"pro 13"_s}));
+    QVERIFY(SearchResultsProxy::keywordsOf(u"vmware OR parallels"_s).isEmpty());
+    QVERIFY(SearchResultsProxy::keywordsOf(u"(vmware fusion)"_s).isEmpty());
+    QCOMPARE(SearchResultsProxy::foldForMatch(u"VMware.Fusion-Pro_13"_s), u"vmware fusion pro 13"_s);
+
+    // one torrent: whole-set row (index FFFF), two file rows (index 0, 1)
+    const auto bt = [](const QString& name, const QString& index) {
+        SearchResultRow r = row(name, 1);
+        r.hash = u"ED2B0111"_s + index + u"1E1B3620ADE2AF9D6E90"_s;
+        return r;
+    };
+    std::vector<SearchResultRow> rows;
+    rows.push_back(bt(u"VMware Fusion Pro 13.6.1 (macOS)"_s, u"FFFF"_s));
+    rows.push_back(bt(u"VMware-Fusion-13.6.1_universal.dmg"_s, u"0000"_s));
+    rows.push_back(bt(u"Keygen.zip"_s, u"0100"_s));
+    rows.push_back(row(u"Keygen.zip"_s, 0));   // an eD2K file is never filtered here
+    rows.back().hash = u"0123456789ABCDEF0123456789ABCDEF"_s;
+    QVERIFY(rows[1].isMetaFileRow());
+    QVERIFY(!rows[0].isMetaFileRow());
+    QVERIFY(!rows[3].isMetaFileRow());
+
+    SearchResultsModel model;
+    model.setResults(rows);
+    SearchResultsProxy proxy;
+    proxy.setSourceModel(&model);
+    proxy.setKeywords(SearchResultsProxy::keywordsOf(u"vmware fusion"_s));
+    QCOMPARE(proxy.rowCount(), 4);   // off by default
+
+    proxy.setNetworkFilter(SearchResultsProxy::NetworkFilter{.hideRelatedContent = true});
+    QCOMPARE(proxy.rowCount(), 3);
+    QCOMPARE(proxy.hiddenCount(), 1);
+
+    proxy.setKeywords({});   // no keywords: nothing to hold the names against
+    QCOMPARE(proxy.rowCount(), 4);
 }
 
 void tst_MetaSearchGui::networkFilterHidesForeignRows()

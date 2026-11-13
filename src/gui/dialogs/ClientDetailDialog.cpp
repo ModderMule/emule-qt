@@ -9,12 +9,17 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QProxyStyle>
+#include <QTabWidget>
 #include <QVBoxLayout>
 
 #include <algorithm>
 #include <memory>
 
 #include "net/Address.h"
+#include "prefs/Preferences.h"
+#include "app/SkinIcons.h"
+#include "utils/ClientIcons.h"
 #include "utils/CountryFlags.h"
 #include "utils/DialogSizing.h"
 #include "utils/OtherFunctions.h"
@@ -41,6 +46,22 @@ double dbl(const QCborMap& m, QLatin1StringView key)
     return m.value(key).toDouble();
 }
 
+bool isEd3k(const QCborMap& m)
+{
+    return str(m, QLatin1StringView("network")) == QLatin1String("ed3k");
+}
+
+/// Title name: an ed3k row is named by its node ID's start
+QString titleName(const QCborMap& d)
+{
+    const QString name = str(d, QLatin1StringView("userName"));
+    if (!isEd3k(d))
+        return name;
+    return d.value(QLatin1StringView("anonymous")).toBool()
+        ? ClientDetailDialog::tr("anonymous (ed3k)")
+        : ClientDetailDialog::tr("%1 (ed3k)").arg(name);
+}
+
 /// Bold "label:" caption, right-aligned as in a QFormLayout.
 QLabel* gridCaption(const QString& label)
 {
@@ -61,6 +82,45 @@ void addGridRow(QGridLayout* grid, int row, int col, const QString& label, const
     grid->addWidget(gridCaption(label), row, col);
     grid->addWidget(valueLabel, row, col + 1, 1, span, Qt::AlignTop);
 }
+
+/// Flag + long country name (MorphXT IP2Country); @p fallback without a code.
+QWidget* countryValue(const QString& cc, const QString& fallback)
+{
+    auto* country = new QWidget;
+    auto* rowLayout = new QHBoxLayout(country);
+    rowLayout->setContentsMargins(0, 0, 0, 0);
+    if (!cc.isEmpty()) {
+        auto* flagLabel = new QLabel(country);
+        flagLabel->setPixmap(CountryFlags::flag(cc).pixmap(QSize(18, 16)));
+        rowLayout->addWidget(flagLabel);
+    }
+    rowLayout->addWidget(new QLabel(cc.isEmpty() ? fallback : CountryFlags::tooltip(cc), country), 1);
+    return country;
+}
+
+/// The same peer seen by the other network (GetClientDetails `ed2kClient` / `ed3kClient`).
+QCborMap otherView(const QCborMap& d)
+{
+    return d.value(QLatin1StringView(isEd3k(d) ? "ed2kClient" : "ed3kClient")).toMap();
+}
+
+/// Country codes of both views: a change rebuilds the flag widgets.
+QString ccKey(const QCborMap& d)
+{
+    return str(d, QLatin1StringView("cc")) + u'/' + str(otherView(d), QLatin1StringView("cc"));
+}
+
+/// The app style with the tabs of a QTabWidget on the left (macOS centres them).
+class LeftTabsStyle final : public QProxyStyle {
+public:
+    int styleHint(StyleHint hint, const QStyleOption* option, const QWidget* widget,
+                  QStyleHintReturn* returnData) const override
+    {
+        if (hint == SH_TabBar_Alignment)
+            return Qt::AlignLeft;
+        return QProxyStyle::styleHint(hint, option, widget, returnData);
+    }
+};
 
 } // anonymous namespace
 
@@ -83,15 +143,23 @@ ClientDetailDialog::ClientDetailDialog(const QCborMap& d, QWidget* parent)
 
 void ClientDetailDialog::setDetails(const QCborMap& d)
 {
+    // a rebuild of the same client keeps the tab shown; else its own network's
+    const bool ed3k = isEd3k(d);
+    const auto* oldTabs = qobject_cast<QTabWidget*>(m_content);
+    const int tab = oldTabs && str(d, QLatin1StringView("userHash")) == subjectKey() ? oldTabs->currentIndex()
+                  : ed3k ? 1 : 0;
     delete m_content;
-    m_content = buildContent(d);
+    m_content = buildPage(d);
+    if (auto* tabs = qobject_cast<QTabWidget*>(m_content))
+        tabs->setCurrentIndex(std::min(tab, tabs->count() - 1));
     contentLayout()->addWidget(m_content);
 
-    m_cc = str(d, QLatin1StringView("cc"));
+    m_cc = ccKey(d);
 
     setSubjectKey(str(d, QLatin1StringView("userHash")));
-    setWindowTitle(tr("Client Details: %1")
-        .arg(str(d, QLatin1StringView("userName"))));
+    setWindowTitle(tr("Client Details: %1").arg(titleName(d)));
+    // ed3k: the same icon as its list row (ClientEd3k.ico); eD2K keeps the app's
+    setWindowIcon(ed3k ? ed3kClientIcon() : QIcon());
 
     fitToContent();
 }
@@ -99,22 +167,42 @@ void ClientDetailDialog::setDetails(const QCborMap& d)
 void ClientDetailDialog::applyDetails(const QCborMap& d)
 {
     if (!m_content || str(d, QLatin1StringView("userHash")) != subjectKey()
-        || str(d, QLatin1StringView("cc")) != m_cc) {
+        || ccKey(d) != m_cc) {
         setDetails(d);
         return;
     }
 
     // Build off-screen and copy the texts over when the rows line up
-    const std::unique_ptr<QWidget> fresh(buildContent(d));
+    const std::unique_ptr<QWidget> fresh(buildPage(d));
     if (!copyValueTexts(m_content, fresh.get())) {
         setDetails(d);
         return;
     }
-    setWindowTitle(tr("Client Details: %1")
-        .arg(str(d, QLatin1StringView("userName"))));
+    setWindowTitle(tr("Client Details: %1").arg(titleName(d)));
 }
 
 // ── private helpers ────────────────────────────────────────────────────
+
+QWidget* ClientDetailDialog::buildPage(const QCborMap& d)
+{
+    // one tab per network that knows the peer (eD2K compat mode: user hash derived from the
+    // node ID), eD2K first; the bar shows even with one tab: which network it is
+    const bool ed3k = isEd3k(d);
+    const QCborMap other = otherView(d);
+    const QCborMap* ed2kView = !ed3k ? &d : other.isEmpty() ? nullptr : &other;
+    const QCborMap* ed3kView = ed3k ? &d : other.isEmpty() ? nullptr : &other;
+    auto* tabs = new QTabWidget;
+    // left-aligned tabs; a style sheet would turn the whole page non-native on macOS
+    auto* style = new LeftTabsStyle;
+    style->setParent(tabs);
+    tabs->setStyle(style);
+    DialogSizing::enableHeightForWidth(tabs);
+    if (ed2kView)
+        tabs->addTab(buildContent(*ed2kView), skinIcon(QStringLiteral(":/icons/Kad.ico")), QStringLiteral("eD2K"));
+    if (ed3kView)
+        tabs->addTab(buildEd3kContent(*ed3kView), skinIcon(QStringLiteral(":/icons/Ed3k.ico")), QStringLiteral("ed3k"));
+    return tabs;
+}
 
 QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
 {
@@ -146,18 +234,8 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
         addGridRow(grid, 2, 0, tr("Software"), str(d, QLatin1StringView("software")));
 
         // Country (MorphXT IP2Country): flag + long name
-        const QString cc = str(d, QLatin1StringView("cc"));
-        auto* country = new QWidget;
-        auto* rowLayout = new QHBoxLayout(country);
-        rowLayout->setContentsMargins(0, 0, 0, 0);
-        if (!cc.isEmpty()) {
-            auto* flagLabel = new QLabel(country);
-            flagLabel->setPixmap(CountryFlags::flag(cc).pixmap(QSize(18, 16)));
-            rowLayout->addWidget(flagLabel);
-        }
-        rowLayout->addWidget(new QLabel(cc.isEmpty() ? unknown : CountryFlags::tooltip(cc), country), 1);
         grid->addWidget(gridCaption(tr("Country")), 3, 0);
-        grid->addWidget(country, 3, 1, Qt::AlignTop);
+        grid->addWidget(countryValue(str(d, QLatin1StringView("cc")), unknown), 3, 1, Qt::AlignTop);
 
         const bool kadConn = d.value(QLatin1StringView("kadConnected")).toBool();
         addGridRow(grid, 4, 0, tr("Kad"), kadConn ? tr("Connected") : tr("Disconnected"));
@@ -282,6 +360,116 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
                 ? tr("(Friend Slot)") : QString::number(num(d, QLatin1StringView("score")));
         }
         addDetailRow(form, tr("Uploadqueue Score"), score);
+
+        mainLayout->addWidget(group);
+    }
+
+    mainLayout->addStretch();
+    return page;
+}
+
+QWidget* ClientDetailDialog::buildEd3kContent(const QCborMap& d)
+{
+    auto* page = new QWidget;
+    auto* mainLayout = new QVBoxLayout(page);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    DialogSizing::enableHeightForWidth(page);
+
+    const QString unknown = QStringLiteral("?");
+    const QString none = QStringLiteral("-");
+    const bool anonymous = d.value(QLatin1StringView("anonymous")).toBool();
+
+    // ── General: the node, laid out like the eD2K page ─────────────────
+    {
+        auto* group = new QGroupBox(tr("General"));
+        auto* grid  = new QGridLayout(group);
+        grid->setColumnStretch(1, 3);
+        grid->setColumnStretch(3, 2);
+        grid->setHorizontalSpacing(12);
+        DialogSizing::enableHeightForWidth(group);
+
+        // Hello.nick: the user name of its Options; may be empty
+        const QString nick = str(d, QLatin1StringView("nick"));
+        addGridRow(grid, 0, 0, tr("Name"), anonymous ? tr("anonymous") : nick.isEmpty() ? unknown : nick);
+        addGridRow(grid, 0, 2, tr("ed3k Type"), anonymous ? tr("Anonymous") : tr("Node"));
+        // the key's value label: what the two keys are
+        if (auto* keyValue = qobject_cast<QLabel*>(grid->itemAtPosition(0, 3)->widget()))
+            keyValue->setToolTip(anonymous
+                ? tr("It downloads from our anonymous node: a second key of ours, reached through a "
+                     "path of other nodes. Neither side sees the other's IP address.")
+                : tr("It downloads from our node key: the key our node ID is made from. It connects "
+                     "to us directly and sees our IP address."));
+        addGridRow(grid, 1, 0, tr("Node ID"), str(d, QLatin1StringView("nodeId")), 3);
+
+        const bool helloKnown = d.value(QLatin1StringView("helloKnown")).toBool();
+        addGridRow(grid, 2, 0, tr("Software"), str(d, QLatin1StringView("software")));
+        // Hello.caps bit ED2K (§2): it speaks eD2K too
+        addGridRow(grid, 2, 2, tr("eD2K"), !helloKnown ? unknown
+                   : d.value(QLatin1StringView("ed2k")).toBool() ? tr("Yes") : tr("No"));
+
+        // the anonymous queue never tells an address (hops.md §1)
+        grid->addWidget(gridCaption(tr("Country")), 3, 0);
+        grid->addWidget(countryValue(str(d, QLatin1StringView("cc")), anonymous ? tr("hidden") : unknown),
+                        3, 1, Qt::AlignTop);
+        addGridRow(grid, 3, 2, tr("Connected"),
+                   d.value(QLatin1StringView("isConnected")).toBool() ? tr("Yes") : tr("No"));
+        if (thePrefs.showExtControls())
+            addGridRow(grid, 4, 2, tr("LAN"), d.value(QLatin1StringView("lan")).toBool() ? tr("Yes") : tr("No"));
+
+        mainLayout->addWidget(group);
+    }
+
+    // ── Transfer: its turn in our upload queue, our download from it ──
+    {
+        auto* group = new QGroupBox(tr("Transfer"));
+        auto* form  = new QFormLayout(group);
+        form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+        DialogSizing::enableHeightForWidth(group);
+
+        // in our upload queue (else only a source of ours)
+        if (!str(d, QLatin1StringView("uploadState")).isEmpty()) {
+            const bool holding = str(d, QLatin1StringView("uploadState")) == QLatin1String("Transferring");
+            const QString file = str(d, QLatin1StringView("uploadFileName"));
+            addDetailRow(form, tr("Currently downloading"), file.isEmpty() ? none : file);
+            const qint64 size = num(d, QLatin1StringView("uploadFileSize"));
+            addDetailRow(form, tr("File size"), size > 0 ? formatByteSize(static_cast<uint64>(size)) : unknown);
+            addDetailRow(form, tr("Root hash"), str(d, QLatin1StringView("root")));
+
+            const int place = static_cast<int>(num(d, QLatin1StringView("queueRank")));
+            addDetailRow(form, tr("Upload state"), holding ? tr("Transferring")
+                         : place > 0 ? tr("On queue (place %1)").arg(place) : tr("On queue"));
+            const qint64 heldMs = num(d, QLatin1StringView(holding ? "uploadStartDelay" : "waitStartTime"));
+            addDetailRow(form, holding ? tr("Upload time") : tr("Waiting time"),
+                         formatDuration(std::chrono::seconds(heldMs / 1000)));
+            addDetailRow(form, tr("Downloaded (this turn)"),
+                         formatByteSize(static_cast<uint64>(num(d, QLatin1StringView("sessionUp")))));
+            // the turn's 16 MiB / 1 h reached (SlotUsed due): the slot goes on next
+            if (holding)
+                addDetailRow(form, tr("Turn ending"),
+                             d.value(QLatin1StringView("due")).toBool() ? tr("Yes") : tr("No"));
+        }
+
+        // a source of one of our downloads: its stream there (§12.5: one per uploader)
+        if (const QCborMap src = d.value(QLatin1StringView("source")).toMap(); !src.isEmpty()) {
+            const QString file = str(src, QLatin1StringView("fileName"));
+            addDetailRow(form, tr("Requested to upload"), file.isEmpty() ? str(src, QLatin1StringView("root")) : file);
+            const bool sending = str(src, QLatin1StringView("state")) == QLatin1String("Downloading");
+            addDetailRow(form, tr("Download state"), sending ? tr("Transferring") : tr("On queue"));
+            const qint64 parts = num(src, QLatin1StringView("parts"));
+            addDetailRow(form, tr("Available parts"),
+                         !src.value(QLatin1StringView("haveKnown")).toBool() ? unknown
+                         : QStringLiteral("%1 / %2").arg(num(src, QLatin1StringView("availParts"))).arg(parts));
+        }
+
+        // this daemon run, worded from the peer's side like the eD2K page: its download is our upload
+        if (thePrefs.showExtControls()) {
+            const auto sent = static_cast<uint64>(num(d, QLatin1StringView("sentTotal")));
+            const auto received = static_cast<uint64>(num(d, QLatin1StringView("receivedTotal")));
+            addDetailRow(form, tr("Downloaded (this session)"), formatByteSize(sent));
+            addDetailRow(form, tr("Uploaded (this session)"), formatByteSize(received));
+            addDetailRow(form, tr("Ratio (UL/DL)"), sent == 0 ? none
+                         : QString::number(static_cast<double>(received) / static_cast<double>(sent), 'f', 2));
+        }
 
         mainLayout->addWidget(group);
     }

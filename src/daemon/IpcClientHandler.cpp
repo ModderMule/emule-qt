@@ -761,12 +761,23 @@ void IpcClientHandler::handleGetDownloadClients(const IpcMessage& msg)
                 clients.append(toCbor(*c));
         }
     }
+    Ed3kUploadsBridge::appendDownloading(clients);
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(clients)));
 }
 
 void IpcClientHandler::handleGetDownloadSources(const IpcMessage& msg)
 {
     const QString hash = msg.fieldString(0);
+    // an ed3k download (its root, 64 hex): its ed3k sources
+    if (hash.size() == 64) {
+        const QByteArray root = QByteArray::fromHex(hash.toLatin1());
+        if (root.size() != 32) {
+            sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+            return;
+        }
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(Ed3kUploadsBridge::downloadSources(root))));
+        return;
+    }
     if (!theApp.downloadQueue) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Download queue unavailable")));
         return;
@@ -783,7 +794,11 @@ void IpcClientHandler::handleGetDownloadSources(const IpcMessage& msg)
         return;
     }
 
-    const QCborArray clients = downloadSourcesToCbor(*pf);
+    QCborArray clients = downloadSourcesToCbor(*pf);
+    // a joint download (ed3kJointDownloads): its ed3k sources too
+    if (const QByteArray root = Ed3kBridge::jointRoot(QByteArray(reinterpret_cast<const char*>(hashBuf), 16)); !root.isEmpty())
+        for (const auto& row : Ed3kUploadsBridge::downloadSources(root))
+            clients.append(row);
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(clients)));
 }
 
@@ -2782,9 +2797,16 @@ void IpcClientHandler::handleGetNetworkInfo(const IpcMessage& msg)
     info.insert(QStringLiteral("bt"), BtBridge::statusToCbor());
     QCborMap ed3k = Ed3kBridge::statusToCbor();
     ed3k.insert(QStringLiteral("enabled"), thePrefs.ed3kEnabled());
-    // counters and sub-blocks the dialog does not show
+    // counters and sub-blocks the dialog does not show; of "stats" only Connections/Indexed
+    const QCborMap stats = ed3k.value(QStringLiteral("stats")).toMap();
     for (const auto* key : {"stats", "session", "cumulative", "queue", "credit", "chain", "hoster", "hide"})
         ed3k.remove(QString::fromLatin1(key));
+    if (!stats.isEmpty()) {
+        QCborMap shown;
+        for (const auto* key : {"connections", "records", "recordBytes"})
+            shown.insert(QString::fromLatin1(key), stats.value(QString::fromLatin1(key)));
+        ed3k.insert(QStringLiteral("stats"), shown);
+    }
     info.insert(QStringLiteral("ed3k"), ed3k);
     QCborMap shared = info.value(QStringLiteral("shared")).toMap();
     Ed3kBridge::appendSharedCounts(shared);
@@ -4097,6 +4119,21 @@ void IpcClientHandler::handleRequestSearchPreview(const IpcMessage& msg)
 void IpcClientHandler::handleGetClientDetails(const IpcMessage& msg)
 {
     const QString hash = msg.fieldString(0);
+    // an ed3k upload queue row (Ed3kUploadsBridge key), not an eD2K client
+    if (Ed3kUploadsBridge::isDetailsKey(hash)) {
+        auto d = Ed3kUploadsBridge::details(hash);
+        if (!d) {
+            sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Client not found")));
+            return;
+        }
+        // the same peer over eD2K (compat mode: derived user hash, §14.2)
+        uint8 derived[16]{};
+        if (theApp.clientList && hexToHash(d->value(QStringLiteral("ed2kUserHash")).toString(), derived))
+            if (auto* c = theApp.clientList->findByUserHash(derived))
+                d->insert(QStringLiteral("ed2kClient"), toCborDetailed(*c, theApp));
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(*d)));
+        return;
+    }
     if (!theApp.clientList) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Client list unavailable")));
         return;
@@ -4113,7 +4150,11 @@ void IpcClientHandler::handleGetClientDetails(const IpcMessage& msg)
         return;
     }
 
-    const QCborMap details = toCborDetailed(*client, theApp);
+    QCborMap details = toCborDetailed(*client, theApp);
+    // the same peer in the ed3k upload queue (its eD2K hash derived from the node ID)
+    if (auto ed3k = Ed3kUploadsBridge::detailsByEd2kHash(
+            QByteArray(reinterpret_cast<const char*>(hashBuf), sizeof(hashBuf))))
+        details.insert(QStringLiteral("ed3kClient"), *ed3k);
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(details)));
 }
 

@@ -387,7 +387,7 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         if (role == Qt::DecorationRole && index.column() == ColFileName)
             return CountryFlags::withFlag(
                 iconPair(sourceStateIcon(sourceStateIconKind(s.downloadState, s.remoteQueueFull, s.a4af)),
-                         clientSoftwareIcon(s.softwareId, s.hasCredit, s.isFriend)),
+                         s.ed3k ? ed3kClientIcon() : clientSoftwareIcon(s.softwareId, s.hasCredit, s.isFriend)),
                 s.cc);
 
         if (role == Qt::TextAlignmentRole)

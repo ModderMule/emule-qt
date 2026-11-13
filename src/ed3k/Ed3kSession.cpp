@@ -53,6 +53,14 @@ QString hex(std::span<const std::uint8_t> bytes)
         QByteArray(reinterpret_cast<const char*>(bytes.data()), qsizetype(bytes.size())).toHex());
 }
 
+/// "ip:port", IPv6 in brackets
+QString endpointText(const ffi::Address& a)
+{
+    const QHostAddress ip = toQHostAddress(a);
+    return a.isV4() ? QStringLiteral("%1:%2").arg(ip.toString()).arg(a.port)
+                    : QStringLiteral("[%1]:%2").arg(ip.toString()).arg(a.port);
+}
+
 QString errorName(ffi::Error e)
 {
     return QString::number(static_cast<int>(e));
@@ -251,6 +259,7 @@ bool Ed3kSession::start(const Ed3kSettings& settings)
     // was: ToDo: an upload queue and slots for ed3k (done: the engine's policy, eMule's score;
     // its slot count from BandwidthCoordinator, counted with eD2K's)
     applyUploadSlots();
+    applyIndexLinks();
     m_logLevel = -1;
     applyLogLevel();
     // hiding (hops.md §1): after hops.dat (loadState), live from the prefs
@@ -300,6 +309,8 @@ void Ed3kSession::stop()
     m_port = 0;
     m_endpoint4.clear();
     m_endpoint6.clear();
+    for (QStringList* l : {&m_relays4, &m_relays6, &m_relayIds4, &m_relayIds6})
+        l->clear();
     m_hide->detach();
     logEd3k(QStringLiteral("ed3k node stopped"));
     emit statusChanged();
@@ -376,6 +387,27 @@ Ed3kStatus Ed3kSession::status() const
     st.hide = m_hide->status();
     st.endpoint4 = m_endpoint4;
     st.endpoint6 = m_endpoint6;
+    st.relays4 = m_relays4;
+    st.relays6 = m_relays6;
+    st.relayIds4 = m_relayIds4;
+    st.relayIds6 = m_relayIds6;
+    if (const auto leaves = m_engine->relaysServed())
+        for (const auto& l : *leaves)
+            st.leavesServed.push_back({endpointText(ffi::Address::from(l.addr)), hex(l.id), l.hop != 0});
+    if (const auto links = m_engine->indexLinks(now()))
+        for (const auto& l : *links) {
+            const auto text = [](const std::uint8_t (&b)[64]) {
+                const auto n = std::find(std::begin(b), std::end(b), std::uint8_t{0}) - std::begin(b);
+                return QString::fromUtf8(reinterpret_cast<const char*>(b), qsizetype(n));
+            };
+            st.indexLinks.push_back({endpointText(ffi::Address::from(l.node.addr)), hex(l.node.id), l.state,
+                                     l.current != 0, l.tries, l.up_s, l.rtt_ms, text(l.agent), text(l.nick)});
+        }
+    if (const auto u = m_engine->kadUsers()) {
+        st.usersByTable = u->by_table;
+        st.usersByLookups = u->by_lookups;
+        st.leafPct = u->leaf_pct;
+    }
     return st;
 }
 
@@ -398,6 +430,25 @@ void Ed3kSession::setLimits(std::uint64_t upBytesPerSec, std::uint64_t downBytes
     m_limits = {upBytesPerSec, downBytesPerSec};
     applyLimits();
     pump();
+}
+
+bool Ed3kSession::addIndexLink(const QString& link)
+{
+    const QString trimmed = link.trimmed();
+    const QByteArray text = trimmed.toUtf8();
+    if (!ffi::parseNodeLink(std::string_view(text.constData(), std::size_t(text.size())))) {
+        logEd3kDebug(QStringLiteral("ed3k: index node link of a server not usable: %1").arg(trimmed));
+        return false;
+    }
+    if (m_indexLinks.contains(trimmed))
+        return true;
+    m_indexLinks.append(trimmed);
+    logEd3k(QStringLiteral("ed3k: index node named by an eD2K server: %1").arg(trimmed));
+    if (m_engine) {
+        applyIndexLinks();
+        pump();
+    }
+    return true;
 }
 
 void Ed3kSession::setUploadSlots(std::uint32_t count)
@@ -519,6 +570,19 @@ void Ed3kSession::pump()
     if (m_lan && m_engine)
         m_lan->drain();
     armTimer();
+}
+
+void Ed3kSession::addPeerBytes(::ed3k::KeyKind key, const ::ed3k::NodeId& node, std::uint64_t up, std::uint64_t down)
+{
+    PeerBytes& b = m_peerBytes[{key, node}];
+    b.up += up;
+    b.down += down;
+}
+
+Ed3kSession::PeerBytes Ed3kSession::peerBytes(::ed3k::KeyKind key, const ::ed3k::NodeId& node) const
+{
+    const auto it = m_peerBytes.find({key, node});
+    return it == m_peerBytes.end() ? PeerBytes{} : it->second;
 }
 
 // ---------------------------------------------------------------------------
@@ -656,15 +720,25 @@ void Ed3kSession::dispatch(ffi::Event& ev, ffi::KeyKind key)
         logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: IPv%1 class %2").arg(n->family).arg(n->natClass); });
         emit statusChanged();
     } else if (const auto* ep = std::get_if<e::Endpoint>(&ev)) {
-        QString text;
-        if (ep->endpoint) {
-            const QHostAddress ip = toQHostAddress(*ep->endpoint);
-            text = ep->endpoint->isV4() ? QStringLiteral("%1:%2").arg(ip.toString()).arg(ep->endpoint->port)
-                                        : QStringLiteral("[%1]:%2").arg(ip.toString()).arg(ep->endpoint->port);
-        }
+        const QString text = ep->endpoint ? endpointText(*ep->endpoint) : QString();
         (ep->family == 6 ? m_endpoint6 : m_endpoint4) = text;
         logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: IPv%1 endpoint %2").arg(ep->family)
                             .arg(text.isEmpty() ? QStringLiteral("none") : text); });
+        emit statusChanged();
+    } else if (const auto* rl = std::get_if<e::Relays>(&ev)) {
+        // §9.4: what a Kad buddy is to a firewalled eD2K client
+        const auto fill = [](const std::vector<ffi::Node>& nodes, QStringList& addrs, QStringList& ids) {
+            addrs.clear();
+            ids.clear();
+            for (const ffi::Node& n : nodes) {
+                addrs << endpointText(n.addr);
+                ids << hex(n.id.bytes);
+            }
+        };
+        fill(rl->relays4, m_relays4, m_relayIds4);
+        fill(rl->relays6, m_relays6, m_relayIds6);
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: relays IPv4 [%1] IPv6 [%2]")
+                            .arg(m_relays4.join(u' '), m_relays6.join(u' ')); });
         emit statusChanged();
     } else if (const auto* r = std::get_if<e::Router>(&ev)) {
         logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: router %1").arg(r->on ? 1 : 0); });
@@ -718,6 +792,24 @@ void Ed3kSession::applyLimits()
     const ffi::Limits l{floored(m_limits.up), floored(m_limits.down)};
     if (auto ok = m_engine->setLimits(now(), l); !ok)
         logEd3kWarning(QStringLiteral("ed3k: limits not set (error %1)").arg(errorName(ok.error())));
+}
+
+void Ed3kSession::applyIndexLinks()
+{
+    if (!m_engine)
+        return;
+    // packmule keeps one entry per node ID: repeats only refresh the address
+    for (const QString& link : std::as_const(m_indexLinks)) {
+        const QByteArray text = link.toUtf8();
+        const auto parsed = ffi::parseNodeLink(std::string_view(text.constData(), std::size_t(text.size())));
+        if (!parsed || parsed->endpoints.empty())
+            continue;
+        // its IPv4 endpoint first, else the link's first
+        const auto v4 = std::ranges::find_if(parsed->endpoints, [](const ffi::Address& a) { return a.isV4(); });
+        const ffi::Address& ep = v4 != parsed->endpoints.end() ? *v4 : parsed->endpoints.front();
+        if (auto ok = m_engine->addIndexNode(ffi::Node{parsed->id, ep}); !ok)
+            logEd3kWarning(QStringLiteral("ed3k: index node not added (error %1)").arg(errorName(ok.error())));
+    }
 }
 
 void Ed3kSession::applyUploadSlots()
@@ -953,6 +1045,8 @@ void Ed3kSession::die(ffi::Error error)
     m_port = 0;
     m_endpoint4.clear();
     m_endpoint6.clear();
+    for (QStringList* l : {&m_relays4, &m_relays6, &m_relayIds4, &m_relayIds6})
+        l->clear();
     m_hide->detach();
     emit statusChanged();
 }

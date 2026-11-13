@@ -7,6 +7,8 @@
 #include "Ed3kStore.h"
 
 #include "files/KnownFile.h"
+#include "files/PartFile.h"
+#include "prefs/Preferences.h"
 #include "utils/Log.h"
 
 #include <QDataStream>
@@ -89,6 +91,13 @@ void Ed3kDownloads::start()
         return;
     beginStart();
     scanTempDirs();   // .met files copied in meanwhile
+    // before anything is opened: a duplicate of a shared file never touches the engine
+    std::vector<ffi::Root> duplicates;
+    for (const auto& [root, e] : m_entries)
+        if (isSharedDuplicate(e))
+            duplicates.push_back(root);
+    for (const auto& root : duplicates)
+        dropSharedDuplicate(root);
     for (auto& [root, e] : m_entries) {
         if (e.info.state == Ed3kDownloadInfo::State::Downloading)
             openEntry(e);
@@ -135,6 +144,11 @@ std::expected<void, QString> Ed3kDownloads::add(const Ed3kDownloadSpec& spec)
         return std::unexpected(tr("The ed3k file has no size."));
     if (m_entries.contains(spec.root))
         return std::unexpected(tr("This ed3k file is in the download list already."));
+    // a file of the share list: nothing to download (its engine record would be downgraded)
+    if ((spec.owner.isEmpty() || spec.owner == kOwner) && m_sharedElsewhere && m_sharedElsewhere(spec.root)) {
+        logInfo(QStringLiteral("download of %1 refused: shared already").arg(hexOf(spec.root.bytes)));
+        return std::unexpected(tr("You share this ed3k file already."));
+    }
     QString name = safeName(spec.name);
     if (name.isEmpty())
         name = hexOf(spec.root.bytes);
@@ -279,6 +293,17 @@ bool Ed3kDownloads::setPriority(const ffi::Root& root, int priority)
     return true;
 }
 
+bool Ed3kDownloads::setPreviewPrio(const ffi::Root& root, bool on)
+{
+    Entry* e = entryOf(root);
+    if (!e)
+        return false;
+    e->info.previewPrio = on;
+    touch(*e);
+    markChanged();
+    return true;
+}
+
 bool Ed3kDownloads::setCategory(const ffi::Root& root, int category)
 {
     Entry* e = entryOf(root);
@@ -353,11 +378,15 @@ std::optional<Ed3kDownloadInfo> Ed3kDownloads::info(const ffi::Root& root) const
     return i;
 }
 
-void Ed3kDownloads::releaseShare(const ffi::Root& root)
+bool Ed3kDownloads::releaseShare(const ffi::Root& root)
 {
     Entry* e = entryOf(root);
+    if (e && isSharedDuplicate(*e)) {
+        dropSharedDuplicate(root);
+        return true;
+    }
     if (!e || e->info.state != Ed3kDownloadInfo::State::Complete)
-        return;
+        return false;
     if (isShared(root))
         forgetShare(root);
     if (!e->sharedByList) {
@@ -365,6 +394,7 @@ void Ed3kDownloads::releaseShare(const ffi::Root& root)
         logDebug([&]() -> QString { return QStringLiteral("\"%1\" is served by the share list now").arg(e->info.name); });
         touch(*e);
     }
+    return false;
 }
 
 QString Ed3kDownloads::statePath() const
@@ -417,6 +447,17 @@ std::vector<std::uint64_t> Ed3kDownloads::wantedBlocks(const Download& d) const
     for (std::size_t i = 0; i < e->have.size(); ++i)
         if (!e->have[i])
             wanted.push_back(std::uint64_t(i) * kBlock);
+    // preview parts first: eD2K's first + last part (PartFile::getNextRequestedBlock)
+    const std::uint64_t size = e->info.size;
+    const bool preview = (thePrefs.previewPrio() || (e->info.previewPrio && thePrefs.showExtControls()))
+        && size > 2 * PARTSIZE && PartFile::previewNeedsLastPart(e->info.name);
+    if (preview) {
+        const std::uint64_t parts = (size + PARTSIZE - 1) / PARTSIZE;
+        std::uint64_t tail = (parts - 1) * PARTSIZE;
+        if (size - tail < PARTSIZE / 3)   // a tiny last part pulls in the one before
+            tail -= PARTSIZE;
+        std::ranges::stable_partition(wanted, [&](std::uint64_t off) { return off < PARTSIZE || off >= tail; });
+    }
     return wanted;
 }
 
@@ -844,6 +885,11 @@ std::optional<Ed3kDownloads::Entry> Ed3kDownloads::readMet(const QString& metPat
     Entry e;
     in >> root >> size >> e.info.name >> e.info.owner >> category >> priority >> state >> targetKind >> target >> have
         >> addedOn >> e.info.error;
+    if (in.status() == QDataStream::Ok && !in.atEnd()) {
+        quint8 flags = 0;
+        in >> flags;
+        e.info.previewPrio = (flags & 1) != 0;
+    }
     const auto r = rootFrom(root);
     if (in.status() != QDataStream::Ok || !r || size == 0 || state < 0 || state > int(Ed3kDownloadInfo::State::Failed)
         || Ed3kDownloadInfo::State(state) == Ed3kDownloadInfo::State::Complete)
@@ -897,7 +943,8 @@ void Ed3kDownloads::writeMet(Entry& e)
         out.setVersion(QDataStream::Qt_6_0);
         out << kMetMagic << kMetVersion << rootBytes(e.info.root) << quint64(e.info.size) << e.info.name << e.info.owner
             << qint32(e.info.category) << qint32(e.info.priority) << qint32(int(state)) << quint8(kind) << target
-            << packBits(e.have) << qint64(e.info.addedOn) << e.info.error;
+            << packBits(e.have) << qint64(e.info.addedOn) << e.info.error
+            << quint8(e.info.previewPrio ? 1 : 0);   // flags (bit 0 preview); older .met: none
     }
     const QString path = metPathOf(e);
     QDir().mkpath(QFileInfo(path).absolutePath());
@@ -923,6 +970,19 @@ QString Ed3kDownloads::freePath(const QString& path)
             return candidate;
     }
     return path;
+}
+
+bool Ed3kDownloads::isSharedDuplicate(const Entry& e) const
+{
+    return e.info.owner == kOwner && e.info.state != Ed3kDownloadInfo::State::Complete && m_sharedElsewhere
+        && m_sharedElsewhere(e.info.root);
+}
+
+void Ed3kDownloads::dropSharedDuplicate(const ffi::Root& root)
+{
+    if (const Entry* e = entryOf(root))
+        logInfo(QStringLiteral("download of \"%1\" dropped: the file is shared already").arg(e->info.name));
+    (void)cancel(root);
 }
 
 } // namespace eMule::ed3k

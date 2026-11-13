@@ -25,6 +25,8 @@ public:
         bool torrent = true;
         bool web = true;      ///< web link sets and link containers
         bool ed3kHidden = false;   ///< ed3k rows a filter list hides (filter-list §3: shown on request)
+        /// a release's file rows only when the name holds every search keyword; the release row stays
+        bool hideRelatedContent = false;
 
         bool operator==(const NetworkFilter&) const = default;
     };
@@ -38,6 +40,15 @@ public:
     /// only — a file that stays keeps all its name rows (MFC IsFilteredOut).
     void setTextFilter(const QStringList& tokens, int column);
 
+    /// Keywords of the tab's search, for NetworkFilter::hideRelatedContent.
+    void setKeywords(const QStringList& keywords);
+
+    /// The plain keywords of a search expression, folded (see foldForMatch()). Empty
+    /// when it has OR or brackets: no single list of words then.
+    [[nodiscard]] static QStringList keywordsOf(const QString& expression);
+    /// Lower case, every run of non letters/digits one space: "VMware.Fusion" → "vmware fusion".
+    [[nodiscard]] static QString foldForMatch(const QString& text);
+
     /// Source rows the filter keeps out of the list.
     [[nodiscard]] int hiddenCount() const;
 
@@ -48,6 +59,7 @@ protected:
 private:
     NetworkFilter m_filter;
     QStringList m_tokens;
+    QStringList m_keywords;   ///< folded
     int m_tokenColumn = 0;
 };
 

@@ -2882,13 +2882,14 @@ I suoi download mantengono i file e passano a Tutti.</translation>
 <context>
     <name>eMule::ClientDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+93"/>
-        <location line="+20"/>
+        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+160"/>
+        <location line="+21"/>
         <source>Client Details: %1</source>
         <translation>Dettagli client: %1</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+37"/>
+        <location line="+166"/>
         <source>General</source>
         <translation>Generale</translation>
     </message>
@@ -2901,7 +2902,7 @@ I suoi download mantengono i file e passano a Tutti.</translation>
         <translation type="vanished">Hash utente</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="-154"/>
         <source>ID</source>
         <translation>ID</translation>
     </message>
@@ -2920,7 +2921,8 @@ I suoi download mantengono i file e passano a Tutti.</translation>
         <translation type="vanished">Software client</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+7"/>
+        <location line="+174"/>
         <source>Country</source>
         <translation>Paese</translation>
     </message>
@@ -2929,22 +2931,24 @@ I suoi download mantengono i file e passano a Tutti.</translation>
         <translation type="vanished">Server</translation>
     </message>
     <message>
-        <location line="-18"/>
+        <location line="-182"/>
+        <location line="+164"/>
         <source>Name</source>
         <translation>Nome</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-162"/>
         <source>Hash</source>
         <translation>Hash</translation>
     </message>
     <message>
         <location line="+3"/>
+        <location line="+171"/>
         <source>Software</source>
         <translation>Software</translation>
     </message>
     <message>
-        <location line="+37"/>
+        <location line="-144"/>
         <source>Server IP</source>
         <translation>IP server</translation>
     </message>
@@ -3028,37 +3032,52 @@ I suoi download mantengono i file e passano a Tutti.</translation>
         <translation>Kad</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="-180"/>
+        <source>anonymous (ed3k)</source>
+        <translation>anonimo (ed3k)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>%1 (ed3k)</source>
+        <translation>%1 (ed3k)</translation>
+    </message>
+    <message>
+        <location line="+179"/>
+        <location line="+173"/>
         <source>Connected</source>
         <translation>Connesso</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="-173"/>
         <source>Disconnected</source>
         <translation>Disconnesso</translation>
     </message>
     <message>
         <location line="+66"/>
+        <location line="+126"/>
         <source>Currently downloading</source>
         <translation>Sta scaricando</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-124"/>
+        <location line="+146"/>
         <source>Requested to upload</source>
         <translation>Richiesto per l&apos;upload</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-143"/>
+        <location line="+156"/>
         <source>Downloaded (this session)</source>
         <translation>Scaricato (questa sessione)</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-154"/>
+        <location line="+155"/>
         <source>Uploaded (this session)</source>
         <translation>Caricato (questa sessione)</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="-150"/>
         <source>Average Downloadrate</source>
         <translation>Velocità media di download</translation>
     </message>
@@ -3093,11 +3112,145 @@ I suoi download mantengono i file e passano a Tutti.</translation>
         <translation>Punteggio nella coda di upload</translation>
     </message>
     <message>
+        <location line="+31"/>
+        <source>anonymous</source>
+        <translation>anonimo</translation>
+    </message>
+    <message>
+        <source>ed3k Key</source>
+        <translation type="vanished">Chiave ed3k</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Anonymous</source>
+        <translation>Anonima</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Node</source>
+        <translation>Nodo</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>It downloads from our anonymous node: a second key of ours, reached through a path of other nodes. Neither side sees the other&apos;s IP address.</source>
+        <translation>Scarica dal nostro nodo anonimo: una seconda chiave nostra, raggiunta tramite un percorso di altri nodi. Nessuna delle due parti vede l&apos;indirizzo IP dell&apos;altra.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>It downloads from our node key: the key our node ID is made from. It connects to us directly and sees our IP address.</source>
+        <translation>Scarica dalla nostra chiave di nodo: la chiave da cui deriva il nostro ID nodo. Si connette direttamente a noi e vede il nostro indirizzo IP.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Node ID</source>
+        <translation>ID nodo</translation>
+    </message>
+    <message>
+        <location line="+55"/>
+        <source>Download state</source>
+        <translation>Stato download</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Available parts</source>
+        <translation>Parti disponibili</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Ratio (UL/DL)</source>
+        <translation>Rapporto (UL/DL)</translation>
+    </message>
+    <message>
+        <source>Address</source>
+        <translation type="vanished">Indirizzo</translation>
+    </message>
+    <message>
+        <location line="-58"/>
+        <source>hidden</source>
+        <translation>nascosto</translation>
+    </message>
+    <message>
+        <location line="-4"/>
+        <location line="+7"/>
+        <location line="+2"/>
+        <location line="+32"/>
+        <source>No</source>
+        <translation>No</translation>
+    </message>
+    <message>
+        <location line="-55"/>
+        <source>ed3k Type</source>
+        <translation>Tipo ed3k</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>eD2K</source>
+        <translation>eD2K</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>LAN</source>
+        <translation>LAN</translation>
+    </message>
+    <message>
+        <location line="+18"/>
+        <source>File size</source>
+        <translation>Dimensione file</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Root hash</source>
+        <translation>Hash radice</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Upload state</source>
+        <translation>Stato upload</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <location line="+18"/>
+        <source>Transferring</source>
+        <translation>Trasferimento</translation>
+    </message>
+    <message>
+        <location line="-17"/>
+        <source>On queue (place %1)</source>
+        <translation>In coda (posizione %1)</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <location line="+17"/>
+        <source>On queue</source>
+        <translation>In coda</translation>
+    </message>
+    <message>
+        <location line="-15"/>
+        <source>Upload time</source>
+        <translation>Tempo di upload</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Waiting time</source>
+        <translation>Tempo di attesa</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Downloaded (this turn)</source>
+        <translation>Scaricato (questo turno)</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Turn ending</source>
+        <translation>Turno in chiusura</translation>
+    </message>
+    <message>
         <source>Not connected</source>
         <translation type="vanished">Non connesso</translation>
     </message>
     <message>
-        <location line="-66"/>
+        <location line="-152"/>
+        <location line="+128"/>
         <source>Transfer</source>
         <translation>Trasferimento</translation>
     </message>
@@ -3130,7 +3283,7 @@ I suoi download mantengono i file e passano a Tutti.</translation>
         <translation type="vanished">Caricato (totale)</translation>
     </message>
     <message>
-        <location line="+39"/>
+        <location line="-89"/>
         <source>Scores</source>
         <translation>Punteggi</translation>
     </message>
@@ -3152,8 +3305,12 @@ I suoi download mantengono i file e passano a Tutti.</translation>
         <translation type="vanished">Slot amico</translation>
     </message>
     <message>
+        <location line="+64"/>
+        <location line="+7"/>
+        <location line="+2"/>
+        <location line="+32"/>
         <source>Yes</source>
-        <translation type="vanished">Sì</translation>
+        <translation>Sì</translation>
     </message>
 </context>
 <context>
@@ -15598,19 +15755,21 @@ Scaricarlo di nuovo?</translation>
         <location line="+6"/>
         <location line="+188"/>
         <location line="+120"/>
+        <location line="+195"/>
         <source>Connected</source>
         <translation>Connesso</translation>
     </message>
     <message>
-        <location line="-306"/>
+        <location line="-501"/>
         <location line="+145"/>
         <location line="+39"/>
         <location line="+122"/>
+        <location line="+194"/>
         <source>Connecting</source>
         <translation>Connessione</translation>
     </message>
     <message>
-        <location line="-304"/>
+        <location line="-498"/>
         <location line="+145"/>
         <source>Disconnected</source>
         <translation>Disconnesso</translation>
@@ -15621,42 +15780,46 @@ Scaricarlo di nuovo?</translation>
         <location line="+117"/>
         <location line="+35"/>
         <location line="+6"/>
-        <location line="+66"/>
+        <location line="+111"/>
         <location line="+5"/>
+        <location line="+83"/>
         <source>Status:</source>
         <translation>Stato:</translation>
     </message>
     <message>
-        <location line="-368"/>
+        <location line="-496"/>
         <location line="+65"/>
         <location line="+156"/>
+        <location line="+134"/>
         <source>Users:</source>
         <translation>Utenti:</translation>
     </message>
     <message>
-        <location line="-220"/>
+        <location line="-354"/>
         <location line="+66"/>
         <location line="+156"/>
+        <location line="+135"/>
         <source>Files:</source>
         <translation>File:</translation>
     </message>
     <message>
-        <location line="-215"/>
+        <location line="-350"/>
         <location line="+304"/>
-        <location line="+62"/>
+        <location line="+107"/>
         <source>Unknown</source>
         <translation>Sconosciuto</translation>
     </message>
     <message>
-        <location line="-366"/>
+        <location line="-411"/>
         <location line="+2"/>
         <location line="+50"/>
         <location line="+98"/>
+        <location line="+329"/>
         <source>IP:Port:</source>
         <translation>IP:Porta:</translation>
     </message>
     <message>
-        <location line="-143"/>
+        <location line="-472"/>
         <location line="+147"/>
         <source>ID:</source>
         <translation>ID:</translation>
@@ -15714,31 +15877,35 @@ Scaricarlo di nuovo?</translation>
     </message>
     <message>
         <location line="+2"/>
+        <location line="+430"/>
         <source>Name:</source>
         <translation>Nome:</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-428"/>
         <source>Description:</source>
         <translation>Descrizione:</translation>
     </message>
     <message>
         <location line="+5"/>
+        <location line="+437"/>
         <source>Version:</source>
         <translation>Versione:</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="-429"/>
+        <location line="+293"/>
         <source>Connections:</source>
         <translation>Connessioni:</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-292"/>
+        <location line="+293"/>
         <source>Obfuscated</source>
         <translation>Offuscato</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="-293"/>
         <source>Normal</source>
         <translation>Normale</translation>
     </message>
@@ -15749,16 +15916,18 @@ Scaricarlo di nuovo?</translation>
     </message>
     <message>
         <location line="+2"/>
+        <location line="+426"/>
         <source>Ping:</source>
         <translation>Ping:</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-425"/>
+        <location line="+425"/>
         <source>%1 ms</source>
         <translation>%1 ms</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="-419"/>
         <source>eD2K Server Features</source>
         <translation>Funzionalità del server eD2K</translation>
     </message>
@@ -15836,20 +16005,20 @@ Scaricarlo di nuovo?</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+210"/>
-        <location line="+99"/>
+        <location line="+211"/>
+        <location line="+143"/>
         <source>Yes</source>
         <translation>Sì</translation>
     </message>
     <message>
-        <location line="-309"/>
-        <location line="+210"/>
-        <location line="+99"/>
+        <location line="-354"/>
+        <location line="+211"/>
+        <location line="+143"/>
         <source>No</source>
         <translation>No</translation>
     </message>
     <message>
-        <location line="-295"/>
+        <location line="-340"/>
         <source>Kad Network</source>
         <translation>Rete Kad</translation>
     </message>
@@ -15875,21 +16044,24 @@ Scaricarlo di nuovo?</translation>
     </message>
     <message>
         <location line="+3"/>
+        <location line="+151"/>
         <source>Buddies served:</source>
         <translation>Buddy serviti:</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="-121"/>
+        <location line="+133"/>
         <source>%1 (Experimental: %2)</source>
         <translation>%1 (sperimentale: %2)</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="-126"/>
+        <location line="+137"/>
         <source>Indexed:</source>
         <translation>Indicizzati:</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-136"/>
         <source>Source:</source>
         <translation>Fonte:</translation>
     </message>
@@ -15943,12 +16115,12 @@ Scaricarlo di nuovo?</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+72"/>
+        <location line="+117"/>
         <source>Not running</source>
         <translation>Non in esecuzione</translation>
     </message>
     <message>
-        <location line="-58"/>
+        <location line="-103"/>
         <source>Offline</source>
         <translation>Offline</translation>
     </message>
@@ -15973,23 +16145,29 @@ Scaricarlo di nuovo?</translation>
         <translation>IPv4:</translation>
     </message>
     <message>
-        <location line="+2"/>
-        <location line="+68"/>
+        <location line="+3"/>
+        <location line="+112"/>
         <source>Router:</source>
         <translation>Router:</translation>
     </message>
     <message>
-        <location line="-67"/>
+        <location line="-104"/>
+        <source>Relays:</source>
+        <translation>Relay:</translation>
+    </message>
+    <message>
+        <location line="+20"/>
         <source>Contacts:</source>
         <translation>Contatti:</translation>
     </message>
     <message>
         <location line="+1"/>
+        <location line="+136"/>
         <source>Node ID:</source>
         <translation>ID nodo:</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="-108"/>
         <source>Shared Files</source>
         <translation>File condivisi</translation>
     </message>
@@ -16137,7 +16315,27 @@ Scaricarlo di nuovo?</translation>
         <translation>%1 (%2 peer)</translation>
     </message>
     <message>
-        <location line="-384"/>
+        <location line="+16"/>
+        <source>ed3k Index Node</source>
+        <translation>Nodo indice ed3k</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Given up</source>
+        <translation>Abbandonato</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Waiting</source>
+        <translation>In attesa</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Index nodes:</source>
+        <translation>Nodi indice:</translation>
+    </message>
+    <message>
+        <location line="-467"/>
         <location line="+94"/>
         <location line="+15"/>
         <source>Firewalled</source>
@@ -16159,13 +16357,14 @@ Scaricarlo di nuovo?</translation>
     </message>
     <message>
         <location line="+36"/>
+        <location line="+144"/>
         <source>None</source>
         <translation>Nessuno</translation>
     </message>
     <message>
-        <location line="+66"/>
+        <location line="-78"/>
         <location line="+39"/>
-        <location line="+72"/>
+        <location line="+117"/>
         <source>Disabled</source>
         <translation>Disabilitato</translation>
     </message>
@@ -21797,15 +21996,15 @@ Le parole chiave per la ricerca sulla rete Kad devono avere un minimo di 3 carat
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+393"/>
-        <location line="+1244"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+406"/>
+        <location line="+1253"/>
         <location line="+21"/>
-        <location line="+602"/>
+        <location line="+603"/>
         <source>Download</source>
         <translation>Download</translation>
     </message>
     <message>
-        <location line="-1847"/>
+        <location line="-1857"/>
         <source>Close All Searches</source>
         <translation>Chiudi tutte le ricerche</translation>
     </message>
@@ -21825,7 +22024,7 @@ Le parole chiave per la ricerca sulla rete Kad devono avere un minimo di 3 carat
         <translation>Tipo:</translation>
     </message>
     <message>
-        <location line="+850"/>
+        <location line="+858"/>
         <location line="+9"/>
         <source>Any</source>
         <translation>Qualsiasi</translation>
@@ -21872,7 +22071,7 @@ Le parole chiave per la ricerca sulla rete Kad devono avere un minimo di 3 carat
         <translation>Collezione</translation>
     </message>
     <message>
-        <location line="-862"/>
+        <location line="-870"/>
         <source>Method:</source>
         <translation>Metodo:</translation>
     </message>
@@ -21927,12 +22126,12 @@ Le parole chiave per la ricerca sulla rete Kad devono avere un minimo di 3 carat
         <translation>Ripristina</translation>
     </message>
     <message>
-        <location line="+38"/>
+        <location line="+39"/>
         <source>Web results</source>
         <translation>Risultati web</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+27"/>
         <source>Min. Size [MB]:</source>
         <translation>Dim. min. [MB]:</translation>
     </message>
@@ -21962,7 +22161,7 @@ Le parole chiave per la ricerca sulla rete Kad devono avere un minimo di 3 carat
         <translation>Codec:</translation>
     </message>
     <message>
-        <location line="+3017"/>
+        <location line="+3040"/>
         <source>ed3k download added: %1</source>
         <translation>Download ed3k aggiunto: %1</translation>
     </message>
@@ -21976,7 +22175,7 @@ Le parole chiave per la ricerca sulla rete Kad devono avere un minimo di 3 carat
         <translation type="vanished">Bitrate min. [kbps]:</translation>
     </message>
     <message>
-        <location line="-3010"/>
+        <location line="-3033"/>
         <source>Min. Length [s]:</source>
         <translation>Durata min. [s]:</translation>
     </message>
@@ -21996,12 +22195,12 @@ Le parole chiave per la ricerca sulla rete Kad devono avere un minimo di 3 carat
         <translation>Artista:</translation>
     </message>
     <message>
-        <location line="-87"/>
+        <location line="-94"/>
         <source>Show results the server found on this network</source>
         <translation>Mostra i risultati che il server ha trovato su questa rete</translation>
     </message>
     <message>
-        <location line="-260"/>
+        <location line="-261"/>
         <source>ed3k Channel (live)</source>
         <translation>Canale ed3k (live)</translation>
     </message>
@@ -22011,7 +22210,7 @@ Le parole chiave per la ricerca sulla rete Kad devono avere un minimo di 3 carat
         <translation>Correlati</translation>
     </message>
     <message>
-        <location line="+219"/>
+        <location line="+220"/>
         <source>Usenet results</source>
         <translation>Risultati Usenet</translation>
     </message>
@@ -22024,6 +22223,16 @@ Le parole chiave per la ricerca sulla rete Kad devono avere un minimo di 3 carat
         <location line="+2"/>
         <source>Torrent results</source>
         <translation>Risultati torrent</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Hide related folder content</source>
+        <translation>Nascondi contenuto della cartella correlata</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Hide the files of a torrent, Usenet or web release whose name lacks a search keyword. The release itself stays.</source>
+        <translation>Nascondi i file di una release torrent, Usenet o web il cui nome non contiene una parola chiave della ricerca. La release stessa resta.</translation>
     </message>
     <message>
         <location line="+56"/>
@@ -22120,12 +22329,12 @@ Le parole chiave per la ricerca sulla rete Kad devono avere un minimo di 3 carat
         <translation>Ricerca «%1» non riuscita: %2</translation>
     </message>
     <message>
-        <location line="-725"/>
+        <location line="-746"/>
         <source>Usenet search</source>
         <translation>Ricerca Usenet</translation>
     </message>
     <message>
-        <location line="+969"/>
+        <location line="+990"/>
         <source>%1 results — %2 of %3 indexers</source>
         <translation>%1 risultati — %2 di %3 indexer</translation>
     </message>
@@ -22151,7 +22360,7 @@ Le parole chiave per la ricerca sulla rete Kad devono avere un minimo di 3 carat
         <translation>&quot;%1&quot; messo in coda per il download da Usenet.</translation>
     </message>
     <message>
-        <location line="+162"/>
+        <location line="+163"/>
         <source>Restore Search Parameters</source>
         <translation>Ripristina parametri di ricerca</translation>
     </message>
@@ -22219,22 +22428,30 @@ Le parole chiave per la ricerca sulla rete Kad devono avere un minimo di 3 carat
         <translation>Dettagli...</translation>
     </message>
     <message>
-        <location line="-1574"/>
+        <location line="-1596"/>
         <source>Torrent search</source>
         <translation>Ricerca torrent</translation>
     </message>
     <message>
-        <location line="+332"/>
+        <location line="+345"/>
         <source>Torrent (Indexer)</source>
         <translation>Torrent (Indexer)</translation>
     </message>
     <message>
-        <location line="+38"/>
+        <location line="+39"/>
         <source>Show results the server found on this network. New eD2K and Kad searches also ask the servers&apos; catalogues of it.</source>
         <translation>Mostra i risultati che il server ha trovato su questa rete. Le nuove ricerche eD2K e Kad interrogano anche i cataloghi dei server.</translation>
     </message>
     <message>
-        <location line="+95"/>
+        <source>Matching files only</source>
+        <translation type="vanished">Solo file corrispondenti</translation>
+    </message>
+    <message>
+        <source>Of a torrent, Usenet or web release, list only the files whose name holds every search keyword. The release itself stays.</source>
+        <translation type="vanished">Di una release torrent, Usenet o web, elenca solo i file il cui nome contiene ogni parola chiave della ricerca. La release stessa resta.</translation>
+    </message>
+    <message>
+        <location line="+102"/>
         <source>Season:</source>
         <translation>Stagione:</translation>
     </message>
@@ -22329,7 +22546,7 @@ Le parole chiave per la ricerca sulla rete Kad devono avere un minimo di 3 carat
         <translation>Altro</translation>
     </message>
     <message>
-        <location line="+230"/>
+        <location line="+231"/>
         <location line="+139"/>
         <source>Save NZB File...</source>
         <translation>Salva file NZB...</translation>
@@ -22372,13 +22589,13 @@ Le parole chiave per la ricerca sulla rete Kad devono avere un minimo di 3 carat
     <message>
         <location line="+69"/>
         <location line="+7"/>
-        <location line="+1079"/>
+        <location line="+1084"/>
         <location line="+43"/>
         <source>Preview</source>
         <translation>Anteprima</translation>
     </message>
     <message>
-        <location line="-715"/>
+        <location line="-719"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -22387,7 +22604,7 @@ Le parole chiave per la ricerca sulla rete Kad devono avere un minimo di 3 carat
 %1</translation>
     </message>
     <message>
-        <location line="+673"/>
+        <location line="+677"/>
         <source>Preview requested - please wait</source>
         <translation>Anteprima richiesta - attendere</translation>
     </message>
@@ -22397,7 +22614,7 @@ Le parole chiave per la ricerca sulla rete Kad devono avere un minimo di 3 carat
         <translation>%1 non ha inviato alcuna anteprima</translation>
     </message>
     <message>
-        <location line="+397"/>
+        <location line="+406"/>
         <source>Asking servers: %1 / %2</source>
         <translation>Interrogazione server: %1 / %2</translation>
     </message>
@@ -22407,7 +22624,17 @@ Le parole chiave per la ricerca sulla rete Kad devono avere un minimo di 3 carat
         <translation>Tutti</translation>
     </message>
     <message>
-        <location line="+222"/>
+        <location line="+194"/>
+        <source>You share &quot;%1&quot; already.</source>
+        <translation>Condividi già &quot;%1&quot;.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>&quot;%1&quot; is downloading already.</source>
+        <translation>&quot;%1&quot; è già in download.</translation>
+    </message>
+    <message>
+        <location line="+35"/>
         <source>ed3k Filter</source>
         <translation>Filtro ed3k</translation>
     </message>
@@ -22469,7 +22696,7 @@ Le parole chiave per la ricerca sulla rete Kad devono avere un minimo di 3 carat
         <translation>Mostra righe nascoste dalle liste di filtri</translation>
     </message>
     <message>
-        <location line="-1888"/>
+        <location line="-1910"/>
         <location line="+15"/>
         <location line="+10"/>
         <source>Mark as Spam</source>
@@ -22512,7 +22739,7 @@ Le parole chiave per la ricerca sulla rete Kad devono avere un minimo di 3 carat
         <translation>Servizi web</translation>
     </message>
     <message>
-        <location line="+1084"/>
+        <location line="+1089"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Anteprima non disponibile — il server web non è in esecuzione o il token di streaming non è stato ricevuto.</translation>
     </message>
@@ -28489,7 +28716,7 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+830"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+832"/>
         <source>Downloads</source>
         <translation>Download</translation>
     </message>
@@ -28501,78 +28728,78 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
     </message>
     <message>
         <location line="-312"/>
-        <location line="+2234"/>
+        <location line="+2235"/>
         <location line="+196"/>
         <source>Low</source>
         <translation>Bassa</translation>
     </message>
     <message>
-        <location line="-2429"/>
-        <location line="+2233"/>
+        <location line="-2430"/>
+        <location line="+2234"/>
         <location line="+197"/>
         <source>Normal</source>
         <translation>Normale</translation>
     </message>
     <message>
-        <location line="-2429"/>
-        <location line="+2232"/>
+        <location line="-2430"/>
+        <location line="+2233"/>
         <location line="+198"/>
         <source>High</source>
         <translation>Alta</translation>
     </message>
     <message>
-        <location line="-2426"/>
-        <location line="+2430"/>
+        <location line="-2427"/>
+        <location line="+2431"/>
         <source>Very Low</source>
         <translation>Molto bassa</translation>
     </message>
     <message>
-        <location line="-2428"/>
-        <location line="+2430"/>
+        <location line="-2429"/>
+        <location line="+2431"/>
         <source>Very High</source>
         <translation>Molto alta</translation>
     </message>
     <message>
-        <location line="-2428"/>
-        <location line="+2431"/>
+        <location line="-2429"/>
+        <location line="+2432"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-2420"/>
+        <location line="-2421"/>
         <location line="+291"/>
         <location line="+491"/>
-        <location line="+1445"/>
+        <location line="+1446"/>
         <source>Pause</source>
         <translation>Pausa</translation>
     </message>
     <message>
-        <location line="-2218"/>
+        <location line="-2219"/>
         <location line="+282"/>
         <location line="+497"/>
-        <location line="+1441"/>
+        <location line="+1442"/>
         <source>Stop</source>
         <translation>Ferma</translation>
     </message>
     <message>
-        <location line="-2211"/>
+        <location line="-2212"/>
         <location line="+273"/>
         <location line="+503"/>
-        <location line="+1437"/>
+        <location line="+1438"/>
         <source>Resume</source>
         <translation>Riprendi</translation>
     </message>
     <message>
-        <location line="-2200"/>
+        <location line="-2201"/>
         <location line="+260"/>
         <location line="+509"/>
-        <location line="+1433"/>
+        <location line="+1434"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>Annulla</translation>
     </message>
     <message>
-        <location line="-2173"/>
+        <location line="-2174"/>
         <source>Preview with</source>
         <translation>Anteprima con</translation>
     </message>
@@ -28593,14 +28820,14 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1516"/>
+        <location line="+1517"/>
         <location line="+1"/>
         <location line="+10"/>
         <source>Import parts to file...</source>
         <translation>Importa parti nel file...</translation>
     </message>
     <message>
-        <location line="-1522"/>
+        <location line="-1523"/>
         <source>Mass Rename...</source>
         <translation>Rinomina multipla...</translation>
     </message>
@@ -28616,12 +28843,12 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1423"/>
+        <location line="+1424"/>
         <source>Source Limit...</source>
         <translation>Limite fonti...</translation>
     </message>
     <message>
-        <location line="-1420"/>
+        <location line="-1421"/>
         <source>Swap All A4AF Sources to This File</source>
         <translation>Sposta tutte le fonti A4AF su questo file</translation>
     </message>
@@ -28709,7 +28936,7 @@ Le fonti vedranno l&apos;indirizzo di questo nodo; le posizioni in coda vanno pe
         <translation>Chiave ed3k</translation>
     </message>
     <message>
-        <location line="+341"/>
+        <location line="+342"/>
         <source>not connected</source>
         <translation>non connesso</translation>
     </message>
@@ -28766,23 +28993,24 @@ Le fonti vedranno l&apos;indirizzo di questo nodo; le posizioni in coda vanno pe
         <translation>Scarica in ordine alfabetico</translation>
     </message>
     <message>
-        <location line="+201"/>
+        <location line="+206"/>
+        <location line="+134"/>
         <source>Copy ed3k Node ID</source>
         <translation>Copia Node ID ed3k</translation>
     </message>
     <message>
-        <location line="+70"/>
-        <location line="+103"/>
+        <location line="-64"/>
+        <location line="+117"/>
         <source>cannot view shared files.</source>
         <translation>impossibile visualizzare i file condivisi.</translation>
     </message>
     <message>
-        <location line="-90"/>
+        <location line="-104"/>
         <source>Unban</source>
         <translation>Sbanna</translation>
     </message>
     <message>
-        <location line="+124"/>
+        <location line="+138"/>
         <source>Bootstrap</source>
         <translation>Bootstrap</translation>
     </message>
@@ -28826,30 +29054,32 @@ Le fonti vedranno l&apos;indirizzo di questo nodo; le posizioni in coda vanno pe
         <translation type="vanished">Nome file:</translation>
     </message>
     <message>
-        <location line="-2838"/>
+        <location line="-2858"/>
         <location line="+245"/>
         <location line="+515"/>
-        <location line="+682"/>
+        <location line="+683"/>
         <source>Open File</source>
         <translation>Apri file</translation>
     </message>
     <message>
-        <location line="-1433"/>
+        <location line="-1434"/>
         <location line="+2"/>
         <location line="+763"/>
-        <location line="+725"/>
+        <location line="+726"/>
         <source>Preview</source>
         <translation>Anteprima</translation>
     </message>
     <message>
-        <location line="-1451"/>
-        <location line="+2373"/>
-        <location line="+118"/>
+        <location line="-1452"/>
+        <location line="+2361"/>
+        <location line="+18"/>
+        <location line="+116"/>
+        <location line="+16"/>
         <source>Details...</source>
         <translation>Dettagli...</translation>
     </message>
     <message>
-        <location line="-2482"/>
+        <location line="-2502"/>
         <source>Comments...</source>
         <translation>Commenti...</translation>
     </message>
@@ -28874,14 +29104,14 @@ Le fonti vedranno l&apos;indirizzo di questo nodo; le posizioni in coda vanno pe
     <message>
         <location line="-64"/>
         <location line="+64"/>
-        <location line="+2164"/>
+        <location line="+2170"/>
         <location line="+113"/>
-        <location line="+72"/>
+        <location line="+86"/>
         <source>Find...</source>
         <translation>Cerca...</translation>
     </message>
     <message>
-        <location line="-2405"/>
+        <location line="-2425"/>
         <source>Search Related Files</source>
         <translation>Cerca file correlati</translation>
     </message>
@@ -28906,7 +29136,7 @@ Le fonti vedranno l&apos;indirizzo di questo nodo; le posizioni in coda vanno pe
         <translation type="vanished">Tutti</translation>
     </message>
     <message>
-        <location line="+1288"/>
+        <location line="+1289"/>
         <source>Uploading</source>
         <translation>In upload</translation>
     </message>
@@ -28926,7 +29156,7 @@ Le fonti vedranno l&apos;indirizzo di questo nodo; le posizioni in coda vanno pe
         <translation>Client conosciuti</translation>
     </message>
     <message>
-        <location line="-1404"/>
+        <location line="-1405"/>
         <source>Clients on queue:   0</source>
         <translation>Client in coda:   0</translation>
     </message>
@@ -28938,12 +29168,12 @@ Le fonti vedranno l&apos;indirizzo di questo nodo; le posizioni in coda vanno pe
     </message>
     <message>
         <location line="-83"/>
-        <location line="+1434"/>
+        <location line="+1435"/>
         <source>Priority</source>
         <translation>Priorità</translation>
     </message>
     <message>
-        <location line="-1397"/>
+        <location line="-1398"/>
         <source>Open Folder</source>
         <translation>Apri cartella</translation>
     </message>
@@ -28973,7 +29203,7 @@ Le fonti vedranno l&apos;indirizzo di questo nodo; le posizioni in coda vanno pe
         <translation>Trova</translation>
     </message>
     <message>
-        <location line="+638"/>
+        <location line="+639"/>
         <location line="+23"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Anteprima non disponibile — il server web non è in esecuzione o il token di streaming non è stato ricevuto.</translation>
@@ -29037,14 +29267,14 @@ Le fonti vedranno l&apos;indirizzo di questo nodo; le posizioni in coda vanno pe
         <translation type="vanished">Apri cartella in arrivo</translation>
     </message>
     <message>
-        <location line="+236"/>
-        <location line="+112"/>
+        <location line="+241"/>
+        <location line="+126"/>
         <source>Add To Friends</source>
         <translation>Aggiungi agli amici</translation>
     </message>
     <message>
-        <location line="-88"/>
-        <location line="+113"/>
+        <location line="-102"/>
+        <location line="+127"/>
         <source>Send Message</source>
         <translation>Invia messaggio</translation>
     </message>
@@ -29053,8 +29283,8 @@ Le fonti vedranno l&apos;indirizzo di questo nodo; le posizioni in coda vanno pe
         <translation type="vanished">Messaggio:</translation>
     </message>
     <message>
-        <location line="-102"/>
-        <location line="+109"/>
+        <location line="-116"/>
+        <location line="+123"/>
         <source>View Shared Files</source>
         <translation>Visualizza file condivisi</translation>
     </message>

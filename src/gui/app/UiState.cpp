@@ -172,6 +172,7 @@ void UiState::load(const QString& configDir)
         m_searchShowKad = root["searchShowKad"].as<bool>(m_searchShowKad);
         m_searchShowTorrent = root["searchShowTorrent"].as<bool>(m_searchShowTorrent);
         m_searchShowWeb = root["searchShowWeb"].as<bool>(m_searchShowWeb);
+        m_searchHideRelatedContent = root["searchHideRelatedContent"].as<bool>(m_searchHideRelatedContent);
         m_searchLastMethod = root["searchLastMethod"].as<int>(m_searchLastMethod);
         m_transferTopView = root["transferTopView"].as<int>(m_transferTopView);
         m_transferBottomView = root["transferBottomView"].as<int>(m_transferBottomView);
@@ -325,6 +326,7 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "searchShowKad" << YAML::Value << m_searchShowKad;
     out << YAML::Key << "searchShowTorrent" << YAML::Value << m_searchShowTorrent;
     out << YAML::Key << "searchShowWeb" << YAML::Value << m_searchShowWeb;
+    out << YAML::Key << "searchHideRelatedContent" << YAML::Value << m_searchHideRelatedContent;
     if (m_searchLastMethod >= 0)
         out << YAML::Key << "searchLastMethod" << YAML::Value << m_searchLastMethod;
     if (m_transferTopView >= 0)

@@ -60,6 +60,9 @@ void paintDownloadBar(QPainter& painter, const QRect& rect, const DownloadBarDat
         return;
     }
 
+    // eD2K part or ed3k piece (DownloadBarData::freqUnit)
+    const uint64_t freqUnit = bar.freqUnit > 0 ? static_cast<uint64_t>(bar.freqUnit) : PARTSIZE;
+
     // MorphXT: what is already in an unfinished part shows through the gaps painted below
     if (partDetail) {
         const QColor started = paused ? QColor(140, 140, 140) : QColor(160, 160, 160);
@@ -67,14 +70,14 @@ void paintDownloadBar(QPainter& painter, const QRect& rect, const DownloadBarDat
             const auto status = static_cast<uint8_t>(bar.partMap.at(p));
             if (status == 0)
                 continue;
-            const uint64_t start = uint64_t(p) * PARTSIZE;
-            shader.fillRange(start, start + PARTSIZE, status == 255 ? progress : started);
+            // was: uint64_t(p) * PARTSIZE, start + PARTSIZE
+            const uint64_t start = uint64_t(p) * freqUnit;
+            shader.fillRange(start, start + freqUnit, status == 255 ? progress : started);
         }
     }
 
     // Gaps, split at part boundaries so each piece takes its part's frequency
     // (ed3k rows: their 4 MiB pieces, DownloadBarData::freqUnit)
-    const uint64_t freqUnit = bar.freqUnit > 0 ? static_cast<uint64_t>(bar.freqUnit) : PARTSIZE;
     for (qsizetype i = 0; i + 1 < bar.gaps.size(); i += 2) {
         uint64_t start = static_cast<uint64_t>(bar.gaps.at(i));
         const uint64_t end = static_cast<uint64_t>(bar.gaps.at(i + 1));
@@ -94,7 +97,7 @@ void paintDownloadBar(QPainter& painter, const QRect& rect, const DownloadBarDat
     shader.draw(painter, rect);
     paintProgressStrip(painter, rect, percent);
     if (partDetail)
-        paintChunkDots(painter, rect, fileSize);
+        paintChunkDots(painter, rect, fileSize, freqUnit);
 }
 
 void DownloadProgressDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option,
@@ -130,9 +133,11 @@ void DownloadProgressDelegate::paint(QPainter* painter, const QStyleOptionViewIt
         if (partMap.isEmpty()) {
             BarShader::fillBarRect(*painter, barRect, sourcePartColor(0, flat), flat, barDepth3D());
         } else {
+            // ed3k sources: per 4 MiB piece of the file (its bar's freqUnit)
             paintPartBar(*painter, barRect, partMap,
                          [flat](uint8_t status) { return sourcePartColor(status, flat); },
-                         static_cast<uint64_t>(std::max<int64_t>(fileBar.fileSize, 0)));
+                         static_cast<uint64_t>(std::max<int64_t>(fileBar.fileSize, 0)),
+                         fileBar.freqUnit > 0 ? static_cast<uint64_t>(fileBar.freqUnit) : PARTSIZE);
         }
     } else if (useSimpleDownloadBar()) {
         paintSimpleBar(*painter, barRect, percent, paused);

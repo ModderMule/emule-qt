@@ -859,6 +859,11 @@ enum class IpcMsgType : int {
     /// [] -> [ok, {available, running, udpPort, nodeId (hex), contacts, class4, class6
     ///   (0 unknown, 1 open, 2 cone, 3 symmetric), natChecking (bits 0 v4, 1 v6: reach
     ///   test without verdict), router, wireSent, wireRecv (bytes),
+    ///   relays4, relays6: [{address "ip:port", node (hex)}] (§9.4, the Kad buddy),
+    ///   leavesServed: [{address, node, hop}] (leaves we relay for: buddies served),
+    ///   indexNodes: [{address, node, state (0 waiting, 1 dialling, 2 connected, 3 given up),
+    ///                current, tries, upSecs, rttMs (0 none), agent, nick}] (§11),
+    ///   users, usersExperimental (eMule's Kad estimates: table, lookups), files, leafPct,
     ///   rateUp, rateDown (B/s), limitUpKb, limitDownKb (0 = none),
     ///   stats: {connections, lookups, records, recordBytes, published, queueLen,
     ///           bannedNodes, bannedHosts, sentFile, sentOther, recvFile, recvOther},

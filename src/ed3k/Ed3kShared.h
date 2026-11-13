@@ -101,6 +101,9 @@ public:
     [[nodiscard]] std::optional<SharedEntry> entryOfRoot(const ::ed3k::Root& root) const;
     /// @p fn(md4, root) for every file open on the engine (shared and published).
     void forEachSharedRoot(const std::function<void(const QByteArray& md4, const ::ed3k::Root& root)>& fn) const;
+    /// Opens @p root on the engine again (another sharer closed or downgraded its record:
+    /// Ed3kDownloads dropped a duplicate download). false: no shared file of that root.
+    bool reopen(const ::ed3k::Root& root);
     /// A file of the list was hashed to @p root (shared, or waiting for its key).
     [[nodiscard]] bool holdsRoot(const ::ed3k::Root& root) const;
     /// The `ed2k` ALIAS record of @p md4 is published.

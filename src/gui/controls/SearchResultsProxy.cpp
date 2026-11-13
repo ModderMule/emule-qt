@@ -32,6 +32,78 @@ void SearchResultsProxy::setTextFilter(const QStringList& tokens, int column)
     endFilterChange(Direction::Rows);
 }
 
+void SearchResultsProxy::setKeywords(const QStringList& keywords)
+{
+    if (keywords == m_keywords)
+        return;
+    beginFilterChange();
+    m_keywords = keywords;
+    endFilterChange(Direction::Rows);
+}
+
+QStringList SearchResultsProxy::keywordsOf(const QString& expression)
+{
+    // words; a quoted run is one
+    QStringList words;
+    QString cur;
+    bool quoted = false;
+    const auto flush = [&] {
+        if (!cur.isEmpty())
+            words.append(std::exchange(cur, {}));
+    };
+    for (const QChar ch : expression) {
+        if (ch == u'"') {
+            quoted = !quoted;
+            flush();
+        } else if (quoted) {
+            cur.append(ch);
+        } else if (ch.isSpace()) {
+            flush();
+        } else if (ch == u'(' || ch == u')') {
+            return {};
+        } else {
+            cur.append(ch);
+        }
+    }
+    flush();
+
+    QStringList keywords;
+    bool skipNext = false;
+    for (const QString& word : std::as_const(words)) {
+        if (word == u"OR")
+            return {};
+        if (word == u"AND")
+            continue;
+        if (word == u"NOT") {
+            skipNext = true;
+            continue;
+        }
+        if (std::exchange(skipNext, false) || (word.size() > 1 && word.startsWith(u'-')))
+            continue;
+        if (const QString folded = foldForMatch(word); !folded.isEmpty())
+            keywords.append(folded);
+    }
+    return keywords;
+}
+
+QString SearchResultsProxy::foldForMatch(const QString& text)
+{
+    QString out;
+    out.reserve(text.size());
+    bool gap = false;
+    for (const QChar ch : text) {
+        if (ch.isLetterOrNumber()) {
+            if (gap && !out.isEmpty())
+                out.append(u' ');
+            gap = false;
+            out.append(ch.toLower());
+        } else {
+            gap = true;
+        }
+    }
+    return out;
+}
+
 int SearchResultsProxy::hiddenCount() const
 {
     return sourceModel() ? sourceModel()->rowCount() - rowCount() : 0;
@@ -54,6 +126,15 @@ bool SearchResultsProxy::filterAcceptsRow(int sourceRow, const QModelIndex& sour
     const SearchResultRow* row = model ? model->resultAt(sourceRow) : nullptr;
     if (!row)
         return true;
+
+    // a release's file without the keywords: listed only for its release's name
+    if (m_filter.hideRelatedContent && !m_keywords.isEmpty() && row->isMetaFileRow()) {
+        const QString name = foldForMatch(row->fileName);
+        for (const QString& kw : m_keywords) {
+            if (!name.contains(kw))
+                return false;
+        }
+    }
 
     if (row->isEd3k() && row->ed3kHidden)
         return m_filter.ed3kHidden;

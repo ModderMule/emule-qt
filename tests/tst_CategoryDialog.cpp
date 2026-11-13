@@ -492,6 +492,72 @@ void tst_CategoryDialog::networkInfo_showsEd3kNode()
     QVERIFY(on.contains(QRegularExpression(QStringLiteral("IPv6:\\s+Open"))));
     QVERIFY(on.contains(QRegularExpression(QStringLiteral("Router:\\s+Yes"))));
     QVERIFY(on.contains(QRegularExpression(QStringLiteral("UDP Port:\\s+6600"))));
+    // an open router without relays hides the row (MFC Buddy); no stats, no Indexed
+    QVERIFY(!on.contains(QStringLiteral("Relays:")));
+    QVERIFY(!on.contains(QStringLiteral("Indexed:")));
+
+    // not a router: relays (the Kad buddy), connections and records stored for others
+    QCborMap leaf = running;
+    leaf.insert(QStringLiteral("router"), false);
+    leaf.insert(QStringLiteral("relays4"),
+                QCborArray{QCborMap{{QStringLiteral("address"), QStringLiteral("198.51.100.7:6600")},
+                                    {QStringLiteral("node"), QStringLiteral("0123456789abcdef")}}});
+    leaf.insert(QStringLiteral("relays6"),
+                QCborArray{QCborMap{{QStringLiteral("address"), QStringLiteral("[2001:db8::1]:6600")},
+                                    {QStringLiteral("node"), QStringLiteral("fedcba9876543210")}}});
+    leaf.insert(QStringLiteral("stats"), QCborMap{{QStringLiteral("connections"), 3},
+                                                  {QStringLiteral("records"), 42},
+                                                  {QStringLiteral("recordBytes"), 2048}});
+    const QString relayed = textOf(NetworkInfoDialog::infoHtml({{QStringLiteral("ed3k"), leaf}}, false));
+    QVERIFY2(relayed.contains(QRegularExpression(QStringLiteral("Relays:\\s+2"))), qPrintable(relayed));
+    QVERIFY(relayed.contains(QStringLiteral("198.51.100.7:6600 (01234567)")));
+    QVERIFY(relayed.contains(QStringLiteral("[2001:db8::1]:6600 (fedcba98)")));
+    QVERIFY(relayed.contains(QRegularExpression(QStringLiteral("Connections:\\s+3 \\(Obfuscated\\)"))));
+    QVERIFY(relayed.contains(QRegularExpression(QStringLiteral("Indexed:\\s+42 \\("))));
+
+    leaf.remove(QStringLiteral("relays4"));
+    leaf.remove(QStringLiteral("relays6"));
+    const QString noRelay = textOf(NetworkInfoDialog::infoHtml({{QStringLiteral("ed3k"), leaf}}, false));
+    QVERIFY(noRelay.contains(QRegularExpression(QStringLiteral("Relays:\\s+None"))));
+    // a leaf serves nobody: no Buddies served row, no index node section without a list
+    QVERIFY(!noRelay.contains(QStringLiteral("Buddies served:")));
+    QVERIFY(!noRelay.contains(QStringLiteral("ed3k Index Node")));
+
+    // a router: leaves it relays for, eMule's Kad estimates, the index node held
+    QCborMap router = running;
+    router.insert(QStringLiteral("leavesServed"),
+                  QCborArray{QCborMap{{QStringLiteral("address"), QStringLiteral("203.0.113.9:6611")},
+                                      {QStringLiteral("node"), QStringLiteral("aabbccdd11223344")},
+                                      {QStringLiteral("hop"), false}}});
+    router.insert(QStringLiteral("users"), 1200);
+    router.insert(QStringLiteral("usersExperimental"), 900);
+    router.insert(QStringLiteral("files"), 129600);
+    const auto link = [](int state, bool current, const QString& addr) {
+        return QCborMap{{QStringLiteral("address"), addr}, {QStringLiteral("node"), QStringLiteral("99887766")},
+                        {QStringLiteral("state"), state}, {QStringLiteral("current"), current},
+                        {QStringLiteral("rttMs"), 42}, {QStringLiteral("agent"), QStringLiteral("eNode 1.0")},
+                        {QStringLiteral("nick"), QStringLiteral("Test index")}};
+    };
+    router.insert(QStringLiteral("indexNodes"), QCborArray{link(0, false, QStringLiteral("192.0.2.20:4662")),
+                                                           link(2, true, QStringLiteral("192.0.2.21:4662"))});
+    const QString served = textOf(NetworkInfoDialog::infoHtml({{QStringLiteral("ed3k"), router}}, false));
+    QVERIFY2(served.contains(QRegularExpression(QStringLiteral("Buddies served:\\s+1"))), qPrintable(served));
+    QVERIFY(served.contains(QStringLiteral("203.0.113.9:6611 (aabbccdd)")));
+    QVERIFY(served.contains(QRegularExpression(QStringLiteral("Users:\\s+1[.,]?200 \\(Experimental: 900\\)"))));
+    QVERIFY(served.contains(QRegularExpression(QStringLiteral("Files:\\s+129[.,]?600"))));
+    QVERIFY(served.contains(QStringLiteral("ed3k Index Node")));
+    QVERIFY(served.contains(QRegularExpression(QStringLiteral("Name:\\s+Test index"))));
+    QVERIFY(served.contains(QRegularExpression(QStringLiteral("IP:Port:\\s+192\\.0\\.2\\.21:4662"))));
+    QVERIFY(served.contains(QRegularExpression(QStringLiteral("Status:\\s+Connected"))));
+    QVERIFY(served.contains(QRegularExpression(QStringLiteral("Version:\\s+eNode 1\\.0"))));
+    QVERIFY(served.contains(QRegularExpression(QStringLiteral("Ping:\\s+42 ms"))));
+    QVERIFY(served.contains(QRegularExpression(QStringLiteral("Index nodes:\\s+2"))));
+    // dialling: no version or ping yet
+    router.insert(QStringLiteral("indexNodes"), QCborArray{link(1, true, QStringLiteral("192.0.2.21:4662"))});
+    const QString dialling = textOf(NetworkInfoDialog::infoHtml({{QStringLiteral("ed3k"), router}}, false));
+    QVERIFY(dialling.contains(QRegularExpression(QStringLiteral("Status:\\s+Connecting"))));
+    QVERIFY(!dialling.contains(QStringLiteral("Ping:")));
+    QVERIFY(!dialling.contains(QStringLiteral("Index nodes:")));
 
     const QCborMap off{{QStringLiteral("available"), true}, {QStringLiteral("running"), false},
                        {QStringLiteral("enabled"), false}};

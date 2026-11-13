@@ -151,8 +151,9 @@ QVariant ClientListModel::data(const QModelIndex& index, int role) const
     if (role == PartMapRole)
         return c.partMap;
 
+    // ed3k: 4 MiB pieces, not PARTSIZE slices: drawn as equal slices
     if (role == FileSizeRole)
-        return QVariant::fromValue(c.reqFileSize);
+        return QVariant::fromValue(c.network == ClientNetwork::Ed3k ? qint64(0) : qint64(c.reqFileSize));
 
     if (role == Qt::DecorationRole && index.column() == 0)
         return CountryFlags::withFlag(c.network == ClientNetwork::Ed3k

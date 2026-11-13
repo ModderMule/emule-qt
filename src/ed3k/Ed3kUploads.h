@@ -54,6 +54,9 @@ public:
         std::uint64_t bytes = 0;     ///< file bytes of the running turn
         qint64 since = 0;            ///< ms since the epoch: entered the queue, or got the slot
         int place = 0;               ///< waiting: the engine's rank (else 1-based by waiting time); holding: 0
+        QString agent;               ///< Hello.agent ("eMuleQt 0.7.0"); empty: not known
+        QString nick;                ///< Hello.nick (the peer's user name); may be empty
+        std::uint64_t caps = 0;      ///< Hello.caps (§2)
     };
     /// name and size of a shared root; nullopt: not known.
     using NameLookup = std::function<std::optional<std::pair<QString, std::uint64_t>>(const ::ed3k::Root&)>;
@@ -63,12 +66,15 @@ public:
 
     /// Names files by root (DaemonApp: Ed3kShared); none: names stay empty.
     void setNameLookup(NameLookup lookup) { m_names = std::move(lookup); }
+    [[nodiscard]] Ed3kSession& session() const { return m_session; }
 
     [[nodiscard]] std::vector<Row> uploading() const;
     /// Oldest first; place set.
     [[nodiscard]] std::vector<Row> waiting() const;
     [[nodiscard]] std::size_t size() const { return m_rows.size(); }
     /// A node whose ID starts with @p prefix waits or holds a slot at the node key (ed3k §14.2 hint).
+    /// File bytes with @p node since the daemon started: sent in finished turns, received.
+    [[nodiscard]] std::pair<std::uint64_t, std::uint64_t> peerBytes(::ed3k::KeyKind key, const ::ed3k::NodeId& node) const;
     [[nodiscard]] bool hasNodeStarting(const std::array<std::uint8_t, 12>& prefix) const;
 
 signals:

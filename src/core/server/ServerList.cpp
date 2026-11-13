@@ -1246,6 +1246,10 @@ void ServerList::processDescResponse(const uint8* data, uint32 size, const Endpo
                     if (!dn.isEmpty() && QHostAddress(dn).isNull())
                         server->setDynIP(dn);
                     // (Duplicate collapsing on a changed dynIP is finding #18.)
+                } else if (tag.nameId() == ST_ED3K && tag.isStr()) {
+                    // the server's ed3k index node (ed3k ed2k-signals.md §3)
+                    if (theApp.ed3kIndexLink)
+                        theApp.ed3kIndexLink(tag.strValue());
                 } else if (tag.nameId() == ST_VERSION) {
                     if (tag.isStr())
                         server->setVersion(tag.strValue());

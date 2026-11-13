@@ -20,7 +20,8 @@
 /// - setOwner: an unfinished row to another owner (Ed3kSets: members of a set not here → kOwner).
 /// - setCompletedHook: called after the move (daemon: SharedFileList adds the file).
 ///   setSharedElsewhere / releaseShare: another sharer (Ed3kShared) holds the root now;
-///   this class forgets its share without closing it on the engine.
+///   this class forgets its share without closing it on the engine. A plain download of a
+///   root shared there is refused (add) and an unfinished one dropped (start, releaseShare).
 ///
 /// Mechanics are Ed3kJoinBase's (owner = the spec's owner, member = a stable id per
 /// download): Kad sources, streams, block requests. wantedBlocks = the missing 256 KiB
@@ -98,6 +99,8 @@ struct Ed3kDownloadInfo {
     std::vector<bool> pending;     ///< per block: asked for, not here yet; empty: not running
     /// per 4 MiB piece: open sources holding it (FileStatus.have, 255 at most); empty: none told
     std::vector<std::uint8_t> availability;
+    /// eMule's "Increase priority for preview parts": first and last part first
+    bool previewPrio = false;
 };
 
 class Ed3kDownloads : public Ed3kJoinBase {
@@ -146,6 +149,8 @@ public:
     bool cancel(const ::ed3k::Root& root);
     bool setPriority(const ::ed3k::Root& root, int priority);
     bool setCategory(const ::ed3k::Root& root, int category);
+    /// The file's own preview flag (eMule's per-file switch; the option covers every file).
+    bool setPreviewPrio(const ::ed3k::Root& root, bool on);
     /// An unfinished download to @p owner (Ed3kSets: an imported member of an unknown set).
     bool setOwner(const ::ed3k::Root& root, const QString& owner);
     /// Complete rows leave the list; their files stay (served on by the share list, if it took them).
@@ -155,8 +160,10 @@ public:
     [[nodiscard]] std::optional<Ed3kDownloadInfo> info(const ::ed3k::Root& root) const;
     [[nodiscard]] bool contains(const ::ed3k::Root& root) const { return m_entries.contains(root); }
 
-    /// Another sharer (Ed3kShared) took @p root: forget the own share, do not close it.
-    void releaseShare(const ::ed3k::Root& root);
+    /// Another sharer (Ed3kShared) took @p root: forget the own share, do not close it. An
+    /// unfinished plain download of it is dropped (part file + .met in Temp; the shared file
+    /// is not touched). true: dropped, its share closed: the sharer opens @p root again.
+    bool releaseShare(const ::ed3k::Root& root);
 
     /// The key @p root is downloaded or shared under (hops.md §1, shown to the user).
     [[nodiscard]] ::ed3k::KeyKind keyOfRoot(const ::ed3k::Root& root) const { return keyOf(root); }
@@ -209,6 +216,10 @@ private:
     };
 
     Entry* entryOf(const ::ed3k::Root& root);
+    /// An unfinished plain download of a root shared by another sharer (setSharedElsewhere).
+    [[nodiscard]] bool isSharedDuplicate(const Entry& e) const;
+    /// Drops @p root as such a duplicate: cancel() with a log line saying why.
+    void dropSharedDuplicate(const ::ed3k::Root& root);
     const Entry* entryOfId(int id) const;
     Entry* entryOfId(int id);
     [[nodiscard]] std::uint64_t blockCount(std::uint64_t size) const;

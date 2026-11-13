@@ -495,6 +495,7 @@ QWidget* SearchPanel::createSearchBar()
         m_showKadCheck->setChecked(true);
         m_showTorrentCheck->setChecked(true);
         m_showWebCheck->setChecked(true);
+        m_hideRelatedCheck->setChecked(true);
     });
     typeRow->addWidget(m_resetBtn);
 
@@ -527,6 +528,13 @@ QWidget* SearchPanel::createSearchBar()
                                          theUiState.searchShowTorrent(), true);
     m_showWebCheck = addNetworkCheck(tr("Web results"), QStringLiteral(":/icons/Web.ico"),
                                      theUiState.searchShowWeb(), true);
+    // A torrent, NZB or web page comes with every file in it, matching or not
+    m_hideRelatedCheck = new QCheckBox(tr("Hide related folder content"), container);
+    m_hideRelatedCheck->setChecked(theUiState.searchHideRelatedContent());
+    m_hideRelatedCheck->setToolTip(tr("Hide the files of a torrent, Usenet or web release whose name "
+                                      "lacks a search keyword. The release itself stays."));
+    networkRow->addWidget(m_hideRelatedCheck);
+    connect(m_hideRelatedCheck, &QCheckBox::toggled, this, &SearchPanel::onNetworkFilterChanged);
     networkRow->addStretch();
     grid->addLayout(networkRow, 2, 0);
 
@@ -1333,6 +1341,7 @@ void SearchPanel::onNetworkFilterChanged()
 {
     theUiState.setSearchShowNetworks(m_showUsenetCheck->isChecked(), m_showKadCheck->isChecked(),
                                      m_showTorrentCheck->isChecked(), m_showWebCheck->isChecked());
+    theUiState.setSearchHideRelatedContent(m_hideRelatedCheck->isChecked());
     for (SearchTab& tab : m_tabs)
         applyNetworkFilter(tab);
     if (const auto* tab = currentTab()) {
@@ -3589,6 +3598,8 @@ void SearchPanel::applyNetworkFilter(SearchTab& tab)
         filter.web = m_showWebCheck->isChecked();
     }
     filter.ed3kHidden = tab.showEd3kHidden;
+    filter.hideRelatedContent = m_hideRelatedCheck && m_hideRelatedCheck->isChecked();
+    proxy->setKeywords(SearchResultsProxy::keywordsOf(tab.request.expression));
     proxy->setNetworkFilter(filter);
 }
 
@@ -3597,14 +3608,26 @@ void SearchPanel::downloadEd3kResults(const std::vector<const SearchResultRow*>&
     if (!m_ipc || !m_ipc->isConnected())
         return;
     QPointer<SearchPanel> self(this);
+    // PushEd3kDownloads is a Transfers-group push: not sent while Search shows, so the
+    // reply marks the row, as sendDownloadRequest() does for eD2K
+    const QPointer<SearchResultsModel> model(currentTab() ? currentTab()->model : nullptr);
     for (const SearchResultRow* r : rows) {
         if (r->ed3kRoot.size() != 64)
             continue;
+        // 1 shared, 2 downloading: as for eD2K rows, re-adding those does nothing useful
+        if (r->knownType == 1 || r->knownType == 2) {
+            StatusBarNotifier::post(r->knownType == 1 ? tr("You share \"%1\" already.").arg(r->fileName)
+                                                      : tr("\"%1\" is downloading already.").arg(r->fileName), 4000);
+            continue;
+        }
         const QString name = r->fileName;
-        m_ipc->addEd3kDownload(r->ed3kRoot, r->fileSize, name, category, paused, [self, name](const IpcMessage& reply) {
+        m_ipc->addEd3kDownload(r->ed3kRoot, r->fileSize, name, category, paused,
+                               [self, model, name, hash = r->hash](const IpcMessage& reply) {
             if (!self)
                 return;
             if (reply.type() == IpcMsgType::Result && reply.fieldBool(0)) {
+                if (model)
+                    model->updateKnownTypes({{hash, 2}});   // Downloading
                 StatusBarNotifier::post(tr("ed3k download added: %1").arg(name), 4000);
                 return;
             }

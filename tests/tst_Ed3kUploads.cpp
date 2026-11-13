@@ -15,6 +15,7 @@
 #include <QDir>
 #include <QFile>
 #include <QSignalSpy>
+#include <QTimer>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -176,6 +177,20 @@ void tst_Ed3kUploads::eventsBecomeRowsAndStayUnhandled()
     QCOMPARE(row.value(QStringLiteral("uploadFileName")).toString(), QStringLiteral("film.mkv"));
     QCOMPARE(row.value(QStringLiteral("queueRank")).toInteger(), 1);
     QVERIFY(row.value(QStringLiteral("lan")).toBool());
+
+    // GetClientDetails: "ed3k:<node>" finds the row, keyed back; other keys and nodes don't
+    const QString key = QStringLiteral("ed3k:") + QStringLiteral("03").repeated(16);
+    QVERIFY(Ed3kUploadsBridge::isDetailsKey(key));
+    QVERIFY(!Ed3kUploadsBridge::isDetailsKey(QStringLiteral("03").repeated(16)));
+    const auto d = Ed3kUploadsBridge::details(key);
+    QVERIFY(d);
+    QCOMPARE(d->value(QStringLiteral("userHash")).toString(), key);
+    QCOMPARE(d->value(QStringLiteral("nodeId")).toString(), QStringLiteral("03").repeated(16));
+    QCOMPARE(d->value(QStringLiteral("uploadFileName")).toString(), QStringLiteral("film.mkv"));
+    QVERIFY(!d->value(QStringLiteral("anonymous")).toBool());
+    QVERIFY(!Ed3kUploadsBridge::details(QStringLiteral("ed3k:anon:") + QStringLiteral("03").repeated(16)));
+    QVERIFY(!Ed3kUploadsBridge::details(QStringLiteral("ed3k:") + QStringLiteral("04").repeated(16)));
+    QVERIFY(!Ed3kUploadsBridge::details(QStringLiteral("ed3k:zz")));
 }
 
 void tst_Ed3kUploads::aQueueOfRealNodesShowsAndEnds()
@@ -188,7 +203,9 @@ void tst_Ed3kUploads::aQueueOfRealNodesShowsAndEnds()
 
     Ed3kSession a, b, c, d;
     QVERIFY(a.start(loopback(da.path())));
-    QVERIFY(b.start(loopback(db.path())));
+    Ed3kSettings named_b = loopback(db.path());
+    named_b.nick = QStringLiteral("bob");
+    QVERIFY(b.start(named_b));
     QVERIFY(c.start(loopback(dc.path())));
     QVERIFY(d.start(loopback(dd.path())));
     a.setUploadSlots(2);
@@ -211,6 +228,7 @@ void tst_Ed3kUploads::aQueueOfRealNodesShowsAndEnds()
     bool named = false;
     bool rankedWithAddress = false;   // the engine's queueList: rank and endpoint
     bool holderWithAddress = false;
+    bool sawNick = false;   // Hello.nick of b
     QCborMap waitingRow;
     connect(&up, &Ed3kUploads::changed, this, [&] {
         const auto h = up.uploading();
@@ -218,9 +236,12 @@ void tst_Ed3kUploads::aQueueOfRealNodesShowsAndEnds()
         mostHolding = std::max(mostHolding, h.size());
         sawWaiting = sawWaiting || !w.empty();
         for (const auto& r : h) {
+            sawNick = sawNick || r.nick == QStringLiteral("bob");
             named = named || (r.fileName == QStringLiteral("q.bin") && r.fileSize == std::uint64_t(data.size()));
             holderWithAddress = holderWithAddress || (r.address == QStringLiteral("127.0.0.1") && r.port != 0);
         }
+        for (const auto& r : w)
+            sawNick = sawNick || r.nick == QStringLiteral("bob");
         for (const auto& r : w)
             if (r.place >= 1 && r.address == QStringLiteral("127.0.0.1") && r.port != 0 && !rankedWithAddress) {
                 rankedWithAddress = true;
@@ -237,11 +258,34 @@ void tst_Ed3kUploads::aQueueOfRealNodesShowsAndEnds()
         f->setSearchEnabled(false);
         f->start();
     }
+    // b's download source a, as Transfers lists it: its stream, endpoint and Hello
+    bool sawSource = false;
+    bool sawHello = false;
+    bool sawDownloading = false;   // the Downloading list: a holding, our pieces counted
+    const std::size_t pieces = (std::size_t(data.size()) + 4 * 1024 * 1024 - 1) / (4 * 1024 * 1024);
+    QTimer sourcePoll;
+    connect(&sourcePoll, &QTimer::timeout, this, [&] {
+        for (const auto& s : Ed3kJoinBase::sourcesAt(b, root))
+            if (s.node == sourceOf(a).id && s.endpoint && s.size == std::uint64_t(data.size())
+                && Ed3kJoinBase::sourceAt(b, ::ed3k::KeyKind::Node, s.node))
+                sawSource = true;
+        if (auto* e = b.engine())
+            if (const auto h = e->peerHello(sourceOf(a).id); h && h->agent.starts_with("eMuleQt") && h->remote)
+                sawHello = true;
+        for (const auto& s : Ed3kJoinBase::downloadingAt(b))
+            if (s.node == sourceOf(a).id && s.holding && s.ownPieces.size() == pieces)
+                sawDownloading = true;
+    });
+    sourcePoll.start(1);
     QVERIFY(fb.fetch(root, std::uint64_t(data.size()), sourceOf(a)));
     QVERIFY(fc.fetch(root, std::uint64_t(data.size()), sourceOf(a)));
     QVERIFY(fd.fetch(root, std::uint64_t(data.size()), sourceOf(a)));
     // the joins still answer the blocks: the view only observes
     QTRY_VERIFY_WITH_TIMEOUT(fb.got == data && fc.got == data && fd.got == data, 60000);
+    sourcePoll.stop();
+    QVERIFY(sawSource);
+    QVERIFY(sawHello);
+    QVERIFY(sawDownloading);
     QVERIFY(mostHolding >= 1);
     QVERIFY(mostHolding <= 2);   // the two slots
     QVERIFY(sawWaiting);         // three nodes, two slots: one waited
@@ -251,12 +295,21 @@ void tst_Ed3kUploads::aQueueOfRealNodesShowsAndEnds()
     QCOMPARE(waitingRow.value(QStringLiteral("addr")).toString(), QStringLiteral("127.0.0.1"));
     QVERIFY(waitingRow.value(QStringLiteral("port")).toInteger() > 0);
     QVERIFY(waitingRow.value(QStringLiteral("queueRank")).toInteger() >= 1);
+    // its Hello: "eMuleQt 0.x" as eD2K writes software, no ED2K bit on a plain node
+    QVERIFY2(waitingRow.value(QStringLiteral("software")).toString().startsWith(QStringLiteral("eMuleQt v")),
+             qPrintable(waitingRow.value(QStringLiteral("software")).toString()));
+    QVERIFY(waitingRow.value(QStringLiteral("helloKnown")).toBool());
+    QVERIFY(sawNick);
+    // per peer this run: b got the whole file from a
+    QCOMPARE(b.peerBytes(::ed3k::KeyKind::Node, sourceOf(a).id).down, std::uint64_t(data.size()));
     // done: the downloaders close their streams, the slots end
     fb.stop();
     fc.stop();
     fd.stop();
     // an idle slot ends after about a minute (SlotEnd::Idle) when the close is not seen
     QTRY_COMPARE_WITH_TIMEOUT(up.uploading().size(), std::size_t(0), 150000);
+    // ended turns count as sent to that peer
+    QVERIFY(up.peerBytes(::ed3k::KeyKind::Node, sourceOf(b).id).first >= std::uint64_t(data.size()));
     shared.stop();
 }
 
@@ -306,6 +359,15 @@ void tst_Ed3kUploads::anonymousRowsAreKeptApart()
     QCOMPARE(uploading.at(0).toMap().value(QStringLiteral("key")).toString(), QStringLiteral("Anonymous"));
     QVERIFY(uploading.at(0).toMap().value(QStringLiteral("addr")).toString().isEmpty());
     QCOMPARE(waiting.at(0).toMap().value(QStringLiteral("key")).toString(), QStringLiteral("Node"));
+    // details per key: the anonymous one holds the slot, the node one waits
+    const QString hex = QStringLiteral("05").repeated(16);
+    const auto anonDetails = Ed3kUploadsBridge::details(QStringLiteral("ed3k:anon:") + hex);
+    QVERIFY(anonDetails);
+    QVERIFY(anonDetails->value(QStringLiteral("anonymous")).toBool());
+    QCOMPARE(anonDetails->value(QStringLiteral("uploadState")).toString(), QStringLiteral("Transferring"));
+    const auto nodeDetails = Ed3kUploadsBridge::details(QStringLiteral("ed3k:") + hex);
+    QVERIFY(nodeDetails);
+    QCOMPARE(nodeDetails->value(QStringLiteral("uploadState")).toString(), QStringLiteral("OnQueue"));
 
     // hiding stops: the anonymous node's rows go
     QSignalSpy changed(&up, &Ed3kUploads::changed);

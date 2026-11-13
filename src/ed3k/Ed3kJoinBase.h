@@ -84,6 +84,35 @@ public:
     [[nodiscard]] static bool switchAllowed(bool queued, std::optional<std::chrono::steady_clock::time_point> last,
                                             std::chrono::steady_clock::time_point now);
 
+    /// A source of a download as the Transfers list shows it: its stream at the uploader.
+    struct SourceInfo {
+        ffi::KeyKind key = ffi::KeyKind::Node;   ///< the key of ours it serves
+        ffi::NodeId node;
+        ffi::Root root;
+        QString fileName;                        ///< the download's (empty: unnamed)
+        std::uint64_t size = 0;
+        std::optional<ffi::Address> endpoint;    ///< none: relays only, or the anonymous key
+        bool holding = false;     ///< holds an upload slot there
+        /// asked for this file; its one stream there (§12.5) serves @c otherName now
+        bool otherFile = false;
+        QString otherName;
+        /// FileStatus.have per 4 MiB piece (missing bits are held); empty: not told
+        std::vector<std::uint8_t> have;
+        /// per 4 MiB piece: every block of it is ours (what the join still wants is not)
+        std::vector<bool> ownPieces;
+        /// block offsets asked on its stream, not here yet (in order)
+        std::vector<std::uint64_t> asked;
+    };
+    /// The sources of @p root: stream holders, then nodes held by another download of ours.
+    [[nodiscard]] std::vector<SourceInfo> sourcesOf(const ffi::Root& root) const;
+    /// sourcesOf @p root in every join of @p session.
+    [[nodiscard]] static std::vector<SourceInfo> sourcesAt(const Ed3kSession& session, const ffi::Root& root);
+    /// Download source @p node of @p key in any join of @p session; nullopt: no stream there.
+    [[nodiscard]] static std::optional<SourceInfo> sourceAt(const Ed3kSession& session, ffi::KeyKind key,
+                                                          const ffi::NodeId& node);
+    /// The sources of @p session holding an upload slot for us (the Downloading list).
+    [[nodiscard]] static std::vector<SourceInfo> downloadingAt(const Ed3kSession& session);
+
 protected:
     static constexpr std::uint64_t kBlock = 256 * 1024;
     /// member index of a set's manifest fetched into memory (set searches, links)
@@ -440,6 +469,9 @@ private:
     [[nodiscard]] NodeTurns& turns() const;
     /// The FileRequest of @p root to @p source; the node is held by it then. false: refused.
     bool openStream(const ffi::Root& root, const ffi::Source& source);
+    /// SourceInfo of @p stream of @p root at @p node; nullopt: its download is gone.
+    [[nodiscard]] std::optional<SourceInfo> holderInfo(const TurnNode& node, const ffi::Root& root, std::uint64_t stream,
+                                                      const ffi::Source& source) const;
     /// A stream of @p root already holds the node of @p source: the newer record goes to
     /// packmule, which keeps the stream and takes its endpoints and relays (true).
     bool refreshStream(const ffi::Root& root, const ffi::Source& source);

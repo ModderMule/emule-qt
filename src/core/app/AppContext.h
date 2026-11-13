@@ -310,6 +310,9 @@ struct AppContext {
     /// A peer's hello arrived (ed3k bootstrap.md §1 source 4): a derived user hash seeds
     /// ed3k Kad while it has few contacts. Set by the daemon.
     std::function<void(UpDownClient& client)> ed3kKadSeed;
+    /// A server advertised its ed3k index node (ST_ED3K, ed3k §11): an ed3k:node link. Set
+    /// by the daemon.
+    std::function<void(const QString& link)> ed3kIndexLink;
     /// eD2K part @p part of @p file passed (true) or failed its MD4 hash (§14.4 pair trust).
     std::function<void(PartFile& file, uint32 part, bool ok)> partVerdict;
     /// The peer of eD2K user hash @p hash waits or holds a slot on ed3k already (§14.4: a

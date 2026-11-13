@@ -55,6 +55,12 @@ bool Ed3kUploads::hasNodeStarting(const std::array<std::uint8_t, 12>& prefix) co
         && std::equal(prefix.begin(), prefix.end(), it->first.second.bytes.begin());
 }
 
+std::pair<std::uint64_t, std::uint64_t> Ed3kUploads::peerBytes(ffi::KeyKind key, const ffi::NodeId& node) const
+{
+    const auto b = m_session.peerBytes(key, node);
+    return {b.up, b.down};
+}
+
 std::vector<Ed3kUploads::Row> Ed3kUploads::uploading() const
 {
     std::vector<Row> out;
@@ -138,6 +144,12 @@ bool Ed3kUploads::appendListed(ffi::KeyKind key, std::vector<Row>& out) const
         row.bytes = q.bytes;
         row.connected = q.connected;
         row.place = q.slot ? 0 : int(std::min<std::uint32_t>(q.rank, INT32_MAX));
+        // its Hello (§5.5); empty before one
+        if (!q.agent.empty())
+            row.agent = QString::fromStdString(q.agent);
+        if (!q.nick.empty())
+            row.nick = QString::fromStdString(q.nick);
+        row.caps = q.caps;
         // monotonic µs → ms since the epoch
         const std::uint64_t ago = nowMono > q.waitingSinceUs ? (nowMono - q.waitingSinceUs) / 1000 : 0;
         row.since = nowWall - qint64(std::min<std::uint64_t>(ago, std::uint64_t(nowWall)));
@@ -200,6 +212,7 @@ void Ed3kUploads::onEventPolled(const ffi::Event& ev, ffi::KeyKind key, bool* ha
         row.bytes = u->bytes;
         row.due = u->due;
     } else if (const auto* se = std::get_if<e::SlotEnded>(&ev)) {
+        m_session.addPeerBytes(key, se->node, se->bytes, 0);
         if (m_rows.erase({key, se->node}) == 0)
             return;
         logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: upload slot of %1 ended (why %2, %3 B)")

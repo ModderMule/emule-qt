@@ -37,6 +37,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -89,6 +90,36 @@ struct Ed3kStatus {
     /// public endpoint the engine adopted per family ("ip:port"); empty = none yet
     QString endpoint4;
     QString endpoint6;
+    /// relays this node is reachable through (§9.4, the Kad buddy): "ip:port" per family
+    QStringList relays4;
+    QStringList relays6;
+    /// node IDs (hex) of relays4 + relays6, same order
+    QStringList relayIds4;
+    QStringList relayIds6;
+    /// leaves this node relays for (§9.4, eMule's "buddies served")
+    struct Leaf {
+        QString address;         ///< "ip:port" of the connection that reserved last
+        QString nodeId;          ///< hex
+        bool hop = false;        ///< last Relay.hop (hops.md §2.5)
+    };
+    QList<Leaf> leavesServed;
+    /// index nodes this client names (§11, the eD2K server list), in list order
+    struct IndexLink {
+        QString address;
+        QString nodeId;          ///< hex
+        int state = 0;           ///< ED3K_INDEX_WAITING / _DIALLING / _CONNECTED / _LOST
+        bool current = false;    ///< the one dialled or held
+        std::uint32_t tries = 0;
+        std::uint64_t upSecs = 0;
+        std::uint32_t rttMs = 0; ///< 0 = none
+        QString agent;           ///< Hello.agent while connected (the "server version")
+        QString nick;            ///< Hello.nick (the "server name")
+    };
+    QList<IndexLink> indexLinks;
+    /// eMule's Kad user estimates: routing table, closest node of lookups (0 = too few)
+    std::uint64_t usersByTable = 0;
+    std::uint64_t usersByLookups = 0;
+    std::uint32_t leafPct = 0;   ///< leaves added in percent
 };
 
 /// Datagram payload bytes since this object was made (wire_sent / wire_recv of ed3k_stats,
@@ -147,6 +178,9 @@ public:
     /// Slots of the engine's upload queue policy (ed3k_queue_auto, on from start): 0 = from
     /// the upload limit. Kept across restarts; set by BandwidthCoordinator.
     void setUploadSlots(std::uint32_t count);
+    /// An eD2K server's index node (ST_ED3K, ed3k §11), an ed3k:node link: kept across
+    /// restarts, each once. false: not a valid ed3k:node link.
+    bool addIndexLink(const QString& link);
     /// The policy's slots, holders and waiting entries; nullopt while not running.
     [[nodiscard]] std::optional<::ed3k::QueueStats> uploadQueueStats();
 
@@ -190,6 +224,14 @@ public:
     /// Which node had the event being dispatched (valid inside eventPolled / keyedEventPolled).
     [[nodiscard]] ::ed3k::KeyKind eventKey() const { return m_eventKey; }
 
+    /// File bytes moved with a peer since the daemon started, per key (our node, anonymous node).
+    struct PeerBytes {
+        std::uint64_t up = 0;     ///< sent to it (finished turns; the running one is in the queue row)
+        std::uint64_t down = 0;   ///< verified blocks from it
+    };
+    void addPeerBytes(::ed3k::KeyKind key, const ::ed3k::NodeId& node, std::uint64_t up, std::uint64_t down);
+    [[nodiscard]] PeerBytes peerBytes(::ed3k::KeyKind key, const ::ed3k::NodeId& node) const;
+
 signals:
     /// Running, port, contacts, address class changed.
     void statusChanged();
@@ -212,6 +254,8 @@ private:
     bool startRpc(const ::ed3k::event::RpcRequest& r);
     void applyLimits();
     void applyUploadSlots();
+    /// addIndexLink's links to the engine (at start)
+    void applyIndexLinks();
     /// packmule's log level from the filter rules of emule.ed3k / emule.ed3k.kad (verbose
     /// when either lets debug lines through); set when it changed.
     void applyLogLevel();
@@ -250,6 +294,10 @@ private:
     /// ED3K_EV_ENDPOINT per family, for status()
     QString m_endpoint4;
     QString m_endpoint6;
+    /// ED3K_EV_RELAYS, for status(): "ip:port" and node ID hex per family
+    QStringList m_relays4, m_relays6, m_relayIds4, m_relayIds6;
+    /// ST_ED3K links of eD2K servers (addIndexLink), in arrival order
+    QStringList m_indexLinks;
     bool m_pumping = false;
     bool m_pumpQueued = false;   ///< a pump after offered datagrams is on its way
     bool m_pumpAgain = false;
@@ -266,6 +314,7 @@ private:
     Ed3kTraffic m_trafficBase;   ///< of the engines before this one
     std::unique_ptr<Ed3kHide> m_hide;
     ::ed3k::KeyKind m_eventKey = ::ed3k::KeyKind::Node;
+    std::map<std::pair<::ed3k::KeyKind, ::ed3k::NodeId>, PeerBytes> m_peerBytes;
 };
 
 } // namespace eMule::ed3k

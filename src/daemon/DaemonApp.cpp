@@ -511,6 +511,8 @@ bool DaemonApp::start()
         std::memcpy(hash.data(), client.userHash(), hash.size());
         (void)b->offerEd2kPeer(hash, ip.toQHostAddress(), client.userPort());
     };
+    // ed3k §11: an eD2K server's index node (ST_ED3K of its ident or description reply)
+    theApp.ed3kIndexLink = [s = m_ed3kSession.get()](const QString& link) { (void)s->addIndexLink(link); };
     m_ed3kBootstrap->setAsker([this](std::uint64_t ask, const QString& host, const QString& url) {
         if (!m_ipcServer || !m_ipcServer->hasReadyClient())
             return false;
@@ -603,8 +605,9 @@ bool DaemonApp::start()
         m_ed3kDownloads->setSharedElsewhere([s = m_ed3kShared.get()](const ::ed3k::Root& root) { return s->sharesRoot(root); });
         connect(m_ed3kShared.get(), &ed3k::Ed3kShared::fileShared, m_ed3kDownloads.get(),
                 [s = m_ed3kShared.get(), d = m_ed3kDownloads.get()](const QByteArray& md4) {
-                    if (const auto root = s->rootOf(md4))
-                        d->releaseShare(*root);
+                    // an unfinished duplicate dropped closed the root on the engine: open it again
+                    if (const auto root = s->rootOf(md4); root && d->releaseShare(*root))
+                        (void)s->reopen(*root);
                 });
     }
     Ed3kDownloadsBridge::setDownloads(m_ed3kDownloads.get());
@@ -1099,6 +1102,7 @@ void DaemonApp::stop()
     Ed3kRoomsBridge::setRooms(nullptr);
     m_ed3kRooms.reset();
     theApp.ed3kKadSeed = {};
+    theApp.ed3kIndexLink = {};
     Ed3kBridge::setBootstrap(nullptr);
     m_ed3kBootstrap.reset();
     Ed3kNamesBridge::setNames(nullptr, nullptr);

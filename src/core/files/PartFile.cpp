@@ -1945,7 +1945,15 @@ bool PartFile::isPreviewableFileType() const
 
 bool PartFile::previewNeedsLastPart() const
 {
-    if (isPreviewableFileType())
+    return containerCheckIfResolved().hasVideo || previewNeedsLastPart(fileName());
+}
+
+bool PartFile::previewNeedsLastPart(const QString& fileName)
+{
+    // isPreviewableFileType by name
+    const ED2KFileType type = getED2KFileTypeID(fileName);
+    if (type == ED2KFileType::Video || type == ED2KFileType::Archive
+        || fileName.endsWith(QStringLiteral(".iso"), Qt::CaseInsensitive))
         return true;
     // Index, central directory or trailer at the end; Ogg keeps duration in its last page (#96)
     static constexpr std::array tailExts = {
@@ -1954,7 +1962,7 @@ bool PartFile::previewNeedsLastPart() const
         u".m2ts", u".pdf", u".docx", u".xlsx", u".pptx", u".odt", u".ods", u".odp",
         u".epub", u".cbz", u".cbr", u".cb7", u".apk", u".jar", u".xpi", u".dmg"
     };
-    const QString name = fileName().toLower();
+    const QString name = fileName.toLower();
     return std::ranges::any_of(tailExts, [&name](const char16_t* e) {
         return name.endsWith(QStringView(e));
     });

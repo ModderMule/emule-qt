@@ -421,6 +421,7 @@ private:
     QCheckBox* m_showKadCheck = nullptr;
     QCheckBox* m_showTorrentCheck = nullptr;
     QCheckBox* m_showWebCheck = nullptr;
+    QCheckBox* m_hideRelatedCheck = nullptr;   ///< a release's files only when they match
 
     // Tab bar + results
     QTabBar* m_tabBar = nullptr;

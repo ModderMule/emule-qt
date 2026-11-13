@@ -2732,23 +2732,25 @@ De downloads ervan behouden hun bestanden en gaan naar Alle.</translation>
 <context>
     <name>eMule::ClientDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+93"/>
-        <location line="+20"/>
+        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+160"/>
+        <location line="+21"/>
         <source>Client Details: %1</source>
         <translation>Cliëntdetails: %1</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+37"/>
+        <location line="+166"/>
         <source>General</source>
         <translation>Algemeen</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="-155"/>
+        <location line="+164"/>
         <source>Name</source>
         <translation>Naam</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-162"/>
         <source>Hash</source>
         <translation>Hash</translation>
     </message>
@@ -2769,16 +2771,18 @@ De downloads ervan behouden hun bestanden en gaan naar Alle.</translation>
     </message>
     <message>
         <location line="+4"/>
+        <location line="+171"/>
         <source>Software</source>
         <translation>Software</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="-168"/>
+        <location line="+174"/>
         <source>Country</source>
         <translation>Land</translation>
     </message>
     <message>
-        <location line="+24"/>
+        <location line="-150"/>
         <source>Server IP</source>
         <translation>Server-IP</translation>
     </message>
@@ -2862,42 +2866,58 @@ De downloads ervan behouden hun bestanden en gaan naar Alle.</translation>
         <translation>Kad</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="-180"/>
+        <source>anonymous (ed3k)</source>
+        <translation>anoniem (ed3k)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>%1 (ed3k)</source>
+        <translation>%1 (ed3k)</translation>
+    </message>
+    <message>
+        <location line="+179"/>
+        <location line="+173"/>
         <source>Connected</source>
         <translation>Verbonden</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="-173"/>
         <source>Disconnected</source>
         <translation>Verbinding verbroken</translation>
     </message>
     <message>
         <location line="+55"/>
+        <location line="+128"/>
         <source>Transfer</source>
         <translation>Overdracht</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="-117"/>
+        <location line="+126"/>
         <source>Currently downloading</source>
         <translation>Huidige download</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-124"/>
+        <location line="+146"/>
         <source>Requested to upload</source>
         <translation>Gevraagde upload</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-143"/>
+        <location line="+156"/>
         <source>Downloaded (this session)</source>
         <translation>Gedownload (deze sessie)</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-154"/>
+        <location line="+155"/>
         <source>Uploaded (this session)</source>
         <translation>Geüpload (deze sessie)</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="-150"/>
         <source>Average Downloadrate</source>
         <translation>Gemiddelde downloadsnelheid</translation>
     </message>
@@ -2940,6 +2960,147 @@ De downloads ervan behouden hun bestanden en gaan naar Alle.</translation>
         <location line="+2"/>
         <source>Uploadqueue Score</source>
         <translation>Uploadlijstscore</translation>
+    </message>
+    <message>
+        <location line="+31"/>
+        <source>anonymous</source>
+        <translation>anoniem</translation>
+    </message>
+    <message>
+        <source>ed3k Key</source>
+        <translation type="vanished">ed3k-sleutel</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Anonymous</source>
+        <translation>Anoniem</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Node</source>
+        <translation>Node</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>It downloads from our anonymous node: a second key of ours, reached through a path of other nodes. Neither side sees the other&apos;s IP address.</source>
+        <translation>Downloadt van onze anonieme node: een tweede sleutel van ons, bereikt via een pad van andere nodes. Geen van beide kanten ziet het IP-adres van de ander.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>It downloads from our node key: the key our node ID is made from. It connects to us directly and sees our IP address.</source>
+        <translation>Downloadt van onze node-sleutel: de sleutel waaruit onze node-ID is gemaakt. Verbindt rechtstreeks met ons en ziet ons IP-adres.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Node ID</source>
+        <translation>Node-ID</translation>
+    </message>
+    <message>
+        <location line="+55"/>
+        <source>Download state</source>
+        <translation>Downloadstatus</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Available parts</source>
+        <translation>Beschikbare delen</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Ratio (UL/DL)</source>
+        <translation>Verhouding (UL/DL)</translation>
+    </message>
+    <message>
+        <source>Address</source>
+        <translation type="vanished">Adres</translation>
+    </message>
+    <message>
+        <location line="-58"/>
+        <source>hidden</source>
+        <translation>verborgen</translation>
+    </message>
+    <message>
+        <location line="-4"/>
+        <location line="+7"/>
+        <location line="+2"/>
+        <location line="+32"/>
+        <source>Yes</source>
+        <translation>Ja</translation>
+    </message>
+    <message>
+        <location line="-55"/>
+        <source>ed3k Type</source>
+        <translation>ed3k-type</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>eD2K</source>
+        <translation>eD2K</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+7"/>
+        <location line="+2"/>
+        <location line="+32"/>
+        <source>No</source>
+        <translation>Nee</translation>
+    </message>
+    <message>
+        <location line="-32"/>
+        <source>LAN</source>
+        <translation>LAN</translation>
+    </message>
+    <message>
+        <location line="+18"/>
+        <source>File size</source>
+        <translation>Bestandsgrootte</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Root hash</source>
+        <translation>Root-hash</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Upload state</source>
+        <translation>Uploadstatus</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <location line="+18"/>
+        <source>Transferring</source>
+        <translation>Bezig met overdracht</translation>
+    </message>
+    <message>
+        <location line="-17"/>
+        <source>On queue (place %1)</source>
+        <translation>In wachtrij (plaats %1)</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <location line="+17"/>
+        <source>On queue</source>
+        <translation>In wachtrij</translation>
+    </message>
+    <message>
+        <location line="-15"/>
+        <source>Upload time</source>
+        <translation>Uploadtijd</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Waiting time</source>
+        <translation>Wachttijd</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Downloaded (this turn)</source>
+        <translation>Gedownload (deze beurt)</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Turn ending</source>
+        <translation>Beurt eindigt</translation>
     </message>
 </context>
 <context>
@@ -15189,19 +15350,21 @@ Opnieuw downloaden?</translation>
         <location line="+6"/>
         <location line="+188"/>
         <location line="+120"/>
+        <location line="+195"/>
         <source>Connected</source>
         <translation>Verbonden</translation>
     </message>
     <message>
-        <location line="-306"/>
+        <location line="-501"/>
         <location line="+145"/>
         <location line="+39"/>
         <location line="+122"/>
+        <location line="+194"/>
         <source>Connecting</source>
         <translation>Verbinden</translation>
     </message>
     <message>
-        <location line="-304"/>
+        <location line="-498"/>
         <location line="+145"/>
         <source>Disconnected</source>
         <translation>Verbinding verbroken</translation>
@@ -15212,42 +15375,46 @@ Opnieuw downloaden?</translation>
         <location line="+117"/>
         <location line="+35"/>
         <location line="+6"/>
-        <location line="+66"/>
+        <location line="+111"/>
         <location line="+5"/>
+        <location line="+83"/>
         <source>Status:</source>
         <translation>Status:</translation>
     </message>
     <message>
-        <location line="-368"/>
+        <location line="-496"/>
         <location line="+65"/>
         <location line="+156"/>
+        <location line="+134"/>
         <source>Users:</source>
         <translation>Gebruikers:</translation>
     </message>
     <message>
-        <location line="-220"/>
+        <location line="-354"/>
         <location line="+66"/>
         <location line="+156"/>
+        <location line="+135"/>
         <source>Files:</source>
         <translation>Bestanden:</translation>
     </message>
     <message>
-        <location line="-215"/>
+        <location line="-350"/>
         <location line="+2"/>
         <location line="+50"/>
         <location line="+98"/>
+        <location line="+329"/>
         <source>IP:Port:</source>
         <translation>IP:poort:</translation>
     </message>
     <message>
-        <location line="-150"/>
+        <location line="-479"/>
         <location line="+304"/>
-        <location line="+62"/>
+        <location line="+107"/>
         <source>Unknown</source>
         <translation>Onbekend</translation>
     </message>
     <message>
-        <location line="-359"/>
+        <location line="-404"/>
         <location line="+147"/>
         <source>ID:</source>
         <translation>ID:</translation>
@@ -15326,31 +15493,35 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="+2"/>
+        <location line="+430"/>
         <source>Name:</source>
         <translation>Naam:</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-428"/>
         <source>Description:</source>
         <translation>Beschrijving:</translation>
     </message>
     <message>
         <location line="+5"/>
+        <location line="+437"/>
         <source>Version:</source>
         <translation>Versie:</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="-429"/>
+        <location line="+293"/>
         <source>Connections:</source>
         <translation>Verbindingen:</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-292"/>
+        <location line="+293"/>
         <source>Obfuscated</source>
         <translation>Verduisterd</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="-293"/>
         <source>Normal</source>
         <translation>Normaal</translation>
     </message>
@@ -15361,16 +15532,18 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="+2"/>
+        <location line="+426"/>
         <source>Ping:</source>
         <translation>Ping:</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-425"/>
+        <location line="+425"/>
         <source>%1 ms</source>
         <translation>%1 ms</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="-419"/>
         <source>eD2K Server Features</source>
         <translation>Functies eD2K-server</translation>
     </message>
@@ -15448,20 +15621,20 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+210"/>
-        <location line="+99"/>
+        <location line="+211"/>
+        <location line="+143"/>
         <source>Yes</source>
         <translation>Ja</translation>
     </message>
     <message>
-        <location line="-309"/>
-        <location line="+210"/>
-        <location line="+99"/>
+        <location line="-354"/>
+        <location line="+211"/>
+        <location line="+143"/>
         <source>No</source>
         <translation>Nee</translation>
     </message>
     <message>
-        <location line="-295"/>
+        <location line="-340"/>
         <source>Kad Network</source>
         <translation>Kad-netwerk</translation>
     </message>
@@ -15482,31 +15655,35 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="+19"/>
+        <location line="+144"/>
         <source>None</source>
         <translation>Geen</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-142"/>
         <source>Buddy:</source>
         <translation>Buddy:</translation>
     </message>
     <message>
         <location line="+3"/>
+        <location line="+151"/>
         <source>Buddies served:</source>
         <translation>Bediende buddy&apos;s:</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="-121"/>
+        <location line="+133"/>
         <source>%1 (Experimental: %2)</source>
         <translation>%1 (experimenteel: %2)</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="-126"/>
+        <location line="+137"/>
         <source>Indexed:</source>
         <translation>Geïndexeerd:</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-136"/>
         <source>Source:</source>
         <translation>Bron:</translation>
     </message>
@@ -15538,12 +15715,12 @@ Opnieuw downloaden?</translation>
     <message>
         <location line="+0"/>
         <location line="+39"/>
-        <location line="+72"/>
+        <location line="+117"/>
         <source>Disabled</source>
         <translation>Uitgeschakeld</translation>
     </message>
     <message>
-        <location line="-109"/>
+        <location line="-154"/>
         <source>not running</source>
         <translation>niet actief</translation>
     </message>
@@ -15567,12 +15744,12 @@ Opnieuw downloaden?</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+72"/>
+        <location line="+117"/>
         <source>Not running</source>
         <translation>Niet actief</translation>
     </message>
     <message>
-        <location line="-58"/>
+        <location line="-103"/>
         <source>Offline</source>
         <translation>Offline</translation>
     </message>
@@ -15597,23 +15774,29 @@ Opnieuw downloaden?</translation>
         <translation>IPv4:</translation>
     </message>
     <message>
-        <location line="+2"/>
-        <location line="+68"/>
+        <location line="+3"/>
+        <location line="+112"/>
         <source>Router:</source>
         <translation>Router:</translation>
     </message>
     <message>
-        <location line="-67"/>
+        <location line="-104"/>
+        <source>Relays:</source>
+        <translation>Relays:</translation>
+    </message>
+    <message>
+        <location line="+20"/>
         <source>Contacts:</source>
         <translation>Contacten:</translation>
     </message>
     <message>
         <location line="+1"/>
+        <location line="+136"/>
         <source>Node ID:</source>
         <translation>Node-ID:</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="-108"/>
         <source>Shared Files</source>
         <translation>Gedeelde bestanden</translation>
     </message>
@@ -15759,6 +15942,26 @@ Opnieuw downloaden?</translation>
         <location line="+0"/>
         <source>%1 (%2 peers)</source>
         <translation>%1 (%2 peers)</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>ed3k Index Node</source>
+        <translation>ed3k-indexnode</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Given up</source>
+        <translation>Opgegeven</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Waiting</source>
+        <translation>Wachten</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Index nodes:</source>
+        <translation>Indexnodes:</translation>
     </message>
 </context>
 <context>
@@ -21276,20 +21479,20 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+290"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+303"/>
         <source>Related</source>
         <translation>Gerelateerd</translation>
     </message>
     <message>
         <location line="+103"/>
-        <location line="+1244"/>
+        <location line="+1253"/>
         <location line="+21"/>
-        <location line="+602"/>
+        <location line="+603"/>
         <source>Download</source>
         <translation>Downloaden</translation>
     </message>
     <message>
-        <location line="-1847"/>
+        <location line="-1857"/>
         <source>Close All Searches</source>
         <translation>Alle zoekopdrachten sluiten</translation>
     </message>
@@ -21309,7 +21512,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>Type:</translation>
     </message>
     <message>
-        <location line="+850"/>
+        <location line="+858"/>
         <location line="+9"/>
         <source>Any</source>
         <translation>Alle</translation>
@@ -21356,7 +21559,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>Collectie</translation>
     </message>
     <message>
-        <location line="-862"/>
+        <location line="-870"/>
         <source>Method:</source>
         <translation>Methode:</translation>
     </message>
@@ -21406,12 +21609,12 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>ed3k</translation>
     </message>
     <message>
-        <location line="-111"/>
+        <location line="-124"/>
         <source>Torrent search</source>
         <translation>Torrent zoeken</translation>
     </message>
     <message>
-        <location line="+112"/>
+        <location line="+125"/>
         <source>ed3k Channel (live)</source>
         <translation>ed3k-kanaal (live)</translation>
     </message>
@@ -21426,7 +21629,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>Herstellen</translation>
     </message>
     <message>
-        <location line="+27"/>
+        <location line="+28"/>
         <source>Show results the server found on this network</source>
         <translation>Resultaten tonen die de server op dit netwerk heeft gevonden</translation>
     </message>
@@ -21451,7 +21654,17 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>Webresultaten</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+3"/>
+        <source>Hide related folder content</source>
+        <translation>Bijbehorende mapinhoud verbergen</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Hide the files of a torrent, Usenet or web release whose name lacks a search keyword. The release itself stays.</source>
+        <translation>Bestanden van een torrent-, Usenet- of webrelease verbergen waarvan de naam een zoekwoord mist. De release zelf blijft staan.</translation>
+    </message>
+    <message>
+        <location line="+22"/>
         <source>Min. Size [MB]:</source>
         <translation>Min. grootte [MB]:</translation>
     </message>
@@ -21631,12 +21844,12 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>Zoeken naar &quot;%1&quot; mislukt: %2</translation>
     </message>
     <message>
-        <location line="-725"/>
+        <location line="-746"/>
         <source>Usenet search</source>
         <translation>Usenet zoeken</translation>
     </message>
     <message>
-        <location line="+969"/>
+        <location line="+990"/>
         <source>%1 results — %2 of %3 indexers</source>
         <translation>%1 resultaten — %2 van %3 indexers</translation>
     </message>
@@ -21661,7 +21874,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>&quot;%1&quot; in de wachtrij gezet voor download via Usenet.</translation>
     </message>
     <message>
-        <location line="+162"/>
+        <location line="+163"/>
         <source>Restore Search Parameters</source>
         <translation>Zoekparameters herstellen</translation>
     </message>
@@ -21740,17 +21953,25 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>Details...</translation>
     </message>
     <message>
-        <location line="-701"/>
+        <location line="-702"/>
         <source>No torrent indexer is configured.</source>
         <translation>Er is geen torrent-indexer ingesteld.</translation>
     </message>
     <message>
-        <location line="-503"/>
+        <location line="-510"/>
         <source>Show results the server found on this network. New eD2K and Kad searches also ask the servers&apos; catalogues of it.</source>
         <translation>Resultaten tonen die de server op dit netwerk heeft gevonden. Nieuwe eD2K- en Kad-zoekopdrachten raadplegen ook de catalogi van de servers.</translation>
     </message>
     <message>
-        <location line="+504"/>
+        <source>Matching files only</source>
+        <translation type="vanished">Alleen overeenkomende bestanden</translation>
+    </message>
+    <message>
+        <source>Of a torrent, Usenet or web release, list only the files whose name holds every search keyword. The release itself stays.</source>
+        <translation type="vanished">Van een torrent-, Usenet- of webrelease alleen de bestanden tonen waarvan de naam elk zoekwoord bevat. De release zelf blijft staan.</translation>
+    </message>
+    <message>
+        <location line="+511"/>
         <source>No Usenet indexer is configured.</source>
         <translation>Er is geen Usenet-indexer ingesteld.</translation>
     </message>
@@ -21805,7 +22026,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>Andere</translation>
     </message>
     <message>
-        <location line="+230"/>
+        <location line="+231"/>
         <location line="+139"/>
         <source>Save NZB File...</source>
         <translation>NZB-bestand opslaan...</translation>
@@ -21865,13 +22086,13 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
     <message>
         <location line="+13"/>
         <location line="+7"/>
-        <location line="+1079"/>
+        <location line="+1084"/>
         <location line="+43"/>
         <source>Preview</source>
         <translation>Voorvertoning</translation>
     </message>
     <message>
-        <location line="-1116"/>
+        <location line="-1121"/>
         <source>Find...</source>
         <translation>Zoeken...</translation>
     </message>
@@ -21886,7 +22107,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>Webdiensten</translation>
     </message>
     <message>
-        <location line="+368"/>
+        <location line="+369"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -21895,7 +22116,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
 %1</translation>
     </message>
     <message>
-        <location line="+673"/>
+        <location line="+677"/>
         <source>Preview requested - please wait</source>
         <translation>Voorvertoning aangevraagd - even geduld</translation>
     </message>
@@ -21910,7 +22131,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>Voorvertoning niet beschikbaar — webserver draait niet of streamtoken niet ontvangen.</translation>
     </message>
     <message>
-        <location line="+370"/>
+        <location line="+379"/>
         <source>Asking servers: %1 / %2</source>
         <translation>Servers bevragen: %1 / %2</translation>
     </message>
@@ -21920,7 +22141,17 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>Alle</translation>
     </message>
     <message>
-        <location line="+195"/>
+        <location line="+194"/>
+        <source>You share &quot;%1&quot; already.</source>
+        <translation>U deelt &quot;%1&quot; al.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>&quot;%1&quot; is downloading already.</source>
+        <translation>&quot;%1&quot; wordt al gedownload.</translation>
+    </message>
+    <message>
+        <location line="+8"/>
         <source>ed3k download added: %1</source>
         <translation>ed3k-download toegevoegd: %1</translation>
     </message>
@@ -27700,101 +27931,101 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+396"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+398"/>
         <location line="+341"/>
         <source>Priority (Download)</source>
         <translation>Prioriteit (download)</translation>
     </message>
     <message>
         <location line="-312"/>
-        <location line="+2234"/>
+        <location line="+2235"/>
         <location line="+196"/>
         <source>Low</source>
         <translation>Laag</translation>
     </message>
     <message>
-        <location line="-2429"/>
-        <location line="+2233"/>
+        <location line="-2430"/>
+        <location line="+2234"/>
         <location line="+197"/>
         <source>Normal</source>
         <translation>Normaal</translation>
     </message>
     <message>
-        <location line="-2429"/>
-        <location line="+2232"/>
+        <location line="-2430"/>
+        <location line="+2233"/>
         <location line="+198"/>
         <source>High</source>
         <translation>Hoog</translation>
     </message>
     <message>
-        <location line="-2426"/>
-        <location line="+2430"/>
+        <location line="-2427"/>
+        <location line="+2431"/>
         <source>Very Low</source>
         <translation>Zeer laag</translation>
     </message>
     <message>
-        <location line="-2428"/>
-        <location line="+2430"/>
+        <location line="-2429"/>
+        <location line="+2431"/>
         <source>Very High</source>
         <translation>Zeer hoog</translation>
     </message>
     <message>
-        <location line="-2428"/>
-        <location line="+2431"/>
+        <location line="-2429"/>
+        <location line="+2432"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-2420"/>
+        <location line="-2421"/>
         <location line="+291"/>
         <location line="+491"/>
-        <location line="+1445"/>
+        <location line="+1446"/>
         <source>Pause</source>
         <translation>Pauzeren</translation>
     </message>
     <message>
-        <location line="-2218"/>
+        <location line="-2219"/>
         <location line="+282"/>
         <location line="+497"/>
-        <location line="+1441"/>
+        <location line="+1442"/>
         <source>Stop</source>
         <translation>Stoppen</translation>
     </message>
     <message>
-        <location line="-2211"/>
+        <location line="-2212"/>
         <location line="+273"/>
         <location line="+503"/>
-        <location line="+1437"/>
+        <location line="+1438"/>
         <source>Resume</source>
         <translation>Hervatten</translation>
     </message>
     <message>
-        <location line="-2200"/>
+        <location line="-2201"/>
         <location line="+260"/>
         <location line="+509"/>
-        <location line="+1433"/>
+        <location line="+1434"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>Annuleren</translation>
     </message>
     <message>
-        <location line="-2190"/>
+        <location line="-2191"/>
         <location line="+245"/>
         <location line="+515"/>
-        <location line="+682"/>
+        <location line="+683"/>
         <source>Open File</source>
         <translation>Bestand openen</translation>
     </message>
     <message>
-        <location line="-1433"/>
+        <location line="-1434"/>
         <location line="+2"/>
         <location line="+763"/>
-        <location line="+725"/>
+        <location line="+726"/>
         <source>Preview</source>
         <translation>Voorvertoning</translation>
     </message>
     <message>
-        <location line="-1482"/>
+        <location line="-1483"/>
         <source>Preview with</source>
         <translation>Voorvertonen met</translation>
     </message>
@@ -27810,13 +28041,15 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
     </message>
     <message>
         <location line="+9"/>
-        <location line="+2373"/>
-        <location line="+118"/>
+        <location line="+2361"/>
+        <location line="+18"/>
+        <location line="+116"/>
+        <location line="+16"/>
         <source>Details...</source>
         <translation>Details...</translation>
     </message>
     <message>
-        <location line="-2482"/>
+        <location line="-2502"/>
         <source>Comments...</source>
         <translation>Commentaar...</translation>
     </message>
@@ -27827,14 +28060,14 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1516"/>
+        <location line="+1517"/>
         <location line="+1"/>
         <location line="+10"/>
         <source>Import parts to file...</source>
         <translation>Delen importeren in bestand...</translation>
     </message>
     <message>
-        <location line="-1522"/>
+        <location line="-1523"/>
         <source>Mass Rename...</source>
         <translation>Massaal hernoemen...</translation>
     </message>
@@ -27857,12 +28090,12 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1423"/>
+        <location line="+1424"/>
         <source>Source Limit...</source>
         <translation>Bronlimiet...</translation>
     </message>
     <message>
-        <location line="-1420"/>
+        <location line="-1421"/>
         <source>Swap All A4AF Sources to This File</source>
         <translation>Alle A4AF-bronnen naar dit bestand wisselen</translation>
     </message>
@@ -27904,14 +28137,14 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
     <message>
         <location line="-64"/>
         <location line="+64"/>
-        <location line="+2164"/>
+        <location line="+2170"/>
         <location line="+113"/>
-        <location line="+72"/>
+        <location line="+86"/>
         <source>Find...</source>
         <translation>Zoeken...</translation>
     </message>
     <message>
-        <location line="-2405"/>
+        <location line="-2425"/>
         <source>Search Related Files</source>
         <translation>Zoeken naar bestanden met samenhang</translation>
     </message>
@@ -27971,12 +28204,12 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
     </message>
     <message>
         <location line="+11"/>
-        <location line="+1434"/>
+        <location line="+1435"/>
         <source>Priority</source>
         <translation>Prioriteit</translation>
     </message>
     <message>
-        <location line="-1397"/>
+        <location line="-1398"/>
         <source>Open Folder</source>
         <translation>Map openen</translation>
     </message>
@@ -28039,7 +28272,7 @@ De bronnen zien dan het adres van deze node; wachtrijplaatsen gaan verloren.</nu
         <translation>ed3k-sleutel</translation>
     </message>
     <message>
-        <location line="+341"/>
+        <location line="+342"/>
         <source>not connected</source>
         <translation>niet verbonden</translation>
     </message>
@@ -28168,41 +28401,42 @@ De bronnen zien dan het adres van deze node; wachtrijplaatsen gaan verloren.</nu
         <translation>Downloaden in alfabetische volgorde</translation>
     </message>
     <message>
-        <location line="+201"/>
+        <location line="+206"/>
+        <location line="+134"/>
         <source>Copy ed3k Node ID</source>
         <translation>ed3k Node ID kopiëren</translation>
     </message>
     <message>
-        <location line="+28"/>
-        <location line="+112"/>
+        <location line="-106"/>
+        <location line="+126"/>
         <source>Add To Friends</source>
         <translation>Toevoegen aan vrienden</translation>
     </message>
     <message>
-        <location line="-88"/>
-        <location line="+113"/>
+        <location line="-102"/>
+        <location line="+127"/>
         <source>Send Message</source>
         <translation>Bericht versturen</translation>
     </message>
     <message>
-        <location line="-102"/>
-        <location line="+109"/>
+        <location line="-116"/>
+        <location line="+123"/>
         <source>View Shared Files</source>
         <translation>Gedeelde bestanden bekijken</translation>
     </message>
     <message>
-        <location line="-102"/>
-        <location line="+103"/>
+        <location line="-116"/>
+        <location line="+117"/>
         <source>cannot view shared files.</source>
         <translation>kan gedeelde bestanden niet bekijken.</translation>
     </message>
     <message>
-        <location line="-90"/>
+        <location line="-104"/>
         <source>Unban</source>
         <translation>Ban opheffen</translation>
     </message>
     <message>
-        <location line="+124"/>
+        <location line="+138"/>
         <source>Bootstrap</source>
         <translation>Bootstrap</translation>
     </message>

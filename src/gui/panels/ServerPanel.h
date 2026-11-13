@@ -10,6 +10,7 @@
 ///   - Vertical splitter between server list and log area
 
 #include <QStringList>
+#include <QCborMap>
 #include <QWidget>
 
 #include <functional>
@@ -91,6 +92,8 @@ private:
     void showFindDialog();
     void requestKadStatus();
     void requestServerState();
+    /// ed3k + shared files for My Info: no push carries them, so polled with the list
+    void requestNetworkInfo();
     /// Back to "not connected" when the daemon link drops.
     void resetConnectionState();
     void parseAndAddServersFromMet(const QByteArray& data);
@@ -191,6 +194,10 @@ private:
     uint32_t m_kadUsers = 0;
     uint32_t m_kadUsersExp = 0;
     uint32_t m_kadFiles = 0;
+
+    // GetNetworkInfo "ed3k" / "shared" blocks (polled)
+    QCborMap m_ed3kInfo;
+    QCborMap m_sharedInfo;
 };
 
 } // namespace eMule

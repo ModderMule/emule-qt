@@ -33,6 +33,7 @@ DownloadRow ed3kDownloadRow(const QCborMap& m)
     row.addedOn = m.value(QStringLiteral("addedOn")).toInteger();
     row.ed3kPath = m.value(QStringLiteral("path")).toString();
     row.ed3kKey = m.value(QStringLiteral("key")).toString();   // batch 15, hops.md §1
+    row.previewPrio = m.value(QStringLiteral("previewPrio")).toBool();
     row.fileType = getFileTypeByName(row.fileName);
     // the eD2K status tokens (statusText): verifying shows as "Completing (Hashing)"
     switch (m.value(QStringLiteral("state")).toInteger()) {
@@ -64,7 +65,20 @@ DownloadRow ed3kDownloadRow(const QCborMap& m)
     if (const auto pending = decodeBlockRuns(m.value(QStringLiteral("pending")).toByteArray(), count))
         row.pending = blockRanges(*pending, true, block, row.fileSize);
     const QByteArray avail = m.value(QStringLiteral("avail")).toByteArray();
-    const qint64 piece = m.value(QStringLiteral("pieceSize")).toInteger();
+    // was: const qint64 piece = m.value(QStringLiteral("pieceSize")).toInteger();
+    const qint64 piece = m.value(QStringLiteral("pieceSize")).toInteger(16 * block);
+    // part detail (Display): per 4 MiB piece 255 held, 1 started, 0 none
+    if (piece > 0 && block > 0 && piece % block == 0) {
+        const auto per = std::size_t(piece / block);
+        row.partFreqUnit = piece;
+        row.partMap.resize(qsizetype((count + per - 1) / per));
+        for (qsizetype p = 0; p < row.partMap.size(); ++p) {
+            const std::size_t from = std::size_t(p) * per;
+            const std::size_t to = std::min(count, from + per);
+            const auto got = std::count(held->begin() + qsizetype(from), held->begin() + qsizetype(to), true);
+            row.partMap[p] = char(got == qsizetype(to - from) ? 255 : got > 0 ? 1 : 0);
+        }
+    }
     if (!avail.isEmpty() && piece > 0) {
         row.partFreqUnit = piece;
         row.partFreq.reserve(avail.size());

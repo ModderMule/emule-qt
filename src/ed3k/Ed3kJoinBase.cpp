@@ -21,6 +21,7 @@
 #include <QUrl>
 
 #include <algorithm>
+#include <iterator>
 #include <chrono>
 #include <cstring>
 
@@ -486,6 +487,69 @@ bool Ed3kJoinBase::switchAllowed(bool queued, std::optional<std::chrono::steady_
                                  std::chrono::steady_clock::time_point now)
 {
     return !queued || !last || now - *last >= kQueuedSwitchGap;
+}
+
+std::vector<Ed3kJoinBase::SourceInfo> Ed3kJoinBase::sourcesOf(const ffi::Root& root) const
+{
+    std::vector<SourceInfo> out;
+    const auto it = m_downloads.find(root);
+    if (it == m_downloads.end())
+        return out;
+    const Download& d = *it->second;
+    const NodeTurns& t = turns();
+    for (const auto& [node, h] : t.holders)
+        if (h.join == this && h.root == root)
+            if (auto info = holderInfo(node, h.root, h.stream, h.source))
+                out.push_back(std::move(*info));
+    // §12.5: its one stream serves another download of ours; this one waits for the turn
+    for (const auto& [node, wants] : t.waiting) {
+        const bool here = std::ranges::any_of(wants, [&](const NodeTurns::Want& w) { return w.join == this && w.root == root; });
+        if (!here)
+            continue;
+        SourceInfo s;
+        s.key = node.first;
+        s.node = node.second;
+        s.root = root;
+        s.fileName = downloadName(root, d);
+        s.size = d.size;
+        s.otherFile = true;
+        if (const auto h = t.holders.find(node); h != t.holders.end()) {
+            if (const auto held = h->second.join ? h->second.join->holderInfo(node, h->second.root, h->second.stream, h->second.source) : std::nullopt)
+                s.otherName = held->fileName;
+            if (node.first == ffi::KeyKind::Node)
+                s.endpoint = h->second.source.ep4 ? h->second.source.ep4 : h->second.source.ep6;
+        }
+        out.push_back(std::move(s));
+    }
+    return out;
+}
+
+std::vector<Ed3kJoinBase::SourceInfo> Ed3kJoinBase::sourcesAt(const Ed3kSession& session, const ffi::Root& root)
+{
+    std::vector<SourceInfo> out;
+    for (const Ed3kJoinBase* join : turnsOf(session).joins)
+        std::ranges::move(join->sourcesOf(root), std::back_inserter(out));
+    return out;
+}
+
+std::optional<Ed3kJoinBase::SourceInfo> Ed3kJoinBase::sourceAt(const Ed3kSession& session, ffi::KeyKind key,
+                                                               const ffi::NodeId& node)
+{
+    const NodeTurns& t = turnsOf(session);
+    const auto h = t.holders.find(TurnNode{key, node});
+    if (h == t.holders.end() || !h->second.join)
+        return std::nullopt;
+    return h->second.join->holderInfo(h->first, h->second.root, h->second.stream, h->second.source);
+}
+
+std::vector<Ed3kJoinBase::SourceInfo> Ed3kJoinBase::downloadingAt(const Ed3kSession& session)
+{
+    std::vector<SourceInfo> out;
+    for (const auto& [node, h] : turnsOf(session).holders)
+        if (h.join)
+            if (auto info = h.join->holderInfo(node, h.root, h.stream, h.source); info && info->holding)
+                out.push_back(std::move(*info));
+    return out;
 }
 
 std::vector<std::uint8_t> Ed3kJoinBase::pieceAvailability(const Download& d)
@@ -1348,6 +1412,12 @@ void Ed3kJoinBase::onBlock(const ffi::event::Block& b)
         return;
     Download& d = *it->second;
     d.outstanding.erase(b.offset);
+    // per-peer bytes (client details): the holder of this stream
+    for (const auto& [node, h] : turns().holders)
+        if (h.join == this && h.stream == b.stream) {
+            m_session.addPeerBytes(node.first, node.second, 0, b.data.size());
+            break;
+        }
     if (!d.inMemory) {
         onFileBlock(d, b);
         // the handler may have stopped it
@@ -2013,6 +2083,52 @@ QString Ed3kJoinBase::logPrefix() const
     // own tab: the tag alone; in the ed3k tab: "ed3k <tag>"
     return logCategory() == &lcEmuleEd3k ? QStringLiteral("ed3k %1: ").arg(m_tag)
                                         : m_tag + QStringLiteral(": ");
+}
+
+std::optional<Ed3kJoinBase::SourceInfo> Ed3kJoinBase::holderInfo(const TurnNode& node, const ffi::Root& root,
+                                                                 std::uint64_t stream, const ffi::Source& source) const
+{
+    const auto it = m_downloads.find(root);
+    if (it == m_downloads.end())
+        return std::nullopt;
+    const Download& d = *it->second;
+    SourceInfo s;
+    s.key = node.first;
+    s.node = node.second;
+    s.root = root;
+    s.fileName = downloadName(root, d);
+    s.size = d.size;
+    // the anonymous key never learns where its uploader is (hops.md §1)
+    if (node.first == ffi::KeyKind::Node)
+        s.endpoint = source.ep4 ? source.ep4 : source.ep6;
+    if (const auto st = d.streams.find(stream); st != d.streams.end())
+        s.holding = st->second;
+    if (const auto have = d.sourceHave.find(stream); have != d.sourceHave.end())
+        s.have = have->second;
+    // our pieces: all but those with a block still wanted
+    constexpr std::uint64_t kPiece = 16 * kBlock;
+    if (d.size > 0) {
+        s.ownPieces.assign(std::size_t((d.size + kPiece - 1) / kPiece), true);
+        std::vector<std::uint64_t> wanted;
+        if (d.inMemory) {
+            for (std::uint64_t off = 0; off < d.size; off += kBlock)
+                if (!d.got.contains(off))
+                    wanted.push_back(off);
+        } else {
+            wanted = wantedBlocks(d);
+        }
+        for (const auto off : wanted)
+            if (const auto p = std::size_t(off / kPiece); p < s.ownPieces.size())
+                s.ownPieces[p] = false;
+        // outstanding blocks are wanted too (wantedBlocks keeps them)
+        for (const auto& [off, st] : d.outstanding) {
+            if (const auto p = std::size_t(off / kPiece); p < s.ownPieces.size())
+                s.ownPieces[p] = false;
+            if (st == stream)
+                s.asked.push_back(off);
+        }
+    }
+    return s;
 }
 
 } // namespace eMule::ed3k

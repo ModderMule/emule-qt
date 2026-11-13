@@ -415,6 +415,10 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
                 else if (tag.nameId() == ST_NAT_PORT && tag.isInt()) {
                     natPort = static_cast<uint16>(tag.intValue());
                 }
+                else if (tag.nameId() == ST_ED3K && tag.isStr()) {
+                    if (theApp.ed3kIndexLink)
+                        theApp.ed3kIndexLink(tag.strValue());
+                }
                 else if (tag.nameId() == ST_NATT_TOKEN && tag.isHash()) {
                     natToken.emplace();
                     std::copy_n(tag.hashValue(), natToken->size(), natToken->begin());

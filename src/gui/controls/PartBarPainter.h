@@ -59,11 +59,11 @@ inline void paintSimpleBar(QPainter& painter, const QRect& rect, double percent,
 }
 
 /// Fill @p rect with one slice per byte of @p parts, each coloured by
-/// @p colorOf(byte). With @p fileSize a slice is one PARTSIZE of the file (the
+/// @p colorOf(byte). With @p fileSize a slice is one @p partSize of the file (the
 /// last one shorter), as MFC draws; without, the slices are equal.
 template <class ColorOf>
 void paintPartBar(QPainter& painter, const QRect& rect, const QByteArray& parts, ColorOf colorOf,
-                  uint64_t fileSize = 0)
+                  uint64_t fileSize = 0, uint64_t partSize = PARTSIZE)
 {
     const qsizetype count = parts.size();
     if (count <= 0 || rect.width() <= 0 || rect.height() <= 0)
@@ -72,8 +72,9 @@ void paintPartBar(QPainter& painter, const QRect& rect, const QByteArray& parts,
     const bool bySize = fileSize > 0;
     BarShader shader(bySize ? fileSize : uint64_t(count));
     for (qsizetype i = 0; i < count; ++i) {
-        const uint64_t start = bySize ? uint64_t(i) * PARTSIZE : uint64_t(i);
-        const uint64_t end = bySize ? start + PARTSIZE : start + 1;
+        // was: uint64_t(i) * PARTSIZE, start + PARTSIZE
+        const uint64_t start = bySize ? uint64_t(i) * partSize : uint64_t(i);
+        const uint64_t end = bySize ? start + partSize : start + 1;
         shader.fillRange(start, end, colorOf(quint8(parts.at(i))));
     }
     shader.draw(painter, rect);
@@ -114,15 +115,16 @@ inline void paintProgressStrip(QPainter& painter, const QRect& rect, double perc
 }
 
 /// MorphXT chunkDots: a 1 px mark on the strip at every part boundary.
-inline void paintChunkDots(QPainter& painter, const QRect& rect, uint64_t fileSize)
+inline void paintChunkDots(QPainter& painter, const QRect& rect, uint64_t fileSize, uint64_t partSize = PARTSIZE)
 {
-    if (rect.height() <= kProgressStripHeight || fileSize <= PARTSIZE)
+    // was: fileSize <= PARTSIZE
+    if (rect.height() <= kProgressStripHeight || partSize == 0 || fileSize <= partSize)
         return;
 
     const bool flat = useFlatBar();
     const QColor dot = flat ? QColor(128, 128, 128) : QColor(255, 255, 255);
     const double w = rect.width();
-    for (uint64_t i = PARTSIZE; i < fileSize; i += PARTSIZE) {
+    for (uint64_t i = partSize; i < fileSize; i += partSize) {
         const int x = rect.left() + int(double(i) * w / double(fileSize));
         BarShader::fillBarRect(painter, QRect(x, rect.top(), 1, kProgressStripHeight), dot, flat,
                                barDepth3D());

@@ -12,6 +12,7 @@
 #include "controls/LogWidget.h"
 #include "controls/ServerListModel.h"
 #include "dialogs/FindInListDialog.h"
+#include "dialogs/NetworkInfoDialog.h"
 
 #include "app/UiState.h"
 #include "utils/Ed2kLinkImporter.h"
@@ -51,6 +52,9 @@
 #include <QPushButton>
 #include <QScrollBar>
 #include <QSplitter>
+#include <QPainter>
+#include <QStyleOptionTab>
+#include <QTabBar>
 #include <QStyle>
 #include <QTimer>
 #include <QTreeView>
@@ -60,6 +64,59 @@
 #include <memory>
 
 namespace eMule {
+
+namespace {
+
+/// One tab drawn unselected by the style: a section title that looks like the log tabs
+class TabTitle : public QWidget {
+public:
+    TabTitle(const QIcon& icon, const QString& text, QWidget* parent = nullptr)
+        : QWidget(parent), m_icon(icon), m_text(text)
+    {
+        setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    }
+
+    [[nodiscard]] QSize sizeHint() const override
+    {
+        const QStyleOptionTab opt = option();
+        // as QTabBar::tabSizeHint
+        const int iconW = opt.iconSize.width() + 4;
+        const QSize contents(fontMetrics().size(Qt::TextShowMnemonic, m_text).width() + iconW
+                                 + style()->pixelMetric(QStyle::PM_TabBarTabHSpace, &opt, this),
+                             std::max(opt.iconSize.height(), fontMetrics().height())
+                                 + style()->pixelMetric(QStyle::PM_TabBarTabVSpace, &opt, this));
+        return style()->sizeFromContents(QStyle::CT_TabBarTab, &opt, contents, this);
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter painter(this);
+        const QStyleOptionTab opt = option();
+        style()->drawControl(QStyle::CE_TabBarTab, &opt, &painter, this);
+    }
+
+private:
+    [[nodiscard]] QStyleOptionTab option() const
+    {
+        QStyleOptionTab opt;
+        opt.initFrom(this);
+        opt.state &= ~(QStyle::State_HasFocus | QStyle::State_MouseOver);   // never State_Selected
+        opt.rect = rect();
+        opt.shape = QTabBar::RoundedNorth;
+        opt.position = QStyleOptionTab::OnlyOneTab;
+        opt.text = m_text;
+        opt.icon = m_icon;
+        const int extent = style()->pixelMetric(QStyle::PM_TabBarIconSize, nullptr, this);
+        opt.iconSize = QSize(extent, extent);
+        return opt;
+    }
+
+    QIcon m_icon;
+    QString m_text;
+};
+
+} // namespace
 
 ServerPanel::ServerPanel(QWidget* parent)
     : QWidget(parent)
@@ -82,6 +139,7 @@ void ServerPanel::setIpcClient(IpcClient* client)
         connect(m_ipc, &IpcClient::connected, this, &ServerPanel::requestServerList);
         connect(m_ipc, &IpcClient::connected, this, &ServerPanel::requestKadStatus);
         connect(m_ipc, &IpcClient::connected, this, &ServerPanel::requestServerState);
+        connect(m_ipc, &IpcClient::connected, this, &ServerPanel::requestNetworkInfo);
 
         // Refresh server list and button on server state changes
         connect(m_ipc, &IpcClient::serverStateChanged,
@@ -136,6 +194,7 @@ void ServerPanel::setIpcClient(IpcClient* client)
             requestServerList();
             requestKadStatus();
             requestServerState();
+            requestNetworkInfo();
         }
     }
 }
@@ -258,8 +317,10 @@ void ServerPanel::applyDisplayOptions()
 
 void ServerPanel::onRefreshTimer()
 {
-    if (m_ipc && m_ipc->isConnected())
+    if (m_ipc && m_ipc->isConnected()) {
         requestServerList();
+        requestNetworkInfo();
+    }
     refreshMyInfo();
 }
 
@@ -783,13 +844,10 @@ QWidget* ServerPanel::createControlsPanel()
     connect(m_updateUrlEdit, &QLineEdit::returnPressed,
             this, &ServerPanel::onUpdateServerMetClicked);
 
-    // Separator
-    auto* separator = new QFrame;
-    separator->setFrameShape(QFrame::HLine);
-    separator->setFrameShadow(QFrame::Sunken);
-    layout->addWidget(separator);
+    // My Info section: titled by an unselected tab with MFC's Info icon, left like the log tabs
+    layout->addWidget(new TabTitle(skinIcon(QStringLiteral(":/icons/Info.ico")), tr("My Info")),
+                      0, Qt::AlignLeft);
 
-    // My Info section
     m_infoLabel = new QLabel;
     m_infoLabel->setWordWrap(true);
     m_infoLabel->setTextFormat(Qt::RichText);
@@ -844,7 +902,11 @@ void ServerPanel::refreshMyInfo()
     const auto sp = QStringLiteral("&nbsp;&nbsp;");
 
     QString html;
-    html += QStringLiteral("<b>") + tr("My Info") + QStringLiteral("</b><br>");
+    // same order as the Network Info dialog: shared files after the client; no blank line
+    // at the top, one after (the table carries its own margin)
+    if (QString shared = NetworkInfoDialog::sharedHtml(m_sharedInfo, thePrefs.showExtControls(), true);
+        !shared.isEmpty())
+        html += shared.mid(4) + (shared.endsWith(QLatin1StringView("</table>")) ? QString() : QStringLiteral("<br>"));
 
     // ---- eD2K Network -------------------------------------------------------
     html += QStringLiteral("<b>") + tr("eD2K Network") + QStringLiteral("</b><br>");
@@ -948,6 +1010,10 @@ void ServerPanel::refreshMyInfo()
     } else {
         html += sp + tr("Status:") + QStringLiteral("\t") + tr("Disconnected") + QStringLiteral("<br>");
     }
+
+    // ---- ed3k Network (no MFC original) ---------------------------------------
+    // own section like the dialog's, though ed3k has no servers yet
+    html += NetworkInfoDialog::ed3kHtml(m_ed3kInfo, true);
 
     // ---- Web Interface ------------------------------------------------------
     html += QStringLiteral("<br><b>") + tr("Web Interface") + QStringLiteral("</b><br>");
@@ -1150,6 +1216,26 @@ void ServerPanel::requestServerState()
         updateConnectButton(m_ed2kConnected, m_ed2kConnecting);
         auto serverId = static_cast<uint32_t>(info.value(QStringLiteral("serverId")).toInteger());
         m_serverListModel->setConnectedServer(serverId);
+        refreshMyInfo();
+    });
+}
+
+void ServerPanel::requestNetworkInfo()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::GetNetworkInfo),
+                       [this](const Ipc::IpcMessage& resp) {
+        if (resp.type() != Ipc::IpcMsgType::Result || !resp.fieldBool(0))
+            return;
+        const QCborMap info = resp.fieldMap(1);
+        QCborMap ed3k = info.value(QStringLiteral("ed3k")).toMap();
+        QCborMap shared = info.value(QStringLiteral("shared")).toMap();
+        if (ed3k == m_ed3kInfo && shared == m_sharedInfo)
+            return;
+        m_ed3kInfo = std::move(ed3k);
+        m_sharedInfo = std::move(shared);
         refreshMyInfo();
     });
 }
@@ -1595,6 +1681,8 @@ void ServerPanel::resetConnectionState()
     m_kadUdpFirewalled = m_kadUdpVerified = false;
     m_kadIP = m_kadId = 0;
     m_kadUsers = m_kadUsersExp = m_kadFiles = 0;
+    m_ed3kInfo.clear();
+    m_sharedInfo.clear();
     updateConnectButton(false, false);
     m_serverListModel->setConnectedServer(0);
     refreshMyInfo();

@@ -81,6 +81,7 @@ QCborMap toCbor(const ed3k::Ed3kDownloadInfo& i)
         {QStringLiteral("addedOn"), i.addedOn},
         {QStringLiteral("completedOn"), i.completedOn},
         {QStringLiteral("error"), i.error},
+        {QStringLiteral("previewPrio"), i.previewPrio},
         // batch 15: "Node" / "Anonymous" (hops.md §1)
         {QStringLiteral("key"), s_downloads ? ed3k::Ed3kHide::keyName(s_downloads->keyOfRoot(i.root)) : QString()},
     };
@@ -148,6 +149,7 @@ void answer(const IpcMessage& msg, ed3k::Ed3kDownloads& d, const std::function<v
             case 2: done = d.cancel(*root); break;
             case 3: done = d.setPriority(*root, int(msg.fieldInt(2))); break;
             case 4: done = d.setCategory(*root, int(msg.fieldInt(2))); break;
+            case 6: done = d.setPreviewPrio(*root, msg.fieldInt(2) != 0); break;   // preview parts first
             default: break;
             }
         }

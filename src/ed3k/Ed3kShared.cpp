@@ -293,6 +293,24 @@ void Ed3kShared::forEachSharedRoot(const std::function<void(const QByteArray&, c
     }
 }
 
+bool Ed3kShared::reopen(const ffi::Root& root)
+{
+    for (auto& [md4, f] : m_files) {
+        if (!f.shared)
+            continue;
+        const auto c = m_cache.find(md4);
+        if (c == m_cache.end() || c->second.root != root)
+            continue;
+        // shareMember() only updates a root it holds: forget it so fileOpen runs again
+        forgetShare(root);
+        f.shared = false;
+        share(f, c->second);
+        pumpSession();
+        return f.shared;
+    }
+    return false;
+}
+
 bool Ed3kShared::holdsRoot(const ffi::Root& root) const
 {
     return std::ranges::any_of(m_files, [&](const auto& kv) {

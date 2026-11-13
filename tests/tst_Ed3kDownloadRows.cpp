@@ -110,6 +110,8 @@ void tst_Ed3kDownloadRows::aRowCarriesTheBlocks()
     QCOMPARE(r.pending, (QList<qint64>{2 * kBlock, 4 * kBlock - 1}));
     QCOMPARE(r.partFreq, (QList<quint16>{3, 0, 1}));
     QCOMPARE(r.partFreqUnit, kPiece);
+    // part detail: piece 0 started, the others empty
+    QCOMPARE(r.partMap, QByteArray("\x01\x00\x00", 3));
 
     // what the progress cell hands the painter
     DownloadListModel model;
@@ -119,6 +121,7 @@ void tst_Ed3kDownloadRows::aRowCarriesTheBlocks()
     QCOMPARE(bar.gaps, r.gaps);
     QCOMPARE(bar.pending, r.pending);
     QCOMPARE(bar.freqUnit, kPiece);
+    QCOMPARE(bar.partMap, r.partMap);
 }
 
 void tst_Ed3kDownloadRows::anOlderCoreDrawsOneRun()

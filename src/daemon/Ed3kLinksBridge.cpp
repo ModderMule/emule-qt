@@ -111,6 +111,8 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
         std::vector<ffi::Node> nodes;
         for (const auto& ep : link->endpoints)
             nodes.push_back(ffi::Node{link->id, ep});
+        // §11: an index node once its Hello says INDEX
+        (void)e->indexCandidate(link->id);
         const auto started = e->bootstrap(s_session->now(), nodes);
         s_session->pump();
         if (!started) {

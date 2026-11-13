@@ -102,6 +102,42 @@ QList<Case> cases()
                      }});
     list.append({"ClientDetailDialog",
                  [] { return std::make_unique<ClientDetailDialog>(clientDetails()); }});
+    // an ed3k upload queue row: its own layout; the same peer over eD2K adds a tab
+    const auto ed3kRow = [] {
+        return QCborMap{
+            {QStringLiteral("network"), QStringLiteral("ed3k")},
+            {QStringLiteral("userName"), QStringLiteral("bob")},
+            {QStringLiteral("nick"), QStringLiteral("bob")},
+            {QStringLiteral("software"), QStringLiteral("eMuleQt v0.7.26")},
+            {QStringLiteral("helloKnown"), true},
+            {QStringLiteral("ed2k"), true},
+            {QStringLiteral("cc"), QStringLiteral("de")},
+            {QStringLiteral("userHash"), QStringLiteral("ed3k:0123abcd0123abcd0123abcd0123abcd")},
+            {QStringLiteral("nodeId"), QStringLiteral("0123abcd0123abcd0123abcd0123abcd")},
+            {QStringLiteral("uploadState"), QStringLiteral("Transferring")},
+            {QStringLiteral("uploadFileName"), QStringLiteral("film.mkv")},
+            {QStringLiteral("sentTotal"), qint64(12) << 20},
+            {QStringLiteral("receivedTotal"), qint64(30) << 20}};
+    };
+    list.append({"ClientDetailDialog (ed3k)", [ed3kRow] { return std::make_unique<ClientDetailDialog>(ed3kRow()); }});
+    list.append({"ClientDetailDialog (ed3k + eD2K)", [ed3kRow] {
+                     QCborMap d = ed3kRow();
+                     d.insert(QStringLiteral("ed2kClient"), clientDetails());
+                     return std::make_unique<ClientDetailDialog>(d);
+                 }});
+    // an ed3k download source only (not in our upload queue)
+    list.append({"ClientDetailDialog (ed3k source)", [ed3kRow] {
+                     QCborMap d = ed3kRow();
+                     d.remove(QStringLiteral("uploadState"));
+                     d.remove(QStringLiteral("uploadFileName"));
+                     d.insert(QStringLiteral("source"), QCborMap{
+                         {QStringLiteral("fileName"), QStringLiteral("album.flac")},
+                         {QStringLiteral("state"), QStringLiteral("Downloading")},
+                         {QStringLiteral("haveKnown"), true},
+                         {QStringLiteral("parts"), 12},
+                         {QStringLiteral("availParts"), 9}});
+                     return std::make_unique<ClientDetailDialog>(d);
+                 }});
     list.append({"SearchDetailDialog",
                  [] { return std::make_unique<SearchDetailDialog>(fileDetails()); }});
     list.append({"AddFriendDialog", [] { return std::make_unique<AddFriendDialog>(); }});

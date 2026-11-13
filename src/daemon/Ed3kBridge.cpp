@@ -143,6 +143,16 @@ void appendDownloadInfo([[maybe_unused]] QCborMap& details, [[maybe_unused]] con
 #endif
 }
 
+QByteArray jointRoot([[maybe_unused]] const QByteArray& md4)
+{
+#ifdef EMULE_HAVE_ED3K
+    if (s_ed2kJoin && s_ed2kJoin->isEnabled())
+        if (const auto root = s_ed2kJoin->rootOf(md4))
+            return QByteArray(reinterpret_cast<const char*>(root->bytes.data()), qsizetype(root->bytes.size()));
+#endif
+    return {};
+}
+
 void appendSharedCounts([[maybe_unused]] QCborMap& shared)
 {
 #ifdef EMULE_HAVE_ED3K
@@ -374,6 +384,36 @@ QCborMap statusToCbor()
     out.insert(QStringLiteral("kadConnected"), st.kadConnected);
     out.insert(QStringLiteral("endpoint4"), st.endpoint4);
     out.insert(QStringLiteral("endpoint6"), st.endpoint6);
+    // relays (§9.4, the Kad buddy): [{address, node}] per family
+    const auto relays = [](const QStringList& addrs, const QStringList& ids) {
+        QCborArray a;
+        for (qsizetype i = 0; i < addrs.size(); ++i)
+            a.append(QCborMap{{QStringLiteral("address"), addrs.at(i)}, {QStringLiteral("node"), ids.value(i)}});
+        return a;
+    };
+    out.insert(QStringLiteral("relays4"), relays(st.relays4, st.relayIds4));
+    out.insert(QStringLiteral("relays6"), relays(st.relays6, st.relayIds6));
+    // leaves we relay for (eMule's buddies served): [{address, node, hop}]
+    QCborArray leaves;
+    for (const auto& l : st.leavesServed)
+        leaves.append(QCborMap{{QStringLiteral("address"), l.address}, {QStringLiteral("node"), l.nodeId},
+                               {QStringLiteral("hop"), l.hop}});
+    out.insert(QStringLiteral("leavesServed"), leaves);
+    // index nodes (§11, the eD2K server list); users/files of an index node: no wire message
+    // (a spec change could add them later)
+    QCborArray links;
+    for (const auto& l : st.indexLinks)
+        links.append(QCborMap{{QStringLiteral("address"), l.address}, {QStringLiteral("node"), l.nodeId},
+                              {QStringLiteral("state"), l.state}, {QStringLiteral("current"), l.current},
+                              {QStringLiteral("tries"), qint64(l.tries)}, {QStringLiteral("upSecs"), qint64(l.upSecs)},
+                              {QStringLiteral("rttMs"), qint64(l.rttMs)}, {QStringLiteral("agent"), l.agent},
+                              {QStringLiteral("nick"), l.nick}});
+    out.insert(QStringLiteral("indexNodes"), links);
+    // eMule's two Kad user estimates; files = users × 108, eMule's default files per user
+    out.insert(QStringLiteral("users"), qint64(st.usersByTable));
+    out.insert(QStringLiteral("usersExperimental"), qint64(st.usersByLookups));
+    out.insert(QStringLiteral("files"), qint64(st.usersByTable * 108));
+    out.insert(QStringLiteral("leafPct"), qint64(st.leafPct));
     out.insert(QStringLiteral("wireSent"), qint64(t.sent));
     out.insert(QStringLiteral("wireRecv"), qint64(t.recv));
     const auto* bw = BandwidthCoordinator::instance();

@@ -59,6 +59,26 @@ QString heading(const QString& title, QLatin1StringView anchor = {}, int top = 1
         .arg(QString::number(top), name, title);
 }
 
+/// Rows/headings as the dialog's tables, or compact lines like the Server window's My Info
+struct Fmt {
+    bool compact = false;
+    [[nodiscard]] QString row(const QString& label, const QString& value) const
+    {
+        if (!compact)
+            return eMule::row(label, value);
+        const auto sp = QStringLiteral("&nbsp;&nbsp;");
+        if (label.isEmpty())
+            return sp + sp + value + QStringLiteral("<br>");
+        return sp + label + QLatin1Char(' ') + value + QStringLiteral("<br>");
+    }
+    [[nodiscard]] QString heading(const QString& title, QLatin1StringView anchor = {}) const
+    {
+        return compact ? QStringLiteral("<br><b>%1</b><br>").arg(title) : eMule::heading(title, anchor);
+    }
+    [[nodiscard]] QString open() const { return compact ? QString() : QStringLiteral("<table cellpadding='1'>"); }
+    [[nodiscard]] QString close() const { return compact ? QString() : QStringLiteral("</table>"); }
+};
+
 } // anonymous namespace
 
 // ---------------------------------------------------------------------------
@@ -465,23 +485,31 @@ QString NetworkInfoDialog::infoHtml(const QCborMap& info, bool extended)
 // ed3k and BitTorrent sections (no MFC original)
 // ---------------------------------------------------------------------------
 
-QString NetworkInfoDialog::ed3kHtml(const QCborMap& ed3k)
+QString NetworkInfoDialog::ed3kHtml(const QCborMap& ed3k, bool compact)
 {
+    const Fmt fmt{compact};
     // a core without ed3k, or from before the section
     if (ed3k.isEmpty() || !ed3k.value(QStringLiteral("available")).toBool())
         return {};
-    QString html = heading(tr("ed3k Network"), QLatin1StringView(kEd3kAnchor))
-                   + QStringLiteral("<table cellpadding='1'>");
+    QString html = fmt.heading(tr("ed3k Network"), QLatin1StringView(kEd3kAnchor))
+                   + fmt.open();
     const bool running = ed3k.value(QStringLiteral("running")).toBool();
     if (!running) {
-        html += row(tr("Status:"), ed3k.value(QStringLiteral("enabled")).toBool() ? tr("Not running")
+        html += fmt.row(tr("Status:"), ed3k.value(QStringLiteral("enabled")).toBool() ? tr("Not running")
                                                                                  : tr("Disabled"));
-        return html + QStringLiteral("</table>");
+        return html + fmt.close();
     }
     const qint64 contacts = ed3k.value(QStringLiteral("contacts")).toInteger();
-    // html += row(tr("Status:"), contacts > 0 ? tr("Connected") : tr("Connecting"));
-    html += row(tr("Status:"), ed3k.value(QStringLiteral("kadConnected")).toBool() ? tr("Connected") : tr("Connecting"));
-    html += row(tr("UDP Port:"), QString::number(ed3k.value(QStringLiteral("udpPort")).toInteger()));
+    // html += fmt.row(tr("Status:"), contacts > 0 ? tr("Connected") : tr("Connecting"));
+    const bool kadConnected = ed3k.value(QStringLiteral("kadConnected")).toBool();
+    QString status = kadConnected ? tr("Connected") : tr("Connecting");
+    // green when reachable (router, like High ID), else orange as My Info colours eD2K
+    status = QStringLiteral("<font color='%1'>%2</font>")
+                 .arg(kadConnected && ed3k.value(QStringLiteral("router")).toBool() ? QStringLiteral("green")
+                                                                                     : QStringLiteral("orange"),
+                      status);
+    html += fmt.row(tr("Status:"), status);
+    html += fmt.row(tr("UDP Port:"), QString::number(ed3k.value(QStringLiteral("udpPort")).toInteger()));
 
     // 0 unknown, 1 open, 2 cone, 3 symmetric; bit 0 IPv4 / bit 1 IPv6 of natChecking
     const qint64 checking = ed3k.value(QStringLiteral("natChecking")).toInteger();
@@ -501,26 +529,77 @@ QString NetworkInfoDialog::ed3kHtml(const QCborMap& ed3k)
     const auto family = [&](const QString& label, const QString& key, const QString& endpoint, int bit) {
         const QString ep = ed3k.value(endpoint).toString();
         const QString state = reach(ed3k.value(key).toInteger(), bit);
-        html += row(label, ep.isEmpty() ? state : QStringLiteral("%1 (%2)").arg(ep.toHtmlEscaped(), state));
+        html += fmt.row(label, ep.isEmpty() ? state : QStringLiteral("%1 (%2)").arg(ep.toHtmlEscaped(), state));
     };
     family(tr("IPv4:"), QStringLiteral("class4"), QStringLiteral("endpoint4"), 1);
     family(tr("IPv6:"), QStringLiteral("class6"), QStringLiteral("endpoint6"), 2);
-    html += row(tr("Router:"), ed3k.value(QStringLiteral("router")).toBool() ? tr("Yes") : tr("No"));
-    html += row(tr("Contacts:"), formatNumber(contacts));
-    html += row(tr("Node ID:"), ed3k.value(QStringLiteral("nodeId")).toString().toHtmlEscaped());
-    return html + QStringLiteral("</table>");
+    const bool router = ed3k.value(QStringLiteral("router")).toBool();
+    html += fmt.row(tr("Router:"), router ? tr("Yes") : tr("No"));
+
+    // relays = the Kad buddy (§9.4): held while not open in a family; like MFC's Buddy
+    // row, hidden for an open node without any
+    QCborArray relays = ed3k.value(QStringLiteral("relays4")).toArray();
+    for (const QCborValue& v : ed3k.value(QStringLiteral("relays6")).toArray())
+        relays.append(v);
+    if (!relays.isEmpty() || !router) {
+        html += fmt.row(tr("Relays:"), relays.isEmpty() ? tr("None") : QString::number(relays.size()));
+        for (const QCborValue& v : relays) {
+            const QCborMap r = v.toMap();
+            const QString node = r.value(QStringLiteral("node")).toString().left(8);
+            html += fmt.row({}, QStringLiteral("%1 (%2)").arg(r.value(QStringLiteral("address")).toString().toHtmlEscaped(),
+                                                       node.toHtmlEscaped()));
+        }
+    }
+
+    // leaves we relay for: Kad's "Buddies served"; only a router serves
+    const QCborArray leaves = ed3k.value(QStringLiteral("leavesServed")).toArray();
+    if (router || !leaves.isEmpty()) {
+        html += fmt.row(tr("Buddies served:"), QString::number(leaves.size()));
+        for (const QCborValue& v : leaves) {
+            const QCborMap l = v.toMap();
+            html += fmt.row({}, QStringLiteral("%1 (%2)").arg(l.value(QStringLiteral("address")).toString().toHtmlEscaped(),
+                                                       l.value(QStringLiteral("node")).toString().left(8).toHtmlEscaped()));
+        }
+    }
+
+    html += fmt.row(tr("Contacts:"), formatNumber(contacts));
+    html += fmt.row(tr("Node ID:"), ed3k.value(QStringLiteral("nodeId")).toString().toHtmlEscaped());
+    // eMule's two Kad estimates, as in the Kad section
+    if (ed3k.contains(QStringLiteral("users"))) {
+        html += fmt.row(tr("Users:"), tr("%1 (Experimental: %2)").arg(
+                                      formatNumber(ed3k.value(QStringLiteral("users")).toInteger()),
+                                      formatNumber(ed3k.value(QStringLiteral("usersExperimental")).toInteger())));
+        html += fmt.row(tr("Files:"), formatNumber(ed3k.value(QStringLiteral("files")).toInteger()));
+    }
+
+    // eD2K server "Connections" and Kad "Indexed": every ed3k connection is obfuscated QUIC
+    const QCborMap stats = ed3k.value(QStringLiteral("stats")).toMap();
+    if (!stats.isEmpty()) {
+        html += fmt.row(tr("Connections:"), QStringLiteral("%1 (%2)").arg(
+                        formatNumber(stats.value(QStringLiteral("connections")).toInteger()), tr("Obfuscated")));
+        html += fmt.row(tr("Indexed:"), QStringLiteral("%1 (%2)").arg(
+                        formatNumber(stats.value(QStringLiteral("records")).toInteger()),
+                        formatByteSize(stats.value(QStringLiteral("recordBytes")).toInteger())));
+    }
+    return html + fmt.close() + ed3kIndexHtml(ed3k.value(QStringLiteral("indexNodes")).toArray(), compact);
 }
 
-QString NetworkInfoDialog::sharedHtml(const QCborMap& shared, bool extended)
+QString NetworkInfoDialog::sharedHtml(const QCborMap& shared, bool extended, bool compact)
 {
+    const Fmt fmt{compact};
     // a core from before the section
     if (shared.isEmpty())
         return {};
     const auto num = [&](const char* key) { return shared.value(QLatin1StringView(key)).toInteger(); };
     const bool hasEd3k = shared.contains(QStringLiteral("ed3kTotal"));
-    QString html = heading(tr("Shared Files")) + QStringLiteral("<table cellpadding='1'>");
+    QString html = fmt.heading(tr("Shared Files"));
     if (extended && hasEd3k) {
-        // per network: eD2K and ed3k each hash and publish on their own
+        // per network: eD2K and ed3k each hash and publish on their own; a table in My Info too,
+        // a block of its own there, so no line break before it
+        if (compact)
+            html.chop(4);
+        html += compact ? QStringLiteral("<table cellpadding='1' style='margin-bottom:12px'>")
+                        : QStringLiteral("<table cellpadding='1'>");
         html += QStringLiteral("<tr><td></td><td align='right'><b>%1</b></td><td align='right'>&nbsp;&nbsp;<b>%2</b></td></tr>")
                     .arg(QStringLiteral("eD2K"), QStringLiteral("ed3k"));
         const auto both = [&](const QString& label, const char* ed2kKey, const char* ed3kKey) {
@@ -532,11 +611,12 @@ QString NetworkInfoDialog::sharedHtml(const QCborMap& shared, bool extended)
         both(tr("Published:"), "ed2kPublished", "ed3kPublished");
         return html + QStringLiteral("</table>");
     }
+    html += fmt.open();
     // combined: ed3k shares the eD2K list, so the larger count; hashing runs per network
-    html += row(tr("Total:"), formatNumber(std::max(num("ed2kTotal"), num("ed3kTotal"))));
-    html += row(tr("Hashing:"), formatNumber(num("ed2kHashing") + num("ed3kHashing")));
-    html += row(tr("Published:"), formatNumber(std::max(num("ed2kPublished"), num("ed3kPublished"))));
-    return html + QStringLiteral("</table>");
+    html += fmt.row(tr("Total:"), formatNumber(std::max(num("ed2kTotal"), num("ed3kTotal"))));
+    html += fmt.row(tr("Hashing:"), formatNumber(num("ed2kHashing") + num("ed3kHashing")));
+    html += fmt.row(tr("Published:"), formatNumber(std::max(num("ed2kPublished"), num("ed3kPublished"))));
+    return html + fmt.close();
 }
 
 QString NetworkInfoDialog::bitTorrentHtml(const QCborMap& bt)
@@ -609,6 +689,43 @@ QString NetworkInfoDialog::i2pHtml(const QCborMap& bt)
                                          .arg(formatNumber(bt.value(QStringLiteral("i2pTorrents")).toInteger()),
                                               formatNumber(bt.value(QStringLiteral("i2pPeers")).toInteger())));
     return html + QStringLiteral("</table>");
+}
+
+QString NetworkInfoDialog::ed3kIndexHtml(const QCborArray& links, bool compact)
+{
+    const Fmt fmt{compact};
+    // the eD2K server section of ed3k (§11): the index node dialled or held. No users/files
+    // rows: an index node has no message for them (may want a spec change later).
+    const auto it = std::ranges::find_if(links, [](const QCborValue& v) {
+        return v.toMap().value(QStringLiteral("current")).toBool();
+    });
+    if (it == links.end())
+        return {};
+    const QCborMap l = (*it).toMap();
+    QString html = fmt.heading(tr("ed3k Index Node")) + fmt.open();
+    const QString nick = l.value(QStringLiteral("nick")).toString();
+    if (!nick.isEmpty())
+        html += fmt.row(tr("Name:"), nick.toHtmlEscaped());
+    html += fmt.row(tr("IP:Port:"), l.value(QStringLiteral("address")).toString().toHtmlEscaped());
+    html += fmt.row(tr("Node ID:"), l.value(QStringLiteral("node")).toString().toHtmlEscaped());
+    QString state;
+    switch (l.value(QStringLiteral("state")).toInteger()) {
+    case 1: state = tr("Connecting"); break;
+    case 2: state = tr("Connected"); break;
+    case 3: state = tr("Given up"); break;
+    default: state = tr("Waiting"); break;
+    }
+    html += fmt.row(tr("Status:"), state);
+    if (l.value(QStringLiteral("state")).toInteger() == 2) {
+        const QString agent = l.value(QStringLiteral("agent")).toString();
+        if (!agent.isEmpty())
+            html += fmt.row(tr("Version:"), agent.toHtmlEscaped());
+        if (const qint64 rtt = l.value(QStringLiteral("rttMs")).toInteger(); rtt > 0)
+            html += fmt.row(tr("Ping:"), tr("%1 ms").arg(rtt));
+    }
+    if (links.size() > 1)
+        html += fmt.row(tr("Index nodes:"), QString::number(links.size()));
+    return html + fmt.close();
 }
 
 } // namespace eMule

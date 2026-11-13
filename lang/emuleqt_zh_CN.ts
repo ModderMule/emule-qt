@@ -2865,13 +2865,14 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::ClientDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+93"/>
-        <location line="+20"/>
+        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+160"/>
+        <location line="+21"/>
         <source>Client Details: %1</source>
         <translation>客户端详情：%1</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+37"/>
+        <location line="+166"/>
         <source>General</source>
         <translation>常规</translation>
     </message>
@@ -2884,7 +2885,7 @@ Its downloads keep their files and move to All.</source>
         <translation type="vanished">用户哈希</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="-154"/>
         <source>ID</source>
         <translation>ID</translation>
     </message>
@@ -2903,7 +2904,8 @@ Its downloads keep their files and move to All.</source>
         <translation type="vanished">客户端软件</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+7"/>
+        <location line="+174"/>
         <source>Country</source>
         <translation>国家</translation>
     </message>
@@ -2912,22 +2914,24 @@ Its downloads keep their files and move to All.</source>
         <translation type="vanished">服务器</translation>
     </message>
     <message>
-        <location line="-18"/>
+        <location line="-182"/>
+        <location line="+164"/>
         <source>Name</source>
         <translation>名称</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-162"/>
         <source>Hash</source>
         <translation>哈希</translation>
     </message>
     <message>
         <location line="+3"/>
+        <location line="+171"/>
         <source>Software</source>
         <translation>软件</translation>
     </message>
     <message>
-        <location line="+37"/>
+        <location line="-144"/>
         <source>Server IP</source>
         <translation>服务器 IP</translation>
     </message>
@@ -3011,37 +3015,52 @@ Its downloads keep their files and move to All.</source>
         <translation>Kad</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="-180"/>
+        <source>anonymous (ed3k)</source>
+        <translation>匿名 (ed3k)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>%1 (ed3k)</source>
+        <translation>%1 (ed3k)</translation>
+    </message>
+    <message>
+        <location line="+179"/>
+        <location line="+173"/>
         <source>Connected</source>
         <translation>已连接</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="-173"/>
         <source>Disconnected</source>
         <translation>已断开</translation>
     </message>
     <message>
         <location line="+66"/>
+        <location line="+126"/>
         <source>Currently downloading</source>
         <translation>当前正在下载</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-124"/>
+        <location line="+146"/>
         <source>Requested to upload</source>
         <translation>请求上传</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-143"/>
+        <location line="+156"/>
         <source>Downloaded (this session)</source>
         <translation>已下载 (本次会话)</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-154"/>
+        <location line="+155"/>
         <source>Uploaded (this session)</source>
         <translation>已上传 (本次会话)</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="-150"/>
         <source>Average Downloadrate</source>
         <translation>平均下载速度</translation>
     </message>
@@ -3076,11 +3095,145 @@ Its downloads keep their files and move to All.</source>
         <translation>上传队列得分</translation>
     </message>
     <message>
+        <location line="+31"/>
+        <source>anonymous</source>
+        <translation>匿名</translation>
+    </message>
+    <message>
+        <source>ed3k Key</source>
+        <translation type="vanished">ed3k 密钥</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Anonymous</source>
+        <translation>匿名</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Node</source>
+        <translation>节点</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>It downloads from our anonymous node: a second key of ours, reached through a path of other nodes. Neither side sees the other&apos;s IP address.</source>
+        <translation>从我们的匿名节点下载：这是我们的第二个密钥，经由其他节点组成的路径到达。双方都看不到对方的 IP 地址。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>It downloads from our node key: the key our node ID is made from. It connects to us directly and sees our IP address.</source>
+        <translation>从我们的节点密钥下载：我们的节点 ID 即由此密钥生成。它直接连接我们，能看到我们的 IP 地址。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Node ID</source>
+        <translation>节点 ID</translation>
+    </message>
+    <message>
+        <location line="+55"/>
+        <source>Download state</source>
+        <translation>下载状态</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Available parts</source>
+        <translation>可用分块</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Ratio (UL/DL)</source>
+        <translation>比率 (UL/DL)</translation>
+    </message>
+    <message>
+        <source>Address</source>
+        <translation type="vanished">地址</translation>
+    </message>
+    <message>
+        <location line="-58"/>
+        <source>hidden</source>
+        <translation>隐藏</translation>
+    </message>
+    <message>
+        <location line="-4"/>
+        <location line="+7"/>
+        <location line="+2"/>
+        <location line="+32"/>
+        <source>No</source>
+        <translation>否</translation>
+    </message>
+    <message>
+        <location line="-55"/>
+        <source>ed3k Type</source>
+        <translation>ed3k 类型</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>eD2K</source>
+        <translation>eD2K</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>LAN</source>
+        <translation>局域网</translation>
+    </message>
+    <message>
+        <location line="+18"/>
+        <source>File size</source>
+        <translation>文件大小</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Root hash</source>
+        <translation>根哈希</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Upload state</source>
+        <translation>上传状态</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <location line="+18"/>
+        <source>Transferring</source>
+        <translation>传输中</translation>
+    </message>
+    <message>
+        <location line="-17"/>
+        <source>On queue (place %1)</source>
+        <translation>排队中（第 %1 位）</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <location line="+17"/>
+        <source>On queue</source>
+        <translation>排队中</translation>
+    </message>
+    <message>
+        <location line="-15"/>
+        <source>Upload time</source>
+        <translation>上传时间</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Waiting time</source>
+        <translation>等待时间</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Downloaded (this turn)</source>
+        <translation>已下载（本轮）</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Turn ending</source>
+        <translation>本轮即将结束</translation>
+    </message>
+    <message>
         <source>Not connected</source>
         <translation type="vanished">未连接</translation>
     </message>
     <message>
-        <location line="-66"/>
+        <location line="-152"/>
+        <location line="+128"/>
         <source>Transfer</source>
         <translation>传输</translation>
     </message>
@@ -3113,7 +3266,7 @@ Its downloads keep their files and move to All.</source>
         <translation type="vanished">已上传（总计）</translation>
     </message>
     <message>
-        <location line="+39"/>
+        <location line="-89"/>
         <source>Scores</source>
         <translation>评分</translation>
     </message>
@@ -3135,8 +3288,12 @@ Its downloads keep their files and move to All.</source>
         <translation type="vanished">好友位</translation>
     </message>
     <message>
+        <location line="+64"/>
+        <location line="+7"/>
+        <location line="+2"/>
+        <location line="+32"/>
         <source>Yes</source>
-        <translation type="vanished">是</translation>
+        <translation>是</translation>
     </message>
 </context>
 <context>
@@ -15543,19 +15700,21 @@ Download it again?</source>
         <location line="+6"/>
         <location line="+188"/>
         <location line="+120"/>
+        <location line="+195"/>
         <source>Connected</source>
         <translation>已连接</translation>
     </message>
     <message>
-        <location line="-306"/>
+        <location line="-501"/>
         <location line="+145"/>
         <location line="+39"/>
         <location line="+122"/>
+        <location line="+194"/>
         <source>Connecting</source>
         <translation>连接中</translation>
     </message>
     <message>
-        <location line="-304"/>
+        <location line="-498"/>
         <location line="+145"/>
         <source>Disconnected</source>
         <translation>已断开</translation>
@@ -15566,42 +15725,46 @@ Download it again?</source>
         <location line="+117"/>
         <location line="+35"/>
         <location line="+6"/>
-        <location line="+66"/>
+        <location line="+111"/>
         <location line="+5"/>
+        <location line="+83"/>
         <source>Status:</source>
         <translation>状态：</translation>
     </message>
     <message>
-        <location line="-368"/>
+        <location line="-496"/>
         <location line="+65"/>
         <location line="+156"/>
+        <location line="+134"/>
         <source>Users:</source>
         <translation>用户数：</translation>
     </message>
     <message>
-        <location line="-220"/>
+        <location line="-354"/>
         <location line="+66"/>
         <location line="+156"/>
+        <location line="+135"/>
         <source>Files:</source>
         <translation>文件数：</translation>
     </message>
     <message>
-        <location line="-215"/>
+        <location line="-350"/>
         <location line="+304"/>
-        <location line="+62"/>
+        <location line="+107"/>
         <source>Unknown</source>
         <translation>未知</translation>
     </message>
     <message>
-        <location line="-366"/>
+        <location line="-411"/>
         <location line="+2"/>
         <location line="+50"/>
         <location line="+98"/>
+        <location line="+329"/>
         <source>IP:Port:</source>
         <translation>IP:端口：</translation>
     </message>
     <message>
-        <location line="-143"/>
+        <location line="-472"/>
         <location line="+147"/>
         <source>ID:</source>
         <translation>ID：</translation>
@@ -15659,31 +15822,35 @@ Download it again?</source>
     </message>
     <message>
         <location line="+2"/>
+        <location line="+430"/>
         <source>Name:</source>
         <translation>名称：</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-428"/>
         <source>Description:</source>
         <translation>描述：</translation>
     </message>
     <message>
         <location line="+5"/>
+        <location line="+437"/>
         <source>Version:</source>
         <translation>版本：</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="-429"/>
+        <location line="+293"/>
         <source>Connections:</source>
         <translation>连接数：</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-292"/>
+        <location line="+293"/>
         <source>Obfuscated</source>
         <translation>已混淆</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="-293"/>
         <source>Normal</source>
         <translation>普通</translation>
     </message>
@@ -15694,16 +15861,18 @@ Download it again?</source>
     </message>
     <message>
         <location line="+2"/>
+        <location line="+426"/>
         <source>Ping:</source>
         <translation>Ping:</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-425"/>
+        <location line="+425"/>
         <source>%1 ms</source>
         <translation>%1 毫秒</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="-419"/>
         <source>eD2K Server Features</source>
         <translation>eD2K 服务器功能</translation>
     </message>
@@ -15781,20 +15950,20 @@ Download it again?</source>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+210"/>
-        <location line="+99"/>
+        <location line="+211"/>
+        <location line="+143"/>
         <source>Yes</source>
         <translation>是</translation>
     </message>
     <message>
-        <location line="-309"/>
-        <location line="+210"/>
-        <location line="+99"/>
+        <location line="-354"/>
+        <location line="+211"/>
+        <location line="+143"/>
         <source>No</source>
         <translation>否</translation>
     </message>
     <message>
-        <location line="-295"/>
+        <location line="-340"/>
         <source>Kad Network</source>
         <translation>Kad 网络</translation>
     </message>
@@ -15820,21 +15989,24 @@ Download it again?</source>
     </message>
     <message>
         <location line="+3"/>
+        <location line="+151"/>
         <source>Buddies served:</source>
         <translation>服务的伙伴:</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="-121"/>
+        <location line="+133"/>
         <source>%1 (Experimental: %2)</source>
         <translation>%1(实验性:%2)</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="-126"/>
+        <location line="+137"/>
         <source>Indexed:</source>
         <translation>已索引:</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-136"/>
         <source>Source:</source>
         <translation>来源：</translation>
     </message>
@@ -15887,12 +16059,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+72"/>
+        <location line="+117"/>
         <source>Not running</source>
         <translation>未运行</translation>
     </message>
     <message>
-        <location line="-58"/>
+        <location line="-103"/>
         <source>Offline</source>
         <translation>离线</translation>
     </message>
@@ -15917,23 +16089,29 @@ Download it again?</source>
         <translation>IPv4:</translation>
     </message>
     <message>
-        <location line="+2"/>
-        <location line="+68"/>
+        <location line="+3"/>
+        <location line="+112"/>
         <source>Router:</source>
         <translation>路由器:</translation>
     </message>
     <message>
-        <location line="-67"/>
+        <location line="-104"/>
+        <source>Relays:</source>
+        <translation>中继:</translation>
+    </message>
+    <message>
+        <location line="+20"/>
         <source>Contacts:</source>
         <translation>联系人:</translation>
     </message>
     <message>
         <location line="+1"/>
+        <location line="+136"/>
         <source>Node ID:</source>
         <translation>节点 ID:</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="-108"/>
         <source>Shared Files</source>
         <translation>共享文件</translation>
     </message>
@@ -16081,7 +16259,27 @@ Download it again?</source>
         <translation>%1 (%2 个节点)</translation>
     </message>
     <message>
-        <location line="-384"/>
+        <location line="+16"/>
+        <source>ed3k Index Node</source>
+        <translation>ed3k 索引节点</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Given up</source>
+        <translation>已放弃</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Waiting</source>
+        <translation>等待中</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Index nodes:</source>
+        <translation>索引节点:</translation>
+    </message>
+    <message>
+        <location line="-467"/>
         <location line="+94"/>
         <location line="+15"/>
         <source>Firewalled</source>
@@ -16103,13 +16301,14 @@ Download it again?</source>
     </message>
     <message>
         <location line="+36"/>
+        <location line="+144"/>
         <source>None</source>
         <translation>无</translation>
     </message>
     <message>
-        <location line="+66"/>
+        <location line="-78"/>
         <location line="+39"/>
-        <location line="+72"/>
+        <location line="+117"/>
         <source>Disabled</source>
         <translation>已禁用</translation>
     </message>
@@ -21737,15 +21936,15 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+393"/>
-        <location line="+1244"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+406"/>
+        <location line="+1253"/>
         <location line="+21"/>
-        <location line="+602"/>
+        <location line="+603"/>
         <source>Download</source>
         <translation>下载</translation>
     </message>
     <message>
-        <location line="-1847"/>
+        <location line="-1857"/>
         <source>Close All Searches</source>
         <translation>关闭所有搜索</translation>
     </message>
@@ -21765,7 +21964,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>类型：</translation>
     </message>
     <message>
-        <location line="+850"/>
+        <location line="+858"/>
         <location line="+9"/>
         <source>Any</source>
         <translation>任意</translation>
@@ -21812,7 +22011,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>合集</translation>
     </message>
     <message>
-        <location line="-862"/>
+        <location line="-870"/>
         <source>Method:</source>
         <translation>方法：</translation>
     </message>
@@ -21867,12 +22066,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>重置</translation>
     </message>
     <message>
-        <location line="+38"/>
+        <location line="+39"/>
         <source>Web results</source>
         <translation>网页结果</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+27"/>
         <source>Min. Size [MB]:</source>
         <translation>最小大小 [MB]：</translation>
     </message>
@@ -21902,7 +22101,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>编解码器：</translation>
     </message>
     <message>
-        <location line="+3017"/>
+        <location line="+3040"/>
         <source>ed3k download added: %1</source>
         <translation>已添加 ed3k 下载：%1</translation>
     </message>
@@ -21916,7 +22115,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation type="vanished">最小比特率 [kbps]：</translation>
     </message>
     <message>
-        <location line="-3010"/>
+        <location line="-3033"/>
         <source>Min. Length [s]:</source>
         <translation>最小时长 [秒]：</translation>
     </message>
@@ -21936,12 +22135,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>艺术家：</translation>
     </message>
     <message>
-        <location line="-87"/>
+        <location line="-94"/>
         <source>Show results the server found on this network</source>
         <translation>显示服务器在此网络上找到的结果</translation>
     </message>
     <message>
-        <location line="-260"/>
+        <location line="-261"/>
         <source>ed3k Channel (live)</source>
         <translation>ed3k 频道（直播）</translation>
     </message>
@@ -21951,7 +22150,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>相关</translation>
     </message>
     <message>
-        <location line="+219"/>
+        <location line="+220"/>
         <source>Usenet results</source>
         <translation>Usenet 结果</translation>
     </message>
@@ -21964,6 +22163,16 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <location line="+2"/>
         <source>Torrent results</source>
         <translation>种子结果</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Hide related folder content</source>
+        <translation>隐藏相关文件夹内容</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Hide the files of a torrent, Usenet or web release whose name lacks a search keyword. The release itself stays.</source>
+        <translation>隐藏种子、Usenet 或网页发布中名称缺少搜索关键字的文件。发布本身保留。</translation>
     </message>
     <message>
         <location line="+56"/>
@@ -22060,12 +22269,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>搜索“%1”失败：%2</translation>
     </message>
     <message>
-        <location line="-725"/>
+        <location line="-746"/>
         <source>Usenet search</source>
         <translation>Usenet 搜索</translation>
     </message>
     <message>
-        <location line="+969"/>
+        <location line="+990"/>
         <source>%1 results — %2 of %3 indexers</source>
         <translation>%1 条结果 — %3 个索引器中的 %2 个</translation>
     </message>
@@ -22091,7 +22300,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>已将“%1”加入队列，从 Usenet 下载。</translation>
     </message>
     <message>
-        <location line="+162"/>
+        <location line="+163"/>
         <source>Restore Search Parameters</source>
         <translation>恢复搜索参数</translation>
     </message>
@@ -22159,22 +22368,30 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>详情...</translation>
     </message>
     <message>
-        <location line="-1574"/>
+        <location line="-1596"/>
         <source>Torrent search</source>
         <translation>Torrent 搜索</translation>
     </message>
     <message>
-        <location line="+332"/>
+        <location line="+345"/>
         <source>Torrent (Indexer)</source>
         <translation>Torrent（索引器）</translation>
     </message>
     <message>
-        <location line="+38"/>
+        <location line="+39"/>
         <source>Show results the server found on this network. New eD2K and Kad searches also ask the servers&apos; catalogues of it.</source>
         <translation>显示服务器在此网络上找到的结果。新的 eD2K 和 Kad 搜索也会查询服务器的目录。</translation>
     </message>
     <message>
-        <location line="+95"/>
+        <source>Matching files only</source>
+        <translation type="vanished">仅匹配的文件</translation>
+    </message>
+    <message>
+        <source>Of a torrent, Usenet or web release, list only the files whose name holds every search keyword. The release itself stays.</source>
+        <translation type="vanished">对于种子、Usenet 或网页发布，仅列出名称包含所有搜索关键字的文件。发布本身保留。</translation>
+    </message>
+    <message>
+        <location line="+102"/>
         <source>Season:</source>
         <translation>季:</translation>
     </message>
@@ -22269,7 +22486,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>其他</translation>
     </message>
     <message>
-        <location line="+230"/>
+        <location line="+231"/>
         <location line="+139"/>
         <source>Save NZB File...</source>
         <translation>保存 NZB 文件...</translation>
@@ -22312,13 +22529,13 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
     <message>
         <location line="+69"/>
         <location line="+7"/>
-        <location line="+1079"/>
+        <location line="+1084"/>
         <location line="+43"/>
         <source>Preview</source>
         <translation>预览</translation>
     </message>
     <message>
-        <location line="-715"/>
+        <location line="-719"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -22327,7 +22544,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
 %1</translation>
     </message>
     <message>
-        <location line="+673"/>
+        <location line="+677"/>
         <source>Preview requested - please wait</source>
         <translation>已请求预览 - 请稍候</translation>
     </message>
@@ -22337,7 +22554,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>%1 未发送预览</translation>
     </message>
     <message>
-        <location line="+397"/>
+        <location line="+406"/>
         <source>Asking servers: %1 / %2</source>
         <translation>正在询问服务器：%1 / %2</translation>
     </message>
@@ -22347,7 +22564,17 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>全部</translation>
     </message>
     <message>
-        <location line="+222"/>
+        <location line="+194"/>
+        <source>You share &quot;%1&quot; already.</source>
+        <translation>您已在共享“%1”。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>&quot;%1&quot; is downloading already.</source>
+        <translation>“%1”已在下载中。</translation>
+    </message>
+    <message>
+        <location line="+35"/>
         <source>ed3k Filter</source>
         <translation>ed3k 过滤</translation>
     </message>
@@ -22409,7 +22636,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>显示被过滤列表隐藏的行</translation>
     </message>
     <message>
-        <location line="-1888"/>
+        <location line="-1910"/>
         <location line="+15"/>
         <location line="+10"/>
         <source>Mark as Spam</source>
@@ -22452,7 +22679,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>Web 服务</translation>
     </message>
     <message>
-        <location line="+1084"/>
+        <location line="+1089"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>预览不可用 — Web 服务器未运行或未收到流令牌。</translation>
     </message>
@@ -28406,7 +28633,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+830"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+832"/>
         <source>Downloads</source>
         <translation>下载</translation>
     </message>
@@ -28418,78 +28645,78 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="-312"/>
-        <location line="+2234"/>
+        <location line="+2235"/>
         <location line="+196"/>
         <source>Low</source>
         <translation>低</translation>
     </message>
     <message>
-        <location line="-2429"/>
-        <location line="+2233"/>
+        <location line="-2430"/>
+        <location line="+2234"/>
         <location line="+197"/>
         <source>Normal</source>
         <translation>普通</translation>
     </message>
     <message>
-        <location line="-2429"/>
-        <location line="+2232"/>
+        <location line="-2430"/>
+        <location line="+2233"/>
         <location line="+198"/>
         <source>High</source>
         <translation>高</translation>
     </message>
     <message>
-        <location line="-2426"/>
-        <location line="+2430"/>
+        <location line="-2427"/>
+        <location line="+2431"/>
         <source>Very Low</source>
         <translation>非常低</translation>
     </message>
     <message>
-        <location line="-2428"/>
-        <location line="+2430"/>
+        <location line="-2429"/>
+        <location line="+2431"/>
         <source>Very High</source>
         <translation>非常高</translation>
     </message>
     <message>
-        <location line="-2428"/>
-        <location line="+2431"/>
+        <location line="-2429"/>
+        <location line="+2432"/>
         <source>Auto</source>
         <translation>自动</translation>
     </message>
     <message>
-        <location line="-2420"/>
+        <location line="-2421"/>
         <location line="+291"/>
         <location line="+491"/>
-        <location line="+1445"/>
+        <location line="+1446"/>
         <source>Pause</source>
         <translation>暂停</translation>
     </message>
     <message>
-        <location line="-2218"/>
+        <location line="-2219"/>
         <location line="+282"/>
         <location line="+497"/>
-        <location line="+1441"/>
+        <location line="+1442"/>
         <source>Stop</source>
         <translation>停止</translation>
     </message>
     <message>
-        <location line="-2211"/>
+        <location line="-2212"/>
         <location line="+273"/>
         <location line="+503"/>
-        <location line="+1437"/>
+        <location line="+1438"/>
         <source>Resume</source>
         <translation>恢复</translation>
     </message>
     <message>
-        <location line="-2200"/>
+        <location line="-2201"/>
         <location line="+260"/>
         <location line="+509"/>
-        <location line="+1433"/>
+        <location line="+1434"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="-2173"/>
+        <location line="-2174"/>
         <source>Preview with</source>
         <translation>预览方式</translation>
     </message>
@@ -28510,14 +28737,14 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1516"/>
+        <location line="+1517"/>
         <location line="+1"/>
         <location line="+10"/>
         <source>Import parts to file...</source>
         <translation>向文件导入分块...</translation>
     </message>
     <message>
-        <location line="-1522"/>
+        <location line="-1523"/>
         <source>Mass Rename...</source>
         <translation>批量重命名...</translation>
     </message>
@@ -28533,12 +28760,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1423"/>
+        <location line="+1424"/>
         <source>Source Limit...</source>
         <translation>来源限制...</translation>
     </message>
     <message>
-        <location line="-1420"/>
+        <location line="-1421"/>
         <source>Swap All A4AF Sources to This File</source>
         <translation>将所有 A4AF 来源切换到此文件</translation>
     </message>
@@ -28619,7 +28846,7 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation>ed3k 密钥</translation>
     </message>
     <message>
-        <location line="+341"/>
+        <location line="+342"/>
         <source>not connected</source>
         <translation>未连接</translation>
     </message>
@@ -28676,23 +28903,24 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation>按字母顺序下载</translation>
     </message>
     <message>
-        <location line="+201"/>
+        <location line="+206"/>
+        <location line="+134"/>
         <source>Copy ed3k Node ID</source>
         <translation>复制 ed3k Node ID</translation>
     </message>
     <message>
-        <location line="+70"/>
-        <location line="+103"/>
+        <location line="-64"/>
+        <location line="+117"/>
         <source>cannot view shared files.</source>
         <translation>无法查看共享文件。</translation>
     </message>
     <message>
-        <location line="-90"/>
+        <location line="-104"/>
         <source>Unban</source>
         <translation>解除封禁</translation>
     </message>
     <message>
-        <location line="+124"/>
+        <location line="+138"/>
         <source>Bootstrap</source>
         <translation>引导</translation>
     </message>
@@ -28736,30 +28964,32 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation type="vanished">文件名：</translation>
     </message>
     <message>
-        <location line="-2838"/>
+        <location line="-2858"/>
         <location line="+245"/>
         <location line="+515"/>
-        <location line="+682"/>
+        <location line="+683"/>
         <source>Open File</source>
         <translation>打开文件</translation>
     </message>
     <message>
-        <location line="-1433"/>
+        <location line="-1434"/>
         <location line="+2"/>
         <location line="+763"/>
-        <location line="+725"/>
+        <location line="+726"/>
         <source>Preview</source>
         <translation>预览</translation>
     </message>
     <message>
-        <location line="-1451"/>
-        <location line="+2373"/>
-        <location line="+118"/>
+        <location line="-1452"/>
+        <location line="+2361"/>
+        <location line="+18"/>
+        <location line="+116"/>
+        <location line="+16"/>
         <source>Details...</source>
         <translation>详情...</translation>
     </message>
     <message>
-        <location line="-2482"/>
+        <location line="-2502"/>
         <source>Comments...</source>
         <translation>评论...</translation>
     </message>
@@ -28784,14 +29014,14 @@ The sources then see this node&apos;s address; queue places are lost.</source>
     <message>
         <location line="-64"/>
         <location line="+64"/>
-        <location line="+2164"/>
+        <location line="+2170"/>
         <location line="+113"/>
-        <location line="+72"/>
+        <location line="+86"/>
         <source>Find...</source>
         <translation>查找...</translation>
     </message>
     <message>
-        <location line="-2405"/>
+        <location line="-2425"/>
         <source>Search Related Files</source>
         <translation>搜索相关文件</translation>
     </message>
@@ -28816,7 +29046,7 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation type="vanished">全部</translation>
     </message>
     <message>
-        <location line="+1288"/>
+        <location line="+1289"/>
         <source>Uploading</source>
         <translation>上传中</translation>
     </message>
@@ -28836,7 +29066,7 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation>已知客户端</translation>
     </message>
     <message>
-        <location line="-1404"/>
+        <location line="-1405"/>
         <source>Clients on queue:   0</source>
         <translation>排队客户端：   0</translation>
     </message>
@@ -28848,12 +29078,12 @@ The sources then see this node&apos;s address; queue places are lost.</source>
     </message>
     <message>
         <location line="-83"/>
-        <location line="+1434"/>
+        <location line="+1435"/>
         <source>Priority</source>
         <translation>优先级</translation>
     </message>
     <message>
-        <location line="-1397"/>
+        <location line="-1398"/>
         <source>Open Folder</source>
         <translation>打开文件夹</translation>
     </message>
@@ -28883,7 +29113,7 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation>查找</translation>
     </message>
     <message>
-        <location line="+638"/>
+        <location line="+639"/>
         <location line="+23"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>预览不可用 — Web 服务器未运行或未收到流令牌。</translation>
@@ -28947,14 +29177,14 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation type="vanished">打开接收文件夹</translation>
     </message>
     <message>
-        <location line="+236"/>
-        <location line="+112"/>
+        <location line="+241"/>
+        <location line="+126"/>
         <source>Add To Friends</source>
         <translation>添加到好友</translation>
     </message>
     <message>
-        <location line="-88"/>
-        <location line="+113"/>
+        <location line="-102"/>
+        <location line="+127"/>
         <source>Send Message</source>
         <translation>发送消息</translation>
     </message>
@@ -28963,8 +29193,8 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation type="vanished">消息:</translation>
     </message>
     <message>
-        <location line="-102"/>
-        <location line="+109"/>
+        <location line="-116"/>
+        <location line="+123"/>
         <source>View Shared Files</source>
         <translation>查看共享文件</translation>
     </message>

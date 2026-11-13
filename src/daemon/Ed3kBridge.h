@@ -42,6 +42,9 @@ void setShared(ed3k::Ed3kShared* shared);
 /// tracked also `ed3kTracked`, `ed3kSearching`, `ed3kRoot` (hex), `ed3kPair` (0 unknown,
 /// 1 trusted, 2 false), `ed3kBytes`, `ed3kSources`, `ed3kTransferring`. Nothing without ed3k.
 void appendDownloadInfo(QCborMap& details, const QByteArray& md4);
+
+/// The ed3k root (32 B) a joint eD2K download of @p md4 fetches from; empty: none.
+[[nodiscard]] QByteArray jointRoot(const QByteArray& md4);
 /// The same for a shared file: `ed3kEnabled` (sharing on), `ed3kRoot` once hashed,
 /// `ed3kAliasPublished`, `ed3kKeywordsPublished`.
 void appendSharedInfo(QCborMap& details, const QByteArray& md4);

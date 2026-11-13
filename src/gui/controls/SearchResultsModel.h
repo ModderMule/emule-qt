@@ -129,6 +129,15 @@ struct SearchResultRow {
         return isUsenet() && hash.size() == 32 && hash.mid(8, 4).compare(u"FFFF", Qt::CaseInsensitive) == 0;
     }
 
+    /// Meta row for one file of a release (hash file index not 0xFFFF): a torrent's,
+    /// NZB's or web page's file, listed because its release matched.
+    [[nodiscard]] bool isMetaFileRow() const
+    {
+        return isMeta() && !isEd3k() && hash.size() == 32
+            && hash.startsWith(u"ED2B", Qt::CaseInsensitive)
+            && hash.mid(8, 4).compare(u"FFFF", Qt::CaseInsensitive) != 0;
+    }
+
     /// ed2k:// link; empty for meta rows (their hash is not an MD4).
     /// @p name stands in for the file's own name (a name row).
     [[nodiscard]] QString ed2kLink(const QString& name = {}) const;

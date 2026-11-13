@@ -434,6 +434,15 @@ public:
     [[nodiscard]] bool searchShowKad() const { return m_searchShowKad; }
     [[nodiscard]] bool searchShowTorrent() const { return m_searchShowTorrent; }
     [[nodiscard]] bool searchShowWeb() const { return m_searchShowWeb; }
+    /// Search list: a release's file rows only when their name holds the keywords.
+    [[nodiscard]] bool searchHideRelatedContent() const { return m_searchHideRelatedContent; }
+    void setSearchHideRelatedContent(bool on)
+    {
+        if (m_searchHideRelatedContent == on)
+            return;
+        m_searchHideRelatedContent = on;
+        scheduleSave();
+    }
     void setSearchShowNetworks(bool usenet, bool kad, bool torrent, bool web)
     {
         m_searchShowUsenet = usenet;
@@ -574,6 +583,7 @@ private:
     bool m_searchShowKad = true;
     bool m_searchShowTorrent = true;
     bool m_searchShowWeb = true;
+    bool m_searchHideRelatedContent = true;
     int  m_searchLastMethod = -1;     ///< -1 = never saved
     QStringList m_searchHistory;
     int  m_transferTopView = -1;      ///< -1 = never saved

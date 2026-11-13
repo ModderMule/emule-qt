@@ -12,6 +12,7 @@
 
 #include "IpcMessage.h"
 #include "utils/BlockRuns.h"
+#include "utils/Opcodes.h"
 
 #include <QCborArray>
 #include <QDataStream>
@@ -148,6 +149,8 @@ private slots:
     void aRaisedPriorityTakesTheSource();
     void queuedPrioritySwitchesWaitThirtyMinutes();
     void aDownloadGoesUnderTheKeyItIsGiven();
+    void aSharedFileIsNotDownloadedAgain();
+    void previewPartsComeFirst();
     void cleanup() { QTest::qWait(10); }
 };
 
@@ -573,6 +576,38 @@ void tst_Ed3kDownloads::queuedPrioritySwitchesWaitThirtyMinutes()
 }
 
 // hops.md §1: a set's member goes under the set's key, never under both keys
+// a root the share list serves: refused on add, an unfinished row of it dropped (part file
+// gone), a complete one kept
+void tst_Ed3kDownloads::aSharedFileIsNotDownloadedAgain()
+{
+    ::ed3k::Root root;   // any root: nothing is fetched
+    root.bytes.fill(0x3c);
+    QTemporaryDir db;
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    Ed3kDownloads d(b, db.path());
+    d.setSearchEnabled(false);
+    d.setDirs(QDir(db.path()).filePath(QStringLiteral("temp")), QDir(db.path()).filePath(QStringLiteral("in")));
+    d.start();
+    bool shared = false;
+    d.setSharedElsewhere([&](const ::ed3k::Root& r) { return shared && r == root; });
+    const Ed3kDownloadSpec spec{root, 3 * kBlock + 5, QStringLiteral("s.bin"), {}, {}, 0, true, 1};
+
+    QVERIFY(d.add(spec).has_value());   // not shared yet
+    const QString part = d.info(root)->partPath;
+    QVERIFY(!d.releaseShare(root));     // nothing shares it: kept
+    QVERIFY(d.contains(root));
+
+    shared = true;
+    QVERIFY(d.releaseShare(root));      // the share list took it: the duplicate goes
+    QVERIFY(!d.contains(root));
+    QVERIFY(!QFile::exists(part));
+    QVERIFY(!QFile::exists(part + QStringLiteral(".met")));
+    QVERIFY(!d.add(spec).has_value());  // and comes no more
+    QVERIFY(!d.contains(root));
+    d.stop();
+}
+
 void tst_Ed3kDownloads::aDownloadGoesUnderTheKeyItIsGiven()
 {
     QTemporaryDir db;
@@ -633,4 +668,57 @@ void tst_Ed3kDownloads::aDownloadGoesUnderTheKeyItIsGiven()
 }
 
 QTEST_GUILESS_MAIN(tst_Ed3kDownloads)
+void tst_Ed3kDownloads::previewPartsComeFirst()
+{
+    // a film of three eD2K parts: the first and last part before the middle one
+    const QByteArray data = payload(int(3 * PARTSIZE - 1000), 7);
+    Seeder a;
+    QVERIFY(a.start(data, QStringLiteral("film.avi")));
+    QTemporaryDir db;
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    const QString temp = QDir(db.path()).filePath(QStringLiteral("temp"));
+    const QString in = QDir(db.path()).filePath(QStringLiteral("in"));
+    {
+        Ed3kDownloads d(b, db.path());
+        d.setSearchEnabled(false);
+        d.setDirs(temp, in);
+        d.start();
+        QVERIFY(d.add(Ed3kDownloadSpec{a.root, std::uint64_t(data.size()), QStringLiteral("film.avi"), {}, {}, 0, true, 1}).has_value());
+        QVERIFY(d.setPreviewPrio(a.root, true));
+        d.stop();
+    }
+    Ed3kDownloads d(b, db.path());
+    d.setSearchEnabled(false);
+    d.setDirs(temp, in);
+    QVERIFY(d.info(a.root));
+    QVERIFY(d.info(a.root)->previewPrio);   // kept in the .met
+    d.start();
+    const std::uint64_t tail = 2 * PARTSIZE;
+    const auto preview = [&](std::size_t b) { return b * kBlock < PARTSIZE || b * kBlock >= tail; };
+    bool middleFirst = false;
+    bool middleSeen = false;
+    connect(&d, &Ed3kDownloads::progress, &d, [&](const ::ed3k::Root& root, std::uint64_t) {
+        const auto i = d.info(root);
+        if (!i || middleSeen)
+            return;
+        for (std::size_t b = 0; b < i->blocks.size(); ++b)
+            if (i->blocks[b] && !preview(b))
+                middleSeen = true;
+        if (!middleSeen)
+            return;
+        // the first middle block: every preview block is here or asked for
+        for (std::size_t b = 0; b < i->blocks.size(); ++b)
+            if (preview(b) && !i->blocks[b] && !(b < i->pending.size() && i->pending[b]))
+                middleFirst = true;
+    });
+    QSignalSpy done(&d, &Ed3kDownloads::completed);
+    QVERIFY(d.resume(a.root));
+    d.addSourceTo(a.root, sourceOf(a.session));
+    QTRY_COMPARE_WITH_TIMEOUT(done.count(), 1, 120000);
+    QVERIFY(middleSeen);
+    QVERIFY(!middleFirst);
+    d.stop();
+}
+
 #include "tst_Ed3kDownloads.moc"

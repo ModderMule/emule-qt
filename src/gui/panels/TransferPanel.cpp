@@ -139,6 +139,8 @@ ClientRow parseClient(const QCborMap& m, bool downloadSide = false)
         row.anonymous = m.value(QStringLiteral("key")).toString() == QLatin1String("Anonymous");
         if (row.anonymous)
             row.addr.clear();
+        // GetClientDetails key (Ed3kUploadsBridge): a node ID is 32 hex like an eD2K user hash
+        row.userHash = (row.anonymous ? QStringLiteral("ed3k:anon:") : QStringLiteral("ed3k:")) + row.userHash;
     }
 
     // New fields for TODO columns
@@ -523,7 +525,9 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
             [this, allHashes, allPausing]() { sendPreviewFlags(allHashes, -1, allPausing ? 0 : 1); });
         pauseAct->setCheckable(true);
         pauseAct->setChecked(allPausing);
-        pauseAct->setEnabled(anyUnfinished);
+        // ed3k downloads do not pause on preview
+        pauseAct->setEnabled(std::any_of(selectedDls.begin(), selectedDls.end(),
+            [](const DownloadRow* d) { return !d->isComplete() && !d->isEd3k(); }));
 
         // Pointless while the option does it for every file
         if (!thePrefs.previewPrio()) {
@@ -1157,8 +1161,8 @@ QWidget* TransferPanel::createBottomPane()
             if (!proxy) return;
             const QModelIndex srcIdx = proxy->mapToSource(proxyIdx);
             const auto* client = model->clientAt(srcIdx.row());
-            // ed3k upload queue rows have no eD2K client to detail
-            if (client && client->network != ClientNetwork::Ed3k)
+            // was: ed3k upload queue rows skipped (no eD2K client); now their queue row's details
+            if (client)
                 fetchAndShowClientDetails(client->userHash,
                                           makeClientWalker(view, model, client->userHash));
         };
@@ -1646,6 +1650,7 @@ void TransferPanel::requestDownloadSources(const QString& hash)
             src.fileRating      = static_cast<int>(m.value(QStringLiteral("fileRating")).toInteger());
             src.isUrl           = m.value(QStringLiteral("isUrl")).toBool();
             src.noViewShared    = m.value(QStringLiteral("noViewSharedFiles")).toBool();
+            src.ed3k            = m.value(QStringLiteral("network")).toString() == QLatin1String("ed3k");
             for (const auto& name : m.value(QStringLiteral("a4afFiles")).toArray())
                 src.a4afFiles << name.toString();
             if (auto spm = m.value(QStringLiteral("sourcePartMap")).toArray(); !spm.isEmpty()) {
@@ -2016,9 +2021,15 @@ void TransferPanel::previewWith(const QString& hash, int appIndex)
     });
 }
 
-void TransferPanel::sendPreviewFlags(const QStringList& hashes, int previewPrio, int pauseOnPreview)
+void TransferPanel::sendPreviewFlags(const QStringList& allHashes, int previewPrio, int pauseOnPreview)
 {
-    if (!m_ipc || !m_ipc->isConnected() || hashes.isEmpty())
+    if (!m_ipc || !m_ipc->isConnected() || allHashes.isEmpty())
+        return;
+    // ed3k rows: preview parts first (Ed3kDownloadControl 6); no pause on preview there
+    QStringList hashes = allHashes;
+    if (const QStringList roots = takeEd3kHashes(hashes); !roots.isEmpty() && previewPrio >= 0)
+        sendEd3kControl(roots, 6, previewPrio);
+    if (hashes.isEmpty())
         return;
     IpcMessage msg(IpcMsgType::SetDownloadPreviewFlags);
     msg.append(QCborArray::fromStringList(hashes));
@@ -2894,10 +2905,15 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
     }
 
     // An ed3k upload queue row: a node, not an eD2K client, so none of the eD2K actions
-    // (details, friends, chat, shared files, ban); only copying its node ID and Find
+    // (friends, chat, shared files, ban); details of its queue row, its node ID and Find
     if (client && client->network == ClientNetwork::Ed3k) {
         QMenu ed3kMenu(this);
-        const QString node = client->userHash;
+        const QString key = client->userHash;
+        auto* detailsAct = ed3kMenu.addAction(menuIcon("UserDetails.ico"), tr("Details..."), this,
+            [this, view, model, key]() { fetchAndShowClientDetails(key, makeClientWalker(view, model, key)); });
+        setMenuDefaultAction(&ed3kMenu, detailsAct);
+        ed3kMenu.addSeparator();
+        const QString node = key.section(QLatin1Char(':'), -1);   // key without "ed3k:[anon:]"
         ed3kMenu.addAction(tr("Copy ed3k Node ID"), this, [node]() { eMule::Clipboard::setText(node); });
         ed3kMenu.addSeparator();
         ed3kMenu.addAction(menuIcon("Search.ico"), tr("Find..."), this, [this, view]() { showClientFindDialog(view); });
@@ -3023,6 +3039,20 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
 void TransferPanel::showSourceContextMenu(const SourceRow& src, const QString& parentHash,
                                           const QPoint& globalPos)
 {
+    // an ed3k source: a node, none of the eD2K client actions (as the ed3k upload rows)
+    if (src.ed3k) {
+        QMenu ed3kMenu(this);
+        const QString key = src.userHash;
+        auto* detailsAct = ed3kMenu.addAction(menuIcon("UserDetails.ico"), tr("Details..."), this,
+            [this, key, parentHash]() { fetchAndShowClientDetails(key, makeSourceWalker(parentHash, key)); });
+        setMenuDefaultAction(&ed3kMenu, detailsAct);
+        ed3kMenu.addSeparator();
+        const QString node = key.section(QLatin1Char(':'), -1);   // key without "ed3k:[anon:]"
+        ed3kMenu.addAction(tr("Copy ed3k Node ID"), this, [node]() { eMule::Clipboard::setText(node); });
+        ed3kMenu.exec(globalPos);
+        return;
+    }
+
     QMenu menu(this);
 
 

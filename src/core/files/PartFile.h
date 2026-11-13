@@ -498,6 +498,8 @@ public:
     /// keep their index at the end (m4a, pdf, Office/OpenDocument, epub, apk, dmg ...).
     /// Decides which files get the last part early under preview priority.
     [[nodiscard]] bool previewNeedsLastPart() const;
+    /// previewNeedsLastPart by @p name alone (no container check): ed3k downloads too.
+    [[nodiscard]] static bool previewNeedsLastPart(const QString& name);
     /// When every part last had a source at the same time; 0 = never.
     [[nodiscard]] time_t lastSeenComplete() const { return m_lastSeenComplete; }
 

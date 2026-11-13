@@ -65,6 +65,7 @@ struct SourceRow {
     QStringList a4afFiles;
     bool isUrl = false;
     bool noViewShared = false;      ///< peer refuses "View Shared Files"
+    bool ed3k = false;              ///< an ed3k node (userHash: "ed3k:[anon:]<node>"), no eD2K client
 };
 
 /// The tooltip of a source row, as MFC builds it. @p extended: advanced controls.

@@ -26,10 +26,14 @@ public:
     void applyDetails(const QCborMap& details) override;
 
 private:
+    /// The page of @p details; a tab per network when the peer is known to both.
+    [[nodiscard]] QWidget* buildPage(const QCborMap& details);
     [[nodiscard]] QWidget* buildContent(const QCborMap& details);
+    /// An ed3k upload queue row (Ed3kUploadsBridge): node, Hello, country, its turn; no eD2K credits.
+    [[nodiscard]] QWidget* buildEd3kContent(const QCborMap& details);
 
     QWidget* m_content = nullptr;
-    QString  m_cc;   ///< country row is a flag widget, rebuilt when this changes
+    QString  m_cc;   ///< country rows are flag widgets (both views), rebuilt when these change
 };
 
 } // namespace eMule
