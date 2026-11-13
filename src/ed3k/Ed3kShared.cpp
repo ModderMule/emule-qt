@@ -458,15 +458,19 @@ private:
     bool m_ok = true;
 };
 
-SideHasherFactory Ed3kShared::sideHasherFactory()
+SideHasherFactory Ed3kShared::sideHasherFactory(quint64 pipeFrom)
 {
     QPointer<Ed3kShared> self(this);
-    return [self, on = m_sideOn](const QString& path, quint64 size) -> std::unique_ptr<SideHash> {
+    return [self, on = m_sideOn, pipeFrom](const QString& path, quint64 size) -> std::unique_ptr<SideHash> {
         Q_UNUSED(path)
         // a hasher only while serving (size 0: never shared)
         if (!on->load() || size == 0)
             return nullptr;
-        return std::make_unique<SideSink>(self);
+        auto sink = std::make_unique<SideSink>(self);
+        // was: BLAKE3 on the eD2K thread, after MD4/AICH — CPU-bound on an SSD
+        if (size >= pipeFrom)
+            return std::make_unique<SideHashPipe>(std::move(sink));
+        return sink;
     };
 }
 

@@ -144,7 +144,9 @@ public:
     }
     /// For SharedFileList::setSideHasher: eD2K's read of a new file hashes it for ed3k too.
     /// Nothing while stopped; the result comes back on this thread before the list adds the file.
-    [[nodiscard]] SideHasherFactory sideHasherFactory();
+    /// A file of @p pipeFrom bytes or more is hashed on its own thread (SideHashPipe).
+    [[nodiscard]] SideHasherFactory sideHasherFactory(quint64 pipeFrom = kSidePipeFrom);
+    static constexpr quint64 kSidePipeFrom = 16ull << 20;
     /// The index of the hash cache (shared-index.dat).
     [[nodiscard]] QString cachePath() const;
     /// The block values of the hash cache (shared-hashes.dat).

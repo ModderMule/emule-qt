@@ -470,7 +470,8 @@ node stops. `applyEd3kConfig` switches it with the pref.
   `DiskLoadLimiter::volumeKey`, so eD2K and ed3k hashing of one disk share its budget; each
   disk's queue in path order), and dropped when it changed while hashed. A file eD2K hashes
   new is read once: `SharedFileList::setSideHasher(sideHasherFactory())` feeds eD2K's read
-  into a BLAKE3 hasher on the same worker, and the result (`primeHash`) is in the cache before
+  into a BLAKE3 hasher (a file of 16 MiB or more on its own thread, `SideHashPipe`; eD2K runs
+  AICH through one too, so MD4, AICH and BLAKE3 use three cores; see `docs/ed3k/hashing-benchmark.md`), and the result (`primeHash`) is in the cache before
   the list adds the file. While hashing, the index is saved every 30 s (values are on disk at
   once; `stop()` saves). An entry of a file not listed is kept while its path exists (the
   list may load later).

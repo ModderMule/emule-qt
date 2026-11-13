@@ -42,6 +42,9 @@ url + sha256 + size are ignored by the GUI.
 - preview: `preview/overview.png`, else `[Skin] Preview=<relative path>` in the ini, else none
 - optional `[Skin]` keys: `Name=`, `Author=`, `Description=`, `Preview=`, `Theme=`
 - `Theme=system|light|dark` (not in MFC): theme the skin is drawn for; absent or unknown = system
+- toolbar speed graph `[Colors]` keys (not in MFC, each optional, unset = Options background
+  choice): `SpeedGraphBk`, `SpeedGraphBorder` (frame + divider), `SpeedGraphGrid`,
+  `SpeedGraphFg` (rate text), `SpeedGraphUp`, `SpeedGraphDown`; `r,g,b` or `#rrggbb`
 - toolbar strip anywhere in the bundle root or one folder below
 - limits: zip ≤ 64 MiB, unpacked ≤ 256 MiB, ≤ 5000 entries, preview ≤ 8 MiB
 
@@ -51,6 +54,11 @@ Name=Cybernetic Neon
 Author=someone
 Preview=preview/overview.png
 Theme=dark
+
+[Colors]
+SpeedGraphBk=8,10,32
+SpeedGraphUp=255,40,200
+SpeedGraphDown=0,229,255
 ```
 
 ## Publishing

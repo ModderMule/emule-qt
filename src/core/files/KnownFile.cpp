@@ -53,6 +53,91 @@ bool isMorphSpreadbarTag(const Tag& tag)
     return std::ranges::all_of(name.sliced(1), [](char c) { return c >= '0' && c <= '9'; });
 }
 
+/// The AICH half of createHash for a whole file, fed in file order: runs in a SideHashPipe,
+/// so MD4 and AICH (SHA-1) each get a core. Same block split and part trees as createHash.
+class AichSink final : public SideHash {
+public:
+    AichSink(AICHHashTree& root, uint64 length) : m_root(root), m_length(length) {}
+
+    void update(std::span<const std::byte> data) override
+    {
+        while (!data.empty() && m_pos < m_length) {
+            if (!m_inPart)
+                beginPart();
+            const uint64 n = std::min({uint64(data.size()), m_partEnd - m_pos,
+                                       uint64(EMBLOCKSIZE) - m_blockFilled});
+            if (m_tree)
+                m_alg->add(data.data(), uint32(n));
+            data = data.subspan(std::size_t(n));
+            m_pos += n;
+            m_blockFilled += n;
+            if (m_blockFilled == EMBLOCKSIZE) {
+                if (m_tree)
+                    m_tree->setBlockHash(EMBLOCKSIZE, m_blockStart, m_alg.get());
+                m_alg->reset();
+                m_blockStart += EMBLOCKSIZE;
+                m_blockFilled = 0;
+            }
+            if (m_pos == m_partEnd)
+                endPart();
+        }
+    }
+
+    void finish(const QByteArray&, const QString&, quint64, qint64) override {}
+
+    /// Every byte arrived and every part tree is calculated.
+    [[nodiscard]] bool complete() const { return m_pos == m_length && !m_inPart; }
+
+private:
+    void beginPart()
+    {
+        const uint64 len = std::min(m_length - m_pos, uint64(PARTSIZE));
+        m_tree = m_root.findHash(m_pos, len);
+        m_alg.reset(AICHRecoveryHashSet::getNewHashAlgo());
+        m_partEnd = m_pos + len;
+        m_blockStart = 0;
+        m_blockFilled = 0;
+        m_inPart = true;
+    }
+
+    void endPart()
+    {
+        if (m_tree) {
+            if (m_blockFilled > 0)
+                m_tree->setBlockHash(m_blockFilled, m_blockStart, m_alg.get());
+            m_tree->reCalculateHash(m_alg.get(), false);
+        }
+        m_inPart = false;
+    }
+
+    AICHHashTree& m_root;
+    const uint64 m_length;
+    uint64 m_pos = 0;
+    uint64 m_partEnd = 0;
+    uint64 m_blockStart = 0;    ///< in the part tree
+    uint64 m_blockFilled = 0;
+    bool m_inPart = false;
+    AICHHashTree* m_tree = nullptr;   ///< this part's; null: none (as createHash skips it)
+    std::unique_ptr<AICHHashAlgo> m_alg;
+};
+
+/// Feeds two side hashes from one read.
+class TeeHash final : public SideHash {
+public:
+    TeeHash(SideHash* a, SideHash* b) : m_a(a), m_b(b) {}
+    void update(std::span<const std::byte> data) override
+    {
+        m_a->update(data);
+        if (m_b)
+            m_b->update(data);
+    }
+    void finish(const QByteArray&, const QString&, quint64, qint64) override {}
+
+private:
+    SideHash* m_a;
+    SideHash* m_b;
+};
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -1360,14 +1445,26 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
     uint64 remaining = length;
     ReadOnceHint readOnce(file);   // read once: not kept in the page cache (report 30)
 
+    // A big file: AICH on its own thread, the tree is its alone until drain()
+    // was: MD4 + SHA-1 on one thread, CPU-bound on an SSD
+    AichSink* aich = nullptr;
+    std::unique_ptr<SideHashPipe> aichPipe;
+    if (length >= aichPipeFrom.load(std::memory_order_relaxed)) {
+        auto sink = std::make_unique<AichSink>(aichHashSet.m_hashTree, length);
+        aich = sink.get();
+        aichPipe = std::make_unique<SideHashPipe>(std::move(sink));
+    }
+    TeeHash tee(aichPipe.get(), side);
+    SideHash* const feed = aichPipe ? &tee : side;
+
     for (uint16 part = 0; part < parts; ++part) {
         const uint64 partLength = std::min(remaining, static_cast<uint64>(PARTSIZE));
 
         std::array<uint8, 16> partHash{};
-        AICHHashTree* partTree = aichHashSet.m_hashTree.findHash(
+        AICHHashTree* partTree = aichPipe ? nullptr : aichHashSet.m_hashTree.findHash(
             static_cast<uint64>(part) * PARTSIZE, partLength);
 
-        if (!createHash(file, partLength, partHash.data(), partTree, cancel, side)) {
+        if (!createHash(file, partLength, partHash.data(), partTree, cancel, feed)) {
             // shutting down while still hashing: not an error
             if (!cancelled())
                 logError(QStringLiteral("KnownFile::createFromFile: read error in '%1'").arg(fullPath));
@@ -1392,6 +1489,14 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
             return false;
         }
         md4HashSet.push_back(emptyHash);
+    }
+
+    if (aichPipe) {
+        aichPipe->drain();
+        if (!aich->complete()) {
+            logError(QStringLiteral("KnownFile::createFromFile: AICH incomplete for '%1'").arg(fullPath));
+            return false;
+        }
     }
 
     // Still being written: the hash would be stored under a size and date the file no

@@ -47,5 +47,9 @@ struct NodesSource {
 [[nodiscard]] QHostAddress advertisedIPv6(const QHostAddress& bind, const QHostAddress& pin);
 /// IPv6SourcePin's address now; null while it does not apply (privacy address, proxy, none).
 [[nodiscard]] QHostAddress ipv6Pin();
+/// The one public IPv4 address of the up interfaces, as `local4` of a wildcard socket the
+/// operator declared open (forceOpen): without it the engine has no IPv4 endpoint until 3
+/// sites reported one (§9.2). Null: none, several, or behind NAT.
+[[nodiscard]] QHostAddress publicIPv4();
 
 } // namespace eMule::ed3k

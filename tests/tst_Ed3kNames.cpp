@@ -49,6 +49,7 @@ Ed3kSettings loopback(const QString& dir)
     s.bindAddress = QHostAddress::LocalHost;
     s.network = QStringLiteral("ed3k test");
     s.forceOpen = true;
+    s.smallNetS = 1;   // a few nodes: connected 1 s after the first answer, not 45 s
     return s;
 }
 
@@ -889,8 +890,11 @@ void tst_Ed3kNames::aHeldSiteIsServedAfterItsHeadCheck()
         QDeadlineTimer until(20000);
         while (b.contactCount() <= before && !until.hasExpired())
             QTest::qWait(20);
+        // Kad connected (the small-network wait): a head search runs, not held
+        while (!b.status().kadConnected && !until.hasExpired())
+            QTest::qWait(20);
         d.stop();
-        return b.contactCount() > before;
+        return b.contactCount() > before && b.status().kadConnected;
     };
     {
         QVERIFY(deadContact());

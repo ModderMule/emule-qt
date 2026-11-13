@@ -53,6 +53,7 @@ struct Ed3kSettings {
     QHostAddress bindAddress{QHostAddress::Any};   ///< Any = dual stack
     QString network;             ///< empty = the public network; tests only; a secret
     bool forceOpen = false;      ///< operator/tests: address open, no NAT tests (§9.2 first nodes)
+    std::uint32_t smallNetS = 0; ///< tests: Kad of a few nodes connected this long after the first answer; 0 = default (45 s)
     /// JSON-RPC endpoints (ed3k.creditRpc / ed3k.chaintubeRpc): operator 0 of a call is the
     /// first, n the n-th (as mode B, packmule_udp::http). Empty: calls answered failed.
     QStringList creditRpc;

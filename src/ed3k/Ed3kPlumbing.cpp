@@ -6,6 +6,7 @@
 #include "net/Address.h"
 #include "net/IPv6SourcePin.h"
 
+#include <QNetworkInterface>
 #include <QUrl>
 
 #include <array>
@@ -196,6 +197,25 @@ QHostAddress ipv6Pin()
     static const Address kProbe = Address::fromString(QStringLiteral("2001:db8::1"));
     const Address pin = IPv6SourcePin::sourceFor(kProbe);
     return pin.isNull() ? QHostAddress() : pin.toQHostAddress();
+}
+
+QHostAddress publicIPv4()
+{
+    QHostAddress found;
+    for (const QNetworkInterface& nif : QNetworkInterface::allInterfaces()) {
+        const auto flags = nif.flags();
+        if (!flags.testFlag(QNetworkInterface::IsUp) || flags.testFlag(QNetworkInterface::IsLoopBack))
+            continue;
+        for (const QNetworkAddressEntry& e : nif.addressEntries()) {
+            const QHostAddress ip = e.ip();
+            if (ip.protocol() != QAbstractSocket::IPv4Protocol || !Address::fromQHostAddress(ip).isPublicIP())
+                continue;
+            if (!found.isNull() && found != ip)
+                return {};   // several: which one peers reach is unknown
+            found = ip;
+        }
+    }
+    return found;
 }
 
 } // namespace eMule::ed3k

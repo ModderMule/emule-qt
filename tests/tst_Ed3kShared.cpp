@@ -17,10 +17,12 @@
 #include <QFile>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QScopeGuard>
 #include <QTest>
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <thread>
 
 #ifdef Q_OS_UNIX
@@ -131,6 +133,7 @@ private slots:
     void tornBlockHashesAreHashedAgain();
     void theHashRamBudgetFollowsRamAndPrefs();
     void twoDisksHashAtOnce();
+    void aSideHashIsSharedWithoutASecondRead_data();
     void aSideHashIsSharedWithoutASecondRead();
     void aStaleSideHashIsHashedAgain();
     void benchHashRun_data();
@@ -741,9 +744,18 @@ void tst_Ed3kShared::twoDisksHashAtOnce()
 }
 
 // eD2K's read hashed it for ed3k too: listed, it is shared without a read of its own
+void tst_Ed3kShared::aSideHashIsSharedWithoutASecondRead_data()
+{
+    QTest::addColumn<quint64>("pipeFrom");
+    QTest::newRow("inline") << std::numeric_limits<quint64>::max();
+    QTest::newRow("own thread") << quint64(0);
+}
+
 void tst_Ed3kShared::aSideHashIsSharedWithoutASecondRead()
 {
-    const QByteArray data = payload(int(kBlock * 2 + 333), 7);
+    QFETCH(quint64, pipeFrom);
+    // over two pipe chunks and a short one
+    const QByteArray data = payload(int(kBlock * 9 + 333), 7);
     QTemporaryDir da;
     QVERIFY(da.isValid());
     const QString path = QDir(da.path()).filePath(QStringLiteral("s.bin"));
@@ -752,10 +764,15 @@ void tst_Ed3kShared::aSideHashIsSharedWithoutASecondRead()
     QVERIFY(a.start(loopback(da.path())));
     FakeSource src;
     Ed3kShared shared(a, src, da.path());
-    const SideHasherFactory factory = shared.sideHasherFactory();
+    const SideHasherFactory factory = shared.sideHasherFactory(pipeFrom);
     QVERIFY(!factory(path, quint64(data.size())));   // stopped: no hasher
     shared.start();
     QVERIFY(!factory(path, 0));
+    {
+        // eD2K failed mid-file: dropped without finish(), nothing hangs
+        auto dropped = factory(path, quint64(data.size()));
+        dropped->update({reinterpret_cast<const std::byte*>(data.constData()), std::size_t(data.size())});
+    }
 
     auto side = factory(path, quint64(data.size()));
     QVERIFY(side);
@@ -847,10 +864,14 @@ void tst_Ed3kShared::benchHashRun_data()
 {
     QTest::addColumn<bool>("newFiles");
     QTest::addColumn<bool>("perDisk");
-    QTest::newRow("library: one at a time (0.7.25)") << false << false;
-    QTest::newRow("library: one per disk") << false << true;
-    QTest::newRow("new files: two reads, ed3k one at a time (0.7.25)") << true << false;
-    QTest::newRow("new files: one read, one per disk") << true << true;
+    QTest::addColumn<bool>("pipe");
+    QTest::addColumn<bool>("aichPipe");
+    QTest::newRow("library: one at a time (0.7.25)") << false << false << false << false;
+    QTest::newRow("library: one per disk") << false << true << false << false;
+    QTest::newRow("new files: two reads, ed3k one at a time (0.7.25)") << true << false << false << false;
+    QTest::newRow("new files: one read, side hash inline (0.7.26)") << true << true << false << false;
+    QTest::newRow("new files: one read, side hash own thread") << true << true << true << false;
+    QTest::newRow("new files: one read, side hash + AICH own threads") << true << true << true << true;
 }
 
 // EMULE_BENCH_HASH_DIRS=dir1:dir2 (one per disk); _FILES per disk, _MIB per file, _LOAD %
@@ -861,6 +882,10 @@ void tst_Ed3kShared::benchHashRun()
         QSKIP("set EMULE_BENCH_HASH_DIRS");
     QFETCH(bool, newFiles);
     QFETCH(bool, perDisk);
+    QFETCH(bool, pipe);
+    QFETCH(bool, aichPipe);
+    const auto aichWas = KnownFile::aichPipeFrom.exchange(aichPipe ? 16ull << 20 : std::numeric_limits<uint64>::max());
+    const auto restoreAich = qScopeGuard([aichWas] { KnownFile::aichPipeFrom = aichWas; });
     const int perDir = envInt("EMULE_BENCH_HASH_FILES", 2);
     const qint64 fileSize = qint64(envInt("EMULE_BENCH_HASH_MIB", 1024)) << 20;
     thePrefs.setHashingDiskLoad(envInt("EMULE_BENCH_HASH_LOAD", 80));
@@ -904,7 +929,8 @@ void tst_Ed3kShared::benchHashRun()
     } else {
         // eD2K hashes one file per disk (as in 0.7.25); ed3k gets each file as eD2K lists it
         shared.start();
-        const SideHasherFactory factory = perDisk ? shared.sideHasherFactory() : SideHasherFactory{};
+        const SideHasherFactory factory = perDisk ? shared.sideHasherFactory(pipe ? Ed3kShared::kSidePipeFrom : std::numeric_limits<quint64>::max())
+                                                  : SideHasherFactory{};
         for (const auto& disk : byDisk) {
             workers.emplace_back([&, disk, factory] {   // factory: this block ends before the workers
                 DiskLoadLimiter::lowerThisThread();

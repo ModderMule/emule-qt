@@ -41,6 +41,7 @@ Ed3kSettings loopback(const QString& dir)
     s.bindAddress = QHostAddress::LocalHost;
     s.network = QStringLiteral("ed3k test");
     s.forceOpen = true;
+    s.smallNetS = 1;   // a few nodes: connected 1 s after the first answer, not 45 s
     return s;
 }
 

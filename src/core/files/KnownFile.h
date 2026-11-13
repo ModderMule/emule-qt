@@ -266,6 +266,8 @@ public:
                         std::function<void(int)> progressCallback = {},
                         const FileStamp* scanned = nullptr, bool* changedSinceScan = nullptr,
                         const std::atomic<bool>* cancel = nullptr, SideHash* side = nullptr);
+    /// createFromFile hashes AICH on its own thread from this size up (tests: 0 / max)
+    static inline std::atomic<uint64> aichPipeFrom = 16ull << 20;
     bool createAICHHashSetOnly();
     /// Read @p path and build its complete AICH recovery set into @p out. Touches no
     /// KnownFile, so it is safe on a worker thread.
