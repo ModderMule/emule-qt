@@ -1,0 +1,68 @@
+# User-private config files that must never ship in a release bundle.
+# One glob per line, matched case-insensitively against the file NAME (any depth)
+# under data/config. Read by publish-release.sh (tracked files) and the
+# bundle-{win,linux,macos} scripts (staged config/), which fail on a match.
+# Shipped defaults (server.met, nodes.dat, nodes.ed3knod, webservices.dat,
+# eMule.tmpl, FakeFileFilter.dat, GeoLite2-Country.mmdb, webserver/*) stay allowed.
+
+# preferences / identity
+preferences*
+emule.ini
+fileinfo.ini
+statistics.ini
+cryptkey.dat
+*.key
+*.pem
+*.p12
+*.pfx
+
+# eMule state
+known*.met
+clients.met
+cancelled.met
+emfriends.met
+storedsearches.met
+*.part
+*.part.met*
+staticservers.dat
+deadservers.dat
+shareddir.dat
+sharedsubdir.dat
+sharedfiles.dat
+key_index.dat
+src_index.dat
+load_index.dat
+ipfilter.dat
+PreviewApps.dat
+downloads.txt
+addresses.dat
+
+# ed3k state
+kad.dat
+bad.dat
+sets.dat
+friend.dat
+friend-names.dat
+filter.dat
+filter-own.dat
+hops.dat
+rooms.dat
+names.dat
+name-*.dat
+paid.dat
+shared.dat
+shared-*.dat
+downloads.dat
+bootstrap.dat
+records.bin
+
+# BitTorrent / usenet / indexer / misc runtime state
+session.dat
+metaaccounts.yml
+usage.yml
+history.yml
+*.json
+*.log
+*.bak
+*.tmp
+mfc-import.yml

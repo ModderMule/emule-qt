@@ -128,6 +128,17 @@ if (Test-Path $configSrc) {
     Write-Host '=== Copying config data ==='
     Copy-Item $configSrc (Join-Path $stageDir 'config') -Recurse -Force
     Write-Host '  config\ copied'
+
+    # never ship user-private files (preferences.yml, known.met, keys, ...)
+    $privatePatterns = Get-Content (Join-Path $PSScriptRoot 'private-config.txt') |
+        ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith('#') }
+    $privateHits = @(Get-ChildItem (Join-Path $stageDir 'config') -Recurse -File | Where-Object {
+        $n = $_.Name; $privatePatterns | Where-Object { $n -like $_ } | Select-Object -First 1
+    })
+    if ($privateHits) {
+        throw "Private config files in $configSrc would ship (scripts\private-config.txt):`n  " +
+              (($privateHits | ForEach-Object { $_.FullName.Substring($stageDir.Length + 1) }) -join "`n  ")
+    }
 }
 else {
     Write-Warning "$configSrc not found -- skipping config data."

@@ -373,6 +373,8 @@ if [ -d "$CONFIG_SRC" ]; then
     echo "=== Copying config data ==="
     cp -R "$CONFIG_SRC" "$CONFIG_DST"
     echo "  config/ copied ($(find "$CONFIG_DST" -type f | wc -l | tr -d ' ') files)"
+    # never ship user-private files (preferences.yml, known.met, keys, ...)
+    bash "$REPO_ROOT/scripts/check-private-config.sh" "$CONFIG_DST"
 else
     echo "Warning: $CONFIG_SRC not found — skipping config data."
 fi
