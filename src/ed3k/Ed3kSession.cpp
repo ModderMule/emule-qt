@@ -144,15 +144,21 @@ bool Ed3kSession::start(const Ed3kSettings& settings)
     cfg.nick = settings.nick.toStdString();
     // the socket of each family; [::] / 0.0.0.0 for a wildcard bind
     const QHostAddress& bind = settings.bindAddress;
+    // forceOpen on a wildcard: the public interface address, else no IPv4 endpoint (and no
+    // own entry in an exported node list) until 3 sites reported one
+    const QHostAddress open4 = settings.forceOpen ? publicIPv4() : QHostAddress();
+    const ffi::Address any4 = open4.isNull() ? ffi::Address::v4(0, 0, 0, 0, port) : toAddress(open4, port);
     if (bind == QHostAddress::Any) {
-        cfg.local4 = ffi::Address::v4(0, 0, 0, 0, port);
+        // cfg.local4 = ffi::Address::v4(0, 0, 0, 0, port);
+        cfg.local4 = any4;
         // was: ToDo: the stable IPv6 source address (IPv6SourcePin) instead of [::], socket-modes.md
         // §8.3 (done: advertised and sent from, followIPv6Pin; [::] while none applies)
         // cfg.local6 = ffi::Address{{}, port};
         m_ipv6Source = advertisedIPv6(bind, ipv6Pin());
         cfg.local6 = m_ipv6Source.isNull() ? ffi::Address{{}, port} : toAddress(m_ipv6Source, port);
     } else if (bind == QHostAddress::AnyIPv4) {
-        cfg.local4 = ffi::Address::v4(0, 0, 0, 0, port);
+        // cfg.local4 = ffi::Address::v4(0, 0, 0, 0, port);
+        cfg.local4 = any4;
     } else if (bind == QHostAddress::AnyIPv6) {
         m_ipv6Source = advertisedIPv6(bind, ipv6Pin());
         cfg.local6 = m_ipv6Source.isNull() ? ffi::Address{{}, port} : toAddress(m_ipv6Source, port);
@@ -163,6 +169,7 @@ bool Ed3kSession::start(const Ed3kSettings& settings)
     }
     cfg.forceOpen4 = settings.forceOpen;
     cfg.forceOpen6 = settings.forceOpen;
+    cfg.smallNetS = settings.smallNetS;
     // was: ToDo: one pref per optional extension (cfg.extOff), socket-modes.md "extensions"
     // (done: pref ed3k.extOff → settings.extOff)
     cfg.extOff = settings.extOff;

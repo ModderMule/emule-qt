@@ -5117,6 +5117,9 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
         thePrefs.setEd3kExtOff(Preferences::rpcUrlList(val));
     else if (key == QStringLiteral("ed3kLan"))
         thePrefs.setEd3kLan(val.toBool());
+    // was missing: ReloadPreferences listed it changed but never applied it
+    else if (key == QStringLiteral("ed3kForceOpen"))
+        thePrefs.setEd3kForceOpen(val.toBool());
     else if (key == QStringLiteral("ed3kHide"))
         thePrefs.setEd3kHide(val.toBool());
     else if (key == QStringLiteral("ed3kHops"))

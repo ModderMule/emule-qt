@@ -344,8 +344,9 @@ void tst_Ed3kPlumbing::ed2kPeerSeedsKadAndContactsExport()
     QVERIFY(b.start(loopback(db.path())));
     Ed3kBootstrap boot(a);
     QCOMPARE(a.contactCount(), 0u);
-    // no contacts yet: nothing to export
-    QVERIFY(!boot.exportList(QStringLiteral("x")));
+    // no contacts yet: a router (forceOpen) lists itself only (§3)
+    // QVERIFY(!boot.exportList(QStringLiteral("x")));
+    QVERIFY(boot.exportList(QStringLiteral("x")));
 
     const auto bId = b.nodeId();
     QVERIFY(bId);

@@ -3,6 +3,7 @@
 /// @brief Compact dual-pane speed graph — implementation.
 
 #include "controls/SpeedGraph.h"
+#include "app/SkinColors.h"
 #include "app/UiState.h"
 #include "utils/Appearance.h"
 
@@ -29,7 +30,7 @@ struct GraphPalette {
     QColor download;
 };
 
-const GraphPalette& graphPalette()
+const GraphPalette& basePalette()
 {
     static const GraphPalette dark{QColor(0, 0, 64), QColor(80, 80, 128), QColor(75, 75, 75),
                                    QColor(160, 160, 200), QColor(210, 0, 0), QColor(0, 210, 0)};
@@ -41,6 +42,24 @@ const GraphPalette& graphPalette()
     case 2:  return isDarkScheme() ? dark : light;
     default: return dark;
     }
+}
+
+// Background choice with skin [Colors] SpeedGraph* keys on top (eMule Qt only)
+GraphPalette graphPalette()
+{
+    GraphPalette pal = basePalette();
+    const SkinColors& skin = SkinColors::instance();
+    const auto take = [&](QColor& target, const char* key) {
+        if (auto c = skin.color(QLatin1StringView(key)))
+            target = *c;
+    };
+    take(pal.background, "SpeedGraphBk");
+    take(pal.border, "SpeedGraphBorder");
+    take(pal.grid, "SpeedGraphGrid");
+    take(pal.text, "SpeedGraphFg");
+    take(pal.upload, "SpeedGraphUp");
+    take(pal.download, "SpeedGraphDown");
+    return pal;
 }
 
 } // namespace
@@ -58,6 +77,8 @@ SpeedGraph::SpeedGraph(QWidget* parent)
         update();
     });
     m_gridTimer.start();
+
+    connect(&SkinColors::instance(), &SkinColors::changed, this, qOverload<>(&QWidget::update));
 }
 
 void SpeedGraph::appendSample(double downKBs, double upKBs)
@@ -113,9 +134,9 @@ double SpeedGraph::niceYMax(double raw)
     return nice * magnitude;
 }
 
-void SpeedGraph::drawGrid(QPainter& p, const QRect& area)
+void SpeedGraph::drawGrid(QPainter& p, const QRect& area, const QColor& color)
 {
-    p.setPen(QPen(graphPalette().grid, 1, Qt::SolidLine));
+    p.setPen(QPen(color, 1, Qt::SolidLine));
 
     // Vertical lines — scroll left via m_gridXOffset
     for (int x = area.left() + (kGridSpacing - m_gridXOffset) % kGridSpacing;
@@ -129,7 +150,7 @@ void SpeedGraph::drawGrid(QPainter& p, const QRect& area)
 
 void SpeedGraph::drawHalf(QPainter& p, const QRect& area,
                           const std::deque<double>& data,
-                          double yMax, const QColor& color,
+                          double yMax, const QColor& color, const QColor& textColor,
                           bool isUpload, const QString& rateText)
 {
     if (area.width() < 4 || area.height() < 4)
@@ -169,7 +190,7 @@ void SpeedGraph::drawHalf(QPainter& p, const QRect& area,
     }
 
     // Rate text after arrow
-    p.setPen(graphPalette().text);
+    p.setPen(textColor);
     p.drawText(labelX + arrowSize + 3, labelY, area.width(), fm.height(),
                Qt::AlignLeft | Qt::AlignTop, rateText);
 
@@ -211,7 +232,7 @@ void SpeedGraph::paintEvent(QPaintEvent* /*event*/)
     p.setRenderHint(QPainter::Antialiasing, true);
 
     const QRect r = rect();
-    const GraphPalette& pal = graphPalette();
+    const GraphPalette pal = graphPalette();
 
     // Dark navy by default (eMule), light or theme-following on request
     p.fillRect(r, pal.background);
@@ -226,8 +247,8 @@ void SpeedGraph::paintEvent(QPaintEvent* /*event*/)
     const QRect downArea(r.left() + 1, midY + 1, r.width() - 2, r.bottom() - midY - 1);
 
     // Scrolling grid overlay on both halves
-    drawGrid(p, upArea);
-    drawGrid(p, downArea);
+    drawGrid(p, upArea, pal.grid);
+    drawGrid(p, downArea, pal.grid);
 
     // Divider line
     p.setPen(QPen(pal.border, 1));
@@ -255,11 +276,11 @@ void SpeedGraph::paintEvent(QPaintEvent* /*event*/)
     const double curDown = m_downData.empty() ? 0.0 : m_downData.back();
 
     // Draw upload half (red, top) with ▲ arrow
-    drawHalf(p, upArea, m_upData, upScale, pal.upload,
+    drawHalf(p, upArea, m_upData, upScale, pal.upload, pal.text,
              true, fmtRate(curUp));
 
     // Draw download half (green, bottom) with ▼ arrow
-    drawHalf(p, downArea, m_downData, downScale, pal.download,
+    drawHalf(p, downArea, m_downData, downScale, pal.download, pal.text,
              false, fmtRate(curDown));
 }
 

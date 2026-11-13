@@ -19,6 +19,7 @@
 #include "utils/SafeFile.h"
 
 #include <QBuffer>
+#include <QScopeGuard>
 #include <QSettings>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -27,6 +28,7 @@
 
 #include <cstring>
 #include <ctime>
+#include <limits>
 
 using namespace eMule;
 
@@ -209,6 +211,8 @@ private slots:
     void createFromFile_partBoundaryAddsTheEmptyPartHash();
     void createFromFile_nonExistent();
     void createFromFile_stopsWhenCancelled();
+    void createFromFile_aichOnItsOwnThreadMatchesInline_data();
+    void createFromFile_aichOnItsOwnThreadMatchesInline();
     void createFromFile_setsDate();
     void createFromFile_refusesAFileThatChangedSinceTheScan();
     void mediaExtractVersion_isStampedStoredAndComparedOnLoad();
@@ -923,6 +927,46 @@ void tst_KnownFile::createFromFile_partBoundaryAddsTheEmptyPartHash()
     QCOMPARE(QByteArray(reinterpret_cast<const char*>(id.getMD4PartHash(
                             static_cast<uint32>(parts))), 16),
              md4(QByteArray()));
+}
+
+void tst_KnownFile::createFromFile_aichOnItsOwnThreadMatchesInline_data()
+{
+    QTest::addColumn<quint64>("size");
+    QTest::newRow("parts + odd tail") << quint64(2) * PARTSIZE + 12345;
+    QTest::newRow("part boundary") << quint64(2) * PARTSIZE;
+    QTest::newRow("block boundary") << quint64(PARTSIZE) + 3 * EMBLOCKSIZE;
+}
+
+void tst_KnownFile::createFromFile_aichOnItsOwnThreadMatchesInline()
+{
+    // a big file hashes AICH in a SideHashPipe: same block split, same hashes
+    QFETCH(quint64, size);
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString name = QStringLiteral("aich.bin");
+    {
+        QByteArray data(qsizetype(size), Qt::Uninitialized);
+        quint32 x = 12345;
+        for (char& c : data)
+            c = char((x = x * 1103515245u + 12345u) >> 24);
+        QFile f(dir.filePath(name));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        QCOMPARE(f.write(data), data.size());
+    }
+    const auto was = KnownFile::aichPipeFrom.load();
+    const auto restore = qScopeGuard([was] { KnownFile::aichPipeFrom = was; });
+
+    KnownFile::aichPipeFrom = std::numeric_limits<uint64>::max();
+    KnownFile inl;
+    QVERIFY(inl.createFromFile(dir.path(), name));
+    KnownFile::aichPipeFrom = 0;
+    KnownFile piped;
+    QVERIFY(piped.createFromFile(dir.path(), name));
+
+    QVERIFY(inl.fileIdentifier().hasAICHHash());
+    QCOMPARE(piped.fileIdentifier().getAICHHash().getString(), inl.fileIdentifier().getAICHHash().getString());
+    QCOMPARE(QByteArray(reinterpret_cast<const char*>(piped.fileHash()), 16),
+             QByteArray(reinterpret_cast<const char*>(inl.fileHash()), 16));
 }
 
 void tst_KnownFile::createFromFile_stopsWhenCancelled()

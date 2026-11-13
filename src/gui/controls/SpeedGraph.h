@@ -41,12 +41,12 @@ private:
     static double niceYMax(double raw);
 
     /// Draw grid lines over a rectangular area.
-    void drawGrid(QPainter& p, const QRect& area);
+    void drawGrid(QPainter& p, const QRect& area, const QColor& color);
 
     /// Draw one half of the graph (upload or download).
     void drawHalf(QPainter& p, const QRect& plotArea, const std::deque<double>& data,
-                  double yMax, const QColor& color, bool isUpload,
-                  const QString& rateText);
+                  double yMax, const QColor& color, const QColor& textColor,
+                  bool isUpload, const QString& rateText);
 
     std::deque<double> m_downData;
     std::deque<double> m_upData;
