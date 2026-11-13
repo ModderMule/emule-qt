@@ -425,7 +425,6 @@ private:
     QCheckBox* m_overheadCheck = nullptr;
     QCheckBox* m_kadEnabledCheck = nullptr;
     QCheckBox* m_ed2kEnabledCheck = nullptr;
-    QCheckBox* m_separateIPv6QueueCheck = nullptr;
     QCheckBox* m_ipv6PrivacyAddressCheck = nullptr;
 
     // Proxy page controls

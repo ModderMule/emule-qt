@@ -1146,7 +1146,7 @@ void tst_UploadQueue::slotAssignment_alternatesBetweenFamilies()
              "so alternation must not happen");
     QVERIFY(withoutPref != withPref);
 
-    thePrefs.setSeparateIPv6Queue(true);   // restore the default
+    thePrefs.setSeparateIPv6Queue(false);  // restore the default
     theApp.sharedFileList = nullptr;
 }
 

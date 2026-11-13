@@ -365,6 +365,12 @@ bool Ed3kTorrentJoin::hasBlockValues(const QString& id, int member) const
 // protected
 // ---------------------------------------------------------------------------
 
+QString Ed3kTorrentJoin::downloadName(const ffi::Root& root, const Download& d) const
+{
+    Q_UNUSED(root)
+    return name(d.owner);
+}
+
 std::vector<std::uint64_t> Ed3kTorrentJoin::wantedBlocks(const Download& d) const
 {
     const Join* j = findJoin(d.owner);

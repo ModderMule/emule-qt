@@ -94,7 +94,9 @@ Ed3kKadPanel::Ed3kKadPanel(QWidget* parent)
                                       QStringLiteral(":/icons/KadCurrentSearches.ico"), m_searchesView, m_searchesLabel);
     auto* lookupsView = static_cast<ListTreeView*>(m_searchesView);
     lookupsView->setDefaultSort(Ed3kKadLookupsModel::ColNumber, Qt::DescendingOrder);
-    lookupsView->bindColumns(QStringLiteral("ed3kKadLookups"), {70, 110, 260, 110, 60, 70, 80, 120});
+    // "2": Name, Load and Requests Sent columns
+    // lookupsView->bindColumns(QStringLiteral("ed3kKadLookups"), {70, 110, 260, 110, 60, 70, 80, 120});
+    lookupsView->bindColumns(QStringLiteral("ed3kKadLookups2"), {70, 110, 200, 260, 110, 50, 90, 60, 70, 80, 120});
 
     buildLayout(contacts, createControlsPanel(), lookups, [](QSplitter* s) { theUiState.bindEd3kKadSplitter(s); });
 
@@ -263,8 +265,10 @@ QString Ed3kKadPanel::lookupTitle(std::uint64_t id) const
     if (row < 0)
         return {};
     const QCborMap& l = m_lookupsModel->row(row);
+    // the name when known, the target only without one
+    const QString name = l.value(QStringLiteral("name")).toString();
     return QStringLiteral("%1 %2").arg(l.value(QStringLiteral("purpose")).toString(),
-                                       shortHex(l.value(QStringLiteral("target")).toString()));
+                                       name.isEmpty() ? shortHex(l.value(QStringLiteral("target")).toString()) : name);
 }
 
 // ---------------------------------------------------------------------------

@@ -11,7 +11,7 @@
 ///   root and where the block values are in shared-hashes.dat (append-only, compacted at
 ///   start); a hit shares at once. Misses are hashed on a worker, one file per disk at a time
 ///   (disks in parallel, as eD2K). A file eD2K hashes new comes with its ed3k hash from the
-///   same read (sideHasherFactory). shared.dat (v1, values inline) is migrated.
+///   same read (sideHasherFactory).
 /// - Block values: written to disk once hashed; the engine holds them in RAM within its
 ///   budget (hashRamMiB, 0 = auto: 2 % of RAM, 64–512 MiB; 0 while free RAM is below
 ///   lowRamPercent) and asks for them again (WantHashes) when a peer needs them. A start
@@ -264,9 +264,6 @@ private:
     [[nodiscard]] QByteArray indexBlob() const;
     /// @p h's values from shared-hashes.dat; nullopt: missing or torn.
     [[nodiscard]] std::optional<::ed3k::Bytes> loadHashes(const Hashed& h) const;
-    /// shared.dat (v1) into the index and the values file, streamed (no whole-file read).
-    /// ToDo: remove later, with the v1 magic
-    void migrateV1();
     /// shared-hashes.dat rewritten with the live values when mostly dead.
     void compactHashes();
     /// Free RAM below m_lowRamPercent (checked at most every few seconds).

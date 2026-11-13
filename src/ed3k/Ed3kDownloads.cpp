@@ -401,6 +401,13 @@ void Ed3kDownloads::saveNow()
 // protected
 // ---------------------------------------------------------------------------
 
+QString Ed3kDownloads::downloadName(const ffi::Root& root, const Download& d) const
+{
+    Q_UNUSED(d)
+    const auto it = m_entries.find(root);
+    return it == m_entries.end() ? QString() : it->second.info.name;
+}
+
 std::vector<std::uint64_t> Ed3kDownloads::wantedBlocks(const Download& d) const
 {
     const Entry* e = entryOfId(d.member);

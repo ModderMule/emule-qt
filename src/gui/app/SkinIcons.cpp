@@ -99,6 +99,8 @@ const QHash<QString, QStringList>& rcNames()
         {u"filerating4.ico"_s, {u"RATING_GOOD"_s}},
         {u"filerating5.ico"_s, {u"RATING_EXCELLENT"_s}},
         {u"filerename.ico"_s, {u"FILERENAME"_s, u"RENAME"_s}},
+        // eMule Qt only: base name "Rename" would hit FileRename's RENAME key
+        {u"rename.ico"_s, {u"RENAMEITEM"_s}},
         {u"filesharedkad.ico"_s, {u"FILESHAREDKAD"_s}},
         {u"filesharedserver.ico"_s, {u"FILESHAREDSERVER"_s}},
         {u"filetypeany.ico"_s, {u"SEARCHFILETYPE_ANY"_s}},

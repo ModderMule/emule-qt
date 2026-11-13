@@ -182,6 +182,7 @@ ClientRow parseClient(const QCborMap& m, bool downloadSide = false)
         }
     }
     row.upStatus.greyed = m.value(QStringLiteral("upBarGreyed")).toBool();
+    row.slotNumber = static_cast<int>(m.value(QStringLiteral("slot")).toInteger());
 
     // Upload lists: their requested file first; Downloading list: our requested file first
     const QString upName  = m.value(QStringLiteral("uploadFileName")).toString();

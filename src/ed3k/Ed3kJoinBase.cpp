@@ -1451,8 +1451,12 @@ void Ed3kJoinBase::searchSourcesAgain(const ffi::Root& root, bool force)
         return;
     }
     ++m_sourceSearches;
-    if (auto lookup = e->searchSources(m_session.now(), root))
+    if (auto lookup = e->searchSources(m_session.now(), root)) {
         m_sourceLookups[lookupKey(*lookup, ffi::KeyKind::Node)] = root;
+        // the Kad window lists it by name; a lookup that ended within its start may be gone
+        if (const QString name = downloadName(root, d); !name.isEmpty())
+            (void)e->kadLookupName(*lookup, name.toStdString());
+    }
 }
 
 void Ed3kJoinBase::onResearchTimer()

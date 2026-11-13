@@ -139,6 +139,7 @@ data/config/GeoLite2-Country.mmdb
 # Dev automation workspace
 dev/
 docs/avatars
+docs/skins
 data/nzb
 data/dlc
 data/torrent

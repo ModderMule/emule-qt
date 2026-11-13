@@ -805,6 +805,13 @@ QList<Ed3kHosterJoin::SharedLink> Ed3kHosterJoin::sharedLinks(quint32 id) const
 
 // -- Ed3kJoinBase -------------------------------------------------------------
 
+QString Ed3kHosterJoin::downloadName(const ffi::Root& root, const Download& d) const
+{
+    Q_UNUSED(root)
+    const Entry* e = find(idOf(d.owner));
+    return e ? e->item.name : QString();
+}
+
 std::vector<std::uint64_t> Ed3kHosterJoin::wantedBlocks(const Download& d) const
 {
     std::vector<std::uint64_t> out;

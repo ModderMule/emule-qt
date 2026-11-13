@@ -428,6 +428,7 @@ void tst_ToolbarSkin::icons_resourceNames()
     QCOMPARE(SkinIcons::resourceNames(QStringLiteral(":/icons/Kad.ico")), QStringList{u"KADEMLIA"_s});
     QCOMPARE(SkinIcons::resourceNames(QStringLiteral(":/icons/FileRename.ico")),
              (QStringList{u"FILERENAME"_s, u"RENAME"_s}));
+    QCOMPARE(SkinIcons::resourceNames(QStringLiteral(":/icons/Rename.ico")), QStringList{u"RENAMEITEM"_s});
     QCOMPARE(SkinIcons::resourceNames(QStringLiteral(":/smileys/Smiley_Smile.ico")),
              QStringList{u"SMILEY_SMILE"_s});
     QCOMPARE(SkinIcons::resourceNames(QStringLiteral(":/icons/Usenet.ico")), QStringList{u"Usenet"_s});

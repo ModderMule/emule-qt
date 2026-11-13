@@ -140,6 +140,11 @@ protected:
 
     /// Block offsets of a file download still wanted (outstanding ones are skipped here).
     [[nodiscard]] virtual std::vector<std::uint64_t> wantedBlocks(const Download& d) const = 0;
+    /// Name of a file download, shown on its Kad source lookups; empty: none.
+    [[nodiscard]] virtual QString downloadName(const ffi::Root& root, const Download& d) const
+    {
+        Q_UNUSED(root) Q_UNUSED(d) return {};
+    }
     /// A verified block of a file download arrived.
     virtual void onFileBlock(const Download& d, const ffi::event::Block& b) = 0;
     /// A blob (fetchBlob) is complete and verified block by block. The download is gone.

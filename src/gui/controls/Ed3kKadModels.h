@@ -64,12 +64,16 @@ private:
     std::array<QIcon, 6> m_icons;
 };
 
-/// Running and ended lookups: Number, Purpose, Target, Kind, Asked, Answered, Candidates, State.
+/// Running and ended lookups: Number, Purpose, Name, Target, Kind, Load, Requests Sent, Asked,
+/// Answered, Candidates, State.
 class Ed3kKadLookupsModel : public Ed3kKadTableModel {
     Q_OBJECT
 
 public:
-    enum Column { ColNumber = 0, ColPurpose, ColTarget, ColKind, ColAsked, ColAnswered, ColCandidates, ColState };
+    // enum Column { ColNumber = 0, ColPurpose, ColTarget, ColKind, ColAsked, ColAnswered, ColCandidates, ColState };
+    enum Column {
+        ColNumber = 0, ColPurpose, ColName, ColTarget, ColKind, ColLoad, ColSent, ColAsked, ColAnswered, ColCandidates, ColState
+    };
     explicit Ed3kKadLookupsModel(QObject* parent = nullptr);
     /// The lookup id of a row.
     [[nodiscard]] std::uint64_t idAt(int row) const;

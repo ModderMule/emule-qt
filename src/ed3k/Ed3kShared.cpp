@@ -33,8 +33,6 @@ namespace ffi = ::ed3k;
 
 namespace {
 
-constexpr quint32 kCacheMagic = 0x45335348;   // "E3SH", shared.dat v1 (values inline)
-constexpr quint32 kCacheVersion = 1;
 constexpr quint32 kIndexMagic = 0x45335349;   // "E3SI", shared-index.dat
 constexpr quint32 kIndexVersion = 2;
 /// head of shared-hashes.dat; offsets count from the file start
@@ -951,12 +949,8 @@ void Ed3kShared::loadCache()
 {
     m_cache.clear();
     const QByteArray blob = readBlob(cachePath());
-    if (blob.isEmpty()) {
-        // ToDo: remove the shared.dat (v1) migration later
-        if (QFile::exists(joinDir(QStringLiteral("shared.dat"))))
-            migrateV1();
+    if (blob.isEmpty())
         return;
-    }
     QDataStream in(blob);
     in.setVersion(QDataStream::Qt_6_0);
     quint32 magic = 0, version = 0, count = 0;
@@ -1062,49 +1056,6 @@ std::optional<ffi::Bytes> Ed3kShared::loadHashes(const Hashed& h) const
     if (checkOf(bytes) != h.diskCheck)
         return std::nullopt;
     return ffi::Bytes(bytes.begin(), bytes.end());
-}
-
-// ToDo: remove migrateV1 + kCacheMagic/kCacheVersion once no profile has shared.dat left
-void Ed3kShared::migrateV1()
-{
-    const QString old = joinDir(QStringLiteral("shared.dat"));
-    QFile f(old);
-    if (!f.open(QIODevice::ReadOnly))
-        return;
-    // streamed: one file's values in RAM at a time (a big v1 file on a machine short of RAM)
-    QDataStream in(&f);
-    in.setVersion(QDataStream::Qt_6_0);
-    quint32 magic = 0, version = 0, count = 0;
-    in >> magic >> version >> count;
-    if (magic != kCacheMagic || version != kCacheVersion || count > kMaxCacheEntries) {
-        logWarning(QStringLiteral("%1 is not a hash cache, ignored").arg(old));
-        return;
-    }
-    int moved = 0;
-    for (quint32 i = 0; i < count && in.status() == QDataStream::Ok; ++i) {
-        QByteArray md4, root, hashes;
-        Hashed h;
-        quint64 size = 0;
-        in >> md4 >> h.path >> size >> h.mtimeMs >> root >> hashes;
-        if (in.status() != QDataStream::Ok || md4.size() != 16 || root.size() != qsizetype(h.root.bytes.size()))
-            break;
-        h.size = size;
-        std::memcpy(h.root.bytes.data(), root.constData(), h.root.bytes.size());
-        if (!storeHashes(h, std::as_bytes(std::span{hashes.constData(), std::size_t(hashes.size())})))
-            continue;   // hashed again when listed
-        m_cache[md4] = std::move(h);
-        ++moved;
-    }
-    f.close();
-    // the index first: a crash before it keeps shared.dat for the next try
-    forgetBlobWrites(cachePath());
-    if (!writeBlob(cachePath(), spanOf(indexBlob()))) {
-        logWarning(QStringLiteral("cannot write %1, %2 kept").arg(cachePath(), old));
-        return;
-    }
-    forgetBlobWrites(old);
-    QFile::remove(old);
-    logInfo(QStringLiteral("hash cache: %1 of %2 entries moved from shared.dat").arg(moved).arg(count));
 }
 
 void Ed3kShared::compactHashes()

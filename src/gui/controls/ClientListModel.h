@@ -87,6 +87,7 @@ struct ClientRow {
     bool hasLowID = false;
     QString natRoute;              // "quic" | "ipv6" when the live link goes around the LowID
     bool addNextConnect = false;   // LowID peer owed the next free slot
+    int slotNumber = 0;            // upload slot # (MorphXT), 0 = none
     bool remoteQueueFull = false;
     int kadPort = 0;
     int kadVersion = 0;
@@ -134,12 +135,13 @@ protected:
 
 private:
     /// Uploading and On Queue append Uploaded, Downloaded, Ratio, Session Ratio
-    /// after Shared List, so saved layouts keep their indices.
-    enum ExtraColumn { ExtraUploaded = 0, ExtraDownloaded, ExtraRatio, ExtraSessionRatio, ExtraCount };
+    /// after Shared List, so saved layouts keep their indices. Uploading adds Slot.
+    enum ExtraColumn { ExtraUploaded = 0, ExtraDownloaded, ExtraRatio, ExtraSessionRatio, ExtraSlot, ExtraCount };
 
     /// Columns up to and including Shared List.
     [[nodiscard]] int baseColumnCount() const;
-    [[nodiscard]] bool hasExtraColumns() const;
+    /// Columns after Shared List in this mode.
+    [[nodiscard]] int extraColumnCount() const;
     [[nodiscard]] QVariant extraData(const ClientRow& c, int extra, int role) const;
     [[nodiscard]] QVariant displayData(const ClientRow& c, int column) const;
     [[nodiscard]] QVariant sortData(const ClientRow& c, int column) const;

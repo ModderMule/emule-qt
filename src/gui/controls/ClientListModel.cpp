@@ -82,23 +82,23 @@ ClientListModel::ClientListModel(ClientListMode mode, QObject* parent)
 std::vector<int> ClientListModel::extColumns() const
 {
     std::vector<int> cols{sharedListColumn()};
-    if (hasExtraColumns()) {
-        for (int i = 0; i < ExtraCount; ++i)
-            cols.push_back(baseColumnCount() + i);
-    }
+    for (int i = 0; i < extraColumnCount(); ++i)
+        cols.push_back(baseColumnCount() + i);
     return cols;
 }
 
 std::vector<int> ClientListModel::defaultHiddenColumns() const
 {
     std::vector<int> cols = extColumns();
+    if (m_mode == ClientListMode::Uploading)
+        std::erase(cols, baseColumnCount() + ExtraSlot);   // Slot shows with ext controls
     cols.push_back(countryColumn());
     return cols;
 }
 
 int ClientListModel::columnCountValue() const
 {
-    return baseColumnCount() + (hasExtraColumns() ? ExtraCount : 0);
+    return baseColumnCount() + extraColumnCount();
 }
 
 QVariant ClientListModel::data(const QModelIndex& index, int role) const
@@ -186,6 +186,7 @@ QVariant ClientListModel::headerData(int section, Qt::Orientation orientation, i
     case ExtraDownloaded:   return tr("Downloaded");
     case ExtraRatio:        return tr("Ratio");
     case ExtraSessionRatio: return tr("Session Ratio");
+    case ExtraSlot:         return tr("Slot #");
     default:                return headerLabel(section);
     }
 }
@@ -205,9 +206,13 @@ int ClientListModel::baseColumnCount() const
     return 0;
 }
 
-bool ClientListModel::hasExtraColumns() const
+int ClientListModel::extraColumnCount() const
 {
-    return m_mode == ClientListMode::Uploading || m_mode == ClientListMode::OnQueue;
+    switch (m_mode) {
+    case ClientListMode::Uploading: return ExtraCount;
+    case ClientListMode::OnQueue:   return ExtraSlot;   // no slot while queued
+    default:                        return 0;
+    }
 }
 
 QVariant ClientListModel::extraData(const ClientRow& c, int extra, int role) const
@@ -223,6 +228,7 @@ QVariant ClientListModel::extraData(const ClientRow& c, int extra, int role) con
         case ExtraDownloaded:   return sizeCell(c.downloadedTotal);
         case ExtraRatio:        return formatShareRatio(c.uploadFileAllTimeTransferred, c.uploadFileSize);
         case ExtraSessionRatio: return formatShareRatio(c.uploadFileTransferred, c.uploadFileSize);
+        case ExtraSlot:         return c.slotNumber > 0 ? QString::number(c.slotNumber) : QString{};
         default:                return {};
         }
     }
@@ -232,6 +238,7 @@ QVariant ClientListModel::extraData(const ClientRow& c, int extra, int role) con
         case ExtraDownloaded:   return QVariant::fromValue(c.downloadedTotal);
         case ExtraRatio:        return shareRatio(c.uploadFileAllTimeTransferred, c.uploadFileSize);
         case ExtraSessionRatio: return shareRatio(c.uploadFileTransferred, c.uploadFileSize);
+        case ExtraSlot:         return c.slotNumber;
         default:                return {};
         }
     }

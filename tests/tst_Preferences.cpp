@@ -84,7 +84,7 @@ private slots:
         QCOMPARE(prefs.maxServedBuddies(), static_cast<uint16>(128));   // the setting stays
         // Default ON: IPv6 peers are a small population and would otherwise be outbid
         // on upload score by the IPv4 majority indefinitely.
-        QCOMPARE(prefs.separateIPv6Queue(), true);
+        QCOMPARE(prefs.separateIPv6Queue(), false);
         // Default OFF: outgoing IPv6 is pinned to the stable address we advertise.
         QCOMPARE(prefs.ipv6UsePrivacyAddress(), false);
         QCOMPARE(prefs.serverPreferIPv6(), true);
@@ -956,7 +956,7 @@ private slots:
             p1.setProxyPassword(QStringLiteral("pass1"));
             p1.setEnableUPnP(false);
             p1.setCloseUPnPOnExit(false);
-            p1.setSeparateIPv6Queue(false);   // non-default, so a lost key would show
+            p1.setSeparateIPv6Queue(true);    // non-default, so a lost key would show
             p1.setIpv6UsePrivacyAddress(true);
             p1.setServerPreferIPv6(false);
             // One switch per process — both must survive the round trip
@@ -1003,7 +1003,7 @@ private slots:
         QCOMPARE(p2.proxyPassword(), QStringLiteral("pass1"));
         QCOMPARE(p2.enableUPnP(), false);
         QCOMPARE(p2.closeUPnPOnExit(), false);
-        QCOMPARE(p2.separateIPv6Queue(), false);
+        QCOMPARE(p2.separateIPv6Queue(), true);
         QCOMPARE(p2.ipv6UsePrivacyAddress(), true);
         QCOMPARE(p2.serverPreferIPv6(), false);
         QCOMPARE(p2.logToDiskCore(), true);

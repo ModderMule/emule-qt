@@ -312,6 +312,8 @@ void tst_Ed3kEd2kJoin::aHintedSourceIsUsedOverEd3k()
     join.setSearchGap(1000);
     join.setHintTimeout(60000);
     join.start();
+    // root first: a first search that beats A's alias store finds none and drops the hint
+    QTRY_VERIFY_WITH_TIMEOUT(join.rootOf(md4).has_value(), 30000);
 
     auto client = std::make_unique<UpDownClient>();
     const auto hash = ::ed3k::userHash(*w.a.nodeId());
@@ -322,7 +324,8 @@ void tst_Ed3kEd2kJoin::aHintedSourceIsUsedOverEd3k()
     client->setReqFile(pf);
     QCOMPARE(join.offerHint(*client, true), AppContext::Ed3kHint::Started);
     client->setEd3kRoute(Ed3kRoute::Pending);
-    QTRY_COMPARE_WITH_TIMEOUT(client->ed3kRoute(), Ed3kRoute::Preferred, 60000);
+    // QTRY counts steps, not wall time, and retries on failure: well under the 300 s watchdog
+    QTRY_COMPARE_WITH_TIMEOUT(client->ed3kRoute(), Ed3kRoute::Preferred, 30000);
     QCOMPARE(client->downloadStateDisplayString(), QStringLiteral("ViaEd3k"));
 
     // a legacy hash is no hint

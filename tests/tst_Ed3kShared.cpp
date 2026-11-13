@@ -129,7 +129,6 @@ private slots:
     void anUnreadableFileIsHashedAgainLater();
     void anAnonymousFileDownloadedElsewhereIsToldOnce();
     void lowRamKeepsBlockHashesOnDiskOnly();
-    void aVersion1CacheIsMigrated();
     void tornBlockHashesAreHashedAgain();
     void theHashRamBudgetFollowsRamAndPrefs();
     void twoDisksHashAtOnce();
@@ -566,53 +565,6 @@ void tst_Ed3kShared::lowRamKeepsBlockHashesOnDiskOnly()
     }
     a.stop();
     b.stop();
-}
-
-// shared.dat (v1, values inline) becomes index + values file without a hash
-// ToDo: remove with Ed3kShared::migrateV1
-void tst_Ed3kShared::aVersion1CacheIsMigrated()
-{
-    const QByteArray data = payload(int(2 * kBlock + 1234), 7);
-    QTemporaryDir da;
-    QVERIFY(da.isValid());
-    const QString path = QDir(da.path()).filePath(QStringLiteral("v1.bin"));
-    QVERIFY(writeFile(path, data));
-    Ed3kSession a;
-    QVERIFY(a.start(loopback(da.path())));
-    FakeSource src;
-    const QByteArray md4(16, char(0x61));
-    src.entries.push_back(SharedEntry{md4, path, QStringLiteral("v1.bin"), std::uint64_t(data.size())});
-
-    ::ed3k::Hasher hasher;
-    QVERIFY(hasher.update({reinterpret_cast<const std::byte*>(data.constData()), std::size_t(data.size())}));
-    auto done = hasher.finish();
-    QVERIFY(done.has_value());
-    const auto hashBytes = done->hashes.bytes();
-    {
-        Ed3kShared shared(a, src, da.path());
-        const QString old = QFileInfo(shared.cachePath()).dir().filePath(QStringLiteral("shared.dat"));
-        QVERIFY(QDir().mkpath(QFileInfo(old).absolutePath()));
-        QFile f(old);
-        QVERIFY(f.open(QIODevice::WriteOnly));
-        QDataStream out(&f);
-        out.setVersion(QDataStream::Qt_6_0);
-        out << quint32(0x45335348) << quint32(1) << quint32(1);
-        out << md4 << path << quint64(data.size()) << QFileInfo(path).lastModified().toMSecsSinceEpoch()
-            << QByteArray(reinterpret_cast<const char*>(done->root.bytes.data()), qsizetype(done->root.bytes.size()))
-            << QByteArray(reinterpret_cast<const char*>(hashBytes.data()), qsizetype(hashBytes.size()));
-        f.close();
-
-        QSignalSpy spy(&shared, &Ed3kShared::fileShared);
-        shared.start();
-        QCOMPARE(spy.count(), 1);
-        QCOMPARE(shared.hashCount(), 0);
-        QCOMPARE(*shared.rootOf(md4), done->root);
-        QVERIFY(!QFile::exists(old));
-        QVERIFY(QFile::exists(shared.cachePath()));
-        QCOMPARE(QFileInfo(shared.hashesPath()).size(), qint64(8 + hashBytes.size()));
-        shared.stop();
-    }
-    a.stop();
 }
 
 // values that do not match their check (a torn write): read as a miss, hashed again

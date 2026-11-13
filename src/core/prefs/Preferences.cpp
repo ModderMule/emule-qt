@@ -226,7 +226,7 @@ struct Preferences::Data {
     uint32 ipv4PublicServerConfirmWindowSecs = 3600;
     // Alternate freed upload slots between IPv4 and IPv6 peers when both are waiting,
     // so a small IPv6 population isn't permanently outbid on score alone.
-    bool separateIPv6Queue = true;
+    bool separateIPv6Queue = false;   // YAML only, no GUI
     // Use the OS-preferred temporary IPv6 source instead of pinning the stable address.
     bool ipv6UsePrivacyAddress = false;
     // Operator says our IPv6 is reachable inbound: advertise it to peers without proof.
@@ -4437,7 +4437,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->schedulerEnabled = p.value(QStringLiteral("schedulerEnabled")).toBool();
     m_data->enableUPnP       = p.value(QStringLiteral("enableUPnP")).toBool();
     // Defaults to true, so a missing key (older daemon) must NOT read back as false.
-    m_data->separateIPv6Queue = p.value(QStringLiteral("separateIPv6Queue")).toBool(true);
+    m_data->separateIPv6Queue = p.value(QStringLiteral("separateIPv6Queue")).toBool(false);
     m_data->ipv6UsePrivacyAddress = p.value(QStringLiteral("ipv6UsePrivacyAddress")).toBool(false);
 
     // Server

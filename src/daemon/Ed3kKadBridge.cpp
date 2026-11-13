@@ -96,6 +96,7 @@ QCborArray lookupsToCbor(const std::vector<ed3k_kad_lookup_info>& all)
     QCborArray out;
     for (const auto& l : all) {
         const auto* p = reinterpret_cast<const char*>(l.purpose);
+        const auto* n = reinterpret_cast<const char*>(l.name);
         out.append(QCborMap{
             {QStringLiteral("id"), qint64(l.id)},
             {QStringLiteral("purpose"), QString::fromUtf8(p, qsizetype(strnlen(p, sizeof l.purpose)))},
@@ -107,6 +108,10 @@ QCborArray lookupsToCbor(const std::vector<ed3k_kad_lookup_info>& all)
             {QStringLiteral("candidates"), qint64(l.candidates)},
             {QStringLiteral("ended"), l.ended != 0},
             {QStringLiteral("endedAgoMs"), qint64(l.ended_ago_ms)},
+            {QStringLiteral("name"), QString::fromUtf8(n, qsizetype(strnlen(n, sizeof l.name)))},
+            {QStringLiteral("sent"), qint64(l.sent)},
+            // -1: no responsible node told a load
+            {QStringLiteral("load"), l.has_load != 0 ? qint64(l.load) : qint64(-1)},
         });
     }
     return out;

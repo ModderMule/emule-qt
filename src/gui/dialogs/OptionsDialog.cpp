@@ -292,7 +292,6 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_overheadCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_kadEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_ed2kEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
-    connect(m_separateIPv6QueueCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_ipv6PrivacyAddressCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
 
     // Server page
@@ -1637,12 +1636,6 @@ QWidget* OptionsDialog::createConnectionPage()
     netLayout->addWidget(m_kadEnabledCheck);
     m_ed2kEnabledCheck = new QCheckBox(tr("eD2K"), netGroup);
     netLayout->addWidget(m_ed2kEnabledCheck);
-    m_separateIPv6QueueCheck = new QCheckBox(tr("Separate IPv6 queue"), netGroup);
-    m_separateIPv6QueueCheck->setToolTip(
-        tr("Alternate freed upload slots between IPv4 and IPv6 clients when both are "
-           "waiting, so IPv6 peers are not outbid on score alone. When only one family "
-           "is waiting, no slot is held back."));
-    netLayout->addWidget(m_separateIPv6QueueCheck);
     m_ipv6PrivacyAddressCheck = new QCheckBox(tr("Use IPv6 privacy address"), netGroup);
     m_ipv6PrivacyAddressCheck->setToolTip(
         tr("Connect to IPv6 peers and servers from the rotating temporary (RFC 4941) address. "
@@ -7711,8 +7704,6 @@ void OptionsDialog::saveSettings()
         req.append(m_schedEnabledCheck->isChecked());
         req.append(QStringLiteral("networkED2K"));
         req.append(m_ed2kEnabledCheck->isChecked());
-        req.append(QStringLiteral("separateIPv6Queue"));
-        req.append(m_separateIPv6QueueCheck->isChecked());
         req.append(QStringLiteral("ipv6UsePrivacyAddress"));
         req.append(m_ipv6PrivacyAddressCheck->isChecked());
 
@@ -8393,7 +8384,6 @@ void OptionsDialog::saveSettings()
         thePrefs.setShowOverhead(m_overheadCheck->isChecked());
         thePrefs.setKadEnabled(m_kadEnabledCheck->isChecked());
         thePrefs.setNetworkED2K(m_ed2kEnabledCheck->isChecked());
-        thePrefs.setSeparateIPv6Queue(m_separateIPv6QueueCheck->isChecked());
         thePrefs.setIpv6UsePrivacyAddress(m_ipv6PrivacyAddressCheck->isChecked());
 
         // Server page fallback
@@ -8697,9 +8687,6 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_overheadCheck->setChecked(prefs.value(QStringLiteral("showOverhead")).toBool());
     m_kadEnabledCheck->setChecked(prefs.value(QStringLiteral("kadEnabled")).toBool());
     m_ed2kEnabledCheck->setChecked(prefs.value(QStringLiteral("networkED2K")).toBool());
-    // Defaults to true — bare toBool() would silently uncheck it against an older daemon.
-    m_separateIPv6QueueCheck->setChecked(
-        prefs.value(QStringLiteral("separateIPv6Queue")).toBool(true));
     m_ipv6PrivacyAddressCheck->setChecked(
         prefs.value(QStringLiteral("ipv6UsePrivacyAddress")).toBool(false));
 

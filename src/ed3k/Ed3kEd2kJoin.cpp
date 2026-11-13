@@ -296,6 +296,13 @@ void Ed3kEd2kJoin::sync()
 // Ed3kJoinBase
 // ---------------------------------------------------------------------------
 
+QString Ed3kEd2kJoin::downloadName(const ffi::Root& root, const Download& d) const
+{
+    Q_UNUSED(d)
+    const auto it = std::ranges::find_if(m_files, [&](const auto& f) { return f.second.root == root; });
+    return it == m_files.end() ? QString() : it->second.name;
+}
+
 std::vector<std::uint64_t> Ed3kEd2kJoin::wantedBlocks(const Download& d) const
 {
     std::vector<std::uint64_t> out;

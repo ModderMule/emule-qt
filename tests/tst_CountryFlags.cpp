@@ -219,7 +219,7 @@ void tst_CountryFlags::sharedListColumn_hiddenByDefaultAndExtOnly()
 }
 
 // Uploading and On Queue append Uploaded, Downloaded, Ratio, Session Ratio after
-// Shared List; all are "Show more controls" columns, hidden on a fresh layout.
+// Shared List, Uploading also Slot #; all are "Show more controls" columns.
 void tst_CountryFlags::clientModel_transferAndRatioColumns()
 {
     for (const auto mode : {ClientListMode::Uploading, ClientListMode::OnQueue}) {
@@ -233,7 +233,8 @@ void tst_CountryFlags::clientModel_transferAndRatioColumns()
         model.setClients({row});
 
         const int first = model.sharedListColumn() + 1;
-        QCOMPARE(model.columnCount(), first + 4);
+        const bool uploading = mode == ClientListMode::Uploading;
+        QCOMPARE(model.columnCount(), first + (uploading ? 5 : 4));
         QCOMPARE(model.headerData(first, Qt::Horizontal).toString(), QStringLiteral("Uploaded"));
         QCOMPARE(model.headerData(first + 3, Qt::Horizontal).toString(), QStringLiteral("Session Ratio"));
         QCOMPARE(model.data(model.index(0, first)).toString(), QStringLiteral("3.00 MB"));
@@ -242,8 +243,21 @@ void tst_CountryFlags::clientModel_transferAndRatioColumns()
         QCOMPARE(model.data(model.index(0, first + 3)).toString(), QStringLiteral("0.5"));
         QCOMPARE(model.data(model.index(0, first + 2), Qt::UserRole).toDouble(), 2.5);
 
-        const std::vector<int> ext = model.extColumns();
-        QCOMPARE(ext, (std::vector<int>{first - 1, first, first + 1, first + 2, first + 3}));
+        std::vector<int> expected{first - 1, first, first + 1, first + 2, first + 3};
+        if (uploading) {
+            // MorphXT's Slot #: ext-only, but shown on a fresh layout
+            expected.push_back(first + 4);
+            QCOMPARE(model.headerData(first + 4, Qt::Horizontal).toString(), QStringLiteral("Slot #"));
+            QCOMPARE(model.data(model.index(0, first + 4)).toString(), QString());   // no slot
+            ClientRow slotted = row;
+            slotted.slotNumber = 3;
+            model.setClients({slotted});
+            QCOMPARE(model.data(model.index(0, first + 4)).toString(), QStringLiteral("3"));
+            QCOMPARE(model.data(model.index(0, first + 4), Qt::UserRole).toInt(), 3);
+            const auto hidden = model.defaultHiddenColumns();
+            QVERIFY(std::ranges::find(hidden, first + 4) == hidden.end());
+        }
+        QCOMPARE(model.extColumns(), expected);
     }
     // The other two tabs keep Shared List last
     ClientListModel known(ClientListMode::KnownClients);

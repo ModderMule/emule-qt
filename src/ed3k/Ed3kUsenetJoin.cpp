@@ -1049,6 +1049,12 @@ void Ed3kUsenetJoin::startDownload(const QString& itemId, int fileIndex)
     (void)openDownload(*m->root, *m->size, itemId, fileIndex);
 }
 
+QString Ed3kUsenetJoin::downloadName(const ffi::Root& root, const Download& d) const
+{
+    Q_UNUSED(root)
+    return postName(d.owner);
+}
+
 std::vector<std::uint64_t> Ed3kUsenetJoin::wantedBlocks(const Download& d) const
 {
     const auto post = findPost(d.owner);

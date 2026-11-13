@@ -701,6 +701,7 @@ void IpcClientHandler::handleGetUploads(const IpcMessage& msg)
             const bool sending = c->uploadState() == UploadState::Uploading
                               || c->uploadState() == UploadState::Connecting;
             m.insert(QStringLiteral("upBarGreyed"), sending && c->slotNumber() > activeSlots);
+            m.insert(QStringLiteral("slot"), static_cast<qint64>(c->slotNumber()));
             uploading.append(m);
         });
         theApp.uploadQueue->forEachWaiting([&](UpDownClient* c) {
@@ -4301,7 +4302,7 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
     else if (key == QStringLiteral("enableUPnP"))
         thePrefs.setEnableUPnP(val.toBool());
     else if (key == QStringLiteral("separateIPv6Queue"))
-        thePrefs.setSeparateIPv6Queue(val.toBool(true));
+        thePrefs.setSeparateIPv6Queue(val.toBool(false));
     else if (key == QStringLiteral("ipv6UsePrivacyAddress")) {
         const bool on = val.toBool(false);
         if (on != thePrefs.ipv6UsePrivacyAddress()) {

@@ -135,6 +135,7 @@ signals:
 
 protected:
     [[nodiscard]] std::vector<std::uint64_t> wantedBlocks(const Download& d) const override;
+    [[nodiscard]] QString downloadName(const ffi::Root& root, const Download& d) const override;
     void onFileBlock(const Download& d, const ::ed3k::event::Block& b) override;
     void onBlobFetched(const QString& owner, int member, const ::ed3k::Root& root, const QByteArray& data) override;
     void onDownloadHashes(const Download& d, const ::ed3k::Bytes& blob) override;

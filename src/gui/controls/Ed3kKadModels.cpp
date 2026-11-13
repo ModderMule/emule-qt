@@ -183,6 +183,7 @@ Ed3kKadLookupsModel::Ed3kKadLookupsModel(QObject* parent)
         {tr("Number"), [](const QCborMap& m) { return QString::number(number(m, "id")); },
          [](const QCborMap& m) { return QVariant(number(m, "id")); }},
         {tr("Purpose"), [](const QCborMap& m) { return value(m, "purpose"); }, {}},
+        {tr("Name"), [](const QCborMap& m) { return value(m, "name"); }, {}},
         {tr("Target"), [](const QCborMap& m) { return value(m, "target"); }, {}},
         {tr("Kind"),
          [](const QCborMap& m) {
@@ -190,6 +191,16 @@ Ed3kKadLookupsModel::Ed3kKadLookupsModel(QObject* parent)
              return m.value(QStringLiteral("store")).toBool() ? tr("Store %1").arg(kind) : kind;
          },
          {}},
+        // MFC Kad's Load: average of the responsible answers, empty without one
+        {tr("Load"),
+         [](const QCborMap& m) {
+             const auto load = number(m, "load");
+             return load < 0 ? QString() : QStringLiteral("%1%").arg(load);
+         },
+         [](const QCborMap& m) { return QVariant(number(m, "load")); }},
+        // MFC Kad's Packets Sent: KadRequests by datagram or over QUIC, pages and retries too
+        {tr("Requests Sent"), [](const QCborMap& m) { return QString::number(number(m, "sent")); },
+         [](const QCborMap& m) { return QVariant(number(m, "sent")); }},
         {tr("Asked"), [](const QCborMap& m) { return QString::number(number(m, "asked")); },
          [](const QCborMap& m) { return QVariant(number(m, "asked")); }},
         {tr("Answered"), [](const QCborMap& m) { return QString::number(number(m, "answered")); },
