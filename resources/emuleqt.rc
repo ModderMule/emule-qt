@@ -1,0 +1,5 @@
+// emuleqt.exe: icon + version info
+#define APP_FILE_DESC "eMule Qt"
+#define APP_EXE_NAME  "emuleqt.exe"
+#include "appicon.rc"
+#include "versioninfo.rc"

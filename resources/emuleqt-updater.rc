@@ -1,0 +1,4 @@
+// emuleqt-updater.exe: version info
+#define APP_FILE_DESC "eMule Qt updater"
+#define APP_EXE_NAME  "emuleqt-updater.exe"
+#include "versioninfo.rc"

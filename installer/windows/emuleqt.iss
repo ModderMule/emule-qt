@@ -22,6 +22,8 @@
 #endif
 
 #define AppName "eMule Qt"
+#define AppPublisher "eMuleQt team"
+#define AppCopyright "Copyright (C) eMuleQt team. GPL-2.0"
 #define AppExe "emuleqt.exe"
 ; Name of the shared copy; InstallerCopy looks for eMuleQt-v*-win64-setup.exe
 #define SetupCopyName "eMuleQt-v" + AppVersion + "-win64-setup.exe"
@@ -33,10 +35,19 @@ AppId={{{#AppGuid}}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
-AppPublisher={#AppName}
+; Publisher + version info: AV heuristics score anonymous setups higher (#179).
+; Keep in sync with resources/versioninfo.rc
+AppPublisher={#AppPublisher}
 AppPublisherURL=https://emule-qt.org
 AppSupportURL=https://emule-qt.org
+AppUpdatesURL=https://emule-qt.org
+AppCopyright={#AppCopyright}
 VersionInfoVersion={#AppVersion}
+VersionInfoCompany={#AppPublisher}
+VersionInfoCopyright={#AppCopyright}
+VersionInfoDescription={#AppName} Setup
+VersionInfoProductName={#AppName}
+VersionInfoProductVersion={#AppVersion}
 DefaultDirName={autopf}\{#AppName}
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
@@ -215,22 +226,56 @@ begin
   end;
 end;
 
+// Counts cores of this install in any session, ends them when Kill. In-process
+// WMI: the hidden powershell.exe Stop-Process it replaces looked like malware
+// to AV heuristics (#179)
+function AppCoresWmi(Kill: Boolean): Integer;
+var
+  Locator, Service, Procs, Proc, ExePath: Variant;
+  App, PathStr: String;
+  I: Integer;
+begin
+  Result := 0;
+  App := Lowercase(AddBackslash(ExpandConstant('{app}')));
+  try
+    Locator := CreateOleObject('WbemScripting.SWbemLocator');
+    Service := Locator.ConnectServer('.', 'root\CIMV2');
+    Procs := Service.ExecQuery('SELECT ProcessId, ExecutablePath FROM Win32_Process WHERE Name = ''' +
+                               CoreExe + '''');
+    for I := 0 to Procs.Count - 1 do
+    begin
+      Proc := Procs.ItemIndex(I);
+      // Null for processes we may not query
+      ExePath := Proc.ExecutablePath;
+      if VarIsNull(ExePath) or VarIsEmpty(ExePath) then
+        Continue;
+      PathStr := ExePath;
+      if Pos(App, Lowercase(PathStr)) <> 1 then
+        Continue;
+      Result := Result + 1;
+      if Kill then
+        Proc.Terminate(1);
+    end;
+  except
+    Log('WMI query for ' + CoreExe + ' failed: ' + GetExceptionMessage);
+  end;
+end;
+
 // Cores of other sessions and ones that didn't stop in time
 procedure KillAppCores;
 var
-  App, Cmd: String;
-  ResultCode: Integer;
+  I: Integer;
 begin
-  App := AddBackslash(ExpandConstant('{app}'));
-  StringChangeEx(App, #39, #39#39, True);
-  // no line may start with #: ISPP reads it as a directive
-  Cmd := '-NoProfile -NonInteractive -Command "Get-Process ' + ChangeFileExt(CoreExe, '') +
-    ' -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith(' + #39 +
-    App + #39 + ', [StringComparison]::OrdinalIgnoreCase) } | ' +
-    'Stop-Process -Force -PassThru | Wait-Process -Timeout 10"';
-  if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Cmd, '',
-              SW_HIDE, ewWaitUntilTerminated, ResultCode) then
-    Log('Could not run PowerShell to end ' + CoreExe);
+  if AppCoresWmi(True) = 0 then
+    Exit;
+  Log('Ended ' + CoreExe + ' that did not stop');
+  // Terminate returns before the process lets go of its files; 40 x 250 ms
+  I := 0;
+  while (I < 40) and (AppCoresWmi(False) > 0) do
+  begin
+    Sleep(250);
+    I := I + 1;
+  end;
 end;
 
 procedure StopAppCores;

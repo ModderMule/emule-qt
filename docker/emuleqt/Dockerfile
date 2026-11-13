@@ -91,6 +91,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 LABEL org.opencontainers.image.title="eMuleQt" \
       org.opencontainers.image.description="eMuleQt core (emulecored) with web UI, REST API and optional GUI via noVNC" \
+      org.opencontainers.image.vendor="eMuleQt team" \
+      org.opencontainers.image.authors="eMuleQt team" \
+      org.opencontainers.image.url="https://emule-qt.org" \
       org.opencontainers.image.source="https://github.com/ModderMule/emule-qt" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.licenses="GPL-2.0"

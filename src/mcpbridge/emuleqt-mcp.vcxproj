@@ -180,6 +180,9 @@
     <ClCompile Include="McpStdioBridge.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ResourceCompile Include="..\..\resources\emuleqt-mcp.rc" />
+  </ItemGroup>
+  <ItemGroup>
     <QtMoc Include="McpStdioBridge.h" />
   </ItemGroup>
   <ItemGroup>

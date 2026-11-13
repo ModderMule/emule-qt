@@ -60,10 +60,7 @@ elseif(LINUX)
     target_link_libraries(emuledaemon PUBLIC Qt6::DBus)
 elseif(WIN32)
     # Same donkey as the GUI: Explorer, and the console window when it has one.
-    set(APP_ICON_RC "${CMAKE_SOURCE_DIR}/resources/appicon.rc")
-    target_sources(emulecored PRIVATE "${APP_ICON_RC}")
-    set_source_files_properties("${APP_ICON_RC}" PROPERTIES
-        OBJECT_DEPENDS "${CMAKE_SOURCE_DIR}/resources/icons/MuleApp.ico")
+    emule_add_win_resources(emulecored "${CMAKE_SOURCE_DIR}/resources/emulecored.rc")
 endif()
 
 set_target_properties(emulecored emuledaemon PROPERTIES

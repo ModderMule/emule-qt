@@ -126,8 +126,9 @@ Address updatePublicIPv6(const IPv6PrivacyReport& report);
 [[nodiscard]] std::vector<LocalIPv6Address> parseProcNetIfInet6(QStringView text);
 
 /// Windows tie-breaker: within one interface and one /64, when several addresses report
-/// a random suffix the shortest-lived one is the RFC 4941 temporary address and the rest
-/// are stable. Groups of one are left Unknown — with nothing to compare against there is
+/// a random suffix the longest-lived one is stable and every shorter-lived one an RFC 4941
+/// temporary address (Windows keeps older, deprecated ones). Several tied at the top stay
+/// Unknown. Groups of one are left Unknown — with nothing to compare against there is
 /// no evidence either way, and Unknown already outranks Temporary in selection.
 void classifyByPrefixLifetime(std::vector<LocalIPv6Address>& addrs);
 

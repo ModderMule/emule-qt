@@ -22,3 +22,5 @@ target_link_libraries(emuleqt-mcp
 set_target_properties(emuleqt-mcp PROPERTIES
     FOLDER "Daemon"
 )
+
+emule_add_win_resources(emuleqt-mcp "${CMAKE_SOURCE_DIR}/resources/emuleqt-mcp.rc")
