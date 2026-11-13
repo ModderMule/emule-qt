@@ -370,11 +370,16 @@ private:
     void applyToolbarBackground();
     void clearToolbarSkin();
     QString skinsDir() const;
-    void applySkinProfile(const QString& path);
+    /// @p userChoice: also adopt the profile's [Skin] Theme=; otherwise only when it changed
+    void applySkinProfile(const QString& path, bool userChoice = true);
+    /// Theme after switching from a profile drawn for @p previous to one drawn for @p next
+    void adoptSkinTheme(ThemeChoice previous, ThemeChoice next, bool isDefault);
     /// Browse Skins window (toolbar context menu)
     void openSkinBrowser();
     /// Installed manifest skin @p id: its profile + toolbar strip
     void applyInstalledSkin(const QString& id);
+    /// @p userChoice false = re-applied after an update, see applySkinProfile
+    void loadInstalledSkin(const QString& id, bool userChoice);
     /// No profile, no toolbar strip
     void restoreDefaultSkin();
     /// SkinInstaller done: an updated active skin is applied again

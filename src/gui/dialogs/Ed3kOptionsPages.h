@@ -185,6 +185,7 @@ private:
     OptionsTree* m_extTree = nullptr;
     QTreeWidgetItem* m_hashRamItem = nullptr;
     QTreeWidgetItem* m_lowRamItem = nullptr;
+    QTreeWidgetItem* m_lanItem = nullptr;   ///< ed3kLan
 
     // General
     QLabel* m_runningLabel = nullptr;
@@ -203,7 +204,6 @@ private:
     QLabel* m_udpPortJoinedLabel = nullptr;
     bool m_portJoined = false;
     int m_joinedPort = 0;
-    QCheckBox* m_lanCheck = nullptr;
     QSpinBox* m_sitePortSpin = nullptr;
     QPlainTextEdit* m_nodeListsEdit = nullptr;
     QCheckBox* m_nodeListAutoCheck = nullptr;

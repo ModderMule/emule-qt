@@ -127,6 +127,13 @@ public:
     void setRehashDelay(int ms) { m_rehashMs = ms; }
     /// Files hashed since construction (cache misses).
     [[nodiscard]] int hashCount() const { return m_hashCount; }
+    /// Files listed, waiting for or in a hash, and open on the engine (published).
+    struct Counts {
+        std::size_t total = 0;
+        std::size_t hashing = 0;
+        std::size_t published = 0;
+    };
+    [[nodiscard]] Counts counts() const;
     /// Files being hashed now (one per disk at most).
     [[nodiscard]] int hashingNow() const { return int(m_hashingVolumes.size()); }
     /// Tests: which disk a directory counts as (default: DiskLoadLimiter::volumeKey).

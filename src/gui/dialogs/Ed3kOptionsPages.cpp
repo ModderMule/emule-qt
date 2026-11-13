@@ -242,7 +242,7 @@ void Ed3kOptionsPages::load(const QCborMap& p)
         showPortJoined();
         requestCompatPlan();
     }
-    m_lanCheck->setChecked(p.value(QStringLiteral("ed3kLan")).toBool(true));
+    m_extTree->setChecked(m_lanItem, p.value(QStringLiteral("ed3kLan")).toBool(false));
     m_hiding->load(p);
     m_sitePortSpin->setValue(int(p.value(QStringLiteral("ed3kSitePort")).toInteger(0)));
     m_nodeListsEdit->setPlainText(linesText(p.value(QStringLiteral("ed3kNodeLists"))));
@@ -331,7 +331,7 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kExtOff", extOff().join(QLatin1Char(' ')));
     if (!m_portJoined)   // joined: the Connection page sends it
         put("ed3kUdpPort", qint64(m_udpPortSpin->value()));
-    put("ed3kLan", m_lanCheck->isChecked());
+    put("ed3kLan", m_extTree->isChecked(m_lanItem));
     m_hiding->appendTo(req);
     put("ed3kSitePort", qint64(m_sitePortSpin->value()));
     put("ed3kNodeLists", linesOf(m_nodeListsEdit).join(QLatin1Char(' ')));
@@ -405,7 +405,7 @@ void Ed3kOptionsPages::saveLocal() const
     thePrefs.setEd3kExtOff(extOff());
     if (!m_portJoined && m_udpPortSpin->value() > 0)
         thePrefs.setEd3kUdpPort(uint16(m_udpPortSpin->value()));
-    thePrefs.setEd3kLan(m_lanCheck->isChecked());
+    thePrefs.setEd3kLan(m_extTree->isChecked(m_lanItem));
     m_hiding->saveLocal();
     if (m_sitePortSpin->value() > 0)
         thePrefs.setEd3kSitePort(uint16(m_sitePortSpin->value()));
@@ -600,12 +600,10 @@ QWidget* Ed3kOptionsPages::buildConnection(QWidget* parent)
 
     auto* findGroup = new QGroupBox(tr("Finding nodes"), page);
     auto* findLayout = new QVBoxLayout(findGroup);
-    m_lanCheck = new QCheckBox(tr("Find ed3k nodes in the local network (restarts the node)"), findGroup);
-    findLayout->addWidget(m_lanCheck);
     findLayout->addWidget(noteLabel(tr("Node lists for the first contact, one ed3k:nodes link per line:"), findGroup));
     m_nodeListsEdit = new QPlainTextEdit(findGroup);
     m_nodeListsEdit->setPlaceholderText(QStringLiteral("ed3k:nodes?url=…&key=…"));
-    m_nodeListsEdit->setFixedHeight(m_nodeListsEdit->fontMetrics().lineSpacing() * 5 + 12);
+    m_nodeListsEdit->setFixedHeight(m_nodeListsEdit->fontMetrics().lineSpacing() * 2 + 12);
     findLayout->addWidget(m_nodeListsEdit);
     // bootstrap.md §1, §2: the automatic fetch, the age a list may have, eD2K peers as seeds.
     // Hidden, YAML only (defaults on, 30 days); still loaded and saved so the values round-trip.
@@ -656,7 +654,7 @@ QWidget* Ed3kOptionsPages::buildConnection(QWidget* parent)
                                      chainGroup));
     m_chaintubeRpcEdit = new QPlainTextEdit(chainGroup);
     m_chaintubeRpcEdit->setPlaceholderText(QStringLiteral("https://…"));
-    m_chaintubeRpcEdit->setFixedHeight(m_chaintubeRpcEdit->fontMetrics().lineSpacing() * 4 + 12);
+    m_chaintubeRpcEdit->setFixedHeight(m_chaintubeRpcEdit->fontMetrics().lineSpacing() * 2 + 12);
     chainLayout->addWidget(m_chaintubeRpcEdit);
     m_chainSingleNote = noteLabel(tr("Only one remote endpoint: nothing checks its answers. Two endpoints of independent "
                                      "providers are recommended, or a chain node on this computer."),
@@ -703,10 +701,6 @@ QWidget* Ed3kOptionsPages::buildConnection(QWidget* parent)
             if (!m_loading)
                 emit changed();
         });
-    connect(m_lanCheck, &QCheckBox::toggled, this, [this] {
-        if (!m_loading)
-            emit changed();
-    });
     for (QPlainTextEdit* e : {m_nodeListsEdit, m_chaintubeRpcEdit})
         connect(e, &QPlainTextEdit::textChanged, this, [this] {
             if (!m_loading)
@@ -1979,6 +1973,9 @@ QWidget* Ed3kOptionsPages::buildExtended(QWidget* parent)
     m_lowRamItem->setToolTip(0, tr("While the free RAM is below this share of the total, only block hashes in use "
                                    "stay in RAM."));
     m_extTree->setValue(m_lowRamItem, 20);
+    QTreeWidgetItem* connection = m_extTree->addGroup(tr("Connection"), skinIcon(QStringLiteral(":/icons/Connection.ico")));
+    m_lanItem = m_extTree->addCheck(connection, tr("Find ed3k nodes in the local network (restarts the node)"));
+    m_lanItem->setToolTip(0, tr("LAN discovery: finds other ed3k nodes on this computer's local networks."));
     connect(m_extTree, &OptionsTree::changed, this, [this] {
         if (!m_loading)
             emit changed();

@@ -86,10 +86,11 @@ DetailDialog::DetailDialog(QWidget* parent, ContentScroll scroll)
     buildButtonRow();   // appends its row to mainLayout
 }
 
-void DetailDialog::setDesignedSize(QSize minimum, QSize preferred)
+void DetailDialog::setDesignedSize(QSize minimum, QSize preferred, DialogSizing::Fit fit)
 {
     m_designedMin     = minimum;
     m_designedDefault = preferred;
+    m_fit             = fit;
 }
 
 void DetailDialog::fitToContent()
@@ -104,14 +105,14 @@ void DetailDialog::fitToContent()
             content->show();
     }
 
-    DialogSizing::applySize(this, m_designedMin, m_designedDefault);
+    DialogSizing::applySize(this, m_designedMin, m_designedDefault, m_fit);
 
     // And once more when the resize has come back from the window manager. Only then has
     // the content been laid out at its final width, which is the first moment a wrapping
     // label reports the height it truly needs — the measurement above can be a line short
     // of it. applySize() only ever grows a window that is already up, so this settles.
     QTimer::singleShot(0, this, [this] {
-        DialogSizing::applySize(this, m_designedMin, m_designedDefault);
+        DialogSizing::applySize(this, m_designedMin, m_designedDefault, m_fit);
     });
 }
 

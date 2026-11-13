@@ -2,7 +2,10 @@
 /// @brief eMule's shared files over ed3k (src/ed3k/Ed3kShared): node A shares a file of a
 /// fake share list, node B fetches it by its root; the hash cache spares a re-hash.
 
+#include "files/KnownFile.h"
+#include "prefs/Preferences.h"
 #include "utils/BackgroundFileWriter.h"
+#include "utils/DiskLoadLimiter.h"
 #include "utils/SystemMemory.h"
 #include "Ed3kJoinBase.h"
 #include "Ed3kSession.h"
@@ -18,6 +21,12 @@
 
 #include <algorithm>
 #include <cstring>
+#include <thread>
+
+#ifdef Q_OS_UNIX
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 using namespace eMule;
 using namespace eMule::ed3k;
@@ -124,6 +133,8 @@ private slots:
     void twoDisksHashAtOnce();
     void aSideHashIsSharedWithoutASecondRead();
     void aStaleSideHashIsHashedAgain();
+    void benchHashRun_data();
+    void benchHashRun();
     void cleanup();
 };
 
@@ -795,6 +806,134 @@ void tst_Ed3kShared::aStaleSideHashIsHashedAgain()
     QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
     QCOMPARE(shared.hashCount(), 1);
     QCOMPARE(*shared.rootOf(md4), rootOf(data));
+    shared.stop();
+}
+
+namespace {
+
+/// Written past the page cache, so the hash reads hit the disk.
+bool writeUncached(const QString& path, qint64 size, int seed)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly))
+        return false;
+#ifdef Q_OS_MACOS
+    ::fcntl(f.handle(), F_NOCACHE, 1);
+#endif
+    QByteArray chunk = payload(1 << 20, seed);
+    for (qint64 at = 0; at < size; at += chunk.size()) {
+        std::memcpy(chunk.data(), &at, sizeof at);   // no two chunks alike
+        if (f.write(chunk.constData(), std::min<qint64>(chunk.size(), size - at)) <= 0)
+            return false;
+    }
+    f.flush();
+#if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
+    ::fdatasync(f.handle());
+    ::posix_fadvise(f.handle(), 0, 0, POSIX_FADV_DONTNEED);
+#endif
+    return true;
+}
+
+int envInt(const char* name, int fallback)
+{
+    bool ok = false;
+    const int v = qEnvironmentVariableIntValue(name, &ok);
+    return ok && v > 0 ? v : fallback;
+}
+
+} // namespace
+
+void tst_Ed3kShared::benchHashRun_data()
+{
+    QTest::addColumn<bool>("newFiles");
+    QTest::addColumn<bool>("perDisk");
+    QTest::newRow("library: one at a time (0.7.25)") << false << false;
+    QTest::newRow("library: one per disk") << false << true;
+    QTest::newRow("new files: two reads, ed3k one at a time (0.7.25)") << true << false;
+    QTest::newRow("new files: one read, one per disk") << true << true;
+}
+
+// EMULE_BENCH_HASH_DIRS=dir1:dir2 (one per disk); _FILES per disk, _MIB per file, _LOAD %
+void tst_Ed3kShared::benchHashRun()
+{
+    const QStringList dirs = qEnvironmentVariable("EMULE_BENCH_HASH_DIRS").split(u':', Qt::SkipEmptyParts);
+    if (dirs.isEmpty())
+        QSKIP("set EMULE_BENCH_HASH_DIRS");
+    QFETCH(bool, newFiles);
+    QFETCH(bool, perDisk);
+    const int perDir = envInt("EMULE_BENCH_HASH_FILES", 2);
+    const qint64 fileSize = qint64(envInt("EMULE_BENCH_HASH_MIB", 1024)) << 20;
+    thePrefs.setHashingDiskLoad(envInt("EMULE_BENCH_HASH_LOAD", 80));
+
+    // fresh files each row: the last row's reads are cached
+    std::vector<std::unique_ptr<QTemporaryDir>> roots;
+    FakeSource src;
+    std::vector<std::vector<SharedEntry>> byDisk(dirs.size());
+    static int seed = 100;
+    for (int d = 0; d < dirs.size(); ++d) {
+        roots.push_back(std::make_unique<QTemporaryDir>(QDir(dirs[d]).filePath(QStringLiteral("emuleqt-hashbench-XXXXXX"))));
+        QVERIFY(roots.back()->isValid());
+        for (int i = 0; i < perDir; ++i) {
+            const QString name = QStringLiteral("f%1.bin").arg(i);
+            const QString path = QDir(roots.back()->path()).filePath(name);
+            QVERIFY2(writeUncached(path, fileSize, ++seed), qPrintable(path));
+            QByteArray md4(16, Qt::Uninitialized);
+            for (int b = 0; b < 16; ++b)
+                md4[b] = char(seed * 7 + b);
+            byDisk[d].push_back(SharedEntry{md4, path, name, std::uint64_t(fileSize)});
+        }
+    }
+    const int total = int(dirs.size()) * perDir;
+
+    QTemporaryDir cfg;
+    QVERIFY(cfg.isValid());
+    Ed3kSession a;
+    QVERIFY(a.start(loopback(cfg.path())));
+    Ed3kShared shared(a, src, cfg.path());
+    if (!perDisk)
+        shared.setVolumeKeyFn([](const QString&) { return QStringLiteral("one"); });
+    QSignalSpy spy(&shared, &Ed3kShared::fileShared);
+    QElapsedTimer t;
+    std::atomic<int> ed2kDone = 0;
+    std::vector<std::thread> workers;
+    t.start();
+    if (!newFiles) {
+        for (const auto& disk : byDisk)
+            src.entries.insert(src.entries.end(), disk.begin(), disk.end());
+        shared.start();
+    } else {
+        // eD2K hashes one file per disk (as in 0.7.25); ed3k gets each file as eD2K lists it
+        shared.start();
+        const SideHasherFactory factory = perDisk ? shared.sideHasherFactory() : SideHasherFactory{};
+        for (const auto& disk : byDisk) {
+            workers.emplace_back([&, disk, factory] {   // factory: this block ends before the workers
+                DiskLoadLimiter::lowerThisThread();
+                for (const auto& e : disk) {
+                    const QFileInfo fi(e.path);
+                    std::unique_ptr<SideHash> side = factory ? factory(e.path, e.size) : nullptr;
+                    KnownFile kf;
+                    if (!kf.createFromFile(fi.absolutePath(), fi.fileName(), {}, nullptr, nullptr, nullptr, side.get()))
+                        continue;
+                    if (side)
+                        side->finish(e.md4, e.path, e.size, fi.lastModified().toMSecsSinceEpoch());
+                    QMetaObject::invokeMethod(&shared, [&, e] {
+                        src.entries.push_back(e);
+                        shared.onFileAdded(e);
+                    }, Qt::QueuedConnection);
+                    ++ed2kDone;
+                }
+            });
+        }
+    }
+    QTRY_VERIFY_WITH_TIMEOUT(spy.count() == total, 3'600'000);
+    const qint64 ms = t.elapsed();
+    for (auto& w : workers)
+        w.join();
+    const double gib = double(total) * double(fileSize) / double(1 << 30);
+    qInfo("%s: %d disk(s) × %d × %lld MiB = %.1f GiB in %.1f s → %.0f MB/s, ed3k reads %d",
+          QTest::currentDataTag(), int(dirs.size()), perDir, fileSize >> 20, gib, ms / 1000.0,
+          double(total) * double(fileSize) / 1e6 / (ms / 1000.0), shared.hashCount());
+    QCOMPARE(int(ed2kDone), newFiles ? total : 0);
     shared.stop();
 }
 

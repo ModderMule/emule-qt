@@ -1197,7 +1197,7 @@ Has comments</source>
 <context>
     <name>RenameFileDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/RenameFileDialog.h" line="+23"/>
+        <location filename="../src/gui/dialogs/RenameFileDialog.h" line="+26"/>
         <source>Rename</source>
         <translation>Переименовать</translation>
     </message>
@@ -3840,7 +3840,7 @@ Retry the last core, or enter the address and authentication token of another on
 <context>
     <name>eMule::DetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/DetailDialog.cpp" line="+205"/>
+        <location filename="../src/gui/dialogs/DetailDialog.cpp" line="+206"/>
         <source>Rename</source>
         <translation>Переименовать</translation>
     </message>
@@ -4934,7 +4934,12 @@ Make a new anonymous key?</source>
         <translation>След. проверка</translation>
     </message>
     <message>
-        <location line="+24"/>
+        <location line="+3"/>
+        <source>due</source>
+        <translation>сейчас</translation>
+    </message>
+    <message>
+        <location line="+21"/>
         <source>Not connected since restart</source>
         <translation>Не подключён после перезапуска</translation>
     </message>
@@ -5554,7 +5559,7 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+439"/>
         <location line="+11"/>
-        <location line="+568"/>
+        <location line="+562"/>
         <location line="+11"/>
         <location line="+23"/>
         <location line="+19"/>
@@ -5565,7 +5570,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation>Кредиты ed3k</translation>
     </message>
     <message>
-        <location line="-679"/>
+        <location line="-673"/>
         <source>The ledger contract is an address: 0x and 40 hexadecimal digits.</source>
         <translation>Контракт реестра — это адрес: 0x и 40 шестнадцатеричных цифр.</translation>
     </message>
@@ -5659,12 +5664,12 @@ Its names are then resolved after the lists you already follow.</source>
         <translation>Поиск узлов</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+1376"/>
         <source>Find ed3k nodes in the local network (restarts the node)</source>
         <translation>Искать узлы ed3k в локальной сети (перезапускает узел)</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-1374"/>
         <source>Node lists for the first contact, one ed3k:nodes link per line:</source>
         <translation>Списки узлов для первого контакта, одна ссылка ed3k:nodes на строку:</translation>
     </message>
@@ -5678,7 +5683,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">Конечные точки JSON-RPC цепочки chaintube, один URL на строку (https или http к узлу на этом компьютере). Реестр кредитов находится на странице «Кредиты».</translation>
     </message>
     <message>
-        <location line="+73"/>
+        <location line="+69"/>
         <source>Use credits (off by default)</source>
         <translation>Использовать кредиты (по умолчанию выключено)</translation>
     </message>
@@ -5770,7 +5775,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">Пересыльщик:</translation>
     </message>
     <message>
-        <location line="-1420"/>
+        <location line="-1414"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>Также раздавать публикации Usenet через ed3k</translation>
     </message>
@@ -5790,7 +5795,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation>Следит за папками «Мои наборы ed3k»: добавленные, изменённые или удалённые там файлы публикуют новую версию набора.</translation>
     </message>
     <message>
-        <location line="+119"/>
+        <location line="+117"/>
         <source> days</source>
         <translation> дн.</translation>
     </message>
@@ -5840,7 +5845,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation>Списки узлов ed3k (*.ed3knod);;Все файлы (*)</translation>
     </message>
     <message>
-        <location line="+100"/>
+        <location line="+96"/>
         <source>The ledger contract of the network: 0x and 40 hexadecimal digits. No default.</source>
         <translation>Контракт реестра сети: 0x и 40 шестнадцатеричных цифр. Без значения по умолчанию.</translation>
     </message>
@@ -5872,12 +5877,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1247"/>
+        <location line="+1250"/>
         <source> credits/MiB</source>
         <translation> кредитов/MiB</translation>
     </message>
     <message>
-        <location line="-1256"/>
+        <location line="-1259"/>
         <source>Never pay (receipts only)</source>
         <translation>Никогда не платить (только квитанции)</translation>
     </message>
@@ -6125,12 +6130,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1084"/>
+        <location line="+1087"/>
         <source>not read yet</source>
         <translation>ещё не прочитано</translation>
     </message>
     <message>
-        <location line="-1082"/>
+        <location line="-1085"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Счёт в минусе: выход — новый кредитный ключ.</translation>
     </message>
@@ -6642,7 +6647,17 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>Пока свободной ОЗУ меньше этой доли от общего объёма, в ОЗУ остаются только используемые хеши блоков.</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+3"/>
+        <source>Connection</source>
+        <translation>Соединение</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>LAN discovery: finds other ed3k nodes on this computer&apos;s local networks.</source>
+        <translation>Обнаружение в LAN: находит другие узлы ed3k в локальных сетях этого компьютера.</translation>
+    </message>
+    <message>
+        <location line="+20"/>
         <source>Autostart highspeed download</source>
         <translation>Автозапуск скоростной загрузки</translation>
     </message>
@@ -6716,12 +6731,12 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>Скоростная загрузка не работает. Баланс: %1</translation>
     </message>
     <message>
-        <location line="-736"/>
+        <location line="-739"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
     <message>
-        <location line="-848"/>
+        <location line="-842"/>
         <source>Runs the ed3k node (packmule) in the core, on the eD2K UDP port or one of its own. It finds other nodes over Kad and serves the shared files.</source>
         <translation>Запускает узел ed3k (packmule) в ядре, на UDP-порту eD2K или на собственном. Он находит другие узлы через Kad и раздаёт общие файлы.</translation>
     </message>
@@ -6731,7 +6746,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
     </message>
     <message>
         <location line="+30"/>
-        <location line="+743"/>
+        <location line="+737"/>
         <location line="+6"/>
         <location line="+9"/>
         <location line="+13"/>
@@ -6741,7 +6756,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>Совместимость с eD2K</translation>
     </message>
     <message>
-        <location line="-779"/>
+        <location line="-773"/>
         <source>One port for eD2K and ed3k, and a user hash that tells eD2K peers this client also speaks ed3k.</source>
         <translation>Один порт для eD2K и ed3k и хеш пользователя, сообщающий пирам eD2K, что этот клиент поддерживает и ed3k.</translation>
     </message>
@@ -6786,7 +6801,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>Открывает веб-страницу роутера этого компьютера, где настраивается проброс портов</translation>
     </message>
     <message>
-        <location line="+24"/>
+        <location line="+22"/>
         <source>Fetch node lists automatically when few nodes answer</source>
         <translation>Загружать списки узлов автоматически, если отвечает мало узлов</translation>
     </message>
@@ -6801,7 +6816,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>Только одна удалённая конечная точка: её ответы никто не проверяет. Рекомендуются две конечные точки независимых провайдеров или узел цепочки на этом компьютере.</translation>
     </message>
     <message>
-        <location line="+670"/>
+        <location line="+666"/>
         <source>%1 failed: %2</source>
         <translation>%1: ошибка: %2</translation>
     </message>
@@ -9487,7 +9502,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
 <context>
     <name>eMule::FileDetailDialog</name>
     <message numerus="yes">
-        <location filename="../src/gui/dialogs/FileDetailDialog.cpp" line="+181"/>
+        <location filename="../src/gui/dialogs/FileDetailDialog.cpp" line="+182"/>
         <source>File Details: %n files</source>
         <translation>
             <numerusform>Детали файла: %n файл</numerusform>
@@ -9499,12 +9514,12 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <location line="+14"/>
         <location line="+49"/>
         <location line="+7"/>
-        <location line="+159"/>
+        <location line="+162"/>
         <source>General</source>
         <translation>Основные</translation>
     </message>
     <message>
-        <location line="-214"/>
+        <location line="-217"/>
         <location line="+50"/>
         <location line="+7"/>
         <source>Comments</source>
@@ -9548,7 +9563,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>Предпросмотр архива</translation>
     </message>
     <message>
-        <location line="+37"/>
+        <location line="+40"/>
         <location line="+20"/>
         <location line="+237"/>
         <source>File Name</source>
@@ -9648,12 +9663,12 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>Путь к файлу</translation>
     </message>
     <message>
-        <location line="-335"/>
+        <location line="-339"/>
         <source>%1   (%2 ago)</source>
         <translation>%1   (%2 назад)</translation>
     </message>
     <message>
-        <location line="+330"/>
+        <location line="+334"/>
         <source>Name</source>
         <translation>Имя</translation>
     </message>
@@ -15161,7 +15176,7 @@ Download it again?</source>
 <context>
     <name>eMule::NetworkInfoDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+65"/>
+        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+73"/>
         <source>Network Information</source>
         <translation>Сетевая информация</translation>
     </message>
@@ -15188,18 +15203,18 @@ Download it again?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+247"/>
+        <location line="+249"/>
         <source>Hash:</source>
         <translation>Хеш:</translation>
     </message>
     <message>
-        <location line="-245"/>
+        <location line="-247"/>
         <source>TCP Port:</source>
         <translation>TCP-порт:</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+326"/>
+        <location line="+328"/>
         <source>UDP Port:</source>
         <translation>UDP-порт:</translation>
     </message>
@@ -15235,13 +15250,13 @@ Download it again?</source>
         <location line="+117"/>
         <location line="+35"/>
         <location line="+6"/>
-        <location line="+38"/>
+        <location line="+66"/>
         <location line="+5"/>
         <source>Status:</source>
         <translation>Статус:</translation>
     </message>
     <message>
-        <location line="-340"/>
+        <location line="-368"/>
         <location line="+65"/>
         <location line="+156"/>
         <source>Users:</source>
@@ -15265,12 +15280,12 @@ Download it again?</source>
     <message>
         <location line="-150"/>
         <location line="+304"/>
-        <location line="+34"/>
+        <location line="+62"/>
         <source>Unknown</source>
         <translation>Неизвестно</translation>
     </message>
     <message>
-        <location line="-331"/>
+        <location line="-359"/>
         <location line="+147"/>
         <source>ID:</source>
         <translation>ID:</translation>
@@ -15472,19 +15487,19 @@ Download it again?</source>
     <message>
         <location line="+3"/>
         <location line="+210"/>
-        <location line="+71"/>
+        <location line="+99"/>
         <source>Yes</source>
         <translation>Да</translation>
     </message>
     <message>
-        <location line="-281"/>
+        <location line="-309"/>
         <location line="+210"/>
-        <location line="+71"/>
+        <location line="+99"/>
         <source>No</source>
         <translation>Нет</translation>
     </message>
     <message>
-        <location line="-267"/>
+        <location line="-295"/>
         <source>Kad Network</source>
         <translation>Сеть Kad</translation>
     </message>
@@ -15561,12 +15576,12 @@ Download it again?</source>
     <message>
         <location line="+0"/>
         <location line="+39"/>
-        <location line="+44"/>
+        <location line="+72"/>
         <source>Disabled</source>
         <translation>Отключено</translation>
     </message>
     <message>
-        <location line="-81"/>
+        <location line="-109"/>
         <source>not running</source>
         <translation>не запущен</translation>
     </message>
@@ -15585,18 +15600,18 @@ Download it again?</source>
         <translation>URL:</translation>
     </message>
     <message>
-        <location line="+19"/>
+        <location line="+18"/>
         <source>ed3k Network</source>
         <translation>Сеть ed3k</translation>
     </message>
     <message>
-        <location line="+3"/>
-        <location line="+44"/>
+        <location line="+4"/>
+        <location line="+72"/>
         <source>Not running</source>
         <translation>Не запущен</translation>
     </message>
     <message>
-        <location line="-30"/>
+        <location line="-58"/>
         <source>Offline</source>
         <translation>Недоступна</translation>
     </message>
@@ -15622,12 +15637,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+40"/>
+        <location line="+68"/>
         <source>Router:</source>
         <translation>Маршрутизатор:</translation>
     </message>
     <message>
-        <location line="-39"/>
+        <location line="-67"/>
         <source>Contacts:</source>
         <translation>Контакты:</translation>
     </message>
@@ -15635,6 +15650,29 @@ Download it again?</source>
         <location line="+1"/>
         <source>Node ID:</source>
         <translation>ID узла:</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Shared Files</source>
+        <translation>Файлы обмена</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <location line="+6"/>
+        <source>Total:</source>
+        <translation>Всего:</translation>
+    </message>
+    <message>
+        <location line="-5"/>
+        <location line="+6"/>
+        <source>Hashing:</source>
+        <translation>Хеширование:</translation>
+    </message>
+    <message>
+        <location line="-5"/>
+        <location line="+6"/>
+        <source>Published:</source>
+        <translation>Опубликовано:</translation>
     </message>
     <message>
         <location line="+9"/>

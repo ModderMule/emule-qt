@@ -535,6 +535,14 @@ void OptionsDialog::selectPage(int page)
         m_sidebar->setCurrentItemId(page);
 }
 
+void OptionsDialog::syncColorScheme()
+{
+    m_initialColorScheme = theUiState.colorScheme();
+    const QSignalBlocker block(m_colorSchemeCombo);   // no markDirty
+    m_colorSchemeCombo->setCurrentIndex(
+        std::max(0, m_colorSchemeCombo->findData(m_initialColorScheme)));
+}
+
 void OptionsDialog::done(int result)
 {
     // Remember the page across every close path — OK, Cancel, Esc and the window
@@ -7347,6 +7355,7 @@ void OptionsDialog::loadSettings()
     // Display - appearance
     m_colorSchemeCombo->setCurrentIndex(
         std::max(0, m_colorSchemeCombo->findData(theUiState.colorScheme())));
+    m_initialColorScheme = theUiState.colorScheme();
     m_fontScaleCombo->setCurrentIndex(
         std::max(0, m_fontScaleCombo->findData(theUiState.fontScalePercent())));
     m_speedGraphBgCombo->setCurrentIndex(
@@ -7580,8 +7589,10 @@ void OptionsDialog::saveSettings()
     }
 
     // Display - appearance
+    // only a combo change: a skin may have set the theme while Options was open
     if (const int scheme = m_colorSchemeCombo->currentData().toInt();
-        scheme != theUiState.colorScheme()) {
+        scheme != m_initialColorScheme && scheme != theUiState.colorScheme()) {
+        m_initialColorScheme = scheme;
         theUiState.setColorScheme(scheme);
         if (applyColorScheme(scheme, false)) {
             refreshThemedWidgets();

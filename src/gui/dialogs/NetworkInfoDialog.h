@@ -36,6 +36,8 @@ private:
     static QString formatNumber(qint64 value);
     /// GetNetworkInfo "ed3k" / "bt" blocks; empty for a core without them
     static QString ed3kHtml(const QCborMap& ed3k);
+    /// GetNetworkInfo "shared": per network with @p extended, else combined
+    static QString sharedHtml(const QCborMap& shared, bool extended);
     static QString bitTorrentHtml(const QCborMap& bt);
     static QString i2pHtml(const QCborMap& bt);
 

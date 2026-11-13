@@ -522,6 +522,12 @@ private slots:
         }
     }
 
+    // LAN discovery default off
+    void ed3kLan_defaultOff()
+    {
+        QCOMPARE(Preferences{}.ed3kLan(), false);
+    }
+
     // Every key through YAML and the IPC map, non-default values throughout
     void bittorrent_roundTrip()
     {

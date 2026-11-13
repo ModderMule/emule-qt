@@ -51,6 +51,14 @@ QString row(const QString& label, const QString& value)
     return QStringLiteral("<tr><td>%1</td><td>%2</td></tr>").arg(label, value);
 }
 
+/// Section headline: space above, so it reads as the start of the next section
+QString heading(const QString& title, QLatin1StringView anchor = {}, int top = 14)
+{
+    const QString name = anchor.isEmpty() ? QString() : QStringLiteral("<a name='%1'></a>").arg(anchor);
+    return QStringLiteral("<p style='margin-top:%1px; margin-bottom:4px;'>%2<b>%3</b></p>")
+        .arg(QString::number(top), name, title);
+}
+
 } // anonymous namespace
 
 // ---------------------------------------------------------------------------
@@ -137,7 +145,7 @@ QString NetworkInfoDialog::infoHtml(const QCborMap& info, bool extended)
     // Client
     // -----------------------------------------------------------------------
     const QCborMap client = info.value(QStringLiteral("client")).toMap();
-    html += QStringLiteral("<b>%1</b><br>").arg(tr("Client"));
+    html += heading(tr("Client"), {}, 0);
     html += QStringLiteral("<table cellpadding='1'>");
     html += QStringLiteral("<tr><td>%1</td><td>%2</td></tr>").arg(tr("Nick:"))
                 .arg(client.value(QStringLiteral("nick")).toString().toHtmlEscaped());
@@ -147,7 +155,9 @@ QString NetworkInfoDialog::infoHtml(const QCborMap& info, bool extended)
                 .arg(client.value(QStringLiteral("tcpPort")).toInteger());
     html += QStringLiteral("<tr><td>%1</td><td>%2</td></tr>").arg(tr("UDP Port:"))
                 .arg(client.value(QStringLiteral("udpPort")).toInteger());
-    html += QStringLiteral("</table><br>");
+    html += QStringLiteral("</table>");
+
+    html += sharedHtml(info.value(QStringLiteral("shared")).toMap(), extended);
 
     // -----------------------------------------------------------------------
     // eD2K Network
@@ -156,7 +166,7 @@ QString NetworkInfoDialog::infoHtml(const QCborMap& info, bool extended)
     const bool ed2kConnected = ed2k.value(QStringLiteral("connected")).toBool();
     const bool ed2kConnecting = ed2k.value(QStringLiteral("connecting")).toBool();
 
-    html += QStringLiteral("<b>%1</b><br>").arg(tr("eD2K Network"));
+    html += heading(tr("eD2K Network"));
     html += QStringLiteral("<table cellpadding='1'>");
 
     // Status
@@ -220,14 +230,14 @@ QString NetworkInfoDialog::infoHtml(const QCborMap& info, bool extended)
             html += QStringLiteral("<tr><td>%1</td><td>%2</td></tr>").arg(tr("IPv6 Status:")).arg(v6Status);
         }
     }
-    html += QStringLiteral("</table><br>");
+    html += QStringLiteral("</table>");
 
     // -----------------------------------------------------------------------
     // eD2K Server (if connected)
     // -----------------------------------------------------------------------
     if (ed2kConnected && ed2k.contains(QStringLiteral("server"))) {
         const QCborMap srv = ed2k.value(QStringLiteral("server")).toMap();
-        html += QStringLiteral("<b>%1</b><br>").arg(tr("eD2K Server"));
+        html += heading(tr("eD2K Server"));
         html += QStringLiteral("<table cellpadding='1'>");
         html += QStringLiteral("<tr><td>%1</td><td>%2</td></tr>").arg(tr("Name:"))
                     .arg(srv.value(QStringLiteral("name")).toString().toHtmlEscaped());
@@ -251,12 +261,12 @@ QString NetworkInfoDialog::infoHtml(const QCborMap& info, bool extended)
                     .arg(formatNumber(srv.value(QStringLiteral("lowIDUsers")).toInteger()));
         html += QStringLiteral("<tr><td>%1</td><td>%2</td></tr>").arg(tr("Ping:"))
                     .arg(tr("%1 ms").arg(srv.value(QStringLiteral("ping")).toInteger()));
-        html += QStringLiteral("</table><br>");
+        html += QStringLiteral("</table>");
 
         // Server features
         const auto softFiles = srv.value(QStringLiteral("softFiles")).toInteger();
         const auto hardFiles = srv.value(QStringLiteral("hardFiles")).toInteger();
-        html += QStringLiteral("<b>%1</b><br>").arg(tr("eD2K Server Features"));
+        html += heading(tr("eD2K Server Features"));
         html += QStringLiteral("<table cellpadding='1'>");
         html += QStringLiteral("<tr><td>%1</td><td>%2/%3</td></tr>").arg(tr("Soft/Hard File Limits:"))
                     .arg(formatNumber(softFiles)).arg(formatNumber(hardFiles));
@@ -288,7 +298,7 @@ QString NetworkInfoDialog::infoHtml(const QCborMap& info, bool extended)
                             .arg(label, features.value(QLatin1StringView(key)).toBool() ? tr("Yes") : tr("No"));
             }
         }
-        html += QStringLiteral("</table><br>");
+        html += QStringLiteral("</table>");
     }
 
     // -----------------------------------------------------------------------
@@ -299,7 +309,7 @@ QString NetworkInfoDialog::infoHtml(const QCborMap& info, bool extended)
     const bool kadConnected = kad.value(QStringLiteral("connected")).toBool();
     const bool kadFirewalled = kad.value(QStringLiteral("firewalled")).toBool();
 
-    html += QStringLiteral("<b>%1</b><br>").arg(tr("Kad Network"));
+    html += heading(tr("Kad Network"));
     html += QStringLiteral("<table cellpadding='1'>");
 
     // Status
@@ -413,7 +423,7 @@ QString NetworkInfoDialog::infoHtml(const QCborMap& info, bool extended)
                         .arg(idx.value(QStringLiteral("load")).toInteger());
         }
     }
-    html += QStringLiteral("</table><br>");
+    html += QStringLiteral("</table>");
 
     html += ed3kHtml(info.value(QStringLiteral("ed3k")).toMap());
     html += bitTorrentHtml(info.value(QStringLiteral("bt")).toMap());
@@ -421,7 +431,7 @@ QString NetworkInfoDialog::infoHtml(const QCborMap& info, bool extended)
     // -----------------------------------------------------------------------
     // Web Interface
     // -----------------------------------------------------------------------
-    html += QStringLiteral("<b>%1</b><br>").arg(tr("Web Interface"));
+    html += heading(tr("Web Interface"));
     html += QStringLiteral("<table cellpadding='1'>");
     const QCborMap web = info.value(QStringLiteral("web")).toMap();
     const bool webEnabled = web.value(QStringLiteral("enabled")).toBool();
@@ -460,13 +470,13 @@ QString NetworkInfoDialog::ed3kHtml(const QCborMap& ed3k)
     // a core without ed3k, or from before the section
     if (ed3k.isEmpty() || !ed3k.value(QStringLiteral("available")).toBool())
         return {};
-    QString html = QStringLiteral("<a name='%1'></a><b>%2</b><br><table cellpadding='1'>")
-                       .arg(QLatin1StringView(kEd3kAnchor), tr("ed3k Network"));
+    QString html = heading(tr("ed3k Network"), QLatin1StringView(kEd3kAnchor))
+                   + QStringLiteral("<table cellpadding='1'>");
     const bool running = ed3k.value(QStringLiteral("running")).toBool();
     if (!running) {
         html += row(tr("Status:"), ed3k.value(QStringLiteral("enabled")).toBool() ? tr("Not running")
                                                                                  : tr("Disabled"));
-        return html + QStringLiteral("</table><br>");
+        return html + QStringLiteral("</table>");
     }
     const qint64 contacts = ed3k.value(QStringLiteral("contacts")).toInteger();
     // html += row(tr("Status:"), contacts > 0 ? tr("Connected") : tr("Connecting"));
@@ -498,7 +508,35 @@ QString NetworkInfoDialog::ed3kHtml(const QCborMap& ed3k)
     html += row(tr("Router:"), ed3k.value(QStringLiteral("router")).toBool() ? tr("Yes") : tr("No"));
     html += row(tr("Contacts:"), formatNumber(contacts));
     html += row(tr("Node ID:"), ed3k.value(QStringLiteral("nodeId")).toString().toHtmlEscaped());
-    return html + QStringLiteral("</table><br>");
+    return html + QStringLiteral("</table>");
+}
+
+QString NetworkInfoDialog::sharedHtml(const QCborMap& shared, bool extended)
+{
+    // a core from before the section
+    if (shared.isEmpty())
+        return {};
+    const auto num = [&](const char* key) { return shared.value(QLatin1StringView(key)).toInteger(); };
+    const bool hasEd3k = shared.contains(QStringLiteral("ed3kTotal"));
+    QString html = heading(tr("Shared Files")) + QStringLiteral("<table cellpadding='1'>");
+    if (extended && hasEd3k) {
+        // per network: eD2K and ed3k each hash and publish on their own
+        html += QStringLiteral("<tr><td></td><td align='right'><b>%1</b></td><td align='right'>&nbsp;&nbsp;<b>%2</b></td></tr>")
+                    .arg(QStringLiteral("eD2K"), QStringLiteral("ed3k"));
+        const auto both = [&](const QString& label, const char* ed2kKey, const char* ed3kKey) {
+            html += QStringLiteral("<tr><td>%1</td><td align='right'>%2</td><td align='right'>%3</td></tr>")
+                        .arg(label, formatNumber(num(ed2kKey)), formatNumber(num(ed3kKey)));
+        };
+        both(tr("Total:"), "ed2kTotal", "ed3kTotal");
+        both(tr("Hashing:"), "ed2kHashing", "ed3kHashing");
+        both(tr("Published:"), "ed2kPublished", "ed3kPublished");
+        return html + QStringLiteral("</table>");
+    }
+    // combined: ed3k shares the eD2K list, so the larger count; hashing runs per network
+    html += row(tr("Total:"), formatNumber(std::max(num("ed2kTotal"), num("ed3kTotal"))));
+    html += row(tr("Hashing:"), formatNumber(num("ed2kHashing") + num("ed3kHashing")));
+    html += row(tr("Published:"), formatNumber(std::max(num("ed2kPublished"), num("ed3kPublished"))));
+    return html + QStringLiteral("</table>");
 }
 
 QString NetworkInfoDialog::bitTorrentHtml(const QCborMap& bt)
@@ -506,11 +544,11 @@ QString NetworkInfoDialog::bitTorrentHtml(const QCborMap& bt)
     // a core built without BitTorrent, or from before the section
     if (bt.isEmpty() || !bt.value(QStringLiteral("available")).toBool())
         return {};
-    QString html = QStringLiteral("<b>%1</b><br><table cellpadding='1'>").arg(tr("BitTorrent"));
+    QString html = heading(tr("BitTorrent")) + QStringLiteral("<table cellpadding='1'>");
     if (!bt.value(QStringLiteral("running")).toBool()) {
         html += row(tr("Status:"), bt.value(QStringLiteral("enabled")).toBool() ? tr("Not running")
                                                                                : tr("Disabled"));
-        return html + QStringLiteral("</table><br>");
+        return html + QStringLiteral("</table>");
     }
     const quint16 port = static_cast<quint16>(bt.value(QStringLiteral("listenPort")).toInteger());
     html += row(tr("Status:"), bt.value(QStringLiteral("listening")).toBool()
@@ -524,7 +562,7 @@ QString NetworkInfoDialog::bitTorrentHtml(const QCborMap& bt)
         html += row(tr("External IPv6:"), v6.toHtmlEscaped());
     html += row(tr("DHT Nodes:"), formatNumber(bt.value(QStringLiteral("dhtNodes")).toInteger()));
     html += row(tr("Torrents:"), formatNumber(bt.value(QStringLiteral("torrents")).toInteger()));
-    html += QStringLiteral("</table><br>");
+    html += QStringLiteral("</table>");
     return html + i2pHtml(bt);
 }
 
@@ -534,7 +572,7 @@ QString NetworkInfoDialog::i2pHtml(const QCborMap& bt)
     const qint64 mode = bt.value(QStringLiteral("i2pMode")).toInteger();
     if (mode == 0 || !bt.value(QStringLiteral("i2pEnabled")).toBool())
         return {};
-    QString html = QStringLiteral("<b>%1</b><br><table cellpadding='1'>").arg(tr("BitTorrent over I2P"));
+    QString html = heading(tr("BitTorrent over I2P")) + QStringLiteral("<table cellpadding='1'>");
     html += row(tr("Router:"), mode == 1 ? tr("Bundled (i2pd)") : tr("External"));
     if (mode == 1) {
         // I2pRouter::State: Stopped, Starting, Ready, Failed, Downloading
@@ -570,7 +608,7 @@ QString NetworkInfoDialog::i2pHtml(const QCborMap& bt)
     html += row(tr("I2P Torrents:"), tr("%1 (%2 peers)")
                                          .arg(formatNumber(bt.value(QStringLiteral("i2pTorrents")).toInteger()),
                                               formatNumber(bt.value(QStringLiteral("i2pPeers")).toInteger())));
-    return html + QStringLiteral("</table><br>");
+    return html + QStringLiteral("</table>");
 }
 
 } // namespace eMule

@@ -154,7 +154,7 @@ void HttpDownloadJob::startHop(const QUrl& url)
     if (!m_opts.validators.lastModified.isEmpty())
         request.setRawHeader("If-Modified-Since", m_opts.validators.lastModified);
 
-    m_reply = m_nam->get(request);
+    m_reply = m_opts.headOnly ? m_nam->head(request) : m_nam->get(request);
     connect(m_reply, &QNetworkReply::finished, this, &HttpDownloadJob::onReplyFinished);
 }
 
@@ -203,6 +203,12 @@ void HttpDownloadJob::onReplyFinished()
 
     if (reply->error() != QNetworkReply::NoError || r.httpStatus < 200 || r.httpStatus > 299) {
         r.error = replyError(reply, r.httpStatus, m_opts.redactUrls);
+        complete(std::move(r));
+        return;
+    }
+
+    if (m_opts.headOnly) {
+        r.ok = true;
         complete(std::move(r));
         return;
     }

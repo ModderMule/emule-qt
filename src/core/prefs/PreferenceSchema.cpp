@@ -275,7 +275,7 @@ using Kind = PrefSpec::Kind;
                                                  "a node on this machine, separated by spaces). Empty = off."));
     t << advanced(text("ed3kExtOff", 1024, "Optional ed3k extensions turned off (names of their documents, e.g. "
                                            "lan-discovery chat, separated by spaces). Restarts the node."));
-    t << flag("ed3kLan", "Find ed3k nodes in the local network (LAN discovery). Restarts the node.");
+    t << flag("ed3kLan", "Find ed3k nodes in the local network (LAN discovery). Default off. Restarts the node.");
     t << advanced(flag("ed3kForceOpen", "Declare the ed3k node reachable (no NAT tests): a network's first routers, "
                                         "seed nodes only. Restarts the node."));
     t << flag("ed3kHide", "Hide this node (ed3k hops.md §1): new ed3k searches, downloads and shares go under the "

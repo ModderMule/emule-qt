@@ -1627,7 +1627,7 @@ public:
     void setEd3kExtOff(const QStringList& names);
     /// The names ed3kExtOff takes: the optional extensions of wire version 1.
     [[nodiscard]] static QStringList ed3kExtensionNames();
-    /// LAN discovery (lan-discovery.md) on the local networks. Default on. A change restarts
+    /// LAN discovery (lan-discovery.md) on the local networks. Default off. A change restarts
     /// the node. IPC/REST key `ed3kLan`.
     [[nodiscard]] bool ed3kLan() const;
     void setEd3kLan(bool val);

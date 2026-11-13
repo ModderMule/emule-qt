@@ -56,6 +56,8 @@ public:
 
     /// Switch to a specific page by index.
     void selectPage(int page);
+    /// Theme changed outside (skin applied): show it, not as an unsaved change.
+    void syncColorScheme();
 
     /// Windows only: Qt forces a top-level window with a height-for-width layout up to
     /// the layout's minimumHeightForWidth() on every resize (WM_WINDOWPOSCHANGING), over
@@ -365,6 +367,7 @@ private:
     QCheckBox* m_useAutoCompletionCheck = nullptr;
     QCheckBox* m_useOriginalIconsCheck = nullptr;
     bool m_initialUseOriginalIcons = false;
+    int  m_initialColorScheme = 0;   ///< theme shown at load / last sync
     QCheckBox* m_showCountryFlagsCheck = nullptr;
     QComboBox* m_geoIpSourceCombo = nullptr;
     QLabel* m_geoIpAccountLabel = nullptr;

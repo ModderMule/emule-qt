@@ -72,10 +72,10 @@ Fitted contentSize(QWidget* dialog, QSize floor, Fit fit, QSize budget)
     const int   minHeight = std::max(floor.height(), layoutMin.height());
     int         preferred = minHeight;
 
-    if (fit == Fit::Content)
+    if (fit != Fit::Layout)
         preferred = std::max(preferred, neededHeight(layout, width));
 
-    const int minimum = preferred <= budget.height() ? preferred : minHeight;
+    const int minimum = fit != Fit::Scroll && preferred <= budget.height() ? preferred : minHeight;
     return {QSize(width, minimum).boundedTo(budget), QSize(width, preferred).boundedTo(budget)};
 }
 
@@ -147,8 +147,12 @@ QSize screenBudget(const QWidget* dialog)
     if (!screen)
         return {QWIDGETSIZE_MAX, QWIDGETSIZE_MAX};
 
+    // Wayland never tells a client where the panels are, and a client-side title bar is
+    // taller than the 60 px below allows for: a window sized to the full screen there
+    // has its bottom edge under the panel and cannot be dragged smaller (issue #181)
     const QRect avail = screen->availableGeometry();
-    return {std::max(320, avail.width() - 40), std::max(240, avail.height() - 60)};
+    const int panels = avail == screen->geometry() ? std::min(80, avail.height() / 10) : 0;
+    return {std::max(320, avail.width() - 40), std::max(240, avail.height() - 60 - panels)};
 }
 
 /// How tall @p layout has to be at @p width for nothing inside it to be clipped.

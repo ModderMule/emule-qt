@@ -2702,15 +2702,19 @@ QString MainWindow::skinsDir() const
     return QDir(dir).exists() ? dir : QString{};
 }
 
-void MainWindow::applySkinProfile(const QString& path)
+void MainWindow::applySkinProfile(const QString& path, bool userChoice)
 {
     theUiState.setSkinProfilePath(path);
 
+    const ThemeChoice previousTheme = m_skinEngine.theme();
     if (path.isEmpty()) {
         m_skinEngine.clear();
     } else {
         m_skinEngine.loadProfile(path);
     }
+    // a re-applied update only moves the theme when its Theme= changed
+    if (userChoice || m_skinEngine.theme() != previousTheme)
+        adoptSkinTheme(previousTheme, m_skinEngine.theme(), path.isEmpty());
 
     SkinColors::instance().setColors(m_skinEngine.colors(), m_skinEngine.listImages());
     if (SkinIcons::instance().setFiles(m_skinEngine.iconFiles()))
@@ -2730,7 +2734,35 @@ void MainWindow::openSkinBrowser()
     ModalHost::show(m_skinBrowser, this);
 }
 
+void MainWindow::adoptSkinTheme(ThemeChoice previous, ThemeChoice next, bool isDefault)
+{
+    // Default skin = system theme; a Theme=system profile only undoes a theme the
+    // previous profile forced, a hand-picked one stays
+    const int current = theUiState.colorScheme();
+    int target = current;
+    if (next != ThemeChoice::System)
+        target = static_cast<int>(next);
+    else if (isDefault || (previous != ThemeChoice::System && current == static_cast<int>(previous)))
+        target = static_cast<int>(ThemeChoice::System);
+    if (target == current)
+        return;
+
+    theUiState.setColorScheme(target);
+    if (applyColorScheme(target, false))
+        refreshThemedWidgets();
+    else
+        logInfo(QStringLiteral("Skin theme takes effect after a restart"));
+    // Options behind the skin browser: its OK must not undo this
+    if (auto* options = findChild<OptionsDialog*>(Qt::FindDirectChildrenOnly))
+        options->syncColorScheme();
+}
+
 void MainWindow::applyInstalledSkin(const QString& id)
+{
+    loadInstalledSkin(id, true);
+}
+
+void MainWindow::loadInstalledSkin(const QString& id, bool userChoice)
 {
     const QString profile = SkinInstaller::profilePath(id);
     if (profile.isEmpty())
@@ -2744,7 +2776,7 @@ void MainWindow::applyInstalledSkin(const QString& id)
         theUiState.setToolbarSkinPath(QString{});
         clearToolbarSkin();
     }
-    applySkinProfile(profile);   // rebuilds the toolbar
+    applySkinProfile(profile, userChoice);   // rebuilds the toolbar
     logInfo(QStringLiteral("Skin %1 applied").arg(id));
 }
 
@@ -2761,7 +2793,7 @@ void MainWindow::onSkinInstalled(const QString& id, bool ok)
     const QString dir = QDir::cleanPath(SkinInstaller::skinDir(id)) + QLatin1Char('/');
     const QString active = QDir::cleanPath(theUiState.skinProfilePath());
     if (ok && active.startsWith(dir))
-        applyInstalledSkin(id);
+        loadInstalledSkin(id, false);
     if (m_skinBrowser)
         m_skinBrowser->refreshStates();
 }

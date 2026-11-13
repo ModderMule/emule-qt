@@ -69,6 +69,8 @@ public:
         /// Errors say "HTTP <status>", never Qt's errorString(), which quotes the URL
         /// (a presigned URL or an API key must not reach a log line).
         bool redactUrls = false;
+        /// HEAD instead of GET: status and headers only, no body.
+        bool headOnly = false;
     };
 
     struct Result {

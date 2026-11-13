@@ -158,8 +158,9 @@ FileDetailDialog::FileDetailDialog(const QCborMap& details, Tab initialTab,
     setAttribute(Qt::WA_DeleteOnClose);
 
     // Floors only — the General tab grows a row for an AICH hash and its file-name
-    // value wraps, so the height the tabs need is not a constant.
-    setDesignedSize(QSize(680, 420), QSize(720, 480));
+    // value wraps, so the height the tabs need is not a constant. Opens tall enough for
+    // all of it, but the General page scrolls, so the user may shrink it (issue #181).
+    setDesignedSize(QSize(680, 420), QSize(720, 480), DialogSizing::Fit::Scroll);
 
     // Explicitly qualified: a constructor must not dispatch virtually.
     m_pendingTab = initialTab;
@@ -170,7 +171,7 @@ FileDetailDialog::FileDetailDialog(const QList<QCborMap>& files, Tab initialTab,
     : DetailDialog(parent)
 {
     setAttribute(Qt::WA_DeleteOnClose);
-    setDesignedSize(QSize(680, 420), QSize(720, 480));
+    setDesignedSize(QSize(680, 420), QSize(720, 480), DialogSizing::Fit::Scroll);
 
     m_pendingTab = initialTab;
     if (files.size() == 1) {
@@ -288,10 +289,13 @@ QWidget* FileDetailDialog::createGeneralTab(const QCborMap& d)
     if (download)
         return createDownloadGeneralTab(d);
 
+    // Scrolls once the user shrinks the dialog below the form (issue #181)
     auto* page = new QWidget;
     auto* form = new QFormLayout(page);
     form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
     DialogSizing::enableHeightForWidth(page);
+    auto* area = new ContentScrollArea;
+    area->setWidget(page);
 
     auto addRow = [form](const QString& label, const QString& value) {
         addDetailRow(form, label, value);
@@ -319,7 +323,7 @@ QWidget* FileDetailDialog::createGeneralTab(const QCborMap& d)
         addRow(tr("Last Seen Complete"), na);
         addRow(tr("Last Reception"), na);
         form->addItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
-        return page;
+        return area;
     }
 
     addRow(tr("File Name"), str(d, QLatin1StringView("fileName")));
@@ -378,7 +382,7 @@ QWidget* FileDetailDialog::createGeneralTab(const QCborMap& d)
     addRow(tr("Last Reception"),     fmtTime(num(d, QLatin1StringView("lastReception"))));
 
     form->addItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
-    return page;
+    return area;
 }
 
 // MFC FileDetailDialogInfo: General / Transfer / Dates. Several files: per-file

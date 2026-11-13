@@ -664,8 +664,12 @@ void Ed3kSession::dispatch(ffi::Event& ev, ffi::KeyKind key)
         emit statusChanged();
     } else if (const auto* ko = std::get_if<e::KadOffline>(&ev)) {
         // Protocol.md §10 "Own network down": no store, no answer from Kad of that family
-        logEd3kKad(ko->offline ? QStringLiteral("ed3k: Kad (IPv%1) offline: own network down").arg(ko->family)
-                               : QStringLiteral("ed3k: Kad (IPv%1) online again").arg(ko->family));
+        // regular ed3k log: the contact table is frozen while offline
+        if (ko->offline)
+            logEd3kWarning(QStringLiteral("ed3k: IPv%1 network seems offline (no answers, several sites "
+                                          "failed) — Kad contacts kept, not evicted").arg(ko->family));
+        else
+            logEd3k(QStringLiteral("ed3k: IPv%1 network online again — checking Kad contacts").arg(ko->family));
         emit statusChanged();
     } else if (std::holds_alternative<e::HopsPathBuilt>(ev) || std::holds_alternative<e::HopsPathFailed>(ev)
                || std::holds_alternative<e::HopsPathClosed>(ev)) {

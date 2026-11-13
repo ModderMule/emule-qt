@@ -213,7 +213,7 @@ void ConnectionChecker::runHttpProbe(const QUrl& url, ProbeDone done)
 {
     HttpFileDownload::Options opts;
     opts.timeoutMs = kProbeTimeoutMs;
-    opts.maxBytes = 1024 * 1024;
+    opts.headOnly = true;   // status line is enough, no body
     opts.headers = {{"Cache-Control", "no-cache"}};
     // any answer from the far end proves the line, even an error page
     m_job = HttpFileDownload::fetch(this, url, opts, [done = std::move(done)](const auto& r) {

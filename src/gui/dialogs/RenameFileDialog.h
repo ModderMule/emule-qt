@@ -6,10 +6,13 @@
 /// QInputDialog::getText() is as narrow as its label. Shared by the transfer and
 /// the shared files list.
 
+#include "utils/DialogSizing.h"
+
 #include <QCoreApplication>
 #include <QInputDialog>
 #include <QString>
 
+#include <algorithm>
 #include <optional>
 
 namespace eMule {
@@ -24,7 +27,10 @@ public:
         setLabelText(QCoreApplication::translate("RenameFileDialog", "File name:"));
         setInputMode(QInputDialog::TextInput);
         setTextValue(currentName);
-        resize(kWidth, sizeHint().height());
+        // Wide enough for a long name, never wider than the screen; the user can still
+        // drag it wider or narrower (issue #181)
+        setSizeGripEnabled(true);
+        resize(std::min(kWidth, DialogSizing::screenBudget(this).width()), sizeHint().height());
     }
 
     /// The trimmed name the user entered; empty when it is blank or unchanged.

@@ -15,6 +15,8 @@
 #include <QPixmap>
 #include <QString>
 
+#include "utils/Appearance.h"
+
 #include <optional>
 
 namespace eMule {
@@ -54,6 +56,9 @@ public:
     /// [Colors] <key>BkImg list watermarks: lower-cased key → readable file.
     [[nodiscard]] const QHash<QString, QString>& listImages() const { return m_listImages; }
 
+    /// [Skin] Theme= of the loaded profile: system, light or dark; absent/unknown = System.
+    [[nodiscard]] ThemeChoice theme() const { return m_theme; }
+
     /// [Skin] @p key of the profile at @p iniPath, else that key in any section; empty if none.
     [[nodiscard]] static QString profileValue(const QString& iniPath, const QString& key);
 
@@ -71,6 +76,7 @@ private:
     QHash<QString, QString> m_bitmaps;  ///< [Bitmaps] lower-case resourceName → file spec
     QHash<QString, QColor>  m_colors;   ///< [Colors] lower-case key → QColor
     QHash<QString, QString> m_listImages;   ///< [Colors] lower-case <key>BkImg → file
+    ThemeChoice m_theme = ThemeChoice::System;  ///< [Skin] Theme=
 
     /// section → key → value, both lower-cased
     [[nodiscard]] static QHash<QString, QHash<QString, QString>> parseIni(const QString& text);

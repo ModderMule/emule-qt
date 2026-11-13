@@ -79,6 +79,7 @@ private slots:
     void networkInfo_listsServedBuddies();
     void networkInfo_showsEd3kNode();
     void networkInfo_showsTorrentIpsAndI2p();
+    void networkInfo_showsSharedCounts();
 
 private:
     QTemporaryDir m_dir;
@@ -500,6 +501,38 @@ void tst_CategoryDialog::networkInfo_showsEd3kNode()
     // a core without ed3k, or from before the section: nothing
     const QString none = textOf(NetworkInfoDialog::infoHtml({}, false));
     QVERIFY(!none.contains(QStringLiteral("ed3k")));
+}
+
+// Not MFC: own shared files, per network with advanced controls, else combined
+void tst_CategoryDialog::networkInfo_showsSharedCounts()
+{
+    const auto textOf = [](const QString& html) {
+        QTextDocument doc;
+        doc.setHtml(html);
+        return doc.toPlainText();
+    };
+    const QCborMap shared{{QStringLiteral("ed2kTotal"), 120}, {QStringLiteral("ed2kHashing"), 3},
+                          {QStringLiteral("ed2kPublished"), 100}, {QStringLiteral("ed3kTotal"), 117},
+                          {QStringLiteral("ed3kHashing"), 5}, {QStringLiteral("ed3kPublished"), 110}};
+    const QCborMap info{{QStringLiteral("shared"), shared}};
+
+    const QString ext = textOf(NetworkInfoDialog::infoHtml(info, true));
+    QVERIFY2(ext.contains(QRegularExpression(QStringLiteral("Total:\\s+120\\s+117"))), qPrintable(ext));
+    QVERIFY(ext.contains(QRegularExpression(QStringLiteral("Hashing:\\s+3\\s+5"))));
+    QVERIFY(ext.contains(QRegularExpression(QStringLiteral("Published:\\s+100\\s+110"))));
+
+    const QString plain = textOf(NetworkInfoDialog::infoHtml(info, false));
+    QVERIFY2(plain.contains(QRegularExpression(QStringLiteral("Total:\\s+120\\n"))), qPrintable(plain));
+    QVERIFY(plain.contains(QRegularExpression(QStringLiteral("Hashing:\\s+8\\n"))));
+    QVERIFY(plain.contains(QRegularExpression(QStringLiteral("Published:\\s+110\\n"))));
+
+    // ed3k off: eD2K's own, no columns even with advanced controls
+    const QCborMap ed2kOnly{{QStringLiteral("shared"), QCborMap{{QStringLiteral("ed2kTotal"), 7},
+                                                               {QStringLiteral("ed2kHashing"), 0},
+                                                               {QStringLiteral("ed2kPublished"), 7}}}};
+    const QString solo = textOf(NetworkInfoDialog::infoHtml(ed2kOnly, true));
+    QVERIFY2(solo.contains(QRegularExpression(QStringLiteral("Total:\\s+7\\n"))), qPrintable(solo));
+    QVERIFY(!solo.contains(QStringLiteral("ed3k")));
 }
 
 // Not MFC: BitTorrent's external IPs (external_ip_alert) and the I2P state (#165)

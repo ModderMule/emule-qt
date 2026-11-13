@@ -822,7 +822,7 @@ struct Preferences::Data {
     QStringList ed3kCreditRpc;         // JSON-RPC endpoints; empty = off
     QStringList ed3kChaintubeRpc;
     QStringList ed3kExtOff;            // extension names off at start
-    bool ed3kLan = true;               // LAN discovery
+    bool ed3kLan = false;              // LAN discovery
     bool ed3kForceOpen = false;        // operator: node reachable, no NAT tests (§9.2 first nodes)
     bool ed3kHide = false;             // hiding (hops.md §1): new searches, downloads, shares anonymous
     int ed3kHops = 1;                  // 0 to 3, every use (0: only while hopping, hops.md §2.6)
@@ -4632,7 +4632,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->ed3kCreditRpc = rpcUrlList(p.value(QStringLiteral("ed3kCreditRpc")));
     m_data->ed3kChaintubeRpc = rpcUrlList(p.value(QStringLiteral("ed3kChaintubeRpc")));
     m_data->ed3kExtOff = rpcUrlList(p.value(QStringLiteral("ed3kExtOff")));
-    m_data->ed3kLan = p.value(QStringLiteral("ed3kLan")).toBool(true);
+    m_data->ed3kLan = p.value(QStringLiteral("ed3kLan")).toBool(false);
     m_data->ed3kForceOpen = p.value(QStringLiteral("ed3kForceOpen")).toBool(false);
     m_data->ed3kHide = p.value(QStringLiteral("ed3kHide")).toBool(false);
     m_data->ed3kHops = static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kHops")).toInteger(1), 0, 3));

@@ -22,24 +22,26 @@ Manifest entry (written by `scripts/publish-skin.py`, parsed by `VersionManifest
 "skins": {
   "CyberneticNeon": {
     "name": "Cybernetic Neon",
-    "url": "https://emule-qt.org/pub/skins/CyberneticNeon.zip",
+    "url": "https://emule-qt.org/pub/skins/CyberneticNeon.zip?v=160ecd95cb13ec8c",
     "sha256": "…", "size": 4949824,
     "date": "2026-11-06T13:41:40Z",
     "author": "…", "description": "…",
-    "preview": { "url": "https://emule-qt.org/pub/skins/CyberneticNeon.preview.png",
+    "preview": { "url": "https://emule-qt.org/pub/skins/CyberneticNeon.preview.png?v=69bca896c2b79a0a",
                  "sha256": "…", "size": 322171 }
   }
 }
 ```
 
-`date` = zip mtime (UTC). `author`/`description`/`preview` optional. Entries without
+`?v=` = first 16 hex of the file's sha256: the CDN caches by URL (4 h), so an overwritten
+zip under a bare URL would be served stale against the new sha256. `date` = zip mtime (UTC). `author`/`description`/`preview` optional. Entries without
 url + sha256 + size are ignored by the GUI.
 
 ## Bundle layout
 
 - exactly one `*.eMuleSkin.ini`, at the zip top or inside one top folder (Finder/Explorer zips)
 - preview: `preview/overview.png`, else `[Skin] Preview=<relative path>` in the ini, else none
-- optional `[Skin]` keys: `Name=`, `Author=`, `Description=`, `Preview=`
+- optional `[Skin]` keys: `Name=`, `Author=`, `Description=`, `Preview=`, `Theme=`
+- `Theme=system|light|dark` (not in MFC): theme the skin is drawn for; absent or unknown = system
 - toolbar strip anywhere in the bundle root or one folder below
 - limits: zip ≤ 64 MiB, unpacked ≤ 256 MiB, ≤ 5000 entries, preview ≤ 8 MiB
 
@@ -48,6 +50,7 @@ url + sha256 + size are ignored by the GUI.
 Name=Cybernetic Neon
 Author=someone
 Preview=preview/overview.png
+Theme=dark
 ```
 
 ## Publishing
@@ -71,6 +74,13 @@ sha256 on their next update check. Only the `skins` key of the live manifest is 
 - **Apply**: download (size + sha256 check), unpack to `<config>/skins/<id>/`, apply profile +
   bundle strip. A strip from another bundle is dropped; a hand-picked one stays if the bundle has none
 - **Restore Default Skin**: no profile, no strip
+- theme (Options → Display → Theme) on applying a profile, from any menu:
+  - `Theme=light|dark` → that theme
+  - Default skin → System
+  - `Theme=system`/absent → System only if the current theme is the one the previous
+    profile forced; a hand-picked theme stays
+  - an update re-applying the active skin moves the theme only when its `Theme=` changed
+  - an open Options dialog follows, so its OK does not undo it
 - installed bundles carry `.skinrelease.json` (sha256, date); each manifest fetch re-installs a
   bundle whose sha256 changed (`SkinInstaller::updateInstalled`), the active one is re-applied
 - update checks only run with version checks on (Options → General)

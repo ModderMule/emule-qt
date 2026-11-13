@@ -2735,6 +2735,9 @@ void IpcClientHandler::handleGetNetworkInfo(const IpcMessage& msg)
     for (const auto* key : {"stats", "session", "cumulative", "queue", "credit", "chain", "hoster", "hide"})
         ed3k.remove(QString::fromLatin1(key));
     info.insert(QStringLiteral("ed3k"), ed3k);
+    QCborMap shared = info.value(QStringLiteral("shared")).toMap();
+    Ed3kBridge::appendSharedCounts(shared);
+    info.insert(QStringLiteral("shared"), shared);
 
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(info)));
 }

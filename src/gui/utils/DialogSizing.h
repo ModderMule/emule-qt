@@ -32,10 +32,16 @@ enum class Fit {
     /// the layout minimum is the honest floor here (and the one Qt would apply itself,
     /// were the dialog not overriding it).
     Layout,
+
+    /// Opens like Content, but may be dragged down to the layout minimum: every page that
+    /// would clip sits in a scroll area. For the tabbed detail dialogs, whose full height
+    /// is taller than a laptop screen less its panels (issue #181).
+    Scroll,
 };
 
 /// How large @p dialog may grow before it stops fitting on its screen -- the available
-/// area less room for the window frame.
+/// area less room for the window frame. Where the platform reports no work area (Wayland:
+/// the available area is the whole screen), panels are guessed in as well.
 [[nodiscard]] QSize screenBudget(const QWidget* dialog);
 
 /// Give @p dialog a minimum size that shows all of its content, and a default size at

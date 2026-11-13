@@ -46,6 +46,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.parse
 import urllib.request
 import zipfile
 from dataclasses import dataclass, field
@@ -268,10 +269,17 @@ def inspect_bundle(zip_path: Path, id_override: str, name_override: str) -> Bund
                   preview_name=preview, preview_bytes=preview_bytes)
 
 
+def url_file_name(url: str) -> str:
+    """File name of a published URL, without the ?v= cache key."""
+    return posixpath.basename(urllib.parse.urlsplit(url).path) if url else ""
+
+
 def manifest_entry(b: Bundle, base_url: str) -> dict:
     entry: dict = {
         "name": b.name,
-        "url": f"{base_url}/{SKINS_DIR}/{b.skin_id}.zip",
+        # ?v= = content hash: the CDN caches by URL, an overwrite under the same URL
+        # would serve the old zip against the new sha256 for hours
+        "url": f"{base_url}/{SKINS_DIR}/{b.skin_id}.zip?v={b.sha256[:16]}",
         "sha256": b.sha256,
         "size": b.size,
         "date": b.date,
@@ -281,9 +289,10 @@ def manifest_entry(b: Bundle, base_url: str) -> dict:
     if b.description:
         entry["description"] = b.description
     if b.preview_bytes:
+        preview_sha = hashlib.sha256(b.preview_bytes).hexdigest()
         entry["preview"] = {
-            "url": f"{base_url}/{SKINS_DIR}/{b.skin_id}.preview{b.preview_ext}",
-            "sha256": hashlib.sha256(b.preview_bytes).hexdigest(),
+            "url": f"{base_url}/{SKINS_DIR}/{b.skin_id}.preview{b.preview_ext}?v={preview_sha[:16]}",
+            "sha256": preview_sha,
             "size": len(b.preview_bytes),
         }
     return entry
@@ -332,7 +341,8 @@ class Server:
 
 def check_served(url: str, sha256: str) -> None:
     """The file is served as uploaded: clients check size and SHA-256."""
-    req = urllib.request.Request(f"{url}?t={int(time.time())}", headers={"User-Agent": "publish-skin"})
+    sep = "&" if "?" in url else "?"
+    req = urllib.request.Request(f"{url}{sep}t={int(time.time())}", headers={"User-Agent": "publish-skin"})
     h = hashlib.sha256()
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
@@ -411,15 +421,15 @@ def main() -> None:
             server.rsync(str(staged), server.remote(f"{SKINS_DIR}/{b.skin_id}.zip"), "zip upload")
             check_served(entry["url"], b.sha256)
             if prev := entry.get("preview"):
-                staged_preview = work / posixpath.basename(prev["url"])
+                staged_preview = work / url_file_name(prev["url"])
                 staged_preview.write_bytes(b.preview_bytes)
                 server.rsync(str(staged_preview), server.remote(f"{SKINS_DIR}/{staged_preview.name}"),
                              "preview upload")
                 check_served(prev["url"], prev["sha256"])
             # a preview with another extension, or none any more: drop the old file
-            old_preview = (old.get("preview") or {}).get("url", "")
-            if old_preview and old_preview != (entry.get("preview") or {}).get("url"):
-                name = posixpath.basename(old_preview)
+            old_preview = url_file_name((old.get("preview") or {}).get("url", ""))
+            if old_preview and old_preview != url_file_name((entry.get("preview") or {}).get("url", "")):
+                name = old_preview
                 if re.fullmatch(r"[A-Za-z0-9._-]+", name):
                     server.remote_shell(f"rm -f '{server.remote_path}/{SKINS_DIR}/{name}'", "old preview removal")
             skins[b.skin_id] = entry

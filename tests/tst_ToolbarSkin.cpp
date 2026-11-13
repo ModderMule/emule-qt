@@ -76,6 +76,7 @@ private slots:
     void icon_extraTilesFallBackToProfile();
     void profile_mfcIni();
     void profile_utf16Bom();
+    void profile_theme();
     void colors_listFallback();
     void colors_followProfile();
     void colors_keepOwnPalette();
@@ -250,6 +251,30 @@ void tst_ToolbarSkin::profile_utf16Bom()
     SkinEngine skin;
     skin.loadProfile(ini);
     QCOMPARE(skin.color(QStringLiteral("ChatFg")), QColor(1, 2, 3));
+}
+
+void tst_ToolbarSkin::profile_theme()
+{
+    QTemporaryDir dir;
+    const auto themeOf = [&](const QByteArray& body) {
+        const QString ini = dir.filePath(QStringLiteral("t.eMuleSkin.ini"));
+        writeRaw(ini, body);
+        SkinEngine skin;
+        skin.loadProfile(ini);
+        return skin.theme();
+    };
+    QCOMPARE(themeOf("[Skin]\r\nTheme = Dark\r\n"), ThemeChoice::Dark);
+    QCOMPARE(themeOf("[skin]\nTHEME=light\n"), ThemeChoice::Light);
+    QCOMPARE(themeOf("[Skin]\nTheme=system\n"), ThemeChoice::System);
+    QCOMPARE(themeOf("[Skin]\nTheme=neon\n"), ThemeChoice::System);     // unknown
+    QCOMPARE(themeOf("[Colors]\nLogBk=#336699\n"), ThemeChoice::System); // absent
+    QCOMPARE(themeOf("[Colors]\nTheme=dark\n"), ThemeChoice::System);   // only [Skin]
+
+    SkinEngine skin;
+    writeRaw(dir.filePath(QStringLiteral("d.eMuleSkin.ini")), "[Skin]\nTheme=dark\n");
+    skin.loadProfile(dir.filePath(QStringLiteral("d.eMuleSkin.ini")));
+    skin.clear();
+    QCOMPARE(skin.theme(), ThemeChoice::System);
 }
 
 void tst_ToolbarSkin::colors_listFallback()

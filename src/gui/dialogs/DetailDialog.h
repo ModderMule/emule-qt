@@ -21,6 +21,7 @@
 
 #include <QCborMap>
 #include "dialogs/RememberedSizeDialog.h"
+#include "utils/DialogSizing.h"
 #include <QSize>
 #include <QString>
 
@@ -203,7 +204,9 @@ protected:
 
     /// The hand-picked size floors, in place of setMinimumSize()/resize(): the content
     /// raises them whenever it needs more room. Pass 0 for a dimension the content owns.
-    void setDesignedSize(QSize minimum, QSize preferred);
+    /// Fit::Scroll lets the user shrink a dialog whose tall pages scroll.
+    void setDesignedSize(QSize minimum, QSize preferred,
+                         DialogSizing::Fit fit = DialogSizing::Fit::Content);
 
     /// Re-measure the content and grow the dialog to fit it. The walker rebuilds every
     /// page on each step, so each setDetails() override ends with this.
@@ -224,6 +227,7 @@ private:
     QString           m_subjectKey;
     QSize             m_designedMin;
     QSize             m_designedDefault;
+    DialogSizing::Fit m_fit = DialogSizing::Fit::Content;
 };
 
 } // namespace eMule

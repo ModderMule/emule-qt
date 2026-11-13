@@ -126,7 +126,7 @@ Ed3kKadContactsModel::Ed3kKadContactsModel(QObject* parent)
         {tr("Next check"),
          [](const QCborMap& m) {
              const qint64 s = number(m, "checkInS");
-             return s > 0 ? ageText(s * 1000) : QString();
+             return s > 0 ? ageText(s * 1000) : tr("due");
          },
          [](const QCborMap& m) { return QVariant(number(m, "checkInS")); }},
     };

@@ -31,6 +31,13 @@ void SkinEngine::loadProfile(const QString& iniPath)
     m_icons = sections.value(QStringLiteral("icons"));
     m_bitmaps = sections.value(QStringLiteral("bitmaps"));
 
+    // not in MFC: theme the skin is drawn for
+    const QString theme = sections.value(QStringLiteral("skin")).value(QStringLiteral("theme"));
+    if (theme.compare(QLatin1StringView("dark"), Qt::CaseInsensitive) == 0)
+        m_theme = ThemeChoice::Dark;
+    else if (theme.compare(QLatin1StringView("light"), Qt::CaseInsensitive) == 0)
+        m_theme = ThemeChoice::Light;
+
     // MFC reads "%i , %i , %i"; we also take #RRGGBB
     const auto colors = sections.value(QStringLiteral("colors"));
     for (const auto& [key, value] : colors.asKeyValueRange()) {
@@ -73,6 +80,7 @@ void SkinEngine::clear()
     m_bitmaps.clear();
     m_colors.clear();
     m_listImages.clear();
+    m_theme = ThemeChoice::System;
 }
 
 QIcon SkinEngine::icon(const QString& resourceName, const QIcon& fallback) const

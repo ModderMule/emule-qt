@@ -143,6 +143,18 @@ void appendDownloadInfo([[maybe_unused]] QCborMap& details, [[maybe_unused]] con
 #endif
 }
 
+void appendSharedCounts([[maybe_unused]] QCborMap& shared)
+{
+#ifdef EMULE_HAVE_ED3K
+    if (!s_shared || !s_shared->isEnabled())
+        return;
+    const auto c = s_shared->counts();
+    shared.insert(QLatin1StringView("ed3kTotal"), static_cast<qint64>(c.total));
+    shared.insert(QLatin1StringView("ed3kHashing"), static_cast<qint64>(c.hashing));
+    shared.insert(QLatin1StringView("ed3kPublished"), static_cast<qint64>(c.published));
+#endif
+}
+
 void appendSharedInfo([[maybe_unused]] QCborMap& details, [[maybe_unused]] const QByteArray& md4)
 {
 #ifdef EMULE_HAVE_ED3K

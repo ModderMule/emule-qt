@@ -1251,6 +1251,17 @@ void Ed3kShared::logHashProgress()
                 .arg(static_cast<double>(m_runBytes >> 20) / secs, 0, 'f', 1));
 }
 
+Ed3kShared::Counts Ed3kShared::counts() const
+{
+    Counts c{.total = m_files.size(), .hashing = m_hashingVolumes.size()};
+    for (const auto& [md4, f] : m_files) {
+        if (f.shared)
+            ++c.published;
+        else if (f.queued)
+            ++c.hashing;
+    }
+    return c;
+}
 
 std::size_t Ed3kShared::hashQueueSize() const
 {

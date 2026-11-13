@@ -5,15 +5,19 @@
 /// "HTML Format" ticked the link box rendered the anchor -- so it showed, and copied,
 /// only the file name. Runs on an 800x600 offscreen screen set up in main().
 
+#include "controls/ContentScrollArea.h"
 #include "dialogs/FileDetailDialog.h"
 #include "dialogs/FileDetailsMerge.h"
 #include "prefs/Preferences.h"
+#include "utils/DialogSizing.h"
 
 #include <QApplication>
 #include <QCheckBox>
 #include <QCborMap>
 #include <QClipboard>
+#include <QDialog>
 #include <QDir>
+#include <QFormLayout>
 #include <QFile>
 #include <QGroupBox>
 #include <QLabel>
@@ -124,6 +128,8 @@ private slots:
     void severalDownloadsRefresh();
     void ed3kGroupShowsTheJoin();
     void sharedFileShowsItsBlake3Root();
+    void shrinksAndKeepsItsSizeAfterARename();
+    void scrollFitShrinksContentThatFits();
 };
 
 /// The window manager may not let the user drag a window smaller than its minimum, so
@@ -373,6 +379,60 @@ void TestFileDetailDialog::sharedFileShowsItsBlake3Root()
     FileDetailDialog plain(fileDetails(), FileDetailDialog::General);
     for (auto* label : plain.findChild<QTabWidget*>()->widget(0)->findChildren<QLabel*>())
         QVERIFY(!label->text().contains(FileDetailDialog::tr("BLAKE3 Hash")));
+}
+
+/// Issue #181: the minimum was the whole content, so the window could not be dragged
+/// to fit a screen less its panels, and a rename (a rebuild) grew it back.
+void TestFileDetailDialog::shrinksAndKeepsItsSizeAfterARename()
+{
+    for (const QCborMap& details : {fileDetails(), downloadDetails()}) {
+        FileDetailDialog dlg(details, FileDetailDialog::General);
+        dlg.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+        QTest::qWait(10);
+
+        const QString where = QStringLiteral("%1: min %2, size %3")
+                                  .arg(details.value(QStringLiteral("fileName")).toString())
+                                  .arg(dlg.minimumHeight()).arg(dlg.height());
+        QVERIFY2(dlg.minimumHeight() < dlg.height() - 50, qPrintable(where));
+
+        // The user drags it smaller, then renames: the dialog is rebuilt from new details
+        const QSize chosen(dlg.minimumWidth(), dlg.minimumHeight());
+        dlg.resize(chosen);
+        QTest::qWait(10);
+        QCborMap renamed = details;
+        renamed.insert(QStringLiteral("fileName"), QStringLiteral("Renamed.file.name.iso"));
+        dlg.setDetails(renamed);
+        QTest::qWait(10);
+        QCOMPARE(dlg.size(), chosen);
+    }
+}
+
+/// Issue #181 on a screen tall enough for all of it: Fit::Content pins the minimum to
+/// the content, Fit::Scroll opens just as tall but lets the scroll area give way.
+void TestFileDetailDialog::scrollFitShrinksContentThatFits()
+{
+    const auto measure = [](DialogSizing::Fit fit) {
+        QDialog dlg;
+        auto* layout = new QVBoxLayout(&dlg);
+        auto* page = new QWidget;
+        auto* form = new QFormLayout(page);
+        for (int row = 0; row < 8; ++row)
+            form->addRow(QStringLiteral("Row %1:").arg(row), new QLabel(QStringLiteral("value")));
+        auto* area = new ContentScrollArea;
+        area->setWidget(page);
+        layout->addWidget(area);
+        DialogSizing::applySize(&dlg, {}, {}, fit);
+        return std::pair{dlg.minimumHeight(), dlg.height()};
+    };
+
+    const auto [contentMin, contentHeight] = measure(DialogSizing::Fit::Content);
+    const auto [scrollMin, scrollHeight] = measure(DialogSizing::Fit::Scroll);
+    QVERIFY2(contentHeight < kScreenHeight - 120, qPrintable(QString::number(contentHeight)));
+    QCOMPARE(contentMin, contentHeight);
+    QCOMPARE(scrollHeight, contentHeight);
+    QVERIFY2(scrollMin < scrollHeight - 50,
+             qPrintable(QStringLiteral("%1 of %2").arg(scrollMin).arg(scrollHeight)));
 }
 
 int main(int argc, char* argv[])

@@ -44,6 +44,8 @@ void appendDownloadInfo(QCborMap& details, const QByteArray& md4);
 /// The same for a shared file: `ed3kEnabled` (sharing on), `ed3kRoot` once hashed,
 /// `ed3kAliasPublished`, `ed3kKeywordsPublished`.
 void appendSharedInfo(QCborMap& details, const QByteArray& md4);
+/// Network Info: `ed3kTotal`, `ed3kHashing`, `ed3kPublished` while sharing is on.
+void appendSharedCounts(QCborMap& shared);
 
 /// Whether the daemon was built with the ed3k module.
 [[nodiscard]] bool available();

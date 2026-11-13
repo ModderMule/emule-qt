@@ -8,6 +8,8 @@
 #include "client/ClientCensus.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
+#include "files/KnownFile.h"
+#include "files/SharedFileList.h"
 #include "geo/IP2Country.h"
 #include "kademlia/KadContact.h"
 #include "kademlia/KadFirewallTester.h"
@@ -283,6 +285,19 @@ QCborMap networkInfo()
                            portMapStatusName(PortMapStatus::Disabled));
     }
     info.insert(QStringLiteral("portmap"), portMapInfo);
+
+    // -- own shared files (eD2K; the daemon adds ed3k's) ------------------------
+    if (auto* sf = theApp.sharedFileList) {
+        qint64 published = 0;
+        sf->forEachFile([&published](KnownFile* f) {
+            if (f->publishedED2K() || f->lastPublishTimeKadSrc() > 0)
+                ++published;
+        });
+        info.insert(QStringLiteral("shared"),
+                    QCborMap{{QStringLiteral("ed2kTotal"), static_cast<qint64>(sf->getCount())},
+                             {QStringLiteral("ed2kHashing"), static_cast<qint64>(sf->getHashingCount())},
+                             {QStringLiteral("ed2kPublished"), published}});
+    }
 
     return info;
 }

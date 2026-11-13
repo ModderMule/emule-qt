@@ -1261,7 +1261,7 @@ Erneut herunterladen?</translation>
 <context>
     <name>RenameFileDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/RenameFileDialog.h" line="+23"/>
+        <location filename="../src/gui/dialogs/RenameFileDialog.h" line="+26"/>
         <source>Rename</source>
         <translation>Umbenennen</translation>
     </message>
@@ -4073,7 +4073,7 @@ Versuche den letzten Core erneut oder gib Adresse und Authentifizierungstoken ei
 <context>
     <name>eMule::DetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/DetailDialog.cpp" line="+205"/>
+        <location filename="../src/gui/dialogs/DetailDialog.cpp" line="+206"/>
         <source>Rename</source>
         <translation>Umbenennen</translation>
     </message>
@@ -5198,7 +5198,12 @@ Neuen anonymen Schlüssel erstellen?</translation>
         <translation>Nächste Prüfung</translation>
     </message>
     <message>
-        <location line="+24"/>
+        <location line="+3"/>
+        <source>due</source>
+        <translation>fällig</translation>
+    </message>
+    <message>
+        <location line="+21"/>
         <source>Not connected since restart</source>
         <translation>Seit dem Neustart nicht verbunden</translation>
     </message>
@@ -5816,7 +5821,7 @@ Ihre Namen werden dann nach den Listen aufgelöst, denen Sie bereits folgen.</tr
     <message>
         <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+439"/>
         <location line="+11"/>
-        <location line="+568"/>
+        <location line="+562"/>
         <location line="+11"/>
         <location line="+23"/>
         <location line="+19"/>
@@ -5827,7 +5832,7 @@ Ihre Namen werden dann nach den Listen aufgelöst, denen Sie bereits folgen.</tr
         <translation>ed3k-Credits</translation>
     </message>
     <message>
-        <location line="-679"/>
+        <location line="-673"/>
         <source>The ledger contract is an address: 0x and 40 hexadecimal digits.</source>
         <translation>Der Ledger-Vertrag ist eine Adresse: 0x und 40 Hexadezimalziffern.</translation>
     </message>
@@ -5921,12 +5926,12 @@ Ihre Namen werden dann nach den Listen aufgelöst, denen Sie bereits folgen.</tr
         <translation>Knoten finden</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+1376"/>
         <source>Find ed3k nodes in the local network (restarts the node)</source>
         <translation>ed3k-Knoten im lokalen Netzwerk finden (startet den Knoten neu)</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-1374"/>
         <source>Node lists for the first contact, one ed3k:nodes link per line:</source>
         <translation>Knotenlisten für den ersten Kontakt, ein ed3k:nodes-Link pro Zeile:</translation>
     </message>
@@ -5940,7 +5945,7 @@ Ihre Namen werden dann nach den Listen aufgelöst, denen Sie bereits folgen.</tr
         <translation type="vanished">JSON-RPC-Endpunkte der Chaintube-Chain, eine URL pro Zeile (https, oder http zu einem Knoten auf diesem Computer). Das Ledger der Credits befindet sich auf der Seite Credits.</translation>
     </message>
     <message>
-        <location line="+73"/>
+        <location line="+69"/>
         <source>Use credits (off by default)</source>
         <translation>Credits verwenden (standardmäßig aus)</translation>
     </message>
@@ -6032,7 +6037,7 @@ Ihre Namen werden dann nach den Listen aufgelöst, denen Sie bereits folgen.</tr
         <translation type="vanished">Weiterleiter:</translation>
     </message>
     <message>
-        <location line="-1420"/>
+        <location line="-1414"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>Usenet-Posts auch über ed3k freigeben</translation>
     </message>
@@ -6052,7 +6057,7 @@ Ihre Namen werden dann nach den Listen aufgelöst, denen Sie bereits folgen.</tr
         <translation>Überwacht die Ordner von „Meine ed3k-Sets“: dort hinzugefügte, geänderte oder entfernte Dateien veröffentlichen eine neue Version des Sets.</translation>
     </message>
     <message>
-        <location line="+119"/>
+        <location line="+117"/>
         <source> days</source>
         <translation> Tage</translation>
     </message>
@@ -6102,7 +6107,7 @@ Ihre Namen werden dann nach den Listen aufgelöst, denen Sie bereits folgen.</tr
         <translation>ed3k-Knotenlisten (*.ed3knod);;Alle Dateien (*)</translation>
     </message>
     <message>
-        <location line="+100"/>
+        <location line="+96"/>
         <source>The ledger contract of the network: 0x and 40 hexadecimal digits. No default.</source>
         <translation>Der Ledger-Vertrag des Netzwerks: 0x und 40 Hexadezimalziffern. Kein Standardwert.</translation>
     </message>
@@ -6134,12 +6139,12 @@ Ihre Namen werden dann nach den Listen aufgelöst, denen Sie bereits folgen.</tr
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1247"/>
+        <location line="+1250"/>
         <source> credits/MiB</source>
         <translation> Credits/MiB</translation>
     </message>
     <message>
-        <location line="-1256"/>
+        <location line="-1259"/>
         <source>Never pay (receipts only)</source>
         <translation>Nie zahlen (nur Quittungen)</translation>
     </message>
@@ -6387,12 +6392,12 @@ Ihre Namen werden dann nach den Listen aufgelöst, denen Sie bereits folgen.</tr
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1084"/>
+        <location line="+1087"/>
         <source>not read yet</source>
         <translation>noch nicht gelesen</translation>
     </message>
     <message>
-        <location line="-1082"/>
+        <location line="-1085"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Das Konto ist überzogen: Ein neuer Credit-Schlüssel ist der Weg weiter.</translation>
     </message>
@@ -6904,7 +6909,17 @@ Auto: 2 % des RAM, mindestens 64 MiB und höchstens 512 MiB.</translation>
         <translation>Solange der freie RAM unter diesem Anteil des gesamten liegt, bleiben nur genutzte Blockhashes im RAM.</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+3"/>
+        <source>Connection</source>
+        <translation>Verbindung</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>LAN discovery: finds other ed3k nodes on this computer&apos;s local networks.</source>
+        <translation>LAN-Erkennung: findet andere ed3k-Knoten in den lokalen Netzwerken dieses Computers.</translation>
+    </message>
+    <message>
+        <location line="+20"/>
         <source>Autostart highspeed download</source>
         <translation>Highspeed-Download automatisch starten</translation>
     </message>
@@ -6978,12 +6993,12 @@ Auto: 2 % des RAM, mindestens 64 MiB und höchstens 512 MiB.</translation>
         <translation>Highspeed-Download läuft nicht. Guthaben: %1</translation>
     </message>
     <message>
-        <location line="-736"/>
+        <location line="-739"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
     <message>
-        <location line="-848"/>
+        <location line="-842"/>
         <source>Runs the ed3k node (packmule) in the core, on the eD2K UDP port or one of its own. It finds other nodes over Kad and serves the shared files.</source>
         <translation>Startet den ed3k-Knoten (packmule) im Core, auf dem eD2K-UDP-Port oder einem eigenen. Er findet andere Knoten über Kad und stellt die freigegebenen Dateien bereit.</translation>
     </message>
@@ -6993,7 +7008,7 @@ Auto: 2 % des RAM, mindestens 64 MiB und höchstens 512 MiB.</translation>
     </message>
     <message>
         <location line="+30"/>
-        <location line="+743"/>
+        <location line="+737"/>
         <location line="+6"/>
         <location line="+9"/>
         <location line="+13"/>
@@ -7003,7 +7018,7 @@ Auto: 2 % des RAM, mindestens 64 MiB und höchstens 512 MiB.</translation>
         <translation>eD2K-Kompatibilität</translation>
     </message>
     <message>
-        <location line="-779"/>
+        <location line="-773"/>
         <source>One port for eD2K and ed3k, and a user hash that tells eD2K peers this client also speaks ed3k.</source>
         <translation>Ein Port für eD2K und ed3k und ein Benutzer-Hash, der eD2K-Peers zeigt, dass dieser Client auch ed3k spricht.</translation>
     </message>
@@ -7048,7 +7063,7 @@ Auto: 2 % des RAM, mindestens 64 MiB und höchstens 512 MiB.</translation>
         <translation>Öffnet die Webseite des Routers dieses Computers, auf der Ports weitergeleitet werden</translation>
     </message>
     <message>
-        <location line="+24"/>
+        <location line="+22"/>
         <source>Fetch node lists automatically when few nodes answer</source>
         <translation>Knotenlisten automatisch abrufen, wenn wenige Knoten antworten</translation>
     </message>
@@ -7063,7 +7078,7 @@ Auto: 2 % des RAM, mindestens 64 MiB und höchstens 512 MiB.</translation>
         <translation>Nur ein entfernter Endpunkt: Niemand prüft seine Antworten. Empfohlen werden zwei Endpunkte unabhängiger Anbieter oder ein Chain-Knoten auf diesem Computer.</translation>
     </message>
     <message>
-        <location line="+670"/>
+        <location line="+666"/>
         <source>%1 failed: %2</source>
         <translation>%1 fehlgeschlagen: %2</translation>
     </message>
@@ -9735,7 +9750,7 @@ Seine Dateien kommen in den Eingangsordner, in einen eigenen Ordner des Sets; ne
 <context>
     <name>eMule::FileDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/FileDetailDialog.cpp" line="+233"/>
+        <location filename="../src/gui/dialogs/FileDetailDialog.cpp" line="+234"/>
         <source>File Details: %1</source>
         <translation>Dateidetails: %1</translation>
     </message>
@@ -9743,12 +9758,12 @@ Seine Dateien kommen in den Eingangsordner, in einen eigenen Ordner des Sets; ne
         <location line="-38"/>
         <location line="+49"/>
         <location line="+7"/>
-        <location line="+159"/>
+        <location line="+162"/>
         <source>General</source>
         <translation>Allgemein</translation>
     </message>
     <message>
-        <location line="-165"/>
+        <location line="-168"/>
         <location line="+7"/>
         <source>File Names</source>
         <translation>Dateinamen</translation>
@@ -9787,7 +9802,7 @@ Seine Dateien kommen in den Eingangsordner, in einen eigenen Ordner des Sets; ne
         <translation>Archivvorschau</translation>
     </message>
     <message>
-        <location line="+37"/>
+        <location line="+40"/>
         <location line="+20"/>
         <location line="+237"/>
         <source>File Name</source>
@@ -9812,12 +9827,12 @@ Seine Dateien kommen in den Eingangsordner, in einen eigenen Ordner des Sets; ne
         <translation>Dateigröße</translation>
     </message>
     <message>
-        <location line="-275"/>
+        <location line="-279"/>
         <source>%1   (%2 ago)</source>
         <translation>%1   (vor %2)</translation>
     </message>
     <message>
-        <location line="+226"/>
+        <location line="+230"/>
         <location line="+49"/>
         <source>%1 (%2 Bytes)</source>
         <translation>%1 (%2 Bytes)</translation>
@@ -9867,7 +9882,7 @@ Seine Dateien kommen in den Eingangsordner, in einen eigenen Ordner des Sets; ne
         <translation>Erstellt</translation>
     </message>
     <message numerus="yes">
-        <location line="-195"/>
+        <location line="-198"/>
         <source>File Details: %n files</source>
         <translation>
             <numerusform>Dateidetails: %n Datei</numerusform>
@@ -9875,7 +9890,7 @@ Seine Dateien kommen in den Eingangsordner, in einen eigenen Ordner des Sets; ne
         </translation>
     </message>
     <message>
-        <location line="+130"/>
+        <location line="+133"/>
         <location line="+55"/>
         <location line="+144"/>
         <location line="+7"/>
@@ -15516,7 +15531,7 @@ Erneut herunterladen?</translation>
 <context>
     <name>eMule::NetworkInfoDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+65"/>
+        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+73"/>
         <source>Network Information</source>
         <translation>Netzwerkinformationen</translation>
     </message>
@@ -15543,18 +15558,18 @@ Erneut herunterladen?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+247"/>
+        <location line="+249"/>
         <source>Hash:</source>
         <translation>Hash:</translation>
     </message>
     <message>
-        <location line="-245"/>
+        <location line="-247"/>
         <source>TCP Port:</source>
         <translation>TCP-Port:</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+326"/>
+        <location line="+328"/>
         <source>UDP Port:</source>
         <translation>UDP-Port:</translation>
     </message>
@@ -15590,13 +15605,13 @@ Erneut herunterladen?</translation>
         <location line="+117"/>
         <location line="+35"/>
         <location line="+6"/>
-        <location line="+38"/>
+        <location line="+66"/>
         <location line="+5"/>
         <source>Status:</source>
         <translation>Status:</translation>
     </message>
     <message>
-        <location line="-340"/>
+        <location line="-368"/>
         <location line="+65"/>
         <location line="+156"/>
         <source>Users:</source>
@@ -15612,12 +15627,12 @@ Erneut herunterladen?</translation>
     <message>
         <location line="-215"/>
         <location line="+304"/>
-        <location line="+34"/>
+        <location line="+62"/>
         <source>Unknown</source>
         <translation>Unbekannt</translation>
     </message>
     <message>
-        <location line="-338"/>
+        <location line="-366"/>
         <location line="+2"/>
         <location line="+50"/>
         <location line="+98"/>
@@ -15806,19 +15821,19 @@ Erneut herunterladen?</translation>
     <message>
         <location line="+3"/>
         <location line="+210"/>
-        <location line="+71"/>
+        <location line="+99"/>
         <source>Yes</source>
         <translation>Ja</translation>
     </message>
     <message>
-        <location line="-281"/>
+        <location line="-309"/>
         <location line="+210"/>
-        <location line="+71"/>
+        <location line="+99"/>
         <source>No</source>
         <translation>Nein</translation>
     </message>
     <message>
-        <location line="-267"/>
+        <location line="-295"/>
         <source>Kad Network</source>
         <translation>Kad-Netzwerk</translation>
     </message>
@@ -15906,18 +15921,18 @@ Erneut herunterladen?</translation>
         <translation>URL:</translation>
     </message>
     <message>
-        <location line="+19"/>
+        <location line="+18"/>
         <source>ed3k Network</source>
         <translation>ed3k-Netzwerk</translation>
     </message>
     <message>
-        <location line="+3"/>
-        <location line="+44"/>
+        <location line="+4"/>
+        <location line="+72"/>
         <source>Not running</source>
         <translation>Nicht gestartet</translation>
     </message>
     <message>
-        <location line="-30"/>
+        <location line="-58"/>
         <source>Offline</source>
         <translation>Offline</translation>
     </message>
@@ -15943,12 +15958,12 @@ Erneut herunterladen?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+40"/>
+        <location line="+68"/>
         <source>Router:</source>
         <translation>Router:</translation>
     </message>
     <message>
-        <location line="-39"/>
+        <location line="-67"/>
         <source>Contacts:</source>
         <translation>Kontakte:</translation>
     </message>
@@ -15956,6 +15971,29 @@ Erneut herunterladen?</translation>
         <location line="+1"/>
         <source>Node ID:</source>
         <translation>Knoten-ID:</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Shared Files</source>
+        <translation>Freigegebene Dateien</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <location line="+6"/>
+        <source>Total:</source>
+        <translation>Gesamt:</translation>
+    </message>
+    <message>
+        <location line="-5"/>
+        <location line="+6"/>
+        <source>Hashing:</source>
+        <translation>Hashen:</translation>
+    </message>
+    <message>
+        <location line="-5"/>
+        <location line="+6"/>
+        <source>Published:</source>
+        <translation>Veröffentlicht:</translation>
     </message>
     <message>
         <location line="+9"/>
@@ -16083,7 +16121,7 @@ Erneut herunterladen?</translation>
         <translation>%1 (%2 Peers)</translation>
     </message>
     <message>
-        <location line="-356"/>
+        <location line="-384"/>
         <location line="+94"/>
         <location line="+15"/>
         <source>Firewalled</source>
@@ -16111,7 +16149,7 @@ Erneut herunterladen?</translation>
     <message>
         <location line="+66"/>
         <location line="+39"/>
-        <location line="+44"/>
+        <location line="+72"/>
         <source>Disabled</source>
         <translation>Deaktiviert</translation>
     </message>
