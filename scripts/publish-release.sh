@@ -105,6 +105,15 @@ if [[ "$PUBLISH_ONLY" -eq 0 && -n "$(git status --porcelain)" ]]; then
   exit 1
 fi
 
+# --- guard: no private config files in the release ---------------------------
+# CI bundles data/config from the tag, so a committed preferences.yml, known.met,
+# cryptkey.dat, ... would ship to every user. Denylist: scripts/private-config.txt
+# (the bundlers check their staged config/ against it too).
+if ! git ls-files -- data/config | bash scripts/check-private-config.sh -; then
+  echo "  remove them: git rm --cached <file>  (and commit)" >&2
+  exit 1
+fi
+
 # --- guard: specialdlp submodule is pushed ------------------------------------
 # CI checks out the recorded commit of external/specialdlp (ModderMule/specialdlp);
 # one that only exists locally fails every platform build after the tag push.
