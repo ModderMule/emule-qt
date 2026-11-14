@@ -126,6 +126,8 @@ private:
     /// Opens a complete item's folder.
     void openRow(QTreeWidgetItem* row);
     void copyLinks();
+    /// "Move To Folder..." (#187): unfinished items to one folder.
+    void moveToFolder();
     /// Pasted links: added, or into the Link Grabber with "open all links" there.
     void pasteLinks(const QStringList& links);
     /// Shows or hides the Link Grabber tab.

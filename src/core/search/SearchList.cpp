@@ -311,12 +311,12 @@ SearchList::TcpSearchAnswer SearchList::processSearchAnswer(const uint8* packet,
         if (data.position() < data.length())
             moreResults = data.readUInt8() != 0;
     } catch (const FileException& ex) {
-        logWarning(QStringLiteral("Malformed search answer from %1 — kept %2 of %3 result(s): %4")
+        logDebug(QStringLiteral("Malformed search answer from %1 — kept %2 of %3 result(s): %4")
                        .arg(server.toString()).arg(parsed).arg(resultCount)
                        .arg(QString::fromUtf8(ex.what())));
     }
     if (moreResults) {
-        logInfo(QStringLiteral("Server returned only part of the matches — more results "
+        logDebug(QStringLiteral("Server returned only part of the matches — more results "
                                "are available."));
     }
 
@@ -377,7 +377,7 @@ uint32 SearchList::processClientSharedFiles(UpDownClient& sender, const uint8* p
         }
     } catch (const FileException& ex) {
         // The files read so far stay listed; the peer keeps its connection.
-        logWarning(QStringLiteral("Malformed shared file list from %1: %2")
+        logDebug(QStringLiteral("Malformed shared file list from %1: %2")
                        .arg(sender.userName(), QString::fromUtf8(ex.what())));
     }
 
@@ -1127,7 +1127,7 @@ void SearchList::saveSpamFilter(const QString& configDir) const
     const QString filePath = QDir(configDir).filePath(kSpamFilterFilename);
     SafeFile file;
     if (!file.open(filePath, QIODevice::WriteOnly)) {
-        logWarning(QStringLiteral("Failed to save %1").arg(filePath));
+        logDebug(QStringLiteral("Failed to save %1").arg(filePath));
         return;
     }
 
@@ -1166,7 +1166,7 @@ void SearchList::saveSpamFilter(const QString& configDir) const
             Tag(static_cast<uint8>(SP_UDPSERVERSPAMRATIO), blob).writeNewEd2kTag(file);
         }
     } catch (const FileException& ex) {
-        logWarning(QStringLiteral("Failed to save %1: %2")
+        logDebug(QStringLiteral("Failed to save %1: %2")
                        .arg(filePath, QString::fromStdString(ex.what())));
     }
 }
@@ -1188,7 +1188,7 @@ void SearchList::loadSpamFilter(const QString& configDir)
 
     try {
         if (file.readUInt8() != MET_HEADER_I64TAGS) {
-            logWarning(QStringLiteral("Failed to load %1, invalid first byte").arg(filePath));
+            logDebug(QStringLiteral("Failed to load %1, invalid first byte").arg(filePath));
             return;
         }
 
@@ -1239,7 +1239,7 @@ void SearchList::loadSpamFilter(const QString& configDir)
             }
         }
     } catch (const FileException& ex) {
-        logWarning(QStringLiteral("Failed to load %1: %2")
+        logDebug(QStringLiteral("Failed to load %1: %2")
                        .arg(filePath, QString::fromStdString(ex.what())));
     }
 }

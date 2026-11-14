@@ -495,7 +495,7 @@ QWidget* SearchPanel::createSearchBar()
         m_showKadCheck->setChecked(true);
         m_showTorrentCheck->setChecked(true);
         m_showWebCheck->setChecked(true);
-        m_hideRelatedCheck->setChecked(true);
+        m_hideRelatedCheck->setChecked(false);
     });
     typeRow->addWidget(m_resetBtn);
 
@@ -1283,13 +1283,15 @@ void SearchPanel::onResetFilters()
 
 void SearchPanel::onMethodChanged()
 {
-    const bool indexer = isIndexerSearchType(static_cast<SearchType>(m_methodCombo->currentData().toInt()));
+    const auto method = static_cast<SearchType>(m_methodCombo->currentData().toInt());
+    const bool indexer = isIndexerSearchType(method);
     if (indexer != m_typeComboIndexer)
         fillTypeCombo(indexer);
     for (QWidget* w : std::as_const(m_ed2kOnlyFilters))
         w->setVisible(!indexer);
     for (QWidget* w : std::as_const(m_indexerOnlyFilters))
         w->setVisible(indexer);
+    updateNetworkChecks();
     onTypeChanged();
 }
 
@@ -1357,6 +1359,7 @@ void SearchPanel::onNetworkFilterChanged()
 void SearchPanel::onTabChanged(int index)
 {
     switchToTab(index);
+    updateNetworkChecks();
     // The sweep belongs to one search; arriving at another tab must not show its bar.
     updateSweepProgress();
 }
@@ -3573,6 +3576,22 @@ void SearchPanel::requestMore(SearchTab& tab)
     }
 }
 
+void SearchPanel::updateNetworkChecks()
+{
+    if (!m_hideRelatedCheck)
+        return;   // still building the form
+    // live filters: the open tab's method counts as much as the form's next search
+    const auto formMethod = static_cast<SearchType>(m_methodCombo->currentData().toInt());
+    const auto* tab = currentTab();
+    const auto tabMethod = tab ? std::optional(static_cast<SearchType>(tab->method)) : std::nullopt;
+    const auto uses = [&](auto pred) { return pred(formMethod) || (tabMethod && pred(*tabMethod)); };
+    const bool blends = uses(canBlendMetaSearch);
+    for (QCheckBox* c : {m_showUsenetCheck, m_showKadCheck, m_showTorrentCheck, m_showWebCheck})
+        c->setEnabled(blends);
+    // release files come from server catalogues only
+    m_hideRelatedCheck->setEnabled(blends || uses(isMetaSearchType));
+}
+
 void SearchPanel::updateMoreButton()
 {
     const auto* tab = currentTab();
@@ -3591,7 +3610,7 @@ void SearchPanel::applyNetworkFilter(SearchTab& tab)
     SearchResultsProxy::NetworkFilter filter;
     // Usenet / torrent / web via server: that network was asked for, and an emptied
     // list would have loadMoreIfAtEnd() pull every page
-    if (tab.method != 6 && tab.method != 7 && tab.method != 8 && m_showUsenetCheck) {
+    if (canBlendMetaSearch(static_cast<SearchType>(tab.method)) && m_showUsenetCheck) {
         filter.usenet = m_showUsenetCheck->isChecked();
         filter.kad = m_showKadCheck->isChecked();
         filter.torrent = m_showTorrentCheck->isChecked();

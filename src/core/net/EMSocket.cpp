@@ -412,13 +412,15 @@ void EMSocket::readIncoming(bool peerShutdown)
                     break;
                 default: {
                     // Debug: dump first bytes for diagnosis
-                    int dumpLen = std::min(static_cast<int>(rend - rptr), 32);
-                    QString hex;
-                    for (int i = 0; i < dumpLen; ++i)
-                        hex += QStringLiteral("%1 ").arg(static_cast<uint8>(rptr[i]), 2, 16, QLatin1Char('0'));
-                    logWarning(QStringLiteral("EMSocket: kErrWrongHeader — first %1 bytes: %2 (peer %3:%4)")
-                                   .arg(dumpLen).arg(hex)
-                                   .arg(peerAddress().toString()).arg(peerPort()));
+                    logDebug([&]() -> QString {
+                        const int dumpLen = std::min(static_cast<int>(rend - rptr), 32);
+                        QString hex;
+                        for (int i = 0; i < dumpLen; ++i)
+                            hex += QStringLiteral("%1 ").arg(static_cast<uint8>(rptr[i]), 2, 16, QLatin1Char('0'));
+                        return QStringLiteral("EMSocket: kErrWrongHeader — first %1 bytes: %2 (peer %3:%4)")
+                            .arg(dumpLen).arg(hex)
+                            .arg(peerAddress().toString()).arg(peerPort());
+                    });
                     onError(kErrWrongHeader);
                     return;
                 }
@@ -458,16 +460,16 @@ void EMSocket::readIncoming(bool peerShutdown)
             }
         }
     } catch (const std::exception& ex) {
-        logWarning(QStringLiteral("EMSocket::onReadyRead — exception in packet processing: %1 (peer %2:%3)")
+        logDebug([&]() -> QString { return QStringLiteral("EMSocket::onReadyRead — exception in packet processing: %1 (peer %2:%3)")
                        .arg(QLatin1String(ex.what()))
-                       .arg(peerAddress().toString()).arg(peerPort()));
+                       .arg(peerAddress().toString()).arg(peerPort()); });
         m_pendingPacket.reset();
         m_pendingPacketSize = 0;
         onError(kErrWrongHeader);
         return;
     } catch (...) {
-        logWarning(QStringLiteral("EMSocket::onReadyRead — unhandled exception in packet processing (peer %1:%2)")
-                       .arg(peerAddress().toString()).arg(peerPort()));
+        logDebug([&]() -> QString { return QStringLiteral("EMSocket::onReadyRead — unhandled exception in packet processing (peer %1:%2)")
+                       .arg(peerAddress().toString()).arg(peerPort()); });
         m_pendingPacket.reset();
         m_pendingPacketSize = 0;
         onError(kErrWrongHeader);

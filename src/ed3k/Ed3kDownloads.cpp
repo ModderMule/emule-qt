@@ -9,6 +9,7 @@
 #include "files/KnownFile.h"
 #include "files/PartFile.h"
 #include "prefs/Preferences.h"
+#include "utils/OtherFunctions.h"
 #include "utils/Log.h"
 
 #include <QDataStream>
@@ -35,6 +36,7 @@ enum class TargetKind : quint8 { None = 0, Incoming = 1, Absolute = 2 };
 /// a piece of the Have bitmap (Protocol.md §12.5): 4 MiB = 16 blocks
 constexpr std::size_t kPieceBlocks = 16;
 constexpr int kTickMs = 1000;
+constexpr std::size_t kRateSamples = 10;   // rate = average of the last 10 ticks
 const QString kStateFile = QStringLiteral("downloads.dat");
 
 QByteArray rootBytes(const ffi::Root& r)
@@ -242,6 +244,10 @@ bool Ed3kDownloads::pause(const ffi::Root& root)
 bool Ed3kDownloads::resume(const ffi::Root& root)
 {
     Entry* e = entryOf(root);
+    if (e && e->moving) {   // on again once moved
+        e->resumeAfterMove = true;
+        return true;
+    }
     if (!e || (e->info.state != Ed3kDownloadInfo::State::Paused && e->info.state != Ed3kDownloadInfo::State::Failed))
         return false;
     e->info.state = Ed3kDownloadInfo::State::Downloading;
@@ -251,6 +257,62 @@ bool Ed3kDownloads::resume(const ffi::Root& root)
     markChanged();
     pumpSession();
     return true;
+}
+
+QString Ed3kDownloads::moveTo(const ffi::Root& root, const QString& dir)
+{
+    Entry* e = entryOf(root);
+    if (!e)
+        return QStringLiteral("unknown download");
+    const QString target = QDir::cleanPath(QDir::fromNativeSeparators(dir));
+    using S = Ed3kDownloadInfo::State;
+    if (e->moving)
+        return QStringLiteral("already moving");
+    if (e->info.state == S::Complete || e->info.state == S::Verifying)
+        return QStringLiteral("busy or complete");
+    if (target.isEmpty() || QDir::isRelativePath(target) || !QDir().mkpath(target))
+        return QStringLiteral("cannot use %1").arg(dir);
+
+    // all data in (the move to incoming failed): it completes into the folder instead
+    if (!e->have.empty() && std::ranges::all_of(e->have, [](bool h) { return h; })) {
+        e->info.targetPath = QDir(target).filePath(e->info.name);
+        touch(*e);
+        if (e->info.state == S::Failed)
+            resume(root);
+        return {};
+    }
+    const QString from = e->info.partPath;
+    const QString to = QDir(target).filePath(QFileInfo(from).fileName());
+    if (QDir::cleanPath(QFileInfo(from).absolutePath()) == target)
+        return {};
+    if (QFile::exists(to))
+        return QStringLiteral("%1 already exists").arg(to);
+
+    e->resumeAfterMove = e->info.state == S::Downloading || e->info.state == S::Failed;
+    if (e->info.state == S::Downloading)
+        pause(root);
+    e->moving = true;
+    markChanged();
+    logInfo(QStringLiteral("moving \"%1\" to %2").arg(e->info.name, target));
+    if (!QFile::exists(from)) {   // nothing written yet
+        relocated(*e, from, to, target);
+        return {};
+    }
+    relocateInBackground(from, to, e->info.done, [this, root, from, to, target](const QString& error) {
+        Entry* e = entryOf(root);
+        if (!e)
+            return;
+        e->moving = false;
+        if (!error.isEmpty()) {
+            logWarning(QStringLiteral("cannot move \"%1\": %2").arg(e->info.name, error));
+            markChanged();
+            if (std::exchange(e->resumeAfterMove, false))
+                resume(root);   // on where it was
+            return;
+        }
+        relocated(*e, from, to, target);
+    });
+    return {};
 }
 
 bool Ed3kDownloads::cancel(const ffi::Root& root)
@@ -366,6 +428,13 @@ std::optional<Ed3kDownloadInfo> Ed3kDownloads::info(const ffi::Root& root) const
         return std::nullopt;
     Ed3kDownloadInfo i = it->second.info;
     i.blocks = it->second.have;
+    // as eD2K: a video or audio file with its first 9.28 MB part held
+    if (i.state == Ed3kDownloadInfo::State::Downloading || i.state == Ed3kDownloadInfo::State::Paused) {
+        const auto ft = getED2KFileTypeID(i.name);
+        const auto head = std::size_t(blockCount(std::min<std::uint64_t>(i.size, PARTSIZE)));
+        i.previewPossible = (ft == ED2KFileType::Video || ft == ED2KFileType::Audio) && head <= i.blocks.size()
+            && std::all_of(i.blocks.begin(), i.blocks.begin() + qsizetype(head), [](bool h) { return h; });
+    }
     if (const Download* d = downloadOf(root)) {
         i.sources = int(d->streams.size());
         i.transferring = int(std::ranges::count_if(d->streams, [](const auto& s) { return s.second; }));
@@ -703,7 +772,8 @@ void Ed3kDownloads::shareComplete(Entry& e, std::span<const std::byte> hashes)
     if (!shareMember(ffi::SharedFile{e.info.root, e.info.size, name, std::nullopt, std::nullopt, ffi::Have::complete(), hashes},
                      e.info.owner, e.id))
         return;
-    const ffi::FileInfo fi{e.info.root, e.info.size, name, std::nullopt, 0, 0, 0, 0, 0, 0};
+    // sources 1: this node, the file held complete (Protocol.md §10.7)
+    const ffi::FileInfo fi{e.info.root, e.info.size, name, std::nullopt, 1, 0, 0, 0, 0, 0};
     // was: eng->publish(m_session.now(), fi, m_holdBack ? ffi::Publish::Source : ffi::Publish::Both)
     if (auto ok = publishShared(fi); !ok)
         logDebug([&]() -> QString { return QStringLiteral("publish of \"%1\" failed (error %2)").arg(e.info.name, errorName(ok.error())); });
@@ -760,8 +830,21 @@ void Ed3kDownloads::touch(Entry& e)
 void Ed3kDownloads::onTick()
 {
     for (auto& [root, e] : m_entries) {
-        const std::uint64_t rate = e.received - e.lastReceived;
+        const std::uint64_t got = e.received - e.lastReceived;
         e.lastReceived = e.received;
+        // blocks are 256 KiB: one tick reads 0 or a whole block, so average the last ticks
+        std::uint64_t rate = 0;
+        if (e.info.state == Ed3kDownloadInfo::State::Downloading) {
+            e.rateSamples.push_back(got);
+            if (e.rateSamples.size() > kRateSamples)
+                e.rateSamples.pop_front();
+            std::uint64_t sum = 0;
+            for (const auto b : e.rateSamples)
+                sum += b;
+            rate = sum * 1000 / (std::uint64_t(e.rateSamples.size()) * kTickMs);
+        } else {
+            e.rateSamples.clear();
+        }
         if (rate != e.info.rate) {
             e.info.rate = rate;
             m_changed = true;
@@ -919,6 +1002,22 @@ std::optional<Ed3kDownloads::Entry> Ed3kDownloads::readMet(const QString& metPat
         if (e.have[i])
             e.info.done += std::min<std::uint64_t>(kBlock, size - std::uint64_t(i) * kBlock);
     return e;
+}
+
+void Ed3kDownloads::relocated(Entry& e, const QString& from, const QString& to, const QString& dir)
+{
+    e.moving = false;
+    e.info.partPath = to;
+    writeMet(e);   // now, before the old one goes: never a part file without its .met
+    const QString oldMet = from + QStringLiteral(".met");
+    forgetBlobWrites(oldMet);   // a queued save lands after the remove otherwise
+    QFile::remove(oldMet);
+    if (!m_tempDirs.contains(dir))
+        m_tempDirs.append(dir);
+    logInfo(QStringLiteral("moved \"%1\" to %2").arg(e.info.name, dir));
+    markChanged();
+    if (std::exchange(e.resumeAfterMove, false))
+        resume(e.info.root);
 }
 
 void Ed3kDownloads::writeMet(Entry& e)

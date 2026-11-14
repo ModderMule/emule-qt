@@ -612,7 +612,7 @@ void CoreSession::initUSS()
             this, [] { thePrefs.setDynUpEnabled(false); }, Qt::QueuedConnection);
 
     m_lastCommonRouteFinder->start();
-    logInfo(QStringLiteral("Upload SpeedSense (USS) thread started"));
+    logDebug(QStringLiteral("Upload SpeedSense (USS) thread started"));
 }
 
 // ---------------------------------------------------------------------------
@@ -855,9 +855,10 @@ void CoreSession::autoUpdateServerList()
     // list it was merged into still holds servers: a wiped server.met fetches in full.
     if (m_serverList->serverCount() > 0)
         opts.validators = thePrefs.downloadValidators(QString::fromLatin1(kServerMetValidatorKey), url);
-    logInfo(opts.validators.isEmpty()
-                ? QStringLiteral("Auto-updating server list from %1").arg(url)
-                : QStringLiteral("Checking server list %1 for changes").arg(url));
+    if (opts.validators.isEmpty())
+        logInfo(QStringLiteral("Auto-updating server list from %1").arg(url));
+    else
+        logDebug(QStringLiteral("Checking server list %1 for changes").arg(url));
 
     const HttpFileDownload::Result r = HttpFileDownload::fetchBlocking(QUrl(url), opts);
     if (!r.ok) {
@@ -865,7 +866,7 @@ void CoreSession::autoUpdateServerList()
         return;
     }
     if (r.notModified) {
-        logInfo(QStringLiteral("Server list is up to date"));
+        logDebug(QStringLiteral("Server list is up to date"));
         return;
     }
     const QByteArray& data = r.data;
@@ -1014,7 +1015,7 @@ void CoreSession::initListenSocket()
         m_listenSocket = std::make_unique<ListenSocket>(this);
         if (m_listenSocket->startListening(thePrefs.port())) {
             theApp.listenSocket = m_listenSocket.get();
-            logInfo(QStringLiteral("TCP listen socket bound on port %1")
+            logDebug(QStringLiteral("TCP listen socket bound on port %1")
                         .arg(m_listenSocket->connectedPort()));
         } else if (!BindAddress::outboundAllowed()) {
             // Kept closed; resumeNetworking() opens it when the interface is there.
@@ -1206,7 +1207,7 @@ void CoreSession::initClientUDP()
     // Create and bind the shared UDP socket (client + Kad traffic).
     m_clientUDP = std::make_unique<ClientUDPSocket>();
     if (m_clientUDP->rebind(udpPort)) {
-        logInfo(QStringLiteral("Client UDP socket bound on port %1").arg(udpPort));
+        logDebug(QStringLiteral("Client UDP socket bound on port %1").arg(udpPort));
     } else if (BindAddress::outboundAllowed()) {
         logError(QStringLiteral("Failed to bind client UDP socket on port %1")
                      .arg(udpPort));
@@ -1720,7 +1721,7 @@ void CoreSession::initScheduler()
 
     int loaded = m_scheduler->loadFromFile(thePrefs.configDir());
     if (loaded > 0)
-        logInfo(QStringLiteral("Loaded %1 scheduler entries").arg(loaded));
+        logDebug(QStringLiteral("Loaded %1 scheduler entries").arg(loaded));
 }
 
 // ---------------------------------------------------------------------------
@@ -1788,7 +1789,7 @@ void CoreSession::initPortMapper()
             this, &CoreSession::portMapStatusChanged);
 
     connect(m_portMapper.get(), &PortMapper::mappingChanged, this,
-            [](const PortMapping& mapping, bool ok) {
+            [shown = QHash<QString, QString>{}](const PortMapping& mapping, bool ok) mutable {
                 // An IPv6 pinhole for the eD2K TCP port proves inbound reachability.
                 if (mapping.request.family == PortMapFamily::IPv6
                     && mapping.request.purpose == PortMapPurpose::Ed2kTcp) {
@@ -1803,12 +1804,24 @@ void CoreSession::initPortMapper()
                 if (mapping.request.family == PortMapFamily::IPv4
                     && mapping.request.purpose == PortMapPurpose::Ed2kTcp && theApp.reachabilityWatch)
                     theApp.reachabilityWatch->onMappedPortChanged(mapping.externalPort);
-                logInfo(QStringLiteral("Port mapping: %1 port %2 -> external %3 (%4, %5s lease)")
-                            .arg(portMapPurposeName(mapping.request.purpose))
-                            .arg(mapping.request.internalPort)
-                            .arg(mapping.externalPort)
-                            .arg(portMapMethodName(mapping.method))
-                            .arg(mapping.lifetimeSecs));
+                const QString line = QStringLiteral("Port mapping: %1 port %2 -> external %3 (%4, %5s lease)")
+                                         .arg(portMapPurposeName(mapping.request.purpose))
+                                         .arg(mapping.request.internalPort)
+                                         .arg(mapping.externalPort)
+                                         .arg(portMapMethodName(mapping.method))
+                                         .arg(mapping.lifetimeSecs);
+                // every renewal emits it again: only a new mapping is a main-log line
+                const QString key = QStringLiteral("%1/%2").arg(static_cast<int>(mapping.request.purpose))
+                                        .arg(static_cast<int>(mapping.request.family));
+                const QString what = QStringLiteral("%1/%2/%3").arg(mapping.request.internalPort)
+                                         .arg(mapping.externalPort)
+                                         .arg(static_cast<int>(mapping.method));
+                if (shown.value(key) == what) {
+                    logDebug(line);
+                } else {
+                    shown.insert(key, what);
+                    logInfo(line);
+                }
             });
 
     connect(m_portMapper.get(), &PortMapper::externalAddressChanged, this,
@@ -2187,7 +2200,7 @@ void CoreSession::markPeersForIPChange(const Address& effective)
         ++marked;
     });
     if (marked > 0)
-        logInfo(QStringLiteral("IPv6: queued IP-change notice for %1 connected peer(s)")
+        logDebug(QStringLiteral("IPv6: queued IP-change notice for %1 connected peer(s)")
                     .arg(marked));
 }
 
@@ -2518,7 +2531,7 @@ void CoreSession::finishStart()
     if (autoConnect && thePrefs.kadUsable() && m_kademlia) {
         m_kademlia->start();
         if (m_kademlia->isRunning())
-            logInfo(QStringLiteral("Kademlia started."));
+            logDebug(QStringLiteral("Kademlia started."));
         else
             logWarning(QStringLiteral("Kademlia failed to start."));
     }

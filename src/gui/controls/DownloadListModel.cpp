@@ -882,7 +882,7 @@ const DownloadRow* DownloadListModel::findByHash(const QString& hexHash) const
 namespace {
 
 /// PartFileOp ordinals, mirroring src/core/files/PartFile.h.
-enum : int { OpNone = 0, OpHashing = 1, OpCopying = 2, OpUncompressing = 3, OpImportParts = 4 };
+enum : int { OpNone = 0, OpHashing = 1, OpCopying = 2, OpUncompressing = 3, OpImportParts = 4, OpMoving = 5 };
 
 } // namespace
 
@@ -890,6 +890,8 @@ QString DownloadListModel::statusText(const DownloadRow& d) const
 {
     if (d.fileOp == OpImportParts)
         return tr("Importing part");
+    if (d.fileOp == OpMoving)
+        return tr("Moving");
 
     if (d.status == QLatin1String("hashing") || d.status == QLatin1String("waitingforhash"))
         return tr("Hashing");

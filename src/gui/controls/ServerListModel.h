@@ -41,6 +41,7 @@ struct ServerRow {
     bool obfuscation = false;
     bool hasMetaApi = false;   ///< eNode server announcing a Meta API (torrent/Usenet downloads)
     QString addrPort;          ///< daemon's "addr:port" key for Meta API requests
+    QString ed3kLink;          ///< ed3k:node link of its index node (ST_ED3K), else empty
     uint32_t files = 0;
 
     // Server identity for IPC connect-to-specific-server. numericIp is 0 for an IPv6
@@ -102,6 +103,11 @@ public:
 
     /// Set the currently connected server (0 to clear).
     void setConnectedServer(uint32_t serverId);
+    [[nodiscard]] uint32_t connectedServer() const { return m_connectedServerId; }
+
+    /// Node IDs (hex) of the connected ed3k index nodes: rows naming one are emphasised
+    /// too, so eD2K and ed3k may each mark a server.
+    void setConnectedIndexNodes(const QStringList& nodeIds);
 
     /// Repaint the connected row's colour and font, e.g. after the bold option changed.
     void refreshEmphasis();
@@ -110,7 +116,10 @@ protected:
     [[nodiscard]] int columnCountValue() const override { return ColCount; }
 
 private:
+    [[nodiscard]] bool isEmphasised(const ServerRow& r) const;
+
     uint32_t m_connectedServerId = 0;
+    QStringList m_indexNodeIds;   ///< lower-case hex
 };
 
 } // namespace eMule

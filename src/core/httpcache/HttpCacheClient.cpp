@@ -84,7 +84,7 @@ bool HttpCacheClient::beginFetch(const HttpCacheOffer& offer, PartFile* file,
     // holding a dangling file pointer between attempts.
     file->addSource(this);
 
-    logInfo(QStringLiteral("HTTP Cache: fetching part %1 of %2 from %3")
+    logDebug(QStringLiteral("HTTP Cache: fetching part %1 of %2 from %3")
                 .arg(m_offer.partIndex)
                 .arg(file->fileName())
                 .arg(QUrl(m_offer.url).host()));
@@ -165,7 +165,7 @@ bool HttpCacheClient::processHttpDownResponse(const QList<QByteArray>& headers)
     if (code == 416) {
         // The object no longer covers the range the offer described, so no amount
         // of retrying will help.
-        logWarning(QStringLiteral("HTTP Cache: server rejected range %1- for part %2")
+        logDebug(QStringLiteral("HTTP Cache: server rejected range %1- for part %2")
                        .arg(m_expectedBodyStart)
                        .arg(m_offer.partIndex));
         finish(HttpCacheResult::SizeMismatch);
@@ -185,7 +185,7 @@ bool HttpCacheClient::processHttpDownResponse(const QList<QByteArray>& headers)
     // still completes — failing here would hand the part back to ed2k for a
     // server behaviour we can simply absorb.
     if (code == 200 && m_expectedBodyStart != 0) {
-        logWarning(QStringLiteral("HTTP Cache: server ignored Range on part %1, restarting from 0")
+        logDebug(QStringLiteral("HTTP Cache: server ignored Range on part %1, restarting from 0")
                        .arg(m_offer.partIndex));
         if (!restartFromZero()) {
             finish(HttpCacheResult::HttpFailed);
@@ -204,7 +204,7 @@ bool HttpCacheClient::processHttpDownResponse(const QList<QByteArray>& headers)
         bool ok = false;
         const qulonglong len = contentLength.toULongLong(&ok);
         if (ok && len != expectedBody) {
-            logWarning(QStringLiteral("HTTP Cache: server offers %1 bytes, expected %2")
+            logDebug(QStringLiteral("HTTP Cache: server offers %1 bytes, expected %2")
                            .arg(len)
                            .arg(expectedBody));
             finish(HttpCacheResult::SizeMismatch);
@@ -222,7 +222,7 @@ bool HttpCacheClient::processHttpDownResponse(const QList<QByteArray>& headers)
             || first != m_expectedBodyStart
             || last != m_offer.cipherLength - 1
             || total != m_offer.cipherLength) {
-            logWarning(QStringLiteral("HTTP Cache: unusable Content-Range '%1', wanted %2-%3/%4")
+            logDebug(QStringLiteral("HTTP Cache: unusable Content-Range '%1', wanted %2-%3/%4")
                            .arg(QString::fromLatin1(contentRange))
                            .arg(m_expectedBodyStart)
                            .arg(m_offer.cipherLength - 1)
@@ -311,7 +311,7 @@ bool HttpCacheClient::acceptResolvedAddress(const Address& addr)
     if (cacheReachAllowsPeer(classifyCacheAddress(addr), m_peerAddress, !thePrefs.filterLANIPs()))
         return true;
 
-    logWarning(QStringLiteral("HTTP Cache: refusing %1 — it resolves to a local address (%2) "
+    logDebug(QStringLiteral("HTTP Cache: refusing %1 — it resolves to a local address (%2) "
                               "and the offer did not come from a local peer")
                    .arg(urlHost(), addr.toString()));
 
@@ -407,7 +407,7 @@ void HttpCacheClient::scheduleResume()
     // reads the count to decide whether another one is allowed.
     ++m_consecutiveRetries;
 
-    logInfo(QStringLiteral("HTTP Cache: part %1 dropped at %2/%3 bytes, resuming in %4 ms")
+    logDebug(QStringLiteral("HTTP Cache: part %1 dropped at %2/%3 bytes, resuming in %4 ms")
                 .arg(m_offer.partIndex)
                 .arg(m_cipherConsumed)
                 .arg(m_offer.cipherLength)
@@ -456,7 +456,7 @@ bool HttpCacheClient::consumeStagedBlocks()
     if (plain.size() != whole) {
         // With padding disabled a whole-block input yields exactly as much
         // output, so a short result means the cipher context failed.
-        logWarning(QStringLiteral("HTTP Cache: decrypt failed on part %1")
+        logDebug(QStringLiteral("HTTP Cache: decrypt failed on part %1")
                        .arg(m_offer.partIndex));
         finish(HttpCacheResult::Corrupt);
         return false;
@@ -541,7 +541,7 @@ void HttpCacheClient::verifyComplete()
     // many connections it took to get them.
     const QByteArray digest = m_cipherHash.result();
     if (digest != m_offer.cipherSha256) {
-        logWarning(QStringLiteral("HTTP Cache: ciphertext digest mismatch on part %1")
+        logDebug(QStringLiteral("HTTP Cache: ciphertext digest mismatch on part %1")
                        .arg(m_offer.partIndex));
         finish(HttpCacheResult::Corrupt);
         return;
@@ -565,21 +565,21 @@ void HttpCacheClient::verifyComplete()
     }
 
     if (!paddingOk) {
-        logWarning(QStringLiteral("HTTP Cache: bad padding on part %1 — wrong key?")
+        logDebug(QStringLiteral("HTTP Cache: bad padding on part %1 — wrong key?")
                        .arg(m_offer.partIndex));
         finish(HttpCacheResult::Corrupt);
         return;
     }
 
     if (m_plainWritten != m_offer.plainLength) {
-        logWarning(QStringLiteral("HTTP Cache: decrypted %1 bytes, expected %2")
+        logDebug(QStringLiteral("HTTP Cache: decrypted %1 bytes, expected %2")
                        .arg(m_plainWritten)
                        .arg(m_offer.plainLength));
         finish(HttpCacheResult::Corrupt);
         return;
     }
 
-    logInfo(QStringLiteral("HTTP Cache: part %1 complete (%2 bytes, %3 connection(s))")
+    logDebug(QStringLiteral("HTTP Cache: part %1 complete (%2 bytes, %3 connection(s))")
                 .arg(m_offer.partIndex)
                 .arg(m_plainWritten)
                 .arg(m_totalAttempts));

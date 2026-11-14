@@ -88,6 +88,7 @@ QCborMap statsToCbor(const ::ed3k::Stats& s)
         {QStringLiteral("sentOther"), qint64(s.sent_other)},
         {QStringLiteral("recvFile"), qint64(s.recv_file)},
         {QStringLiteral("recvOther"), qint64(s.recv_other)},
+        {QStringLiteral("hashRamBytes"), qint64(s.hash_ram)},
     };
 }
 #endif
@@ -423,6 +424,8 @@ QCborMap statusToCbor()
     out.insert(QStringLiteral("limitDownKb"), qint64(limits.down / 1024));
     if (st.running)
         out.insert(QStringLiteral("stats"), statsToCbor(st.stats));
+    if (s_shared && s_shared->isEnabled())
+        out.insert(QStringLiteral("hashRamBudget"), qint64(s_shared->hashRamBudget()));
     // batch 15: Kad's own network down (bit 0 IPv4, bit 1 IPv6) and hiding (hops.md §1)
     out.insert(QStringLiteral("kadOffline"), qint64(st.kadOffline));
     if (const QCborMap hide = hideToCbor(); !hide.isEmpty())

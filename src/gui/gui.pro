@@ -113,6 +113,7 @@ SOURCES += \
     controls/CategoryTabBar.cpp \
     controls/FitTextTabBar.cpp \
     controls/DownloadListModel.cpp \
+    controls/FolderTreeModel.cpp \
     controls/BarShader.cpp \
     controls/DownloadProgressDelegate.cpp \
     controls/Ed3kDownloadRows.cpp \
@@ -167,6 +168,8 @@ SOURCES += \
     utils/ClientIcons.cpp \
     utils/CountryFlags.cpp \
     utils/MassRenameAction.cpp \
+    utils/MoveDownloadsAction.cpp \
+    utils/FolderLister.cpp \
     utils/MetaResultActions.cpp \
     utils/TaskbarProgress.cpp \
     utils/TaskbarProgressMac.cpp \
@@ -174,6 +177,7 @@ SOURCES += \
     utils/TaskbarProgressWin.cpp \
     dialogs/PasteLinksDialog.cpp \
     dialogs/MassRenameDialog.cpp \
+    dialogs/FolderPickerDialog.cpp \
     dialogs/PasteTextDialog.cpp \
     dialogs/SimpleCleanupDialog.cpp \
     utils/TorrentLinks.cpp \
@@ -243,6 +247,7 @@ HEADERS += \
     controls/CategoryTabBar.h \
     controls/FitTextTabBar.h \
     controls/DownloadListModel.h \
+    controls/FolderTreeModel.h \
     controls/DownloadProgressDelegate.h \
     controls/Ed3kDownloadRows.h \
     controls/BarShader.h \
@@ -303,11 +308,14 @@ HEADERS += \
     utils/CountryFlags.h \
     utils/InputHistory.h \
     utils/MassRenameAction.h \
+    utils/MoveDownloadsAction.h \
+    utils/FolderLister.h \
     utils/MetaResultActions.h \
     utils/TaskbarProgress.h \
     utils/UrlPrefField.h \
     dialogs/PasteLinksDialog.h \
     dialogs/MassRenameDialog.h \
+    dialogs/FolderPickerDialog.h \
     dialogs/PasteTextDialog.h \
     dialogs/RenameFileDialog.h \
     dialogs/SimpleCleanupDialog.h \

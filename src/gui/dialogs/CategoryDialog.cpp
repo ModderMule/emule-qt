@@ -3,6 +3,7 @@
 /// @brief Add/edit one download category — matches MFC's IDD_CAT layout.
 
 #include "dialogs/CategoryDialog.h"
+#include "dialogs/FolderPickerDialog.h"
 #include "files/KnownFile.h" // kPrLow / kPrNormal / kPrHigh
 #include "prefs/CategoryView.h"
 #include "utils/DialogSizing.h"
@@ -13,7 +14,6 @@
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDir>
-#include <QFileDialog>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -27,10 +27,11 @@
 namespace eMule {
 
 CategoryDialog::CategoryDialog(const DownloadCategory& category,
-                               const QString& defaultIncomingDir, QWidget* parent)
+                               const QString& defaultIncomingDir, QWidget* parent, IpcClient* ipc)
     : QDialog(parent)
     , m_category(category)
     , m_defaultIncomingDir(defaultIncomingDir)
+    , m_ipc(ipc)
     , m_color(category.color)
 {
     setWindowTitle(tr("Edit Category-Properties"));
@@ -134,7 +135,7 @@ void CategoryDialog::onBrowseClicked()
     const QString start = m_incomingEdit->text().isEmpty() ? m_defaultIncomingDir
                                                            : m_incomingEdit->text();
     const QString dir =
-        QFileDialog::getExistingDirectory(this, tr("Choose a folder for incoming files"), start);
+        FolderPickerDialog::getExistingDirectory(this, m_ipc, tr("Choose a folder for incoming files"), start);
     if (!dir.isEmpty())
         m_incomingEdit->setText(dir);
 }

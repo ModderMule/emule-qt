@@ -34,8 +34,8 @@ void appendRows(QCborArray& uploading, QCborArray& waiting);
 [[nodiscard]] bool isDetailsKey(const QString& key);
 
 /// The queue row behind @p key as a GetClientDetails map (`userHash` = @p key, `nodeId`,
-/// `anonymous`, `sentTotal`/`receivedTotal` this run, `ed2kUserHash` derived), or the
-/// download source of that node; `source` {fileName, fileSize, root, state, otherFile,
+/// `anonymous`, `router`/`indexNode` from Hello.caps, `sentTotal`/`receivedTotal` this run,
+/// `ed2kUserHash` derived), or the download source of that node; `source` {fileName, fileSize, root, state, otherFile,
 /// parts, availParts} when it is one. nullopt: neither (any more) or no ed3k.
 [[nodiscard]] std::optional<QCborMap> details(const QString& key);
 

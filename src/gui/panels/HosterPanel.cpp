@@ -16,6 +16,8 @@
 #include "utils/ListActivation.h"
 #include "utils/MenuUtils.h"
 #include "utils/ModalHost.h"
+#include "utils/MoveDownloadsAction.h"
+#include "prefs/Preferences.h"
 #include "utils/StringUtils.h"
 #include "IpcMessage.h"
 #include "app/SkinIcons.h"
@@ -787,6 +789,14 @@ void HosterPanel::showContextMenu(const QPoint& pos)
     menu.addSeparator();
     QAction* copy = menu.addAction(menuIcon("Copy.ico"), tr("Copy link"));
     QAction* folder = menu.addAction(menuIcon("FolderOpen.ico"), tr("Open folder"));
+    // #187: unfinished items to another folder (out of disk space, mostly)
+    QAction* move = nullptr;
+    if (thePrefs.showExtControls()) {
+        move = menu.addAction(menuIcon("Folders.ico"), MoveDownloadsAction::menuText());
+        move->setEnabled(std::ranges::any_of(ids, [this](qint64 id) {
+            return m_items.value(id).value(QStringLiteral("state")).toInteger() != kStateComplete;
+        }));
+    }
     menu.addSeparator();
     QAction* add = menu.addAction(menuIcon("ListAdd.ico"), tr("Add Links..."));
     QAction* dlc = menu.addAction(menuIcon("DLC.ico"), tr("Open DLC..."));
@@ -846,6 +856,8 @@ void HosterPanel::showContextMenu(const QPoint& pos)
             act(QStringLiteral("delete"));
     } else if (chosen == copy) {
         copyLinks();
+    } else if (chosen && chosen == move) {
+        moveToFolder();
     } else if (chosen == folder && !folderDir.isEmpty()) {
         QDesktopServices::openUrl(QUrl::fromLocalFile(folderDir));
     } else if (chosen == add) {
@@ -1038,6 +1050,21 @@ void HosterPanel::openRow(QTreeWidgetItem* row)
     const QCborMap it = m_items.value(row->data(ColName, kItemIdRole).toLongLong());
     if (it.value(QStringLiteral("state")).toInteger() == kStateComplete)
         QDesktopServices::openUrl(QUrl::fromLocalFile(folderOf(it)));
+}
+
+void HosterPanel::moveToFolder()
+{
+    QStringList ids;
+    QHash<QString, QString> names;
+    for (const qint64 id : selectedIds()) {
+        const QCborMap it = m_items.value(id);
+        if (it.value(QStringLiteral("state")).toInteger() == kStateComplete)
+            continue;
+        ids << QString::number(id);
+        names.insert(ids.last(), it.value(QStringLiteral("name")).toString());
+    }
+    // the list follows by its pushes
+    MoveDownloadsAction::run(this, m_ipc, {{MoveDownloadsAction::Network::Hoster, ids}}, names, {}, {});
 }
 
 void HosterPanel::copyLinks()

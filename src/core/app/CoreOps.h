@@ -52,6 +52,15 @@ Status renameSharedFile(const QString& hashHex, const QString& newName);
 /// other file is renamed on disk (MorphXT MP_MASSRENAME).
 Status renameFile(const QString& hashHex, const QString& newName);
 Status setDownloadCategory(const QString& hashHex, uint32 category);
+/// #187: the download's temp data to @p dir, which then joins the temp dirs (so it is
+/// found on the next start). A finished file whose completion failed completes into it.
+Status moveDownload(const QString& hashHex, const QString& dir);
+/// Whether @p dir can hold part files: absolute, creatable, not an incoming or shared
+/// folder (temp dirs are kept out of the share). Message: why not.
+[[nodiscard]] Status checkTempDir(const QString& dir);
+/// Appends @p dir to the temp dirs unless listed: eD2K, ed3k and hoster part files there
+/// are found on the next start.
+void adoptTempDir(const QString& dir);
 /// Moves every idle A4AF source of the download to it. Sources that are transferring
 /// or connecting stay where they are. @p swapped receives how many moved.
 Status swapA4AFToDownload(const QString& hashHex, int* swapped = nullptr);
@@ -97,6 +106,9 @@ Status removeServer(const QString& address, uint16 port);
 /// Connects to @p server, or to any server when null.
 Status connectToServer(Server* server);
 Status disconnectFromServer();
+/// The server list's Disconnect: the eD2K session when it is with @p server, and the ed3k
+/// index node @p server names (ST_ED3K), dropped without an ed3k restart.
+Status disconnectFromServer(Server* server);
 
 /// Merges a downloaded server.met into the list. @p done gets the number added.
 void importServerMetFromUrl(const QString& url,

@@ -382,6 +382,8 @@ struct BtSession::Impl {
     QSet<QString> stopAtMeta;
     /// stopped at metadata, not resumed since: nothing wanted, so a finish is not a download
     QSet<QString> metaStopped;
+    /// moveStorage() runs (#187): an error left at the old place is cleared once moved
+    QSet<QString> moving;
     /// finished, cache flush asked: pread_disk_io holds written blocks in memory, so
     /// torrentFinished waits for cache_flushed_alert (files complete on disk)
     QSet<QString> finishFlush;
@@ -983,6 +985,9 @@ bool BtSession::resume(const QString& id)
     if (auto it = d->rows.find(id); it != d->rows.end() && it->second.paused && it->second.size > 0 && it->second.done >= it->second.size)
         d->limitOverride.insert(id);
     d->metaStopped.remove(id);
+    // a write error (disk full) is tried again
+    h.clear_error();
+    h.unset_flags(lt::torrent_flags::upload_mode);
     h.set_flags(lt::torrent_flags::auto_managed);
     h.resume();
     return true;
@@ -994,6 +999,25 @@ bool BtSession::recheck(const QString& id)
     if (!h.is_valid())
         return false;
     h.force_recheck();
+    return true;
+}
+
+bool BtSession::moveStorage(const QString& id, const QString& dir)
+{
+    const auto h = d->handle(id);
+    if (!h.is_valid())
+        return false;
+    const QString target = QDir::cleanPath(dir);
+    if (auto it = d->rows.find(id); it != d->rows.end() && QDir::cleanPath(it->second.savePath) == target)
+        return true;
+    if (!QDir().mkpath(target)) {
+        logError(QStringLiteral("BitTorrent: cannot create %1 to move a torrent there").arg(target));
+        return false;
+    }
+    d->moving.insert(id);
+    // files already at the target are taken as they are, never overwritten
+    h.move_storage(QDir::toNativeSeparators(target).toStdString(), lt::move_flags_t::dont_replace);
+    h.post_status();
     return true;
 }
 
@@ -1568,6 +1592,28 @@ void BtSession::drainAlerts()
             d->filePrioritiesApplied(BtTorrentView::idOf(fp->handle.info_hashes()));
             if (fp->error)
                 logWarning(QStringLiteral("BitTorrent: %1").arg(message(a)));
+        } else if (auto* sm = lt::alert_cast<lt::storage_moved_alert>(a)) {
+            const QString id = BtTorrentView::idOf(sm->handle.info_hashes());
+            const bool asked = d->moving.remove(id);
+            logInfo(QStringLiteral("BitTorrent: %1").arg(message(a)));
+            // a write error stays with the torrent until cleared: it restarts at the new place.
+            // A full disk is no error to libtorrent: it seeds only (upload mode) for a while.
+            const auto row = d->rows.find(id);
+            if (asked && sm->handle.is_valid()
+                && ((row != d->rows.end() && row->second.state == BtState::Error)
+                    || (sm->handle.flags() & lt::torrent_flags::upload_mode))) {
+                sm->handle.clear_error();
+                sm->handle.unset_flags(lt::torrent_flags::upload_mode);
+                sm->handle.set_flags(lt::torrent_flags::auto_managed);
+                sm->handle.resume();
+            }
+            d->saveResume(sm->handle);   // the new save_path survives a restart
+            sm->handle.post_status();
+            emit torrentChanged(id);
+        } else if (auto* mf = lt::alert_cast<lt::storage_moved_failed_alert>(a)) {
+            d->moving.remove(BtTorrentView::idOf(mf->handle.info_hashes()));
+            logError(QStringLiteral("BitTorrent: %1").arg(message(a)));
+            mf->handle.post_status();
         } else if (lt::alert_cast<lt::torrent_error_alert>(a) || lt::alert_cast<lt::file_error_alert>(a)) {
             if (auto* fe = lt::alert_cast<lt::file_error_alert>(a))
                 d->pendingPriorities.erase(BtTorrentView::idOf(fe->handle.info_hashes()));

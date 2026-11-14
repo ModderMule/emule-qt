@@ -1636,6 +1636,10 @@ public:
     /// the node. IPC/REST key `ed3kForceOpen`.
     [[nodiscard]] bool ed3kForceOpen() const;
     void setEd3kForceOpen(bool val);
+    /// Dial the index node an eD2K server names (ST_ED3K, ed3k §11) on its own. Default off:
+    /// kept only. Live; off again drops a dialled one at a node restart. IPC/REST `ed3kAutoIndexNode`.
+    [[nodiscard]] bool ed3kAutoIndexNode() const;
+    void setEd3kAutoIndexNode(bool val);
     /// Hiding (hops.md §1), the global switch: new ed3k searches, downloads and shares go under
     /// the anonymous key while on; files keep their key. Default off; live. IPC/REST `ed3kHide`.
     [[nodiscard]] bool ed3kHide() const;

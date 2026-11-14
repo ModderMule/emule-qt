@@ -244,6 +244,7 @@ private slots:
     void anAutomaticAddStillGetsAutoCategorised();
     void leavesNoScratchBehind();
     void persistedStateResumesInsteadOfRefetching();
+    void moveItemTakesTheWorkFolderAndGoesOn();
     void awkwardSidecarStringsSurviveTheRoundTrip();
     void anUnchangedSettingsSaveKeepsTheConnections();
     void connectionBudgetIsDividedNotReplicated();
@@ -499,6 +500,46 @@ void tst_UsenetQueue::persistedStateResumesInsteadOfRefetching()
     QVERIFY(!loaded.files.at(0).done.testBit(3));
     QCOMPARE(loaded.files.at(0).missingSegments, 1);
     QCOMPARE(loaded.doneSegmentCount(), 2);
+}
+
+// #187: a queued job's work folder moves; its paths follow, it goes on, a restart keeps it
+void tst_UsenetQueue::moveItemTakesTheWorkFolderAndGoesOn()
+{
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    UsenetQueue queue;
+    queue.start();
+    QString error;
+    const QString id = queue.addNzb(makeNzb(QStringLiteral("move.bin"), 4), QStringLiteral("move"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+    const QString oldPath = queue.findItem(id)->files.at(0).tempPath;
+    QDir().mkpath(QFileInfo(oldPath).absolutePath());
+    QFile part(oldPath);
+    QVERIFY(part.open(QIODevice::WriteOnly));
+    part.write("partial");
+    part.close();
+
+    const QString root = tmp.filePath(QStringLiteral("elsewhere"));
+    QCOMPARE(queue.moveItem(id, root), QString());
+    QVERIFY(!queue.moveItem(id, root).isEmpty());   // one move at a time
+    QTRY_COMPARE(queue.findItem(id)->workRoot, root);
+
+    const UsenetQueueItem* item = queue.findItem(id);
+    const QString newPath = item->files.at(0).tempPath;
+    QVERIFY(newPath.startsWith(QDir(root).filePath(id) + u'/'));
+    QVERIFY(QFile::exists(newPath));
+    QVERIFY(!QFile::exists(oldPath));
+    QVERIFY2(item->status != UsenetItemStatus::Paused, "the running job did not go on");
+    queue.stop();
+
+    UsenetQueueItem loaded;
+    QVERIFY(UsenetQueueStore::load(UsenetQueueStore::statePath(id), loaded, error));
+    QCOMPARE(loaded.workRoot, root);
+    QCOMPARE(loaded.workDir(thePrefs.usenetTempDir()), QDir(root).filePath(id));
 }
 
 void tst_UsenetQueue::awkwardSidecarStringsSurviveTheRoundTrip()

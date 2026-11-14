@@ -738,8 +738,8 @@ int SourceSaver::injectRecords(PartFile* file, const std::vector<SavedSource>& r
     }
 
     if (added > 0) {
-        logInfo(QStringLiteral("Restored %1 saved source(s) for %2")
-                    .arg(added).arg(file->fileName()));
+        logDebug(QStringLiteral("Restored %1 saved source(s) for %2")
+                     .arg(added).arg(file->fileName()));
     }
     return added;
 }

@@ -635,8 +635,8 @@ void ClientUDPSocket::purgeExpiredPackets()
         m_controlQueue.pop_front();
 
     if (m_droppedQueueFull > 0 && now - m_lastQueueFullLog >= MIN2MS(1)) {
-        logWarning(QStringLiteral("Client UDP send queue full — dropped %1 packets")
-                       .arg(m_droppedQueueFull));
+        logDebug([&]() -> QString { return QStringLiteral("Client UDP send queue full — dropped %1 packets")
+                       .arg(m_droppedQueueFull); });
         m_droppedQueueFull = 0;
         m_lastQueueFullLog = now;
     }
@@ -706,7 +706,7 @@ void ClientUDPSocket::growReceiveBuffer()
     m_socket.setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption, kReceiveBufferSize);
     const int got = receiveBufferSize();
     if (got < kMinReceiveBufferSize)
-        logWarning(QStringLiteral("ClientUDPSocket: receive buffer is only %1 bytes").arg(got));
+        logDebug([&]() -> QString { return QStringLiteral("ClientUDPSocket: receive buffer is only %1 bytes").arg(got); });
     else
         logDebug([&]() -> QString { return QStringLiteral("ClientUDPSocket: receive buffer %1 bytes").arg(got); });
 }
@@ -773,7 +773,7 @@ bool ClientUDPSocket::writeDatagramNow(const QByteArray& data, const Endpoint& t
         if (const QString line = gate.filter(error, QStringLiteral("UDP send failed to %1 — %2")
                                                         .arg(to.toString(), error));
             !line.isEmpty())
-            logWarning(line);
+            logDebug(line);
         return false;
     }
     return true;

@@ -472,8 +472,8 @@ void UpDownClient::processFileStatus(bool udpPacket, SafeMemFile& data, PartFile
         m_partCount = file ? file->partCount() : 0;
     } else {
         if (file && file->ed2kPartCount() != wirePartCount) {
-            logWarning(QStringLiteral("processFileStatus: wrong part count recv=%1 expected=%2")
-                           .arg(wirePartCount).arg(file->ed2kPartCount()));
+            logDebug([&]() -> QString { return QStringLiteral("processFileStatus: wrong part count recv=%1 expected=%2")
+                           .arg(wirePartCount).arg(file->ed2kPartCount()); });
             m_partCount = 0;
             return;
         }
@@ -2307,8 +2307,8 @@ void UpDownClient::processAICHFileHash(SafeMemFile* data, PartFile* file,
     // It answered with a different hash than the one we have verified, so it does not
     // have our file. Handle it like a file-not-found and drop it as a source —
     // MFC DownloadClient.cpp:2158-2187.
-    logWarning(QStringLiteral("Client %1 reports a different AICH hash for %2 — removing source")
-                   .arg(userName(), partFile->fileName()));
+    logDebug([&]() -> QString { return QStringLiteral("Client %1 reports a different AICH hash for %2 — removing source")
+                   .arg(userName(), partFile->fileName()); });
 
     // Dead for this file only: it may be a fine source for another one.
     partFile->deadSourceList().addDeadSource(deadSourceKey(), hasLowID());

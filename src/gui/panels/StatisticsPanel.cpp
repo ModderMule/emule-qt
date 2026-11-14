@@ -702,6 +702,24 @@ void StatisticsPanel::buildTree()
         item->setHidden(true);
     }
 
+    // ===== Memory ===== (not in MFC)
+    auto* memory = new QTreeWidgetItem(m_tree, {tr("Memory")});
+    memory->setIcon(0, skinIcon(QStringLiteral(":/icons/StatsGeneric.ico")));
+    m_itemMemProcess = new QTreeWidgetItem(memory);
+    m_itemMemProcess->setToolTip(0, tr("RAM of the core: private bytes on Windows, memory footprint on macOS, "
+                                       "resident size on Linux."));
+    m_itemMemUpload = new QTreeWidgetItem(memory);
+    m_itemMemUpload->setToolTip(0, tr("File data read for eD2K upload slots and not sent yet."));
+    m_itemMemDownload = new QTreeWidgetItem(memory);
+    m_itemMemDownload->setToolTip(0, tr("eD2K download data received and not written to disk yet."));
+    m_itemMemEd3kHashes = new QTreeWidgetItem(memory);
+    m_itemMemEd3kHashes->setToolTip(0, tr("Block hashes of shared files that ed3k keeps in RAM, and the limit "
+                                          "set in Options › ed3k › Extended."));
+    m_itemMemEd3kRecords = new QTreeWidgetItem(memory);
+    m_itemMemEd3kRecords->setToolTip(0, tr("Records ed3k Kad stores for other nodes."));
+    m_itemMemEd3kHashes->setHidden(true);
+    m_itemMemEd3kRecords->setHidden(true);
+
     // ===== Kademlia ===== (not in MFC, which shows Kad only as overhead lines)
     buildKademliaBranch(detailIcon, cumulativeIcon);
 
@@ -1693,6 +1711,20 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
             tr("Additional Space Needed for Downloads: %1").arg(formatByteSize(needed)));
     }
 
+    // === Memory ===
+    {
+        const qint64 now = cborInt(stats, QLatin1StringView("memProcess"));
+        const qint64 peak = cborInt(stats, QLatin1StringView("memProcessPeak"));
+        QString text = tr("Core Process: %1").arg(now > 0 ? formatByteSize(now) : tr("N/A"));
+        if (peak > 0)
+            text += tr(" (peak %1)").arg(formatByteSize(peak));
+        m_itemMemProcess->setText(0, text);
+        m_itemMemUpload->setText(0, tr("eD2K Upload Buffers: %1")
+            .arg(formatByteSize(cborInt(stats, QLatin1StringView("memUploadBuffers")))));
+        m_itemMemDownload->setText(0, tr("eD2K Download Buffers: %1")
+            .arg(formatByteSize(cborInt(stats, QLatin1StringView("memDownloadBuffers")))));
+    }
+
     // Free space per network's save folder (#165); a network that is off has no entry
     {
         const QCborMap space = stats.value(QStringLiteral("saveFolderSpace")).toMap();
@@ -1829,6 +1861,19 @@ void StatisticsPanel::applyHosterStats(const QCborMap& data)
 void StatisticsPanel::applyEd3kStatus(const QCborMap& st)
 {
     // a core without ed3k: no branch at all
+    const QCborMap engine = st.value(QStringLiteral("stats")).toMap();
+    const bool engineUp = st.value(QStringLiteral("available")).toBool() && !engine.isEmpty();
+    m_itemMemEd3kHashes->setHidden(!engineUp);
+    m_itemMemEd3kRecords->setHidden(!engineUp);
+    if (engineUp) {
+        const qint64 budget = st.value(QStringLiteral("hashRamBudget")).toInteger(-1);
+        const QString held = formatByteSize(engine.value(QStringLiteral("hashRamBytes")).toInteger());
+        m_itemMemEd3kHashes->setText(0, budget >= 0 ? tr("ed3k Block Hashes: %1 of %2").arg(held, formatByteSize(budget))
+                                                    : tr("ed3k Block Hashes: %1").arg(held));
+        m_itemMemEd3kRecords->setText(0, tr("ed3k Kad Records: %1")
+            .arg(formatByteSize(engine.value(QStringLiteral("recordBytes")).toInteger())));
+    }
+
     if (!st.value(QStringLiteral("available")).toBool()) {
         m_itemEd3k->setHidden(true);
         return;

@@ -115,6 +115,8 @@ private:
     void editTrackers(const QStringList& ids, const QList<QStringList>& urls);
     /// Options… for the whole selection (#143).
     void onEditOptions();
+    /// "Move To Folder..." (#187): the selected torrents' data to one folder.
+    void onMoveToFolder();
     void editOptions(const QStringList& ids, const QList<QCborMap>& options);
     void onPasteMagnets();
     void showDetails(const QString& id);
@@ -148,6 +150,7 @@ private:
     QAction* m_reannounceAction = nullptr;
     QAction* m_editTrackersAction = nullptr;
     QAction* m_optionsAction = nullptr;
+    QAction* m_moveAction = nullptr;
     QAction* m_openFolderAction = nullptr;
     QAction* m_copyMagnetAction = nullptr;
     QAction* m_pasteMagnetAction = nullptr;

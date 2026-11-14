@@ -143,6 +143,8 @@ private:
     void sendEd3kControl(const QStringList& roots, int action, qint64 value = 0);
     /// MoveEd3kFileKey of each ed3k download (hops.md §1: asks first).
     void moveEd3kKey(const QStringList& roots, bool toAnon);
+    /// "Move To Folder..." (#187): the unfinished data of eD2K and ed3k rows to one folder.
+    void moveDownloadsToFolder(QStringList hashes);
     void requestDownloadSources(const QString& hash);
     void requestUploads();
     void requestDownloadClients();

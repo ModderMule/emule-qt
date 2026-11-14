@@ -368,6 +368,8 @@ private:
     /// Ask for the next page of @p tab, when it has one. The More button's way in.
     void requestMore(SearchTab& tab);
     void updateMoreButton();
+    /// Grey the result check boxes neither the form's method nor the open tab uses.
+    void updateNetworkChecks();
     /// Hide the rows of unticked networks. A tab that asked for one network shows all.
     void applyNetworkFilter(SearchTab& tab);
     /// The "ed3k Filter" submenu of the result menu (filter-list.md §2, §3).

@@ -1939,6 +1939,94 @@ private slots:
         QVERIFY(!QFileInfo::exists(it.file + QStringLiteral(".met")));
     }
 
+    /// "Move to" (#187): a paused item's part and .met go to the new folder and stay paused;
+    /// a restart with that folder among the temp dirs finds it, and it goes on from its blocks
+    void move_pausedItemGoesOnInNewFolder()
+    {
+        Rig r;
+        r.resolver.data = content(3 * 1024 * 1024 + 77);
+        const QString url = QStringLiteral("https://fake.example/f/mv1");
+        const QString temp = r.tmp.filePath(QStringLiteral("temp"));
+        QVERIFY(writeHeld(temp, QStringLiteral("00000000000000d1"), url, r.resolver.data, 6, true));
+        QVERIFY(r.start(true));
+        const quint32 id = idOf(*r.join, url);
+        QVERIFY(id != 0);
+        QCOMPARE(r.state(id), Ed3kHosterJoin::State::Paused);
+        const QString oldPart = r.join->item(id)->file;
+        const QString disk2 = r.tmp.filePath(QStringLiteral("disk2"));
+        const QString newPart = QDir(disk2).filePath(QFileInfo(oldPart).fileName());
+
+        QCOMPARE(r.join->moveTo(id, disk2), QString());
+        QCOMPARE(r.join->moveTo(id, disk2), QStringLiteral("busy"));   // one move at a time
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->item(id)->file, newPart, 10000);
+        eMule::BackgroundFileWriter::instance().flush();
+        QVERIFY(QFileInfo::exists(newPart + QStringLiteral(".met")));
+        QVERIFY(!QFileInfo::exists(oldPart));
+        QVERIFY(!QFileInfo::exists(oldPart + QStringLiteral(".met")));
+        QCOMPARE(r.state(id), Ed3kHosterJoin::State::Paused);
+        {
+            QFile f(newPart);
+            QVERIFY(f.open(QIODevice::ReadOnly));
+            QCOMPARE(f.readAll(), r.resolver.data.left(6 * 256 * 1024));
+        }
+
+        // restarted with the folder as a second temp dir, as the daemon keeps it
+        r.join->stop();
+        r.join.reset();
+        eMule::BackgroundFileWriter::instance().flush();
+        r.join = std::make_unique<Ed3kHosterJoin>(r.session, r.tmp.filePath(QStringLiteral("cfg")));
+        r.join->setResolver(&r.resolver);
+        r.join->setConfig(r.prefs, QStringList{temp, disk2}, r.tmp.filePath(QStringLiteral("incoming")));
+        r.join->start();
+        const quint32 again = idOf(*r.join, url);
+        QVERIFY(again != 0);
+        QCOMPARE(r.join->item(again)->file, newPart);
+        QCOMPARE(r.join->item(again)->done, std::uint64_t(6 * 256 * 1024));
+        r.join->resume(again);
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(again), Ed3kHosterJoin::State::Complete, 60000);
+        QCOMPARE(r.resolver.lastHave, std::uint64_t(6 * 256 * 1024));
+        QFile f(r.join->item(again)->file);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QCOMPARE(f.readAll(), r.resolver.data);
+    }
+
+    /// a running item pauses for the move and goes on in the new folder by itself
+    void move_runningItemGoesOnThere()
+    {
+        Rig r;
+        r.resolver.data = content(3 * 1024 * 1024 + 77);
+        r.resolver.breakAt = 1800 * 1024;   // the hoster says busy once: time to move
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/f/mv2"));
+        QCOMPARE(ids.size(), 1);
+        const quint32 id = ids[0];
+        QTRY_VERIFY_WITH_TIMEOUT(r.join->item(id)->done >= 1024 * 1024, 20000);
+        QVERIFY(r.state(id) != Ed3kHosterJoin::State::Complete);
+        const QString disk2 = r.tmp.filePath(QStringLiteral("disk2"));
+
+        QCOMPARE(r.join->moveTo(id, disk2), QString());
+        QTRY_VERIFY_WITH_TIMEOUT(QFileInfo(r.join->item(id)->file).absolutePath() == QDir::cleanPath(disk2)
+                                     || r.state(id) == Ed3kHosterJoin::State::Complete, 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(id), Ed3kHosterJoin::State::Complete, 60000);
+        QVERIFY(r.resolver.opens >= 2);
+        QFile f(r.join->item(id)->file);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        QCOMPARE(f.readAll(), r.resolver.data);
+        QVERIFY(QDir(disk2).entryList(QDir::Files).filter(QStringLiteral(".hoster.part")).isEmpty());
+    }
+
+    /// done items, unknown ids and relative folders are refused
+    void move_refusals()
+    {
+        Rig r;
+        r.resolver.data = content(512 * 1024);
+        QVERIFY(r.start(true));
+        QVERIFY(!r.join->moveTo(4242, r.tmp.filePath(QStringLiteral("x"))).isEmpty());
+        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/f/mv3"));
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+        QCOMPARE(r.join->moveTo(ids[0], r.tmp.filePath(QStringLiteral("x"))), QStringLiteral("already complete"));
+    }
+
     /// no resolver at all (EMULE_HOSTER_JD off): the item says so
     void noResolver_built()
     {

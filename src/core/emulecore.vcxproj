@@ -310,6 +310,8 @@
     <ClCompile Include="utils\StallWatchdog.cpp" />
     <ClCompile Include="utils\FileDate.cpp" />
     <ClCompile Include="utils\CommandLine.cpp" />
+    <ClCompile Include="utils\FileRelocate.cpp" />
+    <ClCompile Include="utils\FolderList.cpp" />
     <ClCompile Include="utils\PathUtils.cpp" />
     <ClCompile Include="utils\PerfLog.cpp" />
     <ClCompile Include="net\Pinger.cpp" />
@@ -608,6 +610,8 @@
     <ClInclude Include="utils\StallWatchdog.h" />
     <ClInclude Include="utils\FileDate.h" />
     <ClInclude Include="utils\CommandLine.h" />
+    <ClInclude Include="utils\FileRelocate.h" />
+    <ClInclude Include="utils\FolderList.h" />
     <ClInclude Include="utils\PathUtils.h" />
     <ClInclude Include="utils\PerfLog.h" />
     <ClInclude Include="net\Address.h" />

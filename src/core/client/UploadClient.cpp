@@ -385,7 +385,7 @@ void UpDownClient::addReqBlock(Requested_Block_Struct* reqBlock)
                                    .arg(RepeatChunkGuard::kMaxDeliveries);
         delete reqBlock;
         if (thePrefs.logBannedClients())
-            logWarning(QStringLiteral("Clients: %1 (%2), %3")
+            logLeecher(QStringLiteral("Clients: %1 (%2), %3")
                            .arg(userName(), ipstr(m_userAddress), reason));
         ban(reason, RepeatChunkGuard::kBanMs);
         if (theApp.uploadQueue)

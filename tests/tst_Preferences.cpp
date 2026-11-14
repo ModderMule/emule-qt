@@ -528,6 +528,24 @@ private slots:
         QCOMPARE(Preferences{}.ed3kLan(), false);
     }
 
+    // a server's index node: default off, through YAML and the IPC map
+    void ed3kAutoIndexNode_defaultOffAndRoundTrip()
+    {
+        QCOMPARE(Preferences{}.ed3kAutoIndexNode(), false);
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("autoindex.yaml"));
+        {
+            Preferences prefs;
+            QVERIFY(prefs.load(file));
+            prefs.setEd3kAutoIndexNode(true);
+            QVERIFY(prefs.save());
+        }
+        Preferences prefs;
+        QVERIFY(prefs.load(file));
+        QVERIFY(prefs.ed3kAutoIndexNode());
+        QCOMPARE(prefs.toIpcMap().value(QStringLiteral("ed3kAutoIndexNode")).toBool(), true);
+    }
+
     // Every key through YAML and the IPC map, non-default values throughout
     void bittorrent_roundTrip()
     {

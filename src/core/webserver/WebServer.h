@@ -196,6 +196,11 @@ public:
         m_usenetStreamResolver = std::move(resolver);
     }
 
+    /// ed3k preview: the file of a download named by its 64-hex root (part file while
+    /// unfinished). Returns false when there is none. Injected like the Usenet resolver.
+    using Ed3kFileResolver = std::function<bool(const QString& hexRoot, QString& path, QString& name)>;
+    void setEd3kFileResolver(Ed3kFileResolver resolver) { m_ed3kFileResolver = std::move(resolver); }
+
     /// The Usenet page and the /api/v1/usenet routes. Optional and not owned:
     /// without it both answer "Usenet engine unavailable".
     void setUsenetBackend(UsenetWebBackend* backend) { m_usenetBackend = backend; }
@@ -669,6 +674,8 @@ private:
 
     // Usenet stream resolver (injected by DaemonApp; null in a core-only build)
     UsenetStreamResolver m_usenetStreamResolver;
+    // ed3k download file resolver (injected by DaemonApp; null without ed3k)
+    Ed3kFileResolver m_ed3kFileResolver;
 
     // Usenet queue (injected by DaemonApp; not owned)
     UsenetWebBackend* m_usenetBackend = nullptr;

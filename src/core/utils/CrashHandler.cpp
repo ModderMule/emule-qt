@@ -384,7 +384,7 @@ void CrashHandler::install(const QString& crashDir)
     // MSVC keeps this per thread: covers the main thread, where Qt runs events
     std::set_terminate(terminateHandler);
 
-    logInfo(QStringLiteral("CrashHandler installed — dumps will be written to %1").arg(crashDir));
+    logDebug(QStringLiteral("CrashHandler installed — dumps will be written to %1").arg(crashDir));
 }
 
 QString CrashHandler::crashDir()

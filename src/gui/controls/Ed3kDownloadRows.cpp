@@ -34,6 +34,7 @@ DownloadRow ed3kDownloadRow(const QCborMap& m)
     row.ed3kPath = m.value(QStringLiteral("path")).toString();
     row.ed3kKey = m.value(QStringLiteral("key")).toString();   // batch 15, hops.md §1
     row.previewPrio = m.value(QStringLiteral("previewPrio")).toBool();
+    row.isPreviewPossible = m.value(QStringLiteral("isPreviewPossible")).toBool();
     row.fileType = getFileTypeByName(row.fileName);
     // the eD2K status tokens (statusText): verifying shows as "Completing (Hashing)"
     switch (m.value(QStringLiteral("state")).toInteger()) {

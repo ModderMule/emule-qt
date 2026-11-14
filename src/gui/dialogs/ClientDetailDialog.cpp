@@ -9,7 +9,6 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
-#include <QProxyStyle>
 #include <QTabWidget>
 #include <QVBoxLayout>
 
@@ -24,6 +23,7 @@
 #include "utils/DialogSizing.h"
 #include "utils/OtherFunctions.h"
 #include "utils/StringUtils.h"
+#include "utils/TooltipDelayStyle.h"
 
 namespace eMule {
 
@@ -111,14 +111,20 @@ QString ccKey(const QCborMap& d)
 }
 
 /// The app style with the tabs of a QTabWidget on the left (macOS centres them).
-class LeftTabsStyle final : public QProxyStyle {
+/// App base style, not the desktop one: Win10 dark Fusion fallback (#184)
+class LeftTabsStyle final : public TooltipDelayStyle {
 public:
+    LeftTabsStyle()
+        : TooltipDelayStyle(createAppBaseStyle())
+    {
+    }
+
     int styleHint(StyleHint hint, const QStyleOption* option, const QWidget* widget,
                   QStyleHintReturn* returnData) const override
     {
         if (hint == SH_TabBar_Alignment)
             return Qt::AlignLeft;
-        return QProxyStyle::styleHint(hint, option, widget, returnData);
+        return TooltipDelayStyle::styleHint(hint, option, widget, returnData);
     }
 };
 
@@ -413,6 +419,11 @@ QWidget* ClientDetailDialog::buildEd3kContent(const QCborMap& d)
                         3, 1, Qt::AlignTop);
         addGridRow(grid, 3, 2, tr("Connected"),
                    d.value(QLatin1StringView("isConnected")).toBool() ? tr("Yes") : tr("No"));
+        // Hello.caps ROUTER (§2): in routing tables; else a leaf. The anonymous key never routes
+        addGridRow(grid, 4, 0, tr("Role"), anonymous ? tr("hidden") : !helloKnown ? unknown
+                   : d.value(QLatin1StringView("indexNode")).toBool()
+                       ? (d.value(QLatin1StringView("router")).toBool() ? tr("Index node, router") : tr("Index node"))
+                   : d.value(QLatin1StringView("router")).toBool() ? tr("Router") : tr("Leaf"));
         if (thePrefs.showExtControls())
             addGridRow(grid, 4, 2, tr("LAN"), d.value(QLatin1StringView("lan")).toBool() ? tr("Yes") : tr("No"));
 

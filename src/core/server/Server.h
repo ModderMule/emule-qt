@@ -188,6 +188,10 @@ public:
         return hasMetaApi() && (m_metaNetworks == 0 || (m_metaNetworks & (1u << network)) != 0);
     }
 
+    /// The ed3k index node this server names (ST_ED3K, an ed3k:node link); in memory only.
+    [[nodiscard]] const QString& ed3kLink() const       { return m_ed3kLink; }
+    void setEd3kLink(const QString& link)               { m_ed3kLink = link; }
+
     // -- Stats ------------------------------------------------------------
 
     [[nodiscard]] uint32 files() const          { return m_files; }
@@ -467,6 +471,7 @@ private:
     QString m_metaApiUrl;
     QString m_metaApiPin;
     uint32  m_metaNetworks = 0;
+    QString m_ed3kLink;
 };
 
 } // namespace eMule

@@ -122,6 +122,9 @@ void FirstStartWizard::setupHeader()
     header->setAutoFillBackground(true);
     auto pal = header->palette();
     pal.setColor(QPalette::Window, Qt::white);
+    // fixed white bar (mascot GIF has white bg) → dark text, else dark mode draws light on white
+    pal.setColor(QPalette::WindowText, Qt::black);
+    pal.setColor(QPalette::Text, Qt::black);
     header->setPalette(pal);
     header->setFixedHeight(62);
 

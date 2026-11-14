@@ -41,7 +41,7 @@ bool WebTemplateEngine::loadTemplate(const QString& filePath)
     const QString content = stream.readAll();
     parseSections(content);
 
-    logInfo(QStringLiteral("WebTemplateEngine: loaded %1 sections from %2")
+    logDebug(QStringLiteral("WebTemplateEngine: loaded %1 sections from %2")
                 .arg(m_sections.size()).arg(filePath));
     return !m_sections.isEmpty();
 }

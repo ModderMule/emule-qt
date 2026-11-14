@@ -2031,8 +2031,8 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
     if (theApp.ipFilter && !m_connectAddress.isNull()
         && theApp.ipFilter->isFiltered(m_connectAddress, thePrefs.ipFilterLevel())) {
         if (thePrefs.logFilteredIPs()) {
-            logWarning(QStringLiteral("Refused to connect to filtered client (IP=%1) - IP filter (%2)")
-                           .arg(ipstr(m_connectAddress), theApp.ipFilter->lastHitDescription()));
+            logDebug([&]() -> QString { return QStringLiteral("Refused to connect to filtered client (IP=%1) - IP filter (%2)")
+                           .arg(ipstr(m_connectAddress), theApp.ipFilter->lastHitDescription()); });
         }
         if (theApp.statistics)
             theApp.statistics->addFilteredClient();
@@ -2081,8 +2081,8 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
         // The caller asked for a direct dial only — a Kad firewall check or a buddy request,
         // where a callback would answer a question we never asked.
         if (noCallbacks) {
-            logWarning(QStringLiteral("tryToConnect: callback wanted for a no-callback client %1")
-                           .arg(userName()));
+            logDebug([&]() -> QString { return QStringLiteral("tryToConnect: callback wanted for a no-callback client %1")
+                           .arg(userName()); });
             disconnected(QStringLiteral("LowID: no callback allowed"));
             return false;
         }
@@ -2225,7 +2225,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
             if (kad::Kademlia::instance()->getPrefs()->totalSource() > 0
                 || kad::SearchManager::alreadySearchingFor(buddyKadId))
             {
-                logWarning(QStringLiteral("tryToConnect: Buddy without known IP, FindSource lookup currently impossible"));
+                logDebug(QStringLiteral("tryToConnect: Buddy without known IP, FindSource lookup currently impossible"));
                 return true;
             }
             auto* findSource = new kad::Search;
@@ -3111,8 +3111,8 @@ void UpDownClient::processSharedFileList(const uint8* data, uint32 size, const Q
     try {
         searchID = theApp.searchList->processClientSharedFiles(*this, data, size, dir);
     } catch (const std::exception& ex) {
-        logWarning(QStringLiteral("Malformed shared file list from %1: %2")
-                       .arg(userName(), QString::fromUtf8(ex.what())));
+        logDebug([&]() -> QString { return QStringLiteral("Malformed shared file list from %1: %2")
+                       .arg(userName(), QString::fromUtf8(ex.what())); });
         searchID = m_searchID; // tab may exist already; show what did parse
     }
     if (searchID == 0)
@@ -4317,7 +4317,11 @@ void UpDownClient::processKadFwTcpCheckAck()
             peerIpNet = Address::fromQHostAddress(addr).toNetworkUint32();
     }
     if (theApp.clientList && !theApp.clientList->takeKadFirewallAck(peerIpNet)) {
-        logWarning(QStringLiteral("Unrequested OP_KAD_FWTCPCHECK_ACK from %1").arg(dbgGetClientInfo()));
+        // Debug like MFC: a CGNAT peer's TCP IP often differs from its Kad UDP IP,
+        // and a second ACK from one IP is refused too (one witness per address)
+        logDebug([&]() -> QString {
+            return QStringLiteral("Unrequested or repeated OP_KAD_FWTCPCHECK_ACK from %1").arg(dbgGetClientInfo());
+        });
         return;
     }
     if (auto* prefs = kad::Kademlia::getInstancePrefs())

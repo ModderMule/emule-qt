@@ -327,6 +327,19 @@ void setHoster(ed3k::Ed3kHosterJoin* join, ed3k::Ed3kResolver* resolver, ed3k::E
 #endif
 }
 
+QString moveTo([[maybe_unused]] const QString& id, [[maybe_unused]] const QString& dir)
+{
+#ifdef EMULE_HAVE_ED3K
+    bool ok = false;
+    const quint32 n = id.toUInt(&ok);
+    if (!s_join || !ok)
+        return QStringLiteral("no such item");
+    return s_join->moveTo(n, dir);
+#else
+    return QStringLiteral("no hoster downloads");
+#endif
+}
+
 void setGrabber(ed3k::Ed3kLinkGrabber* grabber)
 {
 #ifdef EMULE_HAVE_ED3K

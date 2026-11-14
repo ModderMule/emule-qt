@@ -230,6 +230,8 @@ SOURCES += \
     utils/MassRename.cpp \
     utils/OtherFunctions.cpp \
     utils/SidecarProcess.cpp \
+    utils/FileRelocate.cpp \
+    utils/FolderList.cpp \
     utils/PathUtils.cpp \
     utils/PerfLog.cpp \
     utils/SafeFile.cpp \
@@ -435,6 +437,8 @@ HEADERS += \
     utils/MassRename.h \
     utils/OtherFunctions.h \
     utils/SidecarProcess.h \
+    utils/FileRelocate.h \
+    utils/FolderList.h \
     utils/PathUtils.h \
     utils/PerfLog.h \
     utils/PlatformUtils.h \

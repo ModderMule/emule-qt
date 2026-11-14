@@ -41,6 +41,7 @@ private slots:
     void rpcWithoutEndpointFails();
     void trafficCountedAcrossRestart();
     void limitsKeptAcrossRestart();
+    void serverIndexNode_dialledOnlyWithAutoConnect();
 
 private:
     static Ed3kSettings loopback(const QString& dir);
@@ -209,9 +210,11 @@ void tst_Ed3kSession::stateSavedOnStopAndLoaded()
         Ed3kSession a;
         QVERIFY(a.start(loopback(da.path())));
         QVERIFY(connectPair(a, b));
+        // kad.dat is written only with contacts (saveState): B is in the table after its Hello
+        QTRY_VERIFY_WITH_TIMEOUT(a.contactCount() > 0, 10000);
         a.stop();
-        QVERIFY(QFile::exists(kad));
-        QVERIFY(QFileInfo(kad).size() > 0);
+        // written in the background (writeBlobLater)
+        QTRY_VERIFY_WITH_TIMEOUT(QFileInfo(kad).size() > 0, 5000);
     }
     // no bootstrap call this time: B comes back from kad.dat (loaded before any datagram)
     Ed3kSession again;
@@ -560,6 +563,66 @@ void tst_Ed3kSession::limitsKeptAcrossRestart()
     s.setLimits(0, 0);
     QCOMPARE(s.limits().up, std::uint64_t(0));
     s.stop();
+}
+
+// pref ed3kAutoIndexNode: a server's ST_ED3K node is kept while off, dialled once on; off
+// again keeps the connection; the server's Disconnect drops it without a restart
+void tst_Ed3kSession::serverIndexNode_dialledOnlyWithAutoConnect()
+{
+    QTemporaryDir dirA, dirB;
+    QVERIFY(dirA.isValid() && dirB.isValid());
+    Ed3kSession a, b;
+    QVERIFY(b.start(loopback(dirB.path())));
+    QVERIFY(a.start(loopback(dirA.path())));
+    const QString link = QStringLiteral("ed3k:node?id=%1&ep=127.0.0.1:%2").arg(b.nodeIdHex().toLower()).arg(b.udpPort());
+    const auto connectedToB = [&] {
+        const auto links = a.status().indexLinks;
+        return links.size() == 1 && links.front().state == 2;   // ED3K_INDEX_CONNECTED
+    };
+
+    QVERIFY(!a.autoIndexNodes());
+    QVERIFY(a.addIndexLink(link));
+    QTest::qWait(300);
+    QVERIFY(a.status().indexLinks.isEmpty());
+
+    a.setAutoIndexNodes(true);
+    QTRY_COMPARE_WITH_TIMEOUT(a.status().indexLinks.size(), 1, 5000);
+    QCOMPARE(a.status().indexLinks.front().nodeId.toLower(), b.nodeIdHex().toLower());
+    QVERIFY(a.status().indexLinks.front().current);
+    QTRY_VERIFY_WITH_TIMEOUT(connectedToB(), 15000);
+
+    // off again: no restart, the connection stays
+    const quint16 port = a.udpPort();
+    a.setAutoIndexNodes(false);
+    QTest::qWait(500);
+    QVERIFY(a.isRunning());
+    QCOMPARE(a.udpPort(), port);
+    QVERIFY(connectedToB());
+
+    // the server's Disconnect: dropped and closed, the node keeps running
+    QVERIFY(a.removeIndexLink(link));
+    QVERIFY(a.status().indexLinks.isEmpty());
+    QVERIFY(a.isRunning());
+    QCOMPARE(a.udpPort(), port);
+    QVERIFY(!a.removeIndexLink(QStringLiteral("ed3k:node?id=zz")));
+    // the server names it again at its next login: dialled again (auto connect on)
+    a.setAutoIndexNodes(true);
+    QVERIFY(a.addIndexLink(link));
+    QTRY_VERIFY_WITH_TIMEOUT(connectedToB(), 15000);
+
+    // kept across a restart, applied again at start
+    a.stop();
+    QVERIFY(a.start(loopback(dirA.path())));
+    QTRY_COMPARE_WITH_TIMEOUT(a.status().indexLinks.size(), 1, 5000);
+
+    // off: kept, not handed to the next engine
+    a.setAutoIndexNodes(false);
+    a.stop();
+    QVERIFY(a.start(loopback(dirA.path())));
+    QTest::qWait(300);
+    QVERIFY(a.status().indexLinks.isEmpty());
+    a.stop();
+    b.stop();
 }
 
 // ---------------------------------------------------------------------------

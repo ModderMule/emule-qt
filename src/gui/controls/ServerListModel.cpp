@@ -134,8 +134,7 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
     // Darker than MFC's 128/192 greys: 192 on white is under 3:1 contrast (issue #18).
     // Bold too while "Show active downloads in bold" is on
     if (role == Qt::FontRole) {
-        if (m_connectedServerId != 0 && r.serverId == m_connectedServerId
-            && thePrefs.showActiveDownloadsBold()) {
+        if (isEmphasised(r) && thePrefs.showActiveDownloadsBold()) {
             QFont font;
             font.setBold(true);
             return font;
@@ -144,7 +143,7 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
     }
 
     if (role == Qt::ForegroundRole) {
-        if (m_connectedServerId != 0 && r.serverId == m_connectedServerId)
+        if (isEmphasised(r))
             return roleColor(TextRole::Info);
         const uint32_t deadRetries = thePrefs.deadServerRetries();
         if (r.disabled || (deadRetries > 0 && r.failed >= deadRetries))
@@ -227,6 +226,7 @@ void ServerListModel::refreshFromCborArray(const QCborArray& servers)
         row.obfuscation = m.value(QStringLiteral("obfuscation")).toBool();
         row.hasMetaApi  = m.value(QStringLiteral("hasMetaApi")).toBool();
         row.addrPort    = m.value(QStringLiteral("addrPort")).toString();
+        row.ed3kLink    = m.value(QStringLiteral("ed3k")).toString();
 
         const int pref  = static_cast<int>(m.value(QStringLiteral("preference")).toInteger());
         row.preferenceValue = pref;
@@ -252,7 +252,7 @@ void ServerListModel::refreshFromCborArray(const QCborArray& servers)
 
     // Force repaint of foreground color after model reset so the connected
     // server row reliably shows blue through the sort proxy model.
-    if (m_connectedServerId != 0 && !m_rows.empty())
+    if ((m_connectedServerId != 0 || !m_indexNodeIds.isEmpty()) && !m_rows.empty())
         emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1), {Qt::ForegroundRole});
 }
 
@@ -300,11 +300,34 @@ void ServerListModel::setConnectedServer(uint32_t serverId)
     refreshEmphasis();
 }
 
+void ServerListModel::setConnectedIndexNodes(const QStringList& nodeIds)
+{
+    QStringList ids;
+    for (const QString& id : nodeIds)
+        if (!id.isEmpty())
+            ids.append(id.toLower());
+    if (ids == m_indexNodeIds)
+        return;
+    m_indexNodeIds = std::move(ids);
+    refreshEmphasis();
+}
+
 void ServerListModel::refreshEmphasis()
 {
     if (!m_rows.empty())
         emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1),
                          {Qt::ForegroundRole, Qt::FontRole});
+}
+
+// The eD2K server connected to, or one whose ed3k index node is connected
+bool ServerListModel::isEmphasised(const ServerRow& r) const
+{
+    if (m_connectedServerId != 0 && r.serverId == m_connectedServerId)
+        return true;
+    if (r.ed3kLink.isEmpty())
+        return false;
+    const QString link = r.ed3kLink.toLower();
+    return std::ranges::any_of(m_indexNodeIds, [&](const QString& id) { return link.contains(id); });
 }
 
 } // namespace eMule

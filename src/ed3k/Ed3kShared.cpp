@@ -789,7 +789,8 @@ void Ed3kShared::share(File& f, Hashed& h)
         h.inRam = false;
     }
     const auto t = m_session.now();
-    const ffi::FileInfo info{h.root, h.size, name, ed2k, 0, 0, 0, 0, 0, 0};
+    // sources 1: this node, the file held complete (Protocol.md §10.7)
+    const ffi::FileInfo info{h.root, h.size, name, ed2k, 1, 0, 0, 0, 0, 0};
     // was: ToDo: keywords (Publish::Both) for files the user wants found over ed3k search
     // (done: every shared file, as eD2K's share list; only the source while holding back)
     // if (auto ok = e->publish(t, info, ffi::Publish::Source); !ok)

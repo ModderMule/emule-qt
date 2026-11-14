@@ -379,7 +379,7 @@ int ExternalUnpacker::run(const QStringList& args, const QStringList& redactedAr
         }
     }
 
-    logInfo(QStringLiteral("ExternalUnpacker: %1 %2")
+    logDebug(QStringLiteral("ExternalUnpacker: %1 %2")
                 .arg(toolName(), redactedArgs.join(QLatin1Char(' '))));
 
     process.start();

@@ -298,6 +298,16 @@ bt::BtSession* session()
     return s_session;
 }
 
+QString moveTo(const QString& id, const QString& dir)
+{
+    if (!s_session)
+        return QStringLiteral("BitTorrent is off");
+    const QString target = QDir::cleanPath(QDir::fromNativeSeparators(dir));
+    if (target.isEmpty() || QDir::isRelativePath(target))
+        return QStringLiteral("not an absolute folder");
+    return s_session->moveStorage(id, target) ? QString() : QStringLiteral("no such torrent or folder");
+}
+
 void setI2pRouter(I2pRouter* router)
 {
     s_router = router;

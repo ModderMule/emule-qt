@@ -849,7 +849,8 @@ void Ed3kUsenetJoin::onMemberVerified(const QString& itemId, int fileIndex, cons
         logEd3kWarning(QStringLiteral("ed3k usenet: cannot share file %1 of %2").arg(fileIndex).arg(itemId));
         return;
     }
-    const ffi::FileInfo info{root, size, name, std::nullopt, 0, 0, 0, 0, 0, 0};
+    // sources 1: this node, the file held complete (Protocol.md §10.7)
+    const ffi::FileInfo info{root, size, name, std::nullopt, 1, 0, 0, 0, 0, 0};
     // was: e->publish(t, info, m_holdBack ? ffi::Publish::Source : ffi::Publish::Both)
     if (auto ok = publishShared(info); !ok)
         logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: publish of file %1 of %2 failed (error %3)")

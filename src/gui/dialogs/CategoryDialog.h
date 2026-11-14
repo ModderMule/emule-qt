@@ -28,6 +28,8 @@ class QPushButton;
 
 namespace eMule {
 
+class IpcClient;
+
 class CategoryDialog : public QDialog {
     Q_OBJECT
 
@@ -37,7 +39,8 @@ public:
     ///        having to type it, and so clearing the field is an obvious way
     ///        back to "wherever the global incoming dir is".
     explicit CategoryDialog(const DownloadCategory& category,
-                            const QString& defaultIncomingDir, QWidget* parent = nullptr);
+                            const QString& defaultIncomingDir, QWidget* parent = nullptr,
+                            IpcClient* ipc = nullptr);
 
     /// The edited category. Only meaningful after exec() returned Accepted.
     [[nodiscard]] DownloadCategory category() const { return m_category; }
@@ -55,6 +58,7 @@ private:
 
     DownloadCategory m_category;
     QString m_defaultIncomingDir;
+    IpcClient* m_ipc = nullptr;   ///< browses the core's disk
 
     /// kCategoryColorAuto until the user picks one — kept apart from the
     /// button's palette so "Automatic" survives a repaint.

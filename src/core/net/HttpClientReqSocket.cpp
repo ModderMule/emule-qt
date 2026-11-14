@@ -116,8 +116,8 @@ void HttpClientReqSocket::processHttpHeaderPacket(const char* data, uint32 size,
 
             m_httpHeadersSize += line.size();
             if (m_httpHeadersSize > kMaxTotalHeaderSize) {
-                logWarning(QStringLiteral("HTTP headers too large (%1 bytes)")
-                               .arg(m_httpHeadersSize));
+                logDebug([&]() -> QString { return QStringLiteral("HTTP headers too large (%1 bytes)")
+                               .arg(m_httpHeadersSize); });
                 disconnect(QStringLiteral("HTTP headers too large"));
                 return;
             }
@@ -166,7 +166,7 @@ bool HttpClientReqSocket::processHttpResponseBody(const uint8* data, uint32 size
 bool HttpClientReqSocket::processHttpRequest()
 {
     // Client sockets don't expect incoming HTTP requests
-    logWarning(QStringLiteral("Unexpected HTTP request on client socket"));
+    logDebug(QStringLiteral("Unexpected HTTP request on client socket"));
     return false;
 }
 
@@ -218,7 +218,7 @@ bool HttpClientDownSocket::processHttpResponseBody(const uint8* data, uint32 siz
 
 bool HttpClientDownSocket::processHttpRequest()
 {
-    logWarning(QStringLiteral("Unexpected HTTP request on download socket"));
+    logDebug(QStringLiteral("Unexpected HTTP request on download socket"));
     return false;
 }
 

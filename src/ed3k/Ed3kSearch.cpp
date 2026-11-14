@@ -58,7 +58,29 @@ bool Ed3kSearch::isRunning(uint32 searchID) const
     return m_runs.contains(searchID);
 }
 
-std::unique_ptr<SearchFile> Ed3kSearch::toSearchFile(const ::ed3k::FoundFile& found)
+std::map<QByteArray, Ed3kSearch::Availability> Ed3kSearch::availabilityOf(const std::vector<::ed3k::FoundFile>& files)
+{
+    std::map<QByteArray, Availability> out;
+    // one record per publisher: each one a source; counts it sends may overlap, so the most
+    std::map<QByteArray, Availability> publishers;
+    for (const auto& f : files) {
+        const QByteArray root = bytesOf(f.root.bytes);
+        auto& a = out[root];
+        a.complete = std::max({a.complete, f.sources, f.sites});
+        a.partial = std::max(a.partial, f.partial);
+        // older publishers sent 0/0 for a file they hold complete
+        auto& p = publishers[root];
+        ++(f.sources > 0 || f.partial == 0 ? p.complete : p.partial);
+    }
+    for (const auto& [root, p] : publishers) {
+        auto& a = out[root];
+        a.complete = std::max(a.complete, p.complete);
+        a.partial = std::max(a.partial, p.partial);
+    }
+    return out;
+}
+
+std::unique_ptr<SearchFile> Ed3kSearch::toSearchFile(const ::ed3k::FoundFile& found, const Availability* avail)
 {
     if (found.size == 0 || found.name.empty())
         return nullptr;
@@ -67,9 +89,11 @@ std::unique_ptr<SearchFile> Ed3kSearch::toSearchFile(const ::ed3k::FoundFile& fo
     file->setFileSize(EMFileSize(found.size));
     // the list keys rows by a 16-byte hash: the root's first half (never an MD4 of eD2K)
     file->setFileHash(found.root.bytes.data());
-    file->setSourceCount(found.sources);
-    // partial: sources that hold part of it; the rest are complete
-    file->setCompleteSourceCount(found.sources >= found.partial ? found.sources - found.partial : 0);
+    // was: sources as the total, complete = sources - partial (ABI: sources are the complete ones)
+    const Availability own{found.sources, found.partial};
+    const Availability& a = avail ? *avail : own;
+    file->setSourceCount(a.complete + a.partial);
+    file->setCompleteSourceCount(a.complete);
     if (found.duration != 0)
         file->addTagUnique(Tag(FT_MEDIA_LENGTH, uint32(found.duration)));
     if (found.bitrate != 0)
@@ -254,11 +278,13 @@ void Ed3kSearch::onEventPolled(const ::ed3k::Event& event, ::ed3k::KeyKind key, 
         return;
     }
     int added = 0;
+    const auto avail = availabilityOf(found->files);
     for (const auto& f : found->files) {
         // filter lists (batch 12, G): marked rows shown as spam, hidden ones kept hidden
         // was: hidden rows were dropped (if (judged == Judged::Hide) continue;)
         const Verdict judged = m_judge ? m_judge(f) : Verdict{};
-        if (auto row = toSearchFile(f)) {
+        const auto a = avail.find(bytesOf(f.root.bytes));
+        if (auto row = toSearchFile(f, a != avail.end() ? &a->second : nullptr)) {
             (void)applyVerdict(*row, judged);
             addResult(searchID, std::move(row));
             ++added;
@@ -275,10 +301,12 @@ void Ed3kSearch::onEventPolled(const ::ed3k::Event& event, ::ed3k::KeyKind key, 
 void Ed3kSearch::onLiveFound(uint32 searchID, Run& run, const ::ed3k::event::KadFound& found)
 {
     int candidates = 0;
+    const auto avail = availabilityOf(found.files);
     for (const auto& f : found.files) {
         if (!isChannelFile(f))
             continue;
-        auto row = toSearchFile(f);
+        const auto a = avail.find(bytesOf(f.root.bytes));
+        auto row = toSearchFile(f, a != avail.end() ? &a->second : nullptr);
         if (!row)
             continue;
         (void)applyVerdict(*row, m_judge ? m_judge(f) : Verdict{});

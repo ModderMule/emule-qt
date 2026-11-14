@@ -423,6 +423,12 @@
     <ClCompile Include="utils\CommandLine.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\FileRelocate.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\FolderList.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\PathUtils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -1191,6 +1197,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\CommandLine.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\FileRelocate.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\FolderList.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\PathUtils.h">

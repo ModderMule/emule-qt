@@ -1614,6 +1614,7 @@ void ServerConnect::onServerIdent(ServerSocket* socket, const uint8* serverHash,
     if (const Server* cur = socket->currentServer(); cur && cur != entry) {
         entry->setMetaApi(cur->metaApiUrl(), cur->metaApiPin());
         entry->setNatPort(cur->natPort());   // PR_NAT port of this session, never saved
+        entry->setEd3kLink(cur->ed3kLink());
     }
     // A hash of "****" (0x2A2A2A2A) marks an eFarm server. MFC: ServerSocket.cpp:463-470.
     if (serverHash != nullptr

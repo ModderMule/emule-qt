@@ -269,7 +269,7 @@ bool ArchiveRecovery::recoverZip(QFile& input, QFile& output,
                 centralDirEntries.push_back({pos, static_cast<uint64>(output.pos())});
 
                 if (!copyRange(input, output, static_cast<qint64>(pos), static_cast<qint64>(entryTotalSize))) {
-                    logWarning(QStringLiteral("ZIP recovery: copying entry at %1 failed").arg(pos));
+                    logDebug(QStringLiteral("ZIP recovery: copying entry at %1 failed").arg(pos));
                     return false;
                 }
 
@@ -469,7 +469,7 @@ bool ArchiveRecovery::recoverRar(QFile& input, QFile& output,
 
             if (isFilled(pos, pos + totalBlockSize - 1, filled)) {
                 if (!copyRange(input, output, static_cast<qint64>(pos), static_cast<qint64>(totalBlockSize))) {
-                    logWarning(QStringLiteral("RAR recovery: copying block at %1 failed").arg(pos));
+                    logDebug(QStringLiteral("RAR recovery: copying block at %1 failed").arg(pos));
                     return false;
                 }
                 ++blocksRecovered;
@@ -659,7 +659,7 @@ bool ArchiveRecovery::recoverACE(QFile& input, QFile& output,
         if (blockType == kAceFileHeader || blockType == kAceMainHeader) {
             if (isFilled(pos, pos + totalBlockSize - 1, filled)) {
                 if (!copyRange(input, output, static_cast<qint64>(pos), static_cast<qint64>(totalBlockSize))) {
-                    logWarning(QStringLiteral("ACE recovery: copying block at %1 failed").arg(pos));
+                    logDebug(QStringLiteral("ACE recovery: copying block at %1 failed").arg(pos));
                     return false;
                 }
                 ++blocksRecovered;

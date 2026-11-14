@@ -589,7 +589,7 @@ AppConfig::SeedReport AppConfig::seedFrom(const QString& bundleDir, const QStrin
             if (copyAtomic(it.filePath(), destPath)) {
                 ++report.seeded;
                 now.insert(relPath, hashFile(destPath));
-                logInfo(QStringLiteral("Seeded %1").arg(relPath));
+                logDebug(QStringLiteral("Seeded %1").arg(relPath));
             }
             continue;
         }
@@ -635,7 +635,7 @@ AppConfig::SeedReport AppConfig::seedFrom(const QString& bundleDir, const QStrin
             if (copyAtomic(it.filePath(), destPath)) {
                 ++report.refreshed;
                 now.insert(relPath, bundled);
-                logInfo(QStringLiteral("Refreshed %1").arg(relPath));
+                logDebug(QStringLiteral("Refreshed %1").arg(relPath));
             }
             continue;
         }
@@ -680,7 +680,7 @@ AppConfig::SeedReport AppConfig::seedFrom(const QString& bundleDir, const QStrin
             }
             if (QFile::remove(destPath)) {
                 ++report.pruned;
-                logInfo(QStringLiteral("Removed %1 (no longer bundled)").arg(relPath));
+                logDebug(QStringLiteral("Removed %1 (no longer bundled)").arg(relPath));
             }
         }
     }

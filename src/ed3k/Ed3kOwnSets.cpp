@@ -936,7 +936,8 @@ void Ed3kOwnSets::shareMembers(Set& s, Build& b)
         const auto& h = b.hashes[i];
         if (!h || !serveFile(owner, m.root, m.size, name, sealed ? m.sealedPath : m.file, h->hashes))
             continue;
-        const ffi::FileInfo info{m.root, m.size, utf8(name), std::nullopt, 0, 0, 0, 0, 0, 0};
+        // sources 1: this node, the file held complete (Protocol.md §10.7)
+        const ffi::FileInfo info{m.root, m.size, utf8(name), std::nullopt, 1, 0, 0, 0, 0, 0};
         if (sealed) {
             // §8.1, §4.3: a SOURCE record, no KEYWORD or MEMBER record
             // was: if (auto ok = e->publish(t, info, ffi::Publish::Source); !ok)

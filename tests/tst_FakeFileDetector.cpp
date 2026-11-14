@@ -26,6 +26,7 @@ private slots:
     void abuseNames_lowerTheScore();
     void listing_passwordProtected();
     void namesSpanKinds();
+    void mediaDoubleExtension();
     void badSignalName_tokensAndRegex();
     void badSignalComment();
     void claimedType_archiveAsProIsFine();
@@ -236,6 +237,27 @@ void tst_FakeFileDetector::namesSpanKinds()
     // Audio and video are one kind: the soundtrack of a film is not a fake
     in.observedNames = {QStringLiteral("Il Diavolo Veste Prada.ac3")};
     QVERIFY(!assess(in).has(FakeReason::NamesSpanKinds));
+}
+
+void tst_FakeFileDetector::mediaDoubleExtension()
+{
+    // Seen live: preview sheets named after the video they show
+    FakeFileInput in;
+    in.name = QStringLiteral("Studio - Some Scene Title.mp4.jpg");
+    in.size = 400ull << 10;
+    FakeFileVerdict v = assess(in);
+    QVERIFY(v.reasons.contains({FakeReason::MediaDoubleExtension, 25}));
+    QCOMPARE(v.band, Confidence::Caution);
+
+    in.name = QStringLiteral("Some Album - Track.flac.pdf");
+    QVERIFY(assess(in).has(FakeReason::MediaDoubleExtension));
+
+    // Not a double extension, or a container that may hold the video
+    for (const char* name : {"Some Film 2024.mkv", "Cover.jpg", "Some Film.avi.rar",
+                             "Mr. Smith.jpg", ".mp4.jpg", "Some Film.mp4.mkv"}) {
+        in.name = QString::fromLatin1(name);
+        QVERIFY2(!assess(in).has(FakeReason::MediaDoubleExtension), name);
+    }
 }
 
 void tst_FakeFileDetector::badSignalName_tokensAndRegex()
@@ -500,6 +522,7 @@ void tst_FakeFileDetector::ids_areStable()
     QCOMPARE(fakeReasonId(FakeReason::NameMediaTagMismatch), QStringLiteral("name_media_tag_mismatch"));
     QCOMPARE(fakeReasonId(FakeReason::AbuseContentName), QStringLiteral("abuse_content_name"));
     QCOMPARE(fakeReasonId(FakeReason::PasswordProtected), QStringLiteral("password_protected"));
+    QCOMPARE(fakeReasonId(FakeReason::MediaDoubleExtension), QStringLiteral("media_double_extension"));
     QCOMPARE(confidenceId(Confidence::LikelyFake), QStringLiteral("likely_fake"));
     QCOMPARE(confidenceId(Confidence::Genuine), QStringLiteral("genuine"));
     QVERIFY(Confidence::Spam < Confidence::Genuine);

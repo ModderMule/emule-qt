@@ -223,7 +223,7 @@ private:
         m_reading = false;
         if (data.size() < want) {
             // Shrunk or unreadable: the promised length cannot be kept
-            logWarning(QStringLiteral("Incoming: read failed at %1 of %2 bytes").arg(m_fetched).arg(m_length));
+            logDebug([&]() -> QString { return QStringLiteral("Incoming: read failed at %1 of %2 bytes").arg(m_fetched).arg(m_length); });
             m_failed = true;
             emit readChannelFinished();
             return;
@@ -580,11 +580,11 @@ bool WebServer::start(const WebServerConfig& config)
                        ? QStringLiteral("[%1]").arg(addr.toString()) : addr.toString())
         .arg(actualPort);
     if (m_config.restApiEnabled) {
-        logInfo(QStringLiteral("WebServer: REST API playground at %1/api/v1/docs").arg(base));
-        logInfo(QStringLiteral("WebServer: OpenAPI document at %1/api/v1/openapi.json").arg(base));
+        logDebug(QStringLiteral("WebServer: REST API playground at %1/api/v1/docs").arg(base));
+        logDebug(QStringLiteral("WebServer: OpenAPI document at %1/api/v1/openapi.json").arg(base));
     }
     if (m_config.mcpEnabled) {
-        logInfo(QStringLiteral("WebServer: MCP endpoint at %1/mcp%2")
+        logDebug(QStringLiteral("WebServer: MCP endpoint at %1/mcp%2")
                     .arg(base, m_config.mcpReadOnly ? QStringLiteral(" (read-only tools)")
                                                     : QString()));
     }
@@ -901,8 +901,8 @@ bool WebServer::requestBodyTooLarge(const QHttpServerRequest& req)
     const bool tooLarge = size > kAuthBodyCap
         || !(apiKeyMatches(req.headers()) || webSession(req).valid);
     if (tooLarge) {
-        logWarning(QStringLiteral("WebServer: 413 — %1 byte body from %2 to %3")
-                       .arg(size).arg(req.remoteAddress().toString(), req.url().path()));
+        logDebug([&]() -> QString { return QStringLiteral("WebServer: 413 — %1 byte body from %2 to %3")
+                       .arg(size).arg(req.remoteAddress().toString(), req.url().path()); });
     }
     return tooLarge;
 }
@@ -930,14 +930,26 @@ QHttpServerResponse WebServer::handlePreviewStream(const QString& hash, const QH
     if (auto refusal = streamTokenRefusal(req, u"Preview"))
         return std::move(*refusal);
 
+    // ed3k: a 64-hex root names its part file (or the finished file)
+    if (hash.size() == 64) {
+        QString path;
+        QString fileName;
+        if (!m_ed3kFileResolver || !m_ed3kFileResolver(hash, path, fileName) || !QFileInfo::exists(path)) {
+            logDebug([&]() -> QString { return QStringLiteral("Preview: 404 — no ed3k download for root %1").arg(hash); });
+            return jsonError(404, QStringLiteral("File not found"));
+        }
+        return serveRange({{path, 0, 0, 0}}, fileName, /*totalSize*/ 0, /*availableEnd*/ 0,
+                          req.headers().combinedValue(QByteArrayLiteral("Range")));
+    }
+
     if (!m_downloadQueue) {
-        logWarning(QStringLiteral("Preview: 500 — download queue not available"));
+        logDebug([&]() -> QString { return QStringLiteral("Preview: 500 — download queue not available"); });
         return jsonError(500, QStringLiteral("Download queue not available"));
     }
 
     std::array<uint8, 16> hashBytes{};
     if (hash.size() != 32 || decodeBase16(hash, hashBytes.data(), 16) != 16) {
-        logWarning(QStringLiteral("Preview: 400 — invalid hash format: %1").arg(hash));
+        logDebug([&]() -> QString { return QStringLiteral("Preview: 400 — invalid hash format: %1").arg(hash); });
         return jsonError(400, QStringLiteral("Invalid hash format"));
     }
 
@@ -970,11 +982,11 @@ QHttpServerResponse WebServer::handlePreviewStream(const QString& hash, const QH
     }
 
     if (path.isEmpty()) {
-        logWarning(QStringLiteral("Preview: 404 — no download or shared file for hash %1").arg(hash));
+        logDebug([&]() -> QString { return QStringLiteral("Preview: 404 — no download or shared file for hash %1").arg(hash); });
         return jsonError(404, QStringLiteral("File not found"));
     }
     if (!QFileInfo::exists(path)) {
-        logWarning(QStringLiteral("Preview: 404 — file not available: %1").arg(path));
+        logDebug([&]() -> QString { return QStringLiteral("Preview: 404 — file not available: %1").arg(path); });
         return jsonError(404, QStringLiteral("File not available"));
     }
 
@@ -1037,8 +1049,8 @@ QFuture<QHttpServerResponse> WebServer::handleUsenetPreviewStream(
     // the boost has to be refreshed for as long as a player is really reading.
     const UsenetStreamSource first = m_usenetStreamResolver(ask);
     if (!first.found) {
-        logWarning(QStringLiteral("Usenet preview: 404 — no file %1 of item %2")
-                       .arg(fileIndex).arg(itemId));
+        logDebug([&]() -> QString { return QStringLiteral("Usenet preview: 404 — no file %1 of item %2")
+                       .arg(fileIndex).arg(itemId); });
         return finishedResponse(jsonError(404, QStringLiteral("File not found")));
     }
 
@@ -1046,7 +1058,7 @@ QFuture<QHttpServerResponse> WebServer::handleUsenetPreviewStream(
     // out the poll would end in a 416 that reads like "not yet" — 406 with the
     // reason says "not ever", which is what the user needs to know.
     if (!first.notSeekableReason.isEmpty()) {
-        logWarning(QStringLiteral("Usenet preview: 406 — %1").arg(first.notSeekableReason));
+        logDebug([&]() -> QString { return QStringLiteral("Usenet preview: 406 — %1").arg(first.notSeekableReason); });
         return finishedResponse(jsonError(406, first.notSeekableReason));
     }
 
@@ -1093,7 +1105,7 @@ QFuture<QHttpServerResponse> WebServer::handleUsenetPreviewStream(
             if (!now.found)
                 return jsonError(404, QStringLiteral("File not found"));
             if (refused) {
-                logWarning(QStringLiteral("Usenet preview: 406 — %1").arg(now.notSeekableReason));
+                logDebug([&]() -> QString { return QStringLiteral("Usenet preview: 406 — %1").arg(now.notSeekableReason); });
                 return jsonError(406, now.notSeekableReason);
             }
             if (!arrived) {
@@ -1101,9 +1113,9 @@ QFuture<QHttpServerResponse> WebServer::handleUsenetPreviewStream(
                 // come back inside the window — a slow provider, or a hole no
                 // server holds. A prompt 416 beats a player hanging on a request
                 // that might take the rest of the download.
-                logWarning(QStringLiteral("Usenet preview: 416 — timed out waiting for byte "
+                logDebug([&]() -> QString { return QStringLiteral("Usenet preview: 416 — timed out waiting for byte "
                                           "%1 of \"%2\" (have %3)")
-                               .arg(wantStart).arg(now.fileName).arg(now.availableEnd));
+                               .arg(wantStart).arg(now.fileName).arg(now.availableEnd); });
                 return rangeNotSatisfiable(now.totalSize > 0 ? now.totalSize : now.availableEnd);
             }
             return serveRange(now.pieces, now.fileName, now.totalSize, now.availableEnd,
@@ -1126,7 +1138,7 @@ QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& pieces
     const bool dbg = m_preferences && m_preferences->logWebServer();
 
     if (piecesIn.isEmpty()) {
-        logWarning(QStringLiteral("Preview: 404 — nothing to serve for %1").arg(fileName));
+        logDebug([&]() -> QString { return QStringLiteral("Preview: 404 — nothing to serve for %1").arg(fileName); });
         return jsonError(404, QStringLiteral("File not available"));
     }
 
@@ -1149,8 +1161,8 @@ QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& pieces
             fileSize += p.length;
     }
     if (fileSize <= 0) {
-        logWarning(QStringLiteral("Preview: 404 — nothing readable yet: %1")
-                       .arg(pieces.first().path));
+        logDebug([&]() -> QString { return QStringLiteral("Preview: 404 — nothing readable yet: %1")
+                       .arg(pieces.first().path); });
         return jsonError(404, QStringLiteral("File not available"));
     }
 
@@ -1180,8 +1192,8 @@ QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& pieces
 
         qint64 parsedEnd = -1;
         if (!parseRange(rangeHeader, rangeStart, parsedEnd)) {
-            logWarning(QStringLiteral("Preview: 416 — malformed Range header: %1")
-                .arg(QString::fromLatin1(rangeHeader)));
+            logDebug([&]() -> QString { return QStringLiteral("Preview: 416 — malformed Range header: %1")
+                .arg(QString::fromLatin1(rangeHeader)); });
             return rangeNotSatisfiable(fileSize);
         }
         rangeEnd = parsedEnd < 0 ? fileSize - 1 : parsedEnd;
@@ -1196,8 +1208,8 @@ QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& pieces
             return rangeNotSatisfiable(fileSize);
         }
         if (rangeStart >= fileSize || rangeStart > rangeEnd) {
-            logWarning(QStringLiteral("Preview: 416 — out of bounds: start=%1 end=%2 fileSize=%3")
-                .arg(rangeStart).arg(rangeEnd).arg(fileSize));
+            logDebug([&]() -> QString { return QStringLiteral("Preview: 416 — out of bounds: start=%1 end=%2 fileSize=%3")
+                .arg(rangeStart).arg(rangeEnd).arg(fileSize); });
             return rangeNotSatisfiable(fileSize);
         }
         hasRange = true;
@@ -1210,8 +1222,8 @@ QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& pieces
     // it was willing to; a zero-byte 206 reads as end-of-stream and stops
     // playback, so say plainly that the range cannot be satisfied instead.
     if (rangeStart >= contentEnd) {
-        logWarning(QStringLiteral("Preview: 416 — byte %1 is not downloaded yet (have %2)")
-            .arg(rangeStart).arg(contentEnd));
+        logDebug([&]() -> QString { return QStringLiteral("Preview: 416 — byte %1 is not downloaded yet (have %2)")
+            .arg(rangeStart).arg(contentEnd); });
         return rangeNotSatisfiable(fileSize);
     }
 
@@ -1246,7 +1258,7 @@ QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& pieces
 
         QFile file(p.path);
         if (!file.open(QIODevice::ReadOnly)) {
-            logWarning(QStringLiteral("Preview: cannot open %1").arg(p.path));
+            logDebug([&]() -> QString { return QStringLiteral("Preview: cannot open %1").arg(p.path); });
             break;
         }
         const qint64 into = pos - p.virtualOffset;
@@ -1261,7 +1273,7 @@ QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& pieces
     }
 
     if (data.isEmpty()) {
-        logWarning(QStringLiteral("Preview: 416 — byte %1 could not be read").arg(rangeStart));
+        logDebug([&]() -> QString { return QStringLiteral("Preview: 416 — byte %1 could not be read").arg(rangeStart); });
         return rangeNotSatisfiable(fileSize);
     }
     rangeEnd = rangeStart + data.size() - 1;
@@ -1531,7 +1543,7 @@ QHttpServerResponse WebServer::incomingListingResponse(const IncomingLookup& fou
 
     if (!play.isEmpty()) {
         if (found.abs.isEmpty() || !found.isFile) {
-            logWarning(QStringLiteral("Incoming: 404 — cannot play %1").arg(play));
+            logDebug([&]() -> QString { return QStringLiteral("Incoming: 404 — cannot play %1").arg(play); });
             return jsonError(404, QStringLiteral("File not found"));
         }
         return QHttpServerResponse(QByteArrayLiteral("text/html; charset=utf-8"),
@@ -1540,12 +1552,12 @@ QHttpServerResponse WebServer::incomingListingResponse(const IncomingLookup& fou
     }
 
     if (found.abs.isEmpty()) {
-        logWarning(QStringLiteral("Incoming: 404 — no such folder: %1")
-                       .arg(rel.isEmpty() ? QStringLiteral("<incoming>") : rel));
+        logDebug([&]() -> QString { return QStringLiteral("Incoming: 404 — no such folder: %1")
+                       .arg(rel.isEmpty() ? QStringLiteral("<incoming>") : rel); });
         return jsonError(404, QStringLiteral("Folder not found"));
     }
     if (!found.isDir) {
-        logWarning(QStringLiteral("Incoming: 400 — not a folder: %1").arg(rel));
+        logDebug([&]() -> QString { return QStringLiteral("Incoming: 400 — not a folder: %1").arg(rel); });
         return jsonError(400, QStringLiteral("Not a folder"));
     }
 
@@ -1689,12 +1701,12 @@ void WebServer::handleIncomingStream(const QHttpServerRequest& req,
 void WebServer::sendIncomingStream(QHttpServerResponder& responder, IncomingSend& send)
 {
     if (send.size < 0) {
-        logWarning(QStringLiteral("Incoming: 404 — cannot stream %1").arg(send.rel));
+        logDebug([&]() -> QString { return QStringLiteral("Incoming: 404 — cannot stream %1").arg(send.rel); });
         responder.sendResponse(jsonError(404, QStringLiteral("File not found")));
         return;
     }
     if (send.size == 0) {
-        logWarning(QStringLiteral("Incoming: 404 — nothing to stream in %1").arg(send.rel));
+        logDebug([&]() -> QString { return QStringLiteral("Incoming: 404 — nothing to stream in %1").arg(send.rel); });
         responder.sendResponse(jsonError(404, QStringLiteral("File not available")));
         return;
     }
@@ -1706,12 +1718,12 @@ void WebServer::sendIncomingStream(QHttpServerResponder& responder, IncomingSend
     // download. A finished file is one contiguous file on disk with no holes, so
     // it streams straight off the device and a range-less GET gets its 200.
     if (send.badRange) {
-        logWarning(QStringLiteral("Incoming: 416 — bad Range for %1 (size %2)").arg(send.rel).arg(send.size));
+        logDebug([&]() -> QString { return QStringLiteral("Incoming: 416 — bad Range for %1 (size %2)").arg(send.rel).arg(send.size); });
         responder.sendResponse(rangeNotSatisfiable(send.size));
         return;
     }
     if (!send.file) {
-        logWarning(QStringLiteral("Incoming: 500 — cannot open %1").arg(send.abs));
+        logDebug([&]() -> QString { return QStringLiteral("Incoming: 500 — cannot open %1").arg(send.abs); });
         responder.sendResponse(jsonError(500, QStringLiteral("Cannot open file")));
         return;
     }
@@ -1737,10 +1749,10 @@ void WebServer::sendIncomingStream(QHttpServerResponder& responder, IncomingSend
         // Only a container we positively identified may change the type. Knowing
         // the file is not what it claims is not the same as knowing what it is,
         // and guessing there would just trade one wrong type for another.
-        logWarning(QStringLiteral("Incoming: %1 is named .%2 but contains %3")
+        logDebug([&]() -> QString { return QStringLiteral("Incoming: %1 is named .%2 but contains %3")
                        .arg(name, send.suffix,
                             real.actual.isEmpty() ? QStringLiteral("no recognised container")
-                                                  : real.actual));
+                                                  : real.actual); });
         if (!real.mimeType.isEmpty())
             mimeName = real.mimeType;
     }
@@ -1792,7 +1804,7 @@ void WebServer::handleIncomingDownload(const QHttpServerRequest& req,
 void WebServer::sendIncomingDownload(QHttpServerResponder& responder, IncomingSend& send)
 {
     if (send.abs.isEmpty()) {
-        logWarning(QStringLiteral("Incoming: 404 — cannot download %1").arg(send.rel));
+        logDebug([&]() -> QString { return QStringLiteral("Incoming: 404 — cannot download %1").arg(send.rel); });
         responder.sendResponse(jsonError(404, QStringLiteral("File not found")));
         return;
     }
@@ -1814,7 +1826,7 @@ void WebServer::sendIncomingDownload(QHttpServerResponder& responder, IncomingSe
         return;
     }
     if (!send.file) {
-        logWarning(QStringLiteral("Incoming: 500 — cannot open %1").arg(send.abs));
+        logDebug([&]() -> QString { return QStringLiteral("Incoming: 500 — cannot open %1").arg(send.abs); });
         responder.sendResponse(jsonError(500, QStringLiteral("Cannot open file")));
         return;
     }
@@ -1844,7 +1856,10 @@ std::optional<QHttpServerResponse> WebServer::streamTokenRefusal(const QHttpServ
     if (m_sessionManager) {
         if (const int wait = m_sessionManager->loginWaitSeconds(client, now, kFreeStreamTokenTries);
             wait > 0) {
-            logWarning(QStringLiteral("%1: 429 — too many wrong stream tokens from %2").arg(what, address));
+            static LogRepeatGate gate;   // each retry while backing off: one line a minute
+            if (const QString line = gate.filter(address, QStringLiteral("%1: 429 — too many wrong stream tokens from %2").arg(what, address));
+                !line.isEmpty())
+                logWarning(line);
             return tooManyTries(wait, QStringLiteral("Too many wrong stream tokens; try again later"));
         }
     }
@@ -1859,7 +1874,7 @@ std::optional<QHttpServerResponse> WebServer::streamTokenRefusal(const QHttpServ
     const bool sent = !QUrlQuery(req.query()).queryItemValue(QStringLiteral("token")).isEmpty();
     if (sent && m_sessionManager)
         m_sessionManager->noteLoginFailure(client, now);
-    logWarning(QStringLiteral("%1: 401 — invalid or missing stream token").arg(what));
+    logDebug([&]() -> QString { return QStringLiteral("%1: 401 — invalid or missing stream token").arg(what); });
     return jsonError(401, QStringLiteral("Invalid or missing stream token"));
 }
 

@@ -225,7 +225,7 @@ void PartFileConvert::startThread()
         s_thread = new ConvertThread();
 
     s_thread->start();
-    logInfo(QStringLiteral("PartFileConvert: conversion thread started"));
+    logDebug(QStringLiteral("PartFileConvert: conversion thread started"));
 }
 
 void PartFileConvert::stopThread()

@@ -823,6 +823,7 @@ struct Preferences::Data {
     QStringList ed3kChaintubeRpc;
     QStringList ed3kExtOff;            // extension names off at start
     bool ed3kLan = false;              // LAN discovery
+    bool ed3kAutoIndexNode = false;    // dial eD2K servers' ST_ED3K index nodes
     bool ed3kForceOpen = false;        // operator: node reachable, no NAT tests (§9.2 first nodes)
     bool ed3kHide = false;             // hiding (hops.md §1): new searches, downloads, shares anonymous
     int ed3kHops = 1;                  // 0 to 3, every use (0: only while hopping, hops.md §2.6)
@@ -2708,6 +2709,8 @@ bool Preferences::ed3kLan() const { return get(&Data::ed3kLan); }
 void Preferences::setEd3kLan(bool val) { set(&Data::ed3kLan, val); }
 bool Preferences::ed3kForceOpen() const { return get(&Data::ed3kForceOpen); }
 void Preferences::setEd3kForceOpen(bool val) { set(&Data::ed3kForceOpen, val); }
+bool Preferences::ed3kAutoIndexNode() const { return get(&Data::ed3kAutoIndexNode); }
+void Preferences::setEd3kAutoIndexNode(bool val) { set(&Data::ed3kAutoIndexNode, val); }
 bool Preferences::ed3kHide() const { return get(&Data::ed3kHide); }
 void Preferences::setEd3kHide(bool val) { set(&Data::ed3kHide, val); }
 int Preferences::ed3kHops() const { return get(&Data::ed3kHops); }
@@ -4242,6 +4245,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("ed3kExtOff"), ed3kExtOff().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("ed3kLan"), ed3kLan());
     prefs.insert(QStringLiteral("ed3kForceOpen"), ed3kForceOpen());
+    prefs.insert(QStringLiteral("ed3kAutoIndexNode"), ed3kAutoIndexNode());
     prefs.insert(QStringLiteral("ed3kHide"), ed3kHide());
     prefs.insert(QStringLiteral("ed3kHops"), static_cast<qint64>(ed3kHops()));
     prefs.insert(QStringLiteral("ed3kHopping"), ed3kHopping());
@@ -4634,6 +4638,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->ed3kExtOff = rpcUrlList(p.value(QStringLiteral("ed3kExtOff")));
     m_data->ed3kLan = p.value(QStringLiteral("ed3kLan")).toBool(false);
     m_data->ed3kForceOpen = p.value(QStringLiteral("ed3kForceOpen")).toBool(false);
+    m_data->ed3kAutoIndexNode = p.value(QStringLiteral("ed3kAutoIndexNode")).toBool(false);
     m_data->ed3kHide = p.value(QStringLiteral("ed3kHide")).toBool(false);
     m_data->ed3kHops = static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kHops")).toInteger(1), 0, 3));
     m_data->ed3kHopping = p.value(QStringLiteral("ed3kHopping")).toBool(true);
@@ -6025,6 +6030,7 @@ bool Preferences::load(const QString& filePath)
             m_data->ed3kExtOff = urls(e3["extOff"]);
             m_data->ed3kLan = e3["lan"].as<bool>(m_data->ed3kLan);
             m_data->ed3kForceOpen = e3["forceOpen"].as<bool>(m_data->ed3kForceOpen);
+            m_data->ed3kAutoIndexNode = e3["autoIndexNode"].as<bool>(m_data->ed3kAutoIndexNode);
             m_data->ed3kHide = e3["hide"].as<bool>(m_data->ed3kHide);
             m_data->ed3kHops = std::clamp(e3["hops"].as<int>(m_data->ed3kHops), 0, 3);
             m_data->ed3kHopping = e3["hopping"].as<bool>(m_data->ed3kHopping);
@@ -7477,6 +7483,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "udpPort" << YAML::Value << static_cast<int>(m_data->ed3kUdpPort);
     out << YAML::Key << "lan" << YAML::Value << m_data->ed3kLan;
     out << YAML::Key << "forceOpen" << YAML::Value << m_data->ed3kForceOpen;
+    out << YAML::Key << "autoIndexNode" << YAML::Value << m_data->ed3kAutoIndexNode;
     out << YAML::Key << "hide" << YAML::Value << m_data->ed3kHide;
     out << YAML::Key << "hops" << YAML::Value << m_data->ed3kHops;
     out << YAML::Key << "hopping" << YAML::Value << m_data->ed3kHopping;

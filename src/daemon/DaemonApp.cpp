@@ -513,6 +513,7 @@ bool DaemonApp::start()
     };
     // ed3k §11: an eD2K server's index node (ST_ED3K of its ident or description reply)
     theApp.ed3kIndexLink = [s = m_ed3kSession.get()](const QString& link) { (void)s->addIndexLink(link); };
+    theApp.ed3kIndexDrop = [s = m_ed3kSession.get()](const QString& link) { (void)s->removeIndexLink(link); };
     m_ed3kBootstrap->setAsker([this](std::uint64_t ask, const QString& host, const QString& url) {
         if (!m_ipcServer || !m_ipcServer->hasReadyClient())
             return false;
@@ -1103,6 +1104,7 @@ void DaemonApp::stop()
     m_ed3kRooms.reset();
     theApp.ed3kKadSeed = {};
     theApp.ed3kIndexLink = {};
+    theApp.ed3kIndexDrop = {};
     Ed3kBridge::setBootstrap(nullptr);
     m_ed3kBootstrap.reset();
     Ed3kNamesBridge::setNames(nullptr, nullptr);
@@ -1242,6 +1244,9 @@ void DaemonApp::startWebServer()
     // lives in eMule::Core and `core -> usenet` must never happen. DaemonApp is
     // the one object that links both, which is exactly the seam setLogProvider
     // below already uses.
+    // ed3k preview: same seam, core never links ed3k
+    m_webServer->setEd3kFileResolver(&Ed3kDownloadsBridge::fileOf);
+
     m_webServer->setUsenetStreamResolver(
         [](const UsenetStreamRequest& ask) -> UsenetStreamSource {
             UsenetStreamSource out;
@@ -1521,6 +1526,8 @@ void DaemonApp::applyEd3kConfig()
         if (const QNetworkProxy p = toNetworkProxy(rp); p.type() != QNetworkProxy::NoProxy)
             hide.reportProxy = p;
     m_ed3kSession->setHideSettings(hide);
+    // a server's index node: on is live; off keeps a connection made (no restart)
+    m_ed3kSession->setAutoIndexNodes(thePrefs.ed3kAutoIndexNode());
     // ed3kEnabled = the feature; connectWanted = autoConnect at start, then the Connect button
     const bool enabled = thePrefs.ed3kEnabled() && Ed3kBridge::connectWanted() && !m_enginesHeld;
     const uint16 port = thePrefs.ed3kUdpPort();

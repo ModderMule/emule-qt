@@ -315,6 +315,12 @@ protected:
     /// The same on this thread (files about to be deleted).
     [[nodiscard]] static std::optional<FileHash> hashNow(const QString& path);
 
+    /// "Move to" (#187): the part file @p src to @p dst on a worker (rename, else a copy
+    /// that fits; the source then goes). @p done on this thread, empty = moved; not at all
+    /// once stopped or destroyed. The caller writes its .met beside the new place.
+    void relocateInBackground(const QString& src, const QString& dst, std::uint64_t dataSize,
+                              std::function<void(QString error)> done);
+
     // -- reads ---------------------------------------------------------------
 
     /// One read; nullopt: unreadable, short, or the file changed (size, mtimeMs).

@@ -106,7 +106,7 @@ void GeoIpUpdater::updateNow(Callback done)
 
     m_activeSource = selectedSource();
     if (m_activeSource == GeoIpSource::DbIp) {
-        logInfo(QStringLiteral("IP2Country: checking for a DB-IP Country Lite update"));
+        logDebug(QStringLiteral("IP2Country: checking for a DB-IP Country Lite update"));
         m_dbIpMonthsBack = 0;
         startRequest(dbIpUrl(0));
         return;
@@ -116,7 +116,7 @@ void GeoIpUpdater::updateNow(Callback done)
         finish(false, QStringLiteral("no MaxMind account ID / license key configured"));
         return;
     }
-    logInfo(QStringLiteral("IP2Country: checking for a GeoLite2-Country update"));
+    logDebug(QStringLiteral("IP2Country: checking for a GeoLite2-Country update"));
     startRequest(m_url);
 }
 
@@ -218,7 +218,7 @@ void GeoIpUpdater::onDownloaded(const HttpFileDownload::Result& r)
 {
     if (r.notModified) {
         thePrefs.setGeoIpLastCheck(QDateTime::currentSecsSinceEpoch());
-        finish(true, QStringLiteral("%1 is up to date").arg(sourceName(m_activeSource)));
+        finish(true, QStringLiteral("%1 is up to date").arg(sourceName(m_activeSource)), true);
         return;
     }
     // This month's DB-IP file appears a few days in; take last month's meanwhile
@@ -290,10 +290,12 @@ bool GeoIpUpdater::installDatabase(const QByteArray& mmdb, QString& error)
     return m_ip2Country->open(target, &error);
 }
 
-void GeoIpUpdater::finish(bool ok, const QString& message)
+void GeoIpUpdater::finish(bool ok, const QString& message, bool routine)
 {
     noteOutcome(ok);
-    if (ok)
+    if (ok && routine)
+        logDebug(QStringLiteral("IP2Country: %1").arg(message));
+    else if (ok)
         logInfo(QStringLiteral("IP2Country: %1").arg(message));
     else
         logWarning(QStringLiteral("IP2Country: update failed: %1").arg(message));

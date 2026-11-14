@@ -483,8 +483,8 @@ bool ClientCreditsList::createKeyPair(const QString& keyPath)
     file.write(base64);
     file.close();
 
-    logInfo(QStringLiteral("RSA %1-bit key pair generated and saved to %2")
-                .arg(RSAKEYSIZE).arg(keyPath));
+    logDebug([&]() -> QString { return QStringLiteral("RSA %1-bit key pair generated and saved to %2")
+                .arg(RSAKEYSIZE).arg(keyPath); });
     return true;
 }
 
@@ -503,7 +503,7 @@ void ClientCreditsList::initializeCrypting()
     // Generate key pair if file doesn't exist or is empty
     QFileInfo fi(keyPath);
     if (!fi.exists() || fi.size() == 0) {
-        logInfo(QStringLiteral("No RSA key found, generating new key pair..."));
+        logDebug(QStringLiteral("No RSA key found, generating new key pair..."));
         if (!createKeyPair(keyPath)) {
             logError(QStringLiteral("RSA key pair generation failed — secure ident disabled"));
             return;
@@ -532,8 +532,8 @@ void ClientCreditsList::initializeCrypting()
     i2d_PUBKEY(m_signKey.get(), &pubPtr);
     m_myPublicKeyLen = static_cast<uint8>(pubLen);
 
-    logInfo(QStringLiteral("RSA secure identification initialized (public key: %1 bytes)")
-                .arg(m_myPublicKeyLen));
+    logDebug([&]() -> QString { return QStringLiteral("RSA secure identification initialized (public key: %1 bytes)")
+                .arg(m_myPublicKeyLen); });
 }
 
 ClientCreditsList::KeyFileInfo ClientCreditsList::inspectKeyFile(const QString& keyPath)
@@ -611,8 +611,8 @@ uint8 ClientCreditsList::createSignature(ClientCredits* target, uint8* output, u
     unsigned int rsaSigLen = 0;
     if (RSA_sign(NID_sha1, hash, SHA_DIGEST_LENGTH,
                  output, &rsaSigLen, const_cast<RSA*>(rsa)) != 1) {
-        logWarning(QStringLiteral("createSignature: RSA_sign failed — %1")
-                       .arg(QLatin1StringView(ERR_reason_error_string(ERR_peek_last_error()))));
+        logDebug([&]() -> QString { return QStringLiteral("createSignature: RSA_sign failed — %1")
+                       .arg(QLatin1StringView(ERR_reason_error_string(ERR_peek_last_error()))); });
         return 0;
     }
 
@@ -666,8 +666,8 @@ bool ClientCreditsList::verifyIdent(ClientCredits* target, const uint8* signatur
 
     if (!peerKey) {
         ERR_clear_error();
-        logWarning(QStringLiteral("verifyIdent: d2i_PUBKEY failed for %1-byte key")
-                       .arg(target->secIDKeyLen()));
+        logDebug([&]() -> QString { return QStringLiteral("verifyIdent: d2i_PUBKEY failed for %1-byte key")
+                       .arg(target->secIDKeyLen()); });
         if (target->m_identState == IdentState::IdNeeded)
             target->m_identState = IdentState::IdFailed;
         return false;

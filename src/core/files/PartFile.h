@@ -107,7 +107,8 @@ enum class PartFileOp : uint8 {
     Hashing,
     Copying,
     Uncompressing,
-    ImportParts
+    ImportParts,
+    Moving        ///< moveTo(): the .part goes to another folder (#187)
 };
 
 // ---------------------------------------------------------------------------
@@ -282,7 +283,7 @@ public:
         return path;
     }
     /// KnownFile::uploadReadsOnHold — while verify + move run, the `.part` may vanish.
-    [[nodiscard]] bool uploadReadsOnHold() const override { return m_completionRunning; }
+    [[nodiscard]] bool uploadReadsOnHold() const override { return m_completionRunning || m_relocating; }
     [[nodiscard]] bool isPureGap(uint64 start, uint64 end) const;
     [[nodiscard]] bool isAlreadyRequested(uint64 start, uint64 end) const;
     [[nodiscard]] uint64 totalGapSizeInRange(uint64 start, uint64 end) const;
@@ -449,6 +450,9 @@ public:
     [[nodiscard]] bool isPaused() const { return m_paused; }
     [[nodiscard]] bool isInsufficient() const { return m_insufficient; }
     /// Bytes the .part still has to take on disk (it is created sparse).
+    /// Received data not yet written to disk.
+    [[nodiscard]] uint64 bufferedDataSize() const { return m_totalBufferData; }
+
     [[nodiscard]] uint64 neededSpace() const
     {
         const uint64 size = static_cast<uint64>(fileSize());
@@ -475,6 +479,12 @@ public:
     [[nodiscard]] PartFileOp fileOp() const { return m_fileOp; }
     /// Mark or clear an operation that runs outside this class (importing parts).
     void setFileOp(PartFileOp op) { m_fileOp = op; }
+
+    /// Moves the temp data to @p dir (#187): pause, relocate the .part off the main
+    /// thread, resume. A finished file whose completion failed (disk full) completes into
+    /// @p dir instead. Empty: started (or nothing to do); else why not, in English.
+    [[nodiscard]] QString moveTo(const QString& dir);
+    [[nodiscard]] bool isRelocating() const { return m_relocating; }
     /// Seconds this download has been running while connected (MFC GetDlActiveTime).
     [[nodiscard]] uint32 dlActiveTime() const;
     /// Seconds until done, -1 = unknown (MFC getTimeRemaining).
@@ -750,6 +760,9 @@ private:
     [[nodiscard]] PartDigestRequest digestRequest(uint32 partNumber);
     [[nodiscard]] QString partFilePath() const;
     void finishPendingFlush(bool forceICH, bool noAICH);
+    /// moveTo() worker done: switch to the new place (ok) and resume as before. Also
+    /// from the destructor, for a move that finished before its queued call ran.
+    void finishRelocate();
     /// A write failed: keep the buffer, pause (out of space) or pause as Error.
     void handleWriteFailure(const QString& error, bool diskFull);
     /// A Shareaza ".sd" download description (MFC ImportShareazaTempfile). Parses
@@ -864,6 +877,18 @@ private:
     PartFileStatus m_statusBeforeSizeFix = PartFileStatus::Empty;
     bool m_completionRunning = false;   // verify + move in flight
     QPointer<FileMoveThread> m_moveThread;
+    // moveTo() (#187)
+    QPointer<QThread> m_relocateThread;
+    struct RelocateResult {
+        std::atomic<bool> done{false};
+        bool ok = false;
+        bool renamed = false;
+        QString error, dir, metName;
+    };
+    std::shared_ptr<RelocateResult> m_relocateResult;
+    bool m_relocating = false;
+    bool m_resumeAfterRelocate = false;
+    QString m_completionDir;   ///< moveTo() of a finished file: completes here, not incoming
     QByteArray m_completedAICHMaster;   // root of the set the move thread stored
     bool m_recoveringArchive = false;
 

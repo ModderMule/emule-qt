@@ -256,6 +256,7 @@
     <ClCompile Include="controls\CategoryTabBar.cpp" />
     <ClCompile Include="controls\FitTextTabBar.cpp" />
     <ClCompile Include="controls\DownloadListModel.cpp" />
+    <ClCompile Include="controls\FolderTreeModel.cpp" />
     <ClCompile Include="controls\BarShader.cpp" />
     <ClCompile Include="controls\DownloadProgressDelegate.cpp" />
     <ClCompile Include="controls\Ed3kDownloadRows.cpp" />
@@ -325,6 +326,7 @@
     <ClCompile Include="dialogs\MetaAccountDialog.cpp" />
     <ClCompile Include="dialogs\PasteLinksDialog.cpp" />
     <ClCompile Include="dialogs\MassRenameDialog.cpp" />
+    <ClCompile Include="dialogs\FolderPickerDialog.cpp" />
     <ClCompile Include="dialogs\PasteTextDialog.cpp" />
     <ClCompile Include="dialogs\SimpleCleanupDialog.cpp" />
     <ClCompile Include="dialogs\WebLinksDialog.cpp" />
@@ -369,6 +371,8 @@
     <ClCompile Include="utils\HttpCacheLinkImporter.cpp" />
     <ClCompile Include="utils\IpcFeedback.cpp" />
     <ClCompile Include="utils\MassRenameAction.cpp" />
+    <ClCompile Include="utils\MoveDownloadsAction.cpp" />
+    <ClCompile Include="utils\FolderLister.cpp" />
     <ClCompile Include="utils\ListActivation.cpp" />
     <ClCompile Include="utils\MenuUtils.cpp" />
     <ClCompile Include="utils\ViewNavigation.cpp" />
@@ -441,6 +445,8 @@
     <ClInclude Include="app\Ed3kLiveWatch.h" />
     <ClInclude Include="app\Ed3kLinkActions.h" />
     <ClInclude Include="utils\MassRenameAction.h" />
+    <ClInclude Include="utils\MoveDownloadsAction.h" />
+    <ClInclude Include="utils\FolderLister.h" />
     <ClInclude Include="utils\AsyncMessageBox.h" />
     <ClInclude Include="utils\ScrollMessageBox.h" />
     <ClInclude Include="utils\InputHistory.h" />
@@ -484,6 +490,7 @@
     <QtMoc Include="controls\CategoryFilterProxy.h" />
     <QtMoc Include="controls\CategoryTabBar.h" />
     <QtMoc Include="controls\DownloadListModel.h" />
+    <QtMoc Include="controls\FolderTreeModel.h" />
     <QtMoc Include="controls\DownloadProgressDelegate.h" />
     <QtMoc Include="controls\PreviewImageView.h" />
     <QtMoc Include="controls\PreviewNfoView.h" />
@@ -546,6 +553,7 @@
     <QtMoc Include="dialogs\MetaAccountDialog.h" />
     <QtMoc Include="dialogs\PasteLinksDialog.h" />
     <QtMoc Include="dialogs\MassRenameDialog.h" />
+    <QtMoc Include="dialogs\FolderPickerDialog.h" />
     <QtMoc Include="dialogs\PasteTextDialog.h" />
     <QtMoc Include="dialogs\SimpleCleanupDialog.h" />
     <QtMoc Include="controls\TorrentListModel.h" Condition="'$(EmuleBitTorrent)'=='true'" />

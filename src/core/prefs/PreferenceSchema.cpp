@@ -278,6 +278,7 @@ using Kind = PrefSpec::Kind;
     t << flag("ed3kLan", "Find ed3k nodes in the local network (LAN discovery). Default off. Restarts the node.");
     t << advanced(flag("ed3kForceOpen", "Declare the ed3k node reachable (no NAT tests): a network's first routers, "
                                         "seed nodes only. Restarts the node."));
+    t << flag("ed3kAutoIndexNode", "Connect to the ed3k index node an eD2K server names. Default off.");
     t << flag("ed3kHide", "Hide this node (ed3k hops.md §1): new ed3k searches, downloads and shares go under the "
                           "anonymous key, through paths of other nodes. Files keep the key they have.");
     t << number("ed3kHops", 0, 3, "", "Hops of every path while hiding (0 = deniable, not hidden: only while forwarding for "

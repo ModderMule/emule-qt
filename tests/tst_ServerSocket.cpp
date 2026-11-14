@@ -2,6 +2,7 @@
 /// @brief Tests for ServerSocket — server TCP protocol handling.
 
 #include "TestHelpers.h"
+#include "app/AppContext.h"
 #include "net/ServerSocket.h"
 #include "net/Packet.h"
 #include "server/Server.h"
@@ -11,6 +12,7 @@
 #include "protocol/Tag.h"
 #include "utils/SafeFile.h"
 
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTest>
@@ -49,6 +51,7 @@ private slots:
     void socketError_reportsOnceThroughBothEntryPoints();
     void natRendezvous_idChangeLengthAndNotices();
     void natRendezvous_serverIdentNatPort();
+    void serverIdent_ed3kTagNamesTheIndexNode();
 };
 
 /// Helper: write raw ED2K packet bytes to a socket.
@@ -408,6 +411,42 @@ void tst_ServerSocket::natRendezvous_serverIdentNatPort()
     QVERIFY(clientSocket.currentServer());
     QCOMPARE(clientSocket.currentServer()->natPort(), uint16{2010});
 
+    serverSide->close();
+    clientSocket.close();
+}
+
+// ST_ED3K (0xE3, ed2k-signals.md §3): the server's index node link goes to the ed3k hook
+void tst_ServerSocket::serverIdent_ed3kTagNamesTheIndexNode()
+{
+    QStringList links;
+    theApp.ed3kIndexLink = [&links](const QString& link) { links << link; };
+    const auto unhook = qScopeGuard([] { theApp.ed3kIndexLink = {}; });
+
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    ServerSocket clientSocket;
+    QSignalSpy identSpy(&clientSocket, &ServerSocket::serverIdentReceived);
+    Server srv(htonl(0x7F000001), server.serverPort());
+    clientSocket.connectTo(srv);
+    QVERIFY(server.waitForNewConnection(5000));
+    auto* serverSide = server.nextPendingConnection();
+    QVERIFY(serverSide != nullptr);
+    QVERIFY(clientSocket.waitForConnected(5000));
+
+    const QString link = QStringLiteral("ed3k:node?id=00112233445566778899aabbccddeeff&ep=192.0.2.7:4672");
+    SafeMemFile data;
+    const uint8 hash[16] = {};
+    data.writeHash16(hash);
+    data.writeUInt32(htonl(0x0A010203));
+    data.writeUInt16(4661);
+    data.writeUInt32(1);
+    Tag(static_cast<uint8>(ST_ED3K), link).writeTagToFile(data);
+    const QByteArray payload = data.takeBuffer();
+    writeRawPacket(serverSide, OP_EDONKEYPROT, OP_SERVERIDENT, payload.constData(),
+                   static_cast<uint32>(payload.size()));
+
+    QTRY_COMPARE_WITH_TIMEOUT(identSpy.count(), 1, 3000);
+    QCOMPARE(links, QStringList{link});
     serverSide->close();
     clientSocket.close();
 }

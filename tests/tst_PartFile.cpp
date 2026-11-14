@@ -63,6 +63,8 @@ private slots:
     void writeToBuffer_fillsGap();
     void flushBuffer_writesToDisk();
     void flushBuffer_isRefusedAtTheDiskFloorAndRetried();
+    void moveTo_takesAStarvedFileAndItsBufferToAnotherFolder();
+    void moveTo_refusesWhileMoving();
     void getNextRequestedBlock_basic();
     void httpRange_takesLargestGap();
     void httpRange_splitsAGapAnotherSourceIsIn();
@@ -403,6 +405,72 @@ void tst_PartFile::flushBuffer_isRefusedAtTheDiskFloorAndRetried()
     pf.flushBuffer();
     QVERIFY(!pf.isInsufficient());
     QVERIFY(pf.isCompleteBDSafe(0, 99));
+}
+
+// #187: a file parked at the floor moves to another folder; the held block lands there
+void tst_PartFile::moveTo_takesAStarvedFileAndItsBufferToAnotherFolder()
+{
+    const QString from = m_tempDir.path() + QStringLiteral("/moveFrom");
+    const QString to = m_tempDir.path() + QStringLiteral("/moveTo");
+    QDir().mkpath(from);
+
+    const bool savedCheck = thePrefs.checkDiskspace();
+    const uint64 savedFloor = thePrefs.minFreeDiskSpace();
+    DownloadQueue dq;
+    auto* savedQueue = theApp.downloadQueue;
+    theApp.downloadQueue = &dq;
+    const auto restore = qScopeGuard([&] {
+        theApp.downloadQueue = savedQueue;
+        thePrefs.setCheckDiskspace(savedCheck);
+        thePrefs.setMinFreeDiskSpace(savedFloor);
+    });
+    thePrefs.setCheckDiskspace(true);
+    thePrefs.setMinFreeDiskSpace(1000);
+    uint64 freeBytes = 1050;
+    dq.setFreeSpaceProbe([&freeBytes](const QString&) { return std::optional<uint64>(freeBytes); });
+
+    PartFile pf;
+    pf.setFileSize(1000);
+    pf.setTmpPath(from);
+    QVERIFY(pf.createPartFile(from));
+    const QString oldPart = from + u'/' + pf.partMetFileName().chopped(4);
+    std::vector<uint8> data(100, 0xCD);
+    pf.writeToBuffer(100, data.data(), 0, 99, nullptr);
+    pf.flushBuffer();
+    QVERIFY(pf.isInsufficient());
+
+    freeBytes = 5000;   // the other disk has room
+    dq.setFreeSpaceProbe([&freeBytes](const QString&) { return std::optional<uint64>(freeBytes); });
+    QCOMPARE(pf.moveTo(to), QString());
+    QTRY_VERIFY(!pf.isRelocating());
+
+    QCOMPARE(QDir::cleanPath(pf.tmpPath()), QDir::cleanPath(to));
+    QVERIFY(!QFile::exists(oldPart));
+    QVERIFY(!QFile::exists(oldPart + QStringLiteral(".met")));
+    QVERIFY(QFile::exists(pf.fullName()));
+    QVERIFY2(!pf.isInsufficient() && !pf.isPaused(), "the starved file did not go on");
+
+    pf.flushBuffer();
+    QVERIFY(pf.isCompleteBDSafe(0, 99));
+    QFile part(to + u'/' + pf.partMetFileName().chopped(4));
+    QVERIFY(part.open(QIODevice::ReadOnly));
+    QVERIFY(part.seek(0));
+    QCOMPARE(part.read(100), QByteArray(100, char(0xCD)));
+}
+
+void tst_PartFile::moveTo_refusesWhileMoving()
+{
+    const QString from = m_tempDir.path() + QStringLiteral("/busyFrom");
+    QDir().mkpath(from);
+    PartFile pf;
+    pf.setFileSize(1000);
+    pf.setTmpPath(from);
+    QVERIFY(pf.createPartFile(from));
+    QCOMPARE(pf.moveTo(m_tempDir.path() + QStringLiteral("/busyTo")), QString());
+    QVERIFY(!pf.moveTo(m_tempDir.path() + QStringLiteral("/busyTo2")).isEmpty());
+    QVERIFY(!pf.moveTo(QStringLiteral("relative/dir")).isEmpty());
+    QTRY_VERIFY(!pf.isRelocating());
+    QVERIFY(pf.isPaused() == false);   // it was running: on again
 }
 
 void tst_PartFile::getNextRequestedBlock_basic()

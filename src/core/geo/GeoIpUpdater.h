@@ -79,7 +79,7 @@ private:
     [[nodiscard]] QUrl dbIpUrl(int monthsBack) const;
     void startRequest(const QUrl& url);
     void onDownloaded(const HttpFileDownload::Result& r);
-    void finish(bool ok, const QString& message);
+    void finish(bool ok, const QString& message, bool routine = false);   ///< routine: debug log only
     [[nodiscard]] bool installDatabase(const QByteArray& mmdb, QString& error);
 
     IP2Country* m_ip2Country = nullptr;

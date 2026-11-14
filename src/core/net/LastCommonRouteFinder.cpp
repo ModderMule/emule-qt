@@ -591,8 +591,8 @@ void LastCommonRouteFinder::run()
         const uint8 lastCommonTTL = probe.lastCommonTTL;
         const uint32 hostToPing = probe.hostToPing;
         bool useUdp = probe.useUdp;
-        logInfo(QStringLiteral("USS: Last common hop at TTL %1: %2, pinging through it to %3")
-                    .arg(lastCommonTTL).arg(ipstr(lastCommonHost), ipstr(hostToPing)));
+        logDebug([&]() -> QString { return QStringLiteral("USS: Last common hop at TTL %1: %2, pinging through it to %3")
+                    .arg(lastCommonTTL).arg(ipstr(lastCommonHost), ipstr(hostToPing)); });
 
         // --- Phase 3: lowest ping, the smallest of ten (MFC :502-549) ---
         uint32 lowestInitAllowed;
@@ -623,7 +623,7 @@ void LastCommonRouteFinder::run()
             continue;
         hasSucceededAtLeastOnce = true;
 
-        logInfo(QStringLiteral("USS: Lowest ping: %1 ms").arg(initialPing));
+        logDebug([&]() -> QString { return QStringLiteral("USS: Lowest ping: %1 ms").arg(initialPing); });
 
         // --- Phase 4: Dynamic adjustment loop ---
         {
@@ -687,10 +687,10 @@ void LastCommonRouteFinder::run()
                 const PingStatus ps = pinger.ping(hostToPing, lastCommonTTL, useUdp);
                 if (ps.success && ps.status == kPingTTLExpired) {
                     if (ps.destinationAddress != lastCommonHost) {
-                        logInfo(QStringLiteral("USS: Network topology has changed at TTL %1 "
+                        logDebug([&]() -> QString { return QStringLiteral("USS: Network topology has changed at TTL %1 "
                                                "(expected %2, got %3), tracing again")
                                     .arg(lastCommonTTL)
-                                    .arg(ipstr(lastCommonHost), ipstr(ps.destinationAddress)));
+                                    .arg(ipstr(lastCommonHost), ipstr(ps.destinationAddress)); });
                         restart = true;
                     }
                     pingMs = static_cast<uint32>(ps.delay);
@@ -707,7 +707,7 @@ void LastCommonRouteFinder::run()
                 break;
             if (!pinged) {
                 if (enabledNow())
-                    logInfo(QStringLiteral("USS: No answer to pings for a long time, tracing again"));
+                    logDebug(QStringLiteral("USS: No answer to pings for a long time, tracing again"));
                 break;
             }
 

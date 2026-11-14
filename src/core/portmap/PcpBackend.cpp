@@ -200,7 +200,7 @@ void PcpBackend::checkEpoch(uint32 epochTime)
 
     // Section 8.5: the server lost state, so every mapping it held is gone.
     // Re-adding now beats waiting out the lease with a dead mapping advertised.
-    logWarning(QStringLiteral("PCP: server epoch went backwards — it restarted"));
+    logDebug(QStringLiteral("PCP: server epoch went backwards — it restarted"));
     emit mappingsInvalidated(QStringLiteral("PCP epoch violation"));
 }
 

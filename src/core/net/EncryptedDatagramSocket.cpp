@@ -173,7 +173,7 @@ DecryptResult EncryptedDatagramSocket::decryptReceivedClient(
 
         int remaining = len - kCryptHeaderWithoutPadding;
         if (remaining <= paddingByte) {
-            logWarning(QStringLiteral("Invalid obfuscated UDP packet: padding size (%1) >= remaining bytes").arg(paddingByte));
+            logDebug([&]() -> QString { return QStringLiteral("Invalid obfuscated UDP packet: padding size (%1) >= remaining bytes").arg(paddingByte); });
             result.length = len; // pass through
             return result;
         }
@@ -186,7 +186,7 @@ DecryptResult EncryptedDatagramSocket::decryptReceivedClient(
 
         if (isKad) {
             if (remaining <= 8) {
-                logWarning(QStringLiteral("Obfuscated Kad packet with missing verify keys"));
+                logDebug(QStringLiteral("Obfuscated Kad packet with missing verify keys"));
                 result.length = len;
                 return result;
             }
@@ -346,7 +346,7 @@ DecryptResult EncryptedDatagramSocket::decryptReceivedServer(
 
         int remaining = len - kCryptHeaderWithoutPadding;
         if (remaining <= paddingByte) {
-            logWarning(QStringLiteral("Invalid obfuscated server UDP packet: padding too large"));
+            logDebug(QStringLiteral("Invalid obfuscated server UDP packet: padding too large"));
             result.length = len;
             return result;
         }

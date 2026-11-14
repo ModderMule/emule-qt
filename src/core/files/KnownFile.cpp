@@ -1406,7 +1406,7 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
             file.fileTime(QFileDevice::FileModificationTime).toSecsSinceEpoch());
     }
     if (scanned && (scanned->size != length || scanned->mtime != openedDate)) {
-        logInfo(QStringLiteral("File changed since it was scanned: %1").arg(fullPath));
+        logSharedVerbose(QStringLiteral("File changed since it was scanned: %1").arg(fullPath));
         if (changedSinceScan)
             *changedSinceScan = true;
         return false;
@@ -1504,7 +1504,7 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
     fi.refresh();
     if (static_cast<uint64>(fi.size()) != length
         || static_cast<time_t>(fi.lastModified().toSecsSinceEpoch()) != utcFileDate()) {
-        logInfo(QStringLiteral("File changed while it was hashed: %1").arg(fullPath));
+        logSharedVerbose(QStringLiteral("File changed while it was hashed: %1").arg(fullPath));
         return false;
     }
 

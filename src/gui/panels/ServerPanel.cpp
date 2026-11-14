@@ -397,6 +397,22 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
         });
     }
 
+    // -- Disconnect: the connected server, or one naming an ed3k index node ------
+    // (that index node is dropped from ed3k without a restart)
+    auto* disconnectAction = m_serverMenu->addAction(tr("Disconnect"));
+    disconnectAction->setIcon(ico("ConnectDrop.ico", QStyle::SP_MediaStop));
+    disconnectAction->setEnabled(hasSelection
+                                 && ((row->serverId != 0 && row->serverId == m_serverListModel->connectedServer())
+                                     || !row->ed3kLink.isEmpty()));
+    if (disconnectAction->isEnabled()) {
+        const uint32_t ip = row->numericIp;
+        const QString addr = row->addr;
+        const uint16_t port = row->port;
+        connect(disconnectAction, &QAction::triggered, this, [this, ip, addr, port]() {
+            disconnectFromServer(ip, addr, port);
+        });
+    }
+
     // -- Priority submenu -----------------------------------------------------
     auto* prioMenu = m_serverMenu->addMenu(tr("Priority"));
     prioMenu->setIcon(ico("Priority.ico", QStyle::SP_ArrowRight));
@@ -1236,6 +1252,14 @@ void ServerPanel::requestNetworkInfo()
             return;
         m_ed3kInfo = std::move(ed3k);
         m_sharedInfo = std::move(shared);
+        // a server naming a connected index node is emphasised like the eD2K one
+        QStringList indexUp;
+        for (const auto& v : m_ed3kInfo.value(QStringLiteral("indexNodes")).toArray()) {
+            const QCborMap n = v.toMap();
+            if (n.value(QStringLiteral("state")).toInteger() == 2)
+                indexUp.append(n.value(QStringLiteral("node")).toString());
+        }
+        m_serverListModel->setConnectedIndexNodes(indexUp);
         refreshMyInfo();
     });
 }
@@ -1672,6 +1696,17 @@ void ServerPanel::connectToServer(uint32_t ip, const QString& addr, uint16_t por
     }
 }
 
+void ServerPanel::disconnectFromServer(uint32_t ip, const QString& addr, uint16_t port)
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+    Ipc::IpcMessage req(Ipc::IpcMsgType::DisconnectFromServer);
+    req.append(static_cast<qint64>(ip));
+    req.append(static_cast<qint64>(port));
+    req.append(addr);
+    m_ipc->sendRequest(std::move(req));
+}
+
 void ServerPanel::resetConnectionState()
 {
     m_ed2kConnected = m_ed2kConnecting = m_ed2kFirewalled = m_ed2kLowID = false;
@@ -1682,6 +1717,7 @@ void ServerPanel::resetConnectionState()
     m_kadIP = m_kadId = 0;
     m_kadUsers = m_kadUsersExp = m_kadFiles = 0;
     m_ed3kInfo.clear();
+    m_serverListModel->setConnectedIndexNodes({});
     m_sharedInfo.clear();
     updateConnectButton(false, false);
     m_serverListModel->setConnectedServer(0);

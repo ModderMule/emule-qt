@@ -299,11 +299,16 @@ int UsenetQueueItem::percentComplete() const
     return int(qint64(doneSegmentCount()) * 100 / total);
 }
 
+QString UsenetQueueItem::workDir(const QString& defaultRoot) const
+{
+    return QDir(workRoot.isEmpty() ? defaultRoot : workRoot).filePath(id);
+}
+
 void UsenetQueueItem::initFileStates(const QString& tempRoot)
 {
     files.resize(nzb.files.size());
 
-    const QString itemDir = QDir(tempRoot).filePath(id);
+    const QString itemDir = workDir(tempRoot);
     for (int i = 0; i < nzb.files.size(); ++i) {
         const NzbFileInfo& info = nzb.files.at(i);
         UsenetFileState& st = files[i];

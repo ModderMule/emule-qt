@@ -147,6 +147,8 @@ struct Ed3kHosterJoin::Entry {
     bool hashing = false;                ///< checkHash() runs
     /// LinkVouched while hashing: applied once the checksum matched
     std::optional<std::pair<std::uint64_t, ffi::Root>> heldVouch;
+    bool moving = false;                 ///< moveTo() runs
+    bool resumeAfterMove = false;
 };
 
 Ed3kHosterJoin::Ed3kHosterJoin(Ed3kSession& session, const QString& configDir, QObject* parent)
@@ -461,11 +463,72 @@ void Ed3kHosterJoin::resume(quint32 id)
     Entry* e = find(id);
     if (!e || e->item.state == State::Complete)
         return;
+    if (e->moving) {   // on again once moved
+        e->resumeAfterMove = true;
+        return;
+    }
     e->tries = 0;
     if (m_started)
         begin(*e);
     save();
     pumpSession();
+}
+
+QString Ed3kHosterJoin::moveTo(quint32 id, const QString& dir)
+{
+    Entry* e = find(id);
+    if (!e)
+        return QStringLiteral("unknown item");
+    if (e->item.state == State::Complete)
+        return QStringLiteral("already complete");
+    if (e->moving || e->hashing)
+        return QStringLiteral("busy");
+    const QString target = QDir::cleanPath(QDir::fromNativeSeparators(dir));
+    if (target.isEmpty() || QDir::isRelativePath(target) || !QDir().mkpath(target))
+        return QStringLiteral("cannot use %1").arg(dir);
+    const QString from = e->item.file.isEmpty() ? partPathFor(e->key) : e->item.file;
+    const QString to = QDir(target).filePath(QFileInfo(from).fileName());
+    if (QDir::cleanPath(QFileInfo(from).absolutePath()) == target)
+        return {};
+    if (QFile::exists(to))
+        return QStringLiteral("%1 already exists").arg(to);
+
+    // running, or failed writing (a full disk): on again there; a pause stays
+    const State st = e->item.state;
+    e->resumeAfterMove = st != State::Paused && (st != State::Failed || e->item.reason == Reason::WriteFailed);
+    if (st != State::Paused && st != State::Failed)
+        pause(id);
+    if (!m_tempDirs.contains(target))
+        m_tempDirs.append(target);   // found there on the next start (the daemon keeps it in the prefs)
+    const QString oldMet = from + QStringLiteral(".met");
+    const auto done = [this, id, oldMet, to, target](const QString& error) {
+        Entry* e = find(id);
+        if (!e)
+            return;
+        e->moving = false;
+        if (!error.isEmpty()) {
+            logWarning(QStringLiteral("cannot move \"%1\": %2").arg(e->item.name, error));
+        } else {
+            e->item.file = to;
+            writeMet(*e);   // beside the new place, before the old one goes
+            forgetBlobWrites(oldMet);
+            QFile::remove(oldMet);
+            logInfo(QStringLiteral("moved \"%1\" to %2").arg(e->item.name, target));
+        }
+        changed(*e);
+        save();
+        if (std::exchange(e->resumeAfterMove, false))
+            resume(id);
+    };
+    e->moving = true;
+    changed(*e);
+    if (!QFile::exists(from)) {   // nothing written yet
+        done({});
+        return {};
+    }
+    logInfo(QStringLiteral("moving \"%1\" to %2").arg(e->item.name, target));
+    relocateInBackground(from, to, e->item.done, done);
+    return {};
 }
 
 bool Ed3kHosterJoin::setArchivePassword(quint32 id, const QString& password)

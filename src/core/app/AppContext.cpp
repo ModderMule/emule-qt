@@ -500,10 +500,16 @@ void AppContext::setPublicIPv6Observed(const Address& addr, const QString& serve
     // already chose. A NAT66 / prefix-translating router legitimately lands here — the log
     // says so explicitly rather than silently degrading.
     if (!isLocalIPv6(addr)) {
-        logInfo(QStringLiteral("IPv6: %1 reports our egress as %2, which is NOT assigned to any "
-                               "local interface — ignoring, keeping %3")
-                    .arg(who, addr.toString(),
-                         publicIPv6().isNull() ? QStringLiteral("none") : publicIPv6().toString()));
+        // every login repeats it: once an hour per address, the rest in the verbose log
+        static LogRepeatGate gate(3'600'000);
+        const QString line = QStringLiteral("IPv6: %1 reports our egress as %2, which is NOT assigned to any "
+                                            "local interface — ignoring, keeping %3")
+                                 .arg(who, addr.toString(),
+                                      publicIPv6().isNull() ? QStringLiteral("none") : publicIPv6().toString());
+        if (const QString shown = gate.filter(addr.toString(), line); !shown.isEmpty())
+            logInfo(shown);
+        else
+            logDebug(line);
         return;
     }
 

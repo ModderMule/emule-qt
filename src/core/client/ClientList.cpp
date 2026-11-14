@@ -137,13 +137,13 @@ UpDownClient* ClientList::attachToAlreadyKnown(UpDownClient* newClient, ClientRe
                 {
                     // found is cryptographically identified, so the newcomer is the bad guy.
                     if (thePrefs.logBannedClients()) {
-                        logWarning(QStringLiteral("Clients: %1 (%2), Ban reason: Userhash invalid")
+                        logLeecher(QStringLiteral("Clients: %1 (%2), Ban reason: Userhash invalid")
                                        .arg(newClient->userName(),
                                             ipstr(newClient->connectAddress())));
                     }
                     newClient->ban(QStringLiteral("Userhash invalid"));
                 } else if (thePrefs.logBannedClients()) {
-                    logWarning(QStringLiteral("Found matching client, to a currently connected "
+                    logLeecher(QStringLiteral("Found matching client, to a currently connected "
                                               "client: %1 (%2) and %3 (%4)")
                                    .arg(newClient->userName(), ipstr(newClient->connectAddress()),
                                         found->userName(), ipstr(found->connectAddress())));
@@ -836,7 +836,7 @@ int ClientList::disconnectFilteredClients()
     // disconnected() may delete the client: collected first
     for (UpDownClient* client : cut) {
         if (thePrefs.logFilteredIPs())
-            logWarning(QStringLiteral("Disconnected filtered client %1 - IP filter").arg(client->userName()));
+            logDebug([&]() -> QString { return QStringLiteral("Disconnected filtered client %1 - IP filter").arg(client->userName()); });
         client->disconnected(QStringLiteral("IPFilter"));
     }
     if (theApp.statistics)
@@ -1188,7 +1188,7 @@ void ClientList::noteHandshakeFailure(const Address& addr)
     m_handshakeFailures.erase(addr.peerKey());
     addBannedClient(addr);
     if (thePrefs.logBannedClients()) {
-        logWarning(QStringLiteral("Banned %1: %2 connections dropped before a hello")
+        logLeecher(QStringLiteral("Banned %1: %2 connections dropped before a hello")
                        .arg(ipstr(addr)).arg(HANDSHAKEFAIL_BAN_COUNT));
     }
 }

@@ -415,8 +415,13 @@ void StallWatchdog::report(std::chrono::milliseconds stalledFor)
     logWarning(QStringLiteral("Core main thread stalled for %1 ms%2")
                    .arg(stalledFor.count())
                    .arg(path.isEmpty() ? QString() : QStringLiteral(", stack in ") + path));
-    for (const QString& line : text.split(u'\n', Qt::SkipEmptyParts).mid(1, 40))
-        logWarning(QStringLiteral("  stall: ") + line);
+    // stack in the file: verbose log only
+    for (const QString& line : text.split(u'\n', Qt::SkipEmptyParts).mid(1, 40)) {
+        if (path.isEmpty())
+            logWarning(QStringLiteral("  stall: ") + line);
+        else
+            logDebug(QStringLiteral("  stall: ") + line);
+    }
 }
 
 void StallWatchdog::reportLateStack(bool loopRan)
@@ -434,13 +439,18 @@ void StallWatchdog::reportLateStack(bool loopRan)
     m_lateStackPending = false;
 
     const QString text = QStringLiteral("\nMain thread stack once the kernel call returned:\n") + stack;
-    if (const QString path = lastReportPath(); !path.isEmpty()) {
+    const QString path = lastReportPath();
+    if (!path.isEmpty()) {
         QFile f(path);
         if (f.open(QIODevice::WriteOnly | QIODevice::Append))
             f.write(text.toUtf8());
     }
-    for (const QString& line : text.split(u'\n', Qt::SkipEmptyParts).mid(0, 40))
-        logWarning(QStringLiteral("  stall: ") + line);
+    for (const QString& line : text.split(u'\n', Qt::SkipEmptyParts).mid(0, 40)) {
+        if (path.isEmpty())
+            logWarning(QStringLiteral("  stall: ") + line);
+        else
+            logDebug(QStringLiteral("  stall: ") + line);
+    }
 #else
     Q_UNUSED(loopRan);
     m_lateStackPending = false;

@@ -137,6 +137,7 @@ private:
     void handleClearCompleted(const Ipc::IpcMessage& msg);
     void handleRenameDownload(const Ipc::IpcMessage& msg);
     void handleRenameFiles(const Ipc::IpcMessage& msg);
+    void handleMoveDownloads(const Ipc::IpcMessage& msg);
     void handleGetDownloadSources(const Ipc::IpcMessage& msg);
     void handleGetServers(const Ipc::IpcMessage& msg);
     void handleRemoveServer(const Ipc::IpcMessage& msg);
@@ -235,6 +236,7 @@ private:
     void handleUnshareFile(const Ipc::IpcMessage& msg);
     void handleSetFileShared(const Ipc::IpcMessage& msg);
     void handleBrowseDirectory(const Ipc::IpcMessage& msg);
+    void handleListFolders(const Ipc::IpcMessage& msg);
     void handleGetSharedDirState(const Ipc::IpcMessage& msg);
 
     // Download categories (268-270)

@@ -29,6 +29,9 @@ namespace BtBridge {
 void setSession(bt::BtSession* session);
 [[nodiscard]] bt::BtSession* session();
 
+/// "Move to" (#187): torrent @p id's data to @p dir. Empty: started; else why not.
+[[nodiscard]] QString moveTo(const QString& id, const QString& dir);
+
 /// The bundled I2P router (btI2pMode 1); set by DaemonApp, null when absent.
 void setI2pRouter(I2pRouter* router);
 

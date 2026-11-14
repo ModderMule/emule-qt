@@ -2,13 +2,55 @@
 #include <QTest>
 
 #include "TestHelpers.h"
+#include "utils/FileRelocate.h"
 #include "utils/PathUtils.h"
+
+#include <QTemporaryDir>
 
 /// @brief Tests for PathUtils.h path utility functions.
 class PathUtilsTest : public QObject {
     Q_OBJECT
 
 private slots:
+    // FileRelocate (#187)
+    void relocateFile_renamesAndReplacesTheTarget()
+    {
+        QTemporaryDir tmp;
+        const QString src = tmp.filePath(QStringLiteral("a/x.part"));
+        const QString dst = tmp.filePath(QStringLiteral("b/x.part"));
+        QDir().mkpath(tmp.filePath(QStringLiteral("a")));
+        QFile f(src);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("data");
+        f.close();
+        bool renamed = false;
+        QCOMPARE(eMule::relocateFile(src, dst, 0, false, &renamed), QString());
+        QVERIFY(renamed);
+        QVERIFY(!QFile::exists(src));
+        QFile g(dst);
+        QVERIFY(g.open(QIODevice::ReadOnly));
+        QCOMPARE(g.readAll(), QByteArray("data"));
+        QVERIFY(!eMule::relocateFile(src, dst, 0, false).isEmpty());   // gone: refused
+    }
+
+    void relocateDir_movesTheTreeOrCreatesAnEmptyOne()
+    {
+        QTemporaryDir tmp;
+        const QString from = tmp.filePath(QStringLiteral("job"));
+        QDir().mkpath(from + QStringLiteral("/sub"));
+        QFile f(from + QStringLiteral("/sub/f.bin"));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("x");
+        f.close();
+        const QString to = tmp.filePath(QStringLiteral("other/job"));
+        QCOMPARE(eMule::relocateDir(from, to, 0), QString());
+        QVERIFY(QFile::exists(to + QStringLiteral("/sub/f.bin")));
+        QVERIFY(!QFileInfo::exists(from));
+        QVERIFY(!eMule::relocateDir(from + QStringLiteral("2"), to, 0).isEmpty());   // target exists
+        QCOMPARE(eMule::relocateDir(tmp.filePath(QStringLiteral("none")), tmp.filePath(QStringLiteral("fresh")), 0), QString());
+        QVERIFY(QFileInfo(tmp.filePath(QStringLiteral("fresh"))).isDir());
+    }
+
     void testExecutablePath()
     {
         const QString path = eMule::executablePath();

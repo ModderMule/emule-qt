@@ -125,7 +125,7 @@ void HttpCacheManager::start()
     connect(m_timer, &QTimer::timeout, this, &HttpCacheManager::process);
     m_timer->start();
 
-    logInfo(QStringLiteral("HTTP Cache: manager started"));
+    logDebug(QStringLiteral("HTTP Cache: manager started"));
 
     // Naming the rotation once at startup is what makes a later "publishing to X"
     // line legible. Hosts and key ids only — a key is never logged.
@@ -510,7 +510,7 @@ void HttpCacheManager::publish(const Candidate& candidate, const HttpCacheServer
     const size_t reachable =
         reachablePeerCount(candidate, reachOfUrl(server.baseUrl), !thePrefs.filterLANIPs());
 
-    logInfo(QStringLiteral("HTTP Cache: publishing part %1 of %2 to %3 for %4 peers (%5 can reach it)")
+    logDebug(QStringLiteral("HTTP Cache: publishing part %1 of %2 to %3 for %4 peers (%5 can reach it)")
                 .arg(candidate.partIndex)
                 .arg(candidate.file->fileName(), QUrl(server.baseUrl).host())
                 .arg(candidate.peers.size())
@@ -565,7 +565,7 @@ void HttpCacheManager::onPublishFinished(const QString& key, const QString& serv
     m_session.bytesPublished += offer.cipherLength;
     ++m_session.chunksPublished;
 
-    logInfo(QStringLiteral("HTTP Cache: published part %1 (%2 bytes) -> %3")
+    logDebug(QStringLiteral("HTTP Cache: published part %1 (%2 bytes) -> %3")
                 .arg(offer.partIndex)
                 .arg(offer.cipherLength)
                 .arg(offer.url));
@@ -629,7 +629,7 @@ void HttpCacheManager::notePublishFailure(const QString& key, const QString& ser
         m_publishCooldown.insert(key, now + backoff.seconds);
         if (health.backoffUntil == 0)
             m_serverHealth.remove(serverBaseUrl);
-        logWarning(QStringLiteral("HTTP Cache: publish failed: %1 — retrying that part in %2 min")
+        logDebug(QStringLiteral("HTTP Cache: publish failed: %1 — retrying that part in %2 min")
                        .arg(result.error)
                        .arg(backoff.seconds / 60));
         return;
@@ -924,7 +924,7 @@ void HttpCacheManager::addKadChunks(const std::vector<HttpCacheOffer>& chunks)
 
         // No sender: a Kad record pointing at a local host is never for us.
         if (!urlIsAcceptable(offer.url, Address{})) {
-            logWarning(QStringLiteral("HTTP Cache: refusing a Kad chunk record pointing at %1")
+            logDebug(QStringLiteral("HTTP Cache: refusing a Kad chunk record pointing at %1")
                            .arg(offer.url));
             continue;
         }
@@ -951,7 +951,7 @@ void HttpCacheManager::addKadChunks(const std::vector<HttpCacheOffer>& chunks)
         m_kadFetches.insert(key);
         ++m_session.kadChunks;
 
-        logInfo(QStringLiteral("HTTP Cache: fetching part %1 of '%2' from a chunk found in Kad")
+        logDebug(QStringLiteral("HTTP Cache: fetching part %1 of '%2' from a chunk found in Kad")
                     .arg(offer.partIndex).arg(file->fileName()));
     }
 
@@ -1021,7 +1021,7 @@ void HttpCacheManager::handleOffer(UpDownClient* sender, const HttpCacheOffer& o
     }
 
     if (!urlIsAcceptable(offer.url, sender->connectAddress())) {
-        logWarning(QStringLiteral("HTTP Cache: refusing offer from %1 pointing at %2")
+        logDebug(QStringLiteral("HTTP Cache: refusing offer from %1 pointing at %2")
                        .arg(sender->userName(), offer.url));
         decline(HttpCacheResult::BadOffer);
         return;
@@ -1267,7 +1267,7 @@ void HttpCacheManager::reportPartVerified(const std::array<uint8, 16>& fileHash,
 
     m_entries.insert(key, std::move(entry));
 
-    logInfo(QStringLiteral("HTTP Cache: part %1 verified — relaying its chunk to peers "
+    logDebug(QStringLiteral("HTTP Cache: part %1 verified — relaying its chunk to peers "
                            "that still need it")
                 .arg(partIndex));
 

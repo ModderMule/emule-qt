@@ -142,7 +142,7 @@ void PortMapper::setDesiredMappings(std::vector<PortMapRequest> requests)
 void PortMapper::start()
 {
     if (m_enabledMask == 0) {
-        logInfo(QStringLiteral("PortMap: automatic port forwarding is disabled"));
+        logDebug(QStringLiteral("PortMap: automatic port forwarding is disabled"));
         setStatus(PortMapStatus::Disabled);
         return;
     }
@@ -253,7 +253,7 @@ void PortMapper::buildBackends()
                    return BindAddress::isBoundInterface(g.interfaceName);
                });
         if (!upnpUsable && (m_enabledMask & BitUPnP) != 0)
-            logInfo(QStringLiteral("PortMap: UPnP skipped — the selected interface has no "
+            logDebug(QStringLiteral("PortMap: UPnP skipped — the selected interface has no "
                                    "IPv4 gateway of its own"));
     }
     if ((m_enabledMask & BitUPnP) != 0 && upnpUsable) {
@@ -431,7 +431,7 @@ void PortMapper::adoptLateProbe(PortMapBackend* backend, bool supported, const Q
     slot->probed = true;
     slot->available = true;
 
-    logInfo(QStringLiteral("PortMap: %1 answered after the probe round closed%2 — trying it anyway")
+    logDebug(QStringLiteral("PortMap: %1 answered after the probe round closed%2 — trying it anyway")
                 .arg(backend->name(),
                      detail.isEmpty() ? QString() : QStringLiteral(" (%1)").arg(detail)));
 
@@ -658,11 +658,16 @@ void PortMapper::onMappingResult(PortMapBackend* backend, const PortMapping& map
         emit mappingChanged(mapping, true);
     } else {
         ++it->consecutiveFailures;
-        logWarning(QStringLiteral("PortMap: renewing %1 failed (%2/%3): %4")
-                       .arg(portMapPurposeName(mapping.request.purpose))
-                       .arg(it->consecutiveFailures)
-                       .arg(kMaxRenewFailures)
-                       .arg(error));
+        // first failure shown, the retries in the verbose log
+        const QString line = QStringLiteral("PortMap: renewing %1 failed (%2/%3): %4")
+                                 .arg(portMapPurposeName(mapping.request.purpose))
+                                 .arg(it->consecutiveFailures)
+                                 .arg(kMaxRenewFailures)
+                                 .arg(error);
+        if (it->consecutiveFailures == 1)
+            logWarning(line);
+        else
+            logDebug(line);
         emit mappingChanged(it->mapping, false);
         if (it->consecutiveFailures >= kMaxRenewFailures) {
             // The router stopped honouring this method; start over rather than
@@ -681,7 +686,7 @@ void PortMapper::onMappingsInvalidated(PortMapBackend* backend, const QString& r
     if (m_state != State::Active || currentCandidate() != backend)
         return;
 
-    logWarning(QStringLiteral("PortMap: %1 lost state (%2) — re-adding every mapping")
+    logDebug(QStringLiteral("PortMap: %1 lost state (%2) — re-adding every mapping")
                    .arg(backend->name(), reason));
 
     // Re-add immediately, with the renewal jitter spread so several mappings do

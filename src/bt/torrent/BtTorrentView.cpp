@@ -22,6 +22,9 @@ BtState stateOf(const lt::torrent_status& st)
 {
     if (st.errc)
         return BtState::Error;
+    // a failed write (disk full, read-only): libtorrent stops downloading and only seeds
+    if ((st.flags & lt::torrent_flags::upload_mode) && !st.is_finished)
+        return BtState::Error;
     if (st.moving_storage)
         return BtState::Moving;
     const bool paused = (st.flags & lt::torrent_flags::paused) && !(st.flags & lt::torrent_flags::auto_managed);
@@ -158,6 +161,8 @@ BtTorrentRow BtTorrentView::row(const lt::torrent_status& st)
     r.failedBytes = st.total_failed_bytes;
     if (st.errc)
         r.error = QString::fromStdString(st.errc.message());
+    else if (r.state == BtState::Error)
+        r.error = QStringLiteral("Cannot write to disk (full or read-only)");
     if (st.info_hashes.has_v1())
         r.hashV1 = hexOf(st.info_hashes.v1);
     if (st.info_hashes.has_v2())

@@ -381,8 +381,8 @@ void Server::addTagFromFile(const Tag& tag)
             if (tag.isInt())
                 m_metaNetworks = static_cast<uint32>(tag.intValue());
         } else {
-            logWarning(QStringLiteral("Unknown server.met tag: nameId=0x%1")
-                .arg(tag.nameId(), 2, 16, QChar(u'0')));
+            logDebug([&]() -> QString { return QStringLiteral("Unknown server.met tag: nameId=0x%1")
+                .arg(tag.nameId(), 2, 16, QChar(u'0')); });
         }
         break;
     }

@@ -313,6 +313,13 @@ public:
 
     QList<UsenetFileState> files;
 
+    /// The folder holding this item's work dir (`<workRoot>/<id>`) after a "Move to"
+    /// (#187); empty: Preferences::usenetTempDir(). Persisted (optional key).
+    QString workRoot;
+
+    /// `<workRoot or @p defaultRoot>/<id>`.
+    [[nodiscard]] QString workDir(const QString& defaultRoot) const;
+
     /// Set when the item stopped for a reason worth showing the user.
     QString error;
 

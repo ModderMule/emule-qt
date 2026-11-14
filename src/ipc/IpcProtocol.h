@@ -56,6 +56,11 @@ enum class IpcMsgType : int {
     GetUploads           = 120,
     GetDownloadClients   = 121,  ///< [] — source clients we are downloading from
     GetKnownClients      = 122,  ///< [] — all known clients
+    /// [network: int (0 eD2K, 1 ed3k, 2 BitTorrent, 3 Usenet, 4 Hoster), ids: [string], dir: string]
+    /// → [[id, ok, error]...]. "Move to" (#187): the unfinished data to dir; for eD2K, ed3k,
+    /// Usenet and hoster dir joins the temp dirs. A finished eD2K/ed3k file whose completion
+    /// failed completes into dir. Async: the rows show Moving; ok = started.
+    MoveDownloads        = 123,
     GetServers           = 130,
     // Server-keyed requests carry `addr` — the literal address — in addition to the
     // legacy numeric `ip`, which is 0 for an IPv6 server. The daemon prefers `addr`
@@ -250,6 +255,10 @@ enum class IpcMsgType : int {
     /// `canToggle` is false where the state is forced — the incoming directory is
     /// always shared, a non-shareable directory never is.
     BrowseDirectory         = 267,
+    /// [path: string ("" = the machine's drives), tree: bool] → [ok, [[label, path,
+    /// hasSubfolders]...], home: string] or [false, error]. Folder pickers and share trees
+    /// for a GUI on another host. tree: path and every folder below it (labels empty).
+    ListFolders             = 298,
 
     // -- Download categories (268-270) ---------------------------------------
     //

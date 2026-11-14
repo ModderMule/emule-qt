@@ -229,6 +229,9 @@ public:
     [[nodiscard]] static QString dummyCnlUrl(const ClickNLoad& post);
     void pause(quint32 id);
     void resume(quint32 id);
+    /// "Move to" (#187): the unfinished file (+ .met) to @p dir, one of the temp dirs from
+    /// then on; running or failed (disk full) items go on there. Empty: started; else why not.
+    [[nodiscard]] QString moveTo(quint32 id, const QString& dir);
     /// Starts @p id over from its first link; puzzles of its hosters are asked again.
     void retry(quint32 id);
     /// An archive password the user typed for @p id's encrypted set: kept with its package

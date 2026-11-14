@@ -295,6 +295,7 @@ inline void insertBindState(QCborMap& info)
         {QStringLiteral("serverId"),    static_cast<qint64>(s.serverId())},
         {QStringLiteral("hasMetaApi"),  s.hasMetaApi()},
         {QStringLiteral("addrPort"),    s.addressWithPort()},   // key of the Meta API requests
+        {QStringLiteral("ed3k"),        s.ed3kLink()},          // its ed3k index node (ST_ED3K)
     };
 }
 

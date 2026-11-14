@@ -39,6 +39,11 @@ QString softwareOf(const QString& agent)
     return m.hasMatch() ? QStringLiteral("%1 v%2").arg(m.captured(1), m.captured(2)) : agent;
 }
 
+// Hello.caps bits (Protocol.md §2)
+constexpr std::uint64_t kCapRouter = 1u << 0;   // in routing tables: open and routing
+constexpr std::uint64_t kCapIndex = 1u << 2;    // index node (§11)
+constexpr std::uint64_t kCapEd2k = 1u << 6;     // speaks eD2K too
+
 QString hexOf(std::span<const std::uint8_t> bytes)
 {
     return QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(bytes.data()), qsizetype(bytes.size())).toHex());
@@ -48,7 +53,6 @@ QCborMap rowToCbor(const ed3k::Ed3kUploads::Row& r, qint64 nowMs)
 {
     const QString node = hexOf(r.node.bytes);
     const qint64 held = std::max<qint64>(0, nowMs - r.since);
-    constexpr std::uint64_t kCapEd2k = 1u << 6;   // Protocol.md §2 bit 6 ED2K
     return QCborMap{
         {QStringLiteral("network"), QStringLiteral("ed3k")},
         // Hello.nick: the peer's user name (its Options); else the node ID's start
@@ -59,6 +63,8 @@ QCborMap rowToCbor(const ed3k::Ed3kUploads::Row& r, qint64 nowMs)
         // Hello seen: caps and agent are known
         {QStringLiteral("helloKnown"), !r.agent.isEmpty() || r.caps != 0},
         {QStringLiteral("ed2k"), (r.caps & kCapEd2k) != 0},
+        {QStringLiteral("router"), (r.caps & kCapRouter) != 0},
+        {QStringLiteral("indexNode"), (r.caps & kCapIndex) != 0},
         {QStringLiteral("uploadState"), r.holding ? QStringLiteral("Transferring") : QStringLiteral("OnQueue")},
         {QStringLiteral("uploadFileName"), r.fileName},
         {QStringLiteral("uploadFileSize"), qint64(std::min<std::uint64_t>(r.fileSize, INT64_MAX))},
@@ -186,6 +192,8 @@ QCborMap sourceToCbor(const SourceInfo& s)
         {QStringLiteral("reqFileName"), s.otherName},
         {QStringLiteral("transferredDown"), qint64(std::min<std::uint64_t>(down, INT64_MAX))},
         {QStringLiteral("sessionDown"), qint64(std::min<std::uint64_t>(down, INT64_MAX))},
+        // only a held slot moves bytes; the 10 s average lingers after it ends
+        {QStringLiteral("datarate"), s.holding && !s.otherFile ? qint64(s_uploads->downRate(s.key, s.node)) : 0},
         {QStringLiteral("availPartCount"), held},
         {QStringLiteral("partCount"), pieces},
         {QStringLiteral("addr"), seen.address},
@@ -205,7 +213,6 @@ QCborMap sourceDetailsOf(const SourceInfo& s)
     const Seen seen = seenOf(s);
     const bool anon = s.key == ::ed3k::KeyKind::Anon;
     const QString node = hexOf(s.node.bytes);
-    constexpr std::uint64_t kCapEd2k = 1u << 6;   // Protocol.md §2 bit 6 ED2K
     const auto [up, down] = s_uploads->peerBytes(s.key, s.node);
     QCborMap m{
         {QStringLiteral("network"), QStringLiteral("ed3k")},
@@ -217,6 +224,8 @@ QCborMap sourceDetailsOf(const SourceInfo& s)
         {QStringLiteral("software"), softwareOf(seen.agent)},
         {QStringLiteral("helloKnown"), seen.known},
         {QStringLiteral("ed2k"), (seen.caps & kCapEd2k) != 0},
+        {QStringLiteral("router"), (seen.caps & kCapRouter) != 0},
+        {QStringLiteral("indexNode"), (seen.caps & kCapIndex) != 0},
         {QStringLiteral("addr"), seen.address},
         {QStringLiteral("port"), seen.port},
         {QStringLiteral("cc"), seen.address.isEmpty() ? QString() : countryCodeOf(QHostAddress(seen.address))},

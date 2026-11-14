@@ -3,6 +3,7 @@
 
 #include "pch.h"
 #include "dialogs/Ed3kSetsDialog.h"
+#include "dialogs/FolderPickerDialog.h"
 #include "controls/AbstractListView.h"
 #include "dialogs/Ed3kSellDialogs.h"
 
@@ -20,7 +21,6 @@
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
-#include <QFileDialog>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -853,7 +853,7 @@ void Ed3kSetsDialog::broadcast()
     buttons->button(QDialogButtonBox::Ok)->setText(tr("Broadcast"));
     form->addRow(buttons);
     connect(browse, &QPushButton::clicked, &d, [&] {
-        const QString dir = QFileDialog::getExistingDirectory(&d, tr("HLS Output Folder"), folder->text());
+        const QString dir = FolderPickerDialog::getExistingDirectory(&d, m_ipc, tr("HLS Output Folder"), folder->text());
         if (!dir.isEmpty())
             folder->setText(dir);
     });

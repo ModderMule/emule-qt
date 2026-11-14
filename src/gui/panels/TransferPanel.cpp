@@ -10,6 +10,7 @@
 #include "media/PreviewApps.h"
 #include "dialogs/AddSourceDialog.h"
 #include "utils/MassRenameAction.h"
+#include "utils/MoveDownloadsAction.h"
 #include "utils/Clipboard.h"
 #include "utils/Opcodes.h"
 #include "controls/AbstractListView.h"
@@ -591,6 +592,13 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
                 });
             });
         renameAct->setEnabled(hasSel);
+
+        // #187: the unfinished data to another folder (out of disk space, mostly)
+        auto* moveAct = m_downloadMenu->addAction(menuIcon("Folders.ico"), MoveDownloadsAction::menuText(), this,
+                                                  [this, allHashes]() { moveDownloadsToFolder(allHashes); });
+        moveAct->setEnabled(anyUnfinished && std::ranges::any_of(selectedDls, [](const DownloadRow* d) {
+            return d->status != QLatin1String("completing") && d->fileOp == 0;
+        }));
     }
 
     m_downloadMenu->addSeparator();
@@ -735,12 +743,15 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
                                   [this] { setDownloadToolbarShown(true); });
     }
 
-    // ed3k rows only: what the ed3k list does (Ed3kDownloadControl, open); the eD2K-only
-    // entries (preview, details, comments, sources, eD2K links, ...) are off
+    // ed3k rows only: what the ed3k list does (Ed3kDownloadControl, open, preview); the
+    // eD2K-only entries (details, comments, sources, eD2K links, ...) are off
     if (hasSel && std::all_of(selectedDls.begin(), selectedDls.end(), [](const DownloadRow* d) { return d && d->isEd3k(); })) {
+        // "Preview" is the action or, in ext mode, its submenu (own entries gated above)
         const QSet<QString> ed3kActions{tr("Priority (Download)"), tr("Pause"), tr("Stop"), tr("Resume"), tr("Cancel"),
-                                        tr("Open File"), tr("Clear Completed"), tr("Assign To Category"),
-                                        tr("Paste eD2K Links"), tr("ed3k Sets..."), tr("Find..."), tr("Show Toolbar")};
+                                        tr("Open File"), tr("Preview"), tr("Preview with"), tr("Clear Completed"),
+                                        tr("Assign To Category"),
+                                        tr("Paste eD2K Links"), tr("ed3k Sets..."), tr("Find..."), tr("Show Toolbar"),
+                                        MoveDownloadsAction::menuText()};
         for (QAction* act : m_downloadMenu->actions())
             if (!act->isSeparator() && !ed3kActions.contains(act->text()))
                 act->setEnabled(false);
@@ -3423,6 +3434,24 @@ void TransferPanel::pasteDownloadLinks()
     Ed2kLinkImporter::importLinks(QApplication::clipboard()->text().trimmed(), m_ipc, this,
                                   Ed2kLinkImporter::Source::Manual,
                                   Ed2kLinkImporter::Prompt::Silent);
+}
+
+void TransferPanel::moveDownloadsToFolder(QStringList hashes)
+{
+    QHash<QString, QString> names;
+    for (const QString& h : std::as_const(hashes))
+        if (const DownloadRow* d = m_downloadModel->findByHash(h))
+            names.insert(h, d->fileName);
+    const QStringList roots = takeEd3kHashes(hashes);   // what is left is eD2K
+    QPointer<TransferPanel> self(this);
+    MoveDownloadsAction::run(this, m_ipc,
+                             {{MoveDownloadsAction::Network::Ed2k, hashes}, {MoveDownloadsAction::Network::Ed3k, roots}},
+                             names, {}, [self] {
+                                 if (!self)
+                                     return;
+                                 self->requestDownloads();
+                                 self->requestEd3kDownloads();
+                             });
 }
 
 } // namespace eMule

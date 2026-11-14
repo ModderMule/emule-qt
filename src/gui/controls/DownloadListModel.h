@@ -99,7 +99,7 @@ struct DownloadRow {
     int a4afSrcCount = 0;
     bool isPaused = false;
     bool isStopped = false;
-    /// PartFileOp ordinal: 0 none, 1 hashing, 2 copying, 3 uncompressing, 4 importing.
+    /// PartFileOp ordinal: 0 none, 1 hashing, 2 copying, 3 uncompressing, 4 importing, 5 moving.
     int fileOp = 0;
     /// CompletionFailure ordinal: 0 none, 1 other, 2 disk space, 3 name too long,
     /// 4 cannot write, 5 cannot read.

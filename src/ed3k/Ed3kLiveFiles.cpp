@@ -307,7 +307,8 @@ std::optional<ffi::Root> Ed3kLiveFiles::shareOne(const Published& p)
     const QByteArray n = p.name.toUtf8();
     // kbps of the channel as the bitrate (Protocol.md §5.4: kbit/s)
     const auto info = parse(p.file);
-    const ffi::FileInfo fi{*root, std::uint64_t(p.file.size()), std::string(n.constData(), std::size_t(n.size())), std::nullopt, 0, 0, 0,
+    // sources 1: this node, the file held complete (Protocol.md §10.7)
+    const ffi::FileInfo fi{*root, std::uint64_t(p.file.size()), std::string(n.constData(), std::size_t(n.size())), std::nullopt, 1, 0, 0,
                            info ? info->kbps : 0, 0, 0};
     if (auto ok = publishShared(fi); !ok)
         logWarning(QStringLiteral("channel file \"%1\" not published (error %2)").arg(p.name, errorName(ok.error())));

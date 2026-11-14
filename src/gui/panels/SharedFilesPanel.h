@@ -298,13 +298,18 @@ private:
     [[nodiscard]] QStringList listedHashes() const;
 
     // Filesystem tree helpers
+    /// The core's folders below @p parentItem (IPC ListFolders for a remote core)
     void populateFilesystemChildren(QTreeWidgetItem* parentItem);
     void addFilesystemChild(QTreeWidgetItem* parent, const QString& path,
-                            const QString& displayName);
-    [[nodiscard]] static bool hasSubdirectories(const QString& path);
-    void initFilesystemRoot();
+                            const QString& displayName, bool hasSubfolders);
+    /// The loaded "All Directories" item of @p path ("" = that node itself)
+    [[nodiscard]] QTreeWidgetItem* findFilesystemItem(const QString& path) const;
+    /// Another core: its disk replaces the loaded folders
+    void resetFilesystemTree();
     /// MoveEd3kFileKey of each file (hops.md §1: asks first).
     void moveEd3kKey(const QStringList& hashes, bool toAnon);
+
+    QString m_fsTreeCore;   ///< host:port whose folders "All Directories" holds
 };
 
 } // namespace eMule

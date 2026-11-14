@@ -137,6 +137,21 @@ Kind kindOfTypeString(const QString& type)
     return Kind::Unknown;
 }
 
+/// "Film.mp4.jpg": a video's name with a picture or document extension on top.
+/// Mostly a preview sheet, named so a search for the video finds it. Archives are not
+/// counted ("Film.avi.rar" holds the video).
+bool isMediaDoubleExtension(const QString& name)
+{
+    const qsizetype outer = name.lastIndexOf(QLatin1Char('.'));
+    if (outer <= 0)
+        return false;
+    const Kind outerKind = kindOfName(name);
+    if (outerKind != Kind::Image && outerKind != Kind::Document)
+        return false;
+    const QString inner = name.left(outer);
+    return inner.lastIndexOf(QLatin1Char('.')) > 0 && kindOfName(inner) == Kind::Media;
+}
+
 void add(FakeFileVerdict& verdict, FakeReason reason, int points)
 {
     if (!verdict.has(reason))
@@ -162,6 +177,9 @@ int assessNames(const QStringList& names, const FakeFileInput& in, const FakeFil
     }
     if (kinds.size() >= 2)
         add(verdict, FakeReason::NamesSpanKinds, 25);
+    // Own name only: other names of the hash are judged by NamesSpanKinds
+    if (isMediaDoubleExtension(in.name))
+        add(verdict, FakeReason::MediaDoubleExtension, 25);
 
     // Score only: an ambiguous word is a caution, a trade word makes the file suspect.
     int abuse = 0;
@@ -259,6 +277,7 @@ QString fakeReasonId(FakeReason reason)
     case FakeReason::NameMediaTagMismatch:    return QStringLiteral("name_media_tag_mismatch");
     case FakeReason::AbuseContentName:        return QStringLiteral("abuse_content_name");
     case FakeReason::PasswordProtected:       return QStringLiteral("password_protected");
+    case FakeReason::MediaDoubleExtension:    return QStringLiteral("media_double_extension");
     }
     return {};
 }

@@ -492,6 +492,9 @@ public:
              : 0;
     }
 
+    /// Upload data held in RAM: queued on the socket plus read by the disk thread.
+    [[nodiscard]] uint64 uploadBufferBytes() const { return payloadInBuffer() + m_blockReadBytesQueued; }
+
     [[nodiscard]] uint64 transferredUp() const { return m_transferredUp; }
     [[nodiscard]] uint64 transferredDown() const { return m_transferredDown; }
 

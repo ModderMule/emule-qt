@@ -382,16 +382,16 @@ bool UDPSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode,
         }
         return true;
     } catch (const FileException& ex) {
-        logWarning(QStringLiteral("UDPSocket: bad server packet opcode=0x%1 from %2: %3")
+        logDebug([&]() -> QString { return QStringLiteral("UDPSocket: bad server packet opcode=0x%1 from %2: %3")
                        .arg(opcode, 2, 16, QLatin1Char('0'))
                        .arg(senderEP.toString())
-                       .arg(QLatin1StringView(ex.what())));
+                       .arg(QLatin1StringView(ex.what())); });
         // Swallow for the multi-result opcodes exactly as MFC does.
         return (opcode == OP_GLOBSEARCHRES || opcode == OP_GLOBFOUNDSOURCES);
     } catch (...) {
-        logWarning(QStringLiteral("UDPSocket: unknown exception processing opcode 0x%1 from %2")
+        logDebug([&]() -> QString { return QStringLiteral("UDPSocket: unknown exception processing opcode 0x%1 from %2")
                        .arg(opcode, 2, 16, QLatin1Char('0'))
-                       .arg(senderEP.toString()));
+                       .arg(senderEP.toString()); });
         return false;
     }
 }
@@ -435,8 +435,8 @@ void UDPSocket::queueDNSRequest(const Server& server, uint16 port,
     m_hostResolver->resolve(host, pref, this,
         [this, host, port, tcpPort, payload = std::move(payload)](const HostResolver::Result& result) {
             if (!result.ok()) {
-                logWarning(QStringLiteral("UDPSocket: DNS lookup failed for %1: %2")
-                               .arg(host, result.errorString));
+                logDebug([&]() -> QString { return QStringLiteral("UDPSocket: DNS lookup failed for %1: %2")
+                               .arg(host, result.errorString); });
                 return;
             }
             // Store the IP on the list entry, then drop a LAN/invalid or IP-filtered

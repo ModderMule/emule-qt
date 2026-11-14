@@ -75,8 +75,18 @@ public:
     /// A search still waits for its answer (tests).
     [[nodiscard]] bool isRunning(uint32 searchID) const;
 
+    /// Sources of one root over the records of an answer (one record per publisher).
+    struct Availability {
+        std::uint32_t complete = 0;
+        std::uint32_t partial = 0;
+    };
+    /// Per root (32 bytes): complete = the most of publishers holding it complete, any
+    /// record's own count and the sites an index node counted; a record with sources and
+    /// partial both 0 (older publishers) counts its publisher as complete.
+    [[nodiscard]] static std::map<QByteArray, Availability> availabilityOf(const std::vector<::ed3k::FoundFile>& files);
     /// One found file as a search row (nullptr: no name or size); ed3k root and MD4 kept.
-    [[nodiscard]] static std::unique_ptr<SearchFile> toSearchFile(const ::ed3k::FoundFile& found);
+    /// Sources: @p avail when given, else the record's own (sources complete + partial).
+    [[nodiscard]] static std::unique_ptr<SearchFile> toSearchFile(const ::ed3k::FoundFile& found, const Availability* avail = nullptr);
     /// The search's filters as the engine takes them.
     [[nodiscard]] static ::ed3k::Filter filterOf(const SearchParams& params);
     /// A found file that may be a channel file (Ed3kLive): name and size (§1.2).

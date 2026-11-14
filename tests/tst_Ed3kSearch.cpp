@@ -57,6 +57,7 @@ class tst_Ed3kSearch : public QObject {
 
 private slots:
     void aFoundFileIsAnEd3kRow();
+    void eachPublisherIsASource();
     void theFilterTakesSizeExtensionAndSources();
     void aSharedFileIsFound();
     void withoutANodeTheSearchEnds();
@@ -81,8 +82,9 @@ void tst_Ed3kSearch::aFoundFileIsAnEd3kRow()
     QCOMPARE(QByteArray(reinterpret_cast<const char*>(row->fileHash()), 16), QByteArray(16, char(0xa1)));
     QCOMPARE(row->fileName(), QStringLiteral("summer song.mp3"));
     QCOMPARE(static_cast<uint64>(row->fileSize()), uint64(123456));
-    QCOMPARE(row->sourceCount(), 5u);
-    QCOMPARE(row->completeSourceCount(), 3u);
+    // sources: the complete ones; partial on top
+    QCOMPARE(row->sourceCount(), 7u);
+    QCOMPARE(row->completeSourceCount(), 5u);
     QCOMPARE(row->getIntTagValue(FT_MEDIA_LENGTH), 200u);
     // the child copy keeps the root
     SearchFile child(row.get());
@@ -90,6 +92,37 @@ void tst_Ed3kSearch::aFoundFileIsAnEd3kRow()
     // no name or no size: no row
     f.name.clear();
     QVERIFY(!Ed3kSearch::toSearchFile(f));
+}
+
+void tst_Ed3kSearch::eachPublisherIsASource()
+{
+    const auto file = [](std::uint8_t root, std::uint8_t who, std::uint32_t sources, std::uint32_t partial) {
+        ::ed3k::FoundFile f;
+        f.root.bytes.fill(root);
+        f.publisher.bytes.fill(who);
+        f.size = 1000;
+        f.name = "a.mkv";
+        f.sources = sources;
+        f.partial = partial;
+        return f;
+    };
+    // root 1: three publishers, two of them older (0/0); root 2: one claims 4, one holds part
+    std::vector<::ed3k::FoundFile> files{file(1, 1, 0, 0), file(1, 2, 0, 0), file(1, 3, 1, 0), file(2, 1, 4, 0), file(2, 2, 0, 1)};
+    files.push_back(file(3, 1, 0, 0));
+    files.back().sites = 6;   // an index node counted 6 sites
+    const auto avail = Ed3kSearch::availabilityOf(files);
+    QCOMPARE(avail.size(), std::size_t(3));
+    const auto at = [&](std::uint8_t root) { return avail.at(QByteArray(32, char(root))); };
+    QCOMPARE(at(1).complete, 3u);
+    QCOMPARE(at(1).partial, 0u);
+    QCOMPARE(at(2).complete, 4u);
+    QCOMPARE(at(2).partial, 1u);
+    QCOMPARE(at(3).complete, 6u);
+    const auto a = at(2);
+    const auto row = Ed3kSearch::toSearchFile(files[3], &a);
+    QVERIFY(row);
+    QCOMPARE(row->sourceCount(), 5u);
+    QCOMPARE(row->completeSourceCount(), 4u);
 }
 
 void tst_Ed3kSearch::theFilterTakesSizeExtensionAndSources()

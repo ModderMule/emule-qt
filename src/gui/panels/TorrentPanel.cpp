@@ -24,6 +24,7 @@
 #include "utils/ListActivation.h"
 #include "utils/Log.h"
 #include "utils/MenuUtils.h"
+#include "utils/MoveDownloadsAction.h"
 #include "utils/PanelPoller.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/StringUtils.h"
@@ -305,6 +306,8 @@ void TorrentPanel::setupUi()
     connect(m_editTrackersAction, &QAction::triggered, this, &TorrentPanel::onEditTrackers);
     m_optionsAction = new QAction(menuIcon("Preferences.ico"), tr("Options…"), this);
     connect(m_optionsAction, &QAction::triggered, this, &TorrentPanel::onEditOptions);
+    m_moveAction = new QAction(menuIcon("Folders.ico"), MoveDownloadsAction::menuText(), this);
+    connect(m_moveAction, &QAction::triggered, this, &TorrentPanel::onMoveToFolder);
     m_openFolderAction = new QAction(menuIcon("FolderOpen.ico"), tr("Open Folder"), this);
     connect(m_openFolderAction, &QAction::triggered, this, &TorrentPanel::onOpenFolder);
     m_copyMagnetAction = new QAction(menuIcon("Copy.ico"), tr("Copy Magnet Link"), this);
@@ -519,6 +522,8 @@ void TorrentPanel::onContextMenu(const QPoint& pos)
         menu.addAction(m_editTrackersAction);
         menu.addAction(m_optionsAction);
         menu.addSeparator();
+        if (thePrefs.showExtControls())
+            menu.addAction(m_moveAction);   // #187
         menu.addAction(m_openFolderAction);
         menu.addAction(m_copyMagnetAction);
         menu.addAction(m_detailsAction);
@@ -577,6 +582,22 @@ void TorrentPanel::onRemove()
         m_ipc->sendRequest(std::move(msg));
     }
     m_poller->refreshNow();
+}
+
+void TorrentPanel::onMoveToFolder()
+{
+    const QStringList ids = selectedIds();
+    QHash<QString, QString> names;
+    for (const QString& id : ids)
+        if (const TorrentRow* row = m_model->findById(id))
+            names.insert(id, row->name);
+    const TorrentRow* first = currentRow();
+    QPointer<TorrentPanel> self(this);
+    MoveDownloadsAction::run(this, m_ipc, {{MoveDownloadsAction::Network::BitTorrent, ids}}, names,
+                             first ? first->savePath : QString(), [self] {
+                                 if (self)
+                                     self->m_poller->refreshNow();
+                             });
 }
 
 void TorrentPanel::onOpenFolder()
@@ -856,6 +877,7 @@ void TorrentPanel::updateActions()
     m_reannounceAction->setEnabled(running && any);
     m_editTrackersAction->setEnabled(running && any);
     m_optionsAction->setEnabled(running && any);
+    m_moveAction->setEnabled(running && any);
     m_openFolderAction->setEnabled(any);
     m_copyMagnetAction->setEnabled(hasMagnet);
     m_detailsAction->setEnabled(running && any);

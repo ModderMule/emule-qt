@@ -144,6 +144,8 @@ private:
     void onClearCompleted();
     void onSetPriority(int priority);
     void onOpenFolder();
+    /// "Move To Folder..." (#187): the selected jobs' work folders to one folder.
+    void onMoveToFolder();
     void onPreview();
     void onCheckAvailability();
     void onToggleEnginePause();

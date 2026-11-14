@@ -82,6 +82,7 @@ QCborMap toCbor(const ed3k::Ed3kDownloadInfo& i)
         {QStringLiteral("completedOn"), i.completedOn},
         {QStringLiteral("error"), i.error},
         {QStringLiteral("previewPrio"), i.previewPrio},
+        {QStringLiteral("isPreviewPossible"), i.previewPossible},
         // batch 15: "Node" / "Anonymous" (hops.md §1)
         {QStringLiteral("key"), s_downloads ? ed3k::Ed3kHide::keyName(s_downloads->keyOfRoot(i.root)) : QString()},
     };
@@ -221,6 +222,35 @@ bool downloadOf([[maybe_unused]] const QByteArray& root, bool& inProgress, QStri
     (void)inProgress;
     (void)folder;
     return false;
+#endif
+}
+
+bool fileOf([[maybe_unused]] const QString& hexRoot, [[maybe_unused]] QString& path, [[maybe_unused]] QString& name)
+{
+#ifdef EMULE_HAVE_ED3K
+    const auto r = rootOf(hexRoot);
+    if (!s_downloads || !r)
+        return false;
+    const auto info = s_downloads->info(*r);
+    if (!info || info->state == ed3k::Ed3kDownloadInfo::State::Failed || info->path.isEmpty())
+        return false;
+    path = info->path;
+    name = info->name;
+    return true;
+#else
+    return false;
+#endif
+}
+
+QString moveTo([[maybe_unused]] const QString& hexRoot, [[maybe_unused]] const QString& dir)
+{
+#ifdef EMULE_HAVE_ED3K
+    const auto r = rootOf(hexRoot);
+    if (!s_downloads || !r)
+        return QStringLiteral("no such download");
+    return s_downloads->moveTo(*r, dir);
+#else
+    return QStringLiteral("no ed3k downloads");
 #endif
 }
 

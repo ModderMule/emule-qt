@@ -34,13 +34,14 @@ class QDoubleSpinBox;
 class QTreeWidget;
 class QTreeWidgetItem;
 class QTreeView;
-class QFileSystemModel;
+class QAbstractItemModel;
 class QColorDialog;
 class QTimeEdit;
 
 namespace eMule {
 
 class AccordionSidebar;
+class FolderTreeModel;
 class Ed3kOptionsPages;
 class BtI2pPage;
 class IpcClient;
@@ -191,6 +192,11 @@ private:
     void saveSettings();
     /// Incoming/temp fields: full paths, distinct, created on request. Fails on the page.
     [[nodiscard]] bool validateDirectories();
+    /// The temp field's folders: "|" between them like MFC IDC_TEMPFILES, no blanks or twins
+    [[nodiscard]] QStringList tempDirsFromEdit() const;
+    /// The shared-folder tree's checks, local or remote model
+    [[nodiscard]] QStringList sharedDirsChecked() const;
+    void setSharedDirsChecked(const QStringList& dirs);
     void fillDaemonSettings(const QCborMap& prefs);
     void fillDaemonSettingsFromPrefs();
     /// Value text for the slot-rate slider and the slot count it yields.
@@ -462,7 +468,8 @@ private:
     QLineEdit* m_incomingDirEdit = nullptr;
     QLineEdit* m_tempDirEdit = nullptr;
     QTreeView* m_sharedDirsTree = nullptr;
-    QFileSystemModel* m_sharedDirsModel = nullptr;
+    QAbstractItemModel* m_sharedDirsModel = nullptr;
+    FolderTreeModel* m_remoteDirsModel = nullptr;   ///< the shared tree of a core on another host
 
     // Files page controls
     QCheckBox* m_addFilesPausedCheck = nullptr;

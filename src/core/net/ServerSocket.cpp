@@ -169,8 +169,8 @@ bool ServerSocket::packetReceived(Packet* packet)
     // CServerSocket::PacketReceived returns true and either continues or disconnects).
     if (packet->prot == OP_PACKEDPROT) {
         if (!packet->unPackPacket(250000)) {
-            logWarning(QStringLiteral("ServerSocket: Failed to decompress packed packet (opcode 0x%1)")
-                           .arg(packet->opcode, 2, 16, QLatin1Char('0')));
+            logDebug([&]() -> QString { return QStringLiteral("ServerSocket: Failed to decompress packed packet (opcode 0x%1)")
+                           .arg(packet->opcode, 2, 16, QLatin1Char('0')); });
             return true;
         }
     } else if (packet->prot != OP_EDONKEYPROT) {
@@ -362,6 +362,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         Address serverIPv6;
         bool haveSvrIPv6Tag = false;    // CT_MOD_SVR_IP_V6 seen
         uint16 natPort = 0;             // ST_NAT_PORT (eNode-go PR_NAT)
+        QString ed3kLink;               // ST_ED3K: an ident without it clears the copy's
         std::optional<std::array<uint8, 16>> natToken;   // ST_NATT_TOKEN (ed2k-server 0.9.87)
         bool natProof = false;                           // ST_NATT_PROOF (0.9.88)
 
@@ -416,8 +417,9 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
                     natPort = static_cast<uint16>(tag.intValue());
                 }
                 else if (tag.nameId() == ST_ED3K && tag.isStr()) {
+                    ed3kLink = tag.strValue();
                     if (theApp.ed3kIndexLink)
-                        theApp.ed3kIndexLink(tag.strValue());
+                        theApp.ed3kIndexLink(ed3kLink);
                 }
                 else if (tag.nameId() == ST_NATT_TOKEN && tag.isHash()) {
                     natToken.emplace();
@@ -446,6 +448,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         if (m_curServer) {
             m_curServer->setServerHash(serverHash);
             m_curServer->setNatPort(natPort);
+            m_curServer->setEd3kLink(ed3kLink);
             // only when sent: the copy is per connection, so no token of an earlier login
             if (natToken) {
                 m_curServer->setNatToken(natToken->data());
@@ -551,7 +554,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
     }
 
     case OP_CALLBACK_FAIL:
-        logWarning(QStringLiteral("Server: Callback attempt failed"));
+        logDebug(QStringLiteral("Server: Callback attempt failed"));
         emit callbackFailed();
         break;
 
@@ -567,7 +570,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         break;
 
     case OP_REJECT:
-        logWarning(QStringLiteral("Server rejected our request"));
+        logDebug(QStringLiteral("Server rejected our request"));
         emit rejectReceived();
         break;
 
@@ -636,12 +639,12 @@ void ServerSocket::setConnectionState(ServerConnState newState)
 
 void ServerSocket::onError(int errorCode)
 {
-    logWarning(QStringLiteral("ServerSocket error: %1 server=%2 peer=%3 connState=%4 cryptState=%5")
+    logDebug([&]() -> QString { return QStringLiteral("ServerSocket error: %1 server=%2 peer=%3 connState=%4 cryptState=%5")
                    .arg(errorCode)
                    .arg(m_curServer ? m_curServer->name() : QStringLiteral("?"))
                    .arg(Endpoint(m_sessionAddress, peerPort()).toString())
                    .arg(static_cast<int>(m_connectionState))
-                   .arg(static_cast<int>(m_streamCryptState)));
+                   .arg(static_cast<int>(m_streamCryptState)); });
 
     // Any socket error on an *established* connection is a lost connection, not a
     // dead server or a fatal error. Qt reports the peer's FIN as an error before
@@ -796,10 +799,10 @@ void ServerSocket::onSocketConnected()
                              .arg(m_curServer ? m_curServer->name() : QStringLiteral("?")); });
         return;
     }
-    logInfo(QStringLiteral("ServerSocket connected to %1 (%2) serverCrypt=%3")
+    logDebug([&]() -> QString { return QStringLiteral("ServerSocket connected to %1 (%2) serverCrypt=%3")
                 .arg(m_curServer ? m_curServer->name() : QStringLiteral("?"))
                 .arg(Endpoint(Address::fromQHostAddress(peerAddress()), peerPort()).toString())
-                .arg(isServerCryptEnabledConnection()));
+                .arg(isServerCryptEnabledConnection()); });
     m_lastTransmission = getTickCount();
     m_lastSent = m_lastTransmission;
 
@@ -846,12 +849,12 @@ void ServerSocket::onSocketError(QAbstractSocket::SocketError error)
     if (m_isDeleting)
         return;
 
-    logWarning(QStringLiteral("ServerSocket::onSocketError: %1 (%2) server=%3 peer=%4 connState=%5 cryptState=%6")
+    logDebug([&]() -> QString { return QStringLiteral("ServerSocket::onSocketError: %1 (%2) server=%3 peer=%4 connState=%5 cryptState=%6")
                    .arg(static_cast<int>(error)).arg(errorString())
                    .arg(m_curServer ? m_curServer->name() : QStringLiteral("?"))
                    .arg(Endpoint(m_sessionAddress, peerPort()).toString())
                    .arg(static_cast<int>(m_connectionState))
-                   .arg(static_cast<int>(m_streamCryptState)));
+                   .arg(static_cast<int>(m_streamCryptState)); });
 
     // Normally the second notification: EMSocket routed the error to onError()
     // first and the state is already terminal. Firing again would report the same

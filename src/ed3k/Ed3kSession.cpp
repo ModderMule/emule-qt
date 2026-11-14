@@ -34,6 +34,7 @@ namespace {
 
 // BAD blob at most once a minute (ffi.md "State slots", guide §5.4)
 constexpr std::chrono::seconds kBadSaveEvery{60};
+constexpr qint64 kRateWindowMs = 10000;   // downRate() average
 
 const QString kBadFile = QStringLiteral("bad.dat");
 const QString kKadFile = QStringLiteral("kad.dat");
@@ -443,12 +444,43 @@ bool Ed3kSession::addIndexLink(const QString& link)
     if (m_indexLinks.contains(trimmed))
         return true;
     m_indexLinks.append(trimmed);
-    logEd3k(QStringLiteral("ed3k: index node named by an eD2K server: %1").arg(trimmed));
-    if (m_engine) {
+    logEd3k(QStringLiteral("ed3k: index node named by an eD2K server: %1%2")
+                .arg(trimmed, m_autoIndex ? QString() : QStringLiteral(" (auto connect off)")));
+    if (m_engine && m_autoIndex) {
         applyIndexLinks();
         pump();
     }
     return true;
+}
+
+bool Ed3kSession::removeIndexLink(const QString& link)
+{
+    const QString trimmed = link.trimmed();
+    const QByteArray text = trimmed.toUtf8();
+    const auto parsed = ffi::parseNodeLink(std::string_view(text.constData(), std::size_t(text.size())));
+    if (!parsed)
+        return false;
+    m_indexLinks.removeAll(trimmed);
+    logEd3k(QStringLiteral("ed3k: index node of a disconnected eD2K server dropped: %1").arg(trimmed));
+    if (!m_engine)
+        return true;
+    // NOT_FOUND: never dialled (auto connect off); the next of the list only with auto connect
+    if (auto ok = m_engine->removeIndexNode(now(), parsed->id, m_autoIndex); !ok && ok.error() != ffi::Error::NotFound)
+        logEd3kWarning(QStringLiteral("ed3k: index node not removed (error %1)").arg(errorName(ok.error())));
+    pump();
+    emit statusChanged();
+    return true;
+}
+
+void Ed3kSession::setAutoIndexNodes(bool on)
+{
+    if (m_autoIndex == on)
+        return;
+    m_autoIndex = on;
+    if (on && m_engine) {
+        applyIndexLinks();
+        pump();
+    }
 }
 
 void Ed3kSession::setUploadSlots(std::uint32_t count)
@@ -577,6 +609,41 @@ void Ed3kSession::addPeerBytes(::ed3k::KeyKind key, const ::ed3k::NodeId& node, 
     PeerBytes& b = m_peerBytes[{key, node}];
     b.up += up;
     b.down += down;
+    if (down == 0)
+        return;
+    if (!m_rateClock.isValid())
+        m_rateClock.start();
+    const qint64 now = m_rateClock.elapsed();
+    // drop peers gone quiet, at most once a second
+    if (now - m_recentPruned >= 1000) {
+        m_recentPruned = now;
+        std::erase_if(m_recentDown, [&](const auto& kv) {
+            return kv.second.blocks.empty() || now - kv.second.blocks.back().first > kRateWindowMs;
+        });
+    }
+    RecentDown& r = m_recentDown[{key, node}];
+    while (!r.blocks.empty() && now - r.blocks.front().first > kRateWindowMs)
+        r.blocks.pop_front();
+    if (r.blocks.empty())
+        r.since = now;
+    r.blocks.emplace_back(now, down);
+}
+
+std::uint64_t Ed3kSession::downRate(::ed3k::KeyKind key, const ::ed3k::NodeId& node) const
+{
+    const auto it = m_recentDown.find({key, node});
+    if (it == m_recentDown.end() || !m_rateClock.isValid())
+        return 0;
+    const qint64 now = m_rateClock.elapsed();
+    std::uint64_t sum = 0;
+    for (const auto& [at, bytes] : it->second.blocks)
+        if (now - at <= kRateWindowMs)
+            sum += bytes;
+    if (sum == 0)
+        return 0;
+    // a fresh burst: over its age, not the whole window (no slow ramp-up); 1 s floor
+    const qint64 span = std::clamp<qint64>(now - it->second.since, 1000, kRateWindowMs);
+    return sum * 1000 / std::uint64_t(span);
 }
 
 Ed3kSession::PeerBytes Ed3kSession::peerBytes(::ed3k::KeyKind key, const ::ed3k::NodeId& node) const
@@ -710,9 +777,8 @@ void Ed3kSession::dispatch(ffi::Event& ev, ffi::KeyKind key)
     } else if (const auto* ks = std::get_if<e::KadStored>(&ev)) {
         logEd3kKadDebug([&]() -> QString { return QStringLiteral("ed3k: Kad store %1 (kind %2): %3 nodes")
                             .arg(ks->lookup).arg(ks->kind).arg(ks->nodes); });
-    } else if (const auto* sp = std::get_if<e::SourcesPublished>(&ev)) {
-        logEd3kKadDebug([&]() -> QString { return QStringLiteral("ed3k: sources published: %1 of %2 nodes stored (%3 again)")
-                            .arg(sp->stored).arg(sp->nodes).arg(sp->again); });
+    } else if (std::get_if<e::SourcesPublished>(&ev)) {
+        // packmule logs the batch itself ("sources published <target>: N nodes, x of y along")
     } else if (const auto* kp = std::get_if<e::KeywordsPublished>(&ev)) {
         logEd3kKadDebug([&]() -> QString { return QStringLiteral("ed3k: keywords of %1 file(s) published: %2 stored, %3 full, %4 rejected, %5 unanswered")
                             .arg(kp->files).arg(kp->stored).arg(kp->full).arg(kp->rejected).arg(kp->unanswered); });
@@ -796,7 +862,7 @@ void Ed3kSession::applyLimits()
 
 void Ed3kSession::applyIndexLinks()
 {
-    if (!m_engine)
+    if (!m_engine || !m_autoIndex)
         return;
     // packmule keeps one entry per node ID: repeats only refresh the address
     for (const QString& link : std::as_const(m_indexLinks)) {

@@ -1,5 +1,8 @@
 #include "pch.h"
 #include "utils/FileAssociation.h"
+#include "dialogs/FolderPickerDialog.h"
+#include "controls/FolderTreeModel.h"
+#include "utils/FolderLister.h"
 #include "dialogs/OptionsDialog.h"
 #include "dialogs/BtI2pPage.h"
 #include "utils/ClientIcons.h"
@@ -2048,8 +2051,10 @@ private:
 /// the whole subtree follows, as MFC OnLButtonDown / OnKeyDown (DirectoryTreeCtrl.cpp:136)
 class SharedDirsDelegate : public QStyledItemDelegate {
 public:
-    SharedDirsDelegate(CheckableFileSystemModel* fsModel, QObject* parent)
-        : QStyledItemDelegate(parent), m_fsModel(fsModel) {}
+    using Subtree = std::function<void(const QString& path, bool checked)>;
+
+    SharedDirsDelegate(Subtree subtree, QObject* parent)
+        : QStyledItemDelegate(parent), m_subtree(std::move(subtree)) {}
 
     bool editorEvent(QEvent* event, QAbstractItemModel* model,
                      const QStyleOptionViewItem& option, const QModelIndex& index) override
@@ -2063,8 +2068,8 @@ public:
         const QVariant after = index.data(Qt::CheckStateRole);
         if (recurse && after != before) {
             QGuiApplication::setOverrideCursor(Qt::WaitCursor);
-            m_fsModel->setSubtreeChecked(index.data(QFileSystemModel::FilePathRole).toString(),
-                                         after.toInt() == Qt::Checked);
+            // FilePathRole and FolderTreeModel::PathRole are one role
+            m_subtree(index.data(QFileSystemModel::FilePathRole).toString(), after.toInt() == Qt::Checked);
             QGuiApplication::restoreOverrideCursor();
         }
         return true;
@@ -2084,7 +2089,7 @@ private:
         }
     }
 
-    CheckableFileSystemModel* m_fsModel;
+    Subtree m_subtree;
 };
 
 /// Hides hidden folders again once the model lists them: only /Volumes is wanted, and
@@ -2138,8 +2143,8 @@ QWidget* OptionsDialog::createDirectoriesPage()
     layout->addWidget(incomingGroup);
 
     connect(incomingBrowseBtn, &QPushButton::clicked, this, [this] {
-        QString dir = QFileDialog::getExistingDirectory(
-            this, tr("Select Incoming Directory"), m_incomingDirEdit->text());
+        const QString dir = FolderPickerDialog::getExistingDirectory(
+            this, m_ipc, tr("Select Incoming Directory"), m_incomingDirEdit->text());
         if (!dir.isEmpty())
             m_incomingDirEdit->setText(dir);
     });
@@ -2155,48 +2160,90 @@ QWidget* OptionsDialog::createDirectoriesPage()
     tempLayout->addWidget(tempBrowseBtn);
     layout->addWidget(tempGroup);
 
+    // several folders: "|" between them like MFC; Browse swaps the first, Add appends
+    m_tempDirEdit->setToolTip(tr("Separate several temporary folders with |"));
     connect(tempBrowseBtn, &QPushButton::clicked, this, [this] {
-        QString dir = QFileDialog::getExistingDirectory(
-            this, tr("Select Temporary Directory"), m_tempDirEdit->text());
-        if (!dir.isEmpty())
-            m_tempDirEdit->setText(dir);
+        QStringList dirs = tempDirsFromEdit();
+        const QString dir = FolderPickerDialog::getExistingDirectory(
+            this, m_ipc, tr("Select Temporary Directory"), dirs.value(0));
+        if (dir.isEmpty())
+            return;
+        if (dirs.isEmpty())
+            dirs.append(dir);
+        else
+            dirs[0] = dir;
+        m_tempDirEdit->setText(dirs.join(u'|'));
+    });
+    // MFC IDC_SELTEMPDIRADD, shown with ext controls only
+    auto* tempAddBtn = new QPushButton(tr("Add"), tempGroup);
+    tempAddBtn->setToolTip(tr("Add another temporary folder"));
+    tempAddBtn->setVisible(thePrefs.showExtControls());
+    tempLayout->addWidget(tempAddBtn);
+    connect(tempAddBtn, &QPushButton::clicked, this, [this] {
+        QStringList dirs = tempDirsFromEdit();
+        const QString dir = FolderPickerDialog::getExistingDirectory(
+            this, m_ipc, tr("Add Temporary Directory"), dirs.value(0));
+        if (dir.isEmpty() || dirs.contains(dir))
+            return;
+        dirs.append(dir);
+        m_tempDirEdit->setText(dirs.join(u'|'));
     });
 
     // --- Shared Directories group ---
     auto* sharedGroup = new QGroupBox(tr("Shared Directories (Ctrl+Click includes subdirectories)"), page);
     auto* sharedLayout = new QVBoxLayout(sharedGroup);
 
-    auto* fsModel = new CheckableFileSystemModel(this);
-    // Hidden too: the proxy drops them again, all but /Volumes
-    fsModel->setFilter(QDir::AllDirs | QDir::NoDotAndDotDot | QDir::Hidden);
-    // Machine root: every drive is reachable, not only the home folder
-    fsModel->setRootPath(QString());
-    m_sharedDirsModel = fsModel;
-
-    auto* visibleDirs = new VisibleDirsProxyModel(this);
-    visibleDirs->setSourceModel(fsModel);
-
     m_sharedDirsTree = new QTreeView(sharedGroup);
-    m_sharedDirsTree->setModel(visibleDirs);
-    // Show only the Name column
-    for (int i = 1; i < visibleDirs->columnCount(); ++i)
-        m_sharedDirsTree->setColumnHidden(i, true);
     m_sharedDirsTree->setHeaderHidden(true);
-    m_sharedDirsTree->setItemDelegate(new SharedDirsDelegate(fsModel, m_sharedDirsTree));
-
-    // Open on the home folder, where the tree used to be rooted
-    const QString home = QDir::homePath();
-    for (QModelIndex idx = visibleDirs->mapFromSource(fsModel->index(home)); idx.isValid();
-         idx = idx.parent())
-        m_sharedDirsTree->expand(idx);
-    connect(fsModel, &QFileSystemModel::directoryLoaded, this,
-        [this, fsModel, visibleDirs, home, scrolled = false](const QString& path) mutable {
-            if (scrolled || QDir::cleanPath(path) != home)
-                return;
-            scrolled = true;
-            m_sharedDirsTree->scrollTo(visibleDirs->mapFromSource(fsModel->index(home)),
-                                       QAbstractItemView::PositionAtTop);
+    if (FolderLister::remote(m_ipc)) {
+        // the core's disk, not this one's (IPC ListFolders)
+        m_remoteDirsModel = new FolderTreeModel(m_ipc, true, this);
+        m_sharedDirsModel = m_remoteDirsModel;
+        m_sharedDirsTree->setModel(m_remoteDirsModel);
+        m_sharedDirsTree->setItemDelegate(new SharedDirsDelegate(
+            [model = m_remoteDirsModel](const QString& path, bool checked) { model->setSubtreeChecked(path, checked); },
+            m_sharedDirsTree));
+        connect(m_remoteDirsModel, &FolderTreeModel::homeKnown, this, [this](const QString& home) {
+            m_remoteDirsModel->reveal(home);
         });
+        connect(m_remoteDirsModel, &FolderTreeModel::revealed, this, [this](const QModelIndex& idx) {
+            m_sharedDirsTree->scrollTo(idx, QAbstractItemView::PositionAtTop);   // expands the folders above
+            m_sharedDirsTree->expand(idx);
+        });
+        connect(m_remoteDirsModel, &FolderTreeModel::checksChanged, this, &OptionsDialog::markDirty);
+    } else {
+        auto* fsModel = new CheckableFileSystemModel(this);
+        // Hidden too: the proxy drops them again, all but /Volumes
+        fsModel->setFilter(QDir::AllDirs | QDir::NoDotAndDotDot | QDir::Hidden);
+        // Machine root: every drive is reachable, not only the home folder
+        fsModel->setRootPath(QString());
+        m_sharedDirsModel = fsModel;
+
+        auto* visibleDirs = new VisibleDirsProxyModel(this);
+        visibleDirs->setSourceModel(fsModel);
+
+        m_sharedDirsTree->setModel(visibleDirs);
+        // Show only the Name column
+        for (int i = 1; i < visibleDirs->columnCount(); ++i)
+            m_sharedDirsTree->setColumnHidden(i, true);
+        m_sharedDirsTree->setItemDelegate(new SharedDirsDelegate(
+            [fsModel](const QString& path, bool checked) { fsModel->setSubtreeChecked(path, checked); },
+            m_sharedDirsTree));
+
+        // Open on the home folder, where the tree used to be rooted
+        const QString home = QDir::homePath();
+        for (QModelIndex idx = visibleDirs->mapFromSource(fsModel->index(home)); idx.isValid();
+             idx = idx.parent())
+            m_sharedDirsTree->expand(idx);
+        connect(fsModel, &QFileSystemModel::directoryLoaded, this,
+            [this, fsModel, visibleDirs, home, scrolled = false](const QString& path) mutable {
+                if (scrolled || QDir::cleanPath(path) != home)
+                    return;
+                scrolled = true;
+                m_sharedDirsTree->scrollTo(visibleDirs->mapFromSource(fsModel->index(home)),
+                                           QAbstractItemView::PositionAtTop);
+            });
+    }
 
     giveListRoom(m_sharedDirsTree, 8);
     sharedLayout->addWidget(m_sharedDirsTree);
@@ -2221,12 +2268,11 @@ QWidget* OptionsDialog::createDirectoriesPage()
         // Ensure trailing separator
         if (!uncPath.endsWith(QLatin1Char('/')) && !uncPath.endsWith(QLatin1Char('\\')))
             uncPath += QLatin1Char('\\');
-        auto* fsModel = static_cast<CheckableFileSystemModel*>(m_sharedDirsModel);
-        if (fsModel->checkedPaths().contains(uncPath))
+        auto paths = sharedDirsChecked();
+        if (paths.contains(uncPath))
             return;
-        auto paths = fsModel->checkedPaths();
         paths.append(uncPath);
-        fsModel->setCheckedPaths(paths);
+        setSharedDirsChecked(paths);
         markDirty();   // setCheckedPaths() emits no dataChanged
     });
 #else
@@ -4130,8 +4176,8 @@ QWidget* OptionsDialog::createUsenetPage()
     connect(m_usenetSelectedFileOnlyCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_usenetWatchDirEdit, &QLineEdit::textEdited, this, &OptionsDialog::markDirty);
     connect(m_usenetWatchDirBrowse, &QPushButton::clicked, this, [this] {
-        const QString dir = QFileDialog::getExistingDirectory(
-            this, tr("Watch folder"), m_usenetWatchDirEdit->text());
+        const QString dir = FolderPickerDialog::getExistingDirectory(
+            this, m_ipc, tr("Watch folder"), m_usenetWatchDirEdit->text());
         if (dir.isEmpty())
             return;
         m_usenetWatchDirEdit->setText(dir);
@@ -6042,8 +6088,8 @@ QWidget* OptionsDialog::createBitTorrentPage()
     connect(m_btShareGroup, &QButtonGroup::idClicked, this, &OptionsDialog::markDirty);
     connect(m_btSelectedFileOnlyCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_btDownloadDirBrowse, &QPushButton::clicked, this, [this] {
-        const QString dir = QFileDialog::getExistingDirectory(
-            this, tr("BitTorrent download folder"), m_btDownloadDirEdit->text());
+        const QString dir = FolderPickerDialog::getExistingDirectory(
+            this, m_ipc, tr("BitTorrent download folder"), m_btDownloadDirEdit->text());
         if (dir.isEmpty())
             return;
         m_btDownloadDirEdit->setText(dir);
@@ -7762,12 +7808,10 @@ void OptionsDialog::saveSettings()
         req.append(QStringLiteral("incomingDir"));
         req.append(m_incomingDirEdit->text());
         req.append(QStringLiteral("tempDirs"));
-        QCborArray tempArr;
-        tempArr.append(m_tempDirEdit->text());
-        req.append(tempArr);
+        req.append(QCborArray::fromStringList(tempDirsFromEdit()));
         req.append(QStringLiteral("sharedDirs"));
         QCborArray sharedArr;
-        for (const auto& p : static_cast<CheckableFileSystemModel*>(m_sharedDirsModel)->checkedPaths())
+        for (const auto& p : sharedDirsChecked())
             sharedArr.append(p);
         req.append(sharedArr);
 
@@ -8415,8 +8459,8 @@ void OptionsDialog::saveSettings()
 
         // Directories page fallback
         thePrefs.setIncomingDir(m_incomingDirEdit->text());
-        thePrefs.setTempDirs({m_tempDirEdit->text()});
-        thePrefs.setSharedDirs(static_cast<CheckableFileSystemModel*>(m_sharedDirsModel)->checkedPaths());
+        thePrefs.setTempDirs(tempDirsFromEdit());
+        thePrefs.setSharedDirs(sharedDirsChecked());
 
         // Files page (daemon-side) fallback
         thePrefs.setAddNewFilesPaused(m_addFilesPausedCheck->isChecked());
@@ -8731,13 +8775,15 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
 
     // Directories page
     m_incomingDirEdit->setText(prefs.value(QStringLiteral("incomingDir")).toString());
-    auto tempDirsArr = prefs.value(QStringLiteral("tempDirs")).toArray();
-    if (!tempDirsArr.isEmpty())
-        m_tempDirEdit->setText(tempDirsArr.first().toString());
+    QStringList tempDirs;
+    for (const auto& item : prefs.value(QStringLiteral("tempDirs")).toArray())
+        tempDirs.append(item.toString());
+    if (!tempDirs.isEmpty())
+        m_tempDirEdit->setText(tempDirs.join(u'|'));
     QStringList sharedPaths;
     for (const auto& item : prefs.value(QStringLiteral("sharedDirs")).toArray())
         sharedPaths.append(item.toString());
-    static_cast<CheckableFileSystemModel*>(m_sharedDirsModel)->setCheckedPaths(sharedPaths);
+    setSharedDirsChecked(sharedPaths);
 
     // Files page (daemon-side)
     m_addFilesPausedCheck->setChecked(prefs.value(QStringLiteral("addNewFilesPaused")).toBool());
@@ -9753,54 +9799,65 @@ bool OptionsDialog::validateDirectories()
     constexpr auto pathCase = Qt::CaseSensitive;
 #endif
     const bool local = !m_ipc || m_ipc->isLocalConnection();
+    // Shell habit: "~/..." means the home folder, only known for a local core
+    const auto expand = [local](QString path) {
+        path = path.trimmed();
+        if (local && (path == u'~' || path.startsWith(QLatin1StringView("~/"))))
+            path = QDir::homePath() + path.mid(1);
+        return path;
+    };
 
     // Whole sentences per field, so translations need not splice words in
     struct Field {
         QLineEdit* edit;
         QString empty, relative, missing;
     };
-    const Field fields[] = {
-        {m_incomingDirEdit, tr("Please enter the incoming folder."),
-         tr("The incoming folder must be a full path:\n%1"),
-         tr("The incoming folder does not exist:\n%1\n\nCreate it?")},
-        {m_tempDirEdit, tr("Please enter the temporary folder."),
-         tr("The temporary folder must be a full path:\n%1"),
-         tr("The temporary folder does not exist:\n%1\n\nCreate it?")},
-    };
-    for (const Field& f : fields) {
-        QLineEdit* edit = f.edit;
-        QString path = edit->text().trimmed();
-        // Shell habit: "~/..." means the home folder, only known for a local core
-        if (local && (path == u'~' || path.startsWith(QLatin1StringView("~/"))))
-            path = QDir::homePath() + path.mid(1);
-        if (path != edit->text())
-            edit->setText(path);
-        if (path.isEmpty())
-            return fail(edit, f.empty);
-        if (!QDir::isAbsolutePath(path))
-            return fail(edit, f.relative.arg(path));
+    const Field incoming{m_incomingDirEdit, tr("Please enter the incoming folder."),
+                         tr("The incoming folder must be a full path:\n%1"),
+                         tr("The incoming folder does not exist:\n%1\n\nCreate it?")};
+    const Field temp{m_tempDirEdit, tr("Please enter the temporary folder."),
+                     tr("The temporary folder must be a full path:\n%1"),
+                     tr("The temporary folder does not exist:\n%1\n\nCreate it?")};
+
+    const QString incomingDir = expand(m_incomingDirEdit->text());
+    if (incomingDir != m_incomingDirEdit->text())
+        m_incomingDirEdit->setText(incomingDir);
+    if (incomingDir.isEmpty())
+        return fail(incoming.edit, incoming.empty);
+    if (!QDir::isAbsolutePath(incomingDir))
+        return fail(incoming.edit, incoming.relative.arg(incomingDir));
+
+    QStringList tempDirs;
+    for (const QString& dir : tempDirsFromEdit())
+        tempDirs.append(expand(dir));
+    if (const QString joined = tempDirs.join(u'|'); joined != m_tempDirEdit->text())
+        m_tempDirEdit->setText(joined);
+    if (tempDirs.isEmpty())
+        return fail(temp.edit, temp.empty);
+    for (const QString& dir : std::as_const(tempDirs)) {
+        if (!QDir::isAbsolutePath(dir))
+            return fail(temp.edit, temp.relative.arg(dir));
+        if (QDir::cleanPath(incomingDir).compare(QDir::cleanPath(dir), pathCase) == 0)
+            return fail(temp.edit, tr("The temporary folder can't be the same as the incoming folder."));
     }
-    if (QDir::cleanPath(m_incomingDirEdit->text()).compare(
-            QDir::cleanPath(m_tempDirEdit->text()), pathCase) == 0)
-        return fail(m_tempDirEdit,
-                    tr("The temporary folder can't be the same as the incoming folder."));
 
     // A remote core has its own disk: it creates missing folders itself
     if (!local)
         return true;
-    for (const Field& f : fields) {
-        QLineEdit* edit = f.edit;
-        const QString path = edit->text();
+    QList<std::pair<const Field*, QString>> checks{{&incoming, incomingDir}};
+    for (const QString& dir : std::as_const(tempDirs))
+        checks.append({&temp, dir});
+    for (const auto& [f, path] : checks) {
         const QFileInfo info(path);
         if (info.exists() && !info.isDir())
-            return fail(edit, tr("This is a file, not a folder:\n%1").arg(path));
+            return fail(f->edit, tr("This is a file, not a folder:\n%1").arg(path));
         if (info.exists())
             continue;
-        if (QMessageBox::question(this, tr("Directories"), f.missing.arg(path))
+        if (QMessageBox::question(this, tr("Directories"), f->missing.arg(path))
             != QMessageBox::Yes)
-            return focus(edit);
+            return focus(f->edit);
         if (!QDir().mkpath(path))
-            return fail(edit, tr("Could not create the folder:\n%1").arg(path));
+            return fail(f->edit, tr("Could not create the folder:\n%1").arg(path));
     }
 
     return true;
@@ -10065,6 +10122,37 @@ void OptionsDialog::linkUpToDown()
     if (const uint32 held = SpeedRules::clampDownForUp(raised, down); held != down)
         m_downloadLimitSlider->setValue(static_cast<int>(held));
     m_linkingLimits = false;
+}
+
+QStringList OptionsDialog::tempDirsFromEdit() const
+{
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+    constexpr auto pathCase = Qt::CaseInsensitive;
+#else
+    constexpr auto pathCase = Qt::CaseSensitive;
+#endif
+    QStringList dirs;
+    for (const QString& part : m_tempDirEdit->text().split(u'|', Qt::SkipEmptyParts)) {
+        const QString dir = part.trimmed();
+        if (!dir.isEmpty() && !dirs.contains(dir, pathCase))
+            dirs.append(dir);
+    }
+    return dirs;
+}
+
+QStringList OptionsDialog::sharedDirsChecked() const
+{
+    if (m_remoteDirsModel)
+        return m_remoteDirsModel->checkedPaths();
+    return static_cast<const CheckableFileSystemModel*>(m_sharedDirsModel)->checkedPaths();
+}
+
+void OptionsDialog::setSharedDirsChecked(const QStringList& dirs)
+{
+    if (m_remoteDirsModel)
+        m_remoteDirsModel->setCheckedPaths(dirs);
+    else
+        static_cast<CheckableFileSystemModel*>(m_sharedDirsModel)->setCheckedPaths(dirs);
 }
 
 } // namespace eMule

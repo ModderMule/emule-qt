@@ -186,6 +186,7 @@ private:
     QTreeWidgetItem* m_hashRamItem = nullptr;
     QTreeWidgetItem* m_lowRamItem = nullptr;
     QTreeWidgetItem* m_lanItem = nullptr;   ///< ed3kLan
+    QTreeWidgetItem* m_autoIndexItem = nullptr;   ///< ed3kAutoIndexNode
 
     // General
     QLabel* m_runningLabel = nullptr;

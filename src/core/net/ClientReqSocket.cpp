@@ -223,12 +223,12 @@ bool ClientReqSocket::packetReceived(Packet* packet)
             // discard the leftover partial header with it (EMSocket.cpp:284-285, :299-302),
             // desyncing the stream over a single bad packet.
             if (!packet->unPackPacket(kMaxDecompressedClientPacket)) {
-                logWarning(QStringLiteral("ClientReqSocket::packetReceived — failed to "
+                logDebug([&]() -> QString { return QStringLiteral("ClientReqSocket::packetReceived — failed to "
                                           "decompress packed packet (opcode=0x%1 size=%2 "
                                           "peer=%3:%4)")
                                .arg(opcode, 2, 16, QLatin1Char('0'))
                                .arg(rawSize)
-                               .arg(peerAddress().toString()).arg(peerPort()));
+                               .arg(peerAddress().toString()).arg(peerPort()); });
                 return true;
             }
             // unPackPacket rewrites prot to OP_EMULEPROT (Packet.cpp:186), so a packed packet
@@ -254,31 +254,31 @@ bool ClientReqSocket::packetReceived(Packet* packet)
     } catch (const FileException& ex) {
         // MFC ListenSocket.cpp:1859-1865: a packet we cannot parse ends the connection. The
         // stream past it cannot be trusted, and the rest of the read buffer is dropped anyway.
-        logWarning(QStringLiteral("ClientReqSocket::packetReceived — malformed packet: %1 "
+        logDebug([&]() -> QString { return QStringLiteral("ClientReqSocket::packetReceived — malformed packet: %1 "
                                   "(proto=0x%2 opcode=0x%3 wireSize=%4 peer=%5:%6)")
                        .arg(QLatin1String(ex.what()))
                        .arg(protocol, 2, 16, QLatin1Char('0'))
                        .arg(opcode, 2, 16, QLatin1Char('0'))
                        .arg(rawSize)
-                       .arg(peerAddress().toString()).arg(peerPort()));
+                       .arg(peerAddress().toString()).arg(peerPort()); });
         disconnect(QStringLiteral("Error while processing packet: %1").arg(QLatin1String(ex.what())));
         return false;
     } catch (const std::exception& ex) {
-        logWarning(QStringLiteral("ClientReqSocket::packetReceived — exception: %1 "
+        logDebug([&]() -> QString { return QStringLiteral("ClientReqSocket::packetReceived — exception: %1 "
                                   "(proto=0x%2 opcode=0x%3 wireSize=%4)")
                        .arg(QLatin1String(ex.what()))
                        .arg(protocol, 2, 16, QLatin1Char('0'))
                        .arg(opcode, 2, 16, QLatin1Char('0'))
-                       .arg(rawSize));
+                       .arg(rawSize); });
         disconnect(QStringLiteral("Error while processing packet: %1").arg(QLatin1String(ex.what())));
         return false;
     } catch (...) {
         // MFC ListenSocket.cpp:1836 — a non-std throw must not reach the Qt event loop.
-        logWarning(QStringLiteral("ClientReqSocket::packetReceived — unhandled exception "
+        logDebug([&]() -> QString { return QStringLiteral("ClientReqSocket::packetReceived — unhandled exception "
                                   "(proto=0x%1 opcode=0x%2 wireSize=%3)")
                        .arg(protocol, 2, 16, QLatin1Char('0'))
                        .arg(opcode, 2, 16, QLatin1Char('0'))
-                       .arg(rawSize));
+                       .arg(rawSize); });
         disconnect(QStringLiteral("Unhandled exception"));
         return false;
     }
@@ -287,9 +287,9 @@ bool ClientReqSocket::packetReceived(Packet* packet)
     // is not what it claims to be; charge it, fail the download and drop the peer.
     if (auto* stats = theApp.statistics)
         stats->addDownDataOverheadOther(rawSize);
-    logWarning(QStringLiteral("ClientReqSocket: Unknown protocol 0x%1 from %2:%3")
+    logDebug([&]() -> QString { return QStringLiteral("ClientReqSocket: Unknown protocol 0x%1 from %2:%3")
                    .arg(protocol, 2, 16, QLatin1Char('0'))
-                   .arg(peerAddress().toString()).arg(peerPort()));
+                   .arg(peerAddress().toString()).arg(peerPort()); });
     if (m_client)
         m_client->setDownloadState(DownloadState::Error);
     disconnect(QStringLiteral("Unknown protocol"));
@@ -341,11 +341,11 @@ bool ClientReqSocket::checkHelloFirst(uint8 protocol, uint8 opcode, uint32 rawSi
 
     if (auto* stats = theApp.statistics)
         stats->addDownDataOverheadOther(rawSize);
-    logWarning(QStringLiteral("ClientReqSocket: peer %1:%2 sent proto=0x%3 opcode=0x%4 "
+    logDebug([&]() -> QString { return QStringLiteral("ClientReqSocket: peer %1:%2 sent proto=0x%3 opcode=0x%4 "
                               "before saying hello")
                    .arg(peerAddress().toString()).arg(peerPort())
                    .arg(protocol, 2, 16, QLatin1Char('0'))
-                   .arg(opcode, 2, 16, QLatin1Char('0')));
+                   .arg(opcode, 2, 16, QLatin1Char('0')); });
     // disconnect() sets m_deleteThis before it flushes, which is what keeps a nested
     // send out of packetReceived() — nothing may be sent after this point.
     disconnect(QStringLiteral("Asks for something without saying hello"));

@@ -36,6 +36,7 @@
 #include <QUdpSocket>
 
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <map>
 #include <memory>
@@ -181,6 +182,14 @@ public:
     /// An eD2K server's index node (ST_ED3K, ed3k §11), an ed3k:node link: kept across
     /// restarts, each once. false: not a valid ed3k:node link.
     bool addIndexLink(const QString& link);
+    /// The user disconnected the server of @p link: the link is forgotten and its index node
+    /// taken off the engine's list, its connection closed; no restart. A later ST_ED3K of
+    /// the server adds it again. false: no valid link.
+    bool removeIndexLink(const QString& link);
+    /// pref ed3kAutoIndexNode: hand addIndexLink's links to the engine, which dials them
+    /// (default off: only kept). Off again keeps a connection already made.
+    void setAutoIndexNodes(bool on);
+    [[nodiscard]] bool autoIndexNodes() const { return m_autoIndex; }
     /// The policy's slots, holders and waiting entries; nullopt while not running.
     [[nodiscard]] std::optional<::ed3k::QueueStats> uploadQueueStats();
 
@@ -231,6 +240,8 @@ public:
     };
     void addPeerBytes(::ed3k::KeyKind key, const ::ed3k::NodeId& node, std::uint64_t up, std::uint64_t down);
     [[nodiscard]] PeerBytes peerBytes(::ed3k::KeyKind key, const ::ed3k::NodeId& node) const;
+    /// Download speed from a peer in B/s: verified blocks over the last 10 s (blocks are 256 KiB, a 1 s count flickers).
+    [[nodiscard]] std::uint64_t downRate(::ed3k::KeyKind key, const ::ed3k::NodeId& node) const;
 
 signals:
     /// Running, port, contacts, address class changed.
@@ -298,6 +309,7 @@ private:
     QStringList m_relays4, m_relays6, m_relayIds4, m_relayIds6;
     /// ST_ED3K links of eD2K servers (addIndexLink), in arrival order
     QStringList m_indexLinks;
+    bool m_autoIndex = false;     ///< setAutoIndexNodes
     bool m_pumping = false;
     bool m_pumpQueued = false;   ///< a pump after offered datagrams is on its way
     bool m_pumpAgain = false;
@@ -315,6 +327,14 @@ private:
     std::unique_ptr<Ed3kHide> m_hide;
     ::ed3k::KeyKind m_eventKey = ::ed3k::KeyKind::Node;
     std::map<std::pair<::ed3k::KeyKind, ::ed3k::NodeId>, PeerBytes> m_peerBytes;
+    /// downRate(): recent blocks per peer, and when its burst began
+    struct RecentDown {
+        std::deque<std::pair<qint64, std::uint64_t>> blocks;   ///< ms since start, bytes
+        qint64 since = 0;
+    };
+    std::map<std::pair<::ed3k::KeyKind, ::ed3k::NodeId>, RecentDown> m_recentDown;
+    QElapsedTimer m_rateClock;
+    qint64 m_recentPruned = 0;
 };
 
 } // namespace eMule::ed3k

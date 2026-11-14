@@ -18,6 +18,7 @@
 #include "server/ServerList.h"
 #include "transfer/DownloadQueue.h"
 #include "transfer/UploadQueue.h"
+#include "utils/SystemMemory.h"
 
 #include <QCborArray>
 #include <QCborMap>
@@ -484,6 +485,9 @@ StatsSnapshot collectStatsSnapshot()
         out.upQueueLength = static_cast<qint64>(uq->uploadQueueLength());
         out.upActive = static_cast<qint64>(uq->maxActiveClientsShortTime());
         out.upAvgTime = static_cast<qint64>(uq->averageUpTime());
+        uq->forEachUploading([&out](UpDownClient* c) {
+            out.memUploadBuffers += static_cast<qint64>(c->uploadBufferBytes());
+        });
     }
 
     // Download queue. One walk feeds the queue counters, the compression/corruption
@@ -513,6 +517,7 @@ StatsSnapshot collectStatsSnapshot()
             totalSize += size;
             totalDone += done;
             out.totalDownNeeded += static_cast<qint64>(f->neededSpace());
+            out.memDownloadBuffers += static_cast<qint64>(f->bufferedDataSize());
         }
         const DownloadQueue::SourceStats src = dq->sourceStats();
         out.downSources = {src.onQueue, src.queueFull, src.noNeededParts, src.asking,
@@ -595,6 +600,11 @@ StatsSnapshot collectStatsSnapshot()
     out.recMaxSharedSize = static_cast<qint64>(thePrefs.recMaxSharedSize());
     out.recMaxAvgFileSize = static_cast<qint64>(thePrefs.recMaxAvgFileSize());
     out.recMaxLargestFile = static_cast<qint64>(thePrefs.recMaxLargestFile());
+
+    if (const auto mem = processMemory()) {
+        out.memProcess = static_cast<qint64>(mem->current);
+        out.memProcessPeak = static_cast<qint64>(mem->peak);
+    }
 
     return out;
 }
@@ -683,6 +693,12 @@ QCborMap toCborMap(const StatsSnapshot& s)
     put(QStringLiteral("upQueueLength"), s.upQueueLength);
     put(QStringLiteral("upActive"), s.upActive);
     put(QStringLiteral("upAvgTime"), s.upAvgTime);
+
+    // Memory
+    put(QStringLiteral("memProcess"), s.memProcess);
+    put(QStringLiteral("memProcessPeak"), s.memProcessPeak);
+    put(QStringLiteral("memUploadBuffers"), s.memUploadBuffers);
+    put(QStringLiteral("memDownloadBuffers"), s.memDownloadBuffers);
     put(QStringLiteral("downSuccessful"), s.downSuccessful);
     put(QStringLiteral("downFailed"), s.downFailed);
     put(QStringLiteral("downAvgTime"), s.downAvgTime);

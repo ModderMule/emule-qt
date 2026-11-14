@@ -35,6 +35,13 @@ bool handleRequest(const Ipc::IpcMessage& msg, const std::function<void(const Ip
 /// to where its file is. false: none (or no node).
 [[nodiscard]] bool downloadOf(const QByteArray& root, bool& inProgress, QString& folder);
 
+/// The file of an ed3k download named by @p hexRoot (64 hex): the part file while unfinished,
+/// else the final one. false: none, failed, or no node. Backs preview and FlushDownload.
+[[nodiscard]] bool fileOf(const QString& hexRoot, QString& path, QString& name);
+
+/// "Move to" (#187) of the download of @p hexRoot. Empty: started; else why not.
+[[nodiscard]] QString moveTo(const QString& hexRoot, const QString& dir);
+
 /// GetEd3kDownloads, also what PushEd3kDownloads carries.
 [[nodiscard]] QCborMap listToCbor();
 

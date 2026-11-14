@@ -3,6 +3,7 @@
 /// @brief First start wizard page: take over settings and unfinished downloads from eMule or aMule.
 
 #include "dialogs/LegacyImportPage.h"
+#include "dialogs/FolderPickerDialog.h"
 
 #include "app/IpcClient.h"
 #include "IpcMessage.h"
@@ -14,7 +15,6 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDir>
-#include <QFileDialog>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -301,8 +301,8 @@ void LegacyImportPage::onSettingsDirEdited()
 
 void LegacyImportPage::browseSettings()
 {
-    const QString dir = QFileDialog::getExistingDirectory(
-        this, tr("Settings folder of eMule or aMule"), m_settingsEdit->text());
+    const QString dir = FolderPickerDialog::getExistingDirectory(
+        this, m_ipc, tr("Settings folder of eMule or aMule"), m_settingsEdit->text());
     if (dir.isEmpty())
         return;
     m_settingsEdit->setText(QDir::toNativeSeparators(dir));
@@ -313,8 +313,8 @@ void LegacyImportPage::browseSettings()
 void LegacyImportPage::browseDownloads()
 {
     const QStringList current = downloadDirs();
-    const QString dir = QFileDialog::getExistingDirectory(
-        this, tr("Download folder of eMule or aMule"), current.value(0));
+    const QString dir = FolderPickerDialog::getExistingDirectory(
+        this, m_ipc, tr("Download folder of eMule or aMule"), current.value(0));
     if (dir.isEmpty())
         return;
     // Picked = replaces the detected ones; add more by typing

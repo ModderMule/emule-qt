@@ -138,7 +138,7 @@ void NatPmpBackend::checkEpoch(uint32 secondsSinceEpoch)
     m_lastSssoeAtSecs = nowSecs;
 
     if (rebooted) {
-        logWarning(QStringLiteral("NAT-PMP: gateway restarted — re-adding mappings"));
+        logDebug(QStringLiteral("NAT-PMP: gateway restarted — re-adding mappings"));
         emit mappingsInvalidated(QStringLiteral("NAT-PMP epoch reset"));
     }
 }

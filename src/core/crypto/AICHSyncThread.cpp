@@ -87,8 +87,8 @@ void AICHSyncThread::run()
                         [&keep](const AICHHash& hash) { return keep.contains(hash); }, dropped, bytes))
                     logWarning(QStringLiteral("AICH sync: could not purge known2_64.met"));
                 else if (dropped > 0)
-                    logInfo(QStringLiteral("AICH sync: dropped %1 unused hashsets (%2 bytes)")
-                                .arg(dropped).arg(bytes));
+                    logDebug(QStringLiteral("AICH sync: dropped %1 unused hashsets (%2 bytes)")
+                                 .arg(dropped).arg(bytes));
                 emit purged(dropped, bytes);
                 continue;
             }
@@ -231,8 +231,8 @@ void AICHSyncThread::onIndexLoaded()
     if (m_failures.size() != failuresLoaded)
         saveFailures();
     if (!m_failures.isEmpty())
-        logInfo(QStringLiteral("AICH sync: %1 files skipped, their hashset could not be built before")
-                    .arg(m_failures.size()));
+        logDebug(QStringLiteral("AICH sync: %1 files skipped, their hashset could not be built before")
+                     .arg(m_failures.size()));
 
     // Same thread as every add and remove of the share, so the pointers are still good.
     for (KnownFile* file : needPartHashes)

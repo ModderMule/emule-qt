@@ -142,6 +142,7 @@ private slots:
     void pauseAndResume();
     void aPartFileIsTakenUpAfterARestart();
     void aCopiedPartFileGoesOnElsewhere();
+    void aMovedPartFileGoesOnInItsNewFolder();
     void anOldStateFileMovesToMetFiles();
     void theIpcListsAndControls();
     void downloadsOfOneSourceTakeTurns();
@@ -271,6 +272,47 @@ void tst_Ed3kDownloads::aPartFileIsTakenUpAfterARestart()
     QTRY_COMPARE_WITH_TIMEOUT(done.count(), 1, 60000);
     // only the missing blocks came again
     QVERIFY(std::uint64_t(progress.count()) < (std::uint64_t(data.size()) + kBlock - 1) / kBlock);
+    QVERIFY(readFile(d.info(a.root)->path) == data);
+    d.stop();
+}
+
+// #187: "Move to" a paused download; it stays paused, its .met follows, it completes from there
+void tst_Ed3kDownloads::aMovedPartFileGoesOnInItsNewFolder()
+{
+    const QByteArray data = payload(int(10 * kBlock + 3), 9);
+    Seeder a;
+    QVERIFY(a.start(data, QStringLiteral("m.bin")));
+    QTemporaryDir db;
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    const QString temp = QDir(db.path()).filePath(QStringLiteral("temp"));
+    const QString other = QDir(db.path()).filePath(QStringLiteral("other"));
+    Ed3kDownloads d(b, db.path());
+    d.setSearchEnabled(false);
+    d.setDirs({temp}, QDir(db.path()).filePath(QStringLiteral("in")));
+    d.start();
+    bool once = true;
+    connect(&d, &Ed3kDownloads::progress, &d, [&d, &once](const ::ed3k::Root& root, std::uint64_t) {
+        if (std::exchange(once, false))
+            d.pause(root);
+    });
+    QVERIFY(d.add(Ed3kDownloadSpec{a.root, std::uint64_t(data.size()), QStringLiteral("m.bin"), {}, {}, 0, false, 1}).has_value());
+    d.addSourceTo(a.root, sourceOf(a.session));
+    QTRY_VERIFY_WITH_TIMEOUT(d.info(a.root)->state == Ed3kDownloadInfo::State::Paused, 60000);
+    const QString oldPart = d.info(a.root)->partPath;
+
+    QCOMPARE(d.moveTo(a.root, other), QString());
+    QTRY_VERIFY(d.info(a.root)->partPath.startsWith(other + u'/'));
+    QCOMPARE(d.info(a.root)->state, Ed3kDownloadInfo::State::Paused);   // a pause stays
+    QVERIFY(!QFile::exists(oldPart));
+    QVERIFY(QFile::exists(d.info(a.root)->partPath));
+    QTRY_VERIFY(QFile::exists(d.info(a.root)->partPath + QStringLiteral(".met")));
+    QVERIFY(!QFile::exists(oldPart + QStringLiteral(".met")));
+
+    QSignalSpy done(&d, &Ed3kDownloads::completed);
+    QVERIFY(d.resume(a.root));
+    d.addSourceTo(a.root, sourceOf(a.session));
+    QTRY_COMPARE_WITH_TIMEOUT(done.count(), 1, 60000);
     QVERIFY(readFile(d.info(a.root)->path) == data);
     d.stop();
 }
@@ -698,8 +740,16 @@ void tst_Ed3kDownloads::previewPartsComeFirst()
     const auto preview = [&](std::size_t b) { return b * kBlock < PARTSIZE || b * kBlock >= tail; };
     bool middleFirst = false;
     bool middleSeen = false;
+    bool previewSeen = false;
+    bool previewEarly = false;   // possible before the first part was here
+    QVERIFY(!d.info(a.root)->previewPossible);
     connect(&d, &Ed3kDownloads::progress, &d, [&](const ::ed3k::Root& root, std::uint64_t) {
         const auto i = d.info(root);
+        if (i && i->previewPossible) {
+            previewSeen = true;
+            for (std::size_t b = 0; b * kBlock < PARTSIZE; ++b)
+                previewEarly = previewEarly || !i->blocks[b];
+        }
         if (!i || middleSeen)
             return;
         for (std::size_t b = 0; b < i->blocks.size(); ++b)
@@ -718,6 +768,9 @@ void tst_Ed3kDownloads::previewPartsComeFirst()
     QTRY_COMPARE_WITH_TIMEOUT(done.count(), 1, 120000);
     QVERIFY(middleSeen);
     QVERIFY(!middleFirst);
+    QVERIFY(previewSeen);    // a video with its first part: Preview on
+    QVERIFY(!previewEarly);
+    QVERIFY(!d.info(a.root)->previewPossible);   // complete: Open File instead
     d.stop();
 }
 

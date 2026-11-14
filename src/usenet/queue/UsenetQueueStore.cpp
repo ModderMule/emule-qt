@@ -275,6 +275,8 @@ bool UsenetQueueStore::save(const UsenetQueueItem& item)
     // which is what keeps the first run after an upgrade quiet.
     if (!item.failedLadder.isEmpty())
         out.field("", "failedLadder", item.failedLadder);
+    if (!item.workRoot.isEmpty())   // optional: moved by "Move to" (#187)
+        out.field("", "workRoot", item.workRoot);
     // Indexer row it came from, for a replacement on failure. Absent = none.
     if (item.origin.isSet()) {
         out.raw("origin:\n");
@@ -507,6 +509,7 @@ bool UsenetQueueStore::load(const QString& path, UsenetQueueItem& out, QString& 
         out.passwordRequired =
             root["passwordRequired"] ? root["passwordRequired"].as<bool>(false) : false;
         out.failedLadder = fromStd(root, "failedLadder");
+        out.workRoot = fromStd(root, "workRoot");
         if (const auto origin = root["origin"]; origin && origin.IsMap()) {
             out.origin.indexerName = fromStd(origin, "indexer");
             out.origin.guid = fromStd(origin, "guid");

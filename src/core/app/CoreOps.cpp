@@ -248,6 +248,57 @@ Status setDownloadCategory(const QString& hashHex, uint32 category)
     return st;
 }
 
+Status checkTempDir(const QString& dir)
+{
+    const QString target = QDir::cleanPath(QDir::fromNativeSeparators(dir));
+    if (target.isEmpty() || QDir::isRelativePath(target))
+        return Status::fail(400, QStringLiteral("Not an absolute folder"));
+    const auto same = [&target](const QString& other) {
+        return !other.isEmpty() && QDir::cleanPath(QDir::fromNativeSeparators(other)) == target;
+    };
+    // a temp dir is kept out of the share: it must not take an incoming or shared folder with it
+    if (same(thePrefs.incomingDir()))
+        return Status::fail(400, QStringLiteral("The incoming folder cannot hold unfinished downloads"));
+    for (int i = 1; i < thePrefs.categoryCount(); ++i)
+        if (same(thePrefs.incomingDirForCategory(i)))
+            return Status::fail(400, QStringLiteral("A category folder cannot hold unfinished downloads"));
+    for (const QString& shared : thePrefs.sharedDirs())
+        if (same(shared))
+            return Status::fail(400, QStringLiteral("A shared folder cannot hold unfinished downloads"));
+    if (!QDir().mkpath(target))
+        return Status::fail(500, QStringLiteral("Cannot create %1").arg(target));
+    return {};
+}
+
+void adoptTempDir(const QString& dir)
+{
+    const QString target = QDir::cleanPath(QDir::fromNativeSeparators(dir));
+    QStringList dirs = thePrefs.tempDirs();
+    if (std::ranges::any_of(dirs, [&](const QString& d) { return QDir::cleanPath(QDir::fromNativeSeparators(d)) == target; }))
+        return;
+    dirs.append(target);
+    thePrefs.setTempDirs(dirs);
+    logInfo(QStringLiteral("Added %1 to the temp folders").arg(target));
+}
+
+Status moveDownload(const QString& hashHex, const QString& dir)
+{
+    Status st;
+    PartFile* file = findDownload(hashHex, st);
+    if (!file)
+        return st;
+    // finished data that did not fit: any folder will do as its destination
+    if (!(file->completionError() && file->gapList().empty())) {
+        if (st = checkTempDir(dir); !st.ok())
+            return st;
+    }
+    if (const QString error = file->moveTo(dir); !error.isEmpty())
+        return Status::fail(409, error);
+    if (file->isRelocating())
+        adoptTempDir(dir);
+    return st;
+}
+
 Status swapA4AFToDownload(const QString& hashHex, int* swapped)
 {
     Status st;
@@ -490,6 +541,20 @@ Status disconnectFromServer()
     return {};
 }
 
+Status disconnectFromServer(Server* server)
+{
+    if (!server)
+        return disconnectFromServer();
+    if (!theApp.serverConnect)
+        return unavailable(QStringLiteral("ServerConnect"));
+    if (theApp.serverConnect->isConnectedOrConnectingTo(server))
+        if (Status st = disconnectFromServer(); !st.ok())
+            return st;
+    if (!server->ed3kLink().isEmpty() && theApp.ed3kIndexDrop)
+        theApp.ed3kIndexDrop(server->ed3kLink());
+    return {};
+}
+
 void importServerMetFromUrl(const QString& urlText, std::function<void(const Status&, int)> done)
 {
     Status st;
@@ -704,9 +769,9 @@ Status setFileComments(const QStringList& hashHexes, const QString& commentIn, q
         if (rating >= 0)
             file->setFileRating(static_cast<uint32>(rating));
         ++count;
-        logInfo(QStringLiteral("Comment set for \"%1\": rating %2, \"%3\"")
+        logDebug([&]() -> QString { return QStringLiteral("Comment set for \"%1\": rating %2, \"%3\"")
                     .arg(file->fileName(), QString::number(file->getFileRating()),
-                         file->getFileComment()));
+                         file->getFileComment()); });
     }
     if (applied)
         *applied = count;

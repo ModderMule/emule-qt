@@ -86,6 +86,9 @@ public:
     bool resume(const QString& id);
     bool recheck(const QString& id);
     bool reannounce(const QString& id);
+    /// Moves the torrent's data to @p dir (#187); an errored torrent (disk full) restarts
+    /// there. Async: storage_moved(_failed)_alert finishes it. false: unknown id.
+    bool moveStorage(const QString& id, const QString& dir);
     /// One libtorrent priority 0..7 per file, in file order.
     bool setFilePriorities(const QString& id, const QList<int>& priorities);
 

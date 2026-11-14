@@ -163,13 +163,13 @@ void DownloadQueue::loadPartMet(const QString& metFile, const PartMetPreload* pr
     partFile->finishLoadedDownload();
     // Record the state the file came back in — a download that silently
     // loads paused is skipped by process() and will never ask for sources.
-    logInfo(QStringLiteral("Loaded part file: %1 — status=%2 paused=%3 gaps=%4 completed=%5/%6")
-                .arg(partFile->fileName())
-                .arg(static_cast<int>(partFile->status()))
-                .arg(partFile->isPaused() ? 1 : 0)
-                .arg(partFile->gapList().size())
-                .arg(static_cast<uint64>(partFile->completedSize()))
-                .arg(static_cast<uint64>(partFile->fileSize())));
+    logDebug(QStringLiteral("Loaded part file: %1 — status=%2 paused=%3 gaps=%4 completed=%5/%6")
+                 .arg(partFile->fileName())
+                 .arg(static_cast<int>(partFile->status()))
+                 .arg(partFile->isPaused() ? 1 : 0)
+                 .arg(partFile->gapList().size())
+                 .arg(static_cast<uint64>(partFile->completedSize()))
+                 .arg(static_cast<uint64>(partFile->fileSize())));
 }
 
 // ===========================================================================
@@ -2129,8 +2129,8 @@ QByteArray DownloadQueue::buildLocalRequestFrame(uint64 curTick, const Server* s
         std::erase(m_localServerReqQueue, next);
 
         if (next->isLargeFile() && (!server || !server->supportsLargeFilesTCP())) {
-            logWarning(QStringLiteral("Large file %1 queued for a server without large file support")
-                           .arg(next->fileName()));
+            logDebug(QStringLiteral("Large file %1 queued for a server without large file support")
+                         .arg(next->fileName()));
             continue;
         }
 

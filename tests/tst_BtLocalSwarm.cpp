@@ -16,6 +16,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QRandomGenerator>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
@@ -155,6 +156,8 @@ private slots:
     void i2pOnlyDropsDirectPeers();
     void stopAfterMetadata();
     void addWithWantedFiles();
+    void moveStorageTakesTheFiles();
+    void moveStorageClearsAWriteError();
 
 private:
     void runJoin(bool spoil, bool deferred);
@@ -617,6 +620,83 @@ void tst_BtLocalSwarm::addWithWantedFiles()
     QCOMPARE(priorityOf(QStringLiteral("b.bin")), 4);
     QCOMPARE(priorityOf(QStringLiteral("c.bin")), 4);
     session.stop();
+}
+
+void tst_BtLocalSwarm::moveStorageTakesTheFiles()
+{
+    // "Move to" (#187): a seeding torrent's files go to the folder, it seeds on from there,
+    // and a restart keeps the new place
+    const QString name = QStringLiteral("mover");
+    const QString from = m_dir.filePath(name + QStringLiteral("/from"));
+    const QString to = m_dir.filePath(name + QStringLiteral("/to"));
+    QVERIFY(QDir().mkpath(from));
+    QVERIFY(QFile::copy(m_seedDir + QStringLiteral("/payload.bin"), from + QStringLiteral("/payload.bin")));
+
+    BtSession s;
+    s.start(settingsIn(m_dir, name));
+    const BtAddResult r = s.addTorrentFile(m_v1.bytes, from);
+    QCOMPARE(r.outcome, BtAddOutcome::Added);
+    QTRY_VERIFY_WITH_TIMEOUT(s.torrent(r.id).has_value() && s.torrent(r.id)->state == BtState::Seeding, kTimeoutMs);
+
+    QVERIFY(!s.moveStorage(QStringLiteral("bt:v1:0000000000000000000000000000000000000000"), to));
+    QSignalSpy changed(&s, &BtSession::torrentChanged);
+    QVERIFY(s.moveStorage(r.id, to));
+    QTRY_VERIFY_WITH_TIMEOUT(QDir::cleanPath(s.torrent(r.id)->savePath) == QDir::cleanPath(to), kTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(s.torrent(r.id)->state == BtState::Seeding, kTimeoutMs);
+    QVERIFY(!QFileInfo::exists(from + QStringLiteral("/payload.bin")));
+    QCOMPARE(readDownloaded(s, r.id), m_payload);
+    QVERIFY(changed.count() > 0);
+    QVERIFY(s.moveStorage(r.id, to));   // already there: nothing to do
+    s.stop();
+
+    BtSession again;
+    QSignalSpy added(&again, &BtSession::torrentAdded);
+    again.start(settingsIn(m_dir, name));
+    QTRY_VERIFY_WITH_TIMEOUT(added.count() > 0, 10'000);
+    QTRY_VERIFY_WITH_TIMEOUT(again.torrent(r.id).has_value() && again.torrent(r.id)->state == BtState::Seeding, kTimeoutMs);
+    QCOMPARE(QDir::cleanPath(again.torrent(r.id)->savePath), QDir::cleanPath(to));
+    again.stop();
+}
+
+void tst_BtLocalSwarm::moveStorageClearsAWriteError()
+{
+    // a download that cannot write (as with a full disk) stops with an error; moved to a
+    // folder that takes it, the error goes and it finishes there
+    BtSession seeder;
+    quint16 port = 0;
+    startSeeder(seeder, m_v1, port);
+
+    const QString name = QStringLiteral("stuck");
+    BtSettings settings = settingsIn(m_dir, name);
+    QVERIFY(QDir().mkpath(settings.downloadDir));
+    QVERIFY(QFile::setPermissions(settings.downloadDir, QFileDevice::ReadOwner | QFileDevice::ExeOwner));
+    const auto restore = qScopeGuard([&] {
+        QFile::setPermissions(settings.downloadDir, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+    });
+    if (QFile probe(settings.downloadDir + QStringLiteral("/probe")); probe.open(QIODevice::WriteOnly)) {
+        probe.close();
+        probe.remove();
+        QSKIP("a read-only folder takes files here (root, or no POSIX permissions)");
+    }
+
+    BtSession leecher;
+    leecher.start(settings);
+    QSignalSpy finished(&leecher, &BtSession::torrentFinished);
+    const BtAddResult added = leecher.addMagnet(magnet(m_v1, port));
+    QCOMPARE(added.outcome, BtAddOutcome::Added);
+    QTRY_VERIFY2_WITH_TIMEOUT(leecher.torrent(added.id).has_value() && leecher.torrent(added.id)->state == BtState::Error,
+                              qPrintable(QStringLiteral("state %1 error '%2'").arg(int(leecher.torrent(added.id)->state)).arg(leecher.torrent(added.id)->error)),
+                              kTimeoutMs);
+    QVERIFY(!leecher.torrent(added.id)->error.isEmpty());   // the list says why
+    QCOMPARE(finished.count(), 0);
+
+    const QString roomy = m_dir.filePath(name + QStringLiteral("/roomy"));
+    QVERIFY(leecher.moveStorage(added.id, roomy));
+    QTRY_VERIFY_WITH_TIMEOUT(finished.count() > 0, kTimeoutMs);
+    QCOMPARE(QDir::cleanPath(leecher.torrent(added.id)->savePath), QDir::cleanPath(roomy));
+    QCOMPARE(readDownloaded(leecher, added.id), m_payload);
+    leecher.stop();
+    seeder.stop();
 }
 
 void tst_BtLocalSwarm::startSeeder(BtSession& seeder, const Torrent& torrent, quint16& port)

@@ -609,8 +609,8 @@ Server* ServerList::attachAddress(Server* entry, const Address& addr)
         const Address twinOther = twin->otherFamilyAddress(addr);
         const bool familyConflict = !twinOther.isNull() && !entry->hasAddress(twinOther);
         if (hashConflict || familyConflict) {
-            logInfo(QStringLiteral("Server %1 claims %2, which belongs to server %3 — not merged")
-                        .arg(entry->addressWithPort(), ipstr(addr), twin->addressWithPort()));
+            logDebug([&]() -> QString { return QStringLiteral("Server %1 claims %2, which belongs to server %3 — not merged")
+                        .arg(entry->addressWithPort(), ipstr(addr), twin->addressWithPort()); });
             return entry;
         }
     }
@@ -1248,6 +1248,7 @@ void ServerList::processDescResponse(const uint8* data, uint32 size, const Endpo
                     // (Duplicate collapsing on a changed dynIP is finding #18.)
                 } else if (tag.nameId() == ST_ED3K && tag.isStr()) {
                     // the server's ed3k index node (ed3k ed2k-signals.md §3)
+                    server->setEd3kLink(tag.strValue());
                     if (theApp.ed3kIndexLink)
                         theApp.ed3kIndexLink(tag.strValue());
                 } else if (tag.nameId() == ST_VERSION) {
@@ -1387,8 +1388,8 @@ bool ServerList::isFilteredServerIP(const Address& ip, QStringView context, cons
         return false;
 
     if (thePrefs.logFilteredIPs())
-        logInfo(QStringLiteral("IPFilter(%1): Filtered server \"%2\" (IP=%3) - IP filter (%4)")
-                    .arg(context, serverName, ipstr(ip), theApp.ipFilter->lastHitDescription()));
+        logDebug([&]() -> QString { return QStringLiteral("IPFilter(%1): Filtered server \"%2\" (IP=%3) - IP filter (%4)")
+                    .arg(context, serverName, ipstr(ip), theApp.ipFilter->lastHitDescription()); });
     return true;
 }
 
@@ -1400,8 +1401,8 @@ bool ServerList::isRejectedResolvedIP(const Address& ip, QStringView context, co
         const Server* connected = theApp.serverConnect ? theApp.serverConnect->currentServer() : nullptr;
         if (connected == nullptr || !connected->hasAddress(ip)) {
             if (thePrefs.logFilteredIPs())
-                logInfo(QStringLiteral("IPFilter(%1): Filtered server \"%2\" (IP=%3) - Invalid IP or LAN address.")
-                            .arg(context, serverName, ipstr(ip)));
+                logDebug([&]() -> QString { return QStringLiteral("IPFilter(%1): Filtered server \"%2\" (IP=%3) - Invalid IP or LAN address.")
+                            .arg(context, serverName, ipstr(ip)); });
             return true;
         }
     }

@@ -313,6 +313,8 @@ struct AppContext {
     /// A server advertised its ed3k index node (ST_ED3K, ed3k §11): an ed3k:node link. Set
     /// by the daemon.
     std::function<void(const QString& link)> ed3kIndexLink;
+    /// The user disconnected that server: its index node is dropped from ed3k, no restart.
+    std::function<void(const QString& link)> ed3kIndexDrop;
     /// eD2K part @p part of @p file passed (true) or failed its MD4 hash (§14.4 pair trust).
     std::function<void(PartFile& file, uint32 part, bool ok)> partVerdict;
     /// The peer of eD2K user hash @p hash waits or holds a slot on ed3k already (§14.4: a

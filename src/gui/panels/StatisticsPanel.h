@@ -352,6 +352,13 @@ private:
     /// free space per network's save folder (#165): incoming, torrent, usenet, hoster
     std::array<QTreeWidgetItem*, 4> m_itemSaveFolderSpace{};
 
+    // Memory (not in MFC): the core process and what holds the most of it
+    QTreeWidgetItem* m_itemMemProcess = nullptr;
+    QTreeWidgetItem* m_itemMemUpload = nullptr;
+    QTreeWidgetItem* m_itemMemDownload = nullptr;
+    QTreeWidgetItem* m_itemMemEd3kHashes = nullptr;   ///< from applyEd3kStatus()
+    QTreeWidgetItem* m_itemMemEd3kRecords = nullptr;
+
     // --- Usenet ---
     //
     // Data-driven rather than a member per row: the branch shows the same

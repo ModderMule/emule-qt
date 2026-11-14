@@ -243,6 +243,7 @@ void Ed3kOptionsPages::load(const QCborMap& p)
         requestCompatPlan();
     }
     m_extTree->setChecked(m_lanItem, p.value(QStringLiteral("ed3kLan")).toBool(false));
+    m_extTree->setChecked(m_autoIndexItem, p.value(QStringLiteral("ed3kAutoIndexNode")).toBool(false));
     m_hiding->load(p);
     m_sitePortSpin->setValue(int(p.value(QStringLiteral("ed3kSitePort")).toInteger(0)));
     m_nodeListsEdit->setPlainText(linesText(p.value(QStringLiteral("ed3kNodeLists"))));
@@ -332,6 +333,7 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     if (!m_portJoined)   // joined: the Connection page sends it
         put("ed3kUdpPort", qint64(m_udpPortSpin->value()));
     put("ed3kLan", m_extTree->isChecked(m_lanItem));
+    put("ed3kAutoIndexNode", m_extTree->isChecked(m_autoIndexItem));
     m_hiding->appendTo(req);
     put("ed3kSitePort", qint64(m_sitePortSpin->value()));
     put("ed3kNodeLists", linesOf(m_nodeListsEdit).join(QLatin1Char(' ')));
@@ -406,6 +408,7 @@ void Ed3kOptionsPages::saveLocal() const
     if (!m_portJoined && m_udpPortSpin->value() > 0)
         thePrefs.setEd3kUdpPort(uint16(m_udpPortSpin->value()));
     thePrefs.setEd3kLan(m_extTree->isChecked(m_lanItem));
+    thePrefs.setEd3kAutoIndexNode(m_extTree->isChecked(m_autoIndexItem));
     m_hiding->saveLocal();
     if (m_sitePortSpin->value() > 0)
         thePrefs.setEd3kSitePort(uint16(m_sitePortSpin->value()));
@@ -1976,6 +1979,9 @@ QWidget* Ed3kOptionsPages::buildExtended(QWidget* parent)
     QTreeWidgetItem* connection = m_extTree->addGroup(tr("Connection"), skinIcon(QStringLiteral(":/icons/Connection.ico")));
     m_lanItem = m_extTree->addCheck(connection, tr("Find ed3k nodes in the local network (restarts the node)"));
     m_lanItem->setToolTip(0, tr("LAN discovery: finds other ed3k nodes on this computer's local networks."));
+    m_autoIndexItem = m_extTree->addCheck(connection, tr("Auto connect to the ed3k index node an eD2K server names"));
+    m_autoIndexItem->setToolTip(0, tr("eD2K servers that also run an ed3k index node name it at login. "
+                                      "Off: the node is only noted in the ed3k log."));
     connect(m_extTree, &OptionsTree::changed, this, [this] {
         if (!m_loading)
             emit changed();

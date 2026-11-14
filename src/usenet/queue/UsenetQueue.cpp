@@ -14,6 +14,7 @@
 #include "app/AppContext.h"
 #include "files/SharedFileList.h"
 #include "prefs/Preferences.h"
+#include "utils/FileRelocate.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 #include "utils/PathUtils.h"
@@ -23,6 +24,7 @@
 #include <QDateTime>
 #include <QElapsedTimer>
 #include <QDir>
+#include <QPointer>
 #include <QFile>
 #include <QFileInfo>
 #include <QThread>
@@ -589,8 +591,7 @@ bool UsenetQueue::removeItem(const QString& id, bool deleteFiles)
         cancelEncryptedPreview(*m_items.at(size_t(i)));
 
         if (deleteFiles) {
-            const QString itemDir =
-                QDir(thePrefs.usenetTempDir()).filePath(id);
+            const QString itemDir = m_items.at(size_t(i))->item->workDir(thePrefs.usenetTempDir());
             QDir(itemDir).removeRecursively();
         }
         // Recorded before the erase, while the item is still readable. A release
@@ -646,6 +647,10 @@ bool UsenetQueue::resumeItem(const QString& id, ResumeIntent intent)
     ItemRuntime* rt = runtimeFor(id);
     if (!rt)
         return false;
+    if (rt->moving) {   // on again once moved
+        rt->resumeAfterMove = true;
+        return true;
+    }
     if (rt->item->status != UsenetItemStatus::Paused
         && rt->item->status != UsenetItemStatus::Failed)
         return false;
@@ -927,6 +932,41 @@ bool UsenetQueue::setItemPriority(const QString& id, int priority)
     emit itemChanged(id);
     dispatch();
     return true;
+}
+
+QString UsenetQueue::moveItem(const QString& id, const QString& dir)
+{
+    ItemRuntime* rt = runtimeFor(id);
+    if (!rt)
+        return QStringLiteral("unknown item");
+    const QString root = QDir::cleanPath(QDir::fromNativeSeparators(dir));
+    if (root.isEmpty() || QDir::isRelativePath(root))
+        return QStringLiteral("not an absolute folder");
+    if (rt->moving)
+        return QStringLiteral("already moving");
+    const UsenetItemStatus st = rt->item->status;
+    if (rt->postRunning || st == UsenetItemStatus::Complete || st == UsenetItemStatus::Verifying
+        || st == UsenetItemStatus::Repairing || st == UsenetItemStatus::Unpacking
+        || st == UsenetItemStatus::Checking)
+        return QStringLiteral("busy or complete");
+    const QString from = QDir::cleanPath(rt->item->workDir(thePrefs.usenetTempDir()));
+    const QString to = QDir(root).filePath(id);
+    if (from == QDir::cleanPath(to))
+        return {};
+    if (!QDir().mkpath(root))
+        return QStringLiteral("cannot create %1").arg(root);
+
+    // Running, or failed writing (a full disk): on again at the new place
+    rt->resumeAfterMove = rt->item->isActive() || st == UsenetItemStatus::Failed;
+    if (rt->item->isActive())
+        pauseItem(id);
+    rt->moving = true;
+    rt->moveTarget = root;
+    rt->item->stalledReason = tr("moving to %1").arg(root);
+    emit itemChanged(id);
+    logUsenet(QStringLiteral("Usenet: moving \"%1\" to %2").arg(rt->item->name, to));
+    continueMove(id, 0);
+    return {};
 }
 
 bool UsenetQueue::setItemCategory(const QString& id, int category)
@@ -2056,7 +2096,9 @@ void UsenetQueue::dispatch()
     // before the first tick had ever looked at the volume. Self-gated, so this
     // is a syscall at most every kDiskCheckIntervalMs however often it is asked.
     refreshDiskState();
-    if (m_diskBlocked) {
+    // was: a full default folder parked everything; items moved elsewhere (#187) go on
+    const bool anyMoved = std::ranges::any_of(m_items, [](const auto& rt) { return !rt->item->workRoot.isEmpty(); });
+    if (m_diskBlocked && !anyMoved) {
         noteDispatchPark(QStringLiteral("disk below the free-space floor"));
         return;
     }
@@ -2093,7 +2135,7 @@ void UsenetQueue::dispatch()
         // pending and onTick() rebuilds the whole plan four times a second for
         // the rest of the month.
         if (rt->item->isActive() && !rt->postRunning && !rt->quotaParked
-            && !rt->propagationHeld)
+            && !rt->propagationHeld && !rt->moving && !itemDiskBlocked(*rt))
             order.append(rt.get());
     }
     const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
@@ -2616,7 +2658,7 @@ void UsenetQueue::handleSegmentFailure(ItemRuntime& rt, const UsenetFetchResult&
         // with the local error text, which is the one thing this code never used
         // to do: a local problem failing locally, naming the path and not a
         // provider.
-        if (attempt.writeFailures > kMaxWriteFailures && !m_diskBlocked) {
+        if (attempt.writeFailures > kMaxWriteFailures && !itemDiskBlocked(rt)) {
             rt.attempts.remove(key);
             failItem(rt, tr("Cannot write to the download folder: %1")
                              .arg(result.text.isEmpty() ? describeNntpError(result.error)
@@ -3466,7 +3508,7 @@ void UsenetQueue::maybeStartEncryptedPreview(ItemRuntime& rt, const QString& bas
         // Beside the volumes rather than in the incoming directory: this is
         // scratch, and the share scan must never see it. usenetTempDir() is
         // refused by shouldBeShared() ahead of every other rule.
-        run.path = QDir(QDir(thePrefs.usenetTempDir()).filePath(rt.item->id))
+        run.path = QDir(rt.item->workDir(thePrefs.usenetTempDir()))
                        .filePath(QStringLiteral(".preview-") + baseName);
     }
 
@@ -3749,7 +3791,7 @@ void UsenetQueue::beginPostProcessing(ItemRuntime& rt)
 
     UsenetPostJob job;
     job.itemId = rt.item->id;
-    job.workDir = QDir(thePrefs.usenetTempDir()).filePath(rt.item->id);
+    job.workDir = rt.item->workDir(thePrefs.usenetTempDir());
     // The index is stored on the item; the folder is asked for here, at the last
     // moment. A category repointed, renamed or deleted while the release was
     // downloading resolves now — and incomingDirForCategory() re-tests the
@@ -4026,7 +4068,7 @@ void UsenetQueue::onPostFinished(const UsenetPostResult& result)
 
     // Everything worth keeping has been moved out by now; what is left is
     // scratch, archive volumes and recovery data.
-    QDir(QDir(thePrefs.usenetTempDir()).filePath(rt->item->id)).removeRecursively();
+    QDir(rt->item->workDir(thePrefs.usenetTempDir())).removeRecursively();
 
     // "Auto clear completed downloads" (MFC PartFile.cpp:3000). Deferred so the
     // finish listeners see the item first.
@@ -5429,6 +5471,80 @@ void UsenetQueue::refreshDiskState(bool force)
     }
 }
 
+bool UsenetQueue::itemDiskBlocked(const ItemRuntime& rt)
+{
+    const QString& root = rt.item->workRoot;
+    if (root.isEmpty())
+        return m_diskBlocked;
+    if (!thePrefs.checkDiskspace())
+        return false;
+    RootRoom& room = m_rootRoom[root];
+    if (!room.clock.isValid() || room.clock.elapsed() >= kDiskCheckIntervalMs) {
+        room.clock.start();
+        room.blocked = !volumeHasRoom(root);
+    }
+    return room.blocked;
+}
+
+void UsenetQueue::continueMove(const QString& id, int attempt)
+{
+    ItemRuntime* rt = runtimeFor(id);
+    if (!rt || !rt->moving)
+        return;
+    // Articles still out write to the old paths: wait for them (bounded)
+    constexpr int kWaitTicks = 240;   // 60 s
+    if (!rt->inFlight.isEmpty() && attempt < kWaitTicks) {
+        QTimer::singleShot(250, this, [this, id, attempt] { continueMove(id, attempt + 1); });
+        return;
+    }
+    const QString from = QDir::cleanPath(rt->item->workDir(thePrefs.usenetTempDir()));
+    const QString to = QDir(rt->moveTarget).filePath(id);
+    const qint64 floor = thePrefs.checkDiskspace() ? qint64(thePrefs.minFreeDiskSpace()) : 0;
+    QPointer<UsenetQueue> self(this);
+    QThread* worker = QThread::create([self, id, from, to, floor] {
+        const QString error = relocateDir(from, to, std::uint64_t(floor));
+        QMetaObject::invokeMethod(self.data(), [self, id, from, to, error] {
+            if (self)
+                self->finishMove(id, from, to, error);
+        }, Qt::QueuedConnection);
+    });
+    connect(worker, &QThread::finished, worker, &QObject::deleteLater);
+    worker->start();
+}
+
+void UsenetQueue::finishMove(const QString& id, const QString& from, const QString& to, const QString& error)
+{
+    ItemRuntime* rt = runtimeFor(id);
+    if (!rt)
+        return;
+    rt->moving = false;
+    rt->item->stalledReason.clear();
+    if (!error.isEmpty()) {
+        logUsenetWarning(QStringLiteral("Usenet: cannot move \"%1\": %2").arg(rt->item->name, error));
+    } else {
+        const auto rebase = [&from, &to](QString& path) {
+            if (path.startsWith(from + u'/'))
+                path = to + path.mid(from.size());
+        };
+        for (UsenetFileState& st : rt->item->files) {
+            rebase(st.tempPath);
+            rebase(st.finalPath);
+        }
+        rebase(rt->encryptedPreview.path);
+        rt->item->workRoot = rt->moveTarget;
+        logUsenet(QStringLiteral("Usenet: moved \"%1\" to %2").arg(rt->item->name, to));
+    }
+    rt->moveTarget.clear();
+    persist(*rt);
+    if (error.isEmpty())
+        m_stateWriter.flush();   // the old folder is gone: the sidecar must name the new one now
+    const bool resume = std::exchange(rt->resumeAfterMove, false);
+    emit itemChanged(id);
+    if (resume)
+        resumeItem(id, ResumeIntent::User);
+    dispatch();
+}
+
 bool UsenetQueue::volumeHasRoom(const QString& dir) const
 {
     if (!thePrefs.checkDiskspace() || dir.isEmpty())
@@ -5501,8 +5617,8 @@ bool UsenetQueue::noteWaitReason(ItemRuntime& rt)
         text = enginePausedText();
     else if (m_networkHold)
         text = networkHoldText();
-    else if (m_diskBlocked)
-        text = m_diskStallReason;
+    else if (rt.item->workRoot.isEmpty() ? m_diskBlocked : itemDiskBlocked(rt))
+        text = rt.item->workRoot.isEmpty() ? m_diskStallReason : tr("waiting for disk space in %1").arg(rt.item->workRoot);
     else if (!m_proxyStallReason.isEmpty())
         text = m_proxyStallReason;
     else if (const qint64 wait = propagationWaitSecs(rt); wait > 0)

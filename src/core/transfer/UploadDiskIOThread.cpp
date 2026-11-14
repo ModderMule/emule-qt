@@ -549,7 +549,7 @@ void UploadDiskIOThread::readBlock(Lane& lane, const BlockReadRequest& req)
 
     const uint64 dataLen = req.endOffset - req.startOffset;
     if (dataLen > EMBLOCKSIZE * 3) {
-        logWarning(QStringLiteral("UploadDiskIOThread: Block too large: %1").arg(dataLen));
+        logDebug(QStringLiteral("UploadDiskIOThread: Block too large: %1").arg(dataLen));
         emitReadError(req);
         return;
     }
@@ -623,7 +623,7 @@ bool UploadDiskIOThread::readRange(const BlockReadRequest& req, QByteArray& data
         if (!reader->file) {
             reader->file = std::make_unique<QFile>(req.filePath);
             if (!openForRead(*reader->file)) {
-                logWarning(QStringLiteral("UploadDiskIOThread: Cannot open file: %1").arg(req.filePath));
+                logDebug(QStringLiteral("UploadDiskIOThread: Cannot open file: %1").arg(req.filePath));
                 return false;
             }
             ++m_openCount;
@@ -639,8 +639,8 @@ bool UploadDiskIOThread::readRange(const BlockReadRequest& req, QByteArray& data
 
         const uint64 fileSize = static_cast<uint64>(reader->file->size());
         if (req.endOffset > fileSize) {
-            logWarning(QStringLiteral("UploadDiskIOThread: Read mismatch — wanted: %1 file ends at: %2")
-                           .arg(req.endOffset).arg(fileSize));
+            logDebug(QStringLiteral("UploadDiskIOThread: Read mismatch — wanted: %1 file ends at: %2")
+                         .arg(req.endOffset).arg(fileSize));
             return false;
         }
         // Requests come a few blocks at a time and in order; fetch the next ones with this one.
@@ -648,14 +648,14 @@ bool UploadDiskIOThread::readRange(const BlockReadRequest& req, QByteArray& data
             ? std::min(std::max(dataLen, kReadAheadBytes), fileSize - req.startOffset) : dataLen;
 
         if (!reader->file->seek(static_cast<qint64>(req.startOffset))) {
-            logWarning(QStringLiteral("UploadDiskIOThread: Seek failed at offset %1").arg(req.startOffset));
+            logDebug(QStringLiteral("UploadDiskIOThread: Seek failed at offset %1").arg(req.startOffset));
             return false;
         }
         QByteArray buf = reader->file->read(static_cast<qint64>(want));
         ++m_diskReadCount;
         if (static_cast<uint64>(buf.size()) < dataLen) {
-            logWarning(QStringLiteral("UploadDiskIOThread: Read mismatch — wanted: %1 got: %2")
-                           .arg(dataLen).arg(buf.size()));
+            logDebug(QStringLiteral("UploadDiskIOThread: Read mismatch — wanted: %1 got: %2")
+                         .arg(dataLen).arg(buf.size()));
             return false;
         }
         if (static_cast<uint64>(buf.size()) == dataLen) {
@@ -765,19 +765,19 @@ bool UploadDiskIOThread::readUncached(const BlockReadRequest& req, QByteArray& d
     const uint64 dataLen = req.endOffset - req.startOffset;
     QFile file(req.filePath);
     if (!openForRead(file)) {
-        logWarning(QStringLiteral("UploadDiskIOThread: Cannot open file: %1").arg(req.filePath));
+        logDebug(QStringLiteral("UploadDiskIOThread: Cannot open file: %1").arg(req.filePath));
         return false;
     }
     ++m_openCount;
     if (!file.seek(static_cast<qint64>(req.startOffset))) {
-        logWarning(QStringLiteral("UploadDiskIOThread: Seek failed at offset %1").arg(req.startOffset));
+        logDebug(QStringLiteral("UploadDiskIOThread: Seek failed at offset %1").arg(req.startOffset));
         return false;
     }
     data = file.read(static_cast<qint64>(dataLen));
     ++m_diskReadCount;
     if (static_cast<uint64>(data.size()) != dataLen) {
-        logWarning(QStringLiteral("UploadDiskIOThread: Read mismatch — wanted: %1 got: %2")
-                       .arg(dataLen).arg(data.size()));
+        logDebug(QStringLiteral("UploadDiskIOThread: Read mismatch — wanted: %1 got: %2")
+                     .arg(dataLen).arg(data.size()));
         return false;
     }
     return true;

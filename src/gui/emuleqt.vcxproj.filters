@@ -82,6 +82,9 @@
     <ClCompile Include="controls\DownloadListModel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="controls\FolderTreeModel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="controls\BarShader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -206,6 +209,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="utils\MassRenameAction.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\MoveDownloadsAction.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\FolderLister.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="utils\IpcFeedback.cpp">
@@ -395,6 +404,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\MassRenameDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\FolderPickerDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\TorrentOptionsDialog.cpp">
@@ -654,6 +666,12 @@
     <ClInclude Include="utils\MassRenameAction.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="utils\MoveDownloadsAction.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\FolderLister.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="dialogs\RenameFileDialog.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -754,6 +772,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\DownloadListModel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\FolderTreeModel.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\DownloadProgressDelegate.h">
@@ -931,6 +952,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\MassRenameDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\FolderPickerDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\TorrentOptionsDialog.h">

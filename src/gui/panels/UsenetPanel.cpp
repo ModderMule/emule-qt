@@ -11,6 +11,7 @@
 #include "dialogs/UsenetArchiveEntryDialog.h"
 #include "dialogs/UsenetDetailsDialog.h"
 #include "utils/MenuUtils.h"
+#include "utils/MoveDownloadsAction.h"
 #include "utils/NzbAdd.h"
 #include "utils/NzbDrop.h"
 #include "utils/OtherFunctions.h"
@@ -704,6 +705,16 @@ void UsenetPanel::onContextMenu(const QPoint& pos)
         // at once would spawn four windows nobody asked for.
         openAct->setEnabled(openable && ids.size() == 1);
 
+        // #187: unfinished jobs to another folder (out of disk space, mostly)
+        if (thePrefs.showExtControls()) {
+            auto* moveAct = menu.addAction(menuIcon("Folders.ico"), MoveDownloadsAction::menuText(), this,
+                                           &UsenetPanel::onMoveToFolder);
+            moveAct->setEnabled(std::ranges::any_of(ids, [this](const QString& id) {
+                const UsenetItemRow* r = m_model->findById(id);
+                return r && (r->status == UsenetRowStatus::Queued || r->status == UsenetRowStatus::Downloading
+                             || r->status == UsenetRowStatus::Paused || r->status == UsenetRowStatus::Failed);
+            }));
+        }
         menu.addAction(menuIcon("FolderOpen.ico"), tr("Open Folder"), this,
                        &UsenetPanel::onOpenFolder);
         menu.addAction(menuIcon("FileInfo.ico"), tr("Details…"), this,
@@ -721,6 +732,20 @@ void UsenetPanel::onContextMenu(const QPoint& pos)
     menu.addSeparator();
     menu.addAction(m_clearCompletedAction);
     menu.exec(m_view->viewport()->mapToGlobal(pos));
+}
+
+void UsenetPanel::onMoveToFolder()
+{
+    const QStringList ids = selectedItemIds();
+    QHash<QString, QString> names;
+    for (const QString& id : ids)
+        if (const UsenetItemRow* r = m_model->findById(id))
+            names.insert(id, r->name);
+    QPointer<UsenetPanel> self(this);
+    MoveDownloadsAction::run(this, m_ipc, {{MoveDownloadsAction::Network::Usenet, ids}}, names, {}, [self] {
+        if (self)
+            self->m_poller->refreshNow();
+    });
 }
 
 void UsenetPanel::onAddNzb()

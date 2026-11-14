@@ -216,7 +216,7 @@ void EncryptedStreamSocket::cryptPrepareSendData(uint8* buffer, uint32 len)
 
     if (m_streamCryptState == StreamCryptState::Unknown) {
         m_streamCryptState = StreamCryptState::None;
-        logWarning(QStringLiteral("EncryptedStreamSocket: Premature send, overwriting ECS_UNKNOWN with ECS_NONE (%1)").arg(dbgGetIPString()));
+        logDebug([&]() -> QString { return QStringLiteral("EncryptedStreamSocket: Premature send, overwriting ECS_UNKNOWN with ECS_NONE (%1)").arg(dbgGetIPString()); });
     }
 
     if (m_streamCryptState == StreamCryptState::Encrypting && m_sendKey) {
@@ -309,7 +309,7 @@ int EncryptedStreamSocket::processReceivedData(void* buf, int len)
             if (nNegRes != -1) {
                 nRead += nNegRes;
                 if (nRead != len) {
-                    logWarning(QStringLiteral("EncryptedStreamSocket: Client %1 sent more data than expected while negotiating (1)").arg(dbgGetIPString()));
+                    logDebug([&]() -> QString { return QStringLiteral("EncryptedStreamSocket: Client %1 sent more data than expected while negotiating (1)").arg(dbgGetIPString()); });
                     onError(kErrEncryption);
                 }
             }
@@ -332,15 +332,15 @@ int EncryptedStreamSocket::processReceivedData(void* buf, int len)
                 onError(kErrEncryptionNotAllowed);
                 return 0;
             }
-            logInfo(QStringLiteral("EncryptedStreamSocket: Permitting unencrypted server-test/Kad-firewall "
-                                   "callback from %1 despite require-encryption").arg(dbgGetIPString()));
+            logDebug([&]() -> QString { return QStringLiteral("EncryptedStreamSocket: Permitting unencrypted server-test/Kad-firewall "
+                                   "callback from %1 despite require-encryption").arg(dbgGetIPString()); });
         }
         break;
     }
 
     case StreamCryptState::Pending:
     case StreamCryptState::PendingServer:
-        logWarning(QStringLiteral("EncryptedStreamSocket: Received data before sending on outgoing connection"));
+        logDebug(QStringLiteral("EncryptedStreamSocket: Received data before sending on outgoing connection"));
         m_streamCryptState = StreamCryptState::None;
         break;
 
@@ -357,7 +357,7 @@ int EncryptedStreamSocket::processReceivedData(void* buf, int len)
                 std::memmove(buf, remaining, static_cast<std::size_t>(remainingLen));
                 return remainingLen;
             }
-            logWarning(QStringLiteral("EncryptedStreamSocket: Client %1 sent more data than expected while negotiating (2)").arg(dbgGetIPString()));
+            logDebug([&]() -> QString { return QStringLiteral("EncryptedStreamSocket: Client %1 sent more data than expected while negotiating (2)").arg(dbgGetIPString()); });
             onError(kErrEncryption);
         }
         return 0;
@@ -528,7 +528,7 @@ int EncryptedStreamSocket::negotiate(const uint8* buffer, int len)
             case NegotiatingState::ClientA_MagicValue: {
                 uint32 value = m_receiveBuffer->readUInt32();
                 if (value != kMagicValueSync) {
-                    logWarning(QStringLiteral("EncryptedStreamSocket: Wrong magic value from %1").arg(dbgGetIPString()));
+                    logDebug([&]() -> QString { return QStringLiteral("EncryptedStreamSocket: Wrong magic value from %1").arg(dbgGetIPString()); });
                     onError(kErrEncryption);
                     return -1;
                 }
@@ -581,7 +581,7 @@ int EncryptedStreamSocket::negotiate(const uint8* buffer, int len)
                                  .arg(kMagicValueSync, 8, 16, QLatin1Char('0'))
                                  .arg(peerAddress().toString()).arg(peerPort()); });
                 if (receivedMagic != kMagicValueSync) {
-                    logWarning(QStringLiteral("EncryptedStreamSocket: Wrong sync magic from %1").arg(dbgGetIPString()));
+                    logDebug([&]() -> QString { return QStringLiteral("EncryptedStreamSocket: Wrong sync magic from %1").arg(dbgGetIPString()); });
                     onError(kErrEncryption);
                     return -1;
                 }
@@ -593,7 +593,7 @@ int EncryptedStreamSocket::negotiate(const uint8* buffer, int len)
             case NegotiatingState::ClientB_MethodTagsPadLen: {
                 uint8 methodSet = m_receiveBuffer->readUInt8();
                 if (methodSet != static_cast<uint8>(EncryptionMethod::Obfuscation)) {
-                    logWarning(QStringLiteral("EncryptedStreamSocket: Unsupported encryption method %1 from %2").arg(methodSet).arg(dbgGetIPString()));
+                    logDebug([&]() -> QString { return QStringLiteral("EncryptedStreamSocket: Unsupported encryption method %1 from %2").arg(methodSet).arg(dbgGetIPString()); });
                     onError(kErrEncryption);
                     return -1;
                 }
@@ -668,7 +668,7 @@ int EncryptedStreamSocket::negotiate(const uint8* buffer, int len)
                                  .arg(kMagicValueSync, 8, 16, QLatin1Char('0'))
                                  .arg(peerAddress().toString()).arg(peerPort()); });
                 if (value != kMagicValueSync) {
-                    logWarning(QStringLiteral("EncryptedStreamSocket: Wrong magic value after DH from server %1").arg(dbgGetIPString()));
+                    logDebug([&]() -> QString { return QStringLiteral("EncryptedStreamSocket: Wrong magic value after DH from server %1").arg(dbgGetIPString()); });
                     onError(kErrEncryption);
                     return -1;
                 }
@@ -728,7 +728,7 @@ int EncryptedStreamSocket::negotiate(const uint8* buffer, int len)
 
         return nRead;
     } catch (const std::exception& ex) {
-        logWarning(QStringLiteral("EncryptedStreamSocket: Exception during negotiation: %1").arg(QLatin1StringView(ex.what())));
+        logDebug([&]() -> QString { return QStringLiteral("EncryptedStreamSocket: Exception during negotiation: %1").arg(QLatin1StringView(ex.what())); });
         onError(kErrEncryption);
         m_receiveBuffer.reset();
         return -1;

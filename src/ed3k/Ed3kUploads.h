@@ -75,6 +75,8 @@ public:
     /// A node whose ID starts with @p prefix waits or holds a slot at the node key (ed3k §14.2 hint).
     /// File bytes with @p node since the daemon started: sent in finished turns, received.
     [[nodiscard]] std::pair<std::uint64_t, std::uint64_t> peerBytes(::ed3k::KeyKind key, const ::ed3k::NodeId& node) const;
+    /// Download speed from @p node in B/s (10 s average).
+    [[nodiscard]] std::uint64_t downRate(::ed3k::KeyKind key, const ::ed3k::NodeId& node) const;
     [[nodiscard]] bool hasNodeStarting(const std::array<std::uint8_t, 12>& prefix) const;
 
 signals:

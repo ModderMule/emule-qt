@@ -332,8 +332,8 @@ void ListenSocket::admitAccepted(ClientReqSocket* reqSocket)
     // and not, wrongly, against the v6 one.
     if (theApp.ipFilter && theApp.ipFilter->isFiltered(peer, thePrefs.ipFilterLevel())) {
         if (thePrefs.logFilteredIPs()) {
-            logWarning(QStringLiteral("Rejecting connection attempt (IP=%1) - IP filter (%2)")
-                           .arg(ipstr(peer), theApp.ipFilter->lastHitDescription()));
+            logDebug([&]() -> QString { return QStringLiteral("Rejecting connection attempt (IP=%1) - IP filter (%2)")
+                           .arg(ipstr(peer), theApp.ipFilter->lastHitDescription()); });
         }
         if (theApp.statistics)
             theApp.statistics->addFilteredClient();
@@ -350,7 +350,7 @@ void ListenSocket::admitAccepted(ClientReqSocket* reqSocket)
             // omit the name for a v6 peer.
             const UpDownClient* banned =
                 peer.isIPv4() ? theApp.clientList->findByIP(peer.toNetworkUint32()) : nullptr;
-            logWarning(QStringLiteral("Rejecting connection attempt of banned client %1 %2")
+            logLeecher(QStringLiteral("Rejecting connection attempt of banned client %1 %2")
                            .arg(ipstr(peer), banned ? banned->userName() : QString()));
         }
         reqSocket->safeDelete();

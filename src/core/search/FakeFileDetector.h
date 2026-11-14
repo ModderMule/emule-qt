@@ -41,6 +41,7 @@ enum class FakeReason : uint8 {
     NameMediaTagMismatch,
     AbuseContentName,
     PasswordProtected,
+    MediaDoubleExtension,
 };
 
 /// Worst first, so the numeric value sorts a column.

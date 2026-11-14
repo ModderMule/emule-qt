@@ -36,6 +36,9 @@ void setGrabber(ed3k::Ed3kLinkGrabber* grabber);
 void openContainerAndAdd(const QByteArray& data, const QString& fileName,
                          std::function<void(int added, const QString& error)> done);
 
+/// "Move to" (#187) of hoster item @p id (decimal). Empty: started; else why not.
+[[nodiscard]] QString moveTo(const QString& id, const QString& dir);
+
 [[nodiscard]] bool isHosterRequest(Ipc::IpcMsgType type);
 /// Whether it carries a password: local IPC clients only.
 [[nodiscard]] bool carriesSecret(Ipc::IpcMsgType type);

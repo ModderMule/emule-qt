@@ -54,8 +54,8 @@ bool CollectionKeys::initialize()
         return false;
     }
 
-    logInfo(QStringLiteral("Collection signing key loaded (public key: %1 bytes)")
-                .arg(m_publicKeyDer.size()));
+    logDebug(QStringLiteral("Collection signing key loaded (public key: %1 bytes)")
+                 .arg(m_publicKeyDer.size()));
     return true;
 }
 

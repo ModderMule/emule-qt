@@ -286,7 +286,7 @@ void CategoryTabBar::setViewFilter(int index, int filter)
 
     // A regular expression filter with no expression: ask for one, as MFC does
     if (filter == CategoryViewFilter::RegExp && cat.regexp.isEmpty()) {
-        CategoryDialog dialog(cat, m_defaultIncomingDir, this);
+        CategoryDialog dialog(cat, m_defaultIncomingDir, this, m_ipc);
         if (dialog.exec() == QDialog::Accepted) {
             const int chosen = cat.filter;
             cat = dialog.category();
@@ -509,7 +509,7 @@ void CategoryTabBar::addCategoryInteractive()
 
 void CategoryTabBar::addCategory(std::function<void(int index)> onCreated)
 {
-    CategoryDialog dialog(DownloadCategory{}, m_defaultIncomingDir, this);
+    CategoryDialog dialog(DownloadCategory{}, m_defaultIncomingDir, this, m_ipc);
     if (dialog.exec() != QDialog::Accepted)
         return;
 
@@ -537,7 +537,7 @@ void CategoryTabBar::editCategory(int index)
     if (index <= 0 || index >= m_categories.size())
         return;
 
-    CategoryDialog dialog(m_categories.at(index), m_defaultIncomingDir, this);
+    CategoryDialog dialog(m_categories.at(index), m_defaultIncomingDir, this, m_ipc);
     if (dialog.exec() != QDialog::Accepted)
         return;
 

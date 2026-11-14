@@ -268,8 +268,12 @@ void MetaApiClient::call(const MetaEndpoint& ep, QByteArrayView service, QByteAr
             const QSslCertificate cert = reply->sslConfiguration().peerCertificate();
             if (!cert.isNull() && spkiPin(cert.publicKey().toDer()) == pin)
                 reply->ignoreSslErrors(errors);
-            else
-                logWarning(QStringLiteral("Meta API: TLS certificate does not match the pinned key"));
+            else {
+                static LogRepeatGate gate(3'600'000);   // every request repeats it
+                if (const QString line = gate.filter(pin, QStringLiteral("Meta API: TLS certificate does not match the pinned key"));
+                    !line.isEmpty())
+                    logWarning(line);
+            }
         });
     }
 

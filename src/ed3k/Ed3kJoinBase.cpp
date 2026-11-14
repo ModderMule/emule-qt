@@ -6,7 +6,9 @@
 #include "Ed3kSession.h"
 #include "Ed3kStore.h"
 
+#include "prefs/Preferences.h"
 #include "utils/DiskLoadLimiter.h"
+#include "utils/FileRelocate.h"
 #include "utils/ReadOnceHint.h"
 #include "utils/Log.h"
 
@@ -607,7 +609,8 @@ std::optional<ffi::Root> Ed3kJoinBase::shareBlob(const QByteArray& data, const Q
     if (anonCapable())
         m_session.hide().record(hashed->root, key);
     m_shared[hashed->root] = Shared{QString(), -1, hashed->size, data};
-    const ffi::FileInfo info{hashed->root, hashed->size, std::string(n.constData(), std::size_t(n.size())), std::nullopt, 0, 0, 0, 0, 0, 0};
+    // sources 1: this node, the file held complete (Protocol.md §10.7)
+    const ffi::FileInfo info{hashed->root, hashed->size, std::string(n.constData(), std::size_t(n.size())), std::nullopt, 1, 0, 0, 0, 0, 0};
     // was: (void)e->publish(t, info, ffi::Publish::Source);
     (void)(anon ? e->anonPublish(t, info, ffi::Publish::Source) : e->publish(t, info, ffi::Publish::Source));
     return hashed->root;
@@ -762,6 +765,24 @@ void Ed3kJoinBase::hashInBackground(const QString& path, std::function<void(std:
             [self, cancel, done = std::move(done), out = std::move(out)]() mutable {
                 if (self && !cancel->load())
                     done(std::move(out));
+            },
+            Qt::QueuedConnection);
+    });
+}
+
+void Ed3kJoinBase::relocateInBackground(const QString& src, const QString& dst, std::uint64_t dataSize,
+                                        std::function<void(QString error)> done)
+{
+    QPointer<Ed3kJoinBase> self(this);
+    const auto cancel = m_cancel;
+    const std::uint64_t floor = thePrefs.checkDiskspace() ? thePrefs.minFreeDiskSpace() : 0;
+    QThreadPool::globalInstance()->start([self, cancel, src, dst, dataSize, floor, done = std::move(done)]() mutable {
+        const QString error = relocateFile(src, dst, floor, /*removeSource*/ true, nullptr, dataSize);
+        QMetaObject::invokeMethod(
+            self.data(),
+            [self, cancel, error, done = std::move(done)] {
+                if (self && !cancel->load())
+                    done(error);
             },
             Qt::QueuedConnection);
     });
@@ -1706,7 +1727,8 @@ void Ed3kJoinBase::shareKeptHashed(const QString& owner, int member, const ffi::
         // was: ToDo: the ALIAS and MEMBER records of a kept post or torrent are not published
         // again (done: keepRecords, publishKeptRecords after the members)
         if (auto* e = m_session.engine()) {
-            const ffi::FileInfo info{root, size, fileName, std::nullopt, 0, 0, 0, 0, 0, 0};
+            // sources 1: this node, the file held complete (Protocol.md §10.7)
+            const ffi::FileInfo info{root, size, fileName, std::nullopt, 1, 0, 0, 0, 0, 0};
             // was: (void)e->publish(m_session.now(), info, m_holdBack ? ffi::Publish::Source : ffi::Publish::Both);
             Q_UNUSED(e)
             (void)publishShared(info);

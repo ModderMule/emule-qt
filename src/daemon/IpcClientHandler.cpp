@@ -111,6 +111,7 @@
 #include "transfer/DownloadQueue.h"
 #include "transfer/Scheduler.h"
 #include "transfer/UploadQueue.h"
+#include "utils/FolderList.h"
 #include "utils/PathUtils.h"
 #include "utils/Log.h"
 #include "utils/TimeUtils.h"
@@ -438,6 +439,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::ClearCompleted:       handleClearCompleted(msg); break;
     case IpcMsgType::RenameDownload:       handleRenameDownload(msg); break;
     case IpcMsgType::RenameFiles:          handleRenameFiles(msg); break;
+    case IpcMsgType::MoveDownloads:        handleMoveDownloads(msg); break;
     case IpcMsgType::GetDownloadSources:   handleGetDownloadSources(msg); break;
     case IpcMsgType::GetServers:           handleGetServers(msg); break;
     case IpcMsgType::RemoveServer:         handleRemoveServer(msg); break;
@@ -538,6 +540,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::UnshareFile:          handleUnshareFile(msg); break;
     case IpcMsgType::SetFileShared:        handleSetFileShared(msg); break;
     case IpcMsgType::BrowseDirectory:      handleBrowseDirectory(msg); break;
+    case IpcMsgType::ListFolders:          handleListFolders(msg); break;
     case IpcMsgType::GetSharedDirState:    handleGetSharedDirState(msg); break;
     case IpcMsgType::GetCategories:        handleGetCategories(msg); break;
     case IpcMsgType::SetCategories:        handleSetCategories(msg); break;
@@ -852,6 +855,43 @@ void IpcClientHandler::handleRenameFiles(const IpcMessage& msg)
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, results));
 }
 
+void IpcClientHandler::handleMoveDownloads(const IpcMessage& msg)
+{
+    const int network = int(msg.fieldInt(0));
+    const QString dir = msg.fieldString(2);
+    // part files of these are found in the temp dirs: dir must be fit to be one
+    const bool tempDir = network == 1 || network == 3 || network == 4;
+    const ops::Status fit = tempDir ? ops::checkTempDir(dir) : ops::Status{};
+    QCborArray results;
+    bool anyMoved = false;
+    for (const QCborValue& v : msg.fieldArray(1)) {
+        const QString id = v.toString();
+        QString error = fit.message;
+        if (fit.ok()) {
+            switch (network) {
+            case 0: {
+                const ops::Status st = ops::moveDownload(id, dir);
+                error = st.ok() ? QString() : st.message;
+                break;
+            }
+            case 1: error = Ed3kDownloadsBridge::moveTo(id, dir); break;
+            case 2: error = BtBridge::moveTo(id, dir); break;
+            case 3:
+                error = UsenetBridge::queue() ? UsenetBridge::queue()->moveItem(id, dir)
+                                              : QStringLiteral("Usenet engine unavailable");
+                break;
+            case 4: error = Ed3kHosterBridge::moveTo(id, dir); break;
+            default: error = QStringLiteral("unknown network"); break;
+            }
+        }
+        anyMoved = anyMoved || error.isEmpty();
+        results.append(QCborArray{id, error.isEmpty(), error});
+    }
+    if (tempDir && anyMoved)
+        ops::adoptTempDir(dir);
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, results));
+}
+
 void IpcClientHandler::handleGetServers(const IpcMessage& msg)
 {
     QCborArray servers;
@@ -1152,6 +1192,16 @@ void IpcClientHandler::handleConnectToServer(const IpcMessage& msg)
 
 void IpcClientHandler::handleDisconnectFromServer(const IpcMessage& msg)
 {
+    // ip, port, addr as ConnectToServer: the server list's Disconnect of one server
+    if (msg.fieldCount() >= 2 && theApp.serverList) {
+        Server* srv = resolveServerFromMsg(msg, 0, 2);
+        if (!srv) {
+            sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Server not found")));
+            return;
+        }
+        sendStatus(msg, ops::disconnectFromServer(srv));
+        return;
+    }
     sendStatus(msg, ops::disconnectFromServer());
 }
 
@@ -2137,6 +2187,11 @@ void IpcClientHandler::handleImportDownloadParts(const IpcMessage& msg)
 void IpcClientHandler::handleFlushDownload(const IpcMessage& msg)
 {
     PartFile* file = partFileFor(msg.fieldString(0));
+    // ed3k writes each block at once: nothing to flush, just its part file
+    if (QString path, name; !file && Ed3kDownloadsBridge::fileOf(msg.fieldString(0), path, name)) {
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(path)));
+        return;
+    }
     if (!file) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
         return;
@@ -3696,6 +3751,46 @@ void IpcClientHandler::handleGetSharedDirState(const IpcMessage& msg)
 }
 
 // ---------------------------------------------------------------------------
+// handleListFolders — the core's folders for a picker on another host
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleListFolders(const IpcMessage& msg)
+{
+    const QString path = msg.fieldString(0);
+    const bool tree = msg.fieldBool(1);
+    const QPointer<IpcClientHandler> self(this);
+    const int seqId = msg.seqId();
+    // off the core thread: a NAS folder can take a while (#84)
+    QThreadPool::globalInstance()->start([self, seqId, path, tree] {
+        QCborArray rows;
+        bool found = true;
+        if (path.isEmpty()) {
+            for (const FolderEntry& e : folderRoots())
+                rows.append(QCborArray{e.label, e.path, e.hasSubfolders});
+        } else if (!QFileInfo(path).isDir()) {
+            found = false;
+        } else if (tree) {
+            for (const QString& p : folderTree(path))
+                rows.append(QCborArray{QString(), p, false});
+        } else {
+            for (const FolderEntry& e : subfolders(path))
+                rows.append(QCborArray{e.label, e.path, e.hasSubfolders});
+        }
+        QMetaObject::invokeMethod(QCoreApplication::instance(), [self, seqId, found, rows = std::move(rows)] {
+            if (!self)
+                return;
+            if (!found) {
+                self->sendMessage(IpcMessage::makeResult(seqId, false, QStringLiteral("Folder not found")));
+                return;
+            }
+            IpcMessage resp = IpcMessage::makeResult(seqId, true, rows);
+            resp.append(QDir::homePath());
+            self->sendMessage(resp);
+        });
+    });
+}
+
+// ---------------------------------------------------------------------------
 // handleBrowseDirectory — one directory's files with their share state
 // ---------------------------------------------------------------------------
 
@@ -5212,6 +5307,8 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
     // was missing: ReloadPreferences listed it changed but never applied it
     else if (key == QStringLiteral("ed3kForceOpen"))
         thePrefs.setEd3kForceOpen(val.toBool());
+    else if (key == QStringLiteral("ed3kAutoIndexNode"))
+        thePrefs.setEd3kAutoIndexNode(val.toBool());
     else if (key == QStringLiteral("ed3kHide"))
         thePrefs.setEd3kHide(val.toBool());
     else if (key == QStringLiteral("ed3kHops"))

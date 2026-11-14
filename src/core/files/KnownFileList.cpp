@@ -587,7 +587,7 @@ KnownFileList::MetRead KnownFileList::readCancelledMet(const QString& filePath)
             m_cancelledFiles.insert(key);
         }
 
-        logInfo(QStringLiteral("Loaded %1 cancelled file hashes").arg(m_cancelledFiles.size()));
+        logDebug(QStringLiteral("Loaded %1 cancelled file hashes").arg(m_cancelledFiles.size()));
         return MetRead::Ok;
     } catch (const std::exception& e) {
         logError(QStringLiteral("cancelled.met load error: %1").arg(QString::fromUtf8(e.what())));

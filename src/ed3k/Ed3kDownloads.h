@@ -46,6 +46,7 @@
 #include <QTimer>
 
 #include <cstdint>
+#include <deque>
 #include <expected>
 #include <functional>
 #include <map>
@@ -101,6 +102,8 @@ struct Ed3kDownloadInfo {
     std::vector<std::uint8_t> availability;
     /// eMule's "Increase priority for preview parts": first and last part first
     bool previewPrio = false;
+    /// media file, unfinished, first eD2K part held (PartFile::isPreviewPossible)
+    bool previewPossible = false;
 };
 
 class Ed3kDownloads : public Ed3kJoinBase {
@@ -144,6 +147,10 @@ public:
     std::expected<::ed3k::Root, QString> addLink(const QString& link, int category = 0, bool paused = false);
     bool pause(const ::ed3k::Root& root);
     bool resume(const ::ed3k::Root& root);
+    /// "Move to" (#187): the part file to @p dir (one of the temp dirs from then on), on a
+    /// worker; a running or failed download goes on there. All data in: it completes into
+    /// @p dir instead. Empty: started; else why not (English).
+    [[nodiscard]] QString moveTo(const ::ed3k::Root& root, const QString& dir);
     /// Unfinished: stopped, its part file deleted. Complete: leaves the list and the own share
     /// (the file stays).
     bool cancel(const ::ed3k::Root& root);
@@ -213,6 +220,9 @@ private:
         bool metDirty = false;           ///< the .met is behind
         std::uint64_t received = 0;      ///< bytes this run (rate)
         std::uint64_t lastReceived = 0;
+        std::deque<std::uint64_t> rateSamples;   ///< bytes per tick, newest last (rate average)
+        bool moving = false;             ///< moveTo() runs
+        bool resumeAfterMove = false;
     };
 
     Entry* entryOf(const ::ed3k::Root& root);
@@ -242,6 +252,8 @@ private:
     void scanTempDirs();
     [[nodiscard]] std::optional<Entry> readMet(const QString& metPath) const;
     void writeMet(Entry& e);
+    /// moveTo() done: the entry's part file is at @p to now (its .met written there).
+    void relocated(Entry& e, const QString& from, const QString& to, const QString& dir);
     [[nodiscard]] static QString metPathOf(const Entry& e) { return e.info.partPath + QStringLiteral(".met"); }
     [[nodiscard]] QString partPathOf(const ::ed3k::Root& root) const;
     [[nodiscard]] static QString freePath(const QString& path);

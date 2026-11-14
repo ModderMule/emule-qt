@@ -31,6 +31,7 @@
 #include "utils/DiskLoadLimiter.h"
 #include "utils/ReadOnceHint.h"
 #include "utils/FileDate.h"
+#include "utils/FileRelocate.h"
 #include "utils/Log.h"
 #include "utils/PathUtils.h"
 #include "utils/SafeFile.h"
@@ -82,6 +83,11 @@ PartFile::~PartFile()
         m_moveThread->requestInterruption();
         m_moveThread->wait();
     }
+    if (m_relocateThread) {
+        m_relocateThread->requestInterruption();
+        m_relocateThread->wait();
+    }
+    finishRelocate();   // a move done before its queued call ran: the .met follows the data
 
     // Flush any remaining buffered data, and collect a write still with the worker
     flushBuffer(/*forceICH*/ false, /*noAICH*/ true);   // MFC srchybrid/PartFile.cpp:294
@@ -529,6 +535,8 @@ uint32 PartFile::writeToBuffer(uint64 transize, const uint8* data,
 
 void PartFile::flushBufferAsync()
 {
+    if (m_relocating)
+        return;   // held: the bytes go to the new place
     PartFileWriteThread* writer = theApp.partFileWriter;
     if (!writer || m_destroying) {
         flushBuffer();
@@ -644,7 +652,7 @@ void PartFile::flushBuffer(bool forceICH, bool noAICH)
 {
     finishPendingFlush(forceICH, noAICH);
 
-    if (m_bufferedData.empty())
+    if (m_bufferedData.empty() || (m_relocating && !m_destroying))
         return;
 
     // Refused before the write, not after it failed: a volume at its floor stays
@@ -1521,8 +1529,8 @@ void PartFile::setStatus(PartFileStatus s)
     // it is a plain refusal rather than an assert, so the invariant holds the same way
     // in a release build as in a debug one, and can be tested.
     if (s == PartFileStatus::Paused || s == PartFileStatus::Insufficient) {
-        logWarning(QStringLiteral("PartFile::setStatus: refusing overlay state %1 for %2")
-                       .arg(static_cast<int>(s)).arg(fileName()));
+        logDebug(QStringLiteral("PartFile::setStatus: refusing overlay state %1 for %2")
+                     .arg(static_cast<int>(s)).arg(fileName()));
         return;
     }
 
@@ -1631,6 +1639,10 @@ void PartFile::resumeFile(bool quiet)
 {
     // m_insufficient too: an out-of-space file has m_paused false (see pauseFile), and
     // would otherwise be unresumable.
+    if (m_relocating) {
+        m_resumeAfterRelocate = true;
+        return;
+    }
     if (!m_paused && !m_stopped && !m_insufficient && !m_completionError)
         return;
 
@@ -1728,6 +1740,74 @@ void PartFile::stopFile(bool cancel)
         // the status itself stays as it was.
         savePartFile();
     }
+}
+
+QString PartFile::moveTo(const QString& dir)
+{
+    const QString target = QDir::cleanPath(QDir::fromNativeSeparators(dir));
+    if (target.isEmpty() || QDir::isRelativePath(target))
+        return QStringLiteral("not an absolute folder");
+    if (m_relocating)
+        return QStringLiteral("already moving");
+    const PartFileStatus st = m_status;
+    if (m_completionRunning || st == PartFileStatus::Completing || st == PartFileStatus::Complete)
+        return QStringLiteral("already complete");
+    if (st == PartFileStatus::Hashing || st == PartFileStatus::WaitingForHash || m_fileOp != PartFileOp::None)
+        return QStringLiteral("busy (hashing or importing)");
+    if (!QDir().mkpath(target))
+        return QStringLiteral("cannot create %1").arg(target);
+
+    // Finished, but the file did not fit where it was to go: it goes here instead
+    if (m_completionError && m_gapList.empty()) {
+        m_completionDir = target;
+        logInfo(QStringLiteral("Completing %1 into %2").arg(fileName(), target));
+        resumeFile();
+        return {};
+    }
+    if (QDir::cleanPath(m_tmpPath) == target)
+        return {};
+
+    // Running, or stopped by a full disk: on again at the new place. A plain pause stays.
+    m_resumeAfterRelocate = (!m_paused && !m_stopped) || m_insufficient || m_writeError;
+    if (!m_paused && !m_stopped)
+        pauseFile(/*insufficient*/ false, /*quiet*/ true);
+    finishPendingFlush(false, false);
+    if (m_partFileHandle.isOpen())
+        m_partFileHandle.close();
+
+    // A free NNN in the target, our own number first
+    QString metName = m_partMetFilename;
+    const auto taken = [&target](const QString& met) {
+        return QFile::exists(target + u'/' + met) || QFile::exists(target + u'/' + met.chopped(4));
+    };
+    for (uint32 n = 0; taken(metName); ++n)
+        metName = QStringLiteral("%1.part.met").arg(n, 3, 10, QChar(u'0'));
+
+    m_relocating = true;
+    m_fileOp = PartFileOp::Moving;
+    emit m_partNotifier.statusChanged(status());
+    logInfo(QStringLiteral("Moving %1 to %2").arg(fileName(), target));
+
+    const QString src = partFilePath();
+    const QString dst = target + u'/' + metName.chopped(4);
+    const uint64 floor = thePrefs.checkDiskspace() ? thePrefs.minFreeDiskSpace() : 0;
+    auto result = std::make_shared<RelocateResult>();
+    result->dir = target;
+    result->metName = metName;
+    m_relocateResult = result;
+    QPointer<QObject> notifier(&m_partNotifier);
+    const uint64 held = static_cast<uint64>(m_completedSize) + m_totalBufferData;   // sparse: what is really there
+    m_relocateThread = QThread::create([this, notifier, result, src, dst, floor, held] {
+        // the old .part goes once the new one is in use (finishRelocate)
+        result->error = relocateFile(src, dst, floor, /*removeSource*/ false, &result->renamed, held);
+        result->ok = result->error.isEmpty();
+        result->done = true;
+        // queued on the notifier: dropped once the file is gone
+        QMetaObject::invokeMethod(notifier.data(), [this] { finishRelocate(); }, Qt::QueuedConnection);
+    });
+    QObject::connect(m_relocateThread, &QThread::finished, m_relocateThread, &QObject::deleteLater);
+    m_relocateThread->start();
+    return {};
 }
 
 // MFC CPartFile::StopPausedFile (srchybrid/PartFile.cpp:3299-3307): a file idle for an
@@ -2822,7 +2902,8 @@ void PartFile::completeFile(bool alreadyVerified)
     // the same moment and the same way (srchybrid/PartFile.cpp:2840-2843) —
     // deliberately *now*, not when the download was created, so a category
     // whose folder was set after the download started still gets its file.
-    const QString incomingDir = thePrefs.incomingDirForCategory(static_cast<int>(m_category));
+    const QString incomingDir = m_completionDir.isEmpty()
+        ? thePrefs.incomingDirForCategory(static_cast<int>(m_category)) : m_completionDir;
     const QString destPath = incomingDir + QDir::separator() + fileName();
 
     // Re-read the whole file against its hashes before it is delivered and shared under
@@ -2830,8 +2911,8 @@ void PartFile::completeFile(bool alreadyVerified)
     // there is nothing to check against.
     const bool canVerify = fileIdentifier().hasExpectedMD4HashCount();
     if (!alreadyVerified && !canVerify)
-        logWarning(QStringLiteral("Completing '%1' without a final check: no part hashes")
-                       .arg(fileName()));
+        logDebug(QStringLiteral("Completing '%1' without a final check: no part hashes")
+                     .arg(fileName()));
 
     // Verify and move, both off the main thread
     performFileMove(partPath, destPath, !alreadyVerified && canVerify);
@@ -3792,8 +3873,8 @@ PartFile::PartVerdict PartFile::hashSinglePart(uint32 partNumber, bool* aichAgre
             if (const uint8* storedHash = fileIdentifier().getMD4PartHash(partNumber))
                 md4Error = !md4equ(computedHash, storedHash);
             else {
-                logWarning(QStringLiteral("PartFile: MD4 part hash %1 missing for '%2'")
-                               .arg(partNumber).arg(fileName()));
+                logDebug(QStringLiteral("PartFile: MD4 part hash %1 missing for '%2'")
+                             .arg(partNumber).arg(fileName()));
                 setMD4HashsetNeeded(true);
             }
         } else {
@@ -3802,8 +3883,8 @@ PartFile::PartVerdict PartFile::hashSinglePart(uint32 partNumber, bool* aichAgre
             md4Error = !md4equ(computedHash, fileIdentifier().getMD4Hash());
         }
     } else {
-        logWarning(QStringLiteral("PartFile: MD4 hashset missing while verifying part %1 of '%2'")
-                       .arg(partNumber).arg(fileName()));
+        logDebug(QStringLiteral("PartFile: MD4 hashset missing while verifying part %1 of '%2'")
+                     .arg(partNumber).arg(fileName()));
         setMD4HashsetNeeded(true);
     }
 
@@ -3872,7 +3953,7 @@ void PartFile::voteAICHRoot(const AICHHash& root, const Address& from)
         && m_aichRecoveryHashSet.hasValidMasterHash() && !fileIdentifier().hasAICHHash())
     {
         fileIdentifier().setAICHHash(m_aichRecoveryHashSet.getMasterHash());
-        logInfo(QStringLiteral("AICH root of %1 is trusted by its sources").arg(fileName()));
+        logDebug(QStringLiteral("AICH root of %1 is trusted by its sources").arg(fileName()));
         savePartFile();
     }
 }
@@ -3898,7 +3979,7 @@ void PartFile::requestAICHRecovery(uint32 partNumber)
     if (m_aichRecoveryHashSet.isPartDataAvailable(
             static_cast<uint64>(partNumber) * PARTSIZE, fileSize()))
     {
-        logInfo(QStringLiteral("PartFile: found AICH recovery data in memory for part %1").arg(partNumber));
+        logDebug(QStringLiteral("PartFile: found AICH recovery data in memory for part %1").arg(partNumber));
         aichRecoveryDataAvailable(partNumber);
         return;
     }
@@ -3940,9 +4021,9 @@ void PartFile::requestAICHRecovery(uint32 partNumber)
                 continue;
             ++count;
             if (count == selected) {
-                logInfo(QStringLiteral("PartFile: requesting AICH recovery for part %1 from %2")
-                            .arg(partNumber).arg(client->hasLowID()
-                                ? QStringLiteral("LowID") : QStringLiteral("HighID")));
+                logDebug(QStringLiteral("PartFile: requesting AICH recovery for part %1 from %2")
+                             .arg(partNumber).arg(client->hasLowID()
+                                 ? QStringLiteral("LowID") : QStringLiteral("HighID")));
                 client->sendAICHRequest(this, static_cast<uint16>(partNumber));
                 return;
             }
@@ -4057,7 +4138,7 @@ void PartFile::aichRecoveryDataAvailable(uint32 partNumber)
             return;
         }
 
-        logInfo(QStringLiteral("PartFile AICH recovery: part %1 completed and MD4 verified").arg(partNumber));
+        logDebug(QStringLiteral("PartFile AICH recovery: part %1 completed and MD4 verified").arg(partNumber));
 
         // Remove from corrupted list
         dropCorruptedPart(partNumber);
@@ -4222,30 +4303,38 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
         else if (srcCount != 0 && dataSize == srcCount * recordSize(4))
             version = 4;
         else {
-            logWarning(QStringLiteral("Ignoring invalid SX packet (v%1, count=%2, size=%3) for %4")
-                           .arg(clientSXVersion).arg(srcCount).arg(dataSize).arg(fileName()));
+            logDebug([&]() -> QString {
+                return QStringLiteral("Ignoring invalid SX packet (v%1, count=%2, size=%3) for %4")
+                    .arg(clientSXVersion).arg(srcCount).arg(dataSize).arg(fileName());
+            });
             return;
         }
 
         if (clientSXVersion < version) {
-            logWarning(QStringLiteral("Ignoring SX packet claiming v%1 but shaped as v%2 for %3")
-                           .arg(clientSXVersion).arg(version).arg(fileName()));
+            logDebug([&]() -> QString {
+                return QStringLiteral("Ignoring SX packet claiming v%1 but shaped as v%2 for %3")
+                    .arg(clientSXVersion).arg(version).arg(fileName());
+            });
             return;
         }
     } else {
         // SX2 states its version, so a mismatch can't be a misunderstanding — drop it.
         if (clientSXVersion == 0 || clientSXVersion > SOURCEEXCHANGE2_VERSION) {
-            logWarning(QStringLiteral("Ignoring SX2 packet with unknown version v%1 for %2")
-                           .arg(clientSXVersion).arg(fileName()));
+            logDebug([&]() -> QString {
+                return QStringLiteral("Ignoring SX2 packet with unknown version v%1 for %2")
+                    .arg(clientSXVersion).arg(fileName());
+            });
             return;
         }
         version = clientSXVersion;
 
         if (dataSize != srcCount * recordSize(version)) {
-            logWarning(QStringLiteral("Ignoring corrupt SX2 packet (v%1, count=%2, size=%3, "
+            logDebug([&]() -> QString {
+                return QStringLiteral("Ignoring corrupt SX2 packet (v%1, count=%2, size=%3, "
                                       "expected %4) for %5")
-                           .arg(version).arg(srcCount).arg(dataSize)
-                           .arg(srcCount * recordSize(version)).arg(fileName()));
+                    .arg(version).arg(srcCount).arg(dataSize)
+                    .arg(srcCount * recordSize(version)).arg(fileName());
+            });
             return;
         }
     }
@@ -4536,7 +4625,9 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
         }
     }
     } catch (...) {
-        logWarning(QStringLiteral("Truncated or corrupt source-exchange packet for %1").arg(fileName()));
+        logDebug([&]() -> QString {
+            return QStringLiteral("Truncated or corrupt source-exchange packet for %1").arg(fileName());
+        });
     }
 }
 
@@ -4616,7 +4707,7 @@ void PartFile::punishCorruptionSenders(uint16 part)
                 .arg(guilty.corruptPercent)
                 .arg(guilty.corruptBytes + guilty.verifiedBytes);
 
-        logWarning(QStringLiteral("PartFile: banning %1 — part %2 of '%3': %4")
+        logLeecher(QStringLiteral("PartFile: banning %1 — part %2 of '%3': %4")
                        .arg(guilty.addr.toString())
                        .arg(part)
                        .arg(fileName(), reason));
@@ -4673,6 +4764,58 @@ void PartFile::finishPendingFlush(bool forceICH, bool noAICH)
         addGap(bd.start, bd.end);
     m_flushingData.clear();
     m_flushingBytes = 0;
+}
+
+void PartFile::finishRelocate()
+{
+    const std::shared_ptr<RelocateResult> r = std::exchange(m_relocateResult, nullptr);
+    if (!r || !r->done || !m_relocating)
+        return;
+    m_relocating = false;
+    m_fileOp = PartFileOp::None;
+    const QString dir = r->dir;
+    const QString metName = r->metName;
+    if (!r->ok) {
+        logError(QStringLiteral("Could not move %1 to %2: %3").arg(fileName(), dir, r->error));
+    } else {
+        const QString oldTmp = m_tmpPath;
+        const QString oldMetName = m_partMetFilename;
+        const QString oldMet = m_fullName;
+        const QString oldPart = partFilePath();
+
+        // The saved source list goes along (small, done here)
+        const QString oldList = SourceSaver::filePath(oldTmp, oldMetName);
+        const QString newList = SourceSaver::filePath(dir, metName);
+        if (QFile::exists(oldList)) {
+            QDir().mkpath(QFileInfo(newList).absolutePath());
+            QFile::remove(newList);
+            if (!QFile::rename(oldList, newList) && QFile::copy(oldList, newList))
+                QFile::remove(oldList);
+        }
+
+        m_tmpPath = dir;
+        m_partMetFilename = metName;
+        m_fullName = dir + u'/' + metName;
+        m_partFileHandle.setFileName(partFilePath());
+        savePartFile();   // the .part.met is written fresh beside the data
+
+        BackgroundFileWriter::instance().discard(oldMet);
+        QFile::remove(oldMet);
+        QFile::remove(oldMet + QStringLiteral(".bak"));
+        QFile::remove(oldMet + QStringLiteral(".backup"));
+        if (!r->renamed && !QFile::remove(oldPart))
+            logWarning(QStringLiteral("Could not remove the old %1 after moving it").arg(oldPart));
+        if (theApp.sharedFileList && !m_destroying)
+            theApp.sharedFileList->refreshDirectoryOf(this);
+        logInfo(QStringLiteral("Moved %1 to %2").arg(fileName(), dir));
+    }
+    if (m_destroying)
+        return;   // the destructor saves the .part.met where the data is now
+    // resumeFile() leaves early on a running file: the pause above is undone here
+    if (m_resumeAfterRelocate)
+        resumeFile(/*quiet*/ true);
+    m_resumeAfterRelocate = false;
+    emit m_partNotifier.statusChanged(status());
 }
 
 void PartFile::resumeIdleSources()

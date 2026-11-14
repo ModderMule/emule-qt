@@ -123,6 +123,8 @@ private:
     /// Connect to one server: double click, Enter and "Connect To" all land here.
     /// The daemon aborts a running attempt; the same server is a no-op there.
     void connectToServer(uint32_t ip, const QString& addr, uint16_t port);
+    /// the server list's Disconnect: eD2K when connected to it, and its ed3k index node
+    void disconnectFromServer(uint32_t ip, const QString& addr, uint16_t port);
 
     // Models
     ServerListModel* m_serverListModel = nullptr;

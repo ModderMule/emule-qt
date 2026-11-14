@@ -138,6 +138,12 @@ struct StatsSnapshot {
     qint64 upActive = 0;        ///< slots needed to fill the bandwidth (MFC GetActiveUploadsCount)
     qint64 upAvgTime = 0;
 
+    // --- Memory (bytes) ---
+    qint64 memProcess = 0;            ///< this core now, 0 when unknown
+    qint64 memProcessPeak = 0;
+    qint64 memUploadBuffers = 0;      ///< eD2K block data held for upload slots
+    qint64 memDownloadBuffers = 0;    ///< eD2K received data not yet written
+
     // --- Download sessions (one per source that entered Downloading) ---
     qint64 downSuccessful = 0;
     qint64 downFailed = 0;

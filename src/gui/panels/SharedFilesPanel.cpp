@@ -29,6 +29,7 @@
 #include "utils/MenuUtils.h"
 #include "utils/PanelPoller.h"
 #include "utils/PreviewLauncher.h"
+#include "utils/FolderLister.h"
 #include "utils/SharedDirState.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/StringUtils.h"
@@ -55,7 +56,6 @@
 #include <QComboBox>
 #include <QDesktopServices>
 #include <QFileDialog>
-#include <QStorageInfo>
 #include <QDir>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -232,6 +232,7 @@ void SharedFilesPanel::setIpcClient(IpcClient* client)
     // net under them, for the few things that have no push.
     m_poller->setInterval(kResyncMs);
     connect(m_ipc, &IpcClient::connected, this, [this]() {
+        resetFilesystemTree();
         m_poller->setEnabled(true);
         requestCategoryNodes();
     });
@@ -2109,18 +2110,23 @@ void SharedFilesPanel::onFolderContextMenu(const QPoint& pos)
     auto* shareSubAct = menu.addAction(tr("Share with Subdirectories"), this, [this, path]() {
         if (!m_ipc || !m_ipc->isConnected())
             return;
-        auto dirs = thePrefs.sharedDirs();
-        SharedDirState::collectSubdirectories(path, dirs, [](const QString& d) {
-            return thePrefs.isShareableDirectory(d);
+        // the core's disk walked where it is (IPC ListFolders for a remote one)
+        FolderLister::tree(m_ipc, path, this, [this](const QStringList& tree) {
+            auto dirs = thePrefs.sharedDirs();
+            for (const QString& d : tree)
+                if (!SharedDirState::isSharedDir(dirs, d) && thePrefs.isShareableDirectory(d))
+                    dirs.append(d);
+            sendShareDirsUpdate(dirs);
         });
-        sendShareDirsUpdate(dirs);
     });
     // Incoming is shared on its own and refused as a list entry, but its subfolders
     // (torrent / Usenet download folders) can still go on the list (#124) — unless
     // the incoming tree shares them anyway
     const bool isIncoming = SharedDirState::dirKey(path) == SharedDirState::dirKey(thePrefs.incomingDir());
     const bool treeCovers = inTree || isIncoming;
-    shareSubAct->setEnabled((shareable || isIncoming) && !treeCovers && hasSubdirectories(path));
+    const bool hasSubfolders = item->childCount() > 0
+        || item->childIndicatorPolicy() == QTreeWidgetItem::ShowIndicator;
+    shareSubAct->setEnabled((shareable || isIncoming) && !treeCovers && hasSubfolders);
 
     menu.addSeparator();
 
@@ -2315,68 +2321,31 @@ void SharedFilesPanel::onFolderItemExpanded(QTreeWidgetItem* item)
 
 void SharedFilesPanel::populateFilesystemChildren(QTreeWidgetItem* parentItem)
 {
-    if (parentItem == m_allDirsItem) {
-        initFilesystemRoot();
+    const QString parentPath = parentItem == m_allDirsItem ? QString()
+                                                           : parentItem->data(0, Qt::UserRole + 1).toString();
+    if (parentItem != m_allDirsItem && parentPath.isEmpty())
         return;
-    }
+    if (m_ipc && m_fsTreeCore.isEmpty())
+        m_fsTreeCore = QStringLiteral("%1:%2").arg(m_ipc->daemonHost()).arg(m_ipc->daemonPort());
 
-    const QString parentPath = parentItem->data(0, Qt::UserRole + 1).toString();
-    if (parentPath.isEmpty())
-        return;
-
-    // symlinked folders listed like MFC; the tree loads lazily, so a loop costs nothing
-    QDir dir(parentPath);
-    const auto entries = dir.entryInfoList(
-        QDir::Dirs | QDir::NoDotAndDotDot,
-        QDir::Name | QDir::IgnoreCase);
-
-    for (const QFileInfo& fi : entries) {
-        // Skip hidden directories (name starting with '.')
-        if (fi.fileName().startsWith(u'.'))
-            continue;
-        // Skip unreadable directories
-        if (!fi.isReadable())
-            continue;
-
-        addFilesystemChild(parentItem, fi.absoluteFilePath(), fi.fileName());
-    }
-}
-
-void SharedFilesPanel::initFilesystemRoot()
-{
-#ifdef Q_OS_MACOS
-    // macOS: add root and readable volumes
-    addFilesystemChild(m_allDirsItem, QStringLiteral("/"), QStringLiteral("/"));
-
-    QDir volumes(QStringLiteral("/Volumes"));
-    const auto entries = volumes.entryInfoList(
-        QDir::Dirs | QDir::NoDotAndDotDot | QDir::NoSymLinks,
-        QDir::Name | QDir::IgnoreCase);
-    for (const QFileInfo& fi : entries) {
-        if (fi.isReadable())
-            addFilesystemChild(m_allDirsItem, fi.absoluteFilePath(), fi.fileName());
-    }
-#else
-    // Cross-platform fallback: system drives
-    const auto drives = QDir::drives();
-    for (const QFileInfo& fi : drives) {
-        // "C:" or "Data (E:)" like the shell name MFC shows (SharedDirsTreeCtrl.cpp:757)
-        const QString path = fi.absoluteFilePath();
-        QString label = path;
-        // Drive letters only: "/" stays "/"
-        if (label.size() > 1 && label.endsWith(u'/')) {
-            label.chop(1);
-            if (const QString volume = QStorageInfo(path).name(); !volume.isEmpty())
-                label = QStringLiteral("%1 (%2)").arg(volume, label);
-        }
-        addFilesystemChild(m_allDirsItem, path, label);
-    }
-#endif
+    // the core's disk: asked over IPC when it runs on another host. Symlinked folders
+    // listed like MFC; the tree loads lazily, so a loop costs nothing.
+    FolderLister::list(m_ipc, parentPath, this,
+                       [this, parentPath](bool, const QList<FolderEntry>& rows, const QString&) {
+        QTreeWidgetItem* item = findFilesystemItem(parentPath);
+        if (!item || item->childCount() > 0)
+            return;   // gone, or filled by an earlier answer
+        for (const FolderEntry& e : rows)
+            addFilesystemChild(item, e.path, e.label, e.hasSubfolders);
+        if (rows.isEmpty() && item != m_allDirsItem)
+            item->setChildIndicatorPolicy(QTreeWidgetItem::DontShowIndicator);
+    });
 }
 
 void SharedFilesPanel::addFilesystemChild(QTreeWidgetItem* parent,
                                           const QString& path,
-                                          const QString& displayName)
+                                          const QString& displayName,
+                                          bool hasSubfolders)
 {
     auto* item = new QTreeWidgetItem(parent, {displayName});
     item->setData(0, Qt::UserRole, static_cast<int>(SharedFilterType::SpecificDir));
@@ -2384,8 +2353,46 @@ void SharedFilesPanel::addFilesystemChild(QTreeWidgetItem* parent,
     item->setData(0, kRoleFsItem, true);
     applyShareState(item);
 
-    if (hasSubdirectories(path))
+    if (hasSubfolders)
         item->setChildIndicatorPolicy(QTreeWidgetItem::ShowIndicator);
+}
+
+QTreeWidgetItem* SharedFilesPanel::findFilesystemItem(const QString& path) const
+{
+    if (path.isEmpty())
+        return m_allDirsItem;
+    const QString key = SharedDirState::dirKey(path);
+    QList<QTreeWidgetItem*> pending{m_allDirsItem};
+    while (!pending.isEmpty()) {
+        QTreeWidgetItem* item = pending.takeLast();
+        for (int i = 0; i < item->childCount(); ++i) {
+            QTreeWidgetItem* child = item->child(i);
+            const QString childKey = SharedDirState::dirKey(child->data(0, Qt::UserRole + 1).toString());
+            if (childKey == key)
+                return child;
+            if (SharedDirState::isBelowKey(key, childKey))
+                pending.append(child);
+        }
+    }
+    return nullptr;
+}
+
+void SharedFilesPanel::resetFilesystemTree()
+{
+    const QString core = m_ipc ? QStringLiteral("%1:%2").arg(m_ipc->daemonHost()).arg(m_ipc->daemonPort())
+                               : QString();
+    if (core == m_fsTreeCore)
+        return;
+    m_fsTreeCore.clear();
+    if (m_allDirsItem->childCount() == 0)
+        return;
+    for (QTreeWidgetItem* c = m_folderTree->currentItem(); c; c = c->parent())
+        if (c == m_allDirsItem) {
+            m_folderTree->setCurrentItem(m_allSharedItem);
+            break;
+        }
+    m_allDirsItem->setExpanded(false);
+    qDeleteAll(m_allDirsItem->takeChildren());
 }
 
 // ---------------------------------------------------------------------------
@@ -2674,18 +2681,6 @@ void SharedFilesPanel::showSharedDirMenu(QTreeWidgetItem* item, const QPoint& gl
     }
 
     menu.exec(globalPos);
-}
-
-bool SharedFilesPanel::hasSubdirectories(const QString& path)
-{
-    QDir dir(path);
-    const auto entries = dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
-
-    for (const QFileInfo& fi : entries) {
-        if (!fi.fileName().startsWith(u'.') && fi.isReadable())
-            return true;
-    }
-    return false;
 }
 
 // ---------------------------------------------------------------------------

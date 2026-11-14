@@ -285,6 +285,11 @@ public:
     /// Move @p id into category @p category, or out of one with 0.
     bool setItemCategory(const QString& id, int category);
 
+    /// "Move to" (#187): the item's work folder to `<dir>/<id>`, off the main thread once
+    /// nothing is in flight. Paused meanwhile; running (or failed on a full disk) items
+    /// start again there. Empty: started; else why not (English).
+    [[nodiscard]] QString moveItem(const QString& id, const QString& dir);
+
     /// Renumber every item's category after the list was reordered or trimmed.
     ///
     /// Mirrors `DownloadQueue::remapCategories()`, including its fallback: an
@@ -791,6 +796,12 @@ private:
         /// only disk since every sealed volume is already there.
         QHash<QString, DirectUnpackRun> directUnpack;
 
+        /// moveItem() (#187): where to, and whether to resume once there. Runtime only:
+        /// a restart before the copy is done keeps the old folder.
+        QString moveTarget;
+        bool moving = false;
+        bool resumeAfterMove = false;
+
         /// Most bytes ever advertised of an extracted member, by its path.
         ///
         /// An extraction that restarts truncates its output back to zero, and a
@@ -894,6 +905,12 @@ private:
     /// Unknown reads as "no" for the same reason it does at dispatch: a volume
     /// nobody can measure is not one to copy gigabytes onto.
     [[nodiscard]] bool volumeHasRoom(const QString& dir) const;
+    /// The disk floor for one item: the shared stall for the default folder, a measured
+    /// (cached) answer for a folder it was moved to (#187).
+    [[nodiscard]] bool itemDiskBlocked(const ItemRuntime& rt);
+    /// moveItem(): copy once the in-flight articles are back (polls), then finishMove().
+    void continueMove(const QString& id, int attempt);
+    void finishMove(const QString& id, const QString& from, const QString& to, const QString& error);
 
     /// A connection died at the proxy. Parks the whole queue for the retry
     /// interval, and re-asks noteWaitReason() for every item — never a statement
@@ -1418,6 +1435,12 @@ private:
     bool m_diskBlocked = false;
     bool m_diskStallLogged = false;
     QElapsedTimer m_diskCheckClock;
+    /// itemDiskBlocked() for moved items: per folder, measured each kDiskCheckIntervalMs.
+    struct RootRoom {
+        QElapsedTimer clock;
+        bool blocked = false;
+    };
+    QHash<QString, RootRoom> m_rootRoom;
 
     /// Route for every connection the workers open; NoProxy unless the user's
     /// proxy is on and meant for news servers.
