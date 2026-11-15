@@ -11,6 +11,7 @@
 #include "IpcMessage.h"
 
 #include <QDeadlineTimer>
+#include <QElapsedTimer>
 #include <QHostAddress>
 #include <QObject>
 
@@ -548,8 +549,9 @@ private:
     [[nodiscard]] bool peerStillTalking() const;
 
     /// A reply timer ran out on a loopback link that is still open: the core is
-    /// alive but its loop is held by a load stage. A new connection would queue
-    /// behind the same stage, so keep this one. Issues #24, #40.
+    /// alive but its loop is held (a load stage: as long as it takes; anything
+    /// else: BusyCoreWaitFactor more timeouts). A new connection would queue
+    /// behind the same work, so keep this one. Issues #24, #40, #200.
     [[nodiscard]] bool waitOnBusyCore(bool handshake);
 
     /// Fetch the daemon's Server Info backlog and replay it through
@@ -593,6 +595,8 @@ private:
     bool m_usenetEnginePaused = false;
     bool m_autoReconnect = false;
     bool m_waitingOnBusyCore = false;   // this connection outlived a reply timer
+    bool m_busyLoading = false;         // that wait began on a loading core: unbounded
+    QElapsedTimer m_busySince;          // since that first timeout
     QDeadlineTimer m_restartDeadline;   // expired = no restart pending
     QDeadlineTimer m_startDeadline;     // expired = no launched core awaited
     int64_t m_lastKadId     = 0;
@@ -646,6 +650,8 @@ private:
 
     static constexpr int MaxReconnectDelay      = 10'000;
     static constexpr int StartRetryDelayMs      = 200;     // while a launched core loads
+    /// A busy local core is waited for this many reply timeouts past the first (60 s at defaults)
+    static constexpr int BusyCoreWaitFactor     = 6;
 };
 
 } // namespace eMule
