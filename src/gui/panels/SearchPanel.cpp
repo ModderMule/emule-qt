@@ -1644,14 +1644,14 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
         }
         anyEd2k |= !result->isMeta();
         anyEd3k |= result->isEd3k();
-        anyEd2kLink |= result->ed2kHash().size() == 32;
+        anyEd2kLink |= !result->ed2kHash().isEmpty();
         anyUsenet |= result->isUsenet();
         anyTorrent |= result->isTorrent() && !result->isMagnetOnly();
         anyMagnetOnly |= result->isMagnetOnly();
         anyWeb |= result->isWeb();
         allWeb &= result->isWeb();
         anyContainer |= result->isContainer();
-        anyMagnet |= result->ed2kHash().size() == 32 || !result->magnet.isEmpty();
+        anyMagnet |= !result->ed2kHash().isEmpty() || !result->magnet.isEmpty();
         // eD2K rows: not already in the transfer list. Usenet rows: the daemon asks.
         // Torrent, web and container rows always: their tab, else the external fallback.
         if ((result->isEd3k() && (!m_downloadModel || !m_downloadModel->findByHash(result->ed3kRoot)))
@@ -1932,7 +1932,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     // Web Services — greyed when webservices.dat is empty or the selection is not
     // exactly one file, matching MFC's flag2 (SearchListCtrl.cpp:724-727).
     auto* webMenu = m_contextMenu->addMenu(menuIcon("Web.ico"), tr("Web Services"));
-    if (singleSel && singleEd2kHash.size() == 32)   // web services key on the eD2K hash
+    if (singleSel && !singleEd2kHash.isEmpty())   // web services key on the eD2K hash
         WebServices::instance().populateFileMenu(webMenu, singleEd2kHash, singleName,
                                                  static_cast<uint64_t>(singleSize));
     webMenu->setEnabled(!webMenu->isEmpty());

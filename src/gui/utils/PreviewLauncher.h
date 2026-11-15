@@ -47,6 +47,11 @@ bool launchPlayer(const QString& command, const QString& args, const QString& ta
                                             int fileIndex, const QString& streamToken,
                                             int entry = -1);
 
+/// The same channel for file @p fileIndex of torrent @p torrentId (-1: the core plays
+/// its largest file). Empty on the same terms as daemonStreamUrl().
+[[nodiscard]] QString daemonTorrentStreamUrl(const IpcClient* ipc, const QString& torrentId,
+                                             int fileIndex, const QString& streamToken);
+
 /// The browse page for the core's Incoming folder, or a folder inside it.
 ///
 /// Same lane as the two stream URLs above -- the daemon's web server, gated by

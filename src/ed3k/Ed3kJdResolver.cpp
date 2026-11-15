@@ -5,6 +5,7 @@
 #include "archive/ArchiveReader.h"
 #include "utils/Log.h"
 #include "utils/PathUtils.h"
+#include "utils/SafeRemove.h"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -92,7 +93,7 @@ void pruneShared(const QString& sharedDir, const QString& keep, int days)
             continue;
         const QFileInfo used(dir.filePath(v + u'/' + QLatin1StringView(kLastUsed)));
         if ((v.endsWith(QStringLiteral(".tmp")) || !used.exists() || used.lastModified() < cutoff)
-            && QDir(dir.filePath(v)).removeRecursively())
+            && removeDirTree(dir.filePath(v)))
             logHoster(QStringLiteral("hoster: shared resolver plugins %1 removed (unused)").arg(v));
     }
 }
@@ -247,22 +248,22 @@ bool Ed3kJdResolver::install(const QString& zip, const QString& dataDir, QString
         return true;
     stamp.close();
     const QString tmp = plugins + QStringLiteral(".tmp");
-    QDir(tmp).removeRecursively();
+    removeDirTree(tmp);
     QDir().mkpath(tmp);
     ArchiveReader reader;
     if (!reader.open(zip) || !reader.extractAll(tmp)) {
         if (error)
             *error = reader.lastError();
-        QDir(tmp).removeRecursively();
+        removeDirTree(tmp);
         return false;
     }
     if (!layoutOk(QDir(tmp).filePath(QStringLiteral("resolver")))) {
         if (error)
             *error = QStringLiteral("not a resolver archive");
-        QDir(tmp).removeRecursively();
+        removeDirTree(tmp);
         return false;
     }
-    QDir(plugins).removeRecursively();
+    removeDirTree(plugins);
     if (!QDir().rename(tmp, plugins)) {
         if (error)
             *error = QStringLiteral("cannot move %1").arg(tmp);
@@ -305,18 +306,18 @@ QString Ed3kJdResolver::installShared(const QString& zip, const QString& sharedD
         return root;
     }
     const QString tmp = version + QStringLiteral(".tmp");
-    QDir(tmp).removeRecursively();
+    removeDirTree(tmp);
     QDir().mkpath(tmp);
     ArchiveReader reader;
     if (!reader.open(zip) || !reader.extractAll(tmp)) {
-        QDir(tmp).removeRecursively();
+        removeDirTree(tmp);
         return fail(reader.lastError());
     }
     if (!layoutOk(QDir(tmp).filePath(QStringLiteral("resolver")))) {
-        QDir(tmp).removeRecursively();
+        removeDirTree(tmp);
         return fail(QStringLiteral("not a resolver archive"));
     }
-    QDir(version).removeRecursively();
+    removeDirTree(version);
     if (!QDir().rename(tmp, version))
         return fail(QStringLiteral("cannot move %1").arg(tmp));
     touchUsed(version);
@@ -330,8 +331,8 @@ void Ed3kJdResolver::removePlugins(const QString& dataDir)
     if (dataDir.isEmpty())
         return;
     const QString plugins = QDir(dataDir).filePath(QStringLiteral("plugins"));
-    QDir(plugins + QStringLiteral(".tmp")).removeRecursively();
-    if (QFileInfo(plugins).isDir() && QDir(plugins).removeRecursively())
+    removeDirTree(plugins + QStringLiteral(".tmp"));
+    if (QFileInfo(plugins).isDir() && removeDirTree(plugins))
         logHoster(QStringLiteral("hoster: resolver plugins removed (hoster downloads off)"));
 }
 

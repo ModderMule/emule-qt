@@ -184,7 +184,7 @@ QString SearchResultRow::ed2kLink(const QString& name) const
 {
     // never mint ed2k:// for a meta pseudo-hash; an ed3k row's MD4 is its publisher's (§7.4)
     const QString md4 = ed2kHash();
-    if (md4.size() != 32)
+    if (md4.isEmpty())
         return {};
     return ed2kFileLink(name.isEmpty() ? fileName : name, static_cast<uint64>(fileSize), md4);
 }
@@ -192,7 +192,7 @@ QString SearchResultRow::ed2kLink(const QString& name) const
 QString SearchResultRow::magnetLink(const QString& name) const
 {
     const QString md4 = ed2kHash();
-    if (isMeta() && md4.size() != 32)
+    if (md4.isEmpty())
         return magnet;   // server-supplied for torrents; Usenet has none
 
     // the form ED2KLink::parseMagnetLink reads back

@@ -112,8 +112,9 @@ public:
     struct KadNote {
         uint8   rating = 0;
         QString comment;
+        QString name;   ///< who it is shown as (an ed3k note's nick); empty: the network's name
     };
-    void addKadNote(const QByteArray& publisherId, uint8 rating, const QString& comment);
+    void addKadNote(const QByteArray& publisherId, uint8 rating, const QString& comment, const QString& name = {});
     void clearKadNotes();
     [[nodiscard]] const std::map<QByteArray, KadNote>& kadNotesCache() const { return m_kadNotesCache; }
 

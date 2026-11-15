@@ -17,6 +17,7 @@
 namespace eMule {
 
 class I2pRouter;
+struct UsenetStreamSource;
 
 namespace bt {
 class BtSession;
@@ -31,6 +32,11 @@ void setSession(bt::BtSession* session);
 
 /// "Move to" (#187): torrent @p id's data to @p dir. Empty: started; else why not.
 [[nodiscard]] QString moveTo(const QString& id, const QString& dir);
+
+/// Torrent preview (WebServer::setBtStreamResolver): file @p fileIndex of torrent @p id
+/// (-1: the largest) read from @p offset. @p fetch (seeking on): its next pieces first
+/// (BtSession::streamFrom). found = false: no such torrent/file, or no BitTorrent.
+[[nodiscard]] UsenetStreamSource streamFrom(const QString& id, int fileIndex, qint64 offset, bool fetch);
 
 /// The bundled I2P router (btI2pMode 1); set by DaemonApp, null when absent.
 void setI2pRouter(I2pRouter* router);

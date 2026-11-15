@@ -71,6 +71,9 @@ public:
     /// Peers/Trackers/Files, 3-5 the inspector's Info/Activity/Options. For --subtab.
     void switchToSubTab(int tab);
 
+    /// For Preview: the daemon's stream token (IpcClientHandler "streamToken").
+    void setStreamToken(const QString& token) { m_streamToken = token; }
+
     /// The engine as last reported by GetBtStatus / PushBtStatus.
     [[nodiscard]] bool engineRunning() const;
 
@@ -109,6 +112,8 @@ private:
     void sendForSelection(Ipc::IpcMsgType type);
     void onRemove();
     void onOpenFolder();
+    /// Preview: the selected file, or the torrent's largest, streamed by the core.
+    void onPreview();
     void onCopyMagnet();
     /// Edit Trackers… for the whole selection (#143).
     void onEditTrackers();
@@ -130,6 +135,7 @@ private:
 
     IpcClient* m_ipc = nullptr;
     PanelPoller* m_poller = nullptr;
+    QString m_streamToken;
 
     QTreeView* m_view = nullptr;
     TorrentListModel* m_model = nullptr;
@@ -152,6 +158,7 @@ private:
     QAction* m_optionsAction = nullptr;
     QAction* m_moveAction = nullptr;
     QAction* m_openFolderAction = nullptr;
+    QAction* m_previewAction = nullptr;
     QAction* m_copyMagnetAction = nullptr;
     QAction* m_pasteMagnetAction = nullptr;
     QAction* m_detailsAction = nullptr;

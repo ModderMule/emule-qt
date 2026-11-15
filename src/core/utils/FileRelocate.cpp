@@ -4,6 +4,7 @@
 #include "utils/Log.h"
 #include "utils/PathUtils.h"
 #include "utils/StringUtils.h"
+#include "utils/SafeRemove.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -142,10 +143,10 @@ QString relocateDir(const QString& from, const QString& to, std::uint64_t floor)
         error = copyFile(src, dst);
     }
     if (!error.isEmpty()) {
-        QDir(to).removeRecursively();
+        removeDirTree(to);
         return error;
     }
-    QDir(from).removeRecursively();
+    removeDirTree(from);
     return {};
 }
 

@@ -2592,8 +2592,9 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
             outcome.btChanged = true;
         if (key.startsWith(QLatin1StringView("ed3k")) && before.value(key) != after.value(key))
             outcome.ed3kChanged = true;
-        // the filter level also shapes BitTorrent's IP filter
-        if (key == QLatin1StringView("ipFilterLevel") && before.value(key) != after.value(key))
+        // the filter level also shapes BitTorrent's IP filter; preview parts its pieces
+        if ((key == QLatin1StringView("ipFilterLevel") || key == QLatin1StringView("previewPrio"))
+            && before.value(key) != after.value(key))
             outcome.btChanged = true;
         // the proxy covers every network: each engine picks the new one up (report 34)
         if (key.startsWith(QLatin1StringView("proxy")) && before.value(key) != after.value(key)) {
@@ -3966,7 +3967,7 @@ QCborArray searchKadComments(const AbstractFile& file, const QString& source = Q
         if (note.comment.isEmpty() && note.rating == 0)
             continue;
         comments.append(QCborMap{
-            {QLatin1StringView("userName"), source},
+            {QLatin1StringView("userName"), note.name.isEmpty() ? source : note.name},
             {QLatin1StringView("rating"), note.rating},
             {QLatin1StringView("comment"), note.comment}});
     }

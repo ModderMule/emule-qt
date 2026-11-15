@@ -80,9 +80,13 @@ public:
     /// Searches the notes of @p root (32 B); the rows of that root show the lookup as
     /// running until the answer or kTimeoutMs. False: no node, or one runs for it already.
     bool searchNotes(const QByteArray& root);
-    /// Where found notes go: (root, publisher node ID, rating 0..5, text). Unset:
-    /// theApp.searchList->addNotes.
-    using NoteSink = std::function<void(const QByteArray& root, const QByteArray& publisher, std::uint32_t rating, const QString& text)>;
+    /// Where found notes go: (root, publisher node ID, rating 0..5, text, nick). Unset:
+    /// theApp.searchList->addNotes, shown as noteAuthor().
+    using NoteSink = std::function<void(const QByteArray& root, const QByteArray& publisher, std::uint32_t rating, const QString& text,
+                                        const QString& nick)>;
+    /// How a note's publisher is shown: its nick with the start of its node ID (a nick is a
+    /// claim, §10.7); empty without a nick.
+    [[nodiscard]] static QString noteAuthor(const QString& nick, const QByteArray& publisher);
     void setNoteSink(NoteSink sink) { m_notes = std::move(sink); }
 
     /// Sources of one root over the records of an answer (one record per publisher).

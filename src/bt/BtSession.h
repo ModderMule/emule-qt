@@ -133,6 +133,11 @@ public:
     bool addPiece(const QString& id, int piece, const QByteArray& data);
     /// Asks peers for these pieces first (a held piece waits for them).
     void raisePieces(const QString& id, const QList<int>& pieces);
+    /// File @p fileIndex of @p id (-1: the largest) for a player reading from @p offset.
+    /// @p fetch ("Enable seeking in downloads"): the pieces from the first missing one get
+    /// deadlines, and passed pieces still in the write cache are flushed. nullopt: unknown
+    /// id, no metadata yet, or no such file.
+    [[nodiscard]] std::optional<BtStreamSpan> streamFrom(const QString& id, int fileIndex, qint64 offset, bool fetch);
     /// Writes the blocks libtorrent holds in memory to disk; cacheFlushed follows. false:
     /// unknown id (no signal).
     bool flushCache(const QString& id);

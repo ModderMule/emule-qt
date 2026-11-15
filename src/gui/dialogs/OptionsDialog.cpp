@@ -2338,12 +2338,15 @@ QWidget* OptionsDialog::createFilesPage()
     miscLayout->addWidget(m_transferFullChunksCheck);
 
     m_previewPrioCheck = new QCheckBox(tr("Try to download preview chunks first"), miscGroup);
+    m_previewPrioCheck->setToolTip(
+        tr("First and last part of videos and archives first, from eD2K and ed3k sources, "
+           "web sources and in torrents."));
     miscLayout->addWidget(m_previewPrioCheck);
 
     m_downloadSeekingCheck = new QCheckBox(tr("Enable seeking in downloads"), miscGroup);
     m_downloadSeekingCheck->setToolTip(
-        tr("Preview of an unfinished eD2K or ed3k download: when the player seeks, the parts "
-           "there are downloaded first and the player waits for them."));
+        tr("Preview of an unfinished download (eD2K, ed3k, web sources, BitTorrent): when the "
+           "player seeks, the parts there are downloaded first and the player waits for them."));
     m_downloadSeekingCheck->setVisible(thePrefs.showExtControls());
     miscLayout->addWidget(m_downloadSeekingCheck);
 

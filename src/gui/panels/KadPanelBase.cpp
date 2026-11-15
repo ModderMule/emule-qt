@@ -67,6 +67,12 @@ void KadPanelBase::switchToSubTab(int index)
         autoPickLookup();
 }
 
+void KadPanelBase::switchToBottomTab(int index)
+{
+    if (m_bottomTabWidget && index >= 0 && index < m_bottomTabWidget->count())
+        m_bottomTabWidget->setCurrentIndex(index);
+}
+
 // ---------------------------------------------------------------------------
 // protected
 // ---------------------------------------------------------------------------
@@ -121,7 +127,7 @@ void KadPanelBase::buildLayout(QWidget* contacts, QWidget* controls, QWidget* se
     // Time, Type, Key, Name, From, Answer
     incomingView->bindColumns(network == KadIncomingModel::Network::Ed2k ? QStringLiteral("kadIncoming")
                                                                          : QStringLiteral("ed3kKadIncoming"),
-                              {70, 120, 240, 240, 150, 160});
+                              {70, 120, 240, 240, network == KadIncomingModel::Network::Ed2k ? 40 : 290, 160});
     m_bottomTabWidget = new QTabWidget;
     m_bottomTabWidget->setDocumentMode(true);
     const QIcon searchIcon = thePrefs.useOriginalIcons() ? skinIcon(QStringLiteral(":/icons/KadCurrentSearches.ico")) : QIcon();

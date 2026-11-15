@@ -217,6 +217,17 @@ void tst_BtLocalSwarm::seedAndLeech()
     QTRY_VERIFY_WITH_TIMEOUT(leecher.torrent(added.id)->state == BtState::Seeding, 5000);
     QCOMPARE(leecher.files(added.id).size(), 1);
 
+    // a player's view (preview stream): finished, all of it on disk
+    const auto span = leecher.streamFrom(added.id, -1, 1000, true);
+    QVERIFY(span);
+    QVERIFY(span->complete);
+    QCOMPARE(span->size, kPayload);
+    QCOMPARE(span->availableEnd, kPayload);
+    QCOMPARE(span->name, QStringLiteral("payload.bin"));
+    QVERIFY(QFile::exists(span->path));
+    QVERIFY(!leecher.streamFrom(added.id, 5, 0, false));
+    QVERIFY(!leecher.streamFrom(QStringLiteral("bt:v1:none"), -1, 0, false));
+
     // a join's flush: one cacheFlushed once the last of two asks is done (a member is
     // hashed only after it)
     QSignalSpy flushed(&leecher, &BtSession::cacheFlushed);

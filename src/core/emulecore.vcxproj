@@ -619,6 +619,7 @@
     <ClInclude Include="utils\FileRelocate.h" />
     <ClInclude Include="utils\FolderList.h" />
     <ClInclude Include="utils\PathUtils.h" />
+    <ClInclude Include="utils\SafeRemove.h" />
     <ClInclude Include="utils\PerfLog.h" />
     <ClInclude Include="net\Address.h" />
     <ClInclude Include="net\Pinger.h" />

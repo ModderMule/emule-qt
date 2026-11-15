@@ -453,7 +453,8 @@ bool UpDownClient::canCallBackForSlot() const
         && theApp.serverConnect->isLocalServer(m_serverAddress.toNetworkUint32(), m_serverPort)
         && theApp.canDoCallback(this))
         return true;
-    return theApp.isFirewalled() && theApp.natRendezvous && theApp.natRendezvous->canStart(*this);
+    // HighID too: the foreign callback of the peer's own server
+    return theApp.natRendezvous && theApp.natRendezvous->canStart(*this);
 }
 
 bool UpDownClient::directUdpCallbackAvailable() const
@@ -2128,6 +2129,18 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
             m_connectingState = ConnectingState::NatRendezvous;
             if (theApp.natRendezvous->start(*this)) {
                 logDebug([&]() -> QString { return QStringLiteral("tryToConnect: NAT rendezvous for %1").arg(userName()); });
+                return true;
+            }
+            m_connectingState = ConnectingState::Preconditions;
+        }
+
+        // HighID and no callback route: the peer's own server wakes it (foreign callback,
+        // ed2k-server#40), we dial QUIC. Not MFC.
+        if (!directUdp && !kadCallback && !serverCallback && !theApp.isFirewalled()
+            && theApp.natRendezvous && theApp.natRendezvous->canStart(*this)) {
+            m_connectingState = ConnectingState::NatRendezvous;
+            if (theApp.natRendezvous->start(*this)) {
+                logDebug([&]() -> QString { return QStringLiteral("tryToConnect: foreign callback for %1").arg(userName()); });
                 return true;
             }
             m_connectingState = ConnectingState::Preconditions;

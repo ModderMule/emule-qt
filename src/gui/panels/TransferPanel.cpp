@@ -26,7 +26,6 @@
 #include "controls/UploadStatusDelegate.h"
 #include "dialogs/CategoryDialog.h"
 #include "dialogs/ClientDetailDialog.h"
-#include "dialogs/Ed3kSetsDialog.h"
 #include "dialogs/CollectionViewDialog.h"
 #include "dialogs/FindInListDialog.h"
 #include "dialogs/RenameFileDialog.h"
@@ -683,11 +682,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
             files.append({d->hash, d->fileName, d->fileSize});
         Ed3kLinkMenu::addActions(m_downloadMenu, this, m_ipc, files);
     }
-    // followed ed3k sets and live streams (no MFC original); only while ed3k is on
-    if (thePrefs.ed3kEnabled())
-        m_downloadMenu->addAction(menuIcon("Folders.ico"), tr("ed3k Sets..."), this, [this] {
-            Ed3kSetsDialog::showDialog(this, m_ipc);
-        })->setEnabled(m_ipc && m_ipc->isConnected());
+    // was: "ed3k Sets..." here on every file; now a button of the ed3k Kad window (global)
 
     m_downloadMenu->addSeparator();
 
@@ -758,7 +753,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         const QSet<QString> ed3kActions{tr("Priority (Download)"), tr("Pause"), tr("Stop"), tr("Resume"), tr("Cancel"),
                                         tr("Open File"), tr("Preview"), tr("Preview with"), tr("Clear Completed"),
                                         tr("Assign To Category"),
-                                        tr("Paste eD2K Links"), tr("ed3k Sets..."), tr("Find..."), tr("Show Toolbar"),
+                                        tr("Paste eD2K Links"), tr("Find..."), tr("Show Toolbar"),
                                         MoveDownloadsAction::menuText(), Ed3kLinkMenu::copyText(),
                                         Ed3kLinkMenu::showText()};
         for (QAction* act : m_downloadMenu->actions())

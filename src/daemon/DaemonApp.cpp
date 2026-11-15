@@ -115,6 +115,7 @@
 #include "utils/BackgroundFileWriter.h"
 #include "utils/OtherFunctions.h"
 #include "utils/Log.h"
+#include "utils/SafeRemove.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -458,6 +459,8 @@ bool DaemonApp::start()
         m_ed3kSharedSource = ed3k::Ed3kShared::listAdapter(*theApp.sharedFileList);
         m_ed3kShared = std::make_unique<ed3k::Ed3kShared>(*m_ed3kSession, *m_ed3kSharedSource, thePrefs.configDir());
         m_ed3kShared->connectList(*theApp.sharedFileList);
+        // own notes show the user's nick (Note.nick, Protocol.md §10.7)
+        m_ed3kShared->setNoteNick([] { return thePrefs.nick(); });
         // a new file is read once: eD2K's hashing read hashes it for ed3k too
         theApp.sharedFileList->setSideHasher(m_ed3kShared->sideHasherFactory());
         m_ed3kShared->setLowRamPercent(thePrefs.ed3kHashCacheLowRamPercent());
@@ -1250,6 +1253,7 @@ void DaemonApp::startWebServer()
     // ed3k preview: same seam, core never links ed3k
     m_webServer->setEd3kFileResolver(&Ed3kDownloadsBridge::fileOf);
     m_webServer->setEd3kStreamResolver(&Ed3kDownloadsBridge::streamFrom);
+    m_webServer->setBtStreamResolver(&BtBridge::streamFrom);
 
     m_webServer->setUsenetStreamResolver(
         [](const UsenetStreamRequest& ask) -> UsenetStreamSource {
@@ -1748,7 +1752,7 @@ void DaemonApp::applyHosterConfig()
         if (on) {
             m_resolverUpdater->setDir(sharedWritable ? QDir(sharedDir).filePath(QStringLiteral("update")) : instanceUpdates);
             if (sharedWritable)
-                QDir(instanceUpdates).removeRecursively();
+                removeDirTree(instanceUpdates);
         }
         // a fetched zip when newer than the bundled one and of our api
         m_resolverUpdater->setBundledZip(cfg.zip);

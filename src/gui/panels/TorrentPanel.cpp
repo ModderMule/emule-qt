@@ -19,12 +19,14 @@
 #include "dialogs/EditTrackersDialog.h"
 #include "dialogs/TorrentOptionsDialog.h"
 #include "dialogs/TorrentDetailsDialog.h"
+#include "media/PreviewApps.h"
 #include "prefs/Preferences.h"
 #include "utils/Clipboard.h"
 #include "utils/ListActivation.h"
 #include "utils/Log.h"
 #include "utils/MenuUtils.h"
 #include "utils/MoveDownloadsAction.h"
+#include "utils/PreviewLauncher.h"
 #include "utils/PanelPoller.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/StringUtils.h"
@@ -310,6 +312,8 @@ void TorrentPanel::setupUi()
     connect(m_moveAction, &QAction::triggered, this, &TorrentPanel::onMoveToFolder);
     m_openFolderAction = new QAction(menuIcon("FolderOpen.ico"), tr("Open Folder"), this);
     connect(m_openFolderAction, &QAction::triggered, this, &TorrentPanel::onOpenFolder);
+    m_previewAction = new QAction(menuIcon("Preview.ico"), tr("Preview"), this);
+    connect(m_previewAction, &QAction::triggered, this, &TorrentPanel::onPreview);
     m_copyMagnetAction = new QAction(menuIcon("Copy.ico"), tr("Copy Magnet Link"), this);
     connect(m_copyMagnetAction, &QAction::triggered, this, &TorrentPanel::onCopyMagnet);
     m_pasteMagnetAction = new QAction(menuIcon("eD2kLinkPaste.ico"), tr("Paste Magnet Links"), this);
@@ -525,6 +529,7 @@ void TorrentPanel::onContextMenu(const QPoint& pos)
         if (thePrefs.showExtControls())
             menu.addAction(m_moveAction);   // #187
         menu.addAction(m_openFolderAction);
+        menu.addAction(m_previewAction);
         menu.addAction(m_copyMagnetAction);
         menu.addAction(m_detailsAction);
         setMenuDefaultAction(&menu, m_detailsAction);
@@ -615,6 +620,43 @@ void TorrentPanel::onOpenFolder()
     const QString inner = QDir(row->savePath).filePath(row->name);
     const QString folder = row->numFiles > 1 && QFileInfo(inner).isDir() ? inner : row->savePath;
     QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+}
+
+void TorrentPanel::onPreview()
+{
+    const QStringList ids = selectedIds();
+    if (ids.size() != 1)
+        return;
+    // a file row: that file; the torrent: the core picks its largest
+    int fileIndex = -1;
+    QString name;
+    for (const QModelIndex& index : m_view->selectionModel()->selectedRows()) {
+        if (const TorrentFileRow* file = m_model->fileAt(m_proxy->mapToSource(index))) {
+            fileIndex = file->index;
+            name = file->path.section(QLatin1Char('/'), -1);
+            break;
+        }
+    }
+    if (name.isEmpty())
+        if (const TorrentRow* row = m_model->findById(ids.first()))
+            name = row->name;
+
+    const QString url = daemonTorrentStreamUrl(m_ipc, ids.first(), fileIndex, m_streamToken);
+    if (url.isEmpty()) {
+        logWarning(tr("Preview not available — web server is not running or stream token not received."));
+        return;
+    }
+    // an application of PreviewApps.dat for the extension first, as for downloads
+    if (const PreviewApps& apps = previewApps(); !name.isEmpty()) {
+        if (const int app = apps.appForFileName(name); app >= 0) {
+            const PreviewApp& pick = apps.apps().at(static_cast<size_t>(app));
+            if (!launchPlayer(pick.command, pick.commandArgs, url))
+                QMessageBox::warning(this, tr("Preview"),
+                                     tr("Failed to execute: %1 %2").arg(pick.command, pick.commandArgs));
+            return;
+        }
+    }
+    launchPreview(url);
 }
 
 void TorrentPanel::onEditTrackers()
@@ -879,6 +921,8 @@ void TorrentPanel::updateActions()
     m_optionsAction->setEnabled(running && any);
     m_moveAction->setEnabled(running && any);
     m_openFolderAction->setEnabled(any);
+    const TorrentRow* one = ids.size() == 1 ? m_model->findById(ids.first()) : nullptr;
+    m_previewAction->setEnabled(running && one && one->hasMetadata);
     m_copyMagnetAction->setEnabled(hasMagnet);
     m_detailsAction->setEnabled(running && any);
 }

@@ -183,6 +183,8 @@ void CommandLineExec::applyTabArgs(MainWindow& mainWindow) const
     // pane wins that clash — so asking for both lands --subtab-top exactly as given.
     if (m_hasSubtabTop && m_activeTab == MainWindow::TabTransfers)
         mainWindow.transferPanel()->switchToTopView(m_subtabTop);
+    else if (m_hasSubtabTop && m_activeTab == MainWindow::TabKad)
+        mainWindow.kadPanel()->switchToBottomTab(m_subtabTop);
 }
 
 void CommandLineExec::setupScreenshotTimer(QApplication& app, MainWindow& mainWindow) const

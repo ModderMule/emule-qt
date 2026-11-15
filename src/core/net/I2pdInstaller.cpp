@@ -6,6 +6,7 @@
 #include "net/HttpStreamDownload.h"
 #include "net/I2pdRelease.h"
 #include "utils/Log.h"
+#include "utils/SafeRemove.h"
 
 #include <QDir>
 #include <QFile>
@@ -147,7 +148,7 @@ void I2pdInstaller::abort()
         t->disconnect(this);
         t->wait();
         delete t;
-        QDir(tmpDir()).removeRecursively();
+        removeDirTree(tmpDir());
         QFile::remove(QDir(QFileInfo(m_dir).absolutePath()).filePath(m_asset.name));
     }
 }
@@ -176,7 +177,7 @@ void I2pdInstaller::onDownloaded(bool ok)
 void I2pdInstaller::unpack(const QString& archive)
 {
     const QString tmp = tmpDir();
-    QDir(tmp).removeRecursively();
+    removeDirTree(tmp);
     auto error = std::make_shared<QString>();
     // libarchive in-process on every OS: no tar.exe on old Windows, and a GNU tar from
     // Git/MSYS on PATH reads no zip
@@ -202,12 +203,12 @@ void I2pdInstaller::unpackDone(const QString& archive, const QString& error)
     const QString tmp = tmpDir();
     const QString program = QDir(tmp).filePath(binaryName());
     if (error.isEmpty() && !QFileInfo(program).isFile()) {
-        QDir(tmp).removeRecursively();
+        removeDirTree(tmp);
         done(false, QStringLiteral("the archive has no %1").arg(binaryName()));
         return;
     }
     if (!error.isEmpty()) {
-        QDir(tmp).removeRecursively();
+        removeDirTree(tmp);
         done(false, QStringLiteral("cannot unpack %1: %2").arg(m_asset.name, error));
         return;
     }
@@ -221,19 +222,19 @@ void I2pdInstaller::unpackDone(const QString& archive, const QString& error)
     }
     // the old one aside first: a failed swap keeps it
     const QString old = m_dir + QStringLiteral(".old");
-    QDir(old).removeRecursively();
+    removeDirTree(old);
     if (QFileInfo::exists(m_dir) && !QDir().rename(m_dir, old)) {
-        QDir(tmp).removeRecursively();
+        removeDirTree(tmp);
         done(false, QStringLiteral("cannot replace %1 (in use?)").arg(m_dir));
         return;
     }
     if (!QDir().rename(tmp, m_dir)) {
         QDir().rename(old, m_dir);
-        QDir(tmp).removeRecursively();
+        removeDirTree(tmp);
         done(false, QStringLiteral("cannot move the router to %1").arg(m_dir));
         return;
     }
-    QDir(old).removeRecursively();
+    removeDirTree(old);
     logTorrent(QStringLiteral("I2P: router %1 installed in %2").arg(QLatin1StringView(i2pd_release::kTag), m_dir));
     done(true);
 }

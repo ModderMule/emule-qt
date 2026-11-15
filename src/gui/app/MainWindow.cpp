@@ -927,6 +927,7 @@ void MainWindow::setStreamToken(const QString& token)
     if (m_searchPanel)      m_searchPanel->setStreamToken(token);
     if (m_sharedFilesPanel) m_sharedFilesPanel->setStreamToken(token);
     if (m_usenetPanel)      m_usenetPanel->setStreamToken(token);
+    if (m_torrentPanel)     m_torrentPanel->setStreamToken(token);
 }
 
 void MainWindow::updateTransferRates(double upKBs, double downKBs,

@@ -6,6 +6,7 @@
 #include "session/BtSettingsMap.h"
 #include "torrent/BtTorrentView.h"
 #include "app/AppContext.h"
+#include "files/PartFile.h"
 #include "stats/NetworkCounters.h"
 #include "stats/Statistics.h"
 #include "utils/BackgroundFileWriter.h"
@@ -392,8 +393,21 @@ struct BtSession::Impl {
     void flush(const lt::torrent_handle& h, const QString& id)
     {
         ++flushing[id];
+        if (auto un = unflushed.find(id); un != unflushed.end()) {
+            flushingPieces[id].unite(un->second);
+            unflushed.erase(un);
+        }
         h.flush_cache();
     }
+    /// pieces passed since the last flush ask: pread_disk_io may hold them in memory
+    std::map<QString, QSet<int>> unflushed;
+    /// pieces of the flush asks not answered yet
+    std::map<QString, QSet<int>> flushingPieces;
+    /// streamFrom(): the first missing piece given deadlines; another one clears them
+    std::map<QString, int> streamFocus;
+    /// "Download preview parts first": first + last pieces of each wanted previewable
+    /// file at top priority. Again after each file priority change (it resets them)
+    void applyPreviewPieces(const lt::torrent_handle& h, const QString& id);
     /// pieces libtorrent has, from its status updates: havePieces() never waits
     std::map<QString, QBitArray> have;
     /// checked, a join attached: torrentChecked waits for the status with the new pieces
@@ -797,6 +811,9 @@ void BtSession::stop()
     d->rows.clear();
     d->finishFlush.clear();
     d->flushing.clear();
+    d->unflushed.clear();
+    d->flushingPieces.clear();
+    d->streamFocus.clear();
     d->have.clear();
     d->checkWaited.clear();
     d->i2pNameMisses.clear();
@@ -821,6 +838,7 @@ void BtSession::applySettings(const BtSettings& settings)
 {
     const int oldPerTorrent = d->settings.maxConnectionsPerTorrent;
     const bool wasBlocked = d->settings.networkBlocked;
+    const bool wasPreviewFirst = d->settings.previewPiecesFirst;
     if (d->settings.i2pSamHost != settings.i2pSamHost || d->settings.i2pSamPort != settings.i2pSamPort
         || d->settings.i2pEnabled != settings.i2pEnabled)
         d->i2pError.clear();
@@ -832,6 +850,16 @@ void BtSession::applySettings(const BtSettings& settings)
         d->listening = false;
     }
     d->ses->apply_settings(d->pack(settings));
+    // preview pieces off: the file priorities set the pieces anew
+    if (wasPreviewFirst != settings.previewPiecesFirst)
+        for (const auto& [id, h] : d->handles) {
+            if (!h.is_valid())
+                continue;
+            if (settings.previewPiecesFirst)
+                d->applyPreviewPieces(h, id);
+            else if (const auto dt = d->details.find(id); dt != d->details.end() && !dt->second.priorities.empty())
+                d->prioritizeFiles(h, id, dt->second.priorities);
+        }
     d->dhtNodesBySocket.clear();   // listen sockets may have changed; next dht_stats refills
     if (!settings.networkBlocked && wasBlocked)
         d->ses->resume();
@@ -946,6 +974,9 @@ bool BtSession::remove(const QString& id, bool deleteFiles)
     d->metaStopped.remove(id);
     d->finishFlush.remove(id);
     d->flushing.erase(id);
+    d->unflushed.erase(id);
+    d->flushingPieces.erase(id);
+    d->streamFocus.erase(id);
     d->have.erase(id);
     d->checkWaited.remove(id);
     d->pendingPriorities.erase(id);
@@ -1346,6 +1377,98 @@ void BtSession::raisePieces(const QString& id, const QList<int>& pieces)
         h.set_piece_deadline(lt::piece_index_t(p), 0);
 }
 
+std::optional<BtStreamSpan> BtSession::streamFrom(const QString& id, int fileIndex, qint64 offset, bool fetch)
+{
+    const auto ti = d->torrentFile(id);
+    const auto row = d->rows.find(id);
+    if (!ti || !ti->is_valid() || row == d->rows.end())
+        return std::nullopt;
+    const lt::file_storage& fs = ti->layout();
+    if (fileIndex < 0) {
+        for (const lt::file_index_t f : fs.file_range())
+            if (!fs.pad_file_at(f) && (fileIndex < 0 || fs.file_size(f) > fs.file_size(lt::file_index_t(fileIndex))))
+                fileIndex = static_cast<int>(f);
+    }
+    if (fileIndex < 0 || fileIndex >= fs.num_files() || fs.pad_file_at(lt::file_index_t(fileIndex)))
+        return std::nullopt;
+    const lt::file_index_t file(fileIndex);
+
+    BtStreamSpan out;
+    out.path = QString::fromStdString(fs.file_path(file, row->second.savePath.toStdString()));
+    const auto name = fs.file_name(file);
+    out.name = QString::fromUtf8(name.data(), qsizetype(name.size()));
+    out.size = fs.file_size(file);
+    if (out.size <= 0) {
+        out.complete = true;
+        return out;
+    }
+
+    // a passed piece is on disk once a flush asked after it has come back
+    static const QBitArray kNone;
+    const auto hv = d->have.find(id);
+    const QBitArray& have = hv == d->have.end() ? kNone : hv->second;
+    const auto un = d->unflushed.find(id);
+    const auto fl = d->flushingPieces.find(id);
+    auto hasPiece = [&](int p) { return p < have.size() && have.testBit(p); };
+    auto onDisk = [&](int p) {
+        return hasPiece(p) && (un == d->unflushed.end() || !un->second.contains(p))
+            && (fl == d->flushingPieces.end() || !fl->second.contains(p));
+    };
+
+    const qint64 base = fs.file_offset(file);
+    const qint64 pieceLen = ti->piece_length();
+    const int firstPiece = static_cast<int>(base / pieceLen);
+    const int lastPiece = static_cast<int>((base + out.size - 1) / pieceLen);
+    out.complete = true;
+    for (int p = firstPiece; p <= lastPiece && out.complete; ++p)
+        out.complete = onDisk(p);
+    if (out.complete) {
+        out.availableEnd = out.size;
+        return out;
+    }
+    offset = std::clamp<qint64>(offset, 0, out.size);
+    if (offset >= out.size) {
+        out.availableEnd = offset;
+        return out;
+    }
+    int p = static_cast<int>((base + offset) / pieceLen);
+    while (p <= lastPiece && onDisk(p))
+        ++p;
+    out.availableEnd = std::clamp<qint64>(p * pieceLen - base, offset, out.size);
+    if (!fetch)
+        return out;
+
+    const auto h = d->handle(id);
+    if (!h.is_valid())
+        return out;
+    // passed but in the write cache: on disk with the next flush
+    if (p <= lastPiece && hasPiece(p) && !d->flushing.contains(id))
+        d->flush(h, id);
+    // little left ahead of the player: the next pieces before all others
+    constexpr qint64 kStreamLeadBytes = 32 * 1024 * 1024;
+    if (out.availableEnd - offset >= kStreamLeadBytes)
+        return out;
+    int missing = p;
+    while (missing <= lastPiece && hasPiece(missing))
+        ++missing;
+    if (missing > lastPiece)
+        return out;
+    auto& focus = d->streamFocus[id];
+    if (focus == missing)
+        return out;
+    focus = missing;
+    h.clear_piece_deadlines();
+    const int span = static_cast<int>(std::max<qint64>(2, (kStreamLeadBytes + pieceLen - 1) / pieceLen));
+    int deadline = 0;
+    for (int q = missing; q <= lastPiece && q < missing + span; ++q) {
+        if (!hasPiece(q)) {
+            h.set_piece_deadline(lt::piece_index_t(q), deadline);
+            deadline += 250;
+        }
+    }
+    return out;
+}
+
 bool BtSession::flushCache(const QString& id)
 {
     const auto h = d->handle(id);
@@ -1462,6 +1585,7 @@ void BtSession::drainAlerts()
             d->seedDetail(id, p);
             if (!pending.empty() && pending.mapped().prioritiesChanged)
                 d->prioritizeFiles(at->handle, id, d->details[id].priorities);
+            d->applyPreviewPieces(at->handle, id);
             // was: row(handle.status()), a sync call per torrent; the real one follows
             d->rows[id] = d->row(addedStatus(p, at->handle, at->handle.info_hashes()));
             at->handle.post_status();
@@ -1504,6 +1628,7 @@ void BtSession::drainAlerts()
                 continue;   // a later ask still runs
             if (fl != d->flushing.end())
                 d->flushing.erase(fl);
+            d->flushingPieces.erase(id);
             if (d->handles.contains(id)) {
                 if (d->finishFlush.remove(id))
                     emit torrentFinished(id);
@@ -1514,12 +1639,14 @@ void BtSession::drainAlerts()
             if (d->stopAtMeta.contains(id))
                 d->stopAtMetadata(md->handle, id);
             d->saveResume(md->handle);
+            d->applyPreviewPieces(md->handle, id);
             emit torrentChanged(id);
             emit metadataReceived(id);
         } else if (auto* pf = lt::alert_cast<lt::piece_finished_alert>(a)) {
             const QString id = BtTorrentView::idOf(pf->handle.info_hashes());
             if (auto hv = d->have.find(id); hv != d->have.end() && int(pf->piece_index) < hv->second.size())
                 hv->second.setBit(int(pf->piece_index));
+            d->unflushed[id].insert(int(pf->piece_index));
             if (d->joins.contains(id))
                 emit pieceResult(id, static_cast<int>(pf->piece_index), true);
         } else if (auto* tc = lt::alert_cast<lt::torrent_checked_alert>(a)) {
@@ -1589,7 +1716,9 @@ void BtSession::drainAlerts()
             for (const auto& [_, n] : d->dhtNodesBySocket)
                 d->dhtNodes += n;
         } else if (auto* fp = lt::alert_cast<lt::file_prio_alert>(a)) {
-            d->filePrioritiesApplied(BtTorrentView::idOf(fp->handle.info_hashes()));
+            const QString id = BtTorrentView::idOf(fp->handle.info_hashes());
+            d->filePrioritiesApplied(id);
+            d->applyPreviewPieces(fp->handle, id);
             if (fp->error)
                 logWarning(QStringLiteral("BitTorrent: %1").arg(message(a)));
         } else if (auto* sm = lt::alert_cast<lt::storage_moved_alert>(a)) {
@@ -1762,6 +1891,43 @@ void BtSession::Impl::wantFiles(const lt::torrent_handle& h, const QString& id, 
         details[id].priorities = std::move(prio);
         pendingAdd->second.prioritiesChanged = true;
     }
+}
+
+void BtSession::Impl::applyPreviewPieces(const lt::torrent_handle& h, const QString& id)
+{
+    if (!settings.previewPiecesFirst || !h.is_valid())
+        return;
+    const auto ti = torrentFile(id);
+    if (!ti || !ti->is_valid())
+        return;
+    const lt::file_storage& fs = ti->layout();
+    const auto dt = details.find(id);
+    const qint64 pieceLen = ti->piece_length();
+    // ~ an eD2K preview part at each end, at least one piece
+    constexpr qint64 kPreviewBytes = 9'728'000;
+    const qint64 ends = std::max(pieceLen, kPreviewBytes);
+    std::vector<std::pair<lt::piece_index_t, lt::download_priority_t>> raise;
+    for (const lt::file_index_t f : fs.file_range()) {
+        const auto i = static_cast<std::size_t>(static_cast<int>(f));
+        if (fs.pad_file_at(f)
+            || (dt != details.end() && i < dt->second.priorities.size() && dt->second.priorities[i] == lt::dont_download))
+            continue;
+        const qint64 size = fs.file_size(f);
+        const auto name = fs.file_name(f);
+        // as an eD2K download: only a file over two parts that needs its tail to play
+        if (size <= 2 * kPreviewBytes
+            || !PartFile::previewNeedsLastPart(QString::fromUtf8(name.data(), qsizetype(name.size()))))
+            continue;
+        const qint64 base = fs.file_offset(f);
+        auto add = [&](qint64 from, qint64 to) {
+            for (qint64 p = from / pieceLen; p <= to / pieceLen; ++p)
+                raise.emplace_back(lt::piece_index_t(static_cast<int>(p)), lt::top_priority);
+        };
+        add(base, std::min(base + size, base + ends) - 1);
+        add(std::max(base, base + size - ends), base + size - 1);
+    }
+    if (!raise.empty())
+        h.prioritize_pieces(raise);
 }
 
 void BtSession::Impl::stopAtMetadata(const lt::torrent_handle& h, const QString& id)

@@ -831,6 +831,13 @@ void WebServer::registerRoutes()
             return handleUsenetPreviewStream(itemId, fileIndex, req);
         });
 
+    // Torrent preview: one file of a torrent by its id and file index (-1: the largest)
+    m_server->route(QStringLiteral("/api/v1/torrents/<arg>/<arg>/preview"),
+        QHttpServerRequest::Method::Get,
+        [this](const QString& id, const QString& fileIndex, const QHttpServerRequest& req) {
+            return handleTorrentPreviewStream(id, fileIndex, req);
+        });
+
     // --- REST API (/api/v1/*), from the operation table ---
     if (m_config.restApiEnabled) {
         registerApiRoutes();
@@ -1036,6 +1043,38 @@ QFuture<QHttpServerResponse> WebServer::handlePreviewStream(const QString& hash,
     // The file is resolved fresh on every request; serveRange does the rest,
     // and is also where the response-size cap lives.
     return finishedResponse(serveRange({{path, 0, 0, 0}}, fileName, /*totalSize*/ 0,
+                                       /*availableEnd*/ 0, rangeHeader));
+}
+
+QFuture<QHttpServerResponse> WebServer::handleTorrentPreviewStream(
+    const QString& id, const QString& fileIndexText, const QHttpServerRequest& req)
+{
+    if (auto refusal = streamTokenRefusal(req, u"Torrent preview"))
+        return finishedResponse(std::move(*refusal));
+    if (!m_btStreamResolver)
+        return finishedResponse(jsonError(503, QStringLiteral("BitTorrent unavailable")));
+    bool indexOk = false;
+    const int fileIndex = fileIndexText.toInt(&indexOk);
+    if (!indexOk || fileIndex < -1)
+        return finishedResponse(jsonError(400, QStringLiteral("Invalid file index")));
+
+    const QByteArray rangeHeader = req.headers().combinedValue(QByteArrayLiteral("Range"));
+    const qint64 wantStart = parseRangeStart(rangeHeader);
+    // Seeking on: wait for the pieces and have them fetched first. Off: the file as it
+    // is on disk, holes included, as for an eD2K download
+    if (m_preferences && m_preferences->downloadSeeking()) {
+        auto probe = [this, id, fileIndex, wantStart] {
+            return m_btStreamResolver ? m_btStreamResolver(id, fileIndex, wantStart, true) : UsenetStreamSource{};
+        };
+        return serveWhenAvailable(std::move(probe), rangeHeader, kDownloadStreamWaitMs,
+                                  QStringLiteral("Torrent preview"));
+    }
+    const UsenetStreamSource src = m_btStreamResolver(id, fileIndex, wantStart, false);
+    if (!src.found || src.pieces.isEmpty() || !QFileInfo::exists(src.pieces.front().path)) {
+        logDebug([&]() -> QString { return QStringLiteral("Torrent preview: 404 — %1 file %2").arg(id).arg(fileIndex); });
+        return finishedResponse(jsonError(404, QStringLiteral("File not found")));
+    }
+    return finishedResponse(serveRange({{src.pieces.front().path, 0, 0, 0}}, src.fileName, /*totalSize*/ 0,
                                        /*availableEnd*/ 0, rangeHeader));
 }
 

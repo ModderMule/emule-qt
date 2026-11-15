@@ -5,6 +5,7 @@
 #include "utils/FileRelocate.h"
 #include "utils/FolderList.h"
 #include "utils/PathUtils.h"
+#include "utils/SafeRemove.h"
 
 #include <QTemporaryDir>
 
@@ -328,6 +329,35 @@ private slots:
         QVERIFY2(eMule::diskFileSize(path) < 16 * 1024 * 1024,
                  qPrintable(QString::number(eMule::diskFileSize(path))));
 #endif
+    }
+
+    // QDir("") is the cwd: an unset scratch folder once wiped the daemon's working directory
+    void removeDirTree_refusesEmptyRelativeRootHomeAndCwd()
+    {
+        QTemporaryDir cwd;
+        QDir().mkpath(cwd.filePath(QStringLiteral("keep")));
+        const QString before = QDir::currentPath();
+        QVERIFY(QDir::setCurrent(cwd.path()));
+        QVERIFY(!eMule::removeDirTree(QString()));
+        QVERIFY(!eMule::removeDirTree(QStringLiteral("  ")));
+        QVERIFY(!eMule::removeDirTree(QStringLiteral("keep")));
+        QVERIFY(!eMule::removeDirTree(QStringLiteral(".")));
+        QVERIFY(!eMule::removeDirTree(cwd.path()));
+        QVERIFY(QFileInfo(cwd.filePath(QStringLiteral("keep"))).isDir());
+        QVERIFY(QDir::setCurrent(before));
+        QVERIFY(!eMule::unsafeDirTreeReason(QDir::rootPath()).isEmpty());
+        QVERIFY(!eMule::unsafeDirTreeReason(QDir::homePath()).isEmpty());
+        QVERIFY(!eMule::unsafeDirTreeReason(QDir::rootPath() + QStringLiteral("Users")).isEmpty());
+    }
+
+    void removeDirTree_removesAScratchFolder()
+    {
+        QTemporaryDir tmp;
+        const QString dir = tmp.filePath(QStringLiteral("jd-1/sub"));
+        QVERIFY(QDir().mkpath(dir));
+        QVERIFY(eMule::removeDirTree(tmp.filePath(QStringLiteral("jd-1"))));
+        QVERIFY(!QFileInfo::exists(tmp.filePath(QStringLiteral("jd-1"))));
+        QVERIFY(QFileInfo(tmp.path()).isDir());
     }
 };
 

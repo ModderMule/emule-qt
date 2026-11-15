@@ -175,6 +175,7 @@ private slots:
     void foreign_unlistedProbedOnce();
     void foreign_unlistedOff();
     void foreign_routeViewNeverProbes();
+    void foreign_highIdUsesOnlyForeignCallback();
     void foreign_waitsForKey();
     void foreign_answerOnlyFromThatServer();
     void foreign_answerHashWithoutFlag();
@@ -1044,6 +1045,25 @@ void tst_NatRendezvousPaths::foreign_routeViewNeverProbes()
     QCOMPARE(v.paths.front(), PathKind::ForeignCallback);
     QVERIFY(!v.active);
     QVERIFY(f.env->foreignProbes.empty());
+}
+
+void tst_NatRendezvousPaths::foreign_highIdUsesOnlyForeignCallback()
+{
+    // HighID: server/Kad/direct callbacks cover the rest; a peer of another server is
+    // reached only through its server's foreign callback
+    HubFixture f;
+    logInLugdunum(f);
+    f.env->isFirewalled = false;
+    f.env->foreignReady(kForeignIP, kForeignPort, kForeignKey, kForeignObf);
+    QVERIFY(!f.hub->canStart(f.peerOnServer(79)));
+    QVERIFY(f.hub->routeView(f.peerOnServer(79)).paths.empty());
+    const PeerInfo peer = peerOnForeign(77);
+    QVERIFY(f.hub->mayKeepLowIdSource(peer));
+    QVERIFY(f.hub->start(peer));
+    QCOMPARE(f.hub->attempts().front()->path, PathKind::ForeignCallback);
+    const auto req = f.env->udpWith(OP_EDONKEYPROT, OP_NAT_CALLBACKREQUEST);
+    QCOMPARE(req.size(), size_t{1});
+    QCOMPARE(peekUInt32(bytes(req[0].payload) + 4), 0u);
 }
 
 void tst_NatRendezvousPaths::foreign_waitsForKey()

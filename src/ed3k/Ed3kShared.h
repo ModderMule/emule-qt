@@ -60,6 +60,11 @@ struct SharedEntry {
     /// media length in seconds and kbit/s of its keyword record (FileInfo), 0 = unknown
     std::uint32_t duration = 0;
     std::uint32_t bitrate = 0;
+    /// media tags of its keyword record (FileInfo §5.4, cut to 128 B, codec 32 B); empty = unknown
+    QString artist;
+    QString album;
+    QString title;
+    QString codec;
 
     [[nodiscard]] bool hasNote() const { return rating != 0 || !comment.isEmpty(); }
 };
@@ -174,6 +179,12 @@ public:
     [[nodiscard]] static std::uint64_t autoHashRam(std::uint64_t totalRam);
     /// Tests: replaces the RAM check (true = low).
     void setLowRamCheck(std::function<bool()> check) { m_lowRamCheck = std::move(check); }
+    /// The name own notes show (Note.nick, §10.7; cut to 64 B); unset or empty: none. Never
+    /// under the anonymous key.
+    void setNoteNick(std::function<QString()> nick) { m_noteNick = std::move(nick); }
+
+    /// @p s cut to at most @p bytes of UTF-8, on a character boundary.
+    [[nodiscard]] static QString clipUtf8(const QString& s, qsizetype bytes);
     /// Cache entries whose block values are in RAM now.
     [[nodiscard]] std::size_t hashesInRam() const;
     /// The `ed2k` Alias message (proto) of a file (alias.md §2): MD4 ‖ size as 8 B big endian.
@@ -234,7 +245,8 @@ private:
         bool shared = false;  ///< open on the engine, published
         ::ed3k::Bytes alias;  ///< the ALIAS record published; empty: none
         bool keywords = false;  ///< published with Publish::Both
-        qint64 noteAtMs = 0;    ///< NOTE record last published (ms since epoch); 0: none
+        // was: qint64 noteAtMs = 0; (packmule stores a kept note again by itself)
+        bool notePublished = false;   ///< a NOTE record kept published
         int rehashTries = 0;    ///< hashes that failed (unreadable)
     };
 
@@ -267,9 +279,12 @@ private:
     /// Upload priorities read again (the user's, or auto): changed ones to the engine.
     /// Own notes too: a changed one published, a held one again before it expires.
     void refreshPriorities();
-    /// Publishes @p f's NOTE record (its rating and comment) when it has one and does not
-    /// hold back; under the file's key. A note lives 24 h (§10.3): published again by then.
+    /// Publishes @p f's NOTE record (rating, comment, nick) when it has one and does not hold
+    /// back, under the file's key; packmule stores it again before its 24 h end. A cleared
+    /// note is withdrawn (its copies run out).
     void publishNote(File& f, const ::ed3k::Root& root);
+    /// The nick of a note of @p root: none under the anonymous key.
+    [[nodiscard]] std::string noteNick(const ::ed3k::Root& root) const;
     [[nodiscard]] const File* fileOfMember(int member) const;
     /// Size and date of @p path on disk agree with @p f.
     [[nodiscard]] static bool unchanged(const QString& path, std::uint64_t size, qint64 mtimeMs);
@@ -325,6 +340,7 @@ private:
     std::function<bool(const QString&)> m_neverShared;
     int m_lowRamPercent = 20;
     std::function<bool()> m_lowRamCheck;
+    std::function<QString()> m_noteNick;
     qint64 m_lowRamCheckedMs = 0;
     bool m_lowRam = false;
     int m_hashRamMiB = 0;

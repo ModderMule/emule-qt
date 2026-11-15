@@ -79,9 +79,22 @@ struct BtSettings {
 
     /// Torrent Verbose + btPeerConnectLog: peer connect failures and disconnects in the log
     bool peerConnectLog = false;
+    /// "Download preview parts first": the first and last pieces of each wanted file
+    /// that needs its tail to play (video, archives, ...) at top priority
+    bool previewPiecesFirst = false;
 
     /// A SAM bridge to use now: I2P on and the router reachable.
     [[nodiscard]] bool hasSam() const { return i2pEnabled && i2pSamPort != 0 && !i2pSamHost.isEmpty(); }
+};
+
+/// One file of a torrent as a player reads it (BtSession::streamFrom).
+struct BtStreamSpan {
+    QString path;   ///< on disk
+    QString name;
+    qint64 size = 0;
+    /// end of the bytes on disk from the asked offset on; == offset: none
+    qint64 availableEnd = 0;
+    bool complete = false;
 };
 
 /// State of a torrent as the GUI shows it. Values are IPC: append only.

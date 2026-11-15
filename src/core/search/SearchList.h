@@ -255,8 +255,9 @@ public:
     /// dropped and the Comments tab stays empty forever. MFC does the same, and
     /// first: CSearchList::AddNotes (srchybrid/SearchList.cpp:665-677).
     /// @return true if at least one search result took the note.
+    /// @p name: who the note is shown as (an ed3k note's nick); empty: the network's name.
     bool addNotes(const uint8* fileHash, const QByteArray& publisherId,
-                  uint8 rating, const QString& comment);
+                  uint8 rating, const QString& comment, const QString& name = {});
 
     /// Flag every search result with @p fileHash as having a NOTES lookup in
     /// flight, so the detail dialog can show "(Kad search in progress...)".

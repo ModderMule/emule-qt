@@ -58,6 +58,13 @@ bool Ed3kSearch::isRunning(uint32 searchID) const
     return m_runs.contains(searchID);
 }
 
+QString Ed3kSearch::noteAuthor(const QString& nick, const QByteArray& publisher)
+{
+    if (nick.isEmpty())
+        return {};
+    return QStringLiteral("%1 (%2)").arg(nick, QString::fromLatin1(publisher.left(4).toHex()));
+}
+
 bool Ed3kSearch::searchNotes(const QByteArray& root)
 {
     auto* e = m_session.engine();
@@ -131,6 +138,15 @@ std::unique_ptr<SearchFile> Ed3kSearch::toSearchFile(const ::ed3k::FoundFile& fo
         file->addTagUnique(Tag(FT_MEDIA_LENGTH, uint32(found.duration)));
     if (found.bitrate != 0)
         file->addTagUnique(Tag(FT_MEDIA_BITRATE, uint32(found.bitrate)));
+    // the record's media tags (§5.4): the columns eD2K rows fill from their tags
+    using Found = ::ed3k::FoundFile;
+    static constexpr std::pair<std::string Found::*, uint8> kMedia[] = {
+        {&Found::artist, FT_MEDIA_ARTIST}, {&Found::album, FT_MEDIA_ALBUM}, {&Found::title, FT_MEDIA_TITLE}, {&Found::codec, FT_MEDIA_CODEC}};
+    for (const auto& [field, tag] : kMedia) {
+        const std::string& v = found.*field;
+        if (const QString s = QString::fromUtf8(v.data(), qsizetype(v.size())).trimmed(); !s.isEmpty())
+            file->addTagUnique(Tag(tag, s));
+    }
     file->setEd3k(bytesOf(found.root.bytes), found.ed2k ? bytesOf(*found.ed2k) : QByteArray());
     // AUTHOR of filter lists: the record's publisher (filter-list.md §1)
     file->setEd3kPublisher(bytesOf(found.publisher.bytes));
@@ -306,10 +322,12 @@ void Ed3kSearch::onEventPolled(const ::ed3k::Event& event, ::ed3k::KeyKind key, 
             const QByteArray publisher = bytesOf(note.publisher.bytes);
             const QString text = QString::fromUtf8(note.text.data(), qsizetype(note.text.size()));
             const std::uint32_t rating = std::min<std::uint32_t>(note.rating, 5);
+            const QString nick = QString::fromUtf8(note.nick.data(), qsizetype(note.nick.size())).trimmed();
             if (m_notes)
-                m_notes(root, publisher, rating, text);
+                m_notes(root, publisher, rating, text, nick);
             else if (theApp.searchList)
-                (void)theApp.searchList->addNotes(reinterpret_cast<const uint8*>(root.constData()), publisher, uint8(rating), text);
+                (void)theApp.searchList->addNotes(reinterpret_cast<const uint8*>(root.constData()), publisher, uint8(rating), text,
+                                                  noteAuthor(nick, publisher));
         }
         logEd3kDebug([&]() -> QString { return QStringLiteral("<<< ed3k notes search %1: %2 note(s)").arg(QString::fromLatin1(root.toHex())).arg(found->notes.size()); });
         // reported from the event loop, not inside the pump

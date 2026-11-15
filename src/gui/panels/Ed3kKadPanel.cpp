@@ -2,6 +2,8 @@
 #include "panels/Ed3kKadPanel.h"
 
 #include "app/Ed3kLinkActions.h"
+#include "app/SkinIcons.h"
+#include "dialogs/Ed3kSetsDialog.h"
 #include "app/IpcClient.h"
 #include "app/UiState.h"
 #include "controls/AbstractListView.h"
@@ -386,6 +388,15 @@ QWidget* Ed3kKadPanel::createControlsPanel()
     listsLayout->addLayout(fileRow);
     layout->addWidget(lists);
 
+    // followed ed3k sets, live streams, broadcasts (no MFC original): global, not per file
+    m_setsBtn = new QPushButton(skinIcon(QStringLiteral(":/icons/Folders.ico")), tr("ed3k Sets..."));
+    m_setsBtn->setToolTip(tr("Followed ed3k sets, live streams and broadcasts"));
+    connect(m_setsBtn, &QPushButton::clicked, this, [this] { Ed3kSetsDialog::showDialog(this, m_ipc); });
+    auto* setsRow = new QHBoxLayout;
+    setsRow->addStretch();
+    setsRow->addWidget(m_setsBtn);
+    layout->addLayout(setsRow);
+
     auto* separator = new QFrame;
     separator->setFrameShape(QFrame::HLine);
     separator->setFrameShadow(QFrame::Sunken);
@@ -604,6 +615,7 @@ void Ed3kKadPanel::updateControls()
     const bool listsOk = !m_listsRadio->isChecked() || !thePrefs.ed3kNodeLists().isEmpty();
     m_bootstrapBtn->setEnabled(m_running && linkOk && listsOk);
     m_exportBtn->setEnabled(m_running && m_contacts > 0);
+    m_setsBtn->setEnabled(m_available && ipcReady());
 }
 
 } // namespace eMule

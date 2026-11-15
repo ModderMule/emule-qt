@@ -82,8 +82,8 @@ public:
 
     // -- Client flow ---------------------------------------------------------
 
-    /// We are firewalled, the peer is a LowID, a path can introduce us and the peer did
-    /// not fail before.
+    /// The peer is a LowID, a path can introduce us (HighID: only the foreign callback)
+    /// and the peer did not fail before.
     [[nodiscard]] bool canStart(const PeerInfo& peer) const;
     [[nodiscard]] bool canStart(const UpDownClient& client) const;
 
@@ -95,7 +95,7 @@ public:
     /// it, in try order. Never probes a server.
     struct RouteView {
         bool enabled = false;      ///< NAT-T on
-        bool firewalled = false;   ///< we are LowID: the only case a rendezvous starts
+        bool firewalled = false;   ///< we are LowID; else only the foreign callback is used
         bool dataPath = false;     ///< QUIC or a confident public IPv6
         bool failed = false;       ///< the peer failed this session
         bool active = false;       ///< an attempt runs
@@ -110,7 +110,7 @@ public:
     /// The peer failed this session; do not retry.
     [[nodiscard]] bool hasFailed(const PeerInfo& peer) const;
 
-    /// Keep a LowID source while we are firewalled: some path could introduce us.
+    /// Keep a LowID source: some path could introduce us (see pathAllowed).
     [[nodiscard]] bool mayKeepLowIdSource(const PeerInfo& peer) const;
     /// Same, through theApp.natRendezvous (false when there is none).
     [[nodiscard]] static bool keepLowIdSource(const PeerInfo& peer);
@@ -189,6 +189,8 @@ private:
     /// Paths in the order to try them for @p peer; see the constructor.
     /// @p probe false: no server probe (display).
     [[nodiscard]] std::vector<NatPath*> orderedPaths(const PeerInfo& peer, bool probe = true) const;
+    /// Firewalled: every path. HighID: only the foreign callback.
+    [[nodiscard]] bool pathAllowed(const NatPath& path) const;
     /// Requester whose path never produced an endpoint: move to the next untried path
     /// that can serve the peer. False when none is left.
     bool tryNextPath(Attempt& attempt);

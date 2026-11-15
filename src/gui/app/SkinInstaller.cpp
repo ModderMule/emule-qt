@@ -8,6 +8,7 @@
 #include "net/HttpDefaults.h"        // src/core
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
+#include "utils/SafeRemove.h"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -213,21 +214,21 @@ QString SkinInstaller::unpack(const SkinRelease& release, const QString& zipPath
         return tr("The skin archive is too large.");
 
     const QString staging = skinsRoot() + QStringLiteral("/.%1.new").arg(release.id);
-    QDir(staging).removeRecursively();
+    removeDirTree(staging);
     if (!reader.extractAll(staging)) {
-        QDir(staging).removeRecursively();
+        removeDirTree(staging);
         return tr("Cannot unpack the skin archive: %1").arg(reader.lastError());
     }
     reader.close();
 
     // one top folder (as zipped by Finder/Explorer) becomes the bundle itself
-    QDir(staging + QStringLiteral("/__MACOSX")).removeRecursively();
+    removeDirTree(staging + QStringLiteral("/__MACOSX"));
     QString bundle = staging;
     const QStringList top = QDir(staging).entryList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden);
     if (top.size() == 1 && QFileInfo(staging + QLatin1Char('/') + top.first()).isDir())
         bundle = staging + QLatin1Char('/') + top.first();
     if (QDir(bundle).entryList(profileFilter(), QDir::Files).isEmpty()) {
-        QDir(staging).removeRecursively();
+        removeDirTree(staging);
         return tr("The skin archive has no *.eMuleSkin.ini.");
     }
 
@@ -241,27 +242,27 @@ QString SkinInstaller::unpack(const SkinRelease& release, const QString& zipPath
         {QStringLiteral("installed"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
     };
     if (!meta.open(QIODevice::WriteOnly) || meta.write(QJsonDocument(obj).toJson()) < 0 || !meta.commit()) {
-        QDir(staging).removeRecursively();
+        removeDirTree(staging);
         return tr("Cannot write the skin metadata.");
     }
 
     // swap: old copy aside, new one in, old one gone
     const QString target = skinDir(release.id);
     const QString old = skinsRoot() + QStringLiteral("/.%1.old").arg(release.id);
-    QDir(old).removeRecursively();
+    removeDirTree(old);
     const bool hadOld = QFileInfo::exists(target);
     if (hadOld && !QDir().rename(target, old)) {
-        QDir(staging).removeRecursively();
+        removeDirTree(staging);
         return tr("Cannot replace %1 (in use?).").arg(QDir::toNativeSeparators(target));
     }
     if (!QDir().rename(bundle, target)) {
         if (hadOld)
             QDir().rename(old, target);
-        QDir(staging).removeRecursively();
+        removeDirTree(staging);
         return tr("Cannot move the skin to %1.").arg(QDir::toNativeSeparators(target));
     }
-    QDir(staging).removeRecursively();   // empty, or gone when it was the bundle
-    QDir(old).removeRecursively();
+    removeDirTree(staging);   // empty, or gone when it was the bundle
+    removeDirTree(old);
     return {};
 }
 

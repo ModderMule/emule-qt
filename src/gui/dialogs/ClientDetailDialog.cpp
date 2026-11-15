@@ -350,7 +350,7 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
             cross += QStringLiteral(" \u2014 %1").arg(foreignServer);
         addDetailRow(form, tr("Cross-server callback"), cross);
 
-        // NAT-T introducers in try order; a rendezvous starts only while we are firewalled
+        // NAT-T introducers in try order (HighID: only the foreign callback)
         const QCborMap natt = cb.value(QLatin1StringView("natt")).toMap();
         if (!natt.isEmpty()) {
             QStringList paths;
@@ -371,8 +371,6 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
                 text += QStringLiteral(" (%1)").arg(tr("in progress"));
             else if (nflag(QLatin1StringView("failed")))
                 text += QStringLiteral(" (%1)").arg(tr("failed this session"));
-            else if (!paths.isEmpty() && !nflag(QLatin1StringView("firewalled")))
-                text += QStringLiteral(" (%1)").arg(tr("used only while we are firewalled"));
             else if (!paths.isEmpty() && !nflag(QLatin1StringView("dataPath")))
                 text += QStringLiteral(" (%1)").arg(tr("no QUIC or IPv6 data path"));
             addDetailRow(form, tr("NAT-T rendezvous"), text);

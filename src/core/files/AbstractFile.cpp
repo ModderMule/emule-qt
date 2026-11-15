@@ -234,11 +234,11 @@ void AbstractFile::setKadCommentSearchRunning(bool val)
 }
 
 void AbstractFile::addKadNote(const QByteArray& publisherId, uint8 rating,
-                              const QString& comment)
+                              const QString& comment, const QString& name)
 {
     // Last note from a publisher wins — re-running a NOTES lookup must refresh
     // that peer's entry, not append a second copy of it.
-    m_kadNotesCache[publisherId] = KadNote{rating, comment};
+    m_kadNotesCache[publisherId] = KadNote{rating, comment, name};
     updateFileRatingCommentAvail(true);
 }
 

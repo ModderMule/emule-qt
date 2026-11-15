@@ -11,6 +11,7 @@
 #include "stats/NetworkCounters.h"
 #include "stats/Statistics.h"
 #include "utils/Log.h"
+#include "webserver/WebServer.h"
 
 #include <QCborArray>
 #include <QDir>
@@ -306,6 +307,26 @@ QString moveTo(const QString& id, const QString& dir)
     if (target.isEmpty() || QDir::isRelativePath(target))
         return QStringLiteral("not an absolute folder");
     return s_session->moveStorage(id, target) ? QString() : QStringLiteral("no such torrent or folder");
+}
+
+UsenetStreamSource streamFrom([[maybe_unused]] const QString& id, [[maybe_unused]] int fileIndex,
+                              [[maybe_unused]] qint64 offset, [[maybe_unused]] bool fetch)
+{
+    UsenetStreamSource src;
+#ifdef EMULE_HAVE_BITTORRENT
+    if (!s_session || offset < 0)
+        return src;
+    const auto span = s_session->streamFrom(id, fileIndex, offset, fetch);
+    if (!span)
+        return src;
+    src.found = true;
+    src.fileName = span->name;
+    src.totalSize = span->size;
+    src.complete = span->complete;
+    src.availableEnd = span->availableEnd;
+    src.pieces = {{span->path, 0, 0, span->size}};
+#endif
+    return src;
 }
 
 void setI2pRouter(I2pRouter* router)
@@ -686,6 +707,7 @@ bt::BtSettings settingsFromPrefs()
     s.i2pTunnelQuantity = thePrefs.btI2pTunnelQuantity();
     s.i2pTrackers = thePrefs.btI2pTrackers();
     s.peerConnectLog = thePrefs.btVerboseLog() && thePrefs.btPeerConnectLog();
+    s.previewPiecesFirst = thePrefs.previewPrio();
     return s;
 }
 

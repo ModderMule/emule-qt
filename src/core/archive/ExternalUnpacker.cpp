@@ -6,6 +6,7 @@
 
 #include "archive/ArchiveReader.h"
 #include "utils/Log.h"
+#include "utils/SafeRemove.h"
 
 #include <QDir>
 #include <QDirIterator>
@@ -214,7 +215,7 @@ ExternalUnpacker::Result ExternalUnpacker::extract(const QStringList& volumes,
     const int code = run(args, redacted, {}, nullptr, error);
 
     harvest(staging, destDir, result);
-    QDir(staging).removeRecursively();
+    removeDirTree(staging);
 
     if (m_cancelled.load()) {
         for (const QString& path : std::as_const(result.extractedFiles))

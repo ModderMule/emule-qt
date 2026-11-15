@@ -79,6 +79,7 @@ private:
     QSpinBox* m_maxAgeSpin = nullptr;
     QCheckBox* m_seedEd2kCheck = nullptr;
     QPushButton* m_exportBtn = nullptr;
+    QPushButton* m_setsBtn = nullptr;   ///< ed3k Sets... (was in the Transfers file menu)
     ContactsGraph* m_contactsGraph = nullptr;
     KadContactHistogram* m_networkGraph = nullptr;
     QTimer* m_graphTimer = nullptr;

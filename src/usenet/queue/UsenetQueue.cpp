@@ -19,6 +19,7 @@
 #include "utils/OtherFunctions.h"
 #include "utils/PathUtils.h"
 #include "utils/StringUtils.h"
+#include "utils/SafeRemove.h"
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -592,7 +593,7 @@ bool UsenetQueue::removeItem(const QString& id, bool deleteFiles)
 
         if (deleteFiles) {
             const QString itemDir = m_items.at(size_t(i))->item->workDir(thePrefs.usenetTempDir());
-            QDir(itemDir).removeRecursively();
+            removeDirTree(itemDir);
         }
         // Recorded before the erase, while the item is still readable. A release
         // that finished and is only now being cleared is still Downloaded —
@@ -4068,7 +4069,7 @@ void UsenetQueue::onPostFinished(const UsenetPostResult& result)
 
     // Everything worth keeping has been moved out by now; what is left is
     // scratch, archive volumes and recovery data.
-    QDir(rt->item->workDir(thePrefs.usenetTempDir())).removeRecursively();
+    removeDirTree(rt->item->workDir(thePrefs.usenetTempDir()));
 
     // "Auto clear completed downloads" (MFC PartFile.cpp:3000). Deferred so the
     // finish listeners see the item first.

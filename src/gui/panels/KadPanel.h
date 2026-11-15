@@ -30,6 +30,8 @@ public:
 
     /// 0 = eD2K Contacts, 1 = eD2K Search Details, 2 = ed3k Contacts, 3 = ed3k Search Details.
     void switchToSubTab(int index);
+    /// Bottom tabs of the page shown: 0 = Outgoing, 1 = Incoming Searches.
+    void switchToBottomTab(int index);
 
     [[nodiscard]] Ed2kKadPanel* ed2kPanel() const { return m_ed2k; }
     [[nodiscard]] Ed3kKadPanel* ed3kPanel() const { return m_ed3k; }

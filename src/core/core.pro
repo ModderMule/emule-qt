@@ -440,6 +440,7 @@ HEADERS += \
     utils/FileRelocate.h \
     utils/FolderList.h \
     utils/PathUtils.h \
+    utils/SafeRemove.h \
     utils/PerfLog.h \
     utils/PlatformUtils.h \
     utils/SafeFile.h \

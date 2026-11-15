@@ -758,7 +758,7 @@ SearchFile* SearchList::adoptRestoredFile(std::unique_ptr<SearchFile> file)
 // ---------------------------------------------------------------------------
 
 bool SearchList::addNotes(const uint8* fileHash, const QByteArray& publisherId,
-                          uint8 rating, const QString& comment)
+                          uint8 rating, const QString& comment, const QString& name)
 {
     if (!fileHash)
         return false;
@@ -770,7 +770,7 @@ bool SearchList::addNotes(const uint8* fileHash, const QByteArray& publisherId,
         for (const auto& file : entry.files) {
             if (!md4equ(file->fileHash(), fileHash))
                 continue;
-            file->addKadNote(publisherId, rating, comment);
+            file->addKadNote(publisherId, rating, comment, name);
             added = true;
             if (!file->listParent())
                 assess(file.get());
@@ -780,7 +780,7 @@ bool SearchList::addNotes(const uint8* fileHash, const QByteArray& publisherId,
     }
     // No resultUpdated: a restored row is in no list, its dialog re-fetches by itself
     if (SearchFile* restored = restoredFile(fileHash)) {
-        restored->addKadNote(publisherId, rating, comment);
+        restored->addKadNote(publisherId, rating, comment, name);
         assess(restored);
         added = true;
     }

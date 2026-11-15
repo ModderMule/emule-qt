@@ -12,6 +12,7 @@
 #include "utils/ReadOnceHint.h"
 #include "utils/Log.h"
 #include "utils/PathUtils.h"
+#include "utils/SafeRemove.h"
 
 #include <QCoreApplication>
 #include <QDataStream>
@@ -997,7 +998,7 @@ void Ed3kJoinBase::shareKept()
         if (!keepsOwner(owner)) {
             logDebug([&]() -> QString { return QStringLiteral("%1 is gone: what was kept of it is dropped").arg(owner); });
             forgetBlobWrites(dir.filePath(sub));
-            QDir(dir.filePath(sub)).removeRecursively();
+            removeDirTree(dir.filePath(sub));
             continue;
         }
         if (!sharesKeptOwner(owner))
@@ -1025,7 +1026,7 @@ void Ed3kJoinBase::shareKept()
 void Ed3kJoinBase::dropKept(const QString& owner)
 {
     forgetBlobWrites(keptDir(owner));
-    QDir(keptDir(owner)).removeRecursively();
+    removeDirTree(keptDir(owner));
 }
 
 QString Ed3kJoinBase::keptDir(const QString& owner) const

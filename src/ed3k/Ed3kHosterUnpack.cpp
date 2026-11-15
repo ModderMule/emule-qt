@@ -3,6 +3,7 @@
 #include "post/UsenetPostProcessor.h"
 #include "post/UsenetUnpacker.h"
 #include "prefs/Preferences.h"
+#include "utils/SafeRemove.h"
 
 #include <QDir>
 #include <QDirIterator>
@@ -80,7 +81,7 @@ HosterUnpackResult Ed3kHosterUnpack::run(const HosterUnpackJob& job, const std::
 {
     HosterUnpackResult r;
     r.firstVolume = job.firstVolume;
-    QDir(job.scratchDir).removeRecursively();
+    removeDirTree(job.scratchDir);
     if (!QDir().mkpath(job.scratchDir)) {
         r.error = QStringLiteral("cannot create %1").arg(job.scratchDir);
         return r;
@@ -99,7 +100,7 @@ HosterUnpackResult Ed3kHosterUnpack::run(const HosterUnpackJob& job, const std::
     if (!u.ok || u.nothingToDo) {
         r.passwordRequired = u.passwordRequired;
         r.error = u.nothingToDo ? QStringLiteral("the first volume is missing") : u.error;
-        QDir(job.scratchDir).removeRecursively();
+        removeDirTree(job.scratchDir);
         return r;
     }
 
@@ -132,7 +133,7 @@ HosterUnpackResult Ed3kHosterUnpack::run(const HosterUnpackJob& job, const std::
         }
         r.files << to;
     }
-    QDir(job.scratchDir).removeRecursively();
+    removeDirTree(job.scratchDir);
     r.volumes = consumedOutside;
     r.ok = r.error.isEmpty();
     if (progress)

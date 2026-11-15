@@ -645,6 +645,8 @@ private slots:
     void previewEndProbeIsNotWaitedOut();
     void ed3kPreviewSeekWaitsForTheBytesWhenSeekingIsOn();
     void ed3kPreviewIgnoresTheStreamResolverWhenSeekingIsOff();
+    void torrentPreviewWaitsAndFetchesWhenSeekingIsOn();
+    void torrentPreviewServesTheFileAsIsWhenSeekingIsOff();
 
     // Graphs page data
     // Incoming folder browsing — the remote core's stand-in for the file manager
@@ -2237,6 +2239,87 @@ void tst_WebServer::ed3kPreviewIgnoresTheStreamResolverWhenSeekingIsOff()
         QByteArrayLiteral("bytes=0-"));
     m_webServer->setEd3kStreamResolver({});
     QVERIFY(!asked);
+}
+
+void tst_WebServer::torrentPreviewWaitsAndFetchesWhenSeekingIsOn()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    constexpr qint64 kSize = 512 * 1024;
+    constexpr qint64 kSeek = 300 * 1024;
+    const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSize);
+    QVERIFY(!path.isEmpty());
+
+    QElapsedTimer since;
+    since.start();
+    QList<qint64> offsets;
+    bool fetchedAlways = true;
+    QString askedId;
+    int askedFile = -2;
+    m_webServer->setBtStreamResolver([&](const QString& id, int file, qint64 offset, bool fetch) {
+        askedId = id;
+        askedFile = file;
+        offsets << offset;
+        fetchedAlways = fetchedAlways && fetch;
+        UsenetStreamSource src;
+        src.found = true;
+        src.fileName = QStringLiteral("movie.mkv");
+        src.totalSize = kSize;
+        src.pieces = {{path, 0, 0, kSize}};
+        src.availableEnd = since.elapsed() > 400 ? kSize : offset;
+        return src;
+    });
+    m_preferences->setDownloadSeeking(true);
+
+    const auto resp = sendRanged(
+        QStringLiteral("/api/v1/torrents/bt:v1:%1/2/preview?token=%2")
+            .arg(QString(40, QLatin1Char('c')), m_webServer->streamToken()),
+        QByteArrayLiteral("bytes=%1-").replace("%1", QByteArray::number(kSeek)));
+
+    m_preferences->setDownloadSeeking(false);
+    m_webServer->setBtStreamResolver({});
+
+    QCOMPARE(resp.statusCode, 206);
+    QCOMPARE(qint64(resp.rawBody.size()), kSize - kSeek);
+    QCOMPARE(askedId, QStringLiteral("bt:v1:") + QString(40, QLatin1Char('c')));
+    QCOMPARE(askedFile, 2);
+    QVERIFY(offsets.size() > 1);
+    QVERIFY(std::ranges::all_of(offsets, [](qint64 o) { return o == kSeek; }));
+    QVERIFY(fetchedAlways);
+}
+
+void tst_WebServer::torrentPreviewServesTheFileAsIsWhenSeekingIsOff()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    constexpr qint64 kSize = 64 * 1024;
+    const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSize);
+    QVERIFY(!path.isEmpty());
+
+    // off: asked once without fetching, then the whole file, holes and all
+    int calls = 0;
+    bool fetched = false;
+    m_webServer->setBtStreamResolver([&](const QString&, int, qint64, bool fetch) {
+        ++calls;
+        fetched = fetched || fetch;
+        UsenetStreamSource src;
+        src.found = true;
+        src.fileName = QStringLiteral("movie.mkv");
+        src.totalSize = kSize;
+        src.pieces = {{path, 0, 0, kSize}};
+        return src;   // availableEnd 0: nothing on disk
+    });
+    QVERIFY(!m_preferences->downloadSeeking());
+    const auto resp = sendRanged(
+        QStringLiteral("/api/v1/torrents/bt:v1:%1/-1/preview?token=%2")
+            .arg(QString(40, QLatin1Char('d')), m_webServer->streamToken()),
+        QByteArrayLiteral("bytes=0-"));
+    m_webServer->setBtStreamResolver({});
+
+    QCOMPARE(resp.statusCode, 206);
+    QCOMPARE(qint64(resp.rawBody.size()), kSize);
+    QCOMPARE(calls, 1);
+    QVERIFY(!fetched);
 }
 
 void tst_WebServer::previewGivesUpWhenTheItemDisappears()

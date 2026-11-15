@@ -6,6 +6,7 @@
 #include "net/HttpDefaults.h"
 #include "net/HttpStreamDownload.h"
 #include "utils/Log.h"
+#include "utils/SafeRemove.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -318,7 +319,7 @@ void Ed3kJavaRuntime::setAllowed(bool allowed)
     }
     if (!m_archive.isEmpty())
         QFile::remove(std::exchange(m_archive, {}));
-    QDir(runtimeDir() + QStringLiteral(".tmp")).removeRecursively();
+    removeDirTree(runtimeDir() + QStringLiteral(".tmp"));
     logHoster(QStringLiteral("hoster: Java runtime download stopped (hoster downloads switched off)"));
     setState(State::Missing);
 }
@@ -455,7 +456,7 @@ void Ed3kJavaRuntime::unpack(const QString& archive)
     setState(State::Unpacking);
     m_archive = archive;
     const QString tmp = runtimeDir() + QStringLiteral(".tmp");
-    QDir(tmp).removeRecursively();
+    removeDirTree(tmp);
     QDir().mkpath(tmp);
 #ifdef Q_OS_WIN
     // the zip read in-process: no tar.exe before Windows 10 1803, and a GNU tar first on
@@ -502,7 +503,7 @@ void Ed3kJavaRuntime::unpackDone(bool ok)
     const QString tmp = runtimeDir() + QStringLiteral(".tmp");
     QFile::remove(std::exchange(m_archive, {}));
     if (!ok) {
-        QDir(tmp).removeRecursively();
+        removeDirTree(tmp);
         setState(State::Failed, tr("Could not unpack the Java runtime"));
         return;
     }
@@ -510,12 +511,12 @@ void Ed3kJavaRuntime::unpackDone(bool ok)
     const QStringList top = QDir(tmp).entryList(QDir::Dirs | QDir::NoDotAndDotDot);
     const QString home = top.size() == 1 ? QDir(tmp).filePath(top.first()) : tmp;
     if (javaIn(home).isEmpty()) {
-        QDir(tmp).removeRecursively();
+        removeDirTree(tmp);
         setState(State::Failed, tr("The Java runtime archive has no java program"));
         return;
     }
     const bool installed = installTree(home);
-    QDir(tmp).removeRecursively();
+    removeDirTree(tmp);
     if (!installed)
         return;
 #ifdef Q_OS_MACOS
@@ -538,7 +539,7 @@ bool Ed3kJavaRuntime::installTree(const QString& home)
     const QDir parent(QFileInfo(dir).absolutePath());
     const QString base = QFileInfo(dir).fileName() + QStringLiteral(".old");
     for (const QString& n : parent.entryList({base + u'*'}, QDir::Dirs | QDir::NoDotAndDotDot))
-        QDir(parent.filePath(n)).removeRecursively();
+        removeDirTree(parent.filePath(n));
     QString old = parent.filePath(base);
     if (QFileInfo::exists(old))   // still locked
         old += u'-' + QString::number(QDateTime::currentMSecsSinceEpoch());
@@ -553,7 +554,7 @@ bool Ed3kJavaRuntime::installTree(const QString& home)
         setState(State::Failed, tr("Could not install the Java runtime"));
         return false;
     }
-    if (!QDir(old).removeRecursively())
+    if (!removeDirTree(old))
         logHosterWarning(QStringLiteral("hoster: cannot remove the old Java runtime %1").arg(old));
     return true;
 }
@@ -617,7 +618,7 @@ void Ed3kJavaRuntime::dropInstance()
     // renamed first: a runtime in use on Windows cannot be renamed, so it is kept whole
     if (!QDir().rename(own, aside))
         return;
-    QDir(aside).removeRecursively();
+    removeDirTree(aside);
     QDir().rmdir(QFileInfo(own).path());
     logHoster(QStringLiteral("hoster: own Java runtime %1 removed, the shared one runs").arg(own));
 }

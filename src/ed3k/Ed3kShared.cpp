@@ -42,8 +42,11 @@ constexpr qint64 kHashesMagicLen = 8;
 /// rewritten when the dead values are at least this much and more than the live ones
 constexpr qint64 kCompactMinDead = 4 << 20;
 constexpr qint64 kCopyChunk = 1 << 20;
-/// own NOTE records live 24 h (Protocol.md §10.3): published again after 20 h
-constexpr qint64 kNoteRepublishMs = 20LL * 3600 * 1000;
+// was: kNoteRepublishMs (20 h): packmule stores a kept note again by itself
+/// Note.nick and the media tags at most (Protocol.md §10.7, §5.4)
+constexpr qsizetype kNickMax = 64;
+constexpr qsizetype kMediaTagMax = 128;
+constexpr qsizetype kCodecMax = 32;
 /// the index while hashing: rewritten at most this often (values are on disk at once)
 constexpr int kHashRunSaveDelayMs = 30'000;
 /// the RAM check (a syscall) at most this often
@@ -178,12 +181,27 @@ std::optional<SharedEntry> Ed3kShared::entryOf(const KnownFile& file)
     auto& f = const_cast<KnownFile&>(file);
     e.rating = std::min<std::uint32_t>(f.getFileRating(), 5);
     // a note's text is at most 512 bytes of UTF-8 (§10.3); eMule's comment limit is 128 characters
-    e.comment = f.getFileComment();
-    while (e.comment.toUtf8().size() > 512)
-        e.comment.chop(1);
+    // was: while (e.comment.toUtf8().size() > 512) e.comment.chop(1);
+    e.comment = clipUtf8(f.getFileComment(), 512);
     e.duration = file.getIntTagValue(FT_MEDIA_LENGTH);
     e.bitrate = file.getIntTagValue(FT_MEDIA_BITRATE);
+    e.artist = clipUtf8(file.getStrTagValue(FT_MEDIA_ARTIST), kMediaTagMax);
+    e.album = clipUtf8(file.getStrTagValue(FT_MEDIA_ALBUM), kMediaTagMax);
+    e.title = clipUtf8(file.getStrTagValue(FT_MEDIA_TITLE), kMediaTagMax);
+    e.codec = clipUtf8(file.getStrTagValue(FT_MEDIA_CODEC), kCodecMax);
     return e;
+}
+
+QString Ed3kShared::clipUtf8(const QString& s, qsizetype bytes)
+{
+    QString out = s;
+    while (out.toUtf8().size() > bytes) {
+        out.chop(1);
+        // not half a surrogate pair
+        if (!out.isEmpty() && out.back().isHighSurrogate())
+            out.chop(1);
+    }
+    return out;
 }
 
 void Ed3kShared::connectList(SharedFileList& list)
@@ -790,7 +808,7 @@ void Ed3kShared::share(File& f, Hashed& h)
     // FileStatus.note: the uploader's rating and comment (§12.2)
     std::optional<ffi::Note> note;
     if (f.entry.hasNote())
-        note = ffi::Note{f.entry.rating, utf8(f.entry.comment)};
+        note = ffi::Note{f.entry.rating, utf8(f.entry.comment), noteNick(h.root)};
     // was: ffi::SharedFile file{h.root, h.size, name, ed2k, std::nullopt, ffi::Have::complete(), hashes};
     ffi::SharedFile file{h.root, h.size, name, ed2k, note, ffi::Have::complete(), hashes};
     file.hashesStored = stored;
@@ -809,7 +827,11 @@ void Ed3kShared::share(File& f, Hashed& h)
     const auto t = m_session.now();
     // sources 1: this node, the file held complete (Protocol.md §10.7)
     // was: const ffi::FileInfo info{h.root, h.size, name, ed2k, 1, 0, 0, 0, 0, 0};
-    const ffi::FileInfo info{h.root, h.size, name, ed2k, 1, 0, f.entry.duration, f.entry.bitrate, 0, 0};
+    ffi::FileInfo info{h.root, h.size, name, ed2k, 1, 0, f.entry.duration, f.entry.bitrate, 0, 0};
+    info.artist = utf8(f.entry.artist);
+    info.album = utf8(f.entry.album);
+    info.title = utf8(f.entry.title);
+    info.codec = utf8(f.entry.codec);
     // was: ToDo: keywords (Publish::Both) for files the user wants found over ed3k search
     // (done: every shared file, as eD2K's share list; only the source while holding back)
     // if (auto ok = e->publish(t, info, ffi::Publish::Source); !ok)
@@ -974,12 +996,12 @@ void Ed3kShared::refreshPriorities()
             if (c != m_cache.end())
                 updateUploadPriority(c->second.root);
         }
-        // own note: changed → at once; held → again before its 24 h end
+        // own note changed: at once (packmule keeps a held one stored)
+        // was: also every kNoteRepublishMs
         const bool changed = e->rating != f.entry.rating || e->comment != f.entry.comment;
         f.entry.rating = e->rating;
         f.entry.comment = e->comment;
-        if (c != m_cache.end()
-            && (changed || (f.noteAtMs != 0 && QDateTime::currentMSecsSinceEpoch() - f.noteAtMs > kNoteRepublishMs)))
+        if (c != m_cache.end() && changed)
             publishNote(f, c->second.root);
     }
 }
@@ -987,20 +1009,33 @@ void Ed3kShared::refreshPriorities()
 void Ed3kShared::publishNote(File& f, const ffi::Root& root)
 {
     auto* e = m_session.engine();
-    // a cleared note is not taken back: it ends with its lifetime (no unpublish of one note)
-    if (!e || !f.shared || m_holdBack || !f.entry.hasNote()) {
-        f.noteAtMs = 0;
+    if (!e || !f.shared)
+        return;
+    const auto t = m_session.now();
+    const bool anon = keyOf(root) == ffi::KeyKind::Anon;
+    // was: a cleared note was not taken back (no unpublish of one note)
+    if (m_holdBack || !f.entry.hasNote()) {
+        if (f.notePublished)
+            (void)(anon ? e->anonUnpublishNote(t, root) : e->unpublishNote(t, root));
+        f.notePublished = false;
         return;
     }
-    const ffi::Note note{f.entry.rating, utf8(f.entry.comment)};
-    const auto t = m_session.now();
-    const auto ok = keyOf(root) == ffi::KeyKind::Anon ? e->anonPublishNote(t, root, note) : e->publishNote(t, root, note);
+    const ffi::Note note{f.entry.rating, utf8(f.entry.comment), noteNick(root)};
+    const auto ok = anon ? e->anonPublishNote(t, root, note) : e->publishNote(t, root, note);
     if (!ok) {
         logDebug([&]() -> QString { return QStringLiteral("note of \"%1\" not published (error %2)").arg(f.entry.name, errorName(ok.error())); });
-        f.noteAtMs = 0;
+        f.notePublished = false;
         return;
     }
-    f.noteAtMs = QDateTime::currentMSecsSinceEpoch();
+    f.notePublished = true;
+}
+
+std::string Ed3kShared::noteNick(const ffi::Root& root) const
+{
+    // hops.md §1: nothing under the anonymous key names its owner
+    if (!m_noteNick || keyOf(root) == ffi::KeyKind::Anon)
+        return {};
+    return utf8(clipUtf8(m_noteNick().trimmed(), kNickMax));
 }
 
 const Ed3kShared::File* Ed3kShared::fileOfMember(int member) const

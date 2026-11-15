@@ -274,7 +274,12 @@ KadIncomingModel::KadIncomingModel(Network network, QObject* parent)
         {tr("Type"), [typeText](const QCborMap& m) { return typeText(int(number(m, "type"))); }, {}},
         {tr("Key"), [](const QCborMap& m) { return value(m, "target").toUpper(); }, {}},
         {tr("Name"), [](const QCborMap& m) { return value(m, "name"); }, {}},
-        {tr("From"), [](const QCborMap& m) { return value(m, "addr"); }, {}},
+        // flag; ed3k adds the node ID (eD2K requests carry none)
+        {tr("From"),
+         [network](const QCborMap& m) {
+             return network == Network::Ed3k ? value(m, "peer").toUpper() : QString();
+         },
+         [](const QCborMap& m) { return QVariant(value(m, "cc") + value(m, "peer")); }},
         {tr("Answer"), [](const QCborMap& m) { return answerText(m); }, {}},
     };
 }

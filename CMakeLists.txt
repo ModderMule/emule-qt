@@ -621,8 +621,9 @@ if(EMULE_ED3K)
         add_subdirectory("${_emule_packmule_ffi}" "${CMAKE_BINARY_DIR}/packmule-ffi")
         message(STATUS "ed3k: packmule-ffi from ${_emule_packmule_ffi}")
     else()
-        message(STATUS "ed3k: libs/packmule or cargo missing, EMULE_ED3K turned off")
-        set(EMULE_ED3K OFF CACHE BOOL "ed3k network (packmule)" FORCE)
+        # this run only: a cached FORCE OFF stuck after packmule came back
+        message(WARNING "ed3k: libs/packmule or cargo missing, ed3k off for this configure")
+        set(EMULE_ED3K OFF)
     endif()
 endif()
 # The one place EMULE_HAVE_ED3K is set

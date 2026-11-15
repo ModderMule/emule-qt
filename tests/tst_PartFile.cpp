@@ -69,6 +69,8 @@ private slots:
     void httpRange_takesLargestGap();
     void httpRange_splitsAGapAnotherSourceIsIn();
     void httpRange_continuesItsOwnRun();
+    void httpRange_streamFocusFirst();
+    void httpRange_previewPartsFirst();
     void chunkSelection_spreadsTies();
     void chunkSelection_rarestFirst();
     void chunkSelection_shortLastPartNotFavoured();
@@ -586,6 +588,50 @@ void tst_PartFile::httpRange_continuesItsOwnRun()
     QCOMPARE(b.front()->startOffset, uint64{PARTSIZE});
     pf.releaseReservedBlocks(a);
     pf.releaseReservedBlocks(b);
+}
+
+void tst_PartFile::httpRange_streamFocusFirst()
+{
+    // A player seeked into the middle: the web seed reads on from there, not the
+    // largest gap
+    PartFile pf;
+    httpFile(pf, 20);
+    pf.setFileName(QStringLiteral("movie.mkv"));
+    const uint64 seek = PARTSIZE * 12 + EMBLOCKSIZE * 2 + 77;
+    QCOMPARE(pf.playFrom(seek), seek);
+
+    UpDownClient client;
+    client.setCompleteSource(true);
+    std::vector<Requested_Block_Struct*> blocks;
+    QCOMPARE(pf.getNextHttpRange(&client, PARTSIZE * 2, blocks), uint64{PARTSIZE} * 2);
+    QCOMPARE(blocks.front()->startOffset, seek);
+    QVERIFY(isOneAlignedRun(blocks));
+    pf.releaseReservedBlocks(blocks);
+}
+
+void tst_PartFile::httpRange_previewPartsFirst()
+{
+    const bool oldPrio = thePrefs.previewPrio();
+    const auto restore = qScopeGuard([oldPrio] { thePrefs.setPreviewPrio(oldPrio); });
+    thePrefs.setPreviewPrio(true);
+
+    PartFile pf;
+    httpFile(pf, 20);
+    pf.setFileName(QStringLiteral("movie.mkv"));
+    pf.fillGap(0, PARTSIZE - 1);   // first part done: the last one is next
+    UpDownClient client;
+    client.setCompleteSource(true);
+    std::vector<Requested_Block_Struct*> blocks;
+    QCOMPARE(pf.getNextHttpRange(&client, PARTSIZE * 3, blocks), uint64{PARTSIZE});
+    QCOMPARE(blocks.front()->startOffset, uint64{PARTSIZE} * 19);
+    pf.releaseReservedBlocks(blocks);
+
+    // off: the largest gap from its start
+    thePrefs.setPreviewPrio(false);
+    std::vector<Requested_Block_Struct*> plain;
+    QVERIFY(pf.getNextHttpRange(&client, PARTSIZE, plain) > 0);
+    QCOMPARE(plain.front()->startOffset, uint64{PARTSIZE});
+    pf.releaseReservedBlocks(plain);
 }
 
 namespace {

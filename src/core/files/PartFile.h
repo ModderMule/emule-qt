@@ -378,7 +378,9 @@ public:
     /// Block selection for a web server holding the whole file (BEP 19): one
     /// contiguous run of up to @p maxBytes from the start of the largest free gap,
     /// split into AICH-aligned blocks. Starts mid-gap when another source is already
-    /// eating into the gap from its left end. Appends to @p out, returns the bytes.
+    /// eating into the gap from its left end. A playing preview's focus (playFrom)
+    /// and the preview parts come first, as in getNextRequestedBlock. Appends to
+    /// @p out, returns the bytes.
     uint64 getNextHttpRange(UpDownClient* sender, uint64 maxBytes,
                             std::vector<Requested_Block_Struct*>& out);
     bool getNextEmptyBlockInPart(uint32 partNumber,
@@ -797,6 +799,10 @@ private:
                             const std::map<uint32, PartDigest>* digests = nullptr);
     /// Take @p partNumber off the corrupted list; true if it was on it.
     bool dropCorruptedPart(uint32 partNumber);
+    /// "Download preview parts first" applies to this file (pref, or per file in ext mode).
+    [[nodiscard]] bool previewPartsFirst() const;
+    /// A preview part: first, last, or the one before a tiny last part.
+    [[nodiscard]] bool isPreviewPartNumber(uint32 part) const;
     /// Report — at most once per kKadSkipLogInterval — why process() wanted a Kad
     /// source search for this file but did not start one.
     void logKadSourceSearchSkipped(uint64 curTick, const QString& reason);

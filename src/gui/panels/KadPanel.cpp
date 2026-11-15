@@ -52,4 +52,10 @@ void KadPanel::switchToSubTab(int index)
         m_ed3k->switchToSubTab(index - 2);
 }
 
+void KadPanel::switchToBottomTab(int index)
+{
+    m_ed2k->switchToBottomTab(index);
+    m_ed3k->switchToBottomTab(index);
+}
+
 } // namespace eMule

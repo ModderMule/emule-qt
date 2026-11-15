@@ -39,6 +39,8 @@ public:
 
     /// 0 = Contacts, 1 = Search Details.
     void switchToSubTab(int index);
+    /// 0 = Outgoing Searches, 1 = Incoming Searches.
+    void switchToBottomTab(int index);
 
 protected:
     explicit KadPanelBase(QWidget* parent = nullptr);

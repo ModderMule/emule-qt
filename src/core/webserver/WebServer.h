@@ -206,6 +206,13 @@ public:
     using Ed3kStreamResolver = std::function<UsenetStreamSource(const QString& hexRoot, qint64 offset)>;
     void setEd3kStreamResolver(Ed3kStreamResolver resolver) { m_ed3kStreamResolver = std::move(resolver); }
 
+    /// Torrent preview (/api/v1/torrents/<id>/<file>/preview): file @p fileIndex (-1: the
+    /// largest) of torrent @p id read from @p offset; @p fetch = seeking on, its next pieces
+    /// first. Unset: the route answers 503.
+    using BtStreamResolver = std::function<UsenetStreamSource(const QString& id, int fileIndex,
+                                                              qint64 offset, bool fetch)>;
+    void setBtStreamResolver(BtStreamResolver resolver) { m_btStreamResolver = std::move(resolver); }
+
     /// The Usenet page and the /api/v1/usenet routes. Optional and not owned:
     /// without it both answer "Usenet engine unavailable".
     void setUsenetBackend(UsenetWebBackend* backend) { m_usenetBackend = backend; }
@@ -345,6 +352,10 @@ private:
 
     // Endpoint handlers — preview
     QFuture<QHttpServerResponse> handlePreviewStream(const QString& hash, const QHttpServerRequest& req);
+
+    // Endpoint handlers — torrent preview
+    QFuture<QHttpServerResponse> handleTorrentPreviewStream(const QString& id, const QString& fileIndex,
+                                                            const QHttpServerRequest& req);
 
     // Endpoint handlers — Usenet preview
     QFuture<QHttpServerResponse> handleUsenetPreviewStream(const QString& itemId,
@@ -691,6 +702,7 @@ private:
     // ed3k download file resolver (injected by DaemonApp; null without ed3k)
     Ed3kFileResolver m_ed3kFileResolver;
     Ed3kStreamResolver m_ed3kStreamResolver;
+    BtStreamResolver m_btStreamResolver;
 
     // Usenet queue (injected by DaemonApp; not owned)
     UsenetWebBackend* m_usenetBackend = nullptr;

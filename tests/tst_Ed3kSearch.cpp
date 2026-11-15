@@ -62,6 +62,8 @@ private slots:
     void theFilterTakesSizeExtensionAndSources();
     void aSharedFileIsFound();
     void aSharedFilesNoteAndMediaAreFound();
+    void clipUtf8KeepsWholeCharacters();
+    void aNoteAuthorShowsItsNodeId();
     void withoutANodeTheSearchEnds();
     void aChannelSearchTakesChannelFilesOnly();
 };
@@ -247,8 +249,13 @@ void tst_Ed3kSearch::aSharedFilesNoteAndMediaAreFound()
     entry.comment = QStringLiteral("clean rip");
     entry.duration = 215;
     entry.bitrate = 320;
+    entry.artist = QStringLiteral("Harbour Band");
+    entry.album = QStringLiteral("Tides");
+    entry.title = QStringLiteral("Silver Harbour");
+    entry.codec = QStringLiteral("mp3");
     src.entries.push_back(entry);
     Ed3kShared shared(a, src, da.path());
+    shared.setNoteNick([] { return QStringLiteral("Mule"); });
     QSignalSpy sharedSpy(&shared, &Ed3kShared::fileShared);
     shared.start();
     QTRY_COMPARE_WITH_TIMEOUT(sharedSpy.count(), 1, 20000);
@@ -272,16 +279,21 @@ void tst_Ed3kSearch::aSharedFilesNoteAndMediaAreFound()
     QVERIFY(it != rows.end());
     QCOMPARE((*it)->getIntTagValue(FT_MEDIA_LENGTH), 215u);
     QCOMPARE((*it)->getIntTagValue(FT_MEDIA_BITRATE), 320u);
+    QCOMPARE((*it)->getStrTagValue(FT_MEDIA_ARTIST), QStringLiteral("Harbour Band"));
+    QCOMPARE((*it)->getStrTagValue(FT_MEDIA_ALBUM), QStringLiteral("Tides"));
+    QCOMPARE((*it)->getStrTagValue(FT_MEDIA_TITLE), QStringLiteral("Silver Harbour"));
+    QCOMPARE((*it)->getStrTagValue(FT_MEDIA_CODEC), QStringLiteral("mp3"));
 
     // the NOTE record (§10.7): rating and comment under the root, by A
     struct Found {
         QByteArray root;
         std::uint32_t rating = 0;
         QString text;
+        QString nick;
     };
     std::vector<Found> notes;
-    search.setNoteSink([&](const QByteArray& r, const QByteArray&, std::uint32_t rating, const QString& text) {
-        notes.push_back({r, rating, text});
+    search.setNoteSink([&](const QByteArray& r, const QByteArray&, std::uint32_t rating, const QString& text, const QString& nick) {
+        notes.push_back({r, rating, text, nick});
     });
     // the note may land after the keywords: ask again until it is there (one lookup per root
     // at a time: refused while one runs)
@@ -295,8 +307,27 @@ void tst_Ed3kSearch::aSharedFilesNoteAndMediaAreFound()
     QCOMPARE(notes.front().root, rootBytes);
     QCOMPARE(notes.front().rating, 4u);
     QCOMPARE(notes.front().text, QStringLiteral("clean rip"));
+    QCOMPARE(notes.front().nick, QStringLiteral("Mule"));
     a.disconnect(this);
     shared.stop();
+}
+
+void tst_Ed3kSearch::clipUtf8KeepsWholeCharacters()
+{
+    QCOMPARE(Ed3kShared::clipUtf8(QStringLiteral("abc"), 3), QStringLiteral("abc"));
+    QCOMPARE(Ed3kShared::clipUtf8(QStringLiteral("abcd"), 3), QStringLiteral("abc"));
+    // ä is 2 bytes: not cut in half
+    QCOMPARE(Ed3kShared::clipUtf8(QStringLiteral("aä"), 2), QStringLiteral("a"));
+    // 😀 is 4 bytes and a surrogate pair: dropped whole
+    QCOMPARE(Ed3kShared::clipUtf8(QStringLiteral("a😀"), 4), QStringLiteral("a"));
+    QCOMPARE(Ed3kShared::clipUtf8(QStringLiteral("a😀"), 5), QStringLiteral("a😀"));
+}
+
+void tst_Ed3kSearch::aNoteAuthorShowsItsNodeId()
+{
+    const QByteArray id = QByteArray::fromHex("a1b2c3d4e5f60718293a4b5c6d7e8f90");
+    QCOMPARE(Ed3kSearch::noteAuthor(QStringLiteral("Mule"), id), QStringLiteral("Mule (a1b2c3d4)"));
+    QVERIFY(Ed3kSearch::noteAuthor({}, id).isEmpty());
 }
 
 void tst_Ed3kSearch::withoutANodeTheSearchEnds()

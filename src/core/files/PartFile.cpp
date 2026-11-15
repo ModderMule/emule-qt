@@ -1018,16 +1018,8 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
     // (MFC PartFile.cpp:4680-4682). Unlike MFC they come before very rare parts too:
     // with few sources nearly every part is very rare, so MFC's option did nothing
     // (issue #34)
-    const bool isPreviewEnable =
-        (thePrefs.previewPrio() || (m_previewPrio && thePrefs.showExtControls()))
-        && fs > 2 * PARTSIZE && previewNeedsLastPart();
-    // A tiny last part pulls in the one before
-    auto isPreviewPart = [&](uint32 p) {
-        if (!isPreviewEnable)
-            return false;
-        const uint64 partEnd = std::min(static_cast<uint64>(p) * PARTSIZE + PARTSIZE, fs) - 1;
-        return p == 0 || p == pc - 1u || (p == pc - 2u && fs - partEnd < PARTSIZE / 3);
-    };
+    const bool isPreviewEnable = previewPartsFirst();
+    auto isPreviewPart = [&](uint32 p) { return isPreviewEnable && isPreviewPartNumber(p); };
 
     // Continue the previous chunk; MFC does so only for eMule >= 0.43.1
     uint16 lastPart = sender->lastPartAsked();
@@ -1208,17 +1200,9 @@ uint64 PartFile::getNextHttpRange(UpDownClient* sender, uint64 maxBytes,
         taken.push_back({block->startOffset, block->endOffset, block->holder});
     std::ranges::sort(taken, {}, &Span::start);
 
-    // Largest gap stretch nobody holds; the first one wins a tie
-    uint64 bestStart = 0;
-    uint64 bestEnd = 0;
-    uint64 bestLen = 0;
-    auto consider = [&](uint64 s, uint64 e) {
-        if (e - s + 1 > bestLen) {
-            bestStart = s;
-            bestEnd = e;
-            bestLen = e - s + 1;
-        }
-    };
+    // Gap stretches nobody holds, in file order
+    std::vector<std::pair<uint64, uint64>> freeSpans;
+    auto consider = [&](uint64 s, uint64 e) { freeSpans.emplace_back(s, e); };
     size_t ti = 0;
     for (const auto& gap : m_gapList) {
         while (ti < taken.size() && taken[ti].end < gap.start)
@@ -1237,12 +1221,56 @@ uint64 PartFile::getNextHttpRange(UpDownClient* sender, uint64 maxBytes,
         if (open && cursor <= gap.end)
             consider(cursor, gap.end);
     }
-    if (bestLen == 0)
+    if (freeSpans.empty())
         return 0;
+
+    uint64 bestStart = 0;
+    uint64 bestEnd = 0;
+    // First free byte in [from, to]; the run goes on to its stretch's end
+    auto firstFreeIn = [&](uint64 from, uint64 to) {
+        for (const auto& [s, e] : freeSpans) {
+            if (e >= from && s <= to) {
+                bestStart = std::max(s, from);
+                bestEnd = e;
+                return true;
+            }
+        }
+        return false;
+    };
+    const uint64 fs = static_cast<uint64>(fileSize());
+    // Like getNextRequestedBlock: a playing preview's next bytes (read on from
+    // there), then the preview parts, then the largest stretch
+    bool picked = false;
+    if (const std::optional<uint64> focus = streamFocus())
+        picked = firstFreeIn(*focus, std::min(*focus + kStreamLead, fs) - 1);
+    if (!picked && previewPartsFirst()) {
+        const uint32 pc = partCount();
+        for (const uint32 p : {0u, pc - 2u, pc - 1u}) {
+            if (p >= pc || !isPreviewPartNumber(p))
+                continue;
+            const uint64 partEnd = std::min(static_cast<uint64>(p) * PARTSIZE + PARTSIZE, fs) - 1;
+            if (firstFreeIn(static_cast<uint64>(p) * PARTSIZE, partEnd)) {
+                bestEnd = std::min(bestEnd, partEnd);
+                picked = true;
+                break;
+            }
+        }
+    }
+    uint64 bestLen = 0;
+    if (!picked) {
+        // the first one wins a tie
+        for (const auto& [s, e] : freeSpans) {
+            if (e - s + 1 > bestLen) {
+                bestStart = s;
+                bestEnd = e;
+                bestLen = e - s + 1;
+            }
+        }
+    }
 
     // Another source runs into this stretch from the left: take the second half,
     // so the two do not end up one block apart
-    if (bestStart > 0 && bestLen > 2 * uint64{PARTSIZE}) {
+    if (!picked && bestStart > 0 && bestLen > 2 * uint64{PARTSIZE}) {
         const auto left = std::ranges::find_if(taken, [&](const Span& s) {
             return s.start < bestStart && s.end + 1 >= bestStart;
         });
@@ -5238,6 +5266,22 @@ bool seekBehind(QIODevice& file, const QByteArray& needle)
 }
 
 } // namespace
+
+bool PartFile::previewPartsFirst() const
+{
+    // For every file, or for this one in advanced mode (MFC PartFile.cpp:4680-4682)
+    return (thePrefs.previewPrio() || (m_previewPrio && thePrefs.showExtControls()))
+        && static_cast<uint64>(fileSize()) > 2 * PARTSIZE && previewNeedsLastPart();
+}
+
+bool PartFile::isPreviewPartNumber(uint32 part) const
+{
+    // First + last; a tiny last part pulls in the one before
+    const uint64 fs = static_cast<uint64>(fileSize());
+    const uint32 pc = partCount();
+    const uint64 partEnd = std::min(static_cast<uint64>(part) * PARTSIZE + PARTSIZE, fs) - 1;
+    return part == 0 || part == pc - 1u || (part == pc - 2u && fs - partEnd < PARTSIZE / 3);
+}
 
 void PartFile::resetForImportLoad()
 {

@@ -233,6 +233,19 @@ QString daemonUsenetStreamUrl(const IpcClient* ipc, const QString& itemId, int f
     return url;
 }
 
+QString daemonTorrentStreamUrl(const IpcClient* ipc, const QString& torrentId, int fileIndex,
+                               const QString& streamToken)
+{
+    if (!ipc || !ipc->isConnected() || torrentId.isEmpty() || fileIndex < -1 || streamToken.isEmpty())
+        return {};
+    return QStringLiteral("%1://%2:%3/api/v1/torrents/%4/%5/preview?token=%6")
+        .arg(daemonWebScheme(), ipc->daemonHost())
+        .arg(thePrefs.webServerPort())
+        .arg(QString::fromLatin1(QUrl::toPercentEncoding(torrentId, QByteArrayLiteral(":"))))
+        .arg(fileIndex)
+        .arg(streamToken);
+}
+
 QString daemonIncomingUrl(const IpcClient* ipc, const QString& streamToken,
                           const QString& relPath)
 {

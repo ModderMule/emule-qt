@@ -166,9 +166,9 @@ bool NatRendezvous::isActive(const PeerInfo& peer) const
 
 bool NatRendezvous::mayKeepLowIdSource(const PeerInfo& peer) const
 {
-    if (!m_env->enabled() || !m_env->firewalled() || !hasDataPathNow() || hasFailed(peer))
+    if (!m_env->enabled() || !hasDataPathNow() || hasFailed(peer))
         return false;
-    return std::ranges::any_of(m_paths, [&](const auto& p) { return p->canServe(peer); });
+    return std::ranges::any_of(m_paths, [&](const auto& p) { return pathAllowed(*p) && p->canServe(peer); });
 }
 
 bool NatRendezvous::keepLowIdSource(const PeerInfo& peer)
@@ -830,7 +830,7 @@ std::vector<NatPath*> NatRendezvous::orderedPaths(const PeerInfo& peer, bool pro
 {
     std::vector<NatPath*> out;
     for (const auto& p : m_paths) {
-        if (probe ? p->canServe(peer) : p->canServeKnown(peer))
+        if (pathAllowed(*p) && (probe ? p->canServe(peer) : p->canServeKnown(peer)))
             out.push_back(p.get());
     }
     // PR_NAT ahead of Lugdunum when both can serve: only an eNode-go server offers both.
@@ -906,6 +906,13 @@ void NatRendezvous::remember(QHash<QString, uint64>& map, const Attempt& a, uint
     map.insert(peerKey(a.peer), now);
     if (!a.startKey.isEmpty())
         map.insert(a.startKey, now);
+}
+
+bool NatRendezvous::pathAllowed(const NatPath& path) const
+{
+    // HighID: direct UDP, server and Kad callbacks reach the peer; only a peer of another
+    // server needs its server's foreign callback (it wakes the peer, we dial QUIC)
+    return m_env->firewalled() || path.kind() == PathKind::ForeignCallback;
 }
 
 } // namespace eMule::natt

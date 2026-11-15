@@ -99,7 +99,8 @@ private:
     QCommandLineOption m_subtabTopOption{
         QStringLiteral("subtab-top"),
         QStringLiteral("Transfers upper-pane list (0=downloads, 1=uploading, "
-                       "2=downloading, 3=on queue, 4=known clients)."),
+                       "2=downloading, 3=on queue, 4=known clients). "
+                       "Kad: bottom list (0=outgoing, 1=incoming searches)."),
         QStringLiteral("index")};
 
     QCommandLineOption m_delayOption{

@@ -7,6 +7,7 @@
 #include "prefs/Preferences.h"
 #include "utils/BackgroundFileWriter.h"
 #include "utils/Log.h"
+#include "utils/SafeRemove.h"
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -240,7 +241,7 @@ void Ed3kHosterJoin::start()
         return;
     beginStart();
     // the resolver's scratch of the last run; nothing of it is used again
-    QDir(QFileInfo(workDir(0)).path()).removeRecursively();
+    removeDirTree(QFileInfo(workDir(0)).path());
     scanTempDirs();
     if (auto* e = m_session.engine())
         (void)e->linkAllow(m_prefs.enabled);
@@ -286,7 +287,8 @@ void Ed3kHosterJoin::stop()
     m_rootlessDone.clear();
     m_asks.clear();
     for (const auto& [link, a] : m_preparing)
-        QDir(a.dir).removeRecursively();
+        if (!a.dir.isEmpty())   // set once opened: QDir("") is the cwd
+            removeDirTree(a.dir);
     m_preparing.clear();
     m_matches.clear();
     m_searches.clear();
@@ -627,7 +629,7 @@ void Ed3kHosterJoin::remove(quint32 id, bool deleteFile)
         if (complete)
             QDir().rmdir(archiveDirOf(e->item));
     }
-    QDir(workDir(id)).removeRecursively();
+    removeDirTree(workDir(id));
     m_items.erase(id);
     emit itemRemoved(id);
     save();
@@ -1332,7 +1334,7 @@ void Ed3kHosterJoin::onResolve(const ev::LinkResolve& r)
         break;
     case ED3K_LINK_OPEN: {
         a.dir = QDir(workDir(e->item.id)).filePath(QStringLiteral("jd-%1").arg(r.link));
-        QDir(a.dir).removeRecursively();
+        removeDirTree(a.dir);
         QDir().mkpath(a.dir);
         // resume: r.offset bytes are here already (rootless: what the core hashed; rooted: the
         // blocks held from 0); JD goes on from its part file when the hoster lets it
@@ -1711,7 +1713,8 @@ void Ed3kHosterJoin::openTask(Ask a)
 {
     Entry* e = find(a.item);
     if (!e || !m_resolver || !m_resolver->available()) {
-        QDir(a.dir).removeRecursively();
+        if (!a.dir.isEmpty())   // set once opened: QDir("") is the cwd
+            removeDirTree(a.dir);
         answer(a.link, ED3K_RESOLVER_NO_RESOLVER);
         return;
     }
@@ -1827,7 +1830,8 @@ void Ed3kHosterJoin::endStream(Ed3kResolver::TaskId task, bool broken)
         (void)eng->linkEnd(m_session.now(), a.link, broken);
     if (broken && m_resolver)
         m_resolver->cancel(task);
-    QDir(a.dir).removeRecursively();
+    if (!a.dir.isEmpty())   // set once opened: QDir("") is the cwd
+        removeDirTree(a.dir);
     m_asks.erase(it);
     pumpSession();
 }
@@ -2138,7 +2142,7 @@ void Ed3kHosterJoin::finish(Entry& e)
         setState(e, State::Failed, Reason::MoveFailed, dir);
         return;
     }
-    QDir(workDir(e.item.id)).removeRecursively();
+    removeDirTree(workDir(e.item.id));
     forgetBlobWrites(metPathOf(e));   // a queued save lands after the remove otherwise
     QFile::remove(metPathOf(e));
     e.item.file = to;
@@ -2235,12 +2239,14 @@ void Ed3kHosterJoin::release(Entry& e, bool keepFile)
             (void)eng->linkEnd(m_session.now(), it->second.link, true);
         if (m_resolver)
             m_resolver->cancel(it->first);
-        QDir(it->second.dir).removeRecursively();
+        if (!it->second.dir.isEmpty())   // set once opened: QDir("") is the cwd
+            removeDirTree(it->second.dir);
         it = m_asks.erase(it);
     }
     for (auto it = m_preparing.begin(); it != m_preparing.end();) {
         if (it->second.item == e.item.id) {
-            QDir(it->second.dir).removeRecursively();
+            if (!it->second.dir.isEmpty())   // set once opened: QDir("") is the cwd
+                removeDirTree(it->second.dir);
             it = m_preparing.erase(it);
         } else {
             ++it;
