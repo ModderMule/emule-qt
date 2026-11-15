@@ -2042,12 +2042,12 @@ M	gecomprimeerde gegevens nog niet volledig gedownload
     </message>
     <message>
         <location line="+19"/>
-        <location line="+296"/>
+        <location line="+308"/>
         <source>Off</source>
         <translation>Uit</translation>
     </message>
     <message>
-        <location line="-296"/>
+        <location line="-308"/>
         <source>Torrents use direct connections only.</source>
         <translation>Torrents gebruiken alleen directe verbindingen.</translation>
     </message>
@@ -2062,7 +2062,12 @@ M	gecomprimeerde gegevens nog niet volledig gedownload
         <translation>eMule draait een eigen I2P-router. Bij de eerste start duurt het enkele minuten om het netwerk te betreden.</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+13"/>
+        <source>Part of the bundled router&apos;s bandwidth used for other routers&apos; tunnels. More helps the I2P network and hides your own traffic better.</source>
+        <translation>Deel van de bandbreedte van de meegeleverde router voor tunnels van andere routers. Meer helpt het I2P-netwerk en verbergt je eigen verkeer beter.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
         <source>Set your browser&apos;s HTTP proxy to 127.0.0.1 and this port on the core&apos;s computer to open .i2p sites, e.g. torrent trackers. It uses its own I2P address, not the torrents&apos; one.</source>
         <translation>Stel de HTTP-proxy van je browser op de computer van de kern in op 127.0.0.1 en deze poort om .i2p-sites te openen, bijv. torrenttrackers. Hij gebruikt een eigen I2P-adres, niet dat van de torrents.</translation>
     </message>
@@ -2151,7 +2156,7 @@ M	gecomprimeerde gegevens nog niet volledig gedownload
         <translation type="vanished">De I2P-browserproxy draait op de computer van de kern: browsers op deze computer kunnen hem niet gebruiken.</translation>
     </message>
     <message>
-        <location line="+81"/>
+        <location line="+84"/>
         <source>I2P router is on, but no torrent uses it: check &quot;Add new torrents as I2P only&quot; or &quot;Mixed mode&quot; in Options &gt; BitTorrent &gt; I2P.</source>
         <translation>De I2P-router staat aan, maar geen torrent gebruikt hem: vink &quot;Nieuwe torrents toevoegen als alleen I2P&quot; of &quot;Gemengde modus&quot; aan in Opties &gt; BitTorrent &gt; I2P.</translation>
     </message>
@@ -2170,7 +2175,7 @@ M	gecomprimeerde gegevens nog niet volledig gedownload
         <translation type="vanished">Router:</translation>
     </message>
     <message>
-        <location line="-181"/>
+        <location line="-184"/>
         <source>Host of the external router&apos;s SAM bridge</source>
         <translation>Host van de SAM-bridge van de externe router</translation>
     </message>
@@ -2187,7 +2192,7 @@ M	gecomprimeerde gegevens nog niet volledig gedownload
         <translation>SAM-bridge:</translation>
     </message>
     <message>
-        <location line="-70"/>
+        <location line="-78"/>
         <source>TCP and UDP port of the bundled router. Mapped with UPnP when the BitTorrent port is.</source>
         <translation>TCP- en UDP-poort van de meegeleverde router. Via UPnP doorgestuurd als de BitTorrent-poort dat is.</translation>
     </message>
@@ -2195,6 +2200,11 @@ M	gecomprimeerde gegevens nog niet volledig gedownload
         <location line="+2"/>
         <source>Router port:</source>
         <translation>Routerpoort:</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Bandwidth for relaying:</source>
+        <translation>Bandbreedte voor doorsturen:</translation>
     </message>
     <message>
         <location line="+107"/>
@@ -2257,12 +2267,12 @@ M	gecomprimeerde gegevens nog niet volledig gedownload
         <translation>Status:</translation>
     </message>
     <message>
-        <location line="-94"/>
+        <location line="-102"/>
         <source>Router</source>
         <translation>Router</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+31"/>
         <source>HTTP proxy for browsing .i2p sites</source>
         <translation>HTTP-proxy voor het bezoeken van .i2p-sites</translation>
     </message>
@@ -2295,7 +2305,7 @@ M	gecomprimeerde gegevens nog niet volledig gedownload
         <translation type="vanished">Deze build bevat geen meegeleverde I2P-router (emuleqt-i2pd).</translation>
     </message>
     <message>
-        <location line="+175"/>
+        <location line="+179"/>
         <source>BitTorrent is off</source>
         <translation>BitTorrent staat uit</translation>
     </message>
@@ -2800,18 +2810,18 @@ De downloads ervan behouden hun bestanden en gaan naar Alle.</translation>
     </message>
     <message>
         <location line="+37"/>
-        <location line="+255"/>
+        <location line="+256"/>
         <source>General</source>
         <translation>Algemeen</translation>
     </message>
     <message>
-        <location line="-244"/>
-        <location line="+253"/>
+        <location line="-245"/>
+        <location line="+254"/>
         <source>Name</source>
         <translation>Naam</translation>
     </message>
     <message>
-        <location line="-251"/>
+        <location line="-252"/>
         <source>Hash</source>
         <translation>Hash</translation>
     </message>
@@ -2832,18 +2842,18 @@ De downloads ervan behouden hun bestanden en gaan naar Alle.</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+260"/>
+        <location line="+261"/>
         <source>Software</source>
         <translation>Software</translation>
     </message>
     <message>
-        <location line="-257"/>
-        <location line="+263"/>
+        <location line="-258"/>
+        <location line="+264"/>
         <source>Country</source>
         <translation>Land</translation>
     </message>
     <message>
-        <location line="-239"/>
+        <location line="-240"/>
         <source>Server IP</source>
         <translation>Server-IP</translation>
     </message>
@@ -2938,17 +2948,17 @@ De downloads ervan behouden hun bestanden en gaan naar Alle.</translation>
     </message>
     <message>
         <location line="+185"/>
-        <location line="+262"/>
+        <location line="+263"/>
         <source>Connected</source>
         <translation>Verbonden</translation>
     </message>
     <message>
-        <location line="-262"/>
+        <location line="-263"/>
         <source>Disconnected</source>
         <translation>Verbinding verbroken</translation>
     </message>
     <message>
-        <location line="+55"/>
+        <location line="+56"/>
         <source>LowID Callback</source>
         <translation>LowID-terugroep</translation>
     </message>
@@ -10459,7 +10469,7 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+60"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+62"/>
         <location line="+407"/>
         <source>Unlimited</source>
         <translation>Onbeperkt</translation>
@@ -10470,23 +10480,23 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
         <translation>eMule-instellingenwizard voor eerste keer</translation>
     </message>
     <message>
-        <location line="+619"/>
+        <location line="+643"/>
         <source>eMule uses two ports for communication with servers and clients. These ports must be free and available for remote clients. The TCP port must be available to ensure the main functionality of eMule. The UDP port is used for Kad (serverless network) and to reduce network usage (Overhead).</source>
         <translation>eMule gebruikt twee poorten voor communicatie met servers en cliënten. Deze poorten moeten vrij zijn en beschikbaar voor cliënten van buiten. De TCP-poort moet beschikbaar zijn voor de hoofdfunctionaliteit van eMule. De UDP-poort wordt gebruikt voor Kad (serverloos netwerk) en om netwerkgebruik te verminderen (overhead).</translation>
     </message>
     <message>
-        <location line="-497"/>
+        <location line="-521"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>U kunt de poorten hier wijzigen zolang er nog geen netwerkactiviteiten zijn gestart.</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+479"/>
+        <location line="+503"/>
         <source>TCP:</source>
         <translation>TCP:</translation>
     </message>
     <message>
-        <location line="-475"/>
+        <location line="-499"/>
         <source>UDP:</source>
         <translation>UDP:</translation>
     </message>
@@ -10707,12 +10717,12 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
     </message>
     <message>
         <location line="+2"/>
-        <location line="+34"/>
+        <location line="+58"/>
         <source>Next &gt;</source>
         <translation>Volgende &gt;</translation>
     </message>
     <message>
-        <location line="-31"/>
+        <location line="-55"/>
         <source>Cancel</source>
         <translation>Annuleren</translation>
     </message>
@@ -10722,7 +10732,7 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
         <translation>Help</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+46"/>
         <source>Import</source>
         <translation>Importeren</translation>
     </message>

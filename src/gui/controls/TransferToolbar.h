@@ -59,10 +59,16 @@ signals:
 
 protected:
     void changeEvent(QEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
+    void leaveEvent(QEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    void paintEvent(QPaintEvent* event) override;
 
 private:
     void applyLabelWidth();
+    [[nodiscard]] QRect headerRect() const;
+    void updateHeaderHover();
 
     QStringList m_reservedTexts;
     QHBoxLayout* m_layout = nullptr;
@@ -71,6 +77,7 @@ private:
     QButtonGroup* m_group = nullptr;
     int m_nextId = 0;
     bool m_buttonsVisible = true;
+    bool m_headerHovered = false;
 };
 
 } // namespace eMule

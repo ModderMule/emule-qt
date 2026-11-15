@@ -46,6 +46,28 @@ const char* serverConnStateName(ServerConnState s)
     return "?";
 }
 
+/// Which OFFERFILES v1 tag @p tag is, as an index into the ident parser's seen-counts:
+/// 0 ST_SOFTFILES, 1 ST_HARDFILES, 2 offerfiles_v, 3 offerfiles_batch_max,
+/// 4 offerfiles_min_interval_ms; -1 for any other tag.
+int offerFilesV1Slot(const Tag& tag)
+{
+    if (!tag.hasName()) {
+        if (tag.nameId() == ST_SOFTFILES)
+            return 0;
+        if (tag.nameId() == ST_HARDFILES)
+            return 1;
+        return -1;
+    }
+    const QByteArray& name = tag.name();
+    if (name == OFFERFILES_TAG_VERSION)
+        return 2;
+    if (name == OFFERFILES_TAG_BATCH_MAX)
+        return 3;
+    if (name == OFFERFILES_TAG_MIN_INTERVAL)
+        return 4;
+    return -1;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -365,6 +387,11 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         QString ed3kLink;               // ST_ED3K: an ident without it clears the copy's
         std::optional<std::array<uint8, 16>> natToken;   // ST_NATT_TOKEN (ed2k-server 0.9.87)
         bool natProof = false;                           // ST_NATT_PROOF (0.9.88)
+        // OFFERFILES v1: each of the five uint32 tags must come exactly once.
+        Server::OfferFilesV1 offerV1;
+        uint32 offerV1Version = 0;
+        std::array<int, 5> offerV1Seen{};                // soft, hard, v, batch, interval
+        bool offerV1BadType = false;
 
         // Parse tags
         try {
@@ -372,6 +399,22 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
             checkTagCount(tagData, tagCount, kMaxWireTags);
             for (uint32 i = 0; i < tagCount; ++i) {
                 Tag tag(tagData, true);
+                if (const int slot = offerFilesV1Slot(tag); slot >= 0) {
+                    ++offerV1Seen[static_cast<size_t>(slot)];
+                    if (tag.type() != TAGTYPE_UINT32) {
+                        offerV1BadType = true;
+                        continue;
+                    }
+                    const uint32 v = tag.intValue();
+                    switch (slot) {
+                    case 0: offerV1.softFiles = v; break;
+                    case 1: offerV1.hardFiles = v; break;
+                    case 2: offerV1Version = v; break;
+                    case 3: offerV1.batchMax = v; break;
+                    default: offerV1.minIntervalMs = v; break;
+                    }
+                    continue;
+                }
                 if (tag.nameId() == ST_SERVERNAME && tag.isStr())
                     name = tag.strValue();
                 else if (tag.nameId() == ST_DESCRIPTION && tag.isStr())
@@ -446,6 +489,23 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         // after serverIdentReceived has stored the ident hash on the list entry).
         Address learned;
         if (m_curServer) {
+            // OFFERFILES v1, all or nothing. The first valid advertisement binds the
+            // connection (setOfferFilesV1 keeps it); a later ident, valid or not, changes
+            // nothing, and a malformed one is ignored (aMule docs/ED2K_EXTENSIONS.md).
+            const bool complete = std::all_of(offerV1Seen.begin(), offerV1Seen.end(),
+                                              [](int n) { return n == 1; });
+            if (complete && !offerV1BadType && offerV1Version == OFFERFILES_V1_VERSION
+                && Server::isValidOfferFilesV1(offerV1)) {
+                if (!m_curServer->offerFilesV1())
+                    logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_SERVERIDENT: OFFERFILES v1 batch=%1 interval=%2 ms soft=%3 hard=%4")
+                                         .arg(offerV1.batchMax).arg(offerV1.minIntervalMs)
+                                         .arg(offerV1.softFiles).arg(offerV1.hardFiles); });
+                m_curServer->setOfferFilesV1(offerV1);
+            } else if (std::any_of(offerV1Seen.begin() + 2, offerV1Seen.end(),
+                                   [](int n) { return n > 0; })) {
+                logServerVerbose([&]() -> QString { return QStringLiteral("<<< OP_SERVERIDENT: ignoring an incomplete or invalid OFFERFILES v1 advertisement"); });
+            }
+            m_curServer->setIdentReceived();
             m_curServer->setServerHash(serverHash);
             m_curServer->setNatPort(natPort);
             m_curServer->setEd3kLink(ed3kLink);

@@ -318,7 +318,9 @@ std::vector<Tag> Search::buildSourcePublishTags(const SourcePublishParams& p, bo
         addCommonPortAndSize();
     } else if (p.firewalled && !p.ipv6Hex.isEmpty()) {
         // No route over IPv4, but a public IPv6: the firewalled type without buddy
-        // tags. A v6-capable peer dials ip6; a stock one finds no route and drops it.
+        // tags. A v6-capable peer dials ip6. A firewalled stock peer drops it; an unfirewalled
+        // one keeps it and runs a FINDSOURCE lookup for buddy ID 000…0 (MFC BaseClient.cpp:1450).
+        // ToDo: move to source type 7 once agreed (ipv6-spec §9.1, aMule #2521)
         tags.emplace_back(FT_SOURCETYPE, static_cast<uint32>(p.largeFile ? 5 : 3));
         addCommonPortAndSize();
     } else if (p.firewalled) {

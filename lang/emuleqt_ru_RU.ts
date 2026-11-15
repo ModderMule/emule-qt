@@ -2060,12 +2060,12 @@ M	сжатые данные ещё не полностью приняты
     </message>
     <message>
         <location line="+19"/>
-        <location line="+296"/>
+        <location line="+308"/>
         <source>Off</source>
         <translation>Выключено</translation>
     </message>
     <message>
-        <location line="-296"/>
+        <location line="-308"/>
         <source>Torrents use direct connections only.</source>
         <translation>Торренты используют только прямые соединения.</translation>
     </message>
@@ -2080,7 +2080,12 @@ M	сжатые данные ещё не полностью приняты
         <translation>eMule запускает собственный I2P-роутер. При первом запуске подключение к сети занимает несколько минут.</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+13"/>
+        <source>Part of the bundled router&apos;s bandwidth used for other routers&apos; tunnels. More helps the I2P network and hides your own traffic better.</source>
+        <translation>Часть полосы встроенного маршрутизатора для туннелей других маршрутизаторов. Больше — помощь сети I2P и лучшая маскировка вашего трафика.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
         <source>Set your browser&apos;s HTTP proxy to 127.0.0.1 and this port on the core&apos;s computer to open .i2p sites, e.g. torrent trackers. It uses its own I2P address, not the torrents&apos; one.</source>
         <translation>Укажите в браузере на компьютере ядра HTTP-прокси 127.0.0.1 и этот порт, чтобы открывать сайты .i2p, например торрент-трекеры. Он использует собственный I2P-адрес, а не адрес торрентов.</translation>
     </message>
@@ -2169,7 +2174,7 @@ M	сжатые данные ещё не полностью приняты
         <translation type="vanished">Браузерный прокси I2P работает на компьютере ядра: браузеры на этом компьютере не могут им пользоваться.</translation>
     </message>
     <message>
-        <location line="+81"/>
+        <location line="+84"/>
         <source>I2P router is on, but no torrent uses it: check &quot;Add new torrents as I2P only&quot; or &quot;Mixed mode&quot; in Options &gt; BitTorrent &gt; I2P.</source>
         <translation>Маршрутизатор I2P включён, но ни один торрент его не использует: включите «Добавлять новые торренты как «только I2P»» или «Смешанный режим» в Параметры &gt; BitTorrent &gt; I2P.</translation>
     </message>
@@ -2188,7 +2193,7 @@ M	сжатые данные ещё не полностью приняты
         <translation type="vanished">Роутер:</translation>
     </message>
     <message>
-        <location line="-181"/>
+        <location line="-184"/>
         <source>Host of the external router&apos;s SAM bridge</source>
         <translation>Хост SAM-моста внешнего роутера</translation>
     </message>
@@ -2205,7 +2210,7 @@ M	сжатые данные ещё не полностью приняты
         <translation>SAM-мост:</translation>
     </message>
     <message>
-        <location line="-70"/>
+        <location line="-78"/>
         <source>TCP and UDP port of the bundled router. Mapped with UPnP when the BitTorrent port is.</source>
         <translation>TCP- и UDP-порт встроенного роутера. Пробрасывается через UPnP, если пробрасывается порт BitTorrent.</translation>
     </message>
@@ -2213,6 +2218,11 @@ M	сжатые данные ещё не полностью приняты
         <location line="+2"/>
         <source>Router port:</source>
         <translation>Порт роутера:</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Bandwidth for relaying:</source>
+        <translation>Полоса для ретрансляции:</translation>
     </message>
     <message>
         <location line="+107"/>
@@ -2275,12 +2285,12 @@ M	сжатые данные ещё не полностью приняты
         <translation>Статус:</translation>
     </message>
     <message>
-        <location line="-94"/>
+        <location line="-102"/>
         <source>Router</source>
         <translation>Маршрутизатор</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+31"/>
         <source>HTTP proxy for browsing .i2p sites</source>
         <translation>HTTP-прокси для просмотра сайтов .i2p</translation>
     </message>
@@ -2313,7 +2323,7 @@ M	сжатые данные ещё не полностью приняты
         <translation type="vanished">В этой сборке нет встроенного I2P-роутера (emuleqt-i2pd).</translation>
     </message>
     <message>
-        <location line="+175"/>
+        <location line="+179"/>
         <source>BitTorrent is off</source>
         <translation>BitTorrent выключен</translation>
     </message>
@@ -2818,18 +2828,18 @@ Its downloads keep their files and move to All.</source>
     </message>
     <message>
         <location line="+37"/>
-        <location line="+255"/>
+        <location line="+256"/>
         <source>General</source>
         <translation>Основные</translation>
     </message>
     <message>
-        <location line="-244"/>
-        <location line="+253"/>
+        <location line="-245"/>
+        <location line="+254"/>
         <source>Name</source>
         <translation>Имя</translation>
     </message>
     <message>
-        <location line="-251"/>
+        <location line="-252"/>
         <source>Hash</source>
         <translation>Хеш</translation>
     </message>
@@ -2850,18 +2860,18 @@ Its downloads keep their files and move to All.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+260"/>
+        <location line="+261"/>
         <source>Software</source>
         <translation>Программа</translation>
     </message>
     <message>
-        <location line="-257"/>
-        <location line="+263"/>
+        <location line="-258"/>
+        <location line="+264"/>
         <source>Country</source>
         <translation>Страна</translation>
     </message>
     <message>
-        <location line="-239"/>
+        <location line="-240"/>
         <source>Server IP</source>
         <translation>IP сервера</translation>
     </message>
@@ -2956,17 +2966,17 @@ Its downloads keep their files and move to All.</source>
     </message>
     <message>
         <location line="+185"/>
-        <location line="+262"/>
+        <location line="+263"/>
         <source>Connected</source>
         <translation>Соединён</translation>
     </message>
     <message>
-        <location line="-262"/>
+        <location line="-263"/>
         <source>Disconnected</source>
         <translation>Отсоединён</translation>
     </message>
     <message>
-        <location line="+55"/>
+        <location line="+56"/>
         <source>LowID Callback</source>
         <translation>Обратный вызов LowID</translation>
     </message>
@@ -10497,7 +10507,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+60"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+62"/>
         <location line="+407"/>
         <source>Unlimited</source>
         <translation>Без ограничений</translation>
@@ -10508,23 +10518,23 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>Помощник первого запуска eMule</translation>
     </message>
     <message>
-        <location line="+619"/>
+        <location line="+643"/>
         <source>eMule uses two ports for communication with servers and clients. These ports must be free and available for remote clients. The TCP port must be available to ensure the main functionality of eMule. The UDP port is used for Kad (serverless network) and to reduce network usage (Overhead).</source>
         <translation>eMule использует два порта для связи с серверами и клиентами. Эти порты должны быть свободны и доступны для удалённых клиентов. TCP порт должен быть доступен для обеспечения основной функциональности eMule. UDP порт используется для Kad (бессерверной сети) и для снижения сетевой нагрузки (служебного трафика).</translation>
     </message>
     <message>
-        <location line="-497"/>
+        <location line="-521"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>Здесь можно изменить порты, пока сетевая активность не началась.</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+479"/>
+        <location line="+503"/>
         <source>TCP:</source>
         <translation>TCP:</translation>
     </message>
     <message>
-        <location line="-475"/>
+        <location line="-499"/>
         <source>UDP:</source>
         <translation>UDP:</translation>
     </message>
@@ -10745,12 +10755,12 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
     </message>
     <message>
         <location line="+2"/>
-        <location line="+34"/>
+        <location line="+58"/>
         <source>Next &gt;</source>
         <translation>Далее &gt;</translation>
     </message>
     <message>
-        <location line="-31"/>
+        <location line="-55"/>
         <source>Cancel</source>
         <translation>Отмена</translation>
     </message>
@@ -10760,7 +10770,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>Помощь</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+46"/>
         <source>Import</source>
         <translation>Импорт</translation>
     </message>

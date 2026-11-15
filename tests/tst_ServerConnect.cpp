@@ -461,10 +461,16 @@ void tst_ServerConnect::login_natTraversalTagAndBit()
                      static_cast<qint64>(bytes.size() - 6 - 22));
     const uint32 tagCount = data.readUInt32();
     bool sawUdpPorts = false;
+    int offerV1Requests = 0;
     uint32 flags = 0;
     for (uint32 i = 0; i < tagCount; ++i) {
         Tag tag(data, false);
-        if (tag.nameId() == CT_EMULE_UDPPORTS) {
+        if (tag.hasName() && tag.name() == OFFERFILES_TAG_VERSION) {
+            // OFFERFILES v1 request: string-named uint32, version 1, once.
+            ++offerV1Requests;
+            QCOMPARE(tag.type(), uint8{TAGTYPE_UINT32});
+            QCOMPARE(tag.intValue(), OFFERFILES_V1_VERSION);
+        } else if (tag.nameId() == CT_EMULE_UDPPORTS) {
             sawUdpPorts = true;
             QCOMPARE(tag.intValue() & 0xFFFFu, 4672u);
         } else if (tag.nameId() == CT_SERVER_FLAGS) {
@@ -472,6 +478,7 @@ void tst_ServerConnect::login_natTraversalTagAndBit()
         }
     }
     QCOMPARE(sawUdpPorts, expectUdpPorts);
+    QCOMPARE(offerV1Requests, 1);
     QCOMPARE((flags & SRVCAP_NATTRAVERSAL) != 0, expectNatBit);
     QCOMPARE((flags & SRVCAP_HOLEPUNCH_EXT) != 0, expectNatBit);   // ed2k-server#39: always together
     // PR_NAT wake bit: whenever NAT traversal is on, the data path may come after login

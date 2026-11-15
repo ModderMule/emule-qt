@@ -2165,12 +2165,12 @@ M	圧縮データがまだ完全にダウンロードされていない
     </message>
     <message>
         <location line="+19"/>
-        <location line="+296"/>
+        <location line="+308"/>
         <source>Off</source>
         <translation>オフ</translation>
     </message>
     <message>
-        <location line="-296"/>
+        <location line="-308"/>
         <source>Torrents use direct connections only.</source>
         <translation>トレントは直接接続のみを使います。</translation>
     </message>
@@ -2185,7 +2185,12 @@ M	圧縮データがまだ完全にダウンロードされていない
         <translation>eMule が独自の I2P ルーターを実行します。初回起動時はネットワーク参加に数分かかります。</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+13"/>
+        <source>Part of the bundled router&apos;s bandwidth used for other routers&apos; tunnels. More helps the I2P network and hides your own traffic better.</source>
+        <translation>同梱ルーターの帯域のうち、他のルーターのトンネルに使う割合。多いほど I2P ネットワークに貢献し、自分の通信もより隠れます。</translation>
+    </message>
+    <message>
+        <location line="+5"/>
         <source>Set your browser&apos;s HTTP proxy to 127.0.0.1 and this port on the core&apos;s computer to open .i2p sites, e.g. torrent trackers. It uses its own I2P address, not the torrents&apos; one.</source>
         <translation>.i2pサイト(トレントトラッカーなど)を開くには、コアのコンピューター上でブラウザのHTTPプロキシを127.0.0.1とこのポートに設定してください。トレントとは別の独自のI2Pアドレスを使用します。</translation>
     </message>
@@ -2274,7 +2279,7 @@ M	圧縮データがまだ完全にダウンロードされていない
         <translation type="vanished">I2Pブラウザプロキシはコアのコンピューターで動作しています: このコンピューターのブラウザからは使用できません。</translation>
     </message>
     <message>
-        <location line="+81"/>
+        <location line="+84"/>
         <source>I2P router is on, but no torrent uses it: check &quot;Add new torrents as I2P only&quot; or &quot;Mixed mode&quot; in Options &gt; BitTorrent &gt; I2P.</source>
         <translation>I2P ルーターは動作中ですが、どのトレントも使用していません: オプション &gt; BitTorrent &gt; I2P で「新しいトレントを I2P のみで追加」または「混合モード」をオンにしてください。</translation>
     </message>
@@ -2293,7 +2298,7 @@ M	圧縮データがまだ完全にダウンロードされていない
         <translation type="vanished">ルーター:</translation>
     </message>
     <message>
-        <location line="-181"/>
+        <location line="-184"/>
         <source>Host of the external router&apos;s SAM bridge</source>
         <translation>外部ルーターの SAM ブリッジのホスト</translation>
     </message>
@@ -2310,7 +2315,7 @@ M	圧縮データがまだ完全にダウンロードされていない
         <translation>SAM ブリッジ:</translation>
     </message>
     <message>
-        <location line="-70"/>
+        <location line="-78"/>
         <source>TCP and UDP port of the bundled router. Mapped with UPnP when the BitTorrent port is.</source>
         <translation>同梱ルーターの TCP / UDP ポート。BitTorrent ポートが UPnP でマップされる場合は同様にマップされます。</translation>
     </message>
@@ -2318,6 +2323,11 @@ M	圧縮データがまだ完全にダウンロードされていない
         <location line="+2"/>
         <source>Router port:</source>
         <translation>ルーターポート:</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Bandwidth for relaying:</source>
+        <translation>中継用の帯域:</translation>
     </message>
     <message>
         <location line="+107"/>
@@ -2380,12 +2390,12 @@ M	圧縮データがまだ完全にダウンロードされていない
         <translation>ステータス：</translation>
     </message>
     <message>
-        <location line="-94"/>
+        <location line="-102"/>
         <source>Router</source>
         <translation>ルーター</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+31"/>
         <source>HTTP proxy for browsing .i2p sites</source>
         <translation>.i2pサイト閲覧用HTTPプロキシ</translation>
     </message>
@@ -2418,7 +2428,7 @@ M	圧縮データがまだ完全にダウンロードされていない
         <translation type="vanished">このビルドには同梱の I2P ルーター (emuleqt-i2pd) がありません。</translation>
     </message>
     <message>
-        <location line="+175"/>
+        <location line="+179"/>
         <source>BitTorrent is off</source>
         <translation>BitTorrent はオフです</translation>
     </message>
@@ -2931,7 +2941,7 @@ Its downloads keep their files and move to All.</source>
     </message>
     <message>
         <location line="+37"/>
-        <location line="+255"/>
+        <location line="+256"/>
         <source>General</source>
         <translation>全般</translation>
     </message>
@@ -2944,7 +2954,7 @@ Its downloads keep their files and move to All.</source>
         <translation type="vanished">ユーザーハッシュ</translation>
     </message>
     <message>
-        <location line="-243"/>
+        <location line="-244"/>
         <source>ID</source>
         <translation>ID</translation>
     </message>
@@ -2964,7 +2974,7 @@ Its downloads keep their files and move to All.</source>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+263"/>
+        <location line="+264"/>
         <source>Country</source>
         <translation>国</translation>
     </message>
@@ -2973,24 +2983,24 @@ Its downloads keep their files and move to All.</source>
         <translation type="vanished">サーバー</translation>
     </message>
     <message>
-        <location line="-271"/>
-        <location line="+253"/>
+        <location line="-272"/>
+        <location line="+254"/>
         <source>Name</source>
         <translation>名前</translation>
     </message>
     <message>
-        <location line="-251"/>
+        <location line="-252"/>
         <source>Hash</source>
         <translation>ハッシュ</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+260"/>
+        <location line="+261"/>
         <source>Software</source>
         <translation>ソフトウェア</translation>
     </message>
     <message>
-        <location line="-233"/>
+        <location line="-234"/>
         <source>Server IP</source>
         <translation>サーバー IP</translation>
     </message>
@@ -3085,17 +3095,17 @@ Its downloads keep their files and move to All.</source>
     </message>
     <message>
         <location line="+185"/>
-        <location line="+262"/>
+        <location line="+263"/>
         <source>Connected</source>
         <translation>接続済み</translation>
     </message>
     <message>
-        <location line="-262"/>
+        <location line="-263"/>
         <source>Disconnected</source>
         <translation>未接続</translation>
     </message>
     <message>
-        <location line="+147"/>
+        <location line="+148"/>
         <location line="+139"/>
         <source>Currently downloading</source>
         <translation>現在ダウンロード中</translation>
@@ -10697,7 +10707,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+69"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+71"/>
         <source>eMule First Runtime Wizard</source>
         <translation>eMule 初回実行ウィザード</translation>
     </message>
@@ -10792,7 +10802,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>デスクトップのアプリケーションメニューに eMule Qt を追加します</translation>
     </message>
     <message>
-        <location line="+173"/>
+        <location line="+197"/>
         <source>Import</source>
         <translation>インポート</translation>
     </message>
@@ -10827,7 +10837,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>eMule はサーバーおよびクライアントとの通信に2つのポートを使用します。これらのポートはリモートクライアントに対して空いている必要があります。TCP ポートは eMule の主要機能を確保するために必要です。UDP ポートは Kad（サーバーレスネットワーク）およびネットワーク使用量の削減（オーバーヘッド）に使用されます。</translation>
     </message>
     <message>
-        <location line="-628"/>
+        <location line="-652"/>
         <location line="+407"/>
         <source>Unlimited</source>
         <translation>無制限</translation>
@@ -10883,12 +10893,12 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
     </message>
     <message>
         <location line="+11"/>
-        <location line="+479"/>
+        <location line="+503"/>
         <source>TCP:</source>
         <translation>TCP：</translation>
     </message>
     <message>
-        <location line="-475"/>
+        <location line="-499"/>
         <source>UDP:</source>
         <translation>UDP：</translation>
     </message>
@@ -11027,7 +11037,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
     </message>
     <message>
         <location line="+2"/>
-        <location line="+34"/>
+        <location line="+58"/>
         <source>Next &gt;</source>
         <translation>次へ &gt;</translation>
     </message>
@@ -11094,7 +11104,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>完了</translation>
     </message>
     <message>
-        <location line="-31"/>
+        <location line="-55"/>
         <source>Cancel</source>
         <translation>キャンセル</translation>
     </message>
@@ -11108,7 +11118,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation type="vanished">ダウンロード制限: %1    アップロード制限: %2</translation>
     </message>
     <message>
-        <location line="+273"/>
+        <location line="+297"/>
         <source>The ports are forwarded when the core starts.</source>
         <translation>ポートはコアの起動時に転送されます。</translation>
     </message>

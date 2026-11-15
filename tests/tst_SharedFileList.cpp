@@ -124,6 +124,9 @@ private slots:
 
     // OP_OFFERFILES selection (MFC SendListToServer)
     void offer_capIsTheServersSoftFilesLimit();
+    void offer_v1BatchHardAndSoftBudget();
+    void offer_v1ReofferUsesNoBudget();
+    void offer_v1IntervalHasAFloor();
     void offer_skipsLargeFilesForServersThatCannotIndexThem();
     void offer_marksPublishedSoTheNextPassIsEmpty();
     void republishFile_offersACompletedFileAgain();
@@ -2380,6 +2383,89 @@ void tst_SharedFileList::offer_capIsTheServersSoftFilesLimit()
     // No server at all behaves like "unknown".
     unpublishAll();
     QCOMPARE(static_cast<int>(shared.takeFilesToOffer(nullptr).size()), 200);
+}
+
+// OFFERFILES v1 (#185): a packet is at most min(batch_max, hard - 1, 200) files, and
+// only files new to the connection spend the soft budget.
+namespace {
+void addNumberedFiles(KnownFileList& knownFiles, SharedFileList& shared, int count)
+{
+    for (int i = 0; i < count; ++i) {
+        auto* f = new KnownFile();
+        uint8 hash[16];
+        std::memset(hash, 0, 16);
+        hash[0] = static_cast<uint8>(i & 0xFF);
+        hash[1] = static_cast<uint8>(i >> 8);
+        hash[2] = 0x5A;
+        f->setFileHash(hash);
+        f->setFileName(QStringLiteral("v1-%1.bin").arg(i));
+        f->setFileSize(1000);
+        knownFiles.safeAddKFile(f);
+        shared.safeAddKFile(f);
+    }
+}
+} // namespace
+
+void tst_SharedFileList::offer_v1BatchHardAndSoftBudget()
+{
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    addNumberedFiles(knownFiles, shared, 300);
+    QCOMPARE(shared.getCount(), 300);
+
+    Server srv(0x01020304u, 4661);
+    srv.setOfferFilesV1({/*soft*/ 250, /*hard*/ 20000, /*batch*/ 100, /*interval*/ 500});
+
+    // batch 100, then 100, then the 50 the soft budget has left, then nothing.
+    QCOMPARE(static_cast<int>(shared.takeFilesToOffer(&srv).size()), 100);
+    QCOMPARE(static_cast<int>(shared.takeFilesToOffer(&srv).size()), 100);
+    QCOMPARE(static_cast<int>(shared.takeFilesToOffer(&srv).size()), 50);
+    QCOMPARE(static_cast<int>(shared.takeFilesToOffer(&srv).size()), 0);
+
+    // Our own cap of 200 holds whatever the batch, and so does the hard limit minus one,
+    // tightened by a later UDP status reply.
+    shared.unpublishAllED2K();
+    Server big(0x01020305u, 4661);
+    big.setOfferFilesV1({10000, 20000, 1000, 500});
+    QCOMPARE(static_cast<int>(shared.takeFilesToOffer(&big).size()), 200);
+    shared.unpublishAllED2K();
+    big.setHardFiles(31);
+    QCOMPARE(static_cast<int>(shared.takeFilesToOffer(&big).size()), 30);
+}
+
+void tst_SharedFileList::offer_v1ReofferUsesNoBudget()
+{
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    addNumberedFiles(knownFiles, shared, 20);
+
+    Server srv(0x01020304u, 4661);
+    srv.setOfferFilesV1({/*soft*/ 10, 20000, /*batch*/ 10, 500});
+    const auto first = shared.takeFilesToOffer(&srv);
+    QCOMPARE(static_cast<int>(first.size()), 10);
+    QCOMPARE(static_cast<int>(shared.takeFilesToOffer(&srv).size()), 0);   // budget spent
+
+    // A file offered on this connection comes back (renamed, completed): it is offered
+    // again, and no new file gets in with it.
+    first.front()->setPublishedED2K(false);
+    const auto again = shared.takeFilesToOffer(&srv);
+    QCOMPARE(static_cast<int>(again.size()), 1);
+    QCOMPARE(again.front(), first.front());
+}
+
+void tst_SharedFileList::offer_v1IntervalHasAFloor()
+{
+    Server legacy(0x01020304u, 4661);
+    QCOMPARE(SharedFileList::offerIntervalMs(&legacy), uint64{60000});
+    QCOMPARE(SharedFileList::offerIntervalMs(nullptr), uint64{60000});
+
+    Server fast(0x01020305u, 4661);
+    fast.setOfferFilesV1({10000, 20000, 200, 100});
+    QCOMPARE(SharedFileList::offerIntervalMs(&fast), uint64{500});   // never under 500 ms
+
+    Server slow(0x01020306u, 4661);
+    slow.setOfferFilesV1({10000, 20000, 200, 2000});
+    QCOMPARE(SharedFileList::offerIntervalMs(&slow), uint64{2000});
 }
 
 void tst_SharedFileList::offer_skipsLargeFilesForServersThatCannotIndexThem()

@@ -6146,6 +6146,11 @@ QWidget* OptionsDialog::createBtConnectionPage()
     m_btRandomPortBtn->setToolTip(
         tr("Picks a port that is free for TCP and UDP on this computer."));
     portRow->addWidget(m_btRandomPortBtn);
+    portRow->addStretch();
+    portForm->addRow(tr("Listen port (TCP/UDP):"), portRow);
+
+    // own row: one row with all four buttons widened the dialog past 800 px
+    auto* testRow = new QHBoxLayout;
     auto* btTestBtn = new QPushButton(tr("Test Ports"), portGroup);
     btTestBtn->setToolTip(
         tr("Asks emule-qt.org whether the port the core uses now is reachable over TCP and UDP. "
@@ -6153,13 +6158,13 @@ QWidget* OptionsDialog::createBtConnectionPage()
     connect(btTestBtn, &QPushButton::clicked, this, [this, btTestBtn] {
         PortTest::NetworkTest::run(m_ipc, this, btTestBtn, PortTest::Network::BitTorrent);
     });
-    portRow->addWidget(btTestBtn);
+    testRow->addWidget(btTestBtn);
     auto* btRouterBtn = new QPushButton(tr("Open Router"), portGroup);
     btRouterBtn->setToolTip(tr("Opens the web page of this computer's router, where ports are forwarded"));
     connect(btRouterBtn, &QPushButton::clicked, this, [this] { openRouterPage(); });
-    portRow->addWidget(btRouterBtn);
-    portRow->addStretch();
-    portForm->addRow(tr("Listen port (TCP/UDP):"), portRow);
+    testRow->addWidget(btRouterBtn);
+    testRow->addStretch();
+    portForm->addRow(QString(), testRow);
 
     m_btPortMappingCheck = new QCheckBox(tr("Map port with UPnP/NAT-PMP"), portGroup);
     m_btPortMappingCheck->setToolTip(

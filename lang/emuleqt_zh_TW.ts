@@ -2024,12 +2024,12 @@ M	壓縮資料尚未完全下載
     </message>
     <message>
         <location line="+19"/>
-        <location line="+296"/>
+        <location line="+308"/>
         <source>Off</source>
         <translation>關閉</translation>
     </message>
     <message>
-        <location line="-296"/>
+        <location line="-308"/>
         <source>Torrents use direct connections only.</source>
         <translation>種子僅使用直接連線。</translation>
     </message>
@@ -2044,7 +2044,12 @@ M	壓縮資料尚未完全下載
         <translation>eMule 執行自己的 I2P 路由器。首次啟動需要幾分鐘加入網路。</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+13"/>
+        <source>Part of the bundled router&apos;s bandwidth used for other routers&apos; tunnels. More helps the I2P network and hides your own traffic better.</source>
+        <translation>內建路由器用於其他路由器通道的頻寬比例。越多越有助於 I2P 網路，也更能隱藏您自己的流量。</translation>
+    </message>
+    <message>
+        <location line="+5"/>
         <source>Set your browser&apos;s HTTP proxy to 127.0.0.1 and this port on the core&apos;s computer to open .i2p sites, e.g. torrent trackers. It uses its own I2P address, not the torrents&apos; one.</source>
         <translation>在核心所在的電腦上將瀏覽器的 HTTP 代理設為 127.0.0.1 和此連接埠，即可開啟 .i2p 網站，例如種子 Tracker。它使用自己的 I2P 位址，而非種子的位址。</translation>
     </message>
@@ -2133,7 +2138,7 @@ M	壓縮資料尚未完全下載
         <translation type="vanished">I2P 瀏覽器代理執行於核心所在的電腦上：此電腦上的瀏覽器無法使用它。</translation>
     </message>
     <message>
-        <location line="+81"/>
+        <location line="+84"/>
         <source>I2P router is on, but no torrent uses it: check &quot;Add new torrents as I2P only&quot; or &quot;Mixed mode&quot; in Options &gt; BitTorrent &gt; I2P.</source>
         <translation>I2P 路由器已開啟，但沒有種子使用它：請在 選項 &gt; BitTorrent &gt; I2P 中勾選「新種子預設僅 I2P」或「混合模式」。</translation>
     </message>
@@ -2152,7 +2157,7 @@ M	壓縮資料尚未完全下載
         <translation type="vanished">路由器：</translation>
     </message>
     <message>
-        <location line="-181"/>
+        <location line="-184"/>
         <source>Host of the external router&apos;s SAM bridge</source>
         <translation>外部路由器 SAM 橋接的主機</translation>
     </message>
@@ -2169,7 +2174,7 @@ M	壓縮資料尚未完全下載
         <translation>SAM 橋接：</translation>
     </message>
     <message>
-        <location line="-70"/>
+        <location line="-78"/>
         <source>TCP and UDP port of the bundled router. Mapped with UPnP when the BitTorrent port is.</source>
         <translation>內建路由器的 TCP 與 UDP 連接埠。BitTorrent 連接埠使用 UPnP 對應時也會一併對應。</translation>
     </message>
@@ -2177,6 +2182,11 @@ M	壓縮資料尚未完全下載
         <location line="+2"/>
         <source>Router port:</source>
         <translation>路由器連接埠：</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Bandwidth for relaying:</source>
+        <translation>用於中繼的頻寬:</translation>
     </message>
     <message>
         <location line="+107"/>
@@ -2239,12 +2249,12 @@ M	壓縮資料尚未完全下載
         <translation>狀態：</translation>
     </message>
     <message>
-        <location line="-94"/>
+        <location line="-102"/>
         <source>Router</source>
         <translation>路由器</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+31"/>
         <source>HTTP proxy for browsing .i2p sites</source>
         <translation>用於瀏覽 .i2p 網站的 HTTP 代理</translation>
     </message>
@@ -2277,7 +2287,7 @@ M	壓縮資料尚未完全下載
         <translation type="vanished">此版本未內建 I2P 路由器 (emuleqt-i2pd)。</translation>
     </message>
     <message>
-        <location line="+175"/>
+        <location line="+179"/>
         <source>BitTorrent is off</source>
         <translation>BitTorrent 已關閉</translation>
     </message>
@@ -2782,18 +2792,18 @@ Its downloads keep their files and move to All.</source>
     </message>
     <message>
         <location line="+37"/>
-        <location line="+255"/>
+        <location line="+256"/>
         <source>General</source>
         <translation>一般</translation>
     </message>
     <message>
-        <location line="-244"/>
-        <location line="+253"/>
+        <location line="-245"/>
+        <location line="+254"/>
         <source>Name</source>
         <translation>名稱</translation>
     </message>
     <message>
-        <location line="-251"/>
+        <location line="-252"/>
         <source>Hash</source>
         <translation>切細值</translation>
     </message>
@@ -2814,18 +2824,18 @@ Its downloads keep their files and move to All.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+260"/>
+        <location line="+261"/>
         <source>Software</source>
         <translation>軟體</translation>
     </message>
     <message>
-        <location line="-257"/>
-        <location line="+263"/>
+        <location line="-258"/>
+        <location line="+264"/>
         <source>Country</source>
         <translation>國家</translation>
     </message>
     <message>
-        <location line="-239"/>
+        <location line="-240"/>
         <source>Server IP</source>
         <translation>伺服器 IP</translation>
     </message>
@@ -2920,17 +2930,17 @@ Its downloads keep their files and move to All.</source>
     </message>
     <message>
         <location line="+185"/>
-        <location line="+262"/>
+        <location line="+263"/>
         <source>Connected</source>
         <translation>已連線</translation>
     </message>
     <message>
-        <location line="-262"/>
+        <location line="-263"/>
         <source>Disconnected</source>
         <translation>已中斷連線</translation>
     </message>
     <message>
-        <location line="+55"/>
+        <location line="+56"/>
         <source>LowID Callback</source>
         <translation>LowID 回呼</translation>
     </message>
@@ -10421,7 +10431,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+60"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+62"/>
         <location line="+407"/>
         <source>Unlimited</source>
         <translation>無限制</translation>
@@ -10432,23 +10442,23 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>eMule 首次執行精靈</translation>
     </message>
     <message>
-        <location line="+619"/>
+        <location line="+643"/>
         <source>eMule uses two ports for communication with servers and clients. These ports must be free and available for remote clients. The TCP port must be available to ensure the main functionality of eMule. The UDP port is used for Kad (serverless network) and to reduce network usage (Overhead).</source>
         <translation>eMule 使用兩個連接埠與伺服器和客戶端通訊。這些連接埠必須空閒並可供遠端客戶端使用。TCP 連接埠必須可用以確保 eMule 的主要功能。UDP 連接埠用於 Kad (無伺服器網路) 和減少網路使用量 (額外負擔)。</translation>
     </message>
     <message>
-        <location line="-497"/>
+        <location line="-521"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>在尚未開始任何網路活動前，您可以在此變更連接埠。</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+479"/>
+        <location line="+503"/>
         <source>TCP:</source>
         <translation>TCP：</translation>
     </message>
     <message>
-        <location line="-475"/>
+        <location line="-499"/>
         <source>UDP:</source>
         <translation>UDP：</translation>
     </message>
@@ -10669,12 +10679,12 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
     </message>
     <message>
         <location line="+2"/>
-        <location line="+34"/>
+        <location line="+58"/>
         <source>Next &gt;</source>
         <translation>下一步 &gt;</translation>
     </message>
     <message>
-        <location line="-31"/>
+        <location line="-55"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
@@ -10684,7 +10694,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>說明</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+46"/>
         <source>Import</source>
         <translation>匯入</translation>
     </message>

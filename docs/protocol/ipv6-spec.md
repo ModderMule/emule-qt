@@ -1,7 +1,7 @@
 # eD2K / Kademlia IPv6 Extensions — Interoperability Specification
 
 **Status:** Implemented and shipping in eMuleQt.
-**Document version:** 1.1 — 2026-07-30.
+**Document version:** 1.2 — 2026-11-16.
 **Audience:** implementers of eD2K clients, eD2K servers, and eD2K link generators who want to
 interoperate with eMuleQt over IPv6.
 
@@ -958,6 +958,20 @@ Body: `UInt128 fileID`, `UInt128 sourceID`, `uint8 tagCount`, *tags*. The classi
 `FT_ENCRYPTION` `0xF3`, and for a buddy-relayed source `FT_SERVERIP` `0xFB` / `FT_SERVERPORT` `0xFA`
 / `FT_BUDDYHASH` `0xF8`) are unchanged.
 
+Classic `FT_SOURCETYPE` values, for reference:
+
+| Type | Publisher | Route for a downloader | Extra tags |
+| --- | --- | --- | --- |
+| 1 | not firewalled, file ≤ 4 GB | TCP to `FT_SOURCEIP` | — |
+| 2 | — | none; receivers ignore it (some legacy clients mis-handle it) | — |
+| 3 | firewalled with buddy, file ≤ 4 GB | `KADEMLIA_CALLBACK_REQ` to the buddy → `OP_CALLBACK` → source dials back | `FT_SERVERIP`/`FT_SERVERPORT` = buddy, `FT_BUDDYHASH` |
+| 4 | as 1, file > 4 GB | as 1 | — |
+| 5 | as 3, file > 4 GB | as 3 | as 3 |
+| 6 | firewalled, verified open UDP | UDP callback request to the source's Kad port | `FT_ENCRYPTION` bit 3 set |
+
+Every legacy result switch drops a value it does not know without further work — types 4–6 were
+introduced that way. Type 7 is proposed in §9.1.
+
 Append, **last**:
 
 - `"ip6"` — only when the peer gate of §2.2 is open. It MAY accompany **any** source type
@@ -968,8 +982,22 @@ Append, **last**:
 callback and no buddy would publish nothing at all (sources, keywords and notes are all held back).
 When the peer gate of §2.2 is open it publishes anyway: source type 3 (5 above 4 GB) **without**
 `FT_SERVERIP` / `FT_SERVERPORT` / `FT_BUDDYHASH` / `bi6`, plus the usual port, size and
-`FT_ENCRYPTION` tags and `ip6`. Indexing nodes store it unchanged. A stock client finds no route to
-such a source and drops it without any network I/O; an IPv6-capable client dials `ip6` directly.
+`FT_ENCRYPTION` tags and `ip6`. Indexing nodes store it unchanged. An IPv6-capable client dials
+`ip6` directly.
+
+> **Legacy receivers misread this record.** A stock client that is itself firewalled drops a type
+> 3/5 source outright. One that is **not** firewalled keeps it: the missing `FT_BUDDYHASH` leaves an
+> all-zero buddy ID that is still flagged valid, `FT_SERVERIP` 0 means no buddy address, and the
+> connect attempt falls through to a `FINDSOURCE` lookup for Kad ID `000…0`, which sends
+> `KADEMLIA_CALLBACK_REQ` to up to 20 nodes nearest zero. Those nodes forward `OP_CALLBACK` to their
+> own buddy unchecked; the buddy discards it on the ID mismatch. A client runs one such lookup at a
+> time; while one runs, further records of this kind wait without I/O but stay in the source list
+> and retry on every reask. Every client in this position aims at the same few nodes.
+> A receiver that implements this spec MUST treat an all-zero `FT_BUDDYHASH`, or a missing one, as
+> no buddy and MUST NOT start a lookup for it.
+>
+> This record is interim. Once the type of §9.1 is agreed it replaces this branch; the
+> firewalled-with-buddy record stays type 3/5 with `ip6`/`bi6`.
 
 ### 5.3 Storing and serving
 
@@ -1232,6 +1260,58 @@ negotiation, and a second ingest path would have to be kept in step with the fir
 
 Also out of scope and deliberately inert: NAT rendezvous / `PR_NAT` (the `0x00040000` server flag
 is never tested and a NAT-port tag is skipped as an unknown tag), and µTP.
+
+### 9.1 Proposed: Kad source type 7 — "routes in tags"
+
+**Status:** proposal, under discussion with another implementation; nothing emits or reads it yet.
+Until it is agreed, the interim record of §5.2 stays in use.
+
+**Problem.** A node with no IPv4 route — firewalled on IPv4, no buddy, no verified UDP callback —
+can still be reached over its public IPv6. Kad runs over IPv4 only, so the publisher reaches the
+indexing node over IPv4 and gets an `FT_SOURCEIP`, but no IPv4-only downloader can open a TCP
+connection to it. Published as type 3/5 it costs legacy receivers a buddy lookup (§5.2). A type
+legacy receivers do not know costs them nothing.
+
+**Value.** `FT_SOURCETYPE` = `7`. Lowest unused value: 2 is poisoned, 1 and 3–6 are taken, and no
+surveyed client assigns 7. One value for every file size; the size travels in `FT_FILESIZE`, as
+with type 6.
+
+**Meaning.** "Reach me by one of the routes in my tags." One extensible type rather than one per
+route: a legacy client drops one unknown value exactly as it drops two, and the next route needs
+a tag, not another number.
+
+**Publisher rules.**
+
+- MUST publish type 7 only when no classic route exists. A node with a buddy keeps type 3/5 with
+  `ip6`/`bi6`; a node with a verified UDP callback keeps type 6; a node that is not firewalled keeps
+  1/4. Legacy clients still reach those through the classic route, and a HighID receiver must not
+  be pushed onto IPv6 where a peer would re-key its identity to the IPv6 socket.
+- MUST carry `FT_SOURCEPORT`, `FT_FILESIZE`, `FT_ENCRYPTION` (bit 3 clear) and **at least one
+  route tag**. `FT_SOURCEUPORT` as for other types.
+- MUST NOT carry `FT_SERVERIP`, `FT_SERVERPORT`, `FT_BUDDYHASH` or `bi6`.
+- Route tags defined so far:
+
+| Route tag | Route |
+| --- | --- |
+| `"ip6"` (§5.1, unchanged hex string) | TCP to the source's public IPv6 |
+
+  Further route tags — e.g. a pointer route — are added to this table, not as new types.
+
+**Indexing node.** No change. Stock indexing nodes store any `FT_SOURCETYPE` value, stamp
+`FT_SOURCEIP` from the packet and re-serve unknown tags verbatim (MFC
+`KademliaUDPListener.cpp:1315`, ours `KadUDPListener.cpp`).
+
+**Receiver rules.**
+
+- Collect the route tags it understands; validate each (§7). If none is usable — unknown route
+  tags only, or `ip6` while the receiver has no public IPv6 — drop the record without any I/O.
+- `FT_SOURCEIP` identifies the source and is subject to IP filtering; it MUST NOT be dialled over
+  TCP.
+- MUST NOT start a buddy lookup or send a callback request for a type-7 record.
+- Unlike type 3/5, a firewalled receiver keeps the record when it can use a route.
+
+**Legacy receivers.** MFC (`Search.cpp:953`), and the other result switches surveyed, accept only
+1 and 3–6, so a type-7 record is dropped before any source is created.
 
 ---
 

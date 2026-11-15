@@ -197,6 +197,9 @@ public:
     /// re-add gate — safeAddKFile() clears it (MFC AddFile, srchybrid/SharedFileList.cpp:695).
     bool removeFile(KnownFile* file);
     void process();
+    /// ED2K server publishing: send the next OP_OFFERFILES when it is due. Called on every
+    /// 100 ms tick, since an OFFERFILES v1 server may allow a packet every 500 ms.
+    void processServerPublish();
 
     /// Re-read the media tags of every shared file that is not a part file, a few per
     /// tick; known.met is saved when the pass ends. MFC RebuildMetaData
@@ -401,6 +404,14 @@ private:
     /// file support and its GetSoftFiles() limit, and mark them published. Split out of
     /// sendListToServer() so both rules can be tested without a live server socket.
     std::vector<KnownFile*> takeFilesToOffer(const Server* srv);
+
+    /// Least time between two OP_OFFERFILES to @p srv, in ms: the legacy minute, or what
+    /// an OFFERFILES v1 server advertised, but never under 500 ms.
+    [[nodiscard]] static uint64 offerIntervalMs(const Server* srv);
+
+    /// Mark every file unpublished for the server and arm the republish. The files offered
+    /// on this connection are forgotten too: the next ones are offered again.
+    void unpublishAllED2K();
 
     /// The tag list of one OP_OFFERFILES record for @p srv
     /// (MFC CSharedFileList::CreateOfferedFilePacket).
@@ -754,7 +765,12 @@ private:
     /// ED2K republish throttle — MFC m_lastPublishED2KFlag / m_lastPublishED2K
     /// (srchybrid/SharedFileList.cpp:1229-1236). Main thread only.
     bool m_republishED2K = false;
-    time_t m_lastPublishED2K = 0;
+    uint64 m_lastPublishED2KMs = 0;     ///< getTickCount() of the last OP_OFFERFILES
+    /// OFFERFILES v1 state of the current server connection, reset on every connect.
+    uint64 m_ed2kConnectedAtMs = 0;     ///< when the ID was assigned; the ident wait starts here
+    uint32 m_largestOfferThisConn = 0;  ///< most records in one packet sent on this connection
+    bool m_offerV1Applied = false;      ///< the v1 advertisement has been seen and acted on
+    QSet<QByteArray> m_offeredThisConn; ///< hashes offered on this connection: the soft budget
 
     // Kad publishing round-robin state
     uint32 m_currFileSrc = 0;

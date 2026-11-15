@@ -51,6 +51,7 @@ private:
     QLineEdit* m_hostEdit = nullptr;
     QSpinBox* m_portSpin = nullptr;
     QSpinBox* m_routerPortSpin = nullptr;
+    QSpinBox* m_shareSpin = nullptr;
     QSpinBox* m_lengthSpin = nullptr;
     QSpinBox* m_quantitySpin = nullptr;
     QCheckBox* m_mixedCheck = nullptr;

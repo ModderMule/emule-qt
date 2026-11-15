@@ -52,6 +52,8 @@ private slots:
     void natRendezvous_idChangeLengthAndNotices();
     void natRendezvous_serverIdentNatPort();
     void serverIdent_ed3kTagNamesTheIndexNode();
+    void serverIdent_offerFilesV1AllOrNothing();
+    void serverIdent_offerFilesV1FirstAdvertisementBinds();
 };
 
 /// Helper: write raw ED2K packet bytes to a socket.
@@ -855,5 +857,115 @@ void tst_ServerSocket::socketError_reportsOnceThroughBothEntryPoints()
 }
 
 QTEST_MAIN(tst_ServerSocket)
+// ---------------------------------------------------------------------------
+// OFFERFILES v1 (#185): the post-login OP_SERVERIDENT advertisement
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// The five tags of a valid advertisement: soft 10000, hard 20000, batch 200, 500 ms.
+QList<Tag> offerV1Tags(uint32 batch = 200, uint32 intervalMs = 500, uint32 hard = 20000)
+{
+    return {Tag(static_cast<uint8>(ST_SOFTFILES), uint32{10000}),
+            Tag(static_cast<uint8>(ST_HARDFILES), hard),
+            Tag(QByteArray(OFFERFILES_TAG_VERSION), OFFERFILES_V1_VERSION),
+            Tag(QByteArray(OFFERFILES_TAG_BATCH_MAX), batch),
+            Tag(QByteArray(OFFERFILES_TAG_MIN_INTERVAL), intervalMs)};
+}
+
+/// Feed one OP_SERVERIDENT per entry of @p idents to a fresh connection and return what
+/// the session's copy of the server holds afterwards.
+std::optional<Server::OfferFilesV1> offerV1AfterIdents(const QList<QList<Tag>>& idents)
+{
+    QTcpServer server;
+    if (!server.listen(QHostAddress::LocalHost, 0))
+        return std::nullopt;
+    ServerSocket clientSocket;
+    QSignalSpy identSpy(&clientSocket, &ServerSocket::serverIdentReceived);
+    Server srv(htonl(0x7F000001), server.serverPort());
+    clientSocket.connectTo(srv);
+    if (!server.waitForNewConnection(5000))
+        return std::nullopt;
+    auto* serverSide = server.nextPendingConnection();
+    if (!serverSide || !clientSocket.waitForConnected(5000))
+        return std::nullopt;
+
+    for (const QList<Tag>& tags : idents) {
+        SafeMemFile data;
+        const uint8 hash[16] = {};
+        data.writeHash16(hash);
+        data.writeUInt32(htonl(0x0A010203));
+        data.writeUInt16(4661);
+        data.writeUInt32(static_cast<uint32>(tags.size()));
+        for (const Tag& t : tags)
+            t.writeTagToFile(data);
+        const QByteArray payload = data.takeBuffer();
+        writeRawPacket(serverSide, OP_EDONKEYPROT, OP_SERVERIDENT, payload.constData(),
+                       static_cast<uint32>(payload.size()));
+    }
+    for (int i = 0; i < 300 && identSpy.count() < idents.size(); ++i)
+        QTest::qWait(10);
+    if (identSpy.count() < idents.size())
+        return std::nullopt;
+    std::optional<Server::OfferFilesV1> out;
+    if (clientSocket.currentServer())
+        out = clientSocket.currentServer()->offerFilesV1();
+    serverSide->close();
+    clientSocket.close();
+    return out;
+}
+
+} // namespace
+
+void tst_ServerSocket::serverIdent_offerFilesV1AllOrNothing()
+{
+    const auto valid = offerV1AfterIdents({offerV1Tags()});
+    QVERIFY(valid.has_value());
+    QCOMPARE(valid->softFiles, 10000u);
+    QCOMPARE(valid->hardFiles, 20000u);
+    QCOMPARE(valid->batchMax, 200u);
+    QCOMPARE(valid->minIntervalMs, 500u);
+
+    // A legacy ident: nothing.
+    QVERIFY(!offerV1AfterIdents({{Tag(static_cast<uint8>(ST_NAT_PORT), uint32{2010})}}).has_value());
+
+    // Missing one field.
+    QList<Tag> missing = offerV1Tags();
+    missing.removeLast();
+    QVERIFY(!offerV1AfterIdents({missing}).has_value());
+
+    // A field twice.
+    QList<Tag> duplicate = offerV1Tags();
+    duplicate.append(Tag(QByteArray(OFFERFILES_TAG_BATCH_MAX), uint32{100}));
+    QVERIFY(!offerV1AfterIdents({duplicate}).has_value());
+
+    // Wrong type: the batch as a string.
+    QList<Tag> wrongType = offerV1Tags();
+    wrongType[3] = Tag(QByteArray(OFFERFILES_TAG_BATCH_MAX), QStringLiteral("200"));
+    QVERIFY(!offerV1AfterIdents({wrongType}).has_value());
+
+    // Inconsistent: hard not above the batch, interval 0, another version.
+    QVERIFY(!offerV1AfterIdents({offerV1Tags(200, 500, 200)}).has_value());
+    QVERIFY(!offerV1AfterIdents({offerV1Tags(200, 0)}).has_value());
+    QList<Tag> v2 = offerV1Tags();
+    v2[2] = Tag(QByteArray(OFFERFILES_TAG_VERSION), uint32{2});
+    QVERIFY(!offerV1AfterIdents({v2}).has_value());
+}
+
+void tst_ServerSocket::serverIdent_offerFilesV1FirstAdvertisementBinds()
+{
+    // A later ident, without the tags (the OP_GETSERVERLIST answer) or with others,
+    // changes nothing.
+    const auto kept = offerV1AfterIdents({offerV1Tags(200, 500), {}, offerV1Tags(50, 2000)});
+    QVERIFY(kept.has_value());
+    QCOMPARE(kept->batchMax, 200u);
+    QCOMPARE(kept->minIntervalMs, 500u);
+
+    // A late advertisement still binds (aMule docs/ED2K_EXTENSIONS.md).
+    const auto late = offerV1AfterIdents({{}, offerV1Tags(100, 750)});
+    QVERIFY(late.has_value());
+    QCOMPARE(late->batchMax, 100u);
+}
+
 #include "tst_ServerSocket.moc"
 

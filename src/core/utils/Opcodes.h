@@ -435,6 +435,14 @@
 #define ST_MAXUSERS                 0x87
 #define ST_SOFTFILES                0x88
 #define ST_HARDFILES                0x89
+// OFFERFILES v1 (aMule docs/ED2K_EXTENSIONS.md, ed2k-server, eNode-go #185): string-named
+// uint32 tags. The client asks with OFFERFILES_TAG_VERSION in OP_LOGINREQUEST; a server
+// that supports it answers with all three, plus ST_SOFTFILES / ST_HARDFILES, in the
+// post-login OP_SERVERIDENT.
+#define OFFERFILES_V1_VERSION       1u
+#define OFFERFILES_TAG_VERSION      "offerfiles_v"
+#define OFFERFILES_TAG_BATCH_MAX    "offerfiles_batch_max"
+#define OFFERFILES_TAG_MIN_INTERVAL "offerfiles_min_interval_ms"
 #define ST_LASTPING                 0x90
 #define ST_VERSION                  0x91
 #define ST_UDPFLAGS                 0x92

@@ -20,6 +20,7 @@
 
 #include <QCheckBox>
 #include <QDesktopServices>
+#include <QDialogButtonBox>
 #include <QDoubleSpinBox>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -33,6 +34,7 @@
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStackedWidget>
+#include <QStyle>
 #include <QTimer>
 #include <QTreeWidget>
 #include <QUrl>
@@ -511,12 +513,36 @@ void FirstStartWizard::setupButtons()
     auto* cancelBtn = m_cancelBtn;
     auto* helpBtn = new QPushButton(tr("Help"), this);
 
-    btnLayout->addStretch();
-    btnLayout->addWidget(m_backBtn);
-    btnLayout->addWidget(m_nextBtn);
-    btnLayout->addSpacing(24);
-    btnLayout->addWidget(cancelBtn);
-    btnLayout->addWidget(helpBtn);
+    // Platform order, same style hint QDialogButtonBox follows (no Back/Next roles there).
+    // Windows keeps MFC's Back Next | Cancel Help; macOS: Help | Cancel Back Next (QWizard
+    // Mac style); GNOME: affirmative trailing; KDE: Help | Back Next Cancel
+    switch (style()->styleHint(QStyle::SH_DialogButtonLayout, nullptr, this)) {
+    case QDialogButtonBox::WinLayout:
+        btnLayout->addStretch();
+        btnLayout->addWidget(m_backBtn);
+        btnLayout->addWidget(m_nextBtn);
+        btnLayout->addSpacing(24);
+        btnLayout->addWidget(cancelBtn);
+        btnLayout->addWidget(helpBtn);
+        break;
+    case QDialogButtonBox::MacLayout:
+    case QDialogButtonBox::GnomeLayout:
+        btnLayout->addWidget(helpBtn);
+        btnLayout->addStretch();
+        btnLayout->addWidget(cancelBtn);
+        btnLayout->addSpacing(12);
+        btnLayout->addWidget(m_backBtn);
+        btnLayout->addWidget(m_nextBtn);
+        break;
+    default:   // KDE, Android
+        btnLayout->addWidget(helpBtn);
+        btnLayout->addStretch();
+        btnLayout->addWidget(m_backBtn);
+        btnLayout->addWidget(m_nextBtn);
+        btnLayout->addSpacing(12);
+        btnLayout->addWidget(cancelBtn);
+        break;
+    }
 
     connect(m_backBtn, &QPushButton::clicked, this, &FirstStartWizard::onBack);
     connect(m_nextBtn, &QPushButton::clicked, this, &FirstStartWizard::onNext);

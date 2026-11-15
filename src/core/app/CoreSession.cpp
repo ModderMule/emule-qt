@@ -456,6 +456,9 @@ void CoreSession::onTimer()
         theApp.downloadQueue->process();
     if (theApp.uploadQueue)
         theApp.uploadQueue->process();
+    // Self-gated: an OFFERFILES v1 server may take a packet every 500 ms.
+    if (theApp.sharedFileList)
+        theApp.sharedFileList->processServerPublish();
 
     // Slow path — every 10th tick (~1s)
     if (m_tickCounter % 10 == 0) {

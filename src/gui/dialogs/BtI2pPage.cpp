@@ -124,6 +124,14 @@ BtI2pPage::BtI2pPage(IpcClient* ipc, QWidget* parent)
     m_routerPortSpin->setToolTip(tr("TCP and UDP port of the bundled router. Mapped with UPnP when the "
                                     "BitTorrent port is."));
     routerForm->addRow(tr("Router port:"), m_routerPortSpin);
+    m_shareSpin = new QSpinBox(routerGroup);
+    m_shareSpin->setRange(0, 100);
+    m_shareSpin->setValue(50);
+    m_shareSpin->setSuffix(QStringLiteral(" %"));
+    m_shareSpin->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_shareSpin->setToolTip(tr("Part of the bundled router's bandwidth used for other routers' tunnels. "
+                               "More helps the I2P network and hides your own traffic better."));
+    routerForm->addRow(tr("Bandwidth for relaying:"), m_shareSpin);
     // bind address in preferences.yml only (bittorrent.i2p.browserProxyAddress), default 127.0.0.1
     m_browserProxyCheck = new QCheckBox(tr("HTTP proxy for browsing .i2p sites"), routerGroup);
     m_browserProxyCheck->setToolTip(tr("Set your browser's HTTP proxy to 127.0.0.1 and this port on the core's "
@@ -275,7 +283,8 @@ BtI2pPage::BtI2pPage(IpcClient* ipc, QWidget* parent)
     for (QCheckBox* box : {m_mixedCheck, m_onlyNewCheck})
         connect(box, &QCheckBox::toggled, this, &BtI2pPage::updateEnabled);
     for (QSpinBox* box :
-         {m_portSpin, m_routerPortSpin, m_lengthSpin, m_quantitySpin, m_browserProxyPortSpin, m_statusPagePortSpin})
+         {m_portSpin, m_routerPortSpin, m_shareSpin, m_lengthSpin, m_quantitySpin, m_browserProxyPortSpin,
+          m_statusPagePortSpin})
         connect(box, &QSpinBox::valueChanged, this, &BtI2pPage::changed);
     connect(m_hostEdit, &QLineEdit::textEdited, this, &BtI2pPage::changed);
     if (m_ipc)
@@ -287,8 +296,8 @@ void BtI2pPage::load(const QCborMap& prefs)
 {
     const QSignalBlocker blockGroup(m_modeGroup);
     std::vector<QSignalBlocker> blockers;
-    blockers.reserve(14);
-    for (QObject* o : std::initializer_list<QObject*>{m_hostEdit, m_portSpin, m_routerPortSpin, m_lengthSpin,
+    blockers.reserve(15);
+    for (QObject* o : std::initializer_list<QObject*>{m_hostEdit, m_portSpin, m_routerPortSpin, m_shareSpin, m_lengthSpin,
                                                       m_quantitySpin, m_mixedCheck, m_onlyNewCheck, m_ed3kJoinCheck,
                                                       m_browserProxyCheck, m_browserProxyPortSpin, m_statusPageCheck,
                                                       m_statusPagePortSpin, m_statusPageUserEdit, m_statusPagePassEdit})
@@ -301,6 +310,7 @@ void BtI2pPage::load(const QCborMap& prefs)
     m_hostEdit->setText(prefs.value(QStringLiteral("btI2pHost")).toString(QStringLiteral("127.0.0.1")));
     m_portSpin->setValue(int(prefs.value(QStringLiteral("btI2pPort")).toInteger(Preferences::kDefaultBtI2pSamPort)));
     m_routerPortSpin->setValue(int(prefs.value(QStringLiteral("btI2pRouterPort")).toInteger(Preferences::kBtI2pRouterPortMin)));
+    m_shareSpin->setValue(int(prefs.value(QStringLiteral("btI2pShare")).toInteger(50)));
     m_lengthSpin->setValue(int(prefs.value(QStringLiteral("btI2pTunnelLength")).toInteger(3)));
     m_quantitySpin->setValue(int(prefs.value(QStringLiteral("btI2pTunnelQuantity")).toInteger(3)));
     m_mixedCheck->setChecked(prefs.value(QStringLiteral("btI2pMixed")).toBool(false));
@@ -334,6 +344,7 @@ void BtI2pPage::appendTo(IpcMessage& req) const
     put("btI2pHost", m_hostEdit->text().trimmed());
     put("btI2pPort", qint64(m_portSpin->value()));
     put("btI2pRouterPort", qint64(m_routerPortSpin->value()));
+    put("btI2pShare", qint64(m_shareSpin->value()));
     put("btI2pTunnelLength", qint64(m_lengthSpin->value()));
     put("btI2pTunnelQuantity", qint64(m_quantitySpin->value()));
     put("btI2pMixed", m_mixedCheck->isChecked());
@@ -370,6 +381,7 @@ void BtI2pPage::updateEnabled()
     m_hostEdit->setEnabled(mode == Preferences::kBtI2pExternal);
     m_portSpin->setEnabled(mode == Preferences::kBtI2pExternal);
     m_routerPortSpin->setEnabled(mode == Preferences::kBtI2pBundled);
+    m_shareSpin->setEnabled(mode == Preferences::kBtI2pBundled);
     m_browserProxyCheck->setEnabled(mode == Preferences::kBtI2pBundled);
     m_browserProxyPortSpin->setEnabled(mode == Preferences::kBtI2pBundled && m_browserProxyCheck->isChecked());
     m_statusPageCheck->setEnabled(mode == Preferences::kBtI2pBundled);

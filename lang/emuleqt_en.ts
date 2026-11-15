@@ -1958,12 +1958,12 @@ M	compressed data not completely downloaded yet
     </message>
     <message>
         <location line="+19"/>
-        <location line="+296"/>
+        <location line="+308"/>
         <source>Off</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-296"/>
+        <location line="-308"/>
         <source>Torrents use direct connections only.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1978,7 +1978,12 @@ M	compressed data not completely downloaded yet
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+15"/>
+        <source>Bandwidth for relaying:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Set your browser&apos;s HTTP proxy to 127.0.0.1 and this port on the core&apos;s computer to open .i2p sites, e.g. torrent trackers. It uses its own I2P address, not the torrents&apos; one.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2025,7 +2030,7 @@ M	compressed data not completely downloaded yet
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+140"/>
+        <location line="+143"/>
         <source>I2P router is on, but no torrent uses it: check &quot;Add new torrents as I2P only&quot; or &quot;Mixed mode&quot; in Options &gt; BitTorrent &gt; I2P.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2040,7 +2045,7 @@ M	compressed data not completely downloaded yet
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-244"/>
+        <location line="-255"/>
         <source>TCP and UDP port of the bundled router. Mapped with UPnP when the BitTorrent port is.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2050,7 +2055,7 @@ M	compressed data not completely downloaded yet
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+107"/>
+        <location line="+115"/>
         <source>Routers each tunnel passes. More is more anonymous and slower.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2090,12 +2095,17 @@ M	compressed data not completely downloaded yet
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-94"/>
+        <location line="-102"/>
         <source>Router</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+27"/>
+        <source>Part of the bundled router&apos;s bandwidth used for other routers&apos; tunnels. More helps the I2P network and hides your own traffic better.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+4"/>
         <source>HTTP proxy for browsing .i2p sites</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2175,7 +2185,7 @@ M	compressed data not completely downloaded yet
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+145"/>
+        <location line="+149"/>
         <source>BitTorrent is off</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2673,12 +2683,12 @@ Its downloads keep their files and move to All.</source>
     </message>
     <message>
         <location line="+37"/>
-        <location line="+255"/>
+        <location line="+256"/>
         <source>General</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-243"/>
+        <location line="-244"/>
         <source>ID</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2694,29 +2704,29 @@ Its downloads keep their files and move to All.</source>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+263"/>
+        <location line="+264"/>
         <source>Country</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-271"/>
-        <location line="+253"/>
+        <location line="-272"/>
+        <location line="+254"/>
         <source>Name</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-251"/>
+        <location line="-252"/>
         <source>Hash</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+260"/>
+        <location line="+261"/>
         <source>Software</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-233"/>
+        <location line="-234"/>
         <source>Server IP</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2811,17 +2821,17 @@ Its downloads keep their files and move to All.</source>
     </message>
     <message>
         <location line="+185"/>
-        <location line="+262"/>
+        <location line="+263"/>
         <source>Connected</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-262"/>
+        <location line="-263"/>
         <source>Disconnected</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+55"/>
+        <location line="+56"/>
         <source>LowID Callback</source>
         <translation type="unfinished"></translation>
     </message>
@@ -10056,12 +10066,12 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+69"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+71"/>
         <source>eMule First Runtime Wizard</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+468"/>
+        <location line="+492"/>
         <source>Ports and Connection</source>
         <translation type="unfinished"></translation>
     </message>
@@ -10076,7 +10086,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-628"/>
+        <location line="-652"/>
         <location line="+407"/>
         <source>Unlimited</source>
         <translation type="unfinished"></translation>
@@ -10088,12 +10098,12 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
     </message>
     <message>
         <location line="+11"/>
-        <location line="+479"/>
+        <location line="+503"/>
         <source>TCP:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-475"/>
+        <location line="-499"/>
         <source>UDP:</source>
         <translation type="unfinished"></translation>
     </message>
@@ -10310,7 +10320,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
     </message>
     <message>
         <location line="+2"/>
-        <location line="+34"/>
+        <location line="+58"/>
         <source>Next &gt;</source>
         <translation type="unfinished"></translation>
     </message>
@@ -10345,7 +10355,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-332"/>
+        <location line="-356"/>
         <source>Cancel</source>
         <translation type="unfinished"></translation>
     </message>
@@ -10355,7 +10365,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+67"/>
+        <location line="+91"/>
         <source>UDP is disabled in the config file (udpPort: 0)</source>
         <translation type="unfinished"></translation>
     </message>

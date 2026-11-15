@@ -1077,8 +1077,9 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
     const bool sendToken = live && live->hasNatToken()
                            && (socket->isObfuscating() || !m_connectedSocket->isObfuscating());
 
-    // Tag count — base 4, plus CT_MOD_IP_V6, CT_EMULE_UDPPORTS and ST_NATT_TOKEN when sent.
-    data.writeUInt32(4u + (sendIPv6Tag ? 1u : 0u) + (sendUdpPorts ? 1u : 0u) + (sendToken ? 1u : 0u));
+    // Tag count — base 5 (with the OFFERFILES v1 request), plus CT_MOD_IP_V6,
+    // CT_EMULE_UDPPORTS and ST_NATT_TOKEN when sent.
+    data.writeUInt32(5u + (sendIPv6Tag ? 1u : 0u) + (sendUdpPorts ? 1u : 0u) + (sendToken ? 1u : 0u));
 
     // Tag: CT_NAME — user nick
     // Use old-format tags (writeTagToFile) in the login packet. The server hasn't
@@ -1139,6 +1140,13 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
         Tag tagToken(static_cast<uint8>(ST_NATT_TOKEN), live->natToken().data());
         tagToken.writeTagToFile(data);
     }
+
+    // OFFERFILES v1 (#185): ask the server for a publishing pace faster than the legacy
+    // 200 files a minute. A string-named uint32 in old format, which every server skips
+    // when it does not know it; one that does answers in the post-login OP_SERVERIDENT
+    // (ServerSocket), and SharedFileList publishes within what it was told.
+    Tag tagOfferV1(QByteArray(OFFERFILES_TAG_VERSION), static_cast<uint32>(OFFERFILES_V1_VERSION));
+    tagOfferV1.writeTagToFile(data);
 
     auto packet = std::make_unique<Packet>(data);
     packet->opcode = OP_LOGINREQUEST;

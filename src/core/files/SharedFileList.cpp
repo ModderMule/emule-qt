@@ -20,6 +20,7 @@
 #include "protocol/Tag.h"
 #include "server/Server.h"
 #include "server/ServerConnect.h"
+#include "utils/TimeUtils.h"
 #include "utils/DiskLoadLimiter.h"
 #include "files/PartFile.h"
 #include "files/SharedDirWatcher.h"
@@ -54,7 +55,17 @@ constexpr time_t kEd2kRepublishSecs = 60;
 
 /// Client-side ceiling on files per OP_OFFERFILES packet. A server's advertised
 /// GetSoftFiles() may lower this, never raise it (srchybrid/SharedFileList.cpp:832-834).
+/// OFFERFILES v1 keeps it too (aMule docs/ED2K_EXTENSIONS.md): v1 changes the pace.
 constexpr uint32 kMaxOfferedFiles = 200;
+
+/// OFFERFILES v1: the fastest pace we publish at, whatever a server advertises, so at most
+/// 400 files a second (aMule's rule).
+constexpr uint64 kMinOfferV1IntervalMs = 500;
+
+/// OFFERFILES v1: how long the first offer of a connection waits for the post-login
+/// OP_SERVERIDENT that may carry the advertisement. ed2k-server and eNode-go send it with
+/// the ID; Lugdunum only answers OP_GETSERVERLIST, so it costs those five seconds.
+constexpr uint64 kOfferIdentWaitMs = 5000;
 
 
 // ===========================================================================
@@ -580,13 +591,7 @@ void SharedFileList::process()
 {
     publish();
 
-    // ED2K server publishing — MFC gates on a dirty flag plus a one-minute spacing
-    // (ED2KREPUBLISHTIME, srchybrid/SharedFileList.cpp:1229-1236) rather than walking
-    // the whole share on every tick.
-    if (m_republishED2K && std::time(nullptr) >= m_lastPublishED2K + kEd2kRepublishSecs) {
-        sendListToServer();
-        m_lastPublishED2K = std::time(nullptr);
-    }
+    // ED2K server publishing runs from processServerPublish(), on the 100 ms tick.
 
     warmContainerChecks();
     stepMetaDataRebuild();
@@ -1007,16 +1012,53 @@ std::vector<KnownFile*> SharedFileList::takeFilesToOffer(const Server* srv)
                   return realPriority(a->upPriority()) > realPriority(b->upPriority());
               });
 
-    // The server's own soft limit, clamped: 0 means "unknown", and anything above our
-    // own ceiling is ignored (srchybrid/SharedFileList.cpp:832-834).
-    uint32 limit = srv ? srv->softFiles() : 0;
-    if (limit == 0 || limit > kMaxOfferedFiles)
-        limit = kMaxOfferedFiles;
-    if (sortedFiles.size() > limit)
-        sortedFiles.resize(limit);
+    const auto hashKey = [](const KnownFile* f) {
+        return QByteArray(reinterpret_cast<const char*>(f->fileHash()), 16);
+    };
 
-    for (KnownFile* file : sortedFiles)
+    const std::optional<Server::OfferFilesV1> v1 = srv ? srv->offerFilesV1() : std::nullopt;
+    if (!v1) {
+        // The server's own soft limit, clamped: 0 means "unknown", and anything above our
+        // own ceiling is ignored (srchybrid/SharedFileList.cpp:832-834).
+        uint32 limit = srv ? srv->softFiles() : 0;
+        if (limit == 0 || limit > kMaxOfferedFiles)
+            limit = kMaxOfferedFiles;
+        if (sortedFiles.size() > limit)
+            sortedFiles.resize(limit);
+    } else {
+        // OFFERFILES v1 (aMule docs/ED2K_EXTENSIONS.md). Limits from later UDP status
+        // replies may tighten the snapshot, never widen it.
+        uint32 soft = v1->softFiles;
+        uint32 hard = v1->hardFiles;
+        if (srv->softFiles() > 0)
+            soft = std::min(soft, srv->softFiles());
+        if (srv->hardFiles() > 0)
+            hard = std::min(hard, srv->hardFiles());
+        // Every packet stays at the batch, strictly below the hard limit, and at our cap.
+        const uint32 limit = std::min({v1->batchMax, hard > 0 ? hard - 1 : 0u, kMaxOfferedFiles});
+        // Only a file not yet offered on this connection uses the soft budget; a re-offer
+        // (after a rename or a completion) takes a packet slot but no budget.
+        const auto offered = static_cast<uint32>(m_offeredThisConn.size());
+        uint32 budget = soft > offered ? soft - offered : 0;
+        std::vector<KnownFile*> picked;
+        picked.reserve(std::min<size_t>(sortedFiles.size(), limit));
+        for (KnownFile* file : sortedFiles) {
+            if (picked.size() >= limit)
+                break;
+            if (!m_offeredThisConn.contains(hashKey(file))) {
+                if (budget == 0)
+                    continue;
+                --budget;
+            }
+            picked.push_back(file);
+        }
+        sortedFiles = std::move(picked);
+    }
+
+    for (KnownFile* file : sortedFiles) {
         file->setPublishedED2K(true);
+        m_offeredThisConn.insert(hashKey(file));
+    }
 
     return sortedFiles;
 }
@@ -1078,8 +1120,49 @@ void SharedFileList::sendListToServer()
         packet->packPacket();
 
     m_serverConnect->sendPacket(std::move(packet));
+    m_largestOfferThisConn = std::max(m_largestOfferThisConn, static_cast<uint32>(sortedFiles.size()));
 
     logDebug([&]() -> QString { return QStringLiteral("Sent %1 shared files to server").arg(sortedFiles.size()); });
+}
+
+void SharedFileList::processServerPublish()
+{
+    if (!m_serverConnect || !m_serverConnect->isConnected())
+        return;
+    const Server* srv = m_serverConnect->currentServer();
+    const uint64 now = getTickCount();
+
+    // A late OFFERFILES v1 advertisement still binds the connection. A packet sent before
+    // it that was larger than the batch was skipped by the server: offer this
+    // connection's files again, within the new limits.
+    if (srv && srv->offerFilesV1() && !m_offerV1Applied) {
+        m_offerV1Applied = true;
+        if (m_largestOfferThisConn > srv->offerFilesV1()->batchMax) {
+            logDebug([&]() -> QString { return QStringLiteral("OFFERFILES v1 arrived after a batch of %1 files: offering again")
+                                 .arg(m_largestOfferThisConn); });
+            unpublishAllED2K();
+        }
+    }
+
+    if (!m_republishED2K)
+        return;
+    // The first offer of a connection waits for the ident that may carry v1.
+    if (srv && !srv->identReceived() && now < m_ed2kConnectedAtMs + kOfferIdentWaitMs)
+        return;
+    // MFC gates on a dirty flag plus a one-minute spacing (ED2KREPUBLISHTIME,
+    // srchybrid/SharedFileList.cpp:1229-1236) rather than walking the whole share on
+    // every tick; a v1 server sets a shorter spacing.
+    if (m_lastPublishED2KMs != 0 && now < m_lastPublishED2KMs + offerIntervalMs(srv))
+        return;
+    sendListToServer();
+    m_lastPublishED2KMs = now;
+}
+
+uint64 SharedFileList::offerIntervalMs(const Server* srv)
+{
+    if (srv && srv->offerFilesV1())
+        return std::max<uint64>(srv->offerFilesV1()->minIntervalMs, kMinOfferV1IntervalMs);
+    return static_cast<uint64>(kEd2kRepublishSecs) * 1000u;
 }
 
 // ---------------------------------------------------------------------------
@@ -1105,6 +1188,15 @@ void SharedFileList::setServerConnect(ServerConnect* sc)
 
 void SharedFileList::clearED2KPublishFlags()
 {
+    unpublishAllED2K();
+    // A new connection: its OFFERFILES v1 state starts afresh, and so does the ident wait.
+    m_offerV1Applied = false;
+    m_ed2kConnectedAtMs = getTickCount();
+    m_lastPublishED2KMs = 0;
+}
+
+void SharedFileList::unpublishAllED2K()
+{
     // Set outside the lock: each setter emits fileChanged, and a listener that
     // looks the file up here would wait on m_mutex for ever (core hang on connect)
     std::vector<KnownFile*> files;
@@ -1116,10 +1208,11 @@ void SharedFileList::clearED2KPublishFlags()
     }
     for (KnownFile* file : files)
         file->setPublishedED2K(false);
+    m_offeredThisConn.clear();
+    m_largestOfferThisConn = 0;
     // MFC ClearED2KPublishInfo (srchybrid/SharedFileList.cpp:872-877) arms the flag
     // too — otherwise the whole share is marked unpublished and never re-offered.
     m_republishED2K = true;
-    m_lastPublishED2K = 0;
 }
 
 void SharedFileList::publish()

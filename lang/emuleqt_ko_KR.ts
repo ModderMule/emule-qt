@@ -2165,12 +2165,12 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
     </message>
     <message>
         <location line="+19"/>
-        <location line="+296"/>
+        <location line="+308"/>
         <source>Off</source>
         <translation>꺼짐</translation>
     </message>
     <message>
-        <location line="-296"/>
+        <location line="-308"/>
         <source>Torrents use direct connections only.</source>
         <translation>토렌트는 직접 연결만 사용합니다.</translation>
     </message>
@@ -2185,7 +2185,12 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
         <translation>eMule이 자체 I2P 라우터를 실행합니다. 처음 시작할 때 네트워크 참여에 몇 분이 걸립니다.</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+13"/>
+        <source>Part of the bundled router&apos;s bandwidth used for other routers&apos; tunnels. More helps the I2P network and hides your own traffic better.</source>
+        <translation>내장 라우터 대역폭 중 다른 라우터의 터널에 쓰는 비율. 높을수록 I2P 네트워크에 도움이 되고 자신의 트래픽을 더 잘 숨깁니다.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
         <source>Set your browser&apos;s HTTP proxy to 127.0.0.1 and this port on the core&apos;s computer to open .i2p sites, e.g. torrent trackers. It uses its own I2P address, not the torrents&apos; one.</source>
         <translation>.i2p 사이트(예: 토렌트 트래커)를 열려면 코어 컴퓨터에서 브라우저의 HTTP 프록시를 127.0.0.1과 이 포트로 설정하세요. 토렌트와 다른 자체 I2P 주소를 사용합니다.</translation>
     </message>
@@ -2274,7 +2279,7 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
         <translation type="vanished">I2P 브라우저 프록시는 코어 컴퓨터에서 실행됩니다: 이 컴퓨터의 브라우저에서는 사용할 수 없습니다.</translation>
     </message>
     <message>
-        <location line="+81"/>
+        <location line="+84"/>
         <source>I2P router is on, but no torrent uses it: check &quot;Add new torrents as I2P only&quot; or &quot;Mixed mode&quot; in Options &gt; BitTorrent &gt; I2P.</source>
         <translation>I2P 라우터가 켜져 있지만 사용하는 토렌트가 없습니다: 옵션 &gt; BitTorrent &gt; I2P에서 &quot;새 토렌트를 I2P 전용으로 추가&quot; 또는 &quot;혼합 모드&quot;를 선택하세요.</translation>
     </message>
@@ -2293,7 +2298,7 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
         <translation type="vanished">라우터:</translation>
     </message>
     <message>
-        <location line="-181"/>
+        <location line="-184"/>
         <source>Host of the external router&apos;s SAM bridge</source>
         <translation>외부 라우터 SAM 브리지의 호스트</translation>
     </message>
@@ -2310,7 +2315,7 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
         <translation>SAM 브리지:</translation>
     </message>
     <message>
-        <location line="-70"/>
+        <location line="-78"/>
         <source>TCP and UDP port of the bundled router. Mapped with UPnP when the BitTorrent port is.</source>
         <translation>내장 라우터의 TCP 및 UDP 포트. BitTorrent 포트가 UPnP로 매핑되면 함께 매핑됩니다.</translation>
     </message>
@@ -2318,6 +2323,11 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
         <location line="+2"/>
         <source>Router port:</source>
         <translation>라우터 포트:</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Bandwidth for relaying:</source>
+        <translation>중계용 대역폭:</translation>
     </message>
     <message>
         <location line="+107"/>
@@ -2380,12 +2390,12 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
         <translation>상태:</translation>
     </message>
     <message>
-        <location line="-94"/>
+        <location line="-102"/>
         <source>Router</source>
         <translation>라우터</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+31"/>
         <source>HTTP proxy for browsing .i2p sites</source>
         <translation>.i2p 사이트 탐색용 HTTP 프록시</translation>
     </message>
@@ -2418,7 +2428,7 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
         <translation type="vanished">이 빌드에는 내장 I2P 라우터(emuleqt-i2pd)가 없습니다.</translation>
     </message>
     <message>
-        <location line="+175"/>
+        <location line="+179"/>
         <source>BitTorrent is off</source>
         <translation>BitTorrent가 꺼져 있음</translation>
     </message>
@@ -2931,7 +2941,7 @@ Its downloads keep their files and move to All.</source>
     </message>
     <message>
         <location line="+37"/>
-        <location line="+255"/>
+        <location line="+256"/>
         <source>General</source>
         <translation>일반</translation>
     </message>
@@ -2944,7 +2954,7 @@ Its downloads keep their files and move to All.</source>
         <translation type="vanished">사용자 해시</translation>
     </message>
     <message>
-        <location line="-243"/>
+        <location line="-244"/>
         <source>ID</source>
         <translation>ID</translation>
     </message>
@@ -2964,7 +2974,7 @@ Its downloads keep their files and move to All.</source>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+263"/>
+        <location line="+264"/>
         <source>Country</source>
         <translation>국가</translation>
     </message>
@@ -2973,24 +2983,24 @@ Its downloads keep their files and move to All.</source>
         <translation type="vanished">서버</translation>
     </message>
     <message>
-        <location line="-271"/>
-        <location line="+253"/>
+        <location line="-272"/>
+        <location line="+254"/>
         <source>Name</source>
         <translation>이름</translation>
     </message>
     <message>
-        <location line="-251"/>
+        <location line="-252"/>
         <source>Hash</source>
         <translation>해시</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+260"/>
+        <location line="+261"/>
         <source>Software</source>
         <translation>소프트웨어</translation>
     </message>
     <message>
-        <location line="-233"/>
+        <location line="-234"/>
         <source>Server IP</source>
         <translation>서버 IP</translation>
     </message>
@@ -3085,17 +3095,17 @@ Its downloads keep their files and move to All.</source>
     </message>
     <message>
         <location line="+185"/>
-        <location line="+262"/>
+        <location line="+263"/>
         <source>Connected</source>
         <translation>연결됨</translation>
     </message>
     <message>
-        <location line="-262"/>
+        <location line="-263"/>
         <source>Disconnected</source>
         <translation>연결 해제됨</translation>
     </message>
     <message>
-        <location line="+147"/>
+        <location line="+148"/>
         <location line="+139"/>
         <source>Currently downloading</source>
         <translation>현재 다운로드 중</translation>
@@ -10697,7 +10707,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+69"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+71"/>
         <source>eMule First Runtime Wizard</source>
         <translation>eMule 첫 실행 마법사</translation>
     </message>
@@ -10792,7 +10802,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>데스크톱 응용 프로그램 메뉴에 eMule Qt를 추가합니다</translation>
     </message>
     <message>
-        <location line="+173"/>
+        <location line="+197"/>
         <source>Import</source>
         <translation>가져오기</translation>
     </message>
@@ -10827,7 +10837,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>eMule은 서버 및 클라이언트와의 통신에 두 개의 포트를 사용합니다. 이 포트는 원격 클라이언트에서 사용할 수 있어야 합니다. TCP 포트는 eMule의 주요 기능을 보장하기 위해 필요합니다. UDP 포트는 Kad(서버리스 네트워크) 및 네트워크 사용량 절감(오버헤드)에 사용됩니다.</translation>
     </message>
     <message>
-        <location line="-628"/>
+        <location line="-652"/>
         <location line="+407"/>
         <source>Unlimited</source>
         <translation>무제한</translation>
@@ -10883,12 +10893,12 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
     </message>
     <message>
         <location line="+11"/>
-        <location line="+479"/>
+        <location line="+503"/>
         <source>TCP:</source>
         <translation>TCP:</translation>
     </message>
     <message>
-        <location line="-475"/>
+        <location line="-499"/>
         <source>UDP:</source>
         <translation>UDP:</translation>
     </message>
@@ -11027,7 +11037,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
     </message>
     <message>
         <location line="+2"/>
-        <location line="+34"/>
+        <location line="+58"/>
         <source>Next &gt;</source>
         <translation>다음 &gt;</translation>
     </message>
@@ -11094,7 +11104,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>완료</translation>
     </message>
     <message>
-        <location line="-31"/>
+        <location line="-55"/>
         <source>Cancel</source>
         <translation>취소</translation>
     </message>
@@ -11108,7 +11118,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation type="vanished">다운로드 제한: %1    업로드 제한: %2</translation>
     </message>
     <message>
-        <location line="+273"/>
+        <location line="+297"/>
         <source>The ports are forwarded when the core starts.</source>
         <translation>포트는 코어가 시작될 때 전달됩니다.</translation>
     </message>

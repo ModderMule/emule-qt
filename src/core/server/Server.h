@@ -14,6 +14,7 @@
 #include <QString>
 
 #include <array>
+#include <optional>
 
 namespace eMule {
 
@@ -344,6 +345,35 @@ public:
     [[nodiscard]] bool natProof() const                 { return m_natProof; }
     void setNatProof(bool on)                           { m_natProof = on; }
 
+    /// OFFERFILES v1: the publishing limits the server advertised to this connection in its
+    /// post-login OP_SERVERIDENT. Runtime only, on the session's own copy of the server.
+    struct OfferFilesV1 {
+        uint32 softFiles = 0;       ///< ST_SOFTFILES: distinct files the connection may have indexed
+        uint32 hardFiles = 0;       ///< ST_HARDFILES: every packet declares fewer records
+        uint32 batchMax = 0;        ///< most records in one OP_OFFERFILES
+        uint32 minIntervalMs = 0;   ///< least time between two OP_OFFERFILES
+    };
+    /// The advertisement, or nothing for a legacy server (or one whose advertisement was
+    /// missing, partial, duplicated, wrongly typed or invalid).
+    [[nodiscard]] const std::optional<OfferFilesV1>& offerFilesV1() const { return m_offerFilesV1; }
+    /// Kept once set: one advertisement per connection, and a later OP_SERVERIDENT, valid
+    /// or not, changes nothing.
+    void setOfferFilesV1(const OfferFilesV1& v1)
+    {
+        if (!m_offerFilesV1)
+            m_offerFilesV1 = v1;
+    }
+    /// The all-or-nothing rule: soft > 0, batch_max > 0, interval > 0 and hard > batch_max.
+    [[nodiscard]] static bool isValidOfferFilesV1(const OfferFilesV1& v1)
+    {
+        return v1.softFiles > 0 && v1.batchMax > 0 && v1.minIntervalMs > 0
+               && v1.hardFiles > v1.batchMax;
+    }
+    /// The first OP_SERVERIDENT of this connection has arrived. OFFERFILES waits for it (up
+    /// to a few seconds) so a v1 advertisement is known before the first batch.
+    [[nodiscard]] bool identReceived() const            { return m_identReceived; }
+    void setIdentReceived()                             { m_identReceived = true; }
+
     // -- Aux --------------------------------------------------------------
 
     [[nodiscard]] const QString& auxPortsList() const   { return m_auxPortsList; }
@@ -466,6 +496,8 @@ private:
     std::array<uint8, 16> m_natToken{};   // transient, never saved
     bool    m_hasNatToken = false;
     bool    m_natProof = false;           // transient, never saved
+    std::optional<OfferFilesV1> m_offerFilesV1;   // transient, never saved
+    bool    m_identReceived = false;      // transient, never saved
 
     // eNode Meta API
     QString m_metaApiUrl;

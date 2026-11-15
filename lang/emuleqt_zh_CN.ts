@@ -2165,12 +2165,12 @@ M	压缩数据尚未完全下载
     </message>
     <message>
         <location line="+19"/>
-        <location line="+296"/>
+        <location line="+308"/>
         <source>Off</source>
         <translation>关闭</translation>
     </message>
     <message>
-        <location line="-296"/>
+        <location line="-308"/>
         <source>Torrents use direct connections only.</source>
         <translation>种子仅使用直接连接。</translation>
     </message>
@@ -2185,7 +2185,12 @@ M	压缩数据尚未完全下载
         <translation>eMule 运行自己的 I2P 路由器。首次启动需要几分钟加入网络。</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+13"/>
+        <source>Part of the bundled router&apos;s bandwidth used for other routers&apos; tunnels. More helps the I2P network and hides your own traffic better.</source>
+        <translation>内置路由器用于其他路由器隧道的带宽比例。越多越有助于 I2P 网络，也更能隐藏您自己的流量。</translation>
+    </message>
+    <message>
+        <location line="+5"/>
         <source>Set your browser&apos;s HTTP proxy to 127.0.0.1 and this port on the core&apos;s computer to open .i2p sites, e.g. torrent trackers. It uses its own I2P address, not the torrents&apos; one.</source>
         <translation>在核心所在的计算机上将浏览器的 HTTP 代理设为 127.0.0.1 和此端口，即可打开 .i2p 网站，例如种子 Tracker。它使用自己的 I2P 地址，而不是种子的地址。</translation>
     </message>
@@ -2274,7 +2279,7 @@ M	压缩数据尚未完全下载
         <translation type="vanished">I2P 浏览器代理运行在核心所在的计算机上：此计算机上的浏览器无法使用它。</translation>
     </message>
     <message>
-        <location line="+81"/>
+        <location line="+84"/>
         <source>I2P router is on, but no torrent uses it: check &quot;Add new torrents as I2P only&quot; or &quot;Mixed mode&quot; in Options &gt; BitTorrent &gt; I2P.</source>
         <translation>I2P 路由器已开启，但没有种子使用它：请在 选项 &gt; BitTorrent &gt; I2P 中勾选“新种子默认仅 I2P”或“混合模式”。</translation>
     </message>
@@ -2293,7 +2298,7 @@ M	压缩数据尚未完全下载
         <translation type="vanished">路由器：</translation>
     </message>
     <message>
-        <location line="-181"/>
+        <location line="-184"/>
         <source>Host of the external router&apos;s SAM bridge</source>
         <translation>外部路由器 SAM 桥的主机</translation>
     </message>
@@ -2310,7 +2315,7 @@ M	压缩数据尚未完全下载
         <translation>SAM 桥：</translation>
     </message>
     <message>
-        <location line="-70"/>
+        <location line="-78"/>
         <source>TCP and UDP port of the bundled router. Mapped with UPnP when the BitTorrent port is.</source>
         <translation>内置路由器的 TCP 和 UDP 端口。BitTorrent 端口使用 UPnP 映射时也会一并映射。</translation>
     </message>
@@ -2318,6 +2323,11 @@ M	压缩数据尚未完全下载
         <location line="+2"/>
         <source>Router port:</source>
         <translation>路由器端口：</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Bandwidth for relaying:</source>
+        <translation>用于中继的带宽:</translation>
     </message>
     <message>
         <location line="+107"/>
@@ -2380,12 +2390,12 @@ M	压缩数据尚未完全下载
         <translation>状态：</translation>
     </message>
     <message>
-        <location line="-94"/>
+        <location line="-102"/>
         <source>Router</source>
         <translation>路由器</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+31"/>
         <source>HTTP proxy for browsing .i2p sites</source>
         <translation>用于浏览 .i2p 网站的 HTTP 代理</translation>
     </message>
@@ -2418,7 +2428,7 @@ M	压缩数据尚未完全下载
         <translation type="vanished">此版本未内置 I2P 路由器 (emuleqt-i2pd)。</translation>
     </message>
     <message>
-        <location line="+175"/>
+        <location line="+179"/>
         <source>BitTorrent is off</source>
         <translation>BitTorrent 已关闭</translation>
     </message>
@@ -2931,7 +2941,7 @@ Its downloads keep their files and move to All.</source>
     </message>
     <message>
         <location line="+37"/>
-        <location line="+255"/>
+        <location line="+256"/>
         <source>General</source>
         <translation>常规</translation>
     </message>
@@ -2944,7 +2954,7 @@ Its downloads keep their files and move to All.</source>
         <translation type="vanished">用户哈希</translation>
     </message>
     <message>
-        <location line="-243"/>
+        <location line="-244"/>
         <source>ID</source>
         <translation>ID</translation>
     </message>
@@ -2964,7 +2974,7 @@ Its downloads keep their files and move to All.</source>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+263"/>
+        <location line="+264"/>
         <source>Country</source>
         <translation>国家</translation>
     </message>
@@ -2973,24 +2983,24 @@ Its downloads keep their files and move to All.</source>
         <translation type="vanished">服务器</translation>
     </message>
     <message>
-        <location line="-271"/>
-        <location line="+253"/>
+        <location line="-272"/>
+        <location line="+254"/>
         <source>Name</source>
         <translation>名称</translation>
     </message>
     <message>
-        <location line="-251"/>
+        <location line="-252"/>
         <source>Hash</source>
         <translation>哈希</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+260"/>
+        <location line="+261"/>
         <source>Software</source>
         <translation>软件</translation>
     </message>
     <message>
-        <location line="-233"/>
+        <location line="-234"/>
         <source>Server IP</source>
         <translation>服务器 IP</translation>
     </message>
@@ -3085,17 +3095,17 @@ Its downloads keep their files and move to All.</source>
     </message>
     <message>
         <location line="+185"/>
-        <location line="+262"/>
+        <location line="+263"/>
         <source>Connected</source>
         <translation>已连接</translation>
     </message>
     <message>
-        <location line="-262"/>
+        <location line="-263"/>
         <source>Disconnected</source>
         <translation>已断开</translation>
     </message>
     <message>
-        <location line="+147"/>
+        <location line="+148"/>
         <location line="+139"/>
         <source>Currently downloading</source>
         <translation>当前正在下载</translation>
@@ -10697,7 +10707,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+69"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+71"/>
         <source>eMule First Runtime Wizard</source>
         <translation>eMule 首次运行向导</translation>
     </message>
@@ -10792,7 +10802,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>将 eMule Qt 添加到桌面的应用程序菜单</translation>
     </message>
     <message>
-        <location line="+173"/>
+        <location line="+197"/>
         <source>Import</source>
         <translation>导入</translation>
     </message>
@@ -10827,7 +10837,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>eMule 使用两个端口与服务器和客户端通信。这些端口必须空闲并对远程客户端可用。TCP 端口必须可用以确保 eMule 的主要功能。UDP 端口用于 Kad（无服务器网络）和减少网络使用（开销）。</translation>
     </message>
     <message>
-        <location line="-628"/>
+        <location line="-652"/>
         <location line="+407"/>
         <source>Unlimited</source>
         <translation>无限制</translation>
@@ -10883,12 +10893,12 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
     </message>
     <message>
         <location line="+11"/>
-        <location line="+479"/>
+        <location line="+503"/>
         <source>TCP:</source>
         <translation>TCP：</translation>
     </message>
     <message>
-        <location line="-475"/>
+        <location line="-499"/>
         <source>UDP:</source>
         <translation>UDP：</translation>
     </message>
@@ -11027,7 +11037,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
     </message>
     <message>
         <location line="+2"/>
-        <location line="+34"/>
+        <location line="+58"/>
         <source>Next &gt;</source>
         <translation>下一步 &gt;</translation>
     </message>
@@ -11094,7 +11104,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>完成</translation>
     </message>
     <message>
-        <location line="-31"/>
+        <location line="-55"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
@@ -11108,7 +11118,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation type="vanished">下载限速：%1    上传限速：%2</translation>
     </message>
     <message>
-        <location line="+273"/>
+        <location line="+297"/>
         <source>The ports are forwarded when the core starts.</source>
         <translation>端口将在核心启动时转发。</translation>
     </message>

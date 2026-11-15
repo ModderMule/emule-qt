@@ -2184,12 +2184,12 @@ M	les données compressées ne sont pas encore entièrement téléchargées
     </message>
     <message>
         <location line="+19"/>
-        <location line="+296"/>
+        <location line="+308"/>
         <source>Off</source>
         <translation>Désactivé</translation>
     </message>
     <message>
-        <location line="-296"/>
+        <location line="-308"/>
         <source>Torrents use direct connections only.</source>
         <translation>Les torrents n&apos;utilisent que des connexions directes.</translation>
     </message>
@@ -2204,7 +2204,12 @@ M	les données compressées ne sont pas encore entièrement téléchargées
         <translation>eMule lance son propre routeur I2P. Au premier démarrage, rejoindre le réseau prend quelques minutes.</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+13"/>
+        <source>Part of the bundled router&apos;s bandwidth used for other routers&apos; tunnels. More helps the I2P network and hides your own traffic better.</source>
+        <translation>Part de la bande passante du routeur intégré utilisée pour les tunnels d&apos;autres routeurs. Plus aide le réseau I2P et masque mieux votre propre trafic.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
         <source>Set your browser&apos;s HTTP proxy to 127.0.0.1 and this port on the core&apos;s computer to open .i2p sites, e.g. torrent trackers. It uses its own I2P address, not the torrents&apos; one.</source>
         <translation>Réglez le proxy HTTP de votre navigateur sur 127.0.0.1 et ce port sur l&apos;ordinateur du noyau pour ouvrir des sites .i2p, p. ex. des trackers torrent. Il utilise sa propre adresse I2P, pas celle des torrents.</translation>
     </message>
@@ -2293,7 +2298,7 @@ M	les données compressées ne sont pas encore entièrement téléchargées
         <translation type="vanished">Le proxy de navigation I2P tourne sur l&apos;ordinateur du noyau : les navigateurs de cet ordinateur ne peuvent pas l&apos;utiliser.</translation>
     </message>
     <message>
-        <location line="+81"/>
+        <location line="+84"/>
         <source>I2P router is on, but no torrent uses it: check &quot;Add new torrents as I2P only&quot; or &quot;Mixed mode&quot; in Options &gt; BitTorrent &gt; I2P.</source>
         <translation>Le routeur I2P est actif, mais aucun torrent ne l&apos;utilise : cochez « Ajouter les nouveaux torrents en I2P uniquement » ou « Mode mixte » dans Options &gt; BitTorrent &gt; I2P.</translation>
     </message>
@@ -2312,7 +2317,7 @@ M	les données compressées ne sont pas encore entièrement téléchargées
         <translation type="vanished">Routeur :</translation>
     </message>
     <message>
-        <location line="-181"/>
+        <location line="-184"/>
         <source>Host of the external router&apos;s SAM bridge</source>
         <translation>Hôte du pont SAM du routeur externe</translation>
     </message>
@@ -2329,7 +2334,7 @@ M	les données compressées ne sont pas encore entièrement téléchargées
         <translation>Pont SAM :</translation>
     </message>
     <message>
-        <location line="-70"/>
+        <location line="-78"/>
         <source>TCP and UDP port of the bundled router. Mapped with UPnP when the BitTorrent port is.</source>
         <translation>Port TCP et UDP du routeur intégré. Redirigé par UPnP si le port BitTorrent l&apos;est.</translation>
     </message>
@@ -2337,6 +2342,11 @@ M	les données compressées ne sont pas encore entièrement téléchargées
         <location line="+2"/>
         <source>Router port:</source>
         <translation>Port du routeur :</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Bandwidth for relaying:</source>
+        <translation>Bande passante pour le relais :</translation>
     </message>
     <message>
         <location line="+107"/>
@@ -2399,12 +2409,12 @@ M	les données compressées ne sont pas encore entièrement téléchargées
         <translation>Statut :</translation>
     </message>
     <message>
-        <location line="-94"/>
+        <location line="-102"/>
         <source>Router</source>
         <translation>Routeur</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+31"/>
         <source>HTTP proxy for browsing .i2p sites</source>
         <translation>Proxy HTTP pour naviguer sur les sites .i2p</translation>
     </message>
@@ -2437,7 +2447,7 @@ M	les données compressées ne sont pas encore entièrement téléchargées
         <translation type="vanished">Cette version n&apos;inclut pas de routeur I2P intégré (emuleqt-i2pd).</translation>
     </message>
     <message>
-        <location line="+175"/>
+        <location line="+179"/>
         <source>BitTorrent is off</source>
         <translation>BitTorrent est désactivé</translation>
     </message>
@@ -2950,7 +2960,7 @@ Ses téléchargements conservent leurs fichiers et passent dans Tous.</translati
     </message>
     <message>
         <location line="+37"/>
-        <location line="+255"/>
+        <location line="+256"/>
         <source>General</source>
         <translation>Général</translation>
     </message>
@@ -2963,7 +2973,7 @@ Ses téléchargements conservent leurs fichiers et passent dans Tous.</translati
         <translation type="vanished">Hash utilisateur</translation>
     </message>
     <message>
-        <location line="-243"/>
+        <location line="-244"/>
         <source>ID</source>
         <translation>ID</translation>
     </message>
@@ -2983,7 +2993,7 @@ Ses téléchargements conservent leurs fichiers et passent dans Tous.</translati
     </message>
     <message>
         <location line="+7"/>
-        <location line="+263"/>
+        <location line="+264"/>
         <source>Country</source>
         <translation>Pays</translation>
     </message>
@@ -2992,24 +3002,24 @@ Ses téléchargements conservent leurs fichiers et passent dans Tous.</translati
         <translation type="vanished">Serveur</translation>
     </message>
     <message>
-        <location line="-271"/>
-        <location line="+253"/>
+        <location line="-272"/>
+        <location line="+254"/>
         <source>Name</source>
         <translation>Nom</translation>
     </message>
     <message>
-        <location line="-251"/>
+        <location line="-252"/>
         <source>Hash</source>
         <translation>Hash</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+260"/>
+        <location line="+261"/>
         <source>Software</source>
         <translation>Logiciel</translation>
     </message>
     <message>
-        <location line="-233"/>
+        <location line="-234"/>
         <source>Server IP</source>
         <translation>IP du serveur</translation>
     </message>
@@ -3104,17 +3114,17 @@ Ses téléchargements conservent leurs fichiers et passent dans Tous.</translati
     </message>
     <message>
         <location line="+185"/>
-        <location line="+262"/>
+        <location line="+263"/>
         <source>Connected</source>
         <translation>Connecté</translation>
     </message>
     <message>
-        <location line="-262"/>
+        <location line="-263"/>
         <source>Disconnected</source>
         <translation>Déconnecté</translation>
     </message>
     <message>
-        <location line="+147"/>
+        <location line="+148"/>
         <location line="+139"/>
         <source>Currently downloading</source>
         <translation>Télécharge actuellement</translation>
@@ -10736,7 +10746,7 @@ Ses fichiers vont dans le dossier d&apos;arrivée, dans un dossier propre au set
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+69"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+71"/>
         <source>eMule First Runtime Wizard</source>
         <translation>Assistant de premier démarrage eMule</translation>
     </message>
@@ -10831,7 +10841,7 @@ Ses fichiers vont dans le dossier d&apos;arrivée, dans un dossier propre au set
         <translation>Ajoute eMule Qt au menu des applications du bureau</translation>
     </message>
     <message>
-        <location line="+173"/>
+        <location line="+197"/>
         <source>Import</source>
         <translation>Importer</translation>
     </message>
@@ -10866,7 +10876,7 @@ Ses fichiers vont dans le dossier d&apos;arrivée, dans un dossier propre au set
         <translation>eMule utilise deux ports pour communiquer avec les serveurs et les clients. Ces ports doivent être libres et disponibles pour les clients distants. Le port TCP doit être disponible pour assurer la fonctionnalité principale d&apos;eMule. Le port UDP est utilisé pour Kad (réseau sans serveur) et pour réduire l&apos;utilisation du réseau (overhead).</translation>
     </message>
     <message>
-        <location line="-628"/>
+        <location line="-652"/>
         <location line="+407"/>
         <source>Unlimited</source>
         <translation>Illimité</translation>
@@ -10922,12 +10932,12 @@ Si votre FAI tente de brider ou de bloquer eMule, l&apos;obfuscation aide à con
     </message>
     <message>
         <location line="+11"/>
-        <location line="+479"/>
+        <location line="+503"/>
         <source>TCP:</source>
         <translation>TCP :</translation>
     </message>
     <message>
-        <location line="-475"/>
+        <location line="-499"/>
         <source>UDP:</source>
         <translation>UDP :</translation>
     </message>
@@ -11066,7 +11076,7 @@ Si votre FAI tente de brider ou de bloquer eMule, l&apos;obfuscation aide à con
     </message>
     <message>
         <location line="+2"/>
-        <location line="+34"/>
+        <location line="+58"/>
         <source>Next &gt;</source>
         <translation>Suivant &gt;</translation>
     </message>
@@ -11133,7 +11143,7 @@ Si votre FAI tente de brider ou de bloquer eMule, l&apos;obfuscation aide à con
         <translation>Terminer</translation>
     </message>
     <message>
-        <location line="-31"/>
+        <location line="-55"/>
         <source>Cancel</source>
         <translation>Annuler</translation>
     </message>
@@ -11147,7 +11157,7 @@ Si votre FAI tente de brider ou de bloquer eMule, l&apos;obfuscation aide à con
         <translation type="vanished">Limite de téléchargement : %1    Limite d&apos;envoi : %2</translation>
     </message>
     <message>
-        <location line="+273"/>
+        <location line="+297"/>
         <source>The ports are forwarded when the core starts.</source>
         <translation>Les ports seront redirigés au démarrage du noyau.</translation>
     </message>
