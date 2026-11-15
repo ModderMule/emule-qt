@@ -1326,7 +1326,7 @@ Download it again?</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4999"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+5002"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -13023,12 +13023,12 @@ Other members see your nick and posts; your node takes part in passing the room&
     <message>
         <location line="+2"/>
         <source>From</source>
-        <translation type="unfinished"></translation>
+        <translation>送信元</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Answer</source>
-        <translation type="unfinished"></translation>
+        <translation>応答</translation>
     </message>
     <message>
         <location line="+32"/>
@@ -13044,17 +13044,17 @@ Other members see your nick and posts; your node takes part in passing the room&
     <message>
         <location line="-17"/>
         <source>Keyword Search</source>
-        <translation type="unfinished"></translation>
+        <translation>キーワード検索</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Source Search</source>
-        <translation type="unfinished"></translation>
+        <translation>ソース検索</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Notes Search</source>
-        <translation type="unfinished"></translation>
+        <translation>コメント検索</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -13064,7 +13064,7 @@ Other members see your nick and posts; your node takes part in passing the room&
     <message>
         <location line="+1"/>
         <source>Store Source</source>
-        <translation type="unfinished"></translation>
+        <translation>ソースを保存</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -13074,7 +13074,7 @@ Other members see your nick and posts; your node takes part in passing the room&
     <message>
         <location line="+1"/>
         <source>Firewall Check</source>
-        <translation type="unfinished"></translation>
+        <translation>ファイアウォール確認</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -13084,17 +13084,17 @@ Other members see your nick and posts; your node takes part in passing the room&
     <message>
         <location line="+1"/>
         <source>Callback</source>
-        <translation type="unfinished"></translation>
+        <translation>コールバック</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Type %1</source>
-        <translation type="unfinished"></translation>
+        <translation>種類 %1</translation>
     </message>
     <message>
         <location line="+9"/>
         <source>Search %1</source>
-        <translation type="unfinished"></translation>
+        <translation>検索 %1</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -13104,48 +13104,48 @@ Other members see your nick and posts; your node takes part in passing the room&
     <message>
         <location line="+9"/>
         <source>Error %1</source>
-        <translation type="unfinished"></translation>
+        <translation>エラー %1</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Not answered</source>
-        <translation type="unfinished"></translation>
+        <translation>未応答</translation>
     </message>
     <message numerus="yes">
         <location line="+4"/>
         <source>%n contact(s)</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%n 件の連絡先</numerusform>
         </translation>
     </message>
     <message>
         <location line="+6"/>
         <source>not responsible</source>
-        <translation type="unfinished"></translation>
+        <translation>担当外</translation>
     </message>
     <message numerus="yes">
         <location line="+4"/>
         <source>%n result(s)</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%n 件の結果</numerusform>
         </translation>
     </message>
     <message>
         <location line="+3"/>
         <source>%1 of %2 stored</source>
-        <translation type="unfinished"></translation>
+        <translation>%2 件中 %1 件保存</translation>
     </message>
     <message numerus="yes">
         <location line="+1"/>
         <source>%n stored</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%n 件保存</numerusform>
         </translation>
     </message>
     <message>
         <location line="+3"/>
         <source>load %1%</source>
-        <translation type="unfinished"></translation>
+        <translation>負荷 %1%</translation>
     </message>
 </context>
 <context>
@@ -13346,13 +13346,13 @@ Other members see your nick and posts; your node takes part in passing the room&
     <message>
         <location line="-84"/>
         <source>▸ Outgoing Searches (0)</source>
-        <translation type="unfinished"></translation>
+        <translation>▸ 送信検索 (0)</translation>
     </message>
     <message>
         <location line="+1"/>
         <location line="+162"/>
         <source>▸ Incoming Searches (0)</source>
-        <translation type="unfinished"></translation>
+        <translation>▸ 受信検索 (0)</translation>
     </message>
     <message>
         <location line="-86"/>
@@ -13368,12 +13368,12 @@ Other members see your nick and posts; your node takes part in passing the room&
     <message>
         <location line="+6"/>
         <source>▸ Outgoing Searches (%1)</source>
-        <translation type="unfinished"></translation>
+        <translation>▸ 送信検索 (%1)</translation>
     </message>
     <message>
         <location line="+63"/>
         <source>▸ Incoming Searches (%1)</source>
-        <translation type="unfinished"></translation>
+        <translation>▸ 受信検索 (%1)</translation>
     </message>
 </context>
 <context>
@@ -22409,15 +22409,15 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+412"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+413"/>
         <location line="+1264"/>
         <location line="+21"/>
-        <location line="+605"/>
+        <location line="+622"/>
         <source>Download</source>
         <translation>ダウンロード</translation>
     </message>
     <message>
-        <location line="-1870"/>
+        <location line="-1887"/>
         <source>Close All Searches</source>
         <translation>すべての検索を閉じる</translation>
     </message>
@@ -22574,7 +22574,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>コーデック：</translation>
     </message>
     <message>
-        <location line="+3075"/>
+        <location line="+3092"/>
         <source>ed3k download added: %1</source>
         <translation>ed3k ダウンロードを追加しました: %1</translation>
     </message>
@@ -22588,7 +22588,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation type="vanished">最小ビットレート [kbps]：</translation>
     </message>
     <message>
-        <location line="-3068"/>
+        <location line="-3085"/>
         <source>Min. Length [s]:</source>
         <translation>最小長さ [秒]：</translation>
     </message>
@@ -22995,7 +22995,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>マグネットリンクをコピー</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+34"/>
         <source>Mark as not Spam</source>
         <translation>スパムではないとマーク</translation>
     </message>
@@ -23116,13 +23116,13 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
         <translation>スパムとしてマーク</translation>
     </message>
     <message>
-        <location line="-274"/>
+        <location line="-291"/>
         <location line="+148"/>
         <source>Save Torrent File...</source>
         <translation>Torrent ファイルを保存...</translation>
     </message>
     <message>
-        <location line="+142"/>
+        <location line="+159"/>
         <source>Remove</source>
         <translation>削除</translation>
     </message>
@@ -28714,18 +28714,18 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+0"/>
-        <location line="+361"/>
+        <location line="+370"/>
         <source>Download</source>
         <translation>ダウンロード</translation>
     </message>
     <message>
-        <location line="-361"/>
-        <location line="+352"/>
+        <location line="-370"/>
+        <location line="+361"/>
         <source>Priority</source>
         <translation>優先度</translation>
     </message>
     <message>
-        <location line="-351"/>
+        <location line="-360"/>
         <source>Availability</source>
         <translation>可用性</translation>
     </message>
@@ -28835,7 +28835,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>ファイル (%1)</translation>
     </message>
     <message>
-        <location line="+67"/>
+        <location line="+61"/>
+        <source>Preview</source>
+        <translation>プレビュー</translation>
+    </message>
+    <message>
+        <location line="+15"/>
         <source>Do Not Download</source>
         <translation>ダウンロードしない</translation>
     </message>
@@ -29024,12 +29029,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <location line="+14"/>
         <location line="+15"/>
         <location line="+11"/>
-        <location line="+738"/>
+        <location line="+745"/>
         <source>Not connected to the eMule core.</source>
         <translation>eMule コアに接続されていません。</translation>
     </message>
     <message>
-        <location line="-789"/>
+        <location line="-796"/>
         <source>Cannot read %1.</source>
         <translation>%1 を読み取れません。</translation>
     </message>
@@ -29106,12 +29111,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+2"/>
-        <location line="+339"/>
+        <location line="+346"/>
         <source>Preview</source>
         <translation>プレビュー</translation>
     </message>
     <message>
-        <location line="-337"/>
+        <location line="-344"/>
         <source>Copy Magnet Link</source>
         <translation>マグネットリンクをコピー</translation>
     </message>
@@ -29121,7 +29126,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>マグネットリンクを貼り付け</translation>
     </message>
     <message>
-        <location line="+94"/>
+        <location line="+95"/>
         <source>BitTorrent Options…</source>
         <translation>BitTorrent オプション…</translation>
     </message>
@@ -29163,7 +29168,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>コアのマシンに保存: %1</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="+36"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>プレビューは利用できません — Web サーバーが実行されていないか、ストリームトークンを受信していません。</translation>
     </message>
@@ -30794,14 +30799,14 @@ A password is set for this release.</source>
         <translation>アドレス</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-4223"/>
-        <location line="+4105"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-4226"/>
+        <location line="+4108"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>セッションの有効期限が切れました — 再度ログインしてください</translation>
     </message>
     <message>
-        <location line="-4150"/>
+        <location line="-4153"/>
         <source>Guests cannot add downloads</source>
         <translation>ゲストはダウンロードを追加できません</translation>
     </message>
@@ -30906,7 +30911,7 @@ A password is set for this release.</source>
     </message>
     <message numerus="yes">
         <location line="+255"/>
-        <location line="+1098"/>
+        <location line="+1101"/>
         <source>%n download(s) added</source>
         <translation>
             <numerusform>%n 件のダウンロードを追加しました</numerusform>
@@ -30917,7 +30922,7 @@ A password is set for this release.</source>
         <translation type="vanished">未接続 — 検索を送信できませんでした。</translation>
     </message>
     <message>
-        <location line="-1053"/>
+        <location line="-1056"/>
         <source>Not sent yet — the search is waiting (%1) and starts by itself.</source>
         <translation>未送信 — 検索は待機中 (%1) で、自動的に開始されます。</translation>
     </message>
@@ -30955,12 +30960,12 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+2370"/>
+        <location line="+2373"/>
         <source>Web Control Panel</source>
         <translation>Web コントロールパネル</translation>
     </message>
     <message>
-        <location line="-2362"/>
+        <location line="-2365"/>
         <source>Not connected</source>
         <translation>未接続</translation>
     </message>
@@ -30970,25 +30975,25 @@ A password is set for this release.</source>
         <translation>ブロック中: ネットワークインターフェースが利用できません</translation>
     </message>
     <message>
-        <location line="+303"/>
+        <location line="+304"/>
         <source>Connected</source>
         <translation>接続済み</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+358"/>
+        <location line="+359"/>
         <source>Disconnected</source>
         <translation>未接続</translation>
     </message>
     <message numerus="yes">
-        <location line="-298"/>
+        <location line="-299"/>
         <source>&quot;%1&quot;: %n result(s)</source>
         <translation>
             <numerusform>「%1」: %n 件の結果</numerusform>
         </translation>
     </message>
     <message>
-        <location line="+211"/>
+        <location line="+212"/>
         <source>Active Connections</source>
         <translation>アクティブ接続</translation>
     </message>
@@ -31055,38 +31060,38 @@ A password is set for this release.</source>
     <message>
         <location line="+44"/>
         <location line="+45"/>
-        <location line="+423"/>
+        <location line="+424"/>
         <location line="+1135"/>
         <source>Queued</source>
         <translation>キュー待ち</translation>
     </message>
     <message>
-        <location line="-1599"/>
+        <location line="-1600"/>
         <location line="+43"/>
-        <location line="+422"/>
+        <location line="+423"/>
         <location line="+1133"/>
         <source>Downloading</source>
         <translation>ダウンロード中</translation>
     </message>
     <message>
-        <location line="-1604"/>
+        <location line="-1605"/>
         <location line="+9"/>
         <location line="+42"/>
-        <location line="+421"/>
+        <location line="+422"/>
         <source>Paused</source>
         <translation>一時停止</translation>
     </message>
     <message>
-        <location line="-420"/>
-        <location line="+421"/>
+        <location line="-421"/>
+        <location line="+422"/>
         <location line="+967"/>
         <location line="+163"/>
         <source>Complete</source>
         <translation>完了</translation>
     </message>
     <message>
-        <location line="-1547"/>
-        <location line="+418"/>
+        <location line="-1548"/>
+        <location line="+419"/>
         <source>Failed</source>
         <translation>失敗</translation>
     </message>
@@ -31106,15 +31111,15 @@ A password is set for this release.</source>
         <translation>展開中</translation>
     </message>
     <message>
-        <location line="-473"/>
+        <location line="-474"/>
         <location line="+42"/>
-        <location line="+432"/>
+        <location line="+433"/>
         <source>Checking</source>
         <translation>確認中</translation>
     </message>
     <message>
-        <location line="-2663"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+121"/>
+        <location line="-2666"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+122"/>
         <source>Torrent</source>
         <translation>トレント</translation>
     </message>
@@ -31125,7 +31130,7 @@ A password is set for this release.</source>
         <translation>Web</translation>
     </message>
     <message>
-        <location line="+1919"/>
+        <location line="+1921"/>
         <source>Incoming (eD2K)</source>
         <translation>受信 (eD2K)</translation>
     </message>
@@ -31222,7 +31227,7 @@ A password is set for this release.</source>
         <translation>下り: %1、上り: %2</translation>
     </message>
     <message numerus="yes">
-        <location line="+42"/>
+        <location line="+43"/>
         <source>%n download(s)</source>
         <translation>
             <numerusform>%n 件のダウンロード</numerusform>
@@ -31362,14 +31367,14 @@ A password is set for this release.</source>
         <translation>非常に高い</translation>
     </message>
     <message>
-        <location line="-703"/>
-        <location line="+704"/>
+        <location line="-704"/>
+        <location line="+705"/>
         <source>High</source>
         <translation>高い</translation>
     </message>
     <message>
-        <location line="-708"/>
-        <location line="+709"/>
+        <location line="-709"/>
+        <location line="+710"/>
         <source>Low</source>
         <translation>低い</translation>
     </message>
@@ -31379,8 +31384,8 @@ A password is set for this release.</source>
         <translation>非常に低い</translation>
     </message>
     <message>
-        <location line="-708"/>
-        <location line="+709"/>
+        <location line="-709"/>
+        <location line="+710"/>
         <source>Normal</source>
         <translation>通常</translation>
     </message>
@@ -31437,7 +31442,7 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+56"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-181"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-182"/>
         <source>All</source>
         <translation>すべて</translation>
     </message>
@@ -31684,7 +31689,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>ダウンロード速度</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1823"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1824"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Downloads</source>
         <translation>ダウンロード</translation>
@@ -31840,7 +31845,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>NZB ファイル:</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1349"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1351"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>名前</translation>
@@ -31871,7 +31876,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>下り</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1219"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1221"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+15"/>
         <source>Hoster</source>
         <translation>ホスター</translation>
@@ -31935,6 +31940,11 @@ Whichever network is idle lends its share to the other.</source>
         <location line="+1"/>
         <source>Open Folder</source>
         <translation>フォルダを開く</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Open in the browser, or copy the link into a media player</source>
+        <translation>ブラウザーで開くか、リンクをメディアプレーヤーにコピー</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -32242,7 +32252,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>共有ファイル</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1219"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1221"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Size</source>
         <translation>サイズ</translation>
@@ -32318,7 +32328,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>Torrent ファイル:</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1215"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1217"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Torrents</source>
         <translation>Torrent</translation>
@@ -32375,14 +32385,14 @@ Whichever network is idle lends its share to the other.</source>
         <translation>稼働時間</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-2055"/>
-        <location line="+1926"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-2057"/>
+        <location line="+1928"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="+978"/>
+        <location line="+979"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet engine unavailable</source>
         <translation>Usenet エンジンを利用できません</translation>

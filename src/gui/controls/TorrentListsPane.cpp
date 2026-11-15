@@ -623,6 +623,15 @@ void TorrentListsPane::onFilesContextMenu(const QPoint& pos)
     if (m_files->selectedItems().isEmpty())
         return;
     QMenu menu(this);
+    // Preview: one file row, not a folder
+    const QList<QTreeWidgetItem*> picked = m_files->selectedItems();
+    const QVariant fileIndex = picked.size() == 1 ? picked.first()->data(FileName, kFileIndexRole) : QVariant{};
+    if (fileIndex.isValid() && fileIndex.toInt() >= 0) {
+        const QString name = picked.first()->text(FileName);
+        menu.addAction(menuIcon("Preview.ico"), tr("Preview"), this,
+                       [this, index = fileIndex.toInt(), name] { emit previewRequested(m_id, index, name); });
+        menu.addSeparator();
+    }
     auto* prio = menu.addMenu(menuIcon("FilePriority.ico"), tr("Priority"));
     for (const int level : kPriorityLevels) {
         const char* icon = level == 0  ? "Cancel.ico"

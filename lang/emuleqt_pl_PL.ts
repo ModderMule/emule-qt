@@ -1274,7 +1274,7 @@ Ma komentarze</translation>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4999"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+5002"/>
         <source>Bytes</source>
         <translation>Bajty</translation>
     </message>
@@ -12735,12 +12735,12 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
     <message>
         <location line="+2"/>
         <source>From</source>
-        <translation type="unfinished"></translation>
+        <translation>Od</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Answer</source>
-        <translation type="unfinished"></translation>
+        <translation>Odpowiedź</translation>
     </message>
     <message>
         <location line="+32"/>
@@ -12756,17 +12756,17 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
     <message>
         <location line="-17"/>
         <source>Keyword Search</source>
-        <translation type="unfinished"></translation>
+        <translation>Wyszukiwanie słów kluczowych</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Source Search</source>
-        <translation type="unfinished"></translation>
+        <translation>Wyszukiwanie źródeł</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Notes Search</source>
-        <translation type="unfinished"></translation>
+        <translation>Wyszukiwanie komentarzy</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -12776,7 +12776,7 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
     <message>
         <location line="+1"/>
         <source>Store Source</source>
-        <translation type="unfinished"></translation>
+        <translation>Zapis źródła</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -12786,7 +12786,7 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
     <message>
         <location line="+1"/>
         <source>Firewall Check</source>
-        <translation type="unfinished"></translation>
+        <translation>Sprawdzenie zapory</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -12796,17 +12796,17 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
     <message>
         <location line="+1"/>
         <source>Callback</source>
-        <translation type="unfinished"></translation>
+        <translation>Wywołanie zwrotne</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Type %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Typ %1</translation>
     </message>
     <message>
         <location line="+9"/>
         <source>Search %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Wyszukiwanie %1</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -12816,54 +12816,54 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
     <message>
         <location line="+9"/>
         <source>Error %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Błąd %1</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Not answered</source>
-        <translation type="unfinished"></translation>
+        <translation>Bez odpowiedzi</translation>
     </message>
     <message numerus="yes">
         <location line="+4"/>
         <source>%n contact(s)</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%n kontakt</numerusform>
+            <numerusform>%n kontakty</numerusform>
+            <numerusform>%n kontaktów</numerusform>
         </translation>
     </message>
     <message>
         <location line="+6"/>
         <source>not responsible</source>
-        <translation type="unfinished"></translation>
+        <translation>nieodpowiedzialny</translation>
     </message>
     <message numerus="yes">
         <location line="+4"/>
         <source>%n result(s)</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%n wynik</numerusform>
+            <numerusform>%n wyniki</numerusform>
+            <numerusform>%n wyników</numerusform>
         </translation>
     </message>
     <message>
         <location line="+3"/>
         <source>%1 of %2 stored</source>
-        <translation type="unfinished"></translation>
+        <translation>Zapisano %1 z %2</translation>
     </message>
     <message numerus="yes">
         <location line="+1"/>
         <source>%n stored</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>Zapisano %n</numerusform>
+            <numerusform>Zapisano %n</numerusform>
+            <numerusform>Zapisano %n</numerusform>
         </translation>
     </message>
     <message>
         <location line="+3"/>
         <source>load %1%</source>
-        <translation type="unfinished"></translation>
+        <translation>obciążenie %1%</translation>
     </message>
 </context>
 <context>
@@ -13048,13 +13048,13 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
     <message>
         <location line="-84"/>
         <source>▸ Outgoing Searches (0)</source>
-        <translation type="unfinished"></translation>
+        <translation>▸ Wyszukiwania wychodzące (0)</translation>
     </message>
     <message>
         <location line="+1"/>
         <location line="+162"/>
         <source>▸ Incoming Searches (0)</source>
-        <translation type="unfinished"></translation>
+        <translation>▸ Wyszukiwania przychodzące (0)</translation>
     </message>
     <message>
         <location line="-86"/>
@@ -13070,12 +13070,12 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
     <message>
         <location line="+6"/>
         <source>▸ Outgoing Searches (%1)</source>
-        <translation type="unfinished"></translation>
+        <translation>▸ Wyszukiwania wychodzące (%1)</translation>
     </message>
     <message>
         <location line="+63"/>
         <source>▸ Incoming Searches (%1)</source>
-        <translation type="unfinished"></translation>
+        <translation>▸ Wyszukiwania przychodzące (%1)</translation>
     </message>
 </context>
 <context>
@@ -22021,7 +22021,7 @@ Słowa kluczowe w wyszukiwaniu Kad muszą mieć co najmniej 3 znaki.</translatio
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+309"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+310"/>
         <source>Related</source>
         <translation>Powiązane</translation>
     </message>
@@ -22029,12 +22029,12 @@ Słowa kluczowe w wyszukiwaniu Kad muszą mieć co najmniej 3 znaki.</translatio
         <location line="+103"/>
         <location line="+1264"/>
         <location line="+21"/>
-        <location line="+605"/>
+        <location line="+622"/>
         <source>Download</source>
         <translation>Pobierz</translation>
     </message>
     <message>
-        <location line="-1870"/>
+        <location line="-1887"/>
         <source>Close All Searches</source>
         <translation>Zamknij wszystkie wyszukiwania</translation>
     </message>
@@ -22599,7 +22599,7 @@ Słowa kluczowe w wyszukiwaniu Kad muszą mieć co najmniej 3 znaki.</translatio
         <translation>Kopiuj linki Magnet</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+34"/>
         <location line="+15"/>
         <location line="+10"/>
         <source>Mark as Spam</source>
@@ -28092,18 +28092,18 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
     </message>
     <message>
         <location line="+0"/>
-        <location line="+361"/>
+        <location line="+370"/>
         <source>Download</source>
         <translation>Pobierz</translation>
     </message>
     <message>
-        <location line="-361"/>
-        <location line="+352"/>
+        <location line="-370"/>
+        <location line="+361"/>
         <source>Priority</source>
         <translation>Priorytet</translation>
     </message>
     <message>
-        <location line="-351"/>
+        <location line="-360"/>
         <source>Availability</source>
         <translation>Dostępność</translation>
     </message>
@@ -28213,7 +28213,12 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
         <translation>Pliki (%1)</translation>
     </message>
     <message>
-        <location line="+67"/>
+        <location line="+61"/>
+        <source>Preview</source>
+        <translation>Podgląd</translation>
+    </message>
+    <message>
+        <location line="+15"/>
         <source>Do Not Download</source>
         <translation>Nie pobieraj</translation>
     </message>
@@ -28404,12 +28409,12 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
         <location line="+14"/>
         <location line="+15"/>
         <location line="+11"/>
-        <location line="+738"/>
+        <location line="+745"/>
         <source>Not connected to the eMule core.</source>
         <translation>Brak połączenia z rdzeniem eMule.</translation>
     </message>
     <message>
-        <location line="-789"/>
+        <location line="-796"/>
         <source>Cannot read %1.</source>
         <translation>Nie można odczytać %1.</translation>
     </message>
@@ -28486,12 +28491,12 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
     </message>
     <message>
         <location line="+2"/>
-        <location line="+339"/>
+        <location line="+346"/>
         <source>Preview</source>
         <translation>Podgląd</translation>
     </message>
     <message>
-        <location line="-337"/>
+        <location line="-344"/>
         <source>Copy Magnet Link</source>
         <translation>Kopiuj link Magnet</translation>
     </message>
@@ -28501,7 +28506,7 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
         <translation>Wklej linki magnet</translation>
     </message>
     <message>
-        <location line="+94"/>
+        <location line="+95"/>
         <source>BitTorrent Options…</source>
         <translation>Opcje BitTorrent…</translation>
     </message>
@@ -28545,7 +28550,7 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
         <translation>Zapisano na komputerze rdzenia: %1</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="+36"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Podgląd niedostępny — serwer WWW nie działa lub nie otrzymano tokenu strumienia.</translation>
     </message>
@@ -30133,20 +30138,20 @@ Dla tego wydania ustawiono hasło.</translation>
 <context>
     <name>eMule::WebServer</name>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-4223"/>
-        <location line="+4105"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-4226"/>
+        <location line="+4108"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>Sesja wygasła — zaloguj się ponownie</translation>
     </message>
     <message>
-        <location line="-4150"/>
+        <location line="-4153"/>
         <source>Guests cannot add downloads</source>
         <translation>Goście nie mogą dodawać pobierań</translation>
     </message>
     <message>
         <location line="+671"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+185"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+186"/>
         <source>Torrent</source>
         <translation>Torrent</translation>
     </message>
@@ -30184,13 +30189,13 @@ Dla tego wydania ustawiono hasło.</translation>
     </message>
     <message>
         <location line="+31"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-104"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-105"/>
         <source>Name</source>
         <translation>Nazwa</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+70"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+71"/>
         <source>Size</source>
         <translation>Rozmiar</translation>
     </message>
@@ -30201,7 +30206,7 @@ Dla tego wydania ustawiono hasło.</translation>
     </message>
     <message>
         <location line="+40"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-107"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-108"/>
         <source>Download</source>
         <translation>Pobierz</translation>
     </message>
@@ -30271,7 +30276,7 @@ Dla tego wydania ustawiono hasło.</translation>
     </message>
     <message numerus="yes">
         <location line="+255"/>
-        <location line="+1098"/>
+        <location line="+1101"/>
         <source>%n download(s) added</source>
         <translation>
             <numerusform>Dodano %n pobieranie</numerusform>
@@ -30280,7 +30285,7 @@ Dla tego wydania ustawiono hasło.</translation>
         </translation>
     </message>
     <message>
-        <location line="-1053"/>
+        <location line="-1056"/>
         <source>Not sent yet — the search is waiting (%1) and starts by itself.</source>
         <translation>Jeszcze nie wysłano — wyszukiwanie czeka (%1) i uruchomi się samo.</translation>
     </message>
@@ -30318,12 +30323,12 @@ Dla tego wydania ustawiono hasło.</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+2370"/>
+        <location line="+2373"/>
         <source>Web Control Panel</source>
         <translation>Panel sterowania WWW</translation>
     </message>
     <message>
-        <location line="-2362"/>
+        <location line="-2365"/>
         <source>Not connected</source>
         <translation>Nie połączono</translation>
     </message>
@@ -30333,18 +30338,18 @@ Dla tego wydania ustawiono hasło.</translation>
         <translation>Zablokowano: interfejs sieciowy niedostępny</translation>
     </message>
     <message>
-        <location line="+303"/>
+        <location line="+304"/>
         <source>Connected</source>
         <translation>Podłączony</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+358"/>
+        <location line="+359"/>
         <source>Disconnected</source>
         <translation>Rozłączony</translation>
     </message>
     <message numerus="yes">
-        <location line="-298"/>
+        <location line="-299"/>
         <source>&quot;%1&quot;: %n result(s)</source>
         <translation>
             <numerusform>„%1”: %n wynik</numerusform>
@@ -30353,14 +30358,14 @@ Dla tego wydania ustawiono hasło.</translation>
         </translation>
     </message>
     <message>
-        <location line="+209"/>
+        <location line="+210"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+2"/>
         <source>Downloads</source>
         <translation>Pobieranie</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+130"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+131"/>
         <source>Uploads</source>
         <translation>Wysyłanie</translation>
     </message>
@@ -30376,7 +30381,7 @@ Dla tego wydania ustawiono hasło.</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-115"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-116"/>
         <source>KB/s</source>
         <translation>KB/s</translation>
     </message>
@@ -30443,43 +30448,43 @@ Dla tego wydania ustawiono hasło.</translation>
     <message>
         <location line="+4"/>
         <location line="+45"/>
-        <location line="+423"/>
+        <location line="+424"/>
         <location line="+1135"/>
         <source>Queued</source>
         <translation>W kolejce</translation>
     </message>
     <message>
-        <location line="-1600"/>
+        <location line="-1601"/>
         <source>Downloading metadata</source>
         <translation>Pobieranie metadanych</translation>
     </message>
     <message>
         <location line="+1"/>
         <location line="+43"/>
-        <location line="+422"/>
+        <location line="+423"/>
         <location line="+1133"/>
         <source>Downloading</source>
         <translation>Pobieranie</translation>
     </message>
     <message>
-        <location line="-1604"/>
+        <location line="-1605"/>
         <location line="+9"/>
         <location line="+42"/>
-        <location line="+421"/>
+        <location line="+422"/>
         <source>Paused</source>
         <translation>Wstrzymane</translation>
     </message>
     <message>
-        <location line="-420"/>
-        <location line="+421"/>
+        <location line="-421"/>
+        <location line="+422"/>
         <location line="+967"/>
         <location line="+163"/>
         <source>Complete</source>
         <translation>Ukończony</translation>
     </message>
     <message>
-        <location line="-1547"/>
-        <location line="+418"/>
+        <location line="-1548"/>
+        <location line="+419"/>
         <source>Failed</source>
         <translation>Nieudane</translation>
     </message>
@@ -30499,14 +30504,14 @@ Dla tego wydania ustawiono hasło.</translation>
         <translation>Rozpakowywanie</translation>
     </message>
     <message>
-        <location line="-473"/>
+        <location line="-474"/>
         <location line="+42"/>
-        <location line="+432"/>
+        <location line="+433"/>
         <source>Checking</source>
         <translation>Sprawdzanie</translation>
     </message>
     <message>
-        <location line="-743"/>
+        <location line="-744"/>
         <source>Incoming (eD2K)</source>
         <translation>Przychodzące (eD2K)</translation>
     </message>
@@ -30595,7 +30600,7 @@ Dla tego wydania ustawiono hasło.</translation>
         <translation>Pobieranie: %1, wysyłanie: %2</translation>
     </message>
     <message numerus="yes">
-        <location line="+42"/>
+        <location line="+43"/>
         <source>%n download(s)</source>
         <translation>
             <numerusform>%n pobranie</numerusform>
@@ -30740,7 +30745,7 @@ Dla tego wydania ustawiono hasło.</translation>
     </message>
     <message>
         <location line="+55"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+118"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+119"/>
         <source>Usenet engine unavailable</source>
         <translation>Moduł Usenet niedostępny</translation>
     </message>
@@ -30755,14 +30760,14 @@ Dla tego wydania ustawiono hasło.</translation>
         <translation>Bardzo wysoki</translation>
     </message>
     <message>
-        <location line="-703"/>
-        <location line="+704"/>
+        <location line="-704"/>
+        <location line="+705"/>
         <source>High</source>
         <translation>Wysoki</translation>
     </message>
     <message>
-        <location line="-708"/>
-        <location line="+709"/>
+        <location line="-709"/>
+        <location line="+710"/>
         <source>Low</source>
         <translation>Niski</translation>
     </message>
@@ -30772,8 +30777,8 @@ Dla tego wydania ustawiono hasło.</translation>
         <translation>Bardzo niski</translation>
     </message>
     <message>
-        <location line="-708"/>
-        <location line="+709"/>
+        <location line="-709"/>
+        <location line="+710"/>
         <source>Normal</source>
         <translation>Normalny</translation>
     </message>
@@ -30830,7 +30835,7 @@ Dla tego wydania ustawiono hasło.</translation>
     </message>
     <message>
         <location line="+56"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-175"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-176"/>
         <source>All</source>
         <translation>Wszystkie</translation>
     </message>
@@ -31202,7 +31207,7 @@ Sieć, która jest bezczynna, oddaje swój udział drugiej.</translation>
         <translation>Stan:</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1949"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1950"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Hoster</source>
         <translation>Hosting</translation>
@@ -31351,6 +31356,11 @@ Sieć, która jest bezczynna, oddaje swój udział drugiej.</translation>
         <location line="+1"/>
         <source>Open Folder</source>
         <translation>Otwórz folder</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Open in the browser, or copy the link into a media player</source>
+        <translation>Otwórz w przeglądarce lub skopiuj link do odtwarzacza multimediów</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -31779,8 +31789,8 @@ Sieć, która jest bezczynna, oddaje swój udział drugiej.</translation>
         <translation>Czas działania</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1924"/>
-        <location line="+1926"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1926"/>
+        <location line="+1928"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet</source>
         <translation>Usenet</translation>

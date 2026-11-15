@@ -67,6 +67,32 @@ fetch it again:
 arrives every 15 seconds. A "changed" event is sent at once and then at most once a second
 per type. Statistics, log lines and chat are not pushed; poll `/stats` and `/logs?since=`.
 
+## Media player links
+
+The stream routes answer HTTP ranges, so a media player can seek in them. They take a stream
+token in `?token=`, not the API key, because a player cannot send a header. A REST client gets
+the link with its key:
+
+| Link call (API key) | Stream it returns (`?token=`) |
+|---|---|
+| `GET /downloads/{hash}/preview-link` | `/downloads/{hash}/preview` — eD2K hash (32 hex) or ed3k root (64), download or shared file |
+| `GET /usenet/{id}/{fileIndex}/preview-link` | `/usenet/{id}/{fileIndex}/preview` |
+| `GET /torrents/{id}/{fileIndex}/preview-link` | `/torrents/{id}/{fileIndex}/preview` — `fileIndex` -1 = largest file |
+
+The answer is `{url, path, token}`: `url` is absolute, built from the request's scheme and
+`Host`, and goes straight to the player. Each call mints a new token; it lapses after 6 hours
+unused, and only the 16 newest stay valid. The MCP tools (`download_preview_link`,
+`usenet_preview_link`, `torrents_preview_link`) give `path` only.
+
+Unfinished files: with *Enable seeking in downloads* (`downloadSeeking`, off by default) a
+range that is not on disk yet waits up to 60 seconds while the core fetches those bytes first
+(eD2K/ed3k parts, web-seed ranges, torrent piece deadlines); off, the file is served as it is
+on disk, gaps included. Usenet always waits, up to 15 seconds.
+
+The web UI links the same routes with a page token (30 minutes idle, kept alive by the
+session): *Preview* in the Transfers and Shared Files right-click menus, in the Usenet menu,
+and on each row of a torrent's file table.
+
 ## Preferences
 
 `GET /api/v1/preferences/schema` lists every preference the API offers with type, range, unit,

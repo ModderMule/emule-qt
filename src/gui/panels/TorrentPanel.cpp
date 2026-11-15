@@ -398,6 +398,7 @@ void TorrentPanel::setupUi()
     bindListKeys(m_view, std::move(keys));
 
     m_pane = new TorrentListsPane(m_splitter);
+    connect(m_pane, &TorrentListsPane::previewRequested, this, &TorrentPanel::previewTorrentFile);
     m_splitter->addWidget(m_view);
     m_splitter->addWidget(m_pane);
     m_splitter->setStretchFactor(0, 3);
@@ -640,8 +641,14 @@ void TorrentPanel::onPreview()
     if (name.isEmpty())
         if (const TorrentRow* row = m_model->findById(ids.first()))
             name = row->name;
+    previewTorrentFile(ids.first(), fileIndex, name);
+}
 
-    const QString url = daemonTorrentStreamUrl(m_ipc, ids.first(), fileIndex, m_streamToken);
+void TorrentPanel::previewTorrentFile(const QString& id, int fileIndex, const QString& name)
+{
+    if (id.isEmpty())
+        return;
+    const QString url = daemonTorrentStreamUrl(m_ipc, id, fileIndex, m_streamToken);
     if (url.isEmpty()) {
         logWarning(tr("Preview not available — web server is not running or stream token not received."));
         return;

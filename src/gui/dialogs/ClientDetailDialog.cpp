@@ -298,8 +298,9 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
         mainLayout->addWidget(group);
     }
 
-    // ── Callback group (not MFC): how a LowID client can be reached ─────
-    if (const QCborMap cb = d.value(QLatin1StringView("callback")).toMap(); !cb.isEmpty()) {
+    // ── Callback group (not MFC, ext controls only): how a LowID client can be reached
+    if (const QCborMap cb = d.value(QLatin1StringView("callback")).toMap();
+        thePrefs.showExtControls() && !cb.isEmpty()) {
         auto* group = new QGroupBox(tr("LowID Callback"));
         auto* form  = new QFormLayout(group);
         form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);

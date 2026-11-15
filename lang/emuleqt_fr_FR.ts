@@ -1336,7 +1336,7 @@ Le télécharger à nouveau ?</translation>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4999"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+5002"/>
         <source>Bytes</source>
         <translation>octets</translation>
     </message>
@@ -13070,12 +13070,12 @@ Les autres membres voient votre pseudo et vos messages ; votre nœud participe a
     <message>
         <location line="+2"/>
         <source>From</source>
-        <translation type="unfinished"></translation>
+        <translation>De</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Answer</source>
-        <translation type="unfinished"></translation>
+        <translation>Réponse</translation>
     </message>
     <message>
         <location line="+32"/>
@@ -13091,17 +13091,17 @@ Les autres membres voient votre pseudo et vos messages ; votre nœud participe a
     <message>
         <location line="-17"/>
         <source>Keyword Search</source>
-        <translation type="unfinished"></translation>
+        <translation>Recherche par mot-clé</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Source Search</source>
-        <translation type="unfinished"></translation>
+        <translation>Recherche de sources</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Notes Search</source>
-        <translation type="unfinished"></translation>
+        <translation>Recherche de commentaires</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -13111,7 +13111,7 @@ Les autres membres voient votre pseudo et vos messages ; votre nœud participe a
     <message>
         <location line="+1"/>
         <source>Store Source</source>
-        <translation type="unfinished"></translation>
+        <translation>Stocker une source</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -13121,7 +13121,7 @@ Les autres membres voient votre pseudo et vos messages ; votre nœud participe a
     <message>
         <location line="+1"/>
         <source>Firewall Check</source>
-        <translation type="unfinished"></translation>
+        <translation>Vérification du pare-feu</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -13131,17 +13131,17 @@ Les autres membres voient votre pseudo et vos messages ; votre nœud participe a
     <message>
         <location line="+1"/>
         <source>Callback</source>
-        <translation type="unfinished"></translation>
+        <translation>Rappel</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Type %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Type %1</translation>
     </message>
     <message>
         <location line="+9"/>
         <source>Search %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Recherche %1</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -13151,51 +13151,51 @@ Les autres membres voient votre pseudo et vos messages ; votre nœud participe a
     <message>
         <location line="+9"/>
         <source>Error %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Erreur %1</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Not answered</source>
-        <translation type="unfinished"></translation>
+        <translation>Sans réponse</translation>
     </message>
     <message numerus="yes">
         <location line="+4"/>
         <source>%n contact(s)</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%n contact</numerusform>
+            <numerusform>%n contacts</numerusform>
         </translation>
     </message>
     <message>
         <location line="+6"/>
         <source>not responsible</source>
-        <translation type="unfinished"></translation>
+        <translation>non responsable</translation>
     </message>
     <message numerus="yes">
         <location line="+4"/>
         <source>%n result(s)</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%n résultat</numerusform>
+            <numerusform>%n résultats</numerusform>
         </translation>
     </message>
     <message>
         <location line="+3"/>
         <source>%1 of %2 stored</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 sur %2 stockés</translation>
     </message>
     <message numerus="yes">
         <location line="+1"/>
         <source>%n stored</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%n stocké</numerusform>
+            <numerusform>%n stockés</numerusform>
         </translation>
     </message>
     <message>
         <location line="+3"/>
         <source>load %1%</source>
-        <translation type="unfinished"></translation>
+        <translation>charge %1%</translation>
     </message>
 </context>
 <context>
@@ -13396,13 +13396,13 @@ Les autres membres voient votre pseudo et vos messages ; votre nœud participe a
     <message>
         <location line="-84"/>
         <source>▸ Outgoing Searches (0)</source>
-        <translation type="unfinished"></translation>
+        <translation>▸ Recherches sortantes (0)</translation>
     </message>
     <message>
         <location line="+1"/>
         <location line="+162"/>
         <source>▸ Incoming Searches (0)</source>
-        <translation type="unfinished"></translation>
+        <translation>▸ Recherches entrantes (0)</translation>
     </message>
     <message>
         <location line="-86"/>
@@ -13418,12 +13418,12 @@ Les autres membres voient votre pseudo et vos messages ; votre nœud participe a
     <message>
         <location line="+6"/>
         <source>▸ Outgoing Searches (%1)</source>
-        <translation type="unfinished"></translation>
+        <translation>▸ Recherches sortantes (%1)</translation>
     </message>
     <message>
         <location line="+63"/>
         <source>▸ Incoming Searches (%1)</source>
-        <translation type="unfinished"></translation>
+        <translation>▸ Recherches entrantes (%1)</translation>
     </message>
 </context>
 <context>
@@ -22474,15 +22474,15 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+412"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+413"/>
         <location line="+1264"/>
         <location line="+21"/>
-        <location line="+605"/>
+        <location line="+622"/>
         <source>Download</source>
         <translation>Téléchargement</translation>
     </message>
     <message>
-        <location line="-1870"/>
+        <location line="-1887"/>
         <source>Close All Searches</source>
         <translation>Fermer toutes les recherches</translation>
     </message>
@@ -22639,7 +22639,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>Codec :</translation>
     </message>
     <message>
-        <location line="+3075"/>
+        <location line="+3092"/>
         <source>ed3k download added: %1</source>
         <translation>Téléchargement ed3k ajouté : %1</translation>
     </message>
@@ -22653,7 +22653,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation type="vanished">Débit min. [kbps] :</translation>
     </message>
     <message>
-        <location line="-3068"/>
+        <location line="-3085"/>
         <source>Min. Length [s]:</source>
         <translation>Durée min. [s] :</translation>
     </message>
@@ -23060,7 +23060,7 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>Copier les liens magnet</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+34"/>
         <source>Mark as not Spam</source>
         <translation>Marquer comme non-spam</translation>
     </message>
@@ -23181,13 +23181,13 @@ Les mots-clés utilisés dans les expressions de recherche Kad doivent avoir une
         <translation>Marquer comme spam</translation>
     </message>
     <message>
-        <location line="-274"/>
+        <location line="-291"/>
         <location line="+148"/>
         <source>Save Torrent File...</source>
         <translation>Enregistrer le fichier torrent...</translation>
     </message>
     <message>
-        <location line="+142"/>
+        <location line="+159"/>
         <source>Remove</source>
         <translation>Supprimer</translation>
     </message>
@@ -28796,18 +28796,18 @@ Cliquer de nouveau sur « Restaurer les statistiques » rechargera vos statistiq
     </message>
     <message>
         <location line="+0"/>
-        <location line="+361"/>
+        <location line="+370"/>
         <source>Download</source>
         <translation>Téléchargement</translation>
     </message>
     <message>
-        <location line="-361"/>
-        <location line="+352"/>
+        <location line="-370"/>
+        <location line="+361"/>
         <source>Priority</source>
         <translation>Priorité</translation>
     </message>
     <message>
-        <location line="-351"/>
+        <location line="-360"/>
         <source>Availability</source>
         <translation>Disponibilité</translation>
     </message>
@@ -28917,7 +28917,12 @@ Cliquer de nouveau sur « Restaurer les statistiques » rechargera vos statistiq
         <translation>Fichiers (%1)</translation>
     </message>
     <message>
-        <location line="+67"/>
+        <location line="+61"/>
+        <source>Preview</source>
+        <translation>Aperçu</translation>
+    </message>
+    <message>
+        <location line="+15"/>
         <source>Do Not Download</source>
         <translation>Ne pas télécharger</translation>
     </message>
@@ -29107,12 +29112,12 @@ Cliquer de nouveau sur « Restaurer les statistiques » rechargera vos statistiq
         <location line="+14"/>
         <location line="+15"/>
         <location line="+11"/>
-        <location line="+738"/>
+        <location line="+745"/>
         <source>Not connected to the eMule core.</source>
         <translation>Non connecté au noyau eMule.</translation>
     </message>
     <message>
-        <location line="-789"/>
+        <location line="-796"/>
         <source>Cannot read %1.</source>
         <translation>Impossible de lire %1.</translation>
     </message>
@@ -29189,12 +29194,12 @@ Cliquer de nouveau sur « Restaurer les statistiques » rechargera vos statistiq
     </message>
     <message>
         <location line="+2"/>
-        <location line="+339"/>
+        <location line="+346"/>
         <source>Preview</source>
         <translation>Aperçu</translation>
     </message>
     <message>
-        <location line="-337"/>
+        <location line="-344"/>
         <source>Copy Magnet Link</source>
         <translation>Copier le lien magnet</translation>
     </message>
@@ -29204,7 +29209,7 @@ Cliquer de nouveau sur « Restaurer les statistiques » rechargera vos statistiq
         <translation>Coller les liens magnet</translation>
     </message>
     <message>
-        <location line="+94"/>
+        <location line="+95"/>
         <source>BitTorrent Options…</source>
         <translation>Options BitTorrent…</translation>
     </message>
@@ -29247,7 +29252,7 @@ Cliquer de nouveau sur « Restaurer les statistiques » rechargera vos statistiq
         <translation>Enregistré sur la machine du cœur : %1</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="+36"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Aperçu indisponible — le serveur web n&apos;est pas en cours d&apos;exécution ou aucun jeton de flux n&apos;a été reçu.</translation>
     </message>
@@ -30905,14 +30910,14 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Adresse</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-4223"/>
-        <location line="+4105"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-4226"/>
+        <location line="+4108"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>Session expirée — reconnectez-vous</translation>
     </message>
     <message>
-        <location line="-4150"/>
+        <location line="-4153"/>
         <source>Guests cannot add downloads</source>
         <translation>Les invités ne peuvent pas ajouter de téléchargements</translation>
     </message>
@@ -31018,7 +31023,7 @@ Un mot de passe est défini pour cette release.</translation>
     </message>
     <message numerus="yes">
         <location line="+255"/>
-        <location line="+1098"/>
+        <location line="+1101"/>
         <source>%n download(s) added</source>
         <translation>
             <numerusform>%n téléchargement ajouté</numerusform>
@@ -31030,7 +31035,7 @@ Un mot de passe est défini pour cette release.</translation>
         <translation type="vanished">Non connecté — la recherche n’a pas pu être envoyée.</translation>
     </message>
     <message>
-        <location line="-1053"/>
+        <location line="-1056"/>
         <source>Not sent yet — the search is waiting (%1) and starts by itself.</source>
         <translation>Pas encore envoyée — la recherche est en attente (%1) et démarre d’elle-même.</translation>
     </message>
@@ -31068,12 +31073,12 @@ Un mot de passe est défini pour cette release.</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+2370"/>
+        <location line="+2373"/>
         <source>Web Control Panel</source>
         <translation>Panneau de contrôle Web</translation>
     </message>
     <message>
-        <location line="-2362"/>
+        <location line="-2365"/>
         <source>Not connected</source>
         <translation>Non connecté</translation>
     </message>
@@ -31083,18 +31088,18 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Bloqué : interface réseau indisponible</translation>
     </message>
     <message>
-        <location line="+303"/>
+        <location line="+304"/>
         <source>Connected</source>
         <translation>Connecté</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+358"/>
+        <location line="+359"/>
         <source>Disconnected</source>
         <translation>Déconnecté</translation>
     </message>
     <message numerus="yes">
-        <location line="-298"/>
+        <location line="-299"/>
         <source>&quot;%1&quot;: %n result(s)</source>
         <translation>
             <numerusform>« %1 » : %n résultat</numerusform>
@@ -31102,7 +31107,7 @@ Un mot de passe est défini pour cette release.</translation>
         </translation>
     </message>
     <message>
-        <location line="+211"/>
+        <location line="+212"/>
         <source>Active Connections</source>
         <translation>Connexions actives</translation>
     </message>
@@ -31169,38 +31174,38 @@ Un mot de passe est défini pour cette release.</translation>
     <message>
         <location line="+44"/>
         <location line="+45"/>
-        <location line="+423"/>
+        <location line="+424"/>
         <location line="+1135"/>
         <source>Queued</source>
         <translation>En file d&apos;attente</translation>
     </message>
     <message>
-        <location line="-1599"/>
+        <location line="-1600"/>
         <location line="+43"/>
-        <location line="+422"/>
+        <location line="+423"/>
         <location line="+1133"/>
         <source>Downloading</source>
         <translation>En téléchargement</translation>
     </message>
     <message>
-        <location line="-1604"/>
+        <location line="-1605"/>
         <location line="+9"/>
         <location line="+42"/>
-        <location line="+421"/>
+        <location line="+422"/>
         <source>Paused</source>
         <translation>En pause</translation>
     </message>
     <message>
-        <location line="-420"/>
-        <location line="+421"/>
+        <location line="-421"/>
+        <location line="+422"/>
         <location line="+967"/>
         <location line="+163"/>
         <source>Complete</source>
         <translation>Terminé</translation>
     </message>
     <message>
-        <location line="-1547"/>
-        <location line="+418"/>
+        <location line="-1548"/>
+        <location line="+419"/>
         <source>Failed</source>
         <translation>Échoué</translation>
     </message>
@@ -31220,15 +31225,15 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Décompression</translation>
     </message>
     <message>
-        <location line="-473"/>
+        <location line="-474"/>
         <location line="+42"/>
-        <location line="+432"/>
+        <location line="+433"/>
         <source>Checking</source>
         <translation>Contrôle</translation>
     </message>
     <message>
-        <location line="-2663"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+121"/>
+        <location line="-2666"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+122"/>
         <source>Torrent</source>
         <translation>Torrent</translation>
     </message>
@@ -31239,7 +31244,7 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Web</translation>
     </message>
     <message>
-        <location line="+1919"/>
+        <location line="+1921"/>
         <source>Incoming (eD2K)</source>
         <translation>Entrant (eD2K)</translation>
     </message>
@@ -31337,7 +31342,7 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Réception : %1, envoi : %2</translation>
     </message>
     <message numerus="yes">
-        <location line="+42"/>
+        <location line="+43"/>
         <source>%n download(s)</source>
         <translation>
             <numerusform>%n téléchargement</numerusform>
@@ -31484,14 +31489,14 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Très haute</translation>
     </message>
     <message>
-        <location line="-703"/>
-        <location line="+704"/>
+        <location line="-704"/>
+        <location line="+705"/>
         <source>High</source>
         <translation>Haute</translation>
     </message>
     <message>
-        <location line="-708"/>
-        <location line="+709"/>
+        <location line="-709"/>
+        <location line="+710"/>
         <source>Low</source>
         <translation>Basse</translation>
     </message>
@@ -31501,8 +31506,8 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Très basse</translation>
     </message>
     <message>
-        <location line="-708"/>
-        <location line="+709"/>
+        <location line="-709"/>
+        <location line="+710"/>
         <source>Normal</source>
         <translation>Normale</translation>
     </message>
@@ -31559,7 +31564,7 @@ Un mot de passe est défini pour cette release.</translation>
     </message>
     <message>
         <location line="+56"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-181"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-182"/>
         <source>All</source>
         <translation>Tous</translation>
     </message>
@@ -31808,7 +31813,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Vitesse de téléchargement</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1823"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1824"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Downloads</source>
         <translation>Téléchargements</translation>
@@ -31964,7 +31969,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Fichiers NZB :</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1349"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1351"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>Nom</translation>
@@ -31995,7 +32000,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Réception</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1219"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1221"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+15"/>
         <source>Hoster</source>
         <translation>Hébergeur</translation>
@@ -32059,6 +32064,11 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <location line="+1"/>
         <source>Open Folder</source>
         <translation>Ouvrir le dossier</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Open in the browser, or copy the link into a media player</source>
+        <translation>Ouvrir dans le navigateur ou copier le lien dans un lecteur multimédia</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -32366,7 +32376,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Fichiers partagés</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1219"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1221"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Size</source>
         <translation>Taille</translation>
@@ -32442,7 +32452,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Fichiers torrent :</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1215"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1217"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Torrents</source>
         <translation>Torrents</translation>
@@ -32499,14 +32509,14 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Durée de fonctionnement</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-2055"/>
-        <location line="+1926"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-2057"/>
+        <location line="+1928"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="+978"/>
+        <location line="+979"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet engine unavailable</source>
         <translation>Moteur Usenet indisponible</translation>

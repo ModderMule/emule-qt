@@ -1332,9 +1332,45 @@ void WebServer::buildApiTable()
         Operation op = make("downloads.preview", Method::Get, "/api/v1/downloads/{hash}/preview",
                             "Streams", "Byte-range stream of a download or shared file",
                             "For media players. Authenticated by ?token=, a stream token "
-                            "(the GUI's or a web page's), not by the API key.");
+                            "(from GET .../preview-link, the GUI's or a web page's), not by the "
+                            "API key. With \"Enable seeking in downloads\" on, a range of an "
+                            "unfinished download waits up to 60 seconds for its bytes and has "
+                            "them fetched first; off, the part file is served as it is.");
         op.flags = ReadOnly | RawStream;
-        op.params = {hashParam(), queryStr(s("token"), s("Stream token.")).req()};
+        op.params = {pathStr(s("hash"), s("eD2K hash (32 hex digits) or ed3k root (64)."))
+                         .range(32, 64),
+                     queryStr(s("token"), s("Stream token.")).req()};
+        add(op);
+    }
+    {
+        Operation op = make("downloads.previewLink", Method::Get,
+                            "/api/v1/downloads/{hash}/preview-link", "Streams",
+                            "Player link for a download or shared file",
+                            "A URL of GET /downloads/{hash}/preview with a new stream token, "
+                            "ready for a media player. The token idles out after 6 hours "
+                            "unused; the 16 newest links stay valid.");
+        op.flags = ReadOnly;
+        op.mcpTool = s("download_preview_link");
+        op.params = {pathStr(s("hash"), s("eD2K hash (32 hex digits) or ed3k root (64)."))
+                         .range(32, 64)};
+        op.handler = [this](const Call& c) {
+            const QString hash = c.str(L("hash")).toLower();
+            bool found = false;
+            if (hash.size() == 64) {
+                QString path;
+                QString name;
+                found = m_ed3kFileResolver && m_ed3kFileResolver(hash, path, name);
+            } else if (std::array<uint8, 16> bytes{};
+                       hash.size() == 32 && decodeBase16(hash, bytes.data(), 16) == 16) {
+                found = (m_downloadQueue && m_downloadQueue->fileByID(bytes.data()))
+                        || (m_sharedFiles && m_sharedFiles->getFileByID(bytes.data()));
+            } else {
+                return error(400, s("Invalid hash format"));
+            }
+            if (!found)
+                return error(404, s("File not found"));
+            return apiPreviewLink(c, s("/api/v1/downloads/%1/preview").arg(hash));
+        };
         add(op);
     }
     {
@@ -1546,6 +1582,25 @@ void WebServer::addUsenetOperations()
         op.flags = ReadOnly | RawStream;
         op.params = {idParam(), pathInt(s("fileIndex"), s("Index of the file in the NZB.")).atLeast(0),
                      queryStr(s("token"), s("Stream token.")).req()};
+        add(op);
+    }
+    {
+        Operation op = make("usenet.previewLink", Method::Get,
+                            "/api/v1/usenet/{id}/{fileIndex}/preview-link", "Streams",
+                            "Player link for a Usenet file",
+                            "A URL of GET /usenet/{id}/{fileIndex}/preview with a new stream "
+                            "token, as downloads.previewLink.");
+        op.flags = ReadOnly;
+        op.mcpTool = s("usenet_preview_link");
+        op.params = {idParam(), pathInt(s("fileIndex"), s("Index of the file in the NZB.")).atLeast(0)};
+        op.handler = [this](const Call& c) {
+            const QString id = c.str(L("id"));
+            if (const Result item = toResult(handleRestUsenetItem(id)); !item.ok())
+                return item;
+            return apiPreviewLink(c, s("/api/v1/usenet/%1/%2/preview")
+                                         .arg(QString::fromLatin1(QUrl::toPercentEncoding(id)))
+                                         .arg(c.integer(L("fileIndex"))));
+        };
         add(op);
     }
 }
@@ -1990,6 +2045,24 @@ Result WebServer::apiCategoryEdit(const Call& call, int mode)
     if (const ops::Status st = m_apiBackend->setCategories(list); !st.ok())
         return error(st.code, st.message);
     return ok(QJsonObject{{s("items"), m_apiBackend->categories()}});
+}
+
+Result WebServer::apiPreviewLink(const Call& call, const QString& streamPath)
+{
+    using namespace std::chrono_literals;
+    const QString token = m_streamTokens.mint(s("api"), 6h);
+    const QString path = streamPath + s("?token=") + token;
+    QJsonObject body{{s("path"), path}, {s("token"), token}};
+    // absolute when asked over HTTP (scheme and Host of the request); MCP gets the path only
+    if (call.request) {
+        QUrl url = call.request->url();
+        url.setPath(streamPath, QUrl::StrictMode);
+        url.setQuery(s("token=") + token);
+        url.setFragment({});
+        url.setUserInfo({});
+        body.insert(s("url"), url.toString(QUrl::FullyEncoded));
+    }
+    return ok(body);
 }
 
 void WebServer::saveFriends() const

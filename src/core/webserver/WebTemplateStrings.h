@@ -107,6 +107,7 @@ inline constexpr const char* kWebTemplateStrings[] = {
     QT_TRANSLATE_NOOP("eMule::WebServer", "Nothing here can be previewed yet."),
     QT_TRANSLATE_NOOP("eMule::WebServer", "Open File"),
     QT_TRANSLATE_NOOP("eMule::WebServer", "Open Folder"),
+    QT_TRANSLATE_NOOP("eMule::WebServer", "Open in the browser, or copy the link into a media player"),
     QT_TRANSLATE_NOOP("eMule::WebServer", "Package"),
     QT_TRANSLATE_NOOP("eMule::WebServer", "Package:"),
     QT_TRANSLATE_NOOP("eMule::WebServer", "Password"),

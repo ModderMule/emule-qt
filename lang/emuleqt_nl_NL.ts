@@ -1264,7 +1264,7 @@ Heeft commentaren</translation>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4999"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+5002"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -12689,12 +12689,12 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
     <message>
         <location line="+2"/>
         <source>From</source>
-        <translation type="unfinished"></translation>
+        <translation>Van</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Answer</source>
-        <translation type="unfinished"></translation>
+        <translation>Antwoord</translation>
     </message>
     <message>
         <location line="+32"/>
@@ -12710,17 +12710,17 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
     <message>
         <location line="-17"/>
         <source>Keyword Search</source>
-        <translation type="unfinished"></translation>
+        <translation>Trefwoord zoeken</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Source Search</source>
-        <translation type="unfinished"></translation>
+        <translation>Bronnen zoeken</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Notes Search</source>
-        <translation type="unfinished"></translation>
+        <translation>Opmerkingen zoeken</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -12730,7 +12730,7 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
     <message>
         <location line="+1"/>
         <source>Store Source</source>
-        <translation type="unfinished"></translation>
+        <translation>Bron opslaan</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -12740,7 +12740,7 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
     <message>
         <location line="+1"/>
         <source>Firewall Check</source>
-        <translation type="unfinished"></translation>
+        <translation>Firewallcontrole</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -12750,17 +12750,17 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
     <message>
         <location line="+1"/>
         <source>Callback</source>
-        <translation type="unfinished"></translation>
+        <translation>Terugbellen</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Type %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Type %1</translation>
     </message>
     <message>
         <location line="+9"/>
         <source>Search %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Zoekopdracht %1</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -12770,51 +12770,51 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
     <message>
         <location line="+9"/>
         <source>Error %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Fout %1</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Not answered</source>
-        <translation type="unfinished"></translation>
+        <translation>Niet beantwoord</translation>
     </message>
     <message numerus="yes">
         <location line="+4"/>
         <source>%n contact(s)</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%n contact</numerusform>
+            <numerusform>%n contacten</numerusform>
         </translation>
     </message>
     <message>
         <location line="+6"/>
         <source>not responsible</source>
-        <translation type="unfinished"></translation>
+        <translation>niet verantwoordelijk</translation>
     </message>
     <message numerus="yes">
         <location line="+4"/>
         <source>%n result(s)</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%n resultaat</numerusform>
+            <numerusform>%n resultaten</numerusform>
         </translation>
     </message>
     <message>
         <location line="+3"/>
         <source>%1 of %2 stored</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 van %2 opgeslagen</translation>
     </message>
     <message numerus="yes">
         <location line="+1"/>
         <source>%n stored</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%n opgeslagen</numerusform>
+            <numerusform>%n opgeslagen</numerusform>
         </translation>
     </message>
     <message>
         <location line="+3"/>
         <source>load %1%</source>
-        <translation type="unfinished"></translation>
+        <translation>belasting %1%</translation>
     </message>
 </context>
 <context>
@@ -12999,13 +12999,13 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
     <message>
         <location line="-84"/>
         <source>▸ Outgoing Searches (0)</source>
-        <translation type="unfinished"></translation>
+        <translation>▸ Uitgaande zoekopdrachten (0)</translation>
     </message>
     <message>
         <location line="+1"/>
         <location line="+162"/>
         <source>▸ Incoming Searches (0)</source>
-        <translation type="unfinished"></translation>
+        <translation>▸ Inkomende zoekopdrachten (0)</translation>
     </message>
     <message>
         <location line="-86"/>
@@ -13021,12 +13021,12 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
     <message>
         <location line="+6"/>
         <source>▸ Outgoing Searches (%1)</source>
-        <translation type="unfinished"></translation>
+        <translation>▸ Uitgaande zoekopdrachten (%1)</translation>
     </message>
     <message>
         <location line="+63"/>
         <source>▸ Incoming Searches (%1)</source>
-        <translation type="unfinished"></translation>
+        <translation>▸ Inkomende zoekopdrachten (%1)</translation>
     </message>
 </context>
 <context>
@@ -21957,7 +21957,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+309"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+310"/>
         <source>Related</source>
         <translation>Gerelateerd</translation>
     </message>
@@ -21965,12 +21965,12 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <location line="+103"/>
         <location line="+1264"/>
         <location line="+21"/>
-        <location line="+605"/>
+        <location line="+622"/>
         <source>Download</source>
         <translation>Downloaden</translation>
     </message>
     <message>
-        <location line="-1870"/>
+        <location line="-1887"/>
         <source>Close All Searches</source>
         <translation>Alle zoekopdrachten sluiten</translation>
     </message>
@@ -22535,7 +22535,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>Magnet-links kopiëren</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+34"/>
         <location line="+15"/>
         <location line="+10"/>
         <source>Mark as Spam</source>
@@ -28011,18 +28011,18 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
     </message>
     <message>
         <location line="+0"/>
-        <location line="+361"/>
+        <location line="+370"/>
         <source>Download</source>
         <translation>Downloaden</translation>
     </message>
     <message>
-        <location line="-361"/>
-        <location line="+352"/>
+        <location line="-370"/>
+        <location line="+361"/>
         <source>Priority</source>
         <translation>Prioriteit</translation>
     </message>
     <message>
-        <location line="-351"/>
+        <location line="-360"/>
         <source>Availability</source>
         <translation>Beschikbaarheid</translation>
     </message>
@@ -28132,7 +28132,12 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>Bestanden (%1)</translation>
     </message>
     <message>
-        <location line="+67"/>
+        <location line="+61"/>
+        <source>Preview</source>
+        <translation>Voorvertoning</translation>
+    </message>
+    <message>
+        <location line="+15"/>
         <source>Do Not Download</source>
         <translation>Niet downloaden</translation>
     </message>
@@ -28322,12 +28327,12 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <location line="+14"/>
         <location line="+15"/>
         <location line="+11"/>
-        <location line="+738"/>
+        <location line="+745"/>
         <source>Not connected to the eMule core.</source>
         <translation>Niet verbonden met de eMule-core.</translation>
     </message>
     <message>
-        <location line="-789"/>
+        <location line="-796"/>
         <source>Cannot read %1.</source>
         <translation>%1 kan niet worden gelezen.</translation>
     </message>
@@ -28404,12 +28409,12 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
     </message>
     <message>
         <location line="+2"/>
-        <location line="+339"/>
+        <location line="+346"/>
         <source>Preview</source>
         <translation>Voorvertoning</translation>
     </message>
     <message>
-        <location line="-337"/>
+        <location line="-344"/>
         <source>Copy Magnet Link</source>
         <translation>Magnet-link kopiëren</translation>
     </message>
@@ -28419,7 +28424,7 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>Magnetlinks plakken</translation>
     </message>
     <message>
-        <location line="+94"/>
+        <location line="+95"/>
         <source>BitTorrent Options…</source>
         <translation>BitTorrent-opties…</translation>
     </message>
@@ -28462,7 +28467,7 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>Opgeslagen op de machine van de core: %1</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="+36"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Voorvertoning niet beschikbaar — webserver draait niet of streamtoken niet ontvangen.</translation>
     </message>
@@ -30024,20 +30029,20 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
 <context>
     <name>eMule::WebServer</name>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-4223"/>
-        <location line="+4105"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-4226"/>
+        <location line="+4108"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>Sessie verlopen — log opnieuw in</translation>
     </message>
     <message>
-        <location line="-4150"/>
+        <location line="-4153"/>
         <source>Guests cannot add downloads</source>
         <translation>Gasten kunnen geen downloads toevoegen</translation>
     </message>
     <message>
         <location line="+671"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+185"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+186"/>
         <source>Torrent</source>
         <translation>Torrent</translation>
     </message>
@@ -30075,13 +30080,13 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+31"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-104"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-105"/>
         <source>Name</source>
         <translation>Naam</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+70"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+71"/>
         <source>Size</source>
         <translation>Grootte</translation>
     </message>
@@ -30092,7 +30097,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+40"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-107"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-108"/>
         <source>Download</source>
         <translation>Downloaden</translation>
     </message>
@@ -30161,7 +30166,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message numerus="yes">
         <location line="+255"/>
-        <location line="+1098"/>
+        <location line="+1101"/>
         <source>%n download(s) added</source>
         <translation>
             <numerusform>%n download toegevoegd</numerusform>
@@ -30169,7 +30174,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
         </translation>
     </message>
     <message>
-        <location line="-1053"/>
+        <location line="-1056"/>
         <source>Not sent yet — the search is waiting (%1) and starts by itself.</source>
         <translation>Nog niet verzonden — de zoekopdracht wacht (%1) en start vanzelf.</translation>
     </message>
@@ -30207,12 +30212,12 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+2370"/>
+        <location line="+2373"/>
         <source>Web Control Panel</source>
         <translation>Webbedieningspaneel</translation>
     </message>
     <message>
-        <location line="-2362"/>
+        <location line="-2365"/>
         <source>Not connected</source>
         <translation>Niet verbonden</translation>
     </message>
@@ -30222,18 +30227,18 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
         <translation>Geblokkeerd: netwerkinterface niet beschikbaar</translation>
     </message>
     <message>
-        <location line="+303"/>
+        <location line="+304"/>
         <source>Connected</source>
         <translation>Verbonden</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+358"/>
+        <location line="+359"/>
         <source>Disconnected</source>
         <translation>Verbinding verbroken</translation>
     </message>
     <message numerus="yes">
-        <location line="-298"/>
+        <location line="-299"/>
         <source>&quot;%1&quot;: %n result(s)</source>
         <translation>
             <numerusform>&quot;%1&quot;: %n resultaat</numerusform>
@@ -30241,14 +30246,14 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
         </translation>
     </message>
     <message>
-        <location line="+209"/>
+        <location line="+210"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+2"/>
         <source>Downloads</source>
         <translation>Downloads</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+130"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+131"/>
         <source>Uploads</source>
         <translation>Uploads</translation>
     </message>
@@ -30264,7 +30269,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-115"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-116"/>
         <source>KB/s</source>
         <translation>KB/s</translation>
     </message>
@@ -30331,43 +30336,43 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     <message>
         <location line="+4"/>
         <location line="+45"/>
-        <location line="+423"/>
+        <location line="+424"/>
         <location line="+1135"/>
         <source>Queued</source>
         <translation>In de wachtrij</translation>
     </message>
     <message>
-        <location line="-1600"/>
+        <location line="-1601"/>
         <source>Downloading metadata</source>
         <translation>Metadata downloaden</translation>
     </message>
     <message>
         <location line="+1"/>
         <location line="+43"/>
-        <location line="+422"/>
+        <location line="+423"/>
         <location line="+1133"/>
         <source>Downloading</source>
         <translation>Downloaden</translation>
     </message>
     <message>
-        <location line="-1604"/>
+        <location line="-1605"/>
         <location line="+9"/>
         <location line="+42"/>
-        <location line="+421"/>
+        <location line="+422"/>
         <source>Paused</source>
         <translation>Gepauzeerd</translation>
     </message>
     <message>
-        <location line="-420"/>
-        <location line="+421"/>
+        <location line="-421"/>
+        <location line="+422"/>
         <location line="+967"/>
         <location line="+163"/>
         <source>Complete</source>
         <translation>Voltooid</translation>
     </message>
     <message>
-        <location line="-1547"/>
-        <location line="+418"/>
+        <location line="-1548"/>
+        <location line="+419"/>
         <source>Failed</source>
         <translation>Mislukt</translation>
     </message>
@@ -30387,14 +30392,14 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
         <translation>Uitpakken</translation>
     </message>
     <message>
-        <location line="-473"/>
+        <location line="-474"/>
         <location line="+42"/>
-        <location line="+432"/>
+        <location line="+433"/>
         <source>Checking</source>
         <translation>Controleren</translation>
     </message>
     <message>
-        <location line="-743"/>
+        <location line="-744"/>
         <source>Incoming (eD2K)</source>
         <translation>Binnenkomend (eD2K)</translation>
     </message>
@@ -30482,7 +30487,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
         <translation>Down: %1, up: %2</translation>
     </message>
     <message numerus="yes">
-        <location line="+42"/>
+        <location line="+43"/>
         <source>%n download(s)</source>
         <translation>
             <numerusform>%n download</numerusform>
@@ -30620,7 +30625,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+55"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+118"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+119"/>
         <source>Usenet engine unavailable</source>
         <translation>Usenet-engine niet beschikbaar</translation>
     </message>
@@ -30635,14 +30640,14 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
         <translation>Zeer hoog</translation>
     </message>
     <message>
-        <location line="-703"/>
-        <location line="+704"/>
+        <location line="-704"/>
+        <location line="+705"/>
         <source>High</source>
         <translation>Hoog</translation>
     </message>
     <message>
-        <location line="-708"/>
-        <location line="+709"/>
+        <location line="-709"/>
+        <location line="+710"/>
         <source>Low</source>
         <translation>Laag</translation>
     </message>
@@ -30652,8 +30657,8 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
         <translation>Zeer laag</translation>
     </message>
     <message>
-        <location line="-708"/>
-        <location line="+709"/>
+        <location line="-709"/>
+        <location line="+710"/>
         <source>Normal</source>
         <translation>Normaal</translation>
     </message>
@@ -30710,7 +30715,7 @@ Er is een wachtwoord ingesteld voor deze release.</translation>
     </message>
     <message>
         <location line="+56"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-175"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-176"/>
         <source>All</source>
         <translation>Alle</translation>
     </message>
@@ -31080,7 +31085,7 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
         <translation>Gezondheid:</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1949"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1950"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Hoster</source>
         <translation>Hoster</translation>
@@ -31229,6 +31234,11 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
         <location line="+1"/>
         <source>Open Folder</source>
         <translation>Map openen</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Open in the browser, or copy the link into a media player</source>
+        <translation>Openen in de browser of de link naar een mediaspeler kopiëren</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -31657,8 +31667,8 @@ Het netwerk dat inactief is, leent zijn deel aan het andere.</translation>
         <translation>Uptime</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1924"/>
-        <location line="+1926"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1926"/>
+        <location line="+1928"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet</source>
         <translation>Usenet</translation>

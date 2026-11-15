@@ -107,12 +107,16 @@ function post(q){var f=document.createElement('form');f.method='POST';f.action='
 function act(a){if(a.dataset.q&&!confirm(a.dataset.q))return false;return post(a.dataset.post);}
 function mi(q,icon,label,question){return '<a class="menuitems" href="#" data-post="'+esc(q)+'"'+(question?' data-q="'+esc(question)+'"':'')+' onclick="return act(this)">'+ic(icon)+esc(label)+'</a>';}
 var SEP='<div class="menusep"></div>';
+// Set by pages that offer Preview; the link plays in the browser or can be copied into a media player.
+var STREAM_TOKEN='';
+function previewItem(path){return STREAM_TOKEN?'<a class="menuitems" href="'+esc(path+'?token='+encodeURIComponent(STREAM_TOKEN))+'" target="_blank" onclick="hideMenu()">'+ic('filetype_video')+esc('{{js:Preview}}')+'</a>'+SEP:'';}
 function setlang(code){var q=new URLSearchParams(location.search);q.set('setlang',code);location.search=q.toString();}
 
 function downmenu(e,hash,st){
  var m=document.getElementById('downmenu');
  var h='';
  var u='w=transfer&file='+encodeURIComponent(hash)+'&op=';
+ h+=previewItem('/api/v1/downloads/'+encodeURIComponent(hash)+'/preview');
  if(st==='paused'||st==='stopped')
   h+=mi(u+'resume','l_resume','{{js:Resume}}');
  if(st==='downloading'||st==='waiting')
@@ -151,10 +155,10 @@ function servermenu(e,ip,port){
  showMenu(e,m);
 }
 
-function sharedmenu(e,link){
+function sharedmenu(e,link,hash){
  var m=document.getElementById('sharedmenu');
- m.innerHTML='<a class="menuitems" href="#">'+ic('l_ed2klink')+esc('{{js:Copy ED2K Link}}')+'</a>';
- m.firstChild.onclick=function(){if(navigator.clipboard)navigator.clipboard.writeText(link);hideMenu();return false;};
+ m.innerHTML=previewItem('/api/v1/downloads/'+encodeURIComponent(hash)+'/preview')+'<a class="menuitems" href="#" id="copyed2k">'+ic('l_ed2klink')+esc('{{js:Copy ED2K Link}}')+'</a>';
+ document.getElementById('copyed2k').onclick=function(){if(navigator.clipboard)navigator.clipboard.writeText(link);hideMenu();return false;};
  showMenu(e,m);
 }
 </script>
@@ -607,6 +611,7 @@ img { border: 0; }
 
 
 <--TMPL_TRANSFER_DOWN_HEADER-->
+<script>STREAM_TOKEN='[StreamToken]';</script>
 <div class="section-header">
  <span class="icon icon-arrow_down" style="vertical-align:middle"></span>&nbsp;
  <b>{{Downloads}} ([DownloadCount])</b>
@@ -1263,6 +1268,7 @@ unRestore();
    <th>{{Progress}}</th>
    <th>{{Priority}}</th>
    <th title="{{Share of the file's pieces that connected peers have}}">{{Availability}}</th>
+   <th></th>
   </tr>
  </thead>
  <tbody>
@@ -1284,6 +1290,7 @@ unRestore();
  </td>
  <td class="center">[TorrentFilePriority]</td>
  <td class="center">[TorrentFileAvailability]</td>
+ <td class="center"><a href="[TorrentFilePreviewUrl]" target="_blank" title="{{Open in the browser, or copy the link into a media player}}" [TorrentFilePreviewOff]>{{Preview}}</a></td>
 </tr>
 <--TMPL_TORRENT_FILE_LINE_END-->
 
@@ -1497,6 +1504,7 @@ unRestore();
 <-- ################################################################# -->
 
 <--TMPL_SHARED_LIST-->
+<script>STREAM_TOKEN='[StreamToken]';</script>
 <div class="section-header">
  <span class="icon icon-l_shared" style="vertical-align:middle"></span>&nbsp;
  <b>{{Shared Files}}</b>
@@ -1520,7 +1528,7 @@ unRestore();
 
 
 <--TMPL_SHARED_LINE-->
-<tr data-link="[SharedED2kLink]" oncontextmenu="sharedmenu(event,this.dataset.link)">
+<tr data-link="[SharedED2kLink]" data-hash="[SharedFileHash]" oncontextmenu="sharedmenu(event,this.dataset.link,this.dataset.hash)">
  <td class="left">
   <span class="icon icon-filetype_[SharedFileType]" style="vertical-align:middle"></span>
   <span class="icon icon-rating_[SharedFake]" style="vertical-align:middle" title="[SharedFakeTitle]"></span>

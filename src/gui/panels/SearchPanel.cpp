@@ -26,6 +26,7 @@
 #include "utils/PreviewLauncher.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/Ed2kLinkImporter.h"
+#include "utils/Ed3kLinkMenu.h"
 #include "dialogs/PeerPreviewDialog.h"
 #include "utils/ViewNavigation.h"
 #include "utils/WebServices.h"
@@ -1807,6 +1808,23 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
         if (!links.isEmpty())
             eMule::Clipboard::setText(links.join(QLatin1Char('\n')));
     });
+
+    // Copy ed3k Links / ed3k Links... (only while ed3k is on): ed3k rows by their root,
+    // eD2K rows by their MD4 once the daemon knows a root for it (shared or downloading)
+    {
+        QList<Ed3kLinkMenu::File> files;
+        for (const auto& i : m_resultView->selectionModel()->selectedRows()) {
+            const SearchResultRef ref = refAt(i);
+            if (!ref)
+                continue;
+            const SearchResultRow* r = ref.row;
+            if (r->isEd3k() && !r->ed3kRoot.isEmpty())
+                files.append({r->ed3kRoot, ref.fileName(), r->fileSize});
+            else if (!r->isMeta())
+                files.append({r->hash, ref.fileName(), r->fileSize});
+        }
+        Ed3kLinkMenu::addActions(m_contextMenu, this, m_ipc, files);
+    }
 
     // Mark as Spam / Mark as not Spam — MFC inserts this right before Remove, with
     // no separator of its own, and only when the search spam filter is enabled

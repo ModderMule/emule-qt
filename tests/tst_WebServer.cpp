@@ -647,6 +647,7 @@ private slots:
     void ed3kPreviewIgnoresTheStreamResolverWhenSeekingIsOff();
     void torrentPreviewWaitsAndFetchesWhenSeekingIsOn();
     void torrentPreviewServesTheFileAsIsWhenSeekingIsOff();
+    void previewLinksCarryAWorkingToken();
 
     // Graphs page data
     // Incoming folder browsing — the remote core's stand-in for the file manager
@@ -2322,6 +2323,80 @@ void tst_WebServer::torrentPreviewServesTheFileAsIsWhenSeekingIsOff()
     QVERIFY(!fetched);
 }
 
+void tst_WebServer::previewLinksCarryAWorkingToken()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    constexpr qint64 kSize = 16 * 1024;
+    const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSize);
+    QVERIFY(!path.isEmpty());
+
+    // torrent: the link is the stream route with a fresh token, absolute over HTTP
+    FakeTorrentBackend fake;
+    m_webServer->setTorrentBackend(&fake);
+    m_webServer->setBtStreamResolver([&](const QString&, int, qint64, bool) {
+        UsenetStreamSource src;
+        src.found = true;
+        src.fileName = QStringLiteral("movie.mkv");
+        src.totalSize = kSize;
+        src.availableEnd = kSize;
+        src.complete = true;
+        src.pieces = {{path, 0, 0, kSize}};
+        return src;
+    });
+    const auto reset = qScopeGuard([this] {
+        m_webServer->setTorrentBackend(nullptr);
+        m_webServer->setBtStreamResolver({});
+        m_webServer->setEd3kFileResolver({});
+    });
+    const QString idUrl = QString::fromLatin1(QUrl::toPercentEncoding(FakeTorrentBackend::idA(), ":"));
+    Response r = sendRequest("GET", QStringLiteral("/api/v1/torrents/%1/-1/preview-link").arg(idUrl));
+    QCOMPARE(r.statusCode, 200);
+    const QJsonObject link = r.json.object();
+    const QString token = link.value(QStringLiteral("token")).toString();
+    QCOMPARE(token.size(), 32);
+    QVERIFY(token != m_webServer->streamToken());
+    QCOMPARE(link.value(QStringLiteral("path")).toString(),
+             QStringLiteral("/api/v1/torrents/%1/-1/preview?token=%2").arg(idUrl, token));
+    const QUrl url(link.value(QStringLiteral("url")).toString());
+    QVERIFY2(url.isValid() && !url.host().isEmpty(), qPrintable(url.toString()));
+    QCOMPARE(url.port(), int(m_webServer->port()));
+    QCOMPARE(url.path(QUrl::FullyEncoded) + QStringLiteral("?") + url.query(),
+             link.value(QStringLiteral("path")).toString());
+
+    const auto played = sendRanged(link.value(QStringLiteral("path")).toString(), QByteArrayLiteral("bytes=0-"));
+    QCOMPARE(played.statusCode, 206);
+    QCOMPARE(qint64(played.rawBody.size()), kSize);
+
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/torrents/bt:v1:%1/0/preview-link")
+                                    .arg(QString(40, QLatin1Char('c')))).statusCode, 404);
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/torrents/%1/-2/preview-link").arg(idUrl)).statusCode, 400);
+    // the key is required, as for every call
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/torrents/%1/0/preview-link").arg(idUrl),
+                         {}, false).statusCode, 401);
+
+    // downloads: unknown hash 404, malformed 400, an ed3k root by its resolver
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/downloads/%1/preview-link")
+                                    .arg(QString(32, QLatin1Char('a')))).statusCode, 404);
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/downloads/%1/preview-link")
+                                    .arg(QString(32, QLatin1Char('z')))).statusCode, 400);
+    m_webServer->setEd3kFileResolver([&](const QString&, QString& p, QString& name) {
+        p = path;
+        name = QStringLiteral("movie.mkv");
+        return true;
+    });
+    const QString root(64, QLatin1Char('e'));
+    r = sendRequest("GET", QStringLiteral("/api/v1/downloads/%1/preview-link").arg(root));
+    QCOMPARE(r.statusCode, 200);
+    const auto ed3k = sendRanged(r.json.object().value(QStringLiteral("path")).toString(),
+                                 QByteArrayLiteral("bytes=0-99"));
+    QCOMPARE(ed3k.statusCode, 206);
+    QCOMPARE(ed3k.rawBody.size(), 100);
+
+    // Usenet: unknown item 404 (no backend: 503)
+    QVERIFY(sendRequest("GET", QStringLiteral("/api/v1/usenet/nope/0/preview-link")).statusCode >= 400);
+}
+
 void tst_WebServer::previewGivesUpWhenTheItemDisappears()
 {
     // Found on the first call, gone on the next: the user removed the item, or
@@ -3599,6 +3674,8 @@ void tst_WebServer::webSession_isACookieNotAUrlParameter()
     const QString page = rawGetBody(port, QStringLiteral("/?ses=%1&w=transfer").arg(ses));
     QVERIFY(page.contains(QStringLiteral("nav-tab")));
     QVERIFY(!page.contains(ses));
+    // Preview in the download menu: a page stream token, never the session id
+    QVERIFY(page.contains(QRegularExpression(QStringLiteral("STREAM_TOKEN='[0-9a-f]{16,}'"))));
     QVERIFY(!page.contains(QStringLiteral("ses=")));
 
     // The id in the URL (written so the test helper leaves it there) is no session.
@@ -4160,6 +4237,13 @@ void tst_WebServer::webTorrentsPage_listsAndActs()
     QVERIFY(page.contains(QStringLiteral(">25.0%<")));
     QVERIFY(page.contains(QStringLiteral(">N/A<")));
     QVERIFY(!page.contains(QStringLiteral("[TorrentFile")));
+    // each file row links its preview stream with a working page token
+    const QRegularExpression previewHref(QStringLiteral("href=\"(/api/v1/torrents/[^\"]+/1/preview\\?token=[0-9a-f]+)\""));
+    const QRegularExpressionMatch previewMatch = previewHref.match(page);
+    QVERIFY2(previewMatch.hasMatch(), qPrintable(page));
+    QVERIFY(previewMatch.captured(1).startsWith(QStringLiteral("/api/v1/torrents/")
+                                                + QString::fromLatin1(QUrl::toPercentEncoding(FakeTorrentBackend::idA(), ":"))
+                                                + QLatin1Char('/')));
     fake.calls.clear();
 
     const QByteArray form = QByteArrayLiteral("application/x-www-form-urlencoded");
@@ -4812,7 +4896,10 @@ void tst_WebServer::pagesEscapeHostileServerLogAndShareText()
     QVERIFY2(shared.contains(WebTemplateEngine::htmlEscape(known->fileName())),
              qPrintable(known->fileName()));
     QVERIFY(shared.contains(QStringLiteral("data-link=\"ed2k://|file|")));
-    QVERIFY(shared.contains(QStringLiteral("sharedmenu(event,this.dataset.link)")));
+    QVERIFY(shared.contains(QStringLiteral("sharedmenu(event,this.dataset.link,this.dataset.hash)")));
+    // Preview menu item needs a stream token on the page
+    QVERIFY(shared.contains(QStringLiteral("data-hash=\"") + md4str(known->fileHash()) + QLatin1Char('"')));
+    QVERIFY(shared.contains(QRegularExpression(QStringLiteral("STREAM_TOKEN='[0-9a-f]{16,}'"))));
 
     server->stop();
 }

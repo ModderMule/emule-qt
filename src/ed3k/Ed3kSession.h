@@ -19,6 +19,7 @@
 /// - From outside the pump (a socket slot, a worker result): post() or a command and
 ///   then pump().
 
+#include "Ed3kDecline.h"
 #include "Ed3kFfi.h"
 #include "Ed3kHide.h"
 #include "Ed3kLan.h"
@@ -26,6 +27,7 @@
 
 #include <QByteArray>
 #include <QElapsedTimer>
+#include <QFileSystemWatcher>
 #include <QHostAddress>
 #include <QNetworkDatagram>
 #include <QObject>
@@ -194,6 +196,12 @@ public:
     /// The policy's slots, holders and waiting entries; nullopt while not running.
     [[nodiscard]] std::optional<::ed3k::QueueStats> uploadQueueStats();
 
+    /// Records this node won't hold (§10.3 Declining): answered DECLINED from now on, matching
+    /// records held are dropped. Kept for a restart; decline.txt in stateDir() replaces it on
+    /// every change of the file.
+    void setDeclined(DeclineList list);
+    [[nodiscard]] const DeclineList& declined() const { return m_decline; }
+
     /// The JSON-RPC endpoints of a class (see Ed3kSettings); calls out keep their URL.
     void setRpcEndpoints(::ed3k::RpcClass cls, const QStringList& urls);
 
@@ -270,6 +278,10 @@ private:
     void applyUploadSlots();
     /// addIndexLink's links to the engine (at start)
     void applyIndexLinks();
+    /// m_decline to the engine
+    void applyDeclined();
+    /// decline.txt read again: at start (@p force), on a change; watched from start to stop
+    void loadDeclineFile(bool force);
     /// packmule's log level from the filter rules of emule.ed3k / emule.ed3k.kad (verbose
     /// when either lets debug lines through); set when it changed.
     void applyLogLevel();
@@ -304,6 +316,9 @@ private:
     QThreadPool m_readPool;
     QElapsedTimer m_clock;
     QString m_dir;
+    DeclineList m_decline;
+    std::optional<DeclineList> m_declineFile;   ///< decline.txt as last read; nullopt: none
+    QFileSystemWatcher m_declineWatch;   ///< decline.txt and m_dir (a file written anew)
     std::uint16_t m_port = 0;
     /// ED3K_EV_ENDPOINT per family, for status()
     QString m_endpoint4;

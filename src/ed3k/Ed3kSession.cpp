@@ -19,6 +19,7 @@
 
 #include <QDateTime>
 #include <QDir>
+#include <QFileInfo>
 #include <QNetworkDatagram>
 #include <QUdpSocket>
 
@@ -263,6 +264,7 @@ bool Ed3kSession::start(const Ed3kSettings& settings)
     // its slot count from BandwidthCoordinator, counted with eD2K's)
     applyUploadSlots();
     applyIndexLinks();
+    loadDeclineFile(true);
     m_logLevel = -1;
     applyLogLevel();
     // hiding (hops.md §1): after hops.dat (loadState), live from the prefs
@@ -293,6 +295,9 @@ void Ed3kSession::stop()
     m_timer.stop();
     m_badSaveTimer.stop();
     m_pinTimer.stop();
+    m_declineWatch.disconnect(this);
+    if (const QStringList watched = m_declineWatch.files() + m_declineWatch.directories(); !watched.isEmpty())
+        m_declineWatch.removePaths(watched);
     saveState(true);
     m_lan.reset();
     if (m_http)
@@ -879,6 +884,56 @@ void Ed3kSession::applyIndexLinks()
         if (auto ok = m_engine->addIndexNode(ffi::Node{parsed->id, ep}); !ok)
             logEd3kWarning(QStringLiteral("ed3k: index node not added (error %1)").arg(errorName(ok.error())));
     }
+}
+
+void Ed3kSession::setDeclined(DeclineList list)
+{
+    m_decline = std::move(list);
+    applyDeclined();
+}
+
+void Ed3kSession::applyDeclined()
+{
+    if (!m_engine)
+        return;
+    const QByteArray keywords = m_decline.keywords.join(QLatin1Char('\n')).toUtf8();
+    const auto dropped = m_engine->kadDecline(m_decline.roots, std::string_view(keywords.constData(), std::size_t(keywords.size())));
+    if (!dropped) {
+        logEd3kWarning(QStringLiteral("ed3k: decline list not set (error %1)").arg(errorName(dropped.error())));
+        return;
+    }
+    if (!m_decline.isEmpty() || *dropped > 0)
+        logEd3k(QStringLiteral("ed3k: declining %1 root(s), %2 keyword(s); %3 held record(s) dropped")
+                    .arg(m_decline.roots.size()).arg(m_decline.keywords.size()).arg(*dropped));
+}
+
+void Ed3kSession::loadDeclineFile(bool force)
+{
+    const QString path = filePath(QString::fromLatin1(kDeclineFile));
+    // the dir catches a file created or written by rename; the file one in place
+    if (m_declineWatch.directories().isEmpty()) {
+        m_declineWatch.addPath(m_dir);
+        connect(&m_declineWatch, &QFileSystemWatcher::directoryChanged, this, [this] { loadDeclineFile(false); });
+        connect(&m_declineWatch, &QFileSystemWatcher::fileChanged, this, [this] { loadDeclineFile(false); });
+    }
+    std::optional<DeclineList> file;
+    if (QFileInfo::exists(path)) {
+        if (!m_declineWatch.files().contains(path))
+            m_declineWatch.addPath(path);
+        file = loadDeclineList(path);
+    }
+    // the dir changes with every state save: only a changed file goes to the engine
+    const auto same = [](const std::optional<DeclineList>& a, const std::optional<DeclineList>& b) {
+        return a.has_value() == b.has_value()
+               && (!a || (a->keywords == b->keywords && std::ranges::equal(a->roots, b->roots)));
+    };
+    if (!force && same(file, m_declineFile))
+        return;
+    m_declineFile = file;
+    // no file: what setDeclined gave stays
+    if (file)
+        m_decline = std::move(*file);
+    applyDeclined();
 }
 
 void Ed3kSession::applyUploadSlots()

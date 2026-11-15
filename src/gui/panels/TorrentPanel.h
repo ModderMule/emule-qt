@@ -114,6 +114,8 @@ private:
     void onOpenFolder();
     /// Preview: the selected file, or the torrent's largest, streamed by the core.
     void onPreview();
+    /// Stream one file (-1 = largest) to PreviewApps.dat's player or the default one.
+    void previewTorrentFile(const QString& id, int fileIndex, const QString& name);
     void onCopyMagnet();
     /// Edit Trackers… for the whole selection (#143).
     void onEditTrackers();

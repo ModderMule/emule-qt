@@ -42,6 +42,8 @@ private slots:
     void trafficCountedAcrossRestart();
     void limitsKeptAcrossRestart();
     void serverIndexNode_dialledOnlyWithAutoConnect();
+    void declineListParsed();
+    void declineFileReadAtStartAndOnChange();
 
 private:
     static Ed3kSettings loopback(const QString& dir);
@@ -628,6 +630,48 @@ void tst_Ed3kSession::serverIndexNode_dialledOnlyWithAutoConnect()
 // ---------------------------------------------------------------------------
 // private
 // ---------------------------------------------------------------------------
+
+void tst_Ed3kSession::declineListParsed()
+{
+    const QString hex = QStringLiteral("00112233445566778899AABBCCDDEEFF00112233445566778899aabbccddeeff");
+    const DeclineList l = parseDeclineList(QStringLiteral("# comment\n\n%1\r\n  some words  \nzz%2\n").arg(hex, hex.mid(2)));
+    QCOMPARE(l.roots.size(), std::size_t(1));
+    QCOMPARE(l.roots.front().bytes[0], std::uint8_t(0x00));
+    QCOMPARE(l.roots.front().bytes[31], std::uint8_t(0xff));
+    // not hex: a keyword like any other line
+    QCOMPARE(l.keywords, QStringList({QStringLiteral("some words"), QStringLiteral("zz") + hex.mid(2)}));
+    QVERIFY(parseDeclineList(QStringLiteral("# only\n")).isEmpty());
+}
+
+void tst_Ed3kSession::declineFileReadAtStartAndOnChange()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    QVERIFY(QDir().mkpath(stateDir(dir.path())));
+    const QString path = QDir(stateDir(dir.path())).filePath(QString::fromLatin1(kDeclineFile));
+    const auto write = [&](const QByteArray& text) {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        f.write(text);
+    };
+    write(QByteArrayLiteral("sleep\n"));
+    Ed3kSession s;
+    QVERIFY(s.start(loopback(dir.path())));
+    QCOMPARE(s.declined().keywords, QStringList{QStringLiteral("sleep")});
+    write(QByteArrayLiteral("sleep\nrain\n") + QByteArray(64, 'a') + '\n');
+    QTRY_COMPARE_WITH_TIMEOUT(s.declined().roots.size(), std::size_t(1), 10000);
+    QCOMPARE(s.declined().keywords.size(), 2);
+    // file gone: the list stays; an API list over no file
+    QFile::remove(path);
+    QTest::qWait(300);
+    QCOMPARE(s.declined().keywords.size(), 2);
+    s.setDeclined(DeclineList{{}, {QStringLiteral("quiet")}});
+    QCOMPARE(s.declined().keywords, QStringList{QStringLiteral("quiet")});
+    QVERIFY(s.isRunning());
+    s.stop();
+    // stopped: kept for the next start, no engine call
+    s.setDeclined({});
+}
 
 Ed3kSettings tst_Ed3kSession::loopback(const QString& dir)
 {

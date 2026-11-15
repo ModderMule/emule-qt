@@ -322,6 +322,8 @@ private:
     [[nodiscard]] api::Result apiSearchResults(const api::Call& call) const;
     [[nodiscard]] api::Result apiSearchList(const api::Call& call) const;
     [[nodiscard]] api::Result apiCategoryEdit(const api::Call& call, int mode);
+    /// A stream link for a REST client: mints an "api" stream token for @p streamPath.
+    [[nodiscard]] api::Result apiPreviewLink(const api::Call& call, const QString& streamPath);
 
     void handleEventStream(const QHttpServerRequest& req, QHttpServerResponder& responder);
     void sendEvent(const QString& type, qint64 id, const QByteArray& data, const QString& topic);
@@ -620,9 +622,9 @@ private:
     [[nodiscard]] QString buildMyInfoPage();
     [[nodiscard]] QString buildGraphsPage();
     /// The torrent list; `id=` adds that torrent's file table below it.
-    [[nodiscard]] QString buildTorrentsPage(bool isAdmin, const QUrlQuery& query);
+    [[nodiscard]] QString buildTorrentsPage(bool isAdmin, const QString& sessionId, const QUrlQuery& query);
     /// One torrent's files with availability; empty for no or an unknown @p id.
-    [[nodiscard]] QString buildTorrentFiles(const QString& id);
+    [[nodiscard]] QString buildTorrentFiles(const QString& id, const QString& streamToken);
     [[nodiscard]] QString buildHosterPage(bool isAdmin);
 
     /// The Usenet page: toolbar, category tabs, the queue and the page script.

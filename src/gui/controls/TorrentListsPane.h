@@ -72,6 +72,8 @@ public:
 signals:
     /// A Files or Trackers edit went to the daemon.
     void changed();
+    /// Preview of one file of the torrent shown.
+    void previewRequested(const QString& torrentId, int fileIndex, const QString& fileName);
 
 private:
     void buildUi();

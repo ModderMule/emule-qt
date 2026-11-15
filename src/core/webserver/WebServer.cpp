@@ -2997,7 +2997,7 @@ QHttpServerResponse WebServer::renderPage(const QString& page, const QString& se
     else if (page == QStringLiteral("usenet"))
         content = buildUsenetPage(isAdmin, sessionId, query);
     else if (page == QStringLiteral("torrents"))
-        content = buildTorrentsPage(isAdmin, query);
+        content = buildTorrentsPage(isAdmin, sessionId, query);
     else if (page == QStringLiteral("hoster"))
         content = buildHosterPage(isAdmin);
     else
@@ -3048,7 +3048,7 @@ QHttpServerResponse WebServer::handleStaticFile(const QString& path)
 // Template page builders
 // ---------------------------------------------------------------------------
 
-QString WebServer::buildTransferPage(bool isAdmin, const QString& /*sessionId*/)
+QString WebServer::buildTransferPage(bool isAdmin, const QString& sessionId)
 {
     QHash<QString, QString> vars;
 
@@ -3193,6 +3193,7 @@ QString WebServer::buildTransferPage(bool isAdmin, const QString& /*sessionId*/)
         ? QString::number(m_downloadQueue->fileCount()) : QStringLiteral("0");
     transferVars[QStringLiteral("TotalUpTransferred")] = formatByteSize(totalUpTransferred);
     transferVars[QStringLiteral("TotalUpSpeed")] = formatByteRate(totalUpSpeed);
+    transferVars[QStringLiteral("StreamToken")] = mintPageStreamToken(sessionId);   // Preview menu item
 
     const QString downHeader = WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("TRANSFER_DOWN_HEADER")), transferVars);
@@ -3306,7 +3307,7 @@ QString WebServer::buildSearchPage(bool isAdmin)
         m_templateEngine->section(QStringLiteral("SEARCH")), vars);
 }
 
-QString WebServer::buildSharedFilesPage(bool /*isAdmin*/, const QString& /*sessionId*/)
+QString WebServer::buildSharedFilesPage(bool /*isAdmin*/, const QString& sessionId)
 {
     QHash<QString, QString> vars;
     QString sharedLines;
@@ -3350,6 +3351,7 @@ QString WebServer::buildSharedFilesPage(bool /*isAdmin*/, const QString& /*sessi
     }
 
     vars[QStringLiteral("SharedFilesList")] = sharedLines;
+    vars[QStringLiteral("StreamToken")] = mintPageStreamToken(sessionId);   // Preview menu item
     return WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("SHARED_LIST")), vars);
 }
@@ -3718,7 +3720,7 @@ QString hosterStatusName(int state)
 
 } // namespace
 
-QString WebServer::buildTorrentsPage(bool isAdmin, const QUrlQuery& query)
+QString WebServer::buildTorrentsPage(bool isAdmin, const QString& sessionId, const QUrlQuery& query)
 {
     if (!m_torrentBackend || !m_torrentBackend->running())
         return WebTemplateEngine::substitute(m_templateEngine->section(QStringLiteral("TORRENTS_UNAVAILABLE")));
@@ -3768,7 +3770,8 @@ QString WebServer::buildTorrentsPage(bool isAdmin, const QUrlQuery& query)
         + tr("Down: %1, up: %2").arg(formatByteRate(double(down)), formatByteRate(double(up))));
     vars[QStringLiteral("TorrentLines")] = lines;
     vars[QStringLiteral("TorrentFiles")] =
-        buildTorrentFiles(query.queryItemValue(QStringLiteral("id"), QUrl::FullyDecoded));
+        buildTorrentFiles(query.queryItemValue(QStringLiteral("id"), QUrl::FullyDecoded),
+                          mintPageStreamToken(sessionId));
     return WebTemplateEngine::substitute(m_templateEngine->section(QStringLiteral("TORRENTS")), vars);
 }
 
@@ -5336,7 +5339,7 @@ QString WebServer::languageOptions(const QString& sessionId) const
     return html;
 }
 
-QString WebServer::buildTorrentFiles(const QString& id)
+QString WebServer::buildTorrentFiles(const QString& id, const QString& streamToken)
 {
     if (id.isEmpty())
         return {};
@@ -5346,6 +5349,11 @@ QString WebServer::buildTorrentFiles(const QString& id)
         return {};
 
     const QString lineTmpl = m_templateEngine->section(QStringLiteral("TORRENT_FILE_LINE"));
+    // Same route the GUI's Preview opens; ':' kept so the id stays readable in the URL
+    const QString previewBase = QStringLiteral("/api/v1/torrents/")
+        + QString::fromLatin1(QUrl::toPercentEncoding(id, QByteArrayLiteral(":"))) + QLatin1Char('/');
+    const QString tokenQuery = QStringLiteral("/preview?token=")
+        + QString::fromLatin1(QUrl::toPercentEncoding(streamToken));
     QString lines;
     for (const auto& fv : d.value(QStringLiteral("files")).toArray()) {
         const QCborMap f = fv.toMap();
@@ -5354,7 +5362,12 @@ QString WebServer::buildTorrentFiles(const QString& id)
         const QString path = f.value(QStringLiteral("path")).toString();
         const qint64 size = f.value(QStringLiteral("size")).toInteger();
         const int priority = int(f.value(QStringLiteral("priority")).toInteger(4));
+        const qint64 index = f.value(QStringLiteral("index")).toInteger(-1);
         QHash<QString, QString> v;
+        v[QStringLiteral("TorrentFilePreviewUrl")] = index >= 0 && !streamToken.isEmpty()
+            ? htmlText(previewBase + QString::number(index) + tokenQuery) : QString();
+        v[QStringLiteral("TorrentFilePreviewOff")] = v.value(QStringLiteral("TorrentFilePreviewUrl")).isEmpty()
+            ? QStringLiteral("hidden") : QString();
         v[QStringLiteral("TorrentFileName")] = htmlText(path.section(QLatin1Char('/'), -1));
         v[QStringLiteral("TorrentFileTitle")] = htmlText(path);
         v[QStringLiteral("TorrentFileType")] = webFileTypeToken(path);

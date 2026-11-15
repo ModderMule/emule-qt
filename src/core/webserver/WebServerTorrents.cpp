@@ -529,6 +529,42 @@ void WebServer::addTorrentOperations()
         };
         add(op);
     }
+
+    // Stream: token in the query, routed outside the table (WebServer.cpp)
+    const auto fileIndexParam = [] {
+        return pathInt(s("fileIndex"), s("Index of the file in the torrent; -1 = its largest file.")).atLeast(-1);
+    };
+    {
+        Operation op = make("torrents.preview", Method::Get, "/api/v1/torrents/{id}/{fileIndex}/preview",
+                            "Byte-range stream of a torrent file",
+                            "For media players. Authenticated by ?token=, a stream token (from "
+                            "GET .../preview-link), not by the API key. With \"Enable seeking in "
+                            "downloads\" on, a range not yet on disk waits up to 60 seconds and its "
+                            "pieces get download deadlines; off, the file is served as it is.");
+        op.tag = s("Streams");
+        op.flags = ReadOnly | RawStream;
+        op.params = {idParam(), fileIndexParam(), queryStr(s("token"), s("Stream token.")).req()};
+        add(op);
+    }
+    {
+        Operation op = make("torrents.previewLink", Method::Get,
+                            "/api/v1/torrents/{id}/{fileIndex}/preview-link",
+                            "Player link for a torrent file",
+                            "A URL of GET /torrents/{id}/{fileIndex}/preview with a new stream "
+                            "token, as downloads.previewLink.");
+        op.tag = s("Streams");
+        op.flags = ReadOnly;
+        op.mcpTool = s("torrents_preview_link");
+        op.params = {idParam(), fileIndexParam()};
+        op.handler = [withTorrent, this](const Call& c) {
+            return withTorrent(c, [&c, this](const QString& id, const QCborMap&) -> Result {
+                return apiPreviewLink(c, s("/api/v1/torrents/%1/%2/preview")
+                                             .arg(QString::fromLatin1(QUrl::toPercentEncoding(id, ":")))
+                                             .arg(c.integer(L("fileIndex"))));
+            });
+        };
+        add(op);
+    }
 }
 
 #endif // EMULE_HAVE_BITTORRENT

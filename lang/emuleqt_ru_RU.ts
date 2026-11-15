@@ -1274,7 +1274,7 @@ Has comments</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4999"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+5002"/>
         <source>Bytes</source>
         <translation>байт</translation>
     </message>
@@ -12735,12 +12735,12 @@ Other members see your nick and posts; your node takes part in passing the room&
     <message>
         <location line="+2"/>
         <source>From</source>
-        <translation type="unfinished"></translation>
+        <translation>От</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Answer</source>
-        <translation type="unfinished"></translation>
+        <translation>Ответ</translation>
     </message>
     <message>
         <location line="+32"/>
@@ -12756,17 +12756,17 @@ Other members see your nick and posts; your node takes part in passing the room&
     <message>
         <location line="-17"/>
         <source>Keyword Search</source>
-        <translation type="unfinished"></translation>
+        <translation>Поиск по ключевому слову</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Source Search</source>
-        <translation type="unfinished"></translation>
+        <translation>Поиск источников</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Notes Search</source>
-        <translation type="unfinished"></translation>
+        <translation>Поиск комментариев</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -12776,7 +12776,7 @@ Other members see your nick and posts; your node takes part in passing the room&
     <message>
         <location line="+1"/>
         <source>Store Source</source>
-        <translation type="unfinished"></translation>
+        <translation>Сохранение источника</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -12786,7 +12786,7 @@ Other members see your nick and posts; your node takes part in passing the room&
     <message>
         <location line="+1"/>
         <source>Firewall Check</source>
-        <translation type="unfinished"></translation>
+        <translation>Проверка брандмауэра</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -12796,17 +12796,17 @@ Other members see your nick and posts; your node takes part in passing the room&
     <message>
         <location line="+1"/>
         <source>Callback</source>
-        <translation type="unfinished"></translation>
+        <translation>Обратный вызов</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Type %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Тип %1</translation>
     </message>
     <message>
         <location line="+9"/>
         <source>Search %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Поиск %1</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -12816,54 +12816,54 @@ Other members see your nick and posts; your node takes part in passing the room&
     <message>
         <location line="+9"/>
         <source>Error %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Ошибка %1</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Not answered</source>
-        <translation type="unfinished"></translation>
+        <translation>Без ответа</translation>
     </message>
     <message numerus="yes">
         <location line="+4"/>
         <source>%n contact(s)</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%n контакт</numerusform>
+            <numerusform>%n контакта</numerusform>
+            <numerusform>%n контактов</numerusform>
         </translation>
     </message>
     <message>
         <location line="+6"/>
         <source>not responsible</source>
-        <translation type="unfinished"></translation>
+        <translation>не отвечает за ключ</translation>
     </message>
     <message numerus="yes">
         <location line="+4"/>
         <source>%n result(s)</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%n результат</numerusform>
+            <numerusform>%n результата</numerusform>
+            <numerusform>%n результатов</numerusform>
         </translation>
     </message>
     <message>
         <location line="+3"/>
         <source>%1 of %2 stored</source>
-        <translation type="unfinished"></translation>
+        <translation>Сохранено %1 из %2</translation>
     </message>
     <message numerus="yes">
         <location line="+1"/>
         <source>%n stored</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>Сохранён %n</numerusform>
+            <numerusform>Сохранено %n</numerusform>
+            <numerusform>Сохранено %n</numerusform>
         </translation>
     </message>
     <message>
         <location line="+3"/>
         <source>load %1%</source>
-        <translation type="unfinished"></translation>
+        <translation>нагрузка %1%</translation>
     </message>
 </context>
 <context>
@@ -13048,13 +13048,13 @@ Other members see your nick and posts; your node takes part in passing the room&
     <message>
         <location line="-84"/>
         <source>▸ Outgoing Searches (0)</source>
-        <translation type="unfinished"></translation>
+        <translation>▸ Исходящие поиски (0)</translation>
     </message>
     <message>
         <location line="+1"/>
         <location line="+162"/>
         <source>▸ Incoming Searches (0)</source>
-        <translation type="unfinished"></translation>
+        <translation>▸ Входящие поиски (0)</translation>
     </message>
     <message>
         <location line="-86"/>
@@ -13070,12 +13070,12 @@ Other members see your nick and posts; your node takes part in passing the room&
     <message>
         <location line="+6"/>
         <source>▸ Outgoing Searches (%1)</source>
-        <translation type="unfinished"></translation>
+        <translation>▸ Исходящие поиски (%1)</translation>
     </message>
     <message>
         <location line="+63"/>
         <source>▸ Incoming Searches (%1)</source>
-        <translation type="unfinished"></translation>
+        <translation>▸ Входящие поиски (%1)</translation>
     </message>
 </context>
 <context>
@@ -22021,7 +22021,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+309"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+310"/>
         <source>Related</source>
         <translation>Похожие</translation>
     </message>
@@ -22029,12 +22029,12 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <location line="+103"/>
         <location line="+1264"/>
         <location line="+21"/>
-        <location line="+605"/>
+        <location line="+622"/>
         <source>Download</source>
         <translation>Скачать</translation>
     </message>
     <message>
-        <location line="-1870"/>
+        <location line="-1887"/>
         <source>Close All Searches</source>
         <translation>Закрыть все поиски</translation>
     </message>
@@ -22599,7 +22599,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>Копировать magnet-ссылки</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+34"/>
         <location line="+15"/>
         <location line="+10"/>
         <source>Mark as Spam</source>
@@ -28092,18 +28092,18 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+0"/>
-        <location line="+361"/>
+        <location line="+370"/>
         <source>Download</source>
         <translation>Скачать</translation>
     </message>
     <message>
-        <location line="-361"/>
-        <location line="+352"/>
+        <location line="-370"/>
+        <location line="+361"/>
         <source>Priority</source>
         <translation>Приоритет</translation>
     </message>
     <message>
-        <location line="-351"/>
+        <location line="-360"/>
         <source>Availability</source>
         <translation>Доступность</translation>
     </message>
@@ -28213,7 +28213,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>Файлы (%1)</translation>
     </message>
     <message>
-        <location line="+67"/>
+        <location line="+61"/>
+        <source>Preview</source>
+        <translation>Предпросмотр</translation>
+    </message>
+    <message>
+        <location line="+15"/>
         <source>Do Not Download</source>
         <translation>Не загружать</translation>
     </message>
@@ -28404,12 +28409,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <location line="+14"/>
         <location line="+15"/>
         <location line="+11"/>
-        <location line="+738"/>
+        <location line="+745"/>
         <source>Not connected to the eMule core.</source>
         <translation>Нет соединения с ядром eMule.</translation>
     </message>
     <message>
-        <location line="-789"/>
+        <location line="-796"/>
         <source>Cannot read %1.</source>
         <translation>Не удаётся прочитать %1.</translation>
     </message>
@@ -28486,12 +28491,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+2"/>
-        <location line="+339"/>
+        <location line="+346"/>
         <source>Preview</source>
         <translation>Предпросмотр</translation>
     </message>
     <message>
-        <location line="-337"/>
+        <location line="-344"/>
         <source>Copy Magnet Link</source>
         <translation>Копировать magnet-ссылку</translation>
     </message>
@@ -28501,7 +28506,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>Вставить magnet-ссылки</translation>
     </message>
     <message>
-        <location line="+94"/>
+        <location line="+95"/>
         <source>BitTorrent Options…</source>
         <translation>Настройки BitTorrent…</translation>
     </message>
@@ -28545,7 +28550,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>Сохранено на компьютере ядра: %1</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="+36"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Предпросмотр недоступен — веб-сервер не запущен или не получен токен потока.</translation>
     </message>
@@ -30133,20 +30138,20 @@ A password is set for this release.</source>
 <context>
     <name>eMule::WebServer</name>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-4223"/>
-        <location line="+4105"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-4226"/>
+        <location line="+4108"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>Сессия истекла — войдите снова</translation>
     </message>
     <message>
-        <location line="-4150"/>
+        <location line="-4153"/>
         <source>Guests cannot add downloads</source>
         <translation>Гости не могут добавлять загрузки</translation>
     </message>
     <message>
         <location line="+671"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+185"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+186"/>
         <source>Torrent</source>
         <translation>Торрент</translation>
     </message>
@@ -30184,13 +30189,13 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+31"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-104"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-105"/>
         <source>Name</source>
         <translation>Имя</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+70"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+71"/>
         <source>Size</source>
         <translation>Размер</translation>
     </message>
@@ -30201,7 +30206,7 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+40"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-107"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-108"/>
         <source>Download</source>
         <translation>Скачать</translation>
     </message>
@@ -30271,7 +30276,7 @@ A password is set for this release.</source>
     </message>
     <message numerus="yes">
         <location line="+255"/>
-        <location line="+1098"/>
+        <location line="+1101"/>
         <source>%n download(s) added</source>
         <translation>
             <numerusform>Добавлена %n загрузка</numerusform>
@@ -30280,7 +30285,7 @@ A password is set for this release.</source>
         </translation>
     </message>
     <message>
-        <location line="-1053"/>
+        <location line="-1056"/>
         <source>Not sent yet — the search is waiting (%1) and starts by itself.</source>
         <translation>Ещё не отправлен — поиск ожидает (%1) и начнётся сам.</translation>
     </message>
@@ -30318,12 +30323,12 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+2370"/>
+        <location line="+2373"/>
         <source>Web Control Panel</source>
         <translation>Панель веб-управления</translation>
     </message>
     <message>
-        <location line="-2362"/>
+        <location line="-2365"/>
         <source>Not connected</source>
         <translation>Нет соединения</translation>
     </message>
@@ -30333,18 +30338,18 @@ A password is set for this release.</source>
         <translation>Заблокировано: сетевой интерфейс недоступен</translation>
     </message>
     <message>
-        <location line="+303"/>
+        <location line="+304"/>
         <source>Connected</source>
         <translation>Соединён</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+358"/>
+        <location line="+359"/>
         <source>Disconnected</source>
         <translation>Отсоединён</translation>
     </message>
     <message numerus="yes">
-        <location line="-298"/>
+        <location line="-299"/>
         <source>&quot;%1&quot;: %n result(s)</source>
         <translation>
             <numerusform>«%1»: %n результат</numerusform>
@@ -30353,14 +30358,14 @@ A password is set for this release.</source>
         </translation>
     </message>
     <message>
-        <location line="+209"/>
+        <location line="+210"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+2"/>
         <source>Downloads</source>
         <translation>Приём</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+130"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+131"/>
         <source>Uploads</source>
         <translation>Отдача</translation>
     </message>
@@ -30376,7 +30381,7 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-115"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-116"/>
         <source>KB/s</source>
         <translation>KB/s</translation>
     </message>
@@ -30443,43 +30448,43 @@ A password is set for this release.</source>
     <message>
         <location line="+4"/>
         <location line="+45"/>
-        <location line="+423"/>
+        <location line="+424"/>
         <location line="+1135"/>
         <source>Queued</source>
         <translation>В очереди</translation>
     </message>
     <message>
-        <location line="-1600"/>
+        <location line="-1601"/>
         <source>Downloading metadata</source>
         <translation>Загрузка метаданных</translation>
     </message>
     <message>
         <location line="+1"/>
         <location line="+43"/>
-        <location line="+422"/>
+        <location line="+423"/>
         <location line="+1133"/>
         <source>Downloading</source>
         <translation>Приём</translation>
     </message>
     <message>
-        <location line="-1604"/>
+        <location line="-1605"/>
         <location line="+9"/>
         <location line="+42"/>
-        <location line="+421"/>
+        <location line="+422"/>
         <source>Paused</source>
         <translation>Пауза</translation>
     </message>
     <message>
-        <location line="-420"/>
-        <location line="+421"/>
+        <location line="-421"/>
+        <location line="+422"/>
         <location line="+967"/>
         <location line="+163"/>
         <source>Complete</source>
         <translation>Готово</translation>
     </message>
     <message>
-        <location line="-1547"/>
-        <location line="+418"/>
+        <location line="-1548"/>
+        <location line="+419"/>
         <source>Failed</source>
         <translation>Ошибка</translation>
     </message>
@@ -30499,14 +30504,14 @@ A password is set for this release.</source>
         <translation>Распаковка</translation>
     </message>
     <message>
-        <location line="-473"/>
+        <location line="-474"/>
         <location line="+42"/>
-        <location line="+432"/>
+        <location line="+433"/>
         <source>Checking</source>
         <translation>Проверяется</translation>
     </message>
     <message>
-        <location line="-743"/>
+        <location line="-744"/>
         <source>Incoming (eD2K)</source>
         <translation>Входящие (eD2K)</translation>
     </message>
@@ -30595,7 +30600,7 @@ A password is set for this release.</source>
         <translation>Приём: %1, отдача: %2</translation>
     </message>
     <message numerus="yes">
-        <location line="+42"/>
+        <location line="+43"/>
         <source>%n download(s)</source>
         <translation>
             <numerusform>%n загрузка</numerusform>
@@ -30740,7 +30745,7 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+55"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+118"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+119"/>
         <source>Usenet engine unavailable</source>
         <translation>Модуль Usenet недоступен</translation>
     </message>
@@ -30755,14 +30760,14 @@ A password is set for this release.</source>
         <translation>Очень высокий</translation>
     </message>
     <message>
-        <location line="-703"/>
-        <location line="+704"/>
+        <location line="-704"/>
+        <location line="+705"/>
         <source>High</source>
         <translation>Высокий</translation>
     </message>
     <message>
-        <location line="-708"/>
-        <location line="+709"/>
+        <location line="-709"/>
+        <location line="+710"/>
         <source>Low</source>
         <translation>Низкий</translation>
     </message>
@@ -30772,8 +30777,8 @@ A password is set for this release.</source>
         <translation>Очень низкий</translation>
     </message>
     <message>
-        <location line="-708"/>
-        <location line="+709"/>
+        <location line="-709"/>
+        <location line="+710"/>
         <source>Normal</source>
         <translation>Нормальный</translation>
     </message>
@@ -30830,7 +30835,7 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+56"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-175"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-176"/>
         <source>All</source>
         <translation>Все</translation>
     </message>
@@ -31202,7 +31207,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>Состояние:</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1949"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1950"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Hoster</source>
         <translation>Хостер</translation>
@@ -31351,6 +31356,11 @@ Whichever network is idle lends its share to the other.</source>
         <location line="+1"/>
         <source>Open Folder</source>
         <translation>Открыть папку</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Open in the browser, or copy the link into a media player</source>
+        <translation>Открыть в браузере или скопировать ссылку в медиаплеер</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -31779,8 +31789,8 @@ Whichever network is idle lends its share to the other.</source>
         <translation>Время работы</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1924"/>
-        <location line="+1926"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1926"/>
+        <location line="+1928"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
