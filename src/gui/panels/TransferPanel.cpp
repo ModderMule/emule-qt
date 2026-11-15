@@ -35,6 +35,7 @@
 #include "utils/Ed2kLinkImporter.h"
 #include "utils/IpcFeedback.h"
 #include "utils/ListActivation.h"
+#include "utils/Ed3kLinkMenu.h"
 #include "utils/MenuUtils.h"
 #include "utils/PanelPoller.h"
 #include "utils/PreviewLauncher.h"
@@ -675,6 +676,13 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         pasteAct->setEnabled(hasImportableLink && m_ipc && m_ipc->isConnected());
         connect(pasteAct, &QAction::triggered, this, &TransferPanel::pasteDownloadLinks);
     }
+    // their ed3k:file counterparts (no MFC original): eD2K rows by their root once hashed
+    {
+        QList<Ed3kLinkMenu::File> files;
+        for (const DownloadRow* d : selectedDls)
+            files.append({d->hash, d->fileName, d->fileSize});
+        Ed3kLinkMenu::addActions(m_downloadMenu, this, m_ipc, files);
+    }
     // followed ed3k sets and live streams (no MFC original); only while ed3k is on
     if (thePrefs.ed3kEnabled())
         m_downloadMenu->addAction(menuIcon("Folders.ico"), tr("ed3k Sets..."), this, [this] {
@@ -751,7 +759,8 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
                                         tr("Open File"), tr("Preview"), tr("Preview with"), tr("Clear Completed"),
                                         tr("Assign To Category"),
                                         tr("Paste eD2K Links"), tr("ed3k Sets..."), tr("Find..."), tr("Show Toolbar"),
-                                        MoveDownloadsAction::menuText()};
+                                        MoveDownloadsAction::menuText(), Ed3kLinkMenu::copyText(),
+                                        Ed3kLinkMenu::showText()};
         for (QAction* act : m_downloadMenu->actions())
             if (!act->isSeparator() && !ed3kActions.contains(act->text()))
                 act->setEnabled(false);

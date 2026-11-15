@@ -724,6 +724,16 @@ SearchFile* SearchList::restoredFile(const uint8* hash) const
     return nullptr;
 }
 
+QByteArray SearchList::ed3kRootOf(const uint8* hash) const
+{
+    for (const auto& entry : m_fileLists)
+        for (const auto& file : entry.files)
+            if (file->isEd3kResult() && md4equ(file->fileHash(), hash))
+                return file->ed3kRoot();
+    const SearchFile* restored = restoredFile(hash);
+    return restored && restored->isEd3kResult() ? restored->ed3kRoot() : QByteArray();
+}
+
 SearchFile* SearchList::adoptRestoredFile(std::unique_ptr<SearchFile> file)
 {
     if (!file)

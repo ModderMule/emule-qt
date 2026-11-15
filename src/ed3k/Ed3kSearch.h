@@ -9,6 +9,8 @@
 /// - A KadFound of another lookup is left alone (the joins' source searches).
 /// - One answer per lookup; a search without one ends after kTimeoutMs.
 /// - The rows and the end go to sinks: the daemon's SearchList by default, tests set their own.
+/// - searchNotes(): the NOTE records of one root (§10.7), the Comments of an ed3k row; found
+///   notes go to SearchList::addNotes under root[0..16), as eD2K Kad notes do.
 /// - SearchType::Ed3kLive (live.md §1.2): the same search, only channel files (name ends in
 ///   `.ed3klive`, ≤ 64 KiB); each is fetched (setLiveFetch) and kept only with the magic, its
 ///   title, kbps, media/codecs and lang in the row; one not fetched in kLiveFetchMs shows what
@@ -75,6 +77,14 @@ public:
     /// A search still waits for its answer (tests).
     [[nodiscard]] bool isRunning(uint32 searchID) const;
 
+    /// Searches the notes of @p root (32 B); the rows of that root show the lookup as
+    /// running until the answer or kTimeoutMs. False: no node, or one runs for it already.
+    bool searchNotes(const QByteArray& root);
+    /// Where found notes go: (root, publisher node ID, rating 0..5, text). Unset:
+    /// theApp.searchList->addNotes.
+    using NoteSink = std::function<void(const QByteArray& root, const QByteArray& publisher, std::uint32_t rating, const QString& text)>;
+    void setNoteSink(NoteSink sink) { m_notes = std::move(sink); }
+
     /// Sources of one root over the records of an answer (one record per publisher).
     struct Availability {
         std::uint32_t complete = 0;
@@ -125,10 +135,15 @@ private:
     void onLiveFound(uint32 searchID, Run& run, const ::ed3k::event::KadFound& found);
     /// An Ed3kLive row's channel file arrived (or not).
     void onChannelFile(uint32 searchID, std::unique_ptr<SearchFile> row, const std::optional<QByteArray>& file);
+    /// The notes lookup of @p root ended (answer or timeout): rows no longer show it running.
+    void endNotes(const QByteArray& root);
 
     Ed3kSession& m_session;
     std::map<uint32, Run> m_runs;
     std::map<std::uint64_t, uint32> m_lookups;   ///< by lookupKey()
+    std::map<std::uint64_t, QByteArray> m_noteLookups;   ///< notes lookups by lookupKey(): the root
+    std::map<QByteArray, std::unique_ptr<QTimer>> m_noteTimeouts;   ///< by root
+    NoteSink m_notes;
     ResultSink m_results;
     FinishSink m_finished;
     Judge m_judge;

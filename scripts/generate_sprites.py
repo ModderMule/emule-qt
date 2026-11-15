@@ -19,7 +19,7 @@ from pathlib import Path
 try:
     from PIL import Image
 except ImportError:
-    print("Pillow not installed. Install with: pip3 install Pillow")
+    print("Pillow not installed. Install with: uv sync (or pip3 install Pillow)")
     sys.exit(1)
 
 SOURCE_DIR = Path(__file__).parent.parent / "data" / "legacy" / "webserver"

@@ -192,6 +192,10 @@ public:
     /// row is kept here by hash: detail sheet, Kad notes and spam marking need a file.
     [[nodiscard]] SearchFile* restoredFile(const uint8* hash) const;
 
+    /// The ed3k root of the row with @p hash (its first 16 bytes) in any search or
+    /// restored tab; empty: no ed3k row has it.
+    [[nodiscard]] QByteArray ed3kRootOf(const uint8* hash) const;
+
     /// Keep @p file as a restored row (see restoredFile). Returns the file already
     /// held for its hash when there is one.
     SearchFile* adoptRestoredFile(std::unique_ptr<SearchFile> file);

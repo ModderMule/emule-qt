@@ -27,6 +27,7 @@
 # ---------------------------------------------------------------------------
 
 set -euo pipefail
+. "$(dirname "$0")/py.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -173,7 +174,7 @@ existing_ts_files() {
 
 do_extract() {
     echo "=== Extracting translatable strings ==="
-    python3 "$SCRIPT_DIR/extract_web_strings.py"
+    py "$SCRIPT_DIR/extract_web_strings.py"
     echo "  lupdate: $LUPDATE"
     echo "  Sources: ${SOURCE_DIRS[*]}"
 
@@ -248,7 +249,7 @@ do_add() {
 
     mkdir -p "$TRANSLATIONS_DIR"
 
-    python3 "$SCRIPT_DIR/extract_web_strings.py"
+    py "$SCRIPT_DIR/extract_web_strings.py"
 
     for lang in "${LANGUAGES[@]}"; do
         local ts="$TRANSLATIONS_DIR/${TS_BASENAME}_${lang}.ts"

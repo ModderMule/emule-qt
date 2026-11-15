@@ -2,7 +2,8 @@
 
 /// @file Ed3kKadModels.h
 /// @brief Lists of the ed3k page of the Kad window: the routing table and the lookups, rows
-/// as the core sends them (GetEd3kKadContacts, GetEd3kKadLookups).
+/// as the core sends them (GetEd3kKadContacts, GetEd3kKadLookups); and the incoming requests
+/// of both Kad pages (GetKadIncoming, GetEd3kKadIncoming).
 
 #include <QAbstractTableModel>
 #include <QCborArray>
@@ -81,6 +82,29 @@ public:
     [[nodiscard]] int rowOf(std::uint64_t id) const;
     /// KadRequest.kind as text (Protocol.md §10.3).
     [[nodiscard]] static QString kindText(int kind);
+};
+
+/// Requests other nodes sent us, newest first (rows of ops::kadIncoming): Time, Type, Key,
+/// Name, From, Answer. Not MFC.
+class KadIncomingModel : public Ed3kKadTableModel {
+    Q_OBJECT
+
+public:
+    enum class Network { Ed2k, Ed3k };
+    enum Column { ColTime = 0, ColType, ColKey, ColName, ColFrom, ColAnswer };
+    explicit KadIncomingModel(Network network, QObject* parent = nullptr);
+    [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
+
+    /// Replace the rows; ages turn into clock times here.
+    void setIncoming(const QCborArray& rows);
+
+    /// kad::IncomingType as text.
+    [[nodiscard]] static QString ed2kTypeText(int type);
+    /// KadRequest.kind + 100 × op (0 find, 1 search, 2 store) as text.
+    [[nodiscard]] static QString ed3kTypeText(int type);
+
+private:
+    [[nodiscard]] static QString answerText(const QCborMap& m);
 };
 
 } // namespace eMule

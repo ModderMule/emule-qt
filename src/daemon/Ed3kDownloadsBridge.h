@@ -20,6 +20,8 @@ namespace ed3k {
 class Ed3kDownloads;
 } // namespace ed3k
 
+struct UsenetStreamSource;
+
 namespace Ed3kDownloadsBridge {
 
 /// Set by DaemonApp, null when absent.
@@ -38,6 +40,11 @@ bool handleRequest(const Ipc::IpcMessage& msg, const std::function<void(const Ip
 /// The file of an ed3k download named by @p hexRoot (64 hex): the part file while unfinished,
 /// else the final one. false: none, failed, or no node. Backs preview and FlushDownload.
 [[nodiscard]] bool fileOf(const QString& hexRoot, QString& path, QString& name);
+
+/// Preview with seeking on: the download of @p hexRoot read by a player from @p offset —
+/// its file, size and the end of the bytes held from there (Ed3kDownloads::playFrom, which
+/// fetches the blocks there first). `found` false: none, failed, or no node.
+[[nodiscard]] UsenetStreamSource streamFrom(const QString& hexRoot, qint64 offset);
 
 /// "Move to" (#187) of the download of @p hexRoot. Empty: started; else why not.
 [[nodiscard]] QString moveTo(const QString& hexRoot, const QString& dir);

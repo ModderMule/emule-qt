@@ -7,6 +7,7 @@
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
 #include "utils/Opcodes.h"
+#include "utils/SystemMemory.h"
 #include "utils/TimeUtils.h"
 
 #include <QCborMap>
@@ -20,6 +21,7 @@ class tst_Statistics : public QObject {
 
 private slots:
     void construct_default();
+    void heapMemory_seesAnAllocation();
     void init_loadsFromPrefs();
     void sessionReceivedBytes_accumulates();
     void sessionSentBytes_accumulates();
@@ -722,4 +724,22 @@ void tst_Statistics::init_raisesCumRunTimeToItsLowerBound()
 }
 
 QTEST_MAIN(tst_Statistics)
+// The stats tree's Heap row: an allocation shows up in "in use"
+void tst_Statistics::heapMemory_seesAnAllocation()
+{
+#if defined(Q_OS_WIN) || (defined(__GLIBC__) && (__GLIBC__ > 2 || __GLIBC_MINOR__ >= 33))
+    const auto before = eMule::heapMemory();
+    QVERIFY(before);
+    QVERIFY(before->committed >= before->inUse);
+    constexpr std::size_t kBytes = 64 * 1024 * 1024;
+    auto block = std::make_unique<char[]>(kBytes);
+    block[0] = block[kBytes - 1] = 1;
+    const auto after = eMule::heapMemory();
+    QVERIFY(after);
+    QVERIFY(after->inUse >= before->inUse + kBytes / 2);
+#else
+    QSKIP("no heap statistics on this platform");   // macOS: zone statistics miss large blocks
+#endif
+}
+
 #include "tst_Statistics.moc"

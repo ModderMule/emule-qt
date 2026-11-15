@@ -502,6 +502,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::ImportKadNodes:       handleImportKadNodes(msg); break;
     case IpcMsgType::DisconnectKad:        handleDisconnectKad(msg); break;
     case IpcMsgType::GetKadSearches:       handleGetKadSearches(msg); break;
+    case IpcMsgType::GetKadIncoming:       handleGetKadIncoming(msg); break;
     case IpcMsgType::GetKadLookupHistory:  handleGetKadLookupHistory(msg); break;
     case IpcMsgType::GetNetworkInfo:       handleGetNetworkInfo(msg); break;
     case IpcMsgType::TestPorts:            handleTestPorts(msg); break;
@@ -1123,14 +1124,32 @@ void IpcClientHandler::handleSearchKadNotes(const IpcMessage& msg)
         return;
     }
 
-    if (rejectIfKadUnavailable(msg, /*requireConnected*/ true))
-        return;
-
     const QByteArray hashBytes = QByteArray::fromHex(hash.toLatin1());
     if (hashBytes.size() != 16) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
         return;
     }
+
+    // an ed3k row: its NOTE records on ed3k Kad, not eD2K Kad (its hash is half its root)
+    if (const QByteArray root = theApp.searchList
+            ? theApp.searchList->ed3kRootOf(reinterpret_cast<const uint8*>(hashBytes.constData()))
+            : QByteArray();
+        !root.isEmpty()) {
+        if (!theApp.ed3kConnected || !theApp.ed3kConnected()) {
+            sendMessage(IpcMessage::makeResult(msg.seqId(), false, QCborValue(tr("ed3k is not connected."))));
+            return;
+        }
+        if (!theApp.ed3kSearchNotes || !theApp.ed3kSearchNotes(root)) {
+            sendMessage(IpcMessage::makeResult(msg.seqId(), false,
+                QCborValue(tr("Another search is already in progress. Please try again later!"))));
+            return;
+        }
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+        return;
+    }
+
+    if (rejectIfKadUnavailable(msg, /*requireConnected*/ true))
+        return;
 
     kad::UInt128 target;
     target.setValueBE(reinterpret_cast<const uint8*>(hashBytes.constData()));
@@ -1434,6 +1453,12 @@ SearchFile* searchFileForRow(const uint8* hash, uint32 searchID, const QCborValu
     for (const auto& [key, tagId] : intTags) {
         if (const qint64 value = ref.value(key).toInteger(); value > 0)
             file->setIntTagValue(tagId, static_cast<uint32>(value));
+    }
+    // an ed3k row (SearchResultRow::fileRef): its root keys the notes and the details
+    const QByteArray ed3kRoot = QByteArray::fromHex(ref.value(QLatin1StringView("ed3kRoot")).toString().toLatin1());
+    if (ed3kRoot.size() == 32 && ed3kRoot.left(16) == QByteArray(reinterpret_cast<const char*>(hash), 16)) {
+        const QByteArray md4 = QByteArray::fromHex(ref.value(QLatin1StringView("ed3kEd2k")).toString().toLatin1());
+        file->setEd3k(ed3kRoot, md4.size() == 16 ? md4 : QByteArray());
     }
     return theApp.searchList->adoptRestoredFile(std::move(file));
 }
@@ -2754,6 +2779,11 @@ void IpcClientHandler::handleGetKadSearches(const IpcMessage& msg)
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(searches)));
 }
 
+void IpcClientHandler::handleGetKadIncoming(const IpcMessage& msg)
+{
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(ops::kadIncoming())));
+}
+
 void IpcClientHandler::handleGetKadLookupHistory(const IpcMessage& msg)
 {
     // Reply: [true, entries, meta{found, stopped, type, name}]. Ask times go out as
@@ -3928,14 +3958,15 @@ void mergeKadNotes(const KnownFile& file,
 /// on AbstractFile — a search result, which has no local sources and no .met
 /// record to merge in. The search detail sheet has no File Names page, so unlike
 /// mergeKadNotes() this collects comments only.
-QCborArray searchKadComments(const AbstractFile& file)
+/// @p source: who the notes came from, shown as their user name (an ed3k row's are ed3k NOTE records)
+QCborArray searchKadComments(const AbstractFile& file, const QString& source = QStringLiteral("Kad"))
 {
     QCborArray comments;
     for (const auto& [publisherId, note] : file.kadNotesCache()) {
         if (note.comment.isEmpty() && note.rating == 0)
             continue;
         comments.append(QCborMap{
-            {QLatin1StringView("userName"), QStringLiteral("Kad")},
+            {QLatin1StringView("userName"), source},
             {QLatin1StringView("rating"), note.rating},
             {QLatin1StringView("comment"), note.comment}});
     }
@@ -4401,17 +4432,26 @@ void IpcClientHandler::handleGetSearchResultDetails(const IpcMessage& msg)
     // Same key names as GetSharedFileDetails, so the dialog and the shared
     // Kad-notes wiring need no special-casing for search results.
     QCborMap details;
+    // an ed3k row: its hash is half its root, no MD4 (the `ed2k` alias its publisher named is)
+    const bool ed3k = sf->isEd3kResult();
     details.insert(QLatin1StringView("hash"),     md4str(sf->fileHash()));
     details.insert(QLatin1StringView("fileName"), sf->fileName());
     details.insert(QLatin1StringView("fileSize"), static_cast<qint64>(sf->fileSize()));
     details.insert(QLatin1StringView("fileType"), sf->fileType());
-    details.insert(QLatin1StringView("ed2kLink"), sf->getED2kLink(false, false, false));
+    if (!ed3k)
+        details.insert(QLatin1StringView("ed2kLink"), sf->getED2kLink(false, false, false));
+    else if (sf->ed3kEd2k().size() == 16)
+        details.insert(QLatin1StringView("ed2kLink"),
+                       ed2kFileLink(sf->fileName(), static_cast<uint64>(sf->fileSize()),
+                                    QString::fromLatin1(sf->ed3kEd2k().toHex())));
     details.insert(QLatin1StringView("searchID"), static_cast<qint64>(searchID));
     details.insert(QLatin1StringView("isSpam"),   sf->isConsideredSpam());
 
-    // Drives the "(Kad search in progress...)" state of the Search Kad button.
+    // Drives the "(Kad search in progress...)" state of the Search Kad button. An ed3k
+    // row's notes are searched on ed3k Kad (NOTE records, Protocol.md §10.7).
     details.insert(QLatin1StringView("notesSearchRunning"), sf->isKadCommentSearchRunning());
-    details.insert(QLatin1StringView("kadConnected"), kadIsConnected());
+    details.insert(QLatin1StringView("kadConnected"),
+                   ed3k ? (theApp.ed3kConnected && theApp.ed3kConnected()) : kadIsConnected());
 
     QCborArray tagArr;
     for (const auto& tag : sf->tags()) {
@@ -4431,8 +4471,21 @@ void IpcClientHandler::handleGetSearchResultDetails(const IpcMessage& msg)
             t.insert(QLatin1StringView("hashValue"), encodeBase16({tag.hashValue(), 16}));
         tagArr.append(t);
     }
+    // ed3k: what the keyword record names besides length and bitrate (FileInfo, §5.4)
+    if (ed3k) {
+        const auto hexTag = [&tagArr](const QString& name, const QByteArray& bytes) {
+            if (!bytes.isEmpty())
+                tagArr.append(QCborMap{{QLatin1StringView("name"), name},
+                                       {QLatin1StringView("type"), TAGTYPE_STRING},
+                                       {QLatin1StringView("strValue"), QString::fromLatin1(bytes.toHex())}});
+        };
+        hexTag(QStringLiteral("ed3k root"), sf->ed3kRoot());
+        hexTag(QStringLiteral("ed2k"), sf->ed3kEd2k());
+        hexTag(QStringLiteral("ed3k publisher"), sf->ed3kPublisher());
+    }
     details.insert(QLatin1StringView("tags"), tagArr);
-    details.insert(QLatin1StringView("comments"), searchKadComments(*sf));
+    details.insert(QLatin1StringView("comments"),
+                   ed3k ? searchKadComments(*sf, QStringLiteral("ed3k")) : searchKadComments(*sf));
 
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(details)));
 }
@@ -4561,6 +4614,8 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setTransferFullChunks(val.toBool());
     else if (key == QStringLiteral("previewPrio"))
         thePrefs.setPreviewPrio(val.toBool());
+    else if (key == QStringLiteral("downloadSeeking"))
+        thePrefs.setDownloadSeeking(val.toBool());
     else if (key == QStringLiteral("startNextPausedFile"))
         thePrefs.setStartNextPausedFile(val.toBool());
     else if (key == QStringLiteral("startNextPausedFileSameCat"))
@@ -4673,6 +4728,8 @@ bool IpcClientHandler::applyPreferenceNotify(const QString& key, const QCborValu
         thePrefs.setAntiLeecher(val.toBool());
     else if (key == QStringLiteral("antiLeecherLevel"))
         thePrefs.setAntiLeecherLevel(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("clientAnalyzer"))
+        thePrefs.setClientAnalyzer(val.toBool());
     else if (key == QStringLiteral("enableSearchResultFilter"))
         thePrefs.setEnableSearchResultFilter(val.toBool());
     else if (key == QStringLiteral("ipFilterUpdateUrl"))

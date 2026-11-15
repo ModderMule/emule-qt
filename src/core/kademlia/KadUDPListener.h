@@ -6,6 +6,7 @@
 /// Handles all Kad UDP protocol messages. Uses a packetToSend signal for
 /// decoupling from the actual UDP socket implementation.
 
+#include "kademlia/KadIncomingLog.h"
 #include "kademlia/KadPacketTracking.h"
 #include "kademlia/KadSearchDefs.h"
 #include "kademlia/KadTypes.h"
@@ -80,6 +81,9 @@ public:
 
     /// Total number of HELLO_RES packets received since startup (monotonically increasing).
     [[nodiscard]] uint32_t totalHellosReceived() const { return m_hellosReceived.load(std::memory_order_relaxed); }
+
+    /// Recent requests other nodes sent us (Kad window "Incoming Searches").
+    [[nodiscard]] const IncomingLog& incomingLog() const { return m_incoming; }
 
     /// Decode a serialized search expression tree (the payload produced by
     /// SearchExpr::toBytes). Public because Search rebuilds its own expression
@@ -169,6 +173,7 @@ private:
     bool m_rxEncrypted = false;
     std::atomic<uint32_t> m_hellosSent{0};      ///< HELLO_REQ packets sent (monotonically increasing).
     std::atomic<uint32_t> m_hellosReceived{0};  ///< HELLO_RES packets received (monotonically increasing).
+    IncomingLog m_incoming;
 };
 
 } // namespace eMule::kad

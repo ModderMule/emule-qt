@@ -321,6 +321,7 @@ struct Preferences::Data {
     bool autoSharedFilesPriority = true;
     bool transferFullChunks = true;
     bool previewPrio = false;
+    bool downloadSeeking = false;
     bool startNextPausedFile = false;
     bool startNextPausedFileSameCat = false;
     bool startNextPausedFileOnlySameCat = false;
@@ -607,6 +608,7 @@ struct Preferences::Data {
     bool useSecureIdent = true;  // Enable secure identity (RSA key exchange)
     bool antiLeecher = true;     // specialdlp checks on hello/info/chat (Xtreme DLP)
     int antiLeecherLevel = 0;    // 0 lite, 1 strict, 2 strict + Chinese
+    bool clientAnalyzer = false; // behaviour score per user hash (WiZaRd's ClientAnalyzer)
     int viewSharedFilesAccess = 1;  // 0=nobody, 1=friends only, 2=everybody. MFC nobody; deliberate, 2026-10: friends are picked by the user
 
     // Download behavior
@@ -1334,7 +1336,11 @@ QString Preferences::resolveConfigDir(const QString& stored)
     return overrideDir.isEmpty() ? stored : overrideDir;
 }
 
-void Preferences::setConfigDir(const QString& val) { set(&Data::configDir, val); }
+void Preferences::setConfigDir(const QString& val)
+{
+    set(&Data::configDir, val);
+    m_statsBackupState.store(-1, std::memory_order_relaxed);
+}
 
 QString Preferences::fileCommentsFilePath() const
 {
@@ -1991,7 +1997,13 @@ QString Preferences::cumulativeStatsBackupPath() const
 
 bool Preferences::hasCumulativeStatsBackup() const
 {
-    return QFileInfo::exists(cumulativeStatsBackupPath());
+    // looked once; only backup/restore below change it while running
+    int state = m_statsBackupState.load(std::memory_order_relaxed);
+    if (state < 0) {
+        state = QFileInfo::exists(cumulativeStatsBackupPath()) ? 1 : 0;
+        m_statsBackupState.store(state, std::memory_order_relaxed);
+    }
+    return state == 1;
 }
 
 bool Preferences::backupCumulativeStats() const
@@ -2000,12 +2012,15 @@ bool Preferences::backupCumulativeStats() const
     // m_lock is not recursive.
     const QString path = cumulativeStatsBackupPath();
     QReadLocker lock(&m_lock);
-    return writeStatsBackup(*m_data, path);
+    const bool ok = writeStatsBackup(*m_data, path);
+    m_statsBackupState.store(-1, std::memory_order_relaxed);
+    return ok;
 }
 
 bool Preferences::restoreCumulativeStats()
 {
     const QString path = cumulativeStatsBackupPath();
+    m_statsBackupState.store(-1, std::memory_order_relaxed);
     if (!QFileInfo::exists(path))
         return false;
 
@@ -3584,6 +3599,10 @@ int Preferences::antiLeecherVariant() const
 
 bool Preferences::antiLeecherSoftReduceScore() const { return antiLeecherLevel() == 0; }
 
+bool Preferences::clientAnalyzer() const { return get(&Data::clientAnalyzer); }
+
+void Preferences::setClientAnalyzer(bool val) { set(&Data::clientAnalyzer, val); }
+
 // ---------------------------------------------------------------------------
 // Getters / setters — Shared file visibility
 // ---------------------------------------------------------------------------
@@ -3627,6 +3646,10 @@ void Preferences::setTransferFullChunks(bool val) { set(&Data::transferFullChunk
 bool Preferences::previewPrio() const { return get(&Data::previewPrio); }
 
 void Preferences::setPreviewPrio(bool val) { set(&Data::previewPrio, val); }
+
+bool Preferences::downloadSeeking() const { return get(&Data::downloadSeeking); }
+
+void Preferences::setDownloadSeeking(bool val) { set(&Data::downloadSeeking, val); }
 
 bool Preferences::startNextPausedFile() const { return get(&Data::startNextPausedFile); }
 
@@ -4075,6 +4098,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("autoSharedFilesPriority"), autoSharedFilesPriority());
     prefs.insert(QStringLiteral("transferFullChunks"), transferFullChunks());
     prefs.insert(QStringLiteral("previewPrio"), previewPrio());
+    prefs.insert(QStringLiteral("downloadSeeking"), downloadSeeking());
     prefs.insert(QStringLiteral("startNextPausedFile"), startNextPausedFile());
     prefs.insert(QStringLiteral("startNextPausedFileSameCat"), startNextPausedFileSameCat());
     prefs.insert(QStringLiteral("startNextPausedFileOnlySameCat"), startNextPausedFileOnlySameCat());
@@ -4127,6 +4151,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("useSecureIdent"), useSecureIdent());
     prefs.insert(QStringLiteral("antiLeecher"), antiLeecher());
     prefs.insert(QStringLiteral("antiLeecherLevel"), antiLeecherLevel());
+    prefs.insert(QStringLiteral("clientAnalyzer"), clientAnalyzer());
     prefs.insert(QStringLiteral("enableSearchResultFilter"), enableSearchResultFilter());
     prefs.insert(QStringLiteral("ipFilterUpdateUrl"), ipFilterUpdateUrl());
     prefs.insert(QStringLiteral("ipFilterAutoUpdate"), ipFilterAutoUpdate());
@@ -4482,6 +4507,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->autoSharedFilesPriority       = p.value(QStringLiteral("autoSharedFilesPriority")).toBool();
     m_data->transferFullChunks            = p.value(QStringLiteral("transferFullChunks")).toBool();
     m_data->previewPrio                   = p.value(QStringLiteral("previewPrio")).toBool();
+    m_data->downloadSeeking               = p.value(QStringLiteral("downloadSeeking")).toBool();
     m_data->startNextPausedFile           = p.value(QStringLiteral("startNextPausedFile")).toBool();
     m_data->startNextPausedFileSameCat    = p.value(QStringLiteral("startNextPausedFileSameCat")).toBool();
     m_data->startNextPausedFileOnlySameCat = p.value(QStringLiteral("startNextPausedFileOnlySameCat")).toBool();
@@ -4540,6 +4566,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->useSecureIdent            = p.value(QStringLiteral("useSecureIdent")).toBool();
     m_data->antiLeecher               = p.value(QStringLiteral("antiLeecher")).toBool(true);
     m_data->antiLeecherLevel          = std::clamp(static_cast<int>(p.value(QStringLiteral("antiLeecherLevel")).toInteger()), 0, 2);
+    m_data->clientAnalyzer            = p.value(QStringLiteral("clientAnalyzer")).toBool(false);
     m_data->enableSearchResultFilter  = p.value(QStringLiteral("enableSearchResultFilter")).toBool();
     m_data->useSafeKad                = p.value(QStringLiteral("useSafeKad")).toBool();
     m_data->useFastKad                = p.value(QStringLiteral("useFastKad")).toBool();
@@ -4958,6 +4985,7 @@ bool Preferences::load(const QString& filePath)
     const SubjectRevisionBump bumpOnExit;
 
     m_filePath = filePath;
+    m_statsBackupState.store(-1, std::memory_order_relaxed);
     m_data = std::make_unique<Data>();
 
     if (!QFile::exists(filePath)) {
@@ -5257,6 +5285,7 @@ bool Preferences::load(const QString& filePath)
             m_data->autoSharedFilesPriority = f["autoSharedFilesPriority"].as<bool>(m_data->autoSharedFilesPriority);
             m_data->transferFullChunks = f["transferFullChunks"].as<bool>(m_data->transferFullChunks);
             m_data->previewPrio = f["previewPrio"].as<bool>(m_data->previewPrio);
+            m_data->downloadSeeking = f["downloadSeeking"].as<bool>(m_data->downloadSeeking);
             m_data->startNextPausedFile = f["startNextPausedFile"].as<bool>(m_data->startNextPausedFile);
             m_data->startNextPausedFileSameCat = f["startNextPausedFileSameCat"].as<bool>(m_data->startNextPausedFileSameCat);
             m_data->startNextPausedFileOnlySameCat = f["startNextPausedFileOnlySameCat"].as<bool>(m_data->startNextPausedFileOnlySameCat);
@@ -5435,6 +5464,7 @@ bool Preferences::load(const QString& filePath)
             m_data->useSecureIdent = sec["useSecureIdent"].as<bool>(m_data->useSecureIdent);
             m_data->antiLeecher = sec["antiLeecher"].as<bool>(m_data->antiLeecher);
             m_data->antiLeecherLevel = std::clamp(sec["antiLeecherLevel"].as<int>(m_data->antiLeecherLevel), 0, 2);
+            m_data->clientAnalyzer = sec["clientAnalyzer"].as<bool>(m_data->clientAnalyzer);
             m_data->viewSharedFilesAccess = sec["viewSharedFilesAccess"].as<int>(m_data->viewSharedFilesAccess);
             m_data->useSafeKad = sec["useSafeKad"].as<bool>(m_data->useSafeKad);
             m_data->useFastKad = sec["useFastKad"].as<bool>(m_data->useFastKad);
@@ -6851,6 +6881,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "autoSharedFilesPriority" << YAML::Value << m_data->autoSharedFilesPriority;
     out << YAML::Key << "transferFullChunks" << YAML::Value << m_data->transferFullChunks;
     out << YAML::Key << "previewPrio" << YAML::Value << m_data->previewPrio;
+    out << YAML::Key << "downloadSeeking" << YAML::Value << m_data->downloadSeeking;
     out << YAML::Key << "startNextPausedFile" << YAML::Value << m_data->startNextPausedFile;
     out << YAML::Key << "startNextPausedFileSameCat" << YAML::Value << m_data->startNextPausedFileSameCat;
     out << YAML::Key << "startNextPausedFileOnlySameCat" << YAML::Value << m_data->startNextPausedFileOnlySameCat;
@@ -7030,6 +7061,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "useSecureIdent" << YAML::Value << m_data->useSecureIdent;
     out << YAML::Key << "antiLeecher" << YAML::Value << m_data->antiLeecher;
     out << YAML::Key << "antiLeecherLevel" << YAML::Value << m_data->antiLeecherLevel;
+    out << YAML::Key << "clientAnalyzer" << YAML::Value << m_data->clientAnalyzer;
     out << YAML::Key << "viewSharedFilesAccess" << YAML::Value << m_data->viewSharedFilesAccess;
     out << YAML::Key << "useSafeKad" << YAML::Value << m_data->useSafeKad;
     out << YAML::Key << "useFastKad" << YAML::Value << m_data->useFastKad;

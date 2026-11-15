@@ -67,6 +67,7 @@ static void unixSignalHandler(int)
 #include "utils/Appearance.h"
 #include "utils/BackgroundFileWriter.h"
 #include "utils/ColumnTooltip.h"
+#include "utils/MessageBoxButtonOrder.h"
 #include "utils/CountryFlags.h"
 #include "utils/FileAssociation.h"
 #include "utils/StatusBarNotifier.h"
@@ -722,6 +723,10 @@ int main(int argc, char* argv[])
     // "Label:\tvalue" list tooltips in two aligned columns, as MFC draws them
     eMule::ColumnTooltipFilter columnTooltips;
     app.installEventFilter(&columnTooltips);
+
+    // Yes/No order of every message box per platform style guide, native or not
+    eMule::MessageBoxButtonOrder messageBoxOrder;
+    app.installEventFilter(&messageBoxOrder);
 
     // Theme and font size (Options > Display), before any widget picks up the defaults
     eMule::applyColorScheme(eMule::theUiState.colorScheme(), true);

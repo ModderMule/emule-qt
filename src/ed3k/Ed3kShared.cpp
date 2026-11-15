@@ -8,6 +8,7 @@
 
 #include "files/KnownFile.h"
 #include "files/SharedFileList.h"
+#include "utils/Opcodes.h"
 #include "utils/DiskLoadLimiter.h"
 #include "utils/OwnerOnly.h"
 #include "utils/SystemMemory.h"
@@ -41,6 +42,8 @@ constexpr qint64 kHashesMagicLen = 8;
 /// rewritten when the dead values are at least this much and more than the live ones
 constexpr qint64 kCompactMinDead = 4 << 20;
 constexpr qint64 kCopyChunk = 1 << 20;
+/// own NOTE records live 24 h (Protocol.md §10.3): published again after 20 h
+constexpr qint64 kNoteRepublishMs = 20LL * 3600 * 1000;
 /// the index while hashing: rewritten at most this often (values are on disk at once)
 constexpr int kHashRunSaveDelayMs = 30'000;
 /// the RAM check (a syscall) at most this often
@@ -169,8 +172,18 @@ std::optional<SharedEntry> Ed3kShared::entryOf(const KnownFile& file)
         default: return P::Normal;
         }
     }();
-    return SharedEntry{QByteArray(reinterpret_cast<const char*>(file.fileHash()), 16), file.filePath(), file.fileName(),
-                       static_cast<uint64>(file.fileSize()), priority};
+    SharedEntry e{QByteArray(reinterpret_cast<const char*>(file.fileHash()), 16), file.filePath(), file.fileName(),
+                  static_cast<uint64>(file.fileSize()), priority};
+    // the comment getters load fileinfo.ini once (lazily), hence not const
+    auto& f = const_cast<KnownFile&>(file);
+    e.rating = std::min<std::uint32_t>(f.getFileRating(), 5);
+    // a note's text is at most 512 bytes of UTF-8 (§10.3); eMule's comment limit is 128 characters
+    e.comment = f.getFileComment();
+    while (e.comment.toUtf8().size() > 512)
+        e.comment.chop(1);
+    e.duration = file.getIntTagValue(FT_MEDIA_LENGTH);
+    e.bitrate = file.getIntTagValue(FT_MEDIA_BITRATE);
+    return e;
 }
 
 void Ed3kShared::connectList(SharedFileList& list)
@@ -774,7 +787,12 @@ void Ed3kShared::share(File& f, Hashed& h)
     const auto ed2k = anon ? std::nullopt : ed2kOf(f.entry.md4);
     // the MD4 is eMule's of the same file (the share list checks size and date)
     // was: if (!shareMember(ffi::SharedFile{h.root, h.size, name, ed2k, std::nullopt, ffi::Have::complete(), std::span{hashes}}, kOwner,
-    ffi::SharedFile file{h.root, h.size, name, ed2k, std::nullopt, ffi::Have::complete(), hashes};
+    // FileStatus.note: the uploader's rating and comment (§12.2)
+    std::optional<ffi::Note> note;
+    if (f.entry.hasNote())
+        note = ffi::Note{f.entry.rating, utf8(f.entry.comment)};
+    // was: ffi::SharedFile file{h.root, h.size, name, ed2k, std::nullopt, ffi::Have::complete(), hashes};
+    ffi::SharedFile file{h.root, h.size, name, ed2k, note, ffi::Have::complete(), hashes};
     file.hashesStored = stored;
     if (!shareMember(file, kOwner, f.member)) {
         logWarning(QStringLiteral("cannot share \"%1\"").arg(f.entry.name));
@@ -790,7 +808,8 @@ void Ed3kShared::share(File& f, Hashed& h)
     }
     const auto t = m_session.now();
     // sources 1: this node, the file held complete (Protocol.md §10.7)
-    const ffi::FileInfo info{h.root, h.size, name, ed2k, 1, 0, 0, 0, 0, 0};
+    // was: const ffi::FileInfo info{h.root, h.size, name, ed2k, 1, 0, 0, 0, 0, 0};
+    const ffi::FileInfo info{h.root, h.size, name, ed2k, 1, 0, f.entry.duration, f.entry.bitrate, 0, 0};
     // was: ToDo: keywords (Publish::Both) for files the user wants found over ed3k search
     // (done: every shared file, as eD2K's share list; only the source while holding back)
     // if (auto ok = e->publish(t, info, ffi::Publish::Source); !ok)
@@ -801,6 +820,7 @@ void Ed3kShared::share(File& f, Hashed& h)
         logDebug([&]() -> QString { return QStringLiteral("publish of \"%1\" failed (error %2)").arg(f.entry.name, errorName(ok.error())); });
     else
         f.keywords = *ok == ffi::Publish::Both;
+    publishNote(f, h.root);
     // hops.md §1 SHOULD: every file here is in eD2K's share list too, its sources there show
     // the address and tie the anonymous key to it: the user is told once
     // was: ToDo: the same for a file under the anonymous key downloaded over eD2K or a hoster
@@ -946,12 +966,41 @@ void Ed3kShared::refreshPriorities()
         if (!f.shared)
             continue;
         const auto e = m_source.find(md4);
-        if (!e || e->priority == f.entry.priority)
+        if (!e)
             continue;
-        f.entry.priority = e->priority;
-        if (const auto c = m_cache.find(md4); c != m_cache.end())
-            updateUploadPriority(c->second.root);
+        const auto c = m_cache.find(md4);
+        if (e->priority != f.entry.priority) {
+            f.entry.priority = e->priority;
+            if (c != m_cache.end())
+                updateUploadPriority(c->second.root);
+        }
+        // own note: changed → at once; held → again before its 24 h end
+        const bool changed = e->rating != f.entry.rating || e->comment != f.entry.comment;
+        f.entry.rating = e->rating;
+        f.entry.comment = e->comment;
+        if (c != m_cache.end()
+            && (changed || (f.noteAtMs != 0 && QDateTime::currentMSecsSinceEpoch() - f.noteAtMs > kNoteRepublishMs)))
+            publishNote(f, c->second.root);
     }
+}
+
+void Ed3kShared::publishNote(File& f, const ffi::Root& root)
+{
+    auto* e = m_session.engine();
+    // a cleared note is not taken back: it ends with its lifetime (no unpublish of one note)
+    if (!e || !f.shared || m_holdBack || !f.entry.hasNote()) {
+        f.noteAtMs = 0;
+        return;
+    }
+    const ffi::Note note{f.entry.rating, utf8(f.entry.comment)};
+    const auto t = m_session.now();
+    const auto ok = keyOf(root) == ffi::KeyKind::Anon ? e->anonPublishNote(t, root, note) : e->publishNote(t, root, note);
+    if (!ok) {
+        logDebug([&]() -> QString { return QStringLiteral("note of \"%1\" not published (error %2)").arg(f.entry.name, errorName(ok.error())); });
+        f.noteAtMs = 0;
+        return;
+    }
+    f.noteAtMs = QDateTime::currentMSecsSinceEpoch();
 }
 
 const Ed3kShared::File* Ed3kShared::fileOfMember(int member) const

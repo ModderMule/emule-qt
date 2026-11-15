@@ -89,6 +89,8 @@ public:
     void updateConnectionsStatus();
 
     [[nodiscard]] uint32 openSockets() const { return static_cast<uint32>(m_socketList.size()); }
+    /// RAM the pooled sockets hold in buffers and send queues.
+    [[nodiscard]] uint64 bufferedBytes() const;
     [[nodiscard]] uint32 maxConnectionReached() const { return m_maxConnectionReached; }
     [[nodiscard]] bool isAcceptPaused() const { return m_acceptPaused; }
     [[nodiscard]] uint32 peakConnections() const { return m_peakConnections; }

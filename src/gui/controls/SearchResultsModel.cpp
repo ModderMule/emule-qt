@@ -182,19 +182,22 @@ qint64 completePercent(const SearchResultRow& r)
 
 QString SearchResultRow::ed2kLink(const QString& name) const
 {
-    if (isMeta())   // never mint ed2k:// for a meta pseudo-hash
+    // never mint ed2k:// for a meta pseudo-hash; an ed3k row's MD4 is its publisher's (§7.4)
+    const QString md4 = ed2kHash();
+    if (md4.size() != 32)
         return {};
-    return ed2kFileLink(name.isEmpty() ? fileName : name, static_cast<uint64>(fileSize), hash);
+    return ed2kFileLink(name.isEmpty() ? fileName : name, static_cast<uint64>(fileSize), md4);
 }
 
 QString SearchResultRow::magnetLink(const QString& name) const
 {
-    if (isMeta())
+    const QString md4 = ed2kHash();
+    if (isMeta() && md4.size() != 32)
         return magnet;   // server-supplied for torrents; Usenet has none
 
     // the form ED2KLink::parseMagnetLink reads back
     return QStringLiteral("magnet:?xt=urn:ed2k:%1&xl=%2&dn=%3")
-        .arg(hash.toUpper())
+        .arg(md4.toUpper())
         .arg(fileSize)
         .arg(QString::fromUtf8(QUrl::toPercentEncoding(name.isEmpty() ? fileName : name)));
 }
@@ -243,7 +246,10 @@ QCborMap SearchResultRow::fileRef() const
             {QStringLiteral("title"), title},
             {QStringLiteral("codec"), codec},
             {QStringLiteral("length"), static_cast<qint64>(length)},
-            {QStringLiteral("bitrate"), static_cast<qint64>(bitrate)}};
+            {QStringLiteral("bitrate"), static_cast<qint64>(bitrate)},
+            // an ed3k row: the daemon keys its notes and details on the root
+            {QStringLiteral("ed3kRoot"), ed3kRoot},
+            {QStringLiteral("ed3kEd2k"), ed3kEd2k}};
 }
 
 SearchResultsModel::SearchResultsModel(QObject* parent)

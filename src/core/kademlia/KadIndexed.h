@@ -51,15 +51,18 @@ public:
     bool addLoad(const UInt128& keyID, time_t time);
 
     [[nodiscard]] uint32 getFileKeyCount() const;
+    /// RAM of the stored keywords, sources and notes (estimate, walked at most every 30 s).
+    [[nodiscard]] uint64 memoryBytes();
 
-    void sendValidKeywordResult(const UInt128& keyID, const SearchTerm* searchTerms,
-                                uint32 ip, uint16 port, bool oldClient,
-                                uint16 startPosition, const KadUDPKey& senderKey);
-    void sendValidSourceResult(const UInt128& keyID, uint32 ip, uint16 port,
-                               uint16 startPosition, uint64 fileSize,
-                               const KadUDPKey& senderKey);
-    void sendValidNoteResult(const UInt128& keyID, uint32 ip, uint16 port,
-                             uint64 fileSize, const KadUDPKey& senderKey);
+    /// The send functions return the results sent.
+    int sendValidKeywordResult(const UInt128& keyID, const SearchTerm* searchTerms,
+                               uint32 ip, uint16 port, bool oldClient,
+                               uint16 startPosition, const KadUDPKey& senderKey);
+    int sendValidSourceResult(const UInt128& keyID, uint32 ip, uint16 port,
+                              uint16 startPosition, uint64 fileSize,
+                              const KadUDPKey& senderKey);
+    int sendValidNoteResult(const UInt128& keyID, uint32 ip, uint16 port,
+                            uint64 fileSize, const KadUDPKey& senderKey);
     bool sendStoreRequest(const UInt128& keyID);
 
     /// Drop expired entries. Runs at most every 30 min unless @p force.
@@ -117,6 +120,8 @@ private:
                         const UInt128& keyID, const UInt128& sourceID,
                         Entry* entry, uint8& outLoad, bool fromFile = false);
 
+    uint64 m_memoryBytes = 0;
+    uint64 m_memoryBytesTick = 0;   // 0: never walked
     time_t m_nextClean = 0;
     time_t m_nextForcedClean = 0;   // a full index forces a clean, but not per packet
     KeyHashMap m_keywords;

@@ -114,7 +114,7 @@ LogWidget::LogWidget(QWidget* parent)
 
     // Leecher tab — Xtreme's Anti-Leecher-Log pane, right after Verbose
     m_leecherTabIndex = addLogTab(m_leecherBrowser, QStringLiteral(":/icons/Security.ico"), tr("Leecher"));
-    setLeecherTabVisible(thePrefs.antiLeecher());
+    setLeecherTabVisible(thePrefs.antiLeecher() || thePrefs.clientAnalyzer());
 
     // Usenet tab (shown while Usenet is on and showUsenetLog)
     m_usenetTabIndex = addLogTab(m_usenetBrowser, QStringLiteral(":/icons/Usenet.ico"), tr("Usenet"));

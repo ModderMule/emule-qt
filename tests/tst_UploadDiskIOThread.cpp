@@ -272,6 +272,8 @@ void tst_UploadDiskIOThread::contiguousBlocks_areOneOpenAndOneDiskRead()
     QCOMPARE(rig.thread.diskReadCount(), uint64{1});
     for (int i = 0; i < 3; ++i)
         QCOMPARE(rig.payload(i), QByteArray(EMBLOCKSIZE, static_cast<char>('a' + i)));
+    // the one read is kept for the stats tree
+    QCOMPARE(rig.thread.readAheadBytes(), UploadDiskIOThread::kReadAheadBytes);
 
     // the next three need the disk once more, not the open
     rig.ask(path, 3 * EMBLOCKSIZE, 4 * EMBLOCKSIZE);
@@ -337,8 +339,10 @@ void tst_UploadDiskIOThread::releaseClient_and_idleClose_dropTheReader()
     rig.ask(path, 0, EMBLOCKSIZE);
     QTRY_COMPARE_WITH_TIMEOUT(rig.ready.count(), 1, 3000);
     QCOMPARE(rig.thread.cachedReaderCount(), std::size_t{1});
+    QVERIFY(rig.thread.readAheadBytes() > 0);
     rig.thread.releaseClient(&rig.client);
     QCOMPARE(rig.thread.cachedReaderCount(), std::size_t{0});
+    QTRY_COMPARE_WITH_TIMEOUT(rig.thread.readAheadBytes(), uint64{0}, 3000);
 
     rig.thread.setIdleCloseMs(100);
     rig.ask(path, 0, EMBLOCKSIZE);

@@ -117,6 +117,11 @@ uint64 UpDownClient::score(bool sysValue, bool isDownloading, bool onlyBaseValue
     if (thePrefs.useCreditSystem())
         score *= static_cast<double>(m_credits->scoreRatio(identIP));
 
+    // ClientAnalyzer behaviour score, on top of the credit ratio. Not eMuleFuture, which
+    // used it instead of the credits.
+    if (thePrefs.clientAnalyzer())
+        score *= static_cast<double>(analyzerScore());
+
     // The file priority, for a full score only — MFC srchybrid/UploadClient.cpp:226-227.
     // Skipping it is what makes the onlyBaseValue figure a different number from the queue
     // score rather than a duplicate of it.
@@ -141,7 +146,8 @@ uint64 UpDownClient::score(bool sysValue, bool isDownloading, bool onlyBaseValue
         score *= 0.5;
 
     // Soft anti-leecher verdict: a third of the score. Xtreme srchybrid/UploadClient.cpp:469-471.
-    if (m_leecherCategory != LeecherCategory::None)
+    // With DLP off a verdict only feeds the ClientAnalyzer.
+    if (m_leecherCategory != LeecherCategory::None && thePrefs.antiLeecher())
         score *= 0.33;
 
     // A file we have not yet given away half of once: its requesters move up by a
@@ -177,7 +183,8 @@ float UpDownClient::getCombinedFilePrioAndCredit() const
     if (!m_credits)
         return 0.0f;
 
-    return 10.0f * m_credits->scoreRatio(m_userAddress)
+    const float analyzer = thePrefs.clientAnalyzer() ? analyzerScore() : 1.0f;
+    return 10.0f * m_credits->scoreRatio(m_userAddress) * analyzer
                  * static_cast<float>(filePrioAsNumber());
 }
 
@@ -236,6 +243,7 @@ bool UpDownClient::processExtendedInfo(SafeMemFile& data, KnownFile* file)
             file->updatePartsInfo();
     }
 
+    checkAnalyzerFileFaker();
     return true;
 }
 
@@ -495,6 +503,12 @@ void UpDownClient::updateUploadingStatisticsData()
         // Keyed on m_userAddress (MFC's GetIP()), matching the ident gate in score().
         if (m_credits && sentWire > 0)
             m_credits->addUploaded(sentWire, m_userAddress);
+        if (sentWire > 0) {
+            if (AnalyzerRecord* r = analyzerRecord()) {
+                r->addUploaded(sentBytesCompleteFile, false);
+                r->addUploaded(sentBytesPartFile, true);
+            }
+        }
 
         // Per-file "Transferred" — MFC srchybrid/UploadClient.cpp:447-450. Looked up by the
         // requested file ID rather than through the cached m_uploadFile, because a file switch

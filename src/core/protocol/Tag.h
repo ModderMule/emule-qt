@@ -73,6 +73,8 @@ public:
     [[nodiscard]] float floatValue() const;
     [[nodiscard]] const uint8* hashValue() const;
     [[nodiscard]] const QByteArray& blobValue() const;
+    /// RAM held outside sizeof(Tag): name and string/blob payloads (estimate).
+    [[nodiscard]] std::size_t heapBytes() const;
 
     // Mutators
     void setInt(uint32 val);

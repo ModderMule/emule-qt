@@ -20,6 +20,7 @@
 #include "geo/IP2Country.h"
 #include "client/ClientCensus.h"
 #include "client/DlpLoader.h"
+#include "client/ClientAnalyzer.h"
 #include "client/ClientCredits.h"
 #include "client/BuddyRelayBudget.h"
 #include "client/ClientList.h"
@@ -468,6 +469,8 @@ void CoreSession::onTimer()
                 QStringLiteral("clients.met"));
             theApp.clientCredits->process(creditsPath);  // auto-save every 13 min
         }
+        if (theApp.clientAnalyzer && m_creditsLoaded)
+            theApp.clientAnalyzer->process(clientAnalyzerPath(), getTickCount());  // every 18 min
         if (theApp.friendList)
             theApp.friendList->process(thePrefs.configDir());  // auto-save every 19 min
         if (theApp.listenSocket) {
@@ -992,6 +995,12 @@ void CoreSession::initClientInfra()
         theApp.clientCredits = m_clientCredits.get();
     }
 
+    if (!theApp.clientAnalyzer) {
+        // loadStep() reads clientanalyzer.met next to clients.met
+        m_clientAnalyzer = std::make_unique<ClientAnalyzer>();
+        theApp.clientAnalyzer = m_clientAnalyzer.get();
+    }
+
     if (!theApp.friendList) {
         m_friendList = std::make_unique<FriendList>(this);
         m_friendList->load(thePrefs.configDir());
@@ -1049,6 +1058,14 @@ void CoreSession::shutdownClientInfra()
         if (theApp.clientCredits == m_clientCredits.get())
             theApp.clientCredits = nullptr;
         m_clientCredits.reset();
+    }
+
+    if (m_clientAnalyzer) {
+        if (m_creditsLoaded)
+            m_clientAnalyzer->save(clientAnalyzerPath());
+        if (theApp.clientAnalyzer == m_clientAnalyzer.get())
+            theApp.clientAnalyzer = nullptr;
+        m_clientAnalyzer.reset();
     }
 
     if (m_friendList) {
@@ -2407,6 +2424,9 @@ void CoreSession::loadStep()
             else
                 logInfo(QStringLiteral("Credit file not found, 0 clients are known"));
         }
+        // Read even while switched off: turning it on later finds the old records
+        if (m_clientAnalyzer && QFile::exists(clientAnalyzerPath()))
+            m_clientAnalyzer->load(clientAnalyzerPath());
         m_creditsLoaded = true;
         m_loadStage = LoadStage::KnownFiles;
         break;
@@ -2601,6 +2621,11 @@ void CoreSession::randomizeListenPorts()
                 .arg(thePrefs.btEnabled()
                          ? QStringLiteral(", BitTorrent %1").arg(thePrefs.btListenPort())
                          : QString()));
+}
+
+QString CoreSession::clientAnalyzerPath()
+{
+    return QDir(thePrefs.configDir()).filePath(QStringLiteral("clientanalyzer.met"));
 }
 
 } // namespace eMule

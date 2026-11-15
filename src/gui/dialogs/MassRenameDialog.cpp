@@ -13,6 +13,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QContextMenuEvent>
+#include <QDialogButtonBox>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QKeyEvent>
@@ -155,8 +156,11 @@ MassRenameDialog::MassRenameDialog(QList<Item> items, IpcClient* ipc, QWidget* p
     bottom->addWidget(simpleBtn);
     bottom->addWidget(insertBtn);
     bottom->addStretch();
-    bottom->addWidget(okBtn);
-    bottom->addWidget(cancelBtn);
+    // OK/Cancel in the platform's order
+    auto* okCancel = new QDialogButtonBox(this);
+    okCancel->addButton(okBtn, QDialogButtonBox::AcceptRole);
+    okCancel->addButton(cancelBtn, QDialogButtonBox::RejectRole);
+    bottom->addWidget(okCancel);
     root->addLayout(bottom);
 
     QStringList names;

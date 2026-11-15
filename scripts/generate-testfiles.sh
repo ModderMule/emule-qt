@@ -4,6 +4,7 @@
 #         data/incoming/eMuleQt-testfile-20MB-random.bin (incompressible)
 
 set -euo pipefail
+. "$(dirname "$0")/py.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -15,7 +16,7 @@ mkdir -p "$OUT_DIR"
 # 1) Compressible: repeating 78-byte text pattern
 COMPRESSIBLE="$OUT_DIR/eMuleQt-testfile-20MB.bin"
 PATTERN="eMuleQt test file data block - this pattern repeats to ensure compressibility. "
-python3 -c "
+py -c "
 p = b'$PATTERN'
 with open('$COMPRESSIBLE', 'wb') as f:
     written = 0

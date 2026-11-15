@@ -3,6 +3,7 @@
 
 #include "TestHelpers.h"
 #include "net/EMSocket.h"
+#include "net/SendBufferSizer.h"
 #include "net/StreamTransport.h"
 #include "app/AppContext.h"
 #include "net/Packet.h"
@@ -13,6 +14,7 @@
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QUdpSocket>
 #include <QTest>
 #include <QTimer>
 
@@ -24,6 +26,7 @@
 
 #include <array>
 #include <cstring>
+#include <limits>
 #include <atomic>
 #include <memory>
 #include <mutex>
@@ -115,6 +118,10 @@ private slots:
     void rawSend_waitsForBytesInTheQtBuffer();
     void rawSend_wouldBlockMarksTheSocketBusy();
     void bigSendBuffer_isReadBack();
+    void bigSendBuffer_growsWithTheSlotRate();
+    void bigSendBuffer_neverShrinks();
+    void sendBufferSizer_wantForRates();
+    void sendBufferSizer_growsUdpSocket();
     void ownerThreadSend_isReportedToTheThrottler();
     void transport_carriesPacketsBothWays();
     void transport_backpressureMarksBusy();
@@ -976,6 +983,84 @@ void tst_EMSocket::bigSendBuffer_isReadBack()
     QVERIFY(after >= before);
     // "big" only when the kernel really gave (at least) what MFC asks for
     QCOMPARE(big, after >= 128 * 1024);
+}
+
+// Send buffer: 1 MiB floor, 2 s of the slot's rate in MiB steps, 8 MiB cap
+void tst_EMSocket::bigSendBuffer_growsWithTheSlotRate()
+{
+    constexpr qint64 MiB = 1024 * 1024;
+    TransportPair p;
+    TestEMSocket a, b;
+    a.attachTransport(p.a, true);
+    b.attachTransport(p.b, false);
+
+    QVERIFY(a.useBigSendBuffer(0));
+    QCOMPARE(p.a->limit, 1 * MiB);
+    QVERIFY(a.useBigSendBuffer(400 * 1024));     // 800 KiB -> floor
+    QCOMPARE(p.a->limit, 1 * MiB);
+    QVERIFY(a.useBigSendBuffer(1536 * 1024));    // 3 MiB
+    QCOMPARE(p.a->limit, 3 * MiB);
+    QVERIFY(a.useBigSendBuffer(100 * 1024));     // slower: kept
+    QCOMPARE(p.a->limit, 3 * MiB);
+    QVERIFY(a.useBigSendBuffer(50 * MiB));       // capped
+    QCOMPARE(p.a->limit, 8 * MiB);
+}
+
+void tst_EMSocket::bigSendBuffer_neverShrinks()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    TestEMSocket sock;
+    sock.connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(server.waitForNewConnection(5000));
+    QVERIFY(sock.waitForConnected(5000));
+#ifdef Q_OS_WIN
+    using OptLen = int;
+    const auto fd = static_cast<SOCKET>(sock.socketDescriptor());
+#else
+    using OptLen = socklen_t;
+    const auto fd = static_cast<int>(sock.socketDescriptor());
+#endif
+    const auto sndbuf = [fd] {
+        int v = 0;
+        OptLen len = sizeof(v);
+        return getsockopt(fd, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<char*>(&v), &len) == 0 ? v : -1;
+    };
+    sock.useBigSendBuffer(0);
+    const int floor = sndbuf();
+    sock.useBigSendBuffer(2 * 1024 * 1024);       // asks 4 MiB; kernel may cap it
+    const int grown = sndbuf();
+    QVERIFY(grown >= floor);
+    sock.useBigSendBuffer(0);
+    QCOMPARE(sndbuf(), grown);
+}
+
+void tst_EMSocket::sendBufferSizer_wantForRates()
+{
+    constexpr qint64 MiB = 1024 * 1024;
+    QCOMPARE(SendBufferSizer::wantFor(0), MiB);
+    QCOMPARE(SendBufferSizer::wantFor(400 * 1024), MiB);
+    QCOMPARE(SendBufferSizer::wantFor(1536 * 1024), 3 * MiB);
+    QCOMPARE(SendBufferSizer::wantFor(50 * MiB), 8 * MiB);
+    QCOMPARE(SendBufferSizer::wantFor(std::numeric_limits<uint64>::max()), 8 * MiB);
+}
+
+// ed3k's one UDP socket: grows, never shrinks, stops once the system caps it
+void tst_EMSocket::sendBufferSizer_growsUdpSocket()
+{
+    QUdpSocket udp;
+    QVERIFY(udp.bind(QHostAddress::LocalHost, 0));
+    SendBufferSizer sizer;
+    QCOMPARE(sizer.grow(-1, SendBufferSizer::kStep), qint64{0});
+    QVERIFY(sizer.needs(SendBufferSizer::kStep));
+    const qint64 first = sizer.grow(udp.socketDescriptor(), SendBufferSizer::kStep);
+    QVERIFY(first > 0);
+    QVERIFY(!sizer.needs(SendBufferSizer::kStep));
+    if (sizer.done())
+        return;   // capped below 1 MiB (Linux wmem_max): no more asks
+    const qint64 grown = sizer.grow(udp.socketDescriptor(), 4 * SendBufferSizer::kStep);
+    QVERIFY(grown >= first);
+    QVERIFY(!sizer.needs(2 * SendBufferSizer::kStep));
 }
 
 // C77: a control packet sent on the socket's thread is charged like any upload.

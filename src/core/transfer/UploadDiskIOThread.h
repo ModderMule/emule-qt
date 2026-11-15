@@ -87,6 +87,8 @@ public:
     [[nodiscard]] uint64 openCount() const { return m_openCount.load(); }
     [[nodiscard]] uint64 diskReadCount() const { return m_diskReadCount.load(); }
     [[nodiscard]] std::size_t cachedReaderCount();
+    /// Bytes read ahead and kept for upload slots.
+    [[nodiscard]] uint64 readAheadBytes() const { return m_aheadBytes.load(); }
     /// Slow and stuck reads logged so far.
     [[nodiscard]] uint64 slowReadWarnings() const { return m_slowReadWarnings.load(); }
     /// Workers started, one per drive read from.
@@ -128,10 +130,24 @@ private:
     /// One slot's open file and what was read past its last request. Shared, so a
     /// release never waits for a read in progress (except releaseFile, which must).
     struct Reader {
+        explicit Reader(std::atomic<uint64>& aheadTotal) : aheadTotal(aheadTotal) {}
+        ~Reader() { aheadTotal.fetch_sub(static_cast<uint64>(ahead.size())); }
+        Reader(const Reader&) = delete;
+        Reader& operator=(const Reader&) = delete;
+        /// Keep @p buf as read-ahead from @p start; empty drops it. readMutex held.
+        void setAhead(QByteArray buf = {}, uint64 start = 0)
+        {
+            aheadTotal.fetch_sub(static_cast<uint64>(ahead.size()));
+            ahead = std::move(buf);
+            aheadStart = start;
+            aheadTotal.fetch_add(static_cast<uint64>(ahead.size()));
+        }
+
+        std::atomic<uint64>& aheadTotal;
         std::mutex readMutex;   // held across the disk access
         std::unique_ptr<QFile> file;
         QString path;
-        QByteArray ahead;
+        QByteArray ahead;       // through setAhead() only
         uint64 aheadStart = 0;
         bool retired = false;   // released: the next read opens its own handle
         std::atomic<uint64> lastUsed{0};
@@ -179,6 +195,7 @@ private:
     std::atomic<bool> m_run{true};
     std::atomic<int> m_busyLanes{0};
 
+    std::atomic<uint64> m_aheadBytes{0};   // declared before m_readers: Readers refer to it
     std::mutex m_readerMutex;   // the maps only, never held across a disk access
     std::unordered_map<const UpDownClient*, std::shared_ptr<Reader>> m_readers;
     std::vector<std::weak_ptr<Reader>> m_allReaders;       // incl. ones only a worker holds

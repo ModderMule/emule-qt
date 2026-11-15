@@ -618,6 +618,21 @@ constexpr uint16 kMaxBootstrapContacts = 20;
 /// Longest note comment we store (chars).
 constexpr qsizetype kMaxNoteDescriptionLen = 512;
 
+/// The words a keyword search asks for, for the incoming list; NOT branches left out.
+void collectSearchWords(const SearchTerm* term, QStringList& words)
+{
+    if (!term || words.size() >= 16)
+        return;
+    if (term->type == SearchTerm::Type::String) {
+        for (const QString& w : term->strings)
+            words.append(w);
+        return;
+    }
+    collectSearchWords(term->left.get(), words);
+    if (term->type != SearchTerm::Type::NOT)
+        collectSearchWords(term->right.get(), words);
+}
+
 /// Should we accept a publish request for @p keyID from @p ip?
 ///
 /// Two guards, applied identically by all three PUBLISH_*_REQ handlers in MFC
@@ -746,6 +761,7 @@ std::unique_ptr<SearchTerm> KademliaUDPListener::createSearchExpressionTree(Safe
 void KademliaUDPListener::process_KADEMLIA2_BOOTSTRAP_REQ(uint32 ip, uint16 udpPort,
                                                            const KadUDPKey& senderKey)
 {
+    IncomingNote note(m_incoming, IncomingType::Bootstrap, ip, udpPort);
     auto* rz = Kademlia::getInstanceRoutingZone();
     if (!rz)
         return;
@@ -753,6 +769,7 @@ void KademliaUDPListener::process_KADEMLIA2_BOOTSTRAP_REQ(uint32 ip, uint16 udpP
     // Get up to 20 contacts for the bootstrap response
     ContactArray contacts;
     rz->getBootstrapContacts(contacts, 20);
+    note->contacts = static_cast<int32_t>(contacts.size());
 
     SafeMemFile packet;
     // Write our own contact info
@@ -772,6 +789,7 @@ void KademliaUDPListener::process_KADEMLIA2_BOOTSTRAP_REQ(uint32 ip, uint16 udpP
     }
 
     sendPacket(packet, KADEMLIA2_BOOTSTRAP_RES, ip, udpPort, senderKey, nullptr);
+    note.answered();
 }
 
 void KademliaUDPListener::process_KADEMLIA2_BOOTSTRAP_RES(const uint8* data, uint32 len,
@@ -1077,6 +1095,7 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_RES_ACK(const uint8* data, uin
 void KademliaUDPListener::process_KADEMLIA2_REQ(const uint8* data, uint32 len, uint32 ip,
                                                   uint16 udpPort, const KadUDPKey& senderKey)
 {
+    IncomingNote note(m_incoming, IncomingType::NodeLookup, ip, udpPort);
     if (len < 33) // 1 (type) + 16 (target) + 16 (receiver)
         return;
 
@@ -1091,6 +1110,7 @@ void KademliaUDPListener::process_KADEMLIA2_REQ(const uint8* data, uint32 len, u
         return;
 
     UInt128 target = io::readUInt128(io);
+    note.setTarget(target);
 
     // Sanity check: the sender writes the contact's (our) Kad ID so we can
     // verify the request is actually intended for us.  Silently drop if the
@@ -1129,6 +1149,8 @@ void KademliaUDPListener::process_KADEMLIA2_REQ(const uint8* data, uint32 len, u
     }
 
     sendPacket(resPacket, KADEMLIA2_RES, ip, udpPort, senderKey, nullptr);
+    note->contacts = static_cast<int32_t>(count);
+    note.answered();
 
     // In LAN mode with a small routing table, proactively discover the requester.
     // The REQ packet lacks the sender's KadID, so we send a HELLO_REQ to learn it.
@@ -1343,11 +1365,13 @@ void KademliaUDPListener::process_KADEMLIA2_SEARCH_KEY_REQ(const uint8* data, ui
                                                             uint32 ip, uint16 udpPort,
                                                             const KadUDPKey& senderKey)
 {
+    IncomingNote note(m_incoming, IncomingType::KeywordSearch, ip, udpPort);
     if (len < 16)
         return;
 
     SafeMemFile io(data, len);
     UInt128 target = io::readUInt128(io);
+    note.setTarget(target);
     uint16 startPos = (io.position() + 2 <= io.length()) ? io.readUInt16() : 0;
 
     // MFC: bit 15 of startPos signals a restrictive search with expression tree
@@ -1366,10 +1390,15 @@ void KademliaUDPListener::process_KADEMLIA2_SEARCH_KEY_REQ(const uint8* data, ui
         return;
     }
 
+    QStringList words;
+    collectSearchWords(searchTerms.get(), words);
+    note->name = words.join(u' ');
+
     // Serve keyword results from local index
     if (auto* indexed = Kademlia::getInstanceIndexed()) {
-        indexed->sendValidKeywordResult(target, searchTerms.get(),
-                                        ip, udpPort, false, startPos, senderKey);
+        note->results = indexed->sendValidKeywordResult(target, searchTerms.get(),
+                                                        ip, udpPort, false, startPos, senderKey);
+        note.answered();
     }
 }
 
@@ -1378,17 +1407,21 @@ void KademliaUDPListener::process_KADEMLIA2_SEARCH_SOURCE_REQ(const uint8* data,
                                                                 const KadUDPKey& senderKey)
 {
     // fileID 16 + startPos 2 + size 8 (MFC KademliaUDPListener.cpp:1093-1101)
+    IncomingNote note(m_incoming, IncomingType::SourceSearch, ip, udpPort);
     if (len < 26)
         return;
 
     SafeMemFile io(data, len);
     UInt128 target = io::readUInt128(io);
+    note.setTarget(target);
     uint16 startPos = io.readUInt16() & 0x7FFF;
     uint64 fileSize = io.readUInt64();
 
     // Serve source results from local index
-    if (auto* indexed = Kademlia::getInstanceIndexed())
-        indexed->sendValidSourceResult(target, ip, udpPort, startPos, fileSize, senderKey);
+    if (auto* indexed = Kademlia::getInstanceIndexed()) {
+        note->results = indexed->sendValidSourceResult(target, ip, udpPort, startPos, fileSize, senderKey);
+        note.answered();
+    }
 }
 
 void KademliaUDPListener::process_KADEMLIA2_SEARCH_RES(const uint8* data, uint32 len,
@@ -1436,6 +1469,7 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_KEY_REQ(const uint8* data, u
                                                              uint32 ip, uint16 udpPort,
                                                              const KadUDPKey& senderKey)
 {
+    IncomingNote note(m_incoming, IncomingType::PublishKeyword, ip, udpPort);
     if (len < 32)
         return;
 
@@ -1444,11 +1478,13 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_KEY_REQ(const uint8* data, u
 
     SafeMemFile io(data, len);
     UInt128 keyID = io::readUInt128(io);
+    note.setTarget(keyID);
 
     if (!shouldAcceptPublish(keyID, ip))
         return;
 
     uint16 count = io.readUInt16();
+    note->records = count;
 
     auto* indexed = Kademlia::getInstanceIndexed();
     uint8 totalLoad = 0;
@@ -1470,6 +1506,8 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_KEY_REQ(const uint8* data, u
                     if (tag.nameId() == FT_FILENAME && tag.isStr()) {
                         if (entry->getCommonFileName().isEmpty())
                             entry->setFileName(tag.strValue());
+                        if (note->name.isEmpty())
+                            note->name = tag.strValue();
                     } else if (tag.nameId() == FT_FILESIZE) {
                         if (entry->m_size == 0)
                             entry->m_size = tag.isInt() ? tag.intValue()
@@ -1516,12 +1554,15 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_KEY_REQ(const uint8* data, u
     io::writeUInt128(resPacket, keyID);
     resPacket.writeUInt8(totalLoad);
     sendPacket(resPacket, KADEMLIA2_PUBLISH_RES, ip, udpPort, senderKey, nullptr);
+    note->load = totalLoad;
+    note.answered();
 }
 
 void KademliaUDPListener::process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data, uint32 len,
                                                                 uint32 ip, uint16 udpPort,
                                                                 const KadUDPKey& senderKey)
 {
+    IncomingNote note(m_incoming, IncomingType::PublishSource, ip, udpPort);
     if (len < 32)
         return;
 
@@ -1532,8 +1573,10 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data
 
     SafeMemFile io(data, len);
     uint8 load = 0;
+    note->records = 1;
     try {
         UInt128 keyID = io::readUInt128(io);
+        note.setTarget(keyID);
 
         if (!shouldAcceptPublish(keyID, ip))
             return;
@@ -1659,6 +1702,8 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data
         io::writeUInt128(resPacket, keyID);
         resPacket.writeUInt8(load);
         sendPacket(resPacket, KADEMLIA2_PUBLISH_RES, ip, udpPort, senderKey, nullptr);
+        note->load = load;
+        note.answered();
     } catch (const FileException&) {
         logKad(QStringLiteral("Kad: PUBLISH_SOURCE_REQ from %1:%2 — truncated packet")
                    .arg(ipToString(ip)).arg(udpPort));
@@ -1707,22 +1752,27 @@ void KademliaUDPListener::process_KADEMLIA2_SEARCH_NOTES_REQ(const uint8* data, 
                                                                const KadUDPKey& senderKey)
 {
     // fileID 16 + size 8 (MFC KademliaUDPListener.cpp:1457-1464)
+    IncomingNote note(m_incoming, IncomingType::NotesSearch, ip, udpPort);
     if (len < 24)
         return;
 
     SafeMemFile io(data, len);
     UInt128 target = io::readUInt128(io);
+    note.setTarget(target);
     uint64 fileSize = io.readUInt64();
 
     // Serve note results from local index
-    if (auto* indexed = Kademlia::getInstanceIndexed())
-        indexed->sendValidNoteResult(target, ip, udpPort, fileSize, senderKey);
+    if (auto* indexed = Kademlia::getInstanceIndexed()) {
+        note->results = indexed->sendValidNoteResult(target, ip, udpPort, fileSize, senderKey);
+        note.answered();
+    }
 }
 
 void KademliaUDPListener::process_KADEMLIA2_PUBLISH_NOTES_REQ(const uint8* data, uint32 len,
                                                                 uint32 ip, uint16 udpPort,
                                                                 const KadUDPKey& senderKey)
 {
+    IncomingNote note(m_incoming, IncomingType::PublishNotes, ip, udpPort);
     if (len < 32)
         return;
 
@@ -1731,8 +1781,10 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_NOTES_REQ(const uint8* data,
 
     SafeMemFile io(data, len);
     uint8 load = 0;
+    note->records = 1;
     try {
         UInt128 keyID = io::readUInt128(io);
+        note.setTarget(keyID);
 
         if (!shouldAcceptPublish(keyID, ip))
             return;
@@ -1749,8 +1801,10 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_NOTES_REQ(const uint8* data,
             // Name and size are fields, not tags (MFC :1540-1548).
             for (auto& tag : tags) {
                 if (tag.nameId() == FT_FILENAME && tag.isStr()) {
-                    if (entry->getCommonFileName().isEmpty())
+                    if (entry->getCommonFileName().isEmpty()) {
                         entry->setFileName(tag.strValue());
+                        note->name = tag.strValue();
+                    }
                 } else if (tag.nameId() == FT_FILESIZE) {
                     if (entry->m_size == 0)
                         entry->m_size = tag.isInt() ? tag.intValue()
@@ -1778,6 +1832,8 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_NOTES_REQ(const uint8* data,
         io::writeUInt128(resPacket, keyID);
         resPacket.writeUInt8(load);
         sendPacket(resPacket, KADEMLIA2_PUBLISH_RES, ip, udpPort, senderKey, nullptr);
+        note->load = load;
+        note.answered();
     } catch (const FileException&) {
         logKad(QStringLiteral("Kad: PUBLISH_NOTES_REQ from %1:%2 — truncated packet")
                    .arg(ipToString(ip)).arg(udpPort));
@@ -1809,6 +1865,7 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED_REQ(const uint8* data, uin
                                                            uint32 ip, uint16 udpPort,
                                                            const KadUDPKey& senderKey)
 {
+    IncomingNote note(m_incoming, IncomingType::FirewallCheck, ip, udpPort);
     if (len < 2)
         return;
 
@@ -1831,6 +1888,7 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED_REQ(const uint8* data, uin
     SafeMemFile resPacket;
     resPacket.writeUInt32(ip);
     sendPacket(resPacket, KADEMLIA_FIREWALLED_RES, ip, udpPort, senderKey, nullptr);
+    note.answered();
 
     logKad(QStringLiteral("Kad: FIREWALLED_REQ from %1:%2, responded + TCP fw check")
                .arg(ipToString(ip)).arg(udpPort));
@@ -1840,6 +1898,7 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED2_REQ(const uint8* data, ui
                                                             uint32 ip, uint16 udpPort,
                                                             const KadUDPKey& senderKey)
 {
+    IncomingNote note(m_incoming, IncomingType::FirewallCheck, ip, udpPort);
     if (len < 19) // 2 (TCP) + 16 (hash) + 1 (options)
         return;
 
@@ -1863,6 +1922,7 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED2_REQ(const uint8* data, ui
     SafeMemFile resPacket;
     resPacket.writeUInt32(ip);
     sendPacket(resPacket, KADEMLIA_FIREWALLED_RES, ip, udpPort, senderKey, nullptr);
+    note.answered();
 
     logKad(QStringLiteral("Kad: FIREWALLED2_REQ from %1:%2, responded + TCP fw check")
                .arg(ipToString(ip)).arg(udpPort));
@@ -1918,6 +1978,7 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_REQ(const uint8* data, uint
                                                           const KadUDPKey& senderKey)
 {
     // Matches MFC KademliaUDPListener.cpp:1681-1722
+    IncomingNote note(m_incoming, IncomingType::FindBuddy, ip, udpPort);
     if (len < 34) // 16 (buddyID) + 16 (clientHash) + 2 (tcpPort)
         return;
 
@@ -1969,6 +2030,7 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_REQ(const uint8* data, uint
     if (!senderKey.isEmpty()) // connectOptions only sent with verified key (MFC line 1716)
         resPacket.writeUInt8(prefs->myConnectOptions());
     sendPacket(resPacket, KADEMLIA_FINDBUDDY_RES, ip, udpPort, senderKey, nullptr);
+    note.answered();
 
     logKad(QStringLiteral("Kad: FINDBUDDY_REQ from %1:%2 — accepted, sent response")
                .arg(ipToString(ip)).arg(udpPort));
@@ -2043,6 +2105,7 @@ void KademliaUDPListener::process_KADEMLIA_CALLBACK_REQ(const uint8* data, uint3
     // We are a buddy relay node. A firewalled client wants us to relay a
     // callback to our buddy (another firewalled client).
     // Matches MFC KademliaUDPListener.cpp:1764-1797.
+    IncomingNote note(m_incoming, IncomingType::Callback, ip, 0);
     if (len < 34) // 16 (checkID) + 16 (fileID) + 2 (tcpPort)
         return;
 
@@ -2057,6 +2120,7 @@ void KademliaUDPListener::process_KADEMLIA_CALLBACK_REQ(const uint8* data, uint3
     UInt128 checkID = io::readUInt128(bio);
     UInt128 fileID  = io::readUInt128(bio);
     uint16 tcpPort  = bio.readUInt16();
+    note.setTarget(fileID);
 
     // The BuddyID picks the served node. MFC forwards to its one buddy without comparing
     // (JOHNTODO at line 1779); the firewalled side drops a callback that is not its own.
@@ -2092,6 +2156,7 @@ void KademliaUDPListener::process_KADEMLIA_CALLBACK_REQ(const uint8* data, uint3
 
     auto packet = std::make_unique<eMule::Packet>(relayPacket, OP_EMULEPROT, OP_CALLBACK);
     buddy->sendPacket(std::move(packet));
+    note.answered();
 
     logKad(QStringLiteral("Kad: CALLBACK_REQ from %1 — relayed to buddy via TCP")
                .arg(ipToString(ip)));

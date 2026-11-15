@@ -11,6 +11,7 @@
 ///          upload methods, download methods.
 
 #include "client/BuddyRelayBudget.h"
+#include "client/ClientAnalyzer.h"
 #include "client/DeadSourceList.h"
 #include "client/ClientStateDefs.h"
 #include "client/ClientStructs.h"
@@ -193,6 +194,10 @@ public:
     /// UDP, its Kad buddy, our server (canDoCallback), or a NAT rendezvous. The routes
     /// tryToConnect() takes for it. Not MFC (emule-qt#150).
     [[nodiscard]] bool canCallBackForSlot() const;
+    /// Direct UDP callback route usable: its UDP is open, our UDP listens, address known.
+    [[nodiscard]] bool directUdpCallbackAvailable() const;
+    /// Kad callback route usable: buddy ID valid, Kad connected, buddy address or a file.
+    [[nodiscard]] bool kadCallbackAvailable() const;
 
     [[nodiscard]] uint16 userPort() const { return m_userPort; }
     void setUserPort(uint16 port) { m_userPort = port; sourceIdentityChanged(); }
@@ -494,6 +499,8 @@ public:
 
     /// Upload data held in RAM: queued on the socket plus read by the disk thread.
     [[nodiscard]] uint64 uploadBufferBytes() const { return payloadInBuffer() + m_blockReadBytesQueued; }
+    /// RAM of this client object, its strings, part maps and block lists (estimate).
+    [[nodiscard]] std::size_t memoryBytes() const;
 
     [[nodiscard]] uint64 transferredUp() const { return m_transferredUp; }
     [[nodiscard]] uint64 transferredDown() const { return m_transferredDown; }
@@ -594,6 +601,20 @@ public:
     /// specialdlp verdict, None when clean. Any hit cuts the queue score to a third.
     [[nodiscard]] LeecherCategory leecherCategory() const { return m_leecherCategory; }
     [[nodiscard]] const QString& leecherReason() const { return m_leecherReason; }
+
+    // -- ClientAnalyzer (behaviour score, thePrefs.clientAnalyzer()) ----------
+    /// Queue score factor in [0.01, 10]; 1 while switched off or without a hash.
+    [[nodiscard]] float analyzerScore() const;
+    /// Why the analyzer score is low; empty if nothing or switched off.
+    [[nodiscard]] QString analyzerReasons() const;
+    /// It asked us for an upload (TCP or UDP reask); call before setLastUpRequest().
+    void noteAnalyzerUploadRequest(uint64 now);
+    /// An upload slot of it ended; @p delivered: something went out.
+    void noteAnalyzerUploadSession(bool delivered);
+    /// Failed upload sessions in a row: a slot only while it is connected.
+    [[nodiscard]] bool analyzerWantsLiveSocket() const;
+    /// It sent corrupt data: remembered for 60 days, banned on sight.
+    void noteAnalyzerCorruptSender();
 
     [[nodiscard]] bool helloAnswerPending() const { return m_helloAnswerPending; }
     void setHelloAnswerPending(bool v) { m_helloAnswerPending = v; }
@@ -1183,8 +1204,6 @@ protected:
 private:
     /// ed3k Kad seed hook for a peer with a valid hash (bootstrap.md §1 source 4).
     void maybeSeedEd3kFromPeer();
-    /// Kad callback route usable: buddy ID valid, Kad connected, buddy address or a file.
-    [[nodiscard]] bool kadCallbackAvailable() const;
     /// Fill a missing buddy address from the Kad routing table. True when one is known.
     bool resolveBuddyAddress();
     /// Send KADEMLIA_CALLBACK_REQ to the known buddy. Needs a buddy address and m_reqFile.
@@ -1219,6 +1238,21 @@ private:
     bool checkDlpChatSpam(const QString& message);
     void banLeecher(const QString& reason, LeecherCategory category);
     void clearLeecher();
+
+    // -- ClientAnalyzer -------------------------------------------------------
+    /// The record to change, nullptr while switched off or without a hash. The stored one
+    /// once the identity is proven (or the peer cannot prove it), else a session copy, so
+    /// a hash thief cannot spoil the owner's record (ClientAnalyzer CTempCAList).
+    AnalyzerRecord* analyzerRecord();
+    [[nodiscard]] const AnalyzerRecord* analyzerRecordView() const;
+    /// We download from it: on its queue or in a slot.
+    [[nodiscard]] bool analyzerHasSomethingForUs() const;
+    /// Sets or clears a sticky flag, logs a change.
+    void analyzerFlag(uint32 flag, bool set, const QString& detail = {});
+    /// Complete source asking for the same file, or a complete part status in its request.
+    void checkAnalyzerFileFaker();
+    /// After a hello: a corrupt data sender of the last 60 days is banned.
+    void checkAnalyzerCorruptSender();
 
     // -- Phase 3 — shared file browse handlers --------------------------------
     void processAskSharedFiles();
@@ -1498,6 +1532,7 @@ private:
     LeecherCategory m_leecherCategory = LeecherCategory::None;
     bool m_uploadOnlyBan = false;   ///< last ban() was upload-only; for isFullyBanned() w/o address
     QString m_leecherReason;
+    std::unique_ptr<AnalyzerRecord> m_analyzerSession;   ///< until the identity is proven
     QString m_dlpCheckedSoftware;   ///< software + mod last checked; recheck on change
     QString m_dlpCheckedName;       ///< user name last checked; recheck on change
     bool m_helloAnswerPending = false;

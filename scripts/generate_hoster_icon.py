@@ -19,7 +19,7 @@ from generate_torrent_icon import NODE_DARK, NODE_LIGHT, RIM, badge
 try:
     from PIL import Image, ImageChops, ImageDraw, ImageFilter
 except ImportError:
-    sys.exit("Pillow is required: pip3 install Pillow")
+    sys.exit("Pillow is required: uv sync (or pip3 install Pillow)")
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "resources" / "icons" / "Hoster.ico"

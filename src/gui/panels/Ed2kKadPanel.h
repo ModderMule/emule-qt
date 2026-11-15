@@ -6,7 +6,7 @@
 /// Layout (matching Kad.png / Kad Distance.png screenshots):
 ///   - Top-left: QTabWidget with "Contacts" tab and "Search Details" tab
 ///   - Top-right: Bootstrap/firewall controls + contacts histogram + network graph
-///   - Bottom: Current Searches table
+///   - Bottom: Outgoing / Incoming Searches tabs
 ///   - Vertical splitter between top and bottom sections
 
 #include "panels/KadPanelBase.h"

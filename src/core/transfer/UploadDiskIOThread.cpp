@@ -335,7 +335,7 @@ void UploadDiskIOThread::releaseFile(const QString& path)
         std::lock_guard readLock(reader->readMutex);
         reader->retired = true;
         reader->file.reset();
-        reader->ahead.clear();
+        reader->setAhead();
     }
 }
 
@@ -602,7 +602,7 @@ bool UploadDiskIOThread::readRange(const BlockReadRequest& req, QByteArray& data
         if (!req.isPartFile && !held) {
             std::shared_ptr<Reader>& slot = m_readers[req.client];
             if (!slot || slot->path != req.filePath) {
-                slot = std::make_shared<Reader>();
+                slot = std::make_shared<Reader>(m_aheadBytes);
                 slot->path = req.filePath;
                 m_allReaders.push_back(slot);
             }
@@ -659,13 +659,11 @@ bool UploadDiskIOThread::readRange(const BlockReadRequest& req, QByteArray& data
             return false;
         }
         if (static_cast<uint64>(buf.size()) == dataLen) {
-            reader->ahead.clear();
-            reader->aheadStart = 0;
+            reader->setAhead();
             data = std::move(buf);
         } else {
             data = buf.left(static_cast<qsizetype>(dataLen));
-            reader->aheadStart = req.startOffset;
-            reader->ahead = std::move(buf);
+            reader->setAhead(std::move(buf), req.startOffset);
         }
         return true;
     };
@@ -673,7 +671,7 @@ bool UploadDiskIOThread::readRange(const BlockReadRequest& req, QByteArray& data
         return true;
     // Drop the reader so a retry starts from a fresh handle
     reader->file.reset();
-    reader->ahead.clear();
+    reader->setAhead();
     readLock.unlock();
     forgetReader(req.client, reader);
     data.clear();

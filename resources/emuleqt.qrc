@@ -63,6 +63,7 @@
         <file alias="HardDisk.ico">icons/HardDisk.ico</file>
         <!-- Statistics tree icons -->
         <file alias="StatsGeneric.ico">icons/StatsGeneric.ico</file>
+        <file alias="Memory.ico">icons/Memory.ico</file>
         <file alias="Connection.ico">icons/Connection.ico</file>
         <file alias="SharedFiles.ico">icons/SharedFiles.ico</file>
         <file alias="StatisticsDetail.ico">icons/StatisticsDetail.ico</file>

@@ -136,6 +136,8 @@ using Kind = PrefSpec::Kind;
     t << flag("autoSharedFilesPriority", "New shared files get automatic upload priority.");
     t << flag("transferFullChunks", "Upload whole chunks to one client before switching.");
     t << flag("previewPrio", "Download the first and last part first so a preview is possible.");
+    t << flag("downloadSeeking", "Preview of an unfinished download: a seek in the player fetches "
+        "the parts there first and waits for them.");
     t << flag("startNextPausedFile", "Start the next paused download when one completes.");
     t << flag("startNextPausedFileSameCat", "Prefer the same category when starting the next "
               "paused download.");
@@ -168,6 +170,7 @@ using Kind = PrefSpec::Kind;
     t << flag("antiLeecher", "Check peers against the specialdlp anti-leecher rules.");
     t << number("antiLeecherLevel", 0, 2, "", "Anti-leecher level: 0 = lite (soft hits only reduce the "
                 "queue score), 1 = strict (soft hits are banned too), 2 = strict + Chinese VeryCD/easyMule mods.");
+    t << flag("clientAnalyzer", "Score peers by their behaviour (reasks, source exchange, spam, faked file status, failed sessions, transfer balance); the score multiplies the credit ratio in the upload queue.");
     t << flag("filterServerByIP", "Apply the IP filter to servers too.");
     t << number("ipFilterLevel", 0, 255, "", "IP filter entries with a level below this are blocked.");
     t << flag("ipFilterAutoUpdate", "Check the IP filter update URL every ipFilterUpdateDays days; an unchanged list is not downloaded again.");

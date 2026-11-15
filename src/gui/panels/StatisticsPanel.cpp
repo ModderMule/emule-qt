@@ -704,21 +704,44 @@ void StatisticsPanel::buildTree()
 
     // ===== Memory ===== (not in MFC)
     auto* memory = new QTreeWidgetItem(m_tree, {tr("Memory")});
-    memory->setIcon(0, skinIcon(QStringLiteral(":/icons/StatsGeneric.ico")));
+    memory->setIcon(0, skinIcon(QStringLiteral(":/icons/Memory.ico")));
     m_itemMemProcess = new QTreeWidgetItem(memory);
     m_itemMemProcess->setToolTip(0, tr("RAM of the core: private bytes on Windows, memory footprint on macOS, "
                                        "resident size on Linux."));
+    m_itemMemHeap = new QTreeWidgetItem(memory);
+    m_itemMemHeap->setToolTip(0, tr("Heap memory handed out to the core and ed3k, and what the heap holds from "
+                                    "the system. A big gap means freed memory not given back yet."));
+    m_itemMemHeap->setHidden(true);
     m_itemMemUpload = new QTreeWidgetItem(memory);
     m_itemMemUpload->setToolTip(0, tr("File data read for eD2K upload slots and not sent yet."));
+    m_itemMemReadAhead = new QTreeWidgetItem(memory);
+    m_itemMemReadAhead->setToolTip(0, tr("File data read ahead for eD2K upload slots, for their next requests."));
     m_itemMemDownload = new QTreeWidgetItem(memory);
     m_itemMemDownload->setToolTip(0, tr("eD2K download data received and not written to disk yet."));
+    m_itemMemSockets = new QTreeWidgetItem(memory);
+    m_itemMemSockets->setToolTip(0, tr("Data waiting in eD2K connections: send queues and socket buffers."));
+    m_itemMemKnownFiles = new QTreeWidgetItem(memory);
+    m_itemMemKnownFiles->setToolTip(0, tr("Known, shared and downloading files with their names, tags and hash "
+                                          "sets. Estimate."));
+    m_itemMemClients = new QTreeWidgetItem(memory);
+    m_itemMemClients->setToolTip(0, tr("eD2K clients the core knows: upload queue, sources and connected peers. "
+                                       "Estimate."));
+    m_itemMemCredits = new QTreeWidgetItem(memory);
+    m_itemMemCredits->setToolTip(0, tr("Credit records of clients (clients.met). Estimate."));
+    m_itemMemKadIndex = new QTreeWidgetItem(memory);
+    m_itemMemKadIndex->setToolTip(0, tr("Keywords, sources and notes eD2K Kad stores for other nodes. Estimate."));
+    m_itemMemIpFilter = new QTreeWidgetItem(memory);
+    m_itemMemIpFilter->setToolTip(0, tr("Ranges of the IP filter. Estimate."));
     m_itemMemEd3kHashes = new QTreeWidgetItem(memory);
     m_itemMemEd3kHashes->setToolTip(0, tr("Block hashes of shared files that ed3k keeps in RAM, and the limit "
                                           "set in Options › ed3k › Extended."));
     m_itemMemEd3kRecords = new QTreeWidgetItem(memory);
     m_itemMemEd3kRecords->setToolTip(0, tr("Records ed3k Kad stores for other nodes."));
+    m_itemMemEd3kHeap = new QTreeWidgetItem(memory);
+    m_itemMemEd3kHeap->setToolTip(0, tr("All heap memory ed3k holds now, block hashes and Kad records included."));
     m_itemMemEd3kHashes->setHidden(true);
     m_itemMemEd3kRecords->setHidden(true);
+    m_itemMemEd3kHeap->setHidden(true);
 
     // ===== Kademlia ===== (not in MFC, which shows Kad only as overhead lines)
     buildKademliaBranch(detailIcon, cumulativeIcon);
@@ -1723,6 +1746,21 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
             .arg(formatByteSize(cborInt(stats, QLatin1StringView("memUploadBuffers")))));
         m_itemMemDownload->setText(0, tr("eD2K Download Buffers: %1")
             .arg(formatByteSize(cborInt(stats, QLatin1StringView("memDownloadBuffers")))));
+        const qint64 heapUsed = cborInt(stats, QLatin1StringView("memHeapInUse"));
+        const qint64 heapHeld = cborInt(stats, QLatin1StringView("memHeapCommitted"));
+        m_itemMemHeap->setHidden(heapHeld <= 0);
+        if (heapHeld > 0)
+            m_itemMemHeap->setText(0, tr("Heap: %1 in use of %2 held").arg(formatByteSize(heapUsed), formatByteSize(heapHeld)));
+        const auto setBytes = [&stats](QTreeWidgetItem* item, const QString& label, const char* key) {
+            item->setText(0, label.arg(formatByteSize(cborInt(stats, QLatin1StringView(key)))));
+        };
+        setBytes(m_itemMemReadAhead, tr("eD2K Upload Read-Ahead: %1"), "memUploadReadAhead");
+        setBytes(m_itemMemSockets, tr("eD2K Socket Buffers: %1"), "memSockets");
+        setBytes(m_itemMemKnownFiles, tr("Known Files: %1"), "memKnownFiles");
+        setBytes(m_itemMemClients, tr("Clients: %1"), "memClients");
+        setBytes(m_itemMemCredits, tr("Client Credits: %1"), "memCredits");
+        setBytes(m_itemMemKadIndex, tr("Kad Index: %1"), "memKadIndex");
+        setBytes(m_itemMemIpFilter, tr("IP Filter: %1"), "memIpFilter");
     }
 
     // Free space per network's save folder (#165); a network that is off has no entry
@@ -1865,6 +1903,7 @@ void StatisticsPanel::applyEd3kStatus(const QCborMap& st)
     const bool engineUp = st.value(QStringLiteral("available")).toBool() && !engine.isEmpty();
     m_itemMemEd3kHashes->setHidden(!engineUp);
     m_itemMemEd3kRecords->setHidden(!engineUp);
+    m_itemMemEd3kHeap->setHidden(!engineUp || !engine.contains(QStringLiteral("heapBytes")));
     if (engineUp) {
         const qint64 budget = st.value(QStringLiteral("hashRamBudget")).toInteger(-1);
         const QString held = formatByteSize(engine.value(QStringLiteral("hashRamBytes")).toInteger());
@@ -1872,6 +1911,8 @@ void StatisticsPanel::applyEd3kStatus(const QCborMap& st)
                                                     : tr("ed3k Block Hashes: %1").arg(held));
         m_itemMemEd3kRecords->setText(0, tr("ed3k Kad Records: %1")
             .arg(formatByteSize(engine.value(QStringLiteral("recordBytes")).toInteger())));
+        m_itemMemEd3kHeap->setText(0, tr("ed3k Heap: %1")
+            .arg(formatByteSize(engine.value(QStringLiteral("heapBytes")).toInteger())));
     }
 
     if (!st.value(QStringLiteral("available")).toBool()) {

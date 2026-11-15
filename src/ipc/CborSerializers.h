@@ -701,9 +701,90 @@ inline void insertDownloadSeed(QCborMap& m, const SearchFile& f)
 
 #include "app/AppContext.h"
 #include "net/EMSocket.h"
+#include "net/natt/NatRendezvous.h"
 #include "prefs/Preferences.h"
+#include "server/ServerConnect.h"
 
 namespace eMule::Ipc {
+
+/// How a LowID client can be reached (Client Details, not MFC): its Kad buddy, the
+/// callback routes tryToConnect() takes, the foreign callback of its own server
+/// (ed2k-server / eNode-go UDP flag 0x100000) and the NAT-T introducers. Never probes.
+[[nodiscard]] inline QCborMap callbackRoutesToCbor(const UpDownClient& c, AppContext& app)
+{
+    QCborMap m;
+    // Kad buddy, as the hello / source exchange / Kad source gave it
+    if (!c.buddyAddress().isNull() && c.buddyPort() != 0)
+        m.insert(QStringLiteral("buddy"), Endpoint(c.buddyAddress(), c.buddyPort()).toString());
+    if (!c.buddyIPv6().isNull())
+        m.insert(QStringLiteral("buddyIPv6"), c.buddyIPv6().toString());
+    m.insert(QStringLiteral("buddyID"), c.hasValidBuddyID());
+    m.insert(QStringLiteral("buddyRelayable"), c.buddyIDRelayable());
+
+    m.insert(QStringLiteral("directUdp"), c.directUdpCallbackAvailable());
+    m.insert(QStringLiteral("kadBuddy"), c.kadCallbackAvailable());
+    const bool online = app.serverConnect && app.serverConnect->isConnected();
+    const bool sameServer = online && !c.serverAddress().isNull()
+        && app.serverConnect->isLocalServer(c.serverAddress().toNetworkUint32(), c.serverPort());
+    m.insert(QStringLiteral("sameServer"), sameServer);
+    // OP_CALLBACKREQUEST: the peer dials us, so we must be HighID there
+    m.insert(QStringLiteral("serverCallback"), sameServer && !app.serverConnect->isLowID());
+
+    // Foreign callback: the peer's own server wakes it for us (ed2k-server#40)
+    const char* foreign = "unknown";
+    QString foreignServer;
+    if (sameServer) {
+        foreign = "same";
+    } else if (c.serverAddress().isIPv4() && c.serverPort() != 0) {
+        const Server* srv = app.serverList ? app.serverList->findByIPTcp(c.serverAddress(), c.serverPort())
+                                           : nullptr;
+        if (!srv && app.serverList)
+            srv = app.serverList->unlisted().find(c.serverAddress(), c.serverPort());
+        if (srv) {
+            foreignServer = srv->name();
+            if (!srv->version().isEmpty())
+                foreignServer += QStringLiteral(" (%1)").arg(srv->version());
+        }
+        // only a 0x1000 login gets an odd LowID; an even one cannot be woken
+        if ((c.userIDHybrid() & 1) == 0) {
+            foreign = "notCapable";
+        } else if (app.natRendezvous) {
+            switch (app.natRendezvous->env().foreignServer(c.serverAddress(), c.serverPort(), false).state) {
+            case natt::ForeignServer::State::Ready:   foreign = "ready"; break;
+            case natt::ForeignServer::State::Pending: foreign = "pending"; break;
+            case natt::ForeignServer::State::No:      foreign = "no"; break;
+            }
+        }
+    }
+    m.insert(QStringLiteral("foreign"), QLatin1StringView(foreign));
+    if (!foreignServer.isEmpty())
+        m.insert(QStringLiteral("foreignServer"), foreignServer);
+
+    // NAT-T introducers; a rendezvous starts only while we are firewalled
+    if (app.natRendezvous) {
+        const auto v = app.natRendezvous->routeView(c);
+        QCborMap n;
+        n.insert(QStringLiteral("enabled"), v.enabled);
+        n.insert(QStringLiteral("firewalled"), v.firewalled);
+        n.insert(QStringLiteral("dataPath"), v.dataPath);
+        n.insert(QStringLiteral("failed"), v.failed);
+        n.insert(QStringLiteral("active"), v.active);
+        QCborArray paths;
+        for (const natt::PathKind k : v.paths) {
+            switch (k) {
+            case natt::PathKind::Ed2kServer:      paths.append(QStringLiteral("ed2kServer")); break;
+            case natt::PathKind::Lugdunum:        paths.append(QStringLiteral("lugdunum")); break;
+            case natt::PathKind::EnodeNat:        paths.append(QStringLiteral("prNat")); break;
+            case natt::PathKind::KadBuddy:        paths.append(QStringLiteral("kadBuddy")); break;
+            case natt::PathKind::ForeignCallback: paths.append(QStringLiteral("foreign")); break;
+            case natt::PathKind::DirectUdp:       paths.append(QStringLiteral("directUdp")); break;
+            }
+        }
+        n.insert(QStringLiteral("paths"), paths);
+        m.insert(QStringLiteral("natt"), n);
+    }
+    return m;
+}
 
 [[nodiscard]] inline QCborMap toCborDetailed(const UpDownClient& c, AppContext& app)
 {
@@ -727,6 +808,9 @@ namespace eMule::Ipc {
 
     // Kad
     m.insert(QStringLiteral("kadConnected"), c.kadPort() != 0);
+
+    if (c.hasLowID())
+        m.insert(QStringLiteral("callback"), callbackRoutesToCbor(c, app));
 
     // Tokens; the GUI has MFC's texts (srchybrid/ClientDetailDialog.cpp:93-150).
     // Obfuscation: "none" | "enabled" | "supported"
@@ -784,6 +868,12 @@ namespace eMule::Ipc {
     const bool holdsSlot = c.isUploadingToPeer();
     m.insert(QStringLiteral("score"),  static_cast<qint64>(c.score(false, holdsSlot, false) / 1000));
     m.insert(QStringLiteral("rating"), static_cast<qint64>(c.score(false, holdsSlot, true) / 1000));
+
+    // ClientAnalyzer factor and why it is low; absent while switched off
+    if (thePrefs.clientAnalyzer()) {
+        m.insert(QStringLiteral("analyzerScore"), static_cast<double>(c.analyzerScore()));
+        m.insert(QStringLiteral("analyzerReasons"), c.analyzerReasons());
+    }
 
     // Friend slot
     m.insert(QStringLiteral("friendSlot"), c.friendSlot());

@@ -44,7 +44,7 @@ QList<FolderEntry> folderRoots()
                           .entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot | QDir::NoSymLinks,
                                          QDir::Name | QDir::IgnoreCase);
     for (const QFileInfo& fi : vols)
-        if (fi.isReadable())
+        if (fi.isReadable() && !fi.fileName().startsWith(u'.'))   // not .timemachine
             out.append({fi.fileName(), fi.absoluteFilePath(), hasSubfolders(fi.absoluteFilePath())});
 #else
     for (const QFileInfo& fi : QDir::drives()) {

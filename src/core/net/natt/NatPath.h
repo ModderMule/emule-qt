@@ -34,6 +34,8 @@ public:
 
     /// This path can introduce us to @p peer right now.
     [[nodiscard]] virtual bool canServe(const PeerInfo& peer) const = 0;
+    /// canServe() without side effects (no server probe), for display.
+    [[nodiscard]] virtual bool canServeKnown(const PeerInfo& peer) const { return canServe(peer); }
 
     /// Send the first request for a requester attempt. False = nothing sent.
     virtual bool request(Attempt& attempt) = 0;

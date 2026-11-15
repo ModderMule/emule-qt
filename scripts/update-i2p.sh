@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+. "$(dirname "$0")/py.sh"
 
 # Pins the I2P router (emuleqt-i2pd) the core downloads on demand to a release of the
 # fork: reads the release's SHA256SUMS and rewrites src/core/net/I2pdRelease.h (tag +
@@ -25,7 +26,7 @@ tag="${1:-}"
 if [[ -z "$tag" ]]; then
     # newest emuleqt-* release, not upstream's own tags
     tag="$(curl -fsSL "${auth[@]}" "https://api.github.com/repos/$REPO/releases?per_page=30" \
-        | python3 -c 'import json,sys
+        | py -c 'import json,sys
 for r in json.load(sys.stdin):
     if r["tag_name"].startswith("emuleqt-") and not r["draft"] and not r["prerelease"]:
         print(r["tag_name"]); break')"

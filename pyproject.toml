@@ -1,0 +1,17 @@
+# Python tooling for scripts/ and docker/ (not a package): uv sync, then uv run scripts/<x>.py
+[project]
+name = "emuleqt-scripts"
+version = "0"
+requires-python = ">=3.12"
+dependencies = [
+    "pillow",    # icon generators, splash
+    "cairosvg",  # generate_splash.py, generate_donkey_icons.py (needs system cairo)
+]
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "cbor2",  # test-scripts/: IPC client to emulecored
+]

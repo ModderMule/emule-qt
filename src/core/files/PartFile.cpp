@@ -55,6 +55,9 @@
 #include <QStorageInfo>
 #include <QFileInfo>
 
+#include <algorithm>
+#include <tuple>
+
 
 namespace eMule {
 
@@ -356,6 +359,46 @@ bool PartFile::isCompleteBDSafe(uint64 start, uint64 end) const
     const auto overlaps = [&](const BufferedData& bd) { return bd.start <= end && bd.end >= start; };
     return std::ranges::none_of(m_bufferedData, overlaps)
         && std::ranges::none_of(m_flushingData, overlaps);
+}
+
+uint64 PartFile::playFrom(uint64 offset)
+{
+    const uint64 fs = static_cast<uint64>(fileSize());
+    if (offset >= fs)
+        return offset;
+    if (m_status == PartFileStatus::Complete)
+        return fs;
+    // first gap reaching offset (sorted by start, disjoint)
+    uint64 filledEnd = fs;
+    for (const auto& gap : m_gapList) {
+        if (gap.end >= offset) {
+            filledEnd = std::max(gap.start, offset);
+            break;
+        }
+    }
+    // filled but still in the write buffer or with the worker: not on disk yet
+    uint64 diskEnd = filledEnd;
+    const auto clip = [&](const BufferedData& bd) {
+        if (bd.end >= offset && bd.start < diskEnd)
+            diskEnd = std::max(bd.start, offset);
+    };
+    std::ranges::for_each(m_bufferedData, clip);
+    std::ranges::for_each(m_flushingData, clip);
+    if (diskEnd < filledEnd)
+        flushBufferAsync();   // one job at a time; no-op while one runs
+
+    if (filledEnd < fs && filledEnd - offset < kStreamLead) {
+        m_streamFocus = filledEnd;
+        m_streamFocusUntil.setRemainingTime(kStreamFocusMs);
+    }
+    return diskEnd;
+}
+
+std::optional<uint64> PartFile::streamFocus() const
+{
+    if (m_streamFocusUntil.hasExpired() || m_streamFocus >= static_cast<uint64>(fileSize()))
+        return std::nullopt;
+    return m_streamFocus;
 }
 
 bool PartFile::isComplete(uint32 part) const
@@ -939,8 +982,17 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
     };
 
     const uint64 nowTick = getTickCount();
+    // Playing while downloading: the parts from the player's first missing byte
+    // come before everything, preview parts included (playFrom)
+    const std::optional<uint64> focus = streamFocus();
+    const uint32 focusPart = focus ? static_cast<uint32>(*focus / PARTSIZE) : 0;
+    const uint32 focusLast = focus
+        ? static_cast<uint32>((std::min(*focus + kStreamLead, fs) - 1) / PARTSIZE) : 0;
+    auto isStreamPart = [&](uint32 p) { return focus && p >= focusPart && p <= focusLast; };
+
     auto allocateFromPart = [&](uint32 partNum) {
-        uint64 searchFrom = 0;
+        // the focus part from the focus on; what lies before it waits
+        uint64 searchFrom = (focus && partNum == focusPart) ? *focus : 0;
         uint64 start = 0;
         uint64 end = 0;
         const uint64 limit = slowReservation(partNum);
@@ -984,13 +1036,17 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
             || sender->clientVersion() < makeClientVersion(0, 43, 1)))
         lastPart = UINT16_MAX;
     // Unlike MFC a preview part still open on this source comes before finishing a
-    // mid-file chunk; a slow source otherwise sat on it for half an hour (issue #96)
-    if (lastPart < pc && !isPreviewPart(lastPart)) {
+    // mid-file chunk; a slow source otherwise sat on it for half an hour (issue #96).
+    // While a player streams: a stream part nearer to it than the open one.
+    const bool lastIsStream = lastPart < pc && isStreamPart(lastPart);
+    if (lastPart < pc && (focus || !isPreviewPart(lastPart))) {
         for (uint32 p = 0; p < pc; ++p) {
-            uint64 probeFrom = 0;
+            uint64 probeFrom = (focus && p == focusPart) ? *focus : 0;
             uint64 probeStart = 0;
             uint64 probeEnd = 0;
-            if (isPreviewPart(p) && senderHasPart(p)
+            const bool better = focus ? isStreamPart(p) && (!lastIsStream || p < lastPart)
+                                      : isPreviewPart(p);
+            if (better && senderHasPart(p)
                 && nextFreeBlock(p, probeFrom, probeStart, probeEnd)) {
                 lastPart = UINT16_MAX;
                 break;
@@ -1011,6 +1067,7 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
         uint32 part;
         uint32 rank;          // lower is better
         bool preview = false; // ahead of every other part
+        bool stream = false;  // ahead of preview parts, nearest first
     };
     std::vector<PartCandidate> candidates;
 
@@ -1114,13 +1171,13 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
                  + static_cast<uint32>(!sameChunk)
                  + bandwidthScore;
         }
-        candidates.push_back({p, rank, critPreview});
+        candidates.push_back({p, rank, critPreview, isStreamPart(p)});
     }
 
     // Random among equal ranks, as MFC's pick from aBest
     std::ranges::shuffle(candidates, rng);
     std::ranges::stable_sort(candidates, {}, [](const PartCandidate& c) {
-        return std::pair{!c.preview, c.rank};
+        return std::tuple{!c.stream, !c.preview, c.stream ? c.part : c.rank};
     });
 
     for (const auto& cand : candidates) {
@@ -4716,8 +4773,10 @@ void PartFile::punishCorruptionSenders(uint16 part)
         // and marks its state, which banning a bare address cannot do. Falling back
         // to the address covers a peer that has already disconnected, exactly as MFC
         // does (srchybrid/CorruptionBlackBox.cpp:316-322).
-        if (UpDownClient* client = theApp.clientList->findByConnAddress(guilty.addr))
+        if (UpDownClient* client = theApp.clientList->findByConnAddress(guilty.addr)) {
+            client->noteAnalyzerCorruptSender();
             client->ban(reason);
+        }
         else
             theApp.clientList->addBannedClient(guilty.addr);
     }

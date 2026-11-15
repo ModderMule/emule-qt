@@ -20,6 +20,7 @@
 #include "kademlia/KadSearchManager.h"
 #include "kademlia/KadUDPListener.h"
 #include "kademlia/Kademlia.h"
+#include "net/Address.h"
 #include "net/BindAddress.h"
 #include "portmap/PortMapper.h"
 #include "prefs/Preferences.h"
@@ -28,6 +29,7 @@
 #include "server/ServerList.h"
 #include "stats/Statistics.h"
 #include "utils/OtherFunctions.h"
+#include "utils/TimeUtils.h"
 
 namespace eMule::ops {
 
@@ -330,6 +332,35 @@ QCborArray kadContacts()
         }
     }
     return contacts;
+}
+
+QCborArray kadIncoming()
+{
+    QCborArray out;
+    auto* kad = kad::Kademlia::instance();
+    auto* listener = kad && kad->isRunning() ? kad::Kademlia::getInstanceUDPListener() : nullptr;
+    if (!listener)
+        return out;
+    const uint64 now = getTickCount();
+    for (const auto& r : listener->incomingLog().snapshot()) {
+        const Address addr = Address::fromHostOrder(r.ip);
+        out.append(QCborMap{
+            {QStringLiteral("agoMs"), static_cast<qint64>(now - std::min(r.at, now))},
+            {QStringLiteral("type"), static_cast<qint64>(r.type)},
+            {QStringLiteral("target"), r.hasTarget ? r.target.toHexString() : QString()},
+            {QStringLiteral("name"), r.name},
+            {QStringLiteral("addr"), r.port != 0 ? QStringLiteral("%1:%2").arg(addr.toString()).arg(r.port)
+                                                 : addr.toString()},
+            {QStringLiteral("cc"), countryCodeOf(addr)},
+            {QStringLiteral("contacts"), r.contacts},
+            {QStringLiteral("results"), r.results},
+            {QStringLiteral("records"), r.records},
+            {QStringLiteral("stored"), r.records >= 0 ? (r.answered ? r.records : 0) : -1},
+            {QStringLiteral("load"), r.load},
+            {QStringLiteral("answered"), r.answered},
+        });
+    }
+    return out;
 }
 
 QCborMap kadStatus()

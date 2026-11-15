@@ -61,6 +61,8 @@
 #include <QImageReader>
 #include <QRandomGenerator>
 
+#include <algorithm>
+#include <ctime>
 #include <utility>
 
 
@@ -333,6 +335,33 @@ void UpDownClient::init()
 // Identity
 // ===========================================================================
 
+std::size_t UpDownClient::memoryBytes() const
+{
+    constexpr std::size_t kNode = 2 * sizeof(void*) + 16;
+    constexpr std::size_t kInflate = 7 * 1024 + 32 * 1024;   // zlib inflate state + window
+    const auto str = [](const QString& v) { return v.isEmpty() ? 0 : std::size_t(v.capacity()) * sizeof(QChar) + 32; };
+    std::size_t n = sizeof(*this);
+    for (const QString* v : {&m_username, &m_clientFilename, &m_fileComment, &m_leecherReason,
+                             &m_dlpCheckedSoftware, &m_dlpCheckedName, &m_pendingChatMessage,
+                             &m_clientSoftwareStr, &m_modVersion, &m_helloInfo, &m_captchaChallenge,
+                             &m_captchaPendingMsg})
+        n += str(*v);
+    n += m_upPartStatus.capacity() + m_partStatus.capacity();
+    n += m_abandonedBlocks.capacity() * sizeof(AbandonedBlock);
+    n += (m_averageUDR.size() + m_averageDDR.size()) * sizeof(TransferredData);
+    n += m_unconfirmedSends.size() * sizeof(UnconfirmedSend);
+    for (const Pending_Block_Struct* b : m_pendingBlocks)
+        n += kNode + sizeof(Pending_Block_Struct) + (b && b->zStream ? kInflate : 0);
+    n += m_requestedFiles.size() * (kNode + sizeof(Requested_File_Struct));
+    n += (m_otherRequests.size() + m_otherNoNeeded.size()) * kNode;
+    n += m_dontSwap.size() * (kNode + sizeof(FileStamp));
+    n += m_fileReaskTimes.size() * (kNode + 2 * sizeof(void*)) + m_fileReaskTimes.bucket_count() * sizeof(void*);
+    n += (m_blockRequests.size() + m_doneBlocks.size()) * (kNode + sizeof(Requested_Block_Struct));
+    for (const auto& p : m_waitingPackets)
+        n += kNode + (p ? sizeof(Packet) + p->size : 0);
+    return n;
+}
+
 void UpDownClient::setUserHash(const uint8* hash)
 {
     if (hash)
@@ -416,7 +445,7 @@ bool UpDownClient::canCallBackForSlot() const
     if (isReachableForSlot())
         return false;
     // same order and tests as tryToConnect()'s callback prechecks
-    if (supportsDirectUDPCallback() && theApp.listeningUdpPort() != 0 && !m_connectAddress.isNull())
+    if (directUdpCallbackAvailable())
         return true;
     if (kadCallbackAvailable())
         return true;
@@ -425,6 +454,11 @@ bool UpDownClient::canCallBackForSlot() const
         && theApp.canDoCallback(this))
         return true;
     return theApp.isFirewalled() && theApp.natRendezvous && theApp.natRendezvous->canStart(*this);
+}
+
+bool UpDownClient::directUdpCallbackAvailable() const
+{
+    return supportsDirectUDPCallback() && theApp.listeningUdpPort() != 0 && !m_connectAddress.isNull();
 }
 
 bool UpDownClient::isIPv6Connection() const
@@ -589,6 +623,8 @@ void UpDownClient::setDownloadState(DownloadState state)
                 m_fruitlessSessionTick = 0;
                 if (auto* ledger = fruitlessLedger())
                     ledger->noteProductiveSession(userHash());
+                if (AnalyzerRecord* r = analyzerRecord())
+                    r->addDlSession(false);
             }
             m_unmatchedPackets = 0;
             m_abandonedBlocks.clear();
@@ -2071,8 +2107,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
     // it cannot use.
     if (!dialDirectly) {
         // The three routes, in the order the branches below try them.
-        const bool directUdp = supportsDirectUDPCallback() && theApp.listeningUdpPort() != 0
-                            && !m_connectAddress.isNull();
+        const bool directUdp = directUdpCallbackAvailable();
         const bool kadCallback = kadCallbackAvailable();
         const bool serverCallback = theApp.serverConnect
                                  && theApp.serverConnect->isLocalServer(
@@ -2157,7 +2192,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
 
     // ---- Path 4: Direct Callback via UDP (firewalled but UDP open) ----
     // MFC BaseClient.cpp:1399-1413
-    if (supportsDirectUDPCallback() && theApp.listeningUdpPort() != 0 && !m_connectAddress.isNull()) {
+    if (directUdpCallbackAvailable()) {
         m_connectingState = ConnectingState::DirectCallback;
 
         // Build connect options byte: MFC GetMyConnectOptions(true, false)
@@ -5390,6 +5425,12 @@ QImage UpDownClient::generateCaptchaImage(const QString& text)
 void UpDownClient::setLastAskedForSourcesTime()
 {
     m_lastAskedForSources = getTickCount();
+    // Our asks for files that are not rare: answers are expected (XS exploit check)
+    if (m_reqFile && m_reqFile->sourceCount() > AnalyzerRecord::kRareFile) {
+        if (AnalyzerRecord* r = analyzerRecord(); r && r->incXsAsks() && thePrefs.logBannedClients())
+            logLeecher(QStringLiteral("[CA] Reached XS exploiter level: %1 asks, %2 answers; %3")
+                           .arg(r->xsAsks).arg(r->xsAnswers).arg(leecherLogInfo()));
+    }
 }
 
 // ===========================================================================
@@ -5459,6 +5500,8 @@ void UpDownClient::processAnswerSources(const uint8* data, uint32 size)
 
     m_lastSourceAnswer = getTickCount();
     file->setLastAnsweredTime();
+    if (AnalyzerRecord* r = analyzerRecord())
+        r->incXsAnswers();
 
     file->addClientSources(io, m_sourceExchange1Ver, /*isSX2*/ false, this);
 }
@@ -5527,6 +5570,8 @@ void UpDownClient::processAnswerSources2(const uint8* data, uint32 size)
 
     m_lastSourceAnswer = getTickCount();
     file->setLastAnsweredTime();
+    if (AnalyzerRecord* r = analyzerRecord())
+        r->incXsAnswers();
 
     file->addClientSources(io, version, /*isSX2*/ true, this);
 }
@@ -5560,7 +5605,13 @@ void UpDownClient::answerSourceRequest(KnownFile* file, uint8 requestedVersion,
     if (!((rareFile && (neverAskedBefore || timePassed > SOURCECLIENTREASKS))
           || neverAskedBefore
           || timePassed > SOURCECLIENTREASKS * MINCOMMONPENALTY))
+    {
+        if (AnalyzerRecord* r = analyzerRecord())
+            r->incFastXs();   // asked again too soon
         return;
+    }
+    if (AnalyzerRecord* r = analyzerRecord())
+        r->decFastXs();
 
     m_lastSourceRequest = getTickCount();
 
@@ -5980,11 +6031,22 @@ bool UpDownClient::expectsSourcesFor(const PartFile* file) const
 // ===========================================================================
 // Anti-leecher — eMule Xtreme DLP port (srchybrid/BaseClient.cpp:4316-4800,
 // UploadClient.cpp:1937-2011). Rules live in the specialdlp library (DlpLoader).
+// The ClientAnalyzer reuses the verdicts as its nick/mod thief flag, so the checks run
+// for either switch; only the DLP switch bans or cuts the score to a third.
 // ===========================================================================
+
+namespace {
+
+bool dlpChecksWanted()
+{
+    return thePrefs.antiLeecher() || thePrefs.clientAnalyzer();
+}
+
+} // namespace
 
 void UpDownClient::processUnknownHelloTag(const Tag& tag, QString& reason, bool& md4Found) const
 {
-    if (!reason.isEmpty() || !theApp.dlp || !thePrefs.antiLeecher())
+    if (!reason.isEmpty() || !theApp.dlp || !dlpChecksWanted())
         return;
     if (const auto snafu = theApp.dlp->checkHelloTag(tag.nameId())) {
         reason = QStringLiteral("Suspect Hello-Tag: %1").arg(*snafu);
@@ -5997,7 +6059,7 @@ void UpDownClient::processUnknownHelloTag(const Tag& tag, QString& reason, bool&
 
 void UpDownClient::processUnknownInfoTag(const Tag& tag, QString& reason) const
 {
-    if (!reason.isEmpty() || !theApp.dlp || !thePrefs.antiLeecher())
+    if (!reason.isEmpty() || !theApp.dlp || !dlpChecksWanted())
         return;
     if (const auto snafu = theApp.dlp->checkInfoTag(tag.nameId()))
         reason = QStringLiteral("Suspect eMuleInfo-Tag: %1").arg(*snafu);
@@ -6005,7 +6067,9 @@ void UpDownClient::processUnknownInfoTag(const Tag& tag, QString& reason) const
 
 void UpDownClient::runAntiLeecher(const QString& tagReason, bool md4Tag)
 {
-    if (!thePrefs.antiLeecher() || !theApp.dlp || !theApp.dlp->isLoaded()) {
+    checkAnalyzerCorruptSender();
+
+    if (!dlpChecksWanted() || !theApp.dlp || !theApp.dlp->isLoaded()) {
         // Switched off: soft verdicts no longer apply. Bans run out on their own.
         if (m_leecherCategory != LeecherCategory::None)
             clearLeecher();
@@ -6084,11 +6148,17 @@ void UpDownClient::testLeecher()
 bool UpDownClient::checkDlpChatSpam(const QString& message)
 {
     // Xtreme: the first message of a non-friend only (srchybrid/BaseClient.cpp:3929-3945)
-    if (m_messagesReceived != 0 || m_friend != nullptr || !thePrefs.antiLeecher() || !theApp.dlp)
+    if (m_messagesReceived != 0 || m_friend != nullptr || !dlpChecksWanted() || !theApp.dlp)
         return false;
     const auto reason = theApp.dlp->checkMessageSpam(message);
     if (!reason)
         return false;
+    if (!thePrefs.antiLeecher()) {
+        // Analyzer only: counted, the message still shows
+        if (AnalyzerRecord* r = analyzerRecord())
+            r->addSpam();
+        return false;
+    }
     endChatSession();
     banLeecher(*reason, LeecherCategory::Spammer);
     return true;
@@ -6096,6 +6166,20 @@ bool UpDownClient::checkDlpChatSpam(const QString& message)
 
 void UpDownClient::banLeecher(const QString& reason, LeecherCategory category)
 {
+    // ClientAnalyzer: chat spam counts, every other verdict is the nick/mod thief flag
+    if (category == LeecherCategory::Spammer) {
+        if (AnalyzerRecord* r = analyzerRecord())
+            r->addSpam();
+    } else {
+        analyzerFlag(AnalyzerRecord::kFlagDlp, true, reason);
+    }
+    if (!thePrefs.antiLeecher()) {
+        // Analyzer only: the verdict is kept for a later clear, no ban, no third
+        m_leecherCategory = category;
+        m_leecherReason = reason;
+        return;
+    }
+
     const bool soft = category == LeecherCategory::ModSoft || category == LeecherCategory::UserSoft
                    || category == LeecherCategory::Md4Tag;
     const bool reduceScore = soft && thePrefs.antiLeecherSoftReduceScore();
@@ -6115,10 +6199,169 @@ void UpDownClient::banLeecher(const QString& reason, LeecherCategory category)
 
 void UpDownClient::clearLeecher()
 {
-    if (thePrefs.logBannedClients())
+    analyzerFlag(AnalyzerRecord::kFlagDlp, false);   // held 2 h after the last hit
+    if (thePrefs.antiLeecher() && thePrefs.logBannedClients())
         logLeecher(QStringLiteral("No longer flagged: [DLP] %1; %2").arg(m_leecherReason, leecherLogInfo()));
     m_leecherCategory = LeecherCategory::None;
     m_leecherReason.clear();
+}
+
+// ===========================================================================
+// ClientAnalyzer — WiZaRd's behaviour score (eMuleFuture AntiLeech/ClientAnalyzer.cpp).
+// Its own nick tags and mod string lists are not ported: the DLP verdicts above set
+// kFlagDlp. The 6-failed-downloads ban is left to FruitlessSessionLedger, which already
+// pauses and quarantines such peers; the analyzer only scores those sessions.
+// ===========================================================================
+
+namespace {
+
+QString analyzerFlagName(uint32 flag)
+{
+    switch (flag) {
+    case AnalyzerRecord::kFlagDlp:         return QStringLiteral("DLP verdict");
+    case AnalyzerRecord::kFlagFileFaker:   return QStringLiteral("file faker");
+    case AnalyzerRecord::kFlagUdpFnfFaker: return QStringLiteral("UDP FNF faker");
+    default:                               return QStringLiteral("flag %1").arg(flag);
+    }
+}
+
+} // namespace
+
+float UpDownClient::analyzerScore() const
+{
+    const AnalyzerRecord* r = analyzerRecordView();
+    return r ? r->score(analyzerHasSomethingForUs(), ClientAnalyzer::reaskTimeFor(m_clientSoft)) : 1.0f;
+}
+
+QString UpDownClient::analyzerReasons() const
+{
+    const AnalyzerRecord* r = analyzerRecordView();
+    return r ? r->reasons(analyzerHasSomethingForUs(), ClientAnalyzer::reaskTimeFor(m_clientSoft)) : QString();
+}
+
+void UpDownClient::noteAnalyzerUploadRequest(uint64 now)
+{
+    AnalyzerRecord* r = analyzerRecord();
+    if (!r)
+        return;
+    // A reask only while it waits: the first ask has no interval
+    if (m_uploadState == UploadState::OnUploadQueue && m_lastUpRequest != 0 && now > m_lastUpRequest) {
+        const uint32 reaskTime = ClientAnalyzer::reaskTimeFor(m_clientSoft);
+        const auto interval = static_cast<uint32>(std::min<uint64>(now - m_lastUpRequest, UINT32_MAX));
+        if (r->noteReask(interval, reaskTime) && thePrefs.logBannedClients())
+            logLeecher(QStringLiteral("[CA] Fast reask: %1 reasks @ %2 s avg; %3")
+                           .arg(r->reasks).arg(r->avgReaskMs / 1000).arg(leecherLogInfo()));
+    }
+    checkAnalyzerFileFaker();
+}
+
+void UpDownClient::noteAnalyzerUploadSession(bool delivered)
+{
+    if (AnalyzerRecord* r = analyzerRecord())
+        r->addUlSession(!delivered);
+}
+
+bool UpDownClient::analyzerWantsLiveSocket() const
+{
+    const AnalyzerRecord* r = analyzerRecordView();
+    return r && r->wantsLiveSocket();
+}
+
+void UpDownClient::noteAnalyzerCorruptSender()
+{
+    // Proven identity only: a borrowed hash must not get its owner banned for 60 days
+    if (thePrefs.clientAnalyzer() && theApp.clientAnalyzer && hasValidHash() && hasPassedSecureIdent(true))
+        theApp.clientAnalyzer->addCorruptSender(m_userHash.data());
+}
+
+AnalyzerRecord* UpDownClient::analyzerRecord()
+{
+    if (!thePrefs.clientAnalyzer() || !theApp.clientAnalyzer || !hasValidHash())
+        return nullptr;
+    ClientAnalyzer& ca = *theApp.clientAnalyzer;
+
+    // A copy made for another hash is void
+    if (m_analyzerSession && !md4equ(m_analyzerSession->key.data(), m_userHash.data()))
+        m_analyzerSession.reset();
+
+    if (hasPassedSecureIdent(true)) {
+        bool created = false;
+        AnalyzerRecord& stored = ca.record(m_userHash.data(), &created);
+        if (m_analyzerSession) {
+            // Proven now: what it did meanwhile becomes the record
+            const uint32 seen = stored.lastSeen;
+            stored = *m_analyzerSession;
+            stored.lastSeen = seen;
+            m_analyzerSession.reset();
+        } else if (created && m_credits) {
+            ClientAnalyzer::seedFromCredits(stored, *m_credits);
+        }
+        return &stored;
+    }
+
+    if (!m_analyzerSession) {
+        m_analyzerSession = std::make_unique<AnalyzerRecord>(ca.snapshot(m_userHash.data()));
+        if (m_credits)
+            ClientAnalyzer::seedFromCredits(*m_analyzerSession, *m_credits);
+    }
+    return m_analyzerSession.get();
+}
+
+const AnalyzerRecord* UpDownClient::analyzerRecordView() const
+{
+    if (!thePrefs.clientAnalyzer() || !theApp.clientAnalyzer || !hasValidHash())
+        return nullptr;
+    if (m_analyzerSession && md4equ(m_analyzerSession->key.data(), m_userHash.data()))
+        return m_analyzerSession.get();
+    return hasPassedSecureIdent(true) ? theApp.clientAnalyzer->find(m_userHash.data()) : nullptr;
+}
+
+bool UpDownClient::analyzerHasSomethingForUs() const
+{
+    return m_reqFile != nullptr
+        && (m_downloadState == DownloadState::Downloading || m_downloadState == DownloadState::OnQueue);
+}
+
+void UpDownClient::analyzerFlag(uint32 flag, bool set, const QString& detail)
+{
+    AnalyzerRecord* r = analyzerRecord();
+    if (!r)
+        return;
+    const auto now = static_cast<int64>(std::time(nullptr));
+    const bool changed = set ? r->setFlag(flag, now) : r->clearFlag(flag, now);
+    if (changed && thePrefs.logBannedClients()) {
+        logLeecher(QStringLiteral("[CA] %1 %2%3; %4")
+                       .arg(set ? QStringLiteral("Marked as") : QStringLiteral("Cleared from"),
+                            analyzerFlagName(flag),
+                            detail.isEmpty() ? QString() : QStringLiteral(" - ") + detail,
+                            leecherLogInfo()));
+    }
+}
+
+void UpDownClient::checkAnalyzerFileFaker()
+{
+    if (!thePrefs.clientAnalyzer())
+        return;
+    // It is a complete source for our download and asks us for that same file
+    const bool completeAsker = m_completeSource && m_reqFile
+        && md4equ(m_reqFile->fileHash(), m_reqUpFileId.data());
+    // Its own part status for the file it asks for is complete
+    const bool completeStatus = m_upPartCount > 0
+        && std::ranges::all_of(m_upPartStatus, [](uint8 part) { return part != 0; });
+    if (completeAsker)
+        analyzerFlag(AnalyzerRecord::kFlagFileFaker, true, QStringLiteral("complete source asks for the same file"));
+    else if (completeStatus)
+        analyzerFlag(AnalyzerRecord::kFlagFileFaker, true, QStringLiteral("asks for a file it reports complete"));
+    else
+        analyzerFlag(AnalyzerRecord::kFlagFileFaker, false);
+}
+
+void UpDownClient::checkAnalyzerCorruptSender()
+{
+    if (!thePrefs.clientAnalyzer() || !theApp.clientAnalyzer || !hasValidHash() || isFullyBanned())
+        return;
+    if (theApp.clientAnalyzer->isCorruptSender(m_userHash.data()))
+        ban(QStringLiteral("[CA] Sent corrupt data within the last 60 days"));
 }
 
 // ===========================================================================

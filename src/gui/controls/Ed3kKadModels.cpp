@@ -4,6 +4,9 @@
 #include "utils/CountryFlags.h"
 #include "app/SkinIcons.h"
 
+#include <QDateTime>
+#include <QStringList>
+
 #include <algorithm>
 
 namespace eMule {
@@ -252,6 +255,111 @@ QString Ed3kKadLookupsModel::kindText(int kind)
     case 15: return tr("Name claim");
     default: return tr("Kind %1").arg(kind);
     }
+}
+
+// ---------------------------------------------------------------------------
+// KadIncomingModel
+// ---------------------------------------------------------------------------
+
+KadIncomingModel::KadIncomingModel(Network network, QObject* parent)
+    : Ed3kKadTableModel(parent)
+{
+    const auto typeText = network == Network::Ed2k ? &KadIncomingModel::ed2kTypeText : &KadIncomingModel::ed3kTypeText;
+    m_columns = {
+        {tr("Time"),
+         [](const QCborMap& m) {
+             return QDateTime::fromMSecsSinceEpoch(number(m, "at")).toString(QStringLiteral("HH:mm:ss"));
+         },
+         [](const QCborMap& m) { return QVariant(number(m, "at")); }},
+        {tr("Type"), [typeText](const QCborMap& m) { return typeText(int(number(m, "type"))); }, {}},
+        {tr("Key"), [](const QCborMap& m) { return value(m, "target").toUpper(); }, {}},
+        {tr("Name"), [](const QCborMap& m) { return value(m, "name"); }, {}},
+        {tr("From"), [](const QCborMap& m) { return value(m, "addr"); }, {}},
+        {tr("Answer"), [](const QCborMap& m) { return answerText(m); }, {}},
+    };
+}
+
+QVariant KadIncomingModel::data(const QModelIndex& index, int role) const
+{
+    if (index.isValid() && index.column() == ColFrom && index.row() < count()) {
+        const QCborMap& m = row(index.row());
+        if (role == Qt::DecorationRole && CountryFlags::showFlags())
+            return CountryFlags::flag(value(m, "cc"));
+        if (role == Qt::ToolTipRole)
+            return CountryFlags::tooltip(value(m, "cc"));
+    }
+    return Ed3kKadTableModel::data(index, role);
+}
+
+void KadIncomingModel::setIncoming(const QCborArray& rows)
+{
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    QCborArray stamped;
+    for (const auto& v : rows) {
+        QCborMap m = v.toMap();
+        m.insert(QStringLiteral("at"), now - number(m, "agoMs"));
+        stamped.append(m);
+    }
+    setRows(stamped);
+}
+
+QString KadIncomingModel::ed2kTypeText(int type)
+{
+    // kad::IncomingType
+    switch (type) {
+    case 0: return tr("Bootstrap");
+    case 1: return tr("Node Lookup");
+    case 2: return tr("Keyword Search");
+    case 3: return tr("Source Search");
+    case 4: return tr("Notes Search");
+    case 5: return tr("Store Keyword");
+    case 6: return tr("Store Source");
+    case 7: return tr("Store Notes");
+    case 8: return tr("Firewall Check");
+    case 9: return tr("Find Buddy");
+    case 10: return tr("Callback");
+    default: return tr("Type %1").arg(type);
+    }
+}
+
+QString KadIncomingModel::ed3kTypeText(int type)
+{
+    const QString kind = Ed3kKadLookupsModel::kindText(type % 100);
+    switch (type / 100) {
+    case 0: return tr("Node Lookup");
+    case 1: return tr("Search %1").arg(kind);
+    case 2: return tr("Store %1").arg(kind);
+    default: return kind;
+    }
+}
+
+QString KadIncomingModel::answerText(const QCborMap& m)
+{
+    if (!m.value(QStringLiteral("answered")).toBool()) {
+        const qint64 error = number(m, "error");
+        return error > 0 ? tr("Error %1").arg(error) : tr("Not answered");
+    }
+    QStringList parts;
+    if (const qint64 n = number(m, "contacts"); n > 0)
+        parts << tr("%n contact(s)", nullptr, int(n));
+    const qint64 results = number(m, "results");
+    const qint64 records = number(m, "records");
+    // ed3k: a search or store at a node that is not responsible gets contacts only
+    if (m.contains(QStringLiteral("responsible")) && !m.value(QStringLiteral("responsible")).toBool()
+        && (results >= 0 || records >= 0)) {
+        parts << tr("not responsible");
+        return parts.join(QStringLiteral(", "));
+    }
+    if (results >= 0)
+        parts << tr("%n result(s)", nullptr, int(results));
+    if (records >= 0) {
+        const qint64 stored = number(m, "stored");
+        parts << (stored >= 0 && stored != records ? tr("%1 of %2 stored").arg(stored).arg(records)
+                                                   : tr("%n stored", nullptr, int(records)));
+    }
+    if (const qint64 load = number(m, "load"); load >= 0)
+        parts << tr("load %1%").arg(load);
+    return parts.join(QStringLiteral(", "));
 }
 
 } // namespace eMule

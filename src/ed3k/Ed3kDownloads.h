@@ -41,6 +41,7 @@
 #include "Ed3kJoinBase.h"
 
 #include <QDateTime>
+#include <QDeadlineTimer>
 #include <QString>
 #include <QStringList>
 #include <QTimer>
@@ -158,6 +159,11 @@ public:
     bool setCategory(const ::ed3k::Root& root, int category);
     /// The file's own preview flag (eMule's per-file switch; the option covers every file).
     bool setPreviewPrio(const ::ed3k::Root& root, bool on);
+    /// A player reads from @p offset (preview stream, "Enable seeking in downloads"): end
+    /// (exclusive) of the blocks held from there; nullopt: no such download. Less than
+    /// PartFile::kStreamLead ahead: the blocks from the first missing one go first, their
+    /// hash values too (downloadFocus), for PartFile::kStreamFocusMs.
+    std::optional<std::uint64_t> playFrom(const ::ed3k::Root& root, std::uint64_t offset);
     /// An unfinished download to @p owner (Ed3kSets: an imported member of an unknown set).
     bool setOwner(const ::ed3k::Root& root, const QString& owner);
     /// Complete rows leave the list; their files stay (served on by the share list, if it took them).
@@ -223,6 +229,8 @@ private:
         std::deque<std::uint64_t> rateSamples;   ///< bytes per tick, newest last (rate average)
         bool moving = false;             ///< moveTo() runs
         bool resumeAfterMove = false;
+        std::optional<std::uint64_t> focus;   ///< playFrom(): first byte fetched first
+        QDeadlineTimer focusUntil;       ///< focus ends (onTick)
     };
 
     Entry* entryOf(const ::ed3k::Root& root);

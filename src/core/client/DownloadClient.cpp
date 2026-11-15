@@ -1045,6 +1045,8 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
     // credit system is inert — scoreRatio() stays at 1.0 and clients.met never fills.
     if (m_credits)
         m_credits->addDownloaded(uTransferredFileDataSize, m_userAddress);
+    if (AnalyzerRecord* r = m_reqFile ? analyzerRecord() : nullptr)
+        r->addDownloaded(uTransferredFileDataSize, !m_completeSource, m_reqFile->sourceCount());
 
     if (curBlock->zStreamError) {
         // Previous decompression error — discard and remove block
@@ -1285,6 +1287,10 @@ void UpDownClient::addPayloadDown(uint64 bytes)
 
     if (m_credits)
         m_credits->addDownloaded(static_cast<uint32>(bytes), m_userAddress);
+    if (bytes > 0 && m_reqFile) {
+        if (AnalyzerRecord* r = analyzerRecord())
+            r->addDownloaded(bytes, !m_completeSource, m_reqFile->sourceCount());
+    }
 }
 
 // ===========================================================================
@@ -1508,6 +1514,17 @@ void UpDownClient::udpReaskACK(uint16 newQR)
 void UpDownClient::udpReaskFNF()
 {
     m_udpPending = false;
+
+    // ClientAnalyzer: "file not found" for a file it asks us for, after telling us in that
+    // request it holds parts of it. Without such parts an honest peer may well have
+    // nothing to share yet, so that case is left alone.
+    if (thePrefs.clientAnalyzer()) {
+        const bool contradicts = m_reqFile && m_uploadState != UploadState::None
+            && md4equ(m_reqUpFileId.data(), m_reqFile->fileHash())
+            && std::ranges::any_of(m_upPartStatus, [](uint8 part) { return part != 0; });
+        analyzerFlag(AnalyzerRecord::kFlagUdpFnfFaker, contradicts,
+                     contradicts ? QStringLiteral("says it lacks the file it asks us for (UDP)") : QString());
+    }
 
     // MFC DownloadClient.cpp:1313-1335. Not while it is sending us data.
     if (m_downloadState == DownloadState::Downloading)
@@ -2056,6 +2073,9 @@ void UpDownClient::noteDownloadSessionEndedByPeer()
 {
     if (m_downloadState != DownloadState::Downloading || sessionPayloadDown() >= EMBLOCKSIZE)
         return;
+
+    if (AnalyzerRecord* r = analyzerRecord())
+        r->addDlSession(true);
 
     const uint64 now = getTickCount();
     if (auto* ledger = fruitlessLedger()) {

@@ -114,6 +114,11 @@ constexpr int kStreamWaitMs = 15000;
 /// costs more wake-ups than the scheduler it is waiting on.
 constexpr int kStreamPollMs = 250;
 
+/// The same wait for an eD2K/ed3k download with seeking on. Longer: a seek
+/// starts a part from scratch, and its first block comes from a peer that may
+/// first have to be asked.
+constexpr int kDownloadStreamWaitMs = 60000;
+
 /// Parse a single-range `bytes=N-[M]` header.
 ///
 /// Deliberately narrow: multiple ranges and suffix ranges (`bytes=-500`) are
@@ -911,7 +916,7 @@ bool WebServer::requestBodyTooLarge(const QHttpServerRequest& req)
 // Preview streaming handler
 // ---------------------------------------------------------------------------
 
-QHttpServerResponse WebServer::handlePreviewStream(const QString& hash, const QHttpServerRequest& req)
+QFuture<QHttpServerResponse> WebServer::handlePreviewStream(const QString& hash, const QHttpServerRequest& req)
 {
     const bool dbg = m_preferences && m_preferences->logWebServer();
 
@@ -928,29 +933,66 @@ QHttpServerResponse WebServer::handlePreviewStream(const QString& hash, const QH
 
     // Authenticate via stream token query parameter
     if (auto refusal = streamTokenRefusal(req, u"Preview"))
-        return std::move(*refusal);
+        return finishedResponse(std::move(*refusal));
+
+    // "Enable seeking in downloads": a read of an unfinished download waits for
+    // its bytes — and has them fetched first — instead of getting the zeros of
+    // the preallocated part file. Off: the part file as it is on disk.
+    const QByteArray rangeHeader = req.headers().combinedValue(QByteArrayLiteral("Range"));
+    const bool seeking = m_preferences && m_preferences->downloadSeeking();
 
     // ed3k: a 64-hex root names its part file (or the finished file)
+    if (hash.size() == 64 && seeking && m_ed3kStreamResolver) {
+        const qint64 wantStart = parseRangeStart(rangeHeader);
+        auto probe = [this, hash, wantStart] {
+            return m_ed3kStreamResolver ? m_ed3kStreamResolver(hash, wantStart) : UsenetStreamSource{};
+        };
+        return serveWhenAvailable(std::move(probe), rangeHeader, kDownloadStreamWaitMs,
+                                  QStringLiteral("ed3k preview"));
+    }
     if (hash.size() == 64) {
         QString path;
         QString fileName;
         if (!m_ed3kFileResolver || !m_ed3kFileResolver(hash, path, fileName) || !QFileInfo::exists(path)) {
             logDebug([&]() -> QString { return QStringLiteral("Preview: 404 — no ed3k download for root %1").arg(hash); });
-            return jsonError(404, QStringLiteral("File not found"));
+            return finishedResponse(jsonError(404, QStringLiteral("File not found")));
         }
-        return serveRange({{path, 0, 0, 0}}, fileName, /*totalSize*/ 0, /*availableEnd*/ 0,
-                          req.headers().combinedValue(QByteArrayLiteral("Range")));
+        return finishedResponse(serveRange({{path, 0, 0, 0}}, fileName, /*totalSize*/ 0,
+                                           /*availableEnd*/ 0, rangeHeader));
     }
 
     if (!m_downloadQueue) {
         logDebug([&]() -> QString { return QStringLiteral("Preview: 500 — download queue not available"); });
-        return jsonError(500, QStringLiteral("Download queue not available"));
+        return finishedResponse(jsonError(500, QStringLiteral("Download queue not available")));
     }
 
     std::array<uint8, 16> hashBytes{};
     if (hash.size() != 32 || decodeBase16(hash, hashBytes.data(), 16) != 16) {
         logDebug([&]() -> QString { return QStringLiteral("Preview: 400 — invalid hash format: %1").arg(hash); });
-        return jsonError(400, QStringLiteral("Invalid hash format"));
+        return finishedResponse(jsonError(400, QStringLiteral("Invalid hash format")));
+    }
+
+    // Seeking on and still downloading: wait for the bytes (PartFile::playFrom).
+    // Looked up anew on every poll — the download may finish or go meanwhile.
+    if (const auto* download = m_downloadQueue->fileByID(hashBytes.data());
+        seeking && download && download->status() != PartFileStatus::Complete) {
+        const qint64 wantStart = parseRangeStart(rangeHeader);
+        auto probe = [this, hashBytes, wantStart] {
+            UsenetStreamSource src;
+            PartFile* f = m_downloadQueue ? m_downloadQueue->fileByID(hashBytes.data()) : nullptr;
+            if (!f)
+                return src;
+            const bool complete = f->status() == PartFileStatus::Complete;
+            src.found = true;
+            src.fileName = f->fileName();
+            src.totalSize = static_cast<qint64>(static_cast<uint64>(f->fileSize()));
+            src.complete = complete;
+            src.availableEnd = static_cast<qint64>(f->playFrom(static_cast<uint64>(wantStart)));
+            src.pieces = {{f->dataFilePath(), 0, 0, src.totalSize}};
+            return src;
+        };
+        return serveWhenAvailable(std::move(probe), rangeHeader, kDownloadStreamWaitMs,
+                                  QStringLiteral("Preview"));
     }
 
     // The hash may name an active download or any other shared file. A finished
@@ -983,17 +1025,17 @@ QHttpServerResponse WebServer::handlePreviewStream(const QString& hash, const QH
 
     if (path.isEmpty()) {
         logDebug([&]() -> QString { return QStringLiteral("Preview: 404 — no download or shared file for hash %1").arg(hash); });
-        return jsonError(404, QStringLiteral("File not found"));
+        return finishedResponse(jsonError(404, QStringLiteral("File not found")));
     }
     if (!QFileInfo::exists(path)) {
         logDebug([&]() -> QString { return QStringLiteral("Preview: 404 — file not available: %1").arg(path); });
-        return jsonError(404, QStringLiteral("File not available"));
+        return finishedResponse(jsonError(404, QStringLiteral("File not available")));
     }
 
     // The file is resolved fresh on every request; serveRange does the rest,
     // and is also where the response-size cap lives.
-    return serveRange({{path, 0, 0, 0}}, fileName, /*totalSize*/ 0, /*availableEnd*/ 0,
-                      req.headers().combinedValue(QByteArrayLiteral("Range")));
+    return finishedResponse(serveRange({{path, 0, 0, 0}}, fileName, /*totalSize*/ 0,
+                                       /*availableEnd*/ 0, rangeHeader));
 }
 
 QFuture<QHttpServerResponse> WebServer::handleUsenetPreviewStream(
@@ -1045,84 +1087,78 @@ QFuture<QHttpServerResponse> WebServer::handleUsenetPreviewStream(
 
     // Resolving is not a pure lookup — it also tells the queue somebody is
     // watching this item, which is what puts its articles at the front of the
-    // schedule. That is why the poll below calls it again rather than caching:
+    // schedule. That is why the poll calls it again rather than caching:
     // the boost has to be refreshed for as long as a player is really reading.
-    const UsenetStreamSource first = m_usenetStreamResolver(ask);
-    if (!first.found) {
-        logDebug([&]() -> QString { return QStringLiteral("Usenet preview: 404 — no file %1 of item %2")
-                       .arg(fileIndex).arg(itemId); });
-        return finishedResponse(jsonError(404, QStringLiteral("File not found")));
-    }
+    auto probe = [this, ask] {
+        return m_usenetStreamResolver ? m_usenetStreamResolver(ask) : UsenetStreamSource{};
+    };
+    return serveWhenAvailable(std::move(probe), rangeHeader, kStreamWaitMs, QStringLiteral("Usenet preview"));
+}
 
-    // A compressed, solid or encrypted archive will never be mappable. Waiting
-    // out the poll would end in a 416 that reads like "not yet" — 406 with the
-    // reason says "not ever", which is what the user needs to know.
-    if (!first.notSeekableReason.isEmpty()) {
-        logDebug([&]() -> QString { return QStringLiteral("Usenet preview: 406 — %1").arg(first.notSeekableReason); });
-        return finishedResponse(jsonError(406, first.notSeekableReason));
-    }
+QFuture<QHttpServerResponse> WebServer::serveWhenAvailable(std::function<UsenetStreamSource()> probe,
+                                                           const QByteArray& rangeHeader, int waitMs,
+                                                           const QString& what)
+{
+    const qint64 wantStart = parseRangeStart(rangeHeader);
 
-    if (first.availableEnd > wantStart) {
-        return finishedResponse(serveRange(first.pieces, first.fileName, first.totalSize,
-                                first.availableEnd, rangeHeader));
-    }
+    // Four ways out: the bytes turned up, the file turned out to be unmappable,
+    // it went away, or the wait ran out. Only the first is a success, and
+    // forgetting the middle two means a removed or solid release holds a player
+    // for the whole timeout. A start at or past the end is answered at once
+    // too: serveRange turns it into the EOF 416 a player probes for.
+    auto answer = [this, rangeHeader, wantStart, what](const UsenetStreamSource& now, bool timedOut)
+        -> std::optional<QHttpServerResponse> {
+        if (!now.found) {
+            logDebug([&]() -> QString { return QStringLiteral("%1: 404 — file gone").arg(what); });
+            return jsonError(404, QStringLiteral("File not found"));
+        }
+        // A compressed, solid or encrypted archive will never be mappable. Waiting
+        // out the poll would end in a 416 that reads like "not yet" — 406 with the
+        // reason says "not ever", which is what the user needs to know.
+        if (!now.notSeekableReason.isEmpty()) {
+            logDebug([&]() -> QString { return QStringLiteral("%1: 406 — %2").arg(what, now.notSeekableReason); });
+            return jsonError(406, now.notSeekableReason);
+        }
+        const bool pastEnd = now.totalSize > 0 && wantStart >= now.totalSize;
+        if (now.availableEnd > wantStart || pastEnd)
+            return serveRange(now.pieces, now.fileName, now.totalSize, now.availableEnd, rangeHeader);
+        if (!timedOut)
+            return std::nullopt;
+        // The bytes at this offset were asked for and have not come back inside
+        // the window — a slow source, or a hole nobody holds. A prompt 416 beats
+        // a player hanging on a request that might take the rest of the download.
+        logDebug([&]() -> QString { return QStringLiteral("%1: 416 — timed out waiting for byte %2 of \"%3\" (have %4)")
+                       .arg(what).arg(wantStart).arg(now.fileName).arg(now.availableEnd); });
+        return rangeNotSatisfiable(now.totalSize > 0 ? now.totalSize : now.availableEnd);
+    };
 
-    // Playback has caught up with the write head. Hold the request rather than
-    // answer it: a zero-byte 206 reads as end-of-stream and every player stops.
+    if (auto resp = answer(probe(), false))
+        return finishedResponse(std::move(*resp));
+
+    // Playback has caught up with the write head, or a seek went past it. Hold
+    // the request rather than answer it: a zero-byte 206 reads as end-of-stream
+    // and every player stops.
     //
-    // This runs on the daemon's event loop — the same thread as UsenetQueue — so
-    // sleeping here would stall the very downloads being waited for. A deferred
-    // QFuture is the way out: the handler returns at once and the response goes
-    // when the promise is fulfilled.
+    // This runs on the daemon's event loop — the same thread as the downloads —
+    // so sleeping here would stall the very transfers being waited for. A
+    // deferred QFuture is the way out: the handler returns at once and the
+    // response goes when the promise is fulfilled.
     auto promise = std::make_shared<QPromise<QHttpServerResponse>>();
     promise->start();
     QFuture<QHttpServerResponse> future = promise->future();
 
     auto* timer = new QTimer(this);
     timer->setInterval(kStreamPollMs);
-
-    QDeadlineTimer deadline(kStreamWaitMs);
+    const QDeadlineTimer deadline(waitMs);
 
     connect(timer, &QTimer::timeout, this,
-            [this, timer, promise, ask, rangeHeader, wantStart, deadline] {
-        const UsenetStreamSource now =
-            m_usenetStreamResolver ? m_usenetStreamResolver(ask) : UsenetStreamSource{};
-
-        // Four ways out: the bytes turned up, the release turned out to be
-        // unmappable, the item went away, or the wait ran out. Only the first is
-        // a success, and forgetting the middle two means a removed or solid
-        // release holds a player for the whole timeout.
-        const bool arrived = now.found && now.availableEnd > wantStart;
-        const bool gone = !now.found;
-        const bool refused = now.found && !now.notSeekableReason.isEmpty();
-        if (!arrived && !gone && !refused && !deadline.hasExpired())
+            [timer, promise, probe = std::move(probe), answer = std::move(answer), deadline] {
+        auto resp = answer(probe(), deadline.hasExpired());
+        if (!resp)
             return;
-
         timer->stop();
         timer->deleteLater();
-
-        QHttpServerResponse resp = [&]() -> QHttpServerResponse {
-            if (!now.found)
-                return jsonError(404, QStringLiteral("File not found"));
-            if (refused) {
-                logDebug([&]() -> QString { return QStringLiteral("Usenet preview: 406 — %1").arg(now.notSeekableReason); });
-                return jsonError(406, now.notSeekableReason);
-            }
-            if (!arrived) {
-                // The articles covering this offset were asked for and have not
-                // come back inside the window — a slow provider, or a hole no
-                // server holds. A prompt 416 beats a player hanging on a request
-                // that might take the rest of the download.
-                logDebug([&]() -> QString { return QStringLiteral("Usenet preview: 416 — timed out waiting for byte "
-                                          "%1 of \"%2\" (have %3)")
-                               .arg(wantStart).arg(now.fileName).arg(now.availableEnd); });
-                return rangeNotSatisfiable(now.totalSize > 0 ? now.totalSize : now.availableEnd);
-            }
-            return serveRange(now.pieces, now.fileName, now.totalSize, now.availableEnd,
-                              rangeHeader);
-        }();
-
-        promise->addResult(std::move(resp));
+        promise->addResult(std::move(*resp));
         promise->finish();
     });
 

@@ -358,6 +358,15 @@ private:
     QTreeWidgetItem* m_itemMemDownload = nullptr;
     QTreeWidgetItem* m_itemMemEd3kHashes = nullptr;   ///< from applyEd3kStatus()
     QTreeWidgetItem* m_itemMemEd3kRecords = nullptr;
+    QTreeWidgetItem* m_itemMemEd3kHeap = nullptr;
+    QTreeWidgetItem* m_itemMemHeap = nullptr;
+    QTreeWidgetItem* m_itemMemReadAhead = nullptr;
+    QTreeWidgetItem* m_itemMemSockets = nullptr;
+    QTreeWidgetItem* m_itemMemKnownFiles = nullptr;
+    QTreeWidgetItem* m_itemMemClients = nullptr;
+    QTreeWidgetItem* m_itemMemCredits = nullptr;
+    QTreeWidgetItem* m_itemMemKadIndex = nullptr;
+    QTreeWidgetItem* m_itemMemIpFilter = nullptr;
 
     // --- Usenet ---
     //

@@ -366,6 +366,34 @@ bool Ed3kDownloads::setPreviewPrio(const ffi::Root& root, bool on)
     return true;
 }
 
+std::optional<std::uint64_t> Ed3kDownloads::playFrom(const ffi::Root& root, std::uint64_t offset)
+{
+    Entry* e = entryOf(root);
+    if (!e)
+        return std::nullopt;
+    const std::uint64_t size = e->info.size;
+    if (offset >= size)
+        return offset;
+    if (e->info.state == Ed3kDownloadInfo::State::Complete)
+        return size;
+    std::uint64_t held = offset;
+    for (auto b = offset / kBlock; b < e->have.size() && e->have[std::size_t(b)]; ++b)
+        held = std::min(size, (b + 1) * kBlock);
+    if (held >= size || held - offset >= PartFile::kStreamLead)
+        return held;
+    // the first missing block: there on, in file order
+    const std::uint64_t at = held / kBlock * kBlock;
+    const bool moved = e->focus != at || e->focusUntil.hasExpired();
+    e->focus = at;
+    e->focusUntil.setRemainingTime(PartFile::kStreamFocusMs);
+    if (moved) {
+        if (auto* engine = m_session.engine())
+            (void)engine->downloadFocus(m_session.now(), root, at);
+        requestBlocks(root);
+    }
+    return held;
+}
+
 bool Ed3kDownloads::setCategory(const ffi::Root& root, int category)
 {
     Entry* e = entryOf(root);
@@ -526,6 +554,13 @@ std::vector<std::uint64_t> Ed3kDownloads::wantedBlocks(const Download& d) const
         if (size - tail < PARTSIZE / 3)   // a tiny last part pulls in the one before
             tail -= PARTSIZE;
         std::ranges::stable_partition(wanted, [&](std::uint64_t off) { return off < PARTSIZE || off >= tail; });
+    }
+    // a player streams: the blocks from its first missing one before all else (playFrom)
+    if (e->focus && !e->focusUntil.hasExpired()) {
+        const std::uint64_t from = *e->focus;
+        std::ranges::stable_partition(wanted, [&](std::uint64_t off) {
+            return off >= from && off < from + PartFile::kStreamLead;
+        });
     }
     return wanted;
 }
@@ -830,6 +865,12 @@ void Ed3kDownloads::touch(Entry& e)
 void Ed3kDownloads::onTick()
 {
     for (auto& [root, e] : m_entries) {
+        // the player went away: back to file order
+        if (e.focus && e.focusUntil.hasExpired()) {
+            e.focus.reset();
+            if (auto* engine = m_session.engine())
+                (void)engine->downloadFocus(m_session.now(), root, std::nullopt);
+        }
         const std::uint64_t got = e.received - e.lastReceived;
         e.lastReceived = e.received;
         // blocks are 256 KiB: one tick reads 0 or a whole block, so average the last ticks

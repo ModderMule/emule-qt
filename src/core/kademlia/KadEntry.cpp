@@ -140,6 +140,18 @@ bool Entry::addTag(Tag tag)
     return true;
 }
 
+std::size_t Entry::memoryBytes() const
+{
+    // list nodes: two pointers + allocator overhead
+    constexpr std::size_t kNode = 2 * sizeof(void*) + 16;
+    std::size_t n = sizeof(*this) + std::size_t(m_tags.capacity()) * sizeof(Tag);
+    for (const Tag& tag : m_tags)
+        n += tag.heapBytes();
+    for (const FileNameEntry& name : m_fileNames)
+        n += sizeof(FileNameEntry) + kNode + std::size_t(name.fileName.capacity()) * sizeof(QChar) + 32;
+    return n;
+}
+
 uint32 Entry::getTagCount() const
 {
     // Tag count includes virtual tags (filename, filesize)
@@ -251,6 +263,20 @@ void Entry::addFileNameCapped(FileNameEntry name, bool force)
 std::unordered_map<uint32, uint32> KeyEntry::s_globalPublishIPs;
 
 KeyEntry::KeyEntry() = default;
+
+std::size_t KeyEntry::memoryBytes() const
+{
+    constexpr std::size_t kNode = 2 * sizeof(void*) + 16;
+    std::size_t n = Entry::memoryBytes() - sizeof(Entry) + sizeof(*this);
+    if (m_publishingIPs)
+        n += sizeof(*m_publishingIPs) + m_publishingIPs->size() * (sizeof(PublishingIP) + kNode);
+    n += m_aichHashPopularity.capacity() + m_aichHashes.capacity() * sizeof(QByteArray);
+    for (const QByteArray& hash : m_aichHashes)
+        n += std::size_t(hash.capacity()) + 32;
+    if (!m_searchTermCache.isEmpty())
+        n += std::size_t(m_searchTermCache.capacity()) * sizeof(QChar) + 32;
+    return n;
+}
 
 KeyEntry::~KeyEntry()
 {

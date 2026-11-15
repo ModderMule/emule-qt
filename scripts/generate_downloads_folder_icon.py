@@ -24,7 +24,7 @@ from icon_tools import SIZES, SS, report, scaled, write_ico
 try:
     from PIL import Image, ImageDraw
 except ImportError:
-    sys.exit("Pillow is required: pip3 install Pillow")
+    sys.exit("Pillow is required: uv sync (or pip3 install Pillow)")
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "resources" / "icons" / "DownloadsFolder.ico"

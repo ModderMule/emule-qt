@@ -12,7 +12,10 @@
 #include "utils/ListActivation.h"
 #include "utils/PanelPoller.h"
 
+#include "IpcMessage.h"
+
 #include <QFont>
+#include <QScrollBar>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QSignalBlocker>
@@ -27,7 +30,7 @@ namespace eMule {
 KadPanelBase::KadPanelBase(QWidget* parent)
     : QWidget(parent)
 {
-    m_poller = new PanelPoller(this, [this] { refresh(); });
+    m_poller = new PanelPoller(this, [this] { poll(); });
 }
 
 KadPanelBase::~KadPanelBase() = default;
@@ -46,10 +49,12 @@ void KadPanelBase::setIpcClient(IpcClient* client)
         connect(m_ipc, &IpcClient::disconnected, this, [this] {
             m_poller->setEnabled(false);
             clearAll();
+            clearIncoming();
         });
     } else {
         m_poller->setEnabled(false);
         clearAll();
+        clearIncoming();
     }
 }
 
@@ -66,8 +71,10 @@ void KadPanelBase::switchToSubTab(int index)
 // protected
 // ---------------------------------------------------------------------------
 
-void KadPanelBase::buildLayout(QWidget* contacts, QWidget* controls, QWidget* searches, void (*bindSplitter)(QSplitter*))
+void KadPanelBase::buildLayout(QWidget* contacts, QWidget* controls, QWidget* searches, KadIncomingModel::Network network,
+                               void (*bindSplitter)(QSplitter*))
 {
+    m_network = network;
     auto* mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(2, 2, 2, 2);
     mainLayout->setSpacing(0);
@@ -105,8 +112,28 @@ void KadPanelBase::buildLayout(QWidget* contacts, QWidget* controls, QWidget* se
     topSplitter->setStretchFactor(0, 3);
     topSplitter->setStretchFactor(1, 1);
 
+    // Bottom: our lookups and the requests other nodes sent us
+    m_incomingModel = new KadIncomingModel(network, this);
+    QLabel* noLabel = nullptr;
+    QWidget* incoming = buildListPanel(m_incomingModel, {}, {}, m_incomingView, noLabel);
+    auto* incomingView = static_cast<ListTreeView*>(m_incomingView);
+    incomingView->setDefaultSort(KadIncomingModel::ColTime, Qt::DescendingOrder);
+    // Time, Type, Key, Name, From, Answer
+    incomingView->bindColumns(network == KadIncomingModel::Network::Ed2k ? QStringLiteral("kadIncoming")
+                                                                         : QStringLiteral("ed3kKadIncoming"),
+                              {70, 120, 240, 240, 150, 160});
+    m_bottomTabWidget = new QTabWidget;
+    m_bottomTabWidget->setDocumentMode(true);
+    const QIcon searchIcon = thePrefs.useOriginalIcons() ? skinIcon(QStringLiteral(":/icons/KadCurrentSearches.ico")) : QIcon();
+    m_bottomTabWidget->addTab(searches, searchIcon, tr("▸ Outgoing Searches (0)"));
+    m_bottomTabWidget->addTab(incoming, searchIcon, tr("▸ Incoming Searches (0)"));
+    connect(m_bottomTabWidget, &QTabWidget::currentChanged, this, [this](int index) {
+        if (index == 1)
+            requestIncoming();   // filled only while shown
+    });
+
     m_vertSplitter->addWidget(topSplitter);
-    m_vertSplitter->addWidget(searches);
+    m_vertSplitter->addWidget(m_bottomTabWidget);
     m_vertSplitter->setStretchFactor(0, 3);
     m_vertSplitter->setStretchFactor(1, 1);
     if (bindSplitter)
@@ -138,20 +165,22 @@ QWidget* KadPanelBase::buildListPanel(QAbstractItemModel* model, const QString& 
     layout->setSpacing(2);
 
     // Section header matching MFC style: icon + bold text
-    auto* header = new QHBoxLayout;
-    header->setSpacing(4);
-    if (!icon.isEmpty() && thePrefs.useOriginalIcons()) {
-        auto* iconLabel = new QLabel;
-        setSkinPixmap(iconLabel, icon);
-        header->addWidget(iconLabel);
+    if (!title.isEmpty()) {
+        auto* header = new QHBoxLayout;
+        header->setSpacing(4);
+        if (!icon.isEmpty() && thePrefs.useOriginalIcons()) {
+            auto* iconLabel = new QLabel;
+            setSkinPixmap(iconLabel, icon);
+            header->addWidget(iconLabel);
+        }
+        label = new QLabel(title);
+        QFont boldFont = label->font();
+        boldFont.setBold(true);
+        label->setFont(boldFont);
+        header->addWidget(label);
+        header->addStretch();
+        layout->addLayout(header);
     }
-    label = new QLabel(title);
-    QFont boldFont = label->font();
-    boldFont.setBold(true);
-    label->setFont(boldFont);
-    header->addWidget(label);
-    header->addStretch();
-    layout->addLayout(header);
 
     auto* proxy = new SortValueProxy(this);
     proxy->setSourceModel(model);
@@ -182,6 +211,12 @@ void KadPanelBase::setLookupTabTitle(const QString& lookupTitle)
     // MFC CKademliaWnd::UpdateButtonTitle
     m_topTabWidget->setTabText(1, lookupTitle.isEmpty() ? tr("▸ Search Details")
                                                         : tr("▸ Search Details (%1)").arg(lookupTitle));
+}
+
+void KadPanelBase::setOutgoingCount(int count)
+{
+    if (m_bottomTabWidget)
+        m_bottomTabWidget->setTabText(0, tr("▸ Outgoing Searches (%1)").arg(count));
 }
 
 bool KadPanelBase::lookupTabShown() const
@@ -222,6 +257,44 @@ bool KadPanelBase::ipcReady() const
 // ---------------------------------------------------------------------------
 // private
 // ---------------------------------------------------------------------------
+
+void KadPanelBase::poll()
+{
+    refresh();
+    if (incomingTabShown())
+        requestIncoming();
+}
+
+void KadPanelBase::requestIncoming()
+{
+    if (!ipcReady() || !m_incomingModel)
+        return;
+    const auto type = m_network == KadIncomingModel::Network::Ed2k ? Ipc::IpcMsgType::GetKadIncoming
+                                                                   : Ipc::IpcMsgType::GetEd3kKadIncoming;
+    m_ipc->sendPoll(this, Ipc::IpcMessage(type), [this](const Ipc::IpcMessage& resp) {
+        if (resp.type() != Ipc::IpcMsgType::Result || !resp.fieldBool(0)) {
+            clearIncoming();
+            return;
+        }
+        const int scroll = m_incomingView->verticalScrollBar()->value();
+        m_incomingModel->setIncoming(resp.fieldArray(1));
+        m_incomingView->verticalScrollBar()->setValue(scroll);
+        m_bottomTabWidget->setTabText(1, tr("▸ Incoming Searches (%1)").arg(m_incomingModel->count()));
+    });
+}
+
+void KadPanelBase::clearIncoming()
+{
+    if (!m_incomingModel)
+        return;
+    m_incomingModel->clear();
+    m_bottomTabWidget->setTabText(1, tr("▸ Incoming Searches (0)"));
+}
+
+bool KadPanelBase::incomingTabShown() const
+{
+    return m_bottomTabWidget && m_bottomTabWidget->currentIndex() == 1;
+}
 
 void KadPanelBase::onSearchSelectionChanged()
 {

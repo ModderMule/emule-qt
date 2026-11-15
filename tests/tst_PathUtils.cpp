@@ -3,6 +3,7 @@
 
 #include "TestHelpers.h"
 #include "utils/FileRelocate.h"
+#include "utils/FolderList.h"
 #include "utils/PathUtils.h"
 
 #include <QTemporaryDir>
@@ -49,6 +50,36 @@ private slots:
         QVERIFY(!eMule::relocateDir(from + QStringLiteral("2"), to, 0).isEmpty());   // target exists
         QCOMPARE(eMule::relocateDir(tmp.filePath(QStringLiteral("none")), tmp.filePath(QStringLiteral("fresh")), 0), QString());
         QVERIFY(QFileInfo(tmp.filePath(QStringLiteral("fresh"))).isDir());
+    }
+
+    /// the folder pickers' listing (IPC ListFolders): visible folders only, by name; the
+    /// tree walks a symlink loop once
+    void folderList_subfoldersAndTree()
+    {
+        QTemporaryDir tmp;
+        const QString root = tmp.path();
+        for (const char* d : {"b/deep", "a", ".hidden/x"})
+            QVERIFY(QDir().mkpath(root + u'/' + QLatin1StringView(d)));
+        QFile file(root + QStringLiteral("/file.txt"));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.close();
+#ifndef Q_OS_WIN
+        QVERIFY(QFile::link(root + QStringLiteral("/b"), root + QStringLiteral("/b/deep/up")));
+#endif
+        const QList<eMule::FolderEntry> rows = eMule::subfolders(root);
+        QCOMPARE(rows.size(), 2);
+        QCOMPARE(rows.at(0).label, QStringLiteral("a"));
+        QVERIFY(!rows.at(0).hasSubfolders);
+        QCOMPARE(rows.at(1).label, QStringLiteral("b"));
+        QVERIFY(rows.at(1).hasSubfolders);
+        QCOMPARE(QDir::cleanPath(rows.at(1).path), QDir::cleanPath(root + QStringLiteral("/b")));
+
+        const QStringList tree = eMule::folderTree(root + QStringLiteral("/b"));
+        QVERIFY(tree.contains(QDir::cleanPath(root + QStringLiteral("/b"))));
+        QVERIFY(tree.contains(QDir::cleanPath(root + QStringLiteral("/b/deep"))));
+        QCOMPARE(tree.size(), 2);   // the link back up is walked no further
+        QCOMPARE(eMule::folderTree(root, 1).size(), 1);
+        QVERIFY(!eMule::folderRoots().isEmpty());
     }
 
     void testExecutablePath()

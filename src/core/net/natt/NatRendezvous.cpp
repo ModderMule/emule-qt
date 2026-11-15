@@ -190,6 +190,24 @@ bool NatRendezvous::canStart(const UpDownClient& client) const
     return canStart(PeerInfo::fromClient(client));
 }
 
+NatRendezvous::RouteView NatRendezvous::routeView(const UpDownClient& client) const
+{
+    return routeView(PeerInfo::fromClient(client));
+}
+
+NatRendezvous::RouteView NatRendezvous::routeView(const PeerInfo& peer) const
+{
+    RouteView v;
+    v.enabled = m_env->enabled();
+    v.firewalled = m_env->firewalled();
+    v.dataPath = hasDataPathNow();
+    v.failed = hasFailed(peer);
+    v.active = isActive(peer);
+    for (NatPath* p : orderedPaths(peer, false))
+        v.paths.push_back(p->kind());
+    return v;
+}
+
 bool NatRendezvous::start(UpDownClient& client)
 {
     const PeerInfo peer = PeerInfo::fromClient(client);
@@ -808,11 +826,11 @@ bool NatRendezvous::acceptDirectUdp(const uint8* peerHash, const Endpoint& from,
 // Path choice
 // ---------------------------------------------------------------------------
 
-std::vector<NatPath*> NatRendezvous::orderedPaths(const PeerInfo& peer) const
+std::vector<NatPath*> NatRendezvous::orderedPaths(const PeerInfo& peer, bool probe) const
 {
     std::vector<NatPath*> out;
     for (const auto& p : m_paths) {
-        if (p->canServe(peer))
+        if (probe ? p->canServe(peer) : p->canServeKnown(peer))
             out.push_back(p.get());
     }
     // PR_NAT ahead of Lugdunum when both can serve: only an eNode-go server offers both.

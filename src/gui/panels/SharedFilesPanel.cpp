@@ -26,6 +26,7 @@
 #include "utils/IpcFeedback.h"
 #include "utils/ListActivation.h"
 #include "utils/Log.h"
+#include "utils/Ed3kLinkMenu.h"
 #include "utils/MenuUtils.h"
 #include "utils/PanelPoller.h"
 #include "utils/PreviewLauncher.h"
@@ -701,6 +702,13 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
             fetchAndShowSharedFileDetails(hashes, FileDetailDialog::Ed2kLink);
         });
         act->setEnabled(hasSel);
+    }
+    // their ed3k:file counterparts (no MFC original), as in Transfers
+    {
+        QList<Ed3kLinkMenu::File> links;
+        for (const SharedFileRow* f : sel)
+            links.append({f->hash, f->fileName, f->fileSize});
+        Ed3kLinkMenu::addActions(m_contextMenu, this, m_ipc, links);
     }
     // batch 15, hops.md §1: move to the other ed3k key (asks first); all selected under one key
     {
@@ -2331,13 +2339,13 @@ void SharedFilesPanel::populateFilesystemChildren(QTreeWidgetItem* parentItem)
     // the core's disk: asked over IPC when it runs on another host. Symlinked folders
     // listed like MFC; the tree loads lazily, so a loop costs nothing.
     FolderLister::list(m_ipc, parentPath, this,
-                       [this, parentPath](bool, const QList<FolderEntry>& rows, const QString&) {
+                       [this, parentPath](bool ok, const QList<FolderEntry>& rows, const QString&) {
         QTreeWidgetItem* item = findFilesystemItem(parentPath);
         if (!item || item->childCount() > 0)
             return;   // gone, or filled by an earlier answer
         for (const FolderEntry& e : rows)
             addFilesystemChild(item, e.path, e.label, e.hasSubfolders);
-        if (rows.isEmpty() && item != m_allDirsItem)
+        if (ok && rows.isEmpty() && item != m_allDirsItem)   // a failed ask can be expanded again
             item->setChildIndicatorPolicy(QTreeWidgetItem::DontShowIndicator);
     });
 }
@@ -2652,6 +2660,13 @@ void SharedFilesPanel::showSharedDirMenu(QTreeWidgetItem* item, const QPoint& gl
     menu.addAction(menuIcon("eD2kLink.ico"), tr("eD2K Links..."), this, [this, hashes] {
         fetchAndShowSharedFileDetails(hashes, FileDetailDialog::Ed2kLink);
     })->setEnabled(connected && state.link);
+    {
+        QList<Ed3kLinkMenu::File> links;
+        if (state.link)
+            for (const SharedFileRow* f : files)
+                links.append({f->hash, f->fileName, f->fileSize});
+        Ed3kLinkMenu::addActions(&menu, this, m_ipc, links);
+    }
 
     menu.addSeparator();
 

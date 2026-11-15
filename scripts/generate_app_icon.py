@@ -28,7 +28,7 @@ from icon_tools import report, write_ico
 try:
     from PIL import Image
 except ImportError:
-    sys.exit("Pillow is required: pip3 install Pillow")
+    sys.exit("Pillow is required: uv sync (or pip3 install Pillow)")
 
 ROOT = Path(__file__).resolve().parent.parent
 ICONS = ROOT / "resources" / "icons"

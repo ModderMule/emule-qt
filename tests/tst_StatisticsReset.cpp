@@ -40,6 +40,7 @@ private slots:
     void restore_swapsSoASecondOneUndoesIt();
     void restore_keepsARecordRaisedAfterTheReset();
     void restore_withoutABackupFails();
+    void hasBackup_looksOnceUntilBackupOrLoad();
     void statisticsYaml_everyCumulativeStatRoundTrips();
     void statisticsYaml_fileWithoutBlocksLoadsZeros();
 };
@@ -615,6 +616,30 @@ void tst_StatisticsReset::restore_withoutABackupFails()
     // A failed restore must not leave a backup behind, or the menu item would
     // come alive with nothing behind it.
     QVERIFY(!prefs.hasCumulativeStatsBackup());
+}
+
+// The stats poll asks every second on the main thread: the disk is asked once, then
+// again only after a backup, a restore or a load (a stat stalled the core for 8 s).
+void tst_StatisticsReset::hasBackup_looksOnceUntilBackupOrLoad()
+{
+    QTemporaryDir tmp;
+    Preferences prefs;
+    bindToDir(prefs, tmp);
+
+    QVERIFY(!prefs.hasCumulativeStatsBackup());
+    {
+        QFile f(prefs.cumulativeStatsBackupPath());
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("statsLastReset: 1\n");
+    }
+    QVERIFY(!prefs.hasCumulativeStatsBackup());   // not looked at again
+
+    QVERIFY(prefs.load(prefs.filePath()));
+    QVERIFY(prefs.hasCumulativeStatsBackup());    // a load looks again
+
+    QVERIFY(QFile::remove(prefs.cumulativeStatsBackupPath()));
+    QVERIFY(prefs.backupCumulativeStats());
+    QVERIFY(prefs.hasCumulativeStatsBackup());
 }
 
 // Reset, backup and restore share one field walk, but preferences.yml is loaded

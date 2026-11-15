@@ -8,6 +8,7 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDialogButtonBox>
 #include <QDir>
 #include <QFileDialog>
 #include <QLabel>
@@ -110,10 +111,13 @@ PasteTextDialog::PasteTextDialog(const Chrome& chrome, QWidget* parent)
     // A read-only box is a list the caller filled in, so there is nothing for
     // the user to type and nothing to wait for.
     m_acceptBtn->setEnabled(chrome.readOnlyText);
-    btnLayout->addWidget(m_acceptBtn);
 
     auto* cancelBtn = new QPushButton(tr("Cancel"), this);
-    btnLayout->addWidget(cancelBtn);
+    // Accept/Cancel in the platform's order
+    auto* acceptCancel = new QDialogButtonBox(this);
+    acceptCancel->addButton(m_acceptBtn, QDialogButtonBox::AcceptRole);
+    acceptCancel->addButton(cancelBtn, QDialogButtonBox::RejectRole);
+    btnLayout->addWidget(acceptCancel);
 
     layout->addLayout(btnLayout);
 

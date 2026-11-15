@@ -271,6 +271,18 @@ float Tag::floatValue() const
     return std::get<float>(m_value);
 }
 
+std::size_t Tag::heapBytes() const
+{
+    // + QArrayData header and allocator overhead per buffer
+    constexpr std::size_t kPerBuffer = 32;
+    std::size_t n = m_name.isEmpty() ? 0 : std::size_t(m_name.capacity()) + kPerBuffer;
+    if (const auto* str = std::get_if<QString>(&m_value); str && !str->isEmpty())
+        n += std::size_t(str->capacity()) * sizeof(QChar) + kPerBuffer;
+    else if (const auto* blob = std::get_if<QByteArray>(&m_value); blob && !blob->isEmpty())
+        n += std::size_t(blob->capacity()) + kPerBuffer;
+    return n;
+}
+
 const uint8* Tag::hashValue() const
 {
     return std::get<HashArray>(m_value).data();

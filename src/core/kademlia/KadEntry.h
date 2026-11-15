@@ -47,6 +47,8 @@ public:
     bool addTag(Tag tag);
     uint32 getTagCount() const;
     void writeTagList(FileDataIO& data) const;
+    /// RAM of this entry, its tags and names (estimate).
+    [[nodiscard]] virtual std::size_t memoryBytes() const;
 
     QString getCommonFileName() const;
     QString getCommonFileNameLowerCase() const;
@@ -85,6 +87,7 @@ public:
     ~KeyEntry() override;
     Entry* copy() const override;
     bool isKeyEntry() const override { return true; }
+    [[nodiscard]] std::size_t memoryBytes() const override;
 
     bool startSearchTermsMatch(const SearchTerm& term);
     void mergeIPsAndFilenames(KeyEntry* from);

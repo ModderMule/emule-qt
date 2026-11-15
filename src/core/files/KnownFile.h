@@ -194,6 +194,8 @@ public:
 
     // AICH
     [[nodiscard]] bool isAICHRecoverHashSetAvailable() const { return m_aichRecoverHashSetAvailable; }
+    /// RAM of this file object: names, tags, hash sets, Kad keywords and notes (estimate).
+    [[nodiscard]] std::size_t memoryBytes() const;
     void setAICHRecoverHashSetAvailable(bool val) { m_aichRecoverHashSetAvailable = val; }
 
     // Metadata version

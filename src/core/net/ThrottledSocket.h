@@ -48,7 +48,8 @@ public:
     [[nodiscard]] virtual bool isBusyQuickCheck() const = 0;
     [[nodiscard]] virtual bool isEnoughFileDataQueued(uint32 nMinFilePayloadBytes) const = 0;
     [[nodiscard]] virtual bool hasQueues(bool onlyStandardPackets = false) const = 0;
-    virtual bool useBigSendBuffer() { return false; }
+    /// Raise the send buffer for a slot uploading at @p bytesPerSec (0 = floor only).
+    virtual bool useBigSendBuffer(uint32 /*bytesPerSec*/ = 0) { return false; }
 };
 
 } // namespace eMule

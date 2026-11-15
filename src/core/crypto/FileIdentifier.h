@@ -112,6 +112,11 @@ public:
         return getTheoreticalAICHPartHashCount() == getAvailableAICHPartHashCount();
     }
     [[nodiscard]] const std::vector<AICHHash>& getRawAICHHashSet() const { return m_aichPartHashSet; }
+    /// RAM of the MD4 and AICH part hash sets.
+    [[nodiscard]] std::size_t hashSetBytes() const
+    {
+        return m_md4HashSet.capacity() * sizeof(m_md4HashSet[0]) + m_aichPartHashSet.capacity() * sizeof(AICHHash);
+    }
 
 private:
     EMFileSize& m_fileSize;

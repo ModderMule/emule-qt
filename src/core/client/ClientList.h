@@ -90,6 +90,8 @@ public:
     void removeClient(UpDownClient* client, const QString& reason = {});
     [[nodiscard]] bool isValidClient(const UpDownClient* client) const;
     [[nodiscard]] int clientCount() const;
+    /// RAM of every known client object (estimate).
+    [[nodiscard]] std::size_t memoryBytes() const;
     void deleteAll();
 
     // -- Find operations (linear scan, matching MFC) ------------------------

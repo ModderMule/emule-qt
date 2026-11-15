@@ -75,6 +75,8 @@ private slots:
     void chunkSelection_previewBeatsVeryRare();
     void chunkSelection_previewBeatsCurrentChunk();
     void chunkSelection_previewTailFormats();
+    void playFrom_reportsTheRunAndFocusesTheHole();
+    void chunkSelection_streamFocusBeatsPreview();
     void emptyBlock_alignsToEmBlockSize();
     void endPhase_followsWhatIsLeft();
     void lateDownload_healthyHolderKeepsItsBlock();
@@ -653,6 +655,62 @@ void tst_PartFile::chunkSelection_shortLastPartNotFavoured()
         int count = 1;
         QVERIFY(pf.getNextRequestedBlock(&client, blocks, count));
         QCOMPARE(blocks[0]->startOffset / PARTSIZE, uint64{0});
+    }
+}
+
+void tst_PartFile::playFrom_reportsTheRunAndFocusesTheHole()
+{
+    PartFile pf;
+    pf.setFileName(QStringLiteral("movie.mkv"));
+    pf.setFileSize(PARTSIZE * 20);
+    uint8 hash[16] = {1};
+    pf.setFileHash(hash);
+    pf.fillGap(0, PARTSIZE * 20 - 1);
+    pf.addGap(PARTSIZE * 10 + 1000, PARTSIZE * 12 - 1);
+    QVERIFY(!pf.streamFocus());
+
+    // far from the hole: the run, no focus
+    QCOMPARE(pf.playFrom(0), uint64{PARTSIZE} * 10 + 1000);
+    QVERIFY(!pf.streamFocus());
+
+    // close to it: the hole goes first
+    QCOMPARE(pf.playFrom(PARTSIZE * 9), uint64{PARTSIZE} * 10 + 1000);
+    QCOMPARE(pf.streamFocus().value_or(0), uint64{PARTSIZE} * 10 + 1000);
+
+    // a seek into it: nothing to serve, focus there
+    QCOMPARE(pf.playFrom(PARTSIZE * 11), uint64{PARTSIZE} * 11);
+    QCOMPARE(pf.streamFocus().value_or(0), uint64{PARTSIZE} * 11);
+
+    // the end probe
+    QCOMPARE(pf.playFrom(PARTSIZE * 20), uint64{PARTSIZE} * 20);
+}
+
+void tst_PartFile::chunkSelection_streamFocusBeatsPreview()
+{
+    // A player seeked to part 12: its parts come before preview and rare ones,
+    // and the focus part from the seek offset on
+    const bool oldPrio = thePrefs.previewPrio();
+    const auto restore = qScopeGuard([oldPrio] { thePrefs.setPreviewPrio(oldPrio); });
+    thePrefs.setPreviewPrio(true);
+
+    for (int i = 0; i < 20; ++i) {
+        PartFile pf;
+        pf.setFileName(QStringLiteral("movie.mkv"));
+        pf.setFileSize(PARTSIZE * 20);
+        uint8 hash[16] = {1};
+        pf.setFileHash(hash);
+        auto& freq = pf.srcPartFrequency();
+        std::ranges::fill(freq, uint16{5});
+        freq[3] = 1;   // rarest
+        const uint64 seek = PARTSIZE * 12 + EMBLOCKSIZE * 2 + 77;
+        QCOMPARE(pf.playFrom(seek), seek);
+
+        UpDownClient client;
+        client.setCompleteSource(true);
+        Requested_Block_Struct* blocks[1] = {};
+        int count = 1;
+        QVERIFY(pf.getNextRequestedBlock(&client, blocks, count));
+        QCOMPARE(blocks[0]->startOffset, seek);
     }
 }
 

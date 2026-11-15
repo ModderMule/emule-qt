@@ -19,6 +19,7 @@
 #include "utils/TimeUtils.h"
 
 #include <QDateTime>
+#include <QDeadlineTimer>
 #include <QFile>
 #include <QObject>
 #include <QThread>
@@ -269,6 +270,18 @@ public:
     [[nodiscard]] bool isCompleteBDSafe(uint64 start, uint64 end) const;
     /// KnownFile::isPartComplete — a partfile answers from its gap list.
     [[nodiscard]] bool isPartComplete(uint32 part) const override { return isComplete(part); }
+
+    /// Playing while downloading ("Enable seeking in downloads"): bytes a player gets
+    /// ahead of its position before the parts after them are fetched first.
+    static constexpr uint64 kStreamLead = 3 * PARTSIZE;
+    /// How long one player request keeps that order; each request renews it.
+    static constexpr int kStreamFocusMs = 30'000;
+    /// A player reads from @p offset: end (exclusive) of the bytes on disk from there,
+    /// == @p offset when none. When less than kStreamLead follows, the parts from the
+    /// first missing byte go first (kStreamFocusMs) and buffered bytes are flushed.
+    uint64 playFrom(uint64 offset);
+    /// The first byte the parts are fetched from while a player streams; none: normal order.
+    [[nodiscard]] std::optional<uint64> streamFocus() const;
 
     /// KnownFile::dataFilePath — the `.part` data file, i.e. fullName() (which is
     /// the `.part.met`) with the `.met` suffix removed. Once complete, the `.part`
@@ -917,6 +930,8 @@ private:
     uint32 m_privateMaxSources = 0;
     bool m_previewPrio = false;
     bool m_pauseOnPreview = false;
+    uint64 m_streamFocus = 0;              // playFrom(): first byte fetched first
+    QDeadlineTimer m_streamFocusUntil;     // expired: no stream focus
     uint64 m_clientSrcAnswered = 0;  // MFC: m_ClientSrcAnswered
 
     // Save/Load Sources (MorphXT CPartFile::m_sourcesaver)

@@ -21,6 +21,7 @@
 #include <QClipboard>
 #include <QComboBox>
 #include <QDateTime>
+#include <QDialogButtonBox>
 #include <QFileInfo>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -198,10 +199,13 @@ void Ed3kOwnSetDialog::setupUi()
     m_saveButton = new QPushButton(tr("Save"));
     m_saveButton->setDefault(true);
     connect(m_saveButton, &QPushButton::clicked, this, &Ed3kOwnSetDialog::onSave);
-    btnLayout->addWidget(m_saveButton);
     auto* cancelBtn = new QPushButton(tr("Cancel"));
     connect(cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
-    btnLayout->addWidget(cancelBtn);
+    // Save/Cancel in the platform's order
+    auto* saveCancel = new QDialogButtonBox(this);
+    saveCancel->addButton(m_saveButton, QDialogButtonBox::AcceptRole);
+    saveCancel->addButton(cancelBtn, QDialogButtonBox::RejectRole);
+    btnLayout->addWidget(saveCancel);
     mainLayout->addLayout(btnLayout);
 
     DialogSizing::applySize(this, {}, m_folder.isEmpty() ? QSize(760, 480) : QSize(520, 300), DialogSizing::Fit::Layout);

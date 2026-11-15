@@ -4,9 +4,10 @@
 #
 # Usage:  ./test-scripts/test-daemon-lifecycle.sh [build_dir]
 #
-# Requires: python3 with cbor2 module (pip3 install cbor2)
+# Requires: uv sync (cbor2), or python3 with cbor2 (pip3 install cbor2)
 
 set -euo pipefail
+. "$(dirname "$0")/../scripts/py.sh"
 
 BUILD_DIR="${1:-build}"
 DAEMON="$BUILD_DIR/src/daemon/emulecored"
@@ -38,7 +39,7 @@ start_daemon() {
 echo "=== Scenario 1: Shutdown via IPC ==="
 start_daemon
 
-python3 -c "
+py -c "
 import socket, struct, cbor2, time
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -79,7 +80,7 @@ echo ""
 echo "=== Scenario 2: Client disconnect (daemon must survive) ==="
 start_daemon
 
-python3 -c "
+py -c "
 import socket, struct, cbor2, time
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -118,7 +119,7 @@ if [[ -z "${DAEMON_PID:-}" ]] || ! kill -0 "$DAEMON_PID" 2>/dev/null; then
     start_daemon
 fi
 
-python3 -c "
+py -c "
 import socket, struct, cbor2, time
 
 for i in range(5):

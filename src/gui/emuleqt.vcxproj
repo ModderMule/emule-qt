@@ -372,6 +372,7 @@
     <ClCompile Include="utils\IpcFeedback.cpp" />
     <ClCompile Include="utils\MassRenameAction.cpp" />
     <ClCompile Include="utils\MoveDownloadsAction.cpp" />
+    <ClCompile Include="utils\Ed3kLinkMenu.cpp" />
     <ClCompile Include="utils\FolderLister.cpp" />
     <ClCompile Include="utils\ListActivation.cpp" />
     <ClCompile Include="utils\MenuUtils.cpp" />
@@ -446,6 +447,7 @@
     <ClInclude Include="app\Ed3kLinkActions.h" />
     <ClInclude Include="utils\MassRenameAction.h" />
     <ClInclude Include="utils\MoveDownloadsAction.h" />
+    <ClInclude Include="utils\Ed3kLinkMenu.h" />
     <ClInclude Include="utils\FolderLister.h" />
     <ClInclude Include="utils\AsyncMessageBox.h" />
     <ClInclude Include="utils\ScrollMessageBox.h" />
@@ -453,6 +455,7 @@
     <ClInclude Include="utils\UrlPrefField.h" />
     <ClInclude Include="utils\ListActivation.h" />
     <ClInclude Include="utils\AppActivation.h" />
+    <ClInclude Include="utils\MessageBoxButtonOrder.h" />
     <ClInclude Include="utils\MenuUtils.h" />
     <ClInclude Include="utils\Appearance.h" />
     <ClInclude Include="utils\ColorUtils.h" />
@@ -833,6 +836,7 @@
     <None Include="..\..\resources\icons\UsenetSearch.ico" />
     <None Include="..\..\resources\icons\Torrent.ico" />
     <None Include="..\..\resources\icons\Hoster.ico" />
+    <None Include="..\..\resources\icons\Memory.ico" />
     <None Include="..\..\resources\icons\I2P.ico" />
     <None Include="..\..\resources\icons\User.ico" />
     <None Include="..\..\resources\icons\UserAdd.ico" />

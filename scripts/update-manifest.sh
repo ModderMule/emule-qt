@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+. "$(dirname "$0")/py.sh"
 
 # Rewrites the update manifest (emuleqt-version.json, served at
 # https://emule-qt.org/pub/ and polled by src/gui/app/VersionChecker.cpp) for one
@@ -160,7 +161,7 @@ geoip='null'
 if [[ -n "$GEOIP" ]]; then
   [[ -f "$GEOIP" ]] || die "--geoip file not found: ${GEOIP}"
   # build_epoch from the mmdb metadata: a uint64 (extended type 9) after the key
-  epoch="$(python3 -I - "$GEOIP" <<'PY' 2>/dev/null || true
+  epoch="$(py -I - "$GEOIP" <<'PY' 2>/dev/null || true
 import sys
 data = open(sys.argv[1], 'rb').read()
 meta = data[data.rfind(b'\xab\xcd\xefMaxMind.com') + 14:]

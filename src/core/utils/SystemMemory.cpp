@@ -7,6 +7,7 @@
 #include <QtGlobal>
 
 #include <algorithm>
+#include <vector>
 
 #if defined(Q_OS_WIN)
 #include <qt_windows.h>
@@ -16,6 +17,7 @@
 #include <sys/sysctl.h>
 #elif defined(Q_OS_LINUX)
 #include <QFile>
+#include <malloc.h>
 #endif
 
 namespace eMule {
@@ -102,6 +104,39 @@ std::optional<ProcessMemory> processMemory()
     if (m.current == 0)
         return std::nullopt;
     return m;
+#else
+    return std::nullopt;
+#endif
+}
+
+std::optional<HeapMemory> heapMemory()
+{
+#if defined(Q_OS_WIN)
+    // CRT and Rust both allocate from the process heap; sum every heap anyway
+    std::vector<HANDLE> heaps(64);
+    DWORD n = GetProcessHeaps(DWORD(heaps.size()), heaps.data());
+    if (n > heaps.size()) {
+        heaps.resize(n);
+        n = GetProcessHeaps(DWORD(heaps.size()), heaps.data());
+    }
+    if (n == 0)
+        return std::nullopt;
+    HeapMemory m;
+    for (DWORD i = 0; i < std::min<DWORD>(n, DWORD(heaps.size())); ++i) {
+        HEAP_SUMMARY sum{};
+        sum.cb = sizeof(sum);
+        if (HeapSummary(heaps[i], 0, &sum)) {
+            m.inUse += sum.cbAllocated;
+            m.committed += sum.cbCommitted;
+        }
+    }
+    return m.committed ? std::optional(m) : std::nullopt;
+#elif defined(Q_OS_MACOS) || defined(Q_OS_IOS)
+    // not told: zone statistics leave out large blocks (macOS 27 xzone malloc)
+    return std::nullopt;
+#elif defined(Q_OS_LINUX) && defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 33))
+    const struct mallinfo2 mi = mallinfo2();
+    return HeapMemory{std::uint64_t(mi.uordblks) + mi.hblkhd, std::uint64_t(mi.arena) + mi.hblkhd};
 #else
     return std::nullopt;
 #endif

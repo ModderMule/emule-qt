@@ -146,6 +146,9 @@ enum class IpcMsgType : int {
     /// Settings: imported on a core restart that follows the reply (parts with it).
     /// Parts only: the download folders are queued for conversion now; dir may be empty.
     ImportLegacyProfile  = 226,
+    /// [] -> [ok, [{agoMs, type, target, name, addr, cc, contacts, results, records, stored, load,
+    /// answered}]] — recent requests other Kad nodes sent us, newest first (ops::kadIncoming)
+    GetKadIncoming       = 227,
     SaveSchedules        = 222,  ///< [enabled: bool, schedules: CborArray] — replace all
     ScanImportFolder     = 230,  ///< [folder: string, removeSource: bool] → scan + queue + return jobs
     GetConvertJobs       = 231,  ///< [] → current job list with statuses
@@ -993,6 +996,9 @@ enum class IpcMsgType : int {
     /// [on: bool] -> [ok] — connect or disconnect the node for this run (toolbar Connect);
     /// starts as the autoConnect pref, ed3kEnabled still gates it
     SetEd3kConnected        = 1205,
+    /// [] -> [ok, [rows as GetKadIncoming; type: KadRequest.kind + 100 × (0 find, 1 search,
+    /// 2 store)]] — recent KadRequests other nodes sent this node, newest first
+    GetEd3kKadIncoming      = 1206,
 
     // -- Link Grabber (1210-1219, hoster.md "Link Grabber"), Ed3kHosterBridge.cpp. A package:
     // {id, name, passwords: [string], source, added (ms)}; a link: {id, packageId, url, name, host,
@@ -1269,6 +1275,10 @@ enum class IpcMsgType : int {
     Ed3kOwnSetControl       = 1147,
     /// [id] -> [ok, {link, hidden}] — a hidden set's carries `s` (a credential: never logged)
     GetEd3kOwnSetLink       = 1148,
+    /// [[{h: MD4 (32 hex) or root (64 hex), n: name, s: size}]] -> [ok, {links: [text]}] — the
+    /// ed3k:file link of each (Copy ed3k Links); "" for a file without a root (yet). Ed3kBridge,
+    /// ahead of the downloads' 1140-1149
+    GetEd3kFileLinks        = 1149,
 
     // -- ed3k live polish (batch 14): live.md §1.2, §2.3, §4, Ed3kSetsBridge.cpp. A stream row
     // (GetEd3kLive) also has state 5 (§2.3: this viewer can't play its media/codecs; left) with

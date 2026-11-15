@@ -67,6 +67,7 @@ class UploadBandwidthThrottler;
 class UpDownClient;
 class UploadQueue;
 
+class ClientAnalyzer;
 class ClientCensus;
 class DlpLoader;
 namespace kad { class KadNodeCensus; }
@@ -75,6 +76,8 @@ namespace natt { class NatRendezvous; }
 struct AppContext {
     ClientList*      clientList     = nullptr;
     ClientCreditsList* clientCredits = nullptr;
+    /// Behaviour records (clientanalyzer.met); used only while thePrefs.clientAnalyzer().
+    ClientAnalyzer*  clientAnalyzer = nullptr;
     ClientUDPSocket* clientUDP      = nullptr;
     DownloadQueue*   downloadQueue  = nullptr;
     UploadQueue*     uploadQueue    = nullptr;
@@ -322,6 +325,9 @@ struct AppContext {
     std::function<bool(const uint8* hash)> isEd3kUploadPeer;
     /// ed3k runs and has Kad contacts. Set by the daemon; null: ed3k counts as offline.
     std::function<bool()> ed3kConnected;
+    /// Searches the NOTE records of the ed3k file @p root (32 B, Protocol.md §10.7): found
+    /// notes go to SearchList::addNotes under root[0..16). False: not started. Set by the daemon.
+    std::function<bool(const QByteArray& root)> ed3kSearchNotes;
 
     /// Tier 1: the egress IPv6 a server observed us on (CT_MOD_YOUR_IP in OP_SERVERIDENT).
     /// Callers must only pass this for a session that actually connected over IPv6; the

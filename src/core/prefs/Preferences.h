@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <atomic>
 #include <memory>
 #include <optional>
 
@@ -657,6 +658,11 @@ public:
 
     [[nodiscard]] bool previewPrio() const;
     void setPreviewPrio(bool val);
+
+    /// Preview of an unfinished eD2K/ed3k download: a player's seek fetches the parts
+    /// there first and waits for them instead of reading zeros (WebServer preview route).
+    [[nodiscard]] bool downloadSeeking() const;
+    void setDownloadSeeking(bool val);
 
     [[nodiscard]] bool startNextPausedFile() const;
     void setStartNextPausedFile(bool val);
@@ -2117,6 +2123,9 @@ public:
     [[nodiscard]] int antiLeecherVariant() const;
     /// Soft hits (mod/user soft, md4 tag) reduce the score instead of banning; lite only.
     [[nodiscard]] bool antiLeecherSoftReduceScore() const;
+    /// Behaviour score per user hash (ClientAnalyzer), times the credit ratio. Off by default.
+    [[nodiscard]] bool clientAnalyzer() const;
+    void setClientAnalyzer(bool val);
 
     // -- Shared file visibility -----------------------------------------------
 
@@ -2514,6 +2523,9 @@ private:
     QString m_filePath;
     bool m_peekOnly = false;      ///< peek(): saveImpl() writes nothing
     QStringList m_autoPicked;     ///< peek(): IPC keys picked because the file had none
+    /// hasCumulativeStatsBackup() answer: -1 not looked yet. The stats poll asks every
+    /// second on the main thread; a stat of a busy disk stalled it for seconds.
+    mutable std::atomic<int> m_statsBackupState{-1};
     mutable QReadWriteLock m_lock;
 };
 

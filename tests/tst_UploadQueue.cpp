@@ -59,6 +59,7 @@ private slots:
     void addClientToQueue_trackedClientsGate();
     void slotAssignment_alternatesBetweenFamilies();
     void process_flushesPendingIPChangeForWaitingClients();
+    void purgeStaleWaiters_dropsSilentWaitersOnly();
 
     // UploadState::Connecting must not be a dead end — MFC BaseClient.cpp:1558-1565, :1118-1120
     void connectingSlot_activatedByHandshake();
@@ -1229,6 +1230,43 @@ void tst_UploadQueue::process_flushesPendingIPChangeForWaitingClients()
     freshPeer->close();
     stalePeer->close();
     QCoreApplication::processEvents();
+    theApp.clientList = nullptr;
+}
+
+// The timer purge: a waiter silent for MAX_PURGEQUEUETIME leaves the queue without a slot
+// decision; one heard from just inside the hour stays.
+void tst_UploadQueue::purgeStaleWaiters_dropsSilentWaitersOnly()
+{
+    ClientList clientList;
+    theApp.clientList = &clientList;
+
+    UploadQueue queue;   // no shared file list — the noFile purge stays off
+
+    // occupy the free slots so the next two land on the waiting list
+    UpDownClient filler1, filler2;
+    setupClient(filler1, QStringLiteral("172.31.0.1"), 0xF1, 4000);
+    setupClient(filler2, QStringLiteral("172.31.0.2"), 0xF2, 4001);
+    QVERIFY(queue.addClientToQueue(&filler1));
+    QVERIFY(queue.addClientToQueue(&filler2));
+
+    UpDownClient fresh, stale;
+    setupClient(fresh, QStringLiteral("10.20.30.40"), 0x21, 4662);
+    setupClient(stale, QStringLiteral("10.20.30.41"), 0x22, 4663);
+    QVERIFY(queue.addClientToQueue(&fresh));
+    QVERIFY(queue.addClientToQueue(&stale));
+    QCOMPARE(queue.waitingUserCount(), 2);
+
+    const uint64 now = getTickCount() + MAX_PURGEQUEUETIME;   // room to step back an hour
+    fresh.setLastUpRequest(now - MAX_PURGEQUEUETIME + 1);
+    stale.setLastUpRequest(now - MAX_PURGEQUEUETIME);
+
+    queue.purgeStaleWaiters(now);
+
+    QCOMPARE(queue.waitingUserCount(), 1);
+    QVERIFY(queue.isOnUploadQueue(&fresh));
+    QVERIFY(!queue.isOnUploadQueue(&stale));
+    QCOMPARE(stale.uploadState(), UploadState::None);
+
     theApp.clientList = nullptr;
 }
 

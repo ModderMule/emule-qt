@@ -58,6 +58,39 @@ bool Ed3kSearch::isRunning(uint32 searchID) const
     return m_runs.contains(searchID);
 }
 
+bool Ed3kSearch::searchNotes(const QByteArray& root)
+{
+    auto* e = m_session.engine();
+    if (!e || root.size() != 32 || m_noteTimeouts.contains(root))
+        return false;
+    ::ed3k::Root r;
+    std::copy_n(reinterpret_cast<const std::uint8_t*>(root.constData()), r.bytes.size(), r.bytes.begin());
+    // the same key as keyword searches: while hiding, through a last hop (hops.md §1)
+    const bool anon = m_session.hide().keyForUse() == ::ed3k::KeyKind::Anon;
+    auto lookup = anon ? e->anonSearchNotes(m_session.now(), r) : e->searchNotes(m_session.now(), r);
+    if (!lookup) {
+        logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k notes search refused (error %1)").arg(int(lookup.error())); });
+        return false;
+    }
+    m_noteLookups[lookupKey(*lookup, anon ? ::ed3k::KeyKind::Anon : ::ed3k::KeyKind::Node)] = root;
+    auto timeout = std::make_unique<QTimer>();
+    timeout->setSingleShot(true);
+    connect(timeout.get(), &QTimer::timeout, this, [this, root] {
+        std::erase_if(m_noteLookups, [&root](const auto& kv) { return kv.second == root; });
+        endNotes(root);
+    });
+    timeout->start(kTimeoutMs);
+    m_noteTimeouts[root] = std::move(timeout);
+    if (theApp.searchList)
+        theApp.searchList->setNotesSearchStatus(reinterpret_cast<const uint8*>(root.constData()), true);
+    logEd3kDebug([&]() -> QString { return QStringLiteral(">>> ed3k notes search %1 (lookup %2)").arg(QString::fromLatin1(root.toHex())).arg(*lookup); });
+    QTimer::singleShot(0, this, [this] {
+        if (m_session.isRunning())
+            m_session.pump();
+    });
+    return true;
+}
+
 std::map<QByteArray, Ed3kSearch::Availability> Ed3kSearch::availabilityOf(const std::vector<::ed3k::FoundFile>& files)
 {
     std::map<QByteArray, Availability> out;
@@ -266,6 +299,23 @@ void Ed3kSearch::onEventPolled(const ::ed3k::Event& event, ::ed3k::KeyKind key, 
     const auto* found = std::get_if<::ed3k::event::KadFound>(&event);
     if (!found)
         return;
+    if (const auto n = m_noteLookups.find(lookupKey(found->lookup, key)); n != m_noteLookups.end()) {
+        const QByteArray root = n->second;
+        m_noteLookups.erase(n);
+        for (const auto& note : found->notes) {
+            const QByteArray publisher = bytesOf(note.publisher.bytes);
+            const QString text = QString::fromUtf8(note.text.data(), qsizetype(note.text.size()));
+            const std::uint32_t rating = std::min<std::uint32_t>(note.rating, 5);
+            if (m_notes)
+                m_notes(root, publisher, rating, text);
+            else if (theApp.searchList)
+                (void)theApp.searchList->addNotes(reinterpret_cast<const uint8*>(root.constData()), publisher, uint8(rating), text);
+        }
+        logEd3kDebug([&]() -> QString { return QStringLiteral("<<< ed3k notes search %1: %2 note(s)").arg(QString::fromLatin1(root.toHex())).arg(found->notes.size()); });
+        // reported from the event loop, not inside the pump
+        QTimer::singleShot(0, this, [this, root] { endNotes(root); });
+        return;
+    }
     // was: const auto it = m_lookups.find(found->lookup);
     const auto it = m_lookups.find(lookupKey(found->lookup, key));
     if (it == m_lookups.end())
@@ -296,6 +346,17 @@ void Ed3kSearch::onEventPolled(const ::ed3k::Event& event, ::ed3k::KeyKind key, 
     if (run != m_runs.end())
         run->second.timeout->stop();
     QTimer::singleShot(0, this, [this, searchID] { finish(searchID, {}); });
+}
+
+void Ed3kSearch::endNotes(const QByteArray& root)
+{
+    // may run from the timer's own timeout: not deleted under its emit
+    if (const auto it = m_noteTimeouts.find(root); it != m_noteTimeouts.end()) {
+        it->second.release()->deleteLater();
+        m_noteTimeouts.erase(it);
+    }
+    if (theApp.searchList)
+        theApp.searchList->setNotesSearchStatus(reinterpret_cast<const uint8*>(root.constData()), false);
 }
 
 void Ed3kSearch::onLiveFound(uint32 searchID, Run& run, const ::ed3k::event::KadFound& found)

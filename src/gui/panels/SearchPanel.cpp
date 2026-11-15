@@ -90,12 +90,18 @@ MetaResultActions::Row metaRow(const SearchResultRow& r)
     return {.hash = r.hash, .name = r.fileName, .kind = r.metaKind, .ref = r.metaRef(), .magnet = r.magnet};
 }
 
-/// Whether a row has a Details view: the eD2K sheet, a torrent's or NZB's fetched
-/// file, or a web row's links. A magnet-only torrent, a link container and an
-/// ed3k row have none.
+/// Whether a row has a Details view: the eD2K sheet (also for an ed3k row), a torrent's
+/// or NZB's fetched file, or a web row's links. A magnet-only torrent and a link
+/// container have none.
 bool hasDetails(const SearchResultRow& r)
 {
-    return !r.isMeta() || r.isUsenet() || r.isWeb() || (r.isTorrent() && !r.isMagnetOnly());
+    return !r.isMeta() || r.isEd3k() || r.isUsenet() || r.isWeb() || (r.isTorrent() && !r.isMagnetOnly());
+}
+
+/// Rows the eD2K detail sheet serves: eD2K rows, and ed3k rows (their notes and metadata)
+bool hasDetailSheet(const SearchResultRow& r)
+{
+    return !r.isMeta() || r.isEd3k();
 }
 
 /// UiState key for the shared search-results header layout (all tabs share it).
@@ -1606,6 +1612,8 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     bool anyNotSpam    = false;
     bool anyDownloadable = false;
     bool anyEd2k = false;
+    bool anyEd2kLink = false;   ///< eD2K rows, ed3k rows with their MD4
+    bool anyEd3k = false;
     bool anyUsenet = false;
     bool anyTorrent = false;    ///< with a .torrent to fetch
     bool anyMagnetOnly = false;
@@ -1614,6 +1622,8 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     bool anyContainer = false;
     bool anyMagnet = false;
     bool singleMeta = false;
+    bool singleSheet = false;   ///< the eD2K detail sheet serves it (hasDetailSheet)
+    QString singleEd2kHash;
     bool singleHasDetails = false;
     QString singleHash;
     QString singleName;
@@ -1633,13 +1643,15 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
             peerPreviewHash = result->hash;
         }
         anyEd2k |= !result->isMeta();
+        anyEd3k |= result->isEd3k();
+        anyEd2kLink |= result->ed2kHash().size() == 32;
         anyUsenet |= result->isUsenet();
         anyTorrent |= result->isTorrent() && !result->isMagnetOnly();
         anyMagnetOnly |= result->isMagnetOnly();
         anyWeb |= result->isWeb();
         allWeb &= result->isWeb();
         anyContainer |= result->isContainer();
-        anyMagnet |= !result->isMeta() || !result->magnet.isEmpty();
+        anyMagnet |= result->ed2kHash().size() == 32 || !result->magnet.isEmpty();
         // eD2K rows: not already in the transfer list. Usenet rows: the daemon asks.
         // Torrent, web and container rows always: their tab, else the external fallback.
         if ((result->isEd3k() && (!m_downloadModel || !m_downloadModel->findByHash(result->ed3kRoot)))
@@ -1653,6 +1665,8 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
             singleName = result->fileName;
             singleSize = result->fileSize;
             singleMeta = result->isMeta();
+            singleSheet = hasDetailSheet(*result);
+            singleEd2kHash = result->ed2kHash();
             singleHasDetails = hasDetails(*result);
         }
     }
@@ -1678,7 +1692,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
                 [this] { watchEd3kLiveResults(m_resultView->selectionModel()->selectedRows()); });
         defaultAction = watchAction;
     }
-    if (ext && anyEd2k) {
+    if (ext && (anyEd2k || anyEd3k)) {
         auto* pausedAction = m_contextMenu->addAction(
             menuIcon("Download.ico"), tr("%1 (%2)").arg(tr("Download"), tr("Paused")));
         pausedAction->setEnabled(downloadAction->isEnabled());
@@ -1748,10 +1762,10 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     }
 
     // Comments... — the same sheet, forced onto its Comments page (MFC passes
-    // IDD_COMMENTLST for MP_CMT, SearchListCtrl.cpp:817-824).
+    // IDD_COMMENTLST for MP_CMT, SearchListCtrl.cpp:817-824). ed3k rows: their NOTE records.
     {
         auto* commentsAction = m_contextMenu->addAction(menuIcon("FileComments.ico"), tr("Comments..."));
-        commentsAction->setEnabled(singleSel && tab && !singleMeta);
+        commentsAction->setEnabled(singleSel && tab && singleSheet);
         const uint32_t searchID = tab ? tab->searchID : 0;
         connect(commentsAction, &QAction::triggered, this, [this, searchID, singleHash] {
             fetchAndShowSearchDetails(searchID, singleHash, SearchDetailDialog::Comments);
@@ -1763,12 +1777,12 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     // Copy eD2K Links
     // meta rows have no eD2K link to give (never mint ed2k:// for a pseudo-hash)
     auto* copyLinkAction = m_contextMenu->addAction(menuIcon("eD2kLink.ico"), tr("Copy eD2K Links"));
-    copyLinkAction->setEnabled(hasSelection && anyEd2k);
+    copyLinkAction->setEnabled(hasSelection && anyEd2kLink);
     connect(copyLinkAction, &QAction::triggered, this, &SearchPanel::copySelectedEd2kLinks);
 
     // Copy eD2K Links (HTML)
     auto* copyHtmlAction = m_contextMenu->addAction(menuIcon("Copy.ico"), tr("Copy eD2K Links (HTML)"));
-    copyHtmlAction->setEnabled(hasSelection && anyEd2k);
+    copyHtmlAction->setEnabled(hasSelection && anyEd2kLink);
     copyHtmlAction->setVisible(thePrefs.showExtControls());   // advanced mode only
     connect(copyHtmlAction, &QAction::triggered, this, [this] {
         QStringList links;
@@ -1891,12 +1905,14 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     // (MFC SearchListCtrl / CanSearchRelatedFiles).
     auto* relatedAction = m_contextMenu->addAction(menuIcon("KadFileSearch.ico"),
                                                    tr("Search Related Files"));
-    // Without a server that answers it, one file can still be searched by name
-    relatedAction->setEnabled(hasSelection && anyEd2k
-                              && (m_relatedSearchSupported || (singleSel && !singleMeta)));
+    // Without a server that answers it, one file can still be searched by name (an ed3k
+    // row always: the server knows no root)
+    relatedAction->setEnabled(hasSelection && ((anyEd2k && m_relatedSearchSupported)
+                                               || (singleSel && (!singleMeta || anyEd3k))));
     relatedAction->setVisible(thePrefs.showExtControls());    // advanced mode only
-    connect(relatedAction, &QAction::triggered, this, [this, singleName] {
-        if (!m_relatedSearchSupported) {
+    const bool relatedByName = !m_relatedSearchSupported || !anyEd2k;
+    connect(relatedAction, &QAction::triggered, this, [this, singleName, relatedByName] {
+        if (relatedByName) {
             const qsizetype dotIdx = singleName.lastIndexOf(QLatin1Char('.'));
             startSearchFromExternal(dotIdx > 0 ? singleName.left(dotIdx) : singleName);
             return;
@@ -1916,8 +1932,8 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     // Web Services — greyed when webservices.dat is empty or the selection is not
     // exactly one file, matching MFC's flag2 (SearchListCtrl.cpp:724-727).
     auto* webMenu = m_contextMenu->addMenu(menuIcon("Web.ico"), tr("Web Services"));
-    if (singleSel && !singleMeta)   // web services key on the eD2K hash
-        WebServices::instance().populateFileMenu(webMenu, singleHash, singleName,
+    if (singleSel && singleEd2kHash.size() == 32)   // web services key on the eD2K hash
+        WebServices::instance().populateFileMenu(webMenu, singleEd2kHash, singleName,
                                                  static_cast<uint64_t>(singleSize));
     webMenu->setEnabled(!webMenu->isEmpty());
     webMenu->menuAction()->setVisible(thePrefs.showExtControls());   // advanced mode only
@@ -1951,7 +1967,7 @@ void SearchPanel::showResultDetails(const QModelIndex& index)
     const auto* result = refAt(index).row;
     if (!result || !hasDetails(*result) || (!ext && !result->isWeb()))
         return;
-    if (result->isMeta()) {
+    if (!hasDetailSheet(*result)) {
         showMetaRowDetails(tab->searchID, *result, QPointer(tab->model));
         return;
     }

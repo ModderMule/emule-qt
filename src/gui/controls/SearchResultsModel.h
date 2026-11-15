@@ -138,7 +138,9 @@ struct SearchResultRow {
             && hash.mid(8, 4).compare(u"FFFF", Qt::CaseInsensitive) != 0;
     }
 
-    /// ed2k:// link; empty for meta rows (their hash is not an MD4).
+    /// The file's MD4: an eD2K row's hash, an ed3k row's `ed2k` alias; empty for other rows.
+    [[nodiscard]] QString ed2kHash() const { return isEd3k() ? ed3kEd2k : isMeta() ? QString() : hash; }
+    /// ed2k:// link; empty for meta rows (their hash is not an MD4) but an ed3k row with its MD4.
     /// @p name stands in for the file's own name (a name row).
     [[nodiscard]] QString ed2kLink(const QString& name = {}) const;
     /// urn:ed2k magnet, or the server's magnet for a meta row (empty for Usenet).

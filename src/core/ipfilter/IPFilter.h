@@ -135,6 +135,18 @@ public:
     [[nodiscard]] bool isModified() const { return m_modified; }
 
     [[nodiscard]] const std::vector<IPFilterEntry>& entries() const { return m_entries; }
+    /// RAM of both range tables and their descriptions (estimate).
+    [[nodiscard]] std::size_t memoryBytes() const
+    {
+        // a description past the small-string buffer is a heap block of its own
+        const auto desc = [](const std::string& d) { return d.capacity() > 15 ? d.capacity() + 1 + 16 : 0; };
+        std::size_t n = m_entries.capacity() * sizeof(IPFilterEntry) + m_entries6.capacity() * sizeof(IPFilterEntry6);
+        for (const auto& e : m_entries)
+            n += desc(e.desc);
+        for (const auto& e : m_entries6)
+            n += desc(e.desc);
+        return n;
+    }
     [[nodiscard]] const std::vector<IPFilterEntry6>& entries6() const { return m_entries6; }
 
     [[nodiscard]] QString lastHitDescription() const;

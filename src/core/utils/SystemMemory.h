@@ -19,11 +19,20 @@ struct ProcessMemory {
     std::uint64_t peak = 0;       ///< highest of it so far; 0 when unknown
 };
 
+/// The C/C++ heap (malloc/new, Rust's System allocator too) of this process.
+struct HeapMemory {
+    std::uint64_t inUse = 0;      ///< bytes handed out and not freed
+    std::uint64_t committed = 0;  ///< bytes the heap holds from the OS; minus inUse = free or fragmented
+};
+
 /// RAM now; nullopt: the platform did not tell.
 [[nodiscard]] std::optional<SystemMemory> systemMemory();
 
 /// This process now; nullopt: the platform did not tell.
 [[nodiscard]] std::optional<ProcessMemory> processMemory();
+
+/// Heap of this process now; nullopt: the platform did not tell.
+[[nodiscard]] std::optional<HeapMemory> heapMemory();
 
 /// Available RAM below @p percent of the total. false when unknown or @p percent <= 0.
 [[nodiscard]] bool systemMemoryLow(int percent);

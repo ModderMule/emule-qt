@@ -159,10 +159,16 @@
     <ClCompile Include="net\ListenConflict.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="net\SendBufferSizer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="net\HttpStreamDownload.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="net\GuardedNetworkAccessManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="client\ClientAnalyzer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="client\FruitlessSessionLedger.cpp">
@@ -262,6 +268,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="kademlia\KadLog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="kademlia\KadIncomingLog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="kademlia\KadLookupHistory.cpp">
@@ -866,6 +875,12 @@
     <ClInclude Include="net\ListenConflict.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="net\SendBufferSizer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="client\ClientAnalyzer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="client\FruitlessSessionLedger.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1014,6 +1029,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="kademlia\KadLog.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="kademlia\KadIncomingLog.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="kademlia\KadLookupHistory.h">

@@ -143,6 +143,15 @@ struct StatsSnapshot {
     qint64 memProcessPeak = 0;
     qint64 memUploadBuffers = 0;      ///< eD2K block data held for upload slots
     qint64 memDownloadBuffers = 0;    ///< eD2K received data not yet written
+    qint64 memHeapInUse = 0;          ///< C/C++/Rust heap handed out, 0 when unknown
+    qint64 memHeapCommitted = 0;      ///< heap held from the OS (in use + free/fragmented)
+    qint64 memUploadReadAhead = 0;    ///< file data read ahead for eD2K upload slots
+    qint64 memSockets = 0;            ///< eD2K socket buffers and send queues
+    qint64 memKnownFiles = 0;         ///< known/shared/part file objects (estimate)
+    qint64 memClients = 0;            ///< known client objects (estimate)
+    qint64 memCredits = 0;            ///< client credit records (estimate)
+    qint64 memKadIndex = 0;           ///< Kad keywords/sources/notes stored for others (estimate)
+    qint64 memIpFilter = 0;           ///< IP filter ranges (estimate)
 
     // --- Download sessions (one per source that entered Downloading) ---
     qint64 downSuccessful = 0;

@@ -90,15 +90,16 @@ Ed3kKadPanel::Ed3kKadPanel(QWidget* parent)
     CountryFlags::bindFlagColumn(contactsView);
     m_contactsView->setFont(QFont(QStringLiteral("Courier New"), scaledPointSize(9)));
 
-    QWidget* lookups = buildListPanel(m_lookupsModel, tr("▸ Current Lookups (0)"),
-                                      QStringLiteral(":/icons/KadCurrentSearches.ico"), m_searchesView, m_searchesLabel);
+    // titled by its tab (KadPanelBase "Outgoing Searches")
+    QLabel* noLabel = nullptr;
+    QWidget* lookups = buildListPanel(m_lookupsModel, {}, {}, m_searchesView, noLabel);
     auto* lookupsView = static_cast<ListTreeView*>(m_searchesView);
     lookupsView->setDefaultSort(Ed3kKadLookupsModel::ColNumber, Qt::DescendingOrder);
     // "2": Name, Load and Requests Sent columns
     // lookupsView->bindColumns(QStringLiteral("ed3kKadLookups"), {70, 110, 260, 110, 60, 70, 80, 120});
     lookupsView->bindColumns(QStringLiteral("ed3kKadLookups2"), {70, 110, 200, 260, 110, 50, 90, 60, 70, 80, 120});
 
-    buildLayout(contacts, createControlsPanel(), lookups, [](QSplitter* s) { theUiState.bindEd3kKadSplitter(s); });
+    buildLayout(contacts, createControlsPanel(), lookups, KadIncomingModel::Network::Ed3k, [](QSplitter* s) { theUiState.bindEd3kKadSplitter(s); });
 
     // contacts graph: new connections per minute, also while hidden (as the eD2K page)
     m_graphTimer = new QTimer(this);
@@ -250,7 +251,7 @@ void Ed3kKadPanel::clearAll()
     m_lookupGraph->clear();
     setLookupTabTitle({});
     setContactCount(0);
-    m_searchesLabel->setText(tr("▸ Current Lookups (0)"));
+    setOutgoingCount(0);
     applyStatus({});
 }
 
@@ -435,7 +436,7 @@ void Ed3kKadPanel::requestLookups()
     m_ipc->sendPoll(this, IpcMessage(IpcMsgType::GetEd3kKadLookups), [this](const IpcMessage& resp) {
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
             m_lookupsModel->clear();
-            m_searchesLabel->setText(tr("▸ Current Lookups (0)"));
+            setOutgoingCount(0);
             return;
         }
         const std::uint64_t selected = selectedSearchId();
@@ -443,7 +444,7 @@ void Ed3kKadPanel::requestLookups()
         int running = 0;
         for (int r = 0; r < m_lookupsModel->count(); ++r)
             running += m_lookupsModel->row(r).value(QStringLiteral("ended")).toBool() ? 0 : 1;
-        m_searchesLabel->setText(tr("▸ Current Lookups (%1)").arg(running));
+        setOutgoingCount(running);
         if (selected != 0)
             markSearchRow(m_lookupsModel->rowOf(selected));
         autoPickLookup();

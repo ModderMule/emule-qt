@@ -200,6 +200,7 @@ private:
     void handleImportKadNodes(const Ipc::IpcMessage& msg);
     void handleDisconnectKad(const Ipc::IpcMessage& msg);
     void handleGetKadSearches(const Ipc::IpcMessage& msg);
+    void handleGetKadIncoming(const Ipc::IpcMessage& msg);
     void handleGetKadLookupHistory(const Ipc::IpcMessage& msg);
     void handleGetNetworkInfo(const Ipc::IpcMessage& msg);
     void handleTestPorts(const Ipc::IpcMessage& msg);

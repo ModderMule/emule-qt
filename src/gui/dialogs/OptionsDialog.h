@@ -480,6 +480,7 @@ private:
     QString m_filenameCleanups;   // '|'-separated, edited via editFilenameCleanups()
     QCheckBox* m_transferFullChunksCheck = nullptr;
     QCheckBox* m_previewPrioCheck = nullptr;
+    QCheckBox* m_downloadSeekingCheck = nullptr;
     QCheckBox* m_watchClipboardCheck = nullptr;
     QCheckBox* m_advancedCalcRemainingCheck = nullptr;
     QCheckBox* m_startNextPausedCheck = nullptr;
@@ -556,6 +557,7 @@ private:
     QCheckBox*    m_antiLeecherCheck = nullptr;
     QComboBox*    m_antiLeecherLevelCombo = nullptr;
     QLabel*       m_antiLeecherStatusLabel = nullptr;
+    QCheckBox*    m_clientAnalyzerCheck = nullptr;
 
     // Scheduler page controls
     // -- Usenet page --------------------------------------------------------

@@ -11,6 +11,7 @@
 #include "utils/Opcodes.h"
 
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -60,6 +61,7 @@ private slots:
     void eachPublisherIsASource();
     void theFilterTakesSizeExtensionAndSources();
     void aSharedFileIsFound();
+    void aSharedFilesNoteAndMediaAreFound();
     void withoutANodeTheSearchEnds();
     void aChannelSearchTakesChannelFilesOnly();
 };
@@ -210,6 +212,89 @@ void tst_Ed3kSearch::aSharedFileIsFound()
     search.cancelMetaSearch(42);
     QTest::qWait(3000);
     QVERIFY(!ended);
+    a.disconnect(this);
+    shared.stop();
+}
+
+void tst_Ed3kSearch::aSharedFilesNoteAndMediaAreFound()
+{
+    QTemporaryDir da, db, dc;
+    QVERIFY(da.isValid() && db.isValid() && dc.isValid());
+    QByteArray data(200 * 1024, 'n');
+    const QString path = QDir(da.path()).filePath(QStringLiteral("silver harbour.mp3"));
+    {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly) && f.write(data) == data.size());
+    }
+    Ed3kSession a, b, c;
+    QVERIFY(a.start(loopback(da.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    QVERIFY(c.start(loopback(dc.path())));
+    const ::ed3k::Node bNode = nodeOf(b);
+    a.post([&](::ed3k::Engine& e, ::ed3k::Now now) { (void)e.bootstrap(now, std::span<const ::ed3k::Node>{&bNode, 1}); });
+    c.post([&](::ed3k::Engine& e, ::ed3k::Now now) { (void)e.bootstrap(now, std::span<const ::ed3k::Node>{&bNode, 1}); });
+    QTRY_VERIFY_WITH_TIMEOUT(a.contactCount() > 0 && c.contactCount() > 0, 20000);
+
+    std::uint64_t stored = 0;
+    connect(&a, &Ed3kSession::eventPolled, this, [&](const ::ed3k::Event& ev, bool*) {
+        if (const auto* k = std::get_if<::ed3k::event::KeywordsPublished>(&ev))
+            stored += k->stored;
+    }, Qt::DirectConnection);
+    FakeSource src;
+    const QByteArray md4(16, char(0x55));
+    SharedEntry entry{md4, path, QStringLiteral("silver harbour.mp3"), std::uint64_t(data.size())};
+    entry.rating = 4;
+    entry.comment = QStringLiteral("clean rip");
+    entry.duration = 215;
+    entry.bitrate = 320;
+    src.entries.push_back(entry);
+    Ed3kShared shared(a, src, da.path());
+    QSignalSpy sharedSpy(&shared, &Ed3kShared::fileShared);
+    shared.start();
+    QTRY_COMPARE_WITH_TIMEOUT(sharedSpy.count(), 1, 20000);
+    QTRY_VERIFY_WITH_TIMEOUT(stored > 0, 30000);
+    const auto root = shared.rootOf(md4);
+    QVERIFY(root);
+    const QByteArray rootBytes(reinterpret_cast<const char*>(root->bytes.data()), 32);
+
+    // the keyword record names length and bitrate: the row's media tags
+    Ed3kSearch search(c);
+    std::vector<std::unique_ptr<SearchFile>> rows;
+    std::optional<QString> ended;
+    search.setSinks([&](uint32, std::unique_ptr<SearchFile> f) { rows.push_back(std::move(f)); },
+                    [&](uint32, const QString& error) { ended = error; });
+    SearchParams p;
+    p.type = SearchType::Ed3k;
+    p.expression = QStringLiteral("harbour");
+    search.startMetaSearch(51, SearchType::Ed3k, p, {}, {});
+    QTRY_VERIFY_WITH_TIMEOUT(ended.has_value(), 60000);
+    const auto it = std::ranges::find_if(rows, [&](const auto& r) { return r->ed3kRoot() == rootBytes; });
+    QVERIFY(it != rows.end());
+    QCOMPARE((*it)->getIntTagValue(FT_MEDIA_LENGTH), 215u);
+    QCOMPARE((*it)->getIntTagValue(FT_MEDIA_BITRATE), 320u);
+
+    // the NOTE record (§10.7): rating and comment under the root, by A
+    struct Found {
+        QByteArray root;
+        std::uint32_t rating = 0;
+        QString text;
+    };
+    std::vector<Found> notes;
+    search.setNoteSink([&](const QByteArray& r, const QByteArray&, std::uint32_t rating, const QString& text) {
+        notes.push_back({r, rating, text});
+    });
+    // the note may land after the keywords: ask again until it is there (one lookup per root
+    // at a time: refused while one runs)
+    QElapsedTimer waited;
+    waited.start();
+    while (notes.empty() && waited.elapsed() < 60000) {
+        (void)search.searchNotes(rootBytes);
+        QTest::qWait(500);
+    }
+    QVERIFY(!notes.empty());
+    QCOMPARE(notes.front().root, rootBytes);
+    QCOMPARE(notes.front().rating, 4u);
+    QCOMPARE(notes.front().text, QStringLiteral("clean rip"));
     a.disconnect(this);
     shared.stop();
 }

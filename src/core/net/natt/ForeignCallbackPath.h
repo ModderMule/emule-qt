@@ -26,6 +26,8 @@ public:
 
     [[nodiscard]] PathKind kind() const override { return PathKind::ForeignCallback; }
     [[nodiscard]] bool canServe(const PeerInfo& peer) const override;
+    /// Only a server already known to announce 0x100000 (no status ping).
+    [[nodiscard]] bool canServeKnown(const PeerInfo& peer) const override;
     void repeat(Attempt& attempt) override;
     bool handleServerTcp(uint8 /*opcode*/, const QByteArray& /*payload*/) override { return false; }
 
@@ -41,6 +43,7 @@ protected:
 private:
     /// The peer's server: IPv4, not ours, a LowID there.
     [[nodiscard]] bool foreignPeer(const PeerInfo& peer) const;
+    [[nodiscard]] bool serves(const PeerInfo& peer, bool probe) const;
 };
 
 } // namespace eMule::natt

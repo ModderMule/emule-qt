@@ -3,6 +3,7 @@
 
 #include "Ed3kDownloadsBridge.h"
 #include "Ed3kOffGate.h"
+#include "webserver/WebServer.h"
 
 #include <QCborArray>
 #include <QCborMap>
@@ -240,6 +241,29 @@ bool fileOf([[maybe_unused]] const QString& hexRoot, [[maybe_unused]] QString& p
 #else
     return false;
 #endif
+}
+
+UsenetStreamSource streamFrom([[maybe_unused]] const QString& hexRoot, [[maybe_unused]] qint64 offset)
+{
+    UsenetStreamSource src;
+#ifdef EMULE_HAVE_ED3K
+    const auto r = rootOf(hexRoot);
+    if (!s_downloads || !r || offset < 0)
+        return src;
+    const auto info = s_downloads->info(*r);
+    if (!info || info->state == ed3k::Ed3kDownloadInfo::State::Failed || info->path.isEmpty())
+        return src;
+    const auto held = s_downloads->playFrom(*r, std::uint64_t(offset));
+    if (!held)
+        return src;
+    src.found = true;
+    src.fileName = info->name;
+    src.totalSize = qint64(info->size);
+    src.availableEnd = qint64(*held);
+    src.complete = info->state == ed3k::Ed3kDownloadInfo::State::Complete;
+    src.pieces = {{info->path, 0, 0, qint64(info->size)}};
+#endif
+    return src;
 }
 
 QString moveTo([[maybe_unused]] const QString& hexRoot, [[maybe_unused]] const QString& dir)

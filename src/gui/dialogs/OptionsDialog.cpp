@@ -193,10 +193,13 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
         QDesktopServices::openUrl(QUrl(QStringLiteral("https://emule-qt.org")));
     });
     okBtn->setDefault(true);
-    btnLayout->addWidget(okBtn);
-    btnLayout->addWidget(cancelBtn);
-    btnLayout->addWidget(m_applyBtn);
-    btnLayout->addWidget(helpBtn);
+    // Platform order: Windows keeps MFC's OK, Cancel, Apply, Help
+    auto* buttonBox = new QDialogButtonBox(this);
+    buttonBox->addButton(okBtn, QDialogButtonBox::AcceptRole);
+    buttonBox->addButton(cancelBtn, QDialogButtonBox::RejectRole);
+    buttonBox->addButton(m_applyBtn, QDialogButtonBox::ApplyRole);
+    buttonBox->addButton(helpBtn, QDialogButtonBox::HelpRole);
+    btnLayout->addWidget(buttonBox);
     rightLayout->addLayout(btnLayout);
 
     mainLayout->addLayout(rightLayout, 1);
@@ -338,6 +341,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_autoCleanupFilenamesCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_transferFullChunksCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_previewPrioCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_downloadSeekingCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_watchClipboardCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_advancedCalcRemainingCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_startNextPausedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -394,6 +398,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_ipFilterUpdateDaysSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_antiLeecherCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_antiLeecherLevelCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
+    connect(m_clientAnalyzerCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
 
     // Extended page
     connect(m_maxConPerFiveSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
@@ -2335,6 +2340,13 @@ QWidget* OptionsDialog::createFilesPage()
     m_previewPrioCheck = new QCheckBox(tr("Try to download preview chunks first"), miscGroup);
     miscLayout->addWidget(m_previewPrioCheck);
 
+    m_downloadSeekingCheck = new QCheckBox(tr("Enable seeking in downloads"), miscGroup);
+    m_downloadSeekingCheck->setToolTip(
+        tr("Preview of an unfinished eD2K or ed3k download: when the player seeks, the parts "
+           "there are downloaded first and the player waits for them."));
+    m_downloadSeekingCheck->setVisible(thePrefs.showExtControls());
+    miscLayout->addWidget(m_downloadSeekingCheck);
+
     m_watchClipboardCheck = new QCheckBox(tr("Watch clipboard for eD2K links"), miscGroup);
     miscLayout->addWidget(m_watchClipboardCheck);
 
@@ -2700,8 +2712,10 @@ QWidget* OptionsDialog::createNotificationsPage()
         auto* okBtn = new QPushButton(tr("OK"), &dlg);
         auto* cancelBtn = new QPushButton(tr("Cancel"), &dlg);
         btnLayout->addStretch();
-        btnLayout->addWidget(okBtn);
-        btnLayout->addWidget(cancelBtn);
+        auto* okCancel = new QDialogButtonBox(&dlg);
+        okCancel->addButton(okBtn, QDialogButtonBox::AcceptRole);
+        okCancel->addButton(cancelBtn, QDialogButtonBox::RejectRole);
+        btnLayout->addWidget(okCancel);
         outer->addLayout(btnLayout);
 
         connect(okBtn, &QPushButton::clicked, &dlg, &QDialog::accept);
@@ -3192,6 +3206,14 @@ QWidget* OptionsDialog::createSecurityPage()
     m_antiLeecherStatusLabel = new QLabel(leechGroup);
     m_antiLeecherStatusLabel->setEnabled(false);   // greyed, like MFC static info text
     leechLayout->addWidget(m_antiLeecherStatusLabel);
+
+    // WiZaRd's ClientAnalyzer: behaviour score per user hash, times the credit ratio
+    m_clientAnalyzerCheck = new QCheckBox(tr("Score clients by their behaviour (Client Analyzer)"), leechGroup);
+    m_clientAnalyzerCheck->setToolTip(
+        tr("Lowers the queue score of clients that reask too fast, take sources without giving, "
+           "spam, fake their file status or let sessions fail, and raises it for clients that "
+           "upload to you. Uses the DLP rules for nick and mod thieves. Kept in clientanalyzer.met."));
+    leechLayout->addWidget(m_clientAnalyzerCheck);
 
     connect(m_antiLeecherCheck, &QCheckBox::toggled, m_antiLeecherLevelCombo, &QComboBox::setEnabled);
 
@@ -7828,6 +7850,8 @@ void OptionsDialog::saveSettings()
         req.append(m_transferFullChunksCheck->isChecked());
         req.append(QStringLiteral("previewPrio"));
         req.append(m_previewPrioCheck->isChecked());
+        req.append(QStringLiteral("downloadSeeking"));
+        req.append(m_downloadSeekingCheck->isChecked());
         req.append(QStringLiteral("startNextPausedFile"));
         req.append(m_startNextPausedCheck->isChecked());
         req.append(QStringLiteral("startNextPausedFileSameCat"));
@@ -7922,6 +7946,8 @@ void OptionsDialog::saveSettings()
         req.append(m_antiLeecherCheck->isChecked());
         req.append(QStringLiteral("antiLeecherLevel"));
         req.append(static_cast<qint64>(m_antiLeecherLevelCombo->currentIndex()));
+        req.append(QStringLiteral("clientAnalyzer"));
+        req.append(m_clientAnalyzerCheck->isChecked());
         req.append(QStringLiteral("ipFilterUpdateUrl"));
         req.append(urlPrefFieldValue(m_ipFilterUpdateUrlEdit,
                                      Preferences::kDefaultIpFilterUpdateUrl));
@@ -8469,6 +8495,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setAutoSharedFilesPriority(m_autoSharedFilesPrioCheck->isChecked());
         thePrefs.setTransferFullChunks(m_transferFullChunksCheck->isChecked());
         thePrefs.setPreviewPrio(m_previewPrioCheck->isChecked());
+        thePrefs.setDownloadSeeking(m_downloadSeekingCheck->isChecked());
         thePrefs.setStartNextPausedFile(m_startNextPausedCheck->isChecked());
         thePrefs.setStartNextPausedFileSameCat(m_preferSameCatCheck->isChecked());
         thePrefs.setStartNextPausedFileOnlySameCat(m_onlySameCatCheck->isChecked());
@@ -8519,6 +8546,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setEnableSearchResultFilter(m_enableSearchResultFilterCheck->isChecked());
         thePrefs.setAntiLeecher(m_antiLeecherCheck->isChecked());
         thePrefs.setAntiLeecherLevel(m_antiLeecherLevelCombo->currentIndex());
+        thePrefs.setClientAnalyzer(m_clientAnalyzerCheck->isChecked());
         thePrefs.setIpFilterUpdateUrl(urlPrefFieldValue(m_ipFilterUpdateUrlEdit,
                                                         Preferences::kDefaultIpFilterUpdateUrl));
         thePrefs.setIpFilterAutoUpdate(m_ipFilterAutoUpdateCheck->isChecked());
@@ -8793,6 +8821,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_autoDownloadPrioCheck->setChecked(prefs.value(QStringLiteral("autoDownloadPriority")).toBool(true));
     m_transferFullChunksCheck->setChecked(prefs.value(QStringLiteral("transferFullChunks")).toBool(true));
     m_previewPrioCheck->setChecked(prefs.value(QStringLiteral("previewPrio")).toBool());
+    m_downloadSeekingCheck->setChecked(prefs.value(QStringLiteral("downloadSeeking")).toBool());
     bool startNext = prefs.value(QStringLiteral("startNextPausedFile")).toBool();
     m_startNextPausedCheck->setChecked(startNext);
     m_preferSameCatCheck->setEnabled(startNext);
@@ -8877,6 +8906,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
         m_antiLeecherStatusLabel->setText(dlpVersion > 0
             ? tr("specialdlp loaded, DLP v%1").arg(dlpVersion)
             : tr("specialdlp library not found, checks are inactive"));
+        m_clientAnalyzerCheck->setChecked(prefs.value(QStringLiteral("clientAnalyzer")).toBool(false));
     }
     {
         // An older daemon's map has no default: never show an empty field.

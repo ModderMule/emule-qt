@@ -4,9 +4,12 @@
 /// @brief Shared layout of one network's page in the Kad window (MFC KademliaWnd):
 ///   - top left: tabs "Contacts" and "Search Details" (lookup graph)
 ///   - top right: the network's controls column
-///   - bottom: the lookups list
+///   - bottom: tabs "Outgoing Searches" (our lookups) and "Incoming Searches" (requests
+///     other nodes sent us, not MFC)
 ///   - a vertical splitter between top and bottom
 /// Ed2kKadPanel and Ed3kKadPanel fill it; KadPanel holds both.
+
+#include "controls/Ed3kKadModels.h"
 
 #include <QModelIndex>
 #include <QWidget>
@@ -41,9 +44,12 @@ protected:
     explicit KadPanelBase(QWidget* parent = nullptr);
 
     /// The page: @p contacts and the lookup graph as tabs, @p controls beside them,
-    /// @p searches below. @p bindSplitter restores and saves the splitter.
-    void buildLayout(QWidget* contacts, QWidget* controls, QWidget* searches, void (*bindSplitter)(QSplitter*));
+    /// @p searches and the incoming requests of @p network as tabs below. @p bindSplitter
+    /// restores and saves the splitter.
+    void buildLayout(QWidget* contacts, QWidget* controls, QWidget* searches, KadIncomingModel::Network network,
+                     void (*bindSplitter)(QSplitter*));
     /// A titled list over @p model (sort role Qt::UserRole); sets @p view and @p label.
+    /// An empty @p title: no header, @p label stays as it is.
     QWidget* buildListPanel(QAbstractItemModel* model, const QString& title, const QString& icon, QTreeView*& view,
                             QLabel*& label);
 
@@ -63,6 +69,8 @@ protected:
     /// Contacts label and tab title.
     void setContactCount(int count);
     void setLookupTabTitle(const QString& lookupTitle);
+    /// "Outgoing Searches (n)" tab title.
+    void setOutgoingCount(int count);
     [[nodiscard]] bool lookupTabShown() const;
     [[nodiscard]] bool contactsTabShown() const;
     /// The selected row of the searches list, 0: none.
@@ -72,10 +80,10 @@ protected:
     [[nodiscard]] bool ipcReady() const;
 
     QTabWidget* m_topTabWidget = nullptr;
+    QTabWidget* m_bottomTabWidget = nullptr;
     QTreeView* m_contactsView = nullptr;
     QTreeView* m_searchesView = nullptr;
     QLabel* m_contactsLabel = nullptr;
-    QLabel* m_searchesLabel = nullptr;
     KadLookupGraph* m_lookupGraph = nullptr;
     QSplitter* m_vertSplitter = nullptr;
     /// Lookup the graph shows; may outlive its row (MFC keeps the history while shown).
@@ -84,6 +92,15 @@ protected:
     IpcClient* m_ipc = nullptr;
 
 private:
+    KadIncomingModel* m_incomingModel = nullptr;
+    QTreeView* m_incomingView = nullptr;
+    KadIncomingModel::Network m_network = KadIncomingModel::Network::Ed2k;
+
+private:
+    void poll();
+    void requestIncoming();
+    void clearIncoming();
+    [[nodiscard]] bool incomingTabShown() const;
     void onSearchSelectionChanged();
     void onSearchDoubleClicked(const QModelIndex& index);
 };

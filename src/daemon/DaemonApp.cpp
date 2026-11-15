@@ -719,6 +719,8 @@ bool DaemonApp::start()
         };
     }
     theApp.ed3kConnected = [s = m_ed3kSession.get()] { return s->isRunning() && s->contactCount() > 0; };
+    // an ed3k search row's Comments: its NOTE records (Protocol.md §10.7)
+    theApp.ed3kSearchNotes = [s = m_ed3kSearch.get()](const QByteArray& root) { return s->searchNotes(root); };
     // §14.4: a dual peer queued on ed3k gets no 2nd place in the eD2K upload queue
     theApp.isEd3kUploadPeer = [u = m_ed3kUploads.get()](const uint8* hash) {
         ::ed3k::Ed2kHash h{};
@@ -1057,6 +1059,7 @@ void DaemonApp::stop()
     theApp.partVerdict = {};
     theApp.isEd3kUploadPeer = {};
     theApp.ed3kConnected = {};
+    theApp.ed3kSearchNotes = {};
     Ed3kBridge::setEd2kJoin(nullptr);
     if (m_ed2kJoin)
         m_ed2kJoin->stop();
@@ -1246,6 +1249,7 @@ void DaemonApp::startWebServer()
     // below already uses.
     // ed3k preview: same seam, core never links ed3k
     m_webServer->setEd3kFileResolver(&Ed3kDownloadsBridge::fileOf);
+    m_webServer->setEd3kStreamResolver(&Ed3kDownloadsBridge::streamFrom);
 
     m_webServer->setUsenetStreamResolver(
         [](const UsenetStreamRequest& ask) -> UsenetStreamSource {

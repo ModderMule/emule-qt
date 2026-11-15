@@ -10,6 +10,7 @@
 #include "kademlia/KadResultPacketWriter.h"
 #include "kademlia/KadUDPListener.h"
 #include "utils/SafeFile.h"
+#include "utils/TimeUtils.h"
 
 #include "app/AppContext.h"
 
@@ -294,23 +295,59 @@ uint32 Indexed::getFileKeyCount() const
     return static_cast<uint32>(m_keywords.size());
 }
 
-void Indexed::sendValidKeywordResult(const UInt128& keyID, const SearchTerm* searchTerms,
-                                      uint32 ip, uint16 port, bool /*oldClient*/,
-                                      uint16 startPosition, const KadUDPKey& senderKey)
+uint64 Indexed::memoryBytes()
 {
     if (!isLoaded())
-        return;
+        return 0;
+    const uint64 now = getTickCount();
+    if (m_memoryBytesTick != 0 && now - m_memoryBytesTick < 30'000)
+        return m_memoryBytes;
+    // hash map node: key + value + next pointer + cached hash + allocator overhead
+    constexpr std::size_t kMapNode = sizeof(HashKeyOwn) + 3 * sizeof(void*) + 16;
+    constexpr std::size_t kListNode = 3 * sizeof(void*) + 16;
+    const auto sourceBytes = [&](const Source& src) {
+        std::size_t n = sizeof(Source);
+        for (const Entry* e : src.entryList)
+            n += kListNode + (e ? e->memoryBytes() : 0);
+        return n;
+    };
+    std::size_t n = 0;
+    QMutexLocker lock(&m_mutex);
+    for (const auto& [key, kh] : m_keywords) {
+        n += kMapNode + sizeof(KeyHash) + kh->mapSource.bucket_count() * sizeof(void*);
+        for (const auto& [srcKey, src] : kh->mapSource)
+            n += kMapNode + sourceBytes(*src);
+    }
+    for (const SrcHashMap* index : {&m_sources, &m_notes}) {
+        for (const auto& [key, sh] : *index) {
+            n += kMapNode + sizeof(SrcHash);
+            for (const Source* src : sh->sourceList)
+                n += kListNode + sourceBytes(*src);
+        }
+    }
+    n += m_loads.size() * (kMapNode + sizeof(Load));
+    m_memoryBytes = n;
+    m_memoryBytesTick = now;
+    return n;
+}
+
+int Indexed::sendValidKeywordResult(const UInt128& keyID, const SearchTerm* searchTerms,
+                                     uint32 ip, uint16 port, bool /*oldClient*/,
+                                     uint16 startPosition, const KadUDPKey& senderKey)
+{
+    if (!isLoaded())
+        return 0;
     QMutexLocker lock(&m_mutex);
 
     auto* udpListener = Kademlia::getInstanceUDPListener();
     if (!udpListener)
-        return;
+        return 0;
 
     HashKeyOwn hashKey(keyID.getData());
     auto it = m_keywords.find(hashKey);
     if (it == m_keywords.end()) {
         cleanLocked();   // on a miss too (MFC Indexed.cpp:690)
-        return;
+        return 0;
     }
 
     KeyHash* keyHash = it->second;
@@ -363,25 +400,26 @@ void Indexed::sendValidKeywordResult(const UInt128& keyID, const SearchTerm* sea
     // runs under the lock we already hold (cleanLocked, not clean, to avoid
     // re-locking the non-recursive m_mutex).
     cleanLocked();
+    return std::max(count, 0);
 }
 
-void Indexed::sendValidSourceResult(const UInt128& keyID, uint32 ip, uint16 port,
-                                     uint16 startPosition, uint64 fileSize,
-                                     const KadUDPKey& senderKey)
+int Indexed::sendValidSourceResult(const UInt128& keyID, uint32 ip, uint16 port,
+                                    uint16 startPosition, uint64 fileSize,
+                                    const KadUDPKey& senderKey)
 {
     if (!isLoaded())
-        return;
+        return 0;
     QMutexLocker lock(&m_mutex);
 
     auto* udpListener = Kademlia::getInstanceUDPListener();
     if (!udpListener)
-        return;
+        return 0;
 
     HashKeyOwn hashKey(keyID.getData());
     auto it = m_sources.find(hashKey);
     if (it == m_sources.end()) {
         cleanLocked();   // on a miss too (MFC Indexed.cpp:766)
-        return;
+        return 0;
     }
 
     SrcHash* srcHash = it->second;
@@ -420,23 +458,24 @@ void Indexed::sendValidSourceResult(const UInt128& keyID, uint32 ip, uint16 port
 
     // MFC runs Clean() at the end of SendValidSourceResult too (Indexed.cpp:766).
     cleanLocked();
+    return std::max(count, 0);
 }
 
-void Indexed::sendValidNoteResult(const UInt128& keyID, uint32 ip, uint16 port,
-                                   uint64 fileSize, const KadUDPKey& senderKey)
+int Indexed::sendValidNoteResult(const UInt128& keyID, uint32 ip, uint16 port,
+                                 uint64 fileSize, const KadUDPKey& senderKey)
 {
     if (!isLoaded())
-        return;
+        return 0;
     QMutexLocker lock(&m_mutex);
 
     auto* udpListener = Kademlia::getInstanceUDPListener();
     if (!udpListener)
-        return;
+        return 0;
 
     HashKeyOwn hashKey(keyID.getData());
     auto it = m_notes.find(hashKey);
     if (it == m_notes.end())
-        return;
+        return 0;
 
     SrcHash* srcHash = it->second;
 
@@ -470,6 +509,7 @@ void Indexed::sendValidNoteResult(const UInt128& keyID, uint32 ip, uint16 port,
     }
 
     sender.flush();
+    return totalCount;
 }
 
 bool Indexed::sendStoreRequest(const UInt128& keyID)

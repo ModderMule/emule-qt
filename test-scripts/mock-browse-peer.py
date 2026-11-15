@@ -6,7 +6,7 @@ IPC (RequestClientSharedFiles) and checks the outcome: a PushClientSharedFiles t
 the mock's files, or the "denied" / "does not allow" status-log lines. A GUI connected
 to the same daemon jumps to Search and shows the tab.
 
-Needs a running emulecored (TCP 5662, IPC 4712, filterLANIPs=false) and python cbor2.
+Needs a running emulecored (TCP 5662, IPC 4712, filterLANIPs=false) and cbor2 (uv sync).
 Note: an attached GUI stores the mock tab in StoredSearches.json; close it afterwards.
 
 usage: mock-browse-peer.py [allow|deny|both] [--hold SECONDS]

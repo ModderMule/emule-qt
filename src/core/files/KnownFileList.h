@@ -94,6 +94,8 @@ public:
     bool isCancelledFileByID(const uint8* hash) const;
 
     [[nodiscard]] size_t count() const { return m_filesMap.size(); }
+    /// RAM of the known files and the list's maps (estimate).
+    [[nodiscard]] std::size_t memoryBytes() const;
     /// Every record. Main thread, as everything else here.
     void forEachFile(const std::function<void(const KnownFile*)>& callback) const
     {

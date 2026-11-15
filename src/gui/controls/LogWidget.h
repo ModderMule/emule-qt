@@ -126,7 +126,7 @@ public:
     /// Show or hide the Hoster tab; Hoster Verbose needs @p verbose too.
     void setHosterTabVisible(bool visible, bool verbose);
 
-    /// Show or hide the Leecher tab (follows antiLeecher).
+    /// Show or hide the Leecher tab (follows antiLeecher or clientAnalyzer).
     void setLeecherTabVisible(bool visible);
 
     /// Show or hide the three ed3k tabs; ed3k Verbose needs @p verbose too.

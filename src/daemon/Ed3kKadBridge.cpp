@@ -117,6 +117,42 @@ QCborArray lookupsToCbor(const std::vector<ed3k_kad_lookup_info>& all)
     return out;
 }
 
+/// The shape of ops::kadIncoming; type = kind + 100 × op (0 find, 1 search, 2 store).
+QCborArray incomingToCbor(const std::vector<ed3k_kad_incoming_info>& all)
+{
+    QCborArray out;
+    for (const auto& r : all) {
+        QString addr;
+        QString cc;
+        if (r.has_addr != 0) {
+            const QHostAddress ip = ed3k::toQHostAddress(ffi::Address::from(r.addr));
+            addr = ip.protocol() == QAbstractSocket::IPv6Protocol ? QStringLiteral("[%1]:%2").arg(ip.toString()).arg(r.addr.port)
+                                                                   : QStringLiteral("%1:%2").arg(ip.toString()).arg(r.addr.port);
+            cc = countryCodeOf(ip);
+        }
+        const auto* n = reinterpret_cast<const char*>(r.name);
+        const bool store = r.op == 2;
+        out.append(QCborMap{
+            {QStringLiteral("agoMs"), qint64(r.ago_ms)},
+            {QStringLiteral("type"), qint64(r.kind) + 100 * qint64(r.op)},
+            {QStringLiteral("target"), hexOf(r.target)},
+            {QStringLiteral("peer"), hexOf(r.peer)},
+            {QStringLiteral("name"), QString::fromUtf8(n, qsizetype(strnlen(n, sizeof r.name)))},
+            {QStringLiteral("addr"), addr},
+            {QStringLiteral("cc"), cc},
+            {QStringLiteral("contacts"), qint64(r.contacts)},
+            {QStringLiteral("results"), r.op == 1 ? qint64(r.results) : qint64(-1)},
+            {QStringLiteral("records"), store ? qint64(r.offered) : qint64(-1)},
+            {QStringLiteral("stored"), store ? qint64(r.stored) : qint64(-1)},
+            {QStringLiteral("load"), r.responsible != 0 && r.op != 0 ? qint64(r.load) : qint64(-1)},
+            {QStringLiteral("responsible"), r.responsible != 0},
+            {QStringLiteral("answered"), r.error == 0},
+            {QStringLiteral("error"), qint64(r.error)},
+        });
+    }
+    return out;
+}
+
 QCborArray graphToCbor(const std::vector<ed3k_kad_lookup_node>& all)
 {
     QCborArray out;
@@ -163,6 +199,7 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
 {
     const IpcMsgType t = msg.type();
     if (t != IpcMsgType::GetEd3kKadContacts && t != IpcMsgType::GetEd3kKadLookups && t != IpcMsgType::GetEd3kKadLookupGraph
+        && t != IpcMsgType::GetEd3kKadIncoming
         && t != IpcMsgType::ExportEd3kNodeList && t != IpcMsgType::FetchEd3kNodeLists)
         return false;
     const int seq = msg.seqId();
@@ -186,6 +223,12 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
     case IpcMsgType::GetEd3kKadLookups:
         if (auto all = e->kadLookups(now))
             reply(IpcMessage::makeResult(seq, true, lookupsToCbor(*all)));
+        else
+            reply(failure(seq, int(all.error())));
+        break;
+    case IpcMsgType::GetEd3kKadIncoming:
+        if (auto all = e->kadIncoming(now))
+            reply(IpcMessage::makeResult(seq, true, incomingToCbor(*all)));
         else
             reply(failure(seq, int(all.error())));
         break;

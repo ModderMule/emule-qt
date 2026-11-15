@@ -21,8 +21,12 @@
 #include "stats/NetworkCounters.h"
 #include "stats/Statistics.h"
 
+#include <QCborArray>
+#include <QCborMap>
+
 #include <algorithm>
 #include <array>
+#include <optional>
 
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kBootstrap.h"
@@ -72,6 +76,45 @@ bool handleBootstrap(const IpcMessage& msg, const std::function<void(const IpcMe
     return true;
 }
 
+/// GetEd3kFileLinks (1149): one ed3k:file link per {h, n, s}; "" without a root. A pure
+/// function of the root, so it answers while the node is stopped too.
+void handleFileLinks(const IpcMessage& msg, const std::function<void(const IpcMessage&)>& reply)
+{
+    QCborArray links;
+#ifdef EMULE_HAVE_ED3K
+    for (const auto& v : msg.fieldArray(0)) {
+        const QCborMap m = v.toMap();
+        const QByteArray raw = QByteArray::fromHex(m.value(QStringLiteral("h")).toString().toLatin1());
+        std::optional<::ed3k::Root> root;
+        std::optional<::ed3k::Ed2kHash> ed2k;
+        if (raw.size() == 32) {
+            root.emplace();
+            std::copy_n(reinterpret_cast<const std::uint8_t*>(raw.constData()), 32, root->bytes.begin());
+        } else if (raw.size() == 16) {
+            // shared (hashed by Ed3kShared), else a running eD2K download's joint root
+            root = s_shared ? s_shared->rootOf(raw) : std::nullopt;
+            if (!root && s_ed2kJoin && s_ed2kJoin->isEnabled())
+                root = s_ed2kJoin->rootOf(raw);
+            ed2k.emplace();
+            std::copy_n(reinterpret_cast<const std::uint8_t*>(raw.constData()), 16, ed2k->begin());
+        }
+        QString text;
+        if (root) {
+            ::ed3k::FileLink link;
+            link.root = *root;
+            link.size = std::uint64_t(std::max<qint64>(0, m.value(QStringLiteral("s")).toInteger()));
+            if (const QString name = m.value(QStringLiteral("n")).toString(); !name.isEmpty())
+                link.name = name.toStdString();
+            link.ed2k = ed2k;
+            if (const auto written = ::ed3k::writeFileLink(link))
+                text = QString::fromStdString(*written);
+        }
+        links.append(text);
+    }
+#endif
+    reply(IpcMessage::makeResult(msg.seqId(), true, QCborMap{{QStringLiteral("links"), links}}));
+}
+
 #ifdef EMULE_HAVE_ED3K
 QCborMap statsToCbor(const ::ed3k::Stats& s)
 {
@@ -89,6 +132,7 @@ QCborMap statsToCbor(const ::ed3k::Stats& s)
         {QStringLiteral("recvFile"), qint64(s.recv_file)},
         {QStringLiteral("recvOther"), qint64(s.recv_other)},
         {QStringLiteral("hashRamBytes"), qint64(s.hash_ram)},
+        {QStringLiteral("heapBytes"), qint64(s.heap)},
     };
 }
 #endif
@@ -225,6 +269,11 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
 {
     if (!isEd3kRequest(msg.type()))
         return false;
+    // file links: 1149, inside the downloads' block, so first
+    if (msg.type() == IpcMsgType::GetEd3kFileLinks) {
+        handleFileLinks(msg, reply);
+        return true;
+    }
     // other links (batch 15): 1032, 1049, 1137 (first: 1137 is inside the filter lists' block)
     if (Ed3kLinksBridge::handleRequest(msg, reply))
         return true;

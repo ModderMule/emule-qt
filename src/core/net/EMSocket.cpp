@@ -946,6 +946,20 @@ void EMSocket::truncateQueues()
     m_standardQueueBytes = 0;
 }
 
+uint64 EMSocket::bufferedBytes() const
+{
+    uint64 n = negotiationBufferBytes();
+    n += static_cast<uint64>(std::max<qint64>(0, bytesToWrite()));
+    n += static_cast<uint64>(std::max<qint64>(0, bytesAvailable()));
+    if (m_pendingPacket)
+        n += m_pendingPacket->size;
+    std::lock_guard lock(m_sendLock);
+    n += m_controlQueueBytes + m_standardQueueBytes;
+    if (m_sendBuffer)
+        n += m_sendBufferLen;
+    return n;
+}
+
 // ---------------------------------------------------------------------------
 // Statistics
 // ---------------------------------------------------------------------------
@@ -1108,43 +1122,28 @@ bool EMSocket::isEnoughFileDataQueued(uint32 nMinFilePayloadBytes) const
     return false;
 }
 
-bool EMSocket::useBigSendBuffer()
+bool EMSocket::useBigSendBuffer(uint32 bytesPerSec)
 {
-    if (!m_useBigSendBuffers && hasTransport()) {
-        constexpr qint64 bigSize = 1024 * 1024;
-        m_useBigSendBuffers = transport()->setSendBufferLimit(bigSize) >= bigSize;
-    } else if (!m_useBigSendBuffers) {
-        // Try to increase the send buffer
-        auto fd = socketDescriptor();
-        if (fd != -1) {
-            // 1 MiB: the port's value (MFC 128 KiB), see kBusyThreshold.
-            constexpr int bigSize = 1024 * 1024;
-            constexpr int mfcBigSize = 128 * 1024;
-            int optval = bigSize;
-#ifdef Q_OS_WIN
-            using OptLen = int;
-            const auto sock = static_cast<SOCKET>(fd);
-#else
-            using OptLen = socklen_t;
-            const auto sock = static_cast<int>(fd);
-#endif
-            int got = 0;
-            OptLen len = sizeof(got);
-            // Linux autotunes past 1 MiB, and a fixed SO_SNDBUF turns that off: never shrink
-            if (getsockopt(sock, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<char*>(&got), &len) == 0
-                && got >= bigSize) {
-                m_useBigSendBuffers = true;
-                return true;
-            }
-            setsockopt(sock, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<const char*>(&optval), sizeof(optval));
-            // The kernel may give less without saying so: read it back (MFC :1112-1116).
-            got = 0;
-            len = sizeof(got);
-            if (getsockopt(sock, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<char*>(&got), &len) == 0
-                && got >= mfcBigSize)
-                m_useBigSendBuffers = true;
-        }
+    // 1 MiB floor (MFC 128 KiB, see kBusyThreshold), then 2 s of the slot's rate:
+    // a fast, distant peer drains more than 1 MiB per RTT
+    const qint64 want = SendBufferSizer::wantFor(bytesPerSec);
+    if (!m_sendBufSizer.needs(want))
+        return m_useBigSendBuffers;
+
+    if (hasTransport()) {
+        const qint64 got = transport()->setSendBufferLimit(want);
+        m_sendBufSizer.noteResult(want, got);
+        m_useBigSendBuffers = got >= kBusyThreshold;
+        return m_useBigSendBuffers;
     }
+
+    const auto fd = socketDescriptor();
+    if (fd == -1)
+        return m_useBigSendBuffers;
+    // the kernel may give less than asked (MFC :1112-1116)
+    constexpr qint64 mfcBigSize = 128 * 1024;
+    if (m_sendBufSizer.grow(fd, want) >= mfcBigSize)
+        m_useBigSendBuffers = true;
     return m_useBigSendBuffers;
 }
 

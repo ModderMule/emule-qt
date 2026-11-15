@@ -640,7 +640,7 @@ void MainWindow::showOptionsDialog(int page)
     updateWindowTitle();
 
     m_serverPanel->logWidget()->setIpcTabVisible(thePrefs.enableIpcLog());
-    m_serverPanel->logWidget()->setLeecherTabVisible(thePrefs.antiLeecher());
+    m_serverPanel->logWidget()->setLeecherTabVisible(thePrefs.antiLeecher() || thePrefs.clientAnalyzer());
     m_searchPanel->setEd3kMethodVisible(thePrefs.ed3kEnabled());
     applyFeatureTabs();
     m_serverPanel->refreshUpdateUrl();   // Options "List..." edits the same URL

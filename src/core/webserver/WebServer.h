@@ -200,6 +200,11 @@ public:
     /// unfinished). Returns false when there is none. Injected like the Usenet resolver.
     using Ed3kFileResolver = std::function<bool(const QString& hexRoot, QString& path, QString& name)>;
     void setEd3kFileResolver(Ed3kFileResolver resolver) { m_ed3kFileResolver = std::move(resolver); }
+    /// ed3k preview with seeking on (Preferences::downloadSeeking): the download of a 64-hex
+    /// root read from an offset, availableEnd = end of the bytes held from there; the call
+    /// has them fetched first (Ed3kDownloads::playFrom). Unset: the file resolver alone.
+    using Ed3kStreamResolver = std::function<UsenetStreamSource(const QString& hexRoot, qint64 offset)>;
+    void setEd3kStreamResolver(Ed3kStreamResolver resolver) { m_ed3kStreamResolver = std::move(resolver); }
 
     /// The Usenet page and the /api/v1/usenet routes. Optional and not owned:
     /// without it both answer "Usenet engine unavailable".
@@ -339,12 +344,21 @@ private:
         const QHttpServerRequest& req, QStringView what);
 
     // Endpoint handlers — preview
-    QHttpServerResponse handlePreviewStream(const QString& hash, const QHttpServerRequest& req);
+    QFuture<QHttpServerResponse> handlePreviewStream(const QString& hash, const QHttpServerRequest& req);
 
     // Endpoint handlers — Usenet preview
     QFuture<QHttpServerResponse> handleUsenetPreviewStream(const QString& itemId,
                                                            const QString& fileIndex,
                                                            const QHttpServerRequest& req);
+
+    /// Answers a preview Range request once @p probe reports the bytes at its
+    /// start (availableEnd past it), polling until @p waitMs runs out (416).
+    /// @p probe runs on every poll: it may renew what makes the bytes come
+    /// (a Usenet stream boost, a download's stream focus). Not found: 404; a
+    /// notSeekableReason: 406. @p what prefixes the log lines.
+    QFuture<QHttpServerResponse> serveWhenAvailable(std::function<UsenetStreamSource()> probe,
+                                                    const QByteArray& rangeHeader, int waitMs,
+                                                    const QString& what);
 
     /// Answer a Range request for @p path, serving nothing past @p availableEnd.
     ///
@@ -676,6 +690,7 @@ private:
     UsenetStreamResolver m_usenetStreamResolver;
     // ed3k download file resolver (injected by DaemonApp; null without ed3k)
     Ed3kFileResolver m_ed3kFileResolver;
+    Ed3kStreamResolver m_ed3kStreamResolver;
 
     // Usenet queue (injected by DaemonApp; not owned)
     UsenetWebBackend* m_usenetBackend = nullptr;

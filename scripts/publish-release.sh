@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+. "$(dirname "$0")/py.sh"
 
 # Interactive release helper for eMuleQt.
 #
@@ -474,7 +475,7 @@ fi
 if [[ "$PUBLISH_ONLY" -eq 0 && "$SKIP_ED3K_NODES" -eq 0 ]]; then
   if [[ -f "$ED3K_SEED_SCRIPT" ]]; then
     echo "Exporting the ed3k node list from a seed node ..."
-    if python3 "$ED3K_SEED_SCRIPT" generate-bootstrap --out "$ED3K_NODES_FILE"; then
+    if py "$ED3K_SEED_SCRIPT" generate-bootstrap --out "$ED3K_NODES_FILE"; then
       # the release commit carries it, also when only tagging the current version
       [[ -n "$(git status --porcelain -- "$ED3K_NODES_FILE")" ]] && BUMPED=1
     else

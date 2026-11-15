@@ -115,6 +115,16 @@ qint64 EncryptedStreamSocket::bytesToWrite() const
     return m_transport ? m_transport->pendingSend() : QTcpSocket::bytesToWrite();
 }
 
+uint64 EncryptedStreamSocket::negotiationBufferBytes() const
+{
+    uint64 n = 0;
+    if (m_receiveBuffer)
+        n += static_cast<uint64>(m_receiveBuffer->length());
+    if (m_sendBuffer)
+        n += static_cast<uint64>(m_sendBuffer->length());
+    return n;
+}
+
 void EncryptedStreamSocket::close()
 {
     closeTransport();

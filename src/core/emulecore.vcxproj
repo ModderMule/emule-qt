@@ -203,12 +203,14 @@
     <ClCompile Include="app\CoreSession.cpp" />
     <ClCompile Include="client\CorruptionBlackBox.cpp" />
     <ClCompile Include="client\DeadSourceList.cpp" />
+    <ClCompile Include="client\ClientAnalyzer.cpp" />
     <ClCompile Include="client\FruitlessSessionLedger.cpp" />
     <ClCompile Include="client\RepeatChunkGuard.cpp" />
     <ClCompile Include="net\GuardedNetworkAccessManager.cpp" />
     <ClCompile Include="net\HttpStreamDownload.cpp" />
     <ClCompile Include="net\InterfacePin.cpp" />
     <ClCompile Include="net\ListenConflict.cpp" />
+    <ClCompile Include="net\SendBufferSizer.cpp" />
     <ClCompile Include="search\FakeFileDetector.cpp" />
     <ClCompile Include="search\SeenFileIndex.cpp" />
     <ClCompile Include="search\SearchQueue.cpp" />
@@ -247,6 +249,7 @@
     <ClCompile Include="kademlia\KadIO.cpp" />
     <ClCompile Include="kademlia\KadIndexed.cpp" />
     <ClCompile Include="kademlia\KadLog.cpp" />
+    <ClCompile Include="kademlia\KadIncomingLog.cpp" />
     <ClCompile Include="kademlia\KadLookupHistory.cpp" />
     <ClCompile Include="kademlia\KadMiscUtils.cpp" />
     <ClCompile Include="kademlia\KadPacketTracking.cpp" />
@@ -474,10 +477,12 @@
     <ClInclude Include="client\CorruptionBlackBox.h" />
     <ClInclude Include="client\BuddyRelayBudget.h" />
     <ClInclude Include="client\DeadSourceList.h" />
+    <ClInclude Include="client\ClientAnalyzer.h" />
     <ClInclude Include="client\FruitlessSessionLedger.h" />
     <ClInclude Include="client\RepeatChunkGuard.h" />
     <ClInclude Include="net\InterfacePin.h" />
     <ClInclude Include="net\ListenConflict.h" />
+    <ClInclude Include="net\SendBufferSizer.h" />
     <ClInclude Include="media\MediaReadBudget.h" />
     <ClInclude Include="files\HashFailureStore.h" />
     <ClInclude Include="files\KadPublishStore.h" />
@@ -547,6 +552,7 @@
     <ClInclude Include="kademlia\KadIO.h" />
     <QtMoc Include="kademlia\KadIndexed.h" />
     <ClInclude Include="kademlia\KadLog.h" />
+    <ClInclude Include="kademlia\KadIncomingLog.h" />
     <ClInclude Include="kademlia\KadLookupHistory.h" />
     <ClInclude Include="kademlia\KadMiscUtils.h" />
     <ClInclude Include="kademlia\KadPacketTracking.h" />

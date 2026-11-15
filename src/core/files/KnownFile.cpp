@@ -618,6 +618,25 @@ void KnownFile::deserializeKadNotes(const QByteArray& blob)
     pruneKadNotes();
 }
 
+std::size_t KnownFile::memoryBytes() const
+{
+    constexpr std::size_t kNode = 3 * sizeof(void*) + 16;
+    const auto str = [](const QString& v) { return v.isEmpty() ? 0 : std::size_t(v.capacity()) * sizeof(QChar) + 32; };
+    std::size_t n = sizeof(*this) + fileIdentifier().hashSetBytes();
+    for (const QString* v : {&m_fileName, &m_comment, &m_fileType, &m_directory, &m_filePath, &m_sharedDirectory})
+        n += str(*v);
+    n += m_tags.capacity() * sizeof(Tag);
+    for (const Tag& tag : m_tags)
+        n += tag.heapBytes();
+    n += m_uploadingClients.capacity() * sizeof(UpDownClient*) + m_availPartFrequency.capacity() * sizeof(uint16);
+    n += m_kadKeywords.capacity() * sizeof(QString);
+    for (const QString& kw : m_kadKeywords)
+        n += str(kw);
+    for (const auto& [id, note] : m_kadNotes)
+        n += kNode + sizeof(KadNoteInfo) + std::size_t(id.capacity()) + 32 + str(note.fileName) + str(note.comment);
+    return n;
+}
+
 void KnownFile::pruneKadNotes()
 {
     const time_t now = time(nullptr);

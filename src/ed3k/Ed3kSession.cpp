@@ -12,6 +12,7 @@
 #include "net/InterfacePin.h"
 #include "net/IPv6SourcePin.h"
 #include "net/ProxySettings.h"
+#include "net/SendBufferSizer.h"
 #include "prefs/Preferences.h"
 #include "utils/DebugUtils.h"
 #include "utils/Log.h"
@@ -193,6 +194,7 @@ bool Ed3kSession::start(const Ed3kSettings& settings)
     m_engine = std::make_unique<ffi::Engine>(std::move(*engine));
     m_ownSocket = std::move(socket);
     m_socket = m_ownSocket ? m_ownSocket.get() : settings.sharedSocket.data();
+    m_sendBufSizer = {};   // a new socket
     m_port = port;
     m_settings = settings;
 
@@ -858,6 +860,7 @@ void Ed3kSession::applyLimits()
     const ffi::Limits l{floored(m_limits.up), floored(m_limits.down)};
     if (auto ok = m_engine->setLimits(now(), l); !ok)
         logEd3kWarning(QStringLiteral("ed3k: limits not set (error %1)").arg(errorName(ok.error())));
+    growSendBuffer();
 }
 
 void Ed3kSession::applyIndexLinks()
@@ -1080,6 +1083,21 @@ void Ed3kSession::writeDatagram(const char* data, qint64 len, const ffi::Address
         // the address went away: unpinned this once, the timer looks again
     }
     m_socket->writeDatagram(data, len, ip, to.port);
+}
+
+void Ed3kSession::growSendBuffer()
+{
+    if (!m_socket)
+        return;
+    // one socket carries every ed3k slot: 2 s of the whole upload limit; none = the cap
+    const qint64 want = m_limits.up == 0 ? SendBufferSizer::kMax : SendBufferSizer::wantFor(m_limits.up);
+    if (!m_sendBufSizer.needs(want))
+        return;
+    const qint64 got = m_sendBufSizer.grow(m_socket->socketDescriptor(), want);
+    if (m_sendBufSizer.done() && got < want)
+        logEd3kDebug([&] {
+            return QStringLiteral("ed3k: UDP send buffer %1 KiB of %2 KiB asked (system cap)").arg(got / 1024).arg(want / 1024);
+        });
 }
 
 void Ed3kSession::die(ffi::Error error)

@@ -123,6 +123,16 @@ void KnownFileList::save()
 // clear
 // ---------------------------------------------------------------------------
 
+std::size_t KnownFileList::memoryBytes() const
+{
+    constexpr std::size_t kNode = sizeof(MD4Key) + 3 * sizeof(void*) + 16;
+    std::size_t n = (m_filesMap.size() + m_bySize.size() + m_cancelledFiles.size()) * kNode
+                  + (m_filesMap.bucket_count() + m_bySize.bucket_count() + m_cancelledFiles.bucket_count()) * sizeof(void*);
+    for (const auto& [key, file] : m_filesMap)
+        n += file->memoryBytes();
+    return n;
+}
+
 void KnownFileList::clear()
 {
     for (auto& [key, file] : m_filesMap)

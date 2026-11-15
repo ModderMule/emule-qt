@@ -15,6 +15,7 @@
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QDialogButtonBox>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -176,11 +177,14 @@ void CollectionCreateDialog::setupUi()
     auto* saveBtn = new QPushButton(tr("Save"));
     saveBtn->setDefault(true);
     connect(saveBtn, &QPushButton::clicked, this, &CollectionCreateDialog::onSave);
-    btnLayout->addWidget(saveBtn);
 
     auto* cancelBtn = new QPushButton(tr("Cancel"));
     connect(cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
-    btnLayout->addWidget(cancelBtn);
+    // Save/Cancel in the platform's order
+    auto* saveCancel = new QDialogButtonBox(this);
+    saveCancel->addButton(saveBtn, QDialogButtonBox::AcceptRole);
+    saveCancel->addButton(cancelBtn, QDialogButtonBox::RejectRole);
+    btnLayout->addWidget(saveCancel);
 
     mainLayout->addLayout(btnLayout);
 

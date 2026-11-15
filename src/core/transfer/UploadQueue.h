@@ -158,6 +158,10 @@ public:
     /// for a slot for kSlotCooldownMs, doubling each time it happens again.
     /// One slot per call. @p curTick is passed in so a test can move time.
     void recycleDeadSlots(uint64 curTick);
+    /// Drop waiters not heard from in MAX_PURGEQUEUETIME, or whose file is gone. Run
+    /// before each slot decision (MFC) and every kWaiterPurgeMs from process() (not MFC).
+    void purgeStaleWaiters(uint64 curTick);
+    static constexpr uint32 kWaiterPurgeMs = 10'000;
     [[nodiscard]] bool isSlotCoolingDown(const UpDownClient* client, uint64 curTick) const;
     /// #150: a LowID callback slot may be asked for now (line has room, pacing). Non-const:
     /// forgets addresses asked longer than kCallbackRetryMs ago.
@@ -363,6 +367,7 @@ private:
     uint32 m_failedUpCount = 0;
     uint32 m_totalUploadTime = 0;   // seconds, successful sessions only
     uint64 m_lastStartUpload = 0;
+    uint64 m_lastWaiterPurge = 0;   // purgeStaleWaiters() timer
 
     /// Best score on the waiting list, refreshed by updateMaxClientScore() and read only by
     /// checkForTimeOver()'s score kick. Both are inert while thePrefs.transferFullChunks()

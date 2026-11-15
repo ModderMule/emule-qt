@@ -23,6 +23,11 @@ void insertEd2kCounts(QCborMap& info);
 
 [[nodiscard]] QCborMap kadStatus();
 
+/// Recent requests other Kad nodes sent us, newest first: {agoMs, type (kad::IncomingType),
+/// target (hex, "" = none), name, addr, cc, contacts, results, records, stored, load (-1 = n/a),
+/// answered}. The ed3k node sends the same shape (Ed3kKadBridge).
+[[nodiscard]] QCborArray kadIncoming();
+
 /// The Statistics window's Kademlia branch: `session` and `cumulative` are
 /// KadCounters blocks, `current` the routing table as it stands, `seen` the
 /// distinct-node census (estimates) with its per-country split.

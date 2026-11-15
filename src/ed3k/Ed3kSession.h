@@ -22,6 +22,7 @@
 #include "Ed3kFfi.h"
 #include "Ed3kHide.h"
 #include "Ed3kLan.h"
+#include "net/SendBufferSizer.h"
 
 #include <QByteArray>
 #include <QElapsedTimer>
@@ -264,6 +265,8 @@ private:
     /// RpcRequest to the configured endpoint; false: none for its class and operator.
     bool startRpc(const ::ed3k::event::RpcRequest& r);
     void applyLimits();
+    /// SO_SNDBUF of the socket with the upload limit (SendBufferSizer); never shrinks
+    void growSendBuffer();
     void applyUploadSlots();
     /// addIndexLink's links to the engine (at start)
     void applyIndexLinks();
@@ -321,6 +324,7 @@ private:
     QStringList m_creditRpc;
     QStringList m_chaintubeRpc;
     ::ed3k::Limits m_limits{};
+    eMule::SendBufferSizer m_sendBufSizer;
     std::uint32_t m_uploadSlots = 0;
     int m_logLevel = -1;   ///< ed3k::LogLevel set on this engine; -1 = none yet
     Ed3kTraffic m_trafficBase;   ///< of the engines before this one

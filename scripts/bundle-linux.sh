@@ -28,6 +28,7 @@
 # ---------------------------------------------------------------------------
 
 set -euo pipefail
+. "$(dirname "$0")/py.sh"
 
 DEPLOY_QT=false
 BUILD_DIR=""
@@ -174,7 +175,7 @@ if [ "$DEPLOY_QT" = true ]; then
         # Needed under QEMU emulation where the AppImage runtime can't execute.
         if command -v unsquashfs > /dev/null 2>&1; then
             local offset
-            offset=$(python3 -c "
+            offset=$(py -c "
 import sys, struct
 data = open(sys.argv[1], 'rb').read()
 # Find all 'hsqs' magic occurrences and pick the one that looks like

@@ -91,6 +91,19 @@ public:
     bool start(const PeerInfo& peer);
     bool start(UpDownClient& client);
 
+    /// Client Details view: what gates a rendezvous to the peer and the paths that serve
+    /// it, in try order. Never probes a server.
+    struct RouteView {
+        bool enabled = false;      ///< NAT-T on
+        bool firewalled = false;   ///< we are LowID: the only case a rendezvous starts
+        bool dataPath = false;     ///< QUIC or a confident public IPv6
+        bool failed = false;       ///< the peer failed this session
+        bool active = false;       ///< an attempt runs
+        std::vector<PathKind> paths;
+    };
+    [[nodiscard]] RouteView routeView(const PeerInfo& peer) const;
+    [[nodiscard]] RouteView routeView(const UpDownClient& client) const;
+
     /// An attempt for the peer is running.
     [[nodiscard]] bool isActive(const PeerInfo& peer) const;
 
@@ -174,7 +187,8 @@ signals:
 
 private:
     /// Paths in the order to try them for @p peer; see the constructor.
-    [[nodiscard]] std::vector<NatPath*> orderedPaths(const PeerInfo& peer) const;
+    /// @p probe false: no server probe (display).
+    [[nodiscard]] std::vector<NatPath*> orderedPaths(const PeerInfo& peer, bool probe = true) const;
     /// Requester whose path never produced an endpoint: move to the next untried path
     /// that can serve the peer. False when none is left.
     bool tryNextPath(Attempt& attempt);

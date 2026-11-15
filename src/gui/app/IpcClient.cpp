@@ -80,6 +80,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::SyncLogs:             return QStringLiteral("SyncLogs");
     case T::Shutdown:             return QStringLiteral("Shutdown");
     case T::GetKadSearches:       return QStringLiteral("GetKadSearches");
+    case T::GetKadIncoming:       return QStringLiteral("GetKadIncoming");
     case T::GetKadLookupHistory:  return QStringLiteral("GetKadLookupHistory");
     case T::GetNetworkInfo:       return QStringLiteral("GetNetworkInfo");
     case T::GetNetworkInterfaces: return QStringLiteral("GetNetworkInterfaces");
@@ -316,6 +317,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PublishEd3kOwnSet:    return QStringLiteral("PublishEd3kOwnSet");
     case T::Ed3kOwnSetControl:    return QStringLiteral("Ed3kOwnSetControl");
     case T::GetEd3kOwnSetLink:    return QStringLiteral("GetEd3kOwnSetLink");
+    case T::GetEd3kFileLinks:     return QStringLiteral("GetEd3kFileLinks");
     case T::PushEd3kOwnSetsChanged: return QStringLiteral("PushEd3kOwnSetsChanged");
     case T::BurnEd3kStake:        return QStringLiteral("BurnEd3kStake");
     case T::ClaimEd3kStake:       return QStringLiteral("ClaimEd3kStake");

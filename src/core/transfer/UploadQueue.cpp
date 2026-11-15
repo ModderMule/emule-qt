@@ -389,21 +389,10 @@ UpDownClient* UploadQueue::findBestClientInQueue()
     int unreachable = 0;     // for the log: how many LowIDs wait, how many a callback reaches
     int callbackable = 0;
 
+    purgeStaleWaiters(curTick);
+
     for (auto it = m_waitingList.begin(); it != m_waitingList.end(); ) {
         UpDownClient* cur = *it;
-
-        // Purge stale clients (not seen in MAX_PURGEQUEUETIME = 1 hour)
-        bool stale = (curTick >= cur->lastUpRequest() + MAX_PURGEQUEUETIME);
-        bool noFile = m_sharedFiles && !m_sharedFiles->getFileByID(cur->reqUpFileId());
-
-        if (stale || noFile) {
-            cur->clearWaitStartTime();
-            it = m_waitingList.erase(it);
-            cur->setUploadState(UploadState::None);
-            cur->setAddNextConnect(false);
-            emit clientRemovedFromQueue(cur);
-            continue;
-        }
 
         // Natural send point for a queued OP_CHANGE_CLIENT_IP — we are touching this client
         // anyway, so telling it our new IPv6 costs no extra wakeup.
@@ -411,6 +400,13 @@ UpDownClient* UploadQueue::findBestClientInQueue()
 
         // Just lost a slot for taking nothing from it: not its turn again yet.
         if (isSlotCoolingDown(cur, curTick)) {
+            ++it;
+            continue;
+        }
+
+        // ClientAnalyzer: our last uploads to it failed in a row; a slot only while it is
+        // connected, so the next session has a chance (eMuleFuture UploadQueue.cpp:274).
+        if (cur->analyzerWantsLiveSocket() && !(cur->socket() && cur->socket()->isConnected())) {
             ++it;
             continue;
         }
@@ -941,6 +937,7 @@ bool UploadQueue::addClientToQueue(UpDownClient* client, bool ignoreTimeLimit)
         return false;
 
     client->incAskedCount();
+    client->noteAnalyzerUploadRequest(getTickCount());   // before the stamp: reask interval
     client->setLastUpRequest(getTickCount());
     // It asked us itself: fresh hello, fresh routes, so a new callback may be tried (#150).
     // Not while it is calling in for one.
@@ -1139,6 +1136,7 @@ bool UploadQueue::removeFromUploadQueue(UpDownClient* client, const QString& rea
     } else {
         ++m_failedUpCount;
     }
+    client->noteAnalyzerUploadSession(client->sessionUp() > 0);
 
     // The file loses this peer's reported availability — MFC UploadQueue.cpp:734-736.
     if (KnownFile* uploadedFile = client->uploadFile())
@@ -1421,6 +1419,30 @@ bool UploadQueue::keepsProductiveSlot(const UpDownClient* client) const
     return client->upSlotActivity(client->getUpStartTimeDelay()) == UpDownClient::UpSlotActivity::Busy;
 }
 
+// ===========================================================================
+// purgeStaleWaiters — MFC CUploadQueue::FindBestClientInQueue's purge, also on a timer
+// ===========================================================================
+
+void UploadQueue::purgeStaleWaiters(uint64 curTick)
+{
+    m_lastWaiterPurge = curTick;
+    for (auto it = m_waitingList.begin(); it != m_waitingList.end(); ) {
+        UpDownClient* cur = *it;
+        // not heard from in MAX_PURGEQUEUETIME (1 h), or the file is no longer shared
+        const bool stale = curTick >= cur->lastUpRequest() + MAX_PURGEQUEUETIME;
+        const bool noFile = m_sharedFiles && !m_sharedFiles->getFileByID(cur->reqUpFileId());
+        if (!stale && !noFile) {
+            ++it;
+            continue;
+        }
+        cur->clearWaitStartTime();
+        it = m_waitingList.erase(it);
+        cur->setUploadState(UploadState::None);
+        cur->setAddNextConnect(false);
+        emit clientRemovedFromQueue(cur);
+    }
+}
+
 void UploadQueue::recycleDeadSlots(uint64 curTick)
 {
     // A full line loses nothing to a dead slot: the others take up its share.
@@ -1530,6 +1552,11 @@ void UploadQueue::process()
     // equivalent without adding a timer of our own.
     updateMaxClientScore();
 
+    // Not MFC: MFC purges only when it hands out a slot, so while the line is full gone
+    // peers (a restored queue's offline ones above all) kept their place and filled the queue.
+    if (curTick - m_lastWaiterPurge >= kWaiterPurgeMs)
+        purgeStaleWaiters(curTick);
+
     // Before the promotion below, so a freed slot is filled in the same pass.
     recycleDeadSlots(curTick);
 
@@ -1576,9 +1603,9 @@ void UploadQueue::process()
             continue;
         }
 
-        // Use big send buffer for fast uploads
+        // Send buffer grows with the slot's rate (1 MiB floor, 8 MiB cap)
         if (EMSocket* sock = cur->getFileUploadSocket())
-            sock->useBigSendBuffer();
+            sock->useBigSendBuffer(cur->upDatarate());
 
         // Follow the file the peer is actually pulling. Reads are quick, so this mostly
         // fires from onBlockPacketsReady(); here it catches a block still waiting on disk.
@@ -1707,6 +1734,7 @@ void UploadQueue::answerReask(const Endpoint& replyTo, SafeMemFile& in,
     }
 
     sender->incAskedCount();
+    sender->noteAnalyzerUploadRequest(getTickCount());   // before the stamp: reask interval
     sender->setLastUpRequest(getTickCount());
 
     // Refresh what it holds. UDP version 4 sends the whole extended info; version 3 only

@@ -642,6 +642,9 @@ private slots:
     void previewStitchesAReadAcrossTwoFiles();
     void previewRefusesAnUnstreamableReleaseAtOnce();
     void previewTakesAPieceWithNoLengthFromTheFileOnDisk();
+    void previewEndProbeIsNotWaitedOut();
+    void ed3kPreviewSeekWaitsForTheBytesWhenSeekingIsOn();
+    void ed3kPreviewIgnoresTheStreamResolverWhenSeekingIsOff();
 
     // Graphs page data
     // Incoming folder browsing — the remote core's stand-in for the file manager
@@ -2151,6 +2154,89 @@ void tst_WebServer::previewWaitsForBytesThatHaveNotArrivedYet()
     QCOMPARE(qint64(resp.rawBody.size()), kLate);
 
     m_webServer->setUsenetStreamResolver({});
+}
+
+void tst_WebServer::previewEndProbeIsNotWaitedOut()
+{
+    // VLC probes the byte after the end (trailing moov). Nothing is "available"
+    // there, ever: the answer is the EOF 416 at once, not one after the wait.
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = writePattern(dir, QStringLiteral("movie.mkv"), 1024);
+    m_webServer->setUsenetStreamResolver([path](const UsenetStreamRequest&) {
+        UsenetStreamSource src;
+        src.found = true;
+        src.pieces = {{path, 0, 0, 1024}};
+        src.fileName = QStringLiteral("movie.mkv");
+        src.totalSize = 1024;
+        src.availableEnd = 512;
+        return src;
+    });
+    QElapsedTimer elapsed;
+    elapsed.start();
+    const auto resp = sendRanged(
+        QStringLiteral("/api/v1/usenet/item/0/preview?token=%1").arg(m_webServer->streamToken()),
+        QByteArrayLiteral("bytes=1024-"));
+    QCOMPARE(resp.statusCode, 416);
+    QVERIFY2(elapsed.elapsed() < 2000, "an end probe must not wait");
+    m_webServer->setUsenetStreamResolver({});
+}
+
+void tst_WebServer::ed3kPreviewSeekWaitsForTheBytesWhenSeekingIsOn()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    constexpr qint64 kSize = 512 * 1024;
+    constexpr qint64 kSeek = 300 * 1024;
+    const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSize);
+    QVERIFY(!path.isEmpty());
+
+    // A seek past what is held: the resolver is asked from the seek offset (that
+    // is what has the blocks fetched first) and the answer waits for them.
+    QElapsedTimer since;
+    since.start();
+    QList<qint64> offsets;
+    m_webServer->setEd3kStreamResolver([&](const QString&, qint64 offset) {
+        offsets << offset;
+        UsenetStreamSource src;
+        src.found = true;
+        src.fileName = QStringLiteral("movie.mkv");
+        src.totalSize = kSize;
+        src.pieces = {{path, 0, 0, kSize}};
+        src.availableEnd = since.elapsed() > 400 ? kSize : offset;
+        return src;
+    });
+    m_preferences->setDownloadSeeking(true);
+
+    const QString root(64, QLatin1Char('a'));
+    const auto resp = sendRanged(
+        QStringLiteral("/api/v1/downloads/%1/preview?token=%2").arg(root, m_webServer->streamToken()),
+        QByteArrayLiteral("bytes=%1-").replace("%1", QByteArray::number(kSeek)));
+
+    m_preferences->setDownloadSeeking(false);
+    m_webServer->setEd3kStreamResolver({});
+
+    QCOMPARE(resp.statusCode, 206);
+    QCOMPARE(qint64(resp.rawBody.size()), kSize - kSeek);
+    QVERIFY(offsets.size() > 1);
+    QVERIFY(std::ranges::all_of(offsets, [](qint64 o) { return o == kSeek; }));
+}
+
+void tst_WebServer::ed3kPreviewIgnoresTheStreamResolverWhenSeekingIsOff()
+{
+    // Off (the default): the file resolver serves the part file as it is
+    bool asked = false;
+    m_webServer->setEd3kStreamResolver([&](const QString&, qint64) {
+        asked = true;
+        return UsenetStreamSource{};
+    });
+    QVERIFY(!m_preferences->downloadSeeking());
+    const QString root(64, QLatin1Char('b'));
+    (void)sendRanged(
+        QStringLiteral("/api/v1/downloads/%1/preview?token=%2").arg(root, m_webServer->streamToken()),
+        QByteArrayLiteral("bytes=0-"));
+    m_webServer->setEd3kStreamResolver({});
+    QVERIFY(!asked);
 }
 
 void tst_WebServer::previewGivesUpWhenTheItemDisappears()

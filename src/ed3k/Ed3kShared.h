@@ -54,6 +54,14 @@ struct SharedEntry {
     std::uint64_t size = 0;
     /// the file's upload priority (the engine's queue: eMule's score)
     ::ed3k::UploadPriority priority = ::ed3k::UploadPriority::Normal;
+    /// the user's own rating (0 none, 1..5) and comment: its NOTE record (Protocol.md §10.7)
+    std::uint32_t rating = 0;
+    QString comment;
+    /// media length in seconds and kbit/s of its keyword record (FileInfo), 0 = unknown
+    std::uint32_t duration = 0;
+    std::uint32_t bitrate = 0;
+
+    [[nodiscard]] bool hasNote() const { return rating != 0 || !comment.isEmpty(); }
 };
 
 /// The share list as Ed3kShared reads it: SharedFileList in the daemon
@@ -226,6 +234,7 @@ private:
         bool shared = false;  ///< open on the engine, published
         ::ed3k::Bytes alias;  ///< the ALIAS record published; empty: none
         bool keywords = false;  ///< published with Publish::Both
+        qint64 noteAtMs = 0;    ///< NOTE record last published (ms since epoch); 0: none
         int rehashTries = 0;    ///< hashes that failed (unreadable)
     };
 
@@ -256,7 +265,11 @@ private:
     /// Files whose shares the base closed (gone or changed): dropped, taken again if listed.
     void recheck();
     /// Upload priorities read again (the user's, or auto): changed ones to the engine.
+    /// Own notes too: a changed one published, a held one again before it expires.
     void refreshPriorities();
+    /// Publishes @p f's NOTE record (its rating and comment) when it has one and does not
+    /// hold back; under the file's key. A note lives 24 h (§10.3): published again by then.
+    void publishNote(File& f, const ::ed3k::Root& root);
     [[nodiscard]] const File* fileOfMember(int member) const;
     /// Size and date of @p path on disk agree with @p f.
     [[nodiscard]] static bool unchanged(const QString& path, std::uint64_t size, qint64 mtimeMs);

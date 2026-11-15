@@ -78,6 +78,14 @@ int ClientList::clientCount() const
     return count();
 }
 
+std::size_t ClientList::memoryBytes() const
+{
+    std::size_t n = 0;
+    for (const auto* client : m_items)
+        n += client->memoryBytes();
+    return n;
+}
+
 void ClientList::deleteAll()
 {
     m_items.clear();

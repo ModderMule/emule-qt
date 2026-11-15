@@ -23,6 +23,7 @@
 namespace eMule {
 
 class Address;
+class ClientAnalyzer;
 class ClientCreditsList;
 class ConnectionChecker;
 class ClientList;
@@ -178,6 +179,8 @@ private slots:
     void loadStep();
 
 private:
+    /// clientanalyzer.met in the config folder, apart from clients.met.
+    [[nodiscard]] static QString clientAnalyzerPath();
     /// `<ConfigDir>/uploadqueue.met` — the Upload Queue Storage file.
     [[nodiscard]] static QString uploadQueuePath();
 
@@ -287,6 +290,7 @@ private:
     std::unique_ptr<kad::Kademlia> m_kademlia;
     std::unique_ptr<ClientUDPSocket> m_clientUDP;
     std::unique_ptr<ClientCreditsList> m_clientCredits;
+    std::unique_ptr<ClientAnalyzer> m_clientAnalyzer;
     std::unique_ptr<ClientList> m_clientList;
     std::unique_ptr<FriendList> m_friendList;
     std::unique_ptr<ListenSocket> m_listenSocket;

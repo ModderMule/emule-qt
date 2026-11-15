@@ -45,6 +45,10 @@ url + sha256 + size are ignored by the GUI.
 - toolbar speed graph `[Colors]` keys (not in MFC, each optional, unset = Options background
   choice): `SpeedGraphBk`, `SpeedGraphBorder` (frame + divider), `SpeedGraphGrid`,
   `SpeedGraphFg` (rate text), `SpeedGraphUp`, `SpeedGraphDown`; `r,g,b` or `#rrggbb`
+- `[Icons]` keys: MFC `emule.rc` names (`KADEMLIA`, `STATSGENERIC`, …); icons not in MFC use
+  the eMule Qt icon file's base name, each optional, unset = built-in icon:
+  `Memory` (statistics Memory branch), `Ed3k`, `Usenet`, `Torrent`, `Hoster`, …
+  (`SkinIcons::resourceNames`)
 - toolbar strip anywhere in the bundle root or one folder below
 - limits: zip ≤ 64 MiB, unpacked ≤ 256 MiB, ≤ 5000 entries, preview ≤ 8 MiB
 
@@ -54,6 +58,9 @@ Name=Cybernetic Neon
 Author=someone
 Preview=preview/overview.png
 Theme=dark
+
+[Icons]
+Memory=icons/memory.ico
 
 [Colors]
 SpeedGraphBk=8,10,32

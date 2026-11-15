@@ -310,6 +310,14 @@ void ListenSocket::updateConnectionsStatus()
                     + static_cast<float>(m_activeConnections) * (1.0f - keep));
 }
 
+uint64 ListenSocket::bufferedBytes() const
+{
+    uint64 n = 0;
+    for (const ClientReqSocket* sock : m_socketList)
+        n += sock->bufferedBytes();
+    return n;
+}
+
 float ListenSocket::maxConPerFiveModifier() const
 {
     float spikeSize = std::max(1.0f,

@@ -174,6 +174,7 @@ private slots:
     void foreign_notLoggedInAnywhere();
     void foreign_unlistedProbedOnce();
     void foreign_unlistedOff();
+    void foreign_routeViewNeverProbes();
     void foreign_waitsForKey();
     void foreign_answerOnlyFromThatServer();
     void foreign_answerHashWithoutFlag();
@@ -1023,6 +1024,26 @@ void tst_NatRendezvousPaths::foreign_unlistedOff()
     // a listed server with the flag still works
     f.env->foreignReady(kForeignIP, kForeignPort, kForeignKey, kForeignObf);
     QVERIFY(f.hub->mayKeepLowIdSource(peerOnForeign(77)));
+}
+
+void tst_NatRendezvousPaths::foreign_routeViewNeverProbes()
+{
+    // Client Details: an unknown server is not pinged just to fill the dialog
+    HubFixture f;
+    logInLugdunum(f);
+    const PeerInfo peer = peerOnForeign(77);
+    auto v = f.hub->routeView(peer);
+    QVERIFY(v.enabled);
+    QVERIFY(v.firewalled);
+    QVERIFY(v.paths.empty());
+    QVERIFY(f.env->foreignProbes.empty());
+    // once its server announced 0x100000, the view lists the foreign callback
+    f.env->foreignReady(kForeignIP, kForeignPort, kForeignKey, kForeignObf);
+    v = f.hub->routeView(peer);
+    QCOMPARE(v.paths.size(), size_t{1});
+    QCOMPARE(v.paths.front(), PathKind::ForeignCallback);
+    QVERIFY(!v.active);
+    QVERIFY(f.env->foreignProbes.empty());
 }
 
 void tst_NatRendezvousPaths::foreign_waitsForKey()

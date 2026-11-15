@@ -13,6 +13,7 @@
 #include "net/EncryptedStreamSocket.h"
 #include "net/Packet.h"
 #include "net/ProxySettings.h"
+#include "net/SendBufferSizer.h"
 #include "net/ThrottledSocket.h"
 
 #include <QElapsedTimer>
@@ -96,6 +97,9 @@ public:
     // --- Queue inspection ---
 
     void truncateQueues();
+    /// Bytes this socket holds in RAM: send queues, Qt's buffers, a half-read packet.
+    /// Owner thread only.
+    [[nodiscard]] uint64 bufferedBytes() const;
 
     // --- Bandwidth statistics ---
 
@@ -123,7 +127,7 @@ public:
     [[nodiscard]] bool isBusyQuickCheck() const override;
     [[nodiscard]] bool isEnoughFileDataQueued(uint32 nMinFilePayloadBytes) const override;
     [[nodiscard]] bool hasQueues(bool onlyStandardPackets = false) const override;
-    bool useBigSendBuffer() override;
+    bool useBigSendBuffer(uint32 bytesPerSec = 0) override;
 
 protected:
     void onNegotiationBytesQueued() override;
@@ -251,6 +255,8 @@ private:
     mutable std::atomic<bool> m_rawBusy{false};
     [[nodiscard]] bool rawBusyNow() const;
     bool m_useBigSendBuffers = false;
+    /// Send buffer grows with the slot's rate, never shrinks.
+    SendBufferSizer m_sendBufSizer;
     bool m_retryScheduled = false;
 
     /// One deferred onReadyRead() at a time. onReadyRead() consumes at most
@@ -273,10 +279,10 @@ private:
     std::atomic<qint64> m_cachedBytesToWrite{0};
 
     /// Threshold above which the socket is considered congested: the SO_SNDBUF
-    /// size useBigSendBuffer() asks for. 1 MiB is the port's own value (MFC
+    /// floor useBigSendBuffer() asks for. 1 MiB is the port's own value (MFC
     /// 128 KiB) — deliberate, with the 3 s / 5 s pacing in getNeededBytes()
     /// (stretched on a capped line).
-    static constexpr qint64 kBusyThreshold = 1024 * 1024;
+    static constexpr qint64 kBusyThreshold = SendBufferSizer::kStep;
 
 };
 

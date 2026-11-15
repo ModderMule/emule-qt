@@ -25,7 +25,7 @@ from generate_donkey_icons import donkey_svg
 try:
     import cairosvg
 except ImportError as e:
-    sys.exit(f"{e}: pip install cairosvg (and libcairo)")
+    sys.exit(f"{e}: uv sync, or pip install cairosvg (and libcairo)")
 
 ROOT = Path(__file__).resolve().parent.parent
 IMAGES = ROOT / "resources" / "images"

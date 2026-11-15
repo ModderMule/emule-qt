@@ -25,14 +25,14 @@ bool ForeignCallbackPath::foreignPeer(const PeerInfo& peer) const
 
 bool ForeignCallbackPath::canServe(const PeerInfo& peer) const
 {
-    // The server takes only an obfuscated 0xA6: its key is what proves our address.
-    if (env().ourUdpPort() == 0 || !(env().ourConnectOptions() & CONNECT_OPT_CRYPT_SUPPORTED)
-        || !foreignPeer(peer))
-        return false;
     // Probing here is what "a source of an active download" means: sources come in
     // through keepLowIdSource / tryToConnect, both of which ask canServe.
-    const ForeignServer fs = env().foreignServer(peer.serverAddress, peer.serverPort, true);
-    return fs.state != ForeignServer::State::No;
+    return serves(peer, true);
+}
+
+bool ForeignCallbackPath::canServeKnown(const PeerInfo& peer) const
+{
+    return serves(peer, false);
 }
 
 std::optional<LugdunumNatPath::RequestRoute> ForeignCallbackPath::requestRoute(const Attempt& attempt)
@@ -96,6 +96,16 @@ void ForeignCallbackPath::onNotice(const Endpoint& from, const uint8* data, uint
         return;
     }
     onAnswer(*mine, *n);
+}
+
+bool ForeignCallbackPath::serves(const PeerInfo& peer, bool probe) const
+{
+    // The server takes only an obfuscated 0xA6: its key is what proves our address.
+    if (env().ourUdpPort() == 0 || !(env().ourConnectOptions() & CONNECT_OPT_CRYPT_SUPPORTED)
+        || !foreignPeer(peer))
+        return false;
+    const ForeignServer fs = env().foreignServer(peer.serverAddress, peer.serverPort, probe);
+    return fs.state != ForeignServer::State::No;
 }
 
 } // namespace eMule::natt

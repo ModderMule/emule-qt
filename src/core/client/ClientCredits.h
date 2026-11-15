@@ -143,6 +143,12 @@ public:
 
     ClientCredits* getCredit(const uint8* userHash);
     [[nodiscard]] std::size_t creditCount() const { return m_clients.size(); }
+    /// RAM of the credit records (estimate).
+    [[nodiscard]] std::size_t memoryBytes() const
+    {
+        return m_clients.size() * (sizeof(ClientCredits) + sizeof(HashKeyOwn) + 4 * sizeof(void*) + 32)
+             + m_clients.bucket_count() * sizeof(void*);
+    }
 
     [[nodiscard]] bool cryptoAvailable() const { return m_myPublicKeyLen > 0 && m_signKey != nullptr; }
 

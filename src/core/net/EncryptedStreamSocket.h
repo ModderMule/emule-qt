@@ -105,6 +105,8 @@ public:
 
     [[nodiscard]] qint64 bytesAvailable() const override;
     [[nodiscard]] qint64 bytesToWrite() const override;
+    /// Bytes of the negotiation buffers (data held back until the handshake ends).
+    [[nodiscard]] uint64 negotiationBufferBytes() const;
     void close() override;
 
     /// Set the encryption configuration.

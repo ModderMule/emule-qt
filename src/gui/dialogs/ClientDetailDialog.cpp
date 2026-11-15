@@ -4,6 +4,7 @@
 
 #include "ClientDetailDialog.h"
 
+#include <QCborArray>
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -297,6 +298,89 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
         mainLayout->addWidget(group);
     }
 
+    // ── Callback group (not MFC): how a LowID client can be reached ─────
+    if (const QCborMap cb = d.value(QLatin1StringView("callback")).toMap(); !cb.isEmpty()) {
+        auto* group = new QGroupBox(tr("LowID Callback"));
+        auto* form  = new QFormLayout(group);
+        form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+        DialogSizing::enableHeightForWidth(group);
+        const auto flag = [&cb](QLatin1StringView key) { return cb.value(key).toBool(); };
+        const QString yes = tr("Available");
+        const QString no  = tr("Not available");
+
+        // Kad buddy that relays callbacks for it
+        const QString buddy = str(cb, QLatin1StringView("buddy"));
+        const QString buddy6 = str(cb, QLatin1StringView("buddyIPv6"));
+        QString buddyText;
+        if (!buddy.isEmpty())
+            buddyText = buddy6.isEmpty() ? buddy : QStringLiteral("%1, %2").arg(buddy, buddy6);
+        else if (flag(QLatin1StringView("buddyID")))
+            buddyText = tr("Known, address not resolved yet");
+        else
+            buddyText = tr("None");
+        addDetailRow(form, tr("Kad buddy"), buddyText);
+        addDetailRow(form, tr("Kad buddy callback"), flag(QLatin1StringView("kadBuddy")) ? yes : no);
+        addDetailRow(form, tr("Direct UDP callback"), flag(QLatin1StringView("directUdp")) ? yes : no);
+
+        // Same-server OP_CALLBACKREQUEST
+        QString server;
+        if (!flag(QLatin1StringView("sameServer")))
+            server = tr("Not on our server");
+        else
+            server = flag(QLatin1StringView("serverCallback")) ? yes : tr("Not available (we have a Low ID)");
+        addDetailRow(form, tr("Server callback"), server);
+
+        // Foreign callback through the peer's own server (UDP flag 0x100000)
+        const QString foreign = str(cb, QLatin1StringView("foreign"));
+        const QString foreignServer = str(cb, QLatin1StringView("foreignServer"));
+        QString cross;
+        if (foreign == QLatin1String("same"))
+            cross = tr("Not needed (same server)");
+        else if (foreign == QLatin1String("ready"))
+            cross = tr("Offered by its server");
+        else if (foreign == QLatin1String("pending"))
+            cross = tr("Checking its server");
+        else if (foreign == QLatin1String("no"))
+            cross = tr("Not offered by its server");
+        else if (foreign == QLatin1String("notCapable"))
+            cross = tr("Not possible (peer logged in without NAT callback)");
+        else
+            cross = tr("Its server is unknown");
+        if (!foreignServer.isEmpty() && foreign != QLatin1String("same"))
+            cross += QStringLiteral(" \u2014 %1").arg(foreignServer);
+        addDetailRow(form, tr("Cross-server callback"), cross);
+
+        // NAT-T introducers in try order; a rendezvous starts only while we are firewalled
+        const QCborMap natt = cb.value(QLatin1StringView("natt")).toMap();
+        if (!natt.isEmpty()) {
+            QStringList paths;
+            for (const QCborValue& v : natt.value(QLatin1StringView("paths")).toArray()) {
+                const QString k = v.toString();
+                if (k == QLatin1String("ed2kServer"))     paths << tr("Server hole punch");
+                else if (k == QLatin1String("lugdunum"))  paths << tr("Server NAT callback");
+                else if (k == QLatin1String("prNat"))     paths << QStringLiteral("PR_NAT");
+                else if (k == QLatin1String("kadBuddy"))  paths << tr("Kad buddy");
+                else if (k == QLatin1String("foreign"))   paths << tr("Cross-server callback");
+                else if (k == QLatin1String("directUdp")) paths << tr("Direct UDP");
+            }
+            const auto nflag = [&natt](QLatin1StringView key) { return natt.value(key).toBool(); };
+            QString text = paths.isEmpty() ? tr("None") : paths.join(QStringLiteral(", "));
+            if (!nflag(QLatin1StringView("enabled")))
+                text = tr("NAT-T disabled");
+            else if (nflag(QLatin1StringView("active")))
+                text += QStringLiteral(" (%1)").arg(tr("in progress"));
+            else if (nflag(QLatin1StringView("failed")))
+                text += QStringLiteral(" (%1)").arg(tr("failed this session"));
+            else if (!paths.isEmpty() && !nflag(QLatin1StringView("firewalled")))
+                text += QStringLiteral(" (%1)").arg(tr("used only while we are firewalled"));
+            else if (!paths.isEmpty() && !nflag(QLatin1StringView("dataPath")))
+                text += QStringLiteral(" (%1)").arg(tr("no QUIC or IPv6 data path"));
+            addDetailRow(form, tr("NAT-T rendezvous"), text);
+        }
+
+        mainLayout->addWidget(group);
+    }
+
     // ── Transfer group ─────────────────────────────────────────────────
     {
         auto* group = new QGroupBox(tr("Transfer"));
@@ -366,6 +450,14 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
                 ? tr("(Friend Slot)") : QString::number(num(d, QLatin1StringView("score")));
         }
         addDetailRow(form, tr("Uploadqueue Score"), score);
+
+        // ClientAnalyzer factor, sent only while it is on
+        if (d.contains(QLatin1StringView("analyzerScore"))) {
+            const QString reasons = str(d, QLatin1StringView("analyzerReasons"));
+            const QString factor = QString::number(dbl(d, QLatin1StringView("analyzerScore")), 'f', 2);
+            addDetailRow(form, tr("Client Analyzer"),
+                         reasons.isEmpty() ? factor : QStringLiteral("%1  (%2)").arg(factor, reasons));
+        }
 
         mainLayout->addWidget(group);
     }

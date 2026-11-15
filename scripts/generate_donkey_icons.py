@@ -36,7 +36,7 @@ try:
     import cairosvg
     from PIL import Image
 except ImportError as e:
-    sys.exit(f"{e}: pip install cairosvg Pillow (and libcairo)")
+    sys.exit(f"{e}: uv sync, or pip install cairosvg Pillow (and libcairo)")
 
 ROOT = Path(__file__).resolve().parent.parent
 ICONS = ROOT / "resources" / "icons"

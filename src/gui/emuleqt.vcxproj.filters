@@ -214,6 +214,9 @@
     <ClCompile Include="utils\MoveDownloadsAction.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\Ed3kLinkMenu.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\FolderLister.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -666,7 +669,13 @@
     <ClInclude Include="utils\MassRenameAction.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="utils\MessageBoxButtonOrder.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\MoveDownloadsAction.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\Ed3kLinkMenu.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\FolderLister.h">
@@ -1678,6 +1687,9 @@
       <Filter>Resource Files</Filter>
     </None>
     <None Include="..\..\resources\icons\StatsGeneric.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Memory.ico">
       <Filter>Resource Files</Filter>
     </None>
     <None Include="..\..\resources\icons\StatsMonth.ico">

@@ -9,6 +9,11 @@
 #include "client/ClientCensus.h"
 #include "client/ClientCredits.h"
 #include "kademlia/KadNodeCensus.h"
+#include "kademlia/Kademlia.h"
+#include "kademlia/KadIndexed.h"
+#include "files/KnownFileList.h"
+#include "ipfilter/IPFilter.h"
+#include "transfer/UploadDiskIOThread.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "files/PartFile.h"
@@ -38,6 +43,8 @@ namespace eMule {
 namespace {
 
 std::optional<qint64> cachedFreeTempSpace(const QStringList& tempDirs);
+/// Heap totals and the biggest known consumers of the core's RAM.
+void collectMemoryBreakdown(StatsSnapshot& out);
 
 /// Format a client version word the way the statistics tree labels it.
 QString formatClientVersion(uint32 ver)
@@ -518,6 +525,7 @@ StatsSnapshot collectStatsSnapshot()
             totalDone += done;
             out.totalDownNeeded += static_cast<qint64>(f->neededSpace());
             out.memDownloadBuffers += static_cast<qint64>(f->bufferedDataSize());
+            out.memKnownFiles += static_cast<qint64>(f->memoryBytes());
         }
         const DownloadQueue::SourceStats src = dq->sourceStats();
         out.downSources = {src.onQueue, src.queueFull, src.noNeededParts, src.asking,
@@ -605,6 +613,7 @@ StatsSnapshot collectStatsSnapshot()
         out.memProcess = static_cast<qint64>(mem->current);
         out.memProcessPeak = static_cast<qint64>(mem->peak);
     }
+    collectMemoryBreakdown(out);
 
     return out;
 }
@@ -699,6 +708,15 @@ QCborMap toCborMap(const StatsSnapshot& s)
     put(QStringLiteral("memProcessPeak"), s.memProcessPeak);
     put(QStringLiteral("memUploadBuffers"), s.memUploadBuffers);
     put(QStringLiteral("memDownloadBuffers"), s.memDownloadBuffers);
+    put(QStringLiteral("memHeapInUse"), s.memHeapInUse);
+    put(QStringLiteral("memHeapCommitted"), s.memHeapCommitted);
+    put(QStringLiteral("memUploadReadAhead"), s.memUploadReadAhead);
+    put(QStringLiteral("memSockets"), s.memSockets);
+    put(QStringLiteral("memKnownFiles"), s.memKnownFiles);
+    put(QStringLiteral("memClients"), s.memClients);
+    put(QStringLiteral("memCredits"), s.memCredits);
+    put(QStringLiteral("memKadIndex"), s.memKadIndex);
+    put(QStringLiteral("memIpFilter"), s.memIpFilter);
     put(QStringLiteral("downSuccessful"), s.downSuccessful);
     put(QStringLiteral("downFailed"), s.downFailed);
     put(QStringLiteral("downAvgTime"), s.downAvgTime);
@@ -956,6 +974,28 @@ std::optional<qint64> cachedFreeTempSpace(const QStringList& tempDirs)
         });
     }
     return cache.value;
+}
+
+void collectMemoryBreakdown(StatsSnapshot& out)
+{
+    if (const auto heap = heapMemory()) {
+        out.memHeapInUse = static_cast<qint64>(heap->inUse);
+        out.memHeapCommitted = static_cast<qint64>(heap->committed);
+    }
+    if (const auto* uq = theApp.uploadQueue; uq && uq->diskIOThread())
+        out.memUploadReadAhead = static_cast<qint64>(uq->diskIOThread()->readAheadBytes());
+    if (const auto* ls = theApp.listenSocket)
+        out.memSockets = static_cast<qint64>(ls->bufferedBytes());
+    if (const auto* kfl = theApp.knownFileList)
+        out.memKnownFiles += static_cast<qint64>(kfl->memoryBytes());
+    if (const auto* cl = theApp.clientList)
+        out.memClients = static_cast<qint64>(cl->memoryBytes());
+    if (const auto* cc = theApp.clientCredits)
+        out.memCredits = static_cast<qint64>(cc->memoryBytes());
+    if (auto* indexed = kad::Kademlia::getInstanceIndexed())
+        out.memKadIndex = static_cast<qint64>(indexed->memoryBytes());
+    if (const auto* filter = theApp.ipFilter)
+        out.memIpFilter = static_cast<qint64>(filter->memoryBytes());
 }
 
 } // namespace

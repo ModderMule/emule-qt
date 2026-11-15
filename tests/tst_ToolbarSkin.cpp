@@ -432,6 +432,7 @@ void tst_ToolbarSkin::icons_resourceNames()
     QCOMPARE(SkinIcons::resourceNames(QStringLiteral(":/smileys/Smiley_Smile.ico")),
              QStringList{u"SMILEY_SMILE"_s});
     QCOMPARE(SkinIcons::resourceNames(QStringLiteral(":/icons/Usenet.ico")), QStringList{u"Usenet"_s});
+    QCOMPARE(SkinIcons::resourceNames(QStringLiteral(":/icons/Memory.ico")), QStringList{u"Memory"_s});
 }
 
 void tst_ToolbarSkin::icons_profileFiles()

@@ -61,7 +61,7 @@ Ed2kKadPanel::Ed2kKadPanel(QWidget* parent)
     QWidget* contacts = createContactsPanel();
     QWidget* controls = createControlsPanel();
     QWidget* searches = createSearchesPanel();
-    buildLayout(contacts, controls, searches, [](QSplitter* s) { theUiState.bindKadSplitter(s); });
+    buildLayout(contacts, controls, searches, KadIncomingModel::Network::Ed2k, [](QSplitter* s) { theUiState.bindKadSplitter(s); });
 
     // Deliberately not a PanelPoller: this one accumulates the contacts graph's
     // history from its own GetKadStatus request, so it has to keep running while
@@ -224,7 +224,7 @@ void Ed2kKadPanel::clearAll()
     m_kadNetworkGraph->clear();
     clearLookupGraph();
     m_contactsLabel->setText(tr("▸ Contacts (0)"));
-    m_searchesLabel->setText(tr("▸ Current Searches (0)"));
+    setOutgoingCount(0);
 }
 
 std::uint64_t Ed2kKadPanel::searchIdAtRow(int sourceRow) const
@@ -476,8 +476,9 @@ QWidget* Ed2kKadPanel::createControlsPanel()
 
 QWidget* Ed2kKadPanel::createSearchesPanel()
 {
-    QWidget* widget = buildListPanel(m_searchesModel, tr("▸ Current Searches (0)"),
-                                     QStringLiteral(":/icons/KadCurrentSearches.ico"), m_searchesView, m_searchesLabel);
+    // titled by its tab (KadPanelBase "Outgoing Searches")
+    QLabel* noLabel = nullptr;
+    QWidget* widget = buildListPanel(m_searchesModel, {}, {}, m_searchesView, noLabel);
     // Number, Key, Type, Name, Status, Load, Packets Sent, Responses.
     static_cast<ListTreeView*>(m_searchesView)->bindColumns(QStringLiteral("kadSearches"), {80, 170, 100, 240, 100, 60, 90, 90});
     return widget;
@@ -560,7 +561,7 @@ void Ed2kKadPanel::requestSearches()
     m_ipc->sendPoll(this, std::move(req), [this](const IpcMessage& resp) {
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
             m_searchesModel->clear();
-            m_searchesLabel->setText(tr("▸ Current Searches (0)"));
+            setOutgoingCount(0);
             return;
         }
 
@@ -586,7 +587,7 @@ void Ed2kKadPanel::requestSearches()
         }
 
         m_searchesModel->setSearches(std::move(rows));
-        m_searchesLabel->setText(tr("▸ Current Searches (%1)").arg(m_searchesModel->searchCount()));
+        setOutgoingCount(m_searchesModel->searchCount());
 
         autoPickLookup();
     });

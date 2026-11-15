@@ -169,6 +169,7 @@ SOURCES += \
     utils/CountryFlags.cpp \
     utils/MassRenameAction.cpp \
     utils/MoveDownloadsAction.cpp \
+    utils/Ed3kLinkMenu.cpp \
     utils/FolderLister.cpp \
     utils/MetaResultActions.cpp \
     utils/TaskbarProgress.cpp \
@@ -309,6 +310,7 @@ HEADERS += \
     utils/InputHistory.h \
     utils/MassRenameAction.h \
     utils/MoveDownloadsAction.h \
+    utils/Ed3kLinkMenu.h \
     utils/FolderLister.h \
     utils/MetaResultActions.h \
     utils/TaskbarProgress.h \

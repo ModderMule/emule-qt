@@ -219,6 +219,7 @@ emule_add_test(tst_ServerConnect    FOLDER "Server")
 emule_add_test(tst_ClientStateDefs    FOLDER "Client")
 emule_add_test(tst_DeadSourceList     FOLDER "Client")
 emule_add_test(tst_RepeatChunkGuard   FOLDER "Client")
+emule_add_test(tst_ClientAnalyzer     FOLDER "Client")
 emule_add_test(tst_CorruptionBlackBox FOLDER "Client")
 emule_add_test(tst_ClientCredits      FOLDER "Client")
 
