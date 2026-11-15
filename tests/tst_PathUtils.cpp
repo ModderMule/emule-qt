@@ -8,6 +8,8 @@
 
 #include <QTemporaryDir>
 
+#include <memory>
+
 /// @brief Tests for PathUtils.h path utility functions.
 class PathUtilsTest : public QObject {
     Q_OBJECT
@@ -50,6 +52,46 @@ private slots:
         QVERIFY(!eMule::relocateDir(from + QStringLiteral("2"), to, 0).isEmpty());   // target exists
         QCOMPARE(eMule::relocateDir(tmp.filePath(QStringLiteral("none")), tmp.filePath(QStringLiteral("fresh")), 0), QString());
         QVERIFY(QFileInfo(tmp.filePath(QStringLiteral("fresh"))).isDir());
+    }
+
+    /// a reader opened shared does not keep a moved .part from being deleted (#187)
+    void openReadShared_doesNotBlockDelete()
+    {
+        QTemporaryDir tmp;
+        const QString path = tmp.filePath(QStringLiteral("001.part"));
+        QFile w(path);
+        QVERIFY(w.open(QIODevice::WriteOnly));
+        w.write("data");
+        w.close();
+        QFile reader(path);
+        QVERIFY(eMule::openReadShared(reader));
+        QCOMPARE(reader.read(2), QByteArray("da"));
+        QVERIFY(QFile::remove(path));
+        reader.close();
+        QVERIFY(!QFile::exists(path));
+    }
+
+    /// a file held without shared delete (Windows) goes once it is closed
+    void removeWhenFree_retriesWhileHeld()
+    {
+        QTemporaryDir tmp;
+        const QString path = tmp.filePath(QStringLiteral("002.part"));
+        QFile w(path);
+        QVERIFY(w.open(QIODevice::WriteOnly));
+        w.write("data");
+        w.close();
+        auto holder = std::make_unique<QFile>(path);
+        QVERIFY(holder->open(QIODevice::ReadOnly));   // plain QFile: no FILE_SHARE_DELETE
+        const bool now = eMule::removeWhenFree(path);
+#ifdef Q_OS_WIN
+        QVERIFY(!now);
+        QVERIFY(QFile::exists(path));
+        holder.reset();
+        QTRY_VERIFY_WITH_TIMEOUT(!QFile::exists(path), eMule::kRemoveRetryMs * 2);
+#else
+        QVERIFY(now);
+        QVERIFY(!QFile::exists(path));
+#endif
     }
 
     /// the folder pickers' listing (IPC ListFolders): visible folders only, by name; the

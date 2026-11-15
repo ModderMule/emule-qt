@@ -1,14 +1,18 @@
 #include "pch.h"
 
 #include "utils/FileRelocate.h"
+#include "utils/Log.h"
 #include "utils/PathUtils.h"
 #include "utils/StringUtils.h"
 
+#include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QThread>
+#include <QTimer>
 
 #include <algorithm>
 #include <optional>
@@ -70,6 +74,25 @@ QString copyFile(const QString& src, const QString& dst)
     return error;
 }
 
+/// One more try at removeWhenFree()'s @p path in kRemoveRetryMs; @p born tells it from
+/// a new file that took the name meanwhile.
+void retryRemove(const QString& path, const QDateTime& born, int left)
+{
+    QTimer::singleShot(kRemoveRetryMs, QCoreApplication::instance(), [path, born, left] {
+        const QFileInfo fi(path);
+        if (!fi.exists() || fi.birthTime() != born)
+            return;
+        if (QFile::remove(path)) {
+            logInfo(QStringLiteral("Removed the leftover %1").arg(path));
+            return;
+        }
+        if (left > 1)
+            retryRemove(path, born, left - 1);
+        else
+            logWarning(QStringLiteral("Could not remove %1: still in use").arg(path));
+    });
+}
+
 } // namespace
 
 QString relocateFile(const QString& src, const QString& dst, std::uint64_t floor, bool removeSource, bool* renamed,
@@ -94,7 +117,7 @@ QString relocateFile(const QString& src, const QString& dst, std::uint64_t floor
     if (QString error = copyFile(src, dst); !error.isEmpty())
         return error;
     if (removeSource)
-        QFile::remove(src);
+        (void)removeWhenFree(src);   // a reader may still hold it (Windows)
     return {};
 }
 
@@ -124,6 +147,17 @@ QString relocateDir(const QString& from, const QString& to, std::uint64_t floor)
     }
     QDir(from).removeRecursively();
     return {};
+}
+
+bool removeWhenFree(const QString& path)
+{
+    if (QFile::remove(path) || !QFile::exists(path))
+        return true;
+    if (!QCoreApplication::instance())
+        return false;
+    logDebug(QStringLiteral("%1 is still in use, removing it later").arg(path));
+    retryRemove(path, QFileInfo(path).birthTime(), kRemoveRetries);
+    return false;
 }
 
 } // namespace eMule

@@ -40,6 +40,7 @@
 #include "kademlia/Kademlia.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
+#include "utils/PathUtils.h"
 #include "utils/StringUtils.h"
 #include "utils/UsenetDisplay.h"
 
@@ -1293,7 +1294,7 @@ QHttpServerResponse WebServer::serveRange(const QList<UsenetStreamPiece>& pieces
             break;                  // a gap in the map; serve what we have
 
         QFile file(p.path);
-        if (!file.open(QIODevice::ReadOnly)) {
+        if (!openReadShared(file)) {   // a moved .part can still go (#187)
             logDebug([&]() -> QString { return QStringLiteral("Preview: cannot open %1").arg(p.path); });
             break;
         }

@@ -14,6 +14,7 @@
 #include <QStorageInfo>
 
 #if defined(Q_OS_WIN)
+#include <fcntl.h>
 #include <io.h>
 #include <qt_windows.h>
 #include <winioctl.h>
@@ -114,6 +115,19 @@ bool pathsEqual(const QString& a, const QString& b)
 
 #if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
     // Windows and macOS file systems are typically case-insensitive
+    return ca.compare(cb, Qt::CaseInsensitive) == 0;
+#else
+    return ca == cb;
+#endif
+}
+
+bool samePath(const QString& a, const QString& b)
+{
+    if (a.isEmpty() || b.isEmpty())
+        return false;
+    const QString ca = QDir::cleanPath(QDir::fromNativeSeparators(a));
+    const QString cb = QDir::cleanPath(QDir::fromNativeSeparators(b));
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
     return ca.compare(cb, Qt::CaseInsensitive) == 0;
 #else
     return ca == cb;
@@ -260,6 +274,38 @@ bool preallocateFile(QFile& file, std::uint64_t size)
     return posix_fallocate(file.handle(), 0, static_cast<off_t>(size)) == 0;
 #else
     return false;
+#endif
+}
+
+bool openReadShared(QFile& file, bool sequential)
+{
+#if defined(Q_OS_WIN)
+    // MFC shares all three (srchybrid/UploadDiskIOThread.cpp:147)
+    QString native = QDir::toNativeSeparators(QFileInfo(file.fileName()).absoluteFilePath());
+    if (native.size() >= MAX_PATH && !native.startsWith(QStringLiteral("\\\\?\\"))) {
+        if (native.startsWith(QStringLiteral("\\\\")))
+            native = QStringLiteral("\\\\?\\UNC") + native.mid(1);
+        else
+            native.prepend(QStringLiteral("\\\\?\\"));
+    }
+    const HANDLE handle = ::CreateFileW(reinterpret_cast<LPCWSTR>(native.utf16()), GENERIC_READ,
+                                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                        OPEN_EXISTING, sequential ? FILE_FLAG_SEQUENTIAL_SCAN : 0, nullptr);
+    if (handle == INVALID_HANDLE_VALUE)
+        return false;
+    const int fd = ::_open_osfhandle(reinterpret_cast<intptr_t>(handle), _O_RDONLY | _O_BINARY);
+    if (fd == -1) {
+        ::CloseHandle(handle);
+        return false;
+    }
+    if (!file.open(fd, QIODevice::ReadOnly, QFileDevice::AutoCloseHandle)) {
+        ::_close(fd);   // closes the handle too
+        return false;
+    }
+    return true;
+#else
+    (void)sequential;
+    return file.open(QIODevice::ReadOnly);
 #endif
 }
 

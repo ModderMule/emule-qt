@@ -11,6 +11,7 @@
 #include "utils/FileRelocate.h"
 #include "utils/ReadOnceHint.h"
 #include "utils/Log.h"
+#include "utils/PathUtils.h"
 
 #include <QCoreApplication>
 #include <QDataStream>
@@ -809,7 +810,8 @@ std::optional<QByteArray> Ed3kJoinBase::readFile(const FileRead& r)
             return std::nullopt;
     }
     QFile f(r.path);
-    if (!f.open(QIODevice::ReadOnly) || !f.seek(qint64(r.offset)))
+    // shared delete: a .part moved meanwhile can still go (#187)
+    if (!openReadShared(f) || !f.seek(qint64(r.offset)))
         return std::nullopt;
     QByteArray data = f.read(qint64(r.len));
     if (data.size() != qsizetype(r.len))

@@ -52,6 +52,10 @@ enum class AppDir {
 /// Compare two paths for equality (case-sensitivity depends on platform).
 [[nodiscard]] bool pathsEqual(const QString& a, const QString& b);
 
+/// Like pathsEqual() without touching the disk (folders that may not exist yet):
+/// cleaned, separators normalised, case-insensitive on Windows and macOS.
+[[nodiscard]] bool samePath(const QString& a, const QString& b);
+
 /// Free disk space in bytes on the volume containing @p path.
 /// Returns 0 on error.
 ///
@@ -90,6 +94,11 @@ enum class AppDir {
 /// resized file claims every cluster at once, elsewhere it has holes by default.
 /// @return false when the file system cannot, and on every other platform.
 [[nodiscard]] bool markFileSparse(QFile& file);
+
+/// Open @p file read-only without locking it against deletion or renaming: on Windows
+/// QFile leaves FILE_SHARE_DELETE out, so a reader would keep a moved .part from going.
+/// @p sequential: hint a front-to-back read.
+[[nodiscard]] bool openReadShared(QFile& file, bool sequential = false);
 
 /// Sanitize a file name by removing or replacing invalid characters.
 [[nodiscard]] QString sanitizeFilename(const QString& name);

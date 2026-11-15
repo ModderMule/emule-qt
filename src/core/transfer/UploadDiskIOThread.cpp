@@ -12,6 +12,7 @@
 #include "stats/Statistics.h"
 
 #include "utils/Log.h"
+#include "utils/PathUtils.h"
 #include "utils/TimeUtils.h"
 
 #include <QDir>
@@ -27,8 +28,6 @@
 
 #ifdef Q_OS_WIN
 #include <windows.h>
-#include <fcntl.h>
-#include <io.h>
 #endif
 
 #if defined(Q_OS_DARWIN) || defined(Q_OS_FREEBSD) || defined(Q_OS_OPENBSD) || defined(Q_OS_NETBSD)
@@ -783,34 +782,7 @@ bool UploadDiskIOThread::readUncached(const BlockReadRequest& req, QByteArray& d
 
 bool UploadDiskIOThread::openForRead(QFile& file)
 {
-#ifdef Q_OS_WIN
-    // QFile leaves FILE_SHARE_DELETE out, so a file being uploaded could be neither
-    // deleted nor renamed. MFC shares all three (srchybrid/UploadDiskIOThread.cpp:147).
-    QString native = QDir::toNativeSeparators(QFileInfo(file.fileName()).absoluteFilePath());
-    if (native.size() >= MAX_PATH && !native.startsWith(QStringLiteral("\\\\?\\"))) {
-        if (native.startsWith(QStringLiteral("\\\\")))
-            native = QStringLiteral("\\\\?\\UNC") + native.mid(1);
-        else
-            native.prepend(QStringLiteral("\\\\?\\"));
-    }
-    const HANDLE handle = ::CreateFileW(reinterpret_cast<LPCWSTR>(native.utf16()), GENERIC_READ,
-                                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                                        nullptr, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
-    if (handle == INVALID_HANDLE_VALUE)
-        return false;
-    const int fd = ::_open_osfhandle(reinterpret_cast<intptr_t>(handle), _O_RDONLY | _O_BINARY);
-    if (fd == -1) {
-        ::CloseHandle(handle);
-        return false;
-    }
-    if (!file.open(fd, QIODevice::ReadOnly, QFileDevice::AutoCloseHandle)) {
-        ::_close(fd);   // closes the handle too
-        return false;
-    }
-    return true;
-#else
-    return file.open(QIODevice::ReadOnly);
-#endif
+    return openReadShared(file, /*sequential*/ true);
 }
 
 } // namespace eMule

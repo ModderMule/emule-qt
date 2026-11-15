@@ -28,6 +28,7 @@
 #include "utils/MassRename.h"
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
+#include "utils/PathUtils.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -254,7 +255,7 @@ Status checkTempDir(const QString& dir)
     if (target.isEmpty() || QDir::isRelativePath(target))
         return Status::fail(400, QStringLiteral("Not an absolute folder"));
     const auto same = [&target](const QString& other) {
-        return !other.isEmpty() && QDir::cleanPath(QDir::fromNativeSeparators(other)) == target;
+        return samePath(other, target);
     };
     // a temp dir is kept out of the share: it must not take an incoming or shared folder with it
     if (same(thePrefs.incomingDir()))
@@ -274,7 +275,7 @@ void adoptTempDir(const QString& dir)
 {
     const QString target = QDir::cleanPath(QDir::fromNativeSeparators(dir));
     QStringList dirs = thePrefs.tempDirs();
-    if (std::ranges::any_of(dirs, [&](const QString& d) { return QDir::cleanPath(QDir::fromNativeSeparators(d)) == target; }))
+    if (std::ranges::any_of(dirs, [&](const QString& d) { return samePath(d, target); }))
         return;
     dirs.append(target);
     thePrefs.setTempDirs(dirs);

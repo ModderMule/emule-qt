@@ -22,4 +22,11 @@ namespace eMule {
 /// is removed. A missing @p from just creates @p to. Empty: done; else why not.
 [[nodiscard]] QString relocateDir(const QString& from, const QString& to, std::uint64_t floor);
 
+/// Deletes @p path; one another reader still holds without shared delete (Windows: a
+/// copied .part an upload or preview has open) is tried again every kRemoveRetryMs, up
+/// to kRemoveRetries times, and given up on with a warning. True: gone now.
+[[nodiscard]] bool removeWhenFree(const QString& path);
+inline constexpr int kRemoveRetryMs = 5000;
+inline constexpr int kRemoveRetries = 120;   // 10 min
+
 } // namespace eMule

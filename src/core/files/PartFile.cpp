@@ -1821,7 +1821,7 @@ QString PartFile::moveTo(const QString& dir)
         resumeFile();
         return {};
     }
-    if (QDir::cleanPath(m_tmpPath) == target)
+    if (samePath(m_tmpPath, target))
         return {};
 
     // Running, or stopped by a full disk: on again at the new place. A plain pause stays.
@@ -4862,8 +4862,9 @@ void PartFile::finishRelocate()
         QFile::remove(oldMet);
         QFile::remove(oldMet + QStringLiteral(".bak"));
         QFile::remove(oldMet + QStringLiteral(".backup"));
-        if (!r->renamed && !QFile::remove(oldPart))
-            logWarning(QStringLiteral("Could not remove the old %1 after moving it").arg(oldPart));
+        // copied: a reader may still hold the old one (Windows), then it goes later
+        if (!r->renamed)
+            (void)removeWhenFree(oldPart);
         if (theApp.sharedFileList && !m_destroying)
             theApp.sharedFileList->refreshDirectoryOf(this);
         logInfo(QStringLiteral("Moved %1 to %2").arg(fileName(), dir));

@@ -8,6 +8,7 @@
 #include "crypto/AesCbc.h"
 #include "net/HttpDefaults.h"
 #include "utils/Log.h"
+#include "utils/PathUtils.h"
 
 #include <QCryptographicHash>
 #include <QFile>
@@ -367,7 +368,7 @@ QByteArray HttpCachePublisher::readAndEncrypt(const Request& request, const QByt
     };
 
     QFile file(request.dataFilePath);
-    if (!file.open(QIODevice::ReadOnly))
+    if (!openReadShared(file))   // a moved .part can still go (#187)
         return bail(QStringLiteral("cannot open %1").arg(request.dataFilePath));
 
     if (!file.seek(static_cast<qint64>(request.partOffset)))
