@@ -1237,7 +1237,13 @@ void IpcClient::onMessageReceived(const IpcMessage& msg)
         emit ipcLogMessage(
             QStringLiteral("%1 [seq=%2]").arg(ipcMsgTypeName(msg.type())).arg(msg.seqId()),
             /*outgoing=*/false);
-    m_waitingOnBusyCore = false;   // it answers again: the next timeout is judged afresh
+    if (m_waitingOnBusyCore) {
+        // it answers again: the next timeout is judged afresh
+        m_waitingOnBusyCore = false;
+        if (m_busySince.isValid() && m_busySince.elapsed() >= 1000)
+            logInfo(QStringLiteral("Core answers again after a further %1 s").arg(m_busySince.elapsed() / 1000));
+        m_busySince.invalidate();
+    }
 
     // Check if this is a handshake response
     if (!m_handshaked && msg.type() == IpcMsgType::HandshakeOk) {
@@ -1788,17 +1794,27 @@ bool IpcClient::waitOnBusyCore(bool handshake)
         return false;
     // Handshake: a core we launched or restarted (its load stages block the loop
     // for seconds with a large share). Keepalive: a core that said it is loading.
-    const bool busy = m_waitingOnBusyCore
-                   || (handshake ? daemonStarting() || daemonRestarting()
-                                 : m_coreLink == CoreLink::Loading);
-    if (!busy)
-        return false;
+    const bool loading = handshake ? daemonStarting() || daemonRestarting()
+                                   : m_coreLink == CoreLink::Loading;
     if (!m_waitingOnBusyCore) {
-        logInfo(handshake ? QStringLiteral("Core is busy starting up, still waiting for its answer")
-                          : QStringLiteral("Core is busy loading its files, still waiting for its answer"));
         m_waitingOnBusyCore = true;
+        m_busyLoading = loading;   // a load stage outlives the start grace (#24, #40)
+        m_busySince.start();
+        if (loading)
+            logInfo(handshake ? QStringLiteral("Core is busy starting up, still waiting for its answer")
+                              : QStringLiteral("Core is busy loading its files, still waiting for its answer"));
+        else
+            logWarning(QStringLiteral("Core has not answered for %1 s, its connection is still open — waiting")
+                           .arg((handshake ? m_handshakeTimeoutMs : m_keepaliveTimeoutMs) / 1000));
+        return true;
     }
-    return true;
+    if (loading || m_busyLoading)
+        return true;
+    // Any other silence: its loop is held by some work (#200). A new connection
+    // queues behind the same work and refetches every list on top of it. Bounded:
+    // only a reconnect gets past a link wedged on its own.
+    const int timeoutMs = handshake ? m_handshakeTimeoutMs : m_keepaliveTimeoutMs;
+    return m_busySince.elapsed() < qint64(timeoutMs) * BusyCoreWaitFactor;
 }
 
 QStringList IpcClient::relaunchCommand()

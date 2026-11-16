@@ -197,6 +197,7 @@ private slots:
     // Keepalive against a core that is alive but not answering the ping
     void keepalive_coreThatTalksIsNotDropped();
     void keepalive_silentCoreIsDropped();
+    void keepalive_busyLocalCoreIsWaitedForOnOneConnection();
     void keepalive_pongBehindABlockedLoopIsNotATimeout();
 
     // A flood from the core
@@ -420,8 +421,38 @@ void tst_IpcBusyStates::keepalive_silentCoreIsDropped()
     QSignalSpy lostSpy(&client, &IpcClient::disconnected);
 
     // The control: not a byte from the core, so the keepalive still does its job
-    QTRY_COMPARE_WITH_TIMEOUT(lostSpy.count(), 1, 2000);
+    // (after the bounded wait for a busy local core)
+    QTRY_COMPARE_WITH_TIMEOUT(lostSpy.count(), 1, 3000);
     QCOMPARE(client.coreLink(), Link::NotResponding);
+}
+
+void tst_IpcBusyStates::keepalive_busyLocalCoreIsWaitedForOnOneConnection()
+{
+    // #200: a local core whose loop is held for a while past the pong window.
+    // Reconnecting queued new connections behind the same work and refetched
+    // every list once it came back.
+    MockCore core;
+    QVERIFY(core.listen());
+
+    IpcClient client;
+    client.setTimeouts(2000, 200, 300);   // ping every 200 ms, 300 ms for the pong
+    client.connectToDaemon(QHostAddress(QHostAddress::LocalHost), core.port());
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 3000);
+    QSignalSpy lostSpy(&client, &IpcClient::disconnected);
+
+    core.answerPing = false;   // silent: no pong, no push
+    QTest::qWait(1000);        // well past the pong window, inside the wait
+    QCOMPARE(lostSpy.count(), 0);
+    QCOMPARE(core.connections, 1);
+
+    // The core comes back on the same connection
+    core.push(statsPush(1));
+    core.answerPing = true;
+    QTest::qWait(1500);
+    QCOMPARE(lostSpy.count(), 0);
+    QCOMPARE(core.connections, 1);
+    QVERIFY(client.isConnected());
+    QCOMPARE(client.coreLink(), Link::Ready);
 }
 
 void tst_IpcBusyStates::keepalive_pongBehindABlockedLoopIsNotATimeout()
@@ -1050,9 +1081,19 @@ void tst_IpcBusyStates::watch_clearsWhenTheCoreAnswers()
     watch.restart();
     QTRY_COMPARE_WITH_TIMEOUT(watch.problem(), Problem::NoAnswer, 3000);
 
-    // The core was only busy. The box comes down by itself.
+    // The core was only busy. It answers on the connection that waited (#200),
+    // and the box comes down by itself.
     core.answerHandshake = true;
+    const IpcMessage hello = core.last(IpcMsgType::Handshake);
+    IpcMessage ok(IpcMsgType::HandshakeOk, hello.seqId());
+    ok.append(QStringLiteral("1.0"));
+    ok.append(QStringLiteral("mock core"));
+    ok.append(QStringLiteral("session-1"));
+    ok.append(false);
+    ok.append(QString());
+    core.push(ok);
     QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 8000);
+    QCOMPARE(core.connections, 1);
     QCOMPARE(watch.problem(), Problem::None);
     QCOMPARE(reported, (QList<Problem>{Problem::NoAnswer, Problem::None}));
 }
