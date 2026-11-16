@@ -298,6 +298,7 @@ private slots:
     void probingIsSkippedWhenNoAccountCanBeAsked();
     void theNewSidecarKeysAreOptional();
     void aRecheckOfAPausedItemLeavesItPaused();
+    void checkArticlesStatsApartFromAnyItem();
     void changingTheServerListDoesNotStrandACheckingItem();
     void probeBytesAreBilledToTheAccountThatAnsweredThem();
     void aPublishedFileIsAttributedToTheNzbFileItCameFrom();
@@ -2022,6 +2023,44 @@ void tst_UsenetQueue::aRecheckOfAPausedItemLeavesItPaused()
     QCOMPARE(queue.findItem(id)->status, UsenetItemStatus::Paused);
     QCOMPARE(queue.findItem(id)->healthPercent, 100);
 
+    queue.stop();
+}
+
+// ed3k's deleted volumes (alias.md §3): STAT of message ids with no item behind them; an id
+// no account holds is missing, nothing is fetched, the id is free again once answered
+void tst_UsenetQueue::checkArticlesStatsApartFromAnyItem()
+{
+    const QByteArray whole = payload(kPartSize * kParts);
+    FakeNntpServer server;
+    server.addGroup(QStringLiteral("alt.binaries.test"), kParts, 1, kParts);
+    for (int p = 1; p <= kParts; ++p)
+        server.addArticle(messageIdFor(p), makeArticle(whole, p, kParts, QStringLiteral("gone.bin")));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    UsenetQueue queue;
+    QVERIFY(!queue.checkArticles(QStringLiteral("c"), {messageIdFor(1)}, {}, 0));   // not running
+    queue.applyServers({serverConfig(port, 2)}, 60);
+    queue.start();
+    QSignalSpy checked(&queue, &UsenetQueue::articlesChecked);
+    const QStringList groups{QStringLiteral("alt.binaries.test")};
+    QVERIFY(queue.checkArticles(QStringLiteral("c"), {messageIdFor(1), messageIdFor(3), QStringLiteral("nope@example.com")}, groups, 0));
+    QVERIFY(!queue.checkArticles(QStringLiteral("c"), {messageIdFor(2)}, groups, 0));   // running
+    QTRY_COMPARE_WITH_TIMEOUT(checked.count(), 1, 20000);
+    QCOMPARE(checked.at(0).at(0).toString(), QStringLiteral("c"));
+    QCOMPARE(checked.at(0).at(1).toInt(), 2);
+    QCOMPARE(checked.at(0).at(2).toInt(), 1);
+    QCOMPARE(checked.at(0).at(3).toInt(), 0);
+    QVERIFY(std::ranges::none_of(server.receivedCommands(), [](const QString& c) { return c.startsWith(QLatin1String("BODY")); }));
+    QVERIFY(queue.checkArticles(QStringLiteral("c"), {messageIdFor(2)}, groups, 0));
+    QTRY_COMPARE_WITH_TIMEOUT(checked.count(), 2, 20000);
+    QCOMPARE(checked.at(1).at(1).toInt(), 1);
     queue.stop();
 }
 

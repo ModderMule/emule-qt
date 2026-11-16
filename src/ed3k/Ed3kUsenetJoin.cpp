@@ -13,6 +13,7 @@
 #include "utils/Log.h"
 
 #include <QCryptographicHash>
+#include <QDateTime>
 #include <QDeadlineTimer>
 #include <QDir>
 #include <QFile>
@@ -35,6 +36,9 @@ namespace {
 
 /// a file whose articles all resolved waits this long for ed3k to fill its holes
 constexpr int kSealHoldMs = 10 * 60 * 1000;
+/// a deleted volume's check that could not tell, or found nobody to ask: again after this
+constexpr qint64 kDeletedRetryMs = qint64(24) * 3600 * 1000;
+
 constexpr int kClaimSearchesPerPost = 4;
 /// reads given by block_read in one go; a guard, the core gives few
 constexpr int kMaxReadsPerCall = 1 << 16;
@@ -70,6 +74,10 @@ public:
     }
     void setSealHold(SealHold hold) override { m_q.setSealHold(std::move(hold)); }
     void releaseSealHold(const QString& itemId, int fileIndex) override { m_q.releaseSealHold(itemId, fileIndex); }
+    bool checkArticles(const QString& checkId, const QStringList& messageIds, const QStringList& groups, qint64 date) override
+    {
+        return m_q.checkArticles(checkId, messageIds, groups, date);
+    }
 
 private:
     usenet::UsenetQueue& m_q;
@@ -133,6 +141,7 @@ void Ed3kUsenetJoin::connectQueue(usenet::UsenetQueue& queue)
     connect(&queue, &Q::itemFinished, this, &Ed3kUsenetJoin::onItemFinished);
     connect(&queue, &Q::articleDecoded, this, &Ed3kUsenetJoin::onArticleDecoded);
     connect(&queue, &Q::filesRepaired, this, &Ed3kUsenetJoin::onFilesRepaired);
+    connect(&queue, &Q::articlesChecked, this, &Ed3kUsenetJoin::onArticlesChecked);
 }
 
 void Ed3kUsenetJoin::start()
@@ -144,6 +153,8 @@ void Ed3kUsenetJoin::start()
     m_queue.setSealHold([this](const QString& itemId, int fileIndex) { return sealHold(itemId, fileIndex); });
     for (const QString& id : m_queue.itemIds())
         (void)ensurePost(id);
+    // deleted volumes first: their records go out with the kept ones
+    loadDeleted();
     // what was verified or fetched before the restart: post sets, members
     shareKept();
     pumpSession();
@@ -172,6 +183,8 @@ void Ed3kUsenetJoin::stop()
     m_posts.clear();
     m_noJoin.clear();
     m_cleared.clear();
+    m_deletedChecking.clear();
+    m_deletedRetryAt.clear();
     m_queue.setSealHold({});
     for (const auto& [id, f] : held)
         m_queue.releaseSealHold(id, f);
@@ -342,9 +355,10 @@ void Ed3kUsenetJoin::onItemRemoved(const QString& itemId)
 {
     dropPost(itemId, /*keepBlob*/ false);
     m_noJoin.remove(itemId);
-    // a row cleared, its files left (incoming): the set, members and ALIAS records stay out
-    // as long as the files do (sharedGone, keepsOwner at the next start)
-    if (clearedKept(itemId)) {
+    // a row cleared, its files left (incoming) or volumes deleted (alias.md §3): the set,
+    // members and ALIAS records stay out as long as the files do (sharedGone, keepsOwner at
+    // the next start), or the deleted ones are kept
+    if (clearedKept(itemId) || hasDeleted(itemId)) {
         logEd3k(QStringLiteral("ed3k usenet: %1 cleared from the queue, its files stay shared").arg(itemId));
         pumpSession();
         return;
@@ -357,7 +371,6 @@ void Ed3kUsenetJoin::onItemRemoved(const QString& itemId)
 
 void Ed3kUsenetJoin::onItemFinished(const QString& itemId, bool success, const QString& message)
 {
-    Q_UNUSED(success);
     Q_UNUSED(message);
     const auto post = findPost(itemId);
     if (!post)
@@ -365,6 +378,8 @@ void Ed3kUsenetJoin::onItemFinished(const QString& itemId, bool success, const Q
     m_noJoin.insert(itemId);
     // the files are where they stay now (incoming); the volumes go with the work dir
     rememberPaths(itemId);
+    if (success)
+        keepDeletedVolumes(itemId);
     const bool hashing = std::ranges::any_of(post->members, [](const Post::Member& m) { return m.hashing; });
     if (hashing) {
         // a repaired member is still hashed: its result may verify and complete the post
@@ -522,7 +537,97 @@ void Ed3kUsenetJoin::onSetSearchDone(const QString& owner)
 
 bool Ed3kUsenetJoin::keepsOwner(const QString& owner) const
 {
-    return m_queue.findItem(owner) != nullptr || clearedKept(owner);
+    return m_queue.findItem(owner) != nullptr || clearedKept(owner) || hasDeleted(owner);
+}
+
+void Ed3kUsenetJoin::keepDeletedVolumes(const QString& itemId)
+{
+    const auto post = findPost(itemId);
+    const auto* item = m_queue.findItem(itemId);
+    if (!post || !item)
+        return;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    bool any = false;
+    for (int f = 0; f < item->files.size() && f < item->nzb.files.size(); ++f) {
+        // in incoming: shared while it stays there (clearedKept)
+        if (const QString& done = item->files.at(f).finalPath; !done.isEmpty() && QFileInfo::exists(done))
+            continue;
+        // usenet.md §6: an nzb-file record only of a member decoded here
+        const auto m = post->join.member(std::uint64_t(f));
+        if (!m || m->status != ffi::MemberStatus::Verified || !m->root || !m->size || !m->decodedItself)
+            continue;
+        // what the check asks: first, middle and last article; '@' group, '=' posting date
+        const auto& info = item->nzb.files.at(f);
+        QStringList check;
+        for (const qsizetype i : {qsizetype(0), info.segments.size() / 2, info.segments.size() - 1})
+            if (i >= 0 && i < info.segments.size() && !info.segments.at(i).messageId.isEmpty()
+                && !check.contains(info.segments.at(i).messageId))
+                check << info.segments.at(i).messageId;
+        if (check.isEmpty())
+            continue;
+        for (const QString& g : info.groups)
+            check << QLatin1Char('@') + g;
+        if (info.date > 0)
+            check << QLatin1Char('=') + QString::number(info.date);
+        any |= keepDeleted({*m->root, itemId, f, *m->size, QString::fromStdString(m->name), now, 0, check});
+    }
+    if (any) {
+        logEd3k(QStringLiteral("ed3k usenet: %1 done, its deleted volumes stay published (%2 day(s) at most)").arg(itemId).arg(deletedDays()));
+        republishKeptAliases(itemId);
+    }
+}
+
+void Ed3kUsenetJoin::checkDeleted(qint64 now)
+{
+    std::vector<DeletedFile> due;
+    for (const DeletedFile& f : deletedFiles()) {
+        const QString id = hexOf(f.root.bytes);
+        const qint64 last = std::max(f.checkedAt, f.deletedAt);
+        if (m_deletedChecking.contains(id) || now - last < kDeletedCheckMs || now < m_deletedRetryAt[id])
+            continue;
+        due.push_back(f);
+    }
+    for (const DeletedFile& f : due) {
+        const QString id = hexOf(f.root.bytes);
+        QStringList ids;
+        QStringList groups;
+        qint64 date = 0;
+        for (const QString& c : f.check) {
+            if (c.startsWith(QLatin1Char('@')))
+                groups << c.mid(1);
+            else if (c.startsWith(QLatin1Char('=')))
+                date = c.mid(1).toLongLong();
+            else
+                ids << c;
+        }
+        if (m_queue.checkArticles(id, ids, groups, date)) {
+            m_deletedChecking.insert(id);
+            logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: asking the news servers for deleted \"%1\"").arg(f.name); });
+        } else {
+            // nobody to ask now (Usenet off, no server): kept, asked again in a day
+            m_deletedRetryAt[id] = now + kDeletedRetryMs;
+        }
+    }
+}
+
+void Ed3kUsenetJoin::onArticlesChecked(const QString& checkId, int present, int missing, int unknown)
+{
+    if (!m_deletedChecking.remove(checkId))
+        return;
+    const auto root = rootFromHex(checkId);
+    if (!root)
+        return;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (present > 0) {
+        deletedChecked(*root, now);
+        m_deletedRetryAt.erase(checkId);
+    } else if (missing > 0 && unknown == 0) {
+        endDeleted(*root, QStringLiteral("its articles are gone from the news servers"));
+        m_deletedRetryAt.erase(checkId);
+    } else {
+        // could not tell: kept (alias.md §3), asked again in a day
+        m_deletedRetryAt[checkId] = now + kDeletedRetryMs;
+    }
 }
 
 void Ed3kUsenetJoin::rememberPaths(const QString& itemId)
@@ -858,8 +963,12 @@ void Ed3kUsenetJoin::onMemberHashed(const QString& itemId, int fileIndex, quint6
     }
     m_queue.releaseSealHold(itemId, fileIndex);
     if (const auto again = findPost(itemId); again && again->finished
-        && std::ranges::none_of(again->members, [](const Post::Member& x) { return x.hashing; }))
+        && std::ranges::none_of(again->members, [](const Post::Member& x) { return x.hashing; })) {
+        // a member verified after the item finished
+        if (const auto* item = m_queue.findItem(itemId); item && item->status == usenet::UsenetItemStatus::Complete)
+            keepDeletedVolumes(itemId);
         dropPost(itemId, /*keepBlob*/ false);
+    }
     pumpSession();
 }
 

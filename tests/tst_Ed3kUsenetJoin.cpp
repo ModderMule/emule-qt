@@ -17,7 +17,9 @@
 #include "queue/UsenetQueueItem.h"
 
 #include "prefs/Preferences.h"
+#include "utils/BackgroundFileWriter.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -149,6 +151,18 @@ public:
     }
     void setSealHold(SealHold h) override { hold = std::move(h); }
     void releaseSealHold(const QString&, int) override { ++released; }
+    /// checkArticles asked: id, message ids, groups, date
+    struct Check {
+        QString id;
+        QStringList ids, groups;
+        qint64 date = 0;
+    };
+    QList<Check> checks;
+    bool checkArticles(const QString& checkId, const QStringList& ids, const QStringList& groups, qint64 date) override
+    {
+        checks.append({checkId, ids, groups, date});
+        return true;
+    }
 };
 
 ::ed3k::Source sourceOf(Ed3kSession& s)
@@ -215,6 +229,7 @@ private slots:
     void theLinkFetchesItsPostSet();
     void sourcesAreSearchedAgainWhenTheLastStreamClosed();
     void aDuplicatedNumberCountsUnderItsFirstId();
+    void aDeletedVolumeStaysPublishedUntilItsArticlesAreGone();
     void cleanup();
 
 private:
@@ -697,6 +712,116 @@ void tst_Ed3kUsenetJoin::aDuplicatedNumberCountsUnderItsFirstId()
     QTRY_COMPARE_WITH_TIMEOUT(verified.count(), 1, 30000);
 
     join.stop();
+    b.stop();
+}
+
+// alias.md §3 "Deleted file": a member post-processing deleted (not moved to incoming) keeps
+// its nzb-file record without the file, over a restart and with its row cleared; its articles
+// are asked once 7 days passed: present keeps it, no answer keeps it, gone everywhere ends it
+void tst_Ed3kUsenetJoin::aDeletedVolumeStaysPublishedUntilItsArticlesAreGone()
+{
+    constexpr int kParts = 3;
+    constexpr int kPart = 2500;
+    const QByteArray data = payload(kParts * kPart - 300, 9);
+    const Hashed h = hashOf(data);
+
+    QTemporaryDir db;
+    QVERIFY(db.isValid());
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    FakeQueue queue;
+    queue.item = fakeItem(db.path(), data.size(), kParts);
+    const QString id = queue.item->id;
+    {
+        Ed3kUsenetJoin join(b, queue, db.path());
+        join.setSearchEnabled(false);
+        QSignalSpy verified(&join, &Ed3kUsenetJoin::memberVerified);
+        QSignalSpy postDone(&join, &Ed3kUsenetJoin::postCompleted);
+        join.start();
+        QVERIFY(join.fileClaim(id, 0, h.root, h.size));
+        for (int p = 1; p <= kParts; ++p)
+            landArticle(join, *queue.item, data, p, kParts, kPart);
+        QTRY_COMPARE_WITH_TIMEOUT(verified.count(), 1, 30000);
+        QTRY_COMPARE_WITH_TIMEOUT(postDone.count(), 1, 10000);
+        // post-processing: unpacked, the volume deleted with the work dir
+        queue.item->status = UsenetItemStatus::Complete;
+        QVERIFY(QFile::remove(queue.item->files.at(0).tempPath));
+        join.onItemFinished(id, true, QStringLiteral("done"));
+        QCOMPARE(join.deletedCount(), std::size_t(1));
+        // the row cleared: what is kept of it stays
+        queue.item.reset();
+        join.onItemRemoved(id);
+        QCOMPARE(join.deletedCount(), std::size_t(1));
+        join.stop();
+    }
+    const QString dir = QDir(db.path()).filePath(QStringLiteral("ed3k/usenet"));
+    const QString kept = QDir(dir).filePath(QString::fromLatin1(QUrl::toPercentEncoding(id)));
+    const QString tsv = QDir(dir).filePath(QStringLiteral("deleted.tsv"));
+    QVERIFY(QFileInfo::exists(kept));
+    QVERIFY(QFileInfo::exists(tsv));
+    // deleted @p days ago, never checked
+    const auto age = [&tsv](int days) {
+        eMule::BackgroundFileWriter::instance().flush();
+        QStringList f = QString::fromUtf8(readFile(tsv)).trimmed().split(QLatin1Char('\t'));
+        QVERIFY(f.size() >= 8);
+        f[4] = QString::number(QDateTime::currentMSecsSinceEpoch() - qint64(days) * 24 * 3600 * 1000);
+        f[5] = QStringLiteral("0");
+        QFile out(tsv);
+        QVERIFY(out.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        out.write(f.join(QLatin1Char('\t')).toUtf8() + '\n');
+    };
+    const QString checkId = QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(h.root.bytes.data()), 32).toHex());
+
+    // a restart: the nzb-file record of the deleted member goes out with the set's (2 records)
+    {
+        Ed3kUsenetJoin again(b, queue, db.path());
+        again.setSearchEnabled(false);
+        QSignalSpy republished(&again, &Ed3kUsenetJoin::keptRecordsPublished);
+        again.start();
+        QTRY_COMPARE_WITH_TIMEOUT(republished.count(), 1, 10000);
+        QCOMPARE(republished.at(0).at(1).toInt(), 2);
+        QVERIFY(queue.checks.isEmpty());   // deleted just now: not asked yet
+        again.stop();
+    }
+    // 8 days on: asked (3 articles, its group and date); found: kept
+    age(8);
+    {
+        Ed3kUsenetJoin again(b, queue, db.path());
+        again.setSearchEnabled(false);
+        again.start();
+        QCOMPARE(queue.checks.size(), 1);
+        QCOMPARE(queue.checks.at(0).id, checkId);
+        QCOMPARE(queue.checks.at(0).ids, (QStringList{messageIdFor(1), messageIdFor(2), messageIdFor(3)}));
+        QCOMPARE(queue.checks.at(0).groups, QStringList{QStringLiteral("alt.binaries.test")});
+        QCOMPARE(queue.checks.at(0).date, qint64(1700000000));
+        again.onArticlesChecked(checkId, 3, 0, 0);
+        QCOMPARE(again.deletedCount(), std::size_t(1));
+        again.stop();
+    }
+    // asked again: no answer keeps it
+    age(8);
+    {
+        Ed3kUsenetJoin again(b, queue, db.path());
+        again.setSearchEnabled(false);
+        again.start();
+        QCOMPARE(queue.checks.size(), 2);
+        again.onArticlesChecked(checkId, 0, 0, 3);
+        QCOMPARE(again.deletedCount(), std::size_t(1));
+        QVERIFY(QFileInfo::exists(kept));
+        again.stop();
+    }
+    // gone from every server: its records end, nothing of the post is kept
+    age(8);
+    {
+        Ed3kUsenetJoin again(b, queue, db.path());
+        again.setSearchEnabled(false);
+        again.start();
+        QCOMPARE(queue.checks.size(), 3);
+        again.onArticlesChecked(checkId, 0, 3, 0);
+        QCOMPARE(again.deletedCount(), std::size_t(0));
+        QVERIFY(!QFileInfo::exists(kept));
+        again.stop();
+    }
     b.stop();
 }
 

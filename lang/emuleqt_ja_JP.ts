@@ -6935,7 +6935,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">ed3k ノードは「全般」ページのニックネームを使用します: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+481"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+487"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7280,12 +7280,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1427"/>
+        <location line="+1438"/>
         <source> credits/MiB</source>
         <translation> クレジット/MiB</translation>
     </message>
     <message>
-        <location line="-1436"/>
+        <location line="-1447"/>
         <source>Never pay (receipts only)</source>
         <translation>支払わない（受領証のみ）</translation>
     </message>
@@ -7533,12 +7533,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1264"/>
+        <location line="+1275"/>
         <source>not read yet</source>
         <translation>未読み取り</translation>
     </message>
     <message>
-        <location line="-1262"/>
+        <location line="-1273"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>アカウントが残高不足（マイナス）です。続けるには新しいクレジットキーが必要です。</translation>
     </message>
@@ -8170,6 +8170,11 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>空き RAM が全体のこの割合を下回る間は、使用中のブロックハッシュだけを RAM に保持します。</translation>
     </message>
     <message>
+        <location line="+11"/>
+        <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private and closed rooms are encrypted with a key kept in the same folder.</source>
+        <translation>参加中の各ルームの最近の投稿をファイルに保存し、再起動後に再表示します。無効にすると、他のメンバーがまだ保持している投稿だけが戻ります。プライベートルームとクローズドルームの投稿は、同じフォルダーにある鍵で暗号化されます。</translation>
+    </message>
+    <message>
         <source>Kad</source>
         <translation type="vanished">Kad</translation>
     </message>
@@ -8186,7 +8191,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation type="vanished">このノードが他の ed3k ノードのために保持するキーワードおよびソースのレコード用 RAM（1 件あたり約 1 KiB）。超えると新しいレコードは拒否され、他のノードが別の場所に保存します。ed3k ノードの次回起動時に適用されます。</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-8"/>
         <source>Connection</source>
         <translation>接続</translation>
     </message>
@@ -8204,6 +8209,30 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <location line="+1"/>
         <source>eD2K servers that also run an ed3k index node name it at login. Off: the node is only noted in the ed3k log.</source>
         <translation>ed3k インデックスノードも運用する eD2K サーバーは、ログイン時にそれを通知します。オフ: ノードは ed3k ログに記録されるだけです。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Rooms</source>
+        <translation>ルーム</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Store recent room posts on disk</source>
+        <translation>最近のルーム投稿をディスクに保存</translation>
+    </message>
+    <message>
+        <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private rooms are stored unencrypted.</source>
+        <translation type="vanished">参加中の各ルームの最近の投稿をファイルに保存し、再起動後に再表示します。無効の場合、他のメンバーがまだ保持している投稿のみが戻ります。プライベートルームの投稿は暗号化されずに保存されます。</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Posts kept per room</source>
+        <translation>ルームごとに保持する投稿数</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>The newest posts kept per room, in memory and on disk.</source>
+        <translation>ルームごとにメモリとディスクに保持する最新の投稿数。</translation>
     </message>
     <message>
         <location line="+21"/>
@@ -8280,7 +8309,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>高速ダウンロードは停止中。残高: %1</translation>
     </message>
     <message>
-        <location line="-916"/>
+        <location line="-927"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -9237,7 +9266,7 @@ Its files are no longer shared here; what the network holds of it runs out. &quo
 <context>
     <name>eMule::Ed3kRoomTab</name>
     <message>
-        <location filename="../src/gui/panels/Ed3kRoomTab.cpp" line="+94"/>
+        <location filename="../src/gui/panels/Ed3kRoomTab.cpp" line="+95"/>
         <source>ed3k room %1</source>
         <translation>ed3k ルーム %1</translation>
     </message>
@@ -9267,7 +9296,7 @@ Its files are no longer shared here; what the network holds of it runs out. &quo
         <translation>モデレート</translation>
     </message>
     <message>
-        <location line="+163"/>
+        <location line="+166"/>
         <source>Reply</source>
         <translation>返信</translation>
     </message>
@@ -13288,7 +13317,7 @@ Nick can be changed again in Options-&gt;IRC.</source>
     </message>
     <message>
         <location line="+34"/>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+306"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+312"/>
         <source>* %1 is now known as %2</source>
         <translation>* %1 は %2 に名前を変更しました</translation>
     </message>
@@ -13472,7 +13501,7 @@ Please choose another:</source>
         <translation>%1 があなたをフレンドに追加しました！</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="-486"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="-492"/>
         <location line="+20"/>
         <source>Public: anyone with the link</source>
         <translation>公開: リンクを持つ誰でも</translation>
@@ -13567,14 +13596,14 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+237"/>
+        <location line="+243"/>
         <location line="+67"/>
         <location line="+339"/>
         <source>ed3k room</source>
         <translation>ed3k ルーム</translation>
     </message>
     <message>
-        <location line="-642"/>
+        <location line="-648"/>
         <source>Join the ed3k room &quot;%1&quot;?
 
 Other members see your nick and posts; your node takes part in passing the room&apos;s posts on.</source>
@@ -13588,7 +13617,7 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>ルーム (ed3k)</translation>
     </message>
     <message>
-        <location line="+87"/>
+        <location line="+93"/>
         <source>* %1 has left the room</source>
         <translation>* %1 がルームから退出しました</translation>
     </message>

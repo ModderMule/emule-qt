@@ -47,6 +47,11 @@ constexpr int kSetCandidates = 8;
 const QString kKeptIndex = QStringLiteral("kept.tsv");
 /// ALIAS records to publish again: u32-LE length + Alias, as publishAlias takes them
 const QString kKeptRecords = QStringLiteral("records.bin");
+/// alias.md §3 "Deleted file": one row per file, per network
+const QString kDeletedFile = QStringLiteral("deleted.tsv");
+constexpr int kDeletedTimerMs = 60 * 60 * 1000;
+/// alias.md §3: 365 days at most
+constexpr int kDeletedDaysMax = 365;
 /// a kept member's block hashes with the size and mtime they were read at: a restart
 /// shares it without reading it again (report 23: every seeding torrent read at each start)
 constexpr quint32 kKeptHashesMagic = 0x454B4831;   // "EKH1"
@@ -265,6 +270,8 @@ Ed3kJoinBase::Ed3kJoinBase(Ed3kSession& session, const QString& configDir, QStri
     connect(&m_saveTimer, &QTimer::timeout, this, &Ed3kJoinBase::saveDirty);
     m_researchTimer.setInterval(kResearchMs);
     connect(&m_researchTimer, &QTimer::timeout, this, &Ed3kJoinBase::onResearchTimer);
+    m_deletedTimer.setInterval(kDeletedTimerMs);
+    connect(&m_deletedTimer, &QTimer::timeout, this, &Ed3kJoinBase::onDeletedTimer);
     // was: connect(&m_session, &Ed3kSession::eventPolled, this, &Ed3kJoinBase::onEventPolled, Qt::DirectConnection);
     // the node key's events as before; the anonymous node's from keyedEventPolled (only an
     // anonCapable() join takes them): each event once
@@ -1173,6 +1180,171 @@ QHash<int, QString> Ed3kJoinBase::keptMemberPaths(const QString& owner) const
     return out;
 }
 
+void Ed3kJoinBase::setDeletedDays(int days)
+{
+    m_deletedDays = std::clamp(days, 0, kDeletedDaysMax);
+    if (m_started)
+        onDeletedTimer();
+}
+
+bool Ed3kJoinBase::keepDeleted(const DeletedFile& f)
+{
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (m_deletedDays <= 0 || now - f.deletedAt >= qint64(m_deletedDays) * 24 * 3600 * 1000)
+        return false;
+    if (auto* e = m_session.engine()) {
+        if (auto ok = e->aliasKeepDeleted(m_session.now(), f.root, std::uint64_t(std::max<qint64>(0, f.deletedAt / 1000))); !ok) {
+            logDebug([&]() -> QString { return QStringLiteral("deleted \"%1\" of %2 not kept (error %3)").arg(f.name, f.owner, errorName(ok.error())); });
+            return false;
+        }
+    }
+    auto& rows = deletedRows();
+    std::erase_if(rows, [&](const DeletedFile& r) { return r.root == f.root; });
+    rows.push_back(f);
+    saveDeleted();
+    logDebug([&]() -> QString { return QStringLiteral("\"%1\" of %2 deleted: its records stay out (%3 day(s) at most)").arg(f.name, f.owner).arg(m_deletedDays); });
+    return true;
+}
+
+void Ed3kJoinBase::endDeleted(const ffi::Root& root, const QString& why)
+{
+    auto& rows = deletedRows();
+    const auto it = std::ranges::find(rows, root, &DeletedFile::root);
+    if (it == rows.end())
+        return;
+    const DeletedFile f = *it;
+    rows.erase(it);
+    saveDeleted();
+    if (auto* e = m_session.engine())
+        (void)e->aliasEndDeleted(m_session.now(), root);
+    logInfo(QStringLiteral("deleted \"%1\" no longer published: %2").arg(f.name, why));
+    onDeletedEnded(f);
+    // the owner's set and records too, once nothing else keeps it
+    if (!hasDeleted(f.owner) && !keepsOwner(f.owner) && QFileInfo::exists(keptDir(f.owner))) {
+        withdrawOwner(f.owner);
+        dropKept(f.owner);
+    }
+    pumpSession();
+}
+
+bool Ed3kJoinBase::isDeleted(const ffi::Root& root) const
+{
+    return std::ranges::contains(deletedRows(), root, &DeletedFile::root);
+}
+
+bool Ed3kJoinBase::hasDeleted(const QString& owner) const
+{
+    return std::ranges::contains(deletedRows(), owner, &DeletedFile::owner);
+}
+
+std::vector<Ed3kJoinBase::DeletedFile> Ed3kJoinBase::deletedOf(const QString& owner) const
+{
+    std::vector<DeletedFile> out;
+    std::ranges::copy_if(deletedRows(), std::back_inserter(out), [&](const DeletedFile& f) { return f.owner == owner; });
+    return out;
+}
+
+void Ed3kJoinBase::deletedChecked(const ffi::Root& root, qint64 at)
+{
+    auto& rows = deletedRows();
+    if (const auto it = std::ranges::find(rows, root, &DeletedFile::root); it != rows.end() && it->checkedAt != at) {
+        it->checkedAt = at;
+        saveDeleted();
+    }
+}
+
+void Ed3kJoinBase::loadDeleted()
+{
+    m_deleted.reset();   // read again: another run may have changed it
+    if (auto* e = m_session.engine()) {
+        const auto t = m_session.now();
+        for (const DeletedFile& f : deletedRows())
+            (void)e->aliasKeepDeleted(t, f.root, std::uint64_t(std::max<qint64>(0, f.deletedAt / 1000)));
+    }
+    m_deletedTimer.start();
+    onDeletedTimer();
+}
+
+void Ed3kJoinBase::onDeletedTimer()
+{
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const qint64 keep = qint64(m_deletedDays) * 24 * 3600 * 1000;
+    std::vector<ffi::Root> over;
+    for (const DeletedFile& f : deletedRows())
+        if (now - f.deletedAt >= keep)
+            over.push_back(f.root);
+    for (const auto& root : over)
+        endDeleted(root, m_deletedDays > 0 ? QStringLiteral("%1 day(s) since deleted").arg(m_deletedDays) : QStringLiteral("switched off"));
+    if (m_started && !deletedRows().empty())
+        checkDeleted(now);
+}
+
+std::vector<Ed3kJoinBase::DeletedFile>& Ed3kJoinBase::deletedRows() const
+{
+    if (m_deleted)
+        return *m_deleted;
+    m_deleted.emplace();
+    // root owner member size deletedAt checkedAt name check(space separated)
+    const QByteArray raw = readBlob(deletedPath());
+    for (const QString& line : QString::fromUtf8(raw).split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {
+        const QStringList f = line.split(QLatin1Char('\t'));
+        if (f.size() < 7)
+            continue;
+        const auto root = rootOfHex(f.at(0));
+        if (!root)
+            continue;
+        DeletedFile d;
+        d.root = *root;
+        d.owner = QUrl::fromPercentEncoding(f.at(1).toLatin1());
+        d.member = f.at(2).toInt();
+        d.size = f.at(3).toULongLong();
+        d.deletedAt = f.at(4).toLongLong();
+        d.checkedAt = f.at(5).toLongLong();
+        d.name = f.at(6);
+        d.check = f.value(7).split(QLatin1Char(' '), Qt::SkipEmptyParts);
+        m_deleted->push_back(std::move(d));
+    }
+    return *m_deleted;
+}
+
+void Ed3kJoinBase::saveDeleted() const
+{
+    QString out;
+    for (const DeletedFile& d : deletedRows())
+        out += QStringLiteral("%1\t%2\t%3\t%4\t%5\t%6\t%7\t%8\n")
+                   .arg(hexOf(d.root.bytes), QString::fromLatin1(QUrl::toPercentEncoding(d.owner)))
+                   .arg(d.member)
+                   .arg(d.size)
+                   .arg(d.deletedAt)
+                   .arg(d.checkedAt)
+                   .arg(field(d.name), d.check.join(QLatin1Char(' ')));
+    QDir().mkpath(joinDir(m_tag));
+    const QByteArray utf8 = out.toUtf8();
+    writeBlobLater(deletedPath(), spanOf(utf8));
+}
+
+std::optional<ffi::Root> Ed3kJoinBase::rootFromHex(const QString& hex)
+{
+    return rootOfHex(hex);
+}
+
+QString Ed3kJoinBase::deletedPath() const
+{
+    return QDir(joinDir(m_tag)).filePath(kDeletedFile);
+}
+
+void Ed3kJoinBase::republishKeptAliases(const QString& owner)
+{
+    auto* e = m_session.engine();
+    if (!e || m_holdBack)
+        return;
+    const auto t = m_session.now();
+    // one by one: a record of a file neither shared nor deleted is refused (State) alone
+    for (const auto& r : readRecords(QDir(keptDir(owner)).filePath(kKeptRecords)))
+        (void)e->publishAlias(t, std::span(&r, 1));
+    pumpSession();
+}
+
 void Ed3kJoinBase::keepRecords(const QString& owner, std::optional<ffi::Root> set, const QString& name,
                                const std::vector<ffi::Bytes>& aliases)
 {
@@ -1279,6 +1451,7 @@ void Ed3kJoinBase::closeAll()
     m_reads.clear();   // their results are dropped (the cancel flag)
     m_saveTimer.stop();
     m_researchTimer.stop();
+    m_deletedTimer.stop();
     m_dirty.clear();
     if (auto* e = m_session.engine()) {
         const auto t = m_session.now();

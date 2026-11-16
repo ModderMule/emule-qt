@@ -830,6 +830,7 @@ struct Preferences::Data {
     int ed3kHashCacheLowRamPercent = 20;  // free RAM below: the engine keeps only block hashes in use
     int ed3kHashRamMiB = 0;               // the engine's RAM for block hashes; 0 = auto
     int ed3kKadStoreMiB = 0;              // the engine's RAM for Kad records of others; 0 = default (128)
+    int ed3kDeletedFileDays = 365;        // deleted volumes' ALIAS records kept out (alias.md §3)
     bool ed3kRoomHistoryStore = true;     // recent room posts kept on disk across restarts
     int ed3kRoomHistoryMax = 5000;        // posts kept per room (memory + disk)
     bool ed3kJointDownloads = true;    // eD2K downloads from ed3k too (§14.4)
@@ -2739,6 +2740,8 @@ int Preferences::ed3kHashRamMiB() const { return get(&Data::ed3kHashRamMiB); }
 void Preferences::setEd3kHashRamMiB(int val) { set(&Data::ed3kHashRamMiB, std::clamp(val, 0, kMaxEd3kHashRamMiB)); }
 int Preferences::ed3kKadStoreMiB() const { return get(&Data::ed3kKadStoreMiB); }
 void Preferences::setEd3kKadStoreMiB(int val) { set(&Data::ed3kKadStoreMiB, std::clamp(val, 0, kMaxEd3kKadStoreMiB)); }
+int Preferences::ed3kDeletedFileDays() const { return get(&Data::ed3kDeletedFileDays); }
+void Preferences::setEd3kDeletedFileDays(int val) { set(&Data::ed3kDeletedFileDays, std::clamp(val, 0, kMaxEd3kDeletedFileDays)); }
 bool Preferences::ed3kRoomHistoryStore() const { return get(&Data::ed3kRoomHistoryStore); }
 void Preferences::setEd3kRoomHistoryStore(bool val) { set(&Data::ed3kRoomHistoryStore, val); }
 int Preferences::ed3kRoomHistoryMax() const { return get(&Data::ed3kRoomHistoryMax); }
@@ -6156,6 +6159,8 @@ bool Preferences::load(const QString& filePath)
                 std::clamp(e3["hashCacheLowRamPercent"].as<int>(m_data->ed3kHashCacheLowRamPercent), 0, 100);
             m_data->ed3kHashRamMiB = std::clamp(e3["hashRamMiB"].as<int>(m_data->ed3kHashRamMiB), 0, kMaxEd3kHashRamMiB);
             m_data->ed3kKadStoreMiB = std::clamp(e3["kadStoreMiB"].as<int>(m_data->ed3kKadStoreMiB), 0, kMaxEd3kKadStoreMiB);
+            if (e3["deletedFileDays"])
+                m_data->ed3kDeletedFileDays = std::clamp(e3["deletedFileDays"].as<int>(m_data->ed3kDeletedFileDays), 0, kMaxEd3kDeletedFileDays);
             m_data->ed3kRoomHistoryStore = e3["roomHistoryStore"].as<bool>(m_data->ed3kRoomHistoryStore);
             m_data->ed3kRoomHistoryMax = std::clamp(e3["roomHistoryMax"].as<int>(m_data->ed3kRoomHistoryMax),
                                                     kMinEd3kRoomHistoryMax, kMaxEd3kRoomHistoryMax);
@@ -7646,6 +7651,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "hashCacheLowRamPercent" << YAML::Value << m_data->ed3kHashCacheLowRamPercent;
     out << YAML::Key << "hashRamMiB" << YAML::Value << m_data->ed3kHashRamMiB;
     out << YAML::Key << "kadStoreMiB" << YAML::Value << m_data->ed3kKadStoreMiB;
+    out << YAML::Key << "deletedFileDays" << YAML::Value << m_data->ed3kDeletedFileDays;
     out << YAML::Key << "roomHistoryStore" << YAML::Value << m_data->ed3kRoomHistoryStore;
     out << YAML::Key << "roomHistoryMax" << YAML::Value << m_data->ed3kRoomHistoryMax;
     out << YAML::Key << "jointDownloads" << YAML::Value << m_data->ed3kJointDownloads;

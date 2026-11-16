@@ -126,15 +126,7 @@ bool copyPrefix(const QString& from, const QString& to, std::uint64_t len)
     return true;
 }
 
-std::optional<ffi::Root> rootFromHex(const QString& hex)
-{
-    const QByteArray b = QByteArray::fromHex(hex.toLatin1());
-    if (b.size() != 32)
-        return std::nullopt;
-    ffi::Root r;
-    std::memcpy(r.bytes.data(), b.constData(), 32);
-    return r;
-}
+// was: rootFromHex here; now Ed3kJoinBase::rootFromHex
 
 } // namespace
 
@@ -264,6 +256,8 @@ void Ed3kHosterJoin::start()
     if (auto* e = m_session.engine())
         (void)e->linkAllow(m_prefs.enabled);
     m_tick.start();
+    // volumes deleted after unpacking: their links go out below with the rest
+    loadDeleted();
     for (auto& [id, e] : m_items) {
         switch (e->item.state) {
         case State::Complete:
@@ -640,11 +634,14 @@ void Ed3kHosterJoin::remove(quint32 id, bool deleteFile)
     const bool complete = e->item.state == State::Complete;
     if (e->item.retired)
         return;
-    // the file stays in incoming: its links stay published (and rechecked) while it does
-    if (complete && !deleteFile && QFileInfo::exists(e->item.file)) {
+    // the file stays in incoming, or is a volume deleted after unpacking (alias.md §3): its
+    // links stay published (and rechecked) while it does, or until the deleted one ends
+    const bool deleted = e->root && isDeleted(*e->root) && !QFileInfo::exists(e->item.file);
+    if (complete && !deleteFile && (QFileInfo::exists(e->item.file) || deleted)) {
         e->item.retired = true;
         m_aliasPending.erase(id);
-        logInfo(QStringLiteral("%1: removed from the list, its links stay published while the file is in incoming").arg(e->item.host));
+        logInfo(deleted ? QStringLiteral("%1: removed from the list, the links of its deleted volume stay published").arg(e->item.host)
+                        : QStringLiteral("%1: removed from the list, its links stay published while the file is in incoming").arg(e->item.host));
         emit itemRemoved(id);
         save();
         return;
@@ -653,6 +650,8 @@ void Ed3kHosterJoin::remove(quint32 id, bool deleteFile)
     for (SharedLink& l : e->shared)
         l.offline = true;
     publishShared(*e);
+    if (e->root)
+        endDeleted(*e->root, QStringLiteral("removed by the user"));
     m_aliasPending.erase(id);
     release(*e, false);
     if (!complete) {
@@ -3013,10 +3012,12 @@ void Ed3kHosterJoin::publishShared(Entry& e)
     QStringList urls;
     bool waiting = false;
     int aliases = 0;
+    // alias.md §3 "Deleted file": the ALIAS records only, no SOURCE
+    const bool deleted = isDeleted(*e.root) && !QFileInfo::exists(e.item.file);
     for (SharedLink& l : e.shared) {
         // §4.1: nothing while links are held back
         const bool live = m_prefs.publishLinks && linkLive(l, now);
-        if (live && urls.size() < kMaxShareLinks)
+        if (live && urls.size() < kMaxShareLinks && !deleted)
             urls << l.url;
         const bool wantAlias = live && aliases < kMaxAliasLinks;
         if (wantAlias)
@@ -3181,6 +3182,13 @@ void Ed3kHosterJoin::onRechecked(quint32 item, const QString& url, LinkStatus st
     }
     touch(*e);
     publishShared(*e);
+    // alias.md §3 "Deleted file": the link checked is its name
+    if (e->root && isDeleted(*e->root) && !QFileInfo::exists(e->item.file)) {
+        if (std::ranges::all_of(e->shared, [](const SharedLink& x) { return x.offline; }))
+            endDeleted(*e->root, QStringLiteral("its links are offline"));
+        else if (status == LinkStatus::Online)
+            deletedChecked(*e->root, now);
+    }
 }
 
 void Ed3kHosterJoin::onHttpResults(const ev::HttpResults& r)
@@ -3644,7 +3652,7 @@ void Ed3kHosterJoin::dropGoneRetired()
 {
     QList<quint32> gone;
     for (const auto& [id, e] : m_items)
-        if (e->item.retired && !QFileInfo::exists(e->item.file))
+        if (e->item.retired && !QFileInfo::exists(e->item.file) && !(e->root && isDeleted(*e->root)))
             gone << id;
     for (const quint32 id : std::as_const(gone)) {
         Entry* e = find(id);
@@ -3763,6 +3771,7 @@ void Ed3kHosterJoin::onUnpacked(const HosterUnpackResult& r)
             for (const QString& v : r.volumes)
                 QFile::remove(v);
             QDir().rmdir(dir);
+            keepDeletedVolumes(r.volumes);
         }
     } else {
         logWarning(QStringLiteral("cannot unpack %1: %2").arg(QFileInfo(r.firstVolume).fileName(), r.error));
@@ -3770,6 +3779,41 @@ void Ed3kHosterJoin::onUnpacked(const HosterUnpackResult& r)
     save();
     published(r.files);
     queueUnpacks();
+}
+
+void Ed3kHosterJoin::keepDeletedVolumes(const QStringList& volumes)
+{
+    const qint64 now = nowMs();
+    for (auto& [id, ep] : m_items) {
+        Entry& e = *ep;
+        if (!e.root || e.item.state != State::Complete || QFileInfo::exists(e.item.file)
+            || !std::ranges::any_of(volumes, [&e](const QString& v) { return QFileInfo(v).absoluteFilePath() == QFileInfo(e.item.file).absoluteFilePath(); }))
+            continue;
+        QStringList links;
+        for (const SharedLink& l : e.shared)
+            links << l.url;
+        if (keepDeleted({*e.root, QString::number(id), -1, e.item.size, e.item.name, now, 0, links}))
+            logInfo(QStringLiteral("%1: volume deleted after unpacking, its links stay published (%2 day(s) at most, rechecked)")
+                        .arg(e.item.host).arg(deletedDays()));
+    }
+}
+
+void Ed3kHosterJoin::onDeletedEnded(const DeletedFile& f)
+{
+    bool ok = false;
+    const quint32 id = f.owner.toUInt(&ok);
+    Entry* e = ok ? find(id) : nullptr;
+    if (!e)
+        return;
+    // the engine dropped its records (aliasEndDeleted): out of date here
+    for (SharedLink& l : e->shared)
+        l.aliasOut = false;
+    m_aliasPending.erase(id);
+    if (e->item.retired) {
+        release(*e, true);
+        m_items.erase(id);
+        save();
+    }
 }
 
 void Ed3kHosterJoin::releaseArchives()

@@ -17,6 +17,8 @@
 #include <QFile>
 #include <QLineEdit>
 #include <QSignalSpy>
+#include "prefs/Preferences.h"
+
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -157,6 +159,8 @@ private slots:
     void roomMemberShowsTheMemberKey();
     void anonymousRoomKeepsItsKey();
     void leaveKeepsOrDropsTheRoomKey();
+    void postsStoredAcrossRestart();
+    void postsOfPrivateRoomSealed();
 };
 
 void tst_Ed3kRooms::cleanup()
@@ -740,5 +744,147 @@ void tst_Ed3kRooms::leaveKeepsOrDropsTheRoomKey()
     QVERIFY(ra.find(*room) && !ra.find(*room)->owner);
 }
 
+// ed3k.roomHistoryStore: the posts come back from rooms/<room>.posts after a restart, even
+// with no member online to give its history; off deletes the files
+void tst_Ed3kRooms::postsStoredAcrossRestart()
+{
+    thePrefs.setEd3kRoomHistoryStore(true);
+    thePrefs.setEd3kRoomHistoryMax(Preferences::kMinEd3kRoomHistoryMax);
+    QTemporaryDir da;
+    QVERIFY(da.isValid());
+    Ed3kSession a;
+    QVERIFY(a.start(loopback(da.path())));
+    const std::uint16_t aPort = a.udpPort();
+    Ed3kRooms ra(a);
+    const IpcMessage made = create(ra, QStringLiteral("Alone"), 0, QStringLiteral("solo"));
+    QVERIFY(made.fieldBool(0));
+    const auto room = Ed3kRooms::roomFrom(made.fieldMap(1).value(QStringLiteral("room")).toString());
+    QVERIFY(room.has_value());
+    QVERIFY(post(ra, *room, QStringLiteral("first")).fieldBool(0));
+    QVERIFY(post(ra, *room, QStringLiteral("second")).fieldBool(0));
+    QTRY_COMPARE_WITH_TIMEOUT(texts(ra, *room), (QStringList{QStringLiteral("first"), QStringLiteral("second")}), 10000);
+
+    // the stop writes them at once; the restart shows them before any neighbour
+    a.stop();
+    QVERIFY(ra.rooms().empty());
+    const QString file = QDir(QDir(a.stateDir()).filePath(QStringLiteral("rooms"))).filePath(hexOf(*room) + QStringLiteral(".posts"));
+    QVERIFY(a.start(loopback(da.path(), aPort)));
+    QCOMPARE(texts(ra, *room), (QStringList{QStringLiteral("first"), QStringLiteral("second")}));
+    QCOMPARE(postsOf(ra, *room).size(), 2);
+    eMule::ed3k::flushBlobWrites();
+    QVERIFY(QFile::exists(file));
+#ifndef Q_OS_WIN
+    QCOMPARE(QFile::permissions(file) & (QFileDevice::ReadGroup | QFileDevice::ReadOther), QFileDevice::Permissions());
+#endif
+    // new posts after the restart join them, no repeat
+    QVERIFY(post(ra, *room, QStringLiteral("third")).fieldBool(0));
+    QTRY_COMPARE_WITH_TIMEOUT(texts(ra, *room).size(), 3, 10000);
+    QCOMPARE(texts(ra, *room).count(QStringLiteral("first")), 1);
+
+    // off: the files go, the posts stay in memory
+    thePrefs.setEd3kRoomHistoryStore(false);
+    ra.applyHistoryPrefs();
+    eMule::ed3k::flushBlobWrites();
+    QVERIFY(!QFile::exists(file));
+    QCOMPARE(texts(ra, *room).size(), 3);
+    a.stop();
+    eMule::ed3k::flushBlobWrites();
+    QVERIFY(!QFile::exists(file));
+    // the node keeps its history in rooms.dat (room.md §4.3): the 24 h come back without the file
+    QVERIFY(a.start(loopback(da.path(), aPort)));
+    QCOMPARE(texts(ra, *room).size(), 3);
+    QCOMPARE(texts(ra, *room).count(QStringLiteral("first")), 1);
+    // without rooms.dat too: nothing
+    a.stop();
+    eMule::ed3k::flushBlobWrites();
+    QVERIFY(QFile::remove(QDir(a.stateDir()).filePath(QStringLiteral("rooms.dat"))));
+    QVERIFY(a.start(loopback(da.path(), aPort)));
+    QVERIFY(texts(ra, *room).isEmpty());
+    thePrefs.setEd3kRoomHistoryStore(true);
+    ra.applyHistoryPrefs();
+}
+
 QTEST_MAIN(tst_Ed3kRooms)   // the room tab is a widget
+// private room: posts file sealed (no plain text), posts.key owner-only; a lost key loses them
+void tst_Ed3kRooms::postsOfPrivateRoomSealed()
+{
+    thePrefs.setEd3kRoomHistoryStore(true);
+    QTemporaryDir da;
+    QVERIFY(da.isValid());
+    Ed3kSession a;
+    QVERIFY(a.start(loopback(da.path())));
+    const std::uint16_t aPort = a.udpPort();
+    Ed3kRooms ra(a);
+    const IpcMessage made = create(ra, QStringLiteral("Secret"), ED3K_ROOM_PRIVATE, QStringLiteral("solo"));
+    QVERIFY(made.fieldBool(0));
+    const auto room = Ed3kRooms::roomFrom(made.fieldMap(1).value(QStringLiteral("room")).toString());
+    QVERIFY(room.has_value());
+    QVERIFY(ra.find(*room)->isPrivate);
+    QVERIFY(post(ra, *room, QStringLiteral("whisper one")).fieldBool(0));
+    QVERIFY(post(ra, *room, QStringLiteral("whisper two")).fieldBool(0));
+    QTRY_COMPARE_WITH_TIMEOUT(texts(ra, *room).size(), 2, 10000);
+
+    a.stop();
+    eMule::ed3k::flushBlobWrites();
+    const QDir dir(QDir(a.stateDir()).filePath(QStringLiteral("rooms")));
+    const QString file = dir.filePath(hexOf(*room) + QStringLiteral(".posts"));
+    const QString keyFile = dir.filePath(QStringLiteral("posts.key"));
+    // the node's history (rooms.dat) would bring the posts back: only the posts file is tested
+    const QString nodeFile = QDir(a.stateDir()).filePath(QStringLiteral("rooms.dat"));
+    QFile f(file);
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    const QByteArray raw = f.readAll();
+    f.close();
+    QVERIFY(!raw.contains("whisper"));
+    QVERIFY(!raw.contains("solo"));
+    QVERIFY(QFile::exists(keyFile));
+#ifndef Q_OS_WIN
+    QCOMPARE(QFile::permissions(keyFile) & (QFileDevice::ReadGroup | QFileDevice::ReadOther), QFileDevice::Permissions());
+#endif
+
+    // the restart opens them
+    QVERIFY(a.start(loopback(da.path(), aPort)));
+    QCOMPARE(texts(ra, *room), (QStringList{QStringLiteral("whisper one"), QStringLiteral("whisper two")}));
+
+    // a damaged file is refused, not shown
+    a.stop();
+    eMule::ed3k::flushBlobWrites();
+    QByteArray bad = raw;
+    bad[bad.size() - 1] = char(bad.at(bad.size() - 1) ^ 1);
+    QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    f.write(bad);
+    f.close();
+    QVERIFY(QFile::remove(nodeFile));
+    QVERIFY(a.start(loopback(da.path(), aPort)));
+    QVERIFY(texts(ra, *room).isEmpty());
+
+    // the key gone: the old file is unreadable
+    a.stop();
+    eMule::ed3k::flushBlobWrites();
+    QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    f.write(raw);
+    f.close();
+    QVERIFY(QFile::remove(keyFile));
+    QFile::remove(nodeFile);
+    QVERIFY(a.start(loopback(da.path(), aPort)));
+    QVERIFY(texts(ra, *room).isEmpty());
+
+    // off: the key goes with the files
+    QVERIFY(post(ra, *room, QStringLiteral("whisper three")).fieldBool(0));
+    QTRY_COMPARE_WITH_TIMEOUT(texts(ra, *room).size(), 1, 10000);
+    a.stop();
+    eMule::ed3k::flushBlobWrites();
+    QVERIFY(QFile::exists(keyFile));
+    QVERIFY(a.start(loopback(da.path(), aPort)));
+    QCOMPARE(texts(ra, *room), QStringList{QStringLiteral("whisper three")});
+    thePrefs.setEd3kRoomHistoryStore(false);
+    ra.applyHistoryPrefs();
+    eMule::ed3k::flushBlobWrites();
+    QVERIFY(!QFile::exists(file));
+    QVERIFY(!QFile::exists(keyFile));
+    a.stop();
+    thePrefs.setEd3kRoomHistoryStore(true);
+    ra.applyHistoryPrefs();
+}
+
 #include "tst_Ed3kRooms.moc"

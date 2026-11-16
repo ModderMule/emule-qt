@@ -219,6 +219,11 @@ public:
     /// act on, because a probe that cannot run simply produces no verdict.
     bool recheckItem(const QString& id);
 
+    /// STAT of @p messageIds apart from any item (ed3k: the articles of a volume deleted
+    /// after unpacking still there?), up the server ladder as a health probe goes, from the
+    /// probes' slice. articlesChecked() follows. false: no usable account, or @p checkId runs.
+    bool checkArticles(const QString& checkId, const QStringList& messageIds, const QStringList& groups, qint64 date);
+
     bool removeItem(const QString& id, bool deleteFiles);
     /// Drop every Complete item from the list, files kept. Returns the count.
     int clearCompleted();
@@ -552,6 +557,9 @@ signals:
     /// can broadcast it *uncoalesced*: this is a transition, not a latest value,
     /// and collapsing it inside a coalescing window loses it entirely.
     void itemFinished(const QString& id, bool success, const QString& message);
+    /// checkArticles() done: @p present held by an account, @p missing refused by every
+    /// account, @p unknown no answer (transport, nothing leasable for long).
+    void articlesChecked(const QString& checkId, int present, int missing, int unknown);
 
     /// Files a release just put into incoming under their final names (the daemon
     /// remembers them for usenetShareFiles, #177)
@@ -1213,6 +1221,25 @@ private:
 
     void handleProbeResult(ItemRuntime& rt, const UsenetFetchResult& result);
 
+    /// checkArticles(): one STAT per id, by its index in `ids`
+    struct ArticleCheck {
+        QStringList ids;
+        QStringList groups;
+        qint64 date = 0;
+        QList<int> plan;
+        int cursor = 0;
+        QSet<int> inFlight;
+        QHash<int, SegmentAttempt> attempts;
+        int present = 0;
+        int missing = 0;
+        int unknown = 0;
+    };
+    /// From the probes' slice of each worker, after the items' probes.
+    void dispatchArticleChecks();
+    void handleArticleCheckResult(const UsenetFetchResult& result);
+    /// Checks with nothing left to ask: articlesChecked(), dropped.
+    void finishArticleChecks();
+
     /// Turn the answers into a verdict and let the item go — to Queued, or to
     /// Paused with a reason when the shortfall is past the threshold and the
     /// recovery volumes cannot cover it. Never to Failed.
@@ -1324,6 +1351,8 @@ private:
 
     QList<QThread*> m_threads;
     QList<UsenetWorker*> m_workers;
+    /// checkArticles() running, by check id (runtime only)
+    QHash<QString, ArticleCheck> m_articleChecks;
     QList<int> m_workerCapacity;
     QList<int> m_workerInFlight;
     QList<int> m_workerLive;        ///< live download sockets per worker

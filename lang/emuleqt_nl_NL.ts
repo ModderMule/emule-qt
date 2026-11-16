@@ -6684,7 +6684,7 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
         <translation type="vanished">De ed3k-node gebruikt de gebruikersnaam van de pagina Algemeen: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+481"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+487"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7029,12 +7029,12 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1427"/>
+        <location line="+1438"/>
         <source> credits/MiB</source>
         <translation> credits/MiB</translation>
     </message>
     <message>
-        <location line="-1436"/>
+        <location line="-1447"/>
         <source>Never pay (receipts only)</source>
         <translation>Nooit betalen (alleen ontvangstbewijzen)</translation>
     </message>
@@ -7282,12 +7282,12 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1264"/>
+        <location line="+1275"/>
         <source>not read yet</source>
         <translation>nog niet uitgelezen</translation>
     </message>
     <message>
-        <location line="-1262"/>
+        <location line="-1273"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Het account staat rood: een nieuwe creditsleutel is de weg verder.</translation>
     </message>
@@ -7921,6 +7921,11 @@ Auto: 2 % van het RAM, minimaal 64 MiB en maximaal 512 MiB.</translation>
         <translation>Zolang het vrije RAM onder dit deel van het totaal ligt, blijven alleen gebruikte blokhashes in het RAM.</translation>
     </message>
     <message>
+        <location line="+11"/>
+        <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private and closed rooms are encrypted with a key kept in the same folder.</source>
+        <translation>Bewaart de recente berichten van elke gejoinde kamer in een bestand, die na een herstart weer worden getoond. Zonder deze optie komen alleen berichten terug die andere leden nog hebben. Berichten van privé- en gesloten kamers worden versleuteld met een sleutel in dezelfde map.</translation>
+    </message>
+    <message>
         <source>Kad</source>
         <translation type="vanished">Kad</translation>
     </message>
@@ -7937,7 +7942,7 @@ Auto: 2 % van het RAM, minimaal 64 MiB en maximaal 512 MiB.</translation>
         <translation type="vanished">RAM voor de trefwoord- en bronrecords die deze node voor andere ed3k-nodes bewaart (elk ongeveer 1 KiB). Daarboven worden nieuwe records geweigerd en slaan andere nodes ze elders op. Geldt bij de volgende start van de ed3k-node.</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-8"/>
         <source>Connection</source>
         <translation>Verbinding</translation>
     </message>
@@ -7955,6 +7960,30 @@ Auto: 2 % van het RAM, minimaal 64 MiB en maximaal 512 MiB.</translation>
         <location line="+1"/>
         <source>eD2K servers that also run an ed3k index node name it at login. Off: the node is only noted in the ed3k log.</source>
         <translation>eD2K-servers die ook een ed3k-indexnode draaien, noemen die bij het inloggen. Uit: de node wordt alleen in het ed3k-logboek vermeld.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Rooms</source>
+        <translation>Ruimtes</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Store recent room posts on disk</source>
+        <translation>Recente berichten van ruimtes op schijf opslaan</translation>
+    </message>
+    <message>
+        <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private rooms are stored unencrypted.</source>
+        <translation type="vanished">Bewaart de recente berichten van elke ruimte waarin je zit in een bestand, die na een herstart weer worden getoond. Zonder deze optie komen alleen berichten terug die andere leden nog hebben. Berichten van privéruimtes worden onversleuteld opgeslagen.</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Posts kept per room</source>
+        <translation>Bewaarde berichten per ruimte</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>The newest posts kept per room, in memory and on disk.</source>
+        <translation>De nieuwste berichten die per ruimte in het geheugen en op schijf worden bewaard.</translation>
     </message>
     <message>
         <location line="+21"/>
@@ -8031,7 +8060,7 @@ Auto: 2 % van het RAM, minimaal 64 MiB en maximaal 512 MiB.</translation>
         <translation>Snelle download loopt niet. Saldo: %1</translation>
     </message>
     <message>
-        <location line="-916"/>
+        <location line="-927"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -8989,7 +9018,7 @@ De bestanden worden hier niet meer gedeeld; wat het netwerk ervan bewaart, verlo
 <context>
     <name>eMule::Ed3kRoomTab</name>
     <message>
-        <location filename="../src/gui/panels/Ed3kRoomTab.cpp" line="+94"/>
+        <location filename="../src/gui/panels/Ed3kRoomTab.cpp" line="+95"/>
         <source>ed3k room %1</source>
         <translation>ed3k-ruimte %1</translation>
     </message>
@@ -9019,7 +9048,7 @@ De bestanden worden hier niet meer gedeeld; wat het netwerk ervan bewaart, verlo
         <translation>gemodereerd</translation>
     </message>
     <message>
-        <location line="+163"/>
+        <location line="+166"/>
         <source>Reply</source>
         <translation>Beantwoorden</translation>
     </message>
@@ -12968,7 +12997,7 @@ De bijnaam kan later weer worden gewijzigd via Opties-&gt;IRC.</translation>
     </message>
     <message>
         <location line="+34"/>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+306"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+312"/>
         <source>* %1 is now known as %2</source>
         <translation>* %1 is nu bekend als %2</translation>
     </message>
@@ -13152,7 +13181,7 @@ Kies een andere:</translation>
         <translation>%1 heeft u toegevoegd als vriend!</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="-486"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="-492"/>
         <location line="+20"/>
         <source>Public: anyone with the link</source>
         <translation>Openbaar: iedereen met de link</translation>
@@ -13247,14 +13276,14 @@ Kies een andere:</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+237"/>
+        <location line="+243"/>
         <location line="+67"/>
         <location line="+339"/>
         <source>ed3k room</source>
         <translation>ed3k-ruimte</translation>
     </message>
     <message>
-        <location line="-642"/>
+        <location line="-648"/>
         <source>Join the ed3k room &quot;%1&quot;?
 
 Other members see your nick and posts; your node takes part in passing the room&apos;s posts on.</source>
@@ -13268,7 +13297,7 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
         <translation>Ruimtes (ed3k)</translation>
     </message>
     <message>
-        <location line="+87"/>
+        <location line="+93"/>
         <source>* %1 has left the room</source>
         <translation>* %1 heeft de ruimte verlaten</translation>
     </message>

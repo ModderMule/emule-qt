@@ -36,6 +36,8 @@ namespace {
 
 // BAD blob at most once a minute (ffi.md "State slots", guide §5.4)
 constexpr std::chrono::seconds kBadSaveEvery{60};
+// rooms blob holds the room history (≤ 1,000 posts each): saved at most every 5 min on posts
+constexpr std::chrono::minutes kRoomsSaveEvery{5};
 constexpr qint64 kRateWindowMs = 10000;   // downRate() average
 
 const QString kBadFile = QStringLiteral("bad.dat");
@@ -98,6 +100,11 @@ Ed3kSession::Ed3kSession(QObject* parent)
             m_badDirty = false;
             saveSlot(ffi::State::BadBlocks, kBadFile);
         }
+    });
+    m_roomsSaveTimer.setSingleShot(true);
+    connect(&m_roomsSaveTimer, &QTimer::timeout, this, [this] {
+        if (m_engine)
+            saveSlot(ffi::State::Rooms, kRoomsFile);
     });
 }
 
@@ -295,6 +302,7 @@ void Ed3kSession::stop()
         return;
     m_timer.stop();
     m_badSaveTimer.stop();
+    m_roomsSaveTimer.stop();
     m_pinTimer.stop();
     m_declineWatch.disconnect(this);
     if (const QStringList watched = m_declineWatch.files() + m_declineWatch.directories(); !watched.isEmpty())
@@ -757,6 +765,7 @@ void Ed3kSession::dispatch(ffi::Event& ev, ffi::KeyKind key)
             saveSlot(ffi::State::SetGrants, kSetsFile);
             break;
         case ffi::State::Rooms:
+            m_roomsSaveTimer.stop();
             saveSlot(ffi::State::Rooms, kRoomsFile);
             break;
         case ffi::State::Names:
@@ -766,6 +775,10 @@ void Ed3kSession::dispatch(ffi::Event& ev, ffi::KeyKind key)
             saveSlot(ffi::State::Paid, kPaidFile);
             break;
         }
+    } else if (std::holds_alternative<e::RoomPost>(ev)) {
+        // held posts are in the rooms blob: a crash loses at most kRoomsSaveEvery of history
+        if (!m_roomsSaveTimer.isActive())
+            m_roomsSaveTimer.start(kRoomsSaveEvery);
     } else if (std::holds_alternative<e::FriendChanged>(ev)) {
         saveFriends();
     } else if (std::holds_alternative<e::FilterChanged>(ev)) {
@@ -1190,6 +1203,7 @@ void Ed3kSession::die(ffi::Error error)
     logEd3kError(QStringLiteral("ed3k: the engine stopped (error %1); ed3k is off until restarted").arg(errorName(error)));
     m_timer.stop();
     m_badSaveTimer.stop();
+    m_roomsSaveTimer.stop();
     m_pinTimer.stop();
     if (m_http)
         m_http->clear();

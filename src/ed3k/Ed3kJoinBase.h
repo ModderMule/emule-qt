@@ -60,6 +60,14 @@ public:
     /// A change while started restarts the join; switching on withdraws the kept ALIAS records.
     void setHoldBack(bool on);
     [[nodiscard]] bool holdsBack() const { return m_holdBack; }
+    /// Days a deleted file's records stay out (alias.md §3 "Deleted file"; yaml
+    /// ed3k.deletedFileDays, at most 365, 0: none). Shorter ends the rows over at once.
+    void setDeletedDays(int days);
+    [[nodiscard]] int deletedDays() const { return m_deletedDays; }
+    /// A deleted file's name is asked at least this often (alias.md §3: 7 days)
+    static constexpr qint64 kDeletedCheckMs = qint64(7) * 24 * 3600 * 1000;
+    /// Deleted files kept (tests, Statistics).
+    [[nodiscard]] std::size_t deletedCount() const { return deletedRows().size(); }
     /// Kad searches (sources, claims) on/off; tests switch them off.
     void setSearchEnabled(bool on) { m_searchEnabled = on; }
     /// Sources of a download are searched again every @p everyMs while no stream holds a
@@ -418,6 +426,41 @@ protected:
     void keepMemberPaths(const QString& owner, const QHash<int, QString>& paths);
     [[nodiscard]] QHash<int, QString> keptMemberPaths(const QString& owner) const;
 
+    // -- deleted files (alias.md §3 "Deleted file"; Config/ed3k/<tag>/deleted.tsv) -----
+
+    /// A verified file deleted after its own use (volumes unpacked): its ALIAS records stay
+    /// out without the file until its name is found gone or deletedDays() after deletion.
+    struct DeletedFile {
+        ffi::Root root;
+        QString owner;
+        int member = -1;
+        std::uint64_t size = 0;
+        QString name;
+        qint64 deletedAt = 0;   ///< ms since the epoch
+        qint64 checkedAt = 0;   ///< ms: its name last found there; 0: not yet
+        QStringList check;      ///< what its network asks (usenet: message ids; hoster: the link)
+    };
+    /// Keeps @p f (saved, told to the engine). false: off (0 days), over, or refused.
+    bool keepDeleted(const DeletedFile& f);
+    /// Its name gone, deleted by the user, or over: the engine's records of it end, the row
+    /// goes; the owner's kept records are withdrawn once nothing keeps it.
+    void endDeleted(const ffi::Root& root, const QString& why);
+    [[nodiscard]] bool isDeleted(const ffi::Root& root) const;
+    [[nodiscard]] bool hasDeleted(const QString& owner) const;
+    [[nodiscard]] std::vector<DeletedFile> deletedOf(const QString& owner) const;
+    [[nodiscard]] const std::vector<DeletedFile>& deletedFiles() const { return deletedRows(); }
+    /// Its name found there now (the network's check).
+    void deletedChecked(const ffi::Root& root, qint64 at);
+    /// The saved rows told to the engine, the over ones ended; the hourly check started. At
+    /// start, before shareKept publishes the kept records.
+    void loadDeleted();
+    /// The kept ALIAS records of @p owner published again (a file of it just deleted).
+    void republishKeptAliases(const QString& owner);
+    /// The network's checks of deleted files due (hourly while started); default none.
+    virtual void checkDeleted(qint64 now) { Q_UNUSED(now) }
+    /// A row ended: the network forgets what it holds for it; default nothing.
+    virtual void onDeletedEnded(const DeletedFile& f) { Q_UNUSED(f) }
+
     // -- state -------------------------------------------------------------
 
     void scheduleSave(const QString& owner);
@@ -444,6 +487,8 @@ protected:
     [[nodiscard]] virtual LogCategory logCategory() const;
 
     static QString hexOf(std::span<const std::uint8_t> bytes);
+    /// 64 hex digits; nullopt: not a root
+    static std::optional<ffi::Root> rootFromHex(const QString& hex);
     static QString errorName(ffi::Error e);
     static std::span<const std::byte> spanOf(const QByteArray& b);
     /// A plain file name for one directory, never a path; @p fallback when nothing is left.
@@ -512,6 +557,11 @@ private:
     /// A kept member's first hash is done; the last one publishes the kept records.
     void keptMemberDone(const QString& owner);
     void publishKeptRecords(const QString& owner);
+    [[nodiscard]] std::vector<DeletedFile>& deletedRows() const;
+    void saveDeleted() const;
+    [[nodiscard]] QString deletedPath() const;
+    /// Rows over deletedDays() ended; the network's checks asked.
+    void onDeletedTimer();
     /// unpublishAlias of every kept owner's records (hold back switched on).
     void withdrawKeptRecords();
 
@@ -578,6 +628,10 @@ private:
     std::map<QString, int> m_keptPending;
     std::map<QString, ReadQueue> m_reads;
     std::shared_ptr<std::atomic<bool>> m_cancel;
+    /// deleted.tsv, read on first use
+    mutable std::optional<std::vector<DeletedFile>> m_deleted;
+    QTimer m_deletedTimer;
+    int m_deletedDays = 365;
 };
 
 } // namespace eMule::ed3k

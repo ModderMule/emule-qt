@@ -21,9 +21,10 @@
 ///   is joined again when hiding starts. The anonymous node's room state is not in
 ///   State::Rooms: generation keys come again from members.
 /// - Post store (ed3k.roomHistoryStore, default on): the last ed3k.roomHistoryMax posts of a
-///   room in rooms/<room hex>.posts (CBOR, owner-only; plain text of sealed rooms too), shown
-///   again at start. The core keeps no posts across a restart: it asks neighbours for their
-///   24 h history (room.md §4.3, since 0), which needs one online member that saw them.
+///   room in rooms/<room hex>.posts (CBOR, owner-only), shown again at start. Private and
+///   closed rooms: sealed with ChaCha20-Poly1305 under HKDF(rooms/posts.key, room id).
+///   GUI-only, longer than the network's: the core keeps its own 24 h / 1,000 posts in
+///   State::Rooms (rooms.dat) and reports them again at the join; it serves them to joiners.
 
 #include "Ed3kFfi.h"
 #include "Ed3kStore.h"
@@ -209,7 +210,7 @@ private:
     /// Posts kept per room: ed3k.roomHistoryMax while stored, else kHistory.
     [[nodiscard]] static std::size_t historyMax();
     [[nodiscard]] static bool historyStored();
-    /// The stored posts of @p r (rooms/<hex>.posts) into it.
+    /// The stored posts of @p r (rooms/<hex>.posts) into it; unreadable: forgotten.
     void loadPosts(Room& r) const;
     /// @p room's posts changed: written a few seconds later (one write per burst).
     void postsChanged(const ::ed3k::Room& room);
@@ -217,6 +218,10 @@ private:
     void writePosts(const Room& r) const;
     void removePostsFile(const ::ed3k::Room& room) const;
     [[nodiscard]] static QString postsFile(const ::ed3k::Room& room);
+    /// Private (`s`) or closed: its posts file is sealed (ChaCha20-Poly1305).
+    [[nodiscard]] static bool sealedRoom(const Room& r);
+    /// @p room's posts key, from rooms/posts.key (made when @p create); the caller wipes it.
+    [[nodiscard]] std::optional<Seed> postsKey(const ::ed3k::Room& room, bool create) const;
     void loadSaved();
     void save() const;
     [[nodiscard]] QString roomsDir() const;

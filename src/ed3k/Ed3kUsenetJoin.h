@@ -62,6 +62,12 @@ public:
     virtual int acceptExternalRange(const QString& itemId, int fileIndex, qint64 offset, qint64 length) = 0;
     virtual void setSealHold(SealHold hold) = 0;
     virtual void releaseSealHold(const QString& itemId, int fileIndex) = 0;
+    /// STAT of @p messageIds (UsenetQueue::checkArticles); the answer comes to
+    /// Ed3kUsenetJoin::onArticlesChecked. false: nobody to ask.
+    virtual bool checkArticles(const QString& checkId, const QStringList& messageIds, const QStringList& groups, qint64 date)
+    {
+        Q_UNUSED(checkId) Q_UNUSED(messageIds) Q_UNUSED(groups) Q_UNUSED(date) return false;
+    }
 };
 
 class Ed3kUsenetJoin : public Ed3kJoinBase {
@@ -124,6 +130,9 @@ public slots:
                           int partNumber, const QByteArray& rawYbeginLine, const QString& serverKey,
                           const QString& messageId);
     void onFilesRepaired(const QString& itemId, const QList<int>& fileIndices);
+    /// alias.md §3 "Deleted file": a deleted volume's articles asked (@p checkId: its root
+    /// in hex). Present: kept; every account refused them all: its records end.
+    void onArticlesChecked(const QString& checkId, int present, int missing, int unknown);
 
 signals:
     /// A member verified under @p root and is shared (tests, GUI later).
@@ -150,6 +159,8 @@ protected:
     [[nodiscard]] bool shareKeptBlobs() const override { return !m_holdBack; }
     [[nodiscard]] bool hasOwner(const QString& owner) const override;
     void saveOwner(const QString& owner) override;
+    /// the articles of deleted volumes asked once kDeletedCheckMs passed
+    void checkDeleted(qint64 now) override;
 
 private:
     struct Post;
@@ -179,6 +190,9 @@ private:
     [[nodiscard]] QString memberPath(const QString& itemId, int fileIndex) const;
     /// The member paths of @p itemId kept for after its row is cleared (keepMemberPaths).
     void rememberPaths(const QString& itemId);
+    /// alias.md §3 "Deleted file": the verified members of a finished item not in incoming
+    /// (volumes, repair files: post-processing deletes them) keep their nzb-file records.
+    void keepDeletedVolumes(const QString& itemId);
     /// Cleared from the queue, files of it still on disk: shared and published on (cached
     /// in m_cleared).
     [[nodiscard]] bool clearedKept(const QString& itemId) const;
@@ -213,6 +227,10 @@ private:
     quint64 m_hashGeneration = 0;
     /// members complete now are hashed on this thread (volumes about to be deleted)
     bool m_hashNow = false;
+    /// deleted volumes (root hex) whose articles are being asked; asked again after a
+    /// check that could not tell
+    QSet<QString> m_deletedChecking;
+    std::map<QString, qint64> m_deletedRetryAt;
 };
 
 } // namespace eMule::ed3k

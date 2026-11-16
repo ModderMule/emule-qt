@@ -2224,7 +2224,8 @@ QWidget* Ed3kOptionsPages::buildExtended(QWidget* parent)
     m_roomStoreItem = m_extTree->addCheck(rooms, tr("Store recent room posts on disk"));
     m_roomStoreItem->setToolTip(0, tr("Keeps the recent posts of each joined room in a file, shown again after a "
                                       "restart. Without it, only posts other members still hold come back. "
-                                      "Posts of private rooms are stored unencrypted."));
+                                      "Posts of private and closed rooms are encrypted with a key kept in the "
+                                      "same folder."));
     m_extTree->setChecked(m_roomStoreItem, true);
     m_roomMaxItem = m_extTree->addSpin(rooms, tr("Posts kept per room"), Preferences::kMinEd3kRoomHistoryMax,
                                        Preferences::kMaxEd3kRoomHistoryMax, QString(), QString());

@@ -6709,7 +6709,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">Узел ed3k использует ник со страницы «Общие»: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+481"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+487"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7054,12 +7054,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1427"/>
+        <location line="+1438"/>
         <source> credits/MiB</source>
         <translation> кредитов/MiB</translation>
     </message>
     <message>
-        <location line="-1436"/>
+        <location line="-1447"/>
         <source>Never pay (receipts only)</source>
         <translation>Никогда не платить (только квитанции)</translation>
     </message>
@@ -7307,12 +7307,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1264"/>
+        <location line="+1275"/>
         <source>not read yet</source>
         <translation>ещё не прочитано</translation>
     </message>
     <message>
-        <location line="-1262"/>
+        <location line="-1273"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Счёт в минусе: выход — новый кредитный ключ.</translation>
     </message>
@@ -7948,6 +7948,11 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>Пока свободной ОЗУ меньше этой доли от общего объёма, в ОЗУ остаются только используемые хеши блоков.</translation>
     </message>
     <message>
+        <location line="+11"/>
+        <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private and closed rooms are encrypted with a key kept in the same folder.</source>
+        <translation>Хранит последние сообщения каждой комнаты, в которую вы вошли, в файле и снова показывает их после перезапуска. Без этого вернутся только сообщения, которые ещё хранят другие участники. Сообщения частных и закрытых комнат шифруются ключом, который хранится в той же папке.</translation>
+    </message>
+    <message>
         <source>Kad</source>
         <translation type="vanished">Kad</translation>
     </message>
@@ -7964,7 +7969,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation type="vanished">ОЗУ для записей ключевых слов и источников, которые этот узел хранит для других узлов ed3k (около 1 КиБ каждая). Сверх этого новые записи отклоняются, и другие узлы сохраняют их в другом месте. Применяется при следующем запуске узла ed3k.</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-8"/>
         <source>Connection</source>
         <translation>Соединение</translation>
     </message>
@@ -7982,6 +7987,30 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <location line="+1"/>
         <source>eD2K servers that also run an ed3k index node name it at login. Off: the node is only noted in the ed3k log.</source>
         <translation>Серверы eD2K, которые также держат индексный узел ed3k, сообщают его при входе. Выкл.: узел только отмечается в журнале ed3k.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Rooms</source>
+        <translation>Комнаты</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Store recent room posts on disk</source>
+        <translation>Хранить последние сообщения комнат на диске</translation>
+    </message>
+    <message>
+        <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private rooms are stored unencrypted.</source>
+        <translation type="vanished">Хранит последние сообщения каждой комнаты, в которой вы состоите, в файле; они снова показываются после перезапуска. Без этого возвращаются только сообщения, которые ещё есть у других участников. Сообщения приватных комнат хранятся без шифрования.</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Posts kept per room</source>
+        <translation>Сообщений на комнату</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>The newest posts kept per room, in memory and on disk.</source>
+        <translation>Число последних сообщений, хранимых для каждой комнаты в памяти и на диске.</translation>
     </message>
     <message>
         <location line="+21"/>
@@ -8058,7 +8087,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>Скоростная загрузка не работает. Баланс: %1</translation>
     </message>
     <message>
-        <location line="-916"/>
+        <location line="-927"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -9017,7 +9046,7 @@ Its files are no longer shared here; what the network holds of it runs out. &quo
 <context>
     <name>eMule::Ed3kRoomTab</name>
     <message>
-        <location filename="../src/gui/panels/Ed3kRoomTab.cpp" line="+94"/>
+        <location filename="../src/gui/panels/Ed3kRoomTab.cpp" line="+95"/>
         <source>ed3k room %1</source>
         <translation>комната ed3k %1</translation>
     </message>
@@ -9047,7 +9076,7 @@ Its files are no longer shared here; what the network holds of it runs out. &quo
         <translation>модерируемая</translation>
     </message>
     <message>
-        <location line="+163"/>
+        <location line="+166"/>
         <source>Reply</source>
         <translation>Ответить</translation>
     </message>
@@ -13020,7 +13049,7 @@ Nick can be changed again in Options-&gt;IRC.</source>
     </message>
     <message>
         <location line="+34"/>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+306"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+312"/>
         <source>* %1 is now known as %2</source>
         <translation>* %1 теперь известен как %2</translation>
     </message>
@@ -13204,7 +13233,7 @@ Please choose another:</source>
         <translation>%1 добавил вас в друзья!</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="-486"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="-492"/>
         <location line="+20"/>
         <source>Public: anyone with the link</source>
         <translation>Публичная: любой, у кого есть ссылка</translation>
@@ -13299,14 +13328,14 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+237"/>
+        <location line="+243"/>
         <location line="+67"/>
         <location line="+339"/>
         <source>ed3k room</source>
         <translation>Комната ed3k</translation>
     </message>
     <message>
-        <location line="-642"/>
+        <location line="-648"/>
         <source>Join the ed3k room &quot;%1&quot;?
 
 Other members see your nick and posts; your node takes part in passing the room&apos;s posts on.</source>
@@ -13320,7 +13349,7 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>Комнаты (ed3k)</translation>
     </message>
     <message>
-        <location line="+87"/>
+        <location line="+93"/>
         <source>* %1 has left the room</source>
         <translation>* %1 покинул(а) комнату</translation>
     </message>

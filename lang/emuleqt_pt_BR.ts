@@ -6961,7 +6961,7 @@ Os nomes dela serão resolvidos depois das listas que você já segue.</translat
         <translation type="vanished">O nó ed3k usa o apelido da página Geral: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+481"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+487"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7306,12 +7306,12 @@ Os nomes dela serão resolvidos depois das listas que você já segue.</translat
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1427"/>
+        <location line="+1438"/>
         <source> credits/MiB</source>
         <translation> créditos/MiB</translation>
     </message>
     <message>
-        <location line="-1436"/>
+        <location line="-1447"/>
         <source>Never pay (receipts only)</source>
         <translation>Nunca pagar (somente recibos)</translation>
     </message>
@@ -7559,12 +7559,12 @@ Os nomes dela serão resolvidos depois das listas que você já segue.</translat
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1264"/>
+        <location line="+1275"/>
         <source>not read yet</source>
         <translation>ainda não lido</translation>
     </message>
     <message>
-        <location line="-1262"/>
+        <location line="-1273"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>A conta está no negativo: uma nova chave de créditos é o caminho a seguir.</translation>
     </message>
@@ -8198,6 +8198,11 @@ Auto: 2 % da RAM, no mínimo 64 MiB e no máximo 512 MiB.</translation>
         <translation>Enquanto a RAM livre estiver abaixo desta parte do total, só os hashes de blocos em uso ficam na RAM.</translation>
     </message>
     <message>
+        <location line="+11"/>
+        <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private and closed rooms are encrypted with a key kept in the same folder.</source>
+        <translation>Guarda as mensagens recentes de cada sala em que você entrou em um arquivo, exibidas novamente após reiniciar. Sem isso, só voltam as mensagens que outros membros ainda têm. As mensagens de salas privadas e fechadas são criptografadas com uma chave guardada na mesma pasta.</translation>
+    </message>
+    <message>
         <source>Kad</source>
         <translation type="vanished">Kad</translation>
     </message>
@@ -8214,7 +8219,7 @@ Auto: 2 % da RAM, no mínimo 64 MiB e no máximo 512 MiB.</translation>
         <translation type="vanished">RAM para os registros de palavras-chave e fontes que este nó guarda para outros nós ed3k (cerca de 1 KiB cada). Acima disso, novos registros são recusados e outros nós os armazenam em outro lugar. Vale a partir do próximo início do nó ed3k.</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-8"/>
         <source>Connection</source>
         <translation>Conexão</translation>
     </message>
@@ -8232,6 +8237,30 @@ Auto: 2 % da RAM, no mínimo 64 MiB e no máximo 512 MiB.</translation>
         <location line="+1"/>
         <source>eD2K servers that also run an ed3k index node name it at login. Off: the node is only noted in the ed3k log.</source>
         <translation>Servidores eD2K que também executam um nó de índice ed3k o indicam no login. Desligado: o nó é apenas anotado no log do ed3k.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Rooms</source>
+        <translation>Salas</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Store recent room posts on disk</source>
+        <translation>Salvar no disco as mensagens recentes das salas</translation>
+    </message>
+    <message>
+        <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private rooms are stored unencrypted.</source>
+        <translation type="vanished">Mantém as mensagens recentes de cada sala em que você entrou em um arquivo, exibidas novamente após reiniciar. Sem isso, só voltam as mensagens que outros membros ainda têm. As mensagens de salas privadas são armazenadas sem criptografia.</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Posts kept per room</source>
+        <translation>Mensagens mantidas por sala</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>The newest posts kept per room, in memory and on disk.</source>
+        <translation>As mensagens mais recentes mantidas por sala, na memória e no disco.</translation>
     </message>
     <message>
         <location line="+21"/>
@@ -8308,7 +8337,7 @@ Auto: 2 % da RAM, no mínimo 64 MiB e no máximo 512 MiB.</translation>
         <translation>Download de alta velocidade parado. Saldo: %1</translation>
     </message>
     <message>
-        <location line="-916"/>
+        <location line="-927"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -9266,7 +9295,7 @@ Seus arquivos deixam de ser compartilhados aqui; o que a rede guarda dele expira
 <context>
     <name>eMule::Ed3kRoomTab</name>
     <message>
-        <location filename="../src/gui/panels/Ed3kRoomTab.cpp" line="+94"/>
+        <location filename="../src/gui/panels/Ed3kRoomTab.cpp" line="+95"/>
         <source>ed3k room %1</source>
         <translation>sala ed3k %1</translation>
     </message>
@@ -9296,7 +9325,7 @@ Seus arquivos deixam de ser compartilhados aqui; o que a rede guarda dele expira
         <translation>moderada</translation>
     </message>
     <message>
-        <location line="+163"/>
+        <location line="+166"/>
         <source>Reply</source>
         <translation>Responder</translation>
     </message>
@@ -13341,7 +13370,7 @@ O nick pode ser alterado em Opções-&gt;IRC.</translation>
     </message>
     <message>
         <location line="+34"/>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+306"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+312"/>
         <source>* %1 is now known as %2</source>
         <translation>* %1 agora se chama %2</translation>
     </message>
@@ -13525,7 +13554,7 @@ Por favor, escolha outro:</translation>
         <translation>%1 adicionou você como amigo!</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="-486"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="-492"/>
         <location line="+20"/>
         <source>Public: anyone with the link</source>
         <translation>Pública: qualquer pessoa com o link</translation>
@@ -13620,14 +13649,14 @@ Por favor, escolha outro:</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+237"/>
+        <location line="+243"/>
         <location line="+67"/>
         <location line="+339"/>
         <source>ed3k room</source>
         <translation>Sala ed3k</translation>
     </message>
     <message>
-        <location line="-642"/>
+        <location line="-648"/>
         <source>Join the ed3k room &quot;%1&quot;?
 
 Other members see your nick and posts; your node takes part in passing the room&apos;s posts on.</source>
@@ -13641,7 +13670,7 @@ Outros membros veem seu nick e suas mensagens; seu nó participa do repasse das 
         <translation>Salas (ed3k)</translation>
     </message>
     <message>
-        <location line="+87"/>
+        <location line="+93"/>
         <source>* %1 has left the room</source>
         <translation>* %1 saiu da sala</translation>
     </message>

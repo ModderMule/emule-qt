@@ -1636,6 +1636,12 @@ public:
     [[nodiscard]] int ed3kKadStoreMiB() const;
     void setEd3kKadStoreMiB(int val);
     static constexpr int kMaxEd3kKadStoreMiB = 65536;
+    /// alias.md §3 "Deleted file": days volumes deleted after unpacking keep their ALIAS
+    /// records out (checked against their network). At most 365, 0 = none. YAML only
+    /// (ed3k.deletedFileDays).
+    [[nodiscard]] int ed3kDeletedFileDays() const;
+    void setEd3kDeletedFileDays(int val);
+    static constexpr int kMaxEd3kDeletedFileDays = 365;
     /// Recent ed3k room posts kept on disk (rooms/<room>.posts), shown again after a restart.
     /// Default on (ed3k.roomHistoryStore).
     [[nodiscard]] bool ed3kRoomHistoryStore() const;

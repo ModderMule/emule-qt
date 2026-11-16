@@ -19,6 +19,10 @@
 #include <QRegularExpression>
 #include <QUrlQuery>
 
+#include <openssl/evp.h>
+#include <openssl/kdf.h>
+#include <openssl/rand.h>
+
 #include <algorithm>
 #include <cstring>
 
@@ -31,7 +35,11 @@ namespace {
 const QString kRoomsDir = QStringLiteral("rooms");
 const QString kJoinedFile = QStringLiteral("joined.cbor");   // links with s: owner-only
 const QString kAdmitPrefix = QStringLiteral("ed3k-admit:");
-const QString kPostsSuffix = QStringLiteral(".posts");   // stored posts: plain text, owner-only
+const QString kPostsSuffix = QStringLiteral(".posts");   // stored posts, owner-only; private rooms sealed
+const QString kPostsKeyFile = QStringLiteral("posts.key");   // master key of sealed posts files
+// sealed posts file: nonce(12) ‖ ChaCha20-Poly1305(CBOR) ‖ tag(16), AAD = room id
+constexpr int kNonceLen = 12;
+constexpr int kTagLen = 16;
 constexpr int kPostsWriteDelayMs = 5000;
 constexpr std::uint64_t kBanMax = 30ull * 24 * 3600;   // §2.3 (initial)
 
@@ -58,6 +66,77 @@ std::optional<std::array<std::uint8_t, N>> arrayFrom(const QByteArray& b)
         return std::nullopt;
     std::memcpy(out.data(), b.constData(), N);
     return out;
+}
+
+/// Per-room subkey: HKDF-SHA256(master, info = "ed3k room posts v1" ‖ room). The master is
+/// uniformly random, so Extract adds nothing but costs nothing either.
+std::optional<Seed> postsSubkey(const Seed& master, const ffi::Room& room)
+{
+    static constexpr char kInfo[] = "ed3k room posts v1";
+    std::array<std::uint8_t, sizeof kInfo - 1 + 16> info{};
+    std::memcpy(info.data(), kInfo, sizeof kInfo - 1);
+    std::memcpy(info.data() + sizeof kInfo - 1, room.bytes.data(), room.bytes.size());
+    EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, nullptr);
+    Seed out{};
+    std::size_t len = out.size();
+    const bool ok = ctx && EVP_PKEY_derive_init(ctx) > 0 && EVP_PKEY_CTX_set_hkdf_md(ctx, EVP_sha256()) > 0
+        && EVP_PKEY_CTX_set1_hkdf_key(ctx, master.data(), int(master.size())) > 0
+        && EVP_PKEY_CTX_add1_hkdf_info(ctx, info.data(), int(info.size())) > 0
+        && EVP_PKEY_derive(ctx, out.data(), &len) > 0 && len == out.size();
+    EVP_PKEY_CTX_free(ctx);
+    if (!ok) {
+        wipe(std::span<std::uint8_t>{out});
+        return std::nullopt;
+    }
+    return out;
+}
+
+/// ChaCha20-Poly1305 of @p plain under @p key; empty: cipher failed.
+QByteArray sealPosts(const Seed& key, const ffi::Room& room, const QByteArray& plain)
+{
+    QByteArray out(kNonceLen + plain.size() + kTagLen, Qt::Uninitialized);
+    auto* nonce = reinterpret_cast<unsigned char*>(out.data());
+    auto* ct = nonce + kNonceLen;
+    if (RAND_bytes(nonce, kNonceLen) != 1)
+        return {};
+    const QByteArray aad = bytesOf(room.bytes);   // another room's file fails
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    int len = 0;
+    int fin = 0;
+    const bool ok = ctx && EVP_EncryptInit_ex(ctx, EVP_chacha20_poly1305(), nullptr, key.data(), nonce) == 1
+        && EVP_EncryptUpdate(ctx, nullptr, &len, reinterpret_cast<const unsigned char*>(aad.constData()), int(aad.size())) == 1
+        && EVP_EncryptUpdate(ctx, ct, &len, reinterpret_cast<const unsigned char*>(plain.constData()), int(plain.size())) == 1
+        && EVP_EncryptFinal_ex(ctx, ct + len, &fin) == 1 && len + fin == plain.size()
+        && EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, kTagLen, ct + plain.size()) == 1;
+    EVP_CIPHER_CTX_free(ctx);
+    return ok ? out : QByteArray{};
+}
+
+/// The CBOR of a sealed posts file; nullopt: wrong key, another room's file or damaged.
+std::optional<QByteArray> openPosts(const Seed& key, const ffi::Room& room, const QByteArray& sealed)
+{
+    const qsizetype size = sealed.size() - kNonceLen - kTagLen;
+    if (size < 0)
+        return std::nullopt;
+    const auto* nonce = reinterpret_cast<const unsigned char*>(sealed.constData());
+    const auto* ct = nonce + kNonceLen;
+    QByteArray tag(reinterpret_cast<const char*>(ct + size), kTagLen);
+    QByteArray plain(size, Qt::Uninitialized);
+    const QByteArray aad = bytesOf(room.bytes);   // another room's file fails
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    int len = 0;
+    int fin = 0;
+    const bool ok = ctx && EVP_DecryptInit_ex(ctx, EVP_chacha20_poly1305(), nullptr, key.data(), nonce) == 1
+        && EVP_DecryptUpdate(ctx, nullptr, &len, reinterpret_cast<const unsigned char*>(aad.constData()), int(aad.size())) == 1
+        && EVP_DecryptUpdate(ctx, reinterpret_cast<unsigned char*>(plain.data()), &len, ct, int(size)) == 1
+        && EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, kTagLen, tag.data()) == 1
+        && EVP_DecryptFinal_ex(ctx, reinterpret_cast<unsigned char*>(plain.data()) + len, &fin) == 1;
+    EVP_CIPHER_CTX_free(ctx);
+    if (!ok) {
+        wipe(plain);
+        return std::nullopt;
+    }
+    return plain;
 }
 
 } // namespace
@@ -476,6 +555,8 @@ void Ed3kRooms::applyHistoryPrefs()
         m_postsTimer->stop();
         for (const auto& [room, s] : m_saved)
             removePostsFile(room);
+        if (!m_session.stateDir().isEmpty())
+            QFile::remove(QDir(roomsDir()).filePath(kPostsKeyFile));
         return;
     }
     // on (again): every room written, the trimmed ones too
@@ -796,13 +877,13 @@ Ed3kRooms::Room& Ed3kRooms::track(const ffi::Room& room, const QString& link, co
     const auto [it, added] = m_rooms.try_emplace(room);
     Room& r = it->second;
     r.room = room;
-    // a restart: the posts of the last run before the network's history comes
-    if (added)
-        loadPosts(r);
     r.link = link;
     r.nick = nick;
     r.key = key;
     r.isPrivate = QUrlQuery(link.mid(link.indexOf(QLatin1Char('?')) + 1)).hasQueryItem(QStringLiteral("s"));
+    // a restart: the posts of the last run before the network's history comes
+    if (added)
+        loadPosts(r);
     Saved& s = m_saved[room];
     s.link = link;
     s.nick = nick;
@@ -855,6 +936,19 @@ void Ed3kRooms::loadPosts(Room& r) const
     QByteArray blob = readBlob(QDir(roomsDir()).filePath(postsFile(r.room)));
     if (blob.isEmpty())
         return;
+    if (sealedRoom(r)) {
+        auto key = postsKey(r.room, false);
+        auto plain = key ? openPosts(*key, r.room, blob) : std::nullopt;
+        if (key)
+            wipe(std::span<std::uint8_t>{*key});
+        wipe(blob);
+        if (!plain) {
+            // key lost or file damaged: history forgotten, next write overwrites
+            logEd3kWarning(QStringLiteral("ed3k: room %1: stored posts not readable").arg(roomHex(r.room)));
+            return;
+        }
+        blob = std::move(*plain);
+    }
     const QCborArray list = QCborValue::fromCbor(blob).toArray();
     wipe(blob);
     const std::size_t max = historyMax();
@@ -926,8 +1020,37 @@ void Ed3kRooms::writePosts(const Room& r) const
         list.append(m);
     }
     QByteArray blob = list.toCborValue().toCbor();
+    if (sealedRoom(r)) {
+        auto key = postsKey(r.room, true);
+        QByteArray sealed = key ? sealPosts(*key, r.room, blob) : QByteArray{};
+        if (key)
+            wipe(std::span<std::uint8_t>{*key});
+        wipe(blob);
+        if (sealed.isEmpty()) {
+            // never plain for a private room
+            logEd3kWarning(QStringLiteral("ed3k: room %1: posts not sealed, not stored").arg(roomHex(r.room)));
+            removePostsFile(r.room);
+            return;
+        }
+        blob = std::move(sealed);
+    }
     writeBlobLater(path, std::as_bytes(std::span{blob.constData(), std::size_t(blob.size())}));
     wipe(blob);
+}
+
+bool Ed3kRooms::sealedRoom(const Room& r)
+{
+    return r.isPrivate || r.closed;
+}
+
+std::optional<Seed> Ed3kRooms::postsKey(const ffi::Room& room, bool create) const
+{
+    auto master = create ? loadOrCreateSecret(roomsDir(), kPostsKeyFile, nullptr) : loadSecret(roomsDir(), kPostsKeyFile);
+    if (!master)
+        return std::nullopt;
+    auto key = postsSubkey(*master, room);
+    wipe(std::span<std::uint8_t>{*master});
+    return key;
 }
 
 void Ed3kRooms::removePostsFile(const ffi::Room& room) const

@@ -6659,7 +6659,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">ed3k 節點使用「一般」頁面中的暱稱：%1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+481"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+487"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7004,12 +7004,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1427"/>
+        <location line="+1438"/>
         <source> credits/MiB</source>
         <translation> 額度/MiB</translation>
     </message>
     <message>
-        <location line="-1436"/>
+        <location line="-1447"/>
         <source>Never pay (receipts only)</source>
         <translation>從不支付（僅收據）</translation>
     </message>
@@ -7257,12 +7257,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1264"/>
+        <location line="+1275"/>
         <source>not read yet</source>
         <translation>尚未讀取</translation>
     </message>
     <message>
-        <location line="-1262"/>
+        <location line="-1273"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>帳戶已透支：唯一的出路是新的額度金鑰。</translation>
     </message>
@@ -7894,6 +7894,11 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>當可用記憶體低於總量的此比例時,只有使用中的區塊雜湊留在記憶體中。</translation>
     </message>
     <message>
+        <location line="+11"/>
+        <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private and closed rooms are encrypted with a key kept in the same folder.</source>
+        <translation>將每個已加入聊天室的最近貼文保存在檔案中，重新啟動後再次顯示。關閉後，只有其他成員仍保留的貼文會回來。私人和封閉聊天室的貼文使用保存在同一資料夾中的金鑰加密。</translation>
+    </message>
+    <message>
         <source>Kad</source>
         <translation type="vanished">Kad</translation>
     </message>
@@ -7910,7 +7915,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation type="vanished">本節點為其他 ed3k 節點保存的關鍵字和來源記錄所用的記憶體（每筆約 1 KiB）。超出後將拒絕新記錄，由其他節點另行保存。在 ed3k 節點下次啟動時生效。</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-8"/>
         <source>Connection</source>
         <translation>連線</translation>
     </message>
@@ -7928,6 +7933,30 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <location line="+1"/>
         <source>eD2K servers that also run an ed3k index node name it at login. Off: the node is only noted in the ed3k log.</source>
         <translation>同時執行 ed3k 索引節點的 eD2K 伺服器會在登入時告知該節點。關閉：該節點僅記錄在 ed3k 日誌中。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Rooms</source>
+        <translation>聊天室</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Store recent room posts on disk</source>
+        <translation>將聊天室的最近訊息儲存到磁碟</translation>
+    </message>
+    <message>
+        <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private rooms are stored unencrypted.</source>
+        <translation type="vanished">將每個已加入聊天室的最近訊息保存在檔案中，重新啟動後再次顯示。關閉時，只能恢復其他成員仍保存的訊息。私人聊天室的訊息以未加密方式儲存。</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Posts kept per room</source>
+        <translation>每個聊天室保留的訊息數</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>The newest posts kept per room, in memory and on disk.</source>
+        <translation>每個聊天室在記憶體和磁碟中保留的最新訊息數。</translation>
     </message>
     <message>
         <location line="+21"/>
@@ -8004,7 +8033,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>高速下載未執行。餘額：%1</translation>
     </message>
     <message>
-        <location line="-916"/>
+        <location line="-927"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -8961,7 +8990,7 @@ Its files are no longer shared here; what the network holds of it runs out. &quo
 <context>
     <name>eMule::Ed3kRoomTab</name>
     <message>
-        <location filename="../src/gui/panels/Ed3kRoomTab.cpp" line="+94"/>
+        <location filename="../src/gui/panels/Ed3kRoomTab.cpp" line="+95"/>
         <source>ed3k room %1</source>
         <translation>ed3k 房間 %1</translation>
     </message>
@@ -8991,7 +9020,7 @@ Its files are no longer shared here; what the network holds of it runs out. &quo
         <translation>受管理</translation>
     </message>
     <message>
-        <location line="+163"/>
+        <location line="+166"/>
         <source>Reply</source>
         <translation>回覆</translation>
     </message>
@@ -12916,7 +12945,7 @@ Nick can be changed again in Options-&gt;IRC.</source>
     </message>
     <message>
         <location line="+34"/>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+306"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+312"/>
         <source>* %1 is now known as %2</source>
         <translation>* %1 現在改名為 %2</translation>
     </message>
@@ -13100,7 +13129,7 @@ Please choose another:</source>
         <translation>%1 已將您加入為好友！</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="-486"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="-492"/>
         <location line="+20"/>
         <source>Public: anyone with the link</source>
         <translation>公開：任何擁有連結的人</translation>
@@ -13195,14 +13224,14 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+237"/>
+        <location line="+243"/>
         <location line="+67"/>
         <location line="+339"/>
         <source>ed3k room</source>
         <translation>ed3k 房間</translation>
     </message>
     <message>
-        <location line="-642"/>
+        <location line="-648"/>
         <source>Join the ed3k room &quot;%1&quot;?
 
 Other members see your nick and posts; your node takes part in passing the room&apos;s posts on.</source>
@@ -13216,7 +13245,7 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>房間 (ed3k)</translation>
     </message>
     <message>
-        <location line="+87"/>
+        <location line="+93"/>
         <source>* %1 has left the room</source>
         <translation>* %1 離開了房間</translation>
     </message>

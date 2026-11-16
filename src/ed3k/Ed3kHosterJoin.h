@@ -530,6 +530,10 @@ private:
     void queueUnpacks();
     /// Retired items whose file left incoming: links withdrawn, item dropped.
     void dropGoneRetired();
+    /// alias.md §3 "Deleted file": the items of @p volumes, deleted after unpacking, keep their
+    /// links' ALIAS records (rechecked as before) for deletedDays().
+    void keepDeletedVolumes(const QStringList& volumes);
+    void onDeletedEnded(const DeletedFile& f) override;
     void onUnpacked(const HosterUnpackResult& r);
     /// Extraction switched off: archives waiting in Temp go to incoming as they are.
     void releaseArchives();

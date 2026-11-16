@@ -1262,6 +1262,77 @@ private slots:
         QVERIFY(!QFileInfo::exists(r.join->item(ids[0])->file));
     }
 
+    /// alias.md §3 "Deleted file": the volume deleted after unpacking keeps its link's ALIAS
+    /// record out without the file (no SOURCE), over a restart and once removed from the list;
+    /// a recheck finding the link gone ends it and drops the item
+    void extract_deletedVolumeKeepsItsLinkPublished()
+    {
+        Rig r;
+        const QString zip = r.tmp.filePath(QStringLiteral("src.zip"));
+        QVERIFY(writeZip(zip, {{QStringLiteral("only.txt"), QByteArray("x")}}));
+        QFile zf(zip);
+        QVERIFY(zf.open(QIODevice::ReadOnly));
+        r.resolver.data = zf.readAll();
+        r.resolver.fileName = QStringLiteral("one.zip");
+        r.prefs.deleteArchives = true;
+        QVERIFY(r.start(true));
+        const QString url = QStringLiteral("https://fake.example/z/3");
+        const auto ids = r.join->addLinks(url);
+        QCOMPARE(ids.size(), 1);
+        const quint32 id = ids[0];
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->item(id)->reason, Ed3kHosterJoin::Reason::Unpacked, 60000);
+        QVERIFY(!QFileInfo::exists(r.join->item(id)->file));
+        QCOMPARE(r.join->deletedCount(), std::size_t(1));
+
+        // a restart: the file is gone, its link published all the same
+        QVERIFY(r.restart());
+        QCOMPARE(r.join->deletedCount(), std::size_t(1));
+        QTRY_VERIFY_WITH_TIMEOUT(r.join->sharedLinks(id).value(0).aliasOut, 10000);
+        // removed from the list: hidden, kept
+        r.join->remove(id, false);
+        QVERIFY(!r.join->item(id));
+        QVERIFY(r.join->sharedLinks(id).value(0).aliasOut);
+        QVERIFY(r.restart());
+        QVERIFY(r.join->items().isEmpty());
+        QTRY_VERIFY_WITH_TIMEOUT(r.join->sharedLinks(id).value(0).aliasOut, 10000);
+
+        // the weekly recheck finds the link gone: ended, the hidden item dropped
+        r.resolver.goneUrls << url;
+        QVERIFY(r.restart(stale));
+        QTRY_VERIFY_WITH_TIMEOUT(r.join->sharedLinks(id).isEmpty(), 20000);
+        QCOMPARE(r.join->deletedCount(), std::size_t(0));
+        QVERIFY(r.restart());
+        QVERIFY(r.join->sharedLinks(id).isEmpty());
+    }
+
+    /// ed3k.deletedFileDays: past it (0 here) the deleted volume's link is withdrawn
+    void extract_deletedVolumeEndsAfterItsDays()
+    {
+        Rig r;
+        const QString zip = r.tmp.filePath(QStringLiteral("src.zip"));
+        QVERIFY(writeZip(zip, {{QStringLiteral("only.txt"), QByteArray("y")}}));
+        QFile zf(zip);
+        QVERIFY(zf.open(QIODevice::ReadOnly));
+        r.resolver.data = zf.readAll();
+        r.resolver.fileName = QStringLiteral("two.zip");
+        r.prefs.deleteArchives = true;
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/z/4"));
+        QCOMPARE(ids.size(), 1);
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->item(ids[0])->reason, Ed3kHosterJoin::Reason::Unpacked, 60000);
+        QCOMPARE(r.join->deletedCount(), std::size_t(1));
+        QVERIFY(r.restart());
+        QTRY_VERIFY_WITH_TIMEOUT(r.join->sharedLinks(ids[0]).value(0).aliasOut, 10000);
+        r.join->setDeletedDays(0);
+        QCOMPARE(r.join->deletedCount(), std::size_t(0));
+        QVERIFY(!r.join->sharedLinks(ids[0]).value(0).aliasOut);
+        // the item stays in the list (unpacked), its link not published again
+        QVERIFY(r.restart());
+        QVERIFY(r.join->item(ids[0]));
+        QTest::qWait(500);
+        QVERIFY(!r.join->sharedLinks(ids[0]).value(0).aliasOut);
+    }
+
     /// an encrypted zip: the package's passwords first (a container's); none opens it ->
     /// UnpackPassword; a typed one goes first in the package and the extraction runs again
     void extract_passwordFromPackageThenTyped()

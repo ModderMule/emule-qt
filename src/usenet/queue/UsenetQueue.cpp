@@ -114,6 +114,8 @@ constexpr int kMaxSampleProbes = 200;
 /// whole queue to drain. A quarter is enough to finish a sampled probe in a
 /// round trip or three and small enough that downloads do not notice.
 constexpr int kProbeCapacityDivisor = 4;
+/// itemId of a checkArticles() STAT: never a queue item's (those are hex)
+const QString kArticleCheckPrefix = QStringLiteral("\x01check:");
 
 /// Create @p path and its directory, empty. Returns false with @p error set.
 [[nodiscard]] bool createTargetFile(const QString& path, QString& error)
@@ -246,6 +248,14 @@ void UsenetQueue::stop()
             rt->item->stalledReason.clear();
         }
     }
+
+    // the article checks' STATs went with the workers: what was not answered is unknown
+    for (auto it = m_articleChecks.begin(); it != m_articleChecks.end(); ++it) {
+        it->unknown += int(it->plan.size()) - it->cursor + int(it->inFlight.size());
+        it->cursor = int(it->plan.size());
+        it->inFlight.clear();
+    }
+    finishArticleChecks();
 
     for (auto& rt : m_items)
         persist(*rt);
@@ -544,6 +554,21 @@ QString UsenetQueue::addNzb(const QByteArray& data, const QString& name, QString
 
     dispatch();
     return id;
+}
+
+bool UsenetQueue::checkArticles(const QString& checkId, const QStringList& messageIds, const QStringList& groups, qint64 date)
+{
+    if (!m_running || m_workers.isEmpty() || m_ladder.isEmpty() || messageIds.isEmpty() || m_articleChecks.contains(checkId))
+        return false;
+    ArticleCheck c;
+    c.ids = messageIds;
+    c.groups = groups;
+    c.date = date;
+    for (int i = 0; i < messageIds.size(); ++i)
+        c.plan.append(i);
+    m_articleChecks.insert(checkId, std::move(c));
+    dispatch();
+    return true;
 }
 
 bool UsenetQueue::recheckItem(const QString& id)
@@ -2523,6 +2548,15 @@ void UsenetQueue::onSegmentFinished(const UsenetFetchResult& result, bool curren
     if (current && result.workerIndex >= 0 && result.workerIndex < m_workerInFlight.size()
         && m_workerInFlight.at(result.workerIndex) > 0) {
         m_workerInFlight[result.workerIndex] -= 1;
+    }
+
+    // a checkArticles() STAT: no item behind it
+    if (result.probeOnly && result.itemId.startsWith(kArticleCheckPrefix)) {
+        if (current)
+            handleArticleCheckResult(result);
+        finishArticleChecks();
+        dispatch();
+        return;
     }
 
     ItemRuntime* rt = runtimeFor(result.itemId);
@@ -4849,6 +4883,137 @@ void UsenetQueue::dispatchProbes()
     }
     for (ItemRuntime* rt : std::as_const(done))
         finishHealthCheck(*rt);
+    dispatchArticleChecks();
+}
+
+void UsenetQueue::dispatchArticleChecks()
+{
+    if (m_articleChecks.isEmpty())
+        return;
+    for (int w = 0; w < m_workers.size(); ++w) {
+        if (w >= m_workerCapacity.size() || w >= m_workerInFlight.size())
+            break;
+        if (m_workerStarved.value(w))
+            continue;
+        const int reserved = std::max(1, m_workerCapacity.at(w) / kProbeCapacityDivisor);
+        int spent = 0;
+        while (spent < reserved && m_workerInFlight.at(w) < m_workerCapacity.at(w)) {
+            bool dispatched = false;
+            for (auto it = m_articleChecks.begin(); it != m_articleChecks.end() && !dispatched; ++it) {
+                ArticleCheck& c = it.value();
+                while (c.cursor < c.plan.size()) {
+                    const int i = c.plan.at(c.cursor);
+                    if (c.inFlight.contains(i) || i >= c.ids.size()) {
+                        ++c.cursor;
+                        continue;
+                    }
+                    const SegmentAttempt attempt = c.attempts.value(i);
+                    bool relaxed = false;
+                    const int level = nextServableLevel(attempt.tried, c.date, relaxed);
+                    if (level < 0) {
+                        ++c.missing;   // every account refused it
+                        ++c.cursor;
+                        continue;
+                    }
+                    const int payLevel = nextAffordableLevel(attempt.tried, c.date, level, relaxed);
+                    if (payLevel < 0) {
+                        ++c.unknown;   // not worth an allowance: no verdict
+                        ++c.cursor;
+                        continue;
+                    }
+                    QStringList ignore = attempt.tried;
+                    ignore += dispatchExclusions(payLevel, c.date, !relaxed);
+                    if (w < m_workerServers.size() && !workerCanServe(w, payLevel, ignore))
+                        break;   // another worker holds this rung
+                    UsenetFetchRequest req;
+                    req.itemId = kArticleCheckPrefix + it.key();
+                    req.fileIndex = -1;
+                    req.segmentIndex = i;
+                    req.segment.messageId = c.ids.at(i);
+                    req.groups = c.groups;
+                    req.level = payLevel;
+                    req.ignoreServers = std::move(ignore);
+                    req.probeOnly = true;
+                    c.inFlight.insert(i);
+                    ++c.cursor;
+                    m_workerInFlight[w] += 1;
+                    ++spent;
+                    dispatched = true;
+                    QMetaObject::invokeMethod(m_workers.at(w), "fetchSegment", Qt::QueuedConnection,
+                                              Q_ARG(eMule::usenet::UsenetFetchRequest, req));
+                    break;
+                }
+            }
+            if (!dispatched)
+                break;
+        }
+    }
+    finishArticleChecks();
+}
+
+void UsenetQueue::handleArticleCheckResult(const UsenetFetchResult& result)
+{
+    const auto it = m_articleChecks.find(result.itemId.mid(kArticleCheckPrefix.size()));
+    if (it == m_articleChecks.end())
+        return;
+    ArticleCheck& c = it.value();
+    const int i = result.segmentIndex;
+    c.inFlight.remove(i);
+    const auto again = [&c, i] { c.plan.insert(qBound(0, c.cursor, int(c.plan.size())), i); };
+    if (result.error == NntpError::None) {
+        ++c.present;
+        c.attempts.remove(i);
+        return;
+    }
+    if (result.noServerAvailable) {
+        again();
+        markStarved(result.workerIndex);
+        return;
+    }
+    SegmentAttempt attempt = c.attempts.value(i);
+    if (escalatesToNextLevel(result.error)) {
+        if (!result.serverKey.isEmpty() && !attempt.tried.contains(result.serverKey))
+            attempt.tried.append(result.serverKey);
+        bool relaxed = false;
+        if (nextServableLevel(attempt.tried, c.date, relaxed) >= 0) {
+            c.attempts.insert(i, attempt);
+            again();
+            return;
+        }
+        ++c.missing;
+        c.attempts.remove(i);
+        return;
+    }
+    if (result.error == NntpError::ProxyFailed) {
+        again();
+        noteProxyStall(result.text);
+        return;
+    }
+    if (result.error == NntpError::TooManyConnections) {
+        again();
+        return;
+    }
+    // a transport fault says nothing about the article
+    if (++attempt.transportRetries > kMaxTransportRetries) {
+        ++c.unknown;
+        c.attempts.remove(i);
+        return;
+    }
+    c.attempts.insert(i, attempt);
+    again();
+}
+
+void UsenetQueue::finishArticleChecks()
+{
+    QList<QString> done;
+    for (auto it = m_articleChecks.cbegin(); it != m_articleChecks.cend(); ++it)
+        if (it->inFlight.isEmpty() && it->cursor >= it->plan.size())
+            done.append(it.key());
+    for (const QString& id : std::as_const(done)) {
+        const ArticleCheck c = m_articleChecks.take(id);
+        logUsenet(QStringLiteral("Usenet: article check %1: %2 present, %3 missing, %4 unknown").arg(id).arg(c.present).arg(c.missing).arg(c.unknown));
+        emit articlesChecked(id, c.present, c.missing, c.unknown);
+    }
 }
 
 void UsenetQueue::handleProbeResult(ItemRuntime& rt, const UsenetFetchResult& result)

@@ -478,6 +478,7 @@ bool DaemonApp::start()
         m_usenetJoin = std::make_unique<ed3k::Ed3kUsenetJoin>(*m_ed3kSession, *m_usenetJoinQueue, thePrefs.configDir());
         m_usenetJoin->connectQueue(*queue);
         m_usenetJoin->setHoldBack(!thePrefs.ed3kShareUsenetPosts());
+        m_usenetJoin->setDeletedDays(thePrefs.ed3kDeletedFileDays());
     }
     // the share list over ed3k; also attaches on statusChanged
     if (theApp.sharedFileList) {
@@ -792,6 +793,7 @@ bool DaemonApp::start()
     }
     // hoster links (hoster.md); the resolver is the JDownloader sidecar when built in
     m_hosterJoin = std::make_unique<ed3k::Ed3kHosterJoin>(*m_ed3kSession, thePrefs.configDir());
+    m_hosterJoin->setDeletedDays(thePrefs.ed3kDeletedFileDays());
     // what unpacked archives hold (hoster.md §6.1): read on the unpacker's thread, published here
     m_archiveContents = std::make_unique<ed3k::Ed3kArchiveContents>(*m_ed3kSession, thePrefs.configDir());
     m_archiveContents->setPublish(thePrefs.ed3kArchiveContents());

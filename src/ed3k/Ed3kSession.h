@@ -320,6 +320,7 @@ private:
     QHostAddress m_ipv6Source;   ///< advertised as local6 and sent from; null: the system's
     QTimer m_timer;
     QTimer m_badSaveTimer;
+    QTimer m_roomsSaveTimer;   ///< rooms blob after posts (held history)
     QTimer m_pinTimer;   ///< looks at IPv6SourcePin (LocalIPv6 moves it on a rescan)
     QThreadPool m_readPool;
     QElapsedTimer m_clock;
