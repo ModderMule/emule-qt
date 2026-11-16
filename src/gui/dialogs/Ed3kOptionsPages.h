@@ -18,11 +18,14 @@
 /// - Hoster (hoster.md): downloads from hosters are off by default; switching them on shows
 ///   what it means (§3, §8, §9). Vouched links are published by default (§4.1). Accounts are sent
 ///   with their password only when it was typed here; the daemon never sends one back.
-///   Two tabs: General and Captcha solvers (JD's paid solver plugins, same password rule). Tabs:
-///   General and Captcha solvers (JD's paid solver plugins, same password rule).
+///   Tabs: General, Captcha solvers (JD's paid solver plugins) and Multi-hosters (debrid
+///   accounts that download other hosters' links); both with the same password rule.
+/// - General → "Declined records..." (Ed3kDeclineDialog, Protocol.md §10.3): the core's
+///   decline.txt over IPC (1208, 1209), saved at once, not on OK.
 /// - Selling (Ed3kSellPage, subscription.md): paid subscriptions sold, passes issued; acts at
 ///   once over IPC (1033, 1034, 1040, 1041), not on OK.
 
+#include <QCborArray>
 #include <QCborMap>
 #include <QList>
 #include <QObject>
@@ -148,6 +151,8 @@ private:
     [[nodiscard]] static QString creditsText(qint64 micro);
     /// A solver service's balance as an account status; @p balance -1: none given.
     [[nodiscard]] static QString creditText(double balance, const QString& currency);
+    /// A multi-hoster login's status: premium/free, until, its hosters; @p working -1: not told.
+    [[nodiscard]] static QString debridText(bool premium, qint64 expires, int hosts, int working);
     /// m_chainSingleNote shown for the endpoints typed.
     void updateChainNote();
     /// The "hoster" map of the ed3k status: Java runtime and resolver.
@@ -165,6 +170,10 @@ private:
                           QWidget* parent);
     /// The "Captcha solvers" tab of the Hoster page.
     void buildSolvers(QVBoxLayout* layout, QWidget* parent);
+    /// The "Multi-hosters" tab of the Hoster page.
+    void buildDebrid(QVBoxLayout* layout, QWidget* parent);
+    /// m_debridHostsTree: the hosters of the selected multi-hoster row, as its last check named them.
+    void fillDebridHosts();
     /// Adds (@p row -1) or edits a login of @p list.
     void editAccount(AccountList& list, int row);
     void checkAccount(AccountList& list);
@@ -195,6 +204,8 @@ private:
     QTreeWidgetItem* m_lowRamItem = nullptr;
     QTreeWidgetItem* m_lanItem = nullptr;   ///< ed3kLan
     QTreeWidgetItem* m_autoIndexItem = nullptr;   ///< ed3kAutoIndexNode
+    QTreeWidgetItem* m_roomStoreItem = nullptr;   ///< ed3kRoomHistoryStore
+    QTreeWidgetItem* m_roomMaxItem = nullptr;     ///< ed3kRoomHistoryMax
 
     // General
     QLabel* m_runningLabel = nullptr;
@@ -202,6 +213,7 @@ private:
     QCheckBox* m_shareFilesCheck = nullptr;
     QCheckBox* m_jointDownloadsCheck = nullptr;
     QCheckBox* m_shareUsenetCheck = nullptr;
+    QCheckBox* m_archiveContentsCheck = nullptr;
     QCheckBox* m_ownSetsWatchCheck = nullptr;   ///< ed3kOwnSetsWatch
     Ed3kHidingGroup* m_hiding = nullptr;   ///< batch 15: hops.md §1
     QList<QCheckBox*> m_extChecks;   ///< text = the extension name
@@ -268,6 +280,7 @@ private:
         QString password;      ///< typed here; empty: the daemon keeps the stored one
         bool passwordSet = false;
         QString status;
+        QCborArray hosts{};    ///< a multi-hoster: the hosters its last check named
     };
     QCheckBox* m_hosterEnabledCheck = nullptr;
     QCheckBox* m_hosterSingleCheck = nullptr;   ///< ed3kHosterSingleTransfer
@@ -301,9 +314,16 @@ private:
         QTreeWidget* tree = nullptr;
         QList<HosterAccountRow> rows;
         bool solvers = false;   ///< solver services: user optional, credit as status
+        bool debrid = false;    ///< multi-hosters: user optional, hosters as status
+        /// a service list (solvers, multi-hosters) rather than a hoster typed in
+        [[nodiscard]] bool services() const { return solvers || debrid; }
     };
     AccountList m_hosterAccounts;
     AccountList m_solverAccounts{.solvers = true};
+    AccountList m_debridAccounts{.debrid = true};
+    QCheckBox* m_debridCheck = nullptr;    ///< ed3kHosterDebridEnabled
+    QGroupBox* m_debridGroup = nullptr;    ///< enabled by m_debridCheck
+    QTreeWidget* m_debridHostsTree = nullptr;
     QCheckBox* m_solversCheck = nullptr;   ///< ed3kHosterSolversEnabled
     QGroupBox* m_solversGroup = nullptr;   ///< enabled by m_solversCheck
 };

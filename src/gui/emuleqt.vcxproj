@@ -216,6 +216,7 @@
     <ClCompile Include="utils\FileTypeIcons.cpp" />
     <ClCompile Include="utils\NzbAdd.cpp" />
     <ClCompile Include="utils\MetaResultActions.cpp" />
+    <ClCompile Include="utils\ArchiveContentsIpc.cpp" />
     <ClCompile Include="utils\NzbDrop.cpp" />
     <ClCompile Include="utils\ContainerDrop.cpp" />
     <ClCompile Include="utils\TorrentLinks.cpp" />
@@ -263,6 +264,7 @@
     <ClCompile Include="controls\Ed3kDownloadRows.cpp" />
     <ClCompile Include="controls\PreviewImageView.cpp" />
     <ClCompile Include="controls\PreviewNfoView.cpp" />
+    <ClCompile Include="controls\ArchiveContentsView.cpp" />
     <ClCompile Include="controls\PreviewTabView.cpp" />
     <ClCompile Include="controls\UsenetFileCheckList.cpp" />
     <ClCompile Include="controls\UsenetProgressDelegate.cpp" />
@@ -317,6 +319,7 @@
     <ClCompile Include="dialogs\OptionsSearch.cpp" />
     <ClCompile Include="dialogs\Ed3kOptionsPages.cpp" />
     <ClCompile Include="dialogs\Ed3kFilterPage.cpp" />
+    <ClCompile Include="dialogs\Ed3kDeclineDialog.cpp" />
     <ClCompile Include="dialogs\Ed3kOwnSetDialog.cpp" />
     <ClCompile Include="dialogs\Ed3kSellDialogs.cpp" />
     <ClCompile Include="dialogs\Ed3kSellPage.cpp" />
@@ -333,6 +336,7 @@
     <ClCompile Include="dialogs\PasteTextDialog.cpp" />
     <ClCompile Include="dialogs\SimpleCleanupDialog.cpp" />
     <ClCompile Include="dialogs\WebLinksDialog.cpp" />
+    <ClCompile Include="dialogs\ArchiveContentsDialog.cpp" />
     <ClCompile Include="dialogs\PeerPreviewDialog.cpp" />
     <ClCompile Include="dialogs\ToolbarCustomizeDialog.cpp" />
     <ClCompile Include="panels\SearchPanel.cpp" />
@@ -422,6 +426,7 @@
     <ClInclude Include="controls\KnownTypeStyle.h" />
     <ClInclude Include="utils\NzbAdd.h" />
     <QtMoc Include="utils\MetaResultActions.h" />
+    <ClInclude Include="utils\ArchiveContentsIpc.h" />
     <ClInclude Include="utils\NzbDrop.h" />
     <ClInclude Include="utils\ContainerDrop.h" />
     <ClInclude Include="utils\TorrentLinks.h" />
@@ -501,6 +506,7 @@
     <QtMoc Include="controls\DownloadProgressDelegate.h" />
     <QtMoc Include="controls\PreviewImageView.h" />
     <QtMoc Include="controls\PreviewNfoView.h" />
+    <QtMoc Include="controls\ArchiveContentsView.h" />
     <QtMoc Include="controls\PreviewTabView.h" />
     <QtMoc Include="controls\UsenetFileCheckList.h" />
     <QtMoc Include="controls\UsenetProgressDelegate.h" />
@@ -550,6 +556,7 @@
     <QtMoc Include="dialogs\OptionsSearch.h" />
     <QtMoc Include="dialogs\Ed3kOptionsPages.h" />
     <QtMoc Include="dialogs\Ed3kFilterPage.h" />
+    <QtMoc Include="dialogs\Ed3kDeclineDialog.h" />
     <QtMoc Include="dialogs\Ed3kOwnSetDialog.h" />
     <QtMoc Include="dialogs\Ed3kSellDialogs.h" />
     <QtMoc Include="dialogs\Ed3kSellPage.h" />
@@ -582,6 +589,7 @@
     <QtMoc Include="panels\LinkGrabberPanel.h" Condition="'$(EmuleHosterJd)'=='true'" />
     <QtMoc Include="dialogs\HosterPuzzleDialog.h" Condition="'$(EmuleHosterJd)'=='true'" />
     <QtMoc Include="dialogs\WebLinksDialog.h" />
+    <QtMoc Include="dialogs\ArchiveContentsDialog.h" />
     <QtMoc Include="dialogs\PeerPreviewDialog.h" />
     <QtMoc Include="dialogs\ToolbarCustomizeDialog.h" />
     <QtMoc Include="panels\SearchPanel.h" />

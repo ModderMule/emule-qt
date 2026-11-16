@@ -26,8 +26,11 @@
 #include <QStringList>
 
 #include <atomic>
+#include <functional>
 
 namespace eMule {
+
+class ArchiveContentsTap;
 
 class ExternalUnpacker {
 public:
@@ -119,6 +122,16 @@ public:
     /// disk reach. -1 means nothing could be run at all.
     [[nodiscard]] qint64 streamMemberTo(const QStringList& volumes, const QString& member,
                                         const QString& outPath, const QString& password);
+
+    /// extract() in one read that also feeds @p tap (hoster.md §6.1): the tool writes every
+    /// member to stdout (`x -so` / `p -inul`), split here by @p members (archive order, no
+    /// directories); a member goes to @p destDir through safeEntryPath() when @p wanted
+    /// takes its path (empty destDir: none). The tap gets the first volume from disk beside
+    /// the tool, same bytes in the page cache. Output that does not add up to @p members:
+    /// Failed, nothing kept.
+    Result extractStreamed(const QStringList& volumes, const QString& destDir, const QString& password,
+                           const QList<Member>& members, const std::function<bool(const QString&)>& wanted,
+                           ArchiveContentsTap* tap);
 
     /// Kill a run in progress. Safe from another thread; a killed run reports
     /// Outcome::Failed with "cancelled".

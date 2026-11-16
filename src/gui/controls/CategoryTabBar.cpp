@@ -18,6 +18,12 @@
 #include <QCborArray>
 #include <QCborMap>
 #include <QColor>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
+#include <QMimeData>
+#include <QMouseEvent>
+#include <QTimer>
 #include <QMenu>
 #include <QMessageBox>
 #include <QApplication>
@@ -111,22 +117,24 @@ CategoryTabBar::CategoryTabBar(QWidget* parent) : QTabBar(parent)
 
     // Drag to reorder, as MFC's tab control does (OnTabMovement,
     // srchybrid/TransferWnd.cpp:1264-1291). QTabBar moves the tab itself and
-    // tells us afterwards; the daemon does the renumbering from the oldIndex
-    // list, and its push rebuilds the bar either way.
+    // tells us afterwards, once per tab crossed; the moves add up here and go
+    // to the daemon as one reorder on release. Was: one send per step against
+    // a stale oldIndex list, which swapped the categories of two tabs' files.
     setMovable(true);
     connect(this, &QTabBar::tabMoved, this, [this](int from, int to) {
-        // Index 0 is "All" and is pinned — MFC refuses the same move.
-        if (from == 0 || to == 0 || from >= m_categories.size() || to >= m_categories.size()) {
-            rebuildTabs();   // put the bar back
-            return;
+        if (!m_reorder)
+            m_reorder = Reorder{m_categories, m_categoryOldIndex};
+        if (from < m_reorder->categories.size() && to < m_reorder->categories.size()) {
+            m_reorder->categories.move(from, to);
+            m_reorder->oldIndex.move(from, to);
         }
-
-        auto categories = m_categories;
-        auto oldIndex = m_categoryOldIndex;
-        categories.move(from, to);
-        oldIndex.move(from, to);
-        sendCategories(categories, oldIndex);
+        // a move announced after the release (animation end) commits by itself
+        if (!(QGuiApplication::mouseButtons() & Qt::LeftButton))
+            QTimer::singleShot(0, this, &CategoryTabBar::commitReorder);
     });
+
+    // Download rows dropped on a tab (MFC CTransferWnd::OnLButtonUp)
+    setAcceptDrops(true);
 }
 
 int CategoryTabBar::currentCategory() const
@@ -165,6 +173,9 @@ void CategoryTabBar::requestCategories()
         if (!resp.fieldBool(0))
             return;
 
+        QStringList shownTitles;
+        for (const DownloadCategory& c : std::as_const(m_categories))
+            shownTitles << c.title;
         m_categories.clear();
         m_categoryOldIndex.clear();
         for (const auto& value : resp.fieldArray(1)) {
@@ -204,7 +215,15 @@ void CategoryTabBar::requestCategories()
             m_categoryOldIndex.append(0);
         }
 
-        rebuildTabs();
+        // mid tab drag: rebuild on release instead, a rebuild ends the drag.
+        // The echo of our own last send changes nothing the drag builds on.
+        QStringList titles;
+        for (const DownloadCategory& c : std::as_const(m_categories))
+            titles << c.title;
+        if (m_mouseDown || m_reorder)
+            m_rebuildPending = m_rebuildPending || titles != shownTitles;
+        else
+            rebuildTabs();
         emit categoriesReloaded();
     });
 }
@@ -409,12 +428,99 @@ void CategoryTabBar::applyDisplayOptions()
     relayoutTabs();
 }
 
-void CategoryTabBar::rebuildTabs()
+void CategoryTabBar::mousePressEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::LeftButton)
+        m_mouseDown = true;
+    QTabBar::mousePressEvent(event);
+}
+
+void CategoryTabBar::mouseReleaseEvent(QMouseEvent* event)
+{
+    QTabBar::mouseReleaseEvent(event);
+    if (event->button() != Qt::LeftButton)
+        return;
+    m_mouseDown = false;
+    // after the release animation has had its turn
+    QTimer::singleShot(0, this, &CategoryTabBar::commitReorder);
+}
+
+void CategoryTabBar::dragEnterEvent(QDragEnterEvent* event)
+{
+    if (!event->mimeData()->hasFormat(QLatin1String(kDownloadsMime))) {
+        QTabBar::dragEnterEvent(event);
+        return;
+    }
+    event->acceptProposedAction();
+}
+
+void CategoryTabBar::dragMoveEvent(QDragMoveEvent* event)
+{
+    if (!event->mimeData()->hasFormat(QLatin1String(kDownloadsMime))) {
+        QTabBar::dragMoveEvent(event);
+        return;
+    }
+    const int tab = dropTabAt(event->position().toPoint());
+    if (tab != m_dropTab) {
+        m_dropTab = tab;
+        update();
+    }
+    if (tab >= 0)
+        event->acceptProposedAction();
+    else
+        event->ignore();
+}
+
+void CategoryTabBar::dragLeaveEvent(QDragLeaveEvent* event)
+{
+    m_dropTab = -1;
+    update();
+    QTabBar::dragLeaveEvent(event);
+}
+
+void CategoryTabBar::dropEvent(QDropEvent* event)
+{
+    if (!event->mimeData()->hasFormat(QLatin1String(kDownloadsMime))) {
+        QTabBar::dropEvent(event);
+        return;
+    }
+    const int tab = dropTabAt(event->position().toPoint());
+    m_dropTab = -1;
+    update();
+    if (tab < 0) {
+        event->ignore();
+        return;
+    }
+    const QStringList hashes = QString::fromUtf8(event->mimeData()->data(QLatin1String(kDownloadsMime)))
+                                   .split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    event->acceptProposedAction();
+    if (!hashes.isEmpty())
+        emit downloadsDropped(int(tabData(tab).toLongLong()), hashes);
+}
+
+void CategoryTabBar::paintEvent(QPaintEvent* event)
+{
+    QTabBar::paintEvent(event);
+    if (m_dropTab < 0 || m_dropTab >= count())
+        return;
+    // MFC selects the tab under the drag; selecting here would refilter the list
+    QPainter painter(this);
+    QColor fill = palette().color(QPalette::Highlight);
+    fill.setAlpha(70);
+    const QRect r = tabRect(m_dropTab).adjusted(1, 1, -1, -1);
+    painter.fillRect(r, fill);
+    painter.setPen(palette().color(QPalette::Highlight));
+    painter.drawRect(r.adjusted(0, 0, -1, -1));
+}
+
+void CategoryTabBar::rebuildTabs(int selectCategory)
 {
     // Remember the *category*, not the tab position: a removed category shifts
     // every tab behind it, and restoring by index would silently move the user
     // to a different one.
-    const int64_t currentCat = currentIndex() >= 0 ? tabData(currentIndex()).toLongLong() : 0;
+    const int64_t currentCat = selectCategory >= 0 ? selectCategory
+                             : currentIndex() >= 0 ? tabData(currentIndex()).toLongLong() : 0;
+    m_rebuildPending = false;
     int restoreIdx = 0;
 
     {
@@ -485,6 +591,13 @@ void CategoryTabBar::sendCategories(const QList<DownloadCategory>& categories,
             {QStringLiteral("alphabetical"),  cat.downloadInAlphabeticalOrder},
         });
     }
+
+    // What the daemon holds once this lands, so a second edit before the
+    // refetch below maps from the right indices (IPC keeps the order)
+    m_categories = categories;
+    m_categoryOldIndex.clear();
+    for (int i = 0; i < categories.size(); ++i)
+        m_categoryOldIndex.append(i);
 
     IpcMessage msg(IpcMsgType::SetCategories);
     msg.append(rows);
@@ -572,6 +685,47 @@ void CategoryTabBar::removeCategory(int index)
     oldIndex.removeAt(index);
 
     sendCategories(categories, oldIndex);
+}
+
+void CategoryTabBar::commitReorder()
+{
+    if (!m_reorder) {
+        if (m_rebuildPending && !m_mouseDown)
+            rebuildTabs();
+        return;
+    }
+    if (m_mouseDown)
+        return;   // the release commits
+    Reorder reorder = std::move(*m_reorder);
+    m_reorder.reset();
+
+    bool unchanged = true;
+    for (int i = 0; i < reorder.oldIndex.size(); ++i)
+        unchanged = unchanged && reorder.oldIndex.at(i) == m_categoryOldIndex.value(i, -2);
+    // Index 0 is "All" and is pinned — MFC refuses the same move. A reload during
+    // the drag, or a size change, means the moves no longer fit: put the bar back.
+    if (unchanged || reorder.oldIndex.value(0) != 0
+        || reorder.categories.size() != m_categories.size() || m_rebuildPending) {
+        rebuildTabs();
+        return;
+    }
+
+    // keep the category the user had selected, at its new position
+    const int currentCat = currentIndex() >= 0 ? int(tabData(currentIndex()).toLongLong()) : 0;
+    const int newCurrent = std::max(0, int(reorder.oldIndex.indexOf(m_categoryOldIndex.value(currentCat, currentCat))));
+    sendCategories(reorder.categories, reorder.oldIndex);
+    rebuildTabs(newCurrent);
+}
+
+int CategoryTabBar::dropTabAt(const QPoint& pos) const
+{
+    const int tab = tabAt(pos);
+    if (tab < 0)
+        return -1;
+    // MFC: anywhere from "All", elsewhere not onto the tab shown (care4all tabs too)
+    const int target = int(tabData(tab).toLongLong());
+    const int current = currentCategory();
+    return current == 0 || target != current ? tab : -1;
 }
 
 void CategoryTabBar::relayoutTabs()

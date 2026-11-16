@@ -7,7 +7,8 @@
 /// Public API (for the daemon, the IPC bridge and other ed3k classes):
 /// - add(Ed3kDownloadSpec) / addLink(link): starts a download of a root; owner tag "dl"
 ///   (kOwner) unless the spec names another (e.g. "set:<id>"); targetPath empty: the
-///   incoming dir + name. Refused: root known already, size 0, no name.
+///   incoming dir + name. Refused: root known already, size 0, no name. A root or eD2K hash
+///   of decline.txt (Ed3kDecline.h) is added paused and declinedAdded emitted.
 /// - pause / resume / cancel (the part file deleted; a complete row only leaves the list)
 ///   / setPriority (eMule's kPr*: 0 low, 1 normal, 2 high, 3 very high, 4 very low) / clearCompleted.
 /// - list() / info(): snapshots (Ed3kDownloadInfo); signals added, changed (coalesced, at
@@ -218,6 +219,9 @@ public:
 
 signals:
     void added(const ::ed3k::Root& root);
+    /// declined-records.md §2: @p root (or its eD2K hash) is in decline.txt; added paused,
+    /// the user is told (CoreNotifierBridge). Not for a download asked paused.
+    void declinedAdded(const ::ed3k::Root& root, const QString& name);
     /// Something of the list changed (state, progress, rate); at most once a second.
     void changed();
     void progress(const ::ed3k::Root& root, std::uint64_t done);

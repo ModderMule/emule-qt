@@ -153,6 +153,7 @@ private slots:
     void queuedPrioritySwitchesWaitThirtyMinutes();
     void aDownloadGoesUnderTheKeyItIsGiven();
     void aSharedFileIsNotDownloadedAgain();
+    void aDeclinedRootIsAddedPaused();
     void previewPartsComeFirst();
     void cleanup() { QTest::qWait(10); }
 };
@@ -734,6 +735,54 @@ void tst_Ed3kDownloads::queuedPrioritySwitchesWaitThirtyMinutes()
 // hops.md §1: a set's member goes under the set's key, never under both keys
 // a root the share list serves: refused on add, an unfinished row of it dropped (part file
 // gone), a complete one kept
+// declined-records.md §2: a root or eD2K hash of decline.txt: added paused, the user told
+void tst_Ed3kDownloads::aDeclinedRootIsAddedPaused()
+{
+    QTemporaryDir db;
+    QVERIFY(db.isValid());
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    ::ed3k::Root listed, byMd4, other, askedPaused;
+    listed.bytes.fill(0x31);
+    byMd4.bytes.fill(0x32);
+    other.bytes.fill(0x33);
+    askedPaused.bytes.fill(0x34);
+    const QByteArray md4(16, char(0x5a));
+    DeclineList list;
+    list.roots = {listed, askedPaused};
+    list.ed2k.push_back({});
+    std::copy(md4.cbegin(), md4.cend(), list.ed2k.front().begin());
+    b.setDeclined(list);
+
+    Ed3kDownloads d(b, db.path());
+    d.setSearchEnabled(false);
+    d.setDirs(QDir(db.path()).filePath(QStringLiteral("temp")), QDir(db.path()).filePath(QStringLiteral("in")));
+    d.start();
+    QSignalSpy told(&d, &Ed3kDownloads::declinedAdded);
+
+    QVERIFY(d.add(Ed3kDownloadSpec{listed, 1000, QStringLiteral("listed.bin"), {}, {}, 0, false, 1}).has_value());
+    QCOMPARE(d.info(listed)->state, Ed3kDownloadInfo::State::Paused);
+    QCOMPARE(told.count(), 1);
+    QCOMPARE(told.at(0).at(1).toString(), QStringLiteral("listed.bin"));
+
+    Ed3kDownloadSpec spec{byMd4, 1000, QStringLiteral("md4.bin"), {}, {}, 0, false, 1};
+    spec.md4 = md4;
+    QVERIFY(d.add(spec).has_value());
+    QCOMPARE(d.info(byMd4)->state, Ed3kDownloadInfo::State::Paused);
+    QCOMPARE(told.count(), 2);
+
+    // not listed: runs; asked paused: nothing to tell
+    QVERIFY(d.add(Ed3kDownloadSpec{other, 1000, QStringLiteral("other.bin"), {}, {}, 0, false, 1}).has_value());
+    QCOMPARE(d.info(other)->state, Ed3kDownloadInfo::State::Downloading);
+    QVERIFY(d.add(Ed3kDownloadSpec{askedPaused, 1000, QStringLiteral("p.bin"), {}, {}, 0, true, 1}).has_value());
+    QCOMPARE(told.count(), 2);
+    // resumed by hand: downloads anyway
+    QVERIFY(d.resume(listed));
+    QCOMPARE(d.info(listed)->state, Ed3kDownloadInfo::State::Downloading);
+    d.stop();
+    b.stop();
+}
+
 void tst_Ed3kDownloads::aSharedFileIsNotDownloadedAgain()
 {
     ::ed3k::Root root;   // any root: nothing is fetched

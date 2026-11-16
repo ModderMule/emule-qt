@@ -636,6 +636,9 @@ if(EMULE_ED3K)
     target_include_directories(tst_Ed3kRooms PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon" "${CMAKE_SOURCE_DIR}/src/gui")
     set_tests_properties(tst_Ed3kRooms PROPERTIES TIMEOUT 240)
     # ed3k keyword search (Ed3kSearch): one node publishes a file, another finds it
+    # archive contents records (hoster.md §6.1): reading, extracting chosen entries, Kad publish + lookup
+    emule_add_test(tst_Ed3kArchiveContents FOLDER "Ed3k" LIBRARIES eMule::Ed3k eMule::Usenet)
+    set_tests_properties(tst_Ed3kArchiveContents PROPERTIES TIMEOUT 300)
     emule_add_test(tst_Ed3kSearch FOLDER "Ed3k" LIBRARIES eMule::Ed3k)
     set_tests_properties(tst_Ed3kSearch PROPERTIES TIMEOUT 180)
     # plain ed3k downloads (Ed3kDownloads) and their IPC (Ed3kDownloadsBridge): two nodes on loopback
@@ -852,12 +855,13 @@ emule_add_test(tst_Ed2kLinkImporter FOLDER "Ipc"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/TorrentLinks.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/HttpCacheLinkImporter.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/StatusBarNotifier.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp")
 target_include_directories(tst_Ed2kLinkImporter PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
-target_link_libraries(tst_Ed2kLinkImporter PRIVATE eMule::Ipc Qt6::Widgets)
+target_link_libraries(tst_Ed2kLinkImporter PRIVATE eMule::Core eMule::Ipc Qt6::Widgets)
 
 # Prev/Next walker behind the detail dialogs' arrow buttons. Depends on nothing but
 # Qt Widgets, so the real ViewNavigation.cpp compiles straight against the stub pch.
@@ -1299,6 +1303,18 @@ emule_add_test(tst_OptionsTree FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/OptionsTree.cpp")
 target_include_directories(tst_OptionsTree PRIVATE "${CMAKE_SOURCE_DIR}/src/gui")
 target_link_libraries(tst_OptionsTree PRIVATE Qt6::Widgets)
+
+# Category tabs: a drag reorder goes to the core once; downloads dropped on a tab.
+emule_add_test(tst_CategoryTabBar FOLDER "Gui"
+    SOURCES tst_CategoryTabBar.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/CategoryTabBar.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp")
+target_include_directories(tst_CategoryTabBar PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_CategoryTabBar PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
 
 emule_add_test(tst_CategoryDialog FOLDER "Gui"
     SOURCES tst_CategoryDialog.cpp

@@ -3,11 +3,15 @@
 /// @brief Unified archive reader using libarchive.
 
 #include "archive/ArchiveReader.h"
+#include "archive/ArchiveContentsHook.h"
 #include "utils/Log.h"
 
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+
+#include <algorithm>
+#include <cstdio>
 
 #include <archive.h>
 #include <archive_entry.h>
@@ -37,6 +41,7 @@ struct LiveClient {
     QFile file;
     int index = -1;
     QByteArray buffer;
+    ArchiveContentsTap* tap = nullptr;   ///< fed volume bytes as they pass
 };
 
 /// How much a member may grow between progress reports.
@@ -73,8 +78,13 @@ la_ssize_t liveRead(struct archive* a, void* clientData, const void** buffer)
             const qint64 got = c->file.read(c->buffer.data(), c->buffer.size());
             if (got < 0)
                 return -1;
-            if (got > 0)
+            if (got > 0) {
+                if (c->tap && c->index < c->tap->volumesWanted())
+                    c->tap->volumeData(c->index, c->buffer.constData(), got);
                 return la_ssize_t(got);
+            }
+            if (c->tap && c->index < c->tap->volumesWanted())
+                c->tap->volumeEnd(c->index);
             c->file.close();   // this volume is spent; roll to the next
         }
         if (!liveOpenNextVolume(c))
@@ -86,6 +96,148 @@ int liveClose(struct archive* a, void* clientData)
 {
     Q_UNUSED(a);
     static_cast<LiveClient*>(clientData)->file.close();
+    return ARCHIVE_OK;
+}
+
+// ---------------------------------------------------------------------------
+// Tapped volume set: one stream over complete volumes (read/seek/skip) that feeds a
+// contents tap each volume's bytes in order, once. A seek back is not fed again; a seek
+// ahead leaves a gap the drain fills from disk afterwards (7z and zip read their
+// directory at the end first: only that tail is read twice).
+// ---------------------------------------------------------------------------
+
+struct TapClient {
+    QStringList volumes;
+    std::vector<qint64> starts;   ///< virtual offset of each volume
+    std::vector<qint64> sizes;
+    std::vector<qint64> fed;      ///< bytes of each volume fed so far
+    std::vector<bool> ended;
+    qint64 total = 0;
+    qint64 pos = 0;
+    int current = -1;
+    QFile file;
+    QByteArray buffer;
+    ArchiveContentsTap* tap = nullptr;
+    int wanted = 0;
+};
+
+[[nodiscard]] bool tapClientInit(TapClient& c, const QStringList& volumes, ArchiveContentsTap* tap)
+{
+    c.volumes = volumes;
+    c.tap = tap;
+    c.wanted = tap ? std::min(int(volumes.size()), tap->volumesWanted()) : 0;
+    for (const QString& v : volumes) {
+        const QFileInfo fi(v);
+        if (!fi.isFile())
+            return false;
+        c.starts.push_back(c.total);
+        c.sizes.push_back(fi.size());
+        c.total += fi.size();
+    }
+    c.fed.assign(volumes.size(), 0);
+    c.ended.assign(volumes.size(), false);
+    c.buffer.resize(qsizetype(64 * 1024));
+    return true;
+}
+
+void tapFeed(TapClient& c, int v, qint64 offset, const char* data, qint64 len)
+{
+    if (!c.tap || v >= c.wanted || c.ended[size_t(v)])
+        return;
+    qint64& fed = c.fed[size_t(v)];
+    if (offset > fed || offset + len <= fed)
+        return;   // a gap (filled by the drain) or bytes fed already
+    const qint64 skip = fed - offset;
+    c.tap->volumeData(v, data + skip, len - skip);
+    fed += len - skip;
+    if (fed == c.sizes[size_t(v)]) {
+        c.ended[size_t(v)] = true;
+        c.tap->volumeEnd(v);
+    }
+}
+
+/// The rest of each wanted volume, from where the read stopped feeding it.
+bool tapDrain(TapClient& c, const std::atomic<bool>* cancel)
+{
+    for (int v = 0; v < c.wanted; ++v) {
+        if (c.ended[size_t(v)])
+            continue;
+        if (c.fed[size_t(v)] == c.sizes[size_t(v)]) {   // empty
+            c.ended[size_t(v)] = true;
+            c.tap->volumeEnd(v);
+            continue;
+        }
+        QFile f(c.volumes.at(v));
+        if (!f.open(QIODevice::ReadOnly) || !f.seek(c.fed[size_t(v)]))
+            return false;
+        while (!c.ended[size_t(v)]) {
+            if (cancel && cancel->load())
+                return false;
+            const qint64 at = f.pos();
+            const qint64 got = f.read(c.buffer.data(), c.buffer.size());
+            if (got <= 0)
+                return false;   // shorter than its size: changed under us
+            tapFeed(c, v, at, c.buffer.constData(), got);
+        }
+    }
+    return true;
+}
+
+la_ssize_t tapRead(struct archive*, void* clientData, const void** buffer)
+{
+    auto* c = static_cast<TapClient*>(clientData);
+    *buffer = c->buffer.constData();
+    if (c->pos < c->total) {
+        const auto it = std::upper_bound(c->starts.begin(), c->starts.end(), c->pos);
+        const int v = int(it - c->starts.begin()) - 1;
+        const qint64 offset = c->pos - c->starts[size_t(v)];
+        if (offset >= c->sizes[size_t(v)])
+            return -1;   // cannot happen: the last volume starting at or before pos holds it
+        if (c->current != v) {
+            c->file.close();
+            c->file.setFileName(c->volumes.at(v));
+            if (!c->file.open(QIODevice::ReadOnly))
+                return -1;
+            c->current = v;
+        }
+        if (c->file.pos() != offset && !c->file.seek(offset))
+            return -1;
+        const qint64 want = std::min<qint64>(c->buffer.size(), c->sizes[size_t(v)] - offset);
+        const qint64 got = c->file.read(c->buffer.data(), want);
+        if (got <= 0)
+            return -1;
+        tapFeed(*c, v, offset, c->buffer.constData(), got);
+        c->pos += got;
+        return la_ssize_t(got);
+    }
+    return 0;
+}
+
+la_int64_t tapSeek(struct archive*, void* clientData, la_int64_t offset, int whence)
+{
+    auto* c = static_cast<TapClient*>(clientData);
+    qint64 to = offset;
+    if (whence == SEEK_CUR)
+        to = c->pos + offset;
+    else if (whence == SEEK_END)
+        to = c->total + offset;
+    if (to < 0)
+        return ARCHIVE_FATAL;
+    c->pos = std::min(to, c->total);
+    return c->pos;
+}
+
+la_int64_t tapSkip(struct archive*, void* clientData, la_int64_t request)
+{
+    auto* c = static_cast<TapClient*>(clientData);
+    const qint64 step = std::min<qint64>(request, c->total - c->pos);
+    c->pos += step;
+    return step;
+}
+
+int tapClose(struct archive*, void* clientData)
+{
+    static_cast<TapClient*>(clientData)->file.close();
     return ARCHIVE_OK;
 }
 
@@ -122,6 +274,9 @@ struct ArchiveReader::Impl {
     QStringList extracted;        ///< what the last extractAll*() wrote
     ProgressSink sink;            ///< optional; see setProgressSink()
     std::unique_ptr<LiveClient> live;
+    std::unique_ptr<TapClient> tapped;   ///< the stream of a tapped read
+    ArchiveContentsTap* tap = nullptr;
+    bool tapping = false;                ///< this open feeds the tap (not the scan)
     QStringList volumes;          ///< every volume, in order; [0] is what messages name
     ArchiveVolumeSource* source = nullptr;   ///< set instead of `volumes` for a live set
     QString filePath;
@@ -201,6 +356,7 @@ void ArchiveReader::close()
     m_impl->entries.clear();
     m_impl->extracted.clear();
     m_impl->live.reset();
+    m_impl->tapped.reset();
     m_impl->volumes.clear();
     m_impl->source = nullptr;
     m_impl->filePath.clear();
@@ -472,12 +628,18 @@ bool ArchiveReader::extractAll(const QString& destDir)
     if (!m_impl->opened)
         return false;
 
+    m_impl->tapping = m_impl->tap != nullptr;
     auto* ar = openArchive("reopen for extraction");
-    if (!ar)
+    m_impl->tapping = false;
+    if (!ar) {
+        if (m_impl->tap)
+            m_impl->tap->spoil();
         return false;
+    }
 
     const bool ok = extractAllInto(ar, destDir);
     archive_read_free(ar);
+    finishTap(ok);
     return ok;
 }
 
@@ -486,7 +648,9 @@ bool ArchiveReader::extractAllFrom(ArchiveVolumeSource& source, const QString& d
     close();
     m_impl->source = &source;
 
+    m_impl->tapping = m_impl->tap != nullptr;
     auto* ar = openArchive("open live volume set");
+    m_impl->tapping = false;
     if (!ar) {
         m_impl->source = nullptr;
         m_impl->live.reset();
@@ -503,6 +667,14 @@ bool ArchiveReader::extractAllFrom(ArchiveVolumeSource& source, const QString& d
     if (const char* fmt = archive_format_name(ar))
         m_impl->formatName = QString::fromUtf8(fmt);
 
+    // the rest of the volume the read stopped in (bytes past the end marker)
+    if (LiveClient* c = m_impl->live.get(); ok && c->tap && c->file.isOpen() && c->index < c->tap->volumesWanted()) {
+        for (qint64 got = 0; (got = c->file.read(c->buffer.data(), c->buffer.size())) > 0;)
+            c->tap->volumeData(c->index, c->buffer.constData(), got);
+        c->tap->volumeEnd(c->index);
+    }
+    if (!ok && m_impl->tap)
+        m_impl->tap->spoil();
     archive_read_free(ar);   // runs liveClose(), which closes the volume
     m_impl->source = nullptr;
     m_impl->live.reset();
@@ -522,13 +694,67 @@ QString ArchiveReader::normalizedEntryPath(const QString& entryName)
     return p;
 }
 
+void ArchiveReader::setContentsTap(ArchiveContentsTap* tap)
+{
+    m_impl->tap = tap;
+}
+
+void ArchiveReader::setVolumes(const QStringList& volumes)
+{
+    close();
+    m_impl->volumes = volumes;
+    m_impl->filePath = volumes.value(0);
+    m_impl->opened = !volumes.isEmpty();
+}
+
+bool ArchiveReader::tapVolumes(const QStringList& volumes, ArchiveContentsTap& tap, const std::atomic<bool>* cancel)
+{
+    TapClient c;
+    return tapClientInit(c, volumes, &tap) && tapDrain(c, cancel);
+}
+
+QString ArchiveReader::openingPassphrase(const QStringList& volumes, const QStringList& candidates)
+{
+    for (const QString& pw : candidates) {
+        if (pw.isEmpty())
+            continue;
+        ArchiveReader r;
+        r.setPassphrase(pw);
+        r.setVolumes(volumes);
+        auto* ar = r.openArchive("probe passphrase");
+        if (!ar)
+            continue;
+        bool opens = false;
+        struct archive_entry* entry = nullptr;
+        while (archive_read_next_header(ar, &entry) == ARCHIVE_OK) {
+            if (!archive_entry_is_encrypted(entry) || archive_entry_filetype(entry) != AE_IFREG) {
+                archive_read_data_skip(ar);
+                continue;
+            }
+            char buf[4096];
+            opens = archive_read_data(ar, buf, sizeof buf) >= 0;
+            break;
+        }
+        archive_read_free(ar);
+        if (opens)
+            return pw;
+    }
+    return {};
+}
+
 bool ArchiveReader::readEntries(const DataSink& sink)
 {
-    if (!m_impl->opened || !sink)
+    if (!m_impl->opened || (!sink && !m_impl->tap))
         return false;
+    m_impl->tapping = m_impl->tap != nullptr;
     auto* ar = openArchive("reopen for reading");
-    if (!ar)
+    m_impl->tapping = false;
+    if (!ar) {
+        if (m_impl->tap)
+            m_impl->tap->spoil();
         return false;
+    }
+    ArchiveContentsTap* tap = m_impl->tap;
     static constexpr int kBufSize = 65536;
     std::vector<char> buf(kBufSize);
     struct archive_entry* entry = nullptr;
@@ -547,6 +773,8 @@ bool ArchiveReader::readEntries(const DataSink& sink)
         if (!pathname)
             pathname = archive_entry_pathname(entry);
         const QString path = normalizedEntryPath(QString::fromUtf8(pathname ? pathname : ""));
+        if (tap)
+            tap->entryBegin(path);
         for (;;) {
             const auto n = archive_read_data(ar, buf.data(), buf.size());
             if (n < 0) {
@@ -556,12 +784,16 @@ bool ArchiveReader::readEntries(const DataSink& sink)
             }
             if (n == 0)
                 break;
-            if (!sink(entryIndex, path, buf.data(), qint64(n), false)) {
+            if (tap)
+                tap->entryData(buf.data(), qint64(n));
+            if (sink && !sink(entryIndex, path, buf.data(), qint64(n), false)) {
                 ok = false;
                 break;
             }
         }
-        if (ok && !sink(entryIndex, path, nullptr, 0, true))
+        if (tap && ok)
+            tap->entryEnd();
+        if (ok && sink && !sink(entryIndex, path, nullptr, 0, true))
             ok = false;
     }
     if (ok && status != ARCHIVE_EOF) {
@@ -571,7 +803,20 @@ bool ArchiveReader::readEntries(const DataSink& sink)
     if (const char* fmt = archive_format_name(ar))
         m_impl->formatName = QString::fromUtf8(fmt);
     archive_read_free(ar);
+    finishTap(ok);
     return ok;
+}
+
+void ArchiveReader::finishTap(bool ok)
+{
+    if (!m_impl->tap)
+        return;
+    if (!ok)
+        m_impl->tap->spoil();
+    // the volumes still go to the tap complete: a verify hashes them either way
+    if (m_impl->tapped && !tapDrain(*m_impl->tapped, nullptr))
+        m_impl->tap->spoil();
+    m_impl->tapped.reset();
 }
 
 // ---------------------------------------------------------------------------
@@ -600,10 +845,24 @@ bool ArchiveReader::readEntries(const DataSink& sink)
     if (m_impl->source) {
         m_impl->live = std::make_unique<LiveClient>();
         m_impl->live->source = m_impl->source;
+        m_impl->live->tap = m_impl->tapping ? m_impl->tap : nullptr;
         m_impl->live->buffer.resize(qsizetype(kBlockSize));
         archive_read_set_read_callback(ar, liveRead);
         archive_read_set_close_callback(ar, liveClose);
         archive_read_set_callback_data(ar, m_impl->live.get());
+        result = archive_read_open1(ar);
+    } else if (m_impl->tapping && m_impl->tap) {
+        m_impl->tapped = std::make_unique<TapClient>();
+        if (!tapClientInit(*m_impl->tapped, m_impl->volumes, m_impl->tap)) {
+            m_impl->lastError = QStringLiteral("a volume is missing");
+            archive_read_free(ar);
+            return nullptr;
+        }
+        archive_read_set_read_callback(ar, tapRead);
+        archive_read_set_seek_callback(ar, tapSeek);
+        archive_read_set_skip_callback(ar, tapSkip);
+        archive_read_set_close_callback(ar, tapClose);
+        archive_read_set_callback_data(ar, m_impl->tapped.get());
         result = archive_read_open1(ar);
     } else {
         std::vector<QByteArray> utf8;
@@ -766,6 +1025,8 @@ bool ArchiveReader::extractAllInto(::archive* ar, const QString& destDir)
             logWarning(QStringLiteral("ArchiveReader: refusing unsafe member '%1' in '%2'")
                            .arg(rawName, m_impl->filePath));
             m_impl->rejected.append(rawName);
+            if (m_impl->tap && archive_entry_filetype(entry) == AE_IFREG)
+                m_impl->tap->spoil();   // the manifest cannot hold it either
             archive_read_data_skip(ar);
             continue;
         }
@@ -774,9 +1035,32 @@ bool ArchiveReader::extractAllInto(::archive* ar, const QString& destDir)
             QDir().mkpath(destPath);
             continue;
         }
+        const bool regular = archive_entry_filetype(entry) == AE_IFREG;
+        ArchiveContentsTap* tap = regular ? m_impl->tap : nullptr;
+        if (tap)
+            tap->entryBegin(normalizedEntryPath(rawName));
+        // only the tap reads it: the same pass hashes what is not written
+        const auto tapOnly = [&] {
+            for (;;) {
+                const auto n = archive_read_data(ar, buf, kBufSize);
+                if (n < 0) {
+                    noteReadFailure(ar, int(n));
+                    tap->spoil();
+                    return false;
+                }
+                if (n == 0)
+                    break;
+                tap->entryData(buf, qint64(n));
+            }
+            tap->entryEnd();
+            return true;
+        };
         // not chosen (hoster.md §6.1: extract only the checked entries)
         if (m_impl->filter && !m_impl->filter(normalizedEntryPath(rawName))) {
-            archive_read_data_skip(ar);
+            if (!tap)
+                archive_read_data_skip(ar);
+            else if (!tapOnly())
+                allOk = false;
             continue;
         }
 
@@ -786,6 +1070,8 @@ bool ArchiveReader::extractAllInto(::archive* ar, const QString& destDir)
         if (!outFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
             logWarning(QStringLiteral("ArchiveReader: cannot write '%1'").arg(destPath));
             allOk = false;
+            if (tap)
+                tap->spoil();
             archive_read_data_skip(ar);
             continue;
         }
@@ -826,6 +1112,8 @@ bool ArchiveReader::extractAllInto(::archive* ar, const QString& destDir)
             }
             if (readSize == 0)
                 break;
+            if (tap)
+                tap->entryData(buf, qint64(readSize));
             const auto put = outFile.write(buf, readSize);
             if (put != readSize) {
                 allOk = false;
@@ -839,6 +1127,12 @@ bool ArchiveReader::extractAllInto(::archive* ar, const QString& destDir)
                 report();
         }
         outFile.close();
+        if (tap) {
+            if (allOk)
+                tap->entryEnd();
+            else
+                tap->spoil();
+        }
         // After close(), so "finished" really means the file is complete — and
         // extractedFiles() lists it from here on, which is what lets a cancelled
         // run delete a half-written member.

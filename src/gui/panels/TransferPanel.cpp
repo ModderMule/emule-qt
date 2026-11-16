@@ -67,6 +67,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMimeData>
 #include <QMessageBox>
 #include <QProcess>
 #include <QScrollBar>
@@ -684,18 +685,23 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         act->setEnabled(hasSel);
     }
     {
-        auto* pasteAct = m_downloadMenu->addAction(menuIcon("eD2kLinkPaste.ico"), tr("Paste eD2K Links"));
+        // one entry for both networks: each link goes to its own handler
+        auto* pasteAct = m_downloadMenu->addAction(menuIcon("eD2kLinkPaste.ico"), pasteLinksText());
         const QString clipText = QApplication::clipboard()->text().trimmed();
         // Everything importLinks() below can act on, which includes HTTP Cache
         // configuration links — those start no download, but pasting one here is a
         // legitimate way to apply it, and greying the entry hid that entirely.
-        const bool hasImportableLink =
-            Ed2kLinkImporter::linkKindsIn(clipText)
-            & (Ed2kLinkImporter::LinkKind::File | Ed2kLinkImporter::LinkKind::HttpCache
-               | Ed2kLinkImporter::LinkKind::Other | Ed2kLinkImporter::LinkKind::Ed3k);
+        Ed2kLinkImporter::LinkKinds kinds;
+        if (!thePrefs.disableEd2k())
+            kinds |= Ed2kLinkImporter::LinkKind::File | Ed2kLinkImporter::LinkKind::HttpCache
+                   | Ed2kLinkImporter::LinkKind::Other;
+        if (thePrefs.ed3kEnabled())
+            kinds |= Ed2kLinkImporter::LinkKind::Ed3k;
+        const bool hasImportableLink = Ed2kLinkImporter::linkKindsIn(clipText) & kinds;
         pasteAct->setEnabled(hasImportableLink && m_ipc && m_ipc->isConnected());
         connect(pasteAct, &QAction::triggered, this, &TransferPanel::pasteDownloadLinks);
     }
+    // was: a separate "Paste ed3k Links" (Ed3kLinkMenu::addPasteAction), now in the entry above
     // their ed3k:file counterparts (no MFC original): eD2K rows by their root once hashed
     {
         QList<Ed3kLinkMenu::File> files;
@@ -775,7 +781,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
                                         tr("Delete"), tr("Details..."),
                                         tr("Open File"), tr("Preview"), tr("Preview with"), tr("Clear Completed"),
                                         tr("Assign To Category"),
-                                        tr("Paste eD2K Links"), tr("Find..."), tr("Show Toolbar"),
+                                        pasteLinksText(), tr("Find..."), tr("Show Toolbar"),
                                         MoveDownloadsAction::menuText(), Ed3kLinkMenu::copyText(),
                                         Ed3kLinkMenu::showText()};
         for (QAction* act : m_downloadMenu->actions())
@@ -914,6 +920,8 @@ QWidget* TransferPanel::createDownloadsSection()
         static_cast<CategoryFilterProxy*>(m_categoryProxy)->setCategoryFilter(cat);
         updateStatusFilterCounts();   // counts are per tab
     });
+    connect(m_categoryTabBar, &CategoryTabBar::downloadsDropped, this,
+            [this](int category, const QStringList& hashes) { sendSetCategoryBatch(hashes, category); });
     connect(m_categoryTabBar, &CategoryTabBar::categoriesReloaded, this, [this] {
         m_downloadModel->setCategoryNames(m_categoryTabBar->categoryNames());
         static_cast<CategoryFilterProxy*>(m_categoryProxy)
@@ -962,6 +970,17 @@ QWidget* TransferPanel::createDownloadsSection()
     m_downloadView->setUniformRowHeights(true);
     m_downloadView->setContextMenuPolicy(Qt::CustomContextMenu);
     m_downloadView->setExpandsOnDoubleClick(false); // we handle double-click ourselves
+    // Drag the selection onto a category tab (MFC CTransferWnd::OnLvnBegindrag)
+    m_downloadView->setDragEnabled(true);
+    m_downloadView->setDragDropMode(QAbstractItemView::DragOnly);
+    downloadView->setDragPayload([this]() -> QMimeData* {
+        const QStringList hashes = saveDownloadSelectionMulti();
+        if (hashes.isEmpty())
+            return nullptr;
+        auto* mime = new QMimeData;
+        mime->setData(QLatin1String(CategoryTabBar::kDownloadsMime), hashes.join(QLatin1Char('\n')).toUtf8());
+        return mime;
+    });
 
     m_downloadView->setItemDelegateForColumn(
         DownloadListModel::ColProgress,
@@ -3526,10 +3545,19 @@ void TransferPanel::pasteDownloadLinks()
     if (!m_ipc || !m_ipc->isConnected())
         return;
     // Manual: pasting is the confirmation, and a completed or cancelled file is left
-    // alone so it can be re-downloaded on purpose.
+    // alone so it can be re-downloaded on purpose. eD2K and ed3k links alike.
+    // into the shown category tab, MFC PasteClipboard(curTab) (DownloadListCtrl.cpp:1231)
     Ed2kLinkImporter::importLinks(QApplication::clipboard()->text().trimmed(), m_ipc, this,
                                   Ed2kLinkImporter::Source::Manual,
-                                  Ed2kLinkImporter::Prompt::Silent);
+                                  Ed2kLinkImporter::Prompt::Silent, {}, {},
+                                  m_categoryTabBar ? m_categoryTabBar->currentCategory() : 0);
+}
+
+QString TransferPanel::pasteLinksText()
+{
+    if (!thePrefs.ed3kEnabled())
+        return tr("Paste eD2K Links");
+    return thePrefs.disableEd2k() ? tr("Paste ed3k Links") : tr("Paste eD2K/ed3k Links");
 }
 
 void TransferPanel::moveDownloadsToFolder(QStringList hashes)

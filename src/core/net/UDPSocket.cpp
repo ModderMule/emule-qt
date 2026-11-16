@@ -256,7 +256,7 @@ void UDPSocket::onReadyRead()
             continue;
 
         QByteArray data = datagram.data();
-        if (data.size() < 2)
+        if (data.size() < 2 || thePrefs.disableEd2k())
             continue;
 
         // Endpoint-typed so an IPv6 server's reply is attributed to the right entry

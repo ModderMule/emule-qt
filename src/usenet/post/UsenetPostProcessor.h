@@ -25,6 +25,7 @@
 #include <QMetaType>
 #include <QObject>
 #include <QHash>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 
@@ -79,6 +80,9 @@ struct UsenetPostJob {
 
     /// The archivePasswords preference, tried after `password`.
     QStringList extraPasswords;
+
+    /// Archive entries to extract (hoster.md §6.1), as UsenetUnpacker::Options::onlyEntries.
+    QHash<QString, QSet<QString>> onlyEntries;
 
     /// Levels of archives inside archives to unpack. 0 = off.
     int nestedDepth = 0;

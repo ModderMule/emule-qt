@@ -245,6 +245,7 @@ private slots:
     void leavesNoScratchBehind();
     void persistedStateResumesInsteadOfRefetching();
     void moveItemTakesTheWorkFolderAndGoesOn();
+    void queuedItemChangesItsExtraction();
     void awkwardSidecarStringsSurviveTheRoundTrip();
     void anUnchangedSettingsSaveKeepsTheConnections();
     void connectionBudgetIsDividedNotReplicated();
@@ -500,6 +501,40 @@ void tst_UsenetQueue::persistedStateResumesInsteadOfRefetching()
     QVERIFY(!loaded.files.at(0).done.testBit(3));
     QCOMPARE(loaded.files.at(0).missingSegments, 1);
     QCOMPARE(loaded.doneSegmentCount(), 2);
+}
+
+// hoster.md §6.1: a queued item's chosen archive entries change until its unpack starts
+void tst_UsenetQueue::queuedItemChangesItsExtraction()
+{
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    QString id;
+    const QHash<QString, QStringList> kept{{QStringLiteral("a.part1.rar"), {QStringLiteral("x/movie.mkv")}}};
+    {
+        UsenetQueue queue;
+        queue.start();
+        QString error;
+        id = queue.addNzb(makeNzb(QStringLiteral("pick.bin"), 2), QStringLiteral("pick"), error);
+        QVERIFY2(!id.isEmpty(), qPrintable(error));
+        queue.pauseItem(id);
+        QVERIFY(queue.keptEntriesEditable(id));
+        QVERIFY(queue.setItemKeptEntries(id, kept));
+        QCOMPARE(queue.findItem(id)->keptEntries, kept);
+        QVERIFY(!queue.setItemKeptEntries(QStringLiteral("nope"), kept));
+        queue.stop();
+    }
+    // persisted
+    UsenetQueue again;
+    again.start();
+    QVERIFY(again.findItem(id));
+    QCOMPARE(again.findItem(id)->keptEntries, kept);
+    QVERIFY(again.setItemKeptEntries(id, {}));
+    QVERIFY(again.findItem(id)->keptEntries.isEmpty());
+    again.stop();
 }
 
 // #187: a queued job's work folder moves; its paths follow, it goes on, a restart keeps it

@@ -145,6 +145,10 @@ struct Ed3kHosterPrefs {
     bool solversEnabled = true;    ///< ed3kHosterSolversEnabled: puzzles go to the solver services below first
     /// ed3kHosterSolvers: captcha solver services (2captcha.com, ...); user empty for key-only ones
     QList<Ed3kHosterAccount> solvers;
+    /// ed3kHosterDebridEnabled: links of hosters without an own premium login go through the multi-hosters below
+    bool debridEnabled = true;
+    /// ed3kHosterDebrid: multi-hoster logins (real-debrid.com, ...); user empty when the password is an API key
+    QList<Ed3kHosterAccount> debrid;
     bool operator==(const Ed3kHosterPrefs&) const = default;
 };
 
@@ -1632,6 +1636,15 @@ public:
     [[nodiscard]] int ed3kKadStoreMiB() const;
     void setEd3kKadStoreMiB(int val);
     static constexpr int kMaxEd3kKadStoreMiB = 65536;
+    /// Recent ed3k room posts kept on disk (rooms/<room>.posts), shown again after a restart.
+    /// Default on (ed3k.roomHistoryStore).
+    [[nodiscard]] bool ed3kRoomHistoryStore() const;
+    void setEd3kRoomHistoryStore(bool val);
+    /// Posts kept per room, in memory and on disk. Default 5000 (ed3k.roomHistoryMax).
+    [[nodiscard]] int ed3kRoomHistoryMax() const;
+    void setEd3kRoomHistoryMax(int val);
+    static constexpr int kMinEd3kRoomHistoryMax = 100;
+    static constexpr int kMaxEd3kRoomHistoryMax = 100000;
     /// eD2K downloads also fetch from ed3k peers, dual peers over ed3k (Protocol.md §14.4)
     [[nodiscard]] bool ed3kJointDownloads() const;
     void setEd3kJointDownloads(bool val);
@@ -2121,6 +2134,10 @@ public:
 
     [[nodiscard]] bool networkED2K() const;
     void setNetworkED2K(bool val);
+    /// Hard off for eD2K: drops every eD2K TCP/UDP packet, no server/Kad/peer connects.
+    /// ed3k on a shared UDP port keeps working.
+    [[nodiscard]] bool disableEd2k() const;
+    void setDisableEd2k(bool val);
 
     // -- Chat / Messages ------------------------------------------------------
 

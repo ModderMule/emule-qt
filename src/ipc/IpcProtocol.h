@@ -32,6 +32,9 @@ enum class NotifierEvent : int {
     /// text: file name, field 2: networks ("eD2K/Kad"): an ed3k file of the anonymous key is
     /// also shared there, its address shows (ed3k hops.md §1 SHOULD warn)
     Ed3kAnonExposed  = 5,
+    /// text: file name: an ed3k download of a root or eD2K hash in decline.txt was added
+    /// paused (ed3k declined-records.md §2)
+    Ed3kDeclinedAdded = 6,
 };
 
 enum class IpcMsgType : int {
@@ -755,6 +758,11 @@ enum class IpcMsgType : int {
     /// [entries: [{root: hex, size, path}], folder: string, category: int] -> [ok, {added: int}].
     /// Archive entries downloaded by root from ed3k into incoming/<folder>/<path>.
     DownloadArchiveEntries  = 746,
+    /// [target: {usenetItem: id} | {hosterPackage: id, hosterItem: id}, entries: {firstVolumeName:
+    /// [path]}] -> [ok, true] or [false, error]. What a queued download extracts (hoster.md §6.1);
+    /// empty entries: everything. Refused once its unpack started. LookupArchiveContents of a
+    /// queued download answers kept: [path] per archive and editable: bool.
+    SetArchiveEntries       = 747,
 
     // -- eNode meta search (750-754) -------------------------------------------
     //
@@ -841,6 +849,7 @@ enum class IpcMsgType : int {
     ///                              hasError}],
     ///                  availabilityMap: bytes, options: {see SetTorrentOptions}}
     /// flags: Transmission's peer letters; nextAnnounce: seconds, -1 = none
+    /// ed3kPeers: [GetDownloadSources ed3k row + fileName] of a torrent joined with ed3k
     GetTorrentDetails       = 806,
     /// [id: string, priorities: [int 0..7, one per file]] -> bool
     SetTorrentFilePriorities = 807,
@@ -1032,6 +1041,12 @@ enum class IpcMsgType : int {
     /// [id] -> [ok, as GetKadIncomingGraph; ids are routing ids, `node` the node ID] — one
     /// request for the incoming search graph
     GetEd3kKadIncomingGraph = 1207,
+    /// [] -> [ok, {text (decline.txt), running, loaded: {roots, ed2k, keys, kinds, keywords},
+    /// invalid: [line], dropped}] — §10.3 declined records (declined-records.md); loaded: what
+    /// the running node uses, else the file parsed. Works with the node off.
+    GetEd3kDeclined         = 1208,
+    /// [text] -> [ok, as GetEd3kDeclined] — decline.txt written, the node reads it at once
+    SetEd3kDeclined         = 1209,
 
     // -- Link Grabber (1210-1219, hoster.md "Link Grabber"), Ed3kHosterBridge.cpp. A package:
     // {id, name, passwords: [string], source, added (ms)}; a link: {id, packageId, url, name, host,
@@ -1068,6 +1083,8 @@ enum class IpcMsgType : int {
     // GUI words it), reasonArg (technical, not localized), waitUntil (ms), verified, file, root,
     // packageId (0: none), package (its name)}
     /// [] -> [ok, {items: [item], status: {...GetEd3kStatus "hoster"...}}]
+    /// [true] -> [ok, {sources: {id: [GetDownloadSources ed3k row + fileName]}}]: the ed3k
+    /// sources of the items joined with ed3k
     GetHosterItems          = 1100,
     /// [text: string (links, one per line), files?: [[url, mirror…]], package?: string,
     ///  packageId?: int, passwords?: [string], entries?: {firstVolumeName: [path]}] -> [ok, {ids: [int]}];

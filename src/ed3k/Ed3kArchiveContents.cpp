@@ -5,12 +5,14 @@
 #include "Ed3kUsenetJoin.h"
 #include "nzb/NzbFile.h"
 #include "archive/ArchiveReader.h"
+#include "archive/ExternalUnpacker.h"
 #include "post/UsenetUnpacker.h"
 
 #include <QFileInfo>
 #include <QTimer>
 
 #include <algorithm>
+#include <array>
 #include <memory>
 
 namespace eMule::ed3k {
@@ -23,40 +25,35 @@ namespace {
 constexpr std::size_t kMaxEntries = 65536;
 /// alias.md §3: roots tried per name
 constexpr std::size_t kMaxCandidates = 3;
+/// found listings kept for the unpack check (§6.1)
+constexpr std::size_t kMaxFoundListings = 256;
 
 std::span<const std::uint8_t> bytesOf(const QByteArray& b)
 {
     return {reinterpret_cast<const std::uint8_t*>(b.constData()), std::size_t(b.size())};
 }
 
-/// One pass of @p reader into @p out; false: failed or cancelled.
-bool hashEntries(ArchiveReader& reader, std::vector<ArchiveEntry>& out, const std::atomic<bool>* cancel)
+std::span<const std::byte> spanOf(const char* data, qint64 len)
 {
-    out.clear();
-    std::unique_ptr<ffi::Hasher> hasher;
-    bool tooMany = false;
-    const bool ok = reader.readEntries([&](int, const QString& path, const char* data, qint64 len, bool end) {
-        if (cancel && cancel->load())
-            return false;
-        if (!hasher)
-            hasher = std::make_unique<ffi::Hasher>();
-        if (!end) {
-            return hasher->update(std::span<const std::byte>(reinterpret_cast<const std::byte*>(data), std::size_t(len)))
-                .has_value();
-        }
-        auto done = hasher->finish();
-        hasher.reset();
-        if (!done)
-            return false;
-        if (out.size() >= kMaxEntries) {
-            tooMany = true;
-            return false;
-        }
-        out.push_back({path, done->size, done->root});
-        return true;
-    });
-    return ok && !tooMany && !out.empty();
+    return {reinterpret_cast<const std::byte*>(data), std::size_t(len)};
 }
+
+/// Entries only: the volumes reached the tap already.
+class EntriesOnly : public ArchiveContentsTap {
+public:
+    explicit EntriesOnly(ArchiveContentsTap& tap) : m_tap(tap) {}
+    [[nodiscard]] int volumesWanted() const override { return 0; }
+    void volumeData(int, const char*, qint64) override {}
+    void volumeEnd(int) override {}
+    void entryBegin(const QString& path) override { m_tap.entryBegin(path); }
+    void entryData(const char* data, qint64 len) override { m_tap.entryData(data, len); }
+    void entryEnd() override { m_tap.entryEnd(); }
+    void spoil() override { m_tap.spoil(); }
+    void commit(const QString&, const QString&) override {}
+
+private:
+    ArchiveContentsTap& m_tap;
+};
 
 } // namespace
 
@@ -101,41 +98,98 @@ void Ed3kArchiveContents::setPublish(bool on)
     setHoldBack(!on);
 }
 
-std::optional<ArchiveListing> Ed3kArchiveContents::readArchive(const QStringList& volumes, const QStringList& passwords,
-                                                               const std::atomic<bool>* cancel)
+// ---------------------------------------------------------------------------
+// Ed3kContentsTap
+// ---------------------------------------------------------------------------
+
+Ed3kContentsTap::Ed3kContentsTap(Publish publish, int volumes)
+    : m_publish(std::move(publish))
+    , m_volumeCount(std::max(1, volumes))
 {
-    if (volumes.isEmpty())
+    m_volumeHashers.resize(std::size_t(m_volumeCount));
+    for (auto& h : m_volumeHashers)
+        h = std::make_unique<ffi::Hasher>();
+    m_volumes.resize(std::size_t(m_volumeCount));
+}
+
+void Ed3kContentsTap::volumeData(int index, const char* data, qint64 len)
+{
+    if (index < 0 || index >= m_volumeCount)
+        return;
+    auto& h = m_volumeHashers[std::size_t(index)];
+    if (h && !h->update(spanOf(data, len)))
+        h.reset();
+}
+
+void Ed3kContentsTap::volumeEnd(int index)
+{
+    if (index < 0 || index >= m_volumeCount)
+        return;
+    auto& h = m_volumeHashers[std::size_t(index)];
+    if (!h)
+        return;
+    auto done = h->finish();
+    h.reset();
+    if (!done)
+        return;
+    const auto bytes = done->hashes.bytes();
+    m_volumes[std::size_t(index)] = VolumeHash{done->root, done->size, ffi::Bytes(bytes.begin(), bytes.end())};
+}
+
+void Ed3kContentsTap::entryBegin(const QString& path)
+{
+    m_entryPath = path;
+    m_entry = m_spoiled ? nullptr : std::make_unique<ffi::Hasher>();
+}
+
+void Ed3kContentsTap::entryData(const char* data, qint64 len)
+{
+    if (m_entry && !m_entry->update(spanOf(data, len)))
+        spoil();
+}
+
+void Ed3kContentsTap::entryEnd()
+{
+    if (!m_entry)
+        return;
+    auto done = m_entry->finish();
+    m_entry.reset();
+    if (!done || m_entries.size() >= kMaxEntries) {
+        spoil();
+        return;
+    }
+    m_entries.push_back({m_entryPath, done->size, done->root});
+}
+
+void Ed3kContentsTap::spoil()
+{
+    m_spoiled = true;
+    m_entry.reset();
+}
+
+void Ed3kContentsTap::restartEntries()
+{
+    m_spoiled = false;
+    m_entry.reset();
+    m_entries.clear();
+}
+
+std::optional<VolumeHash> Ed3kContentsTap::volume(int index) const
+{
+    if (index < 0 || index >= m_volumeCount)
         return std::nullopt;
-    const auto first = hashNow(volumes.first());
-    if (!first || (cancel && cancel->load()))
+    return m_volumes[std::size_t(index)];
+}
+
+std::optional<ArchiveListing> Ed3kContentsTap::listing(const QString& firstVolumeName, const QString& password) const
+{
+    if (m_spoiled || m_entries.empty() || !m_volumes.front())
         return std::nullopt;
     ArchiveListing listing;
-    listing.first = first->root;
-    listing.firstName = QFileInfo(volumes.first()).fileName();
-
-    // without a password first; an encrypted set then once per password: the record names the one that opened it
-    QStringList tries{QString()};
-    for (const QString& pw : passwords)
-        if (!pw.isEmpty() && !tries.contains(pw))
-            tries << pw;
-    for (const QString& pw : std::as_const(tries)) {
-        ArchiveReader reader;
-        if (!pw.isEmpty())
-            reader.setPassphrase(pw);
-        if (!reader.open(volumes) || reader.encryptionBlocked())
-            return std::nullopt;   // libarchive cannot read it: no listing (external tools write files only)
-        if (hashEntries(reader, listing.entries, cancel)) {
-            listing.password = reader.hasEncryptedEntries() ? pw : QString();
-            break;
-        }
-        listing.entries.clear();
-        if (cancel && cancel->load())
-            return std::nullopt;
-        if (!reader.hasEncryptedEntries() || reader.encryptionBlocked())
-            return std::nullopt;
-    }
-    if (listing.entries.empty())
-        return std::nullopt;
+    listing.first = m_volumes.front()->root;
+    listing.firstName = firstVolumeName;
+    listing.password = password;
+    listing.entries = m_entries;
     // a path the canonical manifest refuses: nothing to publish (hoster.md §6.1)
     std::vector<ffi::ContentEntry> check;
     check.reserve(listing.entries.size());
@@ -146,8 +200,102 @@ std::optional<ArchiveListing> Ed3kArchiveContents::readArchive(const QStringList
     return listing;
 }
 
+void Ed3kContentsTap::commit(const QString& firstVolumeName, const QString& password)
+{
+    if (!m_publish)
+        return;
+    if (auto l = listing(firstVolumeName, password))
+        m_publish(std::move(*l));
+}
+
+// ---------------------------------------------------------------------------
+// Ed3kArchiveContents
+// ---------------------------------------------------------------------------
+
+std::optional<QString> Ed3kArchiveContents::readSet(const QStringList& volumes, const QStringList& passwords,
+                                                     const QString& externalTool, Ed3kContentsTap& tap,
+                                                     const std::atomic<bool>* cancel)
+{
+    if (volumes.isEmpty())
+        return std::nullopt;
+    QStringList tries;
+    for (const QString& pw : passwords)
+        if (!pw.isEmpty() && !tries.contains(pw))
+            tries << pw;
+
+    // headers only: libarchive or the tool
+    ArchiveReader probe;
+    probe.setPassphrases(tries);
+    const bool listed = probe.open(volumes);
+    const bool viaTool = !listed ? probe.encryptionBlocked()
+                                 : probe.hasEncryptedEntries() && !probe.formatName().contains(QLatin1String("ZIP"), Qt::CaseInsensitive);
+    bool volumesFed = false;
+    if (listed && !viaTool) {
+        ArchiveReader reader;
+        reader.setPassphrases(tries);
+        reader.setVolumes(volumes);
+        reader.setContentsTap(&tap);
+        const bool ok = reader.readEntries([cancel](int, const QString&, const char*, qint64, bool) { return !(cancel && cancel->load()); });
+        if (ok && !reader.encryptionBlocked())
+            return reader.hasEncryptedEntries() ? ArchiveReader::openingPassphrase(volumes, tries) : QString();
+        if (!reader.encryptionBlocked())
+            return std::nullopt;
+        volumesFed = true;   // drained by the reader: the tool adds entries only
+        tap.restartEntries();
+    } else if (!listed && !viaTool) {
+        (void)ArchiveReader::tapVolumes(volumes, tap, cancel);   // a verify still wants them
+        return std::nullopt;
+    }
+
+    ExternalUnpacker tool(externalTool);
+    QList<ExternalUnpacker::Member> scanned;
+    for (int i = 0; i < probe.entryCount(); ++i)
+        if (!probe.entryIsDir(i))
+            scanned.append({probe.entryName(i), qint64(probe.entrySize(i))});
+    EntriesOnly entriesOnly(tap);
+    ArchiveContentsTap& target = volumesFed ? static_cast<ArchiveContentsTap&>(entriesOnly) : tap;
+    bool fed = volumesFed;
+    if (tool.available()) {
+        for (const QString& pw : std::as_const(tries)) {
+            if (cancel && cancel->load())
+                break;
+            QString error;
+            const auto members = !scanned.isEmpty()                                     ? scanned
+                                 : tool.toolKind() == ExternalUnpacker::Kind::SevenZip ? tool.listMembers(volumes, pw, error)
+                                                                                       : QList<ExternalUnpacker::Member>{};
+            if (members.isEmpty())
+                continue;
+            // the volumes go to the tap once: later tries feed entries only
+            ArchiveContentsTap& t = fed ? static_cast<ArchiveContentsTap&>(entriesOnly) : target;
+            const auto r = tool.extractStreamed(volumes, {}, pw, members, {}, &t);
+            fed = true;
+            if (r.ok())
+                return pw;
+            tap.restartEntries();
+            if (r.outcome != ExternalUnpacker::Outcome::WrongPassword)
+                break;
+        }
+    }
+    tap.spoil();
+    if (!fed)
+        (void)ArchiveReader::tapVolumes(volumes, tap, cancel);
+    return std::nullopt;
+}
+
+std::optional<ArchiveListing> Ed3kArchiveContents::readArchive(const QStringList& volumes, const QStringList& passwords,
+                                                               const std::atomic<bool>* cancel, const QString& externalTool)
+{
+    Ed3kContentsTap tap;
+    const auto password = readSet(volumes, passwords, externalTool, tap, cancel);
+    if (!password || (cancel && cancel->load()))
+        return std::nullopt;
+    return tap.listing(QFileInfo(volumes.first()).fileName(), *password);
+}
+
 bool Ed3kArchiveContents::publishListing(const ArchiveListing& listing)
 {
+    // §6.1: what was read here is the truth; a listing found for it is checked first
+    (void)checkListing(listing);
     auto* e = m_session.engine();
     if (!m_started || !e || listing.entries.empty())
         return false;
@@ -189,6 +337,44 @@ bool Ed3kArchiveContents::publishListing(const ArchiveListing& listing)
     logInfo(QStringLiteral("contents of %1 published: %2 file(s)").arg(listing.firstName).arg(listing.entries.size()));
     pumpSession();
     return true;
+}
+
+std::optional<ffi::ContentsCheck> Ed3kArchiveContents::checkListing(const ArchiveListing& listing)
+{
+    const auto it = m_foundListings.find(listing.first);
+    if (it == m_foundListings.end())
+        return std::nullopt;
+    const FoundListing found = std::move(it->second);
+    m_foundListings.erase(it);
+    const auto check = compareListing(found.manifest, listing.entries);
+    if (!check) {
+        logDebug([&]() -> QString { return QStringLiteral("contents of %1 not checked: manifest unreadable").arg(listing.firstName); });
+        return std::nullopt;
+    }
+    if (check->matches()) {
+        logInfo(QStringLiteral("contents of %1 checked: as listed").arg(listing.firstName));
+        return check;
+    }
+    ++m_mismatchCount;
+    static constexpr std::array<const char*, 5> kWhat{"match", "manifest", "entry differs", "entry not listed", "member missing"};
+    const char* what = check->kind < kWhat.size() ? kWhat.at(check->kind) : "mismatch";
+    logWarning(QStringLiteral("contents of %1 false (%2, #%3): listing dropped, %4 publisher(s) ignored from now on")
+                   .arg(listing.firstName, QLatin1String(what)).arg(check->index).arg(found.publishers.size()));
+    // was: aliasSearchBlame(now, search, root): the b3 search ended long before the unpack
+    if (auto* e = m_session.engine(); e && !found.publishers.empty())
+        if (auto ok = e->aliasBan(m_session.now(), found.publishers); !ok)
+            logDebug([&]() -> QString { return QStringLiteral("ban of %1's publishers failed (error %2)").arg(listing.firstName, errorName(ok.error())); });
+    return check;
+}
+
+std::optional<ffi::ContentsCheck> Ed3kArchiveContents::compareListing(const QByteArray& manifest, const std::vector<ArchiveEntry>& entries)
+{
+    std::vector<ffi::ContentEntry> list;
+    list.reserve(entries.size());
+    for (const auto& en : entries)
+        list.push_back({en.path.toStdString(), en.size, en.root});
+    const auto check = ffi::contentsCheck(std::span(reinterpret_cast<const std::byte*>(manifest.constData()), std::size_t(manifest.size())), list);
+    return check ? std::optional(*check) : std::nullopt;
 }
 
 QList<int> Ed3kArchiveContents::firstVolumes(const QStringList& names)
@@ -356,9 +542,17 @@ void Ed3kArchiveContents::onBlobFetched(const QString& owner, int member, const 
         return;
     }
     f.manifest = root;
+    std::vector<ffi::PublisherKey> publishers;
     if (cand != cands.end()) {
         f.sites = cand->sites;
         f.password = cand->password;
+        publishers = cand->publishers;
+    }
+    // §6.1: kept for the check when this archive is unpacked here
+    if (f.first) {
+        if (m_foundListings.size() >= kMaxFoundListings && !m_foundListings.contains(*f.first))
+            m_foundListings.erase(m_foundListings.begin());
+        m_foundListings[*f.first] = FoundListing{f.name, data, std::move(publishers)};
     }
     f.entries.clear();
     for (const auto& e : m->files)
@@ -502,7 +696,8 @@ void Ed3kArchiveContents::onAliasFound(const ev::AliasFound& found)
         list.clear();
         for (const auto& c : cands)
             if (c.rel == ED3K_REL_SET)
-                list.push_back({c.root, c.size, c.sites, QString::fromStdString(c.password)});
+                // was: list.push_back({c.root, c.size, c.sites, QString::fromStdString(c.password)});
+                list.push_back({c.root, c.size, c.sites, QString::fromStdString(c.password), c.publishers});
         tryNextContents(l, s.volume);
         break;
     }

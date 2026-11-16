@@ -25,6 +25,8 @@
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
+
+#include "dialogs/ArchiveContentsDialog.h"
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QHBoxLayout>
@@ -381,6 +383,13 @@ void UsenetDetailsDialog::buildUi()
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, this);
     auto* folderBtn = buttons->addButton(tr("Open Folder"), QDialogButtonBox::ActionRole);
     connect(folderBtn, &QPushButton::clicked, this, &UsenetDetailsDialog::openFolder);
+    // what its archives hold, from ed3k (hoster.md §6.1)
+    auto* archiveBtn = buttons->addButton(tr("Archive Contents..."), QDialogButtonBox::ActionRole);
+    connect(archiveBtn, &QPushButton::clicked, this, [this] {
+        auto* dlg = new ArchiveContentsDialog(m_ipc, windowTitle(), QStringLiteral("nzb"),
+                                              QCborMap{{QStringLiteral("usenetItem"), m_itemId}}, windowTitle(), this);
+        dlg->show();
+    });
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     layout->addWidget(buttons);
 }

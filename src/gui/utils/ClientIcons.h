@@ -3,6 +3,7 @@
 /// @file ClientIcons.h
 /// @brief Client software icon (MFC GetDisplayImage) for every list showing peers.
 
+#include <QByteArray>
 #include <QCborMap>
 #include <QIcon>
 #include <QString>
@@ -36,6 +37,30 @@ enum class Ed3kJoin { None, Torrent, Usenet, Hoster };
 
 /// One other name of an ed3k root ("aliases" entry: network, name, id): "Torrent: <name> (btih:…)".
 [[nodiscard]] QString ed3kAliasText(const QCborMap& alias);
+
+/// An ed3k source of a torrent/usenet/hoster job (Ed3kUploadsBridge::jobSources row): a
+/// peer row in the Torrents, Usenet and Hoster tabs.
+struct Ed3kJobSource {
+    QString key;        ///< userHash: unique per row
+    QString name;       ///< nick, else the node ID's start
+    QString software;
+    QString address;    ///< "addr:port"; empty: not known (relayed, anonymous key)
+    QString fileName;   ///< the job's file it serves
+    QString state;      ///< "Downloading" / "OnQueue"
+    qint64 rate = 0;
+    qint64 received = 0;
+    int have = 0;       ///< its pieces of ours
+    int pieces = 0;
+    QByteArray parts;   ///< per 4 MiB piece, sourcePartMap codes (0 lacks, 1 both, 2 it has, 3 asked, 4 receiving)
+    bool anonymous = false;
+    Ed3kJoin join = Ed3kJoin::None;
+
+    [[nodiscard]] static Ed3kJobSource fromCbor(const QCborMap& m);
+    [[nodiscard]] QIcon icon() const { return ed3kClientIcon(anonymous, join); }
+    [[nodiscard]] QString addressText() const;   ///< address, else "(hidden)"
+    [[nodiscard]] QString stateText() const;     ///< "Downloading" / "On Queue"
+    [[nodiscard]] QString toolTip() const;       ///< network line, client, file
+};
 
 /// The I2P icon: I2P torrent peers, the Options > BitTorrent > I2P page.
 [[nodiscard]] QIcon i2pIcon();

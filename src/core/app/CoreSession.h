@@ -96,6 +96,9 @@ public:
     /// Move the listen sockets to the configured ports — only while no server, Kad
     /// or peer is connected. Call after a preference save.
     PortApplyResult applyListenPorts();
+    /// Follow the disableEd2k pref: on = drop server, Kad and every peer connection;
+    /// off = auto-connect as at start. Sockets stay bound (ed3k may share UDP).
+    void applyEd2kDisabled();
     /// Ports the sockets are bound to (0 = closed).
     [[nodiscard]] uint16 boundTcpPort() const;
     [[nodiscard]] uint16 boundUdpPort() const;
@@ -252,6 +255,8 @@ private:
     void syncListenAddresses();
     void reportBindFailure(int port);
     void publishListenPorts();
+    void syncEd2kPorts();
+    [[nodiscard]] static bool ed2kUdpWanted();
 
     BindAddress::Resolution m_appliedBind;   ///< what the open sockets were bound on
     QList<QHostAddress> m_appliedListen;     ///< listen addresses the sockets follow
@@ -261,6 +266,7 @@ private:
     bool m_resumeKad = false;    ///< restart Kad on resume
     bool m_connectHold = false;  ///< auto-connect deferred until releaseConnectHold()
     bool m_offlineResumeEd2k = false;   ///< reconnect eD2K when the internet is back
+    bool m_ed2kOffApplied = false;      ///< disableEd2k as last applied
 
     enum class LoadStage { IpFilter, Credits, KnownFiles, SharedFiles, PartFiles, Network, Done };
     LoadStage m_loadStage = LoadStage::Done;

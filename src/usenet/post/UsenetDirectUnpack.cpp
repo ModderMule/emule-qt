@@ -103,6 +103,9 @@ void UsenetDirectUnpack::run(const eMule::usenet::UsenetDirectUnpackJob& job)
         emit progress({job.itemId, job.setKey, m_entries});
     });
 
+    // the contents record rides on this read (hoster.md §6.1)
+    const auto tap = archiveContentsTap();
+    reader.setContentsTap(tap.get());
     const bool ok = reader.extractAllFrom(*this, job.destDir);
 
     // Read *after* the run, not before: run() is invoked queued and can reach
@@ -175,6 +178,9 @@ void UsenetDirectUnpack::run(const eMule::usenet::UsenetDirectUnpackJob& job)
     }
     result.extracted = reader.extractedFiles();
     result.ok = true;
+    result.contents = tap;
+    if (reader.hasEncryptedEntries())
+        result.contentsPassword = job.password;
 
     logUsenet(QStringLiteral("Usenet: unpacked \"%1\" while downloading (%2 file(s))")
                 .arg(job.setKey).arg(result.extracted.size()));

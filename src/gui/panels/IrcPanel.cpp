@@ -93,7 +93,15 @@ IrcPanel::IrcPanel(QWidget* parent)
     connectIrcSignals();
 }
 
-IrcPanel::~IrcPanel() = default;
+IrcPanel::~IrcPanel()
+{
+    // the client's dtor disconnects and emits disconnected(): not into a half-destroyed panel
+    if (m_irc) {
+        QObject::disconnect(m_irc, nullptr, this, nullptr);
+        delete m_irc;
+        m_irc = nullptr;
+    }
+}
 
 void IrcPanel::setCustomFont(const QFont& font)
 {

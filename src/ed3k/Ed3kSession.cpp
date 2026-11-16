@@ -903,15 +903,29 @@ void Ed3kSession::applyDeclined()
 {
     if (!m_engine)
         return;
-    const QByteArray keywords = m_decline.keywords.join(QLatin1Char('\n')).toUtf8();
-    const auto dropped = m_engine->kadDecline(m_decline.roots, std::string_view(keywords.constData(), std::size_t(keywords.size())));
+    // was: const QByteArray keywords = m_decline.keywords.join(QLatin1Char('\n')).toUtf8();
+    // was: const auto dropped = m_engine->kadDecline(m_decline.roots, std::string_view(keywords.constData(), std::size_t(keywords.size())));
+    // every list: roots, eD2K hashes, publisher keys, kinds, keywords
+    const auto dropped = m_engine->kadDeclineLists(m_decline.toFfi());
     if (!dropped) {
         logEd3kWarning(QStringLiteral("ed3k: decline list not set (error %1)").arg(errorName(dropped.error())));
         return;
     }
+    m_declineDropped = *dropped;
+    if (!m_decline.invalid.isEmpty())
+        logEd3kWarning(QStringLiteral("ed3k: %1 line(s) of %2 skipped: %3")
+                           .arg(m_decline.invalid.size()).arg(QString::fromLatin1(kDeclineFile), m_decline.invalid.join(QStringLiteral("; "))));
     if (!m_decline.isEmpty() || *dropped > 0)
-        logEd3k(QStringLiteral("ed3k: declining %1 root(s), %2 keyword(s); %3 held record(s) dropped")
-                    .arg(m_decline.roots.size()).arg(m_decline.keywords.size()).arg(*dropped));
+        logEd3k(QStringLiteral("ed3k: declining %1 root(s), %2 eD2K hash(es), %3 publisher key(s), %4 kind(s), %5 keyword(s); "
+                               "%6 held record(s) dropped")
+                    .arg(m_decline.roots.size()).arg(m_decline.ed2k.size()).arg(m_decline.keys.size())
+                    .arg(m_decline.kinds.size()).arg(m_decline.keywords.size()).arg(*dropped));
+}
+
+void Ed3kSession::reloadDeclineFile()
+{
+    if (m_engine)
+        loadDeclineFile(false);
 }
 
 void Ed3kSession::loadDeclineFile(bool force)
@@ -930,11 +944,12 @@ void Ed3kSession::loadDeclineFile(bool force)
         file = loadDeclineList(path);
     }
     // the dir changes with every state save: only a changed file goes to the engine
-    const auto same = [](const std::optional<DeclineList>& a, const std::optional<DeclineList>& b) {
-        return a.has_value() == b.has_value()
-               && (!a || (a->keywords == b->keywords && std::ranges::equal(a->roots, b->roots)));
-    };
-    if (!force && same(file, m_declineFile))
+    // was: const auto same = [](const std::optional<DeclineList>& a, const std::optional<DeclineList>& b) {
+    // was:     return a.has_value() == b.has_value()
+    // was:            && (!a || (a->keywords == b->keywords && std::ranges::equal(a->roots, b->roots)));
+    // was: };
+    // was: if (!force && same(file, m_declineFile))
+    if (!force && file == m_declineFile)
         return;
     m_declineFile = file;
     // no file: what setDeclined gave stays

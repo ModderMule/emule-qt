@@ -6,6 +6,7 @@
 #include "dialogs/MetaResultDetailDialog.h"
 
 #include "controls/AbstractListView.h"
+#include "controls/ArchiveContentsView.h"
 #include "controls/FileCheckButtons.h"
 #include "controls/PreviewImageView.h"
 #include "controls/PreviewNfoView.h"
@@ -15,6 +16,7 @@
 #include "utils/StringUtils.h"
 
 #include <QCborArray>
+#include <algorithm>
 #include <QDateTime>
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -129,6 +131,13 @@ MetaResultDetailDialog::MetaResultDetailDialog(const RowInfo& row, QWidget* pare
     m_nfo = new PreviewNfoView(m_tabs);
     m_tabs->addTab(m_nfo, tr("NFO"));
     m_tabs->setTabVisible(TabNfo, false);
+    // what the archives hold, from ed3k; looked up when first opened. A torrent has no
+    // extraction, so no "extract checked" there
+    m_archive = new ArchiveContentsView(m_tabs, !row.torrent);
+    m_tabs->addTab(m_archive, tr("Archive"));
+    m_tabs->setTabVisible(TabArchive, false);
+    connect(m_archive, &ArchiveContentsView::downloadArchiveRequested, this,
+            [this](const QHash<QString, QStringList>& entries, const QString& password) { download(entries, password); });
     connect(m_tabs, &QTabWidget::currentChanged, this, &MetaResultDetailDialog::onTabChanged);
     m_stack->addWidget(m_tabs);
     contentLayout()->addWidget(m_stack);
@@ -169,6 +178,32 @@ void MetaResultDetailDialog::setDetails(const QCborMap& details)
     const bool nzbImages = inspection.value(QStringLiteral("hasImages")).toBool();
     m_tabs->setTabVisible(TabImages, !m_previewToken.isEmpty() && (nzbImages || !m_coverUrl.isEmpty()));
     m_tabs->setTabVisible(TabNfo, !m_previewToken.isEmpty() && inspection.value(QStringLiteral("hasNfo")).toBool());
+    // Archive: an NZB with archive sets, a torrent with archive files
+    m_archiveRequest = {};
+    const QCborArray files = inspection.value(QStringLiteral("files")).toArray();
+    if (torrent) {
+        QCborArray names;
+        bool archives = false;
+        for (const QCborValue& v : files) {
+            const QCborMap f = v.toMap();
+            if (f.value(QStringLiteral("pad")).toBool())
+                continue;
+            const QString path = f.value(QStringLiteral("path")).toString();
+            names.append(path);
+            archives = archives || ArchiveContentsView::opensArchive(path);
+        }
+        if (archives)
+            m_archiveRequest = {QStringLiteral("torrent"),
+                                QCborMap{{QStringLiteral("btih"), inspection.value(QStringLiteral("infoHashV1"))},
+                                         {QStringLiteral("btmh"), inspection.value(QStringLiteral("infoHashV2"))},
+                                         {QStringLiteral("names"), names}}};
+    } else if (!m_previewToken.isEmpty()
+               && std::ranges::any_of(files, [](const QCborValue& v) {
+                      return !v.toMap().value(QStringLiteral("setKey")).toString().isEmpty();
+                  })) {
+        m_archiveRequest = {QStringLiteral("nzb"), QCborMap{{QStringLiteral("previewToken"), m_previewToken}}};
+    }
+    m_tabs->setTabVisible(TabArchive, !m_archiveRequest.first.isEmpty());
 
     m_stack->setCurrentWidget(m_tabs);
     m_download->setEnabled(true);
@@ -223,6 +258,10 @@ void MetaResultDetailDialog::setPreviewNfoError(const QString& error)
 
 void MetaResultDetailDialog::onTabChanged(int index)
 {
+    if (index == TabArchive) {
+        m_archive->ensureLookup();
+        return;
+    }
     if (m_previewToken.isEmpty() || (index != TabImages && index != TabNfo))
         return;
     bool& requested = index == TabImages ? m_imagesRequested : m_nfoRequested;
@@ -244,6 +283,11 @@ void MetaResultDetailDialog::onTabChanged(int index)
 
 void MetaResultDetailDialog::onDownload()
 {
+    download({}, {});
+}
+
+void MetaResultDetailDialog::download(const QHash<QString, QStringList>& entries, const QString& password)
+{
     QList<int> unchecked;
     QList<int> kept;
     bool none = false;
@@ -260,7 +304,7 @@ void MetaResultDetailDialog::onDownload()
         QMessageBox::warning(this, windowTitle(), tr("Keep at least one file of \"%1\".").arg(m_row.name));
         return;
     }
-    emit downloadRequested(unchecked, kept);
+    emit downloadRequested(unchecked, kept, entries, password);
     close();
 }
 

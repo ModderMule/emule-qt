@@ -7,6 +7,7 @@
 
 #include <QCborArray>
 #include <QCborMap>
+#include <QIcon>
 #include <QWidget>
 
 class QPushButton;
@@ -31,21 +32,27 @@ public:
         NewGeneration,  ///< moderator of a closed room
         EditInfo,       ///< owner
         ChangeNick,
+        Paste,          ///< join the room link on the clipboard; the link goes as @p room
     };
 
     explicit Ed3kRoomList(QWidget* parent = nullptr);
+
+    /// Menu/button icon of an action, shared with the room tab's nick menu.
+    [[nodiscard]] static QIcon actionIcon(Action action);
 
     /// The rows of GetEd3kRooms.
     void setRooms(const QCborArray& rooms);
     [[nodiscard]] const QCborArray& rooms() const { return m_rooms; }
 
 signals:
-    /// @p room hex; empty for Join and Create.
+    /// @p room hex; empty for Join and Create; the link for Paste.
     void actionRequested(Ed3kRoomList::Action action, const QString& room);
 
 private:
     void showMenu(const QPoint& pos);
     [[nodiscard]] QString selectedRoom() const;
+    /// The first ed3k:room? link on the clipboard, or empty.
+    [[nodiscard]] static QString clipboardRoomLink();
     /// Texts of one room row (GetEd3kRooms).
     void fillItem(QTreeWidgetItem* item, const QCborMap& r) const;
 

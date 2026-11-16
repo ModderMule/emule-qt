@@ -2,6 +2,7 @@
 
 #include "BandwidthCoordinator.h"
 #include "BtCreateBridge.h"
+#include "Ed3kUploadsBridge.h"
 #include "app/AppConfig.h"
 #include "app/AppContext.h"
 #include "geo/IP2Country.h"
@@ -267,6 +268,8 @@ QCborMap detailsToCbor(const QString& id)
     QCborMap out{
         {QStringLiteral("files"), files},
         {QStringLiteral("peers"), peers},
+        // joined with ed3k: its ed3k sources (Ed3kUploadsBridge::jobSources rows)
+        {QStringLiteral("ed3kPeers"), Ed3kUploadsBridge::jobSources(QStringLiteral("torrent"), id)},
         {QStringLiteral("trackers"), trackers},
         {QStringLiteral("availabilityMap"), s_session->availabilityMap(id)},
     };
@@ -389,8 +392,9 @@ std::optional<SingleTransfer::Job> transferJob([[maybe_unused]] const QString& i
     j.size = t->size;
     j.done = t->done;
     j.rate = t->paused ? 0 : t->rateDown;
-    j.sources = t->peers;
-    j.transferring = j.rate > 0 ? t->peers : 0;
+    // the rate is an average: it outlasts the last peer by a moment
+    j.sources = std::max(t->peers, j.rate > 0 ? 1 : 0);
+    j.transferring = j.rate > 0 ? j.sources : 0;
     j.path = t->name.isEmpty() ? t->savePath : QDir(t->savePath).filePath(t->name);
     j.addedOn = t->addedAt;
     j.error = t->error;

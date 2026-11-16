@@ -160,6 +160,7 @@ SOURCES += \
     dialogs/OptionsSearch.cpp \
     dialogs/Ed3kOptionsPages.cpp \
     dialogs/Ed3kFilterPage.cpp \
+    dialogs/Ed3kDeclineDialog.cpp \
     dialogs/Ed3kOwnSetDialog.cpp \
     dialogs/Ed3kSellDialogs.cpp \
     dialogs/Ed3kSellPage.cpp \
@@ -177,6 +178,7 @@ SOURCES += \
     utils/Ed3kLinkMenu.cpp \
     utils/FolderLister.cpp \
     utils/MetaResultActions.cpp \
+    utils/ArchiveContentsIpc.cpp \
     utils/TaskbarProgress.cpp \
     utils/TaskbarProgressMac.cpp \
     utils/TaskbarProgressUnity.cpp \
@@ -189,10 +191,12 @@ SOURCES += \
     utils/TorrentLinks.cpp \
     utils/ContainerDrop.cpp \
     dialogs/WebLinksDialog.cpp \
+    dialogs/ArchiveContentsDialog.cpp \
     dialogs/PeerPreviewDialog.cpp \
     dialogs/SearchDetailDialog.cpp \
     dialogs/MetaResultDetailDialog.cpp \
     controls/FileCheckButtons.cpp \
+    controls/ArchiveContentsView.cpp \
     controls/TorrentFileTree.cpp \
     dialogs/UsenetArchiveEntryDialog.cpp \
     dialogs/UsenetDetailsDialog.cpp \
@@ -302,6 +306,7 @@ HEADERS += \
     dialogs/OptionsSearch.h \
     dialogs/Ed3kOptionsPages.h \
     dialogs/Ed3kFilterPage.h \
+    dialogs/Ed3kDeclineDialog.h \
     dialogs/Ed3kOwnSetDialog.h \
     dialogs/Ed3kSellDialogs.h \
     dialogs/Ed3kSellPage.h \
@@ -320,6 +325,7 @@ HEADERS += \
     utils/Ed3kLinkMenu.h \
     utils/FolderLister.h \
     utils/MetaResultActions.h \
+    utils/ArchiveContentsIpc.h \
     utils/TaskbarProgress.h \
     utils/UrlPrefField.h \
     dialogs/PasteLinksDialog.h \
@@ -331,10 +337,12 @@ HEADERS += \
     utils/TorrentLinks.h \
     utils/ContainerDrop.h \
     dialogs/WebLinksDialog.h \
+    dialogs/ArchiveContentsDialog.h \
     dialogs/PeerPreviewDialog.h \
     dialogs/SearchDetailDialog.h \
     dialogs/MetaResultDetailDialog.h \
     controls/FileCheckButtons.h \
+    controls/ArchiveContentsView.h \
     controls/TorrentFileTree.h \
     dialogs/UsenetArchiveEntryDialog.h \
     dialogs/UsenetDetailsDialog.h \

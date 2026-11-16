@@ -4,6 +4,7 @@
 
 #include "archive/ExternalUnpacker.h"
 
+#include "archive/ArchiveContentsHook.h"
 #include "archive/ArchiveReader.h"
 #include "utils/Log.h"
 #include "utils/SafeRemove.h"
@@ -16,6 +17,8 @@
 #include <QProcess>
 #include <QStandardPaths>
 #include <QUuid>
+
+#include <thread>
 
 namespace eMule {
 
@@ -314,6 +317,170 @@ QList<ExternalUnpacker::Member> ExternalUnpacker::listMembers(const QStringList&
         }
     }
     return members;
+}
+
+ExternalUnpacker::Result ExternalUnpacker::extractStreamed(const QStringList& volumes, const QString& destDir,
+                                                           const QString& password, const QList<Member>& members,
+                                                           const std::function<bool(const QString&)>& wanted,
+                                                           ArchiveContentsTap* tap)
+{
+    Result result;
+    if (volumes.isEmpty() || members.isEmpty() || !available()) {
+        result.outcome = available() ? Outcome::Failed : Outcome::NoTool;
+        return result;
+    }
+    for (const QString& volume : volumes) {
+        if (!QFileInfo::exists(volume)) {
+            result.error = QObject::tr("%1 is missing").arg(QFileInfo(volume).fileName());
+            return result;
+        }
+    }
+
+    QStringList args;
+    if (m_kind == Kind::SevenZip)
+        args = {QStringLiteral("x"), QStringLiteral("-so"), QStringLiteral("-y"), QStringLiteral("-bd"), passwordArg(password),
+                volumes.first()};
+    else
+        args = {QStringLiteral("p"), QStringLiteral("-inul"), passwordArg(password), volumes.first()};
+    QStringList redacted = args;
+    redacted.replaceInStrings(passwordArg(password), QStringLiteral("-p<hidden>"));
+
+    // the first volume beside the tool: its bytes are read once from disk
+    std::atomic<bool> stopVolumes{false};
+    bool volumesOk = true;
+    std::thread volumeReader;
+    if (tap)
+        volumeReader = std::thread([&] { volumesOk = ArchiveReader::tapVolumes(volumes, *tap, &stopVolumes); });
+
+    // members in order, split by size
+    qsizetype index = -1;
+    qint64 remaining = 0;
+    bool overflow = false;
+    QFile out;
+    const auto endMember = [&] {
+        if (out.isOpen()) {
+            out.close();
+            result.extractedFiles.append(out.fileName());
+        }
+        if (tap)
+            tap->entryEnd();
+    };
+    const auto nextMember = [&] {
+        while (++index < members.size()) {
+            const Member& m = members.at(index);
+            const QString path = ArchiveReader::normalizedEntryPath(m.name);
+            if (tap)
+                tap->entryBegin(path);
+            remaining = m.size;
+            if (!destDir.isEmpty() && (!wanted || wanted(path))) {
+                const QString to = ArchiveReader::safeEntryPath(destDir, m.name);
+                if (to.isEmpty()) {
+                    result.rejectedEntries.append(m.name);
+                    if (tap)
+                        tap->spoil();
+                } else {
+                    QDir().mkpath(QFileInfo(to).absolutePath());
+                    out.setFileName(to);
+                    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate))
+                        overflow = true;   // cannot write: fail the run
+                }
+            }
+            if (remaining > 0)
+                return;
+            endMember();
+        }
+    };
+    const auto consume = [&](const QByteArray& chunk) {
+        const char* data = chunk.constData();
+        qint64 len = chunk.size();
+        while (len > 0) {
+            if (index >= members.size()) {
+                overflow = true;   // more than the listing said
+                return;
+            }
+            const qint64 take = std::min(len, remaining);
+            if (tap)
+                tap->entryData(data, take);
+            if (out.isOpen() && out.write(data, take) != take)
+                overflow = true;
+            data += take;
+            len -= take;
+            remaining -= take;
+            if (remaining == 0) {
+                endMember();
+                nextMember();
+            }
+        }
+    };
+
+    nextMember();
+    QProcess process;
+    process.setProgram(m_toolPath);
+    process.setArguments(args);
+    process.setProcessChannelMode(QProcess::SeparateChannels);
+    logDebug(QStringLiteral("ExternalUnpacker: %1 %2").arg(toolName(), redacted.join(QLatin1Char(' '))));
+    process.start();
+    int code = -1;
+    QByteArray tail;
+    if (process.waitForStarted(10'000)) {
+        QElapsedTimer clock;
+        clock.start();
+        for (;;) {
+            const bool done = process.waitForFinished(200);
+            consume(process.readAllStandardOutput());
+            tail += process.readAllStandardError();
+            if (tail.size() > 64 * 1024)
+                tail = tail.right(32 * 1024);
+            if (done || process.state() == QProcess::NotRunning || overflow)
+                break;
+            if (m_cancelled.load() || clock.elapsed() > m_timeoutMs) {
+                process.kill();
+                process.waitForFinished(2'000);
+                break;
+            }
+        }
+        if (process.state() != QProcess::NotRunning) {
+            process.kill();
+            process.waitForFinished(2'000);
+        }
+        consume(process.readAllStandardOutput());
+        tail += process.readAllStandardError();
+        code = process.exitStatus() == QProcess::NormalExit ? process.exitCode() : -1;
+    }
+    if (out.isOpen())
+        out.close();
+    // a failed run still lets the volumes finish: a verify wants them whole
+    stopVolumes = m_cancelled.load();
+    if (volumeReader.joinable())
+        volumeReader.join();
+
+    const bool complete = !overflow && index >= members.size();
+    if ((code == 0 || (m_kind == Kind::Unrar && code == 1)) && complete && !m_cancelled.load()) {
+        if (tap && !volumesOk)
+            tap->spoil();
+        result.outcome = Outcome::Ok;
+        result.extractedFiles.sort();
+        return result;
+    }
+    if (tap)
+        tap->spoil();
+    if (out.isOpen() || index < members.size())
+        result.extractedFiles.append(out.fileName());   // the half-written one
+    for (const QString& path : std::as_const(result.extractedFiles))
+        if (!path.isEmpty())
+            QFile::remove(path);
+    result.extractedFiles.clear();
+    if (saysWrongPassword(tail)) {
+        result.outcome = Outcome::WrongPassword;
+        result.error = QObject::tr("%1 could not be unpacked: wrong password").arg(QFileInfo(volumes.first()).fileName());
+        return result;
+    }
+    result.outcome = Outcome::Failed;
+    result.error = m_cancelled.load() ? QObject::tr("Cancelled")
+                                      : QObject::tr("%1 could not unpack %2 (exit %3)")
+                                            .arg(toolName(), QFileInfo(volumes.first()).fileName())
+                                            .arg(code);
+    return result;
 }
 
 qint64 ExternalUnpacker::streamMemberTo(const QStringList& volumes, const QString& member,

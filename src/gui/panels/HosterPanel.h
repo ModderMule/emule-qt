@@ -37,6 +37,7 @@ namespace eMule {
 class HosterPuzzleDialog;
 class IpcClient;
 class LinkGrabberPanel;
+class PanelPoller;
 class StatusFilterBar;
 
 namespace Ipc {
@@ -106,6 +107,10 @@ protected:
 
 private:
     void refresh();
+    /// GetHosterItems [true]: the ed3k sources of the items joined with ed3k, polled
+    void pollSources();
+    /// The ed3k sources of @p sources ({id: [row]}) as child rows of their items.
+    void applySources(const QCborMap& sources);
     void upsert(const QCborMap& item);
     void removeRow(qint64 id);
     void fillRow(QTreeWidgetItem* row, const QCborMap& item);
@@ -145,6 +150,7 @@ private:
     QLabel* m_statusLabel = nullptr;
     StatusFilterBar* m_filterBar = nullptr;
     int m_filter = 0;
+    PanelPoller* m_sourcePoller = nullptr;
     bool m_bulkFill = false;   ///< refresh() fills: counts once at the end
     QAction* m_addAction = nullptr;
     QList<QPointer<HosterPuzzleDialog>> m_puzzleDialogs;   ///< open ones, for "Skip hoster"

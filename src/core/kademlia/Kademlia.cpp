@@ -78,6 +78,10 @@ void Kademlia::start(KadPrefs* prefs)
         logKad(QStringLiteral("Kad: Already running"));
         return;
     }
+    if (thePrefs.disableEd2k()) {
+        logInfo(QStringLiteral("Kad not started: eD2K is disabled"));
+        return;
+    }
     if (!BindAddress::outboundAllowed()) {
         logWarning(QStringLiteral("Kad not started: %1").arg(BindAddress::current().reason));
         return;

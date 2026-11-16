@@ -44,6 +44,8 @@ namespace eMule::ops {
 
 namespace {
 
+const QString kEd2kDisabled = QStringLiteral("eD2K is disabled (Options > Extended)");
+
 [[nodiscard]] Status unavailable(const QString& what)
 {
     return Status::fail(503, QStringLiteral("%1 unavailable").arg(what));
@@ -514,6 +516,8 @@ Status connectToServer(Server* server)
 {
     if (!theApp.serverConnect)
         return unavailable(QStringLiteral("ServerConnect"));
+    if (thePrefs.disableEd2k())
+        return Status::fail(409, kEd2kDisabled);
     if (!BindAddress::outboundAllowed())
         return Status::fail(409, BindAddress::current().reason);
 
@@ -605,6 +609,8 @@ Status startKad(const QString& host, uint16 port)
     auto* kad = kad::Kademlia::instance();
     if (!kad)
         return unavailable(QStringLiteral("Kademlia"));
+    if (thePrefs.disableEd2k())
+        return Status::fail(409, kEd2kDisabled);
     if (!BindAddress::outboundAllowed())
         return Status::fail(409, BindAddress::current().reason);
     if (thePrefs.udpPort() == 0)

@@ -131,6 +131,8 @@ public slots:
     void onPortBindFailed(int port);
     /// An ed3k file of the anonymous key is shared on @p networks too: an urgent event.
     void onEd3kAnonExposed(const QString& name, const QString& networks);
+    /// A download of a declined root (decline.txt) was added paused: an urgent event.
+    void onEd3kDeclinedAdded(const QString& name);
 
 private:
     /// Full Kad state snapshot. Built at send time rather than at signal time, so a

@@ -6,6 +6,7 @@
 #include "Ed3kPlumbing.h"
 #include "Ed3kSession.h"
 
+#include "prefs/Preferences.h"
 #include "utils/Log.h"
 
 #include <QCborArray>
@@ -30,6 +31,8 @@ namespace {
 const QString kRoomsDir = QStringLiteral("rooms");
 const QString kJoinedFile = QStringLiteral("joined.cbor");   // links with s: owner-only
 const QString kAdmitPrefix = QStringLiteral("ed3k-admit:");
+const QString kPostsSuffix = QStringLiteral(".posts");   // stored posts: plain text, owner-only
+constexpr int kPostsWriteDelayMs = 5000;
 constexpr std::uint64_t kBanMax = 30ull * 24 * 3600;   // §2.3 (initial)
 
 QByteArray bytesOf(std::span<const std::uint8_t> b)
@@ -84,10 +87,19 @@ Ed3kRooms::Ed3kRooms(Ed3kSession& session, QObject* parent)
             rejoinSaved(ffi::KeyKind::Anon);
     });
     connect(&m_session.hide(), &Ed3kHide::stopped, this, &Ed3kRooms::hideStopped);
+    m_postsTimer = new QTimer(this);
+    m_postsTimer->setSingleShot(true);
+    m_postsTimer->setInterval(kPostsWriteDelayMs);
+    m_historyStored = historyStored();
+    m_historyMax = historyMax();
+    connect(m_postsTimer, &QTimer::timeout, this, &Ed3kRooms::writeDirtyPosts);
     onSessionStatus();
 }
 
-Ed3kRooms::~Ed3kRooms() = default;
+Ed3kRooms::~Ed3kRooms()
+{
+    writeDirtyPosts();
+}
 
 bool Ed3kRooms::isRunning() const
 {
@@ -217,6 +229,8 @@ ffi::Result<> Ed3kRooms::leave(const ffi::Room& room, bool dropRoomKey)
     }
     m_rooms.erase(room);
     m_saved.erase(room);
+    m_dirtyPosts.erase(room);
+    removePostsFile(room);
     save();
     logEd3k(keyDropped ? QStringLiteral("ed3k: room %1 left, room key deleted").arg(roomHex(room))
                        : QStringLiteral("ed3k: room %1 left").arg(roomHex(room)));
@@ -438,6 +452,38 @@ std::optional<std::pair<ffi::Room, QByteArray>> Ed3kRooms::parseAdmitText(const 
     return std::pair{ffi::Room{*r}, *item};
 }
 
+void Ed3kRooms::applyHistoryPrefs()
+{
+    const std::size_t max = historyMax();
+    const bool stored = historyStored();
+    if (stored == m_historyStored && max == m_historyMax)
+        return;
+    m_historyStored = stored;
+    m_historyMax = max;
+    for (auto& [room, r] : m_rooms) {
+        bool trimmed = false;
+        while (r.posts.size() > max) {
+            r.postIds.erase(r.posts.front().id);
+            r.posts.pop_front();
+            trimmed = true;
+        }
+        if (trimmed)
+            m_dirtyPosts.insert(room);
+    }
+    if (!historyStored()) {
+        // off: nothing stays on disk
+        m_dirtyPosts.clear();
+        m_postsTimer->stop();
+        for (const auto& [room, s] : m_saved)
+            removePostsFile(room);
+        return;
+    }
+    // on (again): every room written, the trimmed ones too
+    for (const auto& [room, r] : m_rooms)
+        m_dirtyPosts.insert(room);
+    writeDirtyPosts();
+}
+
 // ---------------------------------------------------------------------------
 // Private
 // ---------------------------------------------------------------------------
@@ -462,8 +508,10 @@ void Ed3kRooms::onEventPolled(const ffi::Event& ev, ffi::KeyKind key, bool* hand
         if (Room* r = roomOf(x->room)) {
             for (const auto& id : x->ids) {
                 std::erase_if(r->posts, [&](const Post& q) { return q.id == id; });
+                r->postIds.erase(id);
                 ids.append(bytesOf(id));
             }
+            postsChanged(x->room);
             emit postsRemoved(bytesOf(x->room.bytes), ids);
         }
     } else if (const auto* pr = std::get_if<e::RoomPresence>(&ev)) {
@@ -499,11 +547,14 @@ void Ed3kRooms::onEventPolled(const ffi::Event& ev, ffi::KeyKind key, bool* hand
             std::erase_if(r->posts, [&](const Post& q) {
                 if (q.author != b->member)
                     return false;
+                r->postIds.erase(q.id);
                 ids.append(bytesOf(q.id));
                 return true;
             });
-            if (!ids.isEmpty())
+            if (!ids.isEmpty()) {
+                postsChanged(b->room);
                 emit postsRemoved(bytesOf(b->room.bytes), ids);
+            }
             noticeOf(b->room, Notice::Banned, 0, false, bytesOf(b->member));
         }
     } else if (const auto* g = std::get_if<e::RoomGeneration>(&ev)) {
@@ -574,6 +625,7 @@ void Ed3kRooms::onSessionStatus()
         attach();
     else if (!m_session.isRunning() && m_attached) {
         m_attached = false;
+        writeDirtyPosts();
         m_rooms.clear();
         emit roomsChanged();
     }
@@ -741,8 +793,12 @@ ffi::Result<ffi::Room> Ed3kRooms::joinWith(const QString& link, const QString& n
 
 Ed3kRooms::Room& Ed3kRooms::track(const ffi::Room& room, const QString& link, const QString& nick, ffi::KeyKind key)
 {
-    Room& r = m_rooms[room];
+    const auto [it, added] = m_rooms.try_emplace(room);
+    Room& r = it->second;
     r.room = room;
+    // a restart: the posts of the last run before the network's history comes
+    if (added)
+        loadPosts(r);
     r.link = link;
     r.nick = nick;
     r.key = key;
@@ -760,6 +816,9 @@ void Ed3kRooms::onPost(const ffi::event::RoomPost& p)
     if (it == m_rooms.end())
         return;
     Room& r = it->second;
+    // the network's history repeats stored and shown posts (room.md §4.3: since 0 at start)
+    if (!r.postIds.insert(p.id).second)
+        return;
     Post post;
     post.id = p.id;
     post.author = p.author;
@@ -770,9 +829,119 @@ void Ed3kRooms::onPost(const ffi::event::RoomPost& p)
     post.text = fromStd(p.text);
     post.replyTo = p.replyTo;
     r.posts.push_back(std::move(post));
-    while (r.posts.size() > kHistory)
+    const std::size_t max = historyMax();
+    while (r.posts.size() > max) {
+        r.postIds.erase(r.posts.front().id);
         r.posts.pop_front();
+    }
+    postsChanged(p.room);
     emit postShown(bytesOf(p.room.bytes), bytesOf(p.id));
+}
+
+std::size_t Ed3kRooms::historyMax()
+{
+    return historyStored() ? std::size_t(std::max(thePrefs.ed3kRoomHistoryMax(), 1)) : kHistory;
+}
+
+bool Ed3kRooms::historyStored()
+{
+    return thePrefs.ed3kRoomHistoryStore();
+}
+
+void Ed3kRooms::loadPosts(Room& r) const
+{
+    if (!historyStored() || m_session.stateDir().isEmpty())
+        return;
+    QByteArray blob = readBlob(QDir(roomsDir()).filePath(postsFile(r.room)));
+    if (blob.isEmpty())
+        return;
+    const QCborArray list = QCborValue::fromCbor(blob).toArray();
+    wipe(blob);
+    const std::size_t max = historyMax();
+    const qsizetype from = std::max<qsizetype>(0, list.size() - qsizetype(max));
+    for (qsizetype i = from; i < list.size(); ++i) {
+        const QCborMap m = list.at(i).toMap();
+        const auto id = arrayFrom<16>(m.value(QStringLiteral("id")).toByteArray());
+        const auto author = arrayFrom<32>(m.value(QStringLiteral("author")).toByteArray());
+        const auto authorId = arrayFrom<16>(m.value(QStringLiteral("authorId")).toByteArray());
+        if (!id || !author || !authorId || !r.postIds.insert(*id).second)
+            continue;
+        Post post;
+        post.id = *id;
+        post.author = *author;
+        post.authorId = *authorId;
+        post.nick = m.value(QStringLiteral("nick")).toString();
+        post.moderator = m.value(QStringLiteral("moderator")).toBool();
+        post.sent = std::uint64_t(m.value(QStringLiteral("sent")).toInteger());
+        post.text = m.value(QStringLiteral("text")).toString();
+        post.replyTo = arrayFrom<16>(m.value(QStringLiteral("replyTo")).toByteArray());
+        r.posts.push_back(std::move(post));
+    }
+    logEd3kDebug([&] { return QStringLiteral("ed3k: room %1: %2 stored posts").arg(roomHex(r.room)).arg(r.posts.size()); });
+}
+
+void Ed3kRooms::postsChanged(const ffi::Room& room)
+{
+    if (!historyStored())
+        return;
+    m_dirtyPosts.insert(room);
+    if (!m_postsTimer->isActive())
+        m_postsTimer->start();
+}
+
+void Ed3kRooms::writeDirtyPosts()
+{
+    m_postsTimer->stop();
+    const auto dirty = std::exchange(m_dirtyPosts, {});
+    if (!historyStored())
+        return;
+    for (const auto& room : dirty)
+        if (const Room* r = find(room))
+            writePosts(*r);
+}
+
+void Ed3kRooms::writePosts(const Room& r) const
+{
+    if (m_session.stateDir().isEmpty() || !QDir().mkpath(roomsDir()))
+        return;
+    const QString path = QDir(roomsDir()).filePath(postsFile(r.room));
+    if (r.posts.empty()) {
+        removePostsFile(r.room);
+        return;
+    }
+    QCborArray list;
+    for (const Post& p : r.posts) {
+        QCborMap m{
+            {QStringLiteral("id"), bytesOf(p.id)},
+            {QStringLiteral("author"), bytesOf(p.author)},
+            {QStringLiteral("authorId"), bytesOf(p.authorId)},
+            {QStringLiteral("nick"), p.nick},
+            {QStringLiteral("sent"), qint64(p.sent)},
+            {QStringLiteral("text"), p.text},
+        };
+        if (p.moderator)
+            m.insert(QStringLiteral("moderator"), true);
+        if (p.replyTo)
+            m.insert(QStringLiteral("replyTo"), bytesOf(*p.replyTo));
+        list.append(m);
+    }
+    QByteArray blob = list.toCborValue().toCbor();
+    writeBlobLater(path, std::as_bytes(std::span{blob.constData(), std::size_t(blob.size())}));
+    wipe(blob);
+}
+
+void Ed3kRooms::removePostsFile(const ffi::Room& room) const
+{
+    if (m_session.stateDir().isEmpty())
+        return;
+    const QString path = QDir(roomsDir()).filePath(postsFile(room));
+    forgetBlobWrites(path);
+    QFile::remove(path);
+}
+
+QString Ed3kRooms::postsFile(const ffi::Room& room)
+{
+    return roomHex(room) + kPostsSuffix;
 }
 
 void Ed3kRooms::loadSaved()

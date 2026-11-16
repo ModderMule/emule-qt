@@ -164,6 +164,10 @@ void ServerConnect::connectToAnyServer(size_t startAt, bool prioSort,
 {
     logServerVerbose([&]() -> QString { return QStringLiteral("connectToAnyServer: %1 servers in list, startAt=%2 prioSort=%3 isAuto=%4 noCrypt=%5")
                          .arg(m_serverList.serverCount()).arg(startAt).arg(prioSort).arg(isAuto).arg(noCrypt); });
+    if (thePrefs.disableEd2k()) {
+        logInfo(QStringLiteral("Not connecting: eD2K is disabled"));
+        return;
+    }
     if (!BindAddress::outboundAllowed()) {
         logWarning(QStringLiteral("Not connecting: %1").arg(BindAddress::current().reason));
         return;
@@ -222,6 +226,10 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
 {
     if (!server)
         return;
+    if (thePrefs.disableEd2k()) {
+        logInfo(QStringLiteral("Not connecting: eD2K is disabled"));
+        return;
+    }
     if (!BindAddress::outboundAllowed()) {
         logWarning(QStringLiteral("Not connecting: %1").arg(BindAddress::current().reason));
         return;

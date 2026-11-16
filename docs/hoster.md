@@ -298,6 +298,23 @@ lacks it, so the GUI hides the box: `Ed3kResolver::canDeepCrawl`).
 - The app's IP filter is not applied to hosters: links are HTTP to the hoster's servers, not
   peers. ed3k peers of a verified link are filtered at the node's socket.
 - Kept archives in Temp are not shared, so a hoster root of an archive is not served to ed3k peers.
+- Only chosen entries: an item's `keptEntries` (items.json `entries`, `{first volume name: [path]}`,
+  from `AddHosterLinks` field 5) become `HosterUnpackJob::onlyEntries`; the set writes only those.
+
+## Archive contents (ed3k spec `hoster.md` §6.1)
+
+- One read: the unpack's own read feeds a contents tap (`archive/ArchiveContentsHook.h`) that hashes
+  the first volume and every entry (unchosen ones too) as they pass; after a good unpack
+  `Ed3kHosterUnpack::run` commits it, and the daemon publishes the canonical contents manifest and
+  the `b3` `SET` record under the first volume's root. Usenet the same in `UsenetPostProcessor`
+  (direct unpack after the PAR2 verify); torrents in `Ed3kTorrentJoin`'s verify read of a complete
+  set. Encrypted RAR/7z: 7-Zip/unrar streams the members out, hashed on the way. Pref
+  `ed3kArchiveContents` (`ed3k: archiveContents`, default on).
+- Lookup (IPC 745): a web row's links → `url` SAME → first volume root → `b3` SET → manifest.
+  Shown in the links dialog's Archive tab and the Hoster menu's *Archive Contents...*.
+- *Download Checked from ed3k* (IPC 746): entries by root into `incoming/<release>/<path>`.
+  *Download Archive, Extract Checked*: the checked links with `entries` (and the record's password).
+- A queued package: *Archive Contents...* › *Extract Only Checked* (IPC 747) until its unpack starts.
 
 ## Link checks of a links dialog
 

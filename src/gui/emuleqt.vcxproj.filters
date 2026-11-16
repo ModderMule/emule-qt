@@ -100,6 +100,9 @@
     <ClCompile Include="controls\PreviewNfoView.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="controls\ArchiveContentsView.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="controls\PreviewTabView.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -256,6 +259,9 @@
     <ClCompile Include="utils\MetaResultActions.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\ArchiveContentsIpc.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\NzbDrop.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -379,6 +385,9 @@
     <ClCompile Include="dialogs\Ed3kFilterPage.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="dialogs\Ed3kDeclineDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="dialogs\Ed3kOwnSetDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -437,6 +446,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\WebLinksDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\ArchiveContentsDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="panels\SearchPanel.cpp">
@@ -738,6 +750,9 @@
     <QtMoc Include="utils\MetaResultActions.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <ClInclude Include="utils\ArchiveContentsIpc.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\NzbDrop.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -805,6 +820,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\PreviewNfoView.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\ArchiveContentsView.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\PreviewTabView.h">
@@ -945,6 +963,9 @@
     <QtMoc Include="dialogs\Ed3kFilterPage.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="dialogs\Ed3kDeclineDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="dialogs\Ed3kOwnSetDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -1036,6 +1057,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\WebLinksDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\ArchiveContentsDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="app\PendingOpenQueue.h">

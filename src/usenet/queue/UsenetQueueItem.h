@@ -302,6 +302,9 @@ public:
     /// The indexer row it was grabbed from; see UsenetOrigin. Persisted.
     UsenetOrigin origin;
 
+    /// Archive entries to extract (hoster.md §6.1), UsenetAddOptions::keptEntries. Persisted.
+    QHash<QString, QStringList> keptEntries;
+
     /// Index into `Preferences::categories()`, 0 being the implicit "All".
     ///
     /// The *index* is stored and the folder is asked for at completion, never

@@ -20,6 +20,7 @@
 /// Blocking and synchronous, like Par2Verifier and for the same reason:
 /// UsenetPostProcessor owns the thread.
 
+#include "archive/ArchiveContentsHook.h"
 #include "archive/ArchiveReader.h"
 
 #include <QString>
@@ -28,6 +29,8 @@
 #include <QStringList>
 
 #include <QList>
+
+#include <memory>
 
 #include <functional>
 
@@ -100,6 +103,20 @@ public:
         int nestedSets = 0;
 
         QString error;
+
+        /// What each extracted set fed its contents tap (hoster.md §6.1), hashed in the
+        /// extraction's own read. Published by commitContents() once the unpack is good.
+        struct Contents {
+            std::shared_ptr<ArchiveContentsTap> tap;
+            QString firstName;
+            QString password;
+        };
+        QList<Contents> contents;
+        void commitContents() const
+        {
+            for (const Contents& c : contents)
+                c.tap->commit(c.firstName, c.password);
+        }
     };
 
     /// Everything unpackAll() can be told. unpack() is the one-password form.
@@ -211,7 +228,8 @@ private:
     /// and re-opening the set to ask again would cost another full scan.
     bool unpackEncrypted(const ArchiveSet& set, const QString& destDir,
                          const QStringList& passwords, const QString& externalTool,
-                         const ArchiveReader& reader, Result& result);
+                         const ArchiveReader& reader, Result& result,
+                         const QSet<QString>* only = nullptr);
 
     ProgressFn m_progress;
     VetoFn m_veto;

@@ -3,6 +3,7 @@
 
 #include "pch.h"
 #include "panels/HosterPanel.h"
+#include "dialogs/ArchiveContentsDialog.h"
 #include "utils/Log.h"
 
 #include "app/IpcClient.h"
@@ -10,12 +11,14 @@
 #include "controls/StatusFilterBar.h"
 #include "dialogs/HosterPuzzleDialog.h"
 #include "panels/LinkGrabberPanel.h"
+#include "utils/ClientIcons.h"
 #include "utils/Clipboard.h"
 #include "utils/ContainerDrop.h"
 #include "utils/FileTypeIcons.h"
 #include "utils/ListActivation.h"
 #include "utils/MenuUtils.h"
 #include "utils/ModalHost.h"
+#include "utils/PanelPoller.h"
 #include "utils/MoveDownloadsAction.h"
 #include "prefs/Preferences.h"
 #include "utils/StringUtils.h"
@@ -69,6 +72,8 @@ enum Column { ColName, ColSize, ColProgress, ColSpeed, ColHoster, ColStatus, Col
 /// ColName data: the item id (0 on a package row) and the package id of a package row
 constexpr int kItemIdRole = Qt::UserRole + 1;
 constexpr int kPackageIdRole = Qt::UserRole + 2;
+/// ColName data of an ed3k source row (its kItemIdRole: its item's, it acts for it): the source key
+constexpr int kSourceKeyRole = Qt::UserRole + 3;
 
 // Ed3kHosterJoin::State
 constexpr int kStateDownloading = 5;
@@ -192,6 +197,8 @@ QString reasonText(int reason, const QString& arg)
     case 35: return HosterPanel::tr("Checking the file against the hoster's %1").arg(arg.toUpper());
     case 36: return HosterPanel::tr("The file does not match the hoster's %1, dropped (Retry downloads it again)").arg(arg.toUpper());
     case 37: return HosterPanel::tr("%1 is a local or private address, not downloaded").arg(arg);
+    case 38: return HosterPanel::tr("%1 could not download it, trying another way").arg(arg);
+    case 39: return HosterPanel::tr("via %1").arg(arg);
     default: return {};
     }
 }
@@ -322,6 +329,12 @@ void HosterPanel::setIpcClient(IpcClient* ipc)
     m_ipc = ipc;
     if (!m_ipc)
         return;
+    // the ed3k sources of joined items change without a push
+    m_sourcePoller = new PanelPoller(this, [this] { pollSources(); });
+    m_sourcePoller->setInterval(2000);
+    m_sourcePoller->setEnabled(m_ipc->isConnected());
+    connect(m_ipc, &IpcClient::connected, this, [this] { m_sourcePoller->setEnabled(true); });
+    connect(m_ipc, &IpcClient::disconnected, this, [this] { m_sourcePoller->setEnabled(false); });
     connect(m_ipc, &IpcClient::connected, this, &HosterPanel::refresh);
     connect(m_ipc, &IpcClient::hosterItemChanged, this, [this](const IpcMessage& msg) { upsert(msg.fieldMap(0)); });
     connect(m_ipc, &IpcClient::hosterItemRemoved, this, [this](const IpcMessage& msg) { removeRow(msg.field(0).toInteger()); });
@@ -618,6 +631,51 @@ void HosterPanel::refresh()
     });
 }
 
+void HosterPanel::pollSources()
+{
+    if (!m_ipc || !m_ipc->isConnected() || !m_enabled)
+        return;
+    IpcMessage req(IpcMsgType::GetHosterItems);
+    req.append(true);
+    m_ipc->sendRequest(std::move(req), [this](const IpcMessage& r) {
+        if (r.fieldBool(0))
+            applySources(r.fieldMap(1).value(QStringLiteral("sources")).toMap());
+    });
+}
+
+void HosterPanel::applySources(const QCborMap& sources)
+{
+    for (auto it = m_rows.cbegin(); it != m_rows.cend(); ++it) {
+        QTreeWidgetItem* row = it.value();
+        QHash<QString, QTreeWidgetItem*> existing;
+        for (int i = 0; i < row->childCount(); ++i)
+            existing.insert(row->child(i)->data(ColName, kSourceKeyRole).toString(), row->child(i));
+        for (const QCborValue& v : sources.value(it.key()).toArray()) {
+            const Ed3kJobSource e = Ed3kJobSource::fromCbor(v.toMap());
+            QTreeWidgetItem* child = existing.take(e.key);
+            if (!child) {
+                child = new HosterRow(row);
+                child->setData(ColName, kItemIdRole, it.key());
+                child->setData(ColName, kSourceKeyRole, e.key);
+            }
+            const QString tip = e.toolTip();
+            child->setText(ColName, e.name);
+            child->setIcon(ColName, e.icon());
+            child->setToolTip(ColName, tip);
+            const double pct = e.pieces > 0 ? 100.0 * e.have / e.pieces : 0.0;
+            child->setText(ColProgress, e.pieces > 0 ? QStringLiteral("%1%").arg(pct, 0, 'f', 1) : QString());
+            child->setData(ColProgress, Qt::UserRole, pct);
+            child->setText(ColSpeed, e.rate > 0 ? formatByteRate(double(e.rate)) : QString());
+            child->setData(ColSpeed, Qt::UserRole, e.rate);
+            child->setText(ColHoster, QStringLiteral("ed3k"));
+            child->setText(ColStatus, e.stateText());
+            child->setText(ColSource, e.addressText());
+            child->setToolTip(ColSource, tip);
+        }
+        qDeleteAll(existing);
+    }
+}
+
 void HosterPanel::upsert(const QCborMap& item)
 {
     const qint64 id = item.value(QStringLiteral("id")).toInteger();
@@ -790,6 +848,9 @@ void HosterPanel::showContextMenu(const QPoint& pos)
     menu.addSeparator();
     QAction* copy = menu.addAction(menuIcon("Copy.ico"), tr("Copy link"));
     QAction* folder = menu.addAction(menuIcon("FolderOpen.ico"), tr("Open folder"));
+    // what the archives of the item (its package) hold, from ed3k (hoster.md §6.1)
+    QAction* contents = menu.addAction(menuIcon("FileInfo.ico"), tr("Archive Contents..."));
+    contents->setEnabled(ids.size() == 1);
     // #187: unfinished items to another folder (out of disk space, mostly)
     QAction* move = nullptr;
     if (thePrefs.showExtControls()) {
@@ -859,6 +920,15 @@ void HosterPanel::showContextMenu(const QPoint& pos)
         copyLinks();
     } else if (chosen && chosen == move) {
         moveToFolder();
+    } else if (chosen == contents && ids.size() == 1) {
+        const QCborMap it = m_items.value(ids.first());
+        const QString pkgName = it.value(QStringLiteral("package")).toString();
+        const QString title = pkgName.isEmpty() ? it.value(QStringLiteral("name")).toString() : pkgName;
+        auto* dlg = new ArchiveContentsDialog(m_ipc, title, QStringLiteral("roots"),
+                                              QCborMap{{QStringLiteral("hosterPackage"), it.value(QStringLiteral("packageId")).toInteger()},
+                                                       {QStringLiteral("hosterItem"), ids.first()}},
+                                              title, this);
+        dlg->show();
     } else if (chosen == folder && !folderDir.isEmpty()) {
         QDesktopServices::openUrl(QUrl::fromLocalFile(folderDir));
     } else if (chosen == add) {

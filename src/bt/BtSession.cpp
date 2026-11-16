@@ -483,6 +483,8 @@ struct BtSession::Impl {
         std::optional<lt::remove_flags_t> removed;   ///< removed meanwhile: removed when it comes
     };
     std::map<QString, Adding> adding;
+    /// the torrents of the last run added at start, their add_torrent_alert not in yet
+    QSet<QString> resuming;
     /// the metadata of @p id, also while it is being added; null: none yet. Never waits
     [[nodiscard]] std::shared_ptr<const lt::torrent_info> torrentFile(const QString& id) const
     {
@@ -741,6 +743,7 @@ void BtSession::start(const BtSettings& settings)
         // older runs put all I2P trackers in one tier: only the first one was asked
         BtAddSource::spreadI2pTiers(atp.trackers, atp.tracker_tiers);
         d->defaultConnections(atp);
+        d->resuming.insert(BtTorrentView::idOf(atp.ti ? atp.ti->info_hashes() : atp.info_hashes));
         d->ses->async_add_torrent(std::move(atp));
         ++loaded;
     }
@@ -810,6 +813,7 @@ void BtSession::stop()
     d->ses.reset();
     d->handles.clear();
     d->adding.clear();
+    d->resuming.clear();
     d->rows.clear();
     d->finishFlush.clear();
     d->flushing.clear();
@@ -834,6 +838,11 @@ void BtSession::stop()
 bool BtSession::isRunning() const
 {
     return d->ses != nullptr;
+}
+
+bool BtSession::isResuming(const QString& id) const
+{
+    return d->resuming.contains(id);
 }
 
 void BtSession::applySettings(const BtSettings& settings)
@@ -1697,6 +1706,7 @@ void BtSession::drainAlerts()
             const QString id = at->handle.is_valid() ? BtTorrentView::idOf(at->handle.info_hashes())
                                                      : BtTorrentView::idOf(p.ti ? p.ti->info_hashes() : p.info_hashes);
             const auto pending = d->adding.extract(id);
+            d->resuming.remove(id);
             if (at->error) {
                 logWarning(QStringLiteral("BitTorrent: could not add: %1").arg(message(at)));
                 // the row add() put up goes again

@@ -81,7 +81,8 @@ private:
     void poll();
     void showNote(const QString& text);
 
-    void applyPeers(const QCborArray& peers);
+    /// @p ed3kPeers: the ed3k sources of a torrent joined with ed3k (Ed3kJobSource rows)
+    void applyPeers(const QCborArray& peers, const QCborArray& ed3kPeers = {});
     void applyTrackers(const QCborArray& trackers);
     void applyFiles(const QCborArray& files);
     QTreeWidgetItem* folderItem(const QString& path, QHash<QString, QTreeWidgetItem*>& folders);

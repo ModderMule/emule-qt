@@ -621,6 +621,10 @@ bool DaemonApp::start()
         m_ed3kDownloads->setDirs(temps.isEmpty() ? QStringList{thePrefs.incomingDir()} : temps, thePrefs.incomingDir());
     }
     m_ed3kDownloads->setCategoryDir([](int category) { return thePrefs.incomingDirForCategory(category); });
+    // declined-records.md §2: a download of a declined root, added paused: a pop-up
+    if (m_notifierBridge)
+        connect(m_ed3kDownloads.get(), &ed3k::Ed3kDownloads::declinedAdded, m_notifierBridge.get(),
+                [b = m_notifierBridge.get()](const ::ed3k::Root&, const QString& name) { b->onEd3kDeclinedAdded(name); });
     m_ed3kDownloads->setCompletedHook([this](const ed3k::Ed3kDownloadInfo& done) {
         // batch 15 #12: an opened plain copy of a sealed member is never shared
         if (m_ed3kSets && m_ed3kSets->plainCopies().contains(done.path))
@@ -791,20 +795,23 @@ bool DaemonApp::start()
     // what unpacked archives hold (hoster.md §6.1): read on the unpacker's thread, published here
     m_archiveContents = std::make_unique<ed3k::Ed3kArchiveContents>(*m_ed3kSession, thePrefs.configDir());
     m_archiveContents->setPublish(thePrefs.ed3kArchiveContents());
+    applyTorrentArchiveContents();
     m_archiveCancel->store(false);
-    setArchiveContentsHook([ac = QPointer<ed3k::Ed3kArchiveContents>(m_archiveContents.get()), cancel = m_archiveCancel](
-                               const QStringList& volumes, const QStringList& passwords) {
+    // a tap per set an unpack reads: hashed on that read, published here once it is good
+    setArchiveContentsHook([ac = QPointer<ed3k::Ed3kArchiveContents>(m_archiveContents.get()),
+                            cancel = m_archiveCancel]() -> std::unique_ptr<ArchiveContentsTap> {
         if (!thePrefs.ed3kArchiveContents() || cancel->load())
-            return;
-        auto listing = ed3k::Ed3kArchiveContents::readArchive(volumes, passwords, cancel.get());
-        if (!listing || cancel->load())
-            return;
-        QMetaObject::invokeMethod(
-            ac.data(), [ac, l = std::move(*listing)] {
-                if (ac)
-                    (void)ac->publishListing(l);
-            },
-            Qt::QueuedConnection);
+            return nullptr;
+        return std::make_unique<ed3k::Ed3kContentsTap>([ac, cancel](ed3k::ArchiveListing listing) {
+            if (cancel->load())
+                return;
+            QMetaObject::invokeMethod(
+                ac.data(), [ac, l = std::move(listing)] {
+                    if (ac)
+                        (void)ac->publishListing(l);
+                },
+                Qt::QueuedConnection);
+        });
     });
     ArchiveContentsBridge::setTargets(m_archiveContents.get(), m_ed3kDownloads.get(), m_hosterJoin.get(), nullptr);
     // hops.md §1 SHOULD: an ed3k download under the anonymous key of a file in the eD2K queue
@@ -989,6 +996,7 @@ bool DaemonApp::start()
     m_torrentJoin->setI2pJoins(thePrefs.btI2pEd3kJoin());
     // torrent.md §6.3: private torrents join only with btShareMode "all"
     m_torrentJoin->setPrivateJoins(thePrefs.btShareMode() >= int(BtShareMode::All));
+    applyTorrentArchiveContents();
     if (m_ed3kSession->isRunning())
         m_torrentJoin->start();
     // a torrent made here gets its BLAKE3 roots and set from the join (#191)
@@ -1512,7 +1520,6 @@ void DaemonApp::connectBtPushes()
         IpcMessage msg(IpcMsgType::PushTorrentFinished, 0);
         msg.append(id);
         m_ipcServer->broadcast(msg);
-        publishTorrentArchives(id);
     });
     connect(m_btSession.get(), &bt::BtSession::statusChanged, this, [this] {
         IpcMessage msg(IpcMsgType::PushBtStatus, 0);
@@ -1718,6 +1725,9 @@ void DaemonApp::applyEd3kConfig()
         m_ed3kBootstrap->setPolicy(thePrefs.ed3kNodeListAuto(), thePrefs.ed3kNodeListMaxAgeDays());
         m_ed3kBootstrap->setSeedFromEd2k(thePrefs.ed3kSeedFromEd2k());
     }
+    // ed3kRoomHistoryStore / ed3kRoomHistoryMax: no restart
+    if (m_ed3kRooms)
+        m_ed3kRooms->applyHistoryPrefs();
     // ed3kShareFiles: on/off while the node runs (starts with it otherwise)
     if (m_ed3kShared) {
         m_ed3kShared->setLowRamPercent(thePrefs.ed3kHashCacheLowRamPercent());
@@ -1733,6 +1743,7 @@ void DaemonApp::applyEd3kConfig()
     // ed3kArchiveContents: off withdraws the published contents records
     if (m_archiveContents)
         m_archiveContents->setPublish(thePrefs.ed3kArchiveContents());
+    applyTorrentArchiveContents();
     // ed3kOwnSetsWatch: no restart
     if (m_ed3kOwnSets)
         m_ed3kOwnSets->setWatchFolders(thePrefs.ed3kOwnSetsWatch());
@@ -1743,33 +1754,19 @@ void DaemonApp::applyEd3kConfig()
 #endif
 }
 
-void DaemonApp::publishTorrentArchives(const QString& id)
+void DaemonApp::applyTorrentArchiveContents()
 {
 #if defined(EMULE_HAVE_ED3K) && defined(EMULE_HAVE_BITTORRENT)
-    if (!m_btSession || !m_archiveContents || !thePrefs.ed3kArchiveContents())
+    if (!m_torrentJoin)
         return;
-    const auto row = m_btSession->torrent(id);
-    if (!row || row->isPrivate)
-        return;
-    QStringList names;
-    for (const auto& f : m_btSession->files(id))
-        if (!f.pad)
-            names << QDir::cleanPath(QDir(row->savePath).absoluteFilePath(f.path));
-    QSet<QString> dirs;
-    for (const int i : ed3k::Ed3kArchiveContents::firstVolumes(names))
-        dirs.insert(QFileInfo(names.at(i)).absolutePath());
-    if (dirs.isEmpty())
-        return;
-    const QSet<QString> mine(names.cbegin(), names.cend());
-    const QStringList passwords = thePrefs.archivePasswords();
-    QThreadPool::globalInstance()->start([dirs, mine, passwords] {
-        for (const QString& dir : dirs)
-            for (const auto& set : usenet::UsenetUnpacker::findArchiveSets(dir))
-                if (!set.headless && mine.contains(QDir::cleanPath(set.firstVolume)))
-                    readArchiveContents(set.volumes, passwords);
-    });
-#else
-    Q_UNUSED(id)
+    // the verify read of a finished torrent's archive sets lists them too (hoster.md §6.1)
+    std::function<void(ed3k::ArchiveListing)> publish;
+    if (thePrefs.ed3kArchiveContents())
+        publish = [ac = QPointer<ed3k::Ed3kArchiveContents>(m_archiveContents.get())](ed3k::ArchiveListing l) {
+            if (ac)
+                (void)ac->publishListing(l);
+        };
+    m_torrentJoin->setArchiveContents(std::move(publish), thePrefs.archivePasswords(), thePrefs.usenetExternalUnpacker());
 #endif
 }
 

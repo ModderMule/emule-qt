@@ -133,6 +133,8 @@ public:
     TaskId expandDeep(const QString& url) override;
     /// Until a sidecar said hello: assumed (an older one ignores the flag, a plain crawl)
     [[nodiscard]] bool canDeepCrawl() const override { return m_deep; }
+    /// Until a sidecar said hello: assumed (an older one names no multi-hoster hosts, so none is used)
+    [[nodiscard]] bool canDebrid() const override { return m_debrid; }
     TaskId openContainer(const QString& path) override;
     TaskId open(const QString& url, const std::optional<ResolverAccount>& account, const QString& dir,
                 std::uint64_t have) override;
@@ -207,6 +209,7 @@ private:
     QString m_root;
     QString m_revision;   ///< JD revision number: the root's revision.txt or the sidecar's hello
     bool m_deep = true;   ///< the sidecar crawls pages (hello "deep"; older ones do not say)
+    bool m_debrid = true; ///< the sidecar downloads via multi-hosters (hello "debrid")
     TaskId m_nextId = 1;
     /// open tasks; pure requests (hello, setProxy) are not counted
     std::map<TaskId, bool> m_pending;

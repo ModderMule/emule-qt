@@ -14,6 +14,7 @@
 /// with while it runs.
 
 #include "controls/CategoryFilterProxy.h"
+#include "utils/ClientIcons.h"
 #include "utils/UsenetDisplay.h"
 
 #include <QAbstractItemModel>
@@ -194,6 +195,12 @@ struct UsenetItemRow {
     /// Wire bytes per second: the daemon's engine rate, split by articles in flight.
     qint64 speed = 0;
 
+    /// Joined with ed3k: its ed3k sources, child rows after the files.
+    QList<Ed3kJobSource> ed3kSources;
+
+    /// Child rows: the files, then the ed3k sources.
+    [[nodiscard]] int childCount() const { return int(files.size() + ed3kSources.size()); }
+
     /// The release's bar: its files laid end to end by size. Built once per
     /// decode by usenetRowFromCbor(), not per paint.
     QByteArray bar;
@@ -298,6 +305,8 @@ public:
     /// The file a child row names, or null for a top-level row. @p itemId, when
     /// given, receives the id of the NZB it belongs to — a file is only ever
     /// addressable as (item, index), never on its own.
+    /// The ed3k source of a child row after the files; null otherwise.
+    [[nodiscard]] const Ed3kJobSource* ed3kSourceAt(const QModelIndex& index) const;
     [[nodiscard]] const UsenetFileRow* fileAt(const QModelIndex& index,
                                               QString* itemId = nullptr) const;
     [[nodiscard]] QString idAt(int row) const;
@@ -312,6 +321,8 @@ signals:
 
 private:
     void applyInto(UsenetItemRow& target, const UsenetItemRow& incoming);
+    /// A child row of an ed3k source (@p sortKey: its place after the files).
+    [[nodiscard]] static QVariant ed3kSourceData(const Ed3kJobSource& e, int sortKey, int column, int role);
     [[nodiscard]] int rowOf(const QString& id) const;
     /// Apply @p incoming to top-level @p row; file rows inserted/removed, never a reset
     /// (a reset swallows a double click and collapses the tree).

@@ -339,7 +339,7 @@ void tst_TorrentDetailsGui::inspectorInfoAndActivity()
 
     TorrentDetailsDialog dialog(nullptr, &model, r.id);
     QCOMPARE(dialog.torrentId(), r.id);
-    QCOMPARE(dialog.tabs()->count(), 3);
+    QCOMPARE(dialog.tabs()->count(), 4);   // Info, Activity, Options, Archive
     QVERIFY(anyLabel(&dialog, QStringLiteral("Tampopo")));
     QVERIFY(anyLabel(&dialog, QStringLiteral("Created by mktorrent 1.1")));
     QVERIFY(anyLabel(&dialog, QStringLiteral("25.0% (1.0% selected)")));

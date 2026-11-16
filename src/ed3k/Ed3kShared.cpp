@@ -853,8 +853,13 @@ void Ed3kShared::share(File& f, Hashed& h)
     // if (auto ok = e->publish(t, info, ffi::Publish::Source); !ok)
     // const auto mode = m_holdBack ? ffi::Publish::Source : ffi::Publish::Both;
     // if (auto ok = e->publish(t, info, mode); !ok)
+    // declined-records.md §2: a root or eD2K hash of decline.txt is served, never published
+    // (no source, keywords, note, ALIAS). ToDo: a list change takes back what is out already
+    const bool declined = m_session.declined().listsFile(h.root, f.entry.md4);
     // a name without a keyword: its source record alone (publishShared)
-    if (auto ok = publishShared(info); !ok)
+    if (declined)
+        logInfo(QStringLiteral("\"%1\" shared, not published: declined (%2)").arg(f.entry.name, QString::fromLatin1(kDeclineFile)));
+    else if (auto ok = publishShared(info); !ok)
         logDebug([&]() -> QString { return QStringLiteral("publish of \"%1\" failed (error %2)").arg(f.entry.name, errorName(ok.error())); });
     else
         f.keywords = *ok == ffi::Publish::Both;
@@ -872,7 +877,7 @@ void Ed3kShared::share(File& f, Hashed& h)
     // alias.md §3: the root is shared here and both names come from these bytes; never for a
     // file of the anonymous key (ffi.md: eD2K is never anonymous)
     // was: if (!m_holdBack) {
-    if (!m_holdBack && !anon) {
+    if (!m_holdBack && !anon && !declined) {
         f.alias = ed2kAlias(f.entry.md4, h.size, h.root, f.entry.name);
         if (auto ok = e->publishAlias(t, std::span{&f.alias, 1}); !ok) {
             logDebug([&]() -> QString { return QStringLiteral("ed2k record of \"%1\" not published (error %2)").arg(f.entry.name, errorName(ok.error())); });
@@ -1030,7 +1035,9 @@ void Ed3kShared::publishNote(File& f, const ffi::Root& root)
     const auto t = m_session.now();
     const bool anon = keyOf(root) == ffi::KeyKind::Anon;
     // was: a cleared note was not taken back (no unpublish of one note)
-    if (m_holdBack || !f.entry.hasNote()) {
+    // was: if (m_holdBack || !f.entry.hasNote()) {
+    // declined-records.md §2: no note for a declined root
+    if (m_holdBack || !f.entry.hasNote() || m_session.declined().listsFile(root, f.entry.md4)) {
         if (f.notePublished)
             (void)(anon ? e->anonUnpublishNote(t, root) : e->unpublishNote(t, root));
         f.notePublished = false;

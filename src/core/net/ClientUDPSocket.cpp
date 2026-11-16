@@ -398,6 +398,8 @@ void ClientUDPSocket::processDatagram(const QNetworkDatagram& datagram)
                 return;
         }
     }
+    if (thePrefs.disableEd2k())
+        return;   // eD2K hard off: ed3k above still gets its datagrams
 
     const Address senderAddress = Address::fromQHostAddress(datagram.senderAddress());
     const uint16 senderPort = static_cast<uint16>(datagram.senderPort());
@@ -730,6 +732,8 @@ Address ClientUDPSocket::keyIPFor(const Endpoint& to)
 
 bool ClientUDPSocket::hasRoute(const Endpoint& to, uint8 prot, uint8 opcode)
 {
+    if (thePrefs.disableEd2k())
+        return false;
     // Port 0 means "no UDP" on the wire (peer or Kad contact with UDP off); the OS refuses it (#164)
     if (to.port() != 0 && !to.address().isNull())
         return true;

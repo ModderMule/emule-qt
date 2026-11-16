@@ -181,6 +181,7 @@
     <ClCompile Include="..\..\src\gui\utils\TorrentLinks.cpp" />
     <ClCompile Include="..\..\src\gui\utils\HttpCacheLinkImporter.cpp" />
     <ClCompile Include="..\..\src\gui\utils\StatusBarNotifier.cpp" />
+    <ClCompile Include="..\..\src\gui\app\UiState.cpp" />
     <ClCompile Include="..\..\src\gui\app\IpcClient.cpp" />
     <ClCompile Include="..\..\src\gui\app\KnownCores.cpp" />
     <ClCompile Include="..\..\src\gui\app\SkinIcons.cpp" />

@@ -13,8 +13,12 @@
 #include "DetailDialog.h"
 
 #include <QCborMap>
+#include <QHash>
 #include <QList>
 #include <QString>
+#include <QStringList>
+
+#include <utility>
 
 class QFormLayout;
 class QLabel;
@@ -25,6 +29,7 @@ class QTreeWidget;
 
 namespace eMule {
 
+class ArchiveContentsView;
 class PreviewImageView;
 class PreviewNfoView;
 class UsenetFileCheckList;
@@ -33,7 +38,7 @@ class MetaResultDetailDialog : public DetailDialog {
     Q_OBJECT
 
 public:
-    enum Tab { TabGeneral = 0, TabFiles, TabTrackers, TabImages, TabNfo };
+    enum Tab { TabGeneral = 0, TabFiles, TabTrackers, TabImages, TabNfo, TabArchive };
     enum NzbColumn { NzbName = 0, NzbSize, NzbArticles, NzbType, NzbColCount };
     enum TorrentColumn { TorrentName = 0, TorrentSize, TorrentColCount };
 
@@ -69,6 +74,10 @@ public:
     [[nodiscard]] UsenetFileCheckList* fileChecks() const { return m_checks; }
     [[nodiscard]] PreviewImageView* imagesView() const { return m_images; }
     [[nodiscard]] PreviewNfoView* nfoView() const { return m_nfo; }
+    /// Details › Archive (hoster.md §6.1); its tab shows when the file lists archives.
+    [[nodiscard]] ArchiveContentsView* archiveView() const { return m_archive; }
+    /// LookupArchiveContents kind and payload for the file shown; empty kind: none.
+    [[nodiscard]] std::pair<QString, QCborMap> archiveRequest() const { return m_archiveRequest; }
 
     /// FetchNzbImages answer: {images: [{name, kind, data}], note}.
     void setPreviewImages(const QCborMap& result);
@@ -81,7 +90,9 @@ signals:
     /// Download pressed: the panel adds the row as its own Download would.
     /// @p unchecked: NZB file indices left out (chooseFiles), else empty.
     /// @p kept: the checked files (NZB without PAR2, or torrent); empty = all.
-    void downloadRequested(const QList<int>& unchecked, const QList<int>& kept);
+    /// @p entries, @p password: archive entries to extract (Archive tab), else empty.
+    void downloadRequested(const QList<int>& unchecked, const QList<int>& kept,
+                           const QHash<QString, QStringList>& entries, const QString& password);
     /// The Images tab was opened the first time. Shown only for an NZB whose
     /// inspection says hasImages, or with a cover URL.
     void imagesRequested(const QString& previewToken, const QString& coverUrl);
@@ -95,6 +106,7 @@ private:
     void buildTrackers(const QCborMap& inspection);
     void addRowFacts(QFormLayout* form) const;
     void onDownload();
+    void download(const QHash<QString, QStringList>& entries, const QString& password);
     void onTabChanged(int index);
 
     RowInfo m_row;
@@ -108,6 +120,8 @@ private:
     UsenetFileCheckList* m_checks = nullptr;
     PreviewImageView* m_images = nullptr;
     PreviewNfoView* m_nfo = nullptr;
+    ArchiveContentsView* m_archive = nullptr;
+    std::pair<QString, QCborMap> m_archiveRequest;
     QString m_previewToken;
     QString m_coverUrl;
     bool m_imagesRequested = false;

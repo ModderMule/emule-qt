@@ -102,6 +102,9 @@ using Kind = PrefSpec::Kind;
 
     // --- Networks ---
     t << flag("networkED2K", "Use the eD2K server network. Gates the automatic connect at start only.");
+    t << flag("disableEd2k", "Not recommended. Close the eD2K TCP and server UDP ports (the client UDP port too "
+              "unless ed3k shares it), drop every eD2K packet and never connect to eD2K servers, "
+              "Kad or eD2K peers; open connections close at once.");
     t << flag("kadEnabled", "Use the Kad network. Gates the automatic start only.");
     t << flag("autoConnect", "Connect to the enabled networks when the core starts.");
     t << flag("reconnect", "Reconnect after the server connection is lost.");
@@ -273,6 +276,9 @@ using Kind = PrefSpec::Kind;
     t << advanced(number("ed3kKadStoreMiB", 0, Preferences::kMaxEd3kKadStoreMiB, "MiB",
                          "RAM for the Kad records this node stores for other nodes; over it new ones are "
                          "refused (BUSY). 0 = default (128 MiB). Applies at the next node start."));
+    t << flag("ed3kRoomHistoryStore", "Keep the recent posts of ed3k rooms on disk, shown again after a restart.");
+    t << advanced(number("ed3kRoomHistoryMax", Preferences::kMinEd3kRoomHistoryMax, Preferences::kMaxEd3kRoomHistoryMax, "",
+                         "Posts kept per ed3k room, in memory and on disk."));
     t << advanced(number("ed3kHashCacheLowRamPercent", 0, 100, "%",
                          "Free RAM below this share: only block hashes in use stay in RAM. 0 = off."));
     t << flag("ed3kJointDownloads", "eD2K downloads also fetch from ed3k peers (found by the ed2k hash); a source with a derived user hash is asked over ed3k first.");
@@ -332,7 +338,7 @@ using Kind = PrefSpec::Kind;
     t << advanced(text("ed3kChainForwarder", 42, "Address of the forwarder of requests a site sends (0x + 40 hex "
                                                  "digits). Empty = none."));
     // hoster links (hoster.md): downloads on by default, vouched links published by default (§4.1).
-    // ed3kHosterAccounts and ed3kHosterSolvers are lists of {host, user, password}: not in the schema,
+    // ed3kHosterAccounts, ed3kHosterSolvers and ed3kHosterDebrid are lists of {host, user, password}: not in the schema,
     // never sent with a password
     t << flag("ed3kHosterEnabled", "Allow downloads from file hosters: the resolver may open hoster pages, wait out "
                                    "their timers, show their puzzles and use the accounts given (hoster.md §3).");
@@ -342,6 +348,8 @@ using Kind = PrefSpec::Kind;
     t << advanced(flag("ed3kHosterAutoJava", "Download a Java runtime into the eMuleQt folder when none is found."));
     t << number("ed3kHosterMaxStreams", 1, 16, "", "Hoster downloads at once (one per hoster and account in any case).");
     t << flag("ed3kHosterSolversEnabled", "Send hoster puzzles to the captcha solver services given first.");
+    t << flag("ed3kHosterDebridEnabled", "Download links of hosters without an own premium account through the "
+                                         "multi-hoster accounts given (Real-Debrid, AllDebrid, ...).");
     t << flag("ed3kHosterPuzzles", "Show image puzzles of hosters; off = skip links that ask for one.");
     t << flag("ed3kHosterPublishLinks", "Publish hoster links: once a link is vouched for, its ALIAS record is published, "
                                         "it goes with the source record and to downloaders (hoster.md §4.1). This can expose "

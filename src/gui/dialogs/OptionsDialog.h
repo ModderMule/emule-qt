@@ -488,6 +488,7 @@ private:
     QCheckBox* m_previewPrioCheck = nullptr;
     QCheckBox* m_downloadSeekingCheck = nullptr;
     QCheckBox* m_watchClipboardCheck = nullptr;
+    QCheckBox* m_knownLinkPopupCheck = nullptr;
     QCheckBox* m_advancedCalcRemainingCheck = nullptr;
     QCheckBox* m_startNextPausedCheck = nullptr;
     QCheckBox* m_preferSameCatCheck = nullptr;
@@ -756,6 +757,7 @@ private:
     QCheckBox*    m_rememberUploadQueueCheck = nullptr;
     QCheckBox*    m_filterLANIPsCheck = nullptr;
     QCheckBox*    m_a4afSaveCpuCheck = nullptr;
+    QCheckBox*    m_disableEd2kCheck = nullptr;
     QCheckBox*    m_disableArchPreviewCheck = nullptr;
     QCheckBox*    m_showExtControlsCheck = nullptr;
     QLineEdit*    m_ed2kHostnameEdit = nullptr;

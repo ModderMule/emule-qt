@@ -335,6 +335,10 @@ float ListenSocket::maxConPerFiveModifier() const
 
 void ListenSocket::admitAccepted(ClientReqSocket* reqSocket)
 {
+    if (thePrefs.disableEd2k()) {
+        reqSocket->safeDelete();
+        return;
+    }
     const Address peer = Address::fromQHostAddress(reqSocket->peerAddress());
 
     // Address-typed, so both families are checked against their own range table.  A v4

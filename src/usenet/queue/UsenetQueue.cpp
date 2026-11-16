@@ -459,6 +459,8 @@ QString UsenetQueue::addNzb(const QByteArray& data, const QString& name, QString
         item->stalledReason = episodeWhy;
     item->initFileStates(thePrefs.usenetTempDir());
 
+    item->keptEntries = options.keptEntries;
+
     // Files the caller kept (a meta search file row): every other payload file
     // skipped. Nothing usable kept = the whole release, never a refusal.
     if (!options.keptFiles.isEmpty()) {
@@ -1034,6 +1036,35 @@ bool UsenetQueue::setItemPassword(const QString& id, const QString& password)
 
     persist(*rt);
     emit itemChanged(id);
+    return true;
+}
+
+bool UsenetQueue::keptEntriesEditable(const QString& id) const
+{
+    const UsenetQueueItem* item = findItem(id);
+    if (!item)
+        return false;
+    switch (item->status) {
+    case UsenetItemStatus::Verifying:
+    case UsenetItemStatus::Repairing:
+    case UsenetItemStatus::Unpacking:
+    case UsenetItemStatus::Complete:
+        return false;
+    default:
+        return true;
+    }
+}
+
+bool UsenetQueue::setItemKeptEntries(const QString& id, const QHash<QString, QStringList>& entries)
+{
+    ItemRuntime* rt = runtimeFor(id);
+    if (!rt || !keptEntriesEditable(id))
+        return false;
+    if (rt->item->keptEntries != entries) {
+        rt->item->keptEntries = entries;
+        persist(*rt);
+        emit itemChanged(id);
+    }
     return true;
 }
 
@@ -3845,6 +3876,8 @@ void UsenetQueue::beginPostProcessing(ItemRuntime& rt)
     job.destDir = thePrefs.incomingDirForCategory(rt.item->category);
     job.password = rt.item->nzb.password;
     job.extraPasswords = thePrefs.archivePasswords();
+    for (auto k = rt.item->keptEntries.cbegin(); k != rt.item->keptEntries.cend(); ++k)
+        job.onlyEntries.insert(k.key(), QSet<QString>(k.value().cbegin(), k.value().cend()));
     job.nestedDepth = thePrefs.archiveRecursiveExtract() ? UsenetUnpacker::kNestedDepth : 0;
     job.jobName = rt.item->name;
     job.deobfuscateEnabled = thePrefs.usenetDeobfuscateNames();

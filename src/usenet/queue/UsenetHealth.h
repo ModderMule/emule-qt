@@ -20,6 +20,7 @@
 /// never propagated, or simply on a different server -- so every figure here is
 /// advice, and the only actor allowed to act on it is the user.
 
+#include <QHash>
 #include <QList>
 #include <QString>
 #include <QStringList>
@@ -131,6 +132,10 @@ struct UsenetAddOptions {
     /// ignored, and nothing left means the whole release. Empty = all files.
     /// With the release still arriving, the kept files join that item instead.
     QList<int> keptFiles;
+
+    /// Archive entries to extract (hoster.md §6.1): first volume's name, lower case →
+    /// entry paths. Stored on the item; empty = everything.
+    QHash<QString, QStringList> keptEntries;
 
     /// Where an indexer grab came from. Stored on the item.
     UsenetOrigin origin;

@@ -10,6 +10,8 @@
 /// - FetchEd3kNodeLists (1204): node lists from the sources now (Ed3kBootstrap::fetchNow).
 /// - GetEd3kKadIncoming (1206): KadRequests other nodes sent (kadIncoming), as ops::kadIncoming.
 /// - GetEd3kKadIncomingGraph (1207): one of them for the graph (kadIncomingGraph).
+/// - GetEd3kDeclined (1208) / SetEd3kDeclined (1209): decline.txt (Ed3kDecline.h) and the
+///   counts loaded; the file is the core's, also while the node is off.
 ///
 /// Failure: [false, {error}] with error 0 (no ed3k node) or an ed3k::Error, plus `message`
 /// where one helps. Free of the ed3k module like Ed3kBridge.h.
@@ -32,7 +34,7 @@ void setSession(ed3k::Ed3kSession* session);
 /// From Ed3kBridge::setBootstrap. Null: none.
 void setBootstrap(ed3k::Ed3kBootstrap* bootstrap);
 
-/// Answers 1200-1204 through `reply`. False: not one of them.
+/// Answers 1200-1209 through `reply`. False: not one of them.
 bool handleRequest(const Ipc::IpcMessage& msg, const std::function<void(const Ipc::IpcMessage&)>& reply);
 
 } // namespace Ed3kKadBridge

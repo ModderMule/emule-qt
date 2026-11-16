@@ -9,6 +9,7 @@
 #include "Ed3kStore.h"
 
 #include "BtSession.h"
+#include "post/UsenetUnpacker.h"
 
 #include "utils/Log.h"
 
@@ -118,6 +119,9 @@ struct Ed3kTorrentJoin::Join {
     std::shared_ptr<Sink> sink;
     /// TORRENT_COMPLETE came before every member was hashed: complete() after the last
     bool completePending = false;
+    /// complete members whose file is gone from disk since the last summary line
+    int missing = 0;
+    QString firstMissing;
 };
 
 Ed3kTorrentJoin::Ed3kTorrentJoin(Ed3kSession& session, bt::BtSession& bt, const QString& configDir, QObject* parent)
@@ -173,6 +177,7 @@ void Ed3kTorrentJoin::stop()
     closeAll();
     m_joins.clear();
     m_noJoin.clear();
+    m_keptWaiting.clear();
     pumpSession();
 }
 
@@ -211,6 +216,11 @@ bool Ed3kTorrentJoin::privateHeld(const QString& id) const
 
 bool Ed3kTorrentJoin::sharesKeptOwner(const QString& owner) const
 {
+    // its paths and flags come with the row
+    if (!m_bt.torrent(owner)) {
+        m_keptWaiting.insert(owner);
+        return false;
+    }
     return !i2pHeld(owner) && !privateHeld(owner);
 }
 
@@ -290,8 +300,12 @@ QByteArray Ed3kTorrentJoin::completedManifest(const QString& id) const
 
 void Ed3kTorrentJoin::onTorrentAdded(const QString& id)
 {
-    if (m_started)
+    if (m_started) {
         (void)ensureJoin(id);
+        // resumed after our start: its set, records and members out again
+        if (m_keptWaiting.remove(id))
+            shareKeptOwner(id);
+    }
     pumpSession();
 }
 
@@ -463,7 +477,9 @@ bool Ed3kTorrentJoin::wantsSet(const QString& owner) const
 
 bool Ed3kTorrentJoin::keepsOwner(const QString& owner) const
 {
-    return m_bt.torrent(owner).has_value();
+    // the rows come with each add_torrent_alert after BtSession::start: dropping what was
+    // kept before that lost every completed set at a restart (no republish)
+    return m_bt.torrent(owner).has_value() || !m_bt.isRunning() || m_bt.isResuming(owner);
 }
 
 QString Ed3kTorrentJoin::keptMemberPath(const QString& owner, int member) const
@@ -859,11 +875,111 @@ void Ed3kTorrentJoin::hashMember(const QString& id, int index)
     m.flushWait = false;
     if (m.hashing)
         return;
+    // a volume of an archive set: one read for every volume and the contents (hoster.md §6.1)
+    const auto row = m_bt.torrent(id);
+    if (m_publishContents && row && !row->isPrivate) {
+        const std::vector<int> set = archiveSetOf(*j, index);
+        bool ready = !set.empty();
+        bool alone = set.empty();
+        for (const int i : set) {
+            const auto tm = j->torrent.member(std::uint64_t(i));
+            if (!tm || (tm->status != ffi::MemberStatus::Open && tm->status != ffi::MemberStatus::Complete)
+                || j->members[std::size_t(i)].hashing) {
+                alone = true;   // hashed already, or never coming: each on its own
+                break;
+            }
+            if (tm->status == ffi::MemberStatus::Open)
+                ready = false;
+        }
+        if (!alone) {
+            if (ready)
+                hashArchiveSet(id, set);
+            return;   // else the last volume to complete starts it
+        }
+    }
     m.hashing = true;
     m.generation = ++m_hashGeneration;
     const quint64 generation = m.generation;
     hashInBackground(memberPath(*j, index), [this, id, index, generation](std::optional<FileHash> hashed) {
         onMemberHashed(id, index, generation, hashed);
+    });
+}
+
+void Ed3kTorrentJoin::setArchiveContents(std::function<void(ArchiveListing)> publish, const QStringList& passwords,
+                                         const QString& externalTool)
+{
+    m_publishContents = std::move(publish);
+    m_archivePasswords = passwords;
+    m_externalTool = externalTool;
+}
+
+std::vector<int> Ed3kTorrentJoin::archiveSetOf(const Join& j, int member) const
+{
+    const QString path = memberPath(j, member);
+    const auto pos = usenet::UsenetUnpacker::volumePositionOf(QFileInfo(path).fileName());
+    if (pos.index < 0)
+        return {};
+    const QString dir = QFileInfo(path).path();
+    std::map<int, int> byIndex;   // volume index → member
+    for (int i = 0; i < int(j.members.size()); ++i) {
+        const QString p = memberPath(j, i);
+        if (QFileInfo(p).path() != dir)
+            continue;
+        const auto other = usenet::UsenetUnpacker::volumePositionOf(QFileInfo(p).fileName());
+        if (other.index >= 0 && other.baseName == pos.baseName)
+            byIndex[other.index] = i;
+    }
+    // headless or with a gap: not a set to read
+    if (byIndex.empty() || byIndex.begin()->first > pos.first)
+        return {};
+    std::vector<int> set;
+    int expect = byIndex.begin()->first;
+    for (const auto& [index, m] : byIndex) {
+        if (index != expect++)
+            return {};
+        set.push_back(m);
+    }
+    return set;
+}
+
+void Ed3kTorrentJoin::hashArchiveSet(const QString& id, const std::vector<int>& set)
+{
+    Join* j = findJoin(id);
+    if (!j)
+        return;
+    QStringList volumes;
+    std::vector<quint64> generations;
+    for (const int i : set) {
+        Join::Member& m = j->members[std::size_t(i)];
+        m.flushWait = false;
+        m.hashing = true;
+        m.generation = ++m_hashGeneration;
+        generations.push_back(m.generation);
+        volumes << memberPath(*j, i);
+    }
+    runHashJob([this, id, set, volumes, generations, passwords = m_archivePasswords, tool = m_externalTool,
+                publish = m_publishContents](const std::atomic<bool>& cancel) -> std::function<void()> {
+        Ed3kContentsTap tap({}, int(volumes.size()));
+        const auto password = Ed3kArchiveContents::readSet(volumes, passwords, tool, tap, &cancel);
+        if (cancel.load())
+            return {};
+        std::vector<std::optional<VolumeHash>> hashes;
+        for (int v = 0; v < int(volumes.size()); ++v)
+            hashes.push_back(tap.volume(v));
+        std::optional<ArchiveListing> listing;
+        if (password)
+            listing = tap.listing(QFileInfo(volumes.first()).fileName(), *password);
+        return [this, id, set, generations, hashes, listing, publish] {
+            for (std::size_t k = 0; k < set.size(); ++k) {
+                std::optional<FileHash> h;
+                if (hashes[k])
+                    h = FileHash{hashes[k]->root, hashes[k]->size, hashes[k]->hashes};
+                onMemberHashed(id, set[k], generations[k], h);
+            }
+            // published once the volumes verified as the torrent's (memberHashed above)
+            if (listing && publish)
+                publish(*listing);
+        };
     });
 }
 
@@ -877,8 +993,18 @@ void Ed3kTorrentJoin::onMemberHashed(const QString& id, int index, quint64 gener
         return;
     m.hashing = false;
     if (!hashed) {
+        // gone from disk (deleted or moved behind libtorrent's back): no retries, one summary
+        // line per torrent; the next start or a BT recheck tries again
+        const QString path = memberPath(*j, index);
+        if (!QFileInfo::exists(path)) {
+            if (j->missing++ == 0) {
+                j->firstMissing = path;
+                QTimer::singleShot(kMissingLogMs, this, [this, id] { logMissing(id); });
+            }
+            return;
+        }
         // was: ToDo: hash again later (done: after kRehashMs, and at the next start in ensureJoin)
-        logWarning(QStringLiteral("cannot hash member %1 of \"%2\" (%3)").arg(index).arg(name(id), memberPath(*j, index)));
+        logWarning(QStringLiteral("cannot hash member %1 of \"%2\" (%3)").arg(index).arg(name(id), path));
         if (++m.rehashTries < kRehashTries)
             QTimer::singleShot(kRehashMs, this, [this, id, index] {
                 if (const auto tm = member(id, index); tm && tm->status == ffi::MemberStatus::Complete)
@@ -1033,12 +1159,12 @@ void Ed3kTorrentJoin::startSetSearch(const QString& id)
     const auto row = m_bt.torrent(id);
     if (!row || privateHeld(id))
         return;
-    // complete here, its set kept: the Kad lookup would only find our own set
-    if (row->totalSize > 0 && row->haveBytes >= row->totalSize) {
-        if (const auto set = keptSet(id)) {
-            logDebug([&]() -> QString { return QStringLiteral("no set search for \"%1\": complete, set %2 kept").arg(name(id), hexOf(set->bytes)); });
-            return;
-        }
+    // completed here, its set kept: the Kad lookup would only find our own set. Not judged
+    // by haveBytes: a resumed row has 0 until libtorrent's check (it searched its own set)
+    // if (row->totalSize > 0 && row->haveBytes >= row->totalSize) {
+    if (const auto set = keptSet(id)) {
+        logDebug([&]() -> QString { return QStringLiteral("no set search for \"%1\": set %2 kept").arg(name(id), hexOf(set->bytes)); });
+        return;
     }
     // a hybrid torrent: both (§5); relation SET. The candidate loop is the base's (tryNextSet)
     if (const auto v1 = hexBytes(row->hashV1, 20))
@@ -1177,6 +1303,17 @@ void Ed3kTorrentJoin::applyPrivateJoins()
 {
     if (auto* e = m_session.engine())
         (void)e->setTorrentSharePrivate(m_privateJoins);
+}
+
+void Ed3kTorrentJoin::logMissing(const QString& id)
+{
+    Join* j = findJoin(id);
+    if (!j || j->missing == 0)
+        return;
+    logWarning(QStringLiteral("%1 complete member(s) of \"%2\" missing on disk (first: %3), not shared; recheck the torrent")
+                   .arg(j->missing).arg(name(id), j->firstMissing));
+    j->missing = 0;
+    j->firstMissing.clear();
 }
 
 } // namespace eMule::ed3k

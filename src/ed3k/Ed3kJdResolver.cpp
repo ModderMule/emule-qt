@@ -109,7 +109,18 @@ QJsonObject accountJson(const std::optional<ResolverAccount>& a)
 {
     if (!a || a->user.isEmpty())
         return {};
-    return QJsonObject{{QStringLiteral("user"), a->user}, {QStringLiteral("password"), a->password}};
+    QJsonObject o{{QStringLiteral("user"), a->user}, {QStringLiteral("password"), a->password}};
+    if (!a->via.isEmpty())
+        o.insert(QStringLiteral("host"), a->via);
+    if (const QJsonDocument d = QJsonDocument::fromJson(a->state); d.isObject())
+        o.insert(QStringLiteral("state"), d.object());
+    return o;
+}
+
+/// "via" for a multi-hoster login, else "account"
+QString accountKey(const std::optional<ResolverAccount>& a)
+{
+    return a && !a->via.isEmpty() ? QStringLiteral("via") : QStringLiteral("account");
 }
 
 } // namespace
@@ -468,7 +479,7 @@ Ed3kResolver::TaskId Ed3kJdResolver::open(const QString& url, const std::optiona
                   {QStringLiteral("path"), dir},
                   {QStringLiteral("have"), static_cast<qint64>(have)}};
     if (const QJsonObject a = accountJson(account); !a.isEmpty())
-        r.insert(QStringLiteral("account"), a);
+        r.insert(accountKey(account), a);
     return request(r, true);
 }
 
@@ -633,6 +644,33 @@ std::optional<std::pair<Ed3kResolver::TaskId, ResolverEvent>> Ed3kJdResolver::pa
     if (e.kind == K::Solved) {
         e.host = str("solver");
         e.name = str("expected");
+    }
+    if (e.kind == K::Account) {
+        e.multi = o.value(QStringLiteral("multi")).toBool();
+        for (const QJsonValue& v : o.value(QStringLiteral("hosts")).toArray()) {
+            const QJsonObject h = v.toObject();
+            const auto num = [&h](const char* key, qint64 def) { return h.value(QLatin1StringView(key)).toInteger(def); };
+            DebridHost d;
+            d.domain = h.value(QStringLiteral("domain")).toString().toLower();
+            for (const QJsonValue& x : h.value(QStringLiteral("domains")).toArray())
+                if (const QString s = x.toString().toLower(); !s.isEmpty())
+                    d.domains << s;
+            if (d.domain.isEmpty())
+                continue;
+            if (!d.domains.contains(d.domain))
+                d.domains.prepend(d.domain);
+            d.status = h.value(QStringLiteral("status")).toString(QStringLiteral("working"));
+            d.linksLeft = num("linksLeft", -1);
+            d.linksMax = num("linksMax", -1);
+            d.trafficLeft = num("trafficLeft", -1);
+            d.trafficMax = num("trafficMax", -1);
+            d.factor = int(std::clamp<qint64>(num("factor", 100), 1, 100000));
+            d.maxDownloads = int(num("maxDownloads", -1));
+            d.unavailableS = std::max<qint64>(0, num("unavailableS", 0));
+            e.hosts.append(d);
+        }
+        if (const QJsonObject st = o.value(QStringLiteral("state")).toObject(); !st.isEmpty())
+            e.state = QJsonDocument(st).toJson(QJsonDocument::Compact);
     }
     for (const QJsonValue& v : o.value(QStringLiteral("accounts")).toArray()) {
         const QJsonObject a = v.toObject();
@@ -922,6 +960,7 @@ void Ed3kJdResolver::handleLine(const QByteArray& line)
         if (const QString rev = o.value(QStringLiteral("jdRevision")).toString(); !rev.isEmpty() && rev != u'?')
             m_revision = rev;
         m_deep = o.value(QStringLiteral("deep")).toBool();
+        m_debrid = o.value(QStringLiteral("debrid")).toBool();
         logHosterDebug([&]() -> QString { return QStringLiteral("hoster: <- hello, protocol %1, JD r%2, %3 hosters, %4 decrypters")
                            .arg(proto)
                            .arg(o.value(QStringLiteral("jdRevision")).toString())
@@ -1092,6 +1131,8 @@ QString Ed3kJdResolver::describeRequest(const QJsonObject& req)
         out += u' ' + host;
     if (req.contains(QStringLiteral("account")))
         out += QStringLiteral(" with account");
+    if (const QJsonObject via = req.value(QStringLiteral("via")).toObject(); !via.isEmpty())
+        out += QStringLiteral(" via ") + via.value(QStringLiteral("host")).toString();
     if (const QJsonArray accs = req.value(QStringLiteral("accounts")).toArray(); !accs.isEmpty()) {
         QStringList hosts;
         for (const QJsonValue& v : accs)
@@ -1169,6 +1210,8 @@ void Ed3kJdResolver::logEvent(TaskId id, const QString& ev, const ResolverEvent&
                 .arg(e.maxDownloads > 0    ? QStringLiteral(", %1 downloads at once").arg(e.maxDownloads)
                      : e.maxDownloads < 0 ? QStringLiteral(", downloads at once unlimited")
                                           : QString());
+        if (e.multi)
+            d += QStringLiteral(", multi-hoster for %1 hosts").arg(e.hosts.size());
         break;
     case K::Solvers: {
         QStringList parts;

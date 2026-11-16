@@ -26,10 +26,12 @@
 
 #ifdef EMULE_HAVE_BITTORRENT
 
+#include "Ed3kArchiveContents.h"
 #include "Ed3kJoinBase.h"
 
 #include <QByteArray>
 #include <QString>
+#include <QStringList>
 
 #include <cstdint>
 #include <functional>
@@ -54,6 +56,8 @@ public:
     static constexpr int kHoldTimeoutMs = 60 * 1000;
     /// A complete member is hashed after libtorrent's cache flush, or after this long.
     static constexpr int kFlushWaitMs = 30 * 1000;
+    /// members found gone from disk are summed up this long, then one log line
+    static constexpr int kMissingLogMs = 5 * 1000;
 
     /// @p configDir: the joins go to <configDir>/ed3k/torrent. Both sessions must outlive this.
     Ed3kTorrentJoin(Ed3kSession& session, bt::BtSession& bt, const QString& configDir, QObject* parent = nullptr);
@@ -77,6 +81,12 @@ public:
     /// Whether private torrents join too (torrent.md §6.3 "Shared"; btShareMode "all"): set,
     /// ALIAS records, ed3k sources. Off (the default) withdraws them; on adds them.
     void setPrivateJoins(bool allowed);
+
+    /// Archive sets among the members (hoster.md §6.1): once every volume is complete, one read
+    /// hashes the volumes (the verify) and lists the entries for @p publish. Null @p publish:
+    /// each member hashed alone. @p passwords / @p externalTool: for encrypted RAR/7z.
+    void setArchiveContents(std::function<void(ArchiveListing)> publish, const QStringList& passwords,
+                            const QString& externalTool);
 
     // -- state, for the daemon and tests -----------------------------------
 
@@ -126,8 +136,10 @@ protected:
     // was: onOtherEvent for the AliasFound of the set searches; now the base's
     [[nodiscard]] bool wantsSet(const QString& owner) const override;
     void onSetManifest(const QString& owner, const ::ed3k::Root& root, const QByteArray& data) override;
+    /// in libtorrent, or maybe soon (BT off, or still resuming at start)
     [[nodiscard]] bool keepsOwner(const QString& owner) const override;
-    /// not an I2P torrent while btI2pEd3kJoin is off
+    /// not an I2P torrent while btI2pEd3kJoin is off; not before libtorrent has it (shared
+    /// at onTorrentAdded then)
     [[nodiscard]] bool sharesKeptOwner(const QString& owner) const override;
     /// An I2P torrent that may not join (setI2pJoins).
     [[nodiscard]] bool i2pHeld(const QString& id) const;
@@ -163,6 +175,10 @@ private:
     void onHoldTimeout(const QString& id, int piece);
     void onMemberComplete(const QString& id, int member);
     void hashMember(const QString& id, int member);
+    /// Members of the archive set @p member is a volume of, in volume order; empty: none.
+    [[nodiscard]] std::vector<int> archiveSetOf(const Join& j, int member) const;
+    /// One read of the set's volumes: their hashes and the contents listing.
+    void hashArchiveSet(const QString& id, const std::vector<int>& set);
     void onMemberHashed(const QString& id, int member, quint64 generation, const std::optional<FileHash>& hashed);
     void onMemberVerified(const QString& id, int member, const ::ed3k::Root& root);
     void onHaveChanged(const QString& id, int member);
@@ -179,6 +195,8 @@ private:
     void feedPieces(const QString& id, const std::vector<std::uint64_t>& pieces);
     void reportProblem(const QString& id, int member, const QString& message);
     [[nodiscard]] QString memberPath(const Join& j, int member) const;
+    /// the members gone from disk since the last line, as one warning
+    void logMissing(const QString& id);
     [[nodiscard]] QString name(const QString& id) const;
     void saveJoin(const QString& id);
     /// Every piece over [begin, end) of the piece space is in libtorrent (Join::have).
@@ -193,12 +211,17 @@ private:
     QSet<QString> m_noJoin;
     /// made here, join not yet created (adoptCreated)
     QSet<QString> m_created;
+    /// kept of a torrent libtorrent had not added yet: shared once it does
+    mutable QSet<QString> m_keptWaiting;
     // was: alias searches → torrent id; now the base's set searches
     /// the sinks' way back here; closed in the destructor
     std::shared_ptr<Gate> m_gate;
     quint64 m_hashGeneration = 0;
     bool m_i2pJoins = true;
     bool m_privateJoins = false;
+    std::function<void(ArchiveListing)> m_publishContents;
+    QStringList m_archivePasswords;
+    QString m_externalTool;
 };
 
 } // namespace eMule::ed3k

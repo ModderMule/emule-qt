@@ -105,10 +105,8 @@ HosterUnpackResult Ed3kHosterUnpack::run(const HosterUnpackJob& job, const std::
         removeDirTree(job.scratchDir);
         return r;
     }
-    // the contents record (hoster.md §6.1), while every volume is still here
-    for (const auto& set : usenet::UsenetUnpacker::findArchiveSets(job.archiveDir))
-        if (!set.headless && !job.skip.contains(set.firstVolume))
-            readArchiveContents(set.volumes, options.passwords);
+    // the contents records (hoster.md §6.1), hashed in the unpack's own read
+    u.commitContents();
 
     // inner archives that were opened live in scratch: drop them, or keep them
     // beside their contents when the user keeps archives

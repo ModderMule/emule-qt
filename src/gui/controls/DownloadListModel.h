@@ -230,6 +230,8 @@ public:
     [[nodiscard]] int rowCount(const QModelIndex& parent = {}) const override;
     [[nodiscard]] int columnCount(const QModelIndex& parent = {}) const override;
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
+    /// File rows drag onto a category tab (MFC CTransferWnd::OnLvnBegindrag)
+    [[nodiscard]] Qt::ItemFlags flags(const QModelIndex& index) const override;
     [[nodiscard]] QVariant headerData(int section, Qt::Orientation orientation,
                                       int role = Qt::DisplayRole) const override;
     [[nodiscard]] bool hasChildren(const QModelIndex& parent = {}) const override;

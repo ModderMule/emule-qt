@@ -11,6 +11,7 @@
 #include <QImage>
 #include <QPainter>
 #include <QPixmap>
+#include <QStringList>
 
 namespace eMule {
 
@@ -269,6 +270,51 @@ QIcon iconPair(const QIcon& first, const QIcon& second)
         cache.clear();
     cache.insert(key, icon);
     return icon;
+}
+
+Ed3kJobSource Ed3kJobSource::fromCbor(const QCborMap& m)
+{
+    Ed3kJobSource s;
+    s.key = m.value(QStringLiteral("userHash")).toString();
+    s.name = m.value(QStringLiteral("userName")).toString();
+    s.software = m.value(QStringLiteral("software")).toString();
+    const QString addr = m.value(QStringLiteral("addr")).toString();
+    const qint64 port = m.value(QStringLiteral("port")).toInteger();
+    if (!addr.isEmpty())
+        s.address = port > 0 ? (addr.contains(u':') ? QStringLiteral("[%1]:%2") : QStringLiteral("%1:%2")).arg(addr).arg(port)
+                             : addr;
+    s.fileName = m.value(QStringLiteral("fileName")).toString();
+    s.state = m.value(QStringLiteral("downloadState")).toString();
+    s.rate = m.value(QStringLiteral("datarate")).toInteger();
+    s.received = m.value(QStringLiteral("transferredDown")).toInteger();
+    s.have = int(m.value(QStringLiteral("availPartCount")).toInteger());
+    s.pieces = int(m.value(QStringLiteral("partCount")).toInteger());
+    for (const QCborValue& c : m.value(QStringLiteral("sourcePartMap")).toArray())
+        s.parts.append(char(c.toInteger()));
+    s.anonymous = m.value(QStringLiteral("key")).toString() == QLatin1String("Anonymous");
+    s.join = ed3kJoinOf(m.value(QStringLiteral("join")).toString());
+    return s;
+}
+
+QString Ed3kJobSource::addressText() const
+{
+    return address.isEmpty() ? QCoreApplication::translate("ClientIcons", "(hidden)") : address;
+}
+
+QString Ed3kJobSource::stateText() const
+{
+    return state == QLatin1String("Downloading") ? QCoreApplication::translate("ClientIcons", "Downloading")
+                                                 : QCoreApplication::translate("ClientIcons", "On Queue");
+}
+
+QString Ed3kJobSource::toolTip() const
+{
+    QStringList lines{ed3kNetworkText(anonymous, join)};
+    if (!software.isEmpty())
+        lines << QCoreApplication::translate("ClientIcons", "Client: %1").arg(software);
+    if (!fileName.isEmpty())
+        lines << QCoreApplication::translate("ClientIcons", "File: %1").arg(fileName);
+    return lines.join(u'\n');
 }
 
 } // namespace eMule

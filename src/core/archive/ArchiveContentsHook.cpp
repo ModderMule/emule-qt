@@ -28,15 +28,16 @@ void setArchiveContentsHook(ArchiveContentsHook hook)
     hookSlot() = std::move(hook);
 }
 
-void readArchiveContents(const QStringList& volumes, const QStringList& passwords)
+std::shared_ptr<ArchiveContentsTap> archiveContentsTap()
 {
     ArchiveContentsHook hook;
     {
         const QMutexLocker lock(&hookMutex());
         hook = hookSlot();
     }
-    if (hook && !volumes.isEmpty())
-        hook(volumes, passwords);
+    if (!hook)
+        return {};
+    return std::shared_ptr<ArchiveContentsTap>(hook());
 }
 
 } // namespace eMule

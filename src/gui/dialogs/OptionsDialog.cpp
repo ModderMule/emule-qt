@@ -366,6 +366,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_previewPrioCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_downloadSeekingCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_watchClipboardCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_knownLinkPopupCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_advancedCalcRemainingCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_startNextPausedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_preferSameCatCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -430,6 +431,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_serverKeepAliveSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_useCreditSystemCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_rememberUploadQueueCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_disableEd2kCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_filterLANIPsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showExtControlsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_a4afSaveCpuCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -2418,6 +2420,13 @@ QWidget* OptionsDialog::createFilesPage()
 
     m_watchClipboardCheck = new QCheckBox(tr("Watch clipboard for eD2K links"), miscGroup);
     miscLayout->addWidget(m_watchClipboardCheck);
+
+    // no MFC original: MFC only logs + status bar (IsFileExisting, LOG_STATUSBAR)
+    m_knownLinkPopupCheck = new QCheckBox(tr("Show a message for links already downloading or shared"), miscGroup);
+    m_knownLinkPopupCheck->setToolTip(
+        tr("Off: a clicked link for a file you already download or share is only noted in the "
+           "log and the status bar."));
+    miscLayout->addWidget(m_knownLinkPopupCheck);
 
     m_advancedCalcRemainingCheck = new QCheckBox(tr("Use advanced calculation method for remaining time"), miscGroup);
     miscLayout->addWidget(m_advancedCalcRemainingCheck);
@@ -6483,6 +6492,14 @@ QWidget* OptionsDialog::createExtendedPage()
     m_a4afSaveCpuCheck = new QCheckBox(tr("Disable A4AF checks to save CPU"), scrollWidget);
     scrollLayout->addWidget(m_a4afSaveCpuCheck);
 
+    m_disableEd2kCheck = new QCheckBox(tr("Disable eD2K (not recommended)"), scrollWidget);
+    m_disableEd2kCheck->setToolTip(
+        tr("Closes the eD2K TCP port and drops every eD2K packet, never connects to eD2K "
+           "servers, Kad or eD2K peers and closes all open eD2K connections. The UDP port "
+           "stays open only when ed3k uses the same port. ed3k, BitTorrent and Usenet keep "
+           "working."));
+    scrollLayout->addWidget(m_disableEd2kCheck);
+
     m_disableArchPreviewCheck = new QCheckBox(
         tr("Disable automatic archive preview start in file details"), scrollWidget);
     scrollLayout->addWidget(m_disableArchPreviewCheck);
@@ -8290,6 +8307,8 @@ void OptionsDialog::saveSettings()
         req.append(m_rememberUploadQueueCheck->isChecked());
         req.append(QStringLiteral("a4afSaveCpu"));
         req.append(m_a4afSaveCpuCheck->isChecked());
+        req.append(QStringLiteral("disableEd2k"));
+        req.append(m_disableEd2kCheck->isChecked());
         req.append(QStringLiteral("autoArchivePreviewStart"));
         req.append(!m_disableArchPreviewCheck->isChecked());
         req.append(QStringLiteral("ed2kHostname"));
@@ -8695,6 +8714,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setUseCreditSystem(m_useCreditSystemCheck->isChecked());
         thePrefs.setRememberUploadQueue(m_rememberUploadQueueCheck->isChecked());
         thePrefs.setA4afSaveCpu(m_a4afSaveCpuCheck->isChecked());
+        thePrefs.setDisableEd2k(m_disableEd2kCheck->isChecked());
         thePrefs.setAutoArchivePreviewStart(!m_disableArchPreviewCheck->isChecked());
         thePrefs.setEd2kHostname(m_ed2kHostnameEdit->text());
         thePrefs.setEd2kLinkAdvertiseIPv6(m_ed2kLinkAdvertiseIPv6Check->isChecked());
@@ -8792,6 +8812,7 @@ void OptionsDialog::saveSettings()
         applyDesktopIntegration();
 #endif
     theUiState.setAddLinksWithoutConfirm(m_addLinksDirectCheck->isChecked());
+    theUiState.setKnownLinkPopup(m_knownLinkPopupCheck->isChecked());
 
     saveIndexers();
     saveFeeds();
@@ -9115,6 +9136,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     }
 #endif
     m_addLinksDirectCheck->setChecked(theUiState.addLinksWithoutConfirm());
+    m_knownLinkPopupCheck->setChecked(theUiState.knownLinkPopup());
     if (QCheckBox* cnl = m_ed3kPages->clickNLoadCheck()) {
         const QSignalBlocker block(cnl);
         cnl->setChecked(theUiState.clickNLoad());
@@ -9225,6 +9247,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_rememberUploadQueueCheck->setChecked(
         prefs.value(QStringLiteral("rememberUploadQueue")).toBool(true));
     m_filterLANIPsCheck->setChecked(prefs.value(QStringLiteral("filterLANIPs")).toBool(true));
+    m_disableEd2kCheck->setChecked(prefs.value(QStringLiteral("disableEd2k")).toBool());
     m_showExtControlsCheck->setChecked(prefs.value(QStringLiteral("showExtControls")).toBool(true));
     m_a4afSaveCpuCheck->setChecked(prefs.value(QStringLiteral("a4afSaveCpu")).toBool());
     m_disableArchPreviewCheck->setChecked(!prefs.value(QStringLiteral("autoArchivePreviewStart")).toBool(true));

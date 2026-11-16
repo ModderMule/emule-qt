@@ -27,6 +27,9 @@
 #include <QPlainTextEdit>
 #include <QStyle>
 #include <QTabWidget>
+
+#include "controls/ArchiveContentsView.h"
+#include "utils/ArchiveContentsIpc.h"
 #include <QTextBrowser>
 #include <QTimer>
 #include <QToolButton>
@@ -118,9 +121,17 @@ TorrentDetailsDialog::TorrentDetailsDialog(IpcClient* ipc, const TorrentListMode
     m_tabs->insertTab(TabInfo, buildInfoTab(), menuIcon("FileInfo.ico"), tr("Info"));
     m_tabs->insertTab(TabActivity, buildActivityTab(), menuIcon("Statistics.ico"), tr("Activity"));
     m_tabs->insertTab(TabOptions, buildOptionsTab(), menuIcon("Preferences.ico"), tr("Options"));
+    // what its archives hold, from ed3k; looked up when opened (no extraction for torrents)
+    m_archive = new ArchiveContentsView(m_tabs, false);
+    m_tabs->insertTab(TabArchive, m_archive, menuIcon("FileInfo.ico"), tr("Archive"));
+    ArchiveContentsIpc::attach(m_archive, m_ipc, [this] {
+        return std::pair{QStringLiteral("torrent"), QCborMap{{QStringLiteral("torrentId"), m_id}}};
+    }, QString());
     m_tabs->setCurrentIndex(s_lastTab);
     connect(m_tabs, &QTabWidget::currentChanged, this, [this](int tab) {
         s_lastTab = tab;
+        if (tab == TabArchive)
+            m_archive->ensureLookup();
         setWindowTitle(tr("%1 — Torrent Inspector").arg(m_tabs->tabText(tab)));
     });
     setWindowTitle(tr("%1 — Torrent Inspector").arg(m_tabs->tabText(s_lastTab)));
@@ -151,6 +162,11 @@ void TorrentDetailsDialog::setTorrentId(const QString& id)
         return;
     if (m_optionsDirty && id != m_id)
         sendOptions();   // what the user typed belongs to the torrent they typed it for
+    if (id != m_id && m_archive) {
+        m_archive->reset();
+        if (m_tabs->currentIndex() == TabArchive)
+            QTimer::singleShot(0, m_archive, &ArchiveContentsView::ensureLookup);
+    }
     m_id = id;
     setSubjectKey(id);
     m_grid->setAvailabilityMap({});

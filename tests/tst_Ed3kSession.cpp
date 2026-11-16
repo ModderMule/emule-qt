@@ -44,6 +44,7 @@ private slots:
     void limitsKeptAcrossRestart();
     void serverIndexNode_dialledOnlyWithAutoConnect();
     void declineListParsed();
+    void declineListPrefixes();
     void declineFileReadAtStartAndOnChange();
 
 private:
@@ -644,6 +645,40 @@ void tst_Ed3kSession::declineListParsed()
     QVERIFY(parseDeclineList(QStringLiteral("# only\n")).isEmpty());
 }
 
+void tst_Ed3kSession::declineListPrefixes()
+{
+    const QString md4 = QStringLiteral("0123456789abcdef0123456789ABCDEF");
+    const QString key(64, u'b');
+    const DeclineList l = parseDeclineList(QStringLiteral("ed2k:%1\n"
+                                                          "ED2K://|file|some.name.avi|1234|%1|h=ABC|/\n"
+                                                          "key:%2\n"
+                                                          "kind:note\nKIND: Alias\nkind:7\n"
+                                                          "kind:0\nkind:bogus\ned2k:12\nkey:zz\ned2k://|server|1.2.3.4|4661|/\n"
+                                                          "%2\n"
+                                                          "plain words\n")
+                                               .arg(md4, key));
+    QCOMPARE(l.ed2k.size(), std::size_t(2));
+    QCOMPARE(l.ed2k[0], l.ed2k[1]);
+    QCOMPARE(l.ed2k[0][0], std::uint8_t(0x01));
+    QCOMPARE(l.ed2k[0][15], std::uint8_t(0xef));
+    QCOMPARE(l.keys.size(), std::size_t(1));
+    QCOMPARE(l.keys[0][31], std::uint8_t(0xbb));
+    QCOMPARE(l.kinds, (std::vector<std::uint32_t>{3, 13, 7}));
+    // a bad prefixed value: skipped, never a keyword
+    QCOMPARE(l.invalid.size(), 5);
+    QCOMPARE(l.roots.size(), std::size_t(1));
+    QCOMPARE(l.keywords, QStringList{QStringLiteral("plain words")});
+    QVERIFY(l.listsEd2k(QByteArray::fromHex(md4.toLatin1())));
+    QVERIFY(!l.listsEd2k(QByteArray(16, '\0')));
+    QVERIFY(l.listsFile(l.roots.front()));
+    QCOMPARE(declineKindOf(QStringLiteral("claim")), std::optional<std::uint32_t>(15));
+    QVERIFY(!declineKindOf(QStringLiteral("none")));
+    // to the engine as they are
+    const auto ffi = l.toFfi();
+    QCOMPARE(ffi.ed2k.size(), std::size_t(2));
+    QCOMPARE(ffi.keywords, (std::vector<std::string>{"plain words"}));
+}
+
 void tst_Ed3kSession::declineFileReadAtStartAndOnChange()
 {
     QTemporaryDir dir;
@@ -662,11 +697,18 @@ void tst_Ed3kSession::declineFileReadAtStartAndOnChange()
     write(QByteArrayLiteral("sleep\nrain\n") + QByteArray(64, 'a') + '\n');
     QTRY_COMPARE_WITH_TIMEOUT(s.declined().roots.size(), std::size_t(1), 10000);
     QCOMPARE(s.declined().keywords.size(), 2);
+    // every list to the engine (kadDeclineLists); a reload at once
+    write(QByteArrayLiteral("sleep\nrain\n") + QByteArray(64, 'a') + "\ned2k:" + QByteArray(32, 'c') + "\nkey:" + QByteArray(64, 'd')
+          + "\nkind:NOTE\n");
+    s.reloadDeclineFile();
+    QCOMPARE(s.declined().ed2k.size(), std::size_t(1));
+    QCOMPARE(s.declined().keys.size(), std::size_t(1));
+    QCOMPARE(s.declined().kinds, std::vector<std::uint32_t>{3});
     // file gone: the list stays; an API list over no file
     QFile::remove(path);
     QTest::qWait(300);
     QCOMPARE(s.declined().keywords.size(), 2);
-    s.setDeclined(DeclineList{{}, {QStringLiteral("quiet")}});
+    s.setDeclined(DeclineList{.keywords = {QStringLiteral("quiet")}});
     QCOMPARE(s.declined().keywords, QStringList{QStringLiteral("quiet")});
     QVERIFY(s.isRunning());
     s.stop();

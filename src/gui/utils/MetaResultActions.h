@@ -52,6 +52,10 @@ public:
         /// Torrent: files checked in the Details window (empty = all); nullopt = not
         /// chosen there, then a file row downloads only its own file
         std::optional<QList<int>> keptFiles;
+        /// NZB: archive entries to extract (Details › Archive), first volume → paths
+        QHash<QString, QStringList> keptEntries;
+        /// NZB: an archive password a contents record carried
+        QString entryPassword;
 
         [[nodiscard]] bool isNzb() const { return kind == 3; }
         [[nodiscard]] bool isContainer() const { return kind == 6; }
@@ -65,7 +69,9 @@ public:
                         QPointer<SearchResultsModel> model);
 
     /// Download pressed in a Details window; @p unchecked and @p kept as downloadRequested() gives them.
-    using DetailsDownload = std::function<void(const QList<int>& unchecked, const QList<int>& kept)>;
+    /// @p entries, @p password: Details › Archive's "Download Archive, Extract Checked", else empty.
+    using DetailsDownload = std::function<void(const QList<int>& unchecked, const QList<int>& kept,
+                                               const QHash<QString, QStringList>& entries, const QString& password)>;
 
     /// Save the .torrent/.nzb/.dlc behind @p rows: a file dialog for one, a folder for several.
     void saveMetaFiles(quint32 searchID, const QList<Row>& rows);

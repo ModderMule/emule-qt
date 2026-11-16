@@ -595,6 +595,7 @@ struct Preferences::Data {
 
     // Network modes
     bool networkED2K = true;   // fresh install: every network on; a file without the key keeps it off
+    bool disableEd2k = false;  // hard off: no eD2K server/Kad/peer traffic at all
 
     // Chat / Messages
     bool msgOnlyFriends = false;   // Only accept messages from friends
@@ -829,6 +830,8 @@ struct Preferences::Data {
     int ed3kHashCacheLowRamPercent = 20;  // free RAM below: the engine keeps only block hashes in use
     int ed3kHashRamMiB = 0;               // the engine's RAM for block hashes; 0 = auto
     int ed3kKadStoreMiB = 0;              // the engine's RAM for Kad records of others; 0 = default (128)
+    bool ed3kRoomHistoryStore = true;     // recent room posts kept on disk across restarts
+    int ed3kRoomHistoryMax = 5000;        // posts kept per room (memory + disk)
     bool ed3kJointDownloads = true;    // eD2K downloads from ed3k too (§14.4)
     bool ed3kShareUsenetPosts = true;  // off = hold back, usenet.md §6
     bool ed3kArchiveContents = true;   // hoster.md §6.1 contents records
@@ -2736,6 +2739,13 @@ int Preferences::ed3kHashRamMiB() const { return get(&Data::ed3kHashRamMiB); }
 void Preferences::setEd3kHashRamMiB(int val) { set(&Data::ed3kHashRamMiB, std::clamp(val, 0, kMaxEd3kHashRamMiB)); }
 int Preferences::ed3kKadStoreMiB() const { return get(&Data::ed3kKadStoreMiB); }
 void Preferences::setEd3kKadStoreMiB(int val) { set(&Data::ed3kKadStoreMiB, std::clamp(val, 0, kMaxEd3kKadStoreMiB)); }
+bool Preferences::ed3kRoomHistoryStore() const { return get(&Data::ed3kRoomHistoryStore); }
+void Preferences::setEd3kRoomHistoryStore(bool val) { set(&Data::ed3kRoomHistoryStore, val); }
+int Preferences::ed3kRoomHistoryMax() const { return get(&Data::ed3kRoomHistoryMax); }
+void Preferences::setEd3kRoomHistoryMax(int val)
+{
+    set(&Data::ed3kRoomHistoryMax, std::clamp(val, kMinEd3kRoomHistoryMax, kMaxEd3kRoomHistoryMax));
+}
 bool Preferences::ed3kJointDownloads() const { return get(&Data::ed3kJointDownloads); }
 void Preferences::setEd3kJointDownloads(bool val) { set(&Data::ed3kJointDownloads, val); }
 bool Preferences::ed3kShareUsenetPosts() const { return get(&Data::ed3kShareUsenetPosts); }
@@ -2949,6 +2959,8 @@ bool Preferences::applyEd3kHosterKey(Ed3kHosterPrefs& h, const QString& key, con
         h.grabAll = val.toBool(h.grabAll);
     else if (key == QLatin1StringView("ed3kHosterSolversEnabled"))
         h.solversEnabled = val.toBool(h.solversEnabled);
+    else if (key == QLatin1StringView("ed3kHosterDebridEnabled"))
+        h.debridEnabled = val.toBool(h.debridEnabled);
     else if (key == QLatin1StringView("ed3kHosterAutoUpdate"))
         h.autoUpdate = val.toBool(h.autoUpdate);
     else if (key == QLatin1StringView("ed3kHosterAccounts")) {
@@ -2957,6 +2969,9 @@ bool Preferences::applyEd3kHosterKey(Ed3kHosterPrefs& h, const QString& key, con
     } else if (key == QLatin1StringView("ed3kHosterSolvers")) {
         if (val.isArray())
             h.solvers = hosterAccountsFromCbor(val.toArray(), h.solvers, false);
+    } else if (key == QLatin1StringView("ed3kHosterDebrid")) {
+        if (val.isArray())
+            h.debrid = hosterAccountsFromCbor(val.toArray(), h.debrid, false);
     } else
         return false;
     return true;
@@ -3582,6 +3597,10 @@ bool Preferences::networkED2K() const { return get(&Data::networkED2K); }
 
 void Preferences::setNetworkED2K(bool val) { set(&Data::networkED2K, val); }
 
+bool Preferences::disableEd2k() const { return get(&Data::disableEd2k); }
+
+void Preferences::setDisableEd2k(bool val) { set(&Data::disableEd2k, val); }
+
 // ---------------------------------------------------------------------------
 // Getters / setters — Chat / Messages
 // ---------------------------------------------------------------------------
@@ -4109,6 +4128,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("reconnect"), reconnect());
     prefs.insert(QStringLiteral("showOverhead"), showOverhead());
     prefs.insert(QStringLiteral("networkED2K"), networkED2K());
+    prefs.insert(QStringLiteral("disableEd2k"), disableEd2k());
     prefs.insert(QStringLiteral("kadEnabled"), kadEnabled());
     prefs.insert(QStringLiteral("schedulerEnabled"), schedulerEnabled());
     prefs.insert(QStringLiteral("enableUPnP"), enableUPnP());
@@ -4317,6 +4337,8 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("ed3kHashCacheLowRamPercent"), static_cast<qint64>(ed3kHashCacheLowRamPercent()));
     prefs.insert(QStringLiteral("ed3kHashRamMiB"), static_cast<qint64>(ed3kHashRamMiB()));
     prefs.insert(QStringLiteral("ed3kKadStoreMiB"), static_cast<qint64>(ed3kKadStoreMiB()));
+    prefs.insert(QStringLiteral("ed3kRoomHistoryStore"), ed3kRoomHistoryStore());
+    prefs.insert(QStringLiteral("ed3kRoomHistoryMax"), static_cast<qint64>(ed3kRoomHistoryMax()));
     prefs.insert(QStringLiteral("ed3kJointDownloads"), ed3kJointDownloads());
     prefs.insert(QStringLiteral("ed3kShareUsenetPosts"), ed3kShareUsenetPosts());
     prefs.insert(QStringLiteral("ed3kArchiveContents"), ed3kArchiveContents());
@@ -4386,6 +4408,8 @@ QCborMap Preferences::toIpcMap() const
         prefs.insert(QStringLiteral("ed3kHosterAccounts"), hosterAccountsToCbor(h.accounts));
         prefs.insert(QStringLiteral("ed3kHosterSolversEnabled"), h.solversEnabled);
         prefs.insert(QStringLiteral("ed3kHosterSolvers"), hosterAccountsToCbor(h.solvers));
+        prefs.insert(QStringLiteral("ed3kHosterDebridEnabled"), h.debridEnabled);
+        prefs.insert(QStringLiteral("ed3kHosterDebrid"), hosterAccountsToCbor(h.debrid));
     }
 
     // Statistics
@@ -4520,6 +4544,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->reconnect        = p.value(QStringLiteral("reconnect")).toBool();
     m_data->showOverhead     = p.value(QStringLiteral("showOverhead")).toBool();
     m_data->networkED2K      = p.value(QStringLiteral("networkED2K")).toBool();
+    m_data->disableEd2k      = p.value(QStringLiteral("disableEd2k")).toBool();
     m_data->kadEnabled       = p.value(QStringLiteral("kadEnabled")).toBool();
     m_data->schedulerEnabled = p.value(QStringLiteral("schedulerEnabled")).toBool();
     m_data->enableUPnP       = p.value(QStringLiteral("enableUPnP")).toBool();
@@ -4720,6 +4745,9 @@ void Preferences::updateFromCbor(const QCborMap& p)
         static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kHashRamMiB")).toInteger(0), 0, kMaxEd3kHashRamMiB));
     m_data->ed3kKadStoreMiB =
         static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kKadStoreMiB")).toInteger(0), 0, kMaxEd3kKadStoreMiB));
+    m_data->ed3kRoomHistoryStore = p.value(QStringLiteral("ed3kRoomHistoryStore")).toBool(true);
+    m_data->ed3kRoomHistoryMax = static_cast<int>(std::clamp<qint64>(
+        p.value(QStringLiteral("ed3kRoomHistoryMax")).toInteger(5000), kMinEd3kRoomHistoryMax, kMaxEd3kRoomHistoryMax));
     m_data->ed3kJointDownloads = p.value(QStringLiteral("ed3kJointDownloads")).toBool(true);
     m_data->ed3kShareUsenetPosts = p.value(QStringLiteral("ed3kShareUsenetPosts")).toBool(true);
     m_data->ed3kArchiveContents = p.value(QStringLiteral("ed3kArchiveContents")).toBool(true);
@@ -5208,6 +5236,7 @@ bool Preferences::load(const QString& filePath)
             m_data->maxConsPerFive = static_cast<uint16>(n["maxConsPerFive"].as<int>(m_data->maxConsPerFive));
             m_data->showOverhead = n["showOverhead"].as<bool>(m_data->showOverhead);
             m_data->networkED2K = n["networkED2K"].as<bool>(false);   // older default: Kad only
+            m_data->disableEd2k = n["disableEd2k"].as<bool>(m_data->disableEd2k);
             // "publicIP" is deliberately not read: it now lives on AppContext as
             // session state. A value left over from an older preferences.yml is
             // ignored rather than resurrecting keys bound to a stale address.
@@ -6127,6 +6156,9 @@ bool Preferences::load(const QString& filePath)
                 std::clamp(e3["hashCacheLowRamPercent"].as<int>(m_data->ed3kHashCacheLowRamPercent), 0, 100);
             m_data->ed3kHashRamMiB = std::clamp(e3["hashRamMiB"].as<int>(m_data->ed3kHashRamMiB), 0, kMaxEd3kHashRamMiB);
             m_data->ed3kKadStoreMiB = std::clamp(e3["kadStoreMiB"].as<int>(m_data->ed3kKadStoreMiB), 0, kMaxEd3kKadStoreMiB);
+            m_data->ed3kRoomHistoryStore = e3["roomHistoryStore"].as<bool>(m_data->ed3kRoomHistoryStore);
+            m_data->ed3kRoomHistoryMax = std::clamp(e3["roomHistoryMax"].as<int>(m_data->ed3kRoomHistoryMax),
+                                                    kMinEd3kRoomHistoryMax, kMaxEd3kRoomHistoryMax);
             m_data->ed3kJointDownloads = e3["jointDownloads"].as<bool>(m_data->ed3kJointDownloads);
             m_data->ed3kShareUsenetPosts = e3["shareUsenetPosts"].as<bool>(m_data->ed3kShareUsenetPosts);
             m_data->ed3kArchiveContents = e3["archiveContents"].as<bool>(m_data->ed3kArchiveContents);
@@ -6237,6 +6269,8 @@ bool Preferences::load(const QString& filePath)
                 h.accounts = readAccounts("accounts", true);
                 h.solversEnabled = ho["solversEnabled"].as<bool>(h.solversEnabled);
                 h.solvers = readAccounts("solvers", false);
+                h.debridEnabled = ho["debridEnabled"].as<bool>(h.debridEnabled);
+                h.debrid = readAccounts("debrid", false);
             }
         }
 
@@ -6829,6 +6863,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "maxConsPerFive" << YAML::Value << static_cast<int>(m_data->maxConsPerFive);
     out << YAML::Key << "showOverhead" << YAML::Value << m_data->showOverhead;
     out << YAML::Key << "networkED2K" << YAML::Value << m_data->networkED2K;
+    out << YAML::Key << "disableEd2k" << YAML::Value << m_data->disableEd2k;
     out << YAML::EndMap;
 
     // Bandwidth
@@ -7384,7 +7419,8 @@ QByteArray Preferences::encode() const
                                                  });
     const auto hasPassword = [](const Ed3kHosterAccount& a) { return !a.password.isEmpty(); };
     const bool haveHosterPassword = std::ranges::any_of(m_data->ed3kHoster.accounts, hasPassword)
-                                    || std::ranges::any_of(m_data->ed3kHoster.solvers, hasPassword);
+                                    || std::ranges::any_of(m_data->ed3kHoster.solvers, hasPassword)
+                                    || std::ranges::any_of(m_data->ed3kHoster.debrid, hasPassword);
     // ed3k:cache links carry an upload key (http-source.md §4.1)
     const bool haveEd3kCacheLink = !m_data->ed3kCacheServers.isEmpty();
     if (encKey.isEmpty() && (!m_data->notifyEmailSmtpPassword.isEmpty() || haveCacheKey
@@ -7610,6 +7646,8 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "hashCacheLowRamPercent" << YAML::Value << m_data->ed3kHashCacheLowRamPercent;
     out << YAML::Key << "hashRamMiB" << YAML::Value << m_data->ed3kHashRamMiB;
     out << YAML::Key << "kadStoreMiB" << YAML::Value << m_data->ed3kKadStoreMiB;
+    out << YAML::Key << "roomHistoryStore" << YAML::Value << m_data->ed3kRoomHistoryStore;
+    out << YAML::Key << "roomHistoryMax" << YAML::Value << m_data->ed3kRoomHistoryMax;
     out << YAML::Key << "jointDownloads" << YAML::Value << m_data->ed3kJointDownloads;
     out << YAML::Key << "shareUsenetPosts" << YAML::Value << m_data->ed3kShareUsenetPosts;
     out << YAML::Key << "archiveContents" << YAML::Value << m_data->ed3kArchiveContents;
@@ -7718,6 +7756,8 @@ QByteArray Preferences::encode() const
         writeAccounts("accounts", h.accounts);
         out << YAML::Key << "solversEnabled" << YAML::Value << h.solversEnabled;
         writeAccounts("solvers", h.solvers);
+        out << YAML::Key << "debridEnabled" << YAML::Value << h.debridEnabled;
+        writeAccounts("debrid", h.debrid);
         out << YAML::EndMap;
     }
     out << YAML::EndMap;

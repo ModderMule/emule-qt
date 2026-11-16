@@ -704,6 +704,58 @@ private slots:
         QCOMPARE(gui.btI2pTrackers(), Preferences::defaultBtI2pTrackers());
     }
 
+    // single transfer mode (ed3k only): per network, through YAML and IPC; in effect only with ed3k
+    void singleTransfer_roundTrip()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("single.yaml"));
+        {
+            Preferences prefs;
+            prefs.setStartVersion(3);
+            prefs.setBtSingleTransfer(true);
+            prefs.setUsenetEnabled(true);
+            prefs.setUsenetSingleTransfer(true);
+            Ed3kHosterPrefs h = prefs.ed3kHoster();
+            h.singleTransfer = true;
+            prefs.setEd3kHoster(h);
+            prefs.setSingleTransferPaused({QStringLiteral("torrent|bt:v1:AB"), QStringLiteral("usenet|x-1")});
+            QVERIFY(prefs.saveTo(file));
+        }
+        Preferences loaded;
+        QVERIFY(loaded.load(file));
+        QVERIFY(loaded.btSingleTransfer());
+        QVERIFY(loaded.usenetSingleTransfer());
+        QVERIFY(loaded.ed3kHoster().singleTransfer);
+        QCOMPARE(loaded.singleTransferPaused(),
+                 (QStringList{QStringLiteral("torrent|bt:v1:AB"), QStringLiteral("usenet|x-1")}));
+
+        // the GUI mirror; the paused list stays in the daemon
+        Preferences mirror;
+        mirror.updateFromCbor(loaded.toIpcMap());
+        QVERIFY(mirror.btSingleTransfer());
+        QVERIFY(mirror.usenetSingleTransfer());
+        QVERIFY(mirror.ed3kHoster().singleTransfer);
+        QVERIFY(mirror.singleTransferPaused().isEmpty());
+
+        // in effect only while ed3k and the network are on
+        loaded.setEd3kEnabled(true);
+        loaded.setBtEnabled(true);
+        QVERIFY(loaded.btSingleTransferOn());
+        QVERIFY(loaded.usenetSingleTransferOn());
+        loaded.setUsenetEnabled(false);
+        QVERIFY(!loaded.usenetSingleTransferOn());
+        loaded.setEd3kEnabled(false);
+        QVERIFY(!loaded.btSingleTransferOn());
+        QVERIFY(!loaded.hosterSingleTransferOn());
+
+        // off by default, also for an older daemon's map
+        Preferences gui;
+        gui.updateFromCbor(QCborMap{});
+        QVERIFY(!gui.btSingleTransfer());
+        QVERIFY(!gui.usenetSingleTransfer());
+        QVERIFY(!Preferences().ed3kHoster().singleTransfer);
+    }
+
     void ed3kCredit_roundTrip()
     {
         // credit.md §9: off by default; §7.1: no default chain or contract
@@ -870,6 +922,46 @@ private slots:
         QVERIFY(k.accounts.isEmpty());   // the hoster accounts are another list
         QVERIFY(Preferences::applyEd3kHosterKey(k, QStringLiteral("ed3kHosterSolversEnabled"), QCborValue(true)));
         QVERIFY(k.solversEnabled);
+    }
+
+    void ed3kHoster_debridRoundTrip()
+    {
+        // multi-hosters: on with no accounts; API-key ones have no user; never a key in clear
+        QVERIFY(Preferences().ed3kHoster().debridEnabled);
+        QVERIFY(Preferences().ed3kHoster().debrid.isEmpty());
+
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("debrid.yaml"));
+        Ed3kHosterPrefs h;
+        h.debridEnabled = false;
+        h.debrid = {{QStringLiteral("alldebrid.com"), {}, QStringLiteral("ad-key")},
+                    {QStringLiteral("real-debrid.com"), QStringLiteral("me"), QStringLiteral("rd-pass")}};
+        {
+            Preferences prefs;
+            prefs.setEd3kHoster(h);
+            QVERIFY(prefs.saveTo(file));
+        }
+        QFile raw(file);
+        QVERIFY(raw.open(QIODevice::ReadOnly));
+        const QByteArray text = raw.readAll();
+        QVERIFY(!text.contains("ad-key"));
+        QVERIFY(!text.contains("rd-pass"));
+        Preferences loaded;
+        QVERIFY(loaded.load(file));
+        QVERIFY(loaded.ed3kHoster() == h);
+
+        const QCborMap ipc = loaded.toIpcMap();
+        QCOMPARE(ipc.value(QStringLiteral("ed3kHosterDebridEnabled")).toBool(true), false);
+        const QCborArray rows = ipc.value(QStringLiteral("ed3kHosterDebrid")).toArray();
+        QCOMPARE(rows.size(), 2);
+        QVERIFY(!rows.at(1).toMap().contains(QStringLiteral("password")));
+        Ed3kHosterPrefs k = h;
+        QVERIFY(Preferences::applyEd3kHosterKey(k, QStringLiteral("ed3kHosterDebrid"), rows));
+        QCOMPARE(k.debrid.at(0).password, QStringLiteral("ad-key"));
+        QCOMPARE(k.debrid.at(1).password, QStringLiteral("rd-pass"));
+        QVERIFY(k.solvers.isEmpty() && k.accounts.isEmpty());
+        QVERIFY(Preferences::applyEd3kHosterKey(k, QStringLiteral("ed3kHosterDebridEnabled"), QCborValue(true)));
+        QVERIFY(k.debridEnabled);
     }
 
     void bittorrent_clamps()

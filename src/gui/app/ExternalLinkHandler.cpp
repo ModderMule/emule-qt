@@ -19,6 +19,7 @@
 #include "app/MainWindow.h"
 #include "app/UiState.h"
 #include "panels/MessagesPanel.h"
+#include "panels/SearchPanel.h"
 #include "protocol/ED2KLink.h"
 #include "prefs/Preferences.h"
 #include "utils/Ed2kLinkImporter.h"
@@ -353,7 +354,9 @@ void ExternalLinkHandler::openNow(const QString& link)
             if (window && thePrefs.bringToFrontOnLinkClick()) {
                 window->restoreWindow();
             }
-        });
+        },
+        // MFC OnWMData: the category picked below the search results (EmuleDlg.cpp:1256)
+        window && window->searchPanel() ? window->searchPanel()->downloadCategory() : 0);
 }
 
 void ExternalLinkHandler::openFileNow(const QString& path)

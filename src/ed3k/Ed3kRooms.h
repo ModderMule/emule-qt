@@ -20,6 +20,10 @@
 ///   waits while hiding is off (listed, not joined; nothing falls back to the node key) and
 ///   is joined again when hiding starts. The anonymous node's room state is not in
 ///   State::Rooms: generation keys come again from members.
+/// - Post store (ed3k.roomHistoryStore, default on): the last ed3k.roomHistoryMax posts of a
+///   room in rooms/<room hex>.posts (CBOR, owner-only; plain text of sealed rooms too), shown
+///   again at start. The core keeps no posts across a restart: it asks neighbours for their
+///   24 h history (room.md §4.3, since 0), which needs one online member that saw them.
 
 #include "Ed3kFfi.h"
 #include "Ed3kStore.h"
@@ -29,6 +33,7 @@
 #include <QList>
 #include <QObject>
 #include <QString>
+#include <QTimer>
 
 #include <cstdint>
 #include <deque>
@@ -85,7 +90,8 @@ public:
         bool moderated = false;
         std::vector<::ed3k::Key32> mods;
         std::map<::ed3k::Key32, QString> present;   ///< member key -> nick
-        std::deque<Post> posts;    ///< the last kHistory, in arrival order
+        std::deque<Post> posts;    ///< the last historyMax(), in arrival order
+        std::set<::ed3k::PostId> postIds;   ///< ids of posts: network history repeats stored ones
         bool joined = false;       ///< RoomJoined seen
         int neighbours = 0;
         std::uint64_t generation = 0;
@@ -104,6 +110,7 @@ public:
         /// This member may admit, ban and start generations.
         [[nodiscard]] bool canModerate() const { return owner || isModerator(memberKey); }
     };
+    /// Posts held per room while the store is off.
     static constexpr std::size_t kHistory = 200;
 
     explicit Ed3kRooms(Ed3kSession& session, QObject* parent = nullptr);
@@ -140,6 +147,9 @@ public:
 
     /// Mutes (or unmutes) a member ID here alone (§6); the GUI hides its posts. Kept.
     ::ed3k::Result<> setMuted(const ::ed3k::Room& room, const std::array<std::uint8_t, 16>& memberId, bool on);
+
+    /// The post store prefs (may have) changed: trims, writes or deletes the stored posts.
+    void applyHistoryPrefs();
 
     /// This member's key as text (base32, 52 characters, §1.1): what a newcomer sends.
     [[nodiscard]] QString memberKeyText(const ::ed3k::Room& room) const;
@@ -196,6 +206,17 @@ private:
     /// The saved info (title, about, closed, moderated, mods) into @p r while it has none.
     static void applySavedInfo(Room& r, const Saved& s);
     void onPost(const ::ed3k::event::RoomPost& p);
+    /// Posts kept per room: ed3k.roomHistoryMax while stored, else kHistory.
+    [[nodiscard]] static std::size_t historyMax();
+    [[nodiscard]] static bool historyStored();
+    /// The stored posts of @p r (rooms/<hex>.posts) into it.
+    void loadPosts(Room& r) const;
+    /// @p room's posts changed: written a few seconds later (one write per burst).
+    void postsChanged(const ::ed3k::Room& room);
+    void writeDirtyPosts();
+    void writePosts(const Room& r) const;
+    void removePostsFile(const ::ed3k::Room& room) const;
+    [[nodiscard]] static QString postsFile(const ::ed3k::Room& room);
     void loadSaved();
     void save() const;
     [[nodiscard]] QString roomsDir() const;
@@ -209,6 +230,10 @@ private:
     bool m_attached = false;
     std::map<::ed3k::Room, Room> m_rooms;
     std::map<::ed3k::Room, Saved> m_saved;   ///< what is joined again at start
+    std::set<::ed3k::Room> m_dirtyPosts;      ///< rooms whose posts wait for writeDirtyPosts
+    QTimer* m_postsTimer = nullptr;
+    bool m_historyStored = true;      ///< what applyHistoryPrefs saw last
+    std::size_t m_historyMax = 0;
 };
 
 } // namespace eMule::ed3k

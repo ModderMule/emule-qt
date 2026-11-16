@@ -224,6 +224,14 @@ public:
         scheduleSave();
     }
 
+    /// Message box for a clicked link already downloading/shared; off = log + status bar only (MFC)
+    [[nodiscard]] bool knownLinkPopup() const { return m_knownLinkPopup; }
+    void setKnownLinkPopup(bool on)
+    {
+        m_knownLinkPopup = on;
+        scheduleSave();
+    }
+
     /// GUI language code, "" = system default. GUI-only: a core with its own
     /// config dir (Docker, remote) keeps preferences.yml out of reach (#75).
     /// Unset until first chosen here; then @p fallback (preferences.yml) applies.
@@ -569,6 +577,7 @@ private:
     std::optional<int> m_appliedFileTypes;
     std::optional<bool> m_menuEntry;
     bool m_addLinksWithoutConfirm = false;
+    bool m_knownLinkPopup = true;
     bool m_miniMuleAutoClose = false;
     bool m_firstStartWizardDone = false;
     std::optional<QString> m_language;   // unset = take preferences.yml's

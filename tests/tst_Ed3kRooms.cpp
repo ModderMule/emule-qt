@@ -156,6 +156,7 @@ private slots:
     void muteIsKeptAndHidesPosts();
     void roomMemberShowsTheMemberKey();
     void anonymousRoomKeepsItsKey();
+    void leaveKeepsOrDropsTheRoomKey();
 };
 
 void tst_Ed3kRooms::cleanup()
@@ -702,6 +703,41 @@ void tst_Ed3kRooms::anonymousRoomKeepsItsKey()
     QVERIFY(plainRoom.has_value());
     QCOMPARE(ra->find(*plainRoom)->key, ::ed3k::KeyKind::Node);
     QCOMPARE(rowOf(*ra, *plainRoom).value(QStringLiteral("key")).toString(), QStringLiteral("Node"));
+}
+
+// leave: the room key stays (a join by the link makes the owner again) unless asked to drop it
+void tst_Ed3kRooms::leaveKeepsOrDropsTheRoomKey()
+{
+    QTemporaryDir da;
+    QVERIFY(da.isValid());
+    Ed3kSession a;
+    QVERIFY(a.start(loopback(da.path())));
+    Ed3kRooms ra(a);
+    const IpcMessage made = create(ra, QStringLiteral("Mine"), 0, QStringLiteral("owner"));
+    QVERIFY(made.fieldBool(0));
+    const QString link = made.fieldMap(1).value(QStringLiteral("link")).toString();
+    const auto room = Ed3kRooms::roomFrom(made.fieldMap(1).value(QStringLiteral("room")).toString());
+    QVERIFY(room.has_value());
+    const QDir dir(QDir(a.stateDir()).filePath(QStringLiteral("rooms")));
+    const auto ownerFiles = [&] { return dir.entryList({QStringLiteral("owner-*.key")}, QDir::Files).size(); };
+    QCOMPARE(ownerFiles(), 1);
+
+    const auto leave = [&](bool drop) {
+        IpcMessage m(IpcMsgType::LeaveEd3kRoom, 20);
+        m.append(hexOf(*room));
+        m.append(drop);
+        return ask(&ra, m).fieldBool(0);
+    };
+    // kept: back by the link as owner
+    QVERIFY(leave(false));
+    QCOMPARE(ownerFiles(), 1);
+    QVERIFY(join(ra, link, QStringLiteral("owner")).fieldBool(0));
+    QVERIFY(ra.find(*room) && ra.find(*room)->owner);
+    // dropped: back by the link as a plain member
+    QVERIFY(leave(true));
+    QCOMPARE(ownerFiles(), 0);
+    QVERIFY(join(ra, link, QStringLiteral("owner")).fieldBool(0));
+    QVERIFY(ra.find(*room) && !ra.find(*room)->owner);
 }
 
 QTEST_MAIN(tst_Ed3kRooms)   // the room tab is a widget

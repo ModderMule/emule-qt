@@ -18,6 +18,8 @@
 class QLabel;
 class QPlainTextEdit;
 class QTabWidget;
+
+namespace eMule { class ArchiveContentsView; }
 class QTextBrowser;
 class QTimer;
 class QToolButton;
@@ -35,7 +37,7 @@ class TorrentDetailsDialog : public DetailDialog {
 
 public:
     /// Tab order, for tests and the panel.
-    enum Tab { TabInfo = 0, TabActivity, TabOptions };
+    enum Tab { TabInfo = 0, TabActivity, TabOptions, TabArchive };
 
     TorrentDetailsDialog(IpcClient* ipc, const TorrentListModel* model, const QString& torrentId,
                          QWidget* parent = nullptr);
@@ -80,6 +82,7 @@ private:
     QLabel* m_summary = nullptr;
     QLabel* m_note = nullptr;
     QTabWidget* m_tabs = nullptr;
+    ArchiveContentsView* m_archive = nullptr;   ///< Archive tab (hoster.md §6.1)
     QTimer* m_pollTimer = nullptr;
 
     // Info

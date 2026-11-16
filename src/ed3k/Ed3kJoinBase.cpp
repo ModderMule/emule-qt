@@ -212,6 +212,7 @@ struct Ed3kJoinBase::Kept {
         ffi::Root root;
         std::uint64_t size = 0;
         QString name;
+        QString path;   ///< keepMemberPaths; empty: the job's own path (keptMemberPath)
     };
     struct Set {
         ffi::Root root;   ///< the manifest, kept as a blob
@@ -614,6 +615,31 @@ std::vector<Ed3kJoinBase::JoinOwner> Ed3kJoinBase::networkJobsAt(const Ed3kSessi
     return out;
 }
 
+std::vector<Ed3kJoinBase::SourceInfo> Ed3kJoinBase::jobSourcesAt(const Ed3kSession& session, const QString& tag,
+                                                                const QString& owner)
+{
+    std::vector<SourceInfo> out;
+    for (const Ed3kJoinBase* join : turnsOf(session).joins) {
+        if (join->m_tag != tag)
+            continue;
+        for (const auto& [root, d] : join->m_downloads) {
+            if (d->owner != owner)
+                continue;
+            for (auto& s : join->sourcesOf(root)) {
+                // a node serving two files of the job: one row, the slot holder wins
+                const auto same = std::ranges::find_if(out, [&s](const SourceInfo& o) {
+                    return o.key == s.key && o.node.bytes == s.node.bytes;
+                });
+                if (same == out.end())
+                    out.push_back(std::move(s));
+                else if (s.holding && !same->holding)
+                    *same = std::move(s);
+            }
+        }
+    }
+    return out;
+}
+
 std::optional<bool> Ed3kJoinBase::joinedAt(const Ed3kSession& session, const QString& tag, const QString& owner)
 {
     for (const Ed3kJoinBase* join : turnsOf(session).joins)
@@ -768,6 +794,11 @@ std::expected<ffi::Publish, ffi::Error> Ed3kJoinBase::publishShared(const ffi::F
     auto* e = m_session.engine();
     if (!e)
         return std::unexpected(ffi::Error::State);
+    // declined-records.md §2: nothing put out for a root (or eD2K hash) this node declines
+    if (const auto& d = m_session.declined(); d.listsRoot(info.root) || (info.ed2k && d.listsEd2k(*info.ed2k))) {
+        logInfo(QStringLiteral("\"%1\" not published: declined (%2)").arg(QString::fromStdString(info.name), QString::fromLatin1(kDeclineFile)));
+        return std::unexpected(ffi::Error::Denied);
+    }
     const auto t = m_session.now();
     const auto mode = m_holdBack ? ffi::Publish::Source : ffi::Publish::Both;
     // under the anonymous key: its ANON record and keywords through a last hop (hops.md §1)
@@ -830,6 +861,25 @@ bool Ed3kJoinBase::moveDownloadKey(const ffi::Root& root, ffi::KeyKind key)
     const bool ok = open(root, size, owner, member, inMemory);
     pumpSession();
     return ok;
+}
+
+void Ed3kJoinBase::runHashJob(std::function<std::function<void()>(const std::atomic<bool>& cancel)> work)
+{
+    QPointer<Ed3kJoinBase> self(this);
+    const auto cancel = m_cancel;
+    hashPool()->start([self, cancel, work = std::move(work)]() mutable {
+        DiskLoadLimiter::lowerThisThread();
+        auto then = work(*cancel);
+        if (cancel->load() || !then)
+            return;
+        QMetaObject::invokeMethod(
+            self.data(),
+            [self, cancel, then = std::move(then)] {
+                if (self && !cancel->load())
+                    then();
+            },
+            Qt::QueuedConnection);
+    });
 }
 
 void Ed3kJoinBase::hashInBackground(const QString& path, std::function<void(std::optional<FileHash>)> done)
@@ -1091,9 +1141,36 @@ void Ed3kJoinBase::keepBlob(const QString& owner, const QByteArray& data, const 
 void Ed3kJoinBase::keepMember(const QString& owner, int member, const ffi::Root& root, std::uint64_t size, const QString& name)
 {
     Kept kept = readKept(owner);
-    std::erase_if(kept.members, [&](const Kept::Member& m) { return m.member == member; });
-    kept.members.push_back({member, root, size, name});
+    QString path;   // kept across a member hashed again
+    std::erase_if(kept.members, [&](const Kept::Member& m) {
+        if (m.member == member && m.root == root)
+            path = m.path;
+        return m.member == member;
+    });
+    kept.members.push_back({member, root, size, name, path});
     writeKept(owner, kept);
+}
+
+void Ed3kJoinBase::keepMemberPaths(const QString& owner, const QHash<int, QString>& paths)
+{
+    Kept kept = readKept(owner);
+    bool changed = false;
+    for (auto& m : kept.members)
+        if (const auto it = paths.constFind(m.member); it != paths.cend() && !it->isEmpty() && *it != m.path) {
+            m.path = *it;
+            changed = true;
+        }
+    if (changed)
+        writeKept(owner, kept);
+}
+
+QHash<int, QString> Ed3kJoinBase::keptMemberPaths(const QString& owner) const
+{
+    QHash<int, QString> out;
+    for (const auto& m : readKept(owner).members)
+        if (!m.path.isEmpty())
+            out.insert(m.member, m.path);
+    return out;
 }
 
 void Ed3kJoinBase::keepRecords(const QString& owner, std::optional<ffi::Root> set, const QString& name,
@@ -1776,7 +1853,7 @@ Ed3kJoinBase::Kept Ed3kJoinBase::readKept(const QString& owner) const
             const int member = f.at(1).toInt(&okMember);
             const std::uint64_t size = f.at(3).toULongLong(&okSize);
             if (const auto root = rootOfHex(f.at(2)); root && okMember && okSize && member >= 0)
-                kept.members.push_back({member, *root, size, f.at(4)});
+                kept.members.push_back({member, *root, size, f.at(4), f.value(5)});
         }
     }
     return kept;
@@ -1788,7 +1865,10 @@ void Ed3kJoinBase::writeKept(const QString& owner, const Kept& kept)
     for (const auto& b : kept.blobs)
         out += QStringLiteral("b\t%1\t%2\n").arg(hexOf(b.root.bytes), field(b.name));
     for (const auto& m : kept.members)
-        out += QStringLiteral("m\t%1\t%2\t%3\t%4\n").arg(m.member).arg(hexOf(m.root.bytes)).arg(m.size).arg(field(m.name));
+        // was: m member root size name; a sixth column (path) older readers skip
+        out += m.path.isEmpty()
+            ? QStringLiteral("m\t%1\t%2\t%3\t%4\n").arg(m.member).arg(hexOf(m.root.bytes)).arg(m.size).arg(field(m.name))
+            : QStringLiteral("m\t%1\t%2\t%3\t%4\t%5\n").arg(m.member).arg(hexOf(m.root.bytes)).arg(m.size).arg(field(m.name), field(m.path));
     if (kept.set)
         out += QStringLiteral("s\t%1\t%2\n").arg(hexOf(kept.set->root.bytes), field(kept.set->name));
     const QString dir = keptDir(owner);
@@ -1840,6 +1920,11 @@ void Ed3kJoinBase::shareKeptHashed(const QString& owner, int member, const ffi::
     {
         if (!hashed) {
             // gone or unreadable now: again later, and at the next start
+            // was: retried when gone too; a PAR2 volume is deleted after repair: once per start
+            if (!QFileInfo::exists(path)) {
+                logDebug([&]() -> QString { return QStringLiteral("kept member %1 of %2 gone from disk (%3)").arg(member).arg(owner, path); });
+                return;
+            }
             logDebug([&]() -> QString { return QStringLiteral("kept member %1 of %2 not readable (%3)").arg(member).arg(owner, path); });
             if (tries + 1 < kRehashTries)
                 QTimer::singleShot(kRehashMs, this, [this, owner, member, root, size, name, tries] {
@@ -1910,13 +1995,22 @@ void Ed3kJoinBase::publishKeptRecords(const QString& owner)
     const auto records = readRecords(QDir(keptDir(owner)).filePath(kKeptRecords));
     int published = 0;
     // §6: no ALIAS records while holding back
+    int unshared = 0;
     if (!m_holdBack && !records.empty()) {
-        if (auto ok = e->publishAlias(t, records); !ok)
-            logDebug([&]() -> QString { return QStringLiteral("kept ALIAS records of %1 not published (error %2)").arg(owner, errorName(ok.error())); });
-        else
-            published = int(records.size());
+        // was: one batch; it stopped at the first record of a member gone from disk (State)
+        // if (auto ok = e->publishAlias(t, records); !ok) ... else published = int(records.size());
+        for (const auto& r : records) {
+            if (auto ok = e->publishAlias(t, std::span(&r, 1)); ok)
+                ++published;
+            else if (ok.error() == ffi::Error::State)
+                ++unshared;   // its file is not shared (any more)
+            else
+                logDebug([&]() -> QString { return QStringLiteral("kept ALIAS record of %1 not published (error %2)").arg(owner, errorName(ok.error())); });
+        }
     }
-    logDebug([&]() -> QString { return QStringLiteral("kept records of %1 published again (%2 alias(es))").arg(owner).arg(published); });
+    logDebug([&]() -> QString {
+        return QStringLiteral("kept records of %1 published again (%2 alias(es), %3 of unshared files skipped)").arg(owner).arg(published).arg(unshared);
+    });
     pumpSession();
     emit keptRecordsPublished(owner, published);
 }

@@ -25,6 +25,7 @@
 #include <QCborMap>
 
 #include <algorithm>
+#include <cstring>
 #include <set>
 #include <utility>
 #include <vector>
@@ -745,16 +746,17 @@ namespace eMule::Ipc {
             if (!srv->version().isEmpty())
                 foreignServer += QStringLiteral(" (%1)").arg(srv->version());
         }
-        // only a 0x1000 login gets an odd LowID; an even one cannot be woken
-        if ((c.userIDHybrid() & 1) == 0) {
-            foreign = "notCapable";
-        } else if (app.natRendezvous) {
+        if (app.natRendezvous) {
             switch (app.natRendezvous->env().foreignServer(c.serverAddress(), c.serverPort(), false).state) {
             case natt::ForeignServer::State::Ready:   foreign = "ready"; break;
             case natt::ForeignServer::State::Pending: foreign = "pending"; break;
             case natt::ForeignServer::State::No:      foreign = "no"; break;
             }
         }
+        // only a 0x1000 login gets an odd LowID; an even one cannot be woken. A server
+        // without the callback hands out any parity, so "no" says more there.
+        if ((c.userIDHybrid() & 1) == 0 && std::strcmp(foreign, "no") != 0)
+            foreign = "notCapable";
     }
     m.insert(QStringLiteral("foreign"), QLatin1StringView(foreign));
     if (!foreignServer.isEmpty())

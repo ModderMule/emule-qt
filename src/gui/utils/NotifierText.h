@@ -57,6 +57,11 @@ struct NotifierText {
                 QCoreApplication::translate("Notifier", "\"%1\" is under the anonymous key and on %2 too: "
                                                         "sources there show your address.")
                     .arg(arg, arg2.isEmpty() ? QStringLiteral("eD2K/Kad") : arg2)};
+    case Ipc::NotifierEvent::Ed3kDeclinedAdded:   // ed3k declined-records.md §2: no MFC counterpart
+        return {true, QCoreApplication::translate("Notifier", "Declined file added paused"),
+                QCoreApplication::translate("Notifier", "\"%1\" is in your declined records list. It was added "
+                                                        "paused: resume it to download anyway.")
+                    .arg(arg)};
     }
     return {};
 }

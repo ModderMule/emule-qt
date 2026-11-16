@@ -4,11 +4,14 @@
 
 #include "dialogs/WebLinksDialog.h"
 
+#include "IpcProtocol.h"
 #include "app/IpcClient.h"
 #include "controls/AbstractListView.h"
+#include "controls/ArchiveContentsView.h"
 #include "controls/FileCheckButtons.h"
 #include "app/UiState.h"
 #include "prefs/Preferences.h"
+#include "utils/ArchiveContentsIpc.h"
 #include "utils/Clipboard.h"
 #include "utils/DialogSizing.h"
 #include "utils/HosterLinkStatus.h"
@@ -38,6 +41,7 @@
 #include <QMap>
 #include <QMenu>
 #include <QStandardPaths>
+#include <QTabWidget>
 #include <QTreeWidget>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -103,14 +107,22 @@ WebLinksDialog::WebLinksDialog(const QString& rowName, const QCborMap& links, co
         layout->addWidget(note);
     }
 
+    // Links | Archive (what the archives hold, from ed3k: hoster.md §6.1)
+    auto* tabs = new QTabWidget(this);
+    auto* linksPage = new QWidget(tabs);
+    auto* pageLayout = new QVBoxLayout(linksPage);
+    pageLayout->setContentsMargins(0, 0, 0, 0);
+    tabs->addTab(linksPage, tr("Links"));
+    layout->addWidget(tabs, 1);
+
     // as a torrent's or an NZB's Files tab: boxes pick what Download takes
     auto* hint = new QLabel(tr("Unchecked links are not downloaded. Links with the same file number "
                                "are mirrors: the next one is tried when one fails."),
-                            this);
+                            linksPage);
     hint->setWordWrap(true);
-    layout->addWidget(hint);
+    pageLayout->addWidget(hint);
 
-    m_list = new ListTreeWidget(this);
+    m_list = new ListTreeWidget(linksPage);
     m_list->setRootIsDecorated(false);
     m_list->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_list->setHeaderLabels({tr("File"), tr("Name"), tr("Size"), tr("Hoster"), tr("Status"), tr("Account"), tr("Link")});
@@ -139,17 +151,38 @@ WebLinksDialog::WebLinksDialog(const QString& rowName, const QCborMap& links, co
     // no data yet: startChecks() / setStatus() bring them back
     lockColumn(ColStatus);
     lockColumn(ColAccount);
-    layout->addWidget(FileCheckButtons::create(this, [this](FileCheckButtons::Bulk mode) {
+    pageLayout->addWidget(FileCheckButtons::create(linksPage, [this](FileCheckButtons::Bulk mode) {
         FileCheckButtons::applyToLeaves(m_list, ColFile, mode);
     }));
-    layout->addWidget(m_list, 1);
+    pageLayout->addWidget(m_list, 1);
 
     if (hasOnionLink()) {
         auto* note = new QLabel(tr("Links to .onion addresses are Tor hidden services. "
-                                   "Copy them into Tor Browser: other browsers cannot open them."), this);
+                                   "Copy them into Tor Browser: other browsers cannot open them."), linksPage);
         note->setWordWrap(true);
         note->setObjectName(QStringLiteral("onionNote"));
-        layout->addWidget(note);
+        pageLayout->addWidget(note);
+    }
+
+    // the Archive tab: only for links naming an archive; looked up when first opened
+    QCborArray archiveLinks;
+    bool archives = false;
+    for (const QCborValue& v : links.value(QStringLiteral("links")).toArray()) {
+        const QCborMap l = v.toMap();
+        const QString name = l.value(QStringLiteral("name")).toString();
+        archives = archives || ArchiveContentsView::opensArchive(name);
+        archiveLinks.append(QCborMap{{QStringLiteral("url"), l.value(QStringLiteral("url"))}, {QStringLiteral("name"), name}});
+    }
+    if (archives) {
+        m_archive = new ArchiveContentsView(tabs, Ed2kLinkImporter::hosterReady());
+        tabs->addTab(m_archive, tr("Archive"));
+        const QCborMap payload{{QStringLiteral("links"), archiveLinks}};
+        ArchiveContentsIpc::attach(m_archive, m_ipc, [payload] { return std::pair{QStringLiteral("web"), payload}; }, rowName);
+        connect(tabs, &QTabWidget::currentChanged, this, [this, tabs](int index) {
+            if (tabs->widget(index) == m_archive)
+                m_archive->ensureLookup();
+        });
+        connect(m_archive, &ArchiveContentsView::downloadArchiveRequested, this, &WebLinksDialog::downloadWithEntries);
     }
     connect(m_list, &QTreeWidget::itemDoubleClicked, this, [](QTreeWidgetItem* item) {
         QDesktopServices::openUrl(QUrl(item->text(ColLink), QUrl::StrictMode));
@@ -318,6 +351,38 @@ void WebLinksDialog::downloadLinks()
     }
     StatusBarNotifier::post(tr("Added %n file(s) of \"%1\" to the Hoster tab.", nullptr, int(files.size()))
                                 .arg(m_rowName));
+    accept();
+}
+
+void WebLinksDialog::downloadWithEntries(const QHash<QString, QStringList>& entries, const QString& password)
+{
+    const QList<QStringList> files = chosenDownloadFiles();
+    if (files.isEmpty() || !m_ipc || !m_ipc->isConnected() || !Ed2kLinkImporter::hosterReady())
+        return;
+    // AddHosterLinks with the entries to extract (field 5) and the record's password
+    QCborArray list;
+    QStringList firsts;
+    for (const QStringList& urls : files) {
+        list.append(QCborArray::fromStringList(urls));
+        firsts << urls.first();
+    }
+    Ipc::IpcMessage req(Ipc::IpcMsgType::AddHosterLinks);
+    req.append(firsts.join(QLatin1Char('\n')));
+    req.append(list);
+    req.append(m_rowName.trimmed());
+    req.append(qint64(0));
+    req.append(QCborArray::fromStringList(password.isEmpty() ? QStringList{} : QStringList{password}));
+    req.append(ArchiveContentsIpc::entriesToCbor(entries));
+    QPointer<QWidget> parent = parentWidget();
+    const QString name = m_rowName;
+    m_ipc->sendRequest(std::move(req), [parent, name](const Ipc::IpcMessage& r) {
+        if (!r.isValid())
+            return;
+        if (!r.fieldBool(0))
+            QMessageBox::warning(parent, tr("Hoster links"), r.fieldMap(1).value(QStringLiteral("error")).toString());
+        else
+            StatusBarNotifier::post(tr("Added the links of \"%1\" to the Hoster tab.").arg(name));
+    });
     accept();
 }
 

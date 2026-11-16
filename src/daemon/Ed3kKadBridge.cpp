@@ -13,7 +13,14 @@
 #include "Ed3kBootstrap.h"
 #include "Ed3kPlumbing.h"
 #include "Ed3kSession.h"
+#include "Ed3kStore.h"
 #include "geo/IP2Country.h"
+#include "prefs/Preferences.h"
+
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QSaveFile>
 
 #include <algorithm>
 #include <cstring>
@@ -211,6 +218,52 @@ QCborArray graphToCbor(const std::vector<ed3k_kad_lookup_node>& all)
     }
     return out;
 }
+
+/// decline.txt of the core: the running node's state dir, else the configured one
+QString declinePath()
+{
+    const QString dir = s_session && !s_session->stateDir().isEmpty() ? s_session->stateDir() : ed3k::stateDir(thePrefs.configDir());
+    return QDir(dir).filePath(QString::fromLatin1(ed3k::kDeclineFile));
+}
+
+/// GetEd3kDeclined's map
+QCborMap declineState()
+{
+    QFile f(declinePath());
+    const QString text = f.open(QIODevice::ReadOnly) ? QString::fromUtf8(f.readAll()) : QString();
+    const bool running = s_session && s_session->isRunning();
+    const ed3k::DeclineList list = running ? s_session->declined() : ed3k::parseDeclineList(text);
+    QCborArray invalid;
+    for (const QString& line : list.invalid)
+        invalid.append(line);
+    return QCborMap{
+        {QStringLiteral("text"), text},
+        {QStringLiteral("running"), running},
+        {QStringLiteral("loaded"), QCborMap{
+             {QStringLiteral("roots"), qint64(list.roots.size())},
+             {QStringLiteral("ed2k"), qint64(list.ed2k.size())},
+             {QStringLiteral("keys"), qint64(list.keys.size())},
+             {QStringLiteral("kinds"), qint64(list.kinds.size())},
+             {QStringLiteral("keywords"), qint64(list.keywords.size())},
+         }},
+        {QStringLiteral("invalid"), invalid},
+        {QStringLiteral("dropped"), running ? qint64(s_session->declineDropped()) : qint64(0)},
+    };
+}
+
+/// SetEd3kDeclined: the file written; empty: ok, else why not
+QString writeDecline(const QString& text)
+{
+    const QString path = declinePath();
+    if (!QDir().mkpath(QFileInfo(path).absolutePath()))
+        return QStringLiteral("cannot create %1").arg(QFileInfo(path).absolutePath());
+    QSaveFile f(path);
+    if (!f.open(QIODevice::WriteOnly) || f.write(text.toUtf8()) < 0 || !f.commit())
+        return QStringLiteral("cannot write %1: %2").arg(path, f.errorString());
+    if (s_session)
+        s_session->reloadDeclineFile();
+    return {};
+}
 #endif
 
 } // namespace
@@ -238,10 +291,26 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
     const IpcMsgType t = msg.type();
     if (t != IpcMsgType::GetEd3kKadContacts && t != IpcMsgType::GetEd3kKadLookups && t != IpcMsgType::GetEd3kKadLookupGraph
         && t != IpcMsgType::GetEd3kKadIncoming && t != IpcMsgType::GetEd3kKadIncomingGraph
-        && t != IpcMsgType::ExportEd3kNodeList && t != IpcMsgType::FetchEd3kNodeLists)
+        && t != IpcMsgType::ExportEd3kNodeList && t != IpcMsgType::FetchEd3kNodeLists
+        && t != IpcMsgType::GetEd3kDeclined && t != IpcMsgType::SetEd3kDeclined)
         return false;
     const int seq = msg.seqId();
 #ifdef EMULE_HAVE_ED3K
+    // the file, also with the node off
+    if (t == IpcMsgType::GetEd3kDeclined) {
+        reply(IpcMessage::makeResult(seq, true, declineState()));
+        return true;
+    }
+    if (t == IpcMsgType::SetEd3kDeclined) {
+        if (const QString error = writeDecline(msg.fieldString(0)); !error.isEmpty()) {
+            logWarning(QStringLiteral("ed3k: %1").arg(error));
+            reply(failure(seq, int(ffi::Error::Io), error));
+        } else {
+            logInfo(QStringLiteral("ed3k: %1 saved").arg(declinePath()));
+            reply(IpcMessage::makeResult(seq, true, declineState()));
+        }
+        return true;
+    }
     auto* e = s_session ? s_session->engine() : nullptr;
     if (!e) {
         reply(failure(seq, 0));

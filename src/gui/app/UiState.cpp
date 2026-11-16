@@ -139,6 +139,7 @@ void UiState::load(const QString& configDir)
         if (const auto menu = root["menuEntry"]; menu && menu.IsScalar())
             m_menuEntry = menu.as<bool>();
         m_addLinksWithoutConfirm = root["addLinksWithoutConfirm"].as<bool>(m_addLinksWithoutConfirm);
+        m_knownLinkPopup = root["knownLinkPopup"].as<bool>(m_knownLinkPopup);
         m_miniMuleAutoClose = root["miniMuleAutoClose"].as<bool>(m_miniMuleAutoClose);
         m_firstStartWizardDone = root["firstStartWizardDone"].as<bool>(m_firstStartWizardDone);
         if (const auto lang = root["language"]; lang && lang.IsScalar())
@@ -294,6 +295,7 @@ void UiState::save(const QString& configDir)
     if (m_menuEntry)
         out << YAML::Key << "menuEntry" << YAML::Value << *m_menuEntry;
     out << YAML::Key << "addLinksWithoutConfirm" << YAML::Value << m_addLinksWithoutConfirm;
+    out << YAML::Key << "knownLinkPopup" << YAML::Value << m_knownLinkPopup;
     out << YAML::Key << "miniMuleAutoClose" << YAML::Value << m_miniMuleAutoClose;
     out << YAML::Key << "firstStartWizardDone" << YAML::Value << m_firstStartWizardDone;
     if (m_language)

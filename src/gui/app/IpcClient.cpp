@@ -194,6 +194,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::FetchNzbNfo: return QStringLiteral("FetchNzbNfo");
     case T::LookupArchiveContents: return QStringLiteral("LookupArchiveContents");
     case T::DownloadArchiveEntries: return QStringLiteral("DownloadArchiveEntries");
+    case T::SetArchiveEntries: return QStringLiteral("SetArchiveEntries");
     case T::GetTorrents:          return QStringLiteral("GetTorrents");
     case T::AddTorrentFile:       return QStringLiteral("AddTorrentFile");
     case T::AddMagnet:            return QStringLiteral("AddMagnet");

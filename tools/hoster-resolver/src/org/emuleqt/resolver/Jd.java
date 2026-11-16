@@ -302,7 +302,11 @@ final class Jd {
 
     /** A fresh plugin instance for one link, ready to be called on the current thread. */
     static PluginForHost newPlugin(final DownloadLink link) throws Exception {
-        final LazyHostPlugin lazy = link.getDefaultPlugin().getLazyP();
+        return newPlugin(link, link.getDefaultPlugin().getLazyP());
+    }
+
+    /** @p lazy's plugin for @p link: its own, or a multi-hoster's that downloads it. */
+    static PluginForHost newPlugin(final DownloadLink link, final LazyHostPlugin lazy) throws Exception {
         final PluginClassLoader.PluginClassLoaderChild cl = PluginClassLoader.getInstance().getChild();
         PluginClassLoader.setThreadPluginClassLoaderChild(cl, cl);
         final PluginForHost plugin = lazy.newInstance(cl);

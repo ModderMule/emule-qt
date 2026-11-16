@@ -334,6 +334,14 @@ void DownloadListModel::fetchMore(const QModelIndex& /*parent*/)
     // TransferPanel requests the sources on QTreeView::expanded
 }
 
+Qt::ItemFlags DownloadListModel::flags(const QModelIndex& index) const
+{
+    Qt::ItemFlags f = QAbstractItemModel::flags(index);
+    if (index.isValid() && !isSourceRow(index))
+        f |= Qt::ItemIsDragEnabled;
+    return f;
+}
+
 QVariant DownloadListModel::data(const QModelIndex& index, int role) const
 {
     if (!index.isValid())

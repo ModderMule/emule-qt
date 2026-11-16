@@ -19,8 +19,10 @@
 /// slot, so nothing here needs moc. Same rationale as AbstractTableModel.
 
 #include <QAction>
+#include <QDrag>
 #include <QHeaderView>
 #include <QMenu>
+#include <QMimeData>
 #include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPainter>
@@ -52,6 +54,10 @@ template<class Base>
 class AbstractListView : public Base {
 public:
     using Base::Base;
+
+    /// Own drag payload instead of the model's mimeData() (downloads → category tab).
+    /// Needs setDragEnabled(true) and ItemIsDragEnabled rows; null payload = no drag.
+    void setDragPayload(std::function<QMimeData*()> payload) { m_dragPayload = std::move(payload); }
 
     /// Column header: `header()` on tree views, `horizontalHeader()` on tables.
     [[nodiscard]] QHeaderView* listHeader() const
@@ -195,6 +201,20 @@ public:
     }
 
 protected:
+    void startDrag(Qt::DropActions supportedActions) override
+    {
+        if (!m_dragPayload) {
+            Base::startDrag(supportedActions);
+            return;
+        }
+        QMimeData* mime = m_dragPayload();
+        if (!mime)
+            return;
+        auto* drag = new QDrag(this);
+        drag->setMimeData(mime);
+        drag->exec(Qt::MoveAction | Qt::CopyAction, Qt::MoveAction);
+    }
+
     /// An empty list says why, when someone set the "emptyNotice" property on it
     /// (MainWindow does while the core loads its files). A dynamic property, so
     /// the setter needs no knowledge of this template.
@@ -388,6 +408,7 @@ private:
     std::optional<std::pair<int, Qt::SortOrder>> m_defaultSort;
     bool             m_restoredOnShow = false;
     bool             m_headerMenuInstalled = false;
+    std::function<QMimeData*()> m_dragPayload;
 
     std::set<int>            m_descendingFirst;
     std::map<int, SortValue> m_sortValues;

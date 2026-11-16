@@ -197,6 +197,10 @@ bool ClientReqSocket::packetReceived(Packet* packet)
 {
     if (m_deleteThis)
         return false;
+    if (thePrefs.disableEd2k()) {
+        disconnect(QStringLiteral("eD2K is disabled"));
+        return false;
+    }
 
     if (thePrefs.logRawSocketPackets())
         logDebug([&]() -> QString { return QStringLiteral("ClientReqSocket::packetReceived — proto=0x%1 opcode=0x%2 size=%3 peer=%4:%5")

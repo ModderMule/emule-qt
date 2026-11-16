@@ -6,6 +6,7 @@
 
 #include "chat/IrcNickList.h"
 #include "controls/LogTextView.h"
+#include "prefs/Preferences.h"
 
 #include <QApplication>
 #include <QCborArray>
@@ -188,8 +189,11 @@ bool Ed3kRoomTab::addPost(const Post& post)
         m_posts.insert(at, post);
         redraw();
     }
-    if (m_posts.size() > kMaxPosts)
-        m_posts.remove(0, m_posts.size() - kMaxPosts);
+    // as many as the core keeps (ed3k.roomHistoryMax while stored)
+    const qsizetype max = thePrefs.ed3kRoomHistoryStore() ? std::max<qsizetype>(kMaxPosts, thePrefs.ed3kRoomHistoryMax())
+                                                          : kMaxPosts;
+    if (m_posts.size() > max)
+        m_posts.remove(0, m_posts.size() - max);
     return true;
 }
 

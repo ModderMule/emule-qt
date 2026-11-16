@@ -3,8 +3,11 @@
 
 #include "Ed3kHosterBridge.h"
 
+#include "ArchiveContentsBridge.h"
+
 #include "Ed3kBridge.h"
 #include "Ed3kOffGate.h"
+#include "Ed3kUploadsBridge.h"
 #include "PushCoalescer.h"
 #include "app/AppContext.h"
 #include "prefs/Preferences.h"
@@ -270,13 +273,29 @@ QCborMap hosterStatsToCbor(const ed3k::Ed3kHosterJoin& join)
 QCborMap resultToCbor(const ed3k::ResolverEvent& r)
 {
     const bool ok = r.kind == ed3k::ResolverEvent::Kind::Account;
-    return QCborMap{{QStringLiteral("valid"), ok && r.valid},
-                    {QStringLiteral("premium"), r.premium},
-                    {QStringLiteral("expires"), r.expires},
-                    {QStringLiteral("trafficLeft"), r.trafficLeft},
-                    {QStringLiteral("balance"), r.balance},   // a solver service: its credit; -1 none
-                    {QStringLiteral("currency"), r.currency},
-                    {QStringLiteral("error"), ok ? QString() : (r.code.isEmpty() ? QStringLiteral("failed") : r.code)}};
+    QCborMap out{{QStringLiteral("valid"), ok && r.valid},
+                 {QStringLiteral("premium"), r.premium},
+                 {QStringLiteral("expires"), r.expires},
+                 {QStringLiteral("trafficLeft"), r.trafficLeft},
+                 {QStringLiteral("balance"), r.balance},   // a solver service: its credit; -1 none
+                 {QStringLiteral("currency"), r.currency},
+                 {QStringLiteral("error"), ok ? QString() : (r.code.isEmpty() ? QStringLiteral("failed") : r.code)}};
+    // a multi-hoster: the hosters it downloads with their quotas (never its session state)
+    if (ok && r.multi) {
+        QCborArray hosts;
+        for (const ed3k::DebridHost& h : r.hosts)
+            hosts.append(QCborMap{{QStringLiteral("domain"), h.domain},
+                                  {QStringLiteral("status"), h.status},
+                                  {QStringLiteral("linksLeft"), h.linksLeft},
+                                  {QStringLiteral("linksMax"), h.linksMax},
+                                  {QStringLiteral("trafficLeft"), h.trafficLeft},
+                                  {QStringLiteral("trafficMax"), h.trafficMax},
+                                  {QStringLiteral("factor"), h.factor},
+                                  {QStringLiteral("unavailableS"), h.unavailableS}});
+        out.insert(QStringLiteral("multi"), true);
+        out.insert(QStringLiteral("hosts"), hosts);
+    }
+    return out;
 }
 #endif
 
@@ -530,6 +549,16 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
     }
     switch (msg.type()) {
     case IpcMsgType::GetHosterItems: {
+        // field 0 true: only the ed3k sources of the items joined with ed3k (a poll)
+        if (msg.fieldBool(0)) {
+            QCborMap sources;
+            for (const auto& it : s_join->items())
+                if (QCborArray rows = Ed3kUploadsBridge::jobSources(QStringLiteral("hoster"), QStringLiteral("h%1").arg(it.id));
+                    !rows.isEmpty())
+                    sources.insert(qint64(it.id), rows);
+            reply(IpcMessage::makeResult(seq, true, QCborMap{{QStringLiteral("sources"), sources}}));
+            break;
+        }
         QCborArray items;
         for (const auto& it : s_join->items())
             items.append(itemToCbor(it));
@@ -558,16 +587,7 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
             if (const QString t = pw.toString(); !t.isEmpty())
                 passwords << t;
         // field 5: archive entries to extract (hoster.md §6.1): {first volume name: [path]}
-        QHash<QString, QStringList> kept;
-        const QCborMap keptMap = msg.field(5).toMap();
-        for (auto k = keptMap.constBegin(); k != keptMap.constEnd(); ++k) {
-            QStringList paths;
-            for (const QCborValue& p : k.value().toArray())
-                if (const QString t = p.toString(); !t.isEmpty())
-                    paths << t;
-            if (!paths.isEmpty())
-                kept.insert(k.key().toString().toLower(), paths);
-        }
+        const QHash<QString, QStringList> kept = ArchiveContentsBridge::entriesFromCbor(msg.field(5).toMap());
         if (files.isEmpty() && (!passwords.isEmpty() || !kept.isEmpty()))
             for (const QString& url : ed3k::Ed3kHosterJoin::linksIn(msg.fieldString(0)))
                 files.append(QStringList{url});
@@ -896,6 +916,18 @@ QCborMap statusToCbor()
                                     {QStringLiteral("code"), st.code}});
         out.insert(QStringLiteral("solvers"), solvers);
     }
+    // multi-hoster logins: what their last check found (no passwords)
+    QCborArray debrid;
+    for (const auto& d : s_join->debridSummaries())
+        debrid.append(QCborMap{{QStringLiteral("host"), d.host},
+                               {QStringLiteral("user"), d.user},
+                               {QStringLiteral("known"), d.known},
+                               {QStringLiteral("valid"), d.valid},
+                               {QStringLiteral("premium"), d.premium},
+                               {QStringLiteral("expires"), d.expires},
+                               {QStringLiteral("hosts"), d.hosts},
+                               {QStringLiteral("working"), d.working}});
+    out.insert(QStringLiteral("debrid"), debrid);
 #ifdef EMULE_HAVE_HOSTER_JD
     if (s_java) {
         QCborMap j{{QStringLiteral("state"), int(s_java->state())},

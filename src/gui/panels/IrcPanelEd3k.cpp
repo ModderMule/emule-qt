@@ -147,14 +147,16 @@ void IrcPanel::setIpcClient(IpcClient* ipc)
     connectEd3kRooms();
 }
 
-void IrcPanel::openEd3kRoomLink(const QString& link)
+bool IrcPanel::openEd3kRoomLink(const QString& link)
 {
     // the link may carry s: the dialog names the room, never shows the secret
     const auto answer = QMessageBox::question(this, tr("ed3k room"),
         tr("Join the ed3k room \"%1\"?\n\nOther members see your nick and posts; your node takes "
            "part in passing the room's posts on.").arg(linkName(link)));
-    if (answer == QMessageBox::Yes)
-        joinEd3kRoom(link);
+    if (answer != QMessageBox::Yes)
+        return false;
+    joinEd3kRoom(link);
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -218,6 +220,12 @@ void IrcPanel::onEd3kRooms(const IpcMessage& reply)
         m_tabWidget->tabBar()->setTabButton(idx, QTabBar::RightSide, nullptr);
         m_tabWidget->tabBar()->setTabButton(idx, QTabBar::LeftSide, nullptr);
         m_channels[kRoomListKey] = ch;
+        // default tab on GUI start, unless the user already picked another one
+        if (!m_roomListShownOnce) {
+            m_roomListShownOnce = true;
+            if (m_tabWidget->currentWidget() == m_statusBrowser)
+                m_tabWidget->setCurrentIndex(idx);
+        }
     }
     m_roomList->setRooms(rooms);
 
@@ -374,6 +382,10 @@ void IrcPanel::onEd3kRoomAction(int action, const QString& room)
         break;
     case A::Join:
         joinEd3kRoom({});
+        break;
+    case A::Paste:
+        // pasting is the consent (as Paste eD2K Links): joins and shows the tab
+        joinEd3kRoom(room);
         break;
     case A::Create:
         createEd3kRoom();
@@ -555,35 +567,35 @@ void IrcPanel::ed3kNickMenu(Ed3kRoomTab* tab, const QString& shown, const QPoint
     const QString room = tab->room();
     const bool self = member == tab->memberKey();
     QMenu menu(this);
-    QAction* title = menu.addAction(tr("Nick : %1").arg(IrcNickList::bare(shown, IrcServerModes{})));
+    QAction* title = menu.addAction(skinIcon(QStringLiteral(":/icons/User.ico")), tr("Nick : %1").arg(IrcNickList::bare(shown, IrcServerModes{})));
     title->setEnabled(false);
     menu.addSeparator();
-    menu.addAction(tr("Copy member key"), this, [member] { QApplication::clipboard()->setText(member); })->setEnabled(!member.isEmpty());
+    menu.addAction(Ed3kRoomList::actionIcon(Ed3kRoomList::Action::CopyMemberKey), tr("Copy member key"), this, [member] { QApplication::clipboard()->setText(member); })->setEnabled(!member.isEmpty());
     // §2.5: answer the member's newest post; §6: mute it here alone
     const Ed3kRoomTab::Post* last = member.isEmpty() ? nullptr : tab->lastPostOf(member);
-    menu.addAction(tr("Reply to last post"), this, [this, tab = QPointer<Ed3kRoomTab>(tab), id = last ? last->id : QString()] {
+    menu.addAction(skinIcon(QStringLiteral(":/icons/UserMessage.ico")), tr("Reply to last post"), this, [this, tab = QPointer<Ed3kRoomTab>(tab), id = last ? last->id : QString()] {
         if (tab)
             replyInEd3kRoom(tab, id);
     })->setEnabled(last != nullptr);
     if (const QString memberId = Ed3kRoomTab::memberIdOf(member); !self && !memberId.isEmpty()) {
         const bool muted = tab->isMuted(memberId);
-        menu.addAction(muted ? tr("Unmute") : tr("Mute"), this,
+        menu.addAction(skinIcon(QStringLiteral(":/icons/Spam.ico")), muted ? tr("Unmute") : tr("Mute"), this,
                        [this, room, memberId, muted] { muteEd3kMember(room, memberId, !muted); });
     }
     // #17: only for a room known closed or moderated, or one that refused us
     // was: if (self && !tab->canModerate())
     if (self && !tab->canModerate() && tab->admitImportable()) {
-        menu.addAction(tr("Import admit..."), this, [this, room] { onEd3kRoomAction(int(Ed3kRoomList::Action::ImportAdmit), room); });
+        menu.addAction(Ed3kRoomList::actionIcon(Ed3kRoomList::Action::ImportAdmit), tr("Import admit..."), this, [this, room] { onEd3kRoomAction(int(Ed3kRoomList::Action::ImportAdmit), room); });
     }
     if (tab->canModerate() && !member.isEmpty() && !self) {
         menu.addSeparator();
-        menu.addAction(tr("Admit"), this, [this, room, member] { admitEd3kMember(room, member); });
-        menu.addAction(tr("Ban (30 days)"), this, [this, room, member] { moderateEd3kMember(room, int(Moderation::Ban), member); });
-        menu.addAction(tr("Lift ban"), this, [this, room, member] { moderateEd3kMember(room, int(Moderation::Lift), member); });
+        menu.addAction(skinIcon(QStringLiteral(":/icons/UserAdd.ico")), tr("Admit"), this, [this, room, member] { admitEd3kMember(room, member); });
+        menu.addAction(skinIcon(QStringLiteral(":/icons/UserDelete.ico")), tr("Ban (30 days)"), this, [this, room, member] { moderateEd3kMember(room, int(Moderation::Ban), member); });
+        menu.addAction(skinIcon(QStringLiteral(":/icons/Restore.ico")), tr("Lift ban"), this, [this, room, member] { moderateEd3kMember(room, int(Moderation::Lift), member); });
     }
     if (tab->isOwner() && !member.isEmpty()) {
         const bool mod = tab->isModerator(member);
-        menu.addAction(mod ? tr("Remove moderator") : tr("Make moderator"), this,
+        menu.addAction(skinIcon(QStringLiteral(":/icons/FriendSlot.ico")), mod ? tr("Remove moderator") : tr("Make moderator"), this,
                        [this, tab = QPointer<Ed3kRoomTab>(tab), member, mod] {
                            if (tab)
                                setEd3kModerator(tab, member, !mod);
@@ -591,8 +603,8 @@ void IrcPanel::ed3kNickMenu(Ed3kRoomTab* tab, const QString& shown, const QPoint
     }
     if (tab->canModerate()) {
         menu.addSeparator();
-        menu.addAction(tr("Admit a member key..."), this, [this, room] { admitEd3kMember(room, {}); });
-        menu.addAction(tr("New generation"), this, [this, room] { moderateEd3kMember(room, int(Moderation::NewGeneration), {}); })
+        menu.addAction(Ed3kRoomList::actionIcon(Ed3kRoomList::Action::AdmitKey), tr("Admit a member key..."), this, [this, room] { admitEd3kMember(room, {}); });
+        menu.addAction(Ed3kRoomList::actionIcon(Ed3kRoomList::Action::NewGeneration), tr("New generation"), this, [this, room] { moderateEd3kMember(room, int(Moderation::NewGeneration), {}); })
             ->setEnabled(tab->row().value(QStringLiteral("closed")).toBool());
     }
     menu.exec(globalPos);

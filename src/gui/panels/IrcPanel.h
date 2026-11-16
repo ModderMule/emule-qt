@@ -110,7 +110,8 @@ public:
 
     /// An `ed3k:room` link (ExternalLinkHandler, a click in a chat): asks, then joins and
     /// shows the room's tab.
-    void openEd3kRoomLink(const QString& link);
+    /// Asks, then joins and shows the room. False when the user said no.
+    bool openEd3kRoomLink(const QString& link);
 
 signals:
     /// A link in a channel, private or status tab was clicked. Carries the link as
@@ -299,6 +300,7 @@ private:
 
     // ed3k rooms: the "Rooms (ed3k)" tab while the node runs
     Ed3kRoomList* m_roomList = nullptr;
+    bool m_roomListShownOnce = false;   ///< first "Rooms (ed3k)" tab of this GUI run gets the focus
     QStringList m_roomTabsClosed;   ///< rooms whose tab the user closed: a post opens it again
 
     // CTCP SOUND playback, created on first use

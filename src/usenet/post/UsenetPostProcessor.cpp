@@ -588,6 +588,21 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
                 continue;
             }
             skip.insert(done.firstVolume);
+            // extracted while downloading: what the user did not choose goes now (hoster.md §6.1)
+            const auto only = job.onlyEntries.constFind(QFileInfo(done.firstVolume).fileName().toLower());
+            if (only != job.onlyEntries.constEnd() && !only->isEmpty()) {
+                const QDir base(unpackDir);
+                QStringList kept;
+                for (const QString& path : done.extracted) {
+                    if (only->contains(ArchiveReader::normalizedEntryPath(base.relativeFilePath(path))))
+                        kept << path;
+                    else
+                        QFile::remove(path);
+                }
+                directPayload += kept;
+                directConsumed += done.consumed;
+                continue;
+            }
             directPayload += done.extracted;
             directConsumed += done.consumed;
         }
@@ -613,6 +628,7 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
         unpackOptions.externalTool = job.externalUnpacker;
         unpackOptions.nestedDepth = job.nestedDepth;
         unpackOptions.nestedSeeds = directPayload;
+        unpackOptions.onlyEntries = job.onlyEntries;
         const auto unpacked = unpacker.unpackAll(job.workDir, unpackDir, unpackOptions);
 
         if (!unpacked.vetoed.isEmpty()) {
@@ -641,12 +657,11 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
             return;
         }
 
-        // the contents record (hoster.md §6.1): read while the volumes still exist
-        if (!unpacked.nothingToDo) {
-            for (const ArchiveSet& set : UsenetUnpacker::findArchiveSets(job.workDir))
-                if (!set.headless)
-                    readArchiveContents(set.volumes, unpackOptions.passwords);
-        }
+        // the contents records (hoster.md §6.1), hashed in the unpack's own read: now good
+        unpacked.commitContents();
+        for (const UsenetDirectUnpackResult& done : job.directUnpacked)
+            if (done.contents && skip.contains(done.firstVolume))
+                done.contents->commit(QFileInfo(done.firstVolume).fileName(), done.contentsPassword);
 
         if (unpacked.nothingToDo && directPayload.isEmpty()) {
             result.unpackOutcome = UsenetUnpackOutcome::NothingToUnpack;

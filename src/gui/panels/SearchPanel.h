@@ -133,6 +133,9 @@ public:
     /// Connect this panel to the IPC client for data updates.
     void setIpcClient(IpcClient* client);
 
+    /// Category the "Download" tabs below the results point at, 0 = none (MFC GetSelectedCat)
+    [[nodiscard]] int downloadCategory() const;
+
     /// Start a search from an external panel (e.g., "Search Related Files").
     ///
     /// With no overrides this fills the search box and runs it exactly as if the user had
@@ -231,7 +234,8 @@ private:
     /// @p keptFiles: the files checked there (GrabIndexerResult field 6); empty = all.
     void grabIndexerResult(uint32_t searchID, const IndexerResultRow& result,
                            QPointer<IndexerResultsModel> model, bool force, int category = 0,
-                           const QList<int>& keptFiles = {});
+                           const QList<int>& keptFiles = {}, const QHash<QString, QStringList>& keptEntries = {},
+                           const QString& entryPassword = {});
 
     /// Category titles, index 0 first, for the Download To submenu. Refreshed
     /// from the daemon rather than kept in sync by hand, on the same

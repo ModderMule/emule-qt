@@ -56,6 +56,7 @@ private slots:
     void aReleaseBarLaysItsFilesOutBySize();
     void aCheckboxClickAsksAndChangesNothing();
     void hasCompletedFollowsTheRows();
+    void ed3kSourcesFollowTheFiles();
 };
 
 void tst_UsenetQueueModel::aFileWithoutAMapIsDrawnFromItsState()
@@ -150,6 +151,49 @@ void tst_UsenetQueueModel::hasCompletedFollowsTheRows()
 
     model.removeItem(QStringLiteral("a"));
     QVERIFY(!model.hasCompleted());
+}
+
+void tst_UsenetQueueModel::ed3kSourcesFollowTheFiles()
+{
+    const auto source = [](const QString& key, const QString& state) {
+        return QCborMap{
+            {QStringLiteral("userHash"), key},
+            {QStringLiteral("userName"), QString(QStringLiteral("peer-") + key)},
+            {QStringLiteral("addr"), QStringLiteral("192.0.2.7")},
+            {QStringLiteral("port"), 4662},
+            {QStringLiteral("downloadState"), state},
+            {QStringLiteral("datarate"), 2048},
+            {QStringLiteral("availPartCount"), 1},
+            {QStringLiteral("partCount"), 2},
+            {QStringLiteral("sourcePartMap"), QCborArray{1, 0}},
+            {QStringLiteral("key"), QStringLiteral("Node")},
+            {QStringLiteral("join"), QStringLiteral("usenet")},
+        };
+    };
+    QCborMap item = itemMap(1, {fileMap(QStringLiteral("movie.mkv"), 5000, UsenetFileRowState::Partial)});
+    item.insert(QStringLiteral("ed3kSources"), QCborArray{source(QStringLiteral("a"), QStringLiteral("Downloading"))});
+
+    UsenetQueueModel model;
+    model.setItems({usenetRowFromCbor(item)});
+    const QModelIndex release = model.index(0, 0);
+    QCOMPARE(model.rowCount(release), 2);
+    const QModelIndex peer = model.index(1, UsenetQueueModel::ColName, release);
+    QVERIFY(!model.fileAt(peer));
+    QVERIFY(model.ed3kSourceAt(peer));
+    QCOMPARE(peer.data().toString(), QStringLiteral("peer-a"));
+    QVERIFY(!(model.flags(peer) & Qt::ItemIsUserCheckable));
+    QVERIFY(model.index(1, UsenetQueueModel::ColStatus, release).data().toString().contains(QStringLiteral("192.0.2.7:4662")));
+    QCOMPARE(model.index(1, UsenetQueueModel::ColProgress, release).data(kUsenetBarRole).toByteArray().size(), 2);
+    QVERIFY(!model.ed3kSourceAt(model.index(0, 0, release)));
+
+    // a second source, then none: the rows follow
+    item.insert(QStringLiteral("ed3kSources"), QCborArray{source(QStringLiteral("a"), QStringLiteral("OnQueue")),
+                                                          source(QStringLiteral("b"), QStringLiteral("Downloading"))});
+    model.upsertItem(usenetRowFromCbor(item));
+    QCOMPARE(model.rowCount(release), 3);
+    item.remove(QStringLiteral("ed3kSources"));
+    model.upsertItem(usenetRowFromCbor(item));
+    QCOMPARE(model.rowCount(release), 1);
 }
 
 #include "tst_UsenetQueueModel.moc"

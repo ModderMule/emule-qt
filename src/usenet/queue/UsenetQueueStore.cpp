@@ -277,6 +277,21 @@ bool UsenetQueueStore::save(const UsenetQueueItem& item)
         out.field("", "failedLadder", item.failedLadder);
     if (!item.workRoot.isEmpty())   // optional: moved by "Move to" (#187)
         out.field("", "workRoot", item.workRoot);
+    // Archive entries to extract (hoster.md §6.1). Absent = everything.
+    if (!item.keptEntries.isEmpty()) {
+        out.raw("keptEntries:\n");
+        for (auto k = item.keptEntries.cbegin(); k != item.keptEntries.cend(); ++k) {
+            out.raw("  - first: ");
+            out.str(k.key());
+            out.endLine();
+            out.raw("    paths:\n");
+            for (const QString& p : k.value()) {
+                out.raw("      - ");
+                out.str(p);
+                out.endLine();
+            }
+        }
+    }
     // Indexer row it came from, for a replacement on failure. Absent = none.
     if (item.origin.isSet()) {
         out.raw("origin:\n");
@@ -510,6 +525,20 @@ bool UsenetQueueStore::load(const QString& path, UsenetQueueItem& out, QString& 
             root["passwordRequired"] ? root["passwordRequired"].as<bool>(false) : false;
         out.failedLadder = fromStd(root, "failedLadder");
         out.workRoot = fromStd(root, "workRoot");
+        if (const auto kept = root["keptEntries"]; kept && kept.IsSequence()) {
+            for (const auto& k : kept) {
+                if (!k.IsMap())
+                    continue;
+                const QString first = fromStd(k, "first").toLower();
+                QStringList paths;
+                if (const auto ps = k["paths"]; ps && ps.IsSequence())
+                    for (const auto& p : ps)
+                        if (const QString t = QString::fromStdString(p.as<std::string>("")); !t.isEmpty())
+                            paths << t;
+                if (!first.isEmpty() && !paths.isEmpty())
+                    out.keptEntries.insert(first, paths);
+            }
+        }
         if (const auto origin = root["origin"]; origin && origin.IsMap()) {
             out.origin.indexerName = fromStd(origin, "indexer");
             out.origin.guid = fromStd(origin, "guid");

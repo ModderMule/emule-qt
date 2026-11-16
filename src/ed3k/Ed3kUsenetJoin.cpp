@@ -171,6 +171,7 @@ void Ed3kUsenetJoin::stop()
     m_claimSearches.clear();
     m_posts.clear();
     m_noJoin.clear();
+    m_cleared.clear();
     m_queue.setSealHold({});
     for (const auto& [id, f] : held)
         m_queue.releaseSealHold(id, f);
@@ -341,6 +342,13 @@ void Ed3kUsenetJoin::onItemRemoved(const QString& itemId)
 {
     dropPost(itemId, /*keepBlob*/ false);
     m_noJoin.remove(itemId);
+    // a row cleared, its files left (incoming): the set, members and ALIAS records stay out
+    // as long as the files do (sharedGone, keepsOwner at the next start)
+    if (clearedKept(itemId)) {
+        logEd3k(QStringLiteral("ed3k usenet: %1 cleared from the queue, its files stay shared").arg(itemId));
+        pumpSession();
+        return;
+    }
     // its files are gone or the user does not want them: not shared any more
     unshareOwner(itemId);
     dropKept(itemId);
@@ -355,6 +363,8 @@ void Ed3kUsenetJoin::onItemFinished(const QString& itemId, bool success, const Q
     if (!post)
         return;
     m_noJoin.insert(itemId);
+    // the files are where they stay now (incoming); the volumes go with the work dir
+    rememberPaths(itemId);
     const bool hashing = std::ranges::any_of(post->members, [](const Post::Member& m) { return m.hashing; });
     if (hashing) {
         // a repaired member is still hashed: its result may verify and complete the post
@@ -512,7 +522,33 @@ void Ed3kUsenetJoin::onSetSearchDone(const QString& owner)
 
 bool Ed3kUsenetJoin::keepsOwner(const QString& owner) const
 {
-    return m_queue.findItem(owner) != nullptr;
+    return m_queue.findItem(owner) != nullptr || clearedKept(owner);
+}
+
+void Ed3kUsenetJoin::rememberPaths(const QString& itemId)
+{
+    const auto* item = m_queue.findItem(itemId);
+    if (!item)
+        return;
+    QHash<int, QString> paths;
+    for (int f = 0; f < item->files.size(); ++f)
+        if (const QString path = memberPath(itemId, f); !path.isEmpty() && QFileInfo::exists(path))
+            paths.insert(f, path);
+    keepMemberPaths(itemId, paths);
+}
+
+bool Ed3kUsenetJoin::clearedKept(const QString& itemId) const
+{
+    if (m_queue.findItem(itemId))
+        return false;
+    QHash<int, QString> paths = keptMemberPaths(itemId);
+    paths.removeIf([](const auto& it) { return !QFileInfo::exists(it.value()); });
+    if (paths.isEmpty()) {
+        m_cleared.erase(itemId);
+        return false;
+    }
+    m_cleared[itemId] = std::move(paths);
+    return true;
 }
 
 QString Ed3kUsenetJoin::keptMemberPath(const QString& owner, int member) const
@@ -863,6 +899,7 @@ void Ed3kUsenetJoin::onMemberVerified(const QString& itemId, int fileIndex, cons
         keepRecords(itemId, std::nullopt, {}, one);
     }
     keepMember(itemId, fileIndex, root, size, QString::fromStdString(name));
+    keepMemberPaths(itemId, {{fileIndex, memberPath(itemId, fileIndex)}});
     logEd3k(QStringLiteral("ed3k usenet: \"%1\" verified and shared as %2")
                 .arg(QString::fromStdString(name), hexOf(root.bytes)));
     emit memberVerified(itemId, fileIndex);
@@ -1006,7 +1043,12 @@ bool Ed3kUsenetJoin::sealHold(const QString& itemId, int fileIndex)
 QString Ed3kUsenetJoin::memberPath(const QString& itemId, int fileIndex) const
 {
     const auto* item = m_queue.findItem(itemId);
-    if (!item || fileIndex < 0 || fileIndex >= item->files.size())
+    if (!item) {
+        // cleared from the queue: where its file was kept (clearedKept)
+        const auto c = m_cleared.find(itemId);
+        return c == m_cleared.end() ? QString() : c->second.value(fileIndex);
+    }
+    if (fileIndex < 0 || fileIndex >= item->files.size())
         return {};
     const auto& st = item->files.at(fileIndex);
     // resolved on every call: sealFile() renames tempPath, publishing moves it again

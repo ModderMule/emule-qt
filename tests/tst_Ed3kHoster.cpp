@@ -119,6 +119,10 @@ public:
     QSet<QString> privateUrls;   ///< open() fails like the address guard (code "private")
     QSet<QString> premiumHosts;  ///< accountCheck() says premium for these
     QHash<QString, int> maxDownloads;   ///< accountCheck() tells JD's downloads at once
+    QHash<QString, QList<DebridHost>> debridHosts;   ///< accountCheck(): these are multi-hosters for these hosts
+    QSet<QString> debridFails;   ///< open() through one of these multi-hosters fails
+    bool debrid = true;          ///< canDebrid()
+    QList<std::optional<ResolverAccount>> openAccounts;   ///< the login of each open(), in order
     QList<QStringList> siteGroups;   ///< one hoster's domains, main first (match() and sites())
     QHash<QString, int> runningChecks;   ///< check() by url host, until it answers
     QHash<QString, int> maxRunningChecks;
@@ -235,11 +239,21 @@ public:
         later(t, e);
         return t;
     }
-    TaskId open(const QString& url, const std::optional<ResolverAccount>&, const QString& dir, std::uint64_t have) override
+    bool canDebrid() const override { return debrid; }
+    TaskId open(const QString& url, const std::optional<ResolverAccount>& account, const QString& dir, std::uint64_t have) override
     {
         ++opens;
         opened << url;
+        openAccounts << account;
         const TaskId t = next++;
+        if (account && debridFails.contains(account->via)) {
+            ResolverEvent f;
+            f.kind = ResolverEvent::Kind::Failed;
+            f.code = QStringLiteral("failed");
+            f.text = QStringLiteral("multi-hoster refused");
+            later(t, f);
+            return t;
+        }
         if (puzzleUrls.contains(url)) {
             ++puzzlesAsked;
             ResolverEvent pz;
@@ -307,6 +321,12 @@ public:
         e.valid = true;
         e.premium = premiumHosts.contains(host);
         e.maxDownloads = maxDownloads.value(host);
+        if (const auto d = debridHosts.find(host); d != debridHosts.end()) {
+            e.premium = true;
+            e.multi = true;
+            e.hosts = *d;
+            e.state = QByteArrayLiteral(R"({"token":"t1"})");
+        }
         later(t, e);
         return t;
     }
@@ -776,6 +796,32 @@ private slots:
         QCOMPARE(items.first().passwords, pws);
     }
 
+    /// hoster.md §6.1: a queued package's extraction choice changes, and stays across a restart
+    void setKeptEntries_changesTheChoice()
+    {
+        Rig r;
+        QVERIFY(r.start(true));
+        r.resolver.hosts.clear();   // no plugin: the items stay, nothing downloads
+        const auto ids = r.join->addMirrored({{QStringLiteral("https://nohost.example/k/1")}, {QStringLiteral("https://nohost.example/k/2")}},
+                                             QStringLiteral("Pkg"));
+        QCOMPARE(ids.size(), 2);
+        const quint32 pkg = r.join->item(ids[0])->packageId;
+        QVERIFY(pkg != 0);
+        const QHash<QString, QStringList> kept{{QStringLiteral("a.part1.rar"), {QStringLiteral("x/movie.mkv")}}};
+        QVERIFY(r.join->setKeptEntries(pkg, 0, kept));
+        bool editable = false;
+        QCOMPARE(r.join->keptEntries(pkg, 0, &editable), kept);
+        QVERIFY(editable);
+        QCOMPARE(r.join->item(ids[1])->keptEntries, kept);
+        QVERIFY(!r.join->setKeptEntries(9999, 0, kept));
+        r.join->stop();
+        r.join = std::make_unique<Ed3kHosterJoin>(r.session, r.tmp.filePath(QStringLiteral("cfg")));
+        r.join->setResolver(&r.resolver);
+        r.join->setConfig(r.prefs, r.tmp.filePath(QStringLiteral("temp")), r.tmp.filePath(QStringLiteral("incoming")));
+        r.join->start();
+        QCOMPARE(r.join->keptEntries(pkg, 0), kept);
+    }
+
     void linksIn_takesHttpLinksOnly()
     {
         const QStringList l = Ed3kHosterJoin::linksIn(QStringLiteral(
@@ -1071,6 +1117,46 @@ private slots:
         QCOMPARE(again.items().size(), 1);
         QCOMPARE(again.items().first().state, Ed3kHosterJoin::State::Complete);
         QCOMPARE(again.items().first().url, QStringLiteral("https://fake.example/f/5"));
+    }
+
+    /// removed from the list, its file left in incoming: out of every list, its links still
+    /// published (over a restart too); added again it is back, complete; its file gone, the
+    /// links are withdrawn and the item dropped
+    void removedComplete_keepsItsLinksPublished()
+    {
+        Rig r;
+        const QString url = QStringLiteral("https://fake.example/f/kept");
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addLinks(url);
+        QCOMPARE(ids.size(), 1);
+        const quint32 id = ids[0];
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(id), Ed3kHosterJoin::State::Complete, 60000);
+        QTRY_VERIFY(!r.join->sharedLinks(id).isEmpty());
+        const QString file = r.join->item(id)->file;
+        QSignalSpy removed(r.join.get(), &Ed3kHosterJoin::itemRemoved);
+
+        r.join->remove(id, false);
+        QCOMPARE(removed.count(), 1);
+        QVERIFY(!r.join->item(id));
+        QVERIFY(r.join->items().isEmpty());
+        QVERIFY(QFileInfo::exists(file));
+        QCOMPARE(r.join->sharedLinks(id).size(), 1);
+        QVERIFY(!r.join->sharedLinks(id).first().offline);
+
+        QVERIFY(r.restart());
+        QVERIFY(r.join->items().isEmpty());
+        QCOMPARE(r.join->sharedLinks(id).size(), 1);
+        QVERIFY(!r.join->sharedLinks(id).first().offline);
+
+        QCOMPARE(r.join->addLinks(url), QList<quint32>{id});
+        QCOMPARE(r.state(id), Ed3kHosterJoin::State::Complete);
+        QCOMPARE(r.join->items().size(), 1);
+        r.join->remove(id, false);
+
+        QVERIFY(QFile::remove(file));
+        QVERIFY(r.restart());
+        QTRY_VERIFY_WITH_TIMEOUT(r.join->sharedLinks(id).isEmpty(), 10000);
+        QVERIFY(r.join->items().isEmpty());
     }
 
     /// a package: one id and name for its items, its own folder under incoming, kept over a
@@ -1829,6 +1915,114 @@ private slots:
         QCOMPARE(r.join->streamsAt(QStringLiteral("prem.example")), 2);
     }
 
+    /// a hoster without a premium login of its own goes through a multi-hoster that downloads it,
+    /// with the multi-hoster's login and the session its check gave
+    void debrid_downloadsWithoutOwnPremium()
+    {
+        Rig r;
+        DebridHost fake{QStringLiteral("fake.example"), {QStringLiteral("fake.example")}, QStringLiteral("working")};
+        fake.maxDownloads = 2;
+        r.resolver.debridHosts = {{QStringLiteral("deb.example"), {fake}}};
+        r.prefs.maxStreams = 8;
+        r.prefs.debrid = {{QStringLiteral("deb.example"), {}, QStringLiteral("k3y")}};
+        QVERIFY(r.start(true));
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->accountTier(QStringLiteral("fake.example")), 2, 10000);
+        QCOMPARE(r.join->streamsAt(QStringLiteral("fake.example")), 2);   // the multi-hoster's limit
+        QCOMPARE(r.join->accountTier(QStringLiteral("other.example")), 0);
+        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/d/1"));
+        QCOMPARE(ids.size(), 1);
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+        QVERIFY(!r.resolver.openAccounts.isEmpty());
+        const auto& acc = r.resolver.openAccounts.last();
+        QVERIFY(acc);
+        QCOMPARE(acc->via, QStringLiteral("deb.example"));
+        QCOMPARE(acc->user, QStringLiteral("apikey"));   // key-only login
+        QCOMPARE(acc->password, QStringLiteral("k3y"));
+        QCOMPARE(acc->state, QByteArrayLiteral(R"({"token":"t1"})"));
+        const auto sum = r.join->debridSummaries();
+        QCOMPARE(sum.size(), 1);
+        QVERIFY(sum[0].known && sum[0].valid);
+        QCOMPARE(sum[0].hosts, 1);
+    }
+
+    /// the multi-hoster fails: the hoster itself is asked next, without a try counted
+    void debrid_failureFallsBackToHoster()
+    {
+        Rig r;
+        r.resolver.debridHosts = {
+            {QStringLiteral("deb.example"), {{QStringLiteral("fake.example"), {QStringLiteral("fake.example")}, QStringLiteral("working")}}}};
+        r.resolver.debridFails = {QStringLiteral("deb.example")};
+        r.prefs.debrid = {{QStringLiteral("deb.example"), QStringLiteral("u"), QStringLiteral("p")}};
+        QVERIFY(r.start(true));
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->accountTier(QStringLiteral("fake.example")), 2, 10000);
+        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/d/2"));
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+        QVERIFY(r.resolver.openAccounts.size() >= 2);
+        QCOMPARE(r.resolver.openAccounts.first()->via, QStringLiteral("deb.example"));
+        QVERIFY(!r.resolver.openAccounts.last() || r.resolver.openAccounts.last()->via.isEmpty());
+        // skipped for that hoster now; the account itself still counts for others
+        QCOMPARE(r.join->accountTier(QStringLiteral("fake.example")), 0);
+        QCOMPARE(r.join->debridSummaries().first().working, 0);
+    }
+
+    /// two multi-hosters: the second takes over when the first fails
+    void debrid_nextAccountAfterFailure()
+    {
+        Rig r;
+        const QList<DebridHost> fake{{QStringLiteral("fake.example"), {QStringLiteral("fake.example")}, QStringLiteral("working")}};
+        r.resolver.debridHosts = {{QStringLiteral("a.example"), fake}, {QStringLiteral("b.example"), fake}};
+        r.resolver.debridFails = {QStringLiteral("a.example")};
+        r.prefs.debrid = {{QStringLiteral("a.example"), QStringLiteral("u"), QStringLiteral("p")},
+                          {QStringLiteral("b.example"), QStringLiteral("u"), QStringLiteral("p")}};
+        QVERIFY(r.start(true));
+        QTRY_VERIFY_WITH_TIMEOUT(r.join->debridSummaries().size() == 2 && r.join->debridSummaries()[1].known, 10000);
+        const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/d/3"));
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+        QStringList vias;
+        for (const auto& a : std::as_const(r.resolver.openAccounts))
+            vias << (a ? a->via : QString());
+        QCOMPARE(vias.first(), QStringLiteral("a.example"));
+        QCOMPARE(vias.last(), QStringLiteral("b.example"));
+    }
+
+    /// the hoster's own premium login first (JD's order); a used-up quota, a host not working,
+    /// the switch off or a resolver without multi-hosters: never through one
+    void debrid_notUsed()
+    {
+        Rig r;
+        r.resolver.hosts += {QStringLiteral("prem.example"), QStringLiteral("quota.example"), QStringLiteral("down.example")};
+        r.resolver.premiumHosts = {QStringLiteral("prem.example")};
+        DebridHost quota{QStringLiteral("quota.example"), {QStringLiteral("quota.example")}, QStringLiteral("working")};
+        quota.linksLeft = 0;
+        DebridHost down{QStringLiteral("down.example"), {QStringLiteral("down.example")}, QStringLiteral("deactivated_multihost")};
+        r.resolver.debridHosts = {
+            {QStringLiteral("deb.example"),
+             {{QStringLiteral("prem.example"), {QStringLiteral("prem.example")}, QStringLiteral("working")}, quota, down,
+              {QStringLiteral("fake.example"), {QStringLiteral("fake.example")}, QStringLiteral("working")}}}};
+        r.prefs.accounts = {{QStringLiteral("prem.example"), QStringLiteral("u"), QStringLiteral("p")}};
+        r.prefs.debrid = {{QStringLiteral("deb.example"), QStringLiteral("u"), QStringLiteral("p")}};
+        QVERIFY(r.start(true));
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->accountTier(QStringLiteral("fake.example")), 2, 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->accountTier(QStringLiteral("prem.example")), 2, 10000);
+        QCOMPARE(r.join->accountTier(QStringLiteral("quota.example")), 0);
+        QCOMPARE(r.join->accountTier(QStringLiteral("down.example")), 0);
+        QCOMPARE(r.join->debridSummaries().first().working, 2);
+        const auto ids = r.join->addLinks(QStringLiteral("https://prem.example/d/4"));
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+        QVERIFY(r.resolver.openAccounts.last());
+        QVERIFY(r.resolver.openAccounts.last()->via.isEmpty());
+        QCOMPARE(r.resolver.openAccounts.last()->user, QStringLiteral("u"));
+        // switched off; then a resolver that cannot
+        r.prefs.debridEnabled = false;
+        r.join->setConfig(r.prefs, r.tmp.filePath(QStringLiteral("temp")), r.tmp.filePath(QStringLiteral("incoming")));
+        QCOMPARE(r.join->accountTier(QStringLiteral("fake.example")), 0);
+        r.prefs.debridEnabled = true;
+        r.join->setConfig(r.prefs, r.tmp.filePath(QStringLiteral("temp")), r.tmp.filePath(QStringLiteral("incoming")));
+        QCOMPARE(r.join->accountTier(QStringLiteral("fake.example")), 2);
+        r.resolver.debrid = false;
+        QCOMPARE(r.join->accountTier(QStringLiteral("fake.example")), 0);
+    }
+
     /// a login stored under one domain of a hoster counts for its others (JD's aliases)
     void rank_accountOnAlias()
     {
@@ -2195,6 +2389,20 @@ private slots:
         QCOMPARE(e->second.text, QStringLiteral("KoYy2j"));
         QCOMPARE(e->second.host, QStringLiteral("9kw.eu"));
         QCOMPARE(e->second.name, QStringLiteral("KoYy2j"));
+        // a multi-hoster's account check: its hosts with quotas, and the plugin's session
+        e = Ed3kJdResolver::parseEvent(
+            R"({"id":10,"ev":"account","valid":true,"premium":true,"multi":true,"state":{"token":"x"},"hosts":[)"
+            R"({"domain":"RapidGator.net","domains":["rg.to"],"status":"working","linksLeft":5,"linksMax":5,)"
+            R"("trafficLeft":-1,"trafficMax":-1,"factor":200,"maxDownloads":-1},{"status":"working"}]})");
+        QCOMPARE(e->second.kind, K::Account);
+        QVERIFY(e->second.multi);
+        QCOMPARE(e->second.hosts.size(), 1);   // one without a domain is dropped
+        QCOMPARE(e->second.hosts[0].domain, QStringLiteral("rapidgator.net"));
+        QCOMPARE(e->second.hosts[0].domains, (QStringList{QStringLiteral("rapidgator.net"), QStringLiteral("rg.to")}));
+        QCOMPARE(e->second.hosts[0].linksLeft, 5);
+        QCOMPARE(e->second.hosts[0].trafficLeft, -1);
+        QCOMPARE(e->second.hosts[0].factor, 200);
+        QCOMPARE(e->second.state, QByteArray(R"({"token":"x"})"));
         e = Ed3kJdResolver::parseEvent(R"({"id":9,"ev":"match","host":"DirectHTTP","generic":"file"})");
         QCOMPARE(e->second.kind, K::Matched);
         QCOMPARE(e->second.generic, QStringLiteral("file"));

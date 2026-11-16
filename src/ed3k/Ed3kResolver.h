@@ -19,10 +19,28 @@
 
 namespace eMule::ed3k {
 
-/// A login for one hoster. Printed as "[redacted]".
+/// A login for one hoster, or for a multi-hoster that downloads another hoster's links (via).
+/// Printed as "[redacted]".
 struct ResolverAccount {
     QString user;
     QString password;
+    QString via{};       ///< open only: the multi-hoster's domain; its plugin downloads the link with this login
+    QByteArray state{};  ///< the plugin's session (JSON object) an Account event gave; empty: none
+};
+
+/// One hoster a multi-hoster account downloads (accountCheck of a multi-hoster).
+struct DebridHost {
+    QString domain;             ///< the resolver's plugin host, e.g. "rapidgator.net"
+    QStringList domains;        ///< all its domains, lower case
+    QString status;             ///< "working", else why not (JD's MultihosterHostStatus, lower case)
+    qint64 linksLeft = -1;      ///< links left today; -1 = unlimited / unknown
+    qint64 linksMax = -1;
+    qint64 trafficLeft = -1;    ///< bytes; -1 = unlimited / unknown
+    qint64 trafficMax = -1;
+    int factor = 100;           ///< traffic charged per byte, percent
+    int maxDownloads = -1;      ///< downloads at once; -1 = unlimited
+    qint64 unavailableS = 0;    ///< the multi-hoster blocked it for this long
+    bool operator==(const DebridHost&) const = default;
 };
 
 /// A captcha solver service login (2captcha.com, anti-captcha.com, ...). Key-only services
@@ -72,7 +90,7 @@ struct ResolverEvent {
                       ///< also "limit" (the DLC service refuses for a while), "invalid", "password",
                       ///< "bad" (a resolver without containers); text
         Cancelled,
-        Account,      ///< accountCheck: valid, premium, expires, trafficLeft, maxDownloads
+        Account,      ///< accountCheck: valid, premium, expires, trafficLeft, maxDownloads; multi, hosts, state
         Status,       ///< open: what the plugin does, text: "link", "hoster", "hosterAccount", "puzzle", "connect", "transfer"
         Solvers,      ///< setSolverAccounts: solvers
         Solved,       ///< solveTest: text, host (the solver), name (the expected text, if known)
@@ -109,6 +127,9 @@ struct ResolverEvent {
     double balance = -1;          ///< accountCheck of a solver service: its credit; -1 = none given
     QString currency;             ///< of balance, ISO 4217; empty: unknown
     QList<SolverAccountState> solvers;
+    bool multi = false;           ///< accountCheck: a multi-hoster account; hosts what it downloads
+    QList<DebridHost> hosts;
+    QByteArray state;             ///< accountCheck: the plugin's session (JSON object), for ResolverAccount::state
 
     /// The last event of a task.
     [[nodiscard]] bool isFinal() const
@@ -148,6 +169,8 @@ public:
     virtual TaskId expandDeep(const QString& url) { return expand(url); }
     /// Whether expandDeep() crawls pages (a resolver that knows it).
     [[nodiscard]] virtual bool canDeepCrawl() const { return false; }
+    /// Whether open() takes a multi-hoster login (ResolverAccount::via).
+    [[nodiscard]] virtual bool canDebrid() const { return false; }
     /// The links of a container file (DLC, RSDF, CCF) at @p path, as written; DLC asks JD's
     /// key service (network). Links or Failed follows.
     virtual TaskId openContainer(const QString& path) = 0;

@@ -68,7 +68,7 @@ public:
     BandwidthCoordinator& operator=(const BandwidthCoordinator&) = delete;
 
     /// The ed3k node, or null (not built, a test). Set before start().
-    void setEd3k(ed3k::Ed3kSession* session) { m_ed3k = session; }
+    void setEd3k(ed3k::Ed3kSession* session) { m_ed3k = session; m_ed3kSlots = 0; }
 
     void start();
     /// Gives every engine the whole line back.
@@ -85,6 +85,9 @@ public:
     /// ed3k upload slots for an upload share of upKb KB/s: 25 each, at least 2 (Protocol.md
     /// §12.5: 9 to 55 KiB/s per slot); 0 = no limit, the node chooses.
     [[nodiscard]] static std::uint32_t ed3kSlotsFor(qint64 upKb);
+    /// Whether a new slot count is applied over the one in force: on/off always, else a move
+    /// of 10 % or more (at least 1); the share jitters every tick, each apply re-ranks the queue.
+    [[nodiscard]] static bool ed3kSlotsMoved(std::uint32_t current, std::uint32_t wanted);
 
     static constexpr int kTickMs = 500;
 
@@ -102,6 +105,7 @@ private:
     usenet::UsenetSession* m_usenet = nullptr;
     bt::BtSession* m_bt = nullptr;
     ed3k::Ed3kSession* m_ed3k = nullptr;
+    std::uint32_t m_ed3kSlots = 0;   ///< the count last given to m_ed3k (0 = from its limit)
 #ifdef EMULE_HAVE_ED3K
     quint64 m_ed3kSent = 0;
     quint64 m_ed3kRecv = 0;

@@ -107,6 +107,7 @@ public final class ResolverMain {
             m.put("deep", true);
             m.put("bind", true);
             m.put("generic", true);
+            m.put("debrid", true);
             Out.send(m);
             break;
         }
@@ -166,7 +167,7 @@ public final class ResolverMain {
             start(new ContainerTask(id, str(req.get("path"))));
             break;
         case "open":
-            start(new OpenTask(id, str(req.get("url")), Account.of(req), str(req.get("path")), num(req.get("have"))));
+            start(new OpenTask(id, str(req.get("url")), Account.of(req), Account.via(req), str(req.get("path")), num(req.get("have"))));
             break;
         case "accountCheck":
             start(new AccountTask(id, str(req.get("host")), Account.of(req)));

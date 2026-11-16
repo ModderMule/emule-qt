@@ -4,6 +4,7 @@
 #include "UsenetBridge.h"
 
 #include "BandwidthCoordinator.h"
+#include "Ed3kUploadsBridge.h"
 #include "IndexerQuery.h"
 #include "UsenetSession.h"
 #include "nzb/NzbFile.h"
@@ -335,6 +336,8 @@ QCborMap itemToCbor(const usenet::UsenetQueueItem& item)
         {QStringLiteral("healthProbed"),    item.healthProbed},
         {QStringLiteral("files"),           files},
         {QStringLiteral("publishedFiles"),  publishedFiles},
+        // joined with ed3k: its ed3k sources (Ed3kUploadsBridge::jobSources rows)
+        {QStringLiteral("ed3kSources"),     Ed3kUploadsBridge::jobSources(QStringLiteral("usenet"), item.id)},
     };
 }
 

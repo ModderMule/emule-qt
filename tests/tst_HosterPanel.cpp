@@ -347,19 +347,27 @@ private slots:
         HosterPanel panel;
         panel.setIpcClient(&ipc);
         QString text;
-        QTimer::singleShot(50, [&] {
-            if (auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget())) {
-                text = box->text();
-                box->reject();
-            }
+        // polled: a box that opens late must not stay on a real screen (it once did)
+        QTimer closer;
+        closer.setInterval(10);
+        connect(&closer, &QTimer::timeout, this, [&] {
+            // not activeModalWidget(): null when the app has no focus (run from a terminal)
+            for (QWidget* w : QApplication::topLevelWidgets())
+                if (auto* box = qobject_cast<QMessageBox*>(w); box && box->isVisible()) {
+                    text = box->text();
+                    box->reject();
+                    closer.stop();
+                    return;
+                }
         });
+        closer.start();
         IpcMessage msg(IpcMsgType::PushHosterLinks, 0);
         msg.append(qint64(0));
         msg.append(QCborArray{});
         msg.append(QCborMap{{QStringLiteral("fileName"), QStringLiteral("x.dlc")}, {QStringLiteral("code"), QStringLiteral("limit")},
                             {QStringLiteral("text"), QStringLiteral("Server claims: DLC Limit reached.")}});
         emit ipc.hosterLinksExpanded(msg);
-        QCoreApplication::processEvents();   // the box opens queued
+        QTRY_VERIFY_WITH_TIMEOUT(!text.isEmpty(), 5000);   // the box opens queued
         QVERIFY2(text.startsWith(QStringLiteral("x.dlc: ")), qPrintable(text));
         QVERIFY2(text.contains(QStringLiteral("too many")), qPrintable(text));
     }
@@ -586,5 +594,16 @@ private slots:
     }
 };
 
-QTEST_MAIN(tst_HosterPanel)
+// Qt widgets' message boxes: a native NSAlert runs its own modal loop the tests cannot close
+#define EMULE_TEST_MAIN_NO_NATIVE(T)                                          \
+    int main(int argc, char** argv)                                           \
+    {                                                                         \
+        QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);              \
+        QApplication app(argc, argv);                                         \
+        app.setAttribute(Qt::AA_Use96Dpi, true);                              \
+        T tc;                                                                 \
+        QTEST_SET_MAIN_SOURCE_PATH                                            \
+        return QTest::qExec(&tc, argc, argv);                                 \
+    }
+EMULE_TEST_MAIN_NO_NATIVE(tst_HosterPanel)
 #include "tst_HosterPanel.moc"

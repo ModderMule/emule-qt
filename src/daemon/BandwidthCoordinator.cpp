@@ -97,6 +97,7 @@ void BandwidthCoordinator::stop()
 #ifdef EMULE_HAVE_ED3K
     if (m_ed3k) {
         m_ed3k->setUploadSlots(0);   // from its upload limit again
+        m_ed3kSlots = 0;
         // the global limits, unshared (0 = none)
         const uint32 line = UploadQueue::lineCapKB();
         m_ed3k->setLimits(line == UNLIMITED ? 0 : quint64(line) * 1024, quint64(thePrefs.maxDownload()) * 1024);
@@ -258,6 +259,16 @@ std::uint32_t BandwidthCoordinator::ed3kSlotsFor(qint64 upKb)
     return std::uint32_t(std::min<qint64>(n, std::numeric_limits<std::uint32_t>::max()));
 }
 
+bool BandwidthCoordinator::ed3kSlotsMoved(std::uint32_t current, std::uint32_t wanted)
+{
+    if (current == wanted)
+        return false;
+    if (current == 0 || wanted == 0)
+        return true;
+    const std::uint32_t diff = current > wanted ? current - wanted : wanted - current;
+    return diff >= std::max<std::uint32_t>(1, current / 10);
+}
+
 void BandwidthCoordinator::applyEd3kSlots(bool ed3kRunning, qint64 upKb)
 {
     int held = 0;
@@ -270,7 +281,12 @@ void BandwidthCoordinator::applyEd3kSlots(bool ed3kRunning, qint64 upKb)
         // m_ed3k->setUploadSlots(std::uint32_t(std::clamp<qint64>(want, kEd3kMinSlots, kEd3kMaxSlots)));
         // was: from the measured rate, which an idle node keeps at 2; now from the share ed3k
         // may use (all of eD2K's, the throttler keeps the sum in it)
-        m_ed3k->setUploadSlots(ed3kSlotsFor(upKb));
+        // was: every tick; the share jitters, so the count moved by a few on almost each one
+        // m_ed3k->setUploadSlots(ed3kSlotsFor(upKb));
+        if (const std::uint32_t want = ed3kSlotsFor(upKb); ed3kSlotsMoved(m_ed3kSlots, want)) {
+            m_ed3kSlots = want;
+            m_ed3k->setUploadSlots(want);
+        }
         // the node's count leaves LAN peers and short slots out, as they hold no eD2K slot
         if (const auto q = m_ed3k->uploadQueueStats())
             held = int(q->holders);

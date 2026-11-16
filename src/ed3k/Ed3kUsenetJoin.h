@@ -177,6 +177,11 @@ private:
     void releaseReadHolds(const QString& itemId);
     /// The file of a member on disk now: tempPath, or finalPath once published.
     [[nodiscard]] QString memberPath(const QString& itemId, int fileIndex) const;
+    /// The member paths of @p itemId kept for after its row is cleared (keepMemberPaths).
+    void rememberPaths(const QString& itemId);
+    /// Cleared from the queue, files of it still on disk: shared and published on (cached
+    /// in m_cleared).
+    [[nodiscard]] bool clearedKept(const QString& itemId) const;
     [[nodiscard]] std::optional<QByteArray> readMember(const QString& itemId, int fileIndex, std::uint64_t offset,
                                                        std::uint32_t len) const;
     void startDownload(const QString& itemId, int fileIndex);
@@ -200,6 +205,8 @@ private:
     std::map<QString, std::shared_ptr<Post>> m_posts;
     /// items with no join (extension off, malformed NZB, complete): never asked again
     QSet<QString> m_noJoin;
+    /// items cleared from the queue whose kept files are still there: member → path
+    mutable std::map<QString, QHash<int, QString>> m_cleared;
     /// alias searches → (item, member)
     std::map<std::uint32_t, std::pair<QString, int>> m_claimSearches;
     QHash<std::uint64_t, QString> m_serverKeys;

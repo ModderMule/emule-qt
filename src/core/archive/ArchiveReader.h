@@ -22,6 +22,7 @@
 #include <QString>
 #include <QStringList>
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -30,6 +31,8 @@
 /// elaborated `struct archive*` inside namespace eMule would declare a *new*
 /// eMule::archive and every libarchive call would stop matching.
 struct archive;
+
+namespace eMule { class ArchiveContentsTap; }
 
 namespace eMule {
 
@@ -177,6 +180,15 @@ public:
     /// False: the archive failed (lastError()) or the sink stopped it.
     using DataSink = std::function<bool(int entryIndex, const QString& path, const char* data, qint64 len, bool end)>;
     bool readEntries(const DataSink& sink);
+    /// Fed while extractAll*() / readEntries() read: volume bytes and every regular entry,
+    /// filtered ones too (archive/ArchiveContentsHook.h). Not owned; null: none.
+    void setContentsTap(ArchiveContentsTap* tap);
+    /// The set to read without a scan (readEntries() only).
+    void setVolumes(const QStringList& volumes);
+    /// Feeds @p tap the volumes it wants straight from disk, each from its start.
+    static bool tapVolumes(const QStringList& volumes, ArchiveContentsTap& tap, const std::atomic<bool>* cancel = nullptr);
+    /// Which of @p candidates opens the set's first encrypted entry; empty: none or none needed.
+    [[nodiscard]] static QString openingPassphrase(const QStringList& volumes, const QStringList& candidates);
     /// A member name with `/` between components and no leading "./" (hoster.md §6).
     [[nodiscard]] static QString normalizedEntryPath(const QString& entryName);
     /// Members the last extractAll() refused as unsafe. Empty on a clean archive.
@@ -212,6 +224,8 @@ private:
     /// The extraction loop itself, over an already-opened handle. Shared by the
     /// on-disk and the live path, which differ only in how @p ar was opened.
     [[nodiscard]] bool extractAllInto(::archive* ar, const QString& destDir);
+    /// Tap after a read: spoiled on @p ok false, the volumes drained complete.
+    void finishTap(bool ok);
 
     struct Impl;
     std::unique_ptr<Impl> m_impl;

@@ -58,5 +58,9 @@ void appendDownloading(QCborArray& out);
 /// and hoster jobs joined with ed3k get bytes from now (Ed3kJoinBase::networkJobsAt).
 void appendNetworkDownloading(QCborArray& out);
 
+/// downloadSources rows of the ed3k sources of job @p owner of the torrent/usenet/hoster
+/// join @p tag (Ed3kJoinBase::jobSourcesAt), plus `fileName`: the job's file it serves.
+[[nodiscard]] QCborArray jobSources(const QString& tag, const QString& owner);
+
 } // namespace Ed3kUploadsBridge
 } // namespace eMule

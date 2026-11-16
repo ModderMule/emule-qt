@@ -181,6 +181,9 @@ std::expected<void, QString> Ed3kDownloads::add(const Ed3kDownloadSpec& spec)
         m_session.hide().record(spec.root, *spec.key);
     }
 
+    // declined-records.md §2: a root (or eD2K hash) of decline.txt is added paused, the user told
+    const bool declined = m_session.declined().listsFile(spec.root, spec.md4);
+
     Entry e;
     e.id = m_nextId++;
     e.info.root = spec.root;
@@ -189,7 +192,8 @@ std::expected<void, QString> Ed3kDownloads::add(const Ed3kDownloadSpec& spec)
     e.info.owner = spec.owner.isEmpty() ? kOwner : spec.owner;
     e.info.category = spec.category;
     e.info.priority = std::clamp(spec.priority, 0, 4);
-    e.info.state = spec.paused ? Ed3kDownloadInfo::State::Paused : Ed3kDownloadInfo::State::Downloading;
+    // was: e.info.state = spec.paused ? Ed3kDownloadInfo::State::Paused : Ed3kDownloadInfo::State::Downloading;
+    e.info.state = spec.paused || declined ? Ed3kDownloadInfo::State::Paused : Ed3kDownloadInfo::State::Downloading;
     e.info.partPath = partPathOf(spec.root);
     e.info.targetPath = spec.targetPath;
     e.info.path = e.info.partPath;
@@ -210,6 +214,10 @@ std::expected<void, QString> Ed3kDownloads::add(const Ed3kDownloadSpec& spec)
     // hops.md §1 SHOULD: the same file on eD2K/hoster ties the anonymous key to this address
     if (m_anonAdded && keyFor(spec.root) == ffi::KeyKind::Anon)
         m_anonAdded(spec.root, spec.md4, name);
+    if (declined && !spec.paused) {
+        logWarning(QStringLiteral("download of \"%1\" added paused: declined (%2)").arg(name, QString::fromLatin1(kDeclineFile)));
+        emit declinedAdded(spec.root, name);
+    }
     emit added(spec.root);
     markChanged();
     pumpSession();

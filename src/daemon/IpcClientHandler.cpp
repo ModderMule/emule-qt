@@ -586,6 +586,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::FetchNzbNfo:         handleFetchNzbNfo(msg); break;
     case IpcMsgType::LookupArchiveContents: handleLookupArchiveContents(msg); break;
     case IpcMsgType::DownloadArchiveEntries: handleDownloadArchiveEntries(msg); break;
+    case IpcMsgType::SetArchiveEntries: handleSetArchiveEntries(msg); break;
     case IpcMsgType::FetchMetaFile:       handleFetchMetaFile(msg); break;
     case IpcMsgType::DownloadMetaResult:  handleDownloadMetaResult(msg); break;
     case IpcMsgType::GetMetaAuthStatus:   handleGetMetaAuthStatus(msg); break;
@@ -2672,6 +2673,9 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
     }
     if (theApp.reachabilityWatch)
         theApp.reachabilityWatch->setEnabled(thePrefs.reachabilityWatch());
+    // every save: the switch, or ed3k moving on or off the eD2K UDP port while it is on
+    if (theApp.applyEd2kDisabled)
+        theApp.applyEd2kDisabled();
 
     // Rescan shared files only if directory settings actually changed
     if (sharedDirsChanged && theApp.sharedFileList)
@@ -4566,6 +4570,8 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setShowOverhead(val.toBool());
     else if (key == QStringLiteral("networkED2K"))
         thePrefs.setNetworkED2K(val.toBool());
+    else if (key == QStringLiteral("disableEd2k"))
+        thePrefs.setDisableEd2k(val.toBool());
     else if (key == QStringLiteral("kadEnabled"))
         thePrefs.setKadEnabled(val.toBool());
     else if (key == QStringLiteral("schedulerEnabled"))
@@ -5387,6 +5393,10 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
         thePrefs.setEd3kHashRamMiB(static_cast<int>(val.toInteger()));
     else if (key == QStringLiteral("ed3kKadStoreMiB"))
         thePrefs.setEd3kKadStoreMiB(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("ed3kRoomHistoryStore"))
+        thePrefs.setEd3kRoomHistoryStore(val.toBool());
+    else if (key == QStringLiteral("ed3kRoomHistoryMax"))
+        thePrefs.setEd3kRoomHistoryMax(static_cast<int>(val.toInteger()));
     else if (key == QStringLiteral("ed3kHashCacheLowRamPercent"))
         thePrefs.setEd3kHashCacheLowRamPercent(static_cast<int>(val.toInteger()));
     else if (key == QStringLiteral("ed3kJointDownloads"))
@@ -6252,6 +6262,9 @@ void IpcClientHandler::handleGrabIndexerResult(const IpcMessage& msg)
     QList<int> kept;
     for (const QCborValue& v : msg.field(6).toArray())
         kept.append(int(v.toInteger(-1)));
+    // fields 7, 8: archive entries to extract and an archive password (hoster.md §6.1)
+    const QHash<QString, QStringList> keptEntries = ArchiveContentsBridge::entriesFromCbor(msg.field(7).toMap());
+    const QString entryPassword = msg.fieldString(8);
 
     QPointer<IpcClientHandler> self(this);
     const int seqId = msg.seqId();
@@ -6260,7 +6273,7 @@ void IpcClientHandler::handleGrabIndexerResult(const IpcMessage& msg)
 
     indexer::theIndexerSearchList->grab(
         searchId, resultId,
-        [self, seqId, force, choices, source, kept](bool ok, const QByteArray& payload,
+        [self, seqId, force, choices, source, kept, keptEntries, entryPassword](bool ok, const QByteArray& payload,
                                               const QString& name, const QString& password,
                                               const QString& error) {
         if (!self)
@@ -6310,9 +6323,9 @@ void IpcClientHandler::handleGrabIndexerResult(const IpcMessage& msg)
         }
         const QString itemId = usenet::theUsenetSession->queue()->addNzb(
             payload, name, addError,
-            {.force = force, .password = password, .category = choices.category,
+            {.force = force, .password = password.isEmpty() ? entryPassword : password, .category = choices.category,
              .priority = choices.priority, .paused = choices.paused, .keptFiles = kept,
-             .origin = origin},
+             .keptEntries = keptEntries, .origin = origin},
             &outcome);
         self->sendAddNzbResult(seqId, itemId, addError, outcome,
                                usenet::UsenetAddOrigin::IndexerGrab);
@@ -7332,6 +7345,14 @@ void IpcClientHandler::handleDownloadArchiveEntries(const IpcMessage& msg)
                                            [self, seqId](bool ok, const QCborValue& result) {
         if (self)
             self->sendMessage(IpcMessage::makeResult(seqId, ok, result));
+    });
+}
+
+void IpcClientHandler::handleSetArchiveEntries(const IpcMessage& msg)
+{
+    const int seqId = msg.seqId();
+    ArchiveContentsBridge::setEntries(msg.field(0).toMap(), msg.field(1).toMap(), [this, seqId](bool ok, const QCborValue& result) {
+        sendMessage(IpcMessage::makeResult(seqId, ok, result));
     });
 }
 

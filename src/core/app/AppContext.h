@@ -303,6 +303,8 @@ struct AppContext {
     std::function<void(bool offline)> onConnectionOfflineChanged;
     /// A port preference was saved: rebind when idle. Set by CoreSession.
     std::function<PortApplyResult()> applyListenPorts;
+    /// disableEd2k was saved: close or reconnect eD2K. Set by CoreSession.
+    std::function<void()> applyEd2kDisabled;
     /// The GUI's first start wizard closed (or its GUI went away): do the deferred
     /// auto-connect. No-op without a hold. Set by CoreSession.
     std::function<void()> releaseConnectHold;

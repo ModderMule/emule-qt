@@ -176,6 +176,7 @@ The port is mapped as `PortMapPurpose::Ed3kUdp` while `ed3kEnabled`.
 | `sell/seller.key`, `sell/<scope>.publisher`, `.holder`, `<scope>-<base>.season` | 32-byte seeds: the seller (issuer) key, a sale's publisher key, its own pass's holder key, a season seed; owner-only, never logged | when made |
 | `live/channels.json`, `live/<id hex>.key`, `.secret` | the broadcast channels by title (`Ed3kLiveBroadcast`: channel `id`, private); the seed of each channel key and `s` of a private one (0600, never logged; the link of a private channel is a credential) | on the first broadcast of a title |
 | `filter-own.dat` | the own filter verdicts mirrored (`subject<TAB>id hex<TAB>verdict<TAB>reason`, a `mode` line, a `publish<TAB>set id hex<TAB>title` line when published; the core lists none, it keeps them in `filter.dat`); not a credential | on a change |
+| `decline.txt` | declined records (Protocol.md §10.3), one per line; written by hand or by the GUI (`SetEd3kDeclined` 1209); see "Declined records" | by the user only; read at start and on every change |
 | `filter-own.key`, `filter-own.ed3kflt`, `filter-own.ed3kset` | the key the own list's set is signed with (32-byte seed, 0600, never logged); the list file and manifest published last (shared again at start) | on publish |
 
 Every blob is put back before the first datagram. `contactsLoaded()` is called when there is
@@ -578,8 +579,48 @@ The GUI's Kad tab has a page per network (`KadPanel` → `Ed2kKadPanel`, `Ed3kKa
 | `GetEd3kKadLookupGraph` 1202 `[id]` | `kadLookupGraph` | candidates by distance, who named whom, asked/answered: the Search Details graph |
 | `ExportEd3kNodeList` 1203 `[comment]` | `bootstrapExport` | own contacts as a signed list |
 | `FetchEd3kNodeLists` 1204 | `bootstrapFetch` | node lists now |
+| `GetEd3kDeclined` 1208 / `SetEd3kDeclined` 1209 `[text]` | `kadDeclineLists` | `decline.txt` and the counts loaded (see below); work with the node off |
 
 Connect/Disconnect on the page switches `ed3kEnabled`. `--subtab 2`/`3` shows the ed3k page.
+
+## Declined records (Protocol.md §10.3, `Ed3kDecline`)
+
+`Config/ed3k/decline.txt`, read at start and on every change (`QFileSystemWatcher` on the file
+and the dir), handed whole to `Engine::kadDeclineLists`; held records it matches are dropped.
+One entry per line, `#` comments and empty lines skipped:
+
+| Line | List | Declined (store side, packmule) |
+|---|---|---|
+| `<64 hex>` | roots | file, keyword, note, alias, member, head records of the root |
+| `ed2k:<32 hex>`, `ed2k://\|file\|name\|size\|hash\|/` | eD2K hashes | `KEYWORD` records of the file, `ALIAS` `ed2k` records |
+| `key:<64 hex>` | publisher keys | the signed records the key authored |
+| `kind:<name or number>` | kinds | every record of the proto `Kind` (`SOURCE`, `NOTE`, `ALIAS`, … or the number; 0 ignored) |
+| anything else | keywords | all words of the line in the file name |
+
+A prefixed line with a bad value is skipped (logged, listed as "not understood"), never a
+keyword. Local uses (declined-records.md §2), same lists:
+- **Own publishing**: a shared file whose root or MD4 is listed is served but not published
+  (`Ed3kJoinBase::publishShared` refuses with `Denied` for every join; `Ed3kShared::share` also
+  skips the note and the `ed2k` ALIAS). ToDo: a list change does not take back records
+  published before it; a restart does.
+- **Downloads**: `Ed3kDownloads::add` of a listed root or MD4 (`spec.md4`) adds it paused and
+  emits `declinedAdded` → `CoreNotifierBridge` → `NotifierEvent::Ed3kDeclinedAdded` (6), an
+  urgent pop-up ("resume it to download anyway"). A download asked paused is not told.
+- **GUI**: Options → ed3k → General → *Declined records...* (`Ed3kDeclineDialog`): edits the
+  core's file over IPC 1208/1209 (the GUI may be remote), OK/Apply save at once, the counts per
+  list as loaded by the running node (else the file parsed) and the held records dropped.
+- ToDo (declined-records.md §2): search rows of listed roots hidden, uploads of a listed root
+  refused, lists fetched from a URL.
+
+## Archive contents check (hoster.md §6.1 "Unpacking is the check")
+
+`Ed3kArchiveContents` keeps every listing it found (`b3` SET → contents manifest) by the
+archive's first volume root, with the publishers of the record that named it (256 at most).
+When that archive is unpacked here, the contents tap's listing reaches `publishListing`, which
+first calls `checkListing`: `ffi::contentsCheck(manifest, entries)`. A mismatch (`DIFFERS`,
+`NOT_LISTED`, `MISSING`, bad manifest) logs a warning, bans the record's publishers
+(`aliasBan`: the `b3` search ended long before, `aliasSearchBlame` needs it open) and drops the
+listing; a match drops it too (checked once). The listing read here is published as usual.
 
 ## Upload queue
 

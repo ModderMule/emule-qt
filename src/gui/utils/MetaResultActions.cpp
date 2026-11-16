@@ -2,6 +2,7 @@
 /// @file MetaResultActions.cpp
 /// @brief Actions on eNode torrent/Usenet/web/container search rows, including the login detour.
 
+#include "utils/ArchiveContentsIpc.h"
 #include "utils/Clipboard.h"
 #include "utils/MetaResultActions.h"
 
@@ -273,11 +274,18 @@ void MetaResultActions::sendDownload(quint32 searchID, const Row& row, int categ
     msg.append(false);       // paused
     msg.append(row.ref);
     msg.append(QCborValue(QCborArray::fromStringList(row.siblingHashes)));
+    const bool entries = !row.keptEntries.isEmpty() || !row.entryPassword.isEmpty();
     if (row.unchecked) {
         QCborArray unchecked;
         for (const int f : *row.unchecked)
             unchecked.append(f);
         msg.append(QCborValue(unchecked));
+    } else if (entries) {
+        msg.append(QCborValue());   // field 8 absent: not chosen
+    }
+    if (entries) {
+        msg.append(ArchiveContentsIpc::entriesToCbor(row.keptEntries));   // field 9
+        msg.append(row.entryPassword);                                   // field 10
     }
 
     QPointer<MetaResultActions> self(this);
@@ -653,6 +661,10 @@ MetaResultDetailDialog* MetaResultActions::openDetails(const MetaResultDetailDia
         connect(dlg, &MetaResultDetailDialog::downloadRequested, this, std::move(onDownload));
     // Images / NFO tabs: fetched only once opened
     QPointer<MetaResultDetailDialog> guard(dlg);
+    // Archive tab: looked up in ed3k once opened (hoster.md §6.1)
+    ArchiveContentsIpc::attach(dlg->archiveView(), m_ipc, [guard] {
+        return guard ? guard->archiveRequest() : std::pair<QString, QCborMap>{};
+    }, info.name);
     connect(dlg, &MetaResultDetailDialog::imagesRequested, this,
             [this, guard](const QString& token, const QString& coverUrl) {
         if (!m_ipc || !m_ipc->isConnected()) {

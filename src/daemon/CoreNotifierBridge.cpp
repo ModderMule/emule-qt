@@ -358,6 +358,11 @@ void CoreNotifierBridge::onEd3kAnonExposed(const QString& name, const QString& n
     raiseNotifierEvent(Ipc::NotifierEvent::Ed3kAnonExposed, name, networks);
 }
 
+void CoreNotifierBridge::onEd3kDeclinedAdded(const QString& name)
+{
+    raiseNotifierEvent(Ipc::NotifierEvent::Ed3kDeclinedAdded, name);
+}
+
 void CoreNotifierBridge::raiseNotifierEvent(Ipc::NotifierEvent kind, const QString& text,
                                             const QCborValue& extra)
 {
@@ -401,6 +406,8 @@ void CoreNotifierBridge::raiseNotifierEvent(Ipc::NotifierEvent kind, const QStri
         break;
     case Ipc::NotifierEvent::Ed3kAnonExposed:
         return;   // pop-up only: a mail naming a hidden file is no better place for it
+    case Ipc::NotifierEvent::Ed3kDeclinedAdded:
+        return;   // pop-up only, like Ed3kAnonExposed
     }
     if (wanted && thePrefs.notifyEmailEnabled())
         sendEmailNotification(subject, body);

@@ -23,6 +23,7 @@
 
 #include <QByteArray>
 #include <QCborMap>
+#include <QHash>
 #include "dialogs/RememberedSizeDialog.h"
 #include <QString>
 #include <QStringList>
@@ -37,6 +38,7 @@ class QTreeWidgetItem;
 
 namespace eMule {
 
+class ArchiveContentsView;
 class IpcClient;
 
 class WebLinksDialog : public RememberedSizeDialog {
@@ -67,6 +69,8 @@ private:
     /// The checked links, by file.
     [[nodiscard]] QList<QStringList> chosenDownloadFiles() const;
     void downloadLinks();
+    /// Archive tab: the checked links, extracting only @p entries (hoster.md §6.1).
+    void downloadWithEntries(const QHash<QString, QStringList>& entries, const QString& password);
     /// "Download (n)" with n of several checked, "Download (all)" with all, else "Download".
     void updateDownloadLabel();
     /// Download (the checked links) and Check / Uncheck Selected.
@@ -92,6 +96,7 @@ private:
     QString m_fileName;
     QString m_rowName;
     IpcClient* m_ipc = nullptr;
+    ArchiveContentsView* m_archive = nullptr;   ///< null: no link names an archive
     bool m_freshLayout = false;   ///< no saved column layout: widths follow the text
     bool m_fitOnShow = false;     ///< fresh layout, Name not fitted yet
     bool m_wantStatus = true;     ///< the user's choice, kept while the column has no data

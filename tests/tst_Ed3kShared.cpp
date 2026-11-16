@@ -126,6 +126,7 @@ private slots:
     void theCacheSparesAHashAfterARestart();
     void unlistedCacheEntriesArePrunedOffTheMainThread();
     void aRemovedFileIsNotShared();
+    void aDeclinedFileIsSharedNotPublished();
     void theUploadQueueServesInTurn();
     void keywordsArePublishedUnlessHeldBack();
     void anUnreadableFileIsHashedAgainLater();
@@ -339,6 +340,34 @@ void tst_Ed3kShared::unlistedCacheEntriesArePrunedOffTheMainThread()
         QCOMPARE(shared.hashCount(), 1);
         shared.stop();
     }
+}
+
+// declined-records.md §2: a file of decline.txt (here by its eD2K hash) is served, not published
+void tst_Ed3kShared::aDeclinedFileIsSharedNotPublished()
+{
+    const QByteArray data = payload(int(kBlock / 2), 9);
+    QTemporaryDir da;
+    QVERIFY(da.isValid());
+    const QString path = QDir(da.path()).filePath(QStringLiteral("declined.bin"));
+    QVERIFY(writeFile(path, data));
+    Ed3kSession a;
+    QVERIFY(a.start(loopback(da.path())));
+    const QByteArray md4(16, char(0x47));
+    DeclineList list;
+    list.ed2k.push_back({});
+    std::copy(md4.cbegin(), md4.cend(), list.ed2k.front().begin());
+    a.setDeclined(list);
+    FakeSource src;
+    src.entries.push_back(SharedEntry{md4, path, QStringLiteral("declined.bin"), std::uint64_t(data.size())});
+    Ed3kShared shared(a, src, da.path());
+    QSignalSpy spy(&shared, &Ed3kShared::fileShared);
+    shared.start();
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+    QVERIFY(shared.rootOf(md4));
+    QVERIFY(!shared.keywordsPublished(md4));
+    QVERIFY(!shared.aliasPublished(md4));
+    shared.stop();
+    a.stop();
 }
 
 void tst_Ed3kShared::aRemovedFileIsNotShared()

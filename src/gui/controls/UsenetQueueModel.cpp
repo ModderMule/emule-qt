@@ -123,6 +123,9 @@ UsenetItemRow usenetRowFromCbor(const QCborMap& m)
         r.publishedFiles.append(pf);
     }
 
+    for (const QCborValue& v : m.value(QStringLiteral("ed3kSources")).toArray())
+        r.ed3kSources.append(Ed3kJobSource::fromCbor(v.toMap()));
+
     r.bar = usenetItemBar(r);
     return r;
 }
@@ -274,7 +277,7 @@ int UsenetQueueModel::rowCount(const QModelIndex& parent) const
     if (parent.internalId() == 0) {
         const int row = parent.row();
         if (row >= 0 && row < int(m_items.size()))
-            return int(m_items[size_t(row)].files.size());
+            return m_items[size_t(row)].childCount();
     }
     return 0;
 }
@@ -291,7 +294,7 @@ bool UsenetQueueModel::hasChildren(const QModelIndex& parent) const
     if (parent.internalId() == 0) {
         const int row = parent.row();
         if (row >= 0 && row < int(m_items.size()))
-            return !m_items[size_t(row)].files.isEmpty();
+            return m_items[size_t(row)].childCount() > 0;
     }
     return false;
 }
@@ -313,6 +316,8 @@ QVariant UsenetQueueModel::data(const QModelIndex& index, int role) const
         if (parentRow < 0 || parentRow >= int(m_items.size()))
             return {};
         const auto& files = m_items[size_t(parentRow)].files;
+        if (const Ed3kJobSource* e = ed3kSourceAt(index))
+            return ed3kSourceData(*e, int(files.size()) + index.row(), index.column(), role);
         if (index.row() < 0 || index.row() >= files.size())
             return {};
         const UsenetFileRow& f = files.at(index.row());
@@ -739,6 +744,18 @@ bool UsenetQueueModel::isFileRow(const QModelIndex& index) const
     return index.isValid() && index.internalId() != 0;
 }
 
+const Ed3kJobSource* UsenetQueueModel::ed3kSourceAt(const QModelIndex& index) const
+{
+    if (!isFileRow(index))
+        return nullptr;
+    const int parentRow = int(index.internalId() - 1);
+    if (parentRow < 0 || parentRow >= int(m_items.size()))
+        return nullptr;
+    const UsenetItemRow& item = m_items.at(size_t(parentRow));
+    const int i = index.row() - int(item.files.size());
+    return i >= 0 && i < item.ed3kSources.size() ? &item.ed3kSources.at(i) : nullptr;
+}
+
 const UsenetFileRow* UsenetQueueModel::fileAt(const QModelIndex& index, QString* itemId) const
 {
     if (!isFileRow(index))
@@ -796,6 +813,47 @@ int UsenetQueueModel::statusRank(const UsenetItemRow& item)
     return usenetStatusRank(int(item.status));
 }
 
+QVariant UsenetQueueModel::ed3kSourceData(const Ed3kJobSource& e, int sortKey, int column, int role)
+{
+    if (column == ColProgress) {
+        switch (role) {
+        case kUsenetBarRole: {
+            // its pieces: held = done, receiving = in flight
+            QByteArray bar;
+            for (const char c : e.parts)
+                bar.append(char(c == 0 ? kUsenetBarQueued : c == 4 ? kUsenetBarInFlight : kUsenetBarDone));
+            return bar;
+        }
+        case kUsenetBarPercentRole: return e.pieces > 0 ? 100 * e.have / e.pieces : 0;
+        case kUsenetBarPausedRole:
+        case kUsenetBarCompleteRole: return false;
+        default: break;
+        }
+    }
+    switch (role) {
+    case Qt::DisplayRole:
+        switch (column) {
+        case ColName:     return e.name;
+        case ColProgress: return e.pieces > 0 ? QStringLiteral("%1%").arg(100 * e.have / e.pieces) : QString{};
+        case ColStatus:   return QStringLiteral("%1 — %2").arg(e.stateText(), e.addressText());
+        case ColSpeed:    return e.rate > 0 ? formatByteRate(e.rate) : QString{};
+        default:          return {};
+        }
+    case Qt::UserRole:
+        switch (column) {
+        case ColName:  return e.name;
+        case ColSpeed: return QVariant::fromValue(e.rate);
+        default:       return sortKey;   // after the files, as they came
+        }
+    case Qt::DecorationRole:
+        return column == ColName ? QVariant(e.icon()) : QVariant{};
+    case Qt::ToolTipRole:
+        return e.toolTip();
+    default:
+        return {};
+    }
+}
+
 int UsenetQueueModel::rowOf(const QString& id) const
 {
     for (int i = 0; i < int(m_items.size()); ++i) {
@@ -809,13 +867,12 @@ void UsenetQueueModel::updateRow(int row, const UsenetItemRow& incoming)
 {
     UsenetItemRow& item = m_items[size_t(row)];
     const QModelIndex p = index(row, 0);
-    const int oldN = int(item.files.size());
-    const int newN = int(incoming.files.size());
+    const int oldN = item.childCount();
+    const int newN = incoming.childCount();
     if (newN < oldN) {
         beginRemoveRows(p, newN, oldN - 1);
-        item.files.resize(newN);
-        endRemoveRows();
         applyInto(item, incoming);
+        endRemoveRows();
     } else if (newN > oldN) {
         beginInsertRows(p, oldN, newN - 1);
         applyInto(item, incoming);

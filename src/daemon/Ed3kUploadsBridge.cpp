@@ -414,6 +414,21 @@ void appendNetworkDownloading([[maybe_unused]] QCborArray& out)
 #endif
 }
 
+QCborArray jobSources([[maybe_unused]] const QString& tag, [[maybe_unused]] const QString& owner)
+{
+    QCborArray out;
+#ifdef EMULE_HAVE_ED3K
+    if (!s_uploads)
+        return out;
+    for (const auto& s : ed3k::Ed3kJoinBase::jobSourcesAt(s_uploads->session(), tag, owner)) {
+        QCborMap m = sourceToCbor(s);
+        m.insert(QStringLiteral("fileName"), s.fileName);
+        out.append(m);
+    }
+#endif
+    return out;
+}
+
 std::optional<QCborMap> detailsByEd2kHash(const QByteArray& userHash)
 {
 #ifdef EMULE_HAVE_ED3K

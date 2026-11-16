@@ -8,7 +8,9 @@
 #include <QCborArray>
 #include <QCborMap>
 #include <QCborValue>
+#include <QHash>
 #include <QString>
+#include <QStringList>
 
 #include <functional>
 
@@ -32,6 +34,11 @@ void setTargets(ed3k::Ed3kArchiveContents* contents, ed3k::Ed3kDownloads* downlo
 using Reply = std::function<void(bool ok, const QCborValue& value)>;
 /// LookupArchiveContents: @p reply once, mostly later.
 void lookup(const QString& kind, const QCborMap& payload, Reply reply);
+/// {firstVolumeName: [path]} of an IPC request: first names lower case, empty lists left out.
+[[nodiscard]] QHash<QString, QStringList> entriesFromCbor(const QCborMap& map);
+/// SetArchiveEntries: what a queued Usenet or hoster download (@p target {usenetItem} |
+/// {hosterPackage, hosterItem}) extracts; empty @p entries: everything.
+void setEntries(const QCborMap& target, const QCborMap& entries, Reply reply);
 /// DownloadArchiveEntries.
 void downloadEntries(const QCborArray& entries, const QString& folder, int category, Reply reply);
 

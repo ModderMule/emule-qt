@@ -407,11 +407,32 @@ void tst_Ed3kUsenetJoin::articlesFromTheQueueVerifyAClaimedMember()
     QVERIFY(again.sharesRoot(manifest.root) && again.sharesRoot(list.root));
     QTRY_COMPARE_WITH_TIMEOUT(republished.count(), 3, 10000);
     QVERIFY(republished.at(2).at(1).toInt() >= 1);
-    // removed: nothing kept any more
-    again.onItemRemoved(id);
-    QVERIFY(!QFileInfo::exists(kept));
-
+    // the row cleared, the file left in incoming: still shared, its records kept
+    const QString incomingFile = queue.findItem(id)->files.at(0).finalPath;
+    QVERIFY(QFileInfo::exists(incomingFile));
+    QVERIFY(queue.removeItem(id, false));
+    QVERIFY(QFileInfo::exists(kept));
+    QVERIFY(again.sharesRoot(manifest.root) && again.sharesRoot(h.root));
+    // and after a restart: shared and published again from the kept paths
     again.stop();
+    Ed3kUsenetJoin third(session, *adapter, tmp.filePath(QStringLiteral("cfg")));
+    third.setSearchEnabled(false);
+    QSignalSpy republishedCleared(&third, &Ed3kUsenetJoin::keptRecordsPublished);
+    third.start();
+    QVERIFY(third.sharesRoot(manifest.root));
+    QTRY_VERIFY_WITH_TIMEOUT(third.sharesRoot(h.root), 10000);
+    QTRY_COMPARE_WITH_TIMEOUT(republishedCleared.count(), 1, 10000);
+    QVERIFY(republishedCleared.at(0).at(1).toInt() >= 1);
+    third.stop();
+    // its file gone: nothing kept at the next start
+    QVERIFY(QFile::remove(incomingFile));
+    Ed3kUsenetJoin fourth(session, *adapter, tmp.filePath(QStringLiteral("cfg")));
+    fourth.setSearchEnabled(false);
+    fourth.start();
+    QVERIFY(!QFileInfo::exists(kept));
+    QVERIFY(!fourth.sharesRoot(manifest.root));
+
+    fourth.stop();
     queue.stop();
     session.stop();
 }

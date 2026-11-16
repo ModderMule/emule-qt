@@ -24,6 +24,7 @@
 #include <QTabBar>
 
 #include <functional>
+#include <optional>
 
 class QMenu;
 
@@ -36,6 +37,9 @@ class CategoryTabBar : public QTabBar {
 
 public:
     explicit CategoryTabBar(QWidget* parent = nullptr);
+
+    /// Mime type of a download drag: hashes, one per line (MFC drag onto m_dlTab)
+    static constexpr auto kDownloadsMime = "application/x-emuleqt-downloads";
 
     /// The IPC client to fetch and store the list through. Without one the bar
     /// still shows "All" and edits do nothing, which is what a disconnected GUI
@@ -106,10 +110,27 @@ signals:
     /// @p index is the category the menu belongs to; 0 is "All".
     void menuRequested(QMenu* menu, int index);
 
+    /// Downloads dropped on the tab of @p category (0 = unassign), MFC CTransferWnd::OnLButtonUp
+    void downloadsDropped(int category, const QStringList& hashes);
+
+protected:
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
+    void dragEnterEvent(QDragEnterEvent* event) override;
+    void dragMoveEvent(QDragMoveEvent* event) override;
+    void dragLeaveEvent(QDragLeaveEvent* event) override;
+    void dropEvent(QDropEvent* event) override;
+    void paintEvent(QPaintEvent* event) override;
+
 private:
     /// Tabs are measured once; a bold tab moving needs them measured again.
     void relayoutTabs();
-    void rebuildTabs();
+    /// @p selectCategory: the tab to select, -1 = keep the current category
+    void rebuildTabs(int selectCategory = -1);
+    /// Send a finished tab drag as one reorder (QTabBar emits tabMoved per step)
+    void commitReorder();
+    /// Tab under @p pos a download drop may land on, else -1
+    [[nodiscard]] int dropTabAt(const QPoint& pos) const;
     /// Title, view filter and info of one tab, as MFC labels it (EditCatTabLabel).
     [[nodiscard]] QString tabLabel(int index) const;
     void setViewFilter(int index, int filter);
@@ -134,6 +155,18 @@ private:
 
     QString m_defaultIncomingDir;
     QStringList m_tabInfo;
+
+    /// A tab drag in progress: the list as moved so far, sent on release
+    struct Reorder {
+        QList<DownloadCategory> categories;
+        QList<int> oldIndex;
+    };
+    std::optional<Reorder> m_reorder;
+    /// Left button down on the bar: a reload waits, it would kill the drag
+    bool m_mouseDown = false;
+    bool m_rebuildPending = false;
+    /// Tab highlighted under a download drag
+    int m_dropTab = -1;
 };
 
 } // namespace eMule

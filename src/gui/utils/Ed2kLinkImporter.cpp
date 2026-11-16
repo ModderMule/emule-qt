@@ -2,6 +2,7 @@
 #include "utils/Ed2kLinkImporter.h"
 
 #include "app/IpcClient.h"
+#include "app/UiState.h"
 
 #include "IpcMessage.h"
 #include "protocol/ED2KLink.h"
@@ -603,7 +604,8 @@ void Ed2kLinkImporter::importLinks(const QString& text, IpcClient* ipc, QWidget*
         // One link, and we are not adding it: saying nothing looks like the paste failed.
         // Several links stay log-only — the survivors are being queued, and a box per skip
         // would be noise.
-        if (source == Source::Manual && result.skipped == 1 && linkCount == 1) {
+        // Options › Files can turn it off: clicking each link twice in a browser made a box per link
+        if (source == Source::Manual && result.skipped == 1 && linkCount == 1 && theUiState.knownLinkPopup()) {
             if (beforePrompt)
                 beforePrompt();  // raise the main window; a browser click must not hide this
             QMessageBox::information(safeParent, tr("eD2K Link"), singleSkipMessage);

@@ -40,6 +40,7 @@ private slots:
     void aRowCarriesTheBlocks();
     void anOlderCoreDrawsOneRun();
     void theBarIsPaintedByPiece();
+    void aNetworkJobRow();
 };
 
 void tst_Ed3kDownloadRows::runsRoundTrip()
@@ -157,6 +158,33 @@ void tst_Ed3kDownloadRows::theBarIsPaintedByPiece()
     QVERIFY2(first.blue() > 200 && first.red() < 60, qPrintable(first.name()));   // a source: blue
     QVERIFY2(second.red() > 200 && second.blue() < 60, qPrintable(second.name())); // none: red
     QVERIFY2(third.red() < 140 && third.blue() < 140, qPrintable(third.name()));   // held: dark
+}
+
+// single transfer mode: a torrent joined with ed3k as a Transfers row (SingleTransfer::transferRow)
+void tst_Ed3kDownloadRows::aNetworkJobRow()
+{
+    const QCborMap m{{QStringLiteral("root"), QStringLiteral("torrent|bt:v1:AB")},
+                     {QStringLiteral("network"), QStringLiteral("torrent")},
+                     {QStringLiteral("name"), QStringLiteral("Big Buck Bunny")},
+                     {QStringLiteral("size"), 1000}, {QStringLiteral("done"), 250},
+                     {QStringLiteral("rate"), 50}, {QStringLiteral("sources"), 4}, {QStringLiteral("transferring"), 4},
+                     {QStringLiteral("state"), 0}};
+    const DownloadRow r = ed3kDownloadRow(m);
+    QVERIFY(r.isEd3k());
+    QVERIFY(r.isNetworkJob());
+    QCOMPARE(r.hash, QStringLiteral("torrent|bt:v1:AB"));
+    QCOMPARE(r.ed3kNetwork, QStringLiteral("torrent"));
+    QCOMPARE(r.status, QStringLiteral("ready"));
+    QCOMPARE(r.timeRemaining, qint64(15));
+
+    DownloadListModel model;
+    model.setDownloads({r});
+    const QString name = model.data(model.index(0, DownloadListModel::ColFileName), Qt::DisplayRole).toString();
+    QVERIFY2(name.contains(QStringLiteral("BitTorrent")), qPrintable(name));
+    const QString tip = model.data(model.index(0, DownloadListModel::ColFileName), Qt::ToolTipRole).toString();
+    QVERIFY2(tip.contains(QStringLiteral("single transfer mode")), qPrintable(tip));
+    // a plain ed3k root is no network job
+    QVERIFY(!ed3kDownloadRow(QCborMap{{QStringLiteral("root"), QString(64, u'a')}}).isNetworkJob());
 }
 
 QTEST_MAIN(tst_Ed3kDownloadRows)

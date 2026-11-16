@@ -141,6 +141,7 @@ CoreSession::~CoreSession()
 {
     theApp.onBindSelectionChanged = nullptr;
     theApp.applyListenPorts = nullptr;
+    theApp.applyEd2kDisabled = nullptr;
     theApp.releaseConnectHold = nullptr;
     theApp.clearListeningPorts();
     theApp.closing = true;   // the saves below are the last ones: commit them
@@ -752,7 +753,7 @@ void CoreSession::initServerConnect()
     //    Matches MFC CServerConnect (srchybrid/ServerConnect.cpp:466).
     if (thePrefs.serverUDPPort() != 0) {
         m_serverUDP = std::make_unique<UDPSocket>(this);
-        if (!m_serverUDP->create() && BindAddress::outboundAllowed())
+        if (!thePrefs.disableEd2k() && !m_serverUDP->create() && BindAddress::outboundAllowed())
             logWarning(QStringLiteral("Failed to bind server UDP socket"));
         m_serverConnect->setUDPSocket(m_serverUDP.get());
     }
@@ -1029,7 +1030,10 @@ void CoreSession::initListenSocket()
 {
     if (!theApp.listenSocket) {
         m_listenSocket = std::make_unique<ListenSocket>(this);
-        if (m_listenSocket->startListening(thePrefs.port())) {
+        if (thePrefs.disableEd2k()) {
+            // eD2K hard off: kept closed, applyEd2kDisabled() opens it
+            theApp.listenSocket = m_listenSocket.get();
+        } else if (m_listenSocket->startListening(thePrefs.port())) {
             theApp.listenSocket = m_listenSocket.get();
             logDebug(QStringLiteral("TCP listen socket bound on port %1")
                         .arg(m_listenSocket->connectedPort()));
@@ -1230,7 +1234,9 @@ void CoreSession::initClientUDP()
 
     // Create and bind the shared UDP socket (client + Kad traffic).
     m_clientUDP = std::make_unique<ClientUDPSocket>();
-    if (m_clientUDP->rebind(udpPort)) {
+    if (!ed2kUdpWanted()) {
+        logInfo(QStringLiteral("Client UDP port %1 closed: eD2K is disabled").arg(udpPort));
+    } else if (m_clientUDP->rebind(udpPort)) {
         logDebug(QStringLiteral("Client UDP socket bound on port %1").arg(udpPort));
     } else if (BindAddress::outboundAllowed()) {
         logError(QStringLiteral("Failed to bind client UDP socket on port %1")
@@ -2008,25 +2014,31 @@ PortApplyResult CoreSession::applyListenPorts()
     if (udpChanged && theApp.yieldEd3kUdpPort)
         theApp.yieldEd3kUdpPort(udp);
 
+    // eD2K hard off: closed ones stay closed, the new port comes with the switch
+    const bool tcpOpen = !thePrefs.disableEd2k();
+    const bool udpOpen = ed2kUdpWanted();
     bool ok = true;
-    if (tcpChanged && !m_listenSocket->rebind(tcp)) {
+    if (tcpChanged && tcpOpen && !m_listenSocket->rebind(tcp)) {
         ok = false;
         if (!m_listenSocket->rebind(m_appliedTcpPort))
             logError(QStringLiteral("TCP listen socket is closed: port %1 could not be reopened")
                          .arg(m_appliedTcpPort));
     }
-    if (ok && udpChanged && !m_clientUDP->rebind(udp)) {
+    if (ok && udpChanged && udpOpen && !m_clientUDP->rebind(udp)) {
         ok = false;
         if (!m_clientUDP->rebind(m_appliedUdpPort))
             logError(QStringLiteral("Client UDP socket is closed: port %1 could not be reopened")
                          .arg(m_appliedUdpPort));
         // Both or neither: put TCP back too
-        if (tcpChanged)
+        if (tcpChanged && tcpOpen)
             m_listenSocket->rebind(m_appliedTcpPort);
     }
+    if (ok && udpChanged && !udpOpen)
+        m_clientUDP->close();   // was open for ed3k on the old port
     if (ok && serverUdpChanged) {
         m_serverUDP->close();
-        m_serverUDP->create();   // 0 = server UDP off, not a failure
+        if (tcpOpen)
+            m_serverUDP->create();   // 0 = server UDP off, not a failure
     }
 
     if (theApp.serverConnect) {
@@ -2047,6 +2059,49 @@ PortApplyResult CoreSession::applyListenPorts()
     logInfo(QStringLiteral("Ports changed: now listening on TCP %1, UDP %2")
                 .arg(boundTcpPort()).arg(boundUdpPort()));
     return PortApplyResult::Applied;
+}
+
+// ---------------------------------------------------------------------------
+// applyEd2kDisabled — eD2K hard off / back on
+// ---------------------------------------------------------------------------
+
+void CoreSession::applyEd2kDisabled()
+{
+    // also after any prefs save: ed3k on or off the eD2K UDP port keeps that one open
+    syncEd2kPorts();
+    if (thePrefs.disableEd2k() == m_ed2kOffApplied)
+        return;
+    m_ed2kOffApplied = thePrefs.disableEd2k();
+    if (thePrefs.disableEd2k()) {
+        logWarning(QStringLiteral("eD2K disabled — closing every eD2K connection"));
+        m_resumeEd2k = false;
+        m_resumeKad = false;
+        m_offlineResumeEd2k = false;
+        if (theApp.serverConnect) {
+            theApp.serverConnect->stopConnectionTry();
+            theApp.serverConnect->disconnect();
+        }
+        if (m_kademlia && m_kademlia->isRunning())
+            m_kademlia->stop();
+        return;   // syncEd2kPorts() closed the peer connections
+    }
+    logInfo(QStringLiteral("eD2K enabled again"));
+    if (!thePrefs.autoConnect())
+        return;
+    const bool ed2k = thePrefs.networkED2K();
+    const bool kad = thePrefs.kadUsable();
+    if (m_connectHold || m_netSuspended) {
+        m_resumeEd2k = ed2k;
+        m_resumeKad = kad;
+        return;
+    }
+    if (ed2k && theApp.connectionOffline)
+        m_offlineResumeEd2k = true;
+    else if (ed2k && theApp.serverConnect && !theApp.serverConnect->isConnected()
+             && !theApp.serverConnect->isConnecting())
+        theApp.serverConnect->connectToAnyServer();
+    if (kad && m_kademlia && !m_kademlia->isRunning())
+        m_kademlia->start();
 }
 
 uint16 CoreSession::boundTcpPort() const
@@ -2131,9 +2186,12 @@ std::vector<PortMapRequest> CoreSession::buildPortMapRequests() const
     const uint16 udpPort = m_clientUDP ? m_clientUDP->connectedPort()
                                        : static_cast<uint16>(thePrefs.udpPort());
 
-    add(PortMapPurpose::Ed2kTcp, PortMapProtocol::Tcp, tcpPort, QStringLiteral("eMule TCP"));
-    add(PortMapPurpose::Ed2kClientUdp, PortMapProtocol::Udp, udpPort,
-        QStringLiteral("eMule UDP"));
+    // eD2K hard off: no mapping for a closed port; the UDP one stays for ed3k on it
+    if (!thePrefs.disableEd2k())
+        add(PortMapPurpose::Ed2kTcp, PortMapProtocol::Tcp, tcpPort, QStringLiteral("eMule TCP"));
+    if (ed2kUdpWanted())
+        add(PortMapPurpose::Ed2kClientUdp, PortMapProtocol::Udp, udpPort,
+            QStringLiteral("eMule UDP"));
 
     // The server UDP port is deliberately absent. UDPSocket only ever receives
     // OP_GLOBSEARCHRES / OP_GLOBFOUNDSOURCES / OP_GLOBSERVSTATRES /
@@ -2284,13 +2342,15 @@ void CoreSession::resumeNetworking()
     m_netSuspended = false;
     logStatusInfo(QStringLiteral("Network interface available — reopening sockets"));
 
-    if (m_listenSocket && !m_listenSocket->startListening(thePrefs.port()))
+    // eD2K hard off: its ports stay closed, the client UDP one open for ed3k on it
+    const bool ed2kOff = thePrefs.disableEd2k();
+    if (m_listenSocket && !ed2kOff && !m_listenSocket->startListening(thePrefs.port()))
         logWarning(QStringLiteral("Failed to bind TCP listen socket on port %1").arg(thePrefs.port()));
     // Port 0 is UDP off, not "any port"
-    if (m_clientUDP && thePrefs.udpPort() != 0
+    if (m_clientUDP && thePrefs.udpPort() != 0 && ed2kUdpWanted()
         && !m_clientUDP->rebind(static_cast<uint16>(thePrefs.udpPort())))
         logError(QStringLiteral("Failed to bind client UDP socket on port %1").arg(thePrefs.udpPort()));
-    if (m_serverUDP && !m_serverUDP->create())
+    if (m_serverUDP && !ed2kOff && !m_serverUDP->create())
         logWarning(QStringLiteral("Failed to bind server UDP socket"));
     rememberAppliedPorts();
     m_appliedListen = BindAddress::listenAddresses();
@@ -2561,7 +2621,10 @@ void CoreSession::finishStart()
     // MFC: CemuleDlg::StartConnection() — emuleDlg.cpp:1978, reached from
     // DoAutoConnect() (EmuleDlg.cpp:742). autoConnect gates *connecting*;
     // networkED2K keeps the default Kad-only profile Kad-only.
-    const bool autoConnect = thePrefs.autoConnect() && BindAddress::outboundAllowed() && !m_connectHold;
+    const bool autoConnect = thePrefs.autoConnect() && BindAddress::outboundAllowed() && !m_connectHold
+                             && !thePrefs.disableEd2k();
+    if (thePrefs.disableEd2k())
+        logInfo(QStringLiteral("eD2K is disabled: no server, Kad or peer connections"));
     if (autoConnect && thePrefs.networkED2K() && m_serverConnect)
         m_serverConnect->connectToAnyServer();
 
@@ -2606,6 +2669,8 @@ void CoreSession::finishStart()
             applyBindSelection();
     });
     theApp.applyListenPorts = [this] { return applyListenPorts(); };
+    m_ed2kOffApplied = thePrefs.disableEd2k();
+    theApp.applyEd2kDisabled = [this] { applyEd2kDisabled(); };
     m_tickCounter = 0;
     m_timer.start();
 }
@@ -2656,6 +2721,79 @@ void CoreSession::randomizeListenPorts()
 QString CoreSession::clientAnalyzerPath()
 {
     return QDir(thePrefs.configDir()).filePath(QStringLiteral("clientanalyzer.met"));
+}
+
+
+// ---------------------------------------------------------------------------
+// syncEd2kPorts — eD2K hard off closes its ports; ed3k on the client UDP one keeps it
+// ---------------------------------------------------------------------------
+
+void CoreSession::syncEd2kPorts()
+{
+    if (m_netSuspended)
+        return;   // resumeNetworking() opens by the same rule
+    const bool off = thePrefs.disableEd2k();
+    bool changed = false;
+    if (m_listenSocket) {
+        if (off && m_listenSocket->isListening()) {
+            m_listenSocket->disconnectAll(QStringLiteral("eD2K is disabled"));
+            m_listenSocket->stopListening();
+            logInfo(QStringLiteral("TCP port %1 closed: eD2K is disabled").arg(m_appliedTcpPort));
+            changed = true;
+        } else if (!off && !m_listenSocket->isListening()) {
+            if (m_listenSocket->startListening(thePrefs.port()))
+                logInfo(QStringLiteral("TCP listen socket reopened on port %1").arg(thePrefs.port()));
+            else
+                logWarning(QStringLiteral("Failed to bind TCP listen socket on port %1").arg(thePrefs.port()));
+            changed = true;
+        }
+    }
+    const auto udpPort = static_cast<uint16>(thePrefs.udpPort());
+    if (m_clientUDP && udpPort != 0) {
+        const bool wanted = ed2kUdpWanted();
+        if (!wanted && m_clientUDP->isBound()) {
+            m_clientUDP->close();
+            logInfo(QStringLiteral("Client UDP port %1 closed: eD2K is disabled").arg(udpPort));
+            changed = true;
+        } else if (wanted && !m_clientUDP->isBound()) {
+            if (!m_clientUDP->rebind(udpPort))
+                logError(QStringLiteral("Failed to bind client UDP socket on port %1").arg(udpPort));
+            changed = true;
+        }
+    }
+    if (m_serverUDP) {
+        if (off && m_serverUDP->localPort() != 0) {
+            m_serverUDP->close();
+            changed = true;
+        } else if (!off && m_serverUDP->localPort() == 0 && thePrefs.serverUDPPort() != 0) {
+            if (!m_serverUDP->create())
+                logWarning(QStringLiteral("Failed to bind server UDP socket"));
+            changed = true;
+        }
+    }
+    if (!changed)
+        return;
+    publishListenPorts();
+    if (theApp.serverConnect) {
+        ServerConnectConfig cfg = theApp.serverConnect->config();
+        if (const uint16 tcp = boundTcpPort())
+            cfg.listenPort = tcp;
+        theApp.serverConnect->setConfig(cfg);
+    }
+    updatePortMappings();
+}
+
+bool CoreSession::ed2kUdpWanted()
+{
+    if (!thePrefs.disableEd2k())
+        return true;
+#ifdef EMULE_HAVE_ED3K
+    // ed3k on the eD2K UDP port shares its socket (§14.1)
+    return thePrefs.ed3kEnabled() && thePrefs.ed3kUdpPort() != 0
+           && thePrefs.ed3kUdpPort() == thePrefs.udpPort();
+#else
+    return false;
+#endif
 }
 
 } // namespace eMule

@@ -42,6 +42,8 @@ constexpr int kMaxTries = 5;
 constexpr int kTickMs = 1000;
 /// one item per link, at most this many
 constexpr std::size_t kMaxItems = 4096;
+/// how often a retired item's file is looked for
+constexpr qint64 kRetiredCheckMs = 60 * 1000;
 /// a container file sent over IPC; DLCs are a few KiB
 constexpr qsizetype kMaxContainerBytes = 4 * 1024 * 1024;
 /// Click'n'Load posts read at once; any web page can post, so a few only
@@ -66,6 +68,14 @@ constexpr qint64 kProbeQueueMs = 2 * 60 * 1000;
 constexpr std::size_t kMaxChecks = 4096;
 /// an account's premium state is asked again after this
 constexpr qint64 kAccountTtlMs = 6 * 3600 * 1000;
+/// a multi-hoster's hosts and quotas (links per day) are asked again after this
+constexpr qint64 kDebridTtlMs = 30 * 60 * 1000;
+/// a multi-hoster that failed for a hoster is skipped for it this long (JD's MultiHosterManagement
+/// default); one that does not take the hoster, or a login refused, longer
+constexpr qint64 kDebridBlockMs = 10 * 60 * 1000;
+constexpr qint64 kDebridLongBlockMs = 60 * 60 * 1000;
+/// after a multi-hoster failed, the link is asked again this soon (another one, or the hoster)
+constexpr int kDebridRetryS = 3;
 /// a shared link's recheck that could not tell is tried again after this (or recheckHours)
 constexpr qint64 kRecheckRetryMs = 6 * 3600 * 1000;
 /// hoster.md §2: dead-link reports from downloaders in this many sites check a shared link at once
@@ -210,7 +220,8 @@ void Ed3kHosterJoin::setConfig(const Ed3kHosterPrefs& prefs, const QStringList& 
     const bool allowed = prefs.enabled != m_prefs.enabled;
     const bool publishChanged = prefs.publishLinks != m_prefs.publishLinks || prefs.recheckHours != m_prefs.recheckHours
                              || prefs.reportRecheckHours != m_prefs.reportRecheckHours;
-    const bool accountsChanged = prefs.accounts != m_prefs.accounts;
+    const bool accountsChanged = prefs.accounts != m_prefs.accounts || prefs.debrid != m_prefs.debrid
+                                 || prefs.debridEnabled != m_prefs.debridEnabled;
     const bool extractOff = m_prefs.extract && !prefs.extract;
     m_prefs = prefs;
     m_tempDirs.clear();
@@ -418,12 +429,19 @@ QList<quint32> Ed3kHosterJoin::addMirrored(const QList<QStringList>& files, cons
                 urls << l.first();
         if (urls.isEmpty())
             continue;
-        const bool known = std::ranges::any_of(m_items, [&urls](const auto& p) {
+        const auto knownAt = std::ranges::find_if(m_items, [&urls](const auto& p) {
             const Item& it = p.second->item;
             return it.state != State::Failed && (urls.contains(it.url) || std::ranges::any_of(it.mirrors, [&urls](const QString& m) {
                 return urls.contains(m);
             }));
         });
+        const bool known = knownAt != m_items.end();
+        // added again after its removal: back in the list, complete
+        if (known && knownAt->second->item.retired) {
+            knownAt->second->item.retired = false;
+            ids << knownAt->first;
+            changed(*knownAt->second);
+        }
         if (known || m_items.size() >= kMaxItems)
             continue;
         urls = rankMirrors(urls);
@@ -620,6 +638,17 @@ void Ed3kHosterJoin::remove(quint32 id, bool deleteFile)
     if (!e)
         return;
     const bool complete = e->item.state == State::Complete;
+    if (e->item.retired)
+        return;
+    // the file stays in incoming: its links stay published (and rechecked) while it does
+    if (complete && !deleteFile && QFileInfo::exists(e->item.file)) {
+        e->item.retired = true;
+        m_aliasPending.erase(id);
+        logInfo(QStringLiteral("%1: removed from the list, its links stay published while the file is in incoming").arg(e->item.host));
+        emit itemRemoved(id);
+        save();
+        return;
+    }
     // its links are not this node's to vouch for any more
     for (SharedLink& l : e->shared)
         l.offline = true;
@@ -802,6 +831,14 @@ bool Ed3kHosterJoin::checkLinks(const QStringList& urls)
 
 int Ed3kHosterJoin::accountTier(const QString& host) const
 {
+    const int own = ownTier(host);
+    if (own >= 2)
+        return own;
+    return debridFor(host, 0).first ? 2 : own;
+}
+
+int Ed3kHosterJoin::ownTier(const QString& host) const
+{
     const Ed3kHosterAccount* a = accountEntry(host);
     if (!a)
         return 0;
@@ -818,8 +855,13 @@ int Ed3kHosterJoin::accountTier(const QString& host) const
 int Ed3kHosterJoin::streamsAt(const QString& host) const
 {
     const int max = std::max(1, int(m_prefs.maxStreams));
-    if (accountTier(host) < 2)
-        return 1;
+    if (ownTier(host) < 2) {
+        // a multi-hoster downloads it: its limit for the hoster, else as premium
+        const auto [acc, h] = debridFor(host, 0);
+        if (!acc)
+            return 1;
+        return h->maxDownloads > 0 ? std::min(h->maxDownloads, max) : max;
+    }
     const Ed3kHosterAccount* a = accountEntry(host);
     const auto it = m_accountStatus.find(a->host + QLatin1Char('|') + a->user);
     const int jd = it->second.maxDownloads;
@@ -859,13 +901,14 @@ QList<Ed3kHosterJoin::Item> Ed3kHosterJoin::items() const
 {
     QList<Item> out;
     for (const auto& [id, e] : m_items)
-        out << e->item;
+        if (!e->item.retired)
+            out << e->item;
     return out;
 }
 
 std::optional<Ed3kHosterJoin::Item> Ed3kHosterJoin::item(quint32 id) const
 {
-    if (const Entry* e = find(id))
+    if (const Entry* e = find(id); e && !e->item.retired)
         return e->item;
     return std::nullopt;
 }
@@ -1059,14 +1102,177 @@ void Ed3kHosterJoin::setState(Entry& e, State s, Reason why, const QString& arg)
 
 void Ed3kHosterJoin::changed(const Entry& e)
 {
-    emit itemChanged(e.item.id);
+    if (!e.item.retired)
+        emit itemChanged(e.item.id);
 }
 
 std::optional<ResolverAccount> Ed3kHosterJoin::accountFor(const QString& host) const
 {
-    if (const Ed3kHosterAccount* a = accountEntry(host))
-        return ResolverAccount{a->user, a->password};
+    if (const Ed3kHosterAccount* a = accountEntry(host)) {
+        ResolverAccount r{a->user, a->password};
+        if (const auto it = m_accountStatus.find(keyOf(*a)); it != m_accountStatus.end())
+            r.state = it->second.state;
+        return r;
+    }
     return std::nullopt;
+}
+
+std::optional<ResolverAccount> Ed3kHosterJoin::openAccount(const Entry& e, const QString& url, Ask& a) const
+{
+    const bool peer = a.link != e.link;
+    const QString host = peer ? QUrl(url).host() : e.item.host;
+    a.via.clear();
+    a.viaSite.clear();
+    // a peer's link goes to its hoster as it is; the item's own may go through a multi-hoster
+    if (!peer) {
+        const std::uint64_t need = e.item.size > e.item.done ? e.item.size - e.item.done : 0;
+        if (const auto [acc, h] = debridFor(host, need); acc) {
+            a.via = keyOf(*acc);
+            a.viaSite = siteOf(h->domain);
+            ResolverAccount r{acc->user.isEmpty() ? QStringLiteral("apikey") : acc->user, acc->password, acc->host};
+            if (const auto it = m_accountStatus.find(a.via); it != m_accountStatus.end())
+                r.state = it->second.state;
+            return r;
+        }
+    }
+    return accountFor(host);
+}
+
+const DebridHost* Ed3kHosterJoin::debridHostOf(const AccountStatus& st, const QString& host) const
+{
+    if (host.isEmpty())
+        return nullptr;
+    const QString h = host.toLower();
+    const QString site = siteOf(h);
+    for (const DebridHost& d : st.hosts)
+        for (const QString& dom : d.domains)
+            if (h == dom || h.endsWith(QLatin1Char('.') + dom) || siteOf(dom) == site)
+                return &d;
+    return nullptr;
+}
+
+bool Ed3kHosterJoin::debridUsable(const DebridHost& h, std::uint64_t need)
+{
+    if (h.status != QLatin1StringView("working") || h.unavailableS > 0 || h.linksLeft == 0 || h.trafficLeft == 0)
+        return false;
+    // the traffic it charges for the bytes still to come
+    return h.trafficLeft < 0 || need == 0 || std::uint64_t(h.trafficLeft) >= need / 100 * std::uint64_t(h.factor);
+}
+
+std::pair<const Ed3kHosterAccount*, const DebridHost*> Ed3kHosterJoin::debridFor(const QString& host, std::uint64_t need) const
+{
+    if (!m_prefs.enabled || !m_prefs.debridEnabled || !m_resolver || !m_resolver->canDebrid() || host.isEmpty())
+        return {};
+    if (ownTier(host) >= 2)
+        return {};   // the hoster's own premium login first, as JD
+    const qint64 now = nowMs();
+    const auto blocked = [&](const QString& k) {
+        const auto it = m_debridBlocks.find(k);
+        return it != m_debridBlocks.end() && it->second > now;
+    };
+    for (const Ed3kHosterAccount& a : m_prefs.debrid) {
+        if (a.host.isEmpty() || a.password.isEmpty())
+            continue;
+        const QString key = keyOf(a);
+        const auto it = m_accountStatus.find(key);
+        if (it == m_accountStatus.end())
+            continue;
+        const AccountStatus& st = it->second;
+        if (!st.known || !st.valid || !st.multi || st.trafficLeft == 0 || (st.expires > 0 && st.expires * 1000 < now)
+            || blocked(key + QStringLiteral("|*")))
+            continue;
+        const DebridHost* h = debridHostOf(st, host);
+        if (!h || blocked(key + QLatin1Char('|') + siteOf(h->domain)) || !debridUsable(*h, need))
+            continue;
+        return {&a, h};
+    }
+    return {};
+}
+
+bool Ed3kHosterJoin::debridFailed(const Ask& a, const ResolverEvent& ev)
+{
+    using K = ResolverEvent::Kind;
+    if (a.via.isEmpty())
+        return false;
+    qint64 blockMs = kDebridBlockMs;
+    bool whole = false;
+    switch (ev.kind) {
+    case K::Wait:
+        if (ev.text == QLatin1StringView("timer"))
+            return false;   // the plugin waits it out itself
+        blockMs = std::clamp<qint64>(qint64(ev.seconds) * 1000, 60 * 1000, 24 * 3600 * 1000);
+        break;
+    case K::Gone:
+        break;   // the hoster says so too, or not: asked directly next
+    case K::NeedsUser:
+        whole = ev.text == QLatin1StringView("login");
+        blockMs = whole ? kDebridLongBlockMs : kDebridBlockMs;
+        break;
+    case K::Failed:
+        // bad bytes and private addresses are the file's matter, not the multi-hoster's
+        if (ev.code == QLatin1StringView("hash") || ev.code == QLatin1StringView("private"))
+            return false;
+        whole = ev.code == QLatin1StringView("noPlugin");
+        if (whole || ev.code == QLatin1StringView("unsupported"))
+            blockMs = kDebridLongBlockMs;
+        break;
+    default:
+        return false;
+    }
+    const QString key = a.via + QLatin1Char('|') + (whole ? QStringLiteral("*") : a.viaSite);
+    m_debridBlocks[key] = nowMs() + blockMs;
+    if (whole)
+        if (const auto it = m_accountStatus.find(a.via); it != m_accountStatus.end())
+            it->second.at = 0;   // asked again on the next refresh
+    const QString via = a.via.section(QLatin1Char('|'), 0, 0);
+    logWarning(QStringLiteral("hoster: %1 could not download from %2 (%3), skipped %4 for %5 min")
+                   .arg(via, a.viaSite, ev.code.isEmpty() ? ev.text : ev.code,
+                        whole ? QStringLiteral("for all hosters") : QStringLiteral("for it"))
+                   .arg(blockMs / 60000));
+    return true;
+}
+
+void Ed3kHosterJoin::chargeDebrid(const Ask& a, std::uint64_t bytes)
+{
+    const auto it = m_accountStatus.find(a.via);
+    if (it == m_accountStatus.end())
+        return;
+    for (DebridHost& h : it->second.hosts) {
+        if (siteOf(h.domain) != a.viaSite)
+            continue;
+        if (h.linksLeft > 0)
+            --h.linksLeft;
+        if (h.trafficLeft > 0)
+            h.trafficLeft = std::max<qint64>(0, h.trafficLeft - qint64(bytes / 100 * std::uint64_t(h.factor)));
+        return;
+    }
+}
+
+QList<Ed3kHosterJoin::DebridSummary> Ed3kHosterJoin::debridSummaries() const
+{
+    QList<DebridSummary> out;
+    const qint64 now = nowMs();
+    for (const Ed3kHosterAccount& a : m_prefs.debrid) {
+        DebridSummary s{a.host, a.user};
+        const QString key = keyOf(a);
+        if (const auto it = m_accountStatus.find(key); it != m_accountStatus.end() && it->second.known) {
+            const AccountStatus& st = it->second;
+            s.known = true;
+            s.valid = st.valid;
+            s.premium = st.premium;
+            s.expires = st.expires;
+            s.hosts = int(st.hosts.size());
+            const auto blockedAll = m_debridBlocks.find(key + QStringLiteral("|*"));
+            if (blockedAll == m_debridBlocks.end() || blockedAll->second <= now)
+                for (const DebridHost& h : st.hosts) {
+                    const auto b = m_debridBlocks.find(key + QLatin1Char('|') + siteOf(h.domain));
+                    if (debridUsable(h, 0) && (b == m_debridBlocks.end() || b->second <= now))
+                        ++s.working;
+                }
+        }
+        out << s;
+    }
+    return out;
 }
 
 const Ed3kHosterAccount* Ed3kHosterJoin::accountEntry(const QString& host) const
@@ -1379,7 +1585,7 @@ void Ed3kHosterJoin::onResolve(const ev::LinkResolve& r)
             prefill(a, e->item.file, r.offset);
             return;
         }
-        task = m_resolver->open(url, account, a.dir, 0);
+        task = m_resolver->open(url, openAccount(*e, url, a), a.dir, 0);
         break;
     }
     default:
@@ -1514,8 +1720,10 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
         const auto [host, user] = it->second;
         m_accountChecks.erase(it);
         AccountStatus& st = m_accountStatus[host + QLatin1Char('|') + user];
+        const QByteArray state = st.state;   // a failed check keeps the session it had
         st = AccountStatus{};
         st.at = nowMs();
+        st.state = state;
         if (ev.kind == K::Account) {
             st.known = true;
             st.valid = ev.valid;
@@ -1523,6 +1731,12 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
             st.expires = ev.expires;
             st.trafficLeft = ev.trafficLeft;
             st.maxDownloads = ev.maxDownloads;
+            st.multi = ev.multi;
+            st.hosts = ev.hosts;
+            if (!ev.state.isEmpty())
+                st.state = ev.state;
+            if (st.multi)
+                logInfo(QStringLiteral("hoster: %1 downloads %2 hosters").arg(host).arg(st.hosts.size()));
         }
         emit accountChecked(host, user, ev);
         return;
@@ -1540,6 +1754,19 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
         else
             answer(a.link, kind, {}, value);
     };
+    const QString viaHost = a.via.section(QLatin1Char('|'), 0, 0);
+    // a multi-hoster failed: soon again, through another one or the hoster itself; no try counted
+    if (ev.isFinal() && debridFailed(a, ev)) {
+        fail(ED3K_RESOLVER_WAIT, kDebridRetryS);
+        if (e && a.link == e->link) {
+            e->nextAskAt = nowMs() + kDebridRetryS * 1000;
+            setState(*e, State::Waiting, Reason::DebridFailed, viaHost);
+            e->item.waitUntil = e->nextAskAt;
+        }
+        final();
+        pumpSession();
+        return;
+    }
 
     switch (ev.kind) {
     case K::Found:
@@ -1593,7 +1820,7 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
                 || (e->item.state == State::Waiting && e->item.reason == Reason::HosterTimer)
                 || (e->item.state == State::Puzzle && ev.text != QLatin1StringView("puzzle")))) {
             if (ev.text == QLatin1StringView("transfer"))
-                setState(*e, State::Downloading);
+                viaHost.isEmpty() ? setState(*e, State::Downloading) : setState(*e, State::Downloading, Reason::ViaDebrid, viaHost);
             else
                 setState(*e, State::Downloading, Reason::HosterStep, ev.text);
         }
@@ -1606,7 +1833,7 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
             if (ev.total && !e->item.verified && !e->item.size)
                 e->item.size = ev.total;
             if (e->item.state != State::Downloading && e->item.state != State::Puzzle)
-                setState(*e, State::Downloading);
+                viaHost.isEmpty() ? setState(*e, State::Downloading) : setState(*e, State::Downloading, Reason::ViaDebrid, viaHost);
         }
         if (!opened(a, ev))
             break;
@@ -1642,6 +1869,8 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
     case K::Done:
         a.done = true;
         a.onDisk = ev.size;
+        if (!a.via.isEmpty())
+            chargeDebrid(a, ev.size);
         // the plugin may learn the checksum only while downloading
         if (e && !ev.hash.isEmpty() && a.link == e->link) {
             e->hashType = ev.hashType;
@@ -1758,8 +1987,7 @@ void Ed3kHosterJoin::openTask(Ask a)
         answer(a.link, ED3K_RESOLVER_NO_RESOLVER);
         return;
     }
-    const bool peer = a.link != e->link;
-    const auto account = accountFor(peer ? QUrl(a.url).host() : e->item.host);
+    const auto account = openAccount(*e, a.url, a);
     const auto task = m_resolver->open(a.url, account, a.dir, a.have);
     e->task = task;
     m_asks[task] = std::move(a);
@@ -2379,6 +2607,11 @@ void Ed3kHosterJoin::retryLater(Entry& e, int seconds, Reason why, const QString
 void Ed3kHosterJoin::onTick()
 {
     const qint64 now = nowMs();
+    // logins past their check interval (multi-hoster quotas every 30 min)
+    if (now - m_accountsRefreshedAt >= 60 * 1000) {
+        m_accountsRefreshedAt = now;
+        refreshAccounts();
+    }
     std::uint64_t totalSpeed = 0;
     for (auto& [id, ep] : m_items) {
         Entry& e = *ep;
@@ -2422,6 +2655,10 @@ void Ed3kHosterJoin::onTick()
         raiseCounter(m_counters->maxDownRate, totalSpeed);
     }
     expireProbes(now);
+    if (now - m_retiredCheckedAt >= kRetiredCheckMs) {
+        m_retiredCheckedAt = now;
+        dropGoneRetired();
+    }
     queueUnpacks();
     // ALIAS records whose root was not shared yet
     for (auto it = m_aliasPending.begin(); it != m_aliasPending.end();) {
@@ -2717,6 +2954,23 @@ void Ed3kHosterJoin::refreshAccounts()
         if (std::ranges::any_of(m_accountChecks, [&key](const auto& c) { return c.second == key; }))
             continue;
         m_accountChecks[m_resolver->accountCheck(a.host, ResolverAccount{a.user, a.password})] = key;
+    }
+    // multi-hosters: their hosts and daily quotas change, asked more often
+    if (!m_prefs.debridEnabled)
+        return;
+    std::erase_if(m_debridBlocks, [now](const auto& b) { return b.second <= now; });
+    for (const Ed3kHosterAccount& a : m_prefs.debrid) {
+        if (a.host.isEmpty() || a.password.isEmpty())
+            continue;
+        if (const auto it = m_accountStatus.find(keyOf(a)); it != m_accountStatus.end() && now - it->second.at < kDebridTtlMs)
+            continue;
+        const std::pair<QString, QString> key{a.host, a.user};
+        if (std::ranges::any_of(m_accountChecks, [&key](const auto& c) { return c.second == key; }))
+            continue;
+        ResolverAccount login{a.user.isEmpty() ? QStringLiteral("apikey") : a.user, a.password};
+        if (const auto it = m_accountStatus.find(keyOf(a)); it != m_accountStatus.end())
+            login.state = it->second.state;
+        m_accountChecks[m_resolver->accountCheck(a.host, login)] = key;
     }
 }
 
@@ -3167,6 +3421,8 @@ QJsonObject Ed3kHosterJoin::toJson(const Entry& e) const
                   {QStringLiteral("tried"), QJsonArray::fromStringList(it.tried)}};
     if (it.generic)
         o.insert(QStringLiteral("generic"), true);
+    if (it.retired)
+        o.insert(QStringLiteral("retired"), true);
     if (e.wholeAt > 0 && !e.root)
         o.insert(QStringLiteral("wholeAt"), qint64(e.wholeAt));
     if (it.packageId != 0)
@@ -3199,6 +3455,7 @@ void Ed3kHosterJoin::fromJson(const QJsonObject& o, Entry& e) const
             it.mirrors << url;
     it.mirrorNo = int(o.value(QStringLiteral("mirrorNo")).toInteger());
     it.generic = o.value(QStringLiteral("generic")).toBool();
+    it.retired = o.value(QStringLiteral("retired")).toBool();
     e.wholeAt = std::uint64_t(std::max<qint64>(0, o.value(QStringLiteral("wholeAt")).toInteger()));
     for (const QJsonValue& m : o.value(QStringLiteral("tried")).toArray())
         if (const QString url = m.toString(); !url.isEmpty())
@@ -3336,13 +3593,80 @@ QString Ed3kHosterJoin::archiveDirOf(const Item& it) const
                                    .arg(it.package.isEmpty() ? QStringLiteral("_") : it.package));
 }
 
+namespace {
+
+/// Unpacking, unpacked, or failed to: the choice is spent.
+bool unpackStarted(const Ed3kHosterJoin::Item& it)
+{
+    using R = Ed3kHosterJoin::Reason;
+    return it.state == Ed3kHosterJoin::State::Complete && it.reason != R::UnpackWaiting && it.reason != R::None;
+}
+
+} // namespace
+
+QHash<QString, QStringList> Ed3kHosterJoin::keptEntries(quint32 packageId, quint32 itemId, bool* editable) const
+{
+    QHash<QString, QStringList> out;
+    bool open = false;
+    for (const auto& [id, ep] : m_items) {
+        const Item& it = ep->item;
+        if (!(packageId != 0 ? it.packageId == packageId : it.id == itemId))
+            continue;
+        open = open || !unpackStarted(it);
+        for (auto k = it.keptEntries.cbegin(); k != it.keptEntries.cend(); ++k)
+            out.insert(k.key(), k.value());
+    }
+    if (editable)
+        *editable = open;
+    return out;
+}
+
+bool Ed3kHosterJoin::setKeptEntries(quint32 packageId, quint32 itemId, const QHash<QString, QStringList>& entries)
+{
+    bool any = false;
+    for (auto& [id, ep] : m_items) {
+        Item& it = ep->item;
+        if (!(packageId != 0 ? it.packageId == packageId : it.id == itemId) || unpackStarted(it))
+            continue;
+        any = true;
+        if (it.keptEntries != entries) {
+            it.keptEntries = entries;
+            ep->metDirty = true;   // an unfinished item keeps it in its .met
+            changed(*ep);
+        }
+    }
+    if (any)
+        save();
+    return any;
+}
+
+void Ed3kHosterJoin::dropGoneRetired()
+{
+    QList<quint32> gone;
+    for (const auto& [id, e] : m_items)
+        if (e->item.retired && !QFileInfo::exists(e->item.file))
+            gone << id;
+    for (const quint32 id : std::as_const(gone)) {
+        Entry* e = find(id);
+        logInfo(QStringLiteral("%1: the file of a removed item left incoming, its links are withdrawn").arg(e->item.host));
+        for (SharedLink& l : e->shared)
+            l.offline = true;
+        publishShared(*e);
+        m_aliasPending.erase(id);
+        release(*e, false);
+        m_items.erase(id);
+    }
+    if (!gone.isEmpty())
+        save();
+}
+
 void Ed3kHosterJoin::queueUnpacks()
 {
     if (m_unpack.busy() || !m_prefs.extract)
         return;
     for (auto& [id, ep] : m_items) {
         Entry& e = *ep;
-        if (e.item.state != State::Complete || e.item.reason != Reason::UnpackWaiting)
+        if (e.item.state != State::Complete || e.item.reason != Reason::UnpackWaiting || e.item.retired)
             continue;
         const QString dir = QFileInfo(e.item.file).absolutePath();
         const QString key = Ed3kHosterUnpack::setKey(QFileInfo(e.item.file).fileName());
@@ -3452,7 +3776,7 @@ void Ed3kHosterJoin::releaseArchives()
 {
     for (auto& [id, ep] : m_items) {
         Entry& e = *ep;
-        if (e.item.state != State::Complete
+        if (e.item.state != State::Complete || e.item.retired
             || (e.item.reason != Reason::UnpackWaiting && e.item.reason != Reason::UnpackFailed
                 && e.item.reason != Reason::UnpackPassword))
             continue;

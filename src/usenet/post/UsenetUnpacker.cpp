@@ -250,6 +250,9 @@ UsenetUnpacker::SetOutcome UsenetUnpacker::extractSet(const ArchiveSet& set, con
     // stream over the files the caller hands it and never opens a sibling
     // volume by name, so opening on volume one stops at its end.
     const bool opened = reader.open(set.volumes);
+    // the contents record hashes what this extraction reads (hoster.md §6.1)
+    const auto tap = archiveContentsTap();
+    reader.setContentsTap(tap.get());
 
     // Encryption is not a corrupt archive, and it must not be reported as
     // one. libarchive decrypts ZIP and nothing else, so every other
@@ -303,6 +306,10 @@ UsenetUnpacker::SetOutcome UsenetUnpacker::extractSet(const ArchiveSet& set, con
 
             result.extractedFiles += produced;
             result.consumedArchives += set.volumes;
+            if (tap)
+                result.contents.append({tap, QFileInfo(set.firstVolume).fileName(),
+                                        reader.hasEncryptedEntries() ? ArchiveReader::openingPassphrase(set.volumes, passwords)
+                                                                     : QString()});
 
             logUsenet(QStringLiteral("Usenet: unpacked \"%1\" (%2 file(s))")
                         .arg(QFileInfo(set.firstVolume).fileName())
@@ -321,8 +328,9 @@ UsenetUnpacker::SetOutcome UsenetUnpacker::extractSet(const ArchiveSet& set, con
             QFile::remove(path);
     }
 
+    reader.setContentsTap(nullptr);
     const qsizetype before = result.extractedFiles.size();
-    if (unpackEncrypted(set, destDir, passwords, externalTool, reader, result)) {
+    if (unpackEncrypted(set, destDir, passwords, externalTool, reader, result, filtered ? &*only : nullptr)) {
         // the tool writes everything: what was not chosen goes again
         if (filtered) {
             const QDir dest(destDir);
@@ -385,6 +393,7 @@ void UsenetUnpacker::unpackNested(QStringList seeds, const Options& options, Res
                     continue;
                 }
 
+                result.contents += inner.contents;
                 for (const QString& v : set.volumes)
                     result.extractedFiles.removeAll(v);
                 for (const QString& f : std::as_const(inner.extractedFiles)) {
@@ -404,7 +413,8 @@ void UsenetUnpacker::unpackNested(QStringList seeds, const Options& options, Res
 
 bool UsenetUnpacker::unpackEncrypted(const ArchiveSet& set, const QString& destDir,
                                      const QStringList& passwords, const QString& externalTool,
-                                     const ArchiveReader& reader, Result& result)
+                                     const ArchiveReader& reader, Result& result,
+                                     const QSet<QString>* only)
 {
     const QString name = QFileInfo(set.firstVolume).fileName();
     result.encryptedUnsupported = true;
@@ -444,11 +454,39 @@ bool UsenetUnpacker::unpackEncrypted(const ArchiveSet& set, const QString& destD
     // Each candidate in turn; only a refused passphrase moves on to the next.
     // The tool extracts into staging and hands over only on success, so a
     // wrong try leaves nothing behind.
+    // members the libarchive scan listed (data-encrypted sets): the tool streams them out and
+    // the contents record hashes them on the way (hoster.md §6.1)
+    QList<ExternalUnpacker::Member> scanned;
+    for (int i = 0; i < reader.entryCount(); ++i)
+        if (!reader.entryIsDir(i))
+            scanned.append({reader.entryName(i), qint64(reader.entrySize(i))});
+    const auto wanted = [only](const QString& path) { return !only || only->contains(path); };
+    std::shared_ptr<ArchiveContentsTap> contentsTap;
+
     ExternalUnpacker::Result outcome;
     QString tried;
     for (const QString& pw : passwords) {
-        outcome = external.extract(set.volumes, destDir, pw);
         tried = pw;
+        if (auto tap = archiveContentsTap()) {
+            // header-encrypted: only 7-Zip lists with sizes, and only with the password
+            QString listError;
+            const QList<ExternalUnpacker::Member> members =
+                !scanned.isEmpty() ? scanned
+                : external.toolKind() == ExternalUnpacker::Kind::SevenZip ? external.listMembers(set.volumes, pw, listError)
+                                                                          : QList<ExternalUnpacker::Member>{};
+            if (!members.isEmpty()) {
+                outcome = external.extractStreamed(set.volumes, destDir, pw, members, wanted, tap.get());
+                if (outcome.ok()) {
+                    contentsTap = tap;
+                    break;
+                }
+                if (outcome.outcome == ExternalUnpacker::Outcome::WrongPassword)
+                    continue;
+                // a listing that did not match the output: the plain way, no record
+                logUsenet(QStringLiteral("Usenet: \"%1\" streamed out of order; extracting it plainly").arg(name));
+            }
+        }
+        outcome = external.extract(set.volumes, destDir, pw);
         if (outcome.outcome != ExternalUnpacker::Outcome::WrongPassword)
             break;
         for (const QString& path : outcome.extractedFiles)
@@ -491,6 +529,8 @@ bool UsenetUnpacker::unpackEncrypted(const ArchiveSet& set, const QString& destD
         result.extractedFiles += outcome.extractedFiles;
         result.consumedArchives += set.volumes;
         result.usedPassword = tried;
+        if (contentsTap)
+            result.contents.append({contentsTap, name, tried});
         logUsenet(QStringLiteral("Usenet: unpacked \"%1\" with %2 (%3 file(s))")
                     .arg(name, external.toolName())
                     .arg(outcome.extractedFiles.size()));

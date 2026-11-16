@@ -20,6 +20,7 @@
 #include "prefs/Preferences.h"
 
 #include <QDeadlineTimer>
+#include <QDir>
 #include <QScopeGuard>
 #include <QFileInfo>
 #include <QTemporaryDir>
@@ -44,6 +45,7 @@ private slots:
     void coordinatorSizesEd3kSlotsFromTheShare();
     void theOtherLinksReachTheNode();
     void theKadWindowSeesTheNode();
+    void declinedRecordsAreEditedOverIpc();
 
 private:
     static Ed3kSettings loopback(const QString& dir);
@@ -261,6 +263,13 @@ void tst_Ed3kBridge::coordinatorSizesEd3kSlotsFromTheShare()
     QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(10), 2u);
     QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(250), 10u);
     QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(1000), 40u);
+    // re-applied on a move of 10 % (at least 1) or on/off, not on the share's tick jitter
+    QVERIFY(!BandwidthCoordinator::ed3kSlotsMoved(1968, 1968));
+    QVERIFY(!BandwidthCoordinator::ed3kSlotsMoved(1968, 1942));
+    QVERIFY(BandwidthCoordinator::ed3kSlotsMoved(1968, 1700));
+    QVERIFY(BandwidthCoordinator::ed3kSlotsMoved(10, 11));
+    QVERIFY(BandwidthCoordinator::ed3kSlotsMoved(0, 2));
+    QVERIFY(BandwidthCoordinator::ed3kSlotsMoved(40, 0));
 
     const uint32 maxUpBefore = thePrefs.maxUpload();
     thePrefs.setMaxUpload(250);
@@ -339,6 +348,44 @@ void tst_Ed3kBridge::theOtherLinksReachTheNode()
     QCOMPARE(thePrefs.ed3kCacheServers().size(), added.fieldBool(0) ? 1 : 0);
     a.stop();
     b.stop();
+}
+
+// GetEd3kDeclined / SetEd3kDeclined (1208, 1209): decline.txt of the core, counts loaded
+void tst_Ed3kBridge::declinedRecordsAreEditedOverIpc()
+{
+    const auto ask = [](IpcMsgType t, const QList<QCborValue>& args = {}) {
+        IpcMessage m(t, 9);
+        for (const QCborValue& a : args)
+            m.append(a);
+        IpcMessage out;
+        if (!Ed3kBridge::handleRequest(m, [&out](const IpcMessage& r) { out = r; }))
+            out = IpcMessage(IpcMsgType::GetBtStatus, 0);   // not taken
+        return out;
+    };
+    QTemporaryDir da;
+    QVERIFY(da.isValid());
+    Ed3kSession a;
+    QVERIFY(a.start(loopback(da.path())));
+    Ed3kBridge::setSession(&a);
+    const QString text = QStringLiteral("# test\n%1\ned2k:%2\nkind:SOURCE\nkind:nope\nsome words\n")
+                             .arg(QString(64, u'e'), QString(32, u'f'));
+    const IpcMessage set = ask(IpcMsgType::SetEd3kDeclined, {text});
+    QCOMPARE(set.type(), IpcMsgType::Result);
+    QVERIFY(set.fieldBool(0));
+    const QCborMap loaded = set.fieldMap(1).value(QStringLiteral("loaded")).toMap();
+    QCOMPARE(loaded.value(QStringLiteral("roots")).toInteger(), 1);
+    QCOMPARE(loaded.value(QStringLiteral("ed2k")).toInteger(), 1);
+    QCOMPARE(loaded.value(QStringLiteral("kinds")).toInteger(), 1);
+    QCOMPARE(loaded.value(QStringLiteral("keywords")).toInteger(), 1);
+    QCOMPARE(set.fieldMap(1).value(QStringLiteral("invalid")).toArray().size(), 1);
+    QVERIFY(set.fieldMap(1).value(QStringLiteral("running")).toBool());
+    // the node took it at once; the file is the session's
+    QCOMPARE(a.declined().ed2k.size(), std::size_t(1));
+    QVERIFY(QFileInfo::exists(QDir(a.stateDir()).filePath(QString::fromLatin1(eMule::ed3k::kDeclineFile))));
+    const IpcMessage get = ask(IpcMsgType::GetEd3kDeclined);
+    QVERIFY(get.fieldBool(0));
+    QCOMPARE(get.fieldMap(1).value(QStringLiteral("text")).toString(), text);
+    a.stop();
 }
 
 Ed3kSettings tst_Ed3kBridge::loopback(const QString& dir)

@@ -1437,6 +1437,18 @@ void MainWindow::onClipboardChanged()
         return;
     }
 
+    // an ed3k room link: asked, joined, its tab shown (other ed3k links stay manual)
+    if (thePrefs.ed3kEnabled() && m_ircPanel) {
+        if (const QString room = Clipboard::linksIn(text, {QLatin1StringView("ed3k:room?")}).value(0); !room.isEmpty()) {
+            if (!m_ipc || !m_ipc->isConnected())
+                return;   // as below: the reconnect re-check picks it up
+            m_lastClipboardContents = text;
+            if (m_ircPanel->openEd3kRoomLink(room))
+                switchToTab(TabIRC);
+            return;
+        }
+    }
+
     // Check if any line contains a link we act on. HTTP Cache configuration links
     // count: copying one off a server's install page is how it is meant to be
     // used, and Ed2kLinkImporter always confirms before storing anything.

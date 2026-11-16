@@ -205,6 +205,10 @@ public:
     /// every change of the file.
     void setDeclined(DeclineList list);
     [[nodiscard]] const DeclineList& declined() const { return m_decline; }
+    /// decline.txt read again now (the watcher does so too, a moment later); not running: no-op.
+    void reloadDeclineFile();
+    /// Held records the last list change dropped.
+    [[nodiscard]] std::uint64_t declineDropped() const { return m_declineDropped; }
 
     /// The JSON-RPC endpoints of a class (see Ed3kSettings); calls out keep their URL.
     void setRpcEndpoints(::ed3k::RpcClass cls, const QStringList& urls);
@@ -321,6 +325,7 @@ private:
     QElapsedTimer m_clock;
     QString m_dir;
     DeclineList m_decline;
+    std::uint64_t m_declineDropped = 0;
     std::optional<DeclineList> m_declineFile;   ///< decline.txt as last read; nullopt: none
     QFileSystemWatcher m_declineWatch;   ///< decline.txt and m_dir (a file written anew)
     std::uint16_t m_port = 0;

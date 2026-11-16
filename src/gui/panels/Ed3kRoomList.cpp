@@ -7,6 +7,8 @@
 #include "controls/AbstractListView.h"
 #include "controls/SortableItems.h"
 #include "app/SkinIcons.h"
+#include "utils/Clipboard.h"
+#include "utils/ListActivation.h"
 
 #include <QCborMap>
 #include <QHash>
@@ -27,8 +29,8 @@ Ed3kRoomList::Ed3kRoomList(QWidget* parent)
     layout->setSpacing(2);
 
     auto* buttons = new QHBoxLayout;
-    auto* join = new QPushButton(tr("Join by link..."), this);
-    auto* create = new QPushButton(tr("Create..."), this);
+    auto* join = new QPushButton(actionIcon(Action::Join), tr("Join by link..."), this);
+    auto* create = new QPushButton(actionIcon(Action::Create), tr("Create..."), this);
     buttons->addWidget(join);
     buttons->addWidget(create);
     buttons->addStretch();
@@ -50,6 +52,12 @@ Ed3kRoomList::Ed3kRoomList(QWidget* parent)
             emit actionRequested(Action::Open, room);
     });
     connect(tree, &QWidget::customContextMenuRequested, this, &Ed3kRoomList::showMenu);
+    ListKeyHandlers keys;
+    keys.paste = [this] {
+        if (const QString link = clipboardRoomLink(); !link.isEmpty())
+            emit actionRequested(Action::Paste, link);
+    };
+    bindListKeys(tree, std::move(keys));
     layout->addWidget(tree, 1);
     m_tree = tree;
 }
@@ -83,6 +91,26 @@ void Ed3kRoomList::setRooms(const QCborArray& rooms)
     m_tree->setSortingEnabled(true);
 }
 
+QIcon Ed3kRoomList::actionIcon(Action action)
+{
+    const auto icon = [](const char* name) { return skinIcon(QStringLiteral(":/icons/") + QLatin1StringView(name)); };
+    switch (action) {
+    case Action::Open:          return icon("IRC.ico");
+    case Action::Join:          return icon("Ed3k.ico");
+    case Action::Paste:         return icon("eD2kLinkPaste.ico");
+    case Action::Create:        return icon("ListAdd.ico");
+    case Action::Leave:         return icon("Exit.ico");
+    case Action::CopyLink:      return icon("eD2kLink.ico");
+    case Action::CopyMemberKey: return icon("Copy.ico");
+    case Action::ImportAdmit:   return icon("Import.ico");
+    case Action::AdmitKey:      return icon("UserAdd.ico");
+    case Action::NewGeneration: return icon("Security.ico");
+    case Action::EditInfo:      return icon("Info.ico");
+    case Action::ChangeNick:    return icon("Rename.ico");
+    }
+    return {};
+}
+
 // ---------------------------------------------------------------------------
 // Private
 // ---------------------------------------------------------------------------
@@ -100,13 +128,18 @@ void Ed3kRoomList::showMenu(const QPoint& pos)
 
     QMenu menu(this);
     const auto add = [&](const QString& text, Action a, bool enabled) {
-        QAction* act = menu.addAction(text, this, [this, a, room] { emit actionRequested(a, room); });
+        QAction* act = menu.addAction(actionIcon(a), text, this, [this, a, room] { emit actionRequested(a, room); });
         act->setEnabled(enabled);
         return act;
     };
     menu.setDefaultAction(add(tr("Open"), Action::Open, has));
     menu.addSeparator();
     add(tr("Join by link..."), Action::Join, true);
+    // the link goes in place of a room (actionRequested)
+    const QString pasted = clipboardRoomLink();
+    menu.addAction(actionIcon(Action::Paste), tr("Paste room link"), this,
+                   [this, pasted] { emit actionRequested(Action::Paste, pasted); })
+        ->setEnabled(!pasted.isEmpty());
     add(tr("Create..."), Action::Create, true);
     add(tr("Leave"), Action::Leave, has);
     menu.addSeparator();
@@ -170,6 +203,11 @@ void Ed3kRoomList::fillItem(QTreeWidgetItem* item, const QCborMap& r) const
     else
         state = tr("Looking for members");
     item->setText(4, state);
+}
+
+QString Ed3kRoomList::clipboardRoomLink()
+{
+    return Clipboard::firstLink(QLatin1StringView("ed3k:room?"));
 }
 
 QString Ed3kRoomList::selectedRoom() const

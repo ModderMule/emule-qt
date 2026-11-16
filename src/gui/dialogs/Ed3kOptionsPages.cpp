@@ -8,6 +8,7 @@
 
 #include "app/Ed3kNameOpener.h"
 #include "app/Ed3kLinkActions.h"
+#include "dialogs/Ed3kDeclineDialog.h"
 #include "app/IpcClient.h"
 #include "dialogs/Ed3kFilterPage.h"
 #include "dialogs/Ed3kHidingGroup.h"
@@ -23,6 +24,7 @@
 #include "utils/Appearance.h"
 #include "utils/DialogSizing.h"
 #include "prefs/Preferences.h"
+#include "utils/StringUtils.h"
 #include "IpcMessage.h"
 
 #include <QCborArray>
@@ -169,9 +171,28 @@ constexpr SolverService kSolverServices[] = {
     {"cheapcaptcha.com", "CheapCaptcha", SolverUser::Required},
 };
 
+/// JDownloader's multi-hoster plugins with a login that works without a browser (a PIN login
+/// such as Debrid-Link's needs one; such a service can still be typed in).
+constexpr SolverService kDebridServices[] = {
+    {"real-debrid.com", "Real-Debrid", SolverUser::Required},
+    {"alldebrid.com", "AllDebrid", SolverUser::None},      // API key
+    {"torbox.app", "TorBox", SolverUser::None},            // API key
+    {"premiumize.me", "Premiumize", SolverUser::Optional}, // customer id + API key, or the key only
+    {"linksnappy.com", "LinkSnappy", SolverUser::Required},
+    {"deepbrid.com", "Deepbrid", SolverUser::Required},
+    {"mega-debrid.eu", "Mega-Debrid", SolverUser::Required},
+    {"high-way.me", "High-Way", SolverUser::Required},
+    {"premium.to", "Premium.to", SolverUser::Optional},
+    {"offcloud.com", "Offcloud", SolverUser::None},        // API key
+};
+
+/// A known solver or multi-hoster service (their domains do not overlap).
 const SolverService* solverService(const QString& host)
 {
     for (const SolverService& sv : kSolverServices)
+        if (host == QLatin1StringView(sv.host))
+            return &sv;
+    for (const SolverService& sv : kDebridServices)
         if (host == QLatin1StringView(sv.host))
             return &sv;
     return nullptr;
@@ -226,6 +247,7 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     m_shareFilesCheck->setChecked(p.value(QStringLiteral("ed3kShareFiles")).toBool(true));
     m_jointDownloadsCheck->setChecked(p.value(QStringLiteral("ed3kJointDownloads")).toBool(true));
     m_shareUsenetCheck->setChecked(p.value(QStringLiteral("ed3kShareUsenetPosts")).toBool(true));
+    m_archiveContentsCheck->setChecked(p.value(QStringLiteral("ed3kArchiveContents")).toBool(true));
     m_ownSetsWatchCheck->setChecked(p.value(QStringLiteral("ed3kOwnSetsWatch")).toBool(true));
     m_extTree->setValue(m_hashRamItem, int(p.value(QStringLiteral("ed3kHashRamMiB")).toInteger(0)));
     m_extTree->setValue(m_lowRamItem, int(p.value(QStringLiteral("ed3kHashCacheLowRamPercent")).toInteger(20)));
@@ -245,6 +267,8 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     }
     m_extTree->setChecked(m_lanItem, p.value(QStringLiteral("ed3kLan")).toBool(false));
     m_extTree->setChecked(m_autoIndexItem, p.value(QStringLiteral("ed3kAutoIndexNode")).toBool(false));
+    m_extTree->setChecked(m_roomStoreItem, p.value(QStringLiteral("ed3kRoomHistoryStore")).toBool(true));
+    m_extTree->setValue(m_roomMaxItem, int(p.value(QStringLiteral("ed3kRoomHistoryMax")).toInteger(5000)));
     m_hiding->load(p);
     m_sitePortSpin->setValue(int(p.value(QStringLiteral("ed3kSitePort")).toInteger(0)));
     m_nodeListsEdit->setPlainText(linesText(p.value(QStringLiteral("ed3kNodeLists"))));
@@ -316,6 +340,13 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     for (const Ed3kHosterAccount& a : h.solvers)
         m_solverAccounts.rows.append({a.host, a.user, {}, false, {}});
     fillAccounts(m_solverAccounts);
+    m_debridCheck->setChecked(h.debridEnabled);
+    m_debridGroup->setEnabled(h.debridEnabled);
+    m_debridAccounts.rows.clear();
+    for (const Ed3kHosterAccount& a : h.debrid)
+        m_debridAccounts.rows.append({a.host, a.user, {}, false, {}});
+    fillAccounts(m_debridAccounts);
+    fillDebridHosts();
     m_loading = false;
 }
 
@@ -329,6 +360,7 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kShareFiles", m_shareFilesCheck->isChecked());
     put("ed3kJointDownloads", m_jointDownloadsCheck->isChecked());
     put("ed3kShareUsenetPosts", m_shareUsenetCheck->isChecked());
+    put("ed3kArchiveContents", m_archiveContentsCheck->isChecked());
     put("ed3kOwnSetsWatch", m_ownSetsWatchCheck->isChecked());
     put("ed3kHashRamMiB", qint64(m_extTree->value(m_hashRamItem)));
     put("ed3kHashCacheLowRamPercent", qint64(m_extTree->value(m_lowRamItem)));
@@ -337,6 +369,8 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
         put("ed3kUdpPort", qint64(m_udpPortSpin->value()));
     put("ed3kLan", m_extTree->isChecked(m_lanItem));
     put("ed3kAutoIndexNode", m_extTree->isChecked(m_autoIndexItem));
+    put("ed3kRoomHistoryStore", m_extTree->isChecked(m_roomStoreItem));
+    put("ed3kRoomHistoryMax", qint64(m_extTree->value(m_roomMaxItem)));
     m_hiding->appendTo(req);
     put("ed3kSitePort", qint64(m_sitePortSpin->value()));
     put("ed3kNodeLists", linesOf(m_nodeListsEdit).join(QLatin1Char(' ')));
@@ -398,6 +432,8 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kHosterAccounts", rows(m_hosterAccounts));
     put("ed3kHosterSolversEnabled", h.solversEnabled);
     put("ed3kHosterSolvers", rows(m_solverAccounts));
+    put("ed3kHosterDebridEnabled", h.debridEnabled);
+    put("ed3kHosterDebrid", rows(m_debridAccounts));
 }
 
 void Ed3kOptionsPages::saveLocal() const
@@ -406,6 +442,7 @@ void Ed3kOptionsPages::saveLocal() const
     thePrefs.setEd3kShareFiles(m_shareFilesCheck->isChecked());
     thePrefs.setEd3kJointDownloads(m_jointDownloadsCheck->isChecked());
     thePrefs.setEd3kShareUsenetPosts(m_shareUsenetCheck->isChecked());
+    thePrefs.setEd3kArchiveContents(m_archiveContentsCheck->isChecked());
     thePrefs.setEd3kOwnSetsWatch(m_ownSetsWatchCheck->isChecked());
     thePrefs.setEd3kHashRamMiB(m_extTree->value(m_hashRamItem));
     thePrefs.setEd3kHashCacheLowRamPercent(m_extTree->value(m_lowRamItem));
@@ -414,6 +451,8 @@ void Ed3kOptionsPages::saveLocal() const
         thePrefs.setEd3kUdpPort(uint16(m_udpPortSpin->value()));
     thePrefs.setEd3kLan(m_extTree->isChecked(m_lanItem));
     thePrefs.setEd3kAutoIndexNode(m_extTree->isChecked(m_autoIndexItem));
+    thePrefs.setEd3kRoomHistoryStore(m_extTree->isChecked(m_roomStoreItem));
+    thePrefs.setEd3kRoomHistoryMax(m_extTree->value(m_roomMaxItem));
     m_hiding->saveLocal();
     if (m_sitePortSpin->value() > 0)
         thePrefs.setEd3kSitePort(uint16(m_sitePortSpin->value()));
@@ -434,6 +473,7 @@ void Ed3kOptionsPages::saveLocal() const
     };
     keep(h.accounts, old.accounts);
     keep(h.solvers, old.solvers);
+    keep(h.debrid, old.debrid);
     thePrefs.setEd3kHoster(h);
 }
 
@@ -502,10 +542,26 @@ QWidget* Ed3kOptionsPages::buildGeneral(QWidget* parent)
     m_shareUsenetCheck->setToolTip(tr("Off: the files of Usenet downloads are still shared, but not their article "
                                       "lists, post sets or nzb records."));
     shareLayout->addWidget(m_shareUsenetCheck);
+    m_archiveContentsCheck = new QCheckBox(tr("Publish what unpacked archives hold"), shareGroup);
+    m_archiveContentsCheck->setToolTip(tr("Lists the files of each archive unpacked here (hoster, Usenet, torrent) in ed3k, "
+                                          "so others can see and pick them before downloading. No links or "
+                                          "message IDs are published."));
+    shareLayout->addWidget(m_archiveContentsCheck);
     m_ownSetsWatchCheck = new QCheckBox(tr("Publish a new version of my sets when their folders change"), shareGroup);
     m_ownSetsWatchCheck->setToolTip(tr("Watches the folders of My ed3k Sets: files added, changed or removed there "
                                        "publish a new version of the set."));
     shareLayout->addWidget(m_ownSetsWatchCheck);
+    // §10.3 Declining (declined-records.md): decline.txt of the core, saved at once
+    auto* declineRow = new QHBoxLayout;
+    declineRow->addWidget(noteLabel(tr("Records not held for others, not published and asked about before downloading."),
+                                    shareGroup), 1);
+    auto* declineBtn = new QPushButton(tr("Declined records..."), shareGroup);
+    connect(declineBtn, &QPushButton::clicked, this, [this] {
+        Ed3kDeclineDialog dlg(m_ipc, m_parent);
+        dlg.exec();
+    });
+    declineRow->addWidget(declineBtn, 0, Qt::AlignTop);
+    shareLayout->addLayout(declineRow);
     layout->addWidget(shareGroup);
 
     // batch 15, hops.md §1: the global switch, one hop count for every use
@@ -554,7 +610,8 @@ QWidget* Ed3kOptionsPages::buildGeneral(QWidget* parent)
     // layout->addWidget(extGroup);
     layout->addStretch();
 
-    for (QCheckBox* box : {m_enabledCheck, m_shareFilesCheck, m_shareUsenetCheck, m_ownSetsWatchCheck, m_jointDownloadsCheck})
+    for (QCheckBox* box : {m_enabledCheck, m_shareFilesCheck, m_shareUsenetCheck, m_archiveContentsCheck, m_ownSetsWatchCheck,
+                           m_jointDownloadsCheck})
         connect(box, &QCheckBox::toggled, this, [this] {
             if (!m_loading)
                 emit changed();
@@ -1427,6 +1484,7 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
     };
     auto* layout = addTab(tr("General"));
     auto* solversLayout = addTab(tr("Captcha solvers"));
+    auto* debridLayout = addTab(tr("Multi-hosters"));
     const auto edited = [this] {
         if (!m_loading)
             emit changed();
@@ -1595,6 +1653,7 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
     connect(m_linkGrabberCheck, &QCheckBox::toggled, m_grabAllCheck, &QWidget::setEnabled);
 
     buildSolvers(solversLayout, page);
+    buildDebrid(debridLayout, page);
 
     connect(m_hosterSingleCheck, &QCheckBox::toggled, this, edited);
     connect(m_hosterEnabledCheck, &QCheckBox::toggled, this, [this] {
@@ -1702,6 +1761,31 @@ void Ed3kOptionsPages::applyHosterStatus(const QCborMap& h)
     }
     if (any)
         fillAccounts(m_solverAccounts);
+
+    // multi-hosters: what the core's last check found, for rows not checked here
+    bool anyDebrid = false;
+    for (const QCborValue& v : h.value(QStringLiteral("debrid")).toArray()) {
+        const QCborMap st = v.toMap();
+        if (!st.value(QStringLiteral("known")).toBool())
+            continue;
+        for (HosterAccountRow& a : m_debridAccounts.rows) {
+            if (a.host != st.value(QStringLiteral("host")).toString() || a.user != st.value(QStringLiteral("user")).toString()
+                || a.passwordSet)
+                continue;
+            const QString text = !st.value(QStringLiteral("valid")).toBool()
+                                     ? tr("Not valid")
+                                     : debridText(st.value(QStringLiteral("premium")).toBool(),
+                                                  st.value(QStringLiteral("expires")).toInteger(),
+                                                  int(st.value(QStringLiteral("hosts")).toInteger()),
+                                                  int(st.value(QStringLiteral("working")).toInteger()));
+            if (a.status != text) {
+                a.status = text;
+                anyDebrid = true;
+            }
+        }
+    }
+    if (anyDebrid)
+        fillAccounts(m_debridAccounts);
 }
 
 void Ed3kOptionsPages::updateJavaButtons()
@@ -1820,6 +1904,8 @@ void Ed3kOptionsPages::editAccount(AccountList& list, int row)
     QDialog dlg(m_parent);
     if (list.solvers)
         dlg.setWindowTitle(add ? tr("Add captcha solver") : tr("Edit captcha solver"));
+    else if (list.debrid)
+        dlg.setWindowTitle(add ? tr("Add multi-hoster account") : tr("Edit multi-hoster account"));
     else
         dlg.setWindowTitle(add ? tr("Add hoster account") : tr("Edit hoster account"));
     auto* form = new QFormLayout(&dlg);
@@ -1831,9 +1917,15 @@ void Ed3kOptionsPages::editAccount(AccountList& list, int row)
     passEdit->setEchoMode(QLineEdit::Password);
     passEdit->setPlaceholderText(add ? QString() : tr("unchanged"));
     auto* passLabel = new QLabel(tr("Password:"), &dlg);
-    if (list.solvers) {
+    if (list.services()) {
         for (const SolverService& sv : kSolverServices)
-            serviceCombo->addItem(QString::fromLatin1(sv.name), QString::fromLatin1(sv.host));
+            if (list.solvers)
+                serviceCombo->addItem(QString::fromLatin1(sv.name), QString::fromLatin1(sv.host));
+        for (const SolverService& sv : kDebridServices)
+            if (list.debrid)
+                serviceCombo->addItem(QString::fromLatin1(sv.name), QString::fromLatin1(sv.host));
+        // another JD multi-hoster plugin: its domain typed in
+        serviceCombo->setEditable(list.debrid);
         if (!a.host.isEmpty() && serviceCombo->findData(a.host) < 0)
             serviceCombo->addItem(a.host, a.host);   // a service this version does not list
         if (!a.host.isEmpty())
@@ -1847,15 +1939,21 @@ void Ed3kOptionsPages::editAccount(AccountList& list, int row)
     form->addRow(tr("User:"), userEdit);
     form->addRow(passLabel, passEdit);
     // key-only services: no user, the key is the password
+    // the service's domain: a listed one, or what was typed into the editable combo
+    const auto serviceHost = [&] {
+        const int i = serviceCombo->findText(serviceCombo->currentText());
+        return i >= 0 ? serviceCombo->itemData(i).toString() : serviceCombo->currentText().trimmed().toLower();
+    };
     const auto updateFields = [&] {
-        if (!list.solvers)
+        if (!list.services())
             return;
-        const SolverUser u = solverUser(serviceCombo->currentData().toString());
+        const SolverUser u = solverUser(serviceHost());
         userEdit->setEnabled(u != SolverUser::None);
         userEdit->setPlaceholderText(u == SolverUser::Optional ? tr("empty: the password is an API token") : QString());
         passLabel->setText(u == SolverUser::None ? tr("API key:") : tr("Password:"));
     };
     connect(serviceCombo, &QComboBox::currentIndexChanged, &dlg, updateFields);
+    connect(serviceCombo, &QComboBox::editTextChanged, &dlg, updateFields);
     updateFields();
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
     connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
@@ -1863,12 +1961,12 @@ void Ed3kOptionsPages::editAccount(AccountList& list, int row)
     form->addRow(buttons);
     if (dlg.exec() != QDialog::Accepted)
         return;
-    QString host = list.solvers ? serviceCombo->currentData().toString() : hostEdit->text().trimmed().toLower();
+    QString host = list.services() ? serviceHost() : hostEdit->text().trimmed().toLower();
     if (host.startsWith(QLatin1StringView("www.")))
         host = host.mid(4);
     const QString user = userEdit->isEnabled() ? userEdit->text().trimmed() : QString();
-    const bool needUser = !list.solvers || solverUser(host) == SolverUser::Required;
-    if (host.isEmpty() || (needUser && user.isEmpty()) || (list.solvers && add && passEdit->text().isEmpty()))
+    const bool needUser = !list.services() || solverUser(host) == SolverUser::Required;
+    if (host.isEmpty() || (needUser && user.isEmpty()) || (list.services() && add && passEdit->text().isEmpty()))
         return;
     const bool renamed = host != a.host || user != a.user;
     a.host = host;
@@ -1878,6 +1976,7 @@ void Ed3kOptionsPages::editAccount(AccountList& list, int row)
         a.passwordSet = true;
     }
     a.status.clear();
+    a.hosts = {};
     if (add)
         list.rows.append(a);
     else
@@ -1896,8 +1995,11 @@ void Ed3kOptionsPages::checkAccount(AccountList& list)
         // the stored password stays in the core: type it to check
         bool ok = false;
         const QString who = a.user.isEmpty() ? a.host : tr("%1 at %2").arg(a.user, a.host);
-        const QString pass = QInputDialog::getText(m_parent, list.solvers ? tr("Check captcha solver") : tr("Check hoster account"),
-                                                   (list.solvers && solverUser(a.host) == SolverUser::None)
+        const QString title = list.solvers  ? tr("Check captcha solver")
+                              : list.debrid ? tr("Check multi-hoster account")
+                                            : tr("Check hoster account");
+        const QString pass = QInputDialog::getText(m_parent, title,
+                                                   (list.services() && solverUser(a.host) == SolverUser::None)
                                                        ? tr("API key of %1:").arg(who)
                                                        : tr("Password of %1:").arg(who),
                                                    QLineEdit::Password, {}, &ok);
@@ -1917,24 +2019,117 @@ void Ed3kOptionsPages::checkAccount(AccountList& list)
 
 void Ed3kOptionsPages::fillAccounts(AccountList& list)
 {
+    // a status update keeps the row the user picked
+    const int current = list.tree->currentItem() ? list.tree->indexOfTopLevelItem(list.tree->currentItem()) : -1;
+    const QSignalBlocker block(list.tree);
     list.tree->clear();
     for (const HosterAccountRow& a : list.rows) {
-        const QString host = list.solvers ? solverName(a.host) : a.host;
+        const QString host = list.services() ? solverName(a.host) : a.host;
         list.tree->addTopLevelItem(new QTreeWidgetItem({host, a.user, a.status}));
     }
+    if (current >= 0 && current < list.tree->topLevelItemCount())
+        list.tree->setCurrentItem(list.tree->topLevelItem(current));
+}
+
+QString Ed3kOptionsPages::debridText(bool premium, qint64 expires, int hosts, int working)
+{
+    QString base = premium ? tr("Premium") : tr("Free");
+    if (expires > 0)
+        base = (premium ? tr("Premium until %1") : tr("Free until %1"))
+                   .arg(QLocale().toString(QDateTime::fromSecsSinceEpoch(expires).date(), QLocale::ShortFormat));
+    if (working >= 0)
+        return tr("%1, %2 of %n hoster(s) usable", nullptr, hosts).arg(base).arg(working);
+    return tr("%1, %n hoster(s)", nullptr, hosts).arg(base);
+}
+
+void Ed3kOptionsPages::buildDebrid(QVBoxLayout* layout, QWidget* parent)
+{
+    m_debridCheck = new QCheckBox(tr("Download through these multi-hosters"), parent);
+    m_debridCheck->setToolTip(tr("A link of a hoster without a premium account of its own here goes through the first "
+                                 "multi-hoster below that downloads that hoster and has quota left."));
+    layout->addWidget(m_debridCheck);
+    m_debridGroup = new QGroupBox(parent);
+    m_debridGroup->setEnabled(false);
+    auto* groupLayout = new QVBoxLayout(m_debridGroup);
+    groupLayout->addWidget(noteLabel(tr("Multi-hosters (debrid services such as Real-Debrid or AllDebrid) download the "
+                                        "links of many hosters with one premium account. When one fails or its quota "
+                                        "for a hoster is used up, the next one is tried, then the hoster itself. "
+                                        "Logins stay on this computer: never sent to another node, never logged."),
+                                     m_debridGroup));
+    buildAccountList(m_debridAccounts, {tr("Service"), tr("User"), tr("Status")}, QStringLiteral("ed3kDebridAccounts"),
+                     groupLayout, m_debridGroup);
+    groupLayout->addWidget(noteLabel(tr("Hosters of the selected account, as its last check found them (Check asks again):"),
+                                     m_debridGroup));
+    m_debridHostsTree = makeFlatList({tr("Hoster"), tr("Status"), tr("Links left"), tr("Traffic left"), tr("Charged")},
+                                     QStringLiteral("ed3kDebridHosts"), m_debridGroup);
+    m_debridHostsTree->setSortingEnabled(true);
+    m_debridHostsTree->setMinimumHeight(m_debridHostsTree->fontMetrics().lineSpacing() * 10);
+    groupLayout->addWidget(m_debridHostsTree, 1);
+    layout->addWidget(m_debridGroup, 1);
+    connect(m_debridCheck, &QCheckBox::toggled, this, [this](bool on) {
+        m_debridGroup->setEnabled(on);
+        if (!m_loading)
+            emit changed();
+    });
+    connect(m_debridAccounts.tree, &QTreeWidget::currentItemChanged, this, [this] { fillDebridHosts(); });
+}
+
+void Ed3kOptionsPages::fillDebridHosts()
+{
+    if (!m_debridHostsTree)
+        return;
+    m_debridHostsTree->setSortingEnabled(false);
+    m_debridHostsTree->clear();
+    QTreeWidgetItem* cur = m_debridAccounts.tree->currentItem();
+    const int row = cur ? m_debridAccounts.tree->indexOfTopLevelItem(cur) : -1;
+    if (row < 0 || row >= m_debridAccounts.rows.size()) {
+        m_debridHostsTree->setSortingEnabled(true);
+        return;
+    }
+    // -1: unlimited; a max shown when there is one
+    const auto quota = [](qint64 left, qint64 max, bool bytes) {
+        if (left < 0)
+            return Ed3kOptionsPages::tr("Unlimited");
+        const QString l = bytes ? formatByteSize(uint64(left)) : QLocale().toString(left);
+        if (max <= 0)
+            return l;
+        return Ed3kOptionsPages::tr("%1 of %2").arg(l, bytes ? formatByteSize(uint64(max)) : QLocale().toString(max));
+    };
+    for (const QCborValue& v : m_debridAccounts.rows.at(row).hosts) {
+        const QCborMap h = v.toMap();
+        const QString status = h.value(QStringLiteral("status")).toString();
+        const bool working = status == QLatin1StringView("working") && h.value(QStringLiteral("unavailableS")).toInteger() <= 0;
+        const int factor = int(h.value(QStringLiteral("factor")).toInteger(100));
+        auto* it = new QTreeWidgetItem(
+            {h.value(QStringLiteral("domain")).toString(), working ? tr("Working") : tr("Not available"),
+             quota(h.value(QStringLiteral("linksLeft")).toInteger(-1), h.value(QStringLiteral("linksMax")).toInteger(-1), false),
+             quota(h.value(QStringLiteral("trafficLeft")).toInteger(-1), h.value(QStringLiteral("trafficMax")).toInteger(-1), true),
+             factor == 100 ? QString() : tr("%1× the size").arg(QLocale().toString(factor / 100.0, 'g', 3))});
+        if (!working)
+            it->setToolTip(1, status);
+        m_debridHostsTree->addTopLevelItem(it);
+    }
+    m_debridHostsTree->setSortingEnabled(true);
 }
 
 void Ed3kOptionsPages::applyAccountCheck(const QString& host, const QString& user, const QCborMap& r)
 {
-    for (AccountList* list : {&m_hosterAccounts, &m_solverAccounts}) {
+    for (AccountList* list : {&m_hosterAccounts, &m_solverAccounts, &m_debridAccounts}) {
         bool hit = false;
         for (HosterAccountRow& a : list->rows) {
             if (a.host != host || a.user != user)
                 continue;
             hit = true;
+            if (list->debrid)
+                a.hosts = r.value(QStringLiteral("hosts")).toArray();
             if (!r.value(QStringLiteral("valid")).toBool())
                 a.status = r.value(QStringLiteral("error")).toString() == QLatin1StringView("io") ? tr("Not reachable")
                                                                                                   : tr("Not valid");
+            else if (list->debrid && !r.value(QStringLiteral("multi")).toBool())
+                a.status = tr("Valid, but downloads no other hosters");
+            else if (list->debrid)
+                a.status = debridText(r.value(QStringLiteral("premium")).toBool(), r.value(QStringLiteral("expires")).toInteger(),
+                                      int(a.hosts.size()), -1);
             else if (list->solvers)
                 a.status = creditText(r.value(QStringLiteral("balance")).toDouble(-1),
                                       r.value(QStringLiteral("currency")).toString());
@@ -1946,6 +2141,8 @@ void Ed3kOptionsPages::applyAccountCheck(const QString& host, const QString& use
         }
         if (hit)
             fillAccounts(*list);
+        if (hit && list->debrid)
+            fillDebridHosts();
     }
 }
 
@@ -1976,6 +2173,10 @@ Ed3kHosterPrefs Ed3kOptionsPages::hosterPrefs() const
     h.solvers.clear();
     for (const HosterAccountRow& a : m_solverAccounts.rows)
         h.solvers.append({a.host, a.user, a.passwordSet ? a.password : QString()});
+    h.debridEnabled = m_debridCheck->isChecked();
+    h.debrid.clear();
+    for (const HosterAccountRow& a : m_debridAccounts.rows)
+        h.debrid.append({a.host, a.user, a.passwordSet ? a.password : QString()});
     return h;
 }
 
@@ -2019,6 +2220,16 @@ QWidget* Ed3kOptionsPages::buildExtended(QWidget* parent)
     m_autoIndexItem = m_extTree->addCheck(connection, tr("Auto connect to the ed3k index node an eD2K server names"));
     m_autoIndexItem->setToolTip(0, tr("eD2K servers that also run an ed3k index node name it at login. "
                                       "Off: the node is only noted in the ed3k log."));
+    QTreeWidgetItem* rooms = m_extTree->addGroup(tr("Rooms"), skinIcon(QStringLiteral(":/icons/IRC.ico")));
+    m_roomStoreItem = m_extTree->addCheck(rooms, tr("Store recent room posts on disk"));
+    m_roomStoreItem->setToolTip(0, tr("Keeps the recent posts of each joined room in a file, shown again after a "
+                                      "restart. Without it, only posts other members still hold come back. "
+                                      "Posts of private rooms are stored unencrypted."));
+    m_extTree->setChecked(m_roomStoreItem, true);
+    m_roomMaxItem = m_extTree->addSpin(rooms, tr("Posts kept per room"), Preferences::kMinEd3kRoomHistoryMax,
+                                       Preferences::kMaxEd3kRoomHistoryMax, QString(), QString());
+    m_roomMaxItem->setToolTip(0, tr("The newest posts kept per room, in memory and on disk."));
+    m_extTree->setValue(m_roomMaxItem, 5000);
     connect(m_extTree, &OptionsTree::changed, this, [this] {
         if (!m_loading)
             emit changed();

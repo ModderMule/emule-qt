@@ -205,7 +205,7 @@ void TorrentListsPane::refresh()
 void TorrentListsPane::applyDetails(const QCborMap& details)
 {
     m_stack->setCurrentWidget(m_tabs);
-    applyPeers(details.value(QStringLiteral("peers")).toArray());
+    applyPeers(details.value(QStringLiteral("peers")).toArray(), details.value(QStringLiteral("ed3kPeers")).toArray());
     applyTrackers(details.value(QStringLiteral("trackers")).toArray());
     applyFiles(details.value(QStringLiteral("files")).toArray());
 }
@@ -373,7 +373,7 @@ void TorrentListsPane::showNote(const QString& text)
     m_stack->setCurrentWidget(m_note);
 }
 
-void TorrentListsPane::applyPeers(const QCborArray& peers)
+void TorrentListsPane::applyPeers(const QCborArray& peers, const QCborArray& ed3kPeers)
 {
     // In place by address, so the selection survives the poll
     QHash<QString, QTreeWidgetItem*> existing = itemsByKey(m_peers);
@@ -411,6 +411,31 @@ void TorrentListsPane::applyPeers(const QCborArray& peers)
         setCell(item, PeerDownloaded, formatByteSize(downloaded), QVariant::fromValue(downloaded), true);
         setCell(item, PeerUploaded, formatByteSize(uploaded), QVariant::fromValue(uploaded), true);
         setCell(item, PeerSource, sourceName(p.value(QStringLiteral("source")).toString()));
+    }
+    // ed3k sources: the ed3k icon in the lock column, no upload or flags
+    for (const auto& v : ed3kPeers) {
+        const Ed3kJobSource e = Ed3kJobSource::fromCbor(v.toMap());
+        const QString key = QStringLiteral("ed3k:") + e.key;
+        QTreeWidgetItem* item = existing.take(key);
+        if (!item) {
+            item = new SortableTreeItem(m_peers);
+            item->setData(0, kKeyRole, key);
+        }
+        const double progress = e.pieces > 0 ? double(e.have) / e.pieces : 0.0;
+        item->setIcon(PeerLock, e.icon());
+        item->setData(PeerLock, SortRole, 3);
+        item->setToolTip(PeerLock, e.toolTip());
+        setCell(item, PeerUp, QString(), QVariant::fromValue(qint64(0)), true);
+        setCell(item, PeerDown, rateText(e.rate), QVariant::fromValue(e.rate), true);
+        setCell(item, PeerProgress, percentText(progress), progress, true);
+        setCell(item, PeerStatus, e.stateText());
+        item->setToolTip(PeerStatus, QString());
+        setCell(item, PeerAddress, e.addressText());
+        setCell(item, PeerClient, e.software.isEmpty() ? e.name : QStringLiteral("%1 (%2)").arg(e.name, e.software));
+        setCell(item, PeerDownloaded, formatByteSize(e.received), QVariant::fromValue(e.received), true);
+        setCell(item, PeerUploaded, QString(), QVariant::fromValue(qint64(0)), true);
+        setCell(item, PeerSource, QStringLiteral("ed3k"));
+        item->setToolTip(PeerClient, e.toolTip());
     }
     qDeleteAll(existing);
     m_peers->setSortingEnabled(true);

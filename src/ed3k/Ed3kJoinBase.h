@@ -129,6 +129,10 @@ public:
     /// Torrent/usenet/hoster jobs of @p session with a root of theirs downloaded or shared on
     /// ed3k: the Transfers Downloading list shows their own network's clients too.
     [[nodiscard]] static std::vector<JoinOwner> networkJobsAt(const Ed3kSession& session);
+    /// The ed3k sources of the downloads of job @p owner of the join tagged @p tag (one per
+    /// node and key, a slot holder first): its peers in the Torrents/Usenet/Hoster tab.
+    [[nodiscard]] static std::vector<SourceInfo> jobSourcesAt(const Ed3kSession& session, const QString& tag,
+                                                             const QString& owner);
     /// Whether the join tagged @p tag of @p session has job @p owner. nullopt: that join is
     /// not started (ed3k starting or off), nothing can be judged yet.
     [[nodiscard]] static std::optional<bool> joinedAt(const Ed3kSession& session, const QString& tag,
@@ -337,6 +341,9 @@ protected:
     /// Hashes @p path on a worker; @p done on this thread (nullopt: unreadable), not at
     /// all once stopped or destroyed.
     void hashInBackground(const QString& path, std::function<void(std::optional<FileHash>)> done);
+    /// Runs @p work on the hash pool (disk load lowered); the step it returns runs on this
+    /// thread, not at all once stopped or destroyed.
+    void runHashJob(std::function<std::function<void()>(const std::atomic<bool>& cancel)> work);
     /// The same on this thread (files about to be deleted).
     [[nodiscard]] static std::optional<FileHash> hashNow(const QString& path);
     /// Hash state of the whole 256 KiB blocks of @p path below @p upTo (Hasher::checkpoint),
@@ -406,6 +413,10 @@ protected:
     [[nodiscard]] QString keptDir(const QString& owner) const;
     /// Root of the set kept for @p owner at its completion; none: not complete here.
     [[nodiscard]] std::optional<ffi::Root> keptSet(const QString& owner) const;
+    /// Where the kept members of @p owner are on disk (member → path), for a member file that
+    /// outlives its job (a cleared NZB: files left in incoming). Kept with keepMember.
+    void keepMemberPaths(const QString& owner, const QHash<int, QString>& paths);
+    [[nodiscard]] QHash<int, QString> keptMemberPaths(const QString& owner) const;
 
     // -- state -------------------------------------------------------------
 

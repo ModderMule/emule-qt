@@ -2125,6 +2125,10 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
     // source (MFC srchybrid/BaseClient.cpp:1285).
     m_connectingState = ConnectingState::Preconditions;
 
+    if (thePrefs.disableEd2k()) {
+        disconnected(QStringLiteral("eD2K is disabled"));
+        return false;
+    }
     if (!ignoreMaxCon && theApp.listenSocket && theApp.listenSocket->tooManySockets()) {
         logDebug(QStringLiteral("tryToConnect: too many sockets"));
         disconnected(QStringLiteral("Too many connections"));

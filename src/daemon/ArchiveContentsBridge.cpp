@@ -190,6 +190,26 @@ bool rootsRequest(const QCborMap& p, ed3k::Ed3kArchiveContents::Request& r)
         r.volumes.push_back({names.at(i), roots.at(std::size_t(i)), urls.at(i), {}});
     return true;
 }
+
+/// The kept entries of the queued download @p p names, and whether they can change; nullopt:
+/// not a queued download.
+std::optional<std::pair<QHash<QString, QStringList>, bool>> keptOf(const QCborMap& p)
+{
+    if (const QString id = p.value(QStringLiteral("usenetItem")).toString(); !id.isEmpty()) {
+        const auto* queue = usenet::theUsenetSession ? usenet::theUsenetSession->queue() : nullptr;
+        const auto* item = queue ? queue->findItem(id) : nullptr;
+        if (!item)
+            return std::nullopt;
+        return std::pair{item->keptEntries, queue->keptEntriesEditable(id)};
+    }
+    if ((p.contains(QStringLiteral("hosterPackage")) || p.contains(QStringLiteral("hosterItem"))) && s_hoster) {
+        bool editable = false;
+        auto kept = s_hoster->keptEntries(quint32(p.value(QStringLiteral("hosterPackage")).toInteger()),
+                                          quint32(p.value(QStringLiteral("hosterItem")).toInteger()), &editable);
+        return std::pair{std::move(kept), editable};
+    }
+    return std::nullopt;
+}
 #endif
 
 } // namespace
@@ -239,11 +259,23 @@ void lookup(const QString& kind, const QCborMap& payload, Reply reply)
         reply(true, QCborMap{{QStringLiteral("archives"), QCborArray()}});
         return;
     }
-    const auto started = s_contents->lookup(std::move(r), [reply](const std::vector<ed3k::Ed3kArchiveContents::Found>& found) {
+    // a queued download: its extraction choice so far (hoster.md §6.1)
+    std::optional<std::pair<QHash<QString, QStringList>, bool>> queued = keptOf(payload);
+    const auto started = s_contents->lookup(std::move(r), [reply, queued](const std::vector<ed3k::Ed3kArchiveContents::Found>& found) {
         QCborArray archives;
-        for (const auto& f : found)
-            archives.append(toCbor(f));
-        reply(true, QCborMap{{QStringLiteral("archives"), archives}});
+        for (const auto& f : found) {
+            QCborMap a = toCbor(f);
+            if (queued) {
+                const auto k = queued->first.constFind(f.name.section(u'/', -1).toLower());
+                if (k != queued->first.constEnd())
+                    a.insert(QStringLiteral("kept"), QCborArray::fromStringList(*k));
+            }
+            archives.append(a);
+        }
+        QCborMap out{{QStringLiteral("archives"), archives}};
+        if (queued)
+            out.insert(QStringLiteral("editable"), queued->second);
+        reply(true, out);
     });
     if (!started)
         reply(false, tr("ed3k is not connected yet."));
@@ -251,6 +283,50 @@ void lookup(const QString& kind, const QCborMap& payload, Reply reply)
     Q_UNUSED(kind) Q_UNUSED(payload)
     reply(false, tr("ed3k is not built in."));
 #endif
+}
+
+QHash<QString, QStringList> entriesFromCbor(const QCborMap& map)
+{
+    QHash<QString, QStringList> out;
+    for (auto k = map.constBegin(); k != map.constEnd(); ++k) {
+        QStringList paths;
+        for (const QCborValue& p : k.value().toArray())
+            if (const QString t = p.toString(); !t.isEmpty())
+                paths << t;
+        if (!paths.isEmpty())
+            out.insert(k.key().toString().toLower(), paths);
+    }
+    return out;
+}
+
+void setEntries(const QCborMap& target, const QCborMap& entries, Reply reply)
+{
+    const QHash<QString, QStringList> kept = entriesFromCbor(entries);
+    if (const QString id = target.value(QStringLiteral("usenetItem")).toString(); !id.isEmpty()) {
+        auto* queue = usenet::theUsenetSession ? usenet::theUsenetSession->queue() : nullptr;
+        if (!queue || !queue->findItem(id)) {
+            reply(false, tr("The download is gone."));
+            return;
+        }
+        if (!queue->setItemKeptEntries(id, kept)) {
+            reply(false, tr("The download is unpacked already."));
+            return;
+        }
+        reply(true, QCborValue(true));
+        return;
+    }
+#ifdef EMULE_HAVE_ED3K
+    if (s_hoster && (target.contains(QStringLiteral("hosterPackage")) || target.contains(QStringLiteral("hosterItem")))) {
+        if (!s_hoster->setKeptEntries(quint32(target.value(QStringLiteral("hosterPackage")).toInteger()),
+                                      quint32(target.value(QStringLiteral("hosterItem")).toInteger()), kept)) {
+            reply(false, tr("The download is unpacked already, or gone."));
+            return;
+        }
+        reply(true, QCborValue(true));
+        return;
+    }
+#endif
+    reply(false, tr("Not a queued download."));
 }
 
 void downloadEntries(const QCborArray& entries, const QString& folder, int category, Reply reply)

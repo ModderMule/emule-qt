@@ -10,7 +10,9 @@ import jd.controlling.downloadcontroller.AccountCache.CachedAccount;
 import jd.controlling.downloadcontroller.DownloadLinkCandidate;
 import jd.controlling.downloadcontroller.DownloadWatchDog;
 import jd.controlling.downloadcontroller.SingleDownloadController;
+import jd.plugins.AccountInfo;
 import jd.plugins.DownloadLink;
+import jd.plugins.MultiHostHost;
 import jd.plugins.FilePackage;
 import jd.plugins.PluginForHost;
 import jd.plugins.PluginProgress;
@@ -19,6 +21,8 @@ import jd.plugins.download.DownloadInterface;
 import org.jdownloader.captcha.blacklist.CaptchaBlackList;
 import org.jdownloader.plugins.CaptchaStepProgress;
 import org.jdownloader.plugins.SleepPluginProgress;
+import org.jdownloader.plugins.controller.LazyPlugin;
+import org.jdownloader.plugins.controller.host.LazyHostPlugin;
 
 /**
  * open: the hoster's file into <path>/data.part, the way JD writes it (way A of note §5).
@@ -30,6 +34,7 @@ final class OpenTask extends Task {
 
     private final String url;
     private final Account account;
+    private final Account via;   ///< a multi-hoster that downloads the link instead; null: the hoster itself
     private final File dir;
     private final long have;
     private static final Map<DownloadLink, Long> BY_LINK = new java.util.concurrent.ConcurrentHashMap<DownloadLink, Long>();
@@ -42,10 +47,11 @@ final class OpenTask extends Task {
         return BY_LINK.get(dl);
     }
 
-    OpenTask(final long id, final String url, final Account account, final String path, final long have) {
+    OpenTask(final long id, final String url, final Account account, final Account via, final String path, final long have) {
         super(id);
         this.url = url;
         this.account = account;
+        this.via = via;
         this.dir = new File(path);
         this.have = Math.max(0, have);
     }
@@ -99,11 +105,35 @@ final class OpenTask extends Task {
         } else {
             link.setChunksProgress(null);
         }
-        final PluginForHost proto = link.getDefaultPlugin();
-        final jd.plugins.Account acc = account == null ? null : account.toJd(proto.getHost());
-        final CachedAccount ca = new CachedAccount(proto.getHost(), acc, proto);
+        PluginForHost proto = link.getDefaultPlugin();
+        LazyHostPlugin viaPlugin = null;
+        jd.plugins.Account acc = account == null ? null : account.toJd(proto.getHost());
+        if (via != null) {
+            // the multi-hoster's plugin downloads the link with its account (JD's handleMultiHost)
+            viaPlugin = Jd.hostPlugin(via.host);
+            if (viaPlugin == null || !viaPlugin.hasFeature(LazyPlugin.FEATURE.MULTIHOST)) {
+                Out.error(id, "noPlugin", via.host);
+                return;
+            }
+            acc = via.toJd(viaPlugin.getHost());
+            status("hosterAccount");
+            final AccountInfo ai;
+            try {
+                ai = Debrid.ensure(viaPlugin, acc);
+            } catch (final Throwable e) {
+                Out.send(Jd.failure(id, e));
+                return;
+            }
+            final MultiHostHost mh = ai.getMultihostSupportedHost(link.getHost());
+            if (mh == null || !Debrid.working(mh)) {
+                Out.error(id, "unsupported", link.getHost());
+                return;
+            }
+            proto = viaPlugin.getPrototype(null);
+        }
+        final CachedAccount ca = new CachedAccount(link.getHost(), acc, proto);
         final DownloadLinkCandidate cand = new DownloadLinkCandidate(link, true, ca, null, false);
-        final Driver d = new Driver(cand, acc);
+        final Driver d = new Driver(cand, acc, viaPlugin);
         driver = d;
         link.setDownloadLinkController(d);
         d.setSessionDownloadDirectory(dir.getAbsolutePath());
@@ -253,9 +283,12 @@ final class OpenTask extends Task {
         volatile boolean resumedHere;
         volatile String blocked;   ///< a host AddressGuard refused
 
-        Driver(final DownloadLinkCandidate cand, final jd.plugins.Account acc) {
+        private final LazyHostPlugin via;
+
+        Driver(final DownloadLinkCandidate cand, final jd.plugins.Account acc, final LazyHostPlugin via) {
             super(cand, DownloadWatchDog.getInstance());
             this.acc = acc;
+            this.via = via;
         }
 
         @Override
@@ -296,7 +329,7 @@ final class OpenTask extends Task {
             final DownloadLink dl = getDownloadLink();
             PluginForHost p = null;
             try {
-                p = Jd.newPlugin(dl);
+                p = via == null ? Jd.newPlugin(dl) : Jd.newPlugin(dl, via);
                 plugin = p;
                 dl.setLivePlugin(p);
                 p.handle(dl, acc);

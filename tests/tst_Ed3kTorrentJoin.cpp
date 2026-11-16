@@ -9,6 +9,7 @@
 
 #include "BtSession.h"
 #include "Ed3kSession.h"
+#include "Ed3kStore.h"
 #include "Ed3kTorrentJoin.h"
 
 #include <libtorrent/create_torrent.hpp>
@@ -16,6 +17,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QSemaphore>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -140,6 +142,8 @@ private slots:
     void privateTorrentJoinsOnlyWhenShared();
     void aFirstSetSearchThatFindsNothingEnds();
     void aFalseClaimNeverFailsATorrentPiece();
+    void aTorrentAloneFindsItsPeerOverEd3k();
+    void aRestartKeepsTheSetOfAResumedTorrent();
 
 private:
     QTemporaryDir m_dir;
@@ -756,6 +760,146 @@ void tst_Ed3kTorrentJoin::aFalseClaimNeverFailsATorrentPiece()
     // CLAIM_FALSE: the set is dropped, the torrent goes on
     QTRY_VERIFY_WITH_TIMEOUT(!problems.isEmpty(), 10000);
     QCOMPARE(problems.first().at(1).toInt(), -1);
+
+    join.stop();
+    bt.stop();
+    node.stop();
+}
+
+// Two eMule Qt nodes, one swarm, no BitTorrent peer between them: the seeder's join
+// publishes its set (MEMBER rows, ALIAS btih/btmh, member sources); a node that joins the
+// torrent alone finds it over Kad (ALIAS → set → manifest → members) and finishes from it
+void tst_Ed3kTorrentJoin::aTorrentAloneFindsItsPeerOverEd3k()
+{
+    const QString seedDir = m_dir.filePath(QStringLiteral("swarm-seed"));
+    const QString leechDir = m_dir.filePath(QStringLiteral("swarm-leech"));
+    QTemporaryDir routerDir;
+    QVERIFY(routerDir.isValid());
+    // a third node: a search never asks the own store, and Kad stores on the closest others
+    Ed3kSession router, seedNode, leechNode;
+    QVERIFY(router.start(loopback(routerDir.path())) && seedNode.start(loopback(seedDir)) && leechNode.start(loopback(leechDir)));
+    // each bootstraps from another: a node whose only contact came in holds its lookups
+    const auto bootstrapFrom = [](Ed3kSession& node, const Ed3kSession& from) {
+        const ::ed3k::Node contact{*from.nodeId(), ::ed3k::Address::v4(127, 0, 0, 1, from.udpPort())};
+        node.post([contact](::ed3k::Engine& e, ::ed3k::Now now) { (void)e.bootstrap(now, std::span<const ::ed3k::Node>{&contact, 1}); });
+    };
+    bootstrapFrom(seedNode, router);
+    bootstrapFrom(leechNode, router);
+    bootstrapFrom(router, seedNode);
+    QTRY_VERIFY_WITH_TIMEOUT(router.contactCount() >= 2 && seedNode.contactCount() > 0 && leechNode.contactCount() > 0, 20000);
+    // the seeder's records stored (ALIAS, MEMBER) and its sources published
+    int stored = 0, published = 0;
+    connect(&seedNode, &Ed3kSession::eventPolled, this, [&](const ::ed3k::Event& ev, bool*) {
+        if (const auto* st = std::get_if<::ed3k::event::KadStored>(&ev); st && st->nodes > 0)
+            ++stored;
+        else if (std::holds_alternative<::ed3k::event::SourcesPublished>(ev))
+            ++published;
+    });
+
+    // the seeder: made here, complete, its set built and published
+    BtSession seedBt;
+    seedBt.start(btSettings(seedDir));
+    Ed3kTorrentJoin seedJoin(seedNode, seedBt, seedDir);
+    seedJoin.start();
+    QSignalSpy seeded(&seedJoin, &Ed3kTorrentJoin::torrentCompleted);
+    const BtAddResult made = seedBt.addCreatedTorrent(m_torrent, m_seedDir);
+    QCOMPARE(made.outcome, BtAddOutcome::Added);
+    seedJoin.adoptCreated(made.id);
+    QTRY_COMPARE_WITH_TIMEOUT(seeded.count(), 1, kTimeoutMs);
+    const QByteArray manifest = seedJoin.completedManifest(made.id);
+    QVERIFY(!manifest.isEmpty());
+    QTRY_VERIFY_WITH_TIMEOUT(stored >= 4 && published >= 1, kTimeoutMs);
+
+    // the leecher: the .torrent alone, no peer to reach over BitTorrent
+    BtSession leechBt;
+    leechBt.start(btSettings(leechDir));
+    Ed3kTorrentJoin leechJoin(leechNode, leechBt, leechDir);
+    leechJoin.start();
+    QSignalSpy finished(&leechBt, &BtSession::torrentFinished);
+    const BtAddResult added = leechBt.addTorrentFile(m_torrent);
+    QCOMPARE(added.outcome, BtAddOutcome::Added);
+    QTRY_VERIFY_WITH_TIMEOUT(leechJoin.hasJoin(added.id), kTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(leechJoin.info(added.id)->manifest.has_value(), kTimeoutMs);
+    QCOMPARE(*leechJoin.info(added.id)->manifest, hashOf(manifest).root);
+    QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), kTimeoutMs);
+    QCOMPARE(leechBt.torrent(added.id)->peers, 0);
+
+    const auto layout = leechBt.layout(added.id);
+    QVERIFY(layout.has_value());
+    QStringList paths;
+    for (const auto& f : layout->files)
+        if (!f.pad)
+            paths << f.path;
+    QCOMPARE(paths.size(), 2);
+    QCOMPARE(readFile(paths.at(0)), m_a);
+    QCOMPARE(readFile(paths.at(1)), m_b);
+
+    leechJoin.stop();
+    seedJoin.stop();
+    leechBt.stop();
+    seedBt.stop();
+    leechNode.stop();
+    seedNode.stop();
+    router.stop();
+}
+
+// A daemon restart: libtorrent adds its torrents after start (async), and the join may
+// start before. What a completed torrent kept (set, ALIAS records, members) was dropped
+// as "torrent gone", so a restarted seeder published nothing and searched its own set
+void tst_Ed3kTorrentJoin::aRestartKeepsTheSetOfAResumedTorrent()
+{
+    const QString dir = m_dir.filePath(QStringLiteral("restart"));
+    Ed3kSession node;
+    QVERIFY(node.start(loopback(dir)));
+    QString id;
+    QByteArray manifest;
+    {
+        BtSession bt;
+        bt.start(btSettings(dir));
+        Ed3kTorrentJoin join(node, bt, dir);
+        join.setSearchEnabled(false);
+        join.start();
+        QSignalSpy completed(&join, &Ed3kTorrentJoin::torrentCompleted);
+        const BtAddResult made = bt.addCreatedTorrent(m_torrent, m_seedDir);
+        QCOMPARE(made.outcome, BtAddOutcome::Added);
+        join.adoptCreated(made.id);
+        QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 1, kTimeoutMs);
+        id = made.id;
+        manifest = join.completedManifest(id);
+        join.stop();
+        bt.stop();
+    }
+    const ::ed3k::Root manifestRoot = hashOf(manifest).root;
+    // Ed3kJoinBase::keptDir
+    const QString kept = QDir(eMule::ed3k::stateDir(dir)).filePath(QStringLiteral("torrent/") + QString::fromLatin1(QUrl::toPercentEncoding(id)));
+    QVERIFY(QFileInfo::exists(kept));
+
+    // BitTorrent off: nothing to judge by, the kept set stays
+    {
+        BtSession off;
+        Ed3kTorrentJoin join(node, off, dir);
+        join.start();
+        QVERIFY(QFileInfo::exists(kept));
+        QVERIFY(!join.sharesRoot(manifestRoot));
+        join.stop();
+    }
+
+    // the new session's rows come with its add alerts, after the join started
+    BtSession bt;
+    bt.start(btSettings(dir));
+    QVERIFY(!bt.torrent(id).has_value() && bt.isResuming(id));
+    Ed3kTorrentJoin join(node, bt, dir);
+    QSignalSpy republished(&join, &Ed3kTorrentJoin::keptRecordsPublished);
+    join.start();
+    QVERIFY(QFileInfo::exists(kept));
+    QTRY_VERIFY_WITH_TIMEOUT(join.hasJoin(id), kTimeoutMs);
+    QVERIFY(!bt.isResuming(id));
+    QTRY_VERIFY_WITH_TIMEOUT(join.sharesRoot(manifestRoot), 10000);
+    QTRY_VERIFY_WITH_TIMEOUT(join.sharesRoot(hashOf(m_a).root) && join.sharesRoot(hashOf(m_b).root), 10000);
+    QTRY_COMPARE_WITH_TIMEOUT(republished.count(), 1, 10000);
+    QCOMPARE(republished.at(0).at(0).toString(), id);
+    // its own set is not searched for
+    QVERIFY(!join.setSearching(id));
 
     join.stop();
     bt.stop();

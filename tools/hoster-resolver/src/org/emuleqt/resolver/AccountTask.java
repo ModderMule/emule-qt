@@ -53,6 +53,7 @@ final class AccountTask extends Task {
         try {
             final AccountInfo ai = plugin.fetchAccountInfo(acc);
             final boolean expired = ai != null && ai.isExpired();
+            Debrid.adopt(acc, ai);
             m.put("valid", ai != null && !expired);
             final jd.plugins.Account.AccountType type = acc.getType();
             m.put("premium", type == jd.plugins.Account.AccountType.PREMIUM || type == jd.plugins.Account.AccountType.LIFETIME);
@@ -67,6 +68,13 @@ final class AccountTask extends Task {
             if (ai != null && !ai.isUnlimitedTraffic() && ai.getTrafficLeft() >= 0) {
                 m.put("trafficLeft", ai.getTrafficLeft());
             }
+            // a multi-hoster: the hosts it downloads, with their quotas
+            if (ai != null && lazy.hasFeature(LazyPlugin.FEATURE.MULTIHOST) && ai.getMultiHostSupportV2() != null) {
+                m.put("multi", true);
+                m.put("hosts", Debrid.hosts(ai));
+            }
+            // the plugin's session for the next run (the daemon keeps it in memory)
+            m.put("state", Account.state(acc));
             if (ai != null && lazy.hasFeature(LazyPlugin.FEATURE.CAPTCHA_SOLVER)) {
                 m.put("balance", ai.getAccountBalance());
                 if (ai.getCurrency() != null) {

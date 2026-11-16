@@ -308,6 +308,11 @@ public:
     /// press Resume separately, after they just answered the only question that
     /// was blocking it, is a step with no decision in it.
     bool setItemPassword(const QString& id, const QString& password);
+    /// The archive entries to extract (hoster.md §6.1, UsenetQueueItem::keptEntries); empty:
+    /// everything. false: no such item, or its unpack ran or runs already.
+    bool setItemKeptEntries(const QString& id, const QHash<QString, QStringList>& entries);
+    /// Whether the item's extraction choice can still change.
+    [[nodiscard]] bool keptEntriesEditable(const QString& id) const;
 
     /// Leave files of @p id out of the download, or bring them back. Widened to
     /// whole archive sets. Empty when applied, else why not.

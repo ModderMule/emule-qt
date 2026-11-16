@@ -7,6 +7,7 @@
 
 #include "IpcClientHandler.h"
 
+#include "ArchiveContentsBridge.h"
 #include "BtBridge.h"
 #include "MetaRowFiles.h"
 #include "MetaSearchService.h"
@@ -236,6 +237,9 @@ void IpcClientHandler::handleDownloadMetaResult(const IpcMessage& msg)
             skip.insert(int(v.toInteger(-1)));
         unchecked = skip;
     }
+    // fields 9, 10: archive entries to extract and an archive password (hoster.md §6.1)
+    const QHash<QString, QStringList> keptEntries = ArchiveContentsBridge::entriesFromCbor(msg.field(9).toMap());
+    const QString entryPassword = msg.fieldString(10);
     std::vector<MetaRow> picked;
     if (!unchecked && thePrefs.usenetMetaSelectedFileOnly()) {
         picked.push_back(*row);
@@ -251,7 +255,7 @@ void IpcClientHandler::handleDownloadMetaResult(const IpcMessage& msg)
     const int seqId = msg.seqId();
 
     MetaSearchService::instance().fetch(*row->target, row->hash16, row->catalogId, 0,
-              [self, seqId, name, force, category, priority, paused, unchecked, picked]
+              [self, seqId, name, force, category, priority, paused, unchecked, picked, keptEntries, entryPassword]
               (MetaStatus status, const QString& error, const QCborMap& meta,
                const enodemeta::pb::MetaFile& file) {
         if (!self)
@@ -293,8 +297,8 @@ void IpcClientHandler::handleDownloadMetaResult(const IpcMessage& msg)
         usenet::UsenetAddOutcome outcome = usenet::UsenetAddOutcome::Failed;
         const QString itemId = usenet::theUsenetSession->queue()->addNzb(
             file.content(), name, addError,
-            {.force = force, .category = category, .priority = priority, .paused = paused,
-             .keptFiles = kept},
+            {.force = force, .password = entryPassword, .category = category, .priority = priority, .paused = paused,
+             .keptFiles = kept, .keptEntries = keptEntries},
             &outcome);
         // a search-result grab, counted with the indexer grabs
         self->sendAddNzbResult(seqId, itemId, addError, outcome, usenet::UsenetAddOrigin::IndexerGrab);

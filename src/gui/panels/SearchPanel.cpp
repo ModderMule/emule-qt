@@ -22,6 +22,7 @@
 #include "utils/ListActivation.h"
 #include "utils/Log.h"
 #include "utils/MenuUtils.h"
+#include "utils/ArchiveContentsIpc.h"
 #include "utils/MetaResultActions.h"
 #include "utils/PreviewLauncher.h"
 #include "utils/StatusBarNotifier.h"
@@ -1160,6 +1161,11 @@ void SearchPanel::onIndexerFinishedPush(const IpcMessage& msg)
     }
 }
 
+int SearchPanel::downloadCategory() const
+{
+    return m_categoryTabs->count() > 1 ? std::max(m_categoryTabs->currentIndex(), 0) : 0;
+}
+
 void SearchPanel::requestCategories()
 {
     if (!m_ipc || !m_ipc->isConnected())
@@ -1190,7 +1196,8 @@ void SearchPanel::sendIndexerGrab(int proxyRow, bool force, int category)
 
 void SearchPanel::grabIndexerResult(uint32_t searchID, const IndexerResultRow& result,
                                     QPointer<IndexerResultsModel> model, bool force, int category,
-                                    const QList<int>& keptFiles)
+                                    const QList<int>& keptFiles, const QHash<QString, QStringList>& keptEntries,
+                                    const QString& entryPassword)
 {
     if (!m_ipc || !m_ipc->isConnected())
         return;
@@ -1204,7 +1211,8 @@ void SearchPanel::grabIndexerResult(uint32_t searchID, const IndexerResultRow& r
     // Download To picked one; plain Download sends 0, which the daemon reads as
     // "nobody chose" and auto-categorises.
     msg.append(qint64(category));
-    if (!keptFiles.isEmpty()) {
+    const bool entries = !keptEntries.isEmpty() || !entryPassword.isEmpty();
+    if (!keptFiles.isEmpty() || entries) {
         // fields 4-5 at their defaults to reach field 6
         msg.append(qint64(0));   // priority
         msg.append(false);       // paused
@@ -1212,6 +1220,10 @@ void SearchPanel::grabIndexerResult(uint32_t searchID, const IndexerResultRow& r
         for (const int f : keptFiles)
             kept.append(f);
         msg.append(QCborValue(kept));
+    }
+    if (entries) {
+        msg.append(ArchiveContentsIpc::entriesToCbor(keptEntries));   // field 7
+        msg.append(entryPassword);                                   // field 8
     }
 
     const QString title = result.title;
@@ -2018,17 +2030,19 @@ void SearchPanel::showMetaRowDetails(uint32_t searchID, const SearchResultRow& r
                                                : thePrefs.usenetMetaSelectedFileOnly();
     QPointer<SearchPanel> self(this);
     metaActions()->showDetails(searchID, row, info, [self, searchID, row, model](const QList<int>& unchecked,
-                                                                                const QList<int>& kept) {
+                                                                                const QList<int>& kept,
+                                                                                const QHash<QString, QStringList>& entries,
+                                                                                const QString& password) {
         if (!self)
             return;
         // the daemon still has the file: no second fetch
         if (row.isNzb()) {
             MetaResultActions::Row chosen = row;
             chosen.unchecked = unchecked;   // the check boxes decide, not the option
+            chosen.keptEntries = entries;
+            chosen.entryPassword = password;
             // MFC DownloadSelected → GetSelectedCat, as downloadResults()
-            const int category = self->m_categoryTabs->count() > 1
-                                     ? std::max(self->m_categoryTabs->currentIndex(), 0)
-                                     : 0;
+            const int category = self->downloadCategory();
             self->metaActions()->downloadUsenet(searchID, {chosen}, category, model);
         }
         else {
@@ -2054,9 +2068,11 @@ void SearchPanel::showIndexerRowDetails(uint32_t searchID, const IndexerResultRo
     info.chooseFiles = true;
     QPointer<SearchPanel> self(this);
     metaActions()->showIndexerDetails(searchID, result.id, info, [self, searchID, result, model](const QList<int>&,
-                                                                                                 const QList<int>& kept) {
+                                                                                                 const QList<int>& kept,
+                                                                                                 const QHash<QString, QStringList>& entries,
+                                                                                                 const QString& password) {
         if (self)
-            self->grabIndexerResult(searchID, result, model, false, 0, kept);
+            self->grabIndexerResult(searchID, result, model, false, 0, kept, entries, password);
     });
 }
 
@@ -2236,7 +2252,7 @@ void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category
 
     // MFC DownloadSelected → GetSelectedCat (SearchResultsWnd.cpp:542)
     if (category < 0)
-        category = m_categoryTabs->count() > 1 ? std::max(m_categoryTabs->currentIndex(), 0) : 0;
+        category = downloadCategory();
 
     // eNode rows leave here, each to its own tab: Usenet to the Usenet queue, a torrent
     // to the Torrents tab, a web row's links and a link container to the Hoster tab.

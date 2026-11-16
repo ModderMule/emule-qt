@@ -3,6 +3,7 @@
 ///        No daemon: the dialog is fed what FetchMetaFile / InspectIndexerResult return.
 
 #include "dialogs/MetaResultDetailDialog.h"
+#include "controls/ArchiveContentsView.h"
 #include "controls/TorrentFileTree.h"
 
 #include "controls/PreviewImageView.h"
@@ -49,6 +50,8 @@ private slots:
     void imagesAreAskedForOnceWhenTheTabOpens();
     void imagesShowOrAMessage();
     void nfoIsAskedForOnceAndShownAsDrawn();
+    void archiveTabLooksUpAndPicksEntries();
+    void queuedArchiveViewShowsTheChoice();
 };
 
 namespace {
@@ -491,6 +494,103 @@ void tst_MetaResultDetailDialog::nfoIsAskedForOnceAndShownAsDrawn()
     dlg.tabs()->setCurrentIndex(MetaResultDetailDialog::TabGeneral);
     dlg.tabs()->setCurrentIndex(MetaResultDetailDialog::TabNfo);
     QCOMPARE(asked.size(), 2);
+}
+
+// Archive tab (hoster.md §6.1): shown for an NZB with an archive set, looked up once when
+// opened; checked entries go to "download from ed3k" or to the extraction choice
+void tst_MetaResultDetailDialog::archiveTabLooksUpAndPicksEntries()
+{
+    MetaResultDetailDialog::RowInfo info;
+    info.name = QStringLiteral("R");
+    info.chooseFiles = true;
+    MetaResultDetailDialog dlg(info);
+    dlg.setDetails(nzbWithToken(QStringLiteral("tok")));
+    QVERIFY(dlg.tabs()->isTabVisible(MetaResultDetailDialog::TabArchive));
+    const auto [kind, payload] = dlg.archiveRequest();
+    QCOMPARE(kind, QStringLiteral("nzb"));
+    QCOMPARE(payload.value(QStringLiteral("previewToken")).toString(), QStringLiteral("tok"));
+
+    ArchiveContentsView* view = dlg.archiveView();
+    QSignalSpy asked(view, &ArchiveContentsView::lookupRequested);
+    dlg.tabs()->setCurrentIndex(MetaResultDetailDialog::TabArchive);
+    dlg.tabs()->setCurrentIndex(MetaResultDetailDialog::TabGeneral);
+    dlg.tabs()->setCurrentIndex(MetaResultDetailDialog::TabArchive);
+    QCOMPARE(asked.count(), 1);
+
+    const QString r1 = QString(64, u'a');
+    const QString r2 = QString(64, u'b');
+    view->setResult(QCborMap{{QStringLiteral("archives"),
+                              QCborArray{QCborMap{{QStringLiteral("name"), QStringLiteral("a.part1.rar")},
+                                                  {QStringLiteral("state"), QStringLiteral("found")},
+                                                  {QStringLiteral("sites"), 2},
+                                                  {QStringLiteral("password"), QStringLiteral("pw")},
+                                                  {QStringLiteral("entries"),
+                                                   QCborArray{QCborMap{{QStringLiteral("path"), QStringLiteral("x/movie.mkv")},
+                                                                       {QStringLiteral("size"), 1000},
+                                                                       {QStringLiteral("root"), r1}},
+                                                              QCborMap{{QStringLiteral("path"), QStringLiteral("x/sample.mkv")},
+                                                                       {QStringLiteral("size"), 10},
+                                                                       {QStringLiteral("root"), r2}}}}}}}});
+    QCOMPARE(view->tree()->topLevelItemCount(), 1);
+    QCOMPARE(view->checkedEntries().size(), 2);
+    QVERIFY(view->checkedByArchive().isEmpty());   // all checked: extracted whole anyway
+    QCOMPARE(view->password(), QStringLiteral("pw"));
+    view->tree()->topLevelItem(0)->child(1)->setCheckState(ArchiveContentsView::ColName, Qt::Unchecked);
+    QCOMPARE(view->checkedEntries().size(), 1);
+    QCOMPARE(view->checkedEntries().at(0).toMap().value(QStringLiteral("root")).toString(), r1);
+    const auto chosen = view->checkedByArchive();
+    QCOMPARE(chosen.value(QStringLiteral("a.part1.rar")), QStringList{QStringLiteral("x/movie.mkv")});
+
+    // "Download Archive, Extract Checked" downloads the release with that choice
+    QSignalSpy spy(&dlg, &MetaResultDetailDialog::downloadRequested);
+    view->downloadArchiveButton()->click();
+    QCOMPARE(spy.count(), 1);
+    using Entries = QHash<QString, QStringList>;
+    QCOMPARE(spy.at(0).at(2).value<Entries>(), chosen);
+    QCOMPARE(spy.at(0).at(3).toString(), QStringLiteral("pw"));
+
+    // a torrent without archives has no tab
+    MetaResultDetailDialog::RowInfo t;
+    t.name = QStringLiteral("T");
+    t.torrent = true;
+    MetaResultDetailDialog tdlg(t);
+    tdlg.setDetails(QCborMap{{QStringLiteral("kind"), QStringLiteral("torrent")},
+                             {QStringLiteral("inspection"),
+                              QCborMap{{QStringLiteral("name"), QStringLiteral("T")},
+                                       {QStringLiteral("files"), QCborArray{QCborMap{{QStringLiteral("index"), 0},
+                                                                                     {QStringLiteral("path"), QStringLiteral("T/a.mkv")},
+                                                                                     {QStringLiteral("size"), 5}}}}}}});
+    QVERIFY(!tdlg.tabs()->isTabVisible(MetaResultDetailDialog::TabArchive));
+}
+
+// Transfers › Archive Contents of a queued download: its choice so far, changeable until it unpacks
+void tst_MetaResultDetailDialog::queuedArchiveViewShowsTheChoice()
+{
+    ArchiveContentsView view(nullptr, false);
+    view.setQueued(true);
+    QVERIFY(!view.downloadArchiveButton()->isHidden());
+    const auto entry = [](const char* path, char root) {
+        return QCborMap{{QStringLiteral("path"), QLatin1StringView(path)}, {QStringLiteral("size"), 10},
+                        {QStringLiteral("root"), QString(64, QLatin1Char(root))}};
+    };
+    const auto result = [&](bool editable) {
+        return QCborMap{{QStringLiteral("editable"), editable},
+                        {QStringLiteral("archives"),
+                         QCborArray{QCborMap{{QStringLiteral("name"), QStringLiteral("a.part1.rar")},
+                                             {QStringLiteral("state"), QStringLiteral("found")},
+                                             {QStringLiteral("kept"), QCborArray{QStringLiteral("x/movie.mkv")}},
+                                             {QStringLiteral("entries"), QCborArray{entry("x/movie.mkv", 'a'), entry("x/sample.mkv", 'b')}}}}}};
+    };
+    view.setResult(result(true));
+    QCOMPARE(view.checkedEntries().size(), 1);
+    QCOMPARE(view.checkedByArchive().value(QStringLiteral("a.part1.rar")), QStringList{QStringLiteral("x/movie.mkv")});
+    QVERIFY(view.downloadArchiveButton()->isEnabled());
+    QSignalSpy spy(&view, &ArchiveContentsView::downloadArchiveRequested);
+    view.downloadArchiveButton()->click();
+    QCOMPARE(spy.count(), 1);
+
+    view.setResult(result(false));   // unpacked already
+    QVERIFY(!view.downloadArchiveButton()->isEnabled());
 }
 
 QTEST_MAIN(tst_MetaResultDetailDialog)

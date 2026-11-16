@@ -112,6 +112,8 @@ public:
         HashChecking,        ///< rootless file whole: checked against the hoster's checksum; arg: its type
         HashMismatch,        ///< the file is not what the hoster's checksum says, dropped; arg: its type
         PrivateAddress,      ///< a generic link (or its redirect) points at a non-public address; arg: the host
+        DebridFailed,        ///< Waiting: a multi-hoster could not download it, tried another way next; arg: its domain
+        ViaDebrid,           ///< Downloading through a multi-hoster account; arg: its domain
     };
 
     /// One download from a hoster link, as the GUI shows it.
@@ -144,6 +146,9 @@ public:
         /// only the generic http plugin takes url (#202): a plain web file, host stays the
         /// site; never looked up or published (the URL may carry a private token)
         bool generic = false;
+        /// removed from the list, its file left in incoming: kept out of every list, its
+        /// links still published and rechecked until the file is gone (then dropped)
+        bool retired = false;
     };
 
     /// What a link check found. Values are sent over IPC: append only.
@@ -215,6 +220,11 @@ public:
     QList<quint32> addMirrored(const QList<QStringList>& files, const QString& package = {},
                                quint32 packageId = 0, const QStringList& passwords = {},
                                const QHash<QString, QStringList>& keptEntries = {});
+    /// The archive entries to extract of package @p packageId (0: item @p itemId alone), hoster.md
+    /// §6.1; empty: everything. false: nothing matched, or its unpack ran or runs already.
+    bool setKeptEntries(quint32 packageId, quint32 itemId, const QHash<QString, QStringList>& entries);
+    /// Its kept entries, and whether they can still change (no unpack yet).
+    [[nodiscard]] QHash<QString, QStringList> keptEntries(quint32 packageId, quint32 itemId, bool* editable = nullptr) const;
     /// Reads the links of a container file (DLC, RSDF, CCF; @p data its bytes, @p fileName for
     /// the plugin and the GUI). containerOpened() follows with the token returned; 0: refused
     /// (no resolver, hosters off or too big), nothing follows.
@@ -258,8 +268,21 @@ public:
     /// a fresh result at once. The core keeps what it learns (a dead link stays dead), so a
     /// download soon after starts from it. False: hosters off, no resolver or no node.
     bool checkLinks(const QStringList& urls);
-    /// 2: an account at @p host that is premium with traffic left, 1: any other account, 0: none.
+    /// 2: an account at @p host that is premium with traffic left, or a multi-hoster that
+    /// downloads it now; 1: any other account; 0: none.
     [[nodiscard]] int accountTier(const QString& host) const;
+    /// What the last check of a multi-hoster login found (Options status).
+    struct DebridSummary {
+        QString host;
+        QString user;
+        bool known = false;   ///< checked (false: not yet, or the check failed)
+        bool valid = false;
+        bool premium = false;
+        qint64 expires = 0;   ///< unix seconds; 0 = unknown
+        int hosts = 0;        ///< hosters it names
+        int working = 0;      ///< of them usable now (working, quota left, not skipped)
+    };
+    [[nodiscard]] QList<DebridSummary> debridSummaries() const;
     /// hoster.md §3: streams at once at @p host: with a premium account (tier 2) JD's limit for
     /// it, capped at maxStreams (maxStreams when JD names none); else 1.
     [[nodiscard]] int streamsAt(const QString& host) const;
@@ -324,6 +347,8 @@ private:
         std::uint64_t onDisk = 0;    ///< bytes the resolver wrote
         bool opened = false;
         bool done = false;           ///< the resolver finished the file
+        QString via;                 ///< open through a multi-hoster: its account key (host|user); empty: direct
+        QString viaSite;             ///< siteOf() of the hoster it downloads for
         bool reading = false;
         bool ended = false;
         int readFailures = 0;
@@ -338,6 +363,9 @@ private:
     void changed(const Entry& e);
     [[nodiscard]] std::optional<ResolverAccount> accountFor(const QString& host) const;
     [[nodiscard]] const Ed3kHosterAccount* accountEntry(const QString& host) const;
+    /// The login an open of @p e's link @p url uses: the hoster's own premium one, else a
+    /// multi-hoster's that downloads the hoster (sets @p a's via), else the hoster's free one.
+    [[nodiscard]] std::optional<ResolverAccount> openAccount(const Entry& e, const QString& url, Ask& a) const;
 
     /// A link checked for checkLinks(): the core's link, until an item takes it or it expires.
     struct Probe {
@@ -369,7 +397,27 @@ private:
         qint64 trafficLeft = -1;
         int maxDownloads = 0;        ///< JD's downloads at once; -1 unlimited, 0 unknown
         qint64 at = 0;
+        bool multi = false;          ///< a multi-hoster: hosts is what it downloads
+        QList<DebridHost> hosts;
+        QByteArray state;            ///< the plugin's session, handed back with the login
     };
+    /// host|user of a stored login
+    [[nodiscard]] static QString keyOf(const Ed3kHosterAccount& a) { return a.host + QLatin1Char('|') + a.user; }
+    /// accountTier() of the hoster's own login only
+    [[nodiscard]] int ownTier(const QString& host) const;
+    /// @p h of login @p key can take a link of @p need bytes now
+    [[nodiscard]] static bool debridUsable(const DebridHost& h, std::uint64_t need);
+    /// The multi-hoster login that downloads @p host now (enabled, checked, the host working, quota
+    /// left for @p need bytes, not blocked), and its host entry; none while the hoster's own
+    /// premium login is there (JD's order).
+    [[nodiscard]] std::pair<const Ed3kHosterAccount*, const DebridHost*> debridFor(const QString& host, std::uint64_t need) const;
+    /// @p st's entry for @p host (one of its domains, or the same site)
+    [[nodiscard]] const DebridHost* debridHostOf(const AccountStatus& st, const QString& host) const;
+    /// The multi-hoster of @p a failed: that pair (all of the account for a login error) is
+    /// skipped for a while; true when @p ev is such a failure.
+    bool debridFailed(const Ask& a, const ResolverEvent& ev);
+    /// A file came through a multi-hoster: its quota for the host goes down until the next check.
+    void chargeDebrid(const Ask& a, std::uint64_t bytes);
     void pumpProbes();
     /// pumpProbes() without the ed3k node: the resolver checks the queued links itself.
     void pumpDirectChecks();
@@ -480,6 +528,8 @@ private:
     [[nodiscard]] QString archiveDirOf(const Item& it) const;
     /// Starts the next archive set whose volumes are all done (one unpack at a time).
     void queueUnpacks();
+    /// Retired items whose file left incoming: links withdrawn, item dropped.
+    void dropGoneRetired();
     void onUnpacked(const HosterUnpackResult& r);
     /// Extraction switched off: archives waiting in Temp go to incoming as they are.
     void releaseArchives();
@@ -531,6 +581,10 @@ private:
     std::map<QString, LinkCheck> m_checks;
     /// host|user → the last account check
     std::map<QString, AccountStatus> m_accountStatus;
+    /// "host|user|site" (a multi-hoster for one hoster) or "host|user|*" (all of it) → skipped until, ms
+    std::map<QString, qint64> m_debridBlocks;
+    qint64 m_accountsRefreshedAt = 0;   ///< onTick's last refreshAccounts()
+    qint64 m_retiredCheckedAt = 0;      ///< onTick's last dropGoneRetired()
     /// sites tasks → account host; domain → its hoster's main domain (siteOf())
     std::map<Ed3kResolver::TaskId, QString> m_siteQueries;
     /// openContainer() tasks → token, scratch file, the file's name

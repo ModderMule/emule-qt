@@ -19,11 +19,14 @@
 /// as long as the download takes, and that thread has to stay free for other
 /// items' repairs.
 
+#include "archive/ArchiveContentsHook.h"
 #include "archive/ArchiveReader.h"
 
 #include <QList>
 #include <QMap>
 #include <QMutex>
+
+#include <memory>
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -77,6 +80,10 @@ struct UsenetDirectUnpackResult {
     bool encrypted = false;
 
     QString error;
+
+    /// Hashed while extracting (hoster.md §6.1); committed once the release verified.
+    std::shared_ptr<ArchiveContentsTap> contents;
+    QString contentsPassword;
 };
 
 class UsenetDirectUnpack : public QObject, public ArchiveVolumeSource {

@@ -275,7 +275,10 @@ public:
     [[nodiscard]] QStringList categoryNames() const;
 private:
     void cleanupSelectedDownloadNames();   ///< Ctrl+F2, or F2 with several files selected
-    void pasteDownloadLinks();        ///< MP_PASTE (Ctrl+V)
+    void pasteDownloadLinks();        ///< MP_PASTE (Ctrl+V): eD2K and ed3k links
+    /// "Paste eD2K Links", "Paste eD2K/ed3k Links" while ed3k is on, "Paste ed3k Links"
+    /// while eD2K is also off.
+    [[nodiscard]] static QString pasteLinksText();
     [[nodiscard]] DetailWalker makeSourceWalker(const QString& parentHash,
                                                 const QString& userHash);
     [[nodiscard]] DetailWalker makeClientWalker(QTreeView* view, ClientListModel* model,

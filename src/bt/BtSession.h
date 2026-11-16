@@ -43,6 +43,8 @@ public:
     void stop();
 
     [[nodiscard]] bool isRunning() const;
+    /// A torrent of the last run, still on its way in (async add at start): no row yet.
+    [[nodiscard]] bool isResuming(const QString& id) const;
 
     /// New settings while running. PEX changes when the session starts again.
     void applySettings(const BtSettings& settings);
