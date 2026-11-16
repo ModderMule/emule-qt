@@ -253,6 +253,26 @@ void tst_Ed3kShared::theCacheSparesAHashAfterARestart()
         fetch.stop();
         shared.stop();
     }
+    // #200: moved and its date 1 h off (DST, as known.met allows): still a hit
+    {
+        const QString moved = QDir(da.path()).filePath(QStringLiteral("C-moved.bin"));
+        QVERIFY(QFile::rename(path, moved));
+        {
+            QFile f(moved);
+            const QDateTime shifted = QFileInfo(moved).lastModified().addSecs(3600);
+            QVERIFY(f.open(QIODevice::ReadWrite) && f.setFileTime(shifted, QFileDevice::FileModificationTime));
+        }
+        src.entries.front().path = moved;
+        Ed3kShared shared(a, src, da.path());
+        QSignalSpy spy(&shared, &Ed3kShared::fileShared);
+        shared.start();
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(shared.hashCount(), 0);
+        QCOMPARE(*shared.rootOf(md4), first);
+        shared.stop();
+        QVERIFY(QFile::rename(moved, path));
+        src.entries.front().path = path;
+    }
     // written since: size and date differ, so hashed again
     QTest::qWait(20);
     const QByteArray other = payload(int(kBlock + 5000), 3);

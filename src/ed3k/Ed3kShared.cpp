@@ -10,6 +10,7 @@
 #include "files/SharedFileList.h"
 #include "utils/Opcodes.h"
 #include "utils/DiskLoadLimiter.h"
+#include "utils/FileDate.h"
 #include "utils/OwnerOnly.h"
 #include "utils/SystemMemory.h"
 
@@ -755,9 +756,16 @@ void Ed3kShared::add(const SharedEntry& entry)
     f.mtimeMs = mtimeOf(entry.path);
     m_members[f.member] = entry.md4;
     const auto c = m_cache.find(entry.md4);
-    if (c != m_cache.end() && c->second.path == entry.path && c->second.size == entry.size && c->second.mtimeMs == f.mtimeMs)
+    // was: exact path + exact ms date: a moved file, other path case or a NAS/FAT date shift
+    // hashed the whole share again at each start (#200)
+    if (c != m_cache.end() && cacheMatches(c->second, entry.path, entry.size, f.mtimeMs)) {
+        if (c->second.path != entry.path || c->second.mtimeMs != f.mtimeMs) {
+            c->second.path = entry.path;
+            c->second.mtimeMs = f.mtimeMs;
+            scheduleSave(kOwner);
+        }
         share(f, c->second);
-    else
+    } else
         enqueueHash(f);
 }
 
@@ -1064,6 +1072,16 @@ bool Ed3kShared::unchanged(const QString& path, std::uint64_t size, qint64 mtime
 qint64 Ed3kShared::mtimeOf(const QString& path)
 {
     return QFileInfo(path).lastModified().toMSecsSinceEpoch();
+}
+
+bool Ed3kShared::cacheMatches(const Hashed& c, const QString& path, std::uint64_t size, qint64 mtimeMs)
+{
+    if (c.size != size)
+        return false;
+    if (c.mtimeMs == mtimeMs)
+        return true;
+    // the MD4 key already names the content: the date as tolerant as known.met's
+    return sameFileDate(time_t(c.mtimeMs / 1000), time_t(mtimeMs / 1000), isLocalTimeVolume(QFileInfo(path).absolutePath()));
 }
 
 void Ed3kShared::loadCache()
@@ -1409,8 +1427,7 @@ void Ed3kShared::primeHash(const QByteArray& md4, const QString& path, qint64 mt
 {
     if (!m_started || (m_neverShared && m_neverShared(path)))
         return;
-    if (const auto c = m_cache.find(md4);
-        c != m_cache.end() && c->second.path == path && c->second.size == hashed.size && c->second.mtimeMs == mtimeMs)
+    if (const auto c = m_cache.find(md4); c != m_cache.end() && c->second.path == path && cacheMatches(c->second, path, hashed.size, mtimeMs))
         return;   // known already
     if (!unchanged(path, hashed.size, mtimeMs))
         return;   // written since eD2K read it: hashed here when listed
