@@ -129,12 +129,12 @@ unanswered and publishes to the next one. Only flip this once the "valid" share 
 on the live network. Before that it drops honest publishes from stock clients.
 
 **Refused since 2026-11-16: `FIREWALLED2_REQ`** without a valid receiver key (aMule #2315,
-live share 119/119 valid). The structural argument carries it: every sender keys it from
-the hello it answers. One honest unkeyed case: the hello was unkeyed itself (MFC
-`FindNodeIDByIP` sends `HELLO_REQ` plain, so do we, plus LAN mode). eMuleQt remembers IPs
-it sent an unkeyed `HELLO_REQ` for 60 s and accepts their unkeyed check. A dropped check
-costs the sender one unanswered probe; it asks other nodes anyway. Dropped requests are
-logged (`FIREWALLED2_REQ from … dropped — no valid receiver key`). `FIREWALLED_REQ` (v1)
+live share 119/119 valid; aMule PR #2536 does the same). The structural argument carries
+it: every sender keys it from the hello it answers. One honest unkeyed case: the hello was
+unkeyed itself (MFC `FindNodeIDByIP` sends `HELLO_REQ` plain, so do we, plus LAN mode).
+That check is dropped too, as in aMule: no exception list. A dropped check costs the
+sender one unanswered probe; it asks other nodes anyway. Dropped requests go to the Kad
+log (`FIREWALLED2_REQ from … dropped — no valid receiver key`). `FIREWALLED_REQ` (v1)
 stays open.
 
 Send side: eMuleQt doesn't send `FIREWALLED2_REQ` it can't key (hello came in unkeyed,

@@ -1098,9 +1098,9 @@ eMuleQt does both (`KadUDPListener.cpp`, `process_KADEMLIA2_PUBLISH_SOURCE_REQ`)
 - MUST NOT start a lookup derived from `FT_BUDDYHASH` (§5.2). The tag is absent on type 7 anyway;
   a lookup or callback request is allowed only where a route tag defines it (`bpv`, §5.6.1).
 - A route tag resolved over the network costs **at most one lookup per source**, keyed by the
-  source ID, across all files the source shares. Cache the result, hit or miss, for one
-  republish-check period (60 min). A miss is possible when another implementation publishes `bpv`
-  before its pointer exists.
+  source ID, across all files the source shares. Cache a hit for one republish-check period
+  (60 min) and a miss for a shorter time (eMuleQt: 10 min). On type 7 a miss is the normal case:
+  the publisher had no buddy when it published, and gets one later.
 - A firewalled receiver keeps the record when it can use `ip6`. `bpv` ends in a callback, so like
   type 3/5 it is useless to a firewalled receiver.
 - After the first hello on an `ip6` route, SHOULD compare the presented user hash with the record's
@@ -1118,9 +1118,9 @@ Code: publish `Search::buildSourcePublishTags`, parse `Search::processResultFile
 #### 5.6.1 The pointer route — `bpv`
 
 A LowID's file records name the buddy it had when it published them. Buddies change more often
-than records expire (one measurement: median buddy link 27 minutes, record 5 h), and later buddy
-searches look up random targets, so a receiver cannot find the current buddy near the BuddyID
-either. The pointer route publishes the current buddy once, at a key every receiver can compute,
+than records expire (one measurement: median buddy link 27 minutes, record 5 h). A 3/5 record
+always carries the buddy address, so a receiver dials that buddy and never looks up the BuddyID;
+a stale one just goes unanswered. The pointer route publishes the current buddy once, at a key every receiver can compute,
 instead of republishing every file.
 
 **Key.** `~sourceID`: the bitwise NOT of the 16 source-ID bytes exactly as they travel in the
@@ -1529,7 +1529,7 @@ A client claiming interoperability with these extensions should implement, at mi
 - [ ] Emit only after the source-type gate on ingest (§5.4)
 - [ ] Never look up an all-zero or missing `FT_BUDDYHASH` (§5.2)
 - [ ] Source type 7: publish only without a classic route, receive only with a usable route tag (§5.6)
-- [ ] Never derive a lookup from `FT_BUDDYHASH` on type 7; one lookup per source for `bpv`, miss cached (§5.6)
+- [ ] Never derive a lookup from `FT_BUDDYHASH` on type 7; one lookup per source for `bpv`, hit cached 60 min, miss shorter (§5.6)
 - [ ] Accept a `bpv` pointer only with the same source ID and the same stamped `FT_SOURCEIP` (§5.6.1–2)
 - [ ] Storer: drop type 7, `bpv` and pointer records without a valid receiver key; `bpv` by name (§5.6)
 - [ ] No type 7 with `bpv` alone; publish keyed records only to keyed storers (§5.6)
