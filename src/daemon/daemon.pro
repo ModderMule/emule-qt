@@ -112,8 +112,10 @@ SOURCES += \
     Ed3kOwnSetsBridge.cpp \
     Ed3kFiltersBridge.cpp \
     Ed3kUploadsBridge.cpp \
+    SingleTransfer.cpp \
     Ed3kHideBridge.cpp \
     Ed3kHosterBridge.cpp \
+    ArchiveContentsBridge.cpp \
     DaemonApiBackend.cpp \
     DaemonHosterWebBackend.cpp \
     DaemonMetaGrabWebBackend.cpp \
@@ -159,8 +161,10 @@ HEADERS += \
     Ed3kOwnSetsBridge.h \
     Ed3kFiltersBridge.h \
     Ed3kUploadsBridge.h \
+    SingleTransfer.h \
     Ed3kHideBridge.h \
     Ed3kHosterBridge.h \
+    ArchiveContentsBridge.h \
     DaemonApiBackend.h \
     DaemonHosterWebBackend.h \
     DaemonMetaGrabWebBackend.h \

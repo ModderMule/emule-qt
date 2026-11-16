@@ -23,6 +23,7 @@
 #include "archive/ArchiveReader.h"
 
 #include <QString>
+#include <QHash>
 #include <QSet>
 #include <QStringList>
 
@@ -115,6 +116,11 @@ public:
         /// Files already extracted elsewhere (direct unpack) that the nested
         /// pass should look into as well.
         QStringList nestedSeeds;
+
+        /// Chosen entries per set (hoster.md §6.1): first volume's file name, lower
+        /// case → entry paths ('/' between components). A set listed here writes
+        /// only those; a set not listed writes everything.
+        QHash<QString, QSet<QString>> onlyEntries;
     };
 
     /// Default nesting depth when the archiveRecursiveExtract pref is on.
@@ -209,6 +215,8 @@ private:
 
     ProgressFn m_progress;
     VetoFn m_veto;
+    /// Options::onlyEntries of the running unpackAll(); nested sets take everything
+    QHash<QString, QSet<QString>> m_onlyEntries;
 };
 
 } // namespace eMule::usenet

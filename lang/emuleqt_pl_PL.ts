@@ -1281,7 +1281,7 @@ Ma komentarze</translation>
         <translation>Dodaj torrent</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+99"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+98"/>
         <source>Delete</source>
         <translation>Usuń</translation>
     </message>
@@ -12477,7 +12477,7 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1193"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1195"/>
         <source>The core&apos;s certificate changed</source>
         <translation>Certyfikat rdzenia się zmienił</translation>
     </message>
@@ -15370,9 +15370,13 @@ Masz mniej źródeł i wolniejsze pobieranie, a dwaj klienci z Low ID rzadko mog
         <translation>Wiadomości</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>IRC</source>
-        <translation>IRC</translation>
+        <translation type="vanished">IRC</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Chat Rooms</source>
+        <translation>Pokoje czatu</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -30118,7 +30122,12 @@ Ponowne kliknięcie „Przywróć statystyki” wczyta z powrotem bieżące stat
         <translation>Pokaż pasek narzędzi</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="-3"/>
+        <source>Delete</source>
+        <translation type="unfinished">Usuń</translation>
+    </message>
+    <message>
+        <location line="+19"/>
         <source>Move to Anonymous ed3k Key...</source>
         <translation>Przenieś do anonimowego klucza ed3k...</translation>
     </message>
@@ -30403,24 +30412,24 @@ The sources then see this node&apos;s address; queue places are lost.</source>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+37"/>
+        <location line="+41"/>
         <source>Cancel download &quot;%1&quot;?</source>
         <translation>Anulować pobieranie „%1”?</translation>
     </message>
     <message>
-        <location line="-40"/>
-        <location line="+42"/>
+        <location line="-44"/>
+        <location line="+46"/>
         <source>Cancel Downloads</source>
         <translation>Anuluj pobierania</translation>
     </message>
     <message>
-        <location line="-37"/>
-        <location line="+36"/>
+        <location line="-41"/>
+        <location line="+40"/>
         <source>Cancel %1 selected downloads?</source>
         <translation>Anulować wybrane pobierania (%1)?</translation>
     </message>
     <message>
-        <location line="-33"/>
+        <location line="-37"/>
         <source>Delete File</source>
         <translation>Usuń plik</translation>
     </message>
@@ -30445,7 +30454,7 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation>Nieukończone pobierania (%1) również zostaną anulowane.</translation>
     </message>
     <message>
-        <location line="+49"/>
+        <location line="+53"/>
         <location line="+18"/>
         <location line="+34"/>
         <source>Rename</source>

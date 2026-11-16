@@ -11,6 +11,7 @@
 #include "Ed3kHosterBridge.h"
 #include "Ed3kHideBridge.h"
 #include "PortTestRunner.h"
+#include "ArchiveContentsBridge.h"
 #include "UsenetBridge.h"
 #include "CoreNotifierBridge.h"
 #include "SharedFileRows.h"
@@ -583,6 +584,8 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::ClearUsenetCompleted: handleClearUsenetCompleted(msg); break;
     case IpcMsgType::FetchNzbImages:      handleFetchNzbImages(msg); break;
     case IpcMsgType::FetchNzbNfo:         handleFetchNzbNfo(msg); break;
+    case IpcMsgType::LookupArchiveContents: handleLookupArchiveContents(msg); break;
+    case IpcMsgType::DownloadArchiveEntries: handleDownloadArchiveEntries(msg); break;
     case IpcMsgType::FetchMetaFile:       handleFetchMetaFile(msg); break;
     case IpcMsgType::DownloadMetaResult:  handleDownloadMetaResult(msg); break;
     case IpcMsgType::GetMetaAuthStatus:   handleGetMetaAuthStatus(msg); break;
@@ -4801,6 +4804,8 @@ bool IpcClientHandler::applyPreferenceNotify(const QString& key, const QCborValu
         thePrefs.setAppToken(val.toString());
     else if (key == QStringLiteral("usenetEnabled"))
         thePrefs.setUsenetEnabled(val.toBool());
+    else if (key == QStringLiteral("usenetSingleTransfer"))
+        thePrefs.setUsenetSingleTransfer(val.toBool());
     else if (key == QStringLiteral("usenetPaused"))   // the engine follows via usenetChanged
         thePrefs.setUsenetPaused(val.toBool());
     else if (key == QStringLiteral("usenetRetryIntervalSeconds"))
@@ -5288,6 +5293,8 @@ bool IpcClientHandler::applyPreferenceBt(const QString& key, const QCborValue& v
     // BitTorrent; the engine re-reads them on btConfigChanged
     if (key == QStringLiteral("btEnabled"))
         thePrefs.setBtEnabled(val.toBool());
+    else if (key == QStringLiteral("btSingleTransfer"))
+        thePrefs.setBtSingleTransfer(val.toBool());
     else if (key == QStringLiteral("btListenPort"))
         thePrefs.setBtListenPort(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 1, 65535)));
     else if (key == QStringLiteral("btDownloadDir"))
@@ -5386,6 +5393,8 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
         thePrefs.setEd3kJointDownloads(val.toBool());
     else if (key == QStringLiteral("ed3kShareUsenetPosts"))
         thePrefs.setEd3kShareUsenetPosts(val.toBool());
+    else if (key == QStringLiteral("ed3kArchiveContents"))
+        thePrefs.setEd3kArchiveContents(val.toBool());
     else if (key == QStringLiteral("ed3kOwnSetsWatch"))
         thePrefs.setEd3kOwnSetsWatch(val.toBool());
     else if (key == QStringLiteral("ed3kUdpPort"))
@@ -7300,6 +7309,27 @@ void IpcClientHandler::handleFetchNzbNfo(const IpcMessage& msg)
     QPointer<IpcClientHandler> self(this);
     const int seqId = msg.seqId();
     UsenetBridge::fetchPreviewNfo(msg.fieldString(0), [self, seqId](bool ok, const QCborValue& result) {
+        if (self)
+            self->sendMessage(IpcMessage::makeResult(seqId, ok, result));
+    });
+}
+
+void IpcClientHandler::handleLookupArchiveContents(const IpcMessage& msg)
+{
+    QPointer<IpcClientHandler> self(this);
+    const int seqId = msg.seqId();
+    ArchiveContentsBridge::lookup(msg.fieldString(0), msg.field(1).toMap(), [self, seqId](bool ok, const QCborValue& result) {
+        if (self)
+            self->sendMessage(IpcMessage::makeResult(seqId, ok, result));
+    });
+}
+
+void IpcClientHandler::handleDownloadArchiveEntries(const IpcMessage& msg)
+{
+    QPointer<IpcClientHandler> self(this);
+    const int seqId = msg.seqId();
+    ArchiveContentsBridge::downloadEntries(msg.field(0).toArray(), msg.fieldString(1), int(msg.fieldInt(2)),
+                                           [self, seqId](bool ok, const QCborValue& result) {
         if (self)
             self->sendMessage(IpcMessage::makeResult(seqId, ok, result));
     });

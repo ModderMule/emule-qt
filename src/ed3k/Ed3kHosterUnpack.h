@@ -9,6 +9,7 @@
 /// and extraction are UsenetUnpacker's (libarchive, external tool for encrypted RAR).
 
 #include <QObject>
+#include <QHash>
 #include <QSet>
 #include <QString>
 #include <QStringList>
@@ -29,6 +30,8 @@ struct HosterUnpackJob {
     QString externalTool;  ///< usenetExternalUnpacker; empty = libarchive only
     int nestedDepth = 0;   ///< archives inside archives, levels; 0 = off
     bool deleteNestedArchives = true;   ///< an opened inner archive is not published
+    /// chosen entries (hoster.md §6.1), as UsenetUnpacker::Options::onlyEntries; empty: all
+    QHash<QString, QSet<QString>> onlyEntries;
 };
 
 /// What an unpack came to.

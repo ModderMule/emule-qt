@@ -86,11 +86,10 @@ using namespace Ipc;
 
 namespace {
 
-/// Cancel on this row deletes the finished file (DownloadQueue::cancelFile). ed3k
-/// rows only leave the list, the file stays.
+/// Cancel on this row deletes the finished file (DownloadQueue::cancelFile; ed3k: action 7)
 bool cancelDeletesFile(const DownloadRow* d)
 {
-    return d && d->isComplete() && !d->isEd3k();
+    return d && d->isComplete();
 }
 
 /// Cancel reads "Delete" once a selected row's file goes from disk (#197)
@@ -773,7 +772,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
     if (hasSel && std::all_of(selectedDls.begin(), selectedDls.end(), [](const DownloadRow* d) { return d && d->isEd3k(); })) {
         // "Preview" is the action or, in ext mode, its submenu (own entries gated above)
         const QSet<QString> ed3kActions{tr("Priority (Download)"), tr("Pause"), tr("Stop"), tr("Resume"), tr("Cancel"),
-                                        tr("Details..."),
+                                        tr("Delete"), tr("Details..."),
                                         tr("Open File"), tr("Preview"), tr("Preview with"), tr("Clear Completed"),
                                         tr("Assign To Category"),
                                         tr("Paste eD2K Links"), tr("Find..."), tr("Show Toolbar"),
@@ -782,6 +781,22 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         for (QAction* act : m_downloadMenu->actions())
             if (!act->isSeparator() && !ed3kActions.contains(act->text()))
                 act->setEnabled(false);
+        // single transfer mode rows: their own network acts (pause, resume, cancel, open);
+        // priority and category only Usenet has; no ed3k root, link or key behind them
+        if (std::ranges::any_of(selectedDls, &DownloadRow::isNetworkJob)) {
+            const bool usenetOnly = std::ranges::all_of(selectedDls, [](const DownloadRow* d) {
+                return d->ed3kNetwork == QLatin1String("usenet");
+            });
+            QSet<QString> off{tr("Details..."), tr("Preview"), tr("Preview with"), MoveDownloadsAction::menuText(),
+                              Ed3kLinkMenu::copyText(), Ed3kLinkMenu::showText()};
+            if (!usenetOnly)
+                off += {tr("Priority (Download)"), tr("Assign To Category")};
+            for (QAction* act : m_downloadMenu->actions())
+                if (!act->isSeparator() && off.contains(act->text()))
+                    act->setEnabled(false);
+            m_downloadMenu->popup(m_downloadView->viewport()->mapToGlobal(pos));
+            return;
+        }
         // batch 15, hops.md §1: a running download to the other key (asks first)
         const QString key = selectedDls.front()->ed3kKey;
         const bool same = !key.isEmpty() && std::ranges::all_of(selectedDls, [&key](const DownloadRow* d) {
@@ -2261,6 +2276,11 @@ void TransferPanel::fetchAndShowFileDetails(const QStringList& hashes,
     }
     if (!m_ipc || !m_ipc->isConnected() || hashes.isEmpty())
         return;
+    if (std::ranges::any_of(hashes, [this](const QString& h) {
+            const DownloadRow* d = m_downloadModel->findByHash(h);
+            return d && d->isNetworkJob();
+        }))
+        return;
 
     // One request per file; the sheet opens when the last answer is in. A file that
     // went away meanwhile is left out.
@@ -2294,6 +2314,9 @@ void TransferPanel::fetchAndShowFileDetails(const QString& hash,
                                              FileDetailDialog::Tab tab)
 {
     if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
+        return;
+    // single transfer mode rows have no Details (their network's tab is hidden)
+    if (const DownloadRow* d = m_downloadModel->findByHash(hash); d && d->isNetworkJob())
         return;
     IpcMessage msg(IpcMsgType::GetDownloadDetails);
     msg.append(hash);
@@ -3393,7 +3416,11 @@ void TransferPanel::cancelSelectedDownloads()
     if (QMessageBox::question(this, title, question, QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
         != QMessageBox::Yes)
         return;
-    sendDownloadActionBatch(hashes, 2);
+    // ed3k: 7 deletes a complete file like eD2K's cancel (2 only drops the row)
+    QStringList ed2k = hashes;
+    if (const QStringList roots = takeEd3kHashes(ed2k); !roots.isEmpty())
+        sendEd3kControl(roots, 7);
+    sendDownloadActionBatch(ed2k, 2);
 }
 
 void TransferPanel::removeSelectedDownloads()

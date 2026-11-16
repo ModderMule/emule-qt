@@ -129,6 +129,10 @@ public:
     /// Torrent/usenet/hoster jobs of @p session with a root of theirs downloaded or shared on
     /// ed3k: the Transfers Downloading list shows their own network's clients too.
     [[nodiscard]] static std::vector<JoinOwner> networkJobsAt(const Ed3kSession& session);
+    /// Whether the join tagged @p tag of @p session has job @p owner. nullopt: that join is
+    /// not started (ed3k starting or off), nothing can be judged yet.
+    [[nodiscard]] static std::optional<bool> joinedAt(const Ed3kSession& session, const QString& tag,
+                                                      const QString& owner);
     [[nodiscard]] const QString& tag() const { return m_tag; }
 
 protected:

@@ -379,13 +379,31 @@ void IrcPanel::onEd3kRoomAction(int action, const QString& room)
         createEd3kRoom();
         break;
     case A::Leave: {
-        const QString text = row.value(QStringLiteral("owner")).toBool()
-            ? tr("Leave this room? You own it: its room key stays on this computer, so joining by its link "
-                 "makes you the owner again.")
-            : tr("Leave this room? To come back you need its link.");
-        if (QMessageBox::question(this, tr("ed3k room"), text) != QMessageBox::Yes || !m_ipc)
+        // the member key always goes; an owner may also delete the room key
+        const bool owner = row.value(QStringLiteral("owner")).toBool();
+        QMessageBox box(QMessageBox::Question, tr("ed3k room"),
+                        tr("Leave this room? The room goes on for its other members. To come back you need "
+                           "its link and you join as a new member."),
+                        QMessageBox::Yes | QMessageBox::No, this);
+        box.setDefaultButton(QMessageBox::No);
+        const QString keptText = tr("You own this room: its room key stays on this computer, so joining by "
+                                    "its link makes you the owner again.");
+        const QString dropText = tr("Warning: this deletes the owner key of the room for good. Nobody can "
+                                    "change its title, settings or moderators ever again. Moderators can still "
+                                    "admit and ban. There is no undo.");
+        if (owner) {
+            box.setInformativeText(keptText);
+            auto* drop = new QCheckBox(tr("Also delete the room key (owner key)"), &box);
+            box.setCheckBox(drop);
+            connect(drop, &QCheckBox::toggled, &box, [&box, keptText, dropText](bool on) {
+                box.setIcon(on ? QMessageBox::Warning : QMessageBox::Question);
+                box.setInformativeText(on ? dropText : keptText);
+            });
+        }
+        if (box.exec() != QMessageBox::Yes || !m_ipc)
             return;
-        m_ipc->leaveEd3kRoom(room, [self = QPointer<IrcPanel>(this)](const IpcMessage& r) {
+        const bool dropRoomKey = owner && box.checkBox() && box.checkBox()->isChecked();
+        m_ipc->leaveEd3kRoom(room, dropRoomKey, [self = QPointer<IrcPanel>(this)](const IpcMessage& r) {
             if (self && (!r.isValid() || !r.fieldBool(0)))
                 self->ed3kRoomFailed(tr("Leaving the room failed"), r);
         });

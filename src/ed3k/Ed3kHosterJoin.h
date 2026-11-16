@@ -138,6 +138,9 @@ public:
         quint32 packageId = 0;       ///< 0: no package; else the group it was added in
         QString package;             ///< the package's name; its folder under incoming
         QStringList passwords;       ///< archive passwords (a container's), tried by the unpack
+        /// chosen archive entries (hoster.md §6.1): first volume's name, lower case → paths;
+        /// the unpack writes only those. Empty: everything
+        QHash<QString, QStringList> keptEntries;
         /// only the generic http plugin takes url (#202): a plain web file, host stays the
         /// site; never looked up or published (the URL may carry a private token)
         bool generic = false;
@@ -208,8 +211,10 @@ public:
     /// @p package not empty: the items form a new package of that name (never nested).
     /// @p packageId an existing package: they join it instead (wins over @p package).
     /// @p passwords: archive passwords for the unpack (a container's)
+    /// @p keptEntries: the archive entries to extract (Item::keptEntries)
     QList<quint32> addMirrored(const QList<QStringList>& files, const QString& package = {},
-                               quint32 packageId = 0, const QStringList& passwords = {});
+                               quint32 packageId = 0, const QStringList& passwords = {},
+                               const QHash<QString, QStringList>& keptEntries = {});
     /// Reads the links of a container file (DLC, RSDF, CCF; @p data its bytes, @p fileName for
     /// the plugin and the GUI). containerOpened() follows with the token returned; 0: refused
     /// (no resolver, hosters off or too big), nothing follows.

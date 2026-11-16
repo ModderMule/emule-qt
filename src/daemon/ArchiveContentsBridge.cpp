@@ -1,0 +1,296 @@
+#include "ArchiveContentsBridge.h"
+
+#include "UsenetBridge.h"
+#include "UsenetSession.h"
+#include "nzb/NzbFile.h"
+#include "prefs/Preferences.h"
+#include "queue/UsenetQueue.h"
+
+#include <QCborArray>
+#include <QCoreApplication>
+#include <QDir>
+#include <QFileInfo>
+
+#ifdef EMULE_HAVE_ED3K
+#include "Ed3kArchiveContents.h"
+#include "Ed3kDownloads.h"
+#include "Ed3kHosterJoin.h"
+#include "Ed3kSetManifest.h"
+#endif
+#ifdef EMULE_HAVE_BITTORRENT
+#include "BtSession.h"
+#endif
+
+namespace eMule::ArchiveContentsBridge {
+
+namespace {
+
+QString tr(const char* text)
+{
+    return QCoreApplication::translate("ArchiveContentsBridge", text);
+}
+
+#ifdef EMULE_HAVE_ED3K
+ed3k::Ed3kArchiveContents* s_contents = nullptr;
+ed3k::Ed3kDownloads* s_downloads = nullptr;
+ed3k::Ed3kHosterJoin* s_hoster = nullptr;
+#endif
+#ifdef EMULE_HAVE_BITTORRENT
+bt::BtSession* s_bt = nullptr;
+#endif
+
+#ifdef EMULE_HAVE_ED3K
+std::optional<::ed3k::Root> rootOfHex(const QString& hex)
+{
+    const QByteArray b = QByteArray::fromHex(hex.toLatin1());
+    if (b.size() != 32)
+        return std::nullopt;
+    ::ed3k::Root r;
+    std::copy_n(reinterpret_cast<const std::uint8_t*>(b.constData()), 32, r.bytes.begin());
+    return r;
+}
+
+QString hexOf(const ::ed3k::Root& r)
+{
+    return QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(r.bytes.data()), 32).toHex());
+}
+
+QCborMap toCbor(const ed3k::Ed3kArchiveContents::Found& f)
+{
+    QCborArray entries;
+    for (const auto& e : f.entries)
+        entries.append(QCborMap{{QStringLiteral("path"), e.path},
+                                {QStringLiteral("size"), qint64(e.size)},
+                                {QStringLiteral("root"), hexOf(e.root)}});
+    QCborMap m{{QStringLiteral("name"), f.name},
+               {QStringLiteral("state"), ed3k::Ed3kArchiveContents::stateName(f.state)},
+               {QStringLiteral("sites"), qint64(f.sites)},
+               {QStringLiteral("password"), f.password},
+               {QStringLiteral("entries"), entries}};
+    if (f.first)
+        m.insert(QStringLiteral("first"), hexOf(*f.first));
+    if (f.state == ed3k::Ed3kArchiveContents::State::Found)
+        m.insert(QStringLiteral("manifest"), hexOf(f.manifest));
+    return m;
+}
+
+/// The first volumes among @p names, as volumes to look up.
+std::vector<ed3k::Ed3kArchiveContents::Volume> volumesOf(const QStringList& names)
+{
+    std::vector<ed3k::Ed3kArchiveContents::Volume> out;
+    for (const int i : ed3k::Ed3kArchiveContents::firstVolumes(names))
+        out.push_back({names.at(i), std::nullopt, {}, {}});
+    return out;
+}
+
+/// web: {links: [{url, name}]}
+bool webRequest(const QCborMap& p, ed3k::Ed3kArchiveContents::Request& r)
+{
+    QStringList names;
+    QStringList urls;
+    for (const QCborValue& v : p.value(QStringLiteral("links")).toArray()) {
+        const QCborMap l = v.toMap();
+        names << l.value(QStringLiteral("name")).toString();
+        urls << l.value(QStringLiteral("url")).toString();
+    }
+    for (const int i : ed3k::Ed3kArchiveContents::firstVolumes(names))
+        r.volumes.push_back({names.at(i), std::nullopt, urls.at(i), {}});
+    return true;
+}
+
+/// nzb: {previewToken | usenetItem, files?: [int]}
+bool nzbRequest(const QCborMap& p, ed3k::Ed3kArchiveContents::Request& r, QString& error)
+{
+    usenet::NzbInfo info;
+    if (const QString token = p.value(QStringLiteral("previewToken")).toString(); !token.isEmpty()) {
+        const QByteArray nzb = UsenetBridge::previewNzb(token);
+        QString parseError;
+        if (nzb.isEmpty() || !usenet::NzbFile::parse(nzb, info, parseError)) {
+            error = tr("The NZB is no longer available; open Details again.");
+            return false;
+        }
+    } else {
+        const auto* queue = usenet::theUsenetSession ? usenet::theUsenetSession->queue() : nullptr;
+        const auto* item = queue ? queue->findItem(p.value(QStringLiteral("usenetItem")).toString()) : nullptr;
+        if (!item) {
+            error = tr("The download is gone.");
+            return false;
+        }
+        info = item->nzb;
+    }
+    QStringList names;
+    for (const auto& f : info.files)
+        names << f.fileName;
+    QList<int> firsts = ed3k::Ed3kArchiveContents::firstVolumes(names);
+    const auto ids = ed3k::Ed3kArchiveContents::nzbFileIds(info, firsts);
+    for (qsizetype k = 0; k < firsts.size(); ++k)
+        r.volumes.push_back({names.at(firsts.at(k)), std::nullopt, {}, ids.at(std::size_t(k))});
+    return true;
+}
+
+/// torrent: {btih?, btmh?, names} | {torrentId}
+bool torrentRequest(const QCborMap& p, ed3k::Ed3kArchiveContents::Request& r, QString& error)
+{
+    QStringList names;
+    QString btih = p.value(QStringLiteral("btih")).toString();
+    QString btmh = p.value(QStringLiteral("btmh")).toString();
+    for (const QCborValue& v : p.value(QStringLiteral("names")).toArray())
+        names << v.toString();
+#ifdef EMULE_HAVE_BITTORRENT
+    if (const QString id = p.value(QStringLiteral("torrentId")).toString(); !id.isEmpty() && s_bt) {
+        const auto row = s_bt->torrent(id);
+        if (!row) {
+            error = tr("The torrent is gone.");
+            return false;
+        }
+        btih = row->hashV1;
+        btmh = row->hashV2;
+        for (const auto& f : s_bt->files(id))
+            if (!f.pad)
+                names << f.path;
+    }
+#endif
+    r.btih = QByteArray::fromHex(btih.toLatin1());
+    r.btmh = QByteArray::fromHex(btmh.toLatin1());
+    if (r.btih.size() != 20)
+        r.btih.clear();
+    if (r.btmh.size() != 32)
+        r.btmh.clear();
+    if (r.btih.isEmpty() && r.btmh.isEmpty()) {
+        error = tr("The torrent has no info hash.");
+        return false;
+    }
+    r.volumes = volumesOf(names);
+    return true;
+}
+
+/// roots: {volumes: [{name, root}]} | {hosterPackage}
+bool rootsRequest(const QCborMap& p, ed3k::Ed3kArchiveContents::Request& r)
+{
+    QStringList names;
+    std::vector<std::optional<::ed3k::Root>> roots;
+    QStringList urls;
+    if (p.contains(QStringLiteral("hosterPackage")) && s_hoster) {
+        const auto pkg = quint32(p.value(QStringLiteral("hosterPackage")).toInteger());
+        const auto one = quint32(p.value(QStringLiteral("hosterItem")).toInteger());
+        for (const auto& it : s_hoster->items())
+            if ((pkg != 0 && it.packageId == pkg) || (one != 0 && it.id == one)) {
+                names << it.name;
+                roots.push_back(rootOfHex(it.rootHex));
+                urls << (it.generic ? QString() : it.url);
+            }
+    }
+    for (const QCborValue& v : p.value(QStringLiteral("volumes")).toArray()) {
+        const QCborMap m = v.toMap();
+        names << m.value(QStringLiteral("name")).toString();
+        roots.push_back(rootOfHex(m.value(QStringLiteral("root")).toString()));
+        urls << QString();
+    }
+    for (const int i : ed3k::Ed3kArchiveContents::firstVolumes(names))
+        r.volumes.push_back({names.at(i), roots.at(std::size_t(i)), urls.at(i), {}});
+    return true;
+}
+#endif
+
+} // namespace
+
+void setTargets(ed3k::Ed3kArchiveContents* contents, ed3k::Ed3kDownloads* downloads, ed3k::Ed3kHosterJoin* hoster,
+                bt::BtSession* bt)
+{
+#ifdef EMULE_HAVE_ED3K
+    s_contents = contents;
+    s_downloads = downloads;
+    s_hoster = hoster;
+#else
+    Q_UNUSED(contents) Q_UNUSED(downloads) Q_UNUSED(hoster)
+#endif
+#ifdef EMULE_HAVE_BITTORRENT
+    s_bt = bt;
+#else
+    Q_UNUSED(bt)
+#endif
+}
+
+void lookup(const QString& kind, const QCborMap& payload, Reply reply)
+{
+#ifdef EMULE_HAVE_ED3K
+    if (!s_contents) {
+        reply(false, tr("ed3k is off."));
+        return;
+    }
+    ed3k::Ed3kArchiveContents::Request r;
+    QString error;
+    bool ok = false;
+    if (kind == QLatin1String("web"))
+        ok = webRequest(payload, r);
+    else if (kind == QLatin1String("nzb"))
+        ok = nzbRequest(payload, r, error);
+    else if (kind == QLatin1String("torrent"))
+        ok = torrentRequest(payload, r, error);
+    else if (kind == QLatin1String("roots"))
+        ok = rootsRequest(payload, r);
+    else
+        error = QStringLiteral("unknown kind");
+    if (!ok) {
+        reply(false, error);
+        return;
+    }
+    if (r.volumes.empty()) {
+        reply(true, QCborMap{{QStringLiteral("archives"), QCborArray()}});
+        return;
+    }
+    const auto started = s_contents->lookup(std::move(r), [reply](const std::vector<ed3k::Ed3kArchiveContents::Found>& found) {
+        QCborArray archives;
+        for (const auto& f : found)
+            archives.append(toCbor(f));
+        reply(true, QCborMap{{QStringLiteral("archives"), archives}});
+    });
+    if (!started)
+        reply(false, tr("ed3k is not connected yet."));
+#else
+    Q_UNUSED(kind) Q_UNUSED(payload)
+    reply(false, tr("ed3k is not built in."));
+#endif
+}
+
+void downloadEntries(const QCborArray& entries, const QString& folder, int category, Reply reply)
+{
+#ifdef EMULE_HAVE_ED3K
+    if (!s_downloads) {
+        reply(false, tr("ed3k is off."));
+        return;
+    }
+    const QString base = QDir(thePrefs.incomingDirForCategory(category))
+                             .filePath(ed3k::ed3kSafeName(folder.isEmpty() ? QStringLiteral("archive") : folder));
+    int added = 0;
+    QString lastError;
+    for (const QCborValue& v : entries) {
+        const QCborMap m = v.toMap();
+        const auto root = rootOfHex(m.value(QStringLiteral("root")).toString());
+        const QString path = m.value(QStringLiteral("path")).toString();
+        const QString target = ed3k::ed3kSetLocalPath(base, path);
+        if (!root || target.isEmpty())
+            continue;
+        ed3k::Ed3kDownloadSpec spec;
+        spec.root = *root;
+        spec.size = std::uint64_t(m.value(QStringLiteral("size")).toInteger());
+        spec.name = QFileInfo(target).fileName();
+        spec.targetPath = target;
+        spec.category = category;
+        if (auto ok = s_downloads->add(spec); ok)
+            ++added;
+        else
+            lastError = ok.error();
+    }
+    if (added == 0 && !lastError.isEmpty()) {
+        reply(false, lastError);
+        return;
+    }
+    reply(true, QCborMap{{QStringLiteral("added"), added}});
+#else
+    Q_UNUSED(entries) Q_UNUSED(folder) Q_UNUSED(category)
+    reply(false, tr("ed3k is not built in."));
+#endif
+}
+
+} // namespace eMule::ArchiveContentsBridge

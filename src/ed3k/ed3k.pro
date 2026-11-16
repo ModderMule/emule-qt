@@ -52,6 +52,7 @@ SOURCES += \
     Ed3kHosterJoin.cpp \
     Ed3kLinkGrabber.cpp \
     Ed3kHosterUnpack.cpp \
+    Ed3kArchiveContents.cpp \
     Ed3kHttp.cpp \
     Ed3kHide.cpp \
     Ed3kJoinBase.cpp \
@@ -92,6 +93,7 @@ HEADERS += \
     Ed3kHosterJoin.h \
     Ed3kLinkGrabber.h \
     Ed3kHosterUnpack.h \
+    Ed3kArchiveContents.h \
     Ed3kHttp.h \
     Ed3kHide.h \
     Ed3kJoinBase.h \

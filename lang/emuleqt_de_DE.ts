@@ -1343,7 +1343,7 @@ Erneut herunterladen?</translation>
         <translation>Torrent hinzufügen</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+99"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+98"/>
         <source>Delete</source>
         <translation>Löschen</translation>
     </message>
@@ -12804,7 +12804,7 @@ Falls der Internetanbieter eMule drosselt oder blockiert, hilft die Verschleieru
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1193"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1195"/>
         <source>The core&apos;s certificate changed</source>
         <translation>Das Zertifikat des Kerns hat sich geändert</translation>
     </message>
@@ -15711,9 +15711,13 @@ Du bekommst weniger Quellen und langsamere Downloads, und zwei Low-ID-Clients k�
         <translation>Nachrichten</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>IRC</source>
-        <translation>IRC</translation>
+        <translation type="vanished">IRC</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Chat Rooms</source>
+        <translation>Chaträume</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -30729,7 +30733,12 @@ Ein erneuter Klick auf „Statistiken wiederherstellen“ lädt Ihre aktuellen S
         <translation>Symbolleiste anzeigen</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="-3"/>
+        <source>Delete</source>
+        <translation type="unfinished">Löschen</translation>
+    </message>
+    <message>
+        <location line="+19"/>
         <source>Move to Anonymous ed3k Key...</source>
         <translation>Zum anonymen ed3k-Schlüssel verschieben...</translation>
     </message>
@@ -30872,24 +30881,24 @@ Die Quellen sehen dann die Adresse dieses Knotens; Warteschlangenplätze gehen v
     </message>
     <message>
         <location line="+3"/>
-        <location line="+37"/>
+        <location line="+41"/>
         <source>Cancel download &quot;%1&quot;?</source>
         <translation>Download &quot;%1&quot; abbrechen?</translation>
     </message>
     <message>
-        <location line="-40"/>
-        <location line="+42"/>
+        <location line="-44"/>
+        <location line="+46"/>
         <source>Cancel Downloads</source>
         <translation>Downloads abbrechen</translation>
     </message>
     <message>
-        <location line="-37"/>
-        <location line="+36"/>
+        <location line="-41"/>
+        <location line="+40"/>
         <source>Cancel %1 selected downloads?</source>
         <translation>%1 ausgewählte Downloads abbrechen?</translation>
     </message>
     <message>
-        <location line="-33"/>
+        <location line="-37"/>
         <source>Delete File</source>
         <translation>Datei löschen</translation>
     </message>
@@ -30914,7 +30923,7 @@ Die Quellen sehen dann die Adresse dieses Knotens; Warteschlangenplätze gehen v
         <translation>%1 unfertige Download(s) werden ebenfalls abgebrochen.</translation>
     </message>
     <message>
-        <location line="+49"/>
+        <location line="+53"/>
         <location line="+18"/>
         <location line="+34"/>
         <source>Rename</source>
@@ -30930,7 +30939,7 @@ Die Quellen sehen dann die Adresse dieses Knotens; Warteschlangenplätze gehen v
         <translation type="vanished">Dateiname:</translation>
     </message>
     <message>
-        <location line="-2923"/>
+        <location line="-2927"/>
         <location line="+259"/>
         <location line="+519"/>
         <location line="+685"/>

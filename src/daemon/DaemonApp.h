@@ -45,7 +45,7 @@ class I2pRouter;
 
 namespace usenet { class UsenetSession; }
 namespace bt { class BtSession; struct BtSettings; }
-namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; class Ed3kTorrentJoin; class Ed3kEd2kJoin; class Ed3kShared; class SharedFileSource; class Ed3kFriends; class Ed3kRooms; class Ed3kBootstrap; class Ed3kNames; class Ed3kSiteServer; class Ed3kCredit; class Ed3kUploads; class Ed3kFilters; class Ed3kChain; class Ed3kHosterJoin; class Ed3kLinkGrabber; class Ed3kJdResolver; class Ed3kJavaRuntime; class Ed3kResolverUpdater; class Ed3kDownloads; class Ed3kSearch; class Ed3kSets; class Ed3kLive; class Ed3kLiveBroadcast; class Ed3kPaid; class Ed3kPaidSeller; class Ed3kOwnSets; }
+namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; class Ed3kTorrentJoin; class Ed3kEd2kJoin; class Ed3kShared; class SharedFileSource; class Ed3kFriends; class Ed3kRooms; class Ed3kBootstrap; class Ed3kNames; class Ed3kSiteServer; class Ed3kCredit; class Ed3kUploads; class Ed3kFilters; class Ed3kChain; class Ed3kHosterJoin; class Ed3kLinkGrabber; class Ed3kJdResolver; class Ed3kJavaRuntime; class Ed3kResolverUpdater; class Ed3kDownloads; class Ed3kSearch; class Ed3kSets; class Ed3kLive; class Ed3kLiveBroadcast; class Ed3kPaid; class Ed3kPaidSeller; class Ed3kOwnSets; class Ed3kArchiveContents; }
 namespace indexer { class IndexerFeedList; class IndexerSearchList; }
 
 class DaemonApp : public QObject {
@@ -275,6 +275,10 @@ private:
     std::unique_ptr<ed3k::Ed3kLiveBroadcast> m_ed3kLiveBroadcast;
     /// downloads from hoster links (hoster.md, Ed3kHosterBridge, prefs ed3kHoster*); dies before the session
     std::unique_ptr<ed3k::Ed3kHosterJoin> m_hosterJoin;
+    /// archive contents records (hoster.md §6.1, ArchiveContentsBridge); readers of the
+    /// unpack hook stop on m_archiveCancel
+    std::unique_ptr<ed3k::Ed3kArchiveContents> m_archiveContents;
+    std::shared_ptr<std::atomic<bool>> m_archiveCancel = std::make_shared<std::atomic<bool>>(false);
     /// the Link Grabber (hoster.md "Link Grabber"): links checked and edited before they become
     /// hoster downloads; dies before the join and the resolver
     std::unique_ptr<ed3k::Ed3kLinkGrabber> m_linkGrabber;
@@ -304,6 +308,9 @@ private:
     void applyHosterConfig();
     /// Stops the ed3k node and its joins (restart: applyEd3kConfig()).
     void stopEd3kNode();
+    /// A finished torrent's archive sets: read on a worker, contents records published
+    /// (hoster.md §6.1). Not for private torrents.
+    void publishTorrentArchives(const QString& id);
     /// eD2K/Usenet/BitTorrent share of the global limits; after both sessions
     std::unique_ptr<BandwidthCoordinator> m_bandwidth;
     std::unique_ptr<ScheduleNetworkBridge> m_scheduleNetwork;

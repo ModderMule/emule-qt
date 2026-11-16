@@ -363,6 +363,95 @@ void appendDownloading(QCborArray& out, const QString& id)
 #endif
 }
 
+#ifdef EMULE_HAVE_BITTORRENT
+namespace {
+
+bool isComplete(const bt::BtTorrentRow& t)
+{
+    return t.state == bt::BtState::Seeding || t.state == bt::BtState::Finished
+           || (t.hasMetadata && t.size > 0 && t.done >= t.size);
+}
+
+} // namespace
+#endif
+
+std::optional<SingleTransfer::Job> transferJob([[maybe_unused]] const QString& id)
+{
+#ifdef EMULE_HAVE_BITTORRENT
+    if (!s_session)
+        return std::nullopt;
+    const auto t = s_session->torrent(id);
+    if (!t)
+        return std::nullopt;
+    using S = SingleTransfer::RowState;
+    SingleTransfer::Job j;
+    j.name = t->name;
+    j.size = t->size;
+    j.done = t->done;
+    j.rate = t->paused ? 0 : t->rateDown;
+    j.sources = t->peers;
+    j.transferring = j.rate > 0 ? t->peers : 0;
+    j.path = t->name.isEmpty() ? t->savePath : QDir(t->savePath).filePath(t->name);
+    j.addedOn = t->addedAt;
+    j.error = t->error;
+    if (t->state == bt::BtState::Error)
+        j.state = S::Error;
+    else if (isComplete(*t))
+        j.state = S::Complete;
+    else if (t->paused || t->state == bt::BtState::Paused)
+        j.state = S::Paused;
+    else if (t->state == bt::BtState::CheckingFiles || t->state == bt::BtState::CheckingResume
+             || t->state == bt::BtState::Moving)
+        j.state = S::Checking;
+    return j;
+#else
+    return std::nullopt;
+#endif
+}
+
+bool transferControl([[maybe_unused]] const QString& id, [[maybe_unused]] int action, qint64 /*value*/)
+{
+#ifdef EMULE_HAVE_BITTORRENT
+    if (!s_session)
+        return false;
+    const auto t = s_session->torrent(id);
+    if (!t)
+        return false;
+    switch (action) {
+    case 0: return s_session->pause(id);
+    case 1: return s_session->resume(id);
+    // cancel as eD2K's: an unfinished download's data goes, a finished one's stays (7: goes)
+    case 2: return s_session->remove(id, !isComplete(*t));
+    case 7: return s_session->remove(id, true);
+    default: return false;   // no priority or category for a torrent
+    }
+#else
+    return false;
+#endif
+}
+
+QStringList jobIds([[maybe_unused]] bool downloadingOnly)
+{
+    QStringList out;
+#ifdef EMULE_HAVE_BITTORRENT
+    if (!s_session || !s_session->isRunning())
+        return out;
+    for (const bt::BtTorrentRow& t : s_session->torrents())
+        if (!downloadingOnly || (t.hasMetadata && !t.paused && t.state != bt::BtState::Paused && !isComplete(t)))
+            out << t.id;
+#endif
+    return out;
+}
+
+bool running()
+{
+#ifdef EMULE_HAVE_BITTORRENT
+    return s_session && s_session->isRunning();
+#else
+    return false;
+#endif
+}
+
 QString moveTo(const QString& id, const QString& dir)
 {
     if (!s_session)

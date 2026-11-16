@@ -29,6 +29,8 @@ enum class Ed3kJoin { None, Torrent, Usenet, Hoster };
 /// A client of a torrent/usenet/hoster job's own network (a BitTorrent peer, a news server,
 /// a hoster) in the Transfers Downloading list: that network's icon.
 [[nodiscard]] QIcon networkClientIcon(Ed3kJoin network);
+/// The resource path of networkClientIcon (badges); None: empty.
+[[nodiscard]] QString networkIconPath(Ed3kJoin network);
 /// "BitTorrent", "Usenet", "Hoster"; None: empty.
 [[nodiscard]] QString networkName(Ed3kJoin network);
 

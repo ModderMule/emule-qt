@@ -451,6 +451,8 @@ enum class IpcMsgType : int {
     /// auto-categorisation.
     /// Optional field 6 keptFiles: [int], the files checked in the Details
     /// window (NZB file or torrent file indices); absent/empty = all.
+    /// Optional field 7 entries: {firstVolumeName: [path]}, archive entries to
+    /// extract (hoster.md §6.1); field 8 password: an archive password. NZB only.
     GrabIndexerResult       = 707,
 
     /// [] -> [[{name, kind, enabled, query, categories, indexers, url, hasUrl,
@@ -742,6 +744,17 @@ enum class IpcMsgType : int {
     /// Search Details › NFO: the .nfo files of the NZB, decoded (UTF-8 or CP437).
     /// Shown when the inspection says `hasNfo`; once per token (3 h).
     FetchNzbNfo             = 744,
+    /// [kind: "web"|"nzb"|"torrent"|"roots", payload: map] -> [true, {archives: [{name,
+    /// state: found|notPublished|noRoot|failed|timedOut, first?: hex, manifest?: hex, sites,
+    /// password, entries: [{path, size, root: hex}]}]}] or [false, error]. Search/Transfers
+    /// Details › Archive: what each archive holds (hoster.md §6.1), by Kad lookups; the reply
+    /// comes when they end (up to 2 min). payload: web {links: [{url, name}]}; nzb
+    /// {previewToken | usenetItem: id, files: [int]}; torrent {btih?: hex, btmh?: hex,
+    /// names: [path]} | {torrentId}; roots {volumes: [{name, root: hex}]} | {hosterPackage: id}.
+    LookupArchiveContents   = 745,
+    /// [entries: [{root: hex, size, path}], folder: string, category: int] -> [ok, {added: int}].
+    /// Archive entries downloaded by root from ed3k into incoming/<folder>/<path>.
+    DownloadArchiveEntries  = 746,
 
     // -- eNode meta search (750-754) -------------------------------------------
     //
@@ -772,7 +785,8 @@ enum class IpcMsgType : int {
     /// `row` as above. `siblings`: hashes of the other picked rows of the same
     /// NZB (usenetMetaSelectedFileOnly). `unchecked`: NZB file indices unchecked
     /// in the Details window, overriding that option (empty = all); absent = not
-    /// chosen there.
+    /// chosen there. Field 9 `entries` {firstVolumeName: [path]}: archive entries to
+    /// extract (hoster.md §6.1); field 10 `password`: an archive password.
     DownloadMetaResult      = 751,
 
     /// [serverAddr] -> [true, {meta keys + loggedIn, username, state,
@@ -1056,8 +1070,9 @@ enum class IpcMsgType : int {
     /// [] -> [ok, {items: [item], status: {...GetEd3kStatus "hoster"...}}]
     GetHosterItems          = 1100,
     /// [text: string (links, one per line), files?: [[url, mirror…]], package?: string,
-    ///  packageId?: int, passwords?: [string]] -> [ok, {ids: [int]}]; passwords: archive
-    /// passwords for the unpack (a container's);
+    ///  packageId?: int, passwords?: [string], entries?: {firstVolumeName: [path]}] -> [ok, {ids: [int]}];
+    /// passwords: archive passwords for the unpack (a container's); entries: only these
+    /// archive entries are extracted (hoster.md §6.1);
     /// files given: one item per file, its other links tried when the first fails or is
     /// stuck, text ignored. package: the items form a new package (a folder under incoming);
     /// packageId != 0: they join that package instead. PushHosterItem follows each
@@ -1110,8 +1125,8 @@ enum class IpcMsgType : int {
     AddEd3kDownload         = 1141,
     /// [link (ed3k:file without bt=), category, paused] -> [ok, {root}]
     AddEd3kDownloadLink     = 1142,
-    /// [root, action (0 pause, 1 resume, 2 cancel, 3 priority, 4 category, 5 clear completed:
-    /// root ignored), value] -> [ok]
+    /// [root, action (0 pause, 1 resume, 2 cancel (complete: leaves list), 3 priority, 4 category,
+    /// 5 clear completed: root ignored, 6 preview prio, 7 cancel (complete: file deleted)), value] -> [ok]
     Ed3kDownloadControl     = 1143,
 
     // -- ed3k filter lists (batch 12): filter-list.md, src/daemon/Ed3kFiltersBridge.cpp.
@@ -1151,7 +1166,7 @@ enum class IpcMsgType : int {
     CreateEd3kRoom          = 1122,
     /// [link (ed3k:room?...), nick] -> [ok, {room}]
     JoinEd3kRoom            = 1123,
-    /// [room] -> [ok]
+    /// [room, dropRoomKey (owner: also delete the room key)] -> [ok]
     LeaveEd3kRoom           = 1124,
     /// [room, text, replyTo (hex, "" none)] -> [ok, ids: array]; shown as PushEd3kRoomPost
     PostEd3kRoom            = 1125,

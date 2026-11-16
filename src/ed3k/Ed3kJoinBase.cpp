@@ -614,6 +614,14 @@ std::vector<Ed3kJoinBase::JoinOwner> Ed3kJoinBase::networkJobsAt(const Ed3kSessi
     return out;
 }
 
+std::optional<bool> Ed3kJoinBase::joinedAt(const Ed3kSession& session, const QString& tag, const QString& owner)
+{
+    for (const Ed3kJoinBase* join : turnsOf(session).joins)
+        if (join->m_tag == tag)
+            return join->m_started ? std::optional(join->hasOwner(owner)) : std::nullopt;
+    return std::nullopt;
+}
+
 std::vector<std::uint8_t> Ed3kJoinBase::pieceAvailability(const Download& d)
 {
     constexpr std::uint64_t kPiece = 16 * kBlock;

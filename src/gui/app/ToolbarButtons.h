@@ -57,7 +57,7 @@ inline constexpr ToolbarButtonDef kAllButtons[] = {
     {ToolbarButtonId::Search,      QT_TRANSLATE_NOOP("eMule::MainWindow", "Search"),        "Search.ico",     QStyle::SP_FileDialogContentsView,   3},
     {ToolbarButtonId::SharedFiles, QT_TRANSLATE_NOOP("eMule::MainWindow", "Shared Files"),  "SharedFiles.ico",QStyle::SP_DirOpenIcon,              4},
     {ToolbarButtonId::Messages,    QT_TRANSLATE_NOOP("eMule::MainWindow", "Messages"),      "Messages.ico",   QStyle::SP_MessageBoxInformation,    5},
-    {ToolbarButtonId::IRC,         QT_TRANSLATE_NOOP("eMule::MainWindow", "IRC"),           "IRC.ico",        QStyle::SP_DialogApplyButton,        6},
+    {ToolbarButtonId::IRC,         QT_TRANSLATE_NOOP("eMule::MainWindow", "Chat Rooms"),    "IRC.ico",        QStyle::SP_DialogApplyButton,        6},
     {ToolbarButtonId::Statistics,  QT_TRANSLATE_NOOP("eMule::MainWindow", "Statistics"),     "Statistics.ico", QStyle::SP_DialogHelpButton,         7},
     {ToolbarButtonId::Usenet,      QT_TRANSLATE_NOOP("eMule::MainWindow", "Usenet"),        "Usenet.ico",     QStyle::SP_DriveNetIcon,             8},
 #ifdef EMULE_HAVE_BITTORRENT

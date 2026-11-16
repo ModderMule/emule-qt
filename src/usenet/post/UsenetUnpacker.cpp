@@ -178,6 +178,7 @@ UsenetUnpacker::Result UsenetUnpacker::unpackAll(const QString& sourceDir, const
     QDir().mkpath(destDir);
     bool allOk = true;
     int setIndex = 0;
+    m_onlyEntries = options.onlyEntries;
 
     for (const ArchiveSet& set : sets) {
         if (options.skipFirstVolumes.contains(set.firstVolume)) {
@@ -215,6 +216,7 @@ UsenetUnpacker::Result UsenetUnpacker::unpackAll(const QString& sourceDir, const
         allOk = false;
     }
 
+    m_onlyEntries.clear();
     if (allOk && options.nestedDepth > 0)
         unpackNested(result.extractedFiles + options.nestedSeeds, options, result);
     if (!result.vetoed.isEmpty())
@@ -238,6 +240,11 @@ UsenetUnpacker::SetOutcome UsenetUnpacker::extractSet(const ArchiveSet& set, con
     ArchiveReader reader;
     // libarchive tries every candidate itself (ZIP is all it decrypts)
     reader.setPassphrases(passwords);
+    // the user chose entries of this set (hoster.md §6.1)
+    const auto only = m_onlyEntries.constFind(QFileInfo(set.firstVolume).fileName().toLower());
+    const bool filtered = only != m_onlyEntries.constEnd() && !only->isEmpty();
+    if (filtered)
+        reader.setEntryFilter([wanted = *only](const QString& path) { return wanted.contains(path); });
 
     // The whole list, not just volume one. libarchive reads a set as one
     // stream over the files the caller hands it and never opens a sibling
@@ -266,6 +273,8 @@ UsenetUnpacker::SetOutcome UsenetUnpacker::extractSet(const ArchiveSet& set, con
         QStringList memberNames;
         for (int i = 0; i < reader.entryCount(); ++i) {
             if (reader.entryIsDir(i))
+                continue;
+            if (filtered && !only->contains(ArchiveReader::normalizedEntryPath(reader.entryName(i))))
                 continue;
             memberNames.append(reader.entryName(i));
             const QString out = ArchiveReader::safeEntryPath(destDir, reader.entryName(i));
@@ -312,8 +321,21 @@ UsenetUnpacker::SetOutcome UsenetUnpacker::extractSet(const ArchiveSet& set, con
             QFile::remove(path);
     }
 
-    if (unpackEncrypted(set, destDir, passwords, externalTool, reader, result))
+    const qsizetype before = result.extractedFiles.size();
+    if (unpackEncrypted(set, destDir, passwords, externalTool, reader, result)) {
+        // the tool writes everything: what was not chosen goes again
+        if (filtered) {
+            const QDir dest(destDir);
+            for (qsizetype i = result.extractedFiles.size() - 1; i >= before; --i) {
+                const QString path = result.extractedFiles.at(i);
+                if (!only->contains(ArchiveReader::normalizedEntryPath(dest.relativeFilePath(path)))) {
+                    QFile::remove(path);
+                    result.extractedFiles.removeAt(i);
+                }
+            }
+        }
         return SetOutcome::Ok;
+    }
     return result.vetoed.isEmpty() ? SetOutcome::Failed : SetOutcome::Vetoed;
 }
 

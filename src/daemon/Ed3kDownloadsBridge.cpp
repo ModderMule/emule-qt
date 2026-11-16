@@ -4,6 +4,7 @@
 #include "Ed3kDownloadsBridge.h"
 #include "Ed3kOffGate.h"
 #include "Ed3kUploadsBridge.h"
+#include "SingleTransfer.h"
 #include "webserver/WebServer.h"
 
 #include <QCborArray>
@@ -16,8 +17,15 @@
 #include "Ed3kDownloads.h"
 #include "Ed3kSession.h"
 
+#include "app/AppContext.h"
+#include "files/KnownFile.h"
+#include "files/SharedFileList.h"
+#include "transfer/UploadQueue.h"
 #include "utils/BlockRuns.h"
+#include "utils/Log.h"
 
+#include <QDir>
+#include <QFile>
 #include <QObject>
 
 #include <cstring>
@@ -64,6 +72,33 @@ std::optional<ffi::Root> rootOf(const QString& hex)
         return std::nullopt;
     std::memcpy(r.bytes.data(), raw.constData(), r.bytes.size());
     return r;
+}
+
+/// Cancel as eD2K's CancelDownload (MFC MP_CANCEL): a complete file goes from disk too,
+/// and from the eD2K share list (Ed3kShared follows it) once that worked
+bool cancelDeleting(ed3k::Ed3kDownloads& d, const ffi::Root& root)
+{
+    const auto info = d.info(root);
+    if (!info || info->state != ed3k::Ed3kDownloadInfo::State::Complete || info->path.isEmpty())
+        return d.cancel(root);
+    const QString path = QDir::cleanPath(info->path);
+    if (theApp.uploadQueue)
+        theApp.uploadQueue->releaseUploadFile(path);
+    const bool done = d.cancel(root);   // closes the own share first
+    if (!QFile::remove(path) && QFileInfo::exists(path)) {
+        logWarning(QStringLiteral("Could not delete completed file: %1").arg(path));
+        return done;
+    }
+    if (theApp.sharedFileList) {
+        KnownFile* hit = nullptr;
+        theApp.sharedFileList->forEachFile([&](KnownFile* f) {
+            if (!hit && QDir::cleanPath(f->filePath()) == path)
+                hit = f;
+        });
+        if (hit)
+            theApp.sharedFileList->removeFile(hit);
+    }
+    return done;
 }
 
 QCborMap toCbor(const ed3k::Ed3kDownloadInfo& i)
@@ -160,6 +195,14 @@ void answer(const IpcMessage& msg, ed3k::Ed3kDownloads& d, const std::function<v
         break;
     case IpcMsgType::Ed3kDownloadControl: {
         const int action = int(msg.fieldInt(1));
+        // a torrent/usenet/hoster row of single transfer mode: its own network acts
+        if (SingleTransfer::isKey(msg.fieldString(0))) {
+            if (SingleTransfer::control(msg.fieldString(0), action, msg.fieldInt(2)))
+                ok(true);
+            else
+                bad();
+            break;
+        }
         if (action == 5) {
             d.clearCompleted();
             ok();
@@ -175,11 +218,13 @@ void answer(const IpcMessage& msg, ed3k::Ed3kDownloads& d, const std::function<v
             case 3: done = d.setPriority(*root, int(msg.fieldInt(2))); break;
             case 4: done = d.setCategory(*root, int(msg.fieldInt(2))); break;
             case 6: done = d.setPreviewPrio(*root, msg.fieldInt(2) != 0); break;   // preview parts first
+            case 7: done = cancelDeleting(d, *root); break;   // Cancel/Delete: complete file off disk
             default: break;
             }
         }
-        // pause of a paused one is no error worth a box: the list says what it is
-        if (root && d.contains(*root))
+        // pause of a paused one is no error worth a box: the list says what it is;
+        // a done cancel has no row left to find
+        if (root && (done || d.contains(*root)))
             ok(done);
         else
             bad();
@@ -417,6 +462,7 @@ QCborMap listToCbor()
             list.append(toCbor(i));
     }
 #endif
+    SingleTransfer::appendRows(list);
     return QCborMap{{QStringLiteral("running"), running}, {QStringLiteral("downloads"), list}};
 }
 

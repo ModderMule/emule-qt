@@ -48,6 +48,9 @@
     <ClCompile Include="archive\ArchiveReader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="archive\ArchiveContentsHook.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="archive\ArchiveRecovery.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -789,6 +792,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="archive\ArchiveReader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="archive\ArchiveContentsHook.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="archive\ArchiveUnpack.h">

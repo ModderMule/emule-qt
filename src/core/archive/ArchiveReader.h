@@ -168,6 +168,17 @@ public:
                                             qint64 entrySize, bool finished)>;
     void setProgressSink(ProgressSink sink);
 
+    /// Only members @p wanted says yes to are written by extractAll()/extractAllFrom()
+    /// (path as normalizedEntryPath() gives it); the rest are skipped. Empty: all.
+    using EntryFilter = std::function<bool(const QString& path)>;
+    void setEntryFilter(EntryFilter wanted);
+    /// One pass over every regular-file member, its data in chunks: @p sink gets each
+    /// chunk, then one call with @p end true (empty chunk). @p sink false stops the walk.
+    /// False: the archive failed (lastError()) or the sink stopped it.
+    using DataSink = std::function<bool(int entryIndex, const QString& path, const char* data, qint64 len, bool end)>;
+    bool readEntries(const DataSink& sink);
+    /// A member name with `/` between components and no leading "./" (hoster.md §6).
+    [[nodiscard]] static QString normalizedEntryPath(const QString& entryName);
     /// Members the last extractAll() refused as unsafe. Empty on a clean archive.
     [[nodiscard]] QStringList rejectedEntries() const;
 

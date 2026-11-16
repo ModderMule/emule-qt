@@ -176,6 +176,7 @@
     <ClCompile Include="app\TranslationRouter.cpp" />
     <ClCompile Include="app\AppContext.cpp" />
     <ClCompile Include="archive\ArchiveReader.cpp" />
+    <ClCompile Include="archive\ArchiveContentsHook.cpp" />
     <ClCompile Include="archive\ExternalUnpacker.cpp" />
     <ClCompile Include="archive\ArchiveRecovery.cpp" />
     <ClCompile Include="archive\ArchiveScan.cpp" />
@@ -451,6 +452,7 @@
     <ClInclude Include="app\TranslationRouter.h" />
     <ClInclude Include="app\AppContext.h" />
     <ClInclude Include="archive\ArchiveReader.h" />
+    <ClInclude Include="archive\ArchiveContentsHook.h" />
     <ClInclude Include="archive\ExternalUnpacker.h" />
     <ClInclude Include="archive\ArchiveRecovery.h" />
     <ClInclude Include="archive\ArchiveScan.h" />

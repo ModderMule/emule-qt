@@ -1343,7 +1343,7 @@ Baixar novamente?</translation>
         <translation>Adicionar torrent</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+99"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+98"/>
         <source>Delete</source>
         <translation>Excluir</translation>
     </message>
@@ -12804,7 +12804,7 @@ Se o seu provedor tenta limitar ou bloquear o eMule, a ofuscação ajuda a conto
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1193"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1195"/>
         <source>The core&apos;s certificate changed</source>
         <translation>O certificado do núcleo mudou</translation>
     </message>
@@ -15711,9 +15711,13 @@ Você obtém menos fontes e downloads mais lentos, e dois clientes com Low ID ra
         <translation>Mensagens</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>IRC</source>
-        <translation>IRC</translation>
+        <translation type="vanished">IRC</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Chat Rooms</source>
+        <translation>Salas de bate-papo</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -30729,7 +30733,12 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
         <translation>Mostrar barra de ferramentas</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="-3"/>
+        <source>Delete</source>
+        <translation type="unfinished">Excluir</translation>
+    </message>
+    <message>
+        <location line="+19"/>
         <source>Move to Anonymous ed3k Key...</source>
         <translation>Mover para a chave ed3k anônima...</translation>
     </message>
@@ -30872,24 +30881,24 @@ As fontes passam a ver o endereço deste nó; as posições na fila são perdida
     </message>
     <message>
         <location line="+3"/>
-        <location line="+37"/>
+        <location line="+41"/>
         <source>Cancel download &quot;%1&quot;?</source>
         <translation>Cancelar o download &quot;%1&quot;?</translation>
     </message>
     <message>
-        <location line="-40"/>
-        <location line="+42"/>
+        <location line="-44"/>
+        <location line="+46"/>
         <source>Cancel Downloads</source>
         <translation>Cancelar downloads</translation>
     </message>
     <message>
-        <location line="-37"/>
-        <location line="+36"/>
+        <location line="-41"/>
+        <location line="+40"/>
         <source>Cancel %1 selected downloads?</source>
         <translation>Cancelar %1 downloads selecionados?</translation>
     </message>
     <message>
-        <location line="-33"/>
+        <location line="-37"/>
         <source>Delete File</source>
         <translation>Excluir arquivo</translation>
     </message>
@@ -30914,7 +30923,7 @@ As fontes passam a ver o endereço deste nó; as posições na fila são perdida
         <translation>%1 download(s) não concluído(s) também serão cancelados.</translation>
     </message>
     <message>
-        <location line="+49"/>
+        <location line="+53"/>
         <location line="+18"/>
         <location line="+34"/>
         <source>Rename</source>
@@ -30930,7 +30939,7 @@ As fontes passam a ver o endereço deste nó; as posições na fila são perdida
         <translation type="vanished">Nome do arquivo:</translation>
     </message>
     <message>
-        <location line="-2923"/>
+        <location line="-2927"/>
         <location line="+259"/>
         <location line="+519"/>
         <location line="+685"/>

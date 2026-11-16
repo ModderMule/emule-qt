@@ -1343,7 +1343,7 @@ Scaricarlo di nuovo?</translation>
         <translation>Aggiungi torrent</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+99"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+98"/>
         <source>Delete</source>
         <translation>Elimina</translation>
     </message>
@@ -12804,7 +12804,7 @@ Se il provider tenta di limitare o bloccare eMule, l&apos;offuscamento aiuta ad 
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1193"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1195"/>
         <source>The core&apos;s certificate changed</source>
         <translation>Il certificato del core è cambiato</translation>
     </message>
@@ -15711,9 +15711,13 @@ Ottieni meno fonti e download più lenti, e due client con Low ID raramente ries
         <translation>Messaggi</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>IRC</source>
-        <translation>IRC</translation>
+        <translation type="vanished">IRC</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Chat Rooms</source>
+        <translation>Stanze chat</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -30729,7 +30733,12 @@ Facendo di nuovo clic su &quot;Ripristina statistiche&quot; verranno ricaricate 
         <translation>Mostra barra degli strumenti</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="-3"/>
+        <source>Delete</source>
+        <translation type="unfinished">Elimina</translation>
+    </message>
+    <message>
+        <location line="+19"/>
         <source>Move to Anonymous ed3k Key...</source>
         <translation>Sposta sulla chiave ed3k anonima...</translation>
     </message>
@@ -30872,24 +30881,24 @@ Le fonti vedranno l&apos;indirizzo di questo nodo; le posizioni in coda vanno pe
     </message>
     <message>
         <location line="+3"/>
-        <location line="+37"/>
+        <location line="+41"/>
         <source>Cancel download &quot;%1&quot;?</source>
         <translation>Annullare il download &quot;%1&quot;?</translation>
     </message>
     <message>
-        <location line="-40"/>
-        <location line="+42"/>
+        <location line="-44"/>
+        <location line="+46"/>
         <source>Cancel Downloads</source>
         <translation>Annulla i download</translation>
     </message>
     <message>
-        <location line="-37"/>
-        <location line="+36"/>
+        <location line="-41"/>
+        <location line="+40"/>
         <source>Cancel %1 selected downloads?</source>
         <translation>Annullare %1 download selezionati?</translation>
     </message>
     <message>
-        <location line="-33"/>
+        <location line="-37"/>
         <source>Delete File</source>
         <translation>Elimina file</translation>
     </message>
@@ -30914,7 +30923,7 @@ Le fonti vedranno l&apos;indirizzo di questo nodo; le posizioni in coda vanno pe
         <translation>Verranno annullati anche %1 download non completati.</translation>
     </message>
     <message>
-        <location line="+49"/>
+        <location line="+53"/>
         <location line="+18"/>
         <location line="+34"/>
         <source>Rename</source>
@@ -30930,7 +30939,7 @@ Le fonti vedranno l&apos;indirizzo di questo nodo; le posizioni in coda vanno pe
         <translation type="vanished">Nome file:</translation>
     </message>
     <message>
-        <location line="-2923"/>
+        <location line="-2927"/>
         <location line="+259"/>
         <location line="+519"/>
         <location line="+685"/>

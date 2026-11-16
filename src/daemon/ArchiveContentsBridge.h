@@ -1,0 +1,40 @@
+#pragma once
+
+/// @file ArchiveContentsBridge.h
+/// @brief Search and Transfers Details › Archive over IPC (745, 746, hoster.md §6.1): what each
+/// archive of a web row, an NZB, a torrent or a queued item holds, and its entries downloaded
+/// by root. Without the ed3k module every request answers false.
+
+#include <QCborArray>
+#include <QCborMap>
+#include <QCborValue>
+#include <QString>
+
+#include <functional>
+
+namespace eMule {
+
+namespace ed3k {
+class Ed3kArchiveContents;
+class Ed3kDownloads;
+class Ed3kHosterJoin;
+} // namespace ed3k
+namespace bt {
+class BtSession;
+}
+
+namespace ArchiveContentsBridge {
+
+/// Set by DaemonApp; null when absent.
+void setTargets(ed3k::Ed3kArchiveContents* contents, ed3k::Ed3kDownloads* downloads, ed3k::Ed3kHosterJoin* hoster,
+                bt::BtSession* bt);
+
+using Reply = std::function<void(bool ok, const QCborValue& value)>;
+/// LookupArchiveContents: @p reply once, mostly later.
+void lookup(const QString& kind, const QCborMap& payload, Reply reply);
+/// DownloadArchiveEntries.
+void downloadEntries(const QCborArray& entries, const QString& folder, int category, Reply reply);
+
+} // namespace ArchiveContentsBridge
+
+} // namespace eMule

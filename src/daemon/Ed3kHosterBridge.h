@@ -7,11 +7,15 @@
 /// it every request answers [false, {error}] and the status has no "hoster".
 
 #include "IpcMessage.h"
+#include "SingleTransfer.h"
 
 #include <QCborArray>
 #include <QCborMap>
 
+#include <QStringList>
+
 #include <functional>
+#include <optional>
 
 namespace eMule {
 
@@ -59,6 +63,13 @@ void connectGrabberPushes(ed3k::Ed3kLinkGrabber& grabber, const std::function<vo
 
 /// The hoster item of @p owner downloading now, as a GetDownloadClients row (network "hoster").
 void appendDownloading(QCborArray& out, const QString& owner);
+
+/// Hoster item of join owner @p owner as a Transfers row in single transfer mode; nullopt: none.
+[[nodiscard]] std::optional<SingleTransfer::Job> transferJob(const QString& owner);
+/// SingleTransfer::control on the item of @p owner. False: not done.
+bool transferControl(const QString& owner, int action, qint64 value);
+/// Join owners ("h<id>") of every hoster item: all of them are ed3k joins.
+[[nodiscard]] QStringList owners();
 
 /// The "hoster" map of GetEd3kStatus: {compiled, enabled, java: {state, path, version, error,
 /// progress}, resolver: {available, reason, description}, clipboard, linkGrabber, grabAll,

@@ -126,6 +126,7 @@ struct ArchiveReader::Impl {
     ArchiveVolumeSource* source = nullptr;   ///< set instead of `volumes` for a live set
     QString filePath;
     QStringList passphrases;
+    EntryFilter filter;
     QString formatName;
     QStringList rejected;
     QString lastError;
@@ -508,6 +509,71 @@ bool ArchiveReader::extractAllFrom(ArchiveVolumeSource& source, const QString& d
     return ok;
 }
 
+void ArchiveReader::setEntryFilter(EntryFilter wanted)
+{
+    m_impl->filter = std::move(wanted);
+}
+
+QString ArchiveReader::normalizedEntryPath(const QString& entryName)
+{
+    QString p = QString(entryName).replace(u'\\', u'/');
+    while (p.startsWith(QLatin1String("./")))
+        p.remove(0, 2);
+    return p;
+}
+
+bool ArchiveReader::readEntries(const DataSink& sink)
+{
+    if (!m_impl->opened || !sink)
+        return false;
+    auto* ar = openArchive("reopen for reading");
+    if (!ar)
+        return false;
+    static constexpr int kBufSize = 65536;
+    std::vector<char> buf(kBufSize);
+    struct archive_entry* entry = nullptr;
+    int entryIndex = -1;
+    bool ok = true;
+    int status = ARCHIVE_OK;
+    while (ok && (status = archive_read_next_header(ar, &entry)) == ARCHIVE_OK) {
+        ++entryIndex;
+        if (archive_entry_is_encrypted(entry))
+            m_impl->encrypted = true;
+        if (archive_entry_filetype(entry) != AE_IFREG) {
+            archive_read_data_skip(ar);
+            continue;
+        }
+        const char* pathname = archive_entry_pathname_utf8(entry);
+        if (!pathname)
+            pathname = archive_entry_pathname(entry);
+        const QString path = normalizedEntryPath(QString::fromUtf8(pathname ? pathname : ""));
+        for (;;) {
+            const auto n = archive_read_data(ar, buf.data(), buf.size());
+            if (n < 0) {
+                noteReadFailure(ar, int(n));
+                ok = false;
+                break;
+            }
+            if (n == 0)
+                break;
+            if (!sink(entryIndex, path, buf.data(), qint64(n), false)) {
+                ok = false;
+                break;
+            }
+        }
+        if (ok && !sink(entryIndex, path, nullptr, 0, true))
+            ok = false;
+    }
+    if (ok && status != ARCHIVE_EOF) {
+        noteReadFailure(ar, status);
+        ok = false;
+    }
+    if (const char* fmt = archive_format_name(ar))
+        m_impl->formatName = QString::fromUtf8(fmt);
+    archive_read_free(ar);
+    return ok;
+}
+
 // ---------------------------------------------------------------------------
 // Private
 // ---------------------------------------------------------------------------
@@ -706,6 +772,11 @@ bool ArchiveReader::extractAllInto(::archive* ar, const QString& destDir)
 
         if (archive_entry_filetype(entry) == AE_IFDIR) {
             QDir().mkpath(destPath);
+            continue;
+        }
+        // not chosen (hoster.md §6.1: extract only the checked entries)
+        if (m_impl->filter && !m_impl->filter(normalizedEntryPath(rawName))) {
+            archive_read_data_skip(ar);
             continue;
         }
 

@@ -34,6 +34,7 @@ DownloadRow ed3kDownloadRow(const QCborMap& m)
     row.addedOn = m.value(QStringLiteral("addedOn")).toInteger();
     row.ed3kPath = m.value(QStringLiteral("path")).toString();
     row.ed3kKey = m.value(QStringLiteral("key")).toString();   // batch 15, hops.md §1
+    row.ed3kNetwork = m.value(QStringLiteral("network")).toString();   // single transfer mode
     for (const auto& a : m.value(QStringLiteral("aliases")).toArray())
         if (const QString text = ed3kAliasText(a.toMap()); !text.isEmpty())
             row.ed3kAliases << text;

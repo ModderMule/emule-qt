@@ -7,13 +7,17 @@
 /// without it (EMULE_BITTORRENT=OFF), and then every request answers 503.
 
 #include "IpcMessage.h"
+#include "SingleTransfer.h"
 #include "stats/StatsHistory.h"
 
 #include <QCborArray>
 #include <QCborMap>
 #include <QString>
 
+#include <QStringList>
+
 #include <functional>
+#include <optional>
 
 namespace eMule {
 
@@ -60,6 +64,16 @@ bool handleRequest(const Ipc::IpcMessage& msg, const std::function<void(const Ip
 
 /// The peers torrent @p id gets bytes from now, as GetDownloadClients rows (network "bt").
 void appendDownloading(QCborArray& out, const QString& id);
+
+/// Torrent @p id as a Transfers row in single transfer mode (SingleTransfer); nullopt: none.
+[[nodiscard]] std::optional<SingleTransfer::Job> transferJob(const QString& id);
+/// SingleTransfer::control on Torrent @p id. False: not done.
+bool transferControl(const QString& id, int action, qint64 value);
+/// Torrent ids; @p downloadingOnly: those fetching now (not paused, not complete, file list known), what
+/// single transfer mode may pause. Empty while the engine is not running.
+[[nodiscard]] QStringList jobIds(bool downloadingOnly);
+/// The engine runs (its torrents are known).
+[[nodiscard]] bool running();
 
 /// One GetTorrents row, also what PushTorrentAdded/Update carry. Empty when the id
 /// is unknown.

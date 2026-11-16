@@ -191,7 +191,7 @@ ffi::Result<ffi::Room> Ed3kRooms::join(const QString& link, const QString& nick)
     return room;
 }
 
-ffi::Result<> Ed3kRooms::leave(const ffi::Room& room)
+ffi::Result<> Ed3kRooms::leave(const ffi::Room& room, bool dropRoomKey)
 {
     auto* e = m_session.engine();
     if (!e)
@@ -206,11 +206,20 @@ ffi::Result<> Ed3kRooms::leave(const ffi::Room& room)
             return ok;
     }
     // the member key goes with the room (a new one for a new join, §1.1); the room key stays
+    // unless asked
     QFile::remove(QDir(roomsDir()).filePath(memberFile(room)));
+    bool keyDropped = false;
+    if (dropRoomKey) {
+        const auto it = m_rooms.find(room);
+        if (it != m_rooms.end())
+            if (const auto roomKey = linkKey(it->second.link))
+                keyDropped = QFile::remove(QDir(roomsDir()).filePath(ownerFile(*roomKey)));
+    }
     m_rooms.erase(room);
     m_saved.erase(room);
     save();
-    logEd3k(QStringLiteral("ed3k: room %1 left").arg(roomHex(room)));
+    logEd3k(keyDropped ? QStringLiteral("ed3k: room %1 left, room key deleted").arg(roomHex(room))
+                       : QStringLiteral("ed3k: room %1 left").arg(roomHex(room)));
     emit roomsChanged();
     return {};
 }

@@ -146,6 +146,7 @@ private slots:
     void aMovedPartFileGoesOnInItsNewFolder();
     void anOldStateFileMovesToMetFiles();
     void theIpcListsAndControls();
+    void cancelDeletesACompleteFile();
     void downloadsOfOneSourceTakeTurns();
     void aHigherPriorityGetsMoreBlocks();
     void aRaisedPriorityTakesTheSource();
@@ -543,6 +544,63 @@ void tst_Ed3kDownloads::theIpcListsAndControls()
     QVERIFY(!Ed3kDownloadsBridge::handleRequest(Ipc::IpcMessage(Ipc::IpcMsgType::GetEd3kStatus, 12), reply));
     Ed3kDownloadsBridge::setDownloads(nullptr);
     d.stop();
+}
+
+// Ed3kDownloadControl 7 = eD2K Cancel/Delete: a complete file goes off disk with its row;
+// 2 (Clear Completed) only drops the row; 7 on an unfinished one cancels it
+void tst_Ed3kDownloads::cancelDeletesACompleteFile()
+{
+    const QByteArray one = payload(int(2 * kBlock + 5), 7);
+    const QByteArray two = payload(int(kBlock + 9), 8);
+    Seeder a;
+    QVERIFY(a.startFiles({{QStringLiteral("gone.bin"), one}, {QStringLiteral("kept.bin"), two}}));
+    QTemporaryDir db;
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    Ed3kDownloads d(b, db.path());
+    d.setSearchEnabled(false);
+    d.setDirs(QDir(db.path()).filePath(QStringLiteral("temp")), QDir(db.path()).filePath(QStringLiteral("in")));
+    d.start();
+    Ed3kDownloadsBridge::setDownloads(&d);
+    QSignalSpy done(&d, &Ed3kDownloads::completed);
+    QVERIFY(d.add(Ed3kDownloadSpec{a.roots[0], std::uint64_t(one.size()), QStringLiteral("gone.bin")}).has_value());
+    QVERIFY(d.add(Ed3kDownloadSpec{a.roots[1], std::uint64_t(two.size()), QStringLiteral("kept.bin")}).has_value());
+    d.addSourceTo(a.roots[0], sourceOf(a.session));
+    d.addSourceTo(a.roots[1], sourceOf(a.session));
+    QTRY_COMPARE_WITH_TIMEOUT(done.count(), 2, 60000);
+    const QString gone = d.info(a.roots[0])->path;
+    const QString kept = d.info(a.roots[1])->path;
+    QVERIFY(QFile::exists(gone) && QFile::exists(kept));
+
+    std::vector<Ipc::IpcMessage> replies;
+    const auto reply = [&](const Ipc::IpcMessage& m) { replies.push_back(m); };
+    const auto control = [&](const ::ed3k::Root& root, qint64 action) {
+        Ipc::IpcMessage m(Ipc::IpcMsgType::Ed3kDownloadControl, 20);
+        m.append(QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(root.bytes.data()),
+                                                qsizetype(root.bytes.size())).toHex()));
+        m.append(action);
+        return Ed3kDownloadsBridge::handleRequest(m, reply) && replies.back().fieldBool(0);
+    };
+
+    QVERIFY(control(a.roots[0], 7));   // a done cancel is no "unknown download"
+    QVERIFY(!d.contains(a.roots[0]));
+    QVERIFY(!d.sharesRoot(a.roots[0]));
+    QVERIFY(!QFile::exists(gone));
+    QVERIFY(control(a.roots[1], 2));
+    QVERIFY(!d.contains(a.roots[1]));
+    QVERIFY(QFile::exists(kept));
+    QVERIFY(!control(a.roots[0], 7));   // gone already
+
+    // unfinished: 7 = plain cancel, the incoming dir untouched
+    ::ed3k::Root other;
+    other.bytes.fill(0x3d);
+    QVERIFY(d.add(Ed3kDownloadSpec{other, 1000, QStringLiteral("open.bin"), {}, {}, 0, true, 1}).has_value());
+    QVERIFY(control(other, 7));
+    QVERIFY(!d.contains(other));
+    QVERIFY(QFile::exists(kept));
+    Ed3kDownloadsBridge::setDownloads(nullptr);
+    d.stop();
+    a.shared->stop();
 }
 
 // Protocol.md §12.5: one file stream per uploader (a second FileRequest replaces the first).

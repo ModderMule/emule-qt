@@ -360,8 +360,11 @@ private:
     /// Ctrl+Tab / Ctrl+Shift+Tab: next / previous window button in toolbar order
     /// (MFC CemuleDlg::GetNextWindowToolbarButton, EmuleDlg.cpp:2975).
     void cycleTab(int direction);
-    /// Tab of a switched-off feature (Torrents without btEnabled, Hoster without hosterDownloadsOn)
+    /// Tab of a switched-off feature (Torrents without btEnabled, Hoster without hosterDownloadsOn),
+    /// or of a network in single transfer mode
     [[nodiscard]] static bool isTabHidden(int tab);
+    /// Tab hidden by single transfer mode (ed3k only): its jobs joined with ed3k are in Transfers.
+    [[nodiscard]] static bool singleTransferHides(int tab);
     /// Puts a feature button back into a customized toolbar order when its feature
     /// was just switched on. True when the order changed (caller rebuilds).
     bool restoreToolbarButton(ToolbarButtonId id);

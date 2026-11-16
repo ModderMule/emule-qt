@@ -11,6 +11,7 @@
 /// Header stays free of the Usenet module, like IpcClientHandler.h: the enums are
 /// forward-declared with their fixed underlying type.
 
+#include "SingleTransfer.h"
 #include "webserver/UsenetWebBackend.h"
 
 #include <QCborArray>
@@ -19,7 +20,10 @@
 #include <QString>
 #include <QUrl>
 
+#include <QStringList>
+
 #include <functional>
+#include <optional>
 
 class QObject;
 
@@ -45,6 +49,14 @@ namespace UsenetBridge {
 /// The news servers item @p itemId gets articles from now, as GetDownloadClients rows
 /// (network "usenet").
 void appendDownloading(QCborArray& out, const QString& itemId);
+
+/// Queue item @p itemId as a Transfers row in single transfer mode (SingleTransfer); nullopt: none.
+[[nodiscard]] std::optional<SingleTransfer::Job> transferJob(const QString& itemId);
+/// SingleTransfer::control on Queue item @p itemId. False: not done.
+bool transferControl(const QString& itemId, int action, qint64 value);
+/// Item ids; @p downloadingOnly: those fetching now (not paused, not complete), what
+/// single transfer mode may pause. Empty while the engine is not running.
+[[nodiscard]] QStringList jobIds(bool downloadingOnly);
 
 /// One GetUsenetQueue row. Also what PushUsenetQueueItem carries.
 [[nodiscard]] QCborMap itemToCbor(const usenet::UsenetQueueItem& item);
@@ -87,6 +99,9 @@ void addNzbUrl(QObject* context, const QString& url, const usenet::UsenetAddOpti
 
 /// Empty when the probe started, else why not.
 [[nodiscard]] QString recheck(const QString& itemId);
+
+/// The NZB inspectNzb() handed out @p token for; empty: unknown or expired.
+[[nodiscard]] QByteArray previewNzb(const QString& token);
 
 /// InspectNzb: the files of an .nzb, without queueing it. Empty with @p error
 /// set when it does not parse.

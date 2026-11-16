@@ -475,7 +475,9 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         // obfuscated badges, not this one (srchybrid/DownloadListCtrl.cpp:202-205).
         // ed3k files: the ed3k client mark after the type icon; eD2K rows keep the
         // slot blank while any ed3k row is listed, so names line up
-        const QString badge = d.isEd3k() ? QStringLiteral(":/icons/ClientEd3k.ico")
+        // single transfer mode: the job's own network instead
+        const QString badge = d.isNetworkJob() ? networkIconPath(ed3kJoinOf(d.ed3kNetwork))
+                              : d.isEd3k() ? QStringLiteral(":/icons/ClientEd3k.ico")
                               : m_hasEd3k ? QString(kEmptyBadge) : QString();
         return fileMarksIcon(d.fileType, containerMark(d.containerSuspect, d.containerMislabelled),
                              /*ownComment*/ false,
@@ -485,7 +487,10 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
     if (role == Qt::DisplayRole) {
         switch (index.column()) {
         // marked as the Messages panel marks ed3k friends (no MFC original)
-        case ColFileName:   return d.isEd3k() ? tr("%1 (ed3k)").arg(d.fileName) : d.fileName;
+        case ColFileName:
+            if (d.isNetworkJob())
+                return tr("%1 (ed3k + %2)").arg(d.fileName, networkName(ed3kJoinOf(d.ed3kNetwork)));
+            return d.isEd3k() ? tr("%1 (ed3k)").arg(d.fileName) : d.fileName;
         case ColSize:       return formatByteSize(d.fileSize);
         case ColCompleted:  return formatByteSize(d.completedSize);
         case ColSpeed:      return d.datarate > 0 ? formatByteRate(d.datarate) : QString{};
@@ -561,6 +566,8 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             .arg(d.requests).arg(d.acceptedRequests)
             .arg(formatByteSize(d.upTransferred));
         tip += extra;
+        if (d.isNetworkJob())
+            tip += u'\n' + tr("Network:\t%1 (single transfer mode)").arg(networkName(ed3kJoinOf(d.ed3kNetwork)));
         // ed3k: the jobs here with the same root (alias.md); the row is in Transfers only
         if (!d.ed3kAliases.isEmpty())
             tip += u'\n' + tr("Also known as:") + QStringLiteral("\n  ") + d.ed3kAliases.join(QStringLiteral("\n  "));

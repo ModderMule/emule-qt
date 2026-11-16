@@ -7,6 +7,7 @@
 #include "post/UsenetDeobfuscate.h"
 #include "post/UsenetReleaseChecks.h"
 #include "post/UsenetUnpacker.h"
+#include "archive/ArchiveContentsHook.h"
 #include "prefs/Preferences.h"
 #include "queue/UsenetQueueItem.h"
 #include "utils/Log.h"
@@ -638,6 +639,13 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
             result.message = unpacked.error;
             emit finished(result);
             return;
+        }
+
+        // the contents record (hoster.md §6.1): read while the volumes still exist
+        if (!unpacked.nothingToDo) {
+            for (const ArchiveSet& set : UsenetUnpacker::findArchiveSets(job.workDir))
+                if (!set.headless)
+                    readArchiveContents(set.volumes, unpackOptions.passwords);
         }
 
         if (unpacked.nothingToDo && directPayload.isEmpty()) {

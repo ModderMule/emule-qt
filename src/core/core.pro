@@ -76,6 +76,7 @@ SOURCES += \
     app/AppContext.cpp \
     app/CoreSession.cpp \
     archive/ArchiveReader.cpp \
+    archive/ArchiveContentsHook.cpp \
     archive/ExternalUnpacker.cpp \
     archive/ArchiveRecovery.cpp \
     archive/ArchiveUnpack.cpp \
@@ -261,6 +262,7 @@ HEADERS += \
     app/AppContext.h \
     app/CoreSession.h \
     archive/ArchiveReader.h \
+    archive/ArchiveContentsHook.h \
     archive/ExternalUnpacker.h \
     archive/ArchiveRecovery.h \
     archive/ArchiveUnpack.h \

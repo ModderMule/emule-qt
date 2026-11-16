@@ -389,7 +389,8 @@ QList<quint32> Ed3kHosterJoin::addLinks(const QString& text, const QString& pack
 }
 
 QList<quint32> Ed3kHosterJoin::addMirrored(const QList<QStringList>& files, const QString& package,
-                                           quint32 packageId, const QStringList& passwords)
+                                           quint32 packageId, const QStringList& passwords,
+                                           const QHash<QString, QStringList>& keptEntries)
 {
     // the package: an existing one by id, else a new one by name; one level only
     QString packageName;
@@ -437,6 +438,7 @@ QList<quint32> Ed3kHosterJoin::addMirrored(const QList<QStringList>& files, cons
         e->item.packageId = packageId;
         e->item.package = packageName;
         e->item.passwords = passwords;
+        e->item.keptEntries = keptEntries;
         e->key = newKey();
         e->item.file = partPathFor(e->key);
         e->metDirty = true;
@@ -3171,6 +3173,12 @@ QJsonObject Ed3kHosterJoin::toJson(const Entry& e) const
         o.insert(QStringLiteral("pkgName"), it.package);
     if (!it.passwords.isEmpty())
         o.insert(QStringLiteral("passwords"), QJsonArray::fromStringList(it.passwords));
+    if (!it.keptEntries.isEmpty()) {
+        QJsonObject kept;
+        for (auto k = it.keptEntries.cbegin(); k != it.keptEntries.cend(); ++k)
+            kept.insert(k.key(), QJsonArray::fromStringList(k.value()));
+        o.insert(QStringLiteral("entries"), kept);
+    }
     return o;
 }
 
@@ -3200,6 +3208,15 @@ void Ed3kHosterJoin::fromJson(const QJsonObject& o, Entry& e) const
     for (const QJsonValue& pw : o.value(QStringLiteral("passwords")).toArray())
         if (const QString t = pw.toString(); !t.isEmpty())
             it.passwords << t;
+    const QJsonObject kept = o.value(QStringLiteral("entries")).toObject();
+    for (auto k = kept.begin(); k != kept.end(); ++k) {
+        QStringList paths;
+        for (const QJsonValue& p : k.value().toArray())
+            if (const QString t = p.toString(); !t.isEmpty())
+                paths << t;
+        if (!paths.isEmpty())
+            it.keptEntries.insert(k.key().toLower(), paths);
+    }
     for (const QJsonValue& lv : o.value(QStringLiteral("links")).toArray()) {
         const QJsonObject lo = lv.toObject();
         SharedLink l;
@@ -3378,6 +3395,11 @@ void Ed3kHosterJoin::queueUnpacks()
                 job.passwords << pw;
         job.nestedDepth = thePrefs.archiveRecursiveExtract() ? usenet::UsenetUnpacker::kNestedDepth : 0;
         job.deleteNestedArchives = m_prefs.deleteArchives;
+        // entries the user chose of this package's archives (hoster.md §6.1)
+        for (const Entry* m : members)
+            for (auto k = m->item.keptEntries.cbegin(); k != m->item.keptEntries.cend(); ++k)
+                for (const QString& p : k.value())
+                    job.onlyEntries[k.key()].insert(p);
         if (!m_unpack.start(job))
             return;
         for (Entry* m : members) {

@@ -421,6 +421,9 @@ MainWindow::~MainWindow()
 
 void MainWindow::switchToTab(Tab tab)
 {
+    // single transfer mode: the network's jobs are in Transfers
+    if (singleTransferHides(tab))
+        tab = TabTransfers;
     // TabTorrents has no page without BitTorrent
     if (tab < 0 || tab >= m_pages->count() || isTabHidden(tab))
         return;
@@ -599,6 +602,7 @@ void MainWindow::showOptionsDialog(int page)
     const int hadDepth3D = thePrefs.depth3D();
     const bool hadTorrents = !isTabHidden(TabTorrents);
     const bool hadHoster = !isTabHidden(TabHoster);
+    const bool hadUsenet = !isTabHidden(TabUsenet);
 
     dlg.exec();
     updateSpeedLimitTip();
@@ -610,6 +614,8 @@ void MainWindow::showOptionsDialog(int page)
         toolbarChanged |= restoreToolbarButton(ToolbarButtonId::Torrents);
     if (!hadHoster && !isTabHidden(TabHoster))
         toolbarChanged |= restoreToolbarButton(ToolbarButtonId::Hoster);
+    if (!hadUsenet && !isTabHidden(TabUsenet))
+        toolbarChanged |= restoreToolbarButton(ToolbarButtonId::Usenet);
 
     // Progress bars read the prefs at paint; paused rows get no push to repaint them
     if (thePrefs.showDwlPercentage() != hadDwlPercentage
@@ -3214,6 +3220,8 @@ bool MainWindow::requireBitTorrent()
 
 bool MainWindow::isTabHidden(int tab)
 {
+    if (singleTransferHides(tab))
+        return true;
     if (tab == TabTorrents)
         return !thePrefs.btEnabled();
     // hoster downloads run on the ed3k node: shown while both are on
@@ -3225,6 +3233,21 @@ bool MainWindow::isTabHidden(int tab)
 #endif
     }
     return false;
+}
+
+bool MainWindow::singleTransferHides(int tab)
+{
+#ifdef EMULE_HAVE_ED3K
+    switch (tab) {
+    case TabTorrents: return thePrefs.btSingleTransferOn();
+    case TabUsenet:   return thePrefs.usenetSingleTransferOn();
+    case TabHoster:   return thePrefs.hosterSingleTransferOn();
+    default:          return false;
+    }
+#else
+    Q_UNUSED(tab)
+    return false;
+#endif
 }
 
 bool MainWindow::restoreToolbarButton(ToolbarButtonId id)

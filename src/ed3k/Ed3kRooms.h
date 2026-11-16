@@ -7,8 +7,8 @@
 /// - Rooms are keyed by the 16-byte room (§1.2).
 /// - Secrets (room.md §1.1, ffi.md "Rooms"): the member key of each room in
 ///   Config/ed3k/rooms/<room hex>.member, the room key of an owned room in
-///   rooms/owner-<room key hex>.key (kept on leave: a join by its link makes this node the
-///   owner again), both 32-byte seeds, owner-only, never logged. The link with `s` is a
+///   rooms/owner-<room key hex>.key (kept on leave unless asked: a join by its link makes
+///   this node the owner again), both 32-byte seeds, owner-only, never logged. The link with `s` is a
 ///   credential too: kept in rooms/joined.cbor (owner-only), never logged.
 /// - Joined rooms (link, nick) are persisted and joined again when the node starts; the
 ///   core's own room state (State::Rooms: generation keys, info) is saved by Ed3kSession.
@@ -118,7 +118,9 @@ public:
     ::ed3k::Result<::ed3k::Room> create(const QString& title, const QString& about, std::uint32_t flags, const QString& nick);
     /// Joins the room of an `ed3k:room` link (a room joined already: its room).
     ::ed3k::Result<::ed3k::Room> join(const QString& link, const QString& nick);
-    ::ed3k::Result<> leave(const ::ed3k::Room& room);
+    /// Leaves @p room; @p dropRoomKey also deletes an owned room's room key (no info or
+    /// moderator change ever again, §11).
+    ::ed3k::Result<> leave(const ::ed3k::Room& room, bool dropRoomKey = false);
     /// A node of the room as a neighbour (others are found through Kad).
     ::ed3k::Result<> connectPeer(const ::ed3k::Room& room, const ::ed3k::Source& peer);
     ::ed3k::Result<std::vector<::ed3k::PostId>> post(const ::ed3k::Room& room, const QString& text,

@@ -92,6 +92,86 @@ void appendDownloading(QCborArray& out, const QString& itemId)
     }
 }
 
+namespace {
+
+/// ed3k's priorities (0 low, 1 normal, 2 high, 3 very high, 4 very low) as Usenet's
+constexpr int kUsenetOfEd3k[] = {usenet::kUsenetPriorityLow, usenet::kUsenetPriorityNormal,
+                                 usenet::kUsenetPriorityHigh, usenet::kUsenetPriorityVeryHigh,
+                                 usenet::kUsenetPriorityVeryLow};
+
+int ed3kPriorityOf(int usenetPriority)
+{
+    for (int i = 0; i < 5; ++i)
+        if (kUsenetOfEd3k[i] == usenetPriority)
+            return i;
+    return 1;
+}
+
+} // namespace
+
+std::optional<SingleTransfer::Job> transferJob(const QString& itemId)
+{
+    auto* q = queue();
+    const auto* item = q ? q->findItem(itemId) : nullptr;
+    if (!item)
+        return std::nullopt;
+    using S = SingleTransfer::RowState;
+    using U = usenet::UsenetItemStatus;
+    SingleTransfer::Job j;
+    j.name = item->name;
+    j.size = item->totalEncodedBytes();
+    j.done = std::min(item->doneEncodedBytes(), j.size);
+    j.rate = item->status == U::Downloading ? q->itemRate(itemId) : 0;
+    const auto servers = q->itemServers(itemId);
+    j.sources = int(servers.size());
+    j.transferring = j.rate > 0 ? j.sources : 0;
+    j.priority = ed3kPriorityOf(item->priority);
+    j.category = item->category;
+    // landed: where its first file went (Open Folder)
+    j.path = item->publishedPaths.isEmpty() ? item->workDir(thePrefs.usenetTempDir()) : item->publishedPaths.first();
+    j.error = item->error;
+    switch (item->status) {
+    case U::Paused: j.state = S::Paused; break;
+    case U::Complete: j.state = S::Complete; j.done = j.size; break;
+    case U::Failed: j.state = S::Error; break;
+    case U::Verifying:
+    case U::Repairing:
+    case U::Unpacking:
+    case U::Checking: j.state = S::Checking; break;
+    case U::Queued:
+    case U::Downloading: break;
+    }
+    return j;
+}
+
+bool transferControl(const QString& itemId, int action, qint64 value)
+{
+    auto* q = queue();
+    const auto* item = q ? q->findItem(itemId) : nullptr;
+    if (!item)
+        return false;
+    switch (action) {
+    case 0: return q->pauseItem(itemId);
+    case 1: return q->resumeItem(itemId);
+    // cancel as eD2K's: an unfinished release's files go, a finished one's stay (7: go)
+    case 2: return q->removeItem(itemId, item->status != usenet::UsenetItemStatus::Complete);
+    case 7: return q->removeItem(itemId, true);
+    case 3: return q->setItemPriority(itemId, kUsenetOfEd3k[std::clamp<qint64>(value, 0, 4)]);
+    case 4: return categoryExists(int(value)) && q->setItemCategory(itemId, int(value));
+    default: return false;
+    }
+}
+
+QStringList jobIds(bool downloadingOnly)
+{
+    QStringList out;
+    if (const auto* q = queue())
+        for (const auto* item : q->items())
+            if (!downloadingOnly || item->isActive())
+                out << item->id;
+    return out;
+}
+
 QCborMap itemToCbor(const usenet::UsenetQueueItem& item)
 {
     // Preview is container-aware since phase 6b, and only the queue's streaming
@@ -772,6 +852,12 @@ int applyCategoryAction(int category, UsenetWebCategoryAction action)
     logUsenet(QStringLiteral("Usenet: %1 applied to %2 item(s) in \"%3\"")
                 .arg(verb, QString::number(acted), thePrefs.category(category).displayName()));
     return acted;
+}
+
+QByteArray previewNzb(const QString& token)
+{
+    const auto it = previewEntries().constFind(token);
+    return it == previewEntries().constEnd() ? QByteArray() : it->nzb;
 }
 
 } // namespace eMule::UsenetBridge

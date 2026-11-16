@@ -907,6 +907,11 @@ void OptionsDialog::setupPages()
 #endif
     addPage(PageEd3kExtended,   m_ed3kPages->extendedPage());
     connect(m_ed3kPages, &Ed3kOptionsPages::changed, this, &OptionsDialog::markDirty);
+    // single transfer mode (ed3k only): greyed while ed3k or the network is off
+    for (QCheckBox* check : {m_ed3kPages->nodeEnabledCheck(), m_usenetEnabledCheck, m_btEnabledCheck})
+        if (check)
+            connect(check, &QCheckBox::toggled, this, &OptionsDialog::updateSingleTransferChecks);
+    updateSingleTransferChecks();
     connect(m_ed3kPages, &Ed3kOptionsPages::portsJoined, this, [this](int port) {
         // applied by the core already: the fields follow
         m_udpPortSpin->setValue(port);
@@ -3857,7 +3862,12 @@ QWidget* OptionsDialog::createUsenetPage()
     m_usenetEnabledCheck = new QCheckBox(tr("Enable Usenet downloads"), page);
     m_usenetEnabledCheck->setToolTip(
         tr("Gates automatic activity only. Adding a download by hand always works."));
-    pageLayout->addWidget(m_usenetEnabledCheck);
+    m_usenetSingleCheck = Ed3kOptionsPages::singleTransferCheck(tr("Usenet"), page);
+    auto* enableRow = new QHBoxLayout;
+    enableRow->addWidget(m_usenetEnabledCheck);
+    enableRow->addWidget(m_usenetSingleCheck);
+    enableRow->addStretch();
+    pageLayout->addLayout(enableRow);
 
     // Two tabs rather than the one ~1300 px column this page used to be -- which, being
     // the tallest of the eighteen, set the minimum height of every one of them.
@@ -4399,6 +4409,7 @@ QWidget* OptionsDialog::createUsenetPage()
     // -- Wiring -------------------------------------------------------------
     // Gates auto-start only, so it greys nothing -- see updateUsenetEnabledStates().
     connect(m_usenetEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_usenetSingleCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_usenetRetrySpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_usenetShareSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
 
@@ -6043,7 +6054,12 @@ QWidget* OptionsDialog::createBitTorrentPage()
         tr("Runs the BitTorrent engine in the core. Off, the engine stops: no torrent "
            "is downloaded or seeded and the BitTorrent port is closed. Torrents stay "
            "in the list and continue when it is switched on again."));
-    mainLayout->addWidget(m_btEnabledCheck);
+    m_btSingleCheck = Ed3kOptionsPages::singleTransferCheck(tr("Torrents"), page);
+    auto* enableRow = new QHBoxLayout;
+    enableRow->addWidget(m_btEnabledCheck);
+    enableRow->addWidget(m_btSingleCheck);
+    enableRow->addStretch();
+    mainLayout->addLayout(enableRow);
 
     // -- Folder -------------------------------------------------------------
     auto* dirGroup = new QGroupBox(tr("Download folder"), page);
@@ -6169,6 +6185,7 @@ QWidget* OptionsDialog::createBitTorrentPage()
 
     // -- Wiring -------------------------------------------------------------
     connect(m_btEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_btSingleCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     for (QSpinBox* box : {m_btMaxActiveDownSpin, m_btMaxActiveSeedSpin, m_btSeedTimeSpin})
         connect(box, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_btSeedRatioSpin, &QDoubleSpinBox::valueChanged, this, &OptionsDialog::markDirty);
@@ -8052,6 +8069,8 @@ void OptionsDialog::saveSettings()
         // it carries credentials and has its own keep-the-stored-password rule.
         req.append(QStringLiteral("usenetEnabled"));
         req.append(m_usenetEnabledCheck->isChecked());
+        req.append(QStringLiteral("usenetSingleTransfer"));
+        req.append(m_usenetSingleCheck->isChecked());
         req.append(QStringLiteral("usenetRetryIntervalSeconds"));
         req.append(static_cast<qint64>(m_usenetRetrySpin->value()));
         req.append(QStringLiteral("usenetDownloadSharePercent"));
@@ -8114,6 +8133,8 @@ void OptionsDialog::saveSettings()
         // BitTorrent page
         req.append(QStringLiteral("btEnabled"));
         req.append(m_btEnabledCheck->isChecked());
+        req.append(QStringLiteral("btSingleTransfer"));
+        req.append(m_btSingleCheck->isChecked());
         req.append(QStringLiteral("btListenPort"));
         req.append(static_cast<qint64>(m_btPortSpin->value()));
         req.append(QStringLiteral("btDownloadDir"));
@@ -9016,6 +9037,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
 
     // Usenet page
     m_usenetEnabledCheck->setChecked(prefs.value(QStringLiteral("usenetEnabled")).toBool(false));
+    m_usenetSingleCheck->setChecked(prefs.value(QStringLiteral("usenetSingleTransfer")).toBool(false));
     m_usenetRetrySpin->setValue(
         static_cast<int>(prefs.value(QStringLiteral("usenetRetryIntervalSeconds")).toInteger(60)));
     m_usenetShareSpin->setValue(
@@ -9116,6 +9138,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
 #ifdef EMULE_HAVE_BITTORRENT
     // BitTorrent page. Defaults stand in for an older daemon without the keys.
     m_btEnabledCheck->setChecked(prefs.value(QStringLiteral("btEnabled")).toBool(true));
+    m_btSingleCheck->setChecked(prefs.value(QStringLiteral("btSingleTransfer")).toBool(false));
     m_btPortSpin->setValue(int(prefs.value(QStringLiteral("btListenPort"))
                                    .toInteger(Preferences::kDefaultBtListenPort)));
     m_btDownloadDirEdit->setText(prefs.value(QStringLiteral("btDownloadDir")).toString());
@@ -9302,6 +9325,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
 
     // ed3k group
     m_ed3kPages->load(prefs);
+    updateSingleTransferChecks();   // load() keeps the toggles quiet
 }
 
 // ---------------------------------------------------------------------------
@@ -10271,6 +10295,14 @@ void OptionsDialog::setSharedDirsChecked(const QStringList& dirs)
         m_remoteDirsModel->setCheckedPaths(dirs);
     else
         static_cast<CheckableFileSystemModel*>(m_sharedDirsModel)->setCheckedPaths(dirs);
+}
+
+void OptionsDialog::updateSingleTransferChecks()
+{
+    const QCheckBox* node = m_ed3kPages ? m_ed3kPages->nodeEnabledCheck() : nullptr;
+    const bool ed3kOn = node && node->isChecked();
+    Ed3kOptionsPages::gateSingleTransfer(m_usenetSingleCheck, ed3kOn, m_usenetEnabledCheck && m_usenetEnabledCheck->isChecked());
+    Ed3kOptionsPages::gateSingleTransfer(m_btSingleCheck, ed3kOn, m_btEnabledCheck && m_btEnabledCheck->isChecked());
 }
 
 } // namespace eMule

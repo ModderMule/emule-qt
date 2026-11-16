@@ -386,6 +386,70 @@ void appendDownloading([[maybe_unused]] QCborArray& out, [[maybe_unused]] const 
 #endif
 }
 
+std::optional<SingleTransfer::Job> transferJob([[maybe_unused]] const QString& owner)
+{
+#ifdef EMULE_HAVE_ED3K
+    const auto item = itemOfOwner(owner);
+    if (!item)
+        return std::nullopt;
+    using S = SingleTransfer::RowState;
+    using H = ed3k::Ed3kHosterJoin::State;
+    SingleTransfer::Job j;
+    j.name = item->name;
+    j.size = qint64(item->size);
+    j.done = qint64(item->done);
+    j.rate = item->state == H::Downloading ? qint64(item->speed) : 0;
+    // the hoster while it sends, and the ed3k streams of its root
+    j.sources = item->peerSources + (item->state == H::Downloading ? 1 : 0);
+    j.transferring = j.rate > 0 ? j.sources : 0;
+    j.path = item->file;
+    j.addedOn = item->added / 1000;   // ms → s, as the ed3k rows
+    j.error = item->reasonArg;
+    switch (item->state) {
+    case H::Paused: j.state = S::Paused; break;
+    case H::Complete: j.state = S::Complete; break;
+    case H::Gone:
+    case H::NeedsUser:
+    case H::NoResolver:
+    case H::Failed: j.state = S::Error; break;
+    default: break;
+    }
+    return j;
+#else
+    return std::nullopt;
+#endif
+}
+
+bool transferControl([[maybe_unused]] const QString& owner, [[maybe_unused]] int action, qint64 /*value*/)
+{
+#ifdef EMULE_HAVE_ED3K
+    const auto item = itemOfOwner(owner);
+    if (!item)
+        return false;
+    switch (action) {
+    case 0: s_join->pause(item->id); return true;
+    case 1: s_join->resume(item->id); return true;
+    // the unfinished file always goes; a complete one only with 7 (Cancel/Delete)
+    case 2: s_join->remove(item->id, false); return true;
+    case 7: s_join->remove(item->id, true); return true;
+    default: return false;
+    }
+#else
+    return false;
+#endif
+}
+
+QStringList owners()
+{
+    QStringList out;
+#ifdef EMULE_HAVE_ED3K
+    if (s_join)
+        for (const auto& item : s_join->items())
+            out << QStringLiteral("h%1").arg(item.id);
+#endif
+    return out;
+}
+
 QString moveTo([[maybe_unused]] const QString& id, [[maybe_unused]] const QString& dir)
 {
 #ifdef EMULE_HAVE_ED3K
@@ -493,11 +557,22 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
         for (const QCborValue& pw : msg.field(4).toArray())
             if (const QString t = pw.toString(); !t.isEmpty())
                 passwords << t;
-        if (files.isEmpty() && !passwords.isEmpty())
+        // field 5: archive entries to extract (hoster.md §6.1): {first volume name: [path]}
+        QHash<QString, QStringList> kept;
+        const QCborMap keptMap = msg.field(5).toMap();
+        for (auto k = keptMap.constBegin(); k != keptMap.constEnd(); ++k) {
+            QStringList paths;
+            for (const QCborValue& p : k.value().toArray())
+                if (const QString t = p.toString(); !t.isEmpty())
+                    paths << t;
+            if (!paths.isEmpty())
+                kept.insert(k.key().toString().toLower(), paths);
+        }
+        if (files.isEmpty() && (!passwords.isEmpty() || !kept.isEmpty()))
             for (const QString& url : ed3k::Ed3kHosterJoin::linksIn(msg.fieldString(0)))
                 files.append(QStringList{url});
         const auto added = files.isEmpty() ? s_join->addLinks(msg.fieldString(0), package, packageId)
-                                           : s_join->addMirrored(files, package, packageId, passwords);
+                                           : s_join->addMirrored(files, package, packageId, passwords, kept);
         for (const quint32 id : added)
             ids.append(qint64(id));
         reply(IpcMessage::makeResult(seq, true, QCborMap{{QStringLiteral("ids"), ids}}));

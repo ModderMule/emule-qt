@@ -214,8 +214,10 @@
     <ClCompile Include="Ed3kOwnSetsBridge.cpp" />
     <ClCompile Include="Ed3kFiltersBridge.cpp" />
     <ClCompile Include="Ed3kUploadsBridge.cpp" />
+    <ClCompile Include="SingleTransfer.cpp" />
     <ClCompile Include="Ed3kHideBridge.cpp" />
     <ClCompile Include="Ed3kHosterBridge.cpp" />
+    <ClCompile Include="ArchiveContentsBridge.cpp" />
     <ClCompile Include="Ed3kKadBridge.cpp" />
     <ClCompile Include="Ed3kLinksBridge.cpp" />
     <ClCompile Include="UsenetBridge.cpp" />
@@ -240,6 +242,7 @@
     <QtMoc Include="UsenetRetryGrabber.h" />
     <ClInclude Include="DaemonApiBackend.h" />
     <ClInclude Include="Ed3kHosterBridge.h" />
+    <ClInclude Include="ArchiveContentsBridge.h" />
     <ClInclude Include="Ed3kKadBridge.h" />
     <ClInclude Include="Ed3kLinksBridge.h" />
     <ClInclude Include="DaemonHosterWebBackend.h" />
@@ -267,6 +270,7 @@
     <ClInclude Include="Ed3kOwnSetsBridge.h" />
     <ClInclude Include="Ed3kFiltersBridge.h" />
     <ClInclude Include="Ed3kUploadsBridge.h" />
+    <ClInclude Include="SingleTransfer.h" />
     <ClInclude Include="Ed3kHideBridge.h" />
     <ClInclude Include="UsenetBridge.h" />
     <ClInclude Include="BandwidthCoordinator.h" />

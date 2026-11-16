@@ -1,5 +1,6 @@
 #include "Ed3kHosterUnpack.h"
 
+#include "archive/ArchiveContentsHook.h"
 #include "post/UsenetPostProcessor.h"
 #include "post/UsenetUnpacker.h"
 #include "prefs/Preferences.h"
@@ -96,6 +97,7 @@ HosterUnpackResult Ed3kHosterUnpack::run(const HosterUnpackJob& job, const std::
     options.skipFirstVolumes = job.skip;
     options.externalTool = job.externalTool;
     options.nestedDepth = job.nestedDepth;
+    options.onlyEntries = job.onlyEntries;
     const auto u = unpacker.unpackAll(job.archiveDir, job.scratchDir, options);
     if (!u.ok || u.nothingToDo) {
         r.passwordRequired = u.passwordRequired;
@@ -103,6 +105,10 @@ HosterUnpackResult Ed3kHosterUnpack::run(const HosterUnpackJob& job, const std::
         removeDirTree(job.scratchDir);
         return r;
     }
+    // the contents record (hoster.md §6.1), while every volume is still here
+    for (const auto& set : usenet::UsenetUnpacker::findArchiveSets(job.archiveDir))
+        if (!set.headless && !job.skip.contains(set.firstVolume))
+            readArchiveContents(set.volumes, options.passwords);
 
     // inner archives that were opened live in scratch: drop them, or keep them
     // beside their contents when the user keeps archives

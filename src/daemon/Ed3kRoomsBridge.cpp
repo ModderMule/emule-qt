@@ -179,7 +179,7 @@ void answer(const IpcMessage& msg, Rooms& rooms, const std::function<void(const 
         break;
     }
     case IpcMsgType::LeaveEd3kRoom:
-        done(rooms.leave(*room));
+        done(rooms.leave(*room, msg.fieldBool(1)));
         break;
     case IpcMsgType::PostEd3kRoom: {
         std::optional<ffi::PostId> replyTo;

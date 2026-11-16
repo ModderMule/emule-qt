@@ -119,6 +119,7 @@ struct Ed3kHosterAccount {
 /// default (the user's choice; hoster.md §4.1 holds them back by default).
 struct Ed3kHosterPrefs {
     bool enabled = true;           ///< ed3kHosterEnabled: the user allowed downloads from hosters
+    bool singleTransfer = false;   ///< ed3kHosterSingleTransfer: no Hoster tab, its items in Transfers
     QString java;                  ///< ed3kHosterJava: path of `java`; empty = find one
     bool autoJava = true;          ///< ed3kHosterAutoJava: download a runtime when none is found
     uint32 maxStreams = 8;         ///< ed3kHosterMaxStreams: hoster streams at once, 1..16 (JD runs 8)
@@ -1139,6 +1140,11 @@ public:
     /// off never needs a daemon restart.
     [[nodiscard]] bool usenetEnabled() const;
     void setUsenetEnabled(bool val);
+    /// Single transfer mode (ed3k only): no Usenet tab, joined items in Transfers, the others paused.
+    [[nodiscard]] bool usenetSingleTransfer() const;
+    void setUsenetSingleTransfer(bool val);
+    /// usenetSingleTransfer in effect: Usenet and ed3k on too
+    [[nodiscard]] bool usenetSingleTransferOn() const;
 
     /// Configured provider accounts, in the order the user arranged them.
     ///
@@ -1428,6 +1434,14 @@ public:
     /// Engine auto-starts. Off by default: a second network is opt-in.
     [[nodiscard]] bool btEnabled() const;
     void setBtEnabled(bool val);
+    /// Single transfer mode (ed3k only): no Torrents tab, joined torrents in Transfers, the others paused.
+    [[nodiscard]] bool btSingleTransfer() const;
+    void setBtSingleTransfer(bool val);
+    /// btSingleTransfer in effect: BitTorrent and ed3k on too
+    [[nodiscard]] bool btSingleTransferOn() const;
+    /// Jobs single transfer mode paused ("bt:<id>", "usenet:<id>"), resumed when it ends. YAML only.
+    [[nodiscard]] QStringList singleTransferPaused() const;
+    void setSingleTransferPaused(const QStringList& val);
 
     /// TCP + UDP listen port.
     [[nodiscard]] uint16 btListenPort() const;
@@ -1626,6 +1640,10 @@ public:
     /// post set or nzb/nzb-file ALIAS records go out; the members are shared all the same. Default on.
     [[nodiscard]] bool ed3kShareUsenetPosts() const;
     void setEd3kShareUsenetPosts(bool val);
+    /// Publish what archives unpacked here hold (hoster.md §6.1): contents manifest and
+    /// `b3` SET record per archive; others see the entries before downloading. Default on.
+    [[nodiscard]] bool ed3kArchiveContents() const;
+    void setEd3kArchiveContents(bool val);
     /// Own ed3k sets' folders watched: a changed folder publishes a new version. Default on.
     [[nodiscard]] bool ed3kOwnSetsWatch() const;
     void setEd3kOwnSetsWatch(bool val);
@@ -1732,6 +1750,8 @@ public:
     [[nodiscard]] Ed3kHosterPrefs ed3kHoster() const;
     /// Hoster downloads run: they are allowed and the ed3k node they run on is enabled
     [[nodiscard]] bool hosterDownloadsOn() const;
+    /// ed3kHoster().singleTransfer in effect: hoster downloads on
+    [[nodiscard]] bool hosterSingleTransferOn() const;
     void setEd3kHoster(const Ed3kHosterPrefs& val);
     /// One `ed3kHoster*` IPC key into @p h. False: not one. An account without a password
     /// keeps the one of the same host and user in @p h.

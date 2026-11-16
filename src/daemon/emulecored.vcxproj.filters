@@ -138,6 +138,9 @@
     <ClCompile Include="Ed3kUploadsBridge.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="SingleTransfer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="Ed3kHideBridge.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -273,6 +276,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Ed3kUploadsBridge.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SingleTransfer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Ed3kHideBridge.h">

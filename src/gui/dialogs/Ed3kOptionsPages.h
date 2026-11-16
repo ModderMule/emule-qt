@@ -83,6 +83,14 @@ public:
     /// GUI-only, like associateDlcCheck(): OptionsDialog loads and saves it
     [[nodiscard]] QCheckBox* clickNLoadCheck() const { return m_clickNLoadCheck; }
 
+    /// The ed3k node switch (General): single transfer mode boxes follow it.
+    [[nodiscard]] QCheckBox* nodeEnabledCheck() const { return m_enabledCheck; }
+    /// "Single transfer mode (ed3k only)" box put right of a network's enable box: hides the
+    /// @p windowName window, its jobs joined with ed3k go to Transfers.
+    [[nodiscard]] static QCheckBox* singleTransferCheck(const QString& windowName, QWidget* parent);
+    /// @p check usable only while ed3k (@p ed3kOn) and its network (@p networkOn) are on.
+    static void gateSingleTransfer(QCheckBox* check, bool ed3kOn, bool networkOn);
+
     /// From the GetPreferences map (keys ed3k*, nick). Signals stay quiet meanwhile.
     void load(const QCborMap& prefs);
     /// Appends key/value pairs of every ed3k preference to a SetPreferences request.
@@ -262,6 +270,7 @@ private:
         QString status;
     };
     QCheckBox* m_hosterEnabledCheck = nullptr;
+    QCheckBox* m_hosterSingleCheck = nullptr;   ///< ed3kHosterSingleTransfer
     QLabel* m_hosterNodeLabel = nullptr;
     QLabel* m_resolverLabel = nullptr;
     QSpinBox* m_hosterStreamsSpin = nullptr;

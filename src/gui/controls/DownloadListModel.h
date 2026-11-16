@@ -164,6 +164,10 @@ struct DownloadRow {
     QString ed3kPath;   ///< ed3k: the part file, or the file once complete (a local GUI opens it)
     QString ed3kKey;    ///< ed3k: "Node" / "Anonymous" (hops.md §1); eD2K rows: empty
     QStringList ed3kAliases;   ///< ed3k: other names of the root known here (ed3kAliasText lines)
+    /// single transfer mode: a torrent/usenet/hoster job joined with ed3k ("torrent", "usenet",
+    /// "hoster"; hash = "<tag>|<owner>"), its own network acts; empty: an ed3k root
+    QString ed3kNetwork;
+    [[nodiscard]] bool isNetworkJob() const { return isEd3k() && !ed3kNetwork.isEmpty(); }
 
     /// A completed download (green 100% bar). Completed files have no live
     /// sources, so they are never expandable in the tree.

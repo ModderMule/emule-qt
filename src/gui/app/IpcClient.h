@@ -214,7 +214,7 @@ public:
                        ResponseCallback callback = nullptr);
     /// An ed3k:room link -> {room}
     int joinEd3kRoom(const QString& link, const QString& nick, ResponseCallback callback = nullptr);
-    int leaveEd3kRoom(const QString& room, ResponseCallback callback = nullptr);
+    int leaveEd3kRoom(const QString& room, bool dropRoomKey, ResponseCallback callback = nullptr);
     /// replyTo: a post id (hex), empty none -> ids
     int postEd3kRoom(const QString& room, const QString& text, const QString& replyTo = {},
                      ResponseCallback callback = nullptr);

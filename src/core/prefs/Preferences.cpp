@@ -778,6 +778,9 @@ struct Preferences::Data {
 
     // -- BitTorrent -----------------------------------------------------------
     bool btEnabled = true;
+    bool btSingleTransfer = false;      // Transfers window only (ed3k joins), Torrents tab hidden
+    bool usenetSingleTransfer = false;  // the same for Usenet
+    QStringList singleTransferPaused;   // jobs those paused: "bt:<id>", "usenet:<id>"
     uint16 btListenPort = Preferences::kDefaultBtListenPort;
     QString btDownloadDir;             // empty = incomingDir
     bool btStopAfterMetadata = false;  // new torrents stop once their file list is known
@@ -828,6 +831,7 @@ struct Preferences::Data {
     int ed3kKadStoreMiB = 0;              // the engine's RAM for Kad records of others; 0 = default (128)
     bool ed3kJointDownloads = true;    // eD2K downloads from ed3k too (§14.4)
     bool ed3kShareUsenetPosts = true;  // off = hold back, usenet.md §6
+    bool ed3kArchiveContents = true;   // hoster.md §6.1 contents records
     bool ed3kOwnSetsWatch = true;      // own sets' folders watched: a change publishes a new version
     QStringList ed3kCreditRpc;         // JSON-RPC endpoints; empty = off
     QStringList ed3kChaintubeRpc;
@@ -2523,6 +2527,14 @@ void Preferences::setIndexerCapsRefreshDays(int val)
 
 bool Preferences::btEnabled() const { return get(&Data::btEnabled); }
 void Preferences::setBtEnabled(bool val) { set(&Data::btEnabled, val); }
+bool Preferences::btSingleTransfer() const { return get(&Data::btSingleTransfer); }
+void Preferences::setBtSingleTransfer(bool val) { set(&Data::btSingleTransfer, val); }
+bool Preferences::btSingleTransferOn() const { return btSingleTransfer() && btEnabled() && ed3kEnabled(); }
+bool Preferences::usenetSingleTransfer() const { return get(&Data::usenetSingleTransfer); }
+void Preferences::setUsenetSingleTransfer(bool val) { set(&Data::usenetSingleTransfer, val); }
+bool Preferences::usenetSingleTransferOn() const { return usenetSingleTransfer() && usenetEnabled() && ed3kEnabled(); }
+QStringList Preferences::singleTransferPaused() const { return get(&Data::singleTransferPaused); }
+void Preferences::setSingleTransferPaused(const QStringList& val) { set(&Data::singleTransferPaused, val); }
 
 uint16 Preferences::btListenPort() const { return get(&Data::btListenPort); }
 void Preferences::setBtListenPort(uint16 val)
@@ -2728,6 +2740,8 @@ bool Preferences::ed3kJointDownloads() const { return get(&Data::ed3kJointDownlo
 void Preferences::setEd3kJointDownloads(bool val) { set(&Data::ed3kJointDownloads, val); }
 bool Preferences::ed3kShareUsenetPosts() const { return get(&Data::ed3kShareUsenetPosts); }
 void Preferences::setEd3kShareUsenetPosts(bool val) { set(&Data::ed3kShareUsenetPosts, val); }
+bool Preferences::ed3kArchiveContents() const { return get(&Data::ed3kArchiveContents); }
+void Preferences::setEd3kArchiveContents(bool val) { set(&Data::ed3kArchiveContents, val); }
 bool Preferences::ed3kOwnSetsWatch() const { return get(&Data::ed3kOwnSetsWatch); }
 void Preferences::setEd3kOwnSetsWatch(bool val) { set(&Data::ed3kOwnSetsWatch, val); }
 
@@ -2861,6 +2875,7 @@ bool Preferences::applyEd3kChainKey(Ed3kChainPrefs& c, const QString& key, const
 
 Ed3kHosterPrefs Preferences::ed3kHoster() const { return get(&Data::ed3kHoster); }
 bool Preferences::hosterDownloadsOn() const { return ed3kEnabled() && ed3kHoster().enabled; }
+bool Preferences::hosterSingleTransferOn() const { return hosterDownloadsOn() && ed3kHoster().singleTransfer; }
 void Preferences::setEd3kHoster(const Ed3kHosterPrefs& val) { set(&Data::ed3kHoster, val); }
 
 namespace {
@@ -2902,6 +2917,8 @@ bool Preferences::applyEd3kHosterKey(Ed3kHosterPrefs& h, const QString& key, con
 {
     if (key == QLatin1StringView("ed3kHosterEnabled"))
         h.enabled = val.toBool(h.enabled);
+    else if (key == QLatin1StringView("ed3kHosterSingleTransfer"))
+        h.singleTransfer = val.toBool(h.singleTransfer);
     else if (key == QLatin1StringView("ed3kHosterJava"))
         h.java = val.toString().trimmed();
     else if (key == QLatin1StringView("ed3kHosterAutoJava"))
@@ -4202,6 +4219,7 @@ QCborMap Preferences::toIpcMap() const
     // Usenet. The server list travels over GetNewsServers=720 instead, because
     // it carries credentials and needs the password-withholding rules.
     prefs.insert(QStringLiteral("usenetEnabled"), usenetEnabled());
+    prefs.insert(QStringLiteral("usenetSingleTransfer"), usenetSingleTransfer());
     prefs.insert(QStringLiteral("usenetRetryIntervalSeconds"),
                  static_cast<qint64>(usenetRetryIntervalSeconds()));
     prefs.insert(QStringLiteral("usenetDownloadSharePercent"),
@@ -4247,6 +4265,7 @@ QCborMap Preferences::toIpcMap() const
 
     // BitTorrent
     prefs.insert(QStringLiteral("btEnabled"), btEnabled());
+    prefs.insert(QStringLiteral("btSingleTransfer"), btSingleTransfer());
     prefs.insert(QStringLiteral("btListenPort"), static_cast<qint64>(btListenPort()));
     prefs.insert(QStringLiteral("btDownloadDir"), btDownloadDir());
     prefs.insert(QStringLiteral("btMaxDownloadKb"), static_cast<qint64>(configuredBtMaxDownloadKb()));
@@ -4300,6 +4319,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("ed3kKadStoreMiB"), static_cast<qint64>(ed3kKadStoreMiB()));
     prefs.insert(QStringLiteral("ed3kJointDownloads"), ed3kJointDownloads());
     prefs.insert(QStringLiteral("ed3kShareUsenetPosts"), ed3kShareUsenetPosts());
+    prefs.insert(QStringLiteral("ed3kArchiveContents"), ed3kArchiveContents());
     prefs.insert(QStringLiteral("ed3kOwnSetsWatch"), ed3kOwnSetsWatch());
     prefs.insert(QStringLiteral("ed3kCreditRpc"), ed3kCreditRpc().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("ed3kChaintubeRpc"), ed3kChaintubeRpc().join(QLatin1Char(' ')));
@@ -4347,6 +4367,7 @@ QCborMap Preferences::toIpcMap() const
     {
         const Ed3kHosterPrefs h = ed3kHoster();
         prefs.insert(QStringLiteral("ed3kHosterEnabled"), h.enabled);
+        prefs.insert(QStringLiteral("ed3kHosterSingleTransfer"), h.singleTransfer);
         prefs.insert(QStringLiteral("ed3kHosterJava"), h.java);
         prefs.insert(QStringLiteral("ed3kHosterAutoJava"), h.autoJava);
         prefs.insert(QStringLiteral("ed3kHosterMaxStreams"), static_cast<qint64>(h.maxStreams));
@@ -4622,6 +4643,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->geoIpLastCheck            = p.value(QStringLiteral("geoIpLastCheck")).toInteger();
     m_data->appToken                  = p.value(QStringLiteral("appToken")).toString();
     m_data->usenetEnabled             = p.value(QStringLiteral("usenetEnabled")).toBool();
+    m_data->usenetSingleTransfer      = p.value(QStringLiteral("usenetSingleTransfer")).toBool(false);
     m_data->usenetRetryIntervalSeconds =
         int(p.value(QStringLiteral("usenetRetryIntervalSeconds")).toInteger(60));
     m_data->usenetMetaSelectedFileOnly =
@@ -4635,6 +4657,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
             return std::clamp(p.value(QLatin1StringView(key)).toInteger(def), lo, hi);
         };
         m_data->btEnabled     = p.value(QStringLiteral("btEnabled")).toBool(true);
+        m_data->btSingleTransfer = p.value(QStringLiteral("btSingleTransfer")).toBool(false);
         m_data->btListenPort  = static_cast<uint16>(
             num("btListenPort", kDefaultBtListenPort, 1, 65535));
         m_data->btDownloadDir = p.value(QStringLiteral("btDownloadDir")).toString();
@@ -4699,6 +4722,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
         static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kKadStoreMiB")).toInteger(0), 0, kMaxEd3kKadStoreMiB));
     m_data->ed3kJointDownloads = p.value(QStringLiteral("ed3kJointDownloads")).toBool(true);
     m_data->ed3kShareUsenetPosts = p.value(QStringLiteral("ed3kShareUsenetPosts")).toBool(true);
+    m_data->ed3kArchiveContents = p.value(QStringLiteral("ed3kArchiveContents")).toBool(true);
     m_data->ed3kOwnSetsWatch = p.value(QStringLiteral("ed3kOwnSetsWatch")).toBool(true);
     m_data->ed3kCreditRpc = rpcUrlList(p.value(QStringLiteral("ed3kCreditRpc")));
     m_data->ed3kChaintubeRpc = rpcUrlList(p.value(QStringLiteral("ed3kChaintubeRpc")));
@@ -5834,6 +5858,7 @@ bool Preferences::load(const QString& filePath)
         m_data->usenetEnabled = false;
         if (auto un = root["usenet"]) {
             m_data->usenetEnabled = un["enabled"].as<bool>(false);
+            m_data->usenetSingleTransfer = un["singleTransfer"].as<bool>(m_data->usenetSingleTransfer);
             m_data->usenetRetryIntervalSeconds =
                 un["retryIntervalSeconds"].as<int>(m_data->usenetRetryIntervalSeconds);
             m_data->usenetPar2Repair =
@@ -6003,6 +6028,14 @@ bool Preferences::load(const QString& filePath)
         // client is shared with BitTorrent.
         if (auto bt = root["bittorrent"]) {
             m_data->btEnabled = bt["enabled"].as<bool>(m_data->btEnabled);
+            m_data->btSingleTransfer = bt["singleTransfer"].as<bool>(m_data->btSingleTransfer);
+            if (auto list = bt["singleTransferPaused"]; list && list.IsSequence()) {
+                QStringList ids;
+                for (const auto& item : list)
+                    if (const QString id = QString::fromStdString(item.as<std::string>("")); !id.isEmpty())
+                        ids << id;
+                m_data->singleTransferPaused = ids;
+            }
             const int port = bt["listenPort"].as<int>(m_data->btListenPort);
             m_data->btListenPort = (port >= 1 && port <= 65535)
                                        ? static_cast<uint16>(port) : kDefaultBtListenPort;
@@ -6096,6 +6129,7 @@ bool Preferences::load(const QString& filePath)
             m_data->ed3kKadStoreMiB = std::clamp(e3["kadStoreMiB"].as<int>(m_data->ed3kKadStoreMiB), 0, kMaxEd3kKadStoreMiB);
             m_data->ed3kJointDownloads = e3["jointDownloads"].as<bool>(m_data->ed3kJointDownloads);
             m_data->ed3kShareUsenetPosts = e3["shareUsenetPosts"].as<bool>(m_data->ed3kShareUsenetPosts);
+            m_data->ed3kArchiveContents = e3["archiveContents"].as<bool>(m_data->ed3kArchiveContents);
             m_data->ed3kOwnSetsWatch = e3["ownSetsWatch"].as<bool>(m_data->ed3kOwnSetsWatch);
             const auto urls = [](const YAML::Node& n) {
                 QStringList out;
@@ -6163,6 +6197,7 @@ bool Preferences::load(const QString& filePath)
             if (auto ho = e3["hoster"]) {
                 Ed3kHosterPrefs& h = m_data->ed3kHoster;
                 h.enabled = ho["enabled"].as<bool>(h.enabled);
+                h.singleTransfer = ho["singleTransfer"].as<bool>(h.singleTransfer);
                 h.java = QString::fromStdString(ho["java"].as<std::string>(h.java.toStdString())).trimmed();
                 h.autoJava = ho["autoJava"].as<bool>(h.autoJava);
                 h.maxStreams = std::clamp<uint32>(ho["maxStreams"].as<uint32>(h.maxStreams), 1, 16);
@@ -7408,6 +7443,7 @@ QByteArray Preferences::encode() const
     // accepts is never written back.
     out << YAML::Key << "usenet" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "enabled" << YAML::Value << m_data->usenetEnabled;
+    out << YAML::Key << "singleTransfer" << YAML::Value << m_data->usenetSingleTransfer;
     out << YAML::Key << "retryIntervalSeconds" << YAML::Value
         << m_data->usenetRetryIntervalSeconds;
     out << YAML::Key << "downloadSharePercent" << YAML::Value
@@ -7513,6 +7549,13 @@ QByteArray Preferences::encode() const
 
     out << YAML::Key << "bittorrent" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "enabled" << YAML::Value << m_data->btEnabled;
+    out << YAML::Key << "singleTransfer" << YAML::Value << m_data->btSingleTransfer;
+    if (!m_data->singleTransferPaused.isEmpty()) {
+        out << YAML::Key << "singleTransferPaused" << YAML::Value << YAML::BeginSeq;
+        for (const QString& id : m_data->singleTransferPaused)
+            out << id.toStdString();
+        out << YAML::EndSeq;
+    }
     out << YAML::Key << "listenPort" << YAML::Value << static_cast<int>(m_data->btListenPort);
     if (!m_data->btDownloadDir.isEmpty())
         out << YAML::Key << "downloadDir" << YAML::Value << m_data->btDownloadDir.toStdString();
@@ -7569,6 +7612,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "kadStoreMiB" << YAML::Value << m_data->ed3kKadStoreMiB;
     out << YAML::Key << "jointDownloads" << YAML::Value << m_data->ed3kJointDownloads;
     out << YAML::Key << "shareUsenetPosts" << YAML::Value << m_data->ed3kShareUsenetPosts;
+    out << YAML::Key << "archiveContents" << YAML::Value << m_data->ed3kArchiveContents;
     out << YAML::Key << "ownSetsWatch" << YAML::Value << m_data->ed3kOwnSetsWatch;
     out << YAML::Key << "udpPort" << YAML::Value << static_cast<int>(m_data->ed3kUdpPort);
     out << YAML::Key << "lan" << YAML::Value << m_data->ed3kLan;
@@ -7635,6 +7679,7 @@ QByteArray Preferences::encode() const
         const Ed3kHosterPrefs& h = m_data->ed3kHoster;
         out << YAML::Key << "hoster" << YAML::Value << YAML::BeginMap;
         out << YAML::Key << "enabled" << YAML::Value << h.enabled;
+        out << YAML::Key << "singleTransfer" << YAML::Value << h.singleTransfer;
         out << YAML::Key << "java" << YAML::Value << h.java.toStdString();
         out << YAML::Key << "autoJava" << YAML::Value << h.autoJava;
         out << YAML::Key << "maxStreams" << YAML::Value << h.maxStreams;

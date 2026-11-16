@@ -188,6 +188,8 @@ using Kind = PrefSpec::Kind;
 
     // --- Usenet ---
     t << flag("usenetEnabled", "Enable the Usenet download engine.");
+    t << flag("usenetSingleTransfer", "Single transfer mode (ed3k only): no Usenet window; downloads joined with "
+                                      "ed3k show in Transfers, the others are paused. Needs ed3k.");
     t << flag("usenetPaused", "Pause all Usenet downloads.");
     t << flag("usenetPar2Repair", "Repair damaged Usenet downloads with PAR2.");
     t << flag("usenetUnpack", "Unpack archives after a Usenet download.");
@@ -208,6 +210,8 @@ using Kind = PrefSpec::Kind;
 
     // --- BitTorrent ---
     t << flag("btEnabled", "Enable the BitTorrent engine.");
+    t << flag("btSingleTransfer", "Single transfer mode (ed3k only): no Torrents window; torrents joined with "
+                                  "ed3k show in Transfers, the others are paused. Needs ed3k.");
     t << number("btListenPort", 1, 65535, "", "TCP and UDP port for BitTorrent peers.");
     t << text("btDownloadDir", 4096, "Folder torrents are saved to. Empty = the incoming folder.");
     t << number("btMaxDownloadKb", 0, kMaxU32, "KiB/s", "BitTorrent download limit. 0 = unlimited.");
@@ -274,6 +278,8 @@ using Kind = PrefSpec::Kind;
     t << flag("ed3kJointDownloads", "eD2K downloads also fetch from ed3k peers (found by the ed2k hash); a source with a derived user hash is asked over ed3k first.");
     t << flag("ed3kShareUsenetPosts", "Share Usenet posts over ed3k too. Off: the files are still shared, but "
                                       "not their article lists, post sets or nzb records (usenet.md §6).");
+    t << flag("ed3kArchiveContents", "Publish what archives unpacked here hold, so others can see and pick their files "
+                                     "before downloading (hoster.md §6.1).");
     t << flag("ed3kOwnSetsWatch", "Watch the folders of own ed3k sets: a change publishes a new version of the set.");
     t << advanced(text("ed3kCreditRpc", 4096, "JSON-RPC endpoints of the credit ledger (https URLs, separated by "
                                               "spaces; operator n = the n-th). Empty = off."));
@@ -330,6 +336,8 @@ using Kind = PrefSpec::Kind;
     // never sent with a password
     t << flag("ed3kHosterEnabled", "Allow downloads from file hosters: the resolver may open hoster pages, wait out "
                                    "their timers, show their puzzles and use the accounts given (hoster.md §3).");
+    t << flag("ed3kHosterSingleTransfer", "Single transfer mode (ed3k only): no Hoster window; hoster downloads "
+                                          "show in Transfers.");
     t << advanced(text("ed3kHosterJava", 1024, "Path of the java program the hoster resolver runs on. Empty = find one."));
     t << advanced(flag("ed3kHosterAutoJava", "Download a Java runtime into the eMuleQt folder when none is found."));
     t << number("ed3kHosterMaxStreams", 1, 16, "", "Hoster downloads at once (one per hoster and account in any case).");

@@ -192,6 +192,8 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::ClearUsenetCompleted: return QStringLiteral("ClearUsenetCompleted");
     case T::FetchNzbImages: return QStringLiteral("FetchNzbImages");
     case T::FetchNzbNfo: return QStringLiteral("FetchNzbNfo");
+    case T::LookupArchiveContents: return QStringLiteral("LookupArchiveContents");
+    case T::DownloadArchiveEntries: return QStringLiteral("DownloadArchiveEntries");
     case T::GetTorrents:          return QStringLiteral("GetTorrents");
     case T::AddTorrentFile:       return QStringLiteral("AddTorrentFile");
     case T::AddMagnet:            return QStringLiteral("AddMagnet");
@@ -1026,10 +1028,11 @@ int IpcClient::joinEd3kRoom(const QString& link, const QString& nick, ResponseCa
     return sendRequest(std::move(msg), std::move(callback));
 }
 
-int IpcClient::leaveEd3kRoom(const QString& room, ResponseCallback callback)
+int IpcClient::leaveEd3kRoom(const QString& room, bool dropRoomKey, ResponseCallback callback)
 {
     IpcMessage msg(IpcMsgType::LeaveEd3kRoom);
     msg.append(room);
+    msg.append(dropRoomKey);
     return sendRequest(std::move(msg), std::move(callback));
 }
 

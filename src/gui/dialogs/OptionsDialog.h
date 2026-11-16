@@ -568,6 +568,7 @@ private:
     // Scheduler page controls
     // -- Usenet page --------------------------------------------------------
     QCheckBox*    m_usenetEnabledCheck = nullptr;
+    QCheckBox*    m_usenetSingleCheck = nullptr;   ///< usenetSingleTransfer
     QSpinBox*     m_usenetRetrySpin = nullptr;
     QSpinBox*     m_usenetShareSpin = nullptr;
     QCheckBox*    m_usenetPar2Check = nullptr;
@@ -624,6 +625,7 @@ private:
 
     // -- BitTorrent page ----------------------------------------------------
     QCheckBox*      m_btEnabledCheck = nullptr;
+    QCheckBox*      m_btSingleCheck = nullptr;   ///< btSingleTransfer
     QSpinBox*       m_btPortSpin = nullptr;
     QLineEdit*      m_btDownloadDirEdit = nullptr;
     QCheckBox*      m_btStopAfterMetadataCheck = nullptr;
@@ -852,6 +854,8 @@ private:
     int m_smtpSecurity = 0;   ///< SmtpSecurity
     QString m_smtpUser;
     QString m_smtpPassword;
+    /// Single transfer mode boxes: usable only while ed3k and their network are ticked.
+    void updateSingleTransferChecks();
 };
 
 } // namespace eMule

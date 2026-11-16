@@ -164,15 +164,21 @@ QString ed3kNetworkText(bool anonymous, Ed3kJoin join)
     return text;
 }
 
-QIcon networkClientIcon(Ed3kJoin network)
+QString networkIconPath(Ed3kJoin network)
 {
     switch (network) {
-    case Ed3kJoin::Torrent: return skinIcon(QStringLiteral(":/icons/Torrent.ico"));
-    case Ed3kJoin::Usenet:  return skinIcon(QStringLiteral(":/icons/Usenet.ico"));
-    case Ed3kJoin::Hoster:  return skinIcon(QStringLiteral(":/icons/Hoster.ico"));
+    case Ed3kJoin::Torrent: return QStringLiteral(":/icons/Torrent.ico");
+    case Ed3kJoin::Usenet:  return QStringLiteral(":/icons/Usenet.ico");
+    case Ed3kJoin::Hoster:  return QStringLiteral(":/icons/Hoster.ico");
     case Ed3kJoin::None:    break;
     }
     return {};
+}
+
+QIcon networkClientIcon(Ed3kJoin network)
+{
+    const QString path = networkIconPath(network);
+    return path.isEmpty() ? QIcon() : skinIcon(path);
 }
 
 QString networkName(Ed3kJoin network)

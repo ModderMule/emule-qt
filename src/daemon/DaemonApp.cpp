@@ -30,6 +30,9 @@
 #include "Ed3kPaidSellerBridge.h"
 #include "Ed3kOwnSetsBridge.h"
 #include "Ed3kHosterBridge.h"
+#include "ArchiveContentsBridge.h"
+#include "archive/ArchiveContentsHook.h"
+#include "post/UsenetUnpacker.h"
 #include "Ed3kFriendsBridge.h"
 #include "Ed3kRoomsBridge.h"
 #include "Ed3kNamesBridge.h"
@@ -85,12 +88,14 @@
 #include "Ed3kNames.h"
 #include "Ed3kPlumbing.h"
 #include "Ed3kSession.h"
+#include "SingleTransfer.h"
 #include "Ed3kShared.h"
 #include "Ed3kSiteServer.h"
 #include "Ed3kUsenetJoin.h"
 #include "Ed3kTorrentJoin.h"
 #include "Ed3kEd2kJoin.h"
 #include "Ed3kHosterJoin.h"
+#include "Ed3kArchiveContents.h"
 #include "Ed3kLinkGrabber.h"
 #ifdef EMULE_HAVE_HOSTER_JD
 #include "Ed3kJavaRuntime.h"
@@ -122,6 +127,8 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
+#include <QSet>
+#include <QThreadPool>
 #include <QLoggingCategory>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -643,6 +650,11 @@ bool DaemonApp::start()
         if (m_ipcServer)
             m_ipcServer->broadcast(msg);
     });
+    // single transfer mode: torrent/usenet/hoster jobs joined with ed3k as Transfers rows
+    SingleTransfer::setSession(m_ed3kSession.get(), [this](const IpcMessage& msg) {
+        if (m_ipcServer)
+            m_ipcServer->broadcast(msg);
+    });
     // followed sets: members into <incoming>/<set>/ through the downloads; live streams on
     // the website server's port (attach on statusChanged)
     // paid subscriptions (buying passes): the paid sets are followed there (batch 13)
@@ -776,6 +788,25 @@ bool DaemonApp::start()
     }
     // hoster links (hoster.md); the resolver is the JDownloader sidecar when built in
     m_hosterJoin = std::make_unique<ed3k::Ed3kHosterJoin>(*m_ed3kSession, thePrefs.configDir());
+    // what unpacked archives hold (hoster.md §6.1): read on the unpacker's thread, published here
+    m_archiveContents = std::make_unique<ed3k::Ed3kArchiveContents>(*m_ed3kSession, thePrefs.configDir());
+    m_archiveContents->setPublish(thePrefs.ed3kArchiveContents());
+    m_archiveCancel->store(false);
+    setArchiveContentsHook([ac = QPointer<ed3k::Ed3kArchiveContents>(m_archiveContents.get()), cancel = m_archiveCancel](
+                               const QStringList& volumes, const QStringList& passwords) {
+        if (!thePrefs.ed3kArchiveContents() || cancel->load())
+            return;
+        auto listing = ed3k::Ed3kArchiveContents::readArchive(volumes, passwords, cancel.get());
+        if (!listing || cancel->load())
+            return;
+        QMetaObject::invokeMethod(
+            ac.data(), [ac, l = std::move(*listing)] {
+                if (ac)
+                    (void)ac->publishListing(l);
+            },
+            Qt::QueuedConnection);
+    });
+    ArchiveContentsBridge::setTargets(m_archiveContents.get(), m_ed3kDownloads.get(), m_hosterJoin.get(), nullptr);
     // hops.md §1 SHOULD: an ed3k download under the anonymous key of a file in the eD2K queue
     // or a hoster download: the user is told (once, Ed3kShared::tellExposed)
     if (m_ed3kShared)
@@ -890,6 +921,9 @@ bool DaemonApp::start()
     m_btSession = std::make_unique<bt::BtSession>();
     btSession = m_btSession.get();
     BtBridge::setSession(m_btSession.get());
+#ifdef EMULE_HAVE_ED3K
+    ArchiveContentsBridge::setTargets(m_archiveContents.get(), m_ed3kDownloads.get(), m_hosterJoin.get(), m_btSession.get());
+#endif
     // #124: libtorrent writes under the final names, so an unfinished torrent's files
     // stay out of the eD2K / ed3k share; a finished one's folder is scanned again, and
     // outside a shared folder (own BT dir, #131) its files are shared one by one
@@ -1090,6 +1124,13 @@ void DaemonApp::stop()
     theApp.isEd3kUploadPeer = {};
     theApp.ed3kConnected = {};
     theApp.ed3kSearchNotes = {};
+    // no reader publishes once the contents service is gone
+    m_archiveCancel->store(true);
+    setArchiveContentsHook({});
+    ArchiveContentsBridge::setTargets(nullptr, nullptr, nullptr, nullptr);
+    if (m_archiveContents)
+        m_archiveContents->stop();
+    m_archiveContents.reset();
     Ed3kBridge::setEd2kJoin(nullptr);
     if (m_ed2kJoin)
         m_ed2kJoin->stop();
@@ -1120,6 +1161,7 @@ void DaemonApp::stop()
     Ed3kPaidBridge::setPaid(nullptr);
     m_ed3kPaid.reset();
     Ed3kDownloadsBridge::setDownloads(nullptr);
+    SingleTransfer::setSession(nullptr);
     Ed3kHideBridge::setTargets(nullptr, nullptr, nullptr);
     if (m_ed3kDownloads)
         m_ed3kDownloads->stop();
@@ -1470,6 +1512,7 @@ void DaemonApp::connectBtPushes()
         IpcMessage msg(IpcMsgType::PushTorrentFinished, 0);
         msg.append(id);
         m_ipcServer->broadcast(msg);
+        publishTorrentArchives(id);
     });
     connect(m_btSession.get(), &bt::BtSession::statusChanged, this, [this] {
         IpcMessage msg(IpcMsgType::PushBtStatus, 0);
@@ -1687,6 +1730,9 @@ void DaemonApp::applyEd3kConfig()
     // ed3kShareUsenetPosts: a change restarts the usenet join (kept lists and records follow)
     if (m_usenetJoin)
         m_usenetJoin->setHoldBack(!thePrefs.ed3kShareUsenetPosts());
+    // ed3kArchiveContents: off withdraws the published contents records
+    if (m_archiveContents)
+        m_archiveContents->setPublish(thePrefs.ed3kArchiveContents());
     // ed3kOwnSetsWatch: no restart
     if (m_ed3kOwnSets)
         m_ed3kOwnSets->setWatchFolders(thePrefs.ed3kOwnSetsWatch());
@@ -1694,6 +1740,36 @@ void DaemonApp::applyEd3kConfig()
     applyHosterConfig();
     if (m_coreSession)
         m_coreSession->updatePortMappings();
+#endif
+}
+
+void DaemonApp::publishTorrentArchives(const QString& id)
+{
+#if defined(EMULE_HAVE_ED3K) && defined(EMULE_HAVE_BITTORRENT)
+    if (!m_btSession || !m_archiveContents || !thePrefs.ed3kArchiveContents())
+        return;
+    const auto row = m_btSession->torrent(id);
+    if (!row || row->isPrivate)
+        return;
+    QStringList names;
+    for (const auto& f : m_btSession->files(id))
+        if (!f.pad)
+            names << QDir::cleanPath(QDir(row->savePath).absoluteFilePath(f.path));
+    QSet<QString> dirs;
+    for (const int i : ed3k::Ed3kArchiveContents::firstVolumes(names))
+        dirs.insert(QFileInfo(names.at(i)).absolutePath());
+    if (dirs.isEmpty())
+        return;
+    const QSet<QString> mine(names.cbegin(), names.cend());
+    const QStringList passwords = thePrefs.archivePasswords();
+    QThreadPool::globalInstance()->start([dirs, mine, passwords] {
+        for (const QString& dir : dirs)
+            for (const auto& set : usenet::UsenetUnpacker::findArchiveSets(dir))
+                if (!set.headless && mine.contains(QDir::cleanPath(set.firstVolume)))
+                    readArchiveContents(set.volumes, passwords);
+    });
+#else
+    Q_UNUSED(id)
 #endif
 }
 
@@ -1712,6 +1788,8 @@ void DaemonApp::stopEd3kNode()
         m_ed3kShared->stop();
     if (m_hosterJoin)
         m_hosterJoin->stop();
+    if (m_archiveContents)
+        m_archiveContents->stop();
 #ifdef EMULE_HAVE_BITTORRENT
     if (m_torrentJoin)
         m_torrentJoin->stop();

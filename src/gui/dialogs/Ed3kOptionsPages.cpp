@@ -287,6 +287,7 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     for (auto it = p.cbegin(); it != p.cend(); ++it)
         Preferences::applyEd3kHosterKey(h, it.key().toString(), it.value());
     m_hosterEnabledCheck->setChecked(h.enabled);
+    m_hosterSingleCheck->setChecked(h.singleTransfer);
     updateJavaButtons();
     updateHosterNodeHint();
     m_hosterStreamsSpin->setValue(int(h.maxStreams));
@@ -367,6 +368,7 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kCreditAutoThreshold", qint64(c.autoThreshold));
     const Ed3kHosterPrefs h = hosterPrefs();
     put("ed3kHosterEnabled", h.enabled);
+    put("ed3kHosterSingleTransfer", h.singleTransfer);
     put("ed3kHosterJava", h.java);
     put("ed3kHosterAutoJava", h.autoJava);
     put("ed3kHosterMaxStreams", qint64(h.maxStreams));
@@ -1435,7 +1437,12 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
     m_hosterEnabledCheck = new QCheckBox(tr("Allow downloads from file hosters"), dlGroup);
     m_hosterEnabledCheck->setToolTip(tr("Lets the resolver open hoster pages, wait out their timers, show their "
                                         "puzzles and use the accounts below. On by default; needs the ed3k node."));
-    dlLayout->addWidget(m_hosterEnabledCheck);
+    m_hosterSingleCheck = singleTransferCheck(tr("Hoster"), dlGroup);
+    auto* enableRow = new QHBoxLayout;
+    enableRow->addWidget(m_hosterEnabledCheck);
+    enableRow->addWidget(m_hosterSingleCheck);
+    enableRow->addStretch();
+    dlLayout->addLayout(enableRow);
     m_hosterNodeLabel = noteLabel(tr("Hoster downloads need the ed3k node (Options, ed3k, General)."), dlGroup);
     dlLayout->addWidget(m_hosterNodeLabel);
     m_resolverLabel = noteLabel(QString(), dlGroup);
@@ -1589,7 +1596,9 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
 
     buildSolvers(solversLayout, page);
 
+    connect(m_hosterSingleCheck, &QCheckBox::toggled, this, edited);
     connect(m_hosterEnabledCheck, &QCheckBox::toggled, this, [this] {
+        updateHosterNodeHint();
         if (m_loading)
             return;
         updateJavaButtons();
@@ -1714,6 +1723,23 @@ void Ed3kOptionsPages::updateHosterNodeHint()
 {
     if (m_hosterNodeLabel && m_enabledCheck && m_hosterEnabledCheck)
         m_hosterNodeLabel->setVisible(m_hosterEnabledCheck->isChecked() && !m_enabledCheck->isChecked());
+    if (m_enabledCheck && m_hosterEnabledCheck)
+        gateSingleTransfer(m_hosterSingleCheck, m_enabledCheck->isChecked(), m_hosterEnabledCheck->isChecked());
+}
+
+QCheckBox* Ed3kOptionsPages::singleTransferCheck(const QString& windowName, QWidget* parent)
+{
+    auto* check = new QCheckBox(tr("Single transfer mode (ed3k only)"), parent);
+    check->setToolTip(tr("Hides the %1 window. Its downloads joined with ed3k are listed in the Transfers window "
+                         "and still use this network and its settings there; the others are paused until this is "
+                         "switched off. Needs ed3k.").arg(windowName));
+    return check;
+}
+
+void Ed3kOptionsPages::gateSingleTransfer(QCheckBox* check, bool ed3kOn, bool networkOn)
+{
+    if (check)
+        check->setEnabled(ed3kOn && networkOn);
 }
 
 bool Ed3kOptionsPages::confirmShareLinks()
@@ -1928,6 +1954,7 @@ Ed3kHosterPrefs Ed3kOptionsPages::hosterPrefs() const
     Ed3kHosterPrefs h = thePrefs.ed3kHoster();   // keeps the YAML-only fields
     h.accounts.clear();
     h.enabled = m_hosterEnabledCheck->isChecked();
+    h.singleTransfer = m_hosterSingleCheck->isChecked();
     h.java = m_javaEdit->text().trimmed();
     h.autoJava = m_autoJavaCheck->isChecked();
     h.autoUpdate = m_resolverAutoUpdateCheck->isChecked();
