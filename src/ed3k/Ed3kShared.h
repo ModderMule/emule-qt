@@ -289,6 +289,9 @@ private:
     /// Size and date of @p path on disk agree with @p f.
     [[nodiscard]] static bool unchanged(const QString& path, std::uint64_t size, qint64 mtimeMs);
     [[nodiscard]] static qint64 mtimeOf(const QString& path);
+    /// @p c holds the root of the file at @p path: same size, same date as eD2K's known.met
+    /// sees it (sameFileDate: FAT/NAS rounding, DST shift). Path may differ (moved, case).
+    [[nodiscard]] static bool cacheMatches(const Hashed& c, const QString& path, std::uint64_t size, qint64 mtimeMs);
     void loadCache();
     void saveCache();
     /// Unlisted entries whose file is gone: checked on a pool thread (after the list's full
