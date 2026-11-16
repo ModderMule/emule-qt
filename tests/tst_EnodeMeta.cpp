@@ -793,6 +793,20 @@ void tst_EnodeMeta::search_entryBecomesAResultRow()
     QVERIFY(!searchFileFromMetaEntry(entryOf(Kind::BtV1, 2, QStringLiteral("a.avi")), SearchType::MetaTorrent, p, 0, 0));
     QVERIFY(searchFileFromMetaEntry(entryOf(Kind::BtV1, 2, QStringLiteral("a.MKV")), SearchType::MetaTorrent, p, 0, 0));
     QVERIFY(searchFileFromMetaEntry(e, SearchType::MetaTorrent, p, 0, 0));
+
+    // size filter: the server checks the release total, a file row is checked here
+    p.extension.clear();
+    p.minSize = 50ULL * 1024 * 1024;
+    pb::MetaEntry nfo = entryOf(Kind::BtV1, 3, QStringLiteral("release.nfo"));
+    nfo.setSize(2048);
+    QVERIFY(!searchFileFromMetaEntry(nfo, SearchType::MetaTorrent, p, 0, 0));
+    QVERIFY(searchFileFromMetaEntry(entryOf(Kind::BtV1, 2, QStringLiteral("a.mkv")), SearchType::MetaTorrent, p, 0, 0));
+    pb::MetaEntry small = e;
+    small.setSize(2048);   // a release row: the server's total check stands
+    QVERIFY(searchFileFromMetaEntry(small, SearchType::MetaTorrent, p, 0, 0));
+    p.minSize = 0;
+    p.maxSize = 1000;
+    QVERIFY(!searchFileFromMetaEntry(entryOf(Kind::BtV1, 2, QStringLiteral("a.mkv")), SearchType::MetaTorrent, p, 0, 0));
 }
 
 void tst_EnodeMeta::search_entryOfAnotherNetworkOrABadHashIsDropped()
