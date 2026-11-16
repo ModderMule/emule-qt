@@ -115,6 +115,8 @@ public:
     int accountChecks = 0;
     int checkDelayMs = 0;        ///< check() answers this much later
     QSet<QString> hosts{QStringLiteral("fake.example")};   ///< hosters match() takes
+    QSet<QString> genericHosts;  ///< sites only the generic http plugin takes (match(): DirectHTTP, "file")
+    QSet<QString> privateUrls;   ///< open() fails like the address guard (code "private")
     QSet<QString> premiumHosts;  ///< accountCheck() says premium for these
     QHash<QString, int> maxDownloads;   ///< accountCheck() tells JD's downloads at once
     QList<QStringList> siteGroups;   ///< one hoster's domains, main first (match() and sites())
@@ -154,6 +156,9 @@ public:
         if (hosts.contains(h)) {
             e.sites = group(h);
             e.host = e.sites.isEmpty() ? h : e.sites.first();
+        } else if (genericHosts.contains(h)) {
+            e.host = QStringLiteral("DirectHTTP");
+            e.generic = QStringLiteral("file");
         }
         later(t, e);
         return t;
@@ -245,6 +250,14 @@ public:
             pz.timeoutS = 300;
             puzzles[pz.puzzle] = t;
             later(t, pz);
+            return t;
+        }
+        if (privateUrls.contains(url)) {
+            ResolverEvent f;
+            f.kind = ResolverEvent::Kind::Failed;
+            f.code = QStringLiteral("private");
+            f.text = QStringLiteral("intranet.example");
+            later(t, f);
             return t;
         }
         if (hashFailUrls.contains(url)) {
@@ -912,6 +925,46 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
         QVERIFY(!seen.contains(int(Ed3kHosterJoin::State::Looking)));
         QVERIFY(!r.join->item(ids[0])->rootHex.isEmpty());
+    }
+
+    /// #202: a plain web link keeps its site as host, skips the lookup, is never vouched for
+    void generic_downloadsNotPublished()
+    {
+        Rig r;
+        r.resolver.genericHosts = {QStringLiteral("www.web.example")};
+        QVERIFY(r.start(true));
+        QSet<int> seen;
+        QObject::connect(r.join.get(), &Ed3kHosterJoin::itemChanged, r.join.get(),
+                         [&](quint32 id) { seen.insert(int(r.state(id))); });
+        const auto ids = r.join->addLinks(QStringLiteral("https://www.web.example/books/a.epub?token=secret"));
+        QCOMPARE(ids.size(), 1);
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+        QVERIFY(!seen.contains(int(Ed3kHosterJoin::State::Looking)));
+        const auto item = *r.join->item(ids[0]);
+        QVERIFY(item.generic);
+        QCOMPARE(item.host, QStringLiteral("www.web.example"));
+        QVERIFY(!item.rootHex.isEmpty());   // the file itself is shared
+        QVERIFY(r.join->sharedLinks(ids[0]).isEmpty());
+        QVERIFY(r.restart());
+        QVERIFY(r.join->item(ids[0])->generic);
+        QVERIFY(r.join->sharedLinks(ids[0]).isEmpty());
+    }
+
+    /// #202: the sidecar refused a non-public address: Failed, not retried
+    void generic_privateAddressFails()
+    {
+        Rig r;
+        const QString u = QStringLiteral("http://intranet.example/x.zip");
+        r.resolver.genericHosts = {QStringLiteral("intranet.example")};
+        r.resolver.privateUrls = {u};
+        QVERIFY(r.start(true));
+        const auto ids = r.join->addLinks(u);
+        QCOMPARE(ids.size(), 1);
+        QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Failed, 60000);
+        QCOMPARE(r.join->item(ids[0])->reason, Ed3kHosterJoin::Reason::PrivateAddress);
+        QCOMPARE(r.join->item(ids[0])->reasonArg, QStringLiteral("intranet.example"));
+        QTest::qWait(1500);
+        QCOMPARE(r.resolver.opens, 1);
     }
 
     /// §3: no puzzle, timer or account without the user's switch: nothing is opened
@@ -2082,6 +2135,11 @@ private slots:
         QCOMPARE(e->second.text, QStringLiteral("KoYy2j"));
         QCOMPARE(e->second.host, QStringLiteral("9kw.eu"));
         QCOMPARE(e->second.name, QStringLiteral("KoYy2j"));
+        e = Ed3kJdResolver::parseEvent(R"({"id":9,"ev":"match","host":"DirectHTTP","generic":"file"})");
+        QCOMPARE(e->second.kind, K::Matched);
+        QCOMPARE(e->second.generic, QStringLiteral("file"));
+        e = Ed3kJdResolver::parseEvent(R"({"id":10,"ev":"match","host":"rapidgator.net"})");
+        QVERIFY(e->second.generic.isEmpty());
         QVERIFY(!Ed3kJdResolver::parseEvent(R"({"id":1,"ev":"ok"})"));
         QVERIFY(!Ed3kJdResolver::parseEvent("not json"));
     }

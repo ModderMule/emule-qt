@@ -7,7 +7,6 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
-#include <QToolTip>
 
 #include <algorithm>
 #include <bit>
@@ -122,6 +121,7 @@ void KadIncomingGraph::setRequest(const QCborMap& row, const QCborMap& graph, co
     if (!parseId(m_target, target)) {
         m_hint = tr("This request has no target: its contacts are not a step towards anything.");
         m_handedCount = 0;
+        setLoading(false);   // and the tip under the pointer follows
         update();
         return;
     }
@@ -163,6 +163,7 @@ void KadIncomingGraph::setRequest(const QCborMap& row, const QCborMap& graph, co
                      [](const Node& a, const Node& b) { return a.closeness < b.closeness; });
     m_hot = -1;
     layoutNodes();
+    setLoading(false);   // and the tip under the pointer follows the new nodes
     update();
 }
 
@@ -178,28 +179,13 @@ void KadIncomingGraph::clear()
     m_wanted = -1;
     m_hot = -1;
     m_hint = tr("Select an incoming search to see who asked us and which closer contacts we handed out.");
-    if (QToolTip::isVisible() && underMouse())
-        QToolTip::hideText();
+    setLoading(false);   // and no tip under the pointer
     update();
 }
 
 // ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
-
-bool KadIncomingGraph::event(QEvent* event)
-{
-    if (event->type() == QEvent::ToolTip) {
-        const auto* help = static_cast<QHelpEvent*>(event);
-        const int idx = hitTest(help->pos());
-        if (idx >= 0)
-            QToolTip::showText(help->globalPos(), toolTipText(idx), this, m_nodes[static_cast<size_t>(idx)].rect);
-        else
-            QToolTip::hideText();
-        return true;
-    }
-    return KadGraphBase::event(event);
-}
 
 void KadIncomingGraph::paintEvent(QPaintEvent* /*event*/)
 {
@@ -303,13 +289,6 @@ void KadIncomingGraph::mouseMoveEvent(QMouseEvent* event)
     if (idx != m_hot) {
         m_hot = idx;
         update();
-        if (QToolTip::isVisible()) {
-            if (idx >= 0)
-                QToolTip::showText(event->globalPosition().toPoint(), toolTipText(idx), this,
-                                   m_nodes[static_cast<size_t>(idx)].rect);
-            else
-                QToolTip::hideText();
-        }
     }
     KadGraphBase::mouseMoveEvent(event);
 }
@@ -389,14 +368,16 @@ int KadIncomingGraph::hitTest(const QPoint& pos) const
     return -1;
 }
 
+QRect KadIncomingGraph::nodeRect(int idx) const
+{
+    return m_nodes[static_cast<size_t>(idx)].rect;
+}
+
 QString KadIncomingGraph::toolTipText(int idx) const
 {
     const Node& n = m_nodes[static_cast<size_t>(idx)];
     const Node* me = own();
-    const auto row = [](const QString& label, const QString& value) {
-        return QStringLiteral("<tr><td><b>%1:</b></td><td>&nbsp;%2</td></tr>")
-            .arg(label.toHtmlEscaped(), value.toHtmlEscaped());
-    };
+    const auto row = &KadGraphBase::tipRow;
     QString role;
     switch (n.role) {
     case Role::Asker: role = tr("Requester"); break;
@@ -404,14 +385,15 @@ QString KadIncomingGraph::toolTipText(int idx) const
     case Role::Handed: role = tr("Handed-out contact"); break;
     }
     QString html = QStringLiteral("<qt><b>%1</b><table cellspacing=0>").arg(role.toHtmlEscaped());
-    if (n.known)
-        html += row(tr("Kad ID"), n.id);
-    else
-        html += row(tr("Kad ID"), n.role == Role::Asker ? tr("unknown (not in our routing table)") : tr("unknown"));
-    if (!n.nodeId.isEmpty())
+    // eD2K: the Kad ID is the node ID; ed3k: a routing ID besides the node ID
+    const QString unknown = n.role == Role::Asker ? tr("unknown (not in our routing table)") : tr("unknown");
+    if (!n.nodeId.isEmpty()) {
         html += row(tr("Node ID"), n.nodeId);
-    if (!n.addr.isEmpty())
-        html += row(tr("Address"), n.cc.isEmpty() ? n.addr : QStringLiteral("%1 (%2)").arg(n.addr, n.cc.toUpper()));
+        html += row(tr("Routing ID"), n.known ? n.id : unknown);
+    } else {
+        html += row(tr("Node ID"), n.known ? n.id : unknown);
+    }
+    html += countryRow(n.cc);
     if (n.version >= 0)
         html += row(tr("Protocol Version"), QString::number(n.version));
     if (n.known) {

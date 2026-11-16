@@ -49,6 +49,13 @@ QString hexOf(const std::uint8_t (&b)[N])
     return QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(b), qsizetype(N)).toHex());
 }
 
+/// "ip:port", "[v6]:port"
+QString addrText(const QHostAddress& ip, std::uint16_t port)
+{
+    return ip.protocol() == QAbstractSocket::IPv6Protocol ? QStringLiteral("[%1]:%2").arg(ip.toString()).arg(port)
+                                                          : QStringLiteral("%1:%2").arg(ip.toString()).arg(port);
+}
+
 /// One row per node: a node in both tables is "dual", shown with the family dialled first
 /// (IPv6, 250 ms ahead of IPv4, packmule dial.rs §8.3) unless IPv6 Kad is offline.
 QCborArray contactsToCbor(const std::vector<ed3k_kad_contact>& all, bool v6First)
@@ -165,13 +172,10 @@ QCborMap incomingGraphToCbor(const std::vector<ed3k_kad_incoming_node>& all)
             {QStringLiteral("id"), n.known != 0 ? hexOf(n.id) : QString()},
             {QStringLiteral("version"), qint64(-1)},
         };
-        if (n.role != 1)
-            m.insert(QStringLiteral("node"), hexOf(n.node));
+        m.insert(QStringLiteral("node"), hexOf(n.node));
         if (n.has_addr != 0) {
             const QHostAddress ip = ed3k::toQHostAddress(ffi::Address::from(n.addr));
-            m.insert(QStringLiteral("addr"), ip.protocol() == QAbstractSocket::IPv6Protocol
-                                                 ? QStringLiteral("[%1]:%2").arg(ip.toString()).arg(n.addr.port)
-                                                 : QStringLiteral("%1:%2").arg(ip.toString()).arg(n.addr.port));
+            m.insert(QStringLiteral("addr"), addrText(ip, n.addr.port));
             m.insert(QStringLiteral("cc"), countryCodeOf(ip));
         }
         switch (n.role) {
@@ -191,8 +195,11 @@ QCborArray graphToCbor(const std::vector<ed3k_kad_lookup_node>& all)
         QCborArray from;
         for (std::uint8_t i = 0; i < n.from_len && i < 4; ++i)
             from.append(qint64(n.from[i]));
+        const QHostAddress ip = ed3k::toQHostAddress(ffi::Address::from(n.addr));
         out.append(QCborMap{
             {QStringLiteral("id"), hexOf(n.id)},
+            {QStringLiteral("addr"), ip.isNull() ? QString() : addrText(ip, n.addr.port)},
+            {QStringLiteral("cc"), countryCodeOf(ip)},
             {QStringLiteral("distance"), hexOf(n.distance)},
             {QStringLiteral("from"), from},
             {QStringLiteral("asked"), n.asked != 0},

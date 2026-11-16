@@ -171,6 +171,7 @@ void Ed3kJdResolver::setConfig(const JdResolverConfig& config)
     const bool proxy = next.proxy != m_config.proxy;
     const bool bind = next.bindAddress != m_config.bindAddress;
     const bool puzzles = next.askPuzzles != m_config.askPuzzles;
+    const bool generic = next.genericHttp != m_config.genericHttp;
     const bool solvers = next.solvers != m_config.solvers;
     m_config = next;
     if (solvers)
@@ -192,6 +193,8 @@ void Ed3kJdResolver::setConfig(const JdResolverConfig& config)
         setBindAddress(m_config.bindAddress);
     if (puzzles)
         setAskPuzzles(m_config.askPuzzles);
+    if (generic)
+        setGenericHttp(m_config.genericHttp);
     // not running: sent with the next start
     if (solvers && running())
         sendSolvers();
@@ -534,6 +537,14 @@ void Ed3kJdResolver::setAskPuzzles(bool on)
                 false);
 }
 
+void Ed3kJdResolver::setGenericHttp(bool on)
+{
+    m_config.genericHttp = on;
+    // an older sidecar answers "unknown op": it keeps refusing generic links
+    if (running())
+        request({{QStringLiteral("op"), QStringLiteral("setGeneric")}, {QStringLiteral("on"), on}}, false);
+}
+
 void Ed3kJdResolver::setProxy(const QString& url)
 {
     m_config.proxy = url;
@@ -610,6 +621,8 @@ std::optional<std::pair<Ed3kResolver::TaskId, ResolverEvent>> Ed3kJdResolver::pa
     for (const QJsonValue& v : o.value(QStringLiteral("sites")).toArray())
         if (const QString d = v.toString().toLower(); !d.isEmpty())
             e.sites.append(d);
+    if (e.kind == K::Matched)
+        e.generic = str("generic");
     e.valid = o.value(QStringLiteral("valid")).toBool();
     e.premium = o.value(QStringLiteral("premium")).toBool();
     e.expires = o.value(QStringLiteral("expires")).toInteger(0);
@@ -811,6 +824,8 @@ bool Ed3kJdResolver::ensureStarted()
         request({{QStringLiteral("op"), QStringLiteral("setBind")}, {QStringLiteral("address"), m_config.bindAddress}}, false);
     if (!m_config.askPuzzles)
         request({{QStringLiteral("op"), QStringLiteral("setPuzzles")}, {QStringLiteral("mode"), QStringLiteral("never")}}, false);
+    if (m_config.genericHttp)
+        request({{QStringLiteral("op"), QStringLiteral("setGeneric")}, {QStringLiteral("on"), true}}, false);
     if (!m_config.solvers.isEmpty())
         sendSolvers();
     return true;

@@ -81,7 +81,8 @@ APPDIR="$WORK/eMuleQt"
 [ -x "$APPDIR/emuleqt" ] || { echo "Error: tarball has no eMuleQt/emuleqt launcher" >&2; exit 1; }
 
 # --emulecored (AppConfig::kAppImageCoreArg): the GUI starts the core as its own
-# instance of the image, so the core keeps a mount of its own after the GUI quits
+# instance of the image, so the core keeps a mount of its own after the GUI
+# quits. Extract-and-run: the GUI starts emulecored from a hard-linked copy
 cat > "$APPDIR/AppRun" <<'APPRUN'
 #!/bin/sh -
 HERE="$(dirname "$(readlink -f -- "$0")")"

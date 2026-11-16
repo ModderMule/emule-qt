@@ -5,6 +5,7 @@
 #include "net/quic/QuicTls.h"
 #include "crypto/SelfSignedCert.h"
 #include "net/quic/QuicNatProtocol.h"
+#include "utils/Log.h"
 
 #include <ngtcp2/ngtcp2_crypto_ossl.h>
 #include <openssl/err.h>
@@ -12,6 +13,10 @@
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 
 #include <memory>
 #include <mutex>
@@ -84,6 +89,27 @@ bool installSelfSigned(SSL_CTX* ctx)
         && SSL_CTX_use_PrivateKey(ctx, id->key.get()) == 1;
 }
 
+#ifdef Q_OS_WIN
+/// The libssl this process loaded has the 3.5 QUIC TLS API ngtcp2_crypto_ossl.dll
+/// imports. That DLL is delay-loaded: called without it, the process dies (#206).
+bool loadedSslHasQuicApi()
+{
+    for (const wchar_t* name : {L"libssl-3-x64.dll", L"libssl-3-arm64.dll", L"libssl-3.dll"}) {
+        const HMODULE ssl = ::GetModuleHandleW(name);
+        if (!ssl)
+            continue;
+        if (::GetProcAddress(ssl, "SSL_set_quic_tls_cbs"))
+            return true;
+        wchar_t path[MAX_PATH] = {};
+        ::GetModuleFileNameW(ssl, path, MAX_PATH);
+        g_lastError = QStringLiteral("%1 (%2) has no QUIC TLS API, needs OpenSSL 3.5")
+                          .arg(QString::fromWCharArray(path), QLatin1String(OpenSSL_version(OPENSSL_VERSION)));
+        return false;
+    }
+    return true;   // linked statically: the build checked the version
+}
+#endif
+
 } // namespace
 
 QuicTls* QuicTls::instance()
@@ -119,6 +145,12 @@ QuicTls::~QuicTls()
 
 bool QuicTls::init()
 {
+#ifdef Q_OS_WIN
+    if (!loadedSslHasQuicApi()) {
+        logWarning(QStringLiteral("QUIC NAT-T off: %1").arg(g_lastError));
+        return false;
+    }
+#endif
     if (ngtcp2_crypto_ossl_init() != 0) {
         g_lastError = QStringLiteral("ngtcp2_crypto_ossl_init failed");
         return false;

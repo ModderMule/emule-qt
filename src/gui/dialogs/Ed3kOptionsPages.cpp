@@ -229,7 +229,6 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     m_ownSetsWatchCheck->setChecked(p.value(QStringLiteral("ed3kOwnSetsWatch")).toBool(true));
     m_extTree->setValue(m_hashRamItem, int(p.value(QStringLiteral("ed3kHashRamMiB")).toInteger(0)));
     m_extTree->setValue(m_lowRamItem, int(p.value(QStringLiteral("ed3kHashCacheLowRamPercent")).toInteger(20)));
-    m_extTree->setValue(m_kadStoreItem, int(p.value(QStringLiteral("ed3kKadStoreMiB")).toInteger(0)));
     const QStringList off = Preferences::rpcUrlList(p.value(QStringLiteral("ed3kExtOff")));
     for (QCheckBox* box : m_extChecks)
         box->setChecked(!off.contains(box->text()));
@@ -292,6 +291,7 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     updateHosterNodeHint();
     m_hosterStreamsSpin->setValue(int(h.maxStreams));
     m_hosterPuzzlesCheck->setChecked(h.askPuzzles);
+    m_hosterGenericCheck->setChecked(h.genericHttp);
     m_hosterPeersCheck->setChecked(h.fromPeers);
     m_hosterCheckLinksCheck->setChecked(h.checkSearchLinks);
     m_hosterExtractCheck->setChecked(h.extract);
@@ -331,7 +331,6 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kOwnSetsWatch", m_ownSetsWatchCheck->isChecked());
     put("ed3kHashRamMiB", qint64(m_extTree->value(m_hashRamItem)));
     put("ed3kHashCacheLowRamPercent", qint64(m_extTree->value(m_lowRamItem)));
-    put("ed3kKadStoreMiB", qint64(m_extTree->value(m_kadStoreItem)));
     put("ed3kExtOff", extOff().join(QLatin1Char(' ')));
     if (!m_portJoined)   // joined: the Connection page sends it
         put("ed3kUdpPort", qint64(m_udpPortSpin->value()));
@@ -372,6 +371,7 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kHosterAutoJava", h.autoJava);
     put("ed3kHosterMaxStreams", qint64(h.maxStreams));
     put("ed3kHosterPuzzles", h.askPuzzles);
+    put("ed3kHosterGenericHttp", h.genericHttp);
     put("ed3kHosterPublishLinks", h.publishLinks);
     put("ed3kHosterFromPeers", h.fromPeers);
     put("ed3kHosterCheckSearchLinks", h.checkSearchLinks);
@@ -407,7 +407,6 @@ void Ed3kOptionsPages::saveLocal() const
     thePrefs.setEd3kOwnSetsWatch(m_ownSetsWatchCheck->isChecked());
     thePrefs.setEd3kHashRamMiB(m_extTree->value(m_hashRamItem));
     thePrefs.setEd3kHashCacheLowRamPercent(m_extTree->value(m_lowRamItem));
-    thePrefs.setEd3kKadStoreMiB(m_extTree->value(m_kadStoreItem));
     thePrefs.setEd3kExtOff(extOff());
     if (!m_portJoined && m_udpPortSpin->value() > 0)
         thePrefs.setEd3kUdpPort(uint16(m_udpPortSpin->value()));
@@ -1453,6 +1452,10 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
     m_hosterPuzzlesCheck->setToolTip(tr("Off: a link that asks for a puzzle is skipped and shows \"Needs you\"; "
                                        "another link of the file is tried. Retry asks again."));
     dlLayout->addWidget(m_hosterPuzzlesCheck);
+    m_hosterGenericCheck = new QCheckBox(tr("Download plain web links no hoster plugin takes"), dlGroup);
+    m_hosterGenericCheck->setToolTip(tr("An http or https link to a file on any website is downloaded directly. "
+                                        "Never from a local or private address; these links are not published."));
+    dlLayout->addWidget(m_hosterGenericCheck);
     m_hosterPeersCheck = new QCheckBox(tr("Use hoster links that other ed3k nodes name"), dlGroup);
     m_hosterPeersCheck->setVisible(thePrefs.showExtControls());
     dlLayout->addWidget(m_hosterPeersCheck);
@@ -1606,7 +1609,7 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
         }
         emit changed();
     });
-    for (QCheckBox* box : {m_hosterPuzzlesCheck, m_hosterPeersCheck, m_hosterCheckLinksCheck, m_autoJavaCheck,
+    for (QCheckBox* box : {m_hosterPuzzlesCheck, m_hosterGenericCheck, m_hosterPeersCheck, m_hosterCheckLinksCheck, m_autoJavaCheck,
                            m_hosterExtractCheck, m_hosterDeleteArchivesCheck, m_hosterShareCheck, m_resolverAutoUpdateCheck})
         connect(box, &QCheckBox::toggled, this, edited);
     connect(m_hosterExtractCheck, &QCheckBox::toggled, m_hosterDeleteArchivesCheck, &QWidget::setEnabled);
@@ -1930,6 +1933,7 @@ Ed3kHosterPrefs Ed3kOptionsPages::hosterPrefs() const
     h.autoUpdate = m_resolverAutoUpdateCheck->isChecked();
     h.maxStreams = uint32(m_hosterStreamsSpin->value());
     h.askPuzzles = m_hosterPuzzlesCheck->isChecked();
+    h.genericHttp = m_hosterGenericCheck->isChecked();
     h.publishLinks = m_publishLinksCheck->isChecked();
     h.fromPeers = m_hosterPeersCheck->isChecked();
     h.checkSearchLinks = m_hosterCheckLinksCheck->isChecked();
@@ -1982,12 +1986,6 @@ QWidget* Ed3kOptionsPages::buildExtended(QWidget* parent)
     m_lowRamItem->setToolTip(0, tr("While the free RAM is below this share of the total, only block hashes in use "
                                    "stay in RAM."));
     m_extTree->setValue(m_lowRamItem, 20);
-    QTreeWidgetItem* kad = m_extTree->addGroup(tr("Kad"), skinIcon(QStringLiteral(":/icons/Kad.ico")));
-    m_kadStoreItem = m_extTree->addSpin(kad, tr("RAM for records of other nodes"), 0, Preferences::kMaxEd3kKadStoreMiB,
-                                        tr("Default (128 MiB)"), QStringLiteral("MiB"));
-    m_kadStoreItem->setToolTip(0, tr("RAM for the keyword and source records this node keeps for other ed3k nodes "
-                                     "(about 1 KiB each). Over it, new records are refused and other nodes store "
-                                     "them elsewhere. Applies at the next start of the ed3k node."));
     QTreeWidgetItem* connection = m_extTree->addGroup(tr("Connection"), skinIcon(QStringLiteral(":/icons/Connection.ico")));
     m_lanItem = m_extTree->addCheck(connection, tr("Find ed3k nodes in the local network (restarts the node)"));
     m_lanItem->setToolTip(0, tr("LAN discovery: finds other ed3k nodes on this computer's local networks."));

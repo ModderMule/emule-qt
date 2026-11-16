@@ -183,8 +183,12 @@ void Ed3kKadPanel::requestLookupHistory()
     const std::uint64_t id = m_graphSearchId;
     m_ipc->sendPoll(this, std::move(req), [this, id](const IpcMessage& resp) {
         // a lookup that is gone keeps its last picture until another one is shown (as eD2K)
-        if (id != m_graphSearchId || resp.type() != IpcMsgType::Result || !resp.fieldBool(0))
+        if (id != m_graphSearchId)
             return;
+        if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
+            m_lookupGraph->setLoading(false);
+            return;
+        }
         std::vector<LookupEntry> entries;
         const QCborArray arr = resp.fieldArray(1);
         entries.reserve(static_cast<size_t>(arr.size()));
@@ -192,6 +196,8 @@ void Ed3kKadPanel::requestLookupHistory()
             const QCborMap m = v.toMap();
             LookupEntry e;
             e.contactID = m.value(QStringLiteral("id")).toString();
+            e.addr = m.value(QStringLiteral("addr")).toString();
+            e.cc = m.value(QStringLiteral("cc")).toString();
             const QString dist = m.value(QStringLiteral("distance")).toString();
             e.distance = distanceText(dist);
             e.dist = distWords(dist);
@@ -237,6 +243,7 @@ void Ed3kKadPanel::autoPickLookup()
     if (pick == 0)
         return;
     m_graphSearchId = pick;
+    m_lookupGraph->setLoading(true);
     setLookupTabTitle(lookupTitle(pick));
     if (lookupTabShown())
         markSearchRow(m_lookupsModel->rowOf(pick));

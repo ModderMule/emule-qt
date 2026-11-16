@@ -153,7 +153,7 @@ MainWindow::MainWindow(QWidget* parent)
     // BitTorrent magnets pasted among eD2K links go to the Torrents tab
     Ed2kLinkImporter::setTorrentLinkHandler(
         [self = QPointer<MainWindow>(this)](const QStringList& magnets, QWidget*) {
-            if (!self || !self->m_torrentPanel)
+            if (!self || !self->m_torrentPanel || !self->requireBitTorrent())
                 return;
             self->switchToTab(TabTorrents);
             self->m_torrentPanel->addMagnets(magnets);
@@ -162,7 +162,7 @@ MainWindow::MainWindow(QWidget* parent)
     Ed2kLinkImporter::setTorrentFileHandler(
         [self = QPointer<MainWindow>(this)](const QString& name, const QByteArray& data,
                                             const QList<int>& wantedFiles, QWidget*) {
-            if (!self || !self->m_torrentPanel)
+            if (!self || !self->m_torrentPanel || !self->requireBitTorrent())
                 return;
             self->switchToTab(TabTorrents);
             self->m_torrentPanel->addTorrentData(name, data, wantedFiles);
@@ -643,6 +643,7 @@ void MainWindow::showOptionsDialog(int page)
     m_serverPanel->logWidget()->setIpcTabVisible(thePrefs.enableIpcLog());
     m_serverPanel->logWidget()->setLeecherTabVisible(thePrefs.antiLeecher() || thePrefs.clientAnalyzer());
     m_searchPanel->setEd3kMethodVisible(thePrefs.ed3kEnabled());
+    m_searchPanel->setTorrentSearchVisible(thePrefs.btEnabled());
     applyFeatureTabs();
     m_serverPanel->refreshUpdateUrl();   // Options "List..." edits the same URL
     updateFreeSpaceLabel();
@@ -1062,6 +1063,13 @@ void MainWindow::dropEvent(QDropEvent* event)
     }
 #endif
 #ifdef EMULE_HAVE_BITTORRENT
+    // BitTorrent off: the drop is taken, and the prompt names the switch
+    if (m_torrentPanel && !gui::torrentDropFiles(event->mimeData()).isEmpty() && !thePrefs.btEnabled()) {
+        event->acceptProposedAction();
+        // not modal inside the drop: the drag source waits for it
+        QTimer::singleShot(0, this, [this] { std::ignore = requireBitTorrent(); });
+        return;
+    }
     if (m_torrentPanel && m_torrentPanel->acceptTorrentDrop(event->mimeData())) {
         switchToTab(TabTorrents);
         event->acceptProposedAction();
@@ -3143,6 +3151,22 @@ void MainWindow::showLowIdHint()
         theUiState.setLowIdHintDisabled(true);
     if (box.clickedButton() == settingsBtn)
         showOptionsDialog(OptionsDialog::PageConnection);
+}
+
+bool MainWindow::requireBitTorrent()
+{
+    if (thePrefs.btEnabled())
+        return true;
+    QMessageBox box(QMessageBox::Information, tr("BitTorrent Disabled"),
+                    tr("BitTorrent is turned off, so torrents and magnet links cannot be added.\n\n"
+                       "Turn it on under Options → BitTorrent, then try again."),
+                    QMessageBox::Cancel, this);
+    auto* openOptions = box.addButton(tr("Open Options"), QMessageBox::AcceptRole);
+    box.setDefaultButton(openOptions);
+    box.exec();
+    if (box.clickedButton() == openOptions)
+        showOptionsDialog(OptionsDialog::PageBitTorrent);
+    return false;
 }
 
 bool MainWindow::isTabHidden(int tab)

@@ -56,6 +56,7 @@ private slots:
     void refusesEscapingNames();
     void cancelStops();
     void seedsWhatWasMade();
+    void savedTorrentsWithoutASession();
     void exportsWhatIsSeeded_data();
     void exportsWhatIsSeeded();
 
@@ -227,6 +228,48 @@ void tst_BtTorrentCreator::seedsWhatWasMade()
                              10000);
     QCOMPARE(session.addCreatedTorrent(r.data, r.savePath).outcome, BtAddOutcome::Duplicate);
     session.stop();
+}
+
+// BT off: the share guard reads the torrents of the last run from their resume data
+void tst_BtTorrentCreator::savedTorrentsWithoutASession()
+{
+    BtCreateParams p;
+    p.path = m_dir.filePath(QStringLiteral("set"));
+    p.isPrivate = true;
+    const BtCreateResult r = create(p);
+    QVERIFY(r.ok);
+
+    QTemporaryDir state;
+    BtSettings s;
+    s.listenPort = 0;
+    s.dht = false;
+    s.lsd = false;
+    s.stateDir = state.filePath(QStringLiteral("BT"));
+    s.downloadDir = state.filePath(QStringLiteral("Incoming"));
+    QString id;
+    {
+        BtSession session;
+        session.start(s);
+        const BtAddResult added = session.addCreatedTorrent(r.data, r.savePath);
+        QCOMPARE(added.outcome, BtAddOutcome::Added);
+        id = added.id;
+        QTRY_VERIFY_WITH_TIMEOUT(session.torrent(id) && session.torrent(id)->totalSize > 0
+                                     && session.torrent(id)->haveBytes == session.torrent(id)->totalSize,
+                                 10000);
+        session.stop();
+    }
+    const QList<BtSavedTorrent> saved = BtSession::savedTorrents(s.stateDir, s.downloadDir);
+    QCOMPARE(saved.size(), 1);
+    const BtTorrentRow& row = saved.first().row;
+    QCOMPARE(row.id, id);
+    QCOMPARE(row.name, QStringLiteral("set"));
+    QCOMPARE(QDir::cleanPath(row.savePath), QDir::cleanPath(r.savePath));
+    QVERIFY(row.isPrivate);
+    QCOMPARE(row.progress, 1.0);
+    QVERIFY(row.totalSize > 0 && row.haveBytes == row.totalSize);
+    for (const BtFileRow& f : saved.first().files)
+        QCOMPARE(f.done, f.size);
+    QVERIFY(BtSession::savedTorrents(state.filePath(QStringLiteral("none")), s.downloadDir).isEmpty());
 }
 
 void tst_BtTorrentCreator::exportsWhatIsSeeded_data()

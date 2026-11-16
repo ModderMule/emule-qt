@@ -1104,13 +1104,18 @@ void Ed3kHosterJoin::begin(Entry& e)
     m_matches[m_resolver->match(e.item.url)] = e.item.id;
 }
 
-void Ed3kHosterJoin::onMatched(Entry& e, const QString& host)
+void Ed3kHosterJoin::onMatched(Entry& e, const ResolverEvent& ev)
 {
-    if (host.isEmpty()) {
+    if (ev.host.isEmpty()) {
         setState(e, State::NoResolver, Reason::NoPlugin, e.item.host);
         return;
     }
-    e.item.host = host;
+    // a generic link keeps its site as host: per-site streams, accounts, the GUI's column
+    e.item.generic = !ev.generic.isEmpty();
+    if (!e.item.generic)
+        e.item.host = ev.host;
+    else if (e.item.host.isEmpty())
+        e.item.host = QUrl(e.item.url).host();
     if (!m_prefs.enabled) {
         // §3: no puzzle, timer or account without the user's switch
         setState(e, State::NeedsUser, Reason::HostersOff);
@@ -1126,6 +1131,11 @@ void Ed3kHosterJoin::onMatched(Entry& e, const QString& host)
 
 void Ed3kHosterJoin::lookUp(Entry& e)
 {
+    // never published by anyone (vouch): nothing to find, and the ask would name the URL
+    if (e.item.generic) {
+        startRootless(e);
+        return;
+    }
     auto* eng = m_session.engine();
     const auto id = ffi::linkId(e.item.url.toStdString());
     // no contacts: nobody to ask, the lookup would only time out
@@ -1423,7 +1433,7 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
         if (!e)
             return;
         if (ev.kind == K::Matched)
-            onMatched(*e, ev.host);
+            onMatched(*e, ev);
         else
             setState(*e, State::NoResolver, Reason::ResolverNotReady, m_resolver ? m_resolver->unavailableReason() : QString());
         pumpSession();
@@ -1653,6 +1663,11 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
         // one's blocks were verified under the root, only the stream is retried)
         if (e && ev.code == QLatin1StringView("hash") && !e->root)
             dropBadFile(*e, ev.text);
+        else if (e && ev.code == QLatin1StringView("private")) {
+            // no retry: it stays private; released, so the core's link end finds no item
+            release(*e, false);
+            setState(*e, State::Failed, Reason::PrivateAddress, ev.text);
+        }
         else if (e && ev.code != QLatin1StringView("noPlugin"))
             retryLater(*e, 60, Reason::ResolverError, ev.text.isEmpty() ? ev.code : ev.text);
         final();
@@ -1996,6 +2011,14 @@ void Ed3kHosterJoin::vouch(Entry& ent, std::uint64_t link, const ffi::Root& root
     // §4.1: the own link, or a peer's blocks from it verified under the root (§4 publisher)
     const auto peer = m_peerLinks.find(link);
     const QString url = peer != m_peerLinks.end() ? peer->second.url : e->item.url;
+    // the own generic link is not vouched for: it may carry a private token; the root stays
+    if (peer == m_peerLinks.end() && e->item.generic) {
+        if (!e->root) {
+            e->root = root;
+            touch(*e);
+        }
+        return;
+    }
     if (url.isEmpty() || std::ranges::any_of(e->shared, [&url](const SharedLink& l) { return l.url == url; }))
         return;
     SharedLink l;
@@ -3073,6 +3096,8 @@ QJsonObject Ed3kHosterJoin::toJson(const Entry& e) const
                   {QStringLiteral("mirrors"), QJsonArray::fromStringList(it.mirrors)},
                   {QStringLiteral("mirrorNo"), it.mirrorNo},
                   {QStringLiteral("tried"), QJsonArray::fromStringList(it.tried)}};
+    if (it.generic)
+        o.insert(QStringLiteral("generic"), true);
     if (it.packageId != 0)
         o.insert(QStringLiteral("pkgName"), it.package);
     if (!it.passwords.isEmpty())
@@ -3096,6 +3121,7 @@ void Ed3kHosterJoin::fromJson(const QJsonObject& o, Entry& e) const
         if (const QString url = m.toString(); !url.isEmpty())
             it.mirrors << url;
     it.mirrorNo = int(o.value(QStringLiteral("mirrorNo")).toInteger());
+    it.generic = o.value(QStringLiteral("generic")).toBool();
     for (const QJsonValue& m : o.value(QStringLiteral("tried")).toArray())
         if (const QString url = m.toString(); !url.isEmpty())
             it.tried << url;

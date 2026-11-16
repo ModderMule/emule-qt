@@ -106,6 +106,7 @@ public final class ResolverMain {
             // what this sidecar can do beyond its protocol (older ones send none)
             m.put("deep", true);
             m.put("bind", true);
+            m.put("generic", true);
             Out.send(m);
             break;
         }
@@ -115,6 +116,10 @@ public final class ResolverMain {
             break;
         case "setBind":
             Jd.setBind(str(req.get("address")));
+            Out.send(id, "ok");
+            break;
+        case "setGeneric":
+            Jd.setGeneric(Boolean.TRUE.equals(req.get("on")));
             Out.send(id, "ok");
             break;
         case "setPuzzles":
@@ -127,6 +132,11 @@ public final class ResolverMain {
             final String host = Jd.match(url);
             if (host != null) {
                 m.put("host", host);
+                // only JD's generic plugin takes it: "file" or "any"
+                final String generic = Jd.genericKind(url);
+                if (generic != null) {
+                    m.put("generic", generic);
+                }
                 // a hoster's aliases, for account matching
                 final LazyHostPlugin hp = Jd.matchHostPlugin(url);
                 if (hp != null && host.equals(hp.getDisplayName())) {

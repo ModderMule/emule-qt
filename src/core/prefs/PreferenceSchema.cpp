@@ -338,6 +338,9 @@ using Kind = PrefSpec::Kind;
     t << flag("ed3kHosterPublishLinks", "Publish hoster links: once a link is vouched for, its ALIAS record is published, "
                                         "it goes with the source record and to downloaders (hoster.md §4.1). This can expose "
                                         "a file its uploader meant to keep private. Off = links are held back.");
+    t << flag("ed3kHosterGenericHttp", "Download plain http/https links that no hoster plugin takes as a web file "
+                                      "(JDownloader's DirectHTTP). Never to a loopback or private address; such "
+                                      "links are never published.");
     t << flag("ed3kHosterFromPeers", "Use hoster links that peers and Kad name for a download.");
     t << flag("ed3kHosterExtract", "Unpack finished hoster archives into incoming/<package>/ and share the files. "
                                    "The archives stay in Temp.");

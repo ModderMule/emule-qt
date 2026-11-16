@@ -87,12 +87,14 @@ void AnalyzerRecord::addDownloaded(uint64 bytes, bool partial, uint32 sourceCoun
         gotRare += bytes;
 }
 
-void AnalyzerRecord::addUlSession(bool bad)
+bool AnalyzerRecord::addUlSession(bool bad)
 {
+    const bool before = wantsLiveSocket();
     if (!bad)
         badUlSessions = 0;
     else if (badUlSessions < 255)
         ++badUlSessions;
+    return !before && wantsLiveSocket();
 }
 
 void AnalyzerRecord::addDlSession(bool bad)
@@ -290,10 +292,11 @@ void ClientAnalyzer::seedFromCredits(AnalyzerRecord& r, const ClientCredits& cre
     }
 }
 
-void ClientAnalyzer::addCorruptSender(const uint8* userHash)
+bool ClientAnalyzer::addCorruptSender(const uint8* userHash)
 {
-    m_corrupt[toKey(userHash)] = static_cast<uint32>(unixNow());
+    const bool inserted = m_corrupt.insert_or_assign(toKey(userHash), static_cast<uint32>(unixNow())).second;
     m_dirty = true;
+    return inserted;
 }
 
 bool ClientAnalyzer::isCorruptSender(const uint8* userHash) const

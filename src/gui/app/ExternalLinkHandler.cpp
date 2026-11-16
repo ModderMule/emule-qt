@@ -208,6 +208,8 @@ void ExternalLinkHandler::openNow(const QString& link)
             return;
         }
         // #119: asked as an eD2K link is; added without asking = stays in the background
+        if (!m_mainWindow->requireBitTorrent())
+            return;
         if (!confirmClickedDownload(tr("Magnet Link"), gui::magnetDisplayName(link)))
             return;
         m_mainWindow->switchToTab(MainWindow::TabTorrents);
@@ -392,6 +394,8 @@ void ExternalLinkHandler::openFileNow(const QString& path)
             logError(QStringLiteral("No Torrents panel to add %1 to").arg(path));
             return;
         }
+        if (!m_mainWindow->requireBitTorrent())
+            return;
         m_mainWindow->switchToTab(MainWindow::TabTorrents);
         torrents->addTorrentFiles({path});
         return;

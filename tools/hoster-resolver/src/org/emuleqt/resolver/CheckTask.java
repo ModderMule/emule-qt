@@ -34,6 +34,15 @@ final class CheckTask extends Task {
 
     @Override
     void run() throws Throwable {
+        AddressGuard.takeBlocked(Thread.currentThread());
+        try {
+            check();
+        } finally {
+            AddressGuard.takeBlocked(Thread.currentThread());
+        }
+    }
+
+    private void check() throws Throwable {
         final List<DownloadLink> links = Jd.crawl(url);
         if (cancelled.get()) {
             Out.send(id, "cancelled");
@@ -53,7 +62,18 @@ final class CheckTask extends Task {
         final DownloadLink link = links.get(0);
         final PluginForHost plugin = Jd.newPlugin(link);
         try {
-            final AvailableStatus st = plugin.checkLink(link);
+            final AvailableStatus st;
+            try {
+                st = plugin.checkLink(link);
+            } catch (final Throwable e) {
+                if (blocked()) {
+                    return;
+                }
+                throw e;
+            }
+            if (st != AvailableStatus.TRUE && blocked()) {
+                return;
+            }
             if (st == AvailableStatus.FALSE) {
                 Out.send(id, "gone");
                 return;
@@ -62,6 +82,16 @@ final class CheckTask extends Task {
         } finally {
             plugin.clean();
         }
+    }
+
+    /** A request was refused (AddressGuard): sends error "private". */
+    private boolean blocked() {
+        final String host = AddressGuard.takeBlocked(Thread.currentThread());
+        if (host == null) {
+            return false;
+        }
+        Out.error(id, "private", host);
+        return true;
     }
 
     static Map<String, Object> found(final long id, final DownloadLink link) {

@@ -159,6 +159,8 @@ public:
 
     /// The "ed3k" search method only while the ed3k node is enabled.
     void setEd3kMethodVisible(bool visible);
+    /// Torrent methods and the "Torrent results" box only while btEnabled.
+    void setTorrentSearchVisible(bool visible);
 
     /// Re-apply "Show more controls" to the result columns (Local Folder).
     void applyDisplayOptions();
@@ -370,6 +372,12 @@ private:
     void updateMoreButton();
     /// Grey the result check boxes neither the form's method nor the open tab uses.
     void updateNetworkChecks();
+    /// One method combo entry; @a after = the entry it goes behind, -1 = at the end
+    struct MethodEntry { int id; QString text; QString icon; int after = -1; };
+    /// Add or drop @p entries; a dropped current method falls back to Kad
+    void setMethodEntriesVisible(std::initializer_list<MethodEntry> entries, bool visible);
+    /// "Torrent results" ticked and not hidden by a switched-off BitTorrent
+    [[nodiscard]] bool torrentResultsShown() const;
     /// Hide the rows of unticked networks. A tab that asked for one network shows all.
     void applyNetworkFilter(SearchTab& tab);
     /// The "ed3k Filter" submenu of the result menu (filter-list.md §2, §3).

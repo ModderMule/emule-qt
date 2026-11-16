@@ -89,10 +89,9 @@ public:
     /// MFC: CSearchResultsWnd::LocalEd2kSearchEnd — srchybrid/SearchResultsWnd.cpp:455-470.
     void onLocalAnswerReceived();
 
-    /// Wired to SearchList::tabHeaderUpdated. Gives up on the rest of the server list
-    /// once a search holds 400 files: the query is too broad to flood every server.
-    /// MFC stops past 100 sources (CSearchResultsWnd::AddEd2kSearchResults,
-    /// srchybrid/SearchResultsWnd.cpp:1552-1556), which one server's answer always hit (#92).
+    /// Wired to SearchList::tabHeaderUpdated. Ends the sweep once the search holds
+    /// thePrefs.globalSearchMaxFiles() files (0 = ask every server, as aMule does).
+    /// MFC stops past 100 sources (srchybrid/SearchResultsWnd.cpp:1552-1556) (#92, #203).
     void onResultCountChanged(uint32 searchID);
 
 signals:

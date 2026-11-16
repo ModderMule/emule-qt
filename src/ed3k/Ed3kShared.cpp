@@ -21,6 +21,7 @@
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QPointer>
+#include <QThreadPool>
 
 #include <algorithm>
 #include <cstring>
@@ -49,6 +50,8 @@ constexpr qsizetype kMediaTagMax = 128;
 constexpr qsizetype kCodecMax = 32;
 /// the index while hashing: rewritten at most this often (values are on disk at once)
 constexpr int kHashRunSaveDelayMs = 30'000;
+/// unlisted cache entries checked for their file at most this often (off the main thread)
+constexpr qint64 kPruneEveryMs = 60 * 60 * 1000;
 /// the RAM check (a syscall) at most this often
 constexpr qint64 kLowRamCheckMs = 5000;
 /// auto budget of the engine's block values: this share of RAM, within the bounds
@@ -601,6 +604,9 @@ void Ed3kShared::onListScanned(bool full)
         return;
     logInfo(QStringLiteral("%1 file(s) of the share list after its scan, %2 to hash")
                 .arg(m_files.size()).arg(hashQueueSize() + m_hashingVolumes.size()));
+    // before it most entries are unlisted: nothing worth a check
+    m_prunedAtMs = 0;
+    pruneCacheLater();
 }
 
 void Ed3kShared::onFileChanged(const QByteArray& md4)
@@ -716,8 +722,10 @@ bool Ed3kShared::hasOwner(const QString& owner) const
 
 void Ed3kShared::saveOwner(const QString& owner)
 {
-    if (owner == kOwner)
-        saveCache();
+    if (owner != kOwner)
+        return;
+    saveCache();
+    pruneCacheLater();
 }
 
 // ---------------------------------------------------------------------------
@@ -1091,12 +1099,57 @@ void Ed3kShared::loadCache()
 
 void Ed3kShared::saveCache()
 {
-    // entries of files not listed (yet) stay while their path exists: the list may load later
-    std::erase_if(m_cache, [&](const auto& c) { return !m_files.contains(c.first) && !QFileInfo::exists(c.second.path); });
+    // was: std::erase_if(m_cache, ... !QFileInfo::exists(c.second.path)) here: one stat per
+    // unlisted entry on the main thread each save (8 s stalls on Windows, #200) → pruneCacheLater()
     const QByteArray blob = indexBlob();
     QDir().mkpath(stateDir(m_configDir));
     writeBlobLater(cachePath(), spanOf(blob));
     dropDirty(kOwner);
+}
+
+void Ed3kShared::pruneCacheLater()
+{
+    // entries of files not listed (yet) stay while their path exists: the list may load later
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (!m_started || !m_scanLogged || m_pruning || (m_prunedAtMs && now - m_prunedAtMs < kPruneEveryMs))
+        return;
+    std::vector<std::pair<QByteArray, QString>> unlisted;
+    for (const auto& [md4, h] : m_cache)
+        if (!m_files.contains(md4))
+            unlisted.emplace_back(md4, h.path);
+    m_prunedAtMs = now;
+    if (unlisted.empty())
+        return;
+    m_pruning = true;
+    QPointer<Ed3kShared> self(this);
+    QThreadPool::globalInstance()->start([self, unlisted = std::move(unlisted)]() mutable {
+        std::erase_if(unlisted, [](const auto& u) { return QFileInfo::exists(u.second); });
+        QMetaObject::invokeMethod(
+            self.get(),
+            [self, gone = std::move(unlisted)] {
+                if (self)
+                    self->onCachePruned(gone);
+            },
+            Qt::QueuedConnection);
+    });
+}
+
+void Ed3kShared::onCachePruned(const std::vector<std::pair<QByteArray, QString>>& gone)
+{
+    m_pruning = false;
+    std::size_t dropped = 0;
+    for (const auto& [md4, path] : gone) {
+        // listed or hashed again meanwhile: kept
+        const auto c = m_cache.find(md4);
+        if (c == m_cache.end() || m_files.contains(md4) || c->second.path != path)
+            continue;
+        m_cache.erase(c);
+        ++dropped;
+    }
+    if (dropped == 0)
+        return;
+    logDebug([&]() -> QString { return QStringLiteral("%1 cached hash(es) of vanished files dropped").arg(dropped); });
+    scheduleSave(kOwner);
 }
 
 QByteArray Ed3kShared::indexBlob() const

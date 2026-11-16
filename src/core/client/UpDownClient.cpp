@@ -5513,8 +5513,9 @@ void UpDownClient::processAnswerSources(const uint8* data, uint32 size)
 
     m_lastSourceAnswer = getTickCount();
     file->setLastAnsweredTime();
-    if (AnalyzerRecord* r = analyzerRecord())
-        r->incXsAnswers();
+    if (AnalyzerRecord* r = analyzerRecord(); r && r->incXsAnswers() && thePrefs.logBannedClients())
+        logLeecher(QStringLiteral("[CA] No longer XS exploiter: %1 asks, %2 answers; %3")
+                       .arg(r->xsAsks).arg(r->xsAnswers).arg(leecherLogInfo()));
 
     file->addClientSources(io, m_sourceExchange1Ver, /*isSX2*/ false, this);
 }
@@ -5583,8 +5584,9 @@ void UpDownClient::processAnswerSources2(const uint8* data, uint32 size)
 
     m_lastSourceAnswer = getTickCount();
     file->setLastAnsweredTime();
-    if (AnalyzerRecord* r = analyzerRecord())
-        r->incXsAnswers();
+    if (AnalyzerRecord* r = analyzerRecord(); r && r->incXsAnswers() && thePrefs.logBannedClients())
+        logLeecher(QStringLiteral("[CA] No longer XS exploiter: %1 asks, %2 answers; %3")
+                       .arg(r->xsAsks).arg(r->xsAnswers).arg(leecherLogInfo()));
 
     file->addClientSources(io, version, /*isSX2*/ true, this);
 }
@@ -5619,8 +5621,10 @@ void UpDownClient::answerSourceRequest(KnownFile* file, uint8 requestedVersion,
           || neverAskedBefore
           || timePassed > SOURCECLIENTREASKS * MINCOMMONPENALTY))
     {
-        if (AnalyzerRecord* r = analyzerRecord())
-            r->incFastXs();   // asked again too soon
+        // asked again too soon
+        if (AnalyzerRecord* r = analyzerRecord(); r && r->incFastXs() && thePrefs.logBannedClients())
+            logLeecher(QStringLiteral("[CA] Reached XS spammer level: %1 too fast source requests; %2")
+                           .arg(r->fastXsAsks).arg(leecherLogInfo()));
         return;
     }
     if (AnalyzerRecord* r = analyzerRecord())
@@ -6168,8 +6172,7 @@ bool UpDownClient::checkDlpChatSpam(const QString& message)
         return false;
     if (!thePrefs.antiLeecher()) {
         // Analyzer only: counted, the message still shows
-        if (AnalyzerRecord* r = analyzerRecord())
-            r->addSpam();
+        noteAnalyzerSpam(*reason);
         return false;
     }
     endChatSession();
@@ -6181,8 +6184,7 @@ void UpDownClient::banLeecher(const QString& reason, LeecherCategory category)
 {
     // ClientAnalyzer: chat spam counts, every other verdict is the nick/mod thief flag
     if (category == LeecherCategory::Spammer) {
-        if (AnalyzerRecord* r = analyzerRecord())
-            r->addSpam();
+        noteAnalyzerSpam(reason);
     } else {
         analyzerFlag(AnalyzerRecord::kFlagDlp, true, reason);
     }
@@ -6243,7 +6245,27 @@ QString analyzerFlagName(uint32 flag)
 float UpDownClient::analyzerScore() const
 {
     const AnalyzerRecord* r = analyzerRecordView();
-    return r ? r->score(analyzerHasSomethingForUs(), ClientAnalyzer::reaskTimeFor(m_clientSoft)) : 1.0f;
+    if (!r)
+        return 1.0f;
+    const bool forUs = analyzerHasSomethingForUs();
+    const uint32 reaskTime = ClientAnalyzer::reaskTimeFor(m_clientSoft);
+    const float s = r->score(forUs, reaskTime);
+
+    // Band crossings only: the balance moves with every chunk, a line per change would flood
+    const bool penalized = m_analyzerPenalized ? s < AnalyzerRecord::kRecoveredAbove
+                                               : s < AnalyzerRecord::kPenalizedBelow;
+    if (penalized != m_analyzerPenalized) {
+        m_analyzerPenalized = penalized;
+        if (thePrefs.logBannedClients()) {
+            const QString why = penalized ? r->reasons(forUs, reaskTime) : QString();
+            logLeecher(QStringLiteral("[CA] Score %1 (%2)%3; %4")
+                           .arg(s, 0, 'f', 2)
+                           .arg(penalized ? QStringLiteral("penalized") : QStringLiteral("back to normal"),
+                                why.isEmpty() ? QString() : QStringLiteral(": ") + why,
+                                leecherLogInfo()));
+        }
+    }
+    return s;
 }
 
 QString UpDownClient::analyzerReasons() const
@@ -6270,8 +6292,9 @@ void UpDownClient::noteAnalyzerUploadRequest(uint64 now)
 
 void UpDownClient::noteAnalyzerUploadSession(bool delivered)
 {
-    if (AnalyzerRecord* r = analyzerRecord())
-        r->addUlSession(!delivered);
+    if (AnalyzerRecord* r = analyzerRecord(); r && r->addUlSession(!delivered) && thePrefs.logBannedClients())
+        logLeecher(QStringLiteral("[CA] %1 empty upload sessions in a row, slot only while connected; %2")
+                       .arg(r->badUlSessions).arg(leecherLogInfo()));
 }
 
 bool UpDownClient::analyzerWantsLiveSocket() const
@@ -6283,8 +6306,9 @@ bool UpDownClient::analyzerWantsLiveSocket() const
 void UpDownClient::noteAnalyzerCorruptSender()
 {
     // Proven identity only: a borrowed hash must not get its owner banned for 60 days
-    if (thePrefs.clientAnalyzer() && theApp.clientAnalyzer && hasValidHash() && hasPassedSecureIdent(true))
-        theApp.clientAnalyzer->addCorruptSender(m_userHash.data());
+    if (thePrefs.clientAnalyzer() && theApp.clientAnalyzer && hasValidHash() && hasPassedSecureIdent(true)
+        && theApp.clientAnalyzer->addCorruptSender(m_userHash.data()) && thePrefs.logBannedClients())
+        logLeecher(QStringLiteral("[CA] Remembered as corrupt data sender for 60 days; %1").arg(leecherLogInfo()));
 }
 
 AnalyzerRecord* UpDownClient::analyzerRecord()
@@ -6349,6 +6373,17 @@ void UpDownClient::analyzerFlag(uint32 flag, bool set, const QString& detail)
                             detail.isEmpty() ? QString() : QStringLiteral(" - ") + detail,
                             leecherLogInfo()));
     }
+}
+
+void UpDownClient::noteAnalyzerSpam(const QString& reason)
+{
+    AnalyzerRecord* r = analyzerRecord();
+    if (!r)
+        return;
+    r->addSpam();
+    // Analyzer only: banLeecher() logs nothing then
+    if (!thePrefs.antiLeecher() && thePrefs.logBannedClients())
+        logLeecher(QStringLiteral("[CA] Chat spam #%1 - %2; %3").arg(r->spams).arg(reason, leecherLogInfo()));
 }
 
 void UpDownClient::checkAnalyzerFileFaker()

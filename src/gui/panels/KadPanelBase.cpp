@@ -390,12 +390,15 @@ void KadPanelBase::requestIncomingGraph()
     const std::uint64_t id = m_incomingGraphId;
     const QCborMap rowData = m_incomingModel->row(row);
     const QString answer = m_incomingModel->answerAt(row);
+    m_incomingGraph->setLoading(true);
     m_ipc->sendPoll(this, std::move(req), [this, id, rowData, answer](const Ipc::IpcMessage& resp) {
-        if (id != m_incomingGraphId || resp.type() != Ipc::IpcMsgType::Result || !resp.fieldBool(0))
+        if (id != m_incomingGraphId)
             return;
         const QCborMap graph = resp.fieldMap(1);
-        if (graph.value(QStringLiteral("found")).toBool())
+        if (resp.type() == Ipc::IpcMsgType::Result && resp.fieldBool(0) && graph.value(QStringLiteral("found")).toBool())
             m_incomingGraph->setRequest(rowData, graph, m_incomingTitle, answer);
+        else
+            m_incomingGraph->setLoading(false);
     });
 }
 
@@ -428,7 +431,7 @@ void KadPanelBase::onSearchSelectionChanged()
     m_graphSearchId = id;
     // title and blank graph at once, the picture follows with the reply (MFC UpdateButtonTitle)
     setLookupTabTitle(lookupTitle(id));
-    m_lookupGraph->clear();
+    m_lookupGraph->clear(true);
     requestLookupHistory();
 }
 

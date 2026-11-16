@@ -271,6 +271,12 @@ QString AppConfig::appImagePath()
     return {};
 }
 
+bool AppConfig::appImageExtracted()
+{
+    return !appImagePath().isEmpty()
+        && QDir(QCoreApplication::applicationDirPath()).dirName().startsWith(u"appimage_extracted_");
+}
+
 bool AppConfig::isAppImageFile(const QString& path)
 {
     // ELF with the type 2 AppImage magic "AI\x02" at offset 8

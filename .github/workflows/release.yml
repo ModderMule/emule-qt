@@ -415,6 +415,37 @@ jobs:
           fi
           grep -q '|h=' ED2K-LINKS.txt || echo "::warning::rhash links carry no AICH hash"
 
+      # ed3k:file links (Protocol.md §13.2): b3 = plain BLAKE3 of the file (b3sum),
+      # base32 lower case w/o padding; ed2k = MD4 from ED2K-LINKS.txt; ws = GitHub
+      # asset URL as HTTP source. Parameter order and encoding as packmule writes them.
+      - name: Generate ED3K-LINKS.txt
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y -qq b3sum
+          # known vector: BLAKE3("")
+          [ "$(printf '' | b3sum --no-names)" = "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262" ] \
+            || { echo "::error::b3sum gives a wrong BLAKE3"; exit 1; }
+          awk '{print $2}' SHA256SUMS.txt | xargs b3sum -- > "$RUNNER_TEMP/b3.raw"
+          base="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+          python3 -I - "$RUNNER_TEMP/b3.raw" ED2K-LINKS.txt "$base" <<'EOF' | tee ED3K-LINKS.txt
+          import base64, os, sys
+          from urllib.parse import quote
+          b3raw, ed2k_links, base = sys.argv[1:4]
+          md4 = {}
+          for line in open(ed2k_links, encoding="utf-8"):
+              f = line.strip().split("|")   # ed2k://|file|name|size|md4|...
+              md4[f[2]] = f[4].lower()
+          enc = lambda s: quote(s, safe="")   # all but RFC 3986 unreserved
+          for line in open(b3raw, encoding="utf-8"):
+              hexroot, name = line.rstrip("\n").split("  ", 1)
+              b3 = base64.b32encode(bytes.fromhex(hexroot)).decode().rstrip("=").lower()
+              size = os.path.getsize(name)
+              print(f"ed3k:file?b3={b3}&sz={size}&dn={enc(name)}&ed2k={md4[name]}&ws={enc(base + '/' + name)}")
+          EOF
+          [ "$(wc -l < ED3K-LINKS.txt)" -eq "$(wc -l < SHA256SUMS.txt)" ] \
+            || { echo "::error::ED3K-LINKS.txt does not match SHA256SUMS.txt"; exit 1; }
+
       - name: Build release notes
         run: |
           set -euo pipefail
@@ -452,6 +483,14 @@ jobs:
             echo
             echo '```'
             cat dist/ED2K-LINKS.txt
+            echo '```'
+            echo
+            echo "</details>"
+            echo
+            echo "<details><summary>ed3k links</summary>"
+            echo
+            echo '```'
+            cat dist/ED3K-LINKS.txt
             echo '```'
             echo
             echo "</details>"

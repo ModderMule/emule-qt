@@ -4,6 +4,8 @@
 #include <QApplication>
 #include <algorithm>
 #include <QDialog>
+#include <QCryptographicHash>
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QDesktopServices>
@@ -39,6 +41,8 @@
 #include <optional>
 #include <utility>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <climits>
 #include <unistd.h>
 
 static int s_sigFd[2];
@@ -67,6 +71,7 @@ static void unixSignalHandler(int)
 #include "utils/Appearance.h"
 #include "utils/BackgroundFileWriter.h"
 #include "utils/ColumnTooltip.h"
+#include "utils/SafeRemove.h"
 #include "utils/MessageBoxButtonOrder.h"
 #include "utils/CountryFlags.h"
 #include "utils/FileAssociation.h"
@@ -377,6 +382,129 @@ bool installerRunning()
     return false;
 }
 
+#ifdef Q_OS_LINUX
+/// A process runs a binary from inside @p dir (only ours are visible to check)
+bool dirInUse(const QString& dir)
+{
+    const QString prefix = dir + QLatin1Char('/');
+    for (const QString& pid : QDir(QStringLiteral("/proc")).entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        if (!pid.front().isDigit())
+            continue;
+        if (QFile::symLinkTarget(QStringLiteral("/proc/%1/exe").arg(pid)).startsWith(prefix))
+            return true;
+        // Under Rosetta/QEMU exe is the emulator: the first mapping is the binary
+        QFile maps(QStringLiteral("/proc/%1/maps").arg(pid));
+        if (maps.open(QIODevice::ReadOnly) && QFile::decodeName(maps.readLine()).contains(prefix))
+            return true;
+    }
+    return false;
+}
+
+/// Mirror the tree @p from at @p to: hard links (no extra disk), copies where
+/// linking fails, symlinks as symlinks
+bool mirrorTree(const QByteArray& from, const QByteArray& to)
+{
+    struct stat st{};
+    if (::lstat(from.constData(), &st) != 0)
+        return false;
+    if (S_ISLNK(st.st_mode)) {
+        char buf[PATH_MAX];
+        const ssize_t n = ::readlink(from.constData(), buf, sizeof(buf) - 1);
+        if (n <= 0)
+            return false;
+        buf[n] = '\0';
+        return ::symlink(buf, to.constData()) == 0;
+    }
+    if (S_ISREG(st.st_mode)) {
+        return ::link(from.constData(), to.constData()) == 0
+            || QFile::copy(QFile::decodeName(from), QFile::decodeName(to));
+    }
+    if (!S_ISDIR(st.st_mode))
+        return true;   // nothing else in an image
+    if (::mkdir(to.constData(), (st.st_mode & 0777) | 0700) != 0)
+        return false;
+    const QDir dir(QFile::decodeName(from));
+    for (const QString& name : dir.entryList(QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot)) {
+        const QByteArray sub = '/' + QFile::encodeName(name);
+        if (!mirrorTree(from + sub, to + sub))
+            return false;
+    }
+    return true;
+}
+
+/// Leftover image dirs in @p base (the runtime never removes an extraction: musl
+/// nftw with 0 fds is a no-op): ours, not @p keep, not running, not just written
+void sweepImageDirs(const QString& base, const QString& keep)
+{
+    const QDateTime settled = QDateTime::currentDateTime().addSecs(-600);
+    for (const QFileInfo& fi : QDir(base).entryInfoList({QStringLiteral("appimage_extracted_*")},
+                                                       QDir::Dirs | QDir::NoDotAndDotDot | QDir::NoSymLinks)) {
+        const QString path = fi.absoluteFilePath();
+        if (fi.fileName() == keep || fi.ownerId() != ::getuid()
+            || !QFile::exists(path + QStringLiteral("/emulecored"))
+            || !QFile::exists(path + QStringLiteral("/emuleqt.desktop"))
+            || fi.lastModified() > settled
+            || QFileInfo(path + QStringLiteral("/lib")).lastModified() > settled
+            || dirInUse(path))
+            continue;
+        eMule::logInfo(QStringLiteral("Removing leftover AppImage extraction %1").arg(path));
+        eMule::removeDirTree(path);
+    }
+}
+
+/// Image run extract-and-run: the core's own copy of our extraction, so no exit
+/// of ours deletes its files. Hard links, so no second ~250 MB on disk. The core
+/// starts from it directly, no runtime in between: its pid is the one we start.
+/// Empty on failure.
+QString appImageCoreDir()
+{
+    const QString ours = QDir(QCoreApplication::applicationDirPath()).dirName();
+    sweepImageDirs(QFileInfo(QCoreApplication::applicationDirPath()).absolutePath(), ours);
+
+    // One per user + profile (one core each), reused. Ours and 0700: nobody else
+    // can plant files for the core to run.
+    const QByteArray key = QCryptographicHash::hash(eMule::AppConfig::configDir().toUtf8(),
+                                                    QCryptographicHash::Md5).toHex().left(8);
+    const QString base = QDir::tempPath() + QStringLiteral("/emuleqt-core-%1-%2")
+                                                .arg(::getuid()).arg(QLatin1StringView(key));
+    const QByteArray native = QFile::encodeName(base);
+    struct stat st{};
+    if ((::mkdir(native.constData(), 0700) != 0 && errno != EEXIST)
+        || ::lstat(native.constData(), &st) != 0 || !S_ISDIR(st.st_mode)
+        || st.st_uid != ::getuid() || (st.st_mode & 077) != 0) {
+        eMule::logWarning(QStringLiteral("Unusable core temp dir %1").arg(base));
+        return {};
+    }
+    sweepImageDirs(base, ours);
+
+    // Same image, same files. Relinked once our extraction was made anew (other
+    // inodes, the disk held twice) unless a core runs from it.
+    const QString dir = base + QLatin1Char('/') + ours;
+    if (QFileInfo(dir + QStringLiteral("/emulecored")).isExecutable()) {
+        const QString self = QFileInfo(QCoreApplication::applicationFilePath()).fileName();
+        struct stat a{}, b{};
+        if ((::stat(QFile::encodeName(QCoreApplication::applicationFilePath()).constData(), &a) == 0
+             && ::stat(QFile::encodeName(dir + QLatin1Char('/') + self).constData(), &b) == 0
+             && a.st_ino == b.st_ino && a.st_dev == b.st_dev)
+            || dirInUse(dir))
+            return dir;
+    }
+    // Built aside, renamed in place: a half copy is never started
+    const QString part = base + QStringLiteral("/.partial");
+    if (QFileInfo::exists(part))
+        eMule::removeDirTree(part);
+    if (QFileInfo::exists(dir))
+        eMule::removeDirTree(dir);
+    if (!mirrorTree(QFile::encodeName(QCoreApplication::applicationDirPath()), QFile::encodeName(part))
+        || ::rename(QFile::encodeName(part).constData(), QFile::encodeName(dir).constData()) != 0) {
+        eMule::logWarning(QStringLiteral("Could not copy the AppImage extraction to %1").arg(dir));
+        eMule::removeDirTree(part);
+        return {};
+    }
+    return dir;
+}
+#endif
+
 /// Try to start the daemon process. Returns true if launched.
 /// @param holdConnect the first start wizard is about to run: the core must not
 ///        auto-connect before the ports are chosen.
@@ -393,9 +521,19 @@ bool launchDaemon(const QString& daemonPath, bool holdConnect, qint64& pid)
 
     eMule::logInfo(QStringLiteral("Launching daemon: %1").arg(daemonPath));
 
+    QString program = daemonPath;
     QStringList daemonArgs;
-    if (eMule::AppConfig::isAppImageFile(daemonPath))
-        daemonArgs << eMule::AppConfig::kAppImageCoreArg;
+    if (eMule::AppConfig::isAppImageFile(daemonPath)) {
+#ifdef Q_OS_LINUX
+        // $APPIMAGE is inherited, so the core still knows its image
+        if (eMule::AppConfig::appImageExtracted()) {
+            if (const QString dir = appImageCoreDir(); !dir.isEmpty())
+                program = dir + QStringLiteral("/emulecored");
+        }
+#endif
+        if (program == daemonPath)
+            daemonArgs << eMule::AppConfig::kAppImageCoreArg;
+    }
     // Our --config goes along, or the two would read different preferences.yml
     // files -- different ipc ports included. Absolute: a terminal starts elsewhere.
     if (const QString dir = eMule::AppConfig::configDirOverride(); !dir.isEmpty())
@@ -410,7 +548,7 @@ bool launchDaemon(const QString& daemonPath, bool holdConnect, qint64& pid)
 #if defined(Q_OS_MACOS)
         // Quoted for the shell, then escaped for the AppleScript string around it
         QStringList words;
-        for (const QString& word : QStringList{daemonPath} + daemonArgs)
+        for (const QString& word : QStringList{program} + daemonArgs)
             words << QLatin1Char('\'') + QString(word).replace(QLatin1Char('\''), QStringLiteral("'\\''"))
                          + QLatin1Char('\'');
         QString command = words.join(QLatin1Char(' '));
@@ -421,13 +559,13 @@ bool launchDaemon(const QString& daemonPath, bool holdConnect, qint64& pid)
         return QProcess::startDetached(QStringLiteral("osascript"), {QStringLiteral("-e"), script});
 #elif defined(Q_OS_WIN)
         return QProcess::startDetached(QStringLiteral("cmd"),
-                                       QStringList{QStringLiteral("/k"), daemonPath} + daemonArgs);
+                                       QStringList{QStringLiteral("/k"), program} + daemonArgs);
 #else
         // No xterm on most desktops (issue #32): the desktop's own terminal, and
         // a plain start when there is none or it will not run
         if (const auto terminal = findTerminal()) {
             if (QProcess::startDetached(terminal->program,
-                                        terminal->args + QStringList{daemonPath} + daemonArgs))
+                                        terminal->args + QStringList{program} + daemonArgs))
                 return true;
             eMule::logWarning(QStringLiteral("Could not start the core in %1, starting it without console")
                                   .arg(terminal->program));
@@ -438,8 +576,9 @@ bool launchDaemon(const QString& daemonPath, bool holdConnect, qint64& pid)
 #endif
     }
 
-    // The tarball launcher exec's the binary, so this is the core's own pid
-    return QProcess::startDetached(daemonPath, daemonArgs, QString(), &pid);
+    // Launchers exec, and so does the FUSE runtime: the core's own pid. Only the
+    // shared extract-and-run fallback forks it: replaced by corePid on connect
+    return QProcess::startDetached(program, daemonArgs, QString(), &pid);
 }
 
 /// The process still runs. A core that died on start never opens its port, and
@@ -1067,6 +1206,7 @@ int main(int argc, char* argv[])
                 mainWindow.sharedFilesPanel()->refreshSharedDirs();
                 // ed3k search method follows the daemon's ed3kEnabled
                 mainWindow.searchPanel()->setEd3kMethodVisible(eMule::thePrefs.ed3kEnabled());
+                mainWindow.searchPanel()->setTorrentSearchVisible(eMule::thePrefs.btEnabled());
                 // Torrents / Hoster tabs follow btEnabled / hosterDownloadsOn
                 mainWindow.applyFeatureTabs();
                 // The lists were built on the local prefs file's showExtControls

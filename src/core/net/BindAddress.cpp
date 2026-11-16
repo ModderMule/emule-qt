@@ -324,6 +324,7 @@ QList<QHostAddress> listenAddressesOf(const Resolution& r, const QList<LocalInte
     case State::Blocked:
         return {};
     case State::Unrestricted:
+        // dual stack: Qt clears IPV6_V6ONLY (FreeBSD/macOS too); OpenBSD has no v4-mapped, would need 0.0.0.0 too
         return {QHostAddress(QHostAddress::Any)};
     case State::Bound:
         break;

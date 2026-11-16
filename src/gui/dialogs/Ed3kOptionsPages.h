@@ -185,7 +185,6 @@ private:
     OptionsTree* m_extTree = nullptr;
     QTreeWidgetItem* m_hashRamItem = nullptr;
     QTreeWidgetItem* m_lowRamItem = nullptr;
-    QTreeWidgetItem* m_kadStoreItem = nullptr;
     QTreeWidgetItem* m_lanItem = nullptr;   ///< ed3kLan
     QTreeWidgetItem* m_autoIndexItem = nullptr;   ///< ed3kAutoIndexNode
 
@@ -267,6 +266,7 @@ private:
     QLabel* m_resolverLabel = nullptr;
     QSpinBox* m_hosterStreamsSpin = nullptr;
     QCheckBox* m_hosterPuzzlesCheck = nullptr;
+    QCheckBox* m_hosterGenericCheck = nullptr;          ///< ed3kHosterGenericHttp
     QCheckBox* m_hosterPeersCheck = nullptr;
     QCheckBox* m_hosterCheckLinksCheck = nullptr;
     QCheckBox* m_hosterExtractCheck = nullptr;

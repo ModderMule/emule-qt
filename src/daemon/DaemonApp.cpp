@@ -940,6 +940,8 @@ bool DaemonApp::start()
         connect(theApp.ipFilter, &IPFilter::filterChanged, this, [] { BtBridge::applyIpFilter(); });
     if (thePrefs.btEnabled() && !m_enginesHeld)
         m_btSession->start(BtBridge::settingsFromPrefs());
+    else
+        guardSavedTorrents();
     applyI2pRouter(BtBridge::settingsFromPrefs());
 #endif
 #if defined(EMULE_HAVE_ED3K) && defined(EMULE_HAVE_BITTORRENT)
@@ -1512,6 +1514,26 @@ void DaemonApp::applyBtConfig()
 #endif
 }
 
+void DaemonApp::guardSavedTorrents()
+{
+#ifdef EMULE_HAVE_BITTORRENT
+    const bt::BtSettings settings = BtBridge::settingsFromPrefs();
+    QStringList released;
+    bool blockedMore = false;
+    for (const bt::BtSavedTorrent& t : bt::BtSession::savedTorrents(settings.stateDir, settings.downloadDir)) {
+        const auto change = m_btShareGuard.update(t.row.id, t.row, [&t] { return std::optional(t.files); });
+        released += change.released;
+        blockedMore = blockedMore || change.blockedMore;
+    }
+    if (!theApp.sharedFileList)
+        return;
+    if (blockedMore)
+        theApp.sharedFileList->dropNeverShared();
+    if (!released.isEmpty())
+        theApp.sharedFileList->rescanTrees(released);
+#endif
+}
+
 void DaemonApp::applyI2pRouter(const bt::BtSettings& settings)
 {
 #ifdef EMULE_HAVE_BITTORRENT
@@ -1794,6 +1816,7 @@ void DaemonApp::applyHosterConfig()
     cfg.proxy = proxy;
     cfg.bindAddress = BindAddress::sourceAddress();
     cfg.askPuzzles = h.askPuzzles;
+    cfg.genericHttp = h.genericHttp;
     if (h.solversEnabled)
         for (const Ed3kHosterAccount& a : h.solvers)
             if (!a.password.isEmpty())

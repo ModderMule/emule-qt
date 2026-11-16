@@ -158,6 +158,9 @@ private:
     void applyBtConfig();
     /// Starts or stops the bundled I2P router for @p settings' network state.
     void applyI2pRouter(const bt::BtSettings& settings);
+    /// BitTorrent off: the share guard learns the torrents from their resume data, so
+    /// btShareMode and unfinished files still keep them out of the eD2K / ed3k share.
+    void guardSavedTorrents();
 
     /// Start, stop or restart the ed3k node after an ed3k* preference moved.
     /// Reached through IpcServer::ed3kConfigChanged.

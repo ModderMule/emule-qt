@@ -1335,6 +1335,62 @@ std::optional<QList<BtFileRow>> BtSession::currentFiles(const QString& id) const
     return std::nullopt;
 }
 
+QList<BtSavedTorrent> BtSession::savedTorrents(const QString& stateDir, const QString& downloadDir)
+{
+    QList<BtSavedTorrent> out;
+    const QDir resumeDir(QDir(stateDir).filePath(kResumeDir));
+    for (const QString& file : resumeDir.entryList({QStringLiteral("*") + kResumeSuffix}, QDir::Files)) {
+        const QByteArray data = readAll(resumeDir.filePath(file));
+        lt::error_code ec;
+        const lt::add_torrent_params atp = lt::read_resume_data(lt::span<char const>(data.constData(), static_cast<std::ptrdiff_t>(data.size())), ec);
+        if (ec || !atp.ti || !atp.ti->is_valid())
+            continue;
+        const lt::torrent_info& ti = *atp.ti;
+        const lt::file_storage& fs = ti.layout();
+        const bool seed = static_cast<bool>(atp.flags & lt::torrent_flags::seed_mode);
+        const auto have = [&](lt::piece_index_t p) {
+            return seed || (static_cast<int>(p) < atp.have_pieces.size() && atp.have_pieces.get_bit(p));
+        };
+        BtSavedTorrent t;
+        BtTorrentRow& r = t.row;
+        r.id = BtTorrentView::idOf(ti.info_hashes());
+        r.name = QString::fromStdString(ti.name());
+        r.savePath = atp.save_path.empty() ? downloadDir : QString::fromStdString(atp.save_path);
+        r.state = BtState::Paused;
+        r.isPrivate = ti.priv();
+        r.i2p = static_cast<bool>(atp.flags & lt::torrent_flags::i2p_torrent);
+        qint64 wanted = 0;
+        qint64 wantedDone = 0;
+        for (lt::file_index_t i : fs.file_range()) {
+            BtFileRow f;
+            f.index = static_cast<int>(i);
+            f.path = QString::fromStdString(fs.file_path(i)).replace(QLatin1Char('\\'), QLatin1Char('/'));
+            f.size = fs.file_size(i);
+            f.pad = fs.pad_file_at(i);
+            const auto idx = static_cast<std::size_t>(f.index);
+            f.priority = idx < atp.file_priorities.size() ? static_cast<int>(static_cast<std::uint8_t>(atp.file_priorities[idx])) : 4;
+            bool complete = true;
+            if (f.size > 0) {
+                const lt::piece_index_t first = fs.map_file(i, 0, 0).piece;
+                const lt::piece_index_t last = fs.map_file(i, f.size - 1, 1).piece;
+                for (lt::piece_index_t p = first; complete && p <= last; ++p)
+                    complete = have(p);
+            }
+            f.done = complete ? f.size : 0;
+            r.totalSize += f.pad ? 0 : f.size;
+            r.haveBytes += f.pad ? 0 : f.done;
+            if (!f.pad && f.priority > 0) {
+                wanted += f.size;
+                wantedDone += f.done;
+            }
+            t.files.append(f);
+        }
+        r.progress = wanted > 0 ? double(wantedDone) / double(wanted) : 1.0;
+        out.append(std::move(t));
+    }
+    return out;
+}
+
 QList<BtPeerRow> BtSession::peers(const QString& id) const
 {
     if (!d->handle(id).is_valid())

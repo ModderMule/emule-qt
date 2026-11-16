@@ -19,6 +19,7 @@
 #include "utils/ViewSelection.h"
 
 class QCheckBox;
+class QDropEvent;
 class QGroupBox;
 class QLabel;
 class QMenu;
@@ -28,6 +29,7 @@ class QSplitter;
 class QStackedWidget;
 class QTabWidget;
 class QTextEdit;
+class QUrl;
 class QTimer;
 class QTreeView;
 class QTreeWidget;
@@ -291,6 +293,13 @@ private:
     /// The folder a tree drag would share when dropped on @p target; empty when the
     /// drag is not a shareable unshared folder or the target does not take one.
     [[nodiscard]] QString dropSharePath(const QTreeWidgetItem* dragged, const QTreeWidgetItem* target) const;
+    /// Files/folders dropped from the desktop onto the file list (MFC CShareDropTarget).
+    /// True when the event was taken.
+    bool handleExternalShareDrop(QEvent* event);
+    /// A drag from outside the app carrying local paths, and a core on this host
+    [[nodiscard]] bool acceptsExternalShareDrop(const QDropEvent* event) const;
+    /// Shares the dropped files one by one and the dropped folders as shared dirs
+    void shareDroppedPaths(const QList<QUrl>& urls);
     /// Fetch the categories and rebuild the nodes under Incoming / Incomplete Files.
     void requestCategoryNodes();
     void rebuildCategoryNodes(const QList<std::pair<QString, QString>>& categories);

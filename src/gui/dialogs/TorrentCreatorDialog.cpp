@@ -108,6 +108,8 @@ TorrentCreatorDialog::TorrentCreatorDialog(IpcClient* ipc, const QString& path, 
     auto* pathRow = new QHBoxLayout;
     pathRow->addWidget(new QLabel(tr("Path:"), sourceBox));
     m_pathEdit = new QLineEdit(sourceBox);
+    m_pathEdit->setToolTip(tr("File or folder to make the torrent of, as a path on the core's disk. "
+                              "A folder becomes one torrent with all its files."));
     connect(m_pathEdit, &QLineEdit::textEdited, this, [this] { m_onlyFiles.clear(); m_selectionLabel->hide(); });
     pathRow->addWidget(m_pathEdit, 1);
     sourceLayout->addLayout(pathRow);
@@ -119,8 +121,12 @@ TorrentCreatorDialog::TorrentCreatorDialog(IpcClient* ipc, const QString& path, 
     m_fileButton = new QPushButton(tr("Select file"), sourceBox);
     // a file dialog shows this machine's disk; the core's is only browsable by folder
     m_fileButton->setEnabled(m_ipc && m_ipc->isLocalConnection());
+    m_fileButton->setToolTip(m_fileButton->isEnabled()
+                                 ? tr("Pick a single file.")
+                                 : tr("Only with a local core. Use Select folder or type the path."));
     connect(m_fileButton, &QPushButton::clicked, this, &TorrentCreatorDialog::selectFile);
     m_folderButton = new QPushButton(tr("Select folder"), sourceBox);
+    m_folderButton->setToolTip(tr("Pick a folder; every file below it goes into the torrent."));
     connect(m_folderButton, &QPushButton::clicked, this, &TorrentCreatorDialog::selectFolder);
     buttonRow->addWidget(m_fileButton);
     buttonRow->addWidget(m_folderButton);
@@ -143,12 +149,18 @@ TorrentCreatorDialog::TorrentCreatorDialog(IpcClient* ipc, const QString& path, 
     m_pieceSize->addItem(tr("Auto"), 0);
     for (int i = 4; i <= 17; ++i)   // 16 KiB .. 128 MiB, as qBittorrent
         m_pieceSize->addItem(pieceLabel(1024 << i), 1024 << i);
+    m_pieceSize->setToolTip(tr("Size of the blocks the content is hashed and traded in. Auto picks one "
+                               "by total size; larger pieces make a smaller .torrent file."));
     form->addRow(tr("Piece size:"), m_pieceSize);
     settingsLayout->addLayout(form);
     m_ignoreDotfiles = new QCheckBox(tr("Ignore dotfiles"), settingsBox);
     m_ignoreDotfiles->setToolTip(tr("Files and folders whose name starts with a period are left out."));
     m_private = new QCheckBox(tr("Private torrent (won't distribute on DHT network)"), settingsBox);
+    m_private->setToolTip(tr("Sets the private flag: peers come from the trackers only, no DHT, "
+                             "peer exchange or local discovery. Needed by private trackers."));
     m_startSeeding = new QCheckBox(tr("Start seeding immediately"), settingsBox);
+    m_startSeeding->setToolTip(tr("Add the new torrent to the Torrents list and seed it from the "
+                                  "selected files, without checking them again."));
     settingsLayout->addWidget(m_ignoreDotfiles);
     settingsLayout->addWidget(m_private);
     settingsLayout->addWidget(m_startSeeding);
@@ -174,13 +186,17 @@ TorrentCreatorDialog::TorrentCreatorDialog(IpcClient* ipc, const QString& path, 
     m_trackers->setToolTip(tr("One URL per line. Separate tracker tiers with an empty line."));
     fields->setRowStretch(addRow(tr("Tracker URLs:"), m_trackers), 1);
     m_webSeeds = textBox(fieldsBox, 2, false);
-    m_webSeeds->setToolTip(tr("One URL per line."));
+    m_webSeeds->setToolTip(tr("HTTP(S) servers that host the same files. One URL per line."));
     addRow(tr("Web seed URLs:"), m_webSeeds);
     m_comment = textBox(fieldsBox, 2, false);
     m_comment->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+    m_comment->setToolTip(tr("Free text stored in the .torrent; clients show it in the torrent's details."));
     addRow(tr("Comments:"), m_comment);
     m_source = new QLineEdit(fieldsBox);
-    m_source->setToolTip(tr("Written into the info dictionary; some private trackers ask for it."));
+    // "source" key sits inside info, so it changes the info hash (cross-seed per tracker)
+    m_source->setToolTip(tr("Optional tag such as a tracker's name, stored inside the torrent's info part. "
+                            "It changes the info hash, so the same files get a separate torrent per tracker. "
+                            "Some private trackers require their own tag here. Leave empty if unsure."));
     addRow(tr("Source:"), m_source);
     layout->addWidget(fieldsBox, 1);
 

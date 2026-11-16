@@ -1689,9 +1689,8 @@ void CoreSession::initSearch()
         m_globalSearch = std::make_unique<GlobalSearchScheduler>(this);
         theApp.globalSearch = m_globalSearch.get();
 
-        // A search that has already collected 400 files stops
-        // asking the rest of the server list — the query was too broad to be worth
-        // it. tabHeaderUpdated is emitted on every batch of results.
+        // A search holding globalSearchMaxFiles files stops asking the rest of the
+        // server list. tabHeaderUpdated is emitted on every batch of results.
         if (theApp.searchList) {
             connect(theApp.searchList, &SearchList::tabHeaderUpdated,
                     m_globalSearch.get(), &GlobalSearchScheduler::onResultCountChanged);

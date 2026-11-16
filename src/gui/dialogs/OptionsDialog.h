@@ -449,6 +449,7 @@ private:
     // Server page controls
     QSpinBox*  m_deadServerRetriesSpin = nullptr;
     QCheckBox* m_removeDeadServersCheck = nullptr;
+    QSpinBox*  m_globalSearchMaxFilesSpin = nullptr;
     QCheckBox* m_autoUpdateServerListCheck = nullptr;
     QPushButton* m_listUrlBtn = nullptr;
     QString m_serverListURLValue;

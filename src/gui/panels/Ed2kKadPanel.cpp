@@ -143,12 +143,14 @@ void Ed2kKadPanel::requestLookupHistory()
     req.append(static_cast<qint64>(m_graphSearchId));
     const std::uint64_t searchId = m_graphSearchId;
     m_ipc->sendPoll(this, std::move(req), [this, searchId](const IpcMessage& resp) {
-        if (searchId != m_graphSearchId || resp.type() != IpcMsgType::Result || !resp.fieldBool(0))
+        if (searchId != m_graphSearchId)
             return;
         const QCborMap meta = resp.fieldMap(2);
         // A deleted search keeps its last picture until another one is shown (MFC)
-        if (!meta.value(QStringLiteral("found")).toBool())
+        if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0) || !meta.value(QStringLiteral("found")).toBool()) {
+            m_lookupGraph->setLoading(false);
             return;
+        }
 
         const QCborArray arr = resp.fieldArray(1);
         std::vector<LookupEntry> entries;
@@ -158,6 +160,8 @@ void Ed2kKadPanel::requestLookupHistory()
             LookupEntry e;
             e.contactID = m.value(QStringLiteral("contactID")).toString();
             e.distance  = m.value(QStringLiteral("distance")).toString();
+            e.addr = m.value(QStringLiteral("addr")).toString();
+            e.cc = m.value(QStringLiteral("cc")).toString();
             e.contactVersion = static_cast<uint8_t>(m.value(QStringLiteral("contactVersion")).toInteger());
             e.askedContactsAge = m.value(QStringLiteral("askedContactsAge")).toInteger(-1);
             e.respondedContact = static_cast<uint32_t>(m.value(QStringLiteral("respondedContact")).toInteger());
@@ -208,6 +212,7 @@ void Ed2kKadPanel::autoPickLookup()
     if (pick == 0)
         return;
     m_graphSearchId = pick;
+    m_lookupGraph->setLoading(true);
     setLookupTabTitle(lookupTitle(pick));
 
     // Mark it in the list only while the graph shows (MFC bMark)

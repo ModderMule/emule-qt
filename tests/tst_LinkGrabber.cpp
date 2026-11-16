@@ -22,6 +22,7 @@ class FakeResolver : public Ed3kResolver {
 public:
     QHash<QString, QList<ResolverLink>> folders;
     QSet<QString> hosts{QStringLiteral("files.example")};
+    QSet<QString> genericSites;   ///< match: only DirectHTTP takes these ("file" when the path has a dot)
     QStringList expanded;   ///< urls expand() was asked for
     QStringList deepExpanded;
     bool deep = true;
@@ -35,8 +36,12 @@ public:
     {
         ResolverEvent e;
         e.kind = ResolverEvent::Kind::Matched;
-        if (hosts.contains(QUrl(url).host()))
+        if (hosts.contains(QUrl(url).host())) {
             e.host = QUrl(url).host();
+        } else if (genericSites.contains(QUrl(url).host())) {
+            e.host = QStringLiteral("DirectHTTP");
+            e.generic = QUrl(url).path().contains(u'.') ? QStringLiteral("file") : QStringLiteral("any");
+        }
         return later(e);
     }
     TaskId expand(const QString& url) override
@@ -352,6 +357,25 @@ private slots:
         QVERIFY(g.grab(QStringLiteral("https://blog.example/post"), {}, true, {}, {}, Ed3kLinkGrabber::Mode::List) != 0);
         QTRY_COMPARE(g.links().size(), 1);
         QCOMPARE(r.deepExpanded, QStringList{QStringLiteral("https://blog.example/post")});
+    }
+
+    /// #202: a copied page URL only the generic plugin takes is dropped; a file link is crawled
+    void clipboardSkipsGenericPages()
+    {
+        QTemporaryDir tmp;
+        Ed3kLinkGrabber g(tmp.path());
+        FakeResolver r;
+        r.genericSites = {QStringLiteral("web.example")};
+        r.folders.insert(QStringLiteral("https://web.example/a.epub"), {link(QStringLiteral("a.epub"))});
+        Backend b;
+        b.grabber = &g;
+        g.setResolver(&r);
+        g.setBackend(b.make());
+        QSignalSpy spy(&g, &Ed3kLinkGrabber::grabbed);
+        QVERIFY(g.grab(QStringLiteral("https://web.example/news/today\nhttps://web.example/a.epub"), {}, false, {}, {},
+                       Ed3kLinkGrabber::Mode::Ask, true) != 0);
+        QTRY_COMPARE(spy.size(), 1);
+        QCOMPARE(r.expanded, QStringList{QStringLiteral("https://web.example/a.epub")});
     }
 
     void clipboardAskDropsUnmatched()

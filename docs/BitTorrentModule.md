@@ -99,6 +99,11 @@ private-flagged (private tracker torrents, "ALT") and not an I2P torrent. A torr
 share through `SharedFileList::setStillWriting`, also inside incoming. A narrower mode drops
 them at once (`dropNeverShared`), a wider one runs `SharedFileList::reload()`; a torrent that
 turns out private once its metadata arrives is dropped then (`Change::blockedMore`). Seeding is not affected.
+A file under a left-out root that an allowed torrent covers too stays shared (public root wins;
+the new allowed root is rescanned, `Change::released`). With BitTorrent off the guard is fed from
+the resume data (`BtSession::savedTorrents`, `DaemonApp::guardSavedTorrents`): the mode applies
+and unfinished files stay out, as with the engine running. A magnet without metadata (no name)
+blocks nothing: nothing is on disk yet, and its root would be the whole save dir.
 The ed3k torrent join follows it for private torrents only: "all" lets them join as sets
 (torrent.md §6.3 "Shared", `Ed3kTorrentJoin::setPrivateJoins`), any other mode keeps them off ed3k
 and withdraws a set made before (shares, kept set, `ALIAS` records; kept on disk, back on "all").

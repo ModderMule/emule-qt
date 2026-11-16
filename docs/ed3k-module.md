@@ -399,6 +399,7 @@ it before either session.
   the files without padding, in order. No join for a private torrent unless private
   torrents are shared (`DENIED`; btShareMode "all" → `setPrivateJoins` → `ed3k_torrent_share_private`,
   torrent.md §6.3), with the extension off, or for a torrent complete before ed3k saw it.
+  A join reloaded complete with its set kept (`keptSet`) starts no §4.2 set search.
 - **Piece checks:** the join attaches a `BtJoinSink` (`BtSession::attachJoin`). libtorrent's
   hash job hands over the piece's bytes (the door reads them through the inner disk I/O) on
   its network thread; the sink hops to the daemon thread through a gate the join closes in
@@ -476,7 +477,9 @@ node stops. `applyEd3kConfig` switches it with the pref.
   AICH through one too, so MD4, AICH and BLAKE3 use three cores; see `docs/ed3k/hashing-benchmark.md`), and the result (`primeHash`) is in the cache before
   the list adds the file. While hashing, the index is saved every 30 s (values are on disk at
   once; `stop()` saves). An entry of a file not listed is kept while its path exists (the
-  list may load later).
+  list may load later): checked on a pool thread (`pruneCacheLater`) after the list's first
+  full scan and then at most hourly with a timed save, never in the save itself (one stat per
+  entry on the main thread stalled the core 8 s on Windows, #200).
   Block values on disk are opened with `hashesStored` and no blob: a start reads none of
   them. packmule asks for them (`WantHashes` → `answerHashes`, read on the base's read pool,
   MD5 checked) when a peer's `HashRequest`, a `BadBlock` or a download of the file needs them
@@ -489,8 +492,8 @@ node stops. `applyEd3kConfig` switches it with the pref.
   start and again after the share list's first full scan, progress once a minute, a summary
   when the run ends, "block hash RAM budget N MiB (auto|set|low RAM)" when it changes.
 - **Kad record store:** records kept for other nodes are capped by `ed3k.kadStoreMiB`
-  (`ed3k_config.store_mib`, 0 = packmule default 128 MiB; Options › ed3k › Extended, group
-  "Kad"; next node start). Over it a store is answered `BUSY`. The cap is the real heap:
+  (`ed3k_config.store_mib`, 0 = packmule default 128 MiB; YAML only, no GUI;
+  next node start). Over it a store is answered `BUSY`. The cap is the real heap:
   packmule counts each record's allocations plus a calibrated overhead (~1 KiB per keyword
   record, ~1.5 KiB alone in its target), checked by `packmule-ffi/tests/store_heap.rs`
   against the counting allocator. Statistics › Memory "ed3k Kad Records" is that count.

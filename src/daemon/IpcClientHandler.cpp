@@ -2822,6 +2822,10 @@ void IpcClientHandler::handleGetKadLookupHistory(const IpcMessage& msg)
                 m.insert(QStringLiteral("contactID"), e->contactID.toHexString());
                 m.insert(QStringLiteral("distance"), e->distance.toHexString());
                 m.insert(QStringLiteral("contactVersion"), static_cast<qint64>(e->contactVersion));
+                if (const Address addr = Address::fromHostOrder(e->ip); !addr.isNull()) {
+                    m.insert(QStringLiteral("addr"), QStringLiteral("%1:%2").arg(addr.toString()).arg(e->port));
+                    m.insert(QStringLiteral("cc"), countryCodeOf(addr));
+                }
                 m.insert(QStringLiteral("askedContactsAge"), ageOf(e->askedContactsTime));
                 m.insert(QStringLiteral("respondedContact"), static_cast<qint64>(e->respondedContact));
                 m.insert(QStringLiteral("askedSearchItemAge"), ageOf(e->askedSearchItemTime));
@@ -4595,6 +4599,8 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setDeadServerRetries(static_cast<uint32>(val.toInteger()));
     else if (key == QStringLiteral("removeDeadServers"))
         thePrefs.setRemoveDeadServers(val.toBool());
+    else if (key == QStringLiteral("globalSearchMaxFiles"))
+        thePrefs.setGlobalSearchMaxFiles(static_cast<uint32>(std::max<qint64>(val.toInteger(), 0)));
     else if (key == QStringLiteral("autoUpdateServerList"))
         thePrefs.setAutoUpdateServerList(val.toBool());
     else if (key == QStringLiteral("serverListURL"))

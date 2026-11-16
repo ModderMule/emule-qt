@@ -582,8 +582,9 @@ void Ed3kLinkGrabber::onTaskEvent(Ed3kResolver::TaskId task, const ResolverEvent
     m_crawls.erase(it);
     using K = ResolverEvent::Kind;
     if (t.kind == TaskKind::Match) {
-        // the clipboard: only links a plugin takes are crawled
-        if (ev.kind != K::Matched || ev.host.isEmpty()) {
+        // the clipboard: only links a plugin takes are crawled; of plain web links only those
+        // naming a file (every copied page URL would land here)
+        if (ev.kind != K::Matched || ev.host.isEmpty() || ev.generic == QLatin1StringView("any")) {
             crawlDone(t.crawl.token, {}, QStringLiteral("noPlugin"));
         } else if (m_resolver) {
             const auto x = t.crawl.deep ? m_resolver->expandDeep(t.crawl.url) : m_resolver->expand(t.crawl.url);
