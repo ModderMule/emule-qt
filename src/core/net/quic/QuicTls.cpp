@@ -108,6 +108,29 @@ bool loadedSslHasQuicApi()
     }
     return true;   // linked statically: the build checked the version
 }
+
+/// ngtcp2_crypto_ossl.dll loads: missing, locked or unresolvable, the delay-load
+/// helper would raise 0xC06D007E/7F on the first call. Same search as that helper;
+/// kept loaded, so the later delay-load gets this very module.
+bool quicCryptoDllLoads()
+{
+#ifndef NGTCP2_STATICLIB
+    // a failed load must not raise the "entry point not found" popup itself
+    DWORD oldMode = 0;
+    ::SetThreadErrorMode(SEM_FAILCRITICALERRORS, &oldMode);
+    const HMODULE dll = ::LoadLibraryW(L"ngtcp2_crypto_ossl.dll");
+    const DWORD err = ::GetLastError();
+    ::SetThreadErrorMode(oldMode, nullptr);
+    if (dll)
+        return true;
+    g_lastError = QStringLiteral("ngtcp2_crypto_ossl.dll not loadable: %1 (error %2)")
+                      .arg(qt_error_string(static_cast<int>(err)))
+                      .arg(err);
+    return false;
+#else
+    return true;
+#endif
+}
 #endif
 
 } // namespace
@@ -146,7 +169,7 @@ QuicTls::~QuicTls()
 bool QuicTls::init()
 {
 #ifdef Q_OS_WIN
-    if (!loadedSslHasQuicApi()) {
+    if (!loadedSslHasQuicApi() || !quicCryptoDllLoads()) {
         logWarning(QStringLiteral("QUIC NAT-T off: %1").arg(g_lastError));
         return false;
     }
