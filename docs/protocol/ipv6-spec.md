@@ -1,7 +1,7 @@
 # eD2K / Kademlia IPv6 Extensions — Interoperability Specification
 
 **Status:** Implemented and shipping in eMuleQt.
-**Document version:** 1.3 — 2026-11-16.
+**Document version:** 1.5 — 2026-11-16.
 **Audience:** implementers of eD2K clients, eD2K servers, and eD2K link generators who want to
 interoperate with eMuleQt over IPv6.
 
@@ -212,6 +212,7 @@ The server probes the family the session arrived on, so a v6-connected session g
 | --- | --- | --- | --- |
 | `TAG_IPV6` | `"ip6"` | STRING, 32 hex chars | Source's public IPv6 |
 | `TAG_SERVINGBUDDYIPV6` | `"bi6"` | STRING, 32 hex chars | Serving buddy's public IPv6 |
+| `TAG_BUDDYPOINTER` | `"bpv"` | UINT8 | Pointer route version (§5.6.1) |
 
 ---
 
@@ -1013,9 +1014,10 @@ Parse order matters: evaluate the classic numeric tags and the source-type gate 
 last valid one wins and a trailing malformed one clears the value.
 
 An accepted `ip6` marks the source IPv6-reachable, which allows a LowID (type 3/5) source to be
-dialled directly over IPv6 instead of via the buddy callback. A type 3/5 source is normally dropped
-by a client that is itself firewalled (two firewalled ends cannot meet through a buddy); eMuleQt
-keeps it when the record carries `ip6` and the client has a public IPv6 of its own. The buddy tags
+dialled directly over IPv6 instead of via the buddy callback. MFC drops a type 3/5 source when it
+is itself firewalled (two firewalled ends cannot meet through a buddy, `DownloadQueue.cpp:1557`);
+aMule has no such gate and keeps the record whatever its own firewall state. eMuleQt follows MFC,
+but keeps the record when it carries `ip6` and the client has a public IPv6 of its own. The buddy tags
 may be absent on such a record (older publishers, §5.2). Type 7 has its own rules (§5.6).
 
 ### 5.5 Kad DNS
@@ -1026,8 +1028,10 @@ into address `0.0.0.0` and silently bootstraps against nothing.
 
 ### 5.6 Source type 7 — "routes in tags"
 
-**Status:** implemented (publish and receive) since 1.3. The value is under discussion with another
-implementation and may still move; until then no other client is known to emit it.
+**Status:** type 7 with the `ip6` route implemented (publish and receive) since 1.3, the pointer
+route `bpv` (§5.6.1) since 1.4; 1.5 adds the receiver-key rule for storers, distinct pointer
+candidates, and `bpv` on 3/5 after a failed callback. Agreed with one other implementation, which
+will publish and read type 7 too.
 
 **Problem.** A node with no IPv4 route — firewalled on IPv4, no buddy, no verified UDP callback —
 can still be reached over its public IPv6. Kad runs over IPv4 only, so the publisher reaches the
@@ -1051,31 +1055,58 @@ a tag, not another number.
   be pushed onto IPv6 where a peer would re-key its identity to the IPv6 socket.
 - MUST carry `FT_SOURCEPORT`, `FT_FILESIZE`, `FT_ENCRYPTION` (bit 3 clear) and **at least one
   route tag**. `FT_SOURCEUPORT` as for other types. No known size, no record.
+- SHOULD NOT publish type 7 with `bpv` as its only route. Before the node has a buddy there is no
+  pointer to find, so every receiver pays a lookup for a miss. Wait for a buddy, then publish
+  3/5 + `bpv` (§5.6.1).
+- Send type 7, `bpv` and pointer records only to indexing nodes whose receiver key it holds (the
+  nodes that answered its lookup); without the key, a storer that enforces the rule above drops them.
 - MUST NOT carry `FT_SERVERIP`, `FT_SERVERPORT`, `FT_BUDDYHASH` or `bi6`. eMuleQt also omits
   `nat`: with no buddy and no open UDP there is no rendezvous.
 - Route tags defined so far:
 
-| Route tag | Route |
-| --- | --- |
-| `"ip6"` (§5.1, unchanged hex string) | TCP to the source's public IPv6 |
+| Route tag | Resolved | Route |
+| --- | --- | --- |
+| `"ip6"` (§5.1, unchanged hex string) | locally, no I/O | TCP to the source's public IPv6 |
+| `"bpv"` (UINT8, pointer version, currently `1`) | over the network, one lookup | buddy callback via the pointer record (§5.6.1) |
 
-  Further route tags — e.g. a pointer route — are added to this table, not as new types.
+  Further route tags are added to this table, not as new types.
 
-**Indexing node.** No change. Stock indexing nodes store any `FT_SOURCETYPE` value, stamp
-`FT_SOURCEIP` from the packet and re-serve unknown tags verbatim (MFC
-`KademliaUDPListener.cpp:1315`, ours `KadUDPListener.cpp`).
+**Indexing node.** Stock indexing nodes store any `FT_SOURCETYPE` value, stamp `FT_SOURCEIP` from
+the packet and re-serve unknown tags verbatim (MFC `KademliaUDPListener.cpp:1315`). An indexing
+node that implements this section:
+
+- MUST drop a `KADEMLIA2_PUBLISH_SOURCE_REQ` without a valid receiver key when it carries
+  `FT_SOURCETYPE` 7, or `bpv`, or is a pointer record (fileID = `~sourceID`, §5.6.1). No
+  `KADEMLIA2_PUBLISH_RES`. The key proves the publisher receives at the IPv4 that is stamped into
+  `FT_SOURCEIP` (§5.6.2). Classic records keep today's rules: most of the installed base publishes
+  them without the key.
+- SHOULD handle `bpv` by name, next to `ip6`/`bi6`: keep the first UINT8, drop repeats, and never
+  count it against an unknown-tag budget that other traffic can exhaust.
+
+eMuleQt does both (`KadUDPListener.cpp`, `process_KADEMLIA2_PUBLISH_SOURCE_REQ`).
 
 **Receiver rules.**
 
 - Collect the route tags it understands; validate each (§7). If none is usable — unknown route
-  tags only, `ip6` that fails §7, or `ip6` while the receiver has no public IPv6 — drop the
-  record without any I/O. `FT_SOURCEPORT` 0 is unusable too.
+  tags only, `ip6` that fails §7, `ip6` while the receiver has no public IPv6, or `bpv` with an
+  unknown version — drop the record without any I/O. `FT_SOURCEPORT` 0 is unusable too.
+- Prefer a locally resolved route: when `ip6` is usable, dial it and do not resolve `bpv`.
 - Ignore `FT_SERVERIP`, `FT_SERVERPORT`, `FT_BUDDYHASH`, `bi6` and `FT_ENCRYPTION` bit 3 should
   they appear.
 - `FT_SOURCEIP` identifies the source and is subject to IP filtering; it MUST NOT be dialled over
   TCP.
-- MUST NOT start a buddy lookup or send a callback request for a type-7 record.
-- Unlike type 3/5, a firewalled receiver keeps the record when it can use a route.
+- MUST NOT start a lookup derived from `FT_BUDDYHASH` (§5.2). The tag is absent on type 7 anyway;
+  a lookup or callback request is allowed only where a route tag defines it (`bpv`, §5.6.1).
+- A route tag resolved over the network costs **at most one lookup per source**, keyed by the
+  source ID, across all files the source shares. Cache a hit for one republish-check period
+  (60 min) and a miss for a shorter time (eMuleQt: 10 min). On type 7 a miss is the normal case:
+  the publisher had no buddy when it published, and gets one later.
+- A firewalled receiver keeps the record when it can use `ip6`. `bpv` ends in a callback, so like
+  type 3/5 it is useless to a firewalled receiver.
+- After the first hello on an `ip6` route, SHOULD compare the presented user hash with the record's
+  source ID and drop the source on mismatch (§5.6.2).
+- A failed connect to an `ip6` that never completed a hello SHOULD NOT be retried for that record,
+  and SHOULD be cached per address, so several records naming one address cost one attempt.
 
 **Legacy receivers.** MFC (`Search.cpp:953`), and the other result switches surveyed, accept only
 1 and 3–6, so a type-7 record is dropped before any source is created. eMuleQt before 1.3 of this
@@ -1083,6 +1114,111 @@ spec drops it the same way, so it loses the IPv6 route to such a source.
 
 Code: publish `Search::buildSourcePublishTags`, parse `Search::processResultFile`
 (`KadSearch.cpp`); admit `DownloadQueue::addKadSourceResult` case 7.
+
+#### 5.6.1 The pointer route — `bpv`
+
+A LowID's file records name the buddy it had when it published them. Buddies change more often
+than records expire (one measurement: median buddy link 27 minutes, record 5 h). A 3/5 record
+always carries the buddy address, so a receiver dials that buddy and never looks up the BuddyID;
+a stale one just goes unanswered. The pointer route publishes the current buddy once, at a key every receiver can compute,
+instead of republishing every file.
+
+**Key.** `~sourceID`: the bitwise NOT of the 16 source-ID bytes exactly as they travel in the
+publish. The source ID of a Kad source record is the publisher's eD2K **user hash**
+(`GetClientHash()` in MFC `Search.cpp:635`, the same in eMuleAI, aMule and here), **not** its Kad
+ID, so a receiver cannot derive anything from the Kad ID. A bytewise NOT commutes with any byte
+order, so the key is the same whatever UInt128 layout an implementation uses.
+
+**File records.** A type 7 record, or a classic type 3/5 record, MAY carry `bpv` = `1`. Type 7
+keeps its rules: no `FT_BUDDYHASH`, no `FT_SERVERIP`/`FT_SERVERPORT`, and `bpv` rides along with
+`ip6`, never alone (§5.6). eMuleQt puts `bpv` on every 3/5/7 record it sends to a storer whose
+receiver key it holds. Firewalled with no buddy, no direct callback and no IPv6, it publishes
+nothing, as MFC does; the first buddy makes every file due at once.
+
+**Pointer record.** A plain `KADEMLIA2_PUBLISH_SOURCE_REQ` (`0x44`) with fileID = `~sourceID`,
+sourceID = the user hash, `FT_SOURCETYPE` = `3`, `FT_SOURCEPORT`, `FT_ENCRYPTION`, and the buddy
+fields `FT_SERVERIP`, `FT_SERVERPORT`, `FT_BUDDYHASH`. It is outside type 7, and no legacy client
+searches its key. Published while the node has a buddy, republished when the buddy changes, left to
+expire when it has none.
+
+**Receiver.** Resolve the pointer by a source search at `~sourceID` (size 0), once per source and
+cached as above:
+
+- type 7 + `bpv` when `ip6` is not usable;
+- 3/5 + `bpv` after the callback through the record's own buddy went unanswered. That buddy counts
+  as tried.
+
+Accept a pointer record only if
+
+1. it is type 3, its source ID equals the file record's source ID, and its `FT_BUDDYHASH` is
+   present and not all-zero (§5.2), and
+2. its `FT_SOURCEIP` equals the file record's `FT_SOURCEIP` (§5.6.2).
+
+Then send `KADEMLIA_CALLBACK_REQ` to the buddy for the file in hand, exactly as for type 3/5; the
+source dials back. A pointer that fails a check is ignored.
+
+**More than one pointer.** Several storers return the same record; dedupe by buddy endpoint. A
+lookup can still yield distinct pointers that pass both checks: an old one not yet expired, or one
+planted by an attacker-run indexing node (§5.6.2). Keep up to **3** distinct candidates and try
+each **once**, in arrival order, within the same one-lookup budget. "First wins" would hand the
+route to whoever answers first; "ambiguous = unresolvable" would let one planted record veto the
+real one. Version 1 has no sequence number. When every candidate failed, the source is dead.
+
+eMuleQt: at most 5 pointer lookups run at once; a record arriving over that cap is dropped, not
+cached. A source waiting for a candidate is not redialled meanwhile.
+
+Code: `kad::PointerRoute` (`KadPointerRoute.cpp`: publish, cache, candidates, delivery as type 3,
+`reroute`); `Search::buildPointerPublishTags`, `Search::acceptPointerRecord`, `Search::pointerKey`
+(`KadSearch.cpp`); `UpDownClient::rerouteViaPointer` (failed callback).
+
+#### 5.6.2 What `FT_SOURCEIP` binds — and what it does not
+
+`FT_SOURCEIP` is the one value in a source record that the publisher does not write: the indexing
+node overwrites it with the IPv4 source address of the publish packet (MFC
+`KademliaUDPListener.cpp:1317`). Two records stored on two different indexing nodes therefore
+carry the same `FT_SOURCEIP` only if both publish packets came from the same IPv4.
+
+**Pointer forgery — blocked.** The source ID is public: every source search result shows it. Without
+check 2, anyone could publish a pointer at `~victimHash` naming any IP as "buddy". Every receiver
+holding one of the victim's file records would then send `KADEMLIA_CALLBACK_REQ` there, which
+leaks who downloads what to the attacker, redirects the victim's callbacks to a dead end, and
+points callback traffic at a third party. With check 2 the forged pointer must come from the
+victim's own IPv4. That takes UDP source spoofing, or sharing the victim's public IPv4 (same NAT or
+CGNAT). An honest LowID publishes its file records and its pointer from the same IPv4, so it
+always passes; if its address changes, records mismatch until both are republished, and the cached
+miss expires.
+
+**Receiver key — the spoofing gap closed.** Check 2 alone leaves UDP source spoofing, the bar type 1
+records live with. Type 7, `bpv` and pointer records have no installed base, so storers require a
+valid receiver key for them (§5.6): the key was issued to the publisher's IPv4, so a publish
+carrying it came from a host that receives there. That removes the off-path spoofer, who needs no
+Kad presence and can work at scale from one host. Residual: an attacker running its own indexing
+node near `~victimHash` stamps `FT_SOURCEIP` itself and can serve a forged pointer that passes
+check 2. The candidate rule (§5.6.1) limits that to one wasted callback per receiver; it cannot
+take the route away from the real pointer. The rule binds only storers that implement it.
+
+**`ip6` — not bound.** Kad is IPv4-only (§5), so no indexing node ever sees the publisher's IPv6
+and nothing stamps it. `ip6` stays an unauthenticated claim (§5.3), and `FT_SOURCEIP` cannot vouch
+for it: an attacker can publish a type 7 record from its own IPv4 with any `ip6`. What limits that:
+
+- **Pointing at a third party** (reflection). Each receiver makes at most one TCP connect to the
+  named address: no retry for a record that never completed a hello, and failures cached per
+  address, so many records naming one victim still cost one attempt. A host that does not speak
+  eD2K never sends a valid hello, and the receiver gives up after its connect timeout. The
+  attacker gains no amplification beyond one TCP handshake per receiver that downloads one of the
+  files it published. Server sentinel records (§4.4) and ExtSX (§3.3) carry
+  unauthenticated IPv6 the same way, so this adds no new class of exposure.
+- **Claiming someone else's user hash** (impersonation). The hello check of §5.6 drops a peer that
+  presents a different user hash. It applies only to the address taken from the record, not to
+  every Kad hash: a hash elsewhere can be stale after an address change. It catches stale records
+  and lazy forgers; the hello hash is self-asserted, so a peer that presents the victim's hash
+  passes it. A peer that presents the victim's hash without its key fails
+  secure identification wherever the victim's public key is already known; otherwise it is only an
+  untrusted source, and every block it sends is still checked against the file and AICH hashes.
+- **Grafting a pointer onto someone else's `ip6` record** — blocked by check 2 above.
+
+Binding `ip6` itself would need a reachability proof over IPv6 by the indexing node, which in turn
+needs Kad over IPv6. Out of scope (§10).
 
 ---
 
@@ -1393,6 +1529,11 @@ A client claiming interoperability with these extensions should implement, at mi
 - [ ] Emit only after the source-type gate on ingest (§5.4)
 - [ ] Never look up an all-zero or missing `FT_BUDDYHASH` (§5.2)
 - [ ] Source type 7: publish only without a classic route, receive only with a usable route tag (§5.6)
+- [ ] Never derive a lookup from `FT_BUDDYHASH` on type 7; one lookup per source for `bpv`, hit cached 60 min, miss shorter (§5.6)
+- [ ] Accept a `bpv` pointer only with the same source ID and the same stamped `FT_SOURCEIP` (§5.6.1–2)
+- [ ] Storer: drop type 7, `bpv` and pointer records without a valid receiver key; `bpv` by name (§5.6)
+- [ ] No type 7 with `bpv` alone; publish keyed records only to keyed storers (§5.6)
+- [ ] Up to 3 distinct pointer candidates, each tried once; 3/5 + `bpv` re-resolves after a failed callback (§5.6.1)
 
 **Required for link interoperability**
 
