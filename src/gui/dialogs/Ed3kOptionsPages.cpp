@@ -267,6 +267,7 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     }
     m_extTree->setChecked(m_lanItem, p.value(QStringLiteral("ed3kLan")).toBool(false));
     m_extTree->setChecked(m_autoIndexItem, p.value(QStringLiteral("ed3kAutoIndexNode")).toBool(false));
+    m_extTree->setChecked(m_forceOpenItem, p.value(QStringLiteral("ed3kForceOpen")).toBool(false));
     m_extTree->setChecked(m_roomStoreItem, p.value(QStringLiteral("ed3kRoomHistoryStore")).toBool(true));
     m_extTree->setValue(m_roomMaxItem, int(p.value(QStringLiteral("ed3kRoomHistoryMax")).toInteger(5000)));
     m_hiding->load(p);
@@ -369,6 +370,7 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
         put("ed3kUdpPort", qint64(m_udpPortSpin->value()));
     put("ed3kLan", m_extTree->isChecked(m_lanItem));
     put("ed3kAutoIndexNode", m_extTree->isChecked(m_autoIndexItem));
+    put("ed3kForceOpen", m_extTree->isChecked(m_forceOpenItem));
     put("ed3kRoomHistoryStore", m_extTree->isChecked(m_roomStoreItem));
     put("ed3kRoomHistoryMax", qint64(m_extTree->value(m_roomMaxItem)));
     m_hiding->appendTo(req);
@@ -451,6 +453,7 @@ void Ed3kOptionsPages::saveLocal() const
         thePrefs.setEd3kUdpPort(uint16(m_udpPortSpin->value()));
     thePrefs.setEd3kLan(m_extTree->isChecked(m_lanItem));
     thePrefs.setEd3kAutoIndexNode(m_extTree->isChecked(m_autoIndexItem));
+    thePrefs.setEd3kForceOpen(m_extTree->isChecked(m_forceOpenItem));
     thePrefs.setEd3kRoomHistoryStore(m_extTree->isChecked(m_roomStoreItem));
     thePrefs.setEd3kRoomHistoryMax(m_extTree->value(m_roomMaxItem));
     m_hiding->saveLocal();
@@ -2220,6 +2223,11 @@ QWidget* Ed3kOptionsPages::buildExtended(QWidget* parent)
     m_autoIndexItem = m_extTree->addCheck(connection, tr("Auto connect to the ed3k index node an eD2K server names"));
     m_autoIndexItem->setToolTip(0, tr("eD2K servers that also run an ed3k index node name it at login. "
                                       "Off: the node is only noted in the ed3k log."));
+    // Protocol.md §9.2 "The first nodes of a network": operator declares the node open
+    m_forceOpenItem = m_extTree->addCheck(connection, tr("This node is reachable: skip NAT tests (restarts the node)"));
+    m_forceOpenItem->setToolTip(0, tr("Only when the UDP port is forwarded or the computer has a public address. "
+                                      "The node then counts as open without reach tests and serves as a router. "
+                                      "Helps a small ed3k network where reach tests find no prober."));
     QTreeWidgetItem* rooms = m_extTree->addGroup(tr("Rooms"), skinIcon(QStringLiteral(":/icons/IRC.ico")));
     m_roomStoreItem = m_extTree->addCheck(rooms, tr("Store recent room posts on disk"));
     m_roomStoreItem->setToolTip(0, tr("Keeps the recent posts of each joined room in a file, shown again after a "

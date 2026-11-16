@@ -6709,7 +6709,7 @@ Jej nazwy będą wtedy rozwiązywane po listach, które już obserwujesz.</trans
         <translation type="vanished">Węzeł ed3k używa nicka ze strony Ogólne: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+481"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+490"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7054,12 +7054,12 @@ Jej nazwy będą wtedy rozwiązywane po listach, które już obserwujesz.</trans
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1427"/>
+        <location line="+1442"/>
         <source> credits/MiB</source>
         <translation> kredytów/MiB</translation>
     </message>
     <message>
-        <location line="-1436"/>
+        <location line="-1451"/>
         <source>Never pay (receipts only)</source>
         <translation>Nigdy nie płać (tylko pokwitowania)</translation>
     </message>
@@ -7307,12 +7307,12 @@ Jej nazwy będą wtedy rozwiązywane po listach, które już obserwujesz.</trans
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1264"/>
+        <location line="+1279"/>
         <source>not read yet</source>
         <translation>jeszcze nie odczytano</translation>
     </message>
     <message>
-        <location line="-1262"/>
+        <location line="-1277"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Konto ma debet: dalsza droga to nowy klucz kredytowy.</translation>
     </message>
@@ -7984,6 +7984,41 @@ Auto: 2 % RAM, co najmniej 64 MiB i najwyżej 512 MiB.</translation>
         <translation>Serwery eD2K, które prowadzą też węzeł indeksu ed3k, podają go przy logowaniu. Wyłączone: węzeł jest tylko odnotowany w logu ed3k.</translation>
     </message>
     <message>
+        <location line="+3"/>
+        <source>This node is reachable: skip NAT tests (restarts the node)</source>
+        <translation>Ten węzeł jest osiągalny: pomiń testy NAT (restartuje węzeł)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Only when the UDP port is forwarded or the computer has a public address. The node then counts as open without reach tests and serves as a router. Helps a small ed3k network where reach tests find no prober.</source>
+        <translation>Tylko gdy port UDP jest przekierowany lub komputer ma adres publiczny. Węzeł jest wtedy uznawany za otwarty bez testów osiągalności i służy jako router. Pomaga w małej sieci ed3k, w której testy osiągalności nie znajdują testującego.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Rooms</source>
+        <translation>Pokoje</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Store recent room posts on disk</source>
+        <translation>Zapisuj ostatnie wpisy pokojów na dysku</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private rooms are stored unencrypted.</source>
+        <translation>Zapisuje ostatnie wpisy każdego dołączonego pokoju w pliku, wyświetlane ponownie po restarcie. Bez tego wracają tylko wpisy, które inni członkowie nadal mają. Wpisy pokojów prywatnych są zapisywane bez szyfrowania.</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Posts kept per room</source>
+        <translation>Wpisy przechowywane na pokój</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>The newest posts kept per room, in memory and on disk.</source>
+        <translation>Najnowsze wpisy przechowywane na pokój, w pamięci i na dysku.</translation>
+    </message>
+    <message>
         <location line="+21"/>
         <source>Autostart highspeed download</source>
         <translation>Automatyczne uruchamianie szybkiego pobierania</translation>
@@ -8058,7 +8093,7 @@ Auto: 2 % RAM, co najmniej 64 MiB i najwyżej 512 MiB.</translation>
         <translation>Szybkie pobieranie nie działa. Saldo: %1</translation>
     </message>
     <message>
-        <location line="-916"/>
+        <location line="-931"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -9017,7 +9052,7 @@ Jego pliki nie są już tu udostępniane; to, co sieć o nim przechowuje, wygaś
 <context>
     <name>eMule::Ed3kRoomTab</name>
     <message>
-        <location filename="../src/gui/panels/Ed3kRoomTab.cpp" line="+94"/>
+        <location filename="../src/gui/panels/Ed3kRoomTab.cpp" line="+95"/>
         <source>ed3k room %1</source>
         <translation>pokój ed3k %1</translation>
     </message>
@@ -9047,7 +9082,7 @@ Jego pliki nie są już tu udostępniane; to, co sieć o nim przechowuje, wygaś
         <translation>moderowany</translation>
     </message>
     <message>
-        <location line="+163"/>
+        <location line="+166"/>
         <source>Reply</source>
         <translation>Odpowiedz</translation>
     </message>
@@ -13020,7 +13055,7 @@ Nick można zmienić później w Opcje-&gt;IRC.</translation>
     </message>
     <message>
         <location line="+34"/>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+306"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+312"/>
         <source>* %1 is now known as %2</source>
         <translation>* %1 jest teraz znany jako %2</translation>
     </message>
@@ -13204,7 +13239,7 @@ Wybierz inny:</translation>
         <translation>%1 dodał cię do znajomych!</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="-486"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="-492"/>
         <location line="+20"/>
         <source>Public: anyone with the link</source>
         <translation>Publiczny: każdy z linkiem</translation>
@@ -13299,14 +13334,14 @@ Wybierz inny:</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+237"/>
+        <location line="+243"/>
         <location line="+67"/>
         <location line="+339"/>
         <source>ed3k room</source>
         <translation>Pokój ed3k</translation>
     </message>
     <message>
-        <location line="-642"/>
+        <location line="-648"/>
         <source>Join the ed3k room &quot;%1&quot;?
 
 Other members see your nick and posts; your node takes part in passing the room&apos;s posts on.</source>
@@ -13320,7 +13355,7 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
         <translation>Pokoje (ed3k)</translation>
     </message>
     <message>
-        <location line="+87"/>
+        <location line="+93"/>
         <source>* %1 has left the room</source>
         <translation>* %1 opuścił(a) pokój</translation>
     </message>

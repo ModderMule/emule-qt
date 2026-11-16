@@ -6709,7 +6709,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">Узел ed3k использует ник со страницы «Общие»: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+481"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+490"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7054,12 +7054,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1427"/>
+        <location line="+1442"/>
         <source> credits/MiB</source>
         <translation> кредитов/MiB</translation>
     </message>
     <message>
-        <location line="-1436"/>
+        <location line="-1451"/>
         <source>Never pay (receipts only)</source>
         <translation>Никогда не платить (только квитанции)</translation>
     </message>
@@ -7307,12 +7307,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1264"/>
+        <location line="+1279"/>
         <source>not read yet</source>
         <translation>ещё не прочитано</translation>
     </message>
     <message>
-        <location line="-1262"/>
+        <location line="-1277"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Счёт в минусе: выход — новый кредитный ключ.</translation>
     </message>
@@ -7984,6 +7984,41 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>Серверы eD2K, которые также держат индексный узел ed3k, сообщают его при входе. Выкл.: узел только отмечается в журнале ed3k.</translation>
     </message>
     <message>
+        <location line="+3"/>
+        <source>This node is reachable: skip NAT tests (restarts the node)</source>
+        <translation>Этот узел доступен: пропускать проверки NAT (перезапускает узел)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Only when the UDP port is forwarded or the computer has a public address. The node then counts as open without reach tests and serves as a router. Helps a small ed3k network where reach tests find no prober.</source>
+        <translation>Только если UDP-порт проброшен или у компьютера публичный адрес. Узел тогда считается открытым без проверок доступности и служит маршрутизатором. Помогает в небольшой сети ed3k, где проверки доступности не находят проверяющего.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Rooms</source>
+        <translation>Комнаты</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Store recent room posts on disk</source>
+        <translation>Хранить недавние сообщения комнат на диске</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private rooms are stored unencrypted.</source>
+        <translation>Сохраняет недавние сообщения каждой комнаты, в которую вы вошли, в файл и показывает их снова после перезапуска. Без этого возвращаются только сообщения, которые ещё хранят другие участники. Сообщения приватных комнат хранятся без шифрования.</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Posts kept per room</source>
+        <translation>Сообщений на комнату</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>The newest posts kept per room, in memory and on disk.</source>
+        <translation>Самые новые сообщения, хранимые для каждой комнаты в памяти и на диске.</translation>
+    </message>
+    <message>
         <location line="+21"/>
         <source>Autostart highspeed download</source>
         <translation>Автозапуск скоростной загрузки</translation>
@@ -8058,7 +8093,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>Скоростная загрузка не работает. Баланс: %1</translation>
     </message>
     <message>
-        <location line="-916"/>
+        <location line="-931"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -9017,7 +9052,7 @@ Its files are no longer shared here; what the network holds of it runs out. &quo
 <context>
     <name>eMule::Ed3kRoomTab</name>
     <message>
-        <location filename="../src/gui/panels/Ed3kRoomTab.cpp" line="+94"/>
+        <location filename="../src/gui/panels/Ed3kRoomTab.cpp" line="+95"/>
         <source>ed3k room %1</source>
         <translation>комната ed3k %1</translation>
     </message>
@@ -9047,7 +9082,7 @@ Its files are no longer shared here; what the network holds of it runs out. &quo
         <translation>модерируемая</translation>
     </message>
     <message>
-        <location line="+163"/>
+        <location line="+166"/>
         <source>Reply</source>
         <translation>Ответить</translation>
     </message>
@@ -13020,7 +13055,7 @@ Nick can be changed again in Options-&gt;IRC.</source>
     </message>
     <message>
         <location line="+34"/>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+306"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+312"/>
         <source>* %1 is now known as %2</source>
         <translation>* %1 теперь известен как %2</translation>
     </message>
@@ -13204,7 +13239,7 @@ Please choose another:</source>
         <translation>%1 добавил вас в друзья!</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="-486"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="-492"/>
         <location line="+20"/>
         <source>Public: anyone with the link</source>
         <translation>Публичная: любой, у кого есть ссылка</translation>
@@ -13299,14 +13334,14 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+237"/>
+        <location line="+243"/>
         <location line="+67"/>
         <location line="+339"/>
         <source>ed3k room</source>
         <translation>Комната ed3k</translation>
     </message>
     <message>
-        <location line="-642"/>
+        <location line="-648"/>
         <source>Join the ed3k room &quot;%1&quot;?
 
 Other members see your nick and posts; your node takes part in passing the room&apos;s posts on.</source>
@@ -13320,7 +13355,7 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>Комнаты (ed3k)</translation>
     </message>
     <message>
-        <location line="+87"/>
+        <location line="+93"/>
         <source>* %1 has left the room</source>
         <translation>* %1 покинул(а) комнату</translation>
     </message>

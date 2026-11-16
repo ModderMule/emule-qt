@@ -6935,7 +6935,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">ed3k 节点使用“常规”页面中的昵称：%1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+481"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+490"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7280,12 +7280,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1427"/>
+        <location line="+1442"/>
         <source> credits/MiB</source>
         <translation> 信用/MiB</translation>
     </message>
     <message>
-        <location line="-1436"/>
+        <location line="-1451"/>
         <source>Never pay (receipts only)</source>
         <translation>从不支付（仅收据）</translation>
     </message>
@@ -7533,12 +7533,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1264"/>
+        <location line="+1279"/>
         <source>not read yet</source>
         <translation>尚未读取</translation>
     </message>
     <message>
-        <location line="-1262"/>
+        <location line="-1277"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>账户已透支：唯一的出路是新的信用密钥。</translation>
     </message>
@@ -8206,6 +8206,41 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>同时运行 ed3k 索引节点的 eD2K 服务器会在登录时告知该节点。关闭：该节点仅记录在 ed3k 日志中。</translation>
     </message>
     <message>
+        <location line="+3"/>
+        <source>This node is reachable: skip NAT tests (restarts the node)</source>
+        <translation>此节点可访问：跳过 NAT 测试（重启节点）</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Only when the UDP port is forwarded or the computer has a public address. The node then counts as open without reach tests and serves as a router. Helps a small ed3k network where reach tests find no prober.</source>
+        <translation>仅在 UDP 端口已转发或计算机有公网地址时使用。节点将无需可达性测试即视为开放，并充当路由器。适用于可达性测试找不到探测者的小型 ed3k 网络。</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Rooms</source>
+        <translation>聊天室</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Store recent room posts on disk</source>
+        <translation>将聊天室近期消息保存到磁盘</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private rooms are stored unencrypted.</source>
+        <translation>将已加入的每个聊天室的近期消息保存到文件中，重启后再次显示。关闭时只会恢复其他成员仍保留的消息。私人聊天室的消息以未加密方式存储。</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Posts kept per room</source>
+        <translation>每个聊天室保留的消息数</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>The newest posts kept per room, in memory and on disk.</source>
+        <translation>每个聊天室在内存和磁盘中保留的最新消息。</translation>
+    </message>
+    <message>
         <location line="+21"/>
         <source>Autostart highspeed download</source>
         <translation>自动开始高速下载</translation>
@@ -8280,7 +8315,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>高速下载未运行。余额：%1</translation>
     </message>
     <message>
-        <location line="-916"/>
+        <location line="-931"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -9237,7 +9272,7 @@ Its files are no longer shared here; what the network holds of it runs out. &quo
 <context>
     <name>eMule::Ed3kRoomTab</name>
     <message>
-        <location filename="../src/gui/panels/Ed3kRoomTab.cpp" line="+94"/>
+        <location filename="../src/gui/panels/Ed3kRoomTab.cpp" line="+95"/>
         <source>ed3k room %1</source>
         <translation>ed3k 房间 %1</translation>
     </message>
@@ -9267,7 +9302,7 @@ Its files are no longer shared here; what the network holds of it runs out. &quo
         <translation>受管理</translation>
     </message>
     <message>
-        <location line="+163"/>
+        <location line="+166"/>
         <source>Reply</source>
         <translation>回复</translation>
     </message>
@@ -13288,7 +13323,7 @@ Nick can be changed again in Options-&gt;IRC.</source>
     </message>
     <message>
         <location line="+34"/>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+306"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+312"/>
         <source>* %1 is now known as %2</source>
         <translation>* %1 现在改名为 %2</translation>
     </message>
@@ -13472,7 +13507,7 @@ Please choose another:</source>
         <translation>%1 已将您添加为好友！</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="-486"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="-492"/>
         <location line="+20"/>
         <source>Public: anyone with the link</source>
         <translation>公开：任何拥有链接的人</translation>
@@ -13567,14 +13602,14 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+237"/>
+        <location line="+243"/>
         <location line="+67"/>
         <location line="+339"/>
         <source>ed3k room</source>
         <translation>ed3k 房间</translation>
     </message>
     <message>
-        <location line="-642"/>
+        <location line="-648"/>
         <source>Join the ed3k room &quot;%1&quot;?
 
 Other members see your nick and posts; your node takes part in passing the room&apos;s posts on.</source>
@@ -13588,7 +13623,7 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>房间 (ed3k)</translation>
     </message>
     <message>
-        <location line="+87"/>
+        <location line="+93"/>
         <source>* %1 has left the room</source>
         <translation>* %1 离开了房间</translation>
     </message>

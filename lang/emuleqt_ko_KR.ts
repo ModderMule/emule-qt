@@ -6935,7 +6935,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">ed3k 노드는 일반 페이지의 닉네임을 사용합니다: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+481"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+490"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7280,12 +7280,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1427"/>
+        <location line="+1442"/>
         <source> credits/MiB</source>
         <translation> 크레딧/MiB</translation>
     </message>
     <message>
-        <location line="-1436"/>
+        <location line="-1451"/>
         <source>Never pay (receipts only)</source>
         <translation>지불 안 함(영수증만)</translation>
     </message>
@@ -7533,12 +7533,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1264"/>
+        <location line="+1279"/>
         <source>not read yet</source>
         <translation>아직 읽지 않음</translation>
     </message>
     <message>
-        <location line="-1262"/>
+        <location line="-1277"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>계정이 초과 인출 상태입니다. 계속하려면 새 크레딧 키가 필요합니다.</translation>
     </message>
@@ -8206,6 +8206,41 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>ed3k 인덱스 노드도 운영하는 eD2K 서버는 로그인 시 이를 알려줍니다. 끄기: 노드는 ed3k 로그에만 기록됩니다.</translation>
     </message>
     <message>
+        <location line="+3"/>
+        <source>This node is reachable: skip NAT tests (restarts the node)</source>
+        <translation>이 노드는 접속 가능: NAT 테스트 건너뛰기 (노드 재시작)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Only when the UDP port is forwarded or the computer has a public address. The node then counts as open without reach tests and serves as a router. Helps a small ed3k network where reach tests find no prober.</source>
+        <translation>UDP 포트가 포워딩되었거나 컴퓨터에 공인 주소가 있을 때만 사용하세요. 노드는 도달 테스트 없이 열린 것으로 간주되며 라우터 역할을 합니다. 도달 테스트에서 프로버를 찾지 못하는 작은 ed3k 네트워크에 도움이 됩니다.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Rooms</source>
+        <translation>대화방</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Store recent room posts on disk</source>
+        <translation>최근 대화방 글을 디스크에 저장</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private rooms are stored unencrypted.</source>
+        <translation>참여한 각 대화방의 최근 글을 파일에 저장하여 재시작 후 다시 표시합니다. 끄면 다른 멤버가 아직 가지고 있는 글만 돌아옵니다. 비공개 대화방의 글은 암호화되지 않은 채 저장됩니다.</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Posts kept per room</source>
+        <translation>대화방별 보관 글 수</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>The newest posts kept per room, in memory and on disk.</source>
+        <translation>대화방별로 메모리와 디스크에 보관하는 최신 글 수.</translation>
+    </message>
+    <message>
         <location line="+21"/>
         <source>Autostart highspeed download</source>
         <translation>고속 다운로드 자동 시작</translation>
@@ -8280,7 +8315,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>고속 다운로드가 실행 중이 아닙니다. 잔액: %1</translation>
     </message>
     <message>
-        <location line="-916"/>
+        <location line="-931"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -9237,7 +9272,7 @@ Its files are no longer shared here; what the network holds of it runs out. &quo
 <context>
     <name>eMule::Ed3kRoomTab</name>
     <message>
-        <location filename="../src/gui/panels/Ed3kRoomTab.cpp" line="+94"/>
+        <location filename="../src/gui/panels/Ed3kRoomTab.cpp" line="+95"/>
         <source>ed3k room %1</source>
         <translation>ed3k 방 %1</translation>
     </message>
@@ -9267,7 +9302,7 @@ Its files are no longer shared here; what the network holds of it runs out. &quo
         <translation>관리됨</translation>
     </message>
     <message>
-        <location line="+163"/>
+        <location line="+166"/>
         <source>Reply</source>
         <translation>답장</translation>
     </message>
@@ -13288,7 +13323,7 @@ Nick can be changed again in Options-&gt;IRC.</source>
     </message>
     <message>
         <location line="+34"/>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+306"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+312"/>
         <source>* %1 is now known as %2</source>
         <translation>* %1 님의 이름이 이제 %2입니다</translation>
     </message>
@@ -13472,7 +13507,7 @@ Please choose another:</source>
         <translation>%1 님이 당신을 친구로 추가했습니다!</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="-486"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="-492"/>
         <location line="+20"/>
         <source>Public: anyone with the link</source>
         <translation>공개: 링크가 있는 누구나</translation>
@@ -13567,14 +13602,14 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+237"/>
+        <location line="+243"/>
         <location line="+67"/>
         <location line="+339"/>
         <source>ed3k room</source>
         <translation>ed3k 방</translation>
     </message>
     <message>
-        <location line="-642"/>
+        <location line="-648"/>
         <source>Join the ed3k room &quot;%1&quot;?
 
 Other members see your nick and posts; your node takes part in passing the room&apos;s posts on.</source>
@@ -13588,7 +13623,7 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>방 (ed3k)</translation>
     </message>
     <message>
-        <location line="+87"/>
+        <location line="+93"/>
         <source>* %1 has left the room</source>
         <translation>* %1님이 방을 나갔습니다</translation>
     </message>

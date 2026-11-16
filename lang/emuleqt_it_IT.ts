@@ -6961,7 +6961,7 @@ I suoi nomi verranno poi risolti dopo le liste che segui già.</translation>
         <translation type="vanished">Il nodo ed3k usa il nickname della pagina Generale: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+481"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+490"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7306,12 +7306,12 @@ I suoi nomi verranno poi risolti dopo le liste che segui già.</translation>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1427"/>
+        <location line="+1442"/>
         <source> credits/MiB</source>
         <translation> crediti/MiB</translation>
     </message>
     <message>
-        <location line="-1436"/>
+        <location line="-1451"/>
         <source>Never pay (receipts only)</source>
         <translation>Non pagare mai (solo ricevute)</translation>
     </message>
@@ -7559,12 +7559,12 @@ I suoi nomi verranno poi risolti dopo le liste che segui già.</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1264"/>
+        <location line="+1279"/>
         <source>not read yet</source>
         <translation>non ancora letto</translation>
     </message>
     <message>
-        <location line="-1262"/>
+        <location line="-1277"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Il conto è scoperto: per continuare serve una nuova chiave dei crediti.</translation>
     </message>
@@ -8234,6 +8234,41 @@ Auto: 2 % della RAM, almeno 64 MiB e al massimo 512 MiB.</translation>
         <translation>I server eD2K che eseguono anche un nodo indice ed3k lo indicano al login. Disattivato: il nodo viene solo annotato nel log ed3k.</translation>
     </message>
     <message>
+        <location line="+3"/>
+        <source>This node is reachable: skip NAT tests (restarts the node)</source>
+        <translation>Questo nodo è raggiungibile: salta i test NAT (riavvia il nodo)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Only when the UDP port is forwarded or the computer has a public address. The node then counts as open without reach tests and serves as a router. Helps a small ed3k network where reach tests find no prober.</source>
+        <translation>Solo se la porta UDP è inoltrata o il computer ha un indirizzo pubblico. Il nodo conta allora come aperto senza test di raggiungibilità e fa da router. Utile in una piccola rete ed3k dove i test di raggiungibilità non trovano alcun verificatore.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Rooms</source>
+        <translation>Stanze</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Store recent room posts on disk</source>
+        <translation>Salva su disco i messaggi recenti delle stanze</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private rooms are stored unencrypted.</source>
+        <translation>Conserva in un file i messaggi recenti di ogni stanza a cui si è entrati, mostrati di nuovo dopo un riavvio. Senza questa opzione tornano solo i messaggi che altri membri conservano ancora. I messaggi delle stanze private sono salvati senza cifratura.</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Posts kept per room</source>
+        <translation>Messaggi conservati per stanza</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>The newest posts kept per room, in memory and on disk.</source>
+        <translation>I messaggi più recenti conservati per stanza, in memoria e su disco.</translation>
+    </message>
+    <message>
         <location line="+21"/>
         <source>Autostart highspeed download</source>
         <translation>Avvio automatico download ad alta velocità</translation>
@@ -8308,7 +8343,7 @@ Auto: 2 % della RAM, almeno 64 MiB e al massimo 512 MiB.</translation>
         <translation>Il download ad alta velocità non è attivo. Saldo: %1</translation>
     </message>
     <message>
-        <location line="-916"/>
+        <location line="-931"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -9266,7 +9301,7 @@ I suoi file non sono più condivisi qui; ciò che la rete ne conserva scade. &qu
 <context>
     <name>eMule::Ed3kRoomTab</name>
     <message>
-        <location filename="../src/gui/panels/Ed3kRoomTab.cpp" line="+94"/>
+        <location filename="../src/gui/panels/Ed3kRoomTab.cpp" line="+95"/>
         <source>ed3k room %1</source>
         <translation>stanza ed3k %1</translation>
     </message>
@@ -9296,7 +9331,7 @@ I suoi file non sono più condivisi qui; ciò che la rete ne conserva scade. &qu
         <translation>moderata</translation>
     </message>
     <message>
-        <location line="+163"/>
+        <location line="+166"/>
         <source>Reply</source>
         <translation>Rispondi</translation>
     </message>
@@ -13341,7 +13376,7 @@ Il nick può essere cambiato in Opzioni-&gt;IRC.</translation>
     </message>
     <message>
         <location line="+34"/>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+306"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+312"/>
         <source>* %1 is now known as %2</source>
         <translation>* %1 ora si chiama %2</translation>
     </message>
@@ -13525,7 +13560,7 @@ Scegli un altro:</translation>
         <translation>%1 ti ha aggiunto come amico!</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="-486"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="-492"/>
         <location line="+20"/>
         <source>Public: anyone with the link</source>
         <translation>Pubblica: chiunque abbia il link</translation>
@@ -13620,14 +13655,14 @@ Scegli un altro:</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+237"/>
+        <location line="+243"/>
         <location line="+67"/>
         <location line="+339"/>
         <source>ed3k room</source>
         <translation>Stanza ed3k</translation>
     </message>
     <message>
-        <location line="-642"/>
+        <location line="-648"/>
         <source>Join the ed3k room &quot;%1&quot;?
 
 Other members see your nick and posts; your node takes part in passing the room&apos;s posts on.</source>
@@ -13641,7 +13676,7 @@ Gli altri membri vedono il tuo nick e i tuoi messaggi; il tuo nodo partecipa all
         <translation>Stanze (ed3k)</translation>
     </message>
     <message>
-        <location line="+87"/>
+        <location line="+93"/>
         <source>* %1 has left the room</source>
         <translation>* %1 ha lasciato la stanza</translation>
     </message>
