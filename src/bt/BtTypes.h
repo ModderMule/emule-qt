@@ -183,6 +183,12 @@ struct BtFileRow {
     double availability = -1.0;
 };
 
+/// A torrent of the last run, read from its resume data without a session (BT off)
+struct BtSavedTorrent {
+    BtTorrentRow row;    ///< id, name, savePath, isPrivate, i2p, progress, sizes; state Paused
+    QList<BtFileRow> files;   ///< done = size when every piece of the file is there, else 0
+};
+
 struct BtPeerRow {
     QString address;  ///< "ip:port", or "<52 chars>.b32.i2p" for an I2P peer
     QString client;

@@ -12,6 +12,7 @@
 #include "Ed3kShared.h"
 
 #include <QDataStream>
+#include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
 #include <QFile>
@@ -123,6 +124,7 @@ private slots:
     void ed2kAliasIsMd4AndSizeBigEndian();
     void aSharedFileIsFetchedByItsRoot();
     void theCacheSparesAHashAfterARestart();
+    void unlistedCacheEntriesArePrunedOffTheMainThread();
     void aRemovedFileIsNotShared();
     void theUploadQueueServesInTurn();
     void keywordsArePublishedUnlessHeldBack();
@@ -263,6 +265,58 @@ void tst_Ed3kShared::theCacheSparesAHashAfterARestart()
         QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
         QCOMPARE(shared.hashCount(), 1);
         QCOMPARE(*shared.rootOf(md4), rootOf(other));
+        shared.stop();
+    }
+}
+
+void tst_Ed3kShared::unlistedCacheEntriesArePrunedOffTheMainThread()
+{
+    // #200: the stat of unlisted entries ran on every save; now once after the full scan, on a pool thread
+    QTemporaryDir da;
+    QVERIFY(da.isValid());
+    const QByteArray keep = payload(int(kBlock + 11), 5), gone = payload(int(kBlock + 22), 6);
+    const QString keepPath = QDir(da.path()).filePath(QStringLiteral("keep.bin"));
+    const QString gonePath = QDir(da.path()).filePath(QStringLiteral("gone.bin"));
+    QVERIFY(writeFile(keepPath, keep) && writeFile(gonePath, gone));
+    const QDateTime goneDate = QFileInfo(gonePath).lastModified();
+    Ed3kSession a;
+    QVERIFY(a.start(loopback(da.path())));
+    FakeSource src;
+    const QByteArray keepMd4(16, char(0x51)), goneMd4(16, char(0x52));
+    const SharedEntry keepEntry{keepMd4, keepPath, QStringLiteral("keep.bin"), std::uint64_t(keep.size())};
+    const SharedEntry goneEntry{goneMd4, gonePath, QStringLiteral("gone.bin"), std::uint64_t(gone.size())};
+    src.entries = {keepEntry, goneEntry};
+    {
+        Ed3kShared shared(a, src, da.path());
+        QSignalSpy spy(&shared, &Ed3kShared::fileShared);
+        shared.start();
+        QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 2, 20000);
+        shared.stop();
+    }
+    // both unlisted, one file gone: the scan's check drops only that one
+    QVERIFY(QFile::remove(gonePath));
+    src.entries.clear();
+    {
+        Ed3kShared shared(a, src, da.path());
+        shared.start();
+        shared.onListScanned(true);
+        QTest::qWait(500);   // pool check + queued result
+        shared.stop();
+        eMule::BackgroundFileWriter::instance().flush();
+    }
+    // same file and date again: the kept entry spares a hash, the dropped one does not
+    QVERIFY(writeFile(gonePath, gone));
+    {
+        QFile f(gonePath);
+        QVERIFY(f.open(QIODevice::ReadWrite) && f.setFileTime(goneDate, QFileDevice::FileModificationTime));
+    }
+    src.entries = {keepEntry, goneEntry};
+    {
+        Ed3kShared shared(a, src, da.path());
+        QSignalSpy spy(&shared, &Ed3kShared::fileShared);
+        shared.start();
+        QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 2, 20000);
+        QCOMPARE(shared.hashCount(), 1);
         shared.stop();
     }
 }

@@ -117,6 +117,9 @@ public:
     /// files() with progress newer than the last change of the torrent; nullopt: asked,
     /// torrentChanged follows with it
     [[nodiscard]] std::optional<QList<BtFileRow>> currentFiles(const QString& id) const;
+    /// The torrents of the last run from @p stateDir's resume data, no session needed (BT
+    /// off: the share guard still applies btShareMode). Magnets without metadata are left out.
+    [[nodiscard]] static QList<BtSavedTorrent> savedTorrents(const QString& stateDir, const QString& downloadDir);
     [[nodiscard]] QList<BtPeerRow> peers(const QString& id) const;
     [[nodiscard]] QList<BtTrackerRow> trackers(const QString& id) const;
     /// Peers per piece, bucketed (BtTorrentView::availabilityMap).

@@ -7,7 +7,8 @@
 /// would hash half-done files. Blocked: an unfinished torrent's whole content; once
 /// done, only its files left incomplete (skipped ones). Fed by the session's signals.
 /// btShareMode (#177): Off keeps every torrent's content out, finished or not; Public
-/// keeps private tracker (ALT) and I2P torrents out.
+/// keeps private tracker (ALT) and I2P torrents out, unless an allowed torrent covers the
+/// same files. Fed from the resume data while BitTorrent is off.
 
 #ifdef EMULE_HAVE_BITTORRENT
 
@@ -64,6 +65,9 @@ private:
         bool operator==(const Root&) const = default;
     };
     [[nodiscard]] bool rootBlocked(const Root& r) const;
+    /// a blocked root is @p key, above or below it
+    [[nodiscard]] bool overlapsBlocked(const QString& key) const;
+    [[nodiscard]] static bool isUnder(const QString& key, const QString& root);
     /// each torrent's root, kept after removal for the session
     QHash<QString, Root> m_roots;
     BtShareMode m_mode = BtShareMode::All;

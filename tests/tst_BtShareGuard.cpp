@@ -21,12 +21,14 @@ class tst_BtShareGuard : public QObject {
 
 private slots:
     void unfinished_blocksTheWholeContent();
+    void magnetWithoutMetadata_blocksNothing();
     void done_releasesTheTreeAndKeepsSkippedFilesOut();
     void removed_keepsItsBlocks();
     void finished_listsCompleteFilesOnce();
     void restart_completedStaysSharedWhileChecked();
     void shareFinishedOff_blocksDoneTorrents();
     void shareModePublic_blocksPrivateAndI2p();
+    void shareModePublic_allowedRootWins();
     void landedFiles_blockOnlyWhileOff();
 };
 
@@ -62,6 +64,23 @@ void tst_BtShareGuard::unfinished_blocksTheWholeContent()
     guard.update(QStringLiteral("t"), row(QStringLiteral("/in"), QStringLiteral("Album"), 1.0, BtState::CheckingFiles), files);
     QVERIFY(guard.blocks(QStringLiteral("/in/Album/02.mp3")));
     QCOMPARE(asked, 0);
+}
+
+void tst_BtShareGuard::magnetWithoutMetadata_blocksNothing()
+{
+    BtShareGuard guard;
+    guard.setShareMode(BtShareMode::Off);
+    const auto files = [] { return QList<BtFileRow>{}; };
+    // no name yet: nothing on disk, the save dir stays shared
+    const auto c = guard.update(QStringLiteral("t"), row(QStringLiteral("/in"), {}, 0, BtState::DownloadingMetadata), files);
+    QVERIFY(!c.blockedMore);
+    QVERIFY(!guard.blocks(QStringLiteral("/in/other.mkv")));
+    QVERIFY(!guard.blocks(QStringLiteral("/in/Album/01.mp3")));
+    // metadata came: its content is out
+    const auto named = guard.update(QStringLiteral("t"), row(QStringLiteral("/in"), QStringLiteral("Album"), 0, BtState::Downloading), files);
+    QVERIFY(named.blockedMore);
+    QVERIFY(guard.blocks(QStringLiteral("/in/Album/01.mp3")));
+    QVERIFY(!guard.blocks(QStringLiteral("/in/other.mkv")));
 }
 
 void tst_BtShareGuard::done_releasesTheTreeAndKeepsSkippedFilesOut()
@@ -249,6 +268,35 @@ void tst_BtShareGuard::shareModePublic_blocksPrivateAndI2p()
     QVERIFY(guard.setShareMode(BtShareMode::All));
     QVERIFY(!guard.blocks(QStringLiteral("/in/Private/01.mp3")));
     QVERIFY(!guard.blocks(QStringLiteral("/in/Anon.mkv")));
+}
+
+// the same files as a private and a public torrent: public, so shared (Off still blocks)
+void tst_BtShareGuard::shareModePublic_allowedRootWins()
+{
+    const auto files = [] { return QList<BtFileRow>{}; };
+    BtShareGuard guard;
+    QVERIFY(guard.setShareMode(BtShareMode::Public));
+    BtTorrentRow priv = row(QStringLiteral("/in"), QStringLiteral("Album"), 1.0, BtState::Seeding);
+    priv.isPrivate = true;
+    QVERIFY(guard.update(QStringLiteral("priv"), priv, files).blockedMore);
+    QVERIFY(guard.blocks(QStringLiteral("/in/Album/01.mp3")));
+
+    // one public track inside the private folder: that file only
+    const BtTorrentRow track = row(QStringLiteral("/in/Album"), QStringLiteral("01.mp3"), 1.0, BtState::Seeding);
+    const auto c1 = guard.update(QStringLiteral("track"), track, files);
+    QVERIFY(c1.released.contains(QStringLiteral("/in/Album/01.mp3")));
+    QVERIFY(!guard.blocks(QStringLiteral("/in/Album/01.mp3")));
+    QVERIFY(guard.blocks(QStringLiteral("/in/Album/02.mp3")));
+    QVERIFY(guard.update(QStringLiteral("track"), track, files).released.isEmpty());   // no news
+
+    // the whole folder public too
+    const BtTorrentRow pub = row(QStringLiteral("/in"), QStringLiteral("Album"), 1.0, BtState::Seeding);
+    QVERIFY(guard.update(QStringLiteral("pub"), pub, files).released.contains(QStringLiteral("/in/Album")));
+    QVERIFY(!guard.blocks(QStringLiteral("/in/Album/02.mp3")));
+    QVERIFY(!guard.blocks(QStringLiteral("/in/Album/sub/03.mp3")));
+
+    QVERIFY(guard.setShareMode(BtShareMode::Off));
+    QVERIFY(guard.blocks(QStringLiteral("/in/Album/02.mp3")));
 }
 
 void tst_BtShareGuard::landedFiles_blockOnlyWhileOff()

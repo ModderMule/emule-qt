@@ -32,7 +32,16 @@ final class AddressGuard implements ProxySelectorInterface {
         Blocked(final String host) {
             super("non-public address: " + host);
             this.host = host;
+            BLOCKED.put(Thread.currentThread(), host);
         }
+    }
+
+    /** The last host refused on a thread: plugins swallow the exception and say "gone". */
+    private static final java.util.Map<Thread, String> BLOCKED = new java.util.concurrent.ConcurrentHashMap<Thread, String>();
+
+    /** The host refused on @p thread since the last call; null: none. */
+    static String takeBlocked(final Thread thread) {
+        return BLOCKED.remove(thread);
     }
 
     private static final List<HTTPProxy> DIRECT = Collections.singletonList(HTTPProxy.NONE);

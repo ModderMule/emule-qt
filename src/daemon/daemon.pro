@@ -76,6 +76,9 @@ win32 {
         "$$OPENSSL_DIR/include" "$$ZLIB_DIR/include" \
         "$$MINIUPNPC_DIR/include" "$$YAMLCPP_DIR/include" "$$LIBARCHIVE_DIR/include"
 
+    # an old libssl costs QUIC NAT-T only, not the start (cmake/Ngtcp2.cmake, #206)
+    msvc: LIBS += -ldelayimp
+    msvc: QMAKE_LFLAGS += /DELAYLOAD:ngtcp2_crypto_ossl.dll /IGNORE:4199
     LIBS += \
         -L"$$OPENSSL_DIR/lib" -ltorrent-rasterbar -lngtcp2_crypto_ossl -lngtcp2 -lssl -lcrypto \
         -L"$$ZLIB_DIR/lib" -lzlib \

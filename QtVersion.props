@@ -34,6 +34,13 @@
   </PropertyGroup>
   <PropertyGroup Label="QuicNatT">
     <EmuleQuicDefines>EMULE_HAVE_QUIC_NATT=1;</EmuleQuicDefines>
-    <EmuleQuicLibs>ngtcp2_crypto_ossl.lib;ngtcp2.lib;</EmuleQuicLibs>
+    <EmuleQuicLibs>ngtcp2_crypto_ossl.lib;ngtcp2.lib;delayimp.lib;</EmuleQuicLibs>
   </PropertyGroup>
+  <!-- As cmake/Ngtcp2.cmake: an old libssl must cost QUIC NAT-T only, not the start (#206) -->
+  <ItemDefinitionGroup Label="QuicNatTDelayLoad">
+    <Link>
+      <DelayLoadDLLs>ngtcp2_crypto_ossl.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+      <AdditionalOptions>/IGNORE:4199 %(AdditionalOptions)</AdditionalOptions>
+    </Link>
+  </ItemDefinitionGroup>
 </Project>

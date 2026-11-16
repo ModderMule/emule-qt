@@ -63,6 +63,8 @@
 #include <QDir>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDropEvent>
+#include <QMimeData>
 #include <QFileInfo>
 #include <QFont>
 #include <QFormLayout>
@@ -277,6 +279,8 @@ QString SharedFilesPanel::dropSharePath(const QTreeWidgetItem* dragged, const QT
 
 bool SharedFilesPanel::eventFilter(QObject* watched, QEvent* event)
 {
+    if (m_fileView && watched == m_fileView->viewport())
+        return handleExternalShareDrop(event) || QWidget::eventFilter(watched, event);
     if (watched != m_folderTree->viewport())
         return QWidget::eventFilter(watched, event);
 
@@ -954,6 +958,11 @@ QWidget* SharedFilesPanel::createTopSection()
 
     connect(m_fileView, &QTreeView::customContextMenuRequested,
             this, &SharedFilesPanel::onFileContextMenu);
+
+    // Files and folders dragged from the desktop get shared — MFC CShareDropTarget,
+    // SharedFilesCtrl.cpp:1673-1760
+    m_fileView->viewport()->setAcceptDrops(true);
+    m_fileView->viewport()->installEventFilter(this);
 
     // MFC CSharedFilesCtrl (srchybrid/SharedFilesCtrl.cpp:1269 OnNmDblClk, :871 IDA_ENTER,
     // :989 MPG_ALTENTER): a plain double click or Enter opens the file, and ALT with
@@ -2799,6 +2808,151 @@ void SharedFilesPanel::moveEd3kKey(const QStringList& hashes, bool toAnon)
             AsyncMessageBox::warning(self, tr("ed3k Key"), tr("The file was not moved: %1").arg(why));
         });
     }
+}
+
+// ---------------------------------------------------------------------------
+// Desktop drops on the file list — MFC CShareDropTarget (SharedFilesCtrl.cpp:1673-1760)
+// ---------------------------------------------------------------------------
+
+bool SharedFilesPanel::acceptsExternalShareDrop(const QDropEvent* event) const
+{
+    // a drag of our own carries a source; the dropped paths must be the core's disk
+    if (event->source() || !event->mimeData()->hasUrls() || !m_ipc
+        || !m_ipc->isConnected() || !m_ipc->isLocalConnection())
+        return false;
+    const QList<QUrl> urls = event->mimeData()->urls();
+    return std::ranges::any_of(urls, [](const QUrl& u) { return u.isLocalFile(); });
+}
+
+bool SharedFilesPanel::handleExternalShareDrop(QEvent* event)
+{
+    switch (event->type()) {
+    case QEvent::DragEnter:
+    case QEvent::DragMove: {
+        auto* drag = static_cast<QDragMoveEvent*>(event);
+        if (!acceptsExternalShareDrop(drag))
+            return false;   // not ours: the main window may still take a .torrent / .nzb
+        drag->setDropAction(Qt::CopyAction);
+        drag->accept();
+        return true;
+    }
+    case QEvent::Drop: {
+        auto* drop = static_cast<QDropEvent*>(event);
+        if (!acceptsExternalShareDrop(drop))
+            return false;
+        drop->setDropAction(Qt::CopyAction);
+        drop->accept();
+        // not inside the drop: the drag source waits for it
+        QTimer::singleShot(0, this, [this, urls = drop->mimeData()->urls()] { shareDroppedPaths(urls); });
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
+void SharedFilesPanel::shareDroppedPaths(const QList<QUrl>& urls)
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    const QStringList sharedDirs = thePrefs.sharedDirs();
+    QStringList files;
+    QStringList dirs;
+    int skipped = 0;
+    bool singleDirectory = true;   // all files in one folder, which is this one
+    QString singleDir;
+
+    // Quick pre-check as MFC; the core checks again when sharing
+    for (const QUrl& url : urls) {
+        if (!url.isLocalFile())
+            continue;
+        const QFileInfo fi(url.toLocalFile());
+        const QString path = QDir::cleanPath(fi.absoluteFilePath());
+        if (!fi.exists()) {
+            logWarning(tr("Drag&Drop'ed shared file not found (%1)").arg(QDir::toNativeSeparators(path)));
+            ++skipped;
+            continue;
+        }
+        if (fi.isDir()) {
+            if (!thePrefs.isShareableDirectory(path) || SharedDirState::isSharedDir(sharedDirs, path)
+                || SharedDirState::isSharedDir(dirs, path)) {
+                logInfo(tr("Drag&Drop'ed shared folder ignored (%1)").arg(QDir::toNativeSeparators(path)));
+                ++skipped;
+                continue;
+            }
+            dirs << path;
+            continue;
+        }
+        const auto size = static_cast<quint64>(fi.size());
+        if (!fi.isFile() || size == 0 || size > MAX_EMULE_FILE_SIZE) {
+            logInfo(tr("Drag&Drop'ed shared file ignored (%1)").arg(QDir::toNativeSeparators(path)));
+            ++skipped;
+            continue;
+        }
+        files << path;
+        const QString dir = fi.absolutePath();
+        if (singleDir.isEmpty())
+            singleDir = dir;
+        else if (SharedDirState::dirKey(singleDir) != SharedDirState::dirKey(dir))
+            singleDirectory = false;
+    }
+
+    if (skipped > 0)
+        StatusBarNotifier::post(tr("%n dropped item(s) cannot be shared", nullptr, skipped));
+    if (files.isEmpty() && dirs.isEmpty())
+        return;
+
+    // Folders first: they make single entries for files inside them unneeded (IPC keeps order)
+    if (!dirs.isEmpty())
+        sendShareDirsUpdate(sharedDirs + dirs);
+
+    if (!files.isEmpty()) {
+        auto failed = std::make_shared<int>(0);
+        m_ipc->sendBatchRequest(files, [](const QString& path) {
+            IpcMessage req(IpcMsgType::SetFileShared);
+            req.append(path);
+            req.append(true);
+            return req;
+        }, this, [this, failed] {
+            if (*failed > 0)
+                StatusBarNotifier::post(tr("Could not share %n dropped file(s)", nullptr, *failed));
+            requestSharedFiles();
+            syncSharedDirState();   // a single shared file bolds its folder
+        }, [failed](const QString& path, const IpcMessage& reply) {
+            if (reply.type() != IpcMsgType::Result || !reply.fieldBool(0)) {
+                ++*failed;
+                logWarning(tr("Could not share dropped file (%1)").arg(QDir::toNativeSeparators(path)));
+            }
+        });
+    }
+
+    // Show where the drop went, as MFC
+    QTreeWidgetItem* show = m_allSharedItem;
+    if (!files.isEmpty() && dirs.isEmpty() && singleDirectory) {
+        // the folder in "All Directories" when loaded; MFC expands to it
+        if (QTreeWidgetItem* fsItem = findFilesystemItem(singleDir); fsItem && fsItem != m_allDirsItem)
+            show = fsItem;
+    } else if (files.isEmpty()) {
+        show = m_sharedDirsItem;
+        if (dirs.size() == 1) {
+            const QString key = SharedDirState::dirKey(dirs.constFirst());
+            QList<QTreeWidgetItem*> pending{m_sharedDirsItem};
+            while (!pending.isEmpty()) {
+                QTreeWidgetItem* item = pending.takeLast();
+                for (int i = 0; i < item->childCount(); ++i) {
+                    QTreeWidgetItem* child = item->child(i);
+                    if (SharedDirState::dirKey(child->data(0, kRolePath).toString()) == key)
+                        show = child;
+                    pending.append(child);
+                }
+            }
+        }
+    }
+    for (QTreeWidgetItem* p = show->parent(); p; p = p->parent())
+        p->setExpanded(true);
+    m_folderTree->setCurrentItem(show);
+    m_folderTree->scrollToItem(show);
 }
 
 } // namespace eMule

@@ -306,7 +306,8 @@ final class Jd {
         final PluginClassLoader.PluginClassLoaderChild cl = PluginClassLoader.getInstance().getChild();
         PluginClassLoader.setThreadPluginClassLoaderChild(cl, cl);
         final PluginForHost plugin = lazy.newInstance(cl);
-        plugin.setBrowser(plugin.createNewBrowserInstance());
+        // every connection of the plugin checked, redirects too (AddressGuard)
+        plugin.setBrowser(GuardedBrowser.of(plugin));
         plugin.setLogger(quietLog(lazy.getDisplayName()));
         plugin.setDownloadLink(link);
         plugin.init();

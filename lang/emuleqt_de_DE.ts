@@ -860,7 +860,7 @@ Aktivieren Sie unter Optionen → Weboberfläche die Weboberfläche oder die RES
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+668"/>
+        <location filename="../src/gui/app/main.cpp" line="+807"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -5194,7 +5194,7 @@ Hochgeladen:	%12</translation>
 <context>
     <name>eMule::Ed2kKadPanel</name>
     <message>
-        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+228"/>
+        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+231"/>
         <location line="+129"/>
         <location line="+155"/>
         <source>▸ Contacts (0)</source>
@@ -6129,7 +6129,7 @@ Neuen anonymen Schlüssel erstellen?</translation>
         </translation>
     </message>
     <message>
-        <location line="+214"/>
+        <location line="+219"/>
         <location line="+318"/>
         <source>Connect</source>
         <translation>Verbinden</translation>
@@ -6158,7 +6158,7 @@ Neuen anonymen Schlüssel erstellen?</translation>
         <translation type="vanished">Quellen bearbeiten...</translation>
     </message>
     <message>
-        <location line="-175"/>
+        <location line="-180"/>
         <source>No sources</source>
         <translation>Keine Quellen</translation>
     </message>
@@ -6171,7 +6171,7 @@ Neuen anonymen Schlüssel erstellen?</translation>
         </translation>
     </message>
     <message>
-        <location line="+154"/>
+        <location line="+159"/>
         <source>From sources</source>
         <translation>Aus Quellen</translation>
     </message>
@@ -6580,7 +6580,7 @@ Ihre Namen werden dann nach den Listen aufgelöst, denen Sie bereits folgen.</tr
         <translation type="vanished">Der ed3k-Knoten verwendet den Benutzernamen der Seite Allgemein: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+448"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+445"/>
         <location line="+11"/>
         <location line="+564"/>
         <location line="+11"/>
@@ -6687,12 +6687,12 @@ Ihre Namen werden dann nach den Listen aufgelöst, denen Sie bereits folgen.</tr
         <translation>Knoten finden</translation>
     </message>
     <message>
-        <location line="+1387"/>
+        <location line="+1381"/>
         <source>Find ed3k nodes in the local network (restarts the node)</source>
         <translation>ed3k-Knoten im lokalen Netzwerk finden (startet den Knoten neu)</translation>
     </message>
     <message>
-        <location line="-1385"/>
+        <location line="-1379"/>
         <source>Node lists for the first contact, one ed3k:nodes link per line:</source>
         <translation>Knotenlisten für den ersten Kontakt, ein ed3k:nodes-Link pro Zeile:</translation>
     </message>
@@ -6900,12 +6900,12 @@ Ihre Namen werden dann nach den Listen aufgelöst, denen Sie bereits folgen.</tr
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1264"/>
+        <location line="+1258"/>
         <source> credits/MiB</source>
         <translation> Credits/MiB</translation>
     </message>
     <message>
-        <location line="-1273"/>
+        <location line="-1267"/>
         <source>Never pay (receipts only)</source>
         <translation>Nie zahlen (nur Quittungen)</translation>
     </message>
@@ -7153,12 +7153,12 @@ Ihre Namen werden dann nach den Listen aufgelöst, denen Sie bereits folgen.</tr
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1101"/>
+        <location line="+1095"/>
         <source>not read yet</source>
         <translation>noch nicht gelesen</translation>
     </message>
     <message>
-        <location line="-1099"/>
+        <location line="-1093"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Das Konto ist überzogen: Ein neuer Credit-Schlüssel ist der Weg weiter.</translation>
     </message>
@@ -7680,24 +7680,20 @@ Auto: 2 % des RAM, mindestens 64 MiB und höchstens 512 MiB.</translation>
         <translation>Solange der freie RAM unter diesem Anteil des gesamten liegt, bleiben nur genutzte Blockhashes im RAM.</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Kad</source>
-        <translation>Kad</translation>
+        <translation type="vanished">Kad</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>RAM for records of other nodes</source>
-        <translation>RAM für Einträge anderer Knoten</translation>
+        <translation type="vanished">RAM für Einträge anderer Knoten</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Default (128 MiB)</source>
-        <translation>Standard (128 MiB)</translation>
+        <translation type="vanished">Standard (128 MiB)</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>RAM for the keyword and source records this node keeps for other ed3k nodes (about 1 KiB each). Over it, new records are refused and other nodes store them elsewhere. Applies at the next start of the ed3k node.</source>
-        <translation>RAM für die Stichwort- und Quelleneinträge, die dieser Knoten für andere ed3k-Knoten aufbewahrt (je etwa 1 KiB). Darüber werden neue Einträge abgelehnt und andere Knoten speichern sie anderswo. Gilt ab dem nächsten Start des ed3k-Knotens.</translation>
+        <translation type="vanished">RAM für die Stichwort- und Quelleneinträge, die dieser Knoten für andere ed3k-Knoten aufbewahrt (je etwa 1 KiB). Darüber werden neue Einträge abgelehnt und andere Knoten speichern sie anderswo. Gilt ab dem nächsten Start des ed3k-Knotens.</translation>
     </message>
     <message>
         <location line="+3"/>
@@ -7794,7 +7790,7 @@ Auto: 2 % des RAM, mindestens 64 MiB und höchstens 512 MiB.</translation>
         <translation>Highspeed-Download läuft nicht. Guthaben: %1</translation>
     </message>
     <message>
-        <location line="-753"/>
+        <location line="-747"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -13430,17 +13426,21 @@ Andere Mitglieder sehen Ihren Nickname und Ihre Beiträge; Ihr Knoten hilft beim
 <context>
     <name>eMule::KadGraphBase</name>
     <message>
-        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+87"/>
+        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+110"/>
         <source>Automatically show active searches</source>
         <translation>automatisch aktive Suchen anzeigen</translation>
     </message>
     <message>
-        <location line="+23"/>
-        <source>Address</source>
-        <translation>Adresse</translation>
+        <location line="+53"/>
+        <source>Loading...</source>
+        <translation>Laden...</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <source>Address</source>
+        <translation type="vanished">Adresse</translation>
+    </message>
+    <message>
+        <location line="-31"/>
         <source>Country</source>
         <translation>Land</translation>
     </message>
@@ -13448,7 +13448,7 @@ Andere Mitglieder sehen Ihren Nickname und Ihre Beiträge; Ihr Knoten hilft beim
 <context>
     <name>eMule::KadIncomingGraph</name>
     <message numerus="yes">
-        <location filename="../src/gui/controls/KadIncomingGraph.cpp" line="+117"/>
+        <location filename="../src/gui/controls/KadIncomingGraph.cpp" line="+116"/>
         <source>%n result(s) sent</source>
         <translation>
             <numerusform>%n Ergebnis gesendet</numerusform>
@@ -13466,12 +13466,12 @@ Andere Mitglieder sehen Ihren Nickname und Ihre Beiträge; Ihr Knoten hilft beim
         <translation>Diese Anfrage hat kein Ziel: ihre Kontakte führen nirgendwohin.</translation>
     </message>
     <message>
-        <location line="+57"/>
+        <location line="+59"/>
         <source>Select an incoming search to see who asked us and which closer contacts we handed out.</source>
         <translation>Wählen Sie eine eingehende Suche, um zu sehen, wer uns gefragt hat und welche näheren Kontakte wir weitergegeben haben.</translation>
     </message>
     <message>
-        <location line="+53"/>
+        <location line="+38"/>
         <source>Too small to draw</source>
         <translation>Zu klein zum Zeichnen</translation>
     </message>
@@ -13482,18 +13482,18 @@ Andere Mitglieder sehen Ihren Nickname und Ihre Beiträge; Ihr Knoten hilft beim
     </message>
     <message>
         <location line="+40"/>
-        <location line="+107"/>
+        <location line="+105"/>
         <source>Requester</source>
         <translation>Anfragender</translation>
     </message>
     <message>
-        <location line="-106"/>
-        <location line="+107"/>
+        <location line="-104"/>
+        <location line="+105"/>
         <source>This node</source>
         <translation>Dieser Knoten</translation>
     </message>
     <message>
-        <location line="-105"/>
+        <location line="-103"/>
         <source>No contacts handed out</source>
         <translation>Keine Kontakte weitergegeben</translation>
     </message>
@@ -13508,7 +13508,7 @@ Andere Mitglieder sehen Ihren Nickname und Ihre Beiträge; Ihr Knoten hilft beim
         <translation>Weitergegeben (%1)</translation>
     </message>
     <message>
-        <location line="+104"/>
+        <location line="+102"/>
         <source>Handed-out contact</source>
         <translation>Weitergegebener Kontakt</translation>
     </message>
@@ -13766,12 +13766,12 @@ Andere Mitglieder sehen Ihren Nickname und Ihre Beiträge; Ihr Knoten hilft beim
         <translation type="vanished">Keine Suche ausgewählt</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+351"/>
+        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+380"/>
         <source>Distance</source>
         <translation>Distanz</translation>
     </message>
     <message>
-        <location line="-259"/>
+        <location line="-251"/>
         <source>Time</source>
         <translation>Zeit</translation>
     </message>
@@ -13790,7 +13790,7 @@ Andere Mitglieder sehen Ihren Nickname und Ihre Beiträge; Ihr Knoten hilft beim
         <translation>0 = Ziel</translation>
     </message>
     <message>
-        <location line="+229"/>
+        <location line="+221"/>
         <source>Routing Table</source>
         <translation>Routing-Tabelle</translation>
     </message>
@@ -24681,7 +24681,7 @@ Ordner:	%13</translation>
 <context>
     <name>eMule::SharedFilesPanel</name>
     <message>
-        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+836"/>
+        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+840"/>
         <source>Shared Files (0)</source>
         <translation>Freigegebene Dateien (0)</translation>
     </message>
@@ -24692,19 +24692,19 @@ Ordner:	%13</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1631"/>
+        <location line="+1636"/>
         <location line="+531"/>
         <source>Open Folder</source>
         <translation>Ordner öffnen</translation>
     </message>
     <message>
-        <location line="-2150"/>
+        <location line="-2155"/>
         <source>Rename...</source>
         <translation>Umbenennen...</translation>
     </message>
     <message>
         <location line="+196"/>
-        <location line="+1996"/>
+        <location line="+2001"/>
         <source>Copy eD2K Links</source>
         <translation>eD2K-Links kopieren</translation>
     </message>
@@ -24717,8 +24717,8 @@ Ordner:	%13</translation>
         <translation type="vanished">Neuer Dateiname:</translation>
     </message>
     <message>
-        <location line="-2173"/>
-        <location line="+2135"/>
+        <location line="-2178"/>
+        <location line="+2140"/>
         <source>Delete From Disk</source>
         <translation>Von Datenträger löschen</translation>
     </message>
@@ -24733,12 +24733,12 @@ Ordner:	%13</translation>
         <translation>Möchten Sie &quot;%1&quot; wirklich dauerhaft von der Festplatte löschen?</translation>
     </message>
     <message>
-        <location line="-1069"/>
+        <location line="-1074"/>
         <source>Unshare</source>
         <translation>Freigabe aufheben</translation>
     </message>
     <message>
-        <location line="+1124"/>
+        <location line="+1129"/>
         <source>Unshare File</source>
         <translation>Dateifreigabe aufheben</translation>
     </message>
@@ -24752,32 +24752,32 @@ The file will remain on disk.</source>
 Die Datei bleibt auf der Festplatte.</translation>
     </message>
     <message>
-        <location line="-1107"/>
-        <location line="+2115"/>
+        <location line="-1112"/>
+        <location line="+2120"/>
         <source>Priority (Upload)</source>
         <translation>Priorität (Upload)</translation>
     </message>
     <message>
-        <location line="-2100"/>
-        <location line="+2117"/>
+        <location line="-2105"/>
+        <location line="+2122"/>
         <source>Very Low</source>
         <translation>Sehr niedrig</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+2117"/>
+        <location line="-2121"/>
+        <location line="+2122"/>
         <source>Low</source>
         <translation>Niedrig</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+2117"/>
+        <location line="-2121"/>
+        <location line="+2122"/>
         <source>Normal</source>
         <translation>Normal</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+2117"/>
+        <location line="-2121"/>
+        <location line="+2122"/>
         <source>High</source>
         <translation>Hoch</translation>
     </message>
@@ -24786,13 +24786,13 @@ Die Datei bleibt auf der Festplatte.</translation>
         <translation type="vanished">Sehr hoch</translation>
     </message>
     <message>
-        <location line="-2114"/>
-        <location line="+2116"/>
+        <location line="-2119"/>
+        <location line="+2121"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-2102"/>
+        <location line="-2107"/>
         <source>Collection</source>
         <translation>Sammlung</translation>
     </message>
@@ -24829,24 +24829,24 @@ Die Datei bleibt auf der Festplatte.</translation>
     </message>
     <message>
         <location line="+19"/>
-        <location line="+2007"/>
+        <location line="+2012"/>
         <source>Details...</source>
         <translation>Details...</translation>
     </message>
     <message>
-        <location line="-2000"/>
-        <location line="+2003"/>
+        <location line="-2005"/>
+        <location line="+2008"/>
         <source>Comments...</source>
         <translation>Kommentare...</translation>
     </message>
     <message>
-        <location line="-1988"/>
-        <location line="+1994"/>
+        <location line="-1993"/>
+        <location line="+1999"/>
         <source>eD2K Links...</source>
         <translation>eD2K-Links...</translation>
     </message>
     <message>
-        <location line="-1932"/>
+        <location line="-1937"/>
         <source>Find...</source>
         <translation>Suchen...</translation>
     </message>
@@ -24890,7 +24890,7 @@ Die Datei bleibt auf der Festplatte.</translation>
         <translation>Alle Verzeichnisse</translation>
     </message>
     <message>
-        <location line="+246"/>
+        <location line="+251"/>
         <source>Current Session</source>
         <translation>Aktuelle Sitzung</translation>
     </message>
@@ -25017,7 +25017,7 @@ Die Datei bleibt auf der Festplatte.</translation>
         <translation>Kopieren</translation>
     </message>
     <message>
-        <location line="-920"/>
+        <location line="-925"/>
         <source>All</source>
         <translation>Alle</translation>
     </message>
@@ -25028,24 +25028,24 @@ Die Datei bleibt auf der Festplatte.</translation>
     </message>
     <message>
         <location line="+57"/>
-        <location line="+2117"/>
+        <location line="+2122"/>
         <source>Release</source>
         <translation>Release</translation>
     </message>
     <message>
-        <location line="-2090"/>
-        <location line="+1509"/>
+        <location line="-2095"/>
+        <location line="+1514"/>
         <source>Create ed3k Set...</source>
         <translation>ed3k-Set erstellen...</translation>
     </message>
     <message>
-        <location line="-1501"/>
-        <location line="+1503"/>
+        <location line="-1506"/>
+        <location line="+1508"/>
         <source>Publish New Version...</source>
         <translation>Neue Version veröffentlichen...</translation>
     </message>
     <message>
-        <location line="-1382"/>
+        <location line="-1387"/>
         <source>Move to Anonymous ed3k Key...</source>
         <translation>Zum anonymen ed3k-Schlüssel verschieben...</translation>
     </message>
@@ -25056,12 +25056,12 @@ Die Datei bleibt auf der Festplatte.</translation>
     </message>
     <message>
         <location line="+21"/>
-        <location line="+1452"/>
+        <location line="+1457"/>
         <source>Create Torrent...</source>
         <translation>Torrent erstellen...</translation>
     </message>
     <message>
-        <location line="-1437"/>
+        <location line="-1442"/>
         <source>Add To IRC Clipboard</source>
         <translation>Zur IRC-Zwischenablage hinzufügen</translation>
     </message>
@@ -25076,7 +25076,7 @@ Die Datei bleibt auf der Festplatte.</translation>
         <translation>Meine ed3k-Sets</translation>
     </message>
     <message>
-        <location line="+359"/>
+        <location line="+364"/>
         <source>Basic Options</source>
         <translation>Grundeinstellungen</translation>
     </message>
@@ -25227,6 +25227,42 @@ Sie werden dann mit der Adresse dieses Knotens veröffentlicht: jeder kann sehen
         <location line="+0"/>
         <source>The file was not moved: %1</source>
         <translation>Die Datei wurde nicht verschoben: %1</translation>
+    </message>
+    <message>
+        <location line="+65"/>
+        <source>Drag&amp;Drop&apos;ed shared file not found (%1)</source>
+        <translation>Per Drag&amp;Drop abgelegte Datei nicht gefunden (%1)</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Drag&amp;Drop&apos;ed shared folder ignored (%1)</source>
+        <translation>Per Drag&amp;Drop abgelegter Ordner ignoriert (%1)</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Drag&amp;Drop&apos;ed shared file ignored (%1)</source>
+        <translation>Per Drag&amp;Drop abgelegte Datei ignoriert (%1)</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+13"/>
+        <source>%n dropped item(s) cannot be shared</source>
+        <translation>
+            <numerusform>%n abgelegtes Element kann nicht freigegeben werden</numerusform>
+            <numerusform>%n abgelegte Elemente können nicht freigegeben werden</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location line="+17"/>
+        <source>Could not share %n dropped file(s)</source>
+        <translation>
+            <numerusform>%n abgelegte Datei konnte nicht freigegeben werden</numerusform>
+            <numerusform>%n abgelegte Dateien konnten nicht freigegeben werden</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Could not share dropped file (%1)</source>
+        <translation>Abgelegte Datei konnte nicht freigegeben werden (%1)</translation>
     </message>
 </context>
 <context>

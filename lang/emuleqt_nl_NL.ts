@@ -836,7 +836,7 @@ Schakel de webinterface of REST API in onder Opties → Webinterface.</translati
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+668"/>
+        <location filename="../src/gui/app/main.cpp" line="+807"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -4917,7 +4917,7 @@ Geüpload:	%12</translation>
 <context>
     <name>eMule::Ed2kKadPanel</name>
     <message>
-        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+228"/>
+        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+231"/>
         <location line="+129"/>
         <location line="+155"/>
         <source>▸ Contacts (0)</source>
@@ -5852,7 +5852,7 @@ Een nieuwe anonieme sleutel maken?</translation>
         </translation>
     </message>
     <message>
-        <location line="+214"/>
+        <location line="+219"/>
         <location line="+318"/>
         <source>Connect</source>
         <translation>Verbinden</translation>
@@ -5881,7 +5881,7 @@ Een nieuwe anonieme sleutel maken?</translation>
         <translation type="vanished">Bronnen bewerken...</translation>
     </message>
     <message>
-        <location line="-175"/>
+        <location line="-180"/>
         <source>No sources</source>
         <translation>Geen bronnen</translation>
     </message>
@@ -5894,7 +5894,7 @@ Een nieuwe anonieme sleutel maken?</translation>
         </translation>
     </message>
     <message>
-        <location line="+154"/>
+        <location line="+159"/>
         <source>From sources</source>
         <translation>Uit bronnen</translation>
     </message>
@@ -6303,7 +6303,7 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
         <translation type="vanished">De ed3k-node gebruikt de gebruikersnaam van de pagina Algemeen: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+448"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+445"/>
         <location line="+11"/>
         <location line="+564"/>
         <location line="+11"/>
@@ -6410,12 +6410,12 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
         <translation>Nodes vinden</translation>
     </message>
     <message>
-        <location line="+1387"/>
+        <location line="+1381"/>
         <source>Find ed3k nodes in the local network (restarts the node)</source>
         <translation>ed3k-nodes in het lokale netwerk vinden (herstart de node)</translation>
     </message>
     <message>
-        <location line="-1385"/>
+        <location line="-1379"/>
         <source>Node lists for the first contact, one ed3k:nodes link per line:</source>
         <translation>Nodelijsten voor het eerste contact, één ed3k:nodes-link per regel:</translation>
     </message>
@@ -6623,12 +6623,12 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1264"/>
+        <location line="+1258"/>
         <source> credits/MiB</source>
         <translation> credits/MiB</translation>
     </message>
     <message>
-        <location line="-1273"/>
+        <location line="-1267"/>
         <source>Never pay (receipts only)</source>
         <translation>Nooit betalen (alleen ontvangstbewijzen)</translation>
     </message>
@@ -6876,12 +6876,12 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1101"/>
+        <location line="+1095"/>
         <source>not read yet</source>
         <translation>nog niet uitgelezen</translation>
     </message>
     <message>
-        <location line="-1099"/>
+        <location line="-1093"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Het account staat rood: een nieuwe creditsleutel is de weg verder.</translation>
     </message>
@@ -7403,24 +7403,20 @@ Auto: 2 % van het RAM, minimaal 64 MiB en maximaal 512 MiB.</translation>
         <translation>Zolang het vrije RAM onder dit deel van het totaal ligt, blijven alleen gebruikte blokhashes in het RAM.</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Kad</source>
-        <translation>Kad</translation>
+        <translation type="vanished">Kad</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>RAM for records of other nodes</source>
-        <translation>RAM voor records van andere nodes</translation>
+        <translation type="vanished">RAM voor records van andere nodes</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Default (128 MiB)</source>
-        <translation>Standaard (128 MiB)</translation>
+        <translation type="vanished">Standaard (128 MiB)</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>RAM for the keyword and source records this node keeps for other ed3k nodes (about 1 KiB each). Over it, new records are refused and other nodes store them elsewhere. Applies at the next start of the ed3k node.</source>
-        <translation>RAM voor de trefwoord- en bronrecords die deze node voor andere ed3k-nodes bewaart (elk ongeveer 1 KiB). Daarboven worden nieuwe records geweigerd en slaan andere nodes ze elders op. Geldt bij de volgende start van de ed3k-node.</translation>
+        <translation type="vanished">RAM voor de trefwoord- en bronrecords die deze node voor andere ed3k-nodes bewaart (elk ongeveer 1 KiB). Daarboven worden nieuwe records geweigerd en slaan andere nodes ze elders op. Geldt bij de volgende start van de ed3k-node.</translation>
     </message>
     <message>
         <location line="+3"/>
@@ -7517,7 +7513,7 @@ Auto: 2 % van het RAM, minimaal 64 MiB en maximaal 512 MiB.</translation>
         <translation>Snelle download loopt niet. Saldo: %1</translation>
     </message>
     <message>
-        <location line="-753"/>
+        <location line="-747"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -13049,17 +13045,21 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
 <context>
     <name>eMule::KadGraphBase</name>
     <message>
-        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+87"/>
+        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+110"/>
         <source>Automatically show active searches</source>
         <translation>Automatisch actieve zoekopdrachten tonen</translation>
     </message>
     <message>
-        <location line="+23"/>
-        <source>Address</source>
-        <translation>Adres</translation>
+        <location line="+53"/>
+        <source>Loading...</source>
+        <translation>Laden...</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <source>Address</source>
+        <translation type="vanished">Adres</translation>
+    </message>
+    <message>
+        <location line="-31"/>
         <source>Country</source>
         <translation>Land</translation>
     </message>
@@ -13067,7 +13067,7 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
 <context>
     <name>eMule::KadIncomingGraph</name>
     <message numerus="yes">
-        <location filename="../src/gui/controls/KadIncomingGraph.cpp" line="+117"/>
+        <location filename="../src/gui/controls/KadIncomingGraph.cpp" line="+116"/>
         <source>%n result(s) sent</source>
         <translation>
             <numerusform>%n resultaat verzonden</numerusform>
@@ -13085,12 +13085,12 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
         <translation>Dit verzoek heeft geen doel: de contacten brengen nergens dichterbij.</translation>
     </message>
     <message>
-        <location line="+57"/>
+        <location line="+59"/>
         <source>Select an incoming search to see who asked us and which closer contacts we handed out.</source>
         <translation>Selecteer een inkomende zoekopdracht om te zien wie het vroeg en welke dichterbij gelegen contacten we doorgaven.</translation>
     </message>
     <message>
-        <location line="+53"/>
+        <location line="+38"/>
         <source>Too small to draw</source>
         <translation>Te klein om te tekenen</translation>
     </message>
@@ -13101,18 +13101,18 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
     </message>
     <message>
         <location line="+40"/>
-        <location line="+107"/>
+        <location line="+105"/>
         <source>Requester</source>
         <translation>Aanvrager</translation>
     </message>
     <message>
-        <location line="-106"/>
-        <location line="+107"/>
+        <location line="-104"/>
+        <location line="+105"/>
         <source>This node</source>
         <translation>Dit knooppunt</translation>
     </message>
     <message>
-        <location line="-105"/>
+        <location line="-103"/>
         <source>No contacts handed out</source>
         <translation>Geen contacten doorgegeven</translation>
     </message>
@@ -13127,7 +13127,7 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
         <translation>Doorgegeven (%1)</translation>
     </message>
     <message>
-        <location line="+104"/>
+        <location line="+102"/>
         <source>Handed-out contact</source>
         <translation>Doorgegeven contact</translation>
     </message>
@@ -13385,12 +13385,12 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
         <translation type="vanished">Geen zoekopdracht geselecteerd</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+351"/>
+        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+380"/>
         <source>Distance</source>
         <translation>Afstand</translation>
     </message>
     <message>
-        <location line="-259"/>
+        <location line="-251"/>
         <source>Time</source>
         <translation>Tijd</translation>
     </message>
@@ -13409,7 +13409,7 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
         <translation>0 = doel</translation>
     </message>
     <message>
-        <location line="+229"/>
+        <location line="+221"/>
         <source>Routing Table</source>
         <translation>Routeringstabel</translation>
     </message>
@@ -24152,7 +24152,7 @@ Map:	%13</translation>
 <context>
     <name>eMule::SharedFilesPanel</name>
     <message>
-        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+836"/>
+        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+840"/>
         <source>Shared Files (0)</source>
         <translation>Gedeelde bestanden (0)</translation>
     </message>
@@ -24168,13 +24168,13 @@ Map:	%13</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1631"/>
+        <location line="+1636"/>
         <location line="+531"/>
         <source>Open Folder</source>
         <translation>Map openen</translation>
     </message>
     <message>
-        <location line="-2150"/>
+        <location line="-2155"/>
         <source>Rename...</source>
         <translation>Hernoemen...</translation>
     </message>
@@ -24185,59 +24185,59 @@ Map:	%13</translation>
     </message>
     <message>
         <location line="+12"/>
-        <location line="+2135"/>
+        <location line="+2140"/>
         <source>Delete From Disk</source>
         <translation>Van schijf verwijderen</translation>
     </message>
     <message>
-        <location line="-2120"/>
+        <location line="-2125"/>
         <source>Unshare</source>
         <translation>Niet delen</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+2115"/>
+        <location line="+2120"/>
         <source>Priority (Upload)</source>
         <translation>Prioriteit (upload)</translation>
     </message>
     <message>
-        <location line="-2100"/>
-        <location line="+2117"/>
+        <location line="-2105"/>
+        <location line="+2122"/>
         <source>Very Low</source>
         <translation>Zeer laag</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+2117"/>
+        <location line="-2121"/>
+        <location line="+2122"/>
         <source>Low</source>
         <translation>Laag</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+2117"/>
+        <location line="-2121"/>
+        <location line="+2122"/>
         <source>Normal</source>
         <translation>Normaal</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+2117"/>
+        <location line="-2121"/>
+        <location line="+2122"/>
         <source>High</source>
         <translation>Hoog</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+2117"/>
+        <location line="-2121"/>
+        <location line="+2122"/>
         <source>Release</source>
         <translation>Uitgave</translation>
     </message>
     <message>
-        <location line="-2115"/>
-        <location line="+2116"/>
+        <location line="-2120"/>
+        <location line="+2121"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-2102"/>
+        <location line="-2107"/>
         <source>Collection</source>
         <translation>Collectie</translation>
     </message>
@@ -24248,18 +24248,18 @@ Map:	%13</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1509"/>
+        <location line="+1514"/>
         <source>Create ed3k Set...</source>
         <translation>ed3k-set maken...</translation>
     </message>
     <message>
-        <location line="-1501"/>
-        <location line="+1503"/>
+        <location line="-1506"/>
+        <location line="+1508"/>
         <source>Publish New Version...</source>
         <translation>Nieuwe versie publiceren...</translation>
     </message>
     <message>
-        <location line="-1496"/>
+        <location line="-1501"/>
         <source>Modify Collection...</source>
         <translation>Collectie wijzigen...</translation>
     </message>
@@ -24286,24 +24286,24 @@ Map:	%13</translation>
     </message>
     <message>
         <location line="+19"/>
-        <location line="+2007"/>
+        <location line="+2012"/>
         <source>Details...</source>
         <translation>Details...</translation>
     </message>
     <message>
-        <location line="-2000"/>
-        <location line="+2003"/>
+        <location line="-2005"/>
+        <location line="+2008"/>
         <source>Comments...</source>
         <translation>Commentaar...</translation>
     </message>
     <message>
-        <location line="-1988"/>
-        <location line="+1994"/>
+        <location line="-1993"/>
+        <location line="+1999"/>
         <source>eD2K Links...</source>
         <translation>eD2K-links...</translation>
     </message>
     <message>
-        <location line="-1975"/>
+        <location line="-1980"/>
         <source>Move to Anonymous ed3k Key...</source>
         <translation>Naar anonieme ed3k-sleutel verplaatsen...</translation>
     </message>
@@ -24314,12 +24314,12 @@ Map:	%13</translation>
     </message>
     <message>
         <location line="+21"/>
-        <location line="+1452"/>
+        <location line="+1457"/>
         <source>Create Torrent...</source>
         <translation>Torrent maken...</translation>
     </message>
     <message>
-        <location line="-1437"/>
+        <location line="-1442"/>
         <source>Add To IRC Clipboard</source>
         <translation>Toevoegen aan IRC-klembord</translation>
     </message>
@@ -24374,7 +24374,7 @@ Map:	%13</translation>
         <translation>Alle mappen</translation>
     </message>
     <message>
-        <location line="+246"/>
+        <location line="+251"/>
         <source>Current Session</source>
         <translation>Huidige sessie</translation>
     </message>
@@ -24678,8 +24678,44 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <translation>Het bestand is niet verplaatst: %1</translation>
     </message>
     <message>
-        <location line="-2101"/>
-        <location line="+1996"/>
+        <location line="+65"/>
+        <source>Drag&amp;Drop&apos;ed shared file not found (%1)</source>
+        <translation>Gesleept bestand niet gevonden (%1)</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Drag&amp;Drop&apos;ed shared folder ignored (%1)</source>
+        <translation>Gesleepte map genegeerd (%1)</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Drag&amp;Drop&apos;ed shared file ignored (%1)</source>
+        <translation>Gesleept bestand genegeerd (%1)</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+13"/>
+        <source>%n dropped item(s) cannot be shared</source>
+        <translation>
+            <numerusform>%n gesleept item kan niet worden gedeeld</numerusform>
+            <numerusform>%n gesleepte items kunnen niet worden gedeeld</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location line="+17"/>
+        <source>Could not share %n dropped file(s)</source>
+        <translation>
+            <numerusform>Kon %n gesleept bestand niet delen</numerusform>
+            <numerusform>Kon %n gesleepte bestanden niet delen</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Could not share dropped file (%1)</source>
+        <translation>Kon gesleept bestand niet delen (%1)</translation>
+    </message>
+    <message>
+        <location line="-2223"/>
+        <location line="+2001"/>
         <source>Copy eD2K Links</source>
         <translation>eD2K-links kopiëren</translation>
     </message>

@@ -187,8 +187,12 @@ an older sidecar answers "unknown op" and keeps refusing such links), sent at st
   published or handed out: the URL may carry a private token. The root is kept, so the file is still
   shared like any other.
 - **Clipboard**: only `generic: "file"` links are grabbed; a copied page URL is ignored.
-- **Address guard** (`AddressGuard`, all plugins, every request incl. redirects): JD's global proxy
-  selector is wrapped. Direct: the host is resolved and refused when any address is loopback, private,
+- **Address guard** (`AddressGuard`): JD's global proxy selector is wrapped (first hop of every
+  request, all plugins). JD picks the route once per request and a redirect inherits it, so the
+  plugin's browser is a `GuardedBrowser` (checks every `createHTTPConnection`: each redirect hop,
+  the download, clones) wherever the plugin keeps JD's plain `PluginBrowser` (DirectHTTP and most
+  others; a plugin with its own browser class keeps it, first hop guarded only). A refusal JD
+  swallows (DirectHTTP says *gone*) is remembered per thread and reported as `private` all the same. Direct: the host is resolved and refused when any address is loopback, private,
   link-local, CGNAT, ULA, multicast, reserved, or a 6to4/NAT64 wrap of one (JVM DNS cache 30 s: the
   connect sees the same addresses). Through a proxy: literals and local names (`localhost`, `.local`,
   `.lan`, `.internal`, `.home.arpa`, single labels) only, no lookup (no DNS leak). Refused: error
@@ -289,7 +293,8 @@ lacks it, so the GUI hides the box: `Ed3kResolver::canDeepCrawl`).
   off shares nothing that landed. The daemon remembers every landed file either way in
   `Config/ed3k/hoster/landed.txt` (`LandedFiles`, cap 200,000), and while off they are
   `setNeverShared` for eD2K, Kad and ed3k, also inside incoming. Off drops them at once, on
-  again runs `SharedFileList::reload()` (#177).
+  again runs `SharedFileList::reload()` (#177). The list loads at core start whether hosters
+  or ed3k are on or not: with them off landed files stay shared as the setting says.
 - The app's IP filter is not applied to hosters: links are HTTP to the hoster's servers, not
   peers. ed3k peers of a verified link are filtered at the node's socket.
 - Kept archives in Temp are not shared, so a hoster root of an archive is not served to ed3k peers.
@@ -566,6 +571,9 @@ not `emule.ed3k`: the GUI's **Hoster** log tab after Torrent, shown while `hoste
 
 - `tst_Ed3kHoster`: the join on a real engine with a fake resolver (mirrors, link checks `probe_*`,
   order `rank_*`); the JD resolver's event parser; the Java probe and Adoptium parsing.
+- `generic_*` (#202): plain web links not published, `private` → *Failed*. The sidecar side
+  (match, DirectHTTP download, `private` for a loopback server's 302 to 10.255.255.1 with
+  `loopbackHosters`) was checked by driving the real sidecar over its socket, no test rig yet.
 - `tst_LinkGrabber`: the grabber with a fake resolver and backend (grouping, dupes, edits, confirm,
   crawl, deep, clipboard match, coalesced changes, save/load). `tst_HosterPanel`: the tab, pushes.
 - Live, opt-in: `EMULE_HOSTER_LIVE=1` downloads a small archive.org file through the real sidecar

@@ -79,6 +79,29 @@ void drawArrow(QPainter& p, QPointF from, QPointF to, const QColor& color)
 KadGraphBase::KadGraphBase(QWidget* parent)
     : QWidget(parent)
 {
+    // short: nodes are small and move with every snapshot of a running search
+    constexpr int kDwellMs = 150;
+    m_dwell.setSingleShot(true);
+    m_dwell.setInterval(kDwellMs);
+    connect(&m_dwell, &QTimer::timeout, this, &KadGraphBase::onDwell);
+}
+
+void KadGraphBase::setLoading(bool on)
+{
+    m_loading = on;
+    if (on)
+        m_loadingAge.restart();
+    refreshTip();
+}
+
+bool KadGraphBase::event(QEvent* event)
+{
+    if (event->type() == QEvent::ToolTip) {
+        // Built on demand, so a re-hover always shows the latest snapshot
+        showTipAt(static_cast<QHelpEvent*>(event)->globalPos());
+        return true;
+    }
+    return QWidget::event(event);
 }
 
 void KadGraphBase::contextMenuEvent(QContextMenuEvent* event)
@@ -103,14 +126,66 @@ QString KadGraphBase::tipRowHtml(const QString& label, const QString& html)
     return QStringLiteral("<tr><td><b>%1:</b></td><td>&nbsp;%2</td></tr>").arg(label.toHtmlEscaped(), html);
 }
 
-QString KadGraphBase::addressRows(const QString& addr, const QString& cc)
+QString KadGraphBase::countryRow(const QString& cc)
 {
-    QString out;
-    if (!addr.isEmpty())
-        out += tipRow(tr("Address"), addr);
-    if (const QString country = CountryFlags::tooltipHtml(cc); !country.isEmpty())
-        out += tipRowHtml(tr("Country"), country);
-    return out;
+    const QString country = CountryFlags::tooltipHtml(cc);
+    return country.isEmpty() ? QString() : tipRowHtml(tr("Country"), country);
+}
+
+void KadGraphBase::mouseMoveEvent(QMouseEvent* event)
+{
+    const int idx = hitTest(event->pos());
+    if (idx != m_tipNode) {
+        m_tipNode = idx;
+        m_dwell.stop();
+        if (QToolTip::isVisible() || idx < 0)
+            showTipAt(event->globalPosition().toPoint());   // a shown tip follows, or "Loading..." / none
+        else
+            m_dwell.start();
+    } else if (idx < 0 && isLoading() && !QToolTip::isVisible()) {
+        showTipAt(event->globalPosition().toPoint());   // entered while the picture loads
+    }
+    QWidget::mouseMoveEvent(event);
+}
+
+void KadGraphBase::leaveEvent(QEvent* event)
+{
+    m_dwell.stop();
+    m_tipNode = -1;
+    QWidget::leaveEvent(event);
+}
+
+void KadGraphBase::showTipAt(const QPoint& globalPos)
+{
+    if (const int idx = hitTest(mapFromGlobal(globalPos)); idx >= 0)
+        QToolTip::showText(globalPos, toolTipText(idx), this, nodeRect(idx));
+    else if (isLoading())
+        QToolTip::showText(globalPos, tr("Loading..."), this, rect());
+    else
+        QToolTip::hideText();
+}
+
+void KadGraphBase::refreshTip()
+{
+    // MFC recomputes the hot item and its tip on every repaint (KadLookupGraph.cpp:300-311)
+    if (!underMouse())
+        return;
+    m_tipNode = hitTest(mapFromGlobal(QCursor::pos()));
+    m_dwell.stop();
+    showTipAt(QCursor::pos());
+}
+
+bool KadGraphBase::isLoading() const
+{
+    // a reply that never comes must not leave "Loading..." up for good
+    constexpr qint64 kLoadingMaxMs = 15'000;
+    return m_loading && m_loadingAge.elapsed() < kLoadingMaxMs;
+}
+
+void KadGraphBase::onDwell()
+{
+    if (underMouse())
+        showTipAt(QCursor::pos());
 }
 
 KadLookupGraph::KadLookupGraph(QWidget* parent)
@@ -136,41 +211,23 @@ void KadLookupGraph::setLookup(std::vector<LookupEntry> entries, int searchType)
     m_searchType = searchType;
     m_snapshotAge.restart();
     layoutNodes();
-    // MFC recomputes the hot item and its tip on every repaint (KadLookupGraph.cpp:300-311)
-    refreshToolTip();
+    setLoading(false);   // and the tip under the pointer follows the new nodes
     update();
 }
 
-void KadLookupGraph::clear()
+void KadLookupGraph::clear(bool loading)
 {
     m_entries.clear();
     m_nodeRects.clear();
     m_hotId.clear();
     m_searchType = -1;
-    if (QToolTip::isVisible() && underMouse())
-        QToolTip::hideText();
+    setLoading(loading);   // "Loading..." or no tip under the pointer
     update();
 }
 
 // ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
-
-bool KadLookupGraph::event(QEvent* event)
-{
-    if (event->type() == QEvent::ToolTip) {
-        // Built on demand, so a re-hover always shows the latest snapshot
-        const auto* help = static_cast<QHelpEvent*>(event);
-        const int idx = hitTest(help->pos());
-        if (idx >= 0)
-            QToolTip::showText(help->globalPos(), toolTipText(idx), this,
-                               m_nodeRects[static_cast<size_t>(idx)]);
-        else
-            QToolTip::hideText();
-        return true;
-    }
-    return KadGraphBase::event(event);
-}
 
 void KadLookupGraph::paintEvent(QPaintEvent* /*event*/)
 {
@@ -281,14 +338,6 @@ void KadLookupGraph::mouseMoveEvent(QMouseEvent* event)
     if (id != m_hotId) {
         m_hotId = id;
         update();
-        // A tip already up follows the pointer to the next node at once
-        if (QToolTip::isVisible()) {
-            if (idx >= 0)
-                QToolTip::showText(event->globalPosition().toPoint(), toolTipText(idx), this,
-                                   m_nodeRects[static_cast<size_t>(idx)]);
-            else
-                QToolTip::hideText();
-        }
     }
     KadGraphBase::mouseMoveEvent(event);
 }
@@ -459,7 +508,7 @@ QString KadLookupGraph::toolTipText(int drawIdx) const
     const auto row = &KadGraphBase::tipRow;
     return QStringLiteral("<qt><b>%1</b><table cellspacing=0>").arg(e.contactID)
         + row(tr("Node ID"), e.contactID)
-        + addressRows(e.addr, e.cc)
+        + countryRow(e.cc)
         + row(tr("Distance"), e.distance)
         + row(tr("Protocol Version"), QString::number(e.contactVersion))
         + QStringLiteral("<tr><td colspan=2><hr></td></tr>")
@@ -470,15 +519,9 @@ QString KadLookupGraph::toolTipText(int drawIdx) const
         + QStringLiteral("</table></qt>");
 }
 
-void KadLookupGraph::refreshToolTip()
+QRect KadLookupGraph::nodeRect(int drawIdx) const
 {
-    if (!QToolTip::isVisible() || !underMouse())
-        return;
-    const int idx = hotDrawIdx();
-    if (idx >= 0)
-        QToolTip::showText(QCursor::pos(), toolTipText(idx), this, m_nodeRects[static_cast<size_t>(idx)]);
-    else
-        QToolTip::hideText();
+    return m_nodeRects[static_cast<size_t>(drawIdx)];
 }
 
 } // namespace eMule

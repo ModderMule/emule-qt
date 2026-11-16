@@ -391,6 +391,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "emuleqt-mcp.exe --version exited with $LASTEXITCODE" }
           Write-Host "Resolved from the OS at runtime ($($external.Count)): $((($external.Keys | Sort-Object) -join ', '))"
 
+          # 4. QUIC NAT-T: ngtcp2_crypto_ossl.dll imports the OpenSSL 3.5 QUIC TLS
+          # API, so the bundled libssl must export it (as linux.yml checks)
+          $ssl = Join-Path $app 'libssl-3-x64.dll'
+          if (-not (Test-Path $ssl)) { throw 'libssl-3-x64.dll missing from the bundle' }
+          if (-not ((& dumpbin /nologo /exports $ssl) -match '\bSSL_set_quic_tls_cbs\b')) {
+            throw 'Bundled libssl-3-x64.dll has no QUIC TLS API (SSL_set_quic_tls_cbs): not OpenSSL 3.5+'
+          }
+          Write-Host 'OK: bundled libssl exports the QUIC TLS API.'
+
       # --- Code signing (#179) -------------------------------------------------
       # Unsigned exes score high with AV ML heuristics. Only our own exes: the Qt
       # and vcpkg DLLs are third party, SignPath Foundation won't sign them.

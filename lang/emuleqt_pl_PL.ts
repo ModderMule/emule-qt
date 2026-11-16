@@ -845,7 +845,7 @@ Włącz interfejs WWW lub REST API w Opcje → Interfejs WWW.</translation>
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+668"/>
+        <location filename="../src/gui/app/main.cpp" line="+807"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -4935,7 +4935,7 @@ Wysłano:	%12</translation>
 <context>
     <name>eMule::Ed2kKadPanel</name>
     <message>
-        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+228"/>
+        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+231"/>
         <location line="+129"/>
         <location line="+155"/>
         <source>▸ Contacts (0)</source>
@@ -5872,7 +5872,7 @@ Utworzyć nowy klucz anonimowy?</translation>
         </translation>
     </message>
     <message>
-        <location line="+214"/>
+        <location line="+219"/>
         <location line="+318"/>
         <source>Connect</source>
         <translation>Podłącz</translation>
@@ -5901,7 +5901,7 @@ Utworzyć nowy klucz anonimowy?</translation>
         <translation type="vanished">Edytuj źródła...</translation>
     </message>
     <message>
-        <location line="-175"/>
+        <location line="-180"/>
         <source>No sources</source>
         <translation>Brak źródeł</translation>
     </message>
@@ -5915,7 +5915,7 @@ Utworzyć nowy klucz anonimowy?</translation>
         </translation>
     </message>
     <message>
-        <location line="+154"/>
+        <location line="+159"/>
         <source>From sources</source>
         <translation>Ze źródeł</translation>
     </message>
@@ -6324,7 +6324,7 @@ Jej nazwy będą wtedy rozwiązywane po listach, które już obserwujesz.</trans
         <translation type="vanished">Węzeł ed3k używa nicka ze strony Ogólne: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+448"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+445"/>
         <location line="+11"/>
         <location line="+564"/>
         <location line="+11"/>
@@ -6431,12 +6431,12 @@ Jej nazwy będą wtedy rozwiązywane po listach, które już obserwujesz.</trans
         <translation>Wyszukiwanie węzłów</translation>
     </message>
     <message>
-        <location line="+1387"/>
+        <location line="+1381"/>
         <source>Find ed3k nodes in the local network (restarts the node)</source>
         <translation>Szukaj węzłów ed3k w sieci lokalnej (uruchamia węzeł ponownie)</translation>
     </message>
     <message>
-        <location line="-1385"/>
+        <location line="-1379"/>
         <source>Node lists for the first contact, one ed3k:nodes link per line:</source>
         <translation>Listy węzłów do pierwszego kontaktu, jeden link ed3k:nodes w wierszu:</translation>
     </message>
@@ -6644,12 +6644,12 @@ Jej nazwy będą wtedy rozwiązywane po listach, które już obserwujesz.</trans
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1264"/>
+        <location line="+1258"/>
         <source> credits/MiB</source>
         <translation> kredytów/MiB</translation>
     </message>
     <message>
-        <location line="-1273"/>
+        <location line="-1267"/>
         <source>Never pay (receipts only)</source>
         <translation>Nigdy nie płać (tylko pokwitowania)</translation>
     </message>
@@ -6897,12 +6897,12 @@ Jej nazwy będą wtedy rozwiązywane po listach, które już obserwujesz.</trans
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1101"/>
+        <location line="+1095"/>
         <source>not read yet</source>
         <translation>jeszcze nie odczytano</translation>
     </message>
     <message>
-        <location line="-1099"/>
+        <location line="-1093"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Konto ma debet: dalsza droga to nowy klucz kredytowy.</translation>
     </message>
@@ -7424,24 +7424,20 @@ Auto: 2 % RAM, co najmniej 64 MiB i najwyżej 512 MiB.</translation>
         <translation>Dopóki wolny RAM jest poniżej tej części całości, w RAM zostają tylko używane hashe bloków.</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Kad</source>
-        <translation>Kad</translation>
+        <translation type="vanished">Kad</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>RAM for records of other nodes</source>
-        <translation>RAM na rekordy innych węzłów</translation>
+        <translation type="vanished">RAM na rekordy innych węzłów</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Default (128 MiB)</source>
-        <translation>Domyślnie (128 MiB)</translation>
+        <translation type="vanished">Domyślnie (128 MiB)</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>RAM for the keyword and source records this node keeps for other ed3k nodes (about 1 KiB each). Over it, new records are refused and other nodes store them elsewhere. Applies at the next start of the ed3k node.</source>
-        <translation>RAM na rekordy słów kluczowych i źródeł, które ten węzeł przechowuje dla innych węzłów ed3k (około 1 KiB każdy). Powyżej nowe rekordy są odrzucane, a inne węzły zapisują je gdzie indziej. Obowiązuje od następnego uruchomienia węzła ed3k.</translation>
+        <translation type="vanished">RAM na rekordy słów kluczowych i źródeł, które ten węzeł przechowuje dla innych węzłów ed3k (około 1 KiB każdy). Powyżej nowe rekordy są odrzucane, a inne węzły zapisują je gdzie indziej. Obowiązuje od następnego uruchomienia węzła ed3k.</translation>
     </message>
     <message>
         <location line="+3"/>
@@ -7538,7 +7534,7 @@ Auto: 2 % RAM, co najmniej 64 MiB i najwyżej 512 MiB.</translation>
         <translation>Szybkie pobieranie nie działa. Saldo: %1</translation>
     </message>
     <message>
-        <location line="-753"/>
+        <location line="-747"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -13095,17 +13091,21 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
 <context>
     <name>eMule::KadGraphBase</name>
     <message>
-        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+87"/>
+        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+110"/>
         <source>Automatically show active searches</source>
         <translation>automatyczne pokazuj aktywne wyszukiwania</translation>
     </message>
     <message>
-        <location line="+23"/>
-        <source>Address</source>
-        <translation>Adres</translation>
+        <location line="+53"/>
+        <source>Loading...</source>
+        <translation>Ładowanie...</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <source>Address</source>
+        <translation type="vanished">Adres</translation>
+    </message>
+    <message>
+        <location line="-31"/>
         <source>Country</source>
         <translation>Kraj</translation>
     </message>
@@ -13113,7 +13113,7 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
 <context>
     <name>eMule::KadIncomingGraph</name>
     <message numerus="yes">
-        <location filename="../src/gui/controls/KadIncomingGraph.cpp" line="+117"/>
+        <location filename="../src/gui/controls/KadIncomingGraph.cpp" line="+116"/>
         <source>%n result(s) sent</source>
         <translation>
             <numerusform>Wysłano %n wynik</numerusform>
@@ -13132,12 +13132,12 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
         <translation>To żądanie nie ma celu: jego kontakty do niczego nie przybliżają.</translation>
     </message>
     <message>
-        <location line="+57"/>
+        <location line="+59"/>
         <source>Select an incoming search to see who asked us and which closer contacts we handed out.</source>
         <translation>Wybierz przychodzące wyszukiwanie, aby zobaczyć, kto pytał i jakie bliższe kontakty przekazaliśmy.</translation>
     </message>
     <message>
-        <location line="+53"/>
+        <location line="+38"/>
         <source>Too small to draw</source>
         <translation>Za mało miejsca na rysunek</translation>
     </message>
@@ -13148,18 +13148,18 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
     </message>
     <message>
         <location line="+40"/>
-        <location line="+107"/>
+        <location line="+105"/>
         <source>Requester</source>
         <translation>Pytający</translation>
     </message>
     <message>
-        <location line="-106"/>
-        <location line="+107"/>
+        <location line="-104"/>
+        <location line="+105"/>
         <source>This node</source>
         <translation>Ten węzeł</translation>
     </message>
     <message>
-        <location line="-105"/>
+        <location line="-103"/>
         <source>No contacts handed out</source>
         <translation>Nie przekazano kontaktów</translation>
     </message>
@@ -13174,7 +13174,7 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
         <translation>Przekazane (%1)</translation>
     </message>
     <message>
-        <location line="+104"/>
+        <location line="+102"/>
         <source>Handed-out contact</source>
         <translation>Przekazany kontakt</translation>
     </message>
@@ -13438,12 +13438,12 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
         <translation type="vanished">Nie wybrano wyszukiwania</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+351"/>
+        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+380"/>
         <source>Distance</source>
         <translation>Odległość</translation>
     </message>
     <message>
-        <location line="-259"/>
+        <location line="-251"/>
         <source>Time</source>
         <translation>Czas</translation>
     </message>
@@ -13462,7 +13462,7 @@ Inni członkowie widzą Twój nick i wpisy; Twój węzeł uczestniczy w przekazy
         <translation>0 = cel</translation>
     </message>
     <message>
-        <location line="+229"/>
+        <location line="+221"/>
         <source>Routing Table</source>
         <translation>Tablica routingu</translation>
     </message>
@@ -24222,7 +24222,7 @@ Folder:	%13</translation>
 <context>
     <name>eMule::SharedFilesPanel</name>
     <message>
-        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+836"/>
+        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+840"/>
         <source>Shared Files (0)</source>
         <translation>Udostępnione pliki (0)</translation>
     </message>
@@ -24238,13 +24238,13 @@ Folder:	%13</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1631"/>
+        <location line="+1636"/>
         <location line="+531"/>
         <source>Open Folder</source>
         <translation>Otwórz folder</translation>
     </message>
     <message>
-        <location line="-2150"/>
+        <location line="-2155"/>
         <source>Rename...</source>
         <translation>Zmień nazwę...</translation>
     </message>
@@ -24255,59 +24255,59 @@ Folder:	%13</translation>
     </message>
     <message>
         <location line="+12"/>
-        <location line="+2135"/>
+        <location line="+2140"/>
         <source>Delete From Disk</source>
         <translation>Usuń z dysku</translation>
     </message>
     <message>
-        <location line="-2120"/>
+        <location line="-2125"/>
         <source>Unshare</source>
         <translation>Wstrzymaj udostępnianie</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+2115"/>
+        <location line="+2120"/>
         <source>Priority (Upload)</source>
         <translation>Priorytet (wysyłanie)</translation>
     </message>
     <message>
-        <location line="-2100"/>
-        <location line="+2117"/>
+        <location line="-2105"/>
+        <location line="+2122"/>
         <source>Very Low</source>
         <translation>Bardzo niski</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+2117"/>
+        <location line="-2121"/>
+        <location line="+2122"/>
         <source>Low</source>
         <translation>Niski</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+2117"/>
+        <location line="-2121"/>
+        <location line="+2122"/>
         <source>Normal</source>
         <translation>Normalny</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+2117"/>
+        <location line="-2121"/>
+        <location line="+2122"/>
         <source>High</source>
         <translation>Wysoki</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+2117"/>
+        <location line="-2121"/>
+        <location line="+2122"/>
         <source>Release</source>
         <translation>Release</translation>
     </message>
     <message>
-        <location line="-2115"/>
-        <location line="+2116"/>
+        <location line="-2120"/>
+        <location line="+2121"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-2102"/>
+        <location line="-2107"/>
         <source>Collection</source>
         <translation>Kolekcja</translation>
     </message>
@@ -24318,18 +24318,18 @@ Folder:	%13</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1509"/>
+        <location line="+1514"/>
         <source>Create ed3k Set...</source>
         <translation>Utwórz zestaw ed3k...</translation>
     </message>
     <message>
-        <location line="-1501"/>
-        <location line="+1503"/>
+        <location line="-1506"/>
+        <location line="+1508"/>
         <source>Publish New Version...</source>
         <translation>Opublikuj nową wersję...</translation>
     </message>
     <message>
-        <location line="-1496"/>
+        <location line="-1501"/>
         <source>Modify Collection...</source>
         <translation>Modyfikuj kolekcję...</translation>
     </message>
@@ -24356,24 +24356,24 @@ Folder:	%13</translation>
     </message>
     <message>
         <location line="+19"/>
-        <location line="+2007"/>
+        <location line="+2012"/>
         <source>Details...</source>
         <translation>Szczegóły...</translation>
     </message>
     <message>
-        <location line="-2000"/>
-        <location line="+2003"/>
+        <location line="-2005"/>
+        <location line="+2008"/>
         <source>Comments...</source>
         <translation>Komentarze...</translation>
     </message>
     <message>
-        <location line="-1988"/>
-        <location line="+1994"/>
+        <location line="-1993"/>
+        <location line="+1999"/>
         <source>eD2K Links...</source>
         <translation>Linki eD2K...</translation>
     </message>
     <message>
-        <location line="-1975"/>
+        <location line="-1980"/>
         <source>Move to Anonymous ed3k Key...</source>
         <translation>Przenieś do anonimowego klucza ed3k...</translation>
     </message>
@@ -24384,12 +24384,12 @@ Folder:	%13</translation>
     </message>
     <message>
         <location line="+21"/>
-        <location line="+1452"/>
+        <location line="+1457"/>
         <source>Create Torrent...</source>
         <translation>Utwórz torrent...</translation>
     </message>
     <message>
-        <location line="-1437"/>
+        <location line="-1442"/>
         <source>Add To IRC Clipboard</source>
         <translation>Dodaj do schowka IRC</translation>
     </message>
@@ -24444,7 +24444,7 @@ Folder:	%13</translation>
         <translation>Wszystkie foldery</translation>
     </message>
     <message>
-        <location line="+246"/>
+        <location line="+251"/>
         <source>Current Session</source>
         <translation>Bieżąca sesja</translation>
     </message>
@@ -24760,8 +24760,46 @@ Zostaną opublikowane z adresem tego węzła: każdy może zobaczyć, że ten w�
         <translation>Plik nie został przeniesiony: %1</translation>
     </message>
     <message>
-        <location line="-2101"/>
-        <location line="+1996"/>
+        <location line="+65"/>
+        <source>Drag&amp;Drop&apos;ed shared file not found (%1)</source>
+        <translation>Nie znaleziono przeciągniętego pliku (%1)</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Drag&amp;Drop&apos;ed shared folder ignored (%1)</source>
+        <translation>Zignorowano przeciągnięty folder (%1)</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Drag&amp;Drop&apos;ed shared file ignored (%1)</source>
+        <translation>Zignorowano przeciągnięty plik (%1)</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+13"/>
+        <source>%n dropped item(s) cannot be shared</source>
+        <translation>
+            <numerusform>Nie można udostępnić %n przeciągniętego elementu</numerusform>
+            <numerusform>Nie można udostępnić %n przeciągniętych elementów</numerusform>
+            <numerusform>Nie można udostępnić %n przeciągniętych elementów</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location line="+17"/>
+        <source>Could not share %n dropped file(s)</source>
+        <translation>
+            <numerusform>Nie udało się udostępnić %n przeciągniętego pliku</numerusform>
+            <numerusform>Nie udało się udostępnić %n przeciągniętych plików</numerusform>
+            <numerusform>Nie udało się udostępnić %n przeciągniętych plików</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Could not share dropped file (%1)</source>
+        <translation>Nie udało się udostępnić przeciągniętego pliku (%1)</translation>
+    </message>
+    <message>
+        <location line="-2223"/>
+        <location line="+2001"/>
         <source>Copy eD2K Links</source>
         <translation>Kopiuj linki eD2K</translation>
     </message>

@@ -1535,6 +1535,7 @@ private:
     bool m_uploadOnlyBan = false;   ///< last ban() was upload-only; for isFullyBanned() w/o address
     QString m_leecherReason;
     std::unique_ptr<AnalyzerRecord> m_analyzerSession;   ///< until the identity is proven
+    mutable bool m_analyzerPenalized = false;   ///< score band last logged, per session
     QString m_dlpCheckedSoftware;   ///< software + mod last checked; recheck on change
     QString m_dlpCheckedName;       ///< user name last checked; recheck on change
     bool m_helloAnswerPending = false;

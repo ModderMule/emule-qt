@@ -35,10 +35,12 @@ public:
     [[nodiscard]] quint64 requestId() const { return m_requestId; }
 
 protected:
-    bool event(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void leaveEvent(QEvent* event) override;
+    [[nodiscard]] int hitTest(const QPoint& pos) const override;
+    [[nodiscard]] QString toolTipText(int idx) const override;
+    [[nodiscard]] QRect nodeRect(int idx) const override;
 
 private:
     enum class Role : std::uint8_t { Asker, Own, Handed };
@@ -58,8 +60,6 @@ private:
 
     void layoutNodes();
     [[nodiscard]] int yOf(double closeness) const;
-    [[nodiscard]] int hitTest(const QPoint& pos) const;
-    [[nodiscard]] QString toolTipText(int idx) const;
     [[nodiscard]] const QIcon& iconOf(const Node& n) const;
     [[nodiscard]] const Node* own() const;
     void paintAxis(QPainter& p) const;

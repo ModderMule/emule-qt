@@ -101,3 +101,10 @@ endif()
 if(WIN32)
     target_link_libraries(emule_ngtcp2 INTERFACE ws2_32 bcrypt crypt32)
 endif()
+# vcpkg x64-windows: a DLL importing SSL_set_quic_tls_cbs. Delay-loaded, so a libssl
+# without the 3.5 QUIC API costs QUIC NAT-T only, not the whole process at start
+# (#206); QuicTls checks libssl before the first call. 4199: exes that never call it
+if(MSVC AND NOT EMULE_NGTCP2_OSSL_LIBRARY MATCHES "_static\\.lib$")
+    target_link_libraries(emule_ngtcp2 INTERFACE delayimp)
+    target_link_options(emule_ngtcp2 INTERFACE "/DELAYLOAD:ngtcp2_crypto_ossl.dll" "/IGNORE:4199")
+endif()

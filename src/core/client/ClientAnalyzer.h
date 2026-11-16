@@ -35,6 +35,8 @@ struct AnalyzerRecord {
     static constexpr uint32 kReaskBufferMs = 5 * 60 * 1000;
     static constexpr uint32 kBadUploadSessions = 3;   ///< more in a row: slot only while connected
     static constexpr int64 kBadFlagHoldS = 2 * 60 * 60;  ///< a flag cannot be cleared for 2 h
+    static constexpr float kPenalizedBelow = 0.5f;    ///< score band logged as penalized
+    static constexpr float kRecoveredAbove = 0.7f;    ///< back to normal; gap stops flapping
 
     std::array<uint8, 16> key{};
     uint32 lastSeen = 0;        ///< unix seconds

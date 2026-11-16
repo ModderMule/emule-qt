@@ -7,7 +7,6 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
-#include <QToolTip>
 
 #include <algorithm>
 #include <bit>
@@ -122,6 +121,7 @@ void KadIncomingGraph::setRequest(const QCborMap& row, const QCborMap& graph, co
     if (!parseId(m_target, target)) {
         m_hint = tr("This request has no target: its contacts are not a step towards anything.");
         m_handedCount = 0;
+        setLoading(false);   // and the tip under the pointer follows
         update();
         return;
     }
@@ -163,6 +163,7 @@ void KadIncomingGraph::setRequest(const QCborMap& row, const QCborMap& graph, co
                      [](const Node& a, const Node& b) { return a.closeness < b.closeness; });
     m_hot = -1;
     layoutNodes();
+    setLoading(false);   // and the tip under the pointer follows the new nodes
     update();
 }
 
@@ -178,28 +179,13 @@ void KadIncomingGraph::clear()
     m_wanted = -1;
     m_hot = -1;
     m_hint = tr("Select an incoming search to see who asked us and which closer contacts we handed out.");
-    if (QToolTip::isVisible() && underMouse())
-        QToolTip::hideText();
+    setLoading(false);   // and no tip under the pointer
     update();
 }
 
 // ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
-
-bool KadIncomingGraph::event(QEvent* event)
-{
-    if (event->type() == QEvent::ToolTip) {
-        const auto* help = static_cast<QHelpEvent*>(event);
-        const int idx = hitTest(help->pos());
-        if (idx >= 0)
-            QToolTip::showText(help->globalPos(), toolTipText(idx), this, m_nodes[static_cast<size_t>(idx)].rect);
-        else
-            QToolTip::hideText();
-        return true;
-    }
-    return KadGraphBase::event(event);
-}
 
 void KadIncomingGraph::paintEvent(QPaintEvent* /*event*/)
 {
@@ -303,13 +289,6 @@ void KadIncomingGraph::mouseMoveEvent(QMouseEvent* event)
     if (idx != m_hot) {
         m_hot = idx;
         update();
-        if (QToolTip::isVisible()) {
-            if (idx >= 0)
-                QToolTip::showText(event->globalPosition().toPoint(), toolTipText(idx), this,
-                                   m_nodes[static_cast<size_t>(idx)].rect);
-            else
-                QToolTip::hideText();
-        }
     }
     KadGraphBase::mouseMoveEvent(event);
 }
@@ -389,6 +368,11 @@ int KadIncomingGraph::hitTest(const QPoint& pos) const
     return -1;
 }
 
+QRect KadIncomingGraph::nodeRect(int idx) const
+{
+    return m_nodes[static_cast<size_t>(idx)].rect;
+}
+
 QString KadIncomingGraph::toolTipText(int idx) const
 {
     const Node& n = m_nodes[static_cast<size_t>(idx)];
@@ -409,7 +393,7 @@ QString KadIncomingGraph::toolTipText(int idx) const
     } else {
         html += row(tr("Node ID"), n.known ? n.id : unknown);
     }
-    html += addressRows(n.addr, n.cc);
+    html += countryRow(n.cc);
     if (n.version >= 0)
         html += row(tr("Protocol Version"), QString::number(n.version));
     if (n.known) {

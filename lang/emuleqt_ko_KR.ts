@@ -851,7 +851,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+668"/>
+        <location filename="../src/gui/app/main.cpp" line="+807"/>
         <source>eMule Qt</source>
         <translation>eMule Qt</translation>
     </message>
@@ -5175,7 +5175,7 @@ ED2K 해시:	%2
 <context>
     <name>eMule::Ed2kKadPanel</name>
     <message>
-        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+228"/>
+        <location filename="../src/gui/panels/Ed2kKadPanel.cpp" line="+231"/>
         <location line="+129"/>
         <location line="+155"/>
         <source>▸ Contacts (0)</source>
@@ -6108,7 +6108,7 @@ Make a new anonymous key?</source>
         </translation>
     </message>
     <message>
-        <location line="+214"/>
+        <location line="+219"/>
         <location line="+318"/>
         <source>Connect</source>
         <translation>연결</translation>
@@ -6137,7 +6137,7 @@ Make a new anonymous key?</source>
         <translation type="vanished">소스 편집...</translation>
     </message>
     <message>
-        <location line="-175"/>
+        <location line="-180"/>
         <source>No sources</source>
         <translation>소스 없음</translation>
     </message>
@@ -6149,7 +6149,7 @@ Make a new anonymous key?</source>
         </translation>
     </message>
     <message>
-        <location line="+154"/>
+        <location line="+159"/>
         <source>From sources</source>
         <translation>소스에서</translation>
     </message>
@@ -6558,7 +6558,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">ed3k 노드는 일반 페이지의 닉네임을 사용합니다: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+448"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+445"/>
         <location line="+11"/>
         <location line="+564"/>
         <location line="+11"/>
@@ -6665,12 +6665,12 @@ Its names are then resolved after the lists you already follow.</source>
         <translation>노드 찾기</translation>
     </message>
     <message>
-        <location line="+1387"/>
+        <location line="+1381"/>
         <source>Find ed3k nodes in the local network (restarts the node)</source>
         <translation>로컬 네트워크에서 ed3k 노드 찾기(노드 다시 시작)</translation>
     </message>
     <message>
-        <location line="-1385"/>
+        <location line="-1379"/>
         <source>Node lists for the first contact, one ed3k:nodes link per line:</source>
         <translation>첫 연결용 노드 목록, 한 줄에 ed3k:nodes 링크 하나:</translation>
     </message>
@@ -6878,12 +6878,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1264"/>
+        <location line="+1258"/>
         <source> credits/MiB</source>
         <translation> 크레딧/MiB</translation>
     </message>
     <message>
-        <location line="-1273"/>
+        <location line="-1267"/>
         <source>Never pay (receipts only)</source>
         <translation>지불 안 함(영수증만)</translation>
     </message>
@@ -7131,12 +7131,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1101"/>
+        <location line="+1095"/>
         <source>not read yet</source>
         <translation>아직 읽지 않음</translation>
     </message>
     <message>
-        <location line="-1099"/>
+        <location line="-1093"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>계정이 초과 인출 상태입니다. 계속하려면 새 크레딧 키가 필요합니다.</translation>
     </message>
@@ -7658,24 +7658,20 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>여유 RAM이 전체의 이 비율보다 적은 동안에는 사용 중인 블록 해시만 RAM에 남습니다.</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Kad</source>
-        <translation>Kad</translation>
+        <translation type="vanished">Kad</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>RAM for records of other nodes</source>
-        <translation>다른 노드 레코드용 RAM</translation>
+        <translation type="vanished">다른 노드 레코드용 RAM</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Default (128 MiB)</source>
-        <translation>기본값 (128 MiB)</translation>
+        <translation type="vanished">기본값 (128 MiB)</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>RAM for the keyword and source records this node keeps for other ed3k nodes (about 1 KiB each). Over it, new records are refused and other nodes store them elsewhere. Applies at the next start of the ed3k node.</source>
-        <translation>이 노드가 다른 ed3k 노드를 위해 보관하는 키워드 및 소스 레코드용 RAM(각 약 1 KiB). 초과하면 새 레코드는 거부되고 다른 노드가 다른 곳에 저장합니다. ed3k 노드를 다음에 시작할 때 적용됩니다.</translation>
+        <translation type="vanished">이 노드가 다른 ed3k 노드를 위해 보관하는 키워드 및 소스 레코드용 RAM(각 약 1 KiB). 초과하면 새 레코드는 거부되고 다른 노드가 다른 곳에 저장합니다. ed3k 노드를 다음에 시작할 때 적용됩니다.</translation>
     </message>
     <message>
         <location line="+3"/>
@@ -7772,7 +7768,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>고속 다운로드가 실행 중이 아닙니다. 잔액: %1</translation>
     </message>
     <message>
-        <location line="-753"/>
+        <location line="-747"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -13383,17 +13379,21 @@ Other members see your nick and posts; your node takes part in passing the room&
 <context>
     <name>eMule::KadGraphBase</name>
     <message>
-        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+87"/>
+        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+110"/>
         <source>Automatically show active searches</source>
         <translation>활성 검색 자동 표시</translation>
     </message>
     <message>
-        <location line="+23"/>
-        <source>Address</source>
-        <translation>주소</translation>
+        <location line="+53"/>
+        <source>Loading...</source>
+        <translation>로딩 중...</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <source>Address</source>
+        <translation type="vanished">주소</translation>
+    </message>
+    <message>
+        <location line="-31"/>
         <source>Country</source>
         <translation>국가</translation>
     </message>
@@ -13401,7 +13401,7 @@ Other members see your nick and posts; your node takes part in passing the room&
 <context>
     <name>eMule::KadIncomingGraph</name>
     <message numerus="yes">
-        <location filename="../src/gui/controls/KadIncomingGraph.cpp" line="+117"/>
+        <location filename="../src/gui/controls/KadIncomingGraph.cpp" line="+116"/>
         <source>%n result(s) sent</source>
         <translation>
             <numerusform>결과 %n개 보냄</numerusform>
@@ -13418,12 +13418,12 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>이 요청에는 대상이 없습니다. 연락처가 어디에도 가까워지지 않습니다.</translation>
     </message>
     <message>
-        <location line="+57"/>
+        <location line="+59"/>
         <source>Select an incoming search to see who asked us and which closer contacts we handed out.</source>
         <translation>들어온 검색을 선택하면 누가 요청했고 어떤 더 가까운 연락처를 넘겨주었는지 볼 수 있습니다.</translation>
     </message>
     <message>
-        <location line="+53"/>
+        <location line="+38"/>
         <source>Too small to draw</source>
         <translation>그리기에 너무 작습니다</translation>
     </message>
@@ -13434,18 +13434,18 @@ Other members see your nick and posts; your node takes part in passing the room&
     </message>
     <message>
         <location line="+40"/>
-        <location line="+107"/>
+        <location line="+105"/>
         <source>Requester</source>
         <translation>요청자</translation>
     </message>
     <message>
-        <location line="-106"/>
-        <location line="+107"/>
+        <location line="-104"/>
+        <location line="+105"/>
         <source>This node</source>
         <translation>이 노드</translation>
     </message>
     <message>
-        <location line="-105"/>
+        <location line="-103"/>
         <source>No contacts handed out</source>
         <translation>넘겨준 연락처 없음</translation>
     </message>
@@ -13460,7 +13460,7 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>넘겨줌 (%1)</translation>
     </message>
     <message>
-        <location line="+104"/>
+        <location line="+102"/>
         <source>Handed-out contact</source>
         <translation>넘겨준 연락처</translation>
     </message>
@@ -13712,12 +13712,12 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation type="vanished">선택된 검색 없음</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+351"/>
+        <location filename="../src/gui/controls/KadLookupGraph.cpp" line="+380"/>
         <source>Distance</source>
         <translation>거리</translation>
     </message>
     <message>
-        <location line="-259"/>
+        <location line="-251"/>
         <source>Time</source>
         <translation>시간</translation>
     </message>
@@ -13736,7 +13736,7 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>0 = 대상</translation>
     </message>
     <message>
-        <location line="+229"/>
+        <location line="+221"/>
         <source>Routing Table</source>
         <translation>라우팅 테이블</translation>
     </message>
@@ -24610,7 +24610,7 @@ ED2K 해시:	%2
 <context>
     <name>eMule::SharedFilesPanel</name>
     <message>
-        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+836"/>
+        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+840"/>
         <source>Shared Files (0)</source>
         <translation>공유 파일 (0)</translation>
     </message>
@@ -24621,19 +24621,19 @@ ED2K 해시:	%2
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1631"/>
+        <location line="+1636"/>
         <location line="+531"/>
         <source>Open Folder</source>
         <translation>폴더 열기</translation>
     </message>
     <message>
-        <location line="-2150"/>
+        <location line="-2155"/>
         <source>Rename...</source>
         <translation>이름 바꾸기...</translation>
     </message>
     <message>
         <location line="+196"/>
-        <location line="+1996"/>
+        <location line="+2001"/>
         <source>Copy eD2K Links</source>
         <translation>eD2K 링크 복사</translation>
     </message>
@@ -24646,8 +24646,8 @@ ED2K 해시:	%2
         <translation type="vanished">새 파일 이름:</translation>
     </message>
     <message>
-        <location line="-2173"/>
-        <location line="+2135"/>
+        <location line="-2178"/>
+        <location line="+2140"/>
         <source>Delete From Disk</source>
         <translation>디스크에서 삭제</translation>
     </message>
@@ -24662,12 +24662,12 @@ ED2K 해시:	%2
         <translation>&quot;%1&quot;을(를) 디스크에서 영구적으로 삭제하시겠습니까?</translation>
     </message>
     <message>
-        <location line="-1069"/>
+        <location line="-1074"/>
         <source>Unshare</source>
         <translation>공유 해제</translation>
     </message>
     <message>
-        <location line="+1124"/>
+        <location line="+1129"/>
         <source>Unshare File</source>
         <translation>파일 공유 해제</translation>
     </message>
@@ -24681,32 +24681,32 @@ The file will remain on disk.</source>
 파일은 디스크에 남아 있습니다.</translation>
     </message>
     <message>
-        <location line="-1107"/>
-        <location line="+2115"/>
+        <location line="-1112"/>
+        <location line="+2120"/>
         <source>Priority (Upload)</source>
         <translation>우선순위(업로드)</translation>
     </message>
     <message>
-        <location line="-2100"/>
-        <location line="+2117"/>
+        <location line="-2105"/>
+        <location line="+2122"/>
         <source>Very Low</source>
         <translation>매우 낮음</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+2117"/>
+        <location line="-2121"/>
+        <location line="+2122"/>
         <source>Low</source>
         <translation>낮음</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+2117"/>
+        <location line="-2121"/>
+        <location line="+2122"/>
         <source>Normal</source>
         <translation>보통</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+2117"/>
+        <location line="-2121"/>
+        <location line="+2122"/>
         <source>High</source>
         <translation>높음</translation>
     </message>
@@ -24715,13 +24715,13 @@ The file will remain on disk.</source>
         <translation type="vanished">매우 높음</translation>
     </message>
     <message>
-        <location line="-2114"/>
-        <location line="+2116"/>
+        <location line="-2119"/>
+        <location line="+2121"/>
         <source>Auto</source>
         <translation>자동</translation>
     </message>
     <message>
-        <location line="-2102"/>
+        <location line="-2107"/>
         <source>Collection</source>
         <translation>컬렉션</translation>
     </message>
@@ -24758,24 +24758,24 @@ The file will remain on disk.</source>
     </message>
     <message>
         <location line="+19"/>
-        <location line="+2007"/>
+        <location line="+2012"/>
         <source>Details...</source>
         <translation>상세...</translation>
     </message>
     <message>
-        <location line="-2000"/>
-        <location line="+2003"/>
+        <location line="-2005"/>
+        <location line="+2008"/>
         <source>Comments...</source>
         <translation>댓글...</translation>
     </message>
     <message>
-        <location line="-1988"/>
-        <location line="+1994"/>
+        <location line="-1993"/>
+        <location line="+1999"/>
         <source>eD2K Links...</source>
         <translation>eD2K 링크...</translation>
     </message>
     <message>
-        <location line="-1932"/>
+        <location line="-1937"/>
         <source>Find...</source>
         <translation>찾기...</translation>
     </message>
@@ -24819,7 +24819,7 @@ The file will remain on disk.</source>
         <translation>모든 디렉터리</translation>
     </message>
     <message>
-        <location line="+246"/>
+        <location line="+251"/>
         <source>Current Session</source>
         <translation>현재 세션</translation>
     </message>
@@ -24946,7 +24946,7 @@ The file will remain on disk.</source>
         <translation>복사</translation>
     </message>
     <message>
-        <location line="-920"/>
+        <location line="-925"/>
         <source>All</source>
         <translation>전체</translation>
     </message>
@@ -24957,24 +24957,24 @@ The file will remain on disk.</source>
     </message>
     <message>
         <location line="+57"/>
-        <location line="+2117"/>
+        <location line="+2122"/>
         <source>Release</source>
         <translation>릴리스</translation>
     </message>
     <message>
-        <location line="-2090"/>
-        <location line="+1509"/>
+        <location line="-2095"/>
+        <location line="+1514"/>
         <source>Create ed3k Set...</source>
         <translation>ed3k 세트 만들기...</translation>
     </message>
     <message>
-        <location line="-1501"/>
-        <location line="+1503"/>
+        <location line="-1506"/>
+        <location line="+1508"/>
         <source>Publish New Version...</source>
         <translation>새 버전 게시...</translation>
     </message>
     <message>
-        <location line="-1382"/>
+        <location line="-1387"/>
         <source>Move to Anonymous ed3k Key...</source>
         <translation>익명 ed3k 키로 이동...</translation>
     </message>
@@ -24985,12 +24985,12 @@ The file will remain on disk.</source>
     </message>
     <message>
         <location line="+21"/>
-        <location line="+1452"/>
+        <location line="+1457"/>
         <source>Create Torrent...</source>
         <translation>토렌트 만들기...</translation>
     </message>
     <message>
-        <location line="-1437"/>
+        <location line="-1442"/>
         <source>Add To IRC Clipboard</source>
         <translation>IRC 클립보드에 추가</translation>
     </message>
@@ -25005,7 +25005,7 @@ The file will remain on disk.</source>
         <translation>내 ed3k 세트</translation>
     </message>
     <message>
-        <location line="+359"/>
+        <location line="+364"/>
         <source>Basic Options</source>
         <translation>기본 옵션</translation>
     </message>
@@ -25144,6 +25144,40 @@ They are then published with this node&apos;s address: anyone can see that this 
         <location line="+0"/>
         <source>The file was not moved: %1</source>
         <translation>파일이 이동되지 않았습니다: %1</translation>
+    </message>
+    <message>
+        <location line="+65"/>
+        <source>Drag&amp;Drop&apos;ed shared file not found (%1)</source>
+        <translation>끌어다 놓은 파일을 찾을 수 없습니다 (%1)</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Drag&amp;Drop&apos;ed shared folder ignored (%1)</source>
+        <translation>끌어다 놓은 폴더를 무시했습니다 (%1)</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Drag&amp;Drop&apos;ed shared file ignored (%1)</source>
+        <translation>끌어다 놓은 파일을 무시했습니다 (%1)</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+13"/>
+        <source>%n dropped item(s) cannot be shared</source>
+        <translation>
+            <numerusform>끌어다 놓은 항목 %n개를 공유할 수 없습니다</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location line="+17"/>
+        <source>Could not share %n dropped file(s)</source>
+        <translation>
+            <numerusform>끌어다 놓은 파일 %n개를 공유하지 못했습니다</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Could not share dropped file (%1)</source>
+        <translation>끌어다 놓은 파일을 공유하지 못했습니다 (%1)</translation>
     </message>
 </context>
 <context>

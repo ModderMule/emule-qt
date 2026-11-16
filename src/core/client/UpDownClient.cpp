@@ -6245,7 +6245,27 @@ QString analyzerFlagName(uint32 flag)
 float UpDownClient::analyzerScore() const
 {
     const AnalyzerRecord* r = analyzerRecordView();
-    return r ? r->score(analyzerHasSomethingForUs(), ClientAnalyzer::reaskTimeFor(m_clientSoft)) : 1.0f;
+    if (!r)
+        return 1.0f;
+    const bool forUs = analyzerHasSomethingForUs();
+    const uint32 reaskTime = ClientAnalyzer::reaskTimeFor(m_clientSoft);
+    const float s = r->score(forUs, reaskTime);
+
+    // Band crossings only: the balance moves with every chunk, a line per change would flood
+    const bool penalized = m_analyzerPenalized ? s < AnalyzerRecord::kRecoveredAbove
+                                               : s < AnalyzerRecord::kPenalizedBelow;
+    if (penalized != m_analyzerPenalized) {
+        m_analyzerPenalized = penalized;
+        if (thePrefs.logBannedClients()) {
+            const QString why = penalized ? r->reasons(forUs, reaskTime) : QString();
+            logLeecher(QStringLiteral("[CA] Score %1 (%2)%3; %4")
+                           .arg(s, 0, 'f', 2)
+                           .arg(penalized ? QStringLiteral("penalized") : QStringLiteral("back to normal"),
+                                why.isEmpty() ? QString() : QStringLiteral(": ") + why,
+                                leecherLogInfo()));
+        }
+    }
+    return s;
 }
 
 QString UpDownClient::analyzerReasons() const

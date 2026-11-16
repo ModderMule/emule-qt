@@ -34,11 +34,16 @@ BtShareGuard::Change BtShareGuard::update(const QString& id, const std::optional
         return {};
     // its whole content, for btShareMode; no name yet (magnet): not the save dir
     bool rootNowBlocked = false;
+    QStringList rootReleased;
     if (!row->name.isEmpty()) {
-        const Root r{SharedFileList::pathKey(QDir::cleanPath(row->savePath + u'/' + row->name)),
-                     row->isPrivate || row->i2p};
+        const QString rootPath = QDir::cleanPath(row->savePath + u'/' + row->name);
+        const Root r{SharedFileList::pathKey(rootPath), row->isPrivate || row->i2p};
         const auto old = m_roots.constFind(id);
-        rootNowBlocked = rootBlocked(r) && (old == m_roots.constEnd() || !rootBlocked(*old) || old->key != r.key);
+        const bool changed = old == m_roots.constEnd() || old->key != r.key;
+        rootNowBlocked = rootBlocked(r) && (changed || !rootBlocked(*old));
+        // an allowed root over a blocked one's files shares them (public root wins)
+        if (!rootBlocked(r) && (changed || rootBlocked(*old)) && overlapsBlocked(r.key))
+            rootReleased = {rootPath, QFileInfo(rootPath).absolutePath()};
         m_roots.insert(id, r);
     }
 
@@ -46,9 +51,10 @@ BtShareGuard::Change BtShareGuard::update(const QString& id, const std::optional
     // Blocking it then unshared every seeding file until the check ended, and the re-share
     // hashed them all again for ed3k. Judged once settled; unfinished ones stay blocked.
     if (!known && !settled(row->state) && row->state != bt::BtState::Moving && row->completedAt > 0)
-        return {.blockedMore = rootNowBlocked};
+        return {.released = rootReleased, .blockedMore = rootNowBlocked};
 
     Change change;
+    change.released = rootReleased;
     change.blockedMore = rootNowBlocked;
     Entry next;
     {
@@ -58,15 +64,17 @@ BtShareGuard::Change BtShareGuard::update(const QString& id, const std::optional
         next.downloading = settled(row->state) ? row->progress < 1.0 : known && it->downloading;
         // done stays done until it is not: no file list per status tick
         if (known && next.done && it->done)
-            return {.blockedMore = rootNowBlocked};
+            return {.released = rootReleased, .blockedMore = rootNowBlocked};
         // loaded complete (a restart) is not finished: a file unshared since stays so
         const bool finished = known && it->downloading && next.done;
         if (!next.done) {
-            next.paths = {root};
+            // no name yet (magnet, no metadata): nothing on disk; root = the save dir
+            if (!row->name.isEmpty())
+                next.paths = {root};
         } else if (files) {
             const auto list = files();
             if (!list)
-                return {.blockedMore = rootNowBlocked};   // entry kept: judged again when they come
+                return {.released = rootReleased, .blockedMore = rootNowBlocked};   // entry kept: judged again when they come
             for (const bt::BtFileRow& f : *list) {
                 if (f.pad)
                     continue;
@@ -106,13 +114,22 @@ bool BtShareGuard::blocks(const QString& filePath) const
     if ((m_entries.isEmpty() && (m_mode == BtShareMode::All || m_roots.isEmpty())) || filePath.isEmpty())
         return false;
     const QString key = SharedFileList::pathKey(filePath);
-    const auto under = [&key](const QString& k) { return key == k || (key.startsWith(k) && key.at(k.size()) == u'/'); };
+    const auto under = [&key](const QString& k) { return isUnder(key, k); };
     for (const Entry& e : m_entries)
         if (std::ranges::any_of(e.keys, under))
             return true;
     if (m_mode == BtShareMode::All)
         return false;
-    return std::ranges::any_of(m_roots, [&](const Root& r) { return rootBlocked(r) && under(r.key); });
+    // blocked only when every torrent over it is: one the mode allows shares it anyway
+    bool blocked = false;
+    for (const Root& r : m_roots) {
+        if (!under(r.key))
+            continue;
+        if (!rootBlocked(r))
+            return false;
+        blocked = true;
+    }
+    return blocked;
 }
 
 bool BtShareGuard::setShareMode(BtShareMode mode)
@@ -130,6 +147,16 @@ bool BtShareGuard::setShareMode(BtShareMode mode)
 bool BtShareGuard::rootBlocked(const Root& r) const
 {
     return m_mode == BtShareMode::Off || (m_mode == BtShareMode::Public && r.restricted);
+}
+
+bool BtShareGuard::overlapsBlocked(const QString& key) const
+{
+    return std::ranges::any_of(m_roots, [&](const Root& r) { return rootBlocked(r) && (isUnder(r.key, key) || isUnder(key, r.key)); });
+}
+
+bool BtShareGuard::isUnder(const QString& key, const QString& root)
+{
+    return key == root || (key.startsWith(root) && key.at(root.size()) == u'/');
 }
 
 } // namespace eMule

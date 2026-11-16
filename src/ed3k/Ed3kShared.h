@@ -291,6 +291,10 @@ private:
     [[nodiscard]] static qint64 mtimeOf(const QString& path);
     void loadCache();
     void saveCache();
+    /// Unlisted entries whose file is gone: checked on a pool thread (after the list's full
+    /// scan, at most every kPruneEveryMs), dropped in onCachePruned().
+    void pruneCacheLater();
+    void onCachePruned(const std::vector<std::pair<QByteArray, QString>>& gone);
     /// Appends @p data (@p h's values) to shared-hashes.dat and notes where. false: not stored.
     bool storeHashes(Hashed& h, std::span<const std::byte> data) const;
     /// shared-index.dat of the entries stored on disk.
@@ -332,6 +336,9 @@ private:
     QElapsedTimer m_runTimer;
     /// the count after the share list's first full scan was logged (per start)
     bool m_scanLogged = false;
+    /// pruneCacheLater(): a check in flight; when the last one started (0: none yet)
+    bool m_pruning = false;
+    qint64 m_prunedAtMs = 0;
     int m_rehashMs = kRehashMs;
     /// reported by sharedGone() (const): handled on the next turn
     mutable std::set<QByteArray> m_suspects;

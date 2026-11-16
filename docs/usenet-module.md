@@ -2331,7 +2331,8 @@ full rescan. `tst_UsenetSharing` covers all of it.
 `publishedPaths`) whether sharing is on or not. Off: the queue skips
 `shareCompletedFile()` and `SharedFileList::setNeverShared` (`DaemonApp::neverShared`)
 keeps the remembered files out of eD2K/Kad and ed3k, earlier downloads included.
-Switching off drops them at once, on rescans them in.
+Switching off drops them at once, on rescans them in. The list loads at core start with
+Usenet on or off: with Usenet off its files stay shared as the setting says.
 
 ## Bandwidth
 

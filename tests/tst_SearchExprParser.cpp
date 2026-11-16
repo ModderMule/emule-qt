@@ -102,6 +102,7 @@ private slots:
     void ed2kPayload_sizeAbove4GiB_data();
     void ed2kPayload_sizeAbove4GiB();
     void payload_archivesAreSearchedAsPro();
+    void ed2kPayload_keepsQuotedPhrase();
     void keyword_with_size_filter();
     void keyword_with_multiple_filters();
 
@@ -795,6 +796,19 @@ void tst_SearchExprParser::payload_archivesAreSearchedAsPro()
         QVERIFY2(payload.contains(proTerm), type);
         QVERIFY2(!payload.contains("Arc") && !payload.contains("Iso"), type);
     }
+}
+
+// Servers match a quoted string as a phrase only if the quotes reach them (MFC
+// GetSearchPacket keeps them for every target).
+void tst_SearchExprParser::ed2kPayload_keepsQuotedPhrase()
+{
+    SearchParams params;
+    params.expression = QStringLiteral("\"matrix reloaded\" dvd");
+    params.type = SearchType::Ed2kGlobal;
+    const QByteArray payload = buildSearchTermsPayload(params);
+    QVERIFY(payload.contains("\"matrix reloaded\""));
+    QVERIFY(payload.contains("dvd"));
+    QVERIFY(!payload.contains("\"dvd\""));
 }
 
 void tst_SearchExprParser::keyword_with_size_filter()

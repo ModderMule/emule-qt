@@ -995,9 +995,9 @@ QByteArray buildSearchTermsPayload(const SearchParams& params, const QString& ka
     if (uses64Bit)
         *uses64Bit = false;
 
-    // Quoted strings are kept for Kad: they are matched against the result name
-    // by the receiving node and by our own result filter.
-    ParseResult parsed = parseSearchExpression(params.expression, forKad);
+    // Quoted strings keep their quotes for servers and Kad alike (MFC
+    // GetSearchPacket LexInit(.., true)): the receiver matches them as a phrase.
+    ParseResult parsed = parseSearchExpression(params.expression, true);
     if (!parsed.success())
         return {};
 

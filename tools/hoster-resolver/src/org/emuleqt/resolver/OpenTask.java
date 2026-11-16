@@ -166,6 +166,11 @@ final class OpenTask extends Task {
             Out.send(id, "cancelled");
             return;
         }
+        if (d.failure != null && d.blocked != null) {
+            // failed after a redirect or a request to a non-public address was refused
+            Out.error(id, "private", d.blocked);
+            return;
+        }
         if (d.failure != null) {
             // JD's own check of the hoster's checksum failed: the bytes are bad, not the link
             final jd.plugins.download.HashResult hr = d.getHashResult();
@@ -246,6 +251,7 @@ final class OpenTask extends Task {
         private volatile PluginForHost plugin;
         volatile Throwable failure;
         volatile boolean resumedHere;
+        volatile String blocked;   ///< a host AddressGuard refused
 
         Driver(final DownloadLinkCandidate cand, final jd.plugins.Account acc) {
             super(cand, DownloadWatchDog.getInstance());
@@ -299,6 +305,7 @@ final class OpenTask extends Task {
             } catch (final Throwable e) {
                 failure = e;
             } finally {
+                blocked = AddressGuard.takeBlocked(Thread.currentThread());
                 dl.setLivePlugin(null);
                 if (p != null) {
                     try {
