@@ -257,6 +257,11 @@ searchFileFromMetaEntry(const pb::MetaEntry& entry, SearchType type, const Searc
         && !endsWithExtension(entry.name(), params.extension)
         && !endsWithExtension(entry.filePath(), params.extension))
         return nullptr;
+    // the server bounds the release's total size; a file row of it has its own
+    if (!wholeRelease && entry.size() != 0
+        && ((params.minSize > 0 && entry.size() < params.minSize)
+            || (params.maxSize > 0 && entry.size() > params.maxSize)))
+        return nullptr;
 
     // Written as the search result record an eD2K answer carries and read back
     // through the one parser: the hash and tag checks, the name prefix and what a
