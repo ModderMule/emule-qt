@@ -273,6 +273,26 @@ DESKTOP
         find "$SQL_DRIVERS" -maxdepth 1 -type f ! -name 'libqsqlite*' -exec mv {} "$SQL_PARKED/" \;
     fi
 
+    # Wayland: the Qt plugin deploys libqxcb.so only, so a Wayland session ran the
+    # GUI on XWayland. Qt picks wayland itself on XDG_SESSION_TYPE=wayland and falls
+    # back to xcb when the plugin does not load. One libqwayland.so since Qt 6.10
+    # (client moved into qtbase), libqwayland-egl/-generic before.
+    QT_PLUGINS_SRC="$("$QMAKE" -query QT_INSTALL_PLUGINS 2>/dev/null || true)"
+    WAYLAND_PLATFORMS=""
+    for plugin in libqwayland.so libqwayland-egl.so libqwayland-generic.so; do
+        [ -f "$QT_PLUGINS_SRC/platforms/$plugin" ] || continue
+        WAYLAND_PLATFORMS="${WAYLAND_PLATFORMS:+$WAYLAND_PLATFORMS;}$plugin"
+    done
+    if [ -n "$WAYLAND_PLATFORMS" ]; then
+        export EXTRA_PLATFORM_PLUGINS="$WAYLAND_PLATFORMS${EXTRA_PLATFORM_PLUGINS:+;$EXTRA_PLATFORM_PLUGINS}"
+        # "waylandcompositor" is the plugin's switch for the client's shell,
+        # decoration and EGL integration plugins; the compositor lib is not needed
+        export EXTRA_QT_MODULES="waylandcompositor${EXTRA_QT_MODULES:+;$EXTRA_QT_MODULES}"
+        echo "  Wayland platform plugins: $WAYLAND_PLATFORMS"
+    else
+        echo "Warning: no Wayland platform plugin in $QT_PLUGINS_SRC/platforms — X11/XWayland only."
+    fi
+
     # Deploy Qt libs into AppDir without producing an AppImage
     "$LINUXDEPLOY" --appdir "$APPDIR" --executable "$APPDIR/usr/bin/emulecored" --plugin qt
 
@@ -291,7 +311,28 @@ DESKTOP
         if [ -d "$STAGE_DIR/plugins/sqldrivers" ]; then
             find "$STAGE_DIR/plugins/sqldrivers" -type f ! -name 'libqsqlite*' -delete
         fi
+        # Wayland: server-buffer integrations and the non-desktop shells (IVI,
+        # qt-shell, fullscreen, wl_shell) are for Qt's own compositors
+        if [ -d "$STAGE_DIR/plugins/wayland-graphics-integration-client" ]; then
+            find "$STAGE_DIR/plugins/wayland-graphics-integration-client" -type f \
+                ! -name 'libqt-plugin-wayland-egl.so' -delete
+        fi
+        if [ -d "$STAGE_DIR/plugins/wayland-shell-integration" ]; then
+            find "$STAGE_DIR/plugins/wayland-shell-integration" -type f ! -name 'libxdg-shell.so' -delete
+        fi
+        rm -f "$STAGE_DIR/lib"/libQt6WlShellIntegration.so*
         echo "  Bundled $(find "$STAGE_DIR/plugins" -name '*.so' | wc -l | tr -d ' ') Qt plugins"
+    fi
+    # libwayland-* stay the system's: Mesa's libEGL (never bundled) loads the same
+    # libs, and an older bundled copy breaks it (mesa issue 11316). A system
+    # without them has no Wayland session; the plugin fails to load, Qt uses xcb.
+    rm -f "$STAGE_DIR/lib"/libwayland-*.so*
+    # A platform plugin without its shell integration aborts at startup instead of
+    # falling back to xcb
+    if ls "$STAGE_DIR/plugins/platforms"/libqwayland*.so >/dev/null 2>&1 \
+        && [ ! -f "$STAGE_DIR/plugins/wayland-shell-integration/libxdg-shell.so" ]; then
+        echo "Error: Wayland platform plugin bundled without libxdg-shell.so" >&2
+        exit 1
     fi
 
     # Create qt.conf so emuleqt finds the bundled libs
