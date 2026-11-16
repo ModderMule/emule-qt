@@ -93,7 +93,7 @@ log it. Nothing is refused yet.
 | `PUBLISH_SOURCE_REQ` | stores the IP as a source for the file (victim flooded by downloaders, real sources pushed out) | yes, RES contact (this change) |
 | `PUBLISH_KEY_REQ` | the IP is the publisher's vote: each new IP raises the entry's trust value, file name popularity and AICH hash vote; per-IP flood limit (`shouldAcceptPublish`) is bypassed. A victim's IP refreshes that publisher's AICH vote | yes, RES contact |
 | `PUBLISH_NOTES_REQ` | notes collapse per IP (`kNotePolicy`): a forged IP replaces that host's note; many IPs beat the one-note-per-host cap | yes, RES contact |
-| `FIREWALLED_REQ`, `FIREWALLED2_REQ` | we dial TCP to ip:tcpPort (port in the packet) and send `FIREWALLED_RES` there: a TCP connect to any third party | yes: sent from the `HELLO_RES` handler with the key that packet just brought |
+| `FIREWALLED_REQ`, `FIREWALLED2_REQ` | we dial TCP to ip:tcpPort (port in the packet) and send `FIREWALLED_RES` there: a TCP connect to any third party | v2: yes, sent only from a hello handler (MFC: `HELLO_REQ`; aMule, eMuleAI, eMuleQt: `HELLO_REQ` + `HELLO_RES`) with the key that hello just brought, and only to v7+. v1: no key field possible |
 | `FINDBUDDY_REQ` | a pending buddy claim for the claimed IP; claims are capped, oldest goes first, so forged claims evict real ones; `FINDBUDDY_RES` goes to the victim | yes, RES contact |
 | `CALLBACK_REQ` | the IP is relayed as `OP_CALLBACK` target: our firewalled buddy dials it (rate-limited per target, `vetPeerAddress`) | **only on the Kad search path.** The usual path (`UpDownClient::sendKadCallback`, MFC the same) sends unencrypted: the buddy IP came from a source answer, no Kad packet was ever exchanged with it |
 
@@ -128,7 +128,22 @@ LAN mode, drop the packet without a `PUBLISH_RES`. The publisher then counts the
 unanswered and publishes to the next one. Only flip this once the "valid" share is high
 on the live network. Before that it drops honest publishes from stock clients.
 
-Same rule can follow for keyword/notes publishes, `FIREWALLED*_REQ` and `FINDBUDDY_REQ`,
+**Refused since 2026-11-16: `FIREWALLED2_REQ`** without a valid receiver key (aMule #2315,
+live share 119/119 valid). The structural argument carries it: every sender keys it from
+the hello it answers. One honest unkeyed case: the hello was unkeyed itself (MFC
+`FindNodeIDByIP` sends `HELLO_REQ` plain, so do we, plus LAN mode). eMuleQt remembers IPs
+it sent an unkeyed `HELLO_REQ` for 60 s and accepts their unkeyed check. A dropped check
+costs the sender one unanswered probe; it asks other nodes anyway. Dropped requests are
+logged (`FIREWALLED2_REQ from … dropped — no valid receiver key`). `FIREWALLED_REQ` (v1)
+stays open.
+
+Send side: eMuleQt doesn't send `FIREWALLED2_REQ` it can't key (hello came in unkeyed,
+so `senderKey.getKeyValue(publicIP) == 0`) — aMule and we would drop it. Logged as
+`FIREWALLED2_REQ to … skipped — no UDP key for peer`. Test is the send bridge's own, so a
+key bound to our IP while still unknown (0) still counts as keyed, as in MFC. v1 checks to
+v2–v6 peers are sent unchanged.
+
+Same rule can follow for keyword/notes publishes and `FINDBUDDY_REQ`,
 each by its own share. `CALLBACK_REQ` can't be refused this way: honest callbacks are
 mostly unencrypted, so that would need the buddy's key in the source answer first.
 
