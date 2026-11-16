@@ -308,7 +308,7 @@ signals:
 
 protected:
     void closeEvent(QCloseEvent* event) override;
-    /// Minimize-to-tray lives here: MFC hides on minimize, never on close.
+    /// Minimize-to-tray lives here. Closing hides to the tray only with closeToTray (off, as MFC).
     void changeEvent(QEvent* event) override;
 
     // A .nzb dropped anywhere on the window switches to the Usenet tab and is
@@ -411,6 +411,12 @@ private:
     /// @param force repaint even then (startup, and after a settings change).
     void updateTrayIcon(bool force = false);
 
+    /// Tray icon exists and the user wants it shown (showTrayIcon).
+    [[nodiscard]] bool trayInUse() const;
+
+    /// Show or hide the tray icon per showTrayIcon. Hiding it brings a tray-hidden window back.
+    void applyTrayIconVisibility();
+
     /// Colour of the meter bar: stats colour 11, or the system scheme when that is
     /// left on "auto".
     [[nodiscard]] QColor trayMeterColor() const;
@@ -509,6 +515,7 @@ private:
 
     // System tray icon for popup notifications
     QSystemTrayIcon* m_trayIcon = nullptr;
+    bool m_quitRequested = false;   ///< explicit quit: close must not go to the tray
     Qt::WindowStates m_stateBeforeMinimize = Qt::WindowNoState;   // maximized/fullscreen only
     QElapsedTimer m_restoreRequested; ///< restoreWindow() call; stale "minimized" may still arrive
     QSoundEffect* m_notifySound = nullptr;

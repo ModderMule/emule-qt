@@ -12,6 +12,8 @@
 #include "controls/AbstractListView.h"
 #include "controls/ContentScrollArea.h"
 #include "prefs/Preferences.h"
+#include "utils/ClientIcons.h"
+#include "utils/Ed3kKeyText.h"
 #include "utils/Clipboard.h"
 #include "utils/DialogSizing.h"
 #include "utils/IpcFeedback.h"
@@ -241,6 +243,18 @@ void FileDetailDialog::buildTabs(const QCborMap& details, int tabToSelect)
 {
     m_tabs = new QTabWidget;
 
+    // an ed3k download: no eD2K names, comments, tags or link; its General page only
+    if (str(details, QLatin1StringView("network")) == QLatin1String("ed3k")) {
+        if (thePrefs.useOriginalIcons())
+            m_tabs->addTab(createGeneralTab(details), skinIcon(QStringLiteral(":/icons/FileInfo.ico")), tr("General"));
+        else
+            m_tabs->addTab(createGeneralTab(details), tr("General"));
+        m_tabs->setCurrentIndex(0);
+        contentLayout()->addWidget(m_tabs);
+        fitToContent();
+        return;
+    }
+
     if (thePrefs.useOriginalIcons()) {
         m_tabs->addTab(createGeneralTab(details),    skinIcon(QStringLiteral(":/icons/FileInfo.ico")),     tr("General"));
         m_tabs->addTab(createFileNamesTab(details),   skinIcon(QStringLiteral(":/icons/FileRename.ico")),   tr("File Names"));
@@ -418,9 +432,12 @@ QWidget* FileDetailDialog::createDownloadGeneralTab(const QCborMap& d)
     if (filePath.isEmpty())
         filePath = str(d, QLatin1StringView("filePath"));
     general.wide(tr("File Path"), value(filePath));
+    // an ed3k download (network "ed3k"): hash = its BLAKE3 root, no AICH or eD2K hashset
+    const bool ed3kRow = str(d, QLatin1StringView("network")) == QLatin1String("ed3k");
     general.wide(tr("Hash"), value(str(d, QLatin1StringView("hash"))));
     const QString aich = str(d, QLatin1StringView("aichHash"));
-    general.wide(tr("AICH Hash"), value(aich.isEmpty() ? tr("Unknown") : aich));
+    if (!ed3kRow)
+        general.wide(tr("AICH Hash"), value(aich.isEmpty() ? tr("Unknown") : aich));
 
     general.pair(tr("Size"), tr("%1 (%2 Bytes); Size on disk: %3")
         .arg(formatByteSize(fileSize), QLocale().toString(fileSize),
@@ -470,7 +487,7 @@ QWidget* FileDetailDialog::createDownloadGeneralTab(const QCborMap& d)
     const QString status = transferring > 0
         ? tr("Downloading (from %n source(s))", nullptr, static_cast<int>(transferring))
         : str(d, QLatin1StringView("status"));
-    if (ext) {
+    if (ext && !ed3kRow) {
         // ibid. :283-298 — several files: "Yes" only when all have both
         QString hashset;
         if (multi) {
@@ -531,8 +548,22 @@ QWidget* FileDetailDialog::createDownloadGeneralTab(const QCborMap& d)
     dates.pair(tr("Seen complete"), value(fmtTimeAgo(count("lastSeenComplete"), tr("Never"))));
     dates.pair(tr("Last reception"), value(fmtTimeAgo(count("lastReception"), tr("Never"))));
 
+    // other names of the root known here (alias.md): its torrent/usenet/hoster/eD2K jobs
+    QStringList aliases;
+    for (const auto& a : d.value(QLatin1StringView("ed3kAliases")).toArray())
+        if (const QString text = ed3kAliasText(a.toMap()); !text.isEmpty())
+            aliases << text;
+
+    // ── ed3k: a plain ed3k download, listed in Transfers only (Ed3kDownloads.h)
+    if (ed3kRow && !multi) {
+        DetailGroup ed3k(tr("ed3k"), layout);
+        ed3k.pair(tr("Key"), ed3kKeyText(str(d, QLatin1StringView("ed3kKey"))));
+        if (!aliases.isEmpty())
+            ed3k.wide(tr("Also known as"), aliases.join(u'\n'));
+    }
+
     // ── ed3k: the eD2K download joined from ed3k (§14.2), not on MFC's page
-    if (multi ? count("ed3kEnabledCount") > 0 : flag("ed3kEnabled")) {
+    if (!ed3kRow && (multi ? count("ed3kEnabledCount") > 0 : flag("ed3kEnabled"))) {
         DetailGroup ed3k(tr("ed3k"), layout);
         QString root;
         const QString hex = str(d, QLatin1StringView("ed3kRoot"));
@@ -548,6 +579,8 @@ QWidget* FileDetailDialog::createDownloadGeneralTab(const QCborMap& d)
         ed3k.pair(tr("Sources"), tr("%1 (transferring %2)")
             .arg(count("ed3kSources")).arg(count("ed3kTransferring")));
         ed3k.pair(tr("Transferred"), sizeAndShare(count("ed3kBytes"), fileSize));
+        if (!multi && !aliases.isEmpty())
+            ed3k.wide(tr("Also known as"), aliases.join(u'\n'));
     }
 
     layout->addStretch(1);

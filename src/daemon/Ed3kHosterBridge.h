@@ -8,6 +8,7 @@
 
 #include "IpcMessage.h"
 
+#include <QCborArray>
 #include <QCborMap>
 
 #include <functional>
@@ -51,6 +52,13 @@ void connectPushes(ed3k::Ed3kHosterJoin& join, const std::function<void(const Ip
 
 /// The grabber's changes as PushLinkGrabber, its ask results as PushHosterLinks.
 void connectGrabberPushes(ed3k::Ed3kLinkGrabber& grabber, const std::function<void(const Ipc::IpcMessage&)>& broadcast);
+
+/// Hoster item of join owner @p owner ("h<id>") as another name of an ed3k root (Transfers
+/// tooltip, Details): {network: "hoster", name, id: its link, host}; empty: none.
+[[nodiscard]] QCborMap aliasOf(const QString& owner);
+
+/// The hoster item of @p owner downloading now, as a GetDownloadClients row (network "hoster").
+void appendDownloading(QCborArray& out, const QString& owner);
 
 /// The "hoster" map of GetEd3kStatus: {compiled, enabled, java: {state, path, version, error,
 /// progress}, resolver: {available, reason, description}, clipboard, linkGrabber, grabAll,

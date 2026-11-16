@@ -66,6 +66,8 @@ struct SourceRow {
     bool isUrl = false;
     bool noViewShared = false;      ///< peer refuses "View Shared Files"
     bool ed3k = false;              ///< an ed3k node (userHash: "ed3k:[anon:]<node>"), no eD2K client
+    bool ed3kAnon = false;          ///< ed3k: runs on our anonymous key (hops.md §1)
+    QString ed3kJoin;               ///< ed3k: "torrent"/"usenet"/"hoster" join it serves, else empty
 };
 
 /// The tooltip of a source row, as MFC builds it. @p extended: advanced controls.
@@ -81,6 +83,8 @@ struct DownloadBarData {
     QByteArray partMap;
     /// bytes per partFreq entry; 0: an eD2K part (PARTSIZE). ed3k: its 4 MiB piece
     qint64 freqUnit = 0;
+    /// ed3k: bytes of an HTTP source on disk, root not checked yet; [start, end] pairs
+    QList<qint64> unverified;
 };
 
 /// Row data for one download (PartFile) shown in the downloads list.
@@ -127,6 +131,7 @@ struct DownloadRow {
     QList<qint64> pending;    ///< requested blocks not yet received, same shape
     QList<quint16> partFreq;  ///< source count per part
     qint64 partFreqUnit = 0;  ///< bytes per partFreq entry; 0: PARTSIZE (ed3k: a 4 MiB piece)
+    QList<qint64> unverified; ///< ed3k HTTP bytes not checked yet (drawn as held), same shape
     bool hasBarRanges = false; ///< daemon sent gaps; else the bar falls back to partMap
     bool isPreviewPossible = false;
 
@@ -158,6 +163,7 @@ struct DownloadRow {
     [[nodiscard]] bool isEd3k() const { return network == 1; }
     QString ed3kPath;   ///< ed3k: the part file, or the file once complete (a local GUI opens it)
     QString ed3kKey;    ///< ed3k: "Node" / "Anonymous" (hops.md §1); eD2K rows: empty
+    QStringList ed3kAliases;   ///< ed3k: other names of the root known here (ed3kAliasText lines)
 
     /// A completed download (green 100% bar). Completed files have no live
     /// sources, so they are never expandable in the tree.

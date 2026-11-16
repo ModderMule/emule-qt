@@ -2766,7 +2766,7 @@ void tst_SharedFileList::nextDueFile_isOneWalkAndRoundRobin()
     for (uint8 i = 1; i <= 5; ++i)
         shared.safeAddKFile(makeFile(knownFiles, i, QStringLiteral("f%1.bin").arg(i)));
 
-    uint32 cursor = 0;
+    SharedFileList::PublishCursor cursor;
     int asked = 0;
     const auto always = [&asked](KnownFile*) { ++asked; return true; };
 
@@ -2780,18 +2780,22 @@ void tst_SharedFileList::nextDueFile_isOneWalkAndRoundRobin()
     QVERIFY(seen.contains(shared.nextDueFile(cursor, always)));
 
     // Nothing due: every file is asked exactly once, wherever the cursor stands
-    cursor = 3;
     asked = 0;
     QVERIFY(!shared.nextDueFile(cursor, [&asked](KnownFile*) { ++asked; return false; }));
     QCOMPARE(asked, 5);
 
-    // Only one file due, behind the cursor: found on the wrap
+    // Only one file due, behind the cursor: found on the wrap, cursor stays on it
     KnownFile* only = *seen.begin();
-    cursor = 0;
-    shared.nextDueFile(cursor, [only](KnownFile* f) { return f == only; });
-    const uint32 after = cursor;
     QCOMPARE(shared.nextDueFile(cursor, [only](KnownFile* f) { return f == only; }), only);
-    QCOMPARE(cursor, after);
+    const SharedFileList::PublishCursor after = cursor;
+    QCOMPARE(shared.nextDueFile(cursor, [only](KnownFile* f) { return f == only; }), only);
+    QVERIFY(cursor == after);
+
+    // Cursor file left the share: the walk restarts at begin() and still asks each once
+    QVERIFY(shared.removeFile(only));
+    asked = 0;
+    QVERIFY(!shared.nextDueFile(cursor, [&asked](KnownFile*) { ++asked; return false; }));
+    QCOMPARE(asked, 4);
 }
 
 // A record with a stale tag and one with none both end with what the file says.

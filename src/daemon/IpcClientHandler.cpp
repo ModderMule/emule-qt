@@ -767,6 +767,8 @@ void IpcClientHandler::handleGetDownloadClients(const IpcMessage& msg)
         }
     }
     Ed3kUploadsBridge::appendDownloading(clients);
+    // torrent/usenet/hoster jobs joined with ed3k: their own network's clients beside the ed3k ones
+    Ed3kUploadsBridge::appendNetworkDownloading(clients);
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(clients)));
 }
 
@@ -780,7 +782,14 @@ void IpcClientHandler::handleGetDownloadSources(const IpcMessage& msg)
             sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
             return;
         }
-        sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(Ed3kUploadsBridge::downloadSources(root))));
+        QCborArray rows = Ed3kUploadsBridge::downloadSources(root);
+        // its HTTP (ws=) source, as eD2K's URL sources
+        qint64 peerRate = 0;
+        for (const auto& row : rows)
+            peerRate += row.toMap().value(QStringLiteral("datarate")).toInteger();
+        if (auto web = Ed3kDownloadsBridge::webSourceRow(root, peerRate))
+            rows.append(*web);
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(rows)));
         return;
     }
     if (!theApp.downloadQueue) {
@@ -3990,6 +3999,14 @@ QCborArray searchKadComments(const AbstractFile& file, const QString& source = Q
 void IpcClientHandler::handleGetDownloadDetails(const IpcMessage& msg)
 {
     const QString hash = msg.fieldString(0);
+    // an ed3k download (its root, 64 hex): the General page's fields
+    if (hash.size() == 64) {
+        if (auto details = Ed3kDownloadsBridge::detailsOf(hash))
+            sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(*details)));
+        else
+            sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
+        return;
+    }
     if (!theApp.downloadQueue) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Download queue unavailable")));
         return;
@@ -5135,6 +5152,10 @@ bool IpcClientHandler::applyPreferenceC(const QString& key, const QCborValue& va
         thePrefs.setTooltipDelay(static_cast<int>(val.toInteger()));
     else if (key == QStringLiteral("minimizeToTray"))
         thePrefs.setMinimizeToTray(val.toBool());
+    else if (key == QStringLiteral("showTrayIcon"))
+        thePrefs.setShowTrayIcon(val.toBool());
+    else if (key == QStringLiteral("closeToTray"))
+        thePrefs.setCloseToTray(val.toBool());
     else if (key == QStringLiteral("transferDoubleClick"))
         thePrefs.setTransferDoubleClick(val.toBool());
     else if (key == QStringLiteral("showDwlPercentage"))

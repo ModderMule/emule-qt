@@ -25,6 +25,7 @@
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadIO.h"
 #include "kademlia/KadLog.h"
+#include "kademlia/KadPointerRoute.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingZone.h"
 #include "kademlia/KadSearch.h"
@@ -48,9 +49,11 @@
 #include "transfer/UploadQueue.h"
 #include "utils/TimeUtils.h"
 
+#include "utils/Exceptions.h"
 #include "utils/Log.h"
 
 #include <QBuffer>
+#include <QRegularExpression>
 #include <QCoreApplication>
 #include <QCborArray>
 #include <QCborMap>
@@ -59,9 +62,11 @@
 #include <QTimer>
 #include <QPointer>
 #include <QImageReader>
+#include <QVarLengthArray>
 #include <QRandomGenerator>
 
 #include <algorithm>
+#include <span>
 #include <ctime>
 #include <utility>
 
@@ -369,6 +374,17 @@ void UpDownClient::setUserHash(const uint8* hash)
     else
         md4clr(m_userHash.data());
     sourceIdentityChanged();
+}
+
+void UpDownClient::setKadRouteHash(const uint8* hash)
+{
+    if (!hash) {
+        m_kadRouteHash.reset();
+        return;
+    }
+    std::array<uint8, 16> h{};
+    std::memcpy(h.data(), hash, 16);
+    m_kadRouteHash = h;
 }
 
 void UpDownClient::sourceIdentityChanged()
@@ -758,6 +774,7 @@ void UpDownClient::clearHelloProperties()
     m_supportsHttpCache = false;
     m_userIPv6 = Address{};
     m_buddyIPv6 = Address{};
+    m_emuleQtVersion = 0;
     sourceIdentityChanged();
 }
 
@@ -1010,9 +1027,32 @@ QString UpDownClient::dbgGetKadState(KadState state)
 
 QString UpDownClient::dbgGetFullClientSoftVer() const
 {
+    if (isEmuleQt())
+        return displaySoftwareStr();
     if (m_modVersion.isEmpty())
         return m_clientSoftwareStr;
     return QStringLiteral("%1 [%2]").arg(m_clientSoftwareStr, m_modVersion);
+}
+
+QString UpDownClient::displaySoftwareStr() const
+{
+    if (!isEmuleQt())
+        return m_clientSoftwareStr;
+    return QStringLiteral("eMuleQt v%1.%2.%3")
+        .arg(m_emuleQtVersion >> 16).arg((m_emuleQtVersion >> 8) & 0xFF).arg(m_emuleQtVersion & 0xFF);
+}
+
+uint32 UpDownClient::parseEmuleQtModVersion(const QString& modVersion)
+{
+    // Exactly what sendHelloTypePacket writes: "eMule Qt 0.7.33"
+    static const QRegularExpression re(QStringLiteral("^eMule Qt (\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})$"));
+    const auto m = re.match(modVersion);
+    if (!m.hasMatch())
+        return 0;
+    const uint32 maj = m.captured(1).toUInt(), mn = m.captured(2).toUInt(), pt = m.captured(3).toUInt();
+    if (maj > 255 || mn > 255 || pt > 255 || (maj | mn | pt) == 0)
+        return 0;
+    return (maj << 16) | (mn << 8) | pt;
 }
 
 QString UpDownClient::kadBuddyInfo() const
@@ -1120,6 +1160,44 @@ bool UpDownClient::processHelloAnswer(const uint8* data, uint32 size)
 // processHelloTypePacket — MFC BaseClient.cpp:356-673
 // ===========================================================================
 
+namespace {
+
+bool dlpChecksWanted();
+
+struct HelloTagSeen {
+    uint32 id;
+    bool isInt;
+    uint32 value;
+};
+
+// Ghost mod: official-looking eMule with tags/bits its version never sent. Lists in specialdlp.
+// info = OP_EMULEINFO tags, else hello tags.
+QString checkGhostMod(std::span<const HelloTagSeen> tags, uint32 emuleVersion, bool info)
+{
+    if (!theApp.dlp || !dlpChecksWanted()
+        || !(info ? theApp.dlp->hasOfficialInfoChecks() : theApp.dlp->hasOfficialChecks()))
+        return {};
+    for (const HelloTagSeen& t : tags) {
+        if (const auto r = info ? theApp.dlp->checkOfficialInfoTag(t.id, emuleVersion)
+                                : theApp.dlp->checkOfficialHelloTag(t.id, emuleVersion))
+            return QStringLiteral("%1 0x%2").arg(*r).arg(t.id, 2, 16, QLatin1Char('0'));
+        if (!t.isInt)
+            continue;
+        if (const auto r = info ? theApp.dlp->checkOfficialInfoBits(t.id, t.value, emuleVersion)
+                                : theApp.dlp->checkOfficialHelloBits(t.id, t.value, emuleVersion))
+            return QStringLiteral("%1 0x%2=0x%3").arg(*r).arg(t.id, 2, 16, QLatin1Char('0')).arg(t.value, 0, 16);
+    }
+    return {};
+}
+
+// No letter or digit = no modstring; a ghost mod may send " " to look modded
+bool hasReadableModVersion(const QString& mod)
+{
+    return std::ranges::any_of(mod, [](QChar c) { return c.isLetterOrNumber(); });
+}
+
+} // namespace
+
 bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
 {
     m_helloInfo.clear();
@@ -1134,6 +1212,12 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
 
     // Read identity
     data.readHash16(m_userHash.data());
+    // Not MFC: a Kad ip6 route promised this hash (ipv6-spec §5.6.2)
+    if (m_kadRouteHash) {
+        if (*m_kadRouteHash != m_userHash)
+            throw ClientException("user hash differs from the Kad record of this IPv6 route", true);
+        m_kadRouteHash.reset();
+    }
     m_userIDHybrid = data.readUInt32();
     uint16 nUserPort = data.readUInt16();
 
@@ -1144,9 +1228,12 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
     bool bPrTag = false;
     QString dlpTagReason;
     bool dlpMd4Tag = false;
+    QVarLengthArray<HelloTagSeen, 16> seenTags;
+    uint32 rawEmuleVersion = 0;
 
     for (uint32 i = 0; i < tagCount; ++i) {
         Tag tag(data, true);
+        seenTags.push_back({tag.nameId(), tag.isInt(), tag.isInt() ? static_cast<uint32>(tag.intValue()) : 0u});
 
         switch (tag.nameId()) {
         case CT_NAME:
@@ -1230,6 +1317,7 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
 
         case CT_EMULE_VERSION:
             if (tag.isInt()) {
+                rawEmuleVersion = static_cast<uint32>(tag.intValue());
                 m_compatibleClient = static_cast<uint8>((tag.intValue() >> 24) & 0xFF);
                 m_clientVersion = tag.intValue() & 0x00FFFFFF;
                 m_emuleVersion = 0x99;
@@ -1422,6 +1510,9 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
     if (bPrTag)
         m_isHybrid = true;
 
+    // eMuleQt: modstring + HTTP cache bit, which only eMuleQt sends (no own tag, see Opcodes.h)
+    m_emuleQtVersion = bIsMule && m_supportsHttpCache ? parseEmuleQtModVersion(m_modVersion) : 0;
+
     initClientSoftwareVersion();
 
     // A hello on a TCP connection: the hash goes with a real address.
@@ -1430,6 +1521,12 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
 
     if (m_isHybrid)
         m_sharedDirectories = true;
+
+    // Version comes last in the hello, so the ghost mod check runs after the loop
+    m_helloEmuleVersion = rawEmuleVersion;
+    m_ghostModReason = bIsMule && !hasReadableModVersion(m_modVersion) && !m_isHybrid && !m_isMLDonkey
+                           ? checkGhostMod(seenTags, rawEmuleVersion, false)
+                           : QString();
 
     // Xtreme checks after the whole hello (srchybrid/BaseClient.cpp:1080-1162)
     runAntiLeecher(dlpTagReason, dlpMd4Tag);
@@ -1650,7 +1747,8 @@ void UpDownClient::sendHelloTypePacket(SafeMemFile& data)
         (static_cast<uint32>(SEND_EMULE_VERSION_UPD) <<  7);     // update (0=a, 1=b, ...)
     Tag(CT_EMULE_VERSION, emuleVer).writeTagToFile(data);
 
-    // CT_MOD_VERSION — identify ourselves as eMule Qt
+    // CT_MOD_VERSION — identify ourselves as eMule Qt. 3rd parties read this form, keep it;
+    // with MODMISC_HTTPCACHE below it is how eMuleQt peers tell each other apart.
     Tag(CT_MOD_VERSION, QStringLiteral("eMule Qt " EMULE_VERSION_STRING)).writeTagToFile(data);
 
     // CT_MOD_MISCOPTIONS — extended capability bitfield. We advertise IPv6, Extended
@@ -1786,10 +1884,12 @@ void UpDownClient::processMuleInfoPacket(const uint8* data, uint32 size)
     // Read tags
     const uint32 tagCount = readTagCount(file, kMaxWireTags);
     QString dlpTagReason;
+    QVarLengthArray<HelloTagSeen, 16> seenTags;
 
     for (uint32 i = 0; i < tagCount; ++i) {
         // Not UTF-8: MFC BaseClient.cpp:772 reads EMULEINFO tags as plain strings.
         Tag tag(file, false);
+        seenTags.push_back({tag.nameId(), tag.isInt(), tag.isInt() ? static_cast<uint32>(tag.intValue()) : 0u});
 
         switch (tag.nameId()) {
         case ET_COMPRESSION:
@@ -1865,6 +1965,12 @@ void UpDownClient::processMuleInfoPacket(const uint8* data, uint32 size)
     // the raw bitfield to makeClientVersion() decimal format.
     if (prevEmuleVersion != 0x99)
         initClientSoftwareVersion();
+
+    // Ghost mod, as for the hello; the compatible client may come from either packet
+    const uint32 infoVersion = m_helloEmuleVersion | (uint32(m_compatibleClient) << 24);
+    m_ghostModInfoReason = !hasReadableModVersion(m_modVersion) && !m_isHybrid && !m_isMLDonkey
+                               ? checkGhostMod(seenTags, infoVersion, true)
+                               : QString();
 
     // Older clients send their mod string here (srchybrid/BaseClient.cpp:1499-1508)
     runAntiLeecher(dlpTagReason, false);
@@ -2754,9 +2860,14 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
     const bool connectFailed = m_connectingState != ConnectingState::None && !proxyFailed;
     // Our direct IPv6 dial to a LowID source never got through: its v6 inbound is firewalled.
     // Forget the v6 route and reach it the LowID way (callback, NAT rendezvous). Not MFC.
-    const bool v6RouteFailed = connectFailed && m_connectingState == ConnectingState::DirectTCP
+    // Not for a Kad ip6 route that never said hello: it has no LowID route (§5.6.2)
+    const bool kadRouteFailed = m_kadRouteHash.has_value() && isEd2kClient() && m_reqFile;
+    const bool v6RouteFailed = !kadRouteFailed
+                            && connectFailed && m_connectingState == ConnectingState::DirectTCP
                             && m_connectAddress.isIPv6() && hasLowID() && isEd2kClient()
                             && m_reqFile && m_downloadState == DownloadState::Connecting;
+    const bool kadCallbackFailed = m_connectingState == ConnectingState::KadCallback
+                                || m_downloadState == DownloadState::WaitCallbackKad;
     m_connectingState = ConnectingState::None;
 
     // The preview we were waiting for is not coming.
@@ -2860,19 +2971,16 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
                 if (m_reqFile && m_downloadState == DownloadState::None)
                     askForDownload();
             });
+        } else if (unreachable && kadCallbackFailed && rerouteViaPointer()) {
+            // Buddy gone: waits for the pointer's next candidate (ipv6-spec §5.6.1). Not MFC.
         } else if ((unanswered || unreachable)
                    // a failed upload callback with no download side is not a dead source
                    && !(callbackRequeued && m_downloadState == DownloadState::None)) {
             sourceDied = unreachable;
-            if (theApp.clientList)
-                theApp.clientList->globalDeadSourceList.addDeadSource(deadSourceKey(), hasLowID());
-            // Leaves the file's source list; the ClientList reaper takes the client
-            // once nothing else holds it. Without this a long download fills up with
-            // dead peers until maxSourcesPerFile refuses every new one.
-            if (theApp.downloadQueue && m_downloadState != DownloadState::None)
-                theApp.downloadQueue->removeSource(this);
-            else
-                setDownloadState(DownloadState::None);
+            // No retry for this address from any record (ipv6-spec §5.6.2)
+            if (kadRouteFailed && theApp.downloadQueue)
+                theApp.downloadQueue->noteKadIPv6RouteFailed(m_userIPv6);
+            dropAsDeadSource();
         }
     }
 
@@ -6086,8 +6194,26 @@ void UpDownClient::runAntiLeecher(const QString& tagReason, bool md4Tag)
 {
     checkAnalyzerCorruptSender();
 
-    if (!dlpChecksWanted() || !theApp.dlp || !theApp.dlp->isLoaded()) {
+    if (!dlpChecksWanted()) {
         // Switched off: soft verdicts no longer apply. Bans run out on their own.
+        if (m_leecherCategory != LeecherCategory::None)
+            clearLeecher();
+        return;
+    }
+
+    // Own rule, needs no DLP list: every real eMuleQt sends MODMISC_HTTPCACHE
+    // (since v0.4.0, older ones are not cared for). Bans in every DLP mode.
+    if (!m_supportsHttpCache && parseEmuleQtModVersion(m_modVersion) != 0) {
+        banLeecher(QStringLiteral("Fake eMule Qt modstring"), LeecherCategory::FakeEmuleQt);
+        return;
+    }
+    if (m_leecherCategory == LeecherCategory::FakeEmuleQt) {
+        clearLeecher();
+        m_dlpCheckedSoftware.clear();
+        m_dlpCheckedName.clear();
+    }
+
+    if (!theApp.dlp || !theApp.dlp->isLoaded()) {
         if (m_leecherCategory != LeecherCategory::None)
             clearLeecher();
         return;
@@ -6109,6 +6235,15 @@ void UpDownClient::runAntiLeecher(const QString& tagReason, bool md4Tag)
     }
 
     testLeecher();
+
+    // Ghost mod: score cut only, below every other verdict
+    const QString& ghostReason = !m_ghostModReason.isEmpty() ? m_ghostModReason : m_ghostModInfoReason;
+    if (!ghostReason.isEmpty()) {
+        if (m_leecherCategory == LeecherCategory::None)
+            banLeecher(ghostReason, LeecherCategory::GhostMod);
+    } else if (m_leecherCategory == LeecherCategory::GhostMod) {
+        clearLeecher();
+    }
 }
 
 void UpDownClient::testLeecher()
@@ -6197,7 +6332,7 @@ void UpDownClient::banLeecher(const QString& reason, LeecherCategory category)
 
     const bool soft = category == LeecherCategory::ModSoft || category == LeecherCategory::UserSoft
                    || category == LeecherCategory::Md4Tag;
-    const bool reduceScore = soft && thePrefs.antiLeecherSoftReduceScore();
+    const bool reduceScore = category == LeecherCategory::GhostMod || (soft && thePrefs.antiLeecherSoftReduceScore());
 
     if (m_leecherCategory != category) {
         m_leecherCategory = category;
@@ -6473,6 +6608,80 @@ bool UpDownClient::serverCallbackKnownStale() const
     return m_staleCallbackUserID != 0 && m_staleCallbackUserID == m_userIDHybrid
         && m_staleCallbackServerPort == m_serverPort
         && m_staleCallbackServer == m_serverAddress;
+}
+
+// ===========================================================================
+// Pointer route after a failed buddy callback — ipv6-spec §5.6.1, not MFC
+// ===========================================================================
+
+bool UpDownClient::rerouteViaPointer()
+{
+    // The callback ends in a dial to us: useless while we are firewalled
+    if (m_kadPointerSourceIP == 0 || !m_reqFile || !hasValidHash() || !isEd2kClient()
+        || theApp.isFirewalled())
+        return false;
+    std::array<uint8, 16> fileHash{};
+    std::memcpy(fileHash.data(), m_reqFile->fileHash(), 16);
+    const kad::PointerRoute::BuddyEndpoint failed{
+        m_buddyAddress.isNull() ? uint32{0} : m_buddyAddress.toNetworkUint32(), m_buddyPort};
+    QPointer<UpDownClient> self(this);
+    const bool waiting = kad::PointerRoute::reroute(
+        kad::UInt128(m_userHash.data()), m_kadPointerSourceIP, fileHash, failed,
+        [self, fileHash](std::optional<kad::Search::PointerHit> hit) {
+            if (!self)
+                return;
+            const uint32 ip = hit ? hit->buddyIP : 0;
+            const uint16 port = hit ? hit->buddyPort : uint16{0};
+            const std::array<uint8, 16> id = hit ? hit->buddyHash : std::array<uint8, 16>{};
+            // Queued: may arrive inside disconnected()
+            QTimer::singleShot(0, self.data(), [self, fileHash, ip, port, id] {
+                if (self)
+                    self->onPointerResolved(fileHash, ip, port, id);
+            });
+        });
+    if (!waiting)
+        return false;
+    setDownloadState(DownloadState::WaitCallbackKad);
+    logDebug([&]() -> QString { return QStringLiteral("Kad callback to %1 failed, asking its buddy pointer")
+                 .arg(dbgGetClientInfo()); });
+    return true;
+}
+
+void UpDownClient::onPointerResolved(const std::array<uint8, 16>& fileHash, uint32 buddyIP,
+                                     uint16 buddyPort, const std::array<uint8, 16>& buddyID)
+{
+    // Still the attempt that asked: same file, nothing else started meanwhile
+    if (!m_reqFile || std::memcmp(m_reqFile->fileHash(), fileHash.data(), 16) != 0
+        || m_downloadState != DownloadState::WaitCallbackKad
+        || m_connectingState != ConnectingState::None)
+        return;
+    if (buddyIP != 0) {
+        setBuddyID(buddyID.data());
+        setBuddyAddress(Address::fromNetworkOrder(buddyIP));
+        setBuddyPort(buddyPort);
+    }
+    if (buddyIP == 0 || !kadCallbackAvailable()) {
+        dropAsDeadSource();
+        return;
+    }
+    logDebug([&]() -> QString { return QStringLiteral("Kad callback to %1 via pointer buddy %2:%3")
+                 .arg(dbgGetClientInfo(), ipstr(buddyIP)).arg(buddyPort); });
+    if (theApp.clientList)
+        theApp.clientList->addConnectingClient(this);   // connect timeout for this attempt
+    sendKadCallback();
+}
+
+void UpDownClient::dropAsDeadSource()
+{
+    if (theApp.clientList)
+        theApp.clientList->globalDeadSourceList.addDeadSource(deadSourceKey(), hasLowID());
+    // Leaves the file's source list; the ClientList reaper takes the client
+    // once nothing else holds it. Without this a long download fills up with
+    // dead peers until maxSourcesPerFile refuses every new one.
+    if (theApp.downloadQueue && m_downloadState != DownloadState::None)
+        theApp.downloadQueue->removeSource(this);
+    else
+        setDownloadState(DownloadState::None);
 }
 
 // ===========================================================================

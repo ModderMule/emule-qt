@@ -1066,7 +1066,8 @@ bool KnownFile::publishSrc()
         && !kad::UDPFirewallTester::isOpenAndVerified()) {
         auto* clientList = kad::Kademlia::getClientList();
         auto* buddy = clientList ? clientList->getBuddy() : nullptr;
-        // Not MFC: without a buddy a public IPv6 still gets a record out (buddyIP 0)
+        // Not MFC: without a buddy a public IPv6 still gets a record out (buddyIP 0).
+        // No bpv-only record: it waits for a buddy and its pointer (ipv6-spec §5.6.1).
         if (!buddy && !theApp.shouldAdvertisePublicIPv6())
             return false;
 

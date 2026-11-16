@@ -74,6 +74,8 @@ enum class LeecherCategory : uint8 {
     UserSoft = 10,  ///< soft user name / name+hash+mod: ban or reduce score
     Md4Tag = 15,    ///< md4-like string in an unknown hello tag: ban or reduce score
     Userhash = 18,  ///< user hash list: ban
+    FakeEmuleQt = 20, ///< "eMule Qt" modstring without MODMISC_HTTPCACHE: ban (own rule, no DLP list)
+    GhostMod = 21,  ///< official eMule ≤ newest known, no modstring, unknown hello/info tags/bits: score cut only
 };
 
 // ---------------------------------------------------------------------------
@@ -104,6 +106,16 @@ public:
 
     [[nodiscard]] const uint8* userHash() const { return m_userHash.data(); }
     void setUserHash(const uint8* hash);
+    /// Kad `ip6` route (type 7): the next hello must present this hash, or the source
+    /// is dropped and its address cached as failed (ipv6-spec §5.6.2). Cleared by a
+    /// matching hello.
+    void setKadRouteHash(const uint8* hash);
+    [[nodiscard]] bool kadRouteUnverified() const { return m_kadRouteHash.has_value(); }
+    /// Kad 3/5 record with `bpv`, or a source a pointer led to: a failed buddy callback
+    /// asks the pointer at ~userHash for the current buddy (ipv6-spec §5.6.1).
+    /// @p sourceIP = the record's FT_SOURCEIP, host order; 0 = no pointer route.
+    void setKadPointerSource(uint32 sourceIP) { m_kadPointerSourceIP = sourceIP; }
+    [[nodiscard]] uint32 kadPointerSource() const { return m_kadPointerSourceIP; }
     [[nodiscard]] bool hasValidHash() const;
     [[nodiscard]] int hashType() const;
 
@@ -639,6 +651,16 @@ public:
     [[nodiscard]] const QString& clientSoftwareStr() const { return m_clientSoftwareStr; }
     [[nodiscard]] const QString& modVersion() const { return m_modVersion; }
     void setModVersion(const QString& v) { m_modVersion = v; }
+
+    /// eMuleQt peer: "eMule Qt x.y.z" modstring + MODMISC_HTTPCACHE in the hello. On the wire it
+    /// stays eMule 0.70 (clientSoft() eMule) for 3rd parties; only lists/stats show it as eMuleQt.
+    [[nodiscard]] bool isEmuleQt() const { return m_emuleQtVersion != 0; }
+    /// maj<<16 | min<<8 | patch; 0 = not an eMuleQt
+    [[nodiscard]] uint32 emuleQtVersion() const { return m_emuleQtVersion; }
+    /// Software for lists/stats: "eMuleQt v0.7.33" for an eMuleQt, else clientSoftwareStr()
+    [[nodiscard]] QString displaySoftwareStr() const;
+    /// Packed version from an "eMule Qt 0.7.33" modstring; 0 for any other string
+    [[nodiscard]] static uint32 parseEmuleQtModVersion(const QString& modVersion);
 
     [[nodiscard]] const QString& fileComment() const { return m_fileComment; }
     void setFileComment(const QString& c) { m_fileComment = c; }
@@ -1210,6 +1232,14 @@ private:
     void sendKadCallback();
     /// Stored server/LowID already failed a server callback (see fallBackToKadCallback).
     [[nodiscard]] bool serverCallbackKnownStale() const;
+    /// Buddy callback failed: wait in WaitCallbackKad for the next pointer candidate.
+    /// False if the pointer route has none to give.
+    bool rerouteViaPointer();
+    /// @p buddyIP network order, 0 = no candidate left.
+    void onPointerResolved(const std::array<uint8, 16>& fileHash, uint32 buddyIP,
+                           uint16 buddyPort, const std::array<uint8, 16>& buddyID);
+    /// Dead after an attempt: dead list, out of the file's sources.
+    void dropAsDeadSource();
 
     /// Hash, address, ID or a port changed: the download we are a source of files us
     /// under them, so it has to hear. Every writer of those members ends here.
@@ -1327,6 +1357,8 @@ private:
 
     // -- Identity -----------------------------------------------------------
     std::array<uint8, 16> m_userHash{};
+    std::optional<std::array<uint8, 16>> m_kadRouteHash;   ///< setKadRouteHash()
+    uint32 m_kadPointerSourceIP = 0;                        ///< setKadPointerSource()
     Ed3kRoute m_ed3kRoute = Ed3kRoute::Untried;
     QString m_username;
     uint32 m_userIDHybrid = 0;
@@ -1538,6 +1570,9 @@ private:
     mutable bool m_analyzerPenalized = false;   ///< score band last logged, per session
     QString m_dlpCheckedSoftware;   ///< software + mod last checked; recheck on change
     QString m_dlpCheckedName;       ///< user name last checked; recheck on change
+    QString m_ghostModReason;       ///< from the last hello; empty = clean
+    QString m_ghostModInfoReason;   ///< from the last OP_EMULEINFO; empty = clean
+    uint32 m_helloEmuleVersion = 0; ///< raw CT_EMULE_VERSION of the last hello, 0 if none
     bool m_helloAnswerPending = false;
     bool m_pendingFileRequest = false;
     bool m_incomingConnection = false;
@@ -1549,6 +1584,7 @@ private:
     uint16 m_showDR = 0;
     QString m_clientSoftwareStr;
     QString m_modVersion;
+    uint32 m_emuleQtVersion = 0;    // see isEmuleQt(), 0 = not an eMuleQt
     QString m_helloInfo;
     QString m_captchaChallenge;
     QString m_captchaPendingMsg;

@@ -353,7 +353,9 @@ private:
     // Display page controls
     QSlider* m_depth3DSlider = nullptr;
     QSpinBox* m_tooltipDelaySpin = nullptr;
+    QCheckBox* m_showTrayIconCheck = nullptr;
     QCheckBox* m_minimizeToTrayCheck = nullptr;
+    QCheckBox* m_closeToTrayCheck = nullptr;
     QCheckBox* m_transferDoubleClickCheck = nullptr;
     QCheckBox* m_showDwlPercentageCheck = nullptr;
     QComboBox* m_downloadBarModeCombo = nullptr;

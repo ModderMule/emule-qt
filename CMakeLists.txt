@@ -121,6 +121,36 @@ if(APPLE AND NOT DEFINED OPENSSL_ROOT_DIR)
     endforeach()
 endif()
 
+# conda env on PATH: find_package searches <prefix>/lib/cmake, so e.g. yaml-cpp
+# came from anaconda3 and its include dir dragged conda's Boost 1.82 ahead of
+# Homebrew's into src/bt -> asio ODR clash with libtorrent, core segfault at
+# session start. Ignore conda prefixes, drop cached package dirs inside them.
+set(_conda_prefixes "")
+if(DEFINED ENV{CONDA_PREFIX})
+    list(APPEND _conda_prefixes "$ENV{CONDA_PREFIX}")
+endif()
+string(REPLACE ":" ";" _path_entries "$ENV{PATH}")
+foreach(_p IN LISTS _path_entries)
+    if(_p MATCHES "^(.*/(ana|mini)conda[0-9]*|.*/mini(forge|mamba)[0-9]*|.*/mambaforge)(/envs/[^/]+)?/(bin|condabin)/?$")
+        list(APPEND _conda_prefixes "${CMAKE_MATCH_1}${CMAKE_MATCH_4}")
+    endif()
+endforeach()
+list(REMOVE_DUPLICATES _conda_prefixes)
+if(_conda_prefixes)
+    list(APPEND CMAKE_IGNORE_PREFIX_PATH ${_conda_prefixes})
+    get_cmake_property(_cache_vars CACHE_VARIABLES)
+    foreach(_v IN LISTS _cache_vars)
+        if(_v MATCHES "_DIR$|_INCLUDE_DIR|_LIBRARY")
+            foreach(_cp IN LISTS _conda_prefixes)
+                if("${${_v}}" MATCHES "^${_cp}/")
+                    message(STATUS "Ignoring conda package path ${_v}=${${_v}}")
+                    unset(${_v} CACHE)
+                endif()
+            endforeach()
+        endif()
+    endforeach()
+endif()
+
 find_package(ZLIB REQUIRED)
 find_package(OpenSSL REQUIRED)
 

@@ -24,6 +24,7 @@
 
 #include <array>
 #include <memory>
+#include <optional>
 #include <atomic>
 #include <deque>
 #include <functional>
@@ -542,9 +543,12 @@ private:
     /// Unshare @p old and forget its record; a rescan picks the file up again.
     void dropSharedRecord(KnownFile* old);
 
-    /// First file at or after @p cursor (wrapping) for which @p due says yes; the
-    /// cursor moves past it. One walk of the map, not one per probe.
-    KnownFile* nextDueFile(uint32& cursor, const std::function<bool(KnownFile*)>& due);
+    /// Last file a publish walk handed out; the next walk starts after it.
+    using PublishCursor = std::optional<MD4Key>;
+    /// First file after @p cursor (wrapping) for which @p due says yes; the cursor
+    /// moves to it. Resumes by key in O(1), not by index: a walk from begin() per
+    /// pick made a pass over a large share quadratic. Cursor file gone: from begin().
+    KnownFile* nextDueFile(PublishCursor& cursor, const std::function<bool(KnownFile*)>& due);
     /// False while firewalled without a connected buddy or a direct UDP callback.
     [[nodiscard]] static bool canPublishToKad();
     /// Pace of one kind of Kad store searches.
@@ -773,8 +777,8 @@ private:
     QSet<QByteArray> m_offeredThisConn; ///< hashes offered on this connection: the soft budget
 
     // Kad publishing round-robin state
-    uint32 m_currFileSrc = 0;
-    uint32 m_currFileNotes = 0;
+    PublishCursor m_currFileSrc;
+    PublishCursor m_currFileNotes;
     /// A probe that found nothing due is not repeated every tick (MFC probes one
     /// file per call and rests). Cleared when a file joins the share.
     static constexpr time_t kPublishProbeRestSecs = 10;

@@ -4,6 +4,7 @@
 #include "BtCreateBridge.h"
 #include "app/AppConfig.h"
 #include "app/AppContext.h"
+#include "geo/IP2Country.h"
 #include "ipfilter/IPFilter.h"
 #include "net/BindAddress.h"
 #include "net/I2pRouter.h"
@@ -16,6 +17,7 @@
 
 #include <QCborArray>
 #include <QDir>
+#include <QHostAddress>
 #include <QStringList>
 
 #include <algorithm>
@@ -288,6 +290,77 @@ void setSession(bt::BtSession* session)
 bt::BtSession* session()
 {
     return s_session;
+}
+
+QCborMap aliasOf(const QString& id)
+{
+#ifdef EMULE_HAVE_BITTORRENT
+    if (!s_session)
+        return {};
+    const auto t = s_session->torrent(id);
+    if (!t)
+        return {};
+    const QString hash = !t->hashV1.isEmpty() ? QStringLiteral("btih:") + t->hashV1 : QStringLiteral("btmh:") + t->hashV2;
+    return QCborMap{{QStringLiteral("network"), QStringLiteral("torrent")},
+                    {QStringLiteral("name"), t->name},
+                    {QStringLiteral("id"), hash}};
+#else
+    (void)id;
+    return {};
+#endif
+}
+
+void appendDownloading(QCborArray& out, const QString& id)
+{
+#ifdef EMULE_HAVE_BITTORRENT
+    if (!s_session)
+        return;
+    const auto t = s_session->torrent(id);
+    if (!t || t->paused)
+        return;
+    for (const auto& p : s_session->peers(id)) {
+        if (p.rateDown <= 0)
+            continue;
+        // "ip:port", "[v6]:port"; an I2P peer has no address to show
+        QString host;
+        int port = 0;
+        if (!p.i2p) {
+            const qsizetype colon = p.address.lastIndexOf(u':');
+            host = colon > 0 ? p.address.left(colon) : p.address;
+            port = colon > 0 ? p.address.mid(colon + 1).toInt() : 0;
+            if (host.startsWith(u'[') && host.endsWith(u']'))
+                host = host.mid(1, host.size() - 2);
+        }
+        const QString name = p.i2p ? QString(p.address.left(16) + QStringLiteral("….i2p")) : p.address;
+        // the details key of the row: one per peer and torrent
+        const QString key = QStringLiteral("bt:") + id + u'|' + p.address;
+        out.append(QCborMap{
+            {QStringLiteral("network"), QStringLiteral("bt")},
+            {QStringLiteral("userName"), name},
+            {QStringLiteral("userHash"), key},
+            {QStringLiteral("software"), p.client},
+            {QStringLiteral("softwareId"), -1},
+            {QStringLiteral("reqFileName"), t->name},
+            {QStringLiteral("downloadState"), QStringLiteral("Downloading")},
+            {QStringLiteral("datarate"), p.rateDown},
+            {QStringLiteral("upDatarate"), p.rateUp},
+            {QStringLiteral("sessionDown"), p.downloaded},
+            {QStringLiteral("transferredDown"), p.downloaded},
+            {QStringLiteral("sessionUp"), p.uploaded},
+            {QStringLiteral("transferredUp"), p.uploaded},
+            {QStringLiteral("addr"), host},
+            {QStringLiteral("port"), port},
+            {QStringLiteral("cc"), host.isEmpty() ? QString() : countryCodeOf(QHostAddress(host))},
+            {QStringLiteral("netSource"), p.source},
+            {QStringLiteral("isConnected"), true},
+            {QStringLiteral("noViewSharedFiles"), true},
+            {QStringLiteral("sourceFrom"), -1},
+        });
+    }
+#else
+    (void)out;
+    (void)id;
+#endif
 }
 
 QString moveTo(const QString& id, const QString& dir)

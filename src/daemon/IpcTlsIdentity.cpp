@@ -8,6 +8,7 @@
 #include <QDir>
 #include <QFile>
 #include <QSaveFile>
+#include <QSslSocket>
 
 namespace eMule {
 
@@ -34,6 +35,18 @@ bool writeFile(const QString& path, const QByteArray& data, bool secret)
     return !secret || QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
 }
 
+/// Qt's non-OpenSSL backends rebuild cert + key as PKCS#12 and import that; RSA only.
+bool backendServesEc()
+{
+    return QSslSocket::activeBackend() == QStringLiteral("openssl");
+}
+
+QSslKey readKey(const QByteArray& pem)
+{
+    QSslKey rsa(pem, QSsl::Rsa, QSsl::Pem);
+    return rsa.isNull() ? QSslKey(pem, QSsl::Ec, QSsl::Pem) : rsa;
+}
+
 } // namespace
 
 IpcTlsIdentity loadOrCreateIpcTlsIdentity(const QString& configDir, QString* error)
@@ -47,16 +60,19 @@ IpcTlsIdentity loadOrCreateIpcTlsIdentity(const QString& configDir, QString* err
         return IpcTlsIdentity{QSslCertificate(), QSslKey()};
     };
 
+    bool replacedEc = false;
     if (QFile::exists(certPath) && QFile::exists(keyPath)) {
         IpcTlsIdentity id{QSslCertificate(readAll(certPath), QSsl::Pem),
-                          QSslKey(readAll(keyPath), QSsl::Ec, QSsl::Pem)};
-        if (!id.cert.isNull() && !id.key.isNull())
+                          readKey(readAll(keyPath))};
+        if (id.cert.isNull() || id.key.isNull())
+            return fail(QStringLiteral("%1 / %2 unreadable — delete both to regenerate")
+                            .arg(certPath, keyPath));
+        if (id.key.algorithm() != QSsl::Ec || backendServesEc())
             return id;
-        return fail(QStringLiteral("%1 / %2 unreadable — delete both to regenerate")
-                        .arg(certPath, keyPath));
+        replacedEc = true;   // every TLS handshake would fail: SecPKCS12Import -26275
     }
 
-    const auto pem = generateSelfSignedPem("emulecored", kValidDays);
+    const auto pem = generateSelfSignedPem("emulecored", kValidDays, SelfSignedKeyType::Rsa3072);
     if (!pem)
         return fail(QStringLiteral("cannot generate a certificate"));
     if (!dir.exists() && !QDir().mkpath(configDir))
@@ -64,7 +80,7 @@ IpcTlsIdentity loadOrCreateIpcTlsIdentity(const QString& configDir, QString* err
     if (!writeFile(keyPath, pem->keyPem, true) || !writeFile(certPath, pem->certPem, false))
         return fail(QStringLiteral("cannot write %1").arg(certPath));
     return IpcTlsIdentity{QSslCertificate(pem->certPem, QSsl::Pem),
-                          QSslKey(pem->keyPem, QSsl::Ec, QSsl::Pem)};
+                          QSslKey(pem->keyPem, QSsl::Rsa, QSsl::Pem), replacedEc};
 }
 
 } // namespace eMule

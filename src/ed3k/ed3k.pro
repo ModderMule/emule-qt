@@ -32,6 +32,7 @@ SOURCES += \
     Ed3kBootstrap.cpp \
     Ed3kCredit.cpp \
     Ed3kDownloads.cpp \
+    Ed3kDownloadsWeb.cpp \
     Ed3kSearch.cpp \
     Ed3kChain.cpp \
     Ed3kFilters.cpp \

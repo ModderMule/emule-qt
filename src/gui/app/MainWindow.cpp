@@ -236,7 +236,7 @@ MainWindow::MainWindow(QWidget* parent)
         m_trayIcon = new QSystemTrayIcon(this);
         updateTrayIcon(/*force*/ true);
         updateTrayToolTip();   // before the first rate arrives a second from now
-        m_trayIcon->show();
+        m_trayIcon->setVisible(thePrefs.showTrayIcon());
         connect(m_trayIcon, &QSystemTrayIcon::activated,
                 this, &MainWindow::onTrayIconClicked);
         connect(m_trayIcon, &QSystemTrayIcon::messageClicked, this, [this]() {
@@ -306,6 +306,10 @@ MainWindow::MainWindow(QWidget* parent)
     // signal when QApplication::clipboard() is first touched — the line just above — and it
     // is that handler which re-syncs the pasteboard. Reading it synchronously here could
     // hand us the stale cache instead.
+    // Logout / shutdown / Dock Quit close the window too: those must quit, not hide
+    connect(qApp, &QGuiApplication::commitDataRequest, this, [this] { m_quitRequested = true; });
+    qApp->installEventFilter(this);   // QEvent::Quit, see eventFilter()
+
     connect(qApp, &QGuiApplication::applicationStateChanged, this,
             [this](Qt::ApplicationState state) {
         if (state == Qt::ApplicationActive)
@@ -598,6 +602,7 @@ void MainWindow::showOptionsDialog(int page)
 
     dlg.exec();
     updateSpeedLimitTip();
+    applyTrayIconVisibility();
 
     // a feature switched on brings its button back, even one removed from a customized toolbar
     bool toolbarChanged = false;
@@ -1027,7 +1032,7 @@ void MainWindow::showNotification(const QString& title, const QString& message,
 {
     m_notificationClick = nullptr;
     // System tray popup
-    if (m_trayIcon && QSystemTrayIcon::supportsMessages())
+    if (trayInUse() && QSystemTrayIcon::supportsMessages())
         m_trayIcon->showMessage(title, message, QSystemTrayIcon::Information, 5000);
     m_lastNotification = {title, message, soundFile};
 
@@ -1089,9 +1094,16 @@ void MainWindow::dropEvent(QDropEvent* event)
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
-    // Closing exits, as in MFC (OnClose → CanClose, EmuleDlg.cpp:1616,1632-1650); only
-    // minimizing goes to the tray — see changeEvent(). It used to be the other way round,
-    // so with the preference on the close button could not quit at all.
+    // Closing exits, as in MFC (OnClose → CanClose, EmuleDlg.cpp:1616,1632-1650).
+    // closeToTray (qBittorrent, off by default) hides instead — but only for the user's
+    // own close (title bar, Alt+F4: spontaneous). Tray Exit, Cmd/Ctrl+Q, forced and
+    // app-wide quits still exit, so the app can always be quit.
+    if (thePrefs.closeToTray() && trayInUse() && event->spontaneous()
+        && !m_quitRequested && !s_quitWithoutPrompt) {
+        event->ignore();
+        hide();
+        return;
+    }
     if (thePrefs.promptOnExit() && !s_quitWithoutPrompt) {
         // MFC restores the window before asking, so the question is never hidden
         if (!isVisible() || isMinimized()) {
@@ -1111,6 +1123,7 @@ void MainWindow::closeEvent(QCloseEvent* event)
             QMessageBox::Yes | QMessageBox::No,
             QMessageBox::No);
         if (result != QMessageBox::Yes) {
+            m_quitRequested = false;   // the next title-bar close may go to the tray again
             event->ignore();
             return;
         }
@@ -1210,6 +1223,7 @@ void MainWindow::notifyLogEntry(const QString& text)
 
 void MainWindow::forceQuit()
 {
+    m_quitRequested = true;
     close();
 }
 
@@ -1231,7 +1245,7 @@ void MainWindow::startMinimized(bool maximized)
     // The window state survives being hidden, so a later restore lands maximized
     if (maximized)
         setWindowState(windowState() | Qt::WindowMaximized);
-    if (m_trayIcon && thePrefs.minimizeToTray())
+    if (trayInUse() && thePrefs.minimizeToTray())
         return;   // stays hidden; the tray icon is the way in
     showMinimized();
 }
@@ -1299,7 +1313,7 @@ void MainWindow::changeEvent(QEvent* event)
     const Qt::WindowStates before = static_cast<QWindowStateChangeEvent*>(event)->oldState();
     if (!before.testFlag(Qt::WindowMinimized))
         m_stateBeforeMinimize = before & (Qt::WindowMaximized | Qt::WindowFullScreen);
-    if (m_trayIcon && thePrefs.minimizeToTray()) {
+    if (trayInUse() && thePrefs.minimizeToTray()) {
         // X11: restoreWindow() maps the window iconic first, and the WM's WM_STATE
         // for that arrives after the de-iconify request — a stale "minimized" that
         // hid the window again mid-animation (issue #40). Hold off until the WM
@@ -1350,6 +1364,12 @@ bool MainWindow::nativeEvent(const QByteArray& eventType, void* message, qintptr
 
 bool MainWindow::eventFilter(QObject* obj, QEvent* event)
 {
+    // App-wide quit (macOS Dock/menu Quit, session end) closes all windows next
+    if (obj == qApp) {
+        if (event->type() == QEvent::Quit)
+            m_quitRequested = true;
+        return false;
+    }
     if (event->type() == QEvent::MouseButtonDblClick) {
         if (obj == m_statusEd3k) {
             showEd3kNetworkInfo();
@@ -2234,6 +2254,29 @@ MainWindow::ConnectButtonState MainWindow::connectButtonState() const
     if (m_ed2kConnecting || m_kadRunning || m_ed3kRunning)
         return ConnectButtonState::Cancel;
     return ConnectButtonState::Connect;
+}
+
+bool MainWindow::trayInUse() const
+{
+    return m_trayIcon && thePrefs.showTrayIcon();
+}
+
+void MainWindow::applyTrayIconVisibility()
+{
+    if (!m_trayIcon || m_trayIcon->isVisible() == thePrefs.showTrayIcon())
+        return;
+    m_trayIcon->setVisible(thePrefs.showTrayIcon());
+    if (thePrefs.showTrayIcon()) {
+        updateTrayIcon(/*force*/ true);   // some hosts drop the picture while hidden
+        return;
+    }
+#ifdef Q_OS_WIN
+    if (m_miniMule)
+        m_miniMule->hide();
+#endif
+    // no way back in without the icon
+    if (!isVisible())
+        restoreWindow();
 }
 
 QColor MainWindow::trayMeterColor() const

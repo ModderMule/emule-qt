@@ -8,6 +8,7 @@
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "files/PartFile.h"
+#include "kademlia/KadIncomingLog.h"
 #include "kademlia/KadIO.h"
 #include "kademlia/KadPrefs.h"
 #include "prefs/Preferences.h"
@@ -468,7 +469,7 @@ void tst_ClientList::processKadList_releasesAStaleIncomingBuddy()
     ClientList list;
     const uint8 id[16] = {0xB2};
 
-    QVERIFY(list.incomingBuddy(0x4D070809, 4662, 4672, id, id));
+    QVERIFY(!list.incomingBuddy(0x4D070809, 4662, 4672, id, id).refused());
     UpDownClient* claimant = list.findByConnIP(qToBigEndian(uint32{0x4D070809}), 4662);
     QVERIFY(claimant != nullptr);
 
@@ -590,7 +591,7 @@ void tst_ClientList::incomingBuddy_pendingClaimsAreBounded()
     const uint32 base = 0x4D080000;
 
     for (int i = 0; i < ClientList::kMaxPendingBuddyClaims; ++i)
-        QVERIFY(list.incomingBuddy(base + static_cast<uint32>(i) + 1, 4662, 4672, id, id));
+        QVERIFY(!list.incomingBuddy(base + static_cast<uint32>(i) + 1, 4662, 4672, id, id).refused());
     QCOMPARE(list.pendingBuddyClaims(), ClientList::kMaxPendingBuddyClaims);
 
     UpDownClient* oldest = list.findByConnIP(qToBigEndian(base + 7), 4662);
@@ -598,7 +599,7 @@ void tst_ClientList::incomingBuddy_pendingClaimsAreBounded()
     oldest->setKadStateSince(std::time(nullptr) - 60);
 
     // One more is accepted, not refused: the oldest claim makes room
-    QVERIFY(list.incomingBuddy(base + 0x1000, 4662, 4672, id, id));
+    QVERIFY(!list.incomingBuddy(base + 0x1000, 4662, 4672, id, id).refused());
     QCOMPARE(list.pendingBuddyClaims(), ClientList::kMaxPendingBuddyClaims);
     QCOMPARE(oldest->kadState(), KadState::None);
 
@@ -1375,15 +1376,15 @@ void tst_ClientList::incomingBuddy_oneServedBuddyPerIP()
     const uint32 pendingIP = 0x4D090A0B, connectedIP = 0x4D090A0C;
 
     // Same IP, other port: refused while the first claim is pending
-    QVERIFY(list.incomingBuddy(pendingIP, 4662, 4672, id, id));
-    QVERIFY(!list.incomingBuddy(pendingIP, 4663, 4673, id, id));
+    QVERIFY(!list.incomingBuddy(pendingIP, 4662, 4672, id, id).refused());
+    QCOMPARE(list.incomingBuddy(pendingIP, 4663, 4673, id, id).code, kad::IncomingRefusal::IpServed);
 
     // ... and while one from that IP is connected
     const std::time_t now = std::time(nullptr);
     auto* first = addServedBuddy(list, connectedIP, 0xE4, now - 100);
-    QVERIFY(!list.incomingBuddy(connectedIP, 4663, 4673, id, id));
+    QCOMPARE(list.incomingBuddy(connectedIP, 4663, 4673, id, id).code, kad::IncomingRefusal::IpServed);
     // Another IP is fine
-    QVERIFY(list.incomingBuddy(connectedIP + 1, 4662, 4672, id, id));
+    QVERIFY(!list.incomingBuddy(connectedIP + 1, 4662, 4672, id, id).refused());
 
     // A second one from that IP that connected anyway is released, the older one stays
     auto* second = addServedBuddy(list, connectedIP, 0xE5, now - 10);
@@ -1405,17 +1406,17 @@ void tst_ClientList::servedBuddies_claimsUpToTheLimit()
     ClientList list;
     const uint8 id[16] = {0xC1, 0x02};
 
-    QVERIFY(list.incomingBuddy(0x4D070801, 4662, 4672, id, id));
+    QVERIFY(!list.incomingBuddy(0x4D070801, 4662, 4672, id, id).refused());
     // One pending claim per IP, whatever the port
-    QVERIFY(!list.incomingBuddy(0x4D070801, 4663, 4673, id, id));
-    QVERIFY(list.incomingBuddy(0x4D070802, 4662, 4672, id, id));
+    QCOMPARE(list.incomingBuddy(0x4D070801, 4663, 4673, id, id).code, kad::IncomingRefusal::IpServed);
+    QVERIFY(!list.incomingBuddy(0x4D070802, 4662, 4672, id, id).refused());
     QCOMPARE(list.pendingBuddyClaims(), 2);
 
     // A claim reserves nothing (as MFC): 1 connected + 2 pending leaves the limit open
     addServedBuddy(list, 0x4D070803, 0xC3, std::time(nullptr));
     QCOMPARE(list.servedBuddyCount(), 1);
     QVERIFY(list.canServeAnotherBuddy());
-    QVERIFY(list.incomingBuddy(0x4D070804, 4662, 4672, id, id));
+    QVERIFY(!list.incomingBuddy(0x4D070804, 4662, 4672, id, id).refused());
     QCOMPARE(list.pendingBuddyClaims(), 3);
 
     // Claims stay through a pass although a buddy is connected (MFC drops them)
@@ -1438,7 +1439,7 @@ void tst_ClientList::servedBuddies_claimsUpToTheLimit()
     addServedBuddy(list, 0x4D070806, 0xC6, std::time(nullptr));
     QCOMPARE(list.servedBuddyCount(), 3);
     QVERIFY(!list.canServeAnotherBuddy());
-    QVERIFY(!list.incomingBuddy(0x4D070807, 4662, 4672, id, id));
+    QCOMPARE(list.incomingBuddy(0x4D070807, 4662, 4672, id, id).code, kad::IncomingRefusal::SlotsFull);
 
     list.deleteAll();
 }
@@ -1568,7 +1569,7 @@ void tst_ClientList::servedBuddies_refusedWhileWeUseABuddy()
 
     const uint8 id[16] = {0xB7, 0x02};
     QVERIFY(!list.canServeAnotherBuddy());
-    QVERIFY(!list.incomingBuddy(0x4D070851, 4662, 4672, id, id));
+    QCOMPARE(list.incomingBuddy(0x4D070851, 4662, 4672, id, id).code, kad::IncomingRefusal::OwnBuddy);
 
     list.deleteAll();
 }
@@ -2067,8 +2068,8 @@ void tst_ClientList::silentServedBuddy_coolOff()
         QCOMPARE(list.silentBuddyCoolOffLeft(Address::fromHostOrder(base + i)), std::time_t{0});
 
     const uint8 id[16] = {0xB7};
-    QVERIFY(!list.incomingBuddy(base, 4662, 4672, id, id));
-    QVERIFY(list.incomingBuddy(base + 1, 4662, 4672, id, id));
+    QCOMPARE(list.incomingBuddy(base, 4662, 4672, id, id).code, kad::IncomingRefusal::SilentCoolOff);
+    QVERIFY(!list.incomingBuddy(base + 1, 4662, 4672, id, id).refused());
 }
 
 // A claimed buddy is not near ~KadID, so no Kad search finds it again: on loss it is dialled

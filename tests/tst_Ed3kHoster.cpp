@@ -1922,6 +1922,66 @@ private slots:
         QCOMPARE(f.readAll(), r.resolver.data);
     }
 
+    /// a rootless item stopped mid-way: its kept bytes (wholeAt in the .met) are hashed again
+    /// and the link goes on there after the restart; a part file shorter than that starts over
+    void resume_rootless_afterRestart()
+    {
+        const QByteArray data = content(3 * 1024 * 1024 + 77);
+        const std::uint64_t kept = 1024 * 1024;
+        const auto writeRootless = [&](const QString& dir, const QString& key, const QString& url, qsizetype onDisk) {
+            QDir().mkpath(dir);
+            QFile part(QDir(dir).filePath(key + QStringLiteral(".hoster.part")));
+            if (!part.open(QIODevice::WriteOnly) || part.write(data.left(onDisk)) < 0)
+                return false;
+            part.close();
+            const QJsonObject o{{QStringLiteral("format"), QStringLiteral("ed3k-hoster-met")},
+                                {QStringLiteral("v"), 1},
+                                {QStringLiteral("url"), url},
+                                {QStringLiteral("host"), QStringLiteral("fake.example")},
+                                {QStringLiteral("name"), QStringLiteral("movie.bin")},
+                                {QStringLiteral("size"), qint64(data.size())},
+                                {QStringLiteral("state"), int(Ed3kHosterJoin::State::Downloading)},
+                                {QStringLiteral("wholeAt"), qint64(kept)}};
+            QFile met(part.fileName() + QStringLiteral(".met"));
+            return met.open(QIODevice::WriteOnly) && met.write(QJsonDocument(o).toJson()) > 0;
+        };
+        {
+            Rig r;
+            r.resolver.data = data;
+            const QString url = QStringLiteral("https://fake.example/f/rr1");
+            // a bit more on disk than kept: what is past wholeAt comes again
+            QVERIFY(writeRootless(r.tmp.filePath(QStringLiteral("temp")), QStringLiteral("00000000000000b1"), url, qsizetype(kept) + 5000));
+            QVERIFY(r.start(true));
+            const quint32 id = idOf(*r.join, url);
+            QVERIFY(id != 0);
+            QCOMPARE(r.join->item(id)->done, kept);
+            QTRY_COMPARE_WITH_TIMEOUT(r.state(id), Ed3kHosterJoin::State::Complete, 60000);
+            QCOMPARE(r.resolver.opens, 1);
+            QCOMPARE(r.resolver.lastHave, kept);
+            QCOMPARE(r.resolver.lastPrefill, data.left(qsizetype(kept)));
+            const auto item = *r.join->item(id);
+            QVERIFY(!item.rootHex.isEmpty());
+            QFile f(item.file);
+            QVERIFY(f.open(QIODevice::ReadOnly));
+            QCOMPARE(f.readAll(), data);
+        }
+        {
+            Rig r;
+            r.resolver.data = data;
+            const QString url = QStringLiteral("https://fake.example/f/rr2");
+            QVERIFY(writeRootless(r.tmp.filePath(QStringLiteral("temp")), QStringLiteral("00000000000000b2"), url, 1000));
+            QVERIFY(r.start(true));
+            const quint32 id = idOf(*r.join, url);
+            QVERIFY(id != 0);
+            QCOMPARE(r.join->item(id)->done, std::uint64_t(0));
+            QTRY_COMPARE_WITH_TIMEOUT(r.state(id), Ed3kHosterJoin::State::Complete, 60000);
+            QCOMPARE(r.resolver.lastHave, std::uint64_t(0));
+            QFile f(r.join->item(id)->file);
+            QVERIFY(f.open(QIODevice::ReadOnly));
+            QCOMPARE(f.readAll(), data);
+        }
+    }
+
     /// a rooted item saved with verified blocks goes on after them, without a new lookup
     void resume_rooted_afterBlocksHeld()
     {

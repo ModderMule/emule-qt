@@ -192,6 +192,8 @@ QString sourceTooltipText(const SourceRow& s, bool extended)
 
     QString info = DownloadListModel::tr("User Name: %1").arg(s.userName.isEmpty()
                                                ? QStringLiteral("(%1)").arg(DownloadListModel::tr("Unknown")) : s.userName);
+    if (s.ed3k)
+        info += u'\n' + ed3kNetworkText(s.ed3kAnon, ed3kJoinOf(s.ed3kJoin));
     info += QStringLiteral("\n%1:%2:%3\n\n").arg(DownloadListModel::tr("Server"), s.serverAddr.isEmpty()
                                                         ? QStringLiteral("0.0.0.0") : s.serverAddr)
                 .arg(s.serverPort);
@@ -387,7 +389,8 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         if (role == Qt::DecorationRole && index.column() == ColFileName)
             return CountryFlags::withFlag(
                 iconPair(sourceStateIcon(sourceStateIconKind(s.downloadState, s.remoteQueueFull, s.a4af)),
-                         s.ed3k ? ed3kClientIcon() : clientSoftwareIcon(s.softwareId, s.hasCredit, s.isFriend)),
+                         s.ed3k ? ed3kClientIcon(s.ed3kAnon, ed3kJoinOf(s.ed3kJoin))
+                                : clientSoftwareIcon(s.softwareId, s.hasCredit, s.isFriend)),
                 s.cc);
 
         if (role == Qt::TextAlignmentRole)
@@ -558,6 +561,9 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             .arg(d.requests).arg(d.acceptedRequests)
             .arg(formatByteSize(d.upTransferred));
         tip += extra;
+        // ed3k: the jobs here with the same root (alias.md); the row is in Transfers only
+        if (!d.ed3kAliases.isEmpty())
+            tip += u'\n' + tr("Also known as:") + QStringLiteral("\n  ") + d.ed3kAliases.join(QStringLiteral("\n  "));
         // Only when there is something to say: a clean file needs no extra lines
         if (!d.fakeReasons.isEmpty())
             tip += QStringLiteral("\n\n") + confidenceTooltip(d.confidence, d.fakeScore, d.fakeReasons);
@@ -631,7 +637,7 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         if (!d.hasBarRanges)
             return {};
         return QVariant::fromValue(DownloadBarData{d.fileSize, d.gaps, d.pending, d.partFreq,
-                                                   d.partMap, d.partFreqUnit});
+                                                   d.partMap, d.partFreqUnit, d.unverified});
     }
 
     return {};

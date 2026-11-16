@@ -6,10 +6,12 @@
 /// actions of the user's role. It only asks; the panel does the work (IrcPanelEd3k.cpp).
 
 #include <QCborArray>
+#include <QCborMap>
 #include <QWidget>
 
 class QPushButton;
 class QTreeWidget;
+class QTreeWidgetItem;
 
 namespace eMule {
 
@@ -44,6 +46,8 @@ signals:
 private:
     void showMenu(const QPoint& pos);
     [[nodiscard]] QString selectedRoom() const;
+    /// Texts of one room row (GetEd3kRooms).
+    void fillItem(QTreeWidgetItem* item, const QCborMap& r) const;
 
     QTreeWidget* m_tree = nullptr;
     QCborArray m_rooms;

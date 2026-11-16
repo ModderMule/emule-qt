@@ -118,6 +118,8 @@ void Ed3kDownloads::stop()
     if (!m_started)
         return;
     saveNow();
+    for (auto& [root, e] : m_entries)
+        webDetach(e);
     closeAll();
     for (auto& [root, e] : m_entries) {
         e.info.rate = 0;
@@ -144,8 +146,15 @@ std::expected<void, QString> Ed3kDownloads::add(const Ed3kDownloadSpec& spec)
 {
     if (spec.size == 0)
         return std::unexpected(tr("The ed3k file has no size."));
-    if (m_entries.contains(spec.root))
+    if (Entry* known = entryOf(spec.root)) {
+        // the link again, now with ws=: its HTTP sources join the running download
+        const bool hashUrls = mergeWebUrls(known->webHashUrls, spec.webHashUrls);
+        if (known->info.state != Ed3kDownloadInfo::State::Complete && (mergeWebUrls(known->webUrls, spec.webUrls) || hashUrls)) {
+            touch(*known);
+            webAttach(*known);
+        }
         return std::unexpected(tr("This ed3k file is in the download list already."));
+    }
     // a file of the share list: nothing to download (its engine record would be downgraded)
     if ((spec.owner.isEmpty() || spec.owner == kOwner) && m_sharedElsewhere && m_sharedElsewhere(spec.root)) {
         logInfo(QStringLiteral("download of %1 refused: shared already").arg(hexOf(spec.root.bytes)));
@@ -186,6 +195,8 @@ std::expected<void, QString> Ed3kDownloads::add(const Ed3kDownloadSpec& spec)
     e.info.path = e.info.partPath;
     e.info.addedOn = QDateTime::currentSecsSinceEpoch();
     e.have.assign(std::size_t(blockCount(spec.size)), false);
+    (void)mergeWebUrls(e.webUrls, spec.webUrls);
+    (void)mergeWebUrls(e.webHashUrls, spec.webHashUrls);
     e.metDirty = true;
     // an earlier part file of this root (cancelled, list lost) is not trusted
     QFile::remove(e.info.partPath);
@@ -221,6 +232,10 @@ std::expected<ffi::Root, QString> Ed3kDownloads::addLink(const QString& link, in
         spec.name = QString::fromUtf8(parsed->name->data(), qsizetype(parsed->name->size()));
     if (parsed->ed2k)
         spec.md4 = QByteArray(reinterpret_cast<const char*>(parsed->ed2k->data()), qsizetype(parsed->ed2k->size()));
+    for (const auto& ws : parsed->ws)
+        spec.webUrls << QString::fromUtf8(ws.data(), qsizetype(ws.size()));
+    for (const auto& wh : parsed->wh)
+        spec.webHashUrls << QString::fromUtf8(wh.data(), qsizetype(wh.size()));
     spec.category = category;
     spec.paused = paused;
     if (auto ok = add(spec); !ok)
@@ -233,6 +248,7 @@ bool Ed3kDownloads::pause(const ffi::Root& root)
     Entry* e = entryOf(root);
     if (!e || e->info.state != Ed3kDownloadInfo::State::Downloading)
         return false;
+    webDetach(*e);
     stopDownload(root);
     e->info.state = Ed3kDownloadInfo::State::Paused;
     e->info.rate = 0;
@@ -322,6 +338,7 @@ bool Ed3kDownloads::cancel(const ffi::Root& root)
         return false;
     Entry& e = it->second;
     if (e.info.state != Ed3kDownloadInfo::State::Complete) {
+        webDetach(e);
         stopDownload(root);
         if (isShared(root))
             unshare(root);
@@ -472,6 +489,20 @@ std::optional<Ed3kDownloadInfo> Ed3kDownloads::info(const ffi::Root& root) const
                 i.pending[b] = true;
         i.availability = pieceAvailability(*d);
     }
+    // the HTTP source: one more source, holding every piece
+    if (const Web& web = it->second.web; web.source != 0 && i.state == Ed3kDownloadInfo::State::Downloading) {
+        ++i.sources;
+        if (web.fetch)
+            ++i.transferring;
+        constexpr std::uint64_t kPiece = 16 * kBlock;
+        if (i.availability.empty())
+            i.availability.assign(std::size_t((i.size + kPiece - 1) / kPiece), 0);
+        for (auto& a : i.availability)
+            a = std::uint8_t(std::min(255, a + 1));
+    }
+    // whole read from an HTTP source, also while paused or before it goes on
+    if (i.state != Ed3kDownloadInfo::State::Complete)
+        i.unchecked = std::min(i.size, it->second.wholeAt);
     return i;
 }
 
@@ -544,6 +575,9 @@ std::vector<std::uint64_t> Ed3kDownloads::wantedBlocks(const Download& d) const
     for (std::size_t i = 0; i < e->have.size(); ++i)
         if (!e->have[i])
             wanted.push_back(std::uint64_t(i) * kBlock);
+    // unchecked bytes of a whole HTTP read last: the block values check them (webCheckPrefix)
+    if (e->wholeAt >= kBlock)
+        std::ranges::stable_partition(wanted, [&](std::uint64_t off) { return off + kBlock > e->wholeAt; });
     // preview parts first: eD2K's first + last part (PartFile::getNextRequestedBlock)
     const std::uint64_t size = e->info.size;
     const bool preview = (thePrefs.previewPrio() || (e->info.previewPrio && thePrefs.showExtControls()))
@@ -567,34 +601,8 @@ std::vector<std::uint64_t> Ed3kDownloads::wantedBlocks(const Download& d) const
 
 void Ed3kDownloads::onFileBlock(const Download& d, const ffi::event::Block& b)
 {
-    Entry* e = entryOfId(d.member);
-    if (!e || e->info.state != Ed3kDownloadInfo::State::Downloading || b.offset % kBlock != 0)
-        return;
-    const std::uint64_t index = b.offset / kBlock;
-    if (index >= e->have.size() || e->have[std::size_t(index)])
-        return;
-    const QString path = e->info.partPath;
-    QDir().mkpath(QFileInfo(path).absolutePath());
-    QFile f(path);
-    if (!f.open(QIODevice::ReadWrite) || !f.seek(qint64(b.offset))
-        || f.write(reinterpret_cast<const char*>(b.data.data()), qint64(b.data.size())) != qint64(b.data.size())) {
-        fail(*e, QStringLiteral("cannot write %1: %2").arg(path, f.errorString()));
-        return;
-    }
-    f.close();
-    e->have[std::size_t(index)] = true;
-    e->info.done = std::min(e->info.size, e->info.done + std::uint64_t(b.data.size()));
-    e->received += std::uint64_t(b.data.size());
-    emit progress(e->info.root, e->info.done);
-    markChanged();
-    touch(*e);
-    if (std::ranges::all_of(e->have, [](bool h) { return h; })) {
-        verify(*e);
-        return;
-    }
-    // a piece just completed: tell the engine (served from the part file)
-    if (index / kPieceBlocks != (index + 1) / kPieceBlocks || index + 1 == e->have.size())
-        sharePieces(*e);
+    if (Entry* e = entryOfId(d.member))
+        (void)storeBlock(*e, b.offset, b.data);
 }
 
 void Ed3kDownloads::onBlobFetched(const QString& owner, int member, const ffi::Root& root, const QByteArray& data)
@@ -610,6 +618,7 @@ void Ed3kDownloads::onDownloadHashes(const Download& d, const ffi::Bytes& blob)
         return;
     e->hashes = blob;
     sharePieces(*e);
+    webCheckPrefix(*e);   // bytes of a whole read: checked now, not at its end
 }
 
 std::optional<Ed3kJoinBase::FileRead> Ed3kDownloads::sharedRead(const Shared& s, std::uint64_t offset, std::uint32_t len) const
@@ -701,14 +710,17 @@ void Ed3kDownloads::openEntry(Entry& e)
         return;
     }
     // a part file gone since: what the bitmap says is not there any more
-    if (e.info.done > 0 && !QFile::exists(e.info.partPath)) {
+    if ((e.info.done > 0 || e.wholeAt > 0) && !QFile::exists(e.info.partPath)) {
         logWarning(QStringLiteral("part file of \"%1\" is gone: downloaded again").arg(e.info.name));
         std::fill(e.have.begin(), e.have.end(), false);  // not ranges: GCC 12 rejects vector<bool>
         e.info.done = 0;
+        e.wholeAt = 0;
     }
     QDir().mkpath(QFileInfo(e.info.partPath).absolutePath());
     if (!openDownload(e.info.root, e.info.size, e.info.owner, e.id))
         logDebug([&]() -> QString { return QStringLiteral("download of \"%1\" not opened").arg(e.info.name); });
+    else
+        webAttach(e);
     sharePieces(e);
 }
 
@@ -716,6 +728,7 @@ void Ed3kDownloads::verify(Entry& e)
 {
     e.info.state = Ed3kDownloadInfo::State::Verifying;
     e.info.rate = 0;
+    webDetach(e);
     stopDownload(e.info.root);
     markChanged();
     // stale bytes past the end (an older part file) would change the hash
@@ -737,6 +750,7 @@ void Ed3kDownloads::verified(const ffi::Root& root, const std::optional<FileHash
             unshare(root);
         std::fill(e->have.begin(), e->have.end(), false);
         e->info.done = 0;
+        e->wholeAt = 0;
         QFile::remove(e->info.partPath);
         e->info.state = Ed3kDownloadInfo::State::Downloading;
         openEntry(*e);
@@ -839,9 +853,42 @@ void Ed3kDownloads::sharePieces(Entry& e)
                       e.info.owner, e.id);
 }
 
+bool Ed3kDownloads::storeBlock(Entry& e, std::uint64_t offset, const ffi::Bytes& data)
+{
+    if (e.info.state != Ed3kDownloadInfo::State::Downloading || offset % kBlock != 0)
+        return false;
+    const std::uint64_t index = offset / kBlock;
+    if (index >= e.have.size() || e.have[std::size_t(index)])
+        return false;
+    const QString path = e.info.partPath;
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QFile f(path);
+    if (!f.open(QIODevice::ReadWrite) || !f.seek(qint64(offset))
+        || f.write(reinterpret_cast<const char*>(data.data()), qint64(data.size())) != qint64(data.size())) {
+        fail(e, QStringLiteral("cannot write %1: %2").arg(path, f.errorString()));
+        return false;
+    }
+    f.close();
+    e.have[std::size_t(index)] = true;
+    e.info.done = std::min(e.info.size, e.info.done + std::uint64_t(data.size()));
+    e.received += std::uint64_t(data.size());
+    emit progress(e.info.root, e.info.done);
+    markChanged();
+    touch(e);
+    if (std::ranges::all_of(e.have, [](bool h) { return h; })) {
+        verify(e);
+        return true;
+    }
+    // a piece just completed: tell the engine (served from the part file)
+    if (index / kPieceBlocks != (index + 1) / kPieceBlocks || index + 1 == e.have.size())
+        sharePieces(e);
+    return true;
+}
+
 void Ed3kDownloads::fail(Entry& e, const QString& error)
 {
     logWarning(QStringLiteral("download of \"%1\" failed: %2").arg(e.info.name, error));
+    webDetach(e);
     stopDownload(e.info.root);
     e.info.state = Ed3kDownloadInfo::State::Failed;
     e.info.error = error;
@@ -891,6 +938,7 @@ void Ed3kDownloads::onTick()
             m_changed = true;
         }
     }
+    webDrive();
     if (!m_changed)
         return;
     m_changed = false;
@@ -1014,6 +1062,25 @@ std::optional<Ed3kDownloads::Entry> Ed3kDownloads::readMet(const QString& metPat
         in >> flags;
         e.info.previewPrio = (flags & 1) != 0;
     }
+    if (in.status() == QDataStream::Ok && !in.atEnd()) {
+        QStringList urls;
+        in >> urls;
+        if (in.status() == QDataStream::Ok)
+            (void)mergeWebUrls(e.webUrls, urls);
+        else
+            in.resetStatus();   // a bad list costs the sources, not the download
+    }
+    if (in.status() == QDataStream::Ok && !in.atEnd()) {
+        QStringList hashUrls;
+        quint64 wholeAt = 0;
+        in >> hashUrls >> wholeAt;
+        if (in.status() == QDataStream::Ok) {
+            (void)mergeWebUrls(e.webHashUrls, hashUrls);
+            e.wholeAt = wholeAt;
+        } else {
+            in.resetStatus();
+        }
+    }
     const auto r = rootFrom(root);
     if (in.status() != QDataStream::Ok || !r || size == 0 || state < 0 || state > int(Ed3kDownloadInfo::State::Failed)
         || Ed3kDownloadInfo::State(state) == Ed3kDownloadInfo::State::Complete)
@@ -1084,7 +1151,9 @@ void Ed3kDownloads::writeMet(Entry& e)
         out << kMetMagic << kMetVersion << rootBytes(e.info.root) << quint64(e.info.size) << e.info.name << e.info.owner
             << qint32(e.info.category) << qint32(e.info.priority) << qint32(int(state)) << quint8(kind) << target
             << packBits(e.have) << qint64(e.info.addedOn) << e.info.error
-            << quint8(e.info.previewPrio ? 1 : 0);   // flags (bit 0 preview); older .met: none
+            << quint8(e.info.previewPrio ? 1 : 0)    // flags (bit 0 preview); older .met: none
+            << e.webUrls                             // ws= sources; older .met: none
+            << e.webHashUrls << quint64(e.wholeAt);  // wh= URLs, whole read so far; older .met: none
     }
     const QString path = metPathOf(e);
     QDir().mkpath(QFileInfo(path).absolutePath());

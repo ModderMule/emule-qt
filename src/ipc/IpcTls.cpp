@@ -59,19 +59,18 @@ void IpcTlsServer::incomingConnection(qintptr handle)
             drop(socket, QStringLiteral("closed before ready"));
     });
 
+    // First byte decides: TLS record or plain frame. Remote plain is dropped at
+    // once (Secure Transport would sit on it until the handshake timeout).
     const bool loopback = socket->peerAddress().isLoopback() && !m_loopbackIsRemote;
-    if (!loopback) {
-        startTls(socket, false);
-        return;
-    }
     if (socket->bytesAvailable() > 0)
-        decideLoopback(socket);
+        decideFirstByte(socket, loopback);
     else
-        connect(socket, &QIODevice::readyRead, this, [this, socket] { decideLoopback(socket); },
+        connect(socket, &QIODevice::readyRead, this,
+                [this, socket, loopback] { decideFirstByte(socket, loopback); },
                 Qt::SingleShotConnection);
 }
 
-void IpcTlsServer::decideLoopback(QSslSocket* socket)
+void IpcTlsServer::decideFirstByte(QSslSocket* socket, bool isLocal)
 {
     if (socket->property(kStateProp).toInt() != 0 || socket->isEncrypted())
         return;
@@ -79,9 +78,11 @@ void IpcTlsServer::decideLoopback(QSslSocket* socket)
     if (socket->peek(&first, 1) != 1)
         return;
     if (first == kTlsRecordHandshake)
-        startTls(socket, true);
-    else
+        startTls(socket, isLocal);
+    else if (isLocal)
         finish(socket, true);
+    else
+        drop(socket, QStringLiteral("plain connection from a remote peer, TLS required"));
 }
 
 void IpcTlsServer::startTls(QSslSocket* socket, bool isLocal)

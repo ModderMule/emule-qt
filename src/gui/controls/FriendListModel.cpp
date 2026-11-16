@@ -13,13 +13,8 @@
 namespace eMule {
 
 FriendListModel::FriendListModel(QObject* parent)
-    : QAbstractListModel(parent)
+    : AbstractTableModel(parent)
 {
-}
-
-int FriendListModel::rowCount(const QModelIndex& parent) const
-{
-    return parent.isValid() ? 0 : static_cast<int>(m_rows.size());
 }
 
 QVariant FriendListModel::data(const QModelIndex& index, int role) const
@@ -124,13 +119,6 @@ QIcon FriendListModel::baseIcon(const FriendRow& row)
     return user;
 }
 
-const FriendRow* FriendListModel::rowAt(int row) const
-{
-    if (row < 0 || row >= static_cast<int>(m_rows.size()))
-        return nullptr;
-    return &m_rows[static_cast<size_t>(row)];
-}
-
 int FriendListModel::findByHash(const QString& hash) const
 {
     for (size_t i = 0; i < m_rows.size(); ++i) {
@@ -142,13 +130,14 @@ int FriendListModel::findByHash(const QString& hash) const
 
 void FriendListModel::replaceRows(FriendNetwork network, std::vector<FriendRow> rows)
 {
-    beginResetModel();
-    std::erase_if(m_rows, [network](const FriendRow& r) { return r.network == network; });
+    // was: reset; now keyed in place so a refresh can't swallow a double click
+    std::vector<FriendRow> all = m_rows;
+    std::erase_if(all, [network](const FriendRow& r) { return r.network == network; });
     if (network == FriendNetwork::Ed2k)
-        m_rows.insert(m_rows.begin(), std::make_move_iterator(rows.begin()), std::make_move_iterator(rows.end()));
+        all.insert(all.begin(), std::make_move_iterator(rows.begin()), std::make_move_iterator(rows.end()));
     else
-        m_rows.insert(m_rows.end(), std::make_move_iterator(rows.begin()), std::make_move_iterator(rows.end()));
-    endResetModel();
+        all.insert(all.end(), std::make_move_iterator(rows.begin()), std::make_move_iterator(rows.end()));
+    syncRows(std::move(all), [](const FriendRow& r) { return r.hash; });
 }
 
 } // namespace eMule

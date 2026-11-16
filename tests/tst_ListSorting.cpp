@@ -46,6 +46,9 @@
 #include <QStandardItemModel>
 #include <QSignalSpy>
 #include <QTest>
+#include <QApplication>
+#include <QMouseEvent>
+#include <QTreeView>
 #include <QTreeWidget>
 
 #include <functional>
@@ -142,6 +145,9 @@ private slots:
     void removingASearchNameKeepsTheFile();
     void downloadingClientsCarryThePartBar();
     void aSourceIndexSurvivesAnEarlierDownloadLeaving();
+    void aClientRefreshKeepsRowsInPlace();
+    void aDoubleClickSurvivesAClientRefresh();
+    void anNzbsFileListArrivesWithoutAReset();
     void completeSourcesShowPercentOrUnknown();
     void uploadPriorityLabelsMatchMfc();
     void downloadPriorityLabelsMatchMfc();
@@ -1223,6 +1229,87 @@ void tst_ListSorting::downloadingClientsCarryThePartBar()
     QCOMPARE(cell.data(Qt::UserRole).toInt(), 2);   // still sorts by part count
 }
 
+namespace {
+ClientRow namedClient(const QString& hash, const QString& name)
+{
+    ClientRow r;
+    r.userHash = hash;
+    r.userName = name;
+    r.addr = QStringLiteral("192.0.2.1");
+    r.port = 4662;
+    return r;
+}
+} // namespace
+
+void tst_ListSorting::aClientRefreshKeepsRowsInPlace()
+{
+    // a refresh that removes, reorders and adds rows: no reset, a held row follows its client
+    ClientListModel model(ClientListMode::Uploading);
+    model.setClients({namedClient(QStringLiteral("aa"), QStringLiteral("a")),
+                      namedClient(QStringLiteral("bb"), QStringLiteral("b")),
+                      namedClient(QStringLiteral("cc"), QStringLiteral("c"))});
+    const QPersistentModelIndex held = model.index(1, 0);
+    QSignalSpy resets(&model, &QAbstractItemModel::modelReset);
+
+    ClientRow b = namedClient(QStringLiteral("bb"), QStringLiteral("b2"));
+    model.setClients({namedClient(QStringLiteral("dd"), QStringLiteral("d")),
+                      namedClient(QStringLiteral("cc"), QStringLiteral("c")), b,
+                      namedClient(QStringLiteral("ee"), QStringLiteral("e"))});
+
+    QCOMPARE(resets.count(), 0);
+    QCOMPARE(model.rowCount(), 4);
+    QVERIFY(held.isValid());
+    QCOMPARE(held.row(), 2);
+    QCOMPARE(model.clientAt(2)->userName, QStringLiteral("b2"));
+    QStringList order;
+    for (int r = 0; r < model.rowCount(); ++r)
+        order << model.clientAt(r)->userHash;
+    QCOMPARE(order, (QStringList{u"dd"_s, u"cc"_s, u"bb"_s, u"ee"_s}));
+
+    // a repeated key can't be matched: reset, still right
+    model.setClients({namedClient(QStringLiteral("aa"), QStringLiteral("a")),
+                      namedClient(QStringLiteral("aa"), QStringLiteral("a"))});
+    QCOMPARE(resets.count(), 1);
+    QCOMPARE(model.rowCount(), 2);
+}
+
+void tst_ListSorting::aDoubleClickSurvivesAClientRefresh()
+{
+    // the upload list refreshes every second; one landing between the two clicks
+    // used to reset the model and drop the view's pressed index
+    ClientListModel model(ClientListMode::Uploading);
+    model.setClients({namedClient(QStringLiteral("aa"), QStringLiteral("a")),
+                      namedClient(QStringLiteral("bb"), QStringLiteral("b"))});
+    QSortFilterProxyModel proxy;
+    proxy.setSourceModel(&model);
+    QTreeView view;
+    view.setModel(&proxy);
+    view.resize(400, 200);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    QSignalSpy doubles(&view, &QAbstractItemView::doubleClicked);
+
+    const QPoint at = view.visualRect(proxy.index(1, 0)).center();
+    QWidget* vp = view.viewport();
+    QMouseEvent press(QEvent::MouseButtonPress, at, vp->mapToGlobal(at), Qt::LeftButton,
+                      Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(vp, &press);
+    QMouseEvent release(QEvent::MouseButtonRelease, at, vp->mapToGlobal(at), Qt::LeftButton,
+                        Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(vp, &release);
+
+    model.setClients({namedClient(QStringLiteral("aa"), QStringLiteral("a")),
+                      namedClient(QStringLiteral("bb"), QStringLiteral("b, later"))});
+
+    QMouseEvent dbl(QEvent::MouseButtonDblClick, at, vp->mapToGlobal(at), Qt::LeftButton,
+                    Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(vp, &dbl);
+    QApplication::sendEvent(vp, &release);
+
+    QCOMPARE(doubles.count(), 1);
+    QCOMPARE(proxy.mapToSource(doubles.at(0).at(0).value<QModelIndex>()).row(), 1);
+}
+
 void tst_ListSorting::aSourceIndexSurvivesAnEarlierDownloadLeaving()
 {
     // A source index used to carry its download's *row*. When a download above left,
@@ -1878,6 +1965,33 @@ void tst_ListSorting::filenameCleanupSkipsFinishedAndUnchanged()
     QCOMPARE(renames.first().first, QStringLiteral("a"));
     QCOMPARE(renames.first().second, cleanupFilename(QStringLiteral("some_file.name.avi"), QString()));
     QVERIFY(renames.first().second != QStringLiteral("some_file.name.avi"));
+}
+
+// The file rows of an NZB appear once it is parsed: inserted under the release, no reset
+// (a reset swallows a double click and collapses the tree).
+void tst_ListSorting::anNzbsFileListArrivesWithoutAReset()
+{
+    UsenetQueueModel model;
+    UsenetItemRow item = release(QStringLiteral("rel"), 1000, 0, 0, 0, UsenetRowStatus::Downloading);
+    model.setItems({item});
+    QSignalSpy resets(&model, &QAbstractItemModel::modelReset);
+    QSignalSpy inserted(&model, &QAbstractItemModel::rowsInserted);
+    QSignalSpy removed(&model, &QAbstractItemModel::rowsRemoved);
+    const QPersistentModelIndex held = model.index(0, 0);
+
+    for (int i = 0; i < 3; ++i)
+        item.files.append(UsenetFileRow{QStringLiteral("f%1").arg(i), 100});
+    model.setItems({item});
+    QCOMPARE(model.rowCount(model.index(0, 0)), 3);
+    QCOMPARE(inserted.size(), 1);
+    QCOMPARE(inserted.first().at(0).value<QModelIndex>(), model.index(0, 0));
+
+    item.files.removeLast();
+    model.upsertItem(item);
+    QCOMPARE(model.rowCount(model.index(0, 0)), 2);
+    QCOMPARE(removed.size(), 1);
+    QCOMPARE(resets.size(), 0);
+    QVERIFY(held.isValid());
 }
 
 QTEST_MAIN(tst_ListSorting)

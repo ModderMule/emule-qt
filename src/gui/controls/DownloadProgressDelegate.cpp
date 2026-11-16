@@ -90,6 +90,13 @@ void paintDownloadBar(QPainter& painter, const QRect& rect, const DownloadBarDat
             start = pieceEnd + 1;
         }
     }
+    // ed3k HTTP whole read: on disk, drawn held, root checked at the end; detail tells it apart
+    if (partDetail) {
+        const QColor unverified = paused ? QColor(72, 128, 128) : QColor(0, 128, 128);
+        for (qsizetype i = 0; i + 1 < bar.unverified.size(); i += 2)
+            shader.fillRange(static_cast<uint64_t>(bar.unverified.at(i)),
+                             static_cast<uint64_t>(bar.unverified.at(i + 1)) + 1, unverified);
+    }
     for (qsizetype i = 0; i + 1 < bar.pending.size(); i += 2)
         shader.fillRange(static_cast<uint64_t>(bar.pending.at(i)),
                          static_cast<uint64_t>(bar.pending.at(i + 1)) + 1, pending);

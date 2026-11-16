@@ -86,6 +86,19 @@ using namespace Ipc;
 
 namespace {
 
+/// Cancel on this row deletes the finished file (DownloadQueue::cancelFile). ed3k
+/// rows only leave the list, the file stays.
+bool cancelDeletesFile(const DownloadRow* d)
+{
+    return d && d->isComplete() && !d->isEd3k();
+}
+
+/// Cancel reads "Delete" once a selected row's file goes from disk (#197)
+QString cancelActionText(const std::vector<const DownloadRow*>& rows)
+{
+    return std::ranges::any_of(rows, cancelDeletesFile) ? QObject::tr("Delete") : QObject::tr("Cancel");
+}
+
 /// Any row with this fixed (non-auto) download priority — keeps a hidden menu entry visible
 bool anyHasPrio(const std::vector<const DownloadRow*>& rows, QStringView prio)
 {
@@ -131,13 +144,22 @@ ClientRow parseClient(const QCborMap& m, bool downloadSide = false)
     row.isFriend        = m.value(QStringLiteral("isFriend")).toBool();
     row.isUrl           = m.value(QStringLiteral("isUrl")).toBool();
     row.noViewShared    = m.value(QStringLiteral("noViewSharedFiles")).toBool();
+    // the clients of torrent/usenet/hoster jobs joined with ed3k (Downloading list)
+    const QString network = m.value(QStringLiteral("network")).toString();
+    if (network == QLatin1String("bt") || network == QLatin1String("usenet") || network == QLatin1String("hoster")) {
+        row.network = network == QLatin1String("bt")       ? ClientNetwork::Bt
+                      : network == QLatin1String("usenet") ? ClientNetwork::Usenet
+                                                           : ClientNetwork::Hoster;
+        row.noViewShared = true;
+    }
     // ed3k upload queue rows (Ed3kUploadsBridge): no eD2K client behind them
-    if (m.value(QStringLiteral("network")).toString() == QLatin1String("ed3k")) {
+    if (network == QLatin1String("ed3k")) {
         row.network = ClientNetwork::Ed3k;
         row.noViewShared = true;
         row.remoteQueueRank = static_cast<int>(m.value(QStringLiteral("queueRank")).toInteger());
         // the anonymous node's queue (hops.md §1): shown as anonymous, no address
         row.anonymous = m.value(QStringLiteral("key")).toString() == QLatin1String("Anonymous");
+        row.ed3kJoin = m.value(QStringLiteral("join")).toString();
         if (row.anonymous)
             row.addr.clear();
         // GetClientDetails key (Ed3kUploadsBridge): a node ID is 32 hex like an eD2K user hash
@@ -475,9 +497,9 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
 
     m_downloadMenu->addSeparator();
 
-    // -- 3. Cancel (batch, with confirmation for multiple) --
+    // -- 3. Cancel / Delete (batch, with confirmation) --
     {
-        auto* cancelAct = m_downloadMenu->addAction(menuIcon("Cancel.ico"), tr("Cancel"),
+        auto* cancelAct = m_downloadMenu->addAction(menuIcon("Cancel.ico"), cancelActionText(selectedDls),
                                                     this, &TransferPanel::cancelSelectedDownloads);
         cancelAct->setEnabled(hasSel);
     }
@@ -746,11 +768,12 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
                                   [this] { setDownloadToolbarShown(true); });
     }
 
-    // ed3k rows only: what the ed3k list does (Ed3kDownloadControl, open, preview); the
-    // eD2K-only entries (details, comments, sources, eD2K links, ...) are off
+    // ed3k rows only: what the ed3k list does (Ed3kDownloadControl, open, preview, the
+    // General page of Details); the eD2K-only entries (comments, sources, eD2K links, ...) are off
     if (hasSel && std::all_of(selectedDls.begin(), selectedDls.end(), [](const DownloadRow* d) { return d && d->isEd3k(); })) {
         // "Preview" is the action or, in ext mode, its submenu (own entries gated above)
         const QSet<QString> ed3kActions{tr("Priority (Download)"), tr("Pause"), tr("Stop"), tr("Resume"), tr("Cancel"),
+                                        tr("Details..."),
                                         tr("Open File"), tr("Preview"), tr("Preview with"), tr("Clear Completed"),
                                         tr("Assign To Category"),
                                         tr("Paste eD2K Links"), tr("Find..."), tr("Show Toolbar"),
@@ -1176,8 +1199,9 @@ QWidget* TransferPanel::createBottomPane()
             if (!proxy) return;
             const QModelIndex srcIdx = proxy->mapToSource(proxyIdx);
             const auto* client = model->clientAt(srcIdx.row());
-            // was: ed3k upload queue rows skipped (no eD2K client); now their queue row's details
-            if (client)
+            // was: ed3k upload queue rows skipped (no eD2K client); now their queue row's details.
+            // BitTorrent peers, news servers, hosters: none
+            if (client && !client->isOtherNetwork())
                 fetchAndShowClientDetails(client->userHash,
                                           makeClientWalker(view, model, client->userHash));
         };
@@ -1666,6 +1690,8 @@ void TransferPanel::requestDownloadSources(const QString& hash)
             src.isUrl           = m.value(QStringLiteral("isUrl")).toBool();
             src.noViewShared    = m.value(QStringLiteral("noViewSharedFiles")).toBool();
             src.ed3k            = m.value(QStringLiteral("network")).toString() == QLatin1String("ed3k");
+            src.ed3kAnon        = src.ed3k && m.value(QStringLiteral("key")).toString() == QLatin1String("Anonymous");
+            src.ed3kJoin        = m.value(QStringLiteral("join")).toString();
             for (const auto& name : m.value(QStringLiteral("a4afFiles")).toArray())
                 src.a4afFiles << name.toString();
             if (auto spm = m.value(QStringLiteral("sourcePartMap")).toArray(); !spm.isEmpty()) {
@@ -1758,8 +1784,8 @@ void TransferPanel::requestKnownClients()
 
 void TransferPanel::applyClients(int clientView, std::vector<ClientRow> rows)
 {
-    // setClients() resets the model, which drops the view's selection and scroll
-    // position — both are keyed back on afterwards.
+    // setClients() resets the model when it can't match rows by key, which drops the
+    // view's selection and scroll position — both are keyed back on afterwards.
     const ClientSlot& slot = clientSlot(clientView);
     const int scroll = slot.view->verticalScrollBar()->value();
     const QStringList selected = saveClientSelection(slot.view, slot.model);
@@ -2605,6 +2631,7 @@ void TransferPanel::updateActionStates()
     m_actStop->setEnabled(hasSelection && canStop);
     m_actResume->setEnabled(hasSelection && canResume);
     m_actCancel->setEnabled(hasSelection);
+    m_actCancel->setText(cancelActionText(selectedDls));
 }
 
 QString TransferPanel::clientViewName(int clientView)
@@ -2919,6 +2946,22 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
         }
     }
 
+    // A BitTorrent peer, news server or hoster of a joined job: nothing to act on but Find
+    if (client && client->isOtherNetwork()) {
+        QMenu otherMenu(this);
+        if (!client->addr.isEmpty()) {
+            const QString addr = client->port > 0 && client->network != ClientNetwork::Hoster
+                ? (client->addr.contains(u':') ? QStringLiteral("[%1]:%2") : QStringLiteral("%1:%2"))
+                      .arg(client->addr).arg(client->port)
+                : client->addr;
+            otherMenu.addAction(tr("Copy Address"), this, [addr]() { eMule::Clipboard::setText(addr); });
+            otherMenu.addSeparator();
+        }
+        otherMenu.addAction(menuIcon("Search.ico"), tr("Find..."), this, [this, view]() { showClientFindDialog(view); });
+        otherMenu.exec(view->viewport()->mapToGlobal(pos));
+        return;
+    }
+
     // An ed3k upload queue row: a node, not an eD2K client, so none of the eD2K actions
     // (friends, chat, shared files, ban); details of its queue row, its node ID and Find
     if (client && client->network == ClientNetwork::Ed3k) {
@@ -3057,6 +3100,13 @@ void TransferPanel::showSourceContextMenu(const SourceRow& src, const QString& p
     // an ed3k source: a node, none of the eD2K client actions (as the ed3k upload rows)
     if (src.ed3k) {
         QMenu ed3kMenu(this);
+        // its HTTP (ws=) source: the URL only, no node behind it
+        if (src.isUrl) {
+            const QString url = src.userName;
+            ed3kMenu.addAction(menuIcon("eD2kLink.ico"), tr("Copy URL"), this, [url]() { eMule::Clipboard::setText(url); });
+            ed3kMenu.exec(globalPos);
+            return;
+        }
         const QString key = src.userHash;
         auto* detailsAct = ed3kMenu.addAction(menuIcon("UserDetails.ico"), tr("Details..."), this,
             [this, key, parentHash]() { fetchAndShowClientDetails(key, makeSourceWalker(parentHash, key)); });
@@ -3315,19 +3365,34 @@ void TransferPanel::cancelSelectedDownloads()
     const QStringList hashes = saveDownloadSelectionMulti();
     if (hashes.isEmpty())
         return;
-    if (hashes.size() == 1) {
-        const DownloadRow* dl = m_downloadModel->findByHash(hashes.first());
-        const QString name = dl ? dl->fileName : hashes.first();
-        if (QMessageBox::question(this, tr("Cancel Download"),
-                tr("Cancel download \"%1\"?").arg(name),
-                QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes)
-            return;
-    } else {
-        if (QMessageBox::question(this, tr("Cancel Downloads"),
-                tr("Cancel %1 selected downloads?").arg(hashes.size()),
-                QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes)
-            return;
+    // #197: a completed eD2K file is deleted from disk (MFC MP_CANCEL); say so
+    QStringList deleted;
+    for (const QString& hash : hashes) {
+        if (const DownloadRow* dl = m_downloadModel->findByHash(hash); cancelDeletesFile(dl))
+            deleted << dl->fileName;
     }
+    const auto toCancel = static_cast<int>(hashes.size() - deleted.size());
+    QString title;
+    QString question;
+    if (deleted.isEmpty()) {
+        title = hashes.size() == 1 ? tr("Cancel Download") : tr("Cancel Downloads");
+        if (hashes.size() == 1) {
+            const DownloadRow* dl = m_downloadModel->findByHash(hashes.first());
+            question = tr("Cancel download \"%1\"?").arg(dl ? dl->fileName : hashes.first());
+        } else {
+            question = tr("Cancel %1 selected downloads?").arg(hashes.size());
+        }
+    } else {
+        title = deleted.size() == 1 ? tr("Delete File") : tr("Delete Files");
+        question = deleted.size() == 1
+            ? tr("Delete \"%1\" from disk?").arg(deleted.first())
+            : tr("Delete %1 completed files from disk?").arg(deleted.size());
+        if (toCancel > 0)
+            question += u'\n' + tr("%1 unfinished download(s) will be cancelled too.").arg(toCancel);
+    }
+    if (QMessageBox::question(this, title, question, QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+        != QMessageBox::Yes)
+        return;
     sendDownloadActionBatch(hashes, 2);
 }
 

@@ -131,10 +131,12 @@ SOURCES += \
     kademlia/KadLookupHistory.cpp \
     kademlia/KadMiscUtils.cpp \
     kademlia/KadPacketTracking.cpp \
+    kademlia/KadOutboundGuard.cpp \
     kademlia/KadPrefs.cpp \
     kademlia/KadRoutingBin.cpp \
     kademlia/KadRoutingZone.cpp \
     kademlia/KadSearch.cpp \
+    kademlia/KadPointerRoute.cpp \
     kademlia/KadSearchManager.cpp \
     kademlia/KadUDPListener.cpp \
     kademlia/KadUInt128.cpp \
@@ -319,11 +321,13 @@ HEADERS += \
     kademlia/KadLookupHistory.h \
     kademlia/KadMiscUtils.h \
     kademlia/KadPacketTracking.h \
+    kademlia/KadOutboundGuard.h \
     kademlia/KadPrefs.h \
     kademlia/KadRoutingBin.h \
     kademlia/KadRoutingZone.h \
     kademlia/KadSearch.h \
     kademlia/KadSearchDefs.h \
+    kademlia/KadPointerRoute.h \
     kademlia/KadSearchManager.h \
     kademlia/KadTypes.h \
     kademlia/KadUDPKey.h \

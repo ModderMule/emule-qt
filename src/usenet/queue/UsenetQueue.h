@@ -470,6 +470,19 @@ public:
     /// limit, so a rate sampled from them swings between 0 and huge.
     [[nodiscard]] qint64 itemRate(const QString& id) const;
 
+    /// A news server an item got articles from in the last kServerWindowMs.
+    struct ItemServer {
+        QString accountId;
+        QString name;       ///< the server's name, else its host
+        QString host;
+        quint16 port = 0;
+        qint64 rate = 0;    ///< its share of itemRate(), by bytes in the window
+        qint64 bytes = 0;   ///< wire bytes from it for this item this session
+    };
+    static constexpr qint64 kServerWindowMs = 5000;
+    /// The servers item @p id downloads from now (the Transfers Downloading list).
+    [[nodiscard]] QList<ItemServer> itemServers(const QString& id) const;
+
     /// Encoded bytes done plus bytes of articles still in flight, so progress
     /// moves while a batch of articles is being read, not only when it lands.
     /// Same unit as UsenetQueueItem::totalEncodedBytes().
@@ -716,6 +729,14 @@ private:
             QSet<int> files;
         };
         Refetch refetch;
+
+        /// Wire bytes per account: this session's total and recent (ms, bytes)
+        /// answers within kServerWindowMs (itemServers). Runtime only.
+        struct ServerTraffic {
+            qint64 total = 0;
+            QList<QPair<qint64, qint64>> recent;
+        };
+        QHash<QString, ServerTraffic> serverTraffic;
 
         /// Unwanted member names direct unpack reported, acted on from the tick:
         /// stopping cancels the very run whose progress handler found them.

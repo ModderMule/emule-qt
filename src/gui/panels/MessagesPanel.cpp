@@ -690,7 +690,7 @@ void MessagesPanel::onChatTabContextMenu(const QPoint& pos)
                        [this, hash] { showClientDetails(this, m_ipc, hash); });
     else if (isFriend)
         menu.addAction(skinIcon(QStringLiteral(":/icons/UserDetails.ico")), tr("&Details..."), this,
-                       [this, friendRow] { showFriendDetails(m_friendModel->index(friendRow)); });
+                       [this, friendRow] { showFriendDetails(m_friendModel->index(friendRow, 0)); });
     // an ed3k stranger has no key to add: only a link makes a friend (friend.md §1)
     if (!isFriend && ed2k) {
         menu.addAction(skinIcon(QStringLiteral(":/icons/UserAdd.ico")), tr("Add to friends list"),
@@ -888,7 +888,7 @@ void MessagesPanel::restoreSelection(const QString& key)
         return;
     const int row = m_friendModel->findByHash(key);
     if (row >= 0) {
-        m_friendListView->setCurrentIndex(m_friendModel->index(row));
+        m_friendListView->setCurrentIndex(m_friendModel->index(row, 0));
     }
 }
 
@@ -1065,7 +1065,7 @@ void MessagesPanel::onChatTabChanged(int index)
     // Select the corresponding friend in the list and update info
     const int friendRow = m_friendModel->findByHash(hash);
     if (friendRow >= 0) {
-        m_friendListView->setCurrentIndex(m_friendModel->index(friendRow));
+        m_friendListView->setCurrentIndex(m_friendModel->index(friendRow, 0));
         updateInfoSection(friendRow);
     }
 }

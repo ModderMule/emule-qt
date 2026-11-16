@@ -1,0 +1,12 @@
+[package]
+name = "ed3k-hashbody"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Writes the ed3k hash body (http-source.md §3.1) of files, for wh= links"
+
+[dependencies]
+blake3 = "=1.8.7"
+
+[profile.release]
+opt-level = 3

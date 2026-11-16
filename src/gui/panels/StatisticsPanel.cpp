@@ -93,13 +93,15 @@ static qint64 cborInt(const QCborMap& m, QLatin1StringView key)
     return static_cast<qint64>(it->toDouble());
 }
 
-// Client type labels — shared across session and cumulative trees
+// Client type labels — shared across session and cumulative trees. eMuleQt is not MFC.
 static const char* const kUpClientLabels[] = {
-    "eMule", "eD Hybrid", "eDonkey", "aMule", "MLdonkey", "Shareaza", "eM Compat"
+    "eMule", "eD Hybrid", "eDonkey", "aMule", "MLdonkey", "Shareaza", "eM Compat", "eMuleQt"
 };
 static const char* const kDownClientLabels[] = {
-    "eMule", "eD Hybrid", "eDonkey", "aMule", "MLdonkey", "Shareaza", "eM Compat", "URL"
+    "eMule", "eD Hybrid", "eDonkey", "aMule", "MLdonkey", "Shareaza", "eM Compat", "eMuleQt", "URL"
 };
+constexpr int kUpClients = static_cast<int>(std::size(kUpClientLabels));
+constexpr int kDownClients = static_cast<int>(std::size(kDownClientLabels));
 
 // ---------------------------------------------------------------------------
 // Construction
@@ -392,7 +394,7 @@ void StatisticsPanel::buildTree()
 
     m_itemUpSessionData = new QTreeWidgetItem(upSession, {tr("Uploaded Data: 0 Bytes")});
     auto* upSesClients = new QTreeWidgetItem(m_itemUpSessionData, {tr("Clients")});
-    for (int i = 0; i < 7; ++i)
+    for (int i = 0; i < kUpClients; ++i)
         m_itemUpSesClient[i] = new QTreeWidgetItem(upSesClients,
             {tr("%1: 0 Bytes").arg(QString::fromLatin1(kUpClientLabels[i]))});
     auto* upSesPorts = new QTreeWidgetItem(m_itemUpSessionData, {tr("Port")});
@@ -427,7 +429,7 @@ void StatisticsPanel::buildTree()
 
     m_itemUpCumData = new QTreeWidgetItem(upCum, {tr("Uploaded Data: 0 Bytes")});
     auto* upCumClients = new QTreeWidgetItem(m_itemUpCumData, {tr("Clients")});
-    for (int i = 0; i < 7; ++i)
+    for (int i = 0; i < kUpClients; ++i)
         m_itemUpCumClient[i] = new QTreeWidgetItem(upCumClients,
             {tr("%1: 0 Bytes").arg(QString::fromLatin1(kUpClientLabels[i]))});
     auto* upCumPorts = new QTreeWidgetItem(m_itemUpCumData, {tr("Port")});
@@ -459,7 +461,7 @@ void StatisticsPanel::buildTree()
 
     m_itemDownSessionData = new QTreeWidgetItem(downSession, {tr("Downloaded Data: 0 Bytes")});
     auto* downSesClients = new QTreeWidgetItem(m_itemDownSessionData, {tr("Clients")});
-    for (int i = 0; i < 8; ++i)
+    for (int i = 0; i < kDownClients; ++i)
         m_itemDownSesClient[i] = new QTreeWidgetItem(downSesClients,
             {tr("%1: 0 Bytes").arg(QString::fromLatin1(kDownClientLabels[i]))});
     auto* downSesPorts = new QTreeWidgetItem(m_itemDownSessionData, {tr("Port")});
@@ -502,7 +504,7 @@ void StatisticsPanel::buildTree()
 
     m_itemDownCumData = new QTreeWidgetItem(downCum, {tr("Downloaded Data: 0 Bytes")});
     auto* downCumClients = new QTreeWidgetItem(m_itemDownCumData, {tr("Clients")});
-    for (int i = 0; i < 8; ++i)
+    for (int i = 0; i < kDownClients; ++i)
         m_itemDownCumClient[i] = new QTreeWidgetItem(downCumClients,
             {tr("%1: 0 Bytes").arg(QString::fromLatin1(kDownClientLabels[i]))});
     auto* downCumPorts = new QTreeWidgetItem(m_itemDownCumData, {tr("Port")});
@@ -1005,7 +1007,7 @@ void StatisticsPanel::buildProjectedAverages()
         const auto addClients = [&](QTreeWidgetItem* data, const QString& prefix,
                                     std::span<const char* const> labels, const QString& total) {
             static const char* const keys[] = {"Emule", "EDHybrid", "EDonkey", "AMule",
-                                               "MLdonkey", "Shareaza", "EMCompat", "URL"};
+                                               "MLdonkey", "Shareaza", "EMCompat", "EmuleQt", "URL"};
             auto* clients = group(data, tr("Clients"));
             for (std::size_t i = 0; i < labels.size(); ++i)
                 add(clients, Row::BytesShare, QString::fromLatin1(labels[i]),
@@ -1116,9 +1118,9 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
     // Per-client session upload
     static const char* const sesUpKeys[] = {
         "sesUpEmule", "sesUpEDHybrid", "sesUpEDonkey", "sesUpAMule",
-        "sesUpMLdonkey", "sesUpShareaza", "sesUpEMCompat"
+        "sesUpMLdonkey", "sesUpShareaza", "sesUpEMCompat", "sesUpEmuleQt"
     };
-    for (int i = 0; i < 7; ++i) {
+    for (int i = 0; i < kUpClients; ++i) {
         const qint64 v = cborInt(stats, QLatin1StringView(sesUpKeys[i]));
         setClientBreakdown(m_itemUpSesClient[i], kUpClientLabels[i], v, sent);
     }
@@ -1189,9 +1191,9 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
 
     static const char* const cumUpKeys[] = {
         "cumUpEmule", "cumUpEDHybrid", "cumUpEDonkey", "cumUpAMule",
-        "cumUpMLdonkey", "cumUpShareaza", "cumUpEMCompat"
+        "cumUpMLdonkey", "cumUpShareaza", "cumUpEMCompat", "cumUpEmuleQt"
     };
-    for (int i = 0; i < 7; ++i) {
+    for (int i = 0; i < kUpClients; ++i) {
         const qint64 v = cborInt(stats, QLatin1StringView(cumUpKeys[i]));
         setClientBreakdown(m_itemUpCumClient[i], kUpClientLabels[i], v, cumTotalUp);
     }
@@ -1246,9 +1248,9 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
 
     static const char* const sesDownKeys[] = {
         "sesDownEmule", "sesDownEDHybrid", "sesDownEDonkey", "sesDownAMule",
-        "sesDownMLdonkey", "sesDownShareaza", "sesDownEMCompat", "sesDownURL"
+        "sesDownMLdonkey", "sesDownShareaza", "sesDownEMCompat", "sesDownEmuleQt", "sesDownURL"
     };
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < kDownClients; ++i) {
         const qint64 v = cborInt(stats, QLatin1StringView(sesDownKeys[i]));
         setClientBreakdown(m_itemDownSesClient[i], kDownClientLabels[i], v, recv);
     }
@@ -1345,9 +1347,9 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
 
     static const char* const cumDownKeys[] = {
         "cumDownEmule", "cumDownEDHybrid", "cumDownEDonkey", "cumDownAMule",
-        "cumDownMLdonkey", "cumDownShareaza", "cumDownEMCompat", "cumDownURL"
+        "cumDownMLdonkey", "cumDownShareaza", "cumDownEMCompat", "cumDownEmuleQt", "cumDownURL"
     };
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < kDownClients; ++i) {
         const qint64 v = cborInt(stats, QLatin1StringView(cumDownKeys[i]));
         setClientBreakdown(m_itemDownCumClient[i], kDownClientLabels[i], v, cumTotalDown);
     }
@@ -2930,6 +2932,12 @@ std::span<const StatisticsPanel::CounterRow> StatisticsPanel::kadActivityRows()
         {QT_TR_NOOP("Source Searches: %1 %2"), "searchesSource", F::Count, "searchesTotal", 1},
         {QT_TR_NOOP("Notes Searches: %1 %2"), "searchesNotes", F::Count, "searchesTotal", 1},
         {QT_TR_NOOP("Publishes: %1"), "publishes"},
+        // Our side of the receivers' flood limits (kad::OutboundGuard)
+        {QT_TR_NOOP("Most Lookup Requests to One IP per Minute: %1"), "peakReqPerIP"},
+        {QT_TR_NOOP("Most Source Publishes to One IP per Minute: %1"), "peakPublishSourcePerIP"},
+        {QT_TR_NOOP("Most Keyword Publishes to One IP per Minute: %1"), "peakPublishKeyPerIP"},
+        {QT_TR_NOOP("Lookup Requests Held Back: %1"), "requestsHeld"},
+        {QT_TR_NOOP("Searches and Publishes Held Back: %1"), "storesHeld"},
     };
     return kRows;
 }
@@ -2986,6 +2994,16 @@ void StatisticsPanel::buildKademliaBranch(const QIcon& detailIcon, const QIcon& 
             } else if (key == QLatin1StringView("sourcePublishes")) {
                 item->setToolTip(0, tr("Counted per publish, not per node. Firewalled nodes "
                                        "that cannot publish are missing."));
+            } else if (key.startsWith(QLatin1StringView("peak")) && key.endsWith(QLatin1StringView("PerIP"))) {
+                item->setToolTip(0, tr("Most packets of this kind one IP got from us within 60 seconds. "
+                                       "eMule nodes accept 10 lookup requests, 3 source publishes "
+                                       "and 4 keyword publishes per minute and IP, and ban an IP "
+                                       "that keeps going over for 2 hours."));
+            } else if (key.endsWith(QLatin1StringView("Held"))) {
+                item->setToolTip(0, tr("Packets kept back because the node's IP had used up its "
+                                       "per-minute allowance. A lookup asks another node, a publish "
+                                       "goes out once the allowance refills. Each node counts once "
+                                       "per search."));
             }
         }
     };

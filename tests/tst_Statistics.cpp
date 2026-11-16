@@ -447,9 +447,16 @@ void tst_Statistics::addTransferData_feedsSessionTotals()
     // The breakdown underneath still adds up to the same totals.
     QCOMPARE(stats.sesUpByClient(0) + stats.sesUpByClient(3), uint64{1000});
     QCOMPARE(stats.sesUpPort4662() + stats.sesUpPortOther(), uint64{1000});
-    QCOMPARE(stats.sesDownByClient(0) + stats.sesDownByClient(7), uint64{1000});
+    QCOMPARE(stats.sesDownByClient(0)
+                 + stats.sesDownByClient(Statistics::clientIndex(ClientSoftware::URL)), uint64{1000});
     QCOMPARE(stats.sesDownPort4662(), uint64{900});
     QCOMPARE(stats.sesDownPortOther(), uint64{100});
+
+    // eMuleQt peers get their own slot, not eMule's
+    stats.addTransferData(ClientSoftware::eMule, 4662, false, true, 50, true);
+    QCOMPARE(stats.sesUpByClient(Statistics::kEmuleQtClientIndex), uint64{50});
+    QCOMPARE(stats.sesUpByClient(0), uint64{800});
+    QCOMPARE(stats.sessionSentBytes(), uint64{1050});
 }
 
 // MFC's SetTimeOnTransfer: the first byte starts the clock the session averages

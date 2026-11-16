@@ -27,13 +27,24 @@
 #include <utility>
 #include <vector>
 
-namespace eMule::kad { class Contact; }
+namespace eMule::kad {
+class Contact;
+enum class IncomingRefusal : uint8;
+}
 
 namespace eMule {
 
 class ClientCredits;
 class ClientReqSocket;
 class UpDownClient;
+
+/// Why we refuse to serve a buddy. Not refused while code is None (0).
+struct BuddyRefusal {
+    kad::IncomingRefusal code{};
+    int32_t arg = 0;   ///< slots or minutes, per code
+    QString text;      ///< for the log
+    [[nodiscard]] bool refused() const { return code != kad::IncomingRefusal{}; }
+};
 
 /// Buddy connection state for Kademlia firewall traversal.
 enum class BuddyStatus : uint8_t {
@@ -191,9 +202,9 @@ public:
     void releaseBuddyHeldSources();
 
     /// Called when a remote node wants to become our buddy.
-    /// Returns true if accepted.
+    /// Accepted when the result is not refused().
     /// Matches MFC CClientList::IncomingBuddy (srchybrid/ClientList.cpp:721).
-    bool incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
+    BuddyRefusal incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
                        const uint8* clientID, const uint8* buddyID);
 
     /// Initiate a buddy request to a remote node found via Kad.
@@ -338,8 +349,8 @@ signals:
 
 private:
     /// Shared gates for a node claiming us as buddy: slot free, not ourselves, not under a
-    /// firewall check, IP not served yet. Empty when it passes, else the reason for the log.
-    [[nodiscard]] QString buddyServeRefusal(const Address& addr, uint16 tcpPort) const;
+    /// firewall check, IP not served yet. Not refused() when it passes.
+    [[nodiscard]] BuddyRefusal buddyServeRefusal(const Address& addr, uint16 tcpPort) const;
     /// Our claimed buddy was lost while we still need one: dial it and claim it again, once.
     /// A Kad search cannot find it (not near ~KadID); the search runs alongside.
     void reclaimLostBuddy(bool needsOwnBuddy);

@@ -160,6 +160,7 @@ public:
         const uint8* sourceIPv6 = nullptr;    ///< 16 bytes, or nullptr
         const uint8* buddyIPv6 = nullptr;     ///< 16 bytes, or nullptr
         uint8 natt = 0;                       ///< TAG_NATT bits (KADNATT_*), 0 if absent
+        uint8 pointerVersion = 0;             ///< `bpv` on 3/5/7 (ipv6-spec §5.6.1), 0 if absent
 
         /// HTTP Cache chunks this source advertised for the file, empty for every
         /// client that does not publish them. Carried here because one result is both

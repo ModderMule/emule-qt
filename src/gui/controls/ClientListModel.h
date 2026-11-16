@@ -35,8 +35,9 @@ enum class ClientListMode {
     KnownClients
 };
 
-/// The network of a client row (GetUploads "network"; absent = eD2K).
-enum class ClientNetwork { Ed2k, Ed3k };
+/// The network of a client row (GetUploads "network"; absent = eD2K). Bt, Usenet, Hoster:
+/// the Downloading list's clients of torrent/usenet/hoster jobs joined with ed3k.
+enum class ClientNetwork { Ed2k, Ed3k, Bt, Usenet, Hoster };
 
 /// Row data for one client displayed in any of the 4 bottom tabs.
 struct ClientRow {
@@ -67,7 +68,10 @@ struct ClientRow {
     bool isFriend = false;
     bool isUrl = false;            ///< HTTP source, not an eD2K client
     ClientNetwork network = ClientNetwork::Ed2k;   ///< ed3k: a node of the ed3k upload queue, no eD2K actions
+    /// Bt, Usenet, Hoster: not a peer of eD2K or ed3k, no actions but Find
+    [[nodiscard]] bool isOtherNetwork() const { return network >= ClientNetwork::Bt; }
     bool anonymous = false;     ///< ed3k: the anonymous node's queue (hops.md §1), no address
+    QString ed3kJoin;           ///< ed3k: "torrent"/"usenet"/"hoster" join of the file, else empty
     bool noViewShared = false;     ///< peer refuses "View Shared Files"
     int64_t upDatarate = 0;       // bytes/sec upload rate
     int64_t downDatarate = 0;     // bytes/sec download rate
@@ -114,7 +118,13 @@ public:
                                       int role = Qt::DisplayRole) const override;
 
     /// Replace all clients with a new snapshot.
-    void setClients(std::vector<ClientRow> clients) { setRows(std::move(clients)); }
+    /// Keyed in place, no reset (a reset swallows a double click across a refresh).
+    void setClients(std::vector<ClientRow> clients)
+    {
+        syncRows(std::move(clients), [](const ClientRow& r) -> QString {
+            return r.userHash + u'|' + r.addr + u':' + QString::number(r.port);
+        });
+    }
 
     [[nodiscard]] int clientCount() const { return count(); }
     [[nodiscard]] ClientListMode mode() const { return m_mode; }

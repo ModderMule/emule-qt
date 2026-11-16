@@ -233,16 +233,19 @@ public:
     /// Record a data transfer for per-client-type, per-port, per-source tracking,
     /// and add it to the session totals. Called from upload/download client code
     /// after each block transfer.
+    /// emuleQt: an eMuleQt peer (UpDownClient::isEmuleQt), counted apart from eMule
     void addTransferData(ClientSoftware clientType, uint16 port,
-                         bool isPartFile, bool isUpload, uint64 bytes);
+                         bool isPartFile, bool isUpload, uint64 bytes, bool emuleQt = false);
 
-    /// Map ClientSoftware enum to compact array index 0-7.
-    [[nodiscard]] static int clientIndex(ClientSoftware cs);
+    /// Map ClientSoftware enum to compact array index 0-8.
+    [[nodiscard]] static int clientIndex(ClientSoftware cs, bool emuleQt = false);
 
-    /// Number of client types tracked for uploads (eMule..eMCompat).
-    static constexpr int kUpClientCount = 7;
-    /// Number of client types tracked for downloads (eMule..URL).
-    static constexpr int kDownClientCount = 8;
+    /// Index of eMuleQt peers; not MFC, which counts them as eMule
+    static constexpr int kEmuleQtClientIndex = 7;
+    /// Number of client types tracked for uploads (eMule..eMuleQt).
+    static constexpr int kUpClientCount = 8;
+    /// Number of client types tracked for downloads (eMule..eMuleQt, URL).
+    static constexpr int kDownClientCount = 9;
 
     /// Per-client session bytes — upload
     [[nodiscard]] uint64 sesUpByClient(int idx) const { return (idx >= 0 && idx < kUpClientCount) ? m_sesUpByClient[static_cast<size_t>(idx)].load() : 0; }

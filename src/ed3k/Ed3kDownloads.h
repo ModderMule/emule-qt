@@ -23,6 +23,11 @@
 ///   this class forgets its share without closing it on the engine. A plain download of a
 ///   root shared there is refused (add) and an unfinished one dropped (start, releaseShare).
 ///
+/// Listed in the Transfers window only, also when the root is an alias of a torrent, usenet
+/// or hoster job (alias.md): never shown in those networks' tabs. Its bytes come over ed3k
+/// alone, and a 2nd row there would double every action. The jobs known here sharing the
+/// root are named in its tooltip and Details (Ed3kJoinBase::aliasJobsAt) instead.
+///
 /// Mechanics are Ed3kJoinBase's (owner = the spec's owner, member = a stable id per
 /// download): Kad sources, streams, block requests. wantedBlocks = the missing 256 KiB
 /// blocks; each verified block is written into the part file and marked in a bitmap
@@ -30,6 +35,9 @@
 /// size must agree; else the bitmap is dropped and it downloads again), moved, shared
 /// (Publish::Both, keywords unless holding back) and kept (keepMember) for a restart.
 /// Pieces (4 MiB) held are shared while it runs once the block values are in.
+/// HTTP sources (`ws=` of a link, kept in the .met): Ed3kDownloadsWeb.cpp. One fetch per
+/// download at a time, missing blocks in order; without block values packmule reads the
+/// file whole from 0 (HttpUnverified, checked by HttpWhole). Never under the anonymous key.
 ///
 /// was: ToDo: the download priority is kept and shown only; the engine has no priority between
 /// downloads (it could rank block requests or streams per file). (It orders the turns at a
@@ -73,6 +81,10 @@ struct Ed3kDownloadSpec {
     std::optional<::ed3k::KeyKind> key;
     /// the eD2K hash (16 B) the link names, if any (the anonymous-key exposure check)
     QByteArray md4;
+    /// `ws=` of the link: HTTP sources of the whole file (http-source.md §2)
+    QStringList webUrls;
+    /// `wh=` of the link: URLs of its hash body (http-source.md §3.1)
+    QStringList webHashUrls;
 };
 
 /// One download as the list shows it.
@@ -99,6 +111,8 @@ struct Ed3kDownloadInfo {
     QString error;                 ///< Failed: why (not localized: a log line)
     std::vector<bool> blocks;      ///< per 256 KiB block: held (verified)
     std::vector<bool> pending;     ///< per block: asked for, not here yet; empty: not running
+    /// HTTP source read whole: bytes [0, unchecked) on disk, root checked at the end (not in done/blocks)
+    std::uint64_t unchecked = 0;
     /// per 4 MiB piece: open sources holding it (FileStatus.have, 255 at most); empty: none told
     std::vector<std::uint8_t> availability;
     /// eMule's "Increase priority for preview parts": first and last part first
@@ -173,6 +187,17 @@ public:
     [[nodiscard]] std::optional<Ed3kDownloadInfo> info(const ::ed3k::Root& root) const;
     [[nodiscard]] bool contains(const ::ed3k::Root& root) const { return m_entries.contains(root); }
 
+    /// The HTTP (ws=) source of a running download, for its source row.
+    struct WebSourceInfo {
+        QString url;
+        bool fetching = false;           ///< a request runs
+        std::uint64_t at = 0;            ///< offset of the running request
+        std::vector<bool> have;          ///< per 256 KiB block, checked
+        std::uint64_t unchecked = 0;     ///< whole read: bytes [0, unchecked) on disk
+    };
+    /// nullopt: no HTTP source attached (or not downloading).
+    [[nodiscard]] std::optional<WebSourceInfo> webSourceOf(const ::ed3k::Root& root) const;
+
     /// Another sharer (Ed3kShared) took @p root: forget the own share, do not close it. An
     /// unfinished plain download of it is dropped (part file + .met in Temp; the shared file
     /// is not touched). true: dropped, its share closed: the sharer opens @p root again.
@@ -215,8 +240,24 @@ protected:
     [[nodiscard]] int downloadPriority(const Download& d) const override;
     /// Plain ed3k downloads follow the hiding switch (hops.md §1).
     [[nodiscard]] bool anonCapable() const override { return true; }
+    /// HTTP source events (Ed3kDownloadsWeb.cpp)
+    void onOtherEvent(const ::ed3k::Event& event) override;
 
 private:
+    /// HTTP source state of one download (this run only)
+    struct Web {
+        std::uint64_t source = 0;        ///< engine source id; 0: none
+        int urlIndex = 0;                ///< webUrls entry in use
+        std::optional<std::uint64_t> fetch;
+        std::uint64_t fetchAt = 0;       ///< offset of @c fetch
+        bool whole = false;              ///< read whole from 0, checked at the end
+        std::uint64_t wholeNext = 0;     ///< next offset of the whole read
+        int failures = 0;                ///< fetches failed in a row
+        QDeadlineTimer retryAt;          ///< no fetch before
+        bool loggedAnon = false;
+        bool resuming = false;           ///< bytes of an earlier whole read hashed again, no fetch yet
+        bool resumed = false;            ///< whole read went on from a checkpoint
+    };
     struct Entry {
         Ed3kDownloadInfo info;
         int id = -1;                     ///< member index in the base
@@ -231,6 +272,12 @@ private:
         bool resumeAfterMove = false;
         std::optional<std::uint64_t> focus;   ///< playFrom(): first byte fetched first
         QDeadlineTimer focusUntil;       ///< focus ends (onTick)
+        QStringList webUrls;             ///< ws= HTTP sources (kept in the .met)
+        QStringList webHashUrls;         ///< wh= hash body URLs (kept in the .met)
+        /// whole read: bytes [0, wholeAt) on disk, root not checked yet (kept in the .met)
+        std::uint64_t wholeAt = 0;
+        bool prefixChecking = false;     ///< webCheckPrefix() runs on a worker
+        Web web;
     };
 
     Entry* entryOf(const ::ed3k::Root& root);
@@ -251,6 +298,31 @@ private:
     /// The 4 MiB pieces held while it runs (with block values).
     void sharePieces(Entry& e);
     void fail(Entry& e, const QString& error);
+    /// A verified block into the part file; false: not taken.
+    bool storeBlock(Entry& e, std::uint64_t offset, const ::ed3k::Bytes& data);
+
+    // -- HTTP sources (Ed3kDownloadsWeb.cpp) ----------------------------------
+    /// URLs new to @p list: kept; true when one was added.
+    static bool mergeWebUrls(QStringList& list, const QStringList& urls);
+    /// Running download with URLs: its source at the engine.
+    void webAttach(Entry& e);
+    /// Stops the fetch and forgets the source.
+    void webDetach(Entry& e);
+    /// A fetch for every download whose source idles (tick, after a fetch).
+    void webDrive();
+    void webFetch(Entry& e);
+    void webFetched(Entry& e, std::uint32_t code);
+    void webUnverified(Entry& e, std::uint64_t offset, const ::ed3k::Bytes& data);
+    void webWhole(Entry& e, bool ok);
+    void webDropped(Entry& e, std::uint32_t code);
+    /// A whole read of an earlier run goes on: its bytes on disk hashed again (Hasher::checkpoint).
+    void webResume(Entry& e);
+    void webResumed(const ffi::Root& root, std::uint64_t source, const std::optional<HashCheckpoint>& cp);
+    /// Block values known (onDownloadHashes): the unchecked bytes [0, wholeAt) hashed again
+    /// on a worker, matching blocks held; the rest is fetched block by block.
+    void webCheckPrefix(Entry& e);
+    void webPrefixChecked(const ffi::Root& root, std::uint64_t upTo, const std::optional<HashCheckpoint>& cp);
+    Entry* entryOfWebSource(std::uint64_t source);
     void markChanged();
     /// The entry changed: its .met is written at the next save.
     void touch(Entry& e);

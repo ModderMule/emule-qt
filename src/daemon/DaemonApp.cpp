@@ -126,6 +126,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QSslSocket>
 #include <QStringList>
 #include <QTimer>
 #include <QUrl>
@@ -259,6 +260,10 @@ bool DaemonApp::start()
     QString tlsError;
     const IpcTlsIdentity tls = loadOrCreateIpcTlsIdentity(thePrefs.configDir(), &tlsError);
     if (!tls.cert.isNull()) {
+        if (tls.replacedEc)
+            logWarning(QStringLiteral("IPC TLS: EC certificate replaced by RSA — TLS backend %1 "
+                                      "can't serve EC keys; GUIs ask once to trust the new one")
+                           .arg(QSslSocket::activeBackend()));
         m_ipcServer->setTlsIdentity(tls.cert, tls.key);
         logInfo(QStringLiteral("IPC TLS certificate SHA-256: %1")
                     .arg(Ipc::certFingerprint(tls.cert)));
@@ -311,7 +316,7 @@ bool DaemonApp::start()
             m_usenetSession->onNetworkRouteChanged();
         // libtorrent opens its own sockets: rebind to the new interface, pause when gone
         applyBtConfig();
-#ifdef EMULE_HAVE_HOSTER_JD
+#if defined(EMULE_HAVE_ED3K) && defined(EMULE_HAVE_HOSTER_JD)
         // the sidecar cannot pin: its direct connections leave from the selected address
         if (m_jdResolver)
             m_jdResolver->setBindAddress(BindAddress::sourceAddress());

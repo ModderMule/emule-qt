@@ -50,5 +50,13 @@ void appendDownloading(QCborArray& out);
 /// details() writes it: the same peer seen by eD2K too.
 [[nodiscard]] std::optional<QCborMap> detailsByEd2kHash(const QByteArray& userHash);
 
+/// Other names of ed3k @p root (32 B) known here: the eD2K, torrent, usenet and hoster jobs
+/// sharing or downloading it (Ed3kJoinBase::aliasJobsAt), as {network, name, id[, host]}.
+[[nodiscard]] QCborArray aliasesOf(const QByteArray& root);
+
+/// GetDownloadClients: the BitTorrent peers, news servers and hosters that torrent, usenet
+/// and hoster jobs joined with ed3k get bytes from now (Ed3kJoinBase::networkJobsAt).
+void appendNetworkDownloading(QCborArray& out);
+
 } // namespace Ed3kUploadsBridge
 } // namespace eMule

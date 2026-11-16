@@ -415,6 +415,9 @@ private:
     /// Answers OPENED once where the bytes start is known; false: not yet.
     bool opened(Ask& a, const ResolverEvent& ev);
     /// Where an open of a rooted item starts: the first block not held from 0.
+    /// Rootless: the bytes kept by an earlier run hashed again (checkpointInBackground),
+    /// then linkResume; the open waits for it.
+    void resumeRootless(Entry& e);
     [[nodiscard]] std::uint64_t resumeOffset(const Entry& e) const;
     /// Reads what the resolver wrote past Ask::fed and hands it in.
     void feed(Ed3kResolver::TaskId task);

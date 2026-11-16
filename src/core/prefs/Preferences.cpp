@@ -446,6 +446,7 @@ struct Preferences::Data {
     uint64 cumUpMLdonkey = 0;
     uint64 cumUpShareaza = 0;
     uint64 cumUpEMCompat = 0;
+    uint64 cumUpEmuleQt = 0;
 
     // Per-client cumulative download bytes
     uint64 cumDownEmule = 0;
@@ -455,6 +456,7 @@ struct Preferences::Data {
     uint64 cumDownMLdonkey = 0;
     uint64 cumDownShareaza = 0;
     uint64 cumDownEMCompat = 0;
+    uint64 cumDownEmuleQt = 0;
     uint64 cumDownURL = 0;
 
     // Per-port cumulative bytes
@@ -644,6 +646,8 @@ struct Preferences::Data {
     int depth3D = 5;                        // 0=flat, 5=round (MFC default)
     int tooltipDelay = 1;                   // seconds
     bool minimizeToTray = true;
+    bool showTrayIcon = true;               // off = no tray icon, tray options inert
+    bool closeToTray = false;               // close button hides to tray (qBittorrent); MFC quits
     bool transferDoubleClick = true;
     bool showDwlPercentage = false;
     int downloadBarMode = 0;                // DownloadBarMode, 0 = MFC
@@ -1788,6 +1792,7 @@ PREF_GS(uint64, cumUpAMule, CumUpAMule)
 PREF_GS(uint64, cumUpMLdonkey, CumUpMLdonkey)
 PREF_GS(uint64, cumUpShareaza, CumUpShareaza)
 PREF_GS(uint64, cumUpEMCompat, CumUpEMCompat)
+PREF_GS(uint64, cumUpEmuleQt, CumUpEmuleQt)
 
 PREF_GS(uint64, cumDownEmule, CumDownEmule)
 PREF_GS(uint64, cumDownEDHybrid, CumDownEDHybrid)
@@ -1796,6 +1801,7 @@ PREF_GS(uint64, cumDownAMule, CumDownAMule)
 PREF_GS(uint64, cumDownMLdonkey, CumDownMLdonkey)
 PREF_GS(uint64, cumDownShareaza, CumDownShareaza)
 PREF_GS(uint64, cumDownEMCompat, CumDownEMCompat)
+PREF_GS(uint64, cumDownEmuleQt, CumDownEmuleQt)
 PREF_GS(uint64, cumDownURL, CumDownURL)
 
 PREF_GS(uint64, cumUpPort4662, CumUpPort4662)
@@ -1932,6 +1938,7 @@ void Preferences::forEachCumulativeStat(D& d, F&& f)
     f("cumUpMLdonkey", d.cumUpMLdonkey);
     f("cumUpShareaza", d.cumUpShareaza);
     f("cumUpEMCompat", d.cumUpEMCompat);
+    f("cumUpEmuleQt", d.cumUpEmuleQt);
 
     f("cumDownEmule", d.cumDownEmule);
     f("cumDownEDHybrid", d.cumDownEDHybrid);
@@ -1940,6 +1947,7 @@ void Preferences::forEachCumulativeStat(D& d, F&& f)
     f("cumDownMLdonkey", d.cumDownMLdonkey);
     f("cumDownShareaza", d.cumDownShareaza);
     f("cumDownEMCompat", d.cumDownEMCompat);
+    f("cumDownEmuleQt", d.cumDownEmuleQt);
     f("cumDownURL", d.cumDownURL);
 
     f("cumUpPort4662", d.cumUpPort4662);
@@ -3820,6 +3828,14 @@ bool Preferences::minimizeToTray() const { return get(&Data::minimizeToTray); }
 
 void Preferences::setMinimizeToTray(bool val) { set(&Data::minimizeToTray, val); }
 
+bool Preferences::showTrayIcon() const { return get(&Data::showTrayIcon); }
+
+void Preferences::setShowTrayIcon(bool val) { set(&Data::showTrayIcon, val); }
+
+bool Preferences::closeToTray() const { return get(&Data::closeToTray); }
+
+void Preferences::setCloseToTray(bool val) { set(&Data::closeToTray, val); }
+
 bool Preferences::transferDoubleClick() const { return get(&Data::transferDoubleClick); }
 
 void Preferences::setTransferDoubleClick(bool val) { set(&Data::transferDoubleClick, val); }
@@ -5446,6 +5462,7 @@ bool Preferences::load(const QString& filePath)
             m_data->cumUpMLdonkey = st["cumUpMLdonkey"].as<uint64>(m_data->cumUpMLdonkey);
             m_data->cumUpShareaza = st["cumUpShareaza"].as<uint64>(m_data->cumUpShareaza);
             m_data->cumUpEMCompat = st["cumUpEMCompat"].as<uint64>(m_data->cumUpEMCompat);
+            m_data->cumUpEmuleQt = st["cumUpEmuleQt"].as<uint64>(m_data->cumUpEmuleQt);
 
             // Per-client cumulative download
             m_data->cumDownEmule = st["cumDownEmule"].as<uint64>(m_data->cumDownEmule);
@@ -5455,6 +5472,7 @@ bool Preferences::load(const QString& filePath)
             m_data->cumDownMLdonkey = st["cumDownMLdonkey"].as<uint64>(m_data->cumDownMLdonkey);
             m_data->cumDownShareaza = st["cumDownShareaza"].as<uint64>(m_data->cumDownShareaza);
             m_data->cumDownEMCompat = st["cumDownEMCompat"].as<uint64>(m_data->cumDownEMCompat);
+            m_data->cumDownEmuleQt = st["cumDownEmuleQt"].as<uint64>(m_data->cumDownEmuleQt);
             m_data->cumDownURL = st["cumDownURL"].as<uint64>(m_data->cumDownURL);
 
             // Per-port cumulative
@@ -5647,6 +5665,8 @@ bool Preferences::load(const QString& filePath)
             m_data->depth3D = d["depth3D"].as<int>(m_data->depth3D);
             m_data->tooltipDelay = d["tooltipDelay"].as<int>(m_data->tooltipDelay);
             m_data->minimizeToTray = d["minimizeToTray"].as<bool>(m_data->minimizeToTray);
+            m_data->showTrayIcon = d["showTrayIcon"].as<bool>(m_data->showTrayIcon);
+            m_data->closeToTray = d["closeToTray"].as<bool>(m_data->closeToTray);
             m_data->transferDoubleClick = d["transferDoubleClick"].as<bool>(m_data->transferDoubleClick);
             m_data->showDwlPercentage = d["showDwlPercentage"].as<bool>(m_data->showDwlPercentage);
             if (auto mode = d["downloadBarMode"])
@@ -7040,6 +7060,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "cumUpMLdonkey" << YAML::Value << m_data->cumUpMLdonkey;
     out << YAML::Key << "cumUpShareaza" << YAML::Value << m_data->cumUpShareaza;
     out << YAML::Key << "cumUpEMCompat" << YAML::Value << m_data->cumUpEMCompat;
+    out << YAML::Key << "cumUpEmuleQt" << YAML::Value << m_data->cumUpEmuleQt;
 
     // Per-client cumulative download
     out << YAML::Key << "cumDownEmule" << YAML::Value << m_data->cumDownEmule;
@@ -7049,6 +7070,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "cumDownMLdonkey" << YAML::Value << m_data->cumDownMLdonkey;
     out << YAML::Key << "cumDownShareaza" << YAML::Value << m_data->cumDownShareaza;
     out << YAML::Key << "cumDownEMCompat" << YAML::Value << m_data->cumDownEMCompat;
+    out << YAML::Key << "cumDownEmuleQt" << YAML::Value << m_data->cumDownEmuleQt;
     out << YAML::Key << "cumDownURL" << YAML::Value << m_data->cumDownURL;
 
     // Per-port cumulative
@@ -7233,6 +7255,8 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "depth3D" << YAML::Value << m_data->depth3D;
     out << YAML::Key << "tooltipDelay" << YAML::Value << m_data->tooltipDelay;
     out << YAML::Key << "minimizeToTray" << YAML::Value << m_data->minimizeToTray;
+    out << YAML::Key << "showTrayIcon" << YAML::Value << m_data->showTrayIcon;
+    out << YAML::Key << "closeToTray" << YAML::Value << m_data->closeToTray;
     out << YAML::Key << "transferDoubleClick" << YAML::Value << m_data->transferDoubleClick;
     out << YAML::Key << "showDwlPercentage" << YAML::Value << m_data->showDwlPercentage;
     out << YAML::Key << "downloadBarMode" << YAML::Value << m_data->downloadBarMode;

@@ -255,6 +255,7 @@
     <ClCompile Include="kademlia\KadIncomingLog.cpp" />
     <ClCompile Include="kademlia\KadLookupHistory.cpp" />
     <ClCompile Include="kademlia\KadMiscUtils.cpp" />
+    <ClCompile Include="kademlia\KadOutboundGuard.cpp" />
     <ClCompile Include="kademlia\KadPacketTracking.cpp" />
     <ClCompile Include="kademlia\KadPrefs.cpp" />
     <ClCompile Include="kademlia\KadRoutingBin.cpp" />
@@ -263,6 +264,7 @@
     <ClCompile Include="kademlia\KadNodeCensus.cpp" />
     <ClCompile Include="kademlia\KadSafeKad.cpp" />
     <ClCompile Include="kademlia\KadSearch.cpp" />
+    <ClCompile Include="kademlia\KadPointerRoute.cpp" />
     <ClCompile Include="kademlia\KadSearchManager.cpp" />
     <ClCompile Include="kademlia\KadUDPListener.cpp" />
     <ClCompile Include="kademlia\KadUInt128.cpp" />
@@ -561,6 +563,7 @@
     <ClInclude Include="kademlia\KadIncomingLog.h" />
     <ClInclude Include="kademlia\KadLookupHistory.h" />
     <ClInclude Include="kademlia\KadMiscUtils.h" />
+    <ClInclude Include="kademlia\KadOutboundGuard.h" />
     <ClInclude Include="kademlia\KadPacketTracking.h" />
     <ClInclude Include="kademlia\KadPrefs.h" />
     <ClInclude Include="kademlia\KadResultPacketWriter.h" />
@@ -572,6 +575,7 @@
     <ClInclude Include="kademlia\KadStats.h" />
     <ClInclude Include="kademlia\KadSearch.h" />
     <ClInclude Include="kademlia\KadSearchDefs.h" />
+    <ClInclude Include="kademlia\KadPointerRoute.h" />
     <ClInclude Include="kademlia\KadSearchManager.h" />
     <ClInclude Include="kademlia\KadTypes.h" />
     <ClInclude Include="kademlia\KadUDPKey.h" />

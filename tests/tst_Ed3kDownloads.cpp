@@ -141,6 +141,7 @@ private slots:
     void aFileIsDownloadedVerifiedAndShared();
     void pauseAndResume();
     void aPartFileIsTakenUpAfterARestart();
+    void uncheckedHttpBytesAreCheckedByPeerValues();
     void aCopiedPartFileGoesOnElsewhere();
     void aMovedPartFileGoesOnInItsNewFolder();
     void anOldStateFileMovesToMetFiles();
@@ -273,6 +274,61 @@ void tst_Ed3kDownloads::aPartFileIsTakenUpAfterARestart()
     // only the missing blocks came again
     QVERIFY(std::uint64_t(progress.count()) < (std::uint64_t(data.size()) + kBlock - 1) / kBlock);
     QVERIFY(readFile(d.info(a.root)->path) == data);
+    d.stop();
+}
+
+// a whole HTTP read kept over a restart (wholeAt): the block values of a peer check its bytes,
+// matching blocks are held, a wrong one comes again
+void tst_Ed3kDownloads::uncheckedHttpBytesAreCheckedByPeerValues()
+{
+    const QByteArray data = payload(int(12 * kBlock + 99), 11);
+    const std::uint64_t blocks = (std::uint64_t(data.size()) + kBlock - 1) / kBlock;
+    Seeder a;
+    QVERIFY(a.start(data, QStringLiteral("w.bin")));
+    QTemporaryDir db;
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    const QString temp = QDir(db.path()).filePath(QStringLiteral("temp"));
+    const QString in = QDir(db.path()).filePath(QStringLiteral("in"));
+    QString part;
+    {
+        Ed3kDownloads d(b, db.path());
+        d.setSearchEnabled(false);
+        d.setDirs(temp, in);
+        d.start();
+        QVERIFY(d.add(Ed3kDownloadSpec{a.root, std::uint64_t(data.size()), QStringLiteral("w.bin"), {}, {}, 0, true, 1}).has_value());
+        part = d.info(a.root)->partPath;
+        d.stop();
+    }
+    // 8 blocks read whole, block 3 wrong
+    constexpr std::uint64_t kUnchecked = 8 * kBlock;
+    QByteArray prefix = data.left(qsizetype(kUnchecked));
+    prefix[qsizetype(3 * kBlock + 5)] = char(prefix.at(qsizetype(3 * kBlock + 5)) ^ 0x5A);
+    QDir().mkpath(temp);
+    QVERIFY(writeFile(part, prefix));
+    // wholeAt is the last field of the .met
+    const QString met = part + QStringLiteral(".met");
+    QTRY_VERIFY(QFile::exists(met));
+    QByteArray raw = readFile(met);
+    QVERIFY(raw.size() > 8);
+    QByteArray tail;
+    QDataStream(&tail, QIODevice::WriteOnly) << quint64(kUnchecked);
+    raw.replace(raw.size() - 8, 8, tail);
+    QVERIFY(writeFile(met, raw));
+
+    Ed3kDownloads d(b, db.path());
+    d.setSearchEnabled(false);
+    d.setDirs(temp, in);
+    QCOMPARE(d.info(a.root)->done, std::uint64_t(0));   // not held before the check
+    d.start();
+    QSignalSpy done(&d, &Ed3kDownloads::completed);
+    QSignalSpy progress(&d, &Ed3kDownloads::progress);
+    QVERIFY(d.resume(a.root));
+    d.addSourceTo(a.root, sourceOf(a.session));
+    QTRY_COMPARE_WITH_TIMEOUT(done.count(), 1, 60000);
+    QVERIFY(readFile(d.info(a.root)->path) == data);
+    // one signal per block from the peer, one for the 7 checked ones
+    QVERIFY2(std::uint64_t(progress.count()) < blocks, qPrintable(QString::number(progress.count())));
     d.stop();
 }
 

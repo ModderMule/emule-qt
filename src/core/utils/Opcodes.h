@@ -622,6 +622,11 @@
 #define TAG_IPV6                    "ip6"   // source's public IPv6
 #define TAG_SERVINGBUDDYIPV6        "bi6"   // serving buddy's public IPv6
 
+// Pointer route of a type 7 / 3/5 source (ipv6-spec §5.6.1): uint8 version. The current
+// buddy sits in a type 3 record at key ~sourceID.
+#define TAG_BUDDYPOINTER            "bpv"
+#define KAD_POINTER_VERSION         1
+
 // NAT-T transports of a firewalled Kad source (types 3/5/6), uint8 bitfield, string-named
 // like TAG_IPV6. Type 6 + QUIC: a firewalled searcher dials it over QUIC (DirectUdpNatPath).
 #define TAG_NATT                    "nat"
@@ -670,6 +675,8 @@
 // UModMiscOptions block currently ends at bit 4, and packing straight against it
 // would leave it no room to grow. HTTP Cache starts a fresh run at bit 10.
 #define MODMISC_HTTPCACHE           (1u << 10)  // supports HTTP Cache chunk offers
+// Bit 10 is also the eMuleQt ident: always sent since v0.4.0. An "eMule Qt" modstring
+// without it is a fake and DLP bans it from upload (LeecherCategory::FakeEmuleQt).
 // Bit 11 kept for an ed3k bit, idea only, not sent: docs/ed3k-spec/docs/ed2k-signals.md section 6
 
 // Connect-option byte (server callback, Kad, OP_DIRECTCALLBACKREQ, OP_RENDEZVOUS).
@@ -780,6 +787,9 @@
 // IPv6 MOD tags (compatibility target's 0xA0-0xAF MOD-tag family; additive, opt-in).
 #define CT_EMULE_SERVINGBUDDYIPV6   0xA0    // hash16: serving buddy's public IPv6
 #define CT_MOD_MISCOPTIONS          0xAA    // uint32 bitfield (see MODMISC_* below)
+// Note: no eMuleQt ident hello tag on purpose. eMuleAI Shield punishes any unknown hello tag
+// (DetectUnknownTag, default on, PR_UNKOWNTAG); a peer is told apart by modstring + MODMISC_HTTPCACHE
+// (UpDownClient::isEmuleQt). 0xA8 was the free CT_ id (eMuleAI holds 0xA1-0xA7, 0xAB) if it is ever needed.
 #define ST_IPV6_STATUS              0xAB    // uint8 bitfield (see IPV6ST_* above): server's IPv6 verdict (OP_SERVERIDENT)
 #define ST_NATT_PROOF               0xA9    // u32 = 1: ed2k-server 0.9.88 takes the 36-byte proof 0x9F (OP_SERVERIDENT tag, not the c2c opcode)
 #define ST_ED3K                     0xE3    // string: the server's index node as an ed3k:node link (ed3k ed2k-signals.md §3; OP_SERVERIDENT, OP_SERVER_DESC_RES)

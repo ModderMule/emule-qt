@@ -152,7 +152,7 @@ private:
 
     // Uploads — Session
     QTreeWidgetItem* m_itemUpSessionData = nullptr;
-    QTreeWidgetItem* m_itemUpSesClient[7]{};    // eMule..eMCompat
+    QTreeWidgetItem* m_itemUpSesClient[8]{};    // eMule..eMuleQt
     QTreeWidgetItem* m_itemUpSesPort[2]{};      // 4662, Other
     QTreeWidgetItem* m_itemUpSesSource[2]{};    // File, Partfile
     QTreeWidgetItem* m_itemUpSessionFriendData = nullptr;
@@ -176,7 +176,7 @@ private:
 
     // Uploads — Cumulative
     QTreeWidgetItem* m_itemUpCumData = nullptr;
-    QTreeWidgetItem* m_itemUpCumClient[7]{};
+    QTreeWidgetItem* m_itemUpCumClient[8]{};
     QTreeWidgetItem* m_itemUpCumPort[2]{};
     QTreeWidgetItem* m_itemUpCumSource[2]{};
 
@@ -192,7 +192,7 @@ private:
 
     // Downloads — Session
     QTreeWidgetItem* m_itemDownSessionData = nullptr;
-    QTreeWidgetItem* m_itemDownSesClient[8]{};  // eMule..URL
+    QTreeWidgetItem* m_itemDownSesClient[9]{};  // eMule..eMuleQt, URL
     QTreeWidgetItem* m_itemDownSesPort[2]{};
     QTreeWidgetItem* m_itemDownActiveDownloads = nullptr;
     QTreeWidgetItem* m_itemDownFoundSources = nullptr;
@@ -215,7 +215,7 @@ private:
 
     // Downloads — Cumulative
     QTreeWidgetItem* m_itemDownCumData = nullptr;
-    QTreeWidgetItem* m_itemDownCumClient[8]{};
+    QTreeWidgetItem* m_itemDownCumClient[9]{};
     QTreeWidgetItem* m_itemDownCumPort[2]{};
     QTreeWidgetItem* m_itemDownCumCompleted = nullptr;
     QTreeWidgetItem* m_itemDownCumSuccessful = nullptr;

@@ -53,6 +53,45 @@ usenet::UsenetQueue* queue()
     return usenet::theUsenetSession ? usenet::theUsenetSession->queue() : nullptr;
 }
 
+QCborMap aliasOf(const QString& itemId)
+{
+    const auto* q = queue();
+    const auto* item = q ? q->findItem(itemId) : nullptr;
+    if (!item)
+        return {};
+    return QCborMap{{QStringLiteral("network"), QStringLiteral("usenet")},
+                    {QStringLiteral("name"), item->name},
+                    {QStringLiteral("id"), item->id}};
+}
+
+void appendDownloading(QCborArray& out, const QString& itemId)
+{
+    const auto* q = queue();
+    const auto* item = q ? q->findItem(itemId) : nullptr;
+    if (!item || item->status != usenet::UsenetItemStatus::Downloading)
+        return;
+    for (const auto& s : q->itemServers(itemId)) {
+        out.append(QCborMap{
+            {QStringLiteral("network"), QStringLiteral("usenet")},
+            {QStringLiteral("userName"), s.name.isEmpty() ? s.accountId : s.name},
+            // the details key of the row: one per server and item
+            {QStringLiteral("userHash"), QString(QStringLiteral("usenet:") + itemId + u'|' + s.accountId)},
+            {QStringLiteral("software"), QStringLiteral("NNTP")},
+            {QStringLiteral("softwareId"), -1},
+            {QStringLiteral("reqFileName"), item->name},
+            {QStringLiteral("downloadState"), QStringLiteral("Downloading")},
+            {QStringLiteral("datarate"), s.rate},
+            {QStringLiteral("sessionDown"), s.bytes},
+            {QStringLiteral("transferredDown"), s.bytes},
+            {QStringLiteral("addr"), s.host},
+            {QStringLiteral("port"), int(s.port)},
+            {QStringLiteral("isConnected"), true},
+            {QStringLiteral("noViewSharedFiles"), true},
+            {QStringLiteral("sourceFrom"), -1},
+        });
+    }
+}
+
 QCborMap itemToCbor(const usenet::UsenetQueueItem& item)
 {
     // Preview is container-aware since phase 6b, and only the queue's streaming

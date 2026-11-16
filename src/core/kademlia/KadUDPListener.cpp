@@ -15,6 +15,7 @@
 #include "kademlia/KadMiscUtils.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingZone.h"
+#include "kademlia/KadSearch.h"
 #include "prefs/Preferences.h"
 #include "kademlia/KadSearchManager.h"
 #include "app/AppContext.h"
@@ -26,6 +27,7 @@
 #include "net/Address.h"
 #include "net/EMSocket.h"
 #include "net/Packet.h"
+#include "utils/TimeUtils.h"
 
 
 
@@ -83,6 +85,14 @@ void KademliaUDPListener::firewalledCheck(uint32 ip, uint16 udpPort,
     const uint16 tcpPort = theApp.advertisedTcpPort();
 
     if (kadVersion > KADEMLIA_VERSION6_49aBETA) {
+        // v2 without a key gets dropped by aMule (and us) as a possible reflector —
+        // skip it. Same test as the send bridge: key released for our current IP
+        // (also while still 0). Hello came in unkeyed = peer can't key it for us.
+        if (senderKey.getKeyValue(theApp.publicIP()) == 0) {
+            logKad(QStringLiteral("Kad: FIREWALLED2_REQ to %1:%2 skipped — no UDP key for peer")
+                       .arg(ipToString(ip)).arg(udpPort));
+            return;
+        }
         // Kad v2 (v7+): extended request with client hash + connect options for obfuscation support
         SafeMemFile packet;
         packet.writeUInt16(tcpPort);
@@ -404,10 +414,20 @@ void KademliaUDPListener::sendPacket(const uint8* data, uint32 len, uint8 opcode
         if (auto* kad = Kademlia::instance())
             kad->noteRequestSent(destIP);
     }
+    chargeOutbound(destIP, opcode);
 
     sendPacket(reinterpret_cast<const uint8*>(fullPacket.constData()),
                static_cast<uint32>(fullPacket.size()),
                destIP, destPort, targetKey, cryptTargetID);
+}
+
+bool KademliaUDPListener::outboundAllowed(uint32 ip, uint8 opcode, OutboundGuard::Priority prio,
+                                          uint32 count) const
+{
+    // No flood detection on LAN addresses in LAN mode (MFC), so no budget either
+    if (auto* kad = Kademlia::instance(); kad && kad->isRunningInLANMode() && isLanIP(htonl(ip)))
+        return true;
+    return m_outGuard.allows(ip, opcode, prio, count, getTickCount());
 }
 
 void KademliaUDPListener::sendFindBuddyReq(uint32 ip, uint16 udpPort, const KadUDPKey& targetKey,
@@ -1624,7 +1644,16 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data
             bool addUDPPortTag = true;
             uint64 sourceType = 0;   // for the reachability statistics
             bool hasBuddy = false;
+            bool hasPointerTag = false;
             for (auto& tag : tags) {
+                // bpv by name, never on the unknown-tag path (ipv6-spec §5.6.1)
+                if (tag.nameId() == 0 && tag.name() == QByteArrayLiteral(TAG_BUDDYPOINTER)) {
+                    if (!hasPointerTag && tag.isInt() && tag.intValue() <= 0xFF) {
+                        hasPointerTag = true;
+                        entry->addTag(std::move(tag));
+                    }
+                    continue;
+                }
                 switch (tag.nameId()) {
                 case FT_SOURCETYPE:
                     if (!entry->m_source) {
@@ -1703,6 +1732,18 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data
             // one so the stored source still carries a usable port. MFC :1379.
             if (addUDPPortTag)
                 entry->addTag(Tag(FT_SOURCEUPORT, static_cast<uint32>(entry->m_udpPort)));
+
+            // Type 7, bpv and pointer records need a valid receiver key: it proves the
+            // publisher receives at the IPv4 stamped into FT_SOURCEIP (ipv6-spec §5.6.2).
+            // No PUBLISH_RES, as for any refused publish. Not MFC.
+            if (entry->m_source && !m_rxKeyValid
+                && (sourceType == 7 || hasPointerTag || keyID == Search::pointerKey(sourceID))) {
+                logKad(QStringLiteral("Kad: PUBLISH_SOURCE_REQ from %1:%2 — type %3%4 without receiver key, refused")
+                           .arg(ipToString(ip)).arg(udpPort).arg(sourceType)
+                           .arg(hasPointerTag ? QStringLiteral(" + bpv") : QString()));
+                delete entry;
+                return;
+            }
 
             // Only a genuine source (TAG_SOURCETYPE seen, buddy not rejected)
             // gets indexed, and only a successful index earns a response.
@@ -1933,6 +1974,17 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED2_REQ(const uint8* data, ui
     // As FIREWALLED_REQ: the TCP check dials the claimed IP.
     logReceiverKey("FIREWALLED2_REQ", ip, udpPort);
 
+    // Every sender (MFC, aMule, eMuleAI, us) sends this only from a hello handler,
+    // keyed with the key from that hello, and only to v7+ (which have keys). No
+    // valid receiver key = forged source IP: a reflector aiming our TCP dial at an
+    // attacker-chosen ip:port. Also drops the check answering our own unkeyed
+    // HELLO_REQ (findNodeIDByIP, LAN): one lost probe, same as aMule #2536.
+    if (!m_rxKeyValid) {
+        logKad(QStringLiteral("Kad: FIREWALLED2_REQ from %1:%2 dropped — no valid receiver key")
+                   .arg(ipToString(ip)).arg(udpPort));
+        return;
+    }
+
     SafeMemFile io(data, len);
     uint16 tcpPort = io.readUInt16();
     UInt128 senderHash = io::readUInt128(io);  // sender's ED2K user hash for TCP encryption
@@ -2007,8 +2059,12 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_REQ(const uint8* data, uint
 {
     // Matches MFC KademliaUDPListener.cpp:1681-1722
     IncomingNote note(m_incoming, IncomingType::FindBuddy, ip, udpPort);
-    if (len < 34) // 16 (buddyID) + 16 (clientHash) + 2 (tcpPort)
+    if (len < 34) { // 16 (buddyID) + 16 (clientHash) + 2 (tcpPort)
+        note.refuse(IncomingRefusal::Malformed);
+        logKad(QStringLiteral("Kad: FINDBUDDY_REQ from %1:%2 — %3 bytes, too short")
+                   .arg(ipToString(ip)).arg(udpPort).arg(len));
         return;
+    }
 
     // A forged claim takes a pending claim slot (oldest evicted) for the claimed IP.
     logReceiverKey("FINDBUDDY_REQ", ip, udpPort);
@@ -2023,6 +2079,7 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_REQ(const uint8* data, uint
     if (prefs->firewalled() || UDPFirewallTester::isFirewalledUDP(true)
         || !UDPFirewallTester::isVerified())
     {
+        note.refuse(IncomingRefusal::Firewalled);
         logKad(QStringLiteral("Kad: FINDBUDDY_REQ from %1:%2 — ignored, we are firewalled")
                    .arg(ipToString(ip)).arg(udpPort));
         return;
@@ -2031,6 +2088,10 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_REQ(const uint8* data, uint
     // MFC line 1693 refuses once one buddy is connected. Not MFC: we serve several,
     // see docs/protocol/kad-buddy-search.md. As MFC: only connected ones count.
     if (!clientList->canServeAnotherBuddy()) {
+        if (clientList->buddyStatus() == BuddyStatus::Connected)
+            note.refuse(IncomingRefusal::OwnBuddy);
+        else
+            note.refuse(IncomingRefusal::SlotsFull, static_cast<int32_t>(thePrefs.servedBuddyLimit()));
         logKad(QStringLiteral("Kad: FINDBUDDY_REQ from %1:%2 — all %3 buddy slots in use")
                    .arg(ipToString(ip)).arg(udpPort).arg(thePrefs.servedBuddyLimit()));
         return;
@@ -2046,8 +2107,11 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_REQ(const uint8* data, uint
     userID.toByteArray(clientIDBytes);
     uint8 buddyIDBytes[16];
     buddyID.toByteArray(buddyIDBytes);
-    if (!clientList->incomingBuddy(ip, tcpPort, udpPort, clientIDBytes, buddyIDBytes))
+    if (const BuddyRefusal why = clientList->incomingBuddy(ip, tcpPort, udpPort, clientIDBytes, buddyIDBytes);
+        why.refused()) {
+        note.refuse(why.code, why.arg);
         return; // cancelled — don't send a response
+    }
 
     // Send FINDBUDDY_RES back with our info.
     // Matches MFC line 1712-1717.
@@ -2318,6 +2382,24 @@ void KademliaUDPListener::logReceiverKey(const char* request, uint32 ip, uint16 
                                  : ipToString(ip);
     logKad(QStringLiteral("Kad: %1 from %2 — receiver key %3")
                .arg(QLatin1StringView(request), from, QLatin1StringView(state)));
+}
+
+void KademliaUDPListener::chargeOutbound(uint32 destIP, uint8 opcode)
+{
+    const uint64 now = getTickCount();
+    // Peaks per IP and 60 s: what the receiver's flood bucket saw from us
+    if (const uint32 inWindow = m_outGuard.charge(destIP, opcode, now)) {
+        switch (opcode) {
+        case KADEMLIA2_REQ:                raiseKad(&KadCounters::peakReqPerIP, inWindow); break;
+        case KADEMLIA2_PUBLISH_SOURCE_REQ: raiseKad(&KadCounters::peakPublishSourcePerIP, inWindow); break;
+        case KADEMLIA2_PUBLISH_KEY_REQ:    raiseKad(&KadCounters::peakPublishKeyPerIP, inWindow); break;
+        default: break;
+        }
+    }
+    if (now - m_lastOutGuardCleanup >= MIN2MS(1)) {
+        m_lastOutGuardCleanup = now;
+        m_outGuard.cleanup(now);
+    }
 }
 
 } // namespace eMule::kad

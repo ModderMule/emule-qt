@@ -19,13 +19,14 @@ using namespace eMule;
 namespace {
 
 /// Hello from an eMule v0.50a with the given name and mod string, plus extra tags.
-QByteArray buildHello(const QString& name, const QString& mod, const std::vector<Tag>& extra = {})
+QByteArray buildHello(const QString& name, const QString& mod, const std::vector<Tag>& extra = {},
+                      uint32 emuleVersion = 50u << 10)
 {
     std::vector<Tag> tags;
     tags.emplace_back(CT_NAME, name);
     tags.emplace_back(CT_VERSION, static_cast<uint32>(EDONKEYVERSION));
-    // compat 0, v0.50a
-    tags.emplace_back(CT_EMULE_VERSION, (50u << 10));
+    // compat 0, v0.50a by default
+    tags.emplace_back(CT_EMULE_VERSION, emuleVersion);
     if (!mod.isEmpty())
         tags.emplace_back(CT_MOD_VERSION, mod);
     for (const auto& t : extra)
@@ -50,6 +51,19 @@ QByteArray buildHello(const QString& name, const QString& mod, const std::vector
 void feedHello(UpDownClient& client, const QByteArray& buf)
 {
     client.processHelloPacket(reinterpret_cast<const uint8*>(buf.constData()), static_cast<uint32>(buf.size()));
+}
+
+/// OP_EMULEINFO body: version byte, protocol, tags.
+void feedInfo(UpDownClient& client, const std::vector<Tag>& tags)
+{
+    SafeMemFile data;
+    data.writeUInt8(0x46);
+    data.writeUInt8(EMULE_PROTOCOL);
+    data.writeUInt32(static_cast<uint32>(tags.size()));
+    for (const auto& t : tags)
+        t.writeTagToFile(data);
+    const QByteArray buf = data.buffer();
+    client.processMuleInfoPacket(reinterpret_cast<const uint8*>(buf.constData()), static_cast<uint32>(buf.size()));
 }
 
 void feedChat(UpDownClient& client, const QString& message)
@@ -79,6 +93,10 @@ private slots:
     void hello_md4StringTagIsSoft();
     void hello_cleanClientStaysClean();
     void hello_ownModStringIsClean();
+    void hello_fakeEmuleQtModStringBans();
+    void hello_ghostModReducesScoreOnly();
+    void hello_ghostModUnreadableModstring();
+    void info_ghostModReducesScoreOnly();
     void hello_switchedOffChecksNothing();
     void hello_goodModLiftsSoftVerdict();
     void chat_firstSpamMessageBans();
@@ -207,9 +225,154 @@ void tst_Dlp::hello_ownModStringIsClean()
     // What our own hello says (UpDownClient::sendHelloTypePacket), with a v0.70b peer version
     UpDownClient client;
     QByteArray hello = buildHello(QStringLiteral("http://emule-project.net"),
-                                  QStringLiteral("eMule Qt " EMULE_VERSION_STRING));
+                                  QStringLiteral("eMule Qt " EMULE_VERSION_STRING),
+                                  {Tag(CT_MOD_MISCOPTIONS, static_cast<uint32>(MODMISC_HTTPCACHE))});
     feedHello(client, hello);
     QCOMPARE(client.leecherCategory(), LeecherCategory::None);
+    QVERIFY(client.isEmuleQt());
+}
+
+void tst_Dlp::hello_fakeEmuleQtModStringBans()
+{
+    const QString mod = QStringLiteral("eMule Qt " EMULE_VERSION_STRING);
+    // every DLP level bans, the soft-score level too
+    for (int level : {0, 1, 2}) {
+        thePrefs.setAntiLeecherLevel(level);
+        UpDownClient client;
+        feedHello(client, buildHello(QStringLiteral("nick"), mod,
+                                     {Tag(CT_MOD_MISCOPTIONS, static_cast<uint32>(MODMISC_EXTXS))}));
+        QCOMPARE(client.leecherCategory(), LeecherCategory::FakeEmuleQt);
+        QVERIFY(client.isBanned());
+        QVERIFY(!client.isFullyBanned());   // upload-only
+    }
+
+    // Needs no DLP list
+    theApp.dlp = nullptr;
+    UpDownClient noList;
+    feedHello(noList, buildHello(QStringLiteral("nick"), mod));
+    theApp.dlp = &m_dlp;
+    QCOMPARE(noList.leecherCategory(), LeecherCategory::FakeEmuleQt);
+
+    // A real hello later lifts the verdict
+    UpDownClient client;
+    feedHello(client, buildHello(QStringLiteral("nick"), mod));
+    QCOMPARE(client.leecherCategory(), LeecherCategory::FakeEmuleQt);
+    feedHello(client, buildHello(QStringLiteral("nick"), mod,
+                                 {Tag(CT_MOD_MISCOPTIONS, static_cast<uint32>(MODMISC_HTTPCACHE))}));
+    QCOMPARE(client.leecherCategory(), LeecherCategory::None);
+
+    // DLP off: nothing
+    thePrefs.setAntiLeecher(false);
+    UpDownClient off;
+    feedHello(off, buildHello(QStringLiteral("nick"), mod));
+    QCOMPARE(off.leecherCategory(), LeecherCategory::None);
+    QVERIFY(!off.isBanned());
+}
+
+void tst_Dlp::hello_ghostModReducesScoreOnly()
+{
+    QVERIFY(m_dlp.hasOfficialChecks());
+    const uint32 v70b = (70u << 10) | (1u << 7);
+    const uint32 v70c = (70u << 10) | (2u << 7);
+    const Tag opts1(CT_EMULE_MISCOPTIONS1, static_cast<uint32>((1u << 29) | (1u << 28) | (4u << 24) | (1u << 20)
+                                                               | (3u << 16) | (4u << 12) | (2u << 8) | (1u << 4) | 3u));
+    const uint32 opts2 = 0x0au | (1u << 4) | (1u << 5) | (7u << 7) | (0xFu << 10);
+    const Tag modOpts(CT_MOD_MISCOPTIONS, static_cast<uint32>(MODMISC_IPV6));
+
+    // what official 0.70b sends: clean
+    UpDownClient clean;
+    feedHello(clean, buildHello(QStringLiteral("nick"), {}, {opts1, Tag(CT_EMULE_MISCOPTIONS2, opts2)}, v70b));
+    QCOMPARE(clean.leecherCategory(), LeecherCategory::None);
+
+    // unknown tag: score cut at every level, never a ban
+    for (int level : {0, 1, 2}) {
+        thePrefs.setAntiLeecherLevel(level);
+        UpDownClient client;
+        feedHello(client, buildHello(QStringLiteral("nick"), {}, {opts1, modOpts}, v70b));
+        QCOMPARE(client.leecherCategory(), LeecherCategory::GhostMod);
+        QCOMPARE(client.leecherReason(), QStringLiteral("Ghost Mod: unknown hello tag 0xaa"));
+        QVERIFY(!client.isBanned());
+    }
+
+    // reserved mod bit in MiscOptions2
+    UpDownClient bits;
+    feedHello(bits, buildHello(QStringLiteral("nick"), {}, {Tag(CT_EMULE_MISCOPTIONS2, opts2 | (1u << 6))}, v70b));
+    QCOMPARE(bits.leecherCategory(), LeecherCategory::GhostMod);
+    QVERIFY(bits.leecherReason().startsWith(QStringLiteral("Ghost Mod: unknown bits in MiscOptions2 0xfe=")));
+    // a clean hello later lifts it
+    feedHello(bits, buildHello(QStringLiteral("nick"), {}, {Tag(CT_EMULE_MISCOPTIONS2, opts2)}, v70b));
+    QCOMPARE(bits.leecherCategory(), LeecherCategory::None);
+
+    // newer official version or a modstring: not checked
+    UpDownClient future;
+    feedHello(future, buildHello(QStringLiteral("nick"), {}, {modOpts}, v70c));
+    QCOMPARE(future.leecherCategory(), LeecherCategory::None);
+    UpDownClient mod;
+    feedHello(mod, buildHello(QStringLiteral("nick «Xtreme 8.1»"), QStringLiteral("Xtreme 8.1"), {modOpts}, v70b));
+    QCOMPARE(mod.leecherCategory(), LeecherCategory::None);
+}
+
+void tst_Dlp::hello_ghostModUnreadableModstring()
+{
+    const uint32 v70b = (70u << 10) | (1u << 7);
+    const Tag modOpts(CT_MOD_MISCOPTIONS, static_cast<uint32>(MODMISC_IPV6));
+    // no letter or digit counts as no modstring; DLP's own scheme rule bans it first, the harder verdict wins
+    UpDownClient blank;
+    feedHello(blank, buildHello(QStringLiteral("nick"), QStringLiteral(" -. "), {modOpts}, v70b));
+    QCOMPARE(blank.leecherCategory(), LeecherCategory::Hard);
+    QVERIFY(blank.isBanned());
+}
+
+void tst_Dlp::info_ghostModReducesScoreOnly()
+{
+    QVERIFY(m_dlp.hasOfficialInfoChecks());
+    const uint32 v70b = (70u << 10) | (1u << 7);
+    const std::vector<Tag> official{Tag(ET_COMPRESSION, 1u),    Tag(ET_UDPVER, 4u),       Tag(ET_UDPPORT, 4672u),
+                                    Tag(ET_SOURCEEXCHANGE, 3u), Tag(ET_COMMENTS, 1u),     Tag(ET_EXTENDEDREQUEST, 2u),
+                                    Tag(ET_FEATURES, 0x83u)};
+
+    // what official 0.70b sends: clean
+    UpDownClient clean;
+    feedHello(clean, buildHello(QStringLiteral("nick"), {}, {}, v70b));
+    feedInfo(clean, official);
+    QCOMPARE(clean.leecherCategory(), LeecherCategory::None);
+
+    // unknown info tag: score cut at every level, never a ban
+    for (int level : {0, 1, 2}) {
+        thePrefs.setAntiLeecherLevel(level);
+        UpDownClient client;
+        feedHello(client, buildHello(QStringLiteral("nick"), {}, {}, v70b));
+        auto tags = official;
+        tags.emplace_back(static_cast<uint8>(0x3d), 1u);
+        feedInfo(client, tags);
+        QCOMPARE(client.leecherCategory(), LeecherCategory::GhostMod);
+        QCOMPARE(client.leecherReason(), QStringLiteral("Ghost Mod: unknown info tag 0x3d"));
+        QVERIFY(!client.isBanned());
+    }
+    thePrefs.setAntiLeecherLevel(0);
+
+    // value above official
+    UpDownClient comments;
+    feedHello(comments, buildHello(QStringLiteral("nick"), {}, {}, v70b));
+    feedInfo(comments, {Tag(ET_COMPRESSION, 1u), Tag(ET_COMMENTS, 2u)});
+    QCOMPARE(comments.leecherCategory(), LeecherCategory::GhostMod);
+    // a clean info packet later lifts it
+    feedInfo(comments, official);
+    QCOMPARE(comments.leecherCategory(), LeecherCategory::None);
+
+    // compatible client in the info packet, newer version or a modstring: not checked
+    UpDownClient compat;
+    feedHello(compat, buildHello(QStringLiteral("nick"), {}, {}, v70b));
+    feedInfo(compat, {Tag(ET_COMPATIBLECLIENT, 3u), Tag(static_cast<uint8>(0x3d), 1u)});
+    QCOMPARE(compat.leecherCategory(), LeecherCategory::None);
+    UpDownClient future;
+    feedHello(future, buildHello(QStringLiteral("nick"), {}, {}, (71u << 10)));
+    feedInfo(future, {Tag(static_cast<uint8>(0x3d), 1u)});
+    QCOMPARE(future.leecherCategory(), LeecherCategory::None);
+    UpDownClient mod;
+    feedHello(mod, buildHello(QStringLiteral("nick «Xtreme 8.1»"), QStringLiteral("Xtreme 8.1"), {}, v70b));
+    feedInfo(mod, {Tag(static_cast<uint8>(0x3d), 1u)});
+    QCOMPARE(mod.leecherCategory(), LeecherCategory::None);
 }
 
 void tst_Dlp::hello_switchedOffChecksNothing()

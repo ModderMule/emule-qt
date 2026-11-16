@@ -64,6 +64,8 @@ private slots:
     void buddyRequest_carriesInvertedKadIdNotTheWalkTarget();
     void actionPackets_areNotCappedWhileTheSearchRuns();
     void keywordResults_ignoredOnceStoppedPastTheTotal();
+    void lookup_skipsAnIpOutOfFloodBudget();
+    void actionPacket_heldForAnIpOutOfFloodBudget();
 
     // Contact ownership (audit item #2)
     void processResponse_freesAllResultContacts();
@@ -79,6 +81,9 @@ private slots:
     void sourceTags_notFirewalledHasNoBuddyTags();
     void sourceTags_firewalledWithoutBuddyCannotPublish();
     void sourceTags_firewalledWithIPv6PublishesType7();
+    void sourceTags_bpvNeedsABuddyOrIPv6();
+    void pointerTags_type3WithBuddyAndNoSize();
+    void pointerRecord_acceptedOnlyFromTheSamePublisher();
     void sourceTags_directCallbackSetsTheCallbackBit();
     void sourceTags_buddyBranchDoesNotClaimDirectCallback();
     void sourceTags_buddyIpTravelsInNetworkOrder();
@@ -924,6 +929,137 @@ void tst_KadSearch::sourceTags_firewalledWithIPv6PublishesType7()
     QVERIFY(named(TAG_SERVINGBUDDYIPV6));
 }
 
+void tst_KadSearch::sourceTags_bpvNeedsABuddyOrIPv6()
+{
+    // ipv6-spec §5.6.1: no buddy, no IPv6 — nothing; a bpv-only record has no pointer yet
+    Search::SourcePublishParams p;
+    p.firewalled   = true;
+    p.tcpPort      = 4662;
+    p.hasFileSize  = true;
+    p.fileSize     = 12345;
+    p.pointerRoute = true;
+    auto hasBpv = [](const std::vector<Tag>& tags) {
+        return std::any_of(tags.begin(), tags.end(), [](const Tag& t) {
+            return t.nameId() == 0 && t.name() == QByteArrayLiteral(TAG_BUDDYPOINTER)
+                && t.isInt() && t.intValue() == KAD_POINTER_VERSION;
+        });
+    };
+
+    bool canPublish = true;
+    QVERIFY(Search::buildSourcePublishTags(p, canPublish).empty());
+    QVERIFY(!canPublish);
+
+    // IPv6: type 7 with ip6, bpv along for a pointer an earlier buddy left
+    p.ipv6Hex = QStringLiteral("26064700000000000000000000000042");
+    auto tags = Search::buildSourcePublishTags(p, canPublish);
+    QVERIFY(canPublish);
+    QCOMPARE(findTag(tags, FT_SOURCETYPE)->intValue(), uint32{7});
+    QVERIFY(hasBpv(tags));
+    QVERIFY(findTag(tags, FT_BUDDYHASH) == nullptr);
+    QVERIFY(findTag(tags, FT_SERVERIP) == nullptr);
+    p.ipv6Hex.clear();
+
+    // With a buddy: 3/5 keeps the classic route and carries bpv too
+    p.hasBuddy     = true;
+    p.buddyIP      = testIP(5);
+    p.buddyUDPPort = 5555;
+    tags = Search::buildSourcePublishTags(p, canPublish);
+    QCOMPARE(findTag(tags, FT_SOURCETYPE)->intValue(), uint32{3});
+    QVERIFY(hasBpv(tags));
+    // No receiver key at that storer: no bpv
+    p.pointerRoute = false;
+    QVERIFY(!hasBpv(Search::buildSourcePublishTags(p, canPublish)));
+    p.pointerRoute = true;
+
+    // Not on 1/4 or 6: they have a route of their own
+    p.directUDPCallback = true;
+    QVERIFY(!hasBpv(Search::buildSourcePublishTags(p, canPublish)));
+    p.firewalled = false;
+    QVERIFY(!hasBpv(Search::buildSourcePublishTags(p, canPublish)));
+}
+
+void tst_KadSearch::pointerTags_type3WithBuddyAndNoSize()
+{
+    Search::SourcePublishParams p;
+    p.firewalled   = true;
+    p.tcpPort      = 4662;
+    p.cryptOptions = 0x0B;   // callback bit must not travel
+    QVERIFY(Search::buildPointerPublishTags(p).empty());   // no buddy, no pointer
+
+    p.hasBuddy     = true;
+    p.buddyIP      = testIP(9);
+    p.buddyUDPPort = 4672;
+    p.buddyHash    = UInt128(true);
+    const auto tags = Search::buildPointerPublishTags(p);
+    QCOMPARE(findTag(tags, FT_SOURCETYPE)->intValue(), uint32{3});
+    QCOMPARE(findTag(tags, FT_SERVERIP)->intValue(), testIP(9));
+    QCOMPARE(findTag(tags, FT_SERVERPORT)->intValue(), uint32{4672});
+    QVERIFY(findTag(tags, FT_BUDDYHASH) != nullptr);
+    QVERIFY(findTag(tags, FT_SOURCEPORT) != nullptr);
+    QVERIFY(findTag(tags, FT_FILESIZE) == nullptr);
+    QCOMPARE(findTag(tags, FT_ENCRYPTION)->intValue() & 0x08u, 0u);
+
+    p.directUDPCallback = true;   // type 6 publisher needs no pointer
+    QVERIFY(Search::buildPointerPublishTags(p).empty());
+
+    // Key: bitwise NOT, an involution
+    uint8 raw[16];
+    for (int i = 0; i < 16; ++i)
+        raw[i] = static_cast<uint8>(i * 17);
+    const UInt128 id(raw);
+    uint8 key[16];
+    Search::pointerKey(id).toByteArray(key);
+    for (int i = 0; i < 16; ++i)
+        QCOMPARE(key[i], static_cast<uint8>(~raw[i]));
+    QVERIFY(Search::pointerKey(Search::pointerKey(id)) == id);
+}
+
+void tst_KadSearch::pointerRecord_acceptedOnlyFromTheSamePublisher()
+{
+    // ipv6-spec §5.6.2: FT_SOURCEIP is stamped by the indexing node; a pointer is used
+    // only when it matches the file record's — a forged one comes from another IP.
+    uint8 raw[16];
+    std::memset(raw, 0x5E, sizeof(raw));
+    const UInt128 source(raw);
+    const uint32 publisherIP = testIP(40);
+
+    Search::SourcePublishParams p;
+    p.firewalled   = true;
+    p.tcpPort      = 4662;
+    p.hasBuddy     = true;
+    p.buddyIP      = testIP(9);
+    p.buddyUDPPort = 4672;
+    p.buddyHash    = UInt128(true);
+    auto stamped = [&](uint32 ip) {
+        TagList info = Search::buildPointerPublishTags(p);
+        info.emplace_back(FT_SOURCEIP, ip);   // what the indexing node adds
+        return info;
+    };
+
+    auto hit = Search::acceptPointerRecord(source, stamped(publisherIP), source, publisherIP);
+    QVERIFY(hit.has_value());
+    QCOMPARE(hit->buddyIP, testIP(9));
+    QCOMPARE(hit->buddyPort, uint16{4672});
+    QVERIFY(std::all_of(hit->buddyHash.begin(), hit->buddyHash.end(), [](uint8 b) { return b == 0xFF; }));
+
+    // Forged: published from another IPv4
+    QVERIFY(!Search::acceptPointerRecord(source, stamped(testIP(41)), source, publisherIP));
+    // Another source ID at the same key
+    uint8 other[16];
+    std::memset(other, 0x11, sizeof(other));
+    QVERIFY(!Search::acceptPointerRecord(UInt128(other), stamped(publisherIP), source, publisherIP));
+    // All-zero buddy hash = no buddy (§5.2)
+    p.buddyHash = UInt128(false);
+    QVERIFY(!Search::acceptPointerRecord(source, stamped(publisherIP), source, publisherIP));
+    p.buddyHash = UInt128(true);
+    // Not type 3
+    TagList wrongType = stamped(publisherIP);
+    for (auto& t : wrongType)
+        if (t.nameId() == FT_SOURCETYPE)
+            t = Tag(FT_SOURCETYPE, uint32{7});
+    QVERIFY(!Search::acceptPointerRecord(source, wrongType, source, publisherIP));
+}
+
 void tst_KadSearch::sourceTags_directCallbackSetsTheCallbackBit()
 {
     // Regression: the publish path built FT_ENCRYPTION from the three crypt bits and
@@ -1355,6 +1491,65 @@ void tst_KadSearch::actionPackets_areNotCappedWhileTheSearchRuns()
     for (uint32 i = 0; i < kNodes + 2; ++i)
         search->storePacket(false);   // one per jump-start
     QCOMPARE(requests, int(kNodes));
+}
+
+// An IP that used its KADEMLIA2_REQ minute would drop the request: the walk asks the
+// next node and keeps the held one for later.
+void tst_KadSearch::lookup_skipsAnIpOutOfFloodBudget()
+{
+    eMule::testing::KadFixture kadFixture;
+    auto* udp = Kademlia::getInstanceUDPListener();
+    SafeMemFile empty;
+    for (int i = 0; i < 9; ++i)   // MFC allows 10/min; the guard keeps a 1 s margin
+        udp->sendPacket(empty, KADEMLIA2_REQ, walkIP(1), walkPort(1), KadUDPKey(), nullptr);
+    QVERIFY(!udp->outboundAllowed(walkIP(1), KADEMLIA2_REQ, OutboundGuard::Priority::Foreground));
+
+    Search* search = startWalk(SearchType::Keyword, 6);
+    QVERIFY(search != nullptr);
+    QCOMPARE(search->m_tried.size(), std::size_t{3});   // ranks 2-4
+    QCOMPARE(search->m_possible.size(), std::size_t{3});
+    QCOMPARE(search->m_possible.begin()->second->address().toUint32(), walkIP(1));
+    QCOMPARE(search->m_heldLookups.size(), std::size_t{1});
+
+    search->go(1);   // still held, rank 5 instead
+    QCOMPARE(search->m_tried.size(), std::size_t{4});
+    QCOMPARE(search->m_heldLookups.size(), std::size_t{1});
+    SearchManager::stopAllSearches();
+}
+
+void tst_KadSearch::actionPacket_heldForAnIpOutOfFloodBudget()
+{
+    eMule::testing::KadFixture kadFixture;
+    auto* udp = Kademlia::getInstanceUDPListener();
+    SafeMemFile empty;
+    udp->sendPacket(empty, KADEMLIA2_SEARCH_KEY_REQ, walkIP(1), walkPort(1), KadUDPKey(), nullptr);
+    udp->sendPacket(empty, KADEMLIA2_SEARCH_KEY_REQ, walkIP(1), walkPort(1), KadUDPKey(), nullptr);
+
+    QList<uint32> askedIPs;
+    const auto conn = QObject::connect(
+        udp, &KademliaUDPListener::packetToSend, [&](const QByteArray& data, uint32 ip) {
+            if (!data.isEmpty() && static_cast<uint8>(data[0]) == KADEMLIA2_SEARCH_KEY_REQ)
+                askedIPs.append(ip);
+        });
+    const auto disconnect = qScopeGuard([&] { QObject::disconnect(conn); });
+
+    Search* search = startWalk(SearchType::Keyword, 4);
+    QVERIFY(search != nullptr);
+    for (const auto& [dist, contact] : search->m_possible)
+        search->m_tried[dist] = contact;
+    for (const auto& [dist, contact] : search->m_tried)
+        search->m_responded[dist] = true;
+
+    search->storePacket(false);   // rank 1 is out of SEARCH_KEY budget (3/min): rank 2 goes
+    QCOMPARE(askedIPs, QList<uint32>{walkIP(2)});
+    QVERIFY(search->m_storeDeferred);
+    QCOMPARE(search->m_heldStores.size(), std::size_t{1});
+
+    search->storePacket(true);
+    QCOMPARE(askedIPs, (QList<uint32>{walkIP(2), walkIP(3), walkIP(4)}));
+    QVERIFY(search->m_storeDeferred);   // retried by jumpStart() while stopping
+    QCOMPARE(search->m_heldStores.size(), std::size_t{1});
+    SearchManager::stopAllSearches();
 }
 
 // A keyword search that reached its total and is stopping takes no more results;

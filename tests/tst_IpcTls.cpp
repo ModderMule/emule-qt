@@ -29,10 +29,10 @@ class TlsCore : public QObject {
 public:
     explicit TlsCore(bool loopbackIsRemote)
     {
-        const auto pem = generateSelfSignedPem("emulecored", 30);
+        const auto pem = generateSelfSignedPem("emulecored", 30, SelfSignedKeyType::Rsa3072);
         if (pem) {
             server.setIdentity(QSslCertificate(pem->certPem, QSsl::Pem),
-                               QSslKey(pem->keyPem, QSsl::Ec, QSsl::Pem));
+                               QSslKey(pem->keyPem, QSsl::Rsa, QSsl::Pem));
         }
         server.setTreatLoopbackAsRemote(loopbackIsRemote);
         connect(&server, &IpcTlsServer::ready, this, [this](QSslSocket* s, bool local) {
@@ -88,6 +88,7 @@ private slots:
     void pinMismatch_sendsNothingUntilTrusted();
     void knownCores_roundTrip();
     void identity_createdOnceKeptAndPrivate();
+    void identity_oldEcReplacedWhenBackendCantServeIt();
 };
 
 void tst_IpcTls::remoteCore_tlsAndTokenInside()
@@ -231,6 +232,7 @@ void tst_IpcTls::identity_createdOnceKeptAndPrivate()
     const IpcTlsIdentity first = loadOrCreateIpcTlsIdentity(dir.path(), &error);
     QVERIFY2(!first.cert.isNull() && !first.key.isNull(), qPrintable(error));
     QVERIFY(first.cert.expiryDate() > QDateTime::currentDateTimeUtc().addYears(19));
+    QCOMPARE(first.key.algorithm(), QSsl::Rsa);   // every Qt TLS backend serves RSA
 
     const QString keyPath = dir.filePath(QStringLiteral("ipc-key.pem"));
 #ifndef Q_OS_WIN
@@ -249,6 +251,36 @@ void tst_IpcTls::identity_createdOnceKeptAndPrivate()
     error.clear();
     QVERIFY(loadOrCreateIpcTlsIdentity(dir.path(), &error).cert.isNull());
     QVERIFY(!error.isEmpty());
+}
+
+void tst_IpcTls::identity_oldEcReplacedWhenBackendCantServeIt()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto ec = generateSelfSignedPem("emulecored", 30, SelfSignedKeyType::EcP256);
+    QVERIFY(ec);
+    const auto put = [&dir](const char* name, const QByteArray& data) {
+        QFile f(dir.filePath(QString::fromLatin1(name)));
+        return f.open(QIODevice::WriteOnly) && f.write(data) == data.size();
+    };
+    QVERIFY(put("ipc-cert.pem", ec->certPem));
+    QVERIFY(put("ipc-key.pem", ec->keyPem));
+
+    QString error;
+    const IpcTlsIdentity id = loadOrCreateIpcTlsIdentity(dir.path(), &error);
+    QVERIFY2(!id.cert.isNull() && !id.key.isNull(), qPrintable(error));
+    if (QSslSocket::activeBackend() == QStringLiteral("openssl")) {
+        // OpenSSL serves EC: the old pair and the GUI's pin stay
+        QVERIFY(!id.replacedEc);
+        QCOMPARE(id.key.algorithm(), QSsl::Ec);
+    } else {
+        QVERIFY(id.replacedEc);
+        QCOMPARE(id.key.algorithm(), QSsl::Rsa);
+        // Written back, so the next start keeps it
+        const IpcTlsIdentity again = loadOrCreateIpcTlsIdentity(dir.path());
+        QVERIFY(!again.replacedEc);
+        QCOMPARE(certFingerprint(again.cert), certFingerprint(id.cert));
+    }
 }
 
 QTEST_MAIN(tst_IpcTls)

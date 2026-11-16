@@ -19,6 +19,7 @@
 #include "client/ClientList.h"
 #include "ipfilter/IPFilter.h"
 #include "kademlia/Kademlia.h"
+#include "kademlia/KadPointerRoute.h"
 #include "kademlia/KadPrefs.h"
 #include "net/Address.h"
 #include "net/ClientReqSocket.h"
@@ -179,6 +180,9 @@ private slots:
     void addKadSources_type6DroppedWithoutTheBit();
     void addKadSources_firewalledKeepsBuddylessIPv6Source();
     void addKadSources_type7NeedsAUsableRoute();
+    void addKadSources_type7PointerResolvesOncePerSource();
+    void addKadSources_type7FailedIPv6IsNotRedialled();
+    void addKadSources_type3BpvReroutesAfterFailedCallback();
     void addKadSources_buddyIpIsNetworkOrder();
     void addKadSources_firewalledKeepsQuicType6();
 
@@ -1962,6 +1966,222 @@ void tst_DownloadQueue::addKadSources_type7NeedsAUsableRoute()
     QVERIFY(!source->supportsDirectUDPCallback());
     // FT_SOURCEIP is never a TCP target
     QVERIFY(source->connectAddress().isNull() || source->connectAddress() == peerV6);
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::addKadSources_type7PointerResolvesOncePerSource()
+{
+    // ipv6-spec §5.6.1: type 7 + bpv, no ip6. One lookup per source across files; a hit
+    // turns every waiting record into a type 3 source via the pointer's buddy.
+    eMule::testing::KadFixture fx{eMule::testing::KadMode::Open};
+    makeReachable(fx);
+    QVERIFY(!theApp.isFirewalled());
+
+    DownloadQueue dq;
+    uint8 hashA[16] = {65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7};
+    uint8 hashB[16] = {66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7};
+    auto* pfA = createTestPartFile(hashA, QStringLiteral("kad_bpv_a.bin"));
+    auto* pfB = createTestPartFile(hashB, QStringLiteral("kad_bpv_b.bin"));
+    dq.addDownload(pfA);
+    dq.addDownload(pfB);
+
+    kad::PointerRoute::clear();
+    int lookups = 0;
+    kad::UInt128 lookedUpKey;
+    uint32 lookedUpIP = 0;
+    kad::Search::PointerDone pendingDone;
+    kad::PointerRoute::setLookupStarter([&](const kad::UInt128& key, const kad::UInt128&,
+                                            uint32 ip, kad::Search::PointerDone done) {
+        ++lookups;
+        lookedUpKey = key;
+        lookedUpIP = ip;
+        pendingDone = std::move(done);
+        return true;
+    });
+    kad::Kademlia::setKadSourceResultCallback(
+        [&dq](const kad::Kademlia::KadSourceResult& r) { dq.addKadSourceResult(r); });
+    const auto restore = qScopeGuard([] {
+        kad::PointerRoute::setLookupStarter(nullptr);
+        kad::PointerRoute::clear();
+        kad::Kademlia::setKadSourceResultCallback(nullptr);
+    });
+
+    uint8 clientHash[16];
+    std::memset(clientHash, 0x5F, sizeof(clientHash));
+    const uint32 sourceIP = Address::fromString(QStringLiteral("77.66.55.41")).toUint32();
+    auto recA = makeKadResult(hashA, 7, clientHash, sourceIP, 4662, 4672, 0x01);
+    recA.pointerVersion = KAD_POINTER_VERSION;
+    auto recB = recA;
+    recB.fileHash = hashB;
+
+    dq.addKadSourceResult(recA);
+    dq.addKadSourceResult(recB);
+    QCOMPARE(lookups, 1);                          // one per source, not per file
+    QCOMPARE(lookedUpIP, sourceIP);
+    QVERIFY(lookedUpKey == kad::Search::pointerKey(kad::UInt128(clientHash)));
+    QCOMPARE(pfA->sourceCount(), 0);
+
+    // Another FT_SOURCEIP for the same source: not this pointer's publisher
+    auto forged = recA;
+    forged.ip = Address::fromString(QStringLiteral("77.66.55.99")).toUint32();
+    dq.addKadSourceResult(forged);
+    QCOMPARE(lookups, 1);
+
+    const Address buddy = Address::fromString(QStringLiteral("11.22.33.45"));
+    kad::Search::PointerHit hit;
+    hit.buddyIP = buddy.toNetworkUint32();
+    hit.buddyPort = 4673;
+    hit.buddyHash.fill(0x6D);
+    pendingDone(hit);
+    QCOMPARE(pfA->sourceCount(), 1);
+    // Same peer for the second file: linked as A4AF, one client
+    QCOMPARE(pfB->sourceCount() + pfB->a4afSourceCount(), 1);
+    UpDownClient* src = pfA->srcList().front();
+    QVERIFY(src->hasLowID());
+    QCOMPARE(src->buddyAddress(), buddy);
+    QCOMPARE(src->buddyPort(), uint16{4673});
+
+    // Cached hit: no new lookup
+    dq.removeSource(src);
+    dq.addKadSourceResult(recA);
+    QCOMPARE(lookups, 1);
+    QCOMPARE(pfA->sourceCount(), 1);
+
+    // Hit held the full period, a miss only briefly (the publisher may get a buddy soon)
+    pendingDone(std::nullopt);
+    QVERIFY(kad::PointerRoute::cachedFor(kad::UInt128(clientHash)) > kad::PointerRoute::kMissCacheSecs);
+    uint8 otherHash[16];
+    std::memset(otherHash, 0x5E, sizeof(otherHash));
+    auto recMiss = makeKadResult(hashA, 7, otherHash, sourceIP, 4662, 4672, 0x01);
+    recMiss.pointerVersion = KAD_POINTER_VERSION;
+    dq.addKadSourceResult(recMiss);
+    QCOMPARE(lookups, 2);
+    pendingDone(std::nullopt);
+    const time_t missLeft = kad::PointerRoute::cachedFor(kad::UInt128(otherHash));
+    QVERIFY(missLeft > 0 && missLeft <= kad::PointerRoute::kMissCacheSecs);
+    dq.addKadSourceResult(recMiss);
+    QCOMPARE(lookups, 2);                          // cached miss: no new lookup
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::addKadSources_type7FailedIPv6IsNotRedialled()
+{
+    // ipv6-spec §5.6.2: a failed ip6 route is cached per address, whatever record names it
+    eMule::testing::KadFixture fx{eMule::testing::KadMode::Firewalled};
+    fx.kadPrefs().setLastContact();
+
+    DownloadQueue dq;
+    uint8 hash[16] = {67, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7};
+    auto* pf = createTestPartFile(hash, QStringLiteral("kad_type7_failed.bin"));
+    dq.addDownload(pf);
+
+    theApp.setPublicIPv6Override(Address::fromString(QStringLiteral("2606:4700::42")));
+    const auto restoreV6 = qScopeGuard([] { theApp.setPublicIPv6Override(Address{}); });
+    if (!theApp.hasConfidentPublicIPv6()) {
+        dq.deleteAll();
+        QSKIP("no usable public IPv6 in this setup");
+    }
+
+    const Address peerV6 = Address::fromString(QStringLiteral("2606:4700::79"));
+    uint8 clientHash[16];
+    std::memset(clientHash, 0x60, sizeof(clientHash));
+    auto rec = makeKadResult(hash, 7, clientHash, 0x4D423729, 4662, 4672, 0x01);
+    rec.sourceIPv6 = peerV6.ipv6Bytes().data();
+
+    dq.noteKadIPv6RouteFailed(peerV6);
+    QVERIFY(dq.isKadIPv6RouteFailed(peerV6));
+    dq.addKadSourceResult(rec);
+    QCOMPARE(pf->sourceCount(), 0);
+
+    // Another address still goes through, and is held to its record's hash
+    const Address otherV6 = Address::fromString(QStringLiteral("2606:4700::80"));
+    rec.sourceIPv6 = otherV6.ipv6Bytes().data();
+    dq.addKadSourceResult(rec);
+    QCOMPARE(pf->sourceCount(), 1);
+    QVERIFY(pf->srcList().front()->kadRouteUnverified());
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::addKadSources_type3BpvReroutesAfterFailedCallback()
+{
+    // ipv6-spec §5.6.1: a 3/5 record with bpv whose buddy does not answer asks the pointer
+    // at ~userHash; each distinct candidate is tried once, then the source is dead.
+    eMule::testing::KadFixture fx{eMule::testing::KadMode::Open};
+    makeReachable(fx);
+    QVERIFY(!theApp.isFirewalled());
+
+    DownloadQueue dq;
+    uint8 hash[16] = {68, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3};
+    auto* pf = createTestPartFile(hash, QStringLiteral("kad_type3_bpv.bin"));
+    dq.addDownload(pf);
+    theApp.downloadQueue = &dq;   // the dead source leaves through it
+    const auto unhook = qScopeGuard([] { theApp.downloadQueue = nullptr; });
+
+    kad::PointerRoute::clear();
+    int lookups = 0;
+    kad::Search::PointerDone pendingDone;
+    kad::PointerRoute::setLookupStarter([&](const kad::UInt128&, const kad::UInt128&,
+                                            uint32, kad::Search::PointerDone done) {
+        ++lookups;
+        pendingDone = std::move(done);
+        return true;
+    });
+    const auto restore = qScopeGuard([] {
+        kad::PointerRoute::setLookupStarter(nullptr);
+        kad::PointerRoute::clear();
+    });
+
+    uint8 clientHash[16];
+    std::memset(clientHash, 0x61, sizeof(clientHash));
+    uint8 oldBuddyHash[16];
+    std::memset(oldBuddyHash, 0x6E, sizeof(oldBuddyHash));
+    const Address oldBuddy = Address::fromString(QStringLiteral("11.22.33.46"));
+    const uint32 sourceIP = Address::fromString(QStringLiteral("77.66.55.43")).toUint32();
+    auto rec = makeKadResult(hash, 3, clientHash, sourceIP, 4662, 4672, 0x01);
+    rec.buddyIP = oldBuddy.toNetworkUint32();
+    rec.buddyPort = 5556;
+    rec.buddyHash = oldBuddyHash;
+    rec.pointerVersion = KAD_POINTER_VERSION;
+    dq.addKadSourceResult(rec);
+    QCOMPARE(pf->sourceCount(), 1);
+    UpDownClient* src = pf->srcList().front();
+    QCOMPARE(src->kadPointerSource(), sourceIP);
+
+    // The callback via the record's buddy times out
+    src->setDownloadState(DownloadState::WaitCallbackKad);
+    src->disconnected(QStringLiteral("test: no callback"));
+    QCOMPARE(lookups, 1);
+    QCOMPARE(pf->sourceCount(), 1);
+    QCOMPARE(src->downloadState(), DownloadState::WaitCallbackKad);
+
+    // The old buddy again: already tried. A new one: used.
+    kad::Search::PointerHit stale;
+    stale.buddyIP = oldBuddy.toNetworkUint32();
+    stale.buddyPort = 5556;
+    stale.buddyHash.fill(0x6E);
+    pendingDone(stale);
+    QTest::qWait(0);
+    QCOMPARE(src->buddyAddress(), oldBuddy);
+    const Address newBuddy = Address::fromString(QStringLiteral("11.22.33.47"));
+    kad::Search::PointerHit fresh;
+    fresh.buddyIP = newBuddy.toNetworkUint32();
+    fresh.buddyPort = 5557;
+    fresh.buddyHash.fill(0x6F);
+    pendingDone(fresh);
+    QTRY_COMPARE(src->buddyAddress(), newBuddy);
+    QCOMPARE(src->buddyPort(), uint16{5557});
+    QCOMPARE(pf->sourceCount(), 1);
+
+    // That one fails too: no candidate left, the lookup ends, the source is dead
+    src->setDownloadState(DownloadState::WaitCallbackKad);
+    src->disconnected(QStringLiteral("test: no callback"));
+    QCOMPARE(pf->sourceCount(), 1);
+    pendingDone(std::nullopt);
+    QTRY_COMPARE(pf->sourceCount(), 0);
+    QCOMPARE(lookups, 1);
 
     dq.deleteAll();
 }

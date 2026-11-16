@@ -8,6 +8,7 @@
 #include "client/ClientList.h"
 #include "kademlia/KadLog.h"
 #include "kademlia/KadMiscUtils.h"
+#include "kademlia/KadOutboundGuard.h"
 #include "kademlia/Kademlia.h"
 #include "net/Address.h"
 #include "prefs/Preferences.h"
@@ -93,50 +94,19 @@ int PacketTracking::inTrackListIsAllowedPacket(uint32 ip, uint8 opcode,
     // as this port previously did — hands unlimited request rate to any peer
     // that completed a handshake.
     //
-    // Budgets are packets/minute, expressed as a per-packet millisecond cost.
-    int64 token;
+    // Budgets are packets/minute, expressed as a per-packet millisecond cost. One
+    // table for both directions: OutboundGuard holds our requests inside it.
     const uint8 dbgOrigOpcode = opcode;
-    switch (opcode) {
-    case KADEMLIA2_BOOTSTRAP_REQ:
-        token = kTokenBucketMax / 2;
-        break;
-    case KADEMLIA2_HELLO_REQ:
-        token = kTokenBucketMax / 3;
-        break;
-    case KADEMLIA2_REQ:
-        token = kTokenBucketMax / 10;
-        break;
-    case KADEMLIA2_SEARCH_NOTES_REQ:
-    case KADEMLIA2_SEARCH_KEY_REQ:
-    case KADEMLIA2_SEARCH_SOURCE_REQ:
-        token = kTokenBucketMax / 3;
-        break;
-    case KADEMLIA2_PUBLISH_KEY_REQ:
-        token = kTokenBucketMax / 4;
-        break;
-    case KADEMLIA2_PUBLISH_SOURCE_REQ:
-        token = kTokenBucketMax / 3;
-        break;
-    case KADEMLIA2_PUBLISH_NOTES_REQ:
-        token = kTokenBucketMax / 2;
-        break;
-    case KADEMLIA_FIREWALLED2_REQ:
-        opcode = KADEMLIA_FIREWALLED_REQ; // share one bucket with the v1 form
-        [[fallthrough]];
-    case KADEMLIA_FIREWALLED_REQ:
-    case KADEMLIA_FINDBUDDY_REQ:
-        token = kTokenBucketMax / 2;
-        break;
-    case KADEMLIA_CALLBACK_REQ:
+    opcode = floodBucketOpcode(opcode);   // FIREWALLED2 shares the v1 bucket
+    int64 token;
+    if (opcode == KADEMLIA_CALLBACK_REQ) {
         // Not MFC (1/min): kCallbacksPerSenderPerMin per served buddy; the relay applies the
         // per-buddy count. See docs/protocol/kad-buddy-search.md
         token = std::max<int64>(1, kTokenBucketMax / (std::max<int64>(1, thePrefs.servedBuddyLimit())
                                                      * kCallbacksPerSenderPerMin));
-        break;
-    case KADEMLIA2_PING:
-        token = kTokenBucketMax / 2;
-        break;
-    default:
+    } else if (const uint32 perMinute = mfcRequestsPerMinute(opcode)) {
+        token = kTokenBucketMax / perMinute;
+    } else {
         // Not a request — a response. Never throttled, otherwise a busy search
         // would rate-limit its own answers.
         return 0;

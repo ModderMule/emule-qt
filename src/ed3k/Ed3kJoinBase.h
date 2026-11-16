@@ -91,6 +91,7 @@ public:
         ffi::KeyKind key = ffi::KeyKind::Node;   ///< the key of ours it serves
         ffi::NodeId node;
         ffi::Root root;
+        QString join;                            ///< the join's tag ("torrent", "usenet", "hoster", "dl", ...)
         QString fileName;                        ///< the download's (empty: unnamed)
         std::uint64_t size = 0;
         std::optional<ffi::Address> endpoint;    ///< none: relays only, or the anonymous key
@@ -114,6 +115,21 @@ public:
                                                           const ffi::NodeId& node);
     /// The sources of @p session holding an upload slot for us (the Downloading list).
     [[nodiscard]] static std::vector<SourceInfo> downloadingAt(const Ed3kSession& session);
+    /// Tag of the first torrent/usenet/hoster join of @p session sharing or downloading @p root; empty: none.
+    [[nodiscard]] static QString networkJoinAt(const Ed3kSession& session, const ffi::Root& root);
+    /// A job of a join: its tag and owner (torrent id, usenet item id, "h<id>" hoster item, md4 hex).
+    struct JoinOwner {
+        QString tag;
+        QString owner;
+        friend bool operator==(const JoinOwner&, const JoinOwner&) = default;
+    };
+    /// Jobs of the eD2K/torrent/usenet/hoster joins of @p session sharing or downloading @p root:
+    /// the other names of a root known here (alias.md has no root → name lookup).
+    [[nodiscard]] static std::vector<JoinOwner> aliasJobsAt(const Ed3kSession& session, const ffi::Root& root);
+    /// Torrent/usenet/hoster jobs of @p session with a root of theirs downloaded or shared on
+    /// ed3k: the Transfers Downloading list shows their own network's clients too.
+    [[nodiscard]] static std::vector<JoinOwner> networkJobsAt(const Ed3kSession& session);
+    [[nodiscard]] const QString& tag() const { return m_tag; }
 
 protected:
     static constexpr std::uint64_t kBlock = 256 * 1024;
@@ -319,6 +335,16 @@ protected:
     void hashInBackground(const QString& path, std::function<void(std::optional<FileHash>)> done);
     /// The same on this thread (files about to be deleted).
     [[nodiscard]] static std::optional<FileHash> hashNow(const QString& path);
+    /// Hash state of the whole 256 KiB blocks of @p path below @p upTo (Hasher::checkpoint),
+    /// for a whole read going on after a restart (httpWholeResume).
+    struct HashCheckpoint {
+        QByteArray blob;
+        std::uint64_t offset = 0;
+    };
+    /// On a worker; @p done on this thread (nullopt: unreadable or no whole block), not at
+    /// all once stopped or destroyed.
+    void checkpointInBackground(const QString& path, std::uint64_t upTo,
+                                std::function<void(std::optional<HashCheckpoint>)> done);
 
     /// "Move to" (#187): the part file @p src to @p dst on a worker (rename, else a copy
     /// that fits; the source then goes). @p done on this thread, empty = moved; not at all

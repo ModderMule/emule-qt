@@ -18,7 +18,10 @@
 #include <QObject>
 #include <QStringList>
 
+#include <array>
+#include <ctime>
 #include <deque>
+#include <map>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -183,6 +186,12 @@ public:
     /// and stores the source info for later connection.
     /// sourceType: 1/4=non-firewalled, 3/5=firewalled+buddy, 6=direct UDP callback, 7=routes in tags.
     void addKadSourceResult(const kad::Kademlia::KadSourceResult& result);
+
+    /// A Kad `ip6` route (type 7) failed before any hello: that address is not dialled
+    /// again for kFailedKadIPv6Secs, whatever record names it (ipv6-spec §5.6.2).
+    void noteKadIPv6RouteFailed(const Address& address);
+    [[nodiscard]] bool isKadIPv6RouteFailed(const Address& address);
+    static constexpr time_t kFailedKadIPv6Secs = 3600;
 
     /// Store a Kad "notes" search result (filename + rating + comment) on the
     /// matching file — an in-progress download or an already-completed known file.
@@ -461,6 +470,7 @@ private:
     SharedFileList* m_sharedFileList = nullptr;
     KnownFileList* m_knownFileList = nullptr;
     IPFilter* m_ipFilter = nullptr;
+    std::map<std::array<uint8, 16>, time_t> m_failedKadIPv6;   // address → retry after
     ClientList* m_clientList = nullptr;
     ServerConnect* m_serverConnect = nullptr;
     uint32 m_datarate = 0;

@@ -49,7 +49,10 @@ public:
                                       int role = Qt::DisplayRole) const override;
 
     /// Replace all contacts with a new snapshot.
-    void setContacts(std::vector<KadContactRow> contacts) { setRows(std::move(contacts)); }
+    void setContacts(std::vector<KadContactRow> contacts)
+    {
+        syncRows(std::move(contacts), [](const KadContactRow& r) { return r.clientId; });
+    }
 
     [[nodiscard]] int contactCount() const { return count(); }
 

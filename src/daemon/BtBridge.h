@@ -9,6 +9,7 @@
 #include "IpcMessage.h"
 #include "stats/StatsHistory.h"
 
+#include <QCborArray>
 #include <QCborMap>
 #include <QString>
 
@@ -52,6 +53,13 @@ void setI2pRouter(I2pRouter* router);
 
 /// Answers a BitTorrent request through `reply`. False: not a BitTorrent opcode.
 bool handleRequest(const Ipc::IpcMessage& msg, const std::function<void(const Ipc::IpcMessage&)>& reply);
+
+/// Torrent @p id as another name of an ed3k root (Transfers tooltip, Details):
+/// {network: "torrent", name, id: "btih:<hex>" / "btmh:<hex>"}; empty: no such torrent.
+[[nodiscard]] QCborMap aliasOf(const QString& id);
+
+/// The peers torrent @p id gets bytes from now, as GetDownloadClients rows (network "bt").
+void appendDownloading(QCborArray& out, const QString& id);
 
 /// One GetTorrents row, also what PushTorrentAdded/Update carry. Empty when the id
 /// is unknown.

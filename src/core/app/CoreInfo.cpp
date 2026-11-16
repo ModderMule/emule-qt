@@ -200,7 +200,7 @@ QCborMap networkInfo()
                     {QStringLiteral("address"), c->userAddress().toString()},
                     {QStringLiteral("port"), c->userPort()},
                     {QStringLiteral("name"), c->userName()},
-                    {QStringLiteral("software"), c->clientSoftwareStr()},
+                    {QStringLiteral("software"), c->displaySoftwareStr()},
                     {QStringLiteral("connectedSecs"),
                      static_cast<qint64>(std::max<std::time_t>(now - c->kadStateSince(), 0))}});
             }
@@ -355,6 +355,8 @@ QCborMap incomingRow(const kad::IncomingRequest& r, uint64 now)
         {QStringLiteral("stored"), r.records >= 0 ? (r.answered ? r.records : 0) : -1},
         {QStringLiteral("load"), r.load},
         {QStringLiteral("answered"), r.answered},
+        {QStringLiteral("refused"), static_cast<qint64>(r.refusal)},
+        {QStringLiteral("refusedArg"), r.refusalArg},
     };
 }
 

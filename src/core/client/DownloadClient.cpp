@@ -991,7 +991,7 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
     // Per-client/port breakdown tracking
     if (uTransferredFileDataSize > 0 && theApp.statistics)
         theApp.statistics->addTransferData(clientSoft(), userPort(),
-                                           false, false, uTransferredFileDataSize);
+                                           false, false, uTransferredFileDataSize, isEmuleQt());
 
     // Move end back by one (MFC uses inclusive end offset)
     --nEndPos;

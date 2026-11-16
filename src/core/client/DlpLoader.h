@@ -54,6 +54,15 @@ public:
     [[nodiscard]] std::optional<QString> checkHelloTag(uint32 tag);
     [[nodiscard]] std::optional<QString> checkInfoTag(uint32 tag);
 
+    // Ghost mod (lib 1.1.0+, optional): official-looking eMule hello. emuleVersion = raw CT_EMULE_VERSION.
+    [[nodiscard]] bool hasOfficialChecks() const { return m_loaded && m_officialTag && m_officialBits; }
+    [[nodiscard]] std::optional<QString> checkOfficialHelloTag(uint32 tag, uint32 emuleVersion);
+    [[nodiscard]] std::optional<QString> checkOfficialHelloBits(uint32 tag, uint32 value, uint32 emuleVersion);
+    // Same for OP_EMULEINFO (lib 1.2.0+). emuleVersion = compatible client << 24 | hello version, 0 if none.
+    [[nodiscard]] bool hasOfficialInfoChecks() const { return m_loaded && m_officialInfoTag && m_officialInfoBits; }
+    [[nodiscard]] std::optional<QString> checkOfficialInfoTag(uint32 tag, uint32 emuleVersion);
+    [[nodiscard]] std::optional<QString> checkOfficialInfoBits(uint32 tag, uint32 value, uint32 emuleVersion);
+
     /// Platform file name, e.g. libspecialdlp.dylib.
     [[nodiscard]] static QString libraryFileName();
     /// Where a bundled library sits: next to the binary, Contents/Frameworks, lib/.
@@ -69,6 +78,8 @@ private:
     using CheckNameHashModFn = const sdlp_char16* (*)(const sdlp_char16*, const sdlp_char16*, const sdlp_char16*);
     using CheckHashFn = const sdlp_char16* (*)(const uint8_t*);
     using CheckTagFn = const sdlp_char16* (*)(uint32_t);
+    using CheckOfficialTagFn = const sdlp_char16* (*)(uint32_t, uint32_t);
+    using CheckOfficialBitsFn = const sdlp_char16* (*)(uint32_t, uint32_t, uint32_t);
 
     bool tryLoad(const QString& path);
     bool resolveAll();
@@ -91,6 +102,10 @@ private:
     CheckHashFn m_userhash = nullptr;
     CheckTagFn m_helloTag = nullptr;
     CheckTagFn m_infoTag = nullptr;
+    CheckOfficialTagFn m_officialTag = nullptr;     ///< optional, null on a 1.0 lib
+    CheckOfficialBitsFn m_officialBits = nullptr;   ///< optional, null on a 1.0 lib
+    CheckOfficialTagFn m_officialInfoTag = nullptr;   ///< optional, null before lib 1.2
+    CheckOfficialBitsFn m_officialInfoBits = nullptr; ///< optional, null before lib 1.2
 };
 
 } // namespace eMule

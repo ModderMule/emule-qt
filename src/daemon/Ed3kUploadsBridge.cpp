@@ -12,7 +12,13 @@
 #include <set>
 #include <span>
 
+#include "BtBridge.h"
+#include "Ed3kHosterBridge.h"
+#include "UsenetBridge.h"
+#include "app/AppContext.h"
+#include "files/PartFile.h"
 #include "geo/IP2Country.h"
+#include "transfer/DownloadQueue.h"
 
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kHide.h"
@@ -82,6 +88,8 @@ QCborMap rowToCbor(const ed3k::Ed3kUploads::Row& r, qint64 nowMs)
         {QStringLiteral("due"), r.due},
         // hops.md §1: "Anonymous" rows have no address; the GUI shows them as anonymous
         {QStringLiteral("key"), ed3k::Ed3kHide::keyName(r.key)},
+        // the root belongs to a torrent/usenet/hoster join: the GUI badges the node icon
+        {QStringLiteral("join"), s_uploads ? ed3k::Ed3kJoinBase::networkJoinAt(s_uploads->session(), r.root) : QString()},
     };
 }
 
@@ -202,6 +210,8 @@ QCborMap sourceToCbor(const SourceInfo& s)
         {QStringLiteral("key"), ed3k::Ed3kHide::keyName(s.key)},
         {QStringLiteral("sourceFrom"), -1},   // no eD2K source kind ("?")
     };
+    if (s.join == QLatin1String("torrent") || s.join == QLatin1String("usenet") || s.join == QLatin1String("hoster"))
+        m.insert(QStringLiteral("join"), s.join);
     if (!partMap.isEmpty())
         m.insert(QStringLiteral("sourcePartMap"), partMap);
     return m;
@@ -354,6 +364,53 @@ void appendDownloading(QCborArray& out)
     }
 #else
     (void)out;
+#endif
+}
+
+QCborArray aliasesOf([[maybe_unused]] const QByteArray& root)
+{
+    QCborArray out;
+#ifdef EMULE_HAVE_ED3K
+    ::ed3k::Root r;
+    if (!s_uploads || root.size() != qsizetype(r.bytes.size()))
+        return out;
+    std::copy(root.begin(), root.end(), r.bytes.begin());
+    for (const auto& job : ed3k::Ed3kJoinBase::aliasJobsAt(s_uploads->session(), r)) {
+        QCborMap m;
+        if (job.tag == QLatin1String("torrent"))
+            m = BtBridge::aliasOf(job.owner);
+        else if (job.tag == QLatin1String("usenet"))
+            m = UsenetBridge::aliasOf(job.owner);
+        else if (job.tag == QLatin1String("hoster"))
+            m = Ed3kHosterBridge::aliasOf(job.owner);
+        else if (job.tag == QLatin1String("ed2k")) {
+            // owner: the eD2K hash (Ed3kEd2kJoin::ownerOf)
+            m = QCborMap{{QStringLiteral("network"), QStringLiteral("ed2k")}, {QStringLiteral("id"), job.owner}};
+            const QByteArray md4 = QByteArray::fromHex(job.owner.toLatin1());
+            if (theApp.downloadQueue && md4.size() == 16)
+                if (const auto* pf = theApp.downloadQueue->fileByID(reinterpret_cast<const uint8*>(md4.constData())))
+                    m.insert(QStringLiteral("name"), pf->fileName());
+        }
+        if (!m.isEmpty())
+            out.append(m);
+    }
+#endif
+    return out;
+}
+
+void appendNetworkDownloading([[maybe_unused]] QCborArray& out)
+{
+#ifdef EMULE_HAVE_ED3K
+    if (!s_uploads)
+        return;
+    for (const auto& job : ed3k::Ed3kJoinBase::networkJobsAt(s_uploads->session())) {
+        if (job.tag == QLatin1String("torrent"))
+            BtBridge::appendDownloading(out, job.owner);
+        else if (job.tag == QLatin1String("usenet"))
+            UsenetBridge::appendDownloading(out, job.owner);
+        else if (job.tag == QLatin1String("hoster"))
+            Ed3kHosterBridge::appendDownloading(out, job.owner);
+    }
 #endif
 }
 

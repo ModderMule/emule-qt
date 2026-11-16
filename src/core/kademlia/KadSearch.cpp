@@ -15,6 +15,7 @@
 #include "kademlia/KadMiscUtils.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingZone.h"
+#include "kademlia/KadStats.h"
 #include "kademlia/KadUDPListener.h"
 #include "app/AppContext.h"
 #include "httpcache/HttpCacheManager.h"
@@ -30,6 +31,8 @@
 #include "utils/OtherFunctions.h"
 
 #include <QtEndian>
+
+#include <algorithm>
 
 
 namespace eMule::kad {
@@ -76,6 +79,9 @@ Search::~Search()
         }
         finishSizeProbe(best);
     }
+    // Pointer lookup over: end of candidates
+    if (m_pointerDone)
+        finishPointerLookup(std::nullopt);
 
     // Feed the experimental user estimate with the closest node that answered us.
     // Only lookups that converge on a target count. MFC Search.cpp:96-111.
@@ -290,6 +296,7 @@ std::vector<Tag> Search::buildSourcePublishTags(const SourcePublishParams& p, bo
     outCanPublish = true;
     uint8 cryptOptions = p.cryptOptions;
     uint8 sourceType = 0;   // 7 only matters below
+    bool pointerRecord = false;   // firewalled record that may carry bpv
 
     auto addCommonPortAndSize = [&] {
         tags.emplace_back(FT_SOURCEPORT, static_cast<uint32>(p.tcpPort));
@@ -317,11 +324,15 @@ std::vector<Tag> Search::buildSourcePublishTags(const SourcePublishParams& p, bo
         tags.emplace_back(FT_SERVERPORT, static_cast<uint32>(p.buddyUDPPort));
         tags.emplace_back(FT_BUDDYHASH, buddyHashToTagString(p.buddyHash));
         addCommonPortAndSize();
+        pointerRecord = true;
     } else if (p.firewalled && !p.ipv6Hex.isEmpty() && p.hasFileSize) {
-        // No IPv4 route, but a public IPv6: type 7, route in tags (ipv6-spec §5.6).
+        // No IPv4 route, but a public IPv6: type 7, routes in tags (ipv6-spec §5.6).
+        // bpv rides along when set: a pointer from an earlier buddy may still answer.
+        // No type 7 with bpv alone — before a buddy there is no pointer to find (§5.6.1).
         // Was 3/5 w/o buddy tags, which made unfirewalled stock peers look up buddy 000…0.
         // Legacy switches drop 7. Size is a MUST, the type no longer carries it.
         sourceType = 7;
+        pointerRecord = true;
         tags.emplace_back(FT_SOURCETYPE, static_cast<uint32>(7));
         cryptOptions = static_cast<uint8>(cryptOptions & ~0x08);
         addCommonPortAndSize();
@@ -352,10 +363,70 @@ std::vector<Tag> Search::buildSourcePublishTags(const SourcePublishParams& p, bo
         tags.emplace_back(QByteArrayLiteral(TAG_IPV6), p.ipv6Hex);
     if (!p.buddyIPv6Hex.isEmpty() && sourceType != 7)
         tags.emplace_back(QByteArrayLiteral(TAG_SERVINGBUDDYIPV6), p.buddyIPv6Hex);
+    // Pointer route: current buddy at ~sourceID (ipv6-spec §5.6.1)
+    if (p.pointerRoute && pointerRecord)
+        tags.emplace_back(QByteArrayLiteral(TAG_BUDDYPOINTER), static_cast<uint32>(KAD_POINTER_VERSION));
 
     appendHttpCacheChunkTags(tags, p.httpCacheChunks);
 
     return tags;
+}
+
+std::vector<Tag> Search::buildPointerPublishTags(const SourcePublishParams& p)
+{
+    // ipv6-spec §5.6.1: plain type 3, no size — no legacy client searches this key
+    std::vector<Tag> tags;
+    if (!p.firewalled || p.directUDPCallback || !p.hasBuddy || p.buddyIP == 0 || p.buddyUDPPort == 0)
+        return tags;
+    tags.emplace_back(FT_SOURCETYPE, static_cast<uint32>(3));
+    tags.emplace_back(FT_SERVERIP, p.buddyIP);
+    tags.emplace_back(FT_SERVERPORT, static_cast<uint32>(p.buddyUDPPort));
+    tags.emplace_back(FT_BUDDYHASH, buddyHashToTagString(p.buddyHash));
+    tags.emplace_back(FT_SOURCEPORT, static_cast<uint32>(p.tcpPort));
+    if (!p.useExternKadPort)
+        tags.emplace_back(FT_SOURCEUPORT, static_cast<uint32>(p.internKadPort));
+    tags.emplace_back(FT_ENCRYPTION, static_cast<uint32>(p.cryptOptions & ~0x08));
+    return tags;
+}
+
+UInt128 Search::pointerKey(const UInt128& sourceID)
+{
+    // Bytewise NOT commutes with any byte order, so every UInt128 layout agrees
+    UInt128 key(true);
+    key.xorWith(sourceID);
+    return key;
+}
+
+std::optional<Search::PointerHit> Search::acceptPointerRecord(
+    const UInt128& answer, const TagList& info, const UInt128& expectedSource,
+    uint32 expectedSourceIP)
+{
+    if (answer != expectedSource || expectedSourceIP == 0)
+        return std::nullopt;
+    uint8 type = 0;
+    uint32 sourceIP = 0;
+    PointerHit hit;
+    bool hasHash = false;
+    for (const auto& tag : info) {
+        if (tag.isInt()) {
+            switch (tag.nameId()) {
+            case FT_SOURCETYPE: type = static_cast<uint8>(tag.intValue()); break;
+            case FT_SOURCEIP:   sourceIP = tag.intValue(); break;
+            case FT_SERVERIP:   hit.buddyIP = tag.intValue(); break;
+            case FT_SERVERPORT: hit.buddyPort = static_cast<uint16>(tag.intValue()); break;
+            default: break;
+            }
+        } else if (tag.isStr() && tag.nameId() == FT_BUDDYHASH) {
+            hasHash = buddyHashFromTagString(tag.strValue(), hit.buddyHash.data());
+        }
+    }
+    // Stamped FT_SOURCEIP binds the pointer to the file record's publisher (§5.6.2)
+    if (type != 3 || sourceIP != expectedSourceIP || hit.buddyIP == 0 || hit.buddyPort == 0)
+        return std::nullopt;
+    // All-zero buddy ID = no buddy (§5.2)
+    if (!hasHash || std::all_of(hit.buddyHash.begin(), hit.buddyHash.end(), [](uint8 b) { return b == 0; }))
+        return std::nullopt;
+    return hit;
 }
 
 QString Search::buddyHashToTagString(const UInt128& buddyID)
@@ -531,7 +602,8 @@ void Search::go(uint32 maxToSend)
         Contact* contact = it->second;
         auto curIt = it++;
 
-        sendFindValue(contact);
+        if (!sendFindValue(contact))
+            continue;                       // IP out of budget: next candidate
         m_tried[curIt->first] = contact;
         m_possible.erase(curIt);
         ++sent;
@@ -754,9 +826,10 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
             }
         }
         for (auto& [dist, contact] : toAutoQuery) {
+            if (!sendFindValue(contact))
+                continue;                   // stays in m_possible for a later round
             m_tried[dist] = contact;
             m_possible.erase(dist);
-            sendFindValue(contact);
         }
     }
 
@@ -808,6 +881,10 @@ void Search::processResultFile(const UInt128& answer, TagList& info)
 {
     if (isSizeProbe()) {
         processSizeProbeResult(answer, info);
+        return;
+    }
+    if (isPointerLookup()) {
+        processPointerResult(answer, info);
         return;
     }
 
@@ -886,12 +963,18 @@ void Search::processResultFile(const UInt128& answer, TagList& info)
     bool hasSourceIPv6 = false;
     bool hasBuddyIPv6 = false;
     uint8 natt = 0;
+    uint8 pointerVersion = 0;
     for (const auto& tag : info) {
         if (tag.nameId() != 0)
             continue;
         if (tag.isInt() && tag.name() == QByteArrayLiteral(TAG_NATT)) {
             if (sourceType == 3 || sourceType == 5 || sourceType == 6)
                 natt = static_cast<uint8>(tag.intValue());
+            continue;
+        }
+        if (tag.isInt() && tag.name() == QByteArrayLiteral(TAG_BUDDYPOINTER)) {
+            if (sourceType == 3 || sourceType == 5 || sourceType == 7)
+                pointerVersion = static_cast<uint8>(tag.intValue());
             continue;
         }
         if (!tag.isStr())
@@ -929,6 +1012,7 @@ void Search::processResultFile(const UInt128& answer, TagList& info)
         result.sourceIPv6 = hasSourceIPv6 ? sourceIPv6 : nullptr;
         result.buddyIPv6  = hasBuddyIPv6 ? buddyIPv6Bytes : nullptr;
         result.natt       = natt;
+        result.pointerVersion = pointerVersion;
         result.httpCacheChunks = parseHttpCacheChunkTags(info, fileHash);
 
         cb(result);
@@ -1247,8 +1331,12 @@ void Search::processResultNotes(const UInt128& answer, TagList& info)
 
 void Search::jumpStart()
 {
-    if (m_stopping)
+    if (m_stopping) {
+        // Store packets held for budget go out as it refills, until the search is deleted
+        if (m_storeDeferred)
+            storePacket(true);
         return;
+    }
 
     time_t now = time(nullptr);
 
@@ -1343,14 +1431,24 @@ void Search::pinFetchedContacts(const ContactMap& fetched)
     }
 }
 
-void Search::sendFindValue(Contact* contact, bool reAskMore)
+bool Search::sendFindValue(Contact* contact, bool reAskMore)
 {
     if (!contact || m_stopping)
-        return;
+        return false;
 
     auto* udpListener = Kademlia::getInstanceUDPListener();
     if (!udpListener)
-        return;
+        return false;
+
+    // Not MFC: hold back what the contact's IP would drop (KadOutboundGuard.h)
+    if (!udpListener->outboundAllowed(contact->address().toUint32(), KADEMLIA2_REQ, guardPriority())) {
+        if (m_heldLookups.insert(contact->getClientID()).second) {
+            countKad(&KadCounters::requestsHeld);
+            logKad(QStringLiteral("Kad search %1: KADEMLIA2_REQ → %2 held, over its flood budget")
+                       .arg(m_searchID).arg(contact->address().toString()));
+        }
+        return false;
+    }
 
     // No incUse() here: pinning happens once, where contacts enter the search
     // (pinFetchedContacts). Doing it per send double-counted the reAskMore
@@ -1395,6 +1493,7 @@ void Search::sendFindValue(Contact* contact, bool reAskMore)
                                 contact->address().toUint32(), contact->getUDPPort(),
                                 contact->getUDPKey(), &reqClientID);
     }
+    return true;
 }
 
 void Search::prepareToStop()
@@ -1439,7 +1538,7 @@ void Search::setSizeProbe(uint64 low, uint64 high, SizeProbeDone done)
 void Search::retryUnstoredSource() const
 {
     // Not MFC, which counts the attempt as published for KADEMLIAREPUBLISHTIMES.
-    if (m_type != SearchType::StoreFile || m_answers > 0 || !theApp.sharedFileList)
+    if (m_type != SearchType::StoreFile || m_pointerPublish || m_answers > 0 || !theApp.sharedFileList)
         return;
     uint8 hash[16];
     m_target.toByteArray(hash);
@@ -1459,6 +1558,40 @@ uint32 Search::storeLimit() const
     }
 }
 
+OutboundGuard::Priority Search::guardPriority() const
+{
+    switch (m_type) {
+    case SearchType::StoreFile:
+    case SearchType::StoreKeyword:
+    case SearchType::StoreNotes:
+    case SearchType::Node:
+    case SearchType::NodeComplete:
+    case SearchType::FindBuddy:
+        return OutboundGuard::Priority::Background;
+    default:
+        return OutboundGuard::Priority::Foreground;
+    }
+}
+
+std::pair<uint8, uint32> Search::actionRequest() const
+{
+    switch (m_type) {
+    case SearchType::Keyword:   return {KADEMLIA2_SEARCH_KEY_REQ, 1};
+    case SearchType::File:      return {KADEMLIA2_SEARCH_SOURCE_REQ, 1};
+    case SearchType::Notes:     return {KADEMLIA2_SEARCH_NOTES_REQ, 1};
+    case SearchType::StoreFile: return {KADEMLIA2_PUBLISH_SOURCE_REQ, 1};
+    case SearchType::StoreNotes: return {KADEMLIA2_PUBLISH_NOTES_REQ, 1};
+    case SearchType::FindBuddy: return {KADEMLIA_FINDBUDDY_REQ, 1};
+    case SearchType::StoreKeyword: {
+        // One packet per 50 files, up to 150 (storePacket); files gone since only lower it
+        const auto files = static_cast<uint32>(std::min<size_t>(m_fileIDs.size(), 150));
+        return {KADEMLIA2_PUBLISH_KEY_REQ, std::max<uint32>(1, (files + 49) / 50)};
+    }
+    // CALLBACK_REQ has the relay budget (ClientList::allowRelayRequest)
+    default:                    return {0, 0};
+    }
+}
+
 void Search::storePacket(bool flushRemaining)
 {
     auto* udpListener = Kademlia::getInstanceUDPListener();
@@ -1469,6 +1602,8 @@ void Search::storePacket(bool flushRemaining)
         return;
 
     const uint32 maxStore = storeLimit();
+    const auto [actionOpcode, actionPackets] = actionRequest();
+    m_storeDeferred = false;
 
     // Walk the responded contacts closest-first (m_tried is distance-sorted).
     // m_storeSent dedups across cycles so streaming (one per jump-start) and the
@@ -1490,6 +1625,20 @@ void Search::storePacket(bool flushRemaining)
         // Distance tolerance: skip contacts too far from target (MFC Search.cpp:479-482).
         if (dist.get32BitChunk(0) > kSearchTolerance && !contact->address().isLan())
             continue;
+
+        // Not MFC: what the contact's IP would drop waits; the next contact goes first
+        if (actionOpcode
+            && !udpListener->outboundAllowed(contact->address().toUint32(), actionOpcode,
+                                             guardPriority(), actionPackets)) {
+            m_storeDeferred = true;
+            if (m_heldStores.insert(dist).second) {
+                countKad(&KadCounters::storesHeld);
+                logKad(QStringLiteral("Kad search %1: opcode 0x%2 → %3 held, over its flood budget")
+                           .arg(m_searchID).arg(actionOpcode, 2, 16, QChar(u'0'))
+                           .arg(contact->address().toString()));
+            }
+            continue;
+        }
 
         if (m_lookupHistory)
             m_lookupHistory->contactAskedKeyword(contact);   // MFC Search.cpp:484
@@ -1528,11 +1677,12 @@ void Search::storePacket(bool flushRemaining)
             m_target.toByteArray(hash);
             auto* partFile = theApp.downloadQueue
                 ? theApp.downloadQueue->fileByID(hash) : nullptr;
-            if (!partFile && !isSizeProbe())
+            if (!partFile && !isSizeProbe() && !isPointerLookup())
                 break;
             packet.writeUInt16(0); // start position
             // Size 0: storing nodes serve every record, whatever size it was published with
-            packet.writeUInt64(isSizeProbe() ? uint64{0} : static_cast<uint64>(partFile->fileSize()));
+            packet.writeUInt64(partFile && !isSizeProbe() ? static_cast<uint64>(partFile->fileSize())
+                                                          : uint64{0});
             {
                 UInt128 clientID = contact->getClientID();
                 udpListener->sendPacket(packet, KADEMLIA2_SEARCH_SOURCE_REQ,
@@ -1613,6 +1763,39 @@ void Search::storePacket(bool flushRemaining)
             SafeMemFile packet;
             io::writeUInt128(packet, m_target);
             auto* prefs = Kademlia::getInstancePrefs();
+            // Type 7, bpv and pointer records only go to a storer whose receiver key we
+            // hold: it proves we receive at the IPv4 it stamps (ipv6-spec §5.6.2)
+            const bool keyed = contact->getUDPKey().getKeyValue(theApp.publicIP()) != 0;
+            if (m_pointerPublish) {
+                if (!keyed) {
+                    logKad(QStringLiteral("Kad search %1: pointer not sent to %2:%3 — no receiver key")
+                               .arg(m_searchID).arg(contact->address().toString()).arg(contact->getUDPPort()));
+                    break;
+                }
+                // Pointer record at ~clientHash (ipv6-spec §5.6.1)
+                SourcePublishParams sp;
+                sp.tcpPort          = theApp.advertisedTcpPort();
+                sp.internKadPort    = prefs ? prefs->internKadPort() : 0;
+                sp.useExternKadPort = !prefs || prefs->useExternKadPort();
+                sp.cryptOptions     = prefs ? prefs->myConnectOptions(true, false) : uint8{0};
+                fillSourceReachability(sp);
+                const std::vector<Tag> tags = buildPointerPublishTags(sp);
+                if (tags.empty() || !prefs) {
+                    logKad(QStringLiteral("Kad search %1: pointer not published — no buddy").arg(m_searchID));
+                    prepareToStop();
+                    break;
+                }
+                io::writeUInt128(packet, prefs->clientHash());
+                io::writeKadTagList(packet, tags);
+                logKad(QStringLiteral("Kad search %1: pointer PUBLISH_SOURCE_REQ → %2:%3")
+                           .arg(m_searchID).arg(contact->address().toString()).arg(contact->getUDPPort()));
+                UInt128 pubPtrClientID = contact->getClientID();
+                udpListener->sendPacket(packet, KADEMLIA2_PUBLISH_SOURCE_REQ,
+                                        contact->address().toUint32(), contact->getUDPPort(),
+                                        contact->getUDPKey(), &pubPtrClientID);
+                sent = true;
+                break;
+            }
             // MFC uses GetClientHash() (ED2K user hash) for source publishing
             io::writeUInt128(packet, prefs ? prefs->clientHash() : RoutingZone::localKadId());
 
@@ -1662,9 +1845,15 @@ void Search::storePacket(bool flushRemaining)
             // myConnectOptions() gates bit 3 on theApp.isFirewalled(), as the type-6
             // branch now does; buildSourcePublishTags() sets the bit for that type anyway.
             sp.cryptOptions = prefs ? prefs->myConnectOptions(true, true) : uint8{0};
+            sp.pointerRoute = keyed;
 
             bool canPublish = false;
             std::vector<Tag> tags = buildSourcePublishTags(sp, canPublish);
+            if (canPublish && !keyed && !tags.empty() && tags[0].intValue() == 7) {
+                logKad(QStringLiteral("Kad search %1: type 7 not sent to %2:%3 — no receiver key")
+                           .arg(m_searchID).arg(contact->address().toString()).arg(contact->getUDPPort()));
+                break;
+            }
             if (!canPublish) {
                 // Firewalled, no direct callback, no buddy, no IPv6 — nothing to publish
                 logKad(QStringLiteral("Kad search %1: source not published — firewalled, no buddy, no direct callback, no public IPv6")
@@ -1890,6 +2079,51 @@ void Search::processSizeProbeResult(const UInt128& answer, const TagList& info)
         finishSizeProbe(size);
         prepareToStop();
     }
+}
+
+void Search::setPointerLookup(const UInt128& sourceID, uint32 sourceIP, PointerDone done)
+{
+    m_pointerSource = sourceID;
+    m_pointerSourceIP = sourceIP;
+    m_pointerDone = std::move(done);
+    m_pointerLookup = true;
+}
+
+void Search::processPointerResult(const UInt128& answer, const TagList& info)
+{
+    if (!m_pointerDone)
+        return;   // decided, winding down
+    ++m_answers;
+    auto hit = acceptPointerRecord(answer, info, m_pointerSource, m_pointerSourceIP);
+    if (!hit) {
+        logKad(QStringLiteral("Kad search %1: pointer record from %2 refused").arg(m_searchID).arg(answer.toHexString()));
+        return;
+    }
+    // Several storers return the same pointer; only distinct ones count (§5.6.1)
+    const auto same = [&](const PointerHit& h) {
+        return h.buddyIP == hit->buddyIP && h.buddyPort == hit->buddyPort && h.buddyHash == hit->buddyHash;
+    };
+    if (std::ranges::any_of(m_pointerHits, same))
+        return;
+    m_pointerHits.push_back(*hit);
+    logKad(QStringLiteral("Kad search %1: pointer for %2 → buddy %3:%4 (candidate %5)")
+               .arg(m_searchID).arg(answer.toHexString()).arg(ipstr(hit->buddyIP)).arg(hit->buddyPort)
+               .arg(m_pointerHits.size()));
+    PointerDone done = m_pointerDone;   // copy: the receiver may start more searches
+    done(hit);
+    if (m_pointerHits.size() >= kMaxPointerCandidates) {
+        finishPointerLookup(std::nullopt);
+        prepareToStop();
+    }
+}
+
+void Search::finishPointerLookup(std::optional<PointerHit> hit)
+{
+    // Moved out first: the callback may add sources and start searches
+    PointerDone done = std::move(m_pointerDone);
+    m_pointerDone = nullptr;
+    if (done)
+        done(hit);
 }
 
 void Search::finishSizeProbe(uint64 size)

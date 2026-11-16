@@ -56,6 +56,8 @@ constexpr qint64 kLookupMs = 45 * 1000;
 constexpr qint64 kLongWaitMs = 5 * 60 * 1000;
 /// resume only past this many bytes; below it, starting over costs less than the copy
 constexpr std::uint64_t kMinResume = 1024 * 1024;
+/// rootless: how far the bytes on disk go is saved in steps of this (less is lost on a restart)
+constexpr std::uint64_t kWholeKeepStep = 20ULL * 1024 * 1024;
 /// checkLinks(): checks at once, how long a result and its core link stay, how long a
 /// check or a wait for a slot may take, how many results are kept
 constexpr qint64 kCheckTtlMs = 30 * 60 * 1000;
@@ -150,6 +152,11 @@ struct Ed3kHosterJoin::Entry {
     std::optional<std::pair<std::uint64_t, ffi::Root>> heldVouch;
     bool moving = false;                 ///< moveTo() runs
     bool resumeAfterMove = false;
+    /// rootless: bytes [0, wholeAt) on disk, root not known yet (kept in the .met, a restart
+    /// hashes them again and goes on there)
+    std::uint64_t wholeAt = 0;
+    bool resuming = false;               ///< those bytes are hashed again, no open yet
+    bool openAfterResume = false;        ///< askOpen came while resuming
 };
 
 Ed3kHosterJoin::Ed3kHosterJoin(Ed3kSession& session, const QString& configDir, QObject* parent)
@@ -1076,13 +1083,17 @@ void Ed3kHosterJoin::begin(Entry& e)
 {
     // verified blocks stay: the item goes on under its root from where it stood
     const bool keep = e.root && !e.have.empty() && QFileInfo(e.item.file).isFile();
+    // rootless: the bytes kept stay too (startRootless hashes them again)
+    const bool keepWhole = !e.root && e.wholeAt > 0 && QFileInfo(e.item.file).size() >= qint64(e.wholeAt);
     release(e, true);
     e.peerTried.clear();
     e.hashType.clear();
     e.hash.clear();
     if (!keep) {
         e.have.clear();
-        e.item.done = 0;
+        if (!keepWhole)
+            e.wholeAt = 0;
+        e.item.done = e.wholeAt;
         e.item.verified = false;
         e.item.rootHex.clear();
         e.root.reset();
@@ -1210,6 +1221,7 @@ void Ed3kHosterJoin::startRooted(Entry& e, const ffi::Root& root, std::uint64_t 
     QDir().mkpath(QFileInfo(e.item.file).path());
     if (e.have.empty()) {
         e.item.done = 0;
+        e.wholeAt = 0;   // a root now: blocks are verified one by one
         QFile::remove(e.item.file);
     }
     touch(e);
@@ -1232,7 +1244,14 @@ void Ed3kHosterJoin::startRootless(Entry& e)
     if (e.item.file.isEmpty())
         e.item.file = partPathFor(e.key);
     QDir().mkpath(QFileInfo(e.item.file).path());
-    QFile::remove(e.item.file);   // a rootless link starts over: the core's hash is not kept
+    // the bytes of an earlier run are hashed again and the link goes on there; else from 0
+    if (e.wholeAt >= kMinResume && QFileInfo(e.item.file).size() >= qint64(e.wholeAt)) {
+        resumeRootless(e);
+    } else {
+        QFile::remove(e.item.file);
+        e.wholeAt = 0;
+        e.item.done = 0;
+    }
     touch(e);
     // the core gave back a link a links dialog checks: the item goes on from it
     if (const auto p = m_probes.find(*link); p != m_probes.end()) {
@@ -1269,6 +1288,10 @@ void Ed3kHosterJoin::askOpen(Entry& e)
     auto* eng = m_session.engine();
     if (!eng || !e.link)
         return;
+    if (e.resuming) {
+        e.openAfterResume = true;   // the kept bytes are hashed first
+        return;
+    }
     if (activeStreams() >= int(m_prefs.maxStreams)) {
         e.nextAskAt = nowMs() + 5000;
         setState(e, State::Queued);
@@ -1750,8 +1773,11 @@ bool Ed3kHosterJoin::opened(Ask& a, const ResolverEvent& ev)
             return false;
         const std::uint64_t from = *ev.from >= a.have ? a.have : 0;
         if (from == 0)
-            if (Entry* e = find(a.item); e && !e->root)
+            if (Entry* e = find(a.item); e && !e->root) {
                 e->item.done = 0;   // rootless: hashed again from 0
+                e->wholeAt = 0;
+                touch(*e);
+            }
         a.fed = from;
     } else if (a.onDisk == 0 && ev.kind != ResolverEvent::Kind::Done) {
         return false;
@@ -1759,6 +1785,39 @@ bool Ed3kHosterJoin::opened(Ask& a, const ResolverEvent& ev)
     a.opened = true;
     answer(a.link, ED3K_RESOLVER_OPENED, {}, a.fed);
     return true;
+}
+
+void Ed3kHosterJoin::resumeRootless(Entry& e)
+{
+    e.resuming = true;
+    e.openAfterResume = false;
+    const quint32 id = e.item.id;
+    const std::uint64_t link = e.link;
+    checkpointInBackground(e.item.file, e.wholeAt, [this, id, link](std::optional<HashCheckpoint> cp) {
+        Entry* e = find(id);
+        if (!e || e->link != link || !e->resuming)
+            return;   // the item let go of the link meanwhile
+        e->resuming = false;
+        auto* eng = m_session.engine();
+        std::optional<std::uint64_t> at;
+        if (cp && eng)
+            if (auto r = eng->linkResume(link, std::as_bytes(std::span{cp->blob.constData(), std::size_t(cp->blob.size())})))
+                at = *r;
+        if (at) {
+            logInfo(QStringLiteral("%1: goes on at %2 of the bytes kept").arg(e->item.host).arg(*at));
+            e->wholeAt = *at;
+            e->item.done = *at;
+        } else {
+            logWarning(QStringLiteral("%1: the bytes kept cannot be taken up, the link starts over").arg(e->item.host));
+            QFile::remove(e->item.file);
+            e->wholeAt = 0;
+            e->item.done = 0;
+        }
+        touch(*e);
+        changed(*e);
+        if (std::exchange(e->openAfterResume, false))
+            askOpen(*e);
+    });
 }
 
 std::uint64_t Ed3kHosterJoin::resumeOffset(const Entry& e) const
@@ -1878,6 +1937,11 @@ void Ed3kHosterJoin::onLinkUnverified(std::uint64_t link, std::uint64_t offset, 
         count(&HosterCounters::hosterBytes, offset + data.size() - e->item.done);
         e->item.done = offset + data.size();
     }
+    // written (writeAt closes the file): a restart goes on from here, in steps
+    if (const std::uint64_t kept = e->item.done / kWholeKeepStep * kWholeKeepStep; kept > e->wholeAt) {
+        e->wholeAt = kept;
+        touch(*e);
+    }
 }
 
 void Ed3kHosterJoin::onLinkRootless(std::uint64_t link, const ffi::Root& root, std::uint64_t size)
@@ -1978,6 +2042,7 @@ void Ed3kHosterJoin::onLinkClaim(std::uint64_t link, const ffi::Root& root, bool
     stopDownload(root);
     e->root.reset();
     e->have.clear();
+    e->wholeAt = 0;
     e->item.done = 0;
     e->item.verified = false;
     e->item.rootHex.clear();
@@ -2092,6 +2157,7 @@ void Ed3kHosterJoin::nextMirror(Entry& e)
     ++e.item.mirrorNo;
     e.tries = 0;
     e.nextAskAt = 0;
+    e.wholeAt = 0;   // another link: its bytes are not hashed on top of these
     logInfo(QStringLiteral("trying mirror %1 at %2").arg(e.item.mirrorNo + 1).arg(e.item.host));
     begin(e);
     touch(e);
@@ -2239,6 +2305,7 @@ void Ed3kHosterJoin::dropBadFile(Entry& e, const QString& type)
     e.item.rootHex.clear();
     e.item.verified = false;
     e.item.done = 0;
+    e.wholeAt = 0;
     // a mirror follows (mirrorDue); Retry starts the link over
     setState(e, State::Failed, Reason::HashMismatch, type);
     touch(e);
@@ -3098,6 +3165,8 @@ QJsonObject Ed3kHosterJoin::toJson(const Entry& e) const
                   {QStringLiteral("tried"), QJsonArray::fromStringList(it.tried)}};
     if (it.generic)
         o.insert(QStringLiteral("generic"), true);
+    if (e.wholeAt > 0 && !e.root)
+        o.insert(QStringLiteral("wholeAt"), qint64(e.wholeAt));
     if (it.packageId != 0)
         o.insert(QStringLiteral("pkgName"), it.package);
     if (!it.passwords.isEmpty())
@@ -3122,6 +3191,7 @@ void Ed3kHosterJoin::fromJson(const QJsonObject& o, Entry& e) const
             it.mirrors << url;
     it.mirrorNo = int(o.value(QStringLiteral("mirrorNo")).toInteger());
     it.generic = o.value(QStringLiteral("generic")).toBool();
+    e.wholeAt = std::uint64_t(std::max<qint64>(0, o.value(QStringLiteral("wholeAt")).toInteger()));
     for (const QJsonValue& m : o.value(QStringLiteral("tried")).toArray())
         if (const QString url = m.toString(); !url.isEmpty())
             it.tried << url;
@@ -3172,6 +3242,10 @@ std::unique_ptr<Ed3kHosterJoin::Entry> Ed3kHosterJoin::readMet(const QString& me
         if (!e->have.empty())
             logWarning(QStringLiteral("%1: no part file beside it, the download starts over").arg(metPath));
         e->have.clear();
+        // rootless: the bytes kept go on after the restart (startRootless)
+        if (e->wholeAt > 0 && QFileInfo(it.file).size() < qint64(e->wholeAt))
+            e->wholeAt = 0;
+        it.done = e->wholeAt;
     }
     return e;
 }

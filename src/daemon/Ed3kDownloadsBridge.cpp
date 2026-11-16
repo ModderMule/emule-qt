@@ -3,12 +3,14 @@
 
 #include "Ed3kDownloadsBridge.h"
 #include "Ed3kOffGate.h"
+#include "Ed3kUploadsBridge.h"
 #include "webserver/WebServer.h"
 
 #include <QCborArray>
 #include <QCborMap>
 #include <QCoreApplication>
 #include <QFileInfo>
+#include <QUrl>
 
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kDownloads.h"
@@ -87,9 +89,30 @@ QCborMap toCbor(const ed3k::Ed3kDownloadInfo& i)
         // batch 15: "Node" / "Anonymous" (hops.md §1)
         {QStringLiteral("key"), s_downloads ? ed3k::Ed3kHide::keyName(s_downloads->keyOfRoot(i.root)) : QString()},
     };
+    // other names of the root known here (tooltip, Details); its row stays in Transfers only
+    if (QCborArray aliases = Ed3kUploadsBridge::aliasesOf(QByteArray(reinterpret_cast<const char*>(i.root.bytes.data()),
+                                                                      qsizetype(i.root.bytes.size())));
+        !aliases.isEmpty())
+        m.insert(QStringLiteral("aliases"), aliases);
     // the progress bar: held blocks as runs (BlockRuns.h), those asked for, sources per piece
     m.insert(QStringLiteral("blockSize"), qint64(kBarBlock));
-    m.insert(QStringLiteral("blocks"), encodeBlockRuns(i.blocks));
+    // HTTP whole read: its bytes on disk show as held, root checked at the end
+    std::vector<bool> blocks = i.blocks;
+    if (i.unchecked > 0) {
+        std::uint64_t done = i.done;
+        std::vector<bool> unverified(blocks.size(), false);
+        const auto upTo = std::min(blocks.size(), std::size_t(i.unchecked / kBarBlock));
+        for (std::size_t b = 0; b < upTo; ++b)
+            if (!blocks[b]) {
+                blocks[b] = true;
+                unverified[b] = true;
+                done += std::min(kBarBlock, i.size - std::uint64_t(b) * kBarBlock);
+            }
+        m.insert(QStringLiteral("done"), qint64(std::min(done, i.size)));
+        // part detail (Display) draws them apart
+        m.insert(QStringLiteral("unverified"), encodeBlockRuns(unverified));
+    }
+    m.insert(QStringLiteral("blocks"), encodeBlockRuns(blocks));
     if (!i.pending.empty())
         m.insert(QStringLiteral("pending"), encodeBlockRuns(i.pending));
     if (!i.availability.empty()) {
@@ -243,6 +266,60 @@ bool fileOf([[maybe_unused]] const QString& hexRoot, [[maybe_unused]] QString& p
 #endif
 }
 
+std::optional<QCborMap> detailsOf([[maybe_unused]] const QString& hexRoot)
+{
+#ifdef EMULE_HAVE_ED3K
+    const auto r = rootOf(hexRoot);
+    if (!s_downloads || !r)
+        return std::nullopt;
+    const auto info = s_downloads->info(*r);
+    if (!info)
+        return std::nullopt;
+    using State = ed3k::Ed3kDownloadInfo::State;
+    // eD2K's tokens (CborSerializers statusToString, priorityToString)
+    const auto status = [&] {
+        switch (info->state) {
+        case State::Paused:    return QStringLiteral("paused");
+        case State::Verifying: return QStringLiteral("hashing");
+        case State::Complete:  return QStringLiteral("complete");
+        case State::Failed:    return QStringLiteral("error");
+        default:               return QStringLiteral("ready");
+        }
+    }();
+    static const char* const kPrio[] = {"low", "normal", "high", "veryHigh", "veryLow"};
+    const QString prio = info->priority >= 0 && info->priority <= 4 ? QLatin1String(kPrio[info->priority])
+                                                                    : QStringLiteral("normal");
+    const qint64 done = qint64(std::min(info->done, info->size));
+    QCborMap m{
+        {QStringLiteral("network"), QStringLiteral("ed3k")},
+        {QStringLiteral("hash"), hexOf(info->root)},
+        {QStringLiteral("fileName"), info->name},
+        {QStringLiteral("filePath"), info->path},
+        {QStringLiteral("dataPath"), info->path},
+        {QStringLiteral("fileSize"), qint64(info->size)},
+        {QStringLiteral("completedSize"), done},
+        {QStringLiteral("percentCompleted"), info->size > 0 ? 100.0 * double(done) / double(info->size) : 0.0},
+        {QStringLiteral("downTransferred"), done},
+        {QStringLiteral("sizeOnDisk"), QFileInfo(info->path).size()},
+        {QStringLiteral("status"), status},
+        {QStringLiteral("downPriority"), prio},
+        {QStringLiteral("datarate"), qint64(info->rate)},
+        {QStringLiteral("sourceCount"), info->sources},
+        {QStringLiteral("transferringSrcCount"), info->transferring},
+        {QStringLiteral("addedOn"), info->addedOn},
+        {QStringLiteral("ed3kRoot"), hexOf(info->root)},
+        {QStringLiteral("ed3kKey"), ed3k::Ed3kHide::keyName(s_downloads->keyOfRoot(info->root))},
+    };
+    if (QCborArray aliases = Ed3kUploadsBridge::aliasesOf(QByteArray(reinterpret_cast<const char*>(info->root.bytes.data()),
+                                                                      qsizetype(info->root.bytes.size())));
+        !aliases.isEmpty())
+        m.insert(QStringLiteral("ed3kAliases"), aliases);
+    return m;
+#else
+    return std::nullopt;
+#endif
+}
+
 UsenetStreamSource streamFrom([[maybe_unused]] const QString& hexRoot, [[maybe_unused]] qint64 offset)
 {
     UsenetStreamSource src;
@@ -275,6 +352,57 @@ QString moveTo([[maybe_unused]] const QString& hexRoot, [[maybe_unused]] const Q
     return s_downloads->moveTo(*r, dir);
 #else
     return QStringLiteral("no ed3k downloads");
+#endif
+}
+
+std::optional<QCborMap> webSourceRow([[maybe_unused]] const QByteArray& root, [[maybe_unused]] qint64 peerRate)
+{
+#ifdef EMULE_HAVE_ED3K
+    ffi::Root r;
+    if (!s_downloads || root.size() != qsizetype(r.bytes.size()))
+        return std::nullopt;
+    std::memcpy(r.bytes.data(), root.constData(), r.bytes.size());
+    const auto web = s_downloads->webSourceOf(r);
+    const auto info = s_downloads->info(r);
+    if (!web || !info)
+        return std::nullopt;
+    // buildSourcePartMap's codes: 1 both have, 2 it has / we need, 4 receiving
+    const int pieces = int((info->size + kBarPiece - 1) / kBarPiece);
+    constexpr std::size_t kPer = std::size_t(kBarPiece / kBarBlock);
+    QCborArray partMap;
+    for (int p = 0; p < pieces; ++p) {
+        const auto first = std::size_t(p) * kPer;
+        bool ours = first < web->have.size();
+        for (std::size_t b = first; ours && b < std::min(first + kPer, web->have.size()); ++b)
+            ours = web->have[b];
+        if (!ours && web->unchecked > 0)
+            ours = std::min(info->size, std::uint64_t(p + 1) * kBarPiece) <= web->unchecked;
+        const bool active = web->fetching && std::uint64_t(p) == web->at / kBarPiece;
+        partMap.append(ours ? 1 : active ? 4 : 2);
+    }
+    const qint64 rate = web->fetching ? std::max<qint64>(0, qint64(info->rate) - peerRate) : 0;
+    const QUrl url(web->url);
+    return QCborMap{
+        {QStringLiteral("network"), QStringLiteral("ed3k")},
+        {QStringLiteral("isUrl"), true},
+        {QStringLiteral("userName"), web->url},
+        {QStringLiteral("userHash"), QString(QStringLiteral("ed3k:web:") + hexOf(r))},
+        {QStringLiteral("software"), QStringLiteral("HTTP")},
+        {QStringLiteral("softwareId"), -1},
+        {QStringLiteral("downloadState"), web->fetching ? QStringLiteral("Downloading") : QStringLiteral("OnQueue")},
+        {QStringLiteral("transferredDown"), qint64(web->unchecked)},
+        {QStringLiteral("sessionDown"), qint64(web->unchecked)},
+        {QStringLiteral("datarate"), rate},
+        {QStringLiteral("availPartCount"), pieces},
+        {QStringLiteral("partCount"), pieces},
+        {QStringLiteral("addr"), url.host()},
+        {QStringLiteral("port"), url.port(url.scheme() == QLatin1String("https") ? 443 : 80)},
+        {QStringLiteral("noViewSharedFiles"), true},
+        {QStringLiteral("sourceFrom"), -1},
+        {QStringLiteral("sourcePartMap"), partMap},
+    };
+#else
+    return std::nullopt;
 #endif
 }
 

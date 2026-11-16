@@ -32,6 +32,20 @@ enum class IncomingType : uint8 {
     Callback = 10,
 };
 
+/// Why a request got no answer. Stable numbers: the IPC sends them.
+enum class IncomingRefusal : uint8 {
+    None = 0,
+    Malformed = 1,       ///< too short to parse
+    Firewalled = 2,      ///< we are firewalled or UDP-unverified
+    OwnBuddy = 3,        ///< we use a buddy ourselves
+    SlotsFull = 4,       ///< arg: served buddy limit
+    Ourselves = 5,
+    FirewallCheck = 6,   ///< a firewall check runs with it
+    SilentCoolOff = 7,   ///< arg: minutes left
+    IpServed = 8,        ///< one served buddy per IP
+    KnownClient = 9,     ///< already in our client list
+};
+
 /// A contact we handed out in an answer.
 struct HandedContact {
     UInt128 id;
@@ -56,6 +70,8 @@ struct IncomingRequest {
     int32_t load = -1;          ///< publish: load answered (0..100)
     int32_t wanted = -1;        ///< node lookup: contacts asked for (KADEMLIA2_REQ type)
     bool answered = false;
+    IncomingRefusal refusal = IncomingRefusal::None;
+    int32_t refusalArg = 0;
     // for the incoming search graph
     UInt128 own;                ///< our Kad ID when it came
     UInt128 asker;              ///< requester's Kad ID, from the routing table by IP
@@ -96,6 +112,7 @@ public:
     IncomingRequest* operator->() { return &m_request; }
     void setTarget(const UInt128& target);
     void answered() { m_request.answered = true; }
+    void refuse(IncomingRefusal why, int32_t arg = 0) { m_request.refusal = why; m_request.refusalArg = arg; }
     void handOut(const HandedContact& contact) { m_request.handed.push_back(contact); }
 
 private:

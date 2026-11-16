@@ -11,6 +11,7 @@
 #include "client/ClientList.h"
 #include "prefs/CategoryView.h"
 #include "kademlia/Kademlia.h"
+#include "kademlia/KadPointerRoute.h"
 #include "client/DeadSourceList.h"
 #include "client/UpDownClient.h"
 #include "client/URLClient.h"
@@ -32,6 +33,7 @@
 #include "server/Server.h"
 #include "stats/Statistics.h"
 #include "utils/Log.h"
+#include "utils/Opcodes.h"
 #include "utils/PathUtils.h"
 #include "utils/StringUtils.h"
 #include "utils/SafeFile.h"
@@ -760,6 +762,9 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
             client->setConnectAddress(Address::fromHostOrder(ip));
         if (result.natt & KADNATT_QUIC)
             client->setSupportsNatTQuic(true);
+        // bpv: a failed buddy callback asks the pointer for the current buddy (§5.6.1)
+        if (result.pointerVersion == KAD_POINTER_VERSION && ip != 0)
+            client->setKadPointerSource(ip);
         client->setConnectOptions(buddyCrypt, true, true);
         logDebug([&]() -> QString { return QStringLiteral("Kad FW source for %1: type=%2 buddy=%3:%4")
                      .arg(file->fileName()).arg(sourceType).arg(buddyIP).arg(buddyPort); });
@@ -811,10 +816,18 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
     }
 
     case 7: {
-        // Not MFC: routes in tags (ipv6-spec §5.6). Only ip6 so far. No usable route = drop,
-        // no I/O. FT_SOURCEIP is identity only: no TCP dial, no buddy, no callback.
+        // Not MFC: routes in tags (ipv6-spec §5.6). No usable route = drop, no I/O.
+        // FT_SOURCEIP is identity only: no TCP dial; a buddy only via the bpv pointer.
         const Address v6 = sourceIPv6 ? Address::fromIPv6Bytes(sourceIPv6) : Address{};
-        if (tcpPort == 0 || v6.isNull() || !isGoodIP(v6) || !theApp.hasConfidentPublicIPv6()) {
+        const bool ip6Usable = tcpPort != 0 && !v6.isNull() && isGoodIP(v6)
+                            && theApp.hasConfidentPublicIPv6() && !isKadIPv6RouteFailed(v6);
+        if (!ip6Usable) {
+            // Local route first; bpv ends in a callback, useless while we are firewalled
+            if (result.pointerVersion == KAD_POINTER_VERSION && tcpPort != 0 && ip != 0
+                && clientHash && !theApp.isFirewalled()) {
+                kad::PointerRoute::resolve(result);
+                return;
+            }
             logDebug([&]() -> QString { return QStringLiteral("addKadSourceResult: type 7 without a usable route, IP=%1")
                          .arg(ipstr(ed2kIP)); });
             return;
@@ -823,8 +836,11 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
             return;
         auto* client = makeSourceClient(file, kNoIPv4SourceId, v6, tcpPort, SourceFrom::Kademlia);
         client->setKadPort(udpPort);
-        if (clientHash)
+        if (clientHash) {
             client->setUserHash(clientHash);
+            // Hello must present this hash (§5.6.2)
+            client->setKadRouteHash(clientHash);
+        }
         // callback=false: bit 3 must not turn this into a type-6 source
         client->setConnectOptions(buddyCrypt, true, false);
         logDebug([&]() -> QString { return QStringLiteral("Kad IPv6 route source for %1: type=7 [%2]:%3")
@@ -837,6 +853,29 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
         logDebug([&]() -> QString { return QStringLiteral("addKadSourceResult: unknown source type %1").arg(sourceType); });
         return;
     }
+}
+
+void DownloadQueue::noteKadIPv6RouteFailed(const Address& address)
+{
+    if (!address.isIPv6())
+        return;
+    const time_t now = std::time(nullptr);
+    std::erase_if(m_failedKadIPv6, [now](const auto& kv) { return kv.second <= now; });
+    m_failedKadIPv6[address.ipv6Bytes()] = now + kFailedKadIPv6Secs;
+}
+
+bool DownloadQueue::isKadIPv6RouteFailed(const Address& address)
+{
+    if (!address.isIPv6())
+        return false;
+    auto it = m_failedKadIPv6.find(address.ipv6Bytes());
+    if (it == m_failedKadIPv6.end())
+        return false;
+    if (it->second <= std::time(nullptr)) {
+        m_failedKadIPv6.erase(it);
+        return false;
+    }
+    return true;
 }
 
 // ===========================================================================

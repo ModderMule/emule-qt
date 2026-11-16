@@ -514,6 +514,7 @@ std::vector<Ed3kJoinBase::SourceInfo> Ed3kJoinBase::sourcesOf(const ffi::Root& r
         s.key = node.first;
         s.node = node.second;
         s.root = root;
+        s.join = m_tag;
         s.fileName = downloadName(root, d);
         s.size = d.size;
         s.otherFile = true;
@@ -553,6 +554,63 @@ std::vector<Ed3kJoinBase::SourceInfo> Ed3kJoinBase::downloadingAt(const Ed3kSess
         if (h.join)
             if (auto info = h.join->holderInfo(node, h.root, h.stream, h.source); info && info->holding)
                 out.push_back(std::move(*info));
+    return out;
+}
+
+namespace {
+
+bool isNetworkTag(const QString& t)
+{
+    return t == QLatin1String("torrent") || t == QLatin1String("usenet") || t == QLatin1String("hoster");
+}
+
+} // namespace
+
+QString Ed3kJoinBase::networkJoinAt(const Ed3kSession& session, const ffi::Root& root)
+{
+    for (const Ed3kJoinBase* join : turnsOf(session).joins)
+        if (isNetworkTag(join->m_tag) && (join->sharesRoot(root) || join->m_downloads.contains(root)))
+            return join->m_tag;
+    return {};
+}
+
+std::vector<Ed3kJoinBase::JoinOwner> Ed3kJoinBase::aliasJobsAt(const Ed3kSession& session, const ffi::Root& root)
+{
+    std::vector<JoinOwner> out;
+    const auto add = [&out](const QString& tag, const QString& owner) {
+        JoinOwner j{tag, owner};
+        if (!owner.isEmpty() && !std::ranges::contains(out, j))
+            out.push_back(std::move(j));
+    };
+    for (const Ed3kJoinBase* join : turnsOf(session).joins) {
+        if (!isNetworkTag(join->m_tag) && join->m_tag != QLatin1String("ed2k"))
+            continue;
+        if (const auto s = join->m_shared.find(root); s != join->m_shared.end() && s->second.member >= 0)
+            add(join->m_tag, s->second.owner);
+        if (const auto d = join->m_downloads.find(root); d != join->m_downloads.end() && d->second->member >= 0)
+            add(join->m_tag, d->second->owner);
+    }
+    return out;
+}
+
+std::vector<Ed3kJoinBase::JoinOwner> Ed3kJoinBase::networkJobsAt(const Ed3kSession& session)
+{
+    std::vector<JoinOwner> out;
+    const auto add = [&out](const QString& tag, const QString& owner) {
+        JoinOwner j{tag, owner};
+        if (!owner.isEmpty() && !std::ranges::contains(out, j))
+            out.push_back(std::move(j));
+    };
+    for (const Ed3kJoinBase* join : turnsOf(session).joins) {
+        if (!isNetworkTag(join->m_tag))
+            continue;
+        for (const auto& [root, d] : join->m_downloads)
+            if (d->member >= 0)
+                add(join->m_tag, d->owner);
+        for (const auto& [root, s] : join->m_shared)
+            if (s.member >= 0)
+                add(join->m_tag, s.owner);
+    }
     return out;
 }
 
@@ -779,6 +837,48 @@ void Ed3kJoinBase::hashInBackground(const QString& path, std::function<void(std:
         std::optional<FileHash> out;
         if (hashed)
             out = FileHash{hashed->first.root, hashed->first.size, std::move(hashed->second)};
+        QMetaObject::invokeMethod(
+            self.data(),
+            [self, cancel, done = std::move(done), out = std::move(out)]() mutable {
+                if (self && !cancel->load())
+                    done(std::move(out));
+            },
+            Qt::QueuedConnection);
+    });
+}
+
+void Ed3kJoinBase::checkpointInBackground(const QString& path, std::uint64_t upTo,
+                                          std::function<void(std::optional<HashCheckpoint>)> done)
+{
+    QPointer<Ed3kJoinBase> self(this);
+    const auto cancel = m_cancel;
+    hashPool()->start([self, cancel, path, upTo, done = std::move(done)]() mutable {
+        DiskLoadLimiter::lowerThisThread();
+        std::optional<HashCheckpoint> out;
+        QFile f(path);
+        if (f.open(QIODevice::ReadOnly)) {
+            ffi::Hasher h;
+            DiskLoadLimiter& diskLoad = DiskLoadLimiter::thisThread();
+            diskLoad.setFile(path);
+            bool ok = true;
+            for (std::uint64_t at = 0; ok && at < upTo && !cancel->load();) {
+                QByteArray chunk;
+                {
+                    const DiskLoadLimiter::Read timed(diskLoad);
+                    chunk = f.read(qint64(std::min<std::uint64_t>(kHashChunk, upTo - at)));
+                }
+                ok = !chunk.isEmpty() && h.update({reinterpret_cast<const std::byte*>(chunk.constData()), std::size_t(chunk.size())});
+                at += std::uint64_t(chunk.size());
+            }
+            if (ok && !cancel->load()) {
+                if (auto cp = h.checkpoint()) {
+                    const auto b = cp->blob.bytes();
+                    out = HashCheckpoint{QByteArray(reinterpret_cast<const char*>(b.data()), qsizetype(b.size())), cp->offset};
+                }
+            }
+        }
+        if (cancel->load())
+            return;
         QMetaObject::invokeMethod(
             self.data(),
             [self, cancel, done = std::move(done), out = std::move(out)]() mutable {
@@ -2150,6 +2250,7 @@ std::optional<Ed3kJoinBase::SourceInfo> Ed3kJoinBase::holderInfo(const TurnNode&
     s.key = node.first;
     s.node = node.second;
     s.root = root;
+    s.join = m_tag;
     s.fileName = downloadName(root, d);
     s.size = d.size;
     // the anonymous key never learns where its uploader is (hops.md §1)

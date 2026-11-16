@@ -3145,7 +3145,7 @@ QString WebServer::buildTransferPage(bool isAdmin, const QString& sessionId)
         m_uploadQueue->forEachUploading([&](UpDownClient* client) {
             QHash<QString, QString> lineVars;
             lineVars[QStringLiteral("1")] = htmlText(client->userName());
-            lineVars[QStringLiteral("ClientSoftV")] = htmlText(client->clientSoftwareStr());
+            lineVars[QStringLiteral("ClientSoftV")] = htmlText(client->displaySoftwareStr());
             lineVars[QStringLiteral("2")] = client->uploadFile()
                 ? htmlText(client->uploadFile()->fileName()) : QStringLiteral("?");
 

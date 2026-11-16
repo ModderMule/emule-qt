@@ -15,8 +15,13 @@
 /// `Q_OBJECT` intact and keep their `tr()` context and `qobject_cast` support.
 
 #include <QAbstractTableModel>
+#include <QHash>
+#include <QSet>
 
 #include <algorithm>
+#include <cstddef>
+#include <numeric>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -46,18 +51,92 @@ public:
         endResetModel();
     }
 
-    /// Replace all rows. When @p sameKey pairs every old row with the new one at the
-    /// same position, update in place (dataChanged) instead of a reset: a reset drops
-    /// the view's pressed index, swallowing a double click, and kills persistent indexes.
-    template<class SameKey>
-    void updateRows(std::vector<Row> rows, SameKey sameKey)
+    /// Replace all rows, matched by @p keyOf: rows that left are removed, new ones
+    /// inserted, the rest updated in place (and reordered by a layout change).
+    /// No reset on a refresh: a reset drops the view's pressed index, which swallows a
+    /// double click landing across it, and kills selection + persistent indexes.
+    /// Falls back to a reset when keys repeat (nothing to match on).
+    /// @p keyOf must return a value: a joined string needs `-> QString`, or the
+    /// deduced QStringBuilder dangles.
+    template<class KeyOf>
+    void syncRows(std::vector<Row> rows, KeyOf keyOf)
     {
-        if (rows.empty() || rows.size() != m_rows.size()
-            || !std::ranges::equal(m_rows, rows, sameKey)) {
+        using Key = std::remove_cvref_t<std::invoke_result_t<KeyOf&, const Row&>>;
+        QHash<Key, int> newPos;
+        newPos.reserve(static_cast<qsizetype>(rows.size()));
+        for (size_t i = 0; i < rows.size(); ++i)
+            newPos.insert(keyOf(rows[i]), static_cast<int>(i));
+        QSet<Key> oldKeys;
+        oldKeys.reserve(static_cast<qsizetype>(m_rows.size()));
+        for (const Row& r : m_rows)
+            oldKeys.insert(keyOf(r));
+        if (m_rows.empty() || rows.empty()
+            || newPos.size() != static_cast<qsizetype>(rows.size())
+            || oldKeys.size() != static_cast<qsizetype>(m_rows.size())) {
             setRows(std::move(rows));
             return;
         }
-        m_rows = std::move(rows);
+
+        // 1. rows that left, bottom-up a run at a time
+        for (int last = count() - 1; last >= 0; --last) {
+            if (newPos.contains(keyOf(m_rows[size_t(last)])))
+                continue;
+            int first = last;
+            while (first > 0 && !newPos.contains(keyOf(m_rows[size_t(first - 1)])))
+                --first;
+            this->beginRemoveRows({}, first, last);
+            m_rows.erase(m_rows.begin() + first, m_rows.begin() + last + 1);
+            this->endRemoveRows();
+            last = first;
+        }
+
+        // 2. survivors into the new relative order
+        const auto posOf = [&](const Row& r) { return newPos.value(keyOf(r)); };
+        if (!std::ranges::is_sorted(m_rows, {}, posOf)) {
+            emit this->layoutAboutToBeChanged({}, QAbstractItemModel::VerticalSortHint);
+            std::vector<int> order(m_rows.size());   // new row -> old row
+            std::iota(order.begin(), order.end(), 0);
+            std::ranges::sort(order, {}, [&](int r) { return posOf(m_rows[size_t(r)]); });
+            std::vector<int> moved(order.size());    // old row -> new row
+            std::vector<Row> sorted;
+            sorted.reserve(m_rows.size());
+            for (size_t i = 0; i < order.size(); ++i) {
+                moved[size_t(order[i])] = static_cast<int>(i);
+                sorted.push_back(std::move(m_rows[size_t(order[i])]));
+            }
+            m_rows = std::move(sorted);
+            const QModelIndexList from = this->persistentIndexList();
+            QModelIndexList to;
+            to.reserve(from.size());
+            for (const QModelIndex& idx : from)
+                to.append(this->index(moved[size_t(idx.row())], idx.column()));
+            this->changePersistentIndexList(from, to);
+            emit this->layoutChanged({}, QAbstractItemModel::VerticalSortHint);
+        }
+
+        // 3. arrivals at their place, a run at a time; survivors keep their row
+        std::vector<bool> arrived(rows.size(), false);
+        for (size_t i = 0; i < rows.size();) {
+            if (oldKeys.contains(keyOf(rows[i]))) {
+                ++i;
+                continue;
+            }
+            size_t end = i + 1;
+            while (end < rows.size() && !oldKeys.contains(keyOf(rows[end])))
+                ++end;
+            this->beginInsertRows({}, static_cast<int>(i), static_cast<int>(end - 1));
+            for (size_t k = i; k < end; ++k) {
+                arrived[k] = true;
+                m_rows.insert(m_rows.begin() + static_cast<std::ptrdiff_t>(k), std::move(rows[k]));
+            }
+            this->endInsertRows();
+            i = end;
+        }
+
+        // 4. survivors' values
+        for (size_t i = 0; i < rows.size(); ++i)
+            if (!arrived[i])
+                m_rows[i] = std::move(rows[i]);
         emit this->dataChanged(this->index(0, 0),
                                this->index(rowCount() - 1, columnCount() - 1));
     }

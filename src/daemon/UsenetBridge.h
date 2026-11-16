@@ -13,6 +13,7 @@
 
 #include "webserver/UsenetWebBackend.h"
 
+#include <QCborArray>
 #include <QCborMap>
 #include <QCborValue>
 #include <QString>
@@ -36,6 +37,14 @@ namespace UsenetBridge {
 
 /// The queue, or null before the daemon built the engine / after it tore it down.
 [[nodiscard]] usenet::UsenetQueue* queue();
+
+/// Queue item @p itemId as another name of an ed3k root (Transfers tooltip, Details):
+/// {network: "usenet", name, id: item id}; empty: no such item.
+[[nodiscard]] QCborMap aliasOf(const QString& itemId);
+
+/// The news servers item @p itemId gets articles from now, as GetDownloadClients rows
+/// (network "usenet").
+void appendDownloading(QCborArray& out, const QString& itemId);
 
 /// One GetUsenetQueue row. Also what PushUsenetQueueItem carries.
 [[nodiscard]] QCborMap itemToCbor(const usenet::UsenetQueueItem& item);

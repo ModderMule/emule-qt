@@ -683,28 +683,8 @@ void UsenetQueueModel::setItems(const QList<UsenetItemRow>& items)
 
     // Phase 2: update survivors in place.
     for (const UsenetItemRow& incoming : items) {
-        const int row = rowOf(incoming.id);
-        if (row < 0)
-            continue;
-
-        const int oldFileCount = int(m_items[size_t(row)].files.size());
-        applyInto(m_items[size_t(row)], incoming);
-        const int newFileCount = int(m_items[size_t(row)].files.size());
-
-        if (oldFileCount != newFileCount) {
-            // The file list only ever grows once, when the NZB is first parsed,
-            // but a layout change is the honest signal for it.
-            emit dataChanged(index(row, 0), index(row, ColCount - 1));
-            beginResetModel();
-            endResetModel();
-            return;
-        }
-        emit dataChanged(index(row, 0), index(row, ColCount - 1));
-
-        if (newFileCount > 0) {
-            const QModelIndex p = index(row, 0);
-            emit dataChanged(index(0, 0, p), index(newFileCount - 1, ColCount - 1, p));
-        }
+        if (const int row = rowOf(incoming.id); row >= 0)
+            updateRow(row, incoming);
     }
 
     // Phase 3: append arrivals in one batch.
@@ -724,21 +704,8 @@ void UsenetQueueModel::setItems(const QList<UsenetItemRow>& items)
 
 void UsenetQueueModel::upsertItem(const UsenetItemRow& item)
 {
-    const int row = rowOf(item.id);
-    if (row >= 0) {
-        const int oldFileCount = int(m_items[size_t(row)].files.size());
-        applyInto(m_items[size_t(row)], item);
-        if (int(m_items[size_t(row)].files.size()) != oldFileCount) {
-            beginResetModel();
-            endResetModel();
-            return;
-        }
-        emit dataChanged(index(row, 0), index(row, ColCount - 1));
-        if (!m_items[size_t(row)].files.isEmpty()) {
-            const QModelIndex p = index(row, 0);
-            emit dataChanged(index(0, 0, p),
-                             index(int(m_items[size_t(row)].files.size()) - 1, ColCount - 1, p));
-        }
+    if (const int row = rowOf(item.id); row >= 0) {
+        updateRow(row, item);
         return;
     }
 
@@ -836,6 +803,29 @@ int UsenetQueueModel::rowOf(const QString& id) const
             return i;
     }
     return -1;
+}
+
+void UsenetQueueModel::updateRow(int row, const UsenetItemRow& incoming)
+{
+    UsenetItemRow& item = m_items[size_t(row)];
+    const QModelIndex p = index(row, 0);
+    const int oldN = int(item.files.size());
+    const int newN = int(incoming.files.size());
+    if (newN < oldN) {
+        beginRemoveRows(p, newN, oldN - 1);
+        item.files.resize(newN);
+        endRemoveRows();
+        applyInto(item, incoming);
+    } else if (newN > oldN) {
+        beginInsertRows(p, oldN, newN - 1);
+        applyInto(item, incoming);
+        endInsertRows();
+    } else {
+        applyInto(item, incoming);
+    }
+    emit dataChanged(index(row, 0), index(row, ColCount - 1));
+    if (const int kept = std::min(oldN, newN); kept > 0)
+        emit dataChanged(index(0, 0, p), index(kept - 1, ColCount - 1, p));
 }
 
 } // namespace eMule

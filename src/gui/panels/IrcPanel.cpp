@@ -44,6 +44,9 @@
 #include <QMenu>
 #include <QPointer>
 #include <QPushButton>
+#include <QSet>
+
+#include <algorithm>
 #include <QRandomGenerator>
 #include <QRegularExpression>
 #include <QSplitter>
@@ -1304,6 +1307,47 @@ QString IrcPanel::formatMessage(const QString& text) const
 // Nick list
 // ---------------------------------------------------------------------------
 
+namespace {
+
+/// Bring @p model to @p nicks by row moves/inserts/removes, not setStringList(): a
+/// reset between the two clicks of a double click swallows it (busy channels).
+void syncNickModel(QStringListModel* model, const QStringList& nicks)
+{
+    QStringList cur = model->stringList();
+    const QSet<QString> want(nicks.cbegin(), nicks.cend());
+    if (cur.isEmpty() || want.size() != nicks.size()
+        || QSet<QString>(cur.cbegin(), cur.cend()).size() != cur.size()) {
+        model->setStringList(nicks);
+        return;
+    }
+    // another channel: mostly new nicks, a reset is cheaper
+    const auto kept = std::ranges::count_if(cur, [&](const QString& n) { return want.contains(n); });
+    if (kept * 2 < cur.size()) {
+        model->setStringList(nicks);
+        return;
+    }
+    for (int r = int(cur.size()) - 1; r >= 0; --r) {
+        if (!want.contains(cur[r])) {
+            model->removeRows(r, 1);
+            cur.removeAt(r);
+        }
+    }
+    for (int i = 0; i < int(nicks.size()); ++i) {
+        if (i < int(cur.size()) && cur[i] == nicks[i])
+            continue;
+        if (const int j = int(cur.indexOf(nicks[i], i + 1)); j >= 0) {
+            model->moveRows({}, j, 1, {}, i);
+            cur.move(j, i);
+        } else {
+            model->insertRows(i, 1);
+            model->setData(model->index(i), nicks[i]);
+            cur.insert(i, nicks[i]);
+        }
+    }
+}
+
+} // namespace
+
 void IrcPanel::updateNickList()
 {
     const QString key = activeChannelName();
@@ -1316,7 +1360,7 @@ void IrcPanel::updateNickList()
     }
 
     m_nickLabel->setText(tr("Nick (%1)").arg(it->nicks.size()));
-    m_nickModel->setStringList(it->nicks.display());
+    syncNickModel(m_nickModel, it->nicks.display());
 }
 
 QString IrcPanel::selectedNick() const

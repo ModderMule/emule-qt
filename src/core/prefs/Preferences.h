@@ -972,6 +972,8 @@ public:
     void setCumUpShareaza(uint64 val);
     [[nodiscard]] uint64 cumUpEMCompat() const;
     void setCumUpEMCompat(uint64 val);
+    [[nodiscard]] uint64 cumUpEmuleQt() const;
+    void setCumUpEmuleQt(uint64 val);
 
     // Per-client breakdown — cumulative download bytes
     [[nodiscard]] uint64 cumDownEmule() const;
@@ -988,6 +990,8 @@ public:
     void setCumDownShareaza(uint64 val);
     [[nodiscard]] uint64 cumDownEMCompat() const;
     void setCumDownEMCompat(uint64 val);
+    [[nodiscard]] uint64 cumDownEmuleQt() const;
+    void setCumDownEmuleQt(uint64 val);
     [[nodiscard]] uint64 cumDownURL() const;
     void setCumDownURL(uint64 val);
 
@@ -2236,6 +2240,14 @@ public:
 
     [[nodiscard]] bool minimizeToTray() const;
     void setMinimizeToTray(bool val);
+
+    /// Tray icon shown at all; off disables minimize/close/start to tray.
+    [[nodiscard]] bool showTrayIcon() const;
+    void setShowTrayIcon(bool val);
+
+    /// Close button hides to the tray instead of quitting. Tray Exit / Cmd+Q still quit.
+    [[nodiscard]] bool closeToTray() const;
+    void setCloseToTray(bool val);
 
     [[nodiscard]] bool transferDoubleClick() const;
     void setTransferDoubleClick(bool val);

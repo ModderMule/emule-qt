@@ -3,7 +3,9 @@
 /// @file ClientIcons.h
 /// @brief Client software icon (MFC GetDisplayImage) for every list showing peers.
 
+#include <QCborMap>
 #include <QIcon>
+#include <QString>
 
 namespace eMule {
 
@@ -11,8 +13,27 @@ namespace eMule {
 /// the software icon with a small friend badge at the bottom-right.
 [[nodiscard]] QIcon clientSoftwareIcon(int softwareId, bool hasCredit, bool isFriend);
 
+/// The torrent/usenet/hoster join an ed3k transfer belongs to (Ed3kJoinBase tag).
+enum class Ed3kJoin { None, Torrent, Usenet, Hoster };
+/// "torrent", "usenet", "hoster" → the join; anything else None.
+[[nodiscard]] Ed3kJoin ed3kJoinOf(const QString& tag);
+
 /// ed3k node: the eMule client icon with a Mars-red mane (no MFC original).
-[[nodiscard]] QIcon ed3kClientIcon();
+/// @p anonymous: the transfer runs on our anonymous key (hops.md §1), drawn as a grey
+/// shadow. Says nothing about the peer's key. @p join: that network's icon as a badge.
+[[nodiscard]] QIcon ed3kClientIcon(bool anonymous = false, Ed3kJoin join = Ed3kJoin::None);
+
+/// Tooltip line for an ed3k row: "ed3k, anonymous key, for a torrent".
+[[nodiscard]] QString ed3kNetworkText(bool anonymous, Ed3kJoin join);
+
+/// A client of a torrent/usenet/hoster job's own network (a BitTorrent peer, a news server,
+/// a hoster) in the Transfers Downloading list: that network's icon.
+[[nodiscard]] QIcon networkClientIcon(Ed3kJoin network);
+/// "BitTorrent", "Usenet", "Hoster"; None: empty.
+[[nodiscard]] QString networkName(Ed3kJoin network);
+
+/// One other name of an ed3k root ("aliases" entry: network, name, id): "Torrent: <name> (btih:…)".
+[[nodiscard]] QString ed3kAliasText(const QCborMap& alias);
 
 /// The I2P icon: I2P torrent peers, the Options > BitTorrent > I2P page.
 [[nodiscard]] QIcon i2pIcon();

@@ -228,6 +228,13 @@ struct KadCounters {
     uint64 searchesNotes = 0;
     uint64 publishes = 0;          ///< store keyword / file / notes
 
+    // Our requests vs the receivers' MFC flood limits (kad::OutboundGuard), per destination IP
+    uint64 peakReqPerIP = 0;            ///< Max, KADEMLIA2_REQ to one IP in 60 s (MFC: 10)
+    uint64 peakPublishSourcePerIP = 0;  ///< Max, PUBLISH_SOURCE_REQ (MFC: 3)
+    uint64 peakPublishKeyPerIP = 0;     ///< Max, PUBLISH_KEY_REQ packets (MFC: 4)
+    uint64 requestsHeld = 0;            ///< lookup contacts held back, each once per search
+    uint64 storesHeld = 0;              ///< action/publish packets held back, each once per search
+
     // What HELLOs told us about other nodes
     uint64 udpFirewalledNodes = 0;
     uint64 udpOpenNodes = 0;
@@ -262,6 +269,12 @@ struct KadCounters {
         f("searchesSource", &C::searchesSource, CounterAgg::Sum);
         f("searchesNotes", &C::searchesNotes, CounterAgg::Sum);
         f("publishes", &C::publishes, CounterAgg::Sum);
+
+        f("peakReqPerIP", &C::peakReqPerIP, CounterAgg::Max);
+        f("peakPublishSourcePerIP", &C::peakPublishSourcePerIP, CounterAgg::Max);
+        f("peakPublishKeyPerIP", &C::peakPublishKeyPerIP, CounterAgg::Max);
+        f("requestsHeld", &C::requestsHeld, CounterAgg::Sum);
+        f("storesHeld", &C::storesHeld, CounterAgg::Sum);
 
         f("udpFirewalledNodes", &C::udpFirewalledNodes, CounterAgg::Sum);
         f("udpOpenNodes", &C::udpOpenNodes, CounterAgg::Sum);

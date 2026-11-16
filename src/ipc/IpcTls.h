@@ -50,7 +50,7 @@ protected:
 
 private:
     void startTls(QSslSocket* socket, bool isLocal);
-    void decideLoopback(QSslSocket* socket);
+    void decideFirstByte(QSslSocket* socket, bool isLocal);
     void finish(QSslSocket* socket, bool isLocal);
     void drop(QSslSocket* socket, const QString& reason);
 

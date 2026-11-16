@@ -523,10 +523,10 @@ void UpDownClient::updateUploadingStatisticsData()
         if (sentWire > 0 && theApp.statistics) {
             if (sentBytesCompleteFile > 0)
                 theApp.statistics->addTransferData(clientSoft(), userPort(),
-                                                   false, true, sentBytesCompleteFile);
+                                                   false, true, sentBytesCompleteFile, isEmuleQt());
             if (sentBytesPartFile > 0)
                 theApp.statistics->addTransferData(clientSoft(), userPort(),
-                                                   true, true, sentBytesPartFile);
+                                                   true, true, sentBytesPartFile, isEmuleQt());
 
             // MFC passes `IsFriend() && GetFriendSlot()` as the last argument to both
             // Add2SessionTransferData calls above (srchybrid/UploadClient.cpp:438-439);

@@ -1,7 +1,7 @@
 #include "pch.h"
 
 /// @file SelfSignedCert.cpp
-/// @brief Self-signed ECDSA P-256 certificates.
+/// @brief Self-signed ECDSA P-256 / RSA certificates.
 
 #include "crypto/SelfSignedCert.h"
 
@@ -10,6 +10,7 @@
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/rand.h>
+#include <openssl/rsa.h>
 #include <openssl/x509.h>
 
 #include <string>
@@ -19,10 +20,11 @@ namespace eMule {
 void EvpPkeyDeleter::operator()(EVP_PKEY* p) const noexcept { EVP_PKEY_free(p); }
 void X509Deleter::operator()(X509* p) const noexcept { X509_free(p); }
 
-std::optional<SelfSignedIdentity> generateSelfSigned(std::string_view commonName, long validDays)
+std::optional<SelfSignedIdentity> generateSelfSigned(std::string_view commonName, long validDays,
+                                                     SelfSignedKeyType type)
 {
     SelfSignedIdentity id;
-    id.key.reset(EVP_EC_gen("P-256"));
+    id.key.reset(type == SelfSignedKeyType::Rsa3072 ? EVP_RSA_gen(3072) : EVP_EC_gen("P-256"));
     id.cert.reset(X509_new());
     if (!id.key || !id.cert)
         return std::nullopt;
@@ -52,9 +54,10 @@ std::optional<SelfSignedIdentity> generateSelfSigned(std::string_view commonName
     return id;
 }
 
-std::optional<SelfSignedPem> generateSelfSignedPem(std::string_view commonName, long validDays)
+std::optional<SelfSignedPem> generateSelfSignedPem(std::string_view commonName, long validDays,
+                                                   SelfSignedKeyType type)
 {
-    auto id = generateSelfSigned(commonName, validDays);
+    auto id = generateSelfSigned(commonName, validDays, type);
     if (!id)
         return std::nullopt;
 

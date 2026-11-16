@@ -31,13 +31,19 @@ struct SelfSignedPem {
     QByteArray keyPem;
 };
 
-/// New EC P-256 key + self-signed cert for @p commonName, backdated a day, valid
+/// Key algorithm. Rsa for anything Qt serves: its Secure Transport / Schannel
+/// backends can't import an EC server key (SecPKCS12Import -26275).
+enum class SelfSignedKeyType { EcP256, Rsa3072 };
+
+/// New key + self-signed cert for @p commonName, backdated a day, valid
 /// @p validDays. nullopt on any OpenSSL failure.
-[[nodiscard]] std::optional<SelfSignedIdentity> generateSelfSigned(std::string_view commonName,
-                                                                   long validDays);
+[[nodiscard]] std::optional<SelfSignedIdentity> generateSelfSigned(
+    std::string_view commonName, long validDays,
+    SelfSignedKeyType type = SelfSignedKeyType::EcP256);
 
 /// generateSelfSigned(), PEM encoded.
-[[nodiscard]] std::optional<SelfSignedPem> generateSelfSignedPem(std::string_view commonName,
-                                                                 long validDays);
+[[nodiscard]] std::optional<SelfSignedPem> generateSelfSignedPem(
+    std::string_view commonName, long validDays,
+    SelfSignedKeyType type = SelfSignedKeyType::EcP256);
 
 } // namespace eMule

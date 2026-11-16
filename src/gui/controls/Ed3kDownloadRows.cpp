@@ -5,6 +5,7 @@
 #include "controls/Ed3kDownloadRows.h"
 
 #include "utils/BlockRuns.h"
+#include "utils/ClientIcons.h"
 #include "utils/OtherFunctions.h"
 
 #include <QCborArray>
@@ -33,6 +34,9 @@ DownloadRow ed3kDownloadRow(const QCborMap& m)
     row.addedOn = m.value(QStringLiteral("addedOn")).toInteger();
     row.ed3kPath = m.value(QStringLiteral("path")).toString();
     row.ed3kKey = m.value(QStringLiteral("key")).toString();   // batch 15, hops.md §1
+    for (const auto& a : m.value(QStringLiteral("aliases")).toArray())
+        if (const QString text = ed3kAliasText(a.toMap()); !text.isEmpty())
+            row.ed3kAliases << text;
     row.previewPrio = m.value(QStringLiteral("previewPrio")).toBool();
     row.isPreviewPossible = m.value(QStringLiteral("isPreviewPossible")).toBool();
     row.fileType = getFileTypeByName(row.fileName);
@@ -65,6 +69,9 @@ DownloadRow ed3kDownloadRow(const QCborMap& m)
     row.gaps = blockRanges(*held, false, block, row.fileSize);
     if (const auto pending = decodeBlockRuns(m.value(QStringLiteral("pending")).toByteArray(), count))
         row.pending = blockRanges(*pending, true, block, row.fileSize);
+    // HTTP whole read: held in "blocks" too; part detail tells them apart
+    if (const auto unverified = decodeBlockRuns(m.value(QStringLiteral("unverified")).toByteArray(), count))
+        row.unverified = blockRanges(*unverified, true, block, row.fileSize);
     const QByteArray avail = m.value(QStringLiteral("avail")).toByteArray();
     // was: const qint64 piece = m.value(QStringLiteral("pieceSize")).toInteger();
     const qint64 piece = m.value(QStringLiteral("pieceSize")).toInteger(16 * block);

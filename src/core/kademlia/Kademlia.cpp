@@ -13,6 +13,7 @@
 #include "kademlia/KadIndexed.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingZone.h"
+#include "kademlia/KadPointerRoute.h"
 #include "kademlia/KadSearchManager.h"
 #include "kademlia/KadUDPListener.h"
 #include "app/AppContext.h"
@@ -193,6 +194,7 @@ void Kademlia::stop()
 
     // Stop all searches
     SearchManager::stopAllSearches();
+    PointerRoute::clear();   // after: stopped lookups report misses into it
 
     // Clear zone events before deleting routing zones.
     // MFC: m_mapEvents.clear() in Stop().

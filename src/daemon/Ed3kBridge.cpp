@@ -15,6 +15,7 @@
 #include "Ed3kOwnSetsBridge.h"
 #include "Ed3kRoomsBridge.h"
 #include "Ed3kSetsBridge.h"
+#include "Ed3kUploadsBridge.h"
 #include "Ed3kPaidBridge.h"
 #include "Ed3kPaidSellerBridge.h"
 #include "app/AppContext.h"
@@ -178,9 +179,19 @@ void appendDownloadInfo([[maybe_unused]] QCborMap& details, [[maybe_unused]] con
         return;
     details.insert(QLatin1StringView("ed3kTracked"), true);
     details.insert(QLatin1StringView("ed3kSearching"), info->searching);
-    if (info->root)
-        details.insert(QLatin1StringView("ed3kRoot"), QString::fromLatin1(
-            QByteArray(reinterpret_cast<const char*>(info->root->bytes.data()), qsizetype(info->root->bytes.size())).toHex()));
+    if (info->root) {
+        const QByteArray root(reinterpret_cast<const char*>(info->root->bytes.data()), qsizetype(info->root->bytes.size()));
+        details.insert(QLatin1StringView("ed3kRoot"), QString::fromLatin1(root.toHex()));
+        // its other names here, but this download itself
+        QCborArray aliases;
+        const QString self = QString::fromLatin1(md4.toHex());
+        for (const auto& a : Ed3kUploadsBridge::aliasesOf(root))
+            if (const QCborMap m = a.toMap(); m.value(QStringLiteral("network")).toString() != QLatin1String("ed2k")
+                                              || m.value(QStringLiteral("id")).toString() != self)
+                aliases.append(m);
+        if (!aliases.isEmpty())
+            details.insert(QLatin1StringView("ed3kAliases"), aliases);
+    }
     details.insert(QLatin1StringView("ed3kPair"), static_cast<int>(info->pair));
     details.insert(QLatin1StringView("ed3kBytes"), static_cast<qint64>(info->bytes));
     details.insert(QLatin1StringView("ed3kSources"), info->sources);

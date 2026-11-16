@@ -18,6 +18,7 @@
 #include "server/ServerList.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadBuddyStore.h"
+#include "kademlia/KadIncomingLog.h"
 #include "kademlia/KadLog.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadPrefs.h"
@@ -374,15 +375,15 @@ UpDownClient* ClientList::requestTCP(uint32 ip, uint16 tcpPort, uint16 udpPort,
     return client;
 }
 
-bool ClientList::incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
-                               const uint8* clientID, const uint8* buddyID)
+BuddyRefusal ClientList::incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
+                                       const uint8* clientID, const uint8* buddyID)
 {
     // MFC ClientList.cpp:721-747, which serves one buddy. Here: while slots are free.
     // As MFC only connected buddies take a slot, a claim reserves nothing.
     const Address addr = Address::fromHostOrder(ip);
-    if (const QString why = buddyServeRefusal(addr, tcpPort); !why.isEmpty()) {
-        kad::logKad(QStringLiteral("Kad: buddy claim from %1 refused — %2").arg(ipstr(addr), why));
-        return false;
+    if (BuddyRefusal why = buddyServeRefusal(addr, tcpPort); why.refused()) {
+        kad::logKad(QStringLiteral("Kad: buddy claim from %1 refused — %2").arg(ipstr(addr), why.text));
+        return why;
     }
 
     // A client we already know is refused (MFC: "It could cause conflicts"). The request is
@@ -390,8 +391,11 @@ bool ClientList::incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
     // that client's user hash and make it a served buddy. Also IncomingBuddy only turns
     // ConnectedBuddy in connectionEstablished(), which an open link never runs again.
     // A connected LowID claims over TCP instead: acceptBuddyClaim().
-    if (findByConnIP(qToBigEndian(ip), tcpPort))
-        return false;
+    if (findByConnIP(qToBigEndian(ip), tcpPort)) {
+        kad::logKad(QStringLiteral("Kad: buddy claim from %1:%2 refused — already a known client")
+                        .arg(ipstr(addr)).arg(tcpPort));
+        return {kad::IncomingRefusal::KnownClient, 0, QStringLiteral("already a known client")};
+    }
 
     // The request is one unverified UDP packet: bound the claims, oldest goes first.
     // Refusing instead would let spoofed requests lock real nodes out.
@@ -426,7 +430,7 @@ bool ClientList::incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
     // and lets the client become ConnectedBuddy when its connection completes. Claiming
     // Connecting for an inbound request would block a genuine outgoing attempt behind a peer
     // that may never connect.
-    return true;
+    return {};
 }
 
 bool ClientList::takeBuddyOffer(UpDownClient& offerer, uint16 kadPort)
@@ -458,10 +462,10 @@ bool ClientList::takeBuddyOffer(UpDownClient& offerer, uint16 kadPort)
 uint8 ClientList::acceptBuddyClaim(UpDownClient& claimer, const uint8* buddyID)
 {
     const Address addr = claimer.connectAddress();
-    const QString why = buddyServeRefusal(addr, claimer.userPort());
+    const BuddyRefusal why = buddyServeRefusal(addr, claimer.userPort());
     uint8 reason = 0;
-    QString text = why;
-    if (!why.isEmpty()) {
+    QString text = why.text;
+    if (why.refused()) {
         // A silent last link has no slot for now
         reason = canServeAnotherBuddy() && silentBuddyCoolOffLeft(addr) == 0
                      ? BUDDYCLAIM_REFUSE_DUP : BUDDYCLAIM_REFUSE_BUSY;
@@ -1368,22 +1372,28 @@ void ClientList::cleanUpTrackedList()
 // buddyServeRefusal (private)
 // ===========================================================================
 
-QString ClientList::buddyServeRefusal(const Address& addr, uint16 tcpPort) const
+BuddyRefusal ClientList::buddyServeRefusal(const Address& addr, uint16 tcpPort) const
 {
-    if (!canServeAnotherBuddy())
-        return m_buddyStatus == BuddyStatus::Connected
-                   ? QStringLiteral("we use a buddy ourselves")
-                   : QStringLiteral("all %1 slots taken").arg(thePrefs.servedBuddyLimit());
+    using enum kad::IncomingRefusal;
+    if (!canServeAnotherBuddy()) {
+        if (m_buddyStatus == BuddyStatus::Connected)
+            return {OwnBuddy, 0, QStringLiteral("we use a buddy ourselves")};
+        const auto limit = static_cast<int32_t>(thePrefs.servedBuddyLimit());
+        return {SlotsFull, limit, QStringLiteral("all %1 slots taken").arg(limit)};
+    }
 
     // Not ourselves, and not a node we are running a firewall check with
     // (MFC ClientList.cpp:724-730).
     if (theApp.isOwnTcpPort(tcpPort) && addr == Address::fromNetworkOrder(theApp.publicIP()))
-        return QStringLiteral("ourselves");
+        return {Ourselves, 0, QStringLiteral("ourselves")};
     if (isKadFirewallCheckIP(addr.toNetworkUint32()))
-        return QStringLiteral("firewall check running with it");
+        return {FirewallCheck, 0, QStringLiteral("firewall check running with it")};
 
-    if (const std::time_t left = silentBuddyCoolOffLeft(addr); left > 0)
-        return QStringLiteral("its last link was silent, %1 min cool-off left").arg((left + 59) / 60);
+    if (const std::time_t left = silentBuddyCoolOffLeft(addr); left > 0) {
+        const auto minutes = static_cast<int32_t>((left + 59) / 60);
+        return {SilentCoolOff, minutes,
+                QStringLiteral("its last link was silent, %1 min cool-off left").arg(minutes)};
+    }
 
     // One served buddy per IP, pending or connected. The TCP link proves the IP, so this
     // bounds what one host takes from us; a subnet rule would refuse carrier NAT neighbours.
@@ -1391,7 +1401,7 @@ QString ClientList::buddyServeRefusal(const Address& addr, uint16 tcpPort) const
         if (other->isServedBuddy() && other->connectAddress() == addr
             && (other->kadState() == KadState::IncomingBuddy
                 || other->kadState() == KadState::ConnectedBuddy))
-            return QStringLiteral("IP already served");
+            return {IpServed, 0, QStringLiteral("IP already served")};
     }
     return {};
 }

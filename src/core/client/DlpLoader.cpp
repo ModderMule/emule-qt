@@ -137,6 +137,34 @@ std::optional<QString> DlpLoader::checkInfoTag(uint32 tag)
     return toResult(m_infoTag(tag));
 }
 
+std::optional<QString> DlpLoader::checkOfficialHelloTag(uint32 tag, uint32 emuleVersion)
+{
+    if (!hasOfficialChecks())
+        return std::nullopt;
+    return toResult(m_officialTag(tag, emuleVersion));
+}
+
+std::optional<QString> DlpLoader::checkOfficialHelloBits(uint32 tag, uint32 value, uint32 emuleVersion)
+{
+    if (!hasOfficialChecks())
+        return std::nullopt;
+    return toResult(m_officialBits(tag, value, emuleVersion));
+}
+
+std::optional<QString> DlpLoader::checkOfficialInfoTag(uint32 tag, uint32 emuleVersion)
+{
+    if (!hasOfficialInfoChecks())
+        return std::nullopt;
+    return toResult(m_officialInfoTag(tag, emuleVersion));
+}
+
+std::optional<QString> DlpLoader::checkOfficialInfoBits(uint32 tag, uint32 value, uint32 emuleVersion)
+{
+    if (!hasOfficialInfoChecks())
+        return std::nullopt;
+    return toResult(m_officialInfoBits(tag, value, emuleVersion));
+}
+
 QString DlpLoader::libraryFileName()
 {
 #if defined(Q_OS_WIN)
@@ -206,6 +234,10 @@ bool DlpLoader::resolveAll()
     m_userhash = reinterpret_cast<CheckHashFn>(get("sdlp_check_userhash"));
     m_helloTag = reinterpret_cast<CheckTagFn>(get("sdlp_check_hello_tag"));
     m_infoTag = reinterpret_cast<CheckTagFn>(get("sdlp_check_info_tag"));
+    m_officialTag = reinterpret_cast<CheckOfficialTagFn>(get("sdlp_check_official_hello_tag"));
+    m_officialBits = reinterpret_cast<CheckOfficialBitsFn>(get("sdlp_check_official_hello_bits"));
+    m_officialInfoTag = reinterpret_cast<CheckOfficialTagFn>(get("sdlp_check_official_info_tag"));
+    m_officialInfoBits = reinterpret_cast<CheckOfficialBitsFn>(get("sdlp_check_official_info_bits"));
     return m_rulesVersion && m_libVersion && m_setVariant && m_modHard && m_modSoft && m_userHard
         && m_userSoft && m_nameHashMod && m_spam && m_userhash && m_helloTag && m_infoTag;
 }

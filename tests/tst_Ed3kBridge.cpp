@@ -191,10 +191,10 @@ void tst_Ed3kBridge::onlyTheEd3kBlockIsAnswered()
     // QVERIFY(Ed3kBridge::handleRequest(IpcMessage(static_cast<IpcMsgType>(1049), 2), reply));
     // (was 1049: AddEd3kCacheLink since batch 15; every free number is inside a sub-block now,
     // whose bridge answers a failure: 1149 of the downloads')
-    QVERIFY(Ed3kBridge::handleRequest(IpcMessage(static_cast<IpcMsgType>(1149), 2), reply));
+    // (1149 is GetEd3kFileLinks now; 1219: free, after the Link Grabber's 1210-1218)
+    QVERIFY(Ed3kBridge::handleRequest(IpcMessage(static_cast<IpcMsgType>(1219), 2), reply));
     QCOMPARE(replies, 1);
-    // QCOMPARE(last.type(), IpcMsgType::Error);
-    QVERIFY(last.type() == IpcMsgType::Error || (last.type() == IpcMsgType::Result && !last.fieldBool(0)));
+    QCOMPARE(last.type(), IpcMsgType::Error);
 }
 
 void tst_Ed3kBridge::coordinatorLimitsAndCountsTheNode()

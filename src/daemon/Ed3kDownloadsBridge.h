@@ -12,6 +12,8 @@
 
 #include <QCborMap>
 
+#include <optional>
+
 #include <functional>
 
 namespace eMule {
@@ -48,6 +50,15 @@ bool handleRequest(const Ipc::IpcMessage& msg, const std::function<void(const Ip
 
 /// "Move to" (#187) of the download of @p hexRoot. Empty: started; else why not.
 [[nodiscard]] QString moveTo(const QString& hexRoot, const QString& dir);
+
+/// The HTTP (ws=) source row of the download of @p root (32 B), as an eD2K URL source
+/// (isUrl); @p peerRate is what its ed3k sources bring, the rest of the rate is the HTTP
+/// source's. Empty: none attached.
+[[nodiscard]] std::optional<QCborMap> webSourceRow(const QByteArray& root, qint64 peerRate);
+
+/// GetDownloadDetails of the ed3k download @p hexRoot: the General page's fields as eD2K
+/// sends them (FileDetailDialog), network "ed3k", plus ed3kKey and ed3kAliases. Empty: none.
+[[nodiscard]] std::optional<QCborMap> detailsOf(const QString& hexRoot);
 
 /// GetEd3kDownloads, also what PushEd3kDownloads carries.
 [[nodiscard]] QCborMap listToCbor();

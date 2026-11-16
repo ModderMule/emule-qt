@@ -7,6 +7,7 @@
 /// decoupling from the actual UDP socket implementation.
 
 #include "kademlia/KadIncomingLog.h"
+#include "kademlia/KadOutboundGuard.h"
 #include "kademlia/KadPacketTracking.h"
 #include "kademlia/KadSearchDefs.h"
 #include "kademlia/KadTypes.h"
@@ -68,6 +69,11 @@ public:
                     uint16 destPort, const KadUDPKey& targetKey, const UInt128* cryptTargetID);
     void sendPacket(SafeMemFile& data, uint8 opcode, uint32 destIP, uint16 destPort,
                     const KadUDPKey& targetKey, const UInt128* cryptTargetID);
+
+    /// Whether @p count requests of @p opcode to @p ip fit that IP's MFC flood budget now.
+    /// Over it the receiver drops them; a 3-minute deficit bans our IP there for 2 h.
+    [[nodiscard]] bool outboundAllowed(uint32 ip, uint8 opcode, OutboundGuard::Priority prio,
+                                       uint32 count = 1) const;
 
     /// The wire packet for a packetToSend() payload ([opcode][payload]): zlib-packed
     /// when the payload exceeds 200 bytes and shrinks (MFC SendPacket).
@@ -174,6 +180,10 @@ private:
     std::atomic<uint32_t> m_hellosSent{0};      ///< HELLO_REQ packets sent (monotonically increasing).
     std::atomic<uint32_t> m_hellosReceived{0};  ///< HELLO_RES packets received (monotonically increasing).
     IncomingLog m_incoming;
+    OutboundGuard m_outGuard;              ///< every request we send, per destination IP
+    uint64 m_lastOutGuardCleanup = 0;      ///< getTickCount() ms
+
+    void chargeOutbound(uint32 destIP, uint8 opcode);
 };
 
 } // namespace eMule::kad

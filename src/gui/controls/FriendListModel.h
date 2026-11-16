@@ -1,9 +1,10 @@
 #pragma once
 
 /// @file FriendListModel.h
-/// @brief QAbstractListModel for the friend list in the Messages panel.
+/// @brief One-column table model for the friend list in the Messages panel.
 
-#include <QAbstractListModel>
+#include "AbstractTableModel.h"
+
 #include <QCborArray>
 #include <QIcon>
 #include <QString>
@@ -42,13 +43,12 @@ struct FriendRow {
     }
 };
 
-class FriendListModel : public QAbstractListModel {
+class FriendListModel : public AbstractTableModel<FriendRow> {
     Q_OBJECT
 
 public:
     explicit FriendListModel(QObject* parent = nullptr);
 
-    [[nodiscard]] int rowCount(const QModelIndex& parent = {}) const override;
     [[nodiscard]] QVariant data(const QModelIndex& index, int role) const override;
 
     /// Replace the eD2K rows from a CBOR array received via IPC (GetFriends).
@@ -61,18 +61,16 @@ public:
     /// The node hex of an ed3k chat key; empty for an eD2K key.
     [[nodiscard]] static QString ed3kNodeOf(const QString& key);
 
-    /// Access a row by index. Returns nullptr if out of range.
-    [[nodiscard]] const FriendRow* rowAt(int row) const;
-
     /// Find the row index for a given hash. Returns -1 if not found.
     [[nodiscard]] int findByHash(const QString& hash) const;
+
+protected:
+    [[nodiscard]] int columnCountValue() const override { return 1; }
 
 private:
     [[nodiscard]] static QIcon baseIcon(const FriendRow& row);
     /// Puts @p rows of @p network in place of the old ones, eD2K first.
     void replaceRows(FriendNetwork network, std::vector<FriendRow> rows);
-
-    std::vector<FriendRow> m_rows;
 };
 
 } // namespace eMule

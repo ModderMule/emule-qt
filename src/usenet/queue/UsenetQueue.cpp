@@ -1598,6 +1598,40 @@ qint64 UsenetQueue::itemRate(const QString& id) const
     return total > 0 ? currentRate() * mine / total : 0;
 }
 
+QList<UsenetQueue::ItemServer> UsenetQueue::itemServers(const QString& id) const
+{
+    QList<ItemServer> out;
+    const auto found = std::ranges::find_if(m_items, [&id](const auto& rt) { return rt->item->id == id; });
+    if (found == m_items.cend())
+        return out;
+    const qint64 since = QDateTime::currentMSecsSinceEpoch() - kServerWindowMs;
+    qint64 windowTotal = 0;
+    for (auto it = (*found)->serverTraffic.cbegin(); it != (*found)->serverTraffic.cend(); ++it) {
+        qint64 recent = 0;
+        for (const auto& [at, bytes] : it->recent)
+            if (at >= since)
+                recent += bytes;
+        if (recent <= 0)
+            continue;
+        windowTotal += recent;
+        ItemServer s;
+        s.accountId = it.key();
+        s.bytes = it->total;
+        s.rate = recent;   // the window's bytes; turned into a share below
+        if (const auto server = std::ranges::find_if(m_servers, [&](const NewsServer& n) { return n.accountId == it.key(); });
+            server != m_servers.cend()) {
+            s.name = server->name.isEmpty() ? server->host : server->name;
+            s.host = server->host;
+            s.port = server->port;
+        }
+        out.append(s);
+    }
+    const qint64 rate = itemRate(id);
+    for (auto& s : out)
+        s.rate = windowTotal > 0 ? rate * s.rate / windowTotal : 0;
+    return out;
+}
+
 qint64 UsenetQueue::itemProgressBytes(const QString& id) const
 {
     const auto found = std::ranges::find_if(
@@ -2465,6 +2499,16 @@ void UsenetQueue::onSegmentFinished(const UsenetFetchResult& result, bool curren
         // Removed while in flight. Nothing to record.
         dispatch();
         return;
+    }
+
+    // which server delivers this item now (itemServers)
+    if (!result.probeOnly && !result.accountId.isEmpty() && result.rawBytes > 0) {
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        auto& traffic = rt->serverTraffic[result.accountId];
+        traffic.total += result.rawBytes;
+        traffic.recent.append({now, result.rawBytes});
+        while (!traffic.recent.isEmpty() && traffic.recent.constFirst().first < now - kServerWindowMs)
+            traffic.recent.removeFirst();
     }
 
     // A probe answered. Routed here, above everything below, because both of the

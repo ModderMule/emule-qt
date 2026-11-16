@@ -41,18 +41,8 @@ QString ageText(qint64 ms)
 // ---------------------------------------------------------------------------
 
 Ed3kKadTableModel::Ed3kKadTableModel(QObject* parent)
-    : QAbstractTableModel(parent)
+    : AbstractTableModel(parent)
 {
-}
-
-int Ed3kKadTableModel::rowCount(const QModelIndex& parent) const
-{
-    return parent.isValid() ? 0 : static_cast<int>(m_rows.size());
-}
-
-int Ed3kKadTableModel::columnCount(const QModelIndex& parent) const
-{
-    return parent.isValid() ? 0 : static_cast<int>(m_columns.size());
 }
 
 QVariant Ed3kKadTableModel::data(const QModelIndex& index, int role) const
@@ -77,19 +67,12 @@ QVariant Ed3kKadTableModel::headerData(int section, Qt::Orientation orientation,
 
 void Ed3kKadTableModel::setRows(const QCborArray& rows)
 {
-    beginResetModel();
-    m_rows.clear();
-    m_rows.reserve(static_cast<size_t>(rows.size()));
+    std::vector<QCborMap> maps;
+    maps.reserve(static_cast<size_t>(rows.size()));
     for (const auto& v : rows)
-        m_rows.push_back(v.toMap());
-    endResetModel();
-}
-
-void Ed3kKadTableModel::clear()
-{
-    beginResetModel();
-    m_rows.clear();
-    endResetModel();
+        maps.push_back(v.toMap());
+    // polled: a reset would swallow a double click and drop the selection
+    syncRows(std::move(maps), [](const QCborMap& m) { return value(m, "id"); });
 }
 
 // ---------------------------------------------------------------------------
@@ -373,6 +356,8 @@ QString KadIncomingModel::ed3kTypeText(int type)
 QString KadIncomingModel::answerText(const QCborMap& m)
 {
     if (!m.value(QStringLiteral("answered")).toBool()) {
+        if (const qint64 refused = number(m, "refused"); refused > 0)
+            return tr("Refused: %1").arg(refusalText(int(refused), int(number(m, "refusedArg"))));
         const qint64 error = number(m, "error");
         return error > 0 ? tr("Error %1").arg(error) : tr("Not answered");
     }
@@ -397,6 +382,23 @@ QString KadIncomingModel::answerText(const QCborMap& m)
     if (const qint64 load = number(m, "load"); load >= 0)
         parts << tr("load %1%").arg(load);
     return parts.join(QStringLiteral(", "));
+}
+
+QString KadIncomingModel::refusalText(int code, int arg)
+{
+    // kad::IncomingRefusal
+    switch (code) {
+    case 1: return tr("malformed request");
+    case 2: return tr("we are firewalled");
+    case 3: return tr("we use a buddy ourselves");
+    case 4: return tr("all %1 buddy slots taken").arg(arg);
+    case 5: return tr("ourselves");
+    case 6: return tr("firewall check running");
+    case 7: return tr("last link silent, %n min cool-off", nullptr, arg);
+    case 8: return tr("IP already served");
+    case 9: return tr("already a known client");
+    default: return tr("reason %1").arg(code);
+    }
 }
 
 } // namespace eMule

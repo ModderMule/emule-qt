@@ -1,0 +1,286 @@
+#include "pch.h"
+/// @file KadPointerRoute.cpp
+/// @brief Pointer route of Kad source records (ipv6-spec §5.6.1).
+
+#include "kademlia/KadPointerRoute.h"
+#include "kademlia/KadLog.h"
+#include "kademlia/KadPrefs.h"
+#include "kademlia/KadSearchManager.h"
+#include "utils/Opcodes.h"
+#include "utils/OtherFunctions.h"
+
+#include <algorithm>
+#include <iterator>
+
+namespace eMule::kad {
+
+std::map<UInt128, PointerRoute::Entry> PointerRoute::s_cache;
+std::size_t PointerRoute::s_running = 0;
+PointerRoute::LookupStarter PointerRoute::s_starter;
+uint32 PointerRoute::s_pubBuddyIP = 0;
+uint16 PointerRoute::s_pubBuddyPort = 0;
+time_t PointerRoute::s_pubNext = 0;
+
+namespace {
+
+// Lookups started before the last clear() report into nothing
+uint32 s_generation = 0;
+
+// A type 7 record kept past the result callback: its pointers die with it
+struct HeldRecord {
+    std::array<uint8, 16> fileHash{};
+    std::array<uint8, 16> clientHash{};
+    uint32 ip = 0;
+    uint16 tcpPort = 0;
+    uint16 udpPort = 0;
+    uint8 crypt = 0;
+};
+
+} // namespace
+
+void PointerRoute::resolve(const Kademlia::KadSourceResult& record)
+{
+    if (!record.clientHash || !record.fileHash || record.ip == 0 || record.tcpPort == 0
+        || record.pointerVersion != KAD_POINTER_VERSION)
+        return;
+
+    HeldRecord rec;
+    std::copy_n(record.fileHash, 16, rec.fileHash.begin());
+    std::copy_n(record.clientHash, 16, rec.clientHash.begin());
+    rec.ip = record.ip;
+    rec.tcpPort = record.tcpPort;
+    rec.udpPort = record.udpPort;
+    rec.crypt = record.buddyCrypt;
+
+    request(UInt128(record.clientHash), rec.ip, rec.fileHash, std::nullopt,
+            [rec](std::optional<Search::PointerHit> hit) {
+                if (!hit)
+                    return;
+                Kademlia::KadSourceResult r;
+                r.fileHash   = rec.fileHash.data();
+                r.ip         = rec.ip;
+                r.tcpPort    = rec.tcpPort;
+                r.udpPort    = rec.udpPort;
+                r.buddyCrypt = rec.crypt;
+                r.clientHash = rec.clientHash.data();
+                deliver(r, *hit);
+            });
+}
+
+bool PointerRoute::reroute(const UInt128& sourceID, uint32 sourceIP,
+                           const std::array<uint8, 16>& fileHash, BuddyEndpoint failed,
+                           Waiter waiter)
+{
+    if (sourceIP == 0 || !waiter)
+        return false;
+    return request(sourceID, sourceIP, fileHash, failed, std::move(waiter));
+}
+
+void PointerRoute::publishIfDue()
+{
+    auto* kad = Kademlia::instance();
+    auto* prefs = Kademlia::getInstancePrefs();
+    if (!kad || !kad->isRunning() || !prefs)
+        return;
+
+    Search::SourcePublishParams sp;
+    Search::fillSourceReachability(sp);
+    if (!sp.firewalled || sp.directUDPCallback || !sp.hasBuddy || sp.buddyIP == 0) {
+        // No pointer to give; the old one expires (§5.6.1)
+        s_pubBuddyIP = 0;
+        s_pubBuddyPort = 0;
+        return;
+    }
+    const time_t now = std::time(nullptr);
+    if (sp.buddyIP == s_pubBuddyIP && sp.buddyUDPPort == s_pubBuddyPort && now < s_pubNext)
+        return;
+
+    auto* search = SearchManager::prepareLookup(SearchType::StoreFile, false,
+                                                Search::pointerKey(prefs->clientHash()));
+    if (!search)
+        return;   // one still running: next tick
+    search->setPointerPublish(true);
+    search->setGUIName(QStringLiteral("Buddy pointer"));
+    if (!SearchManager::startSearch(search)) {
+        delete search;
+        return;
+    }
+    s_pubBuddyIP = sp.buddyIP;
+    s_pubBuddyPort = sp.buddyUDPPort;
+    s_pubNext = now + KADEMLIAREPUBLISHTIMES;
+    logKad(QStringLiteral("Kad: publishing buddy pointer → %1:%2").arg(ipstr(sp.buddyIP)).arg(sp.buddyUDPPort));
+}
+
+void PointerRoute::clear()
+{
+    ++s_generation;
+    // Waiters hear the end, or a rerouted source would wait forever
+    std::vector<Waiting> waiting;
+    for (auto& [id, e] : s_cache)
+        std::ranges::move(e.waiting, std::back_inserter(waiting));
+    s_cache.clear();
+    s_running = 0;
+    s_pubBuddyIP = 0;
+    s_pubBuddyPort = 0;
+    s_pubNext = 0;
+    for (const Waiting& w : waiting)
+        w.waiter(std::nullopt);
+}
+
+time_t PointerRoute::cachedFor(const UInt128& sourceID)
+{
+    auto it = s_cache.find(sourceID);
+    if (it == s_cache.end())
+        return 0;
+    return std::max<time_t>(0, it->second.expires - std::time(nullptr));
+}
+
+bool PointerRoute::request(const UInt128& sourceID, uint32 sourceIP,
+                           const std::array<uint8, 16>& fileHash,
+                           std::optional<BuddyEndpoint> failed, Waiter waiter)
+{
+    const time_t now = std::time(nullptr);
+    prune(now);
+
+    if (auto it = s_cache.find(sourceID); it != s_cache.end()) {
+        Entry& e = it->second;
+        // Another publisher IP than the one checked: not this pointer (§5.6.2)
+        if (e.sourceIP != sourceIP)
+            return false;
+        if (failed && std::ranges::find(e.failed, *failed) == e.failed.end())
+            e.failed.push_back(*failed);
+        if (const Search::PointerHit* c = untried(e)) {
+            const Search::PointerHit hit = *c;   // the waiter may touch the cache
+            waiter(hit);
+            return true;
+        }
+        if (!e.lookupRunning)
+            return false;   // cached miss, or every candidate tried
+        auto w = std::ranges::find(e.waiting, fileHash, &Waiting::fileHash);
+        if (w != e.waiting.end())
+            w->waiter = std::move(waiter);
+        else if (e.waiting.size() < kMaxWaitersPerSource)
+            e.waiting.push_back({fileHash, std::move(waiter)});
+        else
+            return false;
+        return true;
+    }
+
+    // One lookup per source (§5.6); over the cap nothing is cached
+    if (s_running >= kMaxLookups || s_cache.size() >= kMaxCacheEntries)
+        return false;
+
+    Entry e;
+    e.lookupRunning = true;
+    e.expires = now + kCacheSecs;
+    e.sourceIP = sourceIP;
+    if (failed)
+        e.failed.push_back(*failed);
+    e.waiting.push_back({fileHash, std::move(waiter)});
+    s_cache[sourceID] = std::move(e);
+
+    ++s_running;
+    const uint32 gen = s_generation;
+    const bool started = startLookup(Search::pointerKey(sourceID), sourceID, sourceIP,
+        [sourceID, gen](std::optional<Search::PointerHit> hit) {
+            if (gen == s_generation)
+                onLookupResult(sourceID, hit);
+        });
+    if (!started) {
+        --s_running;
+        s_cache.erase(sourceID);
+        return false;
+    }
+    return true;
+}
+
+const Search::PointerHit* PointerRoute::untried(const Entry& e)
+{
+    for (const auto& c : e.candidates) {
+        if (std::ranges::find(e.failed, BuddyEndpoint{c.buddyIP, c.buddyPort}) == e.failed.end())
+            return &c;
+    }
+    return nullptr;
+}
+
+void PointerRoute::onLookupResult(const UInt128& sourceID, std::optional<Search::PointerHit> hit)
+{
+    auto it = s_cache.find(sourceID);
+    if (it == s_cache.end() || !it->second.lookupRunning)
+        return;
+    Entry& e = it->second;
+
+    if (hit) {
+        // Each distinct pointer up to the cap: a planted record neither wins nor vetoes
+        const bool known = std::ranges::any_of(e.candidates, [&](const Search::PointerHit& c) {
+            return c.buddyIP == hit->buddyIP && c.buddyPort == hit->buddyPort;
+        });
+        if (known || e.candidates.size() >= kMaxCandidates)
+            return;
+        e.candidates.push_back(*hit);
+        if (std::ranges::find(e.failed, BuddyEndpoint{hit->buddyIP, hit->buddyPort}) != e.failed.end())
+            return;
+        std::vector<Waiting> waiting = std::move(e.waiting);
+        e.waiting.clear();
+        for (const Waiting& w : waiting)
+            w.waiter(*hit);
+        return;
+    }
+
+    // Lookup ended
+    if (s_running > 0)
+        --s_running;
+    e.lookupRunning = false;
+    // A miss expires soon: the publisher may get its buddy any minute
+    e.expires = std::time(nullptr) + (e.candidates.empty() ? kMissCacheSecs : kCacheSecs);
+    std::vector<Waiting> waiting = std::move(e.waiting);
+    e.waiting.clear();
+    if (e.candidates.empty())
+        logKad(QStringLiteral("Kad: no buddy pointer for %1, %2 waiting record(s) dropped")
+                   .arg(sourceID.toHexString()).arg(waiting.size()));
+    for (const Waiting& w : waiting)
+        w.waiter(std::nullopt);
+}
+
+void PointerRoute::deliver(const Kademlia::KadSourceResult& rec, const Search::PointerHit& hit)
+{
+    const auto& cb = Kademlia::kadSourceResultCallback();
+    if (!cb)
+        return;
+    // An ordinary type 3 source from here on: callback via the buddy, pointer again if it fails
+    Kademlia::KadSourceResult r = rec;
+    r.buddyIP        = hit.buddyIP;
+    r.buddyPort      = hit.buddyPort;
+    r.sourceType     = 3;
+    r.buddyHash      = hit.buddyHash.data();
+    r.pointerVersion = KAD_POINTER_VERSION;
+    cb(r);
+}
+
+void PointerRoute::prune(time_t now)
+{
+    std::erase_if(s_cache, [now](const auto& kv) {
+        return !kv.second.lookupRunning && kv.second.expires <= now;
+    });
+}
+
+bool PointerRoute::startLookup(const UInt128& key, const UInt128& sourceID, uint32 sourceIP,
+                               Search::PointerDone done)
+{
+    if (s_starter)
+        return s_starter(key, sourceID, sourceIP, std::move(done));
+    auto* search = SearchManager::prepareLookup(SearchType::File, false, key);
+    if (!search)
+        return false;
+    search->setPointerLookup(sourceID, sourceIP, std::move(done));
+    search->setGUIName(QStringLiteral("Buddy pointer %1").arg(sourceID.toHexString()));
+    if (!SearchManager::startSearch(search)) {
+        // Destructor would report the end of a lookup that never ran: disarm first
+        search->setPointerLookup(sourceID, sourceIP, nullptr);
+        delete search;
+        return false;
+    }
+    return true;
+}
+
+} // namespace eMule::kad

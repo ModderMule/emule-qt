@@ -5,7 +5,8 @@
 /// as the core sends them (GetEd3kKadContacts, GetEd3kKadLookups); and the incoming requests
 /// of both Kad pages (GetKadIncoming, GetEd3kKadIncoming).
 
-#include <QAbstractTableModel>
+#include "controls/AbstractTableModel.h"
+
 #include <QCborArray>
 #include <QCborMap>
 #include <QIcon>
@@ -19,17 +20,13 @@
 namespace eMule {
 
 /// A table of CBOR map rows; subclasses name the columns.
-class Ed3kKadTableModel : public QAbstractTableModel {
+class Ed3kKadTableModel : public AbstractTableModel<QCborMap> {
 public:
-    [[nodiscard]] int rowCount(const QModelIndex& parent = {}) const override;
-    [[nodiscard]] int columnCount(const QModelIndex& parent = {}) const override;
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     [[nodiscard]] QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
 
-    /// Replace the rows with a new snapshot.
+    /// Replace the rows with a new snapshot, matched by "id" (no reset).
     void setRows(const QCborArray& rows);
-    void clear();
-    [[nodiscard]] int count() const { return static_cast<int>(m_rows.size()); }
     [[nodiscard]] const QCborMap& row(int r) const { return m_rows.at(static_cast<size_t>(r)); }
 
 protected:
@@ -40,10 +37,8 @@ protected:
         std::function<QVariant(const QCborMap&)> sort;
     };
     explicit Ed3kKadTableModel(QObject* parent);
+    [[nodiscard]] int columnCountValue() const override { return static_cast<int>(m_columns.size()); }
     std::vector<Column> m_columns;
-
-private:
-    std::vector<QCborMap> m_rows;
 };
 
 /// The routing table, one row per node: Type, Node ID, Country, Family, Distance, Fails,
@@ -116,6 +111,8 @@ public:
 
 private:
     [[nodiscard]] static QString answerText(const QCborMap& m);
+    /// kad::IncomingRefusal as text; @p arg per code.
+    [[nodiscard]] static QString refusalText(int code, int arg);
     Network m_network;
 };
 

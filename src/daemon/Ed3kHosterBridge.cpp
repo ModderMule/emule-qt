@@ -18,6 +18,7 @@
 #include <QUrl>
 
 #include <algorithm>
+#include <optional>
 
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kHosterJoin.h"
@@ -324,6 +325,64 @@ void setHoster(ed3k::Ed3kHosterJoin* join, ed3k::Ed3kResolver* resolver, ed3k::E
     s_java = java;
 #else
     Q_UNUSED(join) Q_UNUSED(resolver) Q_UNUSED(java)
+#endif
+}
+
+#ifdef EMULE_HAVE_ED3K
+namespace {
+
+/// The item of join owner "h<id>"
+std::optional<ed3k::Ed3kHosterJoin::Item> itemOfOwner(const QString& owner)
+{
+    if (!s_join || !owner.startsWith(u'h'))
+        return std::nullopt;
+    bool ok = false;
+    const quint32 id = owner.mid(1).toUInt(&ok);
+    return ok ? s_join->item(id) : std::nullopt;
+}
+
+} // namespace
+#endif
+
+QCborMap aliasOf([[maybe_unused]] const QString& owner)
+{
+#ifdef EMULE_HAVE_ED3K
+    const auto item = itemOfOwner(owner);
+    if (!item)
+        return {};
+    return QCborMap{{QStringLiteral("network"), QStringLiteral("hoster")},
+                    {QStringLiteral("name"), item->name},
+                    {QStringLiteral("id"), item->url},
+                    {QStringLiteral("host"), item->host}};
+#else
+    return {};
+#endif
+}
+
+void appendDownloading([[maybe_unused]] QCborArray& out, [[maybe_unused]] const QString& owner)
+{
+#ifdef EMULE_HAVE_ED3K
+    const auto item = itemOfOwner(owner);
+    if (!item || item->state != ed3k::Ed3kHosterJoin::State::Downloading || item->speed == 0)
+        return;
+    const QUrl url(item->url);
+    out.append(QCborMap{
+        {QStringLiteral("network"), QStringLiteral("hoster")},
+        {QStringLiteral("isUrl"), true},
+        {QStringLiteral("userName"), item->host.isEmpty() ? url.host() : item->host},
+        // the details key of the row: one per item
+        {QStringLiteral("userHash"), QString(QStringLiteral("hoster:") + owner)},
+        {QStringLiteral("software"), QStringLiteral("HTTP")},
+        {QStringLiteral("softwareId"), -1},
+        {QStringLiteral("reqFileName"), item->name},
+        {QStringLiteral("downloadState"), QStringLiteral("Downloading")},
+        {QStringLiteral("datarate"), qint64(item->speed)},
+        {QStringLiteral("addr"), url.host()},
+        {QStringLiteral("port"), url.port(url.scheme() == QLatin1String("http") ? 80 : 443)},
+        {QStringLiteral("isConnected"), true},
+        {QStringLiteral("noViewSharedFiles"), true},
+        {QStringLiteral("sourceFrom"), -1},
+    });
 #endif
 }
 

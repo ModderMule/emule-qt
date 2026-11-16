@@ -53,6 +53,7 @@
 
 #include <QButtonGroup>
 #include <QCheckBox>
+#include <QSystemTrayIcon>
 #include <QColorDialog>
 #include <QComboBox>
 #include <QGridLayout>
@@ -265,7 +266,9 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     // Display page
     connect(m_depth3DSlider, &QSlider::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_tooltipDelaySpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_showTrayIconCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_minimizeToTrayCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_closeToTrayCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_transferDoubleClickCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showDwlPercentageCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_downloadBarModeCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
@@ -1197,8 +1200,25 @@ QWidget* OptionsDialog::createDisplayPage()
     layout->addLayout(tooltipRow);
 
     // --- 8 checkboxes (no group box) ---
+    // Tray trio as in qBittorrent: the two below only act while the icon is shown
+    m_showTrayIconCheck = new QCheckBox(tr("Show icon in system tray"), page);
+    m_showTrayIconCheck->setToolTip(tr("Off: no tray icon and no tray pop-up notifications."));
+    layout->addWidget(m_showTrayIconCheck);
+    auto* trayIndent = new QVBoxLayout;
+    trayIndent->setContentsMargins(20, 0, 0, 0);
     m_minimizeToTrayCheck = new QCheckBox(tr("Minimize to system tray"), page);
-    layout->addWidget(m_minimizeToTrayCheck);
+    trayIndent->addWidget(m_minimizeToTrayCheck);
+    m_closeToTrayCheck = new QCheckBox(tr("Close to system tray"), page);
+    m_closeToTrayCheck->setToolTip(
+        tr("The window's close button hides eMule to the tray. Exit in the tray menu still quits."));
+    trayIndent->addWidget(m_closeToTrayCheck);
+    layout->addLayout(trayIndent);
+    connect(m_showTrayIconCheck, &QCheckBox::toggled, m_minimizeToTrayCheck, &QWidget::setEnabled);
+    connect(m_showTrayIconCheck, &QCheckBox::toggled, m_closeToTrayCheck, &QWidget::setEnabled);
+    if (!QSystemTrayIcon::isSystemTrayAvailable()) {
+        m_showTrayIconCheck->setEnabled(false);
+        m_showTrayIconCheck->setToolTip(tr("This desktop has no system tray."));
+    }
 
     m_transferDoubleClickCheck = new QCheckBox(tr("Download list double-click to expand"), page);
     layout->addWidget(m_transferDoubleClickCheck);
@@ -7442,7 +7462,11 @@ void OptionsDialog::loadSettings()
     // Display page
     m_depth3DSlider->setValue(thePrefs.depth3D());
     m_tooltipDelaySpin->setValue(thePrefs.tooltipDelay());
+    m_showTrayIconCheck->setChecked(thePrefs.showTrayIcon());
     m_minimizeToTrayCheck->setChecked(thePrefs.minimizeToTray());
+    m_closeToTrayCheck->setChecked(thePrefs.closeToTray());
+    m_minimizeToTrayCheck->setEnabled(thePrefs.showTrayIcon());
+    m_closeToTrayCheck->setEnabled(thePrefs.showTrayIcon());
     m_transferDoubleClickCheck->setChecked(thePrefs.transferDoubleClick());
     m_showDwlPercentageCheck->setChecked(thePrefs.showDwlPercentage());
     m_downloadBarModeCombo->setCurrentIndex(thePrefs.downloadBarMode());
@@ -7659,7 +7683,9 @@ void OptionsDialog::saveSettings()
     // Display page
     thePrefs.setDepth3D(m_depth3DSlider->value());
     thePrefs.setTooltipDelay(m_tooltipDelaySpin->value());
+    thePrefs.setShowTrayIcon(m_showTrayIconCheck->isChecked());
     thePrefs.setMinimizeToTray(m_minimizeToTrayCheck->isChecked());
+    thePrefs.setCloseToTray(m_closeToTrayCheck->isChecked());
     thePrefs.setTransferDoubleClick(m_transferDoubleClickCheck->isChecked());
     thePrefs.setShowDwlPercentage(m_showDwlPercentageCheck->isChecked());
     thePrefs.setDownloadBarMode(m_downloadBarModeCombo->currentIndex());
@@ -8370,8 +8396,12 @@ void OptionsDialog::saveSettings()
         req.append(static_cast<qint64>(m_depth3DSlider->value()));
         req.append(QStringLiteral("tooltipDelay"));
         req.append(static_cast<qint64>(m_tooltipDelaySpin->value()));
+        req.append(QStringLiteral("showTrayIcon"));
+        req.append(m_showTrayIconCheck->isChecked());
         req.append(QStringLiteral("minimizeToTray"));
         req.append(m_minimizeToTrayCheck->isChecked());
+        req.append(QStringLiteral("closeToTray"));
+        req.append(m_closeToTrayCheck->isChecked());
         req.append(QStringLiteral("transferDoubleClick"));
         req.append(m_transferDoubleClickCheck->isChecked());
         req.append(QStringLiteral("showDwlPercentage"));

@@ -170,6 +170,7 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
     <ClCompile Include="Ed3kBootstrap.cpp" />
     <ClCompile Include="Ed3kCredit.cpp" />
     <ClCompile Include="Ed3kDownloads.cpp" />
+    <ClCompile Include="Ed3kDownloadsWeb.cpp" />
     <ClCompile Include="Ed3kSearch.cpp" />
     <ClCompile Include="Ed3kChain.cpp" />
     <ClCompile Include="Ed3kFilters.cpp" />

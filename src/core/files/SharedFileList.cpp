@@ -13,6 +13,7 @@
 #include "kademlia/KadLog.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadFirewallTester.h"
+#include "kademlia/KadPointerRoute.h"
 #include "kademlia/KadSearch.h"
 #include "kademlia/KadSearchManager.h"
 #include "net/Packet.h"
@@ -1226,6 +1227,9 @@ void SharedFileList::publish()
     if (!kad->getPublish())
         return;
 
+    // Pointer record naming our buddy, at ~userHash (ipv6-spec §5.6.1)
+    kad::PointerRoute::publishIfDue();
+
     // Firewalled with no buddy and no direct callback: nobody could fetch from us.
     // MFC SharedFileList.cpp:1240-1249.
     if (!canPublishToKad()) {
@@ -2332,28 +2336,29 @@ int SharedFileList::getHashingCount() const
 // nextDueFile — round-robin pick for Kad publishing
 // ---------------------------------------------------------------------------
 
-KnownFile* SharedFileList::nextDueFile(uint32& cursor, const std::function<bool(KnownFile*)>& due)
+KnownFile* SharedFileList::nextDueFile(PublishCursor& cursor, const std::function<bool(KnownFile*)>& due)
 {
     // due() marks the file as published when it says yes, so it may only be asked
-    // until the first yes. Two walks, each file asked at most once: from the cursor
-    // to the end, then the part before it.
+    // until the first yes. Two walks, each file asked at most once: from after the
+    // cursor to the end, then from begin() up to it.
     QMutexLocker locker(&m_mutex);
-    if (cursor >= m_map.size())
-        cursor = 0;
-    for (const bool wrapped : {false, true}) {
-        uint32 idx = 0;
-        for (auto& [key, file] : m_map) {
-            const bool inRange = wrapped ? idx < cursor : idx >= cursor;
-            if (wrapped && !inRange)
-                break;
-            if (inRange && file && due(file)) {
-                cursor = idx + 1;
-                return file;
-            }
-            ++idx;
-        }
+    auto start = m_map.begin();
+    if (cursor) {
+        if (const auto it = m_map.find(*cursor); it != m_map.end())
+            start = std::next(it);
     }
-    return nullptr;
+    const auto pick = [&](auto from, auto to) -> KnownFile* {
+        for (auto it = from; it != to; ++it) {
+            if (it->second && due(it->second)) {
+                cursor = it->first;
+                return it->second;
+            }
+        }
+        return nullptr;
+    };
+    if (KnownFile* file = pick(start, m_map.end()))
+        return file;
+    return pick(m_map.begin(), start);
 }
 
 // ---------------------------------------------------------------------------

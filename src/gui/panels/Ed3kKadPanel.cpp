@@ -459,10 +459,8 @@ void Ed3kKadPanel::requestLookups()
         }
         const std::uint64_t selected = selectedSearchId();
         m_lookupsModel->setRows(resp.fieldArray(1));
-        int running = 0;
-        for (int r = 0; r < m_lookupsModel->count(); ++r)
-            running += m_lookupsModel->row(r).value(QStringLiteral("ended")).toBool() ? 0 : 1;
-        setOutgoingCount(running);
+        // rows in the list, ended ones too (same as eD2K)
+        setOutgoingCount(m_lookupsModel->count());
         if (selected != 0)
             markSearchRow(m_lookupsModel->rowOf(selected));
         autoPickLookup();

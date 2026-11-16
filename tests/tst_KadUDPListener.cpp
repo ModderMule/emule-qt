@@ -17,6 +17,7 @@
 #include "kademlia/KadNodeCensus.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingZone.h"
+#include "kademlia/KadSearch.h"
 #include "kademlia/KadSearchDefs.h"
 #include "kademlia/KadUDPListener.h"
 #include "kademlia/KadUDPKey.h"
@@ -55,7 +56,9 @@ private slots:
     void buddySearch_asksRememberedNodeAfterRestart();
     void firewalledAckRes_countsOnlyAskedNodesOnce();
     void firewalledReq_repeatedMakesOneClient();
+    void firewalled2Req_needsValidReceiverKey();
     void ipTrustingRequest_logsReceiverKeyState();
+    void firewalled2_unkeyedSkipsAndDropsAreLogged();
 
     // Search requests we serve
     void searchSourceReq_minimalPacketIsServed();
@@ -66,6 +69,7 @@ private slots:
     void publishNotes_rejectedNoteGetsNoAnswer();
     void publishNotes_unknownTagsDropped();
     void publishSource_injectedSourceIpTagIsDropped();
+    void publishSource_routeRecordsNeedAReceiverKey();
     void searchKeyReq_brokenExpressionIsNotAnswered();
     void nodeLookupReq_notesAskerAndHandedContacts();
 
@@ -348,6 +352,48 @@ void tst_KadUDPListener::firewalledReq_repeatedMakesOneClient()
     theApp.clientList = nullptr;
 }
 
+// FIREWALLED2_REQ is only ever sent from a hello handler with that hello's key, so
+// one without a valid receiver key has a forged source (aMule #2315). Unkeyed is
+// fine only after our own unkeyed HELLO_REQ to that IP.
+void tst_KadUDPListener::firewalled2Req_needsValidReceiverKey()
+{
+    ClientList clients;
+    theApp.clientList = &clients;
+    Kademlia::setClientList(&clients);
+    eMule::testing::KadFixture kadFixture;
+    auto cleanup = qScopeGuard([&] {
+        clients.deleteAll();
+        Kademlia::setClientList(nullptr);
+        theApp.clientList = nullptr;
+    });
+
+    SafeMemFile io;
+    io.writeUInt8(KADEMLIA_FIREWALLED2_REQ);
+    io.writeUInt16(kNodeTcp);
+    io::writeUInt128(io, UInt128(uint32{0xC0FFEE}));
+    io.writeUInt8(0);
+    const QByteArray packet = io.buffer();
+    auto send = [&](uint32 ip, bool validKey) {
+        Kademlia::getInstanceUDPListener()->processPacket(
+            reinterpret_cast<const uint8*>(packet.constData()), static_cast<uint32>(packet.size()),
+            ip, kNodeUdp, validKey, KadUDPKey(0x1234, 0x0A000001), validKey);
+    };
+    auto probe = [&](uint32 ip) { return clients.findByConnIP(qToBigEndian(ip), kNodeTcp); };
+
+    const uint32 forged = 0x4D010210, keyed = 0x4D010211, helloed = 0x4D010212;
+    send(forged, false);
+    QVERIFY(probe(forged) == nullptr);
+
+    send(keyed, true);
+    QVERIFY(probe(keyed) != nullptr);
+
+    // Unkeyed HELLO_REQ, as findNodeIDByIP sends: its unkeyed check is dropped too (as aMule)
+    Kademlia::getInstanceUDPListener()->sendMyDetails(KADEMLIA2_HELLO_REQ, helloed, kNodeUdp,
+                                                      KADEMLIA_VERSION, KadUDPKey(), nullptr, false);
+    send(helloed, false);
+    QVERIFY(probe(helloed) == nullptr);
+}
+
 namespace {
 QStringList g_kadLines;
 void captureKad(QtMsgType, const QMessageLogContext& ctx, const QString& msg)
@@ -402,6 +448,55 @@ void tst_KadUDPListener::ipTrustingRequest_logsReceiverKeyState()
 
 // A source request is exactly 26 bytes (MFC KademliaUDPListener.cpp:1093-1101). A
 // 32-byte floor dropped every one of them, so stored sources were never handed out.
+// Unkeyed v2 checks are not sent (aMule drops them); both the skip and the
+// receive-side drop leave a Kad log line.
+void tst_KadUDPListener::firewalled2_unkeyedSkipsAndDropsAreLogged()
+{
+    eMule::testing::KadFixture kadFixture;
+    const bool wasOn = isKadLoggingEnabled();
+    setKadLogging(true);
+    QLoggingCategory::setFilterRules(QStringLiteral("emule.kad.debug=true"));
+    g_kadLines.clear();
+    const QtMessageHandler prev = qInstallMessageHandler(captureKad);
+    auto restore = qScopeGuard([&] {
+        qInstallMessageHandler(prev);
+        setKadLogging(wasOn);
+        QLoggingCategory::setFilterRules(QString());
+    });
+    auto* listener = Kademlia::getInstanceUDPListener();
+    auto has = [](const char* text) {
+        return std::ranges::any_of(g_kadLines, [text](const QString& l) { return l.contains(QLatin1StringView(text)); });
+    };
+
+    listener->firewalledCheck(0x4D020001, kNodeUdp, KadUDPKey(), KADEMLIA_VERSION);
+    QVERIFY(has("FIREWALLED2_REQ to 77.2.0.1"));
+    QVERIFY(has("skipped"));
+    QVERIFY(!has("Sent FIREWALLED2_REQ"));
+
+    // Key bound to our IP while still unknown (0) is released on the wire, as in MFC
+    g_kadLines.clear();
+    listener->firewalledCheck(0x4D020002, kNodeUdp, KadUDPKey(0x1234, theApp.publicIP()), KADEMLIA_VERSION);
+    QVERIFY(has("Sent FIREWALLED2_REQ (v2) to 77.2.0.2"));
+
+    // v1 has no key field: still sent
+    g_kadLines.clear();
+    listener->firewalledCheck(0x4D020003, kNodeUdp, KadUDPKey(), KADEMLIA_VERSION6_49aBETA);
+    QVERIFY(has("Sent FIREWALLED_REQ (v1)"));
+
+    g_kadLines.clear();
+    SafeMemFile io;
+    io.writeUInt8(KADEMLIA_FIREWALLED2_REQ);
+    io.writeUInt16(kNodeTcp);
+    io::writeUInt128(io, UInt128(uint32{0xC0FFEE}));
+    io.writeUInt8(0);
+    const QByteArray packet = io.buffer();
+    listener->processPacket(reinterpret_cast<const uint8*>(packet.constData()),
+                            static_cast<uint32>(packet.size()), 0x4D020004, kNodeUdp, false,
+                            KadUDPKey(), false);
+    QVERIFY(has("FIREWALLED2_REQ from 77.2.0.4"));
+    QVERIFY(has("dropped"));
+}
+
 void tst_KadUDPListener::searchSourceReq_minimalPacketIsServed()
 {
     eMule::testing::KadFixture kadFixture;
@@ -697,6 +792,55 @@ void tst_KadUDPListener::publishSource_injectedSourceIpTagIsDropped()
     const std::vector<Tag>& source = tags.results.front();
     QCOMPARE(countTags(source, FT_SOURCEIP), 1);
     QCOMPARE(findTag(source, FT_SOURCEIP)->intValue(), kLanIP);
+}
+
+// ipv6-spec §5.6.2: type 7, bpv and pointer records only with a valid receiver key —
+// the key proves the publisher receives at the IPv4 stamped into FT_SOURCEIP.
+void tst_KadUDPListener::publishSource_routeRecordsNeedAReceiverKey()
+{
+    eMule::testing::KadFixture kadFixture;
+    QTRY_VERIFY(Kademlia::getInstanceIndexed()->isLoaded());
+    const UInt128 fileID(uint32{0x51C0FFE4});
+    SentSpy spy;
+
+    uint32 nextSource = 0x70;
+    const auto publish = [&](const UInt128& key, std::vector<Tag> tags, bool keyed) {
+        tags.emplace_back(uint8{FT_SOURCEPORT}, uint32{4662});
+        const QByteArray packet = publishRequest(KADEMLIA2_PUBLISH_SOURCE_REQ, key, UInt128(nextSource), tags);
+        Kademlia::getInstanceUDPListener()->processPacket(
+            reinterpret_cast<const uint8*>(packet.constData()), static_cast<uint32>(packet.size()),
+            kLanIP + (nextSource << 8), kNodeUdp, keyed, KadUDPKey(0));
+        ++nextSource;
+    };
+    const Tag bpv(QByteArrayLiteral(TAG_BUDDYPOINTER), uint32{KAD_POINTER_VERSION});
+    const Tag type3(uint8{FT_SOURCETYPE}, uint32{3});
+    const Tag type7(uint8{FT_SOURCETYPE}, uint32{7});
+    const Tag buddyIP(uint8{FT_SERVERIP}, uint32{0x0A0B0C0D});
+
+    // Without the key: refused, no PUBLISH_RES
+    publish(fileID, {type7, bpv}, false);
+    publish(fileID, {type3, buddyIP, bpv}, false);
+    publish(Search::pointerKey(UInt128(nextSource)), {type3, buddyIP}, false);
+    QCOMPARE(spy.publishAnswers, 0);
+
+    // A classic record stays open to the installed base
+    publish(fileID, {type3, buddyIP}, false);
+    QCOMPARE(spy.publishAnswers, 1);
+
+    // With the key: stored, bpv once
+    publish(fileID, {type3, buddyIP, bpv, bpv}, true);
+    publish(Search::pointerKey(UInt128(nextSource)), {type3, buddyIP}, true);
+    QCOMPARE(spy.publishAnswers, 3);
+
+    ResultTagSpy tags;
+    deliver(sourceRequest(fileID, 0, 0), kNodeIP);
+    QCOMPARE(tags.results.size(), size_t{2});
+    int bpvCount = 0;
+    for (const auto& r : tags.results)
+        bpvCount += static_cast<int>(std::ranges::count_if(r, [](const Tag& t) {
+            return t.nameId() == 0 && t.name() == QByteArrayLiteral(TAG_BUDDYPOINTER);
+        }));
+    QCOMPARE(bpvCount, 1);
 }
 
 // A restrictive request whose expression does not parse must not be served as

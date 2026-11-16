@@ -5,8 +5,10 @@
 #include "utils/ClientIcons.h"
 #include "app/SkinIcons.h"
 
+#include <QCoreApplication>
 #include <QGuiApplication>
 #include <QHash>
+#include <QImage>
 #include <QPainter>
 #include <QPixmap>
 
@@ -98,10 +100,107 @@ QIcon clientSoftwareIcon(int softwareId, bool hasCredit, bool isFriend)
     return composite;
 }
 
-QIcon ed3kClientIcon()
+Ed3kJoin ed3kJoinOf(const QString& tag)
 {
-    static const QIcon icon = skinIcon(QStringLiteral(":/icons/ClientEd3k.ico"));
+    if (tag == QLatin1String("torrent"))
+        return Ed3kJoin::Torrent;
+    if (tag == QLatin1String("usenet"))
+        return Ed3kJoin::Usenet;
+    if (tag == QLatin1String("hoster"))
+        return Ed3kJoin::Hoster;
+    return Ed3kJoin::None;
+}
+
+QIcon ed3kClientIcon(bool anonymous, Ed3kJoin join)
+{
+    static QHash<int, QIcon> cache;
+    static quint64 skinSeen = 0;
+    if (SkinIcons::instance().changedSince(skinSeen))
+        cache.clear();
+    const int key = static_cast<int>(join) * 2 + (anonymous ? 1 : 0);
+    if (auto it = cache.constFind(key); it != cache.cend())
+        return it.value();
+
+    const QIcon base = skinIcon(QStringLiteral(":/icons/ClientEd3k.ico"));
+    if (!anonymous && join == Ed3kJoin::None) {
+        cache.insert(key, base);
+        return base;
+    }
+
+    QImage img = base.pixmap(16, 16).toImage().convertToFormat(QImage::Format_ARGB32);
+    if (anonymous) {
+        // our anonymous key: a dark grey shadow of the node icon
+        for (int y = 0; y < img.height(); ++y) {
+            auto* line = reinterpret_cast<QRgb*>(img.scanLine(y));
+            for (int x = 0; x < img.width(); ++x) {
+                const int g = qGray(line[x]) * 3 / 5;
+                line[x] = qRgba(g, g, g, qAlpha(line[x]));
+            }
+        }
+    }
+    QPixmap pixmap = QPixmap::fromImage(img);
+    if (join != Ed3kJoin::None) {
+        const QString badge = join == Ed3kJoin::Torrent  ? QStringLiteral(":/icons/Torrent.ico")
+                              : join == Ed3kJoin::Usenet ? QStringLiteral(":/icons/Usenet.ico")
+                                                         : QStringLiteral(":/icons/Hoster.ico");
+        QPainter painter(&pixmap);
+        painter.drawPixmap(6, 6, 10, 10, skinIcon(badge).pixmap(10, 10));
+    }
+    QIcon icon(pixmap);
+    cache.insert(key, icon);
     return icon;
+}
+
+QString ed3kNetworkText(bool anonymous, Ed3kJoin join)
+{
+    QString text = anonymous ? QCoreApplication::translate("ClientIcons", "ed3k, anonymous key")
+                             : QCoreApplication::translate("ClientIcons", "ed3k");
+    switch (join) {
+    case Ed3kJoin::Torrent: text = QCoreApplication::translate("ClientIcons", "%1, for a torrent").arg(text); break;
+    case Ed3kJoin::Usenet:  text = QCoreApplication::translate("ClientIcons", "%1, for a Usenet download").arg(text); break;
+    case Ed3kJoin::Hoster:  text = QCoreApplication::translate("ClientIcons", "%1, for a hoster download").arg(text); break;
+    case Ed3kJoin::None:    break;
+    }
+    return text;
+}
+
+QIcon networkClientIcon(Ed3kJoin network)
+{
+    switch (network) {
+    case Ed3kJoin::Torrent: return skinIcon(QStringLiteral(":/icons/Torrent.ico"));
+    case Ed3kJoin::Usenet:  return skinIcon(QStringLiteral(":/icons/Usenet.ico"));
+    case Ed3kJoin::Hoster:  return skinIcon(QStringLiteral(":/icons/Hoster.ico"));
+    case Ed3kJoin::None:    break;
+    }
+    return {};
+}
+
+QString networkName(Ed3kJoin network)
+{
+    switch (network) {
+    case Ed3kJoin::Torrent: return QStringLiteral("BitTorrent");
+    case Ed3kJoin::Usenet:  return QStringLiteral("Usenet");
+    case Ed3kJoin::Hoster:  return QCoreApplication::translate("ClientIcons", "Hoster");
+    case Ed3kJoin::None:    break;
+    }
+    return {};
+}
+
+QString ed3kAliasText(const QCborMap& alias)
+{
+    const QString network = alias.value(QStringLiteral("network")).toString();
+    const QString name = alias.value(QStringLiteral("name")).toString();
+    const QString id = alias.value(QStringLiteral("id")).toString();
+    if (network == QLatin1String("torrent"))
+        return QCoreApplication::translate("ClientIcons", "Torrent: %1 (%2)").arg(name, id);
+    if (network == QLatin1String("usenet"))
+        return QCoreApplication::translate("ClientIcons", "Usenet: %1").arg(name);
+    if (network == QLatin1String("hoster"))
+        return QCoreApplication::translate("ClientIcons", "Hoster: %1 (%2)").arg(name, id);
+    if (network == QLatin1String("ed2k"))
+        return name.isEmpty() ? QCoreApplication::translate("ClientIcons", "eD2K: %1").arg(id)
+                              : QCoreApplication::translate("ClientIcons", "eD2K: %1 (%2)").arg(name, id);
+    return {};
 }
 
 QIcon i2pIcon()

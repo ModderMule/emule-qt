@@ -34,6 +34,8 @@
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTemporaryDir>
+#include "utils/Exceptions.h"
+
 #include <QTest>
 #include <QtEndian>
 
@@ -93,6 +95,7 @@ private slots:
     // Phase 2 tests — hello handshake
     void processHello_basic();
     void processHello_emuleVersion();
+    void processHello_emuleQtIdent();
     void processHello_miscOptions1();
     void processHello_miscOptions2();
     void processHello_udpPorts();
@@ -118,6 +121,7 @@ private slots:
     void sendHelloTypePacket_format();
     void processHelloPacket_parsesIPv6Tags();
     void processHelloPacket_rejectsHugeTagCount();
+    void processHelloPacket_kadRouteHashMustMatch();
     void outOfPartReqs_onlyEndsARunningTransfer();
     void leavingDownloading_releasesTheBlockReservations();
     void unaskedBlockData_endsTheTransferAfterTooMuchOfIt();
@@ -891,6 +895,54 @@ void tst_UpDownClient::processHello_emuleVersion()
 
     // Both flags should be set
     QCOMPARE(client.infoPacketsReceived() & InfoPacketState::Both, InfoPacketState::Both);
+}
+
+void tst_UpDownClient::processHello_emuleQtIdent()
+{
+    uint8 hash[16];
+    fillHash(hash, 0x5A);
+    const uint32 emuleVer = (0u << 17) | (70u << 10) | (0u << 7);
+
+    const auto parse = [&](const QString& mod, uint32 modMisc) {
+        std::vector<Tag> tags;
+        tags.emplace_back(CT_NAME, QStringLiteral("Peer"));
+        tags.emplace_back(CT_VERSION, static_cast<uint32>(60));
+        tags.emplace_back(CT_EMULE_VERSION, emuleVer);
+        if (!mod.isEmpty())
+            tags.emplace_back(CT_MOD_VERSION, mod);
+        if (modMisc)
+            tags.emplace_back(CT_MOD_MISCOPTIONS, modMisc);
+        const auto buf = buildHelloPacket(hash, 0x0A0B0C0D, 4662, tags);
+        auto client = std::make_unique<UpDownClient>();
+        client->processHelloPacket(reinterpret_cast<const uint8*>(buf.constData()),
+                                   static_cast<uint32>(buf.size()));
+        return client;
+    };
+    const uint32 qtMisc = MODMISC_IPV6 | MODMISC_EXTXS | MODMISC_EXTXS_SKIPTAGS | MODMISC_HTTPCACHE;
+
+    // Real: modstring + HTTP cache bit
+    auto real = parse(QStringLiteral("eMule Qt 0.7.33"), qtMisc);
+    QVERIFY(real->isEmuleQt());
+    QCOMPARE(real->emuleQtVersion(), (7u << 8) | 33u);
+    QCOMPARE(real->displaySoftwareStr(), QStringLiteral("eMuleQt v0.7.33"));
+    QCOMPARE(real->dbgGetFullClientSoftVer(), QStringLiteral("eMuleQt v0.7.33"));
+    QCOMPARE(real->clientSoft(), ClientSoftware::eMule);   // wire identity stays eMule
+    QCOMPARE(real->clientSoftwareStr(), QStringLiteral("eMule v0.70a"));
+
+    // Copied modstring without the bit (aMule sends bits 0+5 only): stays eMule with the mod
+    auto fake = parse(QStringLiteral("eMule Qt 0.7.33"), MODMISC_EXTXS | MODMISC_EXTXS_SKIPTAGS);
+    QVERIFY(!fake->isEmuleQt());
+    QCOMPARE(fake->dbgGetFullClientSoftVer(), QStringLiteral("eMule v0.70a [eMule Qt 0.7.33]"));
+    QVERIFY(!parse(QStringLiteral("eMule Qt 0.7.33"), 0)->isEmuleQt());
+
+    // Bit without our modstring
+    QVERIFY(!parse(QStringLiteral("eMuleAI v1.0"), qtMisc)->isEmuleQt());
+    QVERIFY(!parse(QStringLiteral("eMule Qt 0.7.33 [mod]"), qtMisc)->isEmuleQt());
+
+    QCOMPARE(UpDownClient::parseEmuleQtModVersion(QStringLiteral("eMule Qt " EMULE_VERSION_STRING)),
+             (uint32(EMULE_VERSION_MAJOR) << 16) | (uint32(EMULE_VERSION_MINOR) << 8)
+                 | uint32(EMULE_VERSION_PATCH));
+    QCOMPARE(UpDownClient::parseEmuleQtModVersion(QStringLiteral("eMule Qt 0.0.0")), 0u);
 }
 
 void tst_UpDownClient::processHello_miscOptions1()
@@ -3762,6 +3814,31 @@ void tst_UpDownClient::setDownloadState_stampsTheConnectClock()
     const uint64 rewound = client.lastTriedToConnect();
     QVERIFY2(getTickCount() - rewound >= MIN2MS(20),
              "a Kad source over the connection cap must be dialable again at once");
+}
+
+void tst_UpDownClient::processHelloPacket_kadRouteHashMustMatch()
+{
+    // ipv6-spec §5.6.2: a Kad ip6 route promised a user hash; another one drops the peer
+    uint8 promised[16];
+    fillHash(promised, 0x71);
+    uint8 other[16];
+    fillHash(other, 0x72);
+    std::vector<Tag> tags;
+    tags.emplace_back(CT_NAME, QStringLiteral("peer"));
+
+    UpDownClient wrong;
+    wrong.setKadRouteHash(promised);
+    const auto bad = buildHelloPacket(other, 0x0A0B0C0D, 4662, tags);
+    QVERIFY_THROWS_EXCEPTION(ClientException, wrong.processHelloPacket(
+        reinterpret_cast<const uint8*>(bad.constData()), static_cast<uint32>(bad.size())));
+    QVERIFY(wrong.kadRouteUnverified());
+
+    UpDownClient right;
+    right.setKadRouteHash(promised);
+    const auto good = buildHelloPacket(promised, 0x0A0B0C0D, 4662, tags);
+    right.processHelloPacket(reinterpret_cast<const uint8*>(good.constData()),
+                             static_cast<uint32>(good.size()));
+    QVERIFY(!right.kadRouteUnverified());
 }
 
 void tst_UpDownClient::processHelloPacket_rejectsHugeTagCount()

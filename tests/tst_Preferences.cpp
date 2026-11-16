@@ -174,6 +174,26 @@ private slots:
         QCOMPARE(p2.configDir(), realDir);
     }
 
+    // Tray icon + close-to-tray: defaults (icon on, close quits as MFC) and round trip
+    void trayOptions_defaultsAndRoundTrip()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("prefs.yaml"));
+        Preferences p;
+        p.load(file);
+        QCOMPARE(p.showTrayIcon(), true);
+        QCOMPARE(p.closeToTray(), false);
+        QCOMPARE(p.minimizeToTray(), true);
+        p.setShowTrayIcon(false);
+        p.setCloseToTray(true);
+        p.save();
+
+        Preferences p2;
+        p2.load(file);
+        QCOMPARE(p2.showTrayIcon(), false);
+        QCOMPARE(p2.closeToTray(), true);
+    }
+
     // #112: validators of automatic downloads survive a restart and stay tied to
     // the URL they came from
     void downloadValidators_roundTripAndUrlBound()

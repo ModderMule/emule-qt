@@ -313,6 +313,9 @@ signals:
 private:
     void applyInto(UsenetItemRow& target, const UsenetItemRow& incoming);
     [[nodiscard]] int rowOf(const QString& id) const;
+    /// Apply @p incoming to top-level @p row; file rows inserted/removed, never a reset
+    /// (a reset swallows a double click and collapses the tree).
+    void updateRow(int row, const UsenetItemRow& incoming);
 
     /// Where a release stands, as an order rather than a word. The enum above is
     /// wire order and reads as nonsense in a column; this is the same

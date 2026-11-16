@@ -244,11 +244,9 @@ void ServerListModel::refreshFromCborArray(const QCborArray& servers)
         rows.push_back(std::move(row));
     }
 
-    // In place when the server set is unchanged: refreshes arrive on every connect
-    // state push, and a reset between the two clicks of a double click eats it.
-    updateRows(std::move(rows), [](const ServerRow& a, const ServerRow& b) {
-        return a.serverId == b.serverId;
-    });
+    // Keyed in place: refreshes arrive on every connect state push, and a reset
+    // between the two clicks of a double click eats it.
+    syncRows(std::move(rows), [](const ServerRow& r) { return r.serverId; });
 
     // Force repaint of foreground color after model reset so the connected
     // server row reliably shows blue through the sort proxy model.

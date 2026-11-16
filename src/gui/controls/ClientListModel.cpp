@@ -130,8 +130,27 @@ QVariant ClientListModel::data(const QModelIndex& index, int role) const
             return c.remoteQueueRank > 0 ? tr("place %1").arg(c.remoteQueueRank) : QString();
     }
 
+    // BitTorrent peers, news servers, hosters of a job joined with ed3k: their network's icon,
+    // its name as the source type
+    const Ed3kJoin other = c.network == ClientNetwork::Bt       ? Ed3kJoin::Torrent
+                           : c.network == ClientNetwork::Usenet ? Ed3kJoin::Usenet
+                           : c.network == ClientNetwork::Hoster ? Ed3kJoin::Hoster
+                                                                : Ed3kJoin::None;
+    if (other != Ed3kJoin::None) {
+        if (role == Qt::DecorationRole && index.column() == 0)
+            return CountryFlags::withFlag(networkClientIcon(other), c.cc);
+        if (role == Qt::ToolTipRole && index.column() == 0)
+            return c.cc.isEmpty() ? networkName(other) : networkName(other) + u'\n' + CountryFlags::tooltip(c.cc);
+        if (m_mode == ClientListMode::Downloading && index.column() == 7 && role == Qt::DisplayRole)
+            return networkName(other);
+        if (m_mode == ClientListMode::Downloading && index.column() == 7 && role == Qt::UserRole)
+            return 100 + static_cast<int>(other);   // after eD2K's source types
+        if (role == FileSizeRole)
+            return QVariant::fromValue(qint64(0));
+    }
+
     if (index.column() == sharedListColumn()) {
-        if (c.isUrl || c.network == ClientNetwork::Ed3k)
+        if (c.isUrl || c.network != ClientNetwork::Ed2k)
             return {};   // HTTP source / ed3k node, no eD2K shared list
         if (role == Qt::DisplayRole)
             return c.noViewShared ? tr("No") : tr("Yes");
@@ -157,10 +176,14 @@ QVariant ClientListModel::data(const QModelIndex& index, int role) const
 
     if (role == Qt::DecorationRole && index.column() == 0)
         return CountryFlags::withFlag(c.network == ClientNetwork::Ed3k
-                                          ? ed3kClientIcon()
+                                          ? ed3kClientIcon(c.anonymous, ed3kJoinOf(c.ed3kJoin))
                                           : clientSoftwareIcon(c.softwareId, c.hasCredit, c.isFriend),
                                       c.cc);
 
+    if (role == Qt::ToolTipRole && index.column() == 0 && c.network == ClientNetwork::Ed3k) {
+        const QString net = ed3kNetworkText(c.anonymous, ed3kJoinOf(c.ed3kJoin));
+        return c.cc.isEmpty() ? net : net + u'\n' + CountryFlags::tooltip(c.cc);
+    }
     if (role == Qt::ToolTipRole && (index.column() == 0 || isCountry) && !c.cc.isEmpty())
         return CountryFlags::tooltip(c.cc);
 

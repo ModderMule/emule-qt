@@ -59,6 +59,16 @@ QString formatClientVersion(uint32 ver)
     return QStringLiteral("v%1.%2.%3").arg(maj).arg(mn).arg(upd);
 }
 
+/// Stats-only software key for proved eMuleQt peers (they speak as eMule on the wire)
+constexpr int kEmuleQtSoft = 1000;
+const QString kEmuleQtName = QStringLiteral("eMuleQt");
+
+/// Packed eMuleQt version (maj<<16 | min<<8 | patch) as "v0.7.33"
+QString formatEmuleQtVersion(uint32 ver)
+{
+    return QStringLiteral("v%1.%2.%3").arg(ver >> 16).arg((ver >> 8) & 0xFF).arg(ver & 0xFF);
+}
+
 /// Display name for a client software type. eMule/OldEMule and the compat family
 /// each collapse onto one label, which is what merges their counts.
 QString clientSoftName(int sw)
@@ -75,7 +85,9 @@ QString clientSoftName(int sw)
     case ClientSoftware::xMule:
     case ClientSoftware::lphant:        return QStringLiteral("eM Compat");
     case ClientSoftware::URL:           return QStringLiteral("URL");
-    default:                            return QStringLiteral("Unknown");
+    default:
+        if (sw == kEmuleQtSoft)
+            return kEmuleQtName;                            return QStringLiteral("Unknown");
     }
 }
 
@@ -132,6 +144,14 @@ std::vector<ClientSoftStat> collectClientSoftwareStats(const ClientList& clients
             ++census.netUnknown;
         }
 
+        // Proved eMuleQt: own family, its own version, no modstring
+        if (c->isEmuleQt()) {
+            auto& si = softMap[kEmuleQtSoft];
+            ++si.count;
+            ++si.versions[c->emuleQtVersion()].count;
+            return;
+        }
+
         const int sw = static_cast<int>(c->clientSoft());
         auto& si = softMap[sw];
         ++si.count;
@@ -172,7 +192,8 @@ std::vector<ClientSoftStat> collectClientSoftwareStats(const ClientList& clients
         soft.versions.reserve(static_cast<size_t>(it->versions.size()));
         for (auto vit = it->versions.cbegin(); vit != it->versions.cend(); ++vit) {
             ClientVersionStat ver;
-            ver.label = formatClientVersion(vit.key());
+            ver.label = it.key() == kEmuleQtName ? formatEmuleQtVersion(vit.key())
+                                                 : formatClientVersion(vit.key());
             ver.count = vit->count;
 
             ver.mods.reserve(static_cast<size_t>(vit->mods.size()));
@@ -227,19 +248,19 @@ void updateRecords()
 // Wire key names for the per-client breakdown arrays.
 constexpr const char* kSesUpClientKeys[] = {
     "sesUpEmule", "sesUpEDHybrid", "sesUpEDonkey", "sesUpAMule",
-    "sesUpMLdonkey", "sesUpShareaza", "sesUpEMCompat"
+    "sesUpMLdonkey", "sesUpShareaza", "sesUpEMCompat", "sesUpEmuleQt"
 };
 constexpr const char* kSesDownClientKeys[] = {
     "sesDownEmule", "sesDownEDHybrid", "sesDownEDonkey", "sesDownAMule",
-    "sesDownMLdonkey", "sesDownShareaza", "sesDownEMCompat", "sesDownURL"
+    "sesDownMLdonkey", "sesDownShareaza", "sesDownEMCompat", "sesDownEmuleQt", "sesDownURL"
 };
 constexpr const char* kCumUpClientKeys[] = {
     "cumUpEmule", "cumUpEDHybrid", "cumUpEDonkey", "cumUpAMule",
-    "cumUpMLdonkey", "cumUpShareaza", "cumUpEMCompat"
+    "cumUpMLdonkey", "cumUpShareaza", "cumUpEMCompat", "cumUpEmuleQt"
 };
 constexpr const char* kCumDownClientKeys[] = {
     "cumDownEmule", "cumDownEDHybrid", "cumDownEDonkey", "cumDownAMule",
-    "cumDownMLdonkey", "cumDownShareaza", "cumDownEMCompat", "cumDownURL"
+    "cumDownMLdonkey", "cumDownShareaza", "cumDownEMCompat", "cumDownEmuleQt", "cumDownURL"
 };
 
 static_assert(std::size(kSesUpClientKeys) == Statistics::kUpClientCount);

@@ -9,6 +9,7 @@
 #include "app/SkinIcons.h"
 
 #include <QCborMap>
+#include <QHash>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QIcon>
@@ -56,54 +57,28 @@ Ed3kRoomList::Ed3kRoomList(QWidget* parent)
 void Ed3kRoomList::setRooms(const QCborArray& rooms)
 {
     m_rooms = rooms;
-    const QString selected = selectedRoom();
-    m_tree->setSortingEnabled(false);
-    m_tree->clear();
+    // items updated in place: a clear() between the two clicks of a double click
+    // swallows it, and drops the selection
+    QHash<QString, QCborMap> byRoom;
     for (const QCborValue& v : rooms) {
         const QCborMap r = v.toMap();
-        auto* item = new SortableTreeItem(m_tree);
-        const QString room = r.value(QStringLiteral("room")).toString();
-        const QString title = r.value(QStringLiteral("title")).toString();
-        item->setText(0, title.isEmpty() ? room.left(16) : title);
-        item->setIcon(0, skinIcon(QStringLiteral(":/icons/IRC.ico")));
-        item->setData(0, Qt::UserRole, room);
-        item->setText(1, r.value(QStringLiteral("nick")).toString());
-        const int members = int(r.value(QStringLiteral("members")).toArray().size());
-        item->setText(2, QString::number(members));
-        item->setData(2, SortRole, members);
-        item->setTextAlignment(2, Qt::AlignRight | Qt::AlignVCenter);
-        QStringList kind;
-        if (r.value(QStringLiteral("closed")).toBool())
-            kind << tr("Closed");
-        else if (r.value(QStringLiteral("private")).toBool())
-            kind << tr("Private");
-        else
-            kind << tr("Public");
-        if (r.value(QStringLiteral("moderated")).toBool())
-            kind << tr("moderated");
-        // hops.md §1: which key the room is under
-        if (r.value(QStringLiteral("key")).toString() == QLatin1String("Anonymous"))
-            kind << tr("anonymous");
-        if (r.value(QStringLiteral("owner")).toBool())
-            kind << tr("owner");
-        else if (r.value(QStringLiteral("moderator")).toBool())
-            kind << tr("moderator");
-        item->setText(3, kind.join(QStringLiteral(", ")));
-        QString state;
-        const int neighbours = int(r.value(QStringLiteral("neighbours")).toInteger());
-        if (r.value(QStringLiteral("waitingHide")).toBool())
-            state = tr("Waiting for hiding to be on");
-        else if (r.value(QStringLiteral("notAdmitted")).toBool())
-            state = tr("Not admitted: send your member key to a moderator");
-        else if (r.value(QStringLiteral("keyMissing")).toBool())
-            state = tr("Waiting for the room key");
-        else if (neighbours > 0)
-            state = tr("Joined (%n neighbour(s))", nullptr, neighbours);
-        else
-            state = tr("Looking for members");
-        item->setText(4, state);
-        if (room == selected)
-            item->setSelected(true);
+        byRoom.insert(r.value(QStringLiteral("room")).toString(), r);
+    }
+    m_tree->setSortingEnabled(false);
+    for (int i = m_tree->topLevelItemCount() - 1; i >= 0; --i) {
+        QTreeWidgetItem* item = m_tree->topLevelItem(i);
+        const QString room = item->data(0, Qt::UserRole).toString();
+        if (const auto it = byRoom.constFind(room); it != byRoom.cend()) {
+            fillItem(item, *it);
+            byRoom.erase(it);
+        } else {
+            delete item;
+        }
+    }
+    for (const QCborValue& v : rooms) {
+        const QCborMap r = v.toMap();
+        if (byRoom.contains(r.value(QStringLiteral("room")).toString()))
+            fillItem(new SortableTreeItem(m_tree), r);
     }
     m_tree->setSortingEnabled(true);
 }
@@ -151,6 +126,50 @@ void Ed3kRoomList::showMenu(const QPoint& pos)
     if (row.value(QStringLiteral("owner")).toBool())
         add(tr("Room info..."), Action::EditInfo, true);
     menu.exec(m_tree->viewport()->mapToGlobal(pos));
+}
+
+void Ed3kRoomList::fillItem(QTreeWidgetItem* item, const QCborMap& r) const
+{
+    const QString room = r.value(QStringLiteral("room")).toString();
+    const QString title = r.value(QStringLiteral("title")).toString();
+    item->setText(0, title.isEmpty() ? room.left(16) : title);
+    item->setIcon(0, skinIcon(QStringLiteral(":/icons/IRC.ico")));
+    item->setData(0, Qt::UserRole, room);
+    item->setText(1, r.value(QStringLiteral("nick")).toString());
+    const int members = int(r.value(QStringLiteral("members")).toArray().size());
+    item->setText(2, QString::number(members));
+    item->setData(2, SortRole, members);
+    item->setTextAlignment(2, Qt::AlignRight | Qt::AlignVCenter);
+    QStringList kind;
+    if (r.value(QStringLiteral("closed")).toBool())
+        kind << tr("Closed");
+    else if (r.value(QStringLiteral("private")).toBool())
+        kind << tr("Private");
+    else
+        kind << tr("Public");
+    if (r.value(QStringLiteral("moderated")).toBool())
+        kind << tr("moderated");
+    // hops.md §1: which key the room is under
+    if (r.value(QStringLiteral("key")).toString() == QLatin1String("Anonymous"))
+        kind << tr("anonymous");
+    if (r.value(QStringLiteral("owner")).toBool())
+        kind << tr("owner");
+    else if (r.value(QStringLiteral("moderator")).toBool())
+        kind << tr("moderator");
+    item->setText(3, kind.join(QStringLiteral(", ")));
+    QString state;
+    const int neighbours = int(r.value(QStringLiteral("neighbours")).toInteger());
+    if (r.value(QStringLiteral("waitingHide")).toBool())
+        state = tr("Waiting for hiding to be on");
+    else if (r.value(QStringLiteral("notAdmitted")).toBool())
+        state = tr("Not admitted: send your member key to a moderator");
+    else if (r.value(QStringLiteral("keyMissing")).toBool())
+        state = tr("Waiting for the room key");
+    else if (neighbours > 0)
+        state = tr("Joined (%n neighbour(s))", nullptr, neighbours);
+    else
+        state = tr("Looking for members");
+    item->setText(4, state);
 }
 
 QString Ed3kRoomList::selectedRoom() const

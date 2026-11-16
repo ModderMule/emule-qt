@@ -288,6 +288,9 @@
     <ClCompile Include="kademlia\KadMiscUtils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="kademlia\KadOutboundGuard.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="kademlia\KadPacketTracking.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -301,6 +304,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="kademlia\KadSearch.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="kademlia\KadPointerRoute.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="kademlia\KadSearchManager.cpp">
@@ -1058,6 +1064,9 @@
     <ClInclude Include="kademlia\KadMiscUtils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="kademlia\KadOutboundGuard.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="kademlia\KadPacketTracking.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1074,6 +1083,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="kademlia\KadSearchDefs.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="kademlia\KadPointerRoute.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="kademlia\KadSearchManager.h">

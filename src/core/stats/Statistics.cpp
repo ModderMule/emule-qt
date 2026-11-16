@@ -596,9 +596,11 @@ void Statistics::resetUpDatarateOverhead()
 // Per-client / port / source transfer tracking
 // ---------------------------------------------------------------------------
 
-int Statistics::clientIndex(ClientSoftware cs)
+int Statistics::clientIndex(ClientSoftware cs, bool emuleQt)
 {
-    // Map sparse ClientSoftware enum → compact index 0..7
+    if (emuleQt)
+        return kEmuleQtClientIndex;
+    // Map sparse ClientSoftware enum → compact index 0..8
     switch (cs) {
     case ClientSoftware::eMule:
     case ClientSoftware::OldEMule:     return 0; // eMule
@@ -610,18 +612,18 @@ int Statistics::clientIndex(ClientSoftware cs)
     case ClientSoftware::cDonkey:
     case ClientSoftware::xMule:
     case ClientSoftware::lphant:        return 6; // eM Compat
-    case ClientSoftware::URL:           return 7; // URL (download only)
+    case ClientSoftware::URL:           return 8; // URL (download only)
     default:                            return 6; // unknown → compat
     }
 }
 
 void Statistics::addTransferData(ClientSoftware clientType, uint16 port,
-                                  bool isPartFile, bool isUpload, uint64 bytes)
+                                  bool isPartFile, bool isUpload, uint64 bytes, bool emuleQt)
 {
     if (bytes == 0)
         return;
 
-    const int idx = clientIndex(clientType);
+    const int idx = clientIndex(clientType, emuleQt);
     const bool defaultPort = (port == 4662);
 
     if (isUpload) {
@@ -713,10 +715,10 @@ void Statistics::rebaseCumulative(const Preferences& prefs)
 
     b.upByClient = {prefs.cumUpEmule(), prefs.cumUpEDHybrid(), prefs.cumUpEDonkey(),
                     prefs.cumUpAMule(), prefs.cumUpMLdonkey(), prefs.cumUpShareaza(),
-                    prefs.cumUpEMCompat()};
+                    prefs.cumUpEMCompat(), prefs.cumUpEmuleQt()};
     b.downByClient = {prefs.cumDownEmule(), prefs.cumDownEDHybrid(), prefs.cumDownEDonkey(),
                       prefs.cumDownAMule(), prefs.cumDownMLdonkey(), prefs.cumDownShareaza(),
-                      prefs.cumDownEMCompat(), prefs.cumDownURL()};
+                      prefs.cumDownEMCompat(), prefs.cumDownEmuleQt(), prefs.cumDownURL()};
 
     b.upPort4662 = prefs.cumUpPort4662();
     b.upPortOther = prefs.cumUpPortOther();
@@ -912,6 +914,7 @@ void Statistics::flushCumulativeToPrefs(Preferences& prefs,
     prefs.setCumUpMLdonkey(t.upByClient[4]);
     prefs.setCumUpShareaza(t.upByClient[5]);
     prefs.setCumUpEMCompat(t.upByClient[6]);
+    prefs.setCumUpEmuleQt(t.upByClient[7]);
 
     prefs.setCumDownEmule(t.downByClient[0]);
     prefs.setCumDownEDHybrid(t.downByClient[1]);
@@ -920,7 +923,8 @@ void Statistics::flushCumulativeToPrefs(Preferences& prefs,
     prefs.setCumDownMLdonkey(t.downByClient[4]);
     prefs.setCumDownShareaza(t.downByClient[5]);
     prefs.setCumDownEMCompat(t.downByClient[6]);
-    prefs.setCumDownURL(t.downByClient[7]);
+    prefs.setCumDownEmuleQt(t.downByClient[7]);
+    prefs.setCumDownURL(t.downByClient[8]);
 
     prefs.setCumUpPort4662(t.upPort4662);
     prefs.setCumUpPortOther(t.upPortOther);

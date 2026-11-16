@@ -5,6 +5,7 @@
 
 #include "httpcache/HttpCacheOffer.h"
 #include "kademlia/KadDefines.h"
+#include "kademlia/KadOutboundGuard.h"
 #include "kademlia/KadSearchDefs.h"
 #include "kademlia/KadUDPKey.h"
 #include "kademlia/KadTypes.h"
@@ -21,7 +22,10 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <array>
+#include <optional>
 #include <set>
+#include <vector>
 
 namespace eMule {
 class KnownFile;
@@ -101,6 +105,9 @@ public:
         QString ipv6Hex;                    ///< our public IPv6 as 32-char hex, empty if none
         QString buddyIPv6Hex;               ///< serving buddy's IPv6 as 32-char hex, empty if none
         uint8   natt              = 0;      ///< TAG_NATT bits, firewalled records only
+        /// Emit `bpv` on firewalled records (3/5/7); needs a storer that holds our
+        /// receiver key (ipv6-spec §5.6.1).
+        bool    pointerRoute      = false;
 
         /// HTTP Cache chunks to advertise alongside this source record, at most
         /// KADHC_MAX_CHUNKS. Empty unless httpCache.publishToKad is on.
@@ -121,6 +128,24 @@ public:
     /// case there is nothing worth publishing.
     [[nodiscard]] static std::vector<Tag> buildSourcePublishTags(const SourcePublishParams& params,
                                                                  bool& outCanPublish);
+    /// Tags of the pointer record at ~sourceID (ipv6-spec §5.6.1): type 3 + buddy
+    /// fields. Empty unless firewalled with a buddy and no direct UDP callback.
+    [[nodiscard]] static std::vector<Tag> buildPointerPublishTags(const SourcePublishParams& params);
+    /// Key of the pointer record: bitwise NOT of the source ID.
+    [[nodiscard]] static UInt128 pointerKey(const UInt128& sourceID);
+
+    /// Buddy named by an accepted pointer record.
+    struct PointerHit {
+        uint32 buddyIP = 0;                   ///< FT_SERVERIP, network order
+        uint16 buddyPort = 0;
+        std::array<uint8, 16> buddyHash{};    ///< buddy ID bytes, as parsed from FT_BUDDYHASH
+    };
+    /// Checks of ipv6-spec §5.6.1 on one result at ~sourceID: type 3, same source ID,
+    /// usable buddy fields, and FT_SOURCEIP equal to the file record's.
+    [[nodiscard]] static std::optional<PointerHit> acceptPointerRecord(
+        const UInt128& answer, const TagList& info, const UInt128& expectedSource,
+        uint32 expectedSourceIP);
+
     /// FT_BUDDYHASH text as stock clients write it: hex of the ID's four 32-bit
     /// words, each low byte first (MFC md4str() over CUInt128's raw x86 memory).
     [[nodiscard]] static QString buddyHashToTagString(const UInt128& buddyID);
@@ -137,6 +162,17 @@ public:
     using SizeProbeDone = std::function<void(uint64 size)>;
     void setSizeProbe(uint64 low, uint64 high, SizeProbeDone done);
     [[nodiscard]] bool isSizeProbe() const { return m_sizeProbeLow != 0; }
+
+    /// Pointer lookup (ipv6-spec §5.6.1): a File lookup at ~sourceID, size 0. @p done gets
+    /// each distinct accepted pointer, up to kMaxPointerCandidates, then nullopt once the
+    /// lookup ends.
+    using PointerDone = std::function<void(std::optional<PointerHit>)>;
+    static constexpr std::size_t kMaxPointerCandidates = 3;
+    void setPointerLookup(const UInt128& sourceID, uint32 sourceIP, PointerDone done);
+    [[nodiscard]] bool isPointerLookup() const { return static_cast<bool>(m_pointerDone) || m_pointerLookup; }
+    /// StoreFile at ~clientHash publishing the pointer record instead of a file source.
+    void setPointerPublish(bool on) { m_pointerPublish = on; }
+    [[nodiscard]] bool isPointerPublish() const { return m_pointerPublish; }
     /// This search sent its action packet (search / store request) to that node, so a
     /// result from it is one we asked for.
     [[nodiscard]] bool sentActionTo(uint32 ip, uint16 udpPort) const;
@@ -174,12 +210,16 @@ private:
     void processResultNotes(const UInt128& answer, TagList& info);
     void processSizeProbeResult(const UInt128& answer, const TagList& info);
     void finishSizeProbe(uint64 size);
+    void processPointerResult(const UInt128& answer, const TagList& info);
+    void finishPointerLookup(std::optional<PointerHit> hit);
     void jumpStart();
     /// Pin routing-zone contacts fetched with setInUse=true into m_inUse so the
     /// zone cannot free them mid-search. Drops the extra reference when a
     /// contact is already pinned (go() may re-seed m_possible repeatedly).
     void pinFetchedContacts(const ContactMap& fetched);
-    void sendFindValue(Contact* contact, bool reAskMore = false);
+    /// False: held back, the contact's IP is out of KADEMLIA2_REQ budget (OutboundGuard);
+    /// it stays untried for a later round.
+    bool sendFindValue(Contact* contact, bool reAskMore = false);
     void prepareToStop();
     // Send action/publish packets to responded contacts. flushRemaining=false
     // streams one packet per jump-start cycle (results flow during the search);
@@ -188,6 +228,10 @@ private:
     // JumpStart→StorePacket (Search.cpp:311-313) instead of bursting at the end.
     void storePacket(bool flushRemaining);
     [[nodiscard]] uint32 storeLimit() const;
+    /// Publishing and routing upkeep leave part of the lookup budget to the user's searches
+    [[nodiscard]] OutboundGuard::Priority guardPriority() const;
+    /// The opcode storePacket() sends one contact and how many packets; 0 = none to gate
+    [[nodiscard]] std::pair<uint8, uint32> actionRequest() const;
     [[nodiscard]] uint8 getRequestContactCount() const;
     [[nodiscard]] uint32 getLifetime() const;
 
@@ -195,6 +239,9 @@ private:
     UIntList m_fileIDs;
     std::map<UInt128, bool> m_responded;  // distance → provided closer contacts (MFC m_mapResponded)
     std::map<UInt128, bool> m_storeSent;  // distance → already sent an action packet (streaming dedup)
+    std::set<UInt128> m_heldLookups;      // node IDs held back by OutboundGuard, counted once
+    std::set<UInt128> m_heldStores;       // distances, as m_storeSent
+    bool m_storeDeferred = false;         // a held action packet waits for budget; retried while stopping
     ContactMap m_possible;  // untried candidates, sorted by distance
     ContactMap m_tried;     // ALL contacted nodes (responded + not), sorted by distance
     ContactMap m_best;      // top ALPHA_QUERY closest contacts for auto-query (MFC m_mapBest)
@@ -218,6 +265,13 @@ private:
     SizeProbeDone m_sizeProbeDone;
     std::map<uint64, uint32> m_sizeVotes;
     std::set<UInt128> m_sizeVoters;
+    // Pointer lookup / publish (ipv6-spec §5.6.1)
+    UInt128 m_pointerSource;
+    uint32 m_pointerSourceIP = 0;
+    PointerDone m_pointerDone;
+    std::vector<PointerHit> m_pointerHits;
+    bool m_pointerLookup = false;    // stays set after done fired: no file results
+    bool m_pointerPublish = false;
     uint32 m_totalRequestAnswers = 0;
     uint32 m_kadPacketSent = 0;
     uint32 m_totalLoad = 0;

@@ -417,7 +417,10 @@ jobs:
 
       # ed3k:file links (Protocol.md §13.2): b3 = plain BLAKE3 of the file (b3sum),
       # base32 lower case w/o padding; ed2k = MD4 from ED2K-LINKS.txt; ws = GitHub
-      # asset URL as HTTP source. Parameter order and encoding as packmule writes them.
+      # asset URL as HTTP source; wh = its hash body (http-source.md §3.1), an
+      # <asset>.ed3k-hashes asset written by scripts/ed3k-hashbody, so a download
+      # checks each 256 KiB block on arrival and resumes after a restart.
+      # Parameter order and encoding as packmule writes them.
       - name: Generate ED3K-LINKS.txt
         working-directory: dist
         run: |
@@ -427,6 +430,13 @@ jobs:
           [ "$(printf '' | b3sum --no-names)" = "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262" ] \
             || { echo "::error::b3sum gives a wrong BLAKE3"; exit 1; }
           awk '{print $2}' SHA256SUMS.txt | xargs b3sum -- > "$RUNNER_TEMP/b3.raw"
+          # hash bodies next to the assets; its roots must equal b3sum's
+          CARGO_TARGET_DIR="$RUNNER_TEMP/hashbody" cargo build -q --release --locked \
+            --manifest-path "$GITHUB_WORKSPACE/scripts/ed3k-hashbody/Cargo.toml"
+          awk '{print $2}' SHA256SUMS.txt \
+            | xargs "$RUNNER_TEMP/hashbody/release/ed3k-hashbody" . > "$RUNNER_TEMP/hb.raw"
+          diff "$RUNNER_TEMP/b3.raw" "$RUNNER_TEMP/hb.raw" \
+            || { echo "::error::ed3k-hashbody roots differ from b3sum"; exit 1; }
           base="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${TAG}"
           python3 -I - "$RUNNER_TEMP/b3.raw" ED2K-LINKS.txt "$base" <<'EOF' | tee ED3K-LINKS.txt
           import base64, os, sys
@@ -441,10 +451,15 @@ jobs:
               hexroot, name = line.rstrip("\n").split("  ", 1)
               b3 = base64.b32encode(bytes.fromhex(hexroot)).decode().rstrip("=").lower()
               size = os.path.getsize(name)
-              print(f"ed3k:file?b3={b3}&sz={size}&dn={enc(name)}&ed2k={md4[name]}&ws={enc(base + '/' + name)}")
+              link = f"ed3k:file?b3={b3}&sz={size}&dn={enc(name)}&ed2k={md4[name]}&ws={enc(base + '/' + name)}"
+              # a file of one block has no hash body
+              if os.path.exists(name + ".ed3k-hashes"):
+                  link += f"&wh={enc(base + '/' + name + '.ed3k-hashes')}"
+              print(link)
           EOF
           [ "$(wc -l < ED3K-LINKS.txt)" -eq "$(wc -l < SHA256SUMS.txt)" ] \
             || { echo "::error::ED3K-LINKS.txt does not match SHA256SUMS.txt"; exit 1; }
+          grep -q '&wh=' ED3K-LINKS.txt || { echo "::error::ED3K-LINKS.txt has no hash body URL"; exit 1; }
 
       - name: Build release notes
         run: |
