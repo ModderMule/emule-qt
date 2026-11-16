@@ -1033,6 +1033,13 @@ void Ed3kTorrentJoin::startSetSearch(const QString& id)
     const auto row = m_bt.torrent(id);
     if (!row || privateHeld(id))
         return;
+    // complete here, its set kept: the Kad lookup would only find our own set
+    if (row->totalSize > 0 && row->haveBytes >= row->totalSize) {
+        if (const auto set = keptSet(id)) {
+            logDebug([&]() -> QString { return QStringLiteral("no set search for \"%1\": complete, set %2 kept").arg(name(id), hexOf(set->bytes)); });
+            return;
+        }
+    }
     // a hybrid torrent: both (§5); relation SET. The candidate loop is the base's (tryNextSet)
     if (const auto v1 = hexBytes(row->hashV1, 20))
         (void)Ed3kJoinBase::startSetSearch(id, "btih", *v1);

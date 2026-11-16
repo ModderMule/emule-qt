@@ -582,6 +582,8 @@ struct Preferences::Data {
     // A global UDP search stops asking eNode servers for catalogue rows (torrent, Usenet,
     // web, Kad) once this many servers have sent some; 0 asks every server. YAML-only, no UI.
     uint32 globalSearchCatalogueServers = 1;
+    // Global UDP search stops asking servers once this many files are in; 0 = ask all (#92, #203)
+    uint32 globalSearchMaxFiles = 2000;
     bool autoUpdateServerList = false;  // Auto-update server list from URL at startup
     QString serverListURL = Preferences::kDefaultServerListURL;  // URL for server.met download
     bool smartLowIdCheck = true;        // Try another server if we get a LowID
@@ -2896,6 +2898,8 @@ bool Preferences::applyEd3kHosterKey(Ed3kHosterPrefs& h, const QString& key, con
         h.maxStreams = static_cast<uint32>(std::clamp<qint64>(val.toInteger(h.maxStreams), 1, 16));
     else if (key == QLatin1StringView("ed3kHosterPuzzles"))
         h.askPuzzles = val.toBool(h.askPuzzles);
+    else if (key == QLatin1StringView("ed3kHosterGenericHttp"))
+        h.genericHttp = val.toBool(h.genericHttp);
     else if (key == QLatin1StringView("ed3kHosterPublishLinks"))
         h.publishLinks = val.toBool(h.publishLinks);
     else if (key == QLatin1StringView("ed3kHosterFromPeers"))
@@ -3507,6 +3511,13 @@ void Preferences::setGlobalSearchCatalogueServers(uint32 val)
     set(&Data::globalSearchCatalogueServers, std::min<uint32>(val, 99));
 }
 
+uint32 Preferences::globalSearchMaxFiles() const { return get(&Data::globalSearchMaxFiles); }
+
+void Preferences::setGlobalSearchMaxFiles(uint32 val)
+{
+    set(&Data::globalSearchMaxFiles, std::min<uint32>(val, kGlobalSearchMaxFilesLimit));
+}
+
 bool Preferences::autoUpdateServerList() const { return get(&Data::autoUpdateServerList); }
 
 void Preferences::setAutoUpdateServerList(bool val) { set(&Data::autoUpdateServerList, val); }
@@ -4078,6 +4089,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("addServersFromClients"), addServersFromClients());
     prefs.insert(QStringLiteral("deadServerRetries"), static_cast<qint64>(deadServerRetries()));
     prefs.insert(QStringLiteral("removeDeadServers"), removeDeadServers());
+    prefs.insert(QStringLiteral("globalSearchMaxFiles"), static_cast<qint64>(globalSearchMaxFiles()));
     prefs.insert(QStringLiteral("autoUpdateServerList"), autoUpdateServerList());
     prefs.insert(QStringLiteral("serverListURL"), serverListURL());
     prefs.insert(QStringLiteral("nodesDatURL"), nodesDatURL());
@@ -4319,6 +4331,7 @@ QCborMap Preferences::toIpcMap() const
         prefs.insert(QStringLiteral("ed3kHosterAutoJava"), h.autoJava);
         prefs.insert(QStringLiteral("ed3kHosterMaxStreams"), static_cast<qint64>(h.maxStreams));
         prefs.insert(QStringLiteral("ed3kHosterPuzzles"), h.askPuzzles);
+        prefs.insert(QStringLiteral("ed3kHosterGenericHttp"), h.genericHttp);
         prefs.insert(QStringLiteral("ed3kHosterPublishLinks"), h.publishLinks);
         prefs.insert(QStringLiteral("ed3kHosterFromPeers"), h.fromPeers);
         prefs.insert(QStringLiteral("ed3kHosterCheckSearchLinks"), h.checkSearchLinks);
@@ -4484,6 +4497,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->addServersFromClients   = p.value(QStringLiteral("addServersFromClients")).toBool();
     m_data->deadServerRetries       = static_cast<uint32>(p.value(QStringLiteral("deadServerRetries")).toInteger());
     m_data->removeDeadServers       = p.value(QStringLiteral("removeDeadServers")).toBool(true);
+    m_data->globalSearchMaxFiles    = static_cast<uint32>(p.value(QStringLiteral("globalSearchMaxFiles")).toInteger(2000));
     m_data->autoUpdateServerList    = p.value(QStringLiteral("autoUpdateServerList")).toBool();
     m_data->serverListURL           = urlOrDefault(p.value(QStringLiteral("serverListURL")).toString(),
                                                    kDefaultServerListURL);
@@ -4899,6 +4913,9 @@ void Preferences::validate()
     // globalSearchCatalogueServers: max 99; 0 = never decline catalogue rows
     m_data->globalSearchCatalogueServers = std::min<uint32>(m_data->globalSearchCatalogueServers, 99);
 
+    // globalSearchMaxFiles: 0 = no limit
+    m_data->globalSearchMaxFiles = std::min<uint32>(m_data->globalSearchMaxFiles, kGlobalSearchMaxFilesLimit);
+
     // webServerSessionTimeout: clamp 1–60 min; 0 expires a session at once
     m_data->webServerSessionTimeout = std::clamp(m_data->webServerSessionTimeout, 1, 60);
 
@@ -5104,6 +5121,7 @@ bool Preferences::load(const QString& filePath)
             m_data->removeDeadServers = s["removeDeadServers"].as<bool>(m_data->removeDeadServers);
             m_data->deadServerBlockDays = s["deadServerBlockDays"].as<uint32>(m_data->deadServerBlockDays);
             m_data->globalSearchCatalogueServers = s["globalSearchCatalogueServers"].as<uint32>(m_data->globalSearchCatalogueServers);
+            m_data->globalSearchMaxFiles = s["globalSearchMaxFiles"].as<uint32>(m_data->globalSearchMaxFiles);
             m_data->autoUpdateServerList = s["autoUpdateServerList"].as<bool>(m_data->autoUpdateServerList);
             if (s["serverListURL"])
                 m_data->serverListURL = urlOrDefault(
@@ -6124,6 +6142,7 @@ bool Preferences::load(const QString& filePath)
                 h.autoJava = ho["autoJava"].as<bool>(h.autoJava);
                 h.maxStreams = std::clamp<uint32>(ho["maxStreams"].as<uint32>(h.maxStreams), 1, 16);
                 h.askPuzzles = ho["puzzles"].as<bool>(h.askPuzzles);
+                h.genericHttp = ho["genericHttp"].as<bool>(h.genericHttp);
                 h.publishLinks = ho["publishLinks"].as<bool>(h.publishLinks);
                 h.fromPeers = ho["fromPeers"].as<bool>(h.fromPeers);
                 h.checkSearchLinks = ho["checkSearchLinks"].as<bool>(h.checkSearchLinks);
@@ -6714,6 +6733,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "removeDeadServers" << YAML::Value << m_data->removeDeadServers;
     out << YAML::Key << "deadServerBlockDays" << YAML::Value << m_data->deadServerBlockDays;
     out << YAML::Key << "globalSearchCatalogueServers" << YAML::Value << m_data->globalSearchCatalogueServers;
+    out << YAML::Key << "globalSearchMaxFiles" << YAML::Value << m_data->globalSearchMaxFiles;
     out << YAML::Key << "autoUpdateServerList" << YAML::Value << m_data->autoUpdateServerList;
     out << YAML::Key << "serverListURL" << YAML::Value << m_data->serverListURL.toStdString();
     out << YAML::Key << "smartLowIdCheck" << YAML::Value << m_data->smartLowIdCheck;
@@ -7589,6 +7609,7 @@ QByteArray Preferences::encode() const
         out << YAML::Key << "autoJava" << YAML::Value << h.autoJava;
         out << YAML::Key << "maxStreams" << YAML::Value << h.maxStreams;
         out << YAML::Key << "puzzles" << YAML::Value << h.askPuzzles;
+        out << YAML::Key << "genericHttp" << YAML::Value << h.genericHttp;
         out << YAML::Key << "publishLinks" << YAML::Value << h.publishLinks;
         out << YAML::Key << "fromPeers" << YAML::Value << h.fromPeers;
         out << YAML::Key << "checkSearchLinks" << YAML::Value << h.checkSearchLinks;

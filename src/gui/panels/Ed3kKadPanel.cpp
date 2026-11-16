@@ -192,6 +192,8 @@ void Ed3kKadPanel::requestLookupHistory()
             const QCborMap m = v.toMap();
             LookupEntry e;
             e.contactID = m.value(QStringLiteral("id")).toString();
+            e.addr = m.value(QStringLiteral("addr")).toString();
+            e.cc = m.value(QStringLiteral("cc")).toString();
             const QString dist = m.value(QStringLiteral("distance")).toString();
             e.distance = distanceText(dist);
             e.dist = distWords(dist);

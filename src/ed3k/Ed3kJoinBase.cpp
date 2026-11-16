@@ -1051,6 +1051,13 @@ void Ed3kJoinBase::dropKept(const QString& owner)
     removeDirTree(keptDir(owner));
 }
 
+std::optional<ffi::Root> Ed3kJoinBase::keptSet(const QString& owner) const
+{
+    if (const auto set = readKept(owner).set)
+        return set->root;
+    return std::nullopt;
+}
+
 QString Ed3kJoinBase::keptDir(const QString& owner) const
 {
     // reversible and safe as a file name (':' of torrent ids, '/')

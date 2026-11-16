@@ -91,6 +91,19 @@ QString tooltip(const QString& cc)
     return QStringLiteral("%1 (%2)").arg(countryName(cc), cc.toUpper());
 }
 
+QString tooltipHtml(const QString& cc)
+{
+    const QString text = tooltip(cc);
+    if (text.isEmpty())
+        return {};
+    // rich text picks the @2x/@3x file on HiDPI by itself
+    const QString path = QStringLiteral(":/flags/%1.png").arg(cc.toLower());
+    if (!QFile::exists(path))
+        return text.toHtmlEscaped();
+    return QStringLiteral("<img src=\"%1\" width=\"%2\" height=\"%3\" align=\"middle\">&nbsp;%4")
+        .arg(path).arg(kFlagWidth).arg(kIconSize).arg(text.toHtmlEscaped());
+}
+
 QIcon withFlag(const QIcon& base, const QString& cc)
 {
     if (!showFlags())

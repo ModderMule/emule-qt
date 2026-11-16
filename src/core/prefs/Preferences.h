@@ -123,6 +123,7 @@ struct Ed3kHosterPrefs {
     bool autoJava = true;          ///< ed3kHosterAutoJava: download a runtime when none is found
     uint32 maxStreams = 8;         ///< ed3kHosterMaxStreams: hoster streams at once, 1..16 (JD runs 8)
     bool askPuzzles = true;        ///< ed3kHosterPuzzles: show image puzzles; off = skip them
+    bool genericHttp = true;       ///< ed3kHosterGenericHttp: plain http(s) links no hoster plugin takes (#202)
     bool publishLinks = true;      ///< ed3kHosterPublishLinks: publish and hand out vouched links (§4.1)
     bool fromPeers = true;         ///< ed3kHosterFromPeers: use links that peers name
     bool checkSearchLinks = true;  ///< ed3kHosterCheckSearchLinks: a web row's links dialog checks its links
@@ -2057,6 +2058,12 @@ public:
     /// from the rest (SRVCAP_UDP_NO_META); 0 = never. YAML-only, no UI.
     [[nodiscard]] uint32 globalSearchCatalogueServers() const;
     void setGlobalSearchCatalogueServers(uint32 val);
+
+    /// Files after which a global UDP search stops asking further servers; 0 = ask all.
+    /// Default 2000. Options › Server.
+    static constexpr uint32 kGlobalSearchMaxFilesLimit = 100'000;
+    [[nodiscard]] uint32 globalSearchMaxFiles() const;
+    void setGlobalSearchMaxFiles(uint32 val);
 
     [[nodiscard]] bool autoUpdateServerList() const;
     void setAutoUpdateServerList(bool val);

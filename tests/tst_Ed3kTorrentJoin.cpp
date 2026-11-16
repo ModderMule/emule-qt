@@ -620,8 +620,12 @@ void tst_Ed3kTorrentJoin::privateTorrentJoinsOnlyWhenShared()
     join.setPrivateJoins(false);
     QVERIFY(!join.hasJoin(added.id));
     QVERIFY(!join.sharesRoot(hashOf(m_a).root) && !join.sharesRoot(hashOf(m_b).root));
+    join.setSearchEnabled(true);
     join.setPrivateJoins(true);
     QTRY_VERIFY_WITH_TIMEOUT(join.sharesRoot(hashOf(m_a).root) && join.sharesRoot(hashOf(m_b).root), kTimeoutMs);
+    // complete, its set kept: no Kad lookup for its own set
+    QVERIFY(join.hasJoin(added.id));
+    QVERIFY(!join.setSearching(added.id));
 
     join.stop();
     bt.stop();

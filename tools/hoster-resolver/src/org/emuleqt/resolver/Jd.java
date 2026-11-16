@@ -13,6 +13,7 @@ import jd.controlling.linkcrawler.CrawledLink;
 import jd.controlling.linkcrawler.LinkCrawler;
 import jd.http.Browser;
 import jd.http.Browser.BrowserException;
+import jd.http.ProxySelectorInterface;
 import jd.http.StaticProxySelector;
 import jd.plugins.DownloadLink;
 import jd.plugins.LinkStatus;
@@ -58,6 +59,12 @@ final class Jd {
         } catch (final Throwable e) {
             HTTPConnectionImpl.setDefaultSSLSocketStreamFactory(new AutoBCSSLSocketStreamFactory());
         }
+        // the guard resolves before the connect: both must see the same addresses (JVM cache)
+        try {
+            java.security.Security.setProperty("networkaddress.cache.ttl", "30");
+        } catch (final Throwable ignore) {
+        }
+        applyRoute();
         Browser.setGlobalReadTimeout(60000);
         Browser.setGlobalConnectTimeout(30000);
         HostPluginController.getInstance().ensureLoaded();
@@ -107,24 +114,27 @@ final class Jd {
         applyRoute();
     }
 
-    /** A proxy wins (the user's chosen route); else direct, bound to the selected address. */
-    private static void applyRoute() {
+    /**
+     * A proxy wins (the user's chosen route); else direct, bound to the selected address. Either
+     * way behind AddressGuard: no request to a non-public address.
+     */
+    private static synchronized void applyRoute() {
         if (!proxyUrl.isEmpty()) {
             final HTTPProxy proxy = HTTPProxy.parseHTTPProxy(proxyUrl);
-            Browser.setGlobalProxy(proxy == null ? null : new StaticProxySelector(proxy));
+            Browser.setGlobalProxy(new AddressGuard(proxy == null ? null : new StaticProxySelector(proxy), proxy != null));
             return;
         }
-        if (bindAddress.isEmpty()) {
-            Browser.setGlobalProxy(null);
-            return;
+        ProxySelectorInterface direct = null;
+        if (!bindAddress.isEmpty()) {
+            try {
+                direct = new StaticProxySelector(new HTTPProxy(InetAddress.getByName(bindAddress)));
+            } catch (final Exception e) {
+                // a literal never resolves: refuse rather than leak through the default route
+                Out.log("bad bind address: " + e.getClass().getSimpleName());
+                direct = new StaticProxySelector(new HTTPProxy(InetAddress.getLoopbackAddress()));
+            }
         }
-        try {
-            Browser.setGlobalProxy(new StaticProxySelector(new HTTPProxy(InetAddress.getByName(bindAddress))));
-        } catch (final Exception e) {
-            // a literal never resolves: refuse rather than leak through the default route
-            Out.log("bad bind address: " + e.getClass().getSimpleName());
-            Browser.setGlobalProxy(new StaticProxySelector(new HTTPProxy(InetAddress.getLoopbackAddress())));
-        }
+        Browser.setGlobalProxy(new AddressGuard(direct, false));
     }
 
     static int hostPluginCount() {
@@ -154,11 +164,70 @@ final class Jd {
         }
     }
 
+    /** The daemon's switch (setGeneric): a public http(s) link no site plugin takes goes to DirectHTTP. */
+    private static volatile boolean generic = false;
+
+    static void setGeneric(final boolean on) {
+        generic = on;
+    }
+
+    /** JD's generic plugin, for links no site plugin takes (setGeneric). */
+    static final String DIRECT_HTTP = "DirectHTTP";
+
+    /**
+     * How only the generic plugin takes @p url: "file" (the path names a file, JD's "http links"),
+     * "any" (any other public http(s) URL), null (a site plugin takes it, or none). No network.
+     */
+    static String genericKind(final String url) {
+        if (!generic || !publicHttp(url) || siteMatch(url) != null || hasSitePlugin(url)) {
+            return null;
+        }
+        final LazyHostPlugin links = HostPluginController.getInstance().get("http links");
+        return links != null && links.canHandle(url) ? "file" : "any";
+    }
+
+    /** The URL's site has a hoster plugin (a link of it the plugin does not take: no plain download there). */
+    private static boolean hasSitePlugin(final String url) {
+        try {
+            final LazyHostPlugin p = hostPlugin(new java.net.URI(url.trim()).getHost());
+            return usable(p);
+        } catch (final java.net.URISyntaxException e) {
+            return false;
+        }
+    }
+
+    /** An http(s) URL with a host that is no literal non-public address and no local name. No network. */
+    static boolean publicHttp(final String url) {
+        if (url == null) {
+            return false;
+        }
+        try {
+            final java.net.URI u = new java.net.URI(url.trim());
+            final String scheme = u.getScheme();
+            if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme) || u.getHost() == null) {
+                return false;
+            }
+            AddressGuard.check(u.getHost(), false);
+            return true;
+        } catch (final java.net.URISyntaxException | AddressGuard.Blocked e) {
+            return false;
+        }
+    }
+
     /** Plugin that would take the link, crawler first as LinkCrawler does. No network. */
     static String match(final String url) {
         if (loopbackHoster(url)) {
-            return "DirectHTTP";
+            return DIRECT_HTTP;
         }
+        final String site = siteMatch(url);
+        if (site != null || genericKind(url) == null) {
+            return site;
+        }
+        return DIRECT_HTTP;
+    }
+
+    /** match() without the generic plugin. */
+    private static String siteMatch(final String url) {
         for (final LazyCrawlerPlugin p : CrawlerPluginController.getInstance().list()) {
             if (!p.isHasConfig() && "httpdirectorycrawler".equalsIgnoreCase(p.getDisplayName())) {
                 continue;
@@ -179,20 +248,56 @@ final class Jd {
         return crawl(url, false);
     }
 
-    /** As crawl(url); deep: a page no plugin takes is loaded and every hoster link on it crawled. */
+    /**
+     * As crawl(url); deep: a page no plugin takes is loaded and every hoster link on it crawled.
+     * With setGeneric: a link no site plugin takes goes to DirectHTTP (not deep: a page is no
+     * file), and direct links a decrypter finds are kept.
+     */
     static List<DownloadLink> crawl(final String url, final boolean deep) throws InterruptedException {
-        final boolean loopback = loopbackHoster(url);
+        final boolean direct = loopbackHoster(url) || !deep && genericKind(url) != null;
         final LinkCrawler lc = new LinkCrawler(false, false);
-        lc.crawl(loopback ? "directhttp://" + url : url, null, deep);
+        lc.crawl(direct ? "directhttp://" + url.trim() : url, null, deep);
         lc.waitForCrawling();
         final List<DownloadLink> out = new ArrayList<DownloadLink>();
         for (final CrawledLink cl : lc.getCrawledLinks()) {
             final DownloadLink dl = cl.getDownloadLink();
-            if (dl != null && dl.getDefaultPlugin() != null && (loopback || !isGeneric(dl.getDefaultPlugin().getHost()))) {
+            if (dl == null || dl.getDefaultPlugin() == null) {
+                continue;
+            }
+            final String name = dl.getDefaultPlugin().getHost();
+            final String found = dl.getPluginPatternMatcher();
+            if (direct) {
+                // JD also lifts URLs out of the query (?url=...): the link asked for wins, else public ones
+                if (url.trim().equals(plainUrl(found))) {
+                    out.clear();
+                    out.add(dl);
+                    break;
+                }
+                if (isDirectHttp(name) && (loopbackHoster(url) || publicHttp(plainUrl(found)))) {
+                    out.add(dl);
+                }
+            } else if (!isGeneric(name) || generic && isDirectHttp(name) && publicHttp(plainUrl(found))) {
                 out.add(dl);
             }
         }
         return out;
+    }
+
+    /** A crawled generic link as http(s): without JD's directhttp:// prefix or its httpviajd scheme. */
+    private static String plainUrl(final String url) {
+        if (url == null) {
+            return null;
+        }
+        String u = url.startsWith("directhttp://") ? url.substring("directhttp://".length()) : url;
+        if (u.startsWith("httpviajd://") || u.startsWith("httpsviajd://")) {
+            u = u.replaceFirst("viajd://", "://");
+        }
+        return u;
+    }
+
+    /** JD's generic http plugin, under either of its names. */
+    private static boolean isDirectHttp(final String name) {
+        return name != null && (name.equalsIgnoreCase(DIRECT_HTTP) || name.equalsIgnoreCase("http links"));
     }
 
     /** A fresh plugin instance for one link, ready to be called on the current thread. */
@@ -266,6 +371,11 @@ final class Jd {
 
     /** Maps a plugin failure to an event of the protocol (hoster-resolver.local.md §4). */
     static Map<String, Object> failure(final long id, final Throwable t) {
+        for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
+            if (c instanceof AddressGuard.Blocked) {
+                return errorEvent(id, "private", ((AddressGuard.Blocked) c).host);
+            }
+        }
         Throwable e = t;
         if (e instanceof BrowserException && e.getCause() != null) {
             e = e.getCause();

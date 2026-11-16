@@ -21,6 +21,8 @@ namespace eMule {
 struct LookupEntry {
     QString contactID;
     QString distance;
+    QString addr;                     // "ip:port", empty when unknown
+    QString cc;                       // country code, empty when unknown
     std::array<uint32_t, 4> dist{};   // 128-bit distance, most significant chunk first
     std::vector<int> receivedFromIdx; // indexes into the entry list
     int64_t askedContactsAge = -1;    // ms since asked at snapshot time, -1 = never
@@ -32,7 +34,8 @@ struct LookupEntry {
     bool forcedInteresting = false;
 };
 
-/// Shared by the Search Details graphs: the "Automatically show active searches" menu.
+/// Shared by the Search Details graphs: the "Automatically show active searches" menu and
+/// the node tool tip rows.
 class KadGraphBase : public QWidget {
     Q_OBJECT
 
@@ -46,6 +49,13 @@ signals:
 protected:
     explicit KadGraphBase(QWidget* parent);
     void contextMenuEvent(QContextMenuEvent* event) override;
+
+    /// Tool tip table row, @p value escaped.
+    [[nodiscard]] static QString tipRow(const QString& label, const QString& value);
+    /// Tool tip table row, @p html as is.
+    [[nodiscard]] static QString tipRowHtml(const QString& label, const QString& html);
+    /// Address and Country (with flag) rows; each left out when unknown.
+    [[nodiscard]] static QString addressRows(const QString& addr, const QString& cc);
 
     bool m_autoShow = true;
 };

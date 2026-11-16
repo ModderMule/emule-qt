@@ -1794,6 +1794,7 @@ void DaemonApp::applyHosterConfig()
     cfg.proxy = proxy;
     cfg.bindAddress = BindAddress::sourceAddress();
     cfg.askPuzzles = h.askPuzzles;
+    cfg.genericHttp = h.genericHttp;
     if (h.solversEnabled)
         for (const Ed3kHosterAccount& a : h.solvers)
             if (!a.password.isEmpty())

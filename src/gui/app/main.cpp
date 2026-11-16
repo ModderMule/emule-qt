@@ -4,6 +4,7 @@
 #include <QApplication>
 #include <algorithm>
 #include <QDialog>
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QDesktopServices>
@@ -23,6 +24,7 @@
 #include <QSplashScreen>
 #include <QStandardPaths>
 #include <QTcpServer>
+#include <QTemporaryDir>
 #include <QTextStream>
 #include <QTimer>
 #include <QTranslator>
@@ -377,6 +379,27 @@ bool installerRunning()
     return false;
 }
 
+/// `env` assignments for a core started from an image run extract-and-run: a
+/// TMPDIR of its own, so the runtime extracts it apart from us and neither exit
+/// deletes the other's files. AppRun restores the user's TMPDIR. Empty on failure.
+QStringList appImageCoreEnv()
+{
+    // dirs of exited cores are left empty; a fresh one may still await its extraction
+    const QDir base(QDir::tempPath());
+    const QDateTime cutoff = QDateTime::currentDateTime().addSecs(-60);
+    for (const QFileInfo& fi : base.entryInfoList({QStringLiteral("emuleqt-core-*")},
+                                                  QDir::Dirs | QDir::NoDotAndDotDot)) {
+        if (fi.lastModified() < cutoff)
+            base.rmdir(fi.fileName()); // empty ones only
+    }
+    QTemporaryDir dir(base.filePath(QStringLiteral("emuleqt-core-XXXXXX")));
+    if (!dir.isValid())
+        return {};
+    dir.setAutoRemove(false);
+    return {QStringLiteral("APPIMAGE_EXTRACT_AND_RUN=1"), QStringLiteral("TMPDIR=") + dir.path(),
+            eMule::AppConfig::kAppImageTmpDirVar + QLatin1Char('=') + qEnvironmentVariable("TMPDIR")};
+}
+
 /// Try to start the daemon process. Returns true if launched.
 /// @param holdConnect the first start wizard is about to run: the core must not
 ///        auto-connect before the ports are chosen.
@@ -393,9 +416,19 @@ bool launchDaemon(const QString& daemonPath, bool holdConnect, qint64& pid)
 
     eMule::logInfo(QStringLiteral("Launching daemon: %1").arg(daemonPath));
 
+    QString program = daemonPath;
     QStringList daemonArgs;
-    if (eMule::AppConfig::isAppImageFile(daemonPath))
+    if (eMule::AppConfig::isAppImageFile(daemonPath)) {
+        if (eMule::AppConfig::appImageExtracted()) {
+            if (const QStringList env = appImageCoreEnv(); !env.isEmpty()) {
+                program = QStringLiteral("env");
+                daemonArgs << env << daemonPath;
+            } else {
+                eMule::logWarning(QStringLiteral("No temp dir for the core, it shares our extraction"));
+            }
+        }
         daemonArgs << eMule::AppConfig::kAppImageCoreArg;
+    }
     // Our --config goes along, or the two would read different preferences.yml
     // files -- different ipc ports included. Absolute: a terminal starts elsewhere.
     if (const QString dir = eMule::AppConfig::configDirOverride(); !dir.isEmpty())
@@ -410,7 +443,7 @@ bool launchDaemon(const QString& daemonPath, bool holdConnect, qint64& pid)
 #if defined(Q_OS_MACOS)
         // Quoted for the shell, then escaped for the AppleScript string around it
         QStringList words;
-        for (const QString& word : QStringList{daemonPath} + daemonArgs)
+        for (const QString& word : QStringList{program} + daemonArgs)
             words << QLatin1Char('\'') + QString(word).replace(QLatin1Char('\''), QStringLiteral("'\\''"))
                          + QLatin1Char('\'');
         QString command = words.join(QLatin1Char(' '));
@@ -421,13 +454,13 @@ bool launchDaemon(const QString& daemonPath, bool holdConnect, qint64& pid)
         return QProcess::startDetached(QStringLiteral("osascript"), {QStringLiteral("-e"), script});
 #elif defined(Q_OS_WIN)
         return QProcess::startDetached(QStringLiteral("cmd"),
-                                       QStringList{QStringLiteral("/k"), daemonPath} + daemonArgs);
+                                       QStringList{QStringLiteral("/k"), program} + daemonArgs);
 #else
         // No xterm on most desktops (issue #32): the desktop's own terminal, and
         // a plain start when there is none or it will not run
         if (const auto terminal = findTerminal()) {
             if (QProcess::startDetached(terminal->program,
-                                        terminal->args + QStringList{daemonPath} + daemonArgs))
+                                        terminal->args + QStringList{program} + daemonArgs))
                 return true;
             eMule::logWarning(QStringLiteral("Could not start the core in %1, starting it without console")
                                   .arg(terminal->program));
@@ -438,8 +471,9 @@ bool launchDaemon(const QString& daemonPath, bool holdConnect, qint64& pid)
 #endif
     }
 
-    // The tarball launcher exec's the binary, so this is the core's own pid
-    return QProcess::startDetached(daemonPath, daemonArgs, QString(), &pid);
+    // The tarball launcher exec's the binary, so this is the core's own pid. Not
+    // so from extract-and-run (the runtime forks it): replaced by corePid on connect
+    return QProcess::startDetached(program, daemonArgs, QString(), &pid);
 }
 
 /// The process still runs. A core that died on start never opens its port, and
@@ -1067,6 +1101,7 @@ int main(int argc, char* argv[])
                 mainWindow.sharedFilesPanel()->refreshSharedDirs();
                 // ed3k search method follows the daemon's ed3kEnabled
                 mainWindow.searchPanel()->setEd3kMethodVisible(eMule::thePrefs.ed3kEnabled());
+                mainWindow.searchPanel()->setTorrentSearchVisible(eMule::thePrefs.btEnabled());
                 // Torrents / Hoster tabs follow btEnabled / hosterDownloadsOn
                 mainWindow.applyFeatureTabs();
                 // The lists were built on the local prefs file's showExtControls

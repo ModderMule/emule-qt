@@ -1249,6 +1249,8 @@ private:
     [[nodiscard]] bool analyzerHasSomethingForUs() const;
     /// Sets or clears a sticky flag, logs a change.
     void analyzerFlag(uint32 flag, bool set, const QString& detail = {});
+    /// Counts a chat spam; logs it when no DLP ban does.
+    void noteAnalyzerSpam(const QString& reason);
     /// Complete source asking for the same file, or a complete part status in its request.
     void checkAnalyzerFileFaker();
     /// After a hello: a corrupt data sender of the last 60 days is banned.

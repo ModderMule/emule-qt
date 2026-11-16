@@ -292,6 +292,7 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     updateHosterNodeHint();
     m_hosterStreamsSpin->setValue(int(h.maxStreams));
     m_hosterPuzzlesCheck->setChecked(h.askPuzzles);
+    m_hosterGenericCheck->setChecked(h.genericHttp);
     m_hosterPeersCheck->setChecked(h.fromPeers);
     m_hosterCheckLinksCheck->setChecked(h.checkSearchLinks);
     m_hosterExtractCheck->setChecked(h.extract);
@@ -372,6 +373,7 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kHosterAutoJava", h.autoJava);
     put("ed3kHosterMaxStreams", qint64(h.maxStreams));
     put("ed3kHosterPuzzles", h.askPuzzles);
+    put("ed3kHosterGenericHttp", h.genericHttp);
     put("ed3kHosterPublishLinks", h.publishLinks);
     put("ed3kHosterFromPeers", h.fromPeers);
     put("ed3kHosterCheckSearchLinks", h.checkSearchLinks);
@@ -1453,6 +1455,10 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
     m_hosterPuzzlesCheck->setToolTip(tr("Off: a link that asks for a puzzle is skipped and shows \"Needs you\"; "
                                        "another link of the file is tried. Retry asks again."));
     dlLayout->addWidget(m_hosterPuzzlesCheck);
+    m_hosterGenericCheck = new QCheckBox(tr("Download plain web links no hoster plugin takes"), dlGroup);
+    m_hosterGenericCheck->setToolTip(tr("An http or https link to a file on any website is downloaded directly. "
+                                        "Never from a local or private address; these links are not published."));
+    dlLayout->addWidget(m_hosterGenericCheck);
     m_hosterPeersCheck = new QCheckBox(tr("Use hoster links that other ed3k nodes name"), dlGroup);
     m_hosterPeersCheck->setVisible(thePrefs.showExtControls());
     dlLayout->addWidget(m_hosterPeersCheck);
@@ -1606,7 +1612,7 @@ QWidget* Ed3kOptionsPages::buildHoster(QWidget* parent)
         }
         emit changed();
     });
-    for (QCheckBox* box : {m_hosterPuzzlesCheck, m_hosterPeersCheck, m_hosterCheckLinksCheck, m_autoJavaCheck,
+    for (QCheckBox* box : {m_hosterPuzzlesCheck, m_hosterGenericCheck, m_hosterPeersCheck, m_hosterCheckLinksCheck, m_autoJavaCheck,
                            m_hosterExtractCheck, m_hosterDeleteArchivesCheck, m_hosterShareCheck, m_resolverAutoUpdateCheck})
         connect(box, &QCheckBox::toggled, this, edited);
     connect(m_hosterExtractCheck, &QCheckBox::toggled, m_hosterDeleteArchivesCheck, &QWidget::setEnabled);
@@ -1930,6 +1936,7 @@ Ed3kHosterPrefs Ed3kOptionsPages::hosterPrefs() const
     h.autoUpdate = m_resolverAutoUpdateCheck->isChecked();
     h.maxStreams = uint32(m_hosterStreamsSpin->value());
     h.askPuzzles = m_hosterPuzzlesCheck->isChecked();
+    h.genericHttp = m_hosterGenericCheck->isChecked();
     h.publishLinks = m_publishLinksCheck->isChecked();
     h.fromPeers = m_hosterPeersCheck->isChecked();
     h.checkSearchLinks = m_hosterCheckLinksCheck->isChecked();

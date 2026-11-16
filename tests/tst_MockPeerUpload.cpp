@@ -419,8 +419,10 @@ void tst_MockPeerUpload::uploadFlow_longDurationRateLimited()
            elapsedMs, static_cast<unsigned long long>(totalReceived),
            static_cast<unsigned long long>(totalVerified), roundsSent);
 
-    // Restart the default process timer for cleanup
+    // Free the slot before the next test: a client the mock left behind still uploads
     m_pipe.processTimer.start(100);
+    mock.disconnectFromHost();
+    QTRY_VERIFY_WITH_TIMEOUT(!m_pipe.uploadQueue->hasActiveUploads(), 10000);
 }
 
 // ---------------------------------------------------------------------------
@@ -1401,5 +1403,7 @@ void tst_MockPeerUpload::cleanupTestCase()
     m_pipe.teardown();
 }
 
-QTEST_MAIN(tst_MockPeerUpload)
+// Guiless: a Cocoa app gets App Napped after ~1 min run from an IDE, the coalesced timers
+// make the per-second rate samples burst past the cap
+QTEST_GUILESS_MAIN(tst_MockPeerUpload)
 #include "tst_MockPeerUpload.moc"

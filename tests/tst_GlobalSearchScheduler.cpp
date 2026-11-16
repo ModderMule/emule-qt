@@ -248,8 +248,11 @@ void tst_GlobalSearchScheduler::sweep_cancelStopsTheTicks()
 
 void tst_GlobalSearchScheduler::sweep_stopsOnFilesNotSources()
 {
-    // Stops at 400 files, whatever their sources: one server's 300-file answer
-    // must not end it before a 2nd server is asked (#92). MFC stopped past 100 sources.
+    // Stops at globalSearchMaxFiles files, whatever their sources: one server's 300-file
+    // answer must not end it before a 2nd server is asked (#92). MFC stopped past 100 sources.
+    const uint32 savedMax = thePrefs.globalSearchMaxFiles();
+    QCOMPARE(savedMax, 2000u);   // default (#203)
+    thePrefs.setGlobalSearchMaxFiles(400);
     ServerList servers;
     fillServers(servers, 20);
     ScopedServerList scoped(&servers);
@@ -300,6 +303,15 @@ void tst_GlobalSearchScheduler::sweep_stopsOnFilesNotSources()
     sched.onResultCountChanged(id);
     QVERIFY(!sched.isRunning());  // 400 files
 
+    // 0 = no limit: every server is asked, as in aMule (#203)
+    thePrefs.setGlobalSearchMaxFiles(0);
+    sched.start(id, QByteArrayLiteral("payload"), false, false);
+    for (uint32 i = 401; i <= 2500; ++i)
+        add(i, 1);
+    sched.onResultCountChanged(id);
+    QVERIFY(sched.isRunning());
+
+    thePrefs.setGlobalSearchMaxFiles(savedMax);
     theApp.searchList = savedList;
 }
 

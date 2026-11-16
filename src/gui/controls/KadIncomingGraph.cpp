@@ -393,10 +393,7 @@ QString KadIncomingGraph::toolTipText(int idx) const
 {
     const Node& n = m_nodes[static_cast<size_t>(idx)];
     const Node* me = own();
-    const auto row = [](const QString& label, const QString& value) {
-        return QStringLiteral("<tr><td><b>%1:</b></td><td>&nbsp;%2</td></tr>")
-            .arg(label.toHtmlEscaped(), value.toHtmlEscaped());
-    };
+    const auto row = &KadGraphBase::tipRow;
     QString role;
     switch (n.role) {
     case Role::Asker: role = tr("Requester"); break;
@@ -404,14 +401,15 @@ QString KadIncomingGraph::toolTipText(int idx) const
     case Role::Handed: role = tr("Handed-out contact"); break;
     }
     QString html = QStringLiteral("<qt><b>%1</b><table cellspacing=0>").arg(role.toHtmlEscaped());
-    if (n.known)
-        html += row(tr("Kad ID"), n.id);
-    else
-        html += row(tr("Kad ID"), n.role == Role::Asker ? tr("unknown (not in our routing table)") : tr("unknown"));
-    if (!n.nodeId.isEmpty())
+    // eD2K: the Kad ID is the node ID; ed3k: a routing ID besides the node ID
+    const QString unknown = n.role == Role::Asker ? tr("unknown (not in our routing table)") : tr("unknown");
+    if (!n.nodeId.isEmpty()) {
         html += row(tr("Node ID"), n.nodeId);
-    if (!n.addr.isEmpty())
-        html += row(tr("Address"), n.cc.isEmpty() ? n.addr : QStringLiteral("%1 (%2)").arg(n.addr, n.cc.toUpper()));
+        html += row(tr("Routing ID"), n.known ? n.id : unknown);
+    } else {
+        html += row(tr("Node ID"), n.known ? n.id : unknown);
+    }
+    html += addressRows(n.addr, n.cc);
     if (n.version >= 0)
         html += row(tr("Protocol Version"), QString::number(n.version));
     if (n.known) {

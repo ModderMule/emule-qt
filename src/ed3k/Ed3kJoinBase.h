@@ -79,6 +79,8 @@ signals:
 public:
     /// Whether this node serves @p root (a member or a blob) now.
     [[nodiscard]] bool sharesRoot(const ffi::Root& root) const { return m_shared.contains(root); }
+    /// A set search of @p owner is running or has candidates left.
+    [[nodiscard]] bool setSearching(const QString& owner) const;
     /// A priority switch at a node may happen now: with a slot always; queued, only 30 min after
     /// the last queued switch there (Protocol.md §12.5: a 2nd within the budget is BUSY).
     [[nodiscard]] static bool switchAllowed(bool queued, std::optional<std::chrono::steady_clock::time_point> last,
@@ -351,8 +353,6 @@ protected:
     [[nodiscard]] std::vector<ffi::PublisherKey> setPublishers(const QString& owner) const;
     /// Ends every set search of @p owner.
     void endSetSearches(const QString& owner);
-    /// A set search of @p owner is running or has candidates left.
-    [[nodiscard]] bool setSearching(const QString& owner) const;
 
     // -- kept for a restart (Config/ed3k/<tag>/<owner>/) -----------------
 
@@ -374,6 +374,8 @@ protected:
     /// Forgets what is kept of @p owner (removed).
     void dropKept(const QString& owner);
     [[nodiscard]] QString keptDir(const QString& owner) const;
+    /// Root of the set kept for @p owner at its completion; none: not complete here.
+    [[nodiscard]] std::optional<ffi::Root> keptSet(const QString& owner) const;
 
     // -- state -------------------------------------------------------------
 

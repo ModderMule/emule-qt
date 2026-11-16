@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "controls/KadLookupGraph.h"
 #include "app/SkinIcons.h"
+#include "utils/CountryFlags.h"
 
 #include <QContextMenuEvent>
 #include <QCursor>
@@ -90,6 +91,26 @@ void KadGraphBase::contextMenuEvent(QContextMenuEvent* event)
         m_autoShow = autoShow->isChecked();
         emit autoShowLookupsToggled(m_autoShow);
     }
+}
+
+QString KadGraphBase::tipRow(const QString& label, const QString& value)
+{
+    return tipRowHtml(label, value.toHtmlEscaped());
+}
+
+QString KadGraphBase::tipRowHtml(const QString& label, const QString& html)
+{
+    return QStringLiteral("<tr><td><b>%1:</b></td><td>&nbsp;%2</td></tr>").arg(label.toHtmlEscaped(), html);
+}
+
+QString KadGraphBase::addressRows(const QString& addr, const QString& cc)
+{
+    QString out;
+    if (!addr.isEmpty())
+        out += tipRow(tr("Address"), addr);
+    if (const QString country = CountryFlags::tooltipHtml(cc); !country.isEmpty())
+        out += tipRowHtml(tr("Country"), country);
+    return out;
 }
 
 KadLookupGraph::KadLookupGraph(QWidget* parent)
@@ -435,11 +456,10 @@ QString KadLookupGraph::toolTipText(int drawIdx) const
         results = tr("Not Asked");
     }
 
-    const auto row = [](const QString& label, const QString& value) {
-        return QStringLiteral("<tr><td><b>%1:</b></td><td>&nbsp;%2</td></tr>")
-            .arg(label.toHtmlEscaped(), value.toHtmlEscaped());
-    };
+    const auto row = &KadGraphBase::tipRow;
     return QStringLiteral("<qt><b>%1</b><table cellspacing=0>").arg(e.contactID)
+        + row(tr("Node ID"), e.contactID)
+        + addressRows(e.addr, e.cc)
         + row(tr("Distance"), e.distance)
         + row(tr("Protocol Version"), QString::number(e.contactVersion))
         + QStringLiteral("<tr><td colspan=2><hr></td></tr>")

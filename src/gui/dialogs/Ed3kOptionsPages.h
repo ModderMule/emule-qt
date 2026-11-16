@@ -267,6 +267,7 @@ private:
     QLabel* m_resolverLabel = nullptr;
     QSpinBox* m_hosterStreamsSpin = nullptr;
     QCheckBox* m_hosterPuzzlesCheck = nullptr;
+    QCheckBox* m_hosterGenericCheck = nullptr;          ///< ed3kHosterGenericHttp
     QCheckBox* m_hosterPeersCheck = nullptr;
     QCheckBox* m_hosterCheckLinksCheck = nullptr;
     QCheckBox* m_hosterExtractCheck = nullptr;

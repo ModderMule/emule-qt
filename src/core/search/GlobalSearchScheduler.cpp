@@ -29,10 +29,6 @@ constexpr int kSweepIntervalMs = 750;
 /// MFC: SetTimer(TimerServerTimeout, SEC2MS(50), NULL) — srchybrid/SearchResultsWnd.cpp:1259.
 constexpr int kLocalAnswerTimeoutMs = 50 * 1000;
 
-/// Sweep stops once this many distinct files are in. MFC stops past 100 sources
-/// (MAX_RESULTS, SearchResultsWnd.cpp:473), so one server's 300-file answer ends
-/// it before a 2nd server is asked (#92). 400 > a server's 300 cap: always ask on.
-constexpr uint32 kSweepMaxFiles = 400;
 
 } // namespace
 
@@ -156,11 +152,16 @@ void GlobalSearchScheduler::onResultCountChanged(uint32 searchID)
     if (m_searchID == 0 || searchID != m_searchID || !theApp.searchList)
         return;
 
-    // Port change: counts files, not MFC's sources (see kSweepMaxFiles)
-    if (theApp.searchList->foundFiles(searchID) >= kSweepMaxFiles) {
-        logServerVerbose([&]() -> QString { return QStringLiteral("Global search: stopping the UDP sweep after %1 "
-                                        "files — the query is too broad")
-                             .arg(theApp.searchList->foundFiles(searchID)); });
+    // Port change: counts files, not MFC's 100 sources (MAX_RESULTS,
+    // SearchResultsWnd.cpp:473), which one server's answer always hit (#92). aMule has no cap;
+    // a low one skipped servers holding the well-sourced copies (#203). 0 = ask all.
+    const uint32 maxFiles = thePrefs.globalSearchMaxFiles();
+    const uint32 found = theApp.searchList->foundFiles(searchID);
+    if (maxFiles > 0 && found >= maxFiles) {
+        logServerVerbose([&]() -> QString {
+            return QStringLiteral("Global search: stopping the UDP sweep after %1 files (limit %2)")
+                .arg(found).arg(maxFiles);
+        });
         cancel();
     }
 }

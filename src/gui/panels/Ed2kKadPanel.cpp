@@ -158,6 +158,8 @@ void Ed2kKadPanel::requestLookupHistory()
             LookupEntry e;
             e.contactID = m.value(QStringLiteral("contactID")).toString();
             e.distance  = m.value(QStringLiteral("distance")).toString();
+            e.addr = m.value(QStringLiteral("addr")).toString();
+            e.cc = m.value(QStringLiteral("cc")).toString();
             e.contactVersion = static_cast<uint8_t>(m.value(QStringLiteral("contactVersion")).toInteger());
             e.askedContactsAge = m.value(QStringLiteral("askedContactsAge")).toInteger(-1);
             e.respondedContact = static_cast<uint32_t>(m.value(QStringLiteral("respondedContact")).toInteger());

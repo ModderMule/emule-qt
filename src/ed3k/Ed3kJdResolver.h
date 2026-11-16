@@ -50,6 +50,8 @@ struct JdResolverConfig {
     QString proxy;         ///< for every request; empty = direct
     QString bindAddress;   ///< local source address while direct (bindAddress pref); empty = any
     bool askPuzzles = true;
+    /// a public http(s) link no site plugin takes goes to JD's DirectHTTP (#202)
+    bool genericHttp = true;
     /// captcha solver accounts; sent after every start (the sidecar forgets them when it ends)
     QList<SolverAccount> solvers;
     /// hoster downloads on: plugins unpacked, sidecar may start. Off: nothing is created and
@@ -142,6 +144,7 @@ public:
     void cancel(TaskId task) override;
     void setAskPuzzles(bool on) override;
     void setProxy(const QString& url) override;
+    void setGenericHttp(bool on) override;
     void setBindAddress(const QString& address);
 
     /// Parses one event line of the sidecar (tests). nullopt: not an event of a task.

@@ -191,6 +191,7 @@ QString reasonText(int reason, const QString& arg)
     case 34: return HosterPanel::tr("The archive needs a password (Set Password…)");
     case 35: return HosterPanel::tr("Checking the file against the hoster's %1").arg(arg.toUpper());
     case 36: return HosterPanel::tr("The file does not match the hoster's %1, dropped (Retry downloads it again)").arg(arg.toUpper());
+    case 37: return HosterPanel::tr("%1 is a local or private address, not downloaded").arg(arg);
     default: return {};
     }
 }

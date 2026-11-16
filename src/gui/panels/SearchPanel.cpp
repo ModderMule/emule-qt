@@ -259,21 +259,25 @@ void SearchPanel::applyDisplayOptions()
 void SearchPanel::setEd3kMethodVisible(bool visible)
 {
     // ed3k and its live channel search (batch 14: SearchType::Ed3kLive) come and go together
-    // constexpr int kEd3k = static_cast<int>(SearchType::Ed3k);   (was: the one entry)
-    const std::pair<int, QString> entries[] = {{static_cast<int>(SearchType::Ed3k), tr("ed3k")},
-                                               {static_cast<int>(SearchType::Ed3kLive), tr("ed3k Channel (live)")}};
-    for (const auto& [kEd3k, text] : entries) {
-        const int idx = m_methodCombo->findData(kEd3k);
-        if (visible && idx < 0) {
-            m_methodCombo->addItem(skinIcon(QStringLiteral(":/icons/Ed3k.ico")), text, kEd3k);
-            // daemon prefs land after the restore in the ctor
-            if (theUiState.searchLastMethod(0) == kEd3k)
-                m_methodCombo->setCurrentIndex(m_methodCombo->count() - 1);
-        } else if (!visible && idx >= 0) {
-            if (m_methodCombo->currentIndex() == idx)
-                m_methodCombo->setCurrentIndex(m_methodCombo->findData(static_cast<int>(SearchType::Kademlia)));
-            m_methodCombo->removeItem(idx);
-        }
+    const QString icon = QStringLiteral(":/icons/Ed3k.ico");
+    setMethodEntriesVisible({{static_cast<int>(SearchType::Ed3k), tr("ed3k"), icon},
+                             {static_cast<int>(SearchType::Ed3kLive), tr("ed3k Channel (live)"), icon}},
+                            visible);
+}
+
+void SearchPanel::setTorrentSearchVisible(bool visible)
+{
+    // back in their place behind the Usenet twins
+    const QString icon = QStringLiteral(":/icons/Torrent.ico");
+    setMethodEntriesVisible({{static_cast<int>(SearchType::TorrentIndexer), tr("Torrent (Indexer)"), icon,
+                              static_cast<int>(SearchType::UsenetIndexer)},
+                             {static_cast<int>(SearchType::MetaTorrent), tr("Torrent (Server)"), icon,
+                              static_cast<int>(SearchType::MetaUsenet)}},
+                            visible);
+    if (m_showTorrentCheck && m_showTorrentCheck->isHidden() == visible) {
+        m_showTorrentCheck->setVisible(visible);
+        for (SearchTab& tab : m_tabs)
+            applyNetworkFilter(tab);
     }
 }
 
@@ -535,6 +539,7 @@ QWidget* SearchPanel::createSearchBar()
                                          theUiState.searchShowTorrent(), true);
     m_showWebCheck = addNetworkCheck(tr("Web results"), QStringLiteral(":/icons/Web.ico"),
                                      theUiState.searchShowWeb(), true);
+    setTorrentSearchVisible(thePrefs.btEnabled());
     // A torrent, NZB or web page comes with every file in it, matching or not
     m_hideRelatedCheck = new QCheckBox(tr("Hide related folder content"), container);
     m_hideRelatedCheck->setChecked(theUiState.searchHideRelatedContent());
@@ -3359,7 +3364,7 @@ SearchRequest SearchPanel::requestFromUi() const
     // what the result check boxes show is also asked of the servers' catalogues
     if (canBlendMetaSearch(static_cast<SearchType>(req.method))) {
         req.blendMeta = (m_showUsenetCheck->isChecked() ? kBlendMetaUsenet : 0)
-                      | (m_showTorrentCheck->isChecked() ? kBlendMetaTorrent : 0)
+                      | (torrentResultsShown() ? kBlendMetaTorrent : 0)
                       | (m_showWebCheck->isChecked() ? kBlendMetaWeb : 0);
     }
     return req;
@@ -3647,7 +3652,7 @@ void SearchPanel::applyNetworkFilter(SearchTab& tab)
     if (canBlendMetaSearch(static_cast<SearchType>(tab.method)) && m_showUsenetCheck) {
         filter.usenet = m_showUsenetCheck->isChecked();
         filter.kad = m_showKadCheck->isChecked();
-        filter.torrent = m_showTorrentCheck->isChecked();
+        filter.torrent = torrentResultsShown();
         filter.web = m_showWebCheck->isChecked();
     }
     filter.ed3kHidden = tab.showEd3kHidden;
@@ -3830,6 +3835,30 @@ std::function<bool(const QString&)> SearchPanel::pausedLookup() const
         const DownloadRow* dl = model ? model->findByHash(hash) : nullptr;
         return dl && (dl->isPaused || dl->isStopped);
     };
+}
+
+void SearchPanel::setMethodEntriesVisible(std::initializer_list<MethodEntry> entries, bool visible)
+{
+    for (const MethodEntry& e : entries) {
+        const int idx = m_methodCombo->findData(e.id);
+        if (visible && idx < 0) {
+            const int after = e.after < 0 ? -1 : m_methodCombo->findData(e.after);
+            const int at = after < 0 ? m_methodCombo->count() : after + 1;
+            m_methodCombo->insertItem(at, skinIcon(e.icon), e.text, e.id);
+            // daemon prefs land after the restore in the ctor
+            if (theUiState.searchLastMethod(0) == e.id)
+                m_methodCombo->setCurrentIndex(at);
+        } else if (!visible && idx >= 0) {
+            if (m_methodCombo->currentIndex() == idx)
+                m_methodCombo->setCurrentIndex(m_methodCombo->findData(static_cast<int>(SearchType::Kademlia)));
+            m_methodCombo->removeItem(idx);
+        }
+    }
+}
+
+bool SearchPanel::torrentResultsShown() const
+{
+    return m_showTorrentCheck && !m_showTorrentCheck->isHidden() && m_showTorrentCheck->isChecked();
 }
 
 } // namespace eMule

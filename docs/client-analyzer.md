@@ -56,4 +56,4 @@ per record hash + tag list (ids in `ClientAnalyzer.cpp`), then corrupt senders (
 Saved every 18 min and at exit via `BackgroundFileWriter`; loaded with `clients.met`, also while off.
 Dropped: unseen 150 days, or nothing worth keeping (no flag, no bad counter, < 1 chunk either way).
 
-Client Details › Scores shows the factor and reasons while on. Log lines `[CA] …` go to the Leecher tab.
+Client Details › Scores shows the factor and reasons while on. Log lines `[CA] …` go to the Leecher tab (when Log banned clients is on): flag set/cleared, fast reask, XS exploiter reached/cleared, XS spammer reached, chat spam (analyzer only; a DLP ban logs its own), empty upload sessions limit, corrupt sender remembered, corrupt sender banned.

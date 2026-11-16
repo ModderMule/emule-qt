@@ -111,6 +111,7 @@ public:
         UnpackPassword,      ///< Complete: its set is encrypted and no password opens it
         HashChecking,        ///< rootless file whole: checked against the hoster's checksum; arg: its type
         HashMismatch,        ///< the file is not what the hoster's checksum says, dropped; arg: its type
+        PrivateAddress,      ///< a generic link (or its redirect) points at a non-public address; arg: the host
     };
 
     /// One download from a hoster link, as the GUI shows it.
@@ -137,6 +138,9 @@ public:
         quint32 packageId = 0;       ///< 0: no package; else the group it was added in
         QString package;             ///< the package's name; its folder under incoming
         QStringList passwords;       ///< archive passwords (a container's), tried by the unpack
+        /// only the generic http plugin takes url (#202): a plain web file, host stays the
+        /// site; never looked up or published (the URL may carry a private token)
+        bool generic = false;
     };
 
     /// What a link check found. Values are sent over IPC: append only.
@@ -387,7 +391,7 @@ private:
 
     /// The steps of a pasted link.
     void begin(Entry& e);
-    void onMatched(Entry& e, const QString& host);
+    void onMatched(Entry& e, const ResolverEvent& ev);
     void lookUp(Entry& e);
     void onAliasFound(const ::ed3k::event::AliasFound& found);
     void startRooted(Entry& e, const ::ed3k::Root& root, std::uint64_t size, const QString& name,

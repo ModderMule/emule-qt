@@ -56,7 +56,7 @@ struct ResolverLink {
 
 struct ResolverEvent {
     enum class Kind {
-        Matched,      ///< match: host (empty: no plugin takes the link); a hoster's sites
+        Matched,      ///< match: host (empty: no plugin takes the link); a hoster's sites; generic
         Sites,        ///< sites: host (empty: no hoster plugin), sites
         Found,        ///< check: name, size, hash
         Folder,       ///< check: the link names count links; ask expand
@@ -67,7 +67,8 @@ struct ResolverEvent {
         Done,         ///< open: the whole file is at path (size, name, hash)
         Gone,         ///< the hoster says the file was removed
         NeedsUser,    ///< text: "puzzle" or "login"
-        Failed,       ///< code: "io", "defect", "failed", "noPlugin", "folder", "unavailable"; openContainer
+        Failed,       ///< code: "io", "defect", "failed", "noPlugin", "folder", "unavailable", "private"
+                      ///< (a request to a non-public address refused, text: the host); openContainer
                       ///< also "limit" (the DLC service refuses for a while), "invalid", "password",
                       ///< "bad" (a resolver without containers); text
         Cancelled,
@@ -97,6 +98,9 @@ struct ResolverEvent {
     QByteArray image;
     QList<ResolverLink> links;
     QStringList sites;            ///< a hoster's domains, lower case: its host, then its aliases
+    /// match: only the generic http plugin takes the link (setGenericHttp): "file" (the path
+    /// names a file), "any"; empty: a site plugin, or none
+    QString generic;
     bool valid = false;
     bool premium = false;
     qint64 expires = 0;           ///< unix seconds; 0 = unknown
@@ -168,6 +172,8 @@ public:
     virtual void setAskPuzzles(bool on) = 0;
     /// Proxy for every request ("http://h:p", "socks5://user:pass@h:p"); empty = direct.
     virtual void setProxy(const QString& url) = 0;
+    /// A public http(s) link no site plugin takes is downloaded as a plain file (#202). Default: nothing
+    virtual void setGenericHttp(bool on) { (void)on; }
 
 signals:
     void taskEvent(eMule::ed3k::Ed3kResolver::TaskId task, const eMule::ed3k::ResolverEvent& ev);

@@ -71,6 +71,10 @@ void notifyChanged();
 /// "Germany (DE)", empty when there is no country.
 [[nodiscard]] QString tooltip(const QString& cc);
 
+/// Rich-text flag image + "Germany (DE)" for a tool tip, escaped; empty without a country.
+/// The flag shows whatever the flag setting says.
+[[nodiscard]] QString tooltipHtml(const QString& cc);
+
 /// @p base with the flag appended (16 + 2 + 18 px). Returns @p base when flags are
 /// off. The flag slot is kept even without a country so names stay aligned.
 /// A null @p base yields just the flag slot.

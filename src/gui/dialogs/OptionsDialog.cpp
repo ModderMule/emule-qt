@@ -331,6 +331,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_useUserSortedServerListCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_deadServerRetriesSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_removeDeadServersCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_globalSearchMaxFilesSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_autoUpdateServerListCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_smartLowIdCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_serverPreferIPv6Check, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -1975,6 +1976,23 @@ QWidget* OptionsDialog::createServerPage()
     // "Set manually added servers to high priority"
     m_manualHighPrioCheck = new QCheckBox(tr("Set manually added servers to high priority"), miscGroup);
     miscLayout->addWidget(m_manualHighPrioCheck);
+
+    // Global search stops asking servers after N files (0 = ask all)
+    auto* maxFilesRow = new QHBoxLayout;
+    auto* maxFilesLabel = new QLabel(tr("Stop global search after"), miscGroup);
+    m_globalSearchMaxFilesSpin = new QSpinBox(miscGroup);
+    m_globalSearchMaxFilesSpin->setRange(0, static_cast<int>(Preferences::kGlobalSearchMaxFilesLimit));
+    m_globalSearchMaxFilesSpin->setSingleStep(100);
+    m_globalSearchMaxFilesSpin->setValue(2000);
+    m_globalSearchMaxFilesSpin->setSpecialValueText(tr("no limit"));
+    m_globalSearchMaxFilesSpin->setMinimumWidth(80);
+    m_globalSearchMaxFilesSpin->setToolTip(
+        tr("A global search asks one server after another and stops once this many files were found. 0 asks every server."));
+    maxFilesRow->addWidget(maxFilesLabel);
+    maxFilesRow->addWidget(m_globalSearchMaxFilesSpin);
+    maxFilesRow->addWidget(new QLabel(tr("results"), miscGroup));
+    maxFilesRow->addStretch();
+    miscLayout->addLayout(maxFilesRow);
 
     layout->addWidget(miscGroup);
 
@@ -7832,6 +7850,8 @@ void OptionsDialog::saveSettings()
         req.append(static_cast<qint64>(m_deadServerRetriesSpin->value()));
         req.append(QStringLiteral("removeDeadServers"));
         req.append(m_removeDeadServersCheck->isChecked());
+        req.append(QStringLiteral("globalSearchMaxFiles"));
+        req.append(static_cast<qint64>(m_globalSearchMaxFilesSpin->value()));
         req.append(QStringLiteral("autoUpdateServerList"));
         req.append(m_autoUpdateServerListCheck->isChecked());
         req.append(QStringLiteral("serverListURL"));
@@ -8503,6 +8523,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setAddServersFromClients(m_addServersFromClientsCheck->isChecked());
         thePrefs.setDeadServerRetries(static_cast<uint32>(m_deadServerRetriesSpin->value()));
         thePrefs.setRemoveDeadServers(m_removeDeadServersCheck->isChecked());
+        thePrefs.setGlobalSearchMaxFiles(static_cast<uint32>(m_globalSearchMaxFilesSpin->value()));
         thePrefs.setAutoUpdateServerList(m_autoUpdateServerListCheck->isChecked());
         thePrefs.setServerListURL(m_serverListURLValue);
         thePrefs.setSmartLowIdCheck(m_smartLowIdCheck->isChecked());
@@ -8810,6 +8831,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_addServersFromClientsCheck->setChecked(prefs.value(QStringLiteral("addServersFromClients")).toBool());
     m_deadServerRetriesSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("deadServerRetries")).toInteger(20)));
     m_removeDeadServersCheck->setChecked(prefs.value(QStringLiteral("removeDeadServers")).toBool(true));
+    m_globalSearchMaxFilesSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("globalSearchMaxFiles")).toInteger(2000)));
     m_autoUpdateServerListCheck->setChecked(prefs.value(QStringLiteral("autoUpdateServerList")).toBool());
     m_serverListURLValue = prefs.value(QStringLiteral("serverListURL")).toString();
     m_smartLowIdCheck->setChecked(prefs.value(QStringLiteral("smartLowIdCheck")).toBool(true));

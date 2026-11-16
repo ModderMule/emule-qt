@@ -120,6 +120,11 @@ public:
     /// @p path is an AppImage; run with kAppImageCoreArg first it starts the core
     [[nodiscard]] static bool isAppImageFile(const QString& path);
     static constexpr QLatin1StringView kAppImageCoreArg{"--emulecored"};
+    /// Run extract-and-run (no FUSE): our dir is $TMPDIR/appimage_extracted_<md5>,
+    /// shared by every instance of the image and removed when any of them exits
+    [[nodiscard]] static bool appImageExtracted();
+    /// AppRun restores TMPDIR from this for a core given a TMPDIR of its own
+    static constexpr QLatin1StringView kAppImageTmpDirVar{"EMULEQT_TMPDIR"};
 
     /// Why the core of @p configDir quit on start (lock, IPC port). The core
     /// writes it on the way out and clears it on each start; the GUI shows it.

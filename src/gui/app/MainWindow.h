@@ -158,6 +158,8 @@ public:
     /// Torrents / Hoster buttons follow btEnabled / hosterDownloadsOn; a hidden current
     /// tab falls back to Transfers. After a toolbar rebuild and a prefs change.
     void applyFeatureTabs();
+    /// A torrent or magnet arrived: true while btEnabled, else says so and offers Options
+    [[nodiscard]] bool requireBitTorrent();
 
     /// Open the Options dialog, optionally at a specific page index.
     void showOptionsDialog(int page = -1);

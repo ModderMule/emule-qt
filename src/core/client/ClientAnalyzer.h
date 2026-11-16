@@ -56,7 +56,8 @@ struct AnalyzerRecord {
 
     void addUploaded(uint64 bytes, bool partial);
     void addDownloaded(uint64 bytes, bool partial, uint32 sourceCount);
-    void addUlSession(bool bad);
+    /// @return true when this bad session made it a live-socket-only peer.
+    bool addUlSession(bool bad);
     void addDlSession(bool bad);
     void addSpam() { ++spams; }
     /// @return true when this reask made it a fast asker.
@@ -65,7 +66,8 @@ struct AnalyzerRecord {
     bool incXsAsks();
     /// @return true when this answer cleared the exploiter state.
     bool incXsAnswers();
-    void incFastXs() { ++fastXsAsks; }
+    /// @return true when this ask made it an XS spammer.
+    bool incFastXs() { ++fastXsAsks; return fastXsAsks == kXsSpamLevel + 1; }
     void decFastXs() { if (fastXsAsks > 0) --fastXsAsks; }
 
     /// @return true if the flag was not set before.
@@ -119,7 +121,8 @@ public:
     /// Seeds a fresh record with the credit totals, as ClientAnalyzer did.
     static void seedFromCredits(AnalyzerRecord& r, const ClientCredits& credits);
 
-    void addCorruptSender(const uint8* userHash);
+    /// @return true if it was not known yet.
+    bool addCorruptSender(const uint8* userHash);
     [[nodiscard]] bool isCorruptSender(const uint8* userHash) const;
 
     [[nodiscard]] std::size_t count() const { return m_records.size(); }

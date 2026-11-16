@@ -23,7 +23,8 @@ Downloads from links at file hosters, verified under ed3k roots. Spec:
 
 ## Flow of a pasted link
 
-1. **match**: a JD plugin that takes the link (crawler plugins first, as JD does). None: *No resolver*.
+1. **match**: a JD plugin that takes the link (crawler plugins first, as JD does). None: *No resolver*,
+   unless the link is a plain web link (see "Plain web links").
 2. **The user's switch** (§3), on by default, no confirm dialog: with "Allow downloads from file hosters"
    off the item waits as *Needs you*. Hosters run on the ed3k node: the Hoster tab shows, the resolver is
    unpacked and Java looked for only while both `ed3k.enabled` and `ed3k.hoster.enabled` are on
@@ -169,6 +170,31 @@ runs) is logged once and tried again every minute. Port: `uistate.yml` `clickNLo
 - Tests: `tst_ClickNLoadServer` (endpoints on real sockets), `tst_Ed3kHoster` `clickNLoad_*`,
   live `live_jdResolverClickNLoad` (an archive.org link encrypted with a known key, via `jk` and `k`).
 
+## Plain web links (#202)
+
+`genericHttp` (`ed3kHosterGenericHttp`), **default on**, Options › ed3k › Hoster *Download plain web
+links no hoster plugin takes*. Sidecar op `setGeneric {on}` (hello `generic: true`; protocol stays 2,
+an older sidecar answers "unknown op" and keeps refusing such links), sent at start and on change.
+
+- **match**: site plugins first (crawler, then host). None, and the link is http(s) with a host that is
+  no literal non-public address or local name: host `DirectHTTP` plus `generic: "file"` (the path names
+  a file: JD's "http links" pattern) or `"any"`.
+- **crawl** (check, open, plain expand): such a link goes in as `directhttp://<url>`, so DirectHTTP takes
+  any URL; it refuses an HTML/JSON page itself (no file, *gone*). Direct links a site decrypter or a deep
+  crawl finds are kept now too (they were dropped as generic before).
+- **Join**: `Item::generic` (saved as `generic`). The host column keeps the site (per-site stream limit,
+  accounts); no §4 lookup (rootless at once, the ask would name the URL); the own link is never vouched,
+  published or handed out: the URL may carry a private token. The root is kept, so the file is still
+  shared like any other.
+- **Clipboard**: only `generic: "file"` links are grabbed; a copied page URL is ignored.
+- **Address guard** (`AddressGuard`, all plugins, every request incl. redirects): JD's global proxy
+  selector is wrapped. Direct: the host is resolved and refused when any address is loopback, private,
+  link-local, CGNAT, ULA, multicast, reserved, or a 6to4/NAT64 wrap of one (JVM DNS cache 30 s: the
+  connect sees the same addresses). Through a proxy: literals and local names (`localhost`, `.local`,
+  `.lan`, `.internal`, `.home.arpa`, single labels) only, no lookup (no DNS leak). Refused: error
+  `private` → *Failed* / `PrivateAddress` (37), arg the host, no retry. Loopback only with
+  `loopbackHosters` (tests).
+
 ## Clipboard
 
 Options › ed3k › Hoster › Desktop *Watch the clipboard for hoster links (http/https)*,
@@ -230,7 +256,8 @@ and no file). Running crawls are not saved; a check running at exit loads as unk
 
 Deep crawl (*Add Links › Deep crawl*): the sidecar's `expand` with `deep: true` runs
 `LinkCrawler.crawl(url, null, true)`: a page no plugin takes is loaded and every link on it is
-distributed; only links with a (non-generic) host plugin come back. The sidecar's `hello` says
+distributed; only links with a (non-generic) host plugin come back, plus direct file links while
+`genericHttp` is on. The sidecar's `hello` says
 `deep: true`; protocol stays 2 (an older sidecar ignores the field and crawls plainly; its hello
 lacks it, so the GUI hides the box: `Ed3kResolver::canDeepCrawl`).
 
@@ -352,6 +379,7 @@ A stream that breaks goes on from where it stood instead of starting over:
 | `autoJava` | `ed3kHosterAutoJava` | on | download Temurin when none is found |
 | `maxStreams` | `ed3kHosterMaxStreams` | 8 | 1-16 over all hosters (JDownloader also runs 8); per hoster 1 without an account or with a free one, with a premium one JD's limit for that account (`getMaxSimultanDownload`, from the account check), capped by this; configs from before v7 with the old default 2 are raised once |
 | `puzzles` | `ed3kHosterPuzzles` | on | show image puzzles |
+| `genericHttp` | `ed3kHosterGenericHttp` | on | plain http(s) links no plugin takes go to DirectHTTP (see "Plain web links") |
 | `publishLinks` | `ed3kHosterPublishLinks` | **on** | §4.1: vouched links get an `ALIAS` record and are handed out; switching on asks first. Off = holding links back; on is the `hoster.md` §4.1 default |
 | `fromPeers` | `ed3kHosterFromPeers` | on | use links peers name |
 | `checkSearchLinks` | `ed3kHosterCheckSearchLinks` | on | a web search row's links dialog checks its links |
