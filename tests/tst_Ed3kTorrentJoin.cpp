@@ -131,11 +131,13 @@ class tst_Ed3kTorrentJoin : public QObject {
 private slots:
     void initTestCase();
     void completeTorrentGivesItsSet();
+    void createdTorrentGivesItsSet();
     void ed3kAloneFillsATorrent();
     void linkJoinFetchesItsSet();
     void ed3kSkipsPiecesLibtorrentHas();
     void aGoneMemberFailsItsRead();
     void i2pTorrentJoinsOnlyWhenAllowed();
+    void privateTorrentJoinsOnlyWhenShared();
     void aFirstSetSearchThatFindsNothingEnds();
     void aFalseClaimNeverFailsATorrentPiece();
 
@@ -145,6 +147,7 @@ private:
     /// two files: the hybrid torrent pads between them
     QByteArray m_a, m_b;
     QByteArray m_torrent;
+    QByteArray m_privateTorrent;
     /// what completeTorrentGivesItsSet published
     QByteArray m_manifest;
 };
@@ -165,6 +168,52 @@ void tst_Ed3kTorrentJoin::initTestCase()
     lt::set_piece_hashes(t, m_seedDir.toStdString());
     const std::vector<char> buf = t.generate_buf();
     m_torrent = QByteArray(buf.data(), qsizetype(buf.size()));
+    // the same files, marked private: another info hash
+    t.set_priv(true);
+    const std::vector<char> priv = t.generate_buf();
+    m_privateTorrent = QByteArray(priv.data(), qsizetype(priv.size()));
+}
+
+// #191: a torrent made here and seeded at once (seed mode, complete from the start) joins
+// all the same: BLAKE3 roots, the canonical set (the one a downloader builds), records
+void tst_Ed3kTorrentJoin::createdTorrentGivesItsSet()
+{
+    QVERIFY2(!m_manifest.isEmpty(), "needs completeTorrentGivesItsSet first");
+    const QString dir = m_dir.filePath(QStringLiteral("made1"));
+    Ed3kSession node;
+    QVERIFY(node.start(loopback(dir)));
+    BtSession bt;
+    bt.start(btSettings(dir));
+    Ed3kTorrentJoin join(node, bt, dir);
+    join.setSearchEnabled(false);
+    join.start();
+    QSignalSpy verified(&join, &Ed3kTorrentJoin::memberVerified);
+    QSignalSpy completed(&join, &Ed3kTorrentJoin::torrentCompleted);
+
+    const BtAddResult added = bt.addCreatedTorrent(m_torrent, m_seedDir);
+    QCOMPARE(added.outcome, BtAddOutcome::Added);
+    join.adoptCreated(added.id);
+    QTRY_VERIFY_WITH_TIMEOUT(join.hasJoin(added.id), kTimeoutMs);
+    QTRY_COMPARE_WITH_TIMEOUT(verified.count(), 2, kTimeoutMs);
+    QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 1, kTimeoutMs);
+    QCOMPARE(join.completedManifest(added.id), m_manifest);
+    QVERIFY(join.sharesRoot(hashOf(m_a).root));
+    QVERIFY(join.sharesRoot(hashOf(m_b).root));
+    join.stop();
+
+    // the same torrent added as complete without adoptCreated: no join (unchanged rule)
+    const QString dir2 = m_dir.filePath(QStringLiteral("made2"));
+    Ed3kSession node2;
+    QVERIFY(node2.start(loopback(dir2)));
+    BtSession bt2;
+    bt2.start(btSettings(dir2));
+    const BtAddResult plain = bt2.addCreatedTorrent(m_torrent, m_seedDir);
+    QTRY_VERIFY_WITH_TIMEOUT(bt2.torrent(plain.id) && bt2.torrent(plain.id)->haveBytes == bt2.torrent(plain.id)->totalSize, kTimeoutMs);
+    Ed3kTorrentJoin join2(node2, bt2, dir2);
+    join2.setSearchEnabled(false);
+    join2.start();
+    QVERIFY(!join2.hasJoin(plain.id));
+    join2.stop();
 }
 
 // §4.2 with no set found: the torrent's hashes judge; once complete, its members are
@@ -532,6 +581,47 @@ void tst_Ed3kTorrentJoin::i2pTorrentJoinsOnlyWhenAllowed()
     QTRY_VERIFY_WITH_TIMEOUT(join.hasJoin(i2p.id), kTimeoutMs);
     join.setI2pJoins(false);
     QVERIFY(!join.hasJoin(i2p.id));
+
+    join.stop();
+    bt.stop();
+    node.stop();
+}
+
+// torrent.md §6.3: a private torrent joins only while private torrents are shared
+// (btShareMode "all"); off withdraws its join and shares, on brings them back
+void tst_Ed3kTorrentJoin::privateTorrentJoinsOnlyWhenShared()
+{
+    const QString dir = m_dir.filePath(QStringLiteral("private"));
+    Ed3kSession node;
+    QVERIFY(node.start(loopback(dir)));
+    BtSession bt;
+    bt.start(btSettings(dir));
+    Ed3kTorrentJoin join(node, bt, dir);
+    join.setSearchEnabled(false);
+    join.start();   // private joins off by default
+    QSignalSpy completed(&join, &Ed3kTorrentJoin::torrentCompleted);
+
+    const BtAddResult added = bt.addCreatedTorrent(m_privateTorrent, m_seedDir);
+    QCOMPARE(added.outcome, BtAddOutcome::Added);
+    QVERIFY(bt.torrent(added.id)->isPrivate);
+    join.adoptCreated(added.id);
+    QTest::qWait(200);
+    QVERIFY(!join.hasJoin(added.id));
+
+    // shared: its set is made as for a public one, under its own info hash
+    join.setPrivateJoins(true);
+    QTRY_VERIFY_WITH_TIMEOUT(join.hasJoin(added.id), kTimeoutMs);
+    QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 1, kTimeoutMs);
+    const QByteArray manifest = join.completedManifest(added.id);
+    QVERIFY(!manifest.isEmpty() && manifest != m_manifest);
+    QTRY_VERIFY_WITH_TIMEOUT(join.sharesRoot(hashOf(m_a).root) && join.sharesRoot(hashOf(m_b).root), kTimeoutMs);
+
+    // off: join and shares withdrawn; on: what was kept is shared again
+    join.setPrivateJoins(false);
+    QVERIFY(!join.hasJoin(added.id));
+    QVERIFY(!join.sharesRoot(hashOf(m_a).root) && !join.sharesRoot(hashOf(m_b).root));
+    join.setPrivateJoins(true);
+    QTRY_VERIFY_WITH_TIMEOUT(join.sharesRoot(hashOf(m_a).root) && join.sharesRoot(hashOf(m_b).root), kTimeoutMs);
 
     join.stop();
     bt.stop();

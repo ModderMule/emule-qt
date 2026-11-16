@@ -73,6 +73,13 @@ public:
                                std::optional<bool> i2pOnly = std::nullopt,
                                std::optional<bool> stopAfterMetadata = std::nullopt,
                                const QList<int>& wantedFiles = {});
+    /// A .torrent made here (#191) over data already at @p savePath: added in seed mode
+    /// (no recheck), started; I2P as the settings default.
+    BtAddResult addCreatedTorrent(const QByteArray& data, const QString& savePath);
+    /// The .torrent of @p id (#196): its info dictionary as is, v2 piece layers, current
+    /// trackers, web seeds, comment. Error (English): unknown id, no metadata or still being
+    /// added, v2 piece layers not all known. Waits briefly for libtorrent's thread.
+    [[nodiscard]] std::expected<QByteArray, QString> exportTorrent(const QString& id) const;
     /// Reads a .torrent without adding it; works with the engine stopped.
     /// Error: an English reason.
     [[nodiscard]] static std::expected<BtTorrentPreview, QString> inspectTorrentFile(const QByteArray& data);

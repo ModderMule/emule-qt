@@ -41,6 +41,7 @@ if(NOT EMULE_BITTORRENT)
         "dialogs/AddTorrentDialog"
         "dialogs/BtI2pPage"
         "dialogs/EditTrackersDialog"
+        "dialogs/TorrentCreatorDialog"
         "dialogs/TorrentDetailsDialog"
         "dialogs/TorrentOptionsDialog"
         "utils/TorrentAdd")

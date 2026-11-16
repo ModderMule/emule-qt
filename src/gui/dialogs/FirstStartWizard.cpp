@@ -4,6 +4,7 @@
 #include "dialogs/LegacyImportPage.h"
 #include "dialogs/PortChangeNotice.h"
 #include "dialogs/PortTest.h"
+#include "dialogs/VpnPromo.h"
 #include "dialogs/RouterPage.h"
 #include "dialogs/PortMapStatusText.h"
 
@@ -273,6 +274,10 @@ QWidget* FirstStartWizard::setupPortPage()
     testRow->addWidget(testInfo, 1);
     testRow->addLayout(testButtons);
     vbox->addLayout(testRow);
+    if (auto* vpn = VpnPromo::label(VpnPromo::Pitch::HighId, container)) {
+        DialogSizing::enableHeightForWidth(vpn);
+        vbox->addWidget(vpn);
+    }
 
     pageLayout->addWidget(container);
 

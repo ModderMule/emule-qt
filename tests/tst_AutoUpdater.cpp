@@ -3,6 +3,7 @@
 
 #include "AutoUpdater.h"
 
+#include "app/AppConfig.h"
 #include "app/VersionManifest.h"
 #include "prefs/Preferences.h"
 
@@ -78,6 +79,7 @@ private slots:
     void packageKeyAndFormat();
     void installRoot();
     void configKeepArgs();
+    void appImageBlocksSelfUpdate();
     void downloadsVerifiesAndHandsOver();
     void hashMismatchLaunchesNothing();
     void repeatedFailureSkipsVersion();
@@ -341,6 +343,44 @@ void TestAutoUpdater::serve(Rig& rig, const QByteArray& pkg, const QString& sha)
     rig.http.files.insert("/manifest.json",
                           manifestFor(VersionManifest::platformKey(), rig.http.url(u"/pkg/eMuleQt-v9.0.0.tar.gz"_s), pkg, sha));
     qputenv("EMULEQT_VERSION_MANIFEST_URL", rig.http.url(u"/manifest.json"_s).toUtf8());
+}
+
+void TestAutoUpdater::appImageBlocksSelfUpdate()
+{
+    const QByteArray saved = qgetenv("APPIMAGE");
+    qunsetenv("APPIMAGE");
+    QVERIFY(!AutoUpdater::inAppImage());
+    if (!AutoUpdater::inContainer())
+        QVERIFY(AutoUpdater::selfUpdateBlocker().isEmpty());
+
+    // A fake image: ELF header with the type 2 magic
+    QTemporaryDir dir;
+    const QString image = dir.filePath(QStringLiteral("eMuleQt-x86_64.AppImage"));
+    {
+        QFile f(image);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(QByteArray("\x7f" "ELF\x02\x01\x01\x00" "AI\x02", 11) + QByteArray(64, '\0'));
+        f.close();
+        f.setPermissions(f.permissions() | QFileDevice::ExeOwner);
+    }
+    QVERIFY(AppConfig::isAppImageFile(image));
+    QVERIFY(!AppConfig::isAppImageFile(QCoreApplication::applicationFilePath()));
+    QVERIFY(!AppConfig::isAppImageFile(dir.filePath(QStringLiteral("missing"))));
+
+    qputenv("APPIMAGE", dir.filePath(QStringLiteral("missing")).toLocal8Bit());
+    QVERIFY(!AutoUpdater::inAppImage());   // stale variable: no file
+    qputenv("APPIMAGE", image.toLocal8Bit());
+#ifdef Q_OS_LINUX
+    QVERIFY(AutoUpdater::inAppImage());
+    QCOMPARE(AppConfig::appImagePath(), image);
+    QVERIFY(!AutoUpdater::selfUpdateBlocker().isEmpty());
+#else
+    QVERIFY(!AutoUpdater::inAppImage());
+#endif
+    if (saved.isEmpty())
+        qunsetenv("APPIMAGE");
+    else
+        qputenv("APPIMAGE", saved);
 }
 
 QTEST_GUILESS_MAIN(TestAutoUpdater)

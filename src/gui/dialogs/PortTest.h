@@ -9,6 +9,7 @@
 
 #include "app/AppConfig.h"
 #include "app/IpcClient.h"
+#include "dialogs/VpnPromo.h"
 #include "net/PortTestApi.h"
 
 #include "IpcMessage.h"
@@ -257,6 +258,8 @@ public:
             const QString text = reportText(resp.fieldMap(1), &all);
             QMessageBox box(all ? QMessageBox::Information : QMessageBox::Warning, tr("Test Ports"), text,
                             QMessageBox::Ok, guard);
+            // open ports: anonymity only
+            VpnPromo::addTo(box, all ? VpnPromo::Pitch::Anonymity : VpnPromo::Pitch::HighId);
             box.exec();
         });
     }

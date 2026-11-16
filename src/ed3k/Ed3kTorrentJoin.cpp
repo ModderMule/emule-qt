@@ -146,6 +146,7 @@ void Ed3kTorrentJoin::start()
     if (m_started || !m_session.isRunning())
         return;
     beginStart();
+    applyPrivateJoins();
     QDir().mkpath(torrentDir());
     for (const auto& row : m_bt.torrents())
         (void)ensureJoin(row.id);
@@ -180,23 +181,16 @@ void Ed3kTorrentJoin::setI2pJoins(bool allowed)
     if (allowed == m_i2pJoins)
         return;
     m_i2pJoins = allowed;
-    if (!m_started)
+    rejoin(allowed, [](const bt::BtTorrentRow& row) { return row.i2p; });
+}
+
+void Ed3kTorrentJoin::setPrivateJoins(bool allowed)
+{
+    if (allowed == m_privateJoins)
         return;
-    for (const auto& row : m_bt.torrents()) {
-        if (!row.i2p)
-            continue;
-        if (allowed) {
-            (void)ensureJoin(row.id);
-        } else {
-            if (findJoin(row.id)) {
-                saveJoin(row.id);
-                dropJoin(row.id, /*keepBlob*/ true);
-            }
-            // completed members shared before: withdrawn, still kept on disk
-            unshareOwner(row.id);
-        }
-    }
-    pumpSession();
+    m_privateJoins = allowed;
+    applyPrivateJoins();
+    rejoin(allowed, [](const bt::BtTorrentRow& row) { return row.isPrivate; });
 }
 
 bool Ed3kTorrentJoin::i2pHeld(const QString& id) const
@@ -207,9 +201,17 @@ bool Ed3kTorrentJoin::i2pHeld(const QString& id) const
     return row && row->i2p;
 }
 
+bool Ed3kTorrentJoin::privateHeld(const QString& id) const
+{
+    if (m_privateJoins)
+        return false;
+    const auto row = m_bt.torrent(id);
+    return row && row->isPrivate;
+}
+
 bool Ed3kTorrentJoin::sharesKeptOwner(const QString& owner) const
 {
-    return !i2pHeld(owner);
+    return !i2pHeld(owner) && !privateHeld(owner);
 }
 
 bool Ed3kTorrentJoin::hasJoin(const QString& id) const
@@ -304,6 +306,7 @@ void Ed3kTorrentJoin::onTorrentRemoved(const QString& id)
 {
     dropJoin(id, /*keepBlob*/ false);
     m_noJoin.remove(id);
+    m_created.remove(id);
     // its files are gone or not wanted: not shared any more
     unshareOwner(id);
     dropKept(id);
@@ -344,6 +347,15 @@ void Ed3kTorrentJoin::onTorrentChecked(const QString& id)
     j->have = m_bt.havePieces(id);
     if (j->torrent.info() && j->torrent.info()->manifest)
         startDownloads(id);
+    pumpSession();
+}
+
+void Ed3kTorrentJoin::adoptCreated(const QString& id)
+{
+    m_created.insert(id);
+    m_noJoin.remove(id);
+    if (m_started)
+        (void)ensureJoin(id);   // null until libtorrent has it: onTorrentAdded then
     pumpSession();
 }
 
@@ -513,8 +525,8 @@ Ed3kTorrentJoin::Join* Ed3kTorrentJoin::ensureJoin(const QString& id)
     auto* e = m_session.engine();
     if (!m_started || !e || m_noJoin.contains(id))
         return nullptr;
-    // an I2P torrent's hash stays off ed3k unless allowed; not in m_noJoin: the pref may flip
-    if (i2pHeld(id))
+    // an I2P or private torrent's hash stays off ed3k unless allowed; not in m_noJoin: the pref may flip
+    if (i2pHeld(id) || privateHeld(id))
         return nullptr;
     const QByteArray infoDict = m_bt.infoSection(id);
     const auto layout = m_bt.layout(id);
@@ -544,14 +556,16 @@ Ed3kTorrentJoin::Join* Ed3kTorrentJoin::ensureJoin(const QString& id)
             logWarning(QStringLiteral("saved join of \"%1\" dropped (error %2)").arg(name(id), errorName(loaded.error())));
     }
     if (!torrent) {
-        // complete before ed3k saw it: nothing to judge or fetch any more
-        if (const auto row = m_bt.torrent(id); row && row->haveBytes >= row->totalSize && row->totalSize > 0) {
+        // complete before ed3k saw it: nothing to judge or fetch any more. One made here
+        // (#191) joins all the same: its BLAKE3 roots and set come from the join
+        if (const auto row = m_bt.torrent(id);
+            !m_created.contains(id) && row && row->haveBytes >= row->totalSize && row->totalSize > 0) {
             m_noJoin.insert(id);
             return nullptr;
         }
         auto created = ffi::Torrent::create(*e, spanOf(infoDict), link);
         if (!created) {
-            // DENIED: private (§6.3); UNSUPPORTED: the extension is off
+            // DENIED: private, not shared (§6.3); UNSUPPORTED: the extension is off
             logDebug([&]() -> QString { return QStringLiteral("no join for \"%1\" (error %2)").arg(name(id), errorName(created.error())); });
             m_noJoin.insert(id);
             return nullptr;
@@ -588,7 +602,9 @@ Ed3kTorrentJoin::Join* Ed3kTorrentJoin::ensureJoin(const QString& id)
     for (std::size_t m = 0; m < raw->members.size(); ++m)
         if (const auto tm = raw->torrent.member(m); tm && tm->status == ffi::MemberStatus::Complete)
             onMemberComplete(id, int(m));
-    if (info->manifest) {
+    if (m_created.remove(id)) {
+        passCreatedPieces(id);   // made here: no set to look for, ours is the first
+    } else if (info->manifest) {
         startDownloads(id);   // a restart: the set is known
     } else if (link) {
         if (linkSize == 0 || !fetchBlob(*link, linkSize, id, kSetManifest))
@@ -597,7 +613,26 @@ Ed3kTorrentJoin::Join* Ed3kTorrentJoin::ensureJoin(const QString& id)
         startSetSearch(id);
     }
     scheduleSave(id);
-    return raw;
+    return findJoin(id);
+}
+
+void Ed3kTorrentJoin::passCreatedPieces(const QString& id)
+{
+    Join* j = findJoin(id);
+    if (!j)
+        return;
+    // the info dictionary was hashed from these files: every piece passed under the
+    // torrent (§4.2), so members complete, get their BLAKE3 roots, and the set follows
+    const int pieces = j->layout.pieces;
+    j->have.fill(true, pieces);
+    for (int p = 0; p < pieces; ++p) {
+        if (auto ok = j->torrent.pieceResult(std::uint64_t(p), true); !ok) {
+            logWarning(QStringLiteral("\"%1\": piece %2 not taken (error %3)").arg(name(id)).arg(p).arg(errorName(ok.error())));
+            return;
+        }
+    }
+    logInfo(QStringLiteral("\"%1\" made here: hashing its files for ed3k").arg(name(id)));
+    drainEvents(id);
 }
 
 Ed3kTorrentJoin::Join* Ed3kTorrentJoin::findJoin(const QString& id) const
@@ -996,7 +1031,7 @@ void Ed3kTorrentJoin::startDownloads(const QString& id)
 void Ed3kTorrentJoin::startSetSearch(const QString& id)
 {
     const auto row = m_bt.torrent(id);
-    if (!row || row->isPrivate)
+    if (!row || privateHeld(id))
         return;
     // a hybrid torrent: both (§5); relation SET. The candidate loop is the base's (tryNextSet)
     if (const auto v1 = hexBytes(row->hashV1, 20))
@@ -1103,6 +1138,38 @@ bool Ed3kTorrentJoin::blakeJudges(const Join& j) const
 QString Ed3kTorrentJoin::torrentDir() const
 {
     return joinDir(QStringLiteral("torrent"));
+}
+
+void Ed3kTorrentJoin::rejoin(bool allowed, const std::function<bool(const bt::BtTorrentRow&)>& held)
+{
+    if (!m_started)
+        return;
+    for (const auto& row : m_bt.torrents()) {
+        if (!held(row))
+            continue;
+        if (allowed) {
+            m_noJoin.remove(row.id);   // DENIED before
+            (void)ensureJoin(row.id);
+            shareKeptOwner(row.id);
+        } else {
+            const bool joined = findJoin(row.id) != nullptr;
+            if (joined) {
+                saveJoin(row.id);
+                dropJoin(row.id, /*keepBlob*/ true);
+            }
+            // shared before: withdrawn (set and ALIAS records too), still kept on disk
+            withdrawOwner(row.id);
+            if (joined)
+                logInfo(QStringLiteral("\"%1\" left ed3k (not allowed to join any more)").arg(name(row.id)));
+        }
+    }
+    pumpSession();
+}
+
+void Ed3kTorrentJoin::applyPrivateJoins()
+{
+    if (auto* e = m_session.engine())
+        (void)e->setTorrentSharePrivate(m_privateJoins);
 }
 
 } // namespace eMule::ed3k

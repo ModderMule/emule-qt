@@ -296,9 +296,49 @@ jobs:
       ref: ${{ needs.guard.outputs.tag }}
       version: ${{ needs.guard.outputs.version }}
 
+  # AppImage repack of the Linux tarball (#194): no rebuild, ~2 min. Runs while
+  # macOS/Windows still build, so the release waits no longer.
+  appimage:
+    name: Linux AppImage
+    needs: [guard, linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.guard.outputs.version }}
+    steps:
+      # script + icon only
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ needs.guard.outputs.tag }}
+          fetch-depth: 1
+          sparse-checkout: |
+            scripts/make-appimage.sh
+            resources/icons/app
+          sparse-checkout-cone-mode: false
+
+      - name: Download the Linux tarball
+        uses: actions/download-artifact@v8
+        with:
+          name: eMuleQt-v${{ needs.guard.outputs.version }}-linux-x86_64
+          path: in
+
+      - name: Build the AppImage
+        run: ./scripts/make-appimage.sh "in/eMuleQt-v${VERSION}-linux-x86_64.tar.gz" out
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          # eMuleQt-v* prefix: the release job's merge-multiple download picks it up
+          name: eMuleQt-v${{ needs.guard.outputs.version }}-linux-x86_64-appimage
+          path: out/eMuleQt-v*-linux-x86_64.AppImage
+          if-no-files-found: error
+          compression-level: 0    # squashfs is compressed already
+
   release:
     name: Publish GitHub Release
-    needs: [guard, linux, macos, macos-intel, windows]
+    needs: [guard, linux, appimage, macos, macos-intel, windows]
     runs-on: ubuntu-latest
     permissions:
       # Only job that can write. The Releases API lives under `contents`.
@@ -330,6 +370,7 @@ jobs:
 
           assets=(
             "eMuleQt-v${VERSION}-linux-x86_64.tar.gz"
+            "eMuleQt-v${VERSION}-linux-x86_64.AppImage"
             "eMuleQt-v${VERSION}-macOS-arm64.dmg"
             "eMuleQt-v${VERSION}-macOS-x86_64.dmg"
             "eMuleQt-v${VERSION}-win64.zip"
@@ -391,6 +432,7 @@ jobs:
             echo "| Platform | Download |"
             echo "| --- | --- |"
             echo "| Linux x86_64 | \`eMuleQt-v${VERSION}-linux-x86_64.tar.gz\` |"
+            echo "| Linux x86_64 (AppImage) | \`eMuleQt-v${VERSION}-linux-x86_64.AppImage\` |"
             echo "| macOS 13+ (Apple silicon) | \`eMuleQt-v${VERSION}-macOS-arm64.dmg\` |"
             echo "| macOS 13+ (Intel) | \`eMuleQt-v${VERSION}-macOS-x86_64.dmg\` |"
             echo "| Windows x64 (installer) | \`eMuleQt-v${VERSION}-win64-setup.exe\` |"

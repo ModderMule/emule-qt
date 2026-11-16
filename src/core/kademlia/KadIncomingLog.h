@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <optional>
 #include <vector>
 
 namespace eMule::kad {
@@ -31,8 +32,17 @@ enum class IncomingType : uint8 {
     Callback = 10,
 };
 
+/// A contact we handed out in an answer.
+struct HandedContact {
+    UInt128 id;
+    uint32 ip = 0;              ///< host order
+    uint16 port = 0;            ///< UDP
+    uint8 version = 0;
+};
+
 /// One request. Counts -1: not for this type.
 struct IncomingRequest {
+    uint64 id = 0;              ///< log-wide sequence, set by IncomingLog::add
     uint64 at = 0;              ///< getTickCount()
     IncomingType type = IncomingType::NodeLookup;
     UInt128 target;
@@ -44,7 +54,14 @@ struct IncomingRequest {
     int32_t results = -1;       ///< search results sent back
     int32_t records = -1;       ///< publish: entries offered
     int32_t load = -1;          ///< publish: load answered (0..100)
+    int32_t wanted = -1;        ///< node lookup: contacts asked for (KADEMLIA2_REQ type)
     bool answered = false;
+    // for the incoming search graph
+    UInt128 own;                ///< our Kad ID when it came
+    UInt128 asker;              ///< requester's Kad ID, from the routing table by IP
+    bool hasAsker = false;
+    uint8 askerVersion = 0;
+    std::vector<HandedContact> handed;
 };
 
 /// Two rings, so the many node lookups never push out the searches and publishes.
@@ -56,10 +73,13 @@ public:
     void add(IncomingRequest request);
     /// Newest first.
     [[nodiscard]] std::vector<IncomingRequest> snapshot() const;
+    /// The request with IncomingRequest::id @p id, if still kept.
+    [[nodiscard]] std::optional<IncomingRequest> find(uint64 id) const;
     void clear();
 
 private:
     mutable QMutex m_mutex;
+    uint64 m_nextId = 0;
     std::deque<IncomingRequest> m_lookups;
     std::deque<IncomingRequest> m_other;
 };
@@ -76,6 +96,7 @@ public:
     IncomingRequest* operator->() { return &m_request; }
     void setTarget(const UInt128& target);
     void answered() { m_request.answered = true; }
+    void handOut(const HandedContact& contact) { m_request.handed.push_back(contact); }
 
 private:
     IncomingLog& m_log;

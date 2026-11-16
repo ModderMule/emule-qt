@@ -266,6 +266,9 @@ using Kind = PrefSpec::Kind;
     t << advanced(number("ed3kHashRamMiB", 0, Preferences::kMaxEd3kHashRamMiB, "MiB",
                          "RAM for the block hashes of shared files; idle ones over it are read from disk "
                          "again when needed. 0 = auto (2 % of RAM, 64-512 MiB)."));
+    t << advanced(number("ed3kKadStoreMiB", 0, Preferences::kMaxEd3kKadStoreMiB, "MiB",
+                         "RAM for the Kad records this node stores for other nodes; over it new ones are "
+                         "refused (BUSY). 0 = default (128 MiB). Applies at the next node start."));
     t << advanced(number("ed3kHashCacheLowRamPercent", 0, 100, "%",
                          "Free RAM below this share: only block hashes in use stay in RAM. 0 = off."));
     t << flag("ed3kJointDownloads", "eD2K downloads also fetch from ed3k peers (found by the ed2k hash); a source with a derived user hash is asked over ed3k first.");

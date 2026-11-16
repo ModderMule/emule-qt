@@ -218,6 +218,20 @@ bool AutoUpdater::inContainer()
 #endif
 }
 
+bool AutoUpdater::inAppImage()
+{
+    return !AppConfig::appImagePath().isEmpty();
+}
+
+QString AutoUpdater::selfUpdateBlocker()
+{
+    if (inContainer())
+        return QStringLiteral("Auto-update is off in a container: pull the new image instead");
+    if (inAppImage())
+        return QStringLiteral("Auto-update is off in an AppImage: download the new AppImage instead");
+    return {};
+}
+
 QString AutoUpdater::helperName()
 {
     return exeName(QStringLiteral("emuleqt-updater"));

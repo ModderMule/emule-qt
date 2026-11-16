@@ -117,6 +117,10 @@ void UiState::load(const QString& configDir)
                     m_dialogSizes[QString::fromStdString(pair.first.as<std::string>())] = size;
             }
         }
+        if (auto tc = root["torrentCreator"]; tc && tc.IsMap())
+            for (const auto& pair : tc)
+                m_torrentCreator[QString::fromStdString(pair.first.as<std::string>())] =
+                    QString::fromStdString(pair.second.as<std::string>(std::string{}));
         // Older builds kept only the options dialog's size, under keys of its own
         if (const QSize legacy(root["optionsWidth"].as<int>(0), root["optionsHeight"].as<int>(0));
             legacy.width() > 0 && legacy.height() > 0 && !m_dialogSizes.contains(QStringLiteral("OptionsDialog")))
@@ -365,6 +369,13 @@ void UiState::save(const QString& configDir)
         for (auto it = m_dialogSizes.cbegin(); it != m_dialogSizes.cend(); ++it)
             out << YAML::Key << it.key().toStdString() << YAML::Value << YAML::Flow
                 << YAML::BeginSeq << it.value().width() << it.value().height() << YAML::EndSeq;
+        out << YAML::EndMap;
+    }
+
+    if (!m_torrentCreator.isEmpty()) {
+        out << YAML::Key << "torrentCreator" << YAML::Value << YAML::BeginMap;
+        for (auto it = m_torrentCreator.cbegin(); it != m_torrentCreator.cend(); ++it)
+            out << YAML::Key << it.key().toStdString() << YAML::Value << it.value().toStdString();
         out << YAML::EndMap;
     }
 

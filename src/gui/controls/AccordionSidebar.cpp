@@ -258,14 +258,64 @@ void AccordionSidebar::stepCurrentItem(int step)
     if (total == 0)
         return;
     const int current = currentOrdinal();
-    int target = ((current < 0 ? (step > 0 ? -1 : 0) : current) + step + total) % total;
-    for (const Group& group : m_groups) {
-        if (target < group.list->count()) {
-            setCurrentItemId(group.list->item(target)->data(Qt::UserRole).toInt());
-            return;
+    int target = (current < 0 ? (step > 0 ? -1 : 0) : current);
+    // hidden items (search filter) are skipped; total tries: never loops forever
+    for (int tries = 0; tries < total; ++tries) {
+        target = (target + step + total) % total;
+        int ordinal = target;
+        for (const Group& group : m_groups) {
+            if (ordinal < group.list->count()) {
+                const QListWidgetItem* item = group.list->item(ordinal);
+                if (!item->isHidden()) {
+                    setCurrentItemId(item->data(Qt::UserRole).toInt());
+                    return;
+                }
+                break;
+            }
+            ordinal -= group.list->count();
         }
-        target -= group.list->count();
     }
+}
+
+bool AccordionSidebar::hasItem(int id) const
+{
+    return locate(id).first >= 0;
+}
+
+QString AccordionSidebar::itemText(int id) const
+{
+    const auto [g, row] = locate(id);
+    return g < 0 ? QString() : m_groups[size_t(g)].list->item(row)->text();
+}
+
+QString AccordionSidebar::itemGroupTitle(int id) const
+{
+    return groupTitle(locate(id).first);
+}
+
+QList<int> AccordionSidebar::itemIds() const
+{
+    QList<int> ids;
+    for (const Group& group : m_groups)
+        for (int row = 0; row < group.list->count(); ++row)
+            ids.append(group.list->item(row)->data(Qt::UserRole).toInt());
+    return ids;
+}
+
+void AccordionSidebar::setItemHidden(int id, bool hidden)
+{
+    const auto [g, row] = locate(id);
+    if (g < 0)
+        return;
+    Group& group = m_groups[size_t(g)];
+    group.list->item(row)->setHidden(hidden);
+    group.header->setVisible(firstVisibleRow(group.list) >= 0);
+}
+
+bool AccordionSidebar::isItemHidden(int id) const
+{
+    const auto [g, row] = locate(id);
+    return g < 0 || m_groups[size_t(g)].list->item(row)->isHidden();
 }
 
 void AccordionSidebar::setCurrentGroup(int group)
@@ -291,9 +341,13 @@ void AccordionSidebar::setCurrentGroup(int group)
 
     // A group with nothing selected yet opens on its first item, so expanding a header
     // always lands somewhere — CSlideBar posts WM_SBN_SELCHANGED for the same reason.
-    if (current.list->currentRow() < 0 && current.list->count() > 0) {
-        const QSignalBlocker block(current.list);
-        current.list->setCurrentRow(0);
+    // A row hidden by the search filter counts as none.
+    const QListWidgetItem* currentItem = current.list->currentItem();
+    if (!currentItem || currentItem->isHidden()) {
+        if (const int row = firstVisibleRow(current.list); row >= 0) {
+            const QSignalBlocker block(current.list);
+            current.list->setCurrentRow(row);
+        }
     }
 
     // Or the arrow keys land nowhere after the list the user was in went away.
@@ -361,6 +415,25 @@ const AccordionSidebar::Group* AccordionSidebar::groupAt(int index) const
     if (index < 0 || index >= int(m_groups.size()))
         return nullptr;
     return &m_groups[size_t(index)];
+}
+
+std::pair<int, int> AccordionSidebar::locate(int id) const
+{
+    for (size_t g = 0; g < m_groups.size(); ++g) {
+        const QListWidget* list = m_groups[g].list;
+        for (int row = 0; row < list->count(); ++row)
+            if (list->item(row)->data(Qt::UserRole).toInt() == id)
+                return {int(g), row};
+    }
+    return {-1, -1};
+}
+
+int AccordionSidebar::firstVisibleRow(const QListWidget* list)
+{
+    for (int row = 0; row < list->count(); ++row)
+        if (!list->item(row)->isHidden())
+            return row;
+    return -1;
 }
 
 } // namespace eMule

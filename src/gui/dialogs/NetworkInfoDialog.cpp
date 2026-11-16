@@ -3,6 +3,7 @@
 /// @brief Network Information dialog — implementation.
 
 #include "dialogs/NetworkInfoDialog.h"
+#include "dialogs/VpnPromo.h"
 #include "utils/Appearance.h"
 
 #include "app/IpcClient.h"
@@ -175,6 +176,17 @@ QString NetworkInfoDialog::infoHtml(const QCborMap& info, bool extended)
                 .arg(client.value(QStringLiteral("tcpPort")).toInteger());
     html += QStringLiteral("<tr><td>%1</td><td>%2</td></tr>").arg(tr("UDP Port:"))
                 .arg(client.value(QStringLiteral("udpPort")).toInteger());
+    if constexpr (VpnPromo::kEnabled) {
+        // reachable once a server gave a High ID or Kad is open
+        const QCborMap ed2kNet = info.value(QStringLiteral("ed2k")).toMap();
+        const QCborMap kadNet = info.value(QStringLiteral("kad")).toMap();
+        const bool open = (ed2kNet.value(QStringLiteral("connected")).toBool()
+                           && !ed2kNet.value(QStringLiteral("lowID")).toBool())
+                          || (kadNet.value(QStringLiteral("connected")).toBool()
+                              && !kadNet.value(QStringLiteral("firewalled")).toBool());
+        html += QStringLiteral("<tr><td></td><td>%1</td></tr>")
+                    .arg(VpnPromo::Text::html(open ? VpnPromo::Pitch::Anonymity : VpnPromo::Pitch::HighId));
+    }
     html += QStringLiteral("</table>");
 
     html += sharedHtml(info.value(QStringLiteral("shared")).toMap(), extended);

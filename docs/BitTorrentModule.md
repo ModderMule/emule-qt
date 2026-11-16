@@ -96,8 +96,10 @@ private-flagged (private tracker torrents, "ALT") and not an I2P torrent. A torr
 (`BtShareGuard::m_roots`, kept after removal for the session) out of the eD2K / Kad / ed3k
 share through `SharedFileList::setStillWriting`, also inside incoming. A narrower mode drops
 them at once (`dropNeverShared`), a wider one runs `SharedFileList::reload()`; a torrent that
-turns out private once its metadata arrives is dropped then (`Change::blockedMore`). Seeding is not affected, nor
-the ed3k torrent join.
+turns out private once its metadata arrives is dropped then (`Change::blockedMore`). Seeding is not affected.
+The ed3k torrent join follows it for private torrents only: "all" lets them join as sets
+(torrent.md §6.3 "Shared", `Ed3kTorrentJoin::setPrivateJoins`), any other mode keeps them off ed3k
+and withdraws a set made before (shares, kept set, `ALIAS` records; kept on disk, back on "all").
 
 ## ed3k join (torrent.md §4, Part C)
 
@@ -118,6 +120,43 @@ metadata while the ed3k node runs. What BtSession gives it, without libtorrent t
 - `ed3kLink(id)`: an `ed3k:file?…&bt=` link added as a magnet of that infohash, or a magnet's
   `xs` that is an `ed3k:file` link; kept in `<config>/BT/ed3k-links.json`. The GUI routes such
   links like BitTorrent magnets (`gui::isBitTorrentMagnet`).
+
+## Torrent Creator (#191)
+
+Shared Files › right-click › **Create Torrent...**: one complete file, several complete files of
+one folder (a torrent named after the folder holding just those), or a folder from the directory
+tree. Dialog after qBittorrent's (`TorrentCreatorDialog`): format, piece size (Auto, 16 KiB–128 MiB),
+private, ignore dotfiles, start seeding, tracker tiers (empty line = next tier), web seeds,
+comment, `source`. Fields kept in `uistate.yml` `torrentCreator`.
+
+- Formats: **v1** (SHA-1 pieces), **v2** (SHA-256 merkle trees, BEP 52), **hybrid** (both; default).
+  BitTorrent knows no other hash: there is no BLAKE3 torrent.
+- The core hashes (`src/bt/create/BtTorrentCreator`, one job at a time on its own pool) since the
+  files are on its disk: IPC `CreateTorrent` 820 → job id; `PushTorrentCreation` 955 (percent),
+  `PushTorrentCreated` 956 (end); `GetCreatedTorrent` 822 fetches the bytes, which the GUI saves on
+  its own machine (path asked before hashing); `CancelTorrentCreation` 821.
+- Start seeding: `BtSession::addCreatedTorrent` (seed mode, no recheck, save path = parent of the
+  content).
+- ed3k on: the seeded torrent goes to `Ed3kTorrentJoin::adoptCreated` — it joins although complete,
+  every piece passed, so the members get their BLAKE3 roots, the canonical set (the same one a
+  downloader builds) is shared and its `ALIAS` records (btih/btmh) published. A torrent not seeded
+  gets no set. Joins once the ed3k node runs (adopted while it is off: joined at its start; kept in
+  memory only, a core restart before that loses it).
+- Private: follows Options › BitTorrent "Share finished torrents" (`btShareMode`): "all" makes
+  its set and `ALIAS` records as for a public one (torrent.md §6.3 "Shared"); "public"/"don't
+  share" keeps it off ed3k and its files out of the eD2K/ed3k share while it seeds
+  (`BtShareGuard`). The dialog's ed3k note says which.
+
+## Save Torrent File (#196)
+
+Torrents tab › right-click › **Save Torrent File…**: the .torrent of each selected torrent with
+metadata (one asks a file name, several a folder; start dir shared with Search › Save Torrent File,
+`uistate` `metaFileSaveDir`). IPC `ExportTorrent` 817 `[id] → {data, name}`; 404 unknown, 409 no
+metadata yet / still being added / v2 piece layers not all known (a v2 magnet still downloading).
+`BtSession::exportTorrent`: the info dictionary byte for byte (same info hash), `piece layers`
+from `torrent_handle::piece_layers()`, current trackers with tiers and web seeds from the handle,
+comment/creator/date from the session's meta cache (libtorrent 2.1 keeps them out of
+`torrent_info`). Sync calls into libtorrent, on a user's request only.
 
 ## GUI (Torrents tab)
 
@@ -268,6 +307,10 @@ MCP tools: `torrents_list`, `torrents_get`, `torrents_add_magnet`, `torrents_set
 
 - `tst_BtSmoke`: ids, magnet detection (also `ed3k:file` links with `bt`, `xs`), inputs,
   start/stop, rate limits and demand.
+- `tst_BtTorrentCreator`: v1/v2/hybrid, folder order and dot files, a folder subset, fields and
+  tiers, refused names, cancel, seeding what was made, export of a seeded torrent (same hashes, v2
+  piece layers, tiers). `tst_Ed3kTorrentJoin::createdTorrentGivesItsSet`:
+  a created torrent's set equals a downloader's.
 - `tst_BandwidthSplit`: the eD2K/Usenet/BitTorrent plans for download and upload.
 - `tst_BtLocalSwarm`: two sessions on loopback (no network): magnet with metadata exchange,
   duplicate add, a hook that passes every piece (at once and later), a spoiled piece counted

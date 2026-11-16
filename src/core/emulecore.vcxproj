@@ -210,6 +210,9 @@
     <ClCompile Include="net\HttpStreamDownload.cpp" />
     <ClCompile Include="net\InterfacePin.cpp" />
     <ClCompile Include="net\ListenConflict.cpp" />
+    <ClCompile Include="net\AddressWatch.cpp" />
+    <ClCompile Include="net\ListenAddressSet.cpp" />
+    <ClCompile Include="net\UdpSocketSet.cpp" />
     <ClCompile Include="net\SendBufferSizer.cpp" />
     <ClCompile Include="search\FakeFileDetector.cpp" />
     <ClCompile Include="search\SeenFileIndex.cpp" />
@@ -468,6 +471,8 @@
     <ClInclude Include="client\ClientStateDefs.h" />
     <ClInclude Include="client\ClientStructs.h" />
     <QtMoc Include="net\ClientUDPSocket.h" />
+    <QtMoc Include="net\AddressWatch.h" />
+    <QtMoc Include="net\UdpSocketSet.h" />
     <ClInclude Include="files\Collection.h" />
     <ClInclude Include="files\CollectionFile.h" />
     <ClInclude Include="files\CollectionKeys.h" />
@@ -482,6 +487,7 @@
     <ClInclude Include="client\RepeatChunkGuard.h" />
     <ClInclude Include="net\InterfacePin.h" />
     <ClInclude Include="net\ListenConflict.h" />
+    <ClInclude Include="net\ListenAddressSet.h" />
     <ClInclude Include="net\SendBufferSizer.h" />
     <ClInclude Include="media\MediaReadBudget.h" />
     <ClInclude Include="files\HashFailureStore.h" />

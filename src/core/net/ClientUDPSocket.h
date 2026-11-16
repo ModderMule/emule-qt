@@ -10,12 +10,12 @@
 #include "net/Address.h"
 #include "net/Packet.h"
 #include "net/ThrottledSocket.h"
+#include "net/UdpSocketSet.h"
 #include "net/natt/UdpKeyIpTable.h"
 #include "utils/Types.h"
 
 #include <QElapsedTimer>
 #include <QNetworkDatagram>
-#include <QUdpSocket>
 
 #include <array>
 #include <deque>
@@ -69,11 +69,14 @@ public:
     /// Rebind to configured port.
     bool rebind(uint16 port);
 
+    /// Follow the listen addresses of now (a whole interface's changed, #190).
+    bool syncAddresses(const QList<QHostAddress>& addresses);
+
     /// Get the bound port.
     [[nodiscard]] uint16 connectedPort() const { return m_port; }
 
     /// Open; connectedPort() keeps the last port after a failed rebind
-    [[nodiscard]] bool isBound() const { return m_socket.state() == QAbstractSocket::BoundState; }
+    [[nodiscard]] bool isBound() const { return m_socket.isBound(); }
 
     /// SO_RCVBUF as the OS reports it.
     [[nodiscard]] int receiveBufferSize();
@@ -83,8 +86,8 @@ public:
     using ForeignHandler = std::function<bool(const QNetworkDatagram&)>;
     void setForeignHandler(ForeignHandler handler) { m_foreign = std::move(handler); }
 
-    /// The socket itself, for a protocol that shares the port (sends on the owner thread).
-    [[nodiscard]] QUdpSocket& socket() { return m_socket; }
+    /// The sockets themselves, for a protocol that shares the port (sends on the owner thread).
+    [[nodiscard]] UdpSocketSet& socket() { return m_socket; }
 
     /// Send a packet to a peer. Takes ownership of packet.
     /// @param packet     Packet to send (can be nullptr for raw data).
@@ -210,7 +213,7 @@ private:
         Endpoint destination;
     };
 
-    QUdpSocket m_socket;
+    UdpSocketSet m_socket;
     ForeignHandler m_foreign;
     std::deque<UDPPack> m_controlQueue;
     std::deque<PreparedDatagram> m_sendReadyQueue;

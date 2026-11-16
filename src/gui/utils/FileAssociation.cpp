@@ -3,6 +3,7 @@
 
 #include "utils/FileAssociation.h"
 
+#include "app/AppConfig.h"
 #include "utils/Log.h"
 
 #include <QCoreApplication>
@@ -44,6 +45,9 @@ QString exePath()
 {
     const QString self = QCoreApplication::applicationFilePath();
 #ifdef Q_OS_LINUX
+    // AppImage: our dir is a per-run /tmp mount, the .AppImage file is what lasts
+    if (const QString image = AppConfig::appImagePath(); !image.isEmpty())
+        return image;
     if (self.endsWith(QLatin1String(".bin")) && qEnvironmentVariableIsSet("EMULEQT_BUNDLE_LIBS")) {
         const QFileInfo script(self.chopped(4));
         if (script.isFile() && script.isExecutable())

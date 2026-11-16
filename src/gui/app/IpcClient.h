@@ -414,6 +414,10 @@ signals:
     void torrentRemoved(const Ipc::IpcMessage& msg);
     /// [id] — every wanted byte is there. Never coalesced.
     void torrentFinished(const Ipc::IpcMessage& msg);
+    /// {jobId, percent} — a CreateTorrent job hashing (#191)
+    void torrentCreation(const QCborMap& progress);
+    /// {jobId, ok, cancelled, error, name, pieces, pieceSize, seedId?, seedError?}
+    void torrentCreated(const QCborMap& result);
     /// [status map] — the BitTorrent engine started, stopped or changed its port.
     void btStatusChanged(const Ipc::IpcMessage& msg);
     /// [status map] — the ed3k node started, stopped, or its contacts/class changed.

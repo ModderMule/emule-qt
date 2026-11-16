@@ -6,12 +6,14 @@
 
 #include "TestHelpers.h"
 #include "app/AppContext.h"
+#include "net/AddressWatch.h"
 #include "net/BindAddress.h"
 #include "net/ClientReqSocket.h"
 #include "net/ClientUDPSocket.h"
 #include "net/InterfacePin.h"
 #include "net/ListenSocket.h"
 #include "net/LocalIPv6.h"
+#include "net/UdpSocketSet.h"
 #include "prefs/Preferences.h"
 
 #include <QNetworkInterface>
@@ -20,6 +22,7 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTest>
+#include <QUdpSocket>
 
 #ifdef Q_OS_LINUX
 #include <sys/socket.h>
@@ -54,6 +57,14 @@ private slots:
     void ipv6Scan_followsTheInterface();
     void sameBinding_ignoresRoutes();
     void sameBinding_ignoresIPv6OnWholeInterface();
+    void listenAddresses_table_data();
+    void listenAddresses_table();
+    void listenAddresses_followPrefs();
+    void boundByName_leavesOtherInterfacesFree();
+    void listener_followsAddressChanges();
+    void udpSet_sendsFromTheFamilySocket();
+    void udpSet_followsAddressChanges();
+    void addressWatch_foldsBurst();
 
 private:
     QNetworkInterface m_loopback;
@@ -71,6 +82,29 @@ int pinnedIfIndex(qintptr fd)
     return ::getsockopt(static_cast<int>(fd), SOL_SOCKET, SO_BINDTOIFINDEX, &idx, &len) == 0 ? idx : 0;
 }
 #endif
+
+// A non-loopback IPv4 of this host, null when none.
+QHostAddress otherIPv4()
+{
+    const auto all = QNetworkInterface::allInterfaces();
+    for (const QNetworkInterface& nif : all) {
+        const auto flags = nif.flags();
+        if (flags.testFlag(QNetworkInterface::IsLoopBack) || !flags.testFlag(QNetworkInterface::IsUp)
+            || !flags.testFlag(QNetworkInterface::IsRunning))
+            continue;
+        for (const QNetworkAddressEntry& e : nif.addressEntries())
+            if (e.ip().protocol() == QAbstractSocket::IPv4Protocol && !e.ip().isLoopback())
+                return e.ip();
+    }
+    return {};
+}
+
+// ::1 usable on this host
+bool hasLoopbackIPv6()
+{
+    QUdpSocket probe;
+    return probe.bind(QHostAddress(QHostAddress::LocalHostIPv6), 0);
+}
 
 QList<LocalInterface> sample()
 {
@@ -349,7 +383,10 @@ void tst_BindInterface::boundByName_listensAndDialsBothFamilies()
     theApp.listenSocket = &listener;   // accepted sockets unregister through it
     const auto unhook = qScopeGuard([] { theApp.listenSocket = nullptr; });
     QVERIFY(listener.startListening(0));
-    QCOMPARE(listener.serverAddress(), QHostAddress(QHostAddress::Any));
+    // each address of the interface, not the wildcard (#190)
+    QCOMPARE(listener.boundAddresses(), BindAddress::listenAddresses());
+    QVERIFY(!listener.boundAddresses().contains(QHostAddress(QHostAddress::Any)));
+    QVERIFY(listener.boundAddresses().contains(QHostAddress(QHostAddress::LocalHost)));
 
     // The accepted side must keep the connection too (Windows: a v4 peer on the
     // dual-stack listener refused the IPv6 re-pin and was dropped)
@@ -474,6 +511,248 @@ void tst_BindInterface::sameBinding_ignoresIPv6OnWholeInterface()
     b.literal = a.literal;
     QVERIFY(!a.wholeInterface());
     QVERIFY(!BindAddress::sameBinding(a, b));
+}
+
+void tst_BindInterface::listenAddresses_table_data()
+{
+    QTest::addColumn<QString>("selector");
+    QTest::addColumn<bool>("v4Pin");
+    QTest::addColumn<bool>("v6Pin");
+    QTest::addColumn<bool>("privacy");
+    QTest::addColumn<QStringList>("expected");
+
+    const QString v4 = QStringLiteral("192.168.1.20");
+    const QString stable = QStringLiteral("2001:db8::20");
+    const QString temp = QStringLiteral("2001:db8::99");
+    QTest::newRow("unrestricted")  << QString() << true << true << false << QStringList{QStringLiteral("0.0.0.0")};
+    QTest::newRow("blocked")       << QStringLiteral("tun0") << true << true << false << QStringList{};
+    QTest::newRow("literal")       << v4 << true << true << false << QStringList{v4};
+    // no link-local, no privacy address, no deprecated one; IPv4 first
+    QTest::newRow("whole")         << QStringLiteral("en0") << true << true << false << QStringList{v4, stable};
+    // the privacy pref advertises the temporary one: it sends, so first
+    QTest::newRow("privacy")       << QStringLiteral("en0") << true << true << true << QStringList{v4, temp, stable};
+    QTest::newRow("v6-unpinnable") << QStringLiteral("en0") << true << false << false << QStringList{v4};
+    QTest::newRow("v4-unpinnable") << QStringLiteral("en0") << false << true << false << QStringList{stable};
+    // nothing but temporary ones: those, else no IPv6 at all
+    QTest::newRow("only-temp")     << QStringLiteral("utun4") << true << true << false
+                                   << QStringList{QStringLiteral("10.66.3.7"), QStringLiteral("2001:db8:1::5")};
+    QTest::newRow("v4-only-tunnel") << QStringLiteral("tap1") << true << true << false
+                                   << QStringList{QStringLiteral("10.8.0.2"), QStringLiteral("10.8.0.3")};
+}
+
+void tst_BindInterface::listenAddresses_table()
+{
+    QFETCH(QString, selector);
+    QFETCH(bool, v4Pin);
+    QFETCH(bool, v6Pin);
+    QFETCH(bool, privacy);
+    QFETCH(QStringList, expected);
+
+    const auto h = [](const char* a) { return QHostAddress(QString::fromLatin1(a)); };
+    QList<LocalInterface> ifs = sample();
+    ifs[1].addresses += {h("2001:db8::99"), h("2001:db8::98")};
+    ifs[1].temporary = {h("2001:db8::99"), h("2001:db8::98")};
+    ifs[1].deprecated = {h("2001:db8::98")};
+    ifs[2].addresses += {h("fe80::7"), h("2001:db8:1::5")};
+    ifs[2].temporary = {h("2001:db8:1::5")};
+    ifs.append({QStringLiteral("tap1"), QStringLiteral("tap1"), 12, {h("10.8.0.2"), h("10.8.0.3")}});
+
+    BindAddress::Resolution r = BindAddress::resolve(selector, ifs);
+    r.pin.v4 = v4Pin;
+    r.pin.v6 = v6Pin;
+    QStringList got;
+    for (const QHostAddress& a : BindAddress::listenAddressesOf(r, ifs, privacy))
+        got.append(a.toString());
+    QCOMPARE(got, expected);
+}
+
+// The prefs path: the selection and the interface list of now
+void tst_BindInterface::listenAddresses_followPrefs()
+{
+    BindAddress::setInterfaceSource(sample);
+    thePrefs.setBindAddress(QStringLiteral("en0"));
+    QCOMPARE(BindAddress::listenAddresses(),
+             (QList{QHostAddress(QStringLiteral("192.168.1.20")), QHostAddress(QStringLiteral("2001:db8::20"))}));
+    thePrefs.setBindAddress(QString());
+    QCOMPARE(BindAddress::listenAddresses(), QList{QHostAddress(QHostAddress::Any)});
+    thePrefs.setBindAddress(QStringLiteral("vpn-not-there0"));
+    QVERIFY(BindAddress::listenAddresses().isEmpty());
+}
+
+// #190: an interface selected by name holds its port on its own addresses only; another
+// program takes the same port on another interface
+void tst_BindInterface::boundByName_leavesOtherInterfacesFree()
+{
+    if (!m_loopback.isValid())
+        QSKIP("no loopback interface");
+    const QHostAddress other = otherIPv4();
+    if (other.isNull())
+        QSKIP("no IPv4 on another interface");
+    thePrefs.setBindAddress(m_loopback.name());
+
+    ListenSocket listener;
+    QVERIFY(listener.startListening(0));
+    QVERIFY(!listener.boundAddresses().contains(QHostAddress(QHostAddress::Any)));
+    QTcpServer otherApp;
+    QVERIFY2(otherApp.listen(other, listener.serverPort()), qPrintable(otherApp.errorString()));
+    otherApp.close();
+    listener.stopListening();
+
+    ClientUDPSocket udp;
+    QVERIFY(udp.create());
+    QCOMPARE(udp.socket().boundAddresses(), BindAddress::listenAddresses());
+    QUdpSocket otherUdp;
+    QVERIFY2(otherUdp.bind(other, udp.connectedPort(), QAbstractSocket::DontShareAddress),
+             qPrintable(otherUdp.errorString()));
+}
+
+// An address comes and goes on the selected interface: the listener follows it, the
+// others keep listening, the port stays
+void tst_BindInterface::listener_followsAddressChanges()
+{
+    if (!m_loopback.isValid())
+        QSKIP("no loopback interface");
+    if (!hasLoopbackIPv6())
+        QSKIP("no ::1");
+    const int index = m_loopback.index();
+    const QString name = m_loopback.name();
+    QList<QHostAddress> addresses{QHostAddress(QHostAddress::LocalHost)};
+    BindAddress::setInterfaceSource([&] { return QList<LocalInterface>{{name, name, index, addresses}}; });
+    thePrefs.setBindAddress(name);
+
+    ListenSocket listener;
+    theApp.listenSocket = &listener;
+    const auto unhook = qScopeGuard([] { theApp.listenSocket = nullptr; });
+    QVERIFY(listener.startListening(0));
+    const uint16 port = listener.serverPort();
+    QCOMPARE(listener.boundAddresses(), QList{QHostAddress(QHostAddress::LocalHost)});
+    // Darwin 27: a refused dial reports connected() with no peer port
+    const auto dial = [port](const QHostAddress& to) {
+        QTcpSocket s;
+        s.connectToHost(to, port);
+        return s.waitForConnected(2000) && s.peerPort() == port;
+    };
+    QVERIFY(dial(QHostAddress(QHostAddress::LocalHost)));
+    QVERIFY(!dial(QHostAddress(QHostAddress::LocalHostIPv6)));
+
+    addresses.append(QHostAddress(QHostAddress::LocalHostIPv6));
+    QVERIFY(listener.syncAddresses(BindAddress::listenAddresses()));
+    QCOMPARE(listener.serverPort(), port);
+    QVERIFY(dial(QHostAddress(QHostAddress::LocalHostIPv6)));
+    QVERIFY(dial(QHostAddress(QHostAddress::LocalHost)));
+    QVERIFY(!listener.syncAddresses(BindAddress::listenAddresses()));   // nothing new
+
+    // the first address goes: the server moves to the next, still listening on the port
+    addresses.removeFirst();
+    QVERIFY(listener.syncAddresses(BindAddress::listenAddresses()));
+    QVERIFY(listener.isListening());
+    QCOMPARE(listener.serverPort(), port);
+    QCOMPARE(listener.boundAddresses(), QList{QHostAddress(QHostAddress::LocalHostIPv6)});
+    QVERIFY(dial(QHostAddress(QHostAddress::LocalHostIPv6)));
+    QVERIFY(!dial(QHostAddress(QHostAddress::LocalHost)));
+
+    listener.stopListening();
+    QVERIFY(!listener.isListening());
+    QVERIFY(listener.boundAddresses().isEmpty());
+    QVERIFY(!listener.syncAddresses(BindAddress::listenAddresses()));   // closed: no-op
+}
+
+// Each datagram leaves from the socket of its family; the peer sees that address and the
+// one port of the set
+void tst_BindInterface::udpSet_sendsFromTheFamilySocket()
+{
+    if (!hasLoopbackIPv6())
+        QSKIP("no ::1");
+    const QHostAddress v4(QHostAddress::LocalHost);
+    const QHostAddress v6(QHostAddress::LocalHostIPv6);
+    UdpSocketSet set(QStringLiteral("test UDP"));
+    QVERIFY(set.bindTo({v4, v6}, 0));
+    QCOMPARE(set.socketCount(), 2);
+    const quint16 port = set.localPort();
+    QVERIFY(port != 0);
+
+    QUdpSocket peer4, peer6;
+    QVERIFY(peer4.bind(v4, 0));
+    QVERIFY(peer6.bind(v6, 0));
+    QVERIFY(set.writeDatagram(QByteArray("four"), v4, peer4.localPort()) > 0);
+    // a sender of the other family is not ours to honour
+    QNetworkDatagram dg(QByteArray("six"), v6, peer6.localPort());
+    dg.setSender(v4);
+    QVERIFY(set.writeDatagram(dg) > 0);
+    QTRY_VERIFY_WITH_TIMEOUT(peer4.hasPendingDatagrams(), 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(peer6.hasPendingDatagrams(), 2000);
+    const QNetworkDatagram got4 = peer4.receiveDatagram();
+    const QNetworkDatagram got6 = peer6.receiveDatagram();
+    QCOMPARE(got4.data(), QByteArray("four"));
+    QCOMPARE(got4.senderPort(), int(port));
+    QCOMPARE(got6.data(), QByteArray("six"));
+    QCOMPARE(got6.senderAddress(), v6);
+    QCOMPARE(got6.senderPort(), int(port));
+
+    // both sockets come out of one receive queue
+    QSignalSpy ready(&set, &UdpSocketSet::readyRead);
+    peer4.writeDatagram(QByteArray("a"), v4, port);
+    peer6.writeDatagram(QByteArray("b"), v6, port);
+    QTRY_VERIFY_WITH_TIMEOUT(ready.count() >= 1, 2000);
+    QSet<QByteArray> received;
+    QTRY_VERIFY_WITH_TIMEOUT([&] {
+        while (set.hasPendingDatagrams())
+            received.insert(set.receiveDatagram().data());
+        return received.size() == 2;
+    }(), 2000);
+
+    // one family only: the other has no socket
+    UdpSocketSet only4(QStringLiteral("test UDP"));
+    QVERIFY(only4.bindTo({v4}, 0));
+    QCOMPARE(only4.writeDatagram(QByteArray("x"), v6, peer6.localPort()), qint64(-1));
+    QVERIFY(!only4.sendErrorString().isEmpty());
+}
+
+void tst_BindInterface::udpSet_followsAddressChanges()
+{
+    if (!m_loopback.isValid())
+        QSKIP("no loopback interface");
+    if (!hasLoopbackIPv6())
+        QSKIP("no ::1");
+    const int index = m_loopback.index();
+    const QString name = m_loopback.name();
+    QList<QHostAddress> addresses{QHostAddress(QHostAddress::LocalHost)};
+    BindAddress::setInterfaceSource([&] { return QList<LocalInterface>{{name, name, index, addresses}}; });
+    thePrefs.setBindAddress(name);
+
+    ClientUDPSocket udp;
+    QVERIFY(udp.create());
+    const uint16 port = udp.connectedPort();
+    QCOMPARE(udp.socket().socketCount(), 1);
+    addresses.append(QHostAddress(QHostAddress::LocalHostIPv6));
+    QVERIFY(udp.syncAddresses(BindAddress::listenAddresses()));
+    QCOMPARE(udp.socket().socketCount(), 2);
+    QCOMPARE(udp.connectedPort(), port);
+    addresses.removeFirst();
+    QVERIFY(udp.syncAddresses(BindAddress::listenAddresses()));
+    QCOMPARE(udp.socket().boundAddresses(), QList{QHostAddress(QHostAddress::LocalHostIPv6)});
+    QVERIFY(udp.isBound());
+
+    // bound to an explicit address: sync leaves it be
+    UdpSocketSet fixed(QStringLiteral("test UDP"));
+    QVERIFY(fixed.bindTo({QHostAddress(QHostAddress::LocalHost)}, 0));
+    QVERIFY(!fixed.sync({}));
+    QVERIFY(fixed.isBound());
+}
+
+// The OS source is open on the desktop systems; a burst of events is one changed()
+void tst_BindInterface::addressWatch_foldsBurst()
+{
+    AddressWatch watch;
+#if defined(Q_OS_LINUX) || defined(Q_OS_DARWIN) || defined(Q_OS_WIN)
+    QVERIFY(watch.isActive());
+#endif
+    QSignalSpy changed(&watch, &AddressWatch::changed);
+    for (int i = 0; i < 5; ++i)
+        watch.noteEvent();
+    QTRY_COMPARE_WITH_TIMEOUT(changed.count(), 1, 2000);
+    QTest::qWait(400);
+    QCOMPARE(changed.count(), 1);
 }
 
 QTEST_MAIN(tst_BindInterface)

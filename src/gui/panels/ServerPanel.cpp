@@ -13,6 +13,7 @@
 #include "controls/ServerListModel.h"
 #include "dialogs/FindInListDialog.h"
 #include "dialogs/NetworkInfoDialog.h"
+#include "dialogs/VpnPromo.h"
 
 #include "app/UiState.h"
 #include "utils/Ed2kLinkImporter.h"
@@ -868,6 +869,8 @@ QWidget* ServerPanel::createControlsPanel()
     m_infoLabel->setWordWrap(true);
     m_infoLabel->setTextFormat(Qt::RichText);
     m_infoLabel->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+    m_infoLabel->setOpenExternalLinks(true);
+    m_infoLabel->setTextInteractionFlags(Qt::LinksAccessibleByMouse);
     refreshMyInfo();
     // Scrolls like MFC's My Info box: a bare wrapped label pins the window's
     // minimum height to its full text
@@ -916,8 +919,25 @@ void ServerPanel::refreshMyInfo()
         return QLocale().toString(n);
     };
     const auto sp = QStringLiteral("&nbsp;&nbsp;");
-
+    // VPN link next to our IP:Port; anonymity only once reachable
     QString html;
+    QString vpn;
+    if constexpr (VpnPromo::kEnabled) {
+        const bool open = (m_ed2kConnected && !m_ed2kLowID) || (m_kadConnected && !m_kadFirewalled);
+        // own block: wrapped lines keep the indent of the rows above
+        vpn = QStringLiteral("<div style='margin-left:%1px'>").arg(fontMetrics().horizontalAdvance(QStringLiteral("  ")))
+            + VpnPromo::Text::html(open ? VpnPromo::Pitch::Anonymity : VpnPromo::Pitch::HighId)
+            + QStringLiteral("</div>");
+    }
+    // a block after <br> leaves an empty line
+    const auto addVpn = [&html, &vpn] {
+        if (vpn.isEmpty())
+            return;
+        if (html.endsWith(QLatin1StringView("<br>")))
+            html.chop(4);
+        html += vpn;
+    };
+
     // same order as the Network Info dialog: shared files after the client; no blank line
     // at the top, one after (the table carries its own margin)
     if (QString shared = NetworkInfoDialog::sharedHtml(m_sharedInfo, thePrefs.showExtControls(), true);
@@ -942,6 +962,7 @@ void ServerPanel::refreshMyInfo()
             html += sp + tr("IP:Port:") + QStringLiteral("\t") + tr("Unknown") + QStringLiteral("<br>");
         else
             html += sp + tr("IP:Port:") + QStringLiteral("\t") + QStringLiteral("%1:%2").arg(fmtIPSwap(pubIP)).arg(thePrefs.port()) + QStringLiteral("<br>");
+        addVpn();
 
         // Client ID
         const uint32_t clientId = m_ed2kClientID;
@@ -975,8 +996,10 @@ void ServerPanel::refreshMyInfo()
         }
     } else if (ed2kConning) {
         html += sp + tr("Status:") + QStringLiteral(" <font color='orange'>") + tr("Connecting...") + QStringLiteral("</font><br>");
+        addVpn();
     } else {
         html += sp + tr("Status:") + QStringLiteral(" ") + tr("Disconnected") + QStringLiteral("<br>");
+        addVpn();
     }
 
     // ---- Kad Network --------------------------------------------------------

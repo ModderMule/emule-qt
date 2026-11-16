@@ -35,7 +35,15 @@ private slots:
 private:
     void requestJobs();
     void updateJobList(const QCborArray& jobs);
+    void updateButtons();
+    [[nodiscard]] QList<int> selectedJobIndices(bool (*accept)(int state)) const;
     static QString statusString(int state);
+    // not Queued (1) / InProgress (2)
+    static bool isRetryable(int state) { return state != 1 && state != 2; }
+    static bool isRemovable(int state) { return state != 2; }
+
+    static constexpr int kStateRole = Qt::UserRole + 1;
+    static constexpr int kKeyRole = Qt::UserRole + 2;    // folder/filename
 
     IpcClient* m_ipc = nullptr;
     QTimer* m_refreshTimer = nullptr;

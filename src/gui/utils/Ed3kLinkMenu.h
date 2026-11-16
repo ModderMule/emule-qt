@@ -24,7 +24,8 @@ struct File {
     qint64 size = 0;
 };
 
-/// Adds both entries to @p menu while ed3k is on (enabled with files and a connected core).
+/// Adds both entries to @p menu while ed3k is on: grey until the core answers that at least
+/// one of @p files has a root (asked once on open; the click uses that answer).
 void addActions(QMenu* menu, QWidget* parent, IpcClient* ipc, const QList<File>& files);
 
 /// The entries' texts (menus that grey all but a few keep them on).

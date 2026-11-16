@@ -185,6 +185,7 @@ private:
     OptionsTree* m_extTree = nullptr;
     QTreeWidgetItem* m_hashRamItem = nullptr;
     QTreeWidgetItem* m_lowRamItem = nullptr;
+    QTreeWidgetItem* m_kadStoreItem = nullptr;
     QTreeWidgetItem* m_lanItem = nullptr;   ///< ed3kLan
     QTreeWidgetItem* m_autoIndexItem = nullptr;   ///< ed3kAutoIndexNode
 

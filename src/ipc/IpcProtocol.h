@@ -149,6 +149,9 @@ enum class IpcMsgType : int {
     /// [] -> [ok, [{agoMs, type, target, name, addr, cc, contacts, results, records, stored, load,
     /// answered}]] — recent requests other Kad nodes sent us, newest first (ops::kadIncoming)
     GetKadIncoming       = 227,
+    /// [id] -> [ok, {found, row of GetKadIncoming, wanted, own: {id}, asker: {id, addr, cc,
+    /// version}, handed: [{id, addr, cc, version}]}] — one request for the incoming search graph
+    GetKadIncomingGraph  = 228,
     SaveSchedules        = 222,  ///< [enabled: bool, schedules: CborArray] — replace all
     ScanImportFolder     = 230,  ///< [folder: string, removeSource: bool] → scan + queue + return jobs
     GetConvertJobs       = 231,  ///< [] → current job list with statuses
@@ -852,6 +855,9 @@ enum class IpcMsgType : int {
     SetTorrentOptionsMany   = 815,
     /// [ids: [string]] -> [ok, {id: {see SetTorrentOptions}}]; unknown ids left out
     GetTorrentOptionsMany   = 816,
+    /// [id: string] -> [ok, {data: bytes (.torrent), name}] (#196); error 404/409: no
+    /// such torrent / no metadata or v2 piece layers yet
+    ExportTorrent           = 817,
     /// [] -> {running, listenPort, listening, dhtNodes, torrents, rateDown, rateUp}
     GetBtStatus             = 818,
     /// [] -> [ok, map]. The BitTorrent branch of the Statistics window; answered
@@ -862,6 +868,16 @@ enum class IpcMsgType : int {
     ///              torrents: { count, downloading, seeding, paused, checking, queued,
     ///                          error, totalBytes, doneBytes, leftBytes } } }
     GetBtStats              = 819,
+    /// Torrent creator (#191), works with the engine off. [{path, onlyFiles: [string]
+    ///  (names below a folder path; empty = all), format (0 v1, 1 v2, 2 hybrid),
+    ///  pieceSize (bytes, 0 = auto), private, ignoreDotfiles, trackers: [string] ("" = next
+    ///  tier), webSeeds: [string], comment, source, seed: bool}] -> [ok, jobId: int].
+    /// PushTorrentCreation reports progress, PushTorrentCreated the end.
+    CreateTorrent           = 820,
+    /// [jobId: int] -> bool (false: no such running job)
+    CancelTorrentCreation   = 821,
+    /// [jobId: int] -> [ok, {data: bytes (.torrent), name}]; kept 1 h after the job
+    GetCreatedTorrent       = 822,
 
     // -- ed3k (1000-1049; more in 1100-1149) -----------------------------------------------------
     //
@@ -999,6 +1015,9 @@ enum class IpcMsgType : int {
     /// [] -> [ok, [rows as GetKadIncoming; type: KadRequest.kind + 100 × (0 find, 1 search,
     /// 2 store)]] — recent KadRequests other nodes sent this node, newest first
     GetEd3kKadIncoming      = 1206,
+    /// [id] -> [ok, as GetKadIncomingGraph; ids are routing ids, `node` the node ID] — one
+    /// request for the incoming search graph
+    GetEd3kKadIncomingGraph = 1207,
 
     // -- Link Grabber (1210-1219, hoster.md "Link Grabber"), Ed3kHosterBridge.cpp. A package:
     // {id, name, passwords: [string], source, added (ms)}; a link: {id, packageId, url, name, host,
@@ -1422,6 +1441,11 @@ enum class IpcMsgType : int {
     PushBtStatus           = 953,
     /// [id: string] — every wanted byte is there. Uncoalesced.
     PushTorrentFinished    = 954,
+    /// [{jobId, percent}] — CreateTorrent hashing; one per percent. Uncoalesced.
+    PushTorrentCreation    = 955,
+    /// [{jobId, ok, cancelled, error, name, pieces, pieceSize, seedId?, seedError?}]
+    /// — CreateTorrent ended; seedId: the torrent seeding now. Uncoalesced.
+    PushTorrentCreated     = 956,
 
     // -- ed3k pushes (1050-1099; more in 1150-1199) -----------------------------------------------
 

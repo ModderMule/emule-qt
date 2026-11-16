@@ -305,7 +305,10 @@ int main(int argc, char* argv[])
         userLock.setStaleLockTime(0);
         // No wait: a holder with our profile was gone once the lock above was ours
         if (lockAfterStop(userLock, ipcHost, 0)) {
-            eMule::AppConfig::writeUserCore({configDir, QCoreApplication::applicationFilePath(),
+            // In an AppImage our dir is a per-run mount: record the image itself
+            const QString image = eMule::AppConfig::appImagePath();
+            eMule::AppConfig::writeUserCore({configDir,
+                                             image.isEmpty() ? QCoreApplication::applicationFilePath() : image,
                                              QCoreApplication::applicationPid()});
         } else if (userLock.error() == QLockFile::LockFailedError) {
             qint64 holderPid = 0;

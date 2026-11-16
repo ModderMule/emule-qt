@@ -125,6 +125,7 @@ SOURCES += \
     controls/FriendListModel.cpp \
     controls/KadContactHistogram.cpp \
     controls/KadContactsModel.cpp \
+    controls/KadIncomingGraph.cpp \
     controls/KadLookupGraph.cpp \
     controls/KadSearchesModel.cpp \
     controls/LogWidget.cpp \
@@ -153,6 +154,7 @@ SOURCES += \
     dialogs/MetadataPage.cpp \
     dialogs/NetworkInfoDialog.cpp \
     dialogs/OptionsDialog.cpp \
+    dialogs/OptionsSearch.cpp \
     dialogs/Ed3kOptionsPages.cpp \
     dialogs/Ed3kFilterPage.cpp \
     dialogs/Ed3kOwnSetDialog.cpp \
@@ -261,6 +263,7 @@ HEADERS += \
     controls/FriendListModel.h \
     controls/KadContactHistogram.h \
     controls/KadContactsModel.h \
+    controls/KadIncomingGraph.h \
     controls/KadLookupGraph.h \
     controls/KadSearchesModel.h \
     controls/KnownTypeStyle.h \
@@ -293,6 +296,7 @@ HEADERS += \
     dialogs/MetadataPage.h \
     dialogs/NetworkInfoDialog.h \
     dialogs/OptionsDialog.h \
+    dialogs/OptionsSearch.h \
     dialogs/Ed3kOptionsPages.h \
     dialogs/Ed3kFilterPage.h \
     dialogs/Ed3kOwnSetDialog.h \
@@ -349,6 +353,9 @@ HEADERS += \
     panels/StatisticsPanel.h \
     panels/TransferPanel.h
 
+# VPN referral links: shown by default. `qmake CONFIG+=no_promotions` drops them
+no_promotions: DEFINES += NO_PROMOTIONS
+
 # BitTorrent: on by default, as in CMake (EMULE_BITTORRENT). `qmake CONFIG+=no_emule_bittorrent` turns it off
 !no_emule_bittorrent {
     DEFINES += EMULE_HAVE_BITTORRENT=1
@@ -363,6 +370,7 @@ HEADERS += \
         dialogs/AddTorrentDialog.cpp \
         dialogs/BtI2pPage.cpp \
         dialogs/EditTrackersDialog.cpp \
+        dialogs/TorrentCreatorDialog.cpp \
         dialogs/TorrentDetailsDialog.cpp \
         dialogs/TorrentOptionsDialog.cpp \
         panels/TorrentPanel.cpp
@@ -377,6 +385,7 @@ HEADERS += \
         dialogs/AddTorrentDialog.h \
         dialogs/BtI2pPage.h \
         dialogs/EditTrackersDialog.h \
+        dialogs/TorrentCreatorDialog.h \
         dialogs/TorrentDetailsDialog.h \
         dialogs/TorrentOptionsDialog.h \
         panels/TorrentPanel.h

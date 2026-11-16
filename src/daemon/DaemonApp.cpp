@@ -18,6 +18,7 @@
 #include "ScheduleNetworkBridge.h"
 #include "BandwidthCoordinator.h"
 #include "BtBridge.h"
+#include "BtCreateBridge.h"
 #include "Ed3kBridge.h"
 #include "Ed3kCreditBridge.h"
 #include "Ed3kFiltersBridge.h"
@@ -320,6 +321,18 @@ bool DaemonApp::start()
             applyEd3kConfig();
         if (m_notifierBridge)
             m_notifierBridge->pushNetworkState();
+    };
+    // A whole interface's addresses changed (#190): the session's sockets followed; the
+    // ed3k node's own and libtorrent's follow here
+    theApp.onListenAddresses = [this](const QList<QHostAddress>& addresses, bool changed) {
+#ifdef EMULE_HAVE_ED3K
+        if (m_ed3kSession)
+            m_ed3kSession->syncAddresses(addresses);   // also retries pending ones
+#else
+        Q_UNUSED(addresses);
+#endif
+        if (changed)
+            applyBtConfig();
     };
     // Internet down / back (connection checker): BT and Usenet follow eD2K, Kad runs on
     theApp.onConnectionOfflineChanged = [this](bool offline) {
@@ -933,8 +946,15 @@ bool DaemonApp::start()
     // after both sessions; the node may run already (statusChanged was before this)
     m_torrentJoin = std::make_unique<ed3k::Ed3kTorrentJoin>(*m_ed3kSession, *m_btSession, thePrefs.configDir());
     m_torrentJoin->setI2pJoins(thePrefs.btI2pEd3kJoin());
+    // torrent.md §6.3: private torrents join only with btShareMode "all"
+    m_torrentJoin->setPrivateJoins(thePrefs.btShareMode() >= int(BtShareMode::All));
     if (m_ed3kSession->isRunning())
         m_torrentJoin->start();
+    // a torrent made here gets its BLAKE3 roots and set from the join (#191)
+    BtCreateBridge::setSeededHook([this](const QString& id) {
+        if (m_torrentJoin)
+            m_torrentJoin->adoptCreated(id);
+    });
 #endif
     // The graphs' and toolbar's BitTorrent rates; reads BtBridge's session, nulled in stop()
     if (theApp.statsHistory)
@@ -1173,6 +1193,7 @@ void DaemonApp::stop()
     // saves resume data and the DHT state; before IPC and core go away
     if (theApp.statsHistory)
         theApp.statsHistory->setBtRateSource({});
+    BtCreateBridge::shutdown();
     BtBridge::setSession(nullptr);
 #ifdef EMULE_HAVE_BITTORRENT
     if (m_btSession)
@@ -1193,6 +1214,7 @@ void DaemonApp::stop()
         flushCumulativeStats(thePrefs);
 
     theApp.onNetworkSuspended = nullptr;
+    theApp.onListenAddresses = nullptr;
     theApp.onConnectionOfflineChanged = nullptr;
     m_notifierBridge.reset();
 
@@ -1447,6 +1469,11 @@ void DaemonApp::connectBtPushes()
         msg.append(BtBridge::statusToCbor());
         m_ipcServer->broadcast(msg);
     });
+    // torrent creator (#191): progress and the end, uncoalesced
+    BtCreateBridge::setPushSink([this](const IpcMessage& msg) {
+        if (m_ipcServer)
+            m_ipcServer->broadcast(msg);
+    });
 #endif
 }
 
@@ -1465,8 +1492,10 @@ void DaemonApp::applyBtConfig()
         m_btSession->applySettings(settings);
     applyI2pRouter(settings);
 #ifdef EMULE_HAVE_ED3K
-    if (m_torrentJoin)
+    if (m_torrentJoin) {
         m_torrentJoin->setI2pJoins(thePrefs.btI2pEd3kJoin());
+        m_torrentJoin->setPrivateJoins(thePrefs.btShareMode() >= int(BtShareMode::All));
+    }
 #endif
     BtBridge::applyIpFilter(true);
     // btShareMode: narrower drops the shared torrent files now, wider scans them in again
@@ -1557,7 +1586,7 @@ void DaemonApp::applyEd3kConfig()
     if (holdNode)
         logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: stays on UDP port %1 until eD2K UDP moves to %2")
                          .arg(m_ed3kSession->udpPort()).arg(port); });
-    QUdpSocket* shared = nullptr;
+    UdpSocketSet* shared = nullptr;
     if (theApp.clientUDP) {
         if (wantShared && !udpMovePending)
             shared = &theApp.clientUDP->socket();
@@ -1587,6 +1616,7 @@ void DaemonApp::applyEd3kConfig()
         settings.extOff = extOff;
         settings.lan = thePrefs.ed3kLan();
         settings.forceOpen = thePrefs.ed3kForceOpen();
+        settings.storeMiB = static_cast<std::uint32_t>(thePrefs.ed3kKadStoreMiB());
         if (bind) {
             settings.bindAddress = *bind;
             m_ed3kBind = BindAddress::current();
@@ -1970,15 +2000,15 @@ void DaemonApp::onCoreLoaded()
 
 bool DaemonApp::autoUpdateEnabled()
 {
-    return s_instance && s_instance->m_autoUpdateOn && !AutoUpdater::inContainer();
+    return s_instance && s_instance->m_autoUpdateOn && AutoUpdater::selfUpdateBlocker().isEmpty();
 }
 
 void DaemonApp::startAutoUpdater()
 {
     if (!m_autoUpdateOn || m_autoUpdater)
         return;
-    if (AutoUpdater::inContainer()) {
-        logWarning(QStringLiteral("Auto-update is off in a container: pull the new image instead"));
+    if (const QString why = AutoUpdater::selfUpdateBlocker(); !why.isEmpty()) {
+        logWarning(why);
         return;
     }
     m_autoUpdater = std::make_unique<AutoUpdater>(

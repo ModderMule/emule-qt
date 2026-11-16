@@ -25,6 +25,7 @@
 #include "dialogs/ToolbarCustomizeDialog.h"
 #include "dialogs/UsenetArchiveEntryDialog.h"
 #include "dialogs/UsenetDetailsDialog.h"
+#include "dialogs/VpnPromo.h"
 #include "dialogs/WebLinksDialog.h"
 #include "app/ToolbarButtons.h"
 #include "controls/LogWidget.h"
@@ -202,6 +203,7 @@ class TestSmallScreenDialogs : public QObject {
 
 private slots:
     void everyDialogFits();
+    void vpnPromoLinks();
 };
 
 /// Per dialog, on an 800x600 screen:
@@ -255,6 +257,29 @@ void TestSmallScreenDialogs::everyDialogFits()
             cap = std::max(cap, needAtMin);
         QVERIFY2(dlg->minimumHeight() <= cap, qPrintable(where));
     }
+}
+
+/// The VPN link opens in the browser: in the wizard and under a message box's text.
+/// NO_PROMOTIONS builds show none.
+void TestSmallScreenDialogs::vpnPromoLinks()
+{
+    const QString url = QString::fromLatin1(VpnPromo::kUrl);
+    QMessageBox box(QMessageBox::Information, QStringLiteral("t"), QStringLiteral("text"));
+    VpnPromo::addTo(box, VpnPromo::Pitch::Anonymity);
+    FirstStartWizard wizard(nullptr);
+    auto* wizardLink = wizard.findChild<QLabel*>(QStringLiteral("vpnPromo"));
+    if constexpr (!VpnPromo::kEnabled) {
+        QVERIFY(box.informativeText().isEmpty());
+        QVERIFY(!wizardLink);
+        return;
+    }
+    QVERIFY(box.informativeText().contains(url));
+    auto* info = box.findChild<QLabel*>(QStringLiteral("qt_msgbox_informativelabel"));
+    QVERIFY(info);
+    QVERIFY(info->openExternalLinks());
+    QVERIFY(wizardLink);
+    QVERIFY(wizardLink->openExternalLinks());
+    QVERIFY(wizardLink->text().contains(url));
 }
 
 int main(int argc, char* argv[])

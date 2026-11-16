@@ -39,6 +39,9 @@
 #include "dialogs/CollectionCreateDialog.h"
 #include "dialogs/CollectionViewDialog.h"
 #include "dialogs/Ed3kOwnSetDialog.h"
+#ifdef EMULE_HAVE_BITTORRENT
+#include "dialogs/TorrentCreatorDialog.h"
+#endif
 #include "panels/Ed3kOwnSetsView.h"
 
 #include "search/SearchParams.h"
@@ -720,6 +723,33 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
                                              this, [this, hashes, toAnon]() { moveEd3kKey(hashes, toAnon); });
         gateEd3kKeyMove(act, m_contextMenu, toAnon, m_ed3kKeyState, same);
     }
+
+#ifdef EMULE_HAVE_BITTORRENT
+    // Torrent Creator (#191): one complete file, or several complete files of one folder
+    // as a torrent named after that folder
+    if (thePrefs.btEnabled()) {
+        QString root;
+        QStringList only;
+        bool oneFolder = !sel.empty();
+        for (const SharedFileRow* f : sel) {
+            const QFileInfo fi(f->filePath);
+            if (f->isPartFile || f->filePath.isEmpty() || (!root.isEmpty() && fi.absolutePath() != root)) {
+                oneFolder = false;
+                break;
+            }
+            root = fi.absolutePath();
+            only << fi.fileName();
+        }
+        auto* act = m_contextMenu->addAction(skinIcon(QStringLiteral(":/icons/Torrent.ico")), tr("Create Torrent..."),
+                                             this, [this, root, only]() {
+            if (only.size() == 1)
+                TorrentCreatorDialog::run(m_ipc, this, QDir(root).filePath(only.constFirst()));
+            else
+                TorrentCreatorDialog::run(m_ipc, this, root, only);
+        });
+        act->setEnabled(oneFolder && m_ipc && m_ipc->isConnected());
+    }
+#endif
 
     // The link the IRC nick menu's "Send this to friend" offers (MFC Irc_SetSendLink,
     // srchybrid/SharedFilesCtrl.cpp:787, :826-828). Advanced mode only, as in MFC (:1318).
@@ -2159,6 +2189,13 @@ void SharedFilesPanel::onFolderContextMenu(const QPoint& pos)
     menu.addSeparator();
     menu.addAction(tr("Publish as ed3k Set..."), this, [this, path] { Ed3kOwnSetDialog::run(m_ipc, this, {}, path); })
         ->setEnabled(m_ipc && m_ipc->isConnected());
+#ifdef EMULE_HAVE_BITTORRENT
+    // Torrent Creator (#191): the whole folder
+    if (thePrefs.btEnabled())
+        menu.addAction(skinIcon(QStringLiteral(":/icons/Torrent.ico")), tr("Create Torrent..."), this,
+                       [this, path] { TorrentCreatorDialog::run(m_ipc, this, path); })
+            ->setEnabled(m_ipc && m_ipc->isConnected());
+#endif
 
     menu.exec(m_folderTree->viewport()->mapToGlobal(pos));
 }

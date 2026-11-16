@@ -13,6 +13,8 @@
 #include "portmap/PortMapTypes.h"
 
 #include <QByteArray>
+#include <QHostAddress>
+#include <QList>
 #include <QString>
 #include <functional>
 #include <optional>
@@ -294,6 +296,9 @@ struct AppContext {
     /// Networks went down (true) / came back (false) with the bound interface; for the
     /// parts outside the session (Usenet, IRC, state pushes).
     std::function<void(bool suspended)> onNetworkSuspended;
+    /// The listen sockets followed the bound interface's addresses (#190); every watchdog
+    /// pass while an interface is selected, @p changed when they differ from the last.
+    std::function<void(const QList<QHostAddress>& addresses, bool changed)> onListenAddresses;
     /// connectionOffline changed: the daemon holds BitTorrent and Usenet and pushes state.
     std::function<void(bool offline)> onConnectionOfflineChanged;
     /// A port preference was saved: rebind when idle. Set by CoreSession.

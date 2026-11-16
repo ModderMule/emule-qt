@@ -160,6 +160,7 @@
     <ClCompile Include="BtSession.cpp" />
     <ClCompile Include="BtTrackerList.cpp" />
     <ClCompile Include="add\BtAddSource.cpp" />
+    <ClCompile Include="create\BtTorrentCreator.cpp" />
     <ClCompile Include="session\BtJoinDiskIo.cpp" />
     <ClCompile Include="session\BtPeerGate.cpp" />
     <ClCompile Include="session\BtSettingsMap.cpp" />
@@ -178,6 +179,7 @@
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="BtSession.h" />
+    <QtMoc Include="create\BtTorrentCreator.h" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="debug\moc_predefs.h.cbt">

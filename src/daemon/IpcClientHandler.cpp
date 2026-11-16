@@ -503,6 +503,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::DisconnectKad:        handleDisconnectKad(msg); break;
     case IpcMsgType::GetKadSearches:       handleGetKadSearches(msg); break;
     case IpcMsgType::GetKadIncoming:       handleGetKadIncoming(msg); break;
+    case IpcMsgType::GetKadIncomingGraph:  handleGetKadIncomingGraph(msg); break;
     case IpcMsgType::GetKadLookupHistory:  handleGetKadLookupHistory(msg); break;
     case IpcMsgType::GetNetworkInfo:       handleGetNetworkInfo(msg); break;
     case IpcMsgType::TestPorts:            handleTestPorts(msg); break;
@@ -2783,6 +2784,12 @@ void IpcClientHandler::handleGetKadSearches(const IpcMessage& msg)
 void IpcClientHandler::handleGetKadIncoming(const IpcMessage& msg)
 {
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(ops::kadIncoming())));
+}
+
+void IpcClientHandler::handleGetKadIncomingGraph(const IpcMessage& msg)
+{
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true,
+                                       QCborValue(ops::kadIncomingGraph(static_cast<quint64>(msg.fieldInt(0))))));
 }
 
 void IpcClientHandler::handleGetKadLookupHistory(const IpcMessage& msg)
@@ -5344,6 +5351,8 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
         thePrefs.setEd3kShareFiles(val.toBool());
     else if (key == QStringLiteral("ed3kHashRamMiB"))
         thePrefs.setEd3kHashRamMiB(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("ed3kKadStoreMiB"))
+        thePrefs.setEd3kKadStoreMiB(static_cast<int>(val.toInteger()));
     else if (key == QStringLiteral("ed3kHashCacheLowRamPercent"))
         thePrefs.setEd3kHashCacheLowRamPercent(static_cast<int>(val.toInteger()));
     else if (key == QStringLiteral("ed3kJointDownloads"))

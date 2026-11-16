@@ -2,7 +2,8 @@
 
 /// @file KadPanelBase.h
 /// @brief Shared layout of one network's page in the Kad window (MFC KademliaWnd):
-///   - top left: tabs "Contacts" and "Search Details" (lookup graph)
+///   - top left: tabs "Contacts" and "Search Details" (lookup graph; with the Incoming tab
+///     below shown, the graph of an incoming request instead)
 ///   - top right: the network's controls column
 ///   - bottom: tabs "Outgoing Searches" (our lookups) and "Incoming Searches" (requests
 ///     other nodes sent us, not MFC)
@@ -19,12 +20,14 @@
 class QAbstractItemModel;
 class QLabel;
 class QSplitter;
+class QStackedWidget;
 class QTabWidget;
 class QTreeView;
 
 namespace eMule {
 
 class IpcClient;
+class KadIncomingGraph;
 class KadLookupGraph;
 class PanelPoller;
 
@@ -70,9 +73,11 @@ protected:
 
     /// Contacts label and tab title.
     void setContactCount(int count);
+    /// Title of the shown outgoing lookup; applied while the lookup graph shows.
     void setLookupTabTitle(const QString& lookupTitle);
     /// "Outgoing Searches (n)" tab title.
     void setOutgoingCount(int count);
+    /// The Search Details tab shows the lookup graph (not an incoming request).
     [[nodiscard]] bool lookupTabShown() const;
     [[nodiscard]] bool contactsTabShown() const;
     /// The selected row of the searches list, 0: none.
@@ -97,6 +102,14 @@ private:
     KadIncomingModel* m_incomingModel = nullptr;
     QTreeView* m_incomingView = nullptr;
     KadIncomingModel::Network m_network = KadIncomingModel::Network::Ed2k;
+    QStackedWidget* m_graphStack = nullptr;
+    KadIncomingGraph* m_incomingGraph = nullptr;
+    QString m_lookupTitle;
+    QString m_incomingTitle;
+    /// Request the incoming graph shows; kept when its row is gone.
+    std::uint64_t m_incomingGraphId = 0;
+    /// Picked by a click: auto-show leaves it alone.
+    bool m_incomingPicked = false;
 
 private:
     void poll();
@@ -105,6 +118,16 @@ private:
     [[nodiscard]] bool incomingTabShown() const;
     void onSearchSelectionChanged();
     void onSearchDoubleClicked(const QModelIndex& index);
+    /// Search Details follows the bottom tab: lookup graph or incoming graph.
+    void showGraphOf(int bottomTab);
+    void updateDetailsTitle();
+    void onIncomingSelectionChanged();
+    /// Auto-show: the newest request that handed out contacts, unless one was clicked.
+    void autoPickIncoming();
+    /// Fetch the incoming graph when its request changed; graphs never change.
+    void requestIncomingGraph();
+    void markIncomingRow();
+    [[nodiscard]] std::uint64_t selectedIncomingId() const;
 };
 
 } // namespace eMule

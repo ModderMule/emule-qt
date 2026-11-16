@@ -633,6 +633,15 @@ endif()
 
 
 # ---------------------------------------------------------------------------
+# Promotions: the AirVPN referral link near the ports (src/gui/dialogs/VpnPromo.h).
+# ON (default) builds NO_PROMOTIONS and drops every link
+# ---------------------------------------------------------------------------
+option(EMULE_NO_PROMOTIONS "Build without the VPN referral links" OFF)
+if(EMULE_NO_PROMOTIONS)
+    add_compile_definitions(NO_PROMOTIONS)
+endif()
+
+# ---------------------------------------------------------------------------
 # Subdirectories
 # ---------------------------------------------------------------------------
 add_subdirectory(src)

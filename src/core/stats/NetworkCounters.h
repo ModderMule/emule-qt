@@ -238,7 +238,7 @@ struct KadCounters {
     uint64 sourcesOpen = 0;            ///< type 1, 4
     uint64 sourcesBuddy = 0;           ///< type 3, 5 with a buddy
     uint64 sourcesDirectCallback = 0;  ///< type 6
-    uint64 sourcesNoBuddy = 0;         ///< type 3, 5 without a buddy
+    uint64 sourcesNoBuddy = 0;         ///< type 3, 5 without a buddy; type 7
 
     uint64 connectedMs = 0;        ///< time Kad was connected
 

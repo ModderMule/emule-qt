@@ -85,6 +85,10 @@ public:
                                                     const QStringList& userFiles);
     /// Running inside Docker/Podman: update by pulling the image instead.
     [[nodiscard]] static bool inContainer();
+    /// Running from a Linux AppImage ($APPIMAGE set): app dir is a read-only mount
+    [[nodiscard]] static bool inAppImage();
+    /// Why the core can't replace itself here (log text), empty if it can
+    [[nodiscard]] static QString selfUpdateBlocker();
     /// emuleqt-updater[.exe]
     [[nodiscard]] static QString helperName();
 

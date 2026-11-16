@@ -444,6 +444,8 @@ endif()
 # BitTorrent module (libtorrent)
 if(EMULE_BITTORRENT)
     emule_add_test(tst_BtSmoke      FOLDER "BitTorrent" LIBRARIES eMule::Bt)
+    # Torrent Creator (#191)
+    emule_add_test(tst_BtTorrentCreator FOLDER "BitTorrent" LIBRARIES eMule::Bt)
     # two sessions on loopback: no network, so no "live" label
     emule_add_test(tst_BtLocalSwarm FOLDER "BitTorrent" LIBRARIES eMule::Bt)
     set_tests_properties(tst_BtLocalSwarm PROPERTIES TIMEOUT 240)
@@ -821,6 +823,14 @@ emule_add_test(tst_TransferToolbar FOLDER "GUI"
 target_include_directories(tst_TransferToolbar PRIVATE "${CMAKE_SOURCE_DIR}/src/gui")
 target_link_libraries(tst_TransferToolbar PRIVATE eMule::Core Qt6::Widgets)
 
+# Kad window: graph of one incoming request
+emule_add_test(tst_KadIncomingGraph FOLDER "GUI"
+    SOURCES tst_KadIncomingGraph.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/KadIncomingGraph.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/KadLookupGraph.cpp")
+target_include_directories(tst_KadIncomingGraph PRIVATE "${CMAKE_SOURCE_DIR}/src/gui")
+target_link_libraries(tst_KadIncomingGraph PRIVATE eMule::Core Qt6::Widgets)
+
 # Data file integration tests — verify real server.met / nodes.dat / .part loading
 emule_add_test(tst_ServerMetData  FOLDER "DataFiles")
 emule_add_test(tst_KadNodesData   FOLDER "DataFiles")
@@ -1019,6 +1029,11 @@ if(EMULE_BITTORRENT)
                 "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentPieceGrid.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/dialogs/TorrentDetailsDialog.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/dialogs/EditTrackersDialog.cpp"
+                # Torrent Creator (#191) and the folder picker it opens
+                "${CMAKE_SOURCE_DIR}/src/gui/dialogs/TorrentCreatorDialog.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FolderPickerDialog.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/controls/FolderTreeModel.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/utils/FolderLister.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/dialogs/TorrentOptionsDialog.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/controls/TorrentOptionsForm.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/dialogs/DetailDialog.cpp"
@@ -1313,6 +1328,7 @@ emule_add_test(tst_OptionsDialogSizing FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsSearch.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kOptionsPages.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/OptionsTree.cpp"
@@ -1568,6 +1584,7 @@ emule_add_test(tst_SmallScreenDialogs FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FirstStartWizard.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/MetaAccountDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsSearch.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kOptionsPages.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/OptionsTree.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/BtI2pPage.cpp"

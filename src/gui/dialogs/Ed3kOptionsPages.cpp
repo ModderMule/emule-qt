@@ -16,6 +16,7 @@
 #include "dialogs/PortChangeNotice.h"
 #include "dialogs/PortTest.h"
 #include "dialogs/RouterPage.h"
+#include "dialogs/VpnPromo.h"
 #include "controls/ContentScrollArea.h"
 #include "controls/OptionsTree.h"
 #include "app/SkinIcons.h"
@@ -228,6 +229,7 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     m_ownSetsWatchCheck->setChecked(p.value(QStringLiteral("ed3kOwnSetsWatch")).toBool(true));
     m_extTree->setValue(m_hashRamItem, int(p.value(QStringLiteral("ed3kHashRamMiB")).toInteger(0)));
     m_extTree->setValue(m_lowRamItem, int(p.value(QStringLiteral("ed3kHashCacheLowRamPercent")).toInteger(20)));
+    m_extTree->setValue(m_kadStoreItem, int(p.value(QStringLiteral("ed3kKadStoreMiB")).toInteger(0)));
     const QStringList off = Preferences::rpcUrlList(p.value(QStringLiteral("ed3kExtOff")));
     for (QCheckBox* box : m_extChecks)
         box->setChecked(!off.contains(box->text()));
@@ -329,6 +331,7 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kOwnSetsWatch", m_ownSetsWatchCheck->isChecked());
     put("ed3kHashRamMiB", qint64(m_extTree->value(m_hashRamItem)));
     put("ed3kHashCacheLowRamPercent", qint64(m_extTree->value(m_lowRamItem)));
+    put("ed3kKadStoreMiB", qint64(m_extTree->value(m_kadStoreItem)));
     put("ed3kExtOff", extOff().join(QLatin1Char(' ')));
     if (!m_portJoined)   // joined: the Connection page sends it
         put("ed3kUdpPort", qint64(m_udpPortSpin->value()));
@@ -404,6 +407,7 @@ void Ed3kOptionsPages::saveLocal() const
     thePrefs.setEd3kOwnSetsWatch(m_ownSetsWatchCheck->isChecked());
     thePrefs.setEd3kHashRamMiB(m_extTree->value(m_hashRamItem));
     thePrefs.setEd3kHashCacheLowRamPercent(m_extTree->value(m_lowRamItem));
+    thePrefs.setEd3kKadStoreMiB(m_extTree->value(m_kadStoreItem));
     thePrefs.setEd3kExtOff(extOff());
     if (!m_portJoined && m_udpPortSpin->value() > 0)
         thePrefs.setEd3kUdpPort(uint16(m_udpPortSpin->value()));
@@ -599,6 +603,8 @@ QWidget* Ed3kOptionsPages::buildConnection(QWidget* parent)
     m_sitePortSpin->setToolTip(tr("TCP port of the local website server (this computer only). It is part of every "
                                   "site's address: a change loses what sites stored in the browser."));
     portForm->addRow(tr("Website server port:"), m_sitePortSpin);
+    if (auto* vpn = VpnPromo::label(VpnPromo::Pitch::HighId, portGroup))
+        portForm->addRow(vpn);
     layout->addWidget(portGroup);
 
     auto* findGroup = new QGroupBox(tr("Finding nodes"), page);
@@ -1976,6 +1982,12 @@ QWidget* Ed3kOptionsPages::buildExtended(QWidget* parent)
     m_lowRamItem->setToolTip(0, tr("While the free RAM is below this share of the total, only block hashes in use "
                                    "stay in RAM."));
     m_extTree->setValue(m_lowRamItem, 20);
+    QTreeWidgetItem* kad = m_extTree->addGroup(tr("Kad"), skinIcon(QStringLiteral(":/icons/Kad.ico")));
+    m_kadStoreItem = m_extTree->addSpin(kad, tr("RAM for records of other nodes"), 0, Preferences::kMaxEd3kKadStoreMiB,
+                                        tr("Default (128 MiB)"), QStringLiteral("MiB"));
+    m_kadStoreItem->setToolTip(0, tr("RAM for the keyword and source records this node keeps for other ed3k nodes "
+                                     "(about 1 KiB each). Over it, new records are refused and other nodes store "
+                                     "them elsewhere. Applies at the next start of the ed3k node."));
     QTreeWidgetItem* connection = m_extTree->addGroup(tr("Connection"), skinIcon(QStringLiteral(":/icons/Connection.ico")));
     m_lanItem = m_extTree->addCheck(connection, tr("Find ed3k nodes in the local network (restarts the node)"));
     m_lanItem->setToolTip(0, tr("LAN discovery: finds other ed3k nodes on this computer's local networks."));

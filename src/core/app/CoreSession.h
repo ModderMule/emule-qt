@@ -23,6 +23,7 @@
 namespace eMule {
 
 class Address;
+class AddressWatch;
 class ClientAnalyzer;
 class ClientCreditsList;
 class ConnectionChecker;
@@ -246,10 +247,15 @@ private:
     /// No server, no Kad, no peer socket.
     [[nodiscard]] bool isNetworkIdle() const;
     void rememberAppliedPorts();
+    /// A whole interface's addresses changed or one is still pending: each listening
+    /// socket follows, without a reopen (#190).
+    void syncListenAddresses();
     void reportBindFailure(int port);
     void publishListenPorts();
 
     BindAddress::Resolution m_appliedBind;   ///< what the open sockets were bound on
+    QList<QHostAddress> m_appliedListen;     ///< listen addresses the sockets follow
+    std::unique_ptr<AddressWatch> m_addressWatch;   ///< OS address events → applyBindSelection()
     bool m_netSuspended = false;
     bool m_resumeEd2k = false;   ///< reconnect to a server on resume
     bool m_resumeKad = false;    ///< restart Kad on resume

@@ -154,7 +154,7 @@ public:
                                               ///< unlike ip above (see KadSearch.h)
         uint16 buddyPort = 0;
         uint8 buddyCrypt = 0;
-        uint8 sourceType = 0;                 ///< 1, 3, 4, 5 or 6
+        uint8 sourceType = 0;                 ///< 1, 3, 4, 5, 6 or 7
         const uint8* buddyHash = nullptr;     ///< 16 bytes
         const uint8* clientHash = nullptr;    ///< 16 bytes — the ED2K user hash
         const uint8* sourceIPv6 = nullptr;    ///< 16 bytes, or nullptr

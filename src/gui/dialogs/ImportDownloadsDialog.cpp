@@ -15,6 +15,8 @@
 #include <QPointer>
 #include <QCborMap>
 #include <QFileDialog>
+#include <QHash>
+#include <QSet>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -25,6 +27,9 @@
 #include <QTimer>
 #include <QTreeWidget>
 #include <QVBoxLayout>
+
+#include <algorithm>
+#include <functional>
 
 namespace eMule {
 
@@ -65,7 +70,7 @@ ImportDownloadsDialog::ImportDownloadsDialog(IpcClient* ipc, QWidget* parent)
     m_jobList = jobList;
     m_jobList->setHeaderLabels({tr("Filename"), tr("Status"), tr("Size"), tr("File Hash")});
     m_jobList->setRootIsDecorated(false);
-    m_jobList->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_jobList->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_jobList->header()->setStretchLastSection(true);
     jobList->bindColumns(QStringLiteral("importDownloads"), {220, 100, 80, 260});
     queueLayout->addWidget(m_jobList);
@@ -97,19 +102,7 @@ ImportDownloadsDialog::ImportDownloadsDialog(IpcClient* ipc, QWidget* parent)
     connect(m_removeBtn, &QPushButton::clicked, this, &ImportDownloadsDialog::onRemoveSelected);
     connect(m_closeBtn, &QPushButton::clicked, this, &QDialog::accept);
 
-    connect(m_jobList, &QTreeWidget::itemSelectionChanged, this, [this] {
-        const auto items = m_jobList->selectedItems();
-        if (items.isEmpty()) {
-            m_retryBtn->setEnabled(false);
-            m_removeBtn->setEnabled(false);
-            return;
-        }
-        const int state = items.first()->data(0, Qt::UserRole + 1).toInt();
-        // InProgress = 2
-        const bool isTerminal = (state != 1 && state != 2); // not Queued, not InProgress
-        m_retryBtn->setEnabled(isTerminal);
-        m_removeBtn->setEnabled(state != 2); // can remove anything except InProgress
-    });
+    connect(m_jobList, &QTreeWidget::itemSelectionChanged, this, &ImportDownloadsDialog::updateButtons);
 
     // --- Refresh timer ---
     m_refreshTimer = new QTimer(this);
@@ -168,18 +161,17 @@ void ImportDownloadsDialog::onRetrySelected()
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
-    const auto items = m_jobList->selectedItems();
-    if (items.isEmpty())
-        return;
-
-    const int index = items.first()->data(0, Qt::UserRole).toInt();
-
-    IpcMessage req(IpcMsgType::RetryConvertJob);
-    req.append(static_cast<qint64>(index));
-    m_ipc->sendRequest(std::move(req), [this, guard = QPointer(this)](const IpcMessage&) {
-        if (!guard) return;
-        requestJobs();
-    });
+    // retry keeps indices stable, order does not matter
+    const QList<int> indices = selectedJobIndices([](int state) { return isRetryable(state); });
+    for (qsizetype i = 0; i < indices.size(); ++i) {
+        IpcMessage req(IpcMsgType::RetryConvertJob);
+        req.append(static_cast<qint64>(indices[i]));
+        const bool last = i + 1 == indices.size();
+        m_ipc->sendRequest(std::move(req), [this, last, guard = QPointer(this)](const IpcMessage&) {
+            if (guard && last)
+                requestJobs();
+        });
+    }
 }
 
 void ImportDownloadsDialog::onRemoveSelected()
@@ -187,18 +179,18 @@ void ImportDownloadsDialog::onRemoveSelected()
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
-    const auto items = m_jobList->selectedItems();
-    if (items.isEmpty())
-        return;
-
-    const int index = items.first()->data(0, Qt::UserRole).toInt();
-
-    IpcMessage req(IpcMsgType::RemoveConvertJob);
-    req.append(static_cast<qint64>(index));
-    m_ipc->sendRequest(std::move(req), [this, guard = QPointer(this)](const IpcMessage&) {
-        if (!guard) return;
-        requestJobs();
-    });
+    // highest index first so earlier removals don't shift later ones
+    QList<int> indices = selectedJobIndices([](int state) { return isRemovable(state); });
+    std::ranges::sort(indices, std::greater{});
+    for (qsizetype i = 0; i < indices.size(); ++i) {
+        IpcMessage req(IpcMsgType::RemoveConvertJob);
+        req.append(static_cast<qint64>(indices[i]));
+        const bool last = i + 1 == indices.size();
+        m_ipc->sendRequest(std::move(req), [this, last, guard = QPointer(this)](const IpcMessage&) {
+            if (guard && last)
+                requestJobs();
+        });
+    }
 }
 
 void ImportDownloadsDialog::onRefresh()
@@ -226,12 +218,34 @@ void ImportDownloadsDialog::requestJobs()
 
 void ImportDownloadsDialog::updateJobList(const QCborArray& jobs)
 {
-    // Save selection by filename
-    QString selectedFilename;
-    if (auto* sel = m_jobList->currentItem())
-        selectedFilename = sel->text(0);
+    // refresh in place when the job set is unchanged so selection + scroll survive
+    QHash<QString, QTreeWidgetItem*> existing;
+    for (int i = 0; i < m_jobList->topLevelItemCount(); ++i) {
+        auto* item = m_jobList->topLevelItem(i);
+        existing.insert(item->data(0, kKeyRole).toString(), item);
+    }
 
-    m_jobList->clear();
+    QStringList keys;
+    keys.reserve(jobs.size());
+    for (const QCborValue& v : jobs) {
+        const QCborMap m = v.toMap();
+        keys.append(m.value(QStringLiteral("folder")).toString() + u'/'
+                    + m.value(QStringLiteral("filename")).toString());
+    }
+
+    bool sameSet = keys.size() == existing.size();
+    for (const QString& key : std::as_const(keys))
+        sameSet = sameSet && existing.contains(key);
+
+    QSet<QString> selectedKeys;
+    QString currentKey;
+    if (!sameSet) {
+        for (const auto* item : m_jobList->selectedItems())
+            selectedKeys.insert(item->data(0, kKeyRole).toString());
+        if (const auto* cur = m_jobList->currentItem())
+            currentKey = cur->data(0, kKeyRole).toString();
+        m_jobList->clear();
+    }
 
     bool hasInProgress = false;
 
@@ -242,27 +256,28 @@ void ImportDownloadsDialog::updateJobList(const QCborArray& jobs)
         const int64_t size = m.value(QStringLiteral("size")).toInteger();
         const QString fileHash = m.value(QStringLiteral("fileHash")).toString();
 
-        auto* item = new QTreeWidgetItem(m_jobList);
+        QTreeWidgetItem* item = sameSet ? existing.value(keys[i]) : new QTreeWidgetItem(m_jobList);
         item->setText(0, filename);
         item->setText(1, statusString(state));
         item->setText(2, size > 0 ? formatByteSize(size) : QString());
         item->setText(3, fileHash);
         item->setData(0, Qt::UserRole, static_cast<int>(i));      // job index
-        item->setData(0, Qt::UserRole + 1, state);                 // state for button logic
+        item->setData(0, kStateRole, state);                      // state for button logic
+        item->setData(0, kKeyRole, keys[i]);
+
+        if (!sameSet) {
+            if (keys[i] == currentKey)
+                m_jobList->setCurrentItem(item, 0, QItemSelectionModel::NoUpdate);
+            if (selectedKeys.contains(keys[i]))
+                item->setSelected(true);
+        }
 
         if (state == 2) // InProgress
             hasInProgress = true;
     }
 
-    // Restore selection
-    if (!selectedFilename.isEmpty()) {
-        for (int i = 0; i < m_jobList->topLevelItemCount(); ++i) {
-            if (m_jobList->topLevelItem(i)->text(0) == selectedFilename) {
-                m_jobList->setCurrentItem(m_jobList->topLevelItem(i));
-                break;
-            }
-        }
-    }
+    // states may have changed under an unchanged selection
+    updateButtons();
 
     // Update progress bar and status label
     if (hasInProgress) {
@@ -277,6 +292,29 @@ void ImportDownloadsDialog::updateJobList(const QCborArray& jobs)
         m_progressBar->setValue(100);
         m_statusLabel->setText(tr("Done"));
     }
+}
+
+void ImportDownloadsDialog::updateButtons()
+{
+    bool canRetry = false;
+    bool canRemove = false;
+    for (const auto* item : m_jobList->selectedItems()) {
+        const int state = item->data(0, kStateRole).toInt();
+        canRetry = canRetry || isRetryable(state);
+        canRemove = canRemove || isRemovable(state);
+    }
+    m_retryBtn->setEnabled(canRetry);
+    m_removeBtn->setEnabled(canRemove);
+}
+
+QList<int> ImportDownloadsDialog::selectedJobIndices(bool (*accept)(int state)) const
+{
+    QList<int> indices;
+    for (const auto* item : m_jobList->selectedItems()) {
+        if (accept(item->data(0, kStateRole).toInt()))
+            indices.append(item->data(0, Qt::UserRole).toInt());
+    }
+    return indices;
 }
 
 QString ImportDownloadsDialog::statusString(int state)

@@ -11,9 +11,8 @@
 #include "net/Address.h"
 #include "net/Packet.h"
 #include "net/ThrottledSocket.h"
+#include "net/UdpSocketSet.h"
 #include "utils/Types.h"
-
-#include <QUdpSocket>
 
 #include <deque>
 #include <memory>
@@ -58,6 +57,9 @@ public:
 
     /// Close the socket; create() opens it again.
     void close() { m_socket.close(); }
+
+    /// Follow the listen addresses of now (a whole interface's changed, #190).
+    bool syncAddresses(const QList<QHostAddress>& addresses) { return m_socket.sync(addresses); }
 
     /// The OS-assigned local UDP port (0 if unbound).
     [[nodiscard]] quint16 localPort() const { return m_socket.localPort(); }
@@ -114,7 +116,7 @@ private:
     /// query covers both families, so an AAAA-only hostname is reached either way.
     void queueDNSRequest(const Server& server, uint16 port, const uint8* data, uint32 size);
 
-    QUdpSocket m_socket;
+    UdpSocketSet m_socket;
     std::deque<ServerUDPPacket> m_controlQueue;
     HostResolver* m_hostResolver = nullptr;   // created on first dynIP send
     mutable std::mutex m_sendLock;

@@ -4,6 +4,10 @@
 
 #include "kademlia/KadIncomingLog.h"
 
+#include "kademlia/KadContact.h"
+#include "kademlia/KadRoutingZone.h"
+#include "kademlia/Kademlia.h"
+
 #include "utils/TimeUtils.h"
 
 #include <QMutexLocker>
@@ -15,6 +19,7 @@ namespace eMule::kad {
 void IncomingLog::add(IncomingRequest request)
 {
     const QMutexLocker lock(&m_mutex);
+    request.id = ++m_nextId;
     const bool lookup = request.type == IncomingType::NodeLookup;
     auto& ring = lookup ? m_lookups : m_other;
     ring.push_back(std::move(request));
@@ -33,6 +38,15 @@ std::vector<IncomingRequest> IncomingLog::snapshot() const
     return all;
 }
 
+std::optional<IncomingRequest> IncomingLog::find(uint64 id) const
+{
+    const QMutexLocker lock(&m_mutex);
+    for (const auto* ring : {&m_lookups, &m_other})
+        if (auto it = std::ranges::find(*ring, id, &IncomingRequest::id); it != ring->end())
+            return *it;
+    return std::nullopt;
+}
+
 void IncomingLog::clear()
 {
     const QMutexLocker lock(&m_mutex);
@@ -47,10 +61,19 @@ IncomingNote::IncomingNote(IncomingLog& log, IncomingType type, uint32 ip, uint1
     m_request.type = type;
     m_request.ip = ip;
     m_request.port = port;
+    m_request.own = RoutingZone::localKadId();
 }
 
 IncomingNote::~IncomingNote()
 {
+    // REQs carry no sender ID: the routing table may know it by address
+    if (auto* rz = Kademlia::getInstanceRoutingZone(); rz && m_request.port != 0) {
+        if (const Contact* c = rz->getContact(m_request.ip, m_request.port, false)) {
+            m_request.asker = c->getClientID();
+            m_request.askerVersion = c->getVersion();
+            m_request.hasAsker = true;
+        }
+    }
     m_log.add(std::move(m_request));
 }
 

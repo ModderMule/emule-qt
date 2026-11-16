@@ -430,6 +430,30 @@ private slots:
         QCOMPARE(mirror.ed3kHashCacheLowRamPercent(), 10);
     }
 
+    // ed3k Kad record store RAM: 0 = engine default, clamped; YAML and IPC round trip
+    void ed3kKadStore_roundTrips()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("prefs.yaml"));
+
+        Preferences prefs;
+        QCOMPARE(prefs.ed3kKadStoreMiB(), 0);
+        prefs.setEd3kKadStoreMiB(-5);
+        QCOMPARE(prefs.ed3kKadStoreMiB(), 0);
+        prefs.setEd3kKadStoreMiB(Preferences::kMaxEd3kKadStoreMiB + 1);
+        QCOMPARE(prefs.ed3kKadStoreMiB(), Preferences::kMaxEd3kKadStoreMiB);
+        prefs.setEd3kKadStoreMiB(256);
+        QVERIFY(prefs.saveTo(file));
+
+        Preferences loaded;
+        loaded.load(file);
+        QCOMPARE(loaded.ed3kKadStoreMiB(), 256);
+
+        Preferences mirror;
+        mirror.updateFromCbor(loaded.toIpcMap());
+        QCOMPARE(mirror.ed3kKadStoreMiB(), 256);
+    }
+
     // -- BitTorrent -----------------------------------------------------------
 
     void bittorrent_defaults()

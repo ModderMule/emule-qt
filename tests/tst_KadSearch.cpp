@@ -78,7 +78,7 @@ private slots:
     void sourceTags_buddyHashUsesStockByteOrder();
     void sourceTags_notFirewalledHasNoBuddyTags();
     void sourceTags_firewalledWithoutBuddyCannotPublish();
-    void sourceTags_firewalledWithIPv6PublishesWithoutBuddy();
+    void sourceTags_firewalledWithIPv6PublishesType7();
     void sourceTags_directCallbackSetsTheCallbackBit();
     void sourceTags_buddyBranchDoesNotClaimDirectCallback();
     void sourceTags_buddyIpTravelsInNetworkOrder();
@@ -863,30 +863,65 @@ void tst_KadSearch::sourceTags_firewalledWithoutBuddyCannotPublish()
     QVERIFY(tags.empty());
 }
 
-void tst_KadSearch::sourceTags_firewalledWithIPv6PublishesWithoutBuddy()
+void tst_KadSearch::sourceTags_firewalledWithIPv6PublishesType7()
 {
-    // No IPv4 route and no buddy, but a public IPv6: the firewalled type, no buddy tags.
+    // No IPv4 route and no buddy, but a public IPv6: type 7, route in ip6 (ipv6-spec §9.1).
+    // Was type 3 w/o buddy tags, which sent unfirewalled stock peers looking up buddy 000…0.
     Search::SourcePublishParams p;
-    p.firewalled = true;
-    p.tcpPort    = 4662;
-    p.ipv6Hex    = QStringLiteral("20010db8000000000000000000000042");
+    p.firewalled   = true;
+    p.tcpPort      = 4662;
+    p.hasFileSize  = true;
+    p.fileSize     = 12345;
+    p.cryptOptions = 0x09;   // a stray callback bit must not survive
+    p.natt         = KADNATT_QUIC;
+    p.ipv6Hex      = QStringLiteral("20010db8000000000000000000000042");
+    p.buddyIPv6Hex = QStringLiteral("20010db8000000000000000000000043");
 
     bool canPublish = false;
     auto tags = Search::buildSourcePublishTags(p, canPublish);
     QVERIFY(canPublish);
     const Tag* sourceType = findTag(tags, FT_SOURCETYPE);
     QVERIFY(sourceType != nullptr);
-    QCOMPARE(sourceType->intValue(), uint32{3});
+    QCOMPARE(sourceType->intValue(), uint32{7});
     QVERIFY(findTag(tags, FT_SERVERIP) == nullptr);
     QVERIFY(findTag(tags, FT_SERVERPORT) == nullptr);
     QVERIFY(findTag(tags, FT_BUDDYHASH) == nullptr);
+    QVERIFY(findTag(tags, FT_SOURCEPORT) != nullptr);
+    QVERIFY(findTag(tags, FT_FILESIZE) != nullptr);
+    const Tag* crypt = findTag(tags, FT_ENCRYPTION);
+    QVERIFY(crypt != nullptr);
+    QCOMPARE(crypt->intValue() & 0x08u, 0u);
+    auto named = [&](const char* name) {
+        return std::any_of(tags.begin(), tags.end(), [&](const Tag& t) {
+            return t.nameId() == 0 && t.name() == QByteArray(name);
+        });
+    };
     QVERIFY(std::any_of(tags.begin(), tags.end(), [&](const Tag& t) {
         return t.name() == QByteArrayLiteral(TAG_IPV6) && t.strValue() == p.ipv6Hex;
     }));
+    QVERIFY(!named(TAG_SERVINGBUDDYIPV6));
+    QVERIFY(!named(TAG_NATT));
 
+    // One value for every size
     p.largeFile = true;
     tags = Search::buildSourcePublishTags(p, canPublish);
-    QCOMPARE(findTag(tags, FT_SOURCETYPE)->intValue(), uint32{5});
+    QCOMPARE(findTag(tags, FT_SOURCETYPE)->intValue(), uint32{7});
+
+    // FT_FILESIZE is a MUST on 7: no size, no record
+    p.hasFileSize = false;
+    canPublish = true;
+    QVERIFY(Search::buildSourcePublishTags(p, canPublish).empty());
+    QVERIFY(!canPublish);
+
+    // With a buddy it stays 3/5 + ip6, so legacy clients keep their route
+    p.hasFileSize  = true;
+    p.largeFile    = false;
+    p.hasBuddy     = true;
+    p.buddyIP      = testIP(5);
+    p.buddyUDPPort = 5555;
+    tags = Search::buildSourcePublishTags(p, canPublish);
+    QCOMPARE(findTag(tags, FT_SOURCETYPE)->intValue(), uint32{3});
+    QVERIFY(named(TAG_SERVINGBUDDYIPV6));
 }
 
 void tst_KadSearch::sourceTags_directCallbackSetsTheCallbackBit()

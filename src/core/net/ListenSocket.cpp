@@ -44,40 +44,43 @@ ListenSocket::~ListenSocket()
 bool ListenSocket::startListening(uint16 port)
 {
     // Any is dual-stack (AF_INET6, IPV6_V6ONLY=0): accept v4 + v6. A bind address
-    // narrows it to that one address and family.
-    const auto bindTo = BindAddress::listenAddress();
-    if (!bindTo)
+    // narrows it to that one address and family; a whole interface to its addresses.
+    const QList<QHostAddress> addresses = BindAddress::listenAddresses();
+    if (addresses.isEmpty() && !BindAddress::outboundAllowed())
         return false;   // unusable bind address, already reported
-    if (*bindTo == QHostAddress(QHostAddress::Any)
+    if (addresses == QList{QHostAddress(QHostAddress::Any)}
         && ipv4WildcardHeld(port, QAbstractSocket::TcpSocket)) {
         logError(QStringLiteral("ListenSocket: port %1 is already used by another program (IPv4)")
                      .arg(port));
         return false;
     }
-    if (!listen(*bindTo, port)) {
-        logError(QStringLiteral("ListenSocket: Failed to listen on port %1: %2")
-                     .arg(port).arg(errorString()));
+    m_acceptPaused = false;
+    QString error;
+    const bool ok = openAll(addresses, port, error);
+    // nothing bindable yet (IPv6 DAD): syncAddresses() opens it
+    m_listening = isSetActive();
+    m_port = setPort();
+    if (!ok) {
+        logError(QStringLiteral("ListenSocket: Failed to listen on port %1: %2").arg(port).arg(error));
         return false;
     }
-
-    if (!InterfacePin::pin(socketDescriptor())) {
-        close();
-        return false;
-    }
-
-    // When port=0, the OS assigns a random port. Read it back.
-    m_port = serverPort();
-
-    m_listening = true;
     logInfo(QStringLiteral("ListenSocket: Listening on port %1").arg(m_port));
     return true;
+}
+
+bool ListenSocket::syncAddresses(const QList<QHostAddress>& addresses)
+{
+    const bool changed = syncTo(addresses);
+    if (m_listening)
+        m_port = setPort();
+    return changed;
 }
 
 void ListenSocket::stopListening()
 {
     m_acceptPaused = false;
     if (m_listening) {
-        close();
+        closeAll();
         m_listening = false;
     }
 }
@@ -115,7 +118,7 @@ void ListenSocket::incomingConnection(qintptr socketDescriptor)
         }
         m_acceptPaused = true;
         ++m_maxConnectionReached; // MFC counts in StopListening()
-        pauseAccepting();
+        pauseAll();
         // This one is accepted already and cannot go back to the backlog: keep it.
     }
 
@@ -203,7 +206,7 @@ void ListenSocket::process()
     if (m_acceptPaused
         && (openSockets() + 5 < thePrefs.maxConnections() || serverIsConnecting())) {
         m_acceptPaused = false;
-        resumeAccepting();
+        resumeAll();
     }
 
     // Check for timed-out sockets
@@ -372,6 +375,98 @@ void ListenSocket::admitAccepted(ClientReqSocket* reqSocket)
     addSocket(reqSocket);
     addConnection();
     emit newClientConnection(reqSocket);
+}
+
+// ---------------------------------------------------------------------------
+// Listen addresses (#190)
+// ---------------------------------------------------------------------------
+
+/// A further address: accepts into the owner.
+class ListenSocket::Extra : public QTcpServer {
+public:
+    explicit Extra(ListenSocket& owner) : m_owner(owner) {}
+
+protected:
+    void incomingConnection(qintptr socketDescriptor) override { m_owner.incomingConnection(socketDescriptor); }
+
+private:
+    ListenSocket& m_owner;
+};
+
+ListenAddressSet::BindResult ListenSocket::listenOn(QTcpServer& server, const QHostAddress& address,
+                                                    uint16 port, QString& error)
+{
+    if (!server.listen(address, port)) {
+        error = server.errorString();
+        // IPv6 DAD unfinished: EADDRNOTAVAIL until it is
+        return server.serverError() == QAbstractSocket::SocketAddressNotAvailableError ? BindResult::Later
+                                                                                       : BindResult::Failed;
+    }
+    if (!InterfacePin::pin(server.socketDescriptor())) {
+        server.close();
+        error = QStringLiteral("cannot pin the socket to the interface");
+        return BindResult::Failed;
+    }
+    if (m_acceptPaused)
+        server.pauseAccepting();
+    return BindResult::Ok;
+}
+
+ListenAddressSet::BindResult ListenSocket::bindOne(const QHostAddress& address, uint16 port, QString& error)
+{
+    if (!isListening())
+        return listenOn(*this, address, port, error);
+    auto extra = std::make_unique<Extra>(*this);
+    const BindResult r = listenOn(*extra, address, port, error);
+    if (r == BindResult::Ok)
+        m_extras.push_back(std::move(extra));
+    return r;
+}
+
+void ListenSocket::closeOne(const QHostAddress& address)
+{
+    if (const auto it = std::ranges::find_if(m_extras, [&address](const auto& e) { return e->serverAddress() == address; });
+        it != m_extras.end()) {
+        (*it)->close();
+        m_extras.erase(it);
+        return;
+    }
+    if (!isListening() || serverAddress() != address)
+        return;
+    close();
+    if (m_extras.empty())
+        return;
+    // this server stays the listening one (isListening(), serverPort()): it takes over the next
+    const QHostAddress next = m_extras.front()->serverAddress();
+    const uint16 port = m_extras.front()->serverPort();
+    m_extras.front()->close();
+    m_extras.erase(m_extras.begin());
+    if (QString error; listenOn(*this, next, port, error) != BindResult::Ok)
+        logError(QStringLiteral("ListenSocket: lost %1 port %2 while moving it: %3").arg(next.toString()).arg(port).arg(error));
+}
+
+uint16 ListenSocket::portOf(const QHostAddress& address) const
+{
+    if (isListening() && serverAddress() == address)
+        return serverPort();
+    for (const auto& e : m_extras)
+        if (e->serverAddress() == address)
+            return e->serverPort();
+    return 0;
+}
+
+void ListenSocket::pauseAll()
+{
+    pauseAccepting();
+    for (const auto& e : m_extras)
+        e->pauseAccepting();
+}
+
+void ListenSocket::resumeAll()
+{
+    resumeAccepting();
+    for (const auto& e : m_extras)
+        e->resumeAccepting();
 }
 
 } // namespace eMule

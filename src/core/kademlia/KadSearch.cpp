@@ -289,6 +289,7 @@ std::vector<Tag> Search::buildSourcePublishTags(const SourcePublishParams& p, bo
     std::vector<Tag> tags;
     outCanPublish = true;
     uint8 cryptOptions = p.cryptOptions;
+    uint8 sourceType = 0;   // 7 only matters below
 
     auto addCommonPortAndSize = [&] {
         tags.emplace_back(FT_SOURCEPORT, static_cast<uint32>(p.tcpPort));
@@ -316,12 +317,13 @@ std::vector<Tag> Search::buildSourcePublishTags(const SourcePublishParams& p, bo
         tags.emplace_back(FT_SERVERPORT, static_cast<uint32>(p.buddyUDPPort));
         tags.emplace_back(FT_BUDDYHASH, buddyHashToTagString(p.buddyHash));
         addCommonPortAndSize();
-    } else if (p.firewalled && !p.ipv6Hex.isEmpty()) {
-        // No route over IPv4, but a public IPv6: the firewalled type without buddy
-        // tags. A v6-capable peer dials ip6. A firewalled stock peer drops it; an unfirewalled
-        // one keeps it and runs a FINDSOURCE lookup for buddy ID 000…0 (MFC BaseClient.cpp:1450).
-        // ToDo: move to source type 7 once agreed (ipv6-spec §9.1, aMule #2521)
-        tags.emplace_back(FT_SOURCETYPE, static_cast<uint32>(p.largeFile ? 5 : 3));
+    } else if (p.firewalled && !p.ipv6Hex.isEmpty() && p.hasFileSize) {
+        // No IPv4 route, but a public IPv6: type 7, route in tags (ipv6-spec §5.6).
+        // Was 3/5 w/o buddy tags, which made unfirewalled stock peers look up buddy 000…0.
+        // Legacy switches drop 7. Size is a MUST, the type no longer carries it.
+        sourceType = 7;
+        tags.emplace_back(FT_SOURCETYPE, static_cast<uint32>(7));
+        cryptOptions = static_cast<uint8>(cryptOptions & ~0x08);
         addCommonPortAndSize();
     } else if (p.firewalled) {
         // Firewalled with neither a direct callback, a buddy nor an IPv6 — a published
@@ -341,14 +343,14 @@ std::vector<Tag> Search::buildSourcePublishTags(const SourcePublishParams& p, bo
     tags.emplace_back(FT_ENCRYPTION, static_cast<uint32>(cryptOptions));
 
     // Intentional: on 3/5 too, not only 6: searchers learn QUIC before the hello; buddy path ignores it
-    if (p.firewalled && p.natt != 0)
+    if (p.firewalled && p.natt != 0 && sourceType != 7)   // 7: no rendezvous, no NAT-T
         tags.emplace_back(QByteArrayLiteral(TAG_NATT), static_cast<uint32>(p.natt));
 
     // IPv6 (string-named hex tags, matching the reference CKadTagStr encoding) — lets a
     // v6-capable peer reach this source over IPv6. Additive: legacy peers skip them.
     if (!p.ipv6Hex.isEmpty())
         tags.emplace_back(QByteArrayLiteral(TAG_IPV6), p.ipv6Hex);
-    if (!p.buddyIPv6Hex.isEmpty())
+    if (!p.buddyIPv6Hex.isEmpty() && sourceType != 7)
         tags.emplace_back(QByteArrayLiteral(TAG_SERVINGBUDDYIPV6), p.buddyIPv6Hex);
 
     appendHttpCacheChunkTags(tags, p.httpCacheChunks);
@@ -861,6 +863,11 @@ void Search::processResultFile(const UInt128& answer, TagList& info)
     case 6:
         // Direct UDP callback (MFC DownloadQueue.cpp:1584-1601)
         break;
+    case 7:
+        // Not MFC: routes in tags (ipv6-spec §5.6). Buddy tags ignored, never looked up.
+        buddyIP = 0;
+        buddyPort = 0;
+        break;
     case 2:
         // MFC DownloadQueue.cpp:1550: "Don't use this type... Some clients will process it wrong."
         return;
@@ -891,7 +898,7 @@ void Search::processResultFile(const UInt128& answer, TagList& info)
             continue;
         if (tag.name() == QByteArrayLiteral(TAG_IPV6))
             hasSourceIPv6 = strmd4(tag.strValue(), sourceIPv6);
-        else if (tag.name() == QByteArrayLiteral(TAG_SERVINGBUDDYIPV6))
+        else if (tag.name() == QByteArrayLiteral(TAG_SERVINGBUDDYIPV6) && sourceType != 7)
             hasBuddyIPv6 = strmd4(tag.strValue(), buddyIPv6Bytes);
     }
 

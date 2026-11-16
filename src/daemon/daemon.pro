@@ -94,6 +94,7 @@ SOURCES += \
     ApiEventFeeder.cpp \
     BtBridge.cpp \
     BtShareGuard.cpp \
+    BtCreateBridge.cpp \
     LandedFiles.cpp \
     Ed3kBridge.cpp \
     Ed3kFriendsBridge.cpp \
@@ -139,6 +140,7 @@ HEADERS += \
     ApiEventFeeder.h \
     BtBridge.h \
     BtShareGuard.h \
+    BtCreateBridge.h \
     LandedFiles.h \
     Ed3kBridge.h \
     Ed3kOffGate.h \

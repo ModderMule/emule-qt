@@ -334,6 +334,32 @@ QCborArray kadContacts()
     return contacts;
 }
 
+namespace {
+
+/// A row of kadIncoming().
+QCborMap incomingRow(const kad::IncomingRequest& r, uint64 now)
+{
+    const Address addr = Address::fromHostOrder(r.ip);
+    return QCborMap{
+        {QStringLiteral("id"), static_cast<qint64>(r.id)},
+        {QStringLiteral("agoMs"), static_cast<qint64>(now - std::min(r.at, now))},
+        {QStringLiteral("type"), static_cast<qint64>(r.type)},
+        {QStringLiteral("target"), r.hasTarget ? r.target.toHexString() : QString()},
+        {QStringLiteral("name"), r.name},
+        {QStringLiteral("addr"), r.port != 0 ? QStringLiteral("%1:%2").arg(addr.toString()).arg(r.port)
+                                             : addr.toString()},
+        {QStringLiteral("cc"), countryCodeOf(addr)},
+        {QStringLiteral("contacts"), r.contacts},
+        {QStringLiteral("results"), r.results},
+        {QStringLiteral("records"), r.records},
+        {QStringLiteral("stored"), r.records >= 0 ? (r.answered ? r.records : 0) : -1},
+        {QStringLiteral("load"), r.load},
+        {QStringLiteral("answered"), r.answered},
+    };
+}
+
+} // namespace
+
 QCborArray kadIncoming()
 {
     QCborArray out;
@@ -342,25 +368,40 @@ QCborArray kadIncoming()
     if (!listener)
         return out;
     const uint64 now = getTickCount();
-    for (const auto& r : listener->incomingLog().snapshot()) {
-        const Address addr = Address::fromHostOrder(r.ip);
-        out.append(QCborMap{
-            {QStringLiteral("agoMs"), static_cast<qint64>(now - std::min(r.at, now))},
-            {QStringLiteral("type"), static_cast<qint64>(r.type)},
-            {QStringLiteral("target"), r.hasTarget ? r.target.toHexString() : QString()},
-            {QStringLiteral("name"), r.name},
-            {QStringLiteral("addr"), r.port != 0 ? QStringLiteral("%1:%2").arg(addr.toString()).arg(r.port)
-                                                 : addr.toString()},
+    for (const auto& r : listener->incomingLog().snapshot())
+        out.append(incomingRow(r, now));
+    return out;
+}
+
+QCborMap kadIncomingGraph(quint64 id)
+{
+    auto* kad = kad::Kademlia::instance();
+    auto* listener = kad && kad->isRunning() ? kad::Kademlia::getInstanceUDPListener() : nullptr;
+    const auto r = listener ? listener->incomingLog().find(id) : std::nullopt;
+    if (!r)
+        return QCborMap{{QStringLiteral("found"), false}};
+    QCborMap m = incomingRow(*r, getTickCount());
+    m.insert(QStringLiteral("found"), true);
+    m.insert(QStringLiteral("wanted"), r->wanted);
+    m.insert(QStringLiteral("own"), QCborMap{{QStringLiteral("id"), r->own.toHexString()}});
+    m.insert(QStringLiteral("asker"), QCborMap{
+        {QStringLiteral("id"), r->hasAsker ? r->asker.toHexString() : QString()},
+        {QStringLiteral("addr"), m.value(QStringLiteral("addr"))},
+        {QStringLiteral("cc"), m.value(QStringLiteral("cc"))},
+        {QStringLiteral("version"), r->hasAsker ? qint64(r->askerVersion) : qint64(-1)},
+    });
+    QCborArray handed;
+    for (const auto& c : r->handed) {
+        const Address addr = Address::fromHostOrder(c.ip);
+        handed.append(QCborMap{
+            {QStringLiteral("id"), c.id.toHexString()},
+            {QStringLiteral("addr"), QStringLiteral("%1:%2").arg(addr.toString()).arg(c.port)},
             {QStringLiteral("cc"), countryCodeOf(addr)},
-            {QStringLiteral("contacts"), r.contacts},
-            {QStringLiteral("results"), r.results},
-            {QStringLiteral("records"), r.records},
-            {QStringLiteral("stored"), r.records >= 0 ? (r.answered ? r.records : 0) : -1},
-            {QStringLiteral("load"), r.load},
-            {QStringLiteral("answered"), r.answered},
+            {QStringLiteral("version"), qint64(c.version)},
         });
     }
-    return out;
+    m.insert(QStringLiteral("handed"), handed);
+    return m;
 }
 
 QCborMap kadStatus()

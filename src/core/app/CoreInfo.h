@@ -23,10 +23,15 @@ void insertEd2kCounts(QCborMap& info);
 
 [[nodiscard]] QCborMap kadStatus();
 
-/// Recent requests other Kad nodes sent us, newest first: {agoMs, type (kad::IncomingType),
+/// Recent requests other Kad nodes sent us, newest first: {id, agoMs, type (kad::IncomingType),
 /// target (hex, "" = none), name, addr, cc, contacts, results, records, stored, load (-1 = n/a),
 /// answered}. The ed3k node sends the same shape (Ed3kKadBridge).
 [[nodiscard]] QCborArray kadIncoming();
+
+/// One incoming request for the incoming search graph: {found, the row of kadIncoming, wanted,
+/// own: {id}, asker: {id ("" = unknown), addr, cc, version}, handed: [{id, addr, cc, version}]}.
+/// Ids hex; distances are XOR to target. The ed3k node sends the same shape.
+[[nodiscard]] QCborMap kadIncomingGraph(quint64 id);
 
 /// The Statistics window's Kademlia branch: `session` and `cumulative` are
 /// KadCounters blocks, `current` the routing table as it stands, `seen` the

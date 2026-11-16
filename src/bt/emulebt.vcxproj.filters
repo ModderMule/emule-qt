@@ -27,6 +27,9 @@
     <ClCompile Include="add\BtAddSource.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="create\BtTorrentCreator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="session\BtJoinDiskIo.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -71,6 +74,9 @@
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="BtSession.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="create\BtTorrentCreator.h">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>

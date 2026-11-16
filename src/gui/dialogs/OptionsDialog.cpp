@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "dialogs/VpnPromo.h"
 #include "utils/FileAssociation.h"
 #include "dialogs/FolderPickerDialog.h"
 #include "controls/FolderTreeModel.h"
@@ -21,6 +22,7 @@
 #include "app/KnownCores.h"
 #include "controls/AbstractListView.h"
 #include "controls/AccordionSidebar.h"
+#include "dialogs/OptionsSearch.h"
 #include "controls/BarShader.h"
 #include "controls/ContentScrollArea.h"
 #include "panels/StatisticsPanel.h"
@@ -143,7 +145,23 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     // AccordionSidebar::sizeHint() measures them instead.
     m_sidebar = new AccordionSidebar(this);
     setupSidebar();
-    mainLayout->addWidget(m_sidebar);
+    // Search box over the sidebar (issue #193); not in MFC
+    auto* sideColumn = new QWidget(this);
+    sideColumn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
+    auto* sideLayout = new QVBoxLayout(sideColumn);
+    sideLayout->setContentsMargins(0, 0, 0, 0);
+    m_searchEdit = new QLineEdit(sideColumn);
+    m_searchEdit->setObjectName(QStringLiteral("optionsSearch"));
+    m_searchEdit->setPlaceholderText(tr("Search options"));
+    m_searchEdit->setToolTip(tr("Find a setting by name: pages without a match are hidden,"
+                                " matches are highlighted.\nEnter: next page, Esc: clear"));
+    sideLayout->addWidget(m_searchEdit);
+    sideLayout->addWidget(m_sidebar, 1);
+    mainLayout->addWidget(sideColumn);
+    connect(new QShortcut(QKeySequence::Find, this), &QShortcut::activated, this, [this] {
+        m_searchEdit->setFocus(Qt::ShortcutFocusReason);
+        m_searchEdit->selectAll();
+    });
 
     // TreePropSheet::PreTranslateMessage (TreePropSheet.cpp:842): Ctrl+Tab / Ctrl+PgDn
     // next page, Ctrl+Shift+Tab / Ctrl+PgUp previous.
@@ -179,6 +197,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     // Stacked pages
     m_pages = new QStackedWidget(this);
     setupPages();
+    m_search = new OptionsSearch(m_searchEdit, m_pages, m_sidebar, this);
     rightLayout->addWidget(m_pages, 1);
 
     // Buttons (matching MFC: OK, Cancel, Apply, Help)
@@ -1557,6 +1576,8 @@ QWidget* OptionsDialog::createConnectionPage()
     syncRandomRange();
     randomRow->setVisible(thePrefs.showExtControls());
     portLayout->addWidget(randomRow, 5, 0, 1, 4);
+    if (auto* vpn = VpnPromo::label(VpnPromo::Pitch::HighId, portGroup))
+        portLayout->addWidget(vpn, 6, 0, 1, 4);
 
     // Real forwarding status: GetNetworkInfo's portmap section on load, then the
     // daemon's pushes. Full sentence in the tooltip.
@@ -1573,6 +1594,8 @@ QWidget* OptionsDialog::createConnectionPage()
 
     // Bind selection: an interface of the daemon's host, or free text for an
     // address or a subnet. Filled from GetNetworkInterfaces.
+    // No "IPv4 only" switch on purpose (#192): goal is max reachability by as many
+    // peers as possible. A typed IPv4 literal still gives BindAddress::isIPv4Only().
     portLayout->addWidget(new QLabel(tr("Network interface"), portGroup), 3, 0);
     m_bindInterfaceCombo = new QComboBox(portGroup);
     m_bindInterfaceCombo->setEditable(true);
@@ -2878,6 +2901,7 @@ QWidget* OptionsDialog::createIRCPage()
     // column layout to persist.
     m_ircMiscTree = new QTreeWidget(miscGroup);
     m_ircMiscTree->setHeaderHidden(true);
+    m_ircMiscTree->setProperty(kOptionsSearchItems, true);
     m_ircMiscTree->setRootIsDecorated(true);
     m_ircMiscTree->setIndentation(20);
 
@@ -6009,6 +6033,8 @@ QWidget* OptionsDialog::createBitTorrentPage()
         auto* pub = new QRadioButton(tr("Share public torrents"), shareGroup);
         pub->setToolTip(tr("Private tracker torrents (ALT) and I2P torrents are not shared."));
         auto* all = new QRadioButton(tr("Share all torrents, including private tracker (ALT) and I2P torrents"), shareGroup);
+        all->setToolTip(tr("Private tracker torrents also join ed3k as file sets: their info hash is published "
+                           "on ed3k, and ed3k nodes can download them without the tracker. Some trackers forbid this."));
         int id = 0;
         for (QRadioButton* r : {none, pub, all}) {
             m_btShareGroup->addButton(r, id++);
@@ -6171,6 +6197,8 @@ QWidget* OptionsDialog::createBtConnectionPage()
         tr("Forwards the BitTorrent port on the router. Needs \"Use UPnP to Setup "
            "Ports\" on the Connection page."));
     portForm->addRow(m_btPortMappingCheck);
+    if (auto* vpn = VpnPromo::label(VpnPromo::Pitch::HighId, portGroup))
+        portForm->addRow(vpn);
 
     mainLayout->addWidget(portGroup);
 

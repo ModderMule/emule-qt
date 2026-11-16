@@ -54,9 +54,17 @@ QLabel* detailValueLabel(const QString& text)
     return label;
 }
 
-void addDetailRow(QFormLayout* form, const QString& label, const QString& value)
+QLabel* addDetailRow(QFormLayout* form, const QString& label, const QString& value,
+                     const QString& tip)
 {
-    form->addRow(QStringLiteral("<b>%1:</b>").arg(label), detailValueLabel(value));
+    QLabel* valueLabel = detailValueLabel(value);
+    form->addRow(QStringLiteral("<b>%1:</b>").arg(label), valueLabel);
+    if (!tip.isEmpty()) {
+        valueLabel->setToolTip(tip);
+        if (QWidget* caption = form->labelForField(valueLabel))
+            caption->setToolTip(tip);
+    }
+    return valueLabel;
 }
 
 // ── construction ───────────────────────────────────────────────────────

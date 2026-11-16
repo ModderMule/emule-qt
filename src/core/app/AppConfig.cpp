@@ -258,6 +258,29 @@ bool AppConfig::sameDir(const QString& a, const QString& b)
     return !a.isEmpty() && !b.isEmpty() && canonical(a) == canonical(b);
 }
 
+QString AppConfig::appImagePath()
+{
+#ifdef Q_OS_LINUX
+    // Set by the AppImage runtime for everything started from the image
+    if (const QString image = qEnvironmentVariable("APPIMAGE"); !image.isEmpty()) {
+        const QFileInfo fi(image);
+        if (fi.isFile() && fi.isExecutable())
+            return fi.absoluteFilePath();
+    }
+#endif
+    return {};
+}
+
+bool AppConfig::isAppImageFile(const QString& path)
+{
+    // ELF with the type 2 AppImage magic "AI\x02" at offset 8
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return false;
+    const QByteArray head = file.read(11);
+    return head.size() == 11 && head.startsWith("\x7f" "ELF") && head.sliced(8) == "AI\x02";
+}
+
 QString AppConfig::coreStartFailurePath(const QString& configDir)
 {
     return configDir + QStringLiteral("/emulecored.startfail");

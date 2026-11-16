@@ -12,7 +12,6 @@
 #include "utils/Clipboard.h"
 #include "utils/DialogSizing.h"
 #include "utils/MenuUtils.h"
-#include "utils/StatusBarNotifier.h"
 
 #include <QAction>
 #include <QCborArray>
@@ -26,6 +25,7 @@
 #include <QVBoxLayout>
 
 #include <functional>
+#include <memory>
 
 namespace eMule::Ed3kLinkMenu {
 
@@ -45,7 +45,8 @@ protected:
     [[nodiscard]] QString sizeKey() const override { return QStringLiteral("Ed3kLinksDialog"); }
 };
 
-/// The links of @p files, the ones without a root left out; @p apply runs on @p owner's thread.
+/// The links of @p files, the ones without a root left out; @p apply runs on @p owner's thread
+/// (also with none: the caller greys or reports).
 void request(IpcClient* ipc, QObject* owner, const QList<File>& files, std::function<void(const QStringList&)> apply)
 {
     QCborArray items;
@@ -60,10 +61,7 @@ void request(IpcClient* ipc, QObject* owner, const QList<File>& files, std::func
         for (const auto& v : resp.fieldMap(1).value(QStringLiteral("links")).toArray())
             if (const QString link = v.toString(); !link.isEmpty())
                 links << link;
-        if (links.isEmpty())
-            StatusBarNotifier::post(Words::tr("No ed3k link yet: the file has no ed3k hash so far."));
-        else
-            apply(links);
+        apply(links);
     });
 }
 
@@ -102,13 +100,24 @@ void addActions(QMenu* menu, QWidget* parent, IpcClient* ipc, const QList<File>&
 {
     if (!thePrefs.ed3kEnabled())
         return;
-    const bool on = !files.isEmpty() && ipc && ipc->isConnected();
-    menu->addAction(menuIcon("Ed3k.ico"), copyText(), parent, [parent, ipc, files] {
-        request(ipc, parent, files, [](const QStringList& links) { Clipboard::setText(links.join(QLatin1Char('\n'))); });
-    })->setEnabled(on);
-    menu->addAction(menuIcon("Ed3k.ico"), showText(), parent, [parent, ipc, files] {
-        request(ipc, parent, files, [parent](const QStringList& links) { showDialog(parent, links); });
-    })->setEnabled(on);
+    // grey until the core says a selected file has a root; the links asked once, on open
+    auto links = std::make_shared<QStringList>();
+    QPointer<QAction> copy = menu->addAction(menuIcon("Ed3k.ico"), copyText(), parent, [links] {
+        Clipboard::setText(links->join(QLatin1Char('\n')));
+    });
+    QPointer<QAction> show = menu->addAction(menuIcon("Ed3k.ico"), showText(), parent, [parent, links] {
+        showDialog(parent, *links);
+    });
+    copy->setEnabled(false);
+    show->setEnabled(false);
+    if (files.isEmpty() || !ipc || !ipc->isConnected())
+        return;
+    request(ipc, parent, files, [links, copy, show](const QStringList& got) {
+        *links = got;
+        for (const QPointer<QAction>& act : {copy, show})
+            if (act)
+                act->setEnabled(!got.isEmpty());
+    });
 }
 
 } // namespace eMule::Ed3kLinkMenu

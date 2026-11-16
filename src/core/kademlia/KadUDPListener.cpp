@@ -633,6 +633,21 @@ void collectSearchWords(const SearchTerm* term, QStringList& words)
         collectSearchWords(term->right.get(), words);
 }
 
+/// "keyword: file name" for the incoming list; the wire only has the keyword hash,
+/// so find the name's word that hashes to @p keyID. No match: the name alone.
+QString keywordLabel(const QString& fileName, const UInt128& keyID)
+{
+    std::vector<QString> words;
+    getWords(fileName, words);
+    for (const QString& word : words) {
+        UInt128 hash;
+        getKeywordHash(word, hash);
+        if (hash == keyID)
+            return word + u": " + fileName;
+    }
+    return fileName;
+}
+
 /// Should we accept a publish request for @p keyID from @p ip?
 ///
 /// Two guards, applied identically by all three PUBLISH_*_REQ handlers in MFC
@@ -1111,6 +1126,7 @@ void KademliaUDPListener::process_KADEMLIA2_REQ(const uint8* data, uint32 len, u
 
     UInt128 target = io::readUInt128(io);
     note.setTarget(target);
+    note->wanted = type;
 
     // Sanity check: the sender writes the contact's (our) Kad ID so we can
     // verify the request is actually intended for us.  Silently drop if the
@@ -1145,6 +1161,8 @@ void KademliaUDPListener::process_KADEMLIA2_REQ(const uint8* data, uint32 len, u
         resPacket.writeUInt16(contact->getUDPPort());
         resPacket.writeUInt16(contact->getTCPPort());
         resPacket.writeUInt8(contact->getVersion());
+        note.handOut({contact->getClientID(), contact->address().toUint32(), contact->getUDPPort(),
+                      contact->getVersion()});
         ++count;
     }
 
@@ -1407,6 +1425,14 @@ void KademliaUDPListener::process_KADEMLIA2_SEARCH_SOURCE_REQ(const uint8* data,
                                                                 const KadUDPKey& senderKey)
 {
     // fileID 16 + startPos 2 + size 8 (MFC KademliaUDPListener.cpp:1093-1101)
+    // Incoming list name stays empty: source search and PUBLISH_SOURCE_REQ carry
+    // the file hash only, never FT_FILENAME.
+    // ToDo: best-effort name by hash, shown as looked up (greyed/bracketed):
+    //  1. own shared/known files + download queue (cheap, rarely a hit)
+    //  2. keyword index: KeyEntry m_fileNames sit under the keyword hash,
+    //     needs a scan or a file hash -> name map kept on addKeyword
+    //  3. small LRU of file hash -> name from recent PUBLISH_KEY_REQ
+    //  Most rows stay empty anyway: keyword and source nodes differ (other hash).
     IncomingNote note(m_incoming, IncomingType::SourceSearch, ip, udpPort);
     if (len < 26)
         return;
@@ -1507,7 +1533,7 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_KEY_REQ(const uint8* data, u
                         if (entry->getCommonFileName().isEmpty())
                             entry->setFileName(tag.strValue());
                         if (note->name.isEmpty())
-                            note->name = tag.strValue();
+                            note->name = keywordLabel(tag.strValue(), keyID);
                     } else if (tag.nameId() == FT_FILESIZE) {
                         if (entry->m_size == 0)
                             entry->m_size = tag.isInt() ? tag.intValue()
@@ -1563,6 +1589,7 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data
                                                                 const KadUDPKey& senderKey)
 {
     IncomingNote note(m_incoming, IncomingType::PublishSource, ip, udpPort);
+    // No file name on the wire; see ToDo in process_KADEMLIA2_SEARCH_SOURCE_REQ.
     if (len < 32)
         return;
 
@@ -1692,6 +1719,7 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data
             case 3: case 5:
                 countKad(hasBuddy ? &KadCounters::sourcesBuddy : &KadCounters::sourcesNoBuddy);
                 break;
+            case 7: countKad(&KadCounters::sourcesNoBuddy); break;   // routes in tags
             case 6: countKad(&KadCounters::sourcesDirectCallback); break;
             default: break;
             }

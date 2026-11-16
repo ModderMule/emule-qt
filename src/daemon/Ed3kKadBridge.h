@@ -9,6 +9,7 @@
 /// - ExportEd3kNodeList (1203): own contacts as a signed node list (Ed3kBootstrap::exportList).
 /// - FetchEd3kNodeLists (1204): node lists from the sources now (Ed3kBootstrap::fetchNow).
 /// - GetEd3kKadIncoming (1206): KadRequests other nodes sent (kadIncoming), as ops::kadIncoming.
+/// - GetEd3kKadIncomingGraph (1207): one of them for the graph (kadIncomingGraph).
 ///
 /// Failure: [false, {error}] with error 0 (no ed3k node) or an ed3k::Error, plus `message`
 /// where one helps. Free of the ed3k module like Ed3kBridge.h.

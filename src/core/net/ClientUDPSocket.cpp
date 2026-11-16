@@ -4,7 +4,6 @@
 
 #include "net/ClientUDPSocket.h"
 #include "net/BindAddress.h"
-#include "net/InterfacePin.h"
 #include "net/ListenConflict.h"
 #include "net/EncryptedDatagramSocket.h"
 #include "net/IPv6SourcePin.h"
@@ -45,9 +44,10 @@ static constexpr int kMinReceiveBufferSize = 64 * 1024;
 
 ClientUDPSocket::ClientUDPSocket(QObject* parent)
     : QObject(parent)
+    , m_socket(QStringLiteral("client UDP"))
 {
     m_elapsedTimer.start();
-    QObject::connect(&m_socket, &QUdpSocket::readyRead, this, &ClientUDPSocket::onReadyRead);
+    QObject::connect(&m_socket, &UdpSocketSet::readyRead, this, &ClientUDPSocket::onReadyRead);
 }
 
 ClientUDPSocket::~ClientUDPSocket()
@@ -63,15 +63,8 @@ ClientUDPSocket::~ClientUDPSocket()
 
 bool ClientUDPSocket::create()
 {
-    const auto bindTo = BindAddress::listenAddress();   // Any = dual-stack
-    if (!bindTo)
-        return false;
-    if (!m_socket.bind(*bindTo, 0)) {
+    if (!m_socket.bind(0)) {
         logError(QStringLiteral("ClientUDPSocket: Failed to bind: %1").arg(m_socket.errorString()));
-        return false;
-    }
-    if (!InterfacePin::pin(m_socket.socketDescriptor())) {
-        m_socket.close();
         return false;
     }
     m_port = m_socket.localPort();
@@ -82,27 +75,28 @@ bool ClientUDPSocket::create()
 bool ClientUDPSocket::rebind(uint16 port)
 {
     m_socket.close();
-    const auto bindTo = BindAddress::listenAddress();   // Any = dual-stack
-    if (!bindTo)
-        return false;
-    if (*bindTo == QHostAddress(QHostAddress::Any)
+    if (BindAddress::listenAddresses() == QList{QHostAddress(QHostAddress::Any)}   // dual-stack
         && ipv4WildcardHeld(port, QAbstractSocket::UdpSocket)) {
         logError(QStringLiteral("ClientUDPSocket: port %1 is already used by another program (IPv4)")
                      .arg(port));
         return false;
     }
-    if (!m_socket.bind(*bindTo, port)) {
+    if (!m_socket.bind(port)) {
         logError(QStringLiteral("ClientUDPSocket: Failed to rebind to port %1: %2")
                      .arg(port).arg(m_socket.errorString()));
-        return false;
-    }
-    if (!InterfacePin::pin(m_socket.socketDescriptor())) {
-        m_socket.close();
         return false;
     }
     m_port = m_socket.localPort();
     growReceiveBuffer();
     return true;
+}
+
+bool ClientUDPSocket::syncAddresses(const QList<QHostAddress>& addresses)
+{
+    const bool changed = m_socket.sync(addresses);
+    if (changed && m_socket.isBound())
+        m_port = m_socket.localPort();
+    return changed;
 }
 
 int ClientUDPSocket::receiveBufferSize()
@@ -215,7 +209,7 @@ bool ClientUDPSocket::hasControlQueue() const
 SocketSentBytes ClientUDPSocket::sendControlData(uint32 maxNumberOfBytesToSend, uint32 /*minFragSize*/)
 {
     // Called from the UploadBandwidthThrottler thread.
-    // We must NOT call m_socket.writeDatagram() here — QUdpSocket belongs to
+    // We must NOT call m_socket.writeDatagram() here — the QUdpSockets belong to
     // the main thread and Qt's QSocketNotifier is not thread-safe.
     // Instead, prepare datagrams and queue them for flushSendQueue() which
     // runs on the socket's owning thread.
@@ -769,7 +763,7 @@ bool ClientUDPSocket::writeDatagramNow(const QByteArray& data, const Endpoint& t
     if (sent < 0) {
         // Once a minute per error, a dead route fails every datagram (#139)
         static LogRepeatGate gate;
-        const QString error = m_socket.errorString();
+        const QString error = m_socket.sendErrorString();
         if (const QString line = gate.filter(error, QStringLiteral("UDP send failed to %1 — %2")
                                                         .arg(to.toString(), error));
             !line.isEmpty())

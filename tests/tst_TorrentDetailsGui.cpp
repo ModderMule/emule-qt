@@ -8,6 +8,7 @@
 #include "controls/TorrentPieceGrid.h"
 #include "controls/TorrentOptionsForm.h"
 #include "dialogs/EditTrackersDialog.h"
+#include "dialogs/TorrentCreatorDialog.h"
 #include "dialogs/TorrentOptionsDialog.h"
 #include "dialogs/TorrentDetailsDialog.h"
 
@@ -99,6 +100,7 @@ class tst_TorrentDetailsGui : public QObject {
     Q_OBJECT
 
 private slots:
+    void torrentCreatorDialog();
     void filterBuckets();
     void filterProxyHidesRows();
     void filesTree();
@@ -435,6 +437,28 @@ void tst_TorrentDetailsGui::pieceGridColours()
     QCOMPARE(grid.cellColor(10), grid.cellColor(200));    // plenty is plenty
     grid.setMode(TorrentPieceGrid::Mode::Progress);
     QCOMPARE(grid.cellColor(0), grid.palette().color(QPalette::Active, QPalette::Base));
+}
+
+// #191: the fields reach CreateTorrent's map; a folder subset shows its note
+void tst_TorrentDetailsGui::torrentCreatorDialog()
+{
+    TorrentCreatorDialog dlg(nullptr, QStringLiteral("/data/set"), {QStringLiteral("a.bin"), QStringLiteral("b.bin")});
+    auto* format = dlg.findChild<QComboBox*>();
+    QVERIFY(format);
+    auto combos = dlg.findChildren<QComboBox*>();
+    QCOMPARE(combos.size(), 2);
+    QCOMPARE(combos.at(0)->currentData().toInt(), 2);   // hybrid by default
+    QCOMPARE(combos.at(1)->count(), 15);                 // Auto + 16 KiB..128 MiB
+    QCOMPARE(combos.at(1)->itemData(14).toInt(), 128 * 1024 * 1024);
+    const auto labels = dlg.findChildren<QLabel*>();
+    QVERIFY(std::ranges::any_of(labels, [](const QLabel* l) { return l->text().startsWith(QStringLiteral("2 selected file")); }));
+    auto edits = dlg.findChildren<QPlainTextEdit*>();
+    QCOMPARE(edits.size(), 3);
+    if (const QString shot = qEnvironmentVariable("EMULE_TEST_SHOT"); !shot.isEmpty()) {
+        dlg.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+        dlg.grab().save(shot);
+    }
 }
 
 QTEST_MAIN(tst_TorrentDetailsGui)

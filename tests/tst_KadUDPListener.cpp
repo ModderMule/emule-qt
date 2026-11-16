@@ -67,6 +67,7 @@ private slots:
     void publishNotes_unknownTagsDropped();
     void publishSource_injectedSourceIpTagIsDropped();
     void searchKeyReq_brokenExpressionIsNotAnswered();
+    void nodeLookupReq_notesAskerAndHandedContacts();
 
     // Bootstrap
     void bootstrapRes_contactsStartUnverified();
@@ -810,6 +811,48 @@ void tst_KadUDPListener::bootstrapRes_sendsHelloToEachContact()
     helloTo.clear();
     bootstrapAnswer(kListed);
     QVERIFY(helloTo.empty());
+}
+
+// The incoming search graph: who asked (by address in our table), our ID, whom we handed out.
+void tst_KadUDPListener::nodeLookupReq_notesAskerAndHandedContacts()
+{
+    eMule::testing::KadFixture kadFixture;
+    auto* zone = Kademlia::getInstanceRoutingZone();
+    const UInt128 asker(uint32{0xA5C0});
+    QVERIFY(zone->addUnfiltered(asker, kNodeIP, kNodeUdp, kNodeTcp, 8, KadUDPKey(0), true, false, false, false));
+    zone->getContact(asker)->updateType();
+    for (uint32 i = 1; i <= 5; ++i) {
+        const UInt128 id(i * 0x1000);
+        QVERIFY(zone->addUnfiltered(id, 0x4D000000 + (i << 16) + 7, 4672, 4662, 8, KadUDPKey(0), true, false, false, false));
+        zone->getContact(id)->updateType();   // type 2: handed out
+    }
+
+    SafeMemFile io;
+    io.writeUInt8(KADEMLIA2_REQ);
+    io.writeUInt8(KADEMLIA_FIND_NODE);
+    io::writeUInt128(io, UInt128(uint32{0x3000}));
+    io::writeUInt128(io, RoutingZone::localKadId());
+    deliver(io.buffer(), kNodeIP);
+
+    const auto& log = Kademlia::getInstanceUDPListener()->incomingLog();
+    const auto all = log.snapshot();
+    QVERIFY(!all.empty());
+    const IncomingRequest& r = all.front();
+    QCOMPARE(r.type, IncomingType::NodeLookup);
+    QVERIFY(r.answered);
+    QCOMPARE(r.wanted, int32_t{KADEMLIA_FIND_NODE});
+    QVERIFY(r.hasAsker);
+    QCOMPARE(r.asker, asker);
+    QCOMPARE(r.own, RoutingZone::localKadId());
+    QVERIFY(!r.handed.empty());
+    QCOMPARE(static_cast<int32_t>(r.handed.size()), r.contacts);
+    for (const auto& h : r.handed)
+        QVERIFY(zone->getContact(h.id) != nullptr);
+
+    const auto found = log.find(r.id);
+    QVERIFY(found.has_value());
+    QCOMPARE(found->handed.size(), r.handed.size());
+    QVERIFY(!log.find(r.id + 1000).has_value());
 }
 
 // A notes request is 24 bytes (MFC KademliaUDPListener.cpp:1457-1464).

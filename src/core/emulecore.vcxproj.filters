@@ -159,6 +159,15 @@
     <ClCompile Include="net\ListenConflict.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="net\AddressWatch.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\ListenAddressSet.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\UdpSocketSet.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="net\SendBufferSizer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -830,6 +839,12 @@
     <QtMoc Include="net\ClientUDPSocket.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="net\AddressWatch.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="net\UdpSocketSet.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <ClInclude Include="files\CollectionFile.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -873,6 +888,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="net\ListenConflict.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\ListenAddressSet.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="net\SendBufferSizer.h">

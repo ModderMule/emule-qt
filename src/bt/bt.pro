@@ -28,6 +28,7 @@ SOURCES += \
     BtSession.cpp \
     BtTrackerList.cpp \
     add/BtAddSource.cpp \
+    create/BtTorrentCreator.cpp \
     session/BtJoinDiskIo.cpp \
     session/BtPeerGate.cpp \
     session/BtSettingsMap.cpp \
@@ -40,6 +41,7 @@ HEADERS += \
     BtTrackerList.h \
     BtTypes.h \
     add/BtAddSource.h \
+    create/BtTorrentCreator.h \
     session/BtJoinDiskIo.h \
     session/BtPeerGate.h \
     session/BtSettingsMap.h \

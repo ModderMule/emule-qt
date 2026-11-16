@@ -87,6 +87,9 @@
     <ClCompile Include="BtShareGuard.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="BtCreateBridge.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="LandedFiles.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -216,6 +219,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="BtShareGuard.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="BtCreateBridge.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="LandedFiles.h">

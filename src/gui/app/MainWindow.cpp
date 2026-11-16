@@ -28,6 +28,7 @@
 #include "dialogs/FirstStartWizard.h"
 #include "dialogs/BugReportDialog.h"
 #include "dialogs/OptionsDialog.h"
+#include "dialogs/VpnPromo.h"
 #include "panels/IrcPanel.h"
 #include "panels/KadPanel.h"
 #include "panels/MessagesPanel.h"
@@ -733,6 +734,19 @@ void MainWindow::setEd2kStatus(bool connected, bool connecting, bool firewalled,
                   .arg(m_ed2kServerName, QLocale().toString(m_ed2kServerUsers));
     }
     m_statusEd2k->setToolTip(tip);
+    if constexpr (VpnPromo::kEnabled) {
+        const auto pitch = lowID ? VpnPromo::Pitch::HighId : VpnPromo::Pitch::Anonymity;
+        if (m_statusVpn) {
+            m_statusVpn->setText(VpnPromo::Text::statusHtml(pitch));
+            m_statusVpn->setToolTip(VpnPromo::Text::html(pitch) + QStringLiteral("<br>") + VpnPromo::Text::toolTip());
+            m_statusVpn->setVisible(connected);
+        }
+        // once per session, Server Info linkifies the URL
+        if (connected && !m_vpnLogShown && m_serverPanel && m_serverPanel->logWidget()) {
+            m_vpnLogShown = true;
+            m_serverPanel->logWidget()->appendServerInfo(VpnPromo::Text::plain(pitch));
+        }
+    }
     updateConnectButton();
     scheduleLowIdHint();
 }
@@ -2365,6 +2379,17 @@ void MainWindow::setupStatusBar()
     m_statusEd2k->installEventFilter(this);
     sb->addPermanentWidget(m_statusEd2k);
 
+    // ToDo: VpnPromo status bar entry hidden for now, maybe show it again later
+    // (m_statusVpn stays null; setEd2kStatus skips it)
+    // if constexpr (VpnPromo::kEnabled) {
+    //     m_statusVpn = new QLabel(this);
+    //     m_statusVpn->setTextFormat(Qt::RichText);
+    //     m_statusVpn->setOpenExternalLinks(true);
+    //     m_statusVpn->setTextInteractionFlags(Qt::LinksAccessibleByMouse);
+    //     m_statusVpn->hide();
+    //     sb->addPermanentWidget(m_statusVpn);
+    // }
+
     m_statusKad = new QLabel(tr("Kad: Disconnected"), this);
     m_statusKad->installEventFilter(this);
     sb->addPermanentWidget(m_statusKad);
@@ -3101,6 +3126,7 @@ void MainWindow::showLowIdHint()
                     QMessageBox::Close, this);
     // native macOS alert closes on every button: keep the Qt box so More Info stays open
     box.setOption(QMessageBox::Option::DontUseNativeDialog);
+    VpnPromo::addTo(box, VpnPromo::Pitch::HighId);
     auto* settingsBtn = box.addButton(tr("Open Connection Settings"), QMessageBox::AcceptRole);
     auto* infoBtn = box.addButton(tr("More Info"), QMessageBox::HelpRole);
     // website button keeps the box open: drop the button box's close hook

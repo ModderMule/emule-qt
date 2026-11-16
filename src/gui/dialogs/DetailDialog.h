@@ -122,7 +122,9 @@ void connectCommentPosting(DetailDialog* dialog, IpcClient* ipc);
 [[nodiscard]] QLabel* detailValueLabel(const QString& text);
 
 /// Add a bold "@p label:" / @p value row to @p form, the way every detail sheet does.
-void addDetailRow(QFormLayout* form, const QString& label, const QString& value);
+/// @p tip, if set, goes on caption and value. Returns the value label.
+QLabel* addDetailRow(QFormLayout* form, const QString& label, const QString& value,
+                     const QString& tip = {});
 
 /// Base for the detail dialogs: subclass content on top, and a bottom row with
 /// the Prev/Next walker buttons immediately left of Close.

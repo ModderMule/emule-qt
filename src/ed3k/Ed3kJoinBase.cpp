@@ -680,6 +680,23 @@ void Ed3kJoinBase::unshareOwner(const QString& owner)
     }
 }
 
+void Ed3kJoinBase::withdrawOwner(const QString& owner)
+{
+    unshareOwner(owner);
+    const Kept kept = readKept(owner);
+    for (const auto& b : kept.blobs)
+        unshare(b.root);
+    auto* e = m_session.engine();
+    if (!e)
+        return;
+    const auto t = m_session.now();
+    if (kept.set)
+        (void)e->setUnpublish(t, kept.set->root);
+    if (const auto records = readRecords(QDir(keptDir(owner)).filePath(kKeptRecords)); !records.empty())
+        if (auto ok = e->unpublishAlias(t, records); !ok)
+            logDebug([&]() -> QString { return QStringLiteral("ALIAS records of %1 not withdrawn (error %2)").arg(owner, errorName(ok.error())); });
+}
+
 std::expected<ffi::Publish, ffi::Error> Ed3kJoinBase::publishShared(const ffi::FileInfo& info)
 {
     auto* e = m_session.engine();
@@ -1001,26 +1018,31 @@ void Ed3kJoinBase::shareKept()
             removeDirTree(dir.filePath(sub));
             continue;
         }
-        if (!sharesKeptOwner(owner))
-            continue;
-        const Kept kept = readKept(owner);
-        if (shareKeptBlobs()) {
-            for (const auto& b : kept.blobs) {
-                const QByteArray data = readBlob(QDir(keptDir(owner)).filePath(blobFile(b.root)));
-                if (data.isEmpty())
-                    logDebug([&]() -> QString { return QStringLiteral("kept \"%1\" of %2 is gone").arg(b.name, owner); });
-                else
-                    (void)shareBlob(data, b.name, b.root);
-            }
-        }
-        // the records go out once every member had its first hash (publishAlias needs the
-        // roots shared)
-        m_keptPending[owner] = int(kept.members.size());
-        if (kept.members.empty())
-            publishKeptRecords(owner);
-        for (const auto& m : kept.members)
-            shareKeptMember(owner, m.member, m.root, m.size, m.name, 0);
+        shareKeptOwner(owner);
     }
+}
+
+void Ed3kJoinBase::shareKeptOwner(const QString& owner)
+{
+    if (!sharesKeptOwner(owner) || !QFileInfo::exists(keptDir(owner)))
+        return;
+    const Kept kept = readKept(owner);
+    if (shareKeptBlobs()) {
+        for (const auto& b : kept.blobs) {
+            const QByteArray data = readBlob(QDir(keptDir(owner)).filePath(blobFile(b.root)));
+            if (data.isEmpty())
+                logDebug([&]() -> QString { return QStringLiteral("kept \"%1\" of %2 is gone").arg(b.name, owner); });
+            else
+                (void)shareBlob(data, b.name, b.root);
+        }
+    }
+    // the records go out once every member had its first hash (publishAlias needs the
+    // roots shared)
+    m_keptPending[owner] = int(kept.members.size());
+    if (kept.members.empty())
+        publishKeptRecords(owner);
+    for (const auto& m : kept.members)
+        shareKeptMember(owner, m.member, m.root, m.size, m.name, 0);
 }
 
 void Ed3kJoinBase::dropKept(const QString& owner)

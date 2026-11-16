@@ -24,6 +24,7 @@
 #include "Ed3kHide.h"
 #include "Ed3kLan.h"
 #include "net/SendBufferSizer.h"
+#include "net/UdpSocketSet.h"
 
 #include <QByteArray>
 #include <QElapsedTimer>
@@ -36,7 +37,6 @@
 #include <QStringList>
 #include <QThreadPool>
 #include <QTimer>
-#include <QUdpSocket>
 
 #include <cstdint>
 #include <deque>
@@ -59,6 +59,7 @@ struct Ed3kSettings {
     QString network;             ///< empty = the public network; tests only; a secret
     bool forceOpen = false;      ///< operator/tests: address open, no NAT tests (§9.2 first nodes)
     std::uint32_t smallNetS = 0; ///< tests: Kad of a few nodes connected this long after the first answer; 0 = default (45 s)
+    std::uint32_t storeMiB = 0;  ///< RAM for Kad records of others (pref ed3k.kadStoreMiB); 0 = default (128 MiB)
     /// JSON-RPC endpoints (ed3k.creditRpc / ed3k.chaintubeRpc): operator 0 of a call is the
     /// first, n the n-th (as mode B, packmule_udp::http). Empty: calls answered failed.
     QStringList creditRpc;
@@ -71,7 +72,7 @@ struct Ed3kSettings {
     Ed3kLan::Hooks lanHooks;     ///< tests: LAN interfaces and sends by hand
     /// non-null: the eD2K UDP socket bound to udpPort (§14.1); nothing is bound here and its
     /// owner hands in what is not eD2K (offerDatagram)
-    QPointer<QUdpSocket> sharedSocket;
+    QPointer<UdpSocketSet> sharedSocket;
 };
 
 /// What GetEd3kStatus shows (Ed3kBridge); all 0 / empty while not running.
@@ -151,6 +152,9 @@ public:
     /// A datagram from the shared socket (settings().sharedSocket): true = ed3k took it.
     /// A filtered sender's is false: the owner drops it (its own filter check).
     bool offerDatagram(const QNetworkDatagram& d);
+    /// Its own socket of a whole selected interface follows @p addresses (#190); a shared
+    /// one follows its owner.
+    void syncAddresses(const QList<QHostAddress>& addresses);
     /// The app's IP filter (#177): true = no datagram from or to that address, on the node's
     /// socket and LAN discovery. ed3k relays forward signalling only (Protocol §9.4), so file
     /// data always comes straight from the peer's address. Survives stop/start.
@@ -304,8 +308,8 @@ private:
     [[nodiscard]] QString filePath(const QString& name) const;
 
     std::unique_ptr<::ed3k::Engine> m_engine;
-    std::unique_ptr<QUdpSocket> m_ownSocket;   ///< null on a shared socket
-    QPointer<QUdpSocket> m_socket;             ///< own or shared
+    std::unique_ptr<UdpSocketSet> m_ownSocket;   ///< null on a shared socket
+    QPointer<UdpSocketSet> m_socket;             ///< own or shared
     std::unique_ptr<Ed3kHttp> m_http;
     std::unique_ptr<Ed3kLan> m_lan;
     Ed3kSettings m_settings;

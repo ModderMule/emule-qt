@@ -179,6 +179,7 @@ void tst_IpcProtocol::msgTypeEnum_values()
     QCOMPARE(static_cast<int>(IpcMsgType::EditTorrentTrackers), 814);
     QCOMPARE(static_cast<int>(IpcMsgType::SetTorrentOptionsMany), 815);
     QCOMPARE(static_cast<int>(IpcMsgType::GetTorrentOptionsMany), 816);
+    QCOMPARE(static_cast<int>(IpcMsgType::ExportTorrent), 817);
     QCOMPARE(static_cast<int>(IpcMsgType::GetBtStatus), 818);
     QCOMPARE(static_cast<int>(IpcMsgType::GetBtStats), 819);
     QCOMPARE(static_cast<int>(IpcMsgType::PushTorrentAdded), 950);
@@ -186,6 +187,9 @@ void tst_IpcProtocol::msgTypeEnum_values()
     QCOMPARE(static_cast<int>(IpcMsgType::PushTorrentRemoved), 952);
     QCOMPARE(static_cast<int>(IpcMsgType::PushBtStatus), 953);
     QCOMPARE(static_cast<int>(IpcMsgType::PushTorrentFinished), 954);
+    QCOMPARE(static_cast<int>(IpcMsgType::CreateTorrent), 820);
+    QCOMPARE(static_cast<int>(IpcMsgType::GetCreatedTorrent), 822);
+    QCOMPARE(static_cast<int>(IpcMsgType::PushTorrentCreated), 956);
     // ed3k (1000-1049) and its pushes (1050-1099)
     QCOMPARE(static_cast<int>(IpcMsgType::GetEd3kStatus), 1000);
     QCOMPARE(static_cast<int>(IpcMsgType::PushEd3kStatus), 1050);

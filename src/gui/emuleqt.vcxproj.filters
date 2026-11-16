@@ -319,6 +319,9 @@
     <ClCompile Include="controls\KadContactsModel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="controls\KadIncomingGraph.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="controls\KadLookupGraph.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -365,6 +368,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\OptionsDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\OptionsSearch.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\Ed3kOptionsPages.cpp">
@@ -419,6 +425,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\EditTrackersDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\TorrentCreatorDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\SimpleCleanupDialog.cpp">
@@ -640,6 +649,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="dialogs\RouterPage.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="dialogs\VpnPromo.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\NotifierText.h">
@@ -879,6 +891,9 @@
     <QtMoc Include="controls\KadContactsModel.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="controls\KadIncomingGraph.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="controls\KadLookupGraph.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -919,6 +934,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\OptionsDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\OptionsSearch.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\Ed3kOptionsPages.h">
@@ -973,6 +991,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\EditTrackersDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\TorrentCreatorDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\SimpleCleanupDialog.h">

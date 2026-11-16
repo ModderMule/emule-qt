@@ -6,6 +6,7 @@
 /// Uses QTcpServer instead of CAsyncSocketEx. Manages connection pool,
 /// rate limiting, and connection state statistics.
 
+#include "net/ListenAddressSet.h"
 #include "utils/Types.h"
 
 #include <QTcpServer>
@@ -13,6 +14,7 @@
 
 #include <list>
 #include <memory>
+#include <vector>
 
 namespace eMule {
 
@@ -28,7 +30,9 @@ enum class PeerSocketState : uint8;
 ///
 /// Each incoming connection creates a ClientReqSocket. Provides
 /// connection pool management, rate limiting, and statistics.
-class ListenSocket : public QTcpServer {
+/// A whole selected interface listens on each of its addresses (#190): this server on the
+/// first, a helper server per further one; all accept the same way.
+class ListenSocket : public QTcpServer, public ListenAddressSet {
     Q_OBJECT
 
 public:
@@ -43,6 +47,10 @@ public:
 
     /// Rebind to a new port (for port change).
     bool rebind(uint16 port);
+
+    /// Follow the listen addresses of now (BindAddress::listenAddresses()): the ones
+    /// that stay keep listening. True when the bound addresses changed.
+    bool syncAddresses(const QList<QHostAddress>& addresses);
 
     /// Periodic maintenance (timeout checks, cleanup).
     void process();
@@ -111,7 +119,23 @@ signals:
 protected:
     void incomingConnection(qintptr socketDescriptor) override;
 
+    BindResult bindOne(const QHostAddress& address, uint16 port, QString& error) override;
+    void closeOne(const QHostAddress& address) override;
+    [[nodiscard]] uint16 portOf(const QHostAddress& address) const override;
+    [[nodiscard]] QString setName() const override { return QStringLiteral("TCP listener"); }
+
 private:
+    class Extra;
+    friend class Extra;
+
+    /// Listen and pin @p server; Later when the address is not usable yet.
+    BindResult listenOn(QTcpServer& server, const QHostAddress& address, uint16 port, QString& error);
+    void pauseAll();
+    void resumeAll();
+
+    /// Servers of the further addresses
+    std::vector<std::unique_ptr<QTcpServer>> m_extras;
+
     /// Filter, ban, register and announce an accepted socket (TCP or transport).
     void admitAccepted(ClientReqSocket* reqSocket);
 

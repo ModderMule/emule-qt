@@ -337,6 +337,8 @@ TEST_EXTRAS: dict[str, TestExtras] = {
                                   folder="Daemon"),
     "tst_BtSmoke": TestExtras(includes=BT_INCLUDES, defines=BT_DEFINES, libs=BT_LIBS,
                               deps=(EMULEBT_GUID,), folder="BitTorrent"),
+    "tst_BtTorrentCreator": TestExtras(includes=BT_INCLUDES, defines=BT_DEFINES, libs=BT_LIBS,
+                                       deps=(EMULEBT_GUID,), folder="BitTorrent"),
     "tst_BtLocalSwarm": TestExtras(includes=BT_INCLUDES, defines=BT_DEFINES, libs=BT_LIBS,
                                    deps=(EMULEBT_GUID,), folder="BitTorrent"),
     "tst_Ed3kTorrentJoin": replace(ED3K_EXTRAS, folder="BitTorrent"),

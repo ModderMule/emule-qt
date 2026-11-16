@@ -285,6 +285,9 @@ protected:
     void updateUploadPriority(const ffi::Root& root);
     /// Every root of @p owner.
     void unshareOwner(const QString& owner);
+    /// unshareOwner, its kept blobs (manifest, info dictionary) too, and its kept set and ALIAS
+    /// records withdrawn: the owner leaves ed3k (torrent.md §6.3 turned off). Kept on disk.
+    void withdrawOwner(const QString& owner);
     /// Publishes a shared file: its SOURCE record, and its keywords unless holding back
     /// (Publish::Both). A name without a keyword (Protocol.md §10.1) gets its source alone.
     /// The mode taken, or the engine's error.
@@ -366,6 +369,8 @@ protected:
     /// Members are hashed again first, unless the block hashes saved at the last hash still
     /// fit (size, mtime, root); one unreadable is tried again after kRehashMs.
     void shareKept();
+    /// What was kept of @p owner shared and published again (sharesKeptOwner permitting).
+    void shareKeptOwner(const QString& owner);
     /// Forgets what is kept of @p owner (removed).
     void dropKept(const QString& owner);
     [[nodiscard]] QString keptDir(const QString& owner) const;

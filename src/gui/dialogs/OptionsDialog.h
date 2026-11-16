@@ -41,6 +41,7 @@ class QTimeEdit;
 namespace eMule {
 
 class AccordionSidebar;
+class OptionsSearch;
 class FolderTreeModel;
 class Ed3kOptionsPages;
 class BtI2pPage;
@@ -314,6 +315,8 @@ private:
 
     IpcClient* m_ipc = nullptr;
     AccordionSidebar* m_sidebar = nullptr;
+    QLineEdit*        m_searchEdit = nullptr;
+    OptionsSearch*    m_search = nullptr;
     QStackedWidget* m_pages = nullptr;
     QLabel* m_pageHeader = nullptr;
     QPushButton* m_applyBtn = nullptr;

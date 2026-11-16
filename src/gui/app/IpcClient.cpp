@@ -81,6 +81,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::Shutdown:             return QStringLiteral("Shutdown");
     case T::GetKadSearches:       return QStringLiteral("GetKadSearches");
     case T::GetKadIncoming:       return QStringLiteral("GetKadIncoming");
+    case T::GetKadIncomingGraph:  return QStringLiteral("GetKadIncomingGraph");
     case T::GetKadLookupHistory:  return QStringLiteral("GetKadLookupHistory");
     case T::GetNetworkInfo:       return QStringLiteral("GetNetworkInfo");
     case T::GetNetworkInterfaces: return QStringLiteral("GetNetworkInterfaces");
@@ -208,8 +209,14 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::EditTorrentTrackers:  return QStringLiteral("EditTorrentTrackers");
     case T::SetTorrentOptionsMany: return QStringLiteral("SetTorrentOptionsMany");
     case T::GetTorrentOptionsMany: return QStringLiteral("GetTorrentOptionsMany");
+    case T::ExportTorrent:        return QStringLiteral("ExportTorrent");
     case T::GetBtStatus:          return QStringLiteral("GetBtStatus");
     case T::GetBtStats:           return QStringLiteral("GetBtStats");
+    case T::CreateTorrent:        return QStringLiteral("CreateTorrent");
+    case T::CancelTorrentCreation: return QStringLiteral("CancelTorrentCreation");
+    case T::GetCreatedTorrent:    return QStringLiteral("GetCreatedTorrent");
+    case T::PushTorrentCreation:  return QStringLiteral("PushTorrentCreation");
+    case T::PushTorrentCreated:   return QStringLiteral("PushTorrentCreated");
     case T::PushTorrentAdded:     return QStringLiteral("PushTorrentAdded");
     case T::PushTorrentUpdate:    return QStringLiteral("PushTorrentUpdate");
     case T::PushTorrentRemoved:   return QStringLiteral("PushTorrentRemoved");
@@ -1436,6 +1443,8 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushTorrentUpdate:    emit torrentUpdated(msg); break;
     case IpcMsgType::PushTorrentRemoved:   emit torrentRemoved(msg); break;
     case IpcMsgType::PushTorrentFinished:  emit torrentFinished(msg); break;
+    case IpcMsgType::PushTorrentCreation:  emit torrentCreation(msg.fieldMap(0)); break;
+    case IpcMsgType::PushTorrentCreated:   emit torrentCreated(msg.fieldMap(0)); break;
     case IpcMsgType::PushBtStatus:         emit btStatusChanged(msg); break;
     case IpcMsgType::PushEd3kStatus:       emit ed3kStatusChanged(msg); break;
     case IpcMsgType::PushEd3kBootstrapAsk: emit ed3kBootstrapAsk(msg); break;

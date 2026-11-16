@@ -14,6 +14,7 @@
 
 #include <libtorrent/alert_types.hpp>
 #include <libtorrent/announce_entry.hpp>
+#include <libtorrent/bencode.hpp>
 #include <libtorrent/extensions.hpp>
 #include <libtorrent/extensions/smart_ban.hpp>
 #include <libtorrent/extensions/ut_metadata.hpp>
@@ -47,6 +48,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 
 namespace lt = libtorrent;
 
@@ -935,6 +937,85 @@ BtAddResult BtSession::addTorrentFile(const QByteArray& data, const QString& sav
     if (!atp)
         return {BtAddOutcome::Invalid, {}, atp.error()};
     return d->add(*this, std::move(*atp), savePath, paused, i2pOnly, stopAfterMetadata, {}, wantedFiles);
+}
+
+BtAddResult BtSession::addCreatedTorrent(const QByteArray& data, const QString& savePath)
+{
+    if (!d->ses)
+        return {BtAddOutcome::NotRunning, {}, QStringLiteral("BitTorrent is off")};
+    auto atp = BtAddSource::fromTorrentFile(data);
+    if (!atp)
+        return {BtAddOutcome::Invalid, {}, atp.error()};
+    // the pieces were hashed from these files a moment ago (qBittorrent: seedMode)
+    atp->flags |= lt::torrent_flags::seed_mode;
+    return d->add(*this, std::move(*atp), savePath, false, std::nullopt, false);
+}
+
+std::expected<QByteArray, QString> BtSession::exportTorrent(const QString& id) const
+{
+    const auto ti = d->torrentFile(id);
+    if (!ti || !ti->is_valid())
+        return std::unexpected(d->rows.contains(id) ? QStringLiteral("the torrent has no metadata yet")
+                                                    : QStringLiteral("unknown torrent"));
+    lt::entry e;
+    const auto info = ti->info_section();
+    e["info"].preformatted().assign(info.data(), info.data() + info.size());
+    // comment, creator, date: kept beside torrent_info since 2.1 (Impl::meta)
+    if (const auto m = d->meta.find(id); m != d->meta.end()) {
+        if (!m->second.comment.isEmpty())
+            e["comment"] = m->second.comment.toStdString();
+        if (!m->second.creator.isEmpty())
+            e["created by"] = m->second.creator.toStdString();
+        if (m->second.createdAt != 0)
+            e["creation date"] = m->second.createdAt;
+    }
+
+    const lt::torrent_handle h = d->handle(id);
+    if (!h.is_valid())
+        return std::unexpected(QStringLiteral("the torrent is still being added"));
+    // trackers and web seeds as now (edited ones too); sync calls, on a user's request only
+    const std::vector<lt::announce_entry> trackers = h.trackers();
+    const std::set<std::string> webSeeds = h.url_seeds();
+    if (!trackers.empty()) {
+        e["announce"] = trackers.front().url;
+        auto& tiers = e["announce-list"].list();
+        int tier = -1;
+        for (const auto& t : trackers) {
+            if (tiers.empty() || t.tier != tier) {
+                tiers.emplace_back(lt::entry::list_type{});
+                tier = t.tier;
+            }
+            tiers.back().list().emplace_back(t.url);
+        }
+    }
+    if (!webSeeds.empty()) {
+        auto& urls = e["url-list"].list();
+        for (const auto& w : webSeeds)
+            urls.emplace_back(w);
+    }
+
+    // BEP 52: a layer per file longer than a piece, keyed by its root
+    if (ti->v2()) {
+        const auto layers = h.piece_layers();
+        const lt::file_storage& fs = ti->layout();
+        if (int(layers.size()) != fs.num_files())
+            return std::unexpected(QStringLiteral("the v2 piece hashes are not known yet"));
+        auto& out = e["piece layers"].dict();
+        for (const lt::file_index_t f : fs.file_range()) {
+            if (fs.pad_file_at(f) || fs.file_size(f) <= fs.piece_length())
+                continue;
+            const auto& layer = layers[std::size_t(static_cast<int>(f))];
+            if (int(layer.size()) != fs.file_num_pieces(f)
+                || std::ranges::any_of(layer, [](const lt::sha256_hash& x) { return x.is_all_zeros(); }))
+                return std::unexpected(QStringLiteral("the v2 piece hashes are not known yet"));
+            std::string& bytes = out[fs.root(f).to_string()].string();
+            for (const auto& x : layer)
+                bytes += x.to_string();
+        }
+    }
+    std::vector<char> buf;
+    lt::bencode(std::back_inserter(buf), e);
+    return QByteArray(buf.data(), qsizetype(buf.size()));
 }
 
 std::expected<BtTorrentPreview, QString> BtSession::inspectTorrentFile(const QByteArray& data)

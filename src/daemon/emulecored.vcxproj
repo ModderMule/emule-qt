@@ -199,6 +199,7 @@
     <ClCompile Include="PowerManager.cpp" />
     <ClCompile Include="BtBridge.cpp" />
     <ClCompile Include="BtShareGuard.cpp" />
+    <ClCompile Include="BtCreateBridge.cpp" />
     <ClCompile Include="LandedFiles.cpp" />
     <ClCompile Include="Ed3kBridge.cpp" />
     <ClCompile Include="Ed3kFriendsBridge.cpp" />
@@ -250,6 +251,7 @@
     <ClInclude Include="WinShutdownHandler.h" />
     <ClInclude Include="BtBridge.h" />
     <ClInclude Include="BtShareGuard.h" />
+    <ClInclude Include="BtCreateBridge.h" />
     <ClInclude Include="LandedFiles.h" />
     <ClInclude Include="Ed3kBridge.h" />
     <ClInclude Include="Ed3kOffGate.h" />

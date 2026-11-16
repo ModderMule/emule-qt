@@ -396,8 +396,9 @@ the ed3k and the BitTorrent session, starts it at once when the node runs alread
 it before either session.
 
 - **One join per torrent with metadata** (`torrentAdded`, `metadataReceived`). Members are
-  the files without padding, in order. No join for a private torrent (`DENIED`), with the
-  extension off, or for a torrent complete before ed3k saw it.
+  the files without padding, in order. No join for a private torrent unless private
+  torrents are shared (`DENIED`; btShareMode "all" → `setPrivateJoins` → `ed3k_torrent_share_private`,
+  torrent.md §6.3), with the extension off, or for a torrent complete before ed3k saw it.
 - **Piece checks:** the join attaches a `BtJoinSink` (`BtSession::attachJoin`). libtorrent's
   hash job hands over the piece's bytes (the door reads them through the inner disk I/O) on
   its network thread; the sink hops to the daemon thread through a gate the join closes in
@@ -487,6 +488,12 @@ node stops. `applyEd3kConfig` switches it with the pref.
   hashed again. Both prefs: Options › ed3k › Extended (tree, group "Hashing"). Log: count at
   start and again after the share list's first full scan, progress once a minute, a summary
   when the run ends, "block hash RAM budget N MiB (auto|set|low RAM)" when it changes.
+- **Kad record store:** records kept for other nodes are capped by `ed3k.kadStoreMiB`
+  (`ed3k_config.store_mib`, 0 = packmule default 128 MiB; Options › ed3k › Extended, group
+  "Kad"; next node start). Over it a store is answered `BUSY`. The cap is the real heap:
+  packmule counts each record's allocations plus a calibrated overhead (~1 KiB per keyword
+  record, ~1.5 KiB alone in its target), checked by `packmule-ffi/tests/store_heap.rs`
+  against the counting allocator. Statistics › Memory "ed3k Kad Records" is that count.
 - **Sharing:** `shareMember` with `SharedFile{root, size, name, ed2k = MD4, no note, complete,
   block values}`, `publish(Both)` (keywords too, so ed3k search finds it; `Source` while
   holding back), and an `ed2k` ALIAS record (alias.md §2: id = MD4 ‖ size

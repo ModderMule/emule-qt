@@ -7,6 +7,10 @@
 /// subnet ("10.64.0.0/10" = the interface holding an address in it). A literal binds that
 /// address and runs that family only; a name or subnet binds the wildcard and relies on
 /// the interface pin (InterfacePin.h), so both families work on that interface.
+/// Listening sockets of a whole interface bind each of its addresses, not the wildcard
+/// (#190): a wildcard holds the port on every interface (Linux counts wildcard vs a
+/// specific address as a clash; Windows' pin does not confine incoming at all). The
+/// sockets follow address changes (listenAddresses(), AddressWatch) without a reopen.
 /// A selection that does not resolve fails closed — no socket is opened — because falling
 /// back to "any" would defeat the point for someone pinning a VPN.
 /// Resolved on a preference change and by refresh(); never per socket.
@@ -28,6 +32,8 @@ struct LocalInterface {
     QString friendlyName;           ///< Windows "Ethernet 2"; elsewhere same as name
     int index = 0;                  ///< OS interface index
     QList<QHostAddress> addresses;  ///< no scope ids
+    QList<QHostAddress> temporary;  ///< RFC 4941 privacy ones among them
+    QList<QHostAddress> deprecated; ///< preferred lifetime over
 
     friend bool operator==(const LocalInterface&, const LocalInterface&) = default;
 };
@@ -104,10 +110,22 @@ bool refresh();
 /// True when the preference holds anything at all, usable or not.
 [[nodiscard]] bool isConfigured();
 
-/// What a socket binds to: Any when nothing is configured or a whole interface is
-/// selected (AnyIPv4/AnyIPv6 when the other family cannot be pinned), the address for a
-/// literal, nullopt when blocked (do not open the socket).
+/// The bind mode: Any when nothing is configured or a whole interface is selected
+/// (AnyIPv4/AnyIPv6 when the other family cannot be pinned), the address for a literal,
+/// nullopt when blocked (do not open the socket). Listening sockets of a whole interface
+/// bind listenAddresses() instead (UdpSocketSet, ListenSocket).
 [[nodiscard]] std::optional<QHostAddress> listenAddress();
+
+/// Pure: what the listening sockets bind under @p r. Unrestricted: Any; a literal: it;
+/// a whole interface: each IPv4 and non-link-local IPv6 of it of a pinnable family, IPv4
+/// first. RFC 4941 addresses only with @p usePrivacy or when nothing else is there (then
+/// first), deprecated ones of them never. Blocked: empty.
+[[nodiscard]] QList<QHostAddress> listenAddressesOf(const Resolution& r,
+                                                    const QList<LocalInterface>& interfaces,
+                                                    bool usePrivacy);
+
+/// listenAddressesOf() for the current selection and interfaces.
+[[nodiscard]] QList<QHostAddress> listenAddresses();
 
 /// What an outgoing socket towards @p dest binds to before it is pinned; nullopt when
 /// blocked or @p dest is of the family a literal excludes.
@@ -125,7 +143,8 @@ bool refresh();
 /// Empty when nothing is selected; 127.0.0.1 while blocked, so nothing gets out.
 [[nodiscard]] QString sourceAddress();
 
-/// True when the selection leaves no IPv6 to use.
+/// True when the selection leaves no IPv6 to use. Only a side effect of the bind,
+/// never its own pref: max reachability by many peers is the goal (#192).
 [[nodiscard]] bool isIPv4Only();
 
 /// True when @p interfaceName (name, friendly name or index) is the bound interface, or

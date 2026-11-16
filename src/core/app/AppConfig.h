@@ -113,6 +113,14 @@ public:
     /// Same dir however spelled: symlinks, trailing slash, case on Windows.
     [[nodiscard]] static bool sameDir(const QString& a, const QString& b);
 
+    /// The .AppImage file this process runs from (Linux), else empty. Our own dir
+    /// is its mount, which lasts only as long as the processes started from it.
+    [[nodiscard]] static QString appImagePath();
+
+    /// @p path is an AppImage; run with kAppImageCoreArg first it starts the core
+    [[nodiscard]] static bool isAppImageFile(const QString& path);
+    static constexpr QLatin1StringView kAppImageCoreArg{"--emulecored"};
+
     /// Why the core of @p configDir quit on start (lock, IPC port). The core
     /// writes it on the way out and clears it on each start; the GUI shows it.
     /// Its console is hidden and its log file off by default, so this is the

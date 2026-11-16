@@ -19,6 +19,7 @@
 #include <QUdpSocket>
 
 using namespace eMule::ed3k;
+using eMule::UdpSocketSet;
 
 class tst_Ed3kSession : public QObject {
     Q_OBJECT
@@ -107,12 +108,12 @@ void tst_Ed3kSession::sharedSocketCarriesBothProtocols()
 {
     QTemporaryDir da, db;
     QVERIFY(da.isValid() && db.isValid());
-    QUdpSocket shared;
-    QVERIFY(shared.bind(QHostAddress::LocalHost, 0));
+    UdpSocketSet shared(QStringLiteral("eD2K UDP"));
+    QVERIFY(shared.bindTo({QHostAddress(QHostAddress::LocalHost)}, 0));
     Ed3kSession a, b;
     int ed2k = 0;
     int notOurs = 0;
-    QObject::connect(&shared, &QUdpSocket::readyRead, &shared, [&] {
+    QObject::connect(&shared, &UdpSocketSet::readyRead, &shared, [&] {
         while (shared.hasPendingDatagrams()) {
             const QNetworkDatagram d = shared.receiveDatagram();
             const QByteArray data = d.data();
@@ -142,7 +143,7 @@ void tst_Ed3kSession::sharedSocketCarriesBothProtocols()
 
     // stop leaves the socket to its owner
     a.stop();
-    QVERIFY(shared.state() == QAbstractSocket::BoundState);
+    QVERIFY(shared.isBound());
     b.stop();
 }
 

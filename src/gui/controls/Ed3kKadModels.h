@@ -98,6 +98,17 @@ public:
     /// Replace the rows; ages turn into clock times here.
     void setIncoming(const QCborArray& rows);
 
+    /// The request id of a row (GetKadIncomingGraph).
+    [[nodiscard]] std::uint64_t idAt(int row) const;
+    /// Model row of a request, -1 if gone.
+    [[nodiscard]] int rowOf(std::uint64_t id) const;
+    /// Newest row whose answer handed out contacts, -1: none.
+    [[nodiscard]] int newestWithContacts() const;
+    /// "Type: name" (or the key) of a row, for the graph.
+    [[nodiscard]] QString titleAt(int row) const;
+    /// The Answer column of a row.
+    [[nodiscard]] QString answerAt(int row) const { return answerText(this->row(row)); }
+
     /// kad::IncomingType as text.
     [[nodiscard]] static QString ed2kTypeText(int type);
     /// KadRequest.kind + 100 × op (0 find, 1 search, 2 store) as text.
@@ -105,6 +116,7 @@ public:
 
 private:
     [[nodiscard]] static QString answerText(const QCborMap& m);
+    Network m_network;
 };
 
 } // namespace eMule

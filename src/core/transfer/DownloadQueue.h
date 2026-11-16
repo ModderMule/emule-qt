@@ -181,7 +181,7 @@ public:
 
     /// Add a Kad-discovered file source. Finds the matching PartFile by hash
     /// and stores the source info for later connection.
-    /// sourceType: 1/4=non-firewalled, 3/5=firewalled+buddy, 6=direct UDP callback.
+    /// sourceType: 1/4=non-firewalled, 3/5=firewalled+buddy, 6=direct UDP callback, 7=routes in tags.
     void addKadSourceResult(const kad::Kademlia::KadSourceResult& result);
 
     /// Store a Kad "notes" search result (filename + rating + comment) on the

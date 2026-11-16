@@ -20,6 +20,7 @@
 #include "controls/AccordionSidebar.h"
 #include "dialogs/FirstStartWizard.h"
 #include "dialogs/OptionsDialog.h"
+#include "dialogs/OptionsSearch.h"
 #include "dialogs/PortChangeNotice.h"
 #include "dialogs/PortMapStatusText.h"
 #include "prefs/Preferences.h"
@@ -129,6 +130,10 @@ private slots:
     void undersizedStoredSizeGrowsToTheMinimum();
     void sizeIsRememberedOnClose();
     void breadcrumbNamesGroupAndPage();
+    void searchFiltersPagesAndHighlights();
+    void searchFindsSettingsTreeRows();
+    void searchWithoutMatchKeepsEveryPage();
+    void searchEnterStepsPagesNotOk();
     void usenetPageHasAccountAndAdvancedTabs();
 
     // --- values loaded into the pages (offline: IpcClient nullptr) ---------
@@ -1433,6 +1438,97 @@ void TestOptionsDialogSizing::ctrlClickSharesTheSubdirectories()
     clickBox(Qt::NoModifier);
     QTRY_COMPARE(checkOf(QString()), int(Qt::Checked));
     QCOMPARE(checkOf(QStringLiteral("a")), int(Qt::Unchecked));
+}
+
+/// Issue #193: typing hides pages without a match, highlights the control and opens
+/// its tab (the SFV box sits on Usenet's second tab).
+void TestOptionsDialogSizing::searchFiltersPagesAndHighlights()
+{
+    OptionsDialog dlg(nullptr, nullptr);
+    auto* search = dlg.findChild<OptionsSearch*>();
+    auto* sidebar = dlg.findChild<AccordionSidebar*>();
+    QVERIFY(search && sidebar);
+
+    search->search(QStringLiteral("verify SFV"));
+    QCOMPARE(search->matchingPages(), QList<int>{OptionsDialog::PageUsenet});
+    QCOMPARE(sidebar->currentItemId(), int(OptionsDialog::PageUsenet));
+    QVERIFY(!sidebar->isItemHidden(OptionsDialog::PageUsenet));
+    QVERIFY(sidebar->isItemHidden(OptionsDialog::PageGeneral));
+
+    const QList<QWidget*> hits = search->highlightedWidgets(OptionsDialog::PageUsenet);
+    QCOMPARE(hits.size(), 1);
+    auto* box = qobject_cast<QCheckBox*>(hits.first());
+    QVERIFY(box);
+    QVERIFY(box->text().contains(QStringLiteral("SFV")));
+    auto* tabs = stackOf(dlg)->widget(OptionsDialog::PageUsenet)->findChild<QTabWidget*>();
+    QVERIFY(tabs && tabs->currentWidget()->isAncestorOf(box));
+
+    // cleared: every page back, the page stays
+    search->search(QString());
+    QVERIFY(search->matchingPages().isEmpty());
+    for (int id : sidebar->itemIds())
+        QVERIFY2(!sidebar->isItemHidden(id), pageName(id));
+    QCOMPARE(sidebar->currentItemId(), int(OptionsDialog::PageUsenet));
+}
+
+/// Rows of a settings tree are searched; rows of data tables are not.
+void TestOptionsDialogSizing::searchFindsSettingsTreeRows()
+{
+    OptionsDialog dlg(nullptr, nullptr);
+    auto* search = dlg.findChild<OptionsSearch*>();
+    search->search(QStringLiteral("server channel list"));
+    QVERIFY(search->matchingPages().contains(OptionsDialog::PageIRC));
+    const auto items = search->highlightedItems(OptionsDialog::PageIRC);
+    QCOMPARE(items.size(), 1);
+    QVERIFY(items.first()->text(0).contains(QStringLiteral("channel list")));
+
+    // the highlight layer stays over the page shown (QStackedLayout raises each page)
+    dlg.selectPage(OptionsDialog::PageIRC);
+    QStackedWidget* stack = stackOf(dlg);
+    QWidget* top = nullptr;
+    for (QObject* child : stack->children())
+        if (auto* w = qobject_cast<QWidget*>(child))
+            top = w;
+    QVERIFY(top && stack->indexOf(top) < 0);
+}
+
+void TestOptionsDialogSizing::searchWithoutMatchKeepsEveryPage()
+{
+    OptionsDialog dlg(nullptr, nullptr);
+    auto* search = dlg.findChild<OptionsSearch*>();
+    auto* sidebar = dlg.findChild<AccordionSidebar*>();
+    dlg.selectPage(OptionsDialog::PageIRC);
+    search->search(QStringLiteral("zqxjwv"));
+    QVERIFY(search->matchingPages().isEmpty());
+    for (int id : sidebar->itemIds())
+        QVERIFY2(!sidebar->isItemHidden(id), pageName(id));
+    QCOMPARE(sidebar->currentItemId(), int(OptionsDialog::PageIRC));
+}
+
+/// Enter in the box goes to the next match, never to the default OK button.
+void TestOptionsDialogSizing::searchEnterStepsPagesNotOk()
+{
+    OptionsDialog dlg(nullptr, nullptr);
+    dlg.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dlg));
+    auto* search = dlg.findChild<OptionsSearch*>();
+    auto* sidebar = dlg.findChild<AccordionSidebar*>();
+    auto* edit = dlg.findChild<QLineEdit*>(QStringLiteral("optionsSearch"));
+    QVERIFY(search && edit);
+
+    search->search(QStringLiteral("connection"));
+    const QList<int> pages = search->matchingPages();
+    QVERIFY(pages.size() > 1);
+    const int before = sidebar->currentItemId();
+    QTest::keyClick(edit, Qt::Key_Return);
+    QVERIFY(dlg.isVisible());
+    QVERIFY(sidebar->currentItemId() != before);
+    QVERIFY(pages.contains(sidebar->currentItemId()));
+
+    QTest::keyClick(edit, Qt::Key_Escape);
+    QVERIFY(dlg.isVisible());
+    QVERIFY(edit->text().isEmpty());
+    dlg.reject();
 }
 
 QTEST_MAIN(TestOptionsDialogSizing)

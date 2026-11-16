@@ -5,6 +5,7 @@
 #include "app/SkinIcons.h"
 #include "app/UiState.h"
 #include "controls/AbstractListView.h"
+#include "controls/KadIncomingGraph.h"
 #include "controls/KadLookupGraph.h"
 #include "controls/SortableItems.h"
 #include "prefs/Preferences.h"
@@ -21,6 +22,7 @@
 #include <QSignalBlocker>
 #include <QSortFilterProxyModel>
 #include <QSplitter>
+#include <QStackedWidget>
 #include <QTabWidget>
 #include <QTreeView>
 #include <QVBoxLayout>
@@ -100,18 +102,31 @@ void KadPanelBase::buildLayout(QWidget* contacts, QWidget* controls, QWidget* se
     else
         m_topTabWidget->addTab(contacts, tr("▸ Contacts (0)"));
 
-    // Search Details tab with lookup graph (MFC IDS_LOOKUPGRAPH, icon "FriendSlot")
+    // Search Details tab with lookup graph (MFC IDS_LOOKUPGRAPH, icon "FriendSlot"); the
+    // incoming graph takes its place while the Incoming tab shows
     m_lookupGraph = new KadLookupGraph;
-    m_lookupGraph->setAutoShowLookups(theUiState.kadAutoShowLookups());
+    m_incomingGraph = new KadIncomingGraph;
+    m_graphStack = new QStackedWidget;
+    m_graphStack->addWidget(m_lookupGraph);
+    m_graphStack->addWidget(m_incomingGraph);
     if (thePrefs.useOriginalIcons())
-        m_topTabWidget->addTab(m_lookupGraph, skinIcon(QStringLiteral(":/icons/FriendSlot.ico")), tr("▸ Search Details"));
+        m_topTabWidget->addTab(m_graphStack, skinIcon(QStringLiteral(":/icons/FriendSlot.ico")), tr("▸ Search Details"));
     else
-        m_topTabWidget->addTab(m_lookupGraph, tr("▸ Search Details"));
-    connect(m_lookupGraph, &KadLookupGraph::autoShowLookupsToggled, this, [this](bool on) {
-        theUiState.setKadAutoShowLookups(on);
-        if (on)
-            autoPickLookup();
-    });
+        m_topTabWidget->addTab(m_graphStack, tr("▸ Search Details"));
+    for (KadGraphBase* graph : {static_cast<KadGraphBase*>(m_lookupGraph), static_cast<KadGraphBase*>(m_incomingGraph)}) {
+        graph->setAutoShowLookups(theUiState.kadAutoShowLookups());
+        connect(graph, &KadGraphBase::autoShowLookupsToggled, this, [this](bool on) {
+            theUiState.setKadAutoShowLookups(on);
+            m_lookupGraph->setAutoShowLookups(on);
+            m_incomingGraph->setAutoShowLookups(on);
+            if (on) {
+                m_incomingPicked = false;
+                autoPickLookup();
+                autoPickIncoming();
+                requestIncomingGraph();
+            }
+        });
+    }
 
     topSplitter->addWidget(m_topTabWidget);
     topSplitter->addWidget(controls);
@@ -134,8 +149,11 @@ void KadPanelBase::buildLayout(QWidget* contacts, QWidget* controls, QWidget* se
     m_bottomTabWidget->addTab(searches, searchIcon, tr("▸ Outgoing Searches (0)"));
     m_bottomTabWidget->addTab(incoming, searchIcon, tr("▸ Incoming Searches (0)"));
     connect(m_bottomTabWidget, &QTabWidget::currentChanged, this, [this](int index) {
+        showGraphOf(index);
         if (index == 1)
             requestIncoming();   // filled only while shown
+        else
+            requestLookupHistory();
     });
 
     m_vertSplitter->addWidget(topSplitter);
@@ -151,11 +169,18 @@ void KadPanelBase::buildLayout(QWidget* contacts, QWidget* controls, QWidget* se
     connect(m_searchesView->selectionModel(), &QItemSelectionModel::selectionChanged, this,
             &KadPanelBase::onSearchSelectionChanged);
     connect(m_searchesView, &QAbstractItemView::doubleClicked, this, &KadPanelBase::onSearchDoubleClicked);
+    connect(m_incomingView->selectionModel(), &QItemSelectionModel::selectionChanged, this,
+            &KadPanelBase::onIncomingSelectionChanged);
+    connect(m_incomingView, &QAbstractItemView::doubleClicked, this, [this](const QModelIndex& index) {
+        if (index.isValid())
+            m_topTabWidget->setCurrentIndex(1);
+    });
     // switching to the Search Details tab fetches its lookup
     connect(m_topTabWidget, &QTabWidget::currentChanged, this, [this](int index) {
         if (index == 1) {
             autoPickLookup();
             requestLookupHistory();
+            requestIncomingGraph();
         } else if (index == 0 && m_poller) {
             m_poller->refreshNow();   // contacts list is only filled while shown
         }
@@ -214,9 +239,8 @@ void KadPanelBase::setContactCount(int count)
 
 void KadPanelBase::setLookupTabTitle(const QString& lookupTitle)
 {
-    // MFC CKademliaWnd::UpdateButtonTitle
-    m_topTabWidget->setTabText(1, lookupTitle.isEmpty() ? tr("▸ Search Details")
-                                                        : tr("▸ Search Details (%1)").arg(lookupTitle));
+    m_lookupTitle = lookupTitle;
+    updateDetailsTitle();
 }
 
 void KadPanelBase::setOutgoingCount(int count)
@@ -227,7 +251,7 @@ void KadPanelBase::setOutgoingCount(int count)
 
 bool KadPanelBase::lookupTabShown() const
 {
-    return m_topTabWidget && m_topTabWidget->currentIndex() == 1;
+    return m_topTabWidget && m_topTabWidget->currentIndex() == 1 && !incomingTabShown();
 }
 
 bool KadPanelBase::contactsTabShown() const
@@ -284,8 +308,11 @@ void KadPanelBase::requestIncoming()
         }
         const int scroll = m_incomingView->verticalScrollBar()->value();
         m_incomingModel->setIncoming(resp.fieldArray(1));
+        markIncomingRow();   // the reset dropped the selection
         m_incomingView->verticalScrollBar()->setValue(scroll);
         m_bottomTabWidget->setTabText(1, tr("▸ Incoming Searches (%1)").arg(m_incomingModel->count()));
+        autoPickIncoming();
+        requestIncomingGraph();
     });
 }
 
@@ -295,11 +322,102 @@ void KadPanelBase::clearIncoming()
         return;
     m_incomingModel->clear();
     m_bottomTabWidget->setTabText(1, tr("▸ Incoming Searches (0)"));
+    m_incomingGraphId = 0;
+    m_incomingPicked = false;
+    m_incomingTitle.clear();
+    m_incomingGraph->clear();
+    updateDetailsTitle();
 }
 
 bool KadPanelBase::incomingTabShown() const
 {
     return m_bottomTabWidget && m_bottomTabWidget->currentIndex() == 1;
+}
+
+void KadPanelBase::showGraphOf(int bottomTab)
+{
+    m_graphStack->setCurrentIndex(bottomTab == 1 ? 1 : 0);
+    updateDetailsTitle();
+}
+
+void KadPanelBase::updateDetailsTitle()
+{
+    // MFC CKademliaWnd::UpdateButtonTitle; the incoming graph names its request
+    const QString title = incomingTabShown() ? m_incomingTitle : m_lookupTitle;
+    m_topTabWidget->setTabText(1, title.isEmpty() ? tr("▸ Search Details") : tr("▸ Search Details (%1)").arg(title));
+}
+
+void KadPanelBase::onIncomingSelectionChanged()
+{
+    const std::uint64_t id = selectedIncomingId();
+    if (id == 0)
+        return;
+    m_incomingPicked = true;
+    if (id == m_incomingGraphId)
+        return;
+    m_incomingGraphId = id;
+    requestIncomingGraph();
+}
+
+void KadPanelBase::autoPickIncoming()
+{
+    if (!theUiState.kadAutoShowLookups() || !m_incomingModel)
+        return;
+    if (m_incomingPicked && m_incomingModel->rowOf(m_incomingGraphId) >= 0)
+        return;
+    const int row = m_incomingModel->newestWithContacts();
+    if (row < 0)
+        return;
+    m_incomingPicked = false;
+    m_incomingGraphId = m_incomingModel->idAt(row);
+}
+
+void KadPanelBase::requestIncomingGraph()
+{
+    if (!ipcReady() || !incomingTabShown())
+        return;
+    const int row = m_incomingModel->rowOf(m_incomingGraphId);
+    if (m_incomingGraphId == 0 || row < 0 || m_incomingGraph->requestId() == m_incomingGraphId)
+        return;   // a request gone from the list keeps its last picture
+    // the title at once, the picture only while it shows
+    m_incomingTitle = m_incomingModel->titleAt(row);
+    updateDetailsTitle();
+    if (m_topTabWidget->currentIndex() != 1)
+        return;
+    Ipc::IpcMessage req(m_network == KadIncomingModel::Network::Ed2k ? Ipc::IpcMsgType::GetKadIncomingGraph
+                                                                     : Ipc::IpcMsgType::GetEd3kKadIncomingGraph);
+    req.append(static_cast<qint64>(m_incomingGraphId));
+    const std::uint64_t id = m_incomingGraphId;
+    const QCborMap rowData = m_incomingModel->row(row);
+    const QString answer = m_incomingModel->answerAt(row);
+    m_ipc->sendPoll(this, std::move(req), [this, id, rowData, answer](const Ipc::IpcMessage& resp) {
+        if (id != m_incomingGraphId || resp.type() != Ipc::IpcMsgType::Result || !resp.fieldBool(0))
+            return;
+        const QCborMap graph = resp.fieldMap(1);
+        if (graph.value(QStringLiteral("found")).toBool())
+            m_incomingGraph->setRequest(rowData, graph, m_incomingTitle, answer);
+    });
+}
+
+void KadPanelBase::markIncomingRow()
+{
+    const auto* proxy = qobject_cast<const QSortFilterProxyModel*>(m_incomingView->model());
+    const int row = m_incomingPicked ? m_incomingModel->rowOf(m_incomingGraphId) : -1;
+    if (!proxy || row < 0)
+        return;
+    const QModelIndex idx = proxy->mapFromSource(m_incomingModel->index(row, 0));
+    const QSignalBlocker block(m_incomingView->selectionModel());
+    m_incomingView->selectionModel()->select(idx, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    m_incomingView->viewport()->update();
+}
+
+std::uint64_t KadPanelBase::selectedIncomingId() const
+{
+    const auto selection = m_incomingView->selectionModel()->selectedRows();
+    if (selection.isEmpty())
+        return 0;
+    const auto* proxy = qobject_cast<const QSortFilterProxyModel*>(m_incomingView->model());
+    return proxy ? m_incomingModel->idAt(proxy->mapToSource(selection.first()).row()) : 0;
 }
 
 void KadPanelBase::onSearchSelectionChanged()

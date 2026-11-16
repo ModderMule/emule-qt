@@ -1,6 +1,7 @@
 #include "BtBridge.h"
 
 #include "BandwidthCoordinator.h"
+#include "BtCreateBridge.h"
 #include "app/AppConfig.h"
 #include "app/AppContext.h"
 #include "ipfilter/IPFilter.h"
@@ -44,8 +45,9 @@ IpcMessage unavailable(const IpcMessage& msg)
 
 #ifdef EMULE_HAVE_BITTORRENT
 
-// The bindAddress pref for libtorrent: the literal, or the bound interface's addresses
-// of the families that can be pinned. Link-local IPv6 needs a scope id: left out.
+// The bindAddress pref for libtorrent: the literal, or the bound interface's listen
+// addresses (BindAddress::listenAddresses(): pinnable families, no link-local, no
+// privacy address unless asked for), as the eD2K sockets (#190).
 void applyBindSelection(bt::BtSettings& s)
 {
     const BindAddress::Resolution r = BindAddress::current();
@@ -55,19 +57,8 @@ void applyBindSelection(bt::BtSettings& s)
     }
     if (r.state != BindAddress::State::Bound)
         return;
-    if (!r.literal.isNull()) {
-        s.bindAddresses = {r.literal.toString()};
-        return;
-    }
-    for (const BindAddress::LocalInterface& li : BindAddress::localInterfaces()) {
-        if (li.index != r.index)
-            continue;
-        for (const QHostAddress& a : li.addresses) {
-            const bool v4 = a.protocol() == QAbstractSocket::IPv4Protocol;
-            if (v4 ? r.pin.v4 : (r.pin.v6 && !a.isLinkLocal()))
-                s.bindAddresses.append(a.toString());
-        }
-    }
+    for (const QHostAddress& a : BindAddress::listenAddresses())
+        s.bindAddresses.append(a.toString());
     // bound, yet nothing libtorrent can use: never fall back to all interfaces
     if (s.bindAddresses.isEmpty())
         s.networkBlocked = true;
@@ -365,6 +356,9 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
 {
     if (!isBtRequest(msg.type()))
         return false;
+    // the torrent creator needs no running engine
+    if (BtCreateBridge::handleRequest(msg, reply))
+        return true;
 #ifndef EMULE_HAVE_BITTORRENT
     reply(unavailable(msg));
     return true;
@@ -776,6 +770,22 @@ void dispatchRequest(const IpcMessage& msg, const std::function<void(const IpcMe
     case IpcMsgType::RemoveTorrentTrackers:
         boolResult(s_session->removeTrackers(id, stringsOf(msg.fieldArray(1))));
         break;
+    case IpcMsgType::ExportTorrent: {
+        const QString tid = msg.fieldString(0);
+        const auto row = s_session->torrent(tid);
+        if (!row) {
+            reply(IpcMessage::makeError(seq, 404, QStringLiteral("Torrent not found")));
+            break;
+        }
+        const auto data = s_session->exportTorrent(tid);
+        if (!data) {
+            reply(IpcMessage::makeError(seq, 409, data.error()));
+            break;
+        }
+        reply(IpcMessage::makeResult(seq, true,
+                                     QCborMap{{QStringLiteral("data"), *data}, {QStringLiteral("name"), row->name}}));
+        break;
+    }
     case IpcMsgType::GetTorrentOptionsMany: {
         QCborMap all;
         for (const QString& tid : stringsOf(msg.fieldArray(0)))

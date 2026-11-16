@@ -64,23 +64,26 @@ QString titleName(const QCborMap& d)
 }
 
 /// Bold "label:" caption, right-aligned as in a QFormLayout.
-QLabel* gridCaption(const QString& label)
+QLabel* gridCaption(const QString& label, const QString& tip = {})
 {
     auto* caption = new QLabel(QStringLiteral("<b>%1:</b>").arg(label));
     caption->setAlignment(Qt::AlignRight | Qt::AlignTop);
+    caption->setToolTip(tip);
     return caption;
 }
 
 /// Caption at (@p row, @p col), one-line value right of it spanning @p span columns.
+/// @p tip goes on both.
 void addGridRow(QGridLayout* grid, int row, int col, const QString& label, const QString& value,
-                int span = 1)
+                const QString& tip = {}, int span = 1)
 {
     // One line, no word wrap: a wrapping label in a grid has its height measured at the
     // wrong width, which left a scrollbar and a gap under the groups
     auto* valueLabel = new QLabel(value);
     valueLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    grid->addWidget(gridCaption(label), row, col);
+    valueLabel->setToolTip(tip);
+    grid->addWidget(gridCaption(label, tip), row, col);
     grid->addWidget(valueLabel, row, col + 1, 1, span, Qt::AlignTop);
 }
 
@@ -233,25 +236,35 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
         const QString unknown = QStringLiteral("?");
         const QString userName = str(d, QLatin1StringView("userName"));
         const bool lowID = d.value(QLatin1StringView("hasLowID")).toBool();
-        addGridRow(grid, 0, 0, tr("Name"), userName.isEmpty() ? unknown : userName);
-        addGridRow(grid, 0, 2, tr("ID"), lowID ? tr("Low ID") : tr("High ID"));
+        addGridRow(grid, 0, 0, tr("Name"), userName.isEmpty() ? unknown : userName,
+                   tr("User name the client sent in its hello. Anyone can pick any name."));
+        addGridRow(grid, 0, 2, tr("ID"), lowID ? tr("Low ID") : tr("High ID"),
+                   tr("High ID: the client accepts incoming TCP connections.\n"
+                      "Low ID: it is firewalled and can only be reached through a callback."));
         addGridRow(grid, 1, 0, tr("Hash"), d.value(QLatin1StringView("hasValidHash")).toBool(true)
-                                           ? str(d, QLatin1StringView("userHash")) : unknown, 3);
+                                           ? str(d, QLatin1StringView("userHash")) : unknown,
+                   tr("User hash: the client's eD2K identity. Credits are stored under it."), 3);
 
-        addGridRow(grid, 2, 0, tr("Software"), str(d, QLatin1StringView("software")));
+        addGridRow(grid, 2, 0, tr("Software"), str(d, QLatin1StringView("software")),
+                   tr("Client program and version, as detected from its hello."));
 
         // Country (MorphXT IP2Country): flag + long name
-        grid->addWidget(gridCaption(tr("Country")), 3, 0);
+        grid->addWidget(gridCaption(tr("Country"), tr("Country of the client's IP address (IP2Country).")), 3, 0);
         grid->addWidget(countryValue(str(d, QLatin1StringView("cc")), unknown), 3, 1, Qt::AlignTop);
 
         const bool kadConn = d.value(QLatin1StringView("kadConnected")).toBool();
-        addGridRow(grid, 4, 0, tr("Kad"), kadConn ? tr("Connected") : tr("Disconnected"));
+        addGridRow(grid, 4, 0, tr("Kad"), kadConn ? tr("Connected") : tr("Disconnected"),
+                   tr("Whether the client told us it is connected to Kad (it sent a Kad port)."));
 
         const QString obfuscation = str(d, QLatin1StringView("obfuscation"));
         addGridRow(grid, 5, 0, tr("Obfuscation"),
                    obfuscation == QLatin1String("enabled") ? tr("Enabled")
                    : obfuscation == QLatin1String("supported") ? tr("Supported")
-                   : tr("Not supported or disabled"));
+                   : tr("Not supported or disabled"),
+                   tr("Protocol obfuscation for this client.\n"
+                      "Enabled: the connection to it is obfuscated.\n"
+                      "Supported: it can obfuscate, this connection does not.\n"
+                      "Not supported or disabled: it cannot or will not obfuscate."));
 
         // Server. Prefer the string form: "serverIP" is 0 for an IPv6 server, which would
         // otherwise render the row as "\u2014" even though the address is known.
@@ -265,9 +278,11 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
         else if (srvIP != 0)
             srvEndpoint = ipstr(srvIP, srvPort);
 
-        addGridRow(grid, 2, 2, tr("Server IP"), srvEndpoint.isEmpty() ? unknown : srvEndpoint);
+        addGridRow(grid, 2, 2, tr("Server IP"), srvEndpoint.isEmpty() ? unknown : srvEndpoint,
+                   tr("eD2K server the client is logged in to, if known."));
         addGridRow(grid, 3, 2, tr("Server Name"),
-                   srvEndpoint.isEmpty() || srvName.isEmpty() ? unknown : srvName);
+                   srvEndpoint.isEmpty() || srvName.isEmpty() ? unknown : srvName,
+                   tr("Name of that server, when it is in our server list."));
 
         const bool creditsKnown = d.value(QLatin1StringView("creditsKnown")).toBool();
         const QString ident = str(d, QLatin1StringView("identification"));
@@ -275,7 +290,12 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
                    !creditsKnown ? unknown
                    : ident == QLatin1String("ok") ? tr("Successful")
                    : ident == QLatin1String("failed") ? tr("Invalid")
-                   : tr("Not supported or disabled"));
+                   : tr("Not supported or disabled"),
+                   tr("Secure identification: the client proved with its public key that it owns "
+                      "its user hash.\n"
+                      "Successful: credits are given to it.\n"
+                      "Invalid: the proof failed, no credits.\n"
+                      "Not supported or disabled: no proof, credits are not used."));
 
         // Not in MFC: NAT-T for LowID peers — the route in use, else what the peer supports
         const QString natRoute = str(d, QLatin1StringView("natRoute"));
@@ -293,7 +313,11 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
             natt = ways.isEmpty() ? tr("Not supported")
                                   : tr("Supported (%1)").arg(ways.join(QStringLiteral(", ")));
         }
-        addGridRow(grid, 5, 2, tr("NAT-T"), natt);
+        addGridRow(grid, 5, 2, tr("NAT-T"), natt,
+                   tr("NAT traversal: lets two firewalled (Low ID) clients connect directly.\n"
+                      "Connected: the route the current connection took.\n"
+                      "Supported: the routes the client offers (QUIC over a punched UDP hole, "
+                      "or a direct IPv6 connection)."));
 
         mainLayout->addWidget(group);
     }
@@ -319,9 +343,14 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
             buddyText = tr("Known, address not resolved yet");
         else
             buddyText = tr("None");
-        addDetailRow(form, tr("Kad buddy"), buddyText);
-        addDetailRow(form, tr("Kad buddy callback"), flag(QLatin1StringView("kadBuddy")) ? yes : no);
-        addDetailRow(form, tr("Direct UDP callback"), flag(QLatin1StringView("directUdp")) ? yes : no);
+        addDetailRow(form, tr("Kad buddy"), buddyText,
+                     tr("A High ID Kad node that keeps a connection to this Low ID client and "
+                        "forwards callback requests to it."));
+        addDetailRow(form, tr("Kad buddy callback"), flag(QLatin1StringView("kadBuddy")) ? yes : no,
+                     tr("We can ask the client's Kad buddy to make it connect to us."));
+        addDetailRow(form, tr("Direct UDP callback"), flag(QLatin1StringView("directUdp")) ? yes : no,
+                     tr("The client is firewalled on TCP but its UDP port is open: we can ask it "
+                        "over UDP to connect to us. Needs us to be reachable on TCP."));
 
         // Same-server OP_CALLBACKREQUEST
         QString server;
@@ -329,7 +358,9 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
             server = tr("Not on our server");
         else
             server = flag(QLatin1StringView("serverCallback")) ? yes : tr("Not available (we have a Low ID)");
-        addDetailRow(form, tr("Server callback"), server);
+        addDetailRow(form, tr("Server callback"), server,
+                     tr("We are a High ID on the client's server: the server can tell it to "
+                        "connect to us."));
 
         // Foreign callback through the peer's own server (UDP flag 0x100000)
         const QString foreign = str(cb, QLatin1StringView("foreign"));
@@ -349,7 +380,9 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
             cross = tr("Its server is unknown");
         if (!foreignServer.isEmpty() && foreign != QLatin1String("same"))
             cross += QStringLiteral(" \u2014 %1").arg(foreignServer);
-        addDetailRow(form, tr("Cross-server callback"), cross);
+        addDetailRow(form, tr("Cross-server callback"), cross,
+                     tr("The client is logged in to another server: we ask that server over UDP "
+                        "to make it connect to us. Only servers that offer this callback can."));
 
         // NAT-T introducers in try order (HighID: only the foreign callback)
         const QCborMap natt = cb.value(QLatin1StringView("natt")).toMap();
@@ -374,7 +407,24 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
                 text += QStringLiteral(" (%1)").arg(tr("failed this session"));
             else if (!paths.isEmpty() && !nflag(QLatin1StringView("dataPath")))
                 text += QStringLiteral(" (%1)").arg(tr("no QUIC or IPv6 data path"));
-            addDetailRow(form, tr("NAT-T rendezvous"), text);
+            addDetailRow(form, tr("NAT-T rendezvous"), text, tr(
+                "Introducers that can tell both firewalled sides each other's UDP address, so "
+                "they can punch a hole and connect directly. Listed in the order they are tried.\n"
+                "\n"
+                "Server hole punch: our server's own hole-punch extension, for a Low ID on "
+                "our server.\n"
+                "Server NAT callback: our server relays a NAT callback (Lugdunum-style), for "
+                "a Low ID on our server.\n"
+                "PR_NAT: our server's separate NAT service, for a client on our server whose "
+                "user hash is known.\n"
+                "Kad buddy: the request is relayed through the client's Kad buddy.\n"
+                "Cross-server callback: the client's own server, when it is another one, "
+                "wakes it.\n"
+                "Direct UDP: no introducer; the client published a Kad source with QUIC "
+                "NAT-T and open UDP, so we ask it directly.\n"
+                "\n"
+                "No QUIC or IPv6 data path: an introduction could succeed, but we have neither "
+                "QUIC nor a public IPv6 address to carry the connection."));
         }
 
         mainLayout->addWidget(group);
@@ -393,28 +443,36 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
         const bool creditsKnown = d.value(QLatin1StringView("creditsKnown")).toBool();
 
         const QString upFileName = str(d, QLatin1StringView("uploadFileName"));
-        addDetailRow(form, tr("Currently downloading"), upFileName.isEmpty() ? none : upFileName);
+        addDetailRow(form, tr("Currently downloading"), upFileName.isEmpty() ? none : upFileName,
+                     tr("Our file the client downloads or waits for in our upload queue."));
         const QString reqFileName = str(d, QLatin1StringView("reqFileName"));
-        addDetailRow(form, tr("Requested to upload"), reqFileName.isEmpty() ? none : reqFileName);
+        addDetailRow(form, tr("Requested to upload"), reqFileName.isEmpty() ? none : reqFileName,
+                     tr("Our download for which the client is a source."));
 
         // Lifetime of the client object, not the current slot session (IDC_DDOWN / IDC_DDUP)
         addDetailRow(form, tr("Downloaded (this session)"),
-                     formatByteSize(static_cast<uint64>(num(d, QLatin1StringView("transferredUp")))));
+                     formatByteSize(static_cast<uint64>(num(d, QLatin1StringView("transferredUp")))),
+                     tr("What the client downloaded from us since we met it in this run."));
         addDetailRow(form, tr("Uploaded (this session)"),
-                     formatByteSize(static_cast<uint64>(num(d, QLatin1StringView("transferredDown")))));
+                     formatByteSize(static_cast<uint64>(num(d, QLatin1StringView("transferredDown")))),
+                     tr("What the client uploaded to us since we met it in this run."));
 
         // Averages over the slot time, ours up is theirs down (MorphXT; MFC shows the
         // current rate under the same labels, IDC_DAVDR / IDC_DAVUR)
         addDetailRow(form, tr("Average Downloadrate"),
-                     formatByteRate(static_cast<uint64>(num(d, QLatin1StringView("avgUpDatarate")))));
+                     formatByteRate(static_cast<uint64>(num(d, QLatin1StringView("avgUpDatarate")))),
+                     tr("The client's average download rate from us over its upload slot."));
         addDetailRow(form, tr("Average Upload rate"),
-                     formatByteRate(static_cast<uint64>(num(d, QLatin1StringView("avgDownDatarate")))));
+                     formatByteRate(static_cast<uint64>(num(d, QLatin1StringView("avgDownDatarate")))),
+                     tr("The client's average upload rate to us while we download from it."));
 
         // Credits (IDC_DDOWNTOTAL / IDC_DUPTOTAL)
         addDetailRow(form, tr("Downloaded total"), creditsKnown
-            ? formatByteSize(static_cast<uint64>(num(d, QLatin1StringView("uploadedTotal")))) : QStringLiteral("?"));
+            ? formatByteSize(static_cast<uint64>(num(d, QLatin1StringView("uploadedTotal")))) : QStringLiteral("?"),
+            tr("Everything the client ever downloaded from us (from the credit file)."));
         addDetailRow(form, tr("Uploaded total"), creditsKnown
-            ? formatByteSize(static_cast<uint64>(num(d, QLatin1StringView("downloadedTotal")))) : QStringLiteral("?"));
+            ? formatByteSize(static_cast<uint64>(num(d, QLatin1StringView("downloadedTotal")))) : QStringLiteral("?"),
+            tr("Everything the client ever uploaded to us (from the credit file). This earns it credits."));
 
         mainLayout->addWidget(group);
     }
@@ -433,14 +491,19 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
         addDetailRow(form, tr("DL/UP Modifier"), creditsKnown
             ? QStringLiteral("%1  [%2]").arg(QString::number(dbl(d, QLatin1StringView("scoreRatio")), 'f', 1),
                                              QString::number(dbl(d, QLatin1StringView("myScoreRatio")), 'f', 1))
-            : unknown);
+            : unknown,
+            tr("Credit modifier (1 to 10) from what the client uploaded to us; it multiplies "
+               "its queue score.\n"
+               "In brackets: the modifier the client should give us, from what we uploaded to it."));
 
         // MFC formats IDC_DRATING as %.1f from an integer score (ClientDetailDialog.cpp:159),
         // so it always renders one trailing zero. Match it.
         const auto rating = num(d, QLatin1StringView("rating"));
         addDetailRow(form, tr("Rating (total)"),
                      creditsKnown && !str(d, QLatin1StringView("userName")).isEmpty()
-                         ? QString::number(static_cast<double>(rating), 'f', 1) : unknown);
+                         ? QString::number(static_cast<double>(rating), 'f', 1) : unknown,
+                     tr("Base score: 100 times the credit modifier, with penalties for old clients "
+                        "and leechers. No waiting time or file priority."));
 
         // A number, "(Friend Slot)", or "-" outside our upload path (ClientDetailDialog.cpp:164-170)
         QString score = QStringLiteral("-");
@@ -448,14 +511,18 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
             score = d.value(QLatin1StringView("friendSlot")).toBool()
                 ? tr("(Friend Slot)") : QString::number(num(d, QLatin1StringView("score")));
         }
-        addDetailRow(form, tr("Uploadqueue Score"), score);
+        addDetailRow(form, tr("Uploadqueue Score"), score,
+                     tr("The client's current score in our upload queue: waiting time × credit "
+                        "modifier × file priority. The highest score gets the next slot."));
 
         // ClientAnalyzer factor, sent only while it is on
         if (d.contains(QLatin1StringView("analyzerScore"))) {
             const QString reasons = str(d, QLatin1StringView("analyzerReasons"));
             const QString factor = QString::number(dbl(d, QLatin1StringView("analyzerScore")), 'f', 2);
             addDetailRow(form, tr("Client Analyzer"),
-                         reasons.isEmpty() ? factor : QStringLiteral("%1  (%2)").arg(factor, reasons));
+                         reasons.isEmpty() ? factor : QStringLiteral("%1  (%2)").arg(factor, reasons),
+                         tr("Client Analyzer factor from the client's behaviour; it multiplies its "
+                            "queue score. In brackets: why it is below 1."));
         }
 
         mainLayout->addWidget(group);
@@ -487,8 +554,10 @@ QWidget* ClientDetailDialog::buildEd3kContent(const QCborMap& d)
 
         // Hello.nick: the user name of its Options; may be empty
         const QString nick = str(d, QLatin1StringView("nick"));
-        addGridRow(grid, 0, 0, tr("Name"), anonymous ? tr("anonymous") : nick.isEmpty() ? unknown : nick);
-        addGridRow(grid, 0, 2, tr("ed3k Type"), anonymous ? tr("Anonymous") : tr("Node"));
+        addGridRow(grid, 0, 0, tr("Name"), anonymous ? tr("anonymous") : nick.isEmpty() ? unknown : nick,
+                   tr("Nick the node sent in its hello. Anyone can pick any name."));
+        addGridRow(grid, 0, 2, tr("ed3k Type"), anonymous ? tr("Anonymous") : tr("Node"),
+                   tr("Which of our two keys the peer is talking to."));
         // the key's value label: what the two keys are
         if (auto* keyValue = qobject_cast<QLabel*>(grid->itemAtPosition(0, 3)->widget()))
             keyValue->setToolTip(anonymous
@@ -496,27 +565,36 @@ QWidget* ClientDetailDialog::buildEd3kContent(const QCborMap& d)
                      "path of other nodes. Neither side sees the other's IP address.")
                 : tr("It downloads from our node key: the key our node ID is made from. It connects "
                      "to us directly and sees our IP address."));
-        addGridRow(grid, 1, 0, tr("Node ID"), str(d, QLatin1StringView("nodeId")), 3);
+        addGridRow(grid, 1, 0, tr("Node ID"), str(d, QLatin1StringView("nodeId")),
+                   tr("The peer's ed3k identity, derived from its public key."), 3);
 
         const bool helloKnown = d.value(QLatin1StringView("helloKnown")).toBool();
-        addGridRow(grid, 2, 0, tr("Software"), str(d, QLatin1StringView("software")));
+        addGridRow(grid, 2, 0, tr("Software"), str(d, QLatin1StringView("software")),
+                   tr("Client program and version from its hello."));
         // Hello.caps bit ED2K (§2): it speaks eD2K too
         addGridRow(grid, 2, 2, tr("eD2K"), !helloKnown ? unknown
-                   : d.value(QLatin1StringView("ed2k")).toBool() ? tr("Yes") : tr("No"));
+                   : d.value(QLatin1StringView("ed2k")).toBool() ? tr("Yes") : tr("No"),
+                   tr("Whether the peer also speaks eD2K. Then a second tab shows it on that network."));
 
         // the anonymous queue never tells an address (hops.md §1)
-        grid->addWidget(gridCaption(tr("Country")), 3, 0);
+        grid->addWidget(gridCaption(tr("Country"), tr("Country of the peer's IP address (IP2Country). "
+                                                      "Hidden for anonymous peers.")), 3, 0);
         grid->addWidget(countryValue(str(d, QLatin1StringView("cc")), anonymous ? tr("hidden") : unknown),
                         3, 1, Qt::AlignTop);
         addGridRow(grid, 3, 2, tr("Connected"),
-                   d.value(QLatin1StringView("isConnected")).toBool() ? tr("Yes") : tr("No"));
+                   d.value(QLatin1StringView("isConnected")).toBool() ? tr("Yes") : tr("No"),
+                   tr("Whether a connection to the peer is open now."));
         // Hello.caps ROUTER (§2): in routing tables; else a leaf. The anonymous key never routes
         addGridRow(grid, 4, 0, tr("Role"), anonymous ? tr("hidden") : !helloKnown ? unknown
                    : d.value(QLatin1StringView("indexNode")).toBool()
                        ? (d.value(QLatin1StringView("router")).toBool() ? tr("Index node, router") : tr("Index node"))
-                   : d.value(QLatin1StringView("router")).toBool() ? tr("Router") : tr("Leaf"));
+                   : d.value(QLatin1StringView("router")).toBool() ? tr("Router") : tr("Leaf"),
+                   tr("Router: reachable, kept in other nodes' routing tables.\n"
+                      "Index node: stores and answers searches.\n"
+                      "Leaf: not reachable from outside, only connects out."));
         if (thePrefs.showExtControls())
-            addGridRow(grid, 4, 2, tr("LAN"), d.value(QLatin1StringView("lan")).toBool() ? tr("Yes") : tr("No"));
+            addGridRow(grid, 4, 2, tr("LAN"), d.value(QLatin1StringView("lan")).toBool() ? tr("Yes") : tr("No"),
+                       tr("The peer is on our local network."));
 
         mainLayout->addWidget(group);
     }
@@ -532,45 +610,62 @@ QWidget* ClientDetailDialog::buildEd3kContent(const QCborMap& d)
         if (!str(d, QLatin1StringView("uploadState")).isEmpty()) {
             const bool holding = str(d, QLatin1StringView("uploadState")) == QLatin1String("Transferring");
             const QString file = str(d, QLatin1StringView("uploadFileName"));
-            addDetailRow(form, tr("Currently downloading"), file.isEmpty() ? none : file);
+            addDetailRow(form, tr("Currently downloading"), file.isEmpty() ? none : file,
+                         tr("Our file the peer downloads or waits for in our upload queue."));
             const qint64 size = num(d, QLatin1StringView("uploadFileSize"));
-            addDetailRow(form, tr("File size"), size > 0 ? formatByteSize(static_cast<uint64>(size)) : unknown);
-            addDetailRow(form, tr("Root hash"), str(d, QLatin1StringView("root")));
+            addDetailRow(form, tr("File size"), size > 0 ? formatByteSize(static_cast<uint64>(size)) : unknown,
+                         tr("Size of that file."));
+            addDetailRow(form, tr("Root hash"), str(d, QLatin1StringView("root")),
+                         tr("The ed3k root hash that identifies that file."));
 
             const int place = static_cast<int>(num(d, QLatin1StringView("queueRank")));
             addDetailRow(form, tr("Upload state"), holding ? tr("Transferring")
-                         : place > 0 ? tr("On queue (place %1)").arg(place) : tr("On queue"));
+                         : place > 0 ? tr("On queue (place %1)").arg(place) : tr("On queue"),
+                         tr("Transferring: the peer holds an upload slot.\n"
+                            "On queue: it waits for one, at the place shown."));
             const qint64 heldMs = num(d, QLatin1StringView(holding ? "uploadStartDelay" : "waitStartTime"));
             addDetailRow(form, holding ? tr("Upload time") : tr("Waiting time"),
-                         formatDuration(std::chrono::seconds(heldMs / 1000)));
+                         formatDuration(std::chrono::seconds(heldMs / 1000)),
+                         holding ? tr("How long the peer has held its upload slot.")
+                                 : tr("How long the peer has waited in our upload queue."));
             addDetailRow(form, tr("Downloaded (this turn)"),
-                         formatByteSize(static_cast<uint64>(num(d, QLatin1StringView("sessionUp")))));
+                         formatByteSize(static_cast<uint64>(num(d, QLatin1StringView("sessionUp")))),
+                         tr("What the peer downloaded from us in its current slot."));
             // the turn's 16 MiB / 1 h reached (SlotUsed due): the slot goes on next
             if (holding)
                 addDetailRow(form, tr("Turn ending"),
-                             d.value(QLatin1StringView("due")).toBool() ? tr("Yes") : tr("No"));
+                             d.value(QLatin1StringView("due")).toBool() ? tr("Yes") : tr("No"),
+                             tr("The slot reached its limit (16 MiB or 1 hour) and goes to the next "
+                                "peer in the queue."));
         }
 
         // a source of one of our downloads: its stream there (§12.5: one per uploader)
         if (const QCborMap src = d.value(QLatin1StringView("source")).toMap(); !src.isEmpty()) {
             const QString file = str(src, QLatin1StringView("fileName"));
-            addDetailRow(form, tr("Requested to upload"), file.isEmpty() ? str(src, QLatin1StringView("root")) : file);
+            addDetailRow(form, tr("Requested to upload"), file.isEmpty() ? str(src, QLatin1StringView("root")) : file,
+                         tr("Our download for which the peer is a source."));
             const bool sending = str(src, QLatin1StringView("state")) == QLatin1String("Downloading");
-            addDetailRow(form, tr("Download state"), sending ? tr("Transferring") : tr("On queue"));
+            addDetailRow(form, tr("Download state"), sending ? tr("Transferring") : tr("On queue"),
+                         tr("Transferring: the peer sends us data.\n"
+                            "On queue: we wait in its upload queue."));
             const qint64 parts = num(src, QLatin1StringView("parts"));
             addDetailRow(form, tr("Available parts"),
                          !src.value(QLatin1StringView("haveKnown")).toBool() ? unknown
-                         : QStringLiteral("%1 / %2").arg(num(src, QLatin1StringView("availParts"))).arg(parts));
+                         : QStringLiteral("%1 / %2").arg(num(src, QLatin1StringView("availParts"))).arg(parts),
+                         tr("Parts of the file the peer has, of all parts."));
         }
 
         // this daemon run, worded from the peer's side like the eD2K page: its download is our upload
         if (thePrefs.showExtControls()) {
             const auto sent = static_cast<uint64>(num(d, QLatin1StringView("sentTotal")));
             const auto received = static_cast<uint64>(num(d, QLatin1StringView("receivedTotal")));
-            addDetailRow(form, tr("Downloaded (this session)"), formatByteSize(sent));
-            addDetailRow(form, tr("Uploaded (this session)"), formatByteSize(received));
+            addDetailRow(form, tr("Downloaded (this session)"), formatByteSize(sent),
+                         tr("What the peer downloaded from us since the core started."));
+            addDetailRow(form, tr("Uploaded (this session)"), formatByteSize(received),
+                         tr("What the peer uploaded to us since the core started."));
             addDetailRow(form, tr("Ratio (UL/DL)"), sent == 0 ? none
-                         : QString::number(static_cast<double>(received) / static_cast<double>(sent), 'f', 2));
+                         : QString::number(static_cast<double>(received) / static_cast<double>(sent), 'f', 2),
+                         tr("What the peer uploaded to us divided by what it downloaded from us."));
         }
 
         mainLayout->addWidget(group);

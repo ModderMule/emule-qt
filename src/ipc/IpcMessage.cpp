@@ -245,6 +245,7 @@ bool isReadOnlyRequest(IpcMsgType type)
     case IpcMsgType::GetKadStatus:
     case IpcMsgType::GetKadSearches:
     case IpcMsgType::GetKadIncoming:
+    case IpcMsgType::GetKadIncomingGraph:
     case IpcMsgType::GetKadLookupHistory:
     case IpcMsgType::GetNetworkInfo:
     case IpcMsgType::GetSchedules:

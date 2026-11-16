@@ -1604,6 +1604,11 @@ public:
     [[nodiscard]] int ed3kHashRamMiB() const;
     void setEd3kHashRamMiB(int val);
     static constexpr int kMaxEd3kHashRamMiB = 65536;
+    /// RAM of the ed3k engine for the Kad records it stores for other nodes, MiB; over it a
+    /// store is answered BUSY. 0 = default (128 MiB). Next node start (ed3k.kadStoreMiB).
+    [[nodiscard]] int ed3kKadStoreMiB() const;
+    void setEd3kKadStoreMiB(int val);
+    static constexpr int kMaxEd3kKadStoreMiB = 65536;
     /// eD2K downloads also fetch from ed3k peers, dual peers over ed3k (Protocol.md §14.4)
     [[nodiscard]] bool ed3kJointDownloads() const;
     void setEd3kJointDownloads(bool val);

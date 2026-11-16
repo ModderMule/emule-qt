@@ -810,6 +810,29 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
         break;
     }
 
+    case 7: {
+        // Not MFC: routes in tags (ipv6-spec §5.6). Only ip6 so far. No usable route = drop,
+        // no I/O. FT_SOURCEIP is identity only: no TCP dial, no buddy, no callback.
+        const Address v6 = sourceIPv6 ? Address::fromIPv6Bytes(sourceIPv6) : Address{};
+        if (tcpPort == 0 || v6.isNull() || !isGoodIP(v6) || !theApp.hasConfidentPublicIPv6()) {
+            logDebug([&]() -> QString { return QStringLiteral("addKadSourceResult: type 7 without a usable route, IP=%1")
+                         .arg(ipstr(ed2kIP)); });
+            return;
+        }
+        if (m_clientList && m_clientList->isBannedClient(v6))
+            return;
+        auto* client = makeSourceClient(file, kNoIPv4SourceId, v6, tcpPort, SourceFrom::Kademlia);
+        client->setKadPort(udpPort);
+        if (clientHash)
+            client->setUserHash(clientHash);
+        // callback=false: bit 3 must not turn this into a type-6 source
+        client->setConnectOptions(buddyCrypt, true, false);
+        logDebug([&]() -> QString { return QStringLiteral("Kad IPv6 route source for %1: type=7 [%2]:%3")
+                     .arg(file->fileName(), v6.toString()).arg(tcpPort); });
+        finalizeSource(client);
+        break;
+    }
+
     default:
         logDebug([&]() -> QString { return QStringLiteral("addKadSourceResult: unknown source type %1").arg(sourceType); });
         return;

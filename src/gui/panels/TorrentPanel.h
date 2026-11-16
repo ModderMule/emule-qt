@@ -125,6 +125,8 @@ private:
     /// "Move To Folder..." (#187): the selected torrents' data to one folder.
     void onMoveToFolder();
     void editOptions(const QStringList& ids, const QList<QCborMap>& options);
+    /// "Save Torrent File…" (#196): the .torrent of each selected torrent with metadata.
+    void onSaveTorrentFiles();
     void onPasteMagnets();
     void showDetails(const QString& id);
     /// GetTorrentDetails for the file rows of @p id.
@@ -162,6 +164,7 @@ private:
     QAction* m_openFolderAction = nullptr;
     QAction* m_previewAction = nullptr;
     QAction* m_copyMagnetAction = nullptr;
+    QAction* m_saveTorrentAction = nullptr;
     QAction* m_pasteMagnetAction = nullptr;
     QAction* m_detailsAction = nullptr;
 

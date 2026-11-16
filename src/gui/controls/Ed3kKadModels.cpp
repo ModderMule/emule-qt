@@ -263,6 +263,7 @@ QString Ed3kKadLookupsModel::kindText(int kind)
 
 KadIncomingModel::KadIncomingModel(Network network, QObject* parent)
     : Ed3kKadTableModel(parent)
+    , m_network(network)
 {
     const auto typeText = network == Network::Ed2k ? &KadIncomingModel::ed2kTypeText : &KadIncomingModel::ed3kTypeText;
     m_columns = {
@@ -306,6 +307,37 @@ void KadIncomingModel::setIncoming(const QCborArray& rows)
         stamped.append(m);
     }
     setRows(stamped);
+}
+
+std::uint64_t KadIncomingModel::idAt(int row) const
+{
+    return row >= 0 && row < count() ? static_cast<std::uint64_t>(number(this->row(row), "id")) : 0;
+}
+
+int KadIncomingModel::rowOf(std::uint64_t id) const
+{
+    for (int r = 0; r < count(); ++r)
+        if (idAt(r) == id)
+            return r;
+    return -1;
+}
+
+int KadIncomingModel::newestWithContacts() const
+{
+    // rows come newest first
+    for (int r = 0; r < count(); ++r)
+        if (number(row(r), "contacts") > 0 && !value(row(r), "target").isEmpty())
+            return r;
+    return -1;
+}
+
+QString KadIncomingModel::titleAt(int r) const
+{
+    const QCborMap& m = row(r);
+    const int type = int(number(m, "type"));
+    const QString text = m_network == Network::Ed2k ? ed2kTypeText(type) : ed3kTypeText(type);
+    const QString name = value(m, "name");
+    return QStringLiteral("%1: %2").arg(text, name.isEmpty() ? value(m, "target").toUpper() : name);
 }
 
 QString KadIncomingModel::ed2kTypeText(int type)

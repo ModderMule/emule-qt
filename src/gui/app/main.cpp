@@ -106,6 +106,11 @@ QString bundledDaemonPath()
     if (!s_attachedCoreProgram.isEmpty() && QFileInfo::exists(s_attachedCoreProgram))
         return s_attachedCoreProgram;
 
+    // AppImage: the core runs as its own instance of the image, with its own
+    // mount, so it keeps its files once the GUI quits and unmounts ours
+    if (const QString image = eMule::AppConfig::appImagePath(); !image.isEmpty())
+        return image;
+
     const QString appDir = QCoreApplication::applicationDirPath();
     for (const QString& name : {QStringLiteral("/emulecored"),
 #ifdef Q_OS_WIN
@@ -389,6 +394,8 @@ bool launchDaemon(const QString& daemonPath, bool holdConnect, qint64& pid)
     eMule::logInfo(QStringLiteral("Launching daemon: %1").arg(daemonPath));
 
     QStringList daemonArgs;
+    if (eMule::AppConfig::isAppImageFile(daemonPath))
+        daemonArgs << eMule::AppConfig::kAppImageCoreArg;
     // Our --config goes along, or the two would read different preferences.yml
     // files -- different ipc ports included. Absolute: a terminal starts elsewhere.
     if (const QString dir = eMule::AppConfig::configDirOverride(); !dir.isEmpty())

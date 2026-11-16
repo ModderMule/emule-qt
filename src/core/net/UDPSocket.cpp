@@ -4,7 +4,6 @@
 
 #include "net/UDPSocket.h"
 #include "net/BindAddress.h"
-#include "net/InterfacePin.h"
 #include "net/EncryptedDatagramSocket.h"
 #include "net/HostResolver.h"
 #include "net/IPv6SourcePin.h"
@@ -37,8 +36,9 @@ static constexpr int kMaxUDPPacketSize = 5000;
 
 UDPSocket::UDPSocket(QObject* parent)
     : QObject(parent)
+    , m_socket(QStringLiteral("server UDP"))
 {
-    QObject::connect(&m_socket, &QUdpSocket::readyRead, this, &UDPSocket::onReadyRead);
+    QObject::connect(&m_socket, &UdpSocketSet::readyRead, this, &UDPSocket::onReadyRead);
 }
 
 UDPSocket::~UDPSocket()
@@ -67,16 +67,11 @@ bool UDPSocket::create()
     // still resolve via toIPv4Address() below, so the server UDP path is unchanged for
     // the realistic case: IPv4 transport to a dual-stack server, with IPv6 sources
     // carried inside the payload. Dialing a v6-only server over UDP is a later step.
-    const auto bindTo = BindAddress::listenAddress();
-    if (!bindTo)
-        return false;
-    if (!m_socket.bind(*bindTo, bindPort)) {
-        logError(QStringLiteral("UDPSocket: Failed to bind server UDP port %1: %2")
-                     .arg(bindPort).arg(m_socket.errorString()));
-        return false;
-    }
-    if (!InterfacePin::pin(m_socket.socketDescriptor())) {
-        m_socket.close();
+    // A whole interface: one socket per address of it (#190).
+    if (!m_socket.bind(bindPort)) {
+        if (BindAddress::outboundAllowed())
+            logError(QStringLiteral("UDPSocket: Failed to bind server UDP port %1: %2")
+                         .arg(bindPort).arg(m_socket.errorString()));
         return false;
     }
     return true;

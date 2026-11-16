@@ -394,6 +394,19 @@ public:
     [[nodiscard]] const QString& skinProfilePath() const { return m_skinProfilePath; }
     void setSkinProfilePath(const QString& path) { m_skinProfilePath = path; }
 
+    /// Torrent Creator (#191): last field values by key (TorrentCreatorDialog)
+    [[nodiscard]] QString torrentCreatorValue(const QString& key, const QString& fallback = {}) const
+    {
+        return m_torrentCreator.value(key, fallback);
+    }
+    void setTorrentCreatorValue(const QString& key, const QString& value)
+    {
+        if (m_torrentCreator.value(key) == value && m_torrentCreator.contains(key))
+            return;
+        m_torrentCreator[key] = value;
+        scheduleSave();
+    }
+
     /// Where the last .torrent/.nzb from a search result was saved (empty = Downloads).
     [[nodiscard]] const QString& metaFileSaveDir() const { return m_metaFileSaveDir; }
     void setMetaFileSaveDir(const QString& dir)
@@ -592,6 +605,7 @@ private:
     QMap<QString, QByteArray> m_headerStates;
     QMap<QString, bool> m_sortValues;
     QMap<QString, QSize> m_dialogSizes;
+    QMap<QString, QString> m_torrentCreator;
     QSet<QString> m_statsTreeExpanded;
     QString m_configDir;   ///< Remembered by load() so save() can run without it.
     std::unique_ptr<QTimer> m_saveTimer;   ///< Debounce for scheduleSave().

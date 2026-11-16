@@ -9,7 +9,7 @@
 
 #include "app/AppConfig.h"
 #include "net/Address.h"
-#include "net/InterfacePin.h"
+#include "net/BindAddress.h"
 #include "net/IPv6SourcePin.h"
 #include "net/ProxySettings.h"
 #include "net/SendBufferSizer.h"
@@ -122,18 +122,18 @@ bool Ed3kSession::start(const Ed3kSettings& settings)
 
     // the socket first: the engine is told its port. A shared one is bound and pinned by its
     // owner (eD2K UDP on the same port, §14.1)
-    std::unique_ptr<QUdpSocket> socket;
+    std::unique_ptr<UdpSocketSet> socket;
     std::uint16_t port = settings.udpPort;
     if (!settings.sharedSocket) {
-        socket = std::make_unique<QUdpSocket>();
-        if (!socket->bind(settings.bindAddress, settings.udpPort)) {
+        socket = std::make_unique<UdpSocketSet>(QStringLiteral("ed3k UDP"));
+        // the bindAddress pref: a selected interface pins each socket (no default route
+        // around it); a whole one binds each of its addresses (#190)
+        const QHostAddress& bind = settings.bindAddress;
+        const bool wildcard = bind == QHostAddress::Any || bind == QHostAddress::AnyIPv4 || bind == QHostAddress::AnyIPv6;
+        const bool bound = wildcard && BindAddress::current().wholeInterface() ? socket->bind(settings.udpPort)
+                                                                               : socket->bindTo({bind}, settings.udpPort);
+        if (!bound) {
             logEd3kError(QStringLiteral("ed3k: cannot bind UDP port %1: %2").arg(settings.udpPort).arg(socket->errorString()));
-            wipe(*seed);
-            return false;
-        }
-        // the bindAddress pref: a selected interface pins the socket (no default route around it)
-        if (!InterfacePin::pin(socket->socketDescriptor())) {
-            logEd3kError(QStringLiteral("ed3k: the bound interface cannot be pinned; not started"));
             wipe(*seed);
             return false;
         }
@@ -181,6 +181,7 @@ bool Ed3kSession::start(const Ed3kSettings& settings)
     cfg.forceOpen4 = settings.forceOpen;
     cfg.forceOpen6 = settings.forceOpen;
     cfg.smallNetS = settings.smallNetS;
+    cfg.storeMiB = settings.storeMiB;
     // was: ToDo: one pref per optional extension (cfg.extOff), socket-modes.md "extensions"
     // (done: pref ed3k.extOff → settings.extOff)
     cfg.extOff = settings.extOff;
@@ -272,7 +273,7 @@ bool Ed3kSession::start(const Ed3kSettings& settings)
     applyHide();
 
     if (m_ownSocket)
-        connect(m_ownSocket.get(), &QUdpSocket::readyRead, this, &Ed3kSession::onReadyRead);
+        connect(m_ownSocket.get(), &UdpSocketSet::readyRead, this, &Ed3kSession::onReadyRead);
     if (settings.bindAddress == QHostAddress::Any || settings.bindAddress == QHostAddress::AnyIPv6)
         m_pinTimer.start();
     pump();
@@ -687,6 +688,12 @@ void Ed3kSession::onReadyRead()
             ++m_notOurs;   // not ed3k: its own socket, so dropped
     }
     pump();
+}
+
+void Ed3kSession::syncAddresses(const QList<QHostAddress>& addresses)
+{
+    if (m_engine && m_ownSocket)
+        m_ownSocket->sync(addresses);   // no-op unless it follows the interface
 }
 
 bool Ed3kSession::offerDatagram(const QNetworkDatagram& d)
@@ -1148,7 +1155,13 @@ void Ed3kSession::growSendBuffer()
     const qint64 want = m_limits.up == 0 ? SendBufferSizer::kMax : SendBufferSizer::wantFor(m_limits.up);
     if (!m_sendBufSizer.needs(want))
         return;
-    const qint64 got = m_sendBufSizer.grow(m_socket->socketDescriptor(), want);
+    const QList<qintptr> fds = m_socket->socketDescriptors();
+    if (fds.isEmpty())
+        return;
+    const qint64 got = m_sendBufSizer.grow(fds.front(), want);
+    // the other addresses' sockets (#190)
+    if (fds.size() > 1)
+        m_socket->setSocketOption(QAbstractSocket::SendBufferSizeSocketOption, int(want));
     if (m_sendBufSizer.done() && got < want)
         logEd3kDebug([&] {
             return QStringLiteral("ed3k: UDP send buffer %1 KiB of %2 KiB asked (system cap)").arg(got / 1024).arg(want / 1024);

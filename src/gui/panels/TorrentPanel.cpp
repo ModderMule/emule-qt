@@ -22,6 +22,7 @@
 #include "media/PreviewApps.h"
 #include "prefs/Preferences.h"
 #include "utils/Clipboard.h"
+#include "utils/IpcFeedback.h"
 #include "utils/ListActivation.h"
 #include "utils/Log.h"
 #include "utils/MenuUtils.h"
@@ -53,8 +54,11 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QPointer>
 #include <QPushButton>
+#include <QSaveFile>
 #include <QSplitter>
+#include <QStandardPaths>
 #include <QToolBar>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -316,6 +320,8 @@ void TorrentPanel::setupUi()
     connect(m_previewAction, &QAction::triggered, this, &TorrentPanel::onPreview);
     m_copyMagnetAction = new QAction(menuIcon("Copy.ico"), tr("Copy Magnet Link"), this);
     connect(m_copyMagnetAction, &QAction::triggered, this, &TorrentPanel::onCopyMagnet);
+    m_saveTorrentAction = new QAction(menuIcon("Torrent.ico"), tr("Save Torrent File…"), this);
+    connect(m_saveTorrentAction, &QAction::triggered, this, &TorrentPanel::onSaveTorrentFiles);
     m_pasteMagnetAction = new QAction(menuIcon("eD2kLinkPaste.ico"), tr("Paste Magnet Links"), this);
     connect(m_pasteMagnetAction, &QAction::triggered, this, &TorrentPanel::onPasteMagnets);
 
@@ -532,6 +538,7 @@ void TorrentPanel::onContextMenu(const QPoint& pos)
         menu.addAction(m_openFolderAction);
         menu.addAction(m_previewAction);
         menu.addAction(m_copyMagnetAction);
+        menu.addAction(m_saveTorrentAction);   // #196
         menu.addAction(m_detailsAction);
         setMenuDefaultAction(&menu, m_detailsAction);
         menu.addSeparator();
@@ -800,6 +807,70 @@ void TorrentPanel::onCopyMagnet()
     StatusBarNotifier::post(tr("Copied %n magnet link(s).", nullptr, int(links.size())), 3000);
 }
 
+void TorrentPanel::onSaveTorrentFiles()
+{
+    // #196: ExportTorrent per torrent with metadata; one asks a file name, several a folder
+    QList<const TorrentRow*> rows;
+    for (const QString& id : selectedIds())
+        if (const TorrentRow* row = m_model->findById(id); row && row->hasMetadata)
+            rows << row;
+    if (rows.isEmpty() || !IpcFeedback::requireConnection(m_ipc, tr("Save Torrent File")))
+        return;
+    QString startDir = theUiState.metaFileSaveDir();   // shared with Search › Save Torrent File
+    if (startDir.isEmpty() || !QDir(startDir).exists())
+        startDir = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    const auto fileName = [](const TorrentRow& row) {
+        QString name = row.name.isEmpty() ? (row.hashV1.isEmpty() ? row.hashV2 : row.hashV1) : row.name;
+        static const QString bad = QStringLiteral("\\/:*?\"<>|");
+        for (QChar& c : name)
+            if (bad.contains(c) || c.unicode() < 0x20)
+                c = u'_';
+        return name + QStringLiteral(".torrent");
+    };
+
+    QList<std::pair<QString, QString>> targets;   // id, path
+    if (rows.size() == 1) {
+        const QString path = QFileDialog::getSaveFileName(this, tr("Save Torrent File"),
+                                                          QDir(startDir).filePath(fileName(*rows.first())),
+                                                          tr("Torrent files (*.torrent)"));
+        if (path.isEmpty())
+            return;
+        theUiState.setMetaFileSaveDir(QFileInfo(path).absolutePath());
+        targets.append({rows.first()->id, path});
+    } else {
+        const QString dir = QFileDialog::getExistingDirectory(this, tr("Save Torrent Files To"), startDir);
+        if (dir.isEmpty())
+            return;
+        theUiState.setMetaFileSaveDir(dir);
+        for (const TorrentRow* row : rows)
+            targets.append({row->id, QDir(dir).filePath(fileName(*row))});
+    }
+
+    const bool one = targets.size() == 1;
+    for (const auto& [id, path] : targets) {
+        IpcMessage req(IpcMsgType::ExportTorrent);
+        req.append(id);
+        m_ipc->sendRequest(std::move(req), [self = QPointer<TorrentPanel>(this), path, one](const IpcMessage& resp) {
+            if (!self)
+                return;
+            if (one ? !IpcFeedback::checkOrWarn(resp, self, tr("Save Torrent File")) : !resp.fieldBool(0)) {
+                if (!one && resp.isValid())
+                    StatusBarNotifier::post(tr("Could not save %1: %2")
+                                                .arg(QDir::toNativeSeparators(path), resp.fieldString(1)), 5000);
+                return;
+            }
+            const QByteArray data = resp.fieldMap(1).value(QStringLiteral("data")).toByteArray();
+            QSaveFile file(path);
+            if (!file.open(QIODevice::WriteOnly) || file.write(data) != data.size() || !file.commit()) {
+                StatusBarNotifier::post(tr("Could not write %1: %2")
+                                            .arg(QDir::toNativeSeparators(path), file.errorString()), 5000);
+                return;
+            }
+            StatusBarNotifier::post(tr("Saved %1").arg(QDir::toNativeSeparators(path)), 3000);
+        });
+    }
+}
+
 void TorrentPanel::onPasteMagnets()
 {
     // No dialog: pasting is the confirmation, into the default folder, as for eD2K links
@@ -909,12 +980,14 @@ void TorrentPanel::updateActions()
     bool canPause = false;
     bool canResume = false;
     bool hasMagnet = false;
+    bool hasMetadata = false;
     for (const QString& id : ids) {
         const TorrentRow* row = m_model->findById(id);
         if (!row)
             continue;
         (row->paused ? canResume : canPause) = true;
         hasMagnet = hasMagnet || !row->hashV1.isEmpty();
+        hasMetadata = hasMetadata || row->hasMetadata;
     }
 
     m_addFileAction->setEnabled(connected);
@@ -931,6 +1004,7 @@ void TorrentPanel::updateActions()
     const TorrentRow* one = ids.size() == 1 ? m_model->findById(ids.first()) : nullptr;
     m_previewAction->setEnabled(running && one && one->hasMetadata);
     m_copyMagnetAction->setEnabled(hasMagnet);
+    m_saveTorrentAction->setEnabled(running && hasMetadata);
     m_detailsAction->setEnabled(running && any);
 }
 

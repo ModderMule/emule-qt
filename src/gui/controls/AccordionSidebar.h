@@ -15,10 +15,12 @@
 /// OptionsDialog regroup its sidebar without touching its Page enum, its stacked-page
 /// order, or the page index already written to uistate.yml.
 
+#include <QList>
 #include <QSize>
 #include <QString>
 #include <QWidget>
 
+#include <utility>
 #include <vector>
 
 class QIcon;
@@ -65,6 +67,17 @@ public:
     /// the header stack and the visible page disagreeing.
     void setCurrentGroup(int group);
 
+    [[nodiscard]] bool    hasItem(int id) const;
+    [[nodiscard]] QString itemText(int id) const;
+    [[nodiscard]] QString itemGroupTitle(int id) const;
+    /// Every item id in display order, hidden ones included.
+    [[nodiscard]] QList<int> itemIds() const;
+
+    /// Hide or show the item carrying @p id (Options search filter). A group whose items
+    /// are all hidden loses its header too; stepping and group opening skip hidden items.
+    void setItemHidden(int id, bool hidden);
+    [[nodiscard]] bool isItemHidden(int id) const;
+
     [[nodiscard]] QSize sizeHint() const override;
 
 signals:
@@ -85,6 +98,10 @@ private:
     void ensureSomethingCurrent();
 
     [[nodiscard]] const Group* groupAt(int index) const;
+    /// Group index and row of @p id, or {-1, -1}.
+    [[nodiscard]] std::pair<int, int> locate(int id) const;
+    /// First row of @p list not hidden, or -1.
+    [[nodiscard]] static int firstVisibleRow(const QListWidget* list);
 
     QVBoxLayout*       m_layout = nullptr;
     std::vector<Group> m_groups;

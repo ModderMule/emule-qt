@@ -818,6 +818,7 @@ struct Preferences::Data {
     bool ed3kShareFiles = true;        // eMule's shared files over ed3k
     int ed3kHashCacheLowRamPercent = 20;  // free RAM below: the engine keeps only block hashes in use
     int ed3kHashRamMiB = 0;               // the engine's RAM for block hashes; 0 = auto
+    int ed3kKadStoreMiB = 0;              // the engine's RAM for Kad records of others; 0 = default (128)
     bool ed3kJointDownloads = true;    // eD2K downloads from ed3k too (§14.4)
     bool ed3kShareUsenetPosts = true;  // off = hold back, usenet.md §6
     bool ed3kOwnSetsWatch = true;      // own sets' folders watched: a change publishes a new version
@@ -2707,6 +2708,8 @@ int Preferences::ed3kHashCacheLowRamPercent() const { return get(&Data::ed3kHash
 void Preferences::setEd3kHashCacheLowRamPercent(int val) { set(&Data::ed3kHashCacheLowRamPercent, std::clamp(val, 0, 100)); }
 int Preferences::ed3kHashRamMiB() const { return get(&Data::ed3kHashRamMiB); }
 void Preferences::setEd3kHashRamMiB(int val) { set(&Data::ed3kHashRamMiB, std::clamp(val, 0, kMaxEd3kHashRamMiB)); }
+int Preferences::ed3kKadStoreMiB() const { return get(&Data::ed3kKadStoreMiB); }
+void Preferences::setEd3kKadStoreMiB(int val) { set(&Data::ed3kKadStoreMiB, std::clamp(val, 0, kMaxEd3kKadStoreMiB)); }
 bool Preferences::ed3kJointDownloads() const { return get(&Data::ed3kJointDownloads); }
 void Preferences::setEd3kJointDownloads(bool val) { set(&Data::ed3kJointDownloads, val); }
 bool Preferences::ed3kShareUsenetPosts() const { return get(&Data::ed3kShareUsenetPosts); }
@@ -4262,6 +4265,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("ed3kShareFiles"), ed3kShareFiles());
     prefs.insert(QStringLiteral("ed3kHashCacheLowRamPercent"), static_cast<qint64>(ed3kHashCacheLowRamPercent()));
     prefs.insert(QStringLiteral("ed3kHashRamMiB"), static_cast<qint64>(ed3kHashRamMiB()));
+    prefs.insert(QStringLiteral("ed3kKadStoreMiB"), static_cast<qint64>(ed3kKadStoreMiB()));
     prefs.insert(QStringLiteral("ed3kJointDownloads"), ed3kJointDownloads());
     prefs.insert(QStringLiteral("ed3kShareUsenetPosts"), ed3kShareUsenetPosts());
     prefs.insert(QStringLiteral("ed3kOwnSetsWatch"), ed3kOwnSetsWatch());
@@ -4657,6 +4661,8 @@ void Preferences::updateFromCbor(const QCborMap& p)
         static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kHashCacheLowRamPercent")).toInteger(20), 0, 100));
     m_data->ed3kHashRamMiB =
         static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kHashRamMiB")).toInteger(0), 0, kMaxEd3kHashRamMiB));
+    m_data->ed3kKadStoreMiB =
+        static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kKadStoreMiB")).toInteger(0), 0, kMaxEd3kKadStoreMiB));
     m_data->ed3kJointDownloads = p.value(QStringLiteral("ed3kJointDownloads")).toBool(true);
     m_data->ed3kShareUsenetPosts = p.value(QStringLiteral("ed3kShareUsenetPosts")).toBool(true);
     m_data->ed3kOwnSetsWatch = p.value(QStringLiteral("ed3kOwnSetsWatch")).toBool(true);
@@ -6044,6 +6050,7 @@ bool Preferences::load(const QString& filePath)
             m_data->ed3kHashCacheLowRamPercent =
                 std::clamp(e3["hashCacheLowRamPercent"].as<int>(m_data->ed3kHashCacheLowRamPercent), 0, 100);
             m_data->ed3kHashRamMiB = std::clamp(e3["hashRamMiB"].as<int>(m_data->ed3kHashRamMiB), 0, kMaxEd3kHashRamMiB);
+            m_data->ed3kKadStoreMiB = std::clamp(e3["kadStoreMiB"].as<int>(m_data->ed3kKadStoreMiB), 0, kMaxEd3kKadStoreMiB);
             m_data->ed3kJointDownloads = e3["jointDownloads"].as<bool>(m_data->ed3kJointDownloads);
             m_data->ed3kShareUsenetPosts = e3["shareUsenetPosts"].as<bool>(m_data->ed3kShareUsenetPosts);
             m_data->ed3kOwnSetsWatch = e3["ownSetsWatch"].as<bool>(m_data->ed3kOwnSetsWatch);
@@ -7509,6 +7516,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "shareFiles" << YAML::Value << m_data->ed3kShareFiles;
     out << YAML::Key << "hashCacheLowRamPercent" << YAML::Value << m_data->ed3kHashCacheLowRamPercent;
     out << YAML::Key << "hashRamMiB" << YAML::Value << m_data->ed3kHashRamMiB;
+    out << YAML::Key << "kadStoreMiB" << YAML::Value << m_data->ed3kKadStoreMiB;
     out << YAML::Key << "jointDownloads" << YAML::Value << m_data->ed3kJointDownloads;
     out << YAML::Key << "shareUsenetPosts" << YAML::Value << m_data->ed3kShareUsenetPosts;
     out << YAML::Key << "ownSetsWatch" << YAML::Value << m_data->ed3kOwnSetsWatch;

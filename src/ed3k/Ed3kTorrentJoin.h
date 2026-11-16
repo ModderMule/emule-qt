@@ -32,6 +32,7 @@
 #include <QString>
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -40,6 +41,7 @@
 
 namespace eMule::bt {
 class BtSession;
+struct BtTorrentRow;
 }
 
 namespace eMule::ed3k {
@@ -64,9 +66,17 @@ public:
     /// session stops.
     void stop() override;
 
+    /// A torrent made here (#191), added in seed mode: joins although complete, every
+    /// piece passed, so its members are hashed (BLAKE3) and the set and ALIAS records
+    /// published as for a downloaded one (torrent.md §5). Call right after adding it.
+    void adoptCreated(const QString& id);
+
     /// Whether I2P torrents join too (pref btI2pEd3kJoin): their info hash goes out over
     /// ed3k. Off drops the joins of I2P torrents (their blobs stay); on adds them.
     void setI2pJoins(bool allowed);
+    /// Whether private torrents join too (torrent.md §6.3 "Shared"; btShareMode "all"): set,
+    /// ALIAS records, ed3k sources. Off (the default) withdraws them; on adds them.
+    void setPrivateJoins(bool allowed);
 
     // -- state, for the daemon and tests -----------------------------------
 
@@ -121,11 +131,18 @@ protected:
     [[nodiscard]] bool sharesKeptOwner(const QString& owner) const override;
     /// An I2P torrent that may not join (setI2pJoins).
     [[nodiscard]] bool i2pHeld(const QString& id) const;
+    /// A private torrent that may not join (setPrivateJoins).
+    [[nodiscard]] bool privateHeld(const QString& id) const;
     [[nodiscard]] QString keptMemberPath(const QString& owner, int member) const override;
     [[nodiscard]] bool hasOwner(const QString& owner) const override;
     void saveOwner(const QString& owner) override;
 
 private:
+    /// setI2pJoins / setPrivateJoins: joins for the torrents @p held picks, or none.
+    void rejoin(bool allowed, const std::function<bool(const bt::BtTorrentRow&)>& held);
+    /// the engine's switch of §6.3 (ed3k_torrent_share_private)
+    void applyPrivateJoins();
+
     struct Join;
     class Sink;
     struct Gate;
@@ -155,6 +172,8 @@ private:
     void startDownloads(const QString& id);
     /// §4.2: ALIAS searches of the infohashes.
     void startSetSearch(const QString& id);
+    /// adoptCreated: every piece passed under the torrent
+    void passCreatedPieces(const QString& id);
     // was: tryNextSet, the next set a search names; now the base's
     /// Pieces an ed3k block completed: read and handed to libtorrent.
     void feedPieces(const QString& id, const std::vector<std::uint64_t>& pieces);
@@ -172,11 +191,14 @@ private:
     std::map<QString, std::unique_ptr<Join>> m_joins;
     /// torrents with no join (private, extension off, complete before ed3k saw them)
     QSet<QString> m_noJoin;
+    /// made here, join not yet created (adoptCreated)
+    QSet<QString> m_created;
     // was: alias searches → torrent id; now the base's set searches
     /// the sinks' way back here; closed in the destructor
     std::shared_ptr<Gate> m_gate;
     quint64 m_hashGeneration = 0;
     bool m_i2pJoins = true;
+    bool m_privateJoins = false;
 };
 
 } // namespace eMule::ed3k

@@ -75,8 +75,25 @@ void drawArrow(QPainter& p, QPointF from, QPointF to, const QColor& color)
 
 } // anonymous namespace
 
-KadLookupGraph::KadLookupGraph(QWidget* parent)
+KadGraphBase::KadGraphBase(QWidget* parent)
     : QWidget(parent)
+{
+}
+
+void KadGraphBase::contextMenuEvent(QContextMenuEvent* event)
+{
+    QMenu menu(this);
+    QAction* autoShow = menu.addAction(tr("Automatically show active searches"));
+    autoShow->setCheckable(true);
+    autoShow->setChecked(m_autoShow);
+    if (menu.exec(event->globalPos()) == autoShow) {
+        m_autoShow = autoShow->isChecked();
+        emit autoShowLookupsToggled(m_autoShow);
+    }
+}
+
+KadLookupGraph::KadLookupGraph(QWidget* parent)
+    : KadGraphBase(parent)
     , m_nodeIcons{skinIcon(QStringLiteral(":/icons/Contact0.ico")),
                   skinIcon(QStringLiteral(":/icons/Contact1.ico")),
                   skinIcon(QStringLiteral(":/icons/Contact2.ico")),
@@ -131,7 +148,7 @@ bool KadLookupGraph::event(QEvent* event)
             QToolTip::hideText();
         return true;
     }
-    return QWidget::event(event);
+    return KadGraphBase::event(event);
 }
 
 void KadLookupGraph::paintEvent(QPaintEvent* /*event*/)
@@ -158,9 +175,12 @@ void KadLookupGraph::paintEvent(QPaintEvent* /*event*/)
     p.setPen(palette().color(QPalette::Text));
     p.setFont(font());
     p.drawText(QRect(m_baseLineX, m_client.top(), m_client.width(), m_labelHeight),
-               Qt::AlignLeft | Qt::AlignTop | Qt::TextSingleLine, tr("Distance"));
-    p.drawText(QRect(m_client.left(), m_client.bottom() - m_labelHeight + 1, m_client.width(), m_labelHeight),
-               Qt::AlignRight | Qt::AlignBottom | Qt::TextSingleLine, tr("Time"));
+               Qt::AlignLeft | Qt::AlignTop | Qt::TextSingleLine,
+               tr("Distance to the target (XOR, linear): farther up, closer down"));
+    const QRect bottomLabel(m_client.left(), m_client.bottom() - m_labelHeight + 1, m_client.width(), m_labelHeight);
+    p.drawText(bottomLabel.adjusted(m_baseLineX - m_client.left(), 0, 0, 0),
+               Qt::AlignLeft | Qt::AlignBottom | Qt::TextSingleLine, tr("0 = target"));
+    p.drawText(bottomLabel, Qt::AlignRight | Qt::AlignBottom | Qt::TextSingleLine, tr("Time"));
     p.setRenderHint(QPainter::Antialiasing, true);
 
     const auto visible = static_cast<int>(m_nodeRects.size());
@@ -249,7 +269,7 @@ void KadLookupGraph::mouseMoveEvent(QMouseEvent* event)
                 QToolTip::hideText();
         }
     }
-    QWidget::mouseMoveEvent(event);
+    KadGraphBase::mouseMoveEvent(event);
 }
 
 void KadLookupGraph::leaveEvent(QEvent* event)
@@ -258,19 +278,7 @@ void KadLookupGraph::leaveEvent(QEvent* event)
         m_hotId.clear();
         update();
     }
-    QWidget::leaveEvent(event);
-}
-
-void KadLookupGraph::contextMenuEvent(QContextMenuEvent* event)
-{
-    QMenu menu(this);
-    QAction* autoShow = menu.addAction(tr("Automatically show active searches"));
-    autoShow->setCheckable(true);
-    autoShow->setChecked(m_autoShow);
-    if (menu.exec(event->globalPos()) == autoShow) {
-        m_autoShow = autoShow->isChecked();
-        emit autoShowLookupsToggled(m_autoShow);
-    }
+    KadGraphBase::leaveEvent(event);
 }
 
 // ---------------------------------------------------------------------------

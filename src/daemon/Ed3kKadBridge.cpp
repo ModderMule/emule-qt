@@ -133,6 +133,7 @@ QCborArray incomingToCbor(const std::vector<ed3k_kad_incoming_info>& all)
         const auto* n = reinterpret_cast<const char*>(r.name);
         const bool store = r.op == 2;
         out.append(QCborMap{
+            {QStringLiteral("id"), qint64(r.id)},
             {QStringLiteral("agoMs"), qint64(r.ago_ms)},
             {QStringLiteral("type"), qint64(r.kind) + 100 * qint64(r.op)},
             {QStringLiteral("target"), hexOf(r.target)},
@@ -150,6 +151,36 @@ QCborArray incomingToCbor(const std::vector<ed3k_kad_incoming_info>& all)
             {QStringLiteral("error"), qint64(r.error)},
         });
     }
+    return out;
+}
+
+/// The shape of ops::kadIncomingGraph without the row fields: ids are routing ids, `node`
+/// the node ID.
+QCborMap incomingGraphToCbor(const std::vector<ed3k_kad_incoming_node>& all)
+{
+    QCborMap out{{QStringLiteral("found"), true}};
+    QCborArray handed;
+    for (const auto& n : all) {
+        QCborMap m{
+            {QStringLiteral("id"), n.known != 0 ? hexOf(n.id) : QString()},
+            {QStringLiteral("version"), qint64(-1)},
+        };
+        if (n.role != 1)
+            m.insert(QStringLiteral("node"), hexOf(n.node));
+        if (n.has_addr != 0) {
+            const QHostAddress ip = ed3k::toQHostAddress(ffi::Address::from(n.addr));
+            m.insert(QStringLiteral("addr"), ip.protocol() == QAbstractSocket::IPv6Protocol
+                                                 ? QStringLiteral("[%1]:%2").arg(ip.toString()).arg(n.addr.port)
+                                                 : QStringLiteral("%1:%2").arg(ip.toString()).arg(n.addr.port));
+            m.insert(QStringLiteral("cc"), countryCodeOf(ip));
+        }
+        switch (n.role) {
+        case 0: out.insert(QStringLiteral("asker"), m); break;
+        case 1: out.insert(QStringLiteral("own"), m); break;
+        default: handed.append(m); break;
+        }
+    }
+    out.insert(QStringLiteral("handed"), handed);
     return out;
 }
 
@@ -199,7 +230,7 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
 {
     const IpcMsgType t = msg.type();
     if (t != IpcMsgType::GetEd3kKadContacts && t != IpcMsgType::GetEd3kKadLookups && t != IpcMsgType::GetEd3kKadLookupGraph
-        && t != IpcMsgType::GetEd3kKadIncoming
+        && t != IpcMsgType::GetEd3kKadIncoming && t != IpcMsgType::GetEd3kKadIncomingGraph
         && t != IpcMsgType::ExportEd3kNodeList && t != IpcMsgType::FetchEd3kNodeLists)
         return false;
     const int seq = msg.seqId();
@@ -229,6 +260,14 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
     case IpcMsgType::GetEd3kKadIncoming:
         if (auto all = e->kadIncoming(now))
             reply(IpcMessage::makeResult(seq, true, incomingToCbor(*all)));
+        else
+            reply(failure(seq, int(all.error())));
+        break;
+    case IpcMsgType::GetEd3kKadIncomingGraph:
+        if (auto all = e->kadIncomingGraph(std::uint64_t(msg.fieldInt(0))))
+            reply(IpcMessage::makeResult(seq, true, incomingGraphToCbor(*all)));
+        else if (all.error() == ffi::Error::NotFound)
+            reply(IpcMessage::makeResult(seq, true, QCborMap{{QStringLiteral("found"), false}}));
         else
             reply(failure(seq, int(all.error())));
         break;

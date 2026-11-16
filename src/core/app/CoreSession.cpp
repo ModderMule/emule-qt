@@ -12,6 +12,7 @@
 #include "crypto/AICHData.h"
 #include "crypto/AICHHashSet.h"
 #include "crypto/AICHSyncThread.h"
+#include "net/AddressWatch.h"
 #include "net/BindAddress.h"
 #include "app/AppContext.h"
 #include "ipfilter/IPFilter.h"
@@ -209,8 +210,11 @@ BindApplyReport CoreSession::applyBindSelection()
     BindAddress::refresh();
     const BindAddress::Resolution now = BindAddress::current();
     const bool allowed = now.state != BindAddress::State::Blocked;
-    if (BindAddress::sameBinding(now, m_appliedBind) && m_netSuspended != allowed)   // nothing new: still fine, or still waiting
+    if (BindAddress::sameBinding(now, m_appliedBind) && m_netSuspended != allowed) {   // nothing new: still fine, or still waiting
+        if (allowed)
+            syncListenAddresses();   // an IPv6 address came or went: no reopen
         return {allowed ? BindApplyResult::Unchanged : BindApplyResult::Waiting};
+    }
     m_appliedBind = now;
     const uint16 tcpBefore = m_appliedTcpPort;
     const uint16 udpBefore = m_appliedUdpPort;
@@ -2290,6 +2294,7 @@ void CoreSession::resumeNetworking()
     if (m_serverUDP && !m_serverUDP->create())
         logWarning(QStringLiteral("Failed to bind server UDP socket"));
     rememberAppliedPorts();
+    m_appliedListen = BindAddress::listenAddresses();
 
     if (theApp.serverConnect) {
         ServerConnectConfig cfg = theApp.serverConnect->config();
@@ -2314,6 +2319,22 @@ void CoreSession::resumeNetworking()
         theApp.serverConnect->connectToAnyServer();
     if (m_resumeKad && m_kademlia)
         m_kademlia->start();
+}
+
+void CoreSession::syncListenAddresses()
+{
+    const QList<QHostAddress> now = BindAddress::listenAddresses();
+    const bool changed = now != m_appliedListen;
+    m_appliedListen = now;
+    // also when unchanged: each retries its pending addresses (IPv6 DAD, port held)
+    if (m_listenSocket)
+        m_listenSocket->syncAddresses(now);
+    if (m_clientUDP)
+        m_clientUDP->syncAddresses(now);
+    if (m_serverUDP)
+        m_serverUDP->syncAddresses(now);
+    if (theApp.onListenAddresses)
+        theApp.onListenAddresses(now, changed);
 }
 
 void CoreSession::syncConnectionChecker()
@@ -2576,8 +2597,15 @@ void CoreSession::finishStart()
         m_resumeKad = thePrefs.kadUsable() && thePrefs.autoConnect();
     }
     m_appliedBind = BindAddress::current();
+    m_appliedListen = BindAddress::listenAddresses();
     rememberAppliedPorts();
     theApp.onBindSelectionChanged = [this] { return applyBindSelection(); };
+    // addresses come and go between two watchdog ticks: follow them at once
+    m_addressWatch = std::make_unique<AddressWatch>();
+    connect(m_addressWatch.get(), &AddressWatch::changed, this, [this] {
+        if (BindAddress::isConfigured() || m_netSuspended)
+            applyBindSelection();
+    });
     theApp.applyListenPorts = [this] { return applyListenPorts(); };
     m_tickCounter = 0;
     m_timer.start();

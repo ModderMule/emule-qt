@@ -32,8 +32,26 @@ struct LookupEntry {
     bool forcedInteresting = false;
 };
 
+/// Shared by the Search Details graphs: the "Automatically show active searches" menu.
+class KadGraphBase : public QWidget {
+    Q_OBJECT
+
+public:
+    void setAutoShowLookups(bool on) { m_autoShow = on; }
+
+signals:
+    /// Context menu toggled "Automatically show active searches".
+    void autoShowLookupsToggled(bool on);
+
+protected:
+    explicit KadGraphBase(QWidget* parent);
+    void contextMenuEvent(QContextMenuEvent* event) override;
+
+    bool m_autoShow = true;
+};
+
 /// Distance graph widget matching the MFC Kad "Search Details" view.
-class KadLookupGraph : public QWidget {
+class KadLookupGraph : public KadGraphBase {
     Q_OBJECT
 
 public:
@@ -47,18 +65,11 @@ public:
 
     [[nodiscard]] bool hasEntries() const { return !m_entries.empty(); }
 
-    void setAutoShowLookups(bool on) { m_autoShow = on; }
-
-signals:
-    /// Context menu toggled "Automatically show active searches".
-    void autoShowLookupsToggled(bool on);
-
 protected:
     bool event(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void leaveEvent(QEvent* event) override;
-    void contextMenuEvent(QContextMenuEvent* event) override;
 
 private:
     void layoutNodes();
@@ -86,7 +97,6 @@ private:
     int m_baseLineY = 0;
     int m_histWidth = 0;              // 0 = too small to draw
     int m_searchType = -1;
-    bool m_autoShow = true;
 };
 
 } // namespace eMule

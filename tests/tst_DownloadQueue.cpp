@@ -178,6 +178,7 @@ private slots:
     void addKadSources_type6KeepsDirectCallback();
     void addKadSources_type6DroppedWithoutTheBit();
     void addKadSources_firewalledKeepsBuddylessIPv6Source();
+    void addKadSources_type7NeedsAUsableRoute();
     void addKadSources_buddyIpIsNetworkOrder();
     void addKadSources_firewalledKeepsQuicType6();
 
@@ -1905,6 +1906,62 @@ void tst_DownloadQueue::addKadSources_firewalledKeepsBuddylessIPv6Source()
     QVERIFY(source->canDialIPv6());
     QCOMPARE(source->connectAddress(), peerV6);
     QCOMPARE(source->connectingState(), ConnectingState::DirectTCP);
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::addKadSources_type7NeedsAUsableRoute()
+{
+    // Type 7 = routes in tags (ipv6-spec §9.1). No usable route: dropped without I/O.
+    // Usable ip6: kept even while we are firewalled, with no buddy and no callback.
+    eMule::testing::KadFixture fx{eMule::testing::KadMode::Firewalled};
+    fx.kadPrefs().setLastContact();
+    QVERIFY(theApp.isFirewalled());
+
+    DownloadQueue dq;
+    uint8 hash[16] = {64, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7};
+    auto* pf = createTestPartFile(hash, QStringLiteral("kad_type7.bin"));
+    dq.addDownload(pf);
+
+    uint8 clientHash[16];
+    std::memset(clientHash, 0x5E, sizeof(clientHash));
+    uint8 zeroBuddy[16]{};
+    const Address peerV6 = Address::fromString(QStringLiteral("2606:4700::78"));
+    const uint32 sourceIP = Address::fromString(QStringLiteral("77.66.55.40")).toUint32();
+    // 0x09: a stray callback bit must not make this a type-6 source
+    auto result = makeKadResult(hash, 7, clientHash, sourceIP, 4662, 4672, 0x09);
+    result.buddyHash = zeroBuddy;
+
+    dq.addKadSourceResult(result);
+    QCOMPARE(pf->sourceCount(), 0);          // no route tag at all
+
+    result.sourceIPv6 = peerV6.ipv6Bytes().data();
+    dq.addKadSourceResult(result);
+    QCOMPARE(pf->sourceCount(), 0);          // ip6, but we have no IPv6 ourselves
+
+    theApp.setPublicIPv6Override(Address::fromString(QStringLiteral("2606:4700::42")));
+    const auto restoreV6 = qScopeGuard([] { theApp.setPublicIPv6Override(Address{}); });
+    if (!theApp.hasConfidentPublicIPv6()) {
+        dq.deleteAll();
+        QSKIP("no usable public IPv6 in this setup");
+    }
+
+    const Address docV6 = Address::fromString(QStringLiteral("2001:db8::78"));
+    auto bogus = result;
+    bogus.sourceIPv6 = docV6.ipv6Bytes().data();
+    dq.addKadSourceResult(bogus);
+    QCOMPARE(pf->sourceCount(), 0);          // not global unicast (§7)
+
+    dq.addKadSourceResult(result);
+    QCOMPARE(pf->sourceCount(), 1);
+    UpDownClient* source = pf->srcList().front();
+    QCOMPARE(source->userIPv6(), peerV6);
+    QVERIFY(source->hasLowID());
+    QVERIFY(!source->hasValidBuddyID());
+    QVERIFY(!source->kadCallbackAvailable());
+    QVERIFY(!source->supportsDirectUDPCallback());
+    // FT_SOURCEIP is never a TCP target
+    QVERIFY(source->connectAddress().isNull() || source->connectAddress() == peerV6);
 
     dq.deleteAll();
 }

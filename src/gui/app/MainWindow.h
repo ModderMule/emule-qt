@@ -472,6 +472,8 @@ private:
     QLabel* m_statusUpLabel = nullptr;
     QLabel* m_statusDownLabel = nullptr;
     QLabel* m_statusEd2k = nullptr;
+    QLabel* m_statusVpn = nullptr;    ///< VpnPromo link while eD2K is connected
+    bool m_vpnLogShown = false;       ///< VpnPromo line written to Server Info once
     QLabel* m_statusUss = nullptr;    ///< Upload SpeedSense ping, MFC SBarUSS
     QLabel* m_statusFreeSpace = nullptr;   ///< free space of the current window's save folder (#165)
     QCborMap m_saveFolderSpace;

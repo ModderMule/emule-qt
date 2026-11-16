@@ -5,6 +5,7 @@
 #include "net/BindAddress.h"
 #include "net/DefaultGateway.h"
 #include "net/InterfacePin.h"
+#include "net/LocalIPv6.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 
@@ -24,6 +25,8 @@ std::function<PinProbe(int, const QString&)> s_probe;
 
 QList<LocalInterface> systemInterfaces()
 {
+    // RFC 4941 and deprecated flags: Qt has none (LocalIPv6.h)
+    const IPv6PrivacyReport v6 = scanLocalIPv6();
     QList<LocalInterface> out;
     const auto all = QNetworkInterface::allInterfaces();
     for (const QNetworkInterface& nif : all) {
@@ -39,6 +42,15 @@ QList<LocalInterface> systemInterfaces()
             QHostAddress a = e.ip();
             a.setScopeId({});
             li.addresses.append(a);
+        }
+        for (const LocalIPv6Address& e : v6.addresses) {
+            if (e.interfaceName != li.name && e.interfaceName != li.friendlyName)   // Windows: friendly
+                continue;
+            const QHostAddress a = e.address.toQHostAddress();
+            if (e.kind == IPv6AddressKind::Temporary)
+                li.temporary.append(a);
+            if (e.deprecated)
+                li.deprecated.append(a);
         }
         out.append(li);
     }
@@ -303,6 +315,53 @@ std::optional<QHostAddress> listenAddress()
     if (r.literal.isNull())
         return wildcard(r);
     return r.literal;
+}
+
+QList<QHostAddress> listenAddressesOf(const Resolution& r, const QList<LocalInterface>& interfaces,
+                                      bool usePrivacy)
+{
+    switch (r.state) {
+    case State::Blocked:
+        return {};
+    case State::Unrestricted:
+        return {QHostAddress(QHostAddress::Any)};
+    case State::Bound:
+        break;
+    }
+    if (!r.literal.isNull())
+        return {r.literal};
+    QList<QHostAddress> v4, stable, privacy;
+    for (const LocalInterface& li : interfaces) {
+        if (li.index != r.index)
+            continue;
+        for (const QHostAddress& a : li.addresses) {
+            if (a.protocol() == QAbstractSocket::IPv4Protocol) {
+                if (r.pin.v4 && a != QHostAddress(QHostAddress::AnyIPv4))
+                    v4.append(a);
+                continue;
+            }
+            // link-local needs a scope id and no peer can use it
+            if (a.protocol() != QAbstractSocket::IPv6Protocol || !r.pin.v6 || a.isLinkLocal())
+                continue;
+            if (!li.temporary.contains(a))
+                stable.append(a);
+            else if (!li.deprecated.contains(a))
+                privacy.append(a);
+        }
+        break;
+    }
+    // the privacy pref advertises a temporary address: first, so it is the send socket
+    if (usePrivacy || stable.isEmpty())
+        return v4 + privacy + stable;
+    return v4 + stable;
+}
+
+QList<QHostAddress> listenAddresses()
+{
+    const Resolution r = current();
+    if (!r.wholeInterface())
+        return listenAddressesOf(r, {}, false);
+    return listenAddressesOf(r, localInterfaces(), thePrefs.ipv6UsePrivacyAddress());
 }
 
 std::optional<QHostAddress> sourceFor(const Address& dest)
