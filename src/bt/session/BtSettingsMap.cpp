@@ -21,7 +21,9 @@ lt::settings_pack BtSettingsMap::toPack(const BtSettings& s)
     p.set_str(lt::settings_pack::listen_interfaces, listenInterfaces(s));
     p.set_str(lt::settings_pack::outgoing_interfaces, outgoingInterfaces(s));
     p.set_bool(lt::settings_pack::enable_dht, s.dht);
-    p.set_bool(lt::settings_pack::enable_lsd, s.lsd);
+    // LSD binds 0.0.0.0:6771 whatever listen_interfaces says: off while an interface is
+    // selected, unless asked for
+    p.set_bool(lt::settings_pack::enable_lsd, s.lsd && (s.bindAddresses.isEmpty() || s.lsdWhenBound));
     // the app's PortMapper maps the port (research doc §7.5)
     p.set_bool(lt::settings_pack::enable_upnp, false);
     p.set_bool(lt::settings_pack::enable_natpmp, false);

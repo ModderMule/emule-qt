@@ -781,6 +781,7 @@ struct Preferences::Data {
     uint32 btMaxUploadKb = 0;
     bool btDht = true;
     bool btLsd = true;
+    bool btLsdWhenBound = false;       // LSD binds 0.0.0.0:6771 even with an interface selected
     bool btPex = true;
     bool btAnnounceToAll = false;      // every tracker and tier, not 1 per tier
     int btEncryption = 0;              // 0 enabled, 1 forced, 2 disabled
@@ -2547,6 +2548,9 @@ void Preferences::setBtDht(bool val) { set(&Data::btDht, val); }
 
 bool Preferences::btLsd() const { return get(&Data::btLsd); }
 void Preferences::setBtLsd(bool val) { set(&Data::btLsd, val); }
+
+bool Preferences::btLsdWhenBound() const { return get(&Data::btLsdWhenBound); }
+void Preferences::setBtLsdWhenBound(bool val) { set(&Data::btLsdWhenBound, val); }
 
 bool Preferences::btPex() const { return get(&Data::btPex); }
 void Preferences::setBtPex(bool val) { set(&Data::btPex, val); }
@@ -5976,6 +5980,7 @@ bool Preferences::load(const QString& filePath)
                 bt["selectedFileOnly"].as<bool>(m_data->btMetaSelectedFileOnly);
             m_data->btDht = bt["dht"].as<bool>(m_data->btDht);
             m_data->btLsd = bt["lsd"].as<bool>(m_data->btLsd);
+            m_data->btLsdWhenBound = bt["lsdWhenBound"].as<bool>(m_data->btLsdWhenBound);
             m_data->btPex = bt["pex"].as<bool>(m_data->btPex);
             m_data->btAnnounceToAll = bt["announceToAll"].as<bool>(m_data->btAnnounceToAll);
             m_data->btEncryption = std::clamp(
@@ -7474,6 +7479,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "selectedFileOnly" << YAML::Value << m_data->btMetaSelectedFileOnly;
     out << YAML::Key << "dht" << YAML::Value << m_data->btDht;
     out << YAML::Key << "lsd" << YAML::Value << m_data->btLsd;
+    out << YAML::Key << "lsdWhenBound" << YAML::Value << m_data->btLsdWhenBound;
     out << YAML::Key << "pex" << YAML::Value << m_data->btPex;
     out << YAML::Key << "announceToAll" << YAML::Value << m_data->btAnnounceToAll;
     out << YAML::Key << "encryption" << YAML::Value << m_data->btEncryption;

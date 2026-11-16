@@ -86,6 +86,7 @@ void tst_BtSmoke::bindSelectionMapsToInterfaces()
     s.listenPort = 6881;
     QCOMPARE(BtSettingsMap::listenInterfaces(s), std::string("0.0.0.0:6881,[::]:6881"));
     QCOMPARE(BtSettingsMap::outgoingInterfaces(s), std::string());
+    QVERIFY(BtSettingsMap::toPack(s).get_bool(libtorrent::settings_pack::enable_lsd));
 
     s.bindAddresses = {QStringLiteral("10.8.0.2"), QStringLiteral("fd00::2")};
     QCOMPARE(BtSettingsMap::listenInterfaces(s), std::string("10.8.0.2:6881,[fd00::2]:6881"));
@@ -94,6 +95,12 @@ void tst_BtSmoke::bindSelectionMapsToInterfaces()
     QCOMPARE(p.get_str(libtorrent::settings_pack::listen_interfaces), std::string("10.8.0.2:6881,[fd00::2]:6881"));
     // download ACKs must not eat the upload limit (#87)
     QVERIFY(!p.get_bool(libtorrent::settings_pack::rate_limit_ip_overhead));
+    // LSD binds 0.0.0.0:6771 regardless: off while bound, unless lsdWhenBound
+    QVERIFY(!p.get_bool(libtorrent::settings_pack::enable_lsd));
+    s.lsdWhenBound = true;
+    QVERIFY(BtSettingsMap::toPack(s).get_bool(libtorrent::settings_pack::enable_lsd));
+    s.lsd = false;
+    QVERIFY(!BtSettingsMap::toPack(s).get_bool(libtorrent::settings_pack::enable_lsd));
 
     // blocked: no wildcard fallback
     s.networkBlocked = true;
