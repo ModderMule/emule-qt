@@ -6935,7 +6935,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">ed3k 节点使用“常规”页面中的昵称：%1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+490"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+508"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7042,12 +7042,12 @@ Its names are then resolved after the lists you already follow.</source>
         <translation>查找节点</translation>
     </message>
     <message>
-        <location line="+1550"/>
+        <location line="+1536"/>
         <source>Find ed3k nodes in the local network (restarts the node)</source>
         <translation>在局域网中查找 ed3k 节点（会重启节点）</translation>
     </message>
     <message>
-        <location line="-1548"/>
+        <location line="-1534"/>
         <source>Node lists for the first contact, one ed3k:nodes link per line:</source>
         <translation>首次联系用的节点列表，每行一个 ed3k:nodes 链接：</translation>
     </message>
@@ -7093,31 +7093,31 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+957"/>
         <location line="+21"/>
-        <location line="+351"/>
+        <location line="+333"/>
         <source>Not valid</source>
         <translation>无效</translation>
     </message>
     <message>
-        <location line="-89"/>
-        <location line="+99"/>
+        <location line="-99"/>
+        <location line="+109"/>
         <source>Premium until %1</source>
         <translation>高级会员至 %1</translation>
     </message>
     <message>
-        <location line="-99"/>
-        <location line="+99"/>
+        <location line="-109"/>
+        <location line="+109"/>
         <source>Free until %1</source>
         <translation>免费至 %1</translation>
     </message>
     <message>
-        <location line="-101"/>
-        <location line="+104"/>
+        <location line="-111"/>
+        <location line="+114"/>
         <source>Premium</source>
         <translation>高级会员</translation>
     </message>
     <message>
-        <location line="-104"/>
-        <location line="+104"/>
+        <location line="-114"/>
+        <location line="+114"/>
         <source>Free</source>
         <translation>免费</translation>
     </message>
@@ -7158,7 +7158,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">转发器：</translation>
     </message>
     <message>
-        <location line="-1599"/>
+        <location line="-1581"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>同时通过 ed3k 共享 Usenet 帖子</translation>
     </message>
@@ -7280,12 +7280,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1443"/>
+        <location line="+1429"/>
         <source> credits/MiB</source>
         <translation> 信用/MiB</translation>
     </message>
     <message>
-        <location line="-1452"/>
+        <location line="-1438"/>
         <source>Never pay (receipts only)</source>
         <translation>从不支付（仅收据）</translation>
     </message>
@@ -7533,12 +7533,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1280"/>
+        <location line="+1266"/>
         <source>not read yet</source>
         <translation>尚未读取</translation>
     </message>
     <message>
-        <location line="-1278"/>
+        <location line="-1264"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>账户已透支：唯一的出路是新的信用密钥。</translation>
     </message>
@@ -7953,12 +7953,12 @@ Off: they are never shared there, also inside the incoming folder.</source>
     </message>
     <message>
         <location line="+39"/>
-        <location line="+372"/>
+        <location line="+353"/>
         <source>Not reachable</source>
         <translation>无法连接</translation>
     </message>
     <message>
-        <location line="-310"/>
+        <location line="-291"/>
         <source>Single transfer mode (ed3k only)</source>
         <translation>单一传输模式 (仅 ed3k)</translation>
     </message>
@@ -7984,12 +7984,12 @@ Off: they are never shared there, also inside the incoming folder.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+170"/>
+        <location line="+142"/>
         <source>Service</source>
         <translation>服务</translation>
     </message>
     <message>
-        <location line="-153"/>
+        <location line="-125"/>
         <source>Add captcha solver</source>
         <translation>添加验证码识别服务</translation>
     </message>
@@ -8009,12 +8009,12 @@ Off: they are never shared there, also inside the incoming folder.</source>
         <translation>编辑多网盘服务账户</translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="+23"/>
         <source>Service:</source>
         <translation>服务：</translation>
     </message>
     <message>
-        <location line="+19"/>
+        <location line="+9"/>
         <source>empty: the password is an API token</source>
         <translation>留空：密码即 API 令牌</translation>
     </message>
@@ -8024,32 +8024,46 @@ Off: they are never shared there, also inside the incoming folder.</source>
         <translation>API 密钥：</translation>
     </message>
     <message>
-        <location line="+44"/>
+        <location line="+383"/>
+        <source>Log in at %1</source>
+        <translation>登录 %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>%1 logs in through your browser only. Open the page, log in there and allow the access.
+
+The check goes on by itself; the login is kept for later.</source>
+        <translation>%1 只能通过浏览器登录。请打开页面，在那里登录并允许访问。
+
+检查会自动继续；登录信息会保存以供以后使用。</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Open Browser</source>
+        <translation>打开浏览器</translation>
+    </message>
+    <message>
         <source>%1 at %2</source>
-        <translation>%2 上的 %1</translation>
+        <translation type="vanished">%2 上的 %1</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Check captcha solver</source>
-        <translation>检查验证码识别服务</translation>
+        <translation type="vanished">检查验证码识别服务</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Check multi-hoster account</source>
-        <translation>检查多网盘服务账户</translation>
+        <translation type="vanished">检查多网盘服务账户</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>API key of %1:</source>
-        <translation>%1 的 API 密钥：</translation>
+        <translation type="vanished">%1 的 API 密钥：</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Password of %1:</source>
-        <translation>%1 的密码：</translation>
+        <translation type="vanished">%1 的密码：</translation>
     </message>
     <message numerus="yes">
-        <location line="+37"/>
+        <location line="-317"/>
         <source>%1, %2 of %n hoster(s) usable</source>
         <translation>
             <numerusform>%1，%n 个网盘中 %2 个可用</numerusform>
@@ -8123,12 +8137,22 @@ Off: they are never shared there, also inside the incoming folder.</source>
         <translation>大小的 %1 倍</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+21"/>
+        <source>Waiting for the login in the browser...</source>
+        <translation>正在等待浏览器中的登录...</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>No password stored</source>
+        <translation>未保存密码</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Valid, but downloads no other hosters</source>
         <translation>有效，但不下载其他网盘</translation>
     </message>
     <message>
-        <location line="+66"/>
+        <location line="+70"/>
         <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
         <translation>警告：除非您知道自己在做什么，否则请勿更改这些设置。否则可能会导致问题。eMule 无需调整这些设置即可正常运行。</translation>
     </message>
@@ -8319,7 +8343,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>高速下载未运行。余额：%1</translation>
     </message>
     <message>
-        <location line="-932"/>
+        <location line="-918"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -8547,27 +8571,27 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
     <message>
         <location line="-107"/>
         <location line="+110"/>
-        <location line="+455"/>
+        <location line="+427"/>
         <source>Hoster</source>
         <translation>网盘</translation>
     </message>
     <message>
-        <location line="-455"/>
+        <location line="-427"/>
         <location line="+281"/>
-        <location line="+170"/>
+        <location line="+142"/>
         <source>User</source>
         <translation>用户</translation>
     </message>
     <message>
-        <location line="-451"/>
+        <location line="-423"/>
         <location line="+281"/>
-        <location line="+170"/>
+        <location line="+142"/>
         <location line="+4"/>
         <source>Status</source>
         <translation>状态</translation>
     </message>
     <message>
-        <location line="-216"/>
+        <location line="-188"/>
         <source>Add...</source>
         <translation>添加...</translation>
     </message>
@@ -8664,37 +8688,36 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>编辑网盘账户</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+19"/>
         <source>unchanged</source>
         <translation>未更改</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+2"/>
         <source>Hoster:</source>
         <translation>网盘:</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+1"/>
         <source>User:</source>
         <translation>用户：</translation>
     </message>
     <message>
-        <location line="-20"/>
-        <location line="+34"/>
+        <location line="-2"/>
+        <location line="+11"/>
         <source>Password:</source>
         <translation>密码：</translation>
     </message>
     <message>
-        <location line="+47"/>
         <source>Check hoster account</source>
-        <translation>检查网盘账户</translation>
+        <translation type="vanished">检查网盘账户</translation>
     </message>
     <message>
         <source>Password of %1 at %2:</source>
         <translation type="vanished">%1 在 %2 的密码:</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+44"/>
         <source>Checking...</source>
         <translation>正在检查...</translation>
     </message>
@@ -12120,6 +12143,19 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
     </message>
 </context>
 <context>
+    <name>eMule::HosterCombo</name>
+    <message>
+        <location filename="../src/gui/controls/HosterCombo.cpp" line="+83"/>
+        <source>Type to search, e.g. rapidgator.net</source>
+        <translation>输入以搜索，例如 rapidgator.net</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Type to search</source>
+        <translation>输入以搜索</translation>
+    </message>
+</context>
+<context>
     <name>eMule::HosterPanel</name>
     <message>
         <location filename="../src/gui/panels/HosterPanel.cpp" line="+126"/>
@@ -13260,7 +13296,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1197"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1200"/>
         <source>The core&apos;s certificate changed</source>
         <translation>核心的证书已更改</translation>
     </message>

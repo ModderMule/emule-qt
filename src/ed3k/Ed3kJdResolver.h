@@ -139,6 +139,8 @@ public:
     TaskId open(const QString& url, const std::optional<ResolverAccount>& account, const QString& dir,
                 std::uint64_t have) override;
     TaskId accountCheck(const QString& host, const ResolverAccount& account) override;
+    TaskId accountHosts() override;
+    TaskId favicon(const QString& host) override;
     TaskId sites(const QString& host) override;
     TaskId setSolverAccounts(const QList<SolverAccount>& accounts) override;
     TaskId solveTest(const QString& solver, const QString& type, const QByteArray& image = {}) override;

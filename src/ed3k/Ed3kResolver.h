@@ -26,6 +26,7 @@ struct ResolverAccount {
     QString password;
     QString via{};       ///< open only: the multi-hoster's domain; its plugin downloads the link with this login
     QByteArray state{};  ///< the plugin's session (JSON object) an Account event gave; empty: none
+    bool askLogin = false;  ///< accountCheck only: a browser login the plugin needs goes to the user (Login event)
 };
 
 /// One hoster a multi-hoster account downloads (accountCheck of a multi-hoster).
@@ -41,6 +42,15 @@ struct DebridHost {
     int maxDownloads = -1;      ///< downloads at once; -1 = unlimited
     qint64 unavailableS = 0;    ///< the multi-hoster blocked it for this long
     bool operator==(const DebridHost&) const = default;
+};
+
+/// A plugin that takes a premium account (accountHosts), as JD's Add account dialog lists it.
+struct AccountHost {
+    QString host;    ///< lower case domain
+    QString name;    ///< the plugin's name when not its host
+    bool multi = false;    ///< a multi-hoster (debrid service)
+    bool solver = false;   ///< a captcha solver service
+    bool operator==(const AccountHost&) const = default;
 };
 
 /// A captcha solver service login (2captcha.com, anti-captcha.com, ...). Key-only services
@@ -94,6 +104,9 @@ struct ResolverEvent {
         Status,       ///< open: what the plugin does, text: "link", "hoster", "hosterAccount", "puzzle", "connect", "transfer"
         Solvers,      ///< setSolverAccounts: solvers
         Solved,       ///< solveTest: text, host (the solver), name (the expected text, if known)
+        AccountHosts, ///< accountHosts: accountHosts
+        Icon,         ///< favicon: host, image (PNG); Failed "none" when the site has none
+        Login,        ///< accountCheck: a browser login (OAuth device flow) waits; text: its URL, host, timeoutS
     };
     Kind kind = Kind::Failed;
     QString host;
@@ -130,11 +143,13 @@ struct ResolverEvent {
     bool multi = false;           ///< accountCheck: a multi-hoster account; hosts what it downloads
     QList<DebridHost> hosts;
     QByteArray state;             ///< accountCheck: the plugin's session (JSON object), for ResolverAccount::state
+    QList<AccountHost> accountHosts;
 
     /// The last event of a task.
     [[nodiscard]] bool isFinal() const
     {
-        return kind != Kind::Progress && kind != Kind::Wait && kind != Kind::Puzzle && kind != Kind::Status;
+        return kind != Kind::Progress && kind != Kind::Wait && kind != Kind::Puzzle && kind != Kind::Status
+               && kind != Kind::Login;
     }
 };
 
@@ -188,6 +203,14 @@ public:
     /// solver of domain @p solver (empty: any). IMAGE uses a built-in image unless @p image.
     /// Solved or Failed ("noSolver", "unsolved") follows. Costs the solver's price.
     virtual TaskId solveTest(const QString& solver, const QString& type, const QByteArray& image = {}) = 0;
+    /// Every plugin that takes a premium account. AccountHosts follows. Default: none (0)
+    virtual TaskId accountHosts() { return 0; }
+    /// The favicon of @p host (network). Icon or Failed follows. Default: none (0)
+    virtual TaskId favicon(const QString& host)
+    {
+        (void)host;
+        return 0;
+    }
     /// The user's text for a puzzle; empty = skip it.
     virtual void answerPuzzle(std::uint64_t puzzle, const QString& text) = 0;
     virtual void cancel(TaskId task) = 0;

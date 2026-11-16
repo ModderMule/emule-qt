@@ -96,6 +96,7 @@
 #include "Ed3kEd2kJoin.h"
 #include "Ed3kHosterJoin.h"
 #include "Ed3kArchiveContents.h"
+#include "Ed3kHosterCatalog.h"
 #include "Ed3kLinkGrabber.h"
 #ifdef EMULE_HAVE_HOSTER_JD
 #include "Ed3kJavaRuntime.h"
@@ -884,6 +885,22 @@ bool DaemonApp::start()
         });
 #endif
         m_hosterJoin->setResolver(resolver);
+        // a login's plugin session (an OAuth token): kept with the login, encrypted
+        connect(m_hosterJoin.get(), &ed3k::Ed3kHosterJoin::sessionSaved, this,
+                [](const QString& host, const QString& user, const QByteArray& session) {
+                    Ed3kHosterPrefs h = thePrefs.ed3kHoster();
+                    bool hit = false;
+                    for (QList<Ed3kHosterAccount>* list : {&h.accounts, &h.debrid, &h.solvers})
+                        for (Ed3kHosterAccount& a : *list)
+                            if (a.host == host && a.user == user && a.session != session) {
+                                a.session = session;
+                                hit = true;
+                            }
+                    if (!hit)
+                        return;
+                    thePrefs.setEd3kHoster(h);
+                    thePrefs.save();
+                });
         m_hosterJoin->setCounters(theApp.statistics ? &theApp.statistics->hosterSession() : nullptr);
         Ed3kHosterBridge::setHoster(m_hosterJoin.get(), resolver, java);
         Ed3kHosterBridge::connectPushes(*m_hosterJoin, [this](const IpcMessage& msg) {
@@ -916,6 +933,13 @@ bool DaemonApp::start()
                 m_ipcServer->broadcast(msg);
         });
         m_linkGrabber->load();
+        // what the Add account dialogs offer: account plugins and favicons
+        m_hosterCatalog = std::make_unique<ed3k::Ed3kHosterCatalog>(thePrefs.configDir());
+        m_hosterCatalog->setResolver(resolver);
+        Ed3kHosterBridge::setCatalog(m_hosterCatalog.get(), [this](const IpcMessage& msg) {
+            if (m_ipcServer)
+                m_ipcServer->broadcast(msg);
+        });
     }
     applyEd3kConfig();
     if (m_ed3kSession->isRunning())
@@ -1205,6 +1229,8 @@ void DaemonApp::stop()
     Ed3kCreditBridge::setChain(nullptr);
     m_ed3kChain.reset();
     Ed3kHosterBridge::setGrabber(nullptr);
+    Ed3kHosterBridge::setCatalog(nullptr, {});
+    m_hosterCatalog.reset();
     if (m_linkGrabber) {
         m_linkGrabber->abortCrawls();
         m_linkGrabber->save();

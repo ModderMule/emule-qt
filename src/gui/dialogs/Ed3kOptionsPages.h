@@ -180,6 +180,8 @@ private:
     void fillAccounts(AccountList& list);
     /// PushHosterAccount: the status of the rows it names.
     void applyAccountCheck(const QString& host, const QString& user, const QCborMap& result);
+    /// @p host waits for a login at @p url in the browser (OAuth device flow): offers to open it.
+    void askBrowserLogin(const QString& host, const QUrl& url);
     [[nodiscard]] Ed3kHosterPrefs hosterPrefs() const;
     QWidget* buildAutoCredits(QWidget* parent);
     QWidget* buildExtended(QWidget* parent);

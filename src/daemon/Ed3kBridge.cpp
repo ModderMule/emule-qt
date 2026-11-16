@@ -272,8 +272,8 @@ bool isEd3kRequest(IpcMsgType type)
 {
     const int t = static_cast<int>(type);
     // 1100-1149: second request block (batch 12), the first was full; 1200-1209: Kad window;
-    // 1210-1219: the Link Grabber (Ed3kHosterBridge)
-    return (t >= 1000 && t <= 1049) || (t >= 1100 && t <= 1149) || (t >= 1200 && t <= 1219);
+    // 1210-1218: the Link Grabber, 1219-1229: account dialogs (Ed3kHosterBridge)
+    return (t >= 1000 && t <= 1049) || (t >= 1100 && t <= 1149) || (t >= 1200 && t <= 1229);
 }
 
 bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMessage&)>& reply)

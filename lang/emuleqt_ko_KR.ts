@@ -6935,7 +6935,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">ed3k 노드는 일반 페이지의 닉네임을 사용합니다: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+490"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+508"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7042,12 +7042,12 @@ Its names are then resolved after the lists you already follow.</source>
         <translation>노드 찾기</translation>
     </message>
     <message>
-        <location line="+1550"/>
+        <location line="+1536"/>
         <source>Find ed3k nodes in the local network (restarts the node)</source>
         <translation>로컬 네트워크에서 ed3k 노드 찾기(노드 다시 시작)</translation>
     </message>
     <message>
-        <location line="-1548"/>
+        <location line="-1534"/>
         <source>Node lists for the first contact, one ed3k:nodes link per line:</source>
         <translation>첫 연결용 노드 목록, 한 줄에 ed3k:nodes 링크 하나:</translation>
     </message>
@@ -7093,31 +7093,31 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+957"/>
         <location line="+21"/>
-        <location line="+351"/>
+        <location line="+333"/>
         <source>Not valid</source>
         <translation>유효하지 않음</translation>
     </message>
     <message>
-        <location line="-89"/>
-        <location line="+99"/>
+        <location line="-99"/>
+        <location line="+109"/>
         <source>Premium until %1</source>
         <translation>%1까지 프리미엄</translation>
     </message>
     <message>
-        <location line="-99"/>
-        <location line="+99"/>
+        <location line="-109"/>
+        <location line="+109"/>
         <source>Free until %1</source>
         <translation>%1까지 무료</translation>
     </message>
     <message>
-        <location line="-101"/>
-        <location line="+104"/>
+        <location line="-111"/>
+        <location line="+114"/>
         <source>Premium</source>
         <translation>프리미엄</translation>
     </message>
     <message>
-        <location line="-104"/>
-        <location line="+104"/>
+        <location line="-114"/>
+        <location line="+114"/>
         <source>Free</source>
         <translation>무료</translation>
     </message>
@@ -7158,7 +7158,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">포워더:</translation>
     </message>
     <message>
-        <location line="-1599"/>
+        <location line="-1581"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>Usenet 게시물도 ed3k로 공유</translation>
     </message>
@@ -7280,12 +7280,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1443"/>
+        <location line="+1429"/>
         <source> credits/MiB</source>
         <translation> 크레딧/MiB</translation>
     </message>
     <message>
-        <location line="-1452"/>
+        <location line="-1438"/>
         <source>Never pay (receipts only)</source>
         <translation>지불 안 함(영수증만)</translation>
     </message>
@@ -7533,12 +7533,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1280"/>
+        <location line="+1266"/>
         <source>not read yet</source>
         <translation>아직 읽지 않음</translation>
     </message>
     <message>
-        <location line="-1278"/>
+        <location line="-1264"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>계정이 초과 인출 상태입니다. 계속하려면 새 크레딧 키가 필요합니다.</translation>
     </message>
@@ -7953,12 +7953,12 @@ Off: they are never shared there, also inside the incoming folder.</source>
     </message>
     <message>
         <location line="+39"/>
-        <location line="+372"/>
+        <location line="+353"/>
         <source>Not reachable</source>
         <translation>연결할 수 없음</translation>
     </message>
     <message>
-        <location line="-310"/>
+        <location line="-291"/>
         <source>Single transfer mode (ed3k only)</source>
         <translation>단일 전송 모드 (ed3k 전용)</translation>
     </message>
@@ -7984,12 +7984,12 @@ Off: they are never shared there, also inside the incoming folder.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+170"/>
+        <location line="+142"/>
         <source>Service</source>
         <translation>서비스</translation>
     </message>
     <message>
-        <location line="-153"/>
+        <location line="-125"/>
         <source>Add captcha solver</source>
         <translation>캡차 풀이 서비스 추가</translation>
     </message>
@@ -8009,12 +8009,12 @@ Off: they are never shared there, also inside the incoming folder.</source>
         <translation>멀티 호스터 계정 편집</translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="+23"/>
         <source>Service:</source>
         <translation>서비스:</translation>
     </message>
     <message>
-        <location line="+19"/>
+        <location line="+9"/>
         <source>empty: the password is an API token</source>
         <translation>비워 두면: 비밀번호가 API 토큰</translation>
     </message>
@@ -8024,32 +8024,46 @@ Off: they are never shared there, also inside the incoming folder.</source>
         <translation>API 키:</translation>
     </message>
     <message>
-        <location line="+44"/>
+        <location line="+383"/>
+        <source>Log in at %1</source>
+        <translation>%1에 로그인</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>%1 logs in through your browser only. Open the page, log in there and allow the access.
+
+The check goes on by itself; the login is kept for later.</source>
+        <translation>%1은(는) 브라우저를 통해서만 로그인합니다. 페이지를 열어 로그인하고 접근을 허용하세요.
+
+확인은 자동으로 계속되며, 로그인은 나중을 위해 저장됩니다.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Open Browser</source>
+        <translation>브라우저 열기</translation>
+    </message>
+    <message>
         <source>%1 at %2</source>
-        <translation>%2의 %1</translation>
+        <translation type="vanished">%2의 %1</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Check captcha solver</source>
-        <translation>캡차 풀이 서비스 확인</translation>
+        <translation type="vanished">캡차 풀이 서비스 확인</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Check multi-hoster account</source>
-        <translation>멀티 호스터 계정 확인</translation>
+        <translation type="vanished">멀티 호스터 계정 확인</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>API key of %1:</source>
-        <translation>%1의 API 키:</translation>
+        <translation type="vanished">%1의 API 키:</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Password of %1:</source>
-        <translation>%1의 비밀번호:</translation>
+        <translation type="vanished">%1의 비밀번호:</translation>
     </message>
     <message numerus="yes">
-        <location line="+37"/>
+        <location line="-317"/>
         <source>%1, %2 of %n hoster(s) usable</source>
         <translation>
             <numerusform>%1, 호스터 %n개 중 %2개 사용 가능</numerusform>
@@ -8123,12 +8137,22 @@ Off: they are never shared there, also inside the incoming folder.</source>
         <translation>크기의 %1배</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+21"/>
+        <source>Waiting for the login in the browser...</source>
+        <translation>브라우저에서 로그인 대기 중...</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>No password stored</source>
+        <translation>저장된 비밀번호 없음</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Valid, but downloads no other hosters</source>
         <translation>유효하지만 다른 호스터를 다운로드하지 않음</translation>
     </message>
     <message>
-        <location line="+66"/>
+        <location line="+70"/>
         <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
         <translation>경고: 무엇을 하고 있는지 알지 못하는 한 이 설정을 변경하지 마세요. 그렇지 않으면 상황을 쉽게 악화시킬 수 있습니다. eMule은 이 설정을 조정하지 않아도 정상적으로 작동합니다.</translation>
     </message>
@@ -8319,7 +8343,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>고속 다운로드가 실행 중이 아닙니다. 잔액: %1</translation>
     </message>
     <message>
-        <location line="-932"/>
+        <location line="-918"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -8547,27 +8571,27 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
     <message>
         <location line="-107"/>
         <location line="+110"/>
-        <location line="+455"/>
+        <location line="+427"/>
         <source>Hoster</source>
         <translation>호스터</translation>
     </message>
     <message>
-        <location line="-455"/>
+        <location line="-427"/>
         <location line="+281"/>
-        <location line="+170"/>
+        <location line="+142"/>
         <source>User</source>
         <translation>사용자</translation>
     </message>
     <message>
-        <location line="-451"/>
+        <location line="-423"/>
         <location line="+281"/>
-        <location line="+170"/>
+        <location line="+142"/>
         <location line="+4"/>
         <source>Status</source>
         <translation>상태</translation>
     </message>
     <message>
-        <location line="-216"/>
+        <location line="-188"/>
         <source>Add...</source>
         <translation>추가...</translation>
     </message>
@@ -8664,37 +8688,36 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>호스터 계정 편집</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+19"/>
         <source>unchanged</source>
         <translation>변경 안 함</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+2"/>
         <source>Hoster:</source>
         <translation>호스터:</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+1"/>
         <source>User:</source>
         <translation>사용자:</translation>
     </message>
     <message>
-        <location line="-20"/>
-        <location line="+34"/>
+        <location line="-2"/>
+        <location line="+11"/>
         <source>Password:</source>
         <translation>비밀번호:</translation>
     </message>
     <message>
-        <location line="+47"/>
         <source>Check hoster account</source>
-        <translation>호스터 계정 확인</translation>
+        <translation type="vanished">호스터 계정 확인</translation>
     </message>
     <message>
         <source>Password of %1 at %2:</source>
         <translation type="vanished">%2의 %1 비밀번호:</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+44"/>
         <source>Checking...</source>
         <translation>확인 중...</translation>
     </message>
@@ -12120,6 +12143,19 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
     </message>
 </context>
 <context>
+    <name>eMule::HosterCombo</name>
+    <message>
+        <location filename="../src/gui/controls/HosterCombo.cpp" line="+83"/>
+        <source>Type to search, e.g. rapidgator.net</source>
+        <translation>입력하여 검색 (예: rapidgator.net)</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Type to search</source>
+        <translation>입력하여 검색</translation>
+    </message>
+</context>
+<context>
     <name>eMule::HosterPanel</name>
     <message>
         <location filename="../src/gui/panels/HosterPanel.cpp" line="+126"/>
@@ -13260,7 +13296,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1197"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1200"/>
         <source>The core&apos;s certificate changed</source>
         <translation>코어 인증서가 변경되었습니다</translation>
     </message>

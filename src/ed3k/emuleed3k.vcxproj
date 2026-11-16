@@ -179,6 +179,7 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
     <ClCompile Include="Ed3kJavaRuntime.cpp" />
     <ClCompile Include="Ed3kResolverUpdater.cpp" />
     <ClCompile Include="Ed3kHosterJoin.cpp" />
+    <ClCompile Include="Ed3kHosterCatalog.cpp" />
     <ClCompile Include="Ed3kLinkGrabber.cpp" />
     <ClCompile Include="Ed3kHosterUnpack.cpp" />
     <ClCompile Include="Ed3kArchiveContents.cpp" />
@@ -232,6 +233,7 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
     <QtMoc Include="Ed3kJavaRuntime.h" />
     <QtMoc Include="Ed3kResolverUpdater.h" />
     <QtMoc Include="Ed3kHosterJoin.h" />
+    <QtMoc Include="Ed3kHosterCatalog.h" />
     <QtMoc Include="Ed3kLinkGrabber.h" />
     <QtMoc Include="Ed3kHosterUnpack.h" />
     <QtMoc Include="Ed3kArchiveContents.h" />

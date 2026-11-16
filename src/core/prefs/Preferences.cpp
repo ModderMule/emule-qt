@@ -2904,12 +2904,16 @@ QList<Ed3kHosterAccount> hosterAccountsFromCbor(const QCborArray& rows, const QL
                             m.value(QStringLiteral("user")).toString().trimmed(), {}};
         if (a.host.isEmpty() || (needUser && a.user.isEmpty()))
             continue;
+        const auto o = std::ranges::find_if(old, [&a](const Ed3kHosterAccount& x) {
+            return x.host == a.host && x.user == a.user;
+        });
         if (m.contains(QStringLiteral("password")))
             a.password = m.value(QStringLiteral("password")).toString();
-        else if (auto o = std::ranges::find_if(old, [&a](const Ed3kHosterAccount& x) {
-                     return x.host == a.host && x.user == a.user;
-                 }); o != old.end())
+        else if (o != old.end())
             a.password = o->password;
+        // the session stays with an unchanged login
+        if (o != old.end() && o->password == a.password)
+            a.session = o->session;
         list.append(a);
     }
     return list;
@@ -6265,6 +6269,10 @@ bool Preferences::load(const QString& filePath)
                             if (a["passwordEncrypted"] && !m_data->notifyEmailEncKey.isEmpty())
                                 entry.password = aesDecryptFromBase64(
                                     QString::fromStdString(a["passwordEncrypted"].as<std::string>("")), m_data->notifyEmailEncKey);
+                            if (a["sessionEncrypted"] && !m_data->notifyEmailEncKey.isEmpty())
+                                entry.session = aesDecryptFromBase64(
+                                    QString::fromStdString(a["sessionEncrypted"].as<std::string>("")), m_data->notifyEmailEncKey)
+                                                    .toUtf8();
                             if (!entry.host.isEmpty() && (!needUser || !entry.user.isEmpty()))
                                 list.append(entry);
                         }
@@ -7755,6 +7763,9 @@ QByteArray Preferences::encode() const
                 if (!a.password.isEmpty() && !encKey.isEmpty())
                     out << YAML::Key << "passwordEncrypted" << YAML::Value
                         << aesEncryptToBase64(a.password, encKey).toStdString();
+                if (!a.session.isEmpty() && !a.password.isEmpty() && !encKey.isEmpty())
+                    out << YAML::Key << "sessionEncrypted" << YAML::Value
+                        << aesEncryptToBase64(QString::fromUtf8(a.session), encKey).toStdString();
                 out << YAML::EndMap;
             }
             out << YAML::EndSeq;

@@ -24,6 +24,7 @@
 #include <optional>
 
 #ifdef EMULE_HAVE_ED3K
+#include "Ed3kHosterCatalog.h"
 #include "Ed3kHosterJoin.h"
 #include "Ed3kLinkGrabber.h"
 #include "Ed3kResolver.h"
@@ -44,6 +45,9 @@ ed3k::Ed3kHosterJoin* s_join = nullptr;
 ed3k::Ed3kResolver* s_resolver = nullptr;
 ed3k::Ed3kJavaRuntime* s_java = nullptr;
 ed3k::Ed3kLinkGrabber* s_grabber = nullptr;
+ed3k::Ed3kHosterCatalog* s_catalog = nullptr;
+/// favicons asked for at once (GetHosterFavicons)
+constexpr qsizetype kMaxIconAsk = 256;
 /// openContainerAndAdd() tokens: their results stay in the daemon, no GUI asks
 QHash<quint64, std::function<void(int, const QString&)>> s_quietContainers;
 /// item pushes come per block: one per item and window
@@ -109,6 +113,22 @@ QCborMap grabberLinkToCbor(const ed3k::Ed3kLinkGrabber::Link& k)
                     {QStringLiteral("status"), int(k.status)},
                     {QStringLiteral("enabled"), k.enabled},
                     {QStringLiteral("dupe"), k.dupe}};
+}
+
+QCborArray accountHostsToCbor(const QList<ed3k::AccountHost>& hosts)
+{
+    QCborArray out;
+    for (const ed3k::AccountHost& h : hosts) {
+        QCborMap m{{QStringLiteral("host"), h.host}};
+        if (!h.name.isEmpty())
+            m.insert(QStringLiteral("name"), h.name);
+        if (h.multi)
+            m.insert(QStringLiteral("multi"), true);
+        if (h.solver)
+            m.insert(QStringLiteral("solver"), true);
+        out.append(m);
+    }
+    return out;
 }
 
 QList<quint32> idsOf(const QCborValue& v)
@@ -295,6 +315,12 @@ QCborMap resultToCbor(const ed3k::ResolverEvent& r)
         out.insert(QStringLiteral("multi"), true);
         out.insert(QStringLiteral("hosts"), hosts);
     }
+    // a browser login waits: the user opens this URL; the result follows
+    if (r.kind == ed3k::ResolverEvent::Kind::Login) {
+        out.insert(QStringLiteral("error"), QStringLiteral("login"));
+        out.insert(QStringLiteral("login"), r.text);
+        out.insert(QStringLiteral("timeout"), r.timeoutS);
+    }
     return out;
 }
 #endif
@@ -335,6 +361,29 @@ int addContainerLinks(const QList<ed3k::ResolverLink>& links, const QString& fil
 #endif
 
 } // namespace
+
+void setCatalog(ed3k::Ed3kHosterCatalog* catalog, const std::function<void(const IpcMessage&)>& broadcast)
+{
+#ifdef EMULE_HAVE_ED3K
+    s_catalog = catalog;
+    if (!catalog)
+        return;
+    QObject::connect(catalog, &ed3k::Ed3kHosterCatalog::accountHostsChanged, catalog,
+                     [broadcast](const QList<ed3k::AccountHost>& hosts) {
+                         IpcMessage msg(IpcMsgType::PushHosterCatalog, 0);
+                         msg.append(QCborMap{{QStringLiteral("hosts"), accountHostsToCbor(hosts)}});
+                         broadcast(msg);
+                     });
+    QObject::connect(catalog, &ed3k::Ed3kHosterCatalog::iconReady, catalog,
+                     [broadcast](const QString& host, const QByteArray& png) {
+                         IpcMessage msg(IpcMsgType::PushHosterCatalog, 0);
+                         msg.append(QCborMap{{QStringLiteral("icons"), QCborMap{{host, QCborValue(png)}}}});
+                         broadcast(msg);
+                     });
+#else
+    Q_UNUSED(catalog) Q_UNUSED(broadcast)
+#endif
+}
 
 void setHoster(ed3k::Ed3kHosterJoin* join, ed3k::Ed3kResolver* resolver, ed3k::Ed3kJavaRuntime* java)
 {
@@ -514,8 +563,9 @@ void openContainerAndAdd(const QByteArray& data, const QString& fileName,
 bool isHosterRequest(IpcMsgType type)
 {
     const int t = static_cast<int>(type);
-    // 1139: AddClickNLoad, after the block was full; 1210-1218: the Link Grabber
-    return (t >= 1100 && t <= 1109) || type == IpcMsgType::AddClickNLoad || (t >= 1210 && t <= 1218);
+    // 1139: AddClickNLoad, after the block was full; 1210-1218: the Link Grabber; 1219-1220:
+    // account dialogs
+    return (t >= 1100 && t <= 1109) || type == IpcMsgType::AddClickNLoad || (t >= 1210 && t <= 1220);
 }
 
 bool carriesSecret(IpcMsgType type)
@@ -533,6 +583,29 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
         return true;
     const int seq = msg.seqId();
 #ifdef EMULE_HAVE_ED3K
+    if (msg.type() == IpcMsgType::GetHosterAccountHosts || msg.type() == IpcMsgType::GetHosterFavicons) {
+        if (!s_catalog || !thePrefs.hosterDownloadsOn()) {
+            reply(failure(seq, QStringLiteral("hoster downloads are off")));
+            return true;
+        }
+        if (msg.type() == IpcMsgType::GetHosterAccountHosts) {
+            bool asking = false;
+            const auto hosts = s_catalog->accountHosts(&asking);
+            reply(IpcMessage::makeResult(seq, true,
+                                         QCborMap{{QStringLiteral("hosts"), accountHostsToCbor(hosts)},
+                                                  {QStringLiteral("asking"), asking}}));
+            return true;
+        }
+        QStringList hosts;
+        for (const QCborValue& v : msg.field(0).toArray())
+            if (hosts.size() < kMaxIconAsk)
+                hosts << v.toString();
+        QCborMap icons;
+        for (const auto& [host, png] : s_catalog->icons(hosts).asKeyValueRange())
+            icons.insert(host, QCborValue(png));
+        reply(IpcMessage::makeResult(seq, true, QCborMap{{QStringLiteral("icons"), icons}}));
+        return true;
+    }
     if (const int t = static_cast<int>(msg.type()); t >= 1210 && t <= 1218) {
         if (!s_grabber) {
             reply(failure(seq, QStringLiteral("no link grabber")));

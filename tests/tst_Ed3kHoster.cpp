@@ -113,6 +113,7 @@ public:
     int opens = 0;
     int checks = 0;
     int accountChecks = 0;
+    QList<ResolverAccount> checkedAccounts;   ///< what accountCheck() got
     int checkDelayMs = 0;        ///< check() answers this much later
     QSet<QString> hosts{QStringLiteral("fake.example")};   ///< hosters match() takes
     QSet<QString> genericHosts;  ///< sites only the generic http plugin takes (match(): DirectHTTP, "file")
@@ -312,9 +313,10 @@ public:
         writeStep(t, part, from, have > 0 ? std::optional<std::uint64_t>(std::uint64_t(from)) : std::nullopt);
         return t;
     }
-    TaskId accountCheck(const QString& host, const ResolverAccount&) override
+    TaskId accountCheck(const QString& host, const ResolverAccount& account) override
     {
         ++accountChecks;
+        checkedAccounts.append(account);
         const TaskId t = next++;
         ResolverEvent e;
         e.kind = ResolverEvent::Kind::Account;
@@ -2014,6 +2016,40 @@ private slots:
         QCOMPARE(sum.size(), 1);
         QVERIFY(sum[0].known && sum[0].valid);
         QCOMPARE(sum[0].hosts, 1);
+    }
+
+    /// Check without a typed password uses the stored login and its saved session; the new
+    /// session is handed out for saving; an unknown login answers noLogin
+    void debrid_checkStoredLoginSavesSession()
+    {
+        Rig r;
+        DebridHost fake{QStringLiteral("fake.example"), {QStringLiteral("fake.example")}, QStringLiteral("working")};
+        r.resolver.debridHosts = {{QStringLiteral("deb.example"), {fake}}};
+        Ed3kHosterAccount stored{QStringLiteral("deb.example"), QStringLiteral("u"), QStringLiteral("p")};
+        stored.session = QByteArrayLiteral(R"({"token":"t0"})");
+        r.prefs.debrid = {stored};
+        QVERIFY(r.start(true));
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->accountTier(QStringLiteral("fake.example")), 2, 10000);
+        // the background check: saved session in, no browser login asked
+        QVERIFY(!r.resolver.checkedAccounts.isEmpty());
+        QCOMPARE(r.resolver.checkedAccounts.first().state, stored.session);
+        QVERIFY(!r.resolver.checkedAccounts.first().askLogin);
+        QSignalSpy saved(r.join.get(), &Ed3kHosterJoin::sessionSaved);
+        QSignalSpy checked(r.join.get(), &Ed3kHosterJoin::accountChecked);
+        r.join->checkAccount(QStringLiteral("deb.example"), QStringLiteral("u"), {});
+        QTRY_COMPARE_WITH_TIMEOUT(checked.count(), 1, 10000);
+        const ResolverAccount& acc = r.resolver.checkedAccounts.last();
+        QCOMPARE(acc.password, QStringLiteral("p"));
+        QVERIFY(acc.askLogin);
+        QCOMPARE(acc.state, QByteArrayLiteral(R"({"token":"t1"})"));   // this run's session first
+        // the background check already gave t1: saved once from there or from here
+        QVERIFY(saved.count() >= 1);
+        QCOMPARE(saved.last().at(2).toByteArray(), QByteArrayLiteral(R"({"token":"t1"})"));
+        r.join->checkAccount(QStringLiteral("none.example"), QStringLiteral("x"), {});
+        QTRY_COMPARE_WITH_TIMEOUT(checked.count(), 2, 10000);
+        const auto ev = checked.last().at(2).value<ResolverEvent>();
+        QCOMPARE(ev.kind, ResolverEvent::Kind::Failed);
+        QCOMPARE(ev.code, QStringLiteral("noLogin"));
     }
 
     /// the multi-hoster fails: the hoster itself is asked next, without a try counted

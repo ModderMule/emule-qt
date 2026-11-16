@@ -111,7 +111,15 @@ struct Ed3kHosterAccount {
     QString host;      ///< the resolver's plugin host, e.g. "rapidgator.net"
     QString user;
     QString password;  ///< encrypted in preferences.yml with the email key
+    /// the plugin's session (JSON: an OAuth token, cookies) of this login, so a browser login
+    /// is not asked again after a restart; encrypted like the password, never sent over IPC
+    QByteArray session{};
     bool operator==(const Ed3kHosterAccount&) const = default;
+    /// host, user and password alike (the session aside)
+    [[nodiscard]] bool sameLogin(const Ed3kHosterAccount& o) const
+    {
+        return host == o.host && user == o.user && password == o.password;
+    }
 };
 
 /// Links at file hosters (hoster.md), YAML `ed3k: hoster:`, IPC keys `ed3kHoster*`.

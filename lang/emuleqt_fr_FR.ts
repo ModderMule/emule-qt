@@ -6961,7 +6961,7 @@ Ses noms seront alors résolus après les listes que vous suivez déjà.</transl
         <translation type="vanished">Le nœud ed3k utilise le pseudo de la page Général : %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+490"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+508"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7068,12 +7068,12 @@ Ses noms seront alors résolus après les listes que vous suivez déjà.</transl
         <translation>Recherche de nœuds</translation>
     </message>
     <message>
-        <location line="+1550"/>
+        <location line="+1536"/>
         <source>Find ed3k nodes in the local network (restarts the node)</source>
         <translation>Trouver des nœuds ed3k dans le réseau local (redémarre le nœud)</translation>
     </message>
     <message>
-        <location line="-1548"/>
+        <location line="-1534"/>
         <source>Node lists for the first contact, one ed3k:nodes link per line:</source>
         <translation>Listes de nœuds pour le premier contact, un lien ed3k:nodes par ligne :</translation>
     </message>
@@ -7119,31 +7119,31 @@ Ses noms seront alors résolus après les listes que vous suivez déjà.</transl
     <message>
         <location line="+957"/>
         <location line="+21"/>
-        <location line="+351"/>
+        <location line="+333"/>
         <source>Not valid</source>
         <translation>Non valide</translation>
     </message>
     <message>
-        <location line="-89"/>
-        <location line="+99"/>
+        <location line="-99"/>
+        <location line="+109"/>
         <source>Premium until %1</source>
         <translation>Premium jusqu&apos;au %1</translation>
     </message>
     <message>
-        <location line="-99"/>
-        <location line="+99"/>
+        <location line="-109"/>
+        <location line="+109"/>
         <source>Free until %1</source>
         <translation>Gratuit jusqu&apos;au %1</translation>
     </message>
     <message>
-        <location line="-101"/>
-        <location line="+104"/>
+        <location line="-111"/>
+        <location line="+114"/>
         <source>Premium</source>
         <translation>Premium</translation>
     </message>
     <message>
-        <location line="-104"/>
-        <location line="+104"/>
+        <location line="-114"/>
+        <location line="+114"/>
         <source>Free</source>
         <translation>Gratuit</translation>
     </message>
@@ -7184,7 +7184,7 @@ Ses noms seront alors résolus après les listes que vous suivez déjà.</transl
         <translation type="vanished">Relais :</translation>
     </message>
     <message>
-        <location line="-1599"/>
+        <location line="-1581"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>Partager aussi les publications Usenet sur ed3k</translation>
     </message>
@@ -7306,12 +7306,12 @@ Ses noms seront alors résolus après les listes que vous suivez déjà.</transl
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1443"/>
+        <location line="+1429"/>
         <source> credits/MiB</source>
         <translation> crédits/MiB</translation>
     </message>
     <message>
-        <location line="-1452"/>
+        <location line="-1438"/>
         <source>Never pay (receipts only)</source>
         <translation>Ne jamais payer (reçus uniquement)</translation>
     </message>
@@ -7559,12 +7559,12 @@ Ses noms seront alors résolus après les listes que vous suivez déjà.</transl
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1280"/>
+        <location line="+1266"/>
         <source>not read yet</source>
         <translation>pas encore lu</translation>
     </message>
     <message>
-        <location line="-1278"/>
+        <location line="-1264"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Le compte est à découvert : une nouvelle clé de crédit permet de continuer.</translation>
     </message>
@@ -7979,12 +7979,12 @@ Désactivé : ils n&apos;y sont jamais partagés, même dans le dossier des fich
     </message>
     <message>
         <location line="+39"/>
-        <location line="+372"/>
+        <location line="+353"/>
         <source>Not reachable</source>
         <translation>Injoignable</translation>
     </message>
     <message>
-        <location line="-310"/>
+        <location line="-291"/>
         <source>Single transfer mode (ed3k only)</source>
         <translation>Mode transfert unique (ed3k seulement)</translation>
     </message>
@@ -8010,12 +8010,12 @@ Désactivé : ils n&apos;y sont jamais partagés, même dans le dossier des fich
     </message>
     <message>
         <location line="+4"/>
-        <location line="+170"/>
+        <location line="+142"/>
         <source>Service</source>
         <translation>Service</translation>
     </message>
     <message>
-        <location line="-153"/>
+        <location line="-125"/>
         <source>Add captcha solver</source>
         <translation>Ajouter un solveur de captchas</translation>
     </message>
@@ -8035,12 +8035,12 @@ Désactivé : ils n&apos;y sont jamais partagés, même dans le dossier des fich
         <translation>Modifier le compte multi-hébergeur</translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="+23"/>
         <source>Service:</source>
         <translation>Service :</translation>
     </message>
     <message>
-        <location line="+19"/>
+        <location line="+9"/>
         <source>empty: the password is an API token</source>
         <translation>vide : le mot de passe est un jeton d&apos;API</translation>
     </message>
@@ -8050,32 +8050,46 @@ Désactivé : ils n&apos;y sont jamais partagés, même dans le dossier des fich
         <translation>Clé API :</translation>
     </message>
     <message>
-        <location line="+44"/>
+        <location line="+383"/>
+        <source>Log in at %1</source>
+        <translation>Connexion à %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>%1 logs in through your browser only. Open the page, log in there and allow the access.
+
+The check goes on by itself; the login is kept for later.</source>
+        <translation>%1 ne se connecte que via votre navigateur. Ouvrez la page, connectez-vous et autorisez l&apos;accès.
+
+La vérification continue d&apos;elle-même ; la connexion est conservée pour plus tard.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Open Browser</source>
+        <translation>Ouvrir le navigateur</translation>
+    </message>
+    <message>
         <source>%1 at %2</source>
-        <translation>%1 chez %2</translation>
+        <translation type="vanished">%1 chez %2</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Check captcha solver</source>
-        <translation>Vérifier le solveur de captchas</translation>
+        <translation type="vanished">Vérifier le solveur de captchas</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Check multi-hoster account</source>
-        <translation>Vérifier le compte multi-hébergeur</translation>
+        <translation type="vanished">Vérifier le compte multi-hébergeur</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>API key of %1:</source>
-        <translation>Clé d&apos;API de %1 :</translation>
+        <translation type="vanished">Clé d&apos;API de %1 :</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Password of %1:</source>
-        <translation>Mot de passe de %1 :</translation>
+        <translation type="vanished">Mot de passe de %1 :</translation>
     </message>
     <message numerus="yes">
-        <location line="+37"/>
+        <location line="-317"/>
         <source>%1, %2 of %n hoster(s) usable</source>
         <translation>
             <numerusform>%1, %2 sur %n hébergeur utilisable</numerusform>
@@ -8151,12 +8165,22 @@ Désactivé : ils n&apos;y sont jamais partagés, même dans le dossier des fich
         <translation>%1× la taille</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+21"/>
+        <source>Waiting for the login in the browser...</source>
+        <translation>En attente de la connexion dans le navigateur...</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>No password stored</source>
+        <translation>Aucun mot de passe enregistré</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Valid, but downloads no other hosters</source>
         <translation>Valide, mais ne télécharge aucun autre hébergeur</translation>
     </message>
     <message>
-        <location line="+66"/>
+        <location line="+70"/>
         <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
         <translation>Attention : Ne modifiez pas ces paramètres si vous ne savez pas ce que vous faites. Sinon, vous pourriez facilement aggraver les choses. eMule fonctionnera très bien sans modifier aucun de ces paramètres.</translation>
     </message>
@@ -8347,7 +8371,7 @@ Auto : 2 % de la RAM, au moins 64 Mio et au plus 512 Mio.</translation>
         <translation>Le téléchargement haute vitesse n&apos;est pas actif. Solde : %1</translation>
     </message>
     <message>
-        <location line="-932"/>
+        <location line="-918"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -8575,27 +8599,27 @@ Auto : 2 % de la RAM, au moins 64 Mio et au plus 512 Mio.</translation>
     <message>
         <location line="-107"/>
         <location line="+110"/>
-        <location line="+455"/>
+        <location line="+427"/>
         <source>Hoster</source>
         <translation>Hébergeur</translation>
     </message>
     <message>
-        <location line="-455"/>
+        <location line="-427"/>
         <location line="+281"/>
-        <location line="+170"/>
+        <location line="+142"/>
         <source>User</source>
         <translation>Utilisateur</translation>
     </message>
     <message>
-        <location line="-451"/>
+        <location line="-423"/>
         <location line="+281"/>
-        <location line="+170"/>
+        <location line="+142"/>
         <location line="+4"/>
         <source>Status</source>
         <translation>Statut</translation>
     </message>
     <message>
-        <location line="-216"/>
+        <location line="-188"/>
         <source>Add...</source>
         <translation>Ajouter...</translation>
     </message>
@@ -8692,37 +8716,36 @@ Auto : 2 % de la RAM, au moins 64 Mio et au plus 512 Mio.</translation>
         <translation>Modifier le compte d&apos;hébergeur</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+19"/>
         <source>unchanged</source>
         <translation>inchangé</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+2"/>
         <source>Hoster:</source>
         <translation>Hébergeur :</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+1"/>
         <source>User:</source>
         <translation>Utilisateur :</translation>
     </message>
     <message>
-        <location line="-20"/>
-        <location line="+34"/>
+        <location line="-2"/>
+        <location line="+11"/>
         <source>Password:</source>
         <translation>Mot de passe :</translation>
     </message>
     <message>
-        <location line="+47"/>
         <source>Check hoster account</source>
-        <translation>Vérifier le compte d&apos;hébergeur</translation>
+        <translation type="vanished">Vérifier le compte d&apos;hébergeur</translation>
     </message>
     <message>
         <source>Password of %1 at %2:</source>
         <translation type="vanished">Mot de passe de %1 sur %2 :</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+44"/>
         <source>Checking...</source>
         <translation>Vérification...</translation>
     </message>
@@ -12165,6 +12188,19 @@ Si votre FAI tente de brider ou de bloquer eMule, l&apos;obfuscation aide à con
     </message>
 </context>
 <context>
+    <name>eMule::HosterCombo</name>
+    <message>
+        <location filename="../src/gui/controls/HosterCombo.cpp" line="+83"/>
+        <source>Type to search, e.g. rapidgator.net</source>
+        <translation>Tapez pour rechercher, p. ex. rapidgator.net</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Type to search</source>
+        <translation>Tapez pour rechercher</translation>
+    </message>
+</context>
+<context>
     <name>eMule::HosterPanel</name>
     <message>
         <location filename="../src/gui/panels/HosterPanel.cpp" line="+126"/>
@@ -13313,7 +13349,7 @@ Si votre FAI tente de brider ou de bloquer eMule, l&apos;obfuscation aide à con
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1197"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1200"/>
         <source>The core&apos;s certificate changed</source>
         <translation>Le certificat du noyau a changé</translation>
     </message>

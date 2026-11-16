@@ -6709,7 +6709,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">Узел ed3k использует ник со страницы «Общие»: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+490"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+508"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -6816,12 +6816,12 @@ Its names are then resolved after the lists you already follow.</source>
         <translation>Поиск узлов</translation>
     </message>
     <message>
-        <location line="+1550"/>
+        <location line="+1536"/>
         <source>Find ed3k nodes in the local network (restarts the node)</source>
         <translation>Искать узлы ed3k в локальной сети (перезапускает узел)</translation>
     </message>
     <message>
-        <location line="-1548"/>
+        <location line="-1534"/>
         <source>Node lists for the first contact, one ed3k:nodes link per line:</source>
         <translation>Списки узлов для первого контакта, одна ссылка ed3k:nodes на строку:</translation>
     </message>
@@ -6867,31 +6867,31 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+957"/>
         <location line="+21"/>
-        <location line="+351"/>
+        <location line="+333"/>
         <source>Not valid</source>
         <translation>Недействительно</translation>
     </message>
     <message>
-        <location line="-89"/>
-        <location line="+99"/>
+        <location line="-99"/>
+        <location line="+109"/>
         <source>Premium until %1</source>
         <translation>Премиум до %1</translation>
     </message>
     <message>
-        <location line="-99"/>
-        <location line="+99"/>
+        <location line="-109"/>
+        <location line="+109"/>
         <source>Free until %1</source>
         <translation>Бесплатно до %1</translation>
     </message>
     <message>
-        <location line="-101"/>
-        <location line="+104"/>
+        <location line="-111"/>
+        <location line="+114"/>
         <source>Premium</source>
         <translation>Премиум</translation>
     </message>
     <message>
-        <location line="-104"/>
-        <location line="+104"/>
+        <location line="-114"/>
+        <location line="+114"/>
         <source>Free</source>
         <translation>Бесплатно</translation>
     </message>
@@ -6932,7 +6932,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">Пересыльщик:</translation>
     </message>
     <message>
-        <location line="-1599"/>
+        <location line="-1581"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>Также раздавать публикации Usenet через ed3k</translation>
     </message>
@@ -7054,12 +7054,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1443"/>
+        <location line="+1429"/>
         <source> credits/MiB</source>
         <translation> кредитов/MiB</translation>
     </message>
     <message>
-        <location line="-1452"/>
+        <location line="-1438"/>
         <source>Never pay (receipts only)</source>
         <translation>Никогда не платить (только квитанции)</translation>
     </message>
@@ -7307,12 +7307,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1280"/>
+        <location line="+1266"/>
         <source>not read yet</source>
         <translation>ещё не прочитано</translation>
     </message>
     <message>
-        <location line="-1278"/>
+        <location line="-1264"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Счёт в минусе: выход — новый кредитный ключ.</translation>
     </message>
@@ -7727,12 +7727,12 @@ Off: they are never shared there, also inside the incoming folder.</source>
     </message>
     <message>
         <location line="+39"/>
-        <location line="+372"/>
+        <location line="+353"/>
         <source>Not reachable</source>
         <translation>Недоступен</translation>
     </message>
     <message>
-        <location line="-310"/>
+        <location line="-291"/>
         <source>Single transfer mode (ed3k only)</source>
         <translation>Режим единой передачи (только ed3k)</translation>
     </message>
@@ -7758,12 +7758,12 @@ Off: they are never shared there, also inside the incoming folder.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+170"/>
+        <location line="+142"/>
         <source>Service</source>
         <translation>Сервис</translation>
     </message>
     <message>
-        <location line="-153"/>
+        <location line="-125"/>
         <source>Add captcha solver</source>
         <translation>Добавить решатель капчи</translation>
     </message>
@@ -7783,12 +7783,12 @@ Off: they are never shared there, also inside the incoming folder.</source>
         <translation>Изменить аккаунт мультихостера</translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="+23"/>
         <source>Service:</source>
         <translation>Сервис:</translation>
     </message>
     <message>
-        <location line="+19"/>
+        <location line="+9"/>
         <source>empty: the password is an API token</source>
         <translation>пусто: пароль — это API-токен</translation>
     </message>
@@ -7798,32 +7798,46 @@ Off: they are never shared there, also inside the incoming folder.</source>
         <translation>Ключ API:</translation>
     </message>
     <message>
-        <location line="+44"/>
+        <location line="+383"/>
+        <source>Log in at %1</source>
+        <translation>Вход в %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>%1 logs in through your browser only. Open the page, log in there and allow the access.
+
+The check goes on by itself; the login is kept for later.</source>
+        <translation>%1 входит только через браузер. Откройте страницу, войдите там и разрешите доступ.
+
+Проверка продолжится сама; вход сохранится на будущее.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Open Browser</source>
+        <translation>Открыть браузер</translation>
+    </message>
+    <message>
         <source>%1 at %2</source>
-        <translation>%1 на %2</translation>
+        <translation type="vanished">%1 на %2</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Check captcha solver</source>
-        <translation>Проверить решатель капчи</translation>
+        <translation type="vanished">Проверить решатель капчи</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Check multi-hoster account</source>
-        <translation>Проверить аккаунт мультихостера</translation>
+        <translation type="vanished">Проверить аккаунт мультихостера</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>API key of %1:</source>
-        <translation>API-ключ %1:</translation>
+        <translation type="vanished">API-ключ %1:</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Password of %1:</source>
-        <translation>Пароль %1:</translation>
+        <translation type="vanished">Пароль %1:</translation>
     </message>
     <message numerus="yes">
-        <location line="+37"/>
+        <location line="-317"/>
         <source>%1, %2 of %n hoster(s) usable</source>
         <translation>
             <numerusform>%1, доступно %2 из %n хостера</numerusform>
@@ -7901,12 +7915,22 @@ Off: they are never shared there, also inside the incoming folder.</source>
         <translation>%1× размер</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+21"/>
+        <source>Waiting for the login in the browser...</source>
+        <translation>Ожидание входа в браузере...</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>No password stored</source>
+        <translation>Пароль не сохранён</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Valid, but downloads no other hosters</source>
         <translation>Действителен, но не скачивает с других хостеров</translation>
     </message>
     <message>
-        <location line="+66"/>
+        <location line="+70"/>
         <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
         <translation>Внимание: не изменяйте эти настройки, если не знаете, что делаете. Иначе вы легко можете ухудшить себе работу. eMule отлично работает и без изменения этих настроек.</translation>
     </message>
@@ -8097,7 +8121,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>Скоростная загрузка не работает. Баланс: %1</translation>
     </message>
     <message>
-        <location line="-932"/>
+        <location line="-918"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -8325,27 +8349,27 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
     <message>
         <location line="-107"/>
         <location line="+110"/>
-        <location line="+455"/>
+        <location line="+427"/>
         <source>Hoster</source>
         <translation>Хостер</translation>
     </message>
     <message>
-        <location line="-455"/>
+        <location line="-427"/>
         <location line="+281"/>
-        <location line="+170"/>
+        <location line="+142"/>
         <source>User</source>
         <translation>Пользователь</translation>
     </message>
     <message>
-        <location line="-451"/>
+        <location line="-423"/>
         <location line="+281"/>
-        <location line="+170"/>
+        <location line="+142"/>
         <location line="+4"/>
         <source>Status</source>
         <translation>Статус</translation>
     </message>
     <message>
-        <location line="-216"/>
+        <location line="-188"/>
         <source>Add...</source>
         <translation>Добавить...</translation>
     </message>
@@ -8442,37 +8466,36 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>Изменить учётную запись хостера</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+19"/>
         <source>unchanged</source>
         <translation>без изменений</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+2"/>
         <source>Hoster:</source>
         <translation>Хостер:</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+1"/>
         <source>User:</source>
         <translation>Пользователь:</translation>
     </message>
     <message>
-        <location line="-20"/>
-        <location line="+34"/>
+        <location line="-2"/>
+        <location line="+11"/>
         <source>Password:</source>
         <translation>Пароль:</translation>
     </message>
     <message>
-        <location line="+47"/>
         <source>Check hoster account</source>
-        <translation>Проверить учётную запись хостера</translation>
+        <translation type="vanished">Проверить учётную запись хостера</translation>
     </message>
     <message>
         <source>Password of %1 at %2:</source>
         <translation type="vanished">Пароль %1 на %2:</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+44"/>
         <source>Checking...</source>
         <translation>Проверка...</translation>
     </message>
@@ -11836,6 +11859,19 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
     </message>
 </context>
 <context>
+    <name>eMule::HosterCombo</name>
+    <message>
+        <location filename="../src/gui/controls/HosterCombo.cpp" line="+83"/>
+        <source>Type to search, e.g. rapidgator.net</source>
+        <translation>Введите для поиска, напр. rapidgator.net</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Type to search</source>
+        <translation>Введите для поиска</translation>
+    </message>
+</context>
+<context>
     <name>eMule::HosterPanel</name>
     <message>
         <location filename="../src/gui/panels/HosterPanel.cpp" line="+126"/>
@@ -12992,7 +13028,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1197"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1200"/>
         <source>The core&apos;s certificate changed</source>
         <translation>Сертификат ядра изменился</translation>
     </message>

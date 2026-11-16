@@ -6961,7 +6961,7 @@ Os nomes dela serão resolvidos depois das listas que você já segue.</translat
         <translation type="vanished">O nó ed3k usa o apelido da página Geral: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+490"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+508"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7068,12 +7068,12 @@ Os nomes dela serão resolvidos depois das listas que você já segue.</translat
         <translation>Encontrar nós</translation>
     </message>
     <message>
-        <location line="+1550"/>
+        <location line="+1536"/>
         <source>Find ed3k nodes in the local network (restarts the node)</source>
         <translation>Encontrar nós ed3k na rede local (reinicia o nó)</translation>
     </message>
     <message>
-        <location line="-1548"/>
+        <location line="-1534"/>
         <source>Node lists for the first contact, one ed3k:nodes link per line:</source>
         <translation>Listas de nós para o primeiro contato, um link ed3k:nodes por linha:</translation>
     </message>
@@ -7119,31 +7119,31 @@ Os nomes dela serão resolvidos depois das listas que você já segue.</translat
     <message>
         <location line="+957"/>
         <location line="+21"/>
-        <location line="+351"/>
+        <location line="+333"/>
         <source>Not valid</source>
         <translation>Inválido</translation>
     </message>
     <message>
-        <location line="-89"/>
-        <location line="+99"/>
+        <location line="-99"/>
+        <location line="+109"/>
         <source>Premium until %1</source>
         <translation>Premium até %1</translation>
     </message>
     <message>
-        <location line="-99"/>
-        <location line="+99"/>
+        <location line="-109"/>
+        <location line="+109"/>
         <source>Free until %1</source>
         <translation>Gratuito até %1</translation>
     </message>
     <message>
-        <location line="-101"/>
-        <location line="+104"/>
+        <location line="-111"/>
+        <location line="+114"/>
         <source>Premium</source>
         <translation>Premium</translation>
     </message>
     <message>
-        <location line="-104"/>
-        <location line="+104"/>
+        <location line="-114"/>
+        <location line="+114"/>
         <source>Free</source>
         <translation>Gratuito</translation>
     </message>
@@ -7184,7 +7184,7 @@ Os nomes dela serão resolvidos depois das listas que você já segue.</translat
         <translation type="vanished">Encaminhador:</translation>
     </message>
     <message>
-        <location line="-1599"/>
+        <location line="-1581"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>Compartilhar também as postagens da Usenet pelo ed3k</translation>
     </message>
@@ -7306,12 +7306,12 @@ Os nomes dela serão resolvidos depois das listas que você já segue.</translat
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1443"/>
+        <location line="+1429"/>
         <source> credits/MiB</source>
         <translation> créditos/MiB</translation>
     </message>
     <message>
-        <location line="-1452"/>
+        <location line="-1438"/>
         <source>Never pay (receipts only)</source>
         <translation>Nunca pagar (somente recibos)</translation>
     </message>
@@ -7559,12 +7559,12 @@ Os nomes dela serão resolvidos depois das listas que você já segue.</translat
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1280"/>
+        <location line="+1266"/>
         <source>not read yet</source>
         <translation>ainda não lido</translation>
     </message>
     <message>
-        <location line="-1278"/>
+        <location line="-1264"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>A conta está no negativo: uma nova chave de créditos é o caminho a seguir.</translation>
     </message>
@@ -7979,12 +7979,12 @@ Desligado: nunca são compartilhados lá, nem dentro da pasta de entrada.</trans
     </message>
     <message>
         <location line="+39"/>
-        <location line="+372"/>
+        <location line="+353"/>
         <source>Not reachable</source>
         <translation>Inacessível</translation>
     </message>
     <message>
-        <location line="-310"/>
+        <location line="-291"/>
         <source>Single transfer mode (ed3k only)</source>
         <translation>Modo de transferência única (somente ed3k)</translation>
     </message>
@@ -8010,12 +8010,12 @@ Desligado: nunca são compartilhados lá, nem dentro da pasta de entrada.</trans
     </message>
     <message>
         <location line="+4"/>
-        <location line="+170"/>
+        <location line="+142"/>
         <source>Service</source>
         <translation>Serviço</translation>
     </message>
     <message>
-        <location line="-153"/>
+        <location line="-125"/>
         <source>Add captcha solver</source>
         <translation>Adicionar solucionador de captcha</translation>
     </message>
@@ -8035,12 +8035,12 @@ Desligado: nunca são compartilhados lá, nem dentro da pasta de entrada.</trans
         <translation>Editar conta de multi-hoster</translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="+23"/>
         <source>Service:</source>
         <translation>Serviço:</translation>
     </message>
     <message>
-        <location line="+19"/>
+        <location line="+9"/>
         <source>empty: the password is an API token</source>
         <translation>vazio: a senha é um token de API</translation>
     </message>
@@ -8050,32 +8050,46 @@ Desligado: nunca são compartilhados lá, nem dentro da pasta de entrada.</trans
         <translation>Chave de API:</translation>
     </message>
     <message>
-        <location line="+44"/>
+        <location line="+383"/>
+        <source>Log in at %1</source>
+        <translation>Entrar em %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>%1 logs in through your browser only. Open the page, log in there and allow the access.
+
+The check goes on by itself; the login is kept for later.</source>
+        <translation>%1 só entra pelo navegador. Abra a página, entre nela e permita o acesso.
+
+A verificação continua sozinha; o login fica guardado para depois.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Open Browser</source>
+        <translation>Abrir navegador</translation>
+    </message>
+    <message>
         <source>%1 at %2</source>
-        <translation>%1 em %2</translation>
+        <translation type="vanished">%1 em %2</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Check captcha solver</source>
-        <translation>Verificar solucionador de captcha</translation>
+        <translation type="vanished">Verificar solucionador de captcha</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Check multi-hoster account</source>
-        <translation>Verificar conta de multi-hoster</translation>
+        <translation type="vanished">Verificar conta de multi-hoster</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>API key of %1:</source>
-        <translation>Chave de API de %1:</translation>
+        <translation type="vanished">Chave de API de %1:</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Password of %1:</source>
-        <translation>Senha de %1:</translation>
+        <translation type="vanished">Senha de %1:</translation>
     </message>
     <message numerus="yes">
-        <location line="+37"/>
+        <location line="-317"/>
         <source>%1, %2 of %n hoster(s) usable</source>
         <translation>
             <numerusform>%1, %2 de %n hoster utilizável</numerusform>
@@ -8151,12 +8165,22 @@ Desligado: nunca são compartilhados lá, nem dentro da pasta de entrada.</trans
         <translation>%1× o tamanho</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+21"/>
+        <source>Waiting for the login in the browser...</source>
+        <translation>Aguardando o login no navegador...</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>No password stored</source>
+        <translation>Nenhuma senha salva</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Valid, but downloads no other hosters</source>
         <translation>Válida, mas não baixa de outros hosters</translation>
     </message>
     <message>
-        <location line="+66"/>
+        <location line="+70"/>
         <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
         <translation>Aviso: Não altere estas configurações a menos que saiba o que está fazendo. Caso contrário, você pode facilmente piorar as coisas. O eMule funcionará bem sem ajustar nenhuma dessas configurações.</translation>
     </message>
@@ -8347,7 +8371,7 @@ Auto: 2 % da RAM, no mínimo 64 MiB e no máximo 512 MiB.</translation>
         <translation>Download de alta velocidade parado. Saldo: %1</translation>
     </message>
     <message>
-        <location line="-932"/>
+        <location line="-918"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -8575,27 +8599,27 @@ Auto: 2 % da RAM, no mínimo 64 MiB e no máximo 512 MiB.</translation>
     <message>
         <location line="-107"/>
         <location line="+110"/>
-        <location line="+455"/>
+        <location line="+427"/>
         <source>Hoster</source>
         <translation>Hospedagem</translation>
     </message>
     <message>
-        <location line="-455"/>
+        <location line="-427"/>
         <location line="+281"/>
-        <location line="+170"/>
+        <location line="+142"/>
         <source>User</source>
         <translation>Usuário</translation>
     </message>
     <message>
-        <location line="-451"/>
+        <location line="-423"/>
         <location line="+281"/>
-        <location line="+170"/>
+        <location line="+142"/>
         <location line="+4"/>
         <source>Status</source>
         <translation>Status</translation>
     </message>
     <message>
-        <location line="-216"/>
+        <location line="-188"/>
         <source>Add...</source>
         <translation>Adicionar...</translation>
     </message>
@@ -8692,37 +8716,36 @@ Auto: 2 % da RAM, no mínimo 64 MiB e no máximo 512 MiB.</translation>
         <translation>Editar conta de hospedagem</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+19"/>
         <source>unchanged</source>
         <translation>inalterado</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+2"/>
         <source>Hoster:</source>
         <translation>Hospedagem:</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+1"/>
         <source>User:</source>
         <translation>Usuário:</translation>
     </message>
     <message>
-        <location line="-20"/>
-        <location line="+34"/>
+        <location line="-2"/>
+        <location line="+11"/>
         <source>Password:</source>
         <translation>Senha:</translation>
     </message>
     <message>
-        <location line="+47"/>
         <source>Check hoster account</source>
-        <translation>Verificar conta de hospedagem</translation>
+        <translation type="vanished">Verificar conta de hospedagem</translation>
     </message>
     <message>
         <source>Password of %1 at %2:</source>
         <translation type="vanished">Senha de %1 em %2:</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+44"/>
         <source>Checking...</source>
         <translation>Verificando...</translation>
     </message>
@@ -12165,6 +12188,19 @@ Se o seu provedor tenta limitar ou bloquear o eMule, a ofuscação ajuda a conto
     </message>
 </context>
 <context>
+    <name>eMule::HosterCombo</name>
+    <message>
+        <location filename="../src/gui/controls/HosterCombo.cpp" line="+83"/>
+        <source>Type to search, e.g. rapidgator.net</source>
+        <translation>Digite para pesquisar, ex.: rapidgator.net</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Type to search</source>
+        <translation>Digite para pesquisar</translation>
+    </message>
+</context>
+<context>
     <name>eMule::HosterPanel</name>
     <message>
         <location filename="../src/gui/panels/HosterPanel.cpp" line="+126"/>
@@ -13313,7 +13349,7 @@ Se o seu provedor tenta limitar ou bloquear o eMule, a ofuscação ajuda a conto
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1197"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1200"/>
         <source>The core&apos;s certificate changed</source>
         <translation>O certificado do núcleo mudou</translation>
     </message>

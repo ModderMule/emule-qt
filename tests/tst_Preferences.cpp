@@ -841,6 +841,9 @@ private slots:
         h.autoUpdate = false;
         h.autoUpdateHours = 6;
         h.accounts = {{QStringLiteral("rapidgator.net"), QStringLiteral("me"), QStringLiteral("s3cret")}};
+        // a browser login's session (OAuth token) is kept, encrypted like the password
+        h.debrid = {{QStringLiteral("real-debrid.com"), QStringLiteral("me"), QStringLiteral("pw"),
+                     QByteArrayLiteral(R"({"rd_token":"t0k3n"})")}};
         {
             Preferences prefs;
             prefs.setEd3kHoster(h);
@@ -849,7 +852,9 @@ private slots:
         // the password is written encrypted, never in clear
         QFile raw(file);
         QVERIFY(raw.open(QIODevice::ReadOnly));
-        QVERIFY(!raw.readAll().contains("s3cret"));
+        const QByteArray yaml = raw.readAll();
+        QVERIFY(!yaml.contains("s3cret"));
+        QVERIFY(!yaml.contains("t0k3n"));
         Preferences loaded;
         QVERIFY(loaded.load(file));
         QVERIFY(loaded.ed3kHoster() == h);
@@ -862,6 +867,14 @@ private slots:
         QVERIFY(Preferences::applyEd3kHosterKey(k, QStringLiteral("ed3kHosterAccounts"),
                                                 ipc.value(QStringLiteral("ed3kHosterAccounts"))));
         QCOMPARE(k.accounts.at(0).password, QStringLiteral("s3cret"));
+        // IPC never carries the session; the unchanged login keeps it, a new password drops it
+        QVERIFY(!ipc.value(QStringLiteral("ed3kHosterDebrid")).toArray().at(0).toMap().contains(QStringLiteral("session")));
+        QVERIFY(Preferences::applyEd3kHosterKey(k, QStringLiteral("ed3kHosterDebrid"), ipc.value(QStringLiteral("ed3kHosterDebrid"))));
+        QCOMPARE(k.debrid.at(0).session, h.debrid.at(0).session);
+        QCborMap typed = ipc.value(QStringLiteral("ed3kHosterDebrid")).toArray().at(0).toMap();
+        typed.insert(QStringLiteral("password"), QStringLiteral("other"));
+        QVERIFY(Preferences::applyEd3kHosterKey(k, QStringLiteral("ed3kHosterDebrid"), QCborArray{typed}));
+        QVERIFY(k.debrid.at(0).session.isEmpty());
         QVERIFY(Preferences::applyEd3kHosterKey(k, QStringLiteral("ed3kHosterMaxStreams"), QCborValue(99)));
         QCOMPARE(k.maxStreams, uint32{16});
         QVERIFY(!Preferences::applyEd3kHosterKey(k, QStringLiteral("ed3kLan"), QCborValue(true)));

@@ -51,6 +51,7 @@ public final class ResolverMain {
         Jd.notJared();
         Jd.init();
         PuzzleSolver.install();
+        LoginSolver.install();
         // solver accounts JD saved last run: the daemon sends the current ones
         SolverAccountsTask.clear();
         HeadlessUserIO.install();
@@ -108,6 +109,7 @@ public final class ResolverMain {
             m.put("bind", true);
             m.put("generic", true);
             m.put("debrid", true);
+            m.put("accountHosts", true);
             Out.send(m);
             break;
         }
@@ -157,6 +159,13 @@ public final class ResolverMain {
             Out.send(m);
             break;
         }
+        case "accountHosts":
+            // the Add account dialog's list, as JD's: plugins that take a premium account
+            Out.send(Jd.accountHosts(id));
+            break;
+        case "favicon":
+            start(new FaviconTask(id, str(req.get("host"))));
+            break;
         case "check":
             start(new CheckTask(id, str(req.get("url")), Account.of(req)));
             break;
@@ -170,7 +179,7 @@ public final class ResolverMain {
             start(new OpenTask(id, str(req.get("url")), Account.of(req), Account.via(req), str(req.get("path")), num(req.get("have"))));
             break;
         case "accountCheck":
-            start(new AccountTask(id, str(req.get("host")), Account.of(req)));
+            start(new AccountTask(id, str(req.get("host")), Account.of(req), Boolean.TRUE.equals(req.get("askLogin"))));
             break;
         case "solverAccounts": {
             final List<Map<String, Object>> accs = new ArrayList<Map<String, Object>>();

@@ -373,6 +373,9 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::RecheckGrabberLinks:  return QStringLiteral("RecheckGrabberLinks");
     case T::ConfirmGrabberLinks:  return QStringLiteral("ConfirmGrabberLinks");
     case T::AbortGrabberCrawls:   return QStringLiteral("AbortGrabberCrawls");
+    case T::GetHosterAccountHosts: return QStringLiteral("GetHosterAccountHosts");
+    case T::GetHosterFavicons:    return QStringLiteral("GetHosterFavicons");
+    case T::PushHosterCatalog:    return QStringLiteral("PushHosterCatalog");
     case T::PushLinkGrabber:      return QStringLiteral("PushLinkGrabber");
     default:
         return QStringLiteral("Unknown(%1)").arg(static_cast<int>(type));
@@ -1498,6 +1501,7 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushHosterAccount:    emit hosterAccountChecked(msg); break;
     case IpcMsgType::PushHosterLinkCheck:  emit hosterLinkChecked(msg); break;
     case IpcMsgType::PushLinkGrabber:      emit linkGrabberChanged(msg); break;
+    case IpcMsgType::PushHosterCatalog:    emit hosterCatalogChanged(msg); break;
     case IpcMsgType::PushSharedFileUpdate: emit sharedFileUpdated(msg); break;
     case IpcMsgType::PushSharedFileRemoved: emit sharedFileRemoved(msg); break;
     case IpcMsgType::PushSharedHashing:

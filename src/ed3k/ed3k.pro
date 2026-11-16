@@ -50,6 +50,7 @@ SOURCES += \
     Ed3kPaid.cpp \
     Ed3kPaidSeller.cpp \
     Ed3kHosterJoin.cpp \
+    Ed3kHosterCatalog.cpp \
     Ed3kLinkGrabber.cpp \
     Ed3kHosterUnpack.cpp \
     Ed3kArchiveContents.cpp \
@@ -91,6 +92,7 @@ HEADERS += \
     Ed3kPaidSeller.h \
     Ed3kProto.h \
     Ed3kHosterJoin.h \
+    Ed3kHosterCatalog.h \
     Ed3kLinkGrabber.h \
     Ed3kHosterUnpack.h \
     Ed3kArchiveContents.h \

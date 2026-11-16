@@ -2,7 +2,7 @@
 
 /// @file Ed3kHosterBridge.h
 /// @brief Hoster links over IPC (1100-1109, pushes 1150-1159, hoster.md), the Link Grabber
-/// (1210-1218, push 1190) and the "hoster"
+/// (1210-1218, push 1190), the account dialogs' lists (1219-1220, push 1191) and the "hoster"
 /// map of GetEd3kStatus, for Ed3kBridge. Free of the ed3k module like Ed3kBridge.h: without
 /// it every request answers [false, {error}] and the status has no "hoster".
 
@@ -24,12 +24,17 @@ class Ed3kHosterJoin;
 class Ed3kResolver;
 class Ed3kJavaRuntime;
 class Ed3kLinkGrabber;
+class Ed3kHosterCatalog;
 } // namespace ed3k
 
 namespace Ed3kHosterBridge {
 
 /// Set by DaemonApp, null when absent. @p java is null without EMULE_HAVE_HOSTER_JD.
 void setHoster(ed3k::Ed3kHosterJoin* join, ed3k::Ed3kResolver* resolver, ed3k::Ed3kJavaRuntime* java);
+
+/// Account plugins and favicons (GetHosterAccountHosts, GetHosterFavicons), null when absent;
+/// its changes go out as PushHosterCatalog through @p broadcast.
+void setCatalog(ed3k::Ed3kHosterCatalog* catalog, const std::function<void(const Ipc::IpcMessage&)>& broadcast);
 
 /// The Link Grabber, null when absent. With it on, folder links go there; with takesAll(),
 /// Click'n'Load and container links too (connectPushes routes them).

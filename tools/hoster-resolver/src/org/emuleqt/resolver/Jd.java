@@ -28,6 +28,7 @@ import org.appwork.utils.net.httpconnection.JavaSSLSocketStreamFactory.TLS;
 import org.jdownloader.net.AutoBCSSLSocketStreamFactory;
 import org.jdownloader.plugins.SkipReason;
 import org.jdownloader.plugins.SkipReasonException;
+import org.jdownloader.plugins.controller.LazyPlugin;
 import org.jdownloader.plugins.controller.PluginClassLoader;
 import org.jdownloader.plugins.controller.crawler.CrawlerPluginController;
 import org.jdownloader.plugins.controller.crawler.LazyCrawlerPlugin;
@@ -346,6 +347,40 @@ final class Jd {
             }
         }
         return direct;
+    }
+
+    /**
+     * accountHosts event: {hosts: [{host, name?, multi?, solver?}]}, every plugin that takes a premium
+     * account (JD's AddAccountDialog list) but Usenet ones (eMule Qt has its own), sorted by host.
+     */
+    static Map<String, Object> accountHosts(final long id) {
+        final java.util.TreeMap<String, Map<String, Object>> sorted = new java.util.TreeMap<String, Map<String, Object>>();
+        for (final LazyHostPlugin p : HostPluginController.getInstance().list()) {
+            if (!usable(p) || !p.isPremium() || p.hasFeature(LazyPlugin.FEATURE.USENET)
+                || p.hasFeature(LazyPlugin.FEATURE.INTERNAL)) {
+                continue;
+            }
+            final String host = p.getHost().toLowerCase(Locale.ROOT);
+            if (host.indexOf('.') <= 0 || sorted.containsKey(host)) {
+                continue;
+            }
+            final Map<String, Object> h = new java.util.LinkedHashMap<String, Object>();
+            h.put("host", host);
+            final String name = p.getDisplayName();
+            if (name != null && !name.equalsIgnoreCase(host)) {
+                h.put("name", name);
+            }
+            if (p.hasFeature(LazyPlugin.FEATURE.MULTIHOST)) {
+                h.put("multi", true);
+            }
+            if (p.hasFeature(LazyPlugin.FEATURE.CAPTCHA_SOLVER)) {
+                h.put("solver", true);
+            }
+            sorted.put(host, h);
+        }
+        final Map<String, Object> m = Out.event(id, "accountHosts");
+        m.put("hosts", new ArrayList<Object>(sorted.values()));
+        return m;
     }
 
     /** A plugin's domains, lower case: its host first, then its aliases. */

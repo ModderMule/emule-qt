@@ -212,7 +212,11 @@ void Ed3kHosterJoin::setConfig(const Ed3kHosterPrefs& prefs, const QStringList& 
     const bool allowed = prefs.enabled != m_prefs.enabled;
     const bool publishChanged = prefs.publishLinks != m_prefs.publishLinks || prefs.recheckHours != m_prefs.recheckHours
                              || prefs.reportRecheckHours != m_prefs.reportRecheckHours;
-    const bool accountsChanged = prefs.accounts != m_prefs.accounts || prefs.debrid != m_prefs.debrid
+    // a saved session alone is no new login
+    const auto sameLogins = [](const QList<Ed3kHosterAccount>& a, const QList<Ed3kHosterAccount>& b) {
+        return std::ranges::equal(a, b, [](const Ed3kHosterAccount& x, const Ed3kHosterAccount& y) { return x.sameLogin(y); });
+    };
+    const bool accountsChanged = !sameLogins(prefs.accounts, m_prefs.accounts) || !sameLogins(prefs.debrid, m_prefs.debrid)
                                  || prefs.debridEnabled != m_prefs.debridEnabled;
     const bool extractOff = m_prefs.extract && !prefs.extract;
     m_prefs = prefs;
@@ -221,6 +225,7 @@ void Ed3kHosterJoin::setConfig(const Ed3kHosterPrefs& prefs, const QStringList& 
         if (!d.isEmpty() && !m_tempDirs.contains(d))
             m_tempDirs << d;
     m_incomingDir = incomingDir;
+    saveSessions();   // logins checked before they were stored
     scanTempDirs();   // .met files copied in meanwhile
     if (m_resolver)
         m_resolver->setAskPuzzles(prefs.askPuzzles);
@@ -708,9 +713,53 @@ void Ed3kHosterJoin::checkAccount(const QString& host, const QString& user, cons
         emit accountChecked(host, user, r);
         return;
     }
+    // no password typed: the stored one (the GUI never has it)
+    const Ed3kHosterAccount* stored = storedLogin(host, user);
+    const QString pass = password.isEmpty() && stored ? stored->password : password;
+    if (pass.isEmpty()) {
+        ResolverEvent r;
+        r.kind = ResolverEvent::Kind::Failed;
+        r.code = QStringLiteral("noLogin");
+        emit accountChecked(host, user, r);
+        return;
+    }
     // key-only solver services: the user is free text, the key goes as password
-    const auto task = m_resolver->accountCheck(host, ResolverAccount{user.isEmpty() ? QStringLiteral("apikey") : user, password});
-    m_accountChecks[task] = {host, user};
+    ResolverAccount login{user.isEmpty() ? QStringLiteral("apikey") : user, pass};
+    // the user asked: a browser login (OAuth) is shown to them
+    login.askLogin = true;
+    if (stored && stored->password == pass)
+        login.state = sessionOf(*stored);
+    else if (const auto it = m_accountStatus.find(host + QLatin1Char('|') + user); it != m_accountStatus.end())
+        login.state = it->second.state;   // a login typed again before it was stored
+    m_accountChecks[m_resolver->accountCheck(host, login)] = {host, user, pass};
+}
+
+const Ed3kHosterAccount* Ed3kHosterJoin::storedLogin(const QString& host, const QString& user) const
+{
+    for (const QList<Ed3kHosterAccount>* list : {&m_prefs.accounts, &m_prefs.debrid, &m_prefs.solvers})
+        for (const Ed3kHosterAccount& a : *list)
+            if (a.host == host && a.user == user)
+                return &a;
+    return nullptr;
+}
+
+QByteArray Ed3kHosterJoin::sessionOf(const Ed3kHosterAccount& a) const
+{
+    if (const auto it = m_accountStatus.find(keyOf(a)); it != m_accountStatus.end() && !it->second.state.isEmpty())
+        return it->second.state;
+    return a.session;
+}
+
+void Ed3kHosterJoin::saveSessions()
+{
+    for (const QList<Ed3kHosterAccount>* list : {&m_prefs.accounts, &m_prefs.debrid})
+        for (const Ed3kHosterAccount& a : *list) {
+            const auto it = m_accountStatus.find(keyOf(a));
+            if (it == m_accountStatus.end() || !it->second.valid || it->second.state.isEmpty() || it->second.state == a.session
+                || it->second.password != a.password)
+                continue;
+            emit sessionSaved(a.host, a.user, it->second.state);
+        }
 }
 
 quint64 Ed3kHosterJoin::openContainer(const QByteArray& data, const QString& fileName)
@@ -1109,8 +1158,7 @@ std::optional<ResolverAccount> Ed3kHosterJoin::accountFor(const QString& host) c
 {
     if (const Ed3kHosterAccount* a = accountEntry(host)) {
         ResolverAccount r{a->user, a->password};
-        if (const auto it = m_accountStatus.find(keyOf(*a)); it != m_accountStatus.end())
-            r.state = it->second.state;
+        r.state = sessionOf(*a);
         return r;
     }
     return std::nullopt;
@@ -1129,8 +1177,7 @@ std::optional<ResolverAccount> Ed3kHosterJoin::openAccount(const Entry& e, const
             a.via = keyOf(*acc);
             a.viaSite = siteOf(h->domain);
             ResolverAccount r{acc->user.isEmpty() ? QStringLiteral("apikey") : acc->user, acc->password, acc->host};
-            if (const auto it = m_accountStatus.find(a.via); it != m_accountStatus.end())
-                r.state = it->second.state;
+            r.state = sessionOf(*acc);
             return r;
         }
     }
@@ -1716,13 +1763,21 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
         return;
     }
     if (const auto it = m_accountChecks.find(task); it != m_accountChecks.end()) {
-        const auto [host, user] = it->second;
+        const auto [host, user, password] = it->second;
+        // a browser login waits for the user: the check goes on
+        if (ev.kind == K::Login) {
+            logInfo(QStringLiteral("hoster: %1 waits for a browser login").arg(host));
+            emit accountChecked(host, user, ev);
+            return;
+        }
         m_accountChecks.erase(it);
         AccountStatus& st = m_accountStatus[host + QLatin1Char('|') + user];
         const QByteArray state = st.state;   // a failed check keeps the session it had
+        const QString statePassword = st.password;
         st = AccountStatus{};
         st.at = nowMs();
         st.state = state;
+        st.password = statePassword;
         if (ev.kind == K::Account) {
             st.known = true;
             st.valid = ev.valid;
@@ -1732,12 +1787,18 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
             st.maxDownloads = ev.maxDownloads;
             st.multi = ev.multi;
             st.hosts = ev.hosts;
-            if (!ev.state.isEmpty())
+            if (!ev.state.isEmpty()) {
                 st.state = ev.state;
+                st.password = password;
+            }
             if (st.multi)
                 logInfo(QStringLiteral("hoster: %1 downloads %2 hosters").arg(host).arg(st.hosts.size()));
         }
         emit accountChecked(host, user, ev);
+        // a stored login's new session survives a restart (no browser login again)
+        if (const Ed3kHosterAccount* a = storedLogin(host, user);
+            a && st.valid && !st.state.isEmpty() && a->password == password && a->session != st.state)
+            emit sessionSaved(host, user, st.state);
         return;
     }
     const auto it = m_asks.find(task);
@@ -2949,10 +3010,12 @@ void Ed3kHosterJoin::refreshAccounts()
         if (const auto it = m_accountStatus.find(a.host + QLatin1Char('|') + a.user);
             it != m_accountStatus.end() && now - it->second.at < kAccountTtlMs)
             continue;
-        const std::pair<QString, QString> key{a.host, a.user};
+        const AccountCheck key{a.host, a.user, a.password};
         if (std::ranges::any_of(m_accountChecks, [&key](const auto& c) { return c.second == key; }))
             continue;
-        m_accountChecks[m_resolver->accountCheck(a.host, ResolverAccount{a.user, a.password})] = key;
+        ResolverAccount login{a.user, a.password};
+        login.state = sessionOf(a);
+        m_accountChecks[m_resolver->accountCheck(a.host, login)] = key;
     }
     // multi-hosters: their hosts and daily quotas change, asked more often
     if (!m_prefs.debridEnabled)
@@ -2963,12 +3026,11 @@ void Ed3kHosterJoin::refreshAccounts()
             continue;
         if (const auto it = m_accountStatus.find(keyOf(a)); it != m_accountStatus.end() && now - it->second.at < kDebridTtlMs)
             continue;
-        const std::pair<QString, QString> key{a.host, a.user};
+        const AccountCheck key{a.host, a.user, a.password};
         if (std::ranges::any_of(m_accountChecks, [&key](const auto& c) { return c.second == key; }))
             continue;
         ResolverAccount login{a.user.isEmpty() ? QStringLiteral("apikey") : a.user, a.password};
-        if (const auto it = m_accountStatus.find(keyOf(a)); it != m_accountStatus.end())
-            login.state = it->second.state;
+        login.state = sessionOf(a);
         m_accountChecks[m_resolver->accountCheck(a.host, login)] = key;
     }
 }
