@@ -6961,7 +6961,7 @@ Ses noms seront alors résolus après les listes que vous suivez déjà.</transl
         <translation type="vanished">Le nœud ed3k utilise le pseudo de la page Général : %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+487"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+490"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7306,12 +7306,12 @@ Ses noms seront alors résolus après les listes que vous suivez déjà.</transl
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1438"/>
+        <location line="+1443"/>
         <source> credits/MiB</source>
         <translation> crédits/MiB</translation>
     </message>
     <message>
-        <location line="-1447"/>
+        <location line="-1452"/>
         <source>Never pay (receipts only)</source>
         <translation>Ne jamais payer (reçus uniquement)</translation>
     </message>
@@ -7559,12 +7559,12 @@ Ses noms seront alors résolus après les listes que vous suivez déjà.</transl
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1275"/>
+        <location line="+1280"/>
         <source>not read yet</source>
         <translation>pas encore lu</translation>
     </message>
     <message>
-        <location line="-1273"/>
+        <location line="-1278"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Le compte est à découvert : une nouvelle clé de crédit permet de continuer.</translation>
     </message>
@@ -8198,7 +8198,7 @@ Auto : 2 % de la RAM, au moins 64 Mio et au plus 512 Mio.</translation>
         <translation>Tant que la RAM libre est sous cette part du total, seuls les hachages de blocs utilisés restent en RAM.</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+16"/>
         <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private and closed rooms are encrypted with a key kept in the same folder.</source>
         <translation>Conserve les messages récents de chaque salon rejoint dans un fichier, réaffichés après un redémarrage. Sans cette option, seuls les messages encore détenus par d&apos;autres membres reviennent. Les messages des salons privés et fermés sont chiffrés avec une clé conservée dans le même dossier.</translation>
     </message>
@@ -8219,7 +8219,7 @@ Auto : 2 % de la RAM, au moins 64 Mio et au plus 512 Mio.</translation>
         <translation type="vanished">RAM pour les enregistrements de mots-clés et de sources que ce nœud conserve pour d&apos;autres nœuds ed3k (environ 1 Kio chacun). Au-delà, les nouveaux enregistrements sont refusés et d&apos;autres nœuds les stockent ailleurs. S&apos;applique au prochain démarrage du nœud ed3k.</translation>
     </message>
     <message>
-        <location line="-8"/>
+        <location line="-13"/>
         <source>Connection</source>
         <translation>Connexion</translation>
     </message>
@@ -8239,14 +8239,24 @@ Auto : 2 % de la RAM, au moins 64 Mio et au plus 512 Mio.</translation>
         <translation>Les serveurs eD2K qui exécutent aussi un nœud d&apos;index ed3k l&apos;indiquent à la connexion. Désactivé : le nœud est seulement noté dans le journal ed3k.</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
+        <source>This node is reachable: skip NAT tests (restarts the node)</source>
+        <translation>Ce nœud est joignable : ignorer les tests NAT (redémarre le nœud)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Only when the UDP port is forwarded or the computer has a public address. The node then counts as open without reach tests and serves as a router. Helps a small ed3k network where reach tests find no prober.</source>
+        <translation>Uniquement si le port UDP est redirigé ou si l&apos;ordinateur a une adresse publique. Le nœud est alors considéré comme ouvert sans tests de joignabilité et sert de routeur. Utile dans un petit réseau ed3k où les tests de joignabilité ne trouvent aucun testeur.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Rooms</source>
         <translation>Salons</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Store recent room posts on disk</source>
-        <translation>Enregistrer sur le disque les messages récents des salons</translation>
+        <translation>Enregistrer les messages récents des salons sur le disque</translation>
     </message>
     <message>
         <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private rooms are stored unencrypted.</source>
@@ -8337,7 +8347,7 @@ Auto : 2 % de la RAM, au moins 64 Mio et au plus 512 Mio.</translation>
         <translation>Le téléchargement haute vitesse n&apos;est pas actif. Solde : %1</translation>
     </message>
     <message>
-        <location line="-927"/>
+        <location line="-932"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>

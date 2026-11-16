@@ -6709,7 +6709,7 @@ Jej nazwy będą wtedy rozwiązywane po listach, które już obserwujesz.</trans
         <translation type="vanished">Węzeł ed3k używa nicka ze strony Ogólne: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+487"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+490"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7054,12 +7054,12 @@ Jej nazwy będą wtedy rozwiązywane po listach, które już obserwujesz.</trans
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1438"/>
+        <location line="+1443"/>
         <source> credits/MiB</source>
         <translation> kredytów/MiB</translation>
     </message>
     <message>
-        <location line="-1447"/>
+        <location line="-1452"/>
         <source>Never pay (receipts only)</source>
         <translation>Nigdy nie płać (tylko pokwitowania)</translation>
     </message>
@@ -7307,12 +7307,12 @@ Jej nazwy będą wtedy rozwiązywane po listach, które już obserwujesz.</trans
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1275"/>
+        <location line="+1280"/>
         <source>not read yet</source>
         <translation>jeszcze nie odczytano</translation>
     </message>
     <message>
-        <location line="-1273"/>
+        <location line="-1278"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Konto ma debet: dalsza droga to nowy klucz kredytowy.</translation>
     </message>
@@ -7948,7 +7948,7 @@ Auto: 2 % RAM, co najmniej 64 MiB i najwyżej 512 MiB.</translation>
         <translation>Dopóki wolny RAM jest poniżej tej części całości, w RAM zostają tylko używane hashe bloków.</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+16"/>
         <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private and closed rooms are encrypted with a key kept in the same folder.</source>
         <translation>Przechowuje ostatnie wpisy każdego dołączonego pokoju w pliku i pokazuje je ponownie po restarcie. Bez tej opcji wracają tylko wpisy, które inni członkowie nadal mają. Wpisy pokojów prywatnych i zamkniętych są szyfrowane kluczem przechowywanym w tym samym folderze.</translation>
     </message>
@@ -7969,7 +7969,7 @@ Auto: 2 % RAM, co najmniej 64 MiB i najwyżej 512 MiB.</translation>
         <translation type="vanished">RAM na rekordy słów kluczowych i źródeł, które ten węzeł przechowuje dla innych węzłów ed3k (około 1 KiB każdy). Powyżej nowe rekordy są odrzucane, a inne węzły zapisują je gdzie indziej. Obowiązuje od następnego uruchomienia węzła ed3k.</translation>
     </message>
     <message>
-        <location line="-8"/>
+        <location line="-13"/>
         <source>Connection</source>
         <translation>Połączenie</translation>
     </message>
@@ -7989,18 +7989,28 @@ Auto: 2 % RAM, co najmniej 64 MiB i najwyżej 512 MiB.</translation>
         <translation>Serwery eD2K, które prowadzą też węzeł indeksu ed3k, podają go przy logowaniu. Wyłączone: węzeł jest tylko odnotowany w logu ed3k.</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
+        <source>This node is reachable: skip NAT tests (restarts the node)</source>
+        <translation>Ten węzeł jest osiągalny: pomiń testy NAT (restartuje węzeł)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Only when the UDP port is forwarded or the computer has a public address. The node then counts as open without reach tests and serves as a router. Helps a small ed3k network where reach tests find no prober.</source>
+        <translation>Tylko gdy port UDP jest przekierowany lub komputer ma adres publiczny. Węzeł jest wtedy uznawany za otwarty bez testów osiągalności i służy jako router. Pomaga w małej sieci ed3k, w której testy osiągalności nie znajdują testującego.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Rooms</source>
         <translation>Pokoje</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Store recent room posts on disk</source>
-        <translation>Zapisuj najnowsze wpisy pokojów na dysku</translation>
+        <translation>Zapisuj ostatnie wpisy pokojów na dysku</translation>
     </message>
     <message>
         <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private rooms are stored unencrypted.</source>
-        <translation type="vanished">Przechowuje najnowsze wpisy każdego dołączonego pokoju w pliku, wyświetlane ponownie po restarcie. Bez tego wracają tylko wpisy, które inni członkowie nadal mają. Wpisy pokojów prywatnych są zapisywane bez szyfrowania.</translation>
+        <translation type="vanished">Zapisuje ostatnie wpisy każdego dołączonego pokoju w pliku, wyświetlane ponownie po restarcie. Bez tego wracają tylko wpisy, które inni członkowie nadal mają. Wpisy pokojów prywatnych są zapisywane bez szyfrowania.</translation>
     </message>
     <message>
         <location line="+6"/>
@@ -8087,7 +8097,7 @@ Auto: 2 % RAM, co najmniej 64 MiB i najwyżej 512 MiB.</translation>
         <translation>Szybkie pobieranie nie działa. Saldo: %1</translation>
     </message>
     <message>
-        <location line="-927"/>
+        <location line="-932"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>

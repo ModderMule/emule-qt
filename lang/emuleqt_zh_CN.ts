@@ -6935,7 +6935,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">ed3k 节点使用“常规”页面中的昵称：%1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+487"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+490"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7280,12 +7280,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1438"/>
+        <location line="+1443"/>
         <source> credits/MiB</source>
         <translation> 信用/MiB</translation>
     </message>
     <message>
-        <location line="-1447"/>
+        <location line="-1452"/>
         <source>Never pay (receipts only)</source>
         <translation>从不支付（仅收据）</translation>
     </message>
@@ -7533,12 +7533,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1275"/>
+        <location line="+1280"/>
         <source>not read yet</source>
         <translation>尚未读取</translation>
     </message>
     <message>
-        <location line="-1273"/>
+        <location line="-1278"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>账户已透支：唯一的出路是新的信用密钥。</translation>
     </message>
@@ -8170,7 +8170,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>当空闲内存低于总量的此比例时,只有使用中的块哈希留在内存中。</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+16"/>
         <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private and closed rooms are encrypted with a key kept in the same folder.</source>
         <translation>将每个已加入房间的最近帖子保存在文件中，重启后再次显示。关闭后，只有其他成员仍保留的帖子会回来。私人和封闭房间的帖子使用保存在同一文件夹中的密钥加密。</translation>
     </message>
@@ -8191,7 +8191,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation type="vanished">本节点为其他 ed3k 节点保存的关键词和来源记录所用的内存（每条约 1 KiB）。超出后将拒绝新记录，由其他节点另行保存。在 ed3k 节点下次启动时生效。</translation>
     </message>
     <message>
-        <location line="-8"/>
+        <location line="-13"/>
         <source>Connection</source>
         <translation>连接</translation>
     </message>
@@ -8211,18 +8211,28 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>同时运行 ed3k 索引节点的 eD2K 服务器会在登录时告知该节点。关闭：该节点仅记录在 ed3k 日志中。</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
+        <source>This node is reachable: skip NAT tests (restarts the node)</source>
+        <translation>此节点可访问：跳过 NAT 测试（重启节点）</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Only when the UDP port is forwarded or the computer has a public address. The node then counts as open without reach tests and serves as a router. Helps a small ed3k network where reach tests find no prober.</source>
+        <translation>仅在 UDP 端口已转发或计算机有公网地址时使用。节点将无需可达性测试即视为开放，并充当路由器。适用于可达性测试找不到探测者的小型 ed3k 网络。</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Rooms</source>
         <translation>聊天室</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Store recent room posts on disk</source>
-        <translation>将聊天室的最近消息保存到磁盘</translation>
+        <translation>将聊天室近期消息保存到磁盘</translation>
     </message>
     <message>
         <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private rooms are stored unencrypted.</source>
-        <translation type="vanished">将每个已加入聊天室的最近消息保存在文件中，重启后再次显示。关闭时，只能恢复其他成员仍保存的消息。私密聊天室的消息以未加密方式存储。</translation>
+        <translation type="vanished">将已加入的每个聊天室的近期消息保存到文件中，重启后再次显示。关闭时只会恢复其他成员仍保留的消息。私人聊天室的消息以未加密方式存储。</translation>
     </message>
     <message>
         <location line="+6"/>
@@ -8232,7 +8242,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
     <message>
         <location line="+2"/>
         <source>The newest posts kept per room, in memory and on disk.</source>
-        <translation>每个聊天室在内存和磁盘中保留的最新消息数。</translation>
+        <translation>每个聊天室在内存和磁盘中保留的最新消息。</translation>
     </message>
     <message>
         <location line="+21"/>
@@ -8309,7 +8319,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>高速下载未运行。余额：%1</translation>
     </message>
     <message>
-        <location line="-927"/>
+        <location line="-932"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>

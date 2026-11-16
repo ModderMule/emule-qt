@@ -6961,7 +6961,7 @@ Sus nombres se resolverán después de las listas que ya sigues.</translation>
         <translation type="vanished">El nodo ed3k usa el apodo de la página General: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+487"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+490"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7306,12 +7306,12 @@ Sus nombres se resolverán después de las listas que ya sigues.</translation>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1438"/>
+        <location line="+1443"/>
         <source> credits/MiB</source>
         <translation> créditos/MiB</translation>
     </message>
     <message>
-        <location line="-1447"/>
+        <location line="-1452"/>
         <source>Never pay (receipts only)</source>
         <translation>No pagar nunca (solo recibos)</translation>
     </message>
@@ -7559,12 +7559,12 @@ Sus nombres se resolverán después de las listas que ya sigues.</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1275"/>
+        <location line="+1280"/>
         <source>not read yet</source>
         <translation>aún no leído</translation>
     </message>
     <message>
-        <location line="-1273"/>
+        <location line="-1278"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>La cuenta está en descubierto: una nueva clave de créditos es la forma de seguir.</translation>
     </message>
@@ -8198,7 +8198,7 @@ Auto: 2 % de la RAM, como mínimo 64 MiB y como máximo 512 MiB.</translation>
         <translation>Mientras la RAM libre esté por debajo de esta parte del total, solo los hashes de bloque en uso permanecen en la RAM.</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+16"/>
         <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private and closed rooms are encrypted with a key kept in the same folder.</source>
         <translation>Guarda los mensajes recientes de cada sala unida en un archivo y los vuelve a mostrar tras reiniciar. Sin esta opción, solo vuelven los mensajes que otros miembros aún conservan. Los mensajes de salas privadas y cerradas se cifran con una clave guardada en la misma carpeta.</translation>
     </message>
@@ -8219,7 +8219,7 @@ Auto: 2 % de la RAM, como mínimo 64 MiB y como máximo 512 MiB.</translation>
         <translation type="vanished">RAM para los registros de palabras clave y fuentes que este nodo guarda para otros nodos ed3k (aprox. 1 KiB cada uno). Por encima, se rechazan registros nuevos y otros nodos los guardan en otro lugar. Se aplica en el próximo inicio del nodo ed3k.</translation>
     </message>
     <message>
-        <location line="-8"/>
+        <location line="-13"/>
         <source>Connection</source>
         <translation>Conexión</translation>
     </message>
@@ -8239,18 +8239,28 @@ Auto: 2 % de la RAM, como mínimo 64 MiB y como máximo 512 MiB.</translation>
         <translation>Los servidores eD2K que también ejecutan un nodo índice ed3k lo indican al iniciar sesión. Desactivado: el nodo solo se anota en el registro de ed3k.</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
+        <source>This node is reachable: skip NAT tests (restarts the node)</source>
+        <translation>Este nodo es accesible: omitir pruebas NAT (reinicia el nodo)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Only when the UDP port is forwarded or the computer has a public address. The node then counts as open without reach tests and serves as a router. Helps a small ed3k network where reach tests find no prober.</source>
+        <translation>Solo si el puerto UDP está redirigido o el equipo tiene una dirección pública. El nodo cuenta entonces como abierto sin pruebas de alcance y sirve como router. Ayuda en una red ed3k pequeña donde las pruebas de alcance no encuentran ningún comprobador.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Rooms</source>
         <translation>Salas</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Store recent room posts on disk</source>
-        <translation>Guardar en disco los mensajes recientes de las salas</translation>
+        <translation>Guardar en disco las publicaciones recientes de las salas</translation>
     </message>
     <message>
         <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private rooms are stored unencrypted.</source>
-        <translation type="vanished">Guarda los mensajes recientes de cada sala unida en un archivo, que se muestran de nuevo tras un reinicio. Sin esto, solo vuelven los mensajes que otros miembros aún conservan. Los mensajes de salas privadas se guardan sin cifrar.</translation>
+        <translation type="vanished">Guarda las publicaciones recientes de cada sala a la que te has unido en un archivo y las muestra de nuevo tras reiniciar. Sin ello, solo vuelven las publicaciones que otros miembros aún conservan. Las publicaciones de salas privadas se guardan sin cifrar.</translation>
     </message>
     <message>
         <location line="+6"/>
@@ -8260,7 +8270,7 @@ Auto: 2 % de la RAM, como mínimo 64 MiB y como máximo 512 MiB.</translation>
     <message>
         <location line="+2"/>
         <source>The newest posts kept per room, in memory and on disk.</source>
-        <translation>Los mensajes más recientes guardados por sala, en memoria y en disco.</translation>
+        <translation>Las publicaciones más recientes que se guardan por sala, en memoria y en disco.</translation>
     </message>
     <message>
         <location line="+21"/>
@@ -8337,7 +8347,7 @@ Auto: 2 % de la RAM, como mínimo 64 MiB y como máximo 512 MiB.</translation>
         <translation>La descarga de alta velocidad no está en marcha. Saldo: %1</translation>
     </message>
     <message>
-        <location line="-927"/>
+        <location line="-932"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>

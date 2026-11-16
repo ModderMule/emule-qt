@@ -6684,7 +6684,7 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
         <translation type="vanished">De ed3k-node gebruikt de gebruikersnaam van de pagina Algemeen: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+487"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+490"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7029,12 +7029,12 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1438"/>
+        <location line="+1443"/>
         <source> credits/MiB</source>
         <translation> credits/MiB</translation>
     </message>
     <message>
-        <location line="-1447"/>
+        <location line="-1452"/>
         <source>Never pay (receipts only)</source>
         <translation>Nooit betalen (alleen ontvangstbewijzen)</translation>
     </message>
@@ -7282,12 +7282,12 @@ De namen ervan worden dan omgezet na de lijsten die u al volgt.</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1275"/>
+        <location line="+1280"/>
         <source>not read yet</source>
         <translation>nog niet uitgelezen</translation>
     </message>
     <message>
-        <location line="-1273"/>
+        <location line="-1278"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Het account staat rood: een nieuwe creditsleutel is de weg verder.</translation>
     </message>
@@ -7921,7 +7921,7 @@ Auto: 2 % van het RAM, minimaal 64 MiB en maximaal 512 MiB.</translation>
         <translation>Zolang het vrije RAM onder dit deel van het totaal ligt, blijven alleen gebruikte blokhashes in het RAM.</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+16"/>
         <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private and closed rooms are encrypted with a key kept in the same folder.</source>
         <translation>Bewaart de recente berichten van elke gejoinde kamer in een bestand, die na een herstart weer worden getoond. Zonder deze optie komen alleen berichten terug die andere leden nog hebben. Berichten van privé- en gesloten kamers worden versleuteld met een sleutel in dezelfde map.</translation>
     </message>
@@ -7942,7 +7942,7 @@ Auto: 2 % van het RAM, minimaal 64 MiB en maximaal 512 MiB.</translation>
         <translation type="vanished">RAM voor de trefwoord- en bronrecords die deze node voor andere ed3k-nodes bewaart (elk ongeveer 1 KiB). Daarboven worden nieuwe records geweigerd en slaan andere nodes ze elders op. Geldt bij de volgende start van de ed3k-node.</translation>
     </message>
     <message>
-        <location line="-8"/>
+        <location line="-13"/>
         <source>Connection</source>
         <translation>Verbinding</translation>
     </message>
@@ -7962,7 +7962,17 @@ Auto: 2 % van het RAM, minimaal 64 MiB en maximaal 512 MiB.</translation>
         <translation>eD2K-servers die ook een ed3k-indexnode draaien, noemen die bij het inloggen. Uit: de node wordt alleen in het ed3k-logboek vermeld.</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
+        <source>This node is reachable: skip NAT tests (restarts the node)</source>
+        <translation>Deze node is bereikbaar: NAT-tests overslaan (herstart de node)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Only when the UDP port is forwarded or the computer has a public address. The node then counts as open without reach tests and serves as a router. Helps a small ed3k network where reach tests find no prober.</source>
+        <translation>Alleen als de UDP-poort is doorgestuurd of de computer een openbaar adres heeft. De node telt dan zonder bereikbaarheidstests als open en dient als router. Helpt in een klein ed3k-netwerk waar bereikbaarheidstests geen tester vinden.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Rooms</source>
         <translation>Ruimtes</translation>
     </message>
@@ -7973,7 +7983,7 @@ Auto: 2 % van het RAM, minimaal 64 MiB en maximaal 512 MiB.</translation>
     </message>
     <message>
         <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private rooms are stored unencrypted.</source>
-        <translation type="vanished">Bewaart de recente berichten van elke ruimte waarin je zit in een bestand, die na een herstart weer worden getoond. Zonder deze optie komen alleen berichten terug die andere leden nog hebben. Berichten van privéruimtes worden onversleuteld opgeslagen.</translation>
+        <translation type="vanished">Bewaart de recente berichten van elke ruimte waar je lid van bent in een bestand, die na een herstart weer worden getoond. Zonder deze optie komen alleen berichten terug die andere leden nog hebben. Berichten van privéruimtes worden onversleuteld opgeslagen.</translation>
     </message>
     <message>
         <location line="+6"/>
@@ -8060,7 +8070,7 @@ Auto: 2 % van het RAM, minimaal 64 MiB en maximaal 512 MiB.</translation>
         <translation>Snelle download loopt niet. Saldo: %1</translation>
     </message>
     <message>
-        <location line="-927"/>
+        <location line="-932"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>

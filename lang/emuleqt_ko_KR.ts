@@ -6935,7 +6935,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">ed3k 노드는 일반 페이지의 닉네임을 사용합니다: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+487"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+490"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7280,12 +7280,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1438"/>
+        <location line="+1443"/>
         <source> credits/MiB</source>
         <translation> 크레딧/MiB</translation>
     </message>
     <message>
-        <location line="-1447"/>
+        <location line="-1452"/>
         <source>Never pay (receipts only)</source>
         <translation>지불 안 함(영수증만)</translation>
     </message>
@@ -7533,12 +7533,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1275"/>
+        <location line="+1280"/>
         <source>not read yet</source>
         <translation>아직 읽지 않음</translation>
     </message>
     <message>
-        <location line="-1273"/>
+        <location line="-1278"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>계정이 초과 인출 상태입니다. 계속하려면 새 크레딧 키가 필요합니다.</translation>
     </message>
@@ -8170,7 +8170,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>여유 RAM이 전체의 이 비율보다 적은 동안에는 사용 중인 블록 해시만 RAM에 남습니다.</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+16"/>
         <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private and closed rooms are encrypted with a key kept in the same folder.</source>
         <translation>참여한 각 방의 최근 게시물을 파일에 보관하여 재시작 후 다시 표시합니다. 끄면 다른 멤버가 아직 보유한 게시물만 돌아옵니다. 비공개 및 닫힌 방의 게시물은 같은 폴더에 보관된 키로 암호화됩니다.</translation>
     </message>
@@ -8191,7 +8191,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation type="vanished">이 노드가 다른 ed3k 노드를 위해 보관하는 키워드 및 소스 레코드용 RAM(각 약 1 KiB). 초과하면 새 레코드는 거부되고 다른 노드가 다른 곳에 저장합니다. ed3k 노드를 다음에 시작할 때 적용됩니다.</translation>
     </message>
     <message>
-        <location line="-8"/>
+        <location line="-13"/>
         <source>Connection</source>
         <translation>연결</translation>
     </message>
@@ -8211,18 +8211,28 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>ed3k 인덱스 노드도 운영하는 eD2K 서버는 로그인 시 이를 알려줍니다. 끄기: 노드는 ed3k 로그에만 기록됩니다.</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
+        <source>This node is reachable: skip NAT tests (restarts the node)</source>
+        <translation>이 노드는 접속 가능: NAT 테스트 건너뛰기 (노드 재시작)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Only when the UDP port is forwarded or the computer has a public address. The node then counts as open without reach tests and serves as a router. Helps a small ed3k network where reach tests find no prober.</source>
+        <translation>UDP 포트가 포워딩되었거나 컴퓨터에 공인 주소가 있을 때만 사용하세요. 노드는 도달 테스트 없이 열린 것으로 간주되며 라우터 역할을 합니다. 도달 테스트에서 프로버를 찾지 못하는 작은 ed3k 네트워크에 도움이 됩니다.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Rooms</source>
         <translation>방</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Store recent room posts on disk</source>
-        <translation>최근 방 게시물을 디스크에 저장</translation>
+        <translation>최근 대화방 글을 디스크에 저장</translation>
     </message>
     <message>
         <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private rooms are stored unencrypted.</source>
-        <translation type="vanished">참여한 각 방의 최근 게시물을 파일에 보관하여 다시 시작한 후에도 표시합니다. 사용하지 않으면 다른 멤버가 아직 보관 중인 게시물만 돌아옵니다. 비공개 방의 게시물은 암호화되지 않은 상태로 저장됩니다.</translation>
+        <translation type="vanished">참여한 각 대화방의 최근 글을 파일에 저장하여 재시작 후 다시 표시합니다. 끄면 다른 멤버가 아직 가지고 있는 글만 돌아옵니다. 비공개 대화방의 글은 암호화되지 않은 채 저장됩니다.</translation>
     </message>
     <message>
         <location line="+6"/>
@@ -8232,7 +8242,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
     <message>
         <location line="+2"/>
         <source>The newest posts kept per room, in memory and on disk.</source>
-        <translation>방별로 메모리와 디스크에 보관하는 최신 게시물 수.</translation>
+        <translation>대화방별로 메모리와 디스크에 보관하는 최신 글 수.</translation>
     </message>
     <message>
         <location line="+21"/>
@@ -8309,7 +8319,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>고속 다운로드가 실행 중이 아닙니다. 잔액: %1</translation>
     </message>
     <message>
-        <location line="-927"/>
+        <location line="-932"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>

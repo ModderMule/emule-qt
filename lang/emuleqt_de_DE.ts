@@ -6961,7 +6961,7 @@ Ihre Namen werden dann nach den Listen aufgelöst, denen Sie bereits folgen.</tr
         <translation type="vanished">Der ed3k-Knoten verwendet den Benutzernamen der Seite Allgemein: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+487"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+490"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7306,12 +7306,12 @@ Ihre Namen werden dann nach den Listen aufgelöst, denen Sie bereits folgen.</tr
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1438"/>
+        <location line="+1443"/>
         <source> credits/MiB</source>
         <translation> Credits/MiB</translation>
     </message>
     <message>
-        <location line="-1447"/>
+        <location line="-1452"/>
         <source>Never pay (receipts only)</source>
         <translation>Nie zahlen (nur Quittungen)</translation>
     </message>
@@ -7559,12 +7559,12 @@ Ihre Namen werden dann nach den Listen aufgelöst, denen Sie bereits folgen.</tr
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1275"/>
+        <location line="+1280"/>
         <source>not read yet</source>
         <translation>noch nicht gelesen</translation>
     </message>
     <message>
-        <location line="-1273"/>
+        <location line="-1278"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Das Konto ist überzogen: Ein neuer Credit-Schlüssel ist der Weg weiter.</translation>
     </message>
@@ -8198,7 +8198,7 @@ Auto: 2 % des RAM, mindestens 64 MiB und höchstens 512 MiB.</translation>
         <translation>Solange der freie RAM unter diesem Anteil des gesamten liegt, bleiben nur genutzte Blockhashes im RAM.</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+16"/>
         <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private and closed rooms are encrypted with a key kept in the same folder.</source>
         <translation>Speichert die letzten Beiträge jedes beigetretenen Raums in einer Datei, die nach einem Neustart wieder angezeigt werden. Ohne diese Option kommen nur Beiträge zurück, die andere Mitglieder noch haben. Beiträge privater und geschlossener Räume werden mit einem Schlüssel verschlüsselt, der im selben Ordner liegt.</translation>
     </message>
@@ -8219,7 +8219,7 @@ Auto: 2 % des RAM, mindestens 64 MiB und höchstens 512 MiB.</translation>
         <translation type="vanished">RAM für die Stichwort- und Quelleneinträge, die dieser Knoten für andere ed3k-Knoten aufbewahrt (je etwa 1 KiB). Darüber werden neue Einträge abgelehnt und andere Knoten speichern sie anderswo. Gilt ab dem nächsten Start des ed3k-Knotens.</translation>
     </message>
     <message>
-        <location line="-8"/>
+        <location line="-13"/>
         <source>Connection</source>
         <translation>Verbindung</translation>
     </message>
@@ -8239,7 +8239,17 @@ Auto: 2 % des RAM, mindestens 64 MiB und höchstens 512 MiB.</translation>
         <translation>eD2K-Server, die auch einen ed3k-Indexknoten betreiben, nennen ihn beim Login. Aus: Der Knoten wird nur im ed3k-Log vermerkt.</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
+        <source>This node is reachable: skip NAT tests (restarts the node)</source>
+        <translation>Dieser Knoten ist erreichbar: NAT-Tests überspringen (startet den Knoten neu)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Only when the UDP port is forwarded or the computer has a public address. The node then counts as open without reach tests and serves as a router. Helps a small ed3k network where reach tests find no prober.</source>
+        <translation>Nur wenn der UDP-Port weitergeleitet ist oder der Computer eine öffentliche Adresse hat. Der Knoten gilt dann ohne Erreichbarkeitstests als offen und dient als Router. Hilft in einem kleinen ed3k-Netz, in dem Erreichbarkeitstests keinen Prüfer finden.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Rooms</source>
         <translation>Räume</translation>
     </message>
@@ -8337,7 +8347,7 @@ Auto: 2 % des RAM, mindestens 64 MiB und höchstens 512 MiB.</translation>
         <translation>Highspeed-Download läuft nicht. Guthaben: %1</translation>
     </message>
     <message>
-        <location line="-927"/>
+        <location line="-932"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>

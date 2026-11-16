@@ -6709,7 +6709,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">Узел ed3k использует ник со страницы «Общие»: %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+487"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+490"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7054,12 +7054,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1438"/>
+        <location line="+1443"/>
         <source> credits/MiB</source>
         <translation> кредитов/MiB</translation>
     </message>
     <message>
-        <location line="-1447"/>
+        <location line="-1452"/>
         <source>Never pay (receipts only)</source>
         <translation>Никогда не платить (только квитанции)</translation>
     </message>
@@ -7307,12 +7307,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1275"/>
+        <location line="+1280"/>
         <source>not read yet</source>
         <translation>ещё не прочитано</translation>
     </message>
     <message>
-        <location line="-1273"/>
+        <location line="-1278"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>Счёт в минусе: выход — новый кредитный ключ.</translation>
     </message>
@@ -7948,7 +7948,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>Пока свободной ОЗУ меньше этой доли от общего объёма, в ОЗУ остаются только используемые хеши блоков.</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+16"/>
         <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private and closed rooms are encrypted with a key kept in the same folder.</source>
         <translation>Хранит последние сообщения каждой комнаты, в которую вы вошли, в файле и снова показывает их после перезапуска. Без этого вернутся только сообщения, которые ещё хранят другие участники. Сообщения частных и закрытых комнат шифруются ключом, который хранится в той же папке.</translation>
     </message>
@@ -7969,7 +7969,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation type="vanished">ОЗУ для записей ключевых слов и источников, которые этот узел хранит для других узлов ed3k (около 1 КиБ каждая). Сверх этого новые записи отклоняются, и другие узлы сохраняют их в другом месте. Применяется при следующем запуске узла ed3k.</translation>
     </message>
     <message>
-        <location line="-8"/>
+        <location line="-13"/>
         <source>Connection</source>
         <translation>Соединение</translation>
     </message>
@@ -7989,18 +7989,28 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>Серверы eD2K, которые также держат индексный узел ed3k, сообщают его при входе. Выкл.: узел только отмечается в журнале ed3k.</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
+        <source>This node is reachable: skip NAT tests (restarts the node)</source>
+        <translation>Этот узел доступен: пропускать проверки NAT (перезапускает узел)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Only when the UDP port is forwarded or the computer has a public address. The node then counts as open without reach tests and serves as a router. Helps a small ed3k network where reach tests find no prober.</source>
+        <translation>Только если UDP-порт проброшен или у компьютера публичный адрес. Узел тогда считается открытым без проверок доступности и служит маршрутизатором. Помогает в небольшой сети ed3k, где проверки доступности не находят проверяющего.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Rooms</source>
         <translation>Комнаты</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Store recent room posts on disk</source>
-        <translation>Хранить последние сообщения комнат на диске</translation>
+        <translation>Хранить недавние сообщения комнат на диске</translation>
     </message>
     <message>
         <source>Keeps the recent posts of each joined room in a file, shown again after a restart. Without it, only posts other members still hold come back. Posts of private rooms are stored unencrypted.</source>
-        <translation type="vanished">Хранит последние сообщения каждой комнаты, в которой вы состоите, в файле; они снова показываются после перезапуска. Без этого возвращаются только сообщения, которые ещё есть у других участников. Сообщения приватных комнат хранятся без шифрования.</translation>
+        <translation type="vanished">Сохраняет недавние сообщения каждой комнаты, в которую вы вошли, в файл и показывает их снова после перезапуска. Без этого возвращаются только сообщения, которые ещё хранят другие участники. Сообщения приватных комнат хранятся без шифрования.</translation>
     </message>
     <message>
         <location line="+6"/>
@@ -8010,7 +8020,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
     <message>
         <location line="+2"/>
         <source>The newest posts kept per room, in memory and on disk.</source>
-        <translation>Число последних сообщений, хранимых для каждой комнаты в памяти и на диске.</translation>
+        <translation>Самые новые сообщения, хранимые для каждой комнаты в памяти и на диске.</translation>
     </message>
     <message>
         <location line="+21"/>
@@ -8087,7 +8097,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>Скоростная загрузка не работает. Баланс: %1</translation>
     </message>
     <message>
-        <location line="-927"/>
+        <location line="-932"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
