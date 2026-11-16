@@ -1460,6 +1460,10 @@ public:
     /// Local service discovery.
     [[nodiscard]] bool btLsd() const;
     void setBtLsd(bool val);
+    /// LSD also while bindAddress selects an interface; yaml only. Off: LSD's
+    /// 0.0.0.0:6771 socket would ignore the selection.
+    [[nodiscard]] bool btLsdWhenBound() const;
+    void setBtLsdWhenBound(bool val);
     /// Peer exchange.
     [[nodiscard]] bool btPex() const;
     void setBtPex(bool val);

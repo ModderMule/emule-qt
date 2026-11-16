@@ -67,6 +67,8 @@ Priority eD2K > Usenet > BitTorrent. The daemon's `BandwidthCoordinator` recompu
   `btDownLimitKb`, `uploadLineKb`, `ed2kUploadBudgetKb`, `btUpLimitKb`; KB/s, 0 = unlimited.
 - Connections: `btMaxConnections` (session) and `btMaxConnectionsPerTorrent` (the default of
   every torrent; a torrent's own "max peers" 0 means this default).
+- LSD while `bindAddress` selects an interface: off, as libtorrent binds LSD to
+  `0.0.0.0:6771` regardless. YAML only: `bittorrent.lsdWhenBound: true` keeps it on.
 
 Options: the BitTorrent section has two pages, BitTorrent (switch, folder, queue, seeding) and
 Connection (port, mapping, encryption, DHT/LSD/PEX, bandwidth shares and hard caps, connection

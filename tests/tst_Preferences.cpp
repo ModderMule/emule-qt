@@ -467,6 +467,7 @@ private slots:
         QCOMPARE(prefs.btMaxUploadKb(), uint32{0});
         QCOMPARE(prefs.btDht(), true);
         QCOMPARE(prefs.btLsd(), true);
+        QCOMPARE(prefs.btLsdWhenBound(), false);
         QCOMPARE(prefs.btPex(), true);
         QCOMPARE(prefs.btEncryption(), 0);
         QCOMPARE(prefs.btMaxActiveDownloads(), 3);
@@ -585,6 +586,7 @@ private slots:
             prefs.setBtMaxUploadKb(256);
             prefs.setBtDht(false);
             prefs.setBtLsd(false);
+            prefs.setBtLsdWhenBound(true);
             prefs.setBtPex(false);
             prefs.setBtEncryption(1);
             prefs.setBtMaxActiveDownloads(7);
@@ -657,6 +659,7 @@ private slots:
         check(loaded);
         // YAML only, not over IPC
         QCOMPARE(loaded.btI2pBrowserProxyAddress(), QStringLiteral("192.0.2.7"));
+        QCOMPARE(loaded.btLsdWhenBound(), true);
         if (QTest::currentTestFailed())
             return;
 

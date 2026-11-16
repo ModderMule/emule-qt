@@ -644,6 +644,7 @@ bt::BtSettings settingsFromPrefs()
     s.maxUploadKb = thePrefs.btMaxUploadKb();
     s.dht = thePrefs.btDht();
     s.lsd = thePrefs.btLsd();
+    s.lsdWhenBound = thePrefs.btLsdWhenBound();
     s.pex = thePrefs.btPex();
     s.announceToAll = thePrefs.btAnnounceToAll();
     s.encryption = thePrefs.btEncryption();

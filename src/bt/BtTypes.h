@@ -29,6 +29,8 @@ struct BtSettings {
     quint32 maxUploadKb = 0;
     bool dht = true;
     bool lsd = true;
+    /// lsd also with bindAddresses set (LSD binds the wildcard regardless)
+    bool lsdWhenBound = false;
     /// applied when the session starts
     bool pex = true;
     /// every tracker and tier; off = the first working tracker per tier
