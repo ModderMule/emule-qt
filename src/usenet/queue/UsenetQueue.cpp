@@ -634,7 +634,7 @@ bool UsenetQueue::removeItem(const QString& id, bool deleteFiles)
         m_stateWriter.postRemove(id);
         m_items.erase(m_items.begin() + i);
 
-        emit itemRemoved(id);
+        emit itemRemoved(id, deleteFiles);
         dispatch();
         return true;
     }

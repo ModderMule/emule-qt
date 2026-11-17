@@ -339,6 +339,9 @@ private:
     /// True when the verdict changed.
     bool assess(SearchFile* file);
 
+    /// Re-assess every row (live and restored) one of whose publishers is @p publisher.
+    void reassessPublisher(const QByteArray& publisher);
+
     /// A new ED2K search took the server answers: forget who was asked and who answered.
     void resetUdpRequestTracking();
 
@@ -381,6 +384,7 @@ private:
     QStringList m_knownSpamNames;
     QStringList m_knownSimilarSpamNames;
     std::vector<uint64> m_knownSpamSizes;
+    QSet<QByteArray> m_knownSpamPublishers;   // ed3k node IDs (16 B) whose files were marked
 
     // Current session state
     QString m_resultFileType;

@@ -128,6 +128,8 @@ The `ed3k:` block in `preferences.yml`, with IPC/REST keys `ed3kEnabled` and `ed
 | `forceOpen` | `false` | IPC/REST `ed3kForceOpen`: the operator declares the node open in both families, `ROUTER` without reach tests (Protocol.md §9.2 "The first nodes of a network"). Seed nodes only. A change restarts the node |
 | `autoIndexNode` | `false` | IPC/REST `ed3kAutoIndexNode`: the index node an eD2K server names (ST_ED3K, ed2k-signals.md §3) is dialled (`Ed3kSession::setAutoIndexNodes`); off: only kept. Both live, no node restart; off keeps an index node already connected. The server list's Disconnect of that server drops it (`Ed3kSession::removeIndexLink`, packmule `ed3k_remove_index_node`); the next index node of the list is dialled only with auto connect on. A server naming a connected index node is shown like the connected eD2K server (colour, bold), so two rows may be marked. Docker test: `ed3knet.py --index`. GUI: Options → ed3k → Extended → Connection |
 | `nodeLists` | `[]` | IPC/REST `ed3kNodeLists` (links separated by spaces): node list sources as `ed3k:nodes?url=…&key=…` links (`Ed3kBootstrap`); a source the user said yes to is added. No restart |
+| `declineUrls` | `[]` | YAML only; set by the Declined records dialog (`SetEd3kDeclined` 1209): URLs of shared decline lists (declined-records.md §2 "Shared lists": the operator's choice, never on by default), fetched at start, on a change and every 24 h, cached as `decline-url-<n>.txt`, merged with `decline.txt` (see "Declined records"). No restart |
+| `deletedFileDays` | `365` | YAML only: days a volume deleted after unpacking keeps its `ALIAS` records out (alias.md §3, at most 365, 0 = none; see "Deleted file") |
 | `nodeListAuto` | `true` | IPC/REST `ed3kNodeListAuto`: node lists fetched automatically when < 10 nodes answer (bootstrap.md §1). No restart |
 | `nodeListMaxAgeDays` | `30` | IPC/REST `ed3kNodeListMaxAgeDays`: fetched or opened lists older than this are refused (§2 "MAY"); 0 = no limit; the shipped list has none. No restart |
 | `seedFromEd2k` | `true` | IPC/REST `ed3kSeedFromEd2k`: eD2K peers with a derived user hash seed ed3k Kad while it has < 10 contacts (§1 source 4). No restart |
@@ -159,7 +161,7 @@ The port is mapped as `PortMapPurpose::Ed3kUdp` while `ed3kEnabled`.
 | `usenet/<item>.join` | a usenet join | debounced, and at stop |
 | `torrent/<id>.join` | a torrent join (`:` of the id as `_`) | debounced, and at stop |
 | `usenet/<item>/`, `torrent/<id>/` | kept for a restart (owner percent-encoded): `<root>.blob` per manifest, article list, info dictionary; `kept.tsv` names them, the verified members and the set published (`s` line); `records.bin` the `ALIAS` records (u32-LE length + `Alias` each) | when fetched, made or verified; dropped with the item or torrent |
-| `usenet/deleted.tsv`, `hoster/deleted.tsv` | alias.md §3 "Deleted file": volumes (and repair files) deleted after unpacking whose `ALIAS` records stay out without the file, no `SOURCE`. Per row: root, owner, member, size, deleted, last found (ms), name, what is checked (usenet: 3 message ids, `@group`, `=date`; hoster: the links). Told to the engine at start (`aliasKeepDeleted`) before the kept records go out | at deletion; a row ends after `ed3k.deletedFileDays` (YAML, default and max 365, 0 = none), when its name is found gone (usenet: STAT every 7 days, every account refuses all; hoster: the link recheck, `recheckHours`), or removed with "delete file"; the owner's kept dir goes with its last row |
+| `usenet/deleted.tsv`, `hoster/deleted.tsv` | alias.md §3 "Deleted file": volumes (and repair files) deleted after unpacking whose `ALIAS` records stay out without the file, no `SOURCE`. Per row: root, owner, member, size, deleted, last found (ms), name, what is checked (usenet: 3 message ids, `@group`, `=date`; hoster: the links). Told to the engine at start (`aliasKeepDeleted`) before the kept records go out | at deletion; a row ends after `ed3k.deletedFileDays` (YAML, default and max 365, 0 = none), when its name is found gone (usenet: STAT every 7 days, every account refuses all; hoster: the link recheck, `recheckHours`, at least every 7 days: `checkDeleted`), or removed with "delete file"; the owner's kept dir goes with its last row |
 | `names.dat` | `ED3K_STATE_NAMES` (petnames, pins, own zones, followed lists) | on `StateChanged` and at stop |
 | `name-lists.dat` | `id<TAB>label<TAB>link` of the followed name lists in the user's order (`Ed3kNames`); not a credential | on follow, unfollow, move |
 | `name-petnames.dat` | `text<TAB>zone hex<TAB>shareable` of the petnames set here (the core lists none); owner-only | on set, remove |
@@ -457,6 +459,26 @@ members again and, once each had its first hash (shared, changed or unreadable),
 `setPublish` with the kept manifest and `publishAlias` (not while holding back; the roots
 must be shared first, else `ED3K_ERR_STATE`). Signal `keptRecordsPublished(owner, aliases)`.
 
+**Deleted file (alias.md §3, `Ed3kJoinBase`):** a verified volume (or repair file) deleted
+after its own use (unpacked) keeps its `ALIAS` records out without the file and without a
+`SOURCE`: `keepDeleted` saves a row to `<tag>/deleted.tsv` and tells the engine
+(`aliasKeepDeleted` with the deletion time); `loadDeleted` at start tells it again before
+`shareKept` publishes the kept records. `endDeleted(root, why)` ends a row (`aliasEndDeleted`;
+the owner's kept records go once nothing keeps it). A row ends:
+- after `ed3k.deletedFileDays` (default and max 365, 0 = none; a shorter value ends rows at once),
+  checked hourly (`onDeletedTimer`);
+- when its name is found gone, asked at least every 7 days (`kDeletedCheckMs`, `checkDeleted`):
+  usenet samples the member's articles with STAT (`checkArticles`: 3 message ids, its group and
+  date; every account refusing all ends it, no answer keeps it); hoster rechecks the item's
+  links (`checkDeleted` queues them whatever `recheckHours` says; all links offline end it,
+  an online one sets `checkedAt`);
+- when the user removes the item with its files (usenet `itemRemoved(id, deleteFiles)`,
+  hoster `remove(id, true)`): "removed by the user". A row cleared without deleting stays.
+
+`Ed3kArchiveContents` (made after the usenet and hoster joins in `DaemonApp`) starts after
+them on `statusChanged`, so the deleted volumes are kept on the engine before its `PACKED` /
+`b3` records of them go out.
+
 ## Shared files
 
 `Ed3kShared` (derived from `Ed3kJoinBase`, owner `shared`, member = a stable index per file)
@@ -581,7 +603,7 @@ The GUI's Kad tab has a page per network (`KadPanel` → `Ed2kKadPanel`, `Ed3kKa
 | `GetEd3kKadLookupGraph` 1202 `[id]` | `kadLookupGraph` | candidates by distance, who named whom, asked/answered: the Search Details graph |
 | `ExportEd3kNodeList` 1203 `[comment]` | `bootstrapExport` | own contacts as a signed list |
 | `FetchEd3kNodeLists` 1204 | `bootstrapFetch` | node lists now |
-| `GetEd3kDeclined` 1208 / `SetEd3kDeclined` 1209 `[text]` | `kadDeclineLists` | `decline.txt` and the counts loaded (see below); work with the node off |
+| `GetEd3kDeclined` 1208 / `SetEd3kDeclined` 1209 `[text, urls]` | `kadDeclineLists` | `decline.txt`, the URL lists and their fetch status, the counts loaded (see below); work with the node off |
 
 Connect/Disconnect on the page switches `ed3kEnabled`. `--subtab 2`/`3` shows the ed3k page.
 
@@ -603,16 +625,39 @@ A prefixed line with a bad value is skipped (logged, listed as "not understood")
 keyword. Local uses (declined-records.md §2), same lists:
 - **Own publishing**: a shared file whose root or MD4 is listed is served but not published
   (`Ed3kJoinBase::publishShared` refuses with `Denied` for every join; `Ed3kShared::share` also
-  skips the note and the `ed2k` ALIAS). ToDo: a list change does not take back records
-  published before it; a restart does.
+  skips the note and the `ed2k` ALIAS). was: ToDo: a list change does not take back records
+  published before it; a restart does. (done: after every applied change `Ed3kSession` emits
+  `declinedChanged`; `Ed3kJoinBase::onDeclinedChanged` withdraws each shared root now listed
+  (`unpublishShared(root, Both)`, which also ends its `ALIAS` records, and its note) and
+  publishes again the ones taken off the list from the `FileInfo` `publishShared` kept;
+  `Ed3kShared` overrides it by root or MD4 (`m_files`): source, keywords, note and `ed2k` ALIAS
+  out, and `publishFile` again once off the list.) ToDo: a join's `ALIAS` / set records of a
+  root taken off the list come back only at the next start (`shareKept`).
+- **Uploads** (packmule): the engine refuses uploads of listed roots. MD4-listed files whose
+  root is known here (`Ed3kShared::rootsOfListed`, `Ed3kSession::setDeclineRootsOf`) are added
+  to the roots handed to `kadDeclineLists`; the user's list stays as it is (`ownDeclined()`,
+  `declined()` = what is in force). A file hashed later asks for a new apply
+  (`refreshDeclined`, coalesced).
+- **Search**: `Ed3kSearch::judge` hides rows (`Judged::Hide`, `by` = `decline.txt`, reason
+  "its root/eD2K hash is declined") whose root or MD4 is listed, before the filter lists'
+  judge; `declinedChanged` → `rejudge()` (queued). Shown on request like a list's hidden rows.
+- **Lists from URLs** (§2 "Shared lists", `Ed3kDeclineUrls`, pref `ed3k.declineUrls`, empty by
+  default): fetched while the node runs, at start, on a change and every 24 h
+  (`HttpFileDownload`, 4 MiB at most, URLs redacted in errors), cached as
+  `decline-url-<n>.txt` beside `decline.txt` (first line `# url: <url>`: a cache of another
+  URL at that place is ignored; caches past the list's end deleted). Parsed by
+  `parseDeclineList` and merged (`DeclineList::merge`) into `declined()`. A failed fetch is
+  logged and the last cache stays in use; a fetched list applies at once.
 - **Downloads**: `Ed3kDownloads::add` of a listed root or MD4 (`spec.md4`) adds it paused and
   emits `declinedAdded` → `CoreNotifierBridge` → `NotifierEvent::Ed3kDeclinedAdded` (6), an
   urgent pop-up ("resume it to download anyway"). A download asked paused is not told.
 - **GUI**: Options → ed3k → General → *Declined records...* (`Ed3kDeclineDialog`): edits the
   core's file over IPC 1208/1209 (the GUI may be remote), OK/Apply save at once, the counts per
   list as loaded by the running node (else the file parsed) and the held records dropped.
-- ToDo (declined-records.md §2): search rows of listed roots hidden, uploads of a listed root
-  refused, lists fetched from a URL.
+  Below, the URL lists (one per line; 1209 field 1, an array) and a status line per URL
+  (1208 `urls`, `urlStatus` {url, fetchedAt, triedAt, error, entries, fetching}).
+- was: ToDo (declined-records.md §2): search rows of listed roots hidden, uploads of a listed
+  root refused, lists fetched from a URL. (done: see Search, Uploads, Lists from URLs above)
 
 ## Archive contents check (hoster.md §6.1 "Unpacking is the check")
 
@@ -769,8 +814,10 @@ ToDo (credits):
   (`Ed3kShared::tellExposed`). Also when an eD2K download of such a file starts
   (`DownloadQueue::fileAdded` → `tellDownloadElsewhere`, DaemonApp) and when an ed3k download
   under the anonymous key starts of a file in the eD2K queue (the link's `ed2k` MD4,
-  `fileByID`) or the hoster list (root hex) (`Ed3kDownloads::setAnonAddedHook`).
-  BitTorrent / plain HTTP: ToDo in `Ed3kShared::share`.
+  `fileByID`), the hoster list (root hex) or a torrent here (`Ed3kTorrentJoin::holdsRoot`)
+  (`Ed3kDownloads::setAnonAddedHook`). A torrent member verified whose root Shared Files holds
+  under the anonymous key (`Ed3kTorrentJoin::memberVerified`, `Ed3kShared::keyOfRoot`):
+  "BitTorrent". Plain HTTP (not a hoster item): ToDo in `Ed3kShared::share`.
 - **HTTP proxy:** eMuleQt runs packmule in mode A (`Engine::create`, `Ed3kSession::start`) and
   does every HTTP request itself in `Ed3kHttp`, through `QNetworkProxy` from
   `thePrefs.proxySettings()`; nothing of the anonymous key goes over HTTP (§1), except:
@@ -809,8 +856,11 @@ ToDo (credits):
   members along (unshared under the old key, recorded under the new), refused when one of the
   other key is held in Shared Files, the downloads (`setHeldElsewhere`) or another own set.
 
-ToDo (hiding): followed sets' key not shown in the GUI; the exposed-file warning for
-BitTorrent/plain HTTP.
+was: ToDo (hiding): followed sets' key not shown in the GUI; the exposed-file warning for
+BitTorrent/plain HTTP. (done: `toCbor(Ed3kSets::Info)` sends `key` ("Node"/"Anonymous") as the
+live and broadcast rows do, the My/Followed sets details say "Followed under the anonymous
+key."; BitTorrent: see Exposed files) ToDo (hiding): the exposed-file warning for a plain HTTP
+download.
 
 **Kad offline** (Protocol.md §10 "Own network down", in packmule): `ED3K_EV_KAD_OFFLINE` is
 logged and refreshes the status (`kadOffline` bits, "Kad offline (IPv4/IPv6)" in the tooltip).

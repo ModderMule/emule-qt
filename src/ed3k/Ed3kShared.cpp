@@ -141,6 +141,8 @@ Ed3kShared::Ed3kShared(Ed3kSession& session, SharedFileSource& source, const QSt
     : Ed3kJoinBase(session, configDir, QStringLiteral("shared"), parent)
     , m_source(source)
 {
+    // own republish path for a list change (onDeclinedChanged): no FileInfo kept per file
+    setKeepPublishInfo(false);
     m_recheckTimer.setSingleShot(true);
     m_recheckTimer.setInterval(0);
     connect(&m_recheckTimer, &QTimer::timeout, this, &Ed3kShared::recheck);
@@ -370,6 +372,23 @@ std::optional<ffi::KeyKind> Ed3kShared::keyOfFile(const QByteArray& md4) const
 {
     const auto root = hashedRootOf(md4);
     return root ? std::optional(keyOf(*root)) : std::nullopt;
+}
+
+std::optional<ffi::KeyKind> Ed3kShared::keyOfRoot(const ffi::Root& root) const
+{
+    return holdsRoot(root) ? std::optional(keyOf(root)) : std::nullopt;
+}
+
+std::vector<ffi::Root> Ed3kShared::rootsOfListed(const DeclineList& list) const
+{
+    std::vector<ffi::Root> out;
+    if (list.ed2k.empty())
+        return out;
+    for (const auto& [md4, f] : m_files)
+        if (list.listsEd2k(md4))
+            if (const auto c = m_cache.find(md4); c != m_cache.end())
+                out.push_back(c->second.root);
+    return out;
 }
 
 bool Ed3kShared::tellDownloadElsewhere(const QByteArray& md4, const QString& name, const QString& networks)
@@ -840,10 +859,22 @@ void Ed3kShared::share(File& f, Hashed& h)
         ffi::Bytes().swap(h.hashes);
         h.inRam = false;
     }
+    publishFile(f, h.root, h.size);
+    emit fileShared(f.entry.md4);
+}
+
+void Ed3kShared::publishFile(File& f, const ffi::Root& root, std::uint64_t size)
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return;
+    const std::string name = utf8(f.entry.name);
+    const bool anon = keyOf(root) == ffi::KeyKind::Anon;
+    const auto ed2k = anon ? std::nullopt : ed2kOf(f.entry.md4);
     const auto t = m_session.now();
     // sources 1: this node, the file held complete (Protocol.md §10.7)
     // was: const ffi::FileInfo info{h.root, h.size, name, ed2k, 1, 0, 0, 0, 0, 0};
-    ffi::FileInfo info{h.root, h.size, name, ed2k, 1, 0, f.entry.duration, f.entry.bitrate, 0, 0};
+    ffi::FileInfo info{root, size, name, ed2k, 1, 0, f.entry.duration, f.entry.bitrate, 0, 0};
     info.artist = utf8(f.entry.artist);
     info.album = utf8(f.entry.album);
     info.title = utf8(f.entry.title);
@@ -854,37 +885,80 @@ void Ed3kShared::share(File& f, Hashed& h)
     // const auto mode = m_holdBack ? ffi::Publish::Source : ffi::Publish::Both;
     // if (auto ok = e->publish(t, info, mode); !ok)
     // declined-records.md §2: a root or eD2K hash of decline.txt is served, never published
-    // (no source, keywords, note, ALIAS). ToDo: a list change takes back what is out already
-    const bool declined = m_session.declined().listsFile(h.root, f.entry.md4);
+    // (no source, keywords, note, ALIAS). was: ToDo: a list change takes back what is out
+    // already (done: onDeclinedChanged withdraws, and publishes again once it is off the list)
+    const bool declined = m_session.declined().listsFile(root, f.entry.md4);
+    f.declined = declined;
     // a name without a keyword: its source record alone (publishShared)
-    if (declined)
+    if (declined) {
         logInfo(QStringLiteral("\"%1\" shared, not published: declined (%2)").arg(f.entry.name, QString::fromLatin1(kDeclineFile)));
-    else if (auto ok = publishShared(info); !ok)
+        // listed by its MD4 alone: its root goes to the engine too, which refuses its uploads
+        if (!m_session.declined().listsRoot(root))
+            m_session.refreshDeclined();
+    } else if (auto ok = publishShared(info); !ok)
         logDebug([&]() -> QString { return QStringLiteral("publish of \"%1\" failed (error %2)").arg(f.entry.name, errorName(ok.error())); });
     else
         f.keywords = *ok == ffi::Publish::Both;
-    publishNote(f, h.root);
+    publishNote(f, root);
     // hops.md §1 SHOULD: every file here is in eD2K's share list too, its sources there show
     // the address and tie the anonymous key to it: the user is told once
     // was: ToDo: the same for a file under the anonymous key downloaded over eD2K or a hoster
     // (done: DaemonApp, DownloadQueue::fileAdded → tellDownloadElsewhere; Ed3kDownloads::add
     // of an anonymous root → setAnonAddedHook → tellExposed)
-    // ToDo: BitTorrent / HTTP: a file under the anonymous key downloaded or seeded over
+    // was: ToDo: BitTorrent / HTTP: a file under the anonymous key downloaded or seeded over
     // BitTorrent (TorrentSession add, by its ed3k root/MD4) or a plain HTTP download is not
     // checked; DaemonApp's anon hooks (next to setAnonAddedHook) are the place
+    // (done for BitTorrent: DaemonApp, Ed3kTorrentJoin::memberVerified of a root held here
+    // under the anonymous key, and setAnonAddedHook asks Ed3kTorrentJoin::holdsRoot)
+    // ToDo: a plain HTTP download (not a hoster item) of such a file is still not checked
     if (anon)
-        (void)tellExposed(h.root, f.entry.name, QStringLiteral("eD2K/Kad"));
+        (void)tellExposed(root, f.entry.name, QStringLiteral("eD2K/Kad"));
     // alias.md §3: the root is shared here and both names come from these bytes; never for a
     // file of the anonymous key (ffi.md: eD2K is never anonymous)
     // was: if (!m_holdBack) {
     if (!m_holdBack && !anon && !declined) {
-        f.alias = ed2kAlias(f.entry.md4, h.size, h.root, f.entry.name);
+        f.alias = ed2kAlias(f.entry.md4, size, root, f.entry.name);
         if (auto ok = e->publishAlias(t, std::span{&f.alias, 1}); !ok) {
             logDebug([&]() -> QString { return QStringLiteral("ed2k record of \"%1\" not published (error %2)").arg(f.entry.name, errorName(ok.error())); });
             f.alias.clear();
         }
     }
-    emit fileShared(f.entry.md4);
+}
+
+void Ed3kShared::onDeclinedChanged()
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return;
+    const auto& d = m_session.declined();
+    const auto t = m_session.now();
+    int out = 0;
+    int again = 0;
+    for (auto& [md4, f] : m_files) {
+        const auto c = m_cache.find(md4);
+        if (!f.shared || c == m_cache.end())
+            continue;
+        const ffi::Root root = c->second.root;
+        const bool listed = d.listsFile(root, md4);
+        if (listed == f.declined)
+            continue;
+        if (listed) {
+            if (!f.alias.empty())
+                (void)e->unpublishAlias(t, std::span{&f.alias, 1});
+            f.alias.clear();
+            unpublishShared(root, ffi::Publish::Both);
+            f.keywords = false;
+            f.declined = true;
+            publishNote(f, root);   // listed: its note taken back
+            ++out;
+        } else {
+            publishFile(f, root, c->second.size);
+            ++again;
+        }
+    }
+    if (out > 0 || again > 0)
+        logInfo(QStringLiteral("decline list changed: %1 shared file(s) withdrawn, %2 published again").arg(out).arg(again));
+    pumpSession();
 }
 
 void Ed3kShared::enqueueHash(File& f)

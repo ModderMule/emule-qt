@@ -1042,10 +1042,12 @@ enum class IpcMsgType : int {
     /// request for the incoming search graph
     GetEd3kKadIncomingGraph = 1207,
     /// [] -> [ok, {text (decline.txt), running, loaded: {roots, ed2k, keys, kinds, keywords},
-    /// invalid: [line], dropped}] — §10.3 declined records (declined-records.md); loaded: what
-    /// the running node uses, else the file parsed. Works with the node off.
+    /// invalid: [line], dropped, urls: [url], urlStatus: [{url, fetchedAt, triedAt, error,
+    /// entries, fetching}]}] — §10.3 declined records (declined-records.md); loaded: what
+    /// the running node uses (URL lists merged), else the file parsed. Works with the node off.
     GetEd3kDeclined         = 1208,
-    /// [text] -> [ok, as GetEd3kDeclined] — decline.txt written, the node reads it at once
+    /// [text, urls] -> [ok, as GetEd3kDeclined] — decline.txt written, the node reads it at
+    /// once; urls (array): pref ed3k.declineUrls, a change fetches them
     SetEd3kDeclined         = 1209,
 
     // -- Link Grabber (1210-1219, hoster.md "Link Grabber"), Ed3kHosterBridge.cpp. A package:
@@ -1085,6 +1087,9 @@ enum class IpcMsgType : int {
     /// [hosts: [string]] -> [ok, {icons: {host: bytes (PNG; empty: the site has none)}}]; the
     /// others are fetched, a PushHosterCatalog {icons} each
     GetHosterFavicons       = 1220,
+    /// [host, user, code] -> [ok]; the confirmation code a login asked for (any account check or a
+    /// download; PushHosterAccount error "code", any GUI shows it); empty code cancels. Local clients only
+    AnswerHosterAccountCode = 1221,
 
     // hoster links (1100-1109, hoster.md), Ed3kHosterBridge.cpp. An item: {id, url, host,
     // name, size, done, speed, state (Ed3kHosterJoin::State), reason (Ed3kHosterJoin::Reason, the
@@ -1111,7 +1116,8 @@ enum class IpcMsgType : int {
     /// skipHoster: also every later puzzle of that hoster, until a retry
     AnswerHosterPuzzle      = 1103,
     /// [host, user, password] -> [ok]; PushHosterAccount follows (first one with "login": URL when the
-    /// plugin waits for a browser login). Empty password: the stored login. Local clients only (a password)
+    /// plugin waits for a browser login, or error "code" + codeText/codeTitle when it waits for a
+    /// confirmation code: AnswerHosterAccountCode). Empty password: the stored login. Local clients only (a password)
     CheckHosterAccount      = 1104,
     /// [] -> [ok]; fetches a Java runtime into the eMuleQt folder (PushEd3kStatus shows progress)
     DownloadJavaRuntime     = 1105,

@@ -258,7 +258,7 @@ void tst_Collection::authorKeyIsPublishedAsKadKeyword()
     // Without a collection the keywords come from the file name alone.
     QVERIFY(!kf.kadKeywords().empty());
     const QString keyHex = QStringLiteral("deadbeef");
-    QVERIFY(!std::ranges::contains(kf.kadKeywords(), keyHex));
+    QVERIFY(std::ranges::find(kf.kadKeywords(), keyHex) == kf.kadKeywords().end());
 
     auto coll = std::make_unique<Collection>();
     coll->m_name = QStringLiteral("Mixtape");
@@ -266,7 +266,7 @@ void tst_Collection::authorKeyIsPublishedAsKadKeyword()
     kf.setCollection(std::move(coll));
 
     // setCollection re-runs setFileName, which prepends the author key.
-    QVERIFY(std::ranges::contains(kf.kadKeywords(), keyHex));
+    QVERIFY(std::ranges::find(kf.kadKeywords(), keyHex) != kf.kadKeywords().end());
 
     // And the publisher must use that list, not the file name.
     PublishKeywordList keywords;

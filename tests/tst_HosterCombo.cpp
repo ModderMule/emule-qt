@@ -147,6 +147,14 @@ void TestHosterCombo::icons_standInThenFavicon()
     const QImage got = icons->icon(QStringLiteral("rapidgator.net")).pixmap(16, 16).toImage();
     QCOMPARE(QColor(got.pixel(8, 8)), QColor(Qt::red));
     QVERIFY(c.itemIcon(0).isNull());   // the delegate draws it: never twice in the field
+    // the server country: a flag after the favicon, in the tool tip
+    changed.clear();
+    pushCatalog(ipc, {{QStringLiteral("countries"), QCborMap{{QStringLiteral("rapidgator.net"), QStringLiteral("DE")}}}});
+    QCOMPARE(changed.size(), 1);
+    QCOMPARE(icons->country(QStringLiteral("rapidgator.net")), QStringLiteral("de"));
+    QVERIFY(c.itemData(0, Qt::ToolTipRole).toString().contains(QStringLiteral("(DE)")));
+    const QSize wide = icons->iconWithFlag(QStringLiteral("rapidgator.net")).availableSizes().value(0);
+    QCOMPARE(wide.width(), wide.height() * 36 / 16);   // 36x16 at any pixel ratio
     // a site without one keeps its stand-in
     pushCatalog(ipc, {{QStringLiteral("icons"), QCborMap{{QStringLiteral("none.example"), QCborValue(QByteArray())}}}});
     QVERIFY(!icons->icon(QStringLiteral("none.example")).isNull());
@@ -163,7 +171,10 @@ void TestHosterCombo::completer_filtersByPart()
     pushCatalog(ipc, {{QStringLiteral("hosts"), list}});
     const QByteArray colors[] = {png(QColor(0xE0, 0x40, 0x30)), png(QColor(0x30, 0x90, 0xE0))};
     pushCatalog(ipc, {{QStringLiteral("icons"), QCborMap{{QStringLiteral("rapidgator.net"), QCborValue(colors[0])},
-                                                          {QStringLiteral("uploaded.net"), QCborValue(colors[1])}}}});
+                                                          {QStringLiteral("uploaded.net"), QCborValue(colors[1])}}},
+                      {QStringLiteral("countries"), QCborMap{{QStringLiteral("rapidgator.net"), QStringLiteral("ru")},
+                                                             {QStringLiteral("uploaded.net"), QStringLiteral("nl")},
+                                                             {QStringLiteral("katfile.com"), QStringLiteral("de")}}}});
     c.resize(320, c.sizeHint().height());
     c.show();
     QVERIFY(QTest::qWaitForWindowExposed(&c));

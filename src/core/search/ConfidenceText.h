@@ -56,6 +56,7 @@ namespace eMule {
     if (reason == QLatin1StringView("abuse_content_name"))        return QCoreApplication::translate("eMule::ConfidenceText", "A name uses words that advertise child abuse material");
     if (reason == QLatin1StringView("password_protected"))        return QCoreApplication::translate("eMule::ConfidenceText", "The release is password protected");
     if (reason == QLatin1StringView("media_double_extension"))    return QCoreApplication::translate("eMule::ConfidenceText", "Named like a video or song, but it is a picture or document (e.g. .mp4.jpg)");
+    if (reason == QLatin1StringView("spam_publisher"))            return QCoreApplication::translate("eMule::ConfidenceText", "Published by a node whose files you marked as spam");
     return reason;
 }
 

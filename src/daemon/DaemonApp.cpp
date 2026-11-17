@@ -5,6 +5,7 @@
 #include "AutoUpdater.h"
 #include "net/GuardedNetworkAccessManager.h"
 #include "CoreNotifierBridge.h"
+#include "geo/IP2Country.h"
 #include "ApiEventFeeder.h"
 #include "DaemonApiBackend.h"
 #include "DaemonHosterWebBackend.h"
@@ -510,7 +511,13 @@ bool DaemonApp::start()
                     s->onFileChanged(QByteArray(reinterpret_cast<const char*>(f->fileHash()), 16));
             });
         m_ed3kShared->setEnabled(thePrefs.ed3kShareFiles());
+        // declined-records.md §2: roots of listed MD4s known here go to the engine as roots too
+        m_ed3kSession->setDeclineRootsOf([s = QPointer<ed3k::Ed3kShared>(m_ed3kShared.get())](const ed3k::DeclineList& list) {
+            return s ? s->rootsOfListed(list) : std::vector<::ed3k::Root>{};
+        });
     }
+    // decline lists from URLs the operator set (pref ed3k.declineUrls; none by default)
+    m_ed3kSession->setDeclineUrls(thePrefs.ed3kDeclineUrls());
     // friends and chat; attaches on statusChanged
     m_ed3kFriends = std::make_unique<ed3k::Ed3kFriends>(*m_ed3kSession);
     applyEd3kChatOptions();
@@ -795,7 +802,10 @@ bool DaemonApp::start()
     // hoster links (hoster.md); the resolver is the JDownloader sidecar when built in
     m_hosterJoin = std::make_unique<ed3k::Ed3kHosterJoin>(*m_ed3kSession, thePrefs.configDir());
     m_hosterJoin->setDeletedDays(thePrefs.ed3kDeletedFileDays());
-    // what unpacked archives hold (hoster.md §6.1): read on the unpacker's thread, published here
+    // what unpacked archives hold (hoster.md §6.1): read on the unpacker's thread, published here.
+    // Made after the usenet and hoster joins: joins start on statusChanged in this order, so
+    // their loadDeleted (aliasKeepDeleted) comes before its kept PACKED/b3 records of deleted
+    // volumes go out (else ED3K_ERR_STATE: root neither shared nor kept)
     m_archiveContents = std::make_unique<ed3k::Ed3kArchiveContents>(*m_ed3kSession, thePrefs.configDir());
     m_archiveContents->setPublish(thePrefs.ed3kArchiveContents());
     applyTorrentArchiveContents();
@@ -820,8 +830,9 @@ bool DaemonApp::start()
     // hops.md §1 SHOULD: an ed3k download under the anonymous key of a file in the eD2K queue
     // or a hoster download: the user is told (once, Ed3kShared::tellExposed)
     if (m_ed3kShared)
-        m_ed3kDownloads->setAnonAddedHook([s = m_ed3kShared.get(), h = m_hosterJoin.get()](const ::ed3k::Root& root, const QByteArray& md4,
-                                                                                          const QString& name) {
+        // was: setAnonAddedHook([s = m_ed3kShared.get(), h = m_hosterJoin.get()](...)
+        m_ed3kDownloads->setAnonAddedHook([this, s = m_ed3kShared.get(), h = m_hosterJoin.get()](const ::ed3k::Root& root, const QByteArray& md4,
+                                                                                                const QString& name) {
             QStringList on;
             if (md4.size() == 16 && theApp.downloadQueue
                 && theApp.downloadQueue->fileByID(reinterpret_cast<const uint8*>(md4.constData())))
@@ -829,6 +840,13 @@ bool DaemonApp::start()
             const QString hex = QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(root.bytes.data()), qsizetype(root.bytes.size())).toHex());
             if (h && std::ranges::any_of(h->items(), [&](const auto& it) { return it.rootHex.compare(hex, Qt::CaseInsensitive) == 0; }))
                 on << QStringLiteral("HTTP (hoster)");
+#ifdef EMULE_HAVE_BITTORRENT
+            // a torrent here holds the root (created later than this hook: looked up per call)
+            if (m_torrentJoin && m_torrentJoin->holdsRoot(root))
+                on << QStringLiteral("BitTorrent");
+#else
+            Q_UNUSED(this)
+#endif
             if (!on.isEmpty())
                 (void)s->tellExposed(root, name, on.join(QStringLiteral(", ")));
         });
@@ -936,6 +954,13 @@ bool DaemonApp::start()
         // what the Add account dialogs offer: account plugins and favicons
         m_hosterCatalog = std::make_unique<ed3k::Ed3kHosterCatalog>(thePrefs.configDir());
         m_hosterCatalog->setResolver(resolver);
+        // server countries of the sites in the account dialogs
+        m_hosterCatalog->setGeo([] { return theApp.ip2Country && theApp.ip2Country->isLoaded(); },
+                                [](const QHostAddress& a) { return countryCodeOf(a); });
+        m_hosterCatalog->setDnsAllowed(!thePrefs.proxySettings().useProxy);
+        // a download's real server: the site's flag from then on
+        connect(m_hosterJoin.get(), &ed3k::Ed3kHosterJoin::downloadServer, m_hosterCatalog.get(),
+                &ed3k::Ed3kHosterCatalog::noteServer);
         Ed3kHosterBridge::setCatalog(m_hosterCatalog.get(), [this](const IpcMessage& msg) {
             if (m_ipcServer)
                 m_ipcServer->broadcast(msg);
@@ -1025,6 +1050,17 @@ bool DaemonApp::start()
     applyTorrentArchiveContents();
     if (m_ed3kSession->isRunning())
         m_torrentJoin->start();
+    // hops.md §1 SHOULD: a member verified whose root Shared Files holds under the anonymous
+    // key is on BitTorrent too: the user is told (once, Ed3kShared::tellExposed)
+    connect(m_torrentJoin.get(), &ed3k::Ed3kTorrentJoin::memberVerified, this, [this](const QString& id, int index) {
+        if (!m_ed3kShared || !m_torrentJoin)
+            return;
+        const auto m = m_torrentJoin->member(id, index);
+        if (!m || !m->root || m_ed3kShared->keyOfRoot(*m->root) != ::ed3k::KeyKind::Anon)
+            return;
+        const auto entry = m_ed3kShared->entryOfRoot(*m->root);
+        (void)m_ed3kShared->tellExposed(*m->root, entry ? entry->name : id, QStringLiteral("BitTorrent"));
+    });
     // a torrent made here gets its BLAKE3 roots and set from the join (#191)
     BtCreateBridge::setSeededHook([this](const QString& id) {
         if (m_torrentJoin)
@@ -1892,10 +1928,14 @@ void DaemonApp::applyHosterConfig()
                                        + QString::fromLatin1(QUrl::toPercentEncoding(p.password)) + QLatin1Char('@')
                                  : QString();
         proxy = QStringLiteral("%1://%2%3:%4").arg(scheme, auth, p.host).arg(p.port);
+        if (m_hosterCatalog)
+            m_hosterCatalog->setDnsAllowed(false);   // site names stay off the local resolver
         m_javaRuntime->setProxy(toNetworkProxy(p));
         if (m_resolverUpdater)
             m_resolverUpdater->setProxy(toNetworkProxy(p));
     } else {
+        if (m_hosterCatalog)
+            m_hosterCatalog->setDnsAllowed(true);
         m_javaRuntime->setProxy(QNetworkProxy(QNetworkProxy::DefaultProxy));
         if (m_resolverUpdater)
             m_resolverUpdater->setProxy(QNetworkProxy(QNetworkProxy::DefaultProxy));

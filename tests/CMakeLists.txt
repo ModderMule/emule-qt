@@ -1289,7 +1289,10 @@ if(EMULE_HOSTER_JD)
                 "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/utils/ContainerDrop.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/app/ClickNLoadServer.cpp"
-                "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc")
+                "${CMAKE_SOURCE_DIR}/src/gui/utils/HosterIcons.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
+                "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc"
+                "${CMAKE_SOURCE_DIR}/resources/flags.qrc")
     target_include_directories(tst_HosterPanel PRIVATE
         "${CMAKE_SOURCE_DIR}/src/gui"
         "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
@@ -1301,9 +1304,11 @@ emule_add_test(tst_HosterCombo FOLDER "Gui"
     SOURCES tst_HosterCombo.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/controls/HosterCombo.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/HosterIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp"
-            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp")
+            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
+            "${CMAKE_SOURCE_DIR}/resources/flags.qrc")
 target_include_directories(tst_HosterCombo PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")

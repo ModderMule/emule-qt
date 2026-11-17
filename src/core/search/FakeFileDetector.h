@@ -42,6 +42,7 @@ enum class FakeReason : uint8 {
     AbuseContentName,
     PasswordProtected,
     MediaDoubleExtension,
+    SpamPublisher,
 };
 
 /// Worst first, so the numeric value sorts a column.
@@ -103,6 +104,8 @@ struct FakeFileInput {
     KadTrust kadTrust = KadTrust::Unknown;
     QSet<QString> ignoredNameWords; ///< the search's own keywords: in every name, so no link
     bool passwordProtected = false; ///< listed as locked, and no password came with the listing
+    bool spamPublisher = false;     ///< ed3k: a publisher of it published a file marked as spam
+    bool cleanPublisher = false;    ///< ed3k: ...and another publisher was never marked
 };
 
 struct FakeFileVerdict {

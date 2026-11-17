@@ -11,6 +11,8 @@
 #include "Ed3kRooms.h"
 
 #include <QObject>
+#include <QUrl>
+#include <QUrlQuery>
 #endif
 
 namespace eMule::Ed3kRoomsBridge {
@@ -63,6 +65,12 @@ QCborMap postToCbor(const Rooms::Post& p)
     };
 }
 
+/// `dn` of a room link (room.md §1.3), empty without.
+QString linkName(const QString& link)
+{
+    return QUrlQuery(link.mid(link.indexOf(QLatin1Char('?')) + 1)).queryItemValue(QStringLiteral("dn"), QUrl::FullyDecoded).trimmed();
+}
+
 QCborMap roomToCbor(const Rooms::Room& r)
 {
     QCborArray mods;
@@ -81,8 +89,8 @@ QCborMap roomToCbor(const Rooms::Room& r)
         muted.append(hexOf(id));
     return QCborMap{
         {QStringLiteral("room"), Rooms::roomHex(r.room)},
-        {QStringLiteral("link"), r.link},
-        {QStringLiteral("title"), r.title},
+        {QStringLiteral("link"), Rooms::linkWithName(r.link, r.title)},   // room.md §1.3: dn carried
+        {QStringLiteral("title"), r.title.isEmpty() ? linkName(r.link) : r.title},   // no room info yet: the link's dn
         {QStringLiteral("about"), r.about},
         {QStringLiteral("nick"), r.nick},
         {QStringLiteral("owner"), r.owner},
@@ -136,7 +144,7 @@ void answer(const IpcMessage& msg, Rooms& rooms, const std::function<void(const 
             return;
         }
         const Rooms::Room* r = rooms.find(*room);
-        ok(QCborMap{{QStringLiteral("room"), Rooms::roomHex(*room)}, {QStringLiteral("link"), r ? r->link : QString()}});
+        ok(QCborMap{{QStringLiteral("room"), Rooms::roomHex(*room)}, {QStringLiteral("link"), r ? Rooms::linkWithName(r->link, r->title) : QString()}});
         return;
     }
     if (msg.type() == IpcMsgType::JoinEd3kRoom) {

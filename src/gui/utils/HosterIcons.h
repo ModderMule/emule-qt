@@ -8,6 +8,7 @@
 /// (as JDownloader draws one); the favicon is asked for once per run, iconChanged follows.
 
 #include <QCborArray>
+#include <QCborMap>
 #include <QHash>
 #include <QIcon>
 #include <QList>
@@ -42,6 +43,12 @@ public:
     /// The favicon of @p host, or a stand-in until it comes.
     [[nodiscard]] QIcon icon(const QString& host);
 
+    /// The server country of @p host (ISO code), empty until known or behind a CDN only.
+    /// icon() asks for it too.
+    [[nodiscard]] QString country(const QString& host) const { return m_countries.value(host.trimmed().toLower()); }
+    /// icon() with the country flag after it (CountryFlags::withFlag, 36 px wide when flags are on).
+    [[nodiscard]] QIcon iconWithFlag(const QString& host);
+
     /// The plugins that take an account, as last known; asks the core once per connection.
     [[nodiscard]] const QList<AccountHost>& accountHosts();
     /// Whether the core is still collecting them.
@@ -52,6 +59,7 @@ public:
     [[nodiscard]] static QString abbreviation(const QString& host);
 
 signals:
+    /// the favicon or the country of @p host came
     void iconChanged(const QString& host);
     void accountHostsChanged();
 
@@ -60,12 +68,14 @@ private:
     void onPush(const Ipc::IpcMessage& msg);
     void applyIcons(const QHash<QString, QByteArray>& icons);
     void applyHosts(const QCborArray& hosts);
+    void applyCountries(const QCborMap& countries);
     void sendIconAsks();
     void reset();
     [[nodiscard]] static QIcon standIn(const QString& host);
 
     IpcClient* m_ipc;
     QHash<QString, QIcon> m_icons;      ///< favicons, and stand-ins of sites without one
+    QHash<QString, QString> m_countries;   ///< server country per site ("" = none)
     QSet<QString> m_asked;              ///< favicons asked for this connection
     QStringList m_toAsk;
     QTimer m_askTimer;                  ///< icons asked for in one request per paint

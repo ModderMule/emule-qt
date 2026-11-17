@@ -351,10 +351,14 @@ void Ed3kUsenetJoin::onItemAdded(const QString& itemId)
     pumpSession();
 }
 
-void Ed3kUsenetJoin::onItemRemoved(const QString& itemId)
+void Ed3kUsenetJoin::onItemRemoved(const QString& itemId, bool deleteFiles)
 {
     dropPost(itemId, /*keepBlob*/ false);
     m_noJoin.remove(itemId);
+    // alias.md §3 "Deleted file": the user deleted it, its kept records end
+    if (deleteFiles)
+        for (const DeletedFile& f : deletedOf(itemId))
+            endDeleted(f.root, QStringLiteral("removed by the user"));
     // a row cleared, its files left (incoming) or volumes deleted (alias.md §3): the set,
     // members and ALIAS records stay out as long as the files do (sharedGone, keepsOwner at
     // the next start), or the deleted ones are kept

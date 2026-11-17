@@ -56,6 +56,7 @@ private:
         [[nodiscard]] const Row& at(int row) const { return m_rows.at(row); }
 
     private:
+        HosterCombo* m_combo;
         QList<Row> m_rows;
         QHash<QString, int> m_index;
     };

@@ -163,6 +163,10 @@ public:
     /// The admit text: `ed3k-admit:<room base32>:<RoomItem base32>` (an app format, not the spec's).
     [[nodiscard]] static QString admitText(const ::ed3k::Room& room, std::span<const std::byte> item);
     [[nodiscard]] static std::optional<std::pair<::ed3k::Room, QByteArray>> parseAdmitText(const QString& text);
+    /// The link to hand out: @p link with `dn` = @p title (room.md §1.3); no title: as it is.
+    [[nodiscard]] static QString linkWithName(const QString& link, const QString& title);
+    /// Whether two ed3k:room links name the same room: same `key` and `id`, any case, any `dn`.
+    [[nodiscard]] static bool sameRoomLink(const QString& a, const QString& b);
 
 signals:
     /// The list, a room's info, nick or state changed.

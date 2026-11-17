@@ -4,6 +4,7 @@
 #include "pch.h"
 #include "controls/HosterCombo.h"
 
+#include "utils/CountryFlags.h"
 #include "utils/HosterIcons.h"
 
 #include <QAction>
@@ -45,10 +46,11 @@ protected:
         QStyledItemDelegate::initStyleOption(option, index);
         if (!m_icons)
             return;
-        // asked only for painted rows: the favicon is fetched then
-        option->icon = m_icons->icon(index.data(Qt::EditRole).toString());
+        // asked only for painted rows: favicon and country are fetched then
+        option->icon = m_icons->iconWithFlag(index.data(Qt::EditRole).toString());
         option->features |= QStyleOptionViewItem::HasDecoration;
-        option->decorationSize = QSize(16, 16);
+        // the flag slot is kept without a country: hosts stay aligned
+        option->decorationSize = QSize(CountryFlags::showFlags() ? 36 : 16, 16);
     }
 
 private:
@@ -165,6 +167,7 @@ void HosterCombo::updateLeadingIcon()
 
 HosterCombo::Model::Model(HosterCombo* combo)
     : QAbstractListModel(combo)
+    , m_combo(combo)
 {
 }
 
@@ -182,8 +185,12 @@ QVariant HosterCombo::Model::data(const QModelIndex& index, int role) const
     case Qt::DisplayRole:
     case Qt::EditRole:
         return r.host;
-    case Qt::ToolTipRole:
-        return r.name.isEmpty() ? r.host : r.name;
+    case Qt::ToolTipRole: {
+        QString tip = r.name.isEmpty() ? r.host : r.name;
+        if (const QString cc = m_combo->m_icons ? m_combo->m_icons->country(r.host) : QString(); !cc.isEmpty())
+            tip += u'\n' + HosterCombo::tr("Server: %1").arg(CountryFlags::tooltip(cc));
+        return tip;
+    }
     default:
         return {};
     }

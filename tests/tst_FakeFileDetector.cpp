@@ -40,6 +40,7 @@ private slots:
     void rules_parse();
     void kadTrust_decode();
     void ids_areStable();
+    void spamPublisher_halvedBesideCleanOne();
     void sample_replay();
 
 private:
@@ -516,6 +517,22 @@ void tst_FakeFileDetector::listing_passwordProtected()
     QCOMPARE(v.band, Confidence::Suspect);
 }
 
+void tst_FakeFileDetector::spamPublisher_halvedBesideCleanOne()
+{
+    const auto rules = FakeFileRules::defaults();
+    FakeFileInput in;
+    in.name = QStringLiteral("Some Film 2024.mkv");
+    in.size = 700u << 20;
+    in.spamPublisher = true;
+    FakeFileVerdict v = assessFile(in, rules);
+    QVERIFY(v.reasons.contains({FakeReason::SpamPublisher, 40}));
+    QCOMPARE(v.band, Confidence::Caution);
+    in.cleanPublisher = true;   // an unmarked publisher has it too
+    v = assessFile(in, rules);
+    QVERIFY(v.reasons.contains({FakeReason::SpamPublisher, 20}));
+    QCOMPARE(v.band, Confidence::LooksGood);
+}
+
 void tst_FakeFileDetector::ids_areStable()
 {
     QCOMPARE(fakeReasonId(FakeReason::MultipleNames), QStringLiteral("multiple_names"));
@@ -523,6 +540,7 @@ void tst_FakeFileDetector::ids_areStable()
     QCOMPARE(fakeReasonId(FakeReason::AbuseContentName), QStringLiteral("abuse_content_name"));
     QCOMPARE(fakeReasonId(FakeReason::PasswordProtected), QStringLiteral("password_protected"));
     QCOMPARE(fakeReasonId(FakeReason::MediaDoubleExtension), QStringLiteral("media_double_extension"));
+    QCOMPARE(fakeReasonId(FakeReason::SpamPublisher), QStringLiteral("spam_publisher"));
     QCOMPARE(confidenceId(Confidence::LikelyFake), QStringLiteral("likely_fake"));
     QCOMPARE(confidenceId(Confidence::Genuine), QStringLiteral("genuine"));
     QVERIFY(Confidence::Spam < Confidence::Genuine);

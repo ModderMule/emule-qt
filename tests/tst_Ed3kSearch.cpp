@@ -207,6 +207,30 @@ void tst_Ed3kSearch::aSharedFileIsFound()
     QCOMPARE(static_cast<uint64>((*it)->fileSize()), uint64(data.size()));
     // the publisher named its MD4 (Ed3kShared)
     QCOMPARE((*it)->ed3kEd2k(), md4);
+    QVERIFY(!(*it)->ed3kJudged().hidden);
+
+    // declined-records.md §2: a root of the searcher's decline list: its row hidden, by decline.txt
+    c.setDeclined(DeclineList{.roots = {*root}});
+    rows.clear();
+    ended.reset();
+    search.setSinks([&](uint32, std::unique_ptr<SearchFile> f) { rows.push_back(std::move(f)); },
+                    [&](uint32, const QString& error) { ended = error; });
+    search.startMetaSearch(43, SearchType::Ed3k, p, {}, {});
+    QTRY_VERIFY_WITH_TIMEOUT(ended.has_value(), 60000);
+    const auto declined = std::ranges::find_if(rows, [&](const auto& r) {
+        return r->ed3kRoot() == QByteArray(reinterpret_cast<const char*>(root->bytes.data()), 32);
+    });
+    QVERIFY(declined != rows.end());
+    QVERIFY((*declined)->ed3kJudged().hidden);
+    QCOMPARE((*declined)->ed3kJudged().by, QString::fromLatin1(kDeclineFile));
+    c.setDeclined({});
+    search.setSinks([&](uint32 id, std::unique_ptr<SearchFile> f) {
+        QCOMPARE(id, 42u);
+        rows.push_back(std::move(f));
+    }, [&](uint32 id, const QString& error) {
+        QCOMPARE(id, 42u);
+        ended = error;
+    });
 
     // a cancelled search reports nothing
     ended.reset();

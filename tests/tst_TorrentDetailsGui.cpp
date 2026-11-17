@@ -63,12 +63,14 @@ QCborMap details()
                               {QStringLiteral("rateUp"), 0},
                               {QStringLiteral("encrypted"), true},
                               {QStringLiteral("source"), QStringLiteral("dht")},
-                              {QStringLiteral("flags"), QStringLiteral("TDEH")}}};
+                              {QStringLiteral("flags"), QStringLiteral("TDEH")},
+                              {QStringLiteral("cc"), QStringLiteral("DE")}}};
     QCborArray trackers{
         QCborMap{{QStringLiteral("url"), QStringLiteral("udp://a.example/announce")},
                  {QStringLiteral("tier"), 0}, {QStringLiteral("working"), true},
                  {QStringLiteral("seeds"), 12}, {QStringLiteral("peers"), 3},
-                 {QStringLiteral("downloaded"), 99}, {QStringLiteral("nextAnnounce"), 600}},
+                 {QStringLiteral("downloaded"), 99}, {QStringLiteral("nextAnnounce"), 600},
+                 {QStringLiteral("cc"), QStringLiteral("FR")}},
         QCborMap{{QStringLiteral("url"), QStringLiteral("http://b.example/announce")},
                  {QStringLiteral("tier"), 1}, {QStringLiteral("hasError"), true},
                  {QStringLiteral("message"), QStringLiteral("timed out")}}};
@@ -262,9 +264,20 @@ void tst_TorrentDetailsGui::peersAndFlags()
     QVERIFY(tip.at(0).startsWith(QStringLiteral("T: ")));
     QVERIFY(tip.at(3).startsWith(QStringLiteral("H: ")));
     QCOMPARE(torrentPeerFlagsTooltip(QStringLiteral("Z")), QString());
+    // country of the address: tool tip (the flag icon needs resources)
+    QCOMPARE(p->toolTip(TorrentListsPane::PeerAddress), QStringLiteral("Germany (DE)"));
     // in place on the next poll
     pane.applyDetails(details());
     QCOMPARE(peers->topLevelItem(0), p);
+    // I2P peer: I2P icon instead of a flag, no country in the tool tip
+    QCborMap d = details();
+    d[QStringLiteral("peers")] = QCborArray{
+        QCborMap{{QStringLiteral("address"), QStringLiteral("abcd.b32.i2p")},
+                 {QStringLiteral("i2p"), true}}};
+    pane.applyDetails(d);
+    QTreeWidgetItem* ip = peers->topLevelItem(0);
+    QCOMPARE(ip->data(TorrentListsPane::PeerAddress, Qt::UserRole + 40).toString(), QStringLiteral("i2p"));
+    QCOMPARE(ip->toolTip(TorrentListsPane::PeerAddress), ip->toolTip(TorrentListsPane::PeerLock));
 }
 
 void tst_TorrentDetailsGui::trackersBackupToggle()
@@ -279,6 +292,11 @@ void tst_TorrentDetailsGui::trackersBackupToggle()
             backup = trackers->topLevelItem(i);
     QVERIFY(backup);
     QVERIFY(backup->text(TorrentListsPane::TrackerStatus).contains(QStringLiteral("timed out")));
+    // tracker country under the url; none known: just the url
+    QCOMPARE(backup->toolTip(TorrentListsPane::TrackerUrl), QStringLiteral("http://b.example/announce"));
+    QTreeWidgetItem* primary = trackers->topLevelItem(trackers->topLevelItem(0) == backup ? 1 : 0);
+    QCOMPARE(primary->toolTip(TorrentListsPane::TrackerUrl),
+             QStringLiteral("udp://a.example/announce\nFrance (FR)"));
     QVERIFY(!backup->isHidden());
     auto* toggle = pane.findChild<QCheckBox*>();
     QVERIFY(toggle);

@@ -106,6 +106,9 @@ Ed3kSession::Ed3kSession(QObject* parent)
         if (m_engine)
             saveSlot(ffi::State::Rooms, kRoomsFile);
     });
+    // declined-records.md §2 "Shared lists": a fetched list goes to the engine at once
+    m_declineUrls = std::make_unique<Ed3kDeclineUrls>();
+    connect(m_declineUrls.get(), &Ed3kDeclineUrls::listsChanged, this, &Ed3kSession::applyDeclined);
 }
 
 Ed3kSession::~Ed3kSession()
@@ -272,7 +275,10 @@ bool Ed3kSession::start(const Ed3kSettings& settings)
     // its slot count from BandwidthCoordinator, counted with eD2K's)
     applyUploadSlots();
     applyIndexLinks();
+    // the URL lists' caches first: one apply with decline.txt
+    m_declineUrls->setDir(m_dir);
     loadDeclineFile(true);
+    m_declineUrls->start();
     m_logLevel = -1;
     applyLogLevel();
     // hiding (hops.md §1): after hops.dat (loadState), live from the prefs
@@ -304,6 +310,7 @@ void Ed3kSession::stop()
     m_badSaveTimer.stop();
     m_roomsSaveTimer.stop();
     m_pinTimer.stop();
+    m_declineUrls->stop();
     m_declineWatch.disconnect(this);
     if (const QStringList watched = m_declineWatch.files() + m_declineWatch.directories(); !watched.isEmpty())
         m_declineWatch.removePaths(watched);
@@ -912,14 +919,42 @@ void Ed3kSession::setDeclined(DeclineList list)
     applyDeclined();
 }
 
+void Ed3kSession::setDeclineUrls(const QStringList& urls)
+{
+    m_declineUrls->setUrls(urls);   // listsChanged applies
+}
+
+void Ed3kSession::refreshDeclined()
+{
+    if (!m_engine || m_declineRefresh)
+        return;
+    m_declineRefresh = true;
+    QTimer::singleShot(0, this, [this] {
+        m_declineRefresh = false;
+        applyDeclined();
+    });
+}
+
 void Ed3kSession::applyDeclined()
 {
+    // decline.txt, the URL lists, then the roots known here of listed MD4s (§2 "Other
+    // networks' hashes": the engine refuses their uploads too); the user's list stays as it is
+    DeclineList all = m_decline;
+    all.merge(m_declineUrls->merged());
+    if (m_declineRootsOf) {
+        DeclineList known;
+        known.roots = m_declineRootsOf(all);
+        all.merge(known);
+    }
+    const bool changed = all != m_applied;
+    m_applied = std::move(all);
     if (!m_engine)
         return;
     // was: const QByteArray keywords = m_decline.keywords.join(QLatin1Char('\n')).toUtf8();
     // was: const auto dropped = m_engine->kadDecline(m_decline.roots, std::string_view(keywords.constData(), std::size_t(keywords.size())));
     // every list: roots, eD2K hashes, publisher keys, kinds, keywords
-    const auto dropped = m_engine->kadDeclineLists(m_decline.toFfi());
+    // was: const auto dropped = m_engine->kadDeclineLists(m_decline.toFfi());
+    const auto dropped = m_engine->kadDeclineLists(m_applied.toFfi());
     if (!dropped) {
         logEd3kWarning(QStringLiteral("ed3k: decline list not set (error %1)").arg(errorName(dropped.error())));
         return;
@@ -928,11 +963,14 @@ void Ed3kSession::applyDeclined()
     if (!m_decline.invalid.isEmpty())
         logEd3kWarning(QStringLiteral("ed3k: %1 line(s) of %2 skipped: %3")
                            .arg(m_decline.invalid.size()).arg(QString::fromLatin1(kDeclineFile), m_decline.invalid.join(QStringLiteral("; "))));
-    if (!m_decline.isEmpty() || *dropped > 0)
+    if (!m_applied.isEmpty() || *dropped > 0)
         logEd3k(QStringLiteral("ed3k: declining %1 root(s), %2 eD2K hash(es), %3 publisher key(s), %4 kind(s), %5 keyword(s); "
                                "%6 held record(s) dropped")
-                    .arg(m_decline.roots.size()).arg(m_decline.ed2k.size()).arg(m_decline.keys.size())
-                    .arg(m_decline.kinds.size()).arg(m_decline.keywords.size()).arg(*dropped));
+                    .arg(m_applied.roots.size()).arg(m_applied.ed2k.size()).arg(m_applied.keys.size())
+                    .arg(m_applied.kinds.size()).arg(m_applied.keywords.size()).arg(*dropped));
+    // joins withdraw or publish again, search rows judged again
+    if (changed)
+        emit declinedChanged();
 }
 
 void Ed3kSession::reloadDeclineFile()

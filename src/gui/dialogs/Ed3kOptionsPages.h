@@ -151,8 +151,6 @@ private:
     [[nodiscard]] static QString creditsText(qint64 micro);
     /// A solver service's balance as an account status; @p balance -1: none given.
     [[nodiscard]] static QString creditText(double balance, const QString& currency);
-    /// A multi-hoster login's status: premium/free, until, its hosters; @p working -1: not told.
-    [[nodiscard]] static QString debridText(bool premium, qint64 expires, int hosts, int working);
     /// m_chainSingleNote shown for the endpoints typed.
     void updateChainNote();
     /// The "hoster" map of the ed3k status: Java runtime and resolver.
@@ -174,10 +172,22 @@ private:
     void buildDebrid(QVBoxLayout* layout, QWidget* parent);
     /// m_debridHostsTree: the hosters of the selected multi-hoster row, as its last check named them.
     void fillDebridHosts();
+    /// A login's status from a check (live or kept): valid, premium/free, until, traffic left; a
+    /// multi-hoster its @p hosts (-1: downloads none) and @p working of them (-1: not told).
+    [[nodiscard]] static QString accountText(const AccountList& list, const QCborMap& check, int hosts, int working = -1);
     /// Adds (@p row -1) or edits a login of @p list.
     void editAccount(AccountList& list, int row);
     void checkAccount(AccountList& list);
+    /// Asks the core to check row @p row of @p list (its typed password, else the stored one).
+    void checkAccountRow(AccountList& list, int row);
     void fillAccounts(AccountList& list);
+    /// Sends @p list to the core at once, no Apply: rows without a typed password keep the stored
+    /// one. False: no core connected (Apply sends it).
+    bool saveAccounts(AccountList& list);
+    /// @p list as the core's {host, user, password?} rows: a password only when typed here.
+    [[nodiscard]] static QCborArray accountRows(const AccountList& list);
+    /// The preference key of @p list.
+    [[nodiscard]] static QString accountKey(const AccountList& list);
     /// PushHosterAccount: the status of the rows it names.
     void applyAccountCheck(const QString& host, const QString& user, const QCborMap& result);
     /// @p host waits for a login at @p url in the browser (OAuth device flow): offers to open it.
@@ -284,6 +294,7 @@ private:
         bool passwordSet = false;
         QString status;
         QCborArray hosts{};    ///< a multi-hoster: the hosters its last check named
+        qint64 checked = 0;    ///< when status was found (s); 0: not a check
     };
     QCheckBox* m_hosterEnabledCheck = nullptr;
     QCheckBox* m_hosterSingleCheck = nullptr;   ///< ed3kHosterSingleTransfer

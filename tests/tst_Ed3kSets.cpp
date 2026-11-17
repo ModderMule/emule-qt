@@ -697,6 +697,8 @@ void tst_Ed3kSets::theIpcListsAndFollows()
     QCOMPARE(s.value(QStringLiteral("seq")).toInteger(), 3);
     QCOMPARE(s.value(QStringLiteral("members")).toArray().size(), 4);
     QCOMPARE(s.value(QStringLiteral("author")).toString(), QString::fromLatin1(m_author.publicKey().toHex()));
+    // hops.md §1: the key it is followed under, as live and broadcast rows say it
+    QCOMPARE(s.value(QStringLiteral("key")).toString(), QStringLiteral("Node"));
 
     Ipc::IpcMessage bad(Ipc::IpcMsgType::FollowEd3kSet, 2);
     bad.append(QStringLiteral("ed3k:set?nothing"));

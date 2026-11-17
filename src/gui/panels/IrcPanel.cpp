@@ -154,20 +154,9 @@ void IrcPanel::onConnectClicked()
     // Validate nick
     QString nick = thePrefs.ircNick();
     if (nick.isEmpty() || nick.length() > 25) {
-        bool ok = false;
-        nick = QInputDialog::getText(
-            this, tr("Select an IRC nick."),
-            tr("Should be no longer than 25 characters: letters, digits or "
-               "symbols [_-{}]\\.\nNick can be changed again in Options->IRC."),
-            QLineEdit::Normal, nick, &ok);
-        if (!ok || nick.isEmpty())
-            return;
-        // Strip bad chars
-        nick.remove(QRegularExpression(QStringLiteral("[^A-Za-z0-9_\\-{}\\[\\]\\\\]")));
+        nick = askIrcNick(nick);
         if (nick.isEmpty())
             return;
-        nick.truncate(25);
-        thePrefs.setIrcNick(nick);
     }
 
     QString server = thePrefs.ircServer();
@@ -1824,6 +1813,24 @@ void IrcPanel::forgetNickIfGone(const QString& nick)
             return;
     }
     m_linkGate.forgetNick(nick);
+}
+
+QString IrcPanel::askIrcNick(const QString& start)
+{
+    bool ok = false;
+    QString nick = QInputDialog::getText(
+        this, tr("Select an IRC nick."),
+        tr("Should be no longer than 25 characters: letters, digits or "
+           "symbols [_-{}]\\.\nNick can be changed again in Options->IRC."),
+        QLineEdit::Normal, start, &ok);
+    if (!ok)
+        return {};
+    // Strip bad chars
+    nick.remove(QRegularExpression(QStringLiteral("[^A-Za-z0-9_\\-{}\\[\\]\\\\]")));
+    nick.truncate(25);
+    if (!nick.isEmpty())
+        thePrefs.setIrcNick(nick);
+    return nick;
 }
 
 } // namespace eMule

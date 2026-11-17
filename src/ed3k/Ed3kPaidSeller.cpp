@@ -1014,7 +1014,8 @@ void Ed3kPaidSeller::pushOffer(Sale& s)
         m_session.pump();
     }
     // §7: the offer of an open channel is in its channel file: a changed one is a new file
-    // ToDo: off air the channel file is not shared yet (live #5, Ed3kLiveFiles): then at its start
+    // was: ToDo: off air the channel file is not shared yet (live #5, Ed3kLiveFiles): then at
+    // its start (done: publishSaved after the loop below; it skips on-air and unchanged channels)
     if (!m_broadcast || s.kind != Kind::Channel || s.isPrivate)
         return;
     for (const auto& on : m_broadcast->list()) {
@@ -1030,6 +1031,8 @@ void Ed3kPaidSeller::pushOffer(Sale& s)
         if (auto r = m_broadcast->describe(on.id, o->comment, o->lang, o->kbps); !r)
             logEd3kWarning(QStringLiteral("ed3k: paid channel %1: the channel file was not renewed: %2").arg(on.title, r.error()));
     }
+    // channels off air: their kept channel file with the new offer (§1.2)
+    m_broadcast->publishSaved();
 }
 
 void Ed3kPaidSeller::markChanged()

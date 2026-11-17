@@ -14,7 +14,9 @@
 #include "utils/ClientIcons.h"
 #include "utils/Clipboard.h"
 #include "utils/ContainerDrop.h"
+#include "utils/CountryFlags.h"
 #include "utils/FileTypeIcons.h"
+#include "utils/HosterIcons.h"
 #include "utils/ListActivation.h"
 #include "utils/MenuUtils.h"
 #include "utils/ModalHost.h"
@@ -54,6 +56,7 @@
 #include <QTabWidget>
 #include <QTreeWidget>
 #include <QUrl>
+#include <QTimer>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -74,6 +77,8 @@ constexpr int kItemIdRole = Qt::UserRole + 1;
 constexpr int kPackageIdRole = Qt::UserRole + 2;
 /// ColName data of an ed3k source row (its kItemIdRole: its item's, it acts for it): the source key
 constexpr int kSourceKeyRole = Qt::UserRole + 3;
+/// ColHoster: the host its favicon and flag show
+constexpr int kHostRole = Qt::UserRole + 4;
 
 // Ed3kHosterJoin::State
 constexpr int kStateDownloading = 5;
@@ -292,6 +297,9 @@ HosterPanel::HosterPanel(QWidget* parent)
     // After the restore: an older saved state pinned the name column to Stretch
     m_tree->header()->setSectionResizeMode(QHeaderView::Interactive);
     m_tree->header()->setStretchLastSection(true);
+    // favicon + server flag before the hoster, as in Options
+    CountryFlags::bindFlagColumn(m_tree, ColHoster);
+    connect(CountryFlagsNotifier::instance(), &CountryFlagsNotifier::changed, this, [this] { refreshHosterIcons({}); });
 
     m_addAction = new QAction(menuIcon("Hoster.ico"), tr("Add hoster links..."), this);
     connect(m_addAction, &QAction::triggered, this, [this] { promptAddLinks(); });
@@ -336,9 +344,15 @@ void HosterPanel::setIpcClient(IpcClient* ipc)
     connect(m_ipc, &IpcClient::connected, this, [this] { m_sourcePoller->setEnabled(true); });
     connect(m_ipc, &IpcClient::disconnected, this, [this] { m_sourcePoller->setEnabled(false); });
     connect(m_ipc, &IpcClient::connected, this, &HosterPanel::refresh);
+    if (HosterIcons* icons = HosterIcons::of(m_ipc)) {
+        connect(icons, &HosterIcons::iconChanged, this, &HosterPanel::refreshHosterIcons);
+        // after the cache's reset (connected first): asks the new core
+        connect(m_ipc, &IpcClient::connected, this, [this] { refreshHosterIcons({}); });
+    }
     connect(m_ipc, &IpcClient::hosterItemChanged, this, [this](const IpcMessage& msg) { upsert(msg.fieldMap(0)); });
     connect(m_ipc, &IpcClient::hosterItemRemoved, this, [this](const IpcMessage& msg) { removeRow(msg.field(0).toInteger()); });
     connect(m_ipc, &IpcClient::hosterPuzzleAsked, this, &HosterPanel::onPuzzle);
+    connect(m_ipc, &IpcClient::hosterAccountChecked, this, &HosterPanel::onAccountChecked);
     connect(m_ipc, &IpcClient::hosterLinksExpanded, this, &HosterPanel::onLinks);
     connect(m_ipc, &IpcClient::ed3kStatusChanged, this, [this](const IpcMessage& msg) { applyStatus(msg.fieldMap(0)); });
     m_grabber->setIpcClient(ipc);
@@ -783,6 +797,7 @@ void HosterPanel::updatePackage(qint64 id)
     row->setText(ColHoster, hosts.size() <= 2 ? hosts.join(QStringLiteral(", "))
                                               : tr("%n hoster(s)", nullptr, int(hosts.size())));
     row->setToolTip(ColHoster, hosts.join(QLatin1Char('\n')));
+    setHosterIcon(row, hosts.size() == 1 ? hosts.constFirst() : QString());
     QString status = complete == total ? stateText(kStateComplete)
                                        : tr("%1 of %2 complete").arg(complete).arg(total);
     if (downloading > 0 && complete < total)
@@ -812,6 +827,7 @@ void HosterPanel::fillRow(QTreeWidgetItem* row, const QCborMap& it)
     row->setText(ColSpeed, speed > 0 ? formatByteRate(double(speed)) : QString());
     row->setData(ColSpeed, Qt::UserRole, speed);
     row->setText(ColHoster, it.value(QStringLiteral("host")).toString());
+    setHosterIcon(row, it.value(QStringLiteral("host")).toString());
     const qint64 mirrorNo = it.value(QStringLiteral("mirrorNo")).toInteger();
     const qint64 mirrorCount = mirrorNo + 1 + it.value(QStringLiteral("mirrors")).toInteger();
     row->setToolTip(ColHoster, mirrorCount > 1 ? tr("Mirror %1 of %2").arg(mirrorNo + 1).arg(mirrorCount) : QString());
@@ -983,6 +999,81 @@ void HosterPanel::onPuzzle(const IpcMessage& msg)
     dlg->show();
     dlg->raise();
     dlg->activateWindow();
+}
+
+void HosterPanel::onAccountChecked(const IpcMessage& msg)
+{
+    const QString host = msg.fieldString(0);
+    const QString user = msg.fieldString(1);
+    const QCborMap r = msg.field(2).toMap();
+    const QString key = host + QLatin1Char('|') + user;
+    if (r.value(QStringLiteral("error")).toString() != QLatin1StringView("code")) {
+        // the check ended (answered in another GUI, timed out): its window goes, nothing sent
+        if (const QPointer<QDialog> dlg = m_codeAsks.take(key)) {
+            dlg->setProperty("silent", true);
+            dlg->reject();
+        }
+        return;
+    }
+    if (m_codeAsks.value(key))
+        return;
+    const QString title = r.value(QStringLiteral("codeTitle")).toString();
+    const QString text = r.value(QStringLiteral("codeText")).toString();
+    // never a dialog inside the IPC read
+    QTimer::singleShot(0, this, [this, host, user, title, text] { askAccountCode(host, user, title, text); });
+}
+
+void HosterPanel::askAccountCode(const QString& host, const QString& user, const QString& title, const QString& text)
+{
+    const QString key = host + QLatin1Char('|') + user;
+    if (!m_ipc || m_codeAsks.value(key))
+        return;
+    // like a puzzle: not modal, over Options too
+    auto* dlg = new QDialog(window());
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->setWindowTitle(tr("Confirmation code for %1").arg(host));
+    auto* layout = new QVBoxLayout(dlg);
+    // the site's own words when it sent some ("We noticed a new sign in...")
+    const QString why = text.trimmed().isEmpty()
+                            ? tr("%1 asks for a confirmation code to log in as %2. Look in your e-mail or your "
+                                 "authenticator app.")
+                                  .arg(host, user.isEmpty() ? tr("this account") : user)
+                            : text.trimmed();
+    auto* label = new QLabel(why, dlg);
+    label->setWordWrap(true);
+    label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    label->setToolTip(title);
+    layout->addWidget(label);
+    auto* edit = new QLineEdit(dlg);
+    edit->setPlaceholderText(tr("Code"));
+    layout->addWidget(edit);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dlg);
+    buttons->button(QDialogButtonBox::Ok)->setEnabled(false);
+    layout->addWidget(buttons);
+    connect(edit, &QLineEdit::textChanged, dlg, [buttons](const QString& t) {
+        buttons->button(QDialogButtonBox::Ok)->setEnabled(!t.trimmed().isEmpty());
+    });
+    connect(buttons, &QDialogButtonBox::accepted, dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, dlg, &QDialog::reject);
+    // OK: the code; Cancel or closed: an empty one, the login fails
+    connect(dlg, &QDialog::finished, this, [this, dlg, edit, host, user, key](int result) {
+        if (m_codeAsks.value(key) == dlg)
+            m_codeAsks.remove(key);
+        if (!m_ipc || dlg->property("silent").toBool())
+            return;
+        IpcMessage req(IpcMsgType::AnswerHosterAccountCode);
+        req.append(host);
+        req.append(user);
+        req.append(result == QDialog::Accepted ? edit->text().trimmed() : QString());
+        m_ipc->sendRequest(std::move(req));
+    });
+    m_codeAsks.insert(key, dlg);
+    ModalHost::adopt(dlg);   // usable while Options is open
+    dlg->resize(std::max(dlg->sizeHint().width(), 420), dlg->sizeHint().height());
+    dlg->show();
+    dlg->raise();
+    dlg->activateWindow();
+    edit->setFocus();
 }
 
 void HosterPanel::onLinks(const IpcMessage& msg)
@@ -1366,6 +1457,28 @@ void HosterPanel::updateFilterCounts()
             if (matchesFilter(it, f))
                 ++counts[std::size_t(f)];
     m_filterBar->setCounts(counts);
+}
+
+void HosterPanel::setHosterIcon(QTreeWidgetItem* row, const QString& host, bool force)
+{
+    if (!force && row->data(ColHoster, kHostRole).toString() == host)
+        return;   // composed once, not per refresh
+    row->setData(ColHoster, kHostRole, host);
+    HosterIcons* icons = HosterIcons::of(m_ipc);
+    row->setIcon(ColHoster, icons && !host.isEmpty() ? icons->iconWithFlag(host) : QIcon());
+}
+
+void HosterPanel::refreshHosterIcons(const QString& host)
+{
+    const auto update = [&](QTreeWidgetItem* row) {
+        const QString h = row->data(ColHoster, kHostRole).toString();
+        if (!h.isEmpty() && (host.isEmpty() || h.compare(host, Qt::CaseInsensitive) == 0))
+            setHosterIcon(row, h, true);
+    };
+    for (QTreeWidgetItem* row : std::as_const(m_rows))
+        update(row);
+    for (QTreeWidgetItem* row : std::as_const(m_packages))
+        update(row);
 }
 
 } // namespace eMule

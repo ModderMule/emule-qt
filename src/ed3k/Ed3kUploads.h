@@ -10,7 +10,7 @@
 ///   offered slot holds a slot. SlotEnded / QueueEntryEnded drop the row.
 /// - was: The engine tells no rank and no address: the place is the order of waiting (the
 ///   policy's score also weighs the file's priority), the address stays empty.
-///   ToDo: rank and address once the FFI lists the queue (ed3k_queue_list or similar).
+///   was: ToDo: rank and address once the FFI lists the queue (ed3k_queue_list or similar).
 ///   (done: uploading()/waiting() read Engine::queueList: the engine's rank as the place, the
 ///   endpoint, since when, the turn's bytes, connected; the events add name, LAN and due.
 ///   Without an engine the event rows, place by waiting time.)

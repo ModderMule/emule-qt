@@ -59,7 +59,7 @@ public:
 
     /// Filter lists (filter-list.md §3, Ed3kFilters::judge): Mark shows the row as spam, Hide
     /// keeps it hidden (only when the user set the list to hide; the GUI shows it on request).
-    /// Unset: every row as found.
+    /// Unset: every row as found. Rows of a declined root or MD4 are hidden either way.
     /// was: Hide dropped the row (batch 12); §3 wants what was hidden shown on request
     enum class Judged { None, Mark, Hide };
     /// What a row shows: the kind, and the verdict with who said it (SearchFile::Ed3kJudged).
@@ -141,6 +141,8 @@ private:
     void onChannelFile(uint32 searchID, std::unique_ptr<SearchFile> row, const std::optional<QByteArray>& file);
     /// The notes lookup of @p root ended (answer or timeout): rows no longer show it running.
     void endNotes(const QByteArray& root);
+    /// A listed root or MD4 (Ed3kSession::declined) hides the row (by decline.txt), else m_judge.
+    [[nodiscard]] Verdict judge(const ::ed3k::FoundFile& found) const;
 
     Ed3kSession& m_session;
     std::map<uint32, Run> m_runs;

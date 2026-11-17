@@ -1,9 +1,11 @@
 #include "Ed3kDecline.h"
 
 #include <QFile>
+#include <QSet>
 
 #include <algorithm>
 #include <array>
+#include <set>
 
 namespace eMule::ed3k {
 
@@ -82,6 +84,27 @@ bool DeclineList::listsFile(const ::ed3k::Root& root, const QByteArray& md4) con
     for (const QString& k : keywords)
         l.keywords.push_back(k.toStdString());
     return l;
+}
+
+void DeclineList::merge(const DeclineList& other)
+{
+    // URL lists may be long: no linear find per entry
+    const auto add = [](auto& to, const auto& from) {
+        std::set seen(to.begin(), to.end());
+        for (const auto& x : from)
+            if (seen.insert(x).second)
+                to.push_back(x);
+    };
+    add(roots, other.roots);
+    add(ed2k, other.ed2k);
+    add(keys, other.keys);
+    add(kinds, other.kinds);
+    QSet<QString> words(keywords.cbegin(), keywords.cend());
+    for (const QString& k : other.keywords)
+        if (!words.contains(k)) {
+            words.insert(k);
+            keywords.append(k);
+        }
 }
 
 DeclineList parseDeclineList(const QString& text)

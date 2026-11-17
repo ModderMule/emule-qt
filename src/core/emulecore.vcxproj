@@ -237,6 +237,7 @@
     <ClCompile Include="net\HttpClientReqSocket.cpp" />
     <ClCompile Include="ipfilter\IPFilter.cpp" />
     <ClCompile Include="ipfilter\IpFilterUpdater.cpp" />
+    <ClCompile Include="geo\CdnRanges.cpp" />
     <ClCompile Include="geo\GeoIpUpdater.cpp" />
     <ClCompile Include="geo\HostCountryResolver.cpp" />
     <ClCompile Include="geo\IP2Country.cpp" />
@@ -527,6 +528,8 @@
     <QtMoc Include="ipfilter\IpFilterUpdater.h" />
     <QtMoc Include="net\ScheduledUpdater.h" />
     <QtMoc Include="geo\GeoIpUpdater.h" />
+    <ClInclude Include="geo\CdnRanges.h" />
+    <None Include="geo\CdnRanges.inc" />
     <ClInclude Include="geo\HostCountryResolver.h" />
     <ClInclude Include="geo\IP2Country.h" />
     <ClInclude Include="transfer\ImportParts.h" />

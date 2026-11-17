@@ -265,6 +265,9 @@ public:
     /// Checks a login with the resolver; accountChecked() follows (first a Login event when the
     /// plugin waits for a browser login). Empty @p password: the stored login of @p host / @p user.
     void checkAccount(const QString& host, const QString& user, const QString& password);
+    /// The user's confirmation code for the running check of @p host / @p user (its Code event);
+    /// empty @p code cancels. False: no check of that login waits.
+    bool answerAccountCode(const QString& host, const QString& user, const QString& code);
     /// Checks @p urls through the core, as an item's own check goes: linkChecked() for each,
     /// a fresh result at once. The core keeps what it learns (a dead link stays dead), so a
     /// download soon after starts from it. False: hosters off, no resolver or no node.
@@ -280,6 +283,9 @@ public:
         bool valid = false;
         bool premium = false;
         qint64 expires = 0;   ///< unix seconds; 0 = unknown
+        qint64 trafficLeft = -1;   ///< bytes; -1 = unlimited or unknown
+        qint64 trafficMax = -1;
+        qint64 checked = 0;   ///< unix seconds
         int hosts = 0;        ///< hosters it names
         int working = 0;      ///< of them usable now (working, quota left, not skipped)
     };
@@ -321,6 +327,8 @@ signals:
     /// with the resolver's @p code and @p text.
     void clickNLoadOpened(quint64 token, const QString& source, const QList<eMule::ed3k::ResolverLink>& links,
                           const QString& code, const QString& text);
+    /// A download of @p site (link host, or the multi-hoster's) gets its bytes from @p server.
+    void downloadServer(const QString& site, const QString& server);
     /// A checkLinks() result.
     void linkChecked(const QString& url, const eMule::ed3k::Ed3kHosterJoin::LinkCheck& check);
 
@@ -404,6 +412,7 @@ private:
         bool premium = false;
         qint64 expires = 0;
         qint64 trafficLeft = -1;
+        qint64 trafficMax = -1;
         int maxDownloads = 0;        ///< JD's downloads at once; -1 unlimited, 0 unknown
         qint64 at = 0;
         bool multi = false;          ///< a multi-hoster: hosts is what it downloads
@@ -467,6 +476,8 @@ private:
     /// The core asks the resolver.
     void onResolve(const ::ed3k::event::LinkResolve& r);
     void onResolverEvent(Ed3kResolver::TaskId task, const ResolverEvent& ev);
+    /// a login's confirmation code waits (account check or download): to the GUI, once per login
+    void onCodeAsked(Ed3kResolver::TaskId task, const ResolverEvent& ev);
     /// Resolver became ready: NoResolver/ResolverNotReady items start again.
     void retryNotReady();
     void answer(std::uint64_t link, std::uint32_t kind, const QString& text = {}, std::optional<std::uint64_t> value = {});
@@ -544,6 +555,9 @@ private:
     /// links' ALIAS records (rechecked as before) for deletedDays().
     void keepDeletedVolumes(const QStringList& volumes);
     void onDeletedEnded(const DeletedFile& f) override;
+    /// alias.md §3: a deleted row's links are asked at least every kDeletedCheckMs, whatever
+    /// recheckHours says (0: never, or over 168 h); results come to onRechecked.
+    void checkDeleted(qint64 now) override;
     void onUnpacked(const HosterUnpackResult& r);
     /// Extraction switched off: archives waiting in Temp go to incoming as they are.
     void releaseArchives();
@@ -589,6 +603,13 @@ private:
         bool operator==(const AccountCheck& o) const { return host == o.host && user == o.user; }
     };
     std::map<Ed3kResolver::TaskId, AccountCheck> m_accountChecks;
+    /// tasks waiting for a login's confirmation code (account checks and downloads): the login, its ask
+    struct CodeAsk {
+        QString host;
+        QString user;
+        ResolverEvent ev;
+    };
+    std::map<Ed3kResolver::TaskId, CodeAsk> m_codeAsks;
     /// checkLinks(): match tasks → url, links waiting, links checking, results by url
     std::map<Ed3kResolver::TaskId, QString> m_probeMatches;
     QList<QueuedProbe> m_probeQueue;

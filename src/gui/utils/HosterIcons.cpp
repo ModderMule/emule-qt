@@ -5,6 +5,7 @@
 #include "utils/HosterIcons.h"
 
 #include "app/IpcClient.h"
+#include "utils/CountryFlags.h"
 #include "IpcMessage.h"
 
 #include <QCborMap>
@@ -49,6 +50,12 @@ QIcon HosterIcons::icon(const QString& raw)
             m_askTimer.start();
     }
     return standIn(host);
+}
+
+QIcon HosterIcons::iconWithFlag(const QString& host)
+{
+    const QIcon base = icon(host);
+    return base.isNull() ? base : CountryFlags::withFlag(base, country(host));
 }
 
 const QList<HosterIcons::AccountHost>& HosterIcons::accountHosts()
@@ -106,6 +113,7 @@ void HosterIcons::onPush(const IpcMessage& msg)
     for (const auto& [k, v] : m.value(QStringLiteral("icons")).toMap())
         icons.insert(k.toString(), v.toByteArray());
     applyIcons(icons);
+    applyCountries(m.value(QStringLiteral("countries")).toMap());
 }
 
 void HosterIcons::applyIcons(const QHash<QString, QByteArray>& icons)
@@ -116,6 +124,18 @@ void HosterIcons::applyIcons(const QHash<QString, QByteArray>& icons)
             m_icons.insert(host, standIn(host));   // none: the stand-in stays
         else
             m_icons.insert(host, QIcon(pm));
+        emit iconChanged(host);
+    }
+}
+
+void HosterIcons::applyCountries(const QCborMap& countries)
+{
+    for (const auto& [k, v] : countries) {
+        const QString host = k.toString();
+        const QString cc = v.toString().toLower();
+        if (host.isEmpty() || (m_countries.contains(host) && m_countries.value(host) == cc))
+            continue;
+        m_countries.insert(host, cc);
         emit iconChanged(host);
     }
 }
@@ -148,9 +168,11 @@ void HosterIcons::sendIconAsks()
             if (!self || !r.isValid() || !r.fieldBool(0))
                 return;
             QHash<QString, QByteArray> icons;
-            for (const auto& [k, v] : r.fieldMap(1).value(QStringLiteral("icons")).toMap())
+            const QCborMap m = r.fieldMap(1);
+            for (const auto& [k, v] : m.value(QStringLiteral("icons")).toMap())
                 icons.insert(k.toString(), v.toByteArray());
             self->applyIcons(icons);
+            self->applyCountries(m.value(QStringLiteral("countries")).toMap());
         });
     }
 }
@@ -158,6 +180,7 @@ void HosterIcons::sendIconAsks()
 void HosterIcons::reset()
 {
     m_icons.clear();
+    m_countries.clear();
     m_asked.clear();
     m_toAsk.clear();
     m_hostsAsked = false;

@@ -24,6 +24,7 @@
 #include "app/SkinIcons.h"
 #include "utils/Appearance.h"
 #include "utils/DialogSizing.h"
+#include "utils/CountryFlags.h"
 #include "utils/HosterIcons.h"
 #include "prefs/Preferences.h"
 #include "utils/StringUtils.h"
@@ -236,7 +237,7 @@ Ed3kOptionsPages::Ed3kOptionsPages(IpcClient* ipc, QWidget* parent)
             for (AccountList* list : {&m_hosterAccounts, &m_solverAccounts, &m_debridAccounts})
                 for (int i = 0; list->tree && i < list->rows.size() && i < list->tree->topLevelItemCount(); ++i)
                     if (list->rows.at(i).host == host)
-                        list->tree->topLevelItem(i)->setIcon(0, icons->icon(host));
+                        list->tree->topLevelItem(i)->setIcon(0, icons->iconWithFlag(host));
         });
     }
     if (m_ipc) {
@@ -433,22 +434,11 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kHosterLinkGrabber", h.linkGrabber);
     put("ed3kHosterGrabAll", h.grabAll);
     put("ed3kHosterAutoUpdate", h.autoUpdate);
-    // a password only when typed here: the daemon keeps the stored one otherwise
-    const auto rows = [](const AccountList& list) {
-        QCborArray out;
-        for (const HosterAccountRow& a : list.rows) {
-            QCborMap m{{QStringLiteral("host"), a.host}, {QStringLiteral("user"), a.user}};
-            if (a.passwordSet)
-                m.insert(QStringLiteral("password"), a.password);
-            out.append(m);
-        }
-        return out;
-    };
-    put("ed3kHosterAccounts", rows(m_hosterAccounts));
+    put("ed3kHosterAccounts", accountRows(m_hosterAccounts));
     put("ed3kHosterSolversEnabled", h.solversEnabled);
-    put("ed3kHosterSolvers", rows(m_solverAccounts));
+    put("ed3kHosterSolvers", accountRows(m_solverAccounts));
     put("ed3kHosterDebridEnabled", h.debridEnabled);
-    put("ed3kHosterDebrid", rows(m_debridAccounts));
+    put("ed3kHosterDebrid", accountRows(m_debridAccounts));
 }
 
 void Ed3kOptionsPages::saveLocal() const
@@ -1793,20 +1783,35 @@ void Ed3kOptionsPages::applyHosterStatus(const QCborMap& h)
             if (a.host != st.value(QStringLiteral("host")).toString() || a.user != st.value(QStringLiteral("user")).toString()
                 || a.passwordSet)
                 continue;
-            const QString text = !st.value(QStringLiteral("valid")).toBool()
-                                     ? tr("Not valid")
-                                     : debridText(st.value(QStringLiteral("premium")).toBool(),
-                                                  st.value(QStringLiteral("expires")).toInteger(),
-                                                  int(st.value(QStringLiteral("hosts")).toInteger()),
-                                                  int(st.value(QStringLiteral("working")).toInteger()));
+            const QString text = accountText(m_debridAccounts, st, int(st.value(QStringLiteral("hosts")).toInteger()),
+                                             int(st.value(QStringLiteral("working")).toInteger()));
             if (a.status != text) {
                 a.status = text;
+                a.checked = st.value(QStringLiteral("checked")).toInteger();
                 anyDebrid = true;
             }
         }
     }
     if (anyDebrid)
         fillAccounts(m_debridAccounts);
+
+    // the rest: each login's last check the core kept, also from an earlier run
+    for (AccountList* list : {&m_hosterAccounts, &m_solverAccounts, &m_debridAccounts}) {
+        bool hit = false;
+        for (const QCborValue& v : h.value(QStringLiteral("accounts")).toArray()) {
+            const QCborMap st = v.toMap();
+            for (HosterAccountRow& a : list->rows) {
+                if (!a.status.isEmpty() || a.passwordSet || a.host != st.value(QStringLiteral("host")).toString()
+                    || a.user != st.value(QStringLiteral("user")).toString())
+                    continue;
+                a.status = accountText(*list, st, int(st.value(QStringLiteral("hosts")).toInteger(-1)));
+                a.checked = st.value(QStringLiteral("checked")).toInteger();
+                hit = true;
+            }
+        }
+        if (hit)
+            fillAccounts(*list);
+    }
 }
 
 void Ed3kOptionsPages::updateJavaButtons()
@@ -1863,6 +1868,7 @@ void Ed3kOptionsPages::buildAccountList(AccountList& list, const QStringList& co
                                         QVBoxLayout* layout, QWidget* parent)
 {
     list.tree = makeTree(columns, stateKey, parent);
+    CountryFlags::bindFlagColumn(list.tree);   // favicon + server flag
     layout->addWidget(list.tree);
     auto* btns = new QHBoxLayout;
     auto* addBtn = new QPushButton(tr("Add..."), parent);
@@ -1888,7 +1894,9 @@ void Ed3kOptionsPages::buildAccountList(AccountList& list, const QStringList& co
             return;
         l->rows.removeAt(row);
         fillAccounts(*l);
-        emit changed();
+        // saved at once like an added login; without a core Apply sends it
+        if (!saveAccounts(*l))
+            emit changed();
     });
     connect(checkBtn, &QPushButton::clicked, this, [this, l] { checkAccount(*l); });
 }
@@ -1987,13 +1995,26 @@ void Ed3kOptionsPages::editAccount(AccountList& list, int row)
         list.rows.append(a);
     else
         list.rows[row] = a;
+    const int at = add ? int(list.rows.size()) - 1 : row;
+    list.tree->setCurrentItem(nullptr);
     fillAccounts(list);
-    emit changed();
+    if (QTreeWidgetItem* it = list.tree->topLevelItem(at))
+        list.tree->setCurrentItem(it);
+    // added and checked at once, no Apply; without a core Apply sends it
+    if (!saveAccounts(list)) {
+        emit changed();
+        return;
+    }
+    checkAccountRow(list, at);
 }
 
 void Ed3kOptionsPages::checkAccount(AccountList& list)
 {
-    const int row = list.tree->currentItem() ? list.tree->indexOfTopLevelItem(list.tree->currentItem()) : -1;
+    checkAccountRow(list, list.tree->currentItem() ? list.tree->indexOfTopLevelItem(list.tree->currentItem()) : -1);
+}
+
+void Ed3kOptionsPages::checkAccountRow(AccountList& list, int row)
+{
     if (row < 0 || row >= list.rows.size() || !m_ipc)
         return;
     HosterAccountRow& a = list.rows[row];
@@ -2004,6 +2025,7 @@ void Ed3kOptionsPages::checkAccount(AccountList& list)
     req.append(a.passwordSet ? a.password : QString());
     m_ipc->sendRequest(std::move(req));
     a.status = tr("Checking...");
+    a.checked = 0;
     fillAccounts(list);
 }
 
@@ -2016,23 +2038,14 @@ void Ed3kOptionsPages::fillAccounts(AccountList& list)
     for (const HosterAccountRow& a : list.rows) {
         const QString host = list.services() ? solverName(a.host) : a.host;
         auto* it = new QTreeWidgetItem({host, a.user, a.status});
+        if (a.checked > 0)
+            it->setToolTip(2, tr("Checked %1").arg(QLocale().toString(QDateTime::fromSecsSinceEpoch(a.checked), QLocale::ShortFormat)));
         if (HosterIcons* icons = HosterIcons::of(m_ipc))
-            it->setIcon(0, icons->icon(a.host));
+            it->setIcon(0, icons->iconWithFlag(a.host));
         list.tree->addTopLevelItem(it);
     }
     if (current >= 0 && current < list.tree->topLevelItemCount())
         list.tree->setCurrentItem(list.tree->topLevelItem(current));
-}
-
-QString Ed3kOptionsPages::debridText(bool premium, qint64 expires, int hosts, int working)
-{
-    QString base = premium ? tr("Premium") : tr("Free");
-    if (expires > 0)
-        base = (premium ? tr("Premium until %1") : tr("Free until %1"))
-                   .arg(QLocale().toString(QDateTime::fromSecsSinceEpoch(expires).date(), QLocale::ShortFormat));
-    if (working >= 0)
-        return tr("%1, %2 of %n hoster(s) usable", nullptr, hosts).arg(base).arg(working);
-    return tr("%1, %n hoster(s)", nullptr, hosts).arg(base);
 }
 
 void Ed3kOptionsPages::buildDebrid(QVBoxLayout* layout, QWidget* parent)
@@ -2110,6 +2123,8 @@ void Ed3kOptionsPages::applyAccountCheck(const QString& host, const QString& use
     const QString error = r.value(QStringLiteral("error")).toString();
     // a browser login (OAuth device flow) waits: the result follows once the user allowed it
     const bool login = error == QLatin1StringView("login");
+    // a confirmation code waits (2FA, a "new sign in" mail): the check goes on once it is typed
+    const bool code = error == QLatin1StringView("code");
     bool shown = false;
     for (AccountList* list : {&m_hosterAccounts, &m_solverAccounts, &m_debridAccounts}) {
         bool hit = false;
@@ -2122,31 +2137,29 @@ void Ed3kOptionsPages::applyAccountCheck(const QString& host, const QString& use
                 shown = true;
                 continue;
             }
+            if (code) {
+                a.status = tr("Waiting for the confirmation code...");
+                shown = true;
+                continue;
+            }
             if (list->debrid)
                 a.hosts = r.value(QStringLiteral("hosts")).toArray();
-            if (!r.value(QStringLiteral("valid")).toBool())
+            a.checked = QDateTime::currentSecsSinceEpoch();
+            if (!r.value(QStringLiteral("valid")).toBool() && !error.isEmpty())
                 a.status = error == QLatin1StringView("io")        ? tr("Not reachable")
                            : error == QLatin1StringView("noLogin") ? tr("No password stored")
                                                                     : tr("Not valid");
-            else if (list->debrid && !r.value(QStringLiteral("multi")).toBool())
-                a.status = tr("Valid, but downloads no other hosters");
-            else if (list->debrid)
-                a.status = debridText(r.value(QStringLiteral("premium")).toBool(), r.value(QStringLiteral("expires")).toInteger(),
-                                      int(a.hosts.size()), -1);
-            else if (list->solvers)
-                a.status = creditText(r.value(QStringLiteral("balance")).toDouble(-1),
-                                      r.value(QStringLiteral("currency")).toString());
-            else if (const qint64 exp = r.value(QStringLiteral("expires")).toInteger(); exp > 0)
-                a.status = (r.value(QStringLiteral("premium")).toBool() ? tr("Premium until %1") : tr("Free until %1"))
-                               .arg(QLocale().toString(QDateTime::fromSecsSinceEpoch(exp).date(), QLocale::ShortFormat));
             else
-                a.status = r.value(QStringLiteral("premium")).toBool() ? tr("Premium") : tr("Free");
+                a.status = accountText(*list, r, r.value(QStringLiteral("multi")).toBool() ? int(a.hosts.size()) : -1);
         }
         if (hit)
             fillAccounts(*list);
-        if (hit && list->debrid && !login)
+        if (hit && list->debrid && !login && !code)
             fillDebridHosts();
     }
+    // the code window: HosterPanel's, like a puzzle
+    if (code)
+        return;
     const QUrl url(r.value(QStringLiteral("login")).toString());
     if (shown && url.scheme() == QLatin1StringView("https"))
         // never a dialog inside the IPC read
@@ -2354,5 +2367,79 @@ void Ed3kOptionsPages::askBrowserLogin(const QString& host, const QUrl& url)
     box->open();
 }
 
-} // namespace eMule
+bool Ed3kOptionsPages::saveAccounts(AccountList& list)
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return false;
+    IpcMessage req(IpcMsgType::SetPreferences);
+    req.append(accountKey(list));
+    req.append(accountRows(list));
+    m_ipc->sendRequest(std::move(req));
+    // the GUI's copy follows, as Apply's saveLocal() does: stored passwords and sessions stay
+    Ed3kHosterPrefs h = thePrefs.ed3kHoster();
+    QList<Ed3kHosterAccount>& target = list.solvers ? h.solvers : list.debrid ? h.debrid : h.accounts;
+    const QList<Ed3kHosterAccount> before = target;
+    target.clear();
+    for (const HosterAccountRow& a : list.rows) {
+        Ed3kHosterAccount acc{a.host, a.user, a.passwordSet ? a.password : QString()};
+        for (const Ed3kHosterAccount& o : before) {
+            if (o.host != acc.host || o.user != acc.user)
+                continue;
+            if (acc.password.isEmpty())
+                acc.password = o.password;
+            if (acc.password == o.password)
+                acc.session = o.session;
+        }
+        target.append(acc);
+    }
+    thePrefs.setEd3kHoster(h);
+    return true;
+}
 
+QCborArray Ed3kOptionsPages::accountRows(const AccountList& list)
+{
+    // a password only when typed here: the daemon keeps the stored one otherwise
+    QCborArray out;
+    for (const HosterAccountRow& a : list.rows) {
+        QCborMap m{{QStringLiteral("host"), a.host}, {QStringLiteral("user"), a.user}};
+        if (a.passwordSet)
+            m.insert(QStringLiteral("password"), a.password);
+        out.append(m);
+    }
+    return out;
+}
+
+QString Ed3kOptionsPages::accountKey(const AccountList& list)
+{
+    return list.solvers  ? QStringLiteral("ed3kHosterSolvers")
+           : list.debrid ? QStringLiteral("ed3kHosterDebrid")
+                         : QStringLiteral("ed3kHosterAccounts");
+}
+
+QString Ed3kOptionsPages::accountText(const AccountList& list, const QCborMap& check, int hosts, int working)
+{
+    if (!check.value(QStringLiteral("valid")).toBool())
+        return tr("Not valid");
+    if (list.solvers)
+        return creditText(check.value(QStringLiteral("balance")).toDouble(-1), check.value(QStringLiteral("currency")).toString());
+    if (list.debrid && hosts < 0)
+        return tr("Valid, but downloads no other hosters");
+    const bool premium = check.value(QStringLiteral("premium")).toBool();
+    QString text = premium ? tr("Premium") : tr("Free");
+    if (const qint64 exp = check.value(QStringLiteral("expires")).toInteger(); exp > 0)
+        text = (premium ? tr("Premium until %1") : tr("Free until %1"))
+                   .arg(QLocale().toString(QDateTime::fromSecsSinceEpoch(exp).date(), QLocale::ShortFormat));
+    // traffic: none told = unlimited or unknown, said nothing
+    if (const qint64 left = check.value(QStringLiteral("trafficLeft")).toInteger(-1); left >= 0) {
+        const qint64 max = check.value(QStringLiteral("trafficMax")).toInteger(-1);
+        text = max > 0 ? tr("%1, %2 of %3 traffic left").arg(text, formatByteSize(uint64(left)), formatByteSize(uint64(max)))
+                       : tr("%1, %2 traffic left").arg(text, formatByteSize(uint64(left)));
+    }
+    if (!list.debrid)
+        return text;
+    if (working >= 0)
+        return tr("%1, %2 of %n hoster(s) usable", nullptr, hosts).arg(text).arg(working);
+    return tr("%1, %n hoster(s)", nullptr, hosts).arg(text);
+}
+
+} // namespace eMule

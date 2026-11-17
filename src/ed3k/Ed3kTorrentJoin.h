@@ -91,6 +91,8 @@ public:
     // -- state, for the daemon and tests -----------------------------------
 
     [[nodiscard]] bool hasJoin(const QString& id) const;
+    /// A member of a torrent here is shared or downloaded under @p root (hops.md §1 exposure).
+    [[nodiscard]] bool holdsRoot(const ::ed3k::Root& root) const { return sharesRoot(root) || downloading(root); }
     [[nodiscard]] std::optional<::ed3k::TorrentInfo> info(const QString& id) const;
     [[nodiscard]] std::optional<::ed3k::TorrentMember> member(const QString& id, int index) const;
     [[nodiscard]] QString joinPath(const QString& id) const;

@@ -50,11 +50,20 @@ public final class ResolverMain {
         // (JD's updater layout). Keep the loose-classes behaviour the driver was made for.
         Jd.notJared();
         Jd.init();
+        // JD's RemoteAPIController wraps the dialog handler when its class loads, lazily, maybe mid-login
+        // (on top of CodeAsker: a code dialog then parks forever). Load it now, under ours; no API port.
+        try {
+            org.appwork.storage.config.JsonConfig.create(org.jdownloader.api.RemoteAPIConfig.class).setDeprecatedApiEnabled(false);
+            org.jdownloader.api.RemoteAPIController.getInstance();
+        } catch (final Throwable e) {
+            Out.log("JD remote API: " + e);
+        }
         PuzzleSolver.install();
         LoginSolver.install();
         // solver accounts JD saved last run: the daemon sends the current ones
         SolverAccountsTask.clear();
         HeadlessUserIO.install();
+        CodeAsker.install();
         Out.log("ready, " + Jd.hostPluginCount() + " host and " + Jd.crawlerPluginCount() + " crawler plugins");
         final BufferedReader in = Out.input();
         String line;
@@ -110,6 +119,7 @@ public final class ResolverMain {
             m.put("generic", true);
             m.put("debrid", true);
             m.put("accountHosts", true);
+            m.put("code", true);
             Out.send(m);
             break;
         }
@@ -198,6 +208,9 @@ public final class ResolverMain {
             break;
         case "answer":
             PuzzleSolver.answer(num(req.get("puzzle")), str(req.get("text")));
+            break;
+        case "answerCode":
+            CodeAsker.answer(num(req.get("task")), str(req.get("text")));
             break;
         case "cancel": {
             final Task t = TASKS.get(num(req.get("task")));

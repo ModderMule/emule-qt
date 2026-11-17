@@ -258,7 +258,10 @@ private:
     void muteEd3kMember(const QString& room, const QString& memberId, bool on);
     /// A failed room request: "error" of the reply as a line in Status.
     void ed3kRoomFailed(const QString& what, const Ipc::IpcMessage& reply);
+    /// Room nick: the IRC nick, else the eMule nick unless a default one (a URL); empty: none.
     [[nodiscard]] QString ed3kNick() const;
+    /// The IRC nick prompt (also for ed3k rooms without a nick); stored in Options->IRC. Empty: cancelled.
+    [[nodiscard]] QString askIrcNick(const QString& start);
 
     // Members
     IrcClient* m_irc = nullptr;
