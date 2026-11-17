@@ -3273,6 +3273,7 @@ private slots:
             QCOMPARE(u.zipToUse(), newer);
             QVERIFY(!QFileInfo::exists(QDir(dir).filePath(QStringLiteral("resolver-r53800.zip"))));
         }
+        eMule::BackgroundFileWriter::instance().flush();   // update.json is queued: on disk before tmp goes
     }
 
     /// no zip shipped: nothing at start, fetched once a hoster link wants plugins

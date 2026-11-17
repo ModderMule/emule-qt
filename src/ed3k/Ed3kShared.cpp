@@ -302,6 +302,7 @@ void Ed3kShared::stop()
     m_suspects.clear();
     m_recheckTimer.stop();
     pumpSession();
+    flushBlobWrites();   // index on disk once stopped (see Ed3kSession::stop)
 }
 
 void Ed3kShared::setEnabled(bool on)
