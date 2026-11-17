@@ -74,6 +74,8 @@
 #include <QAction>
 #include <QMimeData>
 #include <QDropEvent>
+#include <QShowEvent>
+#include <QWindow>
 #include <QWindowStateChangeEvent>
 #include <QDragMoveEvent>
 #include <QDragEnterEvent>
@@ -1281,7 +1283,8 @@ void MainWindow::restoreWindow(const QString& activationToken)
 
     // Not showNormal(): that drops maximized/fullscreen, so every restore came back
     // at the normal size. Only the minimized bit goes.
-    Qt::WindowStates state = (windowState() | m_stateBeforeMinimize) & ~Qt::WindowMinimized;
+    Qt::WindowStates state = (windowState() | m_stateBeforeMinimize | std::exchange(m_trayHiddenState, {}))
+        & ~Qt::WindowMinimized;
     if (state.testFlag(Qt::WindowFullScreen))
         state &= ~Qt::WindowMaximized;
     // X11: un-minimizing a hidden window maps it behind Qt's back
@@ -1344,6 +1347,19 @@ void MainWindow::changeEvent(QEvent* event)
             if (isMinimized() && ensureTrayIconShown())
                 hide();
         });
+    }
+}
+
+void MainWindow::showEvent(QShowEvent* event)
+{
+    QMainWindow::showEvent(event);
+    m_trayHiddenState = Qt::WindowNoState;   // restoreWindow() already used it; any other show drops it
+    // windowHandle() exists from the first show on and survives hide()
+    if (m_waylandMinimizeHooked || !QGuiApplication::platformName().startsWith(QLatin1String("wayland")))
+        return;
+    if (QWindow* handle = windowHandle()) {
+        connect(handle, &QWindow::windowStateChanged, this, &MainWindow::onWaylandWindowStateChanged);
+        m_waylandMinimizeHooked = true;
     }
 }
 
@@ -3472,6 +3488,26 @@ void MainWindow::updateNetworkStatsLabel()
         users = files = QStringLiteral("0");
     }
     m_statusUsersLabel->setText(tr("Users: %1 | Files: %2").arg(users, files));
+}
+
+void MainWindow::onWaylandWindowStateChanged(Qt::WindowState state)
+{
+    // Qt sends xdg_toplevel.set_minimized and at once reports the window as not
+    // minimized (the protocol has no such state), so changeEvent() never sees it.
+    // This signal is the only trace. A compositor-side minimize (server-side title
+    // bar on KDE/sway, GNOME's Super+H) leaves none: the window just goes down.
+    if (state != Qt::WindowMinimized || !trayInUse() || !thePrefs.minimizeToTray())
+        return;
+    // Widget state still holds maximized here; Qt's "not minimized" report comes later
+    const Qt::WindowStates keep = windowState() & (Qt::WindowMaximized | Qt::WindowFullScreen);
+    // Deferred: the request comes from inside the decoration's mouse handler, and
+    // hide() tears down the surface that decoration draws on
+    QTimer::singleShot(0, this, [this, keep] {
+        if (!isVisible() || !ensureTrayIconShown())
+            return;
+        m_trayHiddenState = keep;
+        hide();
+    });
 }
 
 bool MainWindow::ensureTrayIconShown()

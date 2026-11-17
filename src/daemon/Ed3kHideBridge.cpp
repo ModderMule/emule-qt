@@ -129,6 +129,19 @@ QString sharedKey([[maybe_unused]] const QByteArray& md4)
 #endif
 }
 
+QString sharedRoot([[maybe_unused]] const QByteArray& md4)
+{
+#ifdef EMULE_HAVE_ED3K
+    if (!s_shared)
+        return {};
+    const auto r = s_shared->hashedRootOf(md4);
+    return r ? QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(r->bytes.data()), qsizetype(r->bytes.size())).toHex())
+             : QString();
+#else
+    return {};
+#endif
+}
+
 void connectPushes([[maybe_unused]] ed3k::Ed3kSession& session,
                    [[maybe_unused]] std::function<void(const IpcMessage&)> broadcast)
 {

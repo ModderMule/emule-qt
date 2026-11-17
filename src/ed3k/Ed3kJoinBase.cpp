@@ -1096,6 +1096,15 @@ bool Ed3kJoinBase::anonHeld(const ffi::Root& root) const
     });
 }
 
+bool Ed3kJoinBase::withholdSet(const QString& owner, std::span<const ffi::Root> members) const
+{
+    if (anonCapable())
+        return false;
+    if (std::ranges::any_of(m_skipped, [&](const auto& kv) { return kv.second.owner == owner; }))
+        return true;
+    return std::ranges::any_of(members, [&](const ffi::Root& r) { return anonHeld(r); });
+}
+
 bool Ed3kJoinBase::moveDownloadKey(const ffi::Root& root, ffi::KeyKind key)
 {
     const auto it = m_downloads.find(root);
@@ -2441,7 +2450,13 @@ void Ed3kJoinBase::publishKeptRecords(const QString& owner)
     const auto t = m_session.now();
     const Kept kept = readKept(owner);
     // §6: the set is not shared while holding back (its manifest names the article list)
-    if (kept.set && shareKeptBlobs()) {
+    std::vector<ffi::Root> memberRoots;
+    for (const auto& m : kept.members)
+        memberRoots.push_back(m.root);
+    // was: if (kept.set && shareKeptBlobs()) {
+    if (kept.set && shareKeptBlobs() && withholdSet(owner, memberRoots))
+        logDebug([&]() -> QString { return QStringLiteral("kept set of %1 not published: a member is under the anonymous key").arg(owner); });
+    else if (kept.set && shareKeptBlobs()) {
         const QByteArray manifest = readBlob(QDir(keptDir(owner)).filePath(blobFile(kept.set->root)));
         const QByteArray n = kept.set->name.toUtf8();
         if (manifest.isEmpty())
@@ -2884,14 +2899,20 @@ void Ed3kJoinBase::yieldToAnon(const ffi::Root& root)
         // its source record and keywords under the node key, then the file (§1: never both keys)
         unpublishShared(root, ffi::Publish::Both);
         unshare(root);
-        if (s.member >= 0)
+        if (s.member >= 0) {
+            const QString owner = s.owner;
             skipRoot(root, std::move(s));
+            withdrawSet(owner);
+        }
     }
     if (const auto d = m_downloads.find(root); d != m_downloads.end()) {
         Skipped s{d->second->owner, d->second->member};
         stopDownload(root);
-        if (s.member >= 0)
+        if (s.member >= 0) {
+            const QString owner = s.owner;
             skipRoot(root, std::move(s));
+            withdrawSet(owner);
+        }
     }
 }
 
@@ -2908,8 +2929,12 @@ void Ed3kJoinBase::rejoinSkipped(const ffi::Root& root)
         return;
     const Kept kept = readKept(s.owner);
     const auto m = std::ranges::find_if(kept.members, [&](const Kept::Member& k) { return k.member == s.member && k.root == root; });
-    if (m != kept.members.end())
-        shareKeptMember(s.owner, s.member, root, m->size, m->name, 0);
+    if (m == kept.members.end())
+        return;
+    // its first try ends in keptMemberDone: the kept records (the set, withheld so far) go out again
+    if (!m_keptPending.contains(s.owner))
+        m_keptPending[s.owner] = 1;
+    shareKeptMember(s.owner, s.member, root, m->size, m->name, 0);
 }
 
 bool Ed3kJoinBase::heldByNodeJoinsOnly(const ffi::Root& root) const
@@ -2928,6 +2953,16 @@ bool Ed3kJoinBase::heldByNodeJoinsOnly(const ffi::Root& root) const
 void Ed3kJoinBase::dropSkipped(const QString& owner)
 {
     std::erase_if(m_skipped, [&](const auto& kv) { return kv.second.owner == owner; });
+}
+
+void Ed3kJoinBase::withdrawSet(const QString& owner)
+{
+    auto* e = m_session.engine();
+    if (!e || !keepsOwner(owner))
+        return;
+    if (const Kept kept = readKept(owner); kept.set)
+        if (auto ok = e->setUnpublish(m_session.now(), kept.set->root); ok)
+            logInfo(QStringLiteral("set of %1 withdrawn: a member went to the anonymous key (hops.md §1)").arg(owner));
 }
 
 } // namespace eMule::ed3k

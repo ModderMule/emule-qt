@@ -7,6 +7,7 @@
 #include "geo/HostCountryResolver.h"
 #include "net/DohResolver.h"
 #include "net/HostResolver.h"
+#include "net/SmtpClient.h"
 #include "prefs/Preferences.h"
 
 #include <QScopeGuard>
@@ -109,6 +110,7 @@ private slots:
     void countryDns_offBehindProxyWithoutDoh();
     void hostResolver_usesDohBehindProxy();
     void prefs_cleanDohUrls();
+    void smtp_nameGoesToProxy();
     void live_throughProxy_data();
     void live_throughProxy();
 };
@@ -342,6 +344,32 @@ void tst_DohResolver::prefs_cleanDohUrls()
              QStringList{QStringLiteral("https://doh.example/q")});
 }
 
+/// SMTP behind a SOCKS5 proxy: the server's name goes to the proxy, never to the local resolver.
+void tst_DohResolver::smtp_nameGoesToProxy()
+{
+    testing::FakeProxyServer proxy{testing::FakeProxyServer::Kind::Socks5};
+    const quint16 port = proxy.start();
+    QVERIFY(port != 0);
+    const int oldType = thePrefs.proxyType();
+    const QString oldHost = thePrefs.proxyHost();
+    const uint16 oldPort = thePrefs.proxyPort();
+    auto restore = qScopeGuard([&] {
+        thePrefs.setProxyType(oldType);
+        thePrefs.setProxyHost(oldHost);
+        thePrefs.setProxyPort(oldPort);
+    });
+    thePrefs.setProxyType(3);
+    thePrefs.setProxyHost(QStringLiteral("127.0.0.1"));
+    thePrefs.setProxyPort(port);
+
+    SmtpClient smtp;
+    smtp.sendMail(QStringLiteral("smtp.invalid"), 587, SmtpSecurity::StartTls, SmtpAuth::None, {}, {},
+                  QStringLiteral("a@example.com"), QStringLiteral("b@example.com"), QStringLiteral("s"), QStringLiteral("b"));
+    QTRY_VERIFY(!proxy.targets().isEmpty());
+    QCOMPARE(proxy.targets().first(), QStringLiteral("smtp.invalid:587"));
+    QVERIFY(proxy.sawDomainName());
+}
+
 void tst_DohResolver::live_throughProxy_data()
 {
     QTest::addColumn<int>("kind");
@@ -392,6 +420,18 @@ void tst_DohResolver::live_throughProxy()
     QVERIFY2(body, qPrintable(url));
     const auto txt = dns::parseTxt(*body);
     QVERIFY2(txt && !txt->records.isEmpty(), qPrintable(url));
+
+    // an explicit proxy (the ed3k report proxy) with none on the Proxy page
+    thePrefs.setProxyType(0);
+    const qsizetype before = proxy.targets().size();
+    QNetworkProxy via(kind == int(testing::FakeProxyServer::Kind::Socks5) ? QNetworkProxy::Socks5Proxy : QNetworkProxy::HttpProxy,
+                      QStringLiteral("127.0.0.1"), port);
+    done = false;
+    got.clear();
+    dohLookup(url, QStringLiteral("example.com"), this, [&](QList<QHostAddress> a) { got = a; done = true; }, 8000, via);
+    QTRY_VERIFY_WITH_TIMEOUT(done, 15000);
+    QVERIFY2(!got.isEmpty(), qPrintable(url));
+    QVERIFY(proxy.targets().size() > before);
 }
 
 QTEST_GUILESS_MAIN(tst_DohResolver)

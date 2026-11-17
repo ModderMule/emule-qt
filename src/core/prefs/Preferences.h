@@ -2005,6 +2005,15 @@ public:
     [[nodiscard]] QStringList ipcTokens() const;
     void setIpcTokens(const QStringList& val);
 
+    /// ipc.tunnel: paired phones reach IPC over the ed3k tunnel (ALPN emuleqt-ipc/1,
+    /// libs/qDonkey/docs/ed3k-tunnel.md). Default on; listened only while a phone is paired
+    /// or a pair secret is out.
+    [[nodiscard]] bool ipcTunnel() const;
+    void setIpcTunnel(bool val);
+    /// ipc.tunnelPeers: paired phones, "<node id 32 hex> <name>" each.
+    [[nodiscard]] QStringList ipcTunnelPeers() const;
+    void setIpcTunnelPeers(const QStringList& val);
+
     // -- Web Server -----------------------------------------------------------
 
     [[nodiscard]] bool webServerEnabled() const;

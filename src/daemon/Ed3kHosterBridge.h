@@ -53,7 +53,8 @@ void openContainerAndAdd(const QByteArray& data, const QString& fileName,
 
 /// Hoster preview (WebServer::setHosterStreamResolver): item @p id (decimal) read from
 /// @p offset. @p fetch (seeking on): availableEnd = bytes held from there, peers' blocks
-/// there first (Ed3kHosterJoin::playFrom); off: the file as it is on disk. An archive or a
+/// there first (Ed3kHosterJoin::playFrom); off: the file as it is on disk, but a read near
+/// the end ahead of the stream waits for a tail fetch (previewTail). An archive or a
 /// file no player takes: notSeekableReason. found = false: no such item, or it failed.
 [[nodiscard]] UsenetStreamSource streamFrom(const QString& id, qint64 offset, bool fetch);
 

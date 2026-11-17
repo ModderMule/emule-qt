@@ -250,6 +250,7 @@ SOURCES += \
     webserver/WebServerApi.cpp \
     webserver/WebServerMcp.cpp \
     webserver/WebServerTorrents.cpp \
+    webserver/WebServerEd3k.cpp \
     webserver/StreamTokenStore.cpp \
     webserver/WebSessionManager.cpp \
     webserver/WebTemplateEngine.cpp
@@ -467,6 +468,7 @@ HEADERS += \
     webserver/OpenApiWriter.h \
     webserver/ApiEventHub.h \
     webserver/HosterWebBackend.h \
+    webserver/Ed3kWebBackend.h \
     webserver/MetaGrabWebBackend.h \
     webserver/TorrentWebBackend.h \
     webserver/UsenetWebBackend.h \

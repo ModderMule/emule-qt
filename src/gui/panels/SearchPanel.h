@@ -199,6 +199,7 @@ private slots:
     void onTabDoubleClicked(int index);
     void onTabContextMenu(const QPoint& pos);
     void onResultContextMenu(const QPoint& pos);
+    void dumpEd3kMenus();   ///< dev aid, utils/MenuDump.h
     void onResultDoubleClicked(const QModelIndex& index);
     void onSearchResultPush(const Ipc::IpcMessage& msg);
     void onIndexerResultsPush(const Ipc::IpcMessage& msg);

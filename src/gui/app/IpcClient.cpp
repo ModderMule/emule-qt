@@ -357,6 +357,9 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::StatStream:           return QStringLiteral("StatStream");
     case T::ReadStream:           return QStringLiteral("ReadStream");
     case T::GetIpcIdentity:       return QStringLiteral("GetIpcIdentity");
+    case T::RegisterTunnelPeer:   return QStringLiteral("RegisterTunnelPeer");
+    case T::GetTunnelPeers:       return QStringLiteral("GetTunnelPeers");
+    case T::RemoveTunnelPeer:     return QStringLiteral("RemoveTunnelPeer");
     case T::DownloadJavaRuntime:  return QStringLiteral("DownloadJavaRuntime");
     case T::LocateJavaRuntime:    return QStringLiteral("LocateJavaRuntime");
     case T::GetHosterStats:       return QStringLiteral("GetHosterStats");

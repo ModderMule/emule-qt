@@ -139,6 +139,7 @@ public:
     /// resume: the hoster cannot resume, JD starts over from 0
     bool refuseResume = false;
     bool muxed = false;          ///< open()'s progress says muxed (HLS/DASH via ffmpeg)
+    qsizetype stallAt = 0;       ///< the first open stops writing there (a slow hoster)
     std::uint64_t lastHave = 0;
     QByteArray lastPrefill;   ///< the front of the part file a resumed open found
 
@@ -317,7 +318,8 @@ public:
             QFile::remove(part);
         }
         const qsizetype from = have > 0 && !refuseResume ? qsizetype(have) : 0;
-        writeStep(t, part, from, have > 0 ? std::optional<std::uint64_t>(std::uint64_t(from)) : std::nullopt);
+        writeStep(t, part, from, have > 0 ? std::optional<std::uint64_t>(std::uint64_t(from)) : std::nullopt,
+                  opens == 1 ? stallAt : 0);
         return t;
     }
     TaskId accountCheck(const QString& host, const ResolverAccount& account) override
@@ -427,9 +429,10 @@ private:
     }
     /// 300 KiB per step, a progress event each, then done (the part renamed, as JD does);
     /// @p from: told with the first progress of a resumed open
-    void writeStep(TaskId t, const QString& part, qsizetype at, std::optional<std::uint64_t> from = std::nullopt)
+    void writeStep(TaskId t, const QString& part, qsizetype at, std::optional<std::uint64_t> from = std::nullopt,
+                   qsizetype stall = 0)
     {
-        QTimer::singleShot(5, this, [this, t, part, at, from] {
+        QTimer::singleShot(5, this, [this, t, part, at, from, stall] {
             const qsizetype n = std::min<qsizetype>(300 * 1024, data.size() - at);
             QFile f(part);
             if (!f.open(QIODevice::ReadWrite) || !f.seek(at) || f.write(data.constData() + at, n) != n)
@@ -454,8 +457,10 @@ private:
                 });
                 return;
             }
+            if (stall > 0 && at + n >= stall)
+                return;
             if (at + n < data.size()) {
-                writeStep(t, part, at + n);
+                writeStep(t, part, at + n, std::nullopt, stall);
                 return;
             }
             const QString done = part.chopped(5);
@@ -914,6 +919,57 @@ private slots:
             QCOMPARE(ids.size(), 1);
             QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
             QCOMPARE(r.join->item(ids[0])->muxed, muxed);
+        }
+    }
+
+    /// a player reads near the end, far ahead of a rootless stream: a direct or premium link
+    /// fetches the end with a second open (sparse part, resumed there); a free hoster does not
+    void rootless_tailFetchForPlayer()
+    {
+        const QString direct = QStringLiteral("https://files.example/v.mp4");
+        const QString prem = QStringLiteral("https://prem.example/v.mp4");
+        const QString free = QStringLiteral("https://fake.example/v.mp4");
+        for (const QString& url : {direct, prem, free}) {
+            Rig r;
+            r.resolver.data = content(3 * 1024 * 1024 + 77);
+            r.resolver.stallAt = 600 * 1024;
+            r.resolver.genericHosts = {QStringLiteral("files.example")};
+            r.resolver.hosts += QStringLiteral("prem.example");
+            r.resolver.premiumHosts = {QStringLiteral("prem.example")};
+            r.resolver.maxDownloads[QStringLiteral("prem.example")] = 4;
+            r.prefs.accounts = {{QStringLiteral("prem.example"), QStringLiteral("u"), QStringLiteral("p")}};
+            QVERIFY(r.start(true));
+            if (url == prem)
+                QTRY_COMPARE_WITH_TIMEOUT(r.join->accountTier(QStringLiteral("prem.example")), 2, 10000);
+            const auto ids = r.join->addLinks(url);
+            QCOMPARE(ids.size(), 1);
+            QTRY_VERIFY_WITH_TIMEOUT(r.join->item(ids[0])->done >= 600 * 1024, 60000);
+            QTRY_COMPARE_WITH_TIMEOUT(r.join->item(ids[0])->speed, std::uint64_t(0), 10000);   // stalled
+            const std::uint64_t size = std::uint64_t(r.resolver.data.size());
+            const std::uint64_t at = size - 200 * 1024 - 5;
+            if (url == free) {
+                QVERIFY(!r.join->previewTail(ids[0], at));   // seeking off: the file as it is
+                QCOMPARE(*r.join->playFrom(ids[0], at), at);
+                QTest::qWait(500);
+                QCOMPARE(r.resolver.opens, 1);
+                QCOMPARE(*r.join->playFrom(ids[0], at), at);
+                continue;
+            }
+            // direct: a preview with seeking off (previewTail); premium: seeking on (playFrom)
+            QCOMPARE(url == direct ? *r.join->previewTail(ids[0], at) : *r.join->playFrom(ids[0], at), at);
+            QCOMPARE(r.resolver.opens, 2);
+            QCOMPARE(r.resolver.lastHave, at);
+            QCOMPARE(r.resolver.lastPrefill.size(), qsizetype(at));   // sparse, as long as the offset
+            QTRY_COMPARE_WITH_TIMEOUT(*r.join->playFrom(ids[0], at), size, 10000);
+            QCOMPARE(*r.join->previewTail(ids[0], at), size);
+            QVERIFY(!r.join->previewTail(ids[0], 1000));   // behind the stream: on disk
+            QFile f(r.join->item(ids[0])->file);
+            QVERIFY(f.open(QIODevice::ReadOnly));
+            QVERIFY(f.seek(qint64(at)));
+            QCOMPARE(f.readAll(), r.resolver.data.mid(qsizetype(at)));
+            // the stream itself is still where it stalled; a read before the tail waits for it
+            QCOMPARE(*r.join->playFrom(ids[0], at - 1), at - 1);
+            QCOMPARE(r.resolver.opens, 3);   // a new tail from there
         }
     }
 

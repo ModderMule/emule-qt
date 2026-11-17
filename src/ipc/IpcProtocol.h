@@ -1108,8 +1108,16 @@ enum class IpcMsgType : int {
     /// seeking on: waits up to ~15 s for bytes at offset (fetched first), then empty data
     /// with waiting: true (ask again). Off: the file as it is on disk.
     ReadStream              = 1231,
-    /// [] -> [ok, {fingerprint (IPC TLS cert, "AB:CD:.."), port}] — pairing code for a phone
+    /// [pair?] -> [ok, {fingerprint (IPC TLS cert, "AB:CD:.."), port, tunnel, nodeId, endpoints,
+    /// relays ["<node hex>@ip:port"], udpPort, pairSecret (with pair: hex, 10 min, one use)}] —
+    /// pairing code for a phone (Ed3kTunnelBridge, libs/qDonkey/docs/ed3k-tunnel.md)
     GetIpcIdentity          = 1232,
+    /// [node id hex, name] -> [ok] — a phone paired on the LAN may use the ed3k tunnel
+    RegisterTunnelPeer      = 1233,
+    /// [] -> [ok, [{nodeId, name}]] — phones paired for the ed3k tunnel
+    GetTunnelPeers          = 1234,
+    /// [node id hex] -> [ok] — unpairs a phone; its open tunnel closes
+    RemoveTunnelPeer        = 1235,
 
     // hoster links (1100-1109, hoster.md), Ed3kHosterBridge.cpp. An item: {id, url, host,
     // name, size, done, speed, state (Ed3kHosterJoin::State), reason (Ed3kHosterJoin::Reason, the

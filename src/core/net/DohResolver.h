@@ -10,6 +10,7 @@
 #include <QByteArray>
 #include <QHostAddress>
 #include <QList>
+#include <QNetworkProxy>
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -43,10 +44,11 @@ struct DohProvider {
 [[nodiscard]] bool isLocalName(const QString& name);
 
 /// A and AAAA of @p name via @p dohUrl; @p done gets an empty list on any failure or after
-/// @p timeoutMs. Requests follow the Proxy page (GuardedNetworkAccessManager).
-/// @p context guards the callback. Main thread only.
+/// @p timeoutMs. Requests follow the Proxy page (GuardedNetworkAccessManager), or @p via
+/// when set (the ed3k report proxy). @p context guards the callback. Main thread only.
 void dohLookup(const QString& dohUrl, const QString& name, QObject* context,
-               std::function<void(QList<QHostAddress>)> done, int timeoutMs = 8000);
+               std::function<void(QList<QHostAddress>)> done, int timeoutMs = 8000,
+               const std::optional<QNetworkProxy>& via = std::nullopt);
 
 /// The raw answer message for one @p type query; nullopt on transport failure or timeout.
 void dohQuery(const QString& dohUrl, const QString& name, quint16 type, QObject* context,

@@ -2330,7 +2330,44 @@ private slots:
         QCOMPARE(readRaw(file), QByteArray());
     }
 
+    // account secrets: saved file, an older world-readable one after load and the backup
+    void save_fileIsOwnerOnly()
+    {
+#ifdef Q_OS_WIN
+        QNtfsPermissionCheckGuard ntfs;   // permissions() from the ACL
+#endif
+        TempDir tmp;
+        const QString file = tmp.filePath(QStringLiteral("preferences.yml"));
+        Preferences p;
+        QVERIFY(p.saveTo(file));
+        QVERIFY(ownerOnly(file));
+
+        QVERIFY(QFile::setPermissions(file, QFile::permissions(file) | QFileDevice::ReadGroup | QFileDevice::ReadOther));
+#ifndef Q_OS_WIN
+        QVERIFY(!ownerOnly(file));
+#endif
+        Preferences loaded;
+        QVERIFY(loaded.load(file));
+        BackgroundFileWriter::instance().flush();
+        QVERIFY(ownerOnly(file));
+        QVERIFY(QFile::exists(file + QStringLiteral(".bak")));
+        QVERIFY(ownerOnly(file + QStringLiteral(".bak")));
+
+        loaded.setNick(QStringLiteral("owner-only"));
+        loaded.saveInBackground();
+        BackgroundFileWriter::instance().flush();
+        QVERIFY(ownerOnly(file));
+    }
+
 private:
+    static bool ownerOnly(const QString& path)
+    {
+        constexpr auto others = QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ReadOther
+                                | QFileDevice::WriteOther;
+        const auto perms = QFile::permissions(path);
+        return (perms & QFileDevice::ReadOwner) && !(perms & others);
+    }
+
     static void writeRaw(const QString& path, const QByteArray& data)
     {
         QFile f(path);

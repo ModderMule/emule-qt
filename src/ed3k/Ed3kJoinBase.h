@@ -382,6 +382,9 @@ protected:
     /// hops.md §1: @p root is under the anonymous key or an anonCapable() join takes it there
     /// (hiding). A join that is not anonCapable() leaves it out (skipped), never opens it.
     [[nodiscard]] bool anonHeld(const ffi::Root& root) const;
+    /// hops.md §1: the set (MEMBER rows, published under the node key) of @p owner is left out
+    /// while a member is skipped or anonHeld: it would tie the anonymous file to this node.
+    [[nodiscard]] bool withholdSet(const QString& owner, std::span<const ffi::Root> members) const;
     /// An anonCapable() join takes @p root (before it opens it): default, it shares or
     /// downloads it. Ed3kShared: a listed file hashed to it.
     [[nodiscard]] virtual bool claimsRoot(const ffi::Root& root) const
@@ -648,6 +651,8 @@ private:
     [[nodiscard]] bool heldByNodeJoinsOnly(const ffi::Root& root) const;
     /// Drops the skipped roots of @p owner (job gone, withdrawn).
     void dropSkipped(const QString& owner);
+    /// A member of @p owner yielded to the anonymous key: its kept set taken back (withholdSet).
+    void withdrawSet(const QString& owner);
 
     /// The registries by session; turnsOf: the one of @p session (every join of it shares one).
     [[nodiscard]] static std::map<const Ed3kSession*, NodeTurns>& turnsMap();

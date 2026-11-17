@@ -1135,8 +1135,15 @@ void Ed3kTorrentJoin::onTorrentComplete(const QString& id)
     keepBlob(id, m_bt.infoSection(id), torrentName + QStringLiteral(".info"), done->infoRoot);
     // published again after a restart, as below
     keepRecords(id, done->root, torrentName, done->aliases);
-    // MEMBER rows (file-set.md §6)
-    if (auto ok = e->setPublish(t, done->manifest, done->root, nameView); !ok)
+    // MEMBER rows (file-set.md §6); not while a member is under the anonymous key (hops.md §1)
+    std::vector<ffi::Root> memberRoots;
+    for (std::size_t i = 0; i < j->members.size(); ++i)
+        if (const auto m = j->torrent.member(i); m && m->root)
+            memberRoots.push_back(*m->root);
+    if (withholdSet(id, memberRoots))
+        logInfo(QStringLiteral("set of \"%1\" not published: a member is under the anonymous key").arg(torrentName));
+    // was: if (auto ok = e->setPublish(t, done->manifest, done->root, nameView); !ok)
+    else if (auto ok = e->setPublish(t, done->manifest, done->root, nameView); !ok)
         logDebug([&]() -> QString { return QStringLiteral("set of \"%1\" not published (error %2)").arg(torrentName, errorName(ok.error())); });
     if (!m_holdBack && !done->aliases.empty()) {
         if (auto ok = e->publishAlias(t, done->aliases); !ok)

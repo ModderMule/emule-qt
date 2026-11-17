@@ -41,7 +41,8 @@ Every call does.
 - **Strict input:** an unknown query parameter or body field is a `400`, as is a value of the
   wrong type or out of range. Nothing is ignored silently.
 - **Lists:** `{items, total, offset, limit}`; `?limit=` 1–1000 (default 100), `?offset=`.
-- **Destructive calls** (cancel a download, remove a Usenet release or a category, shut down, restart)
+- **Destructive calls** (cancel an eD2K or ed3k download, remove a Usenet release, a hoster
+  download or a category, shut down, restart)
   need `"confirm": true` in the body, or `?confirm=true` on `DELETE`.
 - **Version:** every response carries `X-Contract-Version`; `GET /capabilities` lists the
   features and every operation id.
@@ -90,8 +91,12 @@ range that is not on disk yet waits while the core fetches those bytes first: 60
 eD2K/ed3k parts, web-seed ranges, torrent piece deadlines and hoster items, 15 seconds for
 Usenet articles (the item is boosted too). A hoster's own HTTP stream stays in file order; only
 ed3k peers of an item with a known root fetch the seek point first, so a seek ahead of a
-rootless hoster item waits for the stream to get there. An MP4 with its index (`moov`) at the
-end therefore opens only once such an item is nearly complete. A stream the resolver muxes
+rootless hoster item waits for the stream to get there. Near the end (the last 64 MiB, where an
+MP4 keeps its index `moov` when it is not "faststart") a direct web link or a premium login
+(own or multi-hoster, two connections or more) opens the link a second time from the seek
+point, so the player starts at once; the stream fetches those bytes again later, and only its
+bytes are hashed. A free hoster would ask another puzzle or wait, so such an MP4 opens only
+once the item is nearly complete. A stream the resolver muxes
 (HLS, DASH through ffmpeg) has no bytes before it ends: 406 until complete, unless ed3k peers
 deliver blocks. Off, the file is served as it is on disk, gaps included (a Usenet archive set
 still waits for the headers that map it).
@@ -99,6 +104,26 @@ still waits for the headers that map it).
 The web UI links the same routes with a page token (30 minutes idle, kept alive by the
 session): *Preview* in the Transfers and Shared Files right-click menus, in the Usenet menu,
 and on each row of a torrent's file table.
+
+## Networks
+
+| Prefix | What | Needs |
+|---|---|---|
+| `/downloads`, `/shared`, `/servers`, `/kad`, `/search` | eD2K and Kad | — |
+| `/ed3k/downloads` | ed3k downloads, by 64-hex root: list, add `ed3k:` links, pause/resume, rename, priority, category, move, cancel | ed3k on |
+| `/usenet` | Usenet queue | Usenet on |
+| `/torrents` | BitTorrent | a BitTorrent build, BitTorrent on |
+| `/hoster` | hoster/web-link downloads: list, add links (optional package), DLC/RSDF/CCF container (base64), pause/resume/retry, remove | ed3k on + hoster resolver |
+
+A network that is off answers `503`. `PATCH /shared/{hash}` renames a shared file, sets its
+upload priority or your comment and rating; `POST /downloads/{hash}/move` moves an unfinished
+download to another temp folder.
+
+`POST /search` takes `"type": "ed3k"` too. `POST /search/{id}/download` takes any row of its
+search: an eD2K file is queued; an ed3k file (`metaKind` `"ed3k"`, `ed3kRoot`) goes to the ed3k
+downloads; a Usenet, torrent or web release of a `usenetServer` / `torrentServer` / `webServer`
+search is fetched from the server's catalogue and handed to the Usenet queue, Torrents or Hoster —
+that call answers once it is there. Indexer searches (newznab/torznab) are not in the API yet.
 
 ## Preferences
 
@@ -160,7 +185,7 @@ wrong instead of failing silently. Headers that are missing or disagree with the
 
 The tools are operations of the same table as the REST routes — same validation, same code —
 chosen for what an assistant needs (status, search, downloads, servers, Kad, shared files,
-categories, preferences, logs, Usenet). The OpenAPI document marks them with `x-mcp-tool`.
+categories, preferences, logs, Usenet, torrents, ed3k downloads, hoster downloads). The OpenAPI document marks them with `x-mcp-tool`.
 Shutting the daemon down is not a tool. With `mcpReadOnly` only the tools that change nothing
 are offered. A request with an `Origin` header that is neither this server nor on
 `corsAllowedOrigins` is refused.

@@ -10,6 +10,7 @@
 #include "media/ContainerSniffer.h"
 #include "utils/Types.h"
 #include "webserver/ApiRegistry.h"
+#include "webserver/Ed3kWebBackend.h"
 #include "webserver/HosterWebBackend.h"
 #include "webserver/MetaGrabWebBackend.h"
 #include "webserver/StreamTokenStore.h"
@@ -145,6 +146,8 @@ struct UsenetStreamSource {
     /// file exists — it is preallocated — but reading it would return zeros, so
     /// it must not be served as content.
     qint64 availableEnd = 0;
+    /// availableEnd holds with seeking off too (a hoster tail fetch), not "all on disk"
+    bool exactEnd = false;
 
     bool complete = false;
 
@@ -218,7 +221,8 @@ public:
     void setBtStreamResolver(BtStreamResolver resolver) { m_btStreamResolver = std::move(resolver); }
 
     /// Hoster preview (/api/v1/hoster/<id>/preview): hoster item @p id read from @p offset;
-    /// @p fetch = seeking on, as BtStreamResolver. Unset: the route answers 503.
+    /// @p fetch = seeking on, as BtStreamResolver; off may still answer exactEnd (tail fetch).
+    /// Unset: the route answers 503.
     using HosterStreamResolver = std::function<UsenetStreamSource(const QString& id, qint64 offset, bool fetch)>;
     void setHosterStreamResolver(HosterStreamResolver resolver) { m_hosterStreamResolver = std::move(resolver); }
 
@@ -234,11 +238,15 @@ public:
     /// and not owned: without it they answer 503.
     void setTorrentBackend(TorrentWebBackend* backend) { m_torrentBackend = backend; }
 
-    /// The Hoster page. Optional and not owned; without it the page says unavailable.
+    /// The Hoster page and the /api/v1/hoster routes. Optional and not owned; without it
+    /// the page says unavailable and the routes answer 503.
     void setHosterBackend(HosterWebBackend* backend) { m_hosterBackend = backend; }
 
-    /// Grabs of the search page's meta rows. Optional and not owned.
+    /// Grabs of the search page's meta rows, and of POST /search/{id}/download. Optional and not owned.
     void setMetaGrabBackend(MetaGrabWebBackend* backend) { m_metaGrabBackend = backend; }
+
+    /// The /api/v1/ed3k routes and ed3k search rows. Optional and not owned: without it they answer 503.
+    void setEd3kBackend(Ed3kWebBackend* backend) { m_ed3kBackend = backend; }
 
     /// Source of GET /api/v1/events. Optional and not owned; outlives this server.
     void setEventHub(ApiEventHub* hub) { m_eventHub = hub; }
@@ -310,6 +318,8 @@ private:
     void buildApiTable();
     void addUsenetOperations();
     void addTorrentOperations();   // WebServerTorrents.cpp; empty without BitTorrent
+    void addEd3kOperations();      // WebServerEd3k.cpp: ed3k downloads
+    void addHosterOperations();    // WebServerEd3k.cpp: hoster downloads
     void registerApiRoutes();
     void registerEventRoute();
     void registerDocsRoutes();
@@ -329,6 +339,8 @@ private:
     [[nodiscard]] api::Result apiLogs(const api::Call& call) const;
     [[nodiscard]] api::Result apiSearchStart(const api::Call& call);
     [[nodiscard]] api::Result apiSearchResults(const api::Call& call) const;
+    /// An eD2K, ed3k or meta (Usenet/torrent/web) row; a meta row answers once grabbed.
+    [[nodiscard]] QFuture<api::Result> apiSearchDownload(const api::Call& call);
     [[nodiscard]] api::Result apiSearchList(const api::Call& call) const;
     [[nodiscard]] api::Result apiCategoryEdit(const api::Call& call, int mode);
     /// A stream link for a REST client: mints an "api" stream token for @p streamPath.
@@ -737,6 +749,7 @@ private:
     // Hoster downloads and meta-row grabs (injected by DaemonApp; not owned)
     HosterWebBackend* m_hosterBackend = nullptr;
     MetaGrabWebBackend* m_metaGrabBackend = nullptr;
+    Ed3kWebBackend* m_ed3kBackend = nullptr;
 
     // REST operation table, and its daemon-side half (not owned)
     api::Registry m_api;

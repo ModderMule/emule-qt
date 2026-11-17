@@ -96,6 +96,7 @@ private slots:
     void onFolderSelectionChanged();
     void onFileSelectionChanged();
     void onFileContextMenu(const QPoint& pos);
+    void dumpEd3kMenus();   ///< dev aid, utils/MenuDump.h
     void onFolderContextMenu(const QPoint& pos);
     void onFolderItemExpanded(QTreeWidgetItem* item);
 

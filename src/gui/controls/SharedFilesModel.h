@@ -19,7 +19,7 @@ namespace eMule {
 struct SharedFileRow {
     QString hash;           ///< MD4 hex; an ed3kOnly row: its root's head (the core's key)
     bool    ed3kOnly = false;   ///< hashed while eD2K was disabled: no MD4, no eD2K link
-    QString ed3kRoot;       ///< ed3kOnly: its ed3k root (64 hex)
+    QString ed3kRoot;       ///< its ed3k root (64 hex) once hashed for ed3k; ed3kOnly: always
     /// the File ID column: the root of an ed3k-only file
     [[nodiscard]] const QString& fileId() const { return ed3kOnly ? ed3kRoot : hash; }
     QString fileName;

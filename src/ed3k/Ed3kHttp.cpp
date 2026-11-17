@@ -6,6 +6,7 @@
 #include "net/DohResolver.h"
 #include "net/InterfacePin.h"
 #include "net/ProxySettings.h"
+#include "prefs/Preferences.h"
 #include "utils/Log.h"
 
 #include <QHostInfo>
@@ -223,6 +224,14 @@ void Ed3kHttp::begin(std::unique_ptr<Request> r)
     };
     // behind a proxy: DoH through it, the local resolver never sees the name
     const QString host = ref.url.host();
+    if (ref.reportProxy) {
+        // an anonymous report: DoH through the report proxy too, even with DoH Off
+        QString doh = thePrefs.proxyDohUrl();
+        if (doh.isEmpty())
+            doh = defaultDohUrl();
+        dohLookup(doh, host, this, std::move(resolved), 8000, ref.reportProxy);
+        return;
+    }
     if (const QString doh = activeDohUrl(); !doh.isEmpty() && !isLocalName(host)) {
         dohLookup(doh, host, this, std::move(resolved));
         return;

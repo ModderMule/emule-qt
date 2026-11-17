@@ -311,6 +311,8 @@ protected:
     void closeEvent(QCloseEvent* event) override;
     /// Minimize-to-tray lives here. Closing hides to the tray only with closeToTray (off, as MFC).
     void changeEvent(QEvent* event) override;
+    /// Wayland: hooks the QWindow minimize request (see onWaylandMinimizeRequested)
+    void showEvent(QShowEvent* event) override;
 
     // A .nzb dropped anywhere on the window switches to the Usenet tab and is
     // queued there. Narrow on purpose — nzbDropCandidates() accepts only .nzb
@@ -425,6 +427,10 @@ private:
     /// False = don't hide the window, there'd be no way back in.
     [[nodiscard]] bool ensureTrayIconShown();
 
+    /// Wayland never reports minimized: Qt's own decoration minimize button only
+    /// shows up as a QWindow state request. Hides to the tray from there.
+    void onWaylandWindowStateChanged(Qt::WindowState state);
+
     /// Colour of the meter bar: stats colour 11, or the system scheme when that is
     /// left on "auto".
     [[nodiscard]] QColor trayMeterColor() const;
@@ -537,6 +543,8 @@ private:
     bool m_quitRequested = false;   ///< explicit quit: close must not go to the tray
     Qt::WindowStates m_stateBeforeMinimize = Qt::WindowNoState;   // maximized/fullscreen only
     QElapsedTimer m_restoreRequested; ///< restoreWindow() call; stale "minimized" may still arrive
+    Qt::WindowStates m_trayHiddenState = Qt::WindowNoState;   ///< Wayland: max/fullscreen at tray hide
+    bool m_waylandMinimizeHooked = false;
     QSoundEffect* m_notifySound = nullptr;
     QStringList m_lastNotification;   ///< title, text, sound — what was last asked for
     std::function<void()> m_notificationClick;   ///< click on the last pop-up; empty = restore

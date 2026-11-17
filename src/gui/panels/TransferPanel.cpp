@@ -35,6 +35,7 @@
 #include "utils/IpcFeedback.h"
 #include "utils/ListActivation.h"
 #include "utils/Ed3kLinkMenu.h"
+#include "utils/MenuDump.h"
 #include "utils/MenuUtils.h"
 #include "utils/PanelPoller.h"
 #include "utils/PreviewLauncher.h"
@@ -266,6 +267,12 @@ void TransferPanel::setIpcClient(IpcClient* client)
     // row-update pushes only while this list is on screen
     m_poller->setOnScreenHook(client ? client->pushGroupHold(Ipc::PushGroupTransfers) : nullptr);
     m_categoryTabBar->setIpcClient(client);
+    if (client && MenuDump::level() > 0 && !findChild<QTimer*>(QStringLiteral("menuDump"))) {
+        auto* dump = new QTimer(this);
+        dump->setObjectName(QStringLiteral("menuDump"));
+        connect(dump, &QTimer::timeout, this, &TransferPanel::dumpEd3kMenus);
+        dump->start(20'000);
+    }
 
     auto clearAll = [this] {
         m_downloadModel->clear();
@@ -790,10 +797,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         for (QAction* act : m_downloadMenu->actions())
             if (!act->isSeparator() && !ed3kActions.contains(act->text()))
                 act->setEnabled(false);
-        // Add Sources takes a URL (ws=); Source Limit and A4AF swap work as eD2K's
-        for (QAction* act : m_downloadMenu->findChildren<QAction*>())
-            if (act->property("ed2kOnly").toBool())
-                act->setEnabled(false);
+        // Source Handling as eD2K's: Add Sources takes a URL (ws=), Source Limit, A4AF swap
         // related files: a search for the name, one file (the server's list needs MD4)
         for (QAction* act : m_downloadMenu->actions())
             if (act->text() == tr("Search Related Files"))
@@ -3592,6 +3596,48 @@ void TransferPanel::moveDownloadsToFolder(QStringList hashes)
                                  self->requestDownloads();
                                  self->requestEd3kDownloads();
                              });
+}
+
+
+void TransferPanel::dumpEd3kMenus()
+{
+    // dev aid (EMULE_DUMP_ED3K_MENUS): each ed3k download's menu in the log; 2 acts once
+    static bool acted = false;
+    for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
+        const DownloadRow* d = m_downloadModel->downloadAt(i);
+        if (!d || !d->isEd3k() || d->isNetworkJob())
+            continue;
+        const QString name = d->fileName;
+        const int limit = d->privateMaxSources;
+        const QModelIndex idx = m_categoryProxy->mapFromSource(m_downloadProxy->mapFromSource(m_downloadModel->index(i, 0)));
+        if (!idx.isValid())
+            continue;
+        m_downloadView->selectionModel()->select(idx, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        onDownloadContextMenu(QPoint(-1, -1));
+        m_downloadMenu->hide();
+        logInfo(QStringLiteral("ed3k menu Transfers %1 a4af=%2 limit=%3: %4")
+                    .arg(name).arg(d->a4afSrcCount).arg(limit).arg(MenuDump::text(m_downloadMenu)));
+        if (MenuDump::level() < 2 || acted)
+            continue;
+        acted = true;
+        if (QAction* swap = MenuDump::find(m_downloadMenu, tr("Swap All A4AF Sources to This File")); swap && swap->isEnabled()) {
+            logInfo(QStringLiteral("ed3k menu Transfers %1: Swap A4AF").arg(name));
+            swap->trigger();
+        }
+        if (QAction* act = MenuDump::find(m_downloadMenu, tr("Source Limit...")); act && act->isEnabled()) {
+            // the dialog's own spin box, then OK: 70000 is kept at its maximum
+            const int want = limit == 0 ? 70000 : 0;
+            QTimer::singleShot(500, this, [want] {
+                if (auto* dlg = qobject_cast<QInputDialog*>(QApplication::activeModalWidget())) {
+                    dlg->setIntValue(want);
+                    logInfo(QStringLiteral("ed3k menu Source Limit dialog: entered %1, shows %2").arg(want).arg(dlg->intValue()));
+                    dlg->accept();
+                }
+            });
+            act->trigger();
+        }
+        return;   // d is stale after the dialog's event loop
+    }
 }
 
 } // namespace eMule

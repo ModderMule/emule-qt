@@ -307,8 +307,13 @@ public:
     /// Preview with seeking on: item @p id read from @p offset; the end of the bytes held from
     /// there (@p offset: none yet). Rooted: the blocks from the first missing one go first to
     /// ed3k peers for PartFile::kStreamFocusMs. The hoster's own link streams in file order and
-    /// is not moved (a new open may cost a puzzle or a wait). nullopt: no such item.
+    /// is not moved; a rootless read far ahead near the end starts a tail fetch (previewTail).
+    /// nullopt: no such item.
     [[nodiscard]] std::optional<std::uint64_t> playFrom(quint32 id, std::uint64_t offset);
+    /// Preview, seeking on or off: rootless item @p id read from @p offset ahead of its stream
+    /// near the end starts a tail fetch (startTail). The end of the bytes held from there, which
+    /// a tail fetch holds or is fetching; nullopt: not such a read (the file as it is).
+    [[nodiscard]] std::optional<std::uint64_t> previewTail(quint32 id, std::uint64_t offset);
     /// The links @p id publishes or held back (SharedLink).
     [[nodiscard]] QList<SharedLink> sharedLinks(quint32 id) const;
     /// http(s) links in @p text, one per line or separated by spaces (tests).
@@ -509,6 +514,22 @@ private:
     void feed(Ed3kResolver::TaskId task);
     void fed(Ed3kResolver::TaskId task, std::optional<QByteArray> data);
     void endStream(Ed3kResolver::TaskId task, bool broken);
+    /// A read of the resolver's file failed: JD may have renamed data.part to data (read from
+    /// there), else it lags behind its progress. false: too many failures, give up.
+    [[nodiscard]] static bool rereadLater(Ask& a);
+
+    /// Tail fetch: a player reads rootless @p e far ahead of its stream near the end (an MP4's
+    /// index): a second open of the link from @p offset, its bytes copied into the item's file.
+    void startTail(Entry& e, std::uint64_t offset);
+    /// previewTail() of @p e
+    [[nodiscard]] std::optional<std::uint64_t> tailHeld(Entry& e, std::uint64_t offset);
+    /// Whether a second open of @p e's link costs only its bytes (direct file, premium).
+    [[nodiscard]] bool tailAllowed(const Entry& e) const;
+    void onTailEvent(Ed3kResolver::TaskId task, const ResolverEvent& ev);
+    void copyTail(Ed3kResolver::TaskId task);
+    void tailCopied(Ed3kResolver::TaskId task, std::optional<QByteArray> data);
+    /// Drops the tail task; @p cancel: the resolver still runs it.
+    void endTail(Ed3kResolver::TaskId task, bool cancel);
 
     void onLinkBlock(std::uint64_t link, const ::ed3k::Root& root, std::uint64_t offset, const ::ed3k::Bytes& data);
     void onLinkUnverified(std::uint64_t link, std::uint64_t offset, const ::ed3k::Bytes& data);
@@ -608,6 +629,8 @@ private:
     /// resolver tasks → what they are for
     std::map<Ed3kResolver::TaskId, quint32> m_matches;
     std::map<Ed3kResolver::TaskId, Ask> m_asks;
+    /// tail fetches (startTail): no core link, fed = the end copied into the item's file
+    std::map<Ed3kResolver::TaskId, Ask> m_tails;
     struct AccountCheck {
         QString host;
         QString user;

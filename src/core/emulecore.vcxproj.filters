@@ -723,6 +723,9 @@
     <ClCompile Include="webserver\WebServerTorrents.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="webserver\WebServerEd3k.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="webserver\StreamTokenStore.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -1032,6 +1035,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="webserver\HosterWebBackend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="webserver\Ed3kWebBackend.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="webserver\MetaGrabWebBackend.h">

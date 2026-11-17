@@ -16,6 +16,7 @@
 #include "CoreNotifierBridge.h"
 #include "SharedFileRows.h"
 #include "DaemonApp.h"
+#include "Ed3kTunnelBridge.h"
 #include "IpcStreamBridge.h"
 #include "IpcServer.h"
 #include "net/OwnAddress.h"
@@ -428,6 +429,9 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     // remote streaming + pairing (1230-1232): a phone reads file bytes over this link
     if (IpcStreamBridge::handleRequest(msg, this, [this](const IpcMessage& reply) { sendMessage(reply); }))
         return;
+    // phones paired for the ed3k tunnel (1233-1235)
+    if (Ed3kTunnelBridge::handleRequest(msg, [this](const IpcMessage& reply) { sendMessage(reply); }))
+        return;
 
     switch (msg.type()) {
     case IpcMsgType::Handshake:            handleHandshake(msg); break;
@@ -640,7 +644,7 @@ void IpcClientHandler::handleHandshake(const IpcMessage& msg)
 
     // Authenticate: required for remote clients, optional for localhost. A remote
     // client only gets here over TLS (IpcTlsServer); checked again anyway.
-    if (!m_isLocal && !m_connection->isEncrypted()) {
+    if (!m_isLocal && !m_isTunnel && !m_connection->isEncrypted()) {
         logWarning(QStringLiteral("IPC auth refused — remote client without TLS"));
         m_connection->close();
         return;
@@ -1633,33 +1637,10 @@ void IpcClientHandler::handleGetSharedFiles(const IpcMessage& msg)
 
 void IpcClientHandler::handleSetSharedFilePriority(const IpcMessage& msg)
 {
-    const QString hash = msg.fieldString(0);
-    const auto priority = static_cast<uint8>(msg.fieldInt(1));
-    const bool isAuto = msg.fieldBool(2);
-
-    uint8 hashBuf[16]{};
-    if (!hexToHash(hash, hashBuf)) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
-        return;
-    }
-
-    // Look up in shared file list first, then download queue
-    KnownFile* kf = theApp.sharedFileList ? theApp.sharedFileList->getFileByID(hashBuf) : nullptr;
-    if (!kf && theApp.downloadQueue)
-        kf = theApp.downloadQueue->fileByID(hashBuf);
-
-    if (!kf) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("File not found")));
-        return;
-    }
-
-    kf->setAutoUpPriority(isAuto);
-    if (!isAuto)
-        kf->setUpPriority(priority);
-    else
-        kf->updateAutoUpPriority();
-
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    const ops::Status st = ops::setSharedFilePriority(
+        msg.fieldString(0), static_cast<uint8>(msg.fieldInt(1)), msg.fieldBool(2));
+    sendMessage(st.ok() ? IpcMessage::makeResult(msg.seqId(), true)
+                        : IpcMessage::makeError(msg.seqId(), st.code, st.message));
 }
 
 void IpcClientHandler::handleReloadSharedFiles(const IpcMessage& msg)

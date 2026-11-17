@@ -3,6 +3,8 @@
 
 #include "DaemonHosterWebBackend.h"
 
+#include "BridgeAsk.h"
+
 #include "Ed3kHosterBridge.h"
 #include "IpcMessage.h"
 
@@ -42,14 +44,8 @@ void DaemonHosterWebBackend::openContainer(const QByteArray& data, const QString
 
 std::optional<QCborValue> DaemonHosterWebBackend::ask(IpcMsgType type, const QCborArray& fields)
 {
-    IpcMessage request(type, 1);
-    for (const QCborValue& f : fields)
-        request.append(f);
-    IpcMessage answer;
-    Ed3kHosterBridge::handleRequest(request, [&answer](const IpcMessage& m) { answer = m; });
-    if (answer.type() != IpcMsgType::Result || !answer.fieldBool(0))
-        return std::nullopt;
-    return answer.fieldCount() > 1 ? answer.field(1) : QCborValue(QCborValue::Null);
+    auto r = askBridge(Ed3kHosterBridge::handleRequest, type, fields);
+    return r ? std::optional<QCborValue>(*r) : std::nullopt;
 }
 
 } // namespace eMule

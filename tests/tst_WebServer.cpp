@@ -375,6 +375,51 @@ public:
     }
 };
 
+/// One ed3k download; records the calls.
+class FakeEd3kBackend final : public Ed3kWebBackend {
+public:
+    static QString root() { return QString(64, QLatin1Char('a')); }
+    mutable QStringList calls;
+    bool on = true;
+
+    bool available() const override { return on; }
+    QCborArray downloads() const override
+    {
+        return {QCborMap{{QStringLiteral("root"), root()}, {QStringLiteral("name"), QStringLiteral("film.mkv")},
+                         {QStringLiteral("size"), 1000}, {QStringLiteral("done"), 250}, {QStringLiteral("state"), 1},
+                         {QStringLiteral("priority"), 2}, {QStringLiteral("blocks"), QByteArray("\x01")}},
+                // single transfer mode row of another network: not listed
+                QCborMap{{QStringLiteral("root"), QStringLiteral("bt:xyz")}, {QStringLiteral("name"), QStringLiteral("t")}}};
+    }
+    AddResult add(const QString& hexRoot, qint64 size, const QString& name, int category, bool paused) override
+    {
+        calls << QStringLiteral("add:%1:%2:%3:%4:%5").arg(hexRoot).arg(size).arg(name).arg(category).arg(paused);
+        return {hexRoot, {}};
+    }
+    AddResult addLink(const QString& link, int, bool) override
+    {
+        calls << QStringLiteral("link:") + link;
+        if (!link.startsWith(QStringLiteral("ed3k:")))
+            return {{}, QStringLiteral("not an ed3k link")};
+        return {root(), {}};
+    }
+    bool control(const QString& hexRoot, Control action, qint64 arg) override
+    {
+        calls << QStringLiteral("control:%1:%2:%3").arg(hexRoot).arg(int(action)).arg(arg);
+        return true;
+    }
+    QString moveTo(const QString& hexRoot, const QString& dir) override
+    {
+        calls << QStringLiteral("move:%1:%2").arg(hexRoot, dir);
+        return {};
+    }
+    QString rename(const QString& hexRoot, const QString& name) override
+    {
+        calls << QStringLiteral("rename:%1:%2").arg(hexRoot, name);
+        return name.contains(QLatin1Char('/')) ? QStringLiteral("Invalid file name") : QString();
+    }
+};
+
 /// A multipart/form-data body: text fields, then files as {field, file name, bytes}.
 QByteArray multipartBody(const QByteArray& boundary, const QList<std::pair<QByteArray, QByteArray>>& fields,
                          const QList<std::tuple<QByteArray, QByteArray, QByteArray>>& files)
@@ -746,6 +791,9 @@ private slots:
     void restUsenetWithoutBackendIs503();
     void restUsenetClearCompletedAndInspect();
     void restUsenetAbsentWhenRestDisabled();
+    void restHosterRoutes();
+    void restEd3kRoutes();
+    void restSharedEditChecksInput();
     void theUsenetTemplateHasItsSections();
 
     // Torrents (only a BitTorrent build has the routes)
@@ -4323,8 +4371,8 @@ void tst_WebServer::webHosterPage_listsAndActs()
     fake.calls.clear();
     sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses), QByteArrayLiteral("w=hoster&op=password&ids=7"), form);
     QVERIFY(fake.calls.isEmpty());
-    // no REST route
-    QCOMPARE(sendRaw(port, "GET", QStringLiteral("/api/v1/hoster"), {}, {}).statusCode, 404);
+    // the REST route exists and wants the key
+    QCOMPARE(sendRaw(port, "GET", QStringLiteral("/api/v1/hoster"), {}, {}).statusCode, 401);
 
     server->stop();
 }
@@ -4644,6 +4692,112 @@ void tst_WebServer::restUsenetClearCompletedAndInspect()
     // Literal routes an id never shadows
     QVERIFY(!fake.calls.contains(QStringLiteral("details:clear-completed")));
     QVERIFY(!fake.calls.contains(QStringLiteral("details:inspect")));
+}
+
+void tst_WebServer::restHosterRoutes()
+{
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/hoster")).statusCode, 503);
+
+    FakeHosterBackend fake;
+    m_webServer->setHosterBackend(&fake);
+    const auto reset = qScopeGuard([this] { m_webServer->setHosterBackend(nullptr); });
+
+    Response r = sendRequest("GET", QStringLiteral("/api/v1/hoster"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("total")).toInt(), 2);
+    const QJsonObject first = r.json.object().value(QStringLiteral("items")).toArray().at(0).toObject();
+    QCOMPARE(first.value(QStringLiteral("state")).toString(), QStringLiteral("downloading"));
+    QCOMPARE(first.value(QStringLiteral("id")).toInt(), 7);
+
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/hoster"), "{}").statusCode, 400);
+    r = sendRequest("POST", QStringLiteral("/api/v1/hoster"),
+                    "{\"links\":[\"https://files.test/a\",\" https://files.test/b \"],\"package\":\"Pack\"}");
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("added")).toInt(), 2);
+    QVERIFY(fake.calls.contains(QStringLiteral("add:https://files.test/a\nhttps://files.test/b:Pack")));
+
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/hoster/7/pause")).statusCode, 200);
+    QVERIFY(fake.calls.contains(QStringLiteral("pause:7")));
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/hoster/8/retry")).statusCode, 404);
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/hoster/7/explode")).statusCode, 400);
+
+    // destructive: nothing without the confirmation
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/hoster/7/remove"), "{\"deleteFile\":true}").statusCode, 400);
+    QVERIFY(!fake.calls.contains(QStringLiteral("delete:7")));
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/hoster/7/remove"),
+                         "{\"deleteFile\":true,\"confirm\":true}").statusCode, 200);
+    QVERIFY(fake.calls.contains(QStringLiteral("delete:7")));
+
+    r = sendRequest("POST", QStringLiteral("/api/v1/hoster/container"),
+                    QJsonDocument(QJsonObject{{QStringLiteral("data"), QString::fromLatin1(QByteArray("dlc-bytes").toBase64())},
+                          {QStringLiteral("fileName"), QStringLiteral("links.dlc")}}).toJson());
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("added")).toInt(), 3);
+    QVERIFY(fake.calls.contains(QStringLiteral("container:links.dlc:dlc-bytes")));
+    r = sendRequest("POST", QStringLiteral("/api/v1/hoster/container"),
+                    QJsonDocument(QJsonObject{{QStringLiteral("data"), QString::fromLatin1(QByteArray("bad").toBase64())},
+                          {QStringLiteral("fileName"), QStringLiteral("links.dlc")}}).toJson());
+    QCOMPARE(r.statusCode, 422);
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/hoster/container"),
+                         "{\"data\":\"!!!!\",\"fileName\":\"links.dlc\"}").statusCode, 400);
+}
+
+void tst_WebServer::restEd3kRoutes()
+{
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/ed3k/downloads")).statusCode, 503);
+
+    FakeEd3kBackend fake;
+    m_webServer->setEd3kBackend(&fake);
+    const auto reset = qScopeGuard([this] { m_webServer->setEd3kBackend(nullptr); });
+    const QString root = FakeEd3kBackend::root();
+    const QString item = QStringLiteral("/api/v1/ed3k/downloads/") + root;
+
+    Response r = sendRequest("GET", QStringLiteral("/api/v1/ed3k/downloads"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("total")).toInt(), 1);
+    const QJsonObject row = r.json.object().value(QStringLiteral("items")).toArray().at(0).toObject();
+    QCOMPARE(row.value(QStringLiteral("state")).toString(), QStringLiteral("paused"));
+    QCOMPARE(row.value(QStringLiteral("priority")).toString(), QStringLiteral("high"));
+    QVERIFY(!row.contains(QStringLiteral("blocks")));
+
+    QCOMPARE(sendRequest("GET", item).statusCode, 200);
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/ed3k/downloads/") + QString(64, QLatin1Char('b'))).statusCode, 404);
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/ed3k/downloads/xyz")).statusCode, 400);
+
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/ed3k/downloads"), "{\"link\":\"http://x.test\"}").statusCode, 400);
+    r = sendRequest("POST", QStringLiteral("/api/v1/ed3k/downloads"), "{\"links\":[\"ed3k:file:x\",\"nope\"]}");
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("added")).toInt(), 1);
+
+    QCOMPARE(sendRequest("POST", item + QStringLiteral("/pause")).statusCode, 200);
+    QVERIFY(fake.calls.contains(QStringLiteral("control:%1:0:0").arg(root)));
+
+    r = sendRequest("PATCH", item, "{\"name\":\"new.mkv\",\"priority\":\"veryHigh\",\"category\":2}");
+    QCOMPARE(r.statusCode, 200);
+    QVERIFY(fake.calls.contains(QStringLiteral("rename:%1:new.mkv").arg(root)));
+    QVERIFY(fake.calls.contains(QStringLiteral("control:%1:3:3").arg(root)));
+    QVERIFY(fake.calls.contains(QStringLiteral("control:%1:4:2").arg(root)));
+    QCOMPARE(sendRequest("PATCH", item, "{\"name\":\"a/b\"}").statusCode, 409);
+    QCOMPARE(sendRequest("PATCH", item, "{}").statusCode, 400);
+
+    QCOMPARE(sendRequest("POST", item + QStringLiteral("/move"), "{\"folder\":\"/tmp/x\"}").statusCode, 200);
+    QVERIFY(fake.calls.contains(QStringLiteral("move:%1:/tmp/x").arg(root)));
+
+    QCOMPARE(sendRequest("POST", item + QStringLiteral("/cancel")).statusCode, 400);
+    QCOMPARE(sendRequest("POST", item + QStringLiteral("/cancel"), "{\"confirm\":true}").statusCode, 200);
+    QVERIFY(fake.calls.contains(QStringLiteral("control:%1:2:0").arg(root)));
+
+    fake.on = false;
+    QCOMPARE(sendRequest("GET", item).statusCode, 503);
+}
+
+void tst_WebServer::restSharedEditChecksInput()
+{
+    const QString item = QStringLiteral("/api/v1/shared/") + QString(32, QLatin1Char('0'));
+    QCOMPARE(sendRequest("PATCH", item, "{}").statusCode, 400);
+    QCOMPARE(sendRequest("PATCH", item, "{\"priority\":\"urgent\"}").statusCode, 400);
+    QCOMPARE(sendRequest("PATCH", item, "{\"rating\":9}").statusCode, 400);
+    QCOMPARE(sendRequest("PATCH", item, "{\"priority\":\"high\"}").statusCode, 404);
 }
 
 void tst_WebServer::restUsenetAbsentWhenRestDisabled()

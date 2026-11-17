@@ -744,6 +744,27 @@ Status setSharedDirectories(const QStringList& dirsIn)
     return {};
 }
 
+Status setSharedFilePriority(const QString& hashHex, uint8 priority, bool isAuto)
+{
+    uint8 hash[16]{};
+    if (!hexToHash(hashHex, hash))
+        return Status::fail(400, QStringLiteral("Invalid hash"));
+    if (!isAuto && priority > kPrVeryLow)
+        return Status::fail(400, QStringLiteral("Invalid priority"));
+    // shared list first, then the download queue (a part file shares its parts)
+    KnownFile* file = theApp.sharedFileList ? theApp.sharedFileList->getFileByID(hash) : nullptr;
+    if (!file && theApp.downloadQueue)
+        file = theApp.downloadQueue->fileByID(hash);
+    if (!file)
+        return Status::fail(404, QStringLiteral("File not found"));
+    file->setAutoUpPriority(isAuto);
+    if (isAuto)
+        file->updateAutoUpPriority();
+    else
+        file->setUpPriority(priority);
+    return {};
+}
+
 Status setFileComments(const QStringList& hashHexes, const QString& commentIn, qint64 rating,
                        bool keepEmpty, int* applied)
 {

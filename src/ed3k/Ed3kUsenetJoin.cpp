@@ -1102,8 +1102,15 @@ void Ed3kUsenetJoin::onPostComplete(const QString& itemId)
         keepRecords(itemId, *done->root, name, {});
         if (!list.isEmpty())
             keepBlob(itemId, list, name + QStringLiteral(".articles"), std::nullopt);
-        // MEMBER rows (file-set.md §6)
-        if (auto ok = e->setPublish(t, done->manifest, *done->root, std::string_view(nameUtf8.constData(), std::size_t(nameUtf8.size())));
+        // MEMBER rows (file-set.md §6); not while a member is under the anonymous key (hops.md §1)
+        std::vector<ffi::Root> memberRoots;
+        for (std::uint64_t f = 0; f < std::uint64_t(post->members.size()); ++f)
+            if (const auto m = post->join.member(f); m && m->root)
+                memberRoots.push_back(*m->root);
+        if (withholdSet(itemId, memberRoots))
+            logEd3k(QStringLiteral("ed3k usenet: set of \"%1\" not published: a member is under the anonymous key").arg(name));
+        // was: if (auto ok = e->setPublish(...); !ok)
+        else if (auto ok = e->setPublish(t, done->manifest, *done->root, std::string_view(nameUtf8.constData(), std::size_t(nameUtf8.size())));
             !ok)
             logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: set of \"%1\" not published (error %2)").arg(name, errorName(ok.error())); });
     }

@@ -9,6 +9,7 @@
 #include "utils/Log.h"
 
 #include <QCoreApplication>
+#include <QNetworkProxyFactory>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QPointer>
@@ -28,12 +29,35 @@ namespace {
 constexpr qsizetype kMaxReplyBytes = 64 * 1024;
 constexpr int kMaxNameBytes = 253;
 
-[[nodiscard]] QNetworkAccessManager* manager()
+/// One fixed proxy; a local host goes direct.
+class FixedProxyFactory : public QNetworkProxyFactory {
+public:
+    explicit FixedProxyFactory(QNetworkProxy proxy) : m_proxy(std::move(proxy)) {}
+    QList<QNetworkProxy> queryProxy(const QNetworkProxyQuery& query) override
+    {
+        return {bypassesProxy(query.peerHostName()) ? QNetworkProxy(QNetworkProxy::NoProxy) : m_proxy};
+    }
+    QNetworkProxy m_proxy;
+};
+
+/// The Proxy page's manager, or one through @p via.
+[[nodiscard]] QNetworkAccessManager* manager(const std::optional<QNetworkProxy>& via = std::nullopt)
 {
     static QPointer<GuardedNetworkAccessManager> s_nam;
-    if (!s_nam)
-        s_nam = new GuardedNetworkAccessManager(QCoreApplication::instance());
-    return s_nam;
+    static QPointer<GuardedNetworkAccessManager> s_via;
+    static QNetworkProxy s_viaProxy;
+    if (!via) {
+        if (!s_nam)
+            s_nam = new GuardedNetworkAccessManager(QCoreApplication::instance());
+        return s_nam;
+    }
+    if (!s_via)
+        s_via = new GuardedNetworkAccessManager(QCoreApplication::instance());
+    if (s_viaProxy != *via || !dynamic_cast<FixedProxyFactory*>(s_via->proxyFactory())) {
+        s_viaProxy = *via;
+        s_via->setProxyFactory(new FixedProxyFactory(*via));   // owned by the manager
+    }
+    return s_via;
 }
 
 [[nodiscard]] quint16 readU16(const QByteArray& m, qsizetype at)
@@ -105,7 +129,8 @@ struct Record {
 
 /// One GET; @p onReply gets the body, or nullopt on a failure. Null when it cannot be sent.
 QNetworkReply* startQuery(const QString& dohUrl, const QByteArray& msg, int timeoutMs,
-                          const QString& name, std::function<void(std::optional<QByteArray>)> onReply)
+                          const QString& name, std::function<void(std::optional<QByteArray>)> onReply,
+                          const std::optional<QNetworkProxy>& via = std::nullopt)
 {
     QUrl url(dohUrl.trimmed());
     QUrlQuery q(url);
@@ -116,7 +141,7 @@ QNetworkReply* startQuery(const QString& dohUrl, const QByteArray& msg, int time
     req.setRawHeader("Accept", "application/dns-message");
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     req.setTransferTimeout(timeoutMs);
-    QNetworkReply* reply = manager()->get(req);
+    QNetworkReply* reply = manager(via)->get(req);
     QObject::connect(reply, &QNetworkReply::finished, reply, [reply, name, onReply = std::move(onReply)] {
         reply->deleteLater();
         const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
@@ -211,7 +236,8 @@ bool isLocalName(const QString& name)
 }
 
 void dohLookup(const QString& dohUrl, const QString& name, QObject* context,
-               std::function<void(QList<QHostAddress>)> done, int timeoutMs)
+               std::function<void(QList<QHostAddress>)> done, int timeoutMs,
+               const std::optional<QNetworkProxy>& via)
 {
     auto pending = std::make_shared<Pending>();
     pending->context = context;
@@ -233,7 +259,7 @@ void dohLookup(const QString& dohUrl, const QString& name, QObject* context,
                 pending->addresses << dns::parseAddresses(*body);
             if (--pending->outstanding == 0)
                 pending->finish();
-        });
+        }, via);
     }
     QTimer::singleShot(timeoutMs + 500, context, [pending] { pending->finish(); });
 }

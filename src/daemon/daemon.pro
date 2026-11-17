@@ -115,10 +115,12 @@ SOURCES += \
     SingleTransfer.cpp \
     Ed3kHideBridge.cpp \
     IpcStreamBridge.cpp \
+    Ed3kTunnelBridge.cpp \
     Ed3kHosterBridge.cpp \
     ArchiveContentsBridge.cpp \
     DaemonApiBackend.cpp \
     DaemonHosterWebBackend.cpp \
+    DaemonEd3kWebBackend.cpp \
     DaemonMetaGrabWebBackend.cpp \
     DaemonTorrentWebBackend.cpp \
     DaemonUsenetWebBackend.cpp \
@@ -165,10 +167,13 @@ HEADERS += \
     SingleTransfer.h \
     Ed3kHideBridge.h \
     IpcStreamBridge.h \
+    Ed3kTunnelBridge.h \
     Ed3kHosterBridge.h \
     ArchiveContentsBridge.h \
     DaemonApiBackend.h \
     DaemonHosterWebBackend.h \
+    DaemonEd3kWebBackend.h \
+    BridgeAsk.h \
     DaemonMetaGrabWebBackend.h \
     DaemonTorrentWebBackend.h \
     DaemonUsenetWebBackend.h \

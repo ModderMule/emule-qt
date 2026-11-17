@@ -2,6 +2,7 @@
 
 #include "DaemonApp.h"
 #include "Ed3kDownloadsBridge.h"
+#include "Ed3kTunnelBridge.h"
 #include "IpcServer.h"
 
 #include "app/AppContext.h"
@@ -241,10 +242,11 @@ void handleIdentity(const IpcMessage& msg, const Reply& reply)
         if (!cert.isNull())
             fp = Ipc::certFingerprint(cert);
     }
-    reply(IpcMessage::makeResult(msg.seqId(), true, QCborMap{
-        {QStringLiteral("fingerprint"), fp},
-        {QStringLiteral("port"), static_cast<qint64>(thePrefs.ipcPort())},
-    }));
+    // field 0: a pair secret for the ed3k tunnel is wanted (the QR code of PhonePairDialog)
+    QCborMap out = Ed3kTunnelBridge::identity(msg.fieldBool(0));
+    out.insert(QStringLiteral("fingerprint"), fp);
+    out.insert(QStringLiteral("port"), static_cast<qint64>(thePrefs.ipcPort()));
+    reply(IpcMessage::makeResult(msg.seqId(), true, out));
 }
 
 } // namespace

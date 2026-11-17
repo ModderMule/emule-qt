@@ -260,22 +260,38 @@ void CoreScriptDialog::save()
 
 void CoreScriptDialog::pairPhone()
 {
-    const auto show = [this](const QString& fingerprint) {
-        PhonePairDialog dlg(host(), port(), m_token, fingerprint, this);
+    const auto show = [this](const QString& fingerprint, const PhonePairDialog::Tunnel& tunnel) {
+        PhonePairDialog dlg(host(), port(), m_token, fingerprint, tunnel, this);
         dlg.exec();
     };
     if (!m_ipc || !m_ipc->isConnected()) {
-        show({});
+        show({}, {});
         return;
     }
-    // the certificate fingerprint lets the phone pin it before sending the token
-    m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::GetIpcIdentity),
-                       [self = QPointer(this), show](const Ipc::IpcMessage& resp) {
-                           if (!self)
-                               return;
-                           const bool ok = resp.isValid() && resp.fieldBool(0);
-                           show(ok ? resp.fieldMap(1).value(QStringLiteral("fingerprint")).toString() : QString{});
-                       });
+    // the certificate fingerprint lets the phone pin it before sending the token; with a pair
+    // secret the phone can also reach the core over the ed3k tunnel
+    Ipc::IpcMessage req(Ipc::IpcMsgType::GetIpcIdentity);
+    req.append(true);
+    m_ipc->sendRequest(std::move(req), [self = QPointer(this), show](const Ipc::IpcMessage& resp) {
+        if (!self)
+            return;
+        if (!resp.isValid() || !resp.fieldBool(0)) {
+            show({}, {});
+            return;
+        }
+        const QCborMap m = resp.fieldMap(1);
+        PhonePairDialog::Tunnel tunnel;
+        if (m.value(QStringLiteral("tunnel")).toBool()) {
+            tunnel.nodeId = m.value(QStringLiteral("nodeId")).toString();
+            tunnel.pairSecret = m.value(QStringLiteral("pairSecret")).toString();
+            tunnel.udpPort = static_cast<uint16_t>(m.value(QStringLiteral("udpPort")).toInteger());
+            for (const QCborValue& v : m.value(QStringLiteral("endpoints")).toArray())
+                tunnel.endpoints.append(v.toString());
+            for (const QCborValue& v : m.value(QStringLiteral("relays")).toArray())
+                tunnel.relays.append(v.toString());
+        }
+        show(m.value(QStringLiteral("fingerprint")).toString(), tunnel);
+    });
 }
 
 void CoreScriptDialog::queryListen()

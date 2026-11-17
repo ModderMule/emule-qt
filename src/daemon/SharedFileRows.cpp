@@ -129,6 +129,9 @@ QCborMap sharedFileRow(KnownFile* kf, const SharedFileList::ShareRules& rules,
     if (kf->isEd3kOnly()) {
         m.insert(QStringLiteral("ed3kOnly"), true);
         m.insert(QStringLiteral("ed3kRoot"), QString::fromLatin1(kf->ed3kOnlyRoot().toHex()));
+    } else if (const QString root = Ed3kHideBridge::sharedRoot(QByteArray(reinterpret_cast<const char*>(kf->fileHash()), 16));
+               !root.isEmpty()) {
+        m.insert(QStringLiteral("ed3kRoot"), root);   // also hashed for ed3k: Web Services #ed3kroot
     }
     m.insert(QStringLiteral("ed2kLink"), kf->getED2kLink());   // empty for ed3k-only
     m.insert(QStringLiteral("isPartFile"), isPartFile);

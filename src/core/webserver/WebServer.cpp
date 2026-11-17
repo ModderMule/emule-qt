@@ -1157,7 +1157,7 @@ QFuture<QHttpServerResponse> WebServer::serveDownloadPreview(std::function<Usene
         UsenetStreamSource src = resolve(seeking);
         // off: everything mapped counts as there (serveRange caps at the file's size);
         // only a source still without pieces waits
-        if (!seeking && !src.pieces.isEmpty())
+        if (!seeking && !src.exactEnd && !src.pieces.isEmpty())
             src.availableEnd = std::numeric_limits<qint64>::max();
         return src;
     };

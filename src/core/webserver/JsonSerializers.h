@@ -147,6 +147,10 @@ inline void insertFakeVerdict(QJsonObject& o, const FakeFileVerdict& verdict, bo
                                          : f.meta().isContainer() ? QStringLiteral("container")
                                                                   : QStringLiteral("torrent"));
     o.insert(QStringLiteral("magnet"), f.meta().magnet);
+    // an ed3k file: its root names it, the hash is the root's first half; else empty
+    if (f.isEd3kResult())
+        o.insert(QStringLiteral("metaKind"), QStringLiteral("ed3k"));
+    o.insert(QStringLiteral("ed3kRoot"), f.isEd3kResult() ? QString::fromLatin1(f.ed3kRoot().toHex()) : QString());
     insertFakeVerdict(o, f.fakeVerdict(), f.hasFakeVerdict());
     return o;
 }

@@ -43,19 +43,24 @@ QImage qrImage(const QString& text, int scale)
 } // namespace
 
 PhonePairDialog::PhonePairDialog(const QString& host, uint16_t port, const QString& token,
-                                 const QString& fingerprint, QWidget* parent)
+                                 const QString& fingerprint, const Tunnel& tunnel, QWidget* parent)
     : RememberedSizeDialog(parent)
     , m_host(host)
     , m_port(port)
     , m_token(token)
     , m_fingerprint(fingerprint)
+    , m_tunnel(tunnel)
 {
     setWindowTitle(tr("Pair Phone"));
     auto* layout = new QVBoxLayout(this);
 
     auto* header = new QLabel(
-        tr("Scan this code with the qDonkey app, or send the link to the phone. The phone "
-           "must reach this address: same network, a VPN such as Tailscale, or a forwarded port."),
+        m_tunnel.nodeId.isEmpty()
+            ? tr("Scan this code with the qDonkey app, or send the link to the phone. The phone "
+                 "must reach this address: same network, a VPN such as Tailscale, or a forwarded port.")
+            : tr("Scan this code with the qDonkey app, or send the link to the phone. On the same "
+                 "network the phone connects directly; elsewhere it goes through ed3k, without a "
+                 "forwarded port or a VPN. The code pairs one phone and is valid for 10 minutes."),
         this);
     header->setWordWrap(true);
     DialogSizing::enableHeightForWidth(header);
@@ -101,7 +106,7 @@ PhonePairDialog::PhonePairDialog(const QString& host, uint16_t port, const QStri
 }
 
 QString PhonePairDialog::pairLink(const QString& host, uint16_t port, const QString& token,
-                                  const QString& fingerprint)
+                                  const QString& fingerprint, const Tunnel& tunnel)
 {
     // each value percent-encoded by hand: a token may hold & = + %
     const auto item = [](QLatin1StringView key, const QString& value) -> QString {
@@ -113,6 +118,17 @@ QString PhonePairDialog::pairLink(const QString& host, uint16_t port, const QStr
         items.append(item(QLatin1StringView("fp"), QString(fingerprint).remove(u':').toLower()));
     if (!token.isEmpty())
         items.append(item(QLatin1StringView("t"), token));
+    if (!tunnel.nodeId.isEmpty()) {
+        items.append(item(QLatin1StringView("n"), tunnel.nodeId.toLower()));
+        if (!token.isEmpty() && !tunnel.pairSecret.isEmpty())
+            items.append(item(QLatin1StringView("ps"), tunnel.pairSecret.toLower()));
+        if (tunnel.udpPort != 0)
+            items.append(item(QLatin1StringView("u"), QString::number(tunnel.udpPort)));
+        if (!tunnel.endpoints.isEmpty())
+            items.append(item(QLatin1StringView("e"), tunnel.endpoints.join(u',')));
+        if (!tunnel.relays.isEmpty())
+            items.append(item(QLatin1StringView("r"), tunnel.relays.join(u',')));
+    }
     return QStringLiteral("qdonkey://pair?") + items.join(u'&');
 }
 
@@ -123,9 +139,10 @@ QString PhonePairDialog::pairLink(const QString& host, uint16_t port, const QStr
 void PhonePairDialog::refresh()
 {
     const QString link = pairLink(m_host, m_port, m_tokenCheck->isChecked() ? m_token : QString{},
-                                  m_fingerprint);
+                                  m_fingerprint, m_tunnel);
     m_linkEdit->setText(link);
-    m_qrLabel->setPixmap(QPixmap::fromImage(qrImage(link, 6)));
+    // a longer link has more modules: keep the code about the same size
+    m_qrLabel->setPixmap(QPixmap::fromImage(qrImage(link, link.size() > 200 ? 4 : 6)));
 }
 
 } // namespace eMule

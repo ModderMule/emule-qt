@@ -131,6 +131,9 @@ Status recheckFirewall();
 Status reloadSharedFiles(bool metaDataOnly = false);
 /// Stores the shared directory list and rescans. Every entry must be an existing directory.
 Status setSharedDirectories(const QStringList& dirs);
+/// Upload priority of a shared file (or a download's shared part): kPrVeryLow..kPrVeryHigh,
+/// ignored when @p isAuto.
+Status setSharedFilePriority(const QString& hashHex, uint8 priority, bool isAuto);
 /// The user's own comment and rating on shared files (MFC CCommentDialog::OnApply).
 /// @p rating -1 and an empty @p comment with @p keepEmpty leave each file's own
 /// value (files disagreed on a multi-selection, #123). Unshared files are skipped;

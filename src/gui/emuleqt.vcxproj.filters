@@ -741,6 +741,9 @@
     <ClInclude Include="utils\ViewNavigation.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="utils\MenuDump.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\ViewSelection.h">
       <Filter>Header Files</Filter>
     </ClInclude>

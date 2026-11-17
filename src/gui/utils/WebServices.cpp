@@ -149,10 +149,8 @@ void WebServices::populateFileMenu(QMenu* menu, const QString& hash,
             || (ed3kRoot.isEmpty() && svc.urlTemplate.contains(u"#ed3kroot")))
             continue;
 
-        menu->addAction(svc.label, menu, [=]() {
-            const QString url = expandMacros(svc.urlTemplate, hash, fileName, fileSize, ed3kRoot);
-            QDesktopServices::openUrl(QUrl(url));
-        });
+        const QString url = expandMacros(svc.urlTemplate, hash, fileName, fileSize, ed3kRoot);
+        menu->addAction(svc.label, menu, [url] { QDesktopServices::openUrl(QUrl(url)); })->setData(url);
     }
 }
 

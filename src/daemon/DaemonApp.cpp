@@ -9,6 +9,7 @@
 #include "geo/IP2Country.h"
 #include "ApiEventFeeder.h"
 #include "DaemonApiBackend.h"
+#include "DaemonEd3kWebBackend.h"
 #include "DaemonHosterWebBackend.h"
 #include "DaemonMetaGrabWebBackend.h"
 #include "DaemonTorrentWebBackend.h"
@@ -37,6 +38,7 @@
 #include "post/UsenetUnpacker.h"
 #include "Ed3kFriendsBridge.h"
 #include "Ed3kRoomsBridge.h"
+#include "Ed3kTunnelBridge.h"
 #include "Ed3kNamesBridge.h"
 #include "UsenetBridge.h"
 #include "UsenetRetryGrabber.h"
@@ -540,6 +542,8 @@ bool DaemonApp::start()
     // rooms (room.md); attaches on statusChanged and joins the saved rooms again
     m_ed3kRooms = std::make_unique<ed3k::Ed3kRooms>(*m_ed3kSession);
     Ed3kRoomsBridge::setRooms(m_ed3kRooms.get());
+    // paired phones over the ed3k tunnel (ALPN emuleqt-ipc/1); listens on statusChanged
+    Ed3kTunnelBridge::setSession(m_ed3kSession.get());
     Ed3kRoomsBridge::connectPushes(*m_ed3kRooms, [this](const IpcMessage& msg) {
         if (m_ipcServer)
             m_ipcServer->broadcast(msg);
@@ -1264,6 +1268,7 @@ void DaemonApp::stop()
     Ed3kFriendsBridge::setFriends(nullptr);
     m_ed3kFriends.reset();
     Ed3kRoomsBridge::setRooms(nullptr);
+    Ed3kTunnelBridge::setSession(nullptr);
     m_ed3kRooms.reset();
     theApp.ed3kKadSeed = {};
     theApp.ed3kIndexLink = {};
@@ -1454,13 +1459,16 @@ void DaemonApp::startWebServer()
     m_webServer->setTorrentBackend(m_torrentWebBackend.get());
 #endif
 
-    // The Hoster page, and the web search's meta-row grabs; page only, no REST routes.
+    // The Hoster page and routes, the meta-row grabs, and the ed3k download routes.
     if (!m_hosterWebBackend)
         m_hosterWebBackend = std::make_unique<DaemonHosterWebBackend>();
     m_webServer->setHosterBackend(m_hosterWebBackend.get());
     if (!m_metaGrabWebBackend)
         m_metaGrabWebBackend = std::make_unique<DaemonMetaGrabWebBackend>();
     m_webServer->setMetaGrabBackend(m_metaGrabWebBackend.get());
+    if (!m_ed3kWebBackend)
+        m_ed3kWebBackend = std::make_unique<DaemonEd3kWebBackend>();
+    m_webServer->setEd3kBackend(m_ed3kWebBackend.get());
 
     // The REST API's daemon half and its event source, kept the same way.
     if (!m_apiBackend)

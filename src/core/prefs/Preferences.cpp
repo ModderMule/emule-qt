@@ -7,6 +7,7 @@
 #include "net/SmtpClient.h"
 #include "utils/AtomicFile.h"
 #include "utils/OtherFunctions.h"
+#include "utils/OwnerOnly.h"
 
 #include "app/AppConfig.h"
 #include "client/BuddyRelayBudget.h"
@@ -164,6 +165,25 @@ std::expected<YAML::Node, QString> readIntactYaml(const QString& path, QByteArra
 QString prefsBackupPath(const QString& filePath)
 {
     return filePath + QStringLiteral(".bak");
+}
+
+/// Account secrets in it (key alongside): only the user reads it. A rename puts the
+/// temporary file's access in place (Windows: the folder's inherited ACL), so after
+/// every write.
+void keepPrivate(const QString& path)
+{
+    QString error;
+    if (QFile::exists(path) && !makeOwnerOnly(path, &error))
+        logWarning(QStringLiteral("Preferences: %1").arg(error));
+}
+
+/// BackgroundFileWriter job for a preferences copy: written, then owner-only.
+bool savePrivate(const QString& path, const QByteArray& data)
+{
+    if (!BackgroundFileWriter::saveFile(path, data))
+        return false;
+    keepPrivate(path);
+    return true;
 }
 
 } // namespace
@@ -538,6 +558,8 @@ struct Preferences::Data {
     int ipcListenRecheckMinutes = 60;   // name listen value: re-resolve period, 0 = changes only
     bool ipcListenTemporaryIpv6 = false;   // name listen value: also bind privacy addresses
     QStringList ipcTokens;
+    bool ipcTunnel = true;                 // paired phones over the ed3k tunnel
+    QStringList ipcTunnelPeers;            // "<node id hex> <name>"
 
     // Web Server
     bool webServerEnabled = false;
@@ -3429,6 +3451,12 @@ QStringList Preferences::ipcTokens() const { return get(&Data::ipcTokens); }
 
 void Preferences::setIpcTokens(const QStringList& val) { set(&Data::ipcTokens, val); }
 
+bool Preferences::ipcTunnel() const { return get(&Data::ipcTunnel); }
+void Preferences::setIpcTunnel(bool val) { set(&Data::ipcTunnel, val); }
+
+QStringList Preferences::ipcTunnelPeers() const { return get(&Data::ipcTunnelPeers); }
+void Preferences::setIpcTunnelPeers(const QStringList& val) { set(&Data::ipcTunnelPeers, val); }
+
 // ---------------------------------------------------------------------------
 // Getters / setters — Web Server
 // ---------------------------------------------------------------------------
@@ -5175,8 +5203,10 @@ bool Preferences::load(const QString& filePath)
         if (m_peekOnly)
             return;
         QFile::remove(broken);
-        if (QFile::copy(filePath, broken))
+        if (QFile::copy(filePath, broken)) {
+            keepPrivate(broken);
             logWarning(QStringLiteral("Unreadable preferences kept as %1").arg(broken));
+        }
     };
     const auto useDefaults = [this] {
         m_data = std::make_unique<Data>();
@@ -5749,6 +5779,12 @@ bool Preferences::load(const QString& filePath)
                 m_data->ipcTokens.clear();
                 for (std::size_t i = 0; i < tok.size(); ++i)
                     m_data->ipcTokens.append(QString::fromStdString(tok[i].as<std::string>()));
+            }
+            m_data->ipcTunnel = ipc["tunnel"].as<bool>(m_data->ipcTunnel);
+            if (auto peers = ipc["tunnelPeers"]) {
+                m_data->ipcTunnelPeers.clear();
+                for (std::size_t i = 0; i < peers.size(); ++i)
+                    m_data->ipcTunnelPeers.append(QString::fromStdString(peers[i].as<std::string>()));
             }
         }
 
@@ -6628,8 +6664,11 @@ bool Preferences::load(const QString& filePath)
             return bak.open(QIODevice::ReadOnly) && bak.readAll() == raw;
         }();
         if (!same)
-            BackgroundFileWriter::instance().write(backupPath, std::move(raw), {});
+            BackgroundFileWriter::instance().write(backupPath, std::move(raw), savePrivate);
     }
+    // files from before (0644 / inherited ACL) or copied in
+    keepPrivate(m_filePath);
+    keepPrivate(backupPath);
     return true;
 }
 
@@ -6665,7 +6704,7 @@ void Preferences::saveInBackground() const
         return;
     // Encoded here, synced + renamed on the writer: fdatasync on a busy ext4 held the
     // main thread for seconds (#169). Newest queued copy wins.
-    BackgroundFileWriter::instance().write(m_filePath, encode(), {});
+    BackgroundFileWriter::instance().write(m_filePath, encode(), savePrivate);
 }
 
 bool Preferences::saveTo(const QString& filePath) const
@@ -6866,7 +6905,7 @@ bool Preferences::saveImpl(const QString& filePath) const
         logError(QStringLiteral("Failed to commit preferences file: %1").arg(filePath));
         return false;
     }
-
+    keepPrivate(filePath);
     return true;
 }
 
@@ -7379,6 +7418,11 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "tokens" << YAML::Value << YAML::BeginSeq;
     for (const auto& t : m_data->ipcTokens)
         out << t.toStdString();
+    out << YAML::EndSeq;
+    out << YAML::Key << "tunnel" << YAML::Value << m_data->ipcTunnel;
+    out << YAML::Key << "tunnelPeers" << YAML::Value << YAML::BeginSeq;
+    for (const auto& p : m_data->ipcTunnelPeers)
+        out << p.toStdString();
     out << YAML::EndSeq;
     out << YAML::EndMap;
 

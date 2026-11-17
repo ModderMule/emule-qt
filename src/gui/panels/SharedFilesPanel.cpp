@@ -35,6 +35,7 @@
 #include "utils/StatusBarNotifier.h"
 #include "utils/StringUtils.h"
 #include "utils/ViewNavigation.h"
+#include "utils/MenuDump.h"
 #include "utils/WebServices.h"
 #include "dialogs/CollectionCreateDialog.h"
 #include "dialogs/CollectionViewDialog.h"
@@ -223,6 +224,12 @@ void SharedFilesPanel::setIpcClient(IpcClient* client)
         disconnect(m_ipc, nullptr, this, nullptr);
     m_ipc = client;
     m_ownSetsView->setIpcClient(client);
+    if (client && MenuDump::level() > 0 && !findChild<QTimer*>(QStringLiteral("menuDump"))) {
+        auto* dump = new QTimer(this);
+        dump->setObjectName(QStringLiteral("menuDump"));
+        connect(dump, &QTimer::timeout, this, &SharedFilesPanel::dumpEd3kMenus);
+        dump->start(20'000);
+    }
     // row-update pushes only while this list is on screen
     m_poller->setOnScreenHook(client ? client->pushGroupHold(Ipc::PushGroupShared) : nullptr);
     m_haveSnapshot = false;
@@ -2966,6 +2973,23 @@ void SharedFilesPanel::shareDroppedPaths(const QList<QUrl>& urls)
         p->setExpanded(true);
     m_folderTree->setCurrentItem(show);
     m_folderTree->scrollToItem(show);
+}
+
+
+void SharedFilesPanel::dumpEd3kMenus()
+{
+    // dev aid (EMULE_DUMP_ED3K_MENUS): the menu of each shared file with an ed3k root
+    for (int i = 0; i < m_proxy->rowCount(); ++i) {
+        const QModelIndex idx = m_proxy->index(i, 0);
+        const SharedFileRow* f = m_model->fileAt(m_proxy->mapToSource(idx).row());
+        if (!f || f->ed3kRoot.isEmpty())
+            continue;
+        m_fileView->selectionModel()->select(idx, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        onFileContextMenu(QPoint(-1, -1));
+        m_contextMenu->hide();
+        logInfo(QStringLiteral("ed3k menu Shared %1%2: %3")
+                    .arg(f->fileName, f->ed3kOnly ? QStringLiteral(" (ed3k only)") : QString(), MenuDump::text(m_contextMenu)));
+    }
 }
 
 } // namespace eMule

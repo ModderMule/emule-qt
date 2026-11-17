@@ -39,6 +39,9 @@
     <ClCompile Include="DaemonHosterWebBackend.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DaemonEd3kWebBackend.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="DaemonMetaGrabWebBackend.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -147,6 +150,9 @@
     <ClCompile Include="IpcStreamBridge.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Ed3kTunnelBridge.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="UsenetRetryGrabber.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -207,6 +213,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DaemonHosterWebBackend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DaemonEd3kWebBackend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="BridgeAsk.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DaemonMetaGrabWebBackend.h">
@@ -288,6 +300,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="IpcStreamBridge.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Ed3kTunnelBridge.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="UsenetBridge.h">

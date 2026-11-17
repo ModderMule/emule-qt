@@ -220,41 +220,19 @@ void IpcServer::notifyCategoriesChanged()
 
 void IpcServer::onSocketReady(QSslSocket* socket, bool isLocal)
 {
-    {
-        logInfo(QStringLiteral("IPC client connected from %1:%2%3%4")
-                    .arg(socket->peerAddress().toString())
-                    .arg(socket->peerPort())
-                    .arg(isLocal ? QString() : QStringLiteral(" (remote)"))
-                    .arg(socket->isEncrypted() ? QStringLiteral(", TLS") : QString()));
+    logInfo(QStringLiteral("IPC client connected from %1:%2%3%4")
+                .arg(socket->peerAddress().toString())
+                .arg(socket->peerPort())
+                .arg(isLocal ? QString() : QStringLiteral(" (remote)"))
+                .arg(socket->isEncrypted() ? QStringLiteral(", TLS") : QString()));
+    addClient(socket, isLocal);
+}
 
-        auto handler = std::make_unique<IpcClientHandler>(socket, isLocal, this);
-
-        connect(handler.get(), &IpcClientHandler::disconnected,
-                this, &IpcServer::onClientDisconnected);
-        connect(handler.get(), &IpcClientHandler::handshakeCompleted,
-                this, &IpcServer::clientReady);
-        connect(handler.get(), &IpcClientHandler::webServerConfigChanged,
-                this, &IpcServer::webServerConfigChanged);
-        connect(handler.get(), &IpcClientHandler::webTemplateReloadRequested,
-                this, &IpcServer::webTemplateReloadRequested);
-        connect(handler.get(), &IpcClientHandler::usenetConfigChanged,
-                this, &IpcServer::usenetConfigChanged);
-        connect(handler.get(), &IpcClientHandler::btConfigChanged,
-                this, &IpcServer::btConfigChanged);
-        connect(handler.get(), &IpcClientHandler::ed3kConfigChanged,
-                this, &IpcServer::ed3kConfigChanged);
-        connect(handler.get(), &IpcClientHandler::standbyConfigChanged,
-                this, &IpcServer::standbyConfigChanged);
-        connect(handler.get(), &IpcClientHandler::indexerConfigChanged,
-                this, &IpcServer::indexerConfigChanged);
-        // Broadcast rather than forward to the daemon: nothing outside the GUIs
-        // cares that the category list changed, and this is the object that
-        // knows every connected client.
-        connect(handler.get(), &IpcClientHandler::categoriesChanged,
-                this, &IpcServer::notifyCategoriesChanged);
-
-        m_clients.push_back(std::move(handler));
-    }
+void IpcServer::adoptTunnel(QTcpSocket* socket, const QString& peer)
+{
+    logInfo(QStringLiteral("IPC client connected over the ed3k tunnel from %1 (remote)").arg(peer));
+    socket->setParent(this);
+    addClient(socket, false)->setTunnel(true);
 }
 
 void IpcServer::onClientDisconnected(IpcClientHandler* handler)
@@ -319,6 +297,38 @@ bool IpcServer::openListener(const QHostAddress& address, QString* error)
         break;
     }
     return false;
+}
+
+IpcClientHandler* IpcServer::addClient(QTcpSocket* socket, bool isLocal)
+{
+    auto handler = std::make_unique<IpcClientHandler>(socket, isLocal, this);
+
+    connect(handler.get(), &IpcClientHandler::disconnected,
+            this, &IpcServer::onClientDisconnected);
+    connect(handler.get(), &IpcClientHandler::handshakeCompleted,
+            this, &IpcServer::clientReady);
+    connect(handler.get(), &IpcClientHandler::webServerConfigChanged,
+            this, &IpcServer::webServerConfigChanged);
+    connect(handler.get(), &IpcClientHandler::webTemplateReloadRequested,
+            this, &IpcServer::webTemplateReloadRequested);
+    connect(handler.get(), &IpcClientHandler::usenetConfigChanged,
+            this, &IpcServer::usenetConfigChanged);
+    connect(handler.get(), &IpcClientHandler::btConfigChanged,
+            this, &IpcServer::btConfigChanged);
+    connect(handler.get(), &IpcClientHandler::ed3kConfigChanged,
+            this, &IpcServer::ed3kConfigChanged);
+    connect(handler.get(), &IpcClientHandler::standbyConfigChanged,
+            this, &IpcServer::standbyConfigChanged);
+    connect(handler.get(), &IpcClientHandler::indexerConfigChanged,
+            this, &IpcServer::indexerConfigChanged);
+    // Broadcast rather than forward to the daemon: nothing outside the GUIs
+    // cares that the category list changed, and this is the object that
+    // knows every connected client.
+    connect(handler.get(), &IpcClientHandler::categoriesChanged,
+            this, &IpcServer::notifyCategoriesChanged);
+
+    m_clients.push_back(std::move(handler));
+    return m_clients.back().get();
 }
 
 } // namespace eMule

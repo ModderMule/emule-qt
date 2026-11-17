@@ -8,6 +8,7 @@
 #include "prefs/Preferences.h"
 #include "utils/BackgroundFileWriter.h"
 #include "utils/Log.h"
+#include "utils/PathUtils.h"
 #include "utils/SafeRemove.h"
 
 #include <QCryptographicHash>
@@ -68,6 +69,11 @@ constexpr qint64 kLongWaitMs = 5 * 60 * 1000;
 constexpr std::uint64_t kMinResume = 1024 * 1024;
 /// rootless: how far the bytes on disk go is saved in steps of this (less is lost on a restart)
 constexpr std::uint64_t kWholeKeepStep = 20ULL * 1024 * 1024;
+/// tail fetch: only a read this near the end (an MP4's index); the in-order stream fetches
+/// those bytes again (it alone is hashed), so the cost stays a few MiB of premium traffic
+constexpr std::uint64_t kTailSpan = 64ULL * 1024 * 1024;
+/// no tail fetch when the stream gets there in this many seconds at its speed
+constexpr std::uint64_t kTailCatchUpS = 20;
 /// checkLinks(): checks at once, how long a result and its core link stay, how long a
 /// check or a wait for a slot may take, how many results are kept
 constexpr qint64 kCheckTtlMs = 30 * 60 * 1000;
@@ -169,6 +175,11 @@ struct Ed3kHosterJoin::Entry {
     bool openAfterResume = false;        ///< askOpen came while resuming
     std::optional<std::uint64_t> focus;  ///< playFrom(): peers' blocks from here first
     QDeadlineTimer focusUntil;           ///< focus ends
+    /// rootless: bytes [tailFrom, tailAt) a tail fetch wrote ahead of done (not saved)
+    std::uint64_t tailFrom = 0;
+    std::uint64_t tailAt = 0;
+    Ed3kResolver::TaskId tailTask = 0;   ///< the tail fetch running
+    bool tailFailed = false;             ///< the hoster cannot do one: not tried again this run
 };
 
 Ed3kHosterJoin::Ed3kHosterJoin(Ed3kSession& session, const QString& configDir, QObject* parent)
@@ -988,6 +999,14 @@ QList<Ed3kHosterJoin::Item> Ed3kHosterJoin::items() const
     return out;
 }
 
+std::optional<std::uint64_t> Ed3kHosterJoin::previewTail(quint32 id, std::uint64_t offset)
+{
+    Entry* e = find(id);
+    if (!e || e->item.retired)
+        return std::nullopt;
+    return tailHeld(*e, offset);
+}
+
 std::optional<Ed3kHosterJoin::Item> Ed3kHosterJoin::item(quint32 id) const
 {
     if (const Entry* e = find(id); e && !e->item.retired)
@@ -1005,9 +1024,10 @@ std::optional<std::uint64_t> Ed3kHosterJoin::playFrom(quint32 id, std::uint64_t 
         return std::max(offset, size);
     if (size > 0 && offset >= size)
         return offset;
-    // rootless: written in file order, hashed as it comes; nothing can go first
+    // rootless: written in file order, hashed as it comes; a tail fetch may hold bytes near
+    // the end ahead of it
     if (!e->root)
-        return std::max(offset, e->item.done);
+        return tailHeld(*e, offset).value_or(std::max(offset, e->item.done));
     std::uint64_t held = offset;
     for (auto b = offset / kBlock * kBlock; b < size && e->have.contains(b); b += kBlock)
         held = std::min(size, b + kBlock);
@@ -1752,6 +1772,11 @@ void Ed3kHosterJoin::onResolve(const ev::LinkResolve& r)
 void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEvent& ev)
 {
     using K = ResolverEvent::Kind;
+    // first: a tail fetch never asks the user (a code, a puzzle)
+    if (m_tails.contains(task)) {
+        onTailEvent(task, ev);
+        return;
+    }
     if (ev.isFinal())
         m_codeAsks.erase(task);
     if (ev.kind == K::Code) {
@@ -2272,12 +2297,7 @@ void Ed3kHosterJoin::fed(Ed3kResolver::TaskId task, std::optional<QByteArray> da
     if (a.ended)
         return;
     if (!data) {
-        // JD renames data.part to data at the end, maybe while this read ran: read from
-        // there; else the file is behind the progress it told, try again shortly
-        const QString done = a.path.endsWith(QLatin1StringView(".part")) ? a.path.chopped(5) : QString();
-        if (!done.isEmpty() && QFileInfo(done).isFile())
-            a.path = done;
-        if (++a.readFailures > kMaxReadFailures) {
+        if (!rereadLater(a)) {
             logWarning(QStringLiteral("cannot read the resolver's file %1").arg(a.path));
             endStream(task, true);
             return;
@@ -2755,6 +2775,15 @@ void Ed3kHosterJoin::release(Entry& e, bool keepFile)
             ++it;
         }
     }
+    std::vector<Ed3kResolver::TaskId> tails;
+    for (const auto& [task, a] : m_tails)
+        if (a.item == e.item.id)
+            tails.push_back(task);
+    for (const auto task : tails)
+        endTail(task, true);
+    // the file may move or go (moveTo, a restart): its tail bytes are forgotten
+    e.tailFrom = 0;
+    e.tailAt = 0;
     std::erase_if(m_matches, [&e](const auto& m) { return m.second == e.item.id; });
     std::erase_if(m_peerLinks, [&e](const auto& m) { return m.second.item == e.item.id; });
     e.peerLink = 0;
@@ -4056,6 +4085,215 @@ void Ed3kHosterJoin::published(const QStringList& files)
 {
     if (m_published && !files.isEmpty())
         m_published(files);
+}
+
+bool Ed3kHosterJoin::rereadLater(Ask& a)
+{
+    const QString done = a.path.endsWith(QLatin1StringView(".part")) ? a.path.chopped(5) : QString();
+    if (!done.isEmpty() && QFileInfo(done).isFile())
+        a.path = done;
+    return ++a.readFailures <= kMaxReadFailures;
+}
+
+bool Ed3kHosterJoin::tailAllowed(const Entry& e) const
+{
+    // Only where a second open costs nothing but its bytes: a direct web file, or a premium
+    // login (own or multi-hoster) with a connection to spare. A free hoster would ask another
+    // puzzle or a wait of minutes (the player gives up after 60 s) and may count it as a
+    // second download against its limit; a premium one with one connection may break the first.
+    if (activeStreams() + int(m_tails.size()) >= int(m_prefs.maxStreams))
+        return false;
+    return e.item.generic || (accountTier(e.item.host) >= 2 && streamsAt(e.item.host) >= 2);
+}
+
+void Ed3kHosterJoin::startTail(Entry& e, std::uint64_t offset)
+{
+    // why: the hoster's stream comes in file order, and an MP4 with its index (moov) at the end
+    // plays only once that index is read, i.e. after the whole download. The rest of a seek
+    // waits for the stream: fetching the middle twice would cost a lot of traffic.
+    if (e.root || e.item.muxed || e.tailFailed || e.item.state != State::Downloading || !e.link
+        || e.item.size == 0 || offset <= e.item.done || offset >= e.item.size || offset + kTailSpan < e.item.size
+        || !m_resolver || !m_resolver->available())
+        return;
+    if (offset - e.item.done <= e.item.speed * kTailCatchUpS)
+        return;   // the stream gets there while the player waits
+    if (e.tailTask) {
+        if (offset >= e.tailFrom)
+            return;   // the running one gets there, it goes to the end
+        endTail(e.tailTask, true);
+    }
+    if (!tailAllowed(e))
+        return;
+    Ask a;
+    a.link = e.link;   // the item's own link for openAccount (a multi-hoster may take it)
+    a.item = e.item.id;
+    a.kind = ED3K_LINK_OPEN;
+    a.url = e.item.url;
+    a.have = offset;
+    a.dir = QDir(workDir(e.item.id)).filePath(QStringLiteral("tail"));
+    removeDirTree(a.dir);
+    QDir().mkpath(a.dir);
+    // JD resumes from where its part file ends: a sparse one that long, nothing copied
+    QFile part(QDir(a.dir).filePath(QStringLiteral("data.part")));
+    if (!part.open(QIODevice::WriteOnly) || ((void)markFileSparse(part), !part.resize(qint64(offset)))) {
+        logWarning(QStringLiteral("cannot prepare a tail fetch in %1: %2").arg(a.dir, part.errorString()));
+        removeDirTree(a.dir);
+        e.tailFailed = true;
+        return;
+    }
+    part.close();
+    const auto account = openAccount(e, a.url, a);
+    const auto task = m_resolver->open(a.url, account, a.dir, offset);
+    logInfo(QStringLiteral("%1: a player reads %2 at %3 of %4, its end is fetched ahead of the stream")
+                .arg(e.item.host, e.item.name).arg(offset).arg(e.item.size));
+    e.tailTask = task;
+    e.tailFrom = offset;
+    e.tailAt = offset;
+    m_tails[task] = std::move(a);
+}
+
+std::optional<std::uint64_t> Ed3kHosterJoin::tailHeld(Entry& e, std::uint64_t offset)
+{
+    if (e.root)
+        return std::nullopt;
+    if (offset >= e.tailFrom && offset < e.tailAt)
+        return std::max(e.tailAt, e.item.done);
+    if (offset < e.item.done)
+        return std::nullopt;
+    startTail(e, offset);
+    if (e.tailTask && offset >= e.tailFrom)
+        return offset;   // the tail fetch gets there
+    return std::nullopt;
+}
+
+void Ed3kHosterJoin::onTailEvent(Ed3kResolver::TaskId task, const ResolverEvent& ev)
+{
+    using K = ResolverEvent::Kind;
+    Ask& a = m_tails.at(task);
+    Entry* e = find(a.item);
+    if (!e || e->tailTask != task) {
+        endTail(task, !ev.isFinal());
+        return;
+    }
+    const auto fail = [&](const QString& why) {
+        logInfo(QStringLiteral("%1: no tail fetch: %2").arg(e->item.host, why));
+        e->tailFailed = true;
+        endTail(task, !ev.isFinal());
+    };
+    switch (ev.kind) {
+    case K::Status:
+        return;
+    case K::Progress:
+    case K::Done:
+        if (ev.muxed)
+            return fail(QStringLiteral("muxed"));
+        if (!ev.path.isEmpty())
+            a.path = ev.path;
+        if (ev.kind == K::Done) {
+            a.done = true;
+            a.onDisk = ev.size;
+        } else {
+            a.onDisk = std::max(a.onDisk, ev.bytes);
+        }
+        if (!a.opened) {
+            // told once: did the hoster start at the offset
+            if (!ev.from) {
+                if (ev.kind == K::Done)
+                    fail(QStringLiteral("the resolver tells no start"));
+                return;
+            }
+            if (*ev.from < a.have)
+                return fail(QStringLiteral("the hoster cannot resume"));
+            a.opened = true;
+            a.fed = a.have;
+        }
+        copyTail(task);
+        return;
+    case K::Puzzle:
+        if (m_resolver)
+            m_resolver->answerPuzzle(ev.puzzle, {});
+        return fail(QStringLiteral("puzzle"));
+    case K::Failed:
+        // the sparse front fails any whole-file checksum JD checks at the end: the bytes are in
+        if (a.opened && ev.code == QLatin1StringView("hash")) {
+            a.done = true;
+            a.onDisk = std::max(a.onDisk, std::uint64_t(std::max<qint64>(0, QFileInfo(a.path).size())));
+            copyTail(task);
+            return;
+        }
+        return fail(ev.code);
+    default:
+        // a wait, a login code, a failure: the player gives up long before
+        return fail(ev.code.isEmpty() ? ev.text : ev.code);
+    }
+}
+
+void Ed3kHosterJoin::copyTail(Ed3kResolver::TaskId task)
+{
+    const auto it = m_tails.find(task);
+    if (it == m_tails.end())
+        return;
+    Ask& a = it->second;
+    if (a.reading || !a.opened)
+        return;
+    if (a.fed >= a.onDisk) {
+        if (a.done)
+            endTail(task, false);
+        return;
+    }
+    a.reading = true;
+    const auto len = std::uint32_t(std::min<std::uint64_t>(kFeedChunk, a.onDisk - a.fed));
+    readInBackground(ownerOf(a.item) + QStringLiteral("-tail"), {FileRead{a.path, a.fed, len}},
+                     [this, task](ReadResults r) { tailCopied(task, r.empty() ? std::nullopt : std::move(r.front())); });
+}
+
+void Ed3kHosterJoin::tailCopied(Ed3kResolver::TaskId task, std::optional<QByteArray> data)
+{
+    const auto it = m_tails.find(task);
+    if (it == m_tails.end())
+        return;
+    Ask& a = it->second;
+    a.reading = false;
+    Entry* e = find(a.item);
+    // never into a file the item let go of (finish() moved it)
+    if (!e || e->tailTask != task || e->item.state == State::Complete) {
+        endTail(task, true);
+        return;
+    }
+    if (!data) {
+        if (!rereadLater(a)) {
+            logWarning(QStringLiteral("cannot read the tail fetch's file %1").arg(a.path));
+            e->tailFailed = true;
+            endTail(task, true);
+            return;
+        }
+        QTimer::singleShot(kReadRetryMs, this, [this, task] { copyTail(task); });
+        return;
+    }
+    a.readFailures = 0;
+    // the stream writes the same bytes again when it gets there; only its bytes are hashed
+    if (!writeAt(*e, a.fed, spanOf(*data)))
+        return;   // released the item, this tail too
+    a.fed += std::uint64_t(data->size());
+    count(&HosterCounters::hosterBytes, std::uint64_t(data->size()));
+    e->tailAt = std::max(e->tailAt, a.fed);
+    copyTail(task);
+}
+
+void Ed3kHosterJoin::endTail(Ed3kResolver::TaskId task, bool cancel)
+{
+    auto node = m_tails.extract(task);
+    if (node.empty())
+        return;
+    const Ask& a = node.mapped();
+    if (cancel && m_resolver)
+        m_resolver->cancel(task);
+    if (!a.via.isEmpty() && a.fed > a.have)
+        chargeDebrid(a, a.fed - a.have);
+    if (!a.dir.isEmpty())   // QDir("") is the cwd
+        removeDirTree(a.dir);
+    if (Entry* e = find(a.item); e && e->tailTask == task)
+        e->tailTask = 0;
 }
 
 } // namespace eMule::ed3k

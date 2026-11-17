@@ -30,6 +30,7 @@
 #include "utils/Ed3kLinkMenu.h"
 #include "dialogs/PeerPreviewDialog.h"
 #include "utils/ViewNavigation.h"
+#include "utils/MenuDump.h"
 #include "utils/WebServices.h"
 #include "prefs/Preferences.h"
 #include "search/SearchExprParser.h"
@@ -172,6 +173,12 @@ void SearchPanel::setIpcClient(IpcClient* client)
     m_ipc = client;
     if (!m_ipc)
         return;
+    if (MenuDump::level() > 0 && !findChild<QTimer*>(QStringLiteral("menuDump"))) {
+        auto* dump = new QTimer(this);
+        dump->setObjectName(QStringLiteral("menuDump"));
+        connect(dump, &QTimer::timeout, this, &SearchPanel::dumpEd3kMenus);
+        dump->start(20'000);
+    }
 
     m_resultRefreshTimer = new QTimer(this);
     m_resultRefreshTimer->setSingleShot(true);
@@ -3877,6 +3884,26 @@ void SearchPanel::setMethodEntriesVisible(std::initializer_list<MethodEntry> ent
 bool SearchPanel::torrentResultsShown() const
 {
     return m_showTorrentCheck && !m_showTorrentCheck->isHidden() && m_showTorrentCheck->isChecked();
+}
+
+
+void SearchPanel::dumpEd3kMenus()
+{
+    // dev aid (EMULE_DUMP_ED3K_MENUS): the menu of the open tab's ed3k results (first 3)
+    if (!m_resultView->model() || !m_resultView->selectionModel())
+        return;
+    int shown = 0;
+    for (int i = 0; i < m_resultView->model()->rowCount() && shown < 3; ++i) {
+        const QModelIndex idx = m_resultView->model()->index(i, 0);
+        const SearchResultRef ref = refAt(idx);
+        if (!ref || !ref.row->isEd3k())
+            continue;
+        ++shown;
+        m_resultView->selectionModel()->select(idx, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        onResultContextMenu(QPoint(-1, -1));
+        m_contextMenu->hide();
+        logInfo(QStringLiteral("ed3k menu Search %1: %2").arg(ref.row->fileName, MenuDump::text(m_contextMenu)));
+    }
 }
 
 } // namespace eMule

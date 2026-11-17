@@ -67,6 +67,7 @@ public:
     void stop() override { closeAll(); }
     std::optional<::ed3k::Root> share(const QByteArray& data) { return shareBlob(data, QStringLiteral("blob.bin"), std::nullopt); }
     static auto hash(const QString& path) { return hashNow(path); }
+    bool setWithheld(const QString& owner, const std::vector<::ed3k::Root>& members) const { return withholdSet(owner, members); }
     /// a verified member of job @p owner, as a torrent join shares it
     bool shareFile(const FileHash& h, const QString& owner, int member)
     {
@@ -476,6 +477,10 @@ void tst_Ed3kHide::aNodeKeyJoinNeverTakesTheSharedFilesKey()
     QCOMPARE(row->kind, Ed3kJoinBase::JoinState::Kind::Skipped);
     QCOMPARE(row->reason, QStringLiteral("anonKey"));
     QCOMPARE(row->owners, QStringList{QStringLiteral("t1")});
+    // its set (MEMBER rows under the node key) would name the anonymous root: left out
+    QVERIFY(torrent.setWithheld(QStringLiteral("t1"), {}));
+    QVERIFY(!torrent.setWithheld(QStringLiteral("t2"), {}));
+    QVERIFY(torrent.setWithheld(QStringLiteral("t2"), {h->root}));
 
     // the other order (the shared file first, as after the fix's first start): left out
     torrent.stop();
@@ -494,6 +499,7 @@ void tst_Ed3kHide::aNodeKeyJoinNeverTakesTheSharedFilesKey()
     const auto again = Ed3kJoinBase::joinStatesAt(s, h->root);
     QCOMPARE(std::ranges::find(again, QStringLiteral("torrent"), &Ed3kJoinBase::JoinState::tag)->kind,
              Ed3kJoinBase::JoinState::Kind::Joined);
+    QVERIFY(!torrent.setWithheld(QStringLiteral("t1"), {h->root}));
     shared.stop();
     torrent.stop();
     s.stop();

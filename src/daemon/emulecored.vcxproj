@@ -184,6 +184,7 @@
     <ClCompile Include="ApiEventFeeder.cpp" />
     <ClCompile Include="DaemonApiBackend.cpp" />
     <ClCompile Include="DaemonHosterWebBackend.cpp" />
+    <ClCompile Include="DaemonEd3kWebBackend.cpp" />
     <ClCompile Include="DaemonMetaGrabWebBackend.cpp" />
     <ClCompile Include="DaemonTorrentWebBackend.cpp" />
     <ClCompile Include="DaemonUsenetWebBackend.cpp" />
@@ -217,6 +218,7 @@
     <ClCompile Include="SingleTransfer.cpp" />
     <ClCompile Include="Ed3kHideBridge.cpp" />
     <ClCompile Include="IpcStreamBridge.cpp" />
+    <ClCompile Include="Ed3kTunnelBridge.cpp" />
     <ClCompile Include="Ed3kHosterBridge.cpp" />
     <ClCompile Include="ArchiveContentsBridge.cpp" />
     <ClCompile Include="Ed3kKadBridge.cpp" />
@@ -247,6 +249,8 @@
     <ClInclude Include="Ed3kKadBridge.h" />
     <ClInclude Include="Ed3kLinksBridge.h" />
     <ClInclude Include="DaemonHosterWebBackend.h" />
+    <ClInclude Include="DaemonEd3kWebBackend.h" />
+    <ClInclude Include="BridgeAsk.h" />
     <ClInclude Include="DaemonMetaGrabWebBackend.h" />
     <ClInclude Include="MetaRowFiles.h" />
     <ClInclude Include="DaemonTorrentWebBackend.h" />
@@ -274,6 +278,7 @@
     <ClInclude Include="SingleTransfer.h" />
     <ClInclude Include="Ed3kHideBridge.h" />
     <ClInclude Include="IpcStreamBridge.h" />
+    <ClInclude Include="Ed3kTunnelBridge.h" />
     <ClInclude Include="UsenetBridge.h" />
     <ClInclude Include="BandwidthCoordinator.h" />
     <ClInclude Include="ScheduleNetworkBridge.h" />

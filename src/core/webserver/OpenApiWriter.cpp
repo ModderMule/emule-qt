@@ -168,8 +168,9 @@ QJsonObject componentSchemas()
         {s("kadOrigin"), schemaBoolean()},
         {s("webOrigin"), schemaBoolean(s("With kadOrigin: an eD2K file the server found on a web page, not on Kad."))},
         {s("metaKind"), schemaString(s("\"torrent\", \"nzb\", \"web\" or \"container\": a release an eD2K server listed from "
-                                       "its catalogue. Empty for an eD2K file. Not downloadable "
-                                       "through POST /search/{id}/download."))},
+                                       "its catalogue; POST /search/{id}/download hands it to its own queue. "
+                                       "\"ed3k\": an ed3k file. Empty for an eD2K file."))},
+        {s("ed3kRoot"), schemaString(s("ed3k file: its 64-hex root (GET /ed3k/downloads/{root} once added); else empty."))},
         {s("magnet"), schemaString(s("Magnet link of a torrent result, when the server sent one; else empty."))},
         {s("spamRating"), schemaInteger(s("Spam filter score; 60 and above counts as spam."))},
         {s("seenBefore"), schemaBoolean(s("This file turned up in an earlier search."))},
