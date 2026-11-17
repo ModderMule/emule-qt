@@ -57,6 +57,10 @@ bool handleRequest(const Ipc::IpcMessage& msg, const std::function<void(const Ip
 [[nodiscard]] QString rename(const QString& hexRoot, const QString& name);
 /// Add Sources of an ed3k row: an http(s) URL of the whole file; false: not taken.
 [[nodiscard]] bool addWebSource(const QString& hexRoot, const QString& url);
+/// Source Limit... of an ed3k row (0: by priority); false: no such unfinished download.
+[[nodiscard]] bool setSourceLimit(const QString& hexRoot, int limit);
+/// Swap All A4AF Sources to This File of an ed3k row: the nodes it waits for; nullopt: none.
+[[nodiscard]] std::optional<int> swapA4af(const QString& hexRoot);
 
 /// The HTTP (ws=) source row of the download of @p root (32 B), as an eD2K URL source
 /// (isUrl); @p peerRate is what its ed3k sources bring, the rest of the rate is the HTTP

@@ -779,10 +779,12 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
     if (thePrefs.showExtControls()) {
         auto* webMenu = m_contextMenu->addMenu(menuIcon("Web.ico"), tr("Web Services"));
         if (single) {
-            WebServices::instance().populateFileMenu(webMenu, single->hash, single->fileName,
-                                                      static_cast<uint64_t>(single->fileSize));
+            // ed3k-only: no eD2K hash, #hashid entries left out
+            WebServices::instance().populateFileMenu(webMenu, single->ed3kOnly ? QString() : single->hash,
+                                                      single->fileName, static_cast<uint64_t>(single->fileSize),
+                                                      single->ed3kRoot);
         }
-        if (webMenu->isEmpty() || (single && single->ed3kOnly))   // the macros take its eD2K hash
+        if (webMenu->isEmpty())
             webMenu->setEnabled(false);
     }
 

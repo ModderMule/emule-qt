@@ -381,6 +381,26 @@ bool Ed3kDownloads::setPriority(const ffi::Root& root, int priority)
     return true;
 }
 
+bool Ed3kDownloads::setSourceLimit(const ffi::Root& root, int limit)
+{
+    Entry* e = entryOf(root);
+    if (!e || e->info.state == Ed3kDownloadInfo::State::Complete)
+        return false;
+    e->info.maxSources = std::clamp(limit, 0, 65535);
+    sourceLimitChanged(root);
+    touch(*e);
+    markChanged();
+    return true;
+}
+
+std::optional<int> Ed3kDownloads::swapA4af(const ffi::Root& root)
+{
+    const Entry* e = entryOf(root);
+    if (!e || e->info.state == Ed3kDownloadInfo::State::Complete)
+        return std::nullopt;
+    return downloading(root) ? swapTurnsTo(root) : 0;   // not open (paused, node off): waits nowhere
+}
+
 bool Ed3kDownloads::setPreviewPrio(const ffi::Root& root, bool on)
 {
     Entry* e = entryOf(root);
@@ -726,6 +746,12 @@ int Ed3kDownloads::downloadPriority(const Download& d) const
     const Entry* e = entryOfId(d.member);
     // was: switch (priority) { case 4: return -2; case 0: return -1; case 2: return 1; case 3: return 2; default: return 0; }
     return realPriority(std::uint8_t(e ? e->info.priority : kPrNormal)) - 2;
+}
+
+int Ed3kDownloads::downloadSourceLimit(const Download& d) const
+{
+    const Entry* e = entryOfId(d.member);
+    return e ? e->info.maxSources : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -1136,6 +1162,14 @@ std::optional<Ed3kDownloads::Entry> Ed3kDownloads::readMet(const QString& metPat
             in.resetStatus();
         }
     }
+    if (in.status() == QDataStream::Ok && !in.atEnd()) {
+        quint32 maxSources = 0;
+        in >> maxSources;
+        if (in.status() == QDataStream::Ok)
+            e.info.maxSources = int(std::min<quint32>(maxSources, 65535));
+        else
+            in.resetStatus();
+    }
     const auto r = rootFrom(root);
     if (in.status() != QDataStream::Ok || !r || size == 0 || state < 0 || state > int(Ed3kDownloadInfo::State::Failed)
         || Ed3kDownloadInfo::State(state) == Ed3kDownloadInfo::State::Complete)
@@ -1208,7 +1242,8 @@ void Ed3kDownloads::writeMet(Entry& e)
             << packBits(e.have) << qint64(e.info.addedOn) << e.info.error
             << quint8(e.info.previewPrio ? 1 : 0)    // flags (bit 0 preview); older .met: none
             << e.webUrls                             // ws= sources; older .met: none
-            << e.webHashUrls << quint64(e.wholeAt);  // wh= URLs, whole read so far; older .met: none
+            << e.webHashUrls << quint64(e.wholeAt)   // wh= URLs, whole read so far; older .met: none
+            << quint32(e.info.maxSources);           // source limit; older .met: none
     }
     const QString path = metPathOf(e);
     QDir().mkpath(QFileInfo(path).absolutePath());

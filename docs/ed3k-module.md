@@ -541,11 +541,19 @@ node stops. `applyEd3kConfig` switches it with the pref.
   (`applyEd2kDisabled` → reload): an ed3k-only file stays shared and is queued for eD2K; once
   hashed, `replaceSharedRecord` swaps in the eD2K record (priority, comment, rating, stats
   follow). Shared Files rows: `ed3kOnly`, `ed3kRoot` (File ID column shows the root); the
-  menu greys only eD2K links, eD2K collections and Web Services.
+  menu greys only eD2K links and eD2K collections; Web Services leaves out `#hashid` entries.
 - **Transfers, ed3k rows:** Mass Rename (`Ed3kDownloads::rename`: the name to be, or the file
   on disk once complete) and Add Sources with a URL (`addWebSource`, a ws= source) through
-  RenameFiles / AddDownloadSource with a 64 hex root; Search Related searches the name. Source
-  Limit, A4AF swap, import parts, eD2K links and Web Services stay eD2K-only.
+  RenameFiles / AddDownloadSource with a 64 hex root; Search Related searches the name.
+  Source Limit (SetDownloadSourceLimit, `Ed3kDownloadInfo::maxSources`, 0-65535, last .met
+  field): the download's stream cap (`downloadSourceLimit` over `streamCap`'s by-priority 1-6);
+  a raised one takes sources from the next search. Swap A4AF (SwapA4AFToFile →
+  `swapTurnsTo`): the file goes first at every node it waits for (`Want::swapped`, before
+  priority); a queued holder switches now within the §12.5 30 min budget, a slot holder keeps
+  its turn (as eD2K never swaps a downloading source). Local policy, no spec change. Import
+  parts and eD2K links stay eD2K-only.
+- **Web Services:** `#ed3kroot` (64 hex) beside eD2K's macros; an entry naming a hash the row
+  lacks is left out (`#hashid` on ed3k rows without a known MD4, `#ed3kroot` on eD2K rows).
 - **Landed files kept out of eD2K** (hoster/Usenet "share landed files" off): `DaemonApp::
   syncEd3kAliasOnly` → `setAliasOnlyFiles`: read once for MD4 + root (`hashInBackground(withEd2k)`)
   while eD2K is enabled, only their `ed2k` ALIAS published (the join shares the root; refused

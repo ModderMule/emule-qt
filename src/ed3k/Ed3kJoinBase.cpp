@@ -287,6 +287,7 @@ struct Ed3kJoinBase::NodeTurns {
         ffi::Source source;
         int priority = 0;
         std::uint64_t seq = 0;
+        bool swapped = false;   ///< swapTurnsTo: first, before any priority
     };
     // was: std::map<ffi::NodeId, Holder> holders; (and waiting, queuedSwitch by NodeId)
     std::map<TurnNode, Holder> holders;
@@ -545,6 +546,50 @@ void Ed3kJoinBase::priorityChanged(const ffi::Root& root)
             j->requestBlocks(r);
     }
     pumpSession();
+}
+
+void Ed3kJoinBase::sourceLimitChanged(const ffi::Root& root)
+{
+    if (m_downloads.contains(root))
+        searchSourcesAgain(root, false);
+}
+
+int Ed3kJoinBase::swapTurnsTo(const ffi::Root& root)
+{
+    if (!m_downloads.contains(root))
+        return 0;
+    auto& t = turns();
+    std::vector<TurnNode> nodes;
+    for (auto& [node, q] : t.waiting) {
+        const bool here = std::ranges::any_of(q, [&](const NodeTurns::Want& w) { return w.join == this && w.root == root; });
+        if (!here)
+            continue;
+        // the latest swap wins at a node
+        for (auto& w : q)
+            w.swapped = w.join == this && w.root == root;
+        nodes.push_back(node);
+    }
+    const auto now = std::chrono::steady_clock::now();
+    for (const auto& node : nodes) {
+        const auto h = t.holders.find(node);
+        if (h == t.holders.end())
+            continue;
+        const NodeTurns::Holder holder = h->second;
+        const auto held = holder.join->m_downloads.find(holder.root);
+        if (held == holder.join->m_downloads.end())
+            continue;
+        // a slot holder keeps its turn (eD2K never swaps a downloading source)
+        const auto slot = held->second->streams.find(holder.stream);
+        if (slot != held->second->streams.end() && slot->second)
+            continue;
+        const auto last = t.queuedSwitch.find(node);
+        if (!switchAllowed(true, last == t.queuedSwitch.end() ? std::nullopt : std::optional(last->second), now))
+            continue;   // next in line there
+        if (holder.join->switchTurn(holder.root, holder.stream))
+            t.queuedSwitch[node] = now;
+    }
+    pumpSession();
+    return int(nodes.size());
 }
 
 bool Ed3kJoinBase::switchAllowed(bool queued, std::optional<std::chrono::steady_clock::time_point> last,
@@ -2543,6 +2588,8 @@ bool Ed3kJoinBase::passTurn(const TurnNode& node)
         // the highest priority first; the same in arrival order (round robin: a download
         // that switched away waits at the end)
         const auto best = std::ranges::max_element(w->second, [](const NodeTurns::Want& a, const NodeTurns::Want& b) {
+            if (a.swapped != b.swapped)
+                return b.swapped;
             return a.priority != b.priority ? a.priority < b.priority : a.seq > b.seq;
         });
         const NodeTurns::Want next = *best;
@@ -2680,6 +2727,8 @@ bool Ed3kJoinBase::yieldToHigher(const TurnNode& node)
 
 std::size_t Ed3kJoinBase::streamCap(const Download& d) const
 {
+    if (const int limit = downloadSourceLimit(d); limit > 0)
+        return std::size_t(limit);
     // very low 1, low 2, normal kMaxStreams (4), high 5, very high 6
     return std::max<std::size_t>(1, kMaxStreams * std::size_t(priorityWeight(d)) / 3);
 }

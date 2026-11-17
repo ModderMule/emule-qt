@@ -649,7 +649,6 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         auto* limitAct = sourcesMenu->addAction(tr("Source Limit..."), this,
             [this, allHashes]() { askSourceLimit(allHashes); });
         limitAct->setEnabled(allUnfinished);
-        limitAct->setProperty("ed2kOnly", true);
         auto* swapAct = sourcesMenu->addAction(tr("Swap All A4AF Sources to This File"), this,
             [this, singleHash]() {
                 if (!IpcFeedback::requireConnection(m_ipc, tr("cannot swap sources.")))
@@ -665,7 +664,6 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
             });
         swapAct->setEnabled(singleSel && dl && dl->a4afSrcCount > 0 && !dl->isComplete()
                             && !dl->isStopped);
-        swapAct->setProperty("ed2kOnly", true);   // packmule takes turns by itself
         sourcesMenu->setEnabled(hasSel);
     }
 
@@ -734,9 +732,11 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
     // Advanced mode only.
     if (thePrefs.showExtControls()) {
         auto* webMenu = m_downloadMenu->addMenu(menuIcon("Web.ico"), tr("Web Services"));
-        if (singleSel && dl)
-            WebServices::instance().populateFileMenu(webMenu, dl->hash, dl->fileName,
-                                                      static_cast<uint64_t>(dl->fileSize));
+        // an ed3k row: hash is its root, the eD2K hash unknown
+        if (singleSel && dl && !dl->isNetworkJob())
+            WebServices::instance().populateFileMenu(webMenu, dl->isEd3k() ? QString() : dl->hash, dl->fileName,
+                                                      static_cast<uint64_t>(dl->fileSize),
+                                                      dl->isEd3k() ? dl->hash : QString());
         webMenu->setEnabled(!webMenu->isEmpty());
     }
 
@@ -786,11 +786,11 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
                                         pasteLinksText(), tr("Find..."), tr("Show Toolbar"),
                                         MoveDownloadsAction::menuText(), Ed3kLinkMenu::copyText(),
                                         Ed3kLinkMenu::showText(), tr("Mass Rename..."),
-                                        tr("Source Handling"), tr("Search Related Files")};
+                                        tr("Source Handling"), tr("Search Related Files"), tr("Web Services")};
         for (QAction* act : m_downloadMenu->actions())
             if (!act->isSeparator() && !ed3kActions.contains(act->text()))
                 act->setEnabled(false);
-        // Add Sources takes a URL (ws=); no source limit or A4AF swap in ed3k
+        // Add Sources takes a URL (ws=); Source Limit and A4AF swap work as eD2K's
         for (QAction* act : m_downloadMenu->findChildren<QAction*>())
             if (act->property("ed2kOnly").toBool())
                 act->setEnabled(false);
@@ -806,7 +806,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
             });
             QSet<QString> off{tr("Details..."), tr("Comments..."), tr("Preview"), tr("Preview with"), MoveDownloadsAction::menuText(),
                               Ed3kLinkMenu::copyText(), Ed3kLinkMenu::showText(), tr("Mass Rename..."), tr("Source Handling"),
-                              tr("Search Related Files")};
+                              tr("Search Related Files"), tr("Web Services")};
             if (!usenetOnly)
                 off += {tr("Priority (Download)"), tr("Assign To Category")};
             for (QAction* act : m_downloadMenu->actions())

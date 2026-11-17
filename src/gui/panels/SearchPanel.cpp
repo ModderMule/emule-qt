@@ -1642,6 +1642,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     bool singleMeta = false;
     bool singleSheet = false;   ///< the eD2K detail sheet serves it (hasDetailSheet)
     QString singleEd2kHash;
+    QString singleEd3kRoot;
     bool singleHasDetails = false;
     QString singleHash;
     QString singleName;
@@ -1685,6 +1686,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
             singleMeta = result->isMeta();
             singleSheet = hasDetailSheet(*result);
             singleEd2kHash = result->ed2kHash();
+            singleEd3kRoot = result->isEd3k() ? result->ed3kRoot : QString();
             singleHasDetails = hasDetails(*result);
         }
     }
@@ -1967,9 +1969,9 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     // Web Services — greyed when webservices.dat is empty or the selection is not
     // exactly one file, matching MFC's flag2 (SearchListCtrl.cpp:724-727).
     auto* webMenu = m_contextMenu->addMenu(menuIcon("Web.ico"), tr("Web Services"));
-    if (singleSel && !singleEd2kHash.isEmpty())   // web services key on the eD2K hash
+    if (singleSel && (!singleEd2kHash.isEmpty() || !singleEd3kRoot.isEmpty()))
         WebServices::instance().populateFileMenu(webMenu, singleEd2kHash, singleName,
-                                                 static_cast<uint64_t>(singleSize));
+                                                 static_cast<uint64_t>(singleSize), singleEd3kRoot);
     webMenu->setEnabled(!webMenu->isEmpty());
     webMenu->menuAction()->setVisible(thePrefs.showExtControls());   // advanced mode only
 

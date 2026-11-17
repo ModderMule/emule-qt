@@ -156,6 +156,8 @@ private slots:
     void aDeclinedRootIsAddedPaused();
     void previewPartsComeFirst();
     void renameAndAUrlSourceFromTheMenu();
+    void swapA4afPutsAFileFirstAtItsSource();
+    void aSourceLimitIsKept();
     void cleanup() { QTest::qWait(10); }
 };
 
@@ -309,14 +311,14 @@ void tst_Ed3kDownloads::uncheckedHttpBytesAreCheckedByPeerValues()
     prefix[qsizetype(3 * kBlock + 5)] = char(prefix.at(qsizetype(3 * kBlock + 5)) ^ 0x5A);
     QDir().mkpath(temp);
     QVERIFY(writeFile(part, prefix));
-    // wholeAt is the last field of the .met
+    // wholeAt, then the source limit (quint32) end the .met
     const QString met = part + QStringLiteral(".met");
     QTRY_VERIFY(QFile::exists(met));
     QByteArray raw = readFile(met);
-    QVERIFY(raw.size() > 8);
+    QVERIFY(raw.size() > 12);
     QByteArray tail;
     QDataStream(&tail, QIODevice::WriteOnly) << quint64(kUnchecked);
-    raw.replace(raw.size() - 8, 8, tail);
+    raw.replace(raw.size() - 12, 8, tail);
     QVERIFY(writeFile(met, raw));
 
     Ed3kDownloads d(b, db.path());
@@ -981,6 +983,89 @@ void tst_Ed3kDownloads::renameAndAUrlSourceFromTheMenu()
     QVERIFY(d.rename(a.root, QStringLiteral("final.bin")).has_value());
     QVERIFY(QFile::exists(QDir(in).filePath(QStringLiteral("final.bin"))));
     QVERIFY(readFile(d.info(a.root)->path) == data);
+    d.stop();
+}
+
+// eD2K's "Swap All A4AF Sources to This File": three files of one source, the same priority;
+// the last asked goes first once swapped (else arrival order: three before two).
+void tst_Ed3kDownloads::swapA4afPutsAFileFirstAtItsSource()
+{
+    const QByteArray one = payload(int(6 * kBlock + 11), 21);
+    const QByteArray two = payload(int(5 * kBlock + 333), 22);
+    const QByteArray three = payload(int(3 * kBlock + 7), 23);
+    Seeder a;
+    QVERIFY(a.startFiles({{QStringLiteral("one.bin"), one}, {QStringLiteral("two.bin"), two}, {QStringLiteral("three.bin"), three}}));
+    QTemporaryDir db;
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    Ed3kDownloads d(b, db.path());
+    d.setSearchEnabled(false);
+    d.setDirs(QDir(db.path()).filePath(QStringLiteral("temp")), QDir(db.path()).filePath(QStringLiteral("in")));
+    d.start();
+    QSignalSpy done(&d, &Ed3kDownloads::completed);
+    QVERIFY(d.add(Ed3kDownloadSpec{a.roots[0], std::uint64_t(one.size()), QStringLiteral("one.bin"), {}, {}, 0, false, 1}).has_value());
+    QVERIFY(d.add(Ed3kDownloadSpec{a.roots[1], std::uint64_t(two.size()), QStringLiteral("two.bin"), {}, {}, 0, false, 1}).has_value());
+    QVERIFY(d.add(Ed3kDownloadSpec{a.roots[2], std::uint64_t(three.size()), QStringLiteral("three.bin"), {}, {}, 0, false, 1}).has_value());
+    d.addSourceTo(a.roots[0], sourceOf(a.session));   // holds the node
+    d.addSourceTo(a.roots[2], sourceOf(a.session));   // waits first
+    d.addSourceTo(a.roots[1], sourceOf(a.session));   // waits second
+    QCOMPARE(d.info(a.roots[1])->a4af, 1);
+    QCOMPARE(d.swapA4af(a.roots[1]), std::optional<int>(1));
+    QTRY_COMPARE_WITH_TIMEOUT(done.count(), 3, 30000);
+    std::vector<::ed3k::Root> order;
+    for (const auto& c : done)
+        order.push_back(c.at(0).value<::ed3k::Root>());
+    const auto at = [&](const ::ed3k::Root& r) { return std::ranges::find(order, r) - order.begin(); };
+    QVERIFY(at(a.roots[1]) < at(a.roots[2]));
+    QVERIFY(readFile(d.info(a.roots[1])->path) == two);
+    QVERIFY(!d.swapA4af(a.roots[1]));   // complete: nothing to swap
+    d.stop();
+    a.shared->stop();
+}
+
+// Source Limit... (eD2K's per-file limit, 0: by priority): clamped to 65535, on the row, set
+// by the IPC route, kept in the .met; an unknown root refused.
+void tst_Ed3kDownloads::aSourceLimitIsKept()
+{
+    ::ed3k::Root root;
+    root.bytes.fill(0x4d);
+    QTemporaryDir db;
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    const QString temp = QDir(db.path()).filePath(QStringLiteral("temp"));
+    const QString in = QDir(db.path()).filePath(QStringLiteral("in"));
+    {
+        Ed3kDownloads d(b, db.path());
+        d.setSearchEnabled(false);
+        d.setDirs(temp, in);
+        d.start();
+        QVERIFY(d.add(Ed3kDownloadSpec{root, 3 * kBlock + 5, QStringLiteral("l.bin"), {}, {}, 0, true, 1}).has_value());
+        QCOMPARE(d.info(root)->maxSources, 0);
+        QVERIFY(d.setSourceLimit(root, 70000));
+        QCOMPARE(d.info(root)->maxSources, 65535);
+        QVERIFY(d.setSourceLimit(root, 2));
+        // the row the GUI shows as "[2]", and the IPC route by the 64 hex root
+        Ed3kDownloadsBridge::setDownloads(&d);
+        std::vector<Ipc::IpcMessage> replies;
+        const auto reply = [&](const Ipc::IpcMessage& m) { replies.push_back(m); };
+        QVERIFY(Ed3kDownloadsBridge::handleRequest(Ipc::IpcMessage(Ipc::IpcMsgType::GetEd3kDownloads, 1), reply));
+        const QCborArray rows = replies.back().fieldMap(1).value(QStringLiteral("downloads")).toArray();
+        QCOMPARE(rows.size(), 1);
+        QCOMPARE(rows.at(0).toMap().value(QStringLiteral("maxSources")).toInteger(), 2);
+        QVERIFY(Ed3kDownloadsBridge::setSourceLimit(QString::fromLatin1(QByteArray(32, char(0x4d)).toHex()), 3));
+        QCOMPARE(d.info(root)->maxSources, 3);
+        QVERIFY(d.setSourceLimit(root, 2));
+        Ed3kDownloadsBridge::setDownloads(nullptr);
+        ::ed3k::Root none;
+        none.bytes.fill(0x4e);
+        QVERIFY(!d.setSourceLimit(none, 3));
+        d.stop();
+    }
+    Ed3kDownloads d(b, db.path());
+    d.setSearchEnabled(false);
+    d.setDirs(temp, in);
+    QVERIFY(d.info(root));
+    QCOMPARE(d.info(root)->maxSources, 2);
     d.stop();
 }
 

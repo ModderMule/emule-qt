@@ -125,6 +125,7 @@ QCborMap toCbor(const ed3k::Ed3kDownloadInfo& i)
         {QStringLiteral("error"), i.error},
         {QStringLiteral("previewPrio"), i.previewPrio},
         {QStringLiteral("isPreviewPossible"), i.previewPossible},
+        {QStringLiteral("maxSources"), i.maxSources},
         // batch 15: "Node" / "Anonymous" (hops.md §1)
         {QStringLiteral("key"), s_downloads ? ed3k::Ed3kHide::keyName(s_downloads->keyOfRoot(i.root)) : QString()},
     };
@@ -493,6 +494,28 @@ bool addWebSource([[maybe_unused]] const QString& hexRoot, [[maybe_unused]] cons
     return s_downloads && r && s_downloads->addWebSource(*r, url);
 #else
     return false;
+#endif
+}
+
+bool setSourceLimit([[maybe_unused]] const QString& hexRoot, [[maybe_unused]] int limit)
+{
+#ifdef EMULE_HAVE_ED3K
+    const auto r = rootOf(hexRoot);
+    return s_downloads && r && s_downloads->setSourceLimit(*r, limit);
+#else
+    return false;
+#endif
+}
+
+std::optional<int> swapA4af([[maybe_unused]] const QString& hexRoot)
+{
+#ifdef EMULE_HAVE_ED3K
+    const auto r = rootOf(hexRoot);
+    if (!s_downloads || !r)
+        return std::nullopt;
+    return s_downloads->swapA4af(*r);
+#else
+    return std::nullopt;
 #endif
 }
 

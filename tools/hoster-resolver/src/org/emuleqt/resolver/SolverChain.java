@@ -23,6 +23,7 @@ import org.jdownloader.captcha.v2.ChallengeResponseController;
 import org.jdownloader.captcha.v2.ChallengeSolver;
 import org.jdownloader.captcha.v2.PluginChallengeSolver;
 import org.jdownloader.captcha.v2.SolverService;
+import org.jdownloader.captcha.v2.challenge.oauth.OAuthChallenge;
 import org.jdownloader.captcha.v2.solverjob.SolverJob;
 import org.jdownloader.captcha.v2.solverjob.SolverJob.SolverOutcome;
 import org.jdownloader.captcha.v2.solverjob.SolverJob.SolverResult;
@@ -72,8 +73,18 @@ final class SolverChain implements ChallengeResponseListener {
     }
 
     @Override
+    @SuppressWarnings({"unchecked", "rawtypes"})
     public void onNewJob(final SolverJob<?> job) {
         final Challenge<?> c = job.getChallenge();
+        if (c instanceof OAuthChallenge) {
+            // browser login (LoginSolver): JD hands it to paid solvers too (no captcha type, no veto)
+            for (final ChallengeSolver s : job.getSolverList()) {
+                if (s instanceof PluginChallengeSolver) {
+                    s.kill(job);
+                }
+            }
+            return;
+        }
         final List<String> used = new ArrayList<String>();
         for (final ChallengeSolver<?> s : job.getSolverList()) {
             if (s instanceof PluginChallengeSolver) {
@@ -100,14 +111,14 @@ final class SolverChain implements ChallengeResponseListener {
 
     @Override
     public void onJobSolverStart(final ChallengeSolver<?> solver, final SolverJob<?> job) {
-        if (solver instanceof PluginChallengeSolver) {
+        if (solver instanceof PluginChallengeSolver && !(job.getChallenge() instanceof OAuthChallenge)) {
             Out.log("captcha for " + job.getChallenge().getHost() + ": " + label(solver) + " started");
         }
     }
 
     @Override
     public void onJobSolverEnd(final ChallengeSolver<?> solver, final SolverJob<?> job) {
-        if (!(solver instanceof PluginChallengeSolver)) {
+        if (!(solver instanceof PluginChallengeSolver) || job.getChallenge() instanceof OAuthChallenge) {
             return;
         }
         final String host = job.getChallenge().getHost();

@@ -2177,6 +2177,10 @@ void IpcClientHandler::handleSetDownloadSourceLimit(const IpcMessage& msg)
 {
     const auto limit = static_cast<uint32>(std::max<qint64>(msg.fieldInt(1), 0));
     for (const auto& hash : msg.fieldArray(0)) {
+        if (const QString h = hash.toString(); h.size() == 64) {   // an ed3k download's root
+            (void)Ed3kDownloadsBridge::setSourceLimit(h, int(std::min<uint32>(limit, 65535)));
+            continue;
+        }
         if (PartFile* file = partFileFor(hash.toString())) {
             file->setPrivateMaxSources(limit);
             file->savePartFile();
@@ -2188,6 +2192,15 @@ void IpcClientHandler::handleSetDownloadSourceLimit(const IpcMessage& msg)
 void IpcClientHandler::handleSwapA4AFToFile(const IpcMessage& msg)
 {
     int swapped = 0;
+    if (const QString h = msg.fieldString(0); h.size() == 64) {   // an ed3k download's root
+        const auto n = Ed3kDownloadsBridge::swapA4af(h);
+        if (!n) {
+            sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("No such download")));
+            return;
+        }
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true, static_cast<qint64>(*n)));
+        return;
+    }
     const ops::Status st = ops::swapA4AFToDownload(msg.fieldString(0), &swapped);
     if (!st.ok()) {
         sendMessage(IpcMessage::makeError(msg.seqId(), st.code, st.message));

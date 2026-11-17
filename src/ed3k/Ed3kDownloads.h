@@ -119,6 +119,8 @@ struct Ed3kDownloadInfo {
     std::vector<std::uint8_t> availability;
     /// eMule's "Increase priority for preview parts": first and last part first
     bool previewPrio = false;
+    /// eD2K's per-file source limit: streams it may open; 0: by priority
+    int maxSources = 0;
     /// media file, unfinished, first eD2K part held (PartFile::isPreviewPossible)
     bool previewPossible = false;
 };
@@ -180,6 +182,10 @@ public:
     bool addWebSource(const ::ed3k::Root& root, const QString& url);
     /// The file's own preview flag (eMule's per-file switch; the option covers every file).
     bool setPreviewPrio(const ::ed3k::Root& root, bool on);
+    /// Source Limit... of an unfinished download (0 to 65535, 0: by priority).
+    bool setSourceLimit(const ::ed3k::Root& root, int limit);
+    /// Swap All A4AF Sources to This File (Ed3kJoinBase::swapTurnsTo); nullopt: none or complete.
+    std::optional<int> swapA4af(const ::ed3k::Root& root);
     /// A player reads from @p offset (preview stream, "Enable seeking in downloads"): end
     /// (exclusive) of the blocks held from there; nullopt: no such download. Less than
     /// PartFile::kStreamLead ahead: the blocks from the first missing one go first, their
@@ -248,6 +254,7 @@ protected:
     void saveOwner(const QString& owner) override;
     /// eMule's kPr* as the turn order at a source shared by several downloads.
     [[nodiscard]] int downloadPriority(const Download& d) const override;
+    [[nodiscard]] int downloadSourceLimit(const Download& d) const override;
     /// Plain ed3k downloads follow the hiding switch (hops.md §1).
     [[nodiscard]] bool anonCapable() const override { return true; }
     /// HTTP source events (Ed3kDownloadsWeb.cpp)

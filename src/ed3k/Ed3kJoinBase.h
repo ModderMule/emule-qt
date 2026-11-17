@@ -270,6 +270,8 @@ protected:
     /// once), the same in arrival order. Also the weight of a download in the session's
     /// block-request depth and its stream cap (priorityWeight). Default 0.
     [[nodiscard]] virtual int downloadPriority(const Download& d) const { Q_UNUSED(d) return 0; }
+    /// The download's own stream cap (eD2K's per-file source limit); 0: by priority (streamCap).
+    [[nodiscard]] virtual int downloadSourceLimit(const Download& d) const { Q_UNUSED(d) return 0; }
     /// Whether @p owner still wants a set: the candidates of its set searches are tried only then.
     [[nodiscard]] virtual bool wantsSet(const QString& owner) const { Q_UNUSED(owner) return false; }
     /// The manifest of the set tried for @p owner arrived (verified block by block): take it,
@@ -320,6 +322,12 @@ protected:
     /// downloadPriority() of @p root changed: its waits re-ordered, nodes taken from or given
     /// to other downloads by the new order, its depth asked again.
     void priorityChanged(const ffi::Root& root);
+    /// downloadSourceLimit() of @p root changed: a higher one takes sources of the next search.
+    void sourceLimitChanged(const ffi::Root& root);
+    /// eD2K's "Swap All A4AF Sources to This File": @p root goes first at every node it waits
+    /// for; a queued holder there switches now (30 min budget, §12.5), a slot holder keeps its
+    /// turn. Returns the nodes it waits for.
+    int swapTurnsTo(const ffi::Root& root);
     /// Sources (open streams) holding each 4 MiB piece of @p d, as their FileStatus told it
     /// (255 at most); empty: no stream told a bitmap.
     [[nodiscard]] static std::vector<std::uint8_t> pieceAvailability(const Download& d);
