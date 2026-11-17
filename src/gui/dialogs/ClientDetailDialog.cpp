@@ -253,6 +253,9 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
         grid->addWidget(countryValue(str(d, QLatin1StringView("cc")), unknown), 3, 1, Qt::AlignTop);
 
         const bool kadConn = d.value(QLatin1StringView("kadConnected")).toBool();
+        const QString peerIp = str(d, QLatin1StringView("addr"));
+        addGridRow(grid, 6, 0, tr("Peer IP"), peerIp.isEmpty() ? tr("Unknown") : peerIp,
+                   tr("Peer connection address (IPv4 or IPv6)."), 3);
         addGridRow(grid, 4, 0, tr("Kad"), kadConn ? tr("Connected") : tr("Disconnected"),
                    tr("Whether the client told us it is connected to Kad (it sent a Kad port)."));
 
@@ -569,6 +572,10 @@ QWidget* ClientDetailDialog::buildEd3kContent(const QCborMap& d)
                    tr("The peer's ed3k identity, derived from its public key."), 3);
 
         const bool helloKnown = d.value(QLatin1StringView("helloKnown")).toBool();
+        const QString peerIp = str(d, QLatin1StringView("addr"));
+        addGridRow(grid, 5, 0, tr("Peer IP"), anonymous ? tr("Hidden")
+                   : peerIp.isEmpty() ? tr("Unknown") : peerIp,
+                   tr("Peer connection address (IPv4 or IPv6)."), 3);
         addGridRow(grid, 2, 0, tr("Software"), str(d, QLatin1StringView("software")),
                    tr("Client program and version from its hello."));
         // Hello.caps bit ED2K (§2): it speaks eD2K too

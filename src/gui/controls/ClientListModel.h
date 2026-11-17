@@ -134,6 +134,8 @@ public:
     /// Shared List: does the peer allow "View Shared Files". Shown only with
     /// "Show more controls".
     [[nodiscard]] int sharedListColumn() const { return baseColumnCount() - 1; }
+    /// Appended after existing columns to preserve saved layouts.
+    [[nodiscard]] int peerIpColumn() const { return baseColumnCount() + extraColumnCount(); }
     /// Columns that exist only with "Show more controls".
     [[nodiscard]] std::vector<int> extColumns() const;
     /// Columns hidden on a fresh layout.

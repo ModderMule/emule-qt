@@ -98,7 +98,7 @@ std::vector<int> ClientListModel::defaultHiddenColumns() const
 
 int ClientListModel::columnCountValue() const
 {
-    return baseColumnCount() + extraColumnCount();
+    return peerIpColumn() + 1;
 }
 
 QVariant ClientListModel::data(const QModelIndex& index, int role) const
@@ -107,6 +107,16 @@ QVariant ClientListModel::data(const QModelIndex& index, int role) const
         return {};
 
     const auto& c = m_rows[static_cast<size_t>(index.row())];
+    if (index.column() == peerIpColumn()) {
+        // These rows carry a service hostname, not a peer IP address.
+        if (c.isUrl || c.network == ClientNetwork::Usenet || c.network == ClientNetwork::Hoster)
+            return {};
+        if (role == Qt::DisplayRole || role == Qt::ToolTipRole)
+            return c.anonymous ? tr("Hidden") : c.addr.isEmpty() ? tr("Unknown") : c.addr;
+        if (role == Qt::UserRole)
+            return c.anonymous ? QString() : c.addr;
+        return {};
+    }
     if (index.column() >= baseColumnCount())
         return extraData(c, index.column() - baseColumnCount(), role);
 
@@ -201,6 +211,8 @@ QVariant ClientListModel::headerData(int section, Qt::Orientation orientation, i
 {
     if (orientation != Qt::Horizontal || role != Qt::DisplayRole)
         return {};
+    if (section == peerIpColumn())
+        return tr("Peer IP");
     if (section == countryColumn())
         return tr("Country");
     if (section == sharedListColumn())

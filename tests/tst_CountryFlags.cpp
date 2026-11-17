@@ -33,6 +33,7 @@ private slots:
     void countryColumn_hiddenByDefaultSavedLayoutWins();
     void sharedListColumn_hiddenByDefaultAndExtOnly();
     void clientModel_transferAndRatioColumns();
+    void clientModel_peerIp();
     void restoreHeader_keepsLayoutWhenColumnAppended();
     void delegate_widensComposedDecoration();
 };
@@ -189,7 +190,7 @@ void tst_CountryFlags::sharedListColumn_hiddenByDefaultAndExtOnly()
     http.isUrl = true;
     model.setClients({open, closed, http});
     const int col = model.sharedListColumn();
-    QCOMPARE(col, model.columnCount() - 1);
+    QCOMPARE(col, model.columnCount() - 2);
     QCOMPARE(model.headerData(col, Qt::Horizontal).toString(), QStringLiteral("Shared List"));
     QCOMPARE(model.data(model.index(0, col)).toString(), QStringLiteral("Yes"));
     QCOMPARE(model.data(model.index(1, col)).toString(), QStringLiteral("No"));
@@ -198,13 +199,13 @@ void tst_CountryFlags::sharedListColumn_hiddenByDefaultAndExtOnly()
     // A layout saved before the column existed: the column still starts hidden
     const QString key = QStringLiteral("tst_countryFlags_sharedList");
     {
-        QStandardItemModel oldModel(0, model.columnCount() - 1);
+        QStandardItemModel oldModel(0, col);
         QHeaderView oldHeader(Qt::Horizontal);
         oldHeader.setModel(&oldModel);
         oldHeader.resizeSection(1, 123);
         theUiState.captureHeaderState(&oldHeader, key);
     }
-    QCOMPARE(theUiState.headerStateSectionCount(key), model.columnCount() - 1);
+    QCOMPARE(theUiState.headerStateSectionCount(key), col);
     ListTreeView view;
     view.setModel(&model);
     view.bindColumns(key, {}, {model.countryColumn(), col});
@@ -234,7 +235,7 @@ void tst_CountryFlags::clientModel_transferAndRatioColumns()
 
         const int first = model.sharedListColumn() + 1;
         const bool uploading = mode == ClientListMode::Uploading;
-        QCOMPARE(model.columnCount(), first + (uploading ? 5 : 4));
+        QCOMPARE(model.columnCount(), first + (uploading ? 5 : 4) + 1);
         QCOMPARE(model.headerData(first, Qt::Horizontal).toString(), QStringLiteral("Uploaded"));
         QCOMPARE(model.headerData(first + 3, Qt::Horizontal).toString(), QStringLiteral("Session Ratio"));
         QCOMPARE(model.data(model.index(0, first)).toString(), QStringLiteral("3.00 MB"));
@@ -259,10 +260,39 @@ void tst_CountryFlags::clientModel_transferAndRatioColumns()
         }
         QCOMPARE(model.extColumns(), expected);
     }
-    // The other two tabs keep Shared List last
+    // The other two tabs append Peer IP immediately after Shared List.
     ClientListModel known(ClientListMode::KnownClients);
-    QCOMPARE(known.sharedListColumn(), known.columnCount() - 1);
+    QCOMPARE(known.sharedListColumn(), known.columnCount() - 2);
     QCOMPARE(known.extColumns(), std::vector<int>{known.sharedListColumn()});
+}
+
+void tst_CountryFlags::clientModel_peerIp()
+{
+    for (const auto mode : {ClientListMode::Uploading, ClientListMode::Downloading,
+                            ClientListMode::OnQueue, ClientListMode::KnownClients}) {
+        ClientListModel model(mode);
+        ClientRow ipv4, ipv6, unknown, anonymous, hoster;
+        ipv4.addr = QStringLiteral("192.0.2.1");
+        ipv6.addr = QStringLiteral("2001:db8::1");
+        anonymous.addr = QStringLiteral("192.0.2.2");
+        anonymous.anonymous = true;
+        hoster.network = ClientNetwork::Hoster;
+        hoster.addr = QStringLiteral("example.com");
+        model.setClients({ipv4, ipv6, unknown, anonymous, hoster});
+        const int col = model.peerIpColumn();
+        QCOMPARE(col, model.columnCount() - 1);
+        QCOMPARE(model.headerData(col, Qt::Horizontal).toString(), QStringLiteral("Peer IP"));
+        QCOMPARE(model.index(0, col).data().toString(), ipv4.addr);
+        QCOMPARE(model.index(1, col).data().toString(), ipv6.addr);
+        QCOMPARE(model.index(2, col).data().toString(), QStringLiteral("Unknown"));
+        QCOMPARE(model.index(3, col).data().toString(), QStringLiteral("Hidden"));
+        QCOMPARE(model.index(3, col).data(Qt::UserRole).toString(), QString());
+        QVERIFY(!model.index(4, col).data().isValid());
+        const auto hidden = model.defaultHiddenColumns();
+        QVERIFY(std::ranges::find(hidden, col) == hidden.end());
+        const auto ext = model.extColumns();
+        QVERIFY(std::ranges::find(ext, col) == ext.end());
+    }
 }
 
 void tst_CountryFlags::restoreHeader_keepsLayoutWhenColumnAppended()
