@@ -551,7 +551,8 @@ signals:
     void itemChanged(const QString& id);
 
     void itemAdded(const QString& id);
-    void itemRemoved(const QString& id);
+    /// @p deleteFiles: the user removed it with its files (removeItem)
+    void itemRemoved(const QString& id, bool deleteFiles);
 
     /// A terminal outcome. Deliberately separate from itemChanged so the daemon
     /// can broadcast it *uncoalesced*: this is a transition, not a latest value,

@@ -16,6 +16,7 @@
 
 #include <QCborArray>
 #include <QCborMap>
+#include <QJsonObject>
 #include <QFileInfo>
 #include <QHash>
 #include <QUrl>
@@ -24,6 +25,7 @@
 #include <optional>
 
 #ifdef EMULE_HAVE_ED3K
+#include "Ed3kHosterCatalog.h"
 #include "Ed3kHosterJoin.h"
 #include "Ed3kLinkGrabber.h"
 #include "Ed3kResolver.h"
@@ -44,6 +46,9 @@ ed3k::Ed3kHosterJoin* s_join = nullptr;
 ed3k::Ed3kResolver* s_resolver = nullptr;
 ed3k::Ed3kJavaRuntime* s_java = nullptr;
 ed3k::Ed3kLinkGrabber* s_grabber = nullptr;
+ed3k::Ed3kHosterCatalog* s_catalog = nullptr;
+/// favicons asked for at once (GetHosterFavicons)
+constexpr qsizetype kMaxIconAsk = 256;
 /// openContainerAndAdd() tokens: their results stay in the daemon, no GUI asks
 QHash<quint64, std::function<void(int, const QString&)>> s_quietContainers;
 /// item pushes come per block: one per item and window
@@ -109,6 +114,22 @@ QCborMap grabberLinkToCbor(const ed3k::Ed3kLinkGrabber::Link& k)
                     {QStringLiteral("status"), int(k.status)},
                     {QStringLiteral("enabled"), k.enabled},
                     {QStringLiteral("dupe"), k.dupe}};
+}
+
+QCborArray accountHostsToCbor(const QList<ed3k::AccountHost>& hosts)
+{
+    QCborArray out;
+    for (const ed3k::AccountHost& h : hosts) {
+        QCborMap m{{QStringLiteral("host"), h.host}};
+        if (!h.name.isEmpty())
+            m.insert(QStringLiteral("name"), h.name);
+        if (h.multi)
+            m.insert(QStringLiteral("multi"), true);
+        if (h.solver)
+            m.insert(QStringLiteral("solver"), true);
+        out.append(m);
+    }
+    return out;
 }
 
 QList<quint32> idsOf(const QCborValue& v)
@@ -270,6 +291,28 @@ QCborMap hosterStatsToCbor(const ed3k::Ed3kHosterJoin& join)
     return out;
 }
 
+/// What sites.json keeps of a login's check (no session, no hoster list): only what is known
+QJsonObject storedCheck(bool valid, bool premium, qint64 expires, qint64 trafficLeft, qint64 trafficMax, double balance,
+                        const QString& currency, int hosts)
+{
+    QJsonObject o{{QStringLiteral("valid"), valid}};
+    if (premium)
+        o.insert(QStringLiteral("premium"), true);
+    if (expires > 0)
+        o.insert(QStringLiteral("expires"), double(expires));
+    if (trafficLeft >= 0)
+        o.insert(QStringLiteral("trafficLeft"), double(trafficLeft));
+    if (trafficMax > 0)
+        o.insert(QStringLiteral("trafficMax"), double(trafficMax));
+    if (balance >= 0)
+        o.insert(QStringLiteral("balance"), balance);
+    if (!currency.isEmpty())
+        o.insert(QStringLiteral("currency"), currency);
+    if (hosts >= 0)
+        o.insert(QStringLiteral("hosts"), hosts);
+    return o;
+}
+
 QCborMap resultToCbor(const ed3k::ResolverEvent& r)
 {
     const bool ok = r.kind == ed3k::ResolverEvent::Kind::Account;
@@ -277,6 +320,7 @@ QCborMap resultToCbor(const ed3k::ResolverEvent& r)
                  {QStringLiteral("premium"), r.premium},
                  {QStringLiteral("expires"), r.expires},
                  {QStringLiteral("trafficLeft"), r.trafficLeft},
+                 {QStringLiteral("trafficMax"), r.trafficMax},
                  {QStringLiteral("balance"), r.balance},   // a solver service: its credit; -1 none
                  {QStringLiteral("currency"), r.currency},
                  {QStringLiteral("error"), ok ? QString() : (r.code.isEmpty() ? QStringLiteral("failed") : r.code)}};
@@ -294,6 +338,19 @@ QCborMap resultToCbor(const ed3k::ResolverEvent& r)
                                   {QStringLiteral("unavailableS"), h.unavailableS}});
         out.insert(QStringLiteral("multi"), true);
         out.insert(QStringLiteral("hosts"), hosts);
+    }
+    // a browser login waits: the user opens this URL; the result follows
+    if (r.kind == ed3k::ResolverEvent::Kind::Login) {
+        out.insert(QStringLiteral("error"), QStringLiteral("login"));
+        out.insert(QStringLiteral("login"), r.text);
+        out.insert(QStringLiteral("timeout"), r.timeoutS);
+    }
+    // a confirmation code waits (2FA, a "new sign in" mail): AnswerHosterAccountCode
+    if (r.kind == ed3k::ResolverEvent::Kind::Code) {
+        out.insert(QStringLiteral("error"), QStringLiteral("code"));
+        out.insert(QStringLiteral("codeText"), r.text);
+        out.insert(QStringLiteral("codeTitle"), r.name);
+        out.insert(QStringLiteral("timeout"), r.timeoutS);
     }
     return out;
 }
@@ -335,6 +392,35 @@ int addContainerLinks(const QList<ed3k::ResolverLink>& links, const QString& fil
 #endif
 
 } // namespace
+
+void setCatalog(ed3k::Ed3kHosterCatalog* catalog, const std::function<void(const IpcMessage&)>& broadcast)
+{
+#ifdef EMULE_HAVE_ED3K
+    s_catalog = catalog;
+    if (!catalog)
+        return;
+    QObject::connect(catalog, &ed3k::Ed3kHosterCatalog::accountHostsChanged, catalog,
+                     [broadcast](const QList<ed3k::AccountHost>& hosts) {
+                         IpcMessage msg(IpcMsgType::PushHosterCatalog, 0);
+                         msg.append(QCborMap{{QStringLiteral("hosts"), accountHostsToCbor(hosts)}});
+                         broadcast(msg);
+                     });
+    QObject::connect(catalog, &ed3k::Ed3kHosterCatalog::iconReady, catalog,
+                     [broadcast](const QString& host, const QByteArray& png) {
+                         IpcMessage msg(IpcMsgType::PushHosterCatalog, 0);
+                         msg.append(QCborMap{{QStringLiteral("icons"), QCborMap{{host, QCborValue(png)}}}});
+                         broadcast(msg);
+                     });
+    QObject::connect(catalog, &ed3k::Ed3kHosterCatalog::countryReady, catalog,
+                     [broadcast](const QString& host, const QString& cc) {
+                         IpcMessage msg(IpcMsgType::PushHosterCatalog, 0);
+                         msg.append(QCborMap{{QStringLiteral("countries"), QCborMap{{host, cc}}}});
+                         broadcast(msg);
+                     });
+#else
+    Q_UNUSED(catalog) Q_UNUSED(broadcast)
+#endif
+}
 
 void setHoster(ed3k::Ed3kHosterJoin* join, ed3k::Ed3kResolver* resolver, ed3k::Ed3kJavaRuntime* java)
 {
@@ -514,13 +600,14 @@ void openContainerAndAdd(const QByteArray& data, const QString& fileName,
 bool isHosterRequest(IpcMsgType type)
 {
     const int t = static_cast<int>(type);
-    // 1139: AddClickNLoad, after the block was full; 1210-1218: the Link Grabber
-    return (t >= 1100 && t <= 1109) || type == IpcMsgType::AddClickNLoad || (t >= 1210 && t <= 1218);
+    // 1139: AddClickNLoad, after the block was full; 1210-1218: the Link Grabber; 1219-1221:
+    // account dialogs
+    return (t >= 1100 && t <= 1109) || type == IpcMsgType::AddClickNLoad || (t >= 1210 && t <= 1221);
 }
 
 bool carriesSecret(IpcMsgType type)
 {
-    return type == IpcMsgType::CheckHosterAccount;
+    return type == IpcMsgType::CheckHosterAccount || type == IpcMsgType::AnswerHosterAccountCode;
 }
 
 bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMessage&)>& reply)
@@ -533,6 +620,33 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
         return true;
     const int seq = msg.seqId();
 #ifdef EMULE_HAVE_ED3K
+    if (msg.type() == IpcMsgType::GetHosterAccountHosts || msg.type() == IpcMsgType::GetHosterFavicons) {
+        if (!s_catalog || !thePrefs.hosterDownloadsOn()) {
+            reply(failure(seq, QStringLiteral("hoster downloads are off")));
+            return true;
+        }
+        if (msg.type() == IpcMsgType::GetHosterAccountHosts) {
+            bool asking = false;
+            const auto hosts = s_catalog->accountHosts(&asking);
+            reply(IpcMessage::makeResult(seq, true,
+                                         QCborMap{{QStringLiteral("hosts"), accountHostsToCbor(hosts)},
+                                                  {QStringLiteral("asking"), asking}}));
+            return true;
+        }
+        QStringList hosts;
+        for (const QCborValue& v : msg.field(0).toArray())
+            if (hosts.size() < kMaxIconAsk)
+                hosts << v.toString();
+        QCborMap icons;
+        for (const auto& [host, png] : s_catalog->icons(hosts).asKeyValueRange())
+            icons.insert(host, QCborValue(png));
+        QCborMap countries;
+        for (const auto& [host, cc] : s_catalog->countries(hosts).asKeyValueRange())
+            countries.insert(host, cc);
+        reply(IpcMessage::makeResult(seq, true,
+                                     QCborMap{{QStringLiteral("icons"), icons}, {QStringLiteral("countries"), countries}}));
+        return true;
+    }
     if (const int t = static_cast<int>(msg.type()); t >= 1210 && t <= 1218) {
         if (!s_grabber) {
             reply(failure(seq, QStringLiteral("no link grabber")));
@@ -684,6 +798,13 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
         s_join->checkAccount(msg.fieldString(0).trimmed().toLower(), msg.fieldString(1), msg.fieldString(2));
         reply(IpcMessage::makeResult(seq, true, QCborValue{}));
         break;
+    case IpcMsgType::AnswerHosterAccountCode:
+        if (!s_join->answerAccountCode(msg.fieldString(0).trimmed().toLower(), msg.fieldString(1), msg.fieldString(2))) {
+            reply(failure(seq, QStringLiteral("no check of this login waits for a code")));
+            break;
+        }
+        reply(IpcMessage::makeResult(seq, true, QCborValue{}));
+        break;
     case IpcMsgType::DownloadJavaRuntime:
     case IpcMsgType::LocateJavaRuntime:
 #ifdef EMULE_HAVE_HOSTER_JD
@@ -808,6 +929,11 @@ void connectPushes(ed3k::Ed3kHosterJoin& join, const std::function<void(const Ip
                      });
     QObject::connect(&join, &ed3k::Ed3kHosterJoin::accountChecked, &join,
                      [broadcast](const QString& host, const QString& user, const ed3k::ResolverEvent& r) {
+                         // an answer (not a network failure, a login still waiting): kept for the next run
+                         if (s_catalog && r.kind == ed3k::ResolverEvent::Kind::Account)
+                             s_catalog->noteAccount(host, user,
+                                                    storedCheck(r.valid, r.premium, r.expires, r.trafficLeft, r.trafficMax,
+                                                                r.balance, r.currency, r.multi ? int(r.hosts.size()) : -1));
                          IpcMessage msg(IpcMsgType::PushHosterAccount, 0);
                          msg.append(host);
                          msg.append(user);
@@ -916,6 +1042,31 @@ QCborMap statusToCbor()
                                     {QStringLiteral("code"), st.code}});
         out.insert(QStringLiteral("solvers"), solvers);
     }
+    // every login's last check, also from an earlier run (no passwords)
+    if (s_catalog) {
+        QList<std::pair<QString, QString>> logins;
+        for (const QList<Ed3kHosterAccount>* list : {&h.accounts, &h.debrid, &h.solvers})
+            for (const Ed3kHosterAccount& a : *list)
+                logins.append({a.host, a.user});
+        s_catalog->keepAccounts(logins);
+        // the solvers the resolver checked at its start
+        if (s_resolver)
+            for (const ed3k::SolverAccountState& st : s_resolver->solverStates())
+                if (st.valid || st.code == QLatin1StringView("login"))
+                    for (const Ed3kHosterAccount& a : std::as_const(h.solvers))
+                        if (a.host == st.host)
+                            s_catalog->noteAccount(a.host, a.user, storedCheck(st.valid, false, 0, -1, -1, st.balance,
+                                                                               st.currency, -1));
+        QCborArray accounts;
+        for (const auto& [host, user] : std::as_const(logins))
+            if (const QJsonObject st = s_catalog->account(host, user); !st.isEmpty()) {
+                QCborMap m = QCborMap::fromJsonObject(st);
+                m.insert(QStringLiteral("host"), host);
+                m.insert(QStringLiteral("user"), user);
+                accounts.append(m);
+            }
+        out.insert(QStringLiteral("accounts"), accounts);
+    }
     // multi-hoster logins: what their last check found (no passwords)
     QCborArray debrid;
     for (const auto& d : s_join->debridSummaries())
@@ -925,6 +1076,9 @@ QCborMap statusToCbor()
                                {QStringLiteral("valid"), d.valid},
                                {QStringLiteral("premium"), d.premium},
                                {QStringLiteral("expires"), d.expires},
+                               {QStringLiteral("trafficLeft"), d.trafficLeft},
+                               {QStringLiteral("trafficMax"), d.trafficMax},
+                               {QStringLiteral("checked"), d.checked},
                                {QStringLiteral("hosts"), d.hosts},
                                {QStringLiteral("working"), d.working}});
     out.insert(QStringLiteral("debrid"), debrid);

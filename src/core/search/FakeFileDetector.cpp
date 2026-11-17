@@ -278,6 +278,7 @@ QString fakeReasonId(FakeReason reason)
     case FakeReason::AbuseContentName:        return QStringLiteral("abuse_content_name");
     case FakeReason::PasswordProtected:       return QStringLiteral("password_protected");
     case FakeReason::MediaDoubleExtension:    return QStringLiteral("media_double_extension");
+    case FakeReason::SpamPublisher:           return QStringLiteral("spam_publisher");
     }
     return {};
 }
@@ -461,6 +462,9 @@ FakeFileVerdict assessFile(const FakeFileInput& in, const FakeFileRules& rules)
         add(verdict, FakeReason::SpamScore, 15);
     if (in.consideredSpam)
         add(verdict, FakeReason::SpamStatus, 15);
+    // a spammer's key on it; half when an unmarked publisher has it too (spammers republish hits)
+    if (in.spamPublisher)
+        add(verdict, FakeReason::SpamPublisher, in.cleanPublisher ? 20 : 40);
 
     if (in.userRating == 1)
         add(verdict, FakeReason::FakeRating, 30);

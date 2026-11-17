@@ -262,8 +262,12 @@ public:
     /// Empty @p text skips; @p skipHoster also skips every later puzzle of that hoster until
     /// retry() of an item with a link there.
     void answerPuzzle(quint64 puzzle, const QString& text, bool skipHoster = false);
-    /// Checks a login with the resolver; accountChecked() follows.
+    /// Checks a login with the resolver; accountChecked() follows (first a Login event when the
+    /// plugin waits for a browser login). Empty @p password: the stored login of @p host / @p user.
     void checkAccount(const QString& host, const QString& user, const QString& password);
+    /// The user's confirmation code for the running check of @p host / @p user (its Code event);
+    /// empty @p code cancels. False: no check of that login waits.
+    bool answerAccountCode(const QString& host, const QString& user, const QString& code);
     /// Checks @p urls through the core, as an item's own check goes: linkChecked() for each,
     /// a fresh result at once. The core keeps what it learns (a dead link stays dead), so a
     /// download soon after starts from it. False: hosters off, no resolver or no node.
@@ -279,6 +283,9 @@ public:
         bool valid = false;
         bool premium = false;
         qint64 expires = 0;   ///< unix seconds; 0 = unknown
+        qint64 trafficLeft = -1;   ///< bytes; -1 = unlimited or unknown
+        qint64 trafficMax = -1;
+        qint64 checked = 0;   ///< unix seconds
         int hosts = 0;        ///< hosters it names
         int working = 0;      ///< of them usable now (working, quota left, not skipped)
     };
@@ -311,6 +318,8 @@ signals:
     /// The link of @p id names a folder: these are its links (the GUI asks which to add).
     void linksExpanded(quint32 id, const QList<eMule::ed3k::ResolverLink>& links);
     void accountChecked(const QString& host, const QString& user, const eMule::ed3k::ResolverEvent& result);
+    /// A stored login's plugin session changed (a browser login, a new token): for preferences.
+    void sessionSaved(const QString& host, const QString& user, const QByteArray& session);
     /// An openContainer() result: its links, or empty with the resolver's @p code and @p text.
     void containerOpened(quint64 token, const QString& fileName, const QList<eMule::ed3k::ResolverLink>& links,
                          const QString& code, const QString& text);
@@ -318,6 +327,8 @@ signals:
     /// with the resolver's @p code and @p text.
     void clickNLoadOpened(quint64 token, const QString& source, const QList<eMule::ed3k::ResolverLink>& links,
                           const QString& code, const QString& text);
+    /// A download of @p site (link host, or the multi-hoster's) gets its bytes from @p server.
+    void downloadServer(const QString& site, const QString& server);
     /// A checkLinks() result.
     void linkChecked(const QString& url, const eMule::ed3k::Ed3kHosterJoin::LinkCheck& check);
 
@@ -363,6 +374,12 @@ private:
     void changed(const Entry& e);
     [[nodiscard]] std::optional<ResolverAccount> accountFor(const QString& host) const;
     [[nodiscard]] const Ed3kHosterAccount* accountEntry(const QString& host) const;
+    /// The stored login of exactly @p host and @p user (hoster, multi-hoster or solver list).
+    [[nodiscard]] const Ed3kHosterAccount* storedLogin(const QString& host, const QString& user) const;
+    /// @p a's plugin session: this run's, else the saved one.
+    [[nodiscard]] QByteArray sessionOf(const Ed3kHosterAccount& a) const;
+    /// sessionSaved() for stored logins whose session of this run is not saved yet.
+    void saveSessions();
     /// The login an open of @p e's link @p url uses: the hoster's own premium one, else a
     /// multi-hoster's that downloads the hoster (sets @p a's via), else the hoster's free one.
     [[nodiscard]] std::optional<ResolverAccount> openAccount(const Entry& e, const QString& url, Ask& a) const;
@@ -395,11 +412,13 @@ private:
         bool premium = false;
         qint64 expires = 0;
         qint64 trafficLeft = -1;
+        qint64 trafficMax = -1;
         int maxDownloads = 0;        ///< JD's downloads at once; -1 unlimited, 0 unknown
         qint64 at = 0;
         bool multi = false;          ///< a multi-hoster: hosts is what it downloads
         QList<DebridHost> hosts;
         QByteArray state;            ///< the plugin's session, handed back with the login
+        QString password;            ///< the login state came with (saved only for that one)
     };
     /// host|user of a stored login
     [[nodiscard]] static QString keyOf(const Ed3kHosterAccount& a) { return a.host + QLatin1Char('|') + a.user; }
@@ -457,6 +476,8 @@ private:
     /// The core asks the resolver.
     void onResolve(const ::ed3k::event::LinkResolve& r);
     void onResolverEvent(Ed3kResolver::TaskId task, const ResolverEvent& ev);
+    /// a login's confirmation code waits (account check or download): to the GUI, once per login
+    void onCodeAsked(Ed3kResolver::TaskId task, const ResolverEvent& ev);
     /// Resolver became ready: NoResolver/ResolverNotReady items start again.
     void retryNotReady();
     void answer(std::uint64_t link, std::uint32_t kind, const QString& text = {}, std::optional<std::uint64_t> value = {});
@@ -534,6 +555,9 @@ private:
     /// links' ALIAS records (rechecked as before) for deletedDays().
     void keepDeletedVolumes(const QStringList& volumes);
     void onDeletedEnded(const DeletedFile& f) override;
+    /// alias.md §3: a deleted row's links are asked at least every kDeletedCheckMs, whatever
+    /// recheckHours says (0: never, or over 168 h); results come to onRechecked.
+    void checkDeleted(qint64 now) override;
     void onUnpacked(const HosterUnpackResult& r);
     /// Extraction switched off: archives waiting in Temp go to incoming as they are.
     void releaseArchives();
@@ -572,7 +596,20 @@ private:
     /// resolver tasks → what they are for
     std::map<Ed3kResolver::TaskId, quint32> m_matches;
     std::map<Ed3kResolver::TaskId, Ask> m_asks;
-    std::map<Ed3kResolver::TaskId, std::pair<QString, QString>> m_accountChecks;
+    struct AccountCheck {
+        QString host;
+        QString user;
+        QString password;   ///< checked; the stored login's when it is the same, its session is saved
+        bool operator==(const AccountCheck& o) const { return host == o.host && user == o.user; }
+    };
+    std::map<Ed3kResolver::TaskId, AccountCheck> m_accountChecks;
+    /// tasks waiting for a login's confirmation code (account checks and downloads): the login, its ask
+    struct CodeAsk {
+        QString host;
+        QString user;
+        ResolverEvent ev;
+    };
+    std::map<Ed3kResolver::TaskId, CodeAsk> m_codeAsks;
     /// checkLinks(): match tasks → url, links waiting, links checking, results by url
     std::map<Ed3kResolver::TaskId, QString> m_probeMatches;
     QList<QueuedProbe> m_probeQueue;

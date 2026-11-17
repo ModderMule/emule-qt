@@ -240,6 +240,9 @@
     <ClCompile Include="geo\GeoIpUpdater.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="geo\CdnRanges.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="geo\HostCountryResolver.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -974,6 +977,9 @@
     <QtMoc Include="geo\GeoIpUpdater.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <ClInclude Include="geo\CdnRanges.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="geo\HostCountryResolver.h">
       <Filter>Header Files</Filter>
     </ClInclude>

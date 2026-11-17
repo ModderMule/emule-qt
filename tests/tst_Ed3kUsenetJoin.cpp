@@ -230,6 +230,7 @@ private slots:
     void sourcesAreSearchedAgainWhenTheLastStreamClosed();
     void aDuplicatedNumberCountsUnderItsFirstId();
     void aDeletedVolumeStaysPublishedUntilItsArticlesAreGone();
+    void aUserDeleteEndsTheDeletedRows();
     void cleanup();
 
 private:
@@ -822,6 +823,43 @@ void tst_Ed3kUsenetJoin::aDeletedVolumeStaysPublishedUntilItsArticlesAreGone()
         QVERIFY(!QFileInfo::exists(kept));
         again.stop();
     }
+    b.stop();
+}
+
+// alias.md §3: the user removes the item with its files: its deleted rows end at once
+void tst_Ed3kUsenetJoin::aUserDeleteEndsTheDeletedRows()
+{
+    constexpr int kParts = 3;
+    constexpr int kPart = 2500;
+    const QByteArray data = payload(kParts * kPart - 200, 10);
+    const Hashed h = hashOf(data);
+
+    QTemporaryDir db;
+    QVERIFY(db.isValid());
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    FakeQueue queue;
+    queue.item = fakeItem(db.path(), data.size(), kParts);
+    const QString id = queue.item->id;
+    Ed3kUsenetJoin join(b, queue, db.path());
+    join.setSearchEnabled(false);
+    QSignalSpy verified(&join, &Ed3kUsenetJoin::memberVerified);
+    QSignalSpy postDone(&join, &Ed3kUsenetJoin::postCompleted);
+    join.start();
+    QVERIFY(join.fileClaim(id, 0, h.root, h.size));
+    for (int p = 1; p <= kParts; ++p)
+        landArticle(join, *queue.item, data, p, kParts, kPart);
+    QTRY_COMPARE_WITH_TIMEOUT(verified.count(), 1, 30000);
+    QTRY_COMPARE_WITH_TIMEOUT(postDone.count(), 1, 10000);
+    queue.item->status = UsenetItemStatus::Complete;
+    QVERIFY(QFile::remove(queue.item->files.at(0).tempPath));
+    join.onItemFinished(id, true, QStringLiteral("done"));
+    QCOMPARE(join.deletedCount(), std::size_t(1));
+    // removed with its files: nothing kept of it
+    queue.item.reset();
+    join.onItemRemoved(id, true);
+    QCOMPARE(join.deletedCount(), std::size_t(0));
+    join.stop();
     b.stop();
 }
 

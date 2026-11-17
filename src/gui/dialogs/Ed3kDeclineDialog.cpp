@@ -9,9 +9,11 @@
 
 #include <QCborArray>
 #include <QCborMap>
+#include <QDateTime>
 #include <QDialogButtonBox>
 #include <QFontDatabase>
 #include <QLabel>
+#include <QLocale>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -27,7 +29,7 @@ Ed3kDeclineDialog::Ed3kDeclineDialog(IpcClient* ipc, QWidget* parent)
     , m_ipc(ipc)
 {
     setWindowTitle(tr("Declined records"));
-    resize(560, 440);
+    resize(560, 540);
     auto* layout = new QVBoxLayout(this);
 
     auto* help = new QLabel(tr("Records this node won't hold for others, won't publish for own files, and asks about "
@@ -54,6 +56,21 @@ Ed3kDeclineDialog::Ed3kDeclineDialog(IpcClient* ipc, QWidget* parent)
     m_invalidLabel->setVisible(false);
     layout->addWidget(m_invalidLabel);
 
+    // declined-records.md §2 "Shared lists": the operator's choice, none by default
+    auto* urlsHelp = new QLabel(tr("Lists from URLs you trust, one per line (fetched at start, when changed and every 24 hours; "
+                                   "the last copy stays in use when a fetch fails):"),
+                                this);
+    urlsHelp->setWordWrap(true);
+    layout->addWidget(urlsHelp);
+    m_urlsEdit = new QPlainTextEdit(this);
+    m_urlsEdit->setLineWrapMode(QPlainTextEdit::NoWrap);
+    m_urlsEdit->setFixedHeight(m_urlsEdit->fontMetrics().lineSpacing() * 4 + 12);
+    layout->addWidget(m_urlsEdit);
+    m_urlStatusLabel = new QLabel(this);
+    m_urlStatusLabel->setWordWrap(true);
+    m_urlStatusLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    layout->addWidget(m_urlStatusLabel);
+
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Apply, this);
     m_okBtn = buttons->button(QDialogButtonBox::Ok);
     m_applyBtn = buttons->button(QDialogButtonBox::Apply);
@@ -71,8 +88,16 @@ Ed3kDeclineDialog::Ed3kDeclineDialog(IpcClient* ipc, QWidget* parent)
 
 void Ed3kDeclineDialog::fill(const QCborMap& state, bool withText)
 {
-    if (withText)
+    if (withText) {
         m_edit->setPlainText(state.value(QStringLiteral("text")).toString());
+        QStringList urls;
+        for (const auto& v : state.value(QStringLiteral("urls")).toArray())
+            urls << v.toString();
+        m_urlsEdit->setPlainText(urls.join(QLatin1Char('\n')));
+    }
+    const QString urlStatus = urlStatusText(state.value(QStringLiteral("urlStatus")).toArray());
+    m_urlStatusLabel->setText(urlStatus);
+    m_urlStatusLabel->setVisible(!urlStatus.isEmpty());
     QString counts = countsText(state.value(QStringLiteral("loaded")).toMap());
     if (!state.value(QStringLiteral("running")).toBool())
         counts += u' ' + tr("(the ed3k node is not running: read from the file)");
@@ -95,6 +120,31 @@ QString Ed3kDeclineDialog::countsText(const QCborMap& loaded)
         .arg(n("keys"))
         .arg(n("kinds"))
         .arg(n("keywords"));
+}
+
+QString Ed3kDeclineDialog::urlStatusText(const QCborArray& status)
+{
+    const auto when = [](qint64 ms) { return QLocale().toString(QDateTime::fromMSecsSinceEpoch(ms), QLocale::ShortFormat); };
+    QStringList lines;
+    for (const auto& v : status) {
+        const QCborMap s = v.toMap();
+        const QString url = s.value(QStringLiteral("url")).toString();
+        const qint64 fetchedAt = s.value(QStringLiteral("fetchedAt")).toInteger();
+        const QString error = s.value(QStringLiteral("error")).toString();
+        QString line;
+        if (s.value(QStringLiteral("fetching")).toBool())
+            line = tr("fetching...");
+        else if (!error.isEmpty())
+            line = tr("last fetch failed: %1").arg(error);
+        else if (fetchedAt == 0)
+            line = tr("not fetched yet");
+        if (fetchedAt > 0) {
+            const QString cache = tr("%n entries from %1", nullptr, int(s.value(QStringLiteral("entries")).toInteger())).arg(when(fetchedAt));
+            line = line.isEmpty() ? cache : line + QStringLiteral("; ") + cache;
+        }
+        lines << QStringLiteral("%1: %2").arg(url, line);
+    }
+    return lines.join(QLatin1Char('\n'));
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +171,11 @@ void Ed3kDeclineDialog::save(bool close)
         return;
     IpcMessage req(IpcMsgType::SetEd3kDeclined);
     req.append(m_edit->toPlainText());
+    QCborArray urls;
+    for (const QString& line : m_urlsEdit->toPlainText().split(QLatin1Char('\n')))
+        if (const QString u = line.trimmed(); !u.isEmpty())
+            urls.append(u);
+    req.append(urls);
     m_okBtn->setEnabled(false);
     m_applyBtn->setEnabled(false);
     m_ipc->sendRequest(std::move(req), [self = QPointer<Ed3kDeclineDialog>(this), close](const IpcMessage& r) {

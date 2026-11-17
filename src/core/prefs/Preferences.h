@@ -111,7 +111,15 @@ struct Ed3kHosterAccount {
     QString host;      ///< the resolver's plugin host, e.g. "rapidgator.net"
     QString user;
     QString password;  ///< encrypted in preferences.yml with the email key
+    /// the plugin's session (JSON: an OAuth token, cookies) of this login, so a browser login
+    /// is not asked again after a restart; encrypted like the password, never sent over IPC
+    QByteArray session{};
     bool operator==(const Ed3kHosterAccount&) const = default;
+    /// host, user and password alike (the session aside)
+    [[nodiscard]] bool sameLogin(const Ed3kHosterAccount& o) const
+    {
+        return host == o.host && user == o.user && password == o.password;
+    }
 };
 
 /// Links at file hosters (hoster.md), YAML `ed3k: hoster:`, IPC keys `ed3kHoster*`.
@@ -1676,6 +1684,11 @@ public:
     void setEd3kChaintubeRpc(const QStringList& urls);
     /// "a b c" or an array of strings → the list (empty entries dropped).
     [[nodiscard]] static QStringList rpcUrlList(const QCborValue& value);
+    /// Decline lists fetched from these URLs (declined-records.md §2 "Shared lists": the
+    /// operator's choice, none by default), merged with decline.txt. YAML ed3k.declineUrls;
+    /// set by the Declined records dialog (SetEd3kDeclined 1209).
+    [[nodiscard]] QStringList ed3kDeclineUrls() const;
+    void setEd3kDeclineUrls(const QStringList& urls);
 
     /// Optional ed3k extensions turned off at start (socket-modes.md "extensions"), by the
     /// names of their documents (ed3kExtensionNames()). A change restarts the node.

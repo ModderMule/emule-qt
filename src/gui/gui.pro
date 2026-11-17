@@ -111,6 +111,8 @@ SOURCES += \
     controls/ClientListModel.cpp \
     controls/ContactsGraph.cpp \
     controls/ContentScrollArea.cpp \
+    controls/HosterCombo.cpp \
+    utils/HosterIcons.cpp \
     controls/OptionsTree.cpp \
     controls/CategoryFilterProxy.cpp \
     controls/CategoryTabBar.cpp \
@@ -252,6 +254,8 @@ HEADERS += \
     controls/ClientListModel.h \
     controls/ContactsGraph.h \
     controls/ContentScrollArea.h \
+    controls/HosterCombo.h \
+    utils/HosterIcons.h \
     controls/OptionsTree.h \
     controls/CategoryFilterProxy.h \
     controls/CategoryTabBar.h \

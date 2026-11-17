@@ -45,6 +45,7 @@ struct Ed3kJobSource {
     QString name;       ///< nick, else the node ID's start
     QString software;
     QString address;    ///< "addr:port"; empty: not known (relayed, anonymous key)
+    QString cc;         ///< address's country code
     QString fileName;   ///< the job's file it serves
     QString state;      ///< "Downloading" / "OnQueue"
     qint64 rate = 0;

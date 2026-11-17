@@ -1042,10 +1042,12 @@ enum class IpcMsgType : int {
     /// request for the incoming search graph
     GetEd3kKadIncomingGraph = 1207,
     /// [] -> [ok, {text (decline.txt), running, loaded: {roots, ed2k, keys, kinds, keywords},
-    /// invalid: [line], dropped}] — §10.3 declined records (declined-records.md); loaded: what
-    /// the running node uses, else the file parsed. Works with the node off.
+    /// invalid: [line], dropped, urls: [url], urlStatus: [{url, fetchedAt, triedAt, error,
+    /// entries, fetching}]}] — §10.3 declined records (declined-records.md); loaded: what
+    /// the running node uses (URL lists merged), else the file parsed. Works with the node off.
     GetEd3kDeclined         = 1208,
-    /// [text] -> [ok, as GetEd3kDeclined] — decline.txt written, the node reads it at once
+    /// [text, urls] -> [ok, as GetEd3kDeclined] — decline.txt written, the node reads it at
+    /// once; urls (array): pref ed3k.declineUrls, a change fetches them
     SetEd3kDeclined         = 1209,
 
     // -- Link Grabber (1210-1219, hoster.md "Link Grabber"), Ed3kHosterBridge.cpp. A package:
@@ -1078,6 +1080,17 @@ enum class IpcMsgType : int {
     /// [] -> [ok]; stops the crawls
     AbortGrabberCrawls      = 1218,
 
+    // -- Add account dialogs (Ed3kHosterCatalog, as JD's)
+    /// [] -> [ok, {hosts: [{host, name?, multi?, solver?}], asking: bool}]: every resolver plugin
+    /// that takes a premium account, as last known; asking: PushHosterCatalog {hosts} follows
+    GetHosterAccountHosts   = 1219,
+    /// [hosts: [string]] -> [ok, {icons: {host: bytes (PNG; empty: the site has none)}}]; the
+    /// others are fetched, a PushHosterCatalog {icons} each
+    GetHosterFavicons       = 1220,
+    /// [host, user, code] -> [ok]; the confirmation code a login asked for (any account check or a
+    /// download; PushHosterAccount error "code", any GUI shows it); empty code cancels. Local clients only
+    AnswerHosterAccountCode = 1221,
+
     // hoster links (1100-1109, hoster.md), Ed3kHosterBridge.cpp. An item: {id, url, host,
     // name, size, done, speed, state (Ed3kHosterJoin::State), reason (Ed3kHosterJoin::Reason, the
     // GUI words it), reasonArg (technical, not localized), waitUntil (ms), verified, file, root,
@@ -1102,7 +1115,9 @@ enum class IpcMsgType : int {
     /// [puzzle: int, text: string, skipHoster?: bool] -> [ok]; empty text skips the puzzle;
     /// skipHoster: also every later puzzle of that hoster, until a retry
     AnswerHosterPuzzle      = 1103,
-    /// [host, user, password] -> [ok]; PushHosterAccount follows. Local clients only (a password)
+    /// [host, user, password] -> [ok]; PushHosterAccount follows (first one with "login": URL when the
+    /// plugin waits for a browser login, or error "code" + codeText/codeTitle when it waits for a
+    /// confirmation code: AnswerHosterAccountCode). Empty password: the stored login. Local clients only (a password)
     CheckHosterAccount      = 1104,
     /// [] -> [ok]; fetches a Java runtime into the eMuleQt folder (PushEd3kStatus shows progress)
     DownloadJavaRuntime     = 1105,
@@ -1541,7 +1556,8 @@ enum class IpcMsgType : int {
     ///  container.grabbed: the links went to the Link Grabber (count), no dialog;
     ///  container.grab: a GrabLinks ask result
     PushHosterLinks        = 1153,
-    /// [host, user, {valid, premium, expires, trafficLeft, error}]
+    /// [host, user, {valid, premium, expires, trafficLeft, error}]; error "login": a browser login waits
+    /// ({login: URL, timeout: s}), "noLogin": no stored password
     PushHosterAccount      = 1154,
     /// [url, {status (Ed3kHosterJoin::LinkStatus: 1 online, 2 offline, 3 unknown), host, name,
     ///   size, account (0 none, 1 an account, 2 premium with traffic left)}] — a CheckHosterLinks result
@@ -1555,6 +1571,8 @@ enum class IpcMsgType : int {
     /// [{packages: [package], links: [link], removedPackages: [id], removedLinks: [id],
     ///   crawling: int, all: bool (replace the whole list)}] — coalesced, at most every 200 ms
     PushLinkGrabber        = 1190,
+    /// [{hosts: [...]} or {icons: {host: bytes}}] — see GetHosterAccountHosts, GetHosterFavicons
+    PushHosterCatalog      = 1191,
 
     // -- ed3k filter lists (batch 12), see GetEd3kFilters
     /// [] — followed lists, their versions or the own verdicts changed (a state push)

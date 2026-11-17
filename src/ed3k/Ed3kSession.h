@@ -20,6 +20,7 @@
 ///   then pump().
 
 #include "Ed3kDecline.h"
+#include "Ed3kDeclineUrls.h"
 #include "Ed3kFfi.h"
 #include "Ed3kHide.h"
 #include "Ed3kLan.h"
@@ -204,11 +205,28 @@ public:
     /// records held are dropped. Kept for a restart; decline.txt in stateDir() replaces it on
     /// every change of the file.
     void setDeclined(DeclineList list);
-    [[nodiscard]] const DeclineList& declined() const { return m_decline; }
+    // was: [[nodiscard]] const DeclineList& declined() const { return m_decline; }
+    /// The lists in force: decline.txt (or setDeclined), the URL lists' caches and the roots of
+    /// listed MD4s known here (setDeclineRootsOf). What joins, downloads and search check.
+    [[nodiscard]] const DeclineList& declined() const { return m_applied; }
+    /// decline.txt (or setDeclined) alone.
+    [[nodiscard]] const DeclineList& ownDeclined() const { return m_decline; }
     /// decline.txt read again now (the watcher does so too, a moment later); not running: no-op.
     void reloadDeclineFile();
     /// Held records the last list change dropped.
     [[nodiscard]] std::uint64_t declineDropped() const { return m_declineDropped; }
+    /// pref ed3k.declineUrls (declined-records.md §2 "Shared lists"): fetched while running,
+    /// cached beside decline.txt, merged into declined(). Empty: none.
+    void setDeclineUrls(const QStringList& urls);
+    [[nodiscard]] Ed3kDeclineUrls& declineUrls() { return *m_declineUrls; }
+    [[nodiscard]] const Ed3kDeclineUrls& declineUrls() const { return *m_declineUrls; }
+    /// Roots known here of a list's eD2K hashes (Ed3kShared): added to the roots handed to the
+    /// engine, which then refuses their uploads too. Asked at every apply.
+    using DeclineRootsOf = std::function<std::vector<::ed3k::Root>(const DeclineList& list)>;
+    void setDeclineRootsOf(DeclineRootsOf fn) { m_declineRootsOf = std::move(fn); }
+    /// The lists applied again soon (one apply for many calls): a root of a listed MD4 became
+    /// known. Not running: no-op.
+    void refreshDeclined();
 
     /// The JSON-RPC endpoints of a class (see Ed3kSettings); calls out keep their URL.
     void setRpcEndpoints(::ed3k::RpcClass cls, const QStringList& urls);
@@ -271,6 +289,9 @@ signals:
     /// eventPolled. eventPolled gets the node key's events only: a slot that does not know the
     /// anonymous key never takes its events for the node key's (hops.md §1).
     void keyedEventPolled(const ::ed3k::Event& event, ::ed3k::KeyKind key, bool* handled);
+    /// declined() changed and went to the engine: joins withdraw or publish again, search
+    /// rows are judged again.
+    void declinedChanged();
 
 private:
     void onReadyRead();
@@ -328,6 +349,10 @@ private:
     DeclineList m_decline;
     std::uint64_t m_declineDropped = 0;
     std::optional<DeclineList> m_declineFile;   ///< decline.txt as last read; nullopt: none
+    DeclineList m_applied;   ///< declined(): m_decline, the URL lists, roots of listed MD4s
+    std::unique_ptr<Ed3kDeclineUrls> m_declineUrls;
+    DeclineRootsOf m_declineRootsOf;
+    bool m_declineRefresh = false;   ///< refreshDeclined() queued
     QFileSystemWatcher m_declineWatch;   ///< decline.txt and m_dir (a file written anew)
     std::uint16_t m_port = 0;
     /// ED3K_EV_ENDPOINT per family, for status()

@@ -46,6 +46,8 @@ private slots:
     void declineListParsed();
     void declineListPrefixes();
     void declineFileReadAtStartAndOnChange();
+    void declinedChangedAfterApply();
+    void declineUrlCacheMerged();
 
 private:
     static Ed3kSettings loopback(const QString& dir);
@@ -714,6 +716,82 @@ void tst_Ed3kSession::declineFileReadAtStartAndOnChange()
     s.stop();
     // stopped: kept for the next start, no engine call
     s.setDeclined({});
+}
+
+// a list change goes to the engine, then declinedChanged; the same list again: no signal
+void tst_Ed3kSession::declinedChangedAfterApply()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    Ed3kSession s;
+    QSignalSpy changed(&s, &Ed3kSession::declinedChanged);
+    QVERIFY(s.start(loopback(dir.path())));
+    QCOMPARE(changed.count(), 0);   // nothing listed
+    DeclineList l;
+    l.roots.push_back(::ed3k::Root{});
+    l.roots.front().bytes[0] = 7;
+    s.setDeclined(l);
+    QCOMPARE(changed.count(), 1);
+    QVERIFY(s.declined().listsRoot(l.roots.front()));
+    s.setDeclined(l);
+    QCOMPARE(changed.count(), 1);
+    // the MD4 → root hook: its roots added for the engine, the user's list as it is
+    ::ed3k::Root known{};
+    known.bytes[0] = 9;
+    s.setDeclineRootsOf([known](const DeclineList& list) {
+        return list.ed2k.empty() ? std::vector<::ed3k::Root>{} : std::vector<::ed3k::Root>{known};
+    });
+    l.ed2k.push_back(::ed3k::Ed2kHash{});
+    s.setDeclined(l);
+    QCOMPARE(changed.count(), 2);
+    QVERIFY(s.declined().listsRoot(known));
+    QVERIFY(!s.ownDeclined().listsRoot(known));
+    s.stop();
+}
+
+// a URL list's cache (decline-url-<n>.txt with its URL on the first line) is merged; one of
+// another URL is not; a failed fetch keeps the cache
+void tst_Ed3kSession::declineUrlCacheMerged()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString state = stateDir(dir.path());
+    QVERIFY(QDir().mkpath(state));
+    // not http(s): the fetch fails at once (no network in the test)
+    const QString url = QStringLiteral("ftp://127.0.0.1/list.txt");
+    const auto cache = [&](int n, const QString& forUrl, const QByteArray& body) {
+        QFile f(QDir(state).filePath(Ed3kDeclineUrls::cacheName(n)));
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        f.write("# url: " + forUrl.toUtf8() + '\n' + body);
+    };
+    cache(0, url, QByteArrayLiteral("thunder\n") + QByteArray(64, 'b') + '\n');
+    cache(1, QStringLiteral("ftp://127.0.0.1/other.txt"), QByteArrayLiteral("hail\n"));
+    {
+        QFile f(QDir(state).filePath(QString::fromLatin1(kDeclineFile)));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("sleep\n");
+    }
+    Ed3kSession s;
+    s.setDeclineUrls({url, QStringLiteral("ftp://127.0.0.1/list2.txt")});
+    QSignalSpy changed(&s, &Ed3kSession::declinedChanged);
+    QVERIFY(s.start(loopback(dir.path())));
+    QCOMPARE(s.declined().keywords, (QStringList{QStringLiteral("sleep"), QStringLiteral("thunder")}));
+    QCOMPARE(s.declined().roots.size(), std::size_t(1));
+    QCOMPARE(s.ownDeclined().keywords, QStringList{QStringLiteral("sleep")});
+    QCOMPARE(s.declineUrls().status().size(), std::size_t(2));
+    QCOMPARE(s.declineUrls().status().at(0).entries, 2);
+    QVERIFY(s.declineUrls().status().at(0).fetchedAt > 0);
+    QCOMPARE(s.declineUrls().status().at(1).fetchedAt, qint64(0));
+    // the fetch fails: logged, the cache stays in use
+    QTRY_VERIFY_WITH_TIMEOUT(!s.declineUrls().status().at(0).error.isEmpty(), 10000);
+    QVERIFY(s.declined().keywords.contains(QStringLiteral("thunder")));
+    // the URL taken out: its list leaves, joins and search are told
+    const int before = changed.count();
+    s.setDeclineUrls({});
+    QCOMPARE(s.declined().keywords, QStringList{QStringLiteral("sleep")});
+    QCOMPARE(changed.count(), before + 1);
+    QVERIFY(!QFileInfo::exists(QDir(state).filePath(Ed3kDeclineUrls::cacheName(0))));
+    s.stop();
 }
 
 Ed3kSettings tst_Ed3kSession::loopback(const QString& dir)

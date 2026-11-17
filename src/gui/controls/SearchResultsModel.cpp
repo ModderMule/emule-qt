@@ -53,6 +53,8 @@ QString ed3kVerdictText(const SearchResultRow& r)
     QString text = ed3kVerdictName(r.ed3kVerdict);
     if (!text.isEmpty())
         text += QStringLiteral(" (%1)").arg(r.ed3kOwn ? SearchResultsModel::tr("own") : r.ed3kBy);
+    else if (r.ed3kHidden)
+        text = r.ed3kBy;   // no verdict: the core's decline.txt hides it
     if (r.ed3kHidden)
         text = SearchResultsModel::tr("Hidden: %1").arg(text);
     return text;

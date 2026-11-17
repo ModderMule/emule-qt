@@ -694,6 +694,8 @@ if(EMULE_ED3K)
     set_tests_properties(tst_Ed3kHoster PROPERTIES TIMEOUT 240)
     # the Link Grabber: crawls, grouping, edits, confirm, saving (fake resolver and join)
     emule_add_test(tst_LinkGrabber FOLDER "Ed3k" LIBRARIES eMule::Ed3k)
+    # Add account dialogs: account plugins + favicons of the resolver, kept on disk (fake resolver)
+    emule_add_test(tst_HosterCatalog FOLDER "Ed3k" LIBRARIES eMule::Ed3k)
     # JD's captcha solver plugins via the resolver: accounts + a test image (EMULE_HOSTER_LIVE=1, .env keys)
     if(EMULE_HOSTER_JD)
         emule_add_test(tst_HosterSolvers FOLDER "Ed3k" LIBRARIES eMule::Ed3k)
@@ -1287,13 +1289,31 @@ if(EMULE_HOSTER_JD)
                 "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/utils/ContainerDrop.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/app/ClickNLoadServer.cpp"
-                "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc")
+                "${CMAKE_SOURCE_DIR}/src/gui/utils/HosterIcons.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
+                "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc"
+                "${CMAKE_SOURCE_DIR}/resources/flags.qrc")
     target_include_directories(tst_HosterPanel PRIVATE
         "${CMAKE_SOURCE_DIR}/src/gui"
         "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
     target_link_libraries(tst_HosterPanel PRIVATE
         eMule::Core eMule::Ipc Qt6::Widgets)
 endif()
+# Add account dialogs: the site combo with the core's account plugins and favicons
+emule_add_test(tst_HosterCombo FOLDER "Gui"
+    SOURCES tst_HosterCombo.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/HosterCombo.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/HosterIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/KnownCores.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
+            "${CMAKE_SOURCE_DIR}/resources/flags.qrc")
+target_include_directories(tst_HosterCombo PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_HosterCombo PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
 
 # The add/edit category dialog. Constructed directly with a DownloadCategory, so
 # it needs the real dialog and DialogSizing but no daemon and no panel.
@@ -1348,6 +1368,8 @@ emule_add_test(tst_OptionsDialogSizing FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsSearch.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kOptionsPages.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/HosterCombo.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/HosterIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/OptionsTree.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/BtI2pPage.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/ClientIcons.cpp"
@@ -1603,6 +1625,8 @@ emule_add_test(tst_SmallScreenDialogs FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsSearch.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kOptionsPages.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/HosterCombo.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/HosterIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/OptionsTree.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/BtI2pPage.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/ClientIcons.cpp"

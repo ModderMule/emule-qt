@@ -187,6 +187,8 @@
     <ClCompile Include="..\..\src\gui\dialogs\MetaAccountDialog.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\OptionsDialog.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\Ed3kOptionsPages.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\HosterCombo.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\HosterIcons.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\BtI2pPage.cpp" />
     <ClCompile Include="..\..\src\gui\utils\ClientIcons.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\Ed3kFilterPage.cpp" />
@@ -283,6 +285,12 @@
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\dialogs\Ed3kOptionsPages.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\controls\HosterCombo.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\utils\HosterIcons.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\dialogs\BtI2pPage.h">

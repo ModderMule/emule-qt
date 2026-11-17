@@ -11,6 +11,7 @@
 #include "controls/TorrentFileTree.h"
 #include "utils/ClientIcons.h"
 #include "utils/Clipboard.h"
+#include "utils/CountryFlags.h"
 #include "utils/MenuUtils.h"
 #include "utils/PanelPoller.h"
 #include "utils/StatusBarNotifier.h"
@@ -28,6 +29,7 @@
 #include <QTimer>
 #include <QToolButton>
 #include <QTreeWidget>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include <array>
@@ -56,6 +58,18 @@ void setCell(QTreeWidgetItem* item, int column, const QString& text, const QVari
         item->setData(column, SortRole, sortKey);
     if (right)
         item->setTextAlignment(column, Qt::AlignRight | Qt::AlignVCenter);
+}
+
+/// Country flag in front of @p column's text (flag setting honoured); I2P icon for I2P rows
+/// (no location to show); key kept to skip repeats
+void setFlag(QTreeWidgetItem* item, int column, const QString& cc, bool i2p = false)
+{
+    constexpr int kCcRole = Qt::UserRole + 40;
+    const QString key = i2p ? QStringLiteral("i2p") : CountryFlags::showFlags() ? cc : QString();
+    if (item->data(column, kCcRole).toString() == key && !item->data(column, kCcRole).isNull())
+        return;
+    item->setData(column, kCcRole, key);
+    item->setIcon(column, i2p ? i2pIcon() : key.isEmpty() ? QIcon() : CountryFlags::flag(key));
 }
 
 QString percentText(double share)
@@ -407,6 +421,9 @@ void TorrentListsPane::applyPeers(const QCborArray& peers, const QCborArray& ed3
         setCell(item, PeerStatus, flags);
         item->setToolTip(PeerStatus, torrentPeerFlagsTooltip(flags));
         setCell(item, PeerAddress, address);
+        const QString cc = p.value(QStringLiteral("cc")).toString();
+        setFlag(item, PeerAddress, cc, i2p);
+        item->setToolTip(PeerAddress, i2p ? tr("I2P peer (anonymous, encrypted)") : CountryFlags::tooltip(cc));
         setCell(item, PeerClient, p.value(QStringLiteral("client")).toString());
         setCell(item, PeerDownloaded, formatByteSize(downloaded), QVariant::fromValue(downloaded), true);
         setCell(item, PeerUploaded, formatByteSize(uploaded), QVariant::fromValue(uploaded), true);
@@ -431,6 +448,8 @@ void TorrentListsPane::applyPeers(const QCborArray& peers, const QCborArray& ed3
         setCell(item, PeerStatus, e.stateText());
         item->setToolTip(PeerStatus, QString());
         setCell(item, PeerAddress, e.addressText());
+        setFlag(item, PeerAddress, e.cc);
+        item->setToolTip(PeerAddress, CountryFlags::tooltip(e.cc));
         setCell(item, PeerClient, e.software.isEmpty() ? e.name : QStringLiteral("%1 (%2)").arg(e.name, e.software));
         setCell(item, PeerDownloaded, formatByteSize(e.received), QVariant::fromValue(e.received), true);
         setCell(item, PeerUploaded, QString(), QVariant::fromValue(qint64(0)), true);
@@ -478,7 +497,10 @@ void TorrentListsPane::applyTrackers(const QCborArray& trackers)
             status = message.isEmpty() ? tr("Not contacted yet") : message;
         }
         setCell(item, TrackerUrl, url);
-        item->setToolTip(TrackerUrl, url);
+        const QString cc = t.value(QStringLiteral("cc")).toString();
+        setFlag(item, TrackerUrl, cc, QUrl(url).host().endsWith(QLatin1String(".i2p"), Qt::CaseInsensitive));
+        const QString country = CountryFlags::tooltip(cc);
+        item->setToolTip(TrackerUrl, country.isEmpty() ? url : url + u'\n' + country);
         setCell(item, TrackerTier, QString::number(tier + 1), tier, true);
         setCell(item, TrackerStatus, status);
         item->setToolTip(TrackerStatus, status);

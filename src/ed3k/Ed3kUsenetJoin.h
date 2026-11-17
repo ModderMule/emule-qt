@@ -124,7 +124,9 @@ public:
 
 public slots:
     void onItemAdded(const QString& itemId);
-    void onItemRemoved(const QString& itemId);
+    // was: void onItemRemoved(const QString& itemId);
+    /// @p deleteFiles: the user removed it with its files: its deleted rows end too (alias.md §3)
+    void onItemRemoved(const QString& itemId, bool deleteFiles = false);
     void onItemFinished(const QString& itemId, bool success, const QString& message);
     void onArticleDecoded(const QString& itemId, int fileIndex, qint64 offset, qint64 length, bool crcOk,
                           int partNumber, const QByteArray& rawYbeginLine, const QString& serverKey,

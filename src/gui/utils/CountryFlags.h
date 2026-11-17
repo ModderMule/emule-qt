@@ -80,8 +80,8 @@ void notifyChanged();
 /// A null @p base yields just the flag slot.
 [[nodiscard]] QIcon withFlag(const QIcon& base, const QString& cc);
 
-/// Widen column 0's decoration for the flag and repaint on setting changes.
-void bindFlagColumn(QAbstractItemView* view);
+/// Widen @p column's decoration for the flag and repaint on setting changes.
+void bindFlagColumn(QAbstractItemView* view, int column = 0);
 
 } // namespace CountryFlags
 

@@ -4,6 +4,8 @@
 /// @brief "Declined records" (ed3k Protocol.md §10.3, declined-records.md): edits the core's
 /// decline.txt over IPC (GetEd3kDeclined 1208 / SetEd3kDeclined 1209) and shows what the
 /// node loaded per list. No MFC original: a plain text dialog like the IP filter editor.
+/// Below it the URLs of shared lists (pref ed3k.declineUrls, one per line) and how each
+/// one's last fetch went.
 
 #include <QDialog>
 #include <QPointer>
@@ -11,6 +13,7 @@
 class QLabel;
 class QPlainTextEdit;
 class QPushButton;
+class QCborArray;
 class QCborMap;
 
 namespace eMule {
@@ -31,6 +34,8 @@ public:
     void fill(const QCborMap& state, bool withText = true);
     /// The counts line of @p loaded (tests).
     [[nodiscard]] static QString countsText(const QCborMap& loaded);
+    /// One line per URL of GetEd3kDeclined's urlStatus (tests).
+    [[nodiscard]] static QString urlStatusText(const QCborArray& status);
 
 private:
     void refresh();
@@ -41,6 +46,8 @@ private:
     QPlainTextEdit* m_edit = nullptr;
     QLabel* m_countsLabel = nullptr;
     QLabel* m_invalidLabel = nullptr;
+    QPlainTextEdit* m_urlsEdit = nullptr;
+    QLabel* m_urlStatusLabel = nullptr;
     QPushButton* m_okBtn = nullptr;
     QPushButton* m_applyBtn = nullptr;
 };

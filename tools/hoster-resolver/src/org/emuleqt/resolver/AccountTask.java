@@ -19,11 +19,14 @@ import org.jdownloader.plugins.controller.host.LazyHostPlugin;
 final class AccountTask extends Task {
     private final String host;
     private final Account account;
+    /** the user asked: a browser login goes to them (LoginSolver), else it fails */
+    private final boolean askLogin;
 
-    AccountTask(final long id, final String host, final Account account) {
+    AccountTask(final long id, final String host, final Account account, final boolean askLogin) {
         super(id);
         this.host = host;
         this.account = account;
+        this.askLogin = askLogin;
     }
 
     @Override
@@ -50,6 +53,12 @@ final class AccountTask extends Task {
         plugin.setLogger(Jd.quietLog(lazy.getDisplayName()));
         final jd.plugins.Account acc = account.toJd(lazy.getHost());
         final Map<String, Object> m = Out.event(id, "account");
+        // a browser login (OAuth device flow) goes to the user as a `login` event
+        if (askLogin) {
+            LoginSolver.checking(plugin, id);
+        }
+        // a confirmation code (2FA, a "new sign in" mail) always: the GUI shows it like a puzzle
+        CodeAsker.checking(id, host, acc.getUser());
         try {
             final AccountInfo ai = plugin.fetchAccountInfo(acc);
             final boolean expired = ai != null && ai.isExpired();
@@ -67,6 +76,9 @@ final class AccountTask extends Task {
             }
             if (ai != null && !ai.isUnlimitedTraffic() && ai.getTrafficLeft() >= 0) {
                 m.put("trafficLeft", ai.getTrafficLeft());
+                if (ai.getTrafficMax() > 0) {
+                    m.put("trafficMax", ai.getTrafficMax());
+                }
             }
             // a multi-hoster: the hosts it downloads, with their quotas
             if (ai != null && lazy.hasFeature(LazyPlugin.FEATURE.MULTIHOST) && ai.getMultiHostSupportV2() != null) {
@@ -83,7 +95,14 @@ final class AccountTask extends Task {
             }
         } catch (final jd.plugins.PluginException e) {
             m.put("valid", false);
+            // the plugin's reason ("OAuth Failed", "Your login informations are incorrect", ...)
+            final String why = e.getMessage();
+            if (why != null && !why.isBlank()) {
+                m.put("error", why.length() > 200 ? why.substring(0, 200) : why);
+            }
         } finally {
+            LoginSolver.done(plugin);
+            CodeAsker.done();
             plugin.clean();
         }
         Out.send(m);

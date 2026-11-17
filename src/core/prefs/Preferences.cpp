@@ -838,6 +838,7 @@ struct Preferences::Data {
     bool ed3kArchiveContents = true;   // hoster.md §6.1 contents records
     bool ed3kOwnSetsWatch = true;      // own sets' folders watched: a change publishes a new version
     QStringList ed3kCreditRpc;         // JSON-RPC endpoints; empty = off
+    QStringList ed3kDeclineUrls;       // decline lists fetched from URLs; empty = none
     QStringList ed3kChaintubeRpc;
     QStringList ed3kExtOff;            // extension names off at start
     bool ed3kLan = false;              // LAN discovery
@@ -2758,6 +2759,8 @@ void Preferences::setEd3kArchiveContents(bool val) { set(&Data::ed3kArchiveConte
 bool Preferences::ed3kOwnSetsWatch() const { return get(&Data::ed3kOwnSetsWatch); }
 void Preferences::setEd3kOwnSetsWatch(bool val) { set(&Data::ed3kOwnSetsWatch, val); }
 
+QStringList Preferences::ed3kDeclineUrls() const { return get(&Data::ed3kDeclineUrls); }
+void Preferences::setEd3kDeclineUrls(const QStringList& urls) { set(&Data::ed3kDeclineUrls, urls); }
 QStringList Preferences::ed3kCreditRpc() const { return get(&Data::ed3kCreditRpc); }
 void Preferences::setEd3kCreditRpc(const QStringList& urls) { set(&Data::ed3kCreditRpc, urls); }
 QStringList Preferences::ed3kChaintubeRpc() const { return get(&Data::ed3kChaintubeRpc); }
@@ -2904,12 +2907,16 @@ QList<Ed3kHosterAccount> hosterAccountsFromCbor(const QCborArray& rows, const QL
                             m.value(QStringLiteral("user")).toString().trimmed(), {}};
         if (a.host.isEmpty() || (needUser && a.user.isEmpty()))
             continue;
+        const auto o = std::ranges::find_if(old, [&a](const Ed3kHosterAccount& x) {
+            return x.host == a.host && x.user == a.user;
+        });
         if (m.contains(QStringLiteral("password")))
             a.password = m.value(QStringLiteral("password")).toString();
-        else if (auto o = std::ranges::find_if(old, [&a](const Ed3kHosterAccount& x) {
-                     return x.host == a.host && x.user == a.user;
-                 }); o != old.end())
+        else if (o != old.end())
             a.password = o->password;
+        // the session stays with an unchanged login
+        if (o != old.end() && o->password == a.password)
+            a.session = o->session;
         list.append(a);
     }
     return list;
@@ -6179,6 +6186,7 @@ bool Preferences::load(const QString& filePath)
             m_data->ed3kCreditRpc = urls(e3["creditRpc"]);
             m_data->ed3kChaintubeRpc = urls(e3["chaintubeRpc"]);
             m_data->ed3kExtOff = urls(e3["extOff"]);
+            m_data->ed3kDeclineUrls = urls(e3["declineUrls"]);
             m_data->ed3kLan = e3["lan"].as<bool>(m_data->ed3kLan);
             m_data->ed3kForceOpen = e3["forceOpen"].as<bool>(m_data->ed3kForceOpen);
             m_data->ed3kAutoIndexNode = e3["autoIndexNode"].as<bool>(m_data->ed3kAutoIndexNode);
@@ -6265,6 +6273,10 @@ bool Preferences::load(const QString& filePath)
                             if (a["passwordEncrypted"] && !m_data->notifyEmailEncKey.isEmpty())
                                 entry.password = aesDecryptFromBase64(
                                     QString::fromStdString(a["passwordEncrypted"].as<std::string>("")), m_data->notifyEmailEncKey);
+                            if (a["sessionEncrypted"] && !m_data->notifyEmailEncKey.isEmpty())
+                                entry.session = aesDecryptFromBase64(
+                                    QString::fromStdString(a["sessionEncrypted"].as<std::string>("")), m_data->notifyEmailEncKey)
+                                                    .toUtf8();
                             if (!entry.host.isEmpty() && (!needUser || !entry.user.isEmpty()))
                                 list.append(entry);
                         }
@@ -7680,6 +7692,7 @@ QByteArray Preferences::encode() const
     for (const auto& [key, list] : {std::pair{"creditRpc", &m_data->ed3kCreditRpc},
                                     std::pair{"chaintubeRpc", &m_data->ed3kChaintubeRpc},
                                     std::pair{"extOff", &m_data->ed3kExtOff},
+                                    std::pair{"declineUrls", &m_data->ed3kDeclineUrls},
                                     std::pair{"nodeLists", &m_data->ed3kNodeLists}}) {
         out << YAML::Key << key << YAML::Value << YAML::BeginSeq;
         for (const QString& u : *list)
@@ -7755,6 +7768,9 @@ QByteArray Preferences::encode() const
                 if (!a.password.isEmpty() && !encKey.isEmpty())
                     out << YAML::Key << "passwordEncrypted" << YAML::Value
                         << aesEncryptToBase64(a.password, encKey).toStdString();
+                if (!a.session.isEmpty() && !a.password.isEmpty() && !encKey.isEmpty())
+                    out << YAML::Key << "sessionEncrypted" << YAML::Value
+                        << aesEncryptToBase64(QString::fromUtf8(a.session), encKey).toStdString();
                 out << YAML::EndMap;
             }
             out << YAML::EndSeq;

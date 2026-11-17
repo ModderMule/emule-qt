@@ -485,10 +485,22 @@ Ed3kResolver::TaskId Ed3kJdResolver::open(const QString& url, const std::optiona
 
 Ed3kResolver::TaskId Ed3kJdResolver::accountCheck(const QString& host, const ResolverAccount& account)
 {
-    return request({{QStringLiteral("op"), QStringLiteral("accountCheck")},
+    QJsonObject req{{QStringLiteral("op"), QStringLiteral("accountCheck")},
                     {QStringLiteral("host"), host},
-                    {QStringLiteral("account"), accountJson(account)}},
-                   true);
+                    {QStringLiteral("account"), accountJson(account)}};
+    if (account.askLogin)
+        req.insert(QStringLiteral("askLogin"), true);
+    return request(req, true);
+}
+
+Ed3kResolver::TaskId Ed3kJdResolver::accountHosts()
+{
+    return request({{QStringLiteral("op"), QStringLiteral("accountHosts")}}, true);
+}
+
+Ed3kResolver::TaskId Ed3kJdResolver::favicon(const QString& host)
+{
+    return request({{QStringLiteral("op"), QStringLiteral("favicon")}, {QStringLiteral("host"), host}}, true);
 }
 
 Ed3kResolver::TaskId Ed3kJdResolver::sites(const QString& host)
@@ -522,6 +534,14 @@ void Ed3kJdResolver::answerPuzzle(std::uint64_t puzzle, const QString& text)
         send({{QStringLiteral("op"), QStringLiteral("answer")},
               {QStringLiteral("puzzle"), static_cast<qint64>(puzzle)},
               {QStringLiteral("text"), text}});
+}
+
+void Ed3kJdResolver::answerCode(TaskId task, const QString& code)
+{
+    if (running())
+        send({{QStringLiteral("op"), QStringLiteral("answerCode")},
+              {QStringLiteral("task"), static_cast<qint64>(task)},
+              {QStringLiteral("text"), code}});
 }
 
 void Ed3kJdResolver::cancel(TaskId task)
@@ -588,7 +608,9 @@ std::optional<std::pair<Ed3kResolver::TaskId, ResolverEvent>> Ed3kJdResolver::pa
         {QStringLiteral("error"), K::Failed},        {QStringLiteral("cancelled"), K::Cancelled},
         {QStringLiteral("account"), K::Account},    {QStringLiteral("sites"), K::Sites},
         {QStringLiteral("status"), K::Status},       {QStringLiteral("solvers"), K::Solvers},
-        {QStringLiteral("solved"), K::Solved}};
+        {QStringLiteral("solved"), K::Solved},       {QStringLiteral("login"), K::Login},
+        {QStringLiteral("accountHosts"), K::AccountHosts}, {QStringLiteral("favicon"), K::Icon},
+        {QStringLiteral("code"), K::Code}};
     const auto k = kinds.find(ev);
     if (k == kinds.end())
         return std::nullopt;
@@ -616,7 +638,7 @@ std::optional<std::pair<Ed3kResolver::TaskId, ResolverEvent>> Ed3kJdResolver::pa
     e.timeoutS = int(u64("timeout"));
     if (e.kind == K::Wait && e.text.isEmpty())
         e.text = str("reason");
-    if (e.kind == K::Puzzle)
+    if (e.kind == K::Puzzle || e.kind == K::Icon)
         e.image = QByteArray::fromBase64(str("image").toLatin1());
     for (const QJsonValue& v : o.value(QStringLiteral("links")).toArray()) {
         const QJsonObject l = v.toObject();
@@ -638,6 +660,7 @@ std::optional<std::pair<Ed3kResolver::TaskId, ResolverEvent>> Ed3kJdResolver::pa
     e.premium = o.value(QStringLiteral("premium")).toBool();
     e.expires = o.value(QStringLiteral("expires")).toInteger(0);
     e.trafficLeft = o.contains(QStringLiteral("trafficLeft")) ? o.value(QStringLiteral("trafficLeft")).toInteger(-1) : -1;
+    e.trafficMax = o.value(QStringLiteral("trafficMax")).toInteger(-1);
     e.maxDownloads = int(o.value(QStringLiteral("maxDownloads")).toInteger(0));
     e.balance = o.value(QStringLiteral("balance")).toDouble(-1);
     e.currency = str("currency");
@@ -645,7 +668,28 @@ std::optional<std::pair<Ed3kResolver::TaskId, ResolverEvent>> Ed3kJdResolver::pa
         e.host = str("solver");
         e.name = str("expected");
     }
+    if (e.kind == K::Login)
+        e.text = str("url");
+    if (e.kind == K::Code) {
+        e.name = str("title");
+        e.user = str("user");
+    }
+    if (e.kind == K::AccountHosts) {
+        for (const QJsonValue& v : o.value(QStringLiteral("hosts")).toArray()) {
+            const QJsonObject h = v.toObject();
+            AccountHost a{h.value(QStringLiteral("host")).toString().toLower(), h.value(QStringLiteral("name")).toString(),
+                          h.value(QStringLiteral("multi")).toBool(), h.value(QStringLiteral("solver")).toBool(), {}};
+            for (const QJsonValue& sub : h.value(QStringLiteral("subs")).toArray())
+                if (const QString n = sub.toString().toLower(); !n.isEmpty() && a.subs.size() < 8)
+                    a.subs.append(n);
+            if (!a.host.isEmpty())
+                e.accountHosts.append(a);
+        }
+    }
     if (e.kind == K::Account) {
+        // the plugin's login error, when invalid
+        if (!e.valid)
+            e.text = str("error");
         e.multi = o.value(QStringLiteral("multi")).toBool();
         for (const QJsonValue& v : o.value(QStringLiteral("hosts")).toArray()) {
             const QJsonObject h = v.toObject();
@@ -1193,6 +1237,12 @@ void Ed3kJdResolver::logEvent(TaskId id, const QString& ev, const ResolverEvent&
     case K::Puzzle:
         d = QStringLiteral("puzzle %1 of %2, %3 s to answer").arg(e.puzzle).arg(e.host).arg(e.timeoutS);
         break;
+    case K::Login:
+        d = QStringLiteral("browser login at %1, %2 s").arg(e.host).arg(e.timeoutS);
+        break;
+    case K::Code:
+        d = QStringLiteral("confirmation code, %1 s").arg(e.timeoutS);   // the site's words stay out
+        break;
     case K::Done:
         d = QStringLiteral("'%1', %2 B").arg(e.name).arg(e.size);
         break;
@@ -1212,6 +1262,8 @@ void Ed3kJdResolver::logEvent(TaskId id, const QString& ev, const ResolverEvent&
                                           : QString());
         if (e.multi)
             d += QStringLiteral(", multi-hoster for %1 hosts").arg(e.hosts.size());
+        if (!e.valid && !e.text.isEmpty())
+            d += QStringLiteral(" (%1)").arg(e.text);
         break;
     case K::Solvers: {
         QStringList parts;
@@ -1223,6 +1275,12 @@ void Ed3kJdResolver::logEvent(TaskId id, const QString& ev, const ResolverEvent&
     }
     case K::Solved:
         d = QStringLiteral("by %1").arg(e.host);   // the answer stays out
+        break;
+    case K::AccountHosts:
+        d = QStringLiteral("%1 hoster(s)").arg(e.accountHosts.size());
+        break;
+    case K::Icon:
+        d = QStringLiteral("%1, %2 B").arg(e.host).arg(e.image.size());
         break;
     case K::Gone:
     case K::Cancelled:

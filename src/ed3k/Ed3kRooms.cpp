@@ -17,6 +17,7 @@
 #include <QFile>
 #include <QRandomGenerator>
 #include <QRegularExpression>
+#include <QUrl>
 #include <QUrlQuery>
 
 #include <openssl/evp.h>
@@ -264,8 +265,9 @@ ffi::Result<ffi::Room> Ed3kRooms::join(const QString& link, const QString& nick)
     if (!m_session.engine())
         return std::unexpected(ffi::Error::State);
     const QString l = link.trimmed();
+    // the same room by key + id: a link with another dn or case is no new join
     for (const auto& [room, r] : m_rooms)
-        if (r.link == l) {
+        if (sameRoomLink(r.link, l)) {
             // hops.md §1: a room of the anonymous key is not joined under the node key
             if (r.waitingHide)
                 return std::unexpected(ffi::Error::State);
@@ -1153,6 +1155,32 @@ std::optional<Seed> Ed3kRooms::newSecret(const QString& name) const
     if (!seed)
         logEd3kWarning(QStringLiteral("ed3k: no room secret (%1)").arg(err));
     return seed;
+}
+
+QString Ed3kRooms::linkWithName(const QString& link, const QString& title)
+{
+    const QString name = title.trimmed();
+    const qsizetype q = link.indexOf(QLatin1Char('?'));
+    if (name.isEmpty() || q < 0)
+        return link;
+    // parameters kept as written (s among them); only dn replaced
+    QStringList items;
+    for (const QString& item : link.mid(q + 1).split(QLatin1Char('&'), Qt::SkipEmptyParts))
+        if (!item.startsWith(QLatin1String("dn="), Qt::CaseInsensitive))
+            items << item;
+    items << QStringLiteral("dn=") + QString::fromLatin1(QUrl::toPercentEncoding(name));
+    return link.left(q + 1) + items.join(QLatin1Char('&'));
+}
+
+bool Ed3kRooms::sameRoomLink(const QString& a, const QString& b)
+{
+    const auto ident = [](const QString& link) {
+        const qsizetype q = link.indexOf(QLatin1Char('?'));
+        const QUrlQuery query(q < 0 ? QString() : link.mid(q + 1));
+        return std::pair{query.queryItemValue(QStringLiteral("key")).toLower(), query.queryItemValue(QStringLiteral("id")).toLower()};
+    };
+    const auto x = ident(a);
+    return !x.first.isEmpty() && !x.second.isEmpty() && x == ident(b);
 }
 
 std::optional<ffi::Key32> Ed3kRooms::linkKey(const QString& link)

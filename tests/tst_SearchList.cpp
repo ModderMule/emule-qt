@@ -156,6 +156,7 @@ private slots:
     void kadKeywordResult_keepsTheBestPublishTrust();
     void fakeVerdict_followsTheNamesOfAHash();
     void fakeVerdict_followsSpamMarkAndNotes();
+    void fakeVerdict_spamMarkLowersPublisherFiles();
     void fakeVerdict_usesNamesOnRecord();
     void recalculateSpamRatings_signalsAChange();
     void spamRating_smallArchiveWithOneSourceIsClean();
@@ -2560,6 +2561,54 @@ void tst_SearchList::fakeVerdict_followsSpamMarkAndNotes()
     QVERIFY(verdict.has(FakeReason::BadSignalComment));
     QVERIFY(verdict.has(FakeReason::BadRating));
     QVERIFY(verdict.score >= 35);
+}
+
+// ed3k: marking a row as spam costs every row of that publisher confidence, in every tab
+void tst_SearchList::fakeVerdict_spamMarkLowersPublisherFiles()
+{
+    eMule::testing::TempDir tempDir;
+    SearchList list;
+    list.loadSpamFilter(tempDir.path());
+    const uint32 tabA = list.newSearch({}, SearchParams{});
+    const uint32 tabB = list.newSearch({}, SearchParams{});
+    const QByteArray spammer(16, 's');
+    const QByteArray honest(16, 'h');
+    const auto addRow = [&list](uint32 id, char fill, const QString& name, const QByteArray& publisher) {
+        uint8 hash[16];
+        std::memset(hash, fill, 16);
+        const QByteArray data = buildSingleResultPacket(hash, name, 700u << 20);
+        SafeMemFile mem(data);
+        auto* file = new SearchFile(mem, true);
+        file->setSearchID(id);
+        file->setEd3k(QByteArray(32, fill), {});
+        file->setEd3kPublisher(publisher);
+        list.addToList(file);
+        return list.searchFileByHash(hash, id);
+    };
+    SearchFile* marked = addRow(tabA, 0x31, QStringLiteral("Some Film 2024.mkv"), spammer);
+    SearchFile* sibling = addRow(tabB, 0x32, QStringLiteral("Other Film 2023.mkv"), spammer);
+    SearchFile* clean = addRow(tabB, 0x33, QStringLiteral("Third Film 2022.mkv"), honest);
+    QVERIFY(marked && sibling && clean);
+    QCOMPARE(sibling->fakeVerdict().band, Confidence::LooksGood);
+
+    QSignalSpy updated(&list, &SearchList::resultUpdated);
+    list.markFileAsSpam(marked, true);
+    QVERIFY(sibling->fakeVerdict().reasons.contains({FakeReason::SpamPublisher, 40}));
+    QCOMPARE(sibling->fakeVerdict().band, Confidence::Caution);
+    QVERIFY(!sibling->isConsideredSpam());   // lowered, not marked
+    QVERIFY(!clean->fakeVerdict().has(FakeReason::SpamPublisher));
+    QVERIFY(std::any_of(updated.cbegin(), updated.cend(),
+                        [sibling](const QList<QVariant>& a) { return a.at(0).value<SearchFile*>() == sibling; }));
+
+    // kept in SearchSpam.met
+    list.saveSpamFilter(tempDir.path());
+    SearchList loaded;
+    loaded.loadSpamFilter(tempDir.path());
+    QVERIFY(loaded.m_knownSpamPublishers.contains(spammer));
+
+    list.markFileAsNotSpam(marked, true);
+    QVERIFY(!sibling->fakeVerdict().has(FakeReason::SpamPublisher));
+    QCOMPARE(sibling->fakeVerdict().band, Confidence::LooksGood);
 }
 
 // A row of a tab the GUI restored from disk: no search holds it (searchID 0)

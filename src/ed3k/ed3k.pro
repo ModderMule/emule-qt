@@ -35,6 +35,8 @@ SOURCES += \
     Ed3kDownloadsWeb.cpp \
     Ed3kSearch.cpp \
     Ed3kChain.cpp \
+    Ed3kDecline.cpp \
+    Ed3kDeclineUrls.cpp \
     Ed3kFilters.cpp \
     Ed3kUploads.cpp \
     Ed3kFriends.cpp \
@@ -50,6 +52,7 @@ SOURCES += \
     Ed3kPaid.cpp \
     Ed3kPaidSeller.cpp \
     Ed3kHosterJoin.cpp \
+    Ed3kHosterCatalog.cpp \
     Ed3kLinkGrabber.cpp \
     Ed3kHosterUnpack.cpp \
     Ed3kArchiveContents.cpp \
@@ -74,6 +77,8 @@ HEADERS += \
     Ed3kDownloads.h \
     Ed3kSearch.h \
     Ed3kChain.h \
+    Ed3kDecline.h \
+    Ed3kDeclineUrls.h \
     Ed3kFilters.h \
     Ed3kUploads.h \
     Ed3kFfi.h \
@@ -91,6 +96,7 @@ HEADERS += \
     Ed3kPaidSeller.h \
     Ed3kProto.h \
     Ed3kHosterJoin.h \
+    Ed3kHosterCatalog.h \
     Ed3kLinkGrabber.h \
     Ed3kHosterUnpack.h \
     Ed3kArchiveContents.h \

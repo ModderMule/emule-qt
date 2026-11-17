@@ -43,6 +43,8 @@ Ed3kSearch::Ed3kSearch(Ed3kSession& session, QObject* parent)
                     onEventPolled(ev, key, handled);
             },
             Qt::DirectConnection);
+    // declined-records.md §2: rows of a root or MD4 listed now are hidden, others shown again
+    connect(&m_session, &Ed3kSession::declinedChanged, this, [this] { (void)rejudge(); }, Qt::QueuedConnection);
 }
 
 Ed3kSearch::~Ed3kSearch() = default;
@@ -170,7 +172,8 @@ bool Ed3kSearch::applyVerdict(SearchFile& file, const Verdict& v)
 
 int Ed3kSearch::rejudge()
 {
-    if (!m_judge || !theApp.searchList)
+    // was: if (!m_judge || !theApp.searchList)
+    if (!theApp.searchList)
         return 0;
     int changed = 0;
     theApp.searchList->updateResults([&](SearchFile* f) {
@@ -187,7 +190,8 @@ int Ed3kSearch::rejudge()
                         found.publisher.bytes.begin());
         found.size = std::uint64_t(f->fileSize());
         found.name = f->fileName().toStdString();
-        if (!applyVerdict(*f, m_judge(found)))
+        // was: if (!applyVerdict(*f, m_judge(found)))
+        if (!applyVerdict(*f, judge(found)))
             return false;
         ++changed;
         return true;
@@ -350,7 +354,8 @@ void Ed3kSearch::onEventPolled(const ::ed3k::Event& event, ::ed3k::KeyKind key, 
     for (const auto& f : found->files) {
         // filter lists (batch 12, G): marked rows shown as spam, hidden ones kept hidden
         // was: hidden rows were dropped (if (judged == Judged::Hide) continue;)
-        const Verdict judged = m_judge ? m_judge(f) : Verdict{};
+        // was: const Verdict judged = m_judge ? m_judge(f) : Verdict{};
+        const Verdict judged = judge(f);
         const auto a = avail.find(bytesOf(f.root.bytes));
         if (auto row = toSearchFile(f, a != avail.end() ? &a->second : nullptr)) {
             (void)applyVerdict(*row, judged);
@@ -388,7 +393,8 @@ void Ed3kSearch::onLiveFound(uint32 searchID, Run& run, const ::ed3k::event::Kad
         auto row = toSearchFile(f, a != avail.end() ? &a->second : nullptr);
         if (!row)
             continue;
-        (void)applyVerdict(*row, m_judge ? m_judge(f) : Verdict{});
+        // was: (void)applyVerdict(*row, m_judge ? m_judge(f) : Verdict{});
+        (void)applyVerdict(*row, judge(f));
         ++candidates;
         if (!m_liveFetch) {
             applyChannel(*row, nullptr);
@@ -477,6 +483,21 @@ void Ed3kSearch::addResult(uint32 searchID, std::unique_ptr<SearchFile> file)
         return;
     theApp.searchList->addMetaSearchResult(searchID, file.release());
     emit theApp.searchList->tabHeaderUpdated(searchID);
+}
+
+Ed3kSearch::Verdict Ed3kSearch::judge(const ::ed3k::FoundFile& found) const
+{
+    // declined-records.md §2 "Downloads": a root or eD2K hash of the decline lists hides the row
+    const auto& d = m_session.declined();
+    const bool byRoot = d.listsRoot(found.root);
+    if (byRoot || (found.ed2k && d.listsEd2k(*found.ed2k))) {
+        Verdict v;
+        v.judged = Judged::Hide;
+        v.shown.by = QString::fromLatin1(kDeclineFile);
+        v.shown.reason = byRoot ? QStringLiteral("its root is declined") : QStringLiteral("its eD2K hash is declined");
+        return v;
+    }
+    return m_judge ? m_judge(found) : Verdict{};
 }
 
 } // namespace eMule::ed3k

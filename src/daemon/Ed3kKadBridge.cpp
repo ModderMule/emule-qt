@@ -236,7 +236,24 @@ QCborMap declineState()
     QCborArray invalid;
     for (const QString& line : list.invalid)
         invalid.append(line);
+    // declined-records.md §2 "Shared lists": the URLs and how their last fetch went
+    QCborArray urls;
+    for (const QString& u : thePrefs.ed3kDeclineUrls())
+        urls.append(u);
+    QCborArray urlStatus;
+    if (s_session)
+        for (const auto& st : s_session->declineUrls().status())
+            urlStatus.append(QCborMap{
+                {QStringLiteral("url"), st.url},
+                {QStringLiteral("fetchedAt"), st.fetchedAt},
+                {QStringLiteral("triedAt"), st.triedAt},
+                {QStringLiteral("error"), st.error},
+                {QStringLiteral("entries"), st.entries},
+                {QStringLiteral("fetching"), st.fetching},
+            });
     return QCborMap{
+        {QStringLiteral("urls"), urls},
+        {QStringLiteral("urlStatus"), urlStatus},
         {QStringLiteral("text"), text},
         {QStringLiteral("running"), running},
         {QStringLiteral("loaded"), QCborMap{
@@ -302,6 +319,19 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
         return true;
     }
     if (t == IpcMsgType::SetEd3kDeclined) {
+        // field 1: the URL lists (pref ed3k.declineUrls), fetched again when changed
+        if (msg.fieldCount() > 1) {
+            QStringList urls;
+            for (const auto& v : msg.fieldArray(1))
+                if (const QString u = v.toString().trimmed(); !u.isEmpty() && !urls.contains(u))
+                    urls << u;
+            if (urls != thePrefs.ed3kDeclineUrls()) {
+                thePrefs.setEd3kDeclineUrls(urls);
+                thePrefs.saveInBackground();
+            }
+            if (s_session)
+                s_session->setDeclineUrls(urls);
+        }
         if (const QString error = writeDecline(msg.fieldString(0)); !error.isEmpty()) {
             logWarning(QStringLiteral("ed3k: %1").arg(error));
             reply(failure(seq, int(ffi::Error::Io), error));

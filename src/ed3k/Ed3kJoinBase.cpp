@@ -285,6 +285,11 @@ Ed3kJoinBase::Ed3kJoinBase(Ed3kSession& session, const QString& configDir, QStri
             },
             Qt::DirectConnection);
     connect(&m_session, &Ed3kSession::statusChanged, this, &Ed3kJoinBase::onSessionStatus);
+    // declined-records.md §2: a list change takes back (or puts out again) what is published
+    connect(&m_session, &Ed3kSession::declinedChanged, this, [this] {
+        if (m_started)
+            onDeclinedChanged();
+    });
     connect(&m_session.hide(), &Ed3kHide::started, this, [this] { hideChanged(true); });
     connect(&m_session.hide(), &Ed3kHide::stopped, this, [this] { hideChanged(false); });
     ++turns().users;
@@ -587,7 +592,8 @@ std::vector<Ed3kJoinBase::JoinOwner> Ed3kJoinBase::aliasJobsAt(const Ed3kSession
     std::vector<JoinOwner> out;
     const auto add = [&out](const QString& tag, const QString& owner) {
         JoinOwner j{tag, owner};
-        if (!owner.isEmpty() && !std::ranges::contains(out, j))
+        // find, not ranges::contains: GCC 12 (Ubuntu 22.04 build) lacks it
+        if (!owner.isEmpty() && std::ranges::find(out, j) == out.end())
             out.push_back(std::move(j));
     };
     for (const Ed3kJoinBase* join : turnsOf(session).joins) {
@@ -606,7 +612,8 @@ std::vector<Ed3kJoinBase::JoinOwner> Ed3kJoinBase::networkJobsAt(const Ed3kSessi
     std::vector<JoinOwner> out;
     const auto add = [&out](const QString& tag, const QString& owner) {
         JoinOwner j{tag, owner};
-        if (!owner.isEmpty() && !std::ranges::contains(out, j))
+        // find, not ranges::contains: GCC 12 (Ubuntu 22.04 build) lacks it
+        if (!owner.isEmpty() && std::ranges::find(out, j) == out.end())
             out.push_back(std::move(j));
     };
     for (const Ed3kJoinBase* join : turnsOf(session).joins) {
@@ -763,6 +770,8 @@ void Ed3kJoinBase::unshare(const ffi::Root& root)
     if (auto* e = m_session.engine())
         (void)e->fileClose(m_session.now(), root);
     m_shared.erase(it);
+    m_publishInfo.erase(root);
+    m_declinedOut.erase(root);
 }
 
 void Ed3kJoinBase::unshareOwner(const QString& owner)
@@ -804,7 +813,16 @@ std::expected<ffi::Publish, ffi::Error> Ed3kJoinBase::publishShared(const ffi::F
     // declined-records.md §2: nothing put out for a root (or eD2K hash) this node declines
     if (const auto& d = m_session.declined(); d.listsRoot(info.root) || (info.ed2k && d.listsEd2k(*info.ed2k))) {
         logInfo(QStringLiteral("\"%1\" not published: declined (%2)").arg(QString::fromStdString(info.name), QString::fromLatin1(kDeclineFile)));
+        // published once the list lets it (onDeclinedChanged)
+        if (m_keepPublishInfo) {
+            m_publishInfo.insert_or_assign(info.root, info);
+            m_declinedOut.insert(info.root);
+        }
         return std::unexpected(ffi::Error::Denied);
+    }
+    if (m_keepPublishInfo) {
+        m_publishInfo.insert_or_assign(info.root, info);
+        m_declinedOut.erase(info.root);
     }
     const auto t = m_session.now();
     const auto mode = m_holdBack ? ffi::Publish::Source : ffi::Publish::Both;
@@ -828,6 +846,9 @@ std::expected<ffi::Publish, ffi::Error> Ed3kJoinBase::publishShared(const ffi::F
 
 void Ed3kJoinBase::unpublishShared(const ffi::Root& root, ffi::Publish mode)
 {
+    // taken back on purpose: not published again by a list change
+    m_publishInfo.erase(root);
+    m_declinedOut.erase(root);
     auto* e = m_session.engine();
     if (!e)
         return;
@@ -838,6 +859,48 @@ void Ed3kJoinBase::unpublishShared(const ffi::Root& root, ffi::Publish mode)
     } else {
         (void)e->unpublish(t, root, mode);
     }
+}
+
+void Ed3kJoinBase::onDeclinedChanged()
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return;
+    const auto& d = m_session.declined();
+    const auto t = m_session.now();
+    int out = 0;
+    int again = 0;
+    std::vector<ffi::FileInfo> republish;
+    for (auto it = m_publishInfo.begin(); it != m_publishInfo.end();) {
+        const ffi::Root root = it->first;
+        // gone meanwhile (forgetShare, hiding off)
+        if (!isShared(root)) {
+            m_declinedOut.erase(root);
+            it = m_publishInfo.erase(it);
+            continue;
+        }
+        const bool listed = d.listsRoot(root) || (it->second.ed2k && d.listsEd2k(*it->second.ed2k));
+        const bool isOut = m_declinedOut.contains(root);
+        if (listed && !isOut) {
+            // source, keywords (Keywords ends its ALIAS records too), note
+            const ffi::FileInfo info = it->second;
+            const bool anon = keyOf(root) == ffi::KeyKind::Anon;
+            unpublishShared(root, ffi::Publish::Both);
+            (void)(anon ? e->anonUnpublishNote(t, root) : e->unpublishNote(t, root));
+            it = m_publishInfo.insert_or_assign(root, info).first;
+            m_declinedOut.insert(root);
+            ++out;
+        } else if (!listed && isOut) {
+            republish.push_back(it->second);
+        }
+        ++it;
+    }
+    for (const ffi::FileInfo& info : republish)
+        if (publishShared(info))
+            ++again;
+    if (out > 0 || again > 0)
+        logInfo(QStringLiteral("decline list changed: %1 file(s) withdrawn, %2 published again").arg(out).arg(again));
+    pumpSession();
 }
 
 ffi::KeyKind Ed3kJoinBase::keyFor(const ffi::Root& root) const
@@ -1229,12 +1292,14 @@ void Ed3kJoinBase::endDeleted(const ffi::Root& root, const QString& why)
 
 bool Ed3kJoinBase::isDeleted(const ffi::Root& root) const
 {
-    return std::ranges::contains(deletedRows(), root, &DeletedFile::root);
+    const auto& rows = deletedRows();
+    return std::ranges::find(rows, root, &DeletedFile::root) != rows.end();
 }
 
 bool Ed3kJoinBase::hasDeleted(const QString& owner) const
 {
-    return std::ranges::contains(deletedRows(), owner, &DeletedFile::owner);
+    const auto& rows = deletedRows();
+    return std::ranges::find(rows, owner, &DeletedFile::owner) != rows.end();
 }
 
 std::vector<Ed3kJoinBase::DeletedFile> Ed3kJoinBase::deletedOf(const QString& owner) const
@@ -1471,6 +1536,8 @@ void Ed3kJoinBase::closeAll()
     m_setSearches.clear();
     m_setTries.clear();
     m_shared.clear();
+    m_publishInfo.clear();
+    m_declinedOut.clear();
     m_started = false;
 }
 

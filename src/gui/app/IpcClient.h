@@ -501,6 +501,8 @@ signals:
     void hosterLinksExpanded(const Ipc::IpcMessage& msg);
     /// [host, user, {valid, premium, expires, trafficLeft, error}] — a login was checked.
     void hosterAccountChecked(const Ipc::IpcMessage& msg);
+    /// PushHosterCatalog: account plugins or favicons came (HosterIcons)
+    void hosterCatalogChanged(const Ipc::IpcMessage& msg);
     /// [url, {status, host, name, size, account}] — a CheckHosterLinks result.
     void hosterLinkChecked(const Ipc::IpcMessage& msg);
     /// PushLinkGrabber: the Link Grabber list changed

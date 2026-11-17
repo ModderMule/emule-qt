@@ -1067,6 +1067,12 @@ void SearchList::markFileAsSpam(SearchFile* file, bool addToFilter)
     assess(file->listParent() ? file->listParent() : file);
     stamp(file);
     emit spamStatusChanged(file);
+
+    // ed3k: the publisher's other files lose confidence in every tab
+    if (addToFilter && file->ed3kPublisher().size() == 16 && !m_knownSpamPublishers.contains(file->ed3kPublisher())) {
+        m_knownSpamPublishers.insert(file->ed3kPublisher());
+        reassessPublisher(file->ed3kPublisher());
+    }
 }
 
 void SearchList::markFileAsNotSpam(SearchFile* file, bool removeFromFilter)
@@ -1100,6 +1106,9 @@ void SearchList::markFileAsNotSpam(SearchFile* file, bool removeFromFilter)
     assess(file->listParent() ? file->listParent() : file);
     stamp(file);
     emit spamStatusChanged(file);
+
+    if (removeFromFilter && m_knownSpamPublishers.remove(file->ed3kPublisher()))
+        reassessPublisher(file->ed3kPublisher());
 }
 
 void SearchList::recalculateSpamRatings(uint32 searchID)
@@ -1151,7 +1160,8 @@ void SearchList::saveSpamFilter(const QString& configDir) const
             + m_knownSpamHashes.size()
             + m_knownSpamServerIPs.size()
             + m_knownSpamSourcesIPs.size()
-            + m_udpServerRecords.size()));
+            + m_udpServerRecords.size()
+            + static_cast<std::size_t>(m_knownSpamPublishers.size())));
 
         for (const auto& name : m_knownSpamNames)
             Tag(static_cast<uint8>(SP_FILEFULLNAME), name).writeNewEd2kTag(file, UTF8Mode::OptBOM);
@@ -1175,6 +1185,9 @@ void SearchList::saveSpamFilter(const QString& configDir) const
             pokeUInt32(buf + 8, record.spamResults);
             Tag(static_cast<uint8>(SP_UDPSERVERSPAMRATIO), blob).writeNewEd2kTag(file);
         }
+        // own tag id: MFC/eMuleAI skip it on load
+        for (const QByteArray& id : m_knownSpamPublishers)
+            Tag(static_cast<uint8>(SP_ED3KPUBLISHER), reinterpret_cast<const uint8*>(id.constData())).writeNewEd2kTag(file);
     } catch (const FileException& ex) {
         logDebug(QStringLiteral("Failed to save %1: %2")
                        .arg(filePath, QString::fromStdString(ex.what())));
@@ -1189,6 +1202,7 @@ void SearchList::loadSpamFilter(const QString& configDir)
     m_knownSpamSourcesIPs.clear();
     m_knownSpamHashes.clear();
     m_knownSpamSizes.clear();
+    m_knownSpamPublishers.clear();
     m_spamFilterLoaded = true;
 
     const QString filePath = QDir(configDir).filePath(kSpamFilterFilename);
@@ -1243,6 +1257,10 @@ void SearchList::loadSpamFilter(const QString& configDir)
                     record.totalResults = peekUInt32(buf + 4);
                     record.spamResults = peekUInt32(buf + 8);
                 }
+                break;
+            case SP_ED3KPUBLISHER:
+                if (tag.isHash())
+                    m_knownSpamPublishers.insert(QByteArray(reinterpret_cast<const char*>(tag.hashValue()), 16));
                 break;
             default:
                 break;
@@ -1314,6 +1332,20 @@ bool SearchList::assess(SearchFile* file)
     // A torrent / Usenet row: judged on its names, the spam filter and what the catalogue says
     in.passwordProtected = file->isMetaResult()
         && (file->meta().flags & META_FLAG_PASSWORD_PROTECTED) != 0;
+    // ed3k: the publishers of the row and its children against the marked ones
+    if (file->isEd3kResult() && !m_knownSpamPublishers.isEmpty()) {
+        const auto note = [&in, this](const SearchFile* f) {
+            if (f->ed3kPublisher().isEmpty())
+                return;
+            if (m_knownSpamPublishers.contains(f->ed3kPublisher()))
+                in.spamPublisher = true;
+            else
+                in.cleanPublisher = true;
+        };
+        note(file);
+        for (const SearchFile* child : file->listChildren())
+            note(child);
+    }
 
     for (const auto& [publisher, note] : file->kadNotesCache()) {
         in.kadNoteRatedFake = in.kadNoteRatedFake || note.rating == 1;
@@ -1432,6 +1464,24 @@ void SearchList::noteCatalogueSender(uint32 searchID, const SearchFile& file, co
         return;
     if (auto* entry = findEntry(searchID))
         entry->catalogueServers.insert(server);
+}
+
+void SearchList::reassessPublisher(const QByteArray& publisher)
+{
+    const auto hasPublisher = [&publisher](const SearchFile* f) {
+        if (!f->isEd3kResult())
+            return false;
+        if (f->ed3kPublisher() == publisher)
+            return true;
+        const auto& kids = f->listChildren();
+        return std::any_of(kids.cbegin(), kids.cend(), [&publisher](const SearchFile* c) { return c->ed3kPublisher() == publisher; });
+    };
+    updateResults([&](SearchFile* f) { return hasPublisher(f) && assess(f); });
+    // restored rows are in no list (no signal): their dialog re-fetches
+    for (const auto& f : m_restoredFiles) {
+        if (hasPublisher(f.get()))
+            assess(f.get());
+    }
 }
 
 } // namespace eMule

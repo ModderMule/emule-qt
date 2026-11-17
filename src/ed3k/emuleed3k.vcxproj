@@ -173,12 +173,15 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
     <ClCompile Include="Ed3kDownloadsWeb.cpp" />
     <ClCompile Include="Ed3kSearch.cpp" />
     <ClCompile Include="Ed3kChain.cpp" />
+    <ClCompile Include="Ed3kDecline.cpp" />
+    <ClCompile Include="Ed3kDeclineUrls.cpp" />
     <ClCompile Include="Ed3kFilters.cpp" />
     <ClCompile Include="Ed3kUploads.cpp" />
     <ClCompile Include="Ed3kJdResolver.cpp" />
     <ClCompile Include="Ed3kJavaRuntime.cpp" />
     <ClCompile Include="Ed3kResolverUpdater.cpp" />
     <ClCompile Include="Ed3kHosterJoin.cpp" />
+    <ClCompile Include="Ed3kHosterCatalog.cpp" />
     <ClCompile Include="Ed3kLinkGrabber.cpp" />
     <ClCompile Include="Ed3kHosterUnpack.cpp" />
     <ClCompile Include="Ed3kArchiveContents.cpp" />
@@ -212,6 +215,7 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Ed3kFfi.h" />
+    <ClInclude Include="Ed3kDecline.h" />
     <ClInclude Include="Ed3kPlumbing.h" />
     <ClInclude Include="Ed3kStore.h" />
     <ClInclude Include="Ed3kKeyFile.h" />
@@ -225,6 +229,7 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
     <QtMoc Include="Ed3kDownloads.h" />
     <QtMoc Include="Ed3kSearch.h" />
     <QtMoc Include="Ed3kChain.h" />
+    <QtMoc Include="Ed3kDeclineUrls.h" />
     <QtMoc Include="Ed3kFilters.h" />
     <QtMoc Include="Ed3kUploads.h" />
     <QtMoc Include="Ed3kResolver.h" />
@@ -232,6 +237,7 @@ cargo build --release -p packmule-ffi --manifest-path ..\..\libs\packmule\Cargo.
     <QtMoc Include="Ed3kJavaRuntime.h" />
     <QtMoc Include="Ed3kResolverUpdater.h" />
     <QtMoc Include="Ed3kHosterJoin.h" />
+    <QtMoc Include="Ed3kHosterCatalog.h" />
     <QtMoc Include="Ed3kLinkGrabber.h" />
     <QtMoc Include="Ed3kHosterUnpack.h" />
     <QtMoc Include="Ed3kArchiveContents.h" />

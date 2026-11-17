@@ -1009,3 +1009,5 @@
 #define SP_FILESIMILARNAME          0x06u
 #define SP_FILESIZE                 0x07u
 #define SP_UDPSERVERSPAMRATIO       0x08u
+// 0x09 is eMuleAI SP_BLACKLISTED
+#define SP_ED3KPUBLISHER            0x0Au   // ed3k publisher node ID (16 B hash tag) marked for spam
