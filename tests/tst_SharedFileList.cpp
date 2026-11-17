@@ -97,6 +97,7 @@ private slots:
     void hashing_bigFilesAreNotHandedOutAhead();
     void hashing_laterVolumeDoesNotWalkEarlierQueue();
     void reload_nameWithWindowsReservedCharsIsNotRehashed();
+    void reload_eD2kDisabledListsNewFilesForEd3kAlone();
     void moveBetweenSharedDirs_keepsTheFileAndHashesNothing_data();
     void moveBetweenSharedDirs_keepsTheFileAndHashesNothing();
     void singleSharedFile_itsDirectoryIsWatchedAndRescanned();
@@ -1763,6 +1764,48 @@ void tst_SharedFileList::reload_nameWithWindowsReservedCharsIsNotRehashed()
     QCOMPARE(shared.getHashingCount(), 0);
     QCOMPARE(shared.getCount(), 1);
 #endif
+}
+
+// Extended "Disable eD2K": known files stay; a new one is not hashed for eD2K (no MD4/AICH)
+// but listed for ed3k alone; on again, a reload hashes it for eD2K
+void tst_SharedFileList::reload_eD2kDisabledListsNewFilesForEd3kAlone()
+{
+    eMule::testing::TempDir tmp;
+    const QString dir = tmp.filePath(QStringLiteral("share"));
+    QVERIFY(!writeFile(dir, QStringLiteral("known.bin"), QByteArray(900, 'k')).isEmpty());
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setIncomingDir(dir);
+    thePrefs.setSharedDirs({});
+    thePrefs.setDisableEd2k(false);
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    RESCAN(shared, reload());
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getHashingCount(), 0, 10000);
+
+    thePrefs.setDisableEd2k(true);
+    const QString fresh = writeFile(dir, QStringLiteral("fresh.bin"), QByteArray(700, 'f'));
+    QVERIFY(!fresh.isEmpty());
+    QSignalSpy added(&shared, &SharedFileList::ed3kOnlyAdded);
+    QSignalSpy removed(&shared, &SharedFileList::ed3kOnlyRemoved);
+    RESCAN(shared, reload());
+    QCOMPARE(added.count(), 1);
+    QCOMPARE(QFileInfo(added.at(0).at(0).toString()).fileName(), QStringLiteral("fresh.bin"));
+    QCOMPARE(shared.ed3kOnlyFiles().size(), std::size_t(1));
+    QCOMPARE(shared.ed3kOnlyFiles().front().second, uint64(700));
+    QTest::qWait(300);
+    QCOMPARE(shared.getHashingCount(), 0);
+    QCOMPARE(shared.getCount(), 1);   // the known one stays
+    // a second scan lists it once
+    RESCAN(shared, reload());
+    QCOMPARE(added.count(), 1);
+
+    thePrefs.setDisableEd2k(false);
+    RESCAN(shared, reload());
+    QCOMPARE(removed.count(), 1);
+    QVERIFY(shared.ed3kOnlyFiles().empty());
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 2, 10000);
 }
 
 // The watcher reports both directories of a move in one batch; seen one at a time

@@ -29,6 +29,7 @@ DownloadRow ed3kDownloadRow(const QCborMap& m)
     row.sourceCount = int(m.value(QStringLiteral("sources")).toInteger());
     row.transferringSrcCount = int(m.value(QStringLiteral("transferring")).toInteger());
     row.availableSrcCount = row.sourceCount;
+    row.a4afSrcCount = int(m.value(QStringLiteral("a4af")).toInteger());   // shown "+N" as eD2K (ext controls)
     row.priority = prio[std::clamp<qint64>(m.value(QStringLiteral("priority")).toInteger(1), 0, 4)];
     row.category = m.value(QStringLiteral("category")).toInteger();
     row.addedOn = m.value(QStringLiteral("addedOn")).toInteger();

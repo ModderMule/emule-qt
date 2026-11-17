@@ -1349,6 +1349,14 @@ void SharedFileList::addStattedSingleFile(const QString& filePath, const DiskEnt
 
     m_hashFailures.remove(key);   // asked for by hand: try again
     const QString volume = volumeKeyFor(entry.directory);
+    if (thePrefs.disableEd2k()) {
+        // eD2K disabled: ed3k alone hashes it (ed3kOnlyFiles)
+        if (!m_ed3kOnly.contains(key)) {
+            m_ed3kOnly.insert(key, {entry.directory, entry.filename, {}, key, entry.size, entry.mtime, volume});
+            emit ed3kOnlyAdded(entry.directory + u'/' + entry.filename, entry.size);
+        }
+        return;
+    }
 
     QMutexLocker hashLocker(&m_hashMutex);
     const auto& queue = m_waitingForHash[workerFor(volume)];
@@ -2220,6 +2228,9 @@ void SharedFileList::rescan(const QStringList& onlyDirs, RescanFollowUps follow)
     if (joined > 0)
         m_republishED2K = true;   // once for the batch
 
+    // eD2K disabled: new files go to ed3k alone (no MD4/AICH); back on, they hash below
+    listEd3kOnly(toHash, wantedUnknown, [&](const QString& dirKey) { return full || scope.contains(dirKey); });
+
     // 5. The hash queue: what is no longer wanted leaves it, what is new joins it.
     // The file on the worker is left to finish.
     {
@@ -2259,6 +2270,55 @@ void SharedFileList::rescan(const QStringList& onlyDirs, RescanFollowUps follow)
     emit scanned(full);
 }
 
+std::vector<std::pair<QString, uint64>> SharedFileList::ed3kOnlyFiles() const
+{
+    std::vector<std::pair<QString, uint64>> out;
+    out.reserve(std::size_t(m_ed3kOnly.size()));
+    for (const UnknownFileEntry& e : m_ed3kOnly)
+        out.emplace_back(e.directory + u'/' + e.filename, e.size);
+    return out;
+}
+
+void SharedFileList::listEd3kOnly(std::vector<UnknownFileEntry>& toHash, const QSet<QString>& wanted,
+                                  const std::function<bool(const QString& dirKey)>& inScope)
+{
+    const bool off = thePrefs.disableEd2k();
+    // gone from the share, or eD2K back on (they are in toHash then, hashed for it)
+    for (auto it = m_ed3kOnly.begin(); it != m_ed3kOnly.end();) {
+        if (inScope(pathKey(it->directory)) && (!off || !wanted.contains(it.key()))) {
+            const QString path = it->directory + u'/' + it->filename;
+            it = m_ed3kOnly.erase(it);
+            emit ed3kOnlyRemoved(path);
+        } else {
+            ++it;
+        }
+    }
+    if (!off)
+        return;
+    for (UnknownFileEntry& e : toHash) {
+        if (m_ed3kOnly.contains(e.key))
+            continue;
+        const QString path = e.directory + u'/' + e.filename;
+        const uint64 size = e.size;
+        m_ed3kOnly.insert(e.key, std::move(e));
+        emit ed3kOnlyAdded(path, size);
+    }
+    toHash.clear();
+    // queued before eD2K went off: ed3k alone too (the file on a worker finishes)
+    QMutexLocker hashLocker(&m_hashMutex);
+    for (auto& [worker, queue] : m_waitingForHash) {
+        for (UnknownFileEntry& e : queue) {
+            if (m_ed3kOnly.contains(e.key))
+                continue;
+            const QString path = e.directory + u'/' + e.filename;
+            const uint64 size = e.size;
+            m_ed3kOnly.insert(e.key, e);
+            emit ed3kOnlyAdded(path, size);
+        }
+        queue.clear();
+    }
+}
+
 void SharedFileList::adoptDiskDate(KnownFile* file, time_t onDisk)
 {
     // Matched across a rounding step or a DST hour (sameFileDate()): take the date
@@ -2287,7 +2347,8 @@ void SharedFileList::stepDeferredScans()
 {
     const time_t now = std::time(nullptr);
 
-    if (!m_hashFailures.isEmpty()) {
+    // eD2K disabled: no MD4 retries (the scan lists them for ed3k alone)
+    if (!m_hashFailures.isEmpty() && !thePrefs.disableEd2k()) {
         QMutexLocker hashLocker(&m_hashMutex);
         for (HashFailure& failure : m_hashFailures) {
             if (failure.givenUp || failure.queued || failure.retryAt == 0 || failure.retryAt > now)

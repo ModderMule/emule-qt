@@ -638,6 +638,9 @@ private slots:
     void previewCapsTheResponseBody();
     void previewStopsAtWhatHasDownloaded();
     void previewWaitsForBytesThatHaveNotArrivedYet();
+    void usenetPreviewWithSeekingOffServesTheFileAsItIs();
+    void hosterPreviewFollowsTheSeekingSwitch();
+    void hosterPreviewRefusesWhatNoPlayerTakes();
     void previewGivesUpWhenTheItemDisappears();
     void previewStitchesAReadAcrossTwoFiles();
     void previewRefusesAnUnstreamableReleaseAtOnce();
@@ -2094,7 +2097,9 @@ void tst_WebServer::previewStopsAtWhatHasDownloaded()
     const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSize);
     QVERIFY(!path.isEmpty());
 
-    m_webServer->setUsenetStreamResolver([path](const UsenetStreamRequest&) {
+    bool fetched = false;
+    m_webServer->setUsenetStreamResolver([path, &fetched](const UsenetStreamRequest& ask) {
+        fetched = ask.fetch;
         UsenetStreamSource src;
         src.found = true;
         src.pieces = {{path, 0, 0, kSize}};
@@ -2103,11 +2108,14 @@ void tst_WebServer::previewStopsAtWhatHasDownloaded()
         src.availableEnd = kHave;
         return src;
     });
+    m_preferences->setDownloadSeeking(true);
 
     const QString token = m_webServer->streamToken();
     const auto resp = sendRanged(
         QStringLiteral("/api/v1/usenet/item/0/preview?token=%1").arg(token),
         QByteArrayLiteral("bytes=0-"));
+    m_preferences->setDownloadSeeking(false);
+    QVERIFY(fetched);
 
     QCOMPARE(resp.statusCode, 206);
     // Exactly the downloaded prefix. Going further hands the player the
@@ -2145,11 +2153,13 @@ void tst_WebServer::previewWaitsForBytesThatHaveNotArrivedYet()
         src.availableEnd = since.elapsed() > 400 ? kLate : 0;
         return src;
     });
+    m_preferences->setDownloadSeeking(true);
 
     const QString token = m_webServer->streamToken();
     const auto resp = sendRanged(
         QStringLiteral("/api/v1/usenet/item/0/preview?token=%1").arg(token),
         QByteArrayLiteral("bytes=0-"));
+    m_preferences->setDownloadSeeking(false);
 
     // Answered, not refused. A zero-byte 206 reads as end-of-stream and every
     // player stops there.
@@ -2157,6 +2167,118 @@ void tst_WebServer::previewWaitsForBytesThatHaveNotArrivedYet()
     QCOMPARE(qint64(resp.rawBody.size()), kLate);
 
     m_webServer->setUsenetStreamResolver({});
+}
+
+void tst_WebServer::usenetPreviewWithSeekingOffServesTheFileAsItIs()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    constexpr qint64 kSize = 200 * 1024;
+    const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSize);
+    QVERIFY(!path.isEmpty());
+
+    // off: a lookup only (no boost, nothing fetched first), the preallocated file as it is
+    QList<bool> fetches;
+    m_webServer->setUsenetStreamResolver([path, &fetches](const UsenetStreamRequest& ask) {
+        fetches << ask.fetch;
+        UsenetStreamSource src;
+        src.found = true;
+        src.pieces = {{path, 0, 0, kSize}};
+        src.fileName = QStringLiteral("movie.mkv");
+        src.totalSize = kSize;
+        src.availableEnd = 0;   // nothing arrived
+        return src;
+    });
+    QVERIFY(!m_preferences->downloadSeeking());
+    QElapsedTimer took;
+    took.start();
+    const auto resp = sendRanged(
+        QStringLiteral("/api/v1/usenet/item/0/preview?token=%1").arg(m_webServer->streamToken()),
+        QByteArrayLiteral("bytes=0-"));
+    m_webServer->setUsenetStreamResolver({});
+
+    QCOMPARE(resp.statusCode, 206);
+    QCOMPARE(qint64(resp.rawBody.size()), kSize);
+    QVERIFY(took.elapsed() < 2000);   // no wait
+    QVERIFY(!fetches.isEmpty());
+    QVERIFY(std::ranges::none_of(fetches, [](bool f) { return f; }));
+}
+
+void tst_WebServer::hosterPreviewFollowsTheSeekingSwitch()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    constexpr qint64 kSize = 300 * 1024;
+    constexpr qint64 kSeek = 100 * 1024;
+    const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSize);
+    QVERIFY(!path.isEmpty());
+
+    // no resolver: not built with hosters
+    auto resp = sendRanged(
+        QStringLiteral("/api/v1/hoster/7/preview?token=%1").arg(m_webServer->streamToken()),
+        QByteArrayLiteral("bytes=0-"));
+    QCOMPARE(resp.statusCode, 503);
+
+    QElapsedTimer since;
+    since.start();
+    QList<std::tuple<QString, qint64, bool>> asks;
+    m_webServer->setHosterStreamResolver([&](const QString& id, qint64 offset, bool fetch) {
+        asks.append({id, offset, fetch});
+        UsenetStreamSource src;
+        src.found = true;
+        src.fileName = QStringLiteral("movie.mkv");
+        src.totalSize = kSize;
+        src.pieces = {{path, 0, 0, kSize}};
+        src.availableEnd = fetch ? (since.elapsed() > 400 ? kSize : offset) : 0;
+        return src;
+    });
+
+    // on: asked from the seek offset with fetch, the answer waits for the bytes
+    m_preferences->setDownloadSeeking(true);
+    resp = sendRanged(
+        QStringLiteral("/api/v1/hoster/7/preview?token=%1").arg(m_webServer->streamToken()),
+        QByteArrayLiteral("bytes=%1-").replace("%1", QByteArray::number(kSeek)));
+    m_preferences->setDownloadSeeking(false);
+    QCOMPARE(resp.statusCode, 206);
+    QCOMPARE(qint64(resp.rawBody.size()), kSize - kSeek);
+    QVERIFY(asks.size() > 1);
+    QVERIFY(std::ranges::all_of(asks, [](const auto& a) {
+        return std::get<0>(a) == QStringLiteral("7") && std::get<1>(a) == kSeek && std::get<2>(a);
+    }));
+
+    // off: one lookup without fetch, the file as it is on disk
+    asks.clear();
+    resp = sendRanged(
+        QStringLiteral("/api/v1/hoster/7/preview?token=%1").arg(m_webServer->streamToken()),
+        QByteArrayLiteral("bytes=0-"));
+    QCOMPARE(resp.statusCode, 206);
+    QCOMPARE(qint64(resp.rawBody.size()), kSize);
+    QCOMPARE(asks.size(), 1);
+    QVERIFY(!std::get<2>(asks.front()));
+
+    m_webServer->setHosterStreamResolver({});
+}
+
+void tst_WebServer::hosterPreviewRefusesWhatNoPlayerTakes()
+{
+    m_webServer->setHosterStreamResolver([](const QString& id, qint64, bool) {
+        UsenetStreamSource src;
+        src.found = id == QStringLiteral("1");
+        src.fileName = QStringLiteral("movie.part1.rar");
+        src.notSeekableReason = QStringLiteral("Packed in an archive: no preview before the extraction");
+        return src;
+    });
+    const QString token = m_webServer->streamToken();
+    auto resp = sendRanged(QStringLiteral("/api/v1/hoster/1/preview?token=%1").arg(token),
+                           QByteArrayLiteral("bytes=0-"));
+    QCOMPARE(resp.statusCode, 406);
+    resp = sendRanged(QStringLiteral("/api/v1/hoster/2/preview?token=%1").arg(token),
+                      QByteArrayLiteral("bytes=0-"));
+    QCOMPARE(resp.statusCode, 404);
+    // the stream token is required
+    resp = sendRanged(QStringLiteral("/api/v1/hoster/1/preview"), QByteArrayLiteral("bytes=0-"));
+    QVERIFY(resp.statusCode == 401 || resp.statusCode == 403);
+    m_webServer->setHosterStreamResolver({});
 }
 
 void tst_WebServer::previewEndProbeIsNotWaitedOut()

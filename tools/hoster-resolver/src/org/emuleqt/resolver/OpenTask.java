@@ -65,6 +65,7 @@ final class OpenTask extends Task {
 
     @Override
     void run() throws Throwable {
+        SolverAccountsTask.awaitLoaded();
         status("link");
         final List<DownloadLink> links = Jd.crawl(url);
         if (cancelled.get()) {

@@ -19,7 +19,6 @@
 #include "dialogs/EditTrackersDialog.h"
 #include "dialogs/TorrentOptionsDialog.h"
 #include "dialogs/TorrentDetailsDialog.h"
-#include "media/PreviewApps.h"
 #include "prefs/Preferences.h"
 #include "utils/Clipboard.h"
 #include "utils/IpcFeedback.h"
@@ -660,17 +659,7 @@ void TorrentPanel::previewTorrentFile(const QString& id, int fileIndex, const QS
         logWarning(tr("Preview not available — web server is not running or stream token not received."));
         return;
     }
-    // an application of PreviewApps.dat for the extension first, as for downloads
-    if (const PreviewApps& apps = previewApps(); !name.isEmpty()) {
-        if (const int app = apps.appForFileName(name); app >= 0) {
-            const PreviewApp& pick = apps.apps().at(static_cast<size_t>(app));
-            if (!launchPlayer(pick.command, pick.commandArgs, url))
-                QMessageBox::warning(this, tr("Preview"),
-                                     tr("Failed to execute: %1 %2").arg(pick.command, pick.commandArgs));
-            return;
-        }
-    }
-    launchPreview(url);
+    playStreamUrl(this, url, name);
 }
 
 void TorrentPanel::onEditTrackers()

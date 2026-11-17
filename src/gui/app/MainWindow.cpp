@@ -905,6 +905,12 @@ void MainWindow::setEd3kStatus(const QCborMap& status)
                       .arg(status.value(QStringLiteral("udpPort")).toInteger())
                       .arg(contacts)
                       .arg(className(class4), className(class6), router ? tr("yes") : tr("no"));
+    // firewalled by class only: no ed3k node probed the port (tiny network), vs. a probe failed
+    const qint64 untested = status.value(QStringLiteral("natUntested")).toInteger();
+    if (firewalled)
+        tip += QLatin1Char('\n') + (untested != 0
+            ? tr("Not proven open: no ed3k node could test the port yet")
+            : tr("Port test failed: a probe did not get through"));
     // batch 15: Kad's own network down (Protocol.md §10), bit 0 IPv4, bit 1 IPv6
     const qint64 kadOffline = status.value(QStringLiteral("kadOffline")).toInteger();
     if (kadOffline != 0) {
@@ -954,6 +960,7 @@ void MainWindow::setStreamToken(const QString& token)
     if (m_sharedFilesPanel) m_sharedFilesPanel->setStreamToken(token);
     if (m_usenetPanel)      m_usenetPanel->setStreamToken(token);
     if (m_torrentPanel)     m_torrentPanel->setStreamToken(token);
+    if (m_hosterPanel)      m_hosterPanel->setStreamToken(token);
 }
 
 void MainWindow::updateTransferRates(double upKBs, double downKBs,
@@ -2578,6 +2585,7 @@ void MainWindow::setupPages()
             m_sharedFilesPanel, &SharedFilesPanel::setIrcConnected);
     connect(m_sharedFilesPanel, &SharedFilesPanel::ircSendLinkChosen,
             m_ircPanel, &IrcPanel::setSendLink);
+    connect(m_ircPanel, &IrcPanel::ed3kRoomJoined, this, [this] { switchToTab(TabIRC); });
     addPage(m_ircPanel);
 
     // Tab 7: Statistics

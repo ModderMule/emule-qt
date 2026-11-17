@@ -491,6 +491,7 @@ std::optional<Ed3kDownloadInfo> Ed3kDownloads::info(const ffi::Root& root) const
     if (const Download* d = downloadOf(root)) {
         i.sources = int(d->streams.size());
         i.transferring = int(std::ranges::count_if(d->streams, [](const auto& s) { return s.second; }));
+        i.a4af = waitingFor(root);
         i.pending.assign(i.blocks.size(), false);
         for (const auto& [offset, stream] : d->outstanding)
             if (const auto b = std::size_t(offset / kBlock); b < i.pending.size())

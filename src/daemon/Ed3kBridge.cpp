@@ -24,6 +24,7 @@
 
 #include <QCborArray>
 #include <QCborMap>
+#include <QFileInfo>
 
 #include <algorithm>
 #include <array>
@@ -227,10 +228,45 @@ QHash<QByteArray, QByteArray> sharedRootIndex()
 #ifdef EMULE_HAVE_ED3K
     if (s_shared)
         s_shared->forEachSharedRoot([&index](const QByteArray& md4, const ::ed3k::Root& root) {
+            if (md4.size() != 16)
+                return;   // no eD2K hash (eD2K disabled): no KnownFile to name
             index.insert(QByteArray(reinterpret_cast<const char*>(root.bytes.data()), qsizetype(root.bytes.size())), md4);
         });
 #endif
     return index;
+}
+
+QCborArray ed3kOnlySharedRows()
+{
+    QCborArray rows;
+#ifdef EMULE_HAVE_ED3K
+    if (!s_shared)
+        return rows;
+    s_shared->forEachSharedRoot([&rows](const QByteArray& key, const ::ed3k::Root& root) {
+        if (key.size() == 16)
+            return;   // in eD2K's list: a row of its own
+        const auto e = s_shared->entryOfRoot(root);
+        if (!e)
+            return;
+        const QFileInfo fi(e->path);
+        QCborMap m;
+        m.insert(QLatin1StringView("hash"),
+                 QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(root.bytes.data()), qsizetype(root.bytes.size())).toHex()));
+        m.insert(QLatin1StringView("ed3kOnly"), true);
+        m.insert(QLatin1StringView("fileName"), e->name);
+        m.insert(QLatin1StringView("fileSize"), static_cast<qint64>(e->size));
+        m.insert(QLatin1StringView("filePath"), e->path);
+        m.insert(QLatin1StringView("path"), fi.absolutePath());
+        m.insert(QLatin1StringView("upPriority"), 1);   // PR_NORMAL
+        m.insert(QLatin1StringView("isAutoUpPriority"), false);
+        m.insert(QLatin1StringView("isPartFile"), false);
+        m.insert(QLatin1StringView("canUnshare"), false);
+        m.insert(QLatin1StringView("ed2kLink"), QString());
+        m.insert(QLatin1StringView("hasPartHashes"), false);
+        rows.append(m);
+    });
+#endif
+    return rows;
 }
 
 void appendSharedInfo([[maybe_unused]] QCborMap& details, [[maybe_unused]] const QByteArray& md4)
@@ -442,6 +478,7 @@ QCborMap statusToCbor()
     out.insert(QStringLiteral("class6"), qint64(st.class6));
     out.insert(QStringLiteral("router"), st.router);
     out.insert(QStringLiteral("natChecking"), qint64(st.natChecking));
+    out.insert(QStringLiteral("natUntested"), qint64(st.natUntested));
     out.insert(QStringLiteral("kadConnected"), st.kadConnected);
     out.insert(QStringLiteral("endpoint4"), st.endpoint4);
     out.insert(QStringLiteral("endpoint6"), st.endpoint6);

@@ -1042,6 +1042,8 @@ QWidget* OptionsDialog::createGeneralPage()
 
     auto* versionCheckRow = new QHBoxLayout;
     m_versionCheckBox = new QCheckBox(tr("Check for new version"), startupGroup);
+    m_versionCheckBox->setToolTip(tr("When off, eMule Qt still checks once a week, but only "
+                                     "tells you about an update that is required."));
     versionCheckRow->addWidget(m_versionCheckBox);
     m_versionCheckDaysSpin = new QSpinBox(startupGroup);
     m_versionCheckDaysSpin->setRange(1, 14);
@@ -2413,8 +2415,9 @@ QWidget* OptionsDialog::createFilesPage()
 
     m_downloadSeekingCheck = new QCheckBox(tr("Enable seeking in downloads"), miscGroup);
     m_downloadSeekingCheck->setToolTip(
-        tr("Preview of an unfinished download (eD2K, ed3k, web sources, BitTorrent): when the "
-           "player seeks, the parts there are downloaded first and the player waits for them."));
+        tr("Preview of an unfinished download (eD2K, ed3k, web sources, BitTorrent, Usenet, hoster "
+           "video and audio files): when the player seeks, the parts there are downloaded first and "
+           "the player waits for them. Off: the file is played as it is on disk."));
     m_downloadSeekingCheck->setVisible(thePrefs.showExtControls());
     miscLayout->addWidget(m_downloadSeekingCheck);
 

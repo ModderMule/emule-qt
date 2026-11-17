@@ -61,7 +61,8 @@ public:
     void setHoldBack(bool on);
     [[nodiscard]] bool holdsBack() const { return m_holdBack; }
     /// Days a deleted file's records stay out (alias.md §3 "Deleted file"; yaml
-    /// ed3k.deletedFileDays, at most 365, 0: none). Shorter ends the rows over at once.
+    /// ed3k.deletedFileDays, default 365, 0: no age limit, < 0: none). Shorter ends the rows
+    /// over at once. Their network's check ends them regardless.
     void setDeletedDays(int days);
     [[nodiscard]] int deletedDays() const { return m_deletedDays; }
     /// A deleted file's name is asked at least this often (alias.md §3: 7 days)
@@ -107,6 +108,8 @@ public:
         /// asked for this file; its one stream there (§12.5) serves @c otherName now
         bool otherFile = false;
         QString otherName;
+        /// the other downloads of ours waiting for this node (eD2K's A4AF files of the source)
+        QStringList otherWants;
         /// FileStatus.have per 4 MiB piece (missing bits are held); empty: not told
         std::vector<std::uint8_t> have;
         /// per 4 MiB piece: every block of it is ours (what the join still wants is not)
@@ -116,6 +119,8 @@ public:
     };
     /// The sources of @p root: stream holders, then nodes held by another download of ours.
     [[nodiscard]] std::vector<SourceInfo> sourcesOf(const ffi::Root& root) const;
+    /// Nodes where @p root waits for another download's turn (eD2K's A4AF source count).
+    [[nodiscard]] int waitingFor(const ffi::Root& root) const;
     /// sourcesOf @p root in every join of @p session.
     [[nodiscard]] static std::vector<SourceInfo> sourcesAt(const Ed3kSession& session, const ffi::Root& root);
     /// Download source @p node of @p key in any join of @p session; nullopt: no stream there.
@@ -353,10 +358,11 @@ protected:
         ffi::Root root;
         std::uint64_t size = 0;
         ffi::Bytes hashes;
+        QByteArray ed2k;   ///< eD2K MD4 (16 B) when asked for, in the same read; else empty
     };
     /// Hashes @p path on a worker; @p done on this thread (nullopt: unreadable), not at
-    /// all once stopped or destroyed.
-    void hashInBackground(const QString& path, std::function<void(std::optional<FileHash>)> done);
+    /// all once stopped or destroyed. @p withEd2k: its eD2K hash too.
+    void hashInBackground(const QString& path, std::function<void(std::optional<FileHash>)> done, bool withEd2k = false);
     /// Runs @p work on the hash pool (disk load lowered); the step it returns runs on this
     /// thread, not at all once stopped or destroyed.
     void runHashJob(std::function<std::function<void()>(const std::atomic<bool>& cancel)> work);
@@ -570,6 +576,8 @@ private:
     [[nodiscard]] QString deletedPath() const;
     /// Rows over deletedDays() ended; the network's checks asked.
     void onDeletedTimer();
+    /// @p f is past the age limit at @p now (never with 0 days: no limit).
+    [[nodiscard]] bool deletedOver(const DeletedFile& f, qint64 now) const;
     /// unpublishAlias of every kept owner's records (hold back switched on).
     void withdrawKeptRecords();
 

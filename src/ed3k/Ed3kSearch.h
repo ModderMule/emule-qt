@@ -25,6 +25,7 @@
 #include <QString>
 #include <QTimer>
 
+#include <deque>
 #include <functional>
 #include <map>
 #include <memory>
@@ -88,6 +89,18 @@ public:
     /// claim, §10.7); empty without a nick.
     [[nodiscard]] static QString noteAuthor(const QString& nick, const QByteArray& publisher);
     void setNoteSink(NoteSink sink) { m_notes = std::move(sink); }
+    /// A note found by searchNotes, kept per root for the Details of a download.
+    struct FoundNote {
+        QByteArray publisher;
+        std::uint32_t rating = 0;
+        QString text;
+        QString nick;
+    };
+    /// Notes found for @p root this run (the last kNotesKept roots), by publisher.
+    [[nodiscard]] std::vector<FoundNote> notesOf(const QByteArray& root) const;
+    /// A notes lookup of @p root runs.
+    [[nodiscard]] bool notesRunning(const QByteArray& root) const { return m_noteTimeouts.contains(root); }
+    static constexpr std::size_t kNotesKept = 256;
 
     /// Sources of one root over the records of an answer (one record per publisher).
     struct Availability {
@@ -150,6 +163,9 @@ private:
     std::map<std::uint64_t, QByteArray> m_noteLookups;   ///< notes lookups by lookupKey(): the root
     std::map<QByteArray, std::unique_ptr<QTimer>> m_noteTimeouts;   ///< by root
     NoteSink m_notes;
+    /// notesOf: root → publisher → note; m_notesOrder: roots, oldest first
+    std::map<QByteArray, std::map<QByteArray, FoundNote>> m_found;
+    std::deque<QByteArray> m_notesOrder;
     ResultSink m_results;
     FinishSink m_finished;
     Judge m_judge;

@@ -160,20 +160,25 @@ void IrcPanel::setIpcClient(IpcClient* ipc)
 
 bool IrcPanel::openEd3kRoomLink(const QString& link)
 {
+    // no room list yet (GUI start, node still starting): membership unknown, so wait for it
+    if (!m_roomList) {
+        if (!std::ranges::any_of(m_pendingRoomLinks, [&](const QString& l) { return sameRoomLink(l, link); }))
+            m_pendingRoomLinks << link;
+        return false;
+    }
     // already a member (as known eD2K/ed3k files): no question, its tab shows
-    if (m_roomList)
-        for (const QCborValue& v : m_roomList->rooms()) {
-            const QCborMap row = v.toMap();
-            if (!sameRoomLink(row.value(QStringLiteral("link")).toString(), link))
-                continue;
-            const QString room = row.value(QStringLiteral("room")).toString();
-            m_roomTabsClosed.removeAll(room);
-            ensureRoomTab(room, true);
-            const QString title = row.value(QStringLiteral("title")).toString();
-            appendInfo(Ed3kRoomTab::keyOf(room), tr("* You are already a member of the room \"%1\"")
-                                                     .arg(title.isEmpty() ? linkName(link) : title));
-            return true;
-        }
+    for (const QCborValue& v : m_roomList->rooms()) {
+        const QCborMap row = v.toMap();
+        if (!sameRoomLink(row.value(QStringLiteral("link")).toString(), link))
+            continue;
+        const QString room = row.value(QStringLiteral("room")).toString();
+        m_roomTabsClosed.removeAll(room);
+        ensureRoomTab(room, true);
+        const QString title = row.value(QStringLiteral("title")).toString();
+        appendInfo(Ed3kRoomTab::keyOf(room), tr("* You are already a member of the room \"%1\"")
+                                                 .arg(title.isEmpty() ? linkName(link) : title));
+        return true;
+    }
     // the link may carry s: the dialog names the room, never shows the secret
     const auto answer = QMessageBox::question(this, tr("ed3k room"),
         tr("Join the ed3k room \"%1\"?\n\nOther members see your nick and posts; your node takes "
@@ -284,6 +289,15 @@ void IrcPanel::onEd3kRooms(const IpcMessage& reply)
         removeChannelTab(k);
     m_roomTabsClosed.removeIf([&](const QString& r) { return !present.contains(r); });
     updateNickList();
+
+    // links that came before the list: a member's tab just shows, the rest are asked now
+    for (const QString& link : std::exchange(m_pendingRoomLinks, {})) {
+        const bool member = std::ranges::any_of(rooms, [&](const QCborValue& v) {
+            return sameRoomLink(v.toMap().value(QStringLiteral("link")).toString(), link);
+        });
+        if (!member && openEd3kRoomLink(link))
+            emit ed3kRoomJoined();
+    }
 }
 
 void IrcPanel::onEd3kRoomPost(const IpcMessage& msg)

@@ -26,6 +26,8 @@
 
 #include <QByteArray>
 #include <QElapsedTimer>
+#include <QHash>
+#include <QStringList>
 #include <QString>
 #include <QTimer>
 
@@ -49,7 +51,9 @@ namespace eMule::ed3k {
 
 /// A complete shared file as Ed3kShared sees it.
 struct SharedEntry {
-    QByteArray md4;   ///< 16 B eD2K hash
+    /// 16 B eD2K hash; a file without one (eD2K disabled, a landed file kept out of eD2K):
+    /// Ed3kShared::pathKeyOf its path
+    QByteArray md4;
     QString path;     ///< full path of the data
     QString name;
     std::uint64_t size = 0;
@@ -79,6 +83,8 @@ public:
     [[nodiscard]] virtual std::vector<SharedEntry> files() const = 0;
     /// The complete shared file of @p md4; nullopt: not shared, or a part file.
     [[nodiscard]] virtual std::optional<SharedEntry> find(const QByteArray& md4) const = 0;
+    /// Files listed for ed3k alone (eD2K disabled: no MD4), keyed Ed3kShared::pathKeyOf.
+    [[nodiscard]] virtual std::vector<SharedEntry> ed3kOnlyFiles() const { return {}; }
 };
 
 class Ed3kShared : public Ed3kJoinBase {
@@ -193,6 +199,18 @@ public:
     [[nodiscard]] static QString clipUtf8(const QString& s, qsizetype bytes);
     /// Cache entries whose block values are in RAM now.
     [[nodiscard]] std::size_t hashesInRam() const;
+    /// Key of a file without an eD2K hash (SharedEntry::md4): never 16 B.
+    [[nodiscard]] static QByteArray pathKeyOf(const QString& path);
+    /// New eD2K hashes allowed (eD2K not disabled). Off: hashes known before keep their
+    /// `ed2k` ALIAS; nothing new is hashed for eD2K.
+    void setEd2kHashing(bool on);
+    [[nodiscard]] bool ed2kHashing() const { return m_ed2kHashing; }
+    /// Landed files kept out of eD2K's share (hoster/Usenet "share landed files" off): not
+    /// served here (their join shares them), only their `ed2k` ALIAS published, hashed for it
+    /// while ed2kHashing(). Replaces the list.
+    void setAliasOnlyFiles(const QStringList& paths);
+    /// The eD2K hash an alias-only file was read to; empty: none (yet).
+    [[nodiscard]] QByteArray aliasOnlyEd2k(const QString& path) const;
     /// The `ed2k` Alias message (proto) of a file (alias.md §2): MD4 ‖ size as 8 B big endian.
     [[nodiscard]] static ::ed3k::Bytes ed2kAlias(const QByteArray& md4, std::uint64_t size, const ::ed3k::Root& root,
                                                  const QString& name);
@@ -202,6 +220,9 @@ public slots:
     void onFileRemoved(const QByteArray& md4);
     /// Renamed or moved: same root when size and date are unchanged, else hashed again.
     void onFileRelocated(const eMule::ed3k::SharedEntry& entry);
+    /// A file listed for ed3k alone came or went (SharedFileList::ed3kOnlyAdded/Removed).
+    void onEd3kOnlyAdded(const QString& path, quint64 size);
+    void onEd3kOnlyRemoved(const QString& path);
     /// Something of the file changed (a download completed): shared when it is complete now.
     void onFileChanged(const QByteArray& md4);
     /// The share list's scan is done; @p full: the whole share. The first full one after
@@ -245,6 +266,7 @@ private:
         qint64 diskOffset = -1; ///< in shared-hashes.dat; -1: not stored
         quint32 diskLen = 0;
         QByteArray diskCheck;   ///< MD5 of the stored values (a torn write reads as a miss)
+        QByteArray ed2k;        ///< eD2K hash of a path-keyed entry, when hashed for it
     };
     struct File {
         SharedEntry entry;
@@ -258,15 +280,26 @@ private:
         bool notePublished = false;   ///< a NOTE record kept published
         bool declined = false;   ///< shared, not published: declined (decline.txt)
         int rehashTries = 0;    ///< hashes that failed (unreadable)
+        bool aliasOnly = false; ///< only its `ed2k` ALIAS (setAliasOnlyFiles), never served here
+        bool aliasWaits = false;   ///< alias-only: its root not shared yet, tried again
+        int aliasTries = 0;        ///< alias-only: refused for that; the first retry is soon
     };
 
-    void add(const SharedEntry& entry);
+    /// @p aliasOnly: setAliasOnlyFiles (not served, its `ed2k` ALIAS only)
+    void add(const SharedEntry& entry, bool aliasOnly = false);
     void remove(const QByteArray& md4);
     /// Shares @p f; values from disk when not in RAM. An unreadable entry is dropped and
     /// @p f hashed again (@p h is gone then).
     void share(File& f, Hashed& h);
     /// The records of shared @p f: source and keywords, note, `ed2k` ALIAS (none when declined).
     void publishFile(File& f, const ::ed3k::Root& root, std::uint64_t size);
+    /// Alias-only @p f: its `ed2k` ALIAS of @p h (no hash for eD2K: nothing). Its root not
+    /// shared (yet): tried again by the priority timer.
+    void publishAliasOnly(File& f, const Hashed& h);
+    /// The `ed2k` ALIAS of @p f taken back (any kind of entry).
+    void withdrawAlias(File& f);
+    /// @p f needs a read: alias-only wants an eD2K hash (only while ed2kHashing()).
+    [[nodiscard]] bool wantsEd2k(const File& f) const { return f.aliasOnly; }
     class SideSink;
     void enqueueHash(File& f);
     /// one file per disk in flight
@@ -359,7 +392,10 @@ private:
     mutable std::set<QByteArray> m_suspects;
     mutable QTimer m_recheckTimer;
     QTimer m_priorityTimer;
+    QTimer m_aliasRetry;   ///< alias-only files whose join shares the root a moment later
     std::function<bool(const QString&)> m_neverShared;
+    bool m_ed2kHashing = true;
+    QHash<QByteArray, QString> m_aliasOnly;   ///< pathKeyOf → path, setAliasOnlyFiles
     int m_lowRamPercent = 20;
     std::function<bool()> m_lowRamCheck;
     std::function<QString()> m_noteNick;

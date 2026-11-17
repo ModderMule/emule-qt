@@ -77,8 +77,18 @@ final class Out {
         send(m);
     }
 
-    /** stderr log line; never pass account data here. */
+    /** stderr log line (hoster log, debug); never pass account data here. */
     static void log(final String s) {
         System.err.println("resolver: " + s);
+    }
+
+    /** Hoster log line the user sees without debug. */
+    static void info(final String s) {
+        System.err.println("resolver+ " + s);
+    }
+
+    /** Hoster log warning. */
+    static void warn(final String s) {
+        System.err.println("resolver! " + s);
     }
 }

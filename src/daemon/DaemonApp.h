@@ -152,6 +152,9 @@ private:
     /// Files never shared on eD2K/Kad and ed3k: ed3k plain copies, hoster and Usenet
     /// downloads while their share switch is off (#177)
     [[nodiscard]] bool neverShared(const QString& path) const;
+    /// Landed files kept out of eD2K (hoster/Usenet share switch off) to Ed3kShared for their
+    /// `ed2k` ALIAS alone, and whether new eD2K hashes may be made (eD2K not disabled).
+    void syncEd3kAliasOnly();
 
     /// Re-apply the BitTorrent settings after an Options save, starting or stopping
     /// the engine. Reached through IpcServer::btConfigChanged.

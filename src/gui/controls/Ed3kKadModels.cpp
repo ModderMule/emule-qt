@@ -5,6 +5,8 @@
 #include "app/SkinIcons.h"
 
 #include <QDateTime>
+#include <QPainter>
+#include <QPixmap>
 #include <QStringList>
 
 #include <algorithm>
@@ -32,6 +34,42 @@ QString ageText(qint64 ms)
     if (s < 7200)
         return QCoreApplication::translate("Ed3kKadModels", "%1 min").arg(s / 60);
     return QCoreApplication::translate("Ed3kKadModels", "%1 h").arg(s / 3600);
+}
+
+/// Badge of the family dialled first: "4" blue, "6" green; a dual node gets a dot.
+QIcon familyIcon(int family, bool dual)
+{
+    static std::array<QIcon, 4> cache;
+    const std::size_t i = (family == 6 ? 2 : 0) + (dual ? 1 : 0);
+    if (!cache[i].isNull())
+        return cache[i];
+    QIcon icon;
+    for (const int px : {16, 32}) {
+        QPixmap pm(px, px);
+        pm.fill(Qt::transparent);
+        QPainter p(&pm);
+        p.setRenderHint(QPainter::Antialiasing);
+        const qreal u = px / 16.0;
+        p.setPen(Qt::NoPen);
+        p.setBrush(family == 6 ? QColor(0x2e, 0x9e, 0x4f) : QColor(0x2f, 0x6f, 0xd0));
+        p.drawRoundedRect(QRectF(1 * u, 2 * u, 14 * u, 12 * u), 3 * u, 3 * u);
+        QFont f;
+        f.setBold(true);
+        f.setPixelSize(int(11 * u));
+        p.setFont(f);
+        p.setPen(Qt::white);
+        p.drawText(QRectF(1 * u, 2 * u, dual ? 11 * u : 14 * u, 12 * u), Qt::AlignCenter,
+                   family == 6 ? QStringLiteral("6") : QStringLiteral("4"));
+        if (dual) {
+            p.setBrush(QColor(0xff, 0xc4, 0x2e));
+            p.setPen(Qt::NoPen);
+            p.drawEllipse(QRectF(11 * u, 3 * u, 3.5 * u, 3.5 * u));
+        }
+        p.end();
+        icon.addPixmap(pm);
+    }
+    cache[i] = icon;
+    return icon;
 }
 
 } // namespace
@@ -126,6 +164,11 @@ QVariant Ed3kKadContactsModel::data(const QModelIndex& index, int role) const
     if (role == Qt::DecorationRole && index.isValid() && index.column() == ColType && index.row() < count()) {
         const QCborMap& m = row(index.row());
         return CountryFlags::withFlag(m_icons[static_cast<size_t>(contactImage(m))], value(m, "cc"));
+    }
+    // the family dialled first at a glance (IPv4 blue, IPv6 green, dot: in both tables)
+    if (role == Qt::DecorationRole && index.isValid() && index.column() == ColFamily && index.row() < count()) {
+        const QCborMap& m = row(index.row());
+        return familyIcon(int(number(m, "family")), m.value(QStringLiteral("dual")).toBool());
     }
     if (role == Qt::ToolTipRole && index.isValid() && index.row() < count()) {
         const QCborMap& m = row(index.row());

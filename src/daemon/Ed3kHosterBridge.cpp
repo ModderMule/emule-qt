@@ -13,6 +13,8 @@
 #include "prefs/Preferences.h"
 #include "stats/NetworkCounters.h"
 #include "stats/Statistics.h"
+#include "utils/OtherFunctions.h"
+#include "webserver/WebServer.h"
 
 #include <QCborArray>
 #include <QCborMap>
@@ -293,9 +295,13 @@ QCborMap hosterStatsToCbor(const ed3k::Ed3kHosterJoin& join)
 
 /// What sites.json keeps of a login's check (no session, no hoster list): only what is known
 QJsonObject storedCheck(bool valid, bool premium, qint64 expires, qint64 trafficLeft, qint64 trafficMax, double balance,
-                        const QString& currency, int hosts)
+                        const QString& currency, int hosts, bool unlimited = false, const QString& unusable = {})
 {
     QJsonObject o{{QStringLiteral("valid"), valid}};
+    if (unlimited)
+        o.insert(QStringLiteral("unlimited"), true);
+    if (!unusable.isEmpty())
+        o.insert(QStringLiteral("unusable"), unusable);
     if (premium)
         o.insert(QStringLiteral("premium"), true);
     if (expires > 0)
@@ -321,6 +327,8 @@ QCborMap resultToCbor(const ed3k::ResolverEvent& r)
                  {QStringLiteral("expires"), r.expires},
                  {QStringLiteral("trafficLeft"), r.trafficLeft},
                  {QStringLiteral("trafficMax"), r.trafficMax},
+                 {QStringLiteral("unlimited"), r.unlimited},
+                 {QStringLiteral("unusable"), r.unusable},
                  {QStringLiteral("balance"), r.balance},   // a solver service: its credit; -1 none
                  {QStringLiteral("currency"), r.currency},
                  {QStringLiteral("error"), ok ? QString() : (r.code.isEmpty() ? QStringLiteral("failed") : r.code)}};
@@ -566,6 +574,46 @@ QString moveTo([[maybe_unused]] const QString& id, [[maybe_unused]] const QStrin
 #else
     return QStringLiteral("no hoster downloads");
 #endif
+}
+
+UsenetStreamSource streamFrom([[maybe_unused]] const QString& id, [[maybe_unused]] qint64 offset,
+                              [[maybe_unused]] bool fetch)
+{
+    UsenetStreamSource src;
+#ifdef EMULE_HAVE_ED3K
+    using State = ed3k::Ed3kHosterJoin::State;
+    bool ok = false;
+    const quint32 n = id.toUInt(&ok);
+    if (!s_join || !ok || offset < 0)
+        return src;
+    const auto item = s_join->item(n);
+    // bytes that are not coming: Failed, Gone
+    if (!item || item->file.isEmpty() || item->state == State::Failed || item->state == State::Gone)
+        return src;
+    src.found = true;
+    src.fileName = item->name;
+    // only a player's file streams; an archive's content is there after the extraction
+    if (ed3k::Ed3kHosterUnpack::isArchive(item->name)) {
+        src.notSeekableReason = QStringLiteral("Packed in an archive: no preview before the extraction");
+        return src;
+    }
+    if (!isPlayableMedia(item->name)) {
+        src.notSeekableReason = QStringLiteral("Not a video or audio file");
+        return src;
+    }
+    src.complete = item->state == State::Complete;
+    src.totalSize = qint64(item->size);
+    if (!fetch) {
+        src.pieces = {{item->file, 0, 0, 0}};   // whatever is on disk
+        return src;
+    }
+    const auto held = s_join->playFrom(n, std::uint64_t(offset));
+    if (!held)
+        return UsenetStreamSource{};
+    src.availableEnd = qint64(*held);
+    src.pieces = {{item->file, 0, 0, qint64(item->size)}};
+#endif
+    return src;
 }
 
 void setGrabber(ed3k::Ed3kLinkGrabber* grabber)
@@ -933,7 +981,8 @@ void connectPushes(ed3k::Ed3kHosterJoin& join, const std::function<void(const Ip
                          if (s_catalog && r.kind == ed3k::ResolverEvent::Kind::Account)
                              s_catalog->noteAccount(host, user,
                                                     storedCheck(r.valid, r.premium, r.expires, r.trafficLeft, r.trafficMax,
-                                                                r.balance, r.currency, r.multi ? int(r.hosts.size()) : -1));
+                                                                r.balance, r.currency, r.multi ? int(r.hosts.size()) : -1,
+                                                                r.unlimited, r.unusable));
                          IpcMessage msg(IpcMsgType::PushHosterAccount, 0);
                          msg.append(host);
                          msg.append(user);
@@ -1078,6 +1127,8 @@ QCborMap statusToCbor()
                                {QStringLiteral("expires"), d.expires},
                                {QStringLiteral("trafficLeft"), d.trafficLeft},
                                {QStringLiteral("trafficMax"), d.trafficMax},
+                               {QStringLiteral("unlimited"), d.unlimited},
+                               {QStringLiteral("unusable"), d.unusable},
                                {QStringLiteral("checked"), d.checked},
                                {QStringLiteral("hosts"), d.hosts},
                                {QStringLiteral("working"), d.working}});

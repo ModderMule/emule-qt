@@ -1374,6 +1374,40 @@ void WebServer::buildApiTable()
         add(op);
     }
     {
+        Operation op = make("hoster.preview", Method::Get, "/api/v1/hoster/{id}/preview",
+                            "Streams", "Byte-range stream of a hoster download",
+                            "For media players. Authenticated by ?token=, the stream token. Video "
+                            "and audio files only, not archives (406). With \"Enable seeking in "
+                            "downloads\" on, a range not yet on disk waits up to 60 seconds; ed3k "
+                            "peers of a file with a known root fetch it first, the hoster's own "
+                            "stream stays in file order. Off, the file is served as it is.");
+        op.flags = ReadOnly | RawStream;
+        op.params = {pathStr(s("id"), s("Hoster item id.")),
+                     queryStr(s("token"), s("Stream token.")).req()};
+        add(op);
+    }
+    {
+        Operation op = make("hoster.previewLink", Method::Get, "/api/v1/hoster/{id}/preview-link",
+                            "Streams", "Player link for a hoster download",
+                            "A URL of GET /hoster/{id}/preview with a new stream token, as "
+                            "downloads.previewLink.");
+        op.flags = ReadOnly;
+        op.mcpTool = s("hoster_preview_link");
+        op.params = {pathStr(s("id"), s("Hoster item id."))};
+        op.handler = [this](const Call& c) {
+            const QString id = c.str(L("id"));
+            const UsenetStreamSource src = m_hosterStreamResolver ? m_hosterStreamResolver(id, 0, false)
+                                                                  : UsenetStreamSource{};
+            if (!src.found)
+                return error(404, s("File not found"));
+            if (!src.notSeekableReason.isEmpty())
+                return error(406, src.notSeekableReason);
+            return apiPreviewLink(c, s("/api/v1/hoster/%1/preview")
+                                         .arg(QString::fromLatin1(QUrl::toPercentEncoding(id))));
+        };
+        add(op);
+    }
+    {
         Operation op = make("incoming.list", Method::Get, "/api/v1/incoming", "Streams",
                             "Browse the incoming folder (HTML)",
                             "Authenticated by ?token=, the stream token.");
@@ -1577,8 +1611,9 @@ void WebServer::addUsenetOperations()
     {
         Operation op = make("usenet.preview", Method::Get, "/api/v1/usenet/{id}/{fileIndex}/preview",
                             "Streams", "Byte-range stream of a Usenet file",
-                            "Authenticated by ?token=, the stream token. Waits up to 15 seconds "
-                            "for bytes that are still downloading.");
+                            "Authenticated by ?token=, the stream token. With \"Enable seeking in "
+                            "downloads\" on, a range not yet on disk waits up to 15 seconds and "
+                            "its articles are fetched first; off, the file is served as it is.");
         op.flags = ReadOnly | RawStream;
         op.params = {idParam(), pathInt(s("fileIndex"), s("Index of the file in the NZB.")).atLeast(0),
                      queryStr(s("token"), s("Stream token.")).req()};

@@ -2,6 +2,7 @@
 // GPL v3 or later, see ../../../../LICENSE
 package org.emuleqt.resolver;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -14,6 +15,7 @@ import java.util.concurrent.TimeUnit;
 
 import javax.swing.Icon;
 
+import org.appwork.swing.components.TextComponentInterface;
 import org.appwork.uio.CloseReason;
 import org.appwork.uio.InputDialogInterface;
 import org.appwork.uio.MessageDialogInterface;
@@ -22,6 +24,7 @@ import org.appwork.uio.UserIODefinition;
 import org.appwork.uio.UserIOHandlerInterface;
 import org.appwork.utils.swing.dialog.Dialog;
 import org.appwork.utils.swing.dialog.DialogCanceledException;
+import org.appwork.utils.swing.dialog.InputDialog;
 
 /**
  * JD's input window, headless: a login's confirmation code (PluginForHost.getTwoFACode, e.g. an
@@ -56,6 +59,22 @@ final class CodeAsker implements UserIOHandlerInterface {
     static void checking(final long task, final String host, final String user) {
         install();
         CHECKS.put(Thread.currentThread(), new Login(task, host, user));
+    }
+
+    /** The current thread (a JD solver's) logs in for another one: the login of @p user on
+     *  @p host that a task registered; false: none. unlend() when it ends. */
+    static boolean lend(final String host, final String user) {
+        for (final Login l : CHECKS.values()) {
+            if (l.host.equalsIgnoreCase(host == null ? "" : host) && l.user.equals(user == null ? "" : user)) {
+                CHECKS.put(Thread.currentThread(), l);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static void unlend() {
+        CHECKS.remove(Thread.currentThread());
     }
 
     static void done() {
@@ -111,7 +130,11 @@ final class CodeAsker implements UserIOHandlerInterface {
         } finally {
             WAITING.remove(task);
         }
-        return answered(cls, impl, code == null || code.isEmpty() ? null : code);
+        final String answer = code == null || code.isEmpty() ? null : code;
+        if (answer != null) {
+            fill(impl, answer);
+        }
+        return answered(cls, impl, answer);
     }
 
     /** @p impl closed: OK with @p code, else cancelled. */
@@ -151,6 +174,37 @@ final class CodeAsker implements UserIOHandlerInterface {
             }
         };
         return (T) Proxy.newProxyInstance(cls.getClassLoader(), new Class<?>[] { cls }, h);
+    }
+
+    /** Some plugins read the dialog itself (RealDebrid: mfaDialog.getText()), headless that has no
+     *  text field and says null: give it one holding @p code. */
+    private static void fill(final Object impl, final String code) {
+        if (!(impl instanceof InputDialog)) {
+            return;
+        }
+        try {
+            final Field f = InputDialog.class.getDeclaredField("input");
+            f.setAccessible(true);
+            if (f.get(impl) == null) {
+                f.set(impl, Proxy.newProxyInstance(TextComponentInterface.class.getClassLoader(), new Class<?>[] { TextComponentInterface.class },
+                        (proxy, method, args) -> {
+                            switch (method.getName()) {
+                            case "getText":
+                                return code;
+                            case "hashCode":
+                                return System.identityHashCode(proxy);
+                            case "equals":
+                                return proxy == args[0];
+                            case "toString":
+                                return "CodeAsker field";
+                            default:
+                                return defaultOf(method);
+                            }
+                        }));
+            }
+        } catch (final Throwable e) {
+            Out.log("code not put into JD's dialog: " + e.getClass().getSimpleName());
+        }
     }
 
     private static final class Login {

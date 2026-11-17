@@ -18,6 +18,7 @@ class QTreeWidget;
 
 namespace eMule {
 
+class ArchiveContentsView;
 class IpcClient;
 class FileDetailDialog;
 
@@ -69,6 +70,9 @@ public:
     /// reading. Distinct from applyDetails(), which is the cheap partial refresh.
     void setDetails(const QCborMap& details) override;
 
+    /// The core for the Archive tab of an ed3k download (LookupArchiveContents by root).
+    void setIpc(IpcClient* ipc);
+
 signals:
     /// Ask the owning panel to fetch a link with this exact flag combination. The
     /// daemon builds it — the four pre-generated variants in the details map cannot
@@ -92,6 +96,12 @@ public slots:
 
 private:
     void buildTabs(const QCborMap& details, int tabToSelect);
+    /// An ed3k download: General, Comments (NOTE records), Media Info, ed3k Link, and for an
+    /// archive Archive (contents from ed3k) and Archive Preview.
+    void buildEd3kTabs(const QCborMap& details, int tabToSelect);
+    QWidget* createEd3kLinkTab(const QCborMap& details);
+    /// Hooks the Archive tab up to the core once both exist.
+    void attachArchive();
     void buildMultiTabs(const QCborMap& merged, Tab tabToSelect);
 
     QWidget* createGeneralTab(const QCborMap& details);
@@ -110,6 +120,13 @@ private:
 
     QTabWidget* m_tabs = nullptr;
     int         m_pendingTab = General;   ///< requested tab, until m_tabs exists
+    bool        m_tabIsEnum = true;       ///< the first build: the tab is a Tab, not an index
+
+    // ed3k Archive tab
+    IpcClient*           m_ipc = nullptr;
+    ArchiveContentsView* m_archive = nullptr;
+    QCborMap             m_archivePayload;
+    QString              m_archiveFolder;
 
     // Dynamic-tab widgets, repopulated by applyDetails().
     QTreeWidget*   m_fileNamesTree      = nullptr;

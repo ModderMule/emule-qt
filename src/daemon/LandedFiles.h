@@ -26,6 +26,8 @@ public:
     void add(const QStringList& paths);
     [[nodiscard]] bool contains(const QString& filePath) const;
     [[nodiscard]] qsizetype size() const { return m_keys.size(); }
+    /// Every landed path, oldest first.
+    [[nodiscard]] const QStringList& paths() const { return m_paths; }
 
     /// On: blocks() names the landed files. False when unchanged.
     bool setBlocking(bool on);

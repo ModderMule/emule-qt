@@ -50,6 +50,8 @@ void CommandLineExec::parse(QApplication& app)
     m_parser.addOption(m_configOption);
     m_parser.addOption(m_logLevelOption);   // read early by consoleLogLevelFromArgs
     m_parser.addOption(m_newInstanceOption);
+    m_parser.addOption(m_coreHostOption);
+    m_parser.addOption(m_corePortOption);
     m_afterUpdateOption.setFlags(QCommandLineOption::HiddenFromHelp);
     m_parser.addOption(m_afterUpdateOption);
     m_parser.addOption(m_registerTypesOption);
@@ -343,6 +345,27 @@ QString CommandLineExec::configOverride() const
     if (m_parser.isSet(m_configOption))
         return m_parser.value(m_configOption);
     return {};
+}
+
+QString CommandLineExec::coreHost() const
+{
+    QString host = m_parser.value(m_coreHostOption).trimmed();
+    // [v6] as typed in a URL
+    if (host.startsWith(u'[') && host.endsWith(u']'))
+        host = host.mid(1, host.size() - 2);
+    return host;
+}
+
+uint16_t CommandLineExec::corePort() const
+{
+    bool ok = false;
+    const uint port = m_parser.value(m_corePortOption).toUInt(&ok);
+    return ok && port > 0 && port <= 65535 ? static_cast<uint16_t>(port) : uint16_t{0};
+}
+
+QString CommandLineExec::coreTokenFromEnv()
+{
+    return qEnvironmentVariable("EMULEQT_CORE_TOKEN").trimmed();
 }
 
 bool CommandLineExec::saveScreenshot(const QPixmap& pixmap, const QString& path)

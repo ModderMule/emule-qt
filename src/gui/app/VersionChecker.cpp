@@ -24,6 +24,9 @@ namespace {
 /// seconds, so a suspended machine simply finds the check overdue when it wakes.
 constexpr int kPeriodicTickMs = 60 * 60 * 1000;
 
+/// versionCheckEnabled off still checks this often, for a required update only.
+constexpr int64_t kDisabledIntervalSecs = 7 * 86400;
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -48,18 +51,19 @@ void VersionChecker::fetchManifest()
 
 void VersionChecker::checkIfDue()
 {
-    if (!thePrefs.versionCheckEnabled())
-        return;
-
+    // Off = weekly, and only a required update (below "minVersion") is announced
+    const bool enabled = thePrefs.versionCheckEnabled();
     const int64_t now = QDateTime::currentSecsSinceEpoch();
-    const int64_t intervalSecs = static_cast<int64_t>(thePrefs.versionCheckDays()) * 86400;
+    const int64_t intervalSecs = enabled
+        ? static_cast<int64_t>(thePrefs.versionCheckDays()) * 86400
+        : kDisabledIntervalSecs;
 
     // m_lastCheck > now means the clock moved backwards (or the file was edited);
     // treat that as due rather than never checking again.
     if (m_lastCheck > 0 && m_lastCheck <= now && (now - m_lastCheck) < intervalSecs)
         return;
 
-    start(Mode::Auto);
+    start(enabled ? Mode::Auto : Mode::RequiredOnly);
 }
 
 void VersionChecker::startPeriodicChecks()
@@ -91,6 +95,7 @@ void VersionChecker::start(Mode mode)
     // would otherwise relabel it and pop a dialog nobody asked for.
     reply->setProperty("emuleManualCheck", mode == Mode::Manual);
     reply->setProperty("emuleQuietFetch", mode == Mode::Quiet);
+    reply->setProperty("emuleRequiredOnly", mode == Mode::RequiredOnly);
     m_inFlight = true;
 }
 
@@ -101,6 +106,7 @@ void VersionChecker::onReplyFinished(QNetworkReply* reply)
 
     const bool manual = reply->property("emuleManualCheck").toBool();
     const bool quiet = reply->property("emuleQuietFetch").toBool();
+    const bool requiredOnly = reply->property("emuleRequiredOnly").toBool();
 
     if (reply->error() != QNetworkReply::NoError) {
         logWarning(QStringLiteral("Version check failed: %1").arg(reply->errorString()));
@@ -136,6 +142,11 @@ void VersionChecker::onReplyFinished(QNetworkReply* reply)
         logWarning(QStringLiteral("eMule Qt %1 is below the minimum version %2, update required (latest: %3)")
                        .arg(current, info.minVersion, info.latest));
         emit newVersionAvailable(info, manual);
+    } else if (requiredOnly) {
+        // check turned off: a merely newer release stays silent
+        if (isNewer(info.latest, current))
+            logInfo(QStringLiteral("New version available: %1 (current: %2), version check off")
+                        .arg(info.latest, current));
     } else if (isNewer(info.latest, current)) {
         logInfo(QStringLiteral("New version available: %1 (current: %2)")
                     .arg(info.latest, current));

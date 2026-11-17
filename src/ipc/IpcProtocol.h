@@ -749,7 +749,8 @@ enum class IpcMsgType : int {
     FetchNzbNfo             = 744,
     /// [kind: "web"|"nzb"|"torrent"|"roots", payload: map] -> [true, {archives: [{name,
     /// state: found|notPublished|noRoot|failed|timedOut, first?: hex, manifest?: hex, sites,
-    /// password, entries: [{path, size, root: hex}]}]}] or [false, error]. Search/Transfers
+    /// password, entries: [{path, size, root: hex}], parts?: [name] (a multi-part set, opening
+    /// volume first: one record for all)}]}] or [false, error]. Search/Transfers
     /// Details › Archive: what each archive holds (hoster.md §6.1), by Kad lookups; the reply
     /// comes when they end (up to 2 min). payload: web {links: [{url, name}]}; nzb
     /// {previewToken | usenetItem: id, files: [int]}; torrent {btih?: hex, btmh?: hex,
@@ -909,7 +910,8 @@ enum class IpcMsgType : int {
 
     /// [] -> [ok, {available, running, udpPort, nodeId (hex), contacts, class4, class6
     ///   (0 unknown, 1 open, 2 cone, 3 symmetric), natChecking (bits 0 v4, 1 v6: reach
-    ///   test without verdict), router, wireSent, wireRecv (bytes),
+    ///   test without verdict), natUntested (bits 0 v4, 1 v6: verdict not open, but no
+    ///   test proved it: no prober / no 2nd site), router, wireSent, wireRecv (bytes),
     ///   relays4, relays6: [{address "ip:port", node (hex)}] (§9.4, the Kad buddy),
     ///   leavesServed: [{address, node, hop}] (leaves we relay for: buddies served),
     ///   indexNodes: [{address, node, state (0 waiting, 1 dialling, 2 connected, 3 given up),

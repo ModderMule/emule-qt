@@ -141,6 +141,9 @@ struct ResolverEvent {
     qint64 expires = 0;           ///< unix seconds; 0 = unknown
     qint64 trafficLeft = -1;      ///< bytes; -1 = unlimited or unknown
     qint64 trafficMax = -1;       ///< accountCheck: the account's traffic in all; -1 = unknown
+    bool unlimited = false;       ///< accountCheck: JD says unlimited traffic
+    /// accountCheck, login worked but not usable: "free" (the plugin can't use free logins), "expired"
+    QString unusable;
     int maxDownloads = 0;         ///< accountCheck: JD's downloads at once; -1 = unlimited, 0 = unknown
     double balance = -1;          ///< accountCheck of a solver service: its credit; -1 = none given
     QString currency;             ///< of balance, ISO 4217; empty: unknown

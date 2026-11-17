@@ -17,7 +17,8 @@ namespace eMule {
 
 /// Row data for one shared file.
 struct SharedFileRow {
-    QString hash;
+    QString hash;           ///< MD4 hex; an ed3kOnly row: its ed3k root (64 hex)
+    bool    ed3kOnly = false;   ///< shared on ed3k alone (eD2K disabled: no MD4)
     QString fileName;
     int64_t fileSize = 0;
     QString fileType;

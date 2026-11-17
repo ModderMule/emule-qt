@@ -5,7 +5,7 @@
 /// mis-parse is either a popup that should not exist or a release nobody hears about.
 /// Everything checked here is pure — VersionChecker::parse/isNewer/platformKey touch
 /// no network, no preferences and no widgets — so the whole decision is testable
-/// without a reply to wait for.
+/// without a reply to wait for. The disabled-check schedule reads a local file:// manifest.
 ///
 /// kRealManifest is the live document from https://emule-qt.org/pub/emuleqt-version.json
 /// verbatim (as written by scripts/update-manifest.sh), so the fixture also asserts
@@ -13,6 +13,9 @@
 
 #include "app/VersionChecker.h"
 
+#include "prefs/Preferences.h"
+
+#include <QDateTime>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QtTest>
@@ -42,6 +45,7 @@ private slots:
     void isNewerComparesNumerically();
     void belowMinimumVersionRequiresUpdate();
     void manifestUrlHonoursTheEnvironmentOverride();
+    void disabledCheckRunsWeeklyForRequiredOnly();
 };
 
 // The fixtures sit BELOW the class on purpose: CMake's AUTOMOC scanner does not
@@ -340,6 +344,72 @@ void TestVersionChecker::manifestUrlHonoursTheEnvironmentOverride()
 
     qputenv("EMULEQT_VERSION_MANIFEST_URL", "file:///tmp/fake-version.json");
     QCOMPARE(VersionChecker::manifestUrl(), QStringLiteral("file:///tmp/fake-version.json"));
+}
+
+// Check turned off: still due after 7 days, and only a minVersion miss is announced
+void TestVersionChecker::disabledCheckRunsWeeklyForRequiredOnly()
+{
+    const QByteArray savedUrl = qgetenv("EMULEQT_VERSION_MANIFEST_URL");
+    const QString savedVersion = QCoreApplication::applicationVersion();
+    const bool savedEnabled = eMule::thePrefs.versionCheckEnabled();
+    auto restore = qScopeGuard([&] {
+        if (savedUrl.isEmpty())
+            qunsetenv("EMULEQT_VERSION_MANIFEST_URL");
+        else
+            qputenv("EMULEQT_VERSION_MANIFEST_URL", savedUrl);
+        QCoreApplication::setApplicationVersion(savedVersion);
+        eMule::thePrefs.setVersionCheckEnabled(savedEnabled);
+    });
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath(QStringLiteral("emuleqt-version.json"));
+    const auto writeManifest = [&path](const char* latest, const char* minVersion) {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        f.write(QJsonDocument(QJsonObject{{QStringLiteral("latest"), QLatin1String(latest)},
+                                          {QStringLiteral("minVersion"), QLatin1String(minVersion)}})
+                    .toJson());
+    };
+    qputenv("EMULEQT_VERSION_MANIFEST_URL", QUrl::fromLocalFile(path).toString().toUtf8());
+    QCoreApplication::setApplicationVersion(QStringLiteral("0.7.20"));
+    eMule::thePrefs.setVersionCheckEnabled(false);
+
+    const qint64 now = QDateTime::currentSecsSinceEpoch();
+
+    // 3 days ago: due when on (1-14 days), not yet when off
+    {
+        VersionChecker checker;
+        QSignalSpy completed(&checker, &VersionChecker::checkCompleted);
+        checker.setLastCheck(now - 3 * 86400);
+        checker.checkIfDue();
+        QVERIFY(!checker.isFetching());
+        QCOMPARE(completed.count(), 0);
+    }
+
+    // newer release, no minVersion miss: checked, but silent
+    writeManifest("0.7.35", "0.7.10");
+    {
+        VersionChecker checker;
+        QSignalSpy completed(&checker, &VersionChecker::checkCompleted);
+        QSignalSpy announced(&checker, &VersionChecker::newVersionAvailable);
+        checker.setLastCheck(now - 8 * 86400);
+        checker.checkIfDue();
+        QVERIFY(completed.wait(5000));
+        QCOMPARE(announced.count(), 0);
+    }
+
+    // below minVersion: announced
+    writeManifest("0.7.35", "0.7.31");
+    {
+        VersionChecker checker;
+        QSignalSpy completed(&checker, &VersionChecker::checkCompleted);
+        QSignalSpy announced(&checker, &VersionChecker::newVersionAvailable);
+        checker.checkIfDue();   // never checked = due
+        QVERIFY(completed.wait(5000));
+        QCOMPARE(announced.count(), 1);
+        QCOMPARE(announced.first().at(1).toBool(), false);   // not manual
+    }
 }
 
 QTEST_GUILESS_MAIN(TestVersionChecker)

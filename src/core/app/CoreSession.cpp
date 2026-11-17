@@ -2072,6 +2072,9 @@ void CoreSession::applyEd2kDisabled()
     if (thePrefs.disableEd2k() == m_ed2kOffApplied)
         return;
     m_ed2kOffApplied = thePrefs.disableEd2k();
+    // new files: hashed for eD2K again, or for ed3k alone (SharedFileList::ed3kOnlyFiles)
+    if (theApp.sharedFileList)
+        theApp.sharedFileList->reload();
     if (thePrefs.disableEd2k()) {
         logWarning(QStringLiteral("eD2K disabled — closing every eD2K connection"));
         m_resumeEd2k = false;

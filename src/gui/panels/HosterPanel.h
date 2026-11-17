@@ -34,6 +34,7 @@ class QTreeWidgetItem;
 
 namespace eMule {
 
+class HosterHostsDelegate;
 class HosterPuzzleDialog;
 class IpcClient;
 class LinkGrabberPanel;
@@ -91,6 +92,8 @@ public:
     [[nodiscard]] bool linkGrabberOn() const { return m_grabberOn; }
     [[nodiscard]] LinkGrabberPanel* linkGrabber() const { return m_grabber; }
     void showLinkGrabber();
+    /// The daemon's stream token, for Preview (MainWindow::setStreamToken).
+    void setStreamToken(const QString& token) { m_streamToken = token; }
 
 signals:
     /// hostersEnabled() changed
@@ -134,6 +137,11 @@ private:
     /// Opens a complete item's folder.
     void openRow(QTreeWidgetItem* row);
     void copyLinks();
+    /// Plays the selected video or audio item through the daemon's stream (seeking: Options).
+    void previewItem(qint64 id);
+    /// The item a package's Preview plays: its main video (the largest, samples and trailers
+    /// last) among @p ids; 0: none.
+    [[nodiscard]] qint64 mainVideoOf(const QList<qint64>& ids) const;
     /// "Move To Folder..." (#187): unfinished items to one folder.
     void moveToFolder();
     /// Pasted links: added, or into the Link Grabber with "open all links" there.
@@ -154,6 +162,7 @@ private:
 
     QPointer<IpcClient> m_ipc;
     ListTreeWidget* m_tree = nullptr;
+    HosterHostsDelegate* m_hostsDelegate = nullptr;   ///< the Hoster column: every host of a package
     QLabel* m_statusLabel = nullptr;
     StatusFilterBar* m_filterBar = nullptr;
     int m_filter = 0;
@@ -174,6 +183,7 @@ private:
     bool m_grabberOn = false;
     bool m_grabAll = false;
     bool m_watchClipboard = false;
+    QString m_streamToken;
 };
 
 } // namespace eMule

@@ -480,6 +480,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
     {
         auto* act = m_contextMenu->addAction(menuIcon("FileOpen.ico"), tr("Open File"), this,
                                              [this, hashes]() { openSharedFile(hashes.value(0)); });
+        act->setProperty("ed3kOnlyOk", true);
         const bool canOpen = singleSel && single && !single->isPartFile
                              && (localConn || !m_streamToken.isEmpty());
         act->setEnabled(canOpen);
@@ -496,6 +497,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
             if (const SharedFileRow* f = m_model->findByHash(hashes.value(0)))
                 QDesktopServices::openUrl(QUrl::fromLocalFile(f->path));
         });
+        act->setProperty("ed3kOnlyOk", true);
         act->setEnabled(singleSel && single && !single->isPartFile && localConn);
     }
 
@@ -782,6 +784,12 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
         if (webMenu->isEmpty())
             webMenu->setEnabled(false);
     }
+
+    // eD2K disabled: a file without MD4 is known to the core by path and root alone
+    if (std::ranges::any_of(sel, &SharedFileRow::ed3kOnly))
+        for (QAction* a : m_contextMenu->actions())
+            if (!a->isSeparator() && !a->property("ed3kOnlyOk").toBool())
+                a->setEnabled(false);
 
     m_contextMenu->popup(m_fileView->viewport()->mapToGlobal(pos));
 }
@@ -1372,6 +1380,7 @@ SharedFileRow sharedRowFromCbor(const QCborMap& m)
     row.shareToggleable   = m.value(QStringLiteral("canUnshare")).toBool();
     row.ed2kLink          = m.value(QStringLiteral("ed2kLink")).toString();
     row.isPartFile        = m.value(QStringLiteral("isPartFile")).toBool();
+    row.ed3kOnly          = m.value(QStringLiteral("ed3kOnly")).toBool();
     row.category          = static_cast<int>(m.value(QStringLiteral("category")).toInteger());
     row.uploadingClients  = static_cast<int>(m.value(QStringLiteral("uploadingClients")).toInteger());
     row.queuedClients     = static_cast<int>(m.value(QStringLiteral("queuedClients")).toInteger());

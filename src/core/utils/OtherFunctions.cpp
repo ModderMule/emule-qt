@@ -427,6 +427,12 @@ void rc4Crypt(uint8* data, uint32 len, RC4Key& key)
 // ED2K file type detection
 // ---------------------------------------------------------------------------
 
+bool isPlayableMedia(const QString& fileName)
+{
+    const ED2KFileType type = getED2KFileTypeID(fileName);
+    return type == ED2KFileType::Video || type == ED2KFileType::Audio;
+}
+
 ED2KFileType getED2KFileTypeID(const QString& fileName)
 {
     const auto dotPos = fileName.lastIndexOf(QChar(u'.'));

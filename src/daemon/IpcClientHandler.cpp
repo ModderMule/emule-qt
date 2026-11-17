@@ -1133,6 +1133,20 @@ void IpcClientHandler::handleSearchKadNotes(const IpcMessage& msg)
 {
     const QString hash = msg.fieldString(0);
     const QString fileName = msg.fieldString(1); // optional; shown in the Kad search list
+    // an ed3k download's Details: its root (64 hex), NOTE records on ed3k Kad
+    if (const QByteArray root = QByteArray::fromHex(hash.toLatin1()); hash.size() == 64 && root.size() == 32) {
+        if (!theApp.ed3kConnected || !theApp.ed3kConnected()) {
+            sendMessage(IpcMessage::makeResult(msg.seqId(), false, QCborValue(tr("ed3k is not connected."))));
+            return;
+        }
+        if (!theApp.ed3kSearchNotes || !theApp.ed3kSearchNotes(root)) {
+            sendMessage(IpcMessage::makeResult(msg.seqId(), false,
+                QCborValue(tr("Another search is already in progress. Please try again later!"))));
+            return;
+        }
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+        return;
+    }
     if (hash.size() != 32) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
         return;
@@ -1598,10 +1612,17 @@ void IpcClientHandler::handleGetSharedFiles(const IpcMessage& msg)
         files.append(sharedFileRow(*it, rules, loadIt != loads.end() ? loadIt->second : SharedFileLoad{}));
     }
 
+    // files shared on ed3k alone (eD2K disabled): keyed by root, so after the MD4 cursor's
+    // pages, all on the last one
+    const QCborArray ed3kOnly = Ed3kBridge::ed3kOnlySharedRows();
+    if (count == remaining)
+        for (const QCborValue& row : ed3kOnly)
+            files.append(row);
+
     QCborMap result;
     result.insert(QStringLiteral("files"), files);
     result.insert(QStringLiteral("more"), count < remaining);
-    result.insert(QStringLiteral("total"), static_cast<qint64>(all.size()));
+    result.insert(QStringLiteral("total"), static_cast<qint64>(all.size()) + ed3kOnly.size());
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(result)));
 }
 
@@ -4008,7 +4029,7 @@ void IpcClientHandler::handleGetDownloadDetails(const IpcMessage& msg)
     const QString hash = msg.fieldString(0);
     // an ed3k download (its root, 64 hex): the General page's fields
     if (hash.size() == 64) {
-        if (auto details = Ed3kDownloadsBridge::detailsOf(hash))
+        if (auto details = Ed3kDownloadsBridge::detailsOf(hash, msg.fieldCount() > 1 && msg.fieldBool(1)))
             sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(*details)));
         else
             sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
@@ -5387,8 +5408,6 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
     // ed3k node; the daemon re-reads them on ed3kConfigChanged
     if (key == QStringLiteral("ed3kEnabled"))
         thePrefs.setEd3kEnabled(val.toBool());
-    else if (key == QStringLiteral("ed3kShareFiles"))
-        thePrefs.setEd3kShareFiles(val.toBool());
     else if (key == QStringLiteral("ed3kHashRamMiB"))
         thePrefs.setEd3kHashRamMiB(static_cast<int>(val.toInteger()));
     else if (key == QStringLiteral("ed3kKadStoreMiB"))

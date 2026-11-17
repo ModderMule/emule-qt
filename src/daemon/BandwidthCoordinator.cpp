@@ -37,7 +37,9 @@ constexpr qint64 kLogChangePercent = 10;
 constexpr qint64 kLogMinIntervalMs = 5000;
 /// ed3k upload slots: KiB/s each, and the count's bounds (Protocol.md §12.5: 9 to 55 KiB/s
 /// per slot, at least 2)
-constexpr qint64 kEd3kSlotKb = 25;
+constexpr qint64 kEd3kSlotKb = 25;   // Options' slot speed automatic (0)
+constexpr qint64 kEd3kSlotKbMin = 9;
+constexpr qint64 kEd3kSlotKbMax = 55;
 constexpr qint64 kEd3kMinSlots = 2;
 // was: a cap of 20; the share sizes them, as in the node (§12.5)
 // constexpr qint64 kEd3kMaxSlots = 20;
@@ -255,7 +257,11 @@ std::uint32_t BandwidthCoordinator::ed3kSlotsFor(qint64 upKb)
 {
     if (upKb <= 0)
         return 0;
-    const qint64 n = std::max<qint64>(upKb / kEd3kSlotKb, kEd3kMinSlots);
+    // was: always kEd3kSlotKb; now Options' slot speed as eD2K's, inside §12.5's bounds
+    // const qint64 n = std::max<qint64>(upKb / kEd3kSlotKb, kEd3kMinSlots);
+    const qint64 user = qint64(thePrefs.uploadSlotTargetRate());
+    const qint64 perSlot = user > 0 ? std::clamp(user, kEd3kSlotKbMin, kEd3kSlotKbMax) : kEd3kSlotKb;
+    const qint64 n = std::max<qint64>(upKb / perSlot, kEd3kMinSlots);
     return std::uint32_t(std::min<qint64>(n, std::numeric_limits<std::uint32_t>::max()));
 }
 

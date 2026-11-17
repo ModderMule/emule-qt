@@ -441,6 +441,8 @@ bool DaemonApp::start()
             // a folder scan may have taken them meanwhile
             if (m_usenetLanded.blocking() && theApp.sharedFileList)
                 theApp.sharedFileList->dropNeverShared();
+            if (m_usenetLanded.blocking())
+                syncEd3kAliasOnly();
         });
     }
     if (thePrefs.usenetEnabled() && !m_enginesHeld)
@@ -510,6 +512,7 @@ bool DaemonApp::start()
                 if (f)
                     s->onFileChanged(QByteArray(reinterpret_cast<const char*>(f->fileHash()), 16));
             });
+        syncEd3kAliasOnly();
         m_ed3kShared->setEnabled(thePrefs.ed3kShareFiles());
         // declined-records.md §2: roots of listed MD4s known here go to the engine as roots too
         m_ed3kSession->setDeclineRootsOf([s = QPointer<ed3k::Ed3kShared>(m_ed3kShared.get())](const ed3k::DeclineList& list) {
@@ -687,6 +690,7 @@ bool DaemonApp::start()
         m_hosterLanded.setListPath(QDir(ed3k::stateDir(thePrefs.configDir())).filePath(QStringLiteral("hoster/landed.txt")));
         m_hosterLanded.load();
         m_hosterLanded.setBlocking(!thePrefs.ed3kHoster().shareFiles);
+        syncEd3kAliasOnly();
         if (theApp.sharedFileList) {
             connect(&m_ed3kSets->plainCopies(), &ed3k::Ed3kPlainCopies::added, this, [] {
                 if (theApp.sharedFileList)
@@ -767,6 +771,7 @@ bool DaemonApp::start()
     theApp.ed3kConnected = [s = m_ed3kSession.get()] { return s->isRunning() && s->contactCount() > 0; };
     // an ed3k search row's Comments: its NOTE records (Protocol.md §10.7)
     theApp.ed3kSearchNotes = [s = m_ed3kSearch.get()](const QByteArray& root) { return s->searchNotes(root); };
+    Ed3kDownloadsBridge::setSearch(m_ed3kSearch.get());
     // §14.4: a dual peer queued on ed3k gets no 2nd place in the eD2K upload queue
     theApp.isEd3kUploadPeer = [u = m_ed3kUploads.get()](const uint8* hash) {
         ::ed3k::Ed2kHash h{};
@@ -856,6 +861,8 @@ bool DaemonApp::start()
     m_hosterJoin->setPublishedHook([this](const QStringList& files) {
         // remembered either way: switching sharing off later covers these too
         m_hosterLanded.add(files);
+        if (m_hosterLanded.blocking())
+            syncEd3kAliasOnly();   // their ed2k ALIAS alone
         if (!theApp.sharedFileList || m_hosterLanded.blocking())
             return;
         for (const QString& f : files)
@@ -1194,6 +1201,7 @@ void DaemonApp::stop()
     theApp.isEd3kUploadPeer = {};
     theApp.ed3kConnected = {};
     theApp.ed3kSearchNotes = {};
+    Ed3kDownloadsBridge::setSearch(nullptr);
     // no reader publishes once the contents service is gone
     m_archiveCancel->store(true);
     setArchiveContentsHook({});
@@ -1397,6 +1405,7 @@ void DaemonApp::startWebServer()
     m_webServer->setEd3kFileResolver(&Ed3kDownloadsBridge::fileOf);
     m_webServer->setEd3kStreamResolver(&Ed3kDownloadsBridge::streamFrom);
     m_webServer->setBtStreamResolver(&BtBridge::streamFrom);
+    m_webServer->setHosterStreamResolver(&Ed3kHosterBridge::streamFrom);
 
     m_webServer->setUsenetStreamResolver(
         [](const UsenetStreamRequest& ask) -> UsenetStreamSource {
@@ -1405,7 +1414,7 @@ void DaemonApp::startWebServer()
                 return out;
 
             const auto info = usenet::theUsenetSession->queue()->requestStream(
-                ask.itemId, ask.fileIndex, ask.wantOffset, ask.wantLength, ask.entryOrdinal);
+                ask.itemId, ask.fileIndex, ask.wantOffset, ask.wantLength, ask.entryOrdinal, ask.fetch);
             out.found             = info.found;
             out.fileName          = info.fileName;
             out.totalSize         = info.totalSize;
@@ -1796,6 +1805,7 @@ void DaemonApp::applyEd3kConfig()
     if (m_ed3kShared) {
         m_ed3kShared->setLowRamPercent(thePrefs.ed3kHashCacheLowRamPercent());
         m_ed3kShared->setHashRamMiB(thePrefs.ed3kHashRamMiB());
+        syncEd3kAliasOnly();
         m_ed3kShared->setEnabled(thePrefs.ed3kShareFiles());
     }
     // ed3kJointDownloads: on/off while the node runs
@@ -1873,6 +1883,7 @@ void DaemonApp::applyHosterConfig()
             theApp.sharedFileList->reload();
         else
             theApp.sharedFileList->dropNeverShared();
+        syncEd3kAliasOnly();
     }
     if (m_linkGrabber)
         m_linkGrabber->setEnabled(h.linkGrabber, h.grabAll);
@@ -1988,6 +1999,7 @@ void DaemonApp::applyUsenetServers()
             theApp.sharedFileList->reload();
         else
             theApp.sharedFileList->dropNeverShared();
+        syncEd3kAliasOnly();
     }
 
     // The enable switch can flip in the same save that changed the servers.
@@ -2378,6 +2390,25 @@ void DaemonApp::releaseEngines()
     Ed3kBridge::setConnectWanted(thePrefs.autoConnect());
     // waits for the eD2K UDP socket while the core loads (onCoreLoaded comes back); hosters too
     applyEd3kConfig();
+}
+
+void DaemonApp::syncEd3kAliasOnly()
+{
+#ifdef EMULE_HAVE_ED3K
+    if (!m_ed3kShared)
+        return;
+    // eD2K disabled: nothing new hashed for it; ed2k ALIAS records known before stay out
+    m_ed3kShared->setEd2kHashing(!thePrefs.disableEd2k());
+    QStringList paths;
+    for (const LandedFiles* landed : {&m_usenetLanded, &m_hosterLanded}) {
+        if (!landed->blocking())
+            continue;   // in eD2K's share: Ed3kShared publishes them as shared files
+        for (const QString& p : landed->paths())
+            if (!m_ed3kSets || !m_ed3kSets->plainCopies().contains(p))   // hidden-set.md §4.2: never named
+                paths << p;
+    }
+    m_ed3kShared->setAliasOnlyFiles(paths);
+#endif
 }
 
 bool DaemonApp::neverShared(const QString& path) const

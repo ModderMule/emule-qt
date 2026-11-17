@@ -59,6 +59,7 @@ public final class ResolverMain {
             Out.log("JD remote API: " + e);
         }
         PuzzleSolver.install();
+        SolverChain.install();
         LoginSolver.install();
         // solver accounts JD saved last run: the daemon sends the current ones
         SolverAccountsTask.clear();

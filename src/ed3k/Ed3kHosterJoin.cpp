@@ -3,6 +3,7 @@
 #include "Ed3kSession.h"
 #include "Ed3kStore.h"
 #include "decode/YencDecoder.h"
+#include "files/PartFile.h"
 #include "post/UsenetUnpacker.h"
 #include "prefs/Preferences.h"
 #include "utils/BackgroundFileWriter.h"
@@ -11,6 +12,7 @@
 
 #include <QCryptographicHash>
 #include <QDateTime>
+#include <QDeadlineTimer>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -159,6 +161,8 @@ struct Ed3kHosterJoin::Entry {
     std::uint64_t wholeAt = 0;
     bool resuming = false;               ///< those bytes are hashed again, no open yet
     bool openAfterResume = false;        ///< askOpen came while resuming
+    std::optional<std::uint64_t> focus;  ///< playFrom(): peers' blocks from here first
+    QDeadlineTimer focusUntil;           ///< focus ends
 };
 
 Ed3kHosterJoin::Ed3kHosterJoin(Ed3kSession& session, const QString& configDir, QObject* parent)
@@ -985,6 +989,36 @@ std::optional<Ed3kHosterJoin::Item> Ed3kHosterJoin::item(quint32 id) const
     return std::nullopt;
 }
 
+std::optional<std::uint64_t> Ed3kHosterJoin::playFrom(quint32 id, std::uint64_t offset)
+{
+    Entry* e = find(id);
+    if (!e || e->item.retired)
+        return std::nullopt;
+    const std::uint64_t size = e->item.size;
+    if (e->item.state == State::Complete)
+        return std::max(offset, size);
+    if (size > 0 && offset >= size)
+        return offset;
+    // rootless: written in file order, hashed as it comes; nothing can go first
+    if (!e->root)
+        return std::max(offset, e->item.done);
+    std::uint64_t held = offset;
+    for (auto b = offset / kBlock * kBlock; b < size && e->have.contains(b); b += kBlock)
+        held = std::min(size, b + kBlock);
+    if (held >= size || held - offset >= PartFile::kStreamLead)
+        return held;
+    const std::uint64_t at = held / kBlock * kBlock;
+    const bool moved = e->focus != at || e->focusUntil.hasExpired();
+    e->focus = at;
+    e->focusUntil.setRemainingTime(PartFile::kStreamFocusMs);
+    if (moved && downloading(*e->root)) {
+        if (auto* engine = m_session.engine())
+            (void)engine->downloadFocus(m_session.now(), *e->root, at);
+        requestBlocks(*e->root);
+    }
+    return held;
+}
+
 QList<Ed3kHosterJoin::SharedLink> Ed3kHosterJoin::sharedLinks(quint32 id) const
 {
     if (const Entry* e = find(id))
@@ -1010,6 +1044,13 @@ std::vector<std::uint64_t> Ed3kHosterJoin::wantedBlocks(const Download& d) const
     for (std::uint64_t off = 0; off < d.size; off += kBlock)
         if (!e->have.contains(off) && !d.outstanding.contains(off))
             out.push_back(off);
+    // a player streams: the blocks from its first missing one before all else (playFrom)
+    if (e->focus && !e->focusUntil.hasExpired()) {
+        const std::uint64_t from = *e->focus;
+        std::ranges::stable_partition(out, [&](std::uint64_t off) {
+            return off >= from && off < from + PartFile::kStreamLead;
+        });
+    }
     return out;
 }
 
@@ -1333,6 +1374,8 @@ QList<Ed3kHosterJoin::DebridSummary> Ed3kHosterJoin::debridSummaries() const
             s.expires = st.expires;
             s.trafficLeft = st.trafficLeft;
             s.trafficMax = st.trafficMax;
+            s.unlimited = st.unlimited;
+            s.unusable = st.unusable;
             s.checked = st.at / 1000;
             s.hosts = int(st.hosts.size());
             const auto blockedAll = m_debridBlocks.find(key + QStringLiteral("|*"));
@@ -1851,6 +1894,8 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
             st.expires = ev.expires;
             st.trafficLeft = ev.trafficLeft;
             st.trafficMax = ev.trafficMax;
+            st.unlimited = ev.unlimited;
+            st.unusable = ev.unusable;
             st.maxDownloads = ev.maxDownloads;
             st.multi = ev.multi;
             st.hosts = ev.hosts;

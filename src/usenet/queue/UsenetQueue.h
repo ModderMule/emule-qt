@@ -414,10 +414,13 @@ public:
     /// meaning the first playable one — which is what makes a release that
     /// packs an `.nfo` ahead of the feature play the feature.
     ///
+    /// @p fetch false ("Enable seeking in downloads" off): a lookup only — no boost, no
+    /// range promoted; an archive set's missing headers are still asked for, or it never maps.
+    ///
     /// Daemon-thread only, like everything else on this class.
     StreamInfo requestStream(const QString& itemId, int fileIndex,
                              qint64 wantOffset = 0, qint64 wantLength = 0,
-                             int entryOrdinal = -1);
+                             int entryOrdinal = -1, bool fetch = true);
 
     /// One row of an archive set's contents, for the GUI's chooser.
     struct ArchiveEntryInfo {

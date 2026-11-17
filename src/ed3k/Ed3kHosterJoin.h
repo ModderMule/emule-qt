@@ -285,6 +285,8 @@ public:
         qint64 expires = 0;   ///< unix seconds; 0 = unknown
         qint64 trafficLeft = -1;   ///< bytes; -1 = unlimited or unknown
         qint64 trafficMax = -1;
+        bool unlimited = false;   ///< JD says unlimited traffic
+        QString unusable;     ///< ResolverEvent::unusable
         qint64 checked = 0;   ///< unix seconds
         int hosts = 0;        ///< hosters it names
         int working = 0;      ///< of them usable now (working, quota left, not skipped)
@@ -299,6 +301,11 @@ public:
 
     [[nodiscard]] QList<Item> items() const;
     [[nodiscard]] std::optional<Item> item(quint32 id) const;
+    /// Preview with seeking on: item @p id read from @p offset; the end of the bytes held from
+    /// there (@p offset: none yet). Rooted: the blocks from the first missing one go first to
+    /// ed3k peers for PartFile::kStreamFocusMs. The hoster's own link streams in file order and
+    /// is not moved (a new open may cost a puzzle or a wait). nullopt: no such item.
+    [[nodiscard]] std::optional<std::uint64_t> playFrom(quint32 id, std::uint64_t offset);
     /// The links @p id publishes or held back (SharedLink).
     [[nodiscard]] QList<SharedLink> sharedLinks(quint32 id) const;
     /// http(s) links in @p text, one per line or separated by spaces (tests).
@@ -413,6 +420,8 @@ private:
         qint64 expires = 0;
         qint64 trafficLeft = -1;
         qint64 trafficMax = -1;
+        bool unlimited = false;
+        QString unusable;
         int maxDownloads = 0;        ///< JD's downloads at once; -1 unlimited, 0 unknown
         qint64 at = 0;
         bool multi = false;          ///< a multi-hoster: hosts is what it downloads

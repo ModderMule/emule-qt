@@ -41,6 +41,9 @@ public:
     [[nodiscard]] bool stopsOnExit() const { return !m_remote && !m_userDetached; }
     /// Only a local core can be attached; a remote one never stops with the GUI.
     [[nodiscard]] bool canToggle() const { return !m_remote; }
+    /// Host as dialed, no brackets
+    [[nodiscard]] QString host() const { return m_host; }
+    [[nodiscard]] uint16_t port() const { return m_port; }
     /// "127.0.0.1:4712"; brackets around an IPv6 host
     [[nodiscard]] QString address() const;
 

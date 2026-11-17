@@ -406,6 +406,7 @@ Ed3kStatus Ed3kSession::status() const
         st.router = s->router != 0;
         st.kadOffline = s->kad_offline;
         st.natChecking = s->nat_checking;
+        st.natUntested = s->nat_untested;
         st.kadConnected = s->kad_connected != 0;
     }
     st.hide = m_hide->status();
@@ -449,7 +450,8 @@ Ed3kTraffic Ed3kSession::traffic() const
 
 void Ed3kSession::setLimits(std::uint64_t upBytesPerSec, std::uint64_t downBytesPerSec)
 {
-    if (m_limits.up == upBytesPerSec && m_limits.down == downBytesPerSec)
+    // the coordinator's tick also carries a changed LAN switch
+    if (m_limits.up == upBytesPerSec && m_limits.down == downBytesPerSec && m_lanUnlimited == thePrefs.ed3kLanUnlimited())
         return;
     m_limits = {upBytesPerSec, downBytesPerSec};
     applyLimits();
@@ -892,6 +894,10 @@ void Ed3kSession::applyLimits()
     const ffi::Limits l{floored(m_limits.up), floored(m_limits.down)};
     if (auto ok = m_engine->setLimits(now(), l); !ok)
         logEd3kWarning(QStringLiteral("ed3k: limits not set (error %1)").arg(errorName(ok.error())));
+    // was: packmule's default, LAN peers outside the limits; now they hold as for eD2K
+    m_lanUnlimited = thePrefs.ed3kLanUnlimited();
+    if (auto ok = m_engine->setLanUnlimited(now(), m_lanUnlimited); !ok)
+        logEd3kWarning(QStringLiteral("ed3k: LAN limit switch not set (error %1)").arg(errorName(ok.error())));
     growSendBuffer();
 }
 

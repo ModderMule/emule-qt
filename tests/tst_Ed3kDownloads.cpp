@@ -630,6 +630,18 @@ void tst_Ed3kDownloads::downloadsOfOneSourceTakeTurns()
     QVERIFY(d.add(Ed3kDownloadSpec{a.roots[2], std::uint64_t(three.size()), QStringLiteral("three.bin"), {}, {}, 0, false, 2}).has_value());
     for (const auto& root : a.roots)
         d.addSourceTo(root, sourceOf(a.session));
+    // eD2K's A4AF: one download holds the node, the other two count it as waiting there;
+    // the holder's source row names them
+    int waiting = 0;
+    for (const auto& root : a.roots)
+        waiting += d.info(root)->a4af;
+    QCOMPARE(waiting, 2);
+    int named = 0;
+    for (const auto& root : a.roots)
+        for (const auto& s : Ed3kJoinBase::sourcesAt(b, root))
+            if (!s.otherFile)
+                named += int(s.otherWants.size());
+    QCOMPARE(named, 2);
     QTRY_COMPARE_WITH_TIMEOUT(done.count(), 3, 30000);
     // was: one, three, two (the holder kept the node; now a higher waiter takes it)
     QVERIFY(done.at(0).at(0).value<::ed3k::Root>() == a.roots[2]);

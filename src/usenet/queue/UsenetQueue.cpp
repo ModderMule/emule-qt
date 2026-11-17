@@ -1308,7 +1308,7 @@ UsenetQueue::PreviewInfo UsenetQueue::previewability(const QString& itemId, int 
 
 UsenetQueue::StreamInfo UsenetQueue::requestStream(const QString& itemId, int fileIndex,
                                                    qint64 wantOffset, qint64 wantLength,
-                                                   int entryOrdinal)
+                                                   int entryOrdinal, bool fetch)
 {
     StreamInfo info;
 
@@ -1329,7 +1329,7 @@ UsenetQueue::StreamInfo UsenetQueue::requestStream(const QString& itemId, int fi
     // every branch below either serves bytes or asks for some, and both want the
     // item ahead of an unattended download for the next kStreamingBoostMs.
     const bool active = item.isActive();
-    if (active)
+    if (active && fetch)
         rt->streamingUntilMs = QDateTime::currentMSecsSinceEpoch() + kStreamingBoostMs;
 
     const StreamResolve resolved =
@@ -1342,7 +1342,7 @@ UsenetQueue::StreamInfo UsenetQueue::requestStream(const QString& itemId, int fi
         // down its own output is a perfectly good byte source. The map goes
         // first because only it can seek ahead of the write head.
         if (streamFromExtraction(*rt, fileIndex, entryOrdinal, info)) {
-            if (active) {
+            if (active && fetch) {
                 promoteExtractionVolume(*rt, fileIndex);
                 dispatch();
             }
@@ -1351,7 +1351,7 @@ UsenetQueue::StreamInfo UsenetQueue::requestStream(const QString& itemId, int fi
         // Last resort, and the only one that works for a password-protected
         // set: re-run the external unpacker over the volumes that have landed.
         if (streamFromEncryptedPreview(*rt, fileIndex, info)) {
-            if (active) {
+            if (active && fetch) {
                 promoteEncryptedPreviewVolumes(*rt, fileIndex);
                 dispatch();
             }
@@ -1399,7 +1399,7 @@ UsenetQueue::StreamInfo UsenetQueue::requestStream(const QString& itemId, int fi
     }
     info.complete = everyPieceFinal;
 
-    if (active) {
+    if (active && fetch) {
         // Ask for what was requested, mapped back through the extents onto the
         // volumes that hold it. A seek to 80% therefore promotes the articles of
         // one volume and leaves everything before it alone.

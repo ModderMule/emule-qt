@@ -77,6 +77,7 @@
 #include <QUuid>
 
 #include <algorithm>
+#include <limits>
 #include <chrono>
 #include <cstring>
 
@@ -115,7 +116,7 @@ constexpr int kStreamWaitMs = 15000;
 /// costs more wake-ups than the scheduler it is waiting on.
 constexpr int kStreamPollMs = 250;
 
-/// The same wait for an eD2K/ed3k download with seeking on. Longer: a seek
+/// The same wait for an eD2K/ed3k/BitTorrent/hoster download with seeking on. Longer: a seek
 /// starts a part from scratch, and its first block comes from a peer that may
 /// first have to be asked.
 constexpr int kDownloadStreamWaitMs = 60000;
@@ -831,6 +832,13 @@ void WebServer::registerRoutes()
             return handleUsenetPreviewStream(itemId, fileIndex, req);
         });
 
+    // Hoster preview: a hoster item by its id
+    m_server->route(QStringLiteral("/api/v1/hoster/<arg>/preview"),
+        QHttpServerRequest::Method::Get,
+        [this](const QString& id, const QHttpServerRequest& req) {
+            return handleHosterPreviewStream(id, req);
+        });
+
     // Torrent preview: one file of a torrent by its id and file index (-1: the largest)
     m_server->route(QStringLiteral("/api/v1/torrents/<arg>/<arg>/preview"),
         QHttpServerRequest::Method::Get,
@@ -1060,22 +1068,26 @@ QFuture<QHttpServerResponse> WebServer::handleTorrentPreviewStream(
 
     const QByteArray rangeHeader = req.headers().combinedValue(QByteArrayLiteral("Range"));
     const qint64 wantStart = parseRangeStart(rangeHeader);
-    // Seeking on: wait for the pieces and have them fetched first. Off: the file as it
-    // is on disk, holes included, as for an eD2K download
-    if (m_preferences && m_preferences->downloadSeeking()) {
-        auto probe = [this, id, fileIndex, wantStart] {
-            return m_btStreamResolver ? m_btStreamResolver(id, fileIndex, wantStart, true) : UsenetStreamSource{};
-        };
-        return serveWhenAvailable(std::move(probe), rangeHeader, kDownloadStreamWaitMs,
-                                  QStringLiteral("Torrent preview"));
-    }
-    const UsenetStreamSource src = m_btStreamResolver(id, fileIndex, wantStart, false);
-    if (!src.found || src.pieces.isEmpty() || !QFileInfo::exists(src.pieces.front().path)) {
-        logDebug([&]() -> QString { return QStringLiteral("Torrent preview: 404 — %1 file %2").arg(id).arg(fileIndex); });
-        return finishedResponse(jsonError(404, QStringLiteral("File not found")));
-    }
-    return finishedResponse(serveRange({{src.pieces.front().path, 0, 0, 0}}, src.fileName, /*totalSize*/ 0,
-                                       /*availableEnd*/ 0, rangeHeader));
+    auto resolve = [this, id, fileIndex, wantStart](bool fetch) {
+        return m_btStreamResolver ? m_btStreamResolver(id, fileIndex, wantStart, fetch) : UsenetStreamSource{};
+    };
+    return serveDownloadPreview(std::move(resolve), rangeHeader, kDownloadStreamWaitMs,
+                                QStringLiteral("Torrent preview"));
+}
+
+QFuture<QHttpServerResponse> WebServer::handleHosterPreviewStream(const QString& id, const QHttpServerRequest& req)
+{
+    if (auto refusal = streamTokenRefusal(req, u"Hoster preview"))
+        return finishedResponse(std::move(*refusal));
+    if (!m_hosterStreamResolver)
+        return finishedResponse(jsonError(503, QStringLiteral("Hoster downloads unavailable")));
+    const QByteArray rangeHeader = req.headers().combinedValue(QByteArrayLiteral("Range"));
+    const qint64 wantStart = parseRangeStart(rangeHeader);
+    auto resolve = [this, id, wantStart](bool fetch) {
+        return m_hosterStreamResolver ? m_hosterStreamResolver(id, wantStart, fetch) : UsenetStreamSource{};
+    };
+    return serveDownloadPreview(std::move(resolve), rangeHeader, kDownloadStreamWaitMs,
+                                QStringLiteral("Hoster preview"));
 }
 
 QFuture<QHttpServerResponse> WebServer::handleUsenetPreviewStream(
@@ -1125,14 +1137,31 @@ QFuture<QHttpServerResponse> WebServer::handleUsenetPreviewStream(
     ask.wantLength = kWantLength;
     ask.entryOrdinal = entryOrdinal;
 
-    // Resolving is not a pure lookup — it also tells the queue somebody is
-    // watching this item, which is what puts its articles at the front of the
-    // schedule. That is why the poll calls it again rather than caching:
-    // the boost has to be refreshed for as long as a player is really reading.
-    auto probe = [this, ask] {
+    // With seeking on, resolving is not a pure lookup — it also tells the queue
+    // somebody is watching this item, which is what puts its articles at the
+    // front of the schedule. That is why the poll calls it again rather than
+    // caching: the boost has to be refreshed for as long as a player is reading.
+    auto resolve = [this, ask](bool fetch) mutable {
+        ask.fetch = fetch;
         return m_usenetStreamResolver ? m_usenetStreamResolver(ask) : UsenetStreamSource{};
     };
-    return serveWhenAvailable(std::move(probe), rangeHeader, kStreamWaitMs, QStringLiteral("Usenet preview"));
+    return serveDownloadPreview(std::move(resolve), rangeHeader, kStreamWaitMs, QStringLiteral("Usenet preview"));
+}
+
+QFuture<QHttpServerResponse> WebServer::serveDownloadPreview(std::function<UsenetStreamSource(bool fetch)> resolve,
+                                                             const QByteArray& rangeHeader, int waitMs,
+                                                             const QString& what)
+{
+    const bool seeking = m_preferences && m_preferences->downloadSeeking();
+    auto probe = [resolve = std::move(resolve), seeking] {
+        UsenetStreamSource src = resolve(seeking);
+        // off: everything mapped counts as there (serveRange caps at the file's size);
+        // only a source still without pieces waits
+        if (!seeking && !src.pieces.isEmpty())
+            src.availableEnd = std::numeric_limits<qint64>::max();
+        return src;
+    };
+    return serveWhenAvailable(std::move(probe), rangeHeader, waitMs, what);
 }
 
 QFuture<QHttpServerResponse> WebServer::serveWhenAvailable(std::function<UsenetStreamSource()> probe,

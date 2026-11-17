@@ -774,11 +774,11 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
     }
 
     // ed3k rows only: what the ed3k list does (Ed3kDownloadControl, open, preview, the
-    // General page of Details); the eD2K-only entries (comments, sources, eD2K links, ...) are off
+    // pages of Details, its NOTE comments); the eD2K-only entries (sources, eD2K links, ...) are off
     if (hasSel && std::all_of(selectedDls.begin(), selectedDls.end(), [](const DownloadRow* d) { return d && d->isEd3k(); })) {
         // "Preview" is the action or, in ext mode, its submenu (own entries gated above)
         const QSet<QString> ed3kActions{tr("Priority (Download)"), tr("Pause"), tr("Stop"), tr("Resume"), tr("Cancel"),
-                                        tr("Delete"), tr("Details..."),
+                                        tr("Delete"), tr("Details..."), tr("Comments..."),
                                         tr("Open File"), tr("Preview"), tr("Preview with"), tr("Clear Completed"),
                                         tr("Assign To Category"),
                                         pasteLinksText(), tr("Find..."), tr("Show Toolbar"),
@@ -793,7 +793,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
             const bool usenetOnly = std::ranges::all_of(selectedDls, [](const DownloadRow* d) {
                 return d->ed3kNetwork == QLatin1String("usenet");
             });
-            QSet<QString> off{tr("Details..."), tr("Preview"), tr("Preview with"), MoveDownloadsAction::menuText(),
+            QSet<QString> off{tr("Details..."), tr("Comments..."), tr("Preview"), tr("Preview with"), MoveDownloadsAction::menuText(),
                               Ed3kLinkMenu::copyText(), Ed3kLinkMenu::showText()};
             if (!usenetOnly)
                 off += {tr("Priority (Download)"), tr("Assign To Category")};
@@ -2344,6 +2344,7 @@ void TransferPanel::fetchAndShowFileDetails(const QString& hash,
             return;
         const QCborMap details = resp.field(1).toMap();
         auto* dlg = new FileDetailDialog(details, tab, this);
+        dlg->setIpc(m_ipc);   // the Archive tab of an ed3k download
         connectEd2kLinkRequests(dlg, m_ipc);
         connectKadNotesSearch(dlg, m_ipc, IpcMsgType::GetDownloadDetails);
         connectCommentFilter(dlg, m_ipc);

@@ -78,16 +78,20 @@ the link with its key:
 | `GET /downloads/{hash}/preview-link` | `/downloads/{hash}/preview` — eD2K hash (32 hex) or ed3k root (64), download or shared file |
 | `GET /usenet/{id}/{fileIndex}/preview-link` | `/usenet/{id}/{fileIndex}/preview` |
 | `GET /torrents/{id}/{fileIndex}/preview-link` | `/torrents/{id}/{fileIndex}/preview` — `fileIndex` -1 = largest file |
+| `GET /hoster/{id}/preview-link` | `/hoster/{id}/preview` — video/audio items only; archive or other file: 406 |
 
 The answer is `{url, path, token}`: `url` is absolute, built from the request's scheme and
 `Host`, and goes straight to the player. Each call mints a new token; it lapses after 6 hours
 unused, and only the 16 newest stay valid. The MCP tools (`download_preview_link`,
-`usenet_preview_link`, `torrents_preview_link`) give `path` only.
+`usenet_preview_link`, `torrents_preview_link`, `hoster_preview_link`) give `path` only.
 
 Unfinished files: with *Enable seeking in downloads* (`downloadSeeking`, off by default) a
-range that is not on disk yet waits up to 60 seconds while the core fetches those bytes first
-(eD2K/ed3k parts, web-seed ranges, torrent piece deadlines); off, the file is served as it is
-on disk, gaps included. Usenet always waits, up to 15 seconds.
+range that is not on disk yet waits while the core fetches those bytes first: 60 seconds for
+eD2K/ed3k parts, web-seed ranges, torrent piece deadlines and hoster items, 15 seconds for
+Usenet articles (the item is boosted too). A hoster's own HTTP stream stays in file order; only
+ed3k peers of an item with a known root fetch the seek point first, so a seek ahead of a
+rootless hoster item waits for the stream to get there. Off, the file is served as it is on
+disk, gaps included (a Usenet archive set still waits for the headers that map it).
 
 The web UI links the same routes with a page token (30 minutes idle, kept alive by the
 session): *Preview* in the Transfers and Shared Files right-click menus, in the Usenet menu,

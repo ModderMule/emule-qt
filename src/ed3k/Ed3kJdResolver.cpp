@@ -661,6 +661,8 @@ std::optional<std::pair<Ed3kResolver::TaskId, ResolverEvent>> Ed3kJdResolver::pa
     e.expires = o.value(QStringLiteral("expires")).toInteger(0);
     e.trafficLeft = o.contains(QStringLiteral("trafficLeft")) ? o.value(QStringLiteral("trafficLeft")).toInteger(-1) : -1;
     e.trafficMax = o.value(QStringLiteral("trafficMax")).toInteger(-1);
+    e.unlimited = o.value(QStringLiteral("unlimited")).toBool();
+    e.unusable = str("unusable");
     e.maxDownloads = int(o.value(QStringLiteral("maxDownloads")).toInteger(0));
     e.balance = o.value(QStringLiteral("balance")).toDouble(-1);
     e.currency = str("currency");
@@ -945,6 +947,10 @@ void Ed3kJdResolver::onLog(const QByteArray& line)
     // JD's own log may hold page content: only the driver's lines
     if (line.startsWith("resolver: "))
         logHosterDebug([&]() -> QString { return QStringLiteral("hoster: ") + QString::fromUtf8(line.mid(10)); });
+    else if (line.startsWith("resolver+ "))   // shown without debug
+        logHoster(QStringLiteral("hoster: ") + QString::fromUtf8(line.mid(10)).trimmed());
+    else if (line.startsWith("resolver! "))
+        logHosterWarning(QStringLiteral("hoster: ") + QString::fromUtf8(line.mid(10)).trimmed());
 }
 
 void Ed3kJdResolver::onFinished(int exitCode, bool crashed, bool stopped)

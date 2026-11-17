@@ -121,7 +121,7 @@ The `ed3k:` block in `preferences.yml`, with IPC/REST keys `ed3kEnabled` and `ed
 | `chaintubeRpc` | `[]` | IPC/REST `ed3kChaintubeRpc`: the same for chaintube's chain reads and writes |
 | `chain:` | | chaintube.md §4.2, no defaults: `chainId` (0 = none), `content`, `comment`, `vote` (0x + 40 hex; empty = none), `forwarder` (empty = none); IPC/REST `ed3kChainId` (decimal text), `ed3kChainContent`, `ed3kChainComment`, `ed3kChainVote`, `ed3kChainForwarder` (`Preferences::applyEd3kChainKey`). `Ed3kChain` calls `chainConfigure` at each node start and when they or `chaintubeRpc` change (no restart): only with a chain ID and the three contracts; providers per read 0 without endpoints, 1 when every endpoint is a local node, else 2 (held to the endpoints there are). One remote endpoint only (`Ed3kChain::singleRemote`): the §4.3 SHOULD of two agreeing providers can't be met, said once in the log and as a note under the endpoints (batch 12 #8). GUI: Options → ed3k → Connection → Chaintube |
 | `jointDownloads` | `true` | IPC `ed3kJointDownloads`: eD2K downloads also fetch from ed3k, dual peers over ed3k (`Ed3kEd2kJoin`) |
-| `shareFiles` | `true` | IPC/REST `ed3kShareFiles`: serve the shared files over ed3k (`Ed3kShared`); only while the node runs |
+| `shareFiles` | `true` | YAML only (no GUI/IPC): serve the shared files over ed3k (`Ed3kShared`); only while the node runs |
 | `sitePort` | `0` | IPC/REST `ed3kSitePort`: TCP port of the website server (name.md §6.2); 0 = a random free port, picked once at load and saved (it is part of every site's origin) |
 | `extOff` | `[]` | IPC/REST `ed3kExtOff` (names separated by spaces): optional extensions turned off (`Preferences::ed3kExtensionNames()`: the names of `extensions/*.md`, `lan` = `lan-discovery`) → `Config::extOff`; unknown names are logged and ignored. A change restarts the node |
 | `lan` | `false` | IPC/REST `ed3kLan`: LAN discovery (`Ed3kLan`). A change restarts the node |
@@ -161,11 +161,11 @@ The port is mapped as `PortMapPurpose::Ed3kUdp` while `ed3kEnabled`.
 | `usenet/<item>.join` | a usenet join | debounced, and at stop |
 | `torrent/<id>.join` | a torrent join (`:` of the id as `_`) | debounced, and at stop |
 | `usenet/<item>/`, `torrent/<id>/` | kept for a restart (owner percent-encoded): `<root>.blob` per manifest, article list, info dictionary; `kept.tsv` names them, the verified members and the set published (`s` line); `records.bin` the `ALIAS` records (u32-LE length + `Alias` each) | when fetched, made or verified; dropped with the item or torrent |
-| `usenet/deleted.tsv`, `hoster/deleted.tsv` | alias.md §3 "Deleted file": volumes (and repair files) deleted after unpacking whose `ALIAS` records stay out without the file, no `SOURCE`. Per row: root, owner, member, size, deleted, last found (ms), name, what is checked (usenet: 3 message ids, `@group`, `=date`; hoster: the links). Told to the engine at start (`aliasKeepDeleted`) before the kept records go out | at deletion; a row ends after `ed3k.deletedFileDays` (YAML, default and max 365, 0 = none), when its name is found gone (usenet: STAT every 7 days, every account refuses all; hoster: the link recheck, `recheckHours`, at least every 7 days: `checkDeleted`), or removed with "delete file"; the owner's kept dir goes with its last row |
+| `usenet/deleted.tsv`, `hoster/deleted.tsv` | alias.md §3 "Deleted file": volumes (and repair files) deleted after unpacking whose `ALIAS` records stay out without the file, no `SOURCE`. Per row: root, owner, member, size, deleted, last found (ms), name, what is checked (usenet: 3 message ids, `@group`, `=date`; hoster: the links). Told to the engine at start (`aliasKeepDeleted`) before the kept records go out | at deletion; a row ends after `ed3k.deletedFileDays` (YAML, default 365, 0 = no age limit, -1 = none kept; the age limit is a MAY), when its name is found gone (usenet: STAT every 7 days, every account refuses all; hoster: the link recheck, `recheckHours`, at least every 7 days: `checkDeleted`), or removed with "delete file"; the owner's kept dir goes with its last row |
 | `names.dat` | `ED3K_STATE_NAMES` (petnames, pins, own zones, followed lists) | on `StateChanged` and at stop |
 | `name-lists.dat` | `id<TAB>label<TAB>link` of the followed name lists in the user's order (`Ed3kNames`); not a credential | on follow, unfollow, move |
 | `name-petnames.dat` | `text<TAB>zone hex<TAB>shareable` of the petnames set here (the core lists none); owner-only | on set, remove |
-| `shared-index.dat` | hash cache index of the shared files (`Ed3kShared`): per MD4 path, size, mtime, root, offset into `shared-hashes.dat` | 5 s after a change, and at stop |
+| `shared-index.dat` | hash cache index of the shared files (`Ed3kShared`): per MD4 (or `pathKeyOf` for a file without one) path, size, mtime, root, offset into `shared-hashes.dat`, v3: eD2K hash of an alias-only file | 5 s after a change, and at stop |
 | `shared-hashes.dat` | block values of those files, append-only, compacted at start | when a file is hashed |
 | `shared.dat` | old single-file hash cache, read once and moved into the two files above (ToDo: drop the migration later) | never |
 | `stake-claims.json` | the claims of own burns and of ids claimed (credit.md §6.7): `[{id, to, amount (uint256 hex), readyAt, state (0 waiting, 1 claiming, 2 paid), burnTx, claimTx (hash hex, "" unknown)}]`, u64 as text; public on the chain, not a secret | on a burn, a claim, a read of a claim |
@@ -526,7 +526,19 @@ node stops. `applyEd3kConfig` switches it with the pref.
   block values}`, `publish(Both)` (keywords too, so ed3k search finds it; `Source` while
   holding back), and an `ed2k` ALIAS record (alias.md §2: id = MD4 ‖ size
   as 8 B big endian, relation `SAME`; `Ed3kShared::ed2kAlias` encodes the `Alias` message, a
-  name over 255 B is left out) through `publishAlias`, not while holding back.
+  name over 255 B is left out) through `publishAlias`, not while holding back. No setting
+  turns it off (only the anonymous key, decline.txt and holding back).
+- **eD2K disabled** (Extended): `SharedFileList` hashes no new file for eD2K (no MD4, no AICH);
+  new files go to `ed3kOnlyFiles()` (`ed3kOnlyAdded/Removed`) and `Ed3kShared` hashes and shares
+  them by root alone, keyed `pathKeyOf(path)` (no `ed2k` field or ALIAS). Known files keep their
+  MD4 and their `ed2k` ALIAS indefinitely. eD2K on again: a reload hashes them for eD2K; the
+  root moves from the path-keyed cache entry (no second read). Shared Files lists them with
+  `ed3kOnly` rows (hash = root hex, last page; open / open folder only).
+- **Landed files kept out of eD2K** (hoster/Usenet "share landed files" off): `DaemonApp::
+  syncEd3kAliasOnly` → `setAliasOnlyFiles`: read once for MD4 + root (`hashInBackground(withEd2k)`)
+  while eD2K is enabled, only their `ed2k` ALIAS published (the join shares the root; refused
+  with `State` until it does: tried after 5 s, then each minute). An eD2K hash known before
+  stays published while eD2K is disabled.
 - **Serving:** the base answers `WantBlock`/`VerifyBlock` (`sharedRead` names the file; the
   worker reads it only while size and mtime are what was hashed). `FileRequested`: see "Upload
   queue"; each file's upload priority (`KnownFile::upPriority`, read again once a minute: no

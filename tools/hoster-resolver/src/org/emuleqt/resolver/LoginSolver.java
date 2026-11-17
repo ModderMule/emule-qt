@@ -2,26 +2,33 @@
 // GPL v3 or later, see ../../../../LICENSE
 package org.emuleqt.resolver;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import jd.plugins.Plugin;
 
+import org.jdownloader.captcha.v2.AbstractResponse;
 import org.jdownloader.captcha.v2.Challenge;
 import org.jdownloader.captcha.v2.ChallengeResponseController;
 import org.jdownloader.captcha.v2.ChallengeSolver;
+import org.jdownloader.captcha.v2.challenge.oauth.AccountLoginOAuthChallenge;
+import org.jdownloader.captcha.v2.challenge.oauth.AccountOAuthSolver;
 import org.jdownloader.captcha.v2.challenge.oauth.OAuthChallenge;
 import org.jdownloader.captcha.v2.solver.service.DialogSolverService;
 import org.jdownloader.captcha.v2.solverjob.SolverJob;
 
 /**
- * Browser logins (OAuth device flow, e.g. Real-Debrid): what JD's OAuthDialogSolver does headless.
- * Only an accountCheck asks the user: a `login` event with the URL, then the challenge's own
- * poll() (ChallengeResponseController, every second) sees the user allow it in the browser.
- * Downloads never wait for one: their login fails and the next mirror / multi-hoster goes.
+ * Logins through a page (OAuth device flow, e.g. Real-Debrid), in place of JD's AccountOAuthSolver:
+ * - the plugin's own auto login (form + captcha + mail code), as JD headless does. Its code dialog
+ *   runs on this solver thread, so it borrows the task's CodeAsker login: the user gets the code ask.
+ * - only an accountCheck also asks the user: a `login` event with the URL, the challenge's own
+ *   poll() (ChallengeResponseController, every second) sees the user allow it in the browser.
+ * Downloads never wait for the browser: their login fails and the next mirror / multi-hoster goes.
  */
 final class LoginSolver extends ChallengeSolver<Boolean> {
     private static final LoginSolver INSTANCE = new LoginSolver();
@@ -32,11 +39,17 @@ final class LoginSolver extends ChallengeSolver<Boolean> {
         super(DialogSolverService.getInstance(), 1);
     }
 
+    @SuppressWarnings("unchecked")
     static void install() {
         try {
+            final ChallengeResponseController crc = ChallengeResponseController.getInstance();
+            // JD's would run the same auto login a 2nd time, its code ask on a thread nobody knows
+            final Field f = ChallengeResponseController.class.getDeclaredField("solverList");
+            f.setAccessible(true);
+            ((List<ChallengeSolver<?>>) f.get(crc)).remove(AccountOAuthSolver.getInstance());
             final Method m = ChallengeResponseController.class.getDeclaredMethod("addSolver", ChallengeSolver.class);
             m.setAccessible(true);
-            m.invoke(ChallengeResponseController.getInstance(), INSTANCE);
+            m.invoke(crc, INSTANCE);
         } catch (final Throwable e) {
             Out.log("login solver not installed: " + e.getClass().getSimpleName());
         }
@@ -74,22 +87,49 @@ final class LoginSolver extends ChallengeSolver<Boolean> {
         }
         final OAuthChallenge c = (OAuthChallenge) job.getChallenge();
         final Long task = c.getPlugin() == null ? null : CHECKS.get(c.getPlugin());
-        if (task == null || c.getUrl() == null) {
+        final boolean browser = task != null && c.getUrl() != null;
+        if (browser) {
+            final Map<String, Object> m = Out.event(task, "login");
+            m.put("url", c.getUrl());
+            m.put("host", c.getHost());
+            final int remaining = c.getRemainingTimeout();
+            m.put("timeout", remaining > 0 ? remaining / 1000 : 300);
+            Out.send(m);
+        }
+        if (autoLogin(job, c)) {
             return;
         }
-        final Map<String, Object> m = Out.event(task, "login");
-        m.put("url", c.getUrl());
-        m.put("host", c.getHost());
-        final int remaining = c.getRemainingTimeout();
-        m.put("timeout", remaining > 0 ? remaining / 1000 : 300);
-        Out.send(m);
+        if (!browser) {
+            return;
+        }
         // the challenge's poll() answers the job once the user allowed it
         while (!job.isSolved() && job.getSkipRequest() == null && CHECKS.containsKey(c.getPlugin())) {
-            final int left = c.getRemainingTimeout();
-            if (left == 0) {
+            if (c.getRemainingTimeout() == 0) {
                 break;
             }
             Thread.sleep(1000);
         }
+    }
+
+    /** The plugin's own login with the account's password; true: done, job answered. */
+    private boolean autoLogin(final SolverJob<Boolean> job, final OAuthChallenge c) {
+        if (!(c instanceof AccountLoginOAuthChallenge)) {
+            return false;
+        }
+        final AccountLoginOAuthChallenge a = (AccountLoginOAuthChallenge) c;
+        final boolean lent = a.getAccount() != null && CodeAsker.lend(a.getAccount().getHoster(), a.getAccount().getUser());
+        try {
+            if (a.autoSolveChallenge(job)) {
+                job.addAnswer(new AbstractResponse<Boolean>(c, this, true));
+                return true;
+            }
+        } catch (final Throwable e) {
+            Out.log("auto login failed: " + e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage()));
+        } finally {
+            if (lent) {
+                CodeAsker.unlend();
+            }
+        }
+        return false;
     }
 }

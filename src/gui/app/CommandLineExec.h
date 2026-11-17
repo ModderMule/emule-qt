@@ -45,6 +45,14 @@ public:
     /// Config directory override from --config, or empty if not set.
     [[nodiscard]] QString configOverride() const;
 
+    /// --core-host: dial this core for this run only, prefs untouched. Empty if not set.
+    [[nodiscard]] QString coreHost() const;
+    /// --core-port, 0 if not set or invalid.
+    [[nodiscard]] uint16_t corePort() const;
+    /// Token for --core-host from EMULEQT_CORE_TOKEN; env, not an arg, so ps/Task
+    /// Manager never show it.
+    [[nodiscard]] static QString coreTokenFromEnv();
+
     /// Apply --tab and --subtab to the main window.
     void applyTabArgs(MainWindow& mainWindow) const;
 
@@ -134,6 +142,17 @@ private:
         QStringLiteral("config"),
         QStringLiteral("Override config directory (default: platform-specific)."),
         QStringLiteral("path")};
+
+    QCommandLineOption m_coreHostOption{
+        QStringLiteral("core-host"),
+        QStringLiteral("Connect to the core at this address for this run; settings are kept. "
+                       "Token from EMULEQT_CORE_TOKEN."),
+        QStringLiteral("host")};
+
+    QCommandLineOption m_corePortOption{
+        QStringLiteral("core-port"),
+        QStringLiteral("IPC port of the --core-host core (default: the configured one)."),
+        QStringLiteral("port")};
 
     QCommandLineOption m_newInstanceOption{
         QStringLiteral("new-instance"),

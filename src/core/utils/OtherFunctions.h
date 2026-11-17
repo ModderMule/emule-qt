@@ -228,6 +228,9 @@ enum class ED2KFileType : uint8 {
 /// Determine the ED2K file type from a file name/extension.
 [[nodiscard]] ED2KFileType getED2KFileTypeID(const QString& fileName);
 
+/// A video or audio file by name: a player can stream it as it downloads (hoster preview).
+[[nodiscard]] bool isPlayableMedia(const QString& fileName);
+
 /// The type string a file is published and searched under: archives and CD images
 /// go as "Pro". Empty for Any. MFC GetED2KFileTypeSearchTerm.
 [[nodiscard]] QString ed2kFileTypeSearchTerm(ED2KFileType type);

@@ -223,7 +223,6 @@ private:
     // General
     QLabel* m_runningLabel = nullptr;
     QCheckBox* m_enabledCheck = nullptr;
-    QCheckBox* m_shareFilesCheck = nullptr;
     QCheckBox* m_jointDownloadsCheck = nullptr;
     QCheckBox* m_shareUsenetCheck = nullptr;
     QCheckBox* m_archiveContentsCheck = nullptr;

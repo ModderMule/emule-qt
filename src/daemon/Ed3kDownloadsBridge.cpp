@@ -15,7 +15,9 @@
 
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kDownloads.h"
+#include "Ed3kSearch.h"
 #include "Ed3kSession.h"
+#include "media/MediaInfo.h"
 
 #include "app/AppContext.h"
 #include "files/KnownFile.h"
@@ -40,6 +42,7 @@ namespace {
 
 #ifdef EMULE_HAVE_ED3K
 ed3k::Ed3kDownloads* s_downloads = nullptr;
+ed3k::Ed3kSearch* s_search = nullptr;
 #endif
 
 IpcMessage failure(int seqId, const QString& error)
@@ -111,6 +114,7 @@ QCborMap toCbor(const ed3k::Ed3kDownloadInfo& i)
         {QStringLiteral("rate"), qint64(i.rate)},
         {QStringLiteral("sources"), i.sources},
         {QStringLiteral("transferring"), i.transferring},
+        {QStringLiteral("a4af"), i.a4af},
         {QStringLiteral("state"), int(i.state)},
         {QStringLiteral("priority"), i.priority},
         {QStringLiteral("category"), i.category},
@@ -311,7 +315,14 @@ bool fileOf([[maybe_unused]] const QString& hexRoot, [[maybe_unused]] QString& p
 #endif
 }
 
-std::optional<QCborMap> detailsOf([[maybe_unused]] const QString& hexRoot)
+void setSearch([[maybe_unused]] ed3k::Ed3kSearch* search)
+{
+#ifdef EMULE_HAVE_ED3K
+    s_search = search;
+#endif
+}
+
+std::optional<QCborMap> detailsOf([[maybe_unused]] const QString& hexRoot, [[maybe_unused]] bool generalOnly)
 {
 #ifdef EMULE_HAVE_ED3K
     const auto r = rootOf(hexRoot);
@@ -351,6 +362,7 @@ std::optional<QCborMap> detailsOf([[maybe_unused]] const QString& hexRoot)
         {QStringLiteral("datarate"), qint64(info->rate)},
         {QStringLiteral("sourceCount"), info->sources},
         {QStringLiteral("transferringSrcCount"), info->transferring},
+        {QStringLiteral("a4afSrcCount"), info->a4af},
         {QStringLiteral("addedOn"), info->addedOn},
         {QStringLiteral("ed3kRoot"), hexOf(info->root)},
         {QStringLiteral("ed3kKey"), ed3k::Ed3kHide::keyName(s_downloads->keyOfRoot(info->root))},
@@ -359,6 +371,63 @@ std::optional<QCborMap> detailsOf([[maybe_unused]] const QString& hexRoot)
                                                                       qsizetype(info->root.bytes.size())));
         !aliases.isEmpty())
         m.insert(QStringLiteral("ed3kAliases"), aliases);
+    if (generalOnly)
+        return m;
+    // Comments: NOTE records found by "Search Kad" (Ed3kSearch::searchNotes)
+    const QByteArray rootBytes(reinterpret_cast<const char*>(info->root.bytes.data()), qsizetype(info->root.bytes.size()));
+    QCborArray comments;
+    if (s_search)
+        for (const auto& n : s_search->notesOf(rootBytes)) {
+            if (n.text.isEmpty() && n.rating == 0)
+                continue;
+            const QString author = ed3k::Ed3kSearch::noteAuthor(n.nick, n.publisher);
+            comments.append(QCborMap{{QStringLiteral("userName"), author.isEmpty() ? QStringLiteral("ed3k") : author},
+                                     {QStringLiteral("origin"), QStringLiteral("ed3k")},
+                                     {QStringLiteral("rating"), qint64(n.rating)},
+                                     {QStringLiteral("comment"), n.text}});
+        }
+    m.insert(QStringLiteral("comments"), comments);
+    m.insert(QStringLiteral("notesSearchRunning"), s_search && s_search->notesRunning(rootBytes));
+    m.insert(QStringLiteral("kadConnected"), theApp.ed3kConnected && theApp.ed3kConnected());
+    // Media Info: read from the file once its head is here (eD2K reads it at completion)
+    if (info->state == State::Complete || info->previewPossible) {
+        MediaInfo mi;
+        if (extractMediaInfo(info->path, mi)) {
+            m.insert(QStringLiteral("mediaTitle"), mi.title);
+            m.insert(QStringLiteral("mediaArtist"), mi.author);
+            m.insert(QStringLiteral("mediaAlbum"), mi.album);
+            m.insert(QStringLiteral("mediaLength"), qint64(mi.lengthSec));
+            const qint64 kbps = (qint64(mi.video.bitRate) + qint64(mi.audio.avgBytesPerSec) * 8) / 1000;
+            m.insert(QStringLiteral("mediaBitrate"), kbps);
+            m.insert(QStringLiteral("mediaCodec"), mi.videoStreamCount > 0 ? mi.video.codecName : mi.audio.codecName);
+        }
+    }
+    // ed3k Link tab
+    ffi::FileLink link;
+    link.root = info->root;
+    link.size = info->size;
+    if (!info->name.isEmpty())
+        link.name = info->name.toStdString();
+    if (const auto written = ffi::writeFileLink(link))
+        m.insert(QStringLiteral("ed3kLink"), QString::fromStdString(*written));
+    // Archive Preview: the missing ranges, eD2K's gap pairs (end inclusive)
+    if (info->state != State::Complete) {
+        QCborArray gaps;
+        const auto& held = info->blocks;
+        for (std::size_t b = 0; b < held.size();) {
+            if (held[b]) {
+                ++b;
+                continue;
+            }
+            const std::size_t from = b;
+            while (b < held.size() && !held[b])
+                ++b;
+            gaps.append(qint64(from * kBarBlock));
+            gaps.append(qint64(std::min<std::uint64_t>(b * kBarBlock, info->size) - 1));
+        }
+        m.insert(QStringLiteral("archiveGaps"), gaps);
+    }
+    m.insert(QStringLiteral("canRecoverArchive"), false);
     return m;
 #else
     return std::nullopt;

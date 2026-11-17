@@ -1628,6 +1628,7 @@ public:
     void setEd3kUdpPort(uint16 val);
 
     /// eMule's shared files served over ed3k (Ed3kShared); only while ed3k runs. Default on.
+    /// YAML only (ed3k.shareFiles), no GUI/IPC.
     [[nodiscard]] bool ed3kShareFiles() const;
     void setEd3kShareFiles(bool val);
     /// Free RAM below this % of total: the ed3k engine keeps only block hashes in use, the rest
@@ -1645,11 +1646,12 @@ public:
     void setEd3kKadStoreMiB(int val);
     static constexpr int kMaxEd3kKadStoreMiB = 65536;
     /// alias.md §3 "Deleted file": days volumes deleted after unpacking keep their ALIAS
-    /// records out (checked against their network). At most 365, 0 = none. YAML only
-    /// (ed3k.deletedFileDays).
+    /// records out (checked against their network; the age limit is a MAY). Default 365,
+    /// 0 = no age limit, -1 = none kept. YAML only (ed3k.deletedFileDays).
     [[nodiscard]] int ed3kDeletedFileDays() const;
     void setEd3kDeletedFileDays(int val);
-    static constexpr int kMaxEd3kDeletedFileDays = 365;
+    // was: static constexpr int kMaxEd3kDeletedFileDays = 365;
+    static constexpr int kMaxEd3kDeletedFileDays = 36500;
     /// Recent ed3k room posts kept on disk (rooms/<room>.posts), shown again after a restart.
     /// Default on (ed3k.roomHistoryStore).
     [[nodiscard]] bool ed3kRoomHistoryStore() const;
@@ -1671,6 +1673,10 @@ public:
     /// `b3` SET record per archive; others see the entries before downloading. Default on.
     [[nodiscard]] bool ed3kArchiveContents() const;
     void setEd3kArchiveContents(bool val);
+    /// LAN peers' ed3k file data outside the upload/download limits (lan-discovery.md §3
+    /// MAY). Default off: limits hold for every peer, as eD2K's.
+    [[nodiscard]] bool ed3kLanUnlimited() const;
+    void setEd3kLanUnlimited(bool val);
     /// Own ed3k sets' folders watched: a changed folder publishes a new version. Default on.
     [[nodiscard]] bool ed3kOwnSetsWatch() const;
     void setEd3kOwnSetsWatch(bool val);

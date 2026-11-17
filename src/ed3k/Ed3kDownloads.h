@@ -107,6 +107,7 @@ struct Ed3kDownloadInfo {
     std::uint64_t rate = 0;        ///< B/s over the last second
     int sources = 0;               ///< streams open
     int transferring = 0;          ///< streams holding a slot
+    int a4af = 0;                  ///< nodes held by another download of ours, this one waits (eD2K A4AF)
     qint64 addedOn = 0;            ///< s since the epoch
     qint64 completedOn = 0;
     QString error;                 ///< Failed: why (not localized: a log line)

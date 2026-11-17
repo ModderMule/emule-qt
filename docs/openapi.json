@@ -118,7 +118,7 @@
                         "type": "string"
                     },
                     "fakeReasons": {
-                        "description": "Why: multiple_names, names_span_kinds, bad_signal_name, bad_signal_comment, header_extension_mismatch, executable_masquerade, archive_masquerade, claimed_type_mismatch, spam_score, spam_status, bad_rating, fake_rating, multiple_aich, implausible_media_length, implausible_media_bitrate, media_size_mismatch, name_media_tag_mismatch, abuse_content_name, password_protected, media_double_extension.",
+                        "description": "Why: multiple_names, names_span_kinds, bad_signal_name, bad_signal_comment, header_extension_mismatch, executable_masquerade, archive_masquerade, claimed_type_mismatch, spam_score, spam_status, bad_rating, fake_rating, multiple_aich, implausible_media_length, implausible_media_bitrate, media_size_mismatch, name_media_tag_mismatch, abuse_content_name, password_protected, media_double_extension, spam_publisher.",
                         "items": {
                             "type": "string"
                         },
@@ -226,7 +226,7 @@
                         "type": "string"
                     },
                     "fakeReasons": {
-                        "description": "Why: multiple_names, names_span_kinds, bad_signal_name, bad_signal_comment, header_extension_mismatch, executable_masquerade, archive_masquerade, claimed_type_mismatch, spam_score, spam_status, bad_rating, fake_rating, multiple_aich, implausible_media_length, implausible_media_bitrate, media_size_mismatch, name_media_tag_mismatch, abuse_content_name, password_protected, media_double_extension.",
+                        "description": "Why: multiple_names, names_span_kinds, bad_signal_name, bad_signal_comment, header_extension_mismatch, executable_masquerade, archive_masquerade, claimed_type_mismatch, spam_score, spam_status, bad_rating, fake_rating, multiple_aich, implausible_media_length, implausible_media_bitrate, media_size_mismatch, name_media_tag_mismatch, abuse_content_name, password_protected, media_double_extension, spam_publisher.",
                         "items": {
                             "type": "string"
                         },
@@ -359,7 +359,7 @@
     "info": {
         "description": "Control and observe an eMuleQt core: eD2K and Kad file sharing plus Usenet downloads.\n\n**Authentication.** Send the API key in the `X-Api-Key` header (or as `Authorization: Bearer <key>`). `/health`, `/openapi.json` and `/docs` need none. The stream routes take `?token=` instead.\n\n**Errors.** Every failure is `{\"error\": {\"code\": <HTTP status>, \"message\": \"...\"}}`. An unknown field or query parameter is a 400, never silently ignored. 409 means the request is fine but the core is in the wrong state for it; 503 that a part of the core is not running.\n\n**Lists.** Answer `{items, total, offset, limit}`; page with `?limit=` (1-1000, default 100) and `?offset=`.\n\n**Destructive calls** need `\"confirm\": true` (in the body, or `?confirm=true` on DELETE).\n\n**Identifiers.** A file is named by its eD2K hash, 32 hexadecimal digits. Sizes are bytes. A category is an index into `GET /categories`.\n\n**Terms.** *HighID*: reachable from outside, the normal state. *LowID* / *firewalled*: not reachable, so fewer sources and slower transfers — check port forwarding. *Kad*: the serverless network; it works alongside the eD2K servers. *Source*: a peer that has (part of) a file.\n\n**Typical flow.** `GET /snapshot` → `POST /search` → `GET /search/{id}/results` until `state` is `finished` → `POST /search/{id}/download` → watch `GET /downloads/{hash}` or the `/events` stream.\n\n**Changes.** Every response carries `X-Contract-Version`. `GET /events` pushes changes so clients need not poll.",
         "title": "eMuleQt REST API",
-        "version": "0.7.31",
+        "version": "0.7.35",
         "x-contract-version": 1
     },
     "openapi": "3.1.0",
@@ -2403,6 +2403,110 @@
                 "tags": [
                     "App"
                 ]
+            }
+        },
+        "/api/v1/hoster/{id}/preview": {
+            "get": {
+                "description": "For media players. Authenticated by ?token=, the stream token. Video and audio files only, not archives (406). With \"Enable seeking in downloads\" on, a range not yet on disk waits up to 60 seconds; ed3k peers of a file with a known root fetch it first, the hoster's own stream stays in file order. Off, the file is served as it is.",
+                "operationId": "hoster.preview",
+                "parameters": [
+                    {
+                        "description": "Hoster item id.",
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "description": "Hoster item id.",
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Stream token.",
+                        "in": "query",
+                        "name": "token",
+                        "required": true,
+                        "schema": {
+                            "description": "Stream token.",
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The requested bytes or page."
+                    }
+                },
+                "security": [
+                ],
+                "summary": "Byte-range stream of a hoster download",
+                "tags": [
+                    "Streams"
+                ]
+            }
+        },
+        "/api/v1/hoster/{id}/preview-link": {
+            "get": {
+                "description": "A URL of GET /hoster/{id}/preview with a new stream token, as downloads.previewLink.",
+                "operationId": "hoster.previewLink",
+                "parameters": [
+                    {
+                        "description": "Hoster item id.",
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "description": "Hoster item id.",
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "No such item."
+                    }
+                },
+                "summary": "Player link for a hoster download",
+                "tags": [
+                    "Streams"
+                ],
+                "x-mcp-tool": "hoster_preview_link"
             }
         },
         "/api/v1/incoming": {
@@ -5516,7 +5620,7 @@
         },
         "/api/v1/usenet/{id}/{fileIndex}/preview": {
             "get": {
-                "description": "Authenticated by ?token=, the stream token. Waits up to 15 seconds for bytes that are still downloading.",
+                "description": "Authenticated by ?token=, the stream token. With \"Enable seeking in downloads\" on, a range not yet on disk waits up to 15 seconds and its articles are fetched first; off, the file is served as it is.",
                 "operationId": "usenet.preview",
                 "parameters": [
                     {

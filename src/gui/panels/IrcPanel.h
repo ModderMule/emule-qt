@@ -110,7 +110,8 @@ public:
 
     /// An `ed3k:room` link (ExternalLinkHandler, a click in a chat): asks, then joins and
     /// shows the room's tab.
-    /// Asks, then joins and shows the room. False when the user said no.
+    /// Asks, then joins and shows the room. False when the user said no, or when the
+    /// room list is not in yet: then the link waits for it (membership check first).
     bool openEd3kRoomLink(const QString& link);
 
 signals:
@@ -123,6 +124,8 @@ signals:
     void linkReceived(const QString& link);
     /// Logged in or gone; Shared Files greys "Add To IRC Clipboard" with it.
     void ircConnectionChanged(bool connected);
+    /// A room link that waited for the room list was joined: show the IRC tab.
+    void ed3kRoomJoined();
 
 protected:
     bool eventFilter(QObject* obj, QEvent* event) override;
@@ -303,6 +306,7 @@ private:
 
     // ed3k rooms: the "Rooms (ed3k)" tab while the node runs
     Ed3kRoomList* m_roomList = nullptr;
+    QStringList m_pendingRoomLinks;     ///< room links opened before the first room list
     bool m_roomListShownOnce = false;   ///< first "Rooms (ed3k)" tab of this GUI run gets the focus
     QStringList m_roomTabsClosed;   ///< rooms whose tab the user closed: a post opens it again
 

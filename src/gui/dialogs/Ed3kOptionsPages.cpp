@@ -258,7 +258,6 @@ void Ed3kOptionsPages::load(const QCborMap& p)
 {
     m_loading = true;
     m_enabledCheck->setChecked(p.value(QStringLiteral("ed3kEnabled")).toBool(true));
-    m_shareFilesCheck->setChecked(p.value(QStringLiteral("ed3kShareFiles")).toBool(true));
     m_jointDownloadsCheck->setChecked(p.value(QStringLiteral("ed3kJointDownloads")).toBool(true));
     m_shareUsenetCheck->setChecked(p.value(QStringLiteral("ed3kShareUsenetPosts")).toBool(true));
     m_archiveContentsCheck->setChecked(p.value(QStringLiteral("ed3kArchiveContents")).toBool(true));
@@ -372,7 +371,6 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
         req.append(v);
     };
     put("ed3kEnabled", m_enabledCheck->isChecked());
-    put("ed3kShareFiles", m_shareFilesCheck->isChecked());
     put("ed3kJointDownloads", m_jointDownloadsCheck->isChecked());
     put("ed3kShareUsenetPosts", m_shareUsenetCheck->isChecked());
     put("ed3kArchiveContents", m_archiveContentsCheck->isChecked());
@@ -444,7 +442,6 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
 void Ed3kOptionsPages::saveLocal() const
 {
     thePrefs.setEd3kEnabled(m_enabledCheck->isChecked());
-    thePrefs.setEd3kShareFiles(m_shareFilesCheck->isChecked());
     thePrefs.setEd3kJointDownloads(m_jointDownloadsCheck->isChecked());
     thePrefs.setEd3kShareUsenetPosts(m_shareUsenetCheck->isChecked());
     thePrefs.setEd3kArchiveContents(m_archiveContentsCheck->isChecked());
@@ -547,8 +544,7 @@ QWidget* Ed3kOptionsPages::buildGeneral(QWidget* parent)
 
     auto* shareGroup = new QGroupBox(tr("Sharing"), page);
     auto* shareLayout = new QVBoxLayout(shareGroup);
-    m_shareFilesCheck = new QCheckBox(tr("Share the shared files over ed3k too"), shareGroup);
-    shareLayout->addWidget(m_shareFilesCheck);
+    // was: "Share the shared files over ed3k too": YAML only now (ed3k.shareFiles, default on)
     m_shareUsenetCheck = new QCheckBox(tr("Share Usenet posts over ed3k too"), shareGroup);
     m_shareUsenetCheck->setToolTip(tr("Off: the files of Usenet downloads are still shared, but not their article "
                                       "lists, post sets or nzb records."));
@@ -621,7 +617,7 @@ QWidget* Ed3kOptionsPages::buildGeneral(QWidget* parent)
     // layout->addWidget(extGroup);
     layout->addStretch();
 
-    for (QCheckBox* box : {m_enabledCheck, m_shareFilesCheck, m_shareUsenetCheck, m_archiveContentsCheck, m_ownSetsWatchCheck,
+    for (QCheckBox* box : {m_enabledCheck, m_shareUsenetCheck, m_archiveContentsCheck, m_ownSetsWatchCheck,
                            m_jointDownloadsCheck})
         connect(box, &QCheckBox::toggled, this, [this] {
             if (!m_loading)
@@ -1904,9 +1900,11 @@ void Ed3kOptionsPages::buildAccountList(AccountList& list, const QStringList& co
 void Ed3kOptionsPages::buildSolvers(QVBoxLayout* layout, QWidget* parent)
 {
     // plain check box: a checkable group title draws small on macOS
-    m_solversCheck = new QCheckBox(tr("Solve puzzles with these services"), parent);
+    m_solversCheck = new QCheckBox(tr("Enable captcha solvers"), parent);
     m_solversCheck->setToolTip(tr("A hoster's image puzzle goes to these paid services first; the puzzle window "
-                                  "only comes when none of them answers."));
+                                  "only comes when none of them answers.\nTurn off to solve puzzles yourself, "
+                                  "for example when the services fail repeatedly (Hoster log) or to save "
+                                  "their balance; the accounts are kept."));
     layout->addWidget(m_solversCheck);
     m_solversGroup = new QGroupBox(parent);
     m_solversGroup->setEnabled(false);
@@ -2418,8 +2416,15 @@ QString Ed3kOptionsPages::accountKey(const AccountList& list)
 
 QString Ed3kOptionsPages::accountText(const AccountList& list, const QCborMap& check, int hosts, int working)
 {
-    if (!check.value(QStringLiteral("valid")).toBool())
+    if (!check.value(QStringLiteral("valid")).toBool()) {
+        // login worked, the account can't download
+        const QString unusable = check.value(QStringLiteral("unusable")).toString();
+        if (unusable == QLatin1StringView("free"))
+            return list.debrid ? tr("Free account: downloads need premium") : tr("Free account: not usable");
+        if (unusable == QLatin1StringView("expired"))
+            return tr("Premium expired");
         return tr("Not valid");
+    }
     if (list.solvers)
         return creditText(check.value(QStringLiteral("balance")).toDouble(-1), check.value(QStringLiteral("currency")).toString());
     if (list.debrid && hosts < 0)
@@ -2434,6 +2439,8 @@ QString Ed3kOptionsPages::accountText(const AccountList& list, const QCborMap& c
         const qint64 max = check.value(QStringLiteral("trafficMax")).toInteger(-1);
         text = max > 0 ? tr("%1, %2 of %3 traffic left").arg(text, formatByteSize(uint64(left)), formatByteSize(uint64(max)))
                        : tr("%1, %2 traffic left").arg(text, formatByteSize(uint64(left)));
+    } else if (check.value(QStringLiteral("unlimited")).toBool()) {
+        text = tr("%1, unlimited traffic").arg(text);
     }
     if (!list.debrid)
         return text;

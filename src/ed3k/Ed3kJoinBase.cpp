@@ -11,10 +11,12 @@
 #include "utils/FileRelocate.h"
 #include "utils/ReadOnceHint.h"
 #include "utils/Log.h"
+#include "utils/Opcodes.h"
 #include "utils/PathUtils.h"
 #include "utils/SafeRemove.h"
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDataStream>
 #include <QDateTime>
 #include <QDir>
@@ -51,7 +53,7 @@ const QString kKeptRecords = QStringLiteral("records.bin");
 const QString kDeletedFile = QStringLiteral("deleted.tsv");
 constexpr int kDeletedTimerMs = 60 * 60 * 1000;
 /// alias.md §3: 365 days at most
-constexpr int kDeletedDaysMax = 365;
+constexpr int kDeletedDaysMax = 36500;   // was 365: the age limit is a MAY (alias.md §3)
 /// a kept member's block hashes with the size and mtime they were read at: a restart
 /// shares it without reading it again (report 23: every seeding torrent read at each start)
 constexpr quint32 kKeptHashesMagic = 0x454B4831;   // "EKH1"
@@ -70,13 +72,48 @@ QThreadPool* hashPool()
     return pool;
 }
 
-/// Hashes a file on a worker; nullopt when unreadable or cancelled.
-std::optional<std::pair<ffi::Hashed, ffi::Bytes>> hashFile(const QString& path, const std::atomic<bool>& cancel)
+/// eD2K file hash: MD4 per 9,728,000 B part; more than one part (or exactly one full part):
+/// MD4 of the part hashes, a size on a part boundary adding the MD4 of an empty part.
+class Ed2kHasher {
+public:
+    void update(const char* data, qint64 len)
+    {
+        while (len > 0) {
+            const qint64 take = std::min<qint64>(len, qint64(PARTSIZE) - m_inPart);
+            m_part.addData(QByteArrayView(data, take));
+            m_inPart += take;
+            data += take;
+            len -= take;
+            if (m_inPart == qint64(PARTSIZE)) {
+                m_parts += m_part.result();
+                m_part.reset();
+                m_inPart = 0;
+            }
+        }
+    }
+    [[nodiscard]] QByteArray finish()
+    {
+        if (m_parts.isEmpty())
+            return m_part.result();   // one part under PARTSIZE (or empty)
+        m_parts += m_part.result();   // the rest, or MD4("") on a part boundary
+        return QCryptographicHash::hash(m_parts, QCryptographicHash::Md4);
+    }
+
+private:
+    QCryptographicHash m_part{QCryptographicHash::Md4};
+    QByteArray m_parts;
+    qint64 m_inPart = 0;
+};
+
+/// Hashes a file on a worker; nullopt when unreadable or cancelled. @p ed2k: its eD2K hash too.
+std::optional<std::pair<ffi::Hashed, ffi::Bytes>> hashFile(const QString& path, const std::atomic<bool>& cancel,
+                                                          QByteArray* ed2k = nullptr)
 {
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly))
         return std::nullopt;
     ffi::Hasher h;
+    Ed2kHasher md4;
     QByteArray chunk;
     // #136: under the eD2K hashing disk limit too; it read at full speed beside it
     DiskLoadLimiter& diskLoad = DiskLoadLimiter::thisThread();
@@ -93,8 +130,12 @@ std::optional<std::pair<ffi::Hashed, ffi::Bytes>> hashFile(const QString& path, 
             return std::nullopt;
         if (!h.update({reinterpret_cast<const std::byte*>(chunk.constData()), std::size_t(chunk.size())}))
             return std::nullopt;
+        if (ed2k)
+            md4.update(chunk.constData(), chunk.size());
         readOnce.readUpTo(f.pos());
     }
+    if (ed2k)
+        *ed2k = md4.finish();
     auto done = h.finish();
     if (!done)
         return std::nullopt;
@@ -542,6 +583,13 @@ std::vector<Ed3kJoinBase::SourceInfo> Ed3kJoinBase::sourcesOf(const ffi::Root& r
     return out;
 }
 
+int Ed3kJoinBase::waitingFor(const ffi::Root& root) const
+{
+    return int(std::ranges::count_if(turns().waiting, [&](const auto& q) {
+        return std::ranges::any_of(q.second, [&](const NodeTurns::Want& w) { return w.join == this && w.root == root; });
+    }));
+}
+
 std::vector<Ed3kJoinBase::SourceInfo> Ed3kJoinBase::sourcesAt(const Ed3kSession& session, const ffi::Root& root)
 {
     std::vector<SourceInfo> out;
@@ -952,19 +1000,20 @@ void Ed3kJoinBase::runHashJob(std::function<std::function<void()>(const std::ato
     });
 }
 
-void Ed3kJoinBase::hashInBackground(const QString& path, std::function<void(std::optional<FileHash>)> done)
+void Ed3kJoinBase::hashInBackground(const QString& path, std::function<void(std::optional<FileHash>)> done, bool withEd2k)
 {
     QPointer<Ed3kJoinBase> self(this);
     const auto cancel = m_cancel;
-    hashPool()->start([self, cancel, path, done = std::move(done)]() mutable {
+    hashPool()->start([self, cancel, path, withEd2k, done = std::move(done)]() mutable {
         DiskLoadLimiter::lowerThisThread();
-        auto hashed = hashFile(path, *cancel);
+        QByteArray ed2k;
+        auto hashed = hashFile(path, *cancel, withEd2k ? &ed2k : nullptr);
         if (cancel->load())
             return;
         // owned copies into the lambda; ffi::Hashed holds a move-only Buffer
         std::optional<FileHash> out;
         if (hashed)
-            out = FileHash{hashed->first.root, hashed->first.size, std::move(hashed->second)};
+            out = FileHash{hashed->first.root, hashed->first.size, std::move(hashed->second), ed2k};
         QMetaObject::invokeMethod(
             self.data(),
             [self, cancel, done = std::move(done), out = std::move(out)]() mutable {
@@ -1245,7 +1294,7 @@ QHash<int, QString> Ed3kJoinBase::keptMemberPaths(const QString& owner) const
 
 void Ed3kJoinBase::setDeletedDays(int days)
 {
-    m_deletedDays = std::clamp(days, 0, kDeletedDaysMax);
+    m_deletedDays = std::clamp(days, -1, kDeletedDaysMax);
     if (m_started)
         onDeletedTimer();
 }
@@ -1253,7 +1302,7 @@ void Ed3kJoinBase::setDeletedDays(int days)
 bool Ed3kJoinBase::keepDeleted(const DeletedFile& f)
 {
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    if (m_deletedDays <= 0 || now - f.deletedAt >= qint64(m_deletedDays) * 24 * 3600 * 1000)
+    if (m_deletedDays < 0 || deletedOver(f, now))
         return false;
     if (auto* e = m_session.engine()) {
         if (auto ok = e->aliasKeepDeleted(m_session.now(), f.root, std::uint64_t(std::max<qint64>(0, f.deletedAt / 1000))); !ok) {
@@ -1265,7 +1314,7 @@ bool Ed3kJoinBase::keepDeleted(const DeletedFile& f)
     std::erase_if(rows, [&](const DeletedFile& r) { return r.root == f.root; });
     rows.push_back(f);
     saveDeleted();
-    logDebug([&]() -> QString { return QStringLiteral("\"%1\" of %2 deleted: its records stay out (%3 day(s) at most)").arg(f.name, f.owner).arg(m_deletedDays); });
+    logDebug([&]() -> QString { return QStringLiteral("\"%1\" of %2 deleted: its records stay out (%3)").arg(f.name, f.owner, m_deletedDays > 0 ? QStringLiteral("%1 day(s) at most").arg(m_deletedDays) : QStringLiteral("no age limit")); });
     return true;
 }
 
@@ -1333,15 +1382,19 @@ void Ed3kJoinBase::loadDeleted()
 void Ed3kJoinBase::onDeletedTimer()
 {
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    const qint64 keep = qint64(m_deletedDays) * 24 * 3600 * 1000;
     std::vector<ffi::Root> over;
     for (const DeletedFile& f : deletedRows())
-        if (now - f.deletedAt >= keep)
+        if (m_deletedDays < 0 || deletedOver(f, now))
             over.push_back(f.root);
     for (const auto& root : over)
         endDeleted(root, m_deletedDays > 0 ? QStringLiteral("%1 day(s) since deleted").arg(m_deletedDays) : QStringLiteral("switched off"));
     if (m_started && !deletedRows().empty())
         checkDeleted(now);
+}
+
+bool Ed3kJoinBase::deletedOver(const DeletedFile& f, qint64 now) const
+{
+    return m_deletedDays > 0 && now - f.deletedAt >= qint64(m_deletedDays) * 24 * 3600 * 1000;
 }
 
 std::vector<Ed3kJoinBase::DeletedFile>& Ed3kJoinBase::deletedRows() const
@@ -2625,6 +2678,13 @@ std::optional<Ed3kJoinBase::SourceInfo> Ed3kJoinBase::holderInfo(const TurnNode&
                 s.asked.push_back(off);
         }
     }
+    // the files of ours waiting for this node (A4AF files of the source)
+    if (const auto w = turns().waiting.find(node); w != turns().waiting.end())
+        for (const auto& x : w->second)
+            if (const auto o = x.join->m_downloads.find(x.root); o != x.join->m_downloads.end())
+                if (const QString name = x.join->downloadName(x.root, *o->second); !name.isEmpty() && !s.otherWants.contains(name))
+                    s.otherWants << name;
+    s.otherWants.sort(Qt::CaseInsensitive);
     return s;
 }
 

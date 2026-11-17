@@ -214,6 +214,11 @@ QCborMap sourceToCbor(const SourceInfo& s)
         m.insert(QStringLiteral("join"), s.join);
     if (!partMap.isEmpty())
         m.insert(QStringLiteral("sourcePartMap"), partMap);
+    // as eD2K's: other files of ours wanting this node (A4AF mark + tooltip)
+    if (!s.otherWants.isEmpty()) {
+        m.insert(QStringLiteral("hasOtherRequests"), true);
+        m.insert(QStringLiteral("a4afFiles"), QCborArray::fromStringList(s.otherWants));
+    }
     return m;
 }
 
@@ -278,8 +283,15 @@ void appendRows(QCborArray& uploading, QCborArray& waiting)
     if (!s_uploads)
         return;
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    for (const auto& r : s_uploads->uploading())
-        uploading.append(rowToCbor(r, now));
+    // slots counted with eD2K's on one line (UploadQueue::setForeignSlots): numbered after them
+    qint64 slot = 0;
+    for (const auto& v : std::as_const(uploading))
+        slot = std::max(slot, v.toMap().value(QStringLiteral("slot")).toInteger());
+    for (const auto& r : s_uploads->uploading()) {
+        QCborMap m = rowToCbor(r, now);
+        m.insert(QStringLiteral("slot"), ++slot);
+        uploading.append(m);
+    }
     for (const auto& r : s_uploads->waiting())
         waiting.append(rowToCbor(r, now));
 #else

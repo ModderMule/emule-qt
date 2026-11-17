@@ -11,7 +11,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QPointer>
-#include <QThreadPool>
+#include <QThread>
 
 namespace eMule::ed3k {
 
@@ -60,7 +60,9 @@ bool Ed3kHosterUnpack::start(const HosterUnpackJob& job)
         return false;
     m_running = job.firstVolume;
     QPointer<Ed3kHosterUnpack> self(this);
-    QThreadPool::globalInstance()->start([self, job] {
+    // own thread: in the global pool it queued behind hash checks and moves (stuck "Unpacking")
+    // was: QThreadPool::globalInstance()->start([self, job] {
+    QThread* worker = QThread::create([self, job] {
         const auto report = [self, key = job.firstVolume](int percent) {
             QMetaObject::invokeMethod(self, [self, key, percent] {
                 if (self)
@@ -75,6 +77,9 @@ bool Ed3kHosterUnpack::start(const HosterUnpackJob& job)
             emit self->finished(r);
         }, Qt::QueuedConnection);
     });
+    worker->setObjectName(QStringLiteral("hoster unpack"));
+    connect(worker, &QThread::finished, worker, &QObject::deleteLater);
+    worker->start();
     return true;
 }
 

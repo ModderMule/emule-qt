@@ -327,6 +327,15 @@ void Ed3kSearch::onEventPolled(const ::ed3k::Event& event, ::ed3k::KeyKind key, 
             const QString text = QString::fromUtf8(note.text.data(), qsizetype(note.text.size()));
             const std::uint32_t rating = std::min<std::uint32_t>(note.rating, 5);
             const QString nick = QString::fromUtf8(note.nick.data(), qsizetype(note.nick.size())).trimmed();
+            // kept for the download's Details (no search row needed)
+            if (!m_found.contains(root)) {
+                m_notesOrder.push_back(root);
+                if (m_notesOrder.size() > kNotesKept) {
+                    m_found.erase(m_notesOrder.front());
+                    m_notesOrder.pop_front();
+                }
+            }
+            m_found[root][publisher] = FoundNote{publisher, rating, text, nick};
             if (m_notes)
                 m_notes(root, publisher, rating, text, nick);
             else if (theApp.searchList)
@@ -369,6 +378,15 @@ void Ed3kSearch::onEventPolled(const ::ed3k::Event& event, ::ed3k::KeyKind key, 
     if (run != m_runs.end())
         run->second.timeout->stop();
     QTimer::singleShot(0, this, [this, searchID] { finish(searchID, {}); });
+}
+
+std::vector<Ed3kSearch::FoundNote> Ed3kSearch::notesOf(const QByteArray& root) const
+{
+    std::vector<FoundNote> out;
+    if (const auto it = m_found.find(root); it != m_found.end())
+        for (const auto& [publisher, note] : it->second)
+            out.push_back(note);
+    return out;
 }
 
 void Ed3kSearch::endNotes(const QByteArray& root)

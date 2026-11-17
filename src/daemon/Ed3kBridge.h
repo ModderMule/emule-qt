@@ -50,6 +50,9 @@ void appendDownloadInfo(QCborMap& details, const QByteArray& md4);
 void appendSharedInfo(QCborMap& details, const QByteArray& md4);
 /// Root (32 B) → MD4 of every file shared on ed3k; one pass, for a batch of lookups.
 [[nodiscard]] QHash<QByteArray, QByteArray> sharedRootIndex();
+/// Shared Files rows of files shared on ed3k alone (eD2K disabled: no MD4): `hash` is the
+/// root (64 hex), `ed3kOnly` true; open and open folder only.
+[[nodiscard]] QCborArray ed3kOnlySharedRows();
 /// Network Info: `ed3kTotal`, `ed3kHashing`, `ed3kPublished` while sharing is on.
 void appendSharedCounts(QCborMap& shared);
 

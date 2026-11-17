@@ -126,6 +126,10 @@ struct UsenetStreamRequest {
     /// Which file *inside* the archive set. -1 means the first playable one,
     /// which is what a URL carrying no `entry=` gets.
     int entryOrdinal = -1;
+
+    /// "Enable seeking in downloads" (Preferences::downloadSeeking): the requested range is
+    /// fetched first and the item boosted. False: only an archive's headers are asked for.
+    bool fetch = true;
 };
 
 struct UsenetStreamSource {
@@ -212,6 +216,11 @@ public:
     using BtStreamResolver = std::function<UsenetStreamSource(const QString& id, int fileIndex,
                                                               qint64 offset, bool fetch)>;
     void setBtStreamResolver(BtStreamResolver resolver) { m_btStreamResolver = std::move(resolver); }
+
+    /// Hoster preview (/api/v1/hoster/<id>/preview): hoster item @p id read from @p offset;
+    /// @p fetch = seeking on, as BtStreamResolver. Unset: the route answers 503.
+    using HosterStreamResolver = std::function<UsenetStreamSource(const QString& id, qint64 offset, bool fetch)>;
+    void setHosterStreamResolver(HosterStreamResolver resolver) { m_hosterStreamResolver = std::move(resolver); }
 
     /// The Usenet page and the /api/v1/usenet routes. Optional and not owned:
     /// without it both answer "Usenet engine unavailable".
@@ -359,6 +368,9 @@ private:
     QFuture<QHttpServerResponse> handleTorrentPreviewStream(const QString& id, const QString& fileIndex,
                                                             const QHttpServerRequest& req);
 
+    // Endpoint handlers — hoster preview
+    QFuture<QHttpServerResponse> handleHosterPreviewStream(const QString& id, const QHttpServerRequest& req);
+
     // Endpoint handlers — Usenet preview
     QFuture<QHttpServerResponse> handleUsenetPreviewStream(const QString& itemId,
                                                            const QString& fileIndex,
@@ -372,6 +384,15 @@ private:
     QFuture<QHttpServerResponse> serveWhenAvailable(std::function<UsenetStreamSource()> probe,
                                                     const QByteArray& rangeHeader, int waitMs,
                                                     const QString& what);
+
+    /// Preview of an unfinished download (BitTorrent, Usenet, hoster) under "Enable seeking
+    /// in downloads": on, @p resolve(true) has the range fetched first and the answer waits
+    /// for its bytes (serveWhenAvailable); off, @p resolve(false) and the file as it is on
+    /// disk, gaps read as zeros. Off still waits for a source with no pieces yet (a Usenet
+    /// archive whose headers are read).
+    QFuture<QHttpServerResponse> serveDownloadPreview(std::function<UsenetStreamSource(bool fetch)> resolve,
+                                                      const QByteArray& rangeHeader, int waitMs,
+                                                      const QString& what);
 
     /// Answer a Range request for @p path, serving nothing past @p availableEnd.
     ///
@@ -705,6 +726,7 @@ private:
     Ed3kFileResolver m_ed3kFileResolver;
     Ed3kStreamResolver m_ed3kStreamResolver;
     BtStreamResolver m_btStreamResolver;
+    HosterStreamResolver m_hosterStreamResolver;
 
     // Usenet queue (injected by DaemonApp; not owned)
     UsenetWebBackend* m_usenetBackend = nullptr;

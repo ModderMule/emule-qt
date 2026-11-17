@@ -139,6 +139,9 @@ public:
     /// Indices of the opening volume of each archive set among @p names (headless sets
     /// left out); a lone archive file is its own set.
     [[nodiscard]] static QList<int> firstVolumes(const QStringList& names);
+    /// The archive sets among @p names: each set's indices, opening volume first, then by
+    /// volume order; sets in order of their opening volume (headless sets left out).
+    [[nodiscard]] static QList<QList<int>> volumeSets(const QStringList& names);
     /// The file ids (usenet.md §1) of files @p indices of an NZB (its text); empty where none.
     [[nodiscard]] static std::vector<QByteArray> nzbFileIds(const QByteArray& nzbText, const QList<int>& indices);
     [[nodiscard]] static std::vector<QByteArray> nzbFileIds(const usenet::NzbInfo& nzb, const QList<int>& indices);

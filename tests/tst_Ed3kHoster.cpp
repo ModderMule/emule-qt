@@ -1336,7 +1336,7 @@ private slots:
         QVERIFY(r.join->sharedLinks(id).isEmpty());
     }
 
-    /// ed3k.deletedFileDays: past it (0 here) the deleted volume's link is withdrawn
+    /// ed3k.deletedFileDays: 0 = no age limit, kept; < 0 = none: the deleted volume's link is withdrawn
     void extract_deletedVolumeEndsAfterItsDays()
     {
         Rig r;
@@ -1355,6 +1355,9 @@ private slots:
         QVERIFY(r.restart());
         QTRY_VERIFY_WITH_TIMEOUT(r.join->sharedLinks(ids[0]).value(0).aliasOut, 10000);
         r.join->setDeletedDays(0);
+        QCOMPARE(r.join->deletedCount(), std::size_t(1));
+        QVERIFY(r.join->sharedLinks(ids[0]).value(0).aliasOut);
+        r.join->setDeletedDays(-1);
         QCOMPARE(r.join->deletedCount(), std::size_t(0));
         QVERIFY(!r.join->sharedLinks(ids[0]).value(0).aliasOut);
         // the item stays in the list (unpacked), its link not published again
@@ -2626,6 +2629,14 @@ private slots:
         QCOMPARE(e->second.hosts[0].trafficLeft, -1);
         QCOMPARE(e->second.hosts[0].factor, 200);
         QCOMPARE(e->second.state, QByteArray(R"({"token":"x"})"));
+        QVERIFY(!e->second.unlimited);
+        // a free login the plugin can't use (Real-Debrid); a premium login with no traffic limit
+        e = Ed3kJdResolver::parseEvent(R"({"id":11,"ev":"account","valid":false,"unusable":"free","trafficLeft":0})");
+        QVERIFY(!e->second.valid);
+        QCOMPARE(e->second.unusable, QStringLiteral("free"));
+        e = Ed3kJdResolver::parseEvent(R"({"id":12,"ev":"account","valid":true,"premium":true,"unlimited":true})");
+        QVERIFY(e->second.unlimited);
+        QVERIFY(e->second.unusable.isEmpty());
         e = Ed3kJdResolver::parseEvent(R"({"id":9,"ev":"match","host":"DirectHTTP","generic":"file"})");
         QCOMPARE(e->second.kind, K::Matched);
         QCOMPARE(e->second.generic, QStringLiteral("file"));

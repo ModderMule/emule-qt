@@ -4,8 +4,10 @@ package org.emuleqt.resolver;
 
 import java.lang.reflect.Method;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -25,7 +27,8 @@ import org.jdownloader.captcha.v2.solver.service.DialogSolverService;
 import org.jdownloader.captcha.v2.solverjob.SolverJob;
 
 /**
- * Image puzzles go to the daemon as a `puzzle` event and wait for `answer`.
+ * Image puzzles go to the daemon as a `puzzle` event and wait for `answer`, only after every
+ * captcha solver account and JD's OCR failed (see SolverChain).
  * reCAPTCHA, hCaptcha and Turnstile need a browser; no solver takes them, so JD skips and
  * the task ends as needsUser{puzzle}. An image puzzle left unanswered ends as needsUser{skipped},
  * one answered and refused as needsUser{wrong}.
@@ -99,6 +102,9 @@ final class PuzzleSolver extends ChallengeSolver<String> {
             return;
         }
         final BasicCaptchaChallenge bc = (BasicCaptchaChallenge) c;
+        if (!waitForSolvers(job)) {
+            return;
+        }
         final long pid = c.getId().getID();
         final long task = taskOf(c);
         final CompletableFuture<String> f = new CompletableFuture<String>();
@@ -127,6 +133,36 @@ final class PuzzleSolver extends ChallengeSolver<String> {
         } finally {
             PENDING.remove(pid);
         }
+    }
+
+    /**
+     * Paid solvers and JD's OCR first: wait until all of them gave up. False: one solved it.
+     * SolverChain orders them ahead of us; JD would still start us after their head start.
+     */
+    private boolean waitForSolvers(final SolverJob<String> job) throws InterruptedException {
+        final List<ChallengeSolver<?>> others = new ArrayList<ChallengeSolver<?>>();
+        for (final ChallengeSolver<String> s : job.getSolverList()) {
+            if (s != this && SolverChain.automatic(s)) {
+                others.add(s);
+            }
+        }
+        if (!others.isEmpty()) {
+            try {
+                job.waitFor(this, 0, others.toArray(new ChallengeSolver<?>[0]));
+            } catch (final InterruptedException e) {
+                if (job.isSolved()) {
+                    return false;
+                }
+                throw e;
+            }
+        }
+        if (job.isSolved()) {
+            return false;
+        }
+        if (others.stream().anyMatch(s -> s instanceof org.jdownloader.captcha.v2.PluginChallengeSolver)) {
+            Out.warn("captcha for " + job.getChallenge().getHost() + ": all captcha solvers failed, asking you");
+        }
+        return true;
     }
 
     /** The task whose download asked, else 0. */

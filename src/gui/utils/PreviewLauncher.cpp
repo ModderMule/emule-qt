@@ -15,6 +15,7 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QFileInfo>
+#include <QMessageBox>
 #include <QProcess>
 #include <QTimer>
 #include <QUrl>
@@ -173,6 +174,33 @@ bool launchPlayer(const QString& command, const QString& playerArgs, const QStri
 #endif
     }
     return QProcess::startDetached(command, argList);
+}
+
+void playStreamUrl(QWidget* parent, const QString& url, const QString& name)
+{
+    // an application of PreviewApps.dat for the extension first, as for downloads
+    if (const PreviewApps& apps = previewApps(); !name.isEmpty()) {
+        if (const int app = apps.appForFileName(name); app >= 0) {
+            const PreviewApp& pick = apps.apps().at(static_cast<size_t>(app));
+            if (!launchPlayer(pick.command, pick.commandArgs, url))
+                QMessageBox::warning(parent, QCoreApplication::translate("PreviewLauncher", "Preview"),
+                                     QCoreApplication::translate("PreviewLauncher", "Failed to execute: %1 %2")
+                                         .arg(pick.command, pick.commandArgs));
+            return;
+        }
+    }
+    launchPreview(url);
+}
+
+QString daemonHosterStreamUrl(const IpcClient* ipc, qint64 itemId, const QString& streamToken)
+{
+    if (!ipc || !ipc->isConnected() || itemId <= 0 || streamToken.isEmpty())
+        return {};
+    return QStringLiteral("%1://%2:%3/api/v1/hoster/%4/preview?token=%5")
+        .arg(daemonWebScheme(), ipc->daemonHost())
+        .arg(thePrefs.webServerPort())
+        .arg(itemId)
+        .arg(streamToken);
 }
 
 const PreviewApps& previewApps()

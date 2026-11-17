@@ -90,6 +90,8 @@ struct Ed3kStatus {
     std::uint32_t kadOffline = 0;
     /// reach test without a verdict yet: bit 0 IPv4, bit 1 IPv6 (class 2/3 may still turn open)
     std::uint32_t natChecking = 0;
+    /// verdict not open, but no test proved it (no prober / no 2nd site): bit 0 IPv4, bit 1 IPv6
+    std::uint32_t natUntested = 0;
     /// Kad node lookups got enough answers: searches and publishing run (not just contacts > 0)
     bool kadConnected = false;
     Ed3kHideStatus hide;         ///< hiding (hops.md §1)
@@ -374,6 +376,7 @@ private:
     QStringList m_creditRpc;
     QStringList m_chaintubeRpc;
     ::ed3k::Limits m_limits{};
+    bool m_lanUnlimited = false;   ///< last told to the engine (thePrefs.ed3kLanUnlimited)
     eMule::SendBufferSizer m_sendBufSizer;
     std::uint32_t m_uploadSlots = 0;
     int m_logLevel = -1;   ///< ed3k::LogLevel set on this engine; -1 = none yet

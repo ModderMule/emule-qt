@@ -836,6 +836,7 @@ struct Preferences::Data {
     bool ed3kJointDownloads = true;    // eD2K downloads from ed3k too (§14.4)
     bool ed3kShareUsenetPosts = true;  // off = hold back, usenet.md §6
     bool ed3kArchiveContents = true;   // hoster.md §6.1 contents records
+    bool ed3kLanUnlimited = false;     // LAN peers outside the limits (lan-discovery.md §3 MAY)
     bool ed3kOwnSetsWatch = true;      // own sets' folders watched: a change publishes a new version
     QStringList ed3kCreditRpc;         // JSON-RPC endpoints; empty = off
     QStringList ed3kDeclineUrls;       // decline lists fetched from URLs; empty = none
@@ -2742,7 +2743,7 @@ void Preferences::setEd3kHashRamMiB(int val) { set(&Data::ed3kHashRamMiB, std::c
 int Preferences::ed3kKadStoreMiB() const { return get(&Data::ed3kKadStoreMiB); }
 void Preferences::setEd3kKadStoreMiB(int val) { set(&Data::ed3kKadStoreMiB, std::clamp(val, 0, kMaxEd3kKadStoreMiB)); }
 int Preferences::ed3kDeletedFileDays() const { return get(&Data::ed3kDeletedFileDays); }
-void Preferences::setEd3kDeletedFileDays(int val) { set(&Data::ed3kDeletedFileDays, std::clamp(val, 0, kMaxEd3kDeletedFileDays)); }
+void Preferences::setEd3kDeletedFileDays(int val) { set(&Data::ed3kDeletedFileDays, std::clamp(val, -1, kMaxEd3kDeletedFileDays)); }
 bool Preferences::ed3kRoomHistoryStore() const { return get(&Data::ed3kRoomHistoryStore); }
 void Preferences::setEd3kRoomHistoryStore(bool val) { set(&Data::ed3kRoomHistoryStore, val); }
 int Preferences::ed3kRoomHistoryMax() const { return get(&Data::ed3kRoomHistoryMax); }
@@ -2755,6 +2756,8 @@ void Preferences::setEd3kJointDownloads(bool val) { set(&Data::ed3kJointDownload
 bool Preferences::ed3kShareUsenetPosts() const { return get(&Data::ed3kShareUsenetPosts); }
 void Preferences::setEd3kShareUsenetPosts(bool val) { set(&Data::ed3kShareUsenetPosts, val); }
 bool Preferences::ed3kArchiveContents() const { return get(&Data::ed3kArchiveContents); }
+bool Preferences::ed3kLanUnlimited() const { return get(&Data::ed3kLanUnlimited); }
+void Preferences::setEd3kLanUnlimited(bool val) { set(&Data::ed3kLanUnlimited, val); }
 void Preferences::setEd3kArchiveContents(bool val) { set(&Data::ed3kArchiveContents, val); }
 bool Preferences::ed3kOwnSetsWatch() const { return get(&Data::ed3kOwnSetsWatch); }
 void Preferences::setEd3kOwnSetsWatch(bool val) { set(&Data::ed3kOwnSetsWatch, val); }
@@ -4343,7 +4346,6 @@ QCborMap Preferences::toIpcMap() const
     // ed3k
     prefs.insert(QStringLiteral("ed3kEnabled"), ed3kEnabled());
     prefs.insert(QStringLiteral("ed3kUdpPort"), static_cast<qint64>(ed3kUdpPort()));
-    prefs.insert(QStringLiteral("ed3kShareFiles"), ed3kShareFiles());
     prefs.insert(QStringLiteral("ed3kHashCacheLowRamPercent"), static_cast<qint64>(ed3kHashCacheLowRamPercent()));
     prefs.insert(QStringLiteral("ed3kHashRamMiB"), static_cast<qint64>(ed3kHashRamMiB()));
     prefs.insert(QStringLiteral("ed3kKadStoreMiB"), static_cast<qint64>(ed3kKadStoreMiB()));
@@ -4352,6 +4354,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("ed3kJointDownloads"), ed3kJointDownloads());
     prefs.insert(QStringLiteral("ed3kShareUsenetPosts"), ed3kShareUsenetPosts());
     prefs.insert(QStringLiteral("ed3kArchiveContents"), ed3kArchiveContents());
+    prefs.insert(QStringLiteral("ed3kLanUnlimited"), ed3kLanUnlimited());
     prefs.insert(QStringLiteral("ed3kOwnSetsWatch"), ed3kOwnSetsWatch());
     prefs.insert(QStringLiteral("ed3kCreditRpc"), ed3kCreditRpc().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("ed3kChaintubeRpc"), ed3kChaintubeRpc().join(QLatin1Char(' ')));
@@ -4748,7 +4751,6 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->ed3kEnabled = p.value(QStringLiteral("ed3kEnabled")).toBool(true);
     m_data->ed3kUdpPort = static_cast<uint16>(
         std::clamp<qint64>(p.value(QStringLiteral("ed3kUdpPort")).toInteger(0), 0, 65535));
-    m_data->ed3kShareFiles = p.value(QStringLiteral("ed3kShareFiles")).toBool(true);
     m_data->ed3kHashCacheLowRamPercent =
         static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kHashCacheLowRamPercent")).toInteger(20), 0, 100));
     m_data->ed3kHashRamMiB =
@@ -4761,6 +4763,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->ed3kJointDownloads = p.value(QStringLiteral("ed3kJointDownloads")).toBool(true);
     m_data->ed3kShareUsenetPosts = p.value(QStringLiteral("ed3kShareUsenetPosts")).toBool(true);
     m_data->ed3kArchiveContents = p.value(QStringLiteral("ed3kArchiveContents")).toBool(true);
+    m_data->ed3kLanUnlimited = p.value(QStringLiteral("ed3kLanUnlimited")).toBool(m_data->ed3kLanUnlimited);
     m_data->ed3kOwnSetsWatch = p.value(QStringLiteral("ed3kOwnSetsWatch")).toBool(true);
     m_data->ed3kCreditRpc = rpcUrlList(p.value(QStringLiteral("ed3kCreditRpc")));
     m_data->ed3kChaintubeRpc = rpcUrlList(p.value(QStringLiteral("ed3kChaintubeRpc")));
@@ -6167,13 +6170,14 @@ bool Preferences::load(const QString& filePath)
             m_data->ed3kHashRamMiB = std::clamp(e3["hashRamMiB"].as<int>(m_data->ed3kHashRamMiB), 0, kMaxEd3kHashRamMiB);
             m_data->ed3kKadStoreMiB = std::clamp(e3["kadStoreMiB"].as<int>(m_data->ed3kKadStoreMiB), 0, kMaxEd3kKadStoreMiB);
             if (e3["deletedFileDays"])
-                m_data->ed3kDeletedFileDays = std::clamp(e3["deletedFileDays"].as<int>(m_data->ed3kDeletedFileDays), 0, kMaxEd3kDeletedFileDays);
+                m_data->ed3kDeletedFileDays = std::clamp(e3["deletedFileDays"].as<int>(m_data->ed3kDeletedFileDays), -1, kMaxEd3kDeletedFileDays);
             m_data->ed3kRoomHistoryStore = e3["roomHistoryStore"].as<bool>(m_data->ed3kRoomHistoryStore);
             m_data->ed3kRoomHistoryMax = std::clamp(e3["roomHistoryMax"].as<int>(m_data->ed3kRoomHistoryMax),
                                                     kMinEd3kRoomHistoryMax, kMaxEd3kRoomHistoryMax);
             m_data->ed3kJointDownloads = e3["jointDownloads"].as<bool>(m_data->ed3kJointDownloads);
             m_data->ed3kShareUsenetPosts = e3["shareUsenetPosts"].as<bool>(m_data->ed3kShareUsenetPosts);
             m_data->ed3kArchiveContents = e3["archiveContents"].as<bool>(m_data->ed3kArchiveContents);
+            m_data->ed3kLanUnlimited = e3["lanUnlimited"].as<bool>(m_data->ed3kLanUnlimited);
             m_data->ed3kOwnSetsWatch = e3["ownSetsWatch"].as<bool>(m_data->ed3kOwnSetsWatch);
             const auto urls = [](const YAML::Node& n) {
                 QStringList out;
@@ -7669,6 +7673,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "jointDownloads" << YAML::Value << m_data->ed3kJointDownloads;
     out << YAML::Key << "shareUsenetPosts" << YAML::Value << m_data->ed3kShareUsenetPosts;
     out << YAML::Key << "archiveContents" << YAML::Value << m_data->ed3kArchiveContents;
+    out << YAML::Key << "lanUnlimited" << YAML::Value << m_data->ed3kLanUnlimited;
     out << YAML::Key << "ownSetsWatch" << YAML::Value << m_data->ed3kOwnSetsWatch;
     out << YAML::Key << "udpPort" << YAML::Value << static_cast<int>(m_data->ed3kUdpPort);
     out << YAML::Key << "lan" << YAML::Value << m_data->ed3kLan;
