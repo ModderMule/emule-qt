@@ -16,6 +16,7 @@
 #include "app/AppConfig.h"
 #include "app/AutoStart.h"
 #include "app/CoreAttachment.h"
+#include "dialogs/CoreScriptDialog.h"
 #include "app/UiState.h"
 #include "app/Ed2kSchemeHandler.h"
 #include "app/IpcClient.h"
@@ -26,6 +27,7 @@
 #include "controls/BarShader.h"
 #include "controls/ContentScrollArea.h"
 #include "panels/StatisticsPanel.h"
+#include "net/DohResolver.h"
 #include "net/HttpFileDownload.h"
 #include "prefs/Preferences.h"
 #include "prefs/SpeedRules.h"
@@ -350,6 +352,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_proxyUserEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
     connect(m_proxyPasswordEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
     connect(m_proxyUsenetCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_proxyDohCombo, &QComboBox::currentTextChanged, this, &OptionsDialog::markDirty);
 
     // Directories page
     connect(m_incomingDirEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
@@ -406,6 +409,11 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_showSmileysCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_commentFilterEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
     connect(m_indicateRatingsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_chatSoundCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_chatAlertCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
+    connect(m_chatUnreadBadgeCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_chatPlainLinksCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_chatModStarCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
 
     // Security page
     connect(m_filterServersByIPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -538,6 +546,9 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
         m_proxyUserEdit->setEnabled(on && m_proxyAuthCheck->isChecked());
         m_proxyPasswordEdit->setEnabled(on && m_proxyAuthCheck->isChecked());
         m_proxyUsenetCheck->setEnabled(on);
+        m_proxyDohLabel->setEnabled(on);
+        m_proxyDohCombo->setEnabled(on);
+        updateProxyDohRemoveButton();
     });
     connect(m_proxyAuthCheck, &QCheckBox::toggled, this, [this](bool on) {
         bool proxyOn = m_proxyEnableCheck->isChecked();
@@ -1147,8 +1158,13 @@ QWidget* OptionsDialog::createGeneralPage()
     coreLayout->addRow(coreNote);
 
     m_shutdownCoreBtn = new QPushButton(tr("Shutdown eMule Core"), coreGroup);
+    auto* connectScriptBtn = new QPushButton(tr("Create Connect Script..."), coreGroup);
+    connectScriptBtn->setToolTip(
+        tr("Save a script that starts eMule Qt on another computer, connected to this core"));
+    connect(connectScriptBtn, &QPushButton::clicked, this, &OptionsDialog::createConnectScript);
     auto* shutdownBtnLayout = new QHBoxLayout;
     shutdownBtnLayout->addWidget(m_shutdownCoreBtn);
+    shutdownBtnLayout->addWidget(connectScriptBtn);
     shutdownBtnLayout->addStretch();
     coreLayout->addRow(shutdownBtnLayout);
 
@@ -1837,6 +1853,39 @@ QWidget* OptionsDialog::createProxyPage()
            "Every Usenet connection then passes through the proxy, so its speed caps "
            "the download, and many HTTP proxies only allow connections to port 443."));
     generalLayout->addWidget(m_proxyUsenetCheck);
+
+    // names resolved behind the proxy: DoH through it
+    auto* dohRow = new QHBoxLayout;
+    m_proxyDohLabel = new QLabel(tr("DNS through proxy:"), generalGroup);
+    dohRow->addWidget(m_proxyDohLabel);
+    m_proxyDohCombo = new QComboBox(generalGroup);
+    m_proxyDohCombo->setEditable(true);
+    m_proxyDohCombo->setInsertPolicy(QComboBox::NoInsert);   // a typed URL is added on OK
+    m_proxyDohCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_proxyDohCombo->setMinimumContentsLength(16);   // stretches; 24 pinned the dialog near 800 px
+    m_proxyDohCombo->setToolTip(
+        tr("Behind a proxy, host names (servers, sources, ed3k names, country flags) are "
+           "looked up by DNS over HTTPS through the proxy, so they never reach your local "
+           "DNS server.\n\n"
+           "Pick a provider or type the URL of another one (RFC 8484), it is kept in the "
+           "list. Off: names use your local DNS server, and hoster, tracker and news "
+           "server flags are not shown.\n\n"
+           "Works with SOCKS4a, SOCKS5 and HTTP proxies that allow HTTPS (CONNECT)."));
+    m_proxyDohLabel->setBuddy(m_proxyDohCombo);
+    dohRow->addWidget(m_proxyDohCombo, 1);
+    m_proxyDohRemoveBtn = new QPushButton(tr("Remove"), generalGroup);
+    m_proxyDohRemoveBtn->setToolTip(tr("Remove this URL from the list"));
+    dohRow->addWidget(m_proxyDohRemoveBtn);
+    generalLayout->addLayout(dohRow);
+    fillProxyDohCombo(defaultDohUrl(), {});
+    connect(m_proxyDohCombo, &QComboBox::currentTextChanged, this, &OptionsDialog::updateProxyDohRemoveButton);
+    connect(m_proxyDohRemoveBtn, &QPushButton::clicked, this, [this] {
+        const int i = m_proxyDohCombo->findText(m_proxyDohCombo->currentText().trimmed());
+        if (i > 0 && m_proxyDohCombo->itemData(i, Qt::UserRole + 1).toBool())
+            m_proxyDohCombo->removeItem(i);
+        m_proxyDohCombo->setCurrentIndex(1);   // the default provider
+        markDirty();
+    });
     layout->addWidget(generalGroup);
 
     // --- Authentication group ---
@@ -1874,6 +1923,9 @@ QWidget* OptionsDialog::createProxyPage()
     m_proxyUserEdit->setEnabled(false);
     m_proxyPasswordEdit->setEnabled(false);
     m_proxyUsenetCheck->setEnabled(false);
+    m_proxyDohLabel->setEnabled(false);
+    m_proxyDohCombo->setEnabled(false);
+    m_proxyDohRemoveBtn->setEnabled(false);
 
     return page;
 }
@@ -2651,16 +2703,7 @@ QWidget* OptionsDialog::createNotificationsPage()
     m_notifyLogCheck = new QCheckBox(tr("Log entry added"), whenGroup);
     whenLayout->addWidget(m_notifyLogCheck);
 
-    m_notifyChatCheck = new QCheckBox(tr("Chat session started"), whenGroup);
-    whenLayout->addWidget(m_notifyChatCheck);
-
-    // Indented "Chat message received"
-    auto* chatMsgLayout = new QVBoxLayout;
-    chatMsgLayout->setContentsMargins(30, 0, 0, 0);
-    m_notifyChatMsgCheck = new QCheckBox(tr("Chat message received"), whenGroup);
-    m_notifyChatMsgCheck->setEnabled(false);
-    chatMsgLayout->addWidget(m_notifyChatMsgCheck);
-    whenLayout->addLayout(chatMsgLayout);
+    // MFC "Chat session started" + "Chat message received": in the Messages group below
 
     m_notifyDownloadAddedCheck = new QCheckBox(tr("Download added"), whenGroup);
     whenLayout->addWidget(m_notifyDownloadAddedCheck);
@@ -2687,6 +2730,36 @@ QWidget* OptionsDialog::createNotificationsPage()
     whenLayout->addWidget(m_notifyUrgentCheck);
 
     layout->addWidget(whenGroup);
+
+    // === Messages group: every chat notice in one place (friends, IRC, ed3k rooms) ===
+    auto* chatGroup = new QGroupBox(tr("Messages (friends, IRC, ed3k rooms)"), page);
+    auto* chatLayout = new QVBoxLayout(chatGroup);
+    m_notifyChatCheck = new QCheckBox(tr("Pop-up when a chat session starts"), chatGroup);
+    chatLayout->addWidget(m_notifyChatCheck);
+    // indented: MFC "Chat message received"
+    auto* chatMsgLayout = new QVBoxLayout;
+    chatMsgLayout->setContentsMargins(30, 0, 0, 0);
+    m_notifyChatMsgCheck = new QCheckBox(tr("Pop-up on every chat message"), chatGroup);
+    m_notifyChatMsgCheck->setEnabled(false);
+    chatMsgLayout->addWidget(m_notifyChatMsgCheck);
+    chatLayout->addLayout(chatMsgLayout);
+    m_chatUnreadBadgeCheck = new QCheckBox(tr("Mark unread messages on the toolbar and the status bar"), chatGroup);
+    m_chatUnreadBadgeCheck->setToolTip(tr("A red \"!\" on the Messages and IRC buttons, a blinking icon in the status bar"));
+    chatLayout->addWidget(m_chatUnreadBadgeCheck);
+    m_chatSoundCheck = new QCheckBox(tr("Play a sound on new messages"), chatGroup);
+    m_chatSoundCheck->setToolTip(tr("The sound file above, else the system sound"));
+    chatLayout->addWidget(m_chatSoundCheck);
+    auto* alertRow = new QHBoxLayout;
+    alertRow->addWidget(new QLabel(tr("Draw attention to the window:"), chatGroup));
+    m_chatAlertCombo = new QComboBox(chatGroup);
+    m_chatAlertCombo->addItem(tr("Never"), int(Preferences::ChatAlertNever));
+    m_chatAlertCombo->addItem(tr("On private messages and my nick"), int(Preferences::ChatAlertMention));
+    m_chatAlertCombo->addItem(tr("On every message"), int(Preferences::ChatAlertAll));
+    m_chatAlertCombo->setToolTip(tr("Flashes the taskbar button or bounces the dock icon while the window is in the background"));
+    alertRow->addWidget(m_chatAlertCombo);
+    alertRow->addStretch();
+    chatLayout->addLayout(alertRow);
+    layout->addWidget(chatGroup);
 
     connect(m_notifyDownloadFinishedCheck, &QCheckBox::toggled,
             m_notifyOpenFinishedCheck, &QCheckBox::setEnabled);
@@ -3030,6 +3103,16 @@ QWidget* OptionsDialog::createMessagesPage()
     msgLayout->addWidget(m_showSmileysCheck);
 
     layout->addWidget(msgGroup);
+
+    // --- Chats group: friends, IRC and ed3k rooms (notices: Notifications page) ---
+    auto* chatGroup = new QGroupBox(tr("Chats (friends, IRC, ed3k rooms)"), page);
+    auto* chatLayout = new QVBoxLayout(chatGroup);
+    m_chatPlainLinksCheck = new QCheckBox(tr("Show links in chats as plain text"), chatGroup);
+    m_chatPlainLinksCheck->setToolTip(tr("No link in a message can be clicked by mistake: opening one tells its owner your IP address"));
+    chatLayout->addWidget(m_chatPlainLinksCheck);
+    m_chatModStarCheck = new QCheckBox(tr("Mark ed3k room moderators by a star instead of \"@\""), chatGroup);
+    chatLayout->addWidget(m_chatModStarCheck);
+    layout->addWidget(chatGroup);
 
     // --- Comments group ---
     auto* cmtGroup = new QGroupBox(tr("Comments"), page);
@@ -7585,6 +7668,11 @@ void OptionsDialog::loadSettings()
     // Messages page (GUI-only)
     m_showSmileysCheck->setChecked(thePrefs.showSmileys());
     m_indicateRatingsCheck->setChecked(thePrefs.indicateRatings());
+    m_chatSoundCheck->setChecked(thePrefs.chatSound());
+    m_chatAlertCombo->setCurrentIndex(std::max(0, m_chatAlertCombo->findData(thePrefs.chatAlert())));
+    m_chatUnreadBadgeCheck->setChecked(thePrefs.chatUnreadBadge());
+    m_chatPlainLinksCheck->setChecked(thePrefs.chatPlainLinks());
+    m_chatModStarCheck->setChecked(thePrefs.chatModStar());
 
     // The GUI acts on this one (LogWidget, IpcClient), so its own copy is the truth;
     // GetPreferences never carried it, which loaded the box unticked every time.
@@ -7655,6 +7743,14 @@ void OptionsDialog::saveSettings()
                "Restart eMule for all connections to use the new proxy settings.\n\n"
                "News server connections switch over immediately."));
     }
+    QString dohUrl = proxyDohUrlFromCombo();
+    if (!dohUrl.isEmpty() && !isValidDohUrl(dohUrl)) {
+        QMessageBox::warning(this, tr("Proxy"),
+            tr("\"%1\" is no DNS over HTTPS URL (https://host/path). The default %2 is used instead.")
+                .arg(dohUrl, defaultDohUrl()));
+        dohUrl = defaultDohUrl();
+    }
+    const QStringList dohCustom = proxyDohCustomUrls();
 
     // GUI-only settings — save locally
     thePrefs.setPromptOnExit(m_promptOnExitCheck->isChecked());
@@ -7827,6 +7923,11 @@ void OptionsDialog::saveSettings()
     // Messages page (GUI-only)
     thePrefs.setShowSmileys(m_showSmileysCheck->isChecked());
     thePrefs.setIndicateRatings(m_indicateRatingsCheck->isChecked());
+    thePrefs.setChatSound(m_chatSoundCheck->isChecked());
+    thePrefs.setChatAlert(m_chatAlertCombo->currentData().toInt());
+    thePrefs.setChatUnreadBadge(m_chatUnreadBadgeCheck->isChecked());
+    thePrefs.setChatPlainLinks(m_chatPlainLinksCheck->isChecked());
+    thePrefs.setChatModStar(m_chatModStarCheck->isChecked());
 
     // Statistics page — always save locally for immediate GUI effect
     thePrefs.setGraphsUpdateSec(static_cast<uint32>(m_statsGraphUpdateSlider->value()));
@@ -7944,6 +8045,10 @@ void OptionsDialog::saveSettings()
         req.append(m_proxyPasswordEdit->text());
         req.append(QStringLiteral("usenetUseProxy"));
         req.append(m_proxyUsenetCheck->isChecked());
+        req.append(QStringLiteral("proxyDohUrls"));
+        req.append(QCborArray::fromStringList(dohCustom));
+        req.append(QStringLiteral("proxyDohUrl"));
+        req.append(dohUrl);
 
         // Directories page
         req.append(QStringLiteral("incomingDir"));
@@ -8526,6 +8631,16 @@ void OptionsDialog::saveSettings()
         req.append(m_showSmileysCheck->isChecked());
         req.append(QStringLiteral("indicateRatings"));
         req.append(m_indicateRatingsCheck->isChecked());
+        req.append(QStringLiteral("chatSound"));
+        req.append(m_chatSoundCheck->isChecked());
+        req.append(QStringLiteral("chatAlert"));
+        req.append(static_cast<qint64>(m_chatAlertCombo->currentData().toInt()));
+        req.append(QStringLiteral("chatUnreadBadge"));
+        req.append(m_chatUnreadBadgeCheck->isChecked());
+        req.append(QStringLiteral("chatPlainLinks"));
+        req.append(m_chatPlainLinksCheck->isChecked());
+        req.append(QStringLiteral("chatModStar"));
+        req.append(m_chatModStarCheck->isChecked());
 
         // ed3k group (Ed3kOptionsPages)
         m_ed3kPages->appendTo(req);
@@ -8612,6 +8727,8 @@ void OptionsDialog::saveSettings()
         thePrefs.setProxyUser(m_proxyUserEdit->text());
         thePrefs.setProxyPassword(m_proxyPasswordEdit->text());
         thePrefs.setUsenetUseProxy(m_proxyUsenetCheck->isChecked());
+        thePrefs.setProxyDohUrls(dohCustom);
+        thePrefs.setProxyDohUrl(dohUrl);
 
         // Directories page fallback
         thePrefs.setIncomingDir(m_incomingDirEdit->text());
@@ -8926,6 +9043,14 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_proxyUserEdit->setText(prefs.value(QStringLiteral("proxyUser")).toString());
     m_proxyPasswordEdit->setText(prefs.value(QStringLiteral("proxyPassword")).toString());
     m_proxyUsenetCheck->setChecked(prefs.value(QStringLiteral("usenetUseProxy")).toBool(true));
+    {
+        QStringList dohCustom;
+        for (const QCborValue& v : prefs.value(QStringLiteral("proxyDohUrls")).toArray())
+            dohCustom << v.toString();
+        const QCborValue doh = prefs.value(QStringLiteral("proxyDohUrl"));
+        const QSignalBlocker block(m_proxyDohCombo);
+        fillProxyDohCombo(doh.isString() ? doh.toString() : defaultDohUrl(), dohCustom);
+    }
     m_proxyTypeCombo->setEnabled(proxyOn);
     m_proxyHostEdit->setEnabled(proxyOn);
     m_proxyPortSpin->setEnabled(proxyOn);
@@ -8933,6 +9058,9 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_proxyUserEdit->setEnabled(proxyOn && authOn);
     m_proxyPasswordEdit->setEnabled(proxyOn && authOn);
     m_proxyUsenetCheck->setEnabled(proxyOn);
+    m_proxyDohLabel->setEnabled(proxyOn);
+    m_proxyDohCombo->setEnabled(proxyOn);
+    updateProxyDohRemoveButton();
 
     // Directories page
     m_incomingDirEdit->setText(prefs.value(QStringLiteral("incomingDir")).toString());
@@ -10145,6 +10273,53 @@ int OptionsDialog::geoIpSourceSelection() const
     return m_geoIpSourceCombo ? m_geoIpSourceCombo->currentData().toInt() : 0;
 }
 
+void OptionsDialog::fillProxyDohCombo(const QString& current, const QStringList& custom)
+{
+    m_proxyDohCombo->clear();
+    m_proxyDohCombo->addItem(tr("Off"));
+    m_proxyDohCombo->setItemData(0, tr("No lookups behind a proxy: no flags for names"), Qt::ToolTipRole);
+    for (const DohProvider& p : dohProviders()) {
+        m_proxyDohCombo->addItem(p.url);
+        m_proxyDohCombo->setItemData(m_proxyDohCombo->count() - 1, p.name, Qt::ToolTipRole);
+    }
+    QStringList all = custom;
+    if (const QString cur = current.trimmed(); !cur.isEmpty() && !all.contains(cur))
+        all << cur;
+    for (const QString& url : std::as_const(all)) {
+        if (m_proxyDohCombo->findText(url) >= 0)
+            continue;
+        m_proxyDohCombo->addItem(url);
+        m_proxyDohCombo->setItemData(m_proxyDohCombo->count() - 1, true, Qt::UserRole + 1);   // user-added
+    }
+    const int i = current.trimmed().isEmpty() ? 0 : m_proxyDohCombo->findText(current.trimmed());
+    m_proxyDohCombo->setCurrentIndex(std::max(i, 0));
+    updateProxyDohRemoveButton();
+}
+
+QString OptionsDialog::proxyDohUrlFromCombo() const
+{
+    const QString text = m_proxyDohCombo->currentText().trimmed();
+    return text.isEmpty() || text == m_proxyDohCombo->itemText(0) ? QString() : text;
+}
+
+QStringList OptionsDialog::proxyDohCustomUrls() const
+{
+    QStringList out;
+    for (int i = 1; i < m_proxyDohCombo->count(); ++i)
+        if (m_proxyDohCombo->itemData(i, Qt::UserRole + 1).toBool())
+            out << m_proxyDohCombo->itemText(i);
+    if (const QString typed = proxyDohUrlFromCombo(); isValidDohUrl(typed) && m_proxyDohCombo->findText(typed) < 0)
+        out << typed;
+    return Preferences::cleanDohUrls(out);
+}
+
+void OptionsDialog::updateProxyDohRemoveButton()
+{
+    const int i = m_proxyDohCombo->findText(m_proxyDohCombo->currentText().trimmed());
+    m_proxyDohRemoveBtn->setEnabled(m_proxyDohCombo->isEnabled() && i > 0
+                                    && m_proxyDohCombo->itemData(i, Qt::UserRole + 1).toBool());
+}
+
 QStringList OptionsDialog::archivePasswordLines() const
 {
     // not trimmed: a space can be part of a password
@@ -10329,6 +10504,31 @@ void OptionsDialog::updateSingleTransferChecks()
     const bool ed3kOn = node && node->isChecked();
     Ed3kOptionsPages::gateSingleTransfer(m_usenetSingleCheck, ed3kOn, m_usenetEnabledCheck && m_usenetEnabledCheck->isChecked());
     Ed3kOptionsPages::gateSingleTransfer(m_btSingleCheck, ed3kOn, m_btEnabledCheck && m_btEnabledCheck->isChecked());
+}
+
+void OptionsDialog::createConnectScript()
+{
+    const auto& attach = CoreAttachment::instance();
+    const bool local = !attach.isRemote();
+    QString token = m_ipc ? m_ipc->authToken() : QString{};
+    if (token.isEmpty() && !thePrefs.ipcTokens().isEmpty())
+        token = thePrefs.ipcTokens().first();
+    if (token.isEmpty() && local && !thePrefs.filePath().isEmpty()) {
+        // First run: the core made the token after this GUI read preferences.yml
+        Preferences fromFile;
+        if (fromFile.peek(thePrefs.filePath()) && !fromFile.ipcTokens().isEmpty())
+            token = fromFile.ipcTokens().first();
+    }
+    const uint16_t port = attach.port() != 0 ? attach.port() : thePrefs.ipcPort();
+    CoreScriptDialog dlg(local, attach.host(), port, token, thePrefs.ipcListenAddress(), m_ipc, this);
+    dlg.exec();
+    // The core moved already: keep Apply from moving it back
+    if (const QString listen = dlg.changedListenAddress(); !listen.isEmpty()) {
+        const bool fieldWasPref = m_coreAddressEdit->text().trimmed() == thePrefs.ipcListenAddress();
+        thePrefs.setIpcListenAddress(listen);
+        if (fieldWasPref)
+            m_coreAddressEdit->setText(listen);
+    }
 }
 
 } // namespace eMule

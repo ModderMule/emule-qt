@@ -1035,8 +1035,15 @@ void Ed3kTorrentJoin::onMemberVerified(const QString& id, int index, const ffi::
     const std::string fileName(n.constData(), std::size_t(n.size()));
     // §6: a member verified is shared at once
     const auto& hashes = j->members[std::size_t(index)].hashes;
-    if (!shareMember(ffi::SharedFile{root, size, fileName, std::nullopt, std::nullopt, ffi::Have::complete(), std::span{hashes}}, id, index))
+    if (!shareMember(ffi::SharedFile{root, size, fileName, std::nullopt, std::nullopt, ffi::Have::complete(), std::span{hashes}}, id, index)) {
+        // hops.md §1: left out, its root is under the anonymous key: kept, so it joins once
+        // moved to the node key (or the next start); the user is told it is on BitTorrent
+        if (skipped(root)) {
+            keepMember(id, index, root, size, file);
+            emit memberVerified(id, index);
+        }
         return;
+    }
     // sources 1: this node, the file held complete (Protocol.md §10.7)
     const ffi::FileInfo info{root, size, fileName, std::nullopt, 1, 0, 0, 0, 0, 0};
     // was: e->publish(m_session.now(), info, m_holdBack ? ffi::Publish::Source : ffi::Publish::Both)

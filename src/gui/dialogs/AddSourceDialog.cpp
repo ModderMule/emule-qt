@@ -70,6 +70,13 @@ AddSourceDialog::AddSourceDialog(const QString& fileName, QWidget* parent)
 // Private
 // ---------------------------------------------------------------------------
 
+void AddSourceDialog::setUrlOnly()
+{
+    m_urlRadio->setChecked(true);
+    m_sourceRadio->setEnabled(false);
+    updateFields();
+}
+
 void AddSourceDialog::updateFields()
 {
     const bool source = m_sourceRadio->isChecked();

@@ -7,6 +7,7 @@
 #include "chat/IrcNickList.h"
 #include "controls/LogTextView.h"
 #include "prefs/Preferences.h"
+#include "utils/BadgeIcons.h"
 
 #include <QApplication>
 #include <QCborArray>
@@ -20,6 +21,7 @@
 #include <QPushButton>
 #include <QTextBlock>
 #include <QTextDocument>
+#include <QUrl>
 
 #include <algorithm>
 #include <memory>
@@ -29,6 +31,8 @@ namespace eMule {
 namespace {
 
 constexpr int kShownKeyChars = 4;
+constexpr const char* kModMarkUrl = "emuleqt-mod:star";   // a document resource, never fetched
+constexpr int kModMarkSize = 12;
 
 /// member key text -> member ID hex, from the daemon's rows and pushes
 QHash<QString, QString>& memberIds()
@@ -66,9 +70,12 @@ void Ed3kRoomTab::setRow(const QCborMap& row)
     for (const QCborValue& v : row.value(QStringLiteral("mods")).toArray())
         m_mods << v.toString();
     m_members.clear();
+    m_admitted.clear();
     for (const QCborValue& v : row.value(QStringLiteral("members")).toArray()) {
         const QCborMap m = v.toMap();
         m_members.insert(m.value(QStringLiteral("key")).toString(), m.value(QStringLiteral("nick")).toString());
+        if (m.value(QStringLiteral("admitted")).toBool())
+            m_admitted.insert(m.value(QStringLiteral("key")).toString());
         rememberMemberId(m.value(QStringLiteral("key")).toString(), m.value(QStringLiteral("id")).toString());
     }
     rememberMemberId(memberKey(), row.value(QStringLiteral("memberId")).toString());
@@ -148,6 +155,12 @@ QString Ed3kRoomTab::keyOfShown(const QString& shown) const
     if (shownName(m_row.value(QStringLiteral("nick")).toString(), memberKey()) == bare)
         return memberKey();
     return {};
+}
+
+QString Ed3kRoomTab::modMarkHtml()
+{
+    return QStringLiteral("<img src=\"%1\" width=\"%2\" height=\"%2\" title=\"%3\"> ")
+        .arg(QString::fromLatin1(kModMarkUrl)).arg(kModMarkSize).arg(tr("Moderator"));
 }
 
 QString Ed3kRoomTab::shownName(const QString& nick, const QString& key)
@@ -317,6 +330,10 @@ void Ed3kRoomTab::draw(const Post& p)
     if (!p.authorId.isEmpty() && isMuted(p.authorId))
         return;
     QTextDocument* doc = log()->document();
+    // the moderator star (§6: marks moderators' posts); clear() drops resources
+    if (p.moderator && doc->resource(QTextDocument::ImageResource, QUrl(QString::fromLatin1(kModMarkUrl))).isNull())
+        doc->addResource(QTextDocument::ImageResource, QUrl(QString::fromLatin1(kModMarkUrl)),
+                         BadgeIcons::moderatorMark(kModMarkSize, log()->devicePixelRatioF()));
     const int before = doc->blockCount();
     const bool empty = doc->isEmpty();
     append(render(p));
@@ -342,7 +359,8 @@ QString Ed3kRoomTab::render(const Post& p) const
             reply = QStringLiteral("%1: %2").arg(shownName(it->nick, it->author), quote);
         }
     }
-    const QString shown = (p.moderator ? QStringLiteral("@") : QString()) + shownName(p.nick, p.author);
+    // was: (p.moderator ? "@" : "") + shownName(..): the renderer draws a star now
+    const QString shown = shownName(p.nick, p.author);
     return m_render ? m_render(p, shown, p.author == memberKey(), reply) : p.text.toHtmlEscaped();
 }
 

@@ -106,6 +106,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::RenameFiles:          return QStringLiteral("RenameFiles");
     case T::MoveDownloads:        return QStringLiteral("MoveDownloads");
     case T::ListFolders:          return QStringLiteral("ListFolders");
+    case T::ListenIpcAddress:     return QStringLiteral("ListenIpcAddress");
     case T::DeleteSharedFile:     return QStringLiteral("DeleteSharedFile");
     case T::UnshareFile:          return QStringLiteral("UnshareFile");
     case T::SetDownloadCategory:  return QStringLiteral("SetDownloadCategory");

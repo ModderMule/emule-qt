@@ -103,6 +103,17 @@ constexpr int kReasonUnpacked = 32;
 constexpr int kReasonUnpackFailed = 33;
 constexpr int kReasonUnpackPassword = 34;
 
+/// @p it can stream to a player: bytes are coming, and a muxed stream download (HLS/DASH)
+/// without peers' blocks only once complete
+bool previewable(const QCborMap& it)
+{
+    const auto state = it.value(QStringLiteral("state")).toInteger();
+    if (state == kStateGone || state == kStateFailed)
+        return false;
+    return state == kStateComplete || !it.value(QStringLiteral("muxed")).toBool()
+           || it.value(QStringLiteral("verified")).toBool();
+}
+
 /// The filter row's buttons. Persisted in UiState: append only.
 enum Filter : int { FilterAll, FilterDownloading, FilterComplete, FilterPaused, FilterActive, FilterError, FilterCount };
 
@@ -1002,9 +1013,8 @@ qint64 HosterPanel::mainVideoOf(const QList<qint64>& ids) const
     std::pair<bool, qint64> bestKey{false, -1};   // (not an extra, size)
     for (const qint64 id : ids) {
         const QCborMap it = m_items.value(id);
-        const auto state = it.value(QStringLiteral("state")).toInteger();
         const QString name = it.value(QStringLiteral("name")).toString();
-        if (state == kStateGone || state == kStateFailed || getED2KFileTypeID(name) != ED2KFileType::Video)
+        if (!previewable(it) || getED2KFileTypeID(name) != ED2KFileType::Video)
             continue;
         const std::pair<bool, qint64> key{!extra.match(name).hasMatch(), it.value(QStringLiteral("size")).toInteger()};
         if (best == 0 || key > bestKey) {
@@ -1028,8 +1038,7 @@ void HosterPanel::showContextMenu(const QPoint& pos)
         previewId = mainVideoOf(ids);
     } else if (ids.size() == 1) {
         const QCborMap it = m_items.value(ids.first());
-        const auto state = it.value(QStringLiteral("state")).toInteger();
-        if (state != kStateGone && state != kStateFailed && isPlayableMedia(it.value(QStringLiteral("name")).toString()))
+        if (previewable(it) && isPlayableMedia(it.value(QStringLiteral("name")).toString()))
             previewId = ids.first();
     }
     menu.setToolTipsVisible(true);   // a package's: which file plays
@@ -1207,7 +1216,10 @@ void HosterPanel::onAccountChecked(const IpcMessage& msg)
     if (m_codeAsks.value(key))
         return;
     const QString title = r.value(QStringLiteral("codeTitle")).toString();
-    const QString text = r.value(QStringLiteral("codeText")).toString();
+    QString text = r.value(QStringLiteral("codeText")).toString();
+    if (r.value(QStringLiteral("codeAgain")).toBool())
+        text = tr("The last code was not accepted (it may have expired). Use the newest one you got.")
+               + (text.trimmed().isEmpty() ? QString() : QStringLiteral("\n\n") + text.trimmed());
     // never a dialog inside the IPC read
     QTimer::singleShot(0, this, [this, host, user, title, text] { askAccountCode(host, user, title, text); });
 }

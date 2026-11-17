@@ -4,7 +4,8 @@
 /// @brief Readable names (name.md) in the daemon: the host duties of the core's names and
 /// what the local website server (Ed3kSiteServer) needs of the node.
 ///
-/// - DNS (§5.1): `NameDns` → a TXT lookup (QDnsLookup, 10 s; injectable for tests) →
+/// - DNS (§5.1): `NameDns` → a TXT lookup (QDnsLookup, or DoH through the proxy behind
+///   one; 10 s; injectable for tests) →
 ///   nameDnsAnswer / nameDnsFailed. `secure` is always false: QDnsLookup's AD bit comes from
 ///   a resolver this host does not validate, so it is no DNSSEC proof (§5.3).
 /// - `ed3k.json` (§5.2) goes out as an ordinary HttpRequest (Ed3kHttp), nothing here.
@@ -135,7 +136,7 @@ public:
 
     /// The TXT lookup; null restores QDnsLookup (tests inject a fake).
     void setDnsResolver(DnsResolver resolver);
-    /// QDnsLookup TXT with a 10 s timeout.
+    /// TXT with a 10 s timeout: QDnsLookup, or DoH through the proxy (activeDohUrl).
     [[nodiscard]] static DnsResolver systemResolver();
 
     [[nodiscard]] bool isRunning() const;

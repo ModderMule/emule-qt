@@ -783,7 +783,7 @@ void Ed3kHosterJoin::saveSessions()
     for (const QList<Ed3kHosterAccount>* list : {&m_prefs.accounts, &m_prefs.debrid})
         for (const Ed3kHosterAccount& a : *list) {
             const auto it = m_accountStatus.find(keyOf(a));
-            if (it == m_accountStatus.end() || !it->second.valid || it->second.state.isEmpty() || it->second.state == a.session
+            if (it == m_accountStatus.end() || !(it->second.valid || !it->second.unusable.isEmpty()) || it->second.state.isEmpty() || it->second.state == a.session
                 || it->second.password != a.password)
                 continue;
             emit sessionSaved(a.host, a.user, it->second.state);
@@ -1907,9 +1907,10 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
                 logInfo(QStringLiteral("%1 downloads %2 hosters").arg(host).arg(st.hosts.size()));
         }
         emit accountChecked(host, user, ev);
-        // a stored login's new session survives a restart (no browser login again)
+        // a stored login's new session survives a restart (no browser login again);
+        // a free/expired account logged in too (RD: else captcha + mail code each start)
         if (const Ed3kHosterAccount* a = storedLogin(host, user);
-            a && st.valid && !st.state.isEmpty() && a->password == password && a->session != st.state)
+            a && (st.valid || !st.unusable.isEmpty()) && !st.state.isEmpty() && a->password == password && a->session != st.state)
             emit sessionSaved(host, user, st.state);
         return;
     }
@@ -2007,6 +2008,7 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
         if (e) {
             if (ev.total && !e->item.verified && !e->item.size)
                 e->item.size = ev.total;
+            e->item.muxed = ev.muxed;
             if (e->item.state != State::Downloading && e->item.state != State::Puzzle)
                 viaHost.isEmpty() ? setState(*e, State::Downloading) : setState(*e, State::Downloading, Reason::ViaDebrid, viaHost);
         }

@@ -210,6 +210,54 @@ QString ed3kAliasText(const QCborMap& alias)
     return {};
 }
 
+QString ed3kJoinText(const QCborMap& join)
+{
+    const QString network = join.value(QStringLiteral("network")).toString();
+    const QString state = join.value(QStringLiteral("state")).toString();
+    const QString reason = join.value(QStringLiteral("reason")).toString();
+    QString name;
+    if (network == QLatin1String("ed2k"))
+        name = QStringLiteral("eD2K");
+    else if (network == QLatin1String("torrent"))
+        name = networkName(Ed3kJoin::Torrent);
+    else if (network == QLatin1String("usenet"))
+        name = networkName(Ed3kJoin::Usenet);
+    else if (network == QLatin1String("hoster"))
+        name = networkName(Ed3kJoin::Hoster);
+    else
+        return {};
+    QString text;
+    if (state == QLatin1String("joined")) {
+        QStringList jobs;
+        for (const auto& j : join.value(QStringLiteral("jobs")).toArray())
+            if (const QString t = ed3kAliasText(j.toMap()); !t.isEmpty())
+                jobs << t;
+        text = jobs.isEmpty() ? QCoreApplication::translate("ClientIcons", "Joined")
+                              : QCoreApplication::translate("ClientIcons", "Joined (%1)").arg(jobs.join(QStringLiteral("; ")));
+    } else if (state == QLatin1String("skipped")) {
+        // hops.md §1: only ed3k hides; the other networks show this address
+        text = reason == QLatin1String("anonKey")
+            ? QCoreApplication::translate("ClientIcons", "Skipped (%1 is not anonymous; the file is under the anonymous key)").arg(name)
+            : QCoreApplication::translate("ClientIcons", "Skipped");
+    } else if (state == QLatin1String("available")) {
+        text = QCoreApplication::translate("ClientIcons", "Available, not joined");
+    } else if (reason == QLatin1String("noEd2kHash")) {
+        text = QCoreApplication::translate("ClientIcons", "Not available (no eD2K hash, hashed while eD2K was disabled)");
+    } else {
+        text = QCoreApplication::translate("ClientIcons", "Not available (network or its ed3k join is off)");
+    }
+    return QCoreApplication::translate("ClientIcons", "%1: %2").arg(name, text);
+}
+
+QString ed3kJoinsText(const QCborArray& joins)
+{
+    QStringList lines;
+    for (const auto& j : joins)
+        if (const QString t = ed3kJoinText(j.toMap()); !t.isEmpty())
+            lines << t;
+    return lines.join(u'\n');
+}
+
 QIcon i2pIcon()
 {
     static const QIcon icon = skinIcon(QStringLiteral(":/icons/I2P.ico"));

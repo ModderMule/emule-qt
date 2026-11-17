@@ -632,6 +632,7 @@ std::optional<std::pair<Ed3kResolver::TaskId, ResolverEvent>> Ed3kJdResolver::pa
     e.total = u64("total");
     if (o.contains(QStringLiteral("from")))
         e.from = u64("from");
+    e.muxed = o.value(QLatin1StringView("muxed")).toBool();
     e.seconds = u64("seconds");
     e.puzzle = u64("puzzle");
     e.count = int(u64("count"));

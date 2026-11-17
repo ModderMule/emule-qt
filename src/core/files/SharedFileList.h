@@ -82,6 +82,8 @@ public:
         /// Hash an already shared file again for SharedFileList::rehashAllFiles().
         /// Reported by fullRehashDone(), never added to the share by the worker.
         bool fullRehash = false;
+        /// eD2K disabled: the side hash alone, its root the key (KnownFile::isEd3kOnly)
+        bool ed3kOnly = false;
     };
 
     explicit HashingThread(QObject* parent = nullptr);
@@ -259,10 +261,11 @@ public:
     /// Drops the shared files setNeverShared / setStillWriting name (one more came).
     void dropNeverShared();
 
-    /// eD2K disabled (Extended): new files are not hashed for eD2K (no MD4, no AICH) but
-    /// listed here for ed3k alone (Ed3kShared hashes them). Known files stay as they are.
-    /// Turned back on, a reload() hashes them for eD2K. Path and size per file.
-    [[nodiscard]] std::vector<std::pair<QString, uint64>> ed3kOnlyFiles() const;
+    /// eD2K disabled (Extended): new files are hashed for ed3k alone (KnownFile::isEd3kOnly,
+    /// no MD4/AICH), shared like any other. Known files stay as they are. Back on, a
+    /// reload() hashes them for eD2K; the eD2K record then takes their place.
+    /// An ed3k-only file that wants its eD2K hash now (eD2K on).
+    [[nodiscard]] static bool needsEd2kHash(const KnownFile* file);
     /// A folder below a tree root (ShareRules::treeRoots), the root itself included.
     [[nodiscard]] static bool inShareTree(const ShareRules& rules, const QString& dirKey);
 
@@ -401,9 +404,6 @@ signals:
     void partFileRehashApplied(const QByteArray& fileHash, const QByteArray& partOk);
     /// A rescan was applied; @p full: the whole share (reload()).
     void scanned(bool full);
-    /// A file listed for ed3k alone (eD2K disabled, ed3kOnlyFiles()) came or went.
-    void ed3kOnlyAdded(const QString& path, quint64 size);
-    void ed3kOnlyRemoved(const QString& path);
 
 private:
     /// A file whose hashset proves its size wrong: offering it would spread that size
@@ -698,11 +698,6 @@ private:
         bool givenUp = false;
     };
     QHash<QString, HashFailure> m_hashFailures;
-    /// pathKey → file listed for ed3k alone (ed3kOnlyFiles())
-    QHash<QString, UnknownFileEntry> m_ed3kOnly;
-    /// New files of a scan to ed3k alone (eD2K disabled); in-scope ones not wanted leave.
-    void listEd3kOnly(std::vector<UnknownFileEntry>& toHash, const QSet<QString>& wanted,
-                      const std::function<bool(const QString& dirKey)>& inScope);
     size_t m_hashFailuresSaved = 0;     // signature of the given-up set on disk
     time_t m_hashFailuresCheckedAt = 0;
     std::array<int, 3> m_hashRetrySecs{5, 30, 120};

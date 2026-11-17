@@ -4,6 +4,7 @@
 /// @brief Client software icon (MFC GetDisplayImage) for every list showing peers.
 
 #include <QByteArray>
+#include <QCborArray>
 #include <QCborMap>
 #include <QIcon>
 #include <QString>
@@ -37,6 +38,11 @@ enum class Ed3kJoin { None, Torrent, Usenet, Hoster };
 
 /// One other name of an ed3k root ("aliases" entry: network, name, id): "Torrent: <name> (btih:…)".
 [[nodiscard]] QString ed3kAliasText(const QCborMap& alias);
+/// One "ed3kJoins" row (Ed3kUploadsBridge::joinsOf: network, state, reason, jobs) as a line:
+/// "BitTorrent: Skipped (BitTorrent is not anonymous; the file is under the anonymous key)".
+[[nodiscard]] QString ed3kJoinText(const QCborMap& join);
+/// Every row of @p joins, one per line; empty: none.
+[[nodiscard]] QString ed3kJoinsText(const QCborArray& joins);
 
 /// An ed3k source of a torrent/usenet/hoster job (Ed3kUploadsBridge::jobSources row): a
 /// peer row in the Torrents, Usenet and Hoster tabs.

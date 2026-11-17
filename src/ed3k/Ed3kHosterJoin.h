@@ -146,6 +146,9 @@ public:
         /// only the generic http plugin takes url (#202): a plain web file, host stays the
         /// site; never looked up or published (the URL may carry a private token)
         bool generic = false;
+        /// the resolver's download is muxed (HLS/DASH via ffmpeg): no bytes before it ends;
+        /// told with each open, not saved
+        bool muxed = false;
         /// removed from the list, its file left in incoming: kept out of every list, its
         /// links still published and rechecked until the file is gone (then dropped)
         bool retired = false;

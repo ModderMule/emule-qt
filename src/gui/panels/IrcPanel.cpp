@@ -12,6 +12,7 @@
 #include "controls/AbstractListView.h"
 #include "controls/LogTextView.h"
 #include "utils/Appearance.h"
+#include "utils/BadgeIcons.h"
 #include "controls/SortableItems.h"
 #include "app/IpcClient.h"
 #include "chat/IrcClient.h"
@@ -28,7 +29,9 @@
 #include <QAudioOutput>
 #include <QDir>
 #include <QFile>
+#include <QIdentityProxyModel>
 #include <QMediaPlayer>
+#include <QShowEvent>
 #include <QCborArray>
 #include <QCborMap>
 #include <QDateTime>
@@ -55,12 +58,58 @@
 #include <QTabWidget>
 #include <QTextBrowser>
 #include <QToolButton>
+#include <QTimer>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
 #include <QWidgetAction>
 
 namespace eMule {
+
+/// The nick list of an ed3k room, star option on: a moderator's "@" shown as a star (room.md §6); other
+/// channels as they are. The "@" stays in the source list, where sorting and bare() use it.
+class RoomNickProxy : public QIdentityProxyModel {
+public:
+    using QIdentityProxyModel::QIdentityProxyModel;
+
+    void setRoom(bool room)
+    {
+        if (room == m_room)
+            return;
+        beginResetModel();
+        m_room = room;
+        endResetModel();
+    }
+
+    QVariant data(const QModelIndex& index, int role) const override
+    {
+        if (!m_room || (role != Qt::DisplayRole && role != Qt::DecorationRole && role != Qt::ToolTipRole))
+            return QIdentityProxyModel::data(index, role);
+        const QString raw = QIdentityProxyModel::data(index, Qt::DisplayRole).toString();
+        const bool mod = raw.startsWith(QLatin1Char('@'));
+        switch (role) {
+        case Qt::DisplayRole:
+            return mod ? raw.mid(1) : raw;
+        case Qt::DecorationRole: {
+            // a blank of the same size keeps the names in one column
+            static const QPixmap star = BadgeIcons::moderatorMark(16, qApp->devicePixelRatio());
+            static const QPixmap blank = [] {
+                QPixmap pm(star.size());
+                pm.setDevicePixelRatio(star.devicePixelRatio());
+                pm.fill(Qt::transparent);
+                return pm;
+            }();
+            return mod ? star : blank;
+        }
+        default:
+            return mod ? IrcPanel::tr("Moderator") : QVariant();
+        }
+    }
+
+private:
+    bool m_room = false;
+};
+
 
 // ---------------------------------------------------------------------------
 // mIRC color table (16 standard colors)
@@ -219,6 +268,16 @@ void IrcPanel::onTabChanged(int /*index*/)
     const int idx = m_tabWidget->currentIndex();
     if (idx >= 0)
         m_tabWidget->tabBar()->setTabTextColor(idx, QColor());
+    if (isVisible())
+        for (auto it = m_channels.cbegin(); it != m_channels.cend(); ++it)
+            if (it->widget && it->widget == m_tabWidget->currentWidget())
+                markRead(it.key());
+}
+
+void IrcPanel::showEvent(QShowEvent* event)
+{
+    QWidget::showEvent(event);
+    onTabChanged(m_tabWidget->currentIndex());   // the tab on screen is read now
 }
 
 void IrcPanel::onTabCloseRequested(int index)
@@ -370,6 +429,9 @@ void IrcPanel::onChannelMessage(const QString& channel, const QString& nick,
     ensureChannelTab(key);
     appendToChannel(key, messageHtml(key, nick, message));
     markActivity(key);
+    const QString me = m_irc->currentNick();
+    if (nick.compare(me, Qt::CaseInsensitive) != 0)
+        noteMessage(key, !me.isEmpty() && message.contains(me, Qt::CaseInsensitive));
 }
 
 void IrcPanel::onPrivateMessage(const QString& nick, const QString& message)
@@ -378,6 +440,7 @@ void IrcPanel::onPrivateMessage(const QString& nick, const QString& message)
     ensureChannelTab(key, IrcChannel::Private);
     appendToChannel(key, messageHtml(key, nick, message));
     markActivity(key);
+    noteMessage(key, true);
 }
 
 void IrcPanel::onActionReceived(const QString& target, const QString& nick,
@@ -390,6 +453,9 @@ void IrcPanel::onActionReceived(const QString& target, const QString& nick,
               .arg(IrcRouting::colorName(IrcRouting::LineColor::Action), nick.toHtmlEscaped(),
                    formatMessage(message)));
     markActivity(key);
+    const QString me = m_irc->currentNick();
+    if (nick.compare(me, Qt::CaseInsensitive) != 0)
+        noteMessage(key, !target.startsWith(QLatin1Char('#')) || (!me.isEmpty() && message.contains(me, Qt::CaseInsensitive)));
 }
 
 void IrcPanel::onNoticeReceived(const QString& source, const QString& target,
@@ -709,7 +775,9 @@ void IrcPanel::setupUi()
     m_nickModel = new QStringListModel(this);
     m_nickListView = new QListView(leftWidget);
     SkinColors::bind(m_nickListView, {QStringLiteral("IRCNicksLv"), QStringLiteral("DefLv")}, true);
-    m_nickListView->setModel(m_nickModel);
+    m_nickProxy = new RoomNickProxy(this);
+    m_nickProxy->setSourceModel(m_nickModel);
+    m_nickListView->setModel(m_nickProxy);
     m_nickListView->setSelectionMode(QAbstractItemView::SingleSelection);
     m_nickListView->setEditTriggers(QAbstractItemView::NoEditTriggers);
     // MFC CIrcNickListCtrl: a menu on the nick, a double click opens a private channel
@@ -1070,6 +1138,7 @@ void IrcPanel::detachChannel(const QString& key)
 void IrcPanel::removeChannelTab(const QString& name)
 {
     const QString key = name.toLower();
+    markRead(key);
     auto it = m_channels.find(key);
     if (it == m_channels.end())
         return;
@@ -1292,11 +1361,13 @@ QString IrcPanel::formatMessage(const QString& text) const
     // Smileys are matched on the raw text too and ride through the escaping as
     // placeholders — matched afterwards, ">_>" was already "&gt;_&gt;".
     MircFormat fmt;
-    QString html = TextLinks::linkify(text, [this, &fmt](const QString& segment) {
+    const auto render = [this, &fmt](const QString& segment) {
         if (!thePrefs.ircShowSmileys())
             return renderMircCodes(segment, fmt);
         return Smileys::expand(renderMircCodes(Smileys::protect(segment), fmt));
-    });
+    };
+    // privacy: a link clicked by mistake tells its owner our IP
+    QString html = thePrefs.chatPlainLinks() ? render(text) : TextLinks::linkify(text, render);
     return html + fmt.close();
 }
 
@@ -1357,7 +1428,32 @@ void IrcPanel::updateNickList()
     }
 
     m_nickLabel->setText(tr("Nick (%1)").arg(it->nicks.size()));
+    // the star only by option: else the "@" as in IRC channels
+    m_nickProxy->setRoom(it->type == IrcChannel::Ed3kRoom && thePrefs.chatModStar());
     syncNickModel(m_nickModel, it->nicks.display());
+}
+
+void IrcPanel::switchToSubTab(int index)
+{
+    if (index < 0)
+        return;
+    auto* timer = new QTimer(this);
+    connect(timer, &QTimer::timeout, this, [this, timer, index, tries = 60]() mutable {
+        const bool there = index < m_tabWidget->count();
+        if (there)
+            m_tabWidget->setCurrentIndex(index);
+        if (there || --tries <= 0)
+            timer->deleteLater();
+    });
+    timer->start(500);
+}
+
+void IrcPanel::applyChatPrefs()
+{
+    for (const IrcChannel& ch : std::as_const(m_channels))
+        if (ch.room)
+            ch.room->redraw();
+    updateNickList();
 }
 
 QString IrcPanel::selectedNick() const
@@ -1831,6 +1927,25 @@ QString IrcPanel::askIrcNick(const QString& start)
     if (!nick.isEmpty())
         thePrefs.setIrcNick(nick);
     return nick;
+}
+
+void IrcPanel::noteMessage(const QString& key, bool mention)
+{
+    const int idx = findTab(key);
+    const bool onScreen = isVisible() && idx >= 0 && idx == m_tabWidget->currentIndex();
+    if (!onScreen && !m_unread.contains(key)) {
+        m_unread.insert(key);
+        if (m_unread.size() == 1)
+            emit unreadChanged(true);
+    }
+    if (!onScreen || !window()->isActiveWindow())
+        emit messageArrived(mention);
+}
+
+void IrcPanel::markRead(const QString& key)
+{
+    if (m_unread.remove(key) && m_unread.isEmpty())
+        emit unreadChanged(false);
 }
 
 } // namespace eMule

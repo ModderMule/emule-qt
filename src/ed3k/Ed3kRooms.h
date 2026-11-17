@@ -54,7 +54,7 @@ class Ed3kRooms : public QObject {
 public:
     /// What notice() says (the Room* events without a list of their own).
     enum class Notice : int {
-        Joined = 0,       ///< the first neighbour, the first answer taken
+        Joined = 0,       ///< the first neighbour, the first answer taken; flag: a re-join
         Left = 1,
         Neighbour = 2,    ///< value 1 up, 0 gone; who: the node
         Banned = 3,       ///< who: the member key
@@ -94,6 +94,7 @@ public:
         std::deque<Post> posts;    ///< the last historyMax(), in arrival order
         std::set<::ed3k::PostId> postIds;   ///< ids of posts: network history repeats stored ones
         bool joined = false;       ///< RoomJoined seen
+        bool everJoined = false;   ///< RoomJoined seen once: the next is a re-join
         int neighbours = 0;
         std::uint64_t generation = 0;
         bool keyHeld = false;
@@ -145,6 +146,10 @@ public:
     ::ed3k::Result<> ban(const ::ed3k::Room& room, const ::ed3k::Key32& member, std::uint64_t until);
     ::ed3k::Result<> lift(const ::ed3k::Room& room, const ::ed3k::Key32& member);
     ::ed3k::Result<std::uint64_t> startGeneration(const ::ed3k::Room& room);
+    /// ED3K_ROOM_MEMBER_* bits of @p member now (§2.2, §2.3); 0 when unknown. Read only.
+    [[nodiscard]] std::uint32_t memberStatus(const ::ed3k::Room& room, const ::ed3k::Key32& member) const;
+    /// The keys banned now by a held ban and its end (§2.3). Read only.
+    [[nodiscard]] std::vector<::ed3k::Engine::RoomBan> bans(const ::ed3k::Room& room) const;
 
     /// Mutes (or unmutes) a member ID here alone (§6); the GUI hides its posts. Kept.
     ::ed3k::Result<> setMuted(const ::ed3k::Room& room, const std::array<std::uint8_t, 16>& memberId, bool on);

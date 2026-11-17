@@ -16,6 +16,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QUrl>
 #include <QIODevice>
 
 #include <algorithm>
@@ -427,6 +428,51 @@ bool Ed3kDownloads::setCategory(const ffi::Root& root, int category)
     e->info.category = std::max(0, category);
     touch(*e);
     markChanged();
+    return true;
+}
+
+std::expected<void, QString> Ed3kDownloads::rename(const ffi::Root& root, const QString& name)
+{
+    Entry* e = entryOf(root);
+    if (!e)
+        return std::unexpected(tr("No such ed3k download."));
+    const QString clean = safeName(name);
+    if (clean.isEmpty())
+        return std::unexpected(tr("Invalid file name."));
+    if (clean == e->info.name)
+        return {};
+    if (e->info.state == Ed3kDownloadInfo::State::Complete) {
+        // on disk: the share list or its own sharing follows the file
+        if (e->moving)
+            return std::unexpected(tr("The file is being moved."));
+        const QFileInfo fi(e->info.path);
+        const QString to = fi.absoluteDir().filePath(clean);
+        if (QFileInfo::exists(to))
+            return std::unexpected(tr("A file of that name exists already."));
+        if (!QFile::rename(e->info.path, to))
+            return std::unexpected(tr("The file could not be renamed."));
+        e->info.path = to;
+        e->info.targetPath = to;
+    } else if (!e->info.targetPath.isEmpty()) {
+        e->info.targetPath = QFileInfo(e->info.targetPath).absoluteDir().filePath(clean);
+    }
+    e->info.name = clean;
+    touch(*e);
+    markChanged();
+    return {};
+}
+
+bool Ed3kDownloads::addWebSource(const ffi::Root& root, const QString& url)
+{
+    Entry* e = entryOf(root);
+    const QUrl u(url.trimmed());
+    if (!e || e->info.state == Ed3kDownloadInfo::State::Complete
+        || (u.scheme() != QLatin1String("http") && u.scheme() != QLatin1String("https")) || u.host().isEmpty())
+        return false;
+    if (mergeWebUrls(e->webUrls, {u.toString()})) {
+        touch(*e);
+        webAttach(*e);
+    }
     return true;
 }
 

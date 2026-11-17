@@ -333,6 +333,11 @@ Ed3kJoinBase::Ed3kJoinBase(Ed3kSession& session, const QString& configDir, QStri
     });
     connect(&m_session.hide(), &Ed3kHide::started, this, [this] { hideChanged(true); });
     connect(&m_session.hide(), &Ed3kHide::stopped, this, [this] { hideChanged(false); });
+    // hops.md §1: moved to the node key (the user asked): a member left out joins again
+    connect(&m_session.hide(), &Ed3kHide::keyMoved, this, [this](const ffi::Root& root, ffi::KeyKind key) {
+        if (key == ffi::KeyKind::Node && m_started && !anonCapable())
+            rejoinSkipped(root);
+    });
     ++turns().users;
     turns().joins.insert(this);
 }
@@ -414,6 +419,7 @@ void Ed3kJoinBase::stopDownloads(const QString& owner)
             roots.push_back(root);
     for (const auto& root : roots)
         stopDownload(root);
+    dropSkipped(owner);
 }
 
 const Ed3kJoinBase::Download* Ed3kJoinBase::downloadOf(const ffi::Root& root) const
@@ -655,6 +661,46 @@ std::vector<Ed3kJoinBase::JoinOwner> Ed3kJoinBase::aliasJobsAt(const Ed3kSession
     return out;
 }
 
+std::vector<Ed3kJoinBase::JoinState> Ed3kJoinBase::joinStatesAt(const Ed3kSession& session, const ffi::Root& root)
+{
+    std::vector<JoinState> out;
+    for (const Ed3kJoinBase* join : turnsOf(session).joins) {
+        if (!isNetworkTag(join->m_tag) && join->m_tag != QLatin1String("ed2k"))
+            continue;
+        JoinState st;
+        st.tag = join->m_tag;
+        if (!join->m_started) {
+            out.push_back(std::move(st));
+            continue;
+        }
+        const auto addOwner = [&st](const QString& owner) {
+            if (!owner.isEmpty() && !st.owners.contains(owner))
+                st.owners << owner;
+        };
+        if (const auto k = join->m_skipped.find(root); k != join->m_skipped.end()) {
+            st.kind = JoinState::Kind::Skipped;
+            st.reason = QStringLiteral("anonKey");
+            addOwner(k->second.owner);
+        } else {
+            if (const auto sh = join->m_shared.find(root); sh != join->m_shared.end() && sh->second.member >= 0)
+                addOwner(sh->second.owner);
+            if (const auto d = join->m_downloads.find(root); d != join->m_downloads.end() && d->second->member >= 0)
+                addOwner(d->second->owner);
+            if (!st.owners.isEmpty()) {
+                st.kind = JoinState::Kind::Joined;
+            } else if (join->anonHeld(root)) {
+                // none of it holds the file; one that came would be left out
+                st.kind = JoinState::Kind::Skipped;
+                st.reason = QStringLiteral("anonKey");
+            } else {
+                st.kind = JoinState::Kind::Available;
+            }
+        }
+        out.push_back(std::move(st));
+    }
+    return out;
+}
+
 std::vector<Ed3kJoinBase::JoinOwner> Ed3kJoinBase::networkJobsAt(const Ed3kSession& session)
 {
     std::vector<JoinOwner> out;
@@ -782,6 +828,13 @@ bool Ed3kJoinBase::shareMember(const ffi::SharedFile& file, const QString& owner
         (void)e->fileHave(t, file.root, file.have);
         return true;
     }
+    // hops.md §1: a network that is not anonymous leaves a file of the anonymous key out
+    // (never opened under the node key beside it, nor under the anonymous key for it)
+    // (skipped once: each have change of a partial member comes here again)
+    if (!anonCapable() && (m_skipped.contains(file.root) || anonHeld(file.root))) {
+        skipRoot(file.root, Skipped{owner, member});
+        return false;
+    }
     // hops.md §1: under the key it is held under; a new one as the hiding switch says
     const ffi::KeyKind key = keyOf(file.root);
     if (key == ffi::KeyKind::Anon && !m_session.hide().hiding()) {
@@ -790,12 +843,17 @@ bool Ed3kJoinBase::shareMember(const ffi::SharedFile& file, const QString& owner
         return false;
     }
     // was: if (auto ok = e->fileOpen(t, file); !ok) {
+    // a torrent/usenet/hoster member of the same root opened first under the node key
+    if (key == ffi::KeyKind::Anon)
+        takeFromNodeJoins(file.root);
     if (auto ok = key == ffi::KeyKind::Anon ? e->anonFileOpen(t, file) : e->fileOpen(t, file); !ok) {
         logDebug([&]() -> QString { return QStringLiteral("member %1 of %2 not shared (error %3)").arg(member).arg(owner, errorName(ok.error())); });
         return false;
     }
+    // the key this join chose, never one another join opened it under (keyOf)
     if (anonCapable())
         m_session.hide().record(file.root, key);
+    m_skipped.erase(file.root);
     m_shared[file.root] = Shared{owner, member, file.size, {}};
     // the engine's queue policy ranks its downloaders by it (eMule's score)
     (void)e->uploadPriority(file.root, uploadPriority(m_shared[file.root]));
@@ -824,6 +882,7 @@ void Ed3kJoinBase::unshare(const ffi::Root& root)
 
 void Ed3kJoinBase::unshareOwner(const QString& owner)
 {
+    dropSkipped(owner);
     auto* e = m_session.engine();
     for (auto it = m_shared.begin(); it != m_shared.end();) {
         if (it->second.blob.isEmpty() && it->second.owner == owner) {
@@ -958,10 +1017,38 @@ ffi::KeyKind Ed3kJoinBase::keyFor(const ffi::Root& root) const
 
 ffi::KeyKind Ed3kJoinBase::keyOf(const ffi::Root& root) const
 {
+    // was: the engine's key first, for every join
+    // if (auto* e = m_session.engine())
+    //     if (const auto k = e->fileKey(root); k && *k)
+    //         return **k;
+    // return keyFor(root);
+    // a join of the node key opens nothing under the anonymous key (anonHeld skips it)
+    if (!anonCapable())
+        return ffi::KeyKind::Node;
+    if (const auto k = m_session.hide().recorded(root))
+        return *k;
+    // held, not recorded (keys.json lost): its key, unless a node-key join opened it
+    if (!heldByNodeJoinsOnly(root))
+        if (auto* e = m_session.engine())
+            if (const auto k = e->fileKey(root); k && *k)
+                return **k;
+    return m_session.hide().keyFor(root);
+}
+
+bool Ed3kJoinBase::anonHeld(const ffi::Root& root) const
+{
+    const Ed3kHide& hide = m_session.hide();
+    if (const auto k = hide.recorded(root))
+        return *k == ffi::KeyKind::Anon;
     if (auto* e = m_session.engine())
-        if (const auto k = e->fileKey(root); k && *k)
-            return **k;
-    return keyFor(root);
+        if (const auto k = e->fileKey(root); k && *k && **k == ffi::KeyKind::Anon)
+            return true;
+    // not opened yet: an anon-capable join (shared list) takes it under the anonymous key
+    if (!hide.hiding())
+        return false;
+    return std::ranges::any_of(turnsOf(m_session).joins, [&](const Ed3kJoinBase* j) {
+        return j != this && j->m_started && j->anonCapable() && j->claimsRoot(root);
+    });
 }
 
 bool Ed3kJoinBase::moveDownloadKey(const ffi::Root& root, ffi::KeyKind key)
@@ -1589,6 +1676,7 @@ void Ed3kJoinBase::closeAll()
     m_setSearches.clear();
     m_setTries.clear();
     m_shared.clear();
+    m_skipped.clear();
     m_publishInfo.clear();
     m_declinedOut.clear();
     m_started = false;
@@ -1999,8 +2087,17 @@ bool Ed3kJoinBase::open(const ffi::Root& root, std::uint64_t size, const QString
     if (!e || size == 0 || m_downloads.contains(root))
         return false;
     const auto t = m_session.now();
+    // hops.md §1: a network that is not anonymous downloads no file of the anonymous key on
+    // ed3k (its own network still does)
+    if (!anonCapable() && anonHeld(root)) {
+        skipRoot(root, Skipped{owner, member});
+        return false;
+    }
     // hops.md §1: the key it is held under, a new one as the hiding switch says
-    const ffi::KeyKind key = anonCapable() ? keyOf(root) : ffi::KeyKind::Node;
+    // was: const ffi::KeyKind key = anonCapable() ? keyOf(root) : ffi::KeyKind::Node;
+    const ffi::KeyKind key = keyOf(root);
+    if (key == ffi::KeyKind::Anon)
+        takeFromNodeJoins(root);
     if (anonCapable())
         m_session.hide().record(root, key);
     // the anonymous key opens it with the first anonFileRequest (downloadOpen here would hold
@@ -2180,16 +2277,38 @@ void Ed3kJoinBase::shareKeptMember(const QString& owner, int member, const ffi::
         return;
     }
     const QString cache = QDir(keptDir(owner)).filePath(keptHashesFile(member));
-    const QFileInfo before(path);
-    const qint64 mtimeMs = before.lastModified().toMSecsSinceEpoch();
-    if (before.isFile() && std::uint64_t(before.size()) == size) {
-        if (auto hashes = keptHashesOf(readBlob(cache), size, mtimeMs, root)) {
-            logDebug([&]() -> QString { return QStringLiteral("kept member %1 of %2 unchanged: not hashed again").arg(member).arg(owner); });
-            shareKeptHashed(owner, member, root, size, name, tries, path, FileHash{root, size, std::move(*hashes)});
-            if (tries == 0)
-                keptMemberDone(owner);
+    // was: the file's stat and the saved hashes read here, on the daemon thread: a busy disk
+    // stalled the core 8 s at start (m0.hashes, QIODevice::readAll); now on the read pool
+    QPointer<Ed3kJoinBase> self(this);
+    const auto cancel = m_cancel;
+    m_session.readPool().start([self, cancel, owner, member, root, size, name, tries, path, cache] {
+        const QFileInfo before(path);
+        const qint64 mtimeMs = before.lastModified().toMSecsSinceEpoch();
+        std::optional<ffi::Bytes> hashes;
+        if (before.isFile() && std::uint64_t(before.size()) == size)
+            hashes = keptHashesOf(readBlob(cache), size, mtimeMs, root);
+        if (cancel->load())
             return;
-        }
+        QMetaObject::invokeMethod(
+            self.data(),
+            [self, cancel, owner, member, root, size, name, tries, path, cache, mtimeMs, hashes = std::move(hashes)]() mutable {
+                if (self && !cancel->load())
+                    self->shareKeptChecked(owner, member, root, size, name, tries, path, cache, mtimeMs, std::move(hashes));
+            },
+            Qt::QueuedConnection);
+    });
+}
+
+void Ed3kJoinBase::shareKeptChecked(const QString& owner, int member, const ffi::Root& root, std::uint64_t size,
+                                    const QString& name, int tries, const QString& path, const QString& cache, qint64 mtimeMs,
+                                    std::optional<ffi::Bytes> hashes)
+{
+    if (hashes) {
+        logDebug([&]() -> QString { return QStringLiteral("kept member %1 of %2 unchanged: not hashed again").arg(member).arg(owner); });
+        shareKeptHashed(owner, member, root, size, name, tries, path, FileHash{root, size, std::move(*hashes)});
+        if (tries == 0)
+            keptMemberDone(owner);
+        return;
     }
     hashInBackground(path, [this, owner, member, root, size, name, tries, path, cache, mtimeMs](std::optional<FileHash> hashed) {
         if (hashed && hashed->root == root && hashed->size == size) {
@@ -2686,6 +2805,80 @@ std::optional<Ed3kJoinBase::SourceInfo> Ed3kJoinBase::holderInfo(const TurnNode&
                     s.otherWants << name;
     s.otherWants.sort(Qt::CaseInsensitive);
     return s;
+}
+
+void Ed3kJoinBase::skipRoot(const ffi::Root& root, Skipped s)
+{
+    const auto [it, added] = m_skipped.insert_or_assign(root, std::move(s));
+    if (!added)
+        return;
+    logInfo(QStringLiteral("%1 of %2 not joined on ed3k: its file is under the anonymous key and this network is not "
+                           "anonymous (hops.md §1)").arg(it->second.member >= 0 ? QStringLiteral("member %1").arg(it->second.member)
+                                                                                : QStringLiteral("a file")).arg(it->second.owner));
+}
+
+void Ed3kJoinBase::takeFromNodeJoins(const ffi::Root& root)
+{
+    if (!anonCapable())
+        return;
+    // copied: yieldToAnon changes no registry, but stay safe against a join going away
+    const auto joins = turnsOf(m_session).joins;
+    for (Ed3kJoinBase* j : joins)
+        if (j != this && !j->anonCapable() && (j->m_shared.contains(root) || j->m_downloads.contains(root)))
+            j->yieldToAnon(root);
+}
+
+void Ed3kJoinBase::yieldToAnon(const ffi::Root& root)
+{
+    if (const auto it = m_shared.find(root); it != m_shared.end()) {
+        Skipped s{it->second.owner, it->second.member};
+        // its source record and keywords under the node key, then the file (§1: never both keys)
+        unpublishShared(root, ffi::Publish::Both);
+        unshare(root);
+        if (s.member >= 0)
+            skipRoot(root, std::move(s));
+    }
+    if (const auto d = m_downloads.find(root); d != m_downloads.end()) {
+        Skipped s{d->second->owner, d->second->member};
+        stopDownload(root);
+        if (s.member >= 0)
+            skipRoot(root, std::move(s));
+    }
+}
+
+void Ed3kJoinBase::rejoinSkipped(const ffi::Root& root)
+{
+    const auto it = m_skipped.find(root);
+    if (it == m_skipped.end())
+        return;
+    const Skipped s = it->second;
+    m_skipped.erase(it);
+    // a kept member (verified, its path known) is shared as after a restart; anything else
+    // joins again with its job (next start, or the network's next verify)
+    if (s.member < 0 || !keepsOwner(s.owner))
+        return;
+    const Kept kept = readKept(s.owner);
+    const auto m = std::ranges::find_if(kept.members, [&](const Kept::Member& k) { return k.member == s.member && k.root == root; });
+    if (m != kept.members.end())
+        shareKeptMember(s.owner, s.member, root, m->size, m->name, 0);
+}
+
+bool Ed3kJoinBase::heldByNodeJoinsOnly(const ffi::Root& root) const
+{
+    bool nodeJoin = false;
+    for (const Ed3kJoinBase* j : turnsOf(m_session).joins) {
+        if (!j->m_shared.contains(root) && !j->m_downloads.contains(root))
+            continue;
+        if (j->anonCapable())
+            return false;
+        nodeJoin = true;
+    }
+    return nodeJoin;
+}
+
+void Ed3kJoinBase::dropSkipped(const QString& owner)
+{
+    std::erase_if(m_skipped, [&](const auto& kv) { return kv.second.owner == owner; });
 }
 
 } // namespace eMule::ed3k

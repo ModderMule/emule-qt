@@ -480,7 +480,6 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
     {
         auto* act = m_contextMenu->addAction(menuIcon("FileOpen.ico"), tr("Open File"), this,
                                              [this, hashes]() { openSharedFile(hashes.value(0)); });
-        act->setProperty("ed3kOnlyOk", true);
         const bool canOpen = singleSel && single && !single->isPartFile
                              && (localConn || !m_streamToken.isEmpty());
         act->setEnabled(canOpen);
@@ -497,7 +496,6 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
             if (const SharedFileRow* f = m_model->findByHash(hashes.value(0)))
                 QDesktopServices::openUrl(QUrl::fromLocalFile(f->path));
         });
-        act->setProperty("ed3kOnlyOk", true);
         act->setEnabled(singleSel && single && !single->isPartFile && localConn);
     }
 
@@ -594,6 +592,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
             dlg->show();
         });
         createAct->setEnabled(hasSel);
+        createAct->setProperty("ed2kOnly", true);   // an eD2K collection
 
         // My ed3k Sets (batch 15): a set of the selected files, a new version of one
         auto* ed3kCreateAct = collMenu->addAction(tr("Create ed3k Set..."), this, [this, hashes]() {
@@ -704,6 +703,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
         auto* act = m_contextMenu->addAction(menuIcon("eD2kLink.ico"), tr("Copy eD2K Links"), this,
                                              [this, hashes]() { copyEd2kLinks(hashes); });
         act->setEnabled(hasSel);
+        act->setProperty("ed2kOnly", true);
     }
     {
         auto* act = m_contextMenu->addAction(menuIcon("eD2kLink.ico"), tr("eD2K Links..."), this,
@@ -711,12 +711,13 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
             fetchAndShowSharedFileDetails(hashes, FileDetailDialog::Ed2kLink);
         });
         act->setEnabled(hasSel);
+        act->setProperty("ed2kOnly", true);
     }
     // their ed3k:file counterparts (no MFC original), as in Transfers
     {
         QList<Ed3kLinkMenu::File> links;
-        for (const SharedFileRow* f : sel)
-            links.append({f->hash, f->fileName, f->fileSize});
+        for (const SharedFileRow* f : sel)   // an ed3k-only file by its root (ed3k off too)
+            links.append({f->ed3kOnly ? f->ed3kRoot : f->hash, f->fileName, f->fileSize});
         Ed3kLinkMenu::addActions(m_contextMenu, this, m_ipc, links);
     }
     // batch 15, hops.md §1: move to the other ed3k key (asks first); all selected under one key
@@ -781,14 +782,14 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
             WebServices::instance().populateFileMenu(webMenu, single->hash, single->fileName,
                                                       static_cast<uint64_t>(single->fileSize));
         }
-        if (webMenu->isEmpty())
+        if (webMenu->isEmpty() || (single && single->ed3kOnly))   // the macros take its eD2K hash
             webMenu->setEnabled(false);
     }
 
-    // eD2K disabled: a file without MD4 is known to the core by path and root alone
+    // an ed3k-only file (hashed while eD2K was disabled) has no eD2K hash or link
     if (std::ranges::any_of(sel, &SharedFileRow::ed3kOnly))
-        for (QAction* a : m_contextMenu->actions())
-            if (!a->isSeparator() && !a->property("ed3kOnlyOk").toBool())
+        for (QAction* a : m_contextMenu->findChildren<QAction*>())
+            if (a->property("ed2kOnly").toBool())
                 a->setEnabled(false);
 
     m_contextMenu->popup(m_fileView->viewport()->mapToGlobal(pos));
@@ -1381,6 +1382,7 @@ SharedFileRow sharedRowFromCbor(const QCborMap& m)
     row.ed2kLink          = m.value(QStringLiteral("ed2kLink")).toString();
     row.isPartFile        = m.value(QStringLiteral("isPartFile")).toBool();
     row.ed3kOnly          = m.value(QStringLiteral("ed3kOnly")).toBool();
+    row.ed3kRoot          = m.value(QStringLiteral("ed3kRoot")).toString();
     row.category          = static_cast<int>(m.value(QStringLiteral("category")).toInteger());
     row.uploadingClients  = static_cast<int>(m.value(QStringLiteral("uploadingClients")).toInteger());
     row.queuedClients     = static_cast<int>(m.value(QStringLiteral("queuedClients")).toInteger());

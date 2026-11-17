@@ -119,6 +119,7 @@ public:
     QSet<QString> genericHosts;  ///< sites only the generic http plugin takes (match(): DirectHTTP, "file")
     QSet<QString> privateUrls;   ///< open() fails like the address guard (code "private")
     QSet<QString> premiumHosts;  ///< accountCheck() says premium for these
+    QSet<QString> freeHosts;     ///< accountCheck(): logged in, free account (JD: not valid), session
     QHash<QString, int> maxDownloads;   ///< accountCheck() tells JD's downloads at once
     QSet<QString> codeHosts;     ///< accountCheck() asks for a confirmation code
     std::map<TaskId, QString> codeWaits;   ///< check task → host, until answerCode()
@@ -136,6 +137,7 @@ public:
     qsizetype breakAt = 0;
     /// resume: the hoster cannot resume, JD starts over from 0
     bool refuseResume = false;
+    bool muxed = false;          ///< open()'s progress says muxed (HLS/DASH via ffmpeg)
     std::uint64_t lastHave = 0;
     QByteArray lastPrefill;   ///< the front of the part file a resumed open found
 
@@ -342,6 +344,14 @@ public:
             e.hosts = *d;
             e.state = QByteArrayLiteral(R"({"token":"t1"})");
         }
+        if (freeHosts.contains(host)) {
+            e.valid = false;
+            e.premium = false;
+            e.multi = false;
+            e.unusable = QStringLiteral("free");
+            e.trafficLeft = 0;
+            e.state = QByteArrayLiteral(R"({"token":"free"})");
+        }
         later(t, e);
         return t;
     }
@@ -423,6 +433,7 @@ private:
             e.total = std::uint64_t(data.size());
             e.path = part;
             e.from = from;
+            e.muxed = muxed;
             emit taskEvent(t, e);
             if (opens == 1 && breakAt > 0 && at + n >= breakAt) {
                 // the join reads what is on disk first, then the hoster says busy
@@ -882,6 +893,20 @@ private slots:
         QTRY_VERIFY(QDir(r.tmp.filePath(QStringLiteral("temp"))).entryList({QStringLiteral("*.hoster.part*")}, QDir::Files).isEmpty());
         // the same link again is not a second item
         QVERIFY(r.join->addLinks(QStringLiteral("https://fake.example/f/1")).isEmpty());
+    }
+
+    /// the resolver's open says muxed (HLS/DASH): the item tells it, the GUI and preview see it
+    void rootless_muxedOpenMarksItem()
+    {
+        for (const bool muxed : {true, false}) {
+            Rig r;
+            r.resolver.muxed = muxed;
+            QVERIFY(r.start(true));
+            const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/f/1"));
+            QCOMPARE(ids.size(), 1);
+            QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+            QCOMPARE(r.join->item(ids[0])->muxed, muxed);
+        }
     }
 
     /// the digests the hoster checksum check computes ("123456789" check values)
@@ -2115,6 +2140,18 @@ private slots:
         const auto ev = checked.last().at(2).value<ResolverEvent>();
         QCOMPARE(ev.kind, ResolverEvent::Kind::Failed);
         QCOMPARE(ev.code, QStringLiteral("noLogin"));
+    }
+
+    /// a free account logged in (JD: not valid): its session is still saved, no login again
+    void debrid_freeLoginSavesSession()
+    {
+        Rig r;
+        r.resolver.freeHosts = {QStringLiteral("deb.example")};
+        r.prefs.debrid = {Ed3kHosterAccount{QStringLiteral("deb.example"), QStringLiteral("u"), QStringLiteral("p")}};
+        QVERIFY(r.start(true));
+        QSignalSpy saved(r.join.get(), &Ed3kHosterJoin::sessionSaved);
+        QTRY_VERIFY_WITH_TIMEOUT(saved.count() >= 1, 10000);
+        QCOMPARE(saved.last().at(2).toByteArray(), QByteArrayLiteral(R"({"token":"free"})"));
     }
 
     /// a login needs a confirmation code: the check waits, the user's code finishes it; a Check

@@ -27,6 +27,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSet>
+#include <QCryptographicHash>
 #include <QSignalSpy>
 #include <QTest>
 #include <QTemporaryDir>
@@ -389,7 +390,7 @@ void tst_SharedFileList::hashingThread_feedsTheSideHashFromItsRead()
     f.close();
 
     auto slot = std::make_shared<SideHasherSlot>();
-    slot->set([seen](const QString&, quint64) -> std::unique_ptr<SideHash> {
+    slot->set([seen](const QString&, quint64, bool) -> std::unique_ptr<SideHash> {
         ++seen->made;
         return std::make_unique<Recorder>(seen);
     });
@@ -1766,10 +1767,22 @@ void tst_SharedFileList::reload_nameWithWindowsReservedCharsIsNotRehashed()
 #endif
 }
 
-// Extended "Disable eD2K": known files stay; a new one is not hashed for eD2K (no MD4/AICH)
-// but listed for ed3k alone; on again, a reload hashes it for eD2K
+// eD2K disabled: a new file is hashed for ed3k alone (no MD4/AICH), shared under its root's
+// head and kept in known_ed3k.met; on again, its eD2K hash takes the record's place
 void tst_SharedFileList::reload_eD2kDisabledListsNewFilesForEd3kAlone()
 {
+    // a stand-in root: SHA-256 of the bytes, asked for ed3k-only files alone
+    class RootHash final : public SideHash {
+    public:
+        void update(std::span<const std::byte> data) override
+        {
+            m_hash.addData(QByteArrayView(reinterpret_cast<const char*>(data.data()), qsizetype(data.size())));
+        }
+        void finish(const QByteArray&, const QString&, quint64, qint64) override {}
+        QByteArray root() override { return m_hash.result(); }
+    private:
+        QCryptographicHash m_hash{QCryptographicHash::Sha256};
+    };
     eMule::testing::TempDir tmp;
     const QString dir = tmp.filePath(QStringLiteral("share"));
     QVERIFY(!writeFile(dir, QStringLiteral("known.bin"), QByteArray(900, 'k')).isEmpty());
@@ -1779,33 +1792,67 @@ void tst_SharedFileList::reload_eD2kDisabledListsNewFilesForEd3kAlone()
     thePrefs.setDisableEd2k(false);
 
     KnownFileList knownFiles;
+    QVERIFY(knownFiles.init(tmp.path()));
     SharedFileList shared(&knownFiles);
+    shared.setSideHasher([](const QString&, quint64, bool rootWanted) -> std::unique_ptr<SideHash> {
+        return rootWanted ? std::make_unique<RootHash>() : nullptr;
+    });
     RESCAN(shared, reload());
     QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
     QTRY_COMPARE_WITH_TIMEOUT(shared.getHashingCount(), 0, 10000);
 
     thePrefs.setDisableEd2k(true);
-    const QString fresh = writeFile(dir, QStringLiteral("fresh.bin"), QByteArray(700, 'f'));
+    const QByteArray freshData(700, 'f');
+    const QString fresh = writeFile(dir, QStringLiteral("fresh.bin"), freshData);
     QVERIFY(!fresh.isEmpty());
-    QSignalSpy added(&shared, &SharedFileList::ed3kOnlyAdded);
-    QSignalSpy removed(&shared, &SharedFileList::ed3kOnlyRemoved);
+    QVERIFY(!writeFile(dir, QStringLiteral("empty.bin"), {}).isEmpty());   // ed3k shares none
     RESCAN(shared, reload());
-    QCOMPARE(added.count(), 1);
-    QCOMPARE(QFileInfo(added.at(0).at(0).toString()).fileName(), QStringLiteral("fresh.bin"));
-    QCOMPARE(shared.ed3kOnlyFiles().size(), std::size_t(1));
-    QCOMPARE(shared.ed3kOnlyFiles().front().second, uint64(700));
-    QTest::qWait(300);
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 2, 10000);
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getHashingCount(), 0, 10000);
+    const QByteArray root = QCryptographicHash::hash(freshData, QCryptographicHash::Sha256);
+    KnownFile* only = shared.getFileByID(reinterpret_cast<const uint8*>(root.constData()));
+    QVERIFY(only);
+    QVERIFY(only->isEd3kOnly());
+    QCOMPARE(only->ed3kOnlyRoot(), root);
+    QVERIFY(only->getED2kLink().isEmpty());
+    QVERIFY(!only->fileIdentifier().hasAICHHash());
+    only->setUpPriority(kPrHigh, false);
+    only->setAutoUpPriority(false);
+    // a second scan keeps it, nothing read again
+    RESCAN(shared, reload());
     QCOMPARE(shared.getHashingCount(), 0);
-    QCOMPARE(shared.getCount(), 1);   // the known one stays
-    // a second scan lists it once
-    RESCAN(shared, reload());
-    QCOMPARE(added.count(), 1);
+    QCOMPARE(shared.getFileByID(reinterpret_cast<const uint8*>(root.constData())), only);
 
+    // kept apart from known.met
+    knownFiles.save();
+    QVERIFY(QFileInfo::exists(tmp.filePath(QStringLiteral("known_ed3k.met"))));
+    {
+        KnownFileList again;
+        QVERIFY(again.init(tmp.path()));
+        KnownFile* loaded = again.findKnownFileByID(reinterpret_cast<const uint8*>(root.constData()));
+        QVERIFY(loaded);
+        QVERIFY(loaded->isEd3kOnly());
+        QCOMPARE(loaded->ed3kOnlyRoot(), root);
+        QVERIFY(again.findKnownFile(QStringLiteral("fresh.bin"), loaded->utcFileDate(), 700) == loaded);
+    }
+
+    QVERIFY(QFile::remove(dir + QStringLiteral("/empty.bin")));
     thePrefs.setDisableEd2k(false);
     RESCAN(shared, reload());
-    QCOMPARE(removed.count(), 1);
-    QVERIFY(shared.ed3kOnlyFiles().empty());
-    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 2, 10000);
+    QTRY_VERIFY_WITH_TIMEOUT(!shared.getFileByID(reinterpret_cast<const uint8*>(root.constData())), 10000);
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getHashingCount(), 0, 10000);
+    QCOMPARE(shared.getCount(), 2);
+    KnownFile* ed2k = nullptr;
+    shared.forEachFile([&](KnownFile* f) {
+        if (f->fileName() == QLatin1String("fresh.bin"))
+            ed2k = f;
+    });
+    QVERIFY(ed2k);
+    QVERIFY(!ed2k->isEd3kOnly());
+    QVERIFY(!ed2k->getED2kLink().isEmpty());
+    QCOMPARE(ed2k->upPriority(), uint8(kPrHigh));   // the user's settings follow
+    knownFiles.save();
+    QVERIFY(!QFileInfo::exists(tmp.filePath(QStringLiteral("known_ed3k.met"))));
 }
 
 // The watcher reports both directories of a move in one batch; seen one at a time

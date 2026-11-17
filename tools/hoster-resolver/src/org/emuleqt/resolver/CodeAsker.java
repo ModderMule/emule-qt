@@ -40,6 +40,8 @@ final class CodeAsker implements UserIOHandlerInterface {
     private static final Map<Thread, Login> CHECKS = new ConcurrentHashMap<Thread, Login>();
     /** task → where its answer goes */
     private static final Map<Long, BlockingQueue<String>> WAITING = new ConcurrentHashMap<Long, BlockingQueue<String>>();
+    /** task → code asks so far (a 2nd: the site took no code, e.g. RD: an old mail's, expired) */
+    private static final Map<Long, Integer> ASKS = new ConcurrentHashMap<Long, Integer>();
     private final UserIOHandlerInterface base;
 
     private CodeAsker(final UserIOHandlerInterface base) {
@@ -81,6 +83,7 @@ final class CodeAsker implements UserIOHandlerInterface {
         final Login l = CHECKS.remove(Thread.currentThread());
         if (l != null) {
             WAITING.remove(l.task);
+            ASKS.remove(l.task);
         }
     }
 
@@ -120,6 +123,7 @@ final class CodeAsker implements UserIOHandlerInterface {
         final String stock = safe(org.jdownloader.gui.translate._GUI.T::jd_gui_swing_components_AccountDialog_2FA_login);
         m.put("text", text.equals(stock) ? "" : text);
         m.put("timeout", TIMEOUT_S);
+        m.put("count", ASKS.merge(task, 1, Integer::sum));
         Out.send(m);
         String code = null;
         try {

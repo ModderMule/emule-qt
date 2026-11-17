@@ -17,6 +17,7 @@
 #include <QCborMap>
 #include <QCloseEvent>
 #include <QElapsedTimer>
+#include <QSet>
 #include <QMainWindow>
 #include <QMap>
 #include <QMessageBox>
@@ -420,6 +421,10 @@ private:
     /// Show or hide the tray icon per showTrayIcon. Hiding it brings a tray-hidden window back.
     void applyTrayIconVisibility();
 
+    /// trayInUse() and the shell really shows the icon; re-adds it once if not.
+    /// False = don't hide the window, there'd be no way back in.
+    [[nodiscard]] bool ensureTrayIconShown();
+
     /// Colour of the meter bar: stats colour 11, or the system scheme when that is
     /// left on "auto".
     [[nodiscard]] QColor trayMeterColor() const;
@@ -439,6 +444,13 @@ private:
     /// Skin profile [Icons] changed: redraw what holds a copy of an icon.
     void refreshSkinIcons();
     void showChatState(int state);
+    /// Unread chat messages on @p tab (Messages, IRC): the red "!" on its toolbar button.
+    void setChatUnread(Tab tab, bool unread);
+    /// Paints or clears the "!" of every button after a rebuild or an Options change.
+    void applyToolbarBadges();
+    /// A chat message arrived while not on screen: sound and taskbar/dock alert per prefs.
+    /// @p mention: private, a friend's, or naming my nick. @p soundDone: a pop-up played one.
+    void chatAttention(bool mention, bool soundDone = false);
     /// Status bar speed pop-up, made on first use
     void showSpeedPopup();
 
@@ -497,6 +509,10 @@ private:
     SpeedLimitPopup* m_speedPopup = nullptr;
     QLabel* m_statusChat = nullptr;   ///< unread-message icon, MFC SBarChatMsg
     int m_statusChatState = 0;        ///< 0 none, 1 new, 2 pending (blink)
+    QTimer* m_chatBlink = nullptr;    ///< status icon blink while any chat is unread
+    bool m_chatBlinkOn = true;
+    QSet<int> m_unreadTabs;           ///< Tab values with unread chat messages
+    QElapsedTimer m_chatSoundClock;   ///< one chat sound per 2 s at most
     QLabel* m_statusAttach = nullptr;   ///< core attached/detached (#106)
     ConnectionStatusWidget* m_connStatus = nullptr;
 

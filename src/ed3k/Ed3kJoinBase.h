@@ -151,6 +151,25 @@ public:
     [[nodiscard]] static std::optional<bool> joinedAt(const Ed3kSession& session, const QString& tag,
                                                       const QString& owner);
     [[nodiscard]] const QString& tag() const { return m_tag; }
+    /// What a network join (eD2K, BitTorrent, usenet, hoster) does with a root (File Details).
+    struct JoinState {
+        enum class Kind {
+            Joined,      ///< a job of it shares or downloads the root on ed3k
+            Skipped,     ///< left out, see reason (a job of it holds the file or would)
+            Available,   ///< running, no job of it holds the root
+            Off,         ///< not started (its network or ed3k off)
+        };
+        QString tag;
+        Kind kind = Kind::Off;
+        QStringList owners;   ///< Joined, Skipped: its jobs
+        /// Skipped: "anonKey" (hops.md §1: the root is under the anonymous key, the network is
+        /// not anonymous)
+        QString reason;
+    };
+    /// One row per network join of @p session (eD2K, BitTorrent, usenet, hoster) for @p root.
+    [[nodiscard]] static std::vector<JoinState> joinStatesAt(const Ed3kSession& session, const ffi::Root& root);
+    /// hops.md §1: this join (not anonCapable) left @p root out, it is under the anonymous key.
+    [[nodiscard]] bool skipped(const ffi::Root& root) const { return m_skipped.contains(root); }
 
 protected:
     static constexpr std::uint64_t kBlock = 256 * 1024;
@@ -346,8 +365,21 @@ protected:
     /// The key a member of this join is opened under: Ed3kHide::keyFor when anonCapable(),
     /// else the node key.
     [[nodiscard]] ffi::KeyKind keyFor(const ffi::Root& root) const;
-    /// The key @p root is held under now (fileKey), else what keyFor would take.
+    /// The key this join holds @p root under: the node key unless anonCapable(); then the
+    /// recorded key, the engine's (fileKey) unless only joins of the node key hold it, else
+    /// what keyFor would take.
+    // was: the engine's key first: a torrent member opened under the node key first took
+    // the shared file of the same root there for good (keys.json overwritten)
     [[nodiscard]] ffi::KeyKind keyOf(const ffi::Root& root) const;
+    /// hops.md §1: @p root is under the anonymous key or an anonCapable() join takes it there
+    /// (hiding). A join that is not anonCapable() leaves it out (skipped), never opens it.
+    [[nodiscard]] bool anonHeld(const ffi::Root& root) const;
+    /// An anonCapable() join takes @p root (before it opens it): default, it shares or
+    /// downloads it. Ed3kShared: a listed file hashed to it.
+    [[nodiscard]] virtual bool claimsRoot(const ffi::Root& root) const
+    {
+        return m_shared.contains(root) || m_downloads.contains(root);
+    }
     /// Moves an open download to @p key (hops.md §1: the user was asked): closed under its key,
     /// opened again under the other. false: no such download, or the key is the same.
     bool moveDownloadKey(const ffi::Root& root, ffi::KeyKind key);
@@ -566,6 +598,11 @@ private:
     void writeKept(const QString& owner, const Kept& kept);
     void shareKeptMember(const QString& owner, int member, const ffi::Root& root, std::uint64_t size, const QString& name,
                          int tries);
+    /// shareKeptMember after the read pool's look: @p hashes the saved block hashes that
+    /// still fit (size, mtime, root); nullopt: hashed again.
+    void shareKeptChecked(const QString& owner, int member, const ffi::Root& root, std::uint64_t size, const QString& name,
+                          int tries, const QString& path, const QString& cache, qint64 mtimeMs,
+                          std::optional<ffi::Bytes> hashes);
     void shareKeptHashed(const QString& owner, int member, const ffi::Root& root, std::uint64_t size, const QString& name,
                          int tries, const QString& path, const std::optional<FileHash>& hashed);
     /// A kept member's first hash is done; the last one publishes the kept records.
@@ -582,6 +619,27 @@ private:
     void withdrawKeptRecords();
 
     // -- turns at a source node (Protocol.md §12.5: one file stream per uploader) --------
+
+    // -- hops.md §1: joins of the node key and the anonymous key ---------------
+
+    /// A root this join (not anonCapable) left out for the anonymous key: its job.
+    struct Skipped {
+        QString owner;
+        int member = -1;
+    };
+    /// Leaves @p root out (anonHeld): logged once per root, kept for File Details and a rejoin.
+    void skipRoot(const ffi::Root& root, Skipped s);
+    /// An anonCapable() join takes @p root under the anonymous key: joins of the node key
+    /// holding it give it up (yieldToAnon).
+    void takeFromNodeJoins(const ffi::Root& root);
+    /// This join (not anonCapable) gives @p root up: records taken back, closed, skipped.
+    void yieldToAnon(const ffi::Root& root);
+    /// @p root moved to the node key (Ed3kHide::keyMoved): a skipped member shared again.
+    void rejoinSkipped(const ffi::Root& root);
+    /// Only joins of the node key hold @p root (its engine key says nothing of the user's choice).
+    [[nodiscard]] bool heldByNodeJoinsOnly(const ffi::Root& root) const;
+    /// Drops the skipped roots of @p owner (job gone, withdrawn).
+    void dropSkipped(const QString& owner);
 
     /// The registries by session; turnsOf: the one of @p session (every join of it shares one).
     [[nodiscard]] static std::map<const Ed3kSession*, NodeTurns>& turnsMap();
@@ -628,6 +686,8 @@ private:
 
     QString m_tag;
     std::map<ffi::Root, Shared> m_shared;
+    /// roots left out for the anonymous key (hops.md §1), not anonCapable() only
+    std::map<ffi::Root, Skipped> m_skipped;
     std::map<ffi::Root, std::unique_ptr<Download>> m_downloads;
     /// download streams → root; Kad source lookups → root
     std::map<std::uint64_t, ffi::Root> m_streams;

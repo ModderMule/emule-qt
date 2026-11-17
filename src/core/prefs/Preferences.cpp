@@ -12,6 +12,7 @@
 #include "client/BuddyRelayBudget.h"
 #include "crypto/AesCbc.h"
 #include "crypto/SecretCompare.h"
+#include "net/DohResolver.h"
 #include "net/EMSocket.h"
 #include "net/ListenConflict.h"
 #include "net/OwnAddress.h"
@@ -261,6 +262,8 @@ struct Preferences::Data {
     bool proxyEnablePassword = false;
     QString proxyUser;
     QString proxyPassword;
+    QString proxyDohUrl = defaultDohUrl();   // country-flag DNS behind a proxy; "" = off
+    QStringList proxyDohUrls;                // user-added DoH endpoints
 
     // Directories
     QString incomingDir;
@@ -608,6 +611,12 @@ struct Preferences::Data {
     QString commentFilter = QStringLiteral("http://|https://|ftp://|www.|ftp.");
     bool showSmileys = true;
     bool indicateRatings = true;
+    // chats: friends, IRC, ed3k rooms
+    bool chatSound = false;         // a sound on a new message not on screen
+    int chatAlert = 0;              // ChatAlert: flash the taskbar / bounce the dock
+    bool chatUnreadBadge = true;    // red "!" on the toolbar buttons + status bar icon
+    bool chatPlainLinks = false;    // links in chats as plain text (privacy)
+    bool chatModStar = false;       // room moderators: gold star, else "@"
 
     // Security (extended)
     bool useSecureIdent = true;  // Enable secure identity (RSA key exchange)
@@ -1255,6 +1264,30 @@ void Preferences::setProxyUser(const QString& val) { set(&Data::proxyUser, val);
 QString Preferences::proxyPassword() const { return get(&Data::proxyPassword); }
 
 void Preferences::setProxyPassword(const QString& val) { set(&Data::proxyPassword, val); }
+
+QString Preferences::proxyDohUrl() const { return get(&Data::proxyDohUrl); }
+
+void Preferences::setProxyDohUrl(const QString& val)
+{
+    const QString url = val.trimmed();
+    set(&Data::proxyDohUrl, url.isEmpty() || isValidDohUrl(url) ? url : defaultDohUrl());
+}
+
+QStringList Preferences::proxyDohUrls() const { return get(&Data::proxyDohUrls); }
+
+void Preferences::setProxyDohUrls(const QStringList& val) { set(&Data::proxyDohUrls, cleanDohUrls(val)); }
+
+QStringList Preferences::cleanDohUrls(const QStringList& urls)
+{
+    QStringList out;
+    for (const QString& raw : urls) {
+        const QString url = raw.trimmed();
+        const bool builtIn = std::ranges::any_of(dohProviders(), [&url](const DohProvider& p) { return p.url == url; });
+        if (isValidDohUrl(url) && !builtIn && !out.contains(url))
+            out << url;
+    }
+    return out;
+}
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Directories
@@ -3646,6 +3679,17 @@ bool Preferences::showSmileys() const { return get(&Data::showSmileys); }
 
 void Preferences::setShowSmileys(bool val) { set(&Data::showSmileys, val); }
 
+bool Preferences::chatSound() const { return get(&Data::chatSound); }
+void Preferences::setChatSound(bool val) { set(&Data::chatSound, val); }
+int Preferences::chatAlert() const { return get(&Data::chatAlert); }
+void Preferences::setChatAlert(int val) { set(&Data::chatAlert, std::clamp(val, 0, 2)); }
+bool Preferences::chatUnreadBadge() const { return get(&Data::chatUnreadBadge); }
+void Preferences::setChatUnreadBadge(bool val) { set(&Data::chatUnreadBadge, val); }
+bool Preferences::chatPlainLinks() const { return get(&Data::chatPlainLinks); }
+void Preferences::setChatPlainLinks(bool val) { set(&Data::chatPlainLinks, val); }
+bool Preferences::chatModStar() const { return get(&Data::chatModStar); }
+void Preferences::setChatModStar(bool val) { set(&Data::chatModStar, val); }
+
 bool Preferences::indicateRatings() const { return get(&Data::indicateRatings); }
 
 void Preferences::setIndicateRatings(bool val) { set(&Data::indicateRatings, val); }
@@ -4175,6 +4219,8 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("proxyEnablePassword"), proxyEnablePassword());
     prefs.insert(QStringLiteral("proxyUser"), proxyUser());
     prefs.insert(QStringLiteral("proxyPassword"), proxyPassword());
+    prefs.insert(QStringLiteral("proxyDohUrl"), proxyDohUrl());
+    prefs.insert(QStringLiteral("proxyDohUrls"), QCborArray::fromStringList(proxyDohUrls()));
 
     // Files page (daemon-side)
     prefs.insert(QStringLiteral("addNewFilesPaused"), addNewFilesPaused());
@@ -4594,6 +4640,16 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->proxyEnablePassword = p.value(QStringLiteral("proxyEnablePassword")).toBool();
     m_data->proxyUser           = p.value(QStringLiteral("proxyUser")).toString();
     m_data->proxyPassword       = p.value(QStringLiteral("proxyPassword")).toString();
+    if (const QCborValue v = p.value(QStringLiteral("proxyDohUrl")); v.isString()) {
+        const QString url = v.toString().trimmed();
+        m_data->proxyDohUrl = url.isEmpty() || isValidDohUrl(url) ? url : defaultDohUrl();
+    }
+    if (const QCborValue v = p.value(QStringLiteral("proxyDohUrls")); v.isArray()) {
+        QStringList urls;
+        for (const QCborValue& u : v.toArray())
+            urls << u.toString();
+        m_data->proxyDohUrls = cleanDohUrls(urls);
+    }
 
     // Files
     m_data->addNewFilesPaused             = p.value(QStringLiteral("addNewFilesPaused")).toBool();
@@ -5292,6 +5348,16 @@ bool Preferences::load(const QString& filePath)
             m_data->proxyEnablePassword = p["enablePassword"].as<bool>(m_data->proxyEnablePassword);
             m_data->proxyUser = QString::fromStdString(p["user"].as<std::string>(m_data->proxyUser.toStdString()));
             m_data->proxyPassword = QString::fromStdString(p["password"].as<std::string>(m_data->proxyPassword.toStdString()));
+            if (const auto doh = p["dohUrl"]; doh && doh.IsScalar()) {
+                const QString url = QString::fromStdString(doh.as<std::string>()).trimmed();
+                m_data->proxyDohUrl = url.isEmpty() || isValidDohUrl(url) ? url : defaultDohUrl();
+            }
+            if (const auto list = p["dohUrls"]; list && list.IsSequence()) {
+                QStringList urls;
+                for (const auto& u : list)
+                    urls << QString::fromStdString(u.as<std::string>(""));
+                m_data->proxyDohUrls = cleanDohUrls(urls);
+            }
         }
 
         // Directories
@@ -5658,6 +5724,11 @@ bool Preferences::load(const QString& filePath)
                 m_data->commentFilter = QString::fromStdString(ch["commentFilter"].as<std::string>());
             m_data->showSmileys = ch["showSmileys"].as<bool>(m_data->showSmileys);
             m_data->indicateRatings = ch["indicateRatings"].as<bool>(m_data->indicateRatings);
+            m_data->chatSound = ch["chatSound"].as<bool>(m_data->chatSound);
+            m_data->chatAlert = std::clamp(ch["chatAlert"].as<int>(m_data->chatAlert), 0, 2);
+            m_data->chatUnreadBadge = ch["chatUnreadBadge"].as<bool>(m_data->chatUnreadBadge);
+            m_data->chatPlainLinks = ch["chatPlainLinks"].as<bool>(m_data->chatPlainLinks);
+            m_data->chatModStar = ch["chatModStar"].as<bool>(m_data->chatModStar);
         }
 
         // Search
@@ -6923,6 +6994,11 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "enablePassword" << YAML::Value << m_data->proxyEnablePassword;
     out << YAML::Key << "user" << YAML::Value << m_data->proxyUser.toStdString();
     out << YAML::Key << "password" << YAML::Value << m_data->proxyPassword.toStdString();
+    out << YAML::Key << "dohUrl" << YAML::Value << m_data->proxyDohUrl.toStdString();
+    out << YAML::Key << "dohUrls" << YAML::Value << YAML::BeginSeq;
+    for (const QString& url : m_data->proxyDohUrls)
+        out << url.toStdString();
+    out << YAML::EndSeq;
     out << YAML::EndMap;
 
     // Directories
@@ -7279,6 +7355,11 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "commentFilter" << YAML::Value << m_data->commentFilter.toStdString();
     out << YAML::Key << "showSmileys" << YAML::Value << m_data->showSmileys;
     out << YAML::Key << "indicateRatings" << YAML::Value << m_data->indicateRatings;
+    out << YAML::Key << "chatSound" << YAML::Value << m_data->chatSound;
+    out << YAML::Key << "chatAlert" << YAML::Value << m_data->chatAlert;
+    out << YAML::Key << "chatUnreadBadge" << YAML::Value << m_data->chatUnreadBadge;
+    out << YAML::Key << "chatPlainLinks" << YAML::Value << m_data->chatPlainLinks;
+    out << YAML::Key << "chatModStar" << YAML::Value << m_data->chatModStar;
     out << YAML::EndMap;
 
     // Search

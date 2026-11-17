@@ -90,8 +90,11 @@ range that is not on disk yet waits while the core fetches those bytes first: 60
 eD2K/ed3k parts, web-seed ranges, torrent piece deadlines and hoster items, 15 seconds for
 Usenet articles (the item is boosted too). A hoster's own HTTP stream stays in file order; only
 ed3k peers of an item with a known root fetch the seek point first, so a seek ahead of a
-rootless hoster item waits for the stream to get there. Off, the file is served as it is on
-disk, gaps included (a Usenet archive set still waits for the headers that map it).
+rootless hoster item waits for the stream to get there. An MP4 with its index (`moov`) at the
+end therefore opens only once such an item is nearly complete. A stream the resolver muxes
+(HLS, DASH through ffmpeg) has no bytes before it ends: 406 until complete, unless ed3k peers
+deliver blocks. Off, the file is served as it is on disk, gaps included (a Usenet archive set
+still waits for the headers that map it).
 
 The web UI links the same routes with a page token (30 minutes idle, kept alive by the
 session): *Preview* in the Transfers and Shared Files right-click menus, in the Usenet menu,

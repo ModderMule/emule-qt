@@ -649,6 +649,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         auto* limitAct = sourcesMenu->addAction(tr("Source Limit..."), this,
             [this, allHashes]() { askSourceLimit(allHashes); });
         limitAct->setEnabled(allUnfinished);
+        limitAct->setProperty("ed2kOnly", true);
         auto* swapAct = sourcesMenu->addAction(tr("Swap All A4AF Sources to This File"), this,
             [this, singleHash]() {
                 if (!IpcFeedback::requireConnection(m_ipc, tr("cannot swap sources.")))
@@ -664,6 +665,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
             });
         swapAct->setEnabled(singleSel && dl && dl->a4afSrcCount > 0 && !dl->isComplete()
                             && !dl->isStopped);
+        swapAct->setProperty("ed2kOnly", true);   // packmule takes turns by itself
         sourcesMenu->setEnabled(hasSel);
     }
 
@@ -783,10 +785,19 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
                                         tr("Assign To Category"),
                                         pasteLinksText(), tr("Find..."), tr("Show Toolbar"),
                                         MoveDownloadsAction::menuText(), Ed3kLinkMenu::copyText(),
-                                        Ed3kLinkMenu::showText()};
+                                        Ed3kLinkMenu::showText(), tr("Mass Rename..."),
+                                        tr("Source Handling"), tr("Search Related Files")};
         for (QAction* act : m_downloadMenu->actions())
             if (!act->isSeparator() && !ed3kActions.contains(act->text()))
                 act->setEnabled(false);
+        // Add Sources takes a URL (ws=); no source limit or A4AF swap in ed3k
+        for (QAction* act : m_downloadMenu->findChildren<QAction*>())
+            if (act->property("ed2kOnly").toBool())
+                act->setEnabled(false);
+        // related files: a search for the name, one file (the server's list needs MD4)
+        for (QAction* act : m_downloadMenu->actions())
+            if (act->text() == tr("Search Related Files"))
+                act->setEnabled(singleSel);
         // single transfer mode rows: their own network acts (pause, resume, cancel, open);
         // priority and category only Usenet has; no ed3k root, link or key behind them
         if (std::ranges::any_of(selectedDls, &DownloadRow::isNetworkJob)) {
@@ -794,7 +805,8 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
                 return d->ed3kNetwork == QLatin1String("usenet");
             });
             QSet<QString> off{tr("Details..."), tr("Comments..."), tr("Preview"), tr("Preview with"), MoveDownloadsAction::menuText(),
-                              Ed3kLinkMenu::copyText(), Ed3kLinkMenu::showText()};
+                              Ed3kLinkMenu::copyText(), Ed3kLinkMenu::showText(), tr("Mass Rename..."), tr("Source Handling"),
+                              tr("Search Related Files")};
             if (!usenetOnly)
                 off += {tr("Priority (Download)"), tr("Assign To Category")};
             for (QAction* act : m_downloadMenu->actions())
@@ -2141,6 +2153,8 @@ void TransferPanel::showAddSources(const QString& hash)
 
     auto* dialog = new AddSourceDialog(dl->fileName, this);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
+    if (dl->isEd3k())
+        dialog->setUrlOnly();
     connect(dialog, &AddSourceDialog::sourceEntered, this,
             [this, hash](bool url, const QString& text, int port) {
         if (!IpcFeedback::requireConnection(m_ipc, tr("cannot add the source.")))
@@ -2369,7 +2383,8 @@ void TransferPanel::searchRelated(const QStringList& hashes, const QStringList& 
     // MFC asks the server what else the sharers of these files have, and offers
     // nothing where the server cannot answer. There the port falls back to what it
     // always did for one file: a search for its name without the extension.
-    if (m_relatedSearchSupported) {
+    // ed3k rows (64 hex roots): the name below
+    if (m_relatedSearchSupported && std::ranges::none_of(hashes, [](const QString& h) { return h.size() == 64; })) {
         emit relatedSearchRequested(hashes, names);
         return;
     }

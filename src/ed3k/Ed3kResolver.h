@@ -109,7 +109,7 @@ struct ResolverEvent {
         Icon,         ///< favicon: host, image (PNG); Failed "none" when the site has none
         Login,        ///< accountCheck: a browser login (OAuth device flow) waits; text: its URL, host, timeoutS
         Code,         ///< accountCheck, open: a login's confirmation code (2FA, mail) waits; host, user (the login),
-                      ///< text: the site's words, name: title, timeoutS
+                      ///< text: the site's words, name: title, timeoutS, count: the login's ask number
     };
     Kind kind = Kind::Failed;
     QString host;
@@ -126,6 +126,8 @@ struct ResolverEvent {
     /// open with have > 0: where the new bytes start (have: resumed, 0: from the start);
     /// sent once, with a progress or the done
     std::optional<std::uint64_t> from;
+    /// open's progress: not written in file order (HLS/DASH muxed by ffmpeg), the bytes come with the done
+    bool muxed = false;
     std::uint64_t seconds = 0;
     std::uint64_t puzzle = 0;
     int count = 0;

@@ -15,6 +15,7 @@
 #include "IpcMessage.h"
 #include "prefs/Preferences.h"
 #include "app/SkinIcons.h"
+#include "utils/Log.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -36,6 +37,12 @@
 #include <QTabWidget>
 #include <QTextBrowser>
 #include <QUrlQuery>
+#include <QCborArray>
+#include <QLocale>
+#include <QPushButton>
+#include <QVBoxLayout>
+#include <QTimer>
+#include <QTreeWidget>
 
 namespace eMule {
 
@@ -156,6 +163,11 @@ void IrcPanel::setIpcClient(IpcClient* ipc)
 {
     m_ipc = ipc;
     connectEd3kRooms();
+    if (qEnvironmentVariableIntValue("EMULE_DUMP_ROOM_MENUS") == 1) {
+        auto* dump = new QTimer(this);
+        connect(dump, &QTimer::timeout, this, &IrcPanel::dumpEd3kNickMenus);
+        dump->start(30'000);
+    }
 }
 
 bool IrcPanel::openEd3kRoomLink(const QString& link)
@@ -306,8 +318,19 @@ void IrcPanel::onEd3kRoomPost(const IpcMessage& msg)
     Ed3kRoomTab* tab = roomTab(room);
     if (!tab)
         return;   // a closed tab: opening it fetches the posts
-    if (tab->addPost(Ed3kRoomTab::postFrom(msg.fieldMap(1))))
-        markActivity(Ed3kRoomTab::keyOf(room));
+    const Ed3kRoomTab::Post p = Ed3kRoomTab::postFrom(msg.fieldMap(1));
+    if (!tab->addPost(p))
+        return;
+    const QString key = Ed3kRoomTab::keyOf(room);
+    markActivity(key);
+    // someone's new post: history a join brings (older than 10 min) and muted members stay quiet
+    if (p.author == tab->memberKey() || tab->isMuted(p.authorId.toLower())
+        || p.sent < QDateTime::currentSecsSinceEpoch() - 600)
+        return;
+    const QString me = tab->row().value(QStringLiteral("nick")).toString().trimmed();
+    const Ed3kRoomTab::Post* answered = p.replyTo.isEmpty() ? nullptr : tab->post(p.replyTo);
+    noteMessage(key, (answered && answered->author == tab->memberKey())
+                         || (!me.isEmpty() && p.text.contains(me, Qt::CaseInsensitive)));
 }
 
 void IrcPanel::onEd3kRoomPostsRemoved(const IpcMessage& msg)
@@ -366,10 +389,11 @@ void IrcPanel::onEd3kRoomNotice(const IpcMessage& msg)
     const QString who = msg.fieldString(4);
     switch (kind) {
     case Notice::Joined:
-        // as IRC's "Now talking in": who we are here
-        if (const Ed3kRoomTab* tab = roomTab(room))
-            appendInfo(key, tr("* You joined the room as %1")
-                                .arg(Ed3kRoomTab::shownName(tab->row().value(QStringLiteral("nick")).toString(), tab->memberKey())));
+        // as IRC's "Now talking in": who we are here; flag: joined before (restart, reconnect)
+        if (const Ed3kRoomTab* tab = roomTab(room)) {
+            const QString me = Ed3kRoomTab::shownName(tab->row().value(QStringLiteral("nick")).toString(), tab->memberKey());
+            appendInfo(key, flag ? tr("* You re-joined the room as %1").arg(me) : tr("* You joined the room as %1").arg(me));
+        }
         break;
     case Notice::Banned:
         appendInfo(key, tr("* %1 was banned").arg(who.left(8)), IrcRouting::LineColor::Quit);
@@ -531,7 +555,10 @@ Ed3kRoomTab* IrcPanel::ensureRoomTab(const QString& room, bool show)
             const QString stamp = thePrefs.ircAddTimestamp()
                 ? QStringLiteral("[%1] ").arg(QDateTime::fromSecsSinceEpoch(p.sent).toString(QStringLiteral("HH:mm:ss")))
                 : QString();
-            QString line = messageLine(stamp, shown, p.text, own);
+            // §6: moderators' posts marked: a star by option, else the IRC "@"
+            const bool star = p.moderator && thePrefs.chatModStar();
+            QString line = messageLine(star ? stamp + Ed3kRoomTab::modMarkHtml() : stamp,
+                                       p.moderator && !star ? QStringLiteral("@") + shown : shown, p.text, own);
             if (!reply.isEmpty())
                 line = QStringLiteral("<span style=\"color:%1;\">&#8618; %2</span><br>")
                            .arg(IrcRouting::colorName(IrcRouting::LineColor::Notice), reply.toHtmlEscaped())
@@ -605,10 +632,39 @@ void IrcPanel::ed3kNickMenu(Ed3kRoomTab* tab, const QString& shown, const QPoint
 {
     if (!tab)
         return;
+    QMenu menu(this);
+    fillEd3kNickMenu(menu, tab, shown);
+    menu.exec(globalPos);
+}
+
+void IrcPanel::dumpEd3kNickMenus()
+{
+    // dev aid (EMULE_DUMP_ROOM_MENUS=1): every listed member's menu in the log, no clicking
+    for (const IrcChannel& ch : std::as_const(m_channels)) {
+        if (!ch.room)
+            continue;
+        for (const QString& shown : ch.nicks.display()) {
+            QMenu menu;
+            fillEd3kNickMenu(menu, ch.room, shown);
+            QStringList items;
+            for (const QAction* a : menu.actions())
+                if (!a->isSeparator())
+                    items << (a->isEnabled() ? a->text() : QStringLiteral("(%1)").arg(a->text()));
+            logInfo(QStringLiteral("room menu %1 [%2%3%4] %5: %6")
+                        .arg(ch.room->row().value(QStringLiteral("title")).toString(),
+                             ch.room->row().value(QStringLiteral("closed")).toBool() ? QStringLiteral("closed ") : QString(),
+                             ch.room->row().value(QStringLiteral("moderated")).toBool() ? QStringLiteral("moderated ") : QString(),
+                             ch.room->isOwner() ? QStringLiteral("owner") : ch.room->canModerate() ? QStringLiteral("mod") : QStringLiteral("member"),
+                             shown, items.join(QStringLiteral(" | "))));
+        }
+    }
+}
+
+void IrcPanel::fillEd3kNickMenu(QMenu& menu, Ed3kRoomTab* tab, const QString& shown)
+{
     const QString member = tab->keyOfShown(shown);
     const QString room = tab->room();
     const bool self = member == tab->memberKey();
-    QMenu menu(this);
     QAction* title = menu.addAction(skinIcon(QStringLiteral(":/icons/User.ico")), tr("Nick : %1").arg(IrcNickList::bare(shown, IrcServerModes{})));
     title->setEnabled(false);
     menu.addSeparator();
@@ -630,10 +686,19 @@ void IrcPanel::ed3kNickMenu(Ed3kRoomTab* tab, const QString& shown, const QPoint
         menu.addAction(Ed3kRoomList::actionIcon(Ed3kRoomList::Action::ImportAdmit), tr("Import admit..."), this, [this, room] { onEd3kRoomAction(int(Ed3kRoomList::Action::ImportAdmit), room); });
     }
     if (tab->canModerate() && !member.isEmpty() && !self) {
-        menu.addSeparator();
-        menu.addAction(skinIcon(QStringLiteral(":/icons/UserAdd.ico")), tr("Admit"), this, [this, room, member] { admitEd3kMember(room, member); });
-        menu.addAction(skinIcon(QStringLiteral(":/icons/UserDelete.ico")), tr("Ban (30 days)"), this, [this, room, member] { moderateEd3kMember(room, int(Moderation::Ban), member); });
-        menu.addAction(skinIcon(QStringLiteral(":/icons/Restore.ico")), tr("Lift ban"), this, [this, room, member] { moderateEd3kMember(room, int(Moderation::Lift), member); });
+        // only what changes something: an admit in a closed or moderated room for a key not
+        // admitted yet (§2.2); a moderator banned only with the room key (§2.3). A banned
+        // member is never listed (§2.4): lifting is in "Banned members..."
+        const bool memberIsMod = tab->isModerator(member);
+        const bool canAdmit = tab->admitsMatter() && !memberIsMod && !tab->isAdmitted(member);
+        const bool canBan = !memberIsMod || tab->isOwner();
+        if (canAdmit || canBan)
+            menu.addSeparator();
+        if (canAdmit)
+            menu.addAction(skinIcon(QStringLiteral(":/icons/UserAdd.ico")), tr("Admit"), this, [this, room, member] { admitEd3kMember(room, member); });
+        if (canBan)
+            menu.addAction(skinIcon(QStringLiteral(":/icons/UserDelete.ico")), tr("Ban (30 days)"), this, [this, room, member] { moderateEd3kMember(room, int(Moderation::Ban), member); });
+        // was: menu.addAction(.. tr("Lift ban") ..) for every listed member
     }
     if (tab->isOwner() && !member.isEmpty()) {
         const bool mod = tab->isModerator(member);
@@ -645,11 +710,14 @@ void IrcPanel::ed3kNickMenu(Ed3kRoomTab* tab, const QString& shown, const QPoint
     }
     if (tab->canModerate()) {
         menu.addSeparator();
-        menu.addAction(Ed3kRoomList::actionIcon(Ed3kRoomList::Action::AdmitKey), tr("Admit a member key..."), this, [this, room] { admitEd3kMember(room, {}); });
-        menu.addAction(Ed3kRoomList::actionIcon(Ed3kRoomList::Action::NewGeneration), tr("New generation"), this, [this, room] { moderateEd3kMember(room, int(Moderation::NewGeneration), {}); })
-            ->setEnabled(tab->row().value(QStringLiteral("closed")).toBool());
+        if (tab->admitsMatter())
+            menu.addAction(Ed3kRoomList::actionIcon(Ed3kRoomList::Action::AdmitKey), tr("Admit a member key..."), this, [this, room] { admitEd3kMember(room, {}); });
+        if (tab->row().value(QStringLiteral("closed")).toBool())
+            menu.addAction(Ed3kRoomList::actionIcon(Ed3kRoomList::Action::NewGeneration), tr("New generation"), this, [this, room] { moderateEd3kMember(room, int(Moderation::NewGeneration), {}); });
+        menu.addAction(skinIcon(QStringLiteral(":/icons/Restore.ico")), tr("Banned members..."), this,
+                       [this, tab = QPointer<Ed3kRoomTab>(tab)] { showEd3kBans(tab); })
+            ->setEnabled(!tab->row().value(QStringLiteral("bans")).toArray().isEmpty());
     }
-    menu.exec(globalPos);
 }
 
 void IrcPanel::createEd3kRoom()
@@ -806,10 +874,61 @@ void IrcPanel::setEd3kModerator(Ed3kRoomTab* tab, const QString& memberKey, bool
                     | (row.value(QStringLiteral("moderated")).toBool() ? kRoomModerated : 0);
     m_ipc->setEd3kRoomInfo(tab->room(), row.value(QStringLiteral("title")).toString(),
                            row.value(QStringLiteral("about")).toString(), flags, mods,
-                           [self = QPointer<IrcPanel>(this)](const IpcMessage& r) {
-                               if (self && (!r.isValid() || !r.fieldBool(0)))
+                           [self = QPointer<IrcPanel>(this), room = tab->room(), memberKey,
+                            keep = !on && memberKey != tab->memberKey() && tab->admitsMatter()](const IpcMessage& r) {
+                               if (!self)
+                                   return;
+                               if (!r.isValid() || !r.fieldBool(0)) {
                                    self->ed3kRoomFailed(tr("The moderators were not changed"), r);
+                                   return;
+                               }
+                               // §2.1: a dropped moderator of a closed or moderated room needs an
+                               // admit to stay a member; it is kept (our own key: the core admits it)
+                               if (keep)
+                                   self->m_ipc->moderateEd3kRoom(room, int(Moderation::Admit), memberKey, 0, [](const IpcMessage&) {});
                            });
+}
+
+void IrcPanel::showEd3kBans(Ed3kRoomTab* tab)
+{
+    if (!tab || !m_ipc)
+        return;
+    QDialog dlg(this);
+    dlg.setWindowTitle(tr("Banned members - %1").arg(tab->title()));
+    auto* layout = new QVBoxLayout(&dlg);
+    auto* list = new QTreeWidget(&dlg);
+    list->setHeaderLabels({tr("Member"), tr("Banned until")});
+    list->setRootIsDecorated(false);
+    list->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    // a banned member is gone from the list (§2.4): its nick from its posts, if any were held
+    for (const QCborValue& v : tab->row().value(QStringLiteral("bans")).toArray()) {
+        const QCborMap b = v.toMap();
+        const QString key = b.value(QStringLiteral("key")).toString();
+        const Ed3kRoomTab::Post* last = tab->lastPostOf(key);
+        auto* item = new QTreeWidgetItem(list);
+        item->setText(0, QStringLiteral("%1#%2").arg(last ? last->nick : QStringLiteral("?"),
+                                                    b.value(QStringLiteral("id")).toString().left(4)));
+        item->setToolTip(0, key);
+        item->setText(1, QLocale().toString(QDateTime::fromSecsSinceEpoch(b.value(QStringLiteral("until")).toInteger()),
+                                            QLocale::ShortFormat));
+        item->setData(0, Qt::UserRole, key);
+    }
+    list->resizeColumnToContents(0);
+    layout->addWidget(list);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dlg);
+    auto* lift = buttons->addButton(tr("Lift ban"), QDialogButtonBox::ActionRole);
+    lift->setEnabled(false);
+    connect(list, &QTreeWidget::itemSelectionChanged, lift, [list, lift] { lift->setEnabled(!list->selectedItems().isEmpty()); });
+    connect(lift, &QPushButton::clicked, &dlg, [this, list, room = tab->room()] {
+        for (QTreeWidgetItem* item : list->selectedItems()) {
+            moderateEd3kMember(room, int(Moderation::Lift), item->data(0, Qt::UserRole).toString());
+            delete item;
+        }
+    });
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    layout->addWidget(buttons);
+    dlg.resize(420, 300);
+    dlg.exec();
 }
 
 void IrcPanel::replyInEd3kRoom(Ed3kRoomTab* tab, const QString& postId)

@@ -371,6 +371,10 @@ std::optional<QCborMap> detailsOf([[maybe_unused]] const QString& hexRoot, [[may
                                                                       qsizetype(info->root.bytes.size())));
         !aliases.isEmpty())
         m.insert(QStringLiteral("ed3kAliases"), aliases);
+    if (QCborArray joins = Ed3kUploadsBridge::joinsOf(QByteArray(reinterpret_cast<const char*>(info->root.bytes.data()),
+                                                                 qsizetype(info->root.bytes.size())));
+        !joins.isEmpty())
+        m.insert(QStringLiteral("ed3kJoins"), joins);
     if (generalOnly)
         return m;
     // Comments: NOTE records found by "Search Kad" (Ed3kSearch::searchNotes)
@@ -466,6 +470,29 @@ QString moveTo([[maybe_unused]] const QString& hexRoot, [[maybe_unused]] const Q
     return s_downloads->moveTo(*r, dir);
 #else
     return QStringLiteral("no ed3k downloads");
+#endif
+}
+
+QString rename([[maybe_unused]] const QString& hexRoot, [[maybe_unused]] const QString& name)
+{
+#ifdef EMULE_HAVE_ED3K
+    const auto r = rootOf(hexRoot);
+    if (!s_downloads || !r)
+        return QStringLiteral("no such download");
+    const auto done = s_downloads->rename(*r, name);
+    return done ? QString() : done.error();
+#else
+    return QStringLiteral("no ed3k downloads");
+#endif
+}
+
+bool addWebSource([[maybe_unused]] const QString& hexRoot, [[maybe_unused]] const QString& url)
+{
+#ifdef EMULE_HAVE_ED3K
+    const auto r = rootOf(hexRoot);
+    return s_downloads && r && s_downloads->addWebSource(*r, url);
+#else
+    return false;
 #endif
 }
 

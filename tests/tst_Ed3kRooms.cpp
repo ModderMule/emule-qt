@@ -420,6 +420,10 @@ void tst_Ed3kRooms::banDropsPosts()
     QTRY_VERIFY_WITH_TIMEOUT(!texts(ra, *room).contains(QStringLiteral("spam 1")), 10000);
     QVERIFY(removed.count() >= 1);
     QVERIFY(std::ranges::any_of(notices, [](const QList<QVariant>& n) { return n.at(1).toInt() == int(Ed3kRooms::Notice::Banned); }));
+    // the moderator's ban list and member status (menus, "Banned members...")
+    QCOMPARE(ra.bans(*room).size(), std::size_t(1));
+    QVERIFY(ra.bans(*room).front().member == troll);
+    QVERIFY(ra.memberStatus(*room, troll) & ED3K_ROOM_MEMBER_BANNED);
     // a later post of B does not show at A
     (void)post(rb, *room, QStringLiteral("spam 2"));
     QTest::qWait(1500);
@@ -432,6 +436,8 @@ void tst_Ed3kRooms::banDropsPosts()
     lift.append(Ed3kRooms::keyText(troll));
     lift.append(qint64(0));
     QVERIFY(ask(&ra, lift).fieldBool(0));
+    QVERIFY(ra.bans(*room).empty());
+    QCOMPARE(ra.memberStatus(*room, troll) & ED3K_ROOM_MEMBER_BANNED, 0u);
 }
 
 void tst_Ed3kRooms::roomsAcrossRestart()

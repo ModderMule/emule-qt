@@ -88,13 +88,6 @@ public:
         const KnownFile* f = m_list.getFileByID(reinterpret_cast<const uint8*>(md4.constData()));
         return f ? Ed3kShared::entryOf(*f) : std::nullopt;
     }
-    std::vector<SharedEntry> ed3kOnlyFiles() const override
-    {
-        std::vector<SharedEntry> out;
-        for (const auto& [path, size] : m_list.ed3kOnlyFiles())
-            out.push_back(SharedEntry{Ed3kShared::pathKeyOf(path), path, QFileInfo(path).fileName(), size});
-        return out;
-    }
 
 private:
     SharedFileList& m_list;
@@ -128,12 +121,13 @@ QByteArray checkOf(std::span<const std::byte> data)
                                     QCryptographicHash::Md5);
 }
 
-std::optional<ffi::Ed2kHash> ed2kOf(const QByteArray& md4)
+/// none for an ed3k-only file (its key is no eD2K hash) or a path-keyed one
+std::optional<ffi::Ed2kHash> ed2kOf(const SharedEntry& e)
 {
-    if (md4.size() != 16)
+    if (e.md4.size() != 16 || e.ed3kOnly)
         return std::nullopt;
     ffi::Ed2kHash h{};
-    std::memcpy(h.data(), md4.constData(), h.size());
+    std::memcpy(h.data(), e.md4.constData(), h.size());
     return h;
 }
 
@@ -212,6 +206,7 @@ std::optional<SharedEntry> Ed3kShared::entryOf(const KnownFile& file)
     e.album = clipUtf8(file.getStrTagValue(FT_MEDIA_ALBUM), kMediaTagMax);
     e.title = clipUtf8(file.getStrTagValue(FT_MEDIA_TITLE), kMediaTagMax);
     e.codec = clipUtf8(file.getStrTagValue(FT_MEDIA_CODEC), kCodecMax);
+    e.ed3kOnly = file.isEd3kOnly();
     return e;
 }
 
@@ -248,8 +243,6 @@ void Ed3kShared::connectList(SharedFileList& list)
     connect(&list, &SharedFileList::fileChanged, this, &Ed3kShared::onFileChanged,
             Qt::QueuedConnection);
     connect(&list, &SharedFileList::scanned, this, &Ed3kShared::onListScanned);
-    connect(&list, &SharedFileList::ed3kOnlyAdded, this, &Ed3kShared::onEd3kOnlyAdded);
-    connect(&list, &SharedFileList::ed3kOnlyRemoved, this, &Ed3kShared::onEd3kOnlyRemoved);
 }
 
 void Ed3kShared::start()
@@ -261,9 +254,6 @@ void Ed3kShared::start()
     m_scanLogged = false;
     loadCache();
     for (const SharedEntry& e : m_source.files())
-        add(e);
-    // eD2K disabled: files without an MD4, served by root alone
-    for (const SharedEntry& e : m_source.ed3kOnlyFiles())
         add(e);
     for (auto it = m_aliasOnly.cbegin(); it != m_aliasOnly.cend(); ++it)
         add(SharedEntry{it.key(), it.value(), QFileInfo(it.value()).fileName(), std::uint64_t(QFileInfo(it.value()).size())}, true);
@@ -540,15 +530,18 @@ public:
             m_ok = false;
     }
 
+    QByteArray root() override
+    {
+        if (!done())
+            return {};
+        return QByteArray(reinterpret_cast<const char*>(m_done->root.bytes.data()), qsizetype(m_done->root.bytes.size()));
+    }
+
     void finish(const QByteArray& md4, const QString& path, quint64 size, qint64 mtimeMs) override
     {
-        if (!m_ok)
+        if (!done() || m_done->size != size)
             return;
-        auto done = m_hasher.finish();
-        if (!done || done->size != size)
-            return;
-        const auto bytes = done->hashes.bytes();
-        FileHash hashed{done->root, done->size, ffi::Bytes(bytes.begin(), bytes.end())};
+        FileHash hashed = std::move(*m_done);
         // queued to the owner's thread ahead of the share list's hashingFinished
         QMetaObject::invokeMethod(
             m_owner.data(),
@@ -560,18 +553,33 @@ public:
     }
 
 private:
+    /// The hash once all bytes are in (root() and finish() both ask)
+    bool done()
+    {
+        if (!m_done && m_ok) {
+            m_ok = false;   // finished once
+            if (auto d = m_hasher.finish()) {
+                const auto bytes = d->hashes.bytes();
+                m_done = FileHash{d->root, d->size, ffi::Bytes(bytes.begin(), bytes.end())};
+            }
+        }
+        return m_done.has_value();
+    }
+
     QPointer<Ed3kShared> m_owner;
     ffi::Hasher m_hasher;
     bool m_ok = true;
+    std::optional<FileHash> m_done;
 };
 
 SideHasherFactory Ed3kShared::sideHasherFactory(quint64 pipeFrom)
 {
     QPointer<Ed3kShared> self(this);
-    return [self, on = m_sideOn, pipeFrom](const QString& path, quint64 size) -> std::unique_ptr<SideHash> {
+    return [self, on = m_sideOn, pipeFrom](const QString& path, quint64 size, bool rootWanted) -> std::unique_ptr<SideHash> {
         Q_UNUSED(path)
-        // a hasher only while serving (size 0: never shared)
-        if (!on->load() || size == 0)
+        // a hasher while serving, or for an ed3k-only file's key even with ed3k off
+        // (size 0: never shared)
+        if ((!on->load() && !rootWanted) || size == 0)
             return nullptr;
         auto sink = std::make_unique<SideSink>(self);
         // was: BLAKE3 on the eD2K thread, after MD4/AICH — CPU-bound on an SSD
@@ -662,16 +670,6 @@ void Ed3kShared::onFileChanged(const QByteArray& md4)
         return;
     if (auto e = m_source.find(md4))
         onFileAdded(*e);
-}
-
-void Ed3kShared::onEd3kOnlyAdded(const QString& path, quint64 size)
-{
-    onFileAdded(SharedEntry{pathKeyOf(path), path, QFileInfo(path).fileName(), size});
-}
-
-void Ed3kShared::onEd3kOnlyRemoved(const QString& path)
-{
-    onFileRemoved(pathKeyOf(path));
 }
 
 QByteArray Ed3kShared::pathKeyOf(const QString& path)
@@ -944,7 +942,7 @@ void Ed3kShared::share(File& f, Hashed& h)
     // hops.md §1: under the anonymous key nothing names it for eD2K (no MD4, no ALIAS)
     const bool anon = keyOf(h.root) == ffi::KeyKind::Anon;
     // was: const auto ed2k = ed2kOf(f.entry.md4);
-    const auto ed2k = anon ? std::nullopt : ed2kOf(f.entry.md4);
+    const auto ed2k = anon ? std::nullopt : ed2kOf(f.entry);
     // the MD4 is eMule's of the same file (the share list checks size and date)
     // was: if (!shareMember(ffi::SharedFile{h.root, h.size, name, ed2k, std::nullopt, ffi::Have::complete(), std::span{hashes}}, kOwner,
     // FileStatus.note: the uploader's rating and comment (§12.2)
@@ -977,7 +975,7 @@ void Ed3kShared::publishFile(File& f, const ffi::Root& root, std::uint64_t size)
         return;
     const std::string name = utf8(f.entry.name);
     const bool anon = keyOf(root) == ffi::KeyKind::Anon;
-    const auto ed2k = anon ? std::nullopt : ed2kOf(f.entry.md4);
+    const auto ed2k = anon ? std::nullopt : ed2kOf(f.entry);
     const auto t = m_session.now();
     // sources 1: this node, the file held complete (Protocol.md §10.7)
     // was: const ffi::FileInfo info{h.root, h.size, name, ed2k, 1, 0, 0, 0, 0, 0};
@@ -1023,7 +1021,7 @@ void Ed3kShared::publishFile(File& f, const ffi::Root& root, std::uint64_t size)
     // alias.md §3: the root is shared here and both names come from these bytes; never for a
     // file of the anonymous key (ffi.md: eD2K is never anonymous)
     // was: if (!m_holdBack) {
-    if (!m_holdBack && !anon && !declined && f.entry.md4.size() == 16) {
+    if (!m_holdBack && !anon && !declined && ed2kOf(f.entry)) {
         f.alias = ed2kAlias(f.entry.md4, size, root, f.entry.name);
         if (auto ok = e->publishAlias(t, std::span{&f.alias, 1}); !ok) {
             logDebug([&]() -> QString { return QStringLiteral("ed2k record of \"%1\" not published (error %2)").arg(f.entry.name, errorName(ok.error())); });
@@ -1172,7 +1170,9 @@ void Ed3kShared::publishAliasOnly(File& f, const Hashed& h)
     if (!e || !f.alias.empty() || h.ed2k.size() != 16)
         return;
     // as publishFile: never under the anonymous key, nor declined, nor while holding back
-    if (m_holdBack || keyOf(h.root) == ffi::KeyKind::Anon || m_session.declined().listsFile(h.root, h.ed2k))
+    // the key its join holds the root under (keyOf is the share list's own choice)
+    // was: if (m_holdBack || keyOf(h.root) == ffi::KeyKind::Anon || ...)
+    if (m_holdBack || m_session.hide().keyOf(h.root) == ffi::KeyKind::Anon || m_session.declined().listsFile(h.root, h.ed2k))
         return;
     const ffi::Bytes alias = ed2kAlias(h.ed2k, h.size, h.root, f.entry.name);
     if (auto ok = e->publishAlias(m_session.now(), std::span{&alias, 1}); ok) {

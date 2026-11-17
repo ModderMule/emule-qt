@@ -58,13 +58,22 @@ public:
     }
 };
 
-/// A join of the node key only (not anonCapable): shares a blob.
+/// A join of the node key only (not anonCapable): shares a blob, or a member file.
 class NodeJoin final : public Ed3kJoinBase {
 public:
-    explicit NodeJoin(Ed3kSession& s, const QString& dir) : Ed3kJoinBase(s, dir, QStringLiteral("nodejoin"), nullptr) {}
+    explicit NodeJoin(Ed3kSession& s, const QString& dir, const QString& tag = QStringLiteral("nodejoin"))
+        : Ed3kJoinBase(s, dir, tag, nullptr) {}
     void start() override { beginStart(); }
     void stop() override { closeAll(); }
     std::optional<::ed3k::Root> share(const QByteArray& data) { return shareBlob(data, QStringLiteral("blob.bin"), std::nullopt); }
+    static auto hash(const QString& path) { return hashNow(path); }
+    /// a verified member of job @p owner, as a torrent join shares it
+    bool shareFile(const FileHash& h, const QString& owner, int member)
+    {
+        return shareMember(::ed3k::SharedFile{h.root, h.size, "member.bin", std::nullopt, std::nullopt, ::ed3k::Have::complete(),
+                                              std::span{h.hashes}},
+                           owner, member);
+    }
 
 protected:
     std::vector<std::uint64_t> wantedBlocks(const Download&) const override { return {}; }
@@ -118,6 +127,7 @@ private slots:
     void keyedEventsReachOnlyAnonCapableJoins();
     void newSharesGoAnonymousOldOnesKeepTheirKey();
     void movingAFileClosesItUnderTheOtherKey();
+    void aNodeKeyJoinNeverTakesTheSharedFilesKey();
     void downloadsFollowTheSwitch();
     void anonymousCreditKeyAfterEachStart();
     void newAnonymousKeyRestartsTheNode();
@@ -422,6 +432,70 @@ void tst_Ed3kHide::movingAFileClosesItUnderTheOtherKey()
     QCOMPARE(*s.engine()->fileKey(root), std::optional(::ed3k::KeyKind::Node));
     QVERIFY(shared.aliasPublished(md4Of('m')));
     shared.stop();
+    s.stop();
+}
+
+// report: a finished torrent in Incoming flipped the shared file to the node key. A join of
+// another network opening the root first under the node key must neither decide the shared
+// file's key nor keep the root: it gives it up and is listed skipped (File Details).
+void tst_Ed3kHide::aNodeKeyJoinNeverTakesTheSharedFilesKey()
+{
+    QTemporaryDir dir;
+    Ed3kSession s;
+    QVERIFY(s.start(loopback(dir.path())));
+    s.setHideSettings(hidden());
+    const QByteArray data = payload(290 * 1024, 6);
+    const QString path = QDir(dir.path()).filePath(QStringLiteral("t.bin"));
+    QVERIFY(writeFile(path, data));
+    const auto h = NodeJoin::hash(path);
+    QVERIFY(h);
+
+    // the torrent's member first: nothing claims the root yet, opened under the node key
+    NodeJoin torrent(s, dir.path(), QStringLiteral("torrent"));
+    torrent.start();
+    QVERIFY(torrent.shareFile(*h, QStringLiteral("t1"), 0));
+    QCOMPARE(*s.engine()->fileKey(h->root), std::optional(::ed3k::KeyKind::Node));
+
+    // the share list of the same file: the anonymous key (hiding), the torrent gives it up
+    FakeSource src;
+    src.entries.push_back(SharedEntry{md4Of('t'), path, QStringLiteral("t.bin"), std::uint64_t(data.size())});
+    Ed3kShared shared(s, src, dir.path());
+    shared.start();
+    QTRY_VERIFY_WITH_TIMEOUT(shared.rootOf(md4Of('t')).has_value(), 20000);
+    QCOMPARE(*shared.rootOf(md4Of('t')), h->root);
+    QCOMPARE(shared.keyOfFile(md4Of('t')), std::optional(::ed3k::KeyKind::Anon));
+    QCOMPARE(s.hide().recorded(h->root), std::optional(::ed3k::KeyKind::Anon));
+    QCOMPARE(*s.engine()->fileKey(h->root), std::optional(::ed3k::KeyKind::Anon));
+    QVERIFY(!torrent.sharesRoot(h->root));
+    QVERIFY(torrent.skipped(h->root));
+
+    // File Details: the torrent row says why
+    const auto states = Ed3kJoinBase::joinStatesAt(s, h->root);
+    const auto row = std::ranges::find(states, QStringLiteral("torrent"), &Ed3kJoinBase::JoinState::tag);
+    QVERIFY(row != states.end());
+    QCOMPARE(row->kind, Ed3kJoinBase::JoinState::Kind::Skipped);
+    QCOMPARE(row->reason, QStringLiteral("anonKey"));
+    QCOMPARE(row->owners, QStringList{QStringLiteral("t1")});
+
+    // the other order (the shared file first, as after the fix's first start): left out
+    torrent.stop();
+    torrent.start();
+    QVERIFY(!torrent.shareFile(*h, QStringLiteral("t1"), 0));
+    QVERIFY(torrent.skipped(h->root));
+    QCOMPARE(*s.engine()->fileKey(h->root), std::optional(::ed3k::KeyKind::Anon));
+    QCOMPARE(shared.keyOfFile(md4Of('t')), std::optional(::ed3k::KeyKind::Anon));
+
+    // the user moves it to the node key: the torrent may join again, the key stays the user's
+    QVERIFY(shared.moveFileKey(h->root, ::ed3k::KeyKind::Node));
+    QVERIFY(!torrent.skipped(h->root));
+    QVERIFY(torrent.shareFile(*h, QStringLiteral("t1"), 0));
+    QCOMPARE(shared.keyOfFile(md4Of('t')), std::optional(::ed3k::KeyKind::Node));
+    QCOMPARE(s.hide().recorded(h->root), std::optional(::ed3k::KeyKind::Node));
+    const auto again = Ed3kJoinBase::joinStatesAt(s, h->root);
+    QCOMPARE(std::ranges::find(again, QStringLiteral("torrent"), &Ed3kJoinBase::JoinState::tag)->kind,
+             Ed3kJoinBase::JoinState::Kind::Joined);
+    shared.stop();
+    torrent.stop();
     s.stop();
 }
 

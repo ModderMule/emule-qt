@@ -192,6 +192,14 @@ public:
                     const QString& comment, uint8 rating, time_t now);
     [[nodiscard]] const std::map<QByteArray, KadNoteInfo>& kadNotes() const { return m_kadNotes; }
 
+    // ed3k-only: hashed while eD2K was disabled. No MD4/AICH: its file hash is the first
+    // 16 bytes of its ed3k root, never an eD2K hash, kept out of every eD2K list/publish.
+    [[nodiscard]] bool isEd3kOnly() const { return !m_ed3kOnlyRoot.isEmpty(); }
+    [[nodiscard]] bool hasEd2kHash() const override { return !isEd3kOnly(); }
+    [[nodiscard]] const QByteArray& ed3kOnlyRoot() const { return m_ed3kOnlyRoot; }
+    /// @p root 32 B; also sets the file hash from it.
+    void setEd3kOnlyRoot(const QByteArray& root);
+
     // AICH
     [[nodiscard]] bool isAICHRecoverHashSetAvailable() const { return m_aichRecoverHashSetAvailable; }
     /// RAM of this file object: names, tags, hash sets, Kad keywords and notes (estimate).
@@ -268,6 +276,10 @@ public:
                         std::function<void(int)> progressCallback = {},
                         const FileStamp* scanned = nullptr, bool* changedSinceScan = nullptr,
                         const std::atomic<bool>* cancel = nullptr, SideHash* side = nullptr);
+    /// eD2K disabled: @p side alone (its root() is the key), no MD4/AICH. @p side required.
+    bool createFromFileEd3kOnly(const QString& directory, const QString& filename,
+                                std::function<void(int)> progressCallback, const FileStamp* scanned,
+                                bool* changedSinceScan, const std::atomic<bool>* cancel, SideHash* side);
     /// createFromFile hashes AICH on its own thread from this size up (tests: 0 / max)
     static inline std::atomic<uint64> aichPipeFrom = 16ull << 20;
     bool createAICHHashSetOnly();
@@ -390,6 +402,7 @@ private:
     std::vector<uint16> m_availPartFrequency;
     std::vector<QString> m_kadKeywords;
     std::map<QByteArray, KadNoteInfo> m_kadNotes;
+    QByteArray m_ed3kOnlyRoot;   ///< isEd3kOnly(): its ed3k root
 
     time_t m_utcLastModified = static_cast<time_t>(-1);
     time_t m_timeLastSeen = 0;

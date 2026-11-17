@@ -51,8 +51,8 @@ namespace eMule::ed3k {
 
 /// A complete shared file as Ed3kShared sees it.
 struct SharedEntry {
-    /// 16 B eD2K hash; a file without one (eD2K disabled, a landed file kept out of eD2K):
-    /// Ed3kShared::pathKeyOf its path
+    /// 16 B eD2K hash; ed3kOnly: its root's head (no eD2K hash); a landed file kept out of
+    /// eD2K: Ed3kShared::pathKeyOf its path
     QByteArray md4;
     QString path;     ///< full path of the data
     QString name;
@@ -70,6 +70,8 @@ struct SharedEntry {
     QString album;
     QString title;
     QString codec;
+    /// hashed while eD2K was disabled (KnownFile::isEd3kOnly): no ed2k name, no ALIAS
+    bool ed3kOnly = false;
 
     [[nodiscard]] bool hasNote() const { return rating != 0 || !comment.isEmpty(); }
 };
@@ -83,8 +85,6 @@ public:
     [[nodiscard]] virtual std::vector<SharedEntry> files() const = 0;
     /// The complete shared file of @p md4; nullopt: not shared, or a part file.
     [[nodiscard]] virtual std::optional<SharedEntry> find(const QByteArray& md4) const = 0;
-    /// Files listed for ed3k alone (eD2K disabled: no MD4), keyed Ed3kShared::pathKeyOf.
-    [[nodiscard]] virtual std::vector<SharedEntry> ed3kOnlyFiles() const { return {}; }
 };
 
 class Ed3kShared : public Ed3kJoinBase {
@@ -220,9 +220,6 @@ public slots:
     void onFileRemoved(const QByteArray& md4);
     /// Renamed or moved: same root when size and date are unchanged, else hashed again.
     void onFileRelocated(const eMule::ed3k::SharedEntry& entry);
-    /// A file listed for ed3k alone came or went (SharedFileList::ed3kOnlyAdded/Removed).
-    void onEd3kOnlyAdded(const QString& path, quint64 size);
-    void onEd3kOnlyRemoved(const QString& path);
     /// Something of the file changed (a download completed): shared when it is complete now.
     void onFileChanged(const QByteArray& md4);
     /// The share list's scan is done; @p full: the whole share. The first full one after
@@ -247,6 +244,8 @@ protected:
     void saveOwner(const QString& owner) override;
     /// The share list follows the hiding switch (no eD2K ALIAS under the anonymous key).
     [[nodiscard]] bool anonCapable() const override { return true; }
+    /// a listed file hashed to @p root (holdsRoot), shared or about to be
+    [[nodiscard]] bool claimsRoot(const ::ed3k::Root& root) const override { return holdsRoot(root); }
     void onHideChanged(bool hiding) override;
     [[nodiscard]] bool answerHashes(std::uint64_t id, const ::ed3k::Root& root) override;
     void onHashesLost(const ::ed3k::Root& root) override;

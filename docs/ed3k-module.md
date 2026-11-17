@@ -165,7 +165,7 @@ The port is mapped as `PortMapPurpose::Ed3kUdp` while `ed3kEnabled`.
 | `names.dat` | `ED3K_STATE_NAMES` (petnames, pins, own zones, followed lists) | on `StateChanged` and at stop |
 | `name-lists.dat` | `id<TAB>label<TAB>link` of the followed name lists in the user's order (`Ed3kNames`); not a credential | on follow, unfollow, move |
 | `name-petnames.dat` | `text<TAB>zone hex<TAB>shareable` of the petnames set here (the core lists none); owner-only | on set, remove |
-| `shared-index.dat` | hash cache index of the shared files (`Ed3kShared`): per MD4 (or `pathKeyOf` for a file without one) path, size, mtime, root, offset into `shared-hashes.dat`, v3: eD2K hash of an alias-only file | 5 s after a change, and at stop |
+| `shared-index.dat` | hash cache index of the shared files (`Ed3kShared`): per MD4 (an ed3k-only file: its root's head; `pathKeyOf` for an alias-only file) path, size, mtime, root, offset into `shared-hashes.dat`, v3: eD2K hash of an alias-only file | 5 s after a change, and at stop |
 | `shared-hashes.dat` | block values of those files, append-only, compacted at start | when a file is hashed |
 | `shared.dat` | old single-file hash cache, read once and moved into the two files above (ToDo: drop the migration later) | never |
 | `stake-claims.json` | the claims of own burns and of ids claimed (credit.md §6.7): `[{id, to, amount (uint256 hex), readyAt, state (0 waiting, 1 claiming, 2 paid), burnTx, claimTx (hash hex, "" unknown)}]`, u64 as text; public on the chain, not a secret | on a burn, a claim, a read of a claim |
@@ -528,12 +528,24 @@ node stops. `applyEd3kConfig` switches it with the pref.
   as 8 B big endian, relation `SAME`; `Ed3kShared::ed2kAlias` encodes the `Alias` message, a
   name over 255 B is left out) through `publishAlias`, not while holding back. No setting
   turns it off (only the anonymous key, decline.txt and holding back).
-- **eD2K disabled** (Extended): `SharedFileList` hashes no new file for eD2K (no MD4, no AICH);
-  new files go to `ed3kOnlyFiles()` (`ed3kOnlyAdded/Removed`) and `Ed3kShared` hashes and shares
-  them by root alone, keyed `pathKeyOf(path)` (no `ed2k` field or ALIAS). Known files keep their
-  MD4 and their `ed2k` ALIAS indefinitely. eD2K on again: a reload hashes them for eD2K; the
-  root moves from the path-keyed cache entry (no second read). Shared Files lists them with
-  `ed3kOnly` rows (hash = root hex, last page; open / open folder only).
+- **eD2K disabled** (Extended): `SharedFileList` hashes new files for ed3k alone
+  (`HashingThread::Job::ed3kOnly`, `KnownFile::createFromFileEd3kOnly`: no MD4, no AICH, no
+  empty files). The BLAKE3 root comes from the side hasher (`SideHash::root()`; the factory's
+  `rootWanted` gives one with the ed3k network off too). The file is an ordinary `KnownFile`
+  (`isEd3kOnly()`, `ed3kOnlyRoot()`) keyed by the root's first 16 bytes, so every Shared Files
+  action works on it; only eD2K things are off: no link (`hasEd2kHash()` false → empty
+  `getED2kLink`), no server offer, no Kad keyword/source/notes, no AICH sync, no full rehash,
+  no `ed2k` field or ALIAS in `Ed3kShared` (`SharedEntry::ed3kOnly`). Records persist apart in
+  `known_ed3k.met` (header, version 1, then root + known.met record each), never in known.met.
+  Known files keep their MD4 and their `ed2k` ALIAS indefinitely. eD2K on again
+  (`applyEd2kDisabled` → reload): an ed3k-only file stays shared and is queued for eD2K; once
+  hashed, `replaceSharedRecord` swaps in the eD2K record (priority, comment, rating, stats
+  follow). Shared Files rows: `ed3kOnly`, `ed3kRoot` (File ID column shows the root); the
+  menu greys only eD2K links, eD2K collections and Web Services.
+- **Transfers, ed3k rows:** Mass Rename (`Ed3kDownloads::rename`: the name to be, or the file
+  on disk once complete) and Add Sources with a URL (`addWebSource`, a ws= source) through
+  RenameFiles / AddDownloadSource with a 64 hex root; Search Related searches the name. Source
+  Limit, A4AF swap, import parts, eD2K links and Web Services stay eD2K-only.
 - **Landed files kept out of eD2K** (hoster/Usenet "share landed files" off): `DaemonApp::
   syncEd3kAliasOnly` → `setAliasOnlyFiles`: read once for MD4 + root (`hashInBackground(withEd2k)`)
   while eD2K is enabled, only their `ed2k` ALIAS published (the join shares the root; refused
@@ -812,6 +824,20 @@ ToDo (credits):
   theirs, kept in `keys.json`. A file is never under both keys. "Move to Anonymous/Node ed3k
   Key..." (Shared Files, Transfers) asks first (hops §1), IPC 1048. "New anonymous key..." asks
   (queue places lost), 1047. Hiding off: anonymous files are not served and wait for it.
+- **Joins of other networks** (torrent, usenet, hoster, eD2K: not `anonCapable()`) never hold
+  a root of the anonymous key. `Ed3kJoinBase::keyOf` of such a join is always the node key; an
+  anon-capable join takes the recorded key first, the engine's `fileKey` only when an
+  anon-capable join holds the root (a torrent member opened first under the node key once
+  decided the shared file's key and overwrote `keys.json`). `anonHeld` (recorded or held
+  anonymous, or claimed by an anon-capable join while hiding: `claimsRoot`, Ed3kShared =
+  `holdsRoot`) makes `shareMember`/`open` of such a join skip the root (logged once, kept in
+  `m_skipped`; torrent/usenet still `keepMember`). An anon-capable join opening a root under
+  the anonymous key takes it from node-key joins first (`takeFromNodeJoins` → `yieldToAnon`:
+  records taken back, closed, skipped). A move to the node key (`Ed3kHide::keyMoved`) shares a
+  skipped kept member again. File Details "Joins" (`ed3kJoins`, `Ed3kUploadsBridge::joinsOf` ←
+  `joinStatesAt`): eD2K, BitTorrent, Usenet, Hoster each joined / skipped (reason `anonKey`) /
+  available / off (`notRunning`; eD2K of an ed3k-only file: `noEd2kHash`); a shared file's eD2K
+  row is its `ed2k` ALIAS. Shared files also send `ed3kKey`.
 - **Events:** the pump uses `pollKeyedEvent`; `eventPolled` gets node-key events only,
   `keyedEventPolled` all. Each class that runs uses under the anonymous key connects both:
   `eventPolled` as `Node`, `keyedEventPolled` only for `Anon` (each event once). Lookup ids of

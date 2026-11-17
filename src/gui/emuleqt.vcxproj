@@ -254,6 +254,8 @@
     <ClCompile Include="controls\AccordionSidebar.cpp" />
     <ClCompile Include="controls\ContentScrollArea.cpp" />
     <ClCompile Include="dialogs\CoreConnectDialog.cpp" />
+    <ClCompile Include="dialogs\CoreScriptDialog.cpp" />
+    <ClCompile Include="utils\CoreConnectScript.cpp" />
     <ClCompile Include="controls\CategoryFilterProxy.cpp" />
     <ClCompile Include="controls\CategoryTabBar.cpp" />
     <ClCompile Include="controls\FitTextTabBar.cpp" />
@@ -469,6 +471,8 @@
     <ClInclude Include="utils\MessageBoxButtonOrder.h" />
     <ClInclude Include="utils\MenuUtils.h" />
     <ClInclude Include="utils\Appearance.h" />
+    <ClInclude Include="utils\CoreConnectScript.h" />
+    <ClInclude Include="utils\BadgeIcons.h" />
     <ClInclude Include="utils\ColorUtils.h" />
     <ClInclude Include="utils\ViewNavigation.h" />
     <ClInclude Include="utils\ViewSelection.h" />
@@ -501,6 +505,7 @@
     <QtMoc Include="controls\AccordionSidebar.h" />
     <QtMoc Include="controls\ContentScrollArea.h" />
     <QtMoc Include="dialogs\CoreConnectDialog.h" />
+    <QtMoc Include="dialogs\CoreScriptDialog.h" />
     <QtMoc Include="controls\CategoryFilterProxy.h" />
     <QtMoc Include="controls\CategoryTabBar.h" />
     <QtMoc Include="controls\DownloadListModel.h" />

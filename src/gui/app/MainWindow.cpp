@@ -60,6 +60,7 @@
 #ifdef EMULE_HAVE_BITTORRENT
 #include "utils/TorrentLinks.h"
 #endif
+#include "utils/BadgeIcons.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/AppActivation.h"
 #include "utils/StringUtils.h"
@@ -607,6 +608,8 @@ void MainWindow::showOptionsDialog(int page)
     dlg.exec();
     updateSpeedLimitTip();
     applyTrayIconVisibility();
+    applyToolbarBadges();
+    m_ircPanel->applyChatPrefs();
 
     // a feature switched on brings its button back, even one removed from a customized toolbar
     bool toolbarChanged = false;
@@ -1111,8 +1114,8 @@ void MainWindow::closeEvent(QCloseEvent* event)
     // closeToTray (qBittorrent, off by default) hides instead — but only for the user's
     // own close (title bar, Alt+F4: spontaneous). Tray Exit, Cmd/Ctrl+Q, forced and
     // app-wide quits still exit, so the app can always be quit.
-    if (thePrefs.closeToTray() && trayInUse() && event->spontaneous()
-        && !m_quitRequested && !s_quitWithoutPrompt) {
+    if (thePrefs.closeToTray() && event->spontaneous()
+        && !m_quitRequested && !s_quitWithoutPrompt && ensureTrayIconShown()) {
         event->ignore();
         hide();
         return;
@@ -1258,7 +1261,7 @@ void MainWindow::startMinimized(bool maximized)
     // The window state survives being hidden, so a later restore lands maximized
     if (maximized)
         setWindowState(windowState() | Qt::WindowMaximized);
-    if (trayInUse() && thePrefs.minimizeToTray())
+    if (thePrefs.minimizeToTray() && ensureTrayIconShown())
         return;   // stays hidden; the tray icon is the way in
     showMinimized();
 }
@@ -1337,7 +1340,8 @@ void MainWindow::changeEvent(QEvent* event)
             : 0;
         // Re-checked: a restore may already have happened by the time this runs
         QTimer::singleShot(wait, this, [this] {
-            if (isMinimized())
+            // no icon in the shell (Server 2019): stay on the taskbar, else orphaned
+            if (isMinimized() && ensureTrayIconShown())
                 hide();
         });
     }
@@ -1397,7 +1401,7 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
             return true;
         }
         if (obj == m_statusChat) {
-            switchToTab(TabMessages);
+            switchToTab(!m_unreadTabs.contains(TabMessages) && m_unreadTabs.contains(TabIRC) ? TabIRC : TabMessages);
             return true;
         }
         if (obj == m_statusSpeed) {
@@ -1949,6 +1953,7 @@ void MainWindow::rebuildToolbar()
 
         const QIcon icon = toolbarIcon(tileForButton(id), *def);
         auto* action = m_toolbar->addAction(icon, tr(def->label));
+        action->setProperty("baseIcon", icon);   // the icon without the unread badge
         m_toolbarActions[id] = action;
 
         if (def->tabIndex >= 0) {
@@ -2007,6 +2012,7 @@ void MainWindow::rebuildToolbar()
     }
 
     applyFeatureTabs();
+    applyToolbarBadges();
     m_toolbarSizer->update();   // style may have changed: no layout request then
 }
 
@@ -2361,7 +2367,10 @@ void MainWindow::updateTrayIcon(bool force)
     m_trayIconPath = iconPath;
     m_trayMeterColor = barColor;
 
-    m_trayIcon->setIcon(QIcon(TrayMeterIcon::render(skinIcon(iconPath), percent, barColor)));
+    QIcon base = skinIcon(iconPath);
+    if (base.pixmap(16, 16).isNull())
+        base = appIcon(lowId);   // .ico unreadable (qico plugin missing): no blank slot
+    m_trayIcon->setIcon(QIcon(TrayMeterIcon::render(base, percent, barColor)));
 }
 
 void MainWindow::showNetworkInfo()
@@ -2502,7 +2511,22 @@ void MainWindow::setupStatusBar()
     m_statusChat->setScaledContents(true);
     m_statusChat->installEventFilter(this);
     sb->addPermanentWidget(m_statusChat);
-    connect(m_messagesPanel, &MessagesPanel::messageStateChanged, this, &MainWindow::showChatState);
+    // was: messageStateChanged → showChatState (friends only, always on); now any unread
+    // chat, under the badge option, blinking as MFC (ChatSelector.cpp:93, 1.5 s)
+    m_chatBlink = new QTimer(this);
+    m_chatBlink->setInterval(1500);
+    connect(m_chatBlink, &QTimer::timeout, this, [this] {
+        m_chatBlinkOn = !m_chatBlinkOn;
+        showChatState(m_chatBlinkOn ? 1 : 2);
+    });
+    connect(m_messagesPanel, &MessagesPanel::messageStateChanged, this,
+            [this](int state) { setChatUnread(TabMessages, state != 0); });
+    // a friend's message: the tray pop-up (main.cpp) plays its sound when it is on
+    connect(m_messagesPanel, &MessagesPanel::unseenChatMessage, this, [this] {
+        chatAttention(true, thePrefs.notifyOnChat() && thePrefs.notifySoundType() == 1);
+    });
+    connect(m_ircPanel, &IrcPanel::unreadChanged, this, [this](bool unread) { setChatUnread(TabIRC, unread); });
+    connect(m_ircPanel, &IrcPanel::messageArrived, this, [this](bool mention) { chatAttention(mention); });
 }
 
 void MainWindow::requestEd3kStatus()
@@ -3341,6 +3365,67 @@ void MainWindow::showChatState(int state)
     m_statusChat->setToolTip(state == 0 ? QString() : tr("New message — double-click to read"));
 }
 
+void MainWindow::setChatUnread(Tab tab, bool unread)
+{
+    if (unread == m_unreadTabs.contains(tab))
+        return;
+    if (unread)
+        m_unreadTabs.insert(tab);
+    else
+        m_unreadTabs.remove(tab);
+    applyToolbarBadges();
+}
+
+void MainWindow::applyToolbarBadges()
+{
+    const bool on = thePrefs.chatUnreadBadge();
+    for (QAction* action : std::as_const(m_toolbarActions)) {
+        const QVariant tab = action->data();
+        const QIcon base = action->property("baseIcon").value<QIcon>();
+        if (!tab.isValid() || base.isNull())
+            continue;
+        const bool badge = on && m_unreadTabs.contains(tab.toInt());
+        if (action->property("badged").toBool() == badge)
+            continue;
+        action->setProperty("badged", badge);
+        action->setIcon(badge ? BadgeIcons::withAlertBadge(base) : base);
+    }
+    // the status bar icon (MFC SBarChatMsg) under the same option; none yet while the
+    // constructor builds the toolbar before setupStatusBar (crash: null m_chatBlink)
+    if (!m_chatBlink)
+        return;
+    if (!on || m_unreadTabs.isEmpty()) {
+        m_chatBlink->stop();
+        m_chatBlinkOn = true;   // the next one starts on the Message phase
+        showChatState(0);
+    } else if (!m_chatBlink->isActive()) {
+        m_chatBlink->start();
+        showChatState(1);
+    }
+}
+
+void MainWindow::chatAttention(bool mention, bool soundDone)
+{
+    const int alert = thePrefs.chatAlert();
+    if (!isActiveWindow()
+        && (alert == Preferences::ChatAlertAll || (alert == Preferences::ChatAlertMention && mention)))
+        QApplication::alert(this);
+    if (!thePrefs.chatSound() || soundDone)
+        return;
+    if (m_chatSoundClock.isValid() && m_chatSoundClock.elapsed() < 2000)
+        return;   // a busy channel: one sound per 2 s
+    m_chatSoundClock.start();
+    const QString file = thePrefs.notifySoundFile();
+    if (thePrefs.notifySoundType() == 1 && !file.isEmpty() && QFile::exists(file)) {
+        if (!m_notifySound)
+            m_notifySound = new QSoundEffect(this);
+        m_notifySound->setSource(QUrl::fromLocalFile(file));
+        m_notifySound->play();
+    } else {
+        QApplication::beep();
+    }
+}
+
 void MainWindow::updateFreeSpaceLabel()
 {
     if (!m_statusFreeSpace)
@@ -3387,6 +3472,29 @@ void MainWindow::updateNetworkStatsLabel()
         users = files = QStringLiteral("0");
     }
     m_statusUsersLabel->setText(tr("Users: %1 | Files: %2").arg(users, files));
+}
+
+bool MainWindow::ensureTrayIconShown()
+{
+    if (!trayInUse())
+        return false;
+#ifdef Q_OS_WIN
+    // geometry() = Shell_NotifyIconGetRect: S_OK also in the overflow area, E_FAIL when
+    // the shell never took the icon (NIM_ADD before Explorer's tray was up, Server 2019)
+    if (m_trayIcon->geometry().isValid())
+        return true;
+    m_trayIcon->hide();
+    m_trayIcon->show();   // fresh NIM_ADD
+    updateTrayIcon(/*force*/ true);
+    if (m_trayIcon->geometry().isValid()) {
+        logInfo(QStringLiteral("Tray icon was missing from the notification area, re-added"));
+        return true;
+    }
+    logWarning(QStringLiteral("Tray icon not in the notification area: window stays on the taskbar"));
+    return false;
+#else
+    return true;
+#endif
 }
 
 } // namespace eMule

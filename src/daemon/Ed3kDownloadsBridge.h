@@ -53,6 +53,10 @@ bool handleRequest(const Ipc::IpcMessage& msg, const std::function<void(const Ip
 
 /// "Move to" (#187) of the download of @p hexRoot. Empty: started; else why not.
 [[nodiscard]] QString moveTo(const QString& hexRoot, const QString& dir);
+/// Mass Rename of an ed3k row (64 hex root); the error, empty when done.
+[[nodiscard]] QString rename(const QString& hexRoot, const QString& name);
+/// Add Sources of an ed3k row: an http(s) URL of the whole file; false: not taken.
+[[nodiscard]] bool addWebSource(const QString& hexRoot, const QString& url);
 
 /// The HTTP (ws=) source row of the download of @p root (32 B), as an eD2K URL source
 /// (isUrl); @p peerRate is what its ed3k sources bring, the rest of the rate is the HTTP

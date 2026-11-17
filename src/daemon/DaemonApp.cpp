@@ -5,6 +5,7 @@
 #include "AutoUpdater.h"
 #include "net/GuardedNetworkAccessManager.h"
 #include "CoreNotifierBridge.h"
+#include "geo/HostCountryResolver.h"
 #include "geo/IP2Country.h"
 #include "ApiEventFeeder.h"
 #include "DaemonApiBackend.h"
@@ -305,6 +306,13 @@ bool DaemonApp::start()
     // A name follows its addresses: DHCP, a new network, a renamed host
     if (byName && !OwnAddress::isLocalhostName(OwnAddress::normalizedName(listenHost)))
         m_ipcListenWatch = std::make_unique<IpcListenWatch>(m_ipcServer.get(), listenHost);
+    // Moved at runtime (ListenIpcAddress): a name gets its watch, an address none
+    connect(m_ipcServer.get(), &IpcServer::listenHostChanged, this, [this](const QString& value) {
+        m_ipcListenWatch.reset();
+        if (!value.isEmpty() && value != u'*' && QHostAddress(value).isNull()
+            && !OwnAddress::isLocalhostName(OwnAddress::normalizedName(value)))
+            m_ipcListenWatch = std::make_unique<IpcListenWatch>(m_ipcServer.get(), value);
+    });
 
     // Connect core signals to IPC push events
     m_notifierBridge = std::make_unique<CoreNotifierBridge>(m_ipcServer.get(), this);
@@ -964,7 +972,9 @@ bool DaemonApp::start()
         // server countries of the sites in the account dialogs
         m_hosterCatalog->setGeo([] { return theApp.ip2Country && theApp.ip2Country->isLoaded(); },
                                 [](const QHostAddress& a) { return countryCodeOf(a); });
-        m_hosterCatalog->setDnsAllowed(!thePrefs.proxySettings().useProxy);
+        // behind a proxy: DoH through it, or no lookups when DoH is off
+        m_hosterCatalog->setDnsAllowed(std::function<bool()>(&countryDnsAvailable));
+        m_hosterCatalog->setDnsLookup(&countryDnsLookup);
         // a download's real server: the site's flag from then on
         connect(m_hosterJoin.get(), &ed3k::Ed3kHosterJoin::downloadServer, m_hosterCatalog.get(),
                 &ed3k::Ed3kHosterCatalog::noteServer);
@@ -1939,14 +1949,10 @@ void DaemonApp::applyHosterConfig()
                                        + QString::fromLatin1(QUrl::toPercentEncoding(p.password)) + QLatin1Char('@')
                                  : QString();
         proxy = QStringLiteral("%1://%2%3:%4").arg(scheme, auth, p.host).arg(p.port);
-        if (m_hosterCatalog)
-            m_hosterCatalog->setDnsAllowed(false);   // site names stay off the local resolver
         m_javaRuntime->setProxy(toNetworkProxy(p));
         if (m_resolverUpdater)
             m_resolverUpdater->setProxy(toNetworkProxy(p));
     } else {
-        if (m_hosterCatalog)
-            m_hosterCatalog->setDnsAllowed(true);
         m_javaRuntime->setProxy(QNetworkProxy(QNetworkProxy::DefaultProxy));
         if (m_resolverUpdater)
             m_resolverUpdater->setProxy(QNetworkProxy(QNetworkProxy::DefaultProxy));

@@ -19,6 +19,7 @@
 #include <QFile>
 #include <QRandomGenerator>
 
+#include <span>
 #include <vector>
 
 
@@ -37,6 +38,9 @@ static constexpr uint32 kKnownFileListDirtySaveDelay = MIN2S(1);
 // loadCancelledFiles(), and note the seed bug meant its keys matched nothing.
 static constexpr uint8 kCancelledMetHeader = MET_HEADER_I64TAGS;
 static constexpr uint8 kCancelledMetVersion = 0x01;
+// known_ed3k.met: ed3k-only records (KnownFile::isEd3kOnly), apart so known.met never
+// holds a key that is no eD2K hash (an older build would offer it)
+static constexpr uint8 kEd3kOnlyMetVersion = 0x01;
 
 // ---------------------------------------------------------------------------
 // Construction / Destruction
@@ -98,16 +102,36 @@ void KnownFileList::save()
             }
         }
 
+        const auto ed3kFirst = std::ranges::stable_partition(toWrite, &KnownFile::isEd3kOnly);
+        const std::span<const KnownFile* const> ed3kOnly(toWrite.begin(), ed3kFirst.begin());
+        const std::span<const KnownFile* const> ed2k(ed3kFirst.begin(), toWrite.end());
+
         // Write to temp file
         {
             SafeFile file(tmpPath, QIODevice::WriteOnly);
             file.writeUInt8(MET_HEADER_I64TAGS);
-            file.writeUInt32(static_cast<uint32>(toWrite.size()));
-            for (const KnownFile* knownFile : toWrite) {
+            file.writeUInt32(static_cast<uint32>(ed2k.size()));
+            for (const KnownFile* knownFile : ed2k)
                 knownFile->writeToFile(file);
-            }
 
             commitAndReplace(file, tmpPath, knownPath, theApp.commitFilesNow());
+        }
+        // ed3k-only records; none: no file
+        const QString ed3kPath = m_configDir + QStringLiteral("/known_ed3k.met");
+        if (ed3kOnly.empty()) {
+            QFile::remove(ed3kPath);
+        } else {
+            const QString ed3kTmp = ed3kPath + QStringLiteral(".tmp");
+            QFile::remove(ed3kTmp);
+            SafeFile file(ed3kTmp, QIODevice::WriteOnly);
+            file.writeUInt8(MET_HEADER_I64TAGS);
+            file.writeUInt8(kEd3kOnlyMetVersion);
+            file.writeUInt32(static_cast<uint32>(ed3kOnly.size()));
+            for (const KnownFile* knownFile : ed3kOnly) {
+                file.write(knownFile->ed3kOnlyRoot().constData(), 32);
+                knownFile->writeToFile(file);
+            }
+            commitAndReplace(file, ed3kTmp, ed3kPath, theApp.commitFilesNow());
         }
     } catch (const std::exception& e) {
         logError(QStringLiteral("Failed to save known.met: %1").arg(QString::fromUtf8(e.what())));
@@ -226,7 +250,7 @@ bool KnownFileList::dropSupersededRecord(KnownFile* fresh)
     const auto [first, last] = m_bySize.equal_range(size);
     for (auto it = first; it != last; ++it) {
         KnownFile* old = it->second;
-        if (old == fresh || old->fileIdentifier().hasExpectedMD4HashCount()
+        if (old == fresh || old->isEd3kOnly() || old->fileIdentifier().hasExpectedMD4HashCount()
             || md4equ(old->fileHash(), fresh->fileHash())
             || old->fileName().compare(fresh->fileName(), Qt::CaseInsensitive) != 0
             || !sameFileDate(old->utcFileDate(), fresh->utcFileDate(), true))
@@ -320,7 +344,7 @@ KnownFile* KnownFileList::findKnownFile(const QString& filename, time_t date, ui
             continue;
         // Hashed before the boundary-part fix: the record is one part hash short and
         // its file hash is one nobody else computes. Not a match, so it is rehashed.
-        if (size > 0 && size % PARTSIZE == 0
+        if (size > 0 && size % PARTSIZE == 0 && !file->isEd3kOnly()
             && !file->fileIdentifier().hasExpectedMD4HashCount())
             continue;
         if (file->utcFileDate() == date)
@@ -418,6 +442,11 @@ bool KnownFileList::loadKnownFiles()
 {
     const QString filePath = m_configDir + QStringLiteral("/known.met");
 
+    // ed3k-only records apart; a damaged file costs a rehash of those only
+    if (const QString ed3kPath = m_configDir + QStringLiteral("/known_ed3k.met");
+        readKnownMet(ed3kPath, true) == MetRead::Damaged && QFileInfo(ed3kPath + QStringLiteral(".bak")).size() > 0)
+        static_cast<void>(readKnownMet(ed3kPath + QStringLiteral(".bak"), true));
+
     const MetRead primary = readKnownMet(filePath);
     if (primary == MetRead::Ok)
         return true;
@@ -509,7 +538,7 @@ void KnownFileList::saveCancelledFiles()
 // .met readers (private)
 // ---------------------------------------------------------------------------
 
-KnownFileList::MetRead KnownFileList::readKnownMet(const QString& filePath)
+KnownFileList::MetRead KnownFileList::readKnownMet(const QString& filePath, bool ed3kOnly)
 {
     if (QFileInfo(filePath).size() <= 0)
         return MetRead::Missing;
@@ -518,9 +547,10 @@ KnownFileList::MetRead KnownFileList::readKnownMet(const QString& filePath)
         SafeFile file(filePath, QIODevice::ReadOnly);
 
         uint8 version = file.readUInt8();
-        if (version != MET_HEADER && version != MET_HEADER_I64TAGS) {
-            logError(QStringLiteral("known.met: unsupported version 0x%1")
-                         .arg(version, 2, 16, QChar(u'0')));
+        if ((version != MET_HEADER && version != MET_HEADER_I64TAGS)
+            || (ed3kOnly && (version != MET_HEADER_I64TAGS || file.readUInt8() != kEd3kOnlyMetVersion))) {
+            logError(QStringLiteral("%1: unsupported version 0x%2")
+                         .arg(QFileInfo(filePath).fileName()).arg(version, 2, 16, QChar(u'0')));
             return MetRead::Damaged;
         }
 
@@ -528,6 +558,15 @@ KnownFileList::MetRead KnownFileList::readKnownMet(const QString& filePath)
         uint32 count = file.readUInt32();
         for (uint32 i = 0; i < count; ++i) {
             auto* kf = new KnownFile();
+            QByteArray root;
+            if (ed3kOnly) {
+                root.resize(32);
+                if (file.read(root.data(), 32) != 32) {
+                    delete kf;
+                    result = MetRead::Damaged;
+                    break;
+                }
+            }
             if (!kf->loadFromFile(file)) {
                 logWarning(QStringLiteral("known.met: corrupt entry %1 of %2").arg(i).arg(count));
                 delete kf;
@@ -535,6 +574,8 @@ KnownFileList::MetRead KnownFileList::readKnownMet(const QString& filePath)
                 break; // file cursor is at unknown position, can't continue
             }
 
+            if (ed3kOnly)
+                kf->setEd3kOnlyRoot(root);   // its file hash is the root's head
             MD4Key key(kf->fileHash());
             if (m_filesMap.contains(key)) {
                 delete kf;
@@ -548,7 +589,8 @@ KnownFileList::MetRead KnownFileList::readKnownMet(const QString& filePath)
             totalAccepted += kf->statistic.allTimeAccepts();
         }
 
-        logInfo(QStringLiteral("Loaded %1 known files").arg(m_filesMap.size()));
+        if (!ed3kOnly)
+            logInfo(QStringLiteral("Loaded %1 known files").arg(m_filesMap.size()));
         return result;
     } catch (const std::exception& e) {
         logError(QStringLiteral("known.met load error: %1").arg(QString::fromUtf8(e.what())));

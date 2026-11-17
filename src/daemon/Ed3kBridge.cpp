@@ -19,6 +19,8 @@
 #include "Ed3kPaidBridge.h"
 #include "Ed3kPaidSellerBridge.h"
 #include "app/AppContext.h"
+#include "files/KnownFile.h"
+#include "files/SharedFileList.h"
 #include "stats/NetworkCounters.h"
 #include "stats/Statistics.h"
 
@@ -33,6 +35,7 @@
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kBootstrap.h"
 #include "Ed3kEd2kJoin.h"
+#include "Ed3kHide.h"
 #include "Ed3kSession.h"
 #include "Ed3kShared.h"
 #endif
@@ -97,8 +100,13 @@ void handleFileLinks(const IpcMessage& msg, const std::function<void(const IpcMe
             root = s_shared ? s_shared->rootOf(raw) : std::nullopt;
             if (!root && s_ed2kJoin && s_ed2kJoin->isEnabled())
                 root = s_ed2kJoin->rootOf(raw);
-            ed2k.emplace();
-            std::copy_n(reinterpret_cast<const std::uint8_t*>(raw.constData()), 16, ed2k->begin());
+            // an ed3k-only file's key is no eD2K hash: no ed2k= in its link
+            const KnownFile* kf = theApp.sharedFileList
+                ? theApp.sharedFileList->getFileByID(reinterpret_cast<const uint8*>(raw.constData())) : nullptr;
+            if (!kf || kf->hasEd2kHash()) {
+                ed2k.emplace();
+                std::copy_n(reinterpret_cast<const std::uint8_t*>(raw.constData()), 16, ed2k->begin());
+            }
         }
         QString text;
         if (root) {
@@ -193,6 +201,11 @@ void appendDownloadInfo([[maybe_unused]] QCborMap& details, [[maybe_unused]] con
         if (!aliases.isEmpty())
             details.insert(QLatin1StringView("ed3kAliases"), aliases);
     }
+    if (info->root)
+        if (QCborArray joins = Ed3kUploadsBridge::joinsOf(QByteArray(reinterpret_cast<const char*>(info->root->bytes.data()),
+                                                                      qsizetype(info->root->bytes.size())));
+            !joins.isEmpty())
+            details.insert(QLatin1StringView("ed3kJoins"), joins);
     details.insert(QLatin1StringView("ed3kPair"), static_cast<int>(info->pair));
     details.insert(QLatin1StringView("ed3kBytes"), static_cast<qint64>(info->bytes));
     details.insert(QLatin1StringView("ed3kSources"), info->sources);
@@ -236,38 +249,6 @@ QHash<QByteArray, QByteArray> sharedRootIndex()
     return index;
 }
 
-QCborArray ed3kOnlySharedRows()
-{
-    QCborArray rows;
-#ifdef EMULE_HAVE_ED3K
-    if (!s_shared)
-        return rows;
-    s_shared->forEachSharedRoot([&rows](const QByteArray& key, const ::ed3k::Root& root) {
-        if (key.size() == 16)
-            return;   // in eD2K's list: a row of its own
-        const auto e = s_shared->entryOfRoot(root);
-        if (!e)
-            return;
-        const QFileInfo fi(e->path);
-        QCborMap m;
-        m.insert(QLatin1StringView("hash"),
-                 QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(root.bytes.data()), qsizetype(root.bytes.size())).toHex()));
-        m.insert(QLatin1StringView("ed3kOnly"), true);
-        m.insert(QLatin1StringView("fileName"), e->name);
-        m.insert(QLatin1StringView("fileSize"), static_cast<qint64>(e->size));
-        m.insert(QLatin1StringView("filePath"), e->path);
-        m.insert(QLatin1StringView("path"), fi.absolutePath());
-        m.insert(QLatin1StringView("upPriority"), 1);   // PR_NORMAL
-        m.insert(QLatin1StringView("isAutoUpPriority"), false);
-        m.insert(QLatin1StringView("isPartFile"), false);
-        m.insert(QLatin1StringView("canUnshare"), false);
-        m.insert(QLatin1StringView("ed2kLink"), QString());
-        m.insert(QLatin1StringView("hasPartHashes"), false);
-        rows.append(m);
-    });
-#endif
-    return rows;
-}
 
 void appendSharedInfo([[maybe_unused]] QCborMap& details, [[maybe_unused]] const QByteArray& md4)
 {
@@ -277,11 +258,40 @@ void appendSharedInfo([[maybe_unused]] QCborMap& details, [[maybe_unused]] const
     details.insert(QLatin1StringView("ed3kEnabled"), s_shared->isEnabled());
     if (!s_shared->isEnabled())
         return;
-    if (const auto root = s_shared->rootOf(md4))
+    const auto root = s_shared->rootOf(md4);
+    if (root)
         details.insert(QLatin1StringView("ed3kRoot"), QString::fromLatin1(
             QByteArray(reinterpret_cast<const char*>(root->bytes.data()), qsizetype(root->bytes.size())).toHex()));
     details.insert(QLatin1StringView("ed3kAliasPublished"), s_shared->aliasPublished(md4));
     details.insert(QLatin1StringView("ed3kKeywordsPublished"), s_shared->keywordsPublished(md4));
+    const auto key = s_shared->keyOfFile(md4);
+    if (key)
+        details.insert(QLatin1StringView("ed3kKey"), ed3k::Ed3kHide::keyName(*key));
+    if (!root)
+        return;
+    QCborArray joins = Ed3kUploadsBridge::joinsOf(QByteArray(reinterpret_cast<const char*>(root->bytes.data()), qsizetype(root->bytes.size())));
+    // eD2K of a shared file: its `ed2k` ALIAS, not the eD2K download join
+    const auto entry = s_shared->entryOfRoot(*root);
+    for (qsizetype i = 0; i < joins.size(); ++i) {
+        QCborMap row = joins.at(i).toMap();
+        if (row.value(QStringLiteral("network")).toString() != QLatin1String("ed2k"))
+            continue;
+        row.remove(QStringLiteral("jobs"));
+        row.remove(QStringLiteral("reason"));
+        if (entry && entry->ed3kOnly) {
+            row.insert(QStringLiteral("state"), QStringLiteral("off"));
+            row.insert(QStringLiteral("reason"), QStringLiteral("noEd2kHash"));
+        } else if (key == ::ed3k::KeyKind::Anon) {
+            // hops.md §1: nothing names a file of the anonymous key for eD2K
+            row.insert(QStringLiteral("state"), QStringLiteral("skipped"));
+            row.insert(QStringLiteral("reason"), QStringLiteral("anonKey"));
+        } else {
+            row.insert(QStringLiteral("state"), s_shared->aliasPublished(md4) ? QStringLiteral("joined") : QStringLiteral("available"));
+        }
+        joins[i] = row;
+    }
+    if (!joins.isEmpty())
+        details.insert(QLatin1StringView("ed3kJoins"), joins);
 #endif
 }
 

@@ -155,6 +155,7 @@ private slots:
     void aSharedFileIsNotDownloadedAgain();
     void aDeclinedRootIsAddedPaused();
     void previewPartsComeFirst();
+    void renameAndAUrlSourceFromTheMenu();
     void cleanup() { QTest::qWait(10); }
 };
 
@@ -946,6 +947,40 @@ void tst_Ed3kDownloads::previewPartsComeFirst()
     QVERIFY(previewSeen);    // a video with its first part: Preview on
     QVERIFY(!previewEarly);
     QVERIFY(!d.info(a.root)->previewPossible);   // complete: Open File instead
+    d.stop();
+}
+
+// Transfers menu on an ed3k row: Mass Rename (the name to be, then the file on disk) and
+// Add Sources with a URL (as ws=)
+void tst_Ed3kDownloads::renameAndAUrlSourceFromTheMenu()
+{
+    const QByteArray data = payload(int(2 * kBlock + 5), 4);
+    Seeder a;
+    QVERIFY(a.start(data, QStringLiteral("r.bin")));
+    QTemporaryDir db;
+    Ed3kSession b;
+    QVERIFY(b.start(loopback(db.path())));
+    Ed3kDownloads d(b, db.path());
+    d.setSearchEnabled(false);
+    d.setDirs(QDir(db.path()).filePath(QStringLiteral("temp")), QDir(db.path()).filePath(QStringLiteral("in")));
+    d.start();
+    QSignalSpy done(&d, &Ed3kDownloads::completed);
+    QVERIFY(d.add(Ed3kDownloadSpec{a.root, std::uint64_t(data.size()), QStringLiteral("r.bin"), {}, {}, 0, true, 1}).has_value());
+    QVERIFY(d.rename(a.root, QStringLiteral("renamed.bin")).has_value());
+    QCOMPARE(d.info(a.root)->name, QStringLiteral("renamed.bin"));
+    QVERIFY(!d.rename(a.root, QString()).has_value());
+    QVERIFY(!d.addWebSource(a.root, QStringLiteral("ftp://192.0.2.1/r.bin")));
+    QVERIFY(d.addWebSource(a.root, QStringLiteral("http://192.0.2.1/r.bin")));
+    QVERIFY(d.resume(a.root));
+    d.addSourceTo(a.root, sourceOf(a.session));
+    QTRY_COMPARE_WITH_TIMEOUT(done.count(), 1, 60000);
+    const QString in = QDir(db.path()).filePath(QStringLiteral("in"));
+    QCOMPARE(d.info(a.root)->path, QDir(in).filePath(QStringLiteral("renamed.bin")));
+    QVERIFY(!d.addWebSource(a.root, QStringLiteral("http://192.0.2.1/r.bin")));   // complete
+    // complete: the file on disk
+    QVERIFY(d.rename(a.root, QStringLiteral("final.bin")).has_value());
+    QVERIFY(QFile::exists(QDir(in).filePath(QStringLiteral("final.bin"))));
+    QVERIFY(readFile(d.info(a.root)->path) == data);
     d.stop();
 }
 

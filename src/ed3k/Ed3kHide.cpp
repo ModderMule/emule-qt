@@ -141,6 +141,8 @@ void Ed3kHide::record(const ffi::Root& root, ffi::KeyKind key)
     scheduleSave();
     if (moved || key == ffi::KeyKind::Anon)
         emit changed();
+    if (moved)
+        emit keyMoved(root, key);
 }
 
 std::optional<ffi::KeyKind> Ed3kHide::keyOf(const ffi::Root& root) const

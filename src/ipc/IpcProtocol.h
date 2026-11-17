@@ -268,6 +268,11 @@ enum class IpcMsgType : int {
     /// hasSubfolders]...], home: string] or [false, error]. Folder pickers and share trees
     /// for a GUI on another host. tree: path and every folder below it (labels empty).
     ListFolders             = 298,
+    /// [value: string] -> [ok, error, listen: string, addresses: [string], notOwn: bool]
+    /// Moves the IPC server to ipc.listenAddress @p value now and saves it; "" only
+    /// reports where it listens ("*" = dual stack). notOwn: @p value is no address of this machine.
+    /// Changing it: local clients only.
+    ListenIpcAddress        = 299,
 
     // -- Download categories (268-270) ---------------------------------------
     //

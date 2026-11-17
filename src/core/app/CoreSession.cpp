@@ -2072,7 +2072,7 @@ void CoreSession::applyEd2kDisabled()
     if (thePrefs.disableEd2k() == m_ed2kOffApplied)
         return;
     m_ed2kOffApplied = thePrefs.disableEd2k();
-    // new files: hashed for eD2K again, or for ed3k alone (SharedFileList::ed3kOnlyFiles)
+    // ed3k-only files: hashed for eD2K now (KnownFile::isEd3kOnly); new ones follow the switch
     if (theApp.sharedFileList)
         theApp.sharedFileList->reload();
     if (thePrefs.disableEd2k()) {

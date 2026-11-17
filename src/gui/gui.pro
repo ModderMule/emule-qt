@@ -148,6 +148,8 @@ SOURCES += \
     dialogs/CommentEditPanel.cpp \
     dialogs/CommentsPanel.cpp \
     dialogs/CoreConnectDialog.cpp \
+    dialogs/CoreScriptDialog.cpp \
+    utils/CoreConnectScript.cpp \
     dialogs/DetailDialog.cpp \
     dialogs/RememberedSizeDialog.cpp \
     dialogs/FileDetailDialog.cpp \
@@ -293,6 +295,8 @@ HEADERS += \
     dialogs/CommentEditPanel.h \
     dialogs/CommentsPanel.h \
     dialogs/CoreConnectDialog.h \
+    dialogs/CoreScriptDialog.h \
+    utils/CoreConnectScript.h \
     dialogs/DetailDialog.h \
     dialogs/RememberedSizeDialog.h \
     dialogs/FileDetailDialog.h \
@@ -322,6 +326,7 @@ HEADERS += \
     dialogs/AddNzbUrlDialog.h \
     dialogs/MetaAccountDialog.h \
     utils/ClientIcons.h \
+    utils/BadgeIcons.h \
     utils/CountryFlags.h \
     utils/InputHistory.h \
     utils/MassRenameAction.h \

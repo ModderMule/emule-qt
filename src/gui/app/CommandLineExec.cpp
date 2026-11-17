@@ -11,6 +11,7 @@
 #include "app/IpcClient.h"
 #include "dialogs/DetailDialog.h"
 #include "dialogs/OptionsDialog.h"
+#include "panels/IrcPanel.h"
 #include "panels/KadPanel.h"
 #include "panels/TransferPanel.h"
 #ifdef EMULE_HAVE_BITTORRENT
@@ -175,6 +176,8 @@ void CommandLineExec::applyTabArgs(MainWindow& mainWindow) const
             mainWindow.kadPanel()->switchToSubTab(m_subtab);
         else if (m_activeTab == MainWindow::TabTransfers)
             mainWindow.transferPanel()->switchToSubTab(m_subtab);
+        else if (m_activeTab == MainWindow::TabIRC)
+            mainWindow.ircPanel()->switchToSubTab(m_subtab);
 #ifdef EMULE_HAVE_BITTORRENT
         else if (m_activeTab == MainWindow::TabTorrents && mainWindow.torrentPanel())
             mainWindow.torrentPanel()->switchToSubTab(m_subtab);

@@ -202,7 +202,7 @@ void AICHSyncThread::onIndexLoaded()
 
     if (m_sharedFiles && !isClosing()) {
         m_sharedFiles->forEachFile([&](KnownFile* file) {
-            if (file->isPartFile())
+            if (file->isPartFile() || file->isEd3kOnly())   // ed3k-only: no AICH
                 return;
 
             FileIdentifier& fileId = file->fileIdentifier();

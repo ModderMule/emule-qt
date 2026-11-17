@@ -198,8 +198,23 @@ void TestOptionsDialogSizing::dialogFitsOnALaptop()
     OptionsDialog dlg(nullptr, nullptr);
     QVERIFY2(dlg.minimumHeight() <= kDialogBudget,
              qPrintable(QStringLiteral("minimum height is %1").arg(dlg.minimumHeight())));
+    // Name the widest page: "too wide" alone is not actionable
+    QString widest;
+    if (QStackedWidget* stack = stackOf(dlg)) {
+        int most = 0;
+        for (int page = 0; page < stack->count(); ++page) {
+            // a page's scroll area carries the floor as minimumWidth
+            const QWidget* w0 = stack->widget(page);
+            const int w = std::max(w0->minimumWidth(), w0->minimumSizeHint().width());
+            if (w > most) {
+                most = w;
+                widest = QStringLiteral("; widest page %1 needs %2 px")
+                             .arg(QLatin1String(pageName(page))).arg(w);
+            }
+        }
+    }
     QVERIFY2(dlg.minimumWidth() <= 800,
-             qPrintable(QStringLiteral("minimum width is %1").arg(dlg.minimumWidth())));
+             qPrintable(QStringLiteral("minimum width is %1%2").arg(dlg.minimumWidth()).arg(widest)));
 }
 
 /// The sidebar carries Page values as opaque item ids, which is the whole reason the

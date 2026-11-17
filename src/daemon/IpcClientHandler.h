@@ -239,6 +239,7 @@ private:
     void handleSetFileShared(const Ipc::IpcMessage& msg);
     void handleBrowseDirectory(const Ipc::IpcMessage& msg);
     void handleListFolders(const Ipc::IpcMessage& msg);
+    void handleListenIpcAddress(const Ipc::IpcMessage& msg);
     void handleGetSharedDirState(const Ipc::IpcMessage& msg);
 
     // Download categories (268-270)

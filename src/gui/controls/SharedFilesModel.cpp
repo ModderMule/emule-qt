@@ -152,7 +152,7 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
         case ColFolder:
             return f.path;
         case ColFileId:
-            return f.hash.toUpper();
+            return f.fileId().toUpper();
         case ColAccepted:
             return QStringLiteral("%1 (%2)").arg(f.acceptedUploads).arg(f.allTimeAccepted);
         case ColArtist:  return f.artist;
@@ -186,7 +186,7 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
             "Complete Sources:\t%11\n"
             "Shared eD2K|Kad:\t%12\n"
             "Folder:\t%13")
-            .arg(f.fileName, f.hash, fileTypeText(f.fileType, f.fileName),
+            .arg(f.fileName, f.ed3kOnly ? QStringLiteral("-") : f.hash, fileTypeText(f.fileType, f.fileName),
                  uploadPriorityText(f.upPriority, f.isAutoUpPriority))
             .arg(f.requests).arg(f.allTimeRequests)
             .arg(f.acceptedUploads).arg(f.allTimeAccepted)
@@ -227,7 +227,7 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
         // eD2K first, Kad as the second key (SharedFilesCtrl.cpp:1208-1210, :1239-1245)
         case ColSharedNetworks:  return (f.publishedED2K ? 2 : 0) + (f.kadPublished ? 1 : 0);
         case ColFolder:          return f.path;
-        case ColFileId:          return f.hash.toLower();
+        case ColFileId:          return f.fileId().toLower();
         case ColAccepted:        return QVariant::fromValue(f.allTimeAccepted);
         case ColArtist:          return f.artist;
         case ColAlbum:           return f.album;

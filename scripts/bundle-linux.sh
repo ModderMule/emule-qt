@@ -141,23 +141,38 @@ if [ "$DEPLOY_QT" = true ]; then
     TOOLS_DIR="$BUILD_DIR/tools"
     mkdir -p "$TOOLS_DIR"
 
-    LINUXDEPLOY="$TOOLS_DIR/linuxdeploy-$ARCH.AppImage"
-    LINUXDEPLOY_QT="$TOOLS_DIR/linuxdeploy-plugin-qt-$ARCH.AppImage"
+    # Pinned + SHA-256 checked: "continuous" changed what got deployed between
+    # releases (networkinformation 2026-04, Wayland shells 2025-07). To bump: new
+    # tag + digest (gh api repos/linuxdeploy/<repo>/releases/tags/<tag>; the Qt
+    # plugin's assets carry no digest, hash the download).
+    LINUXDEPLOY_TAG="1-alpha-20251107-1"
+    LINUXDEPLOY_QT_TAG="1-alpha-20250213-1"
+    case "$ARCH" in
+        x86_64)
+            LINUXDEPLOY_SHA256="c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d"
+            LINUXDEPLOY_QT_SHA256="15106be885c1c48a021198e7e1e9a48ce9d02a86dd0a1848f00bdbf3c1c92724" ;;
+        aarch64)
+            LINUXDEPLOY_SHA256="620095110d693282b8ebeb244a95b5e911cf8f65f76c88b4b47d16ae6346fcff"
+            LINUXDEPLOY_QT_SHA256="bf1c24aff6d749b5cf423afad6f15abd4440f81dec1aab95706b25f6667cdcf1" ;;
+    esac
+    LINUXDEPLOY="$TOOLS_DIR/linuxdeploy-$LINUXDEPLOY_TAG-$ARCH.AppImage"
+    LINUXDEPLOY_QT="$TOOLS_DIR/linuxdeploy-plugin-qt-$LINUXDEPLOY_QT_TAG-$ARCH.AppImage"
 
-    # Download linuxdeploy if not cached
-    if [ ! -x "$LINUXDEPLOY" ]; then
-        echo "  Downloading linuxdeploy..."
-        curl -fsSL --retry 8 --retry-delay 15 --retry-all-errors -o "$LINUXDEPLOY" \
-            "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-$ARCH.AppImage"
-        chmod +x "$LINUXDEPLOY"
-    fi
-
-    if [ ! -x "$LINUXDEPLOY_QT" ]; then
-        echo "  Downloading linuxdeploy-plugin-qt..."
-        curl -fsSL --retry 8 --retry-delay 15 --retry-all-errors -o "$LINUXDEPLOY_QT" \
-            "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-$ARCH.AppImage"
-        chmod +x "$LINUXDEPLOY_QT"
-    fi
+    # Download unless cached; a cached copy is checked again
+    fetch_tool() {
+        local url="$1" sha="$2" dest="$3"
+        if [ ! -f "$dest" ] || ! echo "$sha  $dest" | sha256sum -c --quiet - >/dev/null 2>&1; then
+            echo "  Downloading $(basename "$dest")..."
+            curl -fsSL --retry 8 --retry-delay 15 --retry-all-errors -o "$dest" "$url"
+            echo "$sha  $dest" | sha256sum -c --quiet - \
+                || { echo "Error: SHA-256 mismatch for $url" >&2; rm -f "$dest"; exit 1; }
+        fi
+        chmod +x "$dest"
+    }
+    fetch_tool "https://github.com/linuxdeploy/linuxdeploy/releases/download/$LINUXDEPLOY_TAG/linuxdeploy-$ARCH.AppImage" \
+        "$LINUXDEPLOY_SHA256" "$LINUXDEPLOY"
+    fetch_tool "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/$LINUXDEPLOY_QT_TAG/linuxdeploy-plugin-qt-$ARCH.AppImage" \
+        "$LINUXDEPLOY_QT_SHA256" "$LINUXDEPLOY_QT"
 
     # AppImages need FUSE; in Docker/CI extract them instead.
     # Under QEMU emulation the AppImage runtime itself may fail (exit 127),
@@ -213,14 +228,17 @@ print(best if best >= 0 else '')
     if [ ! -d /dev/fuse ] && [ ! -e /dev/fuse ]; then
         echo "  FUSE not available — extracting AppImages..."
         cd "$TOOLS_DIR"
-        [ -d "squashfs-root-linuxdeploy" ] || extract_appimage "$LINUXDEPLOY" squashfs-root-linuxdeploy
-        [ -d "squashfs-root-qt-plugin" ]   || extract_appimage "$LINUXDEPLOY_QT" squashfs-root-qt-plugin
-        LINUXDEPLOY="$TOOLS_DIR/squashfs-root-linuxdeploy/AppRun"
+        # Tag in the dir name: a cached extraction of another version is not reused
+        LD_ROOT="squashfs-root-linuxdeploy-$LINUXDEPLOY_TAG"
+        QT_ROOT="squashfs-root-qt-plugin-$LINUXDEPLOY_QT_TAG"
+        [ -d "$LD_ROOT" ] || extract_appimage "$LINUXDEPLOY" "$LD_ROOT"
+        [ -d "$QT_ROOT" ] || extract_appimage "$LINUXDEPLOY_QT" "$QT_ROOT"
+        LINUXDEPLOY="$TOOLS_DIR/$LD_ROOT/AppRun"
         # Create a wrapper so linuxdeploy can discover the Qt plugin by name on PATH
         mkdir -p "$TOOLS_DIR/bin"
-        cat > "$TOOLS_DIR/bin/linuxdeploy-plugin-qt" <<'WRAPPER'
+        cat > "$TOOLS_DIR/bin/linuxdeploy-plugin-qt" <<WRAPPER
 #!/usr/bin/env bash
-exec "$(dirname "$0")/../squashfs-root-qt-plugin/AppRun" "$@"
+exec "\$(dirname "\$0")/../$QT_ROOT/AppRun" "\$@"
 WRAPPER
         chmod +x "$TOOLS_DIR/bin/linuxdeploy-plugin-qt"
         export PATH="$TOOLS_DIR/bin:$PATH"
@@ -273,8 +291,40 @@ DESKTOP
         find "$SQL_DRIVERS" -maxdepth 1 -type f ! -name 'libqsqlite*' -exec mv {} "$SQL_PARKED/" \;
     fi
 
+    # Wayland: the Qt plugin deploys libqxcb.so only, so a Wayland session ran the
+    # GUI on XWayland. Qt picks wayland itself on XDG_SESSION_TYPE=wayland and falls
+    # back to xcb when the plugin does not load. One libqwayland.so since Qt 6.10
+    # (client moved into qtbase), libqwayland-egl/-generic before.
+    QT_PLUGINS_SRC="$("$QMAKE" -query QT_INSTALL_PLUGINS 2>/dev/null || true)"
+    WAYLAND_PLATFORMS=""
+    for plugin in libqwayland.so libqwayland-egl.so libqwayland-generic.so; do
+        [ -f "$QT_PLUGINS_SRC/platforms/$plugin" ] || continue
+        WAYLAND_PLATFORMS="${WAYLAND_PLATFORMS:+$WAYLAND_PLATFORMS;}$plugin"
+    done
+    if [ -n "$WAYLAND_PLATFORMS" ]; then
+        export EXTRA_PLATFORM_PLUGINS="$WAYLAND_PLATFORMS${EXTRA_PLATFORM_PLUGINS:+;$EXTRA_PLATFORM_PLUGINS}"
+        # "waylandcompositor" is the plugin's switch for the client's shell,
+        # decoration and EGL integration plugins; the compositor lib is not needed
+        export EXTRA_QT_MODULES="waylandcompositor${EXTRA_QT_MODULES:+;$EXTRA_QT_MODULES}"
+        echo "  Wayland platform plugins: $WAYLAND_PLATFORMS"
+    else
+        echo "Warning: no Wayland platform plugin in $QT_PLUGINS_SRC/platforms — X11/XWayland only."
+    fi
+
+    # Network information backends: the pinned Qt plugin predates their deployer;
+    # shipped since 2026-04 via "continuous", keep them (deps deployed below)
+    EXTRA_DEPS=()
+    if [ -d "$QT_PLUGINS_SRC/networkinformation" ]; then
+        mkdir -p "$APPDIR/usr/plugins/networkinformation"
+        cp "$QT_PLUGINS_SRC/networkinformation"/*.so "$APPDIR/usr/plugins/networkinformation/"
+        EXTRA_DEPS=(--deploy-deps-only "$APPDIR/usr/plugins/networkinformation")
+    fi
+    # deps-only runs before the Qt plugin, which sets the Qt lib path itself
+    QT_LIBS_SRC="$("$QMAKE" -query QT_INSTALL_LIBS 2>/dev/null || true)"
+
     # Deploy Qt libs into AppDir without producing an AppImage
-    "$LINUXDEPLOY" --appdir "$APPDIR" --executable "$APPDIR/usr/bin/emulecored" --plugin qt
+    LD_LIBRARY_PATH="$QT_LIBS_SRC${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        "$LINUXDEPLOY" --appdir "$APPDIR" --executable "$APPDIR/usr/bin/emulecored" "${EXTRA_DEPS[@]}" --plugin qt
 
     restore_sql_drivers
     trap - EXIT
@@ -291,8 +341,37 @@ DESKTOP
         if [ -d "$STAGE_DIR/plugins/sqldrivers" ]; then
             find "$STAGE_DIR/plugins/sqldrivers" -type f ! -name 'libqsqlite*' -delete
         fi
+        # Wayland: server-buffer integrations and the non-desktop shells (IVI,
+        # qt-shell, fullscreen, wl_shell) are for Qt's own compositors
+        if [ -d "$STAGE_DIR/plugins/wayland-graphics-integration-client" ]; then
+            find "$STAGE_DIR/plugins/wayland-graphics-integration-client" -type f \
+                ! -name 'libqt-plugin-wayland-egl.so' -delete
+        fi
+        if [ -d "$STAGE_DIR/plugins/wayland-shell-integration" ]; then
+            find "$STAGE_DIR/plugins/wayland-shell-integration" -type f ! -name 'libxdg-shell.so' -delete
+        fi
+        rm -f "$STAGE_DIR/lib"/libQt6WlShellIntegration.so*
         echo "  Bundled $(find "$STAGE_DIR/plugins" -name '*.so' | wc -l | tr -d ' ') Qt plugins"
     fi
+    # libwayland-* stay the system's: Mesa's libEGL (never bundled) loads the same
+    # libs, and an older bundled copy breaks it (mesa issue 11316). A system
+    # without them has no Wayland session; the plugin fails to load, Qt uses xcb.
+    rm -f "$STAGE_DIR/lib"/libwayland-*.so*
+    # A platform plugin without its shell integration aborts at startup instead of
+    # falling back to xcb
+    if ls "$STAGE_DIR/plugins/platforms"/libqwayland*.so >/dev/null 2>&1 \
+        && [ ! -f "$STAGE_DIR/plugins/wayland-shell-integration/libxdg-shell.so" ]; then
+        echo "Error: Wayland platform plugin bundled without libxdg-shell.so" >&2
+        exit 1
+    fi
+    # Qt has the plugin but the deployer skipped it (EXTRA_* renamed upstream)
+    IFS=';' read -r -a wl_plugins <<< "$WAYLAND_PLATFORMS"
+    for plugin in "${wl_plugins[@]}"; do
+        if [ ! -f "$STAGE_DIR/plugins/platforms/$plugin" ]; then
+            echo "Error: $plugin is in Qt but was not deployed" >&2
+            exit 1
+        fi
+    done
 
     # Create qt.conf so emuleqt finds the bundled libs
     cat > "$STAGE_DIR/qt.conf" <<QTCONF
@@ -441,6 +520,29 @@ if [ "$UNBUNDLED" -ne 0 ]; then
     exit 1
 fi
 echo "  All direct dependencies bundled or base system libs."
+
+# Wayland plugins + the Qt libs only they pull in: a missing lib there fails
+# silently on a user's desktop (Qt falls back to xcb or aborts the session).
+# libwayland-*/libxkbcommon come from the system that runs the Wayland session.
+WAYLAND_ELFS=$(find "$STAGE_DIR/plugins/platforms" "$STAGE_DIR"/plugins/wayland-* "$STAGE_DIR/lib" \
+    \( -name 'libqwayland*.so' -o -path '*/wayland-*/*.so' -o -name 'libQt6Wayland*.so*' \) \
+    -type f 2>/dev/null || true)
+if [ -n "$WAYLAND_ELFS" ]; then
+    WAYLAND_SONAMES=" libwayland-client.so.0 libwayland-cursor.so.0 libwayland-egl.so.1 libxkbcommon.so.0 "
+    for elf in $WAYLAND_ELFS; do
+        for soname in $(readelf -d "$elf" | awk '/\(NEEDED\)/ { gsub(/[][]/, "", $NF); print $NF }'); do
+            [ -f "$STAGE_DIR/lib/$soname" ] && continue
+            case "$BASE_SONAMES$WAYLAND_SONAMES" in *" $soname "*) continue ;; esac
+            echo "  ${elf#"$STAGE_DIR"/} needs $soname: not bundled, not a Wayland system lib" >&2
+            UNBUNDLED=1
+        done
+    done
+    if [ "$UNBUNDLED" -ne 0 ]; then
+        echo "Error: Wayland plugins depend on libs users may not have (see above)." >&2
+        exit 1
+    fi
+    echo "  Wayland plugin dependencies bundled or system Wayland libs."
+fi
 
 # -- Audit glibc floor (only with GLIBC_MAX set, e.g. GLIBC_MAX=2.39) ---------
 # The newest GLIBC_x.y any shipped ELF needs is the oldest distro it runs on.

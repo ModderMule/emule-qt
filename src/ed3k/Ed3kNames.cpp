@@ -8,8 +8,10 @@
 #include "Ed3kSets.h"
 #include "Ed3kStore.h"
 
+#include "net/DohResolver.h"
 #include "utils/Log.h"
 
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
 #include <QDnsLookup>
@@ -119,6 +121,24 @@ void Ed3kNames::setDnsResolver(DnsResolver resolver)
 Ed3kNames::DnsResolver Ed3kNames::systemResolver()
 {
     return [](const QString& qname, DnsDone done) {
+        // behind a proxy: DoH through it, the local resolver never sees the name
+        if (const QString doh = activeDohUrl(); !doh.isEmpty()) {
+            auto cb = std::make_shared<DnsDone>(std::move(done));
+            dohQuery(doh, qname, dns::kTypeTXT, QCoreApplication::instance(),
+                     [cb](std::optional<QByteArray> body) {
+                         const auto txt = body ? dns::parseTxt(*body) : std::nullopt;
+                         if (!txt) {
+                             (*cb)(std::nullopt);
+                             return;
+                         }
+                         DnsAnswer a;
+                         for (const QByteArray& r : txt->records)
+                             a.records.emplace_back(r.constData(), std::size_t(r.size()));
+                         a.ttl = txt->ttl;
+                         (*cb)(std::move(a));   // secure stays false (§5.3)
+                     }, kDnsTimeoutMs);
+            return;
+        }
         auto* lookup = new QDnsLookup(QDnsLookup::TXT, qname);
         auto* timer = new QTimer(lookup);
         timer->setSingleShot(true);

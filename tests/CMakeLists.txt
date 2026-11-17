@@ -145,6 +145,7 @@ emule_add_test(tst_FileIdentifier   FOLDER "Crypto")
 
 # Module 29d: Networking
 emule_add_test(tst_Address            FOLDER "Net")
+emule_add_test(tst_DohResolver        FOLDER "Net")
 emule_add_test(tst_LocalIPv6         FOLDER "Net")
 emule_add_test(tst_IPv6SourcePin     FOLDER "Net")
 emule_add_test(tst_ConnectionChecker FOLDER "Net")
@@ -1355,6 +1356,21 @@ target_include_directories(tst_CategoryDialog PRIVATE
 target_link_libraries(tst_CategoryDialog PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
 
+# Core connect script: quoting, bash 3.2 run against a stub app, pwsh parse if present.
+emule_add_test(tst_CoreConnectScript FOLDER "Gui"
+    SOURCES tst_CoreConnectScript.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/CoreConnectScript.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CoreScriptDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp")
+target_include_directories(tst_CoreConnectScript PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_CoreConnectScript PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+
 # The Options window's height budget. QStackedLayout's minimum is the MAX over its
 # pages, so one page without a scroll area sets the window height for all eighteen --
 # and the sidebar's grouping must not drift from the Page enum that uistate.yml stores.
@@ -1365,6 +1381,8 @@ emule_add_test(tst_OptionsDialogSizing FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CoreScriptDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/CoreConnectScript.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsSearch.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kOptionsPages.cpp"
@@ -1623,6 +1641,8 @@ emule_add_test(tst_SmallScreenDialogs FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FirstStartWizard.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/MetaAccountDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CoreScriptDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/CoreConnectScript.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsSearch.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kOptionsPages.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/HosterCombo.cpp"

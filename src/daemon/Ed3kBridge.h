@@ -40,19 +40,18 @@ void setShared(ed3k::Ed3kShared* shared);
 
 /// File Details of an eD2K download (16 B MD4): `ed3kEnabled` (join on); while the file is
 /// tracked also `ed3kTracked`, `ed3kSearching`, `ed3kRoot` (hex), `ed3kPair` (0 unknown,
-/// 1 trusted, 2 false), `ed3kBytes`, `ed3kSources`, `ed3kTransferring`. Nothing without ed3k.
+/// 1 trusted, 2 false), `ed3kBytes`, `ed3kSources`, `ed3kTransferring`, `ed3kJoins`
+/// (Ed3kUploadsBridge::joinsOf) once its root is known. Nothing without ed3k.
 void appendDownloadInfo(QCborMap& details, const QByteArray& md4);
 
 /// The ed3k root (32 B) a joint eD2K download of @p md4 fetches from; empty: none.
 [[nodiscard]] QByteArray jointRoot(const QByteArray& md4);
 /// The same for a shared file: `ed3kEnabled` (sharing on), `ed3kRoot` once hashed,
-/// `ed3kAliasPublished`, `ed3kKeywordsPublished`.
+/// `ed3kAliasPublished`, `ed3kKeywordsPublished`, `ed3kKey` ("Node"/"Anonymous"),
+/// `ed3kJoins` (joinsOf; its eD2K row is the file's `ed2k` ALIAS here).
 void appendSharedInfo(QCborMap& details, const QByteArray& md4);
 /// Root (32 B) → MD4 of every file shared on ed3k; one pass, for a batch of lookups.
 [[nodiscard]] QHash<QByteArray, QByteArray> sharedRootIndex();
-/// Shared Files rows of files shared on ed3k alone (eD2K disabled: no MD4): `hash` is the
-/// root (64 hex), `ed3kOnly` true; open and open folder only.
-[[nodiscard]] QCborArray ed3kOnlySharedRows();
 /// Network Info: `ed3kTotal`, `ed3kHashing`, `ed3kPublished` while sharing is on.
 void appendSharedCounts(QCborMap& shared);
 

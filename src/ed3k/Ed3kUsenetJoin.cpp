@@ -995,6 +995,13 @@ void Ed3kUsenetJoin::onMemberVerified(const QString& itemId, int fileIndex, cons
     const auto& hashes = post->members[std::size_t(fileIndex)].hashes;
     if (!shareMember(ffi::SharedFile{root, size, name, std::nullopt, std::nullopt, ffi::Have::complete(), std::span{hashes}},
                      itemId, fileIndex)) {
+        // hops.md §1: left out, its root is under the anonymous key (logged): kept, so it
+        // joins once moved to the node key
+        if (skipped(root)) {
+            keepMember(itemId, fileIndex, root, size, QString::fromStdString(name));
+            keepMemberPaths(itemId, {{fileIndex, memberPath(itemId, fileIndex)}});
+            return;
+        }
         logEd3kWarning(QStringLiteral("ed3k usenet: cannot share file %1 of %2").arg(fileIndex).arg(itemId));
         return;
     }

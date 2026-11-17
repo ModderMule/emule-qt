@@ -71,8 +71,10 @@ QString linkName(const QString& link)
     return QUrlQuery(link.mid(link.indexOf(QLatin1Char('?')) + 1)).queryItemValue(QStringLiteral("dn"), QUrl::FullyDecoded).trimmed();
 }
 
-QCborMap roomToCbor(const Rooms::Room& r)
+QCborMap roomToCbor(const Rooms& rooms, const Rooms::Room& r)
 {
+    // admit/ban state for the moderator's menus (room.md §2.2, §2.3)
+    const bool askStatus = r.canModerate() && (r.closed || r.moderated);
     QCborArray mods;
     for (const auto& k : r.mods)
         mods.append(Rooms::keyText(k));
@@ -83,7 +85,14 @@ QCborMap roomToCbor(const Rooms::Room& r)
             {QStringLiteral("id"), memberIdOf(key)},
             {QStringLiteral("nick"), nick},
             {QStringLiteral("moderator"), r.isModerator(key)},
+            {QStringLiteral("admitted"), askStatus && (rooms.memberStatus(r.room, key) & ED3K_ROOM_MEMBER_ADMITTED) != 0},
         });
+    QCborArray bans;   // keys banned now by a held ban, for the ban list
+    if (r.canModerate())
+        for (const auto& b : rooms.bans(r.room))
+            bans.append(QCborMap{{QStringLiteral("key"), Rooms::keyText(b.member)},
+                                 {QStringLiteral("id"), memberIdOf(b.member)},
+                                 {QStringLiteral("until"), qint64(b.until)}});
     QCborArray muted;   // batch 13: member IDs muted here (room.md §6)
     for (const auto& id : r.muted)
         muted.append(hexOf(id));
@@ -108,6 +117,7 @@ QCborMap roomToCbor(const Rooms::Room& r)
         {QStringLiteral("mods"), mods},
         {QStringLiteral("members"), members},
         {QStringLiteral("muted"), muted},
+        {QStringLiteral("bans"), bans},
         {QStringLiteral("notAdmitted"), r.notAdmitted},
         {QStringLiteral("key"), ed3k::Ed3kHide::keyName(r.key)},   // hops.md §1: shown
         {QStringLiteral("waitingHide"), r.waitingHide},
@@ -118,7 +128,7 @@ QCborMap roomsToCbor(const Rooms& rooms)
 {
     QCborArray list;
     for (const auto& [room, r] : rooms.rooms())
-        list.append(roomToCbor(r));
+        list.append(roomToCbor(rooms, r));
     return QCborMap{{QStringLiteral("running"), rooms.isRunning()}, {QStringLiteral("rooms"), list}};
 }
 

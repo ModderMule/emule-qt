@@ -70,6 +70,7 @@ QCborMap itemToCbor(const ed3k::Ed3kHosterJoin::Item& it)
                     {QStringLiteral("reasonArg"), it.reasonArg},
                     {QStringLiteral("waitUntil"), it.waitUntil},
                     {QStringLiteral("verified"), it.verified},
+                    {QStringLiteral("muxed"), it.muxed},
                     {QStringLiteral("file"), it.file},
                     {QStringLiteral("root"), it.rootHex},
                     {QStringLiteral("added"), it.added},
@@ -359,6 +360,9 @@ QCborMap resultToCbor(const ed3k::ResolverEvent& r)
         out.insert(QStringLiteral("codeText"), r.text);
         out.insert(QStringLiteral("codeTitle"), r.name);
         out.insert(QStringLiteral("timeout"), r.timeoutS);
+        // the same login asks again: the last code was not taken (expired, an older mail's)
+        if (r.count > 1)
+            out.insert(QStringLiteral("codeAgain"), true);
     }
     return out;
 }
@@ -602,6 +606,11 @@ UsenetStreamSource streamFrom([[maybe_unused]] const QString& id, [[maybe_unused
         return src;
     }
     src.complete = item->state == State::Complete;
+    // HLS/DASH muxed at the end, no peers' blocks: nothing to play before it is done
+    if (item->muxed && !item->verified && !src.complete) {
+        src.notSeekableReason = QStringLiteral("Stream download (HLS/DASH): playable once complete");
+        return src;
+    }
     src.totalSize = qint64(item->size);
     if (!fetch) {
         src.pieces = {{item->file, 0, 0, 0}};   // whatever is on disk

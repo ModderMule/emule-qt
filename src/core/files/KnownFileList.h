@@ -116,7 +116,8 @@ private:
     bool loadCancelledFiles();
     /// What reading one .met file came to. Entries read before damage stay loaded.
     enum class MetRead { Ok, Missing, Damaged };
-    MetRead readKnownMet(const QString& filePath);
+    /// @p ed3kOnly: known_ed3k.met (root ahead of each record)
+    MetRead readKnownMet(const QString& filePath, bool ed3kOnly = false);
     MetRead readCancelledMet(const QString& filePath);
     void saveCancelledFiles();
     MD4Key makeCancelledKey(const uint8* hash) const;

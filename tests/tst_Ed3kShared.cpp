@@ -73,9 +73,6 @@ public:
                 return e;
         return std::nullopt;
     }
-    /// eD2K disabled: listed without an MD4
-    std::vector<SharedEntry> only;
-    std::vector<SharedEntry> ed3kOnlyFiles() const override { return only; }
 };
 
 /// A join of the same node that shares a file (a landed hoster/Usenet file is its join's).
@@ -923,16 +920,16 @@ void tst_Ed3kShared::aSideHashIsSharedWithoutASecondRead()
     FakeSource src;
     Ed3kShared shared(a, src, da.path());
     const SideHasherFactory factory = shared.sideHasherFactory(pipeFrom);
-    QVERIFY(!factory(path, quint64(data.size())));   // stopped: no hasher
+    QVERIFY(!factory(path, quint64(data.size()), false));   // stopped: no hasher
     shared.start();
-    QVERIFY(!factory(path, 0));
+    QVERIFY(!factory(path, 0, true));
     {
         // eD2K failed mid-file: dropped without finish(), nothing hangs
-        auto dropped = factory(path, quint64(data.size()));
+        auto dropped = factory(path, quint64(data.size()), false);
         dropped->update({reinterpret_cast<const std::byte*>(data.constData()), std::size_t(data.size())});
     }
 
-    auto side = factory(path, quint64(data.size()));
+    auto side = factory(path, quint64(data.size()), false);
     QVERIFY(side);
     // in eD2K's 64 KiB reads
     for (qsizetype at = 0; at < data.size(); at += 64 * 1024) {
@@ -966,7 +963,7 @@ void tst_Ed3kShared::aStaleSideHashIsHashedAgain()
     FakeSource src;
     Ed3kShared shared(a, src, da.path());
     shared.start();
-    auto side = shared.sideHasherFactory()(path, quint64(data.size()));
+    auto side = shared.sideHasherFactory()(path, quint64(data.size()), false);
     QVERIFY(side);
     side->update({reinterpret_cast<const std::byte*>(data.constData()), std::size_t(data.size())});
     const QByteArray md4(16, char(0x52));
@@ -1018,8 +1015,8 @@ int envInt(const char* name, int fallback)
 
 } // namespace
 
-// eD2K disabled: a file without MD4 is served and published by root, no ed2k ALIAS; eD2K on
-// again: listed with its MD4, the root is taken over without a second read
+// eD2K disabled: the share list keys a file by its root's head (KnownFile::isEd3kOnly), the
+// side hasher gives that root with ed3k off too; shared without an ed2k name or ALIAS
 void tst_Ed3kShared::ed3kOnlyFilesAreSharedWithoutAnEd2kName()
 {
     const QByteArray data = payload(int(kBlock + 777), 7);
@@ -1027,41 +1024,34 @@ void tst_Ed3kShared::ed3kOnlyFilesAreSharedWithoutAnEd2kName()
     QVERIFY(da.isValid());
     const QString path = QDir(da.path()).filePath(QStringLiteral("only.bin"));
     QVERIFY(writeFile(path, data));
+    const auto root = rootOf(data);
+    const QByteArray rootBytes(reinterpret_cast<const char*>(root.bytes.data()), qsizetype(root.bytes.size()));
     Ed3kSession a;
     QVERIFY(a.start(loopback(da.path())));
     FakeSource src;
-    const QByteArray key = Ed3kShared::pathKeyOf(path);
-    QVERIFY(key.size() != 16);
-    src.only.push_back(SharedEntry{key, path, QStringLiteral("only.bin"), std::uint64_t(data.size())});
     {
         Ed3kShared shared(a, src, da.path());
-        QSignalSpy spy(&shared, &Ed3kShared::fileShared);
-        shared.start();
-        QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
-        QCOMPARE(*shared.rootOf(key), rootOf(data));
-        QVERIFY(shared.holdsRoot(rootOf(data)));
-        QVERIFY(!shared.aliasPublished(key));
-        QVERIFY(shared.keywordsPublished(key));
-        QCOMPARE(shared.counts().published, std::size_t(1));
-        // the list's signals: gone and back
-        shared.onEd3kOnlyRemoved(path);
-        QVERIFY(!shared.rootOf(key) || !shared.holdsRoot(rootOf(data)));
-        shared.onEd3kOnlyAdded(path, quint64(data.size()));
-        QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 2, 20000);
-        shared.stop();
-        eMule::BackgroundFileWriter::instance().flush();
+        const SideHasherFactory factory = shared.sideHasherFactory();
+        QVERIFY(!factory(path, quint64(data.size()), false));   // not serving
+        auto side = factory(path, quint64(data.size()), true);
+        QVERIFY(side);
+        side->update({reinterpret_cast<const std::byte*>(data.constData()), std::size_t(data.size())});
+        QCOMPARE(side->root(), rootBytes);
+        side->finish(rootBytes.left(16), path, quint64(data.size()), 0);   // stopped: nothing kept
+        QCOMPARE(shared.hashCount(), 0);
     }
-    // eD2K back on: the share list hashed it (MD4), the root comes from the cache
-    src.only.clear();
-    const QByteArray md4(16, char(0x71));
-    src.entries.push_back(SharedEntry{md4, path, QStringLiteral("only.bin"), std::uint64_t(data.size())});
+    SharedEntry e{rootBytes.left(16), path, QStringLiteral("only.bin"), std::uint64_t(data.size())};
+    e.ed3kOnly = true;
+    src.entries.push_back(e);
     Ed3kShared shared(a, src, da.path());
     QSignalSpy spy(&shared, &Ed3kShared::fileShared);
     shared.start();
-    QCOMPARE(spy.count(), 1);
-    QCOMPARE(shared.hashCount(), 0);
-    QCOMPARE(*shared.rootOf(md4), rootOf(data));
-    QVERIFY(shared.aliasPublished(md4));
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+    QCOMPARE(*shared.rootOf(e.md4), root);
+    QVERIFY(shared.holdsRoot(root));
+    QVERIFY(!shared.aliasPublished(e.md4));
+    QVERIFY(shared.keywordsPublished(e.md4));
+    QCOMPARE(shared.counts().published, std::size_t(1));
     shared.stop();
 }
 
@@ -1207,7 +1197,7 @@ void tst_Ed3kShared::benchHashRun()
                 DiskLoadLimiter::lowerThisThread();
                 for (const auto& e : disk) {
                     const QFileInfo fi(e.path);
-                    std::unique_ptr<SideHash> side = factory ? factory(e.path, e.size) : nullptr;
+                    std::unique_ptr<SideHash> side = factory ? factory(e.path, e.size, false) : nullptr;
                     KnownFile kf;
                     if (!kf.createFromFile(fi.absolutePath(), fi.fileName(), {}, nullptr, nullptr, nullptr, side.get()))
                         continue;

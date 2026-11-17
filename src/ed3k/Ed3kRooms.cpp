@@ -397,6 +397,7 @@ ffi::Result<QString> Ed3kRooms::admit(const ffi::Room& room, const ffi::Key32& m
     if (!item)
         return std::unexpected(item.error());
     logEd3k(QStringLiteral("ed3k: room %1: member %2 admitted").arg(roomHex(room), keyText(member).left(8)));
+    emit roomsChanged();   // admitted/bans of the rows
     return admitText(room, item->bytes());
 }
 
@@ -435,7 +436,27 @@ ffi::Result<> Ed3kRooms::ban(const ffi::Room& room, const ffi::Key32& member, st
     until = std::min(until, t.unixS + kBanMax);
     auto ok = e->roomBan(*key, t, room, member, until);
     m_session.pump();
+    if (ok)
+        emit roomsChanged();   // admitted/bans of the rows
     return ok;
+}
+
+std::uint32_t Ed3kRooms::memberStatus(const ffi::Room& room, const ffi::Key32& member) const
+{
+    auto* e = m_session.engine();
+    const auto key = keyOf(room);
+    if (!e || !key)
+        return 0;
+    return e->roomMemberStatus(*key, m_session.now(), room, member).value_or(0);
+}
+
+std::vector<ffi::Engine::RoomBan> Ed3kRooms::bans(const ffi::Room& room) const
+{
+    auto* e = m_session.engine();
+    const auto key = keyOf(room);
+    if (!e || !key)
+        return {};
+    return e->roomBans(*key, m_session.now(), room).value_or(std::vector<ffi::Engine::RoomBan>{});
 }
 
 ffi::Result<> Ed3kRooms::lift(const ffi::Room& room, const ffi::Key32& member)
@@ -639,6 +660,7 @@ void Ed3kRooms::onEventPolled(const ffi::Event& ev, ffi::KeyKind key, bool* hand
                 emit postsRemoved(bytesOf(b->room.bytes), ids);
             }
             noticeOf(b->room, Notice::Banned, 0, false, bytesOf(b->member));
+            emit roomsChanged();   // present and bans of the row
         }
     } else if (const auto* g = std::get_if<e::RoomGeneration>(&ev)) {
         *handled = true;
@@ -663,9 +685,12 @@ void Ed3kRooms::onEventPolled(const ffi::Event& ev, ffi::KeyKind key, bool* hand
     } else if (const auto* j = std::get_if<e::RoomJoined>(&ev)) {
         *handled = true;
         if (Room* r = roomOf(j->room)) {
+            // flag: a re-join, the room was joined before (this run, or posts kept from a past one)
+            const bool again = r->everJoined || !r->posts.empty();
             r->joined = true;
+            r->everJoined = true;
             r->notAdmitted = false;   // a member took us (admitted, #17)
-            noticeOf(j->room, Notice::Joined, 0, false, {});
+            noticeOf(j->room, Notice::Joined, 0, again, {});
             emit roomsChanged();
         }
     } else if (const auto* l = std::get_if<e::RoomLeft>(&ev)) {

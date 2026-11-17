@@ -450,6 +450,15 @@ public:
     [[nodiscard]] QString proxyPassword() const;
     void setProxyPassword(const QString& val);
 
+    /// DoH endpoint for country-flag lookups while a proxy is set (DohResolver.h);
+    /// "" = off: no flags for names then. An invalid URL falls back to the default.
+    [[nodiscard]] QString proxyDohUrl() const;
+    void setProxyDohUrl(const QString& val);
+    /// User-added DoH endpoints offered beside the built-in ones (valid, unique, no built-ins).
+    [[nodiscard]] QStringList proxyDohUrls() const;
+    void setProxyDohUrls(const QStringList& val);
+    [[nodiscard]] static QStringList cleanDohUrls(const QStringList& urls);
+
     // -- Directories ----------------------------------------------------------
 
     [[nodiscard]] QString incomingDir() const;
@@ -2186,6 +2195,20 @@ public:
 
     [[nodiscard]] bool showSmileys() const;
     void setShowSmileys(bool val);
+
+    /// Chats (friends, IRC, ed3k rooms): what a new message does while not on screen.
+    enum ChatAlert : int { ChatAlertNever = 0, ChatAlertMention = 1, ChatAlertAll = 2 };
+    [[nodiscard]] bool chatSound() const;
+    void setChatSound(bool val);
+    [[nodiscard]] int chatAlert() const;
+    void setChatAlert(int val);
+    [[nodiscard]] bool chatUnreadBadge() const;
+    void setChatUnreadBadge(bool val);
+    [[nodiscard]] bool chatPlainLinks() const;
+    void setChatPlainLinks(bool val);
+    /// ed3k room moderators marked by a gold star; off: the IRC "@"
+    [[nodiscard]] bool chatModStar() const;
+    void setChatModStar(bool val);
 
     [[nodiscard]] bool indicateRatings() const;
     void setIndicateRatings(bool val);

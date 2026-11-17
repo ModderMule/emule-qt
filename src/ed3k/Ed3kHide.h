@@ -134,6 +134,9 @@ signals:
     void stopped();
     /// Running, paths or the key of a file changed (PushEd3kHideChanged).
     void changed();
+    /// A recorded file moved to @p key (the user was asked, §1): joins that left it out
+    /// for the anonymous key take it again (Ed3kJoinBase::rejoinSkipped).
+    void keyMoved(const ::ed3k::Root& root, ::ed3k::KeyKind key);
 
 private:
     /// The anonymous node started or stopped as the settings say.

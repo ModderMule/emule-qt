@@ -128,6 +128,8 @@ private slots:
     void markDirty();
 
 private:
+    /// General › Core button: CoreScriptDialog for the core in use
+    void createConnectScript();
     void editFilenameCleanups();
     /// Files page button: confirm, then have the core rehash every shared file.
     void rehashAllSharedFiles();
@@ -310,6 +312,13 @@ private:
     [[nodiscard]] int geoIpSourceSelection() const;
     /// Archives box: one password per line, blank lines dropped
     [[nodiscard]] QStringList archivePasswordLines() const;
+    /// Proxy page DoH combo: Off, the built-in endpoints, then @p custom; selects @p current
+    void fillProxyDohCombo(const QString& current, const QStringList& custom);
+    /// The combo's URL, "" = Off (not validated)
+    [[nodiscard]] QString proxyDohUrlFromCombo() const;
+    /// User-added URLs in the combo, plus a valid typed one
+    [[nodiscard]] QStringList proxyDohCustomUrls() const;
+    void updateProxyDohRemoveButton();
 
     static QIcon makePadlockIcon();
 
@@ -447,6 +456,9 @@ private:
     QLineEdit*  m_proxyUserEdit = nullptr;
     QLineEdit*  m_proxyPasswordEdit = nullptr;
     QCheckBox*  m_proxyUsenetCheck = nullptr;
+    QLabel*     m_proxyDohLabel = nullptr;
+    QComboBox*  m_proxyDohCombo = nullptr;
+    QPushButton* m_proxyDohRemoveBtn = nullptr;
 
     // Server page controls
     QSpinBox*  m_deadServerRetriesSpin = nullptr;
@@ -546,6 +558,11 @@ private:
     QCheckBox* m_showSmileysCheck = nullptr;
     QLineEdit* m_commentFilterEdit = nullptr;
     QCheckBox* m_indicateRatingsCheck = nullptr;
+    QCheckBox* m_chatSoundCheck = nullptr;
+    QComboBox* m_chatAlertCombo = nullptr;
+    QCheckBox* m_chatUnreadBadgeCheck = nullptr;
+    QCheckBox* m_chatPlainLinksCheck = nullptr;
+    QCheckBox* m_chatModStarCheck = nullptr;
 
     // Security page controls
     QPushButton*  m_reloadIPFilterBtn = nullptr;

@@ -350,14 +350,16 @@ QWidget* FileDetailDialog::createGeneralTab(const QCborMap& d)
     if (!filePath.isEmpty())
         addRow(tr("File Path"), filePath);
 
-    addRow(tr("Hash (MD4)"), str(d, QLatin1StringView("hash")));
+    // ed3k-only: hashed while eD2K was disabled, `hash` is no MD4
+    const bool ed3kOnly = d.value(QLatin1StringView("ed3kOnly")).toBool();
+    addRow(tr("Hash (MD4)"), ed3kOnly ? tr("None (hashed while eD2K was disabled)") : str(d, QLatin1StringView("hash")));
 
     const QString aich = str(d, QLatin1StringView("aichHash"));
-    if (!aich.isEmpty())
+    if (!aich.isEmpty() && !ed3kOnly)
         addRow(tr("AICH Hash"), aich);
 
     // A file shared on ed3k too: its BLAKE3 root (hashed here) and what is published
-    if (d.value(QLatin1StringView("ed3kEnabled")).toBool()) {
+    if (d.value(QLatin1StringView("ed3kEnabled")).toBool() || ed3kOnly) {
         const QString root = str(d, QLatin1StringView("ed3kRoot"));
         addRow(tr("BLAKE3 Hash"), root.isEmpty() ? tr("Not hashed yet") : root);
         QStringList published;
@@ -366,6 +368,11 @@ QWidget* FileDetailDialog::createGeneralTab(const QCborMap& d)
         if (d.value(QLatin1StringView("ed3kKeywordsPublished")).toBool())
             published << tr("Keywords");
         addRow(tr("Published on ed3k"), published.isEmpty() ? tr("No") : published.join(QStringLiteral(", ")));
+        if (const QString key = str(d, QLatin1StringView("ed3kKey")); !key.isEmpty())
+            addRow(tr("Key"), ed3kKeyText(key));
+        // every network, joined or not, and why one was left out (hops.md §1)
+        if (const QString joins = ed3kJoinsText(d.value(QLatin1StringView("ed3kJoins")).toArray()); !joins.isEmpty())
+            addRow(tr("Joins"), joins);
     }
 
     const qint64 fileSize = num(d, QLatin1StringView("fileSize"));
@@ -559,6 +566,8 @@ QWidget* FileDetailDialog::createDownloadGeneralTab(const QCborMap& d)
         ed3k.pair(tr("Key"), ed3kKeyText(str(d, QLatin1StringView("ed3kKey"))));
         if (!aliases.isEmpty())
             ed3k.wide(tr("Also known as"), aliases.join(u'\n'));
+        if (const QString joins = ed3kJoinsText(d.value(QLatin1StringView("ed3kJoins")).toArray()); !joins.isEmpty())
+            ed3k.wide(tr("Joins"), joins);
     }
 
     // ── ed3k: the eD2K download joined from ed3k (§14.2), not on MFC's page
@@ -580,6 +589,9 @@ QWidget* FileDetailDialog::createDownloadGeneralTab(const QCborMap& d)
         ed3k.pair(tr("Transferred"), sizeAndShare(count("ed3kBytes"), fileSize));
         if (!multi && !aliases.isEmpty())
             ed3k.wide(tr("Also known as"), aliases.join(u'\n'));
+        if (!multi)
+            if (const QString joins = ed3kJoinsText(d.value(QLatin1StringView("ed3kJoins")).toArray()); !joins.isEmpty())
+                ed3k.wide(tr("Joins"), joins);
     }
 
     layout->addStretch(1);

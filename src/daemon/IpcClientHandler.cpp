@@ -16,6 +16,8 @@
 #include "CoreNotifierBridge.h"
 #include "SharedFileRows.h"
 #include "DaemonApp.h"
+#include "IpcServer.h"
+#include "net/OwnAddress.h"
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kStore.h"
 #endif
@@ -544,6 +546,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::SetFileShared:        handleSetFileShared(msg); break;
     case IpcMsgType::BrowseDirectory:      handleBrowseDirectory(msg); break;
     case IpcMsgType::ListFolders:          handleListFolders(msg); break;
+    case IpcMsgType::ListenIpcAddress:     handleListenIpcAddress(msg); break;
     case IpcMsgType::GetSharedDirState:    handleGetSharedDirState(msg); break;
     case IpcMsgType::GetCategories:        handleGetCategories(msg); break;
     case IpcMsgType::SetCategories:        handleSetCategories(msg); break;
@@ -864,6 +867,11 @@ void IpcClientHandler::handleRenameFiles(const IpcMessage& msg)
     for (const QCborValue& v : msg.fieldArray(0)) {
         const QCborArray pair = v.toArray();
         const QString hash = pair.at(0).toString();
+        if (hash.size() == 64) {   // an ed3k download's root
+            const QString error = Ed3kDownloadsBridge::rename(hash, pair.at(1).toString());
+            results.append(QCborArray{hash, error.isEmpty(), error});
+            continue;
+        }
         const ops::Status st = ops::renameFile(hash, pair.at(1).toString());
         results.append(QCborArray{hash, st.ok(), st.message});
     }
@@ -1612,17 +1620,10 @@ void IpcClientHandler::handleGetSharedFiles(const IpcMessage& msg)
         files.append(sharedFileRow(*it, rules, loadIt != loads.end() ? loadIt->second : SharedFileLoad{}));
     }
 
-    // files shared on ed3k alone (eD2K disabled): keyed by root, so after the MD4 cursor's
-    // pages, all on the last one
-    const QCborArray ed3kOnly = Ed3kBridge::ed3kOnlySharedRows();
-    if (count == remaining)
-        for (const QCborValue& row : ed3kOnly)
-            files.append(row);
-
     QCborMap result;
     result.insert(QStringLiteral("files"), files);
     result.insert(QStringLiteral("more"), count < remaining);
-    result.insert(QStringLiteral("total"), static_cast<qint64>(all.size()) + ed3kOnly.size());
+    result.insert(QStringLiteral("total"), static_cast<qint64>(all.size()));
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(result)));
 }
 
@@ -2130,6 +2131,14 @@ void stepPartImport(const QString& hashHex)
 
 void IpcClientHandler::handleAddDownloadSource(const IpcMessage& msg)
 {
+    // an ed3k download (64 hex root): a URL source alone, as ws= (no address:port of a node)
+    if (msg.fieldString(0).size() == 64) {
+        if (msg.fieldBool(1) && Ed3kDownloadsBridge::addWebSource(msg.fieldString(0), msg.fieldString(2)))
+            sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+        else
+            sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("The source was not accepted")));
+        return;
+    }
     PartFile* file = partFileFor(msg.fieldString(0));
     if (!file || file->isStopped()) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found or stopped")));
@@ -3870,6 +3879,75 @@ void IpcClientHandler::handleListFolders(const IpcMessage& msg)
 }
 
 // ---------------------------------------------------------------------------
+// handleListenIpcAddress — where the IPC server listens; move it now
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleListenIpcAddress(const IpcMessage& msg)
+{
+    QString value = msg.fieldString(0).trimmed();
+    if (value.startsWith(u'[') && value.endsWith(u']'))
+        value = value.mid(1, value.size() - 2);
+    auto* server = qobject_cast<IpcServer*>(parent());
+    const int seqId = msg.seqId();
+    const auto reply = [this, server, seqId](bool ok, const QString& error, bool notOwn) {
+        QCborArray addrs;
+        if (server)
+            for (const QHostAddress& a : server->listenAddresses())   // dual stack reads "0.0.0.0"
+                addrs.append(a == QHostAddress(QHostAddress::Any) ? QStringLiteral("*") : a.toString());
+        IpcMessage resp = IpcMessage::makeResult(seqId, ok, error);
+        resp.append(thePrefs.ipcListenAddress());
+        resp.append(addrs);
+        resp.append(notOwn);
+        sendMessage(resp);
+    };
+    if (value.isEmpty() || !server) {
+        reply(server != nullptr, QString(), false);
+        return;
+    }
+    if (!m_isLocal) {
+        reply(false, QStringLiteral("Only a GUI on the core's computer can change this"), false);
+        return;
+    }
+    const auto apply = [server, value, reply](const QList<QHostAddress>& addrs) {
+        QString error;
+        if (!server->switchListen(addrs, &error)) {
+            reply(false, error, false);
+            return;
+        }
+        thePrefs.setIpcListenAddress(value);
+        thePrefs.save();
+        logInfo(QStringLiteral("IPC listen address now %1").arg(value));
+        emit server->listenHostChanged(value);
+        reply(true, QString(), false);
+    };
+    const QHostAddress addr(value);
+    if (value == u'*' || !addr.isNull()) {
+        if (!addr.isNull() && !addr.isLoopback() && addr != QHostAddress::AnyIPv4
+            && addr != QHostAddress::AnyIPv6 && !OwnAddress::isOwn(addr)) {
+            reply(false, QStringLiteral("%1 is no address of this computer").arg(value), true);
+            return;
+        }
+        apply({Preferences::ipcBindAddressOf(value)});
+        return;
+    }
+    // A name: its own addresses plus loopback, as at start. DNS off the core thread.
+    const QPointer<IpcClientHandler> self(this);
+    QThreadPool::globalInstance()->start([self, value, apply, reply] {
+        const auto own = OwnAddress::ownBindAddressesOf(value, thePrefs.ipcListenTemporaryIpv6());
+        QMetaObject::invokeMethod(QCoreApplication::instance(), [self, value, own, apply, reply] {
+            if (!self)
+                return;
+            if (!own)
+                reply(false, QStringLiteral("%1 did not resolve in time").arg(value), false);
+            else if (own->isEmpty())
+                reply(false, QStringLiteral("%1 is no address of this computer").arg(value), true);
+            else
+                apply(QList{QHostAddress(QHostAddress::LocalHost)} + *own);
+        });
+    });
+}
+
+// ---------------------------------------------------------------------------
 // handleBrowseDirectory — one directory's files with their share state
 // ---------------------------------------------------------------------------
 
@@ -4389,6 +4467,10 @@ void IpcClientHandler::handleGetSharedFileDetails(const IpcMessage& msg)
     } else {
         details.insert(QLatin1StringView("dataPath"), kf->filePath());
         Ed3kBridge::appendSharedInfo(details, QByteArray(reinterpret_cast<const char*>(kf->fileHash()), 16));
+        if (kf->isEd3kOnly()) {   // no eD2K hash; its root known with ed3k off too
+            details.insert(QLatin1StringView("ed3kOnly"), true);
+            details.insert(QLatin1StringView("ed3kRoot"), QString::fromLatin1(kf->ed3kOnlyRoot().toHex()));
+        }
     }
     details.insert(QLatin1StringView("path"), QFileInfo(kf->filePath()).absolutePath());
 
@@ -4625,6 +4707,14 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setProxyUser(val.toString());
     else if (key == QStringLiteral("proxyPassword"))
         thePrefs.setProxyPassword(val.toString());
+    else if (key == QStringLiteral("proxyDohUrl"))
+        thePrefs.setProxyDohUrl(val.toString());
+    else if (key == QStringLiteral("proxyDohUrls")) {
+        QStringList urls;
+        for (const QCborValue& u : val.toArray())
+            urls << u.toString();
+        thePrefs.setProxyDohUrls(urls);
+    }
     // Server
     else if (key == QStringLiteral("safeServerConnect"))
         thePrefs.setSafeServerConnect(val.toBool());
@@ -5309,6 +5399,16 @@ bool IpcClientHandler::applyPreferenceC(const QString& key, const QCborValue& va
         thePrefs.setShowSmileys(val.toBool());
     else if (key == QStringLiteral("indicateRatings"))
         thePrefs.setIndicateRatings(val.toBool());
+    else if (key == QStringLiteral("chatSound"))
+        thePrefs.setChatSound(val.toBool());
+    else if (key == QStringLiteral("chatAlert"))
+        thePrefs.setChatAlert(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("chatUnreadBadge"))
+        thePrefs.setChatUnreadBadge(val.toBool());
+    else if (key == QStringLiteral("chatPlainLinks"))
+        thePrefs.setChatPlainLinks(val.toBool());
+    else if (key == QStringLiteral("chatModStar"))
+        thePrefs.setChatModStar(val.toBool());
 
     else
         return false;

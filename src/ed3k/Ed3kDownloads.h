@@ -173,6 +173,11 @@ public:
     bool cancel(const ::ed3k::Root& root);
     bool setPriority(const ::ed3k::Root& root, int priority);
     bool setCategory(const ::ed3k::Root& root, int category);
+    /// Rename (Mass Rename): an unfinished download's file name to be, a complete one's file
+    /// on disk. The error is a user-visible text.
+    std::expected<void, QString> rename(const ::ed3k::Root& root, const QString& name);
+    /// Add Sources: an http(s) URL of the whole file (as ws=); false: no such running download.
+    bool addWebSource(const ::ed3k::Root& root, const QString& url);
     /// The file's own preview flag (eMule's per-file switch; the option covers every file).
     bool setPreviewPrio(const ::ed3k::Root& root, bool on);
     /// A player reads from @p offset (preview stream, "Enable seeking in downloads"): end

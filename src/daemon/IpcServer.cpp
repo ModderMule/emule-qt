@@ -82,6 +82,37 @@ void IpcServer::relisten(const QList<QHostAddress>& addresses)
     }
 }
 
+bool IpcServer::switchListen(const QList<QHostAddress>& addresses, QString* error)
+{
+    // Close first: our own loopback listener would make the wildcard look held
+    const QList<QHostAddress> old = listenAddresses();
+    auto closing = std::move(m_tcpServers);
+    m_tcpServers.clear();
+    for (auto& server : closing) {
+        server->close();
+        server.release()->deleteLater();   // may hold sockets mid-handshake
+    }
+    QString firstError;
+    for (const QHostAddress& address : addresses) {
+        QString e;
+        if (openListener(address, &e))
+            logInfo(QStringLiteral("IPC server: now listening on %1").arg(address.toString()));
+        else if (firstError.isEmpty())
+            firstError = e;
+    }
+    if (!m_tcpServers.empty())
+        return true;
+    for (const QHostAddress& address : old) {
+        QString e;
+        if (!openListener(address, &e))
+            logError(QStringLiteral("IPC server: ") + e);
+    }
+    if (error)
+        *error = firstError;
+    logWarning(QStringLiteral("IPC server: ") + firstError);
+    return false;
+}
+
 QList<QHostAddress> IpcServer::listenAddresses() const
 {
     QList<QHostAddress> result;

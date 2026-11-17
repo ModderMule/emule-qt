@@ -1057,6 +1057,8 @@ void KnownFile::setFileRating(uint32 rating)
 
 bool KnownFile::publishSrc()
 {
+    if (isEd3kOnly())
+        return false;   // no eD2K hash to publish
     time_t tNow = std::time(nullptr);
     uint32 buddyIP = 0;
     uint16 buddyPort = 0;
@@ -1092,6 +1094,8 @@ bool KnownFile::publishSrc()
 
 bool KnownFile::publishNotes()
 {
+    if (isEd3kOnly())
+        return false;
     // Check both the loaded comment/rating and the FT_FILERATING tag
     bool hasNotes = !getFileComment().isEmpty() || getFileRating() > 0;
     if (!hasNotes) {
@@ -1554,6 +1558,97 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
     updatePartsInfo();
 
     return true;
+}
+
+bool KnownFile::createFromFileEd3kOnly(const QString& directory, const QString& filename,
+                                       std::function<void(int)> progressCallback, const FileStamp* scanned,
+                                       bool* changedSinceScan, const std::atomic<bool>* cancel, SideHash* side)
+{
+    if (changedSinceScan)
+        *changedSinceScan = false;
+    const auto cancelled = [cancel] { return cancel && cancel->load(std::memory_order_relaxed); };
+    if (!side || cancelled())
+        return false;
+
+    const QString fullPath = directory + u'/' + filename;
+    QFile file(fullPath);
+    uint64 length = 0;
+    time_t openedDate = 0;
+    DiskLoadLimiter& diskLoad = DiskLoadLimiter::thisThread();
+    {
+        diskLoad.setFile(directory);
+        const DiskLoadLimiter::Read timed(diskLoad);
+        if (!file.open(QIODevice::ReadOnly)) {
+            logError(QStringLiteral("KnownFile::createFromFileEd3kOnly: cannot open '%1'").arg(fullPath));
+            return false;
+        }
+        length = static_cast<uint64>(file.size());
+        openedDate = static_cast<time_t>(file.fileTime(QFileDevice::FileModificationTime).toSecsSinceEpoch());
+    }
+    if (scanned && (scanned->size != length || scanned->mtime != openedDate)) {
+        logSharedVerbose(QStringLiteral("File changed since it was scanned: %1").arg(fullPath));
+        if (changedSinceScan)
+            *changedSinceScan = true;
+        return false;
+    }
+    if (length == 0)
+        return false;   // ed3k shares no empty file
+
+    setFileSize(length);
+    setFileName(filename);
+    setPath(directory);
+    setFilePath(fullPath);
+    setUtcFileDate(openedDate);
+
+    static constexpr qint64 kBlock = 256 * 1024;
+    const auto buffer = std::make_unique_for_overwrite<char[]>(kBlock);
+    ReadOnceHint readOnce(file);
+    uint64 done = 0;
+    int lastPercent = -1;
+    while (done < length) {
+        if (cancelled())
+            return false;
+        qint64 got = 0;
+        {
+            const DiskLoadLimiter::Read timed(diskLoad);
+            got = file.read(buffer.get(), static_cast<qint64>(std::min<uint64>(kBlock, length - done)));
+        }
+        if (got <= 0) {
+            logError(QStringLiteral("KnownFile::createFromFileEd3kOnly: read error in '%1'").arg(fullPath));
+            return false;
+        }
+        side->update({reinterpret_cast<const std::byte*>(buffer.get()), static_cast<std::size_t>(got)});
+        done += static_cast<uint64>(got);
+        readOnce.readUpTo(static_cast<qint64>(done));
+        if (const int percent = static_cast<int>(done * 100 / length); progressCallback && percent != lastPercent) {
+            lastPercent = percent;
+            progressCallback(percent);
+        }
+    }
+
+    const QFileInfo fi(fullPath);
+    if (static_cast<uint64>(fi.size()) != length
+        || static_cast<time_t>(fi.lastModified().toSecsSinceEpoch()) != utcFileDate()) {
+        logSharedVerbose(QStringLiteral("File changed while it was hashed: %1").arg(fullPath));
+        return false;
+    }
+    const QByteArray root = side->root();
+    if (root.size() != 32)
+        return false;
+    setEd3kOnlyRoot(root);
+    setLastSeen(std::time(nullptr));
+    updateMetaDataTags();
+    updatePartsInfo();
+    return true;
+}
+
+void KnownFile::setEd3kOnlyRoot(const QByteArray& root)
+{
+    if (root.size() != 32)
+        return;
+    m_ed3kOnlyRoot = root;
+    setFileHash(reinterpret_cast<const uint8*>(root.constData()));
+    fileIdentifier().getRawMD4HashSet().clear();
 }
 
 // ---------------------------------------------------------------------------

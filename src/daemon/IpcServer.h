@@ -39,6 +39,9 @@ public:
     /// Listen on @p addresses from now on, same port: clients and the listeners
     /// still wanted stay.
     void relisten(const QList<QHostAddress>& addresses);
+    /// Move every listener to @p addresses now (Options › Create Connect Script).
+    /// Clients stay. When none opens, the old listeners come back and @p error says why.
+    bool switchListen(const QList<QHostAddress>& addresses, QString* error);
     /// Where it listens now.
     [[nodiscard]] QList<QHostAddress> listenAddresses() const;
     /// Why the last start() failed, with a hint where one helps.
@@ -108,6 +111,9 @@ signals:
 
     /// Forwarded from any client's IpcClientHandler::indexerConfigChanged.
     void indexerConfigChanged();
+
+    /// ipc.listenAddress changed at runtime (ListenIpcAddress)
+    void listenHostChanged(const QString& value);
 
 private slots:
     void onSocketReady(QSslSocket* socket, bool isLocal);
