@@ -336,6 +336,9 @@ void Ed3kSession::stop()
     for (QStringList* l : {&m_relays4, &m_relays6, &m_relayIds4, &m_relayIds6})
         l->clear();
     m_hide->detach();
+    // on disk once stopped: else the writer's exit flush recreates a state dir removed
+    // meanwhile (tst_Ed3kShared temp dirs left behind)
+    flushBlobWrites();
     logEd3k(QStringLiteral("ed3k node stopped"));
     emit statusChanged();
 }

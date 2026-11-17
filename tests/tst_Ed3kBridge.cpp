@@ -131,6 +131,7 @@ void tst_Ed3kBridge::offWritesNoEd3kState()
     thePrefs.setEd3kEnabled(true);
     QVERIFY(!refused(IpcMsgType::SetEd3kPassReports, {false}));
     QVERIFY(QFileInfo::exists(ed3kDir));
+    eMule::ed3k::flushBlobWrites();   // paid.json on disk before tmp goes, else written into it at exit
 
     Ed3kDownloadsBridge::setDownloads(nullptr);
     Ed3kCreditBridge::setCredit(nullptr);
@@ -194,7 +195,8 @@ void tst_Ed3kBridge::onlyTheEd3kBlockIsAnswered()
     // (was 1049: AddEd3kCacheLink since batch 15; every free number is inside a sub-block now,
     // whose bridge answers a failure: 1149 of the downloads')
     // (1149 is GetEd3kFileLinks now; 1219: free, after the Link Grabber's 1210-1218)
-    QVERIFY(Ed3kBridge::handleRequest(IpcMessage(static_cast<IpcMsgType>(1219), 2), reply));
+    // (1219 is GetHosterAccountHosts now; 1229: free, last of the account dialogs' 1219-1229)
+    QVERIFY(Ed3kBridge::handleRequest(IpcMessage(static_cast<IpcMsgType>(1229), 2), reply));
     QCOMPARE(replies, 1);
     QCOMPARE(last.type(), IpcMsgType::Error);
 }
