@@ -578,6 +578,9 @@ void Ed3kSetsDialog::onSetChanged()
         const qsizetype parts = s.value(QStringLiteral("parts")).toArray().size();
         if (parts > 0)
             lines << tr("%n open part(s) by other authors.", nullptr, int(parts));
+        // hops.md §1: the key the set is followed under
+        if (s.value(QStringLiteral("key")).toString() == QLatin1String("Anonymous"))
+            lines << tr("Followed under the anonymous key.");
         if (const QString e = s.value(QStringLiteral("error")).toString(); !e.isEmpty())
             lines << e;
     }

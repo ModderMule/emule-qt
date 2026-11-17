@@ -838,6 +838,7 @@ struct Preferences::Data {
     bool ed3kArchiveContents = true;   // hoster.md §6.1 contents records
     bool ed3kOwnSetsWatch = true;      // own sets' folders watched: a change publishes a new version
     QStringList ed3kCreditRpc;         // JSON-RPC endpoints; empty = off
+    QStringList ed3kDeclineUrls;       // decline lists fetched from URLs; empty = none
     QStringList ed3kChaintubeRpc;
     QStringList ed3kExtOff;            // extension names off at start
     bool ed3kLan = false;              // LAN discovery
@@ -2758,6 +2759,8 @@ void Preferences::setEd3kArchiveContents(bool val) { set(&Data::ed3kArchiveConte
 bool Preferences::ed3kOwnSetsWatch() const { return get(&Data::ed3kOwnSetsWatch); }
 void Preferences::setEd3kOwnSetsWatch(bool val) { set(&Data::ed3kOwnSetsWatch, val); }
 
+QStringList Preferences::ed3kDeclineUrls() const { return get(&Data::ed3kDeclineUrls); }
+void Preferences::setEd3kDeclineUrls(const QStringList& urls) { set(&Data::ed3kDeclineUrls, urls); }
 QStringList Preferences::ed3kCreditRpc() const { return get(&Data::ed3kCreditRpc); }
 void Preferences::setEd3kCreditRpc(const QStringList& urls) { set(&Data::ed3kCreditRpc, urls); }
 QStringList Preferences::ed3kChaintubeRpc() const { return get(&Data::ed3kChaintubeRpc); }
@@ -6183,6 +6186,7 @@ bool Preferences::load(const QString& filePath)
             m_data->ed3kCreditRpc = urls(e3["creditRpc"]);
             m_data->ed3kChaintubeRpc = urls(e3["chaintubeRpc"]);
             m_data->ed3kExtOff = urls(e3["extOff"]);
+            m_data->ed3kDeclineUrls = urls(e3["declineUrls"]);
             m_data->ed3kLan = e3["lan"].as<bool>(m_data->ed3kLan);
             m_data->ed3kForceOpen = e3["forceOpen"].as<bool>(m_data->ed3kForceOpen);
             m_data->ed3kAutoIndexNode = e3["autoIndexNode"].as<bool>(m_data->ed3kAutoIndexNode);
@@ -7688,6 +7692,7 @@ QByteArray Preferences::encode() const
     for (const auto& [key, list] : {std::pair{"creditRpc", &m_data->ed3kCreditRpc},
                                     std::pair{"chaintubeRpc", &m_data->ed3kChaintubeRpc},
                                     std::pair{"extOff", &m_data->ed3kExtOff},
+                                    std::pair{"declineUrls", &m_data->ed3kDeclineUrls},
                                     std::pair{"nodeLists", &m_data->ed3kNodeLists}}) {
         out << YAML::Key << key << YAML::Value << YAML::BeginSeq;
         for (const QString& u : *list)

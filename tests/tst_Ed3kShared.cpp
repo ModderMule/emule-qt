@@ -127,6 +127,7 @@ private slots:
     void unlistedCacheEntriesArePrunedOffTheMainThread();
     void aRemovedFileIsNotShared();
     void aDeclinedFileIsSharedNotPublished();
+    void aListingWithdrawsAndUnlistingPublishes();
     void theUploadQueueServesInTurn();
     void keywordsArePublishedUnlessHeldBack();
     void anUnreadableFileIsHashedAgainLater();
@@ -366,6 +367,49 @@ void tst_Ed3kShared::aDeclinedFileIsSharedNotPublished()
     QVERIFY(shared.rootOf(md4));
     QVERIFY(!shared.keywordsPublished(md4));
     QVERIFY(!shared.aliasPublished(md4));
+    shared.stop();
+    a.stop();
+}
+
+// declined-records.md §2: a list change takes back what is out (source, keywords, ed2k ALIAS)
+// and puts it out again once off the list; a listed MD4's root goes to the engine as a root
+void tst_Ed3kShared::aListingWithdrawsAndUnlistingPublishes()
+{
+    const QByteArray data = payload(int(kBlock / 2), 11);
+    QTemporaryDir da;
+    QVERIFY(da.isValid());
+    const QString path = QDir(da.path()).filePath(QStringLiteral("listed later.bin"));
+    QVERIFY(writeFile(path, data));
+    Ed3kSession a;
+    QVERIFY(a.start(loopback(da.path())));
+    const QByteArray md4(16, char(0x48));
+    FakeSource src;
+    src.entries.push_back(SharedEntry{md4, path, QStringLiteral("listed later.bin"), std::uint64_t(data.size())});
+    Ed3kShared shared(a, src, da.path());
+    a.setDeclineRootsOf([&shared](const DeclineList& list) { return shared.rootsOfListed(list); });
+    QSignalSpy spy(&shared, &Ed3kShared::fileShared);
+    shared.start();
+    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+    const auto root = shared.rootOf(md4);
+    QVERIFY(root);
+    QVERIFY(shared.keywordsPublished(md4));
+    QVERIFY(shared.aliasPublished(md4));
+
+    // listed by its MD4: withdrawn at once, still served; its root declined by the engine too
+    DeclineList list;
+    list.ed2k.push_back({});
+    std::copy(md4.cbegin(), md4.cend(), list.ed2k.front().begin());
+    a.setDeclined(list);
+    QVERIFY(!shared.keywordsPublished(md4));
+    QVERIFY(!shared.aliasPublished(md4));
+    QVERIFY(shared.rootOf(md4));
+    QVERIFY(a.declined().listsRoot(*root));
+    QVERIFY(!a.ownDeclined().listsRoot(*root));
+
+    // off the list: published again
+    a.setDeclined({});
+    QVERIFY(shared.keywordsPublished(md4));
+    QVERIFY(shared.aliasPublished(md4));
     shared.stop();
     a.stop();
 }

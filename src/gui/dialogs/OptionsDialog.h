@@ -234,6 +234,10 @@ private:
     // never given) and diverging would mean two answers to it.
     void loadIndexers();
     void saveIndexers();
+    /// The Usenet / Indexers lists saved and tested at once after an edit (m_newsServerSave, m_indexerSave).
+    void setupAccountAutoSave();
+    [[nodiscard]] QCborArray newsServerRows() const;
+    [[nodiscard]] QCborArray indexerRows() const;
     void refreshIndexerTable();
     void updateIndexerRow(int index);
     void selectIndexer(int index);
@@ -680,6 +684,11 @@ private:
 
     QList<QCborMap> m_indexers;
     int m_currentIndexer = -1;
+
+    /// Usenet / Indexers account lists: saved and tested at once after an edit, no Apply.
+    struct ListAutoSave;
+    std::unique_ptr<ListAutoSave> m_newsServerSave;
+    std::unique_ptr<ListAutoSave> m_indexerSave;
 
     // Feeds page
     QTreeWidget* m_feedTable = nullptr;

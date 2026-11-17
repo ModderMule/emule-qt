@@ -19,6 +19,7 @@
 /// - Removed files are unshared and unpublished; a moved file keeps its root when its size
 ///   and date did not change.
 
+#include "Ed3kDecline.h"
 #include "Ed3kJoinBase.h"
 
 #include "files/SideHasher.h"
@@ -129,6 +130,11 @@ public:
     void setNeverShared(std::function<bool(const QString& path)> check) { m_neverShared = std::move(check); }
     /// The key @p md4 is shared under (hops.md §1, shown to the user); nullopt: not hashed yet.
     [[nodiscard]] std::optional<::ed3k::KeyKind> keyOfFile(const QByteArray& md4) const;
+    /// The key a file of the list hashed to @p root is held under; nullopt: none here.
+    [[nodiscard]] std::optional<::ed3k::KeyKind> keyOfRoot(const ::ed3k::Root& root) const;
+    /// Roots of the list's files whose MD4 @p list names (declined-records.md §2: for
+    /// Ed3kSession::setDeclineRootsOf).
+    [[nodiscard]] std::vector<::ed3k::Root> rootsOfListed(const DeclineList& list) const;
     /// hops.md §1 SHOULD: @p md4 starts downloading on @p networks (eD2K) and is shared here
     /// under the anonymous key: the user is told once (anonExposed). true: told now.
     bool tellDownloadElsewhere(const QByteArray& md4, const QString& name, const QString& networks);
@@ -223,6 +229,9 @@ protected:
     void onHideChanged(bool hiding) override;
     [[nodiscard]] bool answerHashes(std::uint64_t id, const ::ed3k::Root& root) override;
     void onHashesLost(const ::ed3k::Root& root) override;
+    /// By root or MD4: listed files withdrawn (source, keywords, note, `ed2k` ALIAS), files
+    /// off the list published again (publishFile).
+    void onDeclinedChanged() override;
 
 private:
     /// What was hashed: the cache entry of one file.
@@ -247,6 +256,7 @@ private:
         bool keywords = false;  ///< published with Publish::Both
         // was: qint64 noteAtMs = 0; (packmule stores a kept note again by itself)
         bool notePublished = false;   ///< a NOTE record kept published
+        bool declined = false;   ///< shared, not published: declined (decline.txt)
         int rehashTries = 0;    ///< hashes that failed (unreadable)
     };
 
@@ -255,6 +265,8 @@ private:
     /// Shares @p f; values from disk when not in RAM. An unreadable entry is dropped and
     /// @p f hashed again (@p h is gone then).
     void share(File& f, Hashed& h);
+    /// The records of shared @p f: source and keywords, note, `ed2k` ALIAS (none when declined).
+    void publishFile(File& f, const ::ed3k::Root& root, std::uint64_t size);
     class SideSink;
     void enqueueHash(File& f);
     /// one file per disk in flight

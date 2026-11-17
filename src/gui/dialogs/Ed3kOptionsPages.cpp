@@ -433,22 +433,11 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kHosterLinkGrabber", h.linkGrabber);
     put("ed3kHosterGrabAll", h.grabAll);
     put("ed3kHosterAutoUpdate", h.autoUpdate);
-    // a password only when typed here: the daemon keeps the stored one otherwise
-    const auto rows = [](const AccountList& list) {
-        QCborArray out;
-        for (const HosterAccountRow& a : list.rows) {
-            QCborMap m{{QStringLiteral("host"), a.host}, {QStringLiteral("user"), a.user}};
-            if (a.passwordSet)
-                m.insert(QStringLiteral("password"), a.password);
-            out.append(m);
-        }
-        return out;
-    };
-    put("ed3kHosterAccounts", rows(m_hosterAccounts));
+    put("ed3kHosterAccounts", accountRows(m_hosterAccounts));
     put("ed3kHosterSolversEnabled", h.solversEnabled);
-    put("ed3kHosterSolvers", rows(m_solverAccounts));
+    put("ed3kHosterSolvers", accountRows(m_solverAccounts));
     put("ed3kHosterDebridEnabled", h.debridEnabled);
-    put("ed3kHosterDebrid", rows(m_debridAccounts));
+    put("ed3kHosterDebrid", accountRows(m_debridAccounts));
 }
 
 void Ed3kOptionsPages::saveLocal() const
@@ -1888,7 +1877,9 @@ void Ed3kOptionsPages::buildAccountList(AccountList& list, const QStringList& co
             return;
         l->rows.removeAt(row);
         fillAccounts(*l);
-        emit changed();
+        // saved at once like an added login; without a core Apply sends it
+        if (!saveAccounts(*l))
+            emit changed();
     });
     connect(checkBtn, &QPushButton::clicked, this, [this, l] { checkAccount(*l); });
 }
@@ -1987,13 +1978,26 @@ void Ed3kOptionsPages::editAccount(AccountList& list, int row)
         list.rows.append(a);
     else
         list.rows[row] = a;
+    const int at = add ? int(list.rows.size()) - 1 : row;
+    list.tree->setCurrentItem(nullptr);
     fillAccounts(list);
-    emit changed();
+    if (QTreeWidgetItem* it = list.tree->topLevelItem(at))
+        list.tree->setCurrentItem(it);
+    // added and checked at once, no Apply; without a core Apply sends it
+    if (!saveAccounts(list)) {
+        emit changed();
+        return;
+    }
+    checkAccountRow(list, at);
 }
 
 void Ed3kOptionsPages::checkAccount(AccountList& list)
 {
-    const int row = list.tree->currentItem() ? list.tree->indexOfTopLevelItem(list.tree->currentItem()) : -1;
+    checkAccountRow(list, list.tree->currentItem() ? list.tree->indexOfTopLevelItem(list.tree->currentItem()) : -1);
+}
+
+void Ed3kOptionsPages::checkAccountRow(AccountList& list, int row)
+{
     if (row < 0 || row >= list.rows.size() || !m_ipc)
         return;
     HosterAccountRow& a = list.rows[row];
@@ -2110,6 +2114,8 @@ void Ed3kOptionsPages::applyAccountCheck(const QString& host, const QString& use
     const QString error = r.value(QStringLiteral("error")).toString();
     // a browser login (OAuth device flow) waits: the result follows once the user allowed it
     const bool login = error == QLatin1StringView("login");
+    // a confirmation code waits (2FA, a "new sign in" mail): the check goes on once it is typed
+    const bool code = error == QLatin1StringView("code");
     bool shown = false;
     for (AccountList* list : {&m_hosterAccounts, &m_solverAccounts, &m_debridAccounts}) {
         bool hit = false;
@@ -2119,6 +2125,11 @@ void Ed3kOptionsPages::applyAccountCheck(const QString& host, const QString& use
             hit = true;
             if (login) {
                 a.status = tr("Waiting for the login in the browser...");
+                shown = true;
+                continue;
+            }
+            if (code) {
+                a.status = tr("Waiting for the confirmation code...");
                 shown = true;
                 continue;
             }
@@ -2144,8 +2155,15 @@ void Ed3kOptionsPages::applyAccountCheck(const QString& host, const QString& use
         }
         if (hit)
             fillAccounts(*list);
-        if (hit && list->debrid && !login)
+        if (hit && list->debrid && !login && !code)
             fillDebridHosts();
+    }
+    if (shown && code) {
+        const QString title = r.value(QStringLiteral("codeTitle")).toString();
+        const QString text = r.value(QStringLiteral("codeText")).toString();
+        // never a dialog inside the IPC read
+        QTimer::singleShot(0, this, [this, host, user, title, text] { askAccountCode(host, user, title, text); });
+        return;
     }
     const QUrl url(r.value(QStringLiteral("login")).toString());
     if (shown && url.scheme() == QLatin1StringView("https"))
@@ -2352,6 +2370,104 @@ void Ed3kOptionsPages::askBrowserLogin(const QString& host, const QUrl& url)
     box->setDefaultButton(open);
     connect(open, &QPushButton::clicked, box, [url] { QDesktopServices::openUrl(url); });
     box->open();
+}
+
+void Ed3kOptionsPages::askAccountCode(const QString& host, const QString& user, const QString& title, const QString& text)
+{
+    const QString key = host + QLatin1Char('|') + user;
+    if (!m_ipc || m_codeAsks.contains(key))
+        return;
+    m_codeAsks.insert(key);
+    // not modal: the Options window stays usable; the row shows the result
+    auto* dlg = new QDialog(m_parent);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->setWindowTitle(tr("Confirmation code for %1").arg(host));
+    auto* layout = new QVBoxLayout(dlg);
+    // the site's own words when it sent some ("We noticed a new sign in...")
+    const QString why = text.trimmed().isEmpty()
+                            ? tr("%1 asks for a confirmation code to log in as %2. Look in your e-mail or your "
+                                 "authenticator app.")
+                                  .arg(host, user.isEmpty() ? tr("this account") : user)
+                            : text.trimmed();
+    auto* label = new QLabel(why, dlg);
+    label->setWordWrap(true);
+    label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    label->setToolTip(title);
+    layout->addWidget(label);
+    auto* edit = new QLineEdit(dlg);
+    edit->setPlaceholderText(tr("Code"));
+    layout->addWidget(edit);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dlg);
+    buttons->button(QDialogButtonBox::Ok)->setEnabled(false);
+    layout->addWidget(buttons);
+    connect(edit, &QLineEdit::textChanged, dlg, [buttons](const QString& t) {
+        buttons->button(QDialogButtonBox::Ok)->setEnabled(!t.trimmed().isEmpty());
+    });
+    connect(buttons, &QDialogButtonBox::accepted, dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, dlg, &QDialog::reject);
+    // OK: the code; Cancel or closed: an empty one, the check ends as not valid
+    connect(dlg, &QDialog::finished, this, [this, edit, host, user, key](int result) {
+        m_codeAsks.remove(key);
+        if (!m_ipc)
+            return;
+        IpcMessage req(IpcMsgType::AnswerHosterAccountCode);
+        req.append(host);
+        req.append(user);
+        req.append(result == QDialog::Accepted ? edit->text().trimmed() : QString());
+        m_ipc->sendRequest(std::move(req));
+    });
+    dlg->resize(std::max(dlg->sizeHint().width(), 420), dlg->sizeHint().height());
+    dlg->open();
+    edit->setFocus();
+}
+
+bool Ed3kOptionsPages::saveAccounts(AccountList& list)
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return false;
+    IpcMessage req(IpcMsgType::SetPreferences);
+    req.append(accountKey(list));
+    req.append(accountRows(list));
+    m_ipc->sendRequest(std::move(req));
+    // the GUI's copy follows, as Apply's saveLocal() does: stored passwords and sessions stay
+    Ed3kHosterPrefs h = thePrefs.ed3kHoster();
+    QList<Ed3kHosterAccount>& target = list.solvers ? h.solvers : list.debrid ? h.debrid : h.accounts;
+    const QList<Ed3kHosterAccount> before = target;
+    target.clear();
+    for (const HosterAccountRow& a : list.rows) {
+        Ed3kHosterAccount acc{a.host, a.user, a.passwordSet ? a.password : QString()};
+        for (const Ed3kHosterAccount& o : before) {
+            if (o.host != acc.host || o.user != acc.user)
+                continue;
+            if (acc.password.isEmpty())
+                acc.password = o.password;
+            if (acc.password == o.password)
+                acc.session = o.session;
+        }
+        target.append(acc);
+    }
+    thePrefs.setEd3kHoster(h);
+    return true;
+}
+
+QCborArray Ed3kOptionsPages::accountRows(const AccountList& list)
+{
+    // a password only when typed here: the daemon keeps the stored one otherwise
+    QCborArray out;
+    for (const HosterAccountRow& a : list.rows) {
+        QCborMap m{{QStringLiteral("host"), a.host}, {QStringLiteral("user"), a.user}};
+        if (a.passwordSet)
+            m.insert(QStringLiteral("password"), a.password);
+        out.append(m);
+    }
+    return out;
+}
+
+QString Ed3kOptionsPages::accountKey(const AccountList& list)
+{
+    return list.solvers  ? QStringLiteral("ed3kHosterSolvers")
+           : list.debrid ? QStringLiteral("ed3kHosterDebrid")
+                         : QStringLiteral("ed3kHosterAccounts");
 }
 
 } // namespace eMule

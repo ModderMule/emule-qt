@@ -107,6 +107,7 @@ struct ResolverEvent {
         AccountHosts, ///< accountHosts: accountHosts
         Icon,         ///< favicon: host, image (PNG); Failed "none" when the site has none
         Login,        ///< accountCheck: a browser login (OAuth device flow) waits; text: its URL, host, timeoutS
+        Code,         ///< accountCheck: a confirmation code (2FA, mail) waits; text: the site's words, name: title, timeoutS
     };
     Kind kind = Kind::Failed;
     QString host;
@@ -149,7 +150,7 @@ struct ResolverEvent {
     [[nodiscard]] bool isFinal() const
     {
         return kind != Kind::Progress && kind != Kind::Wait && kind != Kind::Puzzle && kind != Kind::Status
-               && kind != Kind::Login;
+               && kind != Kind::Login && kind != Kind::Code;
     }
 };
 
@@ -213,6 +214,12 @@ public:
     }
     /// The user's text for a puzzle; empty = skip it.
     virtual void answerPuzzle(std::uint64_t puzzle, const QString& text) = 0;
+    /// The user's confirmation code for an accountCheck's Code event; empty = cancel. Default: nothing
+    virtual void answerCode(TaskId task, const QString& code)
+    {
+        (void)task;
+        (void)code;
+    }
     virtual void cancel(TaskId task) = 0;
     /// Image puzzles are asked (true) or skipped.
     virtual void setAskPuzzles(bool on) = 0;

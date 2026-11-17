@@ -111,7 +111,55 @@
 #include <QFileInfo>
 #include <QVBoxLayout>
 
+#include <functional>
+#include <memory>
+
 namespace eMule {
+
+/// An account list (news servers, indexers) goes to the core shortly after an edit, without
+/// Apply; the edited account is tested when its login changed. Only a list the core takes is
+/// sent (a new row waits for its host), and only when it differs from what the core has.
+struct OptionsDialog::ListAutoSave {
+    QTimer timer;
+    QCborArray saved;              ///< what the core has
+    bool loginChanged = false;
+    std::function<QCborArray()> rows;                    ///< commits the details, the working copy
+    std::function<bool(const QCborArray&)> complete;     ///< the core would take it
+    std::function<void(const QCborArray&)> send;
+    std::function<void()> test;                          ///< the edited account
+
+    ListAutoSave()
+    {
+        timer.setSingleShot(true);
+        timer.setInterval(1000);
+        QObject::connect(&timer, &QTimer::timeout, &timer, [this] { fire(true); });
+    }
+    void edited(bool login)
+    {
+        loginChanged = loginChanged || login;
+        timer.start();
+    }
+    /// @p withTest false: the dialog closes, only the save is left
+    void fire(bool withTest)
+    {
+        timer.stop();
+        const QCborArray now = rows();
+        if (!complete(now))
+            return;
+        if (now != saved) {
+            send(now);
+            saved = now;
+        }
+        if (loginChanged && withTest)
+            test();
+        loginChanged = false;
+    }
+    void flush()
+    {
+        if (timer.isActive())
+            fire(false);
+    }
+};
 
 // Bind combo: the OS interface id beside the stored adapter name
 constexpr int kRawNameRole = Qt::UserRole + 1;
@@ -128,6 +176,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     , m_statsPanel(statsPanel)
 {
     setWindowTitle(tr("Options"));
+    setupAccountAutoSave();
 
     // A feed can finish a poll while this dialog is open — from its own
     // schedule, not only from Check now — so the table updates in place rather
@@ -582,6 +631,10 @@ void OptionsDialog::done(int result)
     const int page = m_sidebar->currentItemId();
     if (hasPage(page))
         theUiState.setOptionsLastPage(page);
+    // an account edit still waiting for its save goes too, also on Cancel
+    for (ListAutoSave* s : {m_newsServerSave.get(), m_indexerSave.get()})
+        if (s)
+            s->flush();
 
     QDialog::done(result);
 }
@@ -4482,17 +4535,23 @@ QWidget* OptionsDialog::createUsenetPage()
         applyNewsServerDetails();
         updateNewsServerRow(m_currentNewsServer);
         markDirty();
+        m_newsServerSave->edited(false);
+    };
+    // the login: saved and tested at once
+    const auto commitLogin = [this, commit] {
+        commit();
+        m_newsServerSave->edited(true);
     };
     connect(m_usenetNameEdit, &QLineEdit::editingFinished, this, commit);
-    connect(m_usenetHostEdit, &QLineEdit::editingFinished, this, commit);
-    connect(m_usenetUserEdit, &QLineEdit::editingFinished, this, commit);
-    connect(m_usenetPassEdit, &QLineEdit::editingFinished, this, commit);
-    connect(m_usenetPortSpin, &QSpinBox::valueChanged, this, commit);
+    connect(m_usenetHostEdit, &QLineEdit::editingFinished, this, commitLogin);
+    connect(m_usenetUserEdit, &QLineEdit::editingFinished, this, commitLogin);
+    connect(m_usenetPassEdit, &QLineEdit::editingFinished, this, commitLogin);
+    connect(m_usenetPortSpin, &QSpinBox::valueChanged, this, commitLogin);
     connect(m_usenetConnSpin, &QSpinBox::valueChanged, this, commit);
     connect(m_usenetLevelSpin, &QSpinBox::valueChanged, this, commit);
     connect(m_usenetRetentionSpin, &QSpinBox::valueChanged, this, commit);
     connect(m_usenetGroupSpin, &QSpinBox::valueChanged, this, commit);
-    connect(m_usenetTlsCombo, &QComboBox::currentIndexChanged, this, [this, commit](int index) {
+    connect(m_usenetTlsCombo, &QComboBox::currentIndexChanged, this, [this, commitLogin](int index) {
         // Move the port with the encryption mode, but only while it still holds
         // the default for the previous mode — never stomp a port the user typed.
         const int port = m_usenetPortSpin->value();
@@ -4500,7 +4559,7 @@ QWidget* OptionsDialog::createUsenetPage()
             m_usenetPortSpin->setValue(kDefaultNntpTlsPort);
         else if (index != int(NntpTlsMode::Implicit) && port == kDefaultNntpTlsPort)
             m_usenetPortSpin->setValue(kDefaultNntpPort);
-        commit();
+        commitLogin();
     });
     connect(m_usenetCertCombo, &QComboBox::currentIndexChanged, this, commit);
     connect(m_usenetEntryEnabledCheck, &QCheckBox::toggled, this, commit);
@@ -4581,6 +4640,7 @@ void OptionsDialog::loadNewsServers()
         m_currentNewsServer = -1;
         refreshNewsServerTable();
         selectNewsServer(m_newsServers.isEmpty() ? -1 : 0);
+        m_newsServerSave->saved = newsServerRows();
     });
 }
 
@@ -4591,9 +4651,8 @@ void OptionsDialog::saveNewsServers()
 
     applyNewsServerDetails();
 
-    QCborArray rows;
-    for (const QCborMap& server : std::as_const(m_newsServers))
-        rows.append(server);
+    const QCborArray rows = newsServerRows();
+    m_newsServerSave->saved = rows;
 
     Ipc::IpcMessage msg(Ipc::IpcMsgType::SetNewsServers);
     msg.append(rows);
@@ -4929,6 +4988,7 @@ void OptionsDialog::removeNewsServer()
     refreshNewsServerTable();
     selectNewsServer(m_usenetServerTable->topLevelItemCount() > 0 ? 0 : -1);
     markDirty();
+    m_newsServerSave->edited(false);
 }
 
 void OptionsDialog::testNewsServer()
@@ -5135,12 +5195,18 @@ QWidget* OptionsDialog::createIndexersPage()
         applyIndexerDetails();
         updateIndexerRow(m_currentIndexer);
         markDirty();
+        m_indexerSave->edited(false);
+    };
+    // the login: saved and tested at once
+    const auto commitLogin = [this, commit] {
+        commit();
+        m_indexerSave->edited(true);
     };
     connect(m_indexerNameEdit, &QLineEdit::editingFinished, this, commit);
-    connect(m_indexerUrlEdit, &QLineEdit::editingFinished, this, commit);
-    connect(m_indexerApiKeyEdit, &QLineEdit::editingFinished, this, commit);
+    connect(m_indexerUrlEdit, &QLineEdit::editingFinished, this, commitLogin);
+    connect(m_indexerApiKeyEdit, &QLineEdit::editingFinished, this, commitLogin);
     connect(m_indexerKindCombo, &QComboBox::currentIndexChanged, this,
-            [commit](int) { commit(); });
+            [commitLogin](int) { commitLogin(); });
     connect(m_indexerEntryEnabledCheck, &QCheckBox::toggled, this,
             [commit](bool) { commit(); });
 
@@ -5377,6 +5443,7 @@ void OptionsDialog::loadIndexers()
         m_currentIndexer = -1;
         refreshIndexerTable();
         selectIndexer(m_indexers.isEmpty() ? -1 : 0);
+        m_indexerSave->saved = indexerRows();
     });
 }
 
@@ -5387,9 +5454,8 @@ void OptionsDialog::saveIndexers()
 
     applyIndexerDetails();
 
-    QCborArray rows;
-    for (const QCborMap& indexer : std::as_const(m_indexers))
-        rows.append(indexer);
+    const QCborArray rows = indexerRows();
+    m_indexerSave->saved = rows;
 
     Ipc::IpcMessage msg(Ipc::IpcMsgType::SetIndexers);
     msg.append(rows);
@@ -5970,6 +6036,7 @@ void OptionsDialog::removeIndexer()
     refreshIndexerTable();
     selectIndexer(m_indexerTable->topLevelItemCount() > 0 ? 0 : -1);
     markDirty();
+    m_indexerSave->edited(false);
 }
 
 void OptionsDialog::testIndexer()
@@ -10318,6 +10385,98 @@ void OptionsDialog::setSharedDirsChecked(const QStringList& dirs)
         m_remoteDirsModel->setCheckedPaths(dirs);
     else
         static_cast<CheckableFileSystemModel*>(m_sharedDirsModel)->setCheckedPaths(dirs);
+}
+
+void OptionsDialog::setupAccountAutoSave()
+{
+    // a failed save shows in the account's test line, no message box while typing
+    const auto showError = [](QLabel* label, const QString& text) {
+        if (!label)
+            return;
+        label->setText(text);
+        label->setStyleSheet(QStringLiteral("color: %1;").arg(roleColorName(TextRole::Error)));
+    };
+
+    m_newsServerSave = std::make_unique<ListAutoSave>();
+    m_newsServerSave->rows = [this] {
+        applyNewsServerDetails();
+        return newsServerRows();
+    };
+    m_newsServerSave->complete = [](const QCborArray& rows) {
+        return rows.size() <= Preferences::kMaxUsenetServers
+               && std::ranges::all_of(rows, [](const QCborValue& r) {
+                      return !r.toMap().value(QStringLiteral("host")).toString().trimmed().isEmpty();
+                  });
+    };
+    m_newsServerSave->send = [this, showError](const QCborArray& rows) {
+        if (!m_ipc || !m_ipc->isConnected())
+            return;
+        Ipc::IpcMessage msg(Ipc::IpcMsgType::SetNewsServers);
+        msg.append(rows);
+        m_ipc->sendRequest(std::move(msg), [this, self = QPointer<OptionsDialog>(this), showError](const Ipc::IpcMessage& resp) {
+            if (!self || !resp.isValid() || resp.fieldBool(0))
+                return;
+            m_newsServerSave->saved = {};   // sent again on the next edit
+            showError(m_usenetTestResult, resp.fieldString(1));
+        });
+    };
+    m_newsServerSave->test = [this] {
+        if (m_currentNewsServer < 0 || m_currentNewsServer >= m_newsServers.size() || !m_usenetTestBtn->isEnabled())
+            return;
+        // a user without a password yet: the password field is next, test then
+        const QCborMap s = m_newsServers.at(m_currentNewsServer);
+        const bool hasPassword = s.value(QStringLiteral("password")).isString()
+                                 || s.value(QStringLiteral("hasPassword")).toBool(false);
+        if (!s.value(QStringLiteral("user")).toString().isEmpty() && !hasPassword)
+            return;
+        testNewsServer();
+    };
+
+    m_indexerSave = std::make_unique<ListAutoSave>();
+    m_indexerSave->rows = [this] {
+        applyIndexerDetails();
+        return indexerRows();
+    };
+    m_indexerSave->complete = [](const QCborArray& rows) {
+        return rows.size() <= Preferences::kMaxIndexers && std::ranges::all_of(rows, [](const QCborValue& r) {
+                   const QCborMap m = r.toMap();
+                   IndexerConfig c;
+                   c.url = m.value(QStringLiteral("url")).toString();
+                   return !m.value(QStringLiteral("name")).toString().trimmed().isEmpty() && c.apiUrl().isValid();
+               });
+    };
+    m_indexerSave->send = [this, showError](const QCborArray& rows) {
+        if (!m_ipc || !m_ipc->isConnected())
+            return;
+        Ipc::IpcMessage msg(Ipc::IpcMsgType::SetIndexers);
+        msg.append(rows);
+        m_ipc->sendRequest(std::move(msg), [this, self = QPointer<OptionsDialog>(this), showError](const Ipc::IpcMessage& resp) {
+            if (!self || !resp.isValid() || resp.fieldBool(0))
+                return;
+            m_indexerSave->saved = {};
+            showError(m_indexerTestResult, resp.fieldString(1));
+        });
+    };
+    m_indexerSave->test = [this] {
+        if (m_currentIndexer >= 0 && m_currentIndexer < m_indexers.size() && m_indexerTestBtn->isEnabled())
+            testIndexer();
+    };
+}
+
+QCborArray OptionsDialog::newsServerRows() const
+{
+    QCborArray rows;
+    for (const QCborMap& server : m_newsServers)
+        rows.append(server);
+    return rows;
+}
+
+QCborArray OptionsDialog::indexerRows() const
+{
+    QCborArray rows;
+    for (const QCborMap& indexer : m_indexers)
+        rows.append(indexer);
+    return rows;
 }
 
 void OptionsDialog::updateSingleTransferChecks()

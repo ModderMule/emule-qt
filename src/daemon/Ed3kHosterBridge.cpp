@@ -321,6 +321,13 @@ QCborMap resultToCbor(const ed3k::ResolverEvent& r)
         out.insert(QStringLiteral("login"), r.text);
         out.insert(QStringLiteral("timeout"), r.timeoutS);
     }
+    // a confirmation code waits (2FA, a "new sign in" mail): AnswerHosterAccountCode
+    if (r.kind == ed3k::ResolverEvent::Kind::Code) {
+        out.insert(QStringLiteral("error"), QStringLiteral("code"));
+        out.insert(QStringLiteral("codeText"), r.text);
+        out.insert(QStringLiteral("codeTitle"), r.name);
+        out.insert(QStringLiteral("timeout"), r.timeoutS);
+    }
     return out;
 }
 #endif
@@ -563,14 +570,14 @@ void openContainerAndAdd(const QByteArray& data, const QString& fileName,
 bool isHosterRequest(IpcMsgType type)
 {
     const int t = static_cast<int>(type);
-    // 1139: AddClickNLoad, after the block was full; 1210-1218: the Link Grabber; 1219-1220:
+    // 1139: AddClickNLoad, after the block was full; 1210-1218: the Link Grabber; 1219-1221:
     // account dialogs
-    return (t >= 1100 && t <= 1109) || type == IpcMsgType::AddClickNLoad || (t >= 1210 && t <= 1220);
+    return (t >= 1100 && t <= 1109) || type == IpcMsgType::AddClickNLoad || (t >= 1210 && t <= 1221);
 }
 
 bool carriesSecret(IpcMsgType type)
 {
-    return type == IpcMsgType::CheckHosterAccount;
+    return type == IpcMsgType::CheckHosterAccount || type == IpcMsgType::AnswerHosterAccountCode;
 }
 
 bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMessage&)>& reply)
@@ -755,6 +762,13 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
     }
     case IpcMsgType::CheckHosterAccount:
         s_join->checkAccount(msg.fieldString(0).trimmed().toLower(), msg.fieldString(1), msg.fieldString(2));
+        reply(IpcMessage::makeResult(seq, true, QCborValue{}));
+        break;
+    case IpcMsgType::AnswerHosterAccountCode:
+        if (!s_join->answerAccountCode(msg.fieldString(0).trimmed().toLower(), msg.fieldString(1), msg.fieldString(2))) {
+            reply(failure(seq, QStringLiteral("no check of this login waits for a code")));
+            break;
+        }
         reply(IpcMessage::makeResult(seq, true, QCborValue{}));
         break;
     case IpcMsgType::DownloadJavaRuntime:

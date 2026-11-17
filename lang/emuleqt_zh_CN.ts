@@ -1264,7 +1264,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3831"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3884"/>
         <source>Test</source>
         <translation>测试</translation>
     </message>
@@ -4962,6 +4962,11 @@ On queue: it waits for one, at the place shown.</source>
         <translation>名称像视频或歌曲，但实际是图片或文档（例如 .mp4.jpg）</translation>
     </message>
     <message>
+        <location line="+1"/>
+        <source>Published by a node whose files you marked as spam</source>
+        <translation>由您标记为垃圾的文件所属节点发布</translation>
+    </message>
+    <message>
         <location line="+9"/>
         <source>%1 (fake score %2 of 100)</source>
         <translation>%1（假文件评分 %2 / 100）</translation>
@@ -5568,13 +5573,13 @@ ED2K 哈希：	%2
 <context>
     <name>eMule::Ed3kDeclineDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kDeclineDialog.cpp" line="+29"/>
-        <location line="+103"/>
+        <location filename="../src/gui/dialogs/Ed3kDeclineDialog.cpp" line="+31"/>
+        <location line="+156"/>
         <source>Declined records</source>
         <translation>拒绝的记录</translation>
     </message>
     <message>
-        <location line="-99"/>
+        <location line="-152"/>
         <source>Records this node won&apos;t hold for others, won&apos;t publish for own files, and asks about before downloading. One entry per line, # starts a comment:
   &lt;64 hex digits&gt;  a file root
   ed2k:&lt;32 hex digits&gt; or an ed2k:// file link  an eD2K hash
@@ -5589,7 +5594,12 @@ ED2K 哈希：	%2
   其他任何内容  关键字，全部出现在文件名中</translation>
     </message>
     <message>
-        <location line="+35"/>
+        <location line="+25"/>
+        <source>Lists from URLs you trust, one per line (fetched at start, when changed and every 24 hours; the last copy stays in use when a fetch fails):</source>
+        <translation>来自您信任的 URL 的列表，每行一个（启动时、更改时以及每 24 小时获取一次；获取失败时继续使用上一份副本）：</translation>
+    </message>
+    <message>
+        <location line="+25"/>
         <source>Loading...</source>
         <translation>加载中...</translation>
     </message>
@@ -5599,7 +5609,7 @@ ED2K 哈希：	%2
         <translation>未连接到核心。</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+18"/>
         <source>(the ed3k node is not running: read from the file)</source>
         <translation>（ed3k 节点未运行：从文件读取）</translation>
     </message>
@@ -5621,12 +5631,34 @@ ED2K 哈希：	%2
         <translation>已加载：%1 个根，%2 个 eD2K 哈希，%3 个发布者密钥，%4 种类型，%5 个关键字。</translation>
     </message>
     <message>
+        <location line="+19"/>
+        <source>fetching...</source>
+        <translation>正在获取...</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>last fetch failed: %1</source>
+        <translation>上次获取失败：%1</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>not fetched yet</source>
+        <translation>尚未获取</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+2"/>
+        <source>%n entries from %1</source>
+        <translation>
+            <numerusform>%n 个条目（%1）</numerusform>
+        </translation>
+    </message>
+    <message>
         <location line="+22"/>
         <source>The core has no ed3k node.</source>
         <translation>核心没有 ed3k 节点。</translation>
     </message>
     <message>
-        <location line="+19"/>
+        <location line="+24"/>
         <source>The list was not saved: %1</source>
         <translation>列表未保存：%1</translation>
     </message>
@@ -6935,7 +6967,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">ed3k 节点使用“常规”页面中的昵称：%1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+508"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+497"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7042,12 +7074,12 @@ Its names are then resolved after the lists you already follow.</source>
         <translation>查找节点</translation>
     </message>
     <message>
-        <location line="+1536"/>
+        <location line="+1565"/>
         <source>Find ed3k nodes in the local network (restarts the node)</source>
         <translation>在局域网中查找 ed3k 节点（会重启节点）</translation>
     </message>
     <message>
-        <location line="-1534"/>
+        <location line="-1563"/>
         <source>Node lists for the first contact, one ed3k:nodes link per line:</source>
         <translation>首次联系用的节点列表，每行一个 ed3k:nodes 链接：</translation>
     </message>
@@ -7093,31 +7125,31 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+957"/>
         <location line="+21"/>
-        <location line="+333"/>
+        <location line="+355"/>
         <source>Not valid</source>
         <translation>无效</translation>
     </message>
     <message>
-        <location line="-99"/>
-        <location line="+109"/>
+        <location line="-106"/>
+        <location line="+116"/>
         <source>Premium until %1</source>
         <translation>高级会员至 %1</translation>
     </message>
     <message>
-        <location line="-109"/>
-        <location line="+109"/>
+        <location line="-116"/>
+        <location line="+116"/>
         <source>Free until %1</source>
         <translation>免费至 %1</translation>
     </message>
     <message>
-        <location line="-111"/>
-        <location line="+114"/>
+        <location line="-118"/>
+        <location line="+121"/>
         <source>Premium</source>
         <translation>高级会员</translation>
     </message>
     <message>
-        <location line="-114"/>
-        <location line="+114"/>
+        <location line="-121"/>
+        <location line="+121"/>
         <source>Free</source>
         <translation>免费</translation>
     </message>
@@ -7158,7 +7190,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">转发器：</translation>
     </message>
     <message>
-        <location line="-1581"/>
+        <location line="-1603"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>同时通过 ed3k 共享 Usenet 帖子</translation>
     </message>
@@ -7280,12 +7312,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1429"/>
+        <location line="+1458"/>
         <source> credits/MiB</source>
         <translation> 信用/MiB</translation>
     </message>
     <message>
-        <location line="-1438"/>
+        <location line="-1467"/>
         <source>Never pay (receipts only)</source>
         <translation>从不支付（仅收据）</translation>
     </message>
@@ -7533,12 +7565,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1266"/>
+        <location line="+1295"/>
         <source>not read yet</source>
         <translation>尚未读取</translation>
     </message>
     <message>
-        <location line="-1264"/>
+        <location line="-1293"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>账户已透支：唯一的出路是新的信用密钥。</translation>
     </message>
@@ -7953,12 +7985,12 @@ Off: they are never shared there, also inside the incoming folder.</source>
     </message>
     <message>
         <location line="+39"/>
-        <location line="+353"/>
+        <location line="+375"/>
         <source>Not reachable</source>
         <translation>无法连接</translation>
     </message>
     <message>
-        <location line="-291"/>
+        <location line="-313"/>
         <source>Single transfer mode (ed3k only)</source>
         <translation>单一传输模式 (仅 ed3k)</translation>
     </message>
@@ -7968,7 +8000,7 @@ Off: they are never shared there, also inside the incoming folder.</source>
         <translation>隐藏 %1 窗口。与 ed3k 合并的下载显示在传输窗口中,仍使用此网络及其设置;其他下载暂停,直到关闭此项。需要 ed3k。</translation>
     </message>
     <message>
-        <location line="+61"/>
+        <location line="+63"/>
         <source>Solve puzzles with these services</source>
         <translation>用这些服务解答图片验证</translation>
     </message>
@@ -7984,12 +8016,12 @@ Off: they are never shared there, also inside the incoming folder.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+142"/>
+        <location line="+155"/>
         <source>Service</source>
         <translation>服务</translation>
     </message>
     <message>
-        <location line="-125"/>
+        <location line="-138"/>
         <source>Add captcha solver</source>
         <translation>添加验证码识别服务</translation>
     </message>
@@ -8024,7 +8056,12 @@ Off: they are never shared there, also inside the incoming folder.</source>
         <translation>API 密钥：</translation>
     </message>
     <message>
-        <location line="+383"/>
+        <location line="+179"/>
+        <source>Waiting for the confirmation code...</source>
+        <translation>正在等待确认码...</translation>
+    </message>
+    <message>
+        <location line="+231"/>
         <source>Log in at %1</source>
         <translation>登录 %1</translation>
     </message>
@@ -8041,6 +8078,26 @@ The check goes on by itself; the login is kept for later.</source>
         <location line="+5"/>
         <source>Open Browser</source>
         <translation>打开浏览器</translation>
+    </message>
+    <message>
+        <location line="+15"/>
+        <source>Confirmation code for %1</source>
+        <translation>%1 的确认码</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>%1 asks for a confirmation code to log in as %2. Look in your e-mail or your authenticator app.</source>
+        <translation>%1 需要确认码才能以 %2 登录。请查看您的电子邮件或身份验证器应用。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>this account</source>
+        <translation>此账户</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Code</source>
+        <translation>代码</translation>
     </message>
     <message>
         <source>%1 at %2</source>
@@ -8063,7 +8120,7 @@ The check goes on by itself; the login is kept for later.</source>
         <translation type="vanished">%1 的密码：</translation>
     </message>
     <message numerus="yes">
-        <location line="-317"/>
+        <location line="-360"/>
         <source>%1, %2 of %n hoster(s) usable</source>
         <translation>
             <numerusform>%1，%n 个网盘中 %2 个可用</numerusform>
@@ -8137,12 +8194,12 @@ The check goes on by itself; the login is kept for later.</source>
         <translation>大小的 %1 倍</translation>
     </message>
     <message>
-        <location line="+21"/>
+        <location line="+23"/>
         <source>Waiting for the login in the browser...</source>
         <translation>正在等待浏览器中的登录...</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+13"/>
         <source>No password stored</source>
         <translation>未保存密码</translation>
     </message>
@@ -8152,7 +8209,7 @@ The check goes on by itself; the login is kept for later.</source>
         <translation>有效，但不下载其他网盘</translation>
     </message>
     <message>
-        <location line="+70"/>
+        <location line="+77"/>
         <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
         <translation>警告：除非您知道自己在做什么，否则请勿更改这些设置。否则可能会导致问题。eMule 无需调整这些设置即可正常运行。</translation>
     </message>
@@ -8343,7 +8400,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>高速下载未运行。余额：%1</translation>
     </message>
     <message>
-        <location line="-918"/>
+        <location line="-947"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -8571,27 +8628,27 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
     <message>
         <location line="-107"/>
         <location line="+110"/>
-        <location line="+427"/>
+        <location line="+442"/>
         <source>Hoster</source>
         <translation>网盘</translation>
     </message>
     <message>
-        <location line="-427"/>
-        <location line="+281"/>
-        <location line="+142"/>
+        <location line="-442"/>
+        <location line="+283"/>
+        <location line="+155"/>
         <source>User</source>
         <translation>用户</translation>
     </message>
     <message>
-        <location line="-423"/>
-        <location line="+281"/>
-        <location line="+142"/>
+        <location line="-438"/>
+        <location line="+283"/>
+        <location line="+155"/>
         <location line="+4"/>
         <source>Status</source>
         <translation>状态</translation>
     </message>
     <message>
-        <location line="-188"/>
+        <location line="-203"/>
         <source>Add...</source>
         <translation>添加...</translation>
     </message>
@@ -8678,7 +8735,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation type="vanished">共享网盘链接</translation>
     </message>
     <message>
-        <location line="+113"/>
+        <location line="+115"/>
         <source>Add hoster account</source>
         <translation>添加网盘账户</translation>
     </message>
@@ -8717,7 +8774,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation type="vanished">%1 在 %2 的密码:</translation>
     </message>
     <message>
-        <location line="+44"/>
+        <location line="+57"/>
         <source>Checking...</source>
         <translation>正在检查...</translation>
     </message>
@@ -9834,12 +9891,12 @@ Buyers see it is no longer sold. Passes held still work until they end, and you 
     <name>eMule::Ed3kSetsDialog</name>
     <message>
         <location filename="../src/gui/dialogs/Ed3kSetsDialog.cpp" line="+102"/>
-        <location line="+1107"/>
+        <location line="+1110"/>
         <source>ed3k Sets</source>
         <translation>ed3k 集合</translation>
     </message>
     <message>
-        <location line="-1096"/>
+        <location line="-1099"/>
         <source>Name</source>
         <translation>名称</translation>
     </message>
@@ -9909,12 +9966,12 @@ Buyers see it is no longer sold. Passes held still work until they end, and you 
     <message>
         <location line="+1"/>
         <location line="+51"/>
-        <location line="+464"/>
+        <location line="+467"/>
         <source>Buy Pass...</source>
         <translation>购买通行证...</translation>
     </message>
     <message>
-        <location line="-513"/>
+        <location line="-516"/>
         <source>Enter Pass...</source>
         <translation>输入通行证...</translation>
     </message>
@@ -10000,12 +10057,12 @@ Buyers see it is no longer sold. Passes held still work until they end, and you 
     </message>
     <message>
         <location line="+1"/>
-        <location line="+492"/>
+        <location line="+495"/>
         <source>Sell...</source>
         <translation>出售...</translation>
     </message>
     <message>
-        <location line="-491"/>
+        <location line="-494"/>
         <source>Sells this channel as a paid subscription: every segment is sealed, viewers need a pass.</source>
         <translation>将此频道作为付费订阅出售：每个分段都会加密，观众需要通行证。</translation>
     </message>
@@ -10268,6 +10325,11 @@ Use this pass? If not, it is kept unused; you can use it later with &quot;Use Pa
         <translation>
             <numerusform>其他作者的 %n 个开放部分。</numerusform>
         </translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Followed under the anonymous key.</source>
+        <translation>以匿名密钥关注。</translation>
     </message>
     <message>
         <location line="+67"/>
@@ -13296,7 +13358,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1200"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1201"/>
         <source>The core&apos;s certificate changed</source>
         <translation>核心的证书已更改</translation>
     </message>
@@ -13304,7 +13366,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 <context>
     <name>eMule::IrcPanel</name>
     <message>
-        <location filename="../src/gui/panels/IrcPanel.cpp" line="+159"/>
+        <location filename="../src/gui/panels/IrcPanel.cpp" line="+1822"/>
         <source>Select an IRC nick.</source>
         <translation>选择一个 IRC 昵称。</translation>
     </message>
@@ -13316,7 +13378,7 @@ Nick can be changed again in Options-&gt;IRC.</source>
 昵称可在选项-&gt;IRC 中再次更改。</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="-1654"/>
         <source>Connecting</source>
         <translation>连接中</translation>
     </message>
@@ -13363,7 +13425,7 @@ Nick can be changed again in Options-&gt;IRC.</source>
     </message>
     <message>
         <location line="+34"/>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+312"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+337"/>
         <source>* %1 is now known as %2</source>
         <translation>* %1 现在改名为 %2</translation>
     </message>
@@ -13487,7 +13549,7 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+33"/>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+258"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="+261"/>
         <source>Nick : %1</source>
         <translation>昵称: %1</translation>
     </message>
@@ -13547,7 +13609,7 @@ Please choose another:</source>
         <translation>%1 已将您添加为好友！</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="-492"/>
+        <location filename="../src/gui/panels/IrcPanelEd3k.cpp" line="-520"/>
         <location line="+20"/>
         <source>Public: anyone with the link</source>
         <translation>公开：任何拥有链接的人</translation>
@@ -13641,15 +13703,20 @@ Please choose another:</source>
         <translation>房间 %1</translation>
     </message>
     <message>
-        <location line="+14"/>
-        <location line="+243"/>
+        <location line="+34"/>
+        <source>* You are already a member of the room &quot;%1&quot;</source>
+        <translation>* 你已是房间“%1”的成员</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <location line="+246"/>
         <location line="+67"/>
-        <location line="+339"/>
+        <location line="+345"/>
         <source>ed3k room</source>
         <translation>ed3k 房间</translation>
     </message>
     <message>
-        <location line="-648"/>
+        <location line="-657"/>
         <source>Join the ed3k room &quot;%1&quot;?
 
 Other members see your nick and posts; your node takes part in passing the room&apos;s posts on.</source>
@@ -13673,12 +13740,11 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>* %1 加入了房间</translation>
     </message>
     <message>
-        <location line="+20"/>
         <source>* Now in the room</source>
-        <translation>* 已在房间中</translation>
+        <translation type="vanished">* 已在房间中</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+26"/>
         <source>* %1 was banned</source>
         <translation>* %1 已被封禁</translation>
     </message>
@@ -13725,7 +13791,12 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation type="vanished">离开此房间？要回来需要它的链接。</translation>
     </message>
     <message>
-        <location line="+35"/>
+        <location line="-33"/>
+        <source>* You joined the room as %1</source>
+        <translation>* 你以 %1 加入了房间</translation>
+    </message>
+    <message>
+        <location line="+68"/>
         <source>Leave this room? The room goes on for its other members. To come back you need its link and you join as a new member.</source>
         <translation>离开此聊天室?聊天室仍为其他成员继续存在。要回来需要它的链接,并以新成员身份加入。</translation>
     </message>
@@ -13826,12 +13897,12 @@ Other members see your nick and posts; your node takes part in passing the room&
     </message>
     <message>
         <location line="+4"/>
-        <location line="+125"/>
+        <location line="+131"/>
         <source>Admit</source>
         <translation>准入</translation>
     </message>
     <message>
-        <location line="-124"/>
+        <location line="-130"/>
         <source>Ban (30 days)</source>
         <translation>封禁（30 天）</translation>
     </message>
@@ -13866,7 +13937,7 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>创建 ed3k 房间</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+11"/>
         <source>The room was not created</source>
         <translation>房间未创建</translation>
     </message>
@@ -13891,7 +13962,7 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>* 不是 ed3k 房间链接</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+10"/>
         <source>The room was not joined</source>
         <translation>未加入房间</translation>
     </message>
@@ -18093,36 +18164,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3701"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3706"/>
         <source>Options</source>
         <translation>选项</translation>
     </message>
     <message>
-        <location line="+78"/>
-        <location line="+2582"/>
+        <location line="+79"/>
+        <location line="+2586"/>
         <source>OK</source>
         <translation>确定</translation>
     </message>
     <message>
-        <location line="-2581"/>
-        <location line="+2582"/>
+        <location line="-2585"/>
+        <location line="+2586"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="-2581"/>
-        <location line="+6817"/>
+        <location line="-2585"/>
+        <location line="+6835"/>
         <source>Apply</source>
         <translation>应用</translation>
     </message>
     <message>
-        <location line="-6816"/>
+        <location line="-6834"/>
         <source>Help</source>
         <translation>帮助</translation>
     </message>
     <message>
         <location line="+298"/>
-        <location line="+2554"/>
+        <location line="+2558"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -18134,22 +18205,22 @@ Download it again?</source>
         <translation>IP 过滤器</translation>
     </message>
     <message>
-        <location line="-2669"/>
+        <location line="-2673"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP 过滤器已重新加载：%1 条目。</translation>
     </message>
     <message>
-        <location line="+94"/>
+        <location line="+98"/>
         <source>Options -&gt; %1 -&gt; %2</source>
         <translation>选项 -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+5703"/>
+        <location line="+5717"/>
         <source>Bandwidth</source>
         <translation>带宽</translation>
     </message>
     <message>
-        <location line="-5487"/>
+        <location line="-5501"/>
         <source>General options</source>
         <translation>常规选项</translation>
     </message>
@@ -18162,23 +18233,23 @@ Download it again?</source>
         <location line="-65"/>
         <location line="+66"/>
         <location line="+3052"/>
-        <location line="+3422"/>
+        <location line="+3436"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="-6346"/>
+        <location line="-6360"/>
         <source>User Name</source>
         <translation>用户名</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6720"/>
+        <location line="+6734"/>
         <source>Language</source>
         <translation>语言</translation>
     </message>
     <message>
-        <location line="-6717"/>
+        <location line="-6731"/>
         <source>System Default</source>
         <translation>系统默认</translation>
     </message>
@@ -18287,12 +18358,12 @@ Download it again?</source>
     <message>
         <location line="+8"/>
         <location line="+40"/>
-        <location line="+6597"/>
+        <location line="+6611"/>
         <source>Core</source>
         <translation>核心</translation>
     </message>
     <message>
-        <location line="-6610"/>
+        <location line="-6624"/>
         <source>Address:</source>
         <translation>地址：</translation>
     </message>
@@ -18427,12 +18498,12 @@ Are you sure you want to continue?</source>
         <translation>使用原版 eMule 图标</translation>
     </message>
     <message>
-        <location line="+8800"/>
+        <location line="+8814"/>
         <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
         <translation>每个版本都附带一个数据库。可选的免费 &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; 帐户可在版本之间保持其最新。本产品包含由 MaxMind 创建的 GeoLite2 数据。</translation>
     </message>
     <message>
-        <location line="-8747"/>
+        <location line="-8761"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation>节省 CPU &amp;&amp; 内存</translation>
     </message>
@@ -18493,7 +18564,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+4777"/>
+        <location line="+4791"/>
         <source>Torrents</source>
         <translation>种子</translation>
     </message>
@@ -18506,7 +18577,7 @@ Are you sure you want to continue?</source>
         <translation type="vanished">之前排序的列用于区分当前列中相同的项: 先点击“剩余”，再点击“状态”，即可按状态排序，同一状态内按剩余时间排序</translation>
     </message>
     <message>
-        <location line="-4680"/>
+        <location line="-4694"/>
         <source>Disable Known Clients list</source>
         <translation>禁用已知客户端列表</translation>
     </message>
@@ -18560,16 +18631,16 @@ Are you sure you want to continue?</source>
         <location line="+2067"/>
         <location line="+133"/>
         <location line="+301"/>
-        <location line="+1084"/>
-        <location line="+162"/>
-        <location line="+1410"/>
+        <location line="+1091"/>
+        <location line="+168"/>
+        <location line="+1411"/>
         <location line="+333"/>
         <location line="+31"/>
         <source>Enabled</source>
         <translation>已启用</translation>
     </message>
     <message>
-        <location line="-5519"/>
+        <location line="-5533"/>
         <source>Reset</source>
         <translation>重置</translation>
     </message>
@@ -18586,13 +18657,13 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4848"/>
+        <location line="+4862"/>
         <location line="+381"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-5232"/>
+        <location line="-5246"/>
         <source>Upload</source>
         <translation>上传</translation>
     </message>
@@ -18623,18 +18694,18 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+28"/>
-        <location line="+4672"/>
+        <location line="+4686"/>
         <source>Client Port</source>
         <translation>客户端端口</translation>
     </message>
     <message>
-        <location line="-4669"/>
-        <location line="+8500"/>
+        <location line="-4683"/>
+        <location line="+8514"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-8494"/>
+        <location line="-8508"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -18644,24 +18715,24 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4677"/>
+        <location line="+4691"/>
         <source>Test Ports</source>
         <translation>测试端口</translation>
     </message>
     <message>
-        <location line="-4673"/>
-        <location line="+4681"/>
+        <location line="-4687"/>
+        <location line="+4695"/>
         <source>Open Router</source>
         <translation>打开路由器</translation>
     </message>
     <message>
-        <location line="-4680"/>
-        <location line="+4681"/>
+        <location line="-4694"/>
+        <location line="+4695"/>
         <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
         <translation>打开此计算机路由器的网页，可在其中设置端口转发</translation>
     </message>
     <message>
-        <location line="-4677"/>
+        <location line="-4691"/>
         <source>Use UPnP to Setup Ports</source>
         <translation>使用 UPnP 设置端口</translation>
     </message>
@@ -18688,22 +18759,22 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+4"/>
         <location line="+1927"/>
-        <location line="+6106"/>
+        <location line="+6120"/>
         <source>Any</source>
         <translation>任意</translation>
     </message>
     <message>
-        <location line="-8031"/>
+        <location line="-8045"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>仅使用此网络接口，例如 VPN 隧道。可从列表中选择，或输入 IP 地址或子网（如 10.64.0.0/10，即拥有该范围内地址的接口）。通过代理的连接不会被绑定。</translation>
     </message>
     <message>
-        <location line="+7928"/>
+        <location line="+7942"/>
         <source>While the selected interface is not available, all P2P, Usenet and update connections stay closed.</source>
         <translation>所选接口不可用期间，所有 P2P、Usenet 和更新连接都保持关闭。</translation>
     </message>
     <message>
-        <location line="-7914"/>
+        <location line="-7928"/>
         <source>Max. Sources/File</source>
         <translation>最大来源/文件</translation>
     </message>
@@ -18722,12 +18793,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4701"/>
+        <location line="+4715"/>
         <source>Connection Limits</source>
         <translation>连接限制</translation>
     </message>
     <message>
-        <location line="-4699"/>
+        <location line="-4713"/>
         <source>Max. connections</source>
         <translation>最大连接数</translation>
     </message>
@@ -18931,13 +19002,13 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+7"/>
         <location line="+2106"/>
-        <location line="+1087"/>
-        <location line="+162"/>
+        <location line="+1094"/>
+        <location line="+168"/>
         <source>Name:</source>
         <translation>名称：</translation>
     </message>
     <message>
-        <location line="-3351"/>
+        <location line="-3364"/>
         <location line="+932"/>
         <location line="+849"/>
         <location line="+19"/>
@@ -19398,13 +19469,13 @@ Each rule replaces a regex pattern with a replacement string.</source>
     <message>
         <location line="+4"/>
         <location line="+997"/>
-        <location line="+1095"/>
-        <location line="+164"/>
+        <location line="+1102"/>
+        <location line="+170"/>
         <source>Name</source>
         <translation>名称</translation>
     </message>
     <message>
-        <location line="-2254"/>
+        <location line="-2267"/>
         <source>Users</source>
         <translation>用户</translation>
     </message>
@@ -19933,12 +20004,12 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+15"/>
-        <location line="+3056"/>
+        <location line="+3070"/>
         <source>Auto</source>
         <translation>自动</translation>
     </message>
     <message>
-        <location line="-3043"/>
+        <location line="-3057"/>
         <source>Select Color</source>
         <translation>选择颜色</translation>
     </message>
@@ -20155,14 +20226,14 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+3"/>
-        <location line="+696"/>
+        <location line="+702"/>
         <location line="+274"/>
         <location line="+15"/>
         <source>News servers</source>
         <translation>新闻服务器</translation>
     </message>
     <message>
-        <location line="-979"/>
+        <location line="-985"/>
         <source>Host</source>
         <translation>主机</translation>
     </message>
@@ -20254,13 +20325,13 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     <message>
         <location line="-826"/>
         <location line="+828"/>
-        <location line="+1072"/>
-        <location line="+175"/>
+        <location line="+1079"/>
+        <location line="+181"/>
         <source> days</source>
         <translation> 天</translation>
     </message>
     <message>
-        <location line="-1246"/>
+        <location line="-1259"/>
         <source>Retention:</source>
         <translation>保留期：</translation>
     </message>
@@ -20293,13 +20364,13 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     <message>
         <location line="-3279"/>
         <location line="+63"/>
-        <location line="+6474"/>
+        <location line="+6488"/>
         <location line="+2796"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-8769"/>
+        <location line="-8783"/>
         <source>Show download progress on the Dock icon</source>
         <translation>在程序坞图标上显示下载进度</translation>
     </message>
@@ -20460,14 +20531,14 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+1"/>
-        <location line="+2088"/>
+        <location line="+2102"/>
         <location line="+9"/>
         <location line="+180"/>
         <source>No limit</source>
         <translation>无限制</translation>
     </message>
     <message>
-        <location line="-2269"/>
+        <location line="-2283"/>
         <source>Allowance size:</source>
         <translation>额度大小：</translation>
     </message>
@@ -20523,19 +20594,19 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2211"/>
+        <location line="+2225"/>
         <source>Share of the download limit:</source>
         <translation>占下载限速的份额：</translation>
     </message>
     <message>
-        <location line="-2208"/>
+        <location line="-2222"/>
         <location line="+42"/>
-        <location line="+2158"/>
+        <location line="+2172"/>
         <source> %</source>
         <translation> %</translation>
     </message>
     <message>
-        <location line="-2198"/>
+        <location line="-2212"/>
         <source>How much of the global download limit Usenet may take while eD2K is also downloading. Whichever engine is idle lends its whole share to the other, so this only applies when both are busy.</source>
         <translation>当 eD2K 也在下载时，Usenet 可占用全局下载限速的比例。空闲的一方会把自己的全部份额让给另一方，因此此设置仅在两者都繁忙时生效。</translation>
     </message>
@@ -20585,12 +20656,12 @@ The answer is never a verdict. Nothing here can stop an article being fetched �
     <message>
         <location line="-1680"/>
         <location line="+1684"/>
-        <location line="+1379"/>
+        <location line="+1392"/>
         <source>never</source>
         <translation>从不</translation>
     </message>
     <message>
-        <location line="-4277"/>
+        <location line="-4290"/>
         <source>Show free disk space in status bar</source>
         <translation>在状态栏显示可用磁盘空间</translation>
     </message>
@@ -20784,18 +20855,18 @@ It cannot be inside your temp, incoming or configuration folders: the daemon wri
     </message>
     <message>
         <location line="+5"/>
-        <location line="+1832"/>
+        <location line="+1846"/>
         <source>Browse…</source>
         <translation>浏览…</translation>
     </message>
     <message>
-        <location line="-1824"/>
-        <location line="+1911"/>
+        <location line="-1838"/>
+        <location line="+1925"/>
         <source>Desktop</source>
         <translation>桌面</translation>
     </message>
     <message>
-        <location line="-1907"/>
+        <location line="-1921"/>
         <source>Open .nzb files with eMule Qt</source>
         <translation>使用 eMule Qt 打开 .nzb 文件</translation>
     </message>
@@ -21004,7 +21075,7 @@ Resume publishes it anyway.</source>
         <translation>不需要的文件类型：</translation>
     </message>
     <message>
-        <location line="+196"/>
+        <location line="+202"/>
         <source>The news server list could not be saved.</source>
         <translation>无法保存新闻服务器列表。</translation>
     </message>
@@ -21078,7 +21149,7 @@ Enter what your provider&apos;s control panel says, or 0 to start again.</source
         <translation>新服务器</translation>
     </message>
     <message>
-        <location line="+39"/>
+        <location line="+40"/>
         <source>Enter a host name first.</source>
         <translation>请先输入主机名。</translation>
     </message>
@@ -21099,7 +21170,7 @@ Auto follows the upload capacity: 2 below 1 Mbit/s, 4 below 4 Mbit/s, 8 below 20
 自动按上传容量决定：低于 1 Mbit/s 为 2，低于 4 Mbit/s 为 4，低于 20 Mbit/s 为 8，低于 100 Mbit/s 为 16，否则为 32。</translation>
     </message>
     <message>
-        <location line="+5163"/>
+        <location line="+5170"/>
         <location line="+5"/>
         <location line="+18"/>
         <location line="+13"/>
@@ -21166,15 +21237,15 @@ Auto follows the upload capacity: 2 below 1 Mbit/s, 4 below 4 Mbit/s, 8 below 20
         </translation>
     </message>
     <message>
-        <location line="-9478"/>
-        <location line="+4248"/>
-        <location line="+395"/>
+        <location line="-9492"/>
+        <location line="+4255"/>
+        <location line="+401"/>
         <location line="+541"/>
         <source>Indexers</source>
         <translation>索引器</translation>
     </message>
     <message>
-        <location line="-931"/>
+        <location line="-937"/>
         <source>URL</source>
         <translation>URL</translation>
     </message>
@@ -21195,12 +21266,12 @@ Auto follows the upload capacity: 2 below 1 Mbit/s, 4 below 4 Mbit/s, 8 below 20
     </message>
     <message>
         <location line="+11"/>
-        <location line="+162"/>
+        <location line="+168"/>
         <source>Display name</source>
         <translation>显示名称</translation>
     </message>
     <message>
-        <location line="-160"/>
+        <location line="-166"/>
         <source>Also the identity of this account: it names the cached capabilities and appears in the Indexer column of the results.</source>
         <translation>它同时也是此账户的标识：缓存的功能信息以它命名，并显示在结果的“索引器”列中。</translation>
     </message>
@@ -21294,20 +21365,20 @@ Every page is an API call against the allowance your account has, so this is a s
         <translation>适用于来自索引器搜索或订阅源的下载。索引器提供替代时使用它;否则在索引器中搜索相同剧集或标题,并将尚未尝试过、大小相近的最新结果加入队列。最多尝试三次。</translation>
     </message>
     <message>
-        <location line="+56"/>
+        <location line="+62"/>
         <source>A feed is a search that runs on its own and queues what it finds. Its first check adds nothing — it only records what the indexer already lists, because otherwise a new feed would download everything still on the server.</source>
         <translation>订阅源是一个自动运行并把结果加入队列的搜索。它的首次检查不会添加任何内容 — 只是记录索引器当前列出的条目，否则新建的订阅源会把服务器上仍保留的一切都下载下来。</translation>
     </message>
     <message>
-        <location line="-4403"/>
-        <location line="+4411"/>
+        <location line="-4416"/>
+        <location line="+4424"/>
         <location line="+325"/>
         <location line="+277"/>
         <source>Feeds</source>
         <translation>订阅源</translation>
     </message>
     <message>
-        <location line="-5615"/>
+        <location line="-5632"/>
         <source>Search options</source>
         <translation>搜索选项</translation>
     </message>
@@ -21319,7 +21390,7 @@ Enter: next page, Esc: clear</source>
 Enter：下一页，Esc：清除</translation>
     </message>
     <message>
-        <location line="+1054"/>
+        <location line="+1058"/>
         <source>Show icon in system tray</source>
         <translation>在系统托盘显示图标</translation>
     </message>
@@ -21389,7 +21460,7 @@ Enter：下一页，Esc：清除</translation>
         <translation>关闭：点击已在下载或已共享文件的链接时，只在日志和状态栏中记录。</translation>
     </message>
     <message>
-        <location line="+2747"/>
+        <location line="+2760"/>
         <source>Search</source>
         <translation>搜索</translation>
     </message>
@@ -21659,7 +21730,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>新索引器</translation>
     </message>
     <message>
-        <location line="+33"/>
+        <location line="+34"/>
         <source>Enter an API URL first.</source>
         <translation>请先输入 API URL。</translation>
     </message>
@@ -22085,9 +22156,9 @@ Auto follows the upload capacity: 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 
         <translation>达到分享率时停止：</translation>
     </message>
     <message>
-        <location line="-3675"/>
+        <location line="-3689"/>
         <location line="+1721"/>
-        <location line="+1958"/>
+        <location line="+1972"/>
         <source> min</source>
         <translation> 分钟</translation>
     </message>
@@ -22247,8 +22318,8 @@ Look up the &quot;default gateway&quot; in this computer&apos;s network settings
         <translation type="vanished">打开路由器页面</translation>
     </message>
     <message>
-        <location line="-9298"/>
-        <location line="+9217"/>
+        <location line="-9312"/>
+        <location line="+9231"/>
         <location line="+63"/>
         <source>Directories</source>
         <translation>目录</translation>
@@ -22392,7 +22463,7 @@ Create it?</source>
         <translation>过滤服务器和客户端局域网 IP</translation>
     </message>
     <message>
-        <location line="-5155"/>
+        <location line="-5169"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation>显示更多控件（高级模式控件）</translation>
     </message>
@@ -22565,7 +22636,7 @@ RAR 和 7z 需要安装 7-Zip 或 unrar;ZIP 不需要。</translation>
         <translation>仅当核心在本机运行时。否则单击会显示“传输”窗口。</translation>
     </message>
     <message>
-        <location line="+2616"/>
+        <location line="+2629"/>
         <source>Which download category this feed&apos;s matches go into. The category decides the folder they finish in, and it is resolved when a release completes — so repointing the category moves what is still running with it.
 
 Torrents from a torznab indexer go to the BitTorrent download folder instead.</source>
@@ -22574,7 +22645,7 @@ Torrents from a torznab indexer go to the BitTorrent download folder instead.</s
 来自 torznab 索引器的种子会改为进入 BitTorrent 下载文件夹。</translation>
     </message>
     <message>
-        <location line="+774"/>
+        <location line="+775"/>
         <source>Runs the BitTorrent engine in the core. Off, the engine stops: no torrent is downloaded or seeded and the BitTorrent port is closed. Torrents stay in the list and continue when it is switched on again.</source>
         <translation>在核心中运行 BitTorrent 引擎。关闭时引擎停止：不下载也不做种任何种子，BitTorrent 端口关闭。种子保留在列表中，重新开启后继续。</translation>
     </message>
@@ -22982,8 +23053,8 @@ News server connections switch over immediately.</source>
 新闻服务器连接会立即切换。</translation>
     </message>
     <message>
-        <location line="-6899"/>
-        <location line="+7469"/>
+        <location line="-6913"/>
+        <location line="+7483"/>
         <source>Web Interface</source>
         <translation>Web 界面</translation>
     </message>
@@ -23056,18 +23127,18 @@ News server connections switch over immediately.</source>
         <translation>恢复默认值</translation>
     </message>
     <message>
-        <location line="-8718"/>
+        <location line="-8732"/>
         <location line="+2811"/>
-        <location line="+1087"/>
-        <location line="+164"/>
-        <location line="+1761"/>
+        <location line="+1094"/>
+        <location line="+170"/>
+        <location line="+1762"/>
         <location line="+406"/>
         <location line="+2487"/>
         <source>Remove</source>
         <translation>删除</translation>
     </message>
     <message>
-        <location line="-7160"/>
+        <location line="-7174"/>
         <source>New eMule Qt version detected</source>
         <translation>检测到新的 eMule Qt 版本</translation>
     </message>
@@ -23077,7 +23148,7 @@ News server connections switch over immediately.</source>
         <translation>从 URL 更新：（filter.dat 或 PeerGuardian 格式，支持 .gz/.zip）</translation>
     </message>
     <message>
-        <location line="+2999"/>
+        <location line="+3013"/>
         <source>Private tracker torrents (ALT) and I2P torrents are not shared.</source>
         <translation>私有 Tracker 的种子（ALT）和 I2P 种子不会共享。</translation>
     </message>
@@ -23152,14 +23223,14 @@ News server connections switch over immediately.</source>
         <translation>请求的租期：</translation>
     </message>
     <message>
-        <location line="-2707"/>
-        <location line="+981"/>
-        <location line="+1730"/>
+        <location line="-2721"/>
+        <location line="+988"/>
+        <location line="+1737"/>
         <source> s</source>
         <translation> 秒</translation>
     </message>
     <message>
-        <location line="-5560"/>
+        <location line="-5574"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>正在接收数据的下载及发送数据的来源以粗体显示。列在其他文件下的来源 (A4AF) 在传输时也以粗体显示。已连接的服务器和选中的分类标签页同样以粗体显示。</translation>
     </message>
@@ -23218,7 +23289,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="vanished">共享所有种子，包括私有 Tracker 的种子（ALT）</translation>
     </message>
     <message>
-        <location line="+2064"/>
+        <location line="+2078"/>
         <source>Queue</source>
         <translation>队列</translation>
     </message>
@@ -23426,11 +23497,11 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>新建计划</translation>
     </message>
     <message>
-        <location line="-4791"/>
+        <location line="-4805"/>
         <location line="+1683"/>
-        <location line="+1087"/>
-        <location line="+164"/>
-        <location line="+2102"/>
+        <location line="+1094"/>
+        <location line="+170"/>
+        <location line="+2103"/>
         <location line="+2547"/>
         <source>Add</source>
         <translation>添加</translation>
@@ -23454,8 +23525,8 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>设置页面 %1 尚未实现。</translation>
     </message>
     <message>
-        <location line="-6698"/>
-        <location line="+6902"/>
+        <location line="-6712"/>
+        <location line="+6916"/>
         <source>Proxy</source>
         <translation>代理</translation>
     </message>
@@ -24570,7 +24641,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
         <translation>自己</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+4"/>
         <source>Hidden: %1</source>
         <translation>已隐藏：%1</translation>
     </message>

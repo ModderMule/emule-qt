@@ -265,6 +265,9 @@ public:
     /// Checks a login with the resolver; accountChecked() follows (first a Login event when the
     /// plugin waits for a browser login). Empty @p password: the stored login of @p host / @p user.
     void checkAccount(const QString& host, const QString& user, const QString& password);
+    /// The user's confirmation code for the running check of @p host / @p user (its Code event);
+    /// empty @p code cancels. False: no check of that login waits.
+    bool answerAccountCode(const QString& host, const QString& user, const QString& code);
     /// Checks @p urls through the core, as an item's own check goes: linkChecked() for each,
     /// a fresh result at once. The core keeps what it learns (a dead link stays dead), so a
     /// download soon after starts from it. False: hosters off, no resolver or no node.
@@ -544,6 +547,9 @@ private:
     /// links' ALIAS records (rechecked as before) for deletedDays().
     void keepDeletedVolumes(const QStringList& volumes);
     void onDeletedEnded(const DeletedFile& f) override;
+    /// alias.md §3: a deleted row's links are asked at least every kDeletedCheckMs, whatever
+    /// recheckHours says (0: never, or over 168 h); results come to onRechecked.
+    void checkDeleted(qint64 now) override;
     void onUnpacked(const HosterUnpackResult& r);
     /// Extraction switched off: archives waiting in Temp go to incoming as they are.
     void releaseArchives();
@@ -586,6 +592,7 @@ private:
         QString host;
         QString user;
         QString password;   ///< checked; the stored login's when it is the same, its session is saved
+        bool waitsCode = false;   ///< asked for a confirmation code (answerAccountCode)
         bool operator==(const AccountCheck& o) const { return host == o.host && user == o.user; }
     };
     std::map<Ed3kResolver::TaskId, AccountCheck> m_accountChecks;

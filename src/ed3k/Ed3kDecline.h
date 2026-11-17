@@ -13,8 +13,10 @@
 //   anything else                   a keyword; several words on a line = all must be words of the file name
 // A prefixed line with a bad value is skipped (DeclineList::invalid), never a keyword.
 // Local uses (declined-records.md §2): own publishing skips listed roots / eD2K hashes
-// (Ed3kJoinBase::publishShared, Ed3kShared::share); a download of one is added paused and
-// the user told (Ed3kDownloads::declinedAdded).
+// (Ed3kJoinBase::publishShared, Ed3kShared::share; a list change withdraws or publishes again:
+// Ed3kSession::declinedChanged); a download of one is added paused and the user told
+// (Ed3kDownloads::declinedAdded); search rows hidden (Ed3kSearch::judge). Lists fetched from
+// URLs (Ed3kDeclineUrls) are merged in.
 
 #include "Ed3kFfi.h"
 
@@ -50,6 +52,8 @@ struct DeclineList {
     [[nodiscard]] bool listsFile(const ::ed3k::Root& root, const QByteArray& md4 = {}) const;
     /// For Engine::kadDeclineLists.
     [[nodiscard]] ::ed3k::DeclineLists toFfi() const;
+    /// Adds the entries of @p other not listed yet (invalid stays this list's own).
+    void merge(const DeclineList& other);
 };
 
 inline constexpr auto kDeclineFile = "decline.txt";

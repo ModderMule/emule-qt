@@ -536,6 +536,14 @@ void Ed3kJdResolver::answerPuzzle(std::uint64_t puzzle, const QString& text)
               {QStringLiteral("text"), text}});
 }
 
+void Ed3kJdResolver::answerCode(TaskId task, const QString& code)
+{
+    if (running())
+        send({{QStringLiteral("op"), QStringLiteral("answerCode")},
+              {QStringLiteral("task"), static_cast<qint64>(task)},
+              {QStringLiteral("text"), code}});
+}
+
 void Ed3kJdResolver::cancel(TaskId task)
 {
     if (std::erase_if(m_held, [task](const auto& h) { return h.first == task; }) > 0) {
@@ -601,7 +609,8 @@ std::optional<std::pair<Ed3kResolver::TaskId, ResolverEvent>> Ed3kJdResolver::pa
         {QStringLiteral("account"), K::Account},    {QStringLiteral("sites"), K::Sites},
         {QStringLiteral("status"), K::Status},       {QStringLiteral("solvers"), K::Solvers},
         {QStringLiteral("solved"), K::Solved},       {QStringLiteral("login"), K::Login},
-        {QStringLiteral("accountHosts"), K::AccountHosts}, {QStringLiteral("favicon"), K::Icon}};
+        {QStringLiteral("accountHosts"), K::AccountHosts}, {QStringLiteral("favicon"), K::Icon},
+        {QStringLiteral("code"), K::Code}};
     const auto k = kinds.find(ev);
     if (k == kinds.end())
         return std::nullopt;
@@ -660,6 +669,8 @@ std::optional<std::pair<Ed3kResolver::TaskId, ResolverEvent>> Ed3kJdResolver::pa
     }
     if (e.kind == K::Login)
         e.text = str("url");
+    if (e.kind == K::Code)
+        e.name = str("title");
     if (e.kind == K::AccountHosts) {
         for (const QJsonValue& v : o.value(QStringLiteral("hosts")).toArray()) {
             const QJsonObject h = v.toObject();
@@ -1222,6 +1233,9 @@ void Ed3kJdResolver::logEvent(TaskId id, const QString& ev, const ResolverEvent&
         break;
     case K::Login:
         d = QStringLiteral("browser login at %1, %2 s").arg(e.host).arg(e.timeoutS);
+        break;
+    case K::Code:
+        d = QStringLiteral("confirmation code, %1 s").arg(e.timeoutS);   // the site's words stay out
         break;
     case K::Done:
         d = QStringLiteral("'%1', %2 B").arg(e.name).arg(e.size);

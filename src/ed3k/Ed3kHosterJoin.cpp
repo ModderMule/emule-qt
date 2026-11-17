@@ -734,6 +734,20 @@ void Ed3kHosterJoin::checkAccount(const QString& host, const QString& user, cons
     m_accountChecks[m_resolver->accountCheck(host, login)] = {host, user, pass};
 }
 
+bool Ed3kHosterJoin::answerAccountCode(const QString& host, const QString& user, const QString& code)
+{
+    if (!m_resolver)
+        return false;
+    // the check that asked: a background check of the same login may run too
+    for (auto& [task, check] : m_accountChecks)
+        if (check.waitsCode && check.host == host && check.user == user) {
+            check.waitsCode = false;
+            m_resolver->answerCode(task, code.trimmed());
+            return true;
+        }
+    return false;
+}
+
 const Ed3kHosterAccount* Ed3kHosterJoin::storedLogin(const QString& host, const QString& user) const
 {
     for (const QList<Ed3kHosterAccount>* list : {&m_prefs.accounts, &m_prefs.debrid, &m_prefs.solvers})
@@ -1763,10 +1777,15 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
         return;
     }
     if (const auto it = m_accountChecks.find(task); it != m_accountChecks.end()) {
-        const auto [host, user, password] = it->second;
-        // a browser login waits for the user: the check goes on
-        if (ev.kind == K::Login) {
-            logInfo(QStringLiteral("hoster: %1 waits for a browser login").arg(host));
+        const QString host = it->second.host;
+        const QString user = it->second.user;
+        const QString password = it->second.password;
+        // a browser login or a confirmation code waits for the user: the check goes on
+        if (ev.kind == K::Login || ev.kind == K::Code) {
+            if (ev.kind == K::Code)
+                it->second.waitsCode = true;
+            logInfo(ev.kind == K::Login ? QStringLiteral("hoster: %1 waits for a browser login").arg(host)
+                                        : QStringLiteral("hoster: %1 waits for a confirmation code").arg(host));
             emit accountChecked(host, user, ev);
             return;
         }
@@ -3858,6 +3877,33 @@ void Ed3kHosterJoin::keepDeletedVolumes(const QStringList& volumes)
             logInfo(QStringLiteral("%1: volume deleted after unpacking, its links stay published (%2 day(s) at most, rechecked)")
                         .arg(e.item.host).arg(deletedDays()));
     }
+}
+
+void Ed3kHosterJoin::checkDeleted(qint64 now)
+{
+    // §3: no hoster is asked anything without the user's switch; asked at the next hourly turn
+    if (!m_started || !m_prefs.enabled || !m_resolver || !m_resolver->available() || !m_session.engine())
+        return;
+    bool queued = false;
+    for (const DeletedFile& f : deletedFiles()) {
+        bool ok = false;
+        const quint32 id = f.owner.toUInt(&ok);
+        Entry* e = ok ? find(id) : nullptr;
+        if (!e || !e->root || *e->root != f.root)
+            continue;
+        for (SharedLink& l : e->shared) {
+            // queueRechecks asks a shorter recheckHours by itself
+            if (l.checking || l.offline || now - l.checkedAt < kDeletedCheckMs || now < l.retryAt)
+                continue;
+            l.checking = true;
+            const QString host = l.url == e->item.url ? e->item.host : QUrl(l.url).host();
+            logDebug([&]() -> QString { return QStringLiteral("%1: rechecking the link of a deleted volume").arg(host); });
+            m_probeQueue.append({l.url, host, now, e->item.id});
+            queued = true;
+        }
+    }
+    if (queued)
+        pumpProbes();
 }
 
 void Ed3kHosterJoin::onDeletedEnded(const DeletedFile& f)

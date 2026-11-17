@@ -54,8 +54,10 @@ final class AccountTask extends Task {
         final jd.plugins.Account acc = account.toJd(lazy.getHost());
         final Map<String, Object> m = Out.event(id, "account");
         // a browser login (OAuth device flow) goes to the user as a `login` event
+        // and a confirmation code (2FA, a "new sign in" mail) too (CodeAsker)
         if (askLogin) {
             LoginSolver.checking(plugin, id);
+            CodeAsker.checking(id);
         }
         try {
             final AccountInfo ai = plugin.fetchAccountInfo(acc);
@@ -97,6 +99,7 @@ final class AccountTask extends Task {
             }
         } finally {
             LoginSolver.done(plugin);
+            CodeAsker.done();
             plugin.clean();
         }
         Out.send(m);

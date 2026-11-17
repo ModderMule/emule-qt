@@ -139,6 +139,17 @@ QString linkName(const QString& link)
     return dn.isEmpty() ? IrcPanel::tr("room %1").arg(q.queryItemValue(QStringLiteral("key")).left(8)) : dn;
 }
 
+/// Same room: same `key` and `id` of two ed3k:room links, any case, any `dn` (core: Ed3kRooms::sameRoomLink).
+bool sameRoomLink(const QString& a, const QString& b)
+{
+    const auto ident = [](const QString& link) {
+        const QUrlQuery q(link.mid(link.indexOf(QLatin1Char('?')) + 1));
+        return std::pair{q.queryItemValue(QStringLiteral("key")).toLower(), q.queryItemValue(QStringLiteral("id")).toLower()};
+    };
+    const auto x = ident(a);
+    return !x.first.isEmpty() && !x.second.isEmpty() && x == ident(b);
+}
+
 } // namespace
 
 void IrcPanel::setIpcClient(IpcClient* ipc)
@@ -149,6 +160,20 @@ void IrcPanel::setIpcClient(IpcClient* ipc)
 
 bool IrcPanel::openEd3kRoomLink(const QString& link)
 {
+    // already a member (as known eD2K/ed3k files): no question, its tab shows
+    if (m_roomList)
+        for (const QCborValue& v : m_roomList->rooms()) {
+            const QCborMap row = v.toMap();
+            if (!sameRoomLink(row.value(QStringLiteral("link")).toString(), link))
+                continue;
+            const QString room = row.value(QStringLiteral("room")).toString();
+            m_roomTabsClosed.removeAll(room);
+            ensureRoomTab(room, true);
+            const QString title = row.value(QStringLiteral("title")).toString();
+            appendInfo(Ed3kRoomTab::keyOf(room), tr("* You are already a member of the room \"%1\"")
+                                                     .arg(title.isEmpty() ? linkName(link) : title));
+            return true;
+        }
     // the link may carry s: the dialog names the room, never shows the secret
     const auto answer = QMessageBox::question(this, tr("ed3k room"),
         tr("Join the ed3k room \"%1\"?\n\nOther members see your nick and posts; your node takes "
@@ -327,7 +352,10 @@ void IrcPanel::onEd3kRoomNotice(const IpcMessage& msg)
     const QString who = msg.fieldString(4);
     switch (kind) {
     case Notice::Joined:
-        appendInfo(key, tr("* Now in the room"));
+        // as IRC's "Now talking in": who we are here
+        if (const Ed3kRoomTab* tab = roomTab(room))
+            appendInfo(key, tr("* You joined the room as %1")
+                                .arg(Ed3kRoomTab::shownName(tab->row().value(QStringLiteral("nick")).toString(), tab->memberKey())));
         break;
     case Notice::Banned:
         appendInfo(key, tr("* %1 was banned").arg(who.left(8)), IrcRouting::LineColor::Quit);
@@ -619,7 +647,10 @@ void IrcPanel::createEd3kRoom()
     const auto form = askRoomForm(this, tr("Create an ed3k room"), start, true);
     if (!form)
         return;
-    m_ipc->createEd3kRoom(form->title, form->about, form->flags, form->nick.isEmpty() ? ed3kNick() : form->nick,
+    QString nick = form->nick.isEmpty() ? ed3kNick() : form->nick;
+    if (nick.isEmpty() && (nick = askIrcNick({})).isEmpty())
+        return;
+    m_ipc->createEd3kRoom(form->title, form->about, form->flags, nick,
                           [self = QPointer<IrcPanel>(this)](const IpcMessage& r) {
                               if (!self)
                                   return;
@@ -651,7 +682,10 @@ void IrcPanel::joinEd3kRoom(const QString& link)
         appendInfo(m_statusKey, tr("* Not an ed3k room link"), IrcRouting::LineColor::Notice);
         return;
     }
-    m_ipc->joinEd3kRoom(l, ed3kNick(), [self = QPointer<IrcPanel>(this)](const IpcMessage& r) {
+    QString nick = ed3kNick();
+    if (nick.isEmpty() && (nick = askIrcNick({})).isEmpty())
+        return;
+    m_ipc->joinEd3kRoom(l, nick, [self = QPointer<IrcPanel>(this)](const IpcMessage& r) {
         if (!self)
             return;
         if (!r.isValid() || !r.fieldBool(0)) {
@@ -805,7 +839,13 @@ void IrcPanel::ed3kRoomFailed(const QString& what, const IpcMessage& reply)
 QString IrcPanel::ed3kNick() const
 {
     const QString irc = thePrefs.ircNick();
-    return irc.isEmpty() ? thePrefs.nick() : irc;
+    if (!irc.isEmpty())
+        return irc;
+    // the default eMule nick is the website URL: no name in a room
+    const QString nick = thePrefs.nick().trimmed();
+    if (nick == Preferences::defaultNick() || Preferences::isMfcDefaultNick(nick) || nick.contains(QLatin1String("://")))
+        return {};
+    return nick;
 }
 
 } // namespace eMule

@@ -120,6 +120,9 @@ public:
     QSet<QString> privateUrls;   ///< open() fails like the address guard (code "private")
     QSet<QString> premiumHosts;  ///< accountCheck() says premium for these
     QHash<QString, int> maxDownloads;   ///< accountCheck() tells JD's downloads at once
+    QSet<QString> codeHosts;     ///< accountCheck() asks a user check for a confirmation code
+    std::map<TaskId, QString> codeWaits;   ///< check task → host, until answerCode()
+    QStringList codesGot;
     QHash<QString, QList<DebridHost>> debridHosts;   ///< accountCheck(): these are multi-hosters for these hosts
     QSet<QString> debridFails;   ///< open() through one of these multi-hosters fails
     bool debrid = true;          ///< canDebrid()
@@ -318,6 +321,15 @@ public:
         ++accountChecks;
         checkedAccounts.append(account);
         const TaskId t = next++;
+        if (codeHosts.contains(host) && account.askLogin) {
+            ResolverEvent c;
+            c.kind = ResolverEvent::Kind::Code;
+            c.text = QStringLiteral("We noticed a new sign on your account.");
+            c.timeoutS = 600;
+            codeWaits[t] = host;
+            later(t, c);
+            return t;
+        }
         ResolverEvent e;
         e.kind = ResolverEvent::Kind::Account;
         e.valid = true;
@@ -331,6 +343,18 @@ public:
         }
         later(t, e);
         return t;
+    }
+    void answerCode(TaskId task, const QString& code) override
+    {
+        const auto it = codeWaits.find(task);
+        if (it == codeWaits.end())
+            return;
+        codesGot << code;
+        ResolverEvent e;
+        e.kind = ResolverEvent::Kind::Account;
+        e.valid = code == QLatin1StringView("726076");
+        later(task, e);
+        codeWaits.erase(it);
     }
     void answerPuzzle(std::uint64_t puzzle, const QString& text) override
     {
@@ -1335,6 +1359,39 @@ private slots:
         QVERIFY(!r.join->sharedLinks(ids[0]).value(0).aliasOut);
     }
 
+    /// alias.md §3: a deleted volume's link is asked at least weekly, also with recheckHours 0
+    void extract_deletedVolumeRecheckedWeeklyAtZeroHours()
+    {
+        Rig r;
+        const QString zip = r.tmp.filePath(QStringLiteral("src.zip"));
+        QVERIFY(writeZip(zip, {{QStringLiteral("only.txt"), QByteArray("w")}}));
+        QFile zf(zip);
+        QVERIFY(zf.open(QIODevice::ReadOnly));
+        r.resolver.data = zf.readAll();
+        r.resolver.fileName = QStringLiteral("week.zip");
+        r.prefs.deleteArchives = true;
+        r.prefs.recheckHours = 0;
+        QVERIFY(r.start(true));
+        const QString url = QStringLiteral("https://fake.example/z/5");
+        const auto ids = r.join->addLinks(url);
+        QCOMPARE(ids.size(), 1);
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->item(ids[0])->reason, Ed3kHosterJoin::Reason::Unpacked, 60000);
+        QCOMPARE(r.join->deletedCount(), std::size_t(1));
+        // checked 100 h ago: within the week, not asked
+        const int checks = r.resolver.checks;
+        QVERIFY(r.restart(stale));
+        QTest::qWait(1500);
+        QCOMPARE(r.resolver.checks, checks);
+        QCOMPARE(r.join->deletedCount(), std::size_t(1));
+        // 8 days: asked though recheckHours is 0; the link is gone: the row ends
+        r.resolver.goneUrls << url;
+        QVERIFY(r.restart([](QJsonObject& l) {
+            l[QStringLiteral("checkedAt")] = QDateTime::currentMSecsSinceEpoch() - 8LL * 24 * 3600 * 1000;
+        }));
+        QTRY_COMPARE_WITH_TIMEOUT(r.join->deletedCount(), std::size_t(0), 20000);
+        QVERIFY(r.resolver.checks > checks);
+    }
+
     /// an encrypted zip: the package's passwords first (a container's); none opens it ->
     /// UnpackPassword; a typed one goes first in the package and the extraction runs again
     void extract_passwordFromPackageThenTyped()
@@ -2050,6 +2107,39 @@ private slots:
         const auto ev = checked.last().at(2).value<ResolverEvent>();
         QCOMPARE(ev.kind, ResolverEvent::Kind::Failed);
         QCOMPARE(ev.code, QStringLiteral("noLogin"));
+    }
+
+    /// a login needs a confirmation code: the check waits, the user's code finishes it
+    void account_confirmationCode()
+    {
+        Rig r;
+        r.resolver.codeHosts = {QStringLiteral("code.example")};
+        r.prefs.accounts = {{QStringLiteral("code.example"), QStringLiteral("u"), QStringLiteral("p")}};
+        QVERIFY(r.start(true));
+        QSignalSpy checked(r.join.get(), &Ed3kHosterJoin::accountChecked);
+        // the user's check's event of @p kind (a background check of the login reports too)
+        const auto got = [&checked](ResolverEvent::Kind kind) -> std::optional<ResolverEvent> {
+            for (const QList<QVariant>& args : checked)
+                if (const auto ev = args.at(2).value<ResolverEvent>(); ev.kind == kind && args.at(1).toString() == u"u")
+                    return ev;
+            return std::nullopt;
+        };
+        // a background check never asks: nothing waits yet
+        QVERIFY(!r.join->answerAccountCode(QStringLiteral("code.example"), QStringLiteral("u"), QStringLiteral("1")));
+        r.join->checkAccount(QStringLiteral("code.example"), QStringLiteral("u"), {});
+        QTRY_VERIFY_WITH_TIMEOUT(got(ResolverEvent::Kind::Code).has_value(), 10000);
+        const ResolverEvent code = *got(ResolverEvent::Kind::Code);
+        QVERIFY(!code.isFinal());
+        QVERIFY(code.text.contains(QStringLiteral("new sign")));
+        // another login has no check waiting
+        QVERIFY(!r.join->answerAccountCode(QStringLiteral("code.example"), QStringLiteral("other"), QStringLiteral("1")));
+        checked.clear();
+        QVERIFY(r.join->answerAccountCode(QStringLiteral("code.example"), QStringLiteral("u"), QStringLiteral(" 726076 ")));
+        QTRY_VERIFY_WITH_TIMEOUT(got(ResolverEvent::Kind::Account).has_value(), 10000);
+        QVERIFY(got(ResolverEvent::Kind::Account)->valid);
+        QCOMPARE(r.resolver.codesGot, QStringList{QStringLiteral("726076")});
+        // answered once: no more answers taken
+        QVERIFY(!r.join->answerAccountCode(QStringLiteral("code.example"), QStringLiteral("u"), QStringLiteral("1")));
     }
 
     /// the multi-hoster fails: the hoster itself is asked next, without a try counted

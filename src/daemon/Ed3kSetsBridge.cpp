@@ -106,6 +106,7 @@ QCborMap toCbor(const ed3k::Ed3kSets::Info& i)
         {QStringLiteral("parts"), parts},
         {QStringLiteral("pendingMounts"), strings(i.pendingMounts)},
         {QStringLiteral("paidScope"), i.paidScope},
+        {QStringLiteral("key"), i.key == ::ed3k::KeyKind::Anon ? QStringLiteral("Anonymous") : QStringLiteral("Node")},   // hops.md §1
     };
 }
 

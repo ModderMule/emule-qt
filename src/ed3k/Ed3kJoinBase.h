@@ -330,6 +330,14 @@ protected:
     /// Takes back what publishShared published (unpublish, or anonUnshare + anonUnpublish
     /// under the anonymous key).
     void unpublishShared(const ffi::Root& root, ffi::Publish mode);
+    /// declined() changed (Ed3kSession::declinedChanged, declined-records.md §2): shared roots
+    /// now listed are withdrawn (unpublishShared Both, their note); ones no longer listed are
+    /// published again from the FileInfo publishShared kept. Their ALIAS and set records only
+    /// at the next start (shareKept).
+    virtual void onDeclinedChanged();
+    /// publishShared keeps each FileInfo for onDeclinedChanged; off for a join with its own
+    /// republish path (Ed3kShared: many files).
+    void setKeepPublishInfo(bool on) { m_keepPublishInfo = on; }
     /// The key a member of this join is opened under: Ed3kHide::keyFor when anonCapable(),
     /// else the node key.
     [[nodiscard]] ffi::KeyKind keyFor(const ffi::Root& root) const;
@@ -632,6 +640,11 @@ private:
     mutable std::optional<std::vector<DeletedFile>> m_deleted;
     QTimer m_deletedTimer;
     int m_deletedDays = 365;
+    /// publishShared's FileInfo per shared root (onDeclinedChanged), and the roots withdrawn
+    /// or refused as declined
+    std::map<ffi::Root, ffi::FileInfo> m_publishInfo;
+    std::set<ffi::Root> m_declinedOut;
+    bool m_keepPublishInfo = true;
 };
 
 } // namespace eMule::ed3k

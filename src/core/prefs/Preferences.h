@@ -1684,6 +1684,11 @@ public:
     void setEd3kChaintubeRpc(const QStringList& urls);
     /// "a b c" or an array of strings → the list (empty entries dropped).
     [[nodiscard]] static QStringList rpcUrlList(const QCborValue& value);
+    /// Decline lists fetched from these URLs (declined-records.md §2 "Shared lists": the
+    /// operator's choice, none by default), merged with decline.txt. YAML ed3k.declineUrls;
+    /// set by the Declined records dialog (SetEd3kDeclined 1209).
+    [[nodiscard]] QStringList ed3kDeclineUrls() const;
+    void setEd3kDeclineUrls(const QStringList& urls);
 
     /// Optional ed3k extensions turned off at start (socket-modes.md "extensions"), by the
     /// names of their documents (ed3kExtensionNames()). A change restarts the node.

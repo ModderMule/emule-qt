@@ -177,11 +177,23 @@ private:
     /// Adds (@p row -1) or edits a login of @p list.
     void editAccount(AccountList& list, int row);
     void checkAccount(AccountList& list);
+    /// Asks the core to check row @p row of @p list (its typed password, else the stored one).
+    void checkAccountRow(AccountList& list, int row);
     void fillAccounts(AccountList& list);
+    /// Sends @p list to the core at once, no Apply: rows without a typed password keep the stored
+    /// one. False: no core connected (Apply sends it).
+    bool saveAccounts(AccountList& list);
+    /// @p list as the core's {host, user, password?} rows: a password only when typed here.
+    [[nodiscard]] static QCborArray accountRows(const AccountList& list);
+    /// The preference key of @p list.
+    [[nodiscard]] static QString accountKey(const AccountList& list);
     /// PushHosterAccount: the status of the rows it names.
     void applyAccountCheck(const QString& host, const QString& user, const QCborMap& result);
     /// @p host waits for a login at @p url in the browser (OAuth device flow): offers to open it.
     void askBrowserLogin(const QString& host, const QUrl& url);
+    /// A running check waits for a confirmation code (2FA, a "new sign in" mail): asks the user,
+    /// the answer goes to the core (AnswerHosterAccountCode).
+    void askAccountCode(const QString& host, const QString& user, const QString& title, const QString& text);
     [[nodiscard]] Ed3kHosterPrefs hosterPrefs() const;
     QWidget* buildAutoCredits(QWidget* parent);
     QWidget* buildExtended(QWidget* parent);
@@ -324,6 +336,7 @@ private:
     AccountList m_hosterAccounts;
     AccountList m_solverAccounts{.solvers = true};
     AccountList m_debridAccounts{.debrid = true};
+    QSet<QString> m_codeAsks;   ///< host|user of the open code windows
     QCheckBox* m_debridCheck = nullptr;    ///< ed3kHosterDebridEnabled
     QGroupBox* m_debridGroup = nullptr;    ///< enabled by m_debridCheck
     QTreeWidget* m_debridHostsTree = nullptr;

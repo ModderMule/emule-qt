@@ -35,6 +35,8 @@ SOURCES += \
     Ed3kDownloadsWeb.cpp \
     Ed3kSearch.cpp \
     Ed3kChain.cpp \
+    Ed3kDecline.cpp \
+    Ed3kDeclineUrls.cpp \
     Ed3kFilters.cpp \
     Ed3kUploads.cpp \
     Ed3kFriends.cpp \
@@ -75,6 +77,8 @@ HEADERS += \
     Ed3kDownloads.h \
     Ed3kSearch.h \
     Ed3kChain.h \
+    Ed3kDecline.h \
+    Ed3kDeclineUrls.h \
     Ed3kFilters.h \
     Ed3kUploads.h \
     Ed3kFfi.h \

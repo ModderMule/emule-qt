@@ -149,6 +149,7 @@ private slots:
     void cleanup();
     void withoutNodeEveryRequestFails();
     void admitTextRoundTrip();
+    void linkCarriesNameAndMatchesByKeyAndId();
     void openRoomByLinkPostsBothWays();
     void closedRoomAdmitRoundTrip();
     void banDropsPosts();
@@ -196,6 +197,21 @@ void tst_Ed3kRooms::withoutNodeEveryRequestFails()
 }
 
 // the admit text the app hands over: room and item survive blanks and line breaks
+void tst_Ed3kRooms::linkCarriesNameAndMatchesByKeyAndId()
+{
+    using R = eMule::ed3k::Ed3kRooms;
+    const QString base = QStringLiteral("ed3k:room?key=b62rvpi4oawzn7o54efqj34k5s5d66k2yalveabg6u653pgkc7jq&id=h2id42fprwhvs");
+    // room.md §1.3: dn added, s kept as written, an old dn replaced
+    QCOMPARE(R::linkWithName(base, QStringLiteral("My room & co")), base + QStringLiteral("&dn=My%20room%20%26%20co"));
+    QCOMPARE(R::linkWithName(base + QStringLiteral("&dn=old&s=abc"), QStringLiteral("New")), base + QStringLiteral("&s=abc&dn=New"));
+    QCOMPARE(R::linkWithName(base, QString()), base);
+    // same room: any dn, any case; another id is another room
+    QVERIFY(R::sameRoomLink(base, base.toUpper().replace(QStringLiteral("ED3K:ROOM?KEY="), QStringLiteral("ed3k:room?key="))
+                                       .replace(QStringLiteral("&ID="), QStringLiteral("&id=")) + QStringLiteral("&dn=x")));
+    QVERIFY(!R::sameRoomLink(base, base.left(base.size() - 1) + QLatin1Char('t')));
+    QVERIFY(!R::sameRoomLink(QStringLiteral("ed3k:room?dn=a"), QStringLiteral("ed3k:room?dn=a")));
+}
+
 void tst_Ed3kRooms::admitTextRoundTrip()
 {
     ::ed3k::Room room;
@@ -453,7 +469,9 @@ void tst_Ed3kRooms::roomsAcrossRestart()
     const auto* again = ra->find(*room);
     QVERIFY(again);
     QVERIFY(again->owner);
-    QCOMPARE(again->link, link);
+    // the handed-out link carries the title as dn (room.md §1.3)
+    QVERIFY(link.endsWith(QStringLiteral("&dn=Kept")));
+    QCOMPARE(Ed3kRooms::linkWithName(again->link, again->title), link);
     QCOMPARE(again->nick, QStringLiteral("keeper"));
     // the room info of the last run shows before a neighbour sends one
     QCOMPARE(again->title, QStringLiteral("Kept"));

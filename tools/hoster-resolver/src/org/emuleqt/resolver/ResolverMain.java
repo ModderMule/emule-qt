@@ -55,6 +55,7 @@ public final class ResolverMain {
         // solver accounts JD saved last run: the daemon sends the current ones
         SolverAccountsTask.clear();
         HeadlessUserIO.install();
+        CodeAsker.install();
         Out.log("ready, " + Jd.hostPluginCount() + " host and " + Jd.crawlerPluginCount() + " crawler plugins");
         final BufferedReader in = Out.input();
         String line;
@@ -110,6 +111,7 @@ public final class ResolverMain {
             m.put("generic", true);
             m.put("debrid", true);
             m.put("accountHosts", true);
+            m.put("code", true);
             Out.send(m);
             break;
         }
@@ -198,6 +200,9 @@ public final class ResolverMain {
             break;
         case "answer":
             PuzzleSolver.answer(num(req.get("puzzle")), str(req.get("text")));
+            break;
+        case "answerCode":
+            CodeAsker.answer(num(req.get("task")), str(req.get("text")));
             break;
         case "cancel": {
             final Task t = TASKS.get(num(req.get("task")));

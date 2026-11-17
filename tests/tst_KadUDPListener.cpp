@@ -949,7 +949,7 @@ void tst_KadUDPListener::bootstrapRes_sendsHelloToEachContact()
     bootstrapAnswer(kListed);
     QCOMPARE(helloTo.size(), kListed.size());
     for (const auto& c : kListed)
-        QVERIFY(std::ranges::contains(helloTo, c.ip));
+        QVERIFY(std::ranges::find(helloTo, c.ip) != helloTo.end());
 
     // Already known: listed again, no update and no second HELLO.
     helloTo.clear();
