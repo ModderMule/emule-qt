@@ -5028,7 +5028,7 @@ Ponów ostatni rdzeń lub wprowadź adres i token uwierzytelniający innego.</tr
 <context>
     <name>eMule::CoreScriptDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/CoreScriptDialog.cpp" line="+45"/>
+        <location filename="../src/gui/dialogs/CoreScriptDialog.cpp" line="+46"/>
         <source>Create Core Connect Script</source>
         <translation>Utwórz skrypt połączenia z rdzeniem</translation>
     </message>
@@ -5092,7 +5092,17 @@ Ponów ostatni rdzeń lub wprowadź adres i token uwierzytelniający innego.</tr
         <translation>Rdzeń od razu nasłuchuje na adresie powyżej i go zachowuje; bez ponownego uruchamiania</translation>
     </message>
     <message>
-        <location line="+176"/>
+        <location line="+20"/>
+        <source>Pair Phone...</source>
+        <translation>Sparuj telefon...</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Show a QR code the qDonkey phone app scans to reach this core</source>
+        <translation>Pokaż kod QR, który aplikacja qDonkey skanuje, aby połączyć się z tym rdzeniem</translation>
+    </message>
+    <message>
+        <location line="+180"/>
         <source>The core did not answer.</source>
         <translation>Rdzeń nie odpowiedział.</translation>
     </message>
@@ -5141,7 +5151,7 @@ Nasłuchiwać na wszystkich adresach?</translation>
         <translation type="vanished">Ten rdzeń przyjmuje tylko połączenia z tego komputera. Ustaw Opcje › Ogólne › Rdzeń › Adres na 0.0.0.0 (lub adres LAN), uruchom ponownie i przekieruj port TCP %1 na routerze.</translation>
     </message>
     <message>
-        <location line="-151"/>
+        <location line="-172"/>
         <source>Enter the address other computers reach this core at.</source>
         <translation>Wpisz adres, pod którym inne komputery osiągają ten rdzeń.</translation>
     </message>
@@ -5156,7 +5166,7 @@ Nasłuchiwać na wszystkich adresach?</translation>
         <translation>Tylko ten komputer może używać tego adresu.</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+16"/>
         <source>Save Core Connect Script</source>
         <translation>Zapisz skrypt połączenia z rdzeniem</translation>
     </message>
@@ -7175,7 +7185,7 @@ Jej nazwy będą wtedy rozwiązywane po listach, które już obserwujesz.</trans
     <message>
         <location line="+957"/>
         <location line="+387"/>
-        <location line="+277"/>
+        <location line="+279"/>
         <source>Not valid</source>
         <translation>Nieprawidłowe</translation>
     </message>
@@ -7236,7 +7246,7 @@ Jej nazwy będą wtedy rozwiązywane po listach, które już obserwujesz.</trans
         <translation type="vanished">Przekaźnik:</translation>
     </message>
     <message>
-        <location line="-1885"/>
+        <location line="-1887"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>Udostępniaj też posty Usenet przez ed3k</translation>
     </message>
@@ -8144,6 +8154,11 @@ Sprawdzanie trwa samo; logowanie zostanie zachowane na później.</translation>
         <translation>Premium wygasło</translation>
     </message>
     <message>
+        <location line="+2"/>
+        <source>Login needed: press Check to log in through the browser</source>
+        <translation>Wymagane logowanie: naciśnij Sprawdź, aby zalogować się w przeglądarce</translation>
+    </message>
+    <message>
         <location line="+15"/>
         <source>%1, %2 of %3 traffic left</source>
         <translation>%1, pozostało %2 z %3 transferu</translation>
@@ -8213,7 +8228,7 @@ Sprawdzanie trwa samo; logowanie zostanie zachowane na później.</translation>
         </translation>
     </message>
     <message>
-        <location line="-398"/>
+        <location line="-400"/>
         <source>Download through these multi-hosters</source>
         <translation>Pobieraj przez te multihostery</translation>
     </message>
@@ -8295,12 +8310,12 @@ Wyłącz, aby rozwiązywać samodzielnie, np. gdy usługi wielokrotnie zawodzą 
         <translation>Brak zapisanego hasła</translation>
     </message>
     <message>
-        <location line="+283"/>
+        <location line="+285"/>
         <source>Valid, but downloads no other hosters</source>
         <translation>Prawidłowe, ale nie pobiera z innych hosterów</translation>
     </message>
     <message>
-        <location line="-218"/>
+        <location line="-220"/>
         <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
         <translation>Uwaga: Nie zmieniaj tych ustawień, jeśli nie wiesz, co robisz. W przeciwnym razie łatwo możesz pogorszyć sytuację. eMule będzie działać dobrze bez zmiany któregokolwiek z tych ustawień.</translation>
     </message>
@@ -12285,7 +12300,7 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
 <context>
     <name>eMule::HosterPanel</name>
     <message>
-        <location filename="../src/gui/panels/HosterPanel.cpp" line="+143"/>
+        <location filename="../src/gui/panels/HosterPanel.cpp" line="+154"/>
         <source>Finding a resolver</source>
         <translation>Szukanie resolvera</translation>
     </message>
@@ -12566,7 +12581,7 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
         <translation>Pobierania z hostingów</translation>
     </message>
     <message>
-        <location line="+1059"/>
+        <location line="+1057"/>
         <source>Clipboard</source>
         <translation>Schowek</translation>
     </message>
@@ -12694,7 +12709,7 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
         <translation type="vanished">Opcje...</translation>
     </message>
     <message>
-        <location line="-970"/>
+        <location line="-968"/>
         <source>File Name</source>
         <translation>Nazwa pliku</translation>
     </message>
@@ -12760,23 +12775,23 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
     </message>
     <message>
         <location line="+8"/>
-        <location line="+998"/>
+        <location line="+996"/>
         <source>Package Name:</source>
         <translation>Nazwa pakietu:</translation>
     </message>
     <message>
-        <location line="-996"/>
+        <location line="-994"/>
         <source>optional</source>
         <translation>opcjonalnie</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+998"/>
+        <location line="+996"/>
         <source>The links download under one entry, into a folder of this name</source>
         <translation>Linki są pobierane jako jedna pozycja, do folderu o tej nazwie</translation>
     </message>
     <message>
-        <location line="-983"/>
+        <location line="-981"/>
         <location line="+11"/>
         <location line="+16"/>
         <source>Not connected to the eMule core.</source>
@@ -12789,12 +12804,12 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
         <location line="+4"/>
         <location line="+9"/>
         <location line="+42"/>
-        <location line="+823"/>
+        <location line="+821"/>
         <source>Open DLC</source>
         <translation>Otwórz DLC</translation>
     </message>
     <message>
-        <location line="-888"/>
+        <location line="-886"/>
         <location line="+14"/>
         <source>Cannot read %1.</source>
         <translation>Nie można odczytać %1.</translation>
@@ -12868,7 +12883,7 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
         <translation>Nieznany w ed3k: sprawdzany w całości po ukończeniu</translation>
     </message>
     <message>
-        <location line="+58"/>
+        <location line="+56"/>
         <source>Pause</source>
         <translation>Pauza</translation>
     </message>
@@ -12878,13 +12893,13 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
         <translation>Wznów</translation>
     </message>
     <message>
-        <location line="-602"/>
-        <location line="+607"/>
+        <location line="-600"/>
+        <location line="+605"/>
         <source>Remove</source>
         <translation>Usuń</translation>
     </message>
     <message>
-        <location line="-834"/>
+        <location line="-832"/>
         <source>The archive needs a password (Set Password…)</source>
         <translation>Archiwum wymaga hasła (Ustaw hasło…)</translation>
     </message>
@@ -12925,29 +12940,29 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
     </message>
     <message>
         <location line="+1"/>
-        <location line="+1078"/>
+        <location line="+1076"/>
         <source>Link Grabber (%1)</source>
         <translation>LinkGrabber (%1)</translation>
     </message>
     <message>
-        <location line="-1064"/>
-        <location line="+679"/>
+        <location line="-1062"/>
+        <location line="+677"/>
         <source>Add Links...</source>
         <translation>Dodaj linki...</translation>
     </message>
     <message>
-        <location line="-678"/>
+        <location line="-676"/>
         <source>Links to files at hosters, one per line</source>
         <translation>Linki do plików w hostingach, jeden w wierszu</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+677"/>
+        <location line="+675"/>
         <source>Open DLC...</source>
         <translation>Otwórz DLC...</translation>
     </message>
     <message>
-        <location line="-676"/>
+        <location line="-674"/>
         <source>Adds the links of a link container (.dlc, .rsdf, .ccf); you can also drop one here</source>
         <translation>Dodaje linki z kontenera linków (.dlc, .rsdf, .ccf); możesz go też upuścić tutaj</translation>
     </message>
@@ -12957,7 +12972,7 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
         <translation>Podgląd niedostępny — serwer WWW nie działa lub nie otrzymano tokenu strumienia.</translation>
     </message>
     <message>
-        <location line="+46"/>
+        <location line="+44"/>
         <source>Preview</source>
         <translation>Podgląd</translation>
     </message>
@@ -13473,7 +13488,7 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1202"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1205"/>
         <source>The core&apos;s certificate changed</source>
         <translation>Certyfikat rdzenia się zmienił</translation>
     </message>
@@ -13481,7 +13496,7 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
 <context>
     <name>eMule::IrcPanel</name>
     <message>
-        <location filename="../src/gui/panels/IrcPanel.cpp" line="+1902"/>
+        <location filename="../src/gui/panels/IrcPanel.cpp" line="+1918"/>
         <source>Select an IRC nick.</source>
         <translation>Wybierz nick IRC.</translation>
     </message>
@@ -13493,7 +13508,7 @@ Nick can be changed again in Options-&gt;IRC.</source>
 Nick można zmienić później w Opcje-&gt;IRC.</translation>
     </message>
     <message>
-        <location line="-1686"/>
+        <location line="-1701"/>
         <source>Connecting</source>
         <translation>Podłączanie</translation>
     </message>
@@ -13663,7 +13678,7 @@ Wybierz inny:</translation>
         <translation>Nick (%1)</translation>
     </message>
     <message>
-        <location line="+31"/>
+        <location line="+46"/>
         <source>* Private chat session started</source>
         <translation>* Rozpoczęto prywatną rozmowę</translation>
     </message>
@@ -15799,12 +15814,12 @@ Router: %6</translation>
         <translation>ukryty (%1/%2 ścieżek)</translation>
     </message>
     <message>
-        <location line="+2541"/>
+        <location line="+2544"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Użytkownicy: %1 | Pliki: %2</translation>
     </message>
     <message>
-        <location line="-2495"/>
+        <location line="-2498"/>
         <source>Up: %1(%2)</source>
         <translation>Wysł.: %1(%2)</translation>
     </message>
@@ -16258,7 +16273,7 @@ Włącz go w Opcje → BitTorrent i spróbuj ponownie.</translation>
         <translation>Nowa wiadomość — kliknij dwukrotnie, aby przeczytać</translation>
     </message>
     <message>
-        <location line="+81"/>
+        <location line="+84"/>
         <source>Free space: %1</source>
         <translation>Wolne miejsce: %1</translation>
     </message>
@@ -16268,7 +16283,7 @@ Włącz go w Opcje → BitTorrent i spróbuj ponownie.</translation>
         <translation>n/d</translation>
     </message>
     <message>
-        <location line="-428"/>
+        <location line="-431"/>
         <source>eD2K Link</source>
         <translation>Link eD2K</translation>
     </message>
@@ -23908,6 +23923,39 @@ Przeliczyć teraz hash wszystkich udostępnianych plików?</translation>
         <location line="+10"/>
         <source>Image %1 of %2</source>
         <translation>Obraz %1 z %2</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::PhonePairDialog</name>
+    <message>
+        <location filename="../src/gui/dialogs/PhonePairDialog.cpp" line="+53"/>
+        <source>Pair Phone</source>
+        <translation>Sparuj telefon</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Scan this code with the qDonkey app, or send the link to the phone. The phone must reach this address: same network, a VPN such as Tailscale, or a forwarded port.</source>
+        <translation>Zeskanuj ten kod aplikacją qDonkey lub wyślij link na telefon. Telefon musi mieć dostęp do tego adresu: ta sama sieć, VPN taki jak Tailscale lub przekierowany port.</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Include core token</source>
+        <translation>Dołącz token rdzenia</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Whoever scans the code then has full control of the core. When off, the app asks for the token.</source>
+        <translation>Kto zeskanuje kod, ma pełną kontrolę nad rdzeniem. Gdy wyłączone, aplikacja pyta o token.</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Copy Link</source>
+        <translation>Kopiuj link</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>The core&apos;s certificate is unknown here: the app trusts the first one it sees.</source>
+        <translation>Certyfikat rdzenia jest tu nieznany: aplikacja zaufa pierwszemu, który zobaczy.</translation>
     </message>
 </context>
 <context>

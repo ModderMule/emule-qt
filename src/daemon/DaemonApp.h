@@ -80,6 +80,8 @@ public:
 
     /// Access the web server (may be nullptr if not running).
     [[nodiscard]] WebServer* webServer() const { return m_webServer.get(); }
+    /// IPC listener (may be nullptr before start)
+    [[nodiscard]] IpcServer* ipcServer() const { return m_ipcServer.get(); }
 
     /// The installed translator the web UI's languages go through. Not owned;
     /// set before start(). Without it the web UI is English.

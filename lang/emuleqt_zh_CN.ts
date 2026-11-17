@@ -5220,7 +5220,7 @@ Retry the last core, or enter the address and authentication token of another on
 <context>
     <name>eMule::CoreScriptDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/CoreScriptDialog.cpp" line="+45"/>
+        <location filename="../src/gui/dialogs/CoreScriptDialog.cpp" line="+46"/>
         <source>Create Core Connect Script</source>
         <translation>创建核心连接脚本</translation>
     </message>
@@ -5284,7 +5284,17 @@ Retry the last core, or enter the address and authentication token of another on
         <translation>核心立即在上述地址监听并保留该设置；无需重启</translation>
     </message>
     <message>
-        <location line="+176"/>
+        <location line="+20"/>
+        <source>Pair Phone...</source>
+        <translation>配对手机...</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Show a QR code the qDonkey phone app scans to reach this core</source>
+        <translation>显示 qDonkey 手机应用扫描以连接此核心的二维码</translation>
+    </message>
+    <message>
+        <location line="+180"/>
         <source>The core did not answer.</source>
         <translation>核心没有响应。</translation>
     </message>
@@ -5333,7 +5343,7 @@ Listen on all addresses?</source>
         <translation type="vanished">此核心只接受来自本机的连接。请将 选项 › 常规 › 核心 › 地址 设为 0.0.0.0（或局域网地址），重启，并在路由器上转发 TCP 端口 %1。</translation>
     </message>
     <message>
-        <location line="-151"/>
+        <location line="-172"/>
         <source>Enter the address other computers reach this core at.</source>
         <translation>输入其他计算机访问此核心所用的地址。</translation>
     </message>
@@ -5348,7 +5358,7 @@ Listen on all addresses?</source>
         <translation>只有本机能使用此地址。</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+16"/>
         <source>Save Core Connect Script</source>
         <translation>保存核心连接脚本</translation>
     </message>
@@ -7389,7 +7399,7 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+957"/>
         <location line="+387"/>
-        <location line="+277"/>
+        <location line="+279"/>
         <source>Not valid</source>
         <translation>无效</translation>
     </message>
@@ -7450,7 +7460,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">转发器：</translation>
     </message>
     <message>
-        <location line="-1885"/>
+        <location line="-1887"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>同时通过 ed3k 共享 Usenet 帖子</translation>
     </message>
@@ -8358,6 +8368,11 @@ The check goes on by itself; the login is kept for later.</source>
         <translation>高级会员已过期</translation>
     </message>
     <message>
+        <location line="+2"/>
+        <source>Login needed: press Check to log in through the browser</source>
+        <translation>需要登录：点击“检查”以通过浏览器登录</translation>
+    </message>
+    <message>
         <location line="+15"/>
         <source>%1, %2 of %3 traffic left</source>
         <translation>%1，剩余流量 %2 / %3</translation>
@@ -8423,7 +8438,7 @@ The check goes on by itself; the login is kept for later.</source>
         </translation>
     </message>
     <message>
-        <location line="-398"/>
+        <location line="-400"/>
         <source>Download through these multi-hosters</source>
         <translation>通过这些多网盘服务下载</translation>
     </message>
@@ -8505,12 +8520,12 @@ Turn off to solve puzzles yourself, for example when the services fail repeatedl
         <translation>未保存密码</translation>
     </message>
     <message>
-        <location line="+283"/>
+        <location line="+285"/>
         <source>Valid, but downloads no other hosters</source>
         <translation>有效，但不下载其他网盘</translation>
     </message>
     <message>
-        <location line="-218"/>
+        <location line="-220"/>
         <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
         <translation>警告：除非您知道自己在做什么，否则请勿更改这些设置。否则可能会导致问题。eMule 无需调整这些设置即可正常运行。</translation>
     </message>
@@ -12557,7 +12572,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 <context>
     <name>eMule::HosterPanel</name>
     <message>
-        <location filename="../src/gui/panels/HosterPanel.cpp" line="+143"/>
+        <location filename="../src/gui/panels/HosterPanel.cpp" line="+154"/>
         <source>Finding a resolver</source>
         <translation>正在查找解析器</translation>
     </message>
@@ -12836,7 +12851,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>网盘下载</translation>
     </message>
     <message>
-        <location line="+1059"/>
+        <location line="+1057"/>
         <source>Clipboard</source>
         <translation>剪贴板</translation>
     </message>
@@ -12958,7 +12973,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation type="vanished">选项...</translation>
     </message>
     <message>
-        <location line="-970"/>
+        <location line="-968"/>
         <source>File Name</source>
         <translation>文件名</translation>
     </message>
@@ -13022,23 +13037,23 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
     </message>
     <message>
         <location line="+8"/>
-        <location line="+998"/>
+        <location line="+996"/>
         <source>Package Name:</source>
         <translation>包名称：</translation>
     </message>
     <message>
-        <location line="-996"/>
+        <location line="-994"/>
         <source>optional</source>
         <translation>可选</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+998"/>
+        <location line="+996"/>
         <source>The links download under one entry, into a folder of this name</source>
         <translation>这些链接作为一个条目下载到以此命名的文件夹中</translation>
     </message>
     <message>
-        <location line="-983"/>
+        <location line="-981"/>
         <location line="+11"/>
         <location line="+16"/>
         <source>Not connected to the eMule core.</source>
@@ -13051,12 +13066,12 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <location line="+4"/>
         <location line="+9"/>
         <location line="+42"/>
-        <location line="+823"/>
+        <location line="+821"/>
         <source>Open DLC</source>
         <translation>打开 DLC</translation>
     </message>
     <message>
-        <location line="-888"/>
+        <location line="-886"/>
         <location line="+14"/>
         <source>Cannot read %1.</source>
         <translation>无法读取 %1。</translation>
@@ -13126,7 +13141,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>ed3k 未知:完成后整体校验</translation>
     </message>
     <message>
-        <location line="+58"/>
+        <location line="+56"/>
         <source>Pause</source>
         <translation>暂停</translation>
     </message>
@@ -13136,13 +13151,13 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>恢复</translation>
     </message>
     <message>
-        <location line="-602"/>
-        <location line="+607"/>
+        <location line="-600"/>
+        <location line="+605"/>
         <source>Remove</source>
         <translation>删除</translation>
     </message>
     <message>
-        <location line="-834"/>
+        <location line="-832"/>
         <source>The archive needs a password (Set Password…)</source>
         <translation>压缩包需要密码（设置密码…）</translation>
     </message>
@@ -13183,29 +13198,29 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
     </message>
     <message>
         <location line="+1"/>
-        <location line="+1078"/>
+        <location line="+1076"/>
         <source>Link Grabber (%1)</source>
         <translation>LinkGrabber (%1)</translation>
     </message>
     <message>
-        <location line="-1064"/>
-        <location line="+679"/>
+        <location line="-1062"/>
+        <location line="+677"/>
         <source>Add Links...</source>
         <translation>添加链接...</translation>
     </message>
     <message>
-        <location line="-678"/>
+        <location line="-676"/>
         <source>Links to files at hosters, one per line</source>
         <translation>网盘上文件的链接，每行一个</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+677"/>
+        <location line="+675"/>
         <source>Open DLC...</source>
         <translation>打开 DLC...</translation>
     </message>
     <message>
-        <location line="-676"/>
+        <location line="-674"/>
         <source>Adds the links of a link container (.dlc, .rsdf, .ccf); you can also drop one here</source>
         <translation>添加链接容器（.dlc、.rsdf、.ccf）中的链接；也可以将其拖放到此处</translation>
     </message>
@@ -13215,7 +13230,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>预览不可用 — Web 服务器未运行或未收到流令牌。</translation>
     </message>
     <message>
-        <location line="+46"/>
+        <location line="+44"/>
         <source>Preview</source>
         <translation>预览</translation>
     </message>
@@ -13729,7 +13744,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1202"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1205"/>
         <source>The core&apos;s certificate changed</source>
         <translation>核心的证书已更改</translation>
     </message>
@@ -13737,7 +13752,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 <context>
     <name>eMule::IrcPanel</name>
     <message>
-        <location filename="../src/gui/panels/IrcPanel.cpp" line="+1902"/>
+        <location filename="../src/gui/panels/IrcPanel.cpp" line="+1918"/>
         <source>Select an IRC nick.</source>
         <translation>选择一个 IRC 昵称。</translation>
     </message>
@@ -13749,7 +13764,7 @@ Nick can be changed again in Options-&gt;IRC.</source>
 昵称可在选项-&gt;IRC 中再次更改。</translation>
     </message>
     <message>
-        <location line="-1686"/>
+        <location line="-1701"/>
         <source>Connecting</source>
         <translation>连接中</translation>
     </message>
@@ -13919,7 +13934,7 @@ Please choose another:</source>
         <translation>昵称 (%1)</translation>
     </message>
     <message>
-        <location line="+31"/>
+        <location line="+46"/>
         <source>* Private chat session started</source>
         <translation>* 私聊会话已开始</translation>
     </message>
@@ -15862,12 +15877,12 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>Kad：已断开</translation>
     </message>
     <message>
-        <location line="+993"/>
+        <location line="+996"/>
         <source>Users: %1 | Files: %2</source>
         <translation>用户：%1 | 文件：%2</translation>
     </message>
     <message>
-        <location line="-1944"/>
+        <location line="-1947"/>
         <source>Open Incoming Folder...</source>
         <translation>打开接收文件夹...</translation>
     </message>
@@ -16514,7 +16529,7 @@ Turn it on under Options → BitTorrent, then try again.</source>
         <translation>新消息 — 双击阅读</translation>
     </message>
     <message>
-        <location line="+81"/>
+        <location line="+84"/>
         <source>Free space: %1</source>
         <translation>可用空间: %1</translation>
     </message>
@@ -16524,7 +16539,7 @@ Turn it on under Options → BitTorrent, then try again.</source>
         <translation>N/A</translation>
     </message>
     <message>
-        <location line="-428"/>
+        <location line="-431"/>
         <source>eD2K Link</source>
         <translation>eD2K 链接</translation>
     </message>
@@ -24262,6 +24277,39 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <location line="+10"/>
         <source>Image %1 of %2</source>
         <translation>第 %1 张，共 %2 张</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::PhonePairDialog</name>
+    <message>
+        <location filename="../src/gui/dialogs/PhonePairDialog.cpp" line="+53"/>
+        <source>Pair Phone</source>
+        <translation>配对手机</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Scan this code with the qDonkey app, or send the link to the phone. The phone must reach this address: same network, a VPN such as Tailscale, or a forwarded port.</source>
+        <translation>用 qDonkey 应用扫描此二维码，或把链接发送到手机。手机必须能访问此地址：同一网络、Tailscale 等 VPN 或已转发的端口。</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Include core token</source>
+        <translation>包含核心令牌</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Whoever scans the code then has full control of the core. When off, the app asks for the token.</source>
+        <translation>扫描此码的人将完全控制核心。关闭时，应用会询问令牌。</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Copy Link</source>
+        <translation>复制链接</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>The core&apos;s certificate is unknown here: the app trusts the first one it sees.</source>
+        <translation>此处不知道核心的证书：应用会信任它看到的第一个证书。</translation>
     </message>
 </context>
 <context>

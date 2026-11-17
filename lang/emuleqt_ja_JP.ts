@@ -5220,7 +5220,7 @@ Retry the last core, or enter the address and authentication token of another on
 <context>
     <name>eMule::CoreScriptDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/CoreScriptDialog.cpp" line="+45"/>
+        <location filename="../src/gui/dialogs/CoreScriptDialog.cpp" line="+46"/>
         <source>Create Core Connect Script</source>
         <translation>コア接続スクリプトを作成</translation>
     </message>
@@ -5284,7 +5284,17 @@ Retry the last core, or enter the address and authentication token of another on
         <translation>コアは今すぐ上のアドレスで待ち受け、それを保持します。再起動は不要です</translation>
     </message>
     <message>
-        <location line="+176"/>
+        <location line="+20"/>
+        <source>Pair Phone...</source>
+        <translation>スマートフォンとペアリング...</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Show a QR code the qDonkey phone app scans to reach this core</source>
+        <translation>qDonkey アプリがこのコアに接続するためにスキャンする QR コードを表示</translation>
+    </message>
+    <message>
+        <location line="+180"/>
         <source>The core did not answer.</source>
         <translation>コアが応答しませんでした。</translation>
     </message>
@@ -5333,7 +5343,7 @@ Listen on all addresses?</source>
         <translation type="vanished">このコアはこのコンピューターからの接続のみ受け付けます。オプション › 一般 › コア › アドレス を 0.0.0.0 (または LAN アドレス) にして再起動し、ルーターで TCP ポート %1 を転送してください。</translation>
     </message>
     <message>
-        <location line="-151"/>
+        <location line="-172"/>
         <source>Enter the address other computers reach this core at.</source>
         <translation>他のコンピューターがこのコアに到達するアドレスを入力してください。</translation>
     </message>
@@ -5348,7 +5358,7 @@ Listen on all addresses?</source>
         <translation>このアドレスはこのコンピューターでしか使えません。</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+16"/>
         <source>Save Core Connect Script</source>
         <translation>コア接続スクリプトを保存</translation>
     </message>
@@ -7389,7 +7399,7 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+957"/>
         <location line="+387"/>
-        <location line="+277"/>
+        <location line="+279"/>
         <source>Not valid</source>
         <translation>無効</translation>
     </message>
@@ -7450,7 +7460,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">フォワーダー:</translation>
     </message>
     <message>
-        <location line="-1885"/>
+        <location line="-1887"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>Usenet の投稿も ed3k で共有する</translation>
     </message>
@@ -8358,6 +8368,11 @@ The check goes on by itself; the login is kept for later.</source>
         <translation>プレミアム期限切れ</translation>
     </message>
     <message>
+        <location line="+2"/>
+        <source>Login needed: press Check to log in through the browser</source>
+        <translation>ログインが必要です: 「確認」を押してブラウザでログインしてください</translation>
+    </message>
+    <message>
         <location line="+15"/>
         <source>%1, %2 of %3 traffic left</source>
         <translation>%1、残りトラフィック %2 / %3</translation>
@@ -8423,7 +8438,7 @@ The check goes on by itself; the login is kept for later.</source>
         </translation>
     </message>
     <message>
-        <location line="-398"/>
+        <location line="-400"/>
         <source>Download through these multi-hosters</source>
         <translation>これらのマルチホスター経由でダウンロード</translation>
     </message>
@@ -8505,12 +8520,12 @@ Turn off to solve puzzles yourself, for example when the services fail repeatedl
         <translation>パスワードが保存されていません</translation>
     </message>
     <message>
-        <location line="+283"/>
+        <location line="+285"/>
         <source>Valid, but downloads no other hosters</source>
         <translation>有効ですが、他のホスターはダウンロードできません</translation>
     </message>
     <message>
-        <location line="-218"/>
+        <location line="-220"/>
         <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
         <translation>警告：何をしているか分かっていない限り、これらの設定を変更しないでください。さもないと、問題を悪化させる可能性があります。eMule はこれらの設定を調整しなくても正常に動作します。</translation>
     </message>
@@ -12557,7 +12572,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 <context>
     <name>eMule::HosterPanel</name>
     <message>
-        <location filename="../src/gui/panels/HosterPanel.cpp" line="+143"/>
+        <location filename="../src/gui/panels/HosterPanel.cpp" line="+154"/>
         <source>Finding a resolver</source>
         <translation>リゾルバーを検索中</translation>
     </message>
@@ -12836,7 +12851,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>ホスターダウンロード</translation>
     </message>
     <message>
-        <location line="+1059"/>
+        <location line="+1057"/>
         <source>Clipboard</source>
         <translation>クリップボード</translation>
     </message>
@@ -12958,7 +12973,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation type="vanished">オプション...</translation>
     </message>
     <message>
-        <location line="-970"/>
+        <location line="-968"/>
         <source>File Name</source>
         <translation>ファイル名</translation>
     </message>
@@ -13022,23 +13037,23 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
     </message>
     <message>
         <location line="+8"/>
-        <location line="+998"/>
+        <location line="+996"/>
         <source>Package Name:</source>
         <translation>パッケージ名:</translation>
     </message>
     <message>
-        <location line="-996"/>
+        <location line="-994"/>
         <source>optional</source>
         <translation>任意</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+998"/>
+        <location line="+996"/>
         <source>The links download under one entry, into a folder of this name</source>
         <translation>リンクは 1 つの項目にまとめられ、この名前のフォルダーにダウンロードされます</translation>
     </message>
     <message>
-        <location line="-983"/>
+        <location line="-981"/>
         <location line="+11"/>
         <location line="+16"/>
         <source>Not connected to the eMule core.</source>
@@ -13051,12 +13066,12 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <location line="+4"/>
         <location line="+9"/>
         <location line="+42"/>
-        <location line="+823"/>
+        <location line="+821"/>
         <source>Open DLC</source>
         <translation>DLC を開く</translation>
     </message>
     <message>
-        <location line="-888"/>
+        <location line="-886"/>
         <location line="+14"/>
         <source>Cannot read %1.</source>
         <translation>%1 を読み取れません。</translation>
@@ -13126,7 +13141,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>ed3k で未知: 完了時にファイル全体を検証</translation>
     </message>
     <message>
-        <location line="+58"/>
+        <location line="+56"/>
         <source>Pause</source>
         <translation>一時停止</translation>
     </message>
@@ -13136,13 +13151,13 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>再開</translation>
     </message>
     <message>
-        <location line="-602"/>
-        <location line="+607"/>
+        <location line="-600"/>
+        <location line="+605"/>
         <source>Remove</source>
         <translation>削除</translation>
     </message>
     <message>
-        <location line="-834"/>
+        <location line="-832"/>
         <source>The archive needs a password (Set Password…)</source>
         <translation>アーカイブにパスワードが必要です（パスワードを設定…）</translation>
     </message>
@@ -13183,29 +13198,29 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
     </message>
     <message>
         <location line="+1"/>
-        <location line="+1078"/>
+        <location line="+1076"/>
         <source>Link Grabber (%1)</source>
         <translation>LinkGrabber (%1)</translation>
     </message>
     <message>
-        <location line="-1064"/>
-        <location line="+679"/>
+        <location line="-1062"/>
+        <location line="+677"/>
         <source>Add Links...</source>
         <translation>リンクを追加...</translation>
     </message>
     <message>
-        <location line="-678"/>
+        <location line="-676"/>
         <source>Links to files at hosters, one per line</source>
         <translation>ホスター上のファイルへのリンク（1 行に 1 つ）</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+677"/>
+        <location line="+675"/>
         <source>Open DLC...</source>
         <translation>DLC を開く...</translation>
     </message>
     <message>
-        <location line="-676"/>
+        <location line="-674"/>
         <source>Adds the links of a link container (.dlc, .rsdf, .ccf); you can also drop one here</source>
         <translation>リンクコンテナ (.dlc, .rsdf, .ccf) のリンクを追加します。ここにドロップすることもできます</translation>
     </message>
@@ -13215,7 +13230,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>プレビューは利用できません — Web サーバーが実行されていないか、ストリームトークンを受信していません。</translation>
     </message>
     <message>
-        <location line="+46"/>
+        <location line="+44"/>
         <source>Preview</source>
         <translation>プレビュー</translation>
     </message>
@@ -13729,7 +13744,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1202"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1205"/>
         <source>The core&apos;s certificate changed</source>
         <translation>コアの証明書が変更されました</translation>
     </message>
@@ -13737,7 +13752,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 <context>
     <name>eMule::IrcPanel</name>
     <message>
-        <location filename="../src/gui/panels/IrcPanel.cpp" line="+1902"/>
+        <location filename="../src/gui/panels/IrcPanel.cpp" line="+1918"/>
         <source>Select an IRC nick.</source>
         <translation>IRC ニックネームを選択してください。</translation>
     </message>
@@ -13749,7 +13764,7 @@ Nick can be changed again in Options-&gt;IRC.</source>
 ニックネームはオプション-&gt;IRCで再変更できます。</translation>
     </message>
     <message>
-        <location line="-1686"/>
+        <location line="-1701"/>
         <source>Connecting</source>
         <translation>接続中</translation>
     </message>
@@ -13919,7 +13934,7 @@ Please choose another:</source>
         <translation>ニックネーム (%1)</translation>
     </message>
     <message>
-        <location line="+31"/>
+        <location line="+46"/>
         <source>* Private chat session started</source>
         <translation>* プライベートチャットを開始しました</translation>
     </message>
@@ -15862,12 +15877,12 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>Kad：未接続</translation>
     </message>
     <message>
-        <location line="+993"/>
+        <location line="+996"/>
         <source>Users: %1 | Files: %2</source>
         <translation>ユーザー：%1 | ファイル：%2</translation>
     </message>
     <message>
-        <location line="-1944"/>
+        <location line="-1947"/>
         <source>Open Incoming Folder...</source>
         <translation>受信フォルダを開く...</translation>
     </message>
@@ -16514,7 +16529,7 @@ Turn it on under Options → BitTorrent, then try again.</source>
         <translation>新しいメッセージ — ダブルクリックで読む</translation>
     </message>
     <message>
-        <location line="+81"/>
+        <location line="+84"/>
         <source>Free space: %1</source>
         <translation>空き容量: %1</translation>
     </message>
@@ -16524,7 +16539,7 @@ Turn it on under Options → BitTorrent, then try again.</source>
         <translation>N/A</translation>
     </message>
     <message>
-        <location line="-428"/>
+        <location line="-431"/>
         <source>eD2K Link</source>
         <translation>eD2K リンク</translation>
     </message>
@@ -24262,6 +24277,39 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <location line="+10"/>
         <source>Image %1 of %2</source>
         <translation>画像 %1 / %2</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::PhonePairDialog</name>
+    <message>
+        <location filename="../src/gui/dialogs/PhonePairDialog.cpp" line="+53"/>
+        <source>Pair Phone</source>
+        <translation>スマートフォンとペアリング</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Scan this code with the qDonkey app, or send the link to the phone. The phone must reach this address: same network, a VPN such as Tailscale, or a forwarded port.</source>
+        <translation>qDonkey アプリでこのコードをスキャンするか、リンクをスマートフォンに送ってください。スマートフォンはこのアドレスに到達できる必要があります（同じネットワーク、Tailscale などの VPN、またはポート転送）。</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Include core token</source>
+        <translation>コアトークンを含める</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Whoever scans the code then has full control of the core. When off, the app asks for the token.</source>
+        <translation>コードをスキャンした人はコアを完全に操作できます。オフの場合、アプリがトークンを尋ねます。</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Copy Link</source>
+        <translation>リンクをコピー</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>The core&apos;s certificate is unknown here: the app trusts the first one it sees.</source>
+        <translation>ここではコアの証明書が不明です。アプリは最初に見た証明書を信頼します。</translation>
     </message>
 </context>
 <context>

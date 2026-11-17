@@ -693,6 +693,9 @@ std::optional<std::pair<Ed3kResolver::TaskId, ResolverEvent>> Ed3kJdResolver::pa
         // the plugin's login error, when invalid
         if (!e.valid)
             e.text = str("error");
+        // a browser login (OAuth) nobody was asked for: the startup check, a download
+        if (!e.valid && e.unusable.isEmpty() && e.text == QLatin1StringView("browserLogin"))
+            e.unusable = QStringLiteral("login");
         e.multi = o.value(QStringLiteral("multi")).toBool();
         for (const QJsonValue& v : o.value(QStringLiteral("hosts")).toArray()) {
             const QJsonObject h = v.toObject();

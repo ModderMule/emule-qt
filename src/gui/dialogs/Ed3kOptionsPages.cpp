@@ -2423,6 +2423,8 @@ QString Ed3kOptionsPages::accountText(const AccountList& list, const QCborMap& c
             return list.debrid ? tr("Free account: downloads need premium") : tr("Free account: not usable");
         if (unusable == QLatin1StringView("expired"))
             return tr("Premium expired");
+        if (unusable == QLatin1StringView("login"))
+            return tr("Login needed: press Check to log in through the browser");
         return tr("Not valid");
     }
     if (list.solvers)

@@ -5247,7 +5247,7 @@ Versuche den letzten Core erneut oder gib Adresse und Authentifizierungstoken ei
 <context>
     <name>eMule::CoreScriptDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/CoreScriptDialog.cpp" line="+45"/>
+        <location filename="../src/gui/dialogs/CoreScriptDialog.cpp" line="+46"/>
         <source>Create Core Connect Script</source>
         <translation>Core-Verbindungsskript erstellen</translation>
     </message>
@@ -5311,7 +5311,17 @@ Versuche den letzten Core erneut oder gib Adresse und Authentifizierungstoken ei
         <translation>Der Core lauscht ab sofort auf der Adresse oben und behält sie; kein Neustart</translation>
     </message>
     <message>
-        <location line="+176"/>
+        <location line="+20"/>
+        <source>Pair Phone...</source>
+        <translation>Telefon koppeln...</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Show a QR code the qDonkey phone app scans to reach this core</source>
+        <translation>Einen QR-Code zeigen, den die qDonkey-App scannt, um diesen Core zu erreichen</translation>
+    </message>
+    <message>
+        <location line="+180"/>
         <source>The core did not answer.</source>
         <translation>Der Kern hat nicht geantwortet.</translation>
     </message>
@@ -5360,7 +5370,7 @@ Auf allen Adressen lauschen?</translation>
         <translation type="vanished">Dieser Core nimmt nur Verbindungen von diesem Computer an. Setze Optionen › Allgemein › Core › Adresse auf 0.0.0.0 (oder eine LAN-Adresse), starte neu und leite TCP-Port %1 im Router weiter.</translation>
     </message>
     <message>
-        <location line="-151"/>
+        <location line="-172"/>
         <source>Enter the address other computers reach this core at.</source>
         <translation>Gib die Adresse ein, unter der andere Computer diesen Core erreichen.</translation>
     </message>
@@ -5375,7 +5385,7 @@ Auf allen Adressen lauschen?</translation>
         <translation>Nur dieser Computer kann diese Adresse verwenden.</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+16"/>
         <source>Save Core Connect Script</source>
         <translation>Core-Verbindungsskript speichern</translation>
     </message>
@@ -7421,7 +7431,7 @@ Ihre Namen werden dann nach den Listen aufgelöst, denen Sie bereits folgen.</tr
     <message>
         <location line="+957"/>
         <location line="+387"/>
-        <location line="+277"/>
+        <location line="+279"/>
         <source>Not valid</source>
         <translation>Ungültig</translation>
     </message>
@@ -7482,7 +7492,7 @@ Ihre Namen werden dann nach den Listen aufgelöst, denen Sie bereits folgen.</tr
         <translation type="vanished">Weiterleiter:</translation>
     </message>
     <message>
-        <location line="-1885"/>
+        <location line="-1887"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>Usenet-Posts auch über ed3k freigeben</translation>
     </message>
@@ -8390,6 +8400,11 @@ Die Prüfung läuft von selbst weiter; die Anmeldung bleibt für später gespeic
         <translation>Premium abgelaufen</translation>
     </message>
     <message>
+        <location line="+2"/>
+        <source>Login needed: press Check to log in through the browser</source>
+        <translation>Anmeldung nötig: Prüfen drücken, um sich im Browser anzumelden</translation>
+    </message>
+    <message>
         <location line="+15"/>
         <source>%1, %2 of %3 traffic left</source>
         <translation>%1, %2 von %3 Traffic übrig</translation>
@@ -8457,7 +8472,7 @@ Die Prüfung läuft von selbst weiter; die Anmeldung bleibt für später gespeic
         </translation>
     </message>
     <message>
-        <location line="-398"/>
+        <location line="-400"/>
         <source>Download through these multi-hosters</source>
         <translation>Über diese Multi-Hoster herunterladen</translation>
     </message>
@@ -8539,12 +8554,12 @@ Ausschalten, um Rätsel selbst zu lösen, etwa wenn die Dienste wiederholt schei
         <translation>Kein Passwort gespeichert</translation>
     </message>
     <message>
-        <location line="+283"/>
+        <location line="+285"/>
         <source>Valid, but downloads no other hosters</source>
         <translation>Gültig, lädt aber keine anderen Hoster</translation>
     </message>
     <message>
-        <location line="-218"/>
+        <location line="-220"/>
         <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
         <translation>Warnung: Ändern Sie diese Einstellungen nicht, wenn Sie nicht wissen, was Sie tun. Andernfalls können Sie sich leicht Probleme einhandeln. eMule funktioniert einwandfrei ohne Änderung dieser Einstellungen.</translation>
     </message>
@@ -12608,7 +12623,7 @@ Falls der Internetanbieter eMule drosselt oder blockiert, hilft die Verschleieru
 <context>
     <name>eMule::HosterPanel</name>
     <message>
-        <location filename="../src/gui/panels/HosterPanel.cpp" line="+143"/>
+        <location filename="../src/gui/panels/HosterPanel.cpp" line="+154"/>
         <source>Finding a resolver</source>
         <translation>Suche Resolver</translation>
     </message>
@@ -12888,7 +12903,7 @@ Falls der Internetanbieter eMule drosselt oder blockiert, hilft die Verschleieru
         <translation>Hoster-Downloads</translation>
     </message>
     <message>
-        <location line="+1059"/>
+        <location line="+1057"/>
         <source>Clipboard</source>
         <translation>Zwischenablage</translation>
     </message>
@@ -13013,7 +13028,7 @@ Falls der Internetanbieter eMule drosselt oder blockiert, hilft die Verschleieru
         <translation type="vanished">Optionen...</translation>
     </message>
     <message>
-        <location line="-970"/>
+        <location line="-968"/>
         <source>File Name</source>
         <translation>Dateiname</translation>
     </message>
@@ -13078,23 +13093,23 @@ Falls der Internetanbieter eMule drosselt oder blockiert, hilft die Verschleieru
     </message>
     <message>
         <location line="+8"/>
-        <location line="+998"/>
+        <location line="+996"/>
         <source>Package Name:</source>
         <translation>Paketname:</translation>
     </message>
     <message>
-        <location line="-996"/>
+        <location line="-994"/>
         <source>optional</source>
         <translation>optional</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+998"/>
+        <location line="+996"/>
         <source>The links download under one entry, into a folder of this name</source>
         <translation>Die Links werden unter einem Eintrag in einen Ordner dieses Namens heruntergeladen</translation>
     </message>
     <message>
-        <location line="-983"/>
+        <location line="-981"/>
         <location line="+11"/>
         <location line="+16"/>
         <source>Not connected to the eMule core.</source>
@@ -13107,12 +13122,12 @@ Falls der Internetanbieter eMule drosselt oder blockiert, hilft die Verschleieru
         <location line="+4"/>
         <location line="+9"/>
         <location line="+42"/>
-        <location line="+823"/>
+        <location line="+821"/>
         <source>Open DLC</source>
         <translation>DLC öffnen</translation>
     </message>
     <message>
-        <location line="-888"/>
+        <location line="-886"/>
         <location line="+14"/>
         <source>Cannot read %1.</source>
         <translation>%1 kann nicht gelesen werden.</translation>
@@ -13184,7 +13199,7 @@ Falls der Internetanbieter eMule drosselt oder blockiert, hilft die Verschleieru
         <translation>Unbekannt in ed3k: wird nach Abschluss als Ganzes geprüft</translation>
     </message>
     <message>
-        <location line="+58"/>
+        <location line="+56"/>
         <source>Pause</source>
         <translation>Pause</translation>
     </message>
@@ -13194,13 +13209,13 @@ Falls der Internetanbieter eMule drosselt oder blockiert, hilft die Verschleieru
         <translation>Fortsetzen</translation>
     </message>
     <message>
-        <location line="-602"/>
-        <location line="+607"/>
+        <location line="-600"/>
+        <location line="+605"/>
         <source>Remove</source>
         <translation>Entfernen</translation>
     </message>
     <message>
-        <location line="-834"/>
+        <location line="-832"/>
         <source>The archive needs a password (Set Password…)</source>
         <translation>Das Archiv braucht ein Passwort (Passwort festlegen…)</translation>
     </message>
@@ -13241,29 +13256,29 @@ Falls der Internetanbieter eMule drosselt oder blockiert, hilft die Verschleieru
     </message>
     <message>
         <location line="+1"/>
-        <location line="+1078"/>
+        <location line="+1076"/>
         <source>Link Grabber (%1)</source>
         <translation>Linksammler (%1)</translation>
     </message>
     <message>
-        <location line="-1064"/>
-        <location line="+679"/>
+        <location line="-1062"/>
+        <location line="+677"/>
         <source>Add Links...</source>
         <translation>Links hinzufügen...</translation>
     </message>
     <message>
-        <location line="-678"/>
+        <location line="-676"/>
         <source>Links to files at hosters, one per line</source>
         <translation>Links zu Dateien bei Hostern, einer pro Zeile</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+677"/>
+        <location line="+675"/>
         <source>Open DLC...</source>
         <translation>DLC öffnen...</translation>
     </message>
     <message>
-        <location line="-676"/>
+        <location line="-674"/>
         <source>Adds the links of a link container (.dlc, .rsdf, .ccf); you can also drop one here</source>
         <translation>Fügt die Links eines Link-Containers (.dlc, .rsdf, .ccf) hinzu; du kannst ihn auch hierher ziehen</translation>
     </message>
@@ -13273,7 +13288,7 @@ Falls der Internetanbieter eMule drosselt oder blockiert, hilft die Verschleieru
         <translation>Vorschau nicht verfügbar — der Webserver läuft nicht oder es wurde kein Stream-Token empfangen.</translation>
     </message>
     <message>
-        <location line="+46"/>
+        <location line="+44"/>
         <source>Preview</source>
         <translation>Vorschau</translation>
     </message>
@@ -13788,7 +13803,7 @@ Falls der Internetanbieter eMule drosselt oder blockiert, hilft die Verschleieru
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1202"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1205"/>
         <source>The core&apos;s certificate changed</source>
         <translation>Das Zertifikat des Kerns hat sich geändert</translation>
     </message>
@@ -13796,7 +13811,7 @@ Falls der Internetanbieter eMule drosselt oder blockiert, hilft die Verschleieru
 <context>
     <name>eMule::IrcPanel</name>
     <message>
-        <location filename="../src/gui/panels/IrcPanel.cpp" line="+1902"/>
+        <location filename="../src/gui/panels/IrcPanel.cpp" line="+1918"/>
         <source>Select an IRC nick.</source>
         <translation>Wählen Sie einen IRC-Nicknamen.</translation>
     </message>
@@ -13808,7 +13823,7 @@ Nick can be changed again in Options-&gt;IRC.</source>
 Der Nickname kann in Optionen-&gt;IRC geändert werden.</translation>
     </message>
     <message>
-        <location line="-1686"/>
+        <location line="-1701"/>
         <source>Connecting</source>
         <translation>Verbinde</translation>
     </message>
@@ -13978,7 +13993,7 @@ Bitte wählen Sie einen anderen:</translation>
         <translation>Nickname (%1)</translation>
     </message>
     <message>
-        <location line="+31"/>
+        <location line="+46"/>
         <source>* Private chat session started</source>
         <translation>* Private Chatsitzung gestartet</translation>
     </message>
@@ -15935,12 +15950,12 @@ Andere Mitglieder sehen Ihren Nickname und Ihre Beiträge; Ihr Knoten hilft beim
         <translation>Kad: Getrennt</translation>
     </message>
     <message>
-        <location line="+993"/>
+        <location line="+996"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Benutzer: %1 | Dateien: %2</translation>
     </message>
     <message>
-        <location line="-1944"/>
+        <location line="-1947"/>
         <source>Open Incoming Folder...</source>
         <translation>Eingangsordner öffnen...</translation>
     </message>
@@ -16587,7 +16602,7 @@ Schalte es unter Optionen → BitTorrent ein und versuche es erneut.</translatio
         <translation>Neue Nachricht — zum Lesen doppelklicken</translation>
     </message>
     <message>
-        <location line="+81"/>
+        <location line="+84"/>
         <source>Free space: %1</source>
         <translation>Freier Speicher: %1</translation>
     </message>
@@ -16597,7 +16612,7 @@ Schalte es unter Optionen → BitTorrent ein und versuche es erneut.</translatio
         <translation>k. A.</translation>
     </message>
     <message>
-        <location line="-428"/>
+        <location line="-431"/>
         <source>eD2K Link</source>
         <translation>eD2K-Link</translation>
     </message>
@@ -24344,6 +24359,39 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <location line="+10"/>
         <source>Image %1 of %2</source>
         <translation>Bild %1 von %2</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::PhonePairDialog</name>
+    <message>
+        <location filename="../src/gui/dialogs/PhonePairDialog.cpp" line="+53"/>
+        <source>Pair Phone</source>
+        <translation>Telefon koppeln</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Scan this code with the qDonkey app, or send the link to the phone. The phone must reach this address: same network, a VPN such as Tailscale, or a forwarded port.</source>
+        <translation>Scanne diesen Code mit der qDonkey-App oder schicke den Link an das Telefon. Das Telefon muss diese Adresse erreichen: gleiches Netzwerk, ein VPN wie Tailscale oder ein weitergeleiteter Port.</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Include core token</source>
+        <translation>Core-Token einschließen</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Whoever scans the code then has full control of the core. When off, the app asks for the token.</source>
+        <translation>Wer den Code scannt, hat dann volle Kontrolle über den Core. Wenn aus, fragt die App nach dem Token.</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Copy Link</source>
+        <translation>Link kopieren</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>The core&apos;s certificate is unknown here: the app trusts the first one it sees.</source>
+        <translation>Das Zertifikat des Cores ist hier unbekannt: Die App vertraut dem ersten, das sie sieht.</translation>
     </message>
 </context>
 <context>

@@ -12,11 +12,9 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import jd.plugins.Plugin;
 
-import org.jdownloader.captcha.v2.AbstractResponse;
 import org.jdownloader.captcha.v2.Challenge;
 import org.jdownloader.captcha.v2.ChallengeResponseController;
 import org.jdownloader.captcha.v2.ChallengeSolver;
-import org.jdownloader.captcha.v2.challenge.oauth.AccountLoginOAuthChallenge;
 import org.jdownloader.captcha.v2.challenge.oauth.AccountOAuthSolver;
 import org.jdownloader.captcha.v2.challenge.oauth.OAuthChallenge;
 import org.jdownloader.captcha.v2.solver.service.DialogSolverService;
@@ -24,16 +22,18 @@ import org.jdownloader.captcha.v2.solverjob.SolverJob;
 
 /**
  * Logins through a page (OAuth device flow, e.g. Real-Debrid), in place of JD's AccountOAuthSolver:
- * - the plugin's own auto login (form + captcha + mail code), as JD headless does. Its code dialog
- *   runs on this solver thread, so it borrows the task's CodeAsker login: the user gets the code ask.
- * - only an accountCheck also asks the user: a `login` event with the URL, the challenge's own
- *   poll() (ChallengeResponseController, every second) sees the user allow it in the browser.
- * Downloads never wait for the browser: their login fails and the next mirror / multi-hoster goes.
+ * only an accountCheck the user started asks: a `login` event with the URL, the challenge's own
+ * poll() (ChallengeResponseController, every second) sees the user allow it in the browser.
+ * Never the plugin's auto login (form + captcha + mail code), like JD desktop: its headless code
+ * form never took a code (RD, live 2026-11-18), each try mailed one and paid a captcha.
+ * Anything else (the startup check, a download) fails at once: needsBrowser() tells the check.
  */
 final class LoginSolver extends ChallengeSolver<Boolean> {
     private static final LoginSolver INSTANCE = new LoginSolver();
     /** plugin instance → the accountCheck task that runs it */
     private static final Map<Plugin, Long> CHECKS = new ConcurrentHashMap<Plugin, Long>();
+    /** plugins whose login wanted a browser nobody was asked to open */
+    private static final Set<Plugin> NO_BROWSER = ConcurrentHashMap.newKeySet();
 
     private LoginSolver() {
         super(DialogSolverService.getInstance(), 1);
@@ -60,8 +60,14 @@ final class LoginSolver extends ChallengeSolver<Boolean> {
         CHECKS.put(plugin, task);
     }
 
+    /** @p plugin's login failed for a browser login only the user can do (Check in Options). */
+    static boolean needsBrowser(final Plugin plugin) {
+        return NO_BROWSER.contains(plugin);
+    }
+
     static void done(final Plugin plugin) {
         CHECKS.remove(plugin);
+        NO_BROWSER.remove(plugin);
     }
 
     @Override
@@ -87,21 +93,18 @@ final class LoginSolver extends ChallengeSolver<Boolean> {
         }
         final OAuthChallenge c = (OAuthChallenge) job.getChallenge();
         final Long task = c.getPlugin() == null ? null : CHECKS.get(c.getPlugin());
-        final boolean browser = task != null && c.getUrl() != null;
-        if (browser) {
-            final Map<String, Object> m = Out.event(task, "login");
-            m.put("url", c.getUrl());
-            m.put("host", c.getHost());
-            final int remaining = c.getRemainingTimeout();
-            m.put("timeout", remaining > 0 ? remaining / 1000 : 300);
-            Out.send(m);
-        }
-        if (autoLogin(job, c)) {
+        if (task == null || c.getUrl() == null) {
+            if (c.getPlugin() != null) {
+                NO_BROWSER.add(c.getPlugin());
+            }
             return;
         }
-        if (!browser) {
-            return;
-        }
+        final Map<String, Object> m = Out.event(task, "login");
+        m.put("url", c.getUrl());
+        m.put("host", c.getHost());
+        final int remaining = c.getRemainingTimeout();
+        m.put("timeout", remaining > 0 ? remaining / 1000 : 300);
+        Out.send(m);
         // the challenge's poll() answers the job once the user allowed it
         while (!job.isSolved() && job.getSkipRequest() == null && CHECKS.containsKey(c.getPlugin())) {
             if (c.getRemainingTimeout() == 0) {
@@ -109,27 +112,5 @@ final class LoginSolver extends ChallengeSolver<Boolean> {
             }
             Thread.sleep(1000);
         }
-    }
-
-    /** The plugin's own login with the account's password; true: done, job answered. */
-    private boolean autoLogin(final SolverJob<Boolean> job, final OAuthChallenge c) {
-        if (!(c instanceof AccountLoginOAuthChallenge)) {
-            return false;
-        }
-        final AccountLoginOAuthChallenge a = (AccountLoginOAuthChallenge) c;
-        final boolean lent = a.getAccount() != null && CodeAsker.lend(a.getAccount().getHoster(), a.getAccount().getUser());
-        try {
-            if (a.autoSolveChallenge(job)) {
-                job.addAnswer(new AbstractResponse<Boolean>(c, this, true));
-                return true;
-            }
-        } catch (final Throwable e) {
-            Out.log("auto login failed: " + e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage()));
-        } finally {
-            if (lent) {
-                CodeAsker.unlend();
-            }
-        }
-        return false;
     }
 }

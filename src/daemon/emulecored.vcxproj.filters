@@ -144,6 +144,9 @@
     <ClCompile Include="Ed3kHideBridge.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="IpcStreamBridge.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="UsenetRetryGrabber.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -282,6 +285,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Ed3kHideBridge.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="IpcStreamBridge.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="UsenetBridge.h">

@@ -16,6 +16,7 @@
 #include "CoreNotifierBridge.h"
 #include "SharedFileRows.h"
 #include "DaemonApp.h"
+#include "IpcStreamBridge.h"
 #include "IpcServer.h"
 #include "net/OwnAddress.h"
 #ifdef EMULE_HAVE_ED3K
@@ -423,6 +424,9 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
         return;
     }
     if (Ed3kBridge::handleRequest(msg, [this](const IpcMessage& reply) { sendMessage(reply); }))
+        return;
+    // remote streaming + pairing (1230-1232): a phone reads file bytes over this link
+    if (IpcStreamBridge::handleRequest(msg, this, [this](const IpcMessage& reply) { sendMessage(reply); }))
         return;
 
     switch (msg.type()) {

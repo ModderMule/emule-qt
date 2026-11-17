@@ -5220,7 +5220,7 @@ Retry the last core, or enter the address and authentication token of another on
 <context>
     <name>eMule::CoreScriptDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/CoreScriptDialog.cpp" line="+45"/>
+        <location filename="../src/gui/dialogs/CoreScriptDialog.cpp" line="+46"/>
         <source>Create Core Connect Script</source>
         <translation>코어 연결 스크립트 만들기</translation>
     </message>
@@ -5284,7 +5284,17 @@ Retry the last core, or enter the address and authentication token of another on
         <translation>코어가 지금 위 주소에서 수신 대기하고 이를 유지합니다. 재시작 불필요</translation>
     </message>
     <message>
-        <location line="+176"/>
+        <location line="+20"/>
+        <source>Pair Phone...</source>
+        <translation>휴대폰 페어링...</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Show a QR code the qDonkey phone app scans to reach this core</source>
+        <translation>qDonkey 앱이 이 코어에 접속하려고 스캔하는 QR 코드 표시</translation>
+    </message>
+    <message>
+        <location line="+180"/>
         <source>The core did not answer.</source>
         <translation>코어가 응답하지 않았습니다.</translation>
     </message>
@@ -5333,7 +5343,7 @@ Listen on all addresses?</source>
         <translation type="vanished">이 코어는 이 컴퓨터의 연결만 받습니다. 옵션 › 일반 › 코어 › 주소를 0.0.0.0(또는 LAN 주소)으로 설정하고 다시 시작한 다음 라우터에서 TCP 포트 %1을(를) 포워딩하세요.</translation>
     </message>
     <message>
-        <location line="-151"/>
+        <location line="-172"/>
         <source>Enter the address other computers reach this core at.</source>
         <translation>다른 컴퓨터가 이 코어에 접속할 주소를 입력하세요.</translation>
     </message>
@@ -5348,7 +5358,7 @@ Listen on all addresses?</source>
         <translation>이 주소는 이 컴퓨터에서만 사용할 수 있습니다.</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+16"/>
         <source>Save Core Connect Script</source>
         <translation>코어 연결 스크립트 저장</translation>
     </message>
@@ -7389,7 +7399,7 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+957"/>
         <location line="+387"/>
-        <location line="+277"/>
+        <location line="+279"/>
         <source>Not valid</source>
         <translation>유효하지 않음</translation>
     </message>
@@ -7450,7 +7460,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">포워더:</translation>
     </message>
     <message>
-        <location line="-1885"/>
+        <location line="-1887"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>Usenet 게시물도 ed3k로 공유</translation>
     </message>
@@ -8358,6 +8368,11 @@ The check goes on by itself; the login is kept for later.</source>
         <translation>프리미엄 만료</translation>
     </message>
     <message>
+        <location line="+2"/>
+        <source>Login needed: press Check to log in through the browser</source>
+        <translation>로그인 필요: 확인을 눌러 브라우저에서 로그인하세요</translation>
+    </message>
+    <message>
         <location line="+15"/>
         <source>%1, %2 of %3 traffic left</source>
         <translation>%1, 남은 트래픽 %2 / %3</translation>
@@ -8423,7 +8438,7 @@ The check goes on by itself; the login is kept for later.</source>
         </translation>
     </message>
     <message>
-        <location line="-398"/>
+        <location line="-400"/>
         <source>Download through these multi-hosters</source>
         <translation>이 멀티 호스터를 통해 다운로드</translation>
     </message>
@@ -8505,12 +8520,12 @@ Turn off to solve puzzles yourself, for example when the services fail repeatedl
         <translation>저장된 비밀번호 없음</translation>
     </message>
     <message>
-        <location line="+283"/>
+        <location line="+285"/>
         <source>Valid, but downloads no other hosters</source>
         <translation>유효하지만 다른 호스터를 다운로드하지 않음</translation>
     </message>
     <message>
-        <location line="-218"/>
+        <location line="-220"/>
         <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
         <translation>경고: 무엇을 하고 있는지 알지 못하는 한 이 설정을 변경하지 마세요. 그렇지 않으면 상황을 쉽게 악화시킬 수 있습니다. eMule은 이 설정을 조정하지 않아도 정상적으로 작동합니다.</translation>
     </message>
@@ -12557,7 +12572,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
 <context>
     <name>eMule::HosterPanel</name>
     <message>
-        <location filename="../src/gui/panels/HosterPanel.cpp" line="+143"/>
+        <location filename="../src/gui/panels/HosterPanel.cpp" line="+154"/>
         <source>Finding a resolver</source>
         <translation>리졸버 찾는 중</translation>
     </message>
@@ -12836,7 +12851,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>호스터 다운로드</translation>
     </message>
     <message>
-        <location line="+1059"/>
+        <location line="+1057"/>
         <source>Clipboard</source>
         <translation>클립보드</translation>
     </message>
@@ -12958,7 +12973,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation type="vanished">옵션...</translation>
     </message>
     <message>
-        <location line="-970"/>
+        <location line="-968"/>
         <source>File Name</source>
         <translation>파일 이름</translation>
     </message>
@@ -13022,23 +13037,23 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
     </message>
     <message>
         <location line="+8"/>
-        <location line="+998"/>
+        <location line="+996"/>
         <source>Package Name:</source>
         <translation>패키지 이름:</translation>
     </message>
     <message>
-        <location line="-996"/>
+        <location line="-994"/>
         <source>optional</source>
         <translation>선택 사항</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+998"/>
+        <location line="+996"/>
         <source>The links download under one entry, into a folder of this name</source>
         <translation>링크가 하나의 항목 아래 이 이름의 폴더로 다운로드됩니다</translation>
     </message>
     <message>
-        <location line="-983"/>
+        <location line="-981"/>
         <location line="+11"/>
         <location line="+16"/>
         <source>Not connected to the eMule core.</source>
@@ -13051,12 +13066,12 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <location line="+4"/>
         <location line="+9"/>
         <location line="+42"/>
-        <location line="+823"/>
+        <location line="+821"/>
         <source>Open DLC</source>
         <translation>DLC 열기</translation>
     </message>
     <message>
-        <location line="-888"/>
+        <location line="-886"/>
         <location line="+14"/>
         <source>Cannot read %1.</source>
         <translation>%1을(를) 읽을 수 없습니다.</translation>
@@ -13126,7 +13141,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>ed3k에 알려지지 않음: 완료 시 전체 검사</translation>
     </message>
     <message>
-        <location line="+58"/>
+        <location line="+56"/>
         <source>Pause</source>
         <translation>일시정지</translation>
     </message>
@@ -13136,13 +13151,13 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>재개</translation>
     </message>
     <message>
-        <location line="-602"/>
-        <location line="+607"/>
+        <location line="-600"/>
+        <location line="+605"/>
         <source>Remove</source>
         <translation>제거</translation>
     </message>
     <message>
-        <location line="-834"/>
+        <location line="-832"/>
         <source>The archive needs a password (Set Password…)</source>
         <translation>압축 파일에 비밀번호가 필요합니다 (비밀번호 설정…)</translation>
     </message>
@@ -13183,29 +13198,29 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
     </message>
     <message>
         <location line="+1"/>
-        <location line="+1078"/>
+        <location line="+1076"/>
         <source>Link Grabber (%1)</source>
         <translation>LinkGrabber (%1)</translation>
     </message>
     <message>
-        <location line="-1064"/>
-        <location line="+679"/>
+        <location line="-1062"/>
+        <location line="+677"/>
         <source>Add Links...</source>
         <translation>링크 추가...</translation>
     </message>
     <message>
-        <location line="-678"/>
+        <location line="-676"/>
         <source>Links to files at hosters, one per line</source>
         <translation>호스터의 파일 링크, 한 줄에 하나씩</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+677"/>
+        <location line="+675"/>
         <source>Open DLC...</source>
         <translation>DLC 열기...</translation>
     </message>
     <message>
-        <location line="-676"/>
+        <location line="-674"/>
         <source>Adds the links of a link container (.dlc, .rsdf, .ccf); you can also drop one here</source>
         <translation>링크 컨테이너(.dlc, .rsdf, .ccf)의 링크를 추가합니다. 여기에 끌어다 놓을 수도 있습니다</translation>
     </message>
@@ -13215,7 +13230,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>미리보기를 사용할 수 없습니다 — 웹 서버가 실행 중이 아니거나 스트림 토큰을 받지 못했습니다.</translation>
     </message>
     <message>
-        <location line="+46"/>
+        <location line="+44"/>
         <source>Preview</source>
         <translation>미리보기</translation>
     </message>
@@ -13729,7 +13744,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1202"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1205"/>
         <source>The core&apos;s certificate changed</source>
         <translation>코어 인증서가 변경되었습니다</translation>
     </message>
@@ -13737,7 +13752,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
 <context>
     <name>eMule::IrcPanel</name>
     <message>
-        <location filename="../src/gui/panels/IrcPanel.cpp" line="+1902"/>
+        <location filename="../src/gui/panels/IrcPanel.cpp" line="+1918"/>
         <source>Select an IRC nick.</source>
         <translation>IRC 닉네임을 선택하세요.</translation>
     </message>
@@ -13749,7 +13764,7 @@ Nick can be changed again in Options-&gt;IRC.</source>
 닉네임은 옵션-&gt;IRC에서 다시 변경할 수 있습니다.</translation>
     </message>
     <message>
-        <location line="-1686"/>
+        <location line="-1701"/>
         <source>Connecting</source>
         <translation>연결 중</translation>
     </message>
@@ -13919,7 +13934,7 @@ Please choose another:</source>
         <translation>닉네임 (%1)</translation>
     </message>
     <message>
-        <location line="+31"/>
+        <location line="+46"/>
         <source>* Private chat session started</source>
         <translation>* 비공개 채팅 세션 시작됨</translation>
     </message>
@@ -15862,12 +15877,12 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation>Kad: 연결 해제됨</translation>
     </message>
     <message>
-        <location line="+993"/>
+        <location line="+996"/>
         <source>Users: %1 | Files: %2</source>
         <translation>사용자: %1 | 파일: %2</translation>
     </message>
     <message>
-        <location line="-1944"/>
+        <location line="-1947"/>
         <source>Open Incoming Folder...</source>
         <translation>수신 폴더 열기...</translation>
     </message>
@@ -16514,7 +16529,7 @@ Turn it on under Options → BitTorrent, then try again.</source>
         <translation>새 메시지 — 두 번 클릭하여 읽기</translation>
     </message>
     <message>
-        <location line="+81"/>
+        <location line="+84"/>
         <source>Free space: %1</source>
         <translation>여유 공간: %1</translation>
     </message>
@@ -16524,7 +16539,7 @@ Turn it on under Options → BitTorrent, then try again.</source>
         <translation>N/A</translation>
     </message>
     <message>
-        <location line="-428"/>
+        <location line="-431"/>
         <source>eD2K Link</source>
         <translation>eD2K 링크</translation>
     </message>
@@ -24262,6 +24277,39 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <location line="+10"/>
         <source>Image %1 of %2</source>
         <translation>이미지 %1 / %2</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::PhonePairDialog</name>
+    <message>
+        <location filename="../src/gui/dialogs/PhonePairDialog.cpp" line="+53"/>
+        <source>Pair Phone</source>
+        <translation>휴대폰 페어링</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Scan this code with the qDonkey app, or send the link to the phone. The phone must reach this address: same network, a VPN such as Tailscale, or a forwarded port.</source>
+        <translation>qDonkey 앱으로 이 코드를 스캔하거나 링크를 휴대폰으로 보내세요. 휴대폰이 이 주소에 접속할 수 있어야 합니다: 같은 네트워크, Tailscale 같은 VPN 또는 포트 포워딩.</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Include core token</source>
+        <translation>코어 토큰 포함</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Whoever scans the code then has full control of the core. When off, the app asks for the token.</source>
+        <translation>코드를 스캔한 사람은 코어를 완전히 제어할 수 있습니다. 끄면 앱이 토큰을 묻습니다.</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Copy Link</source>
+        <translation>링크 복사</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>The core&apos;s certificate is unknown here: the app trusts the first one it sees.</source>
+        <translation>여기서는 코어의 인증서를 알 수 없습니다: 앱은 처음 본 인증서를 신뢰합니다.</translation>
     </message>
 </context>
 <context>

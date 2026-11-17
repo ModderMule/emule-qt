@@ -31,6 +31,7 @@ public:
 
     /// TLS identity for remote GUIs. Without one only loopback clients get in.
     void setTlsIdentity(const QSslCertificate& cert, const QSslKey& key);
+    [[nodiscard]] QSslCertificate tlsCertificate() const { return m_cert; }
 
     /// Start listening on each of @p addresses at @p port. Fails only when none
     /// listens; the others are logged.

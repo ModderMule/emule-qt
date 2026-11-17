@@ -255,6 +255,8 @@
     <ClCompile Include="controls\ContentScrollArea.cpp" />
     <ClCompile Include="dialogs\CoreConnectDialog.cpp" />
     <ClCompile Include="dialogs\CoreScriptDialog.cpp" />
+    <ClCompile Include="dialogs\PhonePairDialog.cpp" />
+    <ClCompile Include="utils\qrcodegen\qrcodegen.cpp" />
     <ClCompile Include="utils\CoreConnectScript.cpp" />
     <ClCompile Include="controls\CategoryFilterProxy.cpp" />
     <ClCompile Include="controls\CategoryTabBar.cpp" />
@@ -472,6 +474,7 @@
     <ClInclude Include="utils\MenuUtils.h" />
     <ClInclude Include="utils\Appearance.h" />
     <ClInclude Include="utils\CoreConnectScript.h" />
+    <ClInclude Include="utils\qrcodegen\qrcodegen.hpp" />
     <ClInclude Include="utils\BadgeIcons.h" />
     <ClInclude Include="utils\ColorUtils.h" />
     <ClInclude Include="utils\ViewNavigation.h" />
@@ -506,6 +509,7 @@
     <QtMoc Include="controls\ContentScrollArea.h" />
     <QtMoc Include="dialogs\CoreConnectDialog.h" />
     <QtMoc Include="dialogs\CoreScriptDialog.h" />
+    <QtMoc Include="dialogs\PhonePairDialog.h" />
     <QtMoc Include="controls\CategoryFilterProxy.h" />
     <QtMoc Include="controls\CategoryTabBar.h" />
     <QtMoc Include="controls\DownloadListModel.h" />

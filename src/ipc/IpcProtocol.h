@@ -1098,6 +1098,19 @@ enum class IpcMsgType : int {
     /// download; PushHosterAccount error "code", any GUI shows it); empty code cancels. Local clients only
     AnswerHosterAccountCode = 1221,
 
+    // -- remote streaming + pairing (1230-1239): daemon/IpcStreamBridge.cpp. File bytes over the
+    // IPC link itself, so a phone (qDonkey) needs no second port. id: 32 hex (eD2K hash of a
+    // download or shared file) or 64 hex (ed3k download root). Stateless: no open/close.
+    // Failure: [false, {error: string}].
+    /// [id] -> [ok, {name, size, complete, seekable (downloadSeeking on and unfinished)}]
+    StatStream              = 1230,
+    /// [id, offset, maxLen (<= 1 MiB)] -> [ok, {data: bytes, size, availableEnd, complete}];
+    /// seeking on: waits up to ~15 s for bytes at offset (fetched first), then empty data
+    /// with waiting: true (ask again). Off: the file as it is on disk.
+    ReadStream              = 1231,
+    /// [] -> [ok, {fingerprint (IPC TLS cert, "AB:CD:.."), port}] — pairing code for a phone
+    GetIpcIdentity          = 1232,
+
     // hoster links (1100-1109, hoster.md), Ed3kHosterBridge.cpp. An item: {id, url, host,
     // name, size, done, speed, state (Ed3kHosterJoin::State), reason (Ed3kHosterJoin::Reason, the
     // GUI words it), reasonArg (technical, not localized), waitUntil (ms), verified, file, root,

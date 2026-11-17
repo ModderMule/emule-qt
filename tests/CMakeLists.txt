@@ -389,6 +389,11 @@ target_compile_definitions(tst_WebServer PRIVATE
 # IPC Protocol
 emule_add_test(tst_IpcProtocol   FOLDER "Ipc" LIBRARIES eMule::Ipc)
 emule_add_test(tst_IpcMessage    FOLDER "Ipc" LIBRARIES eMule::Ipc)
+# StatStream / ReadStream over IPC (qDonkey phone app): links the daemon lib
+emule_add_test(tst_IpcStream FOLDER "Ipc"
+    SOURCES tst_IpcStream.cpp "${CMAKE_SOURCE_DIR}/src/daemon/IpcStreamBridge.cpp"
+    LIBRARIES eMule::Core)
+target_include_directories(tst_IpcStream PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
 emule_add_test(tst_IpcConnection FOLDER "Ipc" LIBRARIES eMule::Ipc)
 emule_add_test(tst_PreferencesIpc FOLDER "Ipc" LIBRARIES eMule::Ipc yaml-cpp::yaml-cpp)
 # Push broadcast rate limiter — pure Qt Core, so it links the real library directly.

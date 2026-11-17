@@ -37,6 +37,12 @@ namespace ev = ffi::event;
 
 namespace {
 
+/// the login worked: valid, or a free/expired account (its session is worth keeping)
+bool loggedIn(bool valid, const QString& unusable)
+{
+    return valid || unusable == QLatin1StringView("free") || unusable == QLatin1StringView("expired");
+}
+
 /// bytes per linkData call; the core holds at most a sealed chunk per stream
 constexpr std::uint32_t kFeedChunk = 1024 * 1024;
 /// an ask that failed for a reason of the moment is tried again this often at most
@@ -783,7 +789,7 @@ void Ed3kHosterJoin::saveSessions()
     for (const QList<Ed3kHosterAccount>* list : {&m_prefs.accounts, &m_prefs.debrid})
         for (const Ed3kHosterAccount& a : *list) {
             const auto it = m_accountStatus.find(keyOf(a));
-            if (it == m_accountStatus.end() || !(it->second.valid || !it->second.unusable.isEmpty()) || it->second.state.isEmpty() || it->second.state == a.session
+            if (it == m_accountStatus.end() || !loggedIn(it->second.valid, it->second.unusable) || it->second.state.isEmpty() || it->second.state == a.session
                 || it->second.password != a.password)
                 continue;
             emit sessionSaved(a.host, a.user, it->second.state);
@@ -1910,7 +1916,7 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
         // a stored login's new session survives a restart (no browser login again);
         // a free/expired account logged in too (RD: else captcha + mail code each start)
         if (const Ed3kHosterAccount* a = storedLogin(host, user);
-            a && (st.valid || !st.unusable.isEmpty()) && !st.state.isEmpty() && a->password == password && a->session != st.state)
+            a && loggedIn(st.valid, st.unusable) && !st.state.isEmpty() && a->password == password && a->session != st.state)
             emit sessionSaved(host, user, st.state);
         return;
     }

@@ -67,6 +67,12 @@
     <ClCompile Include="dialogs\CoreScriptDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="dialogs\PhonePairDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\qrcodegen\qrcodegen.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\CoreConnectScript.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -756,6 +762,9 @@
     <ClInclude Include="utils\CoreConnectScript.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="utils\qrcodegen\qrcodegen.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\BadgeIcons.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -814,6 +823,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\CoreScriptDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\PhonePairDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\CategoryFilterProxy.h">

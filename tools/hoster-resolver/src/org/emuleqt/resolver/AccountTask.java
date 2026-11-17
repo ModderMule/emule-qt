@@ -106,7 +106,10 @@ final class AccountTask extends Task {
             m.put("valid", false);
             // the plugin's reason ("OAuth Failed", "Your login informations are incorrect", ...)
             final String why = e.getMessage();
-            if (why != null && !why.isBlank()) {
+            if (LoginSolver.needsBrowser(plugin)) {
+                // no session (or it ran out): only a browser login the user starts helps
+                m.put("error", "browserLogin");
+            } else if (why != null && !why.isBlank()) {
                 m.put("error", why.length() > 200 ? why.substring(0, 200) : why);
             }
         } finally {

@@ -120,6 +120,7 @@ public:
     QSet<QString> privateUrls;   ///< open() fails like the address guard (code "private")
     QSet<QString> premiumHosts;  ///< accountCheck() says premium for these
     QSet<QString> freeHosts;     ///< accountCheck(): logged in, free account (JD: not valid), session
+    QSet<QString> browserHosts;  ///< accountCheck(): a browser login nobody asked for (unusable "login")
     QHash<QString, int> maxDownloads;   ///< accountCheck() tells JD's downloads at once
     QSet<QString> codeHosts;     ///< accountCheck() asks for a confirmation code
     std::map<TaskId, QString> codeWaits;   ///< check task → host, until answerCode()
@@ -351,6 +352,13 @@ public:
             e.unusable = QStringLiteral("free");
             e.trafficLeft = 0;
             e.state = QByteArrayLiteral(R"({"token":"free"})");
+        }
+        if (browserHosts.contains(host)) {
+            e.valid = false;
+            e.premium = false;
+            e.multi = false;
+            e.unusable = QStringLiteral("login");
+            e.state = QByteArrayLiteral(R"({"token":"stale"})");
         }
         later(t, e);
         return t;
@@ -2152,6 +2160,23 @@ private slots:
         QSignalSpy saved(r.join.get(), &Ed3kHosterJoin::sessionSaved);
         QTRY_VERIFY_WITH_TIMEOUT(saved.count() >= 1, 10000);
         QCOMPARE(saved.last().at(2).toByteArray(), QByteArrayLiteral(R"({"token":"free"})"));
+    }
+
+    /// the startup check needs a browser login: no session saved from it (it's not logged in)
+    void debrid_browserLoginNeededSavesNothing()
+    {
+        Rig r;
+        r.resolver.browserHosts = {QStringLiteral("deb.example")};
+        r.prefs.debrid = {Ed3kHosterAccount{QStringLiteral("deb.example"), QStringLiteral("u"), QStringLiteral("p")}};
+        QVERIFY(r.start(true));
+        QSignalSpy saved(r.join.get(), &Ed3kHosterJoin::sessionSaved);
+        const auto unusable = [&r] {
+            const auto d = r.join->debridSummaries();
+            return d.isEmpty() ? QString() : d.first().unusable;
+        };
+        QTRY_COMPARE_WITH_TIMEOUT(unusable(), QStringLiteral("login"), 10000);
+        QTest::qWait(300);
+        QCOMPARE(saved.count(), 0);
     }
 
     /// a login needs a confirmation code: the check waits, the user's code finishes it; a Check

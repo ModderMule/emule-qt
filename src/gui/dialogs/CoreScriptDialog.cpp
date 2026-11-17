@@ -3,6 +3,7 @@
 /// @brief Save a connect-to-core script.
 
 #include "dialogs/CoreScriptDialog.h"
+#include "dialogs/PhonePairDialog.h"
 
 #include "app/IpcClient.h"
 #include "IpcMessage.h"
@@ -125,6 +126,9 @@ CoreScriptDialog::CoreScriptDialog(bool localCore, const QString& host, uint16_t
 
     auto* buttons = new QDialogButtonBox(this);
     m_saveBtn = buttons->addButton(QDialogButtonBox::Save);
+    // the qDonkey phone app: a QR code instead of a script
+    m_phoneBtn = buttons->addButton(tr("Pair Phone..."), QDialogButtonBox::ActionRole);
+    m_phoneBtn->setToolTip(tr("Show a QR code the qDonkey phone app scans to reach this core"));
     buttons->addButton(QDialogButtonBox::Cancel);
     m_saveBtn->setDefault(true);
     mainLayout->addWidget(buttons);
@@ -132,6 +136,7 @@ CoreScriptDialog::CoreScriptDialog(bool localCore, const QString& host, uint16_t
     connect(m_hostEdit, &QLineEdit::textChanged, this, &CoreScriptDialog::updateSaveButton);
     connect(m_hostEdit, &QLineEdit::textChanged, this, &CoreScriptDialog::updateListenRow);
     connect(m_saveBtn, &QPushButton::clicked, this, &CoreScriptDialog::save);
+    connect(m_phoneBtn, &QPushButton::clicked, this, &CoreScriptDialog::pairPhone);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     updateSaveButton();
     updateListenRow();
@@ -204,6 +209,7 @@ void CoreScriptDialog::updateSaveButton()
     m_hostHint->setText(hint);
     m_hostHint->setVisible(!hint.isEmpty());
     m_saveBtn->setEnabled(ok);
+    m_phoneBtn->setEnabled(ok);
 }
 
 void CoreScriptDialog::save()
@@ -250,6 +256,26 @@ void CoreScriptDialog::save()
     logInfo(QStringLiteral("Saved core connect script for %1:%2 to %3")
                 .arg(params.host).arg(params.port).arg(path));
     accept();
+}
+
+void CoreScriptDialog::pairPhone()
+{
+    const auto show = [this](const QString& fingerprint) {
+        PhonePairDialog dlg(host(), port(), m_token, fingerprint, this);
+        dlg.exec();
+    };
+    if (!m_ipc || !m_ipc->isConnected()) {
+        show({});
+        return;
+    }
+    // the certificate fingerprint lets the phone pin it before sending the token
+    m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::GetIpcIdentity),
+                       [self = QPointer(this), show](const Ipc::IpcMessage& resp) {
+                           if (!self)
+                               return;
+                           const bool ok = resp.isValid() && resp.fieldBool(0);
+                           show(ok ? resp.fieldMap(1).value(QStringLiteral("fingerprint")).toString() : QString{});
+                       });
 }
 
 void CoreScriptDialog::queryListen()

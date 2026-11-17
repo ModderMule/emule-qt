@@ -149,6 +149,8 @@ SOURCES += \
     dialogs/CommentsPanel.cpp \
     dialogs/CoreConnectDialog.cpp \
     dialogs/CoreScriptDialog.cpp \
+    dialogs/PhonePairDialog.cpp \
+    utils/qrcodegen/qrcodegen.cpp \
     utils/CoreConnectScript.cpp \
     dialogs/DetailDialog.cpp \
     dialogs/RememberedSizeDialog.cpp \
@@ -296,6 +298,8 @@ HEADERS += \
     dialogs/CommentsPanel.h \
     dialogs/CoreConnectDialog.h \
     dialogs/CoreScriptDialog.h \
+    dialogs/PhonePairDialog.h \
+    utils/qrcodegen/qrcodegen.hpp \
     utils/CoreConnectScript.h \
     dialogs/DetailDialog.h \
     dialogs/RememberedSizeDialog.h \

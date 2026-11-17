@@ -5028,7 +5028,7 @@ Retry the last core, or enter the address and authentication token of another on
 <context>
     <name>eMule::CoreScriptDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/CoreScriptDialog.cpp" line="+45"/>
+        <location filename="../src/gui/dialogs/CoreScriptDialog.cpp" line="+46"/>
         <source>Create Core Connect Script</source>
         <translation>Создать сценарий подключения к ядру</translation>
     </message>
@@ -5092,7 +5092,17 @@ Retry the last core, or enter the address and authentication token of another on
         <translation>Ядро сразу начинает слушать на адресе выше и сохраняет его; без перезапуска</translation>
     </message>
     <message>
-        <location line="+176"/>
+        <location line="+20"/>
+        <source>Pair Phone...</source>
+        <translation>Привязать телефон...</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Show a QR code the qDonkey phone app scans to reach this core</source>
+        <translation>Показать QR-код, который приложение qDonkey сканирует для подключения к этому ядру</translation>
+    </message>
+    <message>
+        <location line="+180"/>
         <source>The core did not answer.</source>
         <translation>Ядро не ответило.</translation>
     </message>
@@ -5141,7 +5151,7 @@ Listen on all addresses?</source>
         <translation type="vanished">Это ядро принимает подключения только с этого компьютера. Укажите в Параметры › Общие › Ядро › Адрес 0.0.0.0 (или адрес в LAN), перезапустите и пробросьте TCP-порт %1 на роутере.</translation>
     </message>
     <message>
-        <location line="-151"/>
+        <location line="-172"/>
         <source>Enter the address other computers reach this core at.</source>
         <translation>Введите адрес, по которому другие компьютеры достигают этого ядра.</translation>
     </message>
@@ -5156,7 +5166,7 @@ Listen on all addresses?</source>
         <translation>Этот адрес может использовать только этот компьютер.</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+16"/>
         <source>Save Core Connect Script</source>
         <translation>Сохранить сценарий подключения к ядру</translation>
     </message>
@@ -7175,7 +7185,7 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+957"/>
         <location line="+387"/>
-        <location line="+277"/>
+        <location line="+279"/>
         <source>Not valid</source>
         <translation>Недействительно</translation>
     </message>
@@ -7236,7 +7246,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">Пересыльщик:</translation>
     </message>
     <message>
-        <location line="-1885"/>
+        <location line="-1887"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>Также раздавать публикации Usenet через ed3k</translation>
     </message>
@@ -8144,6 +8154,11 @@ The check goes on by itself; the login is kept for later.</source>
         <translation>Премиум истёк</translation>
     </message>
     <message>
+        <location line="+2"/>
+        <source>Login needed: press Check to log in through the browser</source>
+        <translation>Нужен вход: нажмите «Проверить», чтобы войти через браузер</translation>
+    </message>
+    <message>
         <location line="+15"/>
         <source>%1, %2 of %3 traffic left</source>
         <translation>%1, осталось %2 из %3 трафика</translation>
@@ -8213,7 +8228,7 @@ The check goes on by itself; the login is kept for later.</source>
         </translation>
     </message>
     <message>
-        <location line="-398"/>
+        <location line="-400"/>
         <source>Download through these multi-hosters</source>
         <translation>Загружать через эти мультихостеры</translation>
     </message>
@@ -8295,12 +8310,12 @@ Turn off to solve puzzles yourself, for example when the services fail repeatedl
         <translation>Пароль не сохранён</translation>
     </message>
     <message>
-        <location line="+283"/>
+        <location line="+285"/>
         <source>Valid, but downloads no other hosters</source>
         <translation>Действителен, но не скачивает с других хостеров</translation>
     </message>
     <message>
-        <location line="-218"/>
+        <location line="-220"/>
         <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
         <translation>Внимание: не изменяйте эти настройки, если не знаете, что делаете. Иначе вы легко можете ухудшить себе работу. eMule отлично работает и без изменения этих настроек.</translation>
     </message>
@@ -12285,7 +12300,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
 <context>
     <name>eMule::HosterPanel</name>
     <message>
-        <location filename="../src/gui/panels/HosterPanel.cpp" line="+143"/>
+        <location filename="../src/gui/panels/HosterPanel.cpp" line="+154"/>
         <source>Finding a resolver</source>
         <translation>Поиск резолвера</translation>
     </message>
@@ -12566,7 +12581,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>Загрузки с хостеров</translation>
     </message>
     <message>
-        <location line="+1059"/>
+        <location line="+1057"/>
         <source>Clipboard</source>
         <translation>Буфер обмена</translation>
     </message>
@@ -12694,7 +12709,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation type="vanished">Параметры...</translation>
     </message>
     <message>
-        <location line="-970"/>
+        <location line="-968"/>
         <source>File Name</source>
         <translation>Имя файла</translation>
     </message>
@@ -12760,23 +12775,23 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
     </message>
     <message>
         <location line="+8"/>
-        <location line="+998"/>
+        <location line="+996"/>
         <source>Package Name:</source>
         <translation>Имя пакета:</translation>
     </message>
     <message>
-        <location line="-996"/>
+        <location line="-994"/>
         <source>optional</source>
         <translation>необязательно</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+998"/>
+        <location line="+996"/>
         <source>The links download under one entry, into a folder of this name</source>
         <translation>Ссылки загружаются одной записью в папку с этим именем</translation>
     </message>
     <message>
-        <location line="-983"/>
+        <location line="-981"/>
         <location line="+11"/>
         <location line="+16"/>
         <source>Not connected to the eMule core.</source>
@@ -12789,12 +12804,12 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <location line="+4"/>
         <location line="+9"/>
         <location line="+42"/>
-        <location line="+823"/>
+        <location line="+821"/>
         <source>Open DLC</source>
         <translation>Открыть DLC</translation>
     </message>
     <message>
-        <location line="-888"/>
+        <location line="-886"/>
         <location line="+14"/>
         <source>Cannot read %1.</source>
         <translation>Не удаётся прочитать %1.</translation>
@@ -12868,7 +12883,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>Неизвестен в ed3k: проверяется целиком по завершении</translation>
     </message>
     <message>
-        <location line="+58"/>
+        <location line="+56"/>
         <source>Pause</source>
         <translation>Пауза</translation>
     </message>
@@ -12878,13 +12893,13 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>Продолжить</translation>
     </message>
     <message>
-        <location line="-602"/>
-        <location line="+607"/>
+        <location line="-600"/>
+        <location line="+605"/>
         <source>Remove</source>
         <translation>Удалить</translation>
     </message>
     <message>
-        <location line="-834"/>
+        <location line="-832"/>
         <source>The archive needs a password (Set Password…)</source>
         <translation>Архиву нужен пароль (Задать пароль…)</translation>
     </message>
@@ -12925,29 +12940,29 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
     </message>
     <message>
         <location line="+1"/>
-        <location line="+1078"/>
+        <location line="+1076"/>
         <source>Link Grabber (%1)</source>
         <translation>LinkGrabber (%1)</translation>
     </message>
     <message>
-        <location line="-1064"/>
-        <location line="+679"/>
+        <location line="-1062"/>
+        <location line="+677"/>
         <source>Add Links...</source>
         <translation>Добавить ссылки...</translation>
     </message>
     <message>
-        <location line="-678"/>
+        <location line="-676"/>
         <source>Links to files at hosters, one per line</source>
         <translation>Ссылки на файлы на хостерах, по одной в строке</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+677"/>
+        <location line="+675"/>
         <source>Open DLC...</source>
         <translation>Открыть DLC...</translation>
     </message>
     <message>
-        <location line="-676"/>
+        <location line="-674"/>
         <source>Adds the links of a link container (.dlc, .rsdf, .ccf); you can also drop one here</source>
         <translation>Добавляет ссылки из контейнера ссылок (.dlc, .rsdf, .ccf); его можно также перетащить сюда</translation>
     </message>
@@ -12957,7 +12972,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
         <translation>Предпросмотр недоступен — веб-сервер не запущен или не получен токен потока.</translation>
     </message>
     <message>
-        <location line="+46"/>
+        <location line="+44"/>
         <source>Preview</source>
         <translation>Предпросмотр</translation>
     </message>
@@ -13473,7 +13488,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1202"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1205"/>
         <source>The core&apos;s certificate changed</source>
         <translation>Сертификат ядра изменился</translation>
     </message>
@@ -13481,7 +13496,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
 <context>
     <name>eMule::IrcPanel</name>
     <message>
-        <location filename="../src/gui/panels/IrcPanel.cpp" line="+1902"/>
+        <location filename="../src/gui/panels/IrcPanel.cpp" line="+1918"/>
         <source>Select an IRC nick.</source>
         <translation>Выберите ник для IRC.</translation>
     </message>
@@ -13493,7 +13508,7 @@ Nick can be changed again in Options-&gt;IRC.</source>
 Ник можно изменить в Настройки-&gt;IRC.</translation>
     </message>
     <message>
-        <location line="-1686"/>
+        <location line="-1701"/>
         <source>Connecting</source>
         <translation>Соединение</translation>
     </message>
@@ -13663,7 +13678,7 @@ Please choose another:</source>
         <translation>Ник (%1)</translation>
     </message>
     <message>
-        <location line="+31"/>
+        <location line="+46"/>
         <source>* Private chat session started</source>
         <translation>* Начат приватный чат</translation>
     </message>
@@ -15799,12 +15814,12 @@ IPv6: %5
         <translation>скрыт (%1/%2 путей)</translation>
     </message>
     <message>
-        <location line="+2541"/>
+        <location line="+2544"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Пользователей: %1 | Файлов: %2</translation>
     </message>
     <message>
-        <location line="-2495"/>
+        <location line="-2498"/>
         <source>Up: %1(%2)</source>
         <translation>Отдача: %1(%2)</translation>
     </message>
@@ -16258,7 +16273,7 @@ Turn it on under Options → BitTorrent, then try again.</source>
         <translation>Новое сообщение — двойной щелчок для чтения</translation>
     </message>
     <message>
-        <location line="+81"/>
+        <location line="+84"/>
         <source>Free space: %1</source>
         <translation>Свободно: %1</translation>
     </message>
@@ -16268,7 +16283,7 @@ Turn it on under Options → BitTorrent, then try again.</source>
         <translation>н/д</translation>
     </message>
     <message>
-        <location line="-428"/>
+        <location line="-431"/>
         <source>eD2K Link</source>
         <translation>eD2K ссылка</translation>
     </message>
@@ -23908,6 +23923,39 @@ Rehash all shared files now?</source>
         <location line="+10"/>
         <source>Image %1 of %2</source>
         <translation>Изображение %1 из %2</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::PhonePairDialog</name>
+    <message>
+        <location filename="../src/gui/dialogs/PhonePairDialog.cpp" line="+53"/>
+        <source>Pair Phone</source>
+        <translation>Привязать телефон</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Scan this code with the qDonkey app, or send the link to the phone. The phone must reach this address: same network, a VPN such as Tailscale, or a forwarded port.</source>
+        <translation>Отсканируйте этот код приложением qDonkey или отправьте ссылку на телефон. Телефон должен достигать этого адреса: та же сеть, VPN вроде Tailscale или проброшенный порт.</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Include core token</source>
+        <translation>Включить токен ядра</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Whoever scans the code then has full control of the core. When off, the app asks for the token.</source>
+        <translation>Тот, кто отсканирует код, получит полный контроль над ядром. Если выключено, приложение спросит токен.</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Copy Link</source>
+        <translation>Копировать ссылку</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>The core&apos;s certificate is unknown here: the app trusts the first one it sees.</source>
+        <translation>Сертификат ядра здесь неизвестен: приложение доверится первому увиденному.</translation>
     </message>
 </context>
 <context>

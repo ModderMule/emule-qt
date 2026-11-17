@@ -114,6 +114,7 @@ SOURCES += \
     Ed3kUploadsBridge.cpp \
     SingleTransfer.cpp \
     Ed3kHideBridge.cpp \
+    IpcStreamBridge.cpp \
     Ed3kHosterBridge.cpp \
     ArchiveContentsBridge.cpp \
     DaemonApiBackend.cpp \
@@ -163,6 +164,7 @@ HEADERS += \
     Ed3kUploadsBridge.h \
     SingleTransfer.h \
     Ed3kHideBridge.h \
+    IpcStreamBridge.h \
     Ed3kHosterBridge.h \
     ArchiveContentsBridge.h \
     DaemonApiBackend.h \

@@ -52,6 +52,8 @@ private:
     void updateSaveButton();
     /// Save dialog, write the file; accept() on success
     void save();
+    /// QR code for the qDonkey phone app (PhonePairDialog)
+    void pairPhone();
     /// Ask the core where it listens
     void queryListen();
     /// Move the core's listener to @p value; offers "*" when it is not this machine's
@@ -76,6 +78,7 @@ private:
     QLabel* m_listenLabel = nullptr;
     QPushButton* m_listenBtn = nullptr;
     QPushButton* m_saveBtn = nullptr;
+    QPushButton* m_phoneBtn = nullptr;
 };
 
 } // namespace eMule

@@ -63,22 +63,6 @@ final class CodeAsker implements UserIOHandlerInterface {
         CHECKS.put(Thread.currentThread(), new Login(task, host, user));
     }
 
-    /** The current thread (a JD solver's) logs in for another one: the login of @p user on
-     *  @p host that a task registered; false: none. unlend() when it ends. */
-    static boolean lend(final String host, final String user) {
-        for (final Login l : CHECKS.values()) {
-            if (l.host.equalsIgnoreCase(host == null ? "" : host) && l.user.equals(user == null ? "" : user)) {
-                CHECKS.put(Thread.currentThread(), l);
-                return true;
-            }
-        }
-        return false;
-    }
-
-    static void unlend() {
-        CHECKS.remove(Thread.currentThread());
-    }
-
     static void done() {
         final Login l = CHECKS.remove(Thread.currentThread());
         if (l != null) {

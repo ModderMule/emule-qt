@@ -216,6 +216,7 @@
     <ClCompile Include="Ed3kUploadsBridge.cpp" />
     <ClCompile Include="SingleTransfer.cpp" />
     <ClCompile Include="Ed3kHideBridge.cpp" />
+    <ClCompile Include="IpcStreamBridge.cpp" />
     <ClCompile Include="Ed3kHosterBridge.cpp" />
     <ClCompile Include="ArchiveContentsBridge.cpp" />
     <ClCompile Include="Ed3kKadBridge.cpp" />
@@ -272,6 +273,7 @@
     <ClInclude Include="Ed3kUploadsBridge.h" />
     <ClInclude Include="SingleTransfer.h" />
     <ClInclude Include="Ed3kHideBridge.h" />
+    <ClInclude Include="IpcStreamBridge.h" />
     <ClInclude Include="UsenetBridge.h" />
     <ClInclude Include="BandwidthCoordinator.h" />
     <ClInclude Include="ScheduleNetworkBridge.h" />
