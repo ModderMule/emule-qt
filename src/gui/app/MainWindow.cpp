@@ -1104,8 +1104,8 @@ void MainWindow::closeEvent(QCloseEvent* event)
     // closeToTray (qBittorrent, off by default) hides instead — but only for the user's
     // own close (title bar, Alt+F4: spontaneous). Tray Exit, Cmd/Ctrl+Q, forced and
     // app-wide quits still exit, so the app can always be quit.
-    if (thePrefs.closeToTray() && trayInUse() && event->spontaneous()
-        && !m_quitRequested && !s_quitWithoutPrompt) {
+    if (thePrefs.closeToTray() && event->spontaneous()
+        && !m_quitRequested && !s_quitWithoutPrompt && ensureTrayIconShown()) {
         event->ignore();
         hide();
         return;
@@ -1251,7 +1251,7 @@ void MainWindow::startMinimized(bool maximized)
     // The window state survives being hidden, so a later restore lands maximized
     if (maximized)
         setWindowState(windowState() | Qt::WindowMaximized);
-    if (trayInUse() && thePrefs.minimizeToTray())
+    if (thePrefs.minimizeToTray() && ensureTrayIconShown())
         return;   // stays hidden; the tray icon is the way in
     showMinimized();
 }
@@ -1330,7 +1330,8 @@ void MainWindow::changeEvent(QEvent* event)
             : 0;
         // Re-checked: a restore may already have happened by the time this runs
         QTimer::singleShot(wait, this, [this] {
-            if (isMinimized())
+            // no icon in the shell (Server 2019): stay on the taskbar, else orphaned
+            if (isMinimized() && ensureTrayIconShown())
                 hide();
         });
     }
@@ -2354,7 +2355,10 @@ void MainWindow::updateTrayIcon(bool force)
     m_trayIconPath = iconPath;
     m_trayMeterColor = barColor;
 
-    m_trayIcon->setIcon(QIcon(TrayMeterIcon::render(skinIcon(iconPath), percent, barColor)));
+    QIcon base = skinIcon(iconPath);
+    if (base.pixmap(16, 16).isNull())
+        base = appIcon(lowId);   // .ico unreadable (qico plugin missing): no blank slot
+    m_trayIcon->setIcon(QIcon(TrayMeterIcon::render(base, percent, barColor)));
 }
 
 void MainWindow::showNetworkInfo()
@@ -3379,6 +3383,29 @@ void MainWindow::updateNetworkStatsLabel()
         users = files = QStringLiteral("0");
     }
     m_statusUsersLabel->setText(tr("Users: %1 | Files: %2").arg(users, files));
+}
+
+bool MainWindow::ensureTrayIconShown()
+{
+    if (!trayInUse())
+        return false;
+#ifdef Q_OS_WIN
+    // geometry() = Shell_NotifyIconGetRect: S_OK also in the overflow area, E_FAIL when
+    // the shell never took the icon (NIM_ADD before Explorer's tray was up, Server 2019)
+    if (m_trayIcon->geometry().isValid())
+        return true;
+    m_trayIcon->hide();
+    m_trayIcon->show();   // fresh NIM_ADD
+    updateTrayIcon(/*force*/ true);
+    if (m_trayIcon->geometry().isValid()) {
+        logInfo(QStringLiteral("Tray icon was missing from the notification area, re-added"));
+        return true;
+    }
+    logWarning(QStringLiteral("Tray icon not in the notification area: window stays on the taskbar"));
+    return false;
+#else
+    return true;
+#endif
 }
 
 } // namespace eMule

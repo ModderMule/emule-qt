@@ -420,6 +420,10 @@ private:
     /// Show or hide the tray icon per showTrayIcon. Hiding it brings a tray-hidden window back.
     void applyTrayIconVisibility();
 
+    /// trayInUse() and the shell really shows the icon; re-adds it once if not.
+    /// False = don't hide the window, there'd be no way back in.
+    [[nodiscard]] bool ensureTrayIconShown();
+
     /// Colour of the meter bar: stats colour 11, or the system scheme when that is
     /// left on "auto".
     [[nodiscard]] QColor trayMeterColor() const;
