@@ -376,11 +376,83 @@ final class Jd {
             if (p.hasFeature(LazyPlugin.FEATURE.CAPTCHA_SOLVER)) {
                 h.put("solver", true);
             }
+            final List<String> subs = subdomains(p);
+            if (!subs.isEmpty()) {
+                h.put("subs", subs);
+            }
             sorted.put(host, h);
         }
         final Map<String, Object> m = Out.event(id, "accountHosts");
         m.put("hosts", new ArrayList<Object>(sorted.values()));
         return m;
+    }
+
+    /** subdomain labels in a URL pattern: "(?:www\\.|new\\.|m\\.)?" */
+    private static final java.util.regex.Pattern kLabelGroup = java.util.regex.Pattern
+        .compile("\\(\\?:((?:[a-z0-9-]+\\.\\|)*[a-z0-9-]+\\.)\\)");
+
+    /**
+     * Other names of a plugin's sites, for a server country when its host sits behind a CDN:
+     * its alias domains, subdomain labels and literal subdomains of its URL pattern ("www" left
+     * out), the premium page's host. At most 8, host itself not.
+     */
+    static List<String> subdomains(final LazyHostPlugin p) {
+        final List<String> sites = sites(p);
+        final String host = sites.get(0);
+        final java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<String>();
+        String src = "";
+        try {
+            src = p.getPatternSource().toLowerCase(Locale.ROOT).replace("\\.", ".").replace("\\-", "-");
+        } catch (final Throwable e) {
+            // aliases only
+        }
+        final List<String> labels = new ArrayList<String>();
+        for (final java.util.regex.Matcher m = kLabelGroup.matcher(src); m.find();) {
+            for (final String l : m.group(1).split("\\|")) {
+                final String label = l.substring(0, l.length() - 1);
+                if (!label.equals("www") && !labels.contains(label)) {
+                    labels.add(label);
+                }
+            }
+        }
+        for (final String d : sites) {
+            for (final String l : labels) {
+                out.add(l + "." + d);
+            }
+            // a literal "api.example.com" in the pattern
+            final java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(?<![a-z0-9.-])((?:[a-z0-9-]+\\.)+)" + java.util.regex.Pattern.quote(d) + "(?![a-z0-9-])").matcher(src);
+            while (m.find()) {
+                final String sub = m.group(1) + d;
+                if (!sub.startsWith("www.")) {
+                    out.add(sub);
+                }
+            }
+        }
+        for (int i = 1; i < sites.size(); i++) {
+            out.add(sites.get(i));
+        }
+        try {
+            final String premium = p.getPremiumUrl();
+            if (premium != null) {
+                final String ph = new java.net.URL(premium).getHost().toLowerCase(Locale.ROOT);
+                for (final String d : sites) {
+                    if (!ph.startsWith("www.") && ph.endsWith("." + d)) {
+                        out.add(ph);
+                    }
+                }
+            }
+        } catch (final Throwable e) {
+            // no premium page
+        }
+        out.remove(host);
+        final List<String> list = new ArrayList<String>();
+        for (final String s : out) {
+            if (list.size() < 8 && s.indexOf('.') > 0 && s.matches("[a-z0-9.-]+")) {
+                list.add(s);
+            }
+        }
+        return list;
     }
 
     /** A plugin's domains, lower case: its host first, then its aliases. */

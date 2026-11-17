@@ -41,6 +41,7 @@ final class OpenTask extends Task {
     private volatile Driver driver;
     private volatile DownloadLink link;
     private String lastStatus;
+    private String lastServer;
 
     /** The open task that downloads @p dl, for a puzzle it raises. */
     static Long taskOfLink(final DownloadLink dl) {
@@ -117,6 +118,7 @@ final class OpenTask extends Task {
             }
             acc = via.toJd(viaPlugin.getHost());
             status("hosterAccount");
+            CodeAsker.checking(id, via.host, acc.getUser());
             final AccountInfo ai;
             try {
                 ai = Debrid.ensure(viaPlugin, acc);
@@ -133,7 +135,7 @@ final class OpenTask extends Task {
         }
         final CachedAccount ca = new CachedAccount(link.getHost(), acc, proto);
         final DownloadLinkCandidate cand = new DownloadLinkCandidate(link, true, ca, null, false);
-        final Driver d = new Driver(cand, acc, viaPlugin);
+        final Driver d = new Driver(cand, acc, viaPlugin, id, via != null ? via.host : link.getHost());
         driver = d;
         link.setDownloadLinkController(d);
         d.setSessionDownloadDirectory(dir.getAbsolutePath());
@@ -188,7 +190,7 @@ final class OpenTask extends Task {
             }
             lastWait = wait;
             if (wait == null) {
-                status(step(pp, di, acc != null, bytes));
+                status(step(pp, di, acc != null, bytes), server(di));
             }
         }
         link.setDownloadLinkController(null);
@@ -244,13 +246,34 @@ final class OpenTask extends Task {
 
     /** Sends a status when it changed. */
     private void status(final String text) {
-        if (text.equals(lastStatus)) {
+        status(text, null);
+    }
+
+    /** Sends a status when it or the download server changed; @p server: the host the bytes come from. */
+    private void status(final String text, final String server) {
+        if (text.equals(lastStatus) && (server == null || server.equals(lastServer))) {
             return;
         }
         lastStatus = text;
         final Map<String, Object> m = Out.event(id, "status");
         m.put("text", text);
+        if (server != null) {
+            lastServer = server;
+            m.put("host", server);
+        }
         Out.send(m);
+    }
+
+    /** The host of the transfer's connection (after redirects), null before it opens. */
+    private static String server(final DownloadInterface di) {
+        try {
+            final org.appwork.utils.net.httpconnection.HTTPConnection c = di != null ? di.getConnection() : null;
+            final java.net.URL u = c != null ? c.getURL() : null;
+            final String h = u != null ? u.getHost() : null;
+            return h == null || h.isEmpty() ? null : h.toLowerCase(java.util.Locale.ROOT);
+        } catch (final Throwable e) {
+            return null;
+        }
     }
 
     @Override
@@ -284,11 +307,16 @@ final class OpenTask extends Task {
         volatile String blocked;   ///< a host AddressGuard refused
 
         private final LazyHostPlugin via;
+        private final long task;
+        private final String loginHost;   ///< whose login a confirmation code is for
 
-        Driver(final DownloadLinkCandidate cand, final jd.plugins.Account acc, final LazyHostPlugin via) {
+        Driver(final DownloadLinkCandidate cand, final jd.plugins.Account acc, final LazyHostPlugin via, final long task,
+                final String loginHost) {
             super(cand, DownloadWatchDog.getInstance());
             this.acc = acc;
             this.via = via;
+            this.task = task;
+            this.loginHost = loginHost;
         }
 
         @Override
@@ -328,6 +356,9 @@ final class OpenTask extends Task {
         public void run() {
             final DownloadLink dl = getDownloadLink();
             PluginForHost p = null;
+            if (acc != null) {
+                CodeAsker.checking(task, loginHost, acc.getUser());
+            }
             try {
                 p = via == null ? Jd.newPlugin(dl) : Jd.newPlugin(dl, via);
                 plugin = p;
@@ -339,6 +370,7 @@ final class OpenTask extends Task {
                 failure = e;
             } finally {
                 blocked = AddressGuard.takeBlocked(Thread.currentThread());
+                CodeAsker.done();
                 dl.setLivePlugin(null);
                 if (p != null) {
                     try {

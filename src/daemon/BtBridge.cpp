@@ -5,6 +5,8 @@
 #include "Ed3kUploadsBridge.h"
 #include "app/AppConfig.h"
 #include "app/AppContext.h"
+#include "geo/CdnRanges.h"
+#include "geo/HostCountryResolver.h"
 #include "geo/IP2Country.h"
 #include "ipfilter/IPFilter.h"
 #include "net/BindAddress.h"
@@ -19,6 +21,7 @@
 #include <QCborArray>
 #include <QDir>
 #include <QHostAddress>
+#include <QUrl>
 #include <QStringList>
 
 #include <algorithm>
@@ -39,6 +42,40 @@ using Ipc::IpcMsgType;
 namespace {
 
 bt::BtSession* s_session = nullptr;
+
+#ifdef EMULE_HAVE_BITTORRENT
+/// "ip:port" / "[v6]:port" → host and port; I2P peers have none
+std::pair<QString, int> splitPeerAddress(const QString& address, bool i2p)
+{
+    if (i2p)
+        return {};
+    const qsizetype colon = address.lastIndexOf(u':');
+    QString host = colon > 0 ? address.left(colon) : address;
+    const int port = colon > 0 ? address.mid(colon + 1).toInt() : 0;
+    if (host.startsWith(u'[') && host.endsWith(u']'))
+        host = host.mid(1, host.size() - 2);
+    return {host, port};
+}
+
+QString peerCountry(const QString& host)
+{
+    return host.isEmpty() ? QString() : countryCodeOf(QHostAddress(host));
+}
+
+/// Tracker host's country. Names resolve here only without a proxy (it resolves
+/// them for libtorrent, a lookup of ours would leak DNS); .i2p never; a CDN none.
+QString trackerCountry(const QString& url)
+{
+    const QString host = QUrl(url).host();
+    if (host.isEmpty() || host.endsWith(QLatin1String(".i2p"), Qt::CaseInsensitive))
+        return {};
+    if (QHostAddress literal(host); !literal.isNull())
+        return isCdnAddress(literal) ? QString() : countryCodeOf(literal);
+    if (const ProxySettings p = thePrefs.proxySettings(); p.useProxy && !p.host.isEmpty())
+        return {};
+    return cachedHostCountry(host);
+}
+#endif
 I2pRouter* s_router = nullptr;
 
 IpcMessage unavailable(const IpcMessage& msg)
@@ -249,6 +286,7 @@ QCborMap detailsToCbor(const QString& id)
             {QStringLiteral("source"), p.source},
             {QStringLiteral("flags"), p.flags},
             {QStringLiteral("i2p"), p.i2p},
+            {QStringLiteral("cc"), peerCountry(splitPeerAddress(p.address, p.i2p).first)},
         });
     QCborArray trackers;
     for (const auto& t : s_session->trackers(id))
@@ -264,6 +302,7 @@ QCborMap detailsToCbor(const QString& id)
             {QStringLiteral("updating"), t.updating},
             {QStringLiteral("fails"), t.fails},
             {QStringLiteral("hasError"), t.hasError},
+            {QStringLiteral("cc"), trackerCountry(t.url)},
         });
     QCborMap out{
         {QStringLiteral("files"), files},
@@ -324,16 +363,8 @@ void appendDownloading(QCborArray& out, const QString& id)
     for (const auto& p : s_session->peers(id)) {
         if (p.rateDown <= 0)
             continue;
-        // "ip:port", "[v6]:port"; an I2P peer has no address to show
-        QString host;
-        int port = 0;
-        if (!p.i2p) {
-            const qsizetype colon = p.address.lastIndexOf(u':');
-            host = colon > 0 ? p.address.left(colon) : p.address;
-            port = colon > 0 ? p.address.mid(colon + 1).toInt() : 0;
-            if (host.startsWith(u'[') && host.endsWith(u']'))
-                host = host.mid(1, host.size() - 2);
-        }
+        // an I2P peer has no address to show
+        const auto [host, port] = splitPeerAddress(p.address, p.i2p);
         const QString name = p.i2p ? QString(p.address.left(16) + QStringLiteral("….i2p")) : p.address;
         // the details key of the row: one per peer and torrent
         const QString key = QStringLiteral("bt:") + id + u'|' + p.address;
@@ -353,7 +384,7 @@ void appendDownloading(QCborArray& out, const QString& id)
             {QStringLiteral("transferredUp"), p.uploaded},
             {QStringLiteral("addr"), host},
             {QStringLiteral("port"), port},
-            {QStringLiteral("cc"), host.isEmpty() ? QString() : countryCodeOf(QHostAddress(host))},
+            {QStringLiteral("cc"), peerCountry(host)},
             {QStringLiteral("netSource"), p.source},
             {QStringLiteral("isConnected"), true},
             {QStringLiteral("noViewSharedFiles"), true},

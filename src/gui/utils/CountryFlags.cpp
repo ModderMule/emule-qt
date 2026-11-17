@@ -143,9 +143,9 @@ QIcon withFlag(const QIcon& base, const QString& cc)
     return icon;
 }
 
-void bindFlagColumn(QAbstractItemView* view)
+void bindFlagColumn(QAbstractItemView* view, int column)
 {
-    view->setItemDelegateForColumn(0, new FlagDecorationDelegate(view));
+    view->setItemDelegateForColumn(column, new FlagDecorationDelegate(view));
     QObject::connect(CountryFlagsNotifier::instance(), &CountryFlagsNotifier::changed, view,
                      [view] {
                          // Width changes with the flag, so re-query size hints too

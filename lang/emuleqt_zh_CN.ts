@@ -59,7 +59,7 @@
         <translation>eD2K: %1 (%2)</translation>
     </message>
     <message>
-        <location line="+92"/>
+        <location line="+93"/>
         <source>(hidden)</source>
         <translation>（隐藏）</translation>
     </message>
@@ -1264,7 +1264,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3884"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3831"/>
         <source>Test</source>
         <translation>测试</translation>
     </message>
@@ -6967,7 +6967,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">ed3k 节点使用“常规”页面中的昵称：%1</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+497"/>
+        <location filename="../src/gui/dialogs/Ed3kOptionsPages.cpp" line="+498"/>
         <location line="+11"/>
         <location line="+581"/>
         <location line="+11"/>
@@ -7074,12 +7074,12 @@ Its names are then resolved after the lists you already follow.</source>
         <translation>查找节点</translation>
     </message>
     <message>
-        <location line="+1565"/>
+        <location line="+1559"/>
         <source>Find ed3k nodes in the local network (restarts the node)</source>
         <translation>在局域网中查找 ed3k 节点（会重启节点）</translation>
     </message>
     <message>
-        <location line="-1563"/>
+        <location line="-1557"/>
         <source>Node lists for the first contact, one ed3k:nodes link per line:</source>
         <translation>首次联系用的节点列表，每行一个 ed3k:nodes 链接：</translation>
     </message>
@@ -7124,32 +7124,28 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+957"/>
-        <location line="+21"/>
-        <location line="+355"/>
+        <location line="+385"/>
+        <location line="+271"/>
         <source>Not valid</source>
         <translation>无效</translation>
     </message>
     <message>
-        <location line="-106"/>
-        <location line="+116"/>
+        <location line="+8"/>
         <source>Premium until %1</source>
         <translation>高级会员至 %1</translation>
     </message>
     <message>
-        <location line="-116"/>
-        <location line="+116"/>
+        <location line="+0"/>
         <source>Free until %1</source>
         <translation>免费至 %1</translation>
     </message>
     <message>
-        <location line="-118"/>
-        <location line="+121"/>
+        <location line="-2"/>
         <source>Premium</source>
         <translation>高级会员</translation>
     </message>
     <message>
-        <location line="-121"/>
-        <location line="+121"/>
+        <location line="+0"/>
         <source>Free</source>
         <translation>免费</translation>
     </message>
@@ -7190,7 +7186,7 @@ Its names are then resolved after the lists you already follow.</source>
         <translation type="vanished">转发器：</translation>
     </message>
     <message>
-        <location line="-1603"/>
+        <location line="-1876"/>
         <source>Share Usenet posts over ed3k too</source>
         <translation>同时通过 ed3k 共享 Usenet 帖子</translation>
     </message>
@@ -7312,12 +7308,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+5"/>
         <location line="+10"/>
-        <location line="+1458"/>
+        <location line="+1452"/>
         <source> credits/MiB</source>
         <translation> 信用/MiB</translation>
     </message>
     <message>
-        <location line="-1467"/>
+        <location line="-1461"/>
         <source>Never pay (receipts only)</source>
         <translation>从不支付（仅收据）</translation>
     </message>
@@ -7473,12 +7469,12 @@ Its names are then resolved after the lists you already follow.</source>
     <message>
         <location line="+1"/>
         <location line="+6"/>
-        <location line="+881"/>
+        <location line="+897"/>
         <source>Remove</source>
         <translation>删除</translation>
     </message>
     <message>
-        <location line="-877"/>
+        <location line="-893"/>
         <source>Followed name lists (the first one wins)</source>
         <translation>已关注的名称列表（第一个优先）</translation>
     </message>
@@ -7565,12 +7561,12 @@ Its names are then resolved after the lists you already follow.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1295"/>
+        <location line="+1289"/>
         <source>not read yet</source>
         <translation>尚未读取</translation>
     </message>
     <message>
-        <location line="-1293"/>
+        <location line="-1287"/>
         <source>The account is overdrawn: a new credit key is the way on.</source>
         <translation>账户已透支：唯一的出路是新的信用密钥。</translation>
     </message>
@@ -7985,12 +7981,12 @@ Off: they are never shared there, also inside the incoming folder.</source>
     </message>
     <message>
         <location line="+39"/>
-        <location line="+375"/>
+        <location line="+384"/>
         <source>Not reachable</source>
         <translation>无法连接</translation>
     </message>
     <message>
-        <location line="-313"/>
+        <location line="-307"/>
         <source>Single transfer mode (ed3k only)</source>
         <translation>单一传输模式 (仅 ed3k)</translation>
     </message>
@@ -8000,7 +7996,7 @@ Off: they are never shared there, also inside the incoming folder.</source>
         <translation>隐藏 %1 窗口。与 ed3k 合并的下载显示在传输窗口中,仍使用此网络及其设置;其他下载暂停,直到关闭此项。需要 ed3k。</translation>
     </message>
     <message>
-        <location line="+63"/>
+        <location line="+64"/>
         <source>Solve puzzles with these services</source>
         <translation>用这些服务解答图片验证</translation>
     </message>
@@ -8016,12 +8012,12 @@ Off: they are never shared there, also inside the incoming folder.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+155"/>
+        <location line="+147"/>
         <source>Service</source>
         <translation>服务</translation>
     </message>
     <message>
-        <location line="-138"/>
+        <location line="-130"/>
         <source>Add captcha solver</source>
         <translation>添加验证码识别服务</translation>
     </message>
@@ -8056,12 +8052,17 @@ Off: they are never shared there, also inside the incoming folder.</source>
         <translation>API 密钥：</translation>
     </message>
     <message>
-        <location line="+179"/>
+        <location line="+72"/>
+        <source>Checked %1</source>
+        <translation>检查于 %1</translation>
+    </message>
+    <message>
+        <location line="+99"/>
         <source>Waiting for the confirmation code...</source>
         <translation>正在等待确认码...</translation>
     </message>
     <message>
-        <location line="+231"/>
+        <location line="+217"/>
         <source>Log in at %1</source>
         <translation>登录 %1</translation>
     </message>
@@ -8080,24 +8081,30 @@ The check goes on by itself; the login is kept for later.</source>
         <translation>打开浏览器</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+71"/>
+        <source>%1, %2 of %3 traffic left</source>
+        <translation>%1，剩余流量 %2 / %3</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>%1, %2 traffic left</source>
+        <translation>%1，剩余流量 %2</translation>
+    </message>
+    <message>
         <source>Confirmation code for %1</source>
-        <translation>%1 的确认码</translation>
+        <translation type="vanished">%1 的确认码</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>%1 asks for a confirmation code to log in as %2. Look in your e-mail or your authenticator app.</source>
-        <translation>%1 需要确认码才能以 %2 登录。请查看您的电子邮件或身份验证器应用。</translation>
+        <translation type="vanished">%1 需要确认码才能以 %2 登录。请查看您的电子邮件或身份验证器应用。</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>this account</source>
-        <translation>此账户</translation>
+        <translation type="vanished">此账户</translation>
     </message>
     <message>
-        <location line="+8"/>
         <source>Code</source>
-        <translation>代码</translation>
+        <translation type="vanished">代码</translation>
     </message>
     <message>
         <source>%1 at %2</source>
@@ -8120,7 +8127,7 @@ The check goes on by itself; the login is kept for later.</source>
         <translation type="vanished">%1 的密码：</translation>
     </message>
     <message numerus="yes">
-        <location line="-360"/>
+        <location line="+5"/>
         <source>%1, %2 of %n hoster(s) usable</source>
         <translation>
             <numerusform>%1，%n 个网盘中 %2 个可用</numerusform>
@@ -8134,7 +8141,7 @@ The check goes on by itself; the login is kept for later.</source>
         </translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="-389"/>
         <source>Download through these multi-hosters</source>
         <translation>通过这些多网盘服务下载</translation>
     </message>
@@ -8199,17 +8206,17 @@ The check goes on by itself; the login is kept for later.</source>
         <translation>正在等待浏览器中的登录...</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+14"/>
         <source>No password stored</source>
         <translation>未保存密码</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+276"/>
         <source>Valid, but downloads no other hosters</source>
         <translation>有效，但不下载其他网盘</translation>
     </message>
     <message>
-        <location line="+77"/>
+        <location line="-211"/>
         <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
         <translation>警告：除非您知道自己在做什么，否则请勿更改这些设置。否则可能会导致问题。eMule 无需调整这些设置即可正常运行。</translation>
     </message>
@@ -8400,7 +8407,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>高速下载未运行。余额：%1</translation>
     </message>
     <message>
-        <location line="-947"/>
+        <location line="-941"/>
         <source>ed3k</source>
         <translation>ed3k</translation>
     </message>
@@ -8593,17 +8600,17 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+240"/>
+        <location line="+255"/>
         <source>Publish hoster links</source>
         <translation>发布托管站链接</translation>
     </message>
     <message>
-        <location line="-238"/>
+        <location line="-253"/>
         <source>A downloaded file is shared either way. Published, its link is found in ed3k and handed to other nodes: a link is often all that protects a file at a hoster.</source>
         <translation>下载的文件无论如何都会共享。发布后，其链接可在 ed3k 中找到并交给其他节点：托管站上的文件往往只靠链接保护。</translation>
     </message>
     <message>
-        <location line="+234"/>
+        <location line="+249"/>
         <source>&lt;p&gt;Sharing hoster links means: once a file from a link is downloaded and verified, its link is published in ed3k and handed to other nodes that download the same file.&lt;/p&gt;&lt;p&gt;A link is often all that keeps a file at a hoster private. Whoever knows the link can find the file in ed3k, and anyone can find the link of a file you share.&lt;/p&gt;&lt;p&gt;Publish hoster links?&lt;/p&gt;</source>
         <translation>&lt;p&gt;共享网盘链接是指:链接中的文件下载并校验后,其链接会在 ed3k 中发布,并交给下载同一文件的其他节点。&lt;/p&gt;&lt;p&gt;链接往往是让网盘上的文件保持私密的唯一手段。知道链接的人可以在 ed3k 中找到该文件,任何人也都能找到您共享文件的链接。&lt;/p&gt;&lt;p&gt;发布托管站链接?&lt;/p&gt;</translation>
     </message>
@@ -8616,7 +8623,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation type="vanished">下载的文件无论如何都会共享。保留时,其链接不会发布,也不会交给其他节点:链接往往是保护网盘上文件的唯一手段。</translation>
     </message>
     <message>
-        <location line="-229"/>
+        <location line="-244"/>
         <source>Accounts</source>
         <translation>账户</translation>
     </message>
@@ -8628,27 +8635,27 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
     <message>
         <location line="-107"/>
         <location line="+110"/>
-        <location line="+442"/>
+        <location line="+450"/>
         <source>Hoster</source>
         <translation>网盘</translation>
     </message>
     <message>
-        <location line="-442"/>
-        <location line="+283"/>
-        <location line="+155"/>
+        <location line="-450"/>
+        <location line="+299"/>
+        <location line="+147"/>
         <source>User</source>
         <translation>用户</translation>
     </message>
     <message>
-        <location line="-438"/>
-        <location line="+283"/>
-        <location line="+155"/>
+        <location line="-446"/>
+        <location line="+299"/>
+        <location line="+147"/>
         <location line="+4"/>
         <source>Status</source>
         <translation>状态</translation>
     </message>
     <message>
-        <location line="-203"/>
+        <location line="-195"/>
         <source>Add...</source>
         <translation>添加...</translation>
     </message>
@@ -8663,7 +8670,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>检查</translation>
     </message>
     <message>
-        <location line="-158"/>
+        <location line="-174"/>
         <source>This build has no hoster resolver: hoster links are stored and passed on, but not downloaded.</source>
         <translation>此版本没有网盘解析器:网盘链接会被保存和转发,但不会下载。</translation>
     </message>
@@ -8718,7 +8725,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation>允许从网盘下载后将查找 Java。</translation>
     </message>
     <message>
-        <location line="+64"/>
+        <location line="+79"/>
         <source>Allow downloads from file hosters and apply first.</source>
         <translation>请先允许从文件托管站下载并应用。</translation>
     </message>
@@ -8735,7 +8742,7 @@ Auto: 2 % of the RAM, at least 64 MiB and at most 512 MiB.</source>
         <translation type="vanished">共享网盘链接</translation>
     </message>
     <message>
-        <location line="+115"/>
+        <location line="+116"/>
         <source>Add hoster account</source>
         <translation>添加网盘账户</translation>
     </message>
@@ -12207,7 +12214,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 <context>
     <name>eMule::HosterCombo</name>
     <message>
-        <location filename="../src/gui/controls/HosterCombo.cpp" line="+83"/>
+        <location filename="../src/gui/controls/HosterCombo.cpp" line="+85"/>
         <source>Type to search, e.g. rapidgator.net</source>
         <translation>输入以搜索，例如 rapidgator.net</translation>
     </message>
@@ -12216,11 +12223,16 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <source>Type to search</source>
         <translation>输入以搜索</translation>
     </message>
+    <message>
+        <location line="+106"/>
+        <source>Server: %1</source>
+        <translation>服务器：%1</translation>
+    </message>
 </context>
 <context>
     <name>eMule::HosterPanel</name>
     <message>
-        <location filename="../src/gui/panels/HosterPanel.cpp" line="+126"/>
+        <location filename="../src/gui/panels/HosterPanel.cpp" line="+131"/>
         <source>Finding a resolver</source>
         <translation>正在查找解析器</translation>
     </message>
@@ -12499,7 +12511,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>网盘下载</translation>
     </message>
     <message>
-        <location line="+897"/>
+        <location line="+983"/>
         <source>Clipboard</source>
         <translation>剪贴板</translation>
     </message>
@@ -12607,12 +12619,12 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation type="vanished">添加链接...</translation>
     </message>
     <message>
-        <location line="-459"/>
+        <location line="-534"/>
         <source>Retry</source>
         <translation>重试</translation>
     </message>
     <message>
-        <location line="+247"/>
+        <location line="+322"/>
         <source>JDownloader %1</source>
         <translation>JDownloader %1</translation>
     </message>
@@ -12621,7 +12633,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation type="vanished">选项...</translation>
     </message>
     <message>
-        <location line="-808"/>
+        <location line="-894"/>
         <source>File Name</source>
         <translation>文件名</translation>
     </message>
@@ -12656,7 +12668,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>来源</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+16"/>
         <source>Add hoster links...</source>
         <translation>添加网盘链接...</translation>
     </message>
@@ -12668,7 +12680,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         </translation>
     </message>
     <message>
-        <location line="+106"/>
+        <location line="+112"/>
         <location line="+41"/>
         <source>Hoster links</source>
         <translation>网盘链接</translation>
@@ -12685,23 +12697,23 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
     </message>
     <message>
         <location line="+8"/>
-        <location line="+852"/>
+        <location line="+929"/>
         <source>Package Name:</source>
         <translation>包名称：</translation>
     </message>
     <message>
-        <location line="-850"/>
+        <location line="-927"/>
         <source>optional</source>
         <translation>可选</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+852"/>
+        <location line="+929"/>
         <source>The links download under one entry, into a folder of this name</source>
         <translation>这些链接作为一个条目下载到以此命名的文件夹中</translation>
     </message>
     <message>
-        <location line="-837"/>
+        <location line="-914"/>
         <location line="+11"/>
         <location line="+16"/>
         <source>Not connected to the eMule core.</source>
@@ -12714,12 +12726,12 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <location line="+4"/>
         <location line="+9"/>
         <location line="+42"/>
-        <location line="+677"/>
+        <location line="+754"/>
         <source>Open DLC</source>
         <translation>打开 DLC</translation>
     </message>
     <message>
-        <location line="-742"/>
+        <location line="-819"/>
         <location line="+14"/>
         <source>Cannot read %1.</source>
         <translation>无法读取 %1。</translation>
@@ -12760,12 +12772,12 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         </translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+4"/>
         <source>%1 of %2 complete</source>
         <translation>已完成 %1/%2</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="+31"/>
         <source>Mirror %1 of %2</source>
         <translation>镜像 %1 / %2</translation>
     </message>
@@ -12800,13 +12812,13 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>恢复</translation>
     </message>
     <message>
-        <location line="-532"/>
-        <location line="+537"/>
+        <location line="-540"/>
+        <location line="+545"/>
         <source>Remove</source>
         <translation>删除</translation>
     </message>
     <message>
-        <location line="-650"/>
+        <location line="-661"/>
         <source>The archive needs a password (Set Password…)</source>
         <translation>压缩包需要密码（设置密码…）</translation>
     </message>
@@ -12847,34 +12859,34 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
     </message>
     <message>
         <location line="+1"/>
-        <location line="+916"/>
+        <location line="+1002"/>
         <source>Link Grabber (%1)</source>
         <translation>LinkGrabber (%1)</translation>
     </message>
     <message>
-        <location line="-902"/>
-        <location line="+599"/>
+        <location line="-988"/>
+        <location line="+610"/>
         <source>Add Links...</source>
         <translation>添加链接...</translation>
     </message>
     <message>
-        <location line="-598"/>
+        <location line="-609"/>
         <source>Links to files at hosters, one per line</source>
         <translation>网盘上文件的链接，每行一个</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+597"/>
+        <location line="+608"/>
         <source>Open DLC...</source>
         <translation>打开 DLC...</translation>
     </message>
     <message>
-        <location line="-596"/>
+        <location line="-607"/>
         <source>Adds the links of a link container (.dlc, .rsdf, .ccf); you can also drop one here</source>
         <translation>添加链接容器（.dlc、.rsdf、.ccf）中的链接；也可以将其拖放到此处</translation>
     </message>
     <message>
-        <location line="+576"/>
+        <location line="+587"/>
         <source>Set Password…</source>
         <translation>设置密码…</translation>
     </message>
@@ -12910,7 +12922,27 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>要从磁盘删除所选文件吗?</translation>
     </message>
     <message>
-        <location line="+105"/>
+        <location line="+102"/>
+        <source>Confirmation code for %1</source>
+        <translation>%1 的确认码</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>%1 asks for a confirmation code to log in as %2. Look in your e-mail or your authenticator app.</source>
+        <translation>%1 需要确认码才能以 %2 登录。请查看您的电子邮件或身份验证器应用。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>this account</source>
+        <translation>此账户</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Code</source>
+        <translation>代码</translation>
+    </message>
+    <message>
+        <location line="+64"/>
         <source>Links of a folder</source>
         <translation>文件夹中的链接</translation>
     </message>
@@ -18164,36 +18196,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3706"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3701"/>
         <source>Options</source>
         <translation>选项</translation>
     </message>
     <message>
-        <location line="+79"/>
-        <location line="+2586"/>
+        <location line="+78"/>
+        <location line="+2582"/>
         <source>OK</source>
         <translation>确定</translation>
     </message>
     <message>
-        <location line="-2585"/>
-        <location line="+2586"/>
+        <location line="-2581"/>
+        <location line="+2582"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="-2585"/>
-        <location line="+6835"/>
+        <location line="-2581"/>
+        <location line="+6817"/>
         <source>Apply</source>
         <translation>应用</translation>
     </message>
     <message>
-        <location line="-6834"/>
+        <location line="-6816"/>
         <source>Help</source>
         <translation>帮助</translation>
     </message>
     <message>
         <location line="+298"/>
-        <location line="+2558"/>
+        <location line="+2554"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -18205,22 +18237,22 @@ Download it again?</source>
         <translation>IP 过滤器</translation>
     </message>
     <message>
-        <location line="-2673"/>
+        <location line="-2669"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP 过滤器已重新加载：%1 条目。</translation>
     </message>
     <message>
-        <location line="+98"/>
+        <location line="+94"/>
         <source>Options -&gt; %1 -&gt; %2</source>
         <translation>选项 -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+5717"/>
+        <location line="+5703"/>
         <source>Bandwidth</source>
         <translation>带宽</translation>
     </message>
     <message>
-        <location line="-5501"/>
+        <location line="-5487"/>
         <source>General options</source>
         <translation>常规选项</translation>
     </message>
@@ -18233,23 +18265,23 @@ Download it again?</source>
         <location line="-65"/>
         <location line="+66"/>
         <location line="+3052"/>
-        <location line="+3436"/>
+        <location line="+3422"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="-6360"/>
+        <location line="-6346"/>
         <source>User Name</source>
         <translation>用户名</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6734"/>
+        <location line="+6720"/>
         <source>Language</source>
         <translation>语言</translation>
     </message>
     <message>
-        <location line="-6731"/>
+        <location line="-6717"/>
         <source>System Default</source>
         <translation>系统默认</translation>
     </message>
@@ -18358,12 +18390,12 @@ Download it again?</source>
     <message>
         <location line="+8"/>
         <location line="+40"/>
-        <location line="+6611"/>
+        <location line="+6597"/>
         <source>Core</source>
         <translation>核心</translation>
     </message>
     <message>
-        <location line="-6624"/>
+        <location line="-6610"/>
         <source>Address:</source>
         <translation>地址：</translation>
     </message>
@@ -18498,12 +18530,12 @@ Are you sure you want to continue?</source>
         <translation>使用原版 eMule 图标</translation>
     </message>
     <message>
-        <location line="+8814"/>
+        <location line="+8800"/>
         <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
         <translation>每个版本都附带一个数据库。可选的免费 &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; 帐户可在版本之间保持其最新。本产品包含由 MaxMind 创建的 GeoLite2 数据。</translation>
     </message>
     <message>
-        <location line="-8761"/>
+        <location line="-8747"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation>节省 CPU &amp;&amp; 内存</translation>
     </message>
@@ -18564,7 +18596,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+4791"/>
+        <location line="+4777"/>
         <source>Torrents</source>
         <translation>种子</translation>
     </message>
@@ -18577,7 +18609,7 @@ Are you sure you want to continue?</source>
         <translation type="vanished">之前排序的列用于区分当前列中相同的项: 先点击“剩余”，再点击“状态”，即可按状态排序，同一状态内按剩余时间排序</translation>
     </message>
     <message>
-        <location line="-4694"/>
+        <location line="-4680"/>
         <source>Disable Known Clients list</source>
         <translation>禁用已知客户端列表</translation>
     </message>
@@ -18631,16 +18663,16 @@ Are you sure you want to continue?</source>
         <location line="+2067"/>
         <location line="+133"/>
         <location line="+301"/>
-        <location line="+1091"/>
-        <location line="+168"/>
-        <location line="+1411"/>
+        <location line="+1084"/>
+        <location line="+162"/>
+        <location line="+1410"/>
         <location line="+333"/>
         <location line="+31"/>
         <source>Enabled</source>
         <translation>已启用</translation>
     </message>
     <message>
-        <location line="-5533"/>
+        <location line="-5519"/>
         <source>Reset</source>
         <translation>重置</translation>
     </message>
@@ -18657,13 +18689,13 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4862"/>
+        <location line="+4848"/>
         <location line="+381"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-5246"/>
+        <location line="-5232"/>
         <source>Upload</source>
         <translation>上传</translation>
     </message>
@@ -18694,18 +18726,18 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+28"/>
-        <location line="+4686"/>
+        <location line="+4672"/>
         <source>Client Port</source>
         <translation>客户端端口</translation>
     </message>
     <message>
-        <location line="-4683"/>
-        <location line="+8514"/>
+        <location line="-4669"/>
+        <location line="+8500"/>
         <source>TCP</source>
         <translation>TCP</translation>
     </message>
     <message>
-        <location line="-8508"/>
+        <location line="-8494"/>
         <source>UDP</source>
         <translation>UDP</translation>
     </message>
@@ -18715,24 +18747,24 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4691"/>
+        <location line="+4677"/>
         <source>Test Ports</source>
         <translation>测试端口</translation>
     </message>
     <message>
-        <location line="-4687"/>
-        <location line="+4695"/>
+        <location line="-4673"/>
+        <location line="+4681"/>
         <source>Open Router</source>
         <translation>打开路由器</translation>
     </message>
     <message>
-        <location line="-4694"/>
-        <location line="+4695"/>
+        <location line="-4680"/>
+        <location line="+4681"/>
         <source>Opens the web page of this computer&apos;s router, where ports are forwarded</source>
         <translation>打开此计算机路由器的网页，可在其中设置端口转发</translation>
     </message>
     <message>
-        <location line="-4691"/>
+        <location line="-4677"/>
         <source>Use UPnP to Setup Ports</source>
         <translation>使用 UPnP 设置端口</translation>
     </message>
@@ -18759,22 +18791,22 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+4"/>
         <location line="+1927"/>
-        <location line="+6120"/>
+        <location line="+6106"/>
         <source>Any</source>
         <translation>任意</translation>
     </message>
     <message>
-        <location line="-8045"/>
+        <location line="-8031"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>仅使用此网络接口，例如 VPN 隧道。可从列表中选择，或输入 IP 地址或子网（如 10.64.0.0/10，即拥有该范围内地址的接口）。通过代理的连接不会被绑定。</translation>
     </message>
     <message>
-        <location line="+7942"/>
+        <location line="+7928"/>
         <source>While the selected interface is not available, all P2P, Usenet and update connections stay closed.</source>
         <translation>所选接口不可用期间，所有 P2P、Usenet 和更新连接都保持关闭。</translation>
     </message>
     <message>
-        <location line="-7928"/>
+        <location line="-7914"/>
         <source>Max. Sources/File</source>
         <translation>最大来源/文件</translation>
     </message>
@@ -18793,12 +18825,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4715"/>
+        <location line="+4701"/>
         <source>Connection Limits</source>
         <translation>连接限制</translation>
     </message>
     <message>
-        <location line="-4713"/>
+        <location line="-4699"/>
         <source>Max. connections</source>
         <translation>最大连接数</translation>
     </message>
@@ -19002,13 +19034,13 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+7"/>
         <location line="+2106"/>
-        <location line="+1094"/>
-        <location line="+168"/>
+        <location line="+1087"/>
+        <location line="+162"/>
         <source>Name:</source>
         <translation>名称：</translation>
     </message>
     <message>
-        <location line="-3364"/>
+        <location line="-3351"/>
         <location line="+932"/>
         <location line="+849"/>
         <location line="+19"/>
@@ -19469,13 +19501,13 @@ Each rule replaces a regex pattern with a replacement string.</source>
     <message>
         <location line="+4"/>
         <location line="+997"/>
-        <location line="+1102"/>
-        <location line="+170"/>
+        <location line="+1095"/>
+        <location line="+164"/>
         <source>Name</source>
         <translation>名称</translation>
     </message>
     <message>
-        <location line="-2267"/>
+        <location line="-2254"/>
         <source>Users</source>
         <translation>用户</translation>
     </message>
@@ -20004,12 +20036,12 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+15"/>
-        <location line="+3070"/>
+        <location line="+3056"/>
         <source>Auto</source>
         <translation>自动</translation>
     </message>
     <message>
-        <location line="-3057"/>
+        <location line="-3043"/>
         <source>Select Color</source>
         <translation>选择颜色</translation>
     </message>
@@ -20226,14 +20258,14 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+3"/>
-        <location line="+702"/>
+        <location line="+696"/>
         <location line="+274"/>
         <location line="+15"/>
         <source>News servers</source>
         <translation>新闻服务器</translation>
     </message>
     <message>
-        <location line="-985"/>
+        <location line="-979"/>
         <source>Host</source>
         <translation>主机</translation>
     </message>
@@ -20325,13 +20357,13 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     <message>
         <location line="-826"/>
         <location line="+828"/>
-        <location line="+1079"/>
-        <location line="+181"/>
+        <location line="+1072"/>
+        <location line="+175"/>
         <source> days</source>
         <translation> 天</translation>
     </message>
     <message>
-        <location line="-1259"/>
+        <location line="-1246"/>
         <source>Retention:</source>
         <translation>保留期：</translation>
     </message>
@@ -20364,13 +20396,13 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     <message>
         <location line="-3279"/>
         <location line="+63"/>
-        <location line="+6488"/>
+        <location line="+6474"/>
         <location line="+2796"/>
         <source>BitTorrent</source>
         <translation>BitTorrent</translation>
     </message>
     <message>
-        <location line="-8783"/>
+        <location line="-8769"/>
         <source>Show download progress on the Dock icon</source>
         <translation>在程序坞图标上显示下载进度</translation>
     </message>
@@ -20531,14 +20563,14 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+1"/>
-        <location line="+2102"/>
+        <location line="+2088"/>
         <location line="+9"/>
         <location line="+180"/>
         <source>No limit</source>
         <translation>无限制</translation>
     </message>
     <message>
-        <location line="-2283"/>
+        <location line="-2269"/>
         <source>Allowance size:</source>
         <translation>额度大小：</translation>
     </message>
@@ -20594,19 +20626,19 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+8"/>
-        <location line="+2225"/>
+        <location line="+2211"/>
         <source>Share of the download limit:</source>
         <translation>占下载限速的份额：</translation>
     </message>
     <message>
-        <location line="-2222"/>
+        <location line="-2208"/>
         <location line="+42"/>
-        <location line="+2172"/>
+        <location line="+2158"/>
         <source> %</source>
         <translation> %</translation>
     </message>
     <message>
-        <location line="-2212"/>
+        <location line="-2198"/>
         <source>How much of the global download limit Usenet may take while eD2K is also downloading. Whichever engine is idle lends its whole share to the other, so this only applies when both are busy.</source>
         <translation>当 eD2K 也在下载时，Usenet 可占用全局下载限速的比例。空闲的一方会把自己的全部份额让给另一方，因此此设置仅在两者都繁忙时生效。</translation>
     </message>
@@ -20656,12 +20688,12 @@ The answer is never a verdict. Nothing here can stop an article being fetched �
     <message>
         <location line="-1680"/>
         <location line="+1684"/>
-        <location line="+1392"/>
+        <location line="+1379"/>
         <source>never</source>
         <translation>从不</translation>
     </message>
     <message>
-        <location line="-4290"/>
+        <location line="-4277"/>
         <source>Show free disk space in status bar</source>
         <translation>在状态栏显示可用磁盘空间</translation>
     </message>
@@ -20855,18 +20887,18 @@ It cannot be inside your temp, incoming or configuration folders: the daemon wri
     </message>
     <message>
         <location line="+5"/>
-        <location line="+1846"/>
+        <location line="+1832"/>
         <source>Browse…</source>
         <translation>浏览…</translation>
     </message>
     <message>
-        <location line="-1838"/>
-        <location line="+1925"/>
+        <location line="-1824"/>
+        <location line="+1911"/>
         <source>Desktop</source>
         <translation>桌面</translation>
     </message>
     <message>
-        <location line="-1921"/>
+        <location line="-1907"/>
         <source>Open .nzb files with eMule Qt</source>
         <translation>使用 eMule Qt 打开 .nzb 文件</translation>
     </message>
@@ -21075,7 +21107,7 @@ Resume publishes it anyway.</source>
         <translation>不需要的文件类型：</translation>
     </message>
     <message>
-        <location line="+202"/>
+        <location line="+196"/>
         <source>The news server list could not be saved.</source>
         <translation>无法保存新闻服务器列表。</translation>
     </message>
@@ -21149,7 +21181,7 @@ Enter what your provider&apos;s control panel says, or 0 to start again.</source
         <translation>新服务器</translation>
     </message>
     <message>
-        <location line="+40"/>
+        <location line="+39"/>
         <source>Enter a host name first.</source>
         <translation>请先输入主机名。</translation>
     </message>
@@ -21170,7 +21202,7 @@ Auto follows the upload capacity: 2 below 1 Mbit/s, 4 below 4 Mbit/s, 8 below 20
 自动按上传容量决定：低于 1 Mbit/s 为 2，低于 4 Mbit/s 为 4，低于 20 Mbit/s 为 8，低于 100 Mbit/s 为 16，否则为 32。</translation>
     </message>
     <message>
-        <location line="+5170"/>
+        <location line="+5163"/>
         <location line="+5"/>
         <location line="+18"/>
         <location line="+13"/>
@@ -21237,15 +21269,15 @@ Auto follows the upload capacity: 2 below 1 Mbit/s, 4 below 4 Mbit/s, 8 below 20
         </translation>
     </message>
     <message>
-        <location line="-9492"/>
-        <location line="+4255"/>
-        <location line="+401"/>
+        <location line="-9478"/>
+        <location line="+4248"/>
+        <location line="+395"/>
         <location line="+541"/>
         <source>Indexers</source>
         <translation>索引器</translation>
     </message>
     <message>
-        <location line="-937"/>
+        <location line="-931"/>
         <source>URL</source>
         <translation>URL</translation>
     </message>
@@ -21266,12 +21298,12 @@ Auto follows the upload capacity: 2 below 1 Mbit/s, 4 below 4 Mbit/s, 8 below 20
     </message>
     <message>
         <location line="+11"/>
-        <location line="+168"/>
+        <location line="+162"/>
         <source>Display name</source>
         <translation>显示名称</translation>
     </message>
     <message>
-        <location line="-166"/>
+        <location line="-160"/>
         <source>Also the identity of this account: it names the cached capabilities and appears in the Indexer column of the results.</source>
         <translation>它同时也是此账户的标识：缓存的功能信息以它命名，并显示在结果的“索引器”列中。</translation>
     </message>
@@ -21365,20 +21397,20 @@ Every page is an API call against the allowance your account has, so this is a s
         <translation>适用于来自索引器搜索或订阅源的下载。索引器提供替代时使用它;否则在索引器中搜索相同剧集或标题,并将尚未尝试过、大小相近的最新结果加入队列。最多尝试三次。</translation>
     </message>
     <message>
-        <location line="+62"/>
+        <location line="+56"/>
         <source>A feed is a search that runs on its own and queues what it finds. Its first check adds nothing — it only records what the indexer already lists, because otherwise a new feed would download everything still on the server.</source>
         <translation>订阅源是一个自动运行并把结果加入队列的搜索。它的首次检查不会添加任何内容 — 只是记录索引器当前列出的条目，否则新建的订阅源会把服务器上仍保留的一切都下载下来。</translation>
     </message>
     <message>
-        <location line="-4416"/>
-        <location line="+4424"/>
+        <location line="-4403"/>
+        <location line="+4411"/>
         <location line="+325"/>
         <location line="+277"/>
         <source>Feeds</source>
         <translation>订阅源</translation>
     </message>
     <message>
-        <location line="-5632"/>
+        <location line="-5615"/>
         <source>Search options</source>
         <translation>搜索选项</translation>
     </message>
@@ -21390,7 +21422,7 @@ Enter: next page, Esc: clear</source>
 Enter：下一页，Esc：清除</translation>
     </message>
     <message>
-        <location line="+1058"/>
+        <location line="+1054"/>
         <source>Show icon in system tray</source>
         <translation>在系统托盘显示图标</translation>
     </message>
@@ -21460,7 +21492,7 @@ Enter：下一页，Esc：清除</translation>
         <translation>关闭：点击已在下载或已共享文件的链接时，只在日志和状态栏中记录。</translation>
     </message>
     <message>
-        <location line="+2760"/>
+        <location line="+2747"/>
         <source>Search</source>
         <translation>搜索</translation>
     </message>
@@ -21730,7 +21762,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>新索引器</translation>
     </message>
     <message>
-        <location line="+34"/>
+        <location line="+33"/>
         <source>Enter an API URL first.</source>
         <translation>请先输入 API URL。</translation>
     </message>
@@ -22156,9 +22188,9 @@ Auto follows the upload capacity: 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 
         <translation>达到分享率时停止：</translation>
     </message>
     <message>
-        <location line="-3689"/>
+        <location line="-3675"/>
         <location line="+1721"/>
-        <location line="+1972"/>
+        <location line="+1958"/>
         <source> min</source>
         <translation> 分钟</translation>
     </message>
@@ -22318,8 +22350,8 @@ Look up the &quot;default gateway&quot; in this computer&apos;s network settings
         <translation type="vanished">打开路由器页面</translation>
     </message>
     <message>
-        <location line="-9312"/>
-        <location line="+9231"/>
+        <location line="-9298"/>
+        <location line="+9217"/>
         <location line="+63"/>
         <source>Directories</source>
         <translation>目录</translation>
@@ -22463,7 +22495,7 @@ Create it?</source>
         <translation>过滤服务器和客户端局域网 IP</translation>
     </message>
     <message>
-        <location line="-5169"/>
+        <location line="-5155"/>
         <source>Show more controls (advanced mode controls)</source>
         <translation>显示更多控件（高级模式控件）</translation>
     </message>
@@ -22636,7 +22668,7 @@ RAR 和 7z 需要安装 7-Zip 或 unrar;ZIP 不需要。</translation>
         <translation>仅当核心在本机运行时。否则单击会显示“传输”窗口。</translation>
     </message>
     <message>
-        <location line="+2629"/>
+        <location line="+2616"/>
         <source>Which download category this feed&apos;s matches go into. The category decides the folder they finish in, and it is resolved when a release completes — so repointing the category moves what is still running with it.
 
 Torrents from a torznab indexer go to the BitTorrent download folder instead.</source>
@@ -22645,7 +22677,7 @@ Torrents from a torznab indexer go to the BitTorrent download folder instead.</s
 来自 torznab 索引器的种子会改为进入 BitTorrent 下载文件夹。</translation>
     </message>
     <message>
-        <location line="+775"/>
+        <location line="+774"/>
         <source>Runs the BitTorrent engine in the core. Off, the engine stops: no torrent is downloaded or seeded and the BitTorrent port is closed. Torrents stay in the list and continue when it is switched on again.</source>
         <translation>在核心中运行 BitTorrent 引擎。关闭时引擎停止：不下载也不做种任何种子，BitTorrent 端口关闭。种子保留在列表中，重新开启后继续。</translation>
     </message>
@@ -23053,8 +23085,8 @@ News server connections switch over immediately.</source>
 新闻服务器连接会立即切换。</translation>
     </message>
     <message>
-        <location line="-6913"/>
-        <location line="+7483"/>
+        <location line="-6899"/>
+        <location line="+7469"/>
         <source>Web Interface</source>
         <translation>Web 界面</translation>
     </message>
@@ -23127,18 +23159,18 @@ News server connections switch over immediately.</source>
         <translation>恢复默认值</translation>
     </message>
     <message>
-        <location line="-8732"/>
+        <location line="-8718"/>
         <location line="+2811"/>
-        <location line="+1094"/>
-        <location line="+170"/>
-        <location line="+1762"/>
+        <location line="+1087"/>
+        <location line="+164"/>
+        <location line="+1761"/>
         <location line="+406"/>
         <location line="+2487"/>
         <source>Remove</source>
         <translation>删除</translation>
     </message>
     <message>
-        <location line="-7174"/>
+        <location line="-7160"/>
         <source>New eMule Qt version detected</source>
         <translation>检测到新的 eMule Qt 版本</translation>
     </message>
@@ -23148,7 +23180,7 @@ News server connections switch over immediately.</source>
         <translation>从 URL 更新：（filter.dat 或 PeerGuardian 格式，支持 .gz/.zip）</translation>
     </message>
     <message>
-        <location line="+3013"/>
+        <location line="+2999"/>
         <source>Private tracker torrents (ALT) and I2P torrents are not shared.</source>
         <translation>私有 Tracker 的种子（ALT）和 I2P 种子不会共享。</translation>
     </message>
@@ -23223,14 +23255,14 @@ News server connections switch over immediately.</source>
         <translation>请求的租期：</translation>
     </message>
     <message>
-        <location line="-2721"/>
-        <location line="+988"/>
-        <location line="+1737"/>
+        <location line="-2707"/>
+        <location line="+981"/>
+        <location line="+1730"/>
         <source> s</source>
         <translation> 秒</translation>
     </message>
     <message>
-        <location line="-5574"/>
+        <location line="-5560"/>
         <source>Downloads that are receiving data, and the sources sending it, are drawn in bold. A source listed under another file (A4AF) is bold too while it transfers. The connected server and the selected category tab are bold as well.</source>
         <translation>正在接收数据的下载及发送数据的来源以粗体显示。列在其他文件下的来源 (A4AF) 在传输时也以粗体显示。已连接的服务器和选中的分类标签页同样以粗体显示。</translation>
     </message>
@@ -23289,7 +23321,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="vanished">共享所有种子，包括私有 Tracker 的种子（ALT）</translation>
     </message>
     <message>
-        <location line="+2078"/>
+        <location line="+2064"/>
         <source>Queue</source>
         <translation>队列</translation>
     </message>
@@ -23497,11 +23529,11 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>新建计划</translation>
     </message>
     <message>
-        <location line="-4805"/>
+        <location line="-4791"/>
         <location line="+1683"/>
-        <location line="+1094"/>
-        <location line="+170"/>
-        <location line="+2103"/>
+        <location line="+1087"/>
+        <location line="+164"/>
+        <location line="+2102"/>
         <location line="+2547"/>
         <source>Add</source>
         <translation>添加</translation>
@@ -23525,8 +23557,8 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>设置页面 %1 尚未实现。</translation>
     </message>
     <message>
-        <location line="-6712"/>
-        <location line="+6916"/>
+        <location line="-6698"/>
+        <location line="+6902"/>
         <source>Proxy</source>
         <translation>代理</translation>
     </message>
@@ -30312,7 +30344,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
 <context>
     <name>eMule::TorrentListsPane</name>
     <message>
-        <location filename="../src/gui/controls/TorrentListsPane.cpp" line="+96"/>
+        <location filename="../src/gui/controls/TorrentListsPane.cpp" line="+110"/>
         <source>Tracker</source>
         <translation>Tracker</translation>
     </message>
@@ -30524,18 +30556,18 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+0"/>
-        <location line="+395"/>
+        <location line="+403"/>
         <source>Download</source>
         <translation>下载</translation>
     </message>
     <message>
-        <location line="-395"/>
-        <location line="+386"/>
+        <location line="-403"/>
+        <location line="+394"/>
         <source>Priority</source>
         <translation>优先级</translation>
     </message>
     <message>
-        <location line="-385"/>
+        <location line="-393"/>
         <source>Availability</source>
         <translation>可用性</translation>
     </message>
@@ -30601,11 +30633,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+39"/>
+        <location line="+11"/>
         <source>I2P peer (anonymous, encrypted)</source>
         <translation>I2P 节点（匿名、加密）</translation>
     </message>
     <message>
-        <location line="+41"/>
+        <location line="+35"/>
         <source>Peers (%1)</source>
         <translation>用户 (%1)</translation>
     </message>
@@ -30635,7 +30668,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>尚未联系</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+20"/>
         <source>Trackers (%1)</source>
         <translation>Tracker (%1)</translation>
     </message>

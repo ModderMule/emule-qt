@@ -5,6 +5,7 @@
 #include "AutoUpdater.h"
 #include "net/GuardedNetworkAccessManager.h"
 #include "CoreNotifierBridge.h"
+#include "geo/IP2Country.h"
 #include "ApiEventFeeder.h"
 #include "DaemonApiBackend.h"
 #include "DaemonHosterWebBackend.h"
@@ -953,6 +954,13 @@ bool DaemonApp::start()
         // what the Add account dialogs offer: account plugins and favicons
         m_hosterCatalog = std::make_unique<ed3k::Ed3kHosterCatalog>(thePrefs.configDir());
         m_hosterCatalog->setResolver(resolver);
+        // server countries of the sites in the account dialogs
+        m_hosterCatalog->setGeo([] { return theApp.ip2Country && theApp.ip2Country->isLoaded(); },
+                                [](const QHostAddress& a) { return countryCodeOf(a); });
+        m_hosterCatalog->setDnsAllowed(!thePrefs.proxySettings().useProxy);
+        // a download's real server: the site's flag from then on
+        connect(m_hosterJoin.get(), &ed3k::Ed3kHosterJoin::downloadServer, m_hosterCatalog.get(),
+                &ed3k::Ed3kHosterCatalog::noteServer);
         Ed3kHosterBridge::setCatalog(m_hosterCatalog.get(), [this](const IpcMessage& msg) {
             if (m_ipcServer)
                 m_ipcServer->broadcast(msg);
@@ -1920,10 +1928,14 @@ void DaemonApp::applyHosterConfig()
                                        + QString::fromLatin1(QUrl::toPercentEncoding(p.password)) + QLatin1Char('@')
                                  : QString();
         proxy = QStringLiteral("%1://%2%3:%4").arg(scheme, auth, p.host).arg(p.port);
+        if (m_hosterCatalog)
+            m_hosterCatalog->setDnsAllowed(false);   // site names stay off the local resolver
         m_javaRuntime->setProxy(toNetworkProxy(p));
         if (m_resolverUpdater)
             m_resolverUpdater->setProxy(toNetworkProxy(p));
     } else {
+        if (m_hosterCatalog)
+            m_hosterCatalog->setDnsAllowed(true);
         m_javaRuntime->setProxy(QNetworkProxy(QNetworkProxy::DefaultProxy));
         if (m_resolverUpdater)
             m_resolverUpdater->setProxy(QNetworkProxy(QNetworkProxy::DefaultProxy));

@@ -29,6 +29,7 @@ import org.jdownloader.plugins.controller.host.LazyHostPlugin;
 final class FaviconTask extends Task {
     /** sharp at 16 px on a 2x screen */
     private static final int kMaxSide = 32;
+    private static final int kQuickTimeoutMs = 4000;
     private final String host;
 
     FaviconTask(final long id, final String host) {
@@ -93,7 +94,11 @@ final class FaviconTask extends Task {
                 Out.send(id, "cancelled");
                 return;
             }
-            icon = jd.controlling.faviconcontroller.FavIcons.downloadFavIcon(log, tryHosts, names);
+            // most sites: /favicon.ico at once; JD loads the page first (slow, sleeps on redirects)
+            icon = quickIcon(log, tryHosts.get(0));
+            if (icon == null && !cancelled.get()) {
+                icon = jd.controlling.faviconcontroller.FavIcons.downloadFavIcon(log, tryHosts, names);
+            }
         }
         if (icon == null || icon.getWidth() < 2 || icon.getHeight() < 2) {
             Out.error(id, "none", host);
@@ -105,6 +110,21 @@ final class FaviconTask extends Task {
         m.put("host", host);
         m.put("image", Base64.getEncoder().encodeToString(png.toByteArray()));
         Out.send(m);
+    }
+
+    /** https://host/favicon.ico with short timeouts; null: JD's way. */
+    private static BufferedImage quickIcon(final org.appwork.utils.logging2.LogSource log, final String host) {
+        try {
+            final jd.http.Browser br = new jd.http.Browser();
+            br.setLogger(log);
+            br.setConnectTimeout(kQuickTimeoutMs);
+            br.setReadTimeout(kQuickTimeoutMs);
+            br.getHeaders().put("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:145.0) Gecko/20100101 Firefox/145.0");
+            final BufferedImage img = jd.controlling.faviconcontroller.FavIcons.download_FavIconTag(br, "https://" + host + "/favicon.ico", host);
+            return img != null && img.getWidth() >= 8 && img.getHeight() >= 8 ? img : null;
+        } catch (final Throwable e) {
+            return null;
+        }
     }
 
     private static BufferedImage scaled(final BufferedImage src) {

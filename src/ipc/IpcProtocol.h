@@ -1087,8 +1087,8 @@ enum class IpcMsgType : int {
     /// [hosts: [string]] -> [ok, {icons: {host: bytes (PNG; empty: the site has none)}}]; the
     /// others are fetched, a PushHosterCatalog {icons} each
     GetHosterFavicons       = 1220,
-    /// [host, user, code] -> [ok]; the confirmation code a running CheckHosterAccount asked for
-    /// (PushHosterAccount error "code"); empty code cancels. Local clients only
+    /// [host, user, code] -> [ok]; the confirmation code a login asked for (any account check or a
+    /// download; PushHosterAccount error "code", any GUI shows it); empty code cancels. Local clients only
     AnswerHosterAccountCode = 1221,
 
     // hoster links (1100-1109, hoster.md), Ed3kHosterBridge.cpp. An item: {id, url, host,

@@ -283,6 +283,7 @@ Ed3kJobSource Ed3kJobSource::fromCbor(const QCborMap& m)
     if (!addr.isEmpty())
         s.address = port > 0 ? (addr.contains(u':') ? QStringLiteral("[%1]:%2") : QStringLiteral("%1:%2")).arg(addr).arg(port)
                              : addr;
+    s.cc = m.value(QStringLiteral("cc")).toString();
     s.fileName = m.value(QStringLiteral("fileName")).toString();
     s.state = m.value(QStringLiteral("downloadState")).toString();
     s.rate = m.value(QStringLiteral("datarate")).toInteger();

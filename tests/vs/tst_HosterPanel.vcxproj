@@ -193,9 +193,18 @@
     <ClCompile Include="..\..\src\gui\utils\ContainerDrop.cpp" />
     <ClCompile Include="..\..\src\gui\app\ClickNLoadServer.cpp" />
     <ClCompile Include="..\..\src\gui\app\SkinIcons.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\HosterIcons.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\CountryFlags.cpp" />
     <QtRcc Include="..\..\resources\emuleqt.qrc" />
+    <QtRcc Include="..\..\resources\flags.qrc" />
   </ItemGroup>
   <ItemGroup>
+    <QtMoc Include="..\..\src\gui\utils\HosterIcons.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\utils\CountryFlags.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
     <QtMoc Include="..\..\src\gui\panels\HosterPanel.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>

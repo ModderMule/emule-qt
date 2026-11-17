@@ -121,6 +121,9 @@ private:
     void showContextMenu(const QPoint& pos);
     void act(const QString& op);
     void onPuzzle(const Ipc::IpcMessage& msg);
+    /// PushHosterAccount: error "code" opens the login's confirmation code window, a result closes it
+    void onAccountChecked(const Ipc::IpcMessage& msg);
+    void askAccountCode(const QString& host, const QString& user, const QString& title, const QString& text);
     void onLinks(const Ipc::IpcMessage& msg);
     /// An OpenHosterContainer result (PushHosterLinks with item 0): which links to add, or why none.
     void onContainer(const QCborMap& container, const QCborArray& links);
@@ -144,6 +147,10 @@ private:
     /// A package row shows while one of its items does.
     static void syncPackageVisibility(QTreeWidgetItem* row);
     void updateFilterCounts();
+    /// The favicon and server flag of @p host in @p row's Hoster column (none: empty host).
+    void setHosterIcon(QTreeWidgetItem* row, const QString& host, bool force = false);
+    /// Composes them again for rows of @p host (all: empty), when one came or flags toggled.
+    void refreshHosterIcons(const QString& host);
 
     QPointer<IpcClient> m_ipc;
     ListTreeWidget* m_tree = nullptr;
@@ -159,6 +166,7 @@ private:
     QMap<qint64, QTreeWidgetItem*> m_packages;   ///< package id -> its row
     QMap<qint64, QCborMap> m_items;
     QMap<QString, QPointer<QInputDialog>> m_passwordAsks;   ///< open password dialogs by group
+    QMap<QString, QPointer<QDialog>> m_codeAsks;   ///< open confirmation code windows by host|user
     QSet<qint64> m_cnlTokens;   ///< Click'n'Load posts of this GUI the core reads
     QSet<qint64> m_grabTokens;  ///< copied links of this GUI the core crawls (GrabLinks ask)
     QTabWidget* m_tabs = nullptr;

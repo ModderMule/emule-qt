@@ -660,6 +660,7 @@ std::optional<std::pair<Ed3kResolver::TaskId, ResolverEvent>> Ed3kJdResolver::pa
     e.premium = o.value(QStringLiteral("premium")).toBool();
     e.expires = o.value(QStringLiteral("expires")).toInteger(0);
     e.trafficLeft = o.contains(QStringLiteral("trafficLeft")) ? o.value(QStringLiteral("trafficLeft")).toInteger(-1) : -1;
+    e.trafficMax = o.value(QStringLiteral("trafficMax")).toInteger(-1);
     e.maxDownloads = int(o.value(QStringLiteral("maxDownloads")).toInteger(0));
     e.balance = o.value(QStringLiteral("balance")).toDouble(-1);
     e.currency = str("currency");
@@ -669,13 +670,18 @@ std::optional<std::pair<Ed3kResolver::TaskId, ResolverEvent>> Ed3kJdResolver::pa
     }
     if (e.kind == K::Login)
         e.text = str("url");
-    if (e.kind == K::Code)
+    if (e.kind == K::Code) {
         e.name = str("title");
+        e.user = str("user");
+    }
     if (e.kind == K::AccountHosts) {
         for (const QJsonValue& v : o.value(QStringLiteral("hosts")).toArray()) {
             const QJsonObject h = v.toObject();
             AccountHost a{h.value(QStringLiteral("host")).toString().toLower(), h.value(QStringLiteral("name")).toString(),
-                          h.value(QStringLiteral("multi")).toBool(), h.value(QStringLiteral("solver")).toBool()};
+                          h.value(QStringLiteral("multi")).toBool(), h.value(QStringLiteral("solver")).toBool(), {}};
+            for (const QJsonValue& sub : h.value(QStringLiteral("subs")).toArray())
+                if (const QString n = sub.toString().toLower(); !n.isEmpty() && a.subs.size() < 8)
+                    a.subs.append(n);
             if (!a.host.isEmpty())
                 e.accountHosts.append(a);
         }

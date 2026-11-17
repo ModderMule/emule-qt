@@ -151,8 +151,6 @@ private:
     [[nodiscard]] static QString creditsText(qint64 micro);
     /// A solver service's balance as an account status; @p balance -1: none given.
     [[nodiscard]] static QString creditText(double balance, const QString& currency);
-    /// A multi-hoster login's status: premium/free, until, its hosters; @p working -1: not told.
-    [[nodiscard]] static QString debridText(bool premium, qint64 expires, int hosts, int working);
     /// m_chainSingleNote shown for the endpoints typed.
     void updateChainNote();
     /// The "hoster" map of the ed3k status: Java runtime and resolver.
@@ -174,6 +172,9 @@ private:
     void buildDebrid(QVBoxLayout* layout, QWidget* parent);
     /// m_debridHostsTree: the hosters of the selected multi-hoster row, as its last check named them.
     void fillDebridHosts();
+    /// A login's status from a check (live or kept): valid, premium/free, until, traffic left; a
+    /// multi-hoster its @p hosts (-1: downloads none) and @p working of them (-1: not told).
+    [[nodiscard]] static QString accountText(const AccountList& list, const QCborMap& check, int hosts, int working = -1);
     /// Adds (@p row -1) or edits a login of @p list.
     void editAccount(AccountList& list, int row);
     void checkAccount(AccountList& list);
@@ -191,9 +192,6 @@ private:
     void applyAccountCheck(const QString& host, const QString& user, const QCborMap& result);
     /// @p host waits for a login at @p url in the browser (OAuth device flow): offers to open it.
     void askBrowserLogin(const QString& host, const QUrl& url);
-    /// A running check waits for a confirmation code (2FA, a "new sign in" mail): asks the user,
-    /// the answer goes to the core (AnswerHosterAccountCode).
-    void askAccountCode(const QString& host, const QString& user, const QString& title, const QString& text);
     [[nodiscard]] Ed3kHosterPrefs hosterPrefs() const;
     QWidget* buildAutoCredits(QWidget* parent);
     QWidget* buildExtended(QWidget* parent);
@@ -296,6 +294,7 @@ private:
         bool passwordSet = false;
         QString status;
         QCborArray hosts{};    ///< a multi-hoster: the hosters its last check named
+        qint64 checked = 0;    ///< when status was found (s); 0: not a check
     };
     QCheckBox* m_hosterEnabledCheck = nullptr;
     QCheckBox* m_hosterSingleCheck = nullptr;   ///< ed3kHosterSingleTransfer
@@ -336,7 +335,6 @@ private:
     AccountList m_hosterAccounts;
     AccountList m_solverAccounts{.solvers = true};
     AccountList m_debridAccounts{.debrid = true};
-    QSet<QString> m_codeAsks;   ///< host|user of the open code windows
     QCheckBox* m_debridCheck = nullptr;    ///< ed3kHosterDebridEnabled
     QGroupBox* m_debridGroup = nullptr;    ///< enabled by m_debridCheck
     QTreeWidget* m_debridHostsTree = nullptr;

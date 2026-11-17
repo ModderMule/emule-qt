@@ -237,6 +237,7 @@ private slots:
     void bundle_sameDirIsNoop();
 
     void resolver_literalAddresses();
+    void resolver_cachedHostCountry();
 
 private:
     [[nodiscard]] QString livePath() const
@@ -696,6 +697,17 @@ void tst_IP2Country::resolver_literalAddresses()
     QCOMPARE(result.value(QStringLiteral("2001:218::1")), QStringLiteral("JP"));
     QVERIFY(result.contains(QStringLiteral("192.168.1.9")));
     QVERIFY(result.value(QStringLiteral("192.168.1.9")).isEmpty());
+}
+
+void tst_IP2Country::resolver_cachedHostCountry()
+{
+    QVERIFY(m_db.open(testDb()));
+    QCOMPARE(cachedHostCountry(QStringLiteral(" 81.2.69.160 ")), QStringLiteral("GB"));
+    QCOMPARE(cachedHostCountry(QStringLiteral("2001:218::1")), QStringLiteral("JP"));
+    QVERIFY(cachedHostCountry(QString()).isEmpty());
+    // a name: nothing yet, the lookup runs behind; .invalid never resolves (RFC 6761)
+    QVERIFY(cachedHostCountry(QStringLiteral("tracker.invalid")).isEmpty());
+    QVERIFY(cachedHostCountry(QStringLiteral("tracker.invalid")).isEmpty());
 }
 
 QTEST_MAIN(tst_IP2Country)

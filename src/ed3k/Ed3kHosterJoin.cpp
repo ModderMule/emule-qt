@@ -318,6 +318,7 @@ void Ed3kHosterJoin::stop()
     m_probeQueue.clear();
     m_probeMatches.clear();
     m_accountChecks.clear();
+    m_codeAsks.clear();
     m_siteQueries.clear();
     std::erase_if(m_checks, [](const auto& c) { return c.second.status == LinkStatus::Checking; });
     save();
@@ -723,6 +724,13 @@ void Ed3kHosterJoin::checkAccount(const QString& host, const QString& user, cons
         emit accountChecked(host, user, r);
         return;
     }
+    // a check of this login waits for its code already: asked again, a second login would park
+    // on JD's account lock (and mail another code)
+    for (const auto& [task, ask] : m_codeAsks)
+        if (ask.host == host && ask.user == user) {
+            emit accountChecked(host, user, ask.ev);
+            return;
+        }
     // key-only solver services: the user is free text, the key goes as password
     ResolverAccount login{user.isEmpty() ? QStringLiteral("apikey") : user, pass};
     // the user asked: a browser login (OAuth) is shown to them
@@ -738,14 +746,16 @@ bool Ed3kHosterJoin::answerAccountCode(const QString& host, const QString& user,
 {
     if (!m_resolver)
         return false;
-    // the check that asked: a background check of the same login may run too
-    for (auto& [task, check] : m_accountChecks)
-        if (check.waitsCode && check.host == host && check.user == user) {
-            check.waitsCode = false;
-            m_resolver->answerCode(task, code.trimmed());
-            return true;
-        }
-    return false;
+    // the first task that asked; another one of the same login is shown again
+    const auto it = std::ranges::find_if(m_codeAsks, [&](const auto& a) { return a.second.host == host && a.second.user == user; });
+    if (it == m_codeAsks.end())
+        return false;
+    m_resolver->answerCode(it->first, code.trimmed());
+    m_codeAsks.erase(it);
+    if (const auto next = std::ranges::find_if(m_codeAsks, [&](const auto& a) { return a.second.host == host && a.second.user == user; });
+        next != m_codeAsks.end())
+        emit accountChecked(host, user, next->second.ev);
+    return true;
 }
 
 const Ed3kHosterAccount* Ed3kHosterJoin::storedLogin(const QString& host, const QString& user) const
@@ -1321,6 +1331,9 @@ QList<Ed3kHosterJoin::DebridSummary> Ed3kHosterJoin::debridSummaries() const
             s.valid = st.valid;
             s.premium = st.premium;
             s.expires = st.expires;
+            s.trafficLeft = st.trafficLeft;
+            s.trafficMax = st.trafficMax;
+            s.checked = st.at / 1000;
             s.hosts = int(st.hosts.size());
             const auto blockedAll = m_debridBlocks.find(key + QStringLiteral("|*"));
             if (blockedAll == m_debridBlocks.end() || blockedAll->second <= now)
@@ -1381,6 +1394,37 @@ void Ed3kHosterJoin::begin(Entry& e)
     }
     setState(e, State::Matching);
     m_matches[m_resolver->match(e.item.url)] = e.item.id;
+}
+
+void Ed3kHosterJoin::onCodeAsked(Ed3kResolver::TaskId task, const ResolverEvent& ev)
+{
+    QString host;
+    QString user;
+    if (const auto it = m_accountChecks.find(task); it != m_accountChecks.end()) {
+        host = it->second.host;
+        user = it->second.user;
+    } else {
+        // a download's login: the stored account of that site (key-only logins go as "apikey")
+        const QString site = siteOf(ev.host);
+        for (const QList<Ed3kHosterAccount>* list : {&m_prefs.accounts, &m_prefs.debrid})
+            for (const Ed3kHosterAccount& a : *list)
+                if (host.isEmpty() && siteOf(a.host) == site
+                    && (a.user == ev.user || (a.user.isEmpty() && ev.user == QLatin1String("apikey")))) {
+                    host = a.host;
+                    user = a.user;
+                }
+    }
+    if (host.isEmpty()) {
+        if (m_resolver)
+            m_resolver->answerCode(task, {});
+        return;
+    }
+    const bool shown = std::ranges::any_of(m_codeAsks, [&](const auto& a) { return a.second.host == host && a.second.user == user; });
+    m_codeAsks[task] = {host, user, ev};
+    logInfo(QStringLiteral("%1 waits for a confirmation code").arg(host));
+    // one window per login: the next ask shows when the first is answered
+    if (!shown)
+        emit accountChecked(host, user, ev);
 }
 
 void Ed3kHosterJoin::onMatched(Entry& e, const ResolverEvent& ev)
@@ -1659,6 +1703,12 @@ void Ed3kHosterJoin::onResolve(const ev::LinkResolve& r)
 void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEvent& ev)
 {
     using K = ResolverEvent::Kind;
+    if (ev.isFinal())
+        m_codeAsks.erase(task);
+    if (ev.kind == K::Code) {
+        onCodeAsked(task, ev);
+        return;
+    }
     if (ev.kind == K::Puzzle && m_directChecks.contains(task)) {
         // a links dialog's check never asks the user: skipped, it ends as unknown
         m_resolver->answerPuzzle(ev.puzzle, {});
@@ -1780,12 +1830,9 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
         const QString host = it->second.host;
         const QString user = it->second.user;
         const QString password = it->second.password;
-        // a browser login or a confirmation code waits for the user: the check goes on
-        if (ev.kind == K::Login || ev.kind == K::Code) {
-            if (ev.kind == K::Code)
-                it->second.waitsCode = true;
-            logInfo(ev.kind == K::Login ? QStringLiteral("hoster: %1 waits for a browser login").arg(host)
-                                        : QStringLiteral("hoster: %1 waits for a confirmation code").arg(host));
+        // a browser login waits for the user: the check goes on
+        if (ev.kind == K::Login) {
+            logInfo(QStringLiteral("%1 waits for a browser login").arg(host));
             emit accountChecked(host, user, ev);
             return;
         }
@@ -1803,6 +1850,7 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
             st.premium = ev.premium;
             st.expires = ev.expires;
             st.trafficLeft = ev.trafficLeft;
+            st.trafficMax = ev.trafficMax;
             st.maxDownloads = ev.maxDownloads;
             st.multi = ev.multi;
             st.hosts = ev.hosts;
@@ -1811,7 +1859,7 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
                 st.password = password;
             }
             if (st.multi)
-                logInfo(QStringLiteral("hoster: %1 downloads %2 hosters").arg(host).arg(st.hosts.size()));
+                logInfo(QStringLiteral("%1 downloads %2 hosters").arg(host).arg(st.hosts.size()));
         }
         emit accountChecked(host, user, ev);
         // a stored login's new session survives a restart (no browser login again)
@@ -1893,6 +1941,9 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
         break;
     }
     case K::Status:
+        // the host the bytes come from: its country is the site's flag
+        if (!ev.host.isEmpty() && !a.url.isEmpty())
+            emit downloadServer(viaHost.isEmpty() ? QUrl(a.url).host() : viaHost, ev.host);
         // the step before bytes flow, for the status column; a peer's link keeps its own reason
         if (e && e->task == task && e->item.reason != Reason::PeerLink
             && (e->item.state == State::Downloading

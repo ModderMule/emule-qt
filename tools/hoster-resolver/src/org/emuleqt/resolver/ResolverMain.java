@@ -50,6 +50,14 @@ public final class ResolverMain {
         // (JD's updater layout). Keep the loose-classes behaviour the driver was made for.
         Jd.notJared();
         Jd.init();
+        // JD's RemoteAPIController wraps the dialog handler when its class loads, lazily, maybe mid-login
+        // (on top of CodeAsker: a code dialog then parks forever). Load it now, under ours; no API port.
+        try {
+            org.appwork.storage.config.JsonConfig.create(org.jdownloader.api.RemoteAPIConfig.class).setDeprecatedApiEnabled(false);
+            org.jdownloader.api.RemoteAPIController.getInstance();
+        } catch (final Throwable e) {
+            Out.log("JD remote API: " + e);
+        }
         PuzzleSolver.install();
         LoginSolver.install();
         // solver accounts JD saved last run: the daemon sends the current ones
