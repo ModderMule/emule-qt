@@ -942,7 +942,7 @@ Has comments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+56"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+58"/>
         <source>Server</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1153,7 +1153,7 @@ Trust the new certificate?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3831"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3837"/>
         <source>Test</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2998,19 +2998,19 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::ClientDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+170"/>
+        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+179"/>
         <location line="+21"/>
         <source>Client Details: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+37"/>
-        <location line="+320"/>
+        <location line="+324"/>
         <source>General</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-307"/>
+        <location line="-311"/>
         <source>ID</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3026,29 +3026,29 @@ Its downloads keep their files and move to All.</source>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+328"/>
+        <location line="+338"/>
         <source>Country</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-341"/>
-        <location line="+318"/>
+        <location line="-351"/>
+        <location line="+322"/>
         <source>Name</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-313"/>
+        <location line="-317"/>
         <source>Hash</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+324"/>
+        <location line="+334"/>
         <source>Software</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-291"/>
+        <location line="-297"/>
         <source>Server IP</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3132,7 +3132,7 @@ Its downloads keep their files and move to All.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-194"/>
+        <location line="-204"/>
         <source>anonymous (ed3k)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3142,7 +3142,7 @@ Its downloads keep their files and move to All.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+177"/>
+        <location line="+183"/>
         <source>User name the client sent in its hello. Anyone can pick any name.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3168,13 +3168,31 @@ Low ID: it is firewalled and can only be reached through a callback.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+4"/>
-        <location line="+328"/>
+        <location line="+5"/>
+        <location line="+320"/>
+        <source>Peer IP</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-320"/>
+        <location line="+321"/>
+        <source>Unknown</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-320"/>
+        <location line="+321"/>
+        <source>Peer connection address (IPv4 or IPv6).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-319"/>
+        <location line="+334"/>
         <source>Connected</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-328"/>
+        <location line="-334"/>
         <source>Disconnected</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3390,45 +3408,45 @@ No QUIC or IPv6 data path: an introduction could succeed, but we have neither QU
     </message>
     <message>
         <location line="+36"/>
-        <location line="+167"/>
+        <location line="+173"/>
         <source>Currently downloading</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-166"/>
+        <location line="-172"/>
         <source>Our file the client downloads or waits for in our upload queue.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+196"/>
+        <location line="+202"/>
         <source>Requested to upload</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-195"/>
+        <location line="-201"/>
         <source>Our download for which the client is a source.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+209"/>
+        <location line="+215"/>
         <source>Downloaded (this session)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-207"/>
+        <location line="-213"/>
         <source>What the client downloaded from us since we met it in this run.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+208"/>
+        <location line="+214"/>
         <source>Uploaded (this session)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-206"/>
+        <location line="-212"/>
         <source>What the client uploaded to us since we met it in this run.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3560,6 +3578,11 @@ In brackets: the modifier the client should give us, from what we uploaded to it
     </message>
     <message>
         <location line="+4"/>
+        <source>Hidden</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+6"/>
         <source>Client program and version from its hello.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3703,7 +3726,27 @@ On queue: we wait in its upload queue.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-86"/>
+        <location line="+14"/>
+        <source>Hostname</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Name the peer&apos;s IP address resolves to (reverse DNS).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Not found</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+17"/>
+        <source>Resolving…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-129"/>
         <location line="+6"/>
         <source>hidden</source>
         <translation type="unfinished"></translation>
@@ -3722,12 +3765,12 @@ On queue: we wait in its upload queue.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-16"/>
+        <location line="-22"/>
         <source>ed3k Type</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+23"/>
         <location line="+9"/>
         <location line="+11"/>
         <location line="+41"/>
@@ -3792,13 +3835,13 @@ On queue: we wait in its upload queue.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-201"/>
-        <location line="+169"/>
+        <location line="-207"/>
+        <location line="+175"/>
         <source>Transfer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-122"/>
+        <location line="-128"/>
         <source>Scores</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3811,7 +3854,7 @@ On queue: we wait in its upload queue.</source>
 <context>
     <name>eMule::ClientListModel</name>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+361"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+482"/>
         <location line="+13"/>
         <location line="+13"/>
         <location line="+15"/>
@@ -3936,7 +3979,23 @@ On queue: we wait in its upload queue.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-339"/>
+        <location line="-382"/>
+        <source>Hidden</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>%1
+No hostname found.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>%1 (resolving…)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+28"/>
         <source>%1 (ed3k)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3952,6 +4011,16 @@ On queue: we wait in its upload queue.</source>
     </message>
     <message>
         <location line="+75"/>
+        <source>Hostname / IP</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Peer IP</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Country</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4001,21 +4070,22 @@ On queue: we wait in its upload queue.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-331"/>
-        <location line="+174"/>
+        <location line="-333"/>
+        <location line="+176"/>
         <location line="+15"/>
         <source>Yes</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-189"/>
-        <location line="+174"/>
+        <location line="-191"/>
+        <location line="+176"/>
         <location line="+15"/>
         <source>No</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1"/>
+        <location line="-258"/>
+        <location line="+257"/>
         <source>Unknown</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4742,7 +4812,7 @@ Retry the last core, or enter the address and authentication token of another on
 <context>
     <name>eMule::DownloadListModel</name>
     <message>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+867"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+870"/>
         <source>Downloading</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4752,7 +4822,7 @@ Retry the last core, or enter the address and authentication token of another on
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-189"/>
+        <location line="-192"/>
         <source>Available parts: %1</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4763,11 +4833,22 @@ Retry the last core, or enter the address and authentication token of another on
     </message>
     <message>
         <location line="+1"/>
+        <location line="+5"/>
         <source>Unknown</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-2"/>
+        <source>Peer IP: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hidden</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Server</source>
         <translation type="unfinished"></translation>
     </message>
@@ -14446,18 +14527,18 @@ Other members see your nick and posts; your node takes part in passing the room&
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+141"/>
-        <location line="+852"/>
+        <location line="+854"/>
         <source>eMule Qt v%1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-662"/>
+        <location line="-664"/>
         <location line="+31"/>
         <source>New Version Available</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+354"/>
+        <location line="+356"/>
         <source>eD2K: Connected (LowID)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -14544,14 +14625,14 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1195"/>
+        <location line="-1197"/>
         <location line="+7"/>
-        <location line="+1191"/>
+        <location line="+1193"/>
         <source>Version Check</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1303"/>
+        <location line="-1305"/>
         <source>Quit eMule Qt</source>
         <translation type="unfinished"></translation>
     </message>
@@ -14619,7 +14700,7 @@ Enable at least one under Options → Connection to connect.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+90"/>
+        <location line="+92"/>
         <source>eMule Version %1 ready</source>
         <translation type="unfinished"></translation>
     </message>
@@ -17143,36 +17224,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3701"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-3707"/>
         <source>Options</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+78"/>
-        <location line="+2582"/>
+        <location line="+2588"/>
         <source>OK</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2581"/>
-        <location line="+2582"/>
+        <location line="-2587"/>
+        <location line="+2588"/>
         <source>Cancel</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2581"/>
-        <location line="+6817"/>
+        <location line="-2587"/>
+        <location line="+6823"/>
         <source>Apply</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6816"/>
+        <location line="-6822"/>
         <source>Help</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+298"/>
-        <location line="+2554"/>
+        <location line="+299"/>
+        <location line="+2559"/>
         <location line="+59"/>
         <location line="+6"/>
         <location line="+4"/>
@@ -17184,7 +17265,7 @@ Download it again?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2669"/>
+        <location line="-2674"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -17194,12 +17275,12 @@ Download it again?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+5703"/>
+        <location line="+5708"/>
         <source>Bandwidth</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5487"/>
+        <location line="-5492"/>
         <source>General options</source>
         <translation type="unfinished"></translation>
     </message>
@@ -17238,38 +17319,38 @@ Download it again?</source>
     <message>
         <location line="-65"/>
         <location line="+66"/>
-        <location line="+3052"/>
+        <location line="+3057"/>
         <location line="+3422"/>
         <source>Usenet</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6535"/>
+        <location line="-6540"/>
         <location line="+63"/>
-        <location line="+6474"/>
-        <location line="+2796"/>
+        <location line="+6479"/>
+        <location line="+2801"/>
         <source>BitTorrent</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-9144"/>
+        <location line="-9154"/>
         <source>User Name</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+6720"/>
+        <location line="+6726"/>
         <source>Language</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6717"/>
+        <location line="-6723"/>
         <source>System Default</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+976"/>
+        <location line="+981"/>
         <location line="+451"/>
         <location line="+548"/>
         <location line="+300"/>
@@ -17277,7 +17358,7 @@ Download it again?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2272"/>
+        <location line="-2277"/>
         <source>Bring to front on link click</source>
         <translation type="unfinished"></translation>
     </message>
@@ -17369,25 +17450,25 @@ Download it again?</source>
     <message>
         <location line="+8"/>
         <location line="+40"/>
-        <location line="+6597"/>
+        <location line="+6603"/>
         <source>Core</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6610"/>
+        <location line="-6616"/>
         <source>Address:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1654"/>
+        <location line="+1659"/>
         <location line="+786"/>
         <location line="+432"/>
         <source>Port:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2869"/>
+        <location line="-2874"/>
         <source>authentication token</source>
         <translation type="unfinished"></translation>
     </message>
@@ -17520,22 +17601,22 @@ Are you sure you want to continue?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+10"/>
         <source>Shows advanced entries in context menus and extra details in lists.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+8795"/>
+        <location line="+8800"/>
         <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-8747"/>
+        <location line="-8752"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-360"/>
+        <location line="-365"/>
         <source>Add clicked links without asking</source>
         <translation type="unfinished"></translation>
     </message>
@@ -17545,7 +17626,7 @@ Are you sure you want to continue?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+360"/>
+        <location line="+365"/>
         <source>Disable Known Clients list</source>
         <translation type="unfinished"></translation>
     </message>
@@ -17679,12 +17760,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="-4669"/>
-        <location line="+8500"/>
+        <location line="+8505"/>
         <source>TCP</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-8494"/>
+        <location line="-8499"/>
         <source>UDP</source>
         <translation type="unfinished"></translation>
     </message>
@@ -17773,8 +17854,8 @@ Are you sure you want to continue?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-959"/>
-        <location line="+1059"/>
+        <location line="-964"/>
+        <location line="+1064"/>
         <location line="+1719"/>
         <source>General</source>
         <translation type="unfinished"></translation>
@@ -18221,8 +18302,8 @@ Are you sure you want to continue?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2043"/>
-        <location line="+2156"/>
+        <location line="-2048"/>
+        <location line="+2161"/>
         <source>Server</source>
         <translation type="unfinished"></translation>
     </message>
@@ -18456,7 +18537,7 @@ Torrents from a torznab indexer go to the BitTorrent download folder instead.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+3361"/>
+        <location line="+3366"/>
         <source>Downloading the DB-IP country database...</source>
         <translation type="unfinished"></translation>
     </message>
@@ -18476,7 +18557,7 @@ Torrents from a torznab indexer go to the BitTorrent download folder instead.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-3807"/>
+        <location line="-3812"/>
         <source>Set on the Connection page.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -18511,13 +18592,13 @@ Torrents from a torznab indexer go to the BitTorrent download folder instead.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+2099"/>
+        <location line="+2104"/>
         <source>Could not update the file associations: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-8051"/>
-        <location line="+9217"/>
+        <location line="-8061"/>
+        <location line="+9227"/>
         <location line="+63"/>
         <source>Directories</source>
         <translation type="unfinished"></translation>
@@ -18623,7 +18704,7 @@ Create it?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-7265"/>
+        <location line="-7270"/>
         <source>Connect to help channel</source>
         <translation type="unfinished"></translation>
     </message>
@@ -18978,22 +19059,22 @@ Create it?</source>
     <message>
         <location line="+4"/>
         <location line="+1927"/>
-        <location line="+6106"/>
+        <location line="+6111"/>
         <source>Any</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-8031"/>
+        <location line="-8036"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+7928"/>
+        <location line="+7933"/>
         <source>While the selected interface is not available, all P2P, Usenet and update connections stay closed.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-7863"/>
+        <location line="-7868"/>
         <source>Use IPv6 privacy address</source>
         <translation type="unfinished"></translation>
     </message>
@@ -19035,10 +19116,10 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1758"/>
+        <location line="-1763"/>
         <location line="+23"/>
         <location line="+7"/>
-        <location line="+1981"/>
+        <location line="+1986"/>
         <source>Connection</source>
         <translation type="unfinished"></translation>
     </message>
@@ -19479,7 +19560,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-3302"/>
+        <location line="-3307"/>
         <source>Display</source>
         <translation type="unfinished"></translation>
     </message>
@@ -19621,7 +19702,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
     </message>
     <message>
         <location line="+2"/>
-        <location line="+4777"/>
+        <location line="+4782"/>
         <source>Torrents</source>
         <translation type="unfinished"></translation>
     </message>
@@ -20410,7 +20491,7 @@ Auto follows the upload capacity: 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+3664"/>
+        <location line="+3669"/>
         <location line="+5"/>
         <location line="+18"/>
         <location line="+13"/>
@@ -20474,8 +20555,8 @@ Auto follows the upload capacity: 4 below 4 Mbit/s, 8 below 20 Mbit/s, 16 below 
         </translation>
     </message>
     <message>
-        <location line="-9478"/>
-        <location line="+4248"/>
+        <location line="-9488"/>
+        <location line="+4253"/>
         <location line="+395"/>
         <location line="+541"/>
         <source>Indexers</source>
@@ -20605,15 +20686,15 @@ Every page is an API call against the allowance your account has, so this is a s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4403"/>
-        <location line="+4411"/>
+        <location line="-4408"/>
+        <location line="+4416"/>
         <location line="+325"/>
         <location line="+277"/>
         <source>Feeds</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5615"/>
+        <location line="-5621"/>
         <source>Search options</source>
         <translation type="unfinished"></translation>
     </message>
@@ -20624,7 +20705,7 @@ Enter: next page, Esc: clear</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+1054"/>
+        <location line="+1055"/>
         <source>Show icon in system tray</source>
         <translation type="unfinished"></translation>
     </message>
@@ -20669,7 +20750,17 @@ Enter: next page, Esc: clear</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+110"/>
+        <location line="+30"/>
+        <source>Resolve downloaders&apos; hostnames</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Show resolved hostnames instead of IP addresses in client lists. Keep the IP address when no hostname is found.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+83"/>
         <source>Skin:</source>
         <translation type="unfinished"></translation>
     </message>
@@ -21312,7 +21403,7 @@ The Details window lets you choose the files either way.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+2414"/>
+        <location line="+2419"/>
         <source>This interface has no default route (split-tunnel VPN?): servers and peers outside its subnets are unreachable. Route all traffic through it, or choose another interface.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -21322,7 +21413,7 @@ The Details window lets you choose the files either way.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-3999"/>
+        <location line="-4004"/>
         <source>Active downloads:</source>
         <translation type="unfinished"></translation>
     </message>
@@ -21404,7 +21495,7 @@ The Details window lets you choose the files either way.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+3586"/>
+        <location line="+3591"/>
         <source>UDP is disabled in the config file (udpPort: 0)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -21414,7 +21505,7 @@ The Details window lets you choose the files either way.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-3586"/>
+        <location line="-3591"/>
         <source>Disabled</source>
         <translation type="unfinished"></translation>
     </message>
@@ -21730,7 +21821,7 @@ The Details window lets you choose the files either way.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+314"/>
+        <location line="+315"/>
         <source>Proxy settings will only apply to new connections.
 Restart eMule for all connections to use the new proxy settings.
 
@@ -21738,7 +21829,7 @@ News server connections switch over immediately.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+124"/>
+        <location line="+128"/>
         <source>Theme</source>
         <translation type="unfinished"></translation>
     </message>
@@ -21758,8 +21849,8 @@ News server connections switch over immediately.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-7036"/>
-        <location line="+7469"/>
+        <location line="-7046"/>
+        <location line="+7479"/>
         <source>Web Interface</source>
         <translation type="unfinished"></translation>
     </message>
@@ -21885,18 +21976,18 @@ Rehash all shared files now?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-8800"/>
-        <location line="+2811"/>
+        <location line="-8810"/>
+        <location line="+2816"/>
         <location line="+1087"/>
         <location line="+164"/>
         <location line="+1761"/>
         <location line="+406"/>
-        <location line="+2487"/>
+        <location line="+2492"/>
         <source>Remove</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-7160"/>
+        <location line="-7165"/>
         <source>New eMule Qt version detected</source>
         <translation type="unfinished"></translation>
     </message>
@@ -22093,12 +22184,12 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <location line="+1087"/>
         <location line="+164"/>
         <location line="+2102"/>
-        <location line="+2547"/>
+        <location line="+2552"/>
         <source>Add</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2490"/>
+        <location line="-2495"/>
         <source>Edit Value</source>
         <translation type="unfinished"></translation>
     </message>
@@ -22108,8 +22199,8 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6698"/>
-        <location line="+6902"/>
+        <location line="-6703"/>
+        <location line="+6908"/>
         <source>Proxy</source>
         <translation type="unfinished"></translation>
     </message>
@@ -22124,7 +22215,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+48"/>
+        <location line="+52"/>
         <source>Icons</source>
         <translation type="unfinished"></translation>
     </message>
@@ -29218,12 +29309,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <location line="-792"/>
         <location line="+309"/>
         <location line="+525"/>
-        <location line="+1463"/>
+        <location line="+1470"/>
         <source>Pause</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2347"/>
+        <location line="-2354"/>
         <location line="+359"/>
         <location line="+19"/>
         <source>Priority (Download)</source>
@@ -29231,69 +29322,69 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="-349"/>
-        <location line="+2304"/>
-        <location line="+196"/>
+        <location line="+2311"/>
+        <location line="+198"/>
         <source>Low</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2499"/>
-        <location line="+2303"/>
-        <location line="+197"/>
+        <location line="-2508"/>
+        <location line="+2310"/>
+        <location line="+199"/>
         <source>Normal</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2499"/>
-        <location line="+2302"/>
-        <location line="+198"/>
+        <location line="-2508"/>
+        <location line="+2309"/>
+        <location line="+200"/>
         <source>High</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2496"/>
-        <location line="+2500"/>
+        <location line="-2505"/>
+        <location line="+2509"/>
         <source>Very Low</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2498"/>
-        <location line="+2500"/>
+        <location line="-2507"/>
+        <location line="+2509"/>
         <source>Very High</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2498"/>
-        <location line="+2501"/>
+        <location line="-2507"/>
+        <location line="+2510"/>
         <source>Auto</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2481"/>
+        <location line="-2490"/>
         <location line="+300"/>
         <location line="+531"/>
-        <location line="+1459"/>
+        <location line="+1466"/>
         <source>Stop</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2281"/>
+        <location line="-2288"/>
         <location line="+291"/>
         <location line="+537"/>
-        <location line="+1455"/>
+        <location line="+1462"/>
         <source>Resume</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1992"/>
+        <location line="-1999"/>
         <location line="+543"/>
-        <location line="+1451"/>
+        <location line="+1458"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2243"/>
+        <location line="-2250"/>
         <location line="+247"/>
         <location line="+14"/>
         <source>Preview with</source>
@@ -29316,14 +29407,14 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1575"/>
+        <location line="+1582"/>
         <location line="+1"/>
         <location line="+10"/>
         <source>Import parts to file...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1581"/>
+        <location line="-1588"/>
         <source>Mass Rename...</source>
         <translation type="unfinished"></translation>
     </message>
@@ -29339,12 +29430,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1475"/>
+        <location line="+1482"/>
         <source>Source Limit...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1472"/>
+        <location line="-1479"/>
         <source>Swap All A4AF Sources to This File</source>
         <translation type="unfinished"></translation>
     </message>
@@ -29398,7 +29489,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location line="+245"/>
+        <location line="+252"/>
         <source>Download %n file(s) under the anonymous ed3k key from now on?
 
 The sources are asked again through other nodes; queue places are lost.</source>
@@ -29479,7 +29570,7 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+204"/>
+        <location line="+206"/>
         <source>Copy Address</source>
         <translation type="unfinished"></translation>
     </message>
@@ -29581,28 +29672,28 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2969"/>
+        <location line="-2978"/>
         <location line="+264"/>
         <location line="+548"/>
-        <location line="+685"/>
+        <location line="+692"/>
         <source>Open File</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1488"/>
+        <location line="-1495"/>
         <location line="+2"/>
         <location line="+253"/>
         <location line="+14"/>
         <location line="+548"/>
-        <location line="+728"/>
+        <location line="+735"/>
         <source>Preview</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1504"/>
+        <location line="-1511"/>
         <location line="+213"/>
         <location line="+15"/>
-        <location line="+2216"/>
+        <location line="+2225"/>
         <location line="+18"/>
         <location line="+123"/>
         <location line="+16"/>
@@ -29610,7 +29701,7 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2592"/>
+        <location line="-2601"/>
         <source>Comments...</source>
         <translation type="unfinished"></translation>
     </message>
@@ -29627,14 +29718,14 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+2877"/>
+        <location line="+2886"/>
         <source>Paste eD2K Links</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2842"/>
+        <location line="-2851"/>
         <location line="+67"/>
-        <location line="+2218"/>
+        <location line="+2227"/>
         <location line="+17"/>
         <location line="+113"/>
         <location line="+93"/>
@@ -29642,7 +29733,7 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2500"/>
+        <location line="-2509"/>
         <source>Search Related Files</source>
         <translation type="unfinished"></translation>
     </message>
@@ -29660,7 +29751,7 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+1306"/>
+        <location line="+1313"/>
         <source>Uploading</source>
         <translation type="unfinished"></translation>
     </message>
@@ -29680,13 +29771,13 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1385"/>
-        <location line="+1452"/>
+        <location line="-1392"/>
+        <location line="+1459"/>
         <source>Priority</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1998"/>
+        <location line="-2005"/>
         <location line="+629"/>
         <source>(Unassign)</source>
         <translation type="unfinished"></translation>
@@ -29722,7 +29813,7 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+1297"/>
+        <location line="+1304"/>
         <location line="+7"/>
         <source>Downloads (%1)</source>
         <translation type="unfinished"></translation>
@@ -29738,7 +29829,7 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+257"/>
+        <location line="+259"/>
         <location line="+133"/>
         <source>Add To Friends</source>
         <translation type="unfinished"></translation>
@@ -29756,7 +29847,7 @@ The sources then see this node&apos;s address; queue places are lost.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-512"/>
+        <location line="-514"/>
         <source>Uploading (%1)</source>
         <translation type="unfinished"></translation>
     </message>

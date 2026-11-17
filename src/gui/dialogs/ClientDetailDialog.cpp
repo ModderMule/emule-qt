@@ -9,6 +9,8 @@
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QHostAddress>
+#include <QHostInfo>
 #include <QLabel>
 #include <QTabWidget>
 #include <QVBoxLayout>
@@ -16,6 +18,7 @@
 #include <algorithm>
 #include <memory>
 
+#include "app/UiState.h"
 #include "net/Address.h"
 #include "prefs/Preferences.h"
 #include "app/SkinIcons.h"
@@ -149,6 +152,12 @@ ClientDetailDialog::ClientDetailDialog(const QCborMap& d, QWidget* parent)
     ClientDetailDialog::setDetails(d);
 }
 
+ClientDetailDialog::~ClientDetailDialog()
+{
+    for (const int id : std::as_const(m_hostLookups))
+        QHostInfo::abortHostLookup(id);
+}
+
 // ── re-target ──────────────────────────────────────────────────────────
 
 void ClientDetailDialog::setDetails(const QCborMap& d)
@@ -256,6 +265,7 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
         const QString peerIp = str(d, QLatin1StringView("addr"));
         addGridRow(grid, 6, 0, tr("Peer IP"), peerIp.isEmpty() ? tr("Unknown") : peerIp,
                    tr("Peer connection address (IPv4 or IPv6)."), 3);
+        addHostnameRow(grid, 7, peerIp);
         addGridRow(grid, 4, 0, tr("Kad"), kadConn ? tr("Connected") : tr("Disconnected"),
                    tr("Whether the client told us it is connected to Kad (it sent a Kad port)."));
 
@@ -576,6 +586,8 @@ QWidget* ClientDetailDialog::buildEd3kContent(const QCborMap& d)
         addGridRow(grid, 5, 0, tr("Peer IP"), anonymous ? tr("Hidden")
                    : peerIp.isEmpty() ? tr("Unknown") : peerIp,
                    tr("Peer connection address (IPv4 or IPv6)."), 3);
+        // the anonymous queue never tells an address
+        addHostnameRow(grid, 6, anonymous ? QString() : peerIp);
         addGridRow(grid, 2, 0, tr("Software"), str(d, QLatin1StringView("software")),
                    tr("Client program and version from its hello."));
         // Hello.caps bit ED2K (§2): it speaks eD2K too
@@ -680,6 +692,42 @@ QWidget* ClientDetailDialog::buildEd3kContent(const QCborMap& d)
 
     mainLayout->addStretch();
     return page;
+}
+
+void ClientDetailDialog::addHostnameRow(QGridLayout* grid, int row, const QString& addr)
+{
+    if (!theUiState.resolvePeerHostnames() || QHostAddress(addr).isNull())
+        return;
+    addGridRow(grid, row, 0, tr("Hostname"), hostnameText(addr),
+               tr("Name the peer's IP address resolves to (reverse DNS)."), 3);
+    // found again when the lookup finishes
+    if (auto* item = grid->itemAtPosition(row, 1); item && item->widget()) {
+        item->widget()->setObjectName(QStringLiteral("peerHostname"));
+        item->widget()->setProperty("peerAddr", addr);
+    }
+}
+
+QString ClientDetailDialog::hostnameText(const QString& addr)
+{
+    if (const auto it = m_hostnames.constFind(addr); it != m_hostnames.cend())
+        return it->isEmpty() ? tr("Not found") : *it;
+    if (!m_hostLookups.contains(addr)) {
+        const int id = QHostInfo::lookupHost(addr, this, [this, addr](const QHostInfo& info) {
+            m_hostLookups.remove(addr);
+            // Qt returns the IP itself when there is no PTR record
+            const bool found = info.error() == QHostInfo::NoError
+                && QHostAddress(info.hostName()).isNull();
+            m_hostnames.insert(addr, found ? info.hostName() : QString());
+            if (!m_content)
+                return;
+            for (auto* label : m_content->findChildren<QLabel*>(QStringLiteral("peerHostname"))) {
+                if (label->property("peerAddr").toString() == addr)
+                    label->setText(hostnameText(addr));
+            }
+        });
+        m_hostLookups.insert(addr, id);
+    }
+    return tr("Resolving…");
 }
 
 } // namespace eMule
