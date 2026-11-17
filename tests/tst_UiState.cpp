@@ -23,6 +23,7 @@ private slots:
 
     void roundTrip_searchAndTransferKeys();
     void fallbacks_whenNeverSaved();
+    void resolvePeerHostnames_roundTrip();
     void language_roundTripAndFallback();
     void legacyStore_importedThenRemoved();
     void legacyStore_yamlValueWins();
@@ -63,6 +64,24 @@ void tst_UiState::roundTrip_searchAndTransferKeys()
     QCOMPARE(r.searchHistory(), (QStringList{QStringLiteral("ubuntu"), QStringLiteral("a, b: \"c\"")}));
     QCOMPARE(r.transferTopView(9), 2);
     QCOMPARE(r.transferBottomView(9), 3);
+}
+
+void tst_UiState::resolvePeerHostnames_roundTrip()
+{
+    QTemporaryDir cfg;
+    UiState state;
+    state.load(cfg.path());
+    QVERIFY(!state.resolvePeerHostnames());
+    state.setResolvePeerHostnames(true);
+    state.save();
+    UiState loaded;
+    loaded.load(cfg.path());
+    QVERIFY(loaded.resolvePeerHostnames());
+    loaded.setResolvePeerHostnames(false);
+    loaded.save();
+    UiState disabled;
+    disabled.load(cfg.path());
+    QVERIFY(!disabled.resolvePeerHostnames());
 }
 
 void tst_UiState::fallbacks_whenNeverSaved()

@@ -589,6 +589,8 @@ void MainWindow::showOptionsDialog(int page)
     if (page >= 0 && page < OptionsDialog::PageCount)
         dlg.selectPage(page);
     connect(&dlg, &OptionsDialog::changeSkinRequested, this, &MainWindow::openSkinBrowser);
+    connect(&dlg, &OptionsDialog::peerHostnameResolutionChanged,
+            m_transferPanel, &TransferPanel::applyDisplayOptions);
     connect(&dlg, &OptionsDialog::testNotificationRequested, this, [this](const QString& soundFile) {
         // MFC IDS_MAIN_READY
         showNotification(QStringLiteral("eMule Qt"),

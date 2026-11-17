@@ -290,6 +290,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_useAutoCompletionCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_useOriginalIconsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showCountryFlagsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_resolvePeerHostnamesCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_geoIpSourceCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
     connect(m_geoIpAccountEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
     connect(m_geoIpLicenseEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
@@ -1331,6 +1332,11 @@ QWidget* OptionsDialog::createDisplayPage()
     m_useOriginalIconsCheck = new QCheckBox(tr("Use original eMule icons"), page);
     layout->addWidget(m_useOriginalIconsCheck);
 
+    m_resolvePeerHostnamesCheck = new QCheckBox(tr("Resolve downloaders' hostnames"), page);
+    m_resolvePeerHostnamesCheck->setToolTip(
+        tr("Show resolved hostnames instead of IP addresses in client lists. "
+           "Keep the IP address when no hostname is found."));
+    layout->addWidget(m_resolvePeerHostnamesCheck);
     m_showExtControlsCheck = new QCheckBox(tr("Show more controls (advanced mode controls)"), page);
     m_showExtControlsCheck->setToolTip(
         tr("Shows advanced entries in context menus and extra details in lists."));
@@ -7524,6 +7530,7 @@ void OptionsDialog::loadSettings()
     m_useOriginalIconsCheck->setChecked(thePrefs.useOriginalIcons());
     m_initialUseOriginalIcons = thePrefs.useOriginalIcons();
     m_showCountryFlagsCheck->setChecked(theUiState.showCountryFlags());
+    m_resolvePeerHostnamesCheck->setChecked(theUiState.resolvePeerHostnames());
 
     // Display - appearance
     m_colorSchemeCombo->setCurrentIndex(
@@ -7756,6 +7763,10 @@ void OptionsDialog::saveSettings()
     if (m_showCountryFlagsCheck->isChecked() != theUiState.showCountryFlags()) {
         theUiState.setShowCountryFlags(m_showCountryFlagsCheck->isChecked());
         CountryFlags::setSettings(m_showCountryFlagsCheck->isChecked());
+    }
+    if (m_resolvePeerHostnamesCheck->isChecked() != theUiState.resolvePeerHostnames()) {
+        theUiState.setResolvePeerHostnames(m_resolvePeerHostnamesCheck->isChecked());
+        emit peerHostnameResolutionChanged(theUiState.resolvePeerHostnames());
     }
     if (m_useOriginalIconsCheck->isChecked() != m_initialUseOriginalIcons) {
         QMessageBox::information(this, tr("Icons"),

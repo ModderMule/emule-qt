@@ -13,6 +13,7 @@
 #include <QDirIterator>
 #include <QHeaderView>
 #include <QStandardItemModel>
+#include <QSignalSpy>
 #include <QTest>
 
 using namespace eMule;
@@ -34,6 +35,8 @@ private slots:
     void sharedListColumn_hiddenByDefaultAndExtOnly();
     void clientModel_transferAndRatioColumns();
     void clientModel_peerIp();
+    void clientModel_hostnameEligibility();
+    void clientModel_hostnameSurvivesRefresh();
     void restoreHeader_keepsLayoutWhenColumnAppended();
     void delegate_widensComposedDecoration();
 };
@@ -293,6 +296,71 @@ void tst_CountryFlags::clientModel_peerIp()
         const auto ext = model.extColumns();
         QVERIFY(std::ranges::find(ext, col) == ext.end());
     }
+}
+
+void tst_CountryFlags::clientModel_hostnameEligibility()
+{
+    ClientListModel model(ClientListMode::KnownClients);
+    ClientRow peer;
+    QVERIFY(!model.canResolveHostname(peer));
+    for (const auto* invalid : {"example.com", "0.0.0.0", "::", "239.1.2.3", "255.255.255.255"}) {
+        peer.addr = QString::fromLatin1(invalid);
+        QVERIFY(!model.canResolveHostname(peer));
+    }
+    for (const auto* address : {"192.0.2.1", "2001:db8::1"}) {
+        peer.addr = QString::fromLatin1(address);
+        QVERIFY(model.canResolveHostname(peer));
+    }
+    peer.anonymous = true;
+    QVERIFY(!model.canResolveHostname(peer));
+    peer.anonymous = false;
+    peer.isUrl = true;
+    QVERIFY(!model.canResolveHostname(peer));
+    peer.isUrl = false;
+    peer.network = ClientNetwork::Hoster;
+    QVERIFY(!model.canResolveHostname(peer));
+    peer.network = ClientNetwork::Usenet;
+    QVERIFY(!model.canResolveHostname(peer));
+    peer.network = ClientNetwork::Bt;
+    QVERIFY(model.canResolveHostname(peer));
+}
+
+void tst_CountryFlags::clientModel_hostnameSurvivesRefresh()
+{
+    ClientListModel model(ClientListMode::KnownClients);
+    ClientRow peer, other;
+    peer.addr = QStringLiteral("127.0.0.1");
+    other.addr = QStringLiteral("192.0.2.1");
+    other.anonymous = true; // never query an external address in this test
+    model.setClients({peer});
+    QCOMPARE(model.index(0, model.peerIpColumn()).data().toString(), peer.addr);
+    QVERIFY(model.canResolveHostname(peer)); // off by default: no lookup was started
+    model.setResolveHostnames(true);
+    QVERIFY(!model.canResolveHostname(peer)); // duplicate queries are suppressed
+    QVERIFY(model.index(0, model.peerIpColumn()).data(Qt::ToolTipRole).toString().contains(QStringLiteral("resolving")));
+    model.setClients({other, peer}); // a refresh moves the requested peer
+    QSignalSpy changed(&model, &QAbstractItemModel::dataChanged);
+    QTRY_VERIFY_WITH_TIMEOUT(!changed.isEmpty(), 10000);
+    QCOMPARE(changed.last().at(0).value<QModelIndex>().row(), 1);
+    QCOMPARE(model.index(0, model.peerIpColumn()).data().toString(), QStringLiteral("Hidden"));
+    QVERIFY(model.index(1, model.peerIpColumn()).data(Qt::ToolTipRole).toString().contains(peer.addr));
+    const QString resolved = model.index(1, model.peerIpColumn()).data().toString();
+    QCOMPARE(model.index(1, model.peerIpColumn()).data(Qt::UserRole).toString(), resolved);
+    QVERIFY(!model.canResolveHostname(peer)); // success and failure both cached
+    model.setResolveHostnames(false);
+    QCOMPARE(model.index(1, model.peerIpColumn()).data().toString(), peer.addr);
+    QCOMPARE(model.headerData(model.peerIpColumn(), Qt::Horizontal).toString(), QStringLiteral("Peer IP"));
+    model.setResolveHostnames(true);
+    QCOMPARE(model.index(1, model.peerIpColumn()).data().toString(), resolved);
+    QCOMPARE(model.headerData(model.peerIpColumn(), Qt::Horizontal).toString(), QStringLiteral("Hostname / IP"));
+
+    ClientListModel cancelled(ClientListMode::Downloading);
+    cancelled.setClients({peer});
+    cancelled.setResolveHostnames(true);
+    cancelled.setResolveHostnames(false);
+    QTest::qWait(20);
+    QCOMPARE(cancelled.index(0, cancelled.peerIpColumn()).data().toString(), peer.addr);
+    QVERIFY(cancelled.canResolveHostname(peer)); // the cancelled callback cannot populate the cache
 }
 
 void tst_CountryFlags::restoreHeader_keepsLayoutWhenColumnAppended()

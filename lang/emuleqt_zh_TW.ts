@@ -3960,6 +3960,14 @@ On queue: it waits for one, at the place shown.</source>
 <context>
     <name>eMule::ClientListModel</name>
     <message>
+        <source>Hostname / IP</source>
+        <translation>主機名稱 / IP</translation>
+    </message>
+    <message>
+        <source>Peer IP</source>
+        <translation>IP 位址</translation>
+    </message>
+    <message>
         <location filename="../src/gui/controls/ClientListModel.cpp" line="+143"/>
         <source>Country</source>
         <translation>國家</translation>
@@ -18201,6 +18209,14 @@ Are you sure you want to continue?</source>
         <location line="+2"/>
         <source>Show country flags</source>
         <translation>顯示國旗</translation>
+    </message>
+    <message>
+        <source>Resolve downloaders' hostnames</source>
+        <translation>解析下載者的主機名稱</translation>
+    </message>
+    <message>
+        <source>Show resolved hostnames instead of IP addresses in client lists. Keep the IP address when no hostname is found.</source>
+        <translation>在使用者清單中以解析出的主機名稱取代 IP 位址。查不到主機名稱時保留 IP 位址。</translation>
     </message>
     <message>
         <location line="+10"/>

@@ -282,6 +282,12 @@ public:
 
     /// Country flag next to the client/server icon (IP2Country). Display-only.
     [[nodiscard]] bool showCountryFlags() const { return m_showCountryFlags; }
+    [[nodiscard]] bool resolvePeerHostnames() const { return m_resolvePeerHostnames; }
+    void setResolvePeerHostnames(bool on)
+    {
+        m_resolvePeerHostnames = on;
+        scheduleSave();
+    }
     void setShowCountryFlags(bool on)
     {
         m_showCountryFlags = on;
@@ -584,6 +590,7 @@ private:
     int m_startCount = 0;
     bool m_lowIdHintDisabled = false;
     bool m_showCountryFlags = true;
+    bool m_resolvePeerHostnames = false;
     bool m_showTaskbarProgress = true;
     bool m_showDownloadStatusFilter = false;
     bool m_downloadSortHistory = false;

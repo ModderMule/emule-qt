@@ -7,6 +7,7 @@
 /// Known Clients) by switching the column set based on the mode.
 
 #include <QByteArray>
+#include <QQueue>
 #include <QMetaType>
 #include <QString>
 
@@ -112,6 +113,10 @@ public:
     static constexpr int FileSizeRole = Qt::UserRole + 3;
 
     explicit ClientListModel(ClientListMode mode, QObject* parent = nullptr);
+    ~ClientListModel() override;
+
+    [[nodiscard]] bool canResolveHostname(const ClientRow& client) const;
+    void setResolveHostnames(bool enabled);
 
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     [[nodiscard]] QVariant headerData(int section, Qt::Orientation orientation,
@@ -124,6 +129,7 @@ public:
         syncRows(std::move(clients), [](const ClientRow& r) -> QString {
             return r.userHash + u'|' + r.addr + u':' + QString::number(r.port);
         });
+        refreshHostnames();
     }
 
     [[nodiscard]] int clientCount() const { return count(); }
@@ -162,6 +168,14 @@ private:
     [[nodiscard]] static QString lowIdText(const ClientRow& c);
 
     ClientListMode m_mode;
+    bool m_resolveHostnames = false;
+    quint64 m_hostnameGeneration = 0;
+    QHash<QString, QString> m_hostnames;
+    QHash<QString, int> m_hostnameLookups;
+    QQueue<QString> m_hostnameQueue;
+    void refreshHostnames();
+    void startHostnameLookups();
+    void hostnameChanged(const QString& address);
 };
 
 } // namespace eMule
