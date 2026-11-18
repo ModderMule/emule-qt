@@ -80,8 +80,8 @@ protected:
     /// @p column is missing from the layout saved under @p stateKey (or none is saved).
     /// Ask before binding the columns: binding saves the layout.
     [[nodiscard]] static bool isNewColumn(const QString& stateKey, int column);
-    /// Show contacts column @p column right after @p after, @p width wide.
-    void placeContactsColumn(int column, int after, int width);
+    /// Show column @p column of @p view right after @p after, @p width wide.
+    static void placeColumn(QTreeView* view, int column, int after, int width);
     /// Title of the shown outgoing lookup; applied while the lookup graph shows.
     void setLookupTabTitle(const QString& lookupTitle);
     /// "Outgoing Searches (n)" tab title.

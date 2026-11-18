@@ -15038,9 +15038,14 @@ TCP 連接埠：%3</translation>
         <translation>來自</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+8"/>
         <source>Answer</source>
         <translation>回應</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>IP</source>
+        <translation>IP</translation>
     </message>
     <message>
         <location line="+63"/>
@@ -15405,7 +15410,7 @@ TCP 連接埠：%3</translation>
     <message>
         <location line="+10"/>
         <location line="+2"/>
-        <location line="+268"/>
+        <location line="+278"/>
         <source>▸ Search Details</source>
         <translation>▸ 搜尋詳細資料</translation>
     </message>

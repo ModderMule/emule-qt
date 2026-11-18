@@ -92,7 +92,7 @@ Ed3kKadPanel::Ed3kKadPanel(QWidget* parent)
                               {Ed3kKadContactsModel::ColCountry});
     // IP (not MFC) after Node ID; also into a layout saved before it
     if (newIpColumn)
-        placeContactsColumn(Ed3kKadContactsModel::ColIp, Ed3kKadContactsModel::ColId, 220);
+        placeColumn(m_contactsView, Ed3kKadContactsModel::ColIp, Ed3kKadContactsModel::ColId, 220);
     m_contactsModel->setResolveHostnames(theUiState.resolvePeerHostnames());
     CountryFlags::bindFlagColumn(contactsView);
     m_contactsView->setFont(QFont(QStringLiteral("Courier New"), scaledPointSize(9)));

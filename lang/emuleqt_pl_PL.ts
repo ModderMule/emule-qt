@@ -15162,9 +15162,14 @@ Port TCP: %3</translation>
         <translation>Od</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+8"/>
         <source>Answer</source>
         <translation>Odpowiedź</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>IP</source>
+        <translation>IP</translation>
     </message>
     <message>
         <location line="+63"/>
@@ -15537,7 +15542,7 @@ Port TCP: %3</translation>
     <message>
         <location line="+10"/>
         <location line="+2"/>
-        <location line="+268"/>
+        <location line="+278"/>
         <source>▸ Search Details</source>
         <translation>▸ Szczegóły wyszukiwania</translation>
     </message>

@@ -15481,9 +15481,14 @@ Porta TCP: %3</translation>
         <translation>Da</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+8"/>
         <source>Answer</source>
         <translation>Risposta</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>IP</source>
+        <translation>IP</translation>
     </message>
     <message>
         <location line="+63"/>
@@ -15868,7 +15873,7 @@ Porta TCP: %3</translation>
     <message>
         <location line="+10"/>
         <location line="+2"/>
-        <location line="+268"/>
+        <location line="+278"/>
         <source>▸ Search Details</source>
         <translation>▸ Dettagli ricerca</translation>
     </message>

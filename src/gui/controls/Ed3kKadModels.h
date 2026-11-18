@@ -91,13 +91,14 @@ public:
 };
 
 /// Requests other nodes sent us, newest first (rows of ops::kadIncoming): Time, Type, Key,
-/// Name, From, Answer. Not MFC.
+/// Name, From, Answer; ed3k adds IP (added last; the panel shows it before Answer). From:
+/// flag + ip:port (eD2K) or flag + node ID (ed3k). Not MFC.
 class KadIncomingModel : public Ed3kKadTableModel {
     Q_OBJECT
 
 public:
     enum class Network { Ed2k, Ed3k };
-    enum Column { ColTime = 0, ColType, ColKey, ColName, ColFrom, ColAnswer };
+    enum Column { ColTime = 0, ColType, ColKey, ColName, ColFrom, ColAnswer, ColIp /* ed3k only */ };
     explicit KadIncomingModel(Network network, QObject* parent = nullptr);
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
 

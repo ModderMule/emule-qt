@@ -15418,9 +15418,14 @@ TCP 端口：%3</translation>
         <translation>来自</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+8"/>
         <source>Answer</source>
         <translation>回答</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>IP</source>
+        <translation>IP</translation>
     </message>
     <message>
         <location line="+63"/>
@@ -15801,7 +15806,7 @@ TCP 端口：%3</translation>
     <message>
         <location line="+10"/>
         <location line="+2"/>
-        <location line="+268"/>
+        <location line="+278"/>
         <source>▸ Search Details</source>
         <translation>▸ 搜索详情</translation>
     </message>

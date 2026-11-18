@@ -378,7 +378,7 @@ QWidget* Ed2kKadPanel::createContactsPanel()
     contactsView->bindColumns(QStringLiteral("kadContacts"), {110, 200, 200, 100, 200}, {KadContactsModel::ColCountry});
     // IP (not MFC) after ID; also into a layout saved before it, past the wide Distance
     if (newIpColumn)
-        placeContactsColumn(KadContactsModel::ColIp, KadContactsModel::ColClientId, 200);
+        placeColumn(m_contactsView, KadContactsModel::ColIp, KadContactsModel::ColClientId, 200);
     m_contactsModel->setResolveHostnames(theUiState.resolvePeerHostnames());
     CountryFlags::bindFlagColumn(contactsView);
 

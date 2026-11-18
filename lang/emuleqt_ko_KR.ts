@@ -15418,9 +15418,14 @@ TCP 포트: %3</translation>
         <translation>보낸 곳</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+8"/>
         <source>Answer</source>
         <translation>응답</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>IP</source>
+        <translation>IP</translation>
     </message>
     <message>
         <location line="+63"/>
@@ -15801,7 +15806,7 @@ TCP 포트: %3</translation>
     <message>
         <location line="+10"/>
         <location line="+2"/>
-        <location line="+268"/>
+        <location line="+278"/>
         <source>▸ Search Details</source>
         <translation>▸ 검색 상세</translation>
     </message>

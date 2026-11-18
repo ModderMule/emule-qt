@@ -358,14 +358,20 @@ KadIncomingModel::KadIncomingModel(Network network, QObject* parent)
         {tr("Type"), [typeText](const QCborMap& m) { return typeText(int(number(m, "type"))); }, {}},
         {tr("Key"), [](const QCborMap& m) { return value(m, "target").toUpper(); }, {}},
         {tr("Name"), [](const QCborMap& m) { return value(m, "name"); }, {}},
-        // flag; ed3k adds the node ID (eD2K requests carry none)
+        // flag + ip:port; ed3k: flag + node ID, the address in its own IP column
         {tr("From"),
          [network](const QCborMap& m) {
-             return network == Network::Ed3k ? value(m, "peer").toUpper() : QString();
+             return network == Network::Ed3k ? value(m, "peer").toUpper() : value(m, "addr");
          },
-         [](const QCborMap& m) { return QVariant(value(m, "cc") + value(m, "peer")); }},
+         [network](const QCborMap& m) {
+             return network == Network::Ed3k ? QVariant(value(m, "cc") + value(m, "peer"))
+                                             : QVariant(endpointSortKey(value(m, "addr")));
+         }},
         {tr("Answer"), [](const QCborMap& m) { return answerText(m); }, {}},
     };
+    if (network == Network::Ed3k)
+        m_columns.push_back({tr("IP"), [](const QCborMap& m) { return value(m, "addr"); },
+                             [](const QCborMap& m) { return QVariant(endpointSortKey(value(m, "addr"))); }});
 }
 
 QVariant KadIncomingModel::data(const QModelIndex& index, int role) const
