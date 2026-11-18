@@ -130,29 +130,41 @@ for key in PUBLISH_SSH_USER PUBLISH_SSH_PASS PUBLISH_SSH_HOST PUBLISH_REMOTE_PAT
   [[ -n "${!key}" ]] || die "missing/empty in ${ENV_FILE}: ${key}"
 done
 command -v sshpass >/dev/null || die "sshpass not installed"
-SSH_CMD='sshpass -e ssh -o StrictHostKeyChecking=accept-new -o PubkeyAuthentication=no -o PreferredAuthentications=password,keyboard-interactive'
-REMOTE="${PUBLISH_SSH_USER}@${PUBLISH_SSH_HOST}:${PUBLISH_REMOTE_PATH%/}"
+REMOTE_HOST="${PUBLISH_SSH_USER}@${PUBLISH_SSH_HOST}"
+REMOTE="${REMOTE_HOST}:${PUBLISH_REMOTE_PATH%/}"
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+# one SSH login for the whole run: every rsync rides this master (the host blocks repeated logins);
+# socket in /tmp, the macOS $TMPDIR path is too long for a unix socket
+SOCK_DIR="$(mktemp -d /tmp/ffpub.XXXXXX)"
+SOCK="$SOCK_DIR/s"
+trap 'ssh -o ControlPath="$SOCK" -O exit "$REMOTE_HOST" 2>/dev/null; rm -rf "$WORK" "$SOCK_DIR"' EXIT
+SSHPASS="$PUBLISH_SSH_PASS" sshpass -e ssh -o StrictHostKeyChecking=accept-new -o PubkeyAuthentication=no \
+  -o PreferredAuthentications=password,keyboard-interactive \
+  -o ControlMaster=yes -o ControlPath="$SOCK" -o ControlPersist=600 -fN "$REMOTE_HOST" \
+  || die "SSH login failed"
+SSH_CMD="ssh -o ControlMaster=no -o ControlPath=$SOCK -o BatchMode=yes"
 
+FILES=()
+for p in "${PLATFORMS[@]}"; do FILES+=("$OUT/ffmpeg-${VERSION}-${p}.zip"); done
+echo "Uploading ${#FILES[@]} zips ..."
+rsync -az --ignore-existing -e "$SSH_CMD" "${FILES[@]}" "${REMOTE}/" || die "zip upload failed"
 for p in "${PLATFORMS[@]}"; do
   name="ffmpeg-${VERSION}-${p}.zip"
-  echo "Uploading ${name} ..."
-  SSHPASS="$PUBLISH_SSH_PASS" rsync -az --ignore-existing -e "$SSH_CMD" "$OUT/$name" "${REMOTE}/" || die "upload of $name failed"
   # served as uploaded: clients check size and SHA-256
   want="$(jq -r --arg k "$p" '.downloads[$k].sha256' <<<"$ENTRY")"
   curl -fsSL --retry 3 -o "$WORK/check.zip" "$PUB/${name}?t=$(date +%s)" || die "$name not reachable"
   got="$("$PY" -I -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$WORK/check.zip")"
   [[ "$got" == "$want" ]] || die "served $name differs from the build (an older upload of that name?)"
+  echo "   $name  served hash OK"
 done
 
 echo "Pulling the live manifest ..."
-SSHPASS="$PUBLISH_SSH_PASS" rsync -az -e "$SSH_CMD" "${REMOTE}/emuleqt-version.json" "$WORK/manifest.json" \
+rsync -az -e "$SSH_CMD" "${REMOTE}/emuleqt-version.json" "$WORK/manifest.json" \
   || die "could not download the live manifest"
 jq --argjson e "$ENTRY" '.ffmpeg = $e' "$WORK/manifest.json" > "$WORK/manifest.new"
 mv "$WORK/manifest.new" "$WORK/manifest.json"
 [[ -n "$PUBLISH_LOCAL_JSON" ]] && cp "$WORK/manifest.json" "$PUBLISH_LOCAL_JSON"
 echo "Publishing the manifest ..."
-SSHPASS="$PUBLISH_SSH_PASS" rsync -az -e "$SSH_CMD" "$WORK/manifest.json" "${REMOTE}/emuleqt-version.json" \
+rsync -az -e "$SSH_CMD" "$WORK/manifest.json" "${REMOTE}/emuleqt-version.json" \
   || die "manifest upload failed (the zips are up; re-run)"
 echo "Published ffmpeg ${VERSION} for ${#PLATFORMS[@]} platforms"
