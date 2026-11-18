@@ -247,6 +247,9 @@
     <ClCompile Include="utils\SharedFilesFetch.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\PanelLayout.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\PanelPoller.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -634,6 +637,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="controls\TrayMeterIcon.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\PanelLayout.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\TaskbarProgress.h">
