@@ -12,6 +12,7 @@
 - don't use `git commit` and `git add` unless explicitly instructed
 - keep code comments concise and short. Relax on grammar.
 - when adding new sources: add them to `CMakeLists.txt` and `.vcxproj` files
+- Linux CI builds with GCC 12 (Ubuntu 22.04): avoid C++23 library features it lacks (`std::ranges::contains`, `ranges::to`, `ranges::fold_*`, `views::zip/enumerate/chunk`, `std::print`, `flat_map`); use `std::ranges::find` etc. instead
 
 
 ## GUI
