@@ -170,7 +170,7 @@
 <context>
     <name>Ed3kKadModels</name>
     <message>
-        <location filename="../src/gui/controls/Ed3kKadModels.cpp" line="+31"/>
+        <location filename="../src/gui/controls/Ed3kKadModels.cpp" line="+32"/>
         <source>%1 s</source>
         <translation>%1 秒</translation>
     </message>
@@ -6418,7 +6418,12 @@ Make a new anonymous key?</source>
         <translation>今すぐ</translation>
     </message>
     <message>
-        <location line="+21"/>
+        <location line="+4"/>
+        <source>IP</source>
+        <translation>IP</translation>
+    </message>
+    <message>
+        <location line="+24"/>
         <source>Not connected since restart</source>
         <translation>再起動後に未接続</translation>
     </message>
@@ -14185,7 +14190,16 @@ Other members see your nick and posts; your node takes part in passing the room&
         <translation type="vanished">クライアント ID</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+80"/>
+        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+69"/>
+        <source>%1
+UDP port: %2
+TCP port: %3</source>
+        <translation>%1
+UDP ポート: %2
+TCP ポート: %3</translation>
+    </message>
+    <message>
+        <location line="+18"/>
         <source>Type</source>
         <translation>種類</translation>
     </message>
@@ -14203,6 +14217,11 @@ Other members see your nick and posts; your node takes part in passing the room&
         <location line="+1"/>
         <source>Country</source>
         <translation>国</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>IP</source>
+        <translation>IP</translation>
     </message>
 </context>
 <context>
@@ -24910,7 +24929,7 @@ Kad検索式で使用されるキーワードは最低3文字の長さが必要�
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+78"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+59"/>
         <source>%1 (disabled)</source>
         <translation>%1 (無効)</translation>
     </message>

@@ -174,7 +174,7 @@
 <context>
     <name>Ed3kKadModels</name>
     <message>
-        <location filename="../src/gui/controls/Ed3kKadModels.cpp" line="+31"/>
+        <location filename="../src/gui/controls/Ed3kKadModels.cpp" line="+32"/>
         <source>%1 s</source>
         <translation>%1 с</translation>
     </message>
@@ -6190,7 +6190,12 @@ Make a new anonymous key?</source>
         <translation>сейчас</translation>
     </message>
     <message>
-        <location line="+21"/>
+        <location line="+4"/>
+        <source>IP</source>
+        <translation>IP</translation>
+    </message>
+    <message>
+        <location line="+24"/>
         <source>Not connected since restart</source>
         <translation>Не подключён после перезапуска</translation>
     </message>
@@ -13911,7 +13916,16 @@ Other members see your nick and posts; your node takes part in passing the room&
 <context>
     <name>eMule::KadContactsModel</name>
     <message>
-        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+80"/>
+        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+69"/>
+        <source>%1
+UDP port: %2
+TCP port: %3</source>
+        <translation>%1
+UDP-порт: %2
+TCP-порт: %3</translation>
+    </message>
+    <message>
+        <location line="+18"/>
         <source>Type</source>
         <translation>Тип</translation>
     </message>
@@ -13929,6 +13943,11 @@ Other members see your nick and posts; your node takes part in passing the room&
         <location line="+1"/>
         <source>Country</source>
         <translation>Страна</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>IP</source>
+        <translation>IP</translation>
     </message>
 </context>
 <context>
@@ -24544,7 +24563,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+78"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+59"/>
         <source>%1 (disabled)</source>
         <translation>%1 (отключено)</translation>
     </message>

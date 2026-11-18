@@ -39,6 +39,7 @@ public:
         ColClientId,
         ColDistance,
         ColCountry,          ///< MorphXT IP2Country
+        ColIp,               ///< appended to keep saved layouts; not in MFC
         ColCount
     };
 

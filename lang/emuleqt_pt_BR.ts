@@ -172,7 +172,7 @@
 <context>
     <name>Ed3kKadModels</name>
     <message>
-        <location filename="../src/gui/controls/Ed3kKadModels.cpp" line="+31"/>
+        <location filename="../src/gui/controls/Ed3kKadModels.cpp" line="+32"/>
         <source>%1 s</source>
         <translation>%1 s</translation>
     </message>
@@ -6443,7 +6443,12 @@ Criar uma nova chave anônima?</translation>
         <translation>pendente</translation>
     </message>
     <message>
-        <location line="+21"/>
+        <location line="+4"/>
+        <source>IP</source>
+        <translation>IP</translation>
+    </message>
+    <message>
+        <location line="+24"/>
         <source>Not connected since restart</source>
         <translation>Não conectado desde a reinicialização</translation>
     </message>
@@ -14239,7 +14244,16 @@ Outros membros veem seu nick e suas mensagens; seu nó participa do repasse das 
         <translation type="vanished">ID do cliente</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+80"/>
+        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+69"/>
+        <source>%1
+UDP port: %2
+TCP port: %3</source>
+        <translation>%1
+Porta UDP: %2
+Porta TCP: %3</translation>
+    </message>
+    <message>
+        <location line="+18"/>
         <source>Type</source>
         <translation>Tipo</translation>
     </message>
@@ -14257,6 +14271,11 @@ Outros membros veem seu nick e suas mensagens; seu nó participa do repasse das 
         <location line="+1"/>
         <source>Country</source>
         <translation>País</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>IP</source>
+        <translation>IP</translation>
     </message>
 </context>
 <context>
@@ -24988,7 +25007,7 @@ As palavras-chave usadas em uma pesquisa na rede Kad precisam ter no mínimo 3 c
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+78"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+59"/>
         <source>%1 (disabled)</source>
         <translation>%1 (desativado)</translation>
     </message>

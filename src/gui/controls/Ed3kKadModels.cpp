@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "controls/Ed3kKadModels.h"
 
+#include "utils/AddressSortKey.h"
 #include "utils/CountryFlags.h"
 #include "app/SkinIcons.h"
 
@@ -115,6 +116,13 @@ Ed3kKadContactsModel::Ed3kKadContactsModel(QObject* parent)
              return s > 0 ? ageText(s * 1000) : tr("due");
          },
          [](const QCborMap& m) { return QVariant(number(m, "checkInS")); }},
+        // appended to keep saved layouts; address of the family dialled first
+        {tr("IP"),
+         [](const QCborMap& m) {
+             const QString ip = value(m, "ip");
+             return ip.isEmpty() ? QString() : addressWithPort(ip, static_cast<uint16_t>(number(m, "port")));
+         },
+         [](const QCborMap& m) { return QVariant(addressSortKey(value(m, "ip"), static_cast<uint16_t>(number(m, "port")))); }},
     };
 }
 

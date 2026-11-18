@@ -654,6 +654,9 @@
     <ClInclude Include="utils\ClientStateText.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="utils\AddressSortKey.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\CompleteSourcesText.h">
       <Filter>Header Files</Filter>
     </ClInclude>

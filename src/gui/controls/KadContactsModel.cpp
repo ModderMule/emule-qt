@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "controls/KadContactsModel.h"
+#include "utils/AddressSortKey.h"
 #include "utils/Appearance.h"
 #include "utils/CountryFlags.h"
 #include "app/SkinIcons.h"
@@ -36,6 +37,8 @@ QVariant KadContactsModel::data(const QModelIndex& index, int role) const
             return c.distance;
         case ColCountry:
             return CountryFlags::columnText(c.cc);
+        case ColIp:
+            return c.addr.isEmpty() ? QString() : addressWithPort(c.addr, c.udpPort);
         default:
             break;
         }
@@ -48,6 +51,7 @@ QVariant KadContactsModel::data(const QModelIndex& index, int role) const
         case ColClientId: return c.clientId;
         case ColDistance:  return c.distance;
         case ColCountry:   return CountryFlags::sortKey(c.cc);
+        case ColIp:        return addressSortKey(c.addr, c.udpPort);
         default:          break;
         }
     }
@@ -60,6 +64,9 @@ QVariant KadContactsModel::data(const QModelIndex& index, int role) const
     if (role == Qt::ToolTipRole && (index.column() == ColStatus || index.column() == ColCountry)
         && !c.cc.isEmpty())
         return CountryFlags::tooltip(c.cc);
+
+    if (role == Qt::ToolTipRole && index.column() == ColIp && !c.addr.isEmpty())
+        return tr("%1\nUDP port: %2\nTCP port: %3").arg(c.addr).arg(c.udpPort).arg(c.tcpPort);
 
     if (role == Qt::FontRole && index.column() != ColStatus && index.column() != ColCountry) {
         QFont font;
@@ -81,6 +88,7 @@ QVariant KadContactsModel::headerData(int section, Qt::Orientation orientation, 
     case ColClientId: return tr("ID");
     case ColDistance:  return tr("Distance");
     case ColCountry:   return tr("Country");
+    case ColIp:        return tr("IP");
     default:          return {};
     }
 }

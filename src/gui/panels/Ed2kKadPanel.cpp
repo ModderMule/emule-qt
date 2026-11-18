@@ -363,12 +363,12 @@ QWidget* Ed2kKadPanel::createContactsPanel()
     // Style the header — defaults used on first launch, then overridden by saved state
     auto* header = m_contactsView->header();
     header->setDefaultSectionSize(200);
-    // Type, ID, Distance, Country. Fresh layout: ID first, as MFC
+    // Type, ID, Distance, Country, IP. Fresh layout: ID first, as MFC
     // (srchybrid/KadContactListCtrl.cpp:53-55).
     if (!theUiState.hasHeaderState(QStringLiteral("kadContacts")))
         header->moveSection(KadContactsModel::ColClientId, 0);
     contactsView->setDefaultSort(KadContactsModel::ColStatus, Qt::AscendingOrder);
-    contactsView->bindColumns(QStringLiteral("kadContacts"), {110, 200, 200, 100}, {KadContactsModel::ColCountry});
+    contactsView->bindColumns(QStringLiteral("kadContacts"), {110, 200, 200, 100, 150}, {KadContactsModel::ColCountry});
     CountryFlags::bindFlagColumn(contactsView);
 
     // Compact monospace font for hex/binary display

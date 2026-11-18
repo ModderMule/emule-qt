@@ -438,6 +438,7 @@
     <ClInclude Include="utils\PriorityText.h" />
     <ClInclude Include="utils\Ed3kKeyText.h" />
     <ClInclude Include="utils\ClientStateText.h" />
+    <ClInclude Include="utils\AddressSortKey.h" />
     <ClInclude Include="utils\CompleteSourcesText.h" />
     <ClInclude Include="utils\FileTypeText.h" />
     <ClInclude Include="utils\TooltipDelayStyle.h" />

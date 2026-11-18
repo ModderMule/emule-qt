@@ -172,7 +172,7 @@
 <context>
     <name>Ed3kKadModels</name>
     <message>
-        <location filename="../src/gui/controls/Ed3kKadModels.cpp" line="+31"/>
+        <location filename="../src/gui/controls/Ed3kKadModels.cpp" line="+32"/>
         <source>%1 s</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5960,7 +5960,12 @@ Make a new anonymous key?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+21"/>
+        <location line="+4"/>
+        <source>IP</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+24"/>
         <source>Not connected since restart</source>
         <translation type="unfinished"></translation>
     </message>
@@ -13316,7 +13321,14 @@ Other members see your nick and posts; your node takes part in passing the room&
 <context>
     <name>eMule::KadContactsModel</name>
     <message>
-        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+80"/>
+        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+69"/>
+        <source>%1
+UDP port: %2
+TCP port: %3</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+18"/>
         <source>Type</source>
         <translation type="unfinished"></translation>
     </message>
@@ -13333,6 +13345,11 @@ Other members see your nick and posts; your node takes part in passing the room&
     <message>
         <location line="+1"/>
         <source>Country</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>IP</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -23413,7 +23430,7 @@ The keyword(s) used in a Kad search expression must have a minimum length of 3 c
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+80"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+61"/>
         <location line="+3"/>
         <source>Yes</source>
         <translation type="unfinished"></translation>

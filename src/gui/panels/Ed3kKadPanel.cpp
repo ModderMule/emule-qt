@@ -87,7 +87,7 @@ Ed3kKadPanel::Ed3kKadPanel(QWidget* parent)
     // contactsView->bindColumns(QStringLiteral("ed3kKadContacts2"), {260, 110, 90, 260, 50, 80},
     //                           {Ed3kKadContactsModel::ColCountry});
     // "3": Type column in front, as eD2K Kad
-    contactsView->bindColumns(QStringLiteral("ed3kKadContacts3"), {110, 260, 110, 90, 260, 50, 80},
+    contactsView->bindColumns(QStringLiteral("ed3kKadContacts3"), {110, 260, 110, 90, 260, 50, 80, 220},
                               {Ed3kKadContactsModel::ColCountry});
     CountryFlags::bindFlagColumn(contactsView);
     m_contactsView->setFont(QFont(QStringLiteral("Courier New"), scaledPointSize(9)));

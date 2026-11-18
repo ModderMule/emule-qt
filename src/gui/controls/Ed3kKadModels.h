@@ -47,7 +47,7 @@ class Ed3kKadContactsModel : public Ed3kKadTableModel {
     Q_OBJECT
 
 public:
-    enum Column { ColType = 0, ColId, ColCountry, ColFamily, ColDistance, ColFails, ColCheck };
+    enum Column { ColType = 0, ColId, ColCountry, ColFamily, ColDistance, ColFails, ColCheck, ColIp };
     explicit Ed3kKadContactsModel(QObject* parent = nullptr);
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
 
