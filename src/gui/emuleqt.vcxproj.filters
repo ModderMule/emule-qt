@@ -64,6 +64,18 @@
     <ClCompile Include="dialogs\CoreConnectDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="dialogs\CoreScriptDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\PhonePairDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\qrcodegen\qrcodegen.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\CoreConnectScript.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="controls\CategoryFilterProxy.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -314,6 +326,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="panels\Ed3kOwnSetsView.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="panels\Ed3kRoomMediaView.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="panels\Ed3kRoomTab.cpp">
@@ -735,6 +750,9 @@
     <ClInclude Include="utils\ViewNavigation.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="utils\MenuDump.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\ViewSelection.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -751,6 +769,15 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\Appearance.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\CoreConnectScript.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\qrcodegen\qrcodegen.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\BadgeIcons.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\ColorUtils.h">
@@ -808,6 +835,12 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\CoreConnectDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\CoreScriptDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\PhonePairDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\CategoryFilterProxy.h">
@@ -910,6 +943,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="panels\Ed3kOwnSetsView.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="panels\Ed3kRoomMediaView.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="panels\Ed3kRoomTab.h">

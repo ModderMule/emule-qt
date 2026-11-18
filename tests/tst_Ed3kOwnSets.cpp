@@ -251,7 +251,8 @@ bool tst_Ed3kOwnSets::waitVersion(const QString& id, int timeoutMs)
 void tst_Ed3kOwnSets::aFolderIsPublishedAndFollowed()
 {
     QSignalSpy done(m_own.get(), &Ed3kOwnSets::versionDone);
-    const auto id = m_own->create(QStringLiteral("Holiday"), m_folder, {}, Ed3kOwnSets::Kind::Open);
+    // file-set.md §5.3: the file types suggested to followers, normalised
+    const auto id = m_own->create(QStringLiteral("Holiday"), m_folder, {}, Ed3kOwnSets::Kind::Open, {QStringLiteral("*.BIN"), QStringLiteral("nfo")});
     QVERIFY2(id, qPrintable(id ? QString() : id.error()));
     m_openId = *id;
     QTRY_COMPARE_WITH_TIMEOUT(done.count(), 1, 60000);
@@ -267,6 +268,8 @@ void tst_Ed3kOwnSets::aFolderIsPublishedAndFollowed()
     const auto man = Ed3kSetManifest::parse(readBlob(QDir(QDir(stateDir(m_da.path())).filePath(QStringLiteral("own-sets"))).filePath(m_openId + QStringLiteral(".manifest"))));
     QVERIFY(man);
     QCOMPARE(int(man->files.size()), 2);
+    QCOMPARE(man->exts, (QStringList{QStringLiteral("bin"), QStringLiteral("nfo")}));
+    QCOMPARE(info->exts, (QStringList{QStringLiteral("bin"), QStringLiteral("nfo")}));
     // the set key is a secret file, owner-only
 #ifndef Q_OS_WIN
     const QString key = QDir(m_own->setDir(QString())).filePath(m_openId + QStringLiteral(".key"));
@@ -276,7 +279,7 @@ void tst_Ed3kOwnSets::aFolderIsPublishedAndFollowed()
 
     QVERIFY(m_c.start(m_dc.path(), nodeOf(m_b)));
     QTRY_VERIFY_WITH_TIMEOUT(m_c.session->contactCount() > 0, 20000);
-    const auto cid = m_c.sets->follow(info->link, Ed3kSets::Policy::Download);
+    const auto cid = m_c.sets->follow(info->link, Ed3kSets::Policy::Download, QStringList{});
     QVERIFY2(cid, qPrintable(cid ? QString() : cid.error()));
     m_cSet = *cid;
     QTRY_VERIFY_WITH_TIMEOUT(m_c.sets->info(m_cSet)->seq == std::uint64_t(1), 90000);
@@ -387,7 +390,7 @@ void tst_Ed3kOwnSets::aHiddenSetsLinkComesOnlyFrom1148()
     Follower d;
     QVERIFY(d.start(m_dd.path(), nodeOf(m_b)));
     QTRY_VERIFY_WITH_TIMEOUT(d.session->contactCount() > 0, 20000);
-    const auto did = d.sets->follow(link, Ed3kSets::Policy::Download);
+    const auto did = d.sets->follow(link, Ed3kSets::Policy::Download, QStringList{});
     QVERIFY2(did, qPrintable(did ? QString() : did.error()));
     QTRY_VERIFY_WITH_TIMEOUT(d.sets->info(*did)->seq == std::uint64_t(1), 90000);
     QTRY_VERIFY_WITH_TIMEOUT(readFile(QDir(d.sets->info(*did)->dir).filePath(QStringLiteral("p.bin"))) == plain, 120000);
@@ -460,7 +463,7 @@ void tst_Ed3kOwnSets::aPaidCatalogueIsSealedAndAPassHolderOpensIt()
     const auto pass = m_seller->issuePass({scope}, std::nullopt, m_a.now().unixS + 7 * 86400);
     QVERIFY2(pass, qPrintable(pass ? QString() : pass.error()));
     QVERIFY(e.paid->addPassLink(*pass));
-    const auto setId = e.sets->follow(info->link, Ed3kSets::Policy::Download);
+    const auto setId = e.sets->follow(info->link, Ed3kSets::Policy::Download, QStringList{});
     QVERIFY(setId);
     QTRY_VERIFY_WITH_TIMEOUT(e.sets->info(*setId)->seq == std::uint64_t(3), 90000);
     QCOMPARE(e.sets->info(*setId)->paidScope, scope);

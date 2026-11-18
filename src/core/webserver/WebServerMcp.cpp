@@ -60,11 +60,14 @@ constexpr int kRpcMethodNotFound = -32601;
 }
 
 const char* const kMcpInstructions =
-    "Controls an eMuleQt file-sharing core (eD2K servers, Kad, Usenet). Call get_status first: "
+    "Controls an eMuleQt file-sharing core (eD2K servers, Kad, ed3k, Usenet, BitTorrent, file hosters). "
+    "Call get_status first: "
     "it shows whether the networks are connected. Searching needs a connected network; "
     "connection_connect and kad_start bring them up. To fetch a file: search_start, then "
     "search_results until state is \"finished\" (results arrive over several seconds), then "
-    "download_from_search with the hash of the result. Prefer results with many sources and "
+    "download_from_search with the hash of the result (Usenet, torrent, web and ed3k rows go to their own queues). "
+    "newznab/torznab indexers have their own searches: indexer_search_start, indexer_search_results, "
+    "indexer_download. Prefer results with many sources and "
     "confidence looks_good or genuine; fakeReasons says why a result is doubted. A file is identified by its 32-digit hex hash; sizes are bytes. Lists are "
     "paged: pass limit and offset. Calls that delete data need confirm: true — ask the user "
     "before using them.";

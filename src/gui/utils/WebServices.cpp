@@ -92,6 +92,7 @@ bool WebServices::loadFromFile(const QString& path)
 
     static constexpr std::array kFileMacros = {
         QStringView(u"#hashid"),
+        QStringView(u"#ed3kroot"),
         QStringView(u"#filesize"),
         QStringView(u"#filename"),
         QStringView(u"#name"),
@@ -136,18 +137,20 @@ bool WebServices::loadFromFile(const QString& path)
 // ---------------------------------------------------------------------------
 
 void WebServices::populateFileMenu(QMenu* menu, const QString& hash,
-                                    const QString& fileName, uint64_t fileSize)
+                                    const QString& fileName, uint64_t fileSize, const QString& ed3kRoot)
 {
     reload();
 
     for (const auto& svc : m_services) {
         if (!svc.hasFileMacros)
             continue;
+        // e.g. an ed3k-only file has no eD2K hash, an eD2K row no root
+        if ((hash.isEmpty() && svc.urlTemplate.contains(u"#hashid"))
+            || (ed3kRoot.isEmpty() && svc.urlTemplate.contains(u"#ed3kroot")))
+            continue;
 
-        menu->addAction(svc.label, menu, [=]() {
-            const QString url = expandMacros(svc.urlTemplate, hash, fileName, fileSize);
-            QDesktopServices::openUrl(QUrl(url));
-        });
+        const QString url = expandMacros(svc.urlTemplate, hash, fileName, fileSize, ed3kRoot);
+        menu->addAction(svc.label, menu, [url] { QDesktopServices::openUrl(QUrl(url)); })->setData(url);
     }
 }
 
@@ -193,11 +196,12 @@ bool WebServices::edit()
 // ---------------------------------------------------------------------------
 
 QString WebServices::expandMacros(const QString& urlTemplate, const QString& hash,
-                                   const QString& fileName, uint64_t fileSize)
+                                   const QString& fileName, uint64_t fileSize, const QString& ed3kRoot)
 {
     QString url = urlTemplate;
 
     url.replace(QStringLiteral("#hashid"), hash);
+    url.replace(QStringLiteral("#ed3kroot"), ed3kRoot);
     url.replace(QStringLiteral("#filesize"), QString::number(fileSize));
 
     const QString encodedName = QString::fromUtf8(QUrl::toPercentEncoding(fileName));

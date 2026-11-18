@@ -37,7 +37,8 @@ namespace ffi = ::ed3k;
 namespace {
 
 constexpr quint32 kIndexMagic = 0x45335349;   // "E3SI", shared-index.dat
-constexpr quint32 kIndexVersion = 2;
+// was: 2; 3 adds the eD2K hash of path-keyed entries
+constexpr quint32 kIndexVersion = 3;
 /// head of shared-hashes.dat; offsets count from the file start
 constexpr char kHashesMagic[] = "E3SHASH1";
 constexpr qint64 kHashesMagicLen = 8;
@@ -120,12 +121,13 @@ QByteArray checkOf(std::span<const std::byte> data)
                                     QCryptographicHash::Md5);
 }
 
-std::optional<ffi::Ed2kHash> ed2kOf(const QByteArray& md4)
+/// none for an ed3k-only file (its key is no eD2K hash) or a path-keyed one
+std::optional<ffi::Ed2kHash> ed2kOf(const SharedEntry& e)
 {
-    if (md4.size() != 16)
+    if (e.md4.size() != 16 || e.ed3kOnly)
         return std::nullopt;
     ffi::Ed2kHash h{};
-    std::memcpy(h.data(), md4.constData(), h.size());
+    std::memcpy(h.data(), e.md4.constData(), h.size());
     return h;
 }
 
@@ -153,6 +155,18 @@ Ed3kShared::Ed3kShared(Ed3kSession& session, SharedFileSource& source, const QSt
         releaseRamHashes();
         applyHashRamBudget();
         logHashProgress();
+    });
+    m_aliasRetry.setSingleShot(true);
+    m_aliasRetry.setInterval(5000);
+    m_stoppedSave.setSingleShot(true);
+    m_stoppedSave.setInterval(kHashRunSaveDelayMs);
+    connect(&m_stoppedSave, &QTimer::timeout, this, &Ed3kShared::flushStoppedSave);
+    connect(&m_aliasRetry, &QTimer::timeout, this, [this] {
+        for (auto& [key, f] : m_files)
+            if (f.aliasOnly && f.aliasWaits)
+                if (const auto c = m_cache.find(key); c != m_cache.end())
+                    publishAliasOnly(f, c->second);
+        pumpSession();
     });
 }
 
@@ -195,6 +209,7 @@ std::optional<SharedEntry> Ed3kShared::entryOf(const KnownFile& file)
     e.album = clipUtf8(file.getStrTagValue(FT_MEDIA_ALBUM), kMediaTagMax);
     e.title = clipUtf8(file.getStrTagValue(FT_MEDIA_TITLE), kMediaTagMax);
     e.codec = clipUtf8(file.getStrTagValue(FT_MEDIA_CODEC), kCodecMax);
+    e.ed3kOnly = file.isEd3kOnly();
     return e;
 }
 
@@ -240,9 +255,12 @@ void Ed3kShared::start()
     beginStart();
     m_hashingVolumes.clear();
     m_scanLogged = false;
+    flushStoppedSave();   // primed while stopped: on disk before the reload
     loadCache();
     for (const SharedEntry& e : m_source.files())
         add(e);
+    for (auto it = m_aliasOnly.cbegin(); it != m_aliasOnly.cend(); ++it)
+        add(SharedEntry{it.key(), it.value(), QFileInfo(it.value()).fileName(), std::uint64_t(QFileInfo(it.value()).size())}, true);
     // a disk read folder by folder: fewer seeks between small files
     for (auto& [volume, queue] : m_hashQueues)
         std::ranges::sort(queue, {}, [this](const QByteArray& md4) {
@@ -261,18 +279,20 @@ void Ed3kShared::start()
 
 void Ed3kShared::stop()
 {
+    flushStoppedSave();
     if (!m_started)
         return;
     m_priorityTimer.stop();
+    m_aliasRetry.stop();
     m_sideOn->store(false);
     saveCache();
     if (auto* e = m_session.engine()) {
         const auto t = m_session.now();
         for (const auto& [md4, f] : m_files) {
-            if (!f.shared)
-                continue;
             if (!f.alias.empty())
                 (void)e->unpublishAlias(t, std::span{&f.alias, 1});
+            if (!f.shared)
+                continue;
             // was: (void)e->unpublish(t, c->second.root, ...) (now under its key)
             if (const auto c = m_cache.find(md4); c != m_cache.end())
                 unpublishShared(c->second.root, f.keywords ? ffi::Publish::Both : ffi::Publish::Source);
@@ -287,6 +307,7 @@ void Ed3kShared::stop()
     m_suspects.clear();
     m_recheckTimer.stop();
     pumpSession();
+    flushBlobWrites();   // index on disk once stopped (see Ed3kSession::stop)
 }
 
 void Ed3kShared::setEnabled(bool on)
@@ -351,6 +372,8 @@ bool Ed3kShared::reopen(const ffi::Root& root)
 bool Ed3kShared::holdsRoot(const ffi::Root& root) const
 {
     return std::ranges::any_of(m_files, [&](const auto& kv) {
+        if (kv.second.aliasOnly)
+            return false;   // its join holds it
         const auto c = m_cache.find(kv.first);
         return c != m_cache.end() && c->second.root == root;
     });
@@ -513,15 +536,18 @@ public:
             m_ok = false;
     }
 
+    QByteArray root() override
+    {
+        if (!done())
+            return {};
+        return QByteArray(reinterpret_cast<const char*>(m_done->root.bytes.data()), qsizetype(m_done->root.bytes.size()));
+    }
+
     void finish(const QByteArray& md4, const QString& path, quint64 size, qint64 mtimeMs) override
     {
-        if (!m_ok)
+        if (!done() || m_done->size != size)
             return;
-        auto done = m_hasher.finish();
-        if (!done || done->size != size)
-            return;
-        const auto bytes = done->hashes.bytes();
-        FileHash hashed{done->root, done->size, ffi::Bytes(bytes.begin(), bytes.end())};
+        FileHash hashed = std::move(*m_done);
         // queued to the owner's thread ahead of the share list's hashingFinished
         QMetaObject::invokeMethod(
             m_owner.data(),
@@ -533,18 +559,33 @@ public:
     }
 
 private:
+    /// The hash once all bytes are in (root() and finish() both ask)
+    bool done()
+    {
+        if (!m_done && m_ok) {
+            m_ok = false;   // finished once
+            if (auto d = m_hasher.finish()) {
+                const auto bytes = d->hashes.bytes();
+                m_done = FileHash{d->root, d->size, ffi::Bytes(bytes.begin(), bytes.end())};
+            }
+        }
+        return m_done.has_value();
+    }
+
     QPointer<Ed3kShared> m_owner;
     ffi::Hasher m_hasher;
     bool m_ok = true;
+    std::optional<FileHash> m_done;
 };
 
 SideHasherFactory Ed3kShared::sideHasherFactory(quint64 pipeFrom)
 {
     QPointer<Ed3kShared> self(this);
-    return [self, on = m_sideOn, pipeFrom](const QString& path, quint64 size) -> std::unique_ptr<SideHash> {
+    return [self, on = m_sideOn, pipeFrom](const QString& path, quint64 size, bool rootWanted) -> std::unique_ptr<SideHash> {
         Q_UNUSED(path)
-        // a hasher only while serving (size 0: never shared)
-        if (!on->load() || size == 0)
+        // a hasher while serving, or for an ed3k-only file's key even with ed3k off
+        // (size 0: never shared)
+        if ((!on->load() && !rootWanted) || size == 0)
             return nullptr;
         auto sink = std::make_unique<SideSink>(self);
         // was: BLAKE3 on the eD2K thread, after MD4/AICH — CPU-bound on an SSD
@@ -635,6 +676,54 @@ void Ed3kShared::onFileChanged(const QByteArray& md4)
         return;
     if (auto e = m_source.find(md4))
         onFileAdded(*e);
+}
+
+QByteArray Ed3kShared::pathKeyOf(const QString& path)
+{
+    return QByteArray(1, '\x01') + SharedFileList::pathKey(path).toUtf8();
+}
+
+void Ed3kShared::setEd2kHashing(bool on)
+{
+    if (m_ed2kHashing == on)
+        return;
+    m_ed2kHashing = on;
+    if (!on || !m_started)
+        return;
+    // alias-only files waiting for an eD2K hash: read now
+    for (auto& [key, f] : m_files) {
+        if (!f.aliasOnly || !f.alias.empty())
+            continue;
+        if (const auto c = m_cache.find(key); c == m_cache.end() || c->second.ed2k.size() != 16)
+            enqueueHash(f);
+    }
+    hashNext();
+}
+
+QByteArray Ed3kShared::aliasOnlyEd2k(const QString& path) const
+{
+    const auto c = m_cache.find(pathKeyOf(path));
+    return c == m_cache.end() ? QByteArray() : c->second.ed2k;
+}
+
+void Ed3kShared::setAliasOnlyFiles(const QStringList& paths)
+{
+    QHash<QByteArray, QString> next;
+    for (const QString& p : paths)
+        next.insert(pathKeyOf(p), p);
+    if (m_started) {
+        for (auto it = m_aliasOnly.cbegin(); it != m_aliasOnly.cend(); ++it)
+            if (!next.contains(it.key()))
+                remove(it.key());
+        for (auto it = next.cbegin(); it != next.cend(); ++it)
+            if (!m_files.contains(it.key()))
+                add(SharedEntry{it.key(), it.value(), QFileInfo(it.value()).fileName(), std::uint64_t(QFileInfo(it.value()).size())}, true);
+    }
+    m_aliasOnly = std::move(next);
+    if (m_started) {
+        hashNext();
+        pumpSession();
+    }
 }
 
 // -- base hooks --------------------------------------------------------------
@@ -752,12 +841,14 @@ void Ed3kShared::saveOwner(const QString& owner)
 // private
 // ---------------------------------------------------------------------------
 
-void Ed3kShared::add(const SharedEntry& entry)
+void Ed3kShared::add(const SharedEntry& entry, bool aliasOnly)
 {
-    if (entry.md4.size() != 16 || entry.size == 0 || entry.path.isEmpty())
+    const bool byPath = entry.md4.startsWith('\x01');
+    if ((entry.md4.size() != 16 && !byPath) || entry.size == 0 || entry.path.isEmpty())
         return;
-    // #12 MUST: an opened plain copy is not served (its sealed copy is)
-    if (m_neverShared && m_neverShared(entry.path))
+    // #12 MUST: an opened plain copy is not served (its sealed copy is). An alias-only file
+    // is a landed one kept out on purpose (the caller leaves plain copies out)
+    if (!aliasOnly && m_neverShared && m_neverShared(entry.path))
         return;
     if (const auto it = m_files.find(entry.md4); it != m_files.end()) {
         if (it->second.entry.path != entry.path)
@@ -771,10 +862,30 @@ void Ed3kShared::add(const SharedEntry& entry)
     }
     File& f = m_files[entry.md4];
     f.entry = entry;
-    f.member = m_nextMember++;
+    f.aliasOnly = aliasOnly;
     f.mtimeMs = mtimeOf(entry.path);
-    m_members[f.member] = entry.md4;
+    if (!aliasOnly) {
+        f.member = m_nextMember++;
+        m_members[f.member] = entry.md4;
+    }
+    // hashed before without an MD4 (eD2K was disabled): the same root, no second read
+    if (!byPath && !m_cache.contains(entry.md4))
+        if (const auto p = m_cache.find(pathKeyOf(entry.path));
+            p != m_cache.end() && !m_aliasOnly.contains(p->first) && cacheMatches(p->second, entry.path, entry.size, f.mtimeMs)) {
+            Hashed moved = std::move(p->second);
+            moved.ed2k.clear();
+            m_cache.erase(p);
+            m_cache[entry.md4] = std::move(moved);
+            scheduleSave(kOwner);
+        }
     const auto c = m_cache.find(entry.md4);
+    if (aliasOnly) {
+        if (c != m_cache.end() && cacheMatches(c->second, entry.path, entry.size, f.mtimeMs) && c->second.ed2k.size() == 16)
+            publishAliasOnly(f, c->second);
+        else if (m_ed2kHashing)
+            enqueueHash(f);   // read for its eD2K hash (and root)
+        return;
+    }
     // was: exact path + exact ms date: a moved file, other path case or a NAS/FAT date shift
     // hashed the whole share again at each start (#200)
     if (c != m_cache.end() && cacheMatches(c->second, entry.path, entry.size, f.mtimeMs)) {
@@ -794,19 +905,19 @@ void Ed3kShared::remove(const QByteArray& md4)
     if (it == m_files.end())
         return;
     File& f = it->second;
+    withdrawAlias(f);
     if (f.shared) {
         if (const auto c = m_cache.find(md4); c != m_cache.end()) {
-            if (auto* e = m_session.engine()) {
-                const auto t = m_session.now();
-                if (!f.alias.empty())
-                    (void)e->unpublishAlias(t, std::span{&f.alias, 1});
+            if (m_session.engine()) {
+                // was: if (!f.alias.empty()) (void)e->unpublishAlias(t, std::span{&f.alias, 1}); (withdrawAlias)
                 // was: (void)e->unpublish(t, c->second.root, ...) (now under its key)
                 unpublishShared(c->second.root, f.keywords ? ffi::Publish::Both : ffi::Publish::Source);
             }
             unshare(c->second.root);
         }
     }
-    m_members.erase(f.member);
+    if (f.member >= 0)
+        m_members.erase(f.member);
     m_files.erase(it);
     // a queued hash of it finds no file and is skipped
 }
@@ -837,7 +948,7 @@ void Ed3kShared::share(File& f, Hashed& h)
     // hops.md §1: under the anonymous key nothing names it for eD2K (no MD4, no ALIAS)
     const bool anon = keyOf(h.root) == ffi::KeyKind::Anon;
     // was: const auto ed2k = ed2kOf(f.entry.md4);
-    const auto ed2k = anon ? std::nullopt : ed2kOf(f.entry.md4);
+    const auto ed2k = anon ? std::nullopt : ed2kOf(f.entry);
     // the MD4 is eMule's of the same file (the share list checks size and date)
     // was: if (!shareMember(ffi::SharedFile{h.root, h.size, name, ed2k, std::nullopt, ffi::Have::complete(), std::span{hashes}}, kOwner,
     // FileStatus.note: the uploader's rating and comment (§12.2)
@@ -870,7 +981,7 @@ void Ed3kShared::publishFile(File& f, const ffi::Root& root, std::uint64_t size)
         return;
     const std::string name = utf8(f.entry.name);
     const bool anon = keyOf(root) == ffi::KeyKind::Anon;
-    const auto ed2k = anon ? std::nullopt : ed2kOf(f.entry.md4);
+    const auto ed2k = anon ? std::nullopt : ed2kOf(f.entry);
     const auto t = m_session.now();
     // sources 1: this node, the file held complete (Protocol.md §10.7)
     // was: const ffi::FileInfo info{h.root, h.size, name, ed2k, 1, 0, 0, 0, 0, 0};
@@ -916,7 +1027,7 @@ void Ed3kShared::publishFile(File& f, const ffi::Root& root, std::uint64_t size)
     // alias.md §3: the root is shared here and both names come from these bytes; never for a
     // file of the anonymous key (ffi.md: eD2K is never anonymous)
     // was: if (!m_holdBack) {
-    if (!m_holdBack && !anon && !declined) {
+    if (!m_holdBack && !anon && !declined && ed2kOf(f.entry)) {
         f.alias = ed2kAlias(f.entry.md4, size, root, f.entry.name);
         if (auto ok = e->publishAlias(t, std::span{&f.alias, 1}); !ok) {
             logDebug([&]() -> QString { return QStringLiteral("ed2k record of \"%1\" not published (error %2)").arg(f.entry.name, errorName(ok.error())); });
@@ -1000,6 +1111,7 @@ void Ed3kShared::hashNext()
                 logInfo(QStringLiteral("Hashing file: \"%1\"").arg(QDir::toNativeSeparators(path)));
             QElapsedTimer fileTimer;
             fileTimer.start();
+            const bool withEd2k = wantsEd2k(f) && m_ed2kHashing;
             hashInBackground(path, [this, md4, path, mtime, fileTimer, volume](std::optional<FileHash> hashed) {
                 m_hashingVolumes.erase(volume);
                 if (hashed) {
@@ -1014,7 +1126,7 @@ void Ed3kShared::hashNext()
                 if (m_hashingVolumes.empty())
                     endHashRun();
                 pumpSession();
-            });
+            }, withEd2k);
             break;
         }
     }
@@ -1048,7 +1160,47 @@ void Ed3kShared::onHashed(const QByteArray& md4, const QString& path, qint64 mti
         logDebug([&]() -> QString { return QStringLiteral("\"%1\" changed while hashed, left out").arg(path); });
         return;
     }
+    if (f.aliasOnly) {
+        Hashed& h = remember(md4, path, mtimeMs, *hashed);
+        h.ed2k = hashed->ed2k;
+        publishAliasOnly(f, h);
+        return;
+    }
     share(f, remember(md4, path, mtimeMs, *hashed));
+}
+
+void Ed3kShared::publishAliasOnly(File& f, const Hashed& h)
+{
+    f.aliasWaits = false;
+    auto* e = m_session.engine();
+    if (!e || !f.alias.empty() || h.ed2k.size() != 16)
+        return;
+    // as publishFile: never under the anonymous key, nor declined, nor while holding back
+    // the key its join holds the root under (keyOf is the share list's own choice)
+    // was: if (m_holdBack || keyOf(h.root) == ffi::KeyKind::Anon || ...)
+    if (m_holdBack || m_session.hide().keyOf(h.root) == ffi::KeyKind::Anon || m_session.declined().listsFile(h.root, h.ed2k))
+        return;
+    const ffi::Bytes alias = ed2kAlias(h.ed2k, h.size, h.root, f.entry.name);
+    if (auto ok = e->publishAlias(m_session.now(), std::span{&alias, 1}); ok) {
+        f.alias = alias;
+        logDebug([&]() -> QString { return QStringLiteral("ed2k record of landed \"%1\" published").arg(f.entry.name); });
+    } else if (ok.error() == ffi::Error::State) {
+        f.aliasWaits = true;   // its join has not shared the root (yet)
+        // once soon (the join shares it right after landing); later with the priority timer
+        if (f.aliasTries++ == 0 && !m_aliasRetry.isActive())
+            m_aliasRetry.start();
+    } else {
+        logDebug([&]() -> QString { return QStringLiteral("ed2k record of landed \"%1\" not published (error %2)").arg(f.entry.name, errorName(ok.error())); });
+    }
+}
+
+void Ed3kShared::withdrawAlias(File& f)
+{
+    if (f.alias.empty())
+        return;
+    if (auto* e = m_session.engine())
+        (void)e->unpublishAlias(m_session.now(), std::span{&f.alias, 1});
+    f.alias.clear();
 }
 
 void Ed3kShared::rehash(const QByteArray& md4)
@@ -1067,10 +1219,21 @@ void Ed3kShared::recheck()
 {
     const auto suspects = std::exchange(m_suspects, {});
     for (const QByteArray& md4 : suspects) {
+        // a path-keyed one is not in the share list by MD4: taken again from its entry
+        std::optional<SharedEntry> again;
+        bool aliasOnly = false;
+        if (const auto it = m_files.find(md4); it != m_files.end() && md4.size() != 16) {
+            again = it->second.entry;
+            aliasOnly = it->second.aliasOnly;
+        }
         remove(md4);
         m_cache.erase(md4);
-        if (auto e = m_source.find(md4))
+        if (again) {
+            again->size = std::uint64_t(std::max<qint64>(0, QFileInfo(again->path).size()));
+            add(*again, aliasOnly);
+        } else if (auto e = m_source.find(md4)) {
             add(*e);
+        }
     }
     scheduleSave(kOwner);
     hashNext();
@@ -1080,6 +1243,9 @@ void Ed3kShared::recheck()
 void Ed3kShared::refreshPriorities()
 {
     for (auto& [md4, f] : m_files) {
+        if (f.aliasOnly && f.aliasWaits)
+            if (const auto c = m_cache.find(md4); c != m_cache.end())
+                publishAliasOnly(f, c->second);
         if (!f.shared)
             continue;
         const auto e = m_source.find(md4);
@@ -1168,6 +1334,7 @@ bool Ed3kShared::cacheMatches(const Hashed& c, const QString& path, std::uint64_
 void Ed3kShared::loadCache()
 {
     m_cache.clear();
+    m_cacheLoaded = true;
     const QByteArray blob = readBlob(cachePath());
     if (blob.isEmpty())
         return;
@@ -1175,7 +1342,8 @@ void Ed3kShared::loadCache()
     in.setVersion(QDataStream::Qt_6_0);
     quint32 magic = 0, version = 0, count = 0;
     in >> magic >> version >> count;
-    if (magic != kIndexMagic || version != kIndexVersion || count > kMaxCacheEntries) {
+    // was: version != kIndexVersion; 2 is read too (no eD2K hash of path-keyed entries)
+    if (magic != kIndexMagic || (version != kIndexVersion && version != 2) || count > kMaxCacheEntries) {
         logWarning(QStringLiteral("%1 is not a hash cache, ignored").arg(cachePath()));
         return;
     }
@@ -1185,7 +1353,11 @@ void Ed3kShared::loadCache()
         Hashed h;
         quint64 size = 0;
         in >> md4 >> h.path >> size >> h.mtimeMs >> root >> h.diskOffset >> h.diskLen >> h.diskCheck;
-        if (in.status() != QDataStream::Ok || md4.size() != 16 || root.size() != qsizetype(h.root.bytes.size()))
+        if (version >= 3)
+            in >> h.ed2k;
+        // was: md4.size() != 16 (path-keyed entries: pathKeyOf)
+        if (in.status() != QDataStream::Ok || (md4.size() != 16 && !md4.startsWith('\x01'))
+            || root.size() != qsizetype(h.root.bytes.size()))
             break;
         h.size = size;
         std::memcpy(h.root.bytes.data(), root.constData(), h.root.bytes.size());
@@ -1264,7 +1436,7 @@ QByteArray Ed3kShared::indexBlob() const
         if (!stored(h))
             continue;
         const QByteArray root(reinterpret_cast<const char*>(h.root.bytes.data()), qsizetype(h.root.bytes.size()));
-        out << md4 << h.path << quint64(h.size) << h.mtimeMs << root << h.diskOffset << h.diskLen << h.diskCheck;
+        out << md4 << h.path << quint64(h.size) << h.mtimeMs << root << h.diskOffset << h.diskLen << h.diskCheck << h.ed2k;
     }
     return blob;
 }
@@ -1473,8 +1645,11 @@ void Ed3kShared::logHashProgress()
 
 Ed3kShared::Counts Ed3kShared::counts() const
 {
-    Counts c{.total = m_files.size(), .hashing = m_hashingVolumes.size()};
+    Counts c{.hashing = m_hashingVolumes.size()};
     for (const auto& [md4, f] : m_files) {
+        if (f.aliasOnly)
+            continue;   // not served here
+        ++c.total;
         if (f.shared)
             ++c.published;
         else if (f.queued)
@@ -1506,8 +1681,13 @@ QString Ed3kShared::volumeOf(const QString& path)
 
 void Ed3kShared::primeHash(const QByteArray& md4, const QString& path, qint64 mtimeMs, const FileHash& hashed)
 {
-    if (!m_started || (m_neverShared && m_neverShared(path)))
+    if (m_neverShared && m_neverShared(path))
         return;
+    // was: if (!m_started) return; (an ed3k-only file hashed with ed3k off was read again at start)
+    if (!m_started) {
+        primeStopped(md4, path, mtimeMs, hashed);
+        return;
+    }
     if (const auto c = m_cache.find(md4); c != m_cache.end() && c->second.path == path && cacheMatches(c->second, path, hashed.size, mtimeMs))
         return;   // known already
     if (!unchanged(path, hashed.size, mtimeMs))
@@ -1523,8 +1703,42 @@ void Ed3kShared::primeHash(const QByteArray& md4, const QString& path, qint64 mt
     }
 }
 
+void Ed3kShared::primeStopped(const QByteArray& md4, const QString& path, qint64 mtimeMs, const FileHash& hashed)
+{
+    if (md4.size() != 16)
+        return;
+    if (!m_cacheLoaded)
+        loadCache();   // never started yet: a save must not drop the index on disk
+    if (const auto c = m_cache.find(md4); c != m_cache.end() && c->second.path == path && cacheMatches(c->second, path, hashed.size, mtimeMs))
+        return;
+    if (!unchanged(path, hashed.size, mtimeMs))
+        return;
+    Hashed& h = remember(md4, path, mtimeMs, hashed);   // its scheduleSave is a no-op while stopped
+    // no RAM budget while stopped: the values are read back from disk when shared
+    if (h.diskOffset >= 0) {
+        ffi::Bytes().swap(h.hashes);
+        h.inRam = false;
+    }
+    m_stoppedDirty = true;
+    if (!m_stoppedSave.isActive())
+        m_stoppedSave.start();
+}
+
+void Ed3kShared::flushStoppedSave()
+{
+    m_stoppedSave.stop();
+    if (!std::exchange(m_stoppedDirty, false))
+        return;
+    saveCache();
+    flushBlobWrites();
+}
+
 Ed3kShared::Hashed& Ed3kShared::remember(const QByteArray& md4, const QString& path, qint64 mtimeMs, const FileHash& hashed)
 {
+    // hashed for eD2K now: an entry of the same file without MD4 is stale
+    if (md4.size() == 16)
+        if (const QByteArray byPath = pathKeyOf(path); !m_aliasOnly.contains(byPath) && !m_files.contains(byPath))
+            m_cache.erase(byPath);
     Hashed& h = m_cache[md4];
     h = Hashed{};
     h.path = path;

@@ -46,6 +46,7 @@ struct Ed3kSetManifest {
     QStringList dirs;
     std::vector<Ed3kSetEntry> files;
     QByteArray offer;         ///< FileSet.offer (subscription.md §3): a serialised SignedOffer; empty = not paid
+    QStringList exts;         ///< FileSet.exts (§5.3): the author's suggested file types, lower case, no dot
 
     /// "ed3kset" ‖ 0x01 ‖ SetFile; nullopt: not one.
     [[nodiscard]] static std::optional<Ed3kSetManifest> parse(const QByteArray& file);

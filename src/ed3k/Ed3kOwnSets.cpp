@@ -2,6 +2,7 @@
 /// @brief The user's own ed3k sets — implementation.
 
 #include "Ed3kOwnSets.h"
+#include "Ed3kSetManifest.h"
 
 #include "Ed3kSealedOpener.h"
 #include "Ed3kSession.h"
@@ -9,6 +10,7 @@
 #include "Ed3kStore.h"
 
 #include "files/SharedDirWatcher.h"
+#include "utils/FileTypeFilter.h"
 #include "utils/Log.h"
 
 #include <QDateTime>
@@ -188,7 +190,8 @@ void Ed3kOwnSets::setSeller(Ed3kPaidSeller* seller)
         connect(m_seller, &Ed3kPaidSeller::changed, this, &Ed3kOwnSets::onSellerChanged);
 }
 
-std::expected<QString, QString> Ed3kOwnSets::create(const QString& title, const QString& folder, const QStringList& files, Kind kind)
+std::expected<QString, QString> Ed3kOwnSets::create(const QString& title, const QString& folder, const QStringList& files, Kind kind,
+                                                    const QStringList& exts)
 {
     if (!m_started || !m_session.isRunning())
         return std::unexpected(tr("ed3k is not running."));
@@ -208,6 +211,7 @@ std::expected<QString, QString> Ed3kOwnSets::create(const QString& title, const 
     if (s.title.isEmpty())
         s.title = s.folder.isEmpty() ? QFileInfo(s.files.value(0)).completeBaseName() : QFileInfo(s.folder).fileName();
     s.kind = kind;
+    s.exts = normalizeFileTypes(exts);
     s.created = m_session.now().unixS;
     const auto id = randomBytes<kIdBytes>();
     s.id = QByteArray(reinterpret_cast<const char*>(id.data()), kIdBytes);
@@ -260,6 +264,23 @@ std::expected<void, QString> Ed3kOwnSets::retitle(const QString& id, const QStri
     s->title = title.trimmed();
     save();
     if (s->published)
+        return publishNewVersion(id);
+    markChanged();
+    return {};
+}
+
+std::expected<void, QString> Ed3kOwnSets::setExts(const QString& id, const QStringList& exts)
+{
+    Set* s = find(id);
+    if (!s)
+        return std::unexpected(tr("This set is not yours."));
+    const QStringList norm = normalizeFileTypes(exts);
+    if (norm == s->exts)
+        return {};
+    s->exts = norm;
+    save();
+    // not running: the version made at the next start carries them (the kept one differs)
+    if (s->published && m_started)
         return publishNewVersion(id);
     markChanged();
     return {};
@@ -856,7 +877,12 @@ bool Ed3kOwnSets::publishVersion(Set& s, Build& b, QString* error)
         s.head = *head;
         return true;
     };
-    if (b.restore && !b.changed && offer == s.offer) {
+    // the kept version again only with the file types now set (§5.3)
+    const auto keptExts = [&] {
+        const auto m = Ed3kSetManifest::parse(readBlob(manifestPath));
+        return !m || m->exts == s.exts;
+    };
+    if (b.restore && !b.changed && offer == s.offer && keptExts()) {
         const QByteArray kept = readBlob(manifestPath);
         if (!kept.isEmpty() && publish(kept))
             return true;
@@ -869,6 +895,8 @@ bool Ed3kOwnSets::publishVersion(Set& s, Build& b, QString* error)
     f.id = bytesOf(s.id);
     f.seq = s.seq + 1;
     f.offer = bytesOf(offer);
+    for (const QString& e : s.exts)
+        f.exts.push_back(e.toStdString());
     std::vector<ffi::SetMemberIn> in;
     in.reserve(b.members.size());
     for (const Member& m : b.members) {
@@ -1022,6 +1050,7 @@ Ed3kOwnSets::Info Ed3kOwnSets::infoOf(const Set& s) const
     Info i;
     i.id = QString::fromLatin1(s.id.toHex());
     i.title = s.title;
+    i.exts = s.exts;
     i.folder = s.folder;
     if (s.members.empty()) {
         for (const auto& [path, file] : scan(s)) {
@@ -1122,6 +1151,9 @@ void Ed3kOwnSets::load()
         if (s.id.size() != kIdBytes)
             continue;
         s.title = o.value(QStringLiteral("title")).toString();
+        for (const auto& e : o.value(QStringLiteral("exts")).toArray())
+            s.exts << e.toString();
+        s.exts = normalizeFileTypes(s.exts);
         s.folder = o.value(QStringLiteral("folder")).toString();
         for (const auto& f : o.value(QStringLiteral("files")).toArray())
             s.files << f.toString();
@@ -1179,6 +1211,7 @@ void Ed3kOwnSets::save() const
         sets.append(QJsonObject{
             {QStringLiteral("id"), QString::fromLatin1(s.id.toHex())},
             {QStringLiteral("title"), s.title},
+            {QStringLiteral("exts"), QJsonArray::fromStringList(s.exts)},
             {QStringLiteral("folder"), s.folder},
             {QStringLiteral("files"), QJsonArray::fromStringList(s.files)},
             {QStringLiteral("kind"), int(s.kind)},

@@ -379,27 +379,39 @@ std::optional<ffi::ContentsCheck> Ed3kArchiveContents::compareListing(const QByt
 
 QList<int> Ed3kArchiveContents::firstVolumes(const QStringList& names)
 {
-    struct Best {
-        int at = -1;
-        int index = 0;
-        int first = 0;
+    QList<int> out;
+    for (const QList<int>& set : volumeSets(names))
+        out << set.constFirst();
+    return out;
+}
+
+QList<QList<int>> Ed3kArchiveContents::volumeSets(const QStringList& names)
+{
+    struct Set {
+        int first = 0;                     ///< the set's opening position
+        QList<std::pair<int, int>> parts;  ///< (volume position, name index)
     };
-    QHash<QString, Best> sets;
+    QHash<QString, Set> sets;
     for (int i = 0; i < names.size(); ++i) {
         const auto pos = usenet::UsenetUnpacker::volumePositionOf(QFileInfo(names.at(i)).fileName());
         if (pos.index < 0)
             continue;
         // a torrent's member path: one set per directory
-        const QString key = QFileInfo(names.at(i)).path() + u'/' + pos.baseName;
-        auto it = sets.find(key);
-        if (it == sets.end() || pos.index < it->index)
-            sets[key] = {i, pos.index, pos.first};
+        Set& set = sets[QFileInfo(names.at(i)).path() + u'/' + pos.baseName];
+        set.first = pos.first;
+        set.parts.append({pos.index, i});
     }
-    QList<int> out;
-    for (const Best& b : std::as_const(sets))
-        if (b.index <= b.first)   // headless otherwise
-            out << b.at;
-    std::ranges::sort(out);
+    QList<QList<int>> out;
+    for (Set& set : sets) {
+        std::ranges::sort(set.parts);
+        if (set.parts.constFirst().first > set.first)
+            continue;   // headless
+        QList<int> indices;
+        for (const auto& [position, index] : std::as_const(set.parts))
+            indices << index;
+        out << indices;
+    }
+    std::ranges::sort(out, {}, [](const QList<int>& set) { return set.constFirst(); });
     return out;
 }
 

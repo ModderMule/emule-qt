@@ -12,7 +12,10 @@
 
 #include <openssl/rand.h>
 
+#include <algorithm>
 #include <array>
+#include <span>
+#include <vector>
 
 
 namespace eMule {
@@ -427,6 +430,65 @@ void rc4Crypt(uint8* data, uint32 len, RC4Key& key)
 // ED2K file type detection
 // ---------------------------------------------------------------------------
 
+bool isPlayableMedia(const QString& fileName)
+{
+    const ED2KFileType type = getED2KFileTypeID(fileName);
+    return type == ED2KFileType::Video || type == ED2KFileType::Audio;
+}
+
+namespace {
+
+struct TypeExts {
+    ED2KFileType type;
+    std::span<const char16_t* const> exts;
+};
+
+// the extensions of each type, with the dot
+constexpr std::array audioExts = {
+    u".mp3", u".mp2", u".mpc", u".wav", u".ogg", u".oga", u".flac",
+    u".aac", u".m4a", u".wma", u".ape", u".opus"
+};
+constexpr std::array videoExts = {
+    u".avi", u".mpg", u".mpeg", u".mp4", u".mkv", u".ogm", u".ogv",
+    u".wmv", u".mov", u".divx", u".vob", u".flv", u".webm", u".ts",
+    u".m4v", u".rm", u".rmvb", u".3gp", u".asf"
+};
+constexpr std::array imageExts = {
+    u".jpg", u".jpeg", u".bmp", u".gif", u".png", u".tiff", u".tif",
+    u".psd", u".ico", u".svg", u".webp"
+};
+constexpr std::array progExts = {
+    u".exe", u".com", u".msi", u".dmg", u".app", u".deb", u".rpm",
+    u".apk", u".bat", u".cmd", u".sh"
+};
+constexpr std::array docExts = {
+    u".doc", u".docx", u".txt", u".pdf", u".xls", u".xlsx", u".ppt",
+    u".pptx", u".htm", u".html", u".rtf", u".odt", u".ods", u".odp",
+    u".epub", u".djvu", u".chm"
+};
+constexpr std::array archiveExts = {
+    u".zip", u".rar", u".7z", u".gz", u".bz2", u".xz", u".tar",
+    u".ace", u".cab", u".lzh", u".arj"
+};
+constexpr std::array cdExts = {
+    u".iso", u".bin", u".cue", u".nrg", u".img", u".mdf", u".mds"
+};
+constexpr std::array emcExts = {u".emulecollection"};
+
+// lookup order of getED2KFileTypeID
+constexpr std::array<TypeExts, 8> kTypeExts{{
+    {ED2KFileType::Audio, audioExts},
+    {ED2KFileType::Video, videoExts},
+    {ED2KFileType::Image, imageExts},
+    {ED2KFileType::Program, progExts},
+    {ED2KFileType::Document, docExts},
+    {ED2KFileType::Archive, archiveExts},
+    {ED2KFileType::CDImage, cdExts},
+    {ED2KFileType::EmuleCollection, emcExts},
+}};
+
+} // namespace
+
 ED2KFileType getED2KFileTypeID(const QString& fileName)
 {
     const auto dotPos = fileName.lastIndexOf(QChar(u'.'));
@@ -434,69 +496,37 @@ ED2KFileType getED2KFileTypeID(const QString& fileName)
         return ED2KFileType::Any;
 
     const QString ext = fileName.mid(dotPos).toLower();
-
-    // Audio
-    static constexpr std::array audioExts = {
-        u".mp3", u".mp2", u".mpc", u".wav", u".ogg", u".oga", u".flac",
-        u".aac", u".m4a", u".wma", u".ape", u".opus"
-    };
-    for (auto e : audioExts)
-        if (ext == e) return ED2KFileType::Audio;
-
-    // Video
-    static constexpr std::array videoExts = {
-        u".avi", u".mpg", u".mpeg", u".mp4", u".mkv", u".ogm", u".ogv",
-        u".wmv", u".mov", u".divx", u".vob", u".flv", u".webm", u".ts",
-        u".m4v", u".rm", u".rmvb", u".3gp", u".asf"
-    };
-    for (auto e : videoExts)
-        if (ext == e) return ED2KFileType::Video;
-
-    // Image
-    static constexpr std::array imageExts = {
-        u".jpg", u".jpeg", u".bmp", u".gif", u".png", u".tiff", u".tif",
-        u".psd", u".ico", u".svg", u".webp"
-    };
-    for (auto e : imageExts)
-        if (ext == e) return ED2KFileType::Image;
-
-    // Program
-    static constexpr std::array progExts = {
-        u".exe", u".com", u".msi", u".dmg", u".app", u".deb", u".rpm",
-        u".apk", u".bat", u".cmd", u".sh"
-    };
-    for (auto e : progExts)
-        if (ext == e) return ED2KFileType::Program;
-
-    // Document
-    static constexpr std::array docExts = {
-        u".doc", u".docx", u".txt", u".pdf", u".xls", u".xlsx", u".ppt",
-        u".pptx", u".htm", u".html", u".rtf", u".odt", u".ods", u".odp",
-        u".epub", u".djvu", u".chm"
-    };
-    for (auto e : docExts)
-        if (ext == e) return ED2KFileType::Document;
-
-    // Archive
-    static constexpr std::array archiveExts = {
-        u".zip", u".rar", u".7z", u".gz", u".bz2", u".xz", u".tar",
-        u".ace", u".cab", u".lzh", u".arj"
-    };
-    for (auto e : archiveExts)
-        if (ext == e) return ED2KFileType::Archive;
-
-    // CD/DVD Image
-    static constexpr std::array cdExts = {
-        u".iso", u".bin", u".cue", u".nrg", u".img", u".mdf", u".mds"
-    };
-    for (auto e : cdExts)
-        if (ext == e) return ED2KFileType::CDImage;
-
-    // eMule collection
-    if (ext == u".emulecollection")
-        return ED2KFileType::EmuleCollection;
-
+    for (const auto& t : kTypeExts)
+        for (auto e : t.exts)
+            if (ext == e) return t.type;
     return ED2KFileType::Any;
+}
+
+QStringList ed2kFileTypeExtensions(const QString& typeName)
+{
+    std::vector<ED2KFileType> types;
+    if (typeName == QLatin1StringView(ED2KFTSTR_AUDIO))
+        types = {ED2KFileType::Audio};
+    else if (typeName == QLatin1StringView(ED2KFTSTR_VIDEO))
+        types = {ED2KFileType::Video};
+    else if (typeName == QLatin1StringView(ED2KFTSTR_IMAGE))
+        types = {ED2KFileType::Image};
+    else if (typeName == QLatin1StringView(ED2KFTSTR_DOCUMENT))
+        types = {ED2KFileType::Document};
+    else if (typeName == QLatin1StringView(ED2KFTSTR_PROGRAM))   // archives and CD images search as "Pro"
+        types = {ED2KFileType::Program, ED2KFileType::Archive, ED2KFileType::CDImage};
+    else if (typeName == QLatin1StringView(ED2KFTSTR_ARCHIVE))
+        types = {ED2KFileType::Archive};
+    else if (typeName == QLatin1StringView(ED2KFTSTR_CDIMAGE))
+        types = {ED2KFileType::CDImage};
+    else if (typeName == QLatin1StringView(ED2KFTSTR_EMULECOLLECTION))
+        types = {ED2KFileType::EmuleCollection};
+    QStringList out;
+    for (const auto& t : kTypeExts)
+        if (std::ranges::contains(types, t.type))
+            for (auto e : t.exts)
+                out.append(QString::fromUtf16(e + 1));
+    return out;
 }
 
 QString ed2kFileTypeSearchTerm(ED2KFileType type)

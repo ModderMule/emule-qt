@@ -47,6 +47,8 @@ private:
     void control(int action, const QString& id, const QString& title = {});
     void copyLink(const QString& id);
     void rename(const QString& id);
+    /// the file types suggested to followers (file-set.md §5.3, Ed3kOwnSetControl 5)
+    void editExts(const QString& id);
     void sell(const QString& id);
     void stopOrResume(const QString& id);
     void unpublish(const QString& id);

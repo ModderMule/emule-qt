@@ -786,7 +786,9 @@ int main(int argc, char* argv[])
     // installed to, as there is one core per user. Another --config, a remote or
     // "local" core, or --new-instance each get a window of their own.
     std::unique_ptr<eMule::SingleInstance> singleInstance;
-    if (!cli.screenshotMode() && !cli.newInstance() && eMule::thePrefs.ipcEnabled()
+    // --core-host (connect script) never owns a core: a window of its own
+    const bool coreOverride = !cli.coreHost().isEmpty();
+    if (!cli.screenshotMode() && !cli.newInstance() && eMule::thePrefs.ipcEnabled() && !coreOverride
         && !eMule::CoreAttachment::isRemoteAddress(eMule::thePrefs.ipcListenAddress())) {
         const QString ownedPath = resolveDaemonPath();
         if (!ownedPath.isEmpty() && ownedPath != QStringLiteral("local")) {
@@ -834,7 +836,8 @@ int main(int argc, char* argv[])
     auto daemonPid = std::make_shared<qint64>(0);
     // The last core still holds its profile while saving on the way out
     bool previousCoreStopping = false;
-    if (eMule::thePrefs.ipcEnabled() && !eMule::CoreAttachment::isRemoteAddress(eMule::thePrefs.ipcListenAddress())) {
+    if (eMule::thePrefs.ipcEnabled() && !coreOverride
+        && !eMule::CoreAttachment::isRemoteAddress(eMule::thePrefs.ipcListenAddress())) {
         const QString earlyPath = resolveDaemonPath();
         const bool ownsCore = !earlyPath.isEmpty() && earlyPath != QStringLiteral("local");
         if (ownsCore)
@@ -946,7 +949,16 @@ int main(int argc, char* argv[])
         uint16_t port = eMule::thePrefs.ipcPort();
         QString daemonPath;
 
-        if (eMule::CoreAttachment::isRemoteAddress(connectHost)) {
+        if (coreOverride) {
+            // --core-host from a connect script: this run only, prefs untouched. Treated
+            // as remote even on this machine: never launched, never stopped on exit.
+            connectHost = cli.coreHost();
+            if (cli.corePort() != 0)
+                port = cli.corePort();
+            isRemote = true;
+            eMule::logInfo(QStringLiteral("Core given on the command line: %1:%2")
+                               .arg(connectHost).arg(port));
+        } else if (eMule::CoreAttachment::isRemoteAddress(connectHost)) {
             // FAST PATH: remote address configured — skip daemon discovery
             isRemote = true;
             eMule::logInfo(QStringLiteral("Remote core configured at %1:%2 — skipping local daemon discovery.")
@@ -987,6 +999,12 @@ int main(int argc, char* argv[])
             || (!dialAddr.isNull() && !dialAddr.isLoopback())) {
             if (!eMule::thePrefs.ipcTokens().isEmpty())
                 ipcClient.setAuthToken(eMule::thePrefs.ipcTokens().first());
+        }
+        // Connect script's token wins over the saved one
+        if (coreOverride) {
+            if (const QString envToken = eMule::CommandLineExec::coreTokenFromEnv(); !envToken.isEmpty())
+                ipcClient.setAuthToken(envToken);
+            qunsetenv("EMULEQT_CORE_TOKEN");   // not handed on to child processes
         }
 
         eMule::logInfo(QStringLiteral("Connecting to daemon at %1:%2...")

@@ -770,9 +770,11 @@ void MessagesPanel::updateChatDisplay()
         // only, so a ':/' inside a URL cannot turn into an image (TextLinks.h).
         // "Show smileys" off: the text as typed (MFC ChatSelector.cpp:155)
         const bool smileys = thePrefs.showSmileys();
-        const QString escapedText = TextLinks::linkify(msg.text, [smileys](const QString& text) {
+        const auto render = [smileys](const QString& text) {
             return smileys ? Smileys::render(text) : text.toHtmlEscaped();
-        });
+        };
+        // privacy: web links only when asked (Options › Messages)
+        const QString escapedText = TextLinks::linkifyChat(msg.text, render, thePrefs.chatWebLinks());
         m_chatBrowser->append(
             QStringLiteral("<font color='gray'>[%1]</font> "
                            "<font color='%2'><b>%3:</b></font> %4")

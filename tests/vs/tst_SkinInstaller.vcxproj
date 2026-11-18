@@ -179,21 +179,21 @@
     <ClCompile Include="..\tst_SkinInstaller.cpp" />
     <ClCompile Include="..\..\src\gui\app\SkinInstaller.cpp" />
     <ClCompile Include="..\..\src\gui\app\SkinEngine.cpp" />
-    <ClCompile Include="..\..\src\gui\app\SkinIcons.cpp" />
     <ClCompile Include="..\..\src\gui\app\VersionChecker.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\SkinBrowserDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\app\SkinIcons.cpp" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="..\..\src\gui\app\SkinInstaller.h">
-      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
-    </QtMoc>
-    <QtMoc Include="..\..\src\gui\app\SkinIcons.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\app\VersionChecker.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\dialogs\SkinBrowserDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\app\SkinIcons.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
   </ItemGroup>

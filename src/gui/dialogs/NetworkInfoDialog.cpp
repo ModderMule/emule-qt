@@ -525,6 +525,8 @@ QString NetworkInfoDialog::ed3kHtml(const QCborMap& ed3k, bool compact)
 
     // 0 unknown, 1 open, 2 cone, 3 symmetric; bit 0 IPv4 / bit 1 IPv6 of natChecking
     const qint64 checking = ed3k.value(QStringLiteral("natChecking")).toInteger();
+    // verdict not open, but no test proved it (no prober / no 2nd site)
+    const qint64 untested = ed3k.value(QStringLiteral("natUntested")).toInteger();
     const qint64 offline = ed3k.value(QStringLiteral("kadOffline")).toInteger();
     const auto reach = [&](qint64 nat, int bit) -> QString {
         if (offline & bit)
@@ -533,8 +535,8 @@ QString NetworkInfoDialog::ed3kHtml(const QCborMap& ed3k, bool compact)
             return tr("Checking");
         switch (nat) {
         case 1: return tr("Open");
-        case 2: return tr("Cone NAT");
-        case 3: return tr("Symmetric NAT");
+        case 2: return (untested & bit) ? tr("Cone NAT (port untested)") : tr("Cone NAT");
+        case 3: return (untested & bit) ? tr("Symmetric NAT (port untested)") : tr("Symmetric NAT");
         default: return tr("Unknown");
         }
     };

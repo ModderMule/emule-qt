@@ -117,6 +117,7 @@ class tst_Ed3kArchiveContents : public QObject {
 
 private slots:
     void firstVolumesPickTheOpeningVolume();
+    void volumeSetsListEveryPartInOrder();
     void readingHashesEveryEntry();
     void onlyChosenEntriesAreExtracted();
     void publishedContentsAreFound();
@@ -135,6 +136,15 @@ void tst_Ed3kArchiveContents::firstVolumesPickTheOpeningVolume()
                             QStringLiteral("dir/d.7z.001"), QStringLiteral("dir/d.7z.002"), QStringLiteral("readme.nfo")};
     const QList<int> firsts = Ed3kArchiveContents::firstVolumes(names);
     QCOMPARE(firsts, (QList<int>{0, 3, 4, 6}));   // x has no first volume
+}
+
+void tst_Ed3kArchiveContents::volumeSetsListEveryPartInOrder()
+{
+    const QStringList names{QStringLiteral("a.part2.rar"), QStringLiteral("b.r01"),       QStringLiteral("a.part1.rar"),
+                            QStringLiteral("b.rar"),       QStringLiteral("b.r00"),       QStringLiteral("c.zip"),
+                            QStringLiteral("x.part2.rar"), QStringLiteral("readme.nfo")};
+    // opening volume first, then by volume; sets by their opening volume; x is headless
+    QCOMPARE(Ed3kArchiveContents::volumeSets(names), (QList<QList<int>>{{2, 0}, {3, 4, 1}, {5}}));
 }
 
 void tst_Ed3kArchiveContents::readingHashesEveryEntry()

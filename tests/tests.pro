@@ -107,6 +107,7 @@ SOURCES += \
     tst_IpcConnection.cpp \
     tst_IpcMessage.cpp \
     tst_IpcProtocol.cpp \
+    tst_IpcStream.cpp \
     tst_IpcTls.cpp \
     tst_IrcClient.cpp \
     tst_IrcProtocol.cpp \

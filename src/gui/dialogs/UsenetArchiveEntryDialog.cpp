@@ -278,6 +278,14 @@ void UsenetArchiveEntryDialog::stopPolling()
         m_busy->setVisible(false);
 }
 
+QString UsenetArchiveEntryDialog::entryName(int entry) const
+{
+    for (int i = 0; entry >= 0 && i < m_tree->topLevelItemCount(); ++i)
+        if (const QTreeWidgetItem* item = m_tree->topLevelItem(i); item->data(ColName, Qt::UserRole).toInt() == entry)
+            return item->text(ColName);
+    return {};
+}
+
 void UsenetArchiveEntryDialog::finishWith(int entry)
 {
     if (m_done)

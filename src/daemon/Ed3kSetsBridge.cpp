@@ -94,6 +94,10 @@ QCborMap toCbor(const ed3k::Ed3kSets::Info& i)
         {QStringLiteral("pinned"), i.pinned},
         {QStringLiteral("followed"), i.followed},
         {QStringLiteral("policy"), int(i.policy)},
+        {QStringLiteral("exts"), strings(i.exts)},
+        {QStringLiteral("extsByUser"), i.extsByUser},
+        {QStringLiteral("authorExts"), strings(i.authorExts)},
+        {QStringLiteral("dirByUser"), i.dirByUser},
         {QStringLiteral("seq"), i.seq ? qint64(*i.seq) : qint64(-1)},
         {QStringLiteral("pendingSeq"), i.pendingSeq ? qint64(*i.pendingSeq) : qint64(-1)},
         {QStringLiteral("added"), strings(i.added)},
@@ -176,7 +180,18 @@ QCborMap watchedToCbor(const std::expected<QString, QString>& r)
 
 ed3k::Ed3kSets::Policy policyOf(qint64 v)
 {
-    return v == 1 ? ed3k::Ed3kSets::Policy::Download : ed3k::Ed3kSets::Policy::Ask;
+    return v == 1 ? ed3k::Ed3kSets::Policy::Download : ed3k::Ed3kSets::Policy::Browse;
+}
+
+/// an array of file types; null (or absent): nullopt
+std::optional<QStringList> extsOf(const QCborValue& v)
+{
+    if (!v.isArray())
+        return std::nullopt;
+    QStringList out;
+    for (const auto& e : v.toArray())
+        out << e.toString();
+    return out;
 }
 
 void answer(const IpcMessage& msg, const std::function<void(const IpcMessage&)>& reply)
@@ -191,7 +206,7 @@ void answer(const IpcMessage& msg, const std::function<void(const IpcMessage&)>&
         ok(setsToCbor());
         break;
     case IpcMsgType::FollowEd3kSet:
-        if (auto r = sets.follow(msg.fieldString(0), policyOf(msg.fieldInt(1))))
+        if (auto r = sets.follow(msg.fieldString(0), policyOf(msg.fieldInt(1)), extsOf(msg.field(2)), msg.fieldString(3)))
             ok(QCborMap{{QStringLiteral("id"), qint64(*r)}});
         else
             reply(failure(seq, r.error()));
@@ -211,6 +226,15 @@ void answer(const IpcMessage& msg, const std::function<void(const IpcMessage&)>&
     }
     case IpcMsgType::ApplyEd3kSetVersion:
         sets.applyVersion(id) ? ok() : unknownSet();
+        break;
+    case IpcMsgType::SetEd3kSetFilter:
+        sets.setFilter(id, extsOf(msg.field(1))) ? ok() : unknownSet();
+        break;
+    case IpcMsgType::SetEd3kSetFolder:
+        if (auto r = sets.setFolder(id, msg.fieldString(1)); r)
+            ok();
+        else
+            reply(failure(seq, r.error()));
         break;
     case IpcMsgType::DownloadEd3kSetParts: {
         std::optional<ffi::Key32> author;
@@ -383,7 +407,7 @@ void setSets(ed3k::Ed3kSets* sets, ed3k::Ed3kLive* live, ed3k::Ed3kSiteServer* s
 bool isSetsRequest(IpcMsgType type)
 {
     const int t = static_cast<int>(type);
-    return (t >= 1110 && t <= 1119) || t == 1144 || t == static_cast<int>(IpcMsgType::BroadcastEd3kLive)
+    return (t >= 1110 && t <= 1119) || t == 1144 || type == IpcMsgType::SetEd3kSetFilter || type == IpcMsgType::SetEd3kSetFolder || t == static_cast<int>(IpcMsgType::BroadcastEd3kLive)
            || t == static_cast<int>(IpcMsgType::WatchEd3kLiveFile) || t == static_cast<int>(IpcMsgType::DescribeEd3kLive);
 }
 

@@ -28,6 +28,7 @@
 #include <array>
 #include <deque>
 #include <list>
+#include <map>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -516,6 +517,9 @@ public:
 
     [[nodiscard]] uint64 transferredUp() const { return m_transferredUp; }
     [[nodiscard]] uint64 transferredDown() const { return m_transferredDown; }
+    /// What it sent us of the file with eD2K hash @p fileHash this session (the Transfers
+    /// row's Completed; transferredDown() counts all files, as Client Details shows). Not MFC.
+    [[nodiscard]] uint64 fileDown(const uint8* fileHash) const;
 
     /// Average rates over the time spent in a slot with this client — transferred
     /// bytes / time spent Uploading or Downloading, the running slot included
@@ -1209,6 +1213,8 @@ protected:
     /// paths write into the part file themselves, so processBlockPacket's own
     /// accounting never runs for them.
     void addPayloadDown(uint64 bytes);
+    /// Books @p bytes to m_reqFile's fileDown().
+    void addFileDown(uint64 bytes);
 
     // -- HTTP sources (MFC CUrlClient, CUpDownClient::ProcessHttpBlockPacket) ---
     /// A web server holds the whole file: mark every part available.
@@ -1437,6 +1443,7 @@ private:
     // -- Download tracking --------------------------------------------------
     PartFile* m_reqFile = nullptr;
     uint64 m_transferredDown = 0;
+    std::map<std::array<uint8, 16>, uint64> m_fileDown;   ///< by eD2K file hash, fileDown()
     uint64 m_curSessionDown = 0;
     uint64 m_curSessionPayloadDown = 0;
     uint64 m_lastBlockOffset = UINT64_MAX;

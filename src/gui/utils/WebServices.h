@@ -39,8 +39,10 @@ public:
     /// @param hash     File hash as hex string (for #hashid).
     /// @param fileName File name (for #filename, #name, #cleanfilename, #cleanname).
     /// @param fileSize File size in bytes (for #filesize).
+    /// @param ed3kRoot ed3k root as 64 hex (for #ed3kroot).
+    /// An entry naming a hash not given (empty) is left out.
     void populateFileMenu(QMenu* menu, const QString& hash,
-                          const QString& fileName, uint64_t fileSize);
+                          const QString& fileName, uint64_t fileSize, const QString& ed3kRoot = {});
 
     /// The entries without file macros — MFC's WEBSVC_GEN_URLS, the ones the
     /// Tools → Links menu lists (srchybrid/OtherFunctions.cpp:1013-1030).
@@ -70,7 +72,7 @@ public:
 private:
 
     static QString expandMacros(const QString& urlTemplate, const QString& hash,
-                                const QString& fileName, uint64_t fileSize);
+                                const QString& fileName, uint64_t fileSize, const QString& ed3kRoot);
     static QString cleanupFilename(const QString& name, bool keepExtension = true);
 
     std::vector<WebServiceEntry> m_services;

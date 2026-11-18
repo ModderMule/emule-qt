@@ -6,6 +6,7 @@
 /// table. A route that is not here does not exist.
 
 #include "webserver/WebServer.h"
+#include "webserver/ApiOpBuilder.h"
 
 #include "app/AppConfig.h"
 #include "app/AppContext.h"
@@ -50,25 +51,11 @@
 namespace eMule {
 
 using namespace api;
+using namespace api::build;
 
 namespace {
 
 using L = QLatin1StringView;
-
-[[nodiscard]] QString s(const char* text) { return QString::fromUtf8(text); }
-
-[[nodiscard]] Operation make(const char* id, Method method, const char* path, const char* tag,
-                             const char* summary, const char* description = "")
-{
-    Operation op;
-    op.id = s(id);
-    op.method = method;
-    op.path = s(path);
-    op.tag = s(tag);
-    op.summary = s(summary);
-    op.description = s(description);
-    return op;
-}
 
 [[nodiscard]] Result fromStatus(const ops::Status& st,
                                 const QJsonObject& body = {{QStringLiteral("ok"), true}})
@@ -153,6 +140,8 @@ using L = QLatin1StringView;
 [[nodiscard]] QString searchTypeName(SearchType type)
 {
     return type == SearchType::Kademlia ? QStringLiteral("kad")
+         : type == SearchType::Ed3k ? QStringLiteral("ed3k")
+         : type == SearchType::Ed3kLive ? QStringLiteral("ed3kLive")
          : type == SearchType::MetaUsenet ? QStringLiteral("usenetServer")
          : type == SearchType::MetaTorrent ? QStringLiteral("torrentServer")
          : type == SearchType::MetaWeb ? QStringLiteral("webServer")
@@ -168,6 +157,47 @@ using L = QLatin1StringView;
     if (name == L("normal")) return 1;   // PR_NORMAL
     if (name == L("high"))   return 2;   // PR_HIGH
     return -1;
+}
+
+/// Upload priority names the API takes (kPr* values).
+[[nodiscard]] uint8 upPriorityFromName(const QString& name)
+{
+    if (name == L("veryLow"))  return kPrVeryLow;
+    if (name == L("low"))      return kPrLow;
+    if (name == L("high"))     return kPrHigh;
+    if (name == L("veryHigh")) return kPrVeryHigh;
+    return kPrNormal;
+}
+
+[[nodiscard]] QString upPriorityName(uint8 priority)
+{
+    switch (priority) {
+    case kPrVeryLow:  return s("veryLow");
+    case kPrLow:      return s("low");
+    case kPrHigh:     return s("high");
+    case kPrVeryHigh: return s("veryHigh");
+    default:          return s("normal");
+    }
+}
+
+/// A shared file's row: what the Shared Files list shows, without the part bars.
+[[nodiscard]] QJsonObject sharedFileJson(const KnownFile& file)
+{
+    return QJsonObject{
+        {s("hash"), md4str(file.fileHash())},
+        {s("fileName"), file.fileName()},
+        {s("fileSize"), static_cast<qint64>(file.fileSize())},
+        {s("path"), file.filePath()},
+        {s("upPriority"), upPriorityName(file.upPriority())},
+        {s("isAutoUpPriority"), file.isAutoUpPriority()},
+        {s("requests"), static_cast<qint64>(file.statistic.requests())},
+        {s("accepts"), static_cast<qint64>(file.statistic.accepts())},
+        {s("transferred"), static_cast<qint64>(file.statistic.transferred())},
+        {s("allTimeRequests"), static_cast<qint64>(file.statistic.allTimeRequests())},
+        {s("allTimeAccepts"), static_cast<qint64>(file.statistic.allTimeAccepts())},
+        {s("allTimeTransferred"), static_cast<qint64>(file.statistic.allTimeTransferred())},
+        {s("isPartFile"), file.isPartFile()},
+    };
 }
 
 } // namespace
@@ -571,6 +601,19 @@ void WebServer::buildApiTable()
     downloadAction("downloads.cancel", "cancel", "download_cancel", "Cancel a download",
                    "Removes the download and deletes what was downloaded of it.",
                    &ops::cancelDownload, Destructive);
+    {
+        Operation op = make("downloads.move", Method::Post, "/api/v1/downloads/{hash}/move",
+                            "Downloads", "Move an unfinished download to another temp folder",
+                            "The part file is copied over in the background; the download goes "
+                            "on. The folder joins the temp folder list.");
+        op.mcpTool = s("download_move");
+        op.params = {hashParam(), bodyStr(s("folder"), s("Existing, writable folder.")).req().range(1, 4096)};
+        op.handler = [](const Call& c) {
+            return fromStatus(ops::moveDownload(c.str(L("hash")), c.str(L("folder"))),
+                              {{s("ok"), true}, {s("hash"), c.str(L("hash"))}});
+        };
+        add(op);
+    }
 
     // --- Search ------------------------------------------------------------------
     {
@@ -592,13 +635,15 @@ void WebServer::buildApiTable()
                             "\"usenetServer\", \"torrentServer\" and \"webServer\" ask an eD2K "
                             "server's own catalogue for Usenet, torrent or web releases (keywords "
                             "and NOT only); "
-                            "their results have metaKind set and are not eD2K downloads.");
+                            "their results have metaKind set; POST /search/{id}/download hands "
+                            "such a release to its own queue (Usenet, Torrents, Hoster). \"ed3k\" "
+                            "asks the ed3k network (metaKind \"ed3k\", ed3kRoot set).");
         op.mcpTool = s("search_start");
         op.params = {
             bodyStr(s("expression"), s("Keywords. AND, OR and NOT are understood.")).req().range(1, 512),
             bodyStr(s("type"), s("Network to search."))
                 .oneOf({s("automatic"), s("ed2kServer"), s("ed2kGlobal"), s("kad"),
-                        s("usenetServer"), s("torrentServer"), s("webServer")})
+                        s("usenetServer"), s("torrentServer"), s("webServer"), s("ed3k")})
                 .def(s("automatic")),
             bodyStr(s("fileType"), s("Restrict to a type: Audio, Video, Image, Pro (programs), "
                                      "Doc, Arc (archives), Iso (CD images)."))
@@ -636,39 +681,19 @@ void WebServer::buildApiTable()
         Operation op = make("search.download", Method::Post,
                             "/api/v1/search/{searchID}/download", "Search",
                             "Download a search result",
-                            "Queues the result and carries over the sources the search found.");
+                            "An eD2K file is queued with the sources the search found; an ed3k "
+                            "file goes to the ed3k downloads. A Usenet, torrent or web release "
+                            "(metaKind) is fetched from the server's catalogue and handed to the "
+                            "Usenet queue, the Torrents list or Hoster; the answer comes once it "
+                            "is there.");
         op.mcpTool = s("download_from_search");
         op.params = {
             pathInt(s("searchID"), s("Id returned by POST /search.")).atLeast(1),
             bodyStr(s("hash"), s("Hash of the result to download.")).req().range(32, 32),
             bodyInt(s("category"), s("Category index from GET /categories; 0 = none.")).atLeast(0).def(0),
+            bodyBool(s("paused"), s("Add paused; default: the \"add new files paused\" option.")),
         };
-        op.handler = [this](const Call& c) {
-            if (!m_searchList)
-                return unavailable("Search list");
-            const QString hash = c.str(L("hash"));
-            const auto searchID = static_cast<uint32>(c.integer(L("searchID")));
-            std::array<uint8, 16> raw{};
-            if (decodeBase16(hash, raw.data(), 16) != 16)
-                return error(400, s("Invalid hash"));
-            const SearchFile* result = m_searchList->searchFileByHash(raw.data(), searchID);
-            if (!result)
-                return error(404, s("No such result in this search"));
-            if (result->isMetaResult()) {
-                const auto status = m_searchList->queue().status(searchID);
-                if (!status || !isMetaSearchType(status->type))
-                    return error(404, s("No such result in this search"));   // blended: not in the API
-                return error(400, s("Not an eD2K file: fetch it from the server's catalogue in the app"));
-            }
-            const ops::AddOutcome out = ops::addDownloadFromSearch(
-                hash, result->fileName(), static_cast<uint64>(result->fileSize()), {},
-                c.integer(L("category")), searchID);
-            if (!out.status.ok())
-                return error(out.status.code, out.status.message);
-            return ok(QJsonObject{{s("hash"), hash},
-                                  {s("added"), out.added},
-                                  {s("alreadyQueued"), !out.added}});
-        };
+        op.asyncHandler = [this](const Call& c) { return apiSearchDownload(c); };
         add(op);
     }
     {
@@ -950,11 +975,7 @@ void WebServer::buildApiTable()
             // Only the rows of the window are built: a library can hold 100,000 files.
             m_sharedFiles->forEachFile([&](KnownFile* file) {
                 if (index >= first && index < last) {
-                    items.append(QJsonObject{
-                        {s("hash"), md4str(file->fileHash())},
-                        {s("fileName"), file->fileName()},
-                        {s("fileSize"), static_cast<qint64>(file->fileSize())},
-                    });
+                    items.append(sharedFileJson(*file));
                 }
                 ++index;
             });
@@ -1005,6 +1026,58 @@ void WebServer::buildApiTable()
         op.mcpTool = s("shared_reload");
         op.handler = [](const Call&) {
             return fromStatus(ops::reloadSharedFiles(), {{s("reloading"), true}});
+        };
+        add(op);
+    }
+    {
+        Operation op = make("shared.edit", Method::Patch, "/api/v1/shared/{hash}", "Shared files",
+                            "Rename a shared file, set its upload priority, comment or rating",
+                            "Send only the fields to change. Rename renames the file on disk.");
+        op.mcpTool = s("shared_edit");
+        op.params = {
+            hashParam(),
+            bodyStr(s("name"), s("New file name.")).range(1, 255),
+            bodyStr(s("priority"), s("Upload priority; \"auto\" lets the core choose."))
+                .oneOf({s("veryLow"), s("low"), s("normal"), s("high"), s("veryHigh"), s("auto")}),
+            bodyStr(s("comment"), s("Your comment, published with the file; empty clears it.")).range(0, 128),
+            bodyInt(s("rating"), s("Your rating: 0 none, 1 fake, 2 poor, 3 fair, 4 good, 5 excellent.")).range(0, 5),
+        };
+        op.handler = [this](const Call& c) {
+            if (!m_sharedFiles)
+                return unavailable("Shared file list");
+            const QString hash = c.str(L("hash"));
+            if (!c.has(L("name")) && !c.has(L("priority")) && !c.has(L("comment")) && !c.has(L("rating")))
+                return error(400, s("Nothing to change: send name, priority, comment or rating"));
+            uint8 raw[16]{};
+            if (decodeBase16(hash, raw, 16) != 16)
+                return error(400, s("Invalid hash"));
+            if (!m_sharedFiles->getFileByID(raw))
+                return error(404, s("Shared file not found"));
+
+            ops::Status st;
+            if (c.has(L("priority"))) {
+                const QString name = c.str(L("priority"));
+                const bool isAuto = name == L("auto");
+                st = ops::setSharedFilePriority(hash, isAuto ? kPrNormal : upPriorityFromName(name), isAuto);
+            }
+            if (st.ok() && (c.has(L("comment")) || c.has(L("rating")))) {
+                // a missing one keeps the file's own value
+                st = ops::setFileComments({hash}, c.str(L("comment")),
+                                          c.has(L("rating")) ? c.integer(L("rating")) : -1,
+                                          /*keepEmpty*/ !c.has(L("comment")));
+            }
+            if (st.ok() && c.has(L("name")))
+                st = ops::renameSharedFile(hash, c.str(L("name")));
+            if (!st.ok())
+                return error(st.code, st.message);
+            KnownFile* file = m_sharedFiles->getFileByID(raw);
+            if (!file)
+                return ok(QJsonObject{{s("ok"), true}});
+            // read lazily from fileinfo.ini: here only, not per row of the list
+            QJsonObject row = sharedFileJson(*file);
+            row.insert(s("comment"), file->getFileComment());
+            row.insert(s("rating"), static_cast<qint64>(file->getFileRating()));
+            return ok(row);
         };
         add(op);
     }
@@ -1326,6 +1399,9 @@ void WebServer::buildApiTable()
 
     addUsenetOperations();
     addTorrentOperations();
+    addEd3kOperations();
+    addHosterOperations();
+    addIndexerOperations();
 
     // --- Streams (token in the query, not the API key; routed outside the table) ---
     {
@@ -1370,6 +1446,40 @@ void WebServer::buildApiTable()
             if (!found)
                 return error(404, s("File not found"));
             return apiPreviewLink(c, s("/api/v1/downloads/%1/preview").arg(hash));
+        };
+        add(op);
+    }
+    {
+        Operation op = make("hoster.preview", Method::Get, "/api/v1/hoster/{id}/preview",
+                            "Streams", "Byte-range stream of a hoster download",
+                            "For media players. Authenticated by ?token=, the stream token. Video "
+                            "and audio files only, not archives (406). A range not yet on disk "
+                            "waits up to 60 seconds, \"Enable seeking in downloads\" on or off; "
+                            "ed3k peers of a file with a known root fetch it first, the hoster's "
+                            "own stream stays in file order.");
+        op.flags = ReadOnly | RawStream;
+        op.params = {pathStr(s("id"), s("Hoster item id.")),
+                     queryStr(s("token"), s("Stream token.")).req()};
+        add(op);
+    }
+    {
+        Operation op = make("hoster.previewLink", Method::Get, "/api/v1/hoster/{id}/preview-link",
+                            "Streams", "Player link for a hoster download",
+                            "A URL of GET /hoster/{id}/preview with a new stream token, as "
+                            "downloads.previewLink.");
+        op.flags = ReadOnly;
+        op.mcpTool = s("hoster_preview_link");
+        op.params = {pathStr(s("id"), s("Hoster item id."))};
+        op.handler = [this](const Call& c) {
+            const QString id = c.str(L("id"));
+            const UsenetStreamSource src = m_hosterStreamResolver ? m_hosterStreamResolver(id, 0, false)
+                                                                  : UsenetStreamSource{};
+            if (!src.found)
+                return error(404, s("File not found"));
+            if (!src.notSeekableReason.isEmpty())
+                return error(406, src.notSeekableReason);
+            return apiPreviewLink(c, s("/api/v1/hoster/%1/preview")
+                                         .arg(QString::fromLatin1(QUrl::toPercentEncoding(id))));
         };
         add(op);
     }
@@ -1577,8 +1687,9 @@ void WebServer::addUsenetOperations()
     {
         Operation op = make("usenet.preview", Method::Get, "/api/v1/usenet/{id}/{fileIndex}/preview",
                             "Streams", "Byte-range stream of a Usenet file",
-                            "Authenticated by ?token=, the stream token. Waits up to 15 seconds "
-                            "for bytes that are still downloading.");
+                            "Authenticated by ?token=, the stream token. A range not yet on disk "
+                            "waits up to 15 seconds and its articles are fetched first, \"Enable "
+                            "seeking in downloads\" on or off.");
         op.flags = ReadOnly | RawStream;
         op.params = {idParam(), pathInt(s("fileIndex"), s("Index of the file in the NZB.")).atLeast(0),
                      queryStr(s("token"), s("Stream token.")).req()};
@@ -1905,6 +2016,7 @@ Result WebServer::apiSearchStart(const Call& call)
 
     const QString type = call.str(L("type"));
     params.type = type == L("kad") ? SearchType::Kademlia
+                : type == L("ed3k") ? SearchType::Ed3k
                 : type == L("usenetServer") ? SearchType::MetaUsenet
                 : type == L("torrentServer") ? SearchType::MetaTorrent
                 : type == L("webServer") ? SearchType::MetaWeb
@@ -1975,6 +2087,61 @@ Result WebServer::apiSearchResults(const Call& call) const
     }
     result.body = body;
     return result;
+}
+
+QFuture<Result> WebServer::apiSearchDownload(const Call& c)
+{
+    if (!m_searchList)
+        return Registry::finished(unavailable("Search list"));
+    const QString hash = c.str(L("hash"));
+    const auto searchID = static_cast<uint32>(c.integer(L("searchID")));
+    std::array<uint8, 16> raw{};
+    if (decodeBase16(hash, raw.data(), 16) != 16)
+        return Registry::finished(error(400, s("Invalid hash")));
+    const SearchFile* result = m_searchList->searchFileByHash(raw.data(), searchID);
+    if (!result)
+        return Registry::finished(error(404, s("No such result in this search")));
+    const auto status = m_searchList->queue().status(searchID);
+    const std::optional<bool> paused = c.has(L("paused")) ? std::optional<bool>(c.flag(L("paused"))) : std::nullopt;
+
+    if (result->isEd3kResult()) {
+        if (!m_ed3kBackend || !m_ed3kBackend->available())
+            return Registry::finished(error(503, s("ed3k is not available")));
+        const QString root = QString::fromLatin1(result->ed3kRoot().toHex());
+        const Ed3kWebBackend::AddResult r = m_ed3kBackend->add(
+            root, static_cast<qint64>(result->fileSize()), result->fileName(), int(c.integer(L("category"))),
+            paused.value_or(thePrefs.addNewFilesPaused()));
+        if (r.root.isEmpty())
+            return Registry::finished(error(409, r.error.isEmpty() ? s("Not added") : r.error));
+        return Registry::finished(ok(QJsonObject{{s("hash"), hash}, {s("ed3kRoot"), r.root}, {s("added"), true}}));
+    }
+
+    if (result->isMetaResult()) {
+        // rows blended into an eD2K / Kad search are not in the API
+        if (!status || !isMetaSearchType(status->type))
+            return Registry::finished(error(404, s("No such result in this search")));
+        if (!m_metaGrabBackend)
+            return Registry::finished(error(503, s("Grabbing releases is not available")));
+        auto promise = std::make_shared<QPromise<Result>>();
+        promise->start();
+        QFuture<Result> future = promise->future();
+        const QString name = result->fileName();
+        m_metaGrabBackend->grab(searchID, {raw}, [promise, hash, name](bool done, const QString& message) {
+            promise->addResult(done ? ok(QJsonObject{{s("hash"), hash}, {s("fileName"), name}, {s("grabbed"), true}})
+                                    : error(409, message.isEmpty() ? s("Could not be grabbed") : message));
+            promise->finish();
+        });
+        return future;
+    }
+
+    const ops::AddOutcome out = ops::addDownloadFromSearch(
+        hash, result->fileName(), static_cast<uint64>(result->fileSize()), {},
+        c.integer(L("category")), searchID, paused);
+    if (!out.status.ok())
+        return Registry::finished(error(out.status.code, out.status.message));
+    return Registry::finished(ok(QJsonObject{{s("hash"), hash},
+                                             {s("added"), out.added},
+                                             {s("alreadyQueued"), !out.added}}));
 }
 
 Result WebServer::apiSearchList(const Call& call) const

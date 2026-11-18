@@ -1057,6 +1057,8 @@ void KnownFile::setFileRating(uint32 rating)
 
 bool KnownFile::publishSrc()
 {
+    if (isEd3kOnly())
+        return false;   // no eD2K hash to publish
     time_t tNow = std::time(nullptr);
     uint32 buddyIP = 0;
     uint16 buddyPort = 0;
@@ -1092,6 +1094,8 @@ bool KnownFile::publishSrc()
 
 bool KnownFile::publishNotes()
 {
+    if (isEd3kOnly())
+        return false;
     // Check both the loaded comment/rating and the FT_FILERATING tag
     bool hasNotes = !getFileComment().isEmpty() || getFileRating() > 0;
     if (!hasNotes) {
@@ -1406,40 +1410,11 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
     if (cancelled())
         return false;
 
-    const QString fullPath = directory + u'/' + filename;
-
-    QFile file(fullPath);
-    uint64 length = 0;
-    time_t openedDate = 0;
-    {
-        // Open and stat are disk time too, most of it for a small file
-        DiskLoadLimiter::thisThread().setFile(directory);   // the volume's budget, with ed3k's hashing
-        const DiskLoadLimiter::Read timed(DiskLoadLimiter::thisThread());
-        if (!file.open(QIODevice::ReadOnly)) {
-            logError(QStringLiteral("KnownFile::createFromFile: cannot open '%1'").arg(fullPath));
-            return false;
-        }
-        // Size and date of the file we actually hold open, taken right before the read:
-        // the scan that queued it may be minutes old.
-        length = static_cast<uint64>(file.size());
-        openedDate = static_cast<time_t>(
-            file.fileTime(QFileDevice::FileModificationTime).toSecsSinceEpoch());
-    }
-    if (scanned && (scanned->size != length || scanned->mtime != openedDate)) {
-        logSharedVerbose(QStringLiteral("File changed since it was scanned: %1").arg(fullPath));
-        if (changedSinceScan)
-            *changedSinceScan = true;
+    QFile file;
+    if (!openForHashing(file, directory, filename, scanned, changedSinceScan))
         return false;
-    }
-
-    setFileSize(length);
-    // The name on disk, unchanged: a scan finds the record by it (MFC CreateFromFile :357)
-    setFileName(filename);
-    setPath(directory);
-    setFilePath(fullPath);
-    setUtcFileDate(openedDate);
-
-    QFileInfo fi(fullPath);
+    const QString& fullPath = filePath();
+    const auto length = static_cast<uint64>(fileSize());
 
     if (length == 0) {
         // Empty file — single null hash
@@ -1521,12 +1496,8 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
 
     // Still being written: the hash would be stored under a size and date the file no
     // longer has. The caller tries again later.
-    fi.refresh();
-    if (static_cast<uint64>(fi.size()) != length
-        || static_cast<time_t>(fi.lastModified().toSecsSinceEpoch()) != utcFileDate()) {
-        logSharedVerbose(QStringLiteral("File changed while it was hashed: %1").arg(fullPath));
+    if (changedWhileHashed())
         return false;
-    }
 
     // Compute final file hash
     if (md4HashSet.size() == 1) {
@@ -1554,6 +1525,72 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
     updatePartsInfo();
 
     return true;
+}
+
+bool KnownFile::createFromFileEd3kOnly(const QString& directory, const QString& filename,
+                                       std::function<void(int)> progressCallback, const FileStamp* scanned,
+                                       bool* changedSinceScan, const std::atomic<bool>* cancel, SideHash* side)
+{
+    if (changedSinceScan)
+        *changedSinceScan = false;
+    const auto cancelled = [cancel] { return cancel && cancel->load(std::memory_order_relaxed); };
+    if (!side || cancelled())
+        return false;
+
+    QFile file;
+    if (!openForHashing(file, directory, filename, scanned, changedSinceScan))
+        return false;
+    const QString& fullPath = filePath();
+    const auto length = static_cast<uint64>(fileSize());
+    if (length == 0)
+        return false;   // ed3k shares no empty file
+
+    DiskLoadLimiter& diskLoad = DiskLoadLimiter::thisThread();
+    static constexpr qint64 kBlock = 256 * 1024;
+    const auto buffer = std::make_unique_for_overwrite<char[]>(kBlock);
+    ReadOnceHint readOnce(file);
+    uint64 done = 0;
+    int lastPercent = -1;
+    while (done < length) {
+        if (cancelled())
+            return false;
+        qint64 got = 0;
+        {
+            const DiskLoadLimiter::Read timed(diskLoad);
+            got = file.read(buffer.get(), static_cast<qint64>(std::min<uint64>(kBlock, length - done)));
+        }
+        if (got <= 0) {
+            logError(QStringLiteral("KnownFile::createFromFileEd3kOnly: read error in '%1'").arg(fullPath));
+            return false;
+        }
+        side->update({reinterpret_cast<const std::byte*>(buffer.get()), static_cast<std::size_t>(got)});
+        done += static_cast<uint64>(got);
+        readOnce.readUpTo(static_cast<qint64>(done));
+        if (const int percent = static_cast<int>(done * 100 / length); progressCallback && percent != lastPercent) {
+            lastPercent = percent;
+            progressCallback(percent);
+        }
+    }
+
+    if (changedWhileHashed())
+        return false;
+    const QByteArray root = side->root();
+    if (root.size() != 32)
+        return false;
+    setEd3kOnlyRoot(root);
+    setLastSeen(std::time(nullptr));
+    updateMetaDataTags();
+    updatePartsInfo();
+    return true;
+}
+
+void KnownFile::setEd3kOnlyRoot(const QByteArray& root)
+{
+    if (root.size() != 32)
+        return;
+    m_ed3kOnlyRoot = root;
+    setFileHash(reinterpret_cast<const uint8*>(root.constData()));
+    fileIdentifier().getRawMD4HashSet().clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -1866,6 +1903,51 @@ void KnownFile::markUploadersCommentDirty()
     for (auto* client : m_uploadingClients)
         if (client)
             client->setCommentDirty(true);
+}
+
+bool KnownFile::openForHashing(QFile& file, const QString& directory, const QString& filename,
+                               const FileStamp* scanned, bool* changedSinceScan)
+{
+    const QString fullPath = directory + u'/' + filename;
+    file.setFileName(fullPath);
+    uint64 length = 0;
+    time_t openedDate = 0;
+    {
+        // open and stat are disk time too, most of it for a small file
+        DiskLoadLimiter& diskLoad = DiskLoadLimiter::thisThread();
+        diskLoad.setFile(directory);   // the volume's budget, with ed3k's hashing
+        const DiskLoadLimiter::Read timed(diskLoad);
+        if (!file.open(QIODevice::ReadOnly)) {
+            logError(QStringLiteral("KnownFile: cannot open '%1' for hashing").arg(fullPath));
+            return false;
+        }
+        // size/date of the file held open, right before the read: the scan may be minutes old
+        length = static_cast<uint64>(file.size());
+        openedDate = static_cast<time_t>(file.fileTime(QFileDevice::FileModificationTime).toSecsSinceEpoch());
+    }
+    if (scanned && (scanned->size != length || scanned->mtime != openedDate)) {
+        logSharedVerbose(QStringLiteral("File changed since it was scanned: %1").arg(fullPath));
+        if (changedSinceScan)
+            *changedSinceScan = true;
+        return false;
+    }
+    setFileSize(length);
+    // the name on disk, unchanged: a scan finds the record by it (MFC CreateFromFile :357)
+    setFileName(filename);
+    setPath(directory);
+    setFilePath(fullPath);
+    setUtcFileDate(openedDate);
+    return true;
+}
+
+bool KnownFile::changedWhileHashed() const
+{
+    const QFileInfo fi(filePath());
+    if (static_cast<uint64>(fi.size()) == static_cast<uint64>(fileSize())
+        && static_cast<time_t>(fi.lastModified().toSecsSinceEpoch()) == utcFileDate())
+        return false;
+    logSharedVerbose(QStringLiteral("File changed while it was hashed: %1").arg(filePath()));
+    return true;
 }
 
 } // namespace eMule

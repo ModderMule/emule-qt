@@ -96,20 +96,22 @@ struct ResolverEvent {
         Done,         ///< open: the whole file is at path (size, name, hash)
         Gone,         ///< the hoster says the file was removed
         NeedsUser,    ///< text: "puzzle" or "login"
-        Failed,       ///< code: "io", "defect", "failed", "noPlugin", "folder", "unavailable", "private"
+        Failed,       ///< code: "io", "defect", "failed", "noPlugin", "folder", "unavailable", "ffmpeg"
+                      ///< (HLS/DASH and no ffmpeg came, text: why), "private"
                       ///< (a request to a non-public address refused, text: the host); openContainer
                       ///< also "limit" (the DLC service refuses for a while), "invalid", "password",
                       ///< "bad" (a resolver without containers); text
         Cancelled,
         Account,      ///< accountCheck: valid, premium, expires, trafficLeft, maxDownloads; multi, hosts, state
-        Status,       ///< open: what the plugin does, text: "link", "hoster", "hosterAccount", "puzzle", "connect", "transfer"
+        Status,       ///< open: what the plugin does, text: "link", "hoster", "hosterAccount", "puzzle", "ffmpeg"
+                      ///< (waits for the daemon's ffmpeg), "connect", "transfer"
         Solvers,      ///< setSolverAccounts: solvers
         Solved,       ///< solveTest: text, host (the solver), name (the expected text, if known)
         AccountHosts, ///< accountHosts: accountHosts
         Icon,         ///< favicon: host, image (PNG); Failed "none" when the site has none
         Login,        ///< accountCheck: a browser login (OAuth device flow) waits; text: its URL, host, timeoutS
         Code,         ///< accountCheck, open: a login's confirmation code (2FA, mail) waits; host, user (the login),
-                      ///< text: the site's words, name: title, timeoutS
+                      ///< text: the site's words, name: title, timeoutS, count: the login's ask number
     };
     Kind kind = Kind::Failed;
     QString host;
@@ -126,6 +128,8 @@ struct ResolverEvent {
     /// open with have > 0: where the new bytes start (have: resumed, 0: from the start);
     /// sent once, with a progress or the done
     std::optional<std::uint64_t> from;
+    /// open's progress: not written in file order (HLS/DASH muxed by ffmpeg), the bytes come with the done
+    bool muxed = false;
     std::uint64_t seconds = 0;
     std::uint64_t puzzle = 0;
     int count = 0;
@@ -141,6 +145,10 @@ struct ResolverEvent {
     qint64 expires = 0;           ///< unix seconds; 0 = unknown
     qint64 trafficLeft = -1;      ///< bytes; -1 = unlimited or unknown
     qint64 trafficMax = -1;       ///< accountCheck: the account's traffic in all; -1 = unknown
+    bool unlimited = false;       ///< accountCheck: JD says unlimited traffic
+    /// accountCheck, login worked but not usable: "free" (the plugin can't use free logins), "expired";
+    /// "login": no session, only a browser login the user starts (Check) helps
+    QString unusable;
     int maxDownloads = 0;         ///< accountCheck: JD's downloads at once; -1 = unlimited, 0 = unknown
     double balance = -1;          ///< accountCheck of a solver service: its credit; -1 = none given
     QString currency;             ///< of balance, ISO 4217; empty: unknown

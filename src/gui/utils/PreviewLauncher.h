@@ -6,6 +6,8 @@
 
 #include <QString>
 
+class QWidget;
+
 namespace eMule {
 
 class IpcClient;
@@ -14,11 +16,22 @@ class PreviewApps;
 
 /// Launch the configured video player with the given streaming URL.
 /// If VLC is detected, reuses an existing instance instead of spawning a new one.
-void launchPreview(const QString& url);
+/// @p title: the file name the player shows instead of the URL's last segment.
+void launchPreview(const QString& url, const QString& title = {});
 
 /// Launch @p command on @p target — a stream URL, or a part file's path. @p args may
 /// hold a "%1" for the target; otherwise it is appended. False when nothing started.
-bool launchPlayer(const QString& command, const QString& args, const QString& target);
+/// @p title: shown by VLC for a URL target (handed over as a one-entry M3U playlist, the
+/// token stays in the URL)
+bool launchPlayer(const QString& command, const QString& args, const QString& target,
+                  const QString& title = {});
+
+/// Plays stream @p url of file @p name: the PreviewApps.dat application for its extension,
+/// else launchPreview(). A failed start of that application is told in a box on @p parent.
+void playStreamUrl(QWidget* parent, const QString& url, const QString& name);
+
+/// The same channel for hoster item @p itemId. Empty on the same terms as daemonStreamUrl().
+[[nodiscard]] QString daemonHosterStreamUrl(const IpcClient* ipc, qint64 itemId, const QString& streamToken);
 
 /// The preview applications of PreviewApps.dat in the configuration folder (MFC
 /// thePreviewApps). Read again whenever the file has changed; empty without one.

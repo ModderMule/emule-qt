@@ -258,7 +258,6 @@ void Ed3kOptionsPages::load(const QCborMap& p)
 {
     m_loading = true;
     m_enabledCheck->setChecked(p.value(QStringLiteral("ed3kEnabled")).toBool(true));
-    m_shareFilesCheck->setChecked(p.value(QStringLiteral("ed3kShareFiles")).toBool(true));
     m_jointDownloadsCheck->setChecked(p.value(QStringLiteral("ed3kJointDownloads")).toBool(true));
     m_shareUsenetCheck->setChecked(p.value(QStringLiteral("ed3kShareUsenetPosts")).toBool(true));
     m_archiveContentsCheck->setChecked(p.value(QStringLiteral("ed3kArchiveContents")).toBool(true));
@@ -282,8 +281,13 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     m_extTree->setChecked(m_lanItem, p.value(QStringLiteral("ed3kLan")).toBool(false));
     m_extTree->setChecked(m_autoIndexItem, p.value(QStringLiteral("ed3kAutoIndexNode")).toBool(false));
     m_extTree->setChecked(m_forceOpenItem, p.value(QStringLiteral("ed3kForceOpen")).toBool(false));
+    m_extTree->setChecked(m_lanUnlimitedItem, p.value(QStringLiteral("ed3kLanUnlimited")).toBool(true));
     m_extTree->setChecked(m_roomStoreItem, p.value(QStringLiteral("ed3kRoomHistoryStore")).toBool(true));
     m_extTree->setValue(m_roomMaxItem, int(p.value(QStringLiteral("ed3kRoomHistoryMax")).toInteger(5000)));
+    m_extTree->setChecked(m_anonEd2kItem, p.value(QStringLiteral("ed3kAnonEd2k")).toBool(false));
+    m_extTree->setChecked(m_anonTorrentItem, p.value(QStringLiteral("ed3kAnonTorrent")).toBool(false));
+    m_extTree->setChecked(m_anonUsenetItem, p.value(QStringLiteral("ed3kAnonUsenet")).toBool(true));
+    m_extTree->setChecked(m_anonHosterItem, p.value(QStringLiteral("ed3kAnonHoster")).toBool(true));
     m_hiding->load(p);
     m_sitePortSpin->setValue(int(p.value(QStringLiteral("ed3kSitePort")).toInteger(0)));
     m_nodeListsEdit->setPlainText(linesText(p.value(QStringLiteral("ed3kNodeLists"))));
@@ -372,7 +376,6 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
         req.append(v);
     };
     put("ed3kEnabled", m_enabledCheck->isChecked());
-    put("ed3kShareFiles", m_shareFilesCheck->isChecked());
     put("ed3kJointDownloads", m_jointDownloadsCheck->isChecked());
     put("ed3kShareUsenetPosts", m_shareUsenetCheck->isChecked());
     put("ed3kArchiveContents", m_archiveContentsCheck->isChecked());
@@ -385,8 +388,13 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kLan", m_extTree->isChecked(m_lanItem));
     put("ed3kAutoIndexNode", m_extTree->isChecked(m_autoIndexItem));
     put("ed3kForceOpen", m_extTree->isChecked(m_forceOpenItem));
+    put("ed3kLanUnlimited", m_extTree->isChecked(m_lanUnlimitedItem));
     put("ed3kRoomHistoryStore", m_extTree->isChecked(m_roomStoreItem));
     put("ed3kRoomHistoryMax", qint64(m_extTree->value(m_roomMaxItem)));
+    put("ed3kAnonEd2k", m_extTree->isChecked(m_anonEd2kItem));
+    put("ed3kAnonTorrent", m_extTree->isChecked(m_anonTorrentItem));
+    put("ed3kAnonUsenet", m_extTree->isChecked(m_anonUsenetItem));
+    put("ed3kAnonHoster", m_extTree->isChecked(m_anonHosterItem));
     m_hiding->appendTo(req);
     put("ed3kSitePort", qint64(m_sitePortSpin->value()));
     put("ed3kNodeLists", linesOf(m_nodeListsEdit).join(QLatin1Char(' ')));
@@ -444,7 +452,6 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
 void Ed3kOptionsPages::saveLocal() const
 {
     thePrefs.setEd3kEnabled(m_enabledCheck->isChecked());
-    thePrefs.setEd3kShareFiles(m_shareFilesCheck->isChecked());
     thePrefs.setEd3kJointDownloads(m_jointDownloadsCheck->isChecked());
     thePrefs.setEd3kShareUsenetPosts(m_shareUsenetCheck->isChecked());
     thePrefs.setEd3kArchiveContents(m_archiveContentsCheck->isChecked());
@@ -457,8 +464,13 @@ void Ed3kOptionsPages::saveLocal() const
     thePrefs.setEd3kLan(m_extTree->isChecked(m_lanItem));
     thePrefs.setEd3kAutoIndexNode(m_extTree->isChecked(m_autoIndexItem));
     thePrefs.setEd3kForceOpen(m_extTree->isChecked(m_forceOpenItem));
+    thePrefs.setEd3kLanUnlimited(m_extTree->isChecked(m_lanUnlimitedItem));
     thePrefs.setEd3kRoomHistoryStore(m_extTree->isChecked(m_roomStoreItem));
     thePrefs.setEd3kRoomHistoryMax(m_extTree->value(m_roomMaxItem));
+    thePrefs.setEd3kAnonEd2k(m_extTree->isChecked(m_anonEd2kItem));
+    thePrefs.setEd3kAnonTorrent(m_extTree->isChecked(m_anonTorrentItem));
+    thePrefs.setEd3kAnonUsenet(m_extTree->isChecked(m_anonUsenetItem));
+    thePrefs.setEd3kAnonHoster(m_extTree->isChecked(m_anonHosterItem));
     m_hiding->saveLocal();
     if (m_sitePortSpin->value() > 0)
         thePrefs.setEd3kSitePort(uint16(m_sitePortSpin->value()));
@@ -547,8 +559,7 @@ QWidget* Ed3kOptionsPages::buildGeneral(QWidget* parent)
 
     auto* shareGroup = new QGroupBox(tr("Sharing"), page);
     auto* shareLayout = new QVBoxLayout(shareGroup);
-    m_shareFilesCheck = new QCheckBox(tr("Share the shared files over ed3k too"), shareGroup);
-    shareLayout->addWidget(m_shareFilesCheck);
+    // was: "Share the shared files over ed3k too": YAML only now (ed3k.shareFiles, default on)
     m_shareUsenetCheck = new QCheckBox(tr("Share Usenet posts over ed3k too"), shareGroup);
     m_shareUsenetCheck->setToolTip(tr("Off: the files of Usenet downloads are still shared, but not their article "
                                       "lists, post sets or nzb records."));
@@ -621,7 +632,7 @@ QWidget* Ed3kOptionsPages::buildGeneral(QWidget* parent)
     // layout->addWidget(extGroup);
     layout->addStretch();
 
-    for (QCheckBox* box : {m_enabledCheck, m_shareFilesCheck, m_shareUsenetCheck, m_archiveContentsCheck, m_ownSetsWatchCheck,
+    for (QCheckBox* box : {m_enabledCheck, m_shareUsenetCheck, m_archiveContentsCheck, m_ownSetsWatchCheck,
                            m_jointDownloadsCheck})
         connect(box, &QCheckBox::toggled, this, [this] {
             if (!m_loading)
@@ -1904,9 +1915,11 @@ void Ed3kOptionsPages::buildAccountList(AccountList& list, const QStringList& co
 void Ed3kOptionsPages::buildSolvers(QVBoxLayout* layout, QWidget* parent)
 {
     // plain check box: a checkable group title draws small on macOS
-    m_solversCheck = new QCheckBox(tr("Solve puzzles with these services"), parent);
+    m_solversCheck = new QCheckBox(tr("Enable captcha solvers"), parent);
     m_solversCheck->setToolTip(tr("A hoster's image puzzle goes to these paid services first; the puzzle window "
-                                  "only comes when none of them answers."));
+                                  "only comes when none of them answers.\nTurn off to solve puzzles yourself, "
+                                  "for example when the services fail repeatedly (Hoster log) or to save "
+                                  "their balance; the accounts are kept."));
     layout->addWidget(m_solversCheck);
     m_solversGroup = new QGroupBox(parent);
     m_solversGroup->setEnabled(false);
@@ -2245,6 +2258,11 @@ QWidget* Ed3kOptionsPages::buildExtended(QWidget* parent)
     m_forceOpenItem->setToolTip(0, tr("Only when the UDP port is forwarded or the computer has a public address. "
                                       "The node then counts as open without reach tests and serves as a router. "
                                       "Helps a small ed3k network where reach tests find no prober."));
+    m_lanUnlimitedItem = m_extTree->addCheck(connection, tr("No speed limits for ed3k peers in the local network"));
+    m_lanUnlimitedItem->setToolTip(0, tr("Uploads to and downloads from ed3k peers on this computer's local networks "
+                                         "do not count against the upload and download limits, since they do not "
+                                         "use the Internet line."));
+    m_extTree->setChecked(m_lanUnlimitedItem, true);
     QTreeWidgetItem* rooms = m_extTree->addGroup(tr("Rooms"), skinIcon(QStringLiteral(":/icons/IRC.ico")));
     m_roomStoreItem = m_extTree->addCheck(rooms, tr("Store recent room posts on disk"));
     m_roomStoreItem->setToolTip(0, tr("Keeps the recent posts of each joined room in a file, shown again after a "
@@ -2256,6 +2274,27 @@ QWidget* Ed3kOptionsPages::buildExtended(QWidget* parent)
                                        Preferences::kMaxEd3kRoomHistoryMax, QString(), QString());
     m_roomMaxItem->setToolTip(0, tr("The newest posts kept per room, in memory and on disk."));
     m_extTree->setValue(m_roomMaxItem, 5000);
+    // hops.md §1: which networks' files go under the anonymous key while hiding runs
+    QTreeWidgetItem* kad = m_extTree->addGroup(tr("Kad publishing"), skinIcon(QStringLiteral(":/icons/Kad.ico")));
+    kad->setToolTip(0, tr("While hiding is on, files of the checked networks are shared on ed3k under the anonymous "
+                          "key, with their sets and links. Unchecked: they stay under the node key, and a file "
+                          "already under the anonymous key is left out of that network's join.\n"
+                          "Files already shared keep their key; move them in Shared Files."));
+    const QString exposed = tr("Not hidden: the peers of %1 still see this computer's address next to the file, "
+                               "and logs of it stay. Others can link that to the anonymous key.");
+    m_anonEd2kItem = m_extTree->addCheck(kad, tr("eD2K downloads under the anonymous key"));
+    m_anonEd2kItem->setToolTip(0, exposed.arg(QStringLiteral("eD2K")));
+    m_anonTorrentItem = m_extTree->addCheck(kad, tr("Torrents under the anonymous key"));
+    m_anonTorrentItem->setToolTip(0, exposed.arg(QStringLiteral("BitTorrent")));
+    m_anonUsenetItem = m_extTree->addCheck(kad, tr("Usenet downloads under the anonymous key"));
+    m_anonUsenetItem->setToolTip(0, tr("Only the Usenet provider sees what this computer downloaded (and can hand "
+                                       "over its logs); nothing public lists it."));
+    m_extTree->setChecked(m_anonUsenetItem, true);
+    m_anonHosterItem = m_extTree->addCheck(kad, tr("Hoster downloads under the anonymous key"));
+    m_anonHosterItem->setToolTip(0, tr("Only the hoster sees what this computer downloaded (and can hand over its "
+                                       "logs); nothing public lists it. Its download links are not handed out "
+                                       "under the anonymous key."));
+    m_extTree->setChecked(m_anonHosterItem, true);
     connect(m_extTree, &OptionsTree::changed, this, [this] {
         if (!m_loading)
             emit changed();
@@ -2418,8 +2457,17 @@ QString Ed3kOptionsPages::accountKey(const AccountList& list)
 
 QString Ed3kOptionsPages::accountText(const AccountList& list, const QCborMap& check, int hosts, int working)
 {
-    if (!check.value(QStringLiteral("valid")).toBool())
+    if (!check.value(QStringLiteral("valid")).toBool()) {
+        // login worked, the account can't download
+        const QString unusable = check.value(QStringLiteral("unusable")).toString();
+        if (unusable == QLatin1StringView("free"))
+            return list.debrid ? tr("Free account: downloads need premium") : tr("Free account: not usable");
+        if (unusable == QLatin1StringView("expired"))
+            return tr("Premium expired");
+        if (unusable == QLatin1StringView("login"))
+            return tr("Login needed: press Check to log in through the browser");
         return tr("Not valid");
+    }
     if (list.solvers)
         return creditText(check.value(QStringLiteral("balance")).toDouble(-1), check.value(QStringLiteral("currency")).toString());
     if (list.debrid && hosts < 0)
@@ -2434,6 +2482,8 @@ QString Ed3kOptionsPages::accountText(const AccountList& list, const QCborMap& c
         const qint64 max = check.value(QStringLiteral("trafficMax")).toInteger(-1);
         text = max > 0 ? tr("%1, %2 of %3 traffic left").arg(text, formatByteSize(uint64(left)), formatByteSize(uint64(max)))
                        : tr("%1, %2 traffic left").arg(text, formatByteSize(uint64(left)));
+    } else if (check.value(QStringLiteral("unlimited")).toBool()) {
+        text = tr("%1, unlimited traffic").arg(text);
     }
     if (!list.debrid)
         return text;

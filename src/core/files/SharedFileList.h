@@ -82,6 +82,8 @@ public:
         /// Hash an already shared file again for SharedFileList::rehashAllFiles().
         /// Reported by fullRehashDone(), never added to the share by the worker.
         bool fullRehash = false;
+        /// eD2K disabled: the side hash alone, its root the key (KnownFile::isEd3kOnly)
+        bool ed3kOnly = false;
     };
 
     explicit HashingThread(QObject* parent = nullptr);
@@ -258,6 +260,12 @@ public:
     void setStillWriting(std::function<bool(const QString& filePath)> check);
     /// Drops the shared files setNeverShared / setStillWriting name (one more came).
     void dropNeverShared();
+
+    /// eD2K disabled (Extended): new files are hashed for ed3k alone (KnownFile::isEd3kOnly,
+    /// no MD4/AICH), shared like any other. Known files stay as they are. Back on, a
+    /// reload() hashes them for eD2K; the eD2K record then takes their place.
+    /// An ed3k-only file that wants its eD2K hash now (eD2K on).
+    [[nodiscard]] static bool needsEd2kHash(const KnownFile* file);
     /// A folder below a tree root (ShareRules::treeRoots), the root itself included.
     [[nodiscard]] static bool inShareTree(const ShareRules& rules, const QString& dirKey);
 

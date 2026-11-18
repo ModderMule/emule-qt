@@ -36,6 +36,9 @@ public:
     /// eD2K hashed the file: @p md4 its eD2K hash, @p mtimeMs its date when the read ended.
     /// Not called when eD2K failed or the file changed (the side hash is dropped).
     virtual void finish(const QByteArray& md4, const QString& path, quint64 size, qint64 mtimeMs) = 0;
+    /// The ed3k root (32 B) of every byte fed so far, read after the last update() and
+    /// before finish(); empty: none (failed, or a hash without a root).
+    [[nodiscard]] virtual QByteArray root() { return {}; }
 };
 
 /// Runs @p inner's update() on its own low-priority thread, fed in 1 MiB chunks through a
@@ -82,6 +85,12 @@ public:
     {
         drain();
         m_inner->finish(md4, path, size, mtimeMs);
+    }
+
+    [[nodiscard]] QByteArray root() override
+    {
+        drain();
+        return m_inner->root();
     }
 
     /// Waits until inner has seen every byte; inner is then the caller's again.
@@ -163,8 +172,9 @@ private:
     std::unique_ptr<QThread> m_thread;
 };
 
-/// nullptr: no side hash for this file.
-using SideHasherFactory = std::function<std::unique_ptr<SideHash>(const QString& path, quint64 size)>;
+/// nullptr: no side hash for this file. @p rootWanted: an ed3k-only file (eD2K disabled),
+/// its root() is its key, so a hasher even while ed3k is off.
+using SideHasherFactory = std::function<std::unique_ptr<SideHash>(const QString& path, quint64 size, bool rootWanted)>;
 
 /// The factory as the hashing workers share it: set and cleared from the core thread.
 class SideHasherSlot {
@@ -175,14 +185,14 @@ public:
         m_factory = std::move(factory);
     }
 
-    [[nodiscard]] std::unique_ptr<SideHash> make(const QString& path, quint64 size) const
+    [[nodiscard]] std::unique_ptr<SideHash> make(const QString& path, quint64 size, bool rootWanted = false) const
     {
         SideHasherFactory factory;
         {
             const QMutexLocker lock(&m_mutex);
             factory = m_factory;
         }
-        return factory ? factory(path, size) : nullptr;
+        return factory ? factory(path, size, rootWanted) : nullptr;
     }
 
 private:

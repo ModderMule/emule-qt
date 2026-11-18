@@ -146,6 +146,9 @@ public:
         /// only the generic http plugin takes url (#202): a plain web file, host stays the
         /// site; never looked up or published (the URL may carry a private token)
         bool generic = false;
+        /// the resolver's download is muxed (HLS/DASH via ffmpeg): no bytes before it ends;
+        /// told with each open, not saved
+        bool muxed = false;
         /// removed from the list, its file left in incoming: kept out of every list, its
         /// links still published and rechecked until the file is gone (then dropped)
         bool retired = false;
@@ -285,6 +288,8 @@ public:
         qint64 expires = 0;   ///< unix seconds; 0 = unknown
         qint64 trafficLeft = -1;   ///< bytes; -1 = unlimited or unknown
         qint64 trafficMax = -1;
+        bool unlimited = false;   ///< JD says unlimited traffic
+        QString unusable;     ///< ResolverEvent::unusable
         qint64 checked = 0;   ///< unix seconds
         int hosts = 0;        ///< hosters it names
         int working = 0;      ///< of them usable now (working, quota left, not skipped)
@@ -299,6 +304,12 @@ public:
 
     [[nodiscard]] QList<Item> items() const;
     [[nodiscard]] std::optional<Item> item(quint32 id) const;
+    /// Preview read (seeking on or off, a click asks for these bytes): item @p id read from
+    /// @p offset; the end of the bytes held from there (@p offset: none yet). Rooted: the blocks
+    /// from the first missing one go first to ed3k peers for PartFile::kStreamFocusMs. The
+    /// hoster's own link streams in file order and is not moved; a rootless read far ahead near
+    /// the end starts a tail fetch (tailHeld). nullopt: no such item.
+    [[nodiscard]] std::optional<std::uint64_t> playFrom(quint32 id, std::uint64_t offset);
     /// The links @p id publishes or held back (SharedLink).
     [[nodiscard]] QList<SharedLink> sharedLinks(quint32 id) const;
     /// http(s) links in @p text, one per line or separated by spaces (tests).
@@ -413,6 +424,8 @@ private:
         qint64 expires = 0;
         qint64 trafficLeft = -1;
         qint64 trafficMax = -1;
+        bool unlimited = false;
+        QString unusable;
         int maxDownloads = 0;        ///< JD's downloads at once; -1 unlimited, 0 unknown
         qint64 at = 0;
         bool multi = false;          ///< a multi-hoster: hosts is what it downloads
@@ -497,6 +510,23 @@ private:
     void feed(Ed3kResolver::TaskId task);
     void fed(Ed3kResolver::TaskId task, std::optional<QByteArray> data);
     void endStream(Ed3kResolver::TaskId task, bool broken);
+    /// A read of the resolver's file failed: JD may have renamed data.part to data (read from
+    /// there), else it lags behind its progress. false: too many failures, give up.
+    [[nodiscard]] static bool rereadLater(Ask& a);
+
+    /// Tail fetch: a player reads rootless @p e far ahead of its stream near the end (an MP4's
+    /// index): a second open of the link from @p offset, its bytes copied into the item's file.
+    void startTail(Entry& e, std::uint64_t offset);
+    /// Rootless @p e read from @p offset: the end a tail fetch holds or is fetching there (one
+    /// started if the read is near the end, ahead of the stream); nullopt: the stream's bytes.
+    [[nodiscard]] std::optional<std::uint64_t> tailHeld(Entry& e, std::uint64_t offset);
+    /// Whether a second open of @p e's link costs only its bytes (direct file, premium).
+    [[nodiscard]] bool tailAllowed(const Entry& e) const;
+    void onTailEvent(Ed3kResolver::TaskId task, const ResolverEvent& ev);
+    void copyTail(Ed3kResolver::TaskId task);
+    void tailCopied(Ed3kResolver::TaskId task, std::optional<QByteArray> data);
+    /// Drops the tail task; @p cancel: the resolver still runs it.
+    void endTail(Ed3kResolver::TaskId task, bool cancel);
 
     void onLinkBlock(std::uint64_t link, const ::ed3k::Root& root, std::uint64_t offset, const ::ed3k::Bytes& data);
     void onLinkUnverified(std::uint64_t link, std::uint64_t offset, const ::ed3k::Bytes& data);
@@ -596,6 +626,8 @@ private:
     /// resolver tasks → what they are for
     std::map<Ed3kResolver::TaskId, quint32> m_matches;
     std::map<Ed3kResolver::TaskId, Ask> m_asks;
+    /// tail fetches (startTail): no core link, fed = the end copied into the item's file
+    std::map<Ed3kResolver::TaskId, Ask> m_tails;
     struct AccountCheck {
         QString host;
         QString user;

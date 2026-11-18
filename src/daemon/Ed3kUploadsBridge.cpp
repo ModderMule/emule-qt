@@ -200,6 +200,8 @@ QCborMap sourceToCbor(const SourceInfo& s)
         {QStringLiteral("reqFileName"), s.otherName},
         {QStringLiteral("transferredDown"), qint64(std::min<std::uint64_t>(down, INT64_MAX))},
         {QStringLiteral("sessionDown"), qint64(std::min<std::uint64_t>(down, INT64_MAX))},
+        // Completed of the row: this file only (transferredDown: all files, Client Details)
+        {QStringLiteral("fileDown"), qint64(std::min<std::uint64_t>(s_uploads->peerFileDown(s.key, s.node, s.root), INT64_MAX))},
         // only a held slot moves bytes; the 10 s average lingers after it ends
         {QStringLiteral("datarate"), s.holding && !s.otherFile ? qint64(s_uploads->downRate(s.key, s.node)) : 0},
         {QStringLiteral("availPartCount"), held},
@@ -214,6 +216,11 @@ QCborMap sourceToCbor(const SourceInfo& s)
         m.insert(QStringLiteral("join"), s.join);
     if (!partMap.isEmpty())
         m.insert(QStringLiteral("sourcePartMap"), partMap);
+    // as eD2K's: other files of ours wanting this node (A4AF mark + tooltip)
+    if (!s.otherWants.isEmpty()) {
+        m.insert(QStringLiteral("hasOtherRequests"), true);
+        m.insert(QStringLiteral("a4afFiles"), QCborArray::fromStringList(s.otherWants));
+    }
     return m;
 }
 
@@ -278,8 +285,15 @@ void appendRows(QCborArray& uploading, QCborArray& waiting)
     if (!s_uploads)
         return;
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    for (const auto& r : s_uploads->uploading())
-        uploading.append(rowToCbor(r, now));
+    // slots counted with eD2K's on one line (UploadQueue::setForeignSlots): numbered after them
+    qint64 slot = 0;
+    for (const auto& v : std::as_const(uploading))
+        slot = std::max(slot, v.toMap().value(QStringLiteral("slot")).toInteger());
+    for (const auto& r : s_uploads->uploading()) {
+        QCborMap m = rowToCbor(r, now);
+        m.insert(QStringLiteral("slot"), ++slot);
+        uploading.append(m);
+    }
     for (const auto& r : s_uploads->waiting())
         waiting.append(rowToCbor(r, now));
 #else
@@ -367,6 +381,32 @@ void appendDownloading(QCborArray& out)
 #endif
 }
 
+#ifdef EMULE_HAVE_ED3K
+namespace {
+
+/// {network, name, id[, host]} of job @p owner of the join tagged @p tag; empty: unknown
+QCborMap jobAlias(const QString& tag, const QString& owner)
+{
+    if (tag == QLatin1String("torrent"))
+        return BtBridge::aliasOf(owner);
+    if (tag == QLatin1String("usenet"))
+        return UsenetBridge::aliasOf(owner);
+    if (tag == QLatin1String("hoster"))
+        return Ed3kHosterBridge::aliasOf(owner);
+    if (tag != QLatin1String("ed2k"))
+        return {};
+    // owner: the eD2K hash (Ed3kEd2kJoin::ownerOf)
+    QCborMap m{{QStringLiteral("network"), QStringLiteral("ed2k")}, {QStringLiteral("id"), owner}};
+    const QByteArray md4 = QByteArray::fromHex(owner.toLatin1());
+    if (theApp.downloadQueue && md4.size() == 16)
+        if (const auto* pf = theApp.downloadQueue->fileByID(reinterpret_cast<const uint8*>(md4.constData())))
+            m.insert(QStringLiteral("name"), pf->fileName());
+    return m;
+}
+
+} // namespace
+#endif
+
 QCborArray aliasesOf([[maybe_unused]] const QByteArray& root)
 {
     QCborArray out;
@@ -375,24 +415,46 @@ QCborArray aliasesOf([[maybe_unused]] const QByteArray& root)
     if (!s_uploads || root.size() != qsizetype(r.bytes.size()))
         return out;
     std::copy(root.begin(), root.end(), r.bytes.begin());
-    for (const auto& job : ed3k::Ed3kJoinBase::aliasJobsAt(s_uploads->session(), r)) {
-        QCborMap m;
-        if (job.tag == QLatin1String("torrent"))
-            m = BtBridge::aliasOf(job.owner);
-        else if (job.tag == QLatin1String("usenet"))
-            m = UsenetBridge::aliasOf(job.owner);
-        else if (job.tag == QLatin1String("hoster"))
-            m = Ed3kHosterBridge::aliasOf(job.owner);
-        else if (job.tag == QLatin1String("ed2k")) {
-            // owner: the eD2K hash (Ed3kEd2kJoin::ownerOf)
-            m = QCborMap{{QStringLiteral("network"), QStringLiteral("ed2k")}, {QStringLiteral("id"), job.owner}};
-            const QByteArray md4 = QByteArray::fromHex(job.owner.toLatin1());
-            if (theApp.downloadQueue && md4.size() == 16)
-                if (const auto* pf = theApp.downloadQueue->fileByID(reinterpret_cast<const uint8*>(md4.constData())))
-                    m.insert(QStringLiteral("name"), pf->fileName());
-        }
-        if (!m.isEmpty())
+    for (const auto& job : ed3k::Ed3kJoinBase::aliasJobsAt(s_uploads->session(), r))
+        if (const QCborMap m = jobAlias(job.tag, job.owner); !m.isEmpty())
             out.append(m);
+#endif
+    return out;
+}
+
+QCborArray joinsOf([[maybe_unused]] const QByteArray& root)
+{
+    QCborArray out;
+#ifdef EMULE_HAVE_ED3K
+    ::ed3k::Root r;
+    if (!s_uploads || root.size() != qsizetype(r.bytes.size()))
+        return out;
+    std::copy(root.begin(), root.end(), r.bytes.begin());
+    const auto states = ed3k::Ed3kJoinBase::joinStatesAt(s_uploads->session(), r);
+    // every network, also one whose join does not run (BitTorrent off, not built)
+    for (const QString tag : {QStringLiteral("ed2k"), QStringLiteral("torrent"), QStringLiteral("usenet"), QStringLiteral("hoster")}) {
+        using Kind = ed3k::Ed3kJoinBase::JoinState::Kind;
+        QCborMap row{{QStringLiteral("network"), tag}};
+        const auto st = std::ranges::find(states, tag, &ed3k::Ed3kJoinBase::JoinState::tag);
+        if (st == states.end() || st->kind == Kind::Off) {
+            row.insert(QStringLiteral("state"), QStringLiteral("off"));
+            row.insert(QStringLiteral("reason"), QStringLiteral("notRunning"));
+            out.append(row);
+            continue;
+        }
+        static constexpr const char* kStates[] = {"joined", "skipped", "available", "off"};
+        row.insert(QStringLiteral("state"), QString::fromLatin1(kStates[int(st->kind)]));
+        if (!st->reason.isEmpty())
+            row.insert(QStringLiteral("reason"), st->reason);
+        if (st->anon)
+            row.insert(QStringLiteral("key"), QStringLiteral("anon"));
+        QCborArray jobs;
+        for (const QString& owner : st->owners)
+            if (const QCborMap m = jobAlias(tag, owner); !m.isEmpty())
+                jobs.append(m);
+        if (!jobs.isEmpty())
+            row.insert(QStringLiteral("jobs"), jobs);
+        out.append(row);
     }
 #endif
     return out;

@@ -2,6 +2,7 @@
 // GPL v3 or later, see ../../../../LICENSE
 package org.emuleqt.resolver;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -14,6 +15,7 @@ import java.util.concurrent.TimeUnit;
 
 import javax.swing.Icon;
 
+import org.appwork.swing.components.TextComponentInterface;
 import org.appwork.uio.CloseReason;
 import org.appwork.uio.InputDialogInterface;
 import org.appwork.uio.MessageDialogInterface;
@@ -22,6 +24,7 @@ import org.appwork.uio.UserIODefinition;
 import org.appwork.uio.UserIOHandlerInterface;
 import org.appwork.utils.swing.dialog.Dialog;
 import org.appwork.utils.swing.dialog.DialogCanceledException;
+import org.appwork.utils.swing.dialog.InputDialog;
 
 /**
  * JD's input window, headless: a login's confirmation code (PluginForHost.getTwoFACode, e.g. an
@@ -37,6 +40,8 @@ final class CodeAsker implements UserIOHandlerInterface {
     private static final Map<Thread, Login> CHECKS = new ConcurrentHashMap<Thread, Login>();
     /** task → where its answer goes */
     private static final Map<Long, BlockingQueue<String>> WAITING = new ConcurrentHashMap<Long, BlockingQueue<String>>();
+    /** task → code asks so far (a 2nd: the site took no code, e.g. RD: an old mail's, expired) */
+    private static final Map<Long, Integer> ASKS = new ConcurrentHashMap<Long, Integer>();
     private final UserIOHandlerInterface base;
 
     private CodeAsker(final UserIOHandlerInterface base) {
@@ -62,6 +67,7 @@ final class CodeAsker implements UserIOHandlerInterface {
         final Login l = CHECKS.remove(Thread.currentThread());
         if (l != null) {
             WAITING.remove(l.task);
+            ASKS.remove(l.task);
         }
     }
 
@@ -101,6 +107,7 @@ final class CodeAsker implements UserIOHandlerInterface {
         final String stock = safe(org.jdownloader.gui.translate._GUI.T::jd_gui_swing_components_AccountDialog_2FA_login);
         m.put("text", text.equals(stock) ? "" : text);
         m.put("timeout", TIMEOUT_S);
+        m.put("count", ASKS.merge(task, 1, Integer::sum));
         Out.send(m);
         String code = null;
         try {
@@ -111,7 +118,11 @@ final class CodeAsker implements UserIOHandlerInterface {
         } finally {
             WAITING.remove(task);
         }
-        return answered(cls, impl, code == null || code.isEmpty() ? null : code);
+        final String answer = code == null || code.isEmpty() ? null : code;
+        if (answer != null) {
+            fill(impl, answer);
+        }
+        return answered(cls, impl, answer);
     }
 
     /** @p impl closed: OK with @p code, else cancelled. */
@@ -151,6 +162,37 @@ final class CodeAsker implements UserIOHandlerInterface {
             }
         };
         return (T) Proxy.newProxyInstance(cls.getClassLoader(), new Class<?>[] { cls }, h);
+    }
+
+    /** Some plugins read the dialog itself (RealDebrid: mfaDialog.getText()), headless that has no
+     *  text field and says null: give it one holding @p code. */
+    private static void fill(final Object impl, final String code) {
+        if (!(impl instanceof InputDialog)) {
+            return;
+        }
+        try {
+            final Field f = InputDialog.class.getDeclaredField("input");
+            f.setAccessible(true);
+            if (f.get(impl) == null) {
+                f.set(impl, Proxy.newProxyInstance(TextComponentInterface.class.getClassLoader(), new Class<?>[] { TextComponentInterface.class },
+                        (proxy, method, args) -> {
+                            switch (method.getName()) {
+                            case "getText":
+                                return code;
+                            case "hashCode":
+                                return System.identityHashCode(proxy);
+                            case "equals":
+                                return proxy == args[0];
+                            case "toString":
+                                return "CodeAsker field";
+                            default:
+                                return defaultOf(method);
+                            }
+                        }));
+            }
+        } catch (final Throwable e) {
+            Out.log("code not put into JD's dialog: " + e.getClass().getSimpleName());
+        }
     }
 
     private static final class Login {

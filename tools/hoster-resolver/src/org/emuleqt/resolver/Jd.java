@@ -49,6 +49,7 @@ final class Jd {
         }
         org.appwork.utils.Application.setApplication(".emuleqt_resolver");
         clearCaptchas();
+        accountsInMemory();
         try {
             java.security.Security.setProperty("networkaddress.cache.negative.ttl", "0");
         } catch (final Throwable ignore) {
@@ -80,6 +81,32 @@ final class Jd {
             f.set(null, Boolean.FALSE);
         } catch (final Throwable e) {
             Out.log("jar mode not set: " + e.getClass().getSimpleName());
+        }
+    }
+
+    /** JD's AccountController keeps every account it was given in cfg/...accounts.ejs, under a key
+     *  in JD's public source: plain text in effect. The daemon sends them at every start, so the
+     *  list stays in memory: its writes are dropped, an old file goes. Before anything loads
+     *  AccountSettings (JsonConfig.put refuses a second one). */
+    static void accountsInMemory() {
+        final Class<org.jdownloader.settings.AccountSettings> type = org.jdownloader.settings.AccountSettings.class;
+        final String name = org.appwork.storage.config.JsonConfig.getStorageName(type);
+        final java.io.File base = org.appwork.utils.Application.getResource("cfg/" + name);
+        for (final String ext : new String[] { ".accounts.ejs", ".accounts.json" }) {
+            final java.io.File f = new java.io.File(base.getPath() + ext);
+            if (f.exists() && !f.delete()) {
+                Out.warn("saved accounts not removed: " + f);
+            }
+        }
+        try {
+            org.appwork.storage.config.JsonConfig.put(name, type, new org.appwork.storage.config.handler.StorageHandler<org.jdownloader.settings.AccountSettings>(base, type) {
+                @Override
+                protected void writeObject(final org.appwork.storage.config.handler.ListHandler<?> keyHandler, final Object object) {
+                    // the accounts list (only list key here): memory only
+                }
+            });
+        } catch (final Throwable e) {
+            Out.warn("accounts may be saved to disk: " + e);
         }
     }
 
@@ -502,6 +529,9 @@ final class Jd {
             }
             if (r == SkipReason.NO_ACCOUNT) {
                 return needsUser(id, "login");
+            }
+            if (r == SkipReason.FFMPEG_MISSING || r == SkipReason.FFPROBE_MISSING) {
+                return errorEvent(id, "ffmpeg", r.name());
             }
             return errorEvent(id, "skipped", r.name());
         }

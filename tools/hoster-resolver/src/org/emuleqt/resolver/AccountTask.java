@@ -41,6 +41,7 @@ final class AccountTask extends Task {
 
     @Override
     void run() throws Throwable {
+        SolverAccountsTask.awaitLoaded();
         final LazyHostPlugin lazy = host == null ? null : Jd.hostPlugin(host);
         if (lazy == null || account == null) {
             Out.error(id, "noPlugin", null);
@@ -65,6 +66,14 @@ final class AccountTask extends Task {
             Debrid.adopt(acc, ai);
             m.put("valid", ai != null && !expired);
             final jd.plugins.Account.AccountType type = acc.getType();
+            // login worked, account unusable: a free one the plugin can't use (Real-Debrid), or expired
+            if (expired) {
+                m.put("unusable", type == jd.plugins.Account.AccountType.FREE ? "free" : "expired");
+            }
+            // JD's "Unlimited": the site says so, or tells no limit
+            if (ai != null && !expired && ai.isUnlimitedTraffic()) {
+                m.put("unlimited", true);
+            }
             m.put("premium", type == jd.plugins.Account.AccountType.PREMIUM || type == jd.plugins.Account.AccountType.LIFETIME);
             // JD's downloads at once for this account (what fetchAccountInfo set, else the plugin's)
             final Integer max = maxDownloads(plugin, acc);
@@ -97,7 +106,10 @@ final class AccountTask extends Task {
             m.put("valid", false);
             // the plugin's reason ("OAuth Failed", "Your login informations are incorrect", ...)
             final String why = e.getMessage();
-            if (why != null && !why.isBlank()) {
+            if (LoginSolver.needsBrowser(plugin)) {
+                // no session (or it ran out): only a browser login the user starts helps
+                m.put("error", "browserLogin");
+            } else if (why != null && !why.isBlank()) {
                 m.put("error", why.length() > 200 ? why.substring(0, 200) : why);
             }
         } finally {

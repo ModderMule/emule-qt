@@ -58,8 +58,12 @@ void CommentsPanel::setDetails(const QCborMap& details)
         item->setText(ColUserName, userName);
         // MFC's Network column is eD2K for a source's comment, Kad for a note;
         // the daemon labels the latter "Kad" in the userName field.
-        item->setText(ColOrigin, userName == QLatin1StringView("Kad")
-                                     ? tr("Kad") : QStringLiteral("eD2K"));
+        // ed3k NOTE records say so ("origin"), named by their publisher
+        if (const QString origin = m.value(QLatin1StringView("origin")).toString(); origin == QLatin1StringView("ed3k"))
+            item->setText(ColOrigin, QStringLiteral("ed3k"));
+        else
+            item->setText(ColOrigin, userName == QLatin1StringView("Kad")
+                                         ? tr("Kad") : QStringLiteral("eD2K"));
     }
 
     m_emptyLabel->setVisible(comments.isEmpty());

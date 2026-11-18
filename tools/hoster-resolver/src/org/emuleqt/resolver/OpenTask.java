@@ -42,6 +42,10 @@ final class OpenTask extends Task {
     private volatile DownloadLink link;
     private String lastStatus;
     private String lastServer;
+    /** The download is not written to data.part in file order (HLS/DASH through ffmpeg): bytes come with the done. */
+    private volatile boolean muxed;
+    /** ffmpeg was asked for once (Tools.request) */
+    private boolean toolsAsked;
 
     /** The open task that downloads @p dl, for a puzzle it raises. */
     static Long taskOfLink(final DownloadLink dl) {
@@ -65,6 +69,7 @@ final class OpenTask extends Task {
 
     @Override
     void run() throws Throwable {
+        SolverAccountsTask.awaitLoaded();
         status("link");
         final List<DownloadLink> links = Jd.crawl(url);
         if (cancelled.get()) {
@@ -147,12 +152,14 @@ final class OpenTask extends Task {
         Long from = have > 0 ? null : Long.valueOf(0);
         boolean fromSent = have == 0;
         boolean told = false;
+        boolean muxedSent = false;
         while (d.isAlive()) {
             d.join(500);
             final DownloadInterface di = d.downloadInterface();
             if (di != null && !told) {
                 told = true;
-                Out.log("download interface " + di.getClass().getSimpleName());
+                muxed = !inOrder(di, part);
+                Out.log("download interface " + di.getClass().getSimpleName() + (muxed ? ", muxed" : ""));
             }
             if (from == null && di != null) {
                 final long[] cp = link.getChunksProgress();
@@ -165,10 +172,14 @@ final class OpenTask extends Task {
                 }
             }
             final long bytes = loaded(part);
-            if ((bytes != lastBytes && bytes >= 0) || (from != null && !fromSent)) {
+            if ((bytes != lastBytes && bytes >= 0) || (from != null && !fromSent) || (muxed && !muxedSent)) {
                 lastBytes = bytes;
                 final Map<String, Object> m = Out.event(id, "progress");
                 m.put("bytes", bytes);
+                if (muxed) {
+                    m.put("muxed", true);
+                    muxedSent = true;
+                }
                 if (from != null && !fromSent) {
                     m.put("from", from);
                     fromSent = true;
@@ -201,6 +212,24 @@ final class OpenTask extends Task {
         if (d.failure != null && d.blocked != null) {
             // failed after a redirect or a request to a non-public address was refused
             Out.error(id, "private", d.blocked);
+            return;
+        }
+        if (d.failure != null && Tools.missing(d.failure)) {
+            // HLS/DASH without ffmpeg: the daemon fetches it, then the plugin runs again
+            if (!toolsAsked) {
+                toolsAsked = true;
+                status("ffmpeg");
+                if (Tools.request(this)) {
+                    Out.log("ffmpeg there now, opening again");
+                    download();
+                    return;
+                }
+                if (cancelled.get()) {
+                    Out.send(id, "cancelled");
+                    return;
+                }
+            }
+            Out.error(id, "ffmpeg", Tools.lastError() != null ? Tools.lastError() : "missing");
             return;
         }
         if (d.failure != null) {
@@ -276,6 +305,23 @@ final class OpenTask extends Task {
         }
     }
 
+    /**
+     * The bytes land in @p part in file order: a plain transfer (RAF, HTTP, raw segments) into our
+     * part file. HLS (ffmpeg), DASH (streams merged at the end) and the like write elsewhere.
+     */
+    private static boolean inOrder(final DownloadInterface di, final File part) {
+        if (!(di instanceof jd.plugins.download.raf.OldRAFDownload || di instanceof jd.plugins.download.raf.HTTPDownloader
+                || di instanceof org.jdownloader.downloader.segment.SegmentDownloader)) {
+            return false;
+        }
+        try {
+            final jd.plugins.download.Downloadable d = di.getDownloadable();
+            return d != null && new File(d.getFileOutputPart()).getCanonicalFile().equals(part.getCanonicalFile());
+        } catch (final Throwable e) {
+            return true;   // unknown: as before
+        }
+    }
+
     @Override
     void onCancel() {
         final Driver d = driver;
@@ -284,8 +330,11 @@ final class OpenTask extends Task {
         }
     }
 
-    /** Bytes on disk from the front: JD's last loaded index + 1, else the part file size. */
+    /** Bytes on disk from the front: JD's last loaded index + 1, else the part file size; muxed: none before the done. */
     private long loaded(final File part) {
+        if (muxed) {
+            return 0;
+        }
         final DownloadLink l = link;
         final long[] cp = l == null ? null : l.getChunksProgress();
         if (cp != null && cp.length == 1 && cp[0] >= 0) {

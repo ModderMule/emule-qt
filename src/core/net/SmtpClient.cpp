@@ -4,6 +4,8 @@
 
 #include "net/SmtpClient.h"
 #include "net/InterfacePin.h"
+#include "net/ProxySettings.h"
+#include "prefs/Preferences.h"
 #include "utils/Log.h"
 
 #include <QSslConfiguration>
@@ -53,9 +55,16 @@ void SmtpClient::sendMail(const QString& server, int port, SmtpSecurity security
         m_socket->setSslConfiguration(sslConf);
     }
 
-    logInfo(QStringLiteral("SMTP: connecting to %1:%2...").arg(server).arg(port));
+    // the Proxy page's proxy; it gets the name, so the local resolver never sees it
+    const QNetworkProxy proxy = toNetworkProxy(thePrefs.proxySettings(), server);
+    m_socket->setProxy(proxy);
+    const bool proxied = proxy.type() != QNetworkProxy::NoProxy;
+    logInfo(QStringLiteral("SMTP: connecting to %1:%2%3...")
+                .arg(server)
+                .arg(port)
+                .arg(proxied ? QStringLiteral(" via proxy %1:%2").arg(proxy.hostName()).arg(proxy.port()) : QString()));
 
-    if (!InterfacePin::prepareOutgoing(*m_socket, false)) {
+    if (!InterfacePin::prepareOutgoing(*m_socket, proxied)) {
         logWarning(QStringLiteral("SMTP: not sent — the selected network interface is not available"));
         m_state = State::Disconnected;
         emit finished(false, QStringLiteral("The selected network interface is not available"));

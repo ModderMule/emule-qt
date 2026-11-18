@@ -74,17 +74,34 @@ QCborMap toCbor(const ed3k::Ed3kArchiveContents::Found& f)
     return m;
 }
 
+/// Archive set parts by opening volume name (as looked up): every part's file name
+using Parts = QHash<QString, QStringList>;
+
+/// The opening volumes of the archive sets among @p names; each set's parts into @p parts.
+QList<int> firstsOf(const QStringList& names, Parts& parts)
+{
+    QList<int> out;
+    for (const QList<int>& set : ed3k::Ed3kArchiveContents::volumeSets(names)) {
+        QStringList members;
+        for (const int i : set)
+            members << names.at(i).section(u'/', -1);
+        parts.insert(names.at(set.constFirst()), members);
+        out << set.constFirst();
+    }
+    return out;
+}
+
 /// The first volumes among @p names, as volumes to look up.
-std::vector<ed3k::Ed3kArchiveContents::Volume> volumesOf(const QStringList& names)
+std::vector<ed3k::Ed3kArchiveContents::Volume> volumesOf(const QStringList& names, Parts& parts)
 {
     std::vector<ed3k::Ed3kArchiveContents::Volume> out;
-    for (const int i : ed3k::Ed3kArchiveContents::firstVolumes(names))
+    for (const int i : firstsOf(names, parts))
         out.push_back({names.at(i), std::nullopt, {}, {}});
     return out;
 }
 
 /// web: {links: [{url, name}]}
-bool webRequest(const QCborMap& p, ed3k::Ed3kArchiveContents::Request& r)
+bool webRequest(const QCborMap& p, ed3k::Ed3kArchiveContents::Request& r, Parts& parts)
 {
     QStringList names;
     QStringList urls;
@@ -93,13 +110,13 @@ bool webRequest(const QCborMap& p, ed3k::Ed3kArchiveContents::Request& r)
         names << l.value(QStringLiteral("name")).toString();
         urls << l.value(QStringLiteral("url")).toString();
     }
-    for (const int i : ed3k::Ed3kArchiveContents::firstVolumes(names))
+    for (const int i : firstsOf(names, parts))
         r.volumes.push_back({names.at(i), std::nullopt, urls.at(i), {}});
     return true;
 }
 
 /// nzb: {previewToken | usenetItem, files?: [int]}
-bool nzbRequest(const QCborMap& p, ed3k::Ed3kArchiveContents::Request& r, QString& error)
+bool nzbRequest(const QCborMap& p, ed3k::Ed3kArchiveContents::Request& r, Parts& parts, QString& error)
 {
     usenet::NzbInfo info;
     if (const QString token = p.value(QStringLiteral("previewToken")).toString(); !token.isEmpty()) {
@@ -121,7 +138,7 @@ bool nzbRequest(const QCborMap& p, ed3k::Ed3kArchiveContents::Request& r, QStrin
     QStringList names;
     for (const auto& f : info.files)
         names << f.fileName;
-    QList<int> firsts = ed3k::Ed3kArchiveContents::firstVolumes(names);
+    QList<int> firsts = firstsOf(names, parts);
     const auto ids = ed3k::Ed3kArchiveContents::nzbFileIds(info, firsts);
     for (qsizetype k = 0; k < firsts.size(); ++k)
         r.volumes.push_back({names.at(firsts.at(k)), std::nullopt, {}, ids.at(std::size_t(k))});
@@ -129,7 +146,7 @@ bool nzbRequest(const QCborMap& p, ed3k::Ed3kArchiveContents::Request& r, QStrin
 }
 
 /// torrent: {btih?, btmh?, names} | {torrentId}
-bool torrentRequest(const QCborMap& p, ed3k::Ed3kArchiveContents::Request& r, QString& error)
+bool torrentRequest(const QCborMap& p, ed3k::Ed3kArchiveContents::Request& r, Parts& parts, QString& error)
 {
     QStringList names;
     QString btih = p.value(QStringLiteral("btih")).toString();
@@ -160,12 +177,12 @@ bool torrentRequest(const QCborMap& p, ed3k::Ed3kArchiveContents::Request& r, QS
         error = tr("The torrent has no info hash.");
         return false;
     }
-    r.volumes = volumesOf(names);
+    r.volumes = volumesOf(names, parts);
     return true;
 }
 
 /// roots: {volumes: [{name, root}]} | {hosterPackage}
-bool rootsRequest(const QCborMap& p, ed3k::Ed3kArchiveContents::Request& r)
+bool rootsRequest(const QCborMap& p, ed3k::Ed3kArchiveContents::Request& r, Parts& parts)
 {
     QStringList names;
     std::vector<std::optional<::ed3k::Root>> roots;
@@ -186,7 +203,7 @@ bool rootsRequest(const QCborMap& p, ed3k::Ed3kArchiveContents::Request& r)
         roots.push_back(rootOfHex(m.value(QStringLiteral("root")).toString()));
         urls << QString();
     }
-    for (const int i : ed3k::Ed3kArchiveContents::firstVolumes(names))
+    for (const int i : firstsOf(names, parts))
         r.volumes.push_back({names.at(i), roots.at(std::size_t(i)), urls.at(i), {}});
     return true;
 }
@@ -239,16 +256,17 @@ void lookup(const QString& kind, const QCborMap& payload, Reply reply)
         return;
     }
     ed3k::Ed3kArchiveContents::Request r;
+    Parts parts;
     QString error;
     bool ok = false;
     if (kind == QLatin1String("web"))
-        ok = webRequest(payload, r);
+        ok = webRequest(payload, r, parts);
     else if (kind == QLatin1String("nzb"))
-        ok = nzbRequest(payload, r, error);
+        ok = nzbRequest(payload, r, parts, error);
     else if (kind == QLatin1String("torrent"))
-        ok = torrentRequest(payload, r, error);
+        ok = torrentRequest(payload, r, parts, error);
     else if (kind == QLatin1String("roots"))
-        ok = rootsRequest(payload, r);
+        ok = rootsRequest(payload, r, parts);
     else
         error = QStringLiteral("unknown kind");
     if (!ok) {
@@ -261,10 +279,13 @@ void lookup(const QString& kind, const QCborMap& payload, Reply reply)
     }
     // a queued download: its extraction choice so far (hoster.md §6.1)
     std::optional<std::pair<QHash<QString, QStringList>, bool>> queued = keptOf(payload);
-    const auto started = s_contents->lookup(std::move(r), [reply, queued](const std::vector<ed3k::Ed3kArchiveContents::Found>& found) {
+    const auto started = s_contents->lookup(std::move(r), [reply, queued, parts](const std::vector<ed3k::Ed3kArchiveContents::Found>& found) {
         QCborArray archives;
         for (const auto& f : found) {
             QCborMap a = toCbor(f);
+            // the set's parts share the opening volume's record
+            if (const auto p = parts.constFind(f.name); p != parts.constEnd() && p->size() > 1)
+                a.insert(QStringLiteral("parts"), QCborArray::fromStringList(*p));
             if (queued) {
                 const auto k = queued->first.constFind(f.name.section(u'/', -1).toLower());
                 if (k != queued->first.constEnd())

@@ -89,6 +89,8 @@ public:
     void add(IncomingRequest request);
     /// Newest first.
     [[nodiscard]] std::vector<IncomingRequest> snapshot() const;
+    /// Kept requests, without copying them.
+    [[nodiscard]] size_t size() const;
     /// The request with IncomingRequest::id @p id, if still kept.
     [[nodiscard]] std::optional<IncomingRequest> find(uint64 id) const;
     void clear();

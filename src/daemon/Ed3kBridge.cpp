@@ -19,11 +19,14 @@
 #include "Ed3kPaidBridge.h"
 #include "Ed3kPaidSellerBridge.h"
 #include "app/AppContext.h"
+#include "files/KnownFile.h"
+#include "files/SharedFileList.h"
 #include "stats/NetworkCounters.h"
 #include "stats/Statistics.h"
 
 #include <QCborArray>
 #include <QCborMap>
+#include <QFileInfo>
 
 #include <algorithm>
 #include <array>
@@ -32,6 +35,7 @@
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kBootstrap.h"
 #include "Ed3kEd2kJoin.h"
+#include "Ed3kHide.h"
 #include "Ed3kSession.h"
 #include "Ed3kShared.h"
 #endif
@@ -96,8 +100,13 @@ void handleFileLinks(const IpcMessage& msg, const std::function<void(const IpcMe
             root = s_shared ? s_shared->rootOf(raw) : std::nullopt;
             if (!root && s_ed2kJoin && s_ed2kJoin->isEnabled())
                 root = s_ed2kJoin->rootOf(raw);
-            ed2k.emplace();
-            std::copy_n(reinterpret_cast<const std::uint8_t*>(raw.constData()), 16, ed2k->begin());
+            // an ed3k-only file's key is no eD2K hash: no ed2k= in its link
+            const KnownFile* kf = theApp.sharedFileList
+                ? theApp.sharedFileList->getFileByID(reinterpret_cast<const uint8*>(raw.constData())) : nullptr;
+            if (!kf || kf->hasEd2kHash()) {
+                ed2k.emplace();
+                std::copy_n(reinterpret_cast<const std::uint8_t*>(raw.constData()), 16, ed2k->begin());
+            }
         }
         QString text;
         if (root) {
@@ -192,6 +201,11 @@ void appendDownloadInfo([[maybe_unused]] QCborMap& details, [[maybe_unused]] con
         if (!aliases.isEmpty())
             details.insert(QLatin1StringView("ed3kAliases"), aliases);
     }
+    if (info->root)
+        if (QCborArray joins = Ed3kUploadsBridge::joinsOf(QByteArray(reinterpret_cast<const char*>(info->root->bytes.data()),
+                                                                      qsizetype(info->root->bytes.size())));
+            !joins.isEmpty())
+            details.insert(QLatin1StringView("ed3kJoins"), joins);
     details.insert(QLatin1StringView("ed3kPair"), static_cast<int>(info->pair));
     details.insert(QLatin1StringView("ed3kBytes"), static_cast<qint64>(info->bytes));
     details.insert(QLatin1StringView("ed3kSources"), info->sources);
@@ -227,11 +241,14 @@ QHash<QByteArray, QByteArray> sharedRootIndex()
 #ifdef EMULE_HAVE_ED3K
     if (s_shared)
         s_shared->forEachSharedRoot([&index](const QByteArray& md4, const ::ed3k::Root& root) {
+            if (md4.size() != 16)
+                return;   // no eD2K hash (eD2K disabled): no KnownFile to name
             index.insert(QByteArray(reinterpret_cast<const char*>(root.bytes.data()), qsizetype(root.bytes.size())), md4);
         });
 #endif
     return index;
 }
+
 
 void appendSharedInfo([[maybe_unused]] QCborMap& details, [[maybe_unused]] const QByteArray& md4)
 {
@@ -241,11 +258,40 @@ void appendSharedInfo([[maybe_unused]] QCborMap& details, [[maybe_unused]] const
     details.insert(QLatin1StringView("ed3kEnabled"), s_shared->isEnabled());
     if (!s_shared->isEnabled())
         return;
-    if (const auto root = s_shared->rootOf(md4))
+    const auto root = s_shared->rootOf(md4);
+    if (root)
         details.insert(QLatin1StringView("ed3kRoot"), QString::fromLatin1(
             QByteArray(reinterpret_cast<const char*>(root->bytes.data()), qsizetype(root->bytes.size())).toHex()));
     details.insert(QLatin1StringView("ed3kAliasPublished"), s_shared->aliasPublished(md4));
     details.insert(QLatin1StringView("ed3kKeywordsPublished"), s_shared->keywordsPublished(md4));
+    const auto key = s_shared->keyOfFile(md4);
+    if (key)
+        details.insert(QLatin1StringView("ed3kKey"), ed3k::Ed3kHide::keyName(*key));
+    if (!root)
+        return;
+    QCborArray joins = Ed3kUploadsBridge::joinsOf(QByteArray(reinterpret_cast<const char*>(root->bytes.data()), qsizetype(root->bytes.size())));
+    // eD2K of a shared file: its `ed2k` ALIAS, not the eD2K download join
+    const auto entry = s_shared->entryOfRoot(*root);
+    for (qsizetype i = 0; i < joins.size(); ++i) {
+        QCborMap row = joins.at(i).toMap();
+        if (row.value(QStringLiteral("network")).toString() != QLatin1String("ed2k"))
+            continue;
+        row.remove(QStringLiteral("jobs"));
+        row.remove(QStringLiteral("reason"));
+        if (entry && entry->ed3kOnly) {
+            row.insert(QStringLiteral("state"), QStringLiteral("off"));
+            row.insert(QStringLiteral("reason"), QStringLiteral("noEd2kHash"));
+        } else if (key == ::ed3k::KeyKind::Anon) {
+            // hops.md §1: nothing names a file of the anonymous key for eD2K
+            row.insert(QStringLiteral("state"), QStringLiteral("skipped"));
+            row.insert(QStringLiteral("reason"), QStringLiteral("anonKey"));
+        } else {
+            row.insert(QStringLiteral("state"), s_shared->aliasPublished(md4) ? QStringLiteral("joined") : QStringLiteral("available"));
+        }
+        joins[i] = row;
+    }
+    if (!joins.isEmpty())
+        details.insert(QLatin1StringView("ed3kJoins"), joins);
 #endif
 }
 
@@ -272,8 +318,8 @@ bool isEd3kRequest(IpcMsgType type)
 {
     const int t = static_cast<int>(type);
     // 1100-1149: second request block (batch 12), the first was full; 1200-1209: Kad window;
-    // 1210-1218: the Link Grabber, 1219-1229: account dialogs (Ed3kHosterBridge)
-    return (t >= 1000 && t <= 1049) || (t >= 1100 && t <= 1149) || (t >= 1200 && t <= 1229);
+    // 1210-1218: the Link Grabber, 1219-1229: account dialogs (Ed3kHosterBridge), 1250-1259: room media
+    return (t >= 1000 && t <= 1049) || (t >= 1100 && t <= 1149) || (t >= 1200 && t <= 1229) || (t >= 1250 && t <= 1259);
 }
 
 bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMessage&)>& reply)
@@ -442,6 +488,7 @@ QCborMap statusToCbor()
     out.insert(QStringLiteral("class6"), qint64(st.class6));
     out.insert(QStringLiteral("router"), st.router);
     out.insert(QStringLiteral("natChecking"), qint64(st.natChecking));
+    out.insert(QStringLiteral("natUntested"), qint64(st.natUntested));
     out.insert(QStringLiteral("kadConnected"), st.kadConnected);
     out.insert(QStringLiteral("endpoint4"), st.endpoint4);
     out.insert(QStringLiteral("endpoint6"), st.endpoint6);

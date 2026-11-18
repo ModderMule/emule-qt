@@ -77,6 +77,8 @@ public:
     void clearSearches();
 
     [[nodiscard]] const IndexerSearch* search(quint32 searchId) const;
+    /// Every search, oldest first.
+    [[nodiscard]] QList<quint32> searchIds() const;
 
     using ProbeCallback = std::function<void(bool ok, const IndexerCaps& caps,
                                              const QString& error)>;

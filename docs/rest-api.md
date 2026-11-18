@@ -41,7 +41,8 @@ Every call does.
 - **Strict input:** an unknown query parameter or body field is a `400`, as is a value of the
   wrong type or out of range. Nothing is ignored silently.
 - **Lists:** `{items, total, offset, limit}`; `?limit=` 1–1000 (default 100), `?offset=`.
-- **Destructive calls** (cancel a download, remove a Usenet release or a category, shut down, restart)
+- **Destructive calls** (cancel an eD2K or ed3k download, remove a Usenet release, a hoster
+  download or a category, shut down, restart)
   need `"confirm": true` in the body, or `?confirm=true` on `DELETE`.
 - **Version:** every response carries `X-Contract-Version`; `GET /capabilities` lists the
   features and every operation id.
@@ -78,20 +79,63 @@ the link with its key:
 | `GET /downloads/{hash}/preview-link` | `/downloads/{hash}/preview` — eD2K hash (32 hex) or ed3k root (64), download or shared file |
 | `GET /usenet/{id}/{fileIndex}/preview-link` | `/usenet/{id}/{fileIndex}/preview` |
 | `GET /torrents/{id}/{fileIndex}/preview-link` | `/torrents/{id}/{fileIndex}/preview` — `fileIndex` -1 = largest file |
+| `GET /hoster/{id}/preview-link` | `/hoster/{id}/preview` — video/audio items only; archive or other file: 406 |
 
 The answer is `{url, path, token}`: `url` is absolute, built from the request's scheme and
 `Host`, and goes straight to the player. Each call mints a new token; it lapses after 6 hours
 unused, and only the 16 newest stay valid. The MCP tools (`download_preview_link`,
-`usenet_preview_link`, `torrents_preview_link`) give `path` only.
+`usenet_preview_link`, `torrents_preview_link`, `hoster_preview_link`) give `path` only.
 
 Unfinished files: with *Enable seeking in downloads* (`downloadSeeking`, off by default) a
-range that is not on disk yet waits up to 60 seconds while the core fetches those bytes first
-(eD2K/ed3k parts, web-seed ranges, torrent piece deadlines); off, the file is served as it is
-on disk, gaps included. Usenet always waits, up to 15 seconds.
+range that is not on disk yet waits while the core fetches those bytes first: 60 seconds for
+eD2K/ed3k parts, web-seed ranges and torrent piece deadlines. Usenet and hoster previews always
+do this, with the switch on or off (both are fast, a preview is a request for those bytes): 60
+seconds for hoster items, 15 seconds for Usenet articles (the item is boosted too). A hoster's own HTTP stream stays in file order; only
+ed3k peers of an item with a known root fetch the seek point first, so a seek ahead of a
+rootless hoster item waits for the stream to get there. Near the end (the last 64 MiB, where an
+MP4 keeps its index `moov` when it is not "faststart") a direct web link or a premium login
+(own or multi-hoster, two connections or more) opens the link a second time from the seek
+point, so the player starts at once; the stream fetches those bytes again later, and only its
+bytes are hashed. Only a preview read starts it. A free hoster would ask another puzzle or wait, so such an MP4 opens only
+once the item is nearly complete. A stream the resolver muxes
+(HLS, DASH through ffmpeg) has no bytes before it ends: 406 until complete, unless ed3k peers
+deliver blocks. Off, eD2K/ed3k and torrent files are served as they are on disk, gaps
+included.
 
 The web UI links the same routes with a page token (30 minutes idle, kept alive by the
 session): *Preview* in the Transfers and Shared Files right-click menus, in the Usenet menu,
 and on each row of a torrent's file table.
+
+## Networks
+
+| Prefix | What | Needs |
+|---|---|---|
+| `/downloads`, `/shared`, `/servers`, `/kad`, `/search` | eD2K and Kad | — |
+| `/ed3k/downloads` | ed3k downloads, by 64-hex root: list, add `ed3k:` links, pause/resume, rename, priority, category, move, cancel | ed3k on |
+| `/usenet` | Usenet queue | Usenet on |
+| `/torrents` | BitTorrent | a BitTorrent build, BitTorrent on |
+| `/hoster` | hoster/web-link downloads: list, add links (optional package), DLC/RSDF/CCF container (base64), pause/resume/retry, remove | ed3k on + hoster resolver |
+| `/indexers`, `/indexer/searches` | newznab (Usenet) and torznab (torrent) indexer searches: list accounts, search, results, download, stop, remove | an indexer in Options |
+
+A network that is off answers `503`. `PATCH /shared/{hash}` renames a shared file, sets its
+upload priority or your comment and rating; `POST /downloads/{hash}/move` moves an unfinished
+download to another temp folder.
+
+`POST /search` takes `"type": "ed3k"` too. `POST /search/{id}/download` takes any row of its
+search: an eD2K file is queued; an ed3k file (`metaKind` `"ed3k"`, `ed3kRoot`) goes to the ed3k
+downloads; a Usenet, torrent or web release of a `usenetServer` / `torrentServer` / `webServer`
+search is fetched from the server's catalogue and handed to the Usenet queue, Torrents or Hoster —
+that call answers once it is there.
+
+Indexer searches have their own ids (the GUI's own searches are listed too).
+`POST /indexer/searches` takes `query`, `network` (`usenet` or `torrent`), `mode`
+(`search`, `tvsearch`, `movie`) with `season`/`episode`/`imdb`, newznab `categories`, size
+bounds and `indexers` (names from `GET /indexers`); `409` when no indexer serves the network.
+Every enabled account is asked at once, so poll `GET /indexer/searches/{id}/results` until the
+search's `running` is false. `POST /indexer/searches/{id}/download` with the row's `id` as
+`result` fetches its .nzb, .torrent or magnet (one of the indexer's daily grabs) and adds it to
+the Usenet queue or Torrents; `409` with an `outcome` is "already downloaded", which `force`
+answers; `502` is a failed fetch. API keys and download URLs never leave the daemon.
 
 ## Preferences
 
@@ -153,7 +197,7 @@ wrong instead of failing silently. Headers that are missing or disagree with the
 
 The tools are operations of the same table as the REST routes — same validation, same code —
 chosen for what an assistant needs (status, search, downloads, servers, Kad, shared files,
-categories, preferences, logs, Usenet). The OpenAPI document marks them with `x-mcp-tool`.
+categories, preferences, logs, Usenet, torrents, ed3k downloads, hoster downloads, indexer searches). The OpenAPI document marks them with `x-mcp-tool`.
 Shutting the daemon down is not a tool. With `mcpReadOnly` only the tools that change nothing
 are offered. A request with an `Origin` header that is neither this server nor on
 `corsAllowedOrigins` is refused.

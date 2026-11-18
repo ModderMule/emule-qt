@@ -475,21 +475,13 @@ void ExternalLinkHandler::openEd3kSet(const QString& link, bool noWebsite)
     QPointer<MainWindow> window = m_mainWindow;
     const QString name = QUrlQuery(link.mid(link.indexOf(QLatin1Char('?')) + 1)).queryItemValue(QStringLiteral("dn"), QUrl::FullyDecoded);
     // file-set.md §2.3: nothing downloads before the user says so
-    QMessageBox box(QMessageBox::Question, tr("ed3k set"),
-                    noWebsite ? tr("This ed3k set is no website. Follow it and download its files?")
-                              : tr("Follow this ed3k set%1?\n\nIts files go to the incoming folder, below a folder of the set's own; "
-                                   "new versions are downloaded as they come.")
-                                    .arg(name.isEmpty() ? QString() : QStringLiteral(" \"%1\"").arg(name)),
-                    QMessageBox::NoButton, window);
-    QPushButton* follow = box.addButton(tr("Follow and Download"), QMessageBox::AcceptRole);
-    QPushButton* choose = box.addButton(tr("Choose Files..."), QMessageBox::ActionRole);
-    QPushButton* site = noWebsite ? nullptr : box.addButton(tr("Open as Website"), QMessageBox::ActionRole);
-    box.addButton(QMessageBox::Cancel);
-    box.setDefaultButton(follow);
-    box.exec();
-    if (!m_ipc)
+    const QString text = noWebsite ? tr("This ed3k set is no website. Follow it?")
+                                   : tr("Follow this ed3k set%1?\n\nIts files go to a folder of the set's own, below the incoming folder.")
+                                         .arg(name.isEmpty() ? QString() : QStringLiteral(" \"%1\"").arg(name));
+    const auto choice = Ed3kSetsDialog::askFollow(window, m_ipc, text, !noWebsite);
+    if (!choice || !m_ipc)
         return;
-    if (site && box.clickedButton() == site) {
+    if (choice->website) {
         // name.md §6.1: the website server follows it for the user; no website: it offers it back
         m_ipc->requestEd3kSetSite(link, [](const Ipc::IpcMessage& reply) {
             const QString url = reply.fieldMap(1).value(QStringLiteral("url")).toString();
@@ -500,12 +492,9 @@ void ExternalLinkHandler::openEd3kSet(const QString& link, bool noWebsite)
         });
         return;
     }
-    if (box.clickedButton() != follow && box.clickedButton() != choose)
-        return;
-    // choose: "ask" keeps the version for the dialog's selection
-    const int policy = box.clickedButton() == follow ? 1 : 0;
+    const int policy = choice->policy;
     IpcClient* ipc = m_ipc;
-    m_ipc->followEd3kSet(link, policy, [window, ipc, policy](const Ipc::IpcMessage& reply) {
+    m_ipc->followEd3kSet(link, policy, choice->exts, choice->dir, [window, ipc, policy](const Ipc::IpcMessage& reply) {
         if (!reply.fieldBool(0)) {
             const QString why = reply.fieldMap(1).value(QStringLiteral("error")).toString();
             if (window)

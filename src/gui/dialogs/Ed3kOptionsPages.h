@@ -217,13 +217,18 @@ private:
     QTreeWidgetItem* m_lanItem = nullptr;   ///< ed3kLan
     QTreeWidgetItem* m_autoIndexItem = nullptr;   ///< ed3kAutoIndexNode
     QTreeWidgetItem* m_forceOpenItem = nullptr;   ///< ed3kForceOpen
+    QTreeWidgetItem* m_lanUnlimitedItem = nullptr;   ///< ed3kLanUnlimited
     QTreeWidgetItem* m_roomStoreItem = nullptr;   ///< ed3kRoomHistoryStore
     QTreeWidgetItem* m_roomMaxItem = nullptr;     ///< ed3kRoomHistoryMax
+    /// Kad publishing (hops.md §1): ed3kAnonEd2k/Torrent/Usenet/Hoster
+    QTreeWidgetItem* m_anonEd2kItem = nullptr;
+    QTreeWidgetItem* m_anonTorrentItem = nullptr;
+    QTreeWidgetItem* m_anonUsenetItem = nullptr;
+    QTreeWidgetItem* m_anonHosterItem = nullptr;
 
     // General
     QLabel* m_runningLabel = nullptr;
     QCheckBox* m_enabledCheck = nullptr;
-    QCheckBox* m_shareFilesCheck = nullptr;
     QCheckBox* m_jointDownloadsCheck = nullptr;
     QCheckBox* m_shareUsenetCheck = nullptr;
     QCheckBox* m_archiveContentsCheck = nullptr;

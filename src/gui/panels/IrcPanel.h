@@ -15,6 +15,7 @@
 
 #include <QFont>
 #include <QMap>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 #include <QVector>
@@ -25,6 +26,7 @@ class QLabel;
 class QMediaPlayer;
 class QLineEdit;
 class QListView;
+class QMenu;
 class QPushButton;
 class QSplitter;
 class QStringListModel;
@@ -41,6 +43,7 @@ class Ed3kRoomTab;
 class IpcClient;
 
 class IrcClient;
+class RoomNickProxy;
 
 namespace Ipc {
 class IpcMessage;
@@ -110,8 +113,16 @@ public:
 
     /// An `ed3k:room` link (ExternalLinkHandler, a click in a chat): asks, then joins and
     /// shows the room's tab.
-    /// Asks, then joins and shows the room. False when the user said no.
+    /// Asks, then joins and shows the room. False when the user said no, or when the
+    /// room list is not in yet: then the link waits for it (membership check first).
     bool openEd3kRoomLink(const QString& link);
+
+    /// --subtab: the tab at @p index (Status, Rooms (ed3k), then channels and rooms); a room
+    /// tab opens once the core lists it, so this waits up to 30 s for it.
+    void switchToSubTab(int index);
+
+    /// Chat options changed (moderator star): the nick list and room logs drawn again.
+    void applyChatPrefs();
 
 signals:
     /// A link in a channel, private or status tab was clicked. Carries the link as
@@ -123,9 +134,19 @@ signals:
     void linkReceived(const QString& link);
     /// Logged in or gone; Shared Files greys "Add To IRC Clipboard" with it.
     void ircConnectionChanged(bool connected);
+    /// A room link that waited for the room list was joined: show the IRC tab.
+    void ed3kRoomJoined();
+    /// The user opened an NZB, DLC or torrent posted in an ed3k room: to its add dialog.
+    void roomFileOpened(const QString& name, const QByteArray& bytes);
+    /// Some channel, private chat or ed3k room holds messages not read yet (or none now).
+    void unreadChanged(bool unread);
+    /// Someone's message arrived while not on screen; @p mention: private, my nick, or a reply
+    /// to my post.
+    void messageArrived(bool mention);
 
 protected:
     bool eventFilter(QObject* obj, QEvent* event) override;
+    void showEvent(QShowEvent* event) override;
 
 private slots:
     // Connection flow
@@ -199,7 +220,12 @@ private:
     [[nodiscard]] QString messageHtml(const QString& key, const QString& nick, const QString& message) const;
     /// The line of messageHtml for a name as shown: an IRC message or an ed3k post.
     [[nodiscard]] QString messageLine(const QString& stamp, const QString& shown, const QString& message, bool own) const;
+    /// Soft tab colour for a line in a tab not shown; never over the red of unread.
     void markActivity(const QString& key);
+    /// Someone's message in tab @p key: unread unless on screen; sound and alert (MainWindow).
+    void noteMessage(const QString& key, bool mention);
+    /// Tab @p key read or gone.
+    void markRead(const QString& key);
     void playIrcSound(const QString& fileName);
     [[nodiscard]] QString formatTimestamp() const;
     [[nodiscard]] QString renderMircCodes(QStringView text, MircFormat& fmt) const;
@@ -246,12 +272,24 @@ private:
     /// Posts @p text in the active room tab.
     void postToRoom(Ed3kRoomTab* tab, const QString& text);
     void ed3kNickMenu(Ed3kRoomTab* tab, const QString& shown, const QPoint& globalPos);
+    void fillEd3kNickMenu(QMenu& menu, Ed3kRoomTab* tab, const QString& shown);
+    void dumpEd3kNickMenus();
+    void selfTestRoomFiles(const QString& dir);
     void createEd3kRoom();
     void joinEd3kRoom(const QString& link);
     void editEd3kRoomInfo(Ed3kRoomTab* tab);
     void admitEd3kMember(const QString& room, const QString& memberKey);
     void moderateEd3kMember(const QString& room, int action, const QString& memberKey);
     void setEd3kModerator(Ed3kRoomTab* tab, const QString& memberKey, bool on);
+    /// The keys banned now, to lift (room.md §2.3).
+    void showEd3kBans(Ed3kRoomTab* tab);
+    /// §2.6: the attach button shows in a room tab that takes media.
+    void updateAttachButton();
+    /// A picked file posted with the input line as caption (room.md §2.6).
+    void attachToRoom();
+    /// @p data (a file or a pasted image) posted to @p tab; false: refused with a message.
+    bool postMediaToRoom(Ed3kRoomTab* tab, const QByteArray& data, const QString& name);
+    void onEd3kRoomMedia(const Ipc::IpcMessage& msg);
     /// §2.5: the next post of @p tab answers @p postId.
     void replyInEd3kRoom(Ed3kRoomTab* tab, const QString& postId);
     /// §6: a member ID muted (or unmuted) here alone; kept by the daemon.
@@ -277,6 +315,7 @@ private:
     QLabel* m_nickLabel = nullptr;
     QListView* m_nickListView = nullptr;
     QStringListModel* m_nickModel = nullptr;
+    RoomNickProxy* m_nickProxy = nullptr;   ///< ed3k rooms: a star for "@", no "@"
     QTabWidget* m_tabWidget = nullptr;
     QTextBrowser* m_statusBrowser = nullptr;
 
@@ -291,10 +330,12 @@ private:
     QToolButton* m_resetBtn = nullptr;
     QLineEdit* m_input = nullptr;
     QPushButton* m_sendBtn = nullptr;
+    QToolButton* m_attachBtn = nullptr;   ///< ed3k room media (§2.6)
 
     // Channel state
     QMap<QString, IrcChannel> m_channels; // keyed by lowercase name
     QString m_statusKey;                  // key for Status tab in m_channels
+    QSet<QString> m_unread;               // keys of tabs with unread messages
     QFont m_customFont;                   // custom font for text browsers
 
     // Channel list accumulator
@@ -303,6 +344,7 @@ private:
 
     // ed3k rooms: the "Rooms (ed3k)" tab while the node runs
     Ed3kRoomList* m_roomList = nullptr;
+    QStringList m_pendingRoomLinks;     ///< room links opened before the first room list
     bool m_roomListShownOnce = false;   ///< first "Rooms (ed3k)" tab of this GUI run gets the focus
     QStringList m_roomTabsClosed;   ///< rooms whose tab the user closed: a post opens it again
 

@@ -11,6 +11,7 @@
 #include "Ed3kSession.h"
 #include "Ed3kStore.h"
 
+#include "utils/FileTypeFilter.h"
 #include "utils/Log.h"
 
 #include <QDir>
@@ -131,7 +132,8 @@ Ed3kSets::Ed3kSets(Ed3kSession& session, Ed3kDownloads& downloads, const QString
 
 Ed3kSets::~Ed3kSets() = default;
 
-std::expected<std::uint32_t, QString> Ed3kSets::follow(const QString& link, Policy policy)
+std::expected<std::uint32_t, QString> Ed3kSets::follow(const QString& link, Policy policy, const std::optional<QStringList>& exts,
+                                                       const QString& dir)
 {
     const QString text = link.trimmed();
     const auto parsed = parseLink(text);
@@ -143,6 +145,8 @@ std::expected<std::uint32_t, QString> Ed3kSets::follow(const QString& link, Poli
                                          : (!s.parsed.hidden && s.parsed.key == parsed->key && s.parsed.id == parsed->id
                                             && s.parsed.b3 == parsed->b3);
         if (same) {
+            if (exts)
+                s.exts = normalizeFileTypes(*exts);
             setPolicy(id, policy);
             return id;
         }
@@ -153,6 +157,12 @@ std::expected<std::uint32_t, QString> Ed3kSets::follow(const QString& link, Poli
     s.parsed = *parsed;
     s.policy = policy;
     s.title = parsed->name;
+    if (exts)
+        s.exts = normalizeFileTypes(*exts);
+    if (!dir.trimmed().isEmpty()) {
+        s.dir = QDir::cleanPath(QDir(dir.trimmed()).absolutePath());
+        s.dirByUser = true;
+    }
     // hops.md §1: under the key of a new use, kept for good
     s.key = m_session.hide().keyForUse();
     auto [it, inserted] = m_sets.emplace(s.id, std::move(s));
@@ -196,12 +206,63 @@ bool Ed3kSets::setPolicy(std::uint32_t id, Policy policy)
     if (!s)
         return false;
     s->policy = policy;
+    // downloading by itself: the filter chooses, a version waiting is taken now
+    if (policy == Policy::Download) {
+        chooseByFilter(*s);
+        if (s->pending || s->applied)
+            applyVersion(id);
+    }
     save();
-    // a version waiting for the user is taken now
-    if (policy == Policy::Download && s->pending)
-        applyVersion(id);
     markChanged();
     return true;
+}
+
+bool Ed3kSets::setFilter(std::uint32_t id, const std::optional<QStringList>& exts)
+{
+    Set* s = find(id);
+    if (!s)
+        return false;
+    if (exts)
+        s->exts = normalizeFileTypes(*exts);
+    else
+        s->exts.reset();
+    if (s->policy == Policy::Download) {
+        chooseByFilter(*s);
+        // the members left out stop (as setSkipped), the others come
+        QStringList skipped(s->skipped.begin(), s->skipped.end());
+        setSkipped(id, skipped);
+        if (s->pending || s->applied)
+            applyVersion(id);
+    }
+    save();
+    markChanged();
+    return true;
+}
+
+std::expected<void, QString> Ed3kSets::setFolder(std::uint32_t id, const QString& dir)
+{
+    Set* s = find(id);
+    if (!s)
+        return std::unexpected(tr("Unknown ed3k set."));
+    const QString owner = ownerOf(id);
+    // files on their way or here keep their place: changed only before any of them
+    for (const auto& d : m_downloads.list())
+        if (d.owner == owner)
+            return std::unexpected(tr("Files of this set are downloaded already. The folder can be changed only before the "
+                                      "first file of the set is downloaded."));
+    const QString old = s->dir.isEmpty() ? setDir(*s) : s->dir;
+    for (const Ed3kSetEntry& m : shownMembers(*s))
+        if (const QString local = ed3kSetLocalPath(old, m.path); !local.isEmpty() && QFileInfo::exists(local))
+            return std::unexpected(tr("Files of this set are in its folder already. The folder can be changed only before the "
+                                      "first file of the set is downloaded."));
+    const QString wanted = dir.trimmed();
+    s->dirByUser = !wanted.isEmpty();
+    // empty: the default again (<incoming>/<title>, kept at the first download)
+    s->dir = s->dirByUser ? QDir::cleanPath(QDir(wanted).absolutePath()) : QString();
+    logEd3k(QStringLiteral("ed3k: set %1: folder %2").arg(id).arg(s->dirByUser ? s->dir : QStringLiteral("default")));
+    save();
+    markChanged();
+    return {};
 }
 
 bool Ed3kSets::setSkipped(std::uint32_t id, const QStringList& paths)
@@ -581,6 +642,7 @@ void Ed3kSets::onManifest(Set& s, const ffi::Root& root, const ffi::Bytes& file,
         if (s.pending)
             QFile::remove(QDir(setsDir()).filePath(hexOf(s.pending->root.bytes) + QStringLiteral(".manifest")));
         s.pending = std::move(v);
+        decideNew(s);
         applyVersion(s.id);
         followPaid(s);
         return;
@@ -589,6 +651,7 @@ void Ed3kSets::onManifest(Set& s, const ffi::Root& root, const ffi::Bytes& file,
     if (s.pending)
         QFile::remove(QDir(setsDir()).filePath(hexOf(s.pending->root.bytes) + QStringLiteral(".manifest")));
     s.pending = std::move(v);
+    decideNew(s);
     followPaid(s);
     logEd3k(QStringLiteral("ed3k: set %1 has a new version %2 (waiting for the user)").arg(s.id).arg(seq));
     save();
@@ -616,10 +679,12 @@ void Ed3kSets::onMountManifest(Set& s, const QString& path, const ffi::Root& roo
     if (s.policy == Policy::Download || held == s.mounts.end()) {
         s.mounts[path] = root;
         s.pendingMounts.erase(path);
+        decideNew(s);
         if (s.policy == Policy::Download)
             download(s);
     } else {
         s.pendingMounts[path] = root;
+        decideNew(s);
         save();
         const Info i = infoOf(s);
         emit newVersion(s.id, s.title, s.applied ? s.applied->seq : 0, i.added, i.changed, i.removed);
@@ -635,6 +700,7 @@ void Ed3kSets::onInner(Set& s, const ffi::Root& root, const ffi::Bytes& file)
         return;
     storeManifest(root, f);
     s.inner[root] = f;
+    decideNew(s);
     // of the version applied: its members come now
     if (s.applied && !s.pending)
         download(s);
@@ -781,6 +847,10 @@ Ed3kSets::Info Ed3kSets::infoOf(const Set& s) const
     i.pinned = s.parsed.b3.has_value();
     i.followed = s.topic.has_value();
     i.policy = s.policy;
+    i.exts = filterOf(s);
+    i.extsByUser = s.exts.has_value();
+    i.authorExts = authorExtsOf(s);
+    i.dirByUser = s.dirByUser;
     i.key = s.key;
     if (s.applied)
         i.seq = s.applied->seq;
@@ -943,6 +1013,83 @@ std::optional<Ed3kSets::Link> Ed3kSets::parseLink(const QString& link)
     return out;
 }
 
+QStringList Ed3kSets::filterOf(const Set& s) const
+{
+    if (s.exts)
+        return *s.exts;
+    if (QStringList author = authorExtsOf(s); !author.isEmpty())
+        return author;
+    return defaultSetFileTypes();
+}
+
+QStringList Ed3kSets::authorExtsOf(const Set& s) const
+{
+    const auto& shown = s.pending ? s.pending : s.applied;
+    if (!shown)
+        return {};
+    const auto m = Ed3kSetManifest::parse(shown->file);
+    return m ? m->exts : QStringList{};
+}
+
+std::vector<Ed3kSetEntry> Ed3kSets::shownMembers(const Set& s) const
+{
+    const auto& shown = s.pending ? s.pending : s.applied;
+    if (!shown)
+        return {};
+    if (s.pendingMounts.empty())
+        return flatten(s, shown->file);
+    Set view = s;
+    for (const auto& [path, root] : s.pendingMounts)
+        view.mounts[path] = root;
+    return flatten(view, shown->file);
+}
+
+void Ed3kSets::decideNew(Set& s)
+{
+    const QStringList filter = filterOf(s);
+    const auto members = shownMembers(s);
+    std::map<QString, QString> known;
+    for (const Ed3kSetEntry& m : members) {
+        if (m.isSet)
+            continue;   // an inner set not fetched yet: its members come with it
+        const QString root = hexOf(m.root.bytes);
+        known[m.path] = root;
+        if (const auto it = s.known.find(m.path); it != s.known.end() && it->second == root)
+            continue;   // decided already
+        // §5.3: Browse waits for the user's tick, Download takes the filter's file types
+        if (s.policy == Policy::Download && fileTypeMatches(m.path.section(QLatin1Char('/'), -1), filter))
+            s.skipped.remove(m.path);
+        else
+            s.skipped.insert(m.path);
+    }
+    // no version shown yet (an inner set alone): nothing forgotten
+    if (!members.empty())
+        s.known = std::move(known);
+}
+
+void Ed3kSets::chooseByFilter(Set& s)
+{
+    const QStringList filter = filterOf(s);
+    const QString owner = ownerOf(s.id);
+    const QString dir = s.dir.isEmpty() ? setDir(s) : s.dir;
+    QSet<QString> skipped;
+    for (const Ed3kSetEntry& m : shownMembers(s)) {
+        if (m.isSet)
+            continue;
+        s.known[m.path] = hexOf(m.root.bytes);
+        if (fileTypeMatches(m.path.section(QLatin1Char('/'), -1), filter))
+            continue;
+        // chosen and here or on its way: stays
+        const auto d = m_downloads.info(m.root);
+        const QString local = ed3kSetLocalPath(dir, m.path);
+        const bool held = (d && d->owner == owner) || (!local.isEmpty() && QFileInfo::exists(local));
+        if (held && !isSkipped(s.skipped, m.path))
+            continue;
+        skipped.insert(m.path);
+    }
+    s.skipped = std::move(skipped);
+}
+
 void Ed3kSets::markChanged()
 {
     if (m_changePending)
@@ -980,7 +1127,17 @@ void Ed3kSets::load()
         if (s.id == 0 || !parsed || m_sets.contains(s.id))
             continue;
         s.parsed = *parsed;
-        s.policy = o.value(QStringLiteral("policy")).toInt() == int(Policy::Download) ? Policy::Download : Policy::Ask;
+        s.policy = o.value(QStringLiteral("policy")).toInt() == int(Policy::Download) ? Policy::Download : Policy::Browse;
+        if (const QJsonValue e = o.value(QStringLiteral("exts")); e.isArray()) {
+            QStringList list;
+            for (const QJsonValue& x : e.toArray())
+                list << x.toString();
+            s.exts = normalizeFileTypes(list);
+        }
+        s.dirByUser = o.value(QStringLiteral("dirByUser")).toBool();
+        const QJsonObject known = o.value(QStringLiteral("known")).toObject();
+        for (auto it = known.begin(); it != known.end(); ++it)
+            s.known[it.key()] = it.value().toString();
         s.key = o.value(QStringLiteral("anon")).toBool() ? ffi::KeyKind::Anon : ffi::KeyKind::Node;
         s.title = o.value(QStringLiteral("title")).toString();
         s.dir = o.value(QStringLiteral("dir")).toString();
@@ -1004,6 +1161,11 @@ void Ed3kSets::load()
             if (const auto r = rootOf(it.value().toString()); r && s.inner.contains(*r))
                 s.pendingMounts[it.key()] = *r;
         m_nextId = std::max(m_nextId, s.id + 1);
+        // a sets.json of before: the members shown count as decided
+        if (!o.contains(QStringLiteral("known")))
+            for (const Ed3kSetEntry& m : shownMembers(s))
+                if (!m.isSet)
+                    s.known[m.path] = hexOf(m.root.bytes);
         m_sets.emplace(s.id, std::move(s));
     }
 }
@@ -1030,6 +1192,9 @@ void Ed3kSets::save() const
             pendingMounts.insert(path, hexOf(root.bytes));
         QStringList skipped(s.skipped.begin(), s.skipped.end());
         skipped.sort();
+        QJsonObject known;
+        for (const auto& [path, root] : s.known)
+            known.insert(path, root);
         sets.append(QJsonObject{
             {QStringLiteral("id"), qint64(s.id)},
             {QStringLiteral("link"), s.link},
@@ -1044,6 +1209,9 @@ void Ed3kSets::save() const
             {QStringLiteral("pendingMounts"), pendingMounts},
             {QStringLiteral("queued"), queued},
             {QStringLiteral("anon"), s.key == ffi::KeyKind::Anon},
+            {QStringLiteral("exts"), s.exts ? QJsonValue(QJsonArray::fromStringList(*s.exts)) : QJsonValue()},
+            {QStringLiteral("dirByUser"), s.dirByUser},
+            {QStringLiteral("known"), known},
         });
     }
     const QByteArray out = QJsonDocument(QJsonObject{{QStringLiteral("next"), qint64(m_nextId)}, {QStringLiteral("sets"), sets}})

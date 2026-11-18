@@ -11,6 +11,7 @@
 # #name           -> name of the file without extension
 # #cleanname      -> cleaned up name of the file without extension
 # #hashid         -> hashid of the file
+# #ed3kroot       -> ed3k root of the file (64 hex)
 # #filesize       -> size of the file
 #
 # Example 

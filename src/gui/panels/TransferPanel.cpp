@@ -35,6 +35,7 @@
 #include "utils/IpcFeedback.h"
 #include "utils/ListActivation.h"
 #include "utils/Ed3kLinkMenu.h"
+#include "utils/MenuDump.h"
 #include "utils/MenuUtils.h"
 #include "utils/PanelPoller.h"
 #include "utils/PreviewLauncher.h"
@@ -266,6 +267,12 @@ void TransferPanel::setIpcClient(IpcClient* client)
     // row-update pushes only while this list is on screen
     m_poller->setOnScreenHook(client ? client->pushGroupHold(Ipc::PushGroupTransfers) : nullptr);
     m_categoryTabBar->setIpcClient(client);
+    if (client && MenuDump::level() > 0 && !findChild<QTimer*>(QStringLiteral("menuDump"))) {
+        auto* dump = new QTimer(this);
+        dump->setObjectName(QStringLiteral("menuDump"));
+        connect(dump, &QTimer::timeout, this, &TransferPanel::dumpEd3kMenus);
+        dump->start(20'000);
+    }
 
     auto clearAll = [this] {
         m_downloadModel->clear();
@@ -732,9 +739,11 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
     // Advanced mode only.
     if (thePrefs.showExtControls()) {
         auto* webMenu = m_downloadMenu->addMenu(menuIcon("Web.ico"), tr("Web Services"));
-        if (singleSel && dl)
-            WebServices::instance().populateFileMenu(webMenu, dl->hash, dl->fileName,
-                                                      static_cast<uint64_t>(dl->fileSize));
+        // an ed3k row: hash is its root, the eD2K hash unknown
+        if (singleSel && dl && !dl->isNetworkJob())
+            WebServices::instance().populateFileMenu(webMenu, dl->isEd3k() ? QString() : dl->hash, dl->fileName,
+                                                      static_cast<uint64_t>(dl->fileSize),
+                                                      dl->isEd3k() ? dl->hash : QString());
         webMenu->setEnabled(!webMenu->isEmpty());
     }
 
@@ -774,27 +783,34 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
     }
 
     // ed3k rows only: what the ed3k list does (Ed3kDownloadControl, open, preview, the
-    // General page of Details); the eD2K-only entries (comments, sources, eD2K links, ...) are off
+    // pages of Details, its NOTE comments); the eD2K-only entries (sources, eD2K links, ...) are off
     if (hasSel && std::all_of(selectedDls.begin(), selectedDls.end(), [](const DownloadRow* d) { return d && d->isEd3k(); })) {
         // "Preview" is the action or, in ext mode, its submenu (own entries gated above)
         const QSet<QString> ed3kActions{tr("Priority (Download)"), tr("Pause"), tr("Stop"), tr("Resume"), tr("Cancel"),
-                                        tr("Delete"), tr("Details..."),
+                                        tr("Delete"), tr("Details..."), tr("Comments..."),
                                         tr("Open File"), tr("Preview"), tr("Preview with"), tr("Clear Completed"),
                                         tr("Assign To Category"),
                                         pasteLinksText(), tr("Find..."), tr("Show Toolbar"),
                                         MoveDownloadsAction::menuText(), Ed3kLinkMenu::copyText(),
-                                        Ed3kLinkMenu::showText()};
+                                        Ed3kLinkMenu::showText(), tr("Mass Rename..."),
+                                        tr("Source Handling"), tr("Search Related Files"), tr("Web Services")};
         for (QAction* act : m_downloadMenu->actions())
             if (!act->isSeparator() && !ed3kActions.contains(act->text()))
                 act->setEnabled(false);
+        // Source Handling as eD2K's: Add Sources takes a URL (ws=), Source Limit, A4AF swap
+        // related files: a search for the name, one file (the server's list needs MD4)
+        for (QAction* act : m_downloadMenu->actions())
+            if (act->text() == tr("Search Related Files"))
+                act->setEnabled(singleSel);
         // single transfer mode rows: their own network acts (pause, resume, cancel, open);
         // priority and category only Usenet has; no ed3k root, link or key behind them
         if (std::ranges::any_of(selectedDls, &DownloadRow::isNetworkJob)) {
             const bool usenetOnly = std::ranges::all_of(selectedDls, [](const DownloadRow* d) {
                 return d->ed3kNetwork == QLatin1String("usenet");
             });
-            QSet<QString> off{tr("Details..."), tr("Preview"), tr("Preview with"), MoveDownloadsAction::menuText(),
-                              Ed3kLinkMenu::copyText(), Ed3kLinkMenu::showText()};
+            QSet<QString> off{tr("Details..."), tr("Comments..."), tr("Preview"), tr("Preview with"), MoveDownloadsAction::menuText(),
+                              Ed3kLinkMenu::copyText(), Ed3kLinkMenu::showText(), tr("Mass Rename..."), tr("Source Handling"),
+                              tr("Search Related Files"), tr("Web Services")};
             if (!usenetOnly)
                 off += {tr("Priority (Download)"), tr("Assign To Category")};
             for (QAction* act : m_downloadMenu->actions())
@@ -1707,6 +1723,7 @@ void TransferPanel::requestDownloadSources(const QString& hash)
             src.remoteQueueRank = m.value(QStringLiteral("remoteQueueRank")).toInteger();
             src.remoteQueueFull = m.value(QStringLiteral("remoteQueueFull")).toBool();
             src.transferredDown = m.value(QStringLiteral("transferredDown")).toInteger();
+            src.fileDown        = m.value(QStringLiteral("fileDown")).toInteger(-1);
             src.sessionDown     = m.value(QStringLiteral("sessionDown")).toInteger();
             src.datarate        = m.value(QStringLiteral("datarate")).toInteger();
             src.availPartCount  = static_cast<int>(m.value(QStringLiteral("availPartCount")).toInteger());
@@ -2065,7 +2082,8 @@ void TransferPanel::sendPreview(const QString& hash)
         logWarning(tr("Preview not available — web server is not running or stream token not received."));
         return;
     }
-    launchPreview(url);
+    const DownloadRow* dl = m_downloadModel->findByHash(hash);
+    launchPreview(url, dl ? dl->fileName : QString{});
 }
 
 void TransferPanel::previewWith(const QString& hash, int appIndex)
@@ -2086,7 +2104,8 @@ void TransferPanel::previewWith(const QString& hash, int appIndex)
         const QString url = streamUrl(hash);
         if (url.isEmpty())
             logWarning(tr("Preview not available — web server is not running or stream token not received."));
-        else if (!launchPlayer(app.command, app.commandArgs, url))
+        else if (const DownloadRow* dl = m_downloadModel->findByHash(hash);
+                 !launchPlayer(app.command, app.commandArgs, url, dl ? dl->fileName : QString{}))
             failed();
         return;
     }
@@ -2148,6 +2167,8 @@ void TransferPanel::showAddSources(const QString& hash)
 
     auto* dialog = new AddSourceDialog(dl->fileName, this);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
+    if (dl->isEd3k())
+        dialog->setUrlOnly();
     connect(dialog, &AddSourceDialog::sourceEntered, this,
             [this, hash](bool url, const QString& text, int port) {
         if (!IpcFeedback::requireConnection(m_ipc, tr("cannot add the source.")))
@@ -2249,7 +2270,7 @@ void TransferPanel::openDownload(const QString& hash)
     // Media files stream into the configured player; everything else is handed
     // to the system default handler (browser download / associated app).
     if (ft == ED2KFileType::Video || ft == ED2KFileType::Audio)
-        launchPreview(url);
+        launchPreview(url, fileName);
     else
         QDesktopServices::openUrl(QUrl(url));
 }
@@ -2351,6 +2372,7 @@ void TransferPanel::fetchAndShowFileDetails(const QString& hash,
             return;
         const QCborMap details = resp.field(1).toMap();
         auto* dlg = new FileDetailDialog(details, tab, this);
+        dlg->setIpc(m_ipc);   // the Archive tab of an ed3k download
         connectEd2kLinkRequests(dlg, m_ipc);
         connectKadNotesSearch(dlg, m_ipc, IpcMsgType::GetDownloadDetails);
         connectCommentFilter(dlg, m_ipc);
@@ -2375,7 +2397,8 @@ void TransferPanel::searchRelated(const QStringList& hashes, const QStringList& 
     // MFC asks the server what else the sharers of these files have, and offers
     // nothing where the server cannot answer. There the port falls back to what it
     // always did for one file: a search for its name without the extension.
-    if (m_relatedSearchSupported) {
+    // ed3k rows (64 hex roots): the name below
+    if (m_relatedSearchSupported && std::ranges::none_of(hashes, [](const QString& h) { return h.size() == 64; })) {
         emit relatedSearchRequested(hashes, names);
         return;
     }
@@ -3585,6 +3608,48 @@ void TransferPanel::moveDownloadsToFolder(QStringList hashes)
                                  self->requestDownloads();
                                  self->requestEd3kDownloads();
                              });
+}
+
+
+void TransferPanel::dumpEd3kMenus()
+{
+    // dev aid (EMULE_DUMP_ED3K_MENUS): each ed3k download's menu in the log; 2 acts once
+    static bool acted = false;
+    for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
+        const DownloadRow* d = m_downloadModel->downloadAt(i);
+        if (!d || !d->isEd3k() || d->isNetworkJob())
+            continue;
+        const QString name = d->fileName;
+        const int limit = d->privateMaxSources;
+        const QModelIndex idx = m_categoryProxy->mapFromSource(m_downloadProxy->mapFromSource(m_downloadModel->index(i, 0)));
+        if (!idx.isValid())
+            continue;
+        m_downloadView->selectionModel()->select(idx, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        onDownloadContextMenu(QPoint(-1, -1));
+        m_downloadMenu->hide();
+        logInfo(QStringLiteral("ed3k menu Transfers %1 a4af=%2 limit=%3: %4")
+                    .arg(name).arg(d->a4afSrcCount).arg(limit).arg(MenuDump::text(m_downloadMenu)));
+        if (MenuDump::level() < 2 || acted)
+            continue;
+        acted = true;
+        if (QAction* swap = MenuDump::find(m_downloadMenu, tr("Swap All A4AF Sources to This File")); swap && swap->isEnabled()) {
+            logInfo(QStringLiteral("ed3k menu Transfers %1: Swap A4AF").arg(name));
+            swap->trigger();
+        }
+        if (QAction* act = MenuDump::find(m_downloadMenu, tr("Source Limit...")); act && act->isEnabled()) {
+            // the dialog's own spin box, then OK: 70000 is kept at its maximum
+            const int want = limit == 0 ? 70000 : 0;
+            QTimer::singleShot(500, this, [want] {
+                if (auto* dlg = qobject_cast<QInputDialog*>(QApplication::activeModalWidget())) {
+                    dlg->setIntValue(want);
+                    logInfo(QStringLiteral("ed3k menu Source Limit dialog: entered %1, shows %2").arg(want).arg(dlg->intValue()));
+                    dlg->accept();
+                }
+            });
+            act->trigger();
+        }
+        return;   // d is stale after the dialog's event loop
+    }
 }
 
 } // namespace eMule

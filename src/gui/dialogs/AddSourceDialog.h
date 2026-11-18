@@ -18,6 +18,8 @@ class AddSourceDialog : public QDialog {
 
 public:
     explicit AddSourceDialog(const QString& fileName, QWidget* parent = nullptr);
+    /// URL sources only (an ed3k download: ws=, no node by address)
+    void setUrlOnly();
 
 signals:
     /// @p url false: @p text is an address (or "address:port") and @p port the port

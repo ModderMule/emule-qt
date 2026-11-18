@@ -14,6 +14,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QPointer>
+#include <QRandomGenerator>
 #include <QSslConfiguration>
 
 #include <memory>
@@ -106,6 +107,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::RenameFiles:          return QStringLiteral("RenameFiles");
     case T::MoveDownloads:        return QStringLiteral("MoveDownloads");
     case T::ListFolders:          return QStringLiteral("ListFolders");
+    case T::ListenIpcAddress:     return QStringLiteral("ListenIpcAddress");
     case T::DeleteSharedFile:     return QStringLiteral("DeleteSharedFile");
     case T::UnshareFile:          return QStringLiteral("UnshareFile");
     case T::SetDownloadCategory:  return QStringLiteral("SetDownloadCategory");
@@ -279,6 +281,11 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushEd3kRoomPostsRemoved: return QStringLiteral("PushEd3kRoomPostsRemoved");
     case T::PushEd3kRoomPresence: return QStringLiteral("PushEd3kRoomPresence");
     case T::PushEd3kRoomNotice:   return QStringLiteral("PushEd3kRoomNotice");
+    case T::PushEd3kRoomMedia:    return QStringLiteral("PushEd3kRoomMedia");
+    case T::SetEd3kRoomLimits:    return QStringLiteral("SetEd3kRoomLimits");
+    case T::PostEd3kRoomMedia:    return QStringLiteral("PostEd3kRoomMedia");
+    case T::GetEd3kRoomMedia:     return QStringLiteral("GetEd3kRoomMedia");
+    case T::FetchEd3kRoomMedia:   return QStringLiteral("FetchEd3kRoomMedia");
     case T::GetEd3kDownloads:     return QStringLiteral("GetEd3kDownloads");
     case T::AddEd3kDownload:      return QStringLiteral("AddEd3kDownload");
     case T::AddEd3kDownloadLink:  return QStringLiteral("AddEd3kDownloadLink");
@@ -290,6 +297,8 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::SetEd3kSetPolicy:     return QStringLiteral("SetEd3kSetPolicy");
     case T::SetEd3kSetSelection:  return QStringLiteral("SetEd3kSetSelection");
     case T::ApplyEd3kSetVersion:  return QStringLiteral("ApplyEd3kSetVersion");
+    case T::SetEd3kSetFilter:     return QStringLiteral("SetEd3kSetFilter");
+    case T::SetEd3kSetFolder:     return QStringLiteral("SetEd3kSetFolder");
     case T::DownloadEd3kSetParts: return QStringLiteral("DownloadEd3kSetParts");
     case T::WatchEd3kLive:        return QStringLiteral("WatchEd3kLive");
     case T::LeaveEd3kLive:        return QStringLiteral("LeaveEd3kLive");
@@ -353,6 +362,12 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::AnswerHosterPuzzle:   return QStringLiteral("AnswerHosterPuzzle");
     case T::CheckHosterAccount:   return QStringLiteral("CheckHosterAccount");
     case T::AnswerHosterAccountCode: return QStringLiteral("AnswerHosterAccountCode");
+    case T::StatStream:           return QStringLiteral("StatStream");
+    case T::ReadStream:           return QStringLiteral("ReadStream");
+    case T::GetIpcIdentity:       return QStringLiteral("GetIpcIdentity");
+    case T::RegisterTunnelPeer:   return QStringLiteral("RegisterTunnelPeer");
+    case T::GetTunnelPeers:       return QStringLiteral("GetTunnelPeers");
+    case T::RemoveTunnelPeer:     return QStringLiteral("RemoveTunnelPeer");
     case T::DownloadJavaRuntime:  return QStringLiteral("DownloadJavaRuntime");
     case T::LocateJavaRuntime:    return QStringLiteral("LocateJavaRuntime");
     case T::GetHosterStats:       return QStringLiteral("GetHosterStats");
@@ -870,11 +885,30 @@ void IpcClient::requestEd3kSets(const QObject* owner, ResponseCallback callback)
     sendPoll(owner, IpcMessage(IpcMsgType::GetEd3kSets), std::move(callback));
 }
 
-int IpcClient::followEd3kSet(const QString& link, int policy, ResponseCallback callback)
+int IpcClient::followEd3kSet(const QString& link, int policy, const std::optional<QStringList>& exts, const QString& dir,
+                             ResponseCallback callback)
 {
     IpcMessage msg(IpcMsgType::FollowEd3kSet);
     msg.append(link);
     msg.append(qint64(policy));
+    msg.append(exts ? QCborValue(QCborArray::fromStringList(*exts)) : QCborValue(QCborValue::Null));
+    msg.append(dir);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::setEd3kSetFilter(qint64 id, const std::optional<QStringList>& exts, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::SetEd3kSetFilter);
+    msg.append(id);
+    msg.append(exts ? QCborValue(QCborArray::fromStringList(*exts)) : QCborValue(QCborValue::Null));
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::setEd3kSetFolder(qint64 id, const QString& dir, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::SetEd3kSetFolder);
+    msg.append(id);
+    msg.append(dir);
     return sendRequest(std::move(msg), std::move(callback));
 }
 
@@ -1097,19 +1131,116 @@ int IpcClient::muteEd3kRoomMember(const QString& room, const QString& memberId, 
     return sendRequest(std::move(msg), std::move(callback));
 }
 
+int IpcClient::setEd3kRoomLimits(const QString& room, qint64 mediaMax, int keepHours, int keepPosts, bool files,
+                                 ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::SetEd3kRoomLimits);
+    msg.append(room);
+    msg.append(mediaMax);
+    msg.append(qint64(keepHours));
+    msg.append(qint64(keepPosts));
+    msg.append(files);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+void IpcClient::postEd3kRoomMedia(const QString& room, const QString& text, const QString& replyTo, const QByteArray& data,
+                                  const QString& name, int width, int height, ResponseCallback callback)
+{
+    // parts under MaxPayloadSize; the daemon posts at the last one
+    constexpr qsizetype kChunk = 4 << 20;
+    const QString token = QString::number(QRandomGenerator::global()->generate64(), 16);
+    auto sendPart = std::make_shared<std::function<void(qsizetype)>>();
+    *sendPart = [this, self = QPointer<IpcClient>(this), sendPart, room, text, replyTo, data, name, width, height, token,
+                 callback](qsizetype offset) {
+        if (!self)
+            return;
+        IpcMessage msg(IpcMsgType::PostEd3kRoomMedia);
+        msg.append(room);
+        msg.append(token);
+        msg.append(qint64(offset));
+        msg.append(qint64(data.size()));
+        msg.append(QCborValue(data.mid(offset, kChunk)));
+        msg.append(text);
+        msg.append(replyTo);
+        msg.append(name);
+        msg.append(qint64(width));
+        msg.append(qint64(height));
+        const qsizetype next = offset + kChunk;
+        sendRequest(std::move(msg), [sendPart, next, callback](const IpcMessage& r) {
+            if (r.isValid() && r.fieldBool(0) && r.fieldMap(1).value(QStringLiteral("more")).toBool()) {
+                (*sendPart)(next);
+                return;
+            }
+            *sendPart = nullptr;   // breaks the cycle
+            if (callback)
+                callback(r);
+        });
+    };
+    (*sendPart)(0);
+}
+
+void IpcClient::getEd3kRoomMedia(const QString& root, std::function<void(bool, const QString&, const QByteArray&)> done)
+{
+    auto buf = std::make_shared<QByteArray>();
+    auto askPart = std::make_shared<std::function<void(qint64)>>();
+    *askPart = [this, self = QPointer<IpcClient>(this), askPart, buf, root, done](qint64 offset) {
+        if (!self)
+            return;
+        IpcMessage msg(IpcMsgType::GetEd3kRoomMedia);
+        msg.append(root);
+        msg.append(offset);
+        sendRequest(std::move(msg), [askPart, buf, done](const IpcMessage& r) {
+            const QCborMap m = r.isValid() && r.fieldBool(0) ? r.fieldMap(1) : QCborMap{};
+            const QByteArray part = m.value(QStringLiteral("data")).toByteArray();
+            const qint64 size = m.value(QStringLiteral("size")).toInteger();
+            if (m.isEmpty() || m.value(QStringLiteral("offset")).toInteger() != buf->size() || (part.isEmpty() && buf->size() < size)) {
+                *askPart = nullptr;
+                done(false, {}, {});
+                return;
+            }
+            *buf += part;
+            if (buf->size() < size) {
+                (*askPart)(buf->size());
+                return;
+            }
+            *askPart = nullptr;
+            done(true, m.value(QStringLiteral("type")).toString(), *buf);
+        });
+    };
+    (*askPart)(0);
+}
+
+int IpcClient::fetchEd3kRoomMedia(const QString& room, const QString& root, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::FetchEd3kRoomMedia);
+    msg.append(room);
+    msg.append(root);
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
 int IpcClient::requestEd3kOwnSets(ResponseCallback callback)
 {
     return sendRequest(IpcMessage(IpcMsgType::GetEd3kOwnSets), std::move(callback));
 }
 
 int IpcClient::publishEd3kOwnSet(const QString& folder, const QStringList& files, const QString& title, int kind,
-                                 ResponseCallback callback)
+                                 const QStringList& exts, ResponseCallback callback)
 {
     IpcMessage msg(IpcMsgType::PublishEd3kOwnSet);
     msg.append(folder);
     msg.append(QCborArray::fromStringList(files));
     msg.append(title);
     msg.append(qint64(kind));
+    msg.append(QCborArray::fromStringList(exts));
+    return sendRequest(std::move(msg), std::move(callback));
+}
+
+int IpcClient::setEd3kOwnSetExts(const QString& id, const QStringList& exts, ResponseCallback callback)
+{
+    IpcMessage msg(IpcMsgType::Ed3kOwnSetControl);
+    msg.append(qint64(5));
+    msg.append(id);
+    msg.append(QCborArray::fromStringList(exts));
     return sendRequest(std::move(msg), std::move(callback));
 }
 
@@ -1477,6 +1608,7 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushEd3kRoomPostsRemoved: emit ed3kRoomPostsRemoved(msg); break;
     case IpcMsgType::PushEd3kRoomPresence: emit ed3kRoomPresence(msg); break;
     case IpcMsgType::PushEd3kRoomNotice:   emit ed3kRoomNotice(msg); break;
+    case IpcMsgType::PushEd3kRoomMedia:    emit ed3kRoomMedia(msg); break;
     case IpcMsgType::PushEd3kDownloads:    emit ed3kDownloadsChanged(msg); break;
     case IpcMsgType::PushEd3kSetsChanged:  emit ed3kSetsChanged(msg); break;
     case IpcMsgType::PushEd3kSetVersion:   emit ed3kSetVersion(msg); break;

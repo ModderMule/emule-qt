@@ -5,7 +5,7 @@
 ///
 /// Core never links the ed3k module, so the Hoster page talks to this interface
 /// and DaemonApp installs the implementation — the TorrentWebBackend seam. Rows are
-/// GetHosterItems maps. No REST routes use it.
+/// GetHosterItems maps; the /api/v1/hoster routes use it too.
 
 #include <QCborArray>
 #include <QString>

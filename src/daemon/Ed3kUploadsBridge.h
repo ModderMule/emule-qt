@@ -54,6 +54,12 @@ void appendDownloading(QCborArray& out);
 /// sharing or downloading it (Ed3kJoinBase::aliasJobsAt), as {network, name, id[, host]}.
 [[nodiscard]] QCborArray aliasesOf(const QByteArray& root);
 
+/// File Details "Joins" of ed3k @p root (32 B): one row per network join, always all four
+/// in order eD2K, BitTorrent, usenet, hoster (Ed3kJoinBase::joinStatesAt), as
+/// {network: "ed2k"|"torrent"|"usenet"|"hoster", state: "joined"|"skipped"|"available"|"off",
+/// reason ("anonKey", "notRunning", "noEd2kHash"), jobs: aliasesOf-style maps}. Empty: no ed3k.
+[[nodiscard]] QCborArray joinsOf(const QByteArray& root);
+
 /// GetDownloadClients: the BitTorrent peers, news servers and hosters that torrent, usenet
 /// and hoster jobs joined with ed3k get bytes from now (Ed3kJoinBase::networkJobsAt).
 void appendNetworkDownloading(QCborArray& out);

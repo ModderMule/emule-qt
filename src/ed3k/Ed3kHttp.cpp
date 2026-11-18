@@ -3,8 +3,10 @@
 
 #include "Ed3kHttp.h"
 
+#include "net/DohResolver.h"
 #include "net/InterfacePin.h"
 #include "net/ProxySettings.h"
+#include "prefs/Preferences.h"
 #include "utils/Log.h"
 
 #include <QHostInfo>
@@ -213,12 +215,29 @@ void Ed3kHttp::begin(std::unique_ptr<Request> r)
         return;
     }
     // a name: resolved here, every address offered to the core first (host-io.md)
-    QHostInfo::lookupHost(ref.url.host(), this, [this, id](const QHostInfo& info) {
+    auto resolved = [this, id](const QList<QHostAddress>& addrs) {
         const auto it = m_requests.find(id);
         if (it == m_requests.end())
             return;
-        it->second->addrs = info.addresses();
+        it->second->addrs = addrs;
         resolveNext(*it->second);
+    };
+    // behind a proxy: DoH through it, the local resolver never sees the name
+    const QString host = ref.url.host();
+    if (ref.reportProxy) {
+        // an anonymous report: DoH through the report proxy too, even with DoH Off
+        QString doh = thePrefs.proxyDohUrl();
+        if (doh.isEmpty())
+            doh = defaultDohUrl();
+        dohLookup(doh, host, this, std::move(resolved), 8000, ref.reportProxy);
+        return;
+    }
+    if (const QString doh = activeDohUrl(); !doh.isEmpty() && !isLocalName(host)) {
+        dohLookup(doh, host, this, std::move(resolved));
+        return;
+    }
+    QHostInfo::lookupHost(host, this, [resolved = std::move(resolved)](const QHostInfo& info) {
+        resolved(info.addresses());
     });
 }
 

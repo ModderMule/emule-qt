@@ -7,6 +7,7 @@
 #include "chat/IrcNickList.h"
 #include "controls/LogTextView.h"
 #include "prefs/Preferences.h"
+#include "utils/BadgeIcons.h"
 
 #include <QApplication>
 #include <QCborArray>
@@ -18,8 +19,11 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QPushButton>
+#include <QShowEvent>
 #include <QTextBlock>
+#include <QTextBrowser>
 #include <QTextDocument>
+#include <QUrl>
 
 #include <algorithm>
 #include <memory>
@@ -29,6 +33,8 @@ namespace eMule {
 namespace {
 
 constexpr int kShownKeyChars = 4;
+constexpr const char* kModMarkUrl = "emuleqt-mod:star";   // a document resource, never fetched
+constexpr int kModMarkSize = 12;
 
 /// member key text -> member ID hex, from the daemon's rows and pushes
 QHash<QString, QString>& memberIds()
@@ -57,6 +63,38 @@ Ed3kRoomTab::Ed3kRoomTab(const QString& room, std::function<void(const QString&)
     // a post's menu: reply, mute (the log's own entries stay)
     log()->viewport()->installEventFilter(this);
     buildMemberKeyBar();
+    // §2.6: media under its post; a click on it is ours, not a link to open
+    m_media = new Ed3kRoomMediaView(log(), this);
+    connect(m_media, &Ed3kRoomMediaView::fetchRequested, this, &Ed3kRoomTab::mediaFetchRequested);
+    connect(m_media, &Ed3kRoomMediaView::fileOpenRequested, this, &Ed3kRoomTab::fileOpenRequested);
+    connect(log(), &QTextBrowser::anchorClicked, this, [this](const QUrl& href) {
+        if (const QString root = Ed3kRoomMediaView::rootOfLink(href.toString()); !root.isEmpty())
+            m_media->clicked(root, this);
+    });
+}
+
+void Ed3kRoomTab::setMediaState(const QString& root, int state)
+{
+    bool any = false;
+    for (Post& p : m_posts)
+        if (p.media.root == root) {
+            p.media.state = state;
+            any = true;
+        }
+    if (any && m_media->setState(root, state))
+        redraw();
+}
+
+void Ed3kRoomTab::showEvent(QShowEvent* event)
+{
+    ChatChannelView::showEvent(event);
+    m_media->setActive(true);
+}
+
+void Ed3kRoomTab::hideEvent(QHideEvent* event)
+{
+    ChatChannelView::hideEvent(event);
+    m_media->setActive(false);
 }
 
 void Ed3kRoomTab::setRow(const QCborMap& row)
@@ -66,9 +104,12 @@ void Ed3kRoomTab::setRow(const QCborMap& row)
     for (const QCborValue& v : row.value(QStringLiteral("mods")).toArray())
         m_mods << v.toString();
     m_members.clear();
+    m_admitted.clear();
     for (const QCborValue& v : row.value(QStringLiteral("members")).toArray()) {
         const QCborMap m = v.toMap();
         m_members.insert(m.value(QStringLiteral("key")).toString(), m.value(QStringLiteral("nick")).toString());
+        if (m.value(QStringLiteral("admitted")).toBool())
+            m_admitted.insert(m.value(QStringLiteral("key")).toString());
         rememberMemberId(m.value(QStringLiteral("key")).toString(), m.value(QStringLiteral("id")).toString());
     }
     rememberMemberId(memberKey(), row.value(QStringLiteral("memberId")).toString());
@@ -150,6 +191,12 @@ QString Ed3kRoomTab::keyOfShown(const QString& shown) const
     return {};
 }
 
+QString Ed3kRoomTab::modMarkHtml()
+{
+    return QStringLiteral("<img src=\"%1\" width=\"%2\" height=\"%2\" title=\"%3\"> ")
+        .arg(QString::fromLatin1(kModMarkUrl)).arg(kModMarkSize).arg(tr("Moderator"));
+}
+
 QString Ed3kRoomTab::shownName(const QString& nick, const QString& key)
 {
     // blanks would split the name in a nick completion
@@ -217,6 +264,15 @@ Ed3kRoomTab::Post Ed3kRoomTab::postFrom(const QCborMap& map)
     p.sent = map.value(QStringLiteral("sent")).toInteger();
     p.text = map.value(QStringLiteral("text")).toString();
     p.replyTo = map.value(QStringLiteral("replyTo")).toString();
+    if (const QCborMap m = map.value(QStringLiteral("media")).toMap(); !m.isEmpty()) {
+        p.media.root = m.value(QStringLiteral("root")).toString().toLower();
+        p.media.size = m.value(QStringLiteral("size")).toInteger();
+        p.media.type = m.value(QStringLiteral("type")).toString();
+        p.media.name = m.value(QStringLiteral("name")).toString();
+        p.media.width = int(m.value(QStringLiteral("width")).toInteger());
+        p.media.height = int(m.value(QStringLiteral("height")).toInteger());
+        p.media.state = int(m.value(QStringLiteral("state")).toInteger());
+    }
     return p;
 }
 
@@ -317,6 +373,10 @@ void Ed3kRoomTab::draw(const Post& p)
     if (!p.authorId.isEmpty() && isMuted(p.authorId))
         return;
     QTextDocument* doc = log()->document();
+    // the moderator star (§6: marks moderators' posts); clear() drops resources
+    if (p.moderator && doc->resource(QTextDocument::ImageResource, QUrl(QString::fromLatin1(kModMarkUrl))).isNull())
+        doc->addResource(QTextDocument::ImageResource, QUrl(QString::fromLatin1(kModMarkUrl)),
+                         BadgeIcons::moderatorMark(kModMarkSize, log()->devicePixelRatioF()));
     const int before = doc->blockCount();
     const bool empty = doc->isEmpty();
     append(render(p));
@@ -342,8 +402,12 @@ QString Ed3kRoomTab::render(const Post& p) const
             reply = QStringLiteral("%1: %2").arg(shownName(it->nick, it->author), quote);
         }
     }
-    const QString shown = (p.moderator ? QStringLiteral("@") : QString()) + shownName(p.nick, p.author);
-    return m_render ? m_render(p, shown, p.author == memberKey(), reply) : p.text.toHtmlEscaped();
+    // was: (p.moderator ? "@" : "") + shownName(..): the renderer draws a star now
+    const QString shown = shownName(p.nick, p.author);
+    QString html = m_render ? m_render(p, shown, p.author == memberKey(), reply) : p.text.toHtmlEscaped();
+    if (!p.media.root.isEmpty())
+        html += m_media->html(p.media);
+    return html;
 }
 
 void Ed3kRoomTab::buildMemberKeyBar()

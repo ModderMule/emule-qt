@@ -12,6 +12,7 @@
 #include "Ed3kResolver.h"
 #include "Ed3kSession.h"
 #ifdef EMULE_HAVE_HOSTER_JD
+#include "Ed3kFfmpegTool.h"
 #include "Ed3kJavaRuntime.h"
 #include "Ed3kJdResolver.h"
 #include "Ed3kResolverUpdater.h"
@@ -119,6 +120,8 @@ public:
     QSet<QString> genericHosts;  ///< sites only the generic http plugin takes (match(): DirectHTTP, "file")
     QSet<QString> privateUrls;   ///< open() fails like the address guard (code "private")
     QSet<QString> premiumHosts;  ///< accountCheck() says premium for these
+    QSet<QString> freeHosts;     ///< accountCheck(): logged in, free account (JD: not valid), session
+    QSet<QString> browserHosts;  ///< accountCheck(): a browser login nobody asked for (unusable "login")
     QHash<QString, int> maxDownloads;   ///< accountCheck() tells JD's downloads at once
     QSet<QString> codeHosts;     ///< accountCheck() asks for a confirmation code
     std::map<TaskId, QString> codeWaits;   ///< check task → host, until answerCode()
@@ -136,6 +139,8 @@ public:
     qsizetype breakAt = 0;
     /// resume: the hoster cannot resume, JD starts over from 0
     bool refuseResume = false;
+    bool muxed = false;          ///< open()'s progress says muxed (HLS/DASH via ffmpeg)
+    qsizetype stallAt = 0;       ///< the first open stops writing there (a slow hoster)
     std::uint64_t lastHave = 0;
     QByteArray lastPrefill;   ///< the front of the part file a resumed open found
 
@@ -314,7 +319,8 @@ public:
             QFile::remove(part);
         }
         const qsizetype from = have > 0 && !refuseResume ? qsizetype(have) : 0;
-        writeStep(t, part, from, have > 0 ? std::optional<std::uint64_t>(std::uint64_t(from)) : std::nullopt);
+        writeStep(t, part, from, have > 0 ? std::optional<std::uint64_t>(std::uint64_t(from)) : std::nullopt,
+                  opens == 1 ? stallAt : 0);
         return t;
     }
     TaskId accountCheck(const QString& host, const ResolverAccount& account) override
@@ -341,6 +347,21 @@ public:
             e.multi = true;
             e.hosts = *d;
             e.state = QByteArrayLiteral(R"({"token":"t1"})");
+        }
+        if (freeHosts.contains(host)) {
+            e.valid = false;
+            e.premium = false;
+            e.multi = false;
+            e.unusable = QStringLiteral("free");
+            e.trafficLeft = 0;
+            e.state = QByteArrayLiteral(R"({"token":"free"})");
+        }
+        if (browserHosts.contains(host)) {
+            e.valid = false;
+            e.premium = false;
+            e.multi = false;
+            e.unusable = QStringLiteral("login");
+            e.state = QByteArrayLiteral(R"({"token":"stale"})");
         }
         later(t, e);
         return t;
@@ -409,9 +430,10 @@ private:
     }
     /// 300 KiB per step, a progress event each, then done (the part renamed, as JD does);
     /// @p from: told with the first progress of a resumed open
-    void writeStep(TaskId t, const QString& part, qsizetype at, std::optional<std::uint64_t> from = std::nullopt)
+    void writeStep(TaskId t, const QString& part, qsizetype at, std::optional<std::uint64_t> from = std::nullopt,
+                   qsizetype stall = 0)
     {
-        QTimer::singleShot(5, this, [this, t, part, at, from] {
+        QTimer::singleShot(5, this, [this, t, part, at, from, stall] {
             const qsizetype n = std::min<qsizetype>(300 * 1024, data.size() - at);
             QFile f(part);
             if (!f.open(QIODevice::ReadWrite) || !f.seek(at) || f.write(data.constData() + at, n) != n)
@@ -423,6 +445,7 @@ private:
             e.total = std::uint64_t(data.size());
             e.path = part;
             e.from = from;
+            e.muxed = muxed;
             emit taskEvent(t, e);
             if (opens == 1 && breakAt > 0 && at + n >= breakAt) {
                 // the join reads what is on disk first, then the hoster says busy
@@ -435,8 +458,10 @@ private:
                 });
                 return;
             }
+            if (stall > 0 && at + n >= stall)
+                return;
             if (at + n < data.size()) {
-                writeStep(t, part, at + n);
+                writeStep(t, part, at + n, std::nullopt, stall);
                 return;
             }
             const QString done = part.chopped(5);
@@ -882,6 +907,68 @@ private slots:
         QTRY_VERIFY(QDir(r.tmp.filePath(QStringLiteral("temp"))).entryList({QStringLiteral("*.hoster.part*")}, QDir::Files).isEmpty());
         // the same link again is not a second item
         QVERIFY(r.join->addLinks(QStringLiteral("https://fake.example/f/1")).isEmpty());
+    }
+
+    /// the resolver's open says muxed (HLS/DASH): the item tells it, the GUI and preview see it
+    void rootless_muxedOpenMarksItem()
+    {
+        for (const bool muxed : {true, false}) {
+            Rig r;
+            r.resolver.muxed = muxed;
+            QVERIFY(r.start(true));
+            const auto ids = r.join->addLinks(QStringLiteral("https://fake.example/f/1"));
+            QCOMPARE(ids.size(), 1);
+            QTRY_COMPARE_WITH_TIMEOUT(r.state(ids[0]), Ed3kHosterJoin::State::Complete, 60000);
+            QCOMPARE(r.join->item(ids[0])->muxed, muxed);
+        }
+    }
+
+    /// a player reads near the end, far ahead of a rootless stream: a direct or premium link
+    /// fetches the end with a second open (sparse part, resumed there); a free hoster does not
+    void rootless_tailFetchForPlayer()
+    {
+        const QString direct = QStringLiteral("https://files.example/v.mp4");
+        const QString prem = QStringLiteral("https://prem.example/v.mp4");
+        const QString free = QStringLiteral("https://fake.example/v.mp4");
+        for (const QString& url : {direct, prem, free}) {
+            Rig r;
+            r.resolver.data = content(3 * 1024 * 1024 + 77);
+            r.resolver.stallAt = 600 * 1024;
+            r.resolver.genericHosts = {QStringLiteral("files.example")};
+            r.resolver.hosts += QStringLiteral("prem.example");
+            r.resolver.premiumHosts = {QStringLiteral("prem.example")};
+            r.resolver.maxDownloads[QStringLiteral("prem.example")] = 4;
+            r.prefs.accounts = {{QStringLiteral("prem.example"), QStringLiteral("u"), QStringLiteral("p")}};
+            QVERIFY(r.start(true));
+            if (url == prem)
+                QTRY_COMPARE_WITH_TIMEOUT(r.join->accountTier(QStringLiteral("prem.example")), 2, 10000);
+            const auto ids = r.join->addLinks(url);
+            QCOMPARE(ids.size(), 1);
+            QTRY_VERIFY_WITH_TIMEOUT(r.join->item(ids[0])->done >= 600 * 1024, 60000);
+            QTRY_COMPARE_WITH_TIMEOUT(r.join->item(ids[0])->speed, std::uint64_t(0), 10000);   // stalled
+            const std::uint64_t size = std::uint64_t(r.resolver.data.size());
+            const std::uint64_t at = size - 200 * 1024 - 5;
+            if (url == free) {
+                QCOMPARE(*r.join->playFrom(ids[0], at), at);
+                QTest::qWait(500);
+                QCOMPARE(r.resolver.opens, 1);
+                QCOMPARE(*r.join->playFrom(ids[0], at), at);
+                continue;
+            }
+            QCOMPARE(*r.join->playFrom(ids[0], at), at);
+            QCOMPARE(r.resolver.opens, 2);
+            QCOMPARE(r.resolver.lastHave, at);
+            QCOMPARE(r.resolver.lastPrefill.size(), qsizetype(at));   // sparse, as long as the offset
+            QTRY_COMPARE_WITH_TIMEOUT(*r.join->playFrom(ids[0], at), size, 10000);
+            QCOMPARE(*r.join->playFrom(ids[0], 1000), r.join->item(ids[0])->done);   // behind: the stream's
+            QFile f(r.join->item(ids[0])->file);
+            QVERIFY(f.open(QIODevice::ReadOnly));
+            QVERIFY(f.seek(qint64(at)));
+            QCOMPARE(f.readAll(), r.resolver.data.mid(qsizetype(at)));
+            // the stream itself is still where it stalled; a read before the tail waits for it
+            QCOMPARE(*r.join->playFrom(ids[0], at - 1), at - 1);
+            QCOMPARE(r.resolver.opens, 3);   // a new tail from there
+        }
     }
 
     /// the digests the hoster checksum check computes ("123456789" check values)
@@ -1336,7 +1423,7 @@ private slots:
         QVERIFY(r.join->sharedLinks(id).isEmpty());
     }
 
-    /// ed3k.deletedFileDays: past it (0 here) the deleted volume's link is withdrawn
+    /// ed3k.deletedFileDays: 0 = no age limit, kept; < 0 = none: the deleted volume's link is withdrawn
     void extract_deletedVolumeEndsAfterItsDays()
     {
         Rig r;
@@ -1355,6 +1442,9 @@ private slots:
         QVERIFY(r.restart());
         QTRY_VERIFY_WITH_TIMEOUT(r.join->sharedLinks(ids[0]).value(0).aliasOut, 10000);
         r.join->setDeletedDays(0);
+        QCOMPARE(r.join->deletedCount(), std::size_t(1));
+        QVERIFY(r.join->sharedLinks(ids[0]).value(0).aliasOut);
+        r.join->setDeletedDays(-1);
         QCOMPARE(r.join->deletedCount(), std::size_t(0));
         QVERIFY(!r.join->sharedLinks(ids[0]).value(0).aliasOut);
         // the item stays in the list (unpacked), its link not published again
@@ -2114,6 +2204,35 @@ private slots:
         QCOMPARE(ev.code, QStringLiteral("noLogin"));
     }
 
+    /// a free account logged in (JD: not valid): its session is still saved, no login again
+    void debrid_freeLoginSavesSession()
+    {
+        Rig r;
+        r.resolver.freeHosts = {QStringLiteral("deb.example")};
+        r.prefs.debrid = {Ed3kHosterAccount{QStringLiteral("deb.example"), QStringLiteral("u"), QStringLiteral("p")}};
+        QVERIFY(r.start(true));
+        QSignalSpy saved(r.join.get(), &Ed3kHosterJoin::sessionSaved);
+        QTRY_VERIFY_WITH_TIMEOUT(saved.count() >= 1, 10000);
+        QCOMPARE(saved.last().at(2).toByteArray(), QByteArrayLiteral(R"({"token":"free"})"));
+    }
+
+    /// the startup check needs a browser login: no session saved from it (it's not logged in)
+    void debrid_browserLoginNeededSavesNothing()
+    {
+        Rig r;
+        r.resolver.browserHosts = {QStringLiteral("deb.example")};
+        r.prefs.debrid = {Ed3kHosterAccount{QStringLiteral("deb.example"), QStringLiteral("u"), QStringLiteral("p")}};
+        QVERIFY(r.start(true));
+        QSignalSpy saved(r.join.get(), &Ed3kHosterJoin::sessionSaved);
+        const auto unusable = [&r] {
+            const auto d = r.join->debridSummaries();
+            return d.isEmpty() ? QString() : d.first().unusable;
+        };
+        QTRY_COMPARE_WITH_TIMEOUT(unusable(), QStringLiteral("login"), 10000);
+        QTest::qWait(300);
+        QCOMPARE(saved.count(), 0);
+    }
+
     /// a login needs a confirmation code: the check waits, the user's code finishes it; a Check
     /// meanwhile starts no second login; a download's ask goes to the stored login too
     void account_confirmationCode()
@@ -2626,6 +2745,14 @@ private slots:
         QCOMPARE(e->second.hosts[0].trafficLeft, -1);
         QCOMPARE(e->second.hosts[0].factor, 200);
         QCOMPARE(e->second.state, QByteArray(R"({"token":"x"})"));
+        QVERIFY(!e->second.unlimited);
+        // a free login the plugin can't use (Real-Debrid); a premium login with no traffic limit
+        e = Ed3kJdResolver::parseEvent(R"({"id":11,"ev":"account","valid":false,"unusable":"free","trafficLeft":0})");
+        QVERIFY(!e->second.valid);
+        QCOMPARE(e->second.unusable, QStringLiteral("free"));
+        e = Ed3kJdResolver::parseEvent(R"({"id":12,"ev":"account","valid":true,"premium":true,"unlimited":true})");
+        QVERIFY(e->second.unlimited);
+        QVERIFY(e->second.unusable.isEmpty());
         e = Ed3kJdResolver::parseEvent(R"({"id":9,"ev":"match","host":"DirectHTTP","generic":"file"})");
         QCOMPARE(e->second.kind, K::Matched);
         QCOMPARE(e->second.generic, QStringLiteral("file"));
@@ -3200,6 +3327,88 @@ private slots:
             QCOMPARE(u.zipToUse(), newer);
             QVERIFY(!QFileInfo::exists(QDir(dir).filePath(QStringLiteral("resolver-r53800.zip"))));
         }
+        eMule::BackgroundFileWriter::instance().flush();   // update.json is queued: on disk before tmp goes
+    }
+
+    /// ffmpeg for HLS: this platform's zip of the manifest's "ffmpeg" entry, both binaries
+    /// installed into <base>/ffmpeg and started once (-version)
+    void ffmpegTool_installsFromManifest()
+    {
+        QTemporaryDir tmp;
+        const QString zip = tmp.filePath(QStringLiteral("ff.zip"));
+#ifdef Q_OS_WIN
+        // no program here prints "ffmpeg version": installed, then refused as not starting
+        const QByteArray body = "MZ not a program";
+#else
+        const QByteArray body = "#!/bin/sh
+echo 'ffmpeg version 9.0-test'
+";
+#endif
+        // in a folder, as upstream zips have it
+        QVERIFY(writeZip(zip, {{QStringLiteral("bin/") + Ed3kFfmpegTool::exe(QStringLiteral("ffmpeg")), body},
+                               {QStringLiteral("bin/") + Ed3kFfmpegTool::exe(QStringLiteral("ffprobe")), body},
+                               {QStringLiteral("README.txt"), "x"}}));
+        QFile f(zip);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        const QByteArray zipBytes = f.readAll();
+        f.close();
+        FakeHttpServer http;
+        QVERIFY(http.isListening());
+        bool withEntry = false;
+        http.handler = [&](const QByteArray& path, const QByteArray&) -> FakeHttpServer::Response {
+            if (path == "/ff.zip")
+                return {200, zipBytes};
+            QJsonObject root{{QStringLiteral("latest"), QStringLiteral("9.9.9")}};
+            if (withEntry) {
+                const QJsonObject d{{QStringLiteral("url"), http.url(QStringLiteral("/ff.zip")).toString()},
+                                    {QStringLiteral("sha256"), QString::fromLatin1(fileSha256(zip))},
+                                    {QStringLiteral("size"), zipBytes.size()}};
+                root.insert(QStringLiteral("ffmpeg"),
+                            QJsonObject{{QStringLiteral("version"), QStringLiteral("9.0-test")},
+                                        {QStringLiteral("downloads"), QJsonObject{{VersionManifest::platformKey(), d}}}});
+            }
+            return {200, QJsonDocument(root).toJson()};
+        };
+        const QString base = tmp.filePath(QStringLiteral("ed3k"));
+        {
+            // no entry for this platform: failed, logged, no new try right away
+            Ed3kFfmpegTool t(base);
+            t.setManifestUrl(http.url(QStringLiteral("/emuleqt-version.json")));
+            QVERIFY(!t.download());   // not allowed: hoster downloads off
+            t.setAllowed(true);
+            QVERIFY(t.download());
+            QTRY_COMPARE_WITH_TIMEOUT(t.state(), Ed3kFfmpegTool::State::Failed, 10000);
+            QVERIFY2(t.error().contains(QStringLiteral("no ffmpeg for")), qPrintable(t.error()));
+            QVERIFY(!t.download());
+        }
+        withEntry = true;
+        Ed3kFfmpegTool t(base);
+        t.setManifestUrl(http.url(QStringLiteral("/emuleqt-version.json")));
+        t.setAllowed(true);
+        QVERIFY(t.download());
+        QVERIFY(t.busy());
+        // Unpacking lasts through the -version start
+        QTRY_VERIFY_WITH_TIMEOUT(!t.busy(), 30000);
+        const QDir dir(t.toolDir());
+        QVERIFY(QFileInfo(dir.filePath(Ed3kFfmpegTool::exe(QStringLiteral("ffmpeg")))).isFile());
+        QVERIFY(QFileInfo(dir.filePath(Ed3kFfmpegTool::exe(QStringLiteral("ffprobe")))).isFile());
+        QVERIFY(!QFileInfo::exists(dir.filePath(QStringLiteral("README.txt"))));
+        QVERIFY(!QFileInfo::exists(t.toolDir() + QStringLiteral(".tmp")));
+        QVERIFY(!QFileInfo::exists(QDir(base).filePath(QStringLiteral("ffmpeg-download.zip"))));
+#ifdef Q_OS_WIN
+        QCOMPARE(t.state(), Ed3kFfmpegTool::State::Failed);
+        QVERIFY2(t.error().contains(QStringLiteral("does not start")), qPrintable(t.error()));
+#else
+        QCOMPARE(t.state(), Ed3kFfmpegTool::State::Ready);
+        QCOMPARE(t.ffmpeg(), QFileInfo(dir.filePath(QStringLiteral("ffmpeg"))).absoluteFilePath());
+        QCOMPARE(t.ffprobe(), QFileInfo(dir.filePath(QStringLiteral("ffprobe"))).absoluteFilePath());
+        QVERIFY(QFileInfo(t.ffmpeg()).isExecutable());
+        // a restart finds it without a fetch
+        Ed3kFfmpegTool again(base);
+        again.locate();
+        QCOMPARE(again.state(), Ed3kFfmpegTool::State::Ready);
+        QCOMPARE(again.ffmpeg(), t.ffmpeg());
+#endif
     }
 
     /// no zip shipped: nothing at start, fetched once a hoster link wants plugins
@@ -3927,6 +4136,132 @@ private slots:
         QFile again(done(t2)->path);
         QVERIFY(again.open(QIODevice::ReadOnly));
         QCOMPARE(again.readAll(), data);
+    }
+
+    /// HLS through the real sidecar on a machine without ffmpeg: JD skips with FFMPEG_MISSING,
+    /// the resolver asks (needTools), Ed3kFfmpegTool fetches the zip a local manifest names,
+    /// the paths go in (setTools) and the same task downloads the stream.
+    /// EMULE_HOSTER_LIVE_FFMPEG=<an ffmpeg zip of scripts/publish-ffmpeg.sh>; ffmpeg must not be on PATH
+    void live_jdResolverFetchesFfmpeg()
+    {
+        const QString ffZip = qEnvironmentVariable("EMULE_HOSTER_LIVE_FFMPEG");
+        if (ffZip.isEmpty())
+            QSKIP("live: set EMULE_HOSTER_LIVE_FFMPEG=<ffmpeg-<v>-<platform>.zip>");
+        if (!QStandardPaths::findExecutable(Ed3kFfmpegTool::exe(QStringLiteral("ffmpeg"))).isEmpty())
+            QSKIP("ffmpeg is on PATH: JD would find it");
+        const QString zip = Ed3kJdResolver::findBundledZip();
+        if (zip.isEmpty())
+            QSKIP("no resolver.zip: run scripts/build-hoster-resolver.sh");
+        QTemporaryDir tmp;
+        Ed3kJavaRuntime java(tmp.path());
+        java.locate({});
+        QTRY_VERIFY_WITH_TIMEOUT(java.state() != Ed3kJavaRuntime::State::Probing, 60000);
+        if (!java.runtime())
+            QSKIP("no Java 17+ on this machine");
+
+        // a 4 s stream, made with the zip's own ffmpeg from a folder JD never looks in
+        const QString gen = tmp.filePath(QStringLiteral("gen"));
+        {
+            ArchiveReader r;
+            QVERIFY(r.open(ffZip) && r.extractAll(gen));
+        }
+        const QString hls = tmp.filePath(QStringLiteral("hls"));
+        QVERIFY(QDir().mkpath(hls));
+        QProcess mk;
+        mk.setProcessChannelMode(QProcess::MergedChannels);
+        mk.start(QDir(gen).filePath(Ed3kFfmpegTool::exe(QStringLiteral("ffmpeg"))),
+                 {QStringLiteral("-hide_banner"), QStringLiteral("-loglevel"), QStringLiteral("error"),
+                  QStringLiteral("-f"), QStringLiteral("lavfi"), QStringLiteral("-i"), QStringLiteral("testsrc=duration=4:size=320x240:rate=25"),
+                  QStringLiteral("-f"), QStringLiteral("lavfi"), QStringLiteral("-i"), QStringLiteral("sine=frequency=440:duration=4"),
+                  QStringLiteral("-c:v"), QStringLiteral("libx264"), QStringLiteral("-c:a"), QStringLiteral("aac"), QStringLiteral("-shortest"),
+                  QStringLiteral("-f"), QStringLiteral("hls"), QStringLiteral("-hls_time"), QStringLiteral("1"),
+                  QStringLiteral("-hls_playlist_type"), QStringLiteral("vod"),
+                  QStringLiteral("-hls_segment_filename"), QDir(hls).filePath(QStringLiteral("seg%d.ts")),
+                  QDir(hls).filePath(QStringLiteral("stream.m3u8"))});
+        QVERIFY(mk.waitForFinished(60000));
+        QVERIFY2(mk.exitCode() == 0, mk.readAll().constData());
+        QVERIFY(QDir(gen).removeRecursively());
+
+        QFile zf(ffZip);
+        QVERIFY(zf.open(QIODevice::ReadOnly));
+        const QByteArray zipBytes = zf.readAll();
+        zf.close();
+        FakeHttpServer http;
+        QVERIFY(http.isListening());
+        http.handler = [&](const QByteArray& path, const QByteArray&) -> FakeHttpServer::Response {
+            if (path == "/ff.zip")
+                return {200, zipBytes};
+            if (path == "/emuleqt-version.json") {
+                const QJsonObject d{{QStringLiteral("url"), http.url(QStringLiteral("/ff.zip")).toString()},
+                                    {QStringLiteral("sha256"), QString::fromLatin1(fileSha256(ffZip))},
+                                    {QStringLiteral("size"), zipBytes.size()}};
+                const QJsonObject ff{{QStringLiteral("version"), QStringLiteral("live")},
+                                     {QStringLiteral("downloads"), QJsonObject{{VersionManifest::platformKey(), d}}}};
+                return {200, QJsonDocument(QJsonObject{{QStringLiteral("latest"), QStringLiteral("9.9.9")},
+                                                       {QStringLiteral("ffmpeg"), ff}}).toJson()};
+            }
+            QFile f(QDir(hls).filePath(QString::fromLatin1(path.mid(1))));
+            if (path.contains("..") || !f.open(QIODevice::ReadOnly))
+                return {404, {}};
+            const QByteArray type = path.endsWith(".m3u8") ? "application/vnd.apple.mpegurl" : "video/mp2t";
+            return {200, f.readAll(), {{"Content-Type", type}}};
+        };
+
+        Ed3kFfmpegTool tool(tmp.filePath(QStringLiteral("ed3k")));
+        tool.setManifestUrl(http.url(QStringLiteral("/emuleqt-version.json")));
+        tool.setAllowed(true);
+        tool.locate();
+        QCOMPARE(tool.state(), Ed3kFfmpegTool::State::Missing);
+
+        Ed3kJdResolver resolver;
+        JdResolverConfig cfg;
+        cfg.java = java.runtime()->java;
+        cfg.dataDir = tmp.filePath(QStringLiteral("resolver"));
+        cfg.zip = zip;
+        cfg.loopbackHosters = true;   // the guard lets 127.0.0.1 through
+        resolver.setConfig(cfg);
+        QVERIFY2(resolver.available(), qPrintable(resolver.unavailableReason()));
+        // DaemonApp's wiring
+        int asked = 0;
+        connect(&resolver, &Ed3kJdResolver::toolsNeeded, this, [&] {
+            ++asked;
+            if (!tool.download())
+                resolver.toolsFailed(tool.error());
+        });
+        connect(&tool, &Ed3kFfmpegTool::stateChanged, this, [&] {
+            if (tool.state() == Ed3kFfmpegTool::State::Ready) {
+                JdResolverConfig c = resolver.config();
+                c.ffmpeg = tool.ffmpeg();
+                c.ffprobe = tool.ffprobe();
+                resolver.setConfig(c);
+            } else if (tool.state() == Ed3kFfmpegTool::State::Failed) {
+                resolver.toolsFailed(tool.error());
+            }
+        });
+        std::vector<ResolverEvent> seen;
+        connect(&resolver, &Ed3kResolver::taskEvent, this,
+                [&seen](Ed3kResolver::TaskId, const ResolverEvent& e) { seen.push_back(e); });
+        const auto final = [&seen]() -> const ResolverEvent* {
+            for (const ResolverEvent& e : seen)
+                if (e.isFinal())
+                    return &e;
+            return nullptr;
+        };
+        const QString dir = tmp.filePath(QStringLiteral("t"));
+        QDir().mkpath(dir);
+        // m3u8:// keeps JD's m3u8 crawler (a plain loopback URL would go to DirectHTTP)
+        resolver.open(QStringLiteral("m3u8://") + http.url(QStringLiteral("/stream.m3u8")).toString(), std::nullopt, dir, 0);
+        QTRY_VERIFY_WITH_TIMEOUT(final(), 600000);
+        const ResolverEvent* done = final();
+        QVERIFY2(done->kind == ResolverEvent::Kind::Done, qPrintable(done->code + QLatin1Char(' ') + done->text));
+        QCOMPARE(asked, 1);
+        QCOMPARE(tool.state(), Ed3kFfmpegTool::State::Ready);
+        QVERIFY(std::ranges::any_of(seen, [](const ResolverEvent& e) {
+            return e.kind == ResolverEvent::Kind::Status && e.text == QLatin1StringView("ffmpeg");
+        }));
+        QVERIFY(std::ranges::any_of(seen, [](const ResolverEvent& e) { return e.muxed; }));
+        qInfo("HLS done: %s, %llu bytes", qPrintable(done->name), qulonglong(QFileInfo(done->path).size()));
+        QVERIFY(QFileInfo(done->path).size() > 10000);
     }
 
     /// Temurin fetched from adoptium.net, its SHA-256 checked, unpacked with tar and found.

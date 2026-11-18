@@ -17,6 +17,7 @@ Downloads from links at file hosters, verified under ed3k roots. Spec:
 | `Ed3kJdResolver` | `src/ed3k/` | the JDownloader sidecar: JSON lines over a loopback socket (token via stdin, then stdin closed); installs `resolver.zip` |
 | `Ed3kResolverUpdater` | `src/ed3k/` | newer `resolver.zip` from the update manifest (`hosterResolver`), see "Plugin updates" |
 | `Ed3kJavaRuntime` | `src/ed3k/` | finds Java 17+, else downloads Temurin 21 into `Config/ed3k/java/jre`, or `<sharedPluginDir>/java/jre` (an older `<eMuleQt>/runtime/jre` is moved there) |
+| `Ed3kFfmpegTool` | `src/ed3k/` | ffmpeg + ffprobe for HLS/DASH links: found (PATH, Homebrew, winget, ...) or fetched from the update manifest (`ffmpeg`) into `Config/ed3k/ffmpeg`, see "ffmpeg" |
 | sidecar driver | `tools/hoster-resolver/` | Java, GPL v3+: JD's plugins unmodified, `SingleDownloadController` subclass, puzzle solver |
 | IPC | `src/daemon/Ed3kHosterBridge.*` | requests 1100-1108 (1107 GetHosterStats, Statistics branch; 1108 CheckHosterLinks), 1210-1218 (Link Grabber), pushes 1150-1154, 1159 (PushHosterLinkCheck) and 1190 (PushLinkGrabber), `hoster` map in `GetEd3kStatus` |
 | GUI | `panels/HosterPanel`, `dialogs/HosterPuzzleDialog`, Options › ed3k › Hoster | list, add links (dialog, or Paste links from the clipboard), image puzzles, settings, accounts; web search rows' Download (`MetaResultActions`, `WebLinksDialog`) adds one item per file with its mirrors, only while `enabled` (else the links window, as Details... opens it); the links dialog checks its links (Status column; with the ed3k node off the resolver checks them itself, `pumpDirectChecks`); check boxes pick what its Download takes ("Download (all)" / "Download (n)"), and a context menu has Download, Check Selected and Uncheck Selected |
@@ -455,6 +456,23 @@ through the Proxy page's proxy, SHA-256 checked, unpacked with the system `tar`.
 Only while hoster downloads are switched on (`Ed3kJavaRuntime::setAllowed`): nothing is fetched
 before, the "Download Java" button is off and the IPC request refused; switching off stops a
 running download and removes its files.
+
+## ffmpeg
+
+JD's HLS/DASH plugins need ffmpeg and ffprobe; without them (and without JD's updater, which the
+resolver lacks) JD skips the link with `FFMPEG_MISSING`. `Ed3kFfmpegTool` probes
+`Config/ed3k/ffmpeg`, the application folder, `PATH`, then the usual folders (macOS
+`/opt/homebrew/bin`, `/usr/local/bin`: Finder gives apps no shell PATH; Windows winget links,
+scoop, chocolatey). Both from one folder. The paths go to the sidecar as `-Demuleqt.ffmpeg/ffprobe`,
+which sets JD's `FFmpegSetup.binaryPath/binaryPathProbe`.
+
+None found: an open task that hits `FFMPEG_MISSING` sends `needTools` (id 0, once for all
+waiting tasks), shows status `ffmpeg` and waits up to 30 min. The daemon looks again, else fetches
+this platform's zip of the manifest's `ffmpeg` entry (SHA-256 + size checked), unpacks it
+in-process, runs `ffmpeg -version` and answers `setTools {ffmpeg, ffprobe}`; the task runs the
+plugin once more. A failure answers `setTools {error}`, is logged as a hoster warning, ends the
+task with code `ffmpeg` (retried after 30 min) and blocks a new fetch for 10 min. Zips and
+manifest entry: `scripts/publish-ffmpeg.sh`, `docs/ffmpeg-tools.local.md`.
 
 ## Building the resolver
 

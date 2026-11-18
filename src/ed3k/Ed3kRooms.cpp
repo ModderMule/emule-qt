@@ -14,6 +14,7 @@
 #include <QCborValue>
 #include <QDateTime>
 #include <QDir>
+#include <QHostAddress>
 #include <QFile>
 #include <QRandomGenerator>
 #include <QRegularExpression>
@@ -173,7 +174,13 @@ Ed3kRooms::Ed3kRooms(Ed3kSession& session, QObject* parent)
     m_historyStored = historyStored();
     m_historyMax = historyMax();
     connect(m_postsTimer, &QTimer::timeout, this, &Ed3kRooms::writeDirtyPosts);
+    m_media = new Ed3kRoomMedia(m_session, this);
     onSessionStatus();
+    if (qEnvironmentVariableIsSet("EMULE_ED3K_ROOM_PEER")) {
+        auto* dial = new QTimer(this);
+        connect(dial, &QTimer::timeout, this, &Ed3kRooms::dialDevPeer);
+        dial->start(10'000);
+    }
 }
 
 Ed3kRooms::~Ed3kRooms()
@@ -308,6 +315,7 @@ ffi::Result<> Ed3kRooms::leave(const ffi::Room& room, bool dropRoomKey)
             if (const auto roomKey = linkKey(it->second.link))
                 keyDropped = QFile::remove(QDir(roomsDir()).filePath(ownerFile(*roomKey)));
     }
+    m_media->roomLeft(room);
     m_rooms.erase(room);
     m_saved.erase(room);
     m_dirtyPosts.erase(room);
@@ -384,6 +392,67 @@ ffi::Result<> Ed3kRooms::setInfo(const ffi::Room& room, const QString& title, co
     return ok;
 }
 
+ffi::Result<> Ed3kRooms::setLimits(const ffi::Room& room, std::uint64_t mediaMax, std::uint32_t keepHours, std::uint32_t keepPosts,
+                                   bool files)
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return std::unexpected(ffi::Error::State);
+    const auto key = keyOf(room);
+    if (!key)
+        return std::unexpected(key.error());
+    auto ok = e->roomSetLimits(*key, m_session.now(), room, std::min(mediaMax, Ed3kRoomMedia::kMaxSize), keepHours, keepPosts, files);
+    m_session.pump();
+    if (ok)
+        if (auto it = m_rooms.find(room); it != m_rooms.end()) {
+            readLimits(it->second);
+            emit roomsChanged();
+        }
+    return ok;
+}
+
+ffi::Result<ffi::PostId> Ed3kRooms::postMedia(const ffi::Room& room, const QString& text, std::optional<ffi::PostId> replyTo,
+                                              const QByteArray& bytes, const QString& name, std::uint32_t width, std::uint32_t height)
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return std::unexpected(ffi::Error::State);
+    const auto key = keyOf(room);
+    if (!key)
+        return std::unexpected(key.error());
+    const auto it = m_rooms.find(room);
+    if (it == m_rooms.end())
+        return std::unexpected(ffi::Error::NotFound);
+    readLimits(it->second);
+    // §2.6: no media in a room without; never above its limit
+    if (it->second.mediaMax == 0 || std::uint64_t(bytes.size()) > it->second.mediaMax)
+        return std::unexpected(ffi::Error::Denied);
+    // a file that is no media only where room info sets `files`
+    if (Ed3kRoomMedia::sniffType(bytes).isEmpty() && !it->second.files)
+        return std::unexpected(ffi::Error::Denied);
+    auto media = m_media->add(room, *key, bytes, name, it->second.isPrivate, width, height);
+    if (!media)
+        return std::unexpected(media.error());
+    // text stays required (§2.6): the caption, else the name
+    QString t = text.trimmed().isEmpty() ? media->name : text;
+    if (t.isEmpty())
+        t = QStringLiteral("[%1]").arg(media->type);
+    const QByteArray tb = t.toUtf8().left(4096);
+    ffi::RoomMedia m;
+    m.root = media->root;
+    m.size = media->size;
+    m.type = media->type.toStdString();
+    m.name = media->name.toStdString();
+    m.key = media->key;
+    m.width = media->width;
+    m.height = media->height;
+    auto id = e->roomPostMedia(*key, m_session.now(), room, viewOf(tb), replyTo, m);
+    m_session.pump();
+    if (m.key)
+        std::ranges::fill(*m.key, 0);
+    return id;
+}
+
 ffi::Result<QString> Ed3kRooms::admit(const ffi::Room& room, const ffi::Key32& member, std::uint64_t until)
 {
     auto* e = m_session.engine();
@@ -397,6 +466,7 @@ ffi::Result<QString> Ed3kRooms::admit(const ffi::Room& room, const ffi::Key32& m
     if (!item)
         return std::unexpected(item.error());
     logEd3k(QStringLiteral("ed3k: room %1: member %2 admitted").arg(roomHex(room), keyText(member).left(8)));
+    emit roomsChanged();   // admitted/bans of the rows
     return admitText(room, item->bytes());
 }
 
@@ -435,7 +505,27 @@ ffi::Result<> Ed3kRooms::ban(const ffi::Room& room, const ffi::Key32& member, st
     until = std::min(until, t.unixS + kBanMax);
     auto ok = e->roomBan(*key, t, room, member, until);
     m_session.pump();
+    if (ok)
+        emit roomsChanged();   // admitted/bans of the rows
     return ok;
+}
+
+std::uint32_t Ed3kRooms::memberStatus(const ffi::Room& room, const ffi::Key32& member) const
+{
+    auto* e = m_session.engine();
+    const auto key = keyOf(room);
+    if (!e || !key)
+        return 0;
+    return e->roomMemberStatus(*key, m_session.now(), room, member).value_or(0);
+}
+
+std::vector<ffi::Engine::RoomBan> Ed3kRooms::bans(const ffi::Room& room) const
+{
+    auto* e = m_session.engine();
+    const auto key = keyOf(room);
+    if (!e || !key)
+        return {};
+    return e->roomBans(*key, m_session.now(), room).value_or(std::vector<ffi::Engine::RoomBan>{});
 }
 
 ffi::Result<> Ed3kRooms::lift(const ffi::Room& room, const ffi::Key32& member)
@@ -535,6 +625,7 @@ std::optional<std::pair<ffi::Room, QByteArray>> Ed3kRooms::parseAdmitText(const 
 
 void Ed3kRooms::applyHistoryPrefs()
 {
+    m_media->applyPrefs();
     const std::size_t max = historyMax();
     const bool stored = historyStored();
     if (stored == m_historyStored && max == m_historyMax)
@@ -615,6 +706,7 @@ void Ed3kRooms::onEventPolled(const ffi::Event& ev, ffi::KeyKind key, bool* hand
             r->closed = in->closed;
             r->moderated = in->moderated;
             r->mods = in->mods;
+            readLimits(*r);
             save();
             emit roomsChanged();
         }
@@ -639,6 +731,7 @@ void Ed3kRooms::onEventPolled(const ffi::Event& ev, ffi::KeyKind key, bool* hand
                 emit postsRemoved(bytesOf(b->room.bytes), ids);
             }
             noticeOf(b->room, Notice::Banned, 0, false, bytesOf(b->member));
+            emit roomsChanged();   // present and bans of the row
         }
     } else if (const auto* g = std::get_if<e::RoomGeneration>(&ev)) {
         *handled = true;
@@ -663,9 +756,14 @@ void Ed3kRooms::onEventPolled(const ffi::Event& ev, ffi::KeyKind key, bool* hand
     } else if (const auto* j = std::get_if<e::RoomJoined>(&ev)) {
         *handled = true;
         if (Room* r = roomOf(j->room)) {
+            // flag: a re-join, the room was joined before (this run, or posts kept from a past one)
+            const bool again = r->everJoined || !r->posts.empty();
             r->joined = true;
+            r->everJoined = true;
             r->notAdmitted = false;   // a member took us (admitted, #17)
-            noticeOf(j->room, Notice::Joined, 0, false, {});
+            readLimits(*r);
+            m_media->roomJoined(j->room);
+            noticeOf(j->room, Notice::Joined, 0, again, {});
             emit roomsChanged();
         }
     } else if (const auto* l = std::get_if<e::RoomLeft>(&ev)) {
@@ -695,6 +793,10 @@ void Ed3kRooms::onEventPolled(const ffi::Event& ev, ffi::KeyKind key, bool* hand
             emit roomsChanged();
         }
         noticeOf(rf->room, Notice::Refused, rf->refusal, false, bytesOf(rf->node.bytes));
+    } else if (const auto* md = std::get_if<e::RoomMedia>(&ev)) {
+        *handled = true;
+        if (roomOf(md->room))
+            m_media->onFetched(md->room, md->root, md->ok);
     } else if (const auto* f = std::get_if<e::RoomFault>(&ev)) {
         *handled = true;
         logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k: room %1: %2 sent a bad item").arg(roomHex(f->room), QString::fromLatin1(bytesOf(f->node.bytes).toHex())); });
@@ -709,6 +811,7 @@ void Ed3kRooms::onSessionStatus()
     else if (!m_session.isRunning() && m_attached) {
         m_attached = false;
         writeDirtyPosts();
+        m_media->detach();
         m_rooms.clear();
         emit roomsChanged();
     }
@@ -717,6 +820,8 @@ void Ed3kRooms::onSessionStatus()
 void Ed3kRooms::attach()
 {
     m_attached = true;
+    if (!m_session.stateDir().isEmpty())
+        m_media->attach(roomsDir());
     loadSaved();
     rejoinSaved(std::nullopt);
 }
@@ -886,6 +991,7 @@ Ed3kRooms::Room& Ed3kRooms::track(const ffi::Room& room, const QString& link, co
     // a restart: the posts of the last run before the network's history comes
     if (added)
         loadPosts(r);
+    readLimits(r);
     Saved& s = m_saved[room];
     s.link = link;
     s.nick = nick;
@@ -911,6 +1017,18 @@ void Ed3kRooms::onPost(const ffi::event::RoomPost& p)
     post.sent = p.sent;
     post.text = fromStd(p.text);
     post.replyTo = p.replyTo;
+    if (p.media) {
+        Ed3kRoomMedia::Media m;
+        m.root = p.media->root;
+        m.size = p.media->size;
+        m.type = fromStd(p.media->type);
+        m.name = fromStd(p.media->name);
+        m.key = p.media->key;
+        m.width = p.media->width;
+        m.height = p.media->height;
+        post.media = m;
+        m_media->onPost(p.room, r.key, m, p.sent);
+    }
     r.posts.push_back(std::move(post));
     const std::size_t max = historyMax();
     while (r.posts.size() > max) {
@@ -919,6 +1037,19 @@ void Ed3kRooms::onPost(const ffi::event::RoomPost& p)
     }
     postsChanged(p.room);
     emit postShown(bytesOf(p.room.bytes), bytesOf(p.id));
+}
+
+void Ed3kRooms::readLimits(Room& r)
+{
+    auto* e = m_session.engine();
+    if (!e || r.waitingHide)
+        return;
+    if (const auto l = e->roomLimits(r.key, m_session.now(), r.room)) {
+        r.mediaMax = l->mediaMax;
+        r.keepHours = l->keepHours;
+        r.keepPosts = l->keepPosts;
+        r.files = l->files;
+    }
 }
 
 std::size_t Ed3kRooms::historyMax()
@@ -971,6 +1102,19 @@ void Ed3kRooms::loadPosts(Room& r) const
         post.sent = std::uint64_t(m.value(QStringLiteral("sent")).toInteger());
         post.text = m.value(QStringLiteral("text")).toString();
         post.replyTo = arrayFrom<16>(m.value(QStringLiteral("replyTo")).toByteArray());
+        if (const QCborMap md = m.value(QStringLiteral("media")).toMap(); !md.isEmpty())
+            if (const auto root = arrayFrom<32>(md.value(QStringLiteral("root")).toByteArray())) {
+                Ed3kRoomMedia::Media x;
+                x.root = *root;
+                x.size = std::uint64_t(md.value(QStringLiteral("size")).toInteger());
+                x.type = md.value(QStringLiteral("type")).toString();
+                x.name = md.value(QStringLiteral("name")).toString();
+                x.key = arrayFrom<32>(md.value(QStringLiteral("key")).toByteArray());
+                x.width = std::uint32_t(md.value(QStringLiteral("width")).toInteger());
+                x.height = std::uint32_t(md.value(QStringLiteral("height")).toInteger());
+                post.media = x;
+                m_media->onPost(r.room, r.key, x, post.sent);
+            }
         r.posts.push_back(std::move(post));
     }
     logEd3kDebug([&] { return QStringLiteral("ed3k: room %1: %2 stored posts").arg(roomHex(r.room)).arg(r.posts.size()); });
@@ -1019,6 +1163,20 @@ void Ed3kRooms::writePosts(const Room& r) const
             m.insert(QStringLiteral("moderator"), true);
         if (p.replyTo)
             m.insert(QStringLiteral("replyTo"), bytesOf(*p.replyTo));
+        if (p.media) {
+            // the file key only in a sealed posts file (a room with a secret)
+            QCborMap md{
+                {QStringLiteral("root"), bytesOf(p.media->root)},
+                {QStringLiteral("size"), qint64(p.media->size)},
+                {QStringLiteral("type"), p.media->type},
+                {QStringLiteral("name"), p.media->name},
+                {QStringLiteral("width"), qint64(p.media->width)},
+                {QStringLiteral("height"), qint64(p.media->height)},
+            };
+            if (p.media->key && sealedRoom(r))
+                md.insert(QStringLiteral("key"), bytesOf(*p.media->key));
+            m.insert(QStringLiteral("media"), md);
+        }
         list.append(m);
     }
     QByteArray blob = list.toCborValue().toCbor();
@@ -1189,6 +1347,29 @@ std::optional<ffi::Key32> Ed3kRooms::linkKey(const QString& link)
     if (q < 0)
         return std::nullopt;
     return keyFromText(QUrlQuery(link.mid(q + 1)).queryItemValue(QStringLiteral("key")));
+}
+
+void Ed3kRooms::dialDevPeer()
+{
+    // <id hex>@<port> (127.0.0.1) or <id hex>@<v4>:<port> (a node bound to one interface)
+    const QStringList parts = qEnvironmentVariable("EMULE_ED3K_ROOM_PEER").split(u'@');
+    const QByteArray id = QByteArray::fromHex(parts.value(0).toLatin1());
+    const QStringList at = parts.value(1).split(u':');
+    const QHostAddress ip(at.size() == 2 ? at[0] : QStringLiteral("127.0.0.1"));
+    const int port = at.last().toInt();
+    if (parts.size() != 2 || id.size() != 16 || ip.protocol() != QAbstractSocket::IPv4Protocol || port <= 0
+        || port > 65535 || !m_session.engine())
+        return;
+    ffi::NodeId node;
+    std::memcpy(node.bytes.data(), id.constData(), 16);
+    const quint32 v4 = ip.toIPv4Address();
+    const ffi::Source peer{node, false,
+                           ffi::Address::v4(std::uint8_t(v4 >> 24), std::uint8_t(v4 >> 16), std::uint8_t(v4 >> 8),
+                                            std::uint8_t(v4), std::uint16_t(port)),
+                           std::nullopt, {}};
+    for (const auto& [room, r] : m_rooms)
+        if (r.neighbours == 0)
+            (void)connectPeer(room, peer);
 }
 
 } // namespace eMule::ed3k

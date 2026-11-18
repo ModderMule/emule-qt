@@ -995,6 +995,13 @@ void Ed3kUsenetJoin::onMemberVerified(const QString& itemId, int fileIndex, cons
     const auto& hashes = post->members[std::size_t(fileIndex)].hashes;
     if (!shareMember(ffi::SharedFile{root, size, name, std::nullopt, std::nullopt, ffi::Have::complete(), std::span{hashes}},
                      itemId, fileIndex)) {
+        // hops.md §1: left out, its root is under the anonymous key (logged): kept, so it
+        // joins once moved to the node key
+        if (skipped(root)) {
+            keepMember(itemId, fileIndex, root, size, QString::fromStdString(name));
+            keepMemberPaths(itemId, {{fileIndex, memberPath(itemId, fileIndex)}});
+            return;
+        }
         logEd3kWarning(QStringLiteral("ed3k usenet: cannot share file %1 of %2").arg(fileIndex).arg(itemId));
         return;
     }
@@ -1006,7 +1013,8 @@ void Ed3kUsenetJoin::onMemberVerified(const QString& itemId, int fileIndex, cons
                          .arg(fileIndex).arg(itemId, errorName(ok.error())); });
     if (auto alias = post->join.memberAlias(std::uint64_t(fileIndex), m_holdBack); alias && *alias) {
         const std::vector<ffi::Bytes> one{**alias};
-        if (auto ok = e->publishAlias(t, one); !ok)
+        // was: if (auto ok = e->publishAlias(t, one); !ok)
+        if (auto ok = publishAliasRecords(one); !ok)
             logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: nzb-file record of file %1 of %2 not published (error %3)")
                              .arg(fileIndex).arg(itemId, errorName(ok.error())); });
         keepRecords(itemId, std::nullopt, {}, one);
@@ -1095,14 +1103,25 @@ void Ed3kUsenetJoin::onPostComplete(const QString& itemId)
         keepRecords(itemId, *done->root, name, {});
         if (!list.isEmpty())
             keepBlob(itemId, list, name + QStringLiteral(".articles"), std::nullopt);
-        // MEMBER rows (file-set.md §6)
-        if (auto ok = e->setPublish(t, done->manifest, *done->root, std::string_view(nameUtf8.constData(), std::size_t(nameUtf8.size())));
+        // MEMBER rows (file-set.md §6); not while a member is under the anonymous key (hops.md §1)
+        std::vector<ffi::Root> memberRoots;
+        for (std::uint64_t f = 0; f < std::uint64_t(post->members.size()); ++f)
+            if (const auto m = post->join.member(f); m && m->root)
+                memberRoots.push_back(*m->root);
+        // was: if (withholdSet(itemId, memberRoots)) (node key only); now under the members' one key
+        const auto setKey = setKeyOf(itemId, memberRoots);
+        if (!setKey)
+            logEd3k(QStringLiteral("ed3k usenet: set of \"%1\" not published: its members are not under one key it may use (hops.md §1)").arg(name));
+        // was: if (auto ok = e->setPublish(...); !ok)
+        else if (auto ok = e->setPublish(t, done->manifest, *done->root, std::string_view(nameUtf8.constData(), std::size_t(nameUtf8.size())),
+                                         ffi::SetSigner::Unsigned, nullptr, *setKey);
             !ok)
             logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: set of \"%1\" not published (error %2)").arg(name, errorName(ok.error())); });
     }
     if (!done->aliases.empty()) {
         keepRecords(itemId, std::nullopt, {}, done->aliases);
-        if (auto ok = e->publishAlias(t, done->aliases); !ok)
+        // was: if (auto ok = e->publishAlias(t, done->aliases); !ok)
+        if (auto ok = publishAliasRecords(done->aliases); !ok)
             logEd3kDebug([&]() -> QString { return QStringLiteral("ed3k usenet: ALIAS records of \"%1\" not published (error %2)").arg(name, errorName(ok.error())); });
     }
     logEd3k(QStringLiteral("ed3k usenet: \"%1\" complete%2").arg(name, done->root ? QStringLiteral(", post root ") + hexOf(done->root->bytes) : QString()));

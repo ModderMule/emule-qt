@@ -180,10 +180,14 @@
     <ClCompile Include="..\..\src\gui\app\SkinColors.cpp" />
     <ClCompile Include="..\..\src\gui\utils\Appearance.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\OptionsDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\CoreScriptDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\CoreConnectScript.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\OptionsSearch.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\RememberedSizeDialog.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\Ed3kOptionsPages.cpp" />
     <ClCompile Include="..\..\src\gui\controls\HosterCombo.cpp" />
     <ClCompile Include="..\..\src\gui\utils\HosterIcons.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\OptionsTree.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\BtI2pPage.cpp" />
     <ClCompile Include="..\..\src\gui\utils\ClientIcons.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\Ed3kFilterPage.cpp" />
@@ -221,6 +225,12 @@
     <QtMoc Include="..\..\src\gui\dialogs\OptionsDialog.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\CoreScriptDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\OptionsSearch.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
     <QtMoc Include="..\..\src\gui\dialogs\RememberedSizeDialog.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
@@ -231,6 +241,9 @@
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\utils\HosterIcons.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\controls\OptionsTree.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\dialogs\BtI2pPage.h">

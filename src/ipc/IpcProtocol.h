@@ -149,8 +149,9 @@ enum class IpcMsgType : int {
     /// Settings: imported on a core restart that follows the reply (parts with it).
     /// Parts only: the download folders are queued for conversion now; dir may be empty.
     ImportLegacyProfile  = 226,
-    /// [] -> [ok, [{agoMs, type, target, name, addr, cc, contacts, results, records, stored, load,
-    /// answered}]] — recent requests other Kad nodes sent us, newest first (ops::kadIncoming)
+    /// [countOnly?] -> [ok, [{agoMs, type, target, name, addr, cc, contacts, results, records, stored,
+    /// load, answered}]] — recent requests other Kad nodes sent us, newest first (ops::kadIncoming);
+    /// countOnly true -> [ok, count] (hidden tab title)
     GetKadIncoming       = 227,
     /// [id] -> [ok, {found, row of GetKadIncoming, wanted, own: {id}, asker: {id, addr, cc,
     /// version}, handed: [{id, addr, cc, version}]}] — one request for the incoming search graph
@@ -268,6 +269,11 @@ enum class IpcMsgType : int {
     /// hasSubfolders]...], home: string] or [false, error]. Folder pickers and share trees
     /// for a GUI on another host. tree: path and every folder below it (labels empty).
     ListFolders             = 298,
+    /// [value: string] -> [ok, error, listen: string, addresses: [string], notOwn: bool]
+    /// Moves the IPC server to ipc.listenAddress @p value now and saves it; "" only
+    /// reports where it listens ("*" = dual stack). notOwn: @p value is no address of this machine.
+    /// Changing it: local clients only.
+    ListenIpcAddress        = 299,
 
     // -- Download categories (268-270) ---------------------------------------
     //
@@ -749,7 +755,8 @@ enum class IpcMsgType : int {
     FetchNzbNfo             = 744,
     /// [kind: "web"|"nzb"|"torrent"|"roots", payload: map] -> [true, {archives: [{name,
     /// state: found|notPublished|noRoot|failed|timedOut, first?: hex, manifest?: hex, sites,
-    /// password, entries: [{path, size, root: hex}]}]}] or [false, error]. Search/Transfers
+    /// password, entries: [{path, size, root: hex}], parts?: [name] (a multi-part set, opening
+    /// volume first: one record for all)}]}] or [false, error]. Search/Transfers
     /// Details › Archive: what each archive holds (hoster.md §6.1), by Kad lookups; the reply
     /// comes when they end (up to 2 min). payload: web {links: [{url, name}]}; nzb
     /// {previewToken | usenetItem: id, files: [int]}; torrent {btih?: hex, btmh?: hex,
@@ -909,7 +916,8 @@ enum class IpcMsgType : int {
 
     /// [] -> [ok, {available, running, udpPort, nodeId (hex), contacts, class4, class6
     ///   (0 unknown, 1 open, 2 cone, 3 symmetric), natChecking (bits 0 v4, 1 v6: reach
-    ///   test without verdict), router, wireSent, wireRecv (bytes),
+    ///   test without verdict), natUntested (bits 0 v4, 1 v6: verdict not open, but no
+    ///   test proved it: no prober / no 2nd site), router, wireSent, wireRecv (bytes),
     ///   relays4, relays6: [{address "ip:port", node (hex)}] (§9.4, the Kad buddy),
     ///   leavesServed: [{address, node, hop}] (leaves we relay for: buddies served),
     ///   indexNodes: [{address, node, state (0 waiting, 1 dialling, 2 connected, 3 given up),
@@ -1035,8 +1043,8 @@ enum class IpcMsgType : int {
     /// [on: bool] -> [ok] — connect or disconnect the node for this run (toolbar Connect);
     /// starts as the autoConnect pref, ed3kEnabled still gates it
     SetEd3kConnected        = 1205,
-    /// [] -> [ok, [rows as GetKadIncoming; type: KadRequest.kind + 100 × (0 find, 1 search,
-    /// 2 store)]] — recent KadRequests other nodes sent this node, newest first
+    /// [countOnly?] -> [ok, [rows as GetKadIncoming; type: KadRequest.kind + 100 × (0 find, 1 search,
+    /// 2 store)]] — recent KadRequests other nodes sent this node, newest first; countOnly: [ok, count]
     GetEd3kKadIncoming      = 1206,
     /// [id] -> [ok, as GetKadIncomingGraph; ids are routing ids, `node` the node ID] — one
     /// request for the incoming search graph
@@ -1090,6 +1098,36 @@ enum class IpcMsgType : int {
     /// [host, user, code] -> [ok]; the confirmation code a login asked for (any account check or a
     /// download; PushHosterAccount error "code", any GUI shows it); empty code cancels. Local clients only
     AnswerHosterAccountCode = 1221,
+
+    // -- remote streaming + pairing (1230-1239): daemon/IpcStreamBridge.cpp. File bytes over the
+    // IPC link itself, so a phone (qDonkey) needs no second port. id: 32 hex (eD2K hash of a
+    // download or shared file) or 64 hex (ed3k download root). Stateless: no open/close.
+    // Failure: [false, {error: string}].
+    /// [id] -> [ok, {name, size, complete, seekable (downloadSeeking on and unfinished)}]
+    StatStream              = 1230,
+    /// [id, offset, maxLen (<= 1 MiB)] -> [ok, {data: bytes, size, availableEnd, complete}];
+    /// seeking on: waits up to ~15 s for bytes at offset (fetched first), then empty data
+    /// with waiting: true (ask again). Off: the file as it is on disk.
+    ReadStream              = 1231,
+    /// [pair?] -> [ok, {fingerprint (IPC TLS cert, "AB:CD:.."), port, tunnel, nodeId, endpoints,
+    /// relays ["<node hex>@ip:port"], udpPort, friendLink (ed3k:friend of the node), seeds (Kad
+    /// contacts, as relays), pairSecret (with pair: hex, 10 min, one use)}] —
+    /// pairing code for a phone (Ed3kTunnelBridge, libs/qDonkey/docs/ed3k-tunnel.md)
+    GetIpcIdentity          = 1232,
+    /// [node id hex, name (empty: kept or "Phone N"), node key hex?] -> [ok] — a phone paired
+    /// on the LAN may use the ed3k tunnel; with the key it becomes an ed3k friend
+    RegisterTunnelPeer      = 1233,
+    /// [] -> [ok, [{nodeId, name}]] — phones paired for the ed3k tunnel
+    GetTunnelPeers          = 1234,
+    /// [node id hex] -> [ok] — unpairs a phone; its open tunnel closes
+    RemoveTunnelPeer        = 1235,
+
+    // -- ed3k set options (Ed3kSetsBridge.cpp; the rest of the sets at 1110-1119)
+    /// [id, exts ([ext]; null: back to the author's or the default)] -> [ok] — the file types a
+    /// set with policy download takes (file-set.md §5.3)
+    SetEd3kSetFilter        = 1240,
+    /// [id, dir ("" the default)] -> [ok] — refused once a file of the set is downloaded
+    SetEd3kSetFolder        = 1241,
 
     // hoster links (1100-1109, hoster.md), Ed3kHosterBridge.cpp. An item: {id, url, host,
     // name, size, done, speed, state (Ed3kHosterJoin::State), reason (Ed3kHosterJoin::Reason, the
@@ -1212,6 +1250,19 @@ enum class IpcMsgType : int {
     /// [admit text (ed3k-admit:...)] -> [ok, {room}] — newcomer of a closed room
     ImportEd3kRoomAdmit     = 1129,
 
+    // -- ed3k room media and history (room.md §2.6, §4.3, §4.6): Ed3kRoomsBridge, 1250-1259 (1050-1099 = pushes). A root is hex (64).
+    /// [room, mediaMax (bytes, 0 none), keepHours, keepPosts, files] -> [ok] — owner; files:
+    /// text/NZB/DLC/torrent too (§2.6); rows carry mediaMax, keepHours, keepPosts (clamped), files
+    SetEd3kRoomLimits       = 1250,
+    /// [room, token, offset, total, data (≤ 4 MiB), text, replyTo, name, width, height] ->
+    ///   [ok, {more: true}] until offset + data = total, then [ok, ids] — a post with a file,
+    ///   sent in parts (MaxPayloadSize); token: the GUI's, one per file
+    PostEd3kRoomMedia       = 1251,
+    /// [root, offset] -> [ok, {type, size, offset, data (≤ 4 MiB)}] — a cached file, opened
+    GetEd3kRoomMedia        = 1252,
+    /// [room, root] -> [ok] — fetch now (a click), whatever the hourly limit says
+    FetchEd3kRoomMedia      = 1253,
+
     // -- ed3k filters + rooms polish (batch 13): Ed3kFiltersBridge / Ed3kRoomsBridge. Failure as
     // their blocks above.
     /// [title, on: bool] -> [ok, {link}] — publish the own filter list as a set (filter-list
@@ -1226,7 +1277,9 @@ enum class IpcMsgType : int {
     // -- ed3k sets and live (batch 12): followed sets (file-set.md §5.3) and live streams
     // (live.md), src/daemon/Ed3kSetsBridge.cpp. Set ids are numbers, roots and streams hex.
     // A set: {id, link ("" for a hidden one: a credential), title, author (key hex), hidden,
-    // pinned, followed, policy (0 ask, 1 download), seq / pendingSeq (-1 none), added, changed,
+    // pinned, followed, policy (0 browse: new files unticked, 1 download: new files of the
+    // filter), exts (the filter in use), extsByUser, authorExts (FileSet.exts, file-set.md §5.3),
+    // dirByUser, seq / pendingSeq (-1 none), added, changed,
     // removed (paths of the pending version), dir, error, totalSize, members: [{path, root,
     // size, skipped, state (0 skipped, 1 waiting, 2 downloading, 3 complete, 4 failed,
     // 5 paused, 6 sealed: downloaded, waits for the key (batch 14)), done}], parts: [{author, seq, dir, name, files, size}]}. A stream: {id,
@@ -1234,7 +1287,7 @@ enum class IpcMsgType : int {
     // neighbours, segments, bytes, viewers, url}. Failure: [false, {error: string (localized)}].
     /// [] -> [ok, {running, sets: [set]}]
     GetEd3kSets             = 1110,
-    /// [link (ed3k:set), policy] -> [ok, {id}]
+    /// [link (ed3k:set), policy, exts ([ext]; null: the author's or the default), dir ("" default)] -> [ok, {id}]
     FollowEd3kSet           = 1111,
     /// [id] -> [ok] — the member files stay
     UnfollowEd3kSet         = 1112,
@@ -1330,14 +1383,16 @@ enum class IpcMsgType : int {
     // none yet), kind, published, building, scope (paid, "" not sold), sold, stopped, link (open
     // and paid only: a hidden set's link is a credential, GetEd3kOwnSetLink), error, key ("Node" /
     // "Anonymous", "" none yet), offerKey (hops.md §1: a version was refused for files under that
-    // key; action 4 shares the set there after the user agreed, "" none)}.
+    // key; action 4 shares the set there after the user agreed, "" none), exts (file types
+    // suggested to followers, file-set.md §5.3)}.
     /// [] -> [ok, {running, sets: [set]}]
     GetEd3kOwnSets          = 1145,
-    /// [folder ("" = files), files: [path], title, kind] -> [ok, {id, link}] — published at once
+    /// [folder ("" = files), files: [path], title, kind, exts: [ext]] -> [ok, {id, link}] — published at once
     /// (a paid one waits for SellEd3k); link "" for a hidden set
     PublishEd3kOwnSet       = 1146,
     /// [action (1 publish a new version: folder scanned again, seq + 1; 2 unpublish; 3 retitle;
-    /// 4 share under key: title = "Node" / "Anonymous"), id, title (3, 4)] -> [ok]
+    /// 4 share under key: title = "Node" / "Anonymous"; 5 file types: [ext] in place of title),
+    /// id, title (3, 4)] -> [ok]
     Ed3kOwnSetControl       = 1147,
     /// [id] -> [ok, {link, hidden}] — a hidden set's carries `s` (a credential: never logged)
     GetEd3kOwnSetLink       = 1148,
@@ -1581,7 +1636,8 @@ enum class IpcMsgType : int {
     // -- ed3k rooms (batch 12), see GetEd3kRooms
     /// [] — the rooms, an info, a nick or a room's state changed (a state push): GetEd3kRooms
     PushEd3kRoomsChanged   = 1160,
-    /// [room, {id, author, authorId, nick, moderator, sent, text, replyTo}] — a post to show once
+    /// [room, {id, author, authorId, nick, moderator, sent, text, replyTo, media: {root, size,
+    ///   type, name, width, height, state} (§2.6, only with media)}] — a post to show once
     PushEd3kRoomPost       = 1161,
     /// [room, ids: array] — posts dropped by a ban
     PushEd3kRoomPostsRemoved = 1162,
@@ -1589,6 +1645,8 @@ enum class IpcMsgType : int {
     PushEd3kRoomPresence   = 1163,
     /// [room, kind (Ed3kRooms::Notice), value, flag: bool, who (node hex, member key base32, "")]
     PushEd3kRoomNotice     = 1164,
+    /// [room, root, state (Ed3kRoomMedia::State)] — a post's media changed
+    PushEd3kRoomMedia      = 1166,
 
     // -- My ed3k Sets (batch 15), see GetEd3kOwnSets
     /// [{...GetEd3kOwnSets...}] — own sets, their versions or sales changed (a state push)
@@ -1597,7 +1655,7 @@ enum class IpcMsgType : int {
     // -- ed3k sets and live (batch 12), see GetEd3kSets / GetEd3kLive
     /// [{...GetEd3kSets...}] — followed sets, versions or member states changed (a state push)
     PushEd3kSetsChanged    = 1155,
-    /// [id, title, seq, added, changed, removed] — a new version of a set with policy ask
+    /// [id, title, seq, added, changed, removed] — a new version of a set with policy browse
     PushEd3kSetVersion     = 1156,
     /// [{...GetEd3kLive...}] — a stream's state changed (a state push)
     PushEd3kLiveChanged    = 1157,

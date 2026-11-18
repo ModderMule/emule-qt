@@ -48,8 +48,11 @@ public:
     [[nodiscard]] const uint8* fileHash() const { return m_fileIdentifier.getMD4Hash(); }
     void setFileHash(const uint8* hash) { m_fileIdentifier.setMD4Hash(hash); }
     [[nodiscard]] bool hasNullHash() const;
+    /// false: fileHash() is no eD2K hash (KnownFile::isEd3kOnly)
+    [[nodiscard]] virtual bool hasEd2kHash() const { return true; }
 
     // ED2K link generation
+    /// Empty without an eD2K hash (hasEd2kHash()).
     /// @param source  append our own public IPv4 when no hostname hint applies (MFC bSource).
     [[nodiscard]] QString getED2kLink(bool hashset = false, bool html = false, bool hostname = false,
                                       bool source = false) const;

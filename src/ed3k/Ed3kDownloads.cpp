@@ -16,6 +16,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QUrl>
 #include <QIODevice>
 
 #include <algorithm>
@@ -380,6 +381,26 @@ bool Ed3kDownloads::setPriority(const ffi::Root& root, int priority)
     return true;
 }
 
+bool Ed3kDownloads::setSourceLimit(const ffi::Root& root, int limit)
+{
+    Entry* e = entryOf(root);
+    if (!e || e->info.state == Ed3kDownloadInfo::State::Complete)
+        return false;
+    e->info.maxSources = std::clamp(limit, 0, 65535);
+    sourceLimitChanged(root);
+    touch(*e);
+    markChanged();
+    return true;
+}
+
+std::optional<int> Ed3kDownloads::swapA4af(const ffi::Root& root)
+{
+    const Entry* e = entryOf(root);
+    if (!e || e->info.state == Ed3kDownloadInfo::State::Complete)
+        return std::nullopt;
+    return downloading(root) ? swapTurnsTo(root) : 0;   // not open (paused, node off): waits nowhere
+}
+
 bool Ed3kDownloads::setPreviewPrio(const ffi::Root& root, bool on)
 {
     Entry* e = entryOf(root);
@@ -427,6 +448,51 @@ bool Ed3kDownloads::setCategory(const ffi::Root& root, int category)
     e->info.category = std::max(0, category);
     touch(*e);
     markChanged();
+    return true;
+}
+
+std::expected<void, QString> Ed3kDownloads::rename(const ffi::Root& root, const QString& name)
+{
+    Entry* e = entryOf(root);
+    if (!e)
+        return std::unexpected(tr("No such ed3k download."));
+    const QString clean = safeName(name);
+    if (clean.isEmpty())
+        return std::unexpected(tr("Invalid file name."));
+    if (clean == e->info.name)
+        return {};
+    if (e->info.state == Ed3kDownloadInfo::State::Complete) {
+        // on disk: the share list or its own sharing follows the file
+        if (e->moving)
+            return std::unexpected(tr("The file is being moved."));
+        const QFileInfo fi(e->info.path);
+        const QString to = fi.absoluteDir().filePath(clean);
+        if (QFileInfo::exists(to))
+            return std::unexpected(tr("A file of that name exists already."));
+        if (!QFile::rename(e->info.path, to))
+            return std::unexpected(tr("The file could not be renamed."));
+        e->info.path = to;
+        e->info.targetPath = to;
+    } else if (!e->info.targetPath.isEmpty()) {
+        e->info.targetPath = QFileInfo(e->info.targetPath).absoluteDir().filePath(clean);
+    }
+    e->info.name = clean;
+    touch(*e);
+    markChanged();
+    return {};
+}
+
+bool Ed3kDownloads::addWebSource(const ffi::Root& root, const QString& url)
+{
+    Entry* e = entryOf(root);
+    const QUrl u(url.trimmed());
+    if (!e || e->info.state == Ed3kDownloadInfo::State::Complete
+        || (u.scheme() != QLatin1String("http") && u.scheme() != QLatin1String("https")) || u.host().isEmpty())
+        return false;
+    if (mergeWebUrls(e->webUrls, {u.toString()})) {
+        touch(*e);
+        webAttach(*e);
+    }
     return true;
 }
 
@@ -491,6 +557,7 @@ std::optional<Ed3kDownloadInfo> Ed3kDownloads::info(const ffi::Root& root) const
     if (const Download* d = downloadOf(root)) {
         i.sources = int(d->streams.size());
         i.transferring = int(std::ranges::count_if(d->streams, [](const auto& s) { return s.second; }));
+        i.a4af = waitingFor(root);
         i.pending.assign(i.blocks.size(), false);
         for (const auto& [offset, stream] : d->outstanding)
             if (const auto b = std::size_t(offset / kBlock); b < i.pending.size())
@@ -679,6 +746,12 @@ int Ed3kDownloads::downloadPriority(const Download& d) const
     const Entry* e = entryOfId(d.member);
     // was: switch (priority) { case 4: return -2; case 0: return -1; case 2: return 1; case 3: return 2; default: return 0; }
     return realPriority(std::uint8_t(e ? e->info.priority : kPrNormal)) - 2;
+}
+
+int Ed3kDownloads::downloadSourceLimit(const Download& d) const
+{
+    const Entry* e = entryOfId(d.member);
+    return e ? e->info.maxSources : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -1089,6 +1162,14 @@ std::optional<Ed3kDownloads::Entry> Ed3kDownloads::readMet(const QString& metPat
             in.resetStatus();
         }
     }
+    if (in.status() == QDataStream::Ok && !in.atEnd()) {
+        quint32 maxSources = 0;
+        in >> maxSources;
+        if (in.status() == QDataStream::Ok)
+            e.info.maxSources = int(std::min<quint32>(maxSources, 65535));
+        else
+            in.resetStatus();
+    }
     const auto r = rootFrom(root);
     if (in.status() != QDataStream::Ok || !r || size == 0 || state < 0 || state > int(Ed3kDownloadInfo::State::Failed)
         || Ed3kDownloadInfo::State(state) == Ed3kDownloadInfo::State::Complete)
@@ -1161,7 +1242,8 @@ void Ed3kDownloads::writeMet(Entry& e)
             << packBits(e.have) << qint64(e.info.addedOn) << e.info.error
             << quint8(e.info.previewPrio ? 1 : 0)    // flags (bit 0 preview); older .met: none
             << e.webUrls                             // ws= sources; older .met: none
-            << e.webHashUrls << quint64(e.wholeAt);  // wh= URLs, whole read so far; older .met: none
+            << e.webHashUrls << quint64(e.wholeAt)   // wh= URLs, whole read so far; older .met: none
+            << quint32(e.info.maxSources);           // source limit; older .met: none
     }
     const QString path = metPathOf(e);
     QDir().mkpath(QFileInfo(path).absolutePath());

@@ -58,13 +58,26 @@ public:
     }
 };
 
-/// A join of the node key only (not anonCapable): shares a blob.
+/// A join of the node key only (not anonCapable): shares a blob, or a member file.
 class NodeJoin final : public Ed3kJoinBase {
 public:
-    explicit NodeJoin(Ed3kSession& s, const QString& dir) : Ed3kJoinBase(s, dir, QStringLiteral("nodejoin"), nullptr) {}
+    explicit NodeJoin(Ed3kSession& s, const QString& dir, const QString& tag = QStringLiteral("nodejoin"))
+        : Ed3kJoinBase(s, dir, tag, nullptr) {}
     void start() override { beginStart(); }
     void stop() override { closeAll(); }
     std::optional<::ed3k::Root> share(const QByteArray& data) { return shareBlob(data, QStringLiteral("blob.bin"), std::nullopt); }
+    static auto hash(const QString& path) { return hashNow(path); }
+    bool setWithheld(const QString& owner, const std::vector<::ed3k::Root>& members) const { return withholdSet(owner, members); }
+    using Ed3kJoinBase::anonCapable;
+    using Ed3kJoinBase::blobKeyOf;
+    using Ed3kJoinBase::setKeyOf;
+    /// a verified member of job @p owner, as a torrent join shares it
+    bool shareFile(const FileHash& h, const QString& owner, int member)
+    {
+        return shareMember(::ed3k::SharedFile{h.root, h.size, "member.bin", std::nullopt, std::nullopt, ::ed3k::Have::complete(),
+                                              std::span{h.hashes}},
+                           owner, member);
+    }
 
 protected:
     std::vector<std::uint64_t> wantedBlocks(const Download&) const override { return {}; }
@@ -118,6 +131,8 @@ private slots:
     void keyedEventsReachOnlyAnonCapableJoins();
     void newSharesGoAnonymousOldOnesKeepTheirKey();
     void movingAFileClosesItUnderTheOtherKey();
+    void aNodeKeyJoinNeverTakesTheSharedFilesKey();
+    void aJoinsAnonSwitchTakesItsFilesAndSetAlong();
     void downloadsFollowTheSwitch();
     void anonymousCreditKeyAfterEachStart();
     void newAnonymousKeyRestartsTheNode();
@@ -422,6 +437,140 @@ void tst_Ed3kHide::movingAFileClosesItUnderTheOtherKey()
     QCOMPARE(*s.engine()->fileKey(root), std::optional(::ed3k::KeyKind::Node));
     QVERIFY(shared.aliasPublished(md4Of('m')));
     shared.stop();
+    s.stop();
+}
+
+// report: a finished torrent in Incoming flipped the shared file to the node key. A join of
+// another network opening the root first under the node key must neither decide the shared
+// file's key nor keep the root: it gives it up and is listed skipped (File Details).
+void tst_Ed3kHide::aNodeKeyJoinNeverTakesTheSharedFilesKey()
+{
+    QTemporaryDir dir;
+    Ed3kSession s;
+    QVERIFY(s.start(loopback(dir.path())));
+    s.setHideSettings(hidden());
+    const QByteArray data = payload(290 * 1024, 6);
+    const QString path = QDir(dir.path()).filePath(QStringLiteral("t.bin"));
+    QVERIFY(writeFile(path, data));
+    const auto h = NodeJoin::hash(path);
+    QVERIFY(h);
+
+    // the torrent's member first: nothing claims the root yet, opened under the node key
+    NodeJoin torrent(s, dir.path(), QStringLiteral("torrent"));
+    torrent.start();
+    QVERIFY(torrent.shareFile(*h, QStringLiteral("t1"), 0));
+    QCOMPARE(*s.engine()->fileKey(h->root), std::optional(::ed3k::KeyKind::Node));
+
+    // the share list of the same file: the anonymous key (hiding), the torrent gives it up
+    FakeSource src;
+    src.entries.push_back(SharedEntry{md4Of('t'), path, QStringLiteral("t.bin"), std::uint64_t(data.size())});
+    Ed3kShared shared(s, src, dir.path());
+    shared.start();
+    QTRY_VERIFY_WITH_TIMEOUT(shared.rootOf(md4Of('t')).has_value(), 20000);
+    QCOMPARE(*shared.rootOf(md4Of('t')), h->root);
+    QCOMPARE(shared.keyOfFile(md4Of('t')), std::optional(::ed3k::KeyKind::Anon));
+    QCOMPARE(s.hide().recorded(h->root), std::optional(::ed3k::KeyKind::Anon));
+    QCOMPARE(*s.engine()->fileKey(h->root), std::optional(::ed3k::KeyKind::Anon));
+    QVERIFY(!torrent.sharesRoot(h->root));
+    QVERIFY(torrent.skipped(h->root));
+
+    // File Details: the torrent row says why
+    const auto states = Ed3kJoinBase::joinStatesAt(s, h->root);
+    const auto row = std::ranges::find(states, QStringLiteral("torrent"), &Ed3kJoinBase::JoinState::tag);
+    QVERIFY(row != states.end());
+    QCOMPARE(row->kind, Ed3kJoinBase::JoinState::Kind::Skipped);
+    QCOMPARE(row->reason, QStringLiteral("anonKey"));
+    QCOMPARE(row->owners, QStringList{QStringLiteral("t1")});
+    // its set (MEMBER rows under the node key) would name the anonymous root: left out
+    QVERIFY(torrent.setWithheld(QStringLiteral("t1"), {}));
+    QVERIFY(!torrent.setWithheld(QStringLiteral("t2"), {}));
+    QVERIFY(torrent.setWithheld(QStringLiteral("t2"), {h->root}));
+
+    // the other order (the shared file first, as after the fix's first start): left out
+    torrent.stop();
+    torrent.start();
+    QVERIFY(!torrent.shareFile(*h, QStringLiteral("t1"), 0));
+    QVERIFY(torrent.skipped(h->root));
+    QCOMPARE(*s.engine()->fileKey(h->root), std::optional(::ed3k::KeyKind::Anon));
+    QCOMPARE(shared.keyOfFile(md4Of('t')), std::optional(::ed3k::KeyKind::Anon));
+
+    // the user moves it to the node key: the torrent may join again, the key stays the user's
+    QVERIFY(shared.moveFileKey(h->root, ::ed3k::KeyKind::Node));
+    QVERIFY(!torrent.skipped(h->root));
+    QVERIFY(torrent.shareFile(*h, QStringLiteral("t1"), 0));
+    QCOMPARE(shared.keyOfFile(md4Of('t')), std::optional(::ed3k::KeyKind::Node));
+    QCOMPARE(s.hide().recorded(h->root), std::optional(::ed3k::KeyKind::Node));
+    const auto again = Ed3kJoinBase::joinStatesAt(s, h->root);
+    QCOMPARE(std::ranges::find(again, QStringLiteral("torrent"), &Ed3kJoinBase::JoinState::tag)->kind,
+             Ed3kJoinBase::JoinState::Kind::Joined);
+    QVERIFY(!torrent.setWithheld(QStringLiteral("t1"), {h->root}));
+    shared.stop();
+    torrent.stop();
+    s.stop();
+}
+
+// Options › ed3k › Extended › Kad publishing: a network's join with its switch on holds its
+// files and set under the anonymous key while hiding (hops.md §1: a set under its files' key);
+// switched off again, a file of the anonymous key is left out as before.
+void tst_Ed3kHide::aJoinsAnonSwitchTakesItsFilesAndSetAlong()
+{
+    QTemporaryDir dir;
+    Ed3kSession s;
+    QVERIFY(s.start(loopback(dir.path())));
+    const QByteArray oldData = payload(270 * 1024, 7);
+    const QByteArray newData = payload(280 * 1024, 8);
+    const QString oldPath = QDir(dir.path()).filePath(QStringLiteral("old.bin"));
+    const QString newPath = QDir(dir.path()).filePath(QStringLiteral("new.bin"));
+    QVERIFY(writeFile(oldPath, oldData));
+    QVERIFY(writeFile(newPath, newData));
+    const auto oldHash = NodeJoin::hash(oldPath);
+    const auto newHash = NodeJoin::hash(newPath);
+    QVERIFY(oldHash && newHash);
+
+    NodeJoin usenet(s, dir.path(), QStringLiteral("usenet"));
+    usenet.setAnonKey(true);
+    QVERIFY(usenet.anonCapable());
+    usenet.start();
+    // not hiding: the node key, recorded
+    QVERIFY(usenet.shareFile(*oldHash, QStringLiteral("u0"), 0));
+    QCOMPARE(s.hide().recorded(oldHash->root), std::optional(::ed3k::KeyKind::Node));
+    QCOMPARE(usenet.setKeyOf(QStringLiteral("u0"), std::vector{oldHash->root}), std::optional(::ed3k::KeyKind::Node));
+
+    // hiding: a new file goes under the anonymous key, its set too
+    s.setHideSettings(hidden());
+    QVERIFY(s.hide().hiding());
+    QVERIFY(usenet.shareFile(*newHash, QStringLiteral("u1"), 0));
+    QCOMPARE(*s.engine()->fileKey(newHash->root), std::optional(::ed3k::KeyKind::Anon));
+    QCOMPARE(s.hide().recorded(newHash->root), std::optional(::ed3k::KeyKind::Anon));
+    QCOMPARE(usenet.setKeyOf(QStringLiteral("u1"), std::vector{newHash->root}), std::optional(::ed3k::KeyKind::Anon));
+    QVERIFY(!usenet.setWithheld(QStringLiteral("u1"), {newHash->root}));
+    QCOMPARE(usenet.blobKeyOf(QStringLiteral("u1")), ::ed3k::KeyKind::Anon);
+    // the old one keeps its key (§1: moved only when the user asks)
+    QCOMPARE(s.hide().recorded(oldHash->root), std::optional(::ed3k::KeyKind::Node));
+    // a set of both keys is left out (§1: one key per set)
+    QVERIFY(!usenet.setKeyOf(QStringLiteral("u2"), std::vector{oldHash->root, newHash->root}));
+    QVERIFY(usenet.setWithheld(QStringLiteral("u2"), {oldHash->root, newHash->root}));
+
+    // File Details: joined, under the anonymous key
+    const auto states = Ed3kJoinBase::joinStatesAt(s, newHash->root);
+    const auto row = std::ranges::find(states, QStringLiteral("usenet"), &Ed3kJoinBase::JoinState::tag);
+    QVERIFY(row != states.end());
+    QCOMPARE(row->kind, Ed3kJoinBase::JoinState::Kind::Joined);
+    QVERIFY(row->anon);
+
+    // switched off: restarted, the file of the anonymous key is left out (nothing falls back)
+    usenet.setAnonKey(false);
+    QVERIFY(usenet.isStarted());
+    QVERIFY(!usenet.anonCapable());
+    QVERIFY(!usenet.shareFile(*newHash, QStringLiteral("u1"), 0));
+    QVERIFY(usenet.skipped(newHash->root));
+    QVERIFY(usenet.setWithheld(QStringLiteral("u1"), {newHash->root}));
+    const auto off = Ed3kJoinBase::joinStatesAt(s, newHash->root);
+    const auto offRow = std::ranges::find(off, QStringLiteral("usenet"), &Ed3kJoinBase::JoinState::tag);
+    QCOMPARE(offRow->kind, Ed3kJoinBase::JoinState::Kind::Skipped);
+    QCOMPARE(offRow->reason, QStringLiteral("anonKey"));
+    QVERIFY(usenet.shareFile(*oldHash, QStringLiteral("u0"), 0));
+    usenet.stop();
     s.stop();
 }
 

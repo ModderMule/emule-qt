@@ -16,7 +16,9 @@
 /// - Files of the anonymous key are not served while hiding is off: nothing of them goes
 ///   under the node key behind the user's back.
 /// - HTTP, hoster, eD2K and LAN never go anonymous (ffi.md MUST): only the joins that say
-///   so (Ed3kJoinBase::anonCapable) use the anonymous key.
+///   so (Ed3kJoinBase::anonCapable) use the anonymous key. Joins of other networks do when
+///   their Kad publishing switch is on (setAnonKey): their ed3k side only, the download on
+///   that network stays direct.
 /// - was: ToDo: topics (sets) and live under the anonymous key; rooms and paid not switched
 ///   (done, batch 16: live, channel search, followed and own sets, rooms, paid and the upload
 ///   queue take keyForUse() / the files' key and keyed events).
@@ -134,6 +136,9 @@ signals:
     void stopped();
     /// Running, paths or the key of a file changed (PushEd3kHideChanged).
     void changed();
+    /// A recorded file moved to @p key (the user was asked, §1): joins that left it out
+    /// for the anonymous key take it again (Ed3kJoinBase::rejoinSkipped).
+    void keyMoved(const ::ed3k::Root& root, ::ed3k::KeyKind key);
 
 private:
     /// The anonymous node started or stopped as the settings say.

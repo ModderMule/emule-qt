@@ -450,6 +450,15 @@ public:
     [[nodiscard]] QString proxyPassword() const;
     void setProxyPassword(const QString& val);
 
+    /// DoH endpoint for country-flag lookups while a proxy is set (DohResolver.h);
+    /// "" = off: no flags for names then. An invalid URL falls back to the default.
+    [[nodiscard]] QString proxyDohUrl() const;
+    void setProxyDohUrl(const QString& val);
+    /// User-added DoH endpoints offered beside the built-in ones (valid, unique, no built-ins).
+    [[nodiscard]] QStringList proxyDohUrls() const;
+    void setProxyDohUrls(const QStringList& val);
+    [[nodiscard]] static QStringList cleanDohUrls(const QStringList& urls);
+
     // -- Directories ----------------------------------------------------------
 
     [[nodiscard]] QString incomingDir() const;
@@ -1628,6 +1637,7 @@ public:
     void setEd3kUdpPort(uint16 val);
 
     /// eMule's shared files served over ed3k (Ed3kShared); only while ed3k runs. Default on.
+    /// YAML only (ed3k.shareFiles), no GUI/IPC.
     [[nodiscard]] bool ed3kShareFiles() const;
     void setEd3kShareFiles(bool val);
     /// Free RAM below this % of total: the ed3k engine keeps only block hashes in use, the rest
@@ -1645,11 +1655,12 @@ public:
     void setEd3kKadStoreMiB(int val);
     static constexpr int kMaxEd3kKadStoreMiB = 65536;
     /// alias.md §3 "Deleted file": days volumes deleted after unpacking keep their ALIAS
-    /// records out (checked against their network). At most 365, 0 = none. YAML only
-    /// (ed3k.deletedFileDays).
+    /// records out (checked against their network; the age limit is a MAY). Default 365,
+    /// 0 = no age limit, -1 = none kept. YAML only (ed3k.deletedFileDays).
     [[nodiscard]] int ed3kDeletedFileDays() const;
     void setEd3kDeletedFileDays(int val);
-    static constexpr int kMaxEd3kDeletedFileDays = 365;
+    // was: static constexpr int kMaxEd3kDeletedFileDays = 365;
+    static constexpr int kMaxEd3kDeletedFileDays = 36500;
     /// Recent ed3k room posts kept on disk (rooms/<room>.posts), shown again after a restart.
     /// Default on (ed3k.roomHistoryStore).
     [[nodiscard]] bool ed3kRoomHistoryStore() const;
@@ -1659,6 +1670,16 @@ public:
     void setEd3kRoomHistoryMax(int val);
     static constexpr int kMinEd3kRoomHistoryMax = 100;
     static constexpr int kMaxEd3kRoomHistoryMax = 100000;
+    /// Disk cache of room media (room.md §2.6), MiB; oldest used dropped beyond. Default 200,
+    /// yaml only (ed3k.roomMediaCacheMiB).
+    [[nodiscard]] int ed3kRoomMediaCacheMiB() const;
+    void setEd3kRoomMediaCacheMiB(int val);
+    static constexpr int kMinEd3kRoomMediaCacheMiB = 16;
+    static constexpr int kMaxEd3kRoomMediaCacheMiB = 1 << 20;
+    /// Media fetched by itself per room and hour; beyond: a click fetches. Default 60, yaml
+    /// only (ed3k.roomMediaPerHour); 0 = never by itself.
+    [[nodiscard]] int ed3kRoomMediaPerHour() const;
+    void setEd3kRoomMediaPerHour(int val);
     /// eD2K downloads also fetch from ed3k peers, dual peers over ed3k (Protocol.md §14.4)
     [[nodiscard]] bool ed3kJointDownloads() const;
     void setEd3kJointDownloads(bool val);
@@ -1671,9 +1692,25 @@ public:
     /// `b3` SET record per archive; others see the entries before downloading. Default on.
     [[nodiscard]] bool ed3kArchiveContents() const;
     void setEd3kArchiveContents(bool val);
+    /// LAN peers' ed3k file data outside the upload/download limits (lan-discovery.md §3
+    /// MAY). Default off: limits hold for every peer, as eD2K's.
+    [[nodiscard]] bool ed3kLanUnlimited() const;
+    void setEd3kLanUnlimited(bool val);
     /// Own ed3k sets' folders watched: a changed folder publishes a new version. Default on.
     [[nodiscard]] bool ed3kOwnSetsWatch() const;
     void setEd3kOwnSetsWatch(bool val);
+    /// hops.md §1: files of a network's ed3k join (eD2K, BitTorrent, Usenet, hoster) follow the
+    /// hiding switch: downloads, shares, set and ALIAS records under the anonymous key while
+    /// hiding runs. Off: node key only. BitTorrent and eD2K show this address to their peers
+    /// (default off); Usenet and hosters only to the provider (default on).
+    [[nodiscard]] bool ed3kAnonEd2k() const;
+    void setEd3kAnonEd2k(bool val);
+    [[nodiscard]] bool ed3kAnonTorrent() const;
+    void setEd3kAnonTorrent(bool val);
+    [[nodiscard]] bool ed3kAnonUsenet() const;
+    void setEd3kAnonUsenet(bool val);
+    [[nodiscard]] bool ed3kAnonHoster() const;
+    void setEd3kAnonHoster(bool val);
 
     /// JSON-RPC endpoints of the credit ledger / the chaintube chain (https, or http to
     /// a loopback node); operator n of a call is the n-th. Empty = calls answered failed.
@@ -1990,6 +2027,15 @@ public:
     [[nodiscard]] QStringList ipcTokens() const;
     void setIpcTokens(const QStringList& val);
 
+    /// ipc.tunnel: paired phones reach IPC over the ed3k tunnel (ALPN emuleqt-ipc/1,
+    /// libs/qDonkey/docs/ed3k-tunnel.md). Default on; listened only while a phone is paired
+    /// or a pair secret is out.
+    [[nodiscard]] bool ipcTunnel() const;
+    void setIpcTunnel(bool val);
+    /// ipc.tunnelPeers: paired phones, "<node id 32 hex> <name>" each.
+    [[nodiscard]] QStringList ipcTunnelPeers() const;
+    void setIpcTunnelPeers(const QStringList& val);
+
     // -- Web Server -----------------------------------------------------------
 
     [[nodiscard]] bool webServerEnabled() const;
@@ -2180,6 +2226,28 @@ public:
 
     [[nodiscard]] bool showSmileys() const;
     void setShowSmileys(bool val);
+
+    /// Chats (friends, IRC, ed3k rooms): what a new message does while not on screen.
+    enum ChatAlert : int { ChatAlertNever = 0, ChatAlertMention = 1, ChatAlertAll = 2 };
+    [[nodiscard]] bool chatSound() const;
+    void setChatSound(bool val);
+    [[nodiscard]] int chatAlert() const;
+    void setChatAlert(int val);
+    [[nodiscard]] bool chatUnreadBadge() const;
+    void setChatUnreadBadge(bool val);
+    /// chats: http(s)/www/ftp clickable too; off: only ed2k, ed3k and magnet links
+    [[nodiscard]] bool chatWebLinks() const;
+    void setChatWebLinks(bool val);
+    /// ed3k room moderators marked by a gold star; off: the IRC "@"
+    [[nodiscard]] bool chatModStar() const;
+    void setChatModStar(bool val);
+    /// ed3k room images (and videos, chatRoomVideos) fetched and shown in the chat; off: a
+    /// file line, a click fetches
+    [[nodiscard]] bool chatRoomMedia() const;
+    void setChatRoomMedia(bool val);
+    /// room videos fetched by themselves too (played muted); default off
+    [[nodiscard]] bool chatRoomVideos() const;
+    void setChatRoomVideos(bool val);
 
     [[nodiscard]] bool indicateRatings() const;
     void setIndicateRatings(bool val);

@@ -154,12 +154,18 @@ bool parseBody(QByteArrayView body, Ed3kSetManifest& out)
             return false;
         QByteArrayView b;
         std::uint64_t v = 0;
-        if (wire == 2 && (field == 1 || field == 2 || field == 3 || field == 6 || field == 12)) {
+        if (wire == 2 && (field == 1 || field == 2 || field == 3 || field == 6 || field == 12 || field == 15)) {
             if (!r.bytes(b))
                 return false;
             if (field == 12) {
                 // subscription.md §3: the SignedOffer of a paid catalogue
                 out.offer = b.toByteArray();
+            } else if (field == 15) {
+                // §5.3: a bad entry is ignored, at most 64
+                static const QRegularExpression kExt(QStringLiteral("^[a-z0-9]{1,16}$"));
+                const QString e = QString::fromUtf8(b);
+                if (out.exts.size() < 64 && kExt.match(e).hasMatch() && !out.exts.contains(e))
+                    out.exts.append(e);
             } else if (field == 1) {
                 out.title = QString::fromUtf8(b);
             } else if (field == 2) {

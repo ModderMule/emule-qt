@@ -33,6 +33,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QTemporaryDir>
 #include <QHash>
 #include <QInputDialog>
 #include "controls/CategoryFilterProxy.h"
@@ -754,7 +755,27 @@ void UsenetPanel::onAddNzb()
         this, tr("Add NZB"), QString(), tr("NZB files (*.nzb);;All files (*)"));
     if (paths.isEmpty())
         return;
+    confirmAddNzbFiles(paths);
+}
 
+void UsenetPanel::promptAddNzbData(const QString& name, const QByteArray& data)
+{
+    // the dialog and its file chooser read paths: a temp copy while it is up
+    QTemporaryDir dir;
+    QString base = QFileInfo(name).fileName();
+    if (!base.endsWith(QStringLiteral(".nzb"), Qt::CaseInsensitive))
+        base += QStringLiteral(".nzb");
+    QFile f(dir.filePath(base));
+    if (!dir.isValid() || !f.open(QIODevice::WriteOnly) || f.write(data) != data.size()) {
+        QMessageBox::warning(this, tr("Add NZB"), tr("Cannot read %1.").arg(base));
+        return;
+    }
+    f.close();
+    confirmAddNzbFiles({f.fileName()});
+}
+
+void UsenetPanel::confirmAddNzbFiles(const QStringList& paths)
+{
     // A second dialog, and worth it: the passphrase is the one thing about a
     // release that a file picker cannot express, and supplying it here is the
     // difference between a download that finishes and one that fails and has to
@@ -1125,10 +1146,13 @@ void UsenetPanel::onPreview()
     auto* dialog = new UsenetArchiveEntryDialog(m_ipc, itemId, fileIndex, this);
     m_entryDialog = dialog;
     connect(dialog, &UsenetArchiveEntryDialog::entryChosen, this,
-            [this, itemId, fileIndex](int entry) { launchEntry(itemId, fileIndex, entry); });
+            [this, dialog, itemId, fileIndex](int entry) {
+                launchEntry(itemId, fileIndex, entry, dialog->entryName(entry));
+            });
 }
 
-void UsenetPanel::launchEntry(const QString& itemId, int fileIndex, int entry)
+void UsenetPanel::launchEntry(const QString& itemId, int fileIndex, int entry,
+                              const QString& entryName)
 {
     const QString url = daemonUsenetStreamUrl(m_ipc, itemId, fileIndex, m_streamToken, entry);
     if (url.isEmpty()) {
@@ -1137,7 +1161,13 @@ void UsenetPanel::launchEntry(const QString& itemId, int fileIndex, int entry)
         return;
     }
 
-    launchPreview(url);
+    // the player shows the archive member's name, else the file's
+    QString title = entryName;
+    if (const UsenetItemRow* row = title.isEmpty() ? m_model->findById(itemId) : nullptr)
+        for (const auto& f : row->files)
+            if (f.index == fileIndex)
+                title = f.name;
+    launchPreview(url, title);
 }
 
 void UsenetPanel::updateActions()

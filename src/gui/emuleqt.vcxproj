@@ -254,6 +254,10 @@
     <ClCompile Include="controls\AccordionSidebar.cpp" />
     <ClCompile Include="controls\ContentScrollArea.cpp" />
     <ClCompile Include="dialogs\CoreConnectDialog.cpp" />
+    <ClCompile Include="dialogs\CoreScriptDialog.cpp" />
+    <ClCompile Include="dialogs\PhonePairDialog.cpp" />
+    <ClCompile Include="utils\qrcodegen\qrcodegen.cpp" />
+    <ClCompile Include="utils\CoreConnectScript.cpp" />
     <ClCompile Include="controls\CategoryFilterProxy.cpp" />
     <ClCompile Include="controls\CategoryTabBar.cpp" />
     <ClCompile Include="controls\FitTextTabBar.cpp" />
@@ -295,6 +299,7 @@
     <ClCompile Include="panels\IrcPanelEd3k.cpp" />
     <ClCompile Include="panels\ChatChannelView.cpp" />
     <ClCompile Include="panels\Ed3kOwnSetsView.cpp" />
+    <ClCompile Include="panels\Ed3kRoomMediaView.cpp" />
     <ClCompile Include="panels\Ed3kRoomTab.cpp" />
     <ClCompile Include="panels\Ed3kRoomList.cpp" />
     <ClCompile Include="controls\KadContactHistogram.cpp" />
@@ -471,8 +476,12 @@
     <ClInclude Include="utils\MessageBoxButtonOrder.h" />
     <ClInclude Include="utils\MenuUtils.h" />
     <ClInclude Include="utils\Appearance.h" />
+    <ClInclude Include="utils\CoreConnectScript.h" />
+    <ClInclude Include="utils\qrcodegen\qrcodegen.hpp" />
+    <ClInclude Include="utils\BadgeIcons.h" />
     <ClInclude Include="utils\ColorUtils.h" />
     <ClInclude Include="utils\ViewNavigation.h" />
+    <ClInclude Include="utils\MenuDump.h" />
     <ClInclude Include="utils\ViewSelection.h" />
     <QtMoc Include="utils\PanelPoller.h" />
     <QtMoc Include="utils\HostnameResolver.h" />
@@ -504,6 +513,8 @@
     <QtMoc Include="controls\AccordionSidebar.h" />
     <QtMoc Include="controls\ContentScrollArea.h" />
     <QtMoc Include="dialogs\CoreConnectDialog.h" />
+    <QtMoc Include="dialogs\CoreScriptDialog.h" />
+    <QtMoc Include="dialogs\PhonePairDialog.h" />
     <QtMoc Include="controls\CategoryFilterProxy.h" />
     <QtMoc Include="controls\CategoryTabBar.h" />
     <QtMoc Include="controls\DownloadListModel.h" />
@@ -539,6 +550,7 @@
     <QtMoc Include="panels\IrcPanel.h" />
     <QtMoc Include="panels\ChatChannelView.h" />
     <QtMoc Include="panels\Ed3kOwnSetsView.h" />
+    <QtMoc Include="panels\Ed3kRoomMediaView.h" />
     <QtMoc Include="panels\Ed3kRoomTab.h" />
     <QtMoc Include="panels\Ed3kRoomList.h" />
     <QtMoc Include="controls\KadContactHistogram.h" />

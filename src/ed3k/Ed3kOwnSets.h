@@ -91,6 +91,8 @@ public:
         QString key;
         /// a version was refused for files under this key: the set may move there (shareUnderKey)
         QString offerKey;
+        /// file types suggested to followers (file-set.md §5.3 `exts`)
+        QStringList exts;
     };
 
     /// @p configDir: Config/ (ed3k/own-sets.json and ed3k/own-sets/ below it), loaded here.
@@ -117,11 +119,15 @@ public:
 
     /// A new set of @p folder (every file below it) or @p files, published at once (a paid
     /// one once sold: sell()). The id. The error is user-visible.
-    std::expected<QString, QString> create(const QString& title, const QString& folder, const QStringList& files, Kind kind);
+    /// @p exts: file types suggested to followers (§5.3), normalised here.
+    std::expected<QString, QString> create(const QString& title, const QString& folder, const QStringList& files, Kind kind,
+                                           const QStringList& exts = {});
     /// A new version: the folder scanned again (or the files), seq + 1. A set unpublished is
     /// published again.
     std::expected<void, QString> publishNewVersion(const QString& id);
     std::expected<void, QString> retitle(const QString& id, const QString& title);
+    /// The file types suggested to followers (§5.3); a published set gets a new version.
+    std::expected<void, QString> setExts(const QString& id, const QStringList& exts);
     /// Stops publishing (ed3k_set_unpublish) and sharing the files; the set stays listed.
     std::expected<void, QString> unpublish(const QString& id);
     /// Sells the set (Ed3kPaidSeller, kind 2, its key the publisher) with @p terms; a set sold
@@ -180,6 +186,7 @@ private:
         QString title;
         QString folder;
         QStringList files;
+        QStringList exts;         ///< FileSet.exts (§5.3)
         Kind kind = Kind::Open;
         std::uint64_t seq = 0;
         std::uint64_t created = 0;

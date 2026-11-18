@@ -12,12 +12,15 @@
 /// which `QDnsLookup` does, since it talks to a nameserver directly. On top of that
 /// it adds what `QHostInfo` lacks: a timeout, cancellation (explicit or when a
 /// context object dies), an IP-literal short-circuit, in-flight de-duplication and a
-/// small positive/negative cache.
+/// small positive/negative cache. Behind a proxy with DoH on, names go by DoH through
+/// the proxy instead (net/DohResolver), local names excepted.
 
 #include "net/Address.h"
 #include "utils/Types.h"
 
 #include <QElapsedTimer>
+#include <QHostAddress>
+#include <QList>
 #include <QObject>
 #include <QString>
 
@@ -118,6 +121,9 @@ private:
     /// Start (or join) a lookup for @p host.
     void startLookup(const QString& host);
 
+    /// Cache and deliver one lookup's answer; @p failure empty unless it failed.
+    void lookupDone(const QString& host, const QList<QHostAddress>& found, const QString& failure);
+
     /// Deliver results for every token waiting on @p host.
     void completeHost(const QString& host, const std::vector<Address>& addresses,
                       const QString& errorString);
@@ -135,7 +141,8 @@ private:
 
     std::unordered_map<int, Pending>              m_pending;      ///< token -> request
     std::unordered_map<QString, std::vector<int>> m_waiters;      ///< host -> tokens
-    std::unordered_map<QString, int>              m_lookupIds;   ///< host -> QHostInfo id
+    std::unordered_map<QString, int>              m_lookupIds;   ///< host -> QHostInfo id; < 0 DoH
+    int                                           m_dohSerial = 0;
     std::unordered_map<QString, CacheEntry>       m_cache;
     QElapsedTimer                                 m_clock;
     int                                           m_nextToken = 1;

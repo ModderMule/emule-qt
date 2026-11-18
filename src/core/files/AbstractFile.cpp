@@ -128,6 +128,8 @@ bool AbstractFile::hasNullHash() const
 
 QString AbstractFile::getED2kLink(bool hashset, bool html, bool hostname, bool source) const
 {
+    if (!hasEd2kHash())
+        return {};
     // The link grammar lives in ED2KFileLink::toLink() — including where the '/'
     // terminator goes and how an IPv6 hint is kept out of the legacy `sources,` block.
     ED2KFileLink link;

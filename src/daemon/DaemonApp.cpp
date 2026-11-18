@@ -5,9 +5,12 @@
 #include "AutoUpdater.h"
 #include "net/GuardedNetworkAccessManager.h"
 #include "CoreNotifierBridge.h"
+#include "geo/HostCountryResolver.h"
 #include "geo/IP2Country.h"
 #include "ApiEventFeeder.h"
 #include "DaemonApiBackend.h"
+#include "DaemonEd3kWebBackend.h"
+#include "DaemonIndexerWebBackend.h"
 #include "DaemonHosterWebBackend.h"
 #include "DaemonMetaGrabWebBackend.h"
 #include "DaemonTorrentWebBackend.h"
@@ -36,6 +39,7 @@
 #include "post/UsenetUnpacker.h"
 #include "Ed3kFriendsBridge.h"
 #include "Ed3kRoomsBridge.h"
+#include "Ed3kTunnelBridge.h"
 #include "Ed3kNamesBridge.h"
 #include "UsenetBridge.h"
 #include "UsenetRetryGrabber.h"
@@ -101,6 +105,7 @@
 #include "Ed3kLinkGrabber.h"
 #ifdef EMULE_HAVE_HOSTER_JD
 #include "Ed3kJavaRuntime.h"
+#include "Ed3kFfmpegTool.h"
 #include "Ed3kStore.h"
 #include "Ed3kJdResolver.h"
 #include "Ed3kResolverUpdater.h"
@@ -111,6 +116,7 @@
 #include "IndexerFeedList.h"
 #include "IndexerSearch.h"
 #include "IndexerSearchList.h"
+#include "IndexerGrab.h"
 #include "IndexerResult.h"
 #include "queue/UsenetQueue.h"
 #include "queue/UsenetQueueItem.h"
@@ -305,6 +311,13 @@ bool DaemonApp::start()
     // A name follows its addresses: DHCP, a new network, a renamed host
     if (byName && !OwnAddress::isLocalhostName(OwnAddress::normalizedName(listenHost)))
         m_ipcListenWatch = std::make_unique<IpcListenWatch>(m_ipcServer.get(), listenHost);
+    // Moved at runtime (ListenIpcAddress): a name gets its watch, an address none
+    connect(m_ipcServer.get(), &IpcServer::listenHostChanged, this, [this](const QString& value) {
+        m_ipcListenWatch.reset();
+        if (!value.isEmpty() && value != u'*' && QHostAddress(value).isNull()
+            && !OwnAddress::isLocalhostName(OwnAddress::normalizedName(value)))
+            m_ipcListenWatch = std::make_unique<IpcListenWatch>(m_ipcServer.get(), value);
+    });
 
     // Connect core signals to IPC push events
     m_notifierBridge = std::make_unique<CoreNotifierBridge>(m_ipcServer.get(), this);
@@ -441,6 +454,8 @@ bool DaemonApp::start()
             // a folder scan may have taken them meanwhile
             if (m_usenetLanded.blocking() && theApp.sharedFileList)
                 theApp.sharedFileList->dropNeverShared();
+            if (m_usenetLanded.blocking())
+                syncEd3kAliasOnly();
         });
     }
     if (thePrefs.usenetEnabled() && !m_enginesHeld)
@@ -480,6 +495,7 @@ bool DaemonApp::start()
         m_usenetJoin = std::make_unique<ed3k::Ed3kUsenetJoin>(*m_ed3kSession, *m_usenetJoinQueue, thePrefs.configDir());
         m_usenetJoin->connectQueue(*queue);
         m_usenetJoin->setHoldBack(!thePrefs.ed3kShareUsenetPosts());
+        m_usenetJoin->setAnonKey(thePrefs.ed3kAnonUsenet());
         m_usenetJoin->setDeletedDays(thePrefs.ed3kDeletedFileDays());
     }
     // the share list over ed3k; also attaches on statusChanged
@@ -510,6 +526,7 @@ bool DaemonApp::start()
                 if (f)
                     s->onFileChanged(QByteArray(reinterpret_cast<const char*>(f->fileHash()), 16));
             });
+        syncEd3kAliasOnly();
         m_ed3kShared->setEnabled(thePrefs.ed3kShareFiles());
         // declined-records.md §2: roots of listed MD4s known here go to the engine as roots too
         m_ed3kSession->setDeclineRootsOf([s = QPointer<ed3k::Ed3kShared>(m_ed3kShared.get())](const ed3k::DeclineList& list) {
@@ -529,6 +546,8 @@ bool DaemonApp::start()
     // rooms (room.md); attaches on statusChanged and joins the saved rooms again
     m_ed3kRooms = std::make_unique<ed3k::Ed3kRooms>(*m_ed3kSession);
     Ed3kRoomsBridge::setRooms(m_ed3kRooms.get());
+    // paired phones over the ed3k tunnel (ALPN emuleqt-ipc/1); listens on statusChanged
+    Ed3kTunnelBridge::setSession(m_ed3kSession.get(), m_ed3kFriends.get());
     Ed3kRoomsBridge::connectPushes(*m_ed3kRooms, [this](const IpcMessage& msg) {
         if (m_ipcServer)
             m_ipcServer->broadcast(msg);
@@ -687,6 +706,7 @@ bool DaemonApp::start()
         m_hosterLanded.setListPath(QDir(ed3k::stateDir(thePrefs.configDir())).filePath(QStringLiteral("hoster/landed.txt")));
         m_hosterLanded.load();
         m_hosterLanded.setBlocking(!thePrefs.ed3kHoster().shareFiles);
+        syncEd3kAliasOnly();
         if (theApp.sharedFileList) {
             connect(&m_ed3kSets->plainCopies(), &ed3k::Ed3kPlainCopies::added, this, [] {
                 if (theApp.sharedFileList)
@@ -750,6 +770,7 @@ bool DaemonApp::start()
     if (theApp.downloadQueue) {
         m_ed2kJoin = std::make_unique<ed3k::Ed3kEd2kJoin>(*m_ed3kSession, *theApp.downloadQueue, thePrefs.configDir());
         m_ed2kJoin->setEnabled(thePrefs.ed3kJointDownloads());
+        m_ed2kJoin->setAnonKey(thePrefs.ed3kAnonEd2k());
         Ed3kBridge::setEd2kJoin(m_ed2kJoin.get());
         m_ed2kJoin->setRootTaken([d = m_ed3kDownloads.get()](const ::ed3k::Root& root) { return d && d->contains(root); });
         theApp.ed3kHint = [j = m_ed2kJoin.get()](UpDownClient& client, bool wait) { return j->offerHint(client, wait); };
@@ -767,6 +788,7 @@ bool DaemonApp::start()
     theApp.ed3kConnected = [s = m_ed3kSession.get()] { return s->isRunning() && s->contactCount() > 0; };
     // an ed3k search row's Comments: its NOTE records (Protocol.md §10.7)
     theApp.ed3kSearchNotes = [s = m_ed3kSearch.get()](const QByteArray& root) { return s->searchNotes(root); };
+    Ed3kDownloadsBridge::setSearch(m_ed3kSearch.get());
     // §14.4: a dual peer queued on ed3k gets no 2nd place in the eD2K upload queue
     theApp.isEd3kUploadPeer = [u = m_ed3kUploads.get()](const uint8* hash) {
         ::ed3k::Ed2kHash h{};
@@ -802,6 +824,7 @@ bool DaemonApp::start()
     // hoster links (hoster.md); the resolver is the JDownloader sidecar when built in
     m_hosterJoin = std::make_unique<ed3k::Ed3kHosterJoin>(*m_ed3kSession, thePrefs.configDir());
     m_hosterJoin->setDeletedDays(thePrefs.ed3kDeletedFileDays());
+    m_hosterJoin->setAnonKey(thePrefs.ed3kAnonHoster());
     // what unpacked archives hold (hoster.md §6.1): read on the unpacker's thread, published here.
     // Made after the usenet and hoster joins: joins start on statusChanged in this order, so
     // their loadDeleted (aliasKeepDeleted) comes before its kept PACKED/b3 records of deleted
@@ -856,6 +879,8 @@ bool DaemonApp::start()
     m_hosterJoin->setPublishedHook([this](const QStringList& files) {
         // remembered either way: switching sharing off later covers these too
         m_hosterLanded.add(files);
+        if (m_hosterLanded.blocking())
+            syncEd3kAliasOnly();   // their ed2k ALIAS alone
         if (!theApp.sharedFileList || m_hosterLanded.blocking())
             return;
         for (const QString& f : files)
@@ -880,6 +905,38 @@ bool DaemonApp::start()
             QDir(QFileInfo(thePrefs.configDir()).absolutePath()).filePath(QStringLiteral("runtime/jre")));
         resolver = m_jdResolver.get();
         java = m_javaRuntime.get();
+        m_ffmpegTool = std::make_unique<ed3k::Ed3kFfmpegTool>(ed3k::stateDir(thePrefs.configDir()));
+        // an HLS/DASH link and the sidecar has no ffmpeg: one found since, or ours fetched
+        connect(m_jdResolver.get(), &ed3k::Ed3kJdResolver::toolsNeeded, this, [this] {
+            const QString had = m_jdResolver->config().ffmpeg;
+            m_ffmpegTool->locate();
+            if (m_ffmpegTool->state() == ed3k::Ed3kFfmpegTool::State::Ready) {
+                if (m_ffmpegTool->ffmpeg() != had)
+                    applyHosterConfig();   // the new paths go to the sidecar
+                else
+                    m_jdResolver->toolsFailed(QStringLiteral("%1 is not usable").arg(had));
+                return;
+            }
+            if (!m_ffmpegTool->download())
+                m_jdResolver->toolsFailed(m_ffmpegTool->error());
+        });
+        connect(m_ffmpegTool.get(), &ed3k::Ed3kFfmpegTool::stateChanged, this, [this] {
+            using S = ed3k::Ed3kFfmpegTool::State;
+            switch (m_ffmpegTool->state()) {
+            case S::Ready:
+                if (m_ffmpegTool->ffmpeg() != m_jdResolver->config().ffmpeg)
+                    applyHosterConfig();
+                break;
+            case S::Failed:
+                m_jdResolver->toolsFailed(m_ffmpegTool->error());
+                break;
+            case S::Missing:   // download switched off
+                m_jdResolver->toolsFailed(QStringLiteral("hoster downloads are off"));
+                break;
+            default:   // progress
+                break;
+            }
+        });
         m_resolverUpdater = std::make_unique<ed3k::Ed3kResolverUpdater>(
             QDir(thePrefs.configDir()).filePath(QStringLiteral("ed3k/resolver/update")));
         // a new zip: the resolver swaps it in once its sidecar is idle
@@ -957,7 +1014,9 @@ bool DaemonApp::start()
         // server countries of the sites in the account dialogs
         m_hosterCatalog->setGeo([] { return theApp.ip2Country && theApp.ip2Country->isLoaded(); },
                                 [](const QHostAddress& a) { return countryCodeOf(a); });
-        m_hosterCatalog->setDnsAllowed(!thePrefs.proxySettings().useProxy);
+        // behind a proxy: DoH through it, or no lookups when DoH is off
+        m_hosterCatalog->setDnsAllowed(std::function<bool()>(&countryDnsAvailable));
+        m_hosterCatalog->setDnsLookup(&countryDnsLookup);
         // a download's real server: the site's flag from then on
         connect(m_hosterJoin.get(), &ed3k::Ed3kHosterJoin::downloadServer, m_hosterCatalog.get(),
                 &ed3k::Ed3kHosterCatalog::noteServer);
@@ -1045,6 +1104,7 @@ bool DaemonApp::start()
     // after both sessions; the node may run already (statusChanged was before this)
     m_torrentJoin = std::make_unique<ed3k::Ed3kTorrentJoin>(*m_ed3kSession, *m_btSession, thePrefs.configDir());
     m_torrentJoin->setI2pJoins(thePrefs.btI2pEd3kJoin());
+    m_torrentJoin->setAnonKey(thePrefs.ed3kAnonTorrent());
     // torrent.md §6.3: private torrents join only with btShareMode "all"
     m_torrentJoin->setPrivateJoins(thePrefs.btShareMode() >= int(BtShareMode::All));
     applyTorrentArchiveContents();
@@ -1194,6 +1254,7 @@ void DaemonApp::stop()
     theApp.isEd3kUploadPeer = {};
     theApp.ed3kConnected = {};
     theApp.ed3kSearchNotes = {};
+    Ed3kDownloadsBridge::setSearch(nullptr);
     // no reader publishes once the contents service is gone
     m_archiveCancel->store(true);
     setArchiveContentsHook({});
@@ -1246,6 +1307,7 @@ void DaemonApp::stop()
     Ed3kFriendsBridge::setFriends(nullptr);
     m_ed3kFriends.reset();
     Ed3kRoomsBridge::setRooms(nullptr);
+    Ed3kTunnelBridge::setSession(nullptr);
     m_ed3kRooms.reset();
     theApp.ed3kKadSeed = {};
     theApp.ed3kIndexLink = {};
@@ -1280,6 +1342,7 @@ void DaemonApp::stop()
     m_hosterJoin.reset();
 #ifdef EMULE_HAVE_HOSTER_JD
     m_resolverUpdater.reset();
+    m_ffmpegTool.reset();   // its signals reach the resolver
     m_jdResolver.reset();
     m_javaRuntime.reset();
 #endif
@@ -1397,6 +1460,7 @@ void DaemonApp::startWebServer()
     m_webServer->setEd3kFileResolver(&Ed3kDownloadsBridge::fileOf);
     m_webServer->setEd3kStreamResolver(&Ed3kDownloadsBridge::streamFrom);
     m_webServer->setBtStreamResolver(&BtBridge::streamFrom);
+    m_webServer->setHosterStreamResolver(&Ed3kHosterBridge::streamFrom);
 
     m_webServer->setUsenetStreamResolver(
         [](const UsenetStreamRequest& ask) -> UsenetStreamSource {
@@ -1405,7 +1469,7 @@ void DaemonApp::startWebServer()
                 return out;
 
             const auto info = usenet::theUsenetSession->queue()->requestStream(
-                ask.itemId, ask.fileIndex, ask.wantOffset, ask.wantLength, ask.entryOrdinal);
+                ask.itemId, ask.fileIndex, ask.wantOffset, ask.wantLength, ask.entryOrdinal, ask.fetch);
             out.found             = info.found;
             out.fileName          = info.fileName;
             out.totalSize         = info.totalSize;
@@ -1435,13 +1499,19 @@ void DaemonApp::startWebServer()
     m_webServer->setTorrentBackend(m_torrentWebBackend.get());
 #endif
 
-    // The Hoster page, and the web search's meta-row grabs; page only, no REST routes.
+    // The Hoster page and routes, the meta-row grabs, the ed3k download and indexer routes.
     if (!m_hosterWebBackend)
         m_hosterWebBackend = std::make_unique<DaemonHosterWebBackend>();
     m_webServer->setHosterBackend(m_hosterWebBackend.get());
     if (!m_metaGrabWebBackend)
         m_metaGrabWebBackend = std::make_unique<DaemonMetaGrabWebBackend>();
     m_webServer->setMetaGrabBackend(m_metaGrabWebBackend.get());
+    if (!m_ed3kWebBackend)
+        m_ed3kWebBackend = std::make_unique<DaemonEd3kWebBackend>();
+    m_webServer->setEd3kBackend(m_ed3kWebBackend.get());
+    if (!m_indexerWebBackend)
+        m_indexerWebBackend = std::make_unique<DaemonIndexerWebBackend>();
+    m_webServer->setIndexerBackend(m_indexerWebBackend.get());
 
     // The REST API's daemon half and its event source, kept the same way.
     if (!m_apiBackend)
@@ -1485,9 +1555,6 @@ constexpr int kUsenetPushWindowMs = 250;
 constexpr int kFeedPushWindowMs = 250;
 
 } // namespace
-
-/// Likewise: the push and the StartIndexerSearch reply must carry the same row.
-QCborMap indexerResultToCbor(const indexer::IndexerResult& result, const QString& expression);
 
 void DaemonApp::connectUsenetPushes()
 {
@@ -1757,6 +1824,8 @@ void DaemonApp::applyEd3kConfig()
         settings.extOff = extOff;
         settings.lan = thePrefs.ed3kLan();
         settings.forceOpen = thePrefs.ed3kForceOpen();
+        // dev aid: a named (test) network, private addresses dialable (live rigs on one host)
+        settings.network = qEnvironmentVariable("EMULE_ED3K_NETWORK");
         settings.storeMiB = static_cast<std::uint32_t>(thePrefs.ed3kKadStoreMiB());
         if (bind) {
             settings.bindAddress = *bind;
@@ -1796,6 +1865,7 @@ void DaemonApp::applyEd3kConfig()
     if (m_ed3kShared) {
         m_ed3kShared->setLowRamPercent(thePrefs.ed3kHashCacheLowRamPercent());
         m_ed3kShared->setHashRamMiB(thePrefs.ed3kHashRamMiB());
+        syncEd3kAliasOnly();
         m_ed3kShared->setEnabled(thePrefs.ed3kShareFiles());
     }
     // ed3kJointDownloads: on/off while the node runs
@@ -1804,6 +1874,8 @@ void DaemonApp::applyEd3kConfig()
     // ed3kShareUsenetPosts: a change restarts the usenet join (kept lists and records follow)
     if (m_usenetJoin)
         m_usenetJoin->setHoldBack(!thePrefs.ed3kShareUsenetPosts());
+    // ed3kAnon*: a change restarts that join (hops.md §1)
+    applyJoinKeys();
     // ed3kArchiveContents: off withdraws the published contents records
     if (m_archiveContents)
         m_archiveContents->setPublish(thePrefs.ed3kArchiveContents());
@@ -1831,6 +1903,22 @@ void DaemonApp::applyTorrentArchiveContents()
                 (void)ac->publishListing(l);
         };
     m_torrentJoin->setArchiveContents(std::move(publish), thePrefs.archivePasswords(), thePrefs.usenetExternalUnpacker());
+#endif
+}
+
+void DaemonApp::applyJoinKeys()
+{
+#ifdef EMULE_HAVE_ED3K
+    if (m_ed2kJoin)
+        m_ed2kJoin->setAnonKey(thePrefs.ed3kAnonEd2k());
+    if (m_usenetJoin)
+        m_usenetJoin->setAnonKey(thePrefs.ed3kAnonUsenet());
+    if (m_hosterJoin)
+        m_hosterJoin->setAnonKey(thePrefs.ed3kAnonHoster());
+#endif
+#if defined(EMULE_HAVE_ED3K) && defined(EMULE_HAVE_BITTORRENT)
+    if (m_torrentJoin)
+        m_torrentJoin->setAnonKey(thePrefs.ed3kAnonTorrent());
 #endif
 }
 
@@ -1873,6 +1961,7 @@ void DaemonApp::applyHosterConfig()
             theApp.sharedFileList->reload();
         else
             theApp.sharedFileList->dropNeverShared();
+        syncEd3kAliasOnly();
     }
     if (m_linkGrabber)
         m_linkGrabber->setEnabled(h.linkGrabber, h.grabAll);
@@ -1887,7 +1976,7 @@ void DaemonApp::applyHosterConfig()
         }
     }
 #ifdef EMULE_HAVE_HOSTER_JD
-    if (!m_javaRuntime || !m_jdResolver)
+    if (!m_javaRuntime || !m_jdResolver || !m_ffmpegTool)
         return;
     // nothing is fetched or unpacked unless hoster downloads are on (and so is the ed3k node
     // they run on); off stops a fetch and creates nothing under config/ed3k
@@ -1910,6 +1999,10 @@ void DaemonApp::applyHosterConfig()
                              : QStringLiteral("hoster: %1 is read-only and holds no resolver plugins: per instance").arg(sharedDir));
     }
     m_javaRuntime->setAllowed(on);
+    m_ffmpegTool->setAllowed(on);
+    // once hosters are on: a cheap file lookup, no process started
+    if (on && m_ffmpegTool->state() == ed3k::Ed3kFfmpegTool::State::Unknown)
+        m_ffmpegTool->locate();
     if (on)
         m_javaRuntime->setSharedDir(sharedDir, sharedWritable);
     if (!on)
@@ -1928,15 +2021,13 @@ void DaemonApp::applyHosterConfig()
                                        + QString::fromLatin1(QUrl::toPercentEncoding(p.password)) + QLatin1Char('@')
                                  : QString();
         proxy = QStringLiteral("%1://%2%3:%4").arg(scheme, auth, p.host).arg(p.port);
-        if (m_hosterCatalog)
-            m_hosterCatalog->setDnsAllowed(false);   // site names stay off the local resolver
         m_javaRuntime->setProxy(toNetworkProxy(p));
+        m_ffmpegTool->setProxy(toNetworkProxy(p));
         if (m_resolverUpdater)
             m_resolverUpdater->setProxy(toNetworkProxy(p));
     } else {
-        if (m_hosterCatalog)
-            m_hosterCatalog->setDnsAllowed(true);
         m_javaRuntime->setProxy(QNetworkProxy(QNetworkProxy::DefaultProxy));
+        m_ffmpegTool->setProxy(QNetworkProxy(QNetworkProxy::DefaultProxy));
         if (m_resolverUpdater)
             m_resolverUpdater->setProxy(QNetworkProxy(QNetworkProxy::DefaultProxy));
     }
@@ -1944,6 +2035,8 @@ void DaemonApp::applyHosterConfig()
     if (const auto rt = m_javaRuntime->runtime())
         cfg.java = rt->java;
     cfg.dataDir = QDir(thePrefs.configDir()).filePath(QStringLiteral("ed3k/resolver"));
+    cfg.ffmpeg = m_ffmpegTool->ffmpeg();
+    cfg.ffprobe = m_ffmpegTool->ffprobe();
     if (sharedPlugins)
         cfg.sharedDir = sharedDir;
     cfg.zip = ed3k::Ed3kJdResolver::findBundledZip();
@@ -1988,6 +2081,7 @@ void DaemonApp::applyUsenetServers()
             theApp.sharedFileList->reload();
         else
             theApp.sharedFileList->dropNeverShared();
+        syncEd3kAliasOnly();
     }
 
     // The enable switch can flip in the same save that changed the servers.
@@ -2378,6 +2472,25 @@ void DaemonApp::releaseEngines()
     Ed3kBridge::setConnectWanted(thePrefs.autoConnect());
     // waits for the eD2K UDP socket while the core loads (onCoreLoaded comes back); hosters too
     applyEd3kConfig();
+}
+
+void DaemonApp::syncEd3kAliasOnly()
+{
+#ifdef EMULE_HAVE_ED3K
+    if (!m_ed3kShared)
+        return;
+    // eD2K disabled: nothing new hashed for it; ed2k ALIAS records known before stay out
+    m_ed3kShared->setEd2kHashing(!thePrefs.disableEd2k());
+    QStringList paths;
+    for (const LandedFiles* landed : {&m_usenetLanded, &m_hosterLanded}) {
+        if (!landed->blocking())
+            continue;   // in eD2K's share: Ed3kShared publishes them as shared files
+        for (const QString& p : landed->paths())
+            if (!m_ed3kSets || !m_ed3kSets->plainCopies().contains(p))   // hidden-set.md §4.2: never named
+                paths << p;
+    }
+    m_ed3kShared->setAliasOnlyFiles(paths);
+#endif
 }
 
 bool DaemonApp::neverShared(const QString& path) const

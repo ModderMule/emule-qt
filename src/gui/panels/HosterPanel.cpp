@@ -9,6 +9,8 @@
 #include "app/IpcClient.h"
 #include "app/UiState.h"
 #include "controls/StatusFilterBar.h"
+#include "controls/TorrentListModel.h"
+#include "controls/TorrentProgressDelegate.h"
 #include "dialogs/HosterPuzzleDialog.h"
 #include "panels/LinkGrabberPanel.h"
 #include "utils/ClientIcons.h"
@@ -20,7 +22,9 @@
 #include "utils/ListActivation.h"
 #include "utils/MenuUtils.h"
 #include "utils/ModalHost.h"
+#include "utils/OtherFunctions.h"
 #include "utils/PanelPoller.h"
+#include "utils/PreviewLauncher.h"
 #include "utils/MoveDownloadsAction.h"
 #include "prefs/Preferences.h"
 #include "utils/StringUtils.h"
@@ -49,7 +53,9 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QPainter>
 #include <QPlainTextEdit>
+#include <QRegularExpression>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QTabBar>
@@ -79,17 +85,34 @@ constexpr int kPackageIdRole = Qt::UserRole + 2;
 constexpr int kSourceKeyRole = Qt::UserRole + 3;
 /// ColHoster: the host its favicon and flag show
 constexpr int kHostRole = Qt::UserRole + 4;
+/// ColHoster of a package row: every host of its items (two or more: HosterHostsDelegate draws them)
+constexpr int kHostsRole = Qt::UserRole + 5;
+/// buckets of a hoster progress bar
+constexpr int kBarBuckets = 128;
 
 // Ed3kHosterJoin::State
 constexpr int kStateDownloading = 5;
 constexpr int kStatePaused = 7;
 constexpr int kStateComplete = 8;
+constexpr int kStateGone = 9;
+constexpr int kStateFailed = 12;
 /// a container sent to the core; DLCs are a few KiB (the core's cap)
 constexpr qint64 kMaxContainerBytes = 4 * 1024 * 1024;
 /// Ed3kHosterJoin::Reason
 constexpr int kReasonUnpacked = 32;
 constexpr int kReasonUnpackFailed = 33;
 constexpr int kReasonUnpackPassword = 34;
+
+/// @p it can stream to a player: bytes are coming, and a muxed stream download (HLS/DASH)
+/// without peers' blocks only once complete
+bool previewable(const QCborMap& it)
+{
+    const auto state = it.value(QStringLiteral("state")).toInteger();
+    if (state == kStateGone || state == kStateFailed)
+        return false;
+    return state == kStateComplete || !it.value(QStringLiteral("muxed")).toBool()
+           || it.value(QStringLiteral("verified")).toBool();
+}
 
 /// The filter row's buttons. Persisted in UiState: append only.
 enum Filter : int { FilterAll, FilterDownloading, FilterComplete, FilterPaused, FilterActive, FilterError, FilterCount };
@@ -156,6 +179,8 @@ QString stepText(const QString& step)
         return HosterPanel::tr("Logging in, talking to the hoster");
     if (step == u"puzzle")
         return HosterPanel::tr("Solving a captcha");
+    if (step == u"ffmpeg")
+        return HosterPanel::tr("Getting ffmpeg for the stream");
     if (step == u"connect")
         return HosterPanel::tr("Connecting for the transfer");
     return step;
@@ -232,7 +257,111 @@ public:
     }
 };
 
+/// The Progress bar of files in a row, end to end: @p parts are (size, done), each done
+/// from the file's start (a hoster download has no piece map).
+QByteArray linearBar(const QList<std::pair<qint64, qint64>>& parts)
+{
+    qint64 total = 0;
+    for (const auto& [size, done] : parts)
+        total += std::max<qint64>(size, 0);
+    if (total <= 0)
+        return {};
+    QByteArray bar(kBarBuckets, '\0');
+    for (int b = 0; b < kBarBuckets; ++b) {
+        const double from = double(total) * b / kBarBuckets;
+        const double to = double(total) * (b + 1) / kBarBuckets;
+        double have = 0;
+        double offset = 0;
+        for (const auto& [size, done] : parts) {
+            const double end = offset + double(std::clamp<qint64>(done, 0, std::max<qint64>(size, 0)));
+            have += std::max(0.0, std::min(to, end) - std::max(from, offset));
+            offset += double(std::max<qint64>(size, 0));
+        }
+        bar[b] = char(std::clamp(int(255.0 * have / (to - from) + 0.5), 0, 255));
+    }
+    return bar;
+}
+
+/// The TorrentProgressDelegate roles of a row: done/size of @p parts, @p ok: not failed.
+void setBar(QTreeWidgetItem* row, const QList<std::pair<qint64, qint64>>& parts, double pct, bool complete, bool paused,
+            bool ok)
+{
+    row->setData(ColProgress, kTorrentBarRole, linearBar(parts));
+    row->setData(ColProgress, kTorrentBarPercentRole, pct);
+    row->setData(ColProgress, kTorrentBarCompleteRole, complete);
+    row->setData(ColProgress, kTorrentBarPausedRole, paused);
+    row->setData(ColProgress, kTorrentBarSourcesRole, ok ? 1 : 0);
+}
+
 } // namespace
+
+/// The Hoster column: a package with several hosts shows each one's favicon, flag and name.
+class HosterHostsDelegate : public FlagDecorationDelegate {
+public:
+    using IconOf = std::function<QIcon(const QString&)>;
+    HosterHostsDelegate(QObject* parent, IconOf iconOf)
+        : FlagDecorationDelegate(parent)
+        , m_iconOf(std::move(iconOf))
+    {
+    }
+    /// Icons are composed again (one arrived, flags toggled).
+    void clearIcons() { m_icons.clear(); }
+
+    void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override
+    {
+        const QStringList hosts = index.data(kHostsRole).toStringList();
+        if (hosts.size() < 2) {
+            FlagDecorationDelegate::paint(painter, option, index);
+            return;
+        }
+        QStyleOptionViewItem opt = option;
+        initStyleOption(&opt, index);
+        const int h = opt.decorationSize.height() > 0 ? opt.decorationSize.height() : 16;
+        opt.text.clear();
+        opt.icon = QIcon();
+        opt.features &= ~QStyleOptionViewItem::HasDecoration;
+        const QWidget* widget = opt.widget;
+        QStyle* style = widget ? widget->style() : QApplication::style();
+        style->drawControl(QStyle::CE_ItemViewItem, &opt, painter, widget);   // background, selection
+
+        painter->save();
+        const QRect r = opt.rect.adjusted(3, 0, -3, 0);
+        painter->setClipRect(r);
+        painter->setFont(opt.font);
+        const bool selected = opt.state & QStyle::State_Selected;
+        const QPalette::ColorGroup cg = (opt.state & QStyle::State_Enabled) ? QPalette::Normal : QPalette::Disabled;
+        painter->setPen(opt.palette.color(cg, selected ? QPalette::HighlightedText : QPalette::Text));
+        const QFontMetrics fm(opt.font);
+        int x = r.left();
+        for (qsizetype i = 0; i < hosts.size() && x < r.right(); ++i) {
+            const QIcon icon = iconOf(hosts.at(i));
+            if (!icon.isNull()) {
+                const QList<QSize> sizes = icon.availableSizes();
+                const QSize s = sizes.isEmpty() ? QSize(h, h) : sizes.constFirst();
+                const int w = s.height() > 0 ? h * s.width() / s.height() : h;
+                icon.paint(painter, QRect(x, r.top() + (r.height() - h) / 2, w, h));
+                x += w + 3;
+            }
+            const QString text = hosts.at(i) + (i + 1 < hosts.size() ? QStringLiteral(",") : QString());
+            const QString shown = fm.elidedText(text, Qt::ElideRight, std::max(0, r.right() - x));
+            painter->drawText(QRect(x, r.top(), r.right() - x, r.height()), Qt::AlignVCenter | Qt::AlignLeft, shown);
+            x += fm.horizontalAdvance(text) + 8;
+        }
+        painter->restore();
+    }
+
+private:
+    QIcon iconOf(const QString& host) const
+    {
+        auto it = m_icons.constFind(host);
+        if (it == m_icons.constEnd())
+            it = m_icons.insert(host, m_iconOf ? m_iconOf(host) : QIcon());
+        return *it;
+    }
+
+    IconOf m_iconOf;
+    mutable QHash<QString, QIcon> m_icons;
+};
 
 HosterPanel::HosterPanel(QWidget* parent)
     : QWidget(parent)
@@ -297,8 +426,15 @@ HosterPanel::HosterPanel(QWidget* parent)
     // After the restore: an older saved state pinned the name column to Stretch
     m_tree->header()->setSectionResizeMode(QHeaderView::Interactive);
     m_tree->header()->setStretchLastSection(true);
-    // favicon + server flag before the hoster, as in Options
+    // favicon + server flag before the hoster, as in Options; every host on a package row
     CountryFlags::bindFlagColumn(m_tree, ColHoster);
+    m_hostsDelegate = new HosterHostsDelegate(m_tree, [this](const QString& host) {
+        HosterIcons* icons = HosterIcons::of(m_ipc);
+        return icons ? icons->iconWithFlag(host) : QIcon();
+    });
+    m_tree->setItemDelegateForColumn(ColHoster, m_hostsDelegate);
+    // a bar as the Torrents tab's
+    m_tree->setItemDelegateForColumn(ColProgress, new TorrentProgressDelegate(m_tree));
     connect(CountryFlagsNotifier::instance(), &CountryFlagsNotifier::changed, this, [this] { refreshHosterIcons({}); });
 
     m_addAction = new QAction(menuIcon("Hoster.ico"), tr("Add hoster links..."), this);
@@ -772,13 +908,20 @@ void HosterPanel::updatePackage(qint64 id)
     qint64 speed = 0;
     int complete = 0;
     int downloading = 0;
+    int paused = 0;
+    int failed = 0;
     QStringList hosts;
+    QList<std::pair<qint64, qint64>> parts;
     for (int i = 0; i < row->childCount(); ++i) {
         const QCborMap it = m_items.value(row->child(i)->data(ColName, kItemIdRole).toLongLong());
         const qint64 itemSize = it.value(QStringLiteral("size")).toInteger();
         const int state = int(it.value(QStringLiteral("state")).toInteger());
+        const qint64 itemDone = state == kStateComplete ? itemSize : it.value(QStringLiteral("done")).toInteger();
         size += itemSize;
-        done += state == kStateComplete ? itemSize : it.value(QStringLiteral("done")).toInteger();
+        done += itemDone;
+        parts.append({itemSize, itemDone});
+        paused += state == kStatePaused ? 1 : 0;
+        failed += state > kStateComplete ? 1 : 0;
         speed += it.value(QStringLiteral("speed")).toInteger();
         complete += state == kStateComplete ? 1 : 0;
         downloading += state == kStateDownloading ? 1 : 0;
@@ -792,10 +935,12 @@ void HosterPanel::updatePackage(qint64 id)
     row->setData(ColSize, Qt::UserRole, size);
     row->setText(ColProgress, QStringLiteral("%1%").arg(pct, 0, 'f', 1));
     row->setData(ColProgress, Qt::UserRole, pct);
+    // unfinished items all paused: muted; all failed: red
+    setBar(row, parts, pct, complete == total, paused > 0 && paused + complete == total, failed + complete < total);
     row->setText(ColSpeed, speed > 0 ? formatByteRate(double(speed)) : QString());
     row->setData(ColSpeed, Qt::UserRole, speed);
-    row->setText(ColHoster, hosts.size() <= 2 ? hosts.join(QStringLiteral(", "))
-                                              : tr("%n hoster(s)", nullptr, int(hosts.size())));
+    row->setText(ColHoster, hosts.join(QStringLiteral(", ")));
+    row->setData(ColHoster, kHostsRole, hosts);
     row->setToolTip(ColHoster, hosts.join(QLatin1Char('\n')));
     setHosterIcon(row, hosts.size() == 1 ? hosts.constFirst() : QString());
     QString status = complete == total ? stateText(kStateComplete)
@@ -824,6 +969,8 @@ void HosterPanel::fillRow(QTreeWidgetItem* row, const QCborMap& it)
     row->setData(ColSize, Qt::UserRole, size);
     row->setText(ColProgress, QStringLiteral("%1%").arg(pct, 0, 'f', 1));
     row->setData(ColProgress, Qt::UserRole, pct);
+    setBar(row, {{size, state == kStateComplete ? size : done}}, pct, state == kStateComplete, state == kStatePaused,
+           state <= kStateComplete);
     row->setText(ColSpeed, speed > 0 ? formatByteRate(double(speed)) : QString());
     row->setData(ColSpeed, Qt::UserRole, speed);
     row->setText(ColHoster, it.value(QStringLiteral("host")).toString());
@@ -849,10 +996,59 @@ void HosterPanel::fillRow(QTreeWidgetItem* row, const QCborMap& it)
                                    : tr("Unknown in ed3k: checked as a whole when complete"));
 }
 
+void HosterPanel::previewItem(qint64 id)
+{
+    const QString url = daemonHosterStreamUrl(m_ipc, id, m_streamToken);
+    if (url.isEmpty()) {
+        logWarning(tr("Preview not available — web server is not running or stream token not received."));
+        return;
+    }
+    playStreamUrl(this, url, m_items.value(id).value(QStringLiteral("name")).toString());
+}
+
+qint64 HosterPanel::mainVideoOf(const QList<qint64>& ids) const
+{
+    // extras of a release: played only when nothing else is there
+    static const QRegularExpression extra(QStringLiteral(R"((^|[^a-z])(sample|trailer|teaser|preview|extras?|featurette|promo)([^a-z]|$))"),
+                                          QRegularExpression::CaseInsensitiveOption);
+    qint64 best = 0;
+    std::pair<bool, qint64> bestKey{false, -1};   // (not an extra, size)
+    for (const qint64 id : ids) {
+        const QCborMap it = m_items.value(id);
+        const QString name = it.value(QStringLiteral("name")).toString();
+        if (!previewable(it) || getED2KFileTypeID(name) != ED2KFileType::Video)
+            continue;
+        const std::pair<bool, qint64> key{!extra.match(name).hasMatch(), it.value(QStringLiteral("size")).toInteger()};
+        if (best == 0 || key > bestKey) {
+            best = id;
+            bestKey = key;
+        }
+    }
+    return best;
+}
+
 void HosterPanel::showContextMenu(const QPoint& pos)
 {
     const QList<qint64> ids = selectedIds();
     QMenu menu(this);
+    // a video or audio file, not packed: the player streams it as it downloads; a package
+    // plays its main video
+    const QList<QTreeWidgetItem*> selection = m_tree->selectedItems();
+    const bool onePackage = selection.size() == 1 && selection.first()->data(ColName, kItemIdRole).toLongLong() == 0;
+    qint64 previewId = 0;
+    if (onePackage) {
+        previewId = mainVideoOf(ids);
+    } else if (ids.size() == 1) {
+        const QCborMap it = m_items.value(ids.first());
+        if (previewable(it) && isPlayableMedia(it.value(QStringLiteral("name")).toString()))
+            previewId = ids.first();
+    }
+    menu.setToolTipsVisible(true);   // a package's: which file plays
+    QAction* preview = menu.addAction(menuIcon("Preview.ico"), tr("Preview"));
+    preview->setEnabled(previewId != 0 && !m_streamToken.isEmpty());
+    if (onePackage && previewId != 0)
+        preview->setToolTip(m_items.value(previewId).value(QStringLiteral("name")).toString());
+    menu.addSeparator();
     QAction* pause = menu.addAction(menuIcon("Pause.ico"), tr("Pause"));
     QAction* resume = menu.addAction(menuIcon("Start.ico"), tr("Resume"));
     // from the first link again; skipped puzzles are asked again
@@ -912,13 +1108,17 @@ void HosterPanel::showContextMenu(const QPoint& pos)
             passwordIds << id;
     }
     password->setEnabled(!passwordIds.isEmpty());
-    if (ids.size() == 1) {
-        const int state = int(m_items.value(ids.first()).value(QStringLiteral("state")).toInteger());
-        pause->setEnabled(state != kStateComplete && state != kStatePaused);
-        resume->setEnabled(state != kStateComplete && state != 3 && state != 4 && state != 5);
-    }
+    // only what one of the selected can do: pause a running one, resume a paused or failed one
+    const auto stateOf = [this](qint64 id) { return m_items.value(id).value(QStringLiteral("state")).toInteger(); };
+    pause->setEnabled(std::ranges::any_of(ids, [&](qint64 id) { return stateOf(id) < kStatePaused; }));
+    resume->setEnabled(std::ranges::any_of(ids, [&](qint64 id) {
+        const auto state = stateOf(id);
+        return state == kStatePaused || state > kStateComplete;
+    }));
     QAction* chosen = menu.exec(m_tree->viewport()->mapToGlobal(pos));
-    if (chosen == pause)
+    if (chosen == preview && previewId != 0)
+        previewItem(previewId);
+    else if (chosen == pause)
         act(QStringLiteral("pause"));
     else if (chosen == resume)
         act(QStringLiteral("resume"));
@@ -1018,7 +1218,10 @@ void HosterPanel::onAccountChecked(const IpcMessage& msg)
     if (m_codeAsks.value(key))
         return;
     const QString title = r.value(QStringLiteral("codeTitle")).toString();
-    const QString text = r.value(QStringLiteral("codeText")).toString();
+    QString text = r.value(QStringLiteral("codeText")).toString();
+    if (r.value(QStringLiteral("codeAgain")).toBool())
+        text = tr("The last code was not accepted (it may have expired). Use the newest one you got.")
+               + (text.trimmed().isEmpty() ? QString() : QStringLiteral("\n\n") + text.trimmed());
     // never a dialog inside the IPC read
     QTimer::singleShot(0, this, [this, host, user, title, text] { askAccountCode(host, user, title, text); });
 }
@@ -1479,6 +1682,8 @@ void HosterPanel::refreshHosterIcons(const QString& host)
         update(row);
     for (QTreeWidgetItem* row : std::as_const(m_packages))
         update(row);
+    m_hostsDelegate->clearIcons();   // package rows with several hosts
+    m_tree->viewport()->update();
 }
 
 } // namespace eMule

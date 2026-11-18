@@ -273,6 +273,8 @@ void connectKadNotesSearch(DetailDialog* dialog, IpcClient* ipc,
                     };
                     QTimer::singleShot(8000, dlgPtr, refresh);
                     QTimer::singleShot(20000, dlgPtr, refresh);
+                    // an ed3k keyword lookup (File Names, Metadata) may take longer
+                    QTimer::singleShot(45000, dlgPtr, refresh);
                 });
         });
 }

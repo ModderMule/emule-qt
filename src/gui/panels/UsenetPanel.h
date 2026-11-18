@@ -65,6 +65,8 @@ public:
     /// Every file route funnels here, and only the Add NZB dialog has one to
     /// offer — a drop is a quick action, and the context menu can set it after.
     void addNzbFile(const QString& path, const NzbAddChoices& choices = {});
+    /// An .nzb's bytes (an ed3k room's file): the Add NZB dialog first, nothing queued without OK.
+    void promptAddNzbData(const QString& name, const QByteArray& data);
 
     [[nodiscard]] QStringList categoryChoices() const;
 
@@ -137,6 +139,8 @@ private:
 
     void onContextMenu(const QPoint& pos);
     void onAddNzb();
+    /// The Add NZB dialog for @p paths, then queued
+    void confirmAddNzbFiles(const QStringList& paths);
     void onSetPassword();
     void onPause();
     void onResume();
@@ -178,7 +182,7 @@ private:
     [[nodiscard]] QPair<QString, int> previewTarget() const;
 
     /// Build the preview URL for one inner file and hand it to the player.
-    void launchEntry(const QString& itemId, int fileIndex, int entry);
+    void launchEntry(const QString& itemId, int fileIndex, int entry, const QString& entryName);
 
     /// Why the current selection cannot be previewed, when the daemon said so.
     /// Empty when the answer is "not yet" rather than "not ever".

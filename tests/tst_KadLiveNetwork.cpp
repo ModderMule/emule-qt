@@ -223,7 +223,10 @@ void tst_KadLiveNetwork::onReadyRead()
         if (dr.length > 1 && dr.data && decrypted) {
             uint8 innerProto = dr.data[0];
             bool validKey = dr.receiverVerifyKey != 0;
-            KadUDPKey senderUDPKey(dr.senderVerifyKey, senderIP);
+            // was: KadUDPKey senderUDPKey(dr.senderVerifyKey, senderIP);
+            // keyed to OUR public IP as CoreSession / MFC ClientUDPSocket.cpp:122; the sender's
+            // IP made firewalledCheck() skip every FIREWALLED2_REQ (getKeyValue(publicIP) == 0)
+            KadUDPKey senderUDPKey(dr.senderVerifyKey, theApp.publicIP());
 
             // Debug: log decrypted packet details for large packets (SEARCH_RES)
             if (dr.length > 100) {

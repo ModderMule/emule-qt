@@ -9,6 +9,8 @@
 #include "ArchivePreviewPanel.h"
 #include "MetadataPage.h"
 #include "app/IpcClient.h"
+#include "controls/ArchiveContentsView.h"
+#include "utils/ArchiveContentsIpc.h"
 #include "controls/AbstractListView.h"
 #include "controls/ContentScrollArea.h"
 #include "prefs/Preferences.h"
@@ -229,6 +231,8 @@ void FileDetailDialog::setDetails(const QCborMap& details)
     m_chkHostname         = nullptr;
     m_chkHtml             = nullptr;
     m_chkMediaInfo        = nullptr;
+    m_archive             = nullptr;
+    m_ed3kMeta            = nullptr;
     delete m_tabs;
     m_tabs = nullptr;
 
@@ -243,17 +247,13 @@ void FileDetailDialog::buildTabs(const QCborMap& details, int tabToSelect)
 {
     m_tabs = new QTabWidget;
 
-    // an ed3k download: no eD2K names, comments, tags or link; its General page only
+    // was: an ed3k download showed its General page only
     if (str(details, QLatin1StringView("network")) == QLatin1String("ed3k")) {
-        if (thePrefs.useOriginalIcons())
-            m_tabs->addTab(createGeneralTab(details), skinIcon(QStringLiteral(":/icons/FileInfo.ico")), tr("General"));
-        else
-            m_tabs->addTab(createGeneralTab(details), tr("General"));
-        m_tabs->setCurrentIndex(0);
-        contentLayout()->addWidget(m_tabs);
-        fitToContent();
+        buildEd3kTabs(details, tabToSelect);
+        m_tabIsEnum = false;
         return;
     }
+    m_tabIsEnum = false;
 
     if (thePrefs.useOriginalIcons()) {
         m_tabs->addTab(createGeneralTab(details),    skinIcon(QStringLiteral(":/icons/FileInfo.ico")),     tr("General"));
@@ -351,14 +351,16 @@ QWidget* FileDetailDialog::createGeneralTab(const QCborMap& d)
     if (!filePath.isEmpty())
         addRow(tr("File Path"), filePath);
 
-    addRow(tr("Hash (MD4)"), str(d, QLatin1StringView("hash")));
+    // ed3k-only: hashed while eD2K was disabled, `hash` is no MD4
+    const bool ed3kOnly = d.value(QLatin1StringView("ed3kOnly")).toBool();
+    addRow(tr("Hash (MD4)"), ed3kOnly ? tr("None (hashed while eD2K was disabled)") : str(d, QLatin1StringView("hash")));
 
     const QString aich = str(d, QLatin1StringView("aichHash"));
-    if (!aich.isEmpty())
+    if (!aich.isEmpty() && !ed3kOnly)
         addRow(tr("AICH Hash"), aich);
 
     // A file shared on ed3k too: its BLAKE3 root (hashed here) and what is published
-    if (d.value(QLatin1StringView("ed3kEnabled")).toBool()) {
+    if (d.value(QLatin1StringView("ed3kEnabled")).toBool() || ed3kOnly) {
         const QString root = str(d, QLatin1StringView("ed3kRoot"));
         addRow(tr("BLAKE3 Hash"), root.isEmpty() ? tr("Not hashed yet") : root);
         QStringList published;
@@ -367,6 +369,11 @@ QWidget* FileDetailDialog::createGeneralTab(const QCborMap& d)
         if (d.value(QLatin1StringView("ed3kKeywordsPublished")).toBool())
             published << tr("Keywords");
         addRow(tr("Published on ed3k"), published.isEmpty() ? tr("No") : published.join(QStringLiteral(", ")));
+        if (const QString key = str(d, QLatin1StringView("ed3kKey")); !key.isEmpty())
+            addRow(tr("Key"), ed3kKeyText(key));
+        // every network, joined or not, and why one was left out (hops.md §1)
+        if (const QString joins = ed3kJoinsText(d.value(QLatin1StringView("ed3kJoins")).toArray()); !joins.isEmpty())
+            addRow(tr("Joins"), joins);
     }
 
     const qint64 fileSize = num(d, QLatin1StringView("fileSize"));
@@ -560,6 +567,8 @@ QWidget* FileDetailDialog::createDownloadGeneralTab(const QCborMap& d)
         ed3k.pair(tr("Key"), ed3kKeyText(str(d, QLatin1StringView("ed3kKey"))));
         if (!aliases.isEmpty())
             ed3k.wide(tr("Also known as"), aliases.join(u'\n'));
+        if (const QString joins = ed3kJoinsText(d.value(QLatin1StringView("ed3kJoins")).toArray()); !joins.isEmpty())
+            ed3k.wide(tr("Joins"), joins);
     }
 
     // ── ed3k: the eD2K download joined from ed3k (§14.2), not on MFC's page
@@ -581,6 +590,9 @@ QWidget* FileDetailDialog::createDownloadGeneralTab(const QCborMap& d)
         ed3k.pair(tr("Transferred"), sizeAndShare(count("ed3kBytes"), fileSize));
         if (!multi && !aliases.isEmpty())
             ed3k.wide(tr("Also known as"), aliases.join(u'\n'));
+        if (!multi)
+            if (const QString joins = ed3kJoinsText(d.value(QLatin1StringView("ed3kJoins")).toArray()); !joins.isEmpty())
+                ed3k.wide(tr("Joins"), joins);
     }
 
     layout->addStretch(1);
@@ -754,6 +766,16 @@ void FileDetailDialog::populateFileNames(const QCborMap& d)
 void FileDetailDialog::applyDetails(const QCborMap& details)
 {
     populateFileNames(details);
+    // ed3k: the tags came with a Kad answer; the page is built whole
+    if (m_ed3kMeta && details.contains(QLatin1StringView("tags"))) {
+        if (auto* layout = m_ed3kMeta->layout()) {
+            while (QLayoutItem* item = layout->takeAt(0)) {
+                delete item->widget();
+                delete item;
+            }
+            layout->addWidget(createMetadataTab(details));
+        }
+    }
     if (m_commentsPanel)
         m_commentsPanel->setDetails(details);
 }
@@ -902,6 +924,142 @@ QWidget* FileDetailDialog::createEd2kLinkTab(const QCborMap& d)
     layout->addLayout(btnLayout);
 
     return page;
+}
+
+// ── ed3k download ──────────────────────────────────────────────────────
+
+void FileDetailDialog::buildEd3kTabs(const QCborMap& details, int tabToSelect)
+{
+    // was: no File Names (sources tell no names) and no Metadata (no eD2K tags); now both from
+    // the KEYWORD records others publish for the root, looked up when either tab is opened
+    const bool icons = thePrefs.useOriginalIcons();
+    const auto add = [&](QWidget* page, const char* icon, const QString& title) {
+        return icons ? m_tabs->addTab(page, skinIcon(QStringLiteral(":/icons/") + QLatin1StringView(icon)), title)
+                     : m_tabs->addTab(page, title);
+    };
+    add(createGeneralTab(details), "FileInfo.ico", tr("General"));
+    const int names = add(createFileNamesTab(details), "FileRename.ico", tr("File Names"));
+    if (m_fileNamesEmptyLabel)
+        m_fileNamesEmptyLabel->setText(tr("No other names found in ed3k Kad yet. Opening this tab looks them up."));
+    const int comments = add(createCommentsTab(details), "FileComments.ico", tr("Comments"));
+    const int media = add(createMediaInfoTab(details), "MediaInfo.ico", tr("Media Info"));
+    m_ed3kMeta = new QWidget;
+    auto* metaLayout = new QVBoxLayout(m_ed3kMeta);
+    metaLayout->setContentsMargins(0, 0, 0, 0);
+    metaLayout->addWidget(createMetadataTab(details));
+    const int meta = add(m_ed3kMeta, "MetaData.ico", tr("Metadata"));
+    const int link = add(createEd3kLinkTab(details), "eD2kLink.ico", tr("ed3k Link"));
+    m_ed3kKadAsked = false;
+
+    // what an archive (its first volume, or a lone one) holds, as recorded in ed3k
+    const QString name = str(details, QLatin1StringView("fileName"));
+    int archive = -1;
+    if (ArchiveContentsView::opensArchive(name)) {
+        m_archive = new ArchiveContentsView(m_tabs, false);
+        m_archivePayload = QCborMap{{QStringLiteral("volumes"),
+                                     QCborArray{QCborMap{{QStringLiteral("name"), name},
+                                                         {QStringLiteral("root"), str(details, QLatin1StringView("hash"))}}}}};
+        m_archiveFolder = QFileInfo(name).completeBaseName();
+        archive = add(m_archive, "FileInfo.ico", tr("Archive"));
+        attachArchive();
+    }
+    int preview = -1;
+    const QString type = getFileTypeByName(name);
+    if (type.compare(QLatin1StringView("Arc"), Qt::CaseInsensitive) == 0
+        || type.compare(QLatin1StringView("Iso"), Qt::CaseInsensitive) == 0)
+        preview = add(createArchivePreviewTab(details), "ArchivePreview.ico", tr("Archive Preview"));
+    // no table of contents in the data here: the archive record in Kad tells (the Archive tab)
+    m_archiveFound = -2;
+    if (auto* panel = preview >= 0 && m_archive ? qobject_cast<ArchivePreviewPanel*>(m_tabs->widget(preview)) : nullptr) {
+        const auto kadText = [](int found) {
+            return found > 0 ? tr("Not in the data downloaded yet. Listed in Kad: see the Archive tab.")
+                 : found == 0 ? tr("Nothing found in Kad.") : tr("Nothing found in Kad: the lookup failed.");
+        };
+        auto missing = std::make_shared<bool>(false);
+        connect(panel, &ArchivePreviewPanel::scanFinished, this, [missing] { *missing = false; });
+        connect(panel, &ArchivePreviewPanel::contentsNotFound, this, [this, panel, missing, kadText] {
+            *missing = true;
+            if (m_archiveFound > -2) {
+                panel->setStatusText(kadText(m_archiveFound));
+                return;
+            }
+            panel->setStatusText(tr("Looking up in Kad..."));
+            if (m_archive)
+                m_archive->ensureLookup();
+        });
+        connect(m_archive, &ArchiveContentsView::lookupFinished, panel, [this, panel, missing, kadText](int found) {
+            m_archiveFound = found;
+            if (*missing)
+                panel->setStatusText(kadText(found));
+        });
+    }
+
+    int index = tabToSelect;
+    if (m_tabIsEnum) {
+        switch (tabToSelect) {
+        case FileNames:      index = names; break;
+        case Comments:       index = comments; break;
+        case MediaInfo:      index = media; break;
+        case Metadata:       index = meta; break;
+        case Ed2kLink:       index = link; break;
+        case ArchivePreview: index = preview >= 0 ? preview : 0; break;
+        default:             index = 0; break;
+        }
+    }
+    // names and tags: one Kad lookup per file, when either tab is shown
+    const QString hash = str(details, QLatin1StringView("hash"));
+    const bool kad = details.value(QLatin1StringView("kadConnected")).toBool();
+    const auto askKad = [this, names, meta, hash, name, kad](int tab) {
+        if ((tab == names || tab == meta) && !m_ed3kKadAsked && kad) {
+            m_ed3kKadAsked = true;
+            emit searchKadNotes(hash, name);
+        }
+    };
+    connect(m_tabs, &QTabWidget::currentChanged, this, [this, archive, askKad](int tab) {
+        if (tab == archive && m_archive)
+            m_archive->ensureLookup();
+        askKad(tab);
+    });
+    m_tabs->setCurrentIndex(std::clamp(index, 0, m_tabs->count() - 1));
+    if (m_archive && m_tabs->currentIndex() == archive)
+        QTimer::singleShot(0, m_archive, &ArchiveContentsView::ensureLookup);
+    QTimer::singleShot(0, this, [this, askKad] { askKad(m_tabs->currentIndex()); });
+    contentLayout()->addWidget(m_tabs);
+    fitToContent();
+}
+
+QWidget* FileDetailDialog::createEd3kLinkTab(const QCborMap& d)
+{
+    auto* page = new QWidget;
+    auto* layout = new QVBoxLayout(page);
+    auto* edit = new QTextEdit;
+    edit->setReadOnly(true);
+    edit->setFont(QFont(QStringLiteral("monospace")));
+    edit->setPlainText(str(d, QLatin1StringView("ed3kLink")));
+    layout->addWidget(edit, 1);
+    auto* btnLayout = new QHBoxLayout;
+    btnLayout->addStretch();
+    auto* copyBtn = new QPushButton(tr("Copy to Clipboard"));
+    connect(copyBtn, &QPushButton::clicked, this, [edit] { eMule::Clipboard::setText(edit->toPlainText()); });
+    copyBtn->setEnabled(!edit->toPlainText().isEmpty());
+    btnLayout->addWidget(copyBtn);
+    layout->addLayout(btnLayout);
+    return page;
+}
+
+void FileDetailDialog::setIpc(IpcClient* ipc)
+{
+    m_ipc = ipc;
+    attachArchive();
+}
+
+void FileDetailDialog::attachArchive()
+{
+    if (!m_ipc || !m_archive)
+        return;
+    const QCborMap payload = m_archivePayload;
+    ArchiveContentsIpc::attach(m_archive, m_ipc, [payload] { return std::pair{QStringLiteral("roots"), payload}; },
+                               m_archiveFolder);
 }
 
 // ── Archive Preview tab ────────────────────────────────────────────────

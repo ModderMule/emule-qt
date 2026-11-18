@@ -31,6 +31,7 @@ public:
 
     /// TLS identity for remote GUIs. Without one only loopback clients get in.
     void setTlsIdentity(const QSslCertificate& cert, const QSslKey& key);
+    [[nodiscard]] QSslCertificate tlsCertificate() const { return m_cert; }
 
     /// Start listening on each of @p addresses at @p port. Fails only when none
     /// listens; the others are logged.
@@ -39,6 +40,9 @@ public:
     /// Listen on @p addresses from now on, same port: clients and the listeners
     /// still wanted stay.
     void relisten(const QList<QHostAddress>& addresses);
+    /// Move every listener to @p addresses now (Options › Create Connect Script).
+    /// Clients stay. When none opens, the old listeners come back and @p error says why.
+    bool switchListen(const QList<QHostAddress>& addresses, QString* error);
     /// Where it listens now.
     [[nodiscard]] QList<QHostAddress> listenAddresses() const;
     /// Why the last start() failed, with a hint where one helps.
@@ -84,6 +88,10 @@ public:
     /// Tells every GUI the category list changed.
     void notifyCategoriesChanged();
 
+    /// Takes a plain socket that carries a paired phone's IPC from the ed3k tunnel
+    /// (Ed3kTunnelBridge): a remote client that needs the token. Re-parented here.
+    void adoptTunnel(QTcpSocket* socket, const QString& peer);
+
 signals:
     /// A client finished its handshake.
     void clientReady();
@@ -109,11 +117,16 @@ signals:
     /// Forwarded from any client's IpcClientHandler::indexerConfigChanged.
     void indexerConfigChanged();
 
+    /// ipc.listenAddress changed at runtime (ListenIpcAddress)
+    void listenHostChanged(const QString& value);
+
 private slots:
     void onSocketReady(QSslSocket* socket, bool isLocal);
     void onClientDisconnected(IpcClientHandler* handler);
 
 private:
+    /// A handler for @p socket with its signals wired up.
+    IpcClientHandler* addClient(QTcpSocket* socket, bool isLocal);
     /// Opens and keeps a listener on @p address at m_port; else why not in @p error.
     bool openListener(const QHostAddress& address, QString* error);
 

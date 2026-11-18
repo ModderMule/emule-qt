@@ -125,7 +125,15 @@ QCborMap sharedFileRow(KnownFile* kf, const SharedFileList::ShareRules& rules,
              theApp.sharedFileList
                  && !theApp.sharedFileList->shouldBeShared(rules, kf->path(), kf->filePath(), true));
     m.insert(QStringLiteral("path"), QFileInfo(kf->filePath()).absolutePath());
-    m.insert(QStringLiteral("ed2kLink"), kf->getED2kLink());
+    // ed3k-only (eD2K disabled when hashed): `hash` is its root's head, no eD2K link
+    if (kf->isEd3kOnly()) {
+        m.insert(QStringLiteral("ed3kOnly"), true);
+        m.insert(QStringLiteral("ed3kRoot"), QString::fromLatin1(kf->ed3kOnlyRoot().toHex()));
+    } else if (const QString root = Ed3kHideBridge::sharedRoot(QByteArray(reinterpret_cast<const char*>(kf->fileHash()), 16));
+               !root.isEmpty()) {
+        m.insert(QStringLiteral("ed3kRoot"), root);   // also hashed for ed3k: Web Services #ed3kroot
+    }
+    m.insert(QStringLiteral("ed2kLink"), kf->getED2kLink());   // empty for ed3k-only
     m.insert(QStringLiteral("isPartFile"), isPartFile);
     if (isPartFile)   // the Incomplete Files node splits by it
         m.insert(QStringLiteral("category"), static_cast<qint64>(static_cast<const PartFile*>(kf)->category()));

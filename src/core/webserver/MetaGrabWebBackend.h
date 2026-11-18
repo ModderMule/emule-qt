@@ -5,7 +5,7 @@
 ///
 /// The metafile lives behind the answering server's Meta API, which only the
 /// daemon talks to (MetaSearchService); DaemonApp installs the implementation.
-/// No REST routes use it.
+/// POST /api/v1/search/{id}/download uses it too.
 
 #include "utils/Types.h"
 

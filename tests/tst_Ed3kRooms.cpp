@@ -12,7 +12,10 @@
 #include "panels/Ed3kRoomTab.h"
 
 #include <QCborArray>
+#include <QBuffer>
 #include <QCborMap>
+#include <QImage>
+#include <QRandomGenerator>
 #include <QDir>
 #include <QFile>
 #include <QLineEdit>
@@ -21,6 +24,8 @@
 
 #include <QTemporaryDir>
 #include <QTest>
+
+#include "utils/MediaSniff.h"
 
 using namespace eMule;
 using eMule::ed3k::Ed3kHideSettings;
@@ -162,6 +167,8 @@ private slots:
     void leaveKeepsOrDropsTheRoomKey();
     void postsStoredAcrossRestart();
     void postsOfPrivateRoomSealed();
+    void mediaFetchedFromNeighbour_data();
+    void mediaFetchedFromNeighbour();
 };
 
 void tst_Ed3kRooms::cleanup()
@@ -420,6 +427,10 @@ void tst_Ed3kRooms::banDropsPosts()
     QTRY_VERIFY_WITH_TIMEOUT(!texts(ra, *room).contains(QStringLiteral("spam 1")), 10000);
     QVERIFY(removed.count() >= 1);
     QVERIFY(std::ranges::any_of(notices, [](const QList<QVariant>& n) { return n.at(1).toInt() == int(Ed3kRooms::Notice::Banned); }));
+    // the moderator's ban list and member status (menus, "Banned members...")
+    QCOMPARE(ra.bans(*room).size(), std::size_t(1));
+    QVERIFY(ra.bans(*room).front().member == troll);
+    QVERIFY(ra.memberStatus(*room, troll) & ED3K_ROOM_MEMBER_BANNED);
     // a later post of B does not show at A
     (void)post(rb, *room, QStringLiteral("spam 2"));
     QTest::qWait(1500);
@@ -432,6 +443,8 @@ void tst_Ed3kRooms::banDropsPosts()
     lift.append(Ed3kRooms::keyText(troll));
     lift.append(qint64(0));
     QVERIFY(ask(&ra, lift).fieldBool(0));
+    QVERIFY(ra.bans(*room).empty());
+    QCOMPARE(ra.memberStatus(*room, troll) & ED3K_ROOM_MEMBER_BANNED, 0u);
 }
 
 void tst_Ed3kRooms::roomsAcrossRestart()
@@ -903,6 +916,144 @@ void tst_Ed3kRooms::postsOfPrivateRoomSealed()
     a.stop();
     thePrefs.setEd3kRoomHistoryStore(true);
     ra.applyHistoryPrefs();
+}
+
+void tst_Ed3kRooms::mediaFetchedFromNeighbour_data()
+{
+    QTest::addColumn<int>("flags");
+    QTest::newRow("public") << 0;
+    QTest::newRow("private, sealed") << int(ED3K_ROOM_PRIVATE);
+}
+
+void tst_Ed3kRooms::mediaFetchedFromNeighbour()
+{
+    // room.md §2.6, §4.6: A posts an image, B gets it from its neighbour A
+    QFETCH(int, flags);
+    thePrefs.setChatRoomMedia(true);
+    thePrefs.setEd3kRoomMediaPerHour(60);
+    QTemporaryDir da, db;
+    QVERIFY(da.isValid() && db.isValid());
+    Ed3kSession a, b;
+    QVERIFY(a.start(loopback(da.path())));
+    QVERIFY(b.start(loopback(db.path())));
+    Ed3kRooms ra(a), rb(b);
+    QList<IpcMessage> pushes;
+    Ed3kRoomsBridge::connectPushes(rb, [&](const IpcMessage& m) { pushes.append(roundTrip(m)); });
+
+    const IpcMessage made = create(ra, QStringLiteral("Memes"), flags, QStringLiteral("alice"));
+    QVERIFY(made.fieldBool(0));
+    const auto room = Ed3kRooms::roomFrom(made.fieldMap(1).value(QStringLiteral("room")).toString());
+    QVERIFY(room.has_value());
+    // no media yet: refused
+    QImage img(40, 30, QImage::Format_RGB32);
+    img.fill(Qt::darkCyan);
+    QByteArray png;
+    {
+        QBuffer buf(&png);
+        buf.open(QIODevice::WriteOnly);
+        QVERIFY(img.save(&buf, "PNG"));
+    }
+    const auto postImage = [&](Ed3kRooms& rooms) {
+        IpcMessage m(IpcMsgType::PostEd3kRoomMedia, 30);
+        m.append(hexOf(*room));
+        m.append(QStringLiteral("tok%1").arg(QRandomGenerator::global()->generate()));
+        m.append(qint64(0));
+        m.append(qint64(png.size()));
+        m.append(QCborValue(png));
+        m.append(QStringLiteral("look"));
+        m.append(QString());
+        m.append(QStringLiteral("cyan.png"));
+        m.append(qint64(40));
+        m.append(qint64(30));
+        return ask(&rooms, m);
+    };
+    QVERIFY(!postImage(ra).fieldBool(0));
+    // owner allows 6.5 MiB and two days
+    IpcMessage limits(IpcMsgType::SetEd3kRoomLimits, 31);
+    limits.append(hexOf(*room));
+    limits.append(qint64(6815744));
+    limits.append(qint64(48));
+    limits.append(qint64(2000));
+    QVERIFY(ask(&ra, limits).fieldBool(0));
+    QCOMPARE(rowOf(ra, *room).value(QStringLiteral("mediaMax")).toInteger(), 6815744);
+    QCOMPARE(rowOf(ra, *room).value(QStringLiteral("keepHours")).toInteger(), 48);
+
+    QVERIFY(join(rb, made.fieldMap(1).value(QStringLiteral("link")).toString(), QStringLiteral("bob")).fieldBool(0));
+    QVERIFY(connectTo(rb, *room, a));
+    QTRY_VERIFY_WITH_TIMEOUT(rb.find(*room)->joined, 30000);
+    QTRY_COMPARE_WITH_TIMEOUT(rb.find(*room)->mediaMax, std::uint64_t(6815744), 30000);
+
+    const IpcMessage sent = postImage(ra);
+    QVERIFY2(sent.fieldBool(0), qPrintable(sent.fieldMap(1).value(QStringLiteral("error")).toVariant().toString()));
+    // B: the post with its media, fetched by itself (an image, under the hourly limit)
+    QTRY_VERIFY_WITH_TIMEOUT(std::ranges::any_of(rb.find(*room)->posts, [](const Ed3kRooms::Post& p) { return p.media.has_value(); }), 30000);
+    const auto& posts = rb.find(*room)->posts;
+    const auto it = std::ranges::find_if(posts, [](const Ed3kRooms::Post& p) { return p.media.has_value(); });
+    QCOMPARE(it->text, QStringLiteral("look"));
+    QCOMPARE(it->media->name, QStringLiteral("cyan.png"));
+    QCOMPARE(it->media->type, QStringLiteral("image/png"));
+    QCOMPARE(it->media->key.has_value(), flags != 0);
+    const auto root = it->media->root;
+    QTRY_COMPARE_WITH_TIMEOUT(int(rb.media().state(root)), int(eMule::ed3k::Ed3kRoomMedia::State::Ready), 60000);
+    // the state reached the GUI's pushes
+    QVERIFY(std::ranges::any_of(pushes, [](const IpcMessage& m) {
+        return m.type() == IpcMsgType::PushEd3kRoomMedia && m.fieldInt(2) == int(eMule::ed3k::Ed3kRoomMedia::State::Ready);
+    }));
+    // B shows the opened file, over IPC as the GUI asks
+    IpcMessage get(IpcMsgType::GetEd3kRoomMedia, 32);
+    get.append(eMule::ed3k::Ed3kRoomMedia::rootHex(root));
+    get.append(qint64(0));
+    const IpcMessage got = ask(&rb, get);
+    QVERIFY(got.fieldBool(0));
+    QCOMPARE(got.fieldMap(1).value(QStringLiteral("data")).toByteArray(), png);
+    // on disk as transferred: sealed in a room with a secret
+    QFile cached(QDir(b.stateDir()).filePath(QStringLiteral("rooms/media/%1").arg(eMule::ed3k::Ed3kRoomMedia::rootHex(root))));
+    QVERIFY(cached.open(QIODevice::ReadOnly));
+    QCOMPARE(cached.readAll() == png, flags == 0);
+
+    // §2.6 `files`: an NZB only where the owner allows other small files; never fetched by itself
+    const QByteArray nzb = "<?xml version=\"1.0\"?>\n<nzb xmlns=\"http://www.newzbin.com/DTD/2003/nzb\">\n</nzb>\n";
+    const auto postNzb = [&]() {
+        IpcMessage m(IpcMsgType::PostEd3kRoomMedia, 33);
+        m.append(hexOf(*room));
+        m.append(QStringLiteral("tok%1").arg(QRandomGenerator::global()->generate()));
+        m.append(qint64(0));
+        m.append(qint64(nzb.size()));
+        m.append(QCborValue(nzb));
+        m.append(QString());
+        m.append(QString());
+        m.append(QStringLiteral("release.nzb"));
+        m.append(qint64(0));
+        m.append(qint64(0));
+        return ask(&ra, m);
+    };
+    QVERIFY(!postNzb().fieldBool(0));
+    limits.append(true);
+    QVERIFY(ask(&ra, limits).fieldBool(0));
+    QVERIFY(rowOf(ra, *room).value(QStringLiteral("files")).toBool());
+    QTRY_VERIFY_WITH_TIMEOUT(rb.find(*room)->files, 30000);
+    const IpcMessage sentNzb = postNzb();
+    QVERIFY2(sentNzb.fieldBool(0), qPrintable(sentNzb.fieldMap(1).value(QStringLiteral("error")).toVariant().toString()));
+    const auto isNzb = [](const Ed3kRooms::Post& p) { return p.media && p.media->type == u"application/x-nzb"; };
+    QTRY_VERIFY_WITH_TIMEOUT(std::ranges::any_of(rb.find(*room)->posts, isNzb), 30000);
+    const auto nzbPost = std::ranges::find_if(rb.find(*room)->posts, isNzb);
+    QCOMPARE(nzbPost->text, QStringLiteral("release.nzb"));
+    const auto nzbRoot = nzbPost->media->root;
+    QTRY_COMPARE_WITH_TIMEOUT(int(rb.media().state(nzbRoot)), int(eMule::ed3k::Ed3kRoomMedia::State::Click), 10000);
+    QVERIFY(rb.media().fetch(*room, nzbRoot));
+    QTRY_COMPARE_WITH_TIMEOUT(int(rb.media().state(nzbRoot)), int(eMule::ed3k::Ed3kRoomMedia::State::Ready), 60000);
+    QCOMPARE(rb.media().read(nzbRoot).value_or(QByteArray()), nzb);
+    // any other file is refused by the bytes and name
+    QCOMPARE(eMule::MediaSniff::fileKind(nzb, QStringLiteral("x.exe")), eMule::MediaSniff::FileKind::None);
+    QCOMPARE(eMule::MediaSniff::fileKind(QByteArray("a\0b", 3),QStringLiteral("x.txt")), eMule::MediaSniff::FileKind::None);
+    QCOMPARE(eMule::MediaSniff::fileKind(QByteArray("plain words\n"), QStringLiteral("x.TXT")), eMule::MediaSniff::FileKind::Text);
+    QCOMPARE(eMule::MediaSniff::fileKind(QByteArray(120, 'A') + "==\n", QStringLiteral("l.dlc")), eMule::MediaSniff::FileKind::Dlc);
+    QCOMPARE(eMule::MediaSniff::fileKind(QByteArray(120, '<'), QStringLiteral("l.dlc")), eMule::MediaSniff::FileKind::None);
+    QCOMPARE(eMule::MediaSniff::fileKind(png, QStringLiteral("cyan.txt")), eMule::MediaSniff::FileKind::None);
+    const QByteArray torrent("d8:announce9:http://x/4:infod6:lengthi5e4:name1:a12:piece lengthi16384e6:pieces20:01234567890123456789ee");
+    QCOMPARE(eMule::MediaSniff::fileKind(torrent, QStringLiteral("a.torrent")), eMule::MediaSniff::FileKind::Torrent);
+    QCOMPARE(eMule::MediaSniff::fileKind(QByteArray("d4:name1:ae"), QStringLiteral("a.torrent")), eMule::MediaSniff::FileKind::None);
+    QCOMPARE(eMule::MediaSniff::fileType(eMule::MediaSniff::FileKind::Torrent), QStringLiteral("application/x-bittorrent"));
 }
 
 #include "tst_Ed3kRooms.moc"

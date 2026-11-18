@@ -57,6 +57,10 @@ struct JdResolverConfig {
     /// hoster downloads on: plugins unpacked, sidecar may start. Off: nothing is created and
     /// the unpacked plugins are removed (derived from zip; unpacked again when switched on)
     bool enabled = true;
+    /// ffmpeg + ffprobe for HLS/DASH (Ed3kFfmpegTool); empty: JD's own lookup (PATH). A change
+    /// goes to a running sidecar (setTools), no restart
+    QString ffmpeg;
+    QString ffprobe;
     /// tests only: JD's DirectHTTP takes http://127.0.0.1 links as a hoster (mock hoster)
     bool loopbackHosters = false;
 };
@@ -151,6 +155,8 @@ public:
     void setProxy(const QString& url) override;
     void setGenericHttp(bool on) override;
     void setBindAddress(const QString& address);
+    /// No ffmpeg comes (download refused or failed): the tasks waiting for it end with @p error
+    void toolsFailed(const QString& error);
 
     /// Parses one event line of the sidecar (tests). nullopt: not an event of a task.
     [[nodiscard]] static std::optional<std::pair<TaskId, ResolverEvent>> parseEvent(const QByteArray& line);
@@ -158,6 +164,9 @@ public:
 signals:
     /// A link wants plugins and there are none: fetch the first zip
     void pluginsNeeded();
+    /// An HLS/DASH link needs ffmpeg + ffprobe and the sidecar has none: find or fetch them,
+    /// then setConfig() with the paths, or toolsFailed()
+    void toolsNeeded();
 
 private:
     /// Sends @p req with a new id; starts the sidecar first.
@@ -180,6 +189,8 @@ private:
     bool ensureStarted();
     /// m_config.solvers to the running sidecar
     void sendSolvers();
+    /// m_config's ffmpeg paths (or @p error) to the running sidecar
+    void sendTools(const QString& error = {});
     void stop();
     /// Closes socket and server; queued requests are dropped
     void closeChannel();

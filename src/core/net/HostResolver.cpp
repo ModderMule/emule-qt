@@ -4,9 +4,12 @@
 
 #include "net/HostResolver.h"
 
+#include "net/DohResolver.h"
 #include "utils/Log.h"
 
+#include <QCoreApplication>
 #include <QHostInfo>
+#include <QThread>
 #include <QTimer>
 
 #include <algorithm>
@@ -191,7 +194,8 @@ void HostResolver::cancelAll()
     m_waiters.clear();
 
     for (const auto& [host, lookupId] : m_lookupIds)
-        QHostInfo::abortHostLookup(lookupId);
+        if (lookupId >= 0)
+            QHostInfo::abortHostLookup(lookupId);
     m_lookupIds.clear();
 }
 
@@ -229,37 +233,54 @@ std::vector<Address> HostResolver::orderByPreference(std::vector<Address> addres
 
 void HostResolver::startLookup(const QString& host)
 {
+    // behind a proxy the local resolver must not see the name: DoH through the proxy
+    const auto* app = QCoreApplication::instance();
+    if (const QString doh = activeDohUrl();
+        !doh.isEmpty() && !isLocalName(host) && app && QThread::currentThread() == app->thread()) {
+        const int id = --m_dohSerial;   // negative: not a QHostInfo id
+        m_lookupIds[host] = id;
+        dohLookup(doh, host, this, [this, host, id](const QList<QHostAddress>& addrs) {
+            const auto it = m_lookupIds.find(host);
+            if (it == m_lookupIds.end() || it->second != id)
+                return;   // aborted
+            m_lookupIds.erase(it);
+            lookupDone(host, addrs, addrs.isEmpty() ? QStringLiteral("no answer via DoH") : QString());
+        });
+        return;
+    }
+
     // QHostInfo returns A and AAAA records together; the family choice is applied
     // afterwards per request, so two callers wanting different families still share
     // a single query.
     const int lookupId = QHostInfo::lookupHost(host, this, [this, host](const QHostInfo& info) {
         m_lookupIds.erase(host);
-
-        std::vector<Address> addresses;
-        addresses.reserve(static_cast<size_t>(info.addresses().size()));
-        for (const auto& qaddr : info.addresses()) {
-            const Address addr = Address::fromQHostAddress(qaddr);
-            if (!addr.isNull())
-                addresses.push_back(addr);
-        }
-
-        QString error;
-        if (addresses.empty()) {
-            error = info.error() == QHostInfo::NoError
-                        ? QStringLiteral("no address records")
-                        : info.errorString();
-        }
-
-        logDebug([&]() -> QString { return QStringLiteral("HostResolver: %1 -> %2 address(es)%3")
-                     .arg(host)
-                     .arg(addresses.size())
-                     .arg(error.isEmpty() ? QString() : QStringLiteral(" (%1)").arg(error)); });
-
-        cacheResult(host, addresses, error);
-        completeHost(host, addresses, error);
+        lookupDone(host, info.addresses(), info.error() == QHostInfo::NoError ? QString() : info.errorString());
     });
 
     m_lookupIds[host] = lookupId;
+}
+
+void HostResolver::lookupDone(const QString& host, const QList<QHostAddress>& found, const QString& failure)
+{
+    std::vector<Address> addresses;
+    addresses.reserve(static_cast<size_t>(found.size()));
+    for (const auto& qaddr : found) {
+        const Address addr = Address::fromQHostAddress(qaddr);
+        if (!addr.isNull())
+            addresses.push_back(addr);
+    }
+
+    QString error;
+    if (addresses.empty())
+        error = failure.isEmpty() ? QStringLiteral("no address records") : failure;
+
+    logDebug([&]() -> QString { return QStringLiteral("HostResolver: %1 -> %2 address(es)%3")
+                 .arg(host)
+                 .arg(addresses.size())
+                 .arg(error.isEmpty() ? QString() : QStringLiteral(" (%1)").arg(error)); });
+
+    cacheResult(host, addresses, error);
+    completeHost(host, addresses, error);
 }
 
 void HostResolver::completeHost(const QString& host, const std::vector<Address>& addresses,
@@ -318,7 +339,8 @@ void HostResolver::detachFromLookup(int token, const QString& host)
 
     m_waiters.erase(it);
     if (const auto lookupIt = m_lookupIds.find(host); lookupIt != m_lookupIds.end()) {
-        QHostInfo::abortHostLookup(lookupIt->second);
+        if (lookupIt->second >= 0)   // a DoH lookup's answer is dropped by id
+            QHostInfo::abortHostLookup(lookupIt->second);
         m_lookupIds.erase(lookupIt);
     }
 }

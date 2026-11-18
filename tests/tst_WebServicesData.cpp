@@ -107,18 +107,20 @@ void tst_WebServicesData::parseFileMacros()
             << "With Size,http://example.com/size?s=#filesize\n"
             << "With Filename,http://example.com/name?n=#filename\n"
             << "With Clean,http://example.com/clean?n=#cleanfilename\n"
-            << "No Macros,http://example.com/static\n";
+            << "No Macros,http://example.com/static\n"
+            << "With Root,http://example.com/ed3k?r=#ed3kroot\n";
     }
 
     WebServices ws;
     QVERIFY(ws.loadFromFile(path));
-    QCOMPARE(ws.services().size(), size_t(5));
+    QCOMPARE(ws.services().size(), size_t(6));
 
     QVERIFY(ws.services()[0].hasFileMacros);  // #hashid
     QVERIFY(ws.services()[1].hasFileMacros);  // #filesize
     QVERIFY(ws.services()[2].hasFileMacros);  // #filename
     QVERIFY(ws.services()[3].hasFileMacros);  // #cleanfilename
     QVERIFY(!ws.services()[4].hasFileMacros); // no macros
+    QVERIFY(ws.services()[5].hasFileMacros);  // #ed3kroot
 }
 
 // ---------------------------------------------------------------------------

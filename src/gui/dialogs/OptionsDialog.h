@@ -129,6 +129,10 @@ private slots:
     void markDirty();
 
 private:
+    /// General › Core button: CoreScriptDialog for the core in use
+    void createConnectScript();
+    /// General › Core › Paired phones from the core (GetTunnelPeers)
+    void loadTunnelPeers();
     void editFilenameCleanups();
     /// Files page button: confirm, then have the core rehash every shared file.
     void rehashAllSharedFiles();
@@ -311,6 +315,13 @@ private:
     [[nodiscard]] int geoIpSourceSelection() const;
     /// Archives box: one password per line, blank lines dropped
     [[nodiscard]] QStringList archivePasswordLines() const;
+    /// Proxy page DoH combo: Off, the built-in endpoints, then @p custom; selects @p current
+    void fillProxyDohCombo(const QString& current, const QStringList& custom);
+    /// The combo's URL, "" = Off (not validated)
+    [[nodiscard]] QString proxyDohUrlFromCombo() const;
+    /// User-added URLs in the combo, plus a valid typed one
+    [[nodiscard]] QStringList proxyDohCustomUrls() const;
+    void updateProxyDohRemoveButton();
 
     static QIcon makePadlockIcon();
 
@@ -350,6 +361,9 @@ private:
     /// Remote cores whose TLS certificate is pinned; removals apply on Apply.
     QTreeWidget* m_trustedCoresTree = nullptr;
     QStringList m_trustedCoresRemoved;
+    /// qDonkey phones paired for the ed3k tunnel (GetTunnelPeers); removals apply on Apply.
+    QTreeWidget* m_tunnelPeersTree = nullptr;
+    QStringList m_tunnelPeersRemoved;           ///< node IDs, hex
 
     // Display page controls
     QSlider* m_depth3DSlider = nullptr;
@@ -449,6 +463,9 @@ private:
     QLineEdit*  m_proxyUserEdit = nullptr;
     QLineEdit*  m_proxyPasswordEdit = nullptr;
     QCheckBox*  m_proxyUsenetCheck = nullptr;
+    QLabel*     m_proxyDohLabel = nullptr;
+    QComboBox*  m_proxyDohCombo = nullptr;
+    QPushButton* m_proxyDohRemoveBtn = nullptr;
 
     // Server page controls
     QSpinBox*  m_deadServerRetriesSpin = nullptr;
@@ -548,6 +565,13 @@ private:
     QCheckBox* m_showSmileysCheck = nullptr;
     QLineEdit* m_commentFilterEdit = nullptr;
     QCheckBox* m_indicateRatingsCheck = nullptr;
+    QCheckBox* m_chatSoundCheck = nullptr;
+    QComboBox* m_chatAlertCombo = nullptr;
+    QCheckBox* m_chatUnreadBadgeCheck = nullptr;
+    QCheckBox* m_chatWebLinksCheck = nullptr;
+    QCheckBox* m_chatModStarCheck = nullptr;
+    QCheckBox* m_chatRoomMediaCheck = nullptr;
+    QCheckBox* m_chatRoomVideosCheck = nullptr;
 
     // Security page controls
     QPushButton*  m_reloadIPFilterBtn = nullptr;

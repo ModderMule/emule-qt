@@ -61,7 +61,9 @@ public:
     using DnsLookup = std::function<void(const QString& name, QObject* context, std::function<void(QList<QHostAddress>)> done)>;
     void setDnsLookup(DnsLookup lookup);
     /// false: no DNS (a proxy is set, names must not reach the local resolver)
-    void setDnsAllowed(bool allowed) { m_dnsAllowed = allowed; }
+    void setDnsAllowed(bool allowed) { m_dnsAllowed = [allowed] { return allowed; }; }
+    /// Asked before each batch of lookups: follows a pref change at once.
+    void setDnsAllowed(std::function<bool()> allowed) { m_dnsAllowed = std::move(allowed); }
 
     /// The server countries of @p hosts known (ISO code, "" = none: CDN only); the others are
     /// looked up, countryReady follows for each.
@@ -142,7 +144,7 @@ private:
     std::function<bool()> m_geoReady;
     std::function<QString(const QHostAddress&)> m_countryOf;
     DnsLookup m_dns;
-    bool m_dnsAllowed = true;
+    std::function<bool()> m_dnsAllowed;   ///< unset = allowed
     bool m_countriesLoaded = false;
     bool m_countriesDirty = false;
     QHash<QString, std::pair<QString, qint64>> m_countries;   ///< host -> code ("~" CDN only), when (s)

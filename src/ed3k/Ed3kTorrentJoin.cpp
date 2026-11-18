@@ -1035,8 +1035,15 @@ void Ed3kTorrentJoin::onMemberVerified(const QString& id, int index, const ffi::
     const std::string fileName(n.constData(), std::size_t(n.size()));
     // §6: a member verified is shared at once
     const auto& hashes = j->members[std::size_t(index)].hashes;
-    if (!shareMember(ffi::SharedFile{root, size, fileName, std::nullopt, std::nullopt, ffi::Have::complete(), std::span{hashes}}, id, index))
+    if (!shareMember(ffi::SharedFile{root, size, fileName, std::nullopt, std::nullopt, ffi::Have::complete(), std::span{hashes}}, id, index)) {
+        // hops.md §1: left out, its root is under the anonymous key: kept, so it joins once
+        // moved to the node key (or the next start); the user is told it is on BitTorrent
+        if (skipped(root)) {
+            keepMember(id, index, root, size, file);
+            emit memberVerified(id, index);
+        }
         return;
+    }
     // sources 1: this node, the file held complete (Protocol.md §10.7)
     const ffi::FileInfo info{root, size, fileName, std::nullopt, 1, 0, 0, 0, 0, 0};
     // was: e->publish(m_session.now(), info, m_holdBack ? ffi::Publish::Source : ffi::Publish::Both)
@@ -1128,11 +1135,21 @@ void Ed3kTorrentJoin::onTorrentComplete(const QString& id)
     keepBlob(id, m_bt.infoSection(id), torrentName + QStringLiteral(".info"), done->infoRoot);
     // published again after a restart, as below
     keepRecords(id, done->root, torrentName, done->aliases);
-    // MEMBER rows (file-set.md §6)
-    if (auto ok = e->setPublish(t, done->manifest, done->root, nameView); !ok)
+    // MEMBER rows (file-set.md §6); not while a member is under the anonymous key (hops.md §1)
+    std::vector<ffi::Root> memberRoots;
+    for (std::size_t i = 0; i < j->members.size(); ++i)
+        if (const auto m = j->torrent.member(i); m && m->root)
+            memberRoots.push_back(*m->root);
+    // was: if (withholdSet(id, memberRoots)) (node key only); now under the members' one key
+    const auto setKey = setKeyOf(id, memberRoots);
+    if (!setKey)
+        logInfo(QStringLiteral("set of \"%1\" not published: its members are not under one key it may use (hops.md §1)").arg(torrentName));
+    // was: else if (auto ok = e->setPublish(t, done->manifest, done->root, nameView); !ok)
+    else if (auto ok = e->setPublish(t, done->manifest, done->root, nameView, ffi::SetSigner::Unsigned, nullptr, *setKey); !ok)
         logDebug([&]() -> QString { return QStringLiteral("set of \"%1\" not published (error %2)").arg(torrentName, errorName(ok.error())); });
     if (!m_holdBack && !done->aliases.empty()) {
-        if (auto ok = e->publishAlias(t, done->aliases); !ok)
+        // was: if (auto ok = e->publishAlias(t, done->aliases); !ok)
+        if (auto ok = publishAliasRecords(done->aliases); !ok)
             logDebug([&]() -> QString { return QStringLiteral("ALIAS records of \"%1\" not published (error %2)").arg(torrentName, errorName(ok.error())); });
     }
     logInfo(QStringLiteral("\"%1\" complete, torrent root %2").arg(torrentName, hexOf(done->root.bytes)));

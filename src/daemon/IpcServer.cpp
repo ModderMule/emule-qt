@@ -82,6 +82,37 @@ void IpcServer::relisten(const QList<QHostAddress>& addresses)
     }
 }
 
+bool IpcServer::switchListen(const QList<QHostAddress>& addresses, QString* error)
+{
+    // Close first: our own loopback listener would make the wildcard look held
+    const QList<QHostAddress> old = listenAddresses();
+    auto closing = std::move(m_tcpServers);
+    m_tcpServers.clear();
+    for (auto& server : closing) {
+        server->close();
+        server.release()->deleteLater();   // may hold sockets mid-handshake
+    }
+    QString firstError;
+    for (const QHostAddress& address : addresses) {
+        QString e;
+        if (openListener(address, &e))
+            logInfo(QStringLiteral("IPC server: now listening on %1").arg(address.toString()));
+        else if (firstError.isEmpty())
+            firstError = e;
+    }
+    if (!m_tcpServers.empty())
+        return true;
+    for (const QHostAddress& address : old) {
+        QString e;
+        if (!openListener(address, &e))
+            logError(QStringLiteral("IPC server: ") + e);
+    }
+    if (error)
+        *error = firstError;
+    logWarning(QStringLiteral("IPC server: ") + firstError);
+    return false;
+}
+
 QList<QHostAddress> IpcServer::listenAddresses() const
 {
     QList<QHostAddress> result;
@@ -189,41 +220,19 @@ void IpcServer::notifyCategoriesChanged()
 
 void IpcServer::onSocketReady(QSslSocket* socket, bool isLocal)
 {
-    {
-        logInfo(QStringLiteral("IPC client connected from %1:%2%3%4")
-                    .arg(socket->peerAddress().toString())
-                    .arg(socket->peerPort())
-                    .arg(isLocal ? QString() : QStringLiteral(" (remote)"))
-                    .arg(socket->isEncrypted() ? QStringLiteral(", TLS") : QString()));
+    logInfo(QStringLiteral("IPC client connected from %1:%2%3%4")
+                .arg(socket->peerAddress().toString())
+                .arg(socket->peerPort())
+                .arg(isLocal ? QString() : QStringLiteral(" (remote)"))
+                .arg(socket->isEncrypted() ? QStringLiteral(", TLS") : QString()));
+    addClient(socket, isLocal);
+}
 
-        auto handler = std::make_unique<IpcClientHandler>(socket, isLocal, this);
-
-        connect(handler.get(), &IpcClientHandler::disconnected,
-                this, &IpcServer::onClientDisconnected);
-        connect(handler.get(), &IpcClientHandler::handshakeCompleted,
-                this, &IpcServer::clientReady);
-        connect(handler.get(), &IpcClientHandler::webServerConfigChanged,
-                this, &IpcServer::webServerConfigChanged);
-        connect(handler.get(), &IpcClientHandler::webTemplateReloadRequested,
-                this, &IpcServer::webTemplateReloadRequested);
-        connect(handler.get(), &IpcClientHandler::usenetConfigChanged,
-                this, &IpcServer::usenetConfigChanged);
-        connect(handler.get(), &IpcClientHandler::btConfigChanged,
-                this, &IpcServer::btConfigChanged);
-        connect(handler.get(), &IpcClientHandler::ed3kConfigChanged,
-                this, &IpcServer::ed3kConfigChanged);
-        connect(handler.get(), &IpcClientHandler::standbyConfigChanged,
-                this, &IpcServer::standbyConfigChanged);
-        connect(handler.get(), &IpcClientHandler::indexerConfigChanged,
-                this, &IpcServer::indexerConfigChanged);
-        // Broadcast rather than forward to the daemon: nothing outside the GUIs
-        // cares that the category list changed, and this is the object that
-        // knows every connected client.
-        connect(handler.get(), &IpcClientHandler::categoriesChanged,
-                this, &IpcServer::notifyCategoriesChanged);
-
-        m_clients.push_back(std::move(handler));
-    }
+void IpcServer::adoptTunnel(QTcpSocket* socket, const QString& peer)
+{
+    logInfo(QStringLiteral("IPC client connected over the ed3k tunnel from %1 (remote)").arg(peer));
+    socket->setParent(this);
+    addClient(socket, false)->setTunnel(true);
 }
 
 void IpcServer::onClientDisconnected(IpcClientHandler* handler)
@@ -288,6 +297,38 @@ bool IpcServer::openListener(const QHostAddress& address, QString* error)
         break;
     }
     return false;
+}
+
+IpcClientHandler* IpcServer::addClient(QTcpSocket* socket, bool isLocal)
+{
+    auto handler = std::make_unique<IpcClientHandler>(socket, isLocal, this);
+
+    connect(handler.get(), &IpcClientHandler::disconnected,
+            this, &IpcServer::onClientDisconnected);
+    connect(handler.get(), &IpcClientHandler::handshakeCompleted,
+            this, &IpcServer::clientReady);
+    connect(handler.get(), &IpcClientHandler::webServerConfigChanged,
+            this, &IpcServer::webServerConfigChanged);
+    connect(handler.get(), &IpcClientHandler::webTemplateReloadRequested,
+            this, &IpcServer::webTemplateReloadRequested);
+    connect(handler.get(), &IpcClientHandler::usenetConfigChanged,
+            this, &IpcServer::usenetConfigChanged);
+    connect(handler.get(), &IpcClientHandler::btConfigChanged,
+            this, &IpcServer::btConfigChanged);
+    connect(handler.get(), &IpcClientHandler::ed3kConfigChanged,
+            this, &IpcServer::ed3kConfigChanged);
+    connect(handler.get(), &IpcClientHandler::standbyConfigChanged,
+            this, &IpcServer::standbyConfigChanged);
+    connect(handler.get(), &IpcClientHandler::indexerConfigChanged,
+            this, &IpcServer::indexerConfigChanged);
+    // Broadcast rather than forward to the daemon: nothing outside the GUIs
+    // cares that the category list changed, and this is the object that
+    // knows every connected client.
+    connect(handler.get(), &IpcClientHandler::categoriesChanged,
+            this, &IpcServer::notifyCategoriesChanged);
+
+    m_clients.push_back(std::move(handler));
+    return m_clients.back().get();
 }
 
 } // namespace eMule

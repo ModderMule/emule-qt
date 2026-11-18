@@ -61,6 +61,9 @@ public:
     /// Pick .torrent files, then the same save path / paused choice.
     void promptAddTorrentFiles();
 
+    /// One .torrent's bytes (an ed3k room post) in the Add Torrent dialog; nothing added without OK.
+    void promptAddTorrentData(const QString& name, const QByteArray& data);
+
     /// Take every local .torrent in @p mime. False when there was none.
     bool acceptTorrentDrop(const QMimeData* mime);
 

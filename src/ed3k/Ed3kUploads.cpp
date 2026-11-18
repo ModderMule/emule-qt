@@ -61,6 +61,11 @@ std::pair<std::uint64_t, std::uint64_t> Ed3kUploads::peerBytes(ffi::KeyKind key,
     return {b.up, b.down};
 }
 
+std::uint64_t Ed3kUploads::peerFileDown(ffi::KeyKind key, const ffi::NodeId& node, const ffi::Root& root) const
+{
+    return m_session.peerFileDown(key, node, root);
+}
+
 std::uint64_t Ed3kUploads::downRate(ffi::KeyKind key, const ffi::NodeId& node) const
 {
     return m_session.downRate(key, node);

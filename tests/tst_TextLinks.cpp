@@ -86,6 +86,7 @@ private slots:
     void mircControlByteEndsTheUrl();
     void gapRendererNeverSeesTheUrl();
     void gapRendererRunsOnEverySegment();
+    void chatLinksEmuleOnlyUnlessWebOn();
 
     // The click itself, through a real widget
     void clickingAnAnchorDeliversThePlainLink();
@@ -97,6 +98,26 @@ private slots:
     void markupAroundASmileyStaysEscaped();
     void placeholderCharactersFromAPeerAreDropped();
 };
+
+void TestTextLinks::chatLinksEmuleOnlyUnlessWebOn()
+{
+    const auto esc = [](const QString& t) { return t.toHtmlEscaped(); };
+    const QString room = QStringLiteral("ed3k:room?r=abc");
+    const QString line = QStringLiteral("see https://example.org/x and %1 and magnet:?xt=urn:btih:00 and %2 ed3k: nice")
+                             .arg(kEd2kLink, room);
+    const QString off = linkifyChat(line, esc, false);
+    QCOMPARE(anchorCount(off), 3);
+    QCOMPARE(decodedHref(off, 0), kEd2kLink);
+    QCOMPARE(decodedHref(off, 1), QStringLiteral("magnet:?xt=urn:btih:00"));
+    QCOMPARE(decodedHref(off, 2), room);
+    QVERIFY(off.contains(QStringLiteral("https://example.org/x")));   // shown as text
+
+    const QString on = linkifyChat(line, esc, true);
+    QCOMPARE(anchorCount(on), 4);
+    QCOMPARE(decodedHref(on, 0), QStringLiteral("https://example.org/x"));
+    // never mailto in chats
+    QCOMPARE(anchorCount(linkifyChat(QStringLiteral("mailto:a@b.c"), esc, true)), 0);
+}
 
 void TestTextLinks::ed2kLinkSurvivesRoundTrip()
 {

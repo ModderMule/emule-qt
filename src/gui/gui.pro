@@ -148,6 +148,10 @@ SOURCES += \
     dialogs/CommentEditPanel.cpp \
     dialogs/CommentsPanel.cpp \
     dialogs/CoreConnectDialog.cpp \
+    dialogs/CoreScriptDialog.cpp \
+    dialogs/PhonePairDialog.cpp \
+    utils/qrcodegen/qrcodegen.cpp \
+    utils/CoreConnectScript.cpp \
     dialogs/DetailDialog.cpp \
     dialogs/RememberedSizeDialog.cpp \
     dialogs/FileDetailDialog.cpp \
@@ -206,6 +210,7 @@ SOURCES += \
     panels/IrcPanelEd3k.cpp \
     panels/ChatChannelView.cpp \
     panels/Ed3kOwnSetsView.cpp \
+    panels/Ed3kRoomMediaView.cpp \
     panels/Ed3kRoomTab.cpp \
     panels/Ed3kRoomList.cpp \
     panels/KadPanel.cpp \
@@ -293,6 +298,10 @@ HEADERS += \
     dialogs/CommentEditPanel.h \
     dialogs/CommentsPanel.h \
     dialogs/CoreConnectDialog.h \
+    dialogs/CoreScriptDialog.h \
+    dialogs/PhonePairDialog.h \
+    utils/qrcodegen/qrcodegen.hpp \
+    utils/CoreConnectScript.h \
     dialogs/DetailDialog.h \
     dialogs/RememberedSizeDialog.h \
     dialogs/FileDetailDialog.h \
@@ -322,6 +331,7 @@ HEADERS += \
     dialogs/AddNzbUrlDialog.h \
     dialogs/MetaAccountDialog.h \
     utils/ClientIcons.h \
+    utils/BadgeIcons.h \
     utils/CountryFlags.h \
     utils/InputHistory.h \
     utils/MassRenameAction.h \
@@ -353,6 +363,7 @@ HEADERS += \
     panels/IrcPanel.h \
     panels/ChatChannelView.h \
     panels/Ed3kOwnSetsView.h \
+    panels/Ed3kRoomMediaView.h \
     panels/Ed3kRoomTab.h \
     panels/Ed3kRoomList.h \
     panels/KadPanel.h \

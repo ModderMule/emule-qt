@@ -207,6 +207,9 @@
     <ClCompile Include="net\EMSocket.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="net\DohResolver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="net\ProxySettings.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -720,6 +723,12 @@
     <ClCompile Include="webserver\WebServerTorrents.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="webserver\WebServerEd3k.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="webserver\WebServerIndexer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="webserver\StreamTokenStore.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -935,6 +944,9 @@
     <QtMoc Include="net\EMSocket.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <ClInclude Include="net\DohResolver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="net\ProxySettings.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1026,6 +1038,15 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="webserver\HosterWebBackend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="webserver\Ed3kWebBackend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="webserver\IndexerWebBackend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="webserver\ApiOpBuilder.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="webserver\MetaGrabWebBackend.h">
@@ -1232,6 +1253,9 @@
     <ClInclude Include="utils\AtomicFile.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="utils\MediaSniff.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\OwnerOnly.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1269,6 +1293,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\SafeRemove.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\FileTypeFilter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\PerfLog.h">

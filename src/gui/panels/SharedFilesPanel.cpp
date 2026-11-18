@@ -35,6 +35,7 @@
 #include "utils/StatusBarNotifier.h"
 #include "utils/StringUtils.h"
 #include "utils/ViewNavigation.h"
+#include "utils/MenuDump.h"
 #include "utils/WebServices.h"
 #include "dialogs/CollectionCreateDialog.h"
 #include "dialogs/CollectionViewDialog.h"
@@ -223,6 +224,12 @@ void SharedFilesPanel::setIpcClient(IpcClient* client)
         disconnect(m_ipc, nullptr, this, nullptr);
     m_ipc = client;
     m_ownSetsView->setIpcClient(client);
+    if (client && MenuDump::level() > 0 && !findChild<QTimer*>(QStringLiteral("menuDump"))) {
+        auto* dump = new QTimer(this);
+        dump->setObjectName(QStringLiteral("menuDump"));
+        connect(dump, &QTimer::timeout, this, &SharedFilesPanel::dumpEd3kMenus);
+        dump->start(20'000);
+    }
     // row-update pushes only while this list is on screen
     m_poller->setOnScreenHook(client ? client->pushGroupHold(Ipc::PushGroupShared) : nullptr);
     m_haveSnapshot = false;
@@ -592,6 +599,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
             dlg->show();
         });
         createAct->setEnabled(hasSel);
+        createAct->setProperty("ed2kOnly", true);   // an eD2K collection
 
         // My ed3k Sets (batch 15): a set of the selected files, a new version of one
         auto* ed3kCreateAct = collMenu->addAction(tr("Create ed3k Set..."), this, [this, hashes]() {
@@ -702,6 +710,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
         auto* act = m_contextMenu->addAction(menuIcon("eD2kLink.ico"), tr("Copy eD2K Links"), this,
                                              [this, hashes]() { copyEd2kLinks(hashes); });
         act->setEnabled(hasSel);
+        act->setProperty("ed2kOnly", true);
     }
     {
         auto* act = m_contextMenu->addAction(menuIcon("eD2kLink.ico"), tr("eD2K Links..."), this,
@@ -709,12 +718,13 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
             fetchAndShowSharedFileDetails(hashes, FileDetailDialog::Ed2kLink);
         });
         act->setEnabled(hasSel);
+        act->setProperty("ed2kOnly", true);
     }
     // their ed3k:file counterparts (no MFC original), as in Transfers
     {
         QList<Ed3kLinkMenu::File> links;
-        for (const SharedFileRow* f : sel)
-            links.append({f->hash, f->fileName, f->fileSize});
+        for (const SharedFileRow* f : sel)   // an ed3k-only file by its root (ed3k off too)
+            links.append({f->ed3kOnly ? f->ed3kRoot : f->hash, f->fileName, f->fileSize});
         Ed3kLinkMenu::addActions(m_contextMenu, this, m_ipc, links);
     }
     // batch 15, hops.md §1: move to the other ed3k key (asks first); all selected under one key
@@ -776,12 +786,20 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
     if (thePrefs.showExtControls()) {
         auto* webMenu = m_contextMenu->addMenu(menuIcon("Web.ico"), tr("Web Services"));
         if (single) {
-            WebServices::instance().populateFileMenu(webMenu, single->hash, single->fileName,
-                                                      static_cast<uint64_t>(single->fileSize));
+            // ed3k-only: no eD2K hash, #hashid entries left out
+            WebServices::instance().populateFileMenu(webMenu, single->ed3kOnly ? QString() : single->hash,
+                                                      single->fileName, static_cast<uint64_t>(single->fileSize),
+                                                      single->ed3kRoot);
         }
         if (webMenu->isEmpty())
             webMenu->setEnabled(false);
     }
+
+    // an ed3k-only file (hashed while eD2K was disabled) has no eD2K hash or link
+    if (std::ranges::any_of(sel, &SharedFileRow::ed3kOnly))
+        for (QAction* a : m_contextMenu->findChildren<QAction*>())
+            if (a->property("ed2kOnly").toBool())
+                a->setEnabled(false);
 
     m_contextMenu->popup(m_fileView->viewport()->mapToGlobal(pos));
 }
@@ -1372,6 +1390,8 @@ SharedFileRow sharedRowFromCbor(const QCborMap& m)
     row.shareToggleable   = m.value(QStringLiteral("canUnshare")).toBool();
     row.ed2kLink          = m.value(QStringLiteral("ed2kLink")).toString();
     row.isPartFile        = m.value(QStringLiteral("isPartFile")).toBool();
+    row.ed3kOnly          = m.value(QStringLiteral("ed3kOnly")).toBool();
+    row.ed3kRoot          = m.value(QStringLiteral("ed3kRoot")).toString();
     row.category          = static_cast<int>(m.value(QStringLiteral("category")).toInteger());
     row.uploadingClients  = static_cast<int>(m.value(QStringLiteral("uploadingClients")).toInteger());
     row.queuedClients     = static_cast<int>(m.value(QStringLiteral("queuedClients")).toInteger());
@@ -2304,7 +2324,7 @@ void SharedFilesPanel::openSharedFile(const QString& hash)
     // default handler, which for an http URL means the browser downloads it.
     const ED2KFileType fileType = getED2KFileTypeID(file->fileName);
     if (fileType == ED2KFileType::Video || fileType == ED2KFileType::Audio)
-        launchPreview(url);
+        launchPreview(url, file->fileName);
     else
         QDesktopServices::openUrl(QUrl(url));
 }
@@ -2953,6 +2973,23 @@ void SharedFilesPanel::shareDroppedPaths(const QList<QUrl>& urls)
         p->setExpanded(true);
     m_folderTree->setCurrentItem(show);
     m_folderTree->scrollToItem(show);
+}
+
+
+void SharedFilesPanel::dumpEd3kMenus()
+{
+    // dev aid (EMULE_DUMP_ED3K_MENUS): the menu of each shared file with an ed3k root
+    for (int i = 0; i < m_proxy->rowCount(); ++i) {
+        const QModelIndex idx = m_proxy->index(i, 0);
+        const SharedFileRow* f = m_model->fileAt(m_proxy->mapToSource(idx).row());
+        if (!f || f->ed3kRoot.isEmpty())
+            continue;
+        m_fileView->selectionModel()->select(idx, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        onFileContextMenu(QPoint(-1, -1));
+        m_contextMenu->hide();
+        logInfo(QStringLiteral("ed3k menu Shared %1%2: %3")
+                    .arg(f->fileName, f->ed3kOnly ? QStringLiteral(" (ed3k only)") : QString(), MenuDump::text(m_contextMenu)));
+    }
 }
 
 } // namespace eMule

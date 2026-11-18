@@ -30,6 +30,7 @@
 #include "utils/Ed3kLinkMenu.h"
 #include "dialogs/PeerPreviewDialog.h"
 #include "utils/ViewNavigation.h"
+#include "utils/MenuDump.h"
 #include "utils/WebServices.h"
 #include "prefs/Preferences.h"
 #include "search/SearchExprParser.h"
@@ -172,6 +173,12 @@ void SearchPanel::setIpcClient(IpcClient* client)
     m_ipc = client;
     if (!m_ipc)
         return;
+    if (MenuDump::level() > 0 && !findChild<QTimer*>(QStringLiteral("menuDump"))) {
+        auto* dump = new QTimer(this);
+        dump->setObjectName(QStringLiteral("menuDump"));
+        connect(dump, &QTimer::timeout, this, &SearchPanel::dumpEd3kMenus);
+        dump->start(20'000);
+    }
 
     m_resultRefreshTimer = new QTimer(this);
     m_resultRefreshTimer->setSingleShot(true);
@@ -183,6 +190,8 @@ void SearchPanel::setIpcClient(IpcClient* client)
     // Download To needs the list before the menu opens, not after a round trip.
     connect(m_ipc, &IpcClient::categoriesChanged, this,
             [this](const Ipc::IpcMessage&) { requestCategories(); });
+    // set before the core answers: ask again once connected
+    connect(m_ipc, &IpcClient::connected, this, &SearchPanel::requestCategories);
     requestCategories();
     connect(m_ipc, &IpcClient::indexerResultsReceived, this,
             &SearchPanel::onIndexerResultsPush);
@@ -1642,6 +1651,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     bool singleMeta = false;
     bool singleSheet = false;   ///< the eD2K detail sheet serves it (hasDetailSheet)
     QString singleEd2kHash;
+    QString singleEd3kRoot;
     bool singleHasDetails = false;
     QString singleHash;
     QString singleName;
@@ -1685,6 +1695,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
             singleMeta = result->isMeta();
             singleSheet = hasDetailSheet(*result);
             singleEd2kHash = result->ed2kHash();
+            singleEd3kRoot = result->isEd3k() ? result->ed3kRoot : QString();
             singleHasDetails = hasDetails(*result);
         }
     }
@@ -1967,9 +1978,9 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     // Web Services — greyed when webservices.dat is empty or the selection is not
     // exactly one file, matching MFC's flag2 (SearchListCtrl.cpp:724-727).
     auto* webMenu = m_contextMenu->addMenu(menuIcon("Web.ico"), tr("Web Services"));
-    if (singleSel && !singleEd2kHash.isEmpty())   // web services key on the eD2K hash
+    if (singleSel && (!singleEd2kHash.isEmpty() || !singleEd3kRoot.isEmpty()))
         WebServices::instance().populateFileMenu(webMenu, singleEd2kHash, singleName,
-                                                 static_cast<uint64_t>(singleSize));
+                                                 static_cast<uint64_t>(singleSize), singleEd3kRoot);
     webMenu->setEnabled(!webMenu->isEmpty());
     webMenu->menuAction()->setVisible(thePrefs.showExtControls());   // advanced mode only
 
@@ -3037,16 +3048,7 @@ void SearchPanel::onSearchPreviewPush(const IpcMessage& msg)
     }
 
     // The name comes from the row; the daemon's hash text and ours differ in case.
-    QString fileName;
-    for (const auto& tab : m_tabs) {
-        if (!tab.model)
-            continue;
-        for (int row = 0; row < tab.model->rowCount() && fileName.isEmpty(); ++row) {
-            const auto* result = tab.model->resultAt(row);
-            if (result && result->hash.compare(hash, Qt::CaseInsensitive) == 0)
-                fileName = result->fileName;
-        }
-    }
+    const QString fileName = resultFileName(hash);
     auto* dialog = new PeerPreviewDialog(fileName.isEmpty() ? userName : fileName,
                                          std::move(frames), this);
     dialog->show();
@@ -3063,7 +3065,7 @@ void SearchPanel::sendPreview(const QString& hash)
         return;
     }
 
-    launchPreview(daemonStreamUrl(m_ipc, hash, m_streamToken));
+    launchPreview(daemonStreamUrl(m_ipc, hash, m_streamToken), resultFileName(hash));
 }
 
 // ---------------------------------------------------------------------------
@@ -3875,6 +3877,73 @@ void SearchPanel::setMethodEntriesVisible(std::initializer_list<MethodEntry> ent
 bool SearchPanel::torrentResultsShown() const
 {
     return m_showTorrentCheck && !m_showTorrentCheck->isHidden() && m_showTorrentCheck->isChecked();
+}
+
+
+void SearchPanel::dumpEd3kMenus()
+{
+    // dev aid (EMULE_DUMP_ED3K_MENUS): the menu of the open tab's ed3k results (first 3);
+    // level 2 first runs one ed3k search for EMULE_DUMP_SEARCH
+    static bool searched = false;
+    if (const QString words = qEnvironmentVariable("EMULE_DUMP_SEARCH");
+        MenuDump::level() >= 2 && !words.isEmpty() && !std::exchange(searched, true)) {
+        startSearchFromExternal(words, {}, static_cast<int>(SearchType::Ed3k), {});
+        return;
+    }
+    if (!m_resultView->model() || !m_resultView->selectionModel())
+        return;
+    int shown = 0;
+    for (int i = 0; i < m_resultView->model()->rowCount() && shown < 3; ++i) {
+        const QModelIndex idx = m_resultView->model()->index(i, 0);
+        const SearchResultRef ref = refAt(idx);
+        if (!ref || !ref.row->isEd3k())
+            continue;
+        ++shown;
+        m_resultView->selectionModel()->select(idx, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        onResultContextMenu(QPoint(-1, -1));
+        m_contextMenu->hide();
+        logInfo(QStringLiteral("ed3k menu Search %1: %2").arg(ref.row->fileName, MenuDump::text(m_contextMenu)));
+        // level 2: the menu's Download on the first row named EMULE_DUMP_DOWNLOAD, once;
+        // EMULE_DUMP_DOWNLOAD_PAUSED=1 picks "Download (Paused)", EMULE_DUMP_DOWNLOAD_CAT=n
+        // the category tab first
+        static bool downloaded = false;
+        if (const QString pick = qEnvironmentVariable("EMULE_DUMP_DOWNLOAD");
+            MenuDump::level() >= 2 && !pick.isEmpty() && !downloaded
+            && ref.row->fileName.contains(pick, Qt::CaseInsensitive)) {
+            const QString label = qEnvironmentVariableIntValue("EMULE_DUMP_DOWNLOAD_PAUSED")
+                ? tr("%1 (%2)").arg(tr("Download"), tr("Paused")) : tr("Download");
+            const auto actions = m_contextMenu->actions();
+            const auto it = std::ranges::find(actions, label, &QAction::text);
+            if (it != actions.end() && (*it)->isEnabled()) {
+                downloaded = true;
+                if (const int cat = qEnvironmentVariableIntValue("EMULE_DUMP_DOWNLOAD_CAT");
+                    cat > 0 && cat < m_categoryTabs->count())
+                    m_categoryTabs->setCurrentIndex(cat);
+                logInfo(QStringLiteral("ed3k menu Search: %1 %2 (category %3)")
+                            .arg(label, ref.row->fileName).arg(downloadCategory()));
+                (*it)->trigger();
+            }
+        }
+    }
+    // ed3k link actions arrive async: the last menu again once they could have
+    if (shown)
+        QTimer::singleShot(1500, m_contextMenu, [menu = m_contextMenu] {
+            logInfo(QStringLiteral("ed3k menu Search (1.5 s later): %1").arg(MenuDump::text(menu)));
+        });
+}
+
+QString SearchPanel::resultFileName(const QString& hash) const
+{
+    for (const auto& tab : m_tabs) {
+        if (!tab.model)
+            continue;
+        for (int row = 0; row < tab.model->rowCount(); ++row) {
+            const auto* result = tab.model->resultAt(row);
+            if (result && result->hash.compare(hash, Qt::CaseInsensitive) == 0)
+                return result->fileName;
+        }
+    }
+    return {};
 }
 
 } // namespace eMule

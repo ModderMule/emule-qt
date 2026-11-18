@@ -47,6 +47,11 @@ public:
     /// Returns true if handshake has completed.
     [[nodiscard]] bool isHandshaked() const;
 
+    /// A paired phone over the ed3k tunnel (Ed3kTunnelBridge): remote, token required, no
+    /// inner TLS (QUIC encrypts and pins the node key).
+    void setTunnel(bool on) { m_isTunnel = on; }
+    [[nodiscard]] bool isTunnel() const { return m_isTunnel; }
+
     /// A local GUI that named itself in the handshake (fields 2-4).
     [[nodiscard]] bool isLocalGui() const { return m_handshaked && m_isLocal && m_isGui; }
     /// A local GUI the auto-updater can wait for and start again.
@@ -239,6 +244,7 @@ private:
     void handleSetFileShared(const Ipc::IpcMessage& msg);
     void handleBrowseDirectory(const Ipc::IpcMessage& msg);
     void handleListFolders(const Ipc::IpcMessage& msg);
+    void handleListenIpcAddress(const Ipc::IpcMessage& msg);
     void handleGetSharedDirState(const Ipc::IpcMessage& msg);
 
     // Download categories (268-270)
@@ -360,6 +366,7 @@ private:
 
     std::unique_ptr<Ipc::IpcConnection> m_connection;
     bool m_isLocal = true;
+    bool m_isTunnel = false;
     bool m_handshaked = false;
     bool m_isGui = false;
     qint64 m_guiPid = 0;

@@ -270,6 +270,7 @@ private:
     void cancelSelectedDownloads();   ///< MP_CANCEL, with confirmation
     void removeSelectedDownloads();   ///< MPG_DELETE (Del, ⌫)
     void renameSelectedDownload();    ///< MPG_F2
+    void dumpEd3kMenus();             ///< dev aid, utils/MenuDump.h
 public:
     /// The download categories, index 0 ("All") first — for dialogs that offer one.
     [[nodiscard]] QStringList categoryNames() const;

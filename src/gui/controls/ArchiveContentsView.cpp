@@ -2,6 +2,7 @@
 #include "controls/ArchiveContentsView.h"
 
 #include "controls/FileCheckButtons.h"
+#include "utils/FileTypeIcons.h"
 #include "utils/StringUtils.h"
 
 #include <QHBoxLayout>
@@ -130,8 +131,10 @@ void ArchiveContentsView::setResult(const QCborMap& result)
     m_password.clear();
     const QCborArray archives = result.value(QStringLiteral("archives")).toArray();
     int found = 0;
+    bool multiPart = false;
     for (const QCborValue& v : archives) {
         const QCborMap a = v.toMap();
+        multiPart |= a.value(QStringLiteral("parts")).toArray().size() > 1;
         auto* top = new QTreeWidgetItem(m_tree);
         top->setData(ColName, RoleKind, KindArchive);
         top->setData(ColName, RoleFirst, a.value(QStringLiteral("name")).toString().section(u'/', -1).toLower());
@@ -155,16 +158,22 @@ void ArchiveContentsView::setResult(const QCborMap& result)
         }
     }
     m_editable = result.value(QStringLiteral("editable")).toBool(true);
+    const int sets = int(archives.size());
     if (archives.isEmpty())
         m_status->setText(tr("This release has no archives."));
     else if (found == 0)
-        m_status->setText(tr("Nobody in ed3k has published what these archives hold yet."));
+        m_status->setText(tr("Nobody in ed3k has published what the %n archive(s) hold yet.", nullptr, sets));
     else
-        m_status->setText(tr("%n archive(s) listed by ed3k peers. Check the files you want.", nullptr, found)
+        m_status->setText(tr("%n of %1 archive(s) listed by ed3k peers. Check the files you want.", nullptr, found).arg(sets)
                           + (m_password.isEmpty() ? QString() : u' ' + tr("Archive password: %1").arg(m_password)));
+    // one row per set, not per part: say so, else a lone first part looks like the whole release
+    if (multiPart)
+        m_status->setText(m_status->text() + u' '
+                          + tr("A multi-part archive is one row: ed3k keeps what it holds once, for all its parts."));
     if (m_queued && !m_editable)
         m_status->setText(m_status->text() + u' ' + tr("The download is unpacked already: its extraction cannot change."));
     updateButtons();
+    emit lookupFinished(found);
 }
 
 void ArchiveContentsView::setError(const QString& error)
@@ -173,6 +182,7 @@ void ArchiveContentsView::setError(const QString& error)
     m_requested = false;   // another try when shown again
     m_status->setText(error.isEmpty() ? tr("The lookup failed.") : error);
     updateButtons();
+    emit lookupFinished(-1);
 }
 
 void ArchiveContentsView::setNestedResult(const QString& rootHex, const QCborMap& result)
@@ -254,8 +264,24 @@ void ArchiveContentsView::lookUp()
 void ArchiveContentsView::fillArchive(QTreeWidgetItem* top, const QCborMap& archive)
 {
     const bool nested = top->data(ColName, RoleKind).toInt() == KindEntry;
-    if (!nested)
-        top->setText(ColName, archive.value(QStringLiteral("name")).toString());
+    if (!nested) {
+        const QString name = archive.value(QStringLiteral("name")).toString();
+        const QStringList parts = archive.value(QStringLiteral("parts")).toVariant().toStringList();
+        top->setIcon(ColName, fileTypeIconForName(name));
+        if (parts.size() > 1) {
+            top->setText(ColName, tr("%1 (%n part(s))", nullptr, int(parts.size())).arg(name.section(u'/', -1)));
+            constexpr qsizetype kMaxListed = 25;
+            QStringList listed = parts.mid(0, kMaxListed);
+            if (parts.size() > kMaxListed)
+                listed << tr("... %n more", nullptr, int(parts.size() - kMaxListed));
+            top->setToolTip(ColName, tr("One archive in %n part(s); what it holds is looked up by its first part:",
+                                        nullptr, int(parts.size()))
+                                         + u'\n' + listed.join(u'\n'));
+        } else {
+            top->setText(ColName, name);
+            top->setToolTip(ColName, name);
+        }
+    }
     top->setText(ColStatus, stateText(archive));
     const QCborArray entries = archive.value(QStringLiteral("entries")).toArray();
     if (entries.isEmpty())

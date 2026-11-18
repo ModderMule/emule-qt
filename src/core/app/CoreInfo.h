@@ -27,6 +27,8 @@ void insertEd2kCounts(QCborMap& info);
 /// target (hex, "" = none), name, addr, cc, contacts, results, records, stored, load (-1 = n/a),
 /// answered}. The ed3k node sends the same shape (Ed3kKadBridge).
 [[nodiscard]] QCborArray kadIncoming();
+/// Row count of kadIncoming() without building the rows.
+[[nodiscard]] qint64 kadIncomingCount();
 
 /// One incoming request for the incoming search graph: {found, the row of kadIncoming, wanted,
 /// own: {id}, asker: {id ("" = unknown), addr, cc, version}, handed: [{id, addr, cc, version}]}.

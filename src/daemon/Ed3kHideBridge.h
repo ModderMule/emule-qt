@@ -36,6 +36,9 @@ bool handleRequest(const Ipc::IpcMessage& msg, const std::function<void(const Ip
 /// "Node" / "Anonymous" of a shared file (16 B MD4); empty: not shared over ed3k (yet).
 [[nodiscard]] QString sharedKey(const QByteArray& md4);
 
+/// The ed3k root (64 hex) a shared file (16 B MD4) was hashed to; empty: not hashed (yet).
+[[nodiscard]] QString sharedRoot(const QByteArray& md4);
+
 /// PushEd3kHideChanged (and PushEd3kStatus) through @p broadcast when hiding moved; at most
 /// twice a second.
 void connectPushes(ed3k::Ed3kSession& session, std::function<void(const Ipc::IpcMessage&)> broadcast);

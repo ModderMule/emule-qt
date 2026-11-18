@@ -62,8 +62,8 @@ QString peerCountry(const QString& host)
     return host.isEmpty() ? QString() : countryCodeOf(QHostAddress(host));
 }
 
-/// Tracker host's country. Names resolve here only without a proxy (it resolves
-/// them for libtorrent, a lookup of ours would leak DNS); .i2p never; a CDN none.
+/// Tracker host's country. Behind a proxy names go by DoH through it (the proxy resolves
+/// them for libtorrent, a local lookup would leak DNS); .i2p never; a CDN none.
 QString trackerCountry(const QString& url)
 {
     const QString host = QUrl(url).host();
@@ -71,8 +71,6 @@ QString trackerCountry(const QString& url)
         return {};
     if (QHostAddress literal(host); !literal.isNull())
         return isCdnAddress(literal) ? QString() : countryCodeOf(literal);
-    if (const ProxySettings p = thePrefs.proxySettings(); p.useProxy && !p.host.isEmpty())
-        return {};
     return cachedHostCountry(host);
 }
 #endif

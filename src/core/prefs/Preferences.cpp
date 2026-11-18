@@ -7,11 +7,13 @@
 #include "net/SmtpClient.h"
 #include "utils/AtomicFile.h"
 #include "utils/OtherFunctions.h"
+#include "utils/OwnerOnly.h"
 
 #include "app/AppConfig.h"
 #include "client/BuddyRelayBudget.h"
 #include "crypto/AesCbc.h"
 #include "crypto/SecretCompare.h"
+#include "net/DohResolver.h"
 #include "net/EMSocket.h"
 #include "net/ListenConflict.h"
 #include "net/OwnAddress.h"
@@ -165,6 +167,25 @@ QString prefsBackupPath(const QString& filePath)
     return filePath + QStringLiteral(".bak");
 }
 
+/// Account secrets in it (key alongside): only the user reads it. A rename puts the
+/// temporary file's access in place (Windows: the folder's inherited ACL), so after
+/// every write.
+void keepPrivate(const QString& path)
+{
+    QString error;
+    if (QFile::exists(path) && !makeOwnerOnly(path, &error))
+        logWarning(QStringLiteral("Preferences: %1").arg(error));
+}
+
+/// BackgroundFileWriter job for a preferences copy: written, then owner-only.
+bool savePrivate(const QString& path, const QByteArray& data)
+{
+    if (!BackgroundFileWriter::saveFile(path, data))
+        return false;
+    keepPrivate(path);
+    return true;
+}
+
 } // namespace
 
 // The SMTP password is stored AES-256-CBC encrypted in the YAML; the cipher now
@@ -261,6 +282,8 @@ struct Preferences::Data {
     bool proxyEnablePassword = false;
     QString proxyUser;
     QString proxyPassword;
+    QString proxyDohUrl = defaultDohUrl();   // country-flag DNS behind a proxy; "" = off
+    QStringList proxyDohUrls;                // user-added DoH endpoints
 
     // Directories
     QString incomingDir;
@@ -535,6 +558,8 @@ struct Preferences::Data {
     int ipcListenRecheckMinutes = 60;   // name listen value: re-resolve period, 0 = changes only
     bool ipcListenTemporaryIpv6 = false;   // name listen value: also bind privacy addresses
     QStringList ipcTokens;
+    bool ipcTunnel = true;                 // paired phones over the ed3k tunnel
+    QStringList ipcTunnelPeers;            // "<node id hex> <name>"
 
     // Web Server
     bool webServerEnabled = false;
@@ -608,6 +633,14 @@ struct Preferences::Data {
     QString commentFilter = QStringLiteral("http://|https://|ftp://|www.|ftp.");
     bool showSmileys = true;
     bool indicateRatings = true;
+    // chats: friends, IRC, ed3k rooms
+    bool chatSound = false;         // a sound on a new message not on screen
+    int chatAlert = 0;              // ChatAlert: flash the taskbar / bounce the dock
+    bool chatUnreadBadge = true;    // red "!" on the toolbar buttons + status bar icon
+    bool chatWebLinks = false;    // chats: web links clickable too (off: ed2k/ed3k/magnet only)
+    bool chatModStar = false;       // room moderators: gold star, else "@"
+    bool chatRoomMedia = true;      // room images shown (fetched by themselves)
+    bool chatRoomVideos = false;    // room videos fetched by themselves too
 
     // Security (extended)
     bool useSecureIdent = true;  // Enable secure identity (RSA key exchange)
@@ -833,10 +866,18 @@ struct Preferences::Data {
     int ed3kDeletedFileDays = 365;        // deleted volumes' ALIAS records kept out (alias.md §3)
     bool ed3kRoomHistoryStore = true;     // recent room posts kept on disk across restarts
     int ed3kRoomHistoryMax = 5000;        // posts kept per room (memory + disk)
+    int ed3kRoomMediaCacheMiB = 200;      // room media disk cache
+    int ed3kRoomMediaPerHour = 60;        // media fetched by itself per room and hour
     bool ed3kJointDownloads = true;    // eD2K downloads from ed3k too (§14.4)
     bool ed3kShareUsenetPosts = true;  // off = hold back, usenet.md §6
     bool ed3kArchiveContents = true;   // hoster.md §6.1 contents records
+    // was: false (limits held for LAN peers too); packmule's default again
+    bool ed3kLanUnlimited = true;      // LAN peers outside the limits (lan-discovery.md §3 MAY)
     bool ed3kOwnSetsWatch = true;      // own sets' folders watched: a change publishes a new version
+    bool ed3kAnonEd2k = false;         // ed2k joins under the anonymous key while hiding (hops.md §1)
+    bool ed3kAnonTorrent = false;      // torrent joins under the anonymous key while hiding (hops.md §1)
+    bool ed3kAnonUsenet = true;        // usenet joins under the anonymous key while hiding (hops.md §1)
+    bool ed3kAnonHoster = true;        // hoster joins under the anonymous key while hiding (hops.md §1)
     QStringList ed3kCreditRpc;         // JSON-RPC endpoints; empty = off
     QStringList ed3kDeclineUrls;       // decline lists fetched from URLs; empty = none
     QStringList ed3kChaintubeRpc;
@@ -1254,6 +1295,30 @@ void Preferences::setProxyUser(const QString& val) { set(&Data::proxyUser, val);
 QString Preferences::proxyPassword() const { return get(&Data::proxyPassword); }
 
 void Preferences::setProxyPassword(const QString& val) { set(&Data::proxyPassword, val); }
+
+QString Preferences::proxyDohUrl() const { return get(&Data::proxyDohUrl); }
+
+void Preferences::setProxyDohUrl(const QString& val)
+{
+    const QString url = val.trimmed();
+    set(&Data::proxyDohUrl, url.isEmpty() || isValidDohUrl(url) ? url : defaultDohUrl());
+}
+
+QStringList Preferences::proxyDohUrls() const { return get(&Data::proxyDohUrls); }
+
+void Preferences::setProxyDohUrls(const QStringList& val) { set(&Data::proxyDohUrls, cleanDohUrls(val)); }
+
+QStringList Preferences::cleanDohUrls(const QStringList& urls)
+{
+    QStringList out;
+    for (const QString& raw : urls) {
+        const QString url = raw.trimmed();
+        const bool builtIn = std::ranges::any_of(dohProviders(), [&url](const DohProvider& p) { return p.url == url; });
+        if (isValidDohUrl(url) && !builtIn && !out.contains(url))
+            out << url;
+    }
+    return out;
+}
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Directories
@@ -2742,7 +2807,7 @@ void Preferences::setEd3kHashRamMiB(int val) { set(&Data::ed3kHashRamMiB, std::c
 int Preferences::ed3kKadStoreMiB() const { return get(&Data::ed3kKadStoreMiB); }
 void Preferences::setEd3kKadStoreMiB(int val) { set(&Data::ed3kKadStoreMiB, std::clamp(val, 0, kMaxEd3kKadStoreMiB)); }
 int Preferences::ed3kDeletedFileDays() const { return get(&Data::ed3kDeletedFileDays); }
-void Preferences::setEd3kDeletedFileDays(int val) { set(&Data::ed3kDeletedFileDays, std::clamp(val, 0, kMaxEd3kDeletedFileDays)); }
+void Preferences::setEd3kDeletedFileDays(int val) { set(&Data::ed3kDeletedFileDays, std::clamp(val, -1, kMaxEd3kDeletedFileDays)); }
 bool Preferences::ed3kRoomHistoryStore() const { return get(&Data::ed3kRoomHistoryStore); }
 void Preferences::setEd3kRoomHistoryStore(bool val) { set(&Data::ed3kRoomHistoryStore, val); }
 int Preferences::ed3kRoomHistoryMax() const { return get(&Data::ed3kRoomHistoryMax); }
@@ -2750,12 +2815,29 @@ void Preferences::setEd3kRoomHistoryMax(int val)
 {
     set(&Data::ed3kRoomHistoryMax, std::clamp(val, kMinEd3kRoomHistoryMax, kMaxEd3kRoomHistoryMax));
 }
+int Preferences::ed3kRoomMediaCacheMiB() const { return get(&Data::ed3kRoomMediaCacheMiB); }
+void Preferences::setEd3kRoomMediaCacheMiB(int val)
+{
+    set(&Data::ed3kRoomMediaCacheMiB, std::clamp(val, kMinEd3kRoomMediaCacheMiB, kMaxEd3kRoomMediaCacheMiB));
+}
+int Preferences::ed3kRoomMediaPerHour() const { return get(&Data::ed3kRoomMediaPerHour); }
+void Preferences::setEd3kRoomMediaPerHour(int val) { set(&Data::ed3kRoomMediaPerHour, std::clamp(val, 0, 100000)); }
 bool Preferences::ed3kJointDownloads() const { return get(&Data::ed3kJointDownloads); }
 void Preferences::setEd3kJointDownloads(bool val) { set(&Data::ed3kJointDownloads, val); }
 bool Preferences::ed3kShareUsenetPosts() const { return get(&Data::ed3kShareUsenetPosts); }
 void Preferences::setEd3kShareUsenetPosts(bool val) { set(&Data::ed3kShareUsenetPosts, val); }
 bool Preferences::ed3kArchiveContents() const { return get(&Data::ed3kArchiveContents); }
+bool Preferences::ed3kLanUnlimited() const { return get(&Data::ed3kLanUnlimited); }
+void Preferences::setEd3kLanUnlimited(bool val) { set(&Data::ed3kLanUnlimited, val); }
 void Preferences::setEd3kArchiveContents(bool val) { set(&Data::ed3kArchiveContents, val); }
+bool Preferences::ed3kAnonEd2k() const { return get(&Data::ed3kAnonEd2k); }
+void Preferences::setEd3kAnonEd2k(bool val) { set(&Data::ed3kAnonEd2k, val); }
+bool Preferences::ed3kAnonTorrent() const { return get(&Data::ed3kAnonTorrent); }
+void Preferences::setEd3kAnonTorrent(bool val) { set(&Data::ed3kAnonTorrent, val); }
+bool Preferences::ed3kAnonUsenet() const { return get(&Data::ed3kAnonUsenet); }
+void Preferences::setEd3kAnonUsenet(bool val) { set(&Data::ed3kAnonUsenet, val); }
+bool Preferences::ed3kAnonHoster() const { return get(&Data::ed3kAnonHoster); }
+void Preferences::setEd3kAnonHoster(bool val) { set(&Data::ed3kAnonHoster, val); }
 bool Preferences::ed3kOwnSetsWatch() const { return get(&Data::ed3kOwnSetsWatch); }
 void Preferences::setEd3kOwnSetsWatch(bool val) { set(&Data::ed3kOwnSetsWatch, val); }
 
@@ -3393,6 +3475,12 @@ QStringList Preferences::ipcTokens() const { return get(&Data::ipcTokens); }
 
 void Preferences::setIpcTokens(const QStringList& val) { set(&Data::ipcTokens, val); }
 
+bool Preferences::ipcTunnel() const { return get(&Data::ipcTunnel); }
+void Preferences::setIpcTunnel(bool val) { set(&Data::ipcTunnel, val); }
+
+QStringList Preferences::ipcTunnelPeers() const { return get(&Data::ipcTunnelPeers); }
+void Preferences::setIpcTunnelPeers(const QStringList& val) { set(&Data::ipcTunnelPeers, val); }
+
 // ---------------------------------------------------------------------------
 // Getters / setters — Web Server
 // ---------------------------------------------------------------------------
@@ -3642,6 +3730,21 @@ void Preferences::setCommentFilter(const QString& val) { set(&Data::commentFilte
 bool Preferences::showSmileys() const { return get(&Data::showSmileys); }
 
 void Preferences::setShowSmileys(bool val) { set(&Data::showSmileys, val); }
+
+bool Preferences::chatSound() const { return get(&Data::chatSound); }
+void Preferences::setChatSound(bool val) { set(&Data::chatSound, val); }
+int Preferences::chatAlert() const { return get(&Data::chatAlert); }
+void Preferences::setChatAlert(int val) { set(&Data::chatAlert, std::clamp(val, 0, 2)); }
+bool Preferences::chatUnreadBadge() const { return get(&Data::chatUnreadBadge); }
+void Preferences::setChatUnreadBadge(bool val) { set(&Data::chatUnreadBadge, val); }
+bool Preferences::chatWebLinks() const { return get(&Data::chatWebLinks); }
+void Preferences::setChatWebLinks(bool val) { set(&Data::chatWebLinks, val); }
+bool Preferences::chatModStar() const { return get(&Data::chatModStar); }
+void Preferences::setChatModStar(bool val) { set(&Data::chatModStar, val); }
+bool Preferences::chatRoomMedia() const { return get(&Data::chatRoomMedia); }
+void Preferences::setChatRoomMedia(bool val) { set(&Data::chatRoomMedia, val); }
+bool Preferences::chatRoomVideos() const { return get(&Data::chatRoomVideos); }
+void Preferences::setChatRoomVideos(bool val) { set(&Data::chatRoomVideos, val); }
 
 bool Preferences::indicateRatings() const { return get(&Data::indicateRatings); }
 
@@ -4172,6 +4275,8 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("proxyEnablePassword"), proxyEnablePassword());
     prefs.insert(QStringLiteral("proxyUser"), proxyUser());
     prefs.insert(QStringLiteral("proxyPassword"), proxyPassword());
+    prefs.insert(QStringLiteral("proxyDohUrl"), proxyDohUrl());
+    prefs.insert(QStringLiteral("proxyDohUrls"), QCborArray::fromStringList(proxyDohUrls()));
 
     // Files page (daemon-side)
     prefs.insert(QStringLiteral("addNewFilesPaused"), addNewFilesPaused());
@@ -4343,7 +4448,6 @@ QCborMap Preferences::toIpcMap() const
     // ed3k
     prefs.insert(QStringLiteral("ed3kEnabled"), ed3kEnabled());
     prefs.insert(QStringLiteral("ed3kUdpPort"), static_cast<qint64>(ed3kUdpPort()));
-    prefs.insert(QStringLiteral("ed3kShareFiles"), ed3kShareFiles());
     prefs.insert(QStringLiteral("ed3kHashCacheLowRamPercent"), static_cast<qint64>(ed3kHashCacheLowRamPercent()));
     prefs.insert(QStringLiteral("ed3kHashRamMiB"), static_cast<qint64>(ed3kHashRamMiB()));
     prefs.insert(QStringLiteral("ed3kKadStoreMiB"), static_cast<qint64>(ed3kKadStoreMiB()));
@@ -4352,7 +4456,12 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("ed3kJointDownloads"), ed3kJointDownloads());
     prefs.insert(QStringLiteral("ed3kShareUsenetPosts"), ed3kShareUsenetPosts());
     prefs.insert(QStringLiteral("ed3kArchiveContents"), ed3kArchiveContents());
+    prefs.insert(QStringLiteral("ed3kLanUnlimited"), ed3kLanUnlimited());
     prefs.insert(QStringLiteral("ed3kOwnSetsWatch"), ed3kOwnSetsWatch());
+    prefs.insert(QStringLiteral("ed3kAnonEd2k"), ed3kAnonEd2k());
+    prefs.insert(QStringLiteral("ed3kAnonTorrent"), ed3kAnonTorrent());
+    prefs.insert(QStringLiteral("ed3kAnonUsenet"), ed3kAnonUsenet());
+    prefs.insert(QStringLiteral("ed3kAnonHoster"), ed3kAnonHoster());
     prefs.insert(QStringLiteral("ed3kCreditRpc"), ed3kCreditRpc().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("ed3kChaintubeRpc"), ed3kChaintubeRpc().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("ed3kExtOff"), ed3kExtOff().join(QLatin1Char(' ')));
@@ -4591,6 +4700,16 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->proxyEnablePassword = p.value(QStringLiteral("proxyEnablePassword")).toBool();
     m_data->proxyUser           = p.value(QStringLiteral("proxyUser")).toString();
     m_data->proxyPassword       = p.value(QStringLiteral("proxyPassword")).toString();
+    if (const QCborValue v = p.value(QStringLiteral("proxyDohUrl")); v.isString()) {
+        const QString url = v.toString().trimmed();
+        m_data->proxyDohUrl = url.isEmpty() || isValidDohUrl(url) ? url : defaultDohUrl();
+    }
+    if (const QCborValue v = p.value(QStringLiteral("proxyDohUrls")); v.isArray()) {
+        QStringList urls;
+        for (const QCborValue& u : v.toArray())
+            urls << u.toString();
+        m_data->proxyDohUrls = cleanDohUrls(urls);
+    }
 
     // Files
     m_data->addNewFilesPaused             = p.value(QStringLiteral("addNewFilesPaused")).toBool();
@@ -4748,7 +4867,6 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->ed3kEnabled = p.value(QStringLiteral("ed3kEnabled")).toBool(true);
     m_data->ed3kUdpPort = static_cast<uint16>(
         std::clamp<qint64>(p.value(QStringLiteral("ed3kUdpPort")).toInteger(0), 0, 65535));
-    m_data->ed3kShareFiles = p.value(QStringLiteral("ed3kShareFiles")).toBool(true);
     m_data->ed3kHashCacheLowRamPercent =
         static_cast<int>(std::clamp<qint64>(p.value(QStringLiteral("ed3kHashCacheLowRamPercent")).toInteger(20), 0, 100));
     m_data->ed3kHashRamMiB =
@@ -4761,7 +4879,12 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->ed3kJointDownloads = p.value(QStringLiteral("ed3kJointDownloads")).toBool(true);
     m_data->ed3kShareUsenetPosts = p.value(QStringLiteral("ed3kShareUsenetPosts")).toBool(true);
     m_data->ed3kArchiveContents = p.value(QStringLiteral("ed3kArchiveContents")).toBool(true);
+    m_data->ed3kLanUnlimited = p.value(QStringLiteral("ed3kLanUnlimited")).toBool(m_data->ed3kLanUnlimited);
     m_data->ed3kOwnSetsWatch = p.value(QStringLiteral("ed3kOwnSetsWatch")).toBool(true);
+    m_data->ed3kAnonEd2k = p.value(QStringLiteral("ed3kAnonEd2k")).toBool(m_data->ed3kAnonEd2k);
+    m_data->ed3kAnonTorrent = p.value(QStringLiteral("ed3kAnonTorrent")).toBool(m_data->ed3kAnonTorrent);
+    m_data->ed3kAnonUsenet = p.value(QStringLiteral("ed3kAnonUsenet")).toBool(m_data->ed3kAnonUsenet);
+    m_data->ed3kAnonHoster = p.value(QStringLiteral("ed3kAnonHoster")).toBool(m_data->ed3kAnonHoster);
     m_data->ed3kCreditRpc = rpcUrlList(p.value(QStringLiteral("ed3kCreditRpc")));
     m_data->ed3kChaintubeRpc = rpcUrlList(p.value(QStringLiteral("ed3kChaintubeRpc")));
     m_data->ed3kExtOff = rpcUrlList(p.value(QStringLiteral("ed3kExtOff")));
@@ -5116,8 +5239,10 @@ bool Preferences::load(const QString& filePath)
         if (m_peekOnly)
             return;
         QFile::remove(broken);
-        if (QFile::copy(filePath, broken))
+        if (QFile::copy(filePath, broken)) {
+            keepPrivate(broken);
             logWarning(QStringLiteral("Unreadable preferences kept as %1").arg(broken));
+        }
     };
     const auto useDefaults = [this] {
         m_data = std::make_unique<Data>();
@@ -5289,6 +5414,16 @@ bool Preferences::load(const QString& filePath)
             m_data->proxyEnablePassword = p["enablePassword"].as<bool>(m_data->proxyEnablePassword);
             m_data->proxyUser = QString::fromStdString(p["user"].as<std::string>(m_data->proxyUser.toStdString()));
             m_data->proxyPassword = QString::fromStdString(p["password"].as<std::string>(m_data->proxyPassword.toStdString()));
+            if (const auto doh = p["dohUrl"]; doh && doh.IsScalar()) {
+                const QString url = QString::fromStdString(doh.as<std::string>()).trimmed();
+                m_data->proxyDohUrl = url.isEmpty() || isValidDohUrl(url) ? url : defaultDohUrl();
+            }
+            if (const auto list = p["dohUrls"]; list && list.IsSequence()) {
+                QStringList urls;
+                for (const auto& u : list)
+                    urls << QString::fromStdString(u.as<std::string>(""));
+                m_data->proxyDohUrls = cleanDohUrls(urls);
+            }
         }
 
         // Directories
@@ -5655,6 +5790,13 @@ bool Preferences::load(const QString& filePath)
                 m_data->commentFilter = QString::fromStdString(ch["commentFilter"].as<std::string>());
             m_data->showSmileys = ch["showSmileys"].as<bool>(m_data->showSmileys);
             m_data->indicateRatings = ch["indicateRatings"].as<bool>(m_data->indicateRatings);
+            m_data->chatSound = ch["chatSound"].as<bool>(m_data->chatSound);
+            m_data->chatAlert = std::clamp(ch["chatAlert"].as<int>(m_data->chatAlert), 0, 2);
+            m_data->chatUnreadBadge = ch["chatUnreadBadge"].as<bool>(m_data->chatUnreadBadge);
+            m_data->chatWebLinks = ch["chatWebLinks"].as<bool>(m_data->chatWebLinks);
+            m_data->chatModStar = ch["chatModStar"].as<bool>(m_data->chatModStar);
+            m_data->chatRoomMedia = ch["chatRoomMedia"].as<bool>(m_data->chatRoomMedia);
+            m_data->chatRoomVideos = ch["chatRoomVideos"].as<bool>(m_data->chatRoomVideos);
         }
 
         // Search
@@ -5675,6 +5817,12 @@ bool Preferences::load(const QString& filePath)
                 m_data->ipcTokens.clear();
                 for (std::size_t i = 0; i < tok.size(); ++i)
                     m_data->ipcTokens.append(QString::fromStdString(tok[i].as<std::string>()));
+            }
+            m_data->ipcTunnel = ipc["tunnel"].as<bool>(m_data->ipcTunnel);
+            if (auto peers = ipc["tunnelPeers"]) {
+                m_data->ipcTunnelPeers.clear();
+                for (std::size_t i = 0; i < peers.size(); ++i)
+                    m_data->ipcTunnelPeers.append(QString::fromStdString(peers[i].as<std::string>()));
             }
         }
 
@@ -6167,14 +6315,22 @@ bool Preferences::load(const QString& filePath)
             m_data->ed3kHashRamMiB = std::clamp(e3["hashRamMiB"].as<int>(m_data->ed3kHashRamMiB), 0, kMaxEd3kHashRamMiB);
             m_data->ed3kKadStoreMiB = std::clamp(e3["kadStoreMiB"].as<int>(m_data->ed3kKadStoreMiB), 0, kMaxEd3kKadStoreMiB);
             if (e3["deletedFileDays"])
-                m_data->ed3kDeletedFileDays = std::clamp(e3["deletedFileDays"].as<int>(m_data->ed3kDeletedFileDays), 0, kMaxEd3kDeletedFileDays);
+                m_data->ed3kDeletedFileDays = std::clamp(e3["deletedFileDays"].as<int>(m_data->ed3kDeletedFileDays), -1, kMaxEd3kDeletedFileDays);
             m_data->ed3kRoomHistoryStore = e3["roomHistoryStore"].as<bool>(m_data->ed3kRoomHistoryStore);
             m_data->ed3kRoomHistoryMax = std::clamp(e3["roomHistoryMax"].as<int>(m_data->ed3kRoomHistoryMax),
                                                     kMinEd3kRoomHistoryMax, kMaxEd3kRoomHistoryMax);
+            m_data->ed3kRoomMediaCacheMiB = std::clamp(e3["roomMediaCacheMiB"].as<int>(m_data->ed3kRoomMediaCacheMiB),
+                                                       kMinEd3kRoomMediaCacheMiB, kMaxEd3kRoomMediaCacheMiB);
+            m_data->ed3kRoomMediaPerHour = std::clamp(e3["roomMediaPerHour"].as<int>(m_data->ed3kRoomMediaPerHour), 0, 100000);
             m_data->ed3kJointDownloads = e3["jointDownloads"].as<bool>(m_data->ed3kJointDownloads);
             m_data->ed3kShareUsenetPosts = e3["shareUsenetPosts"].as<bool>(m_data->ed3kShareUsenetPosts);
             m_data->ed3kArchiveContents = e3["archiveContents"].as<bool>(m_data->ed3kArchiveContents);
+            m_data->ed3kLanUnlimited = e3["lanUnlimited"].as<bool>(m_data->ed3kLanUnlimited);
             m_data->ed3kOwnSetsWatch = e3["ownSetsWatch"].as<bool>(m_data->ed3kOwnSetsWatch);
+            m_data->ed3kAnonEd2k = e3["anonEd2k"].as<bool>(m_data->ed3kAnonEd2k);
+            m_data->ed3kAnonTorrent = e3["anonTorrent"].as<bool>(m_data->ed3kAnonTorrent);
+            m_data->ed3kAnonUsenet = e3["anonUsenet"].as<bool>(m_data->ed3kAnonUsenet);
+            m_data->ed3kAnonHoster = e3["anonHoster"].as<bool>(m_data->ed3kAnonHoster);
             const auto urls = [](const YAML::Node& n) {
                 QStringList out;
                 if (n && n.IsSequence())
@@ -6553,8 +6709,11 @@ bool Preferences::load(const QString& filePath)
             return bak.open(QIODevice::ReadOnly) && bak.readAll() == raw;
         }();
         if (!same)
-            BackgroundFileWriter::instance().write(backupPath, std::move(raw), {});
+            BackgroundFileWriter::instance().write(backupPath, std::move(raw), savePrivate);
     }
+    // files from before (0644 / inherited ACL) or copied in
+    keepPrivate(m_filePath);
+    keepPrivate(backupPath);
     return true;
 }
 
@@ -6590,7 +6749,7 @@ void Preferences::saveInBackground() const
         return;
     // Encoded here, synced + renamed on the writer: fdatasync on a busy ext4 held the
     // main thread for seconds (#169). Newest queued copy wins.
-    BackgroundFileWriter::instance().write(m_filePath, encode(), {});
+    BackgroundFileWriter::instance().write(m_filePath, encode(), savePrivate);
 }
 
 bool Preferences::saveTo(const QString& filePath) const
@@ -6791,7 +6950,7 @@ bool Preferences::saveImpl(const QString& filePath) const
         logError(QStringLiteral("Failed to commit preferences file: %1").arg(filePath));
         return false;
     }
-
+    keepPrivate(filePath);
     return true;
 }
 
@@ -6919,6 +7078,11 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "enablePassword" << YAML::Value << m_data->proxyEnablePassword;
     out << YAML::Key << "user" << YAML::Value << m_data->proxyUser.toStdString();
     out << YAML::Key << "password" << YAML::Value << m_data->proxyPassword.toStdString();
+    out << YAML::Key << "dohUrl" << YAML::Value << m_data->proxyDohUrl.toStdString();
+    out << YAML::Key << "dohUrls" << YAML::Value << YAML::BeginSeq;
+    for (const QString& url : m_data->proxyDohUrls)
+        out << url.toStdString();
+    out << YAML::EndSeq;
     out << YAML::EndMap;
 
     // Directories
@@ -7275,6 +7439,13 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "commentFilter" << YAML::Value << m_data->commentFilter.toStdString();
     out << YAML::Key << "showSmileys" << YAML::Value << m_data->showSmileys;
     out << YAML::Key << "indicateRatings" << YAML::Value << m_data->indicateRatings;
+    out << YAML::Key << "chatSound" << YAML::Value << m_data->chatSound;
+    out << YAML::Key << "chatAlert" << YAML::Value << m_data->chatAlert;
+    out << YAML::Key << "chatUnreadBadge" << YAML::Value << m_data->chatUnreadBadge;
+    out << YAML::Key << "chatWebLinks" << YAML::Value << m_data->chatWebLinks;
+    out << YAML::Key << "chatModStar" << YAML::Value << m_data->chatModStar;
+    out << YAML::Key << "chatRoomMedia" << YAML::Value << m_data->chatRoomMedia;
+    out << YAML::Key << "chatRoomVideos" << YAML::Value << m_data->chatRoomVideos;
     out << YAML::EndMap;
 
     // Search
@@ -7294,6 +7465,11 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "tokens" << YAML::Value << YAML::BeginSeq;
     for (const auto& t : m_data->ipcTokens)
         out << t.toStdString();
+    out << YAML::EndSeq;
+    out << YAML::Key << "tunnel" << YAML::Value << m_data->ipcTunnel;
+    out << YAML::Key << "tunnelPeers" << YAML::Value << YAML::BeginSeq;
+    for (const auto& p : m_data->ipcTunnelPeers)
+        out << p.toStdString();
     out << YAML::EndSeq;
     out << YAML::EndMap;
 
@@ -7666,10 +7842,17 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "deletedFileDays" << YAML::Value << m_data->ed3kDeletedFileDays;
     out << YAML::Key << "roomHistoryStore" << YAML::Value << m_data->ed3kRoomHistoryStore;
     out << YAML::Key << "roomHistoryMax" << YAML::Value << m_data->ed3kRoomHistoryMax;
+    out << YAML::Key << "roomMediaCacheMiB" << YAML::Value << m_data->ed3kRoomMediaCacheMiB;
+    out << YAML::Key << "roomMediaPerHour" << YAML::Value << m_data->ed3kRoomMediaPerHour;
     out << YAML::Key << "jointDownloads" << YAML::Value << m_data->ed3kJointDownloads;
     out << YAML::Key << "shareUsenetPosts" << YAML::Value << m_data->ed3kShareUsenetPosts;
     out << YAML::Key << "archiveContents" << YAML::Value << m_data->ed3kArchiveContents;
+    out << YAML::Key << "lanUnlimited" << YAML::Value << m_data->ed3kLanUnlimited;
     out << YAML::Key << "ownSetsWatch" << YAML::Value << m_data->ed3kOwnSetsWatch;
+    out << YAML::Key << "anonEd2k" << YAML::Value << m_data->ed3kAnonEd2k;
+    out << YAML::Key << "anonTorrent" << YAML::Value << m_data->ed3kAnonTorrent;
+    out << YAML::Key << "anonUsenet" << YAML::Value << m_data->ed3kAnonUsenet;
+    out << YAML::Key << "anonHoster" << YAML::Value << m_data->ed3kAnonHoster;
     out << YAML::Key << "udpPort" << YAML::Value << static_cast<int>(m_data->ed3kUdpPort);
     out << YAML::Key << "lan" << YAML::Value << m_data->ed3kLan;
     out << YAML::Key << "forceOpen" << YAML::Value << m_data->ed3kForceOpen;

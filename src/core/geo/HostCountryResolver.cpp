@@ -5,6 +5,9 @@
 #include "geo/HostCountryResolver.h"
 #include "geo/CdnRanges.h"
 #include "geo/IP2Country.h"
+#include "net/DohResolver.h"
+#include "net/ProxySettings.h"
+#include "prefs/Preferences.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -13,6 +16,7 @@
 #include <QPointer>
 #include <QSet>
 #include <QThread>
+#include <QTimer>
 
 #include <memory>
 
@@ -22,6 +26,7 @@ namespace {
 
 constexpr qint64 kCacheTtlSecs = 60 * 60;
 constexpr int kTimeoutMs = 5000;
+constexpr int kProxyTimeoutMs = 9000;
 constexpr qint64 kMissTtlSecs = 10 * 60;
 
 struct CacheEntry {
@@ -58,16 +63,43 @@ struct Pending {
     return isCdnAddress(a) ? QString() : countryCodeOf(a);
 }
 
-[[nodiscard]] QString codeFor(const QHostInfo& info)
+[[nodiscard]] QString codeFor(const QList<QHostAddress>& addresses)
 {
     // First address with a known country wins; v4/v6 order is the resolver's
-    for (const QHostAddress& a : info.addresses())
+    for (const QHostAddress& a : addresses)
         if (QString cc = countryOf(a); !cc.isEmpty())
             return cc;
     return {};
 }
 
+[[nodiscard]] bool proxySet()
+{
+    const ProxySettings p = thePrefs.proxySettings();
+    return p.useProxy && !p.host.isEmpty();
+}
+
 } // namespace
+
+bool countryDnsAvailable()
+{
+    return !proxySet() || !thePrefs.proxyDohUrl().isEmpty();
+}
+
+void countryDnsLookup(const QString& name, QObject* context, std::function<void(QList<QHostAddress>)> done)
+{
+    const QString doh = activeDohUrl();
+    if (!proxySet() || (!doh.isEmpty() && isLocalName(name))) {
+        QHostInfo::lookupHost(name, context, [done = std::move(done)](const QHostInfo& info) {
+            done(info.error() == QHostInfo::NoError ? info.addresses() : QList<QHostAddress>{});
+        });
+        return;
+    }
+    if (!doh.isEmpty()) {
+        dohLookup(doh, name, context, std::move(done));
+        return;
+    }
+    QTimer::singleShot(0, context, [done = std::move(done)] { done({}); });
+}
 
 void resolveHostCountries(const QStringList& hosts, QObject* context,
                           std::function<void(const QHash<QString, QString>&)> done)
@@ -95,6 +127,11 @@ void resolveHostCountries(const QStringList& hosts, QObject* context,
         toResolve.append(host);
     }
 
+    if (!toResolve.isEmpty() && !countryDnsAvailable()) {
+        for (const QString& host : std::as_const(toResolve))
+            pending->result.insert(host, QString());
+        toResolve.clear();
+    }
     if (toResolve.isEmpty()) {
         pending->complete();
         return;
@@ -102,8 +139,8 @@ void resolveHostCountries(const QStringList& hosts, QObject* context,
 
     pending->outstanding = static_cast<int>(toResolve.size());
     for (const QString& host : std::as_const(toResolve)) {
-        QHostInfo::lookupHost(host, context, [pending, host](const QHostInfo& info) {
-            const QString cc = info.error() == QHostInfo::NoError ? codeFor(info) : QString();
+        countryDnsLookup(host, context, [pending, host](const QList<QHostAddress>& addresses) {
+            const QString cc = codeFor(addresses);
             // Only cache a real answer — a db that loads later should get another go
             if (!cc.isEmpty())
                 cache().insert(host.toLower(), {cc, QDateTime::currentSecsSinceEpoch()});
@@ -112,7 +149,8 @@ void resolveHostCountries(const QStringList& hosts, QObject* context,
                 pending->complete();
         });
     }
-    QTimer::singleShot(kTimeoutMs, context, [pending] { pending->complete(); });
+    // DoH takes a round trip through the proxy
+    QTimer::singleShot(proxySet() ? kProxyTimeoutMs : kTimeoutMs, context, [pending] { pending->complete(); });
 }
 
 QString cachedHostCountry(const QString& rawHost)
@@ -133,12 +171,12 @@ QString cachedHostCountry(const QString& rawHost)
         return {};
     if (const auto it = s_misses.constFind(host); it != s_misses.cend() && now - *it < kMissTtlSecs)
         return {};
-    if (s_inFlight.contains(host))
+    if (s_inFlight.contains(host) || !countryDnsAvailable())
         return {};
     s_inFlight.insert(host);
-    QHostInfo::lookupHost(host, app, [host](const QHostInfo& info) {
+    countryDnsLookup(host, app, [host](const QList<QHostAddress>& addresses) {
         s_inFlight.remove(host);
-        const QString cc = info.error() == QHostInfo::NoError ? codeFor(info) : QString();
+        const QString cc = codeFor(addresses);
         const qint64 at = QDateTime::currentSecsSinceEpoch();
         if (cc.isEmpty()) {
             if (s_misses.size() > 4096)

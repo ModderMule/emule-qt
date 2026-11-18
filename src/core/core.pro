@@ -250,6 +250,8 @@ SOURCES += \
     webserver/WebServerApi.cpp \
     webserver/WebServerMcp.cpp \
     webserver/WebServerTorrents.cpp \
+    webserver/WebServerEd3k.cpp \
+    webserver/WebServerIndexer.cpp \
     webserver/StreamTokenStore.cpp \
     webserver/WebSessionManager.cpp \
     webserver/WebTemplateEngine.cpp
@@ -430,6 +432,7 @@ HEADERS += \
     utils/BlockRuns.h \
     utils/DebugUtils.h \
     utils/AtomicFile.h \
+    utils/MediaSniff.h \
     utils/OwnerOnly.h \
     utils/SystemMemory.h \
     utils/BackgroundFileWriter.h \
@@ -447,6 +450,7 @@ HEADERS += \
     utils/FolderList.h \
     utils/PathUtils.h \
     utils/SafeRemove.h \
+    utils/FileTypeFilter.h \
     utils/PerfLog.h \
     utils/PlatformUtils.h \
     utils/SafeFile.h \
@@ -467,6 +471,9 @@ HEADERS += \
     webserver/OpenApiWriter.h \
     webserver/ApiEventHub.h \
     webserver/HosterWebBackend.h \
+    webserver/Ed3kWebBackend.h \
+    webserver/IndexerWebBackend.h \
+    webserver/ApiOpBuilder.h \
     webserver/MetaGrabWebBackend.h \
     webserver/TorrentWebBackend.h \
     webserver/UsenetWebBackend.h \

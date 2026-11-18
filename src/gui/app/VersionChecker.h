@@ -51,8 +51,9 @@ public:
     /// report the outcome either way. Tools -> Links -> Version Check.
     void checkNow();
 
-    /// Check only when enabled and the configured interval has elapsed since the last
-    /// completed check. Silent unless there is a new version.
+    /// Check when the configured interval has elapsed since the last completed check.
+    /// Silent unless there is a new version. With versionCheckEnabled off it still
+    /// checks weekly, but announces only a required update (below "minVersion").
     void checkIfDue();
 
     /// Run checkIfDue() now and once an hour after that. Idempotent — safe to call on
@@ -87,7 +88,7 @@ signals:
     void manifestFetchFailed(const QString& reason);
 
 private:
-    enum class Mode { Auto, Manual, Quiet };
+    enum class Mode { Auto, Manual, Quiet, RequiredOnly };
     void start(Mode mode);
     void onReplyFinished(QNetworkReply* reply);
 

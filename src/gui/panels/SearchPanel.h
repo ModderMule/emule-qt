@@ -199,6 +199,7 @@ private slots:
     void onTabDoubleClicked(int index);
     void onTabContextMenu(const QPoint& pos);
     void onResultContextMenu(const QPoint& pos);
+    void dumpEd3kMenus();   ///< dev aid, utils/MenuDump.h
     void onResultDoubleClicked(const QModelIndex& index);
     void onSearchResultPush(const Ipc::IpcMessage& msg);
     void onIndexerResultsPush(const Ipc::IpcMessage& msg);
@@ -312,6 +313,8 @@ private:
     void setupAutoComplete();
     void addToSearchHistory(const QString& expression);
     void sendPreview(const QString& hash);
+    /// The file name of the first result row of @p hash (any tab, any case); empty: none.
+    [[nodiscard]] QString resultFileName(const QString& hash) const;
     /// Ask the peer behind a browsed file for preview frames.
     void requestPeerPreview(uint32_t searchID, const QString& hash);
     void onSearchPreviewPush(const Ipc::IpcMessage& msg);

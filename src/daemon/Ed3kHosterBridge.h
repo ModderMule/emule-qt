@@ -19,6 +19,8 @@
 
 namespace eMule {
 
+struct UsenetStreamSource;
+
 namespace ed3k {
 class Ed3kHosterJoin;
 class Ed3kResolver;
@@ -48,6 +50,13 @@ void openContainerAndAdd(const QByteArray& data, const QString& fileName,
 
 /// "Move to" (#187) of hoster item @p id (decimal). Empty: started; else why not.
 [[nodiscard]] QString moveTo(const QString& id, const QString& dir);
+
+/// Hoster preview (WebServer::setHosterStreamResolver): item @p id (decimal) read from
+/// @p offset. @p fetch (every preview read, seeking on or off): availableEnd = bytes held
+/// from there, peers' blocks there first, a tail fetch near the end (Ed3kHosterJoin::playFrom);
+/// false: a lookup, the file as it is on disk. An archive or a
+/// file no player takes: notSeekableReason. found = false: no such item, or it failed.
+[[nodiscard]] UsenetStreamSource streamFrom(const QString& id, qint64 offset, bool fetch);
 
 [[nodiscard]] bool isHosterRequest(Ipc::IpcMsgType type);
 /// Whether it carries a password: local IPC clients only.

@@ -145,6 +145,7 @@ emule_add_test(tst_FileIdentifier   FOLDER "Crypto")
 
 # Module 29d: Networking
 emule_add_test(tst_Address            FOLDER "Net")
+emule_add_test(tst_DohResolver        FOLDER "Net")
 emule_add_test(tst_LocalIPv6         FOLDER "Net")
 emule_add_test(tst_IPv6SourcePin     FOLDER "Net")
 emule_add_test(tst_ConnectionChecker FOLDER "Net")
@@ -388,6 +389,12 @@ target_compile_definitions(tst_WebServer PRIVATE
 # IPC Protocol
 emule_add_test(tst_IpcProtocol   FOLDER "Ipc" LIBRARIES eMule::Ipc)
 emule_add_test(tst_IpcMessage    FOLDER "Ipc" LIBRARIES eMule::Ipc)
+# StatStream / ReadStream over IPC (qDonkey phone app): links the daemon lib
+emule_add_test(tst_IpcStream FOLDER "Ipc"
+    SOURCES tst_IpcStream.cpp "${CMAKE_SOURCE_DIR}/src/daemon/IpcStreamBridge.cpp"
+            "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kTunnelBridge.cpp"
+    LIBRARIES eMule::Core)
+target_include_directories(tst_IpcStream PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
 emule_add_test(tst_IpcConnection FOLDER "Ipc" LIBRARIES eMule::Ipc)
 emule_add_test(tst_PreferencesIpc FOLDER "Ipc" LIBRARIES eMule::Ipc yaml-cpp::yaml-cpp)
 # Push broadcast rate limiter — pure Qt Core, so it links the real library directly.
@@ -630,9 +637,10 @@ if(EMULE_ED3K)
         SOURCES tst_Ed3kRooms.cpp
                 "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kRoomsBridge.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/panels/Ed3kRoomTab.cpp"
+                "${CMAKE_SOURCE_DIR}/src/gui/panels/Ed3kRoomMediaView.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/panels/ChatChannelView.cpp"
                 "${CMAKE_SOURCE_DIR}/src/gui/controls/LogTextView.cpp"
-        LIBRARIES eMule::Ed3k eMule::Ipc Qt6::Widgets)
+        LIBRARIES eMule::Ed3k eMule::Ipc Qt6::Widgets Qt6::Multimedia)
     target_include_directories(tst_Ed3kRooms PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon" "${CMAKE_SOURCE_DIR}/src/gui")
     set_tests_properties(tst_Ed3kRooms PROPERTIES TIMEOUT 240)
     # ed3k keyword search (Ed3kSearch): one node publishes a file, another finds it
@@ -1357,6 +1365,21 @@ target_include_directories(tst_CategoryDialog PRIVATE
 target_link_libraries(tst_CategoryDialog PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
 
+# Core connect script: quoting, bash 3.2 run against a stub app, pwsh parse if present.
+emule_add_test(tst_CoreConnectScript FOLDER "Gui"
+    SOURCES tst_CoreConnectScript.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/CoreConnectScript.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CoreScriptDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp")
+target_include_directories(tst_CoreConnectScript PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_CoreConnectScript PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+
 # The Options window's height budget. QStackedLayout's minimum is the MAX over its
 # pages, so one page without a scroll area sets the window height for all eighteen --
 # and the sidebar's grouping must not drift from the Page enum that uistate.yml stores.
@@ -1367,6 +1390,8 @@ emule_add_test(tst_OptionsDialogSizing FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/app/SkinColors.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CoreScriptDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/CoreConnectScript.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsSearch.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/RememberedSizeDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kOptionsPages.cpp"
@@ -1625,6 +1650,8 @@ emule_add_test(tst_SmallScreenDialogs FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FirstStartWizard.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/MetaAccountDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CoreScriptDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/CoreConnectScript.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsSearch.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/Ed3kOptionsPages.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/HosterCombo.cpp"
@@ -1752,6 +1779,14 @@ target_link_libraries(tst_TaskbarProgress PRIVATE Qt6::Widgets)
 # Link codec shared by the Server Info, chat and IRC panes — header-only, so nothing
 # but the test itself is compiled. Widgets is for QTextDocument: one case replays the
 # rich-text parse a QTextBrowser does.
+# Chat tab colours: joins soft, someone's message red with the toolbar "!"
+emule_add_test(tst_IrcTabActivity FOLDER "Gui"
+    SOURCES tst_IrcTabActivity.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/panels/IrcPanel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp")
+target_include_directories(tst_IrcTabActivity PRIVATE "${CMAKE_SOURCE_DIR}/src/gui")
+target_link_libraries(tst_IrcTabActivity PRIVATE eMule::Core eMule::Ipc Qt6::Widgets)
+
 emule_add_test(tst_TextLinks FOLDER "Ipc"
     SOURCES tst_TextLinks.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Smileys.cpp")

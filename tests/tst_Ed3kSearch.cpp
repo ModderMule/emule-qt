@@ -63,6 +63,7 @@ private slots:
     void aSharedFileIsFound();
     void aSharedFilesNoteAndMediaAreFound();
     void clipUtf8KeepsWholeCharacters();
+    void nameWordsAreTheLongestOnes();
     void aNoteAuthorShowsItsNodeId();
     void withoutANodeTheSearchEnds();
     void aChannelSearchTakesChannelFilesOnly();
@@ -142,6 +143,20 @@ void tst_Ed3kSearch::theFilterTakesSizeExtensionAndSources()
     QCOMPARE(f.maxSize, std::uint64_t(1000));
     QCOMPARE(f.minSources, 3u);
     QVERIFY(f.none.empty());
+    QVERIFY(f.exts.empty());
+    // a file type goes as its extensions; media limits as they are
+    p.fileType = QStringLiteral(ED2KFTSTR_VIDEO);
+    p.minLength = 600;
+    p.minBitrate = 128;
+    p.codec = QStringLiteral(" h264 ");
+    const auto v = Ed3kSearch::filterOf(p);
+    const QStringList exts = QString::fromStdString(v.exts).split(QLatin1Char(' '));
+    QVERIFY(exts.contains(QStringLiteral("mkv")) && exts.contains(QStringLiteral("avi")) && !exts.contains(QStringLiteral("mp3")));
+    QCOMPARE(v.minDuration, 600u);
+    QCOMPARE(v.minBitrate, 128u);
+    QCOMPARE(v.codec, std::string("h264"));
+    p.fileType = QStringLiteral(ED2KFTSTR_PROGRAM);
+    QVERIFY(QString::fromStdString(Ed3kSearch::filterOf(p).exts).split(QLatin1Char(' ')).contains(QStringLiteral("iso")));
 }
 
 void tst_Ed3kSearch::aSharedFileIsFound()
@@ -208,6 +223,19 @@ void tst_Ed3kSearch::aSharedFileIsFound()
     // the publisher named its MD4 (Ed3kShared)
     QCOMPARE((*it)->ed3kEd2k(), md4);
     QVERIFY(!(*it)->ed3kJudged().hidden);
+
+    // a type search finds no file of another type (Protocol.md §10.3 `exts`); Program holds .bin
+    for (const auto& [type, found] : {std::pair{QStringLiteral(ED2KFTSTR_VIDEO), false}, std::pair{QStringLiteral(ED2KFTSTR_PROGRAM), true}}) {
+        SearchParams typed = p;
+        typed.fileType = type;
+        rows.clear();
+        ended.reset();
+        search.setSinks([&](uint32, std::unique_ptr<SearchFile> f) { rows.push_back(std::move(f)); },
+                        [&](uint32, const QString& error) { ended = error; });
+        search.startMetaSearch(42, SearchType::Ed3k, typed, {}, {});
+        QTRY_VERIFY_WITH_TIMEOUT(ended.has_value(), 60000);
+        QCOMPARE(std::ranges::any_of(rows, [&](const auto& r) { return r->fileName() == QStringLiteral("golden lighthouse.bin"); }), found);
+    }
 
     // declined-records.md §2: a root of the searcher's decline list: its row hidden, by decline.txt
     c.setDeclined(DeclineList{.roots = {*root}});
@@ -332,8 +360,27 @@ void tst_Ed3kSearch::aSharedFilesNoteAndMediaAreFound()
     QCOMPARE(notes.front().rating, 4u);
     QCOMPARE(notes.front().text, QStringLiteral("clean rip"));
     QCOMPARE(notes.front().nick, QStringLiteral("Mule"));
+
+    // File Names / Metadata of a download: KEYWORD records of the root, by the name's words
+    QVERIFY(search.searchNames(rootBytes, QStringLiteral("Silver.Harbour.mp3"), std::uint64_t(data.size())));
+    QVERIFY(search.namesRunning(rootBytes));
+    QTRY_VERIFY_WITH_TIMEOUT(!search.namesRunning(rootBytes), 60000);
+    const auto names = search.namesOf(rootBytes);
+    QCOMPARE(names.size(), std::size_t(1));
+    QCOMPARE(names.front().name, QStringLiteral("silver harbour.mp3"));
+    QCOMPARE(names.front().publishers, 1);
+    QCOMPARE(names.front().artist, QStringLiteral("Harbour Band"));
+    QCOMPARE(names.front().duration, 215u);
     a.disconnect(this);
     shared.stop();
+}
+
+void tst_Ed3kSearch::nameWordsAreTheLongestOnes()
+{
+    QCOMPARE(Ed3kSearch::nameWords(QStringLiteral("Silver.Harbour.mp3")), (QStringList{QStringLiteral("harbour"), QStringLiteral("silver")}));
+    // short words and the extension left out, repeats once
+    QCOMPARE(Ed3kSearch::nameWords(QStringLiteral("a to be-or-NOT be.not.avi"), 3), (QStringList{QStringLiteral("not")}));
+    QVERIFY(Ed3kSearch::nameWords(QStringLiteral("ab.mkv")).isEmpty());
 }
 
 void tst_Ed3kSearch::clipUtf8KeepsWholeCharacters()

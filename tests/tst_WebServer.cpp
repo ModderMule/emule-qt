@@ -375,6 +375,95 @@ public:
     }
 };
 
+/// One ed3k download; records the calls.
+class FakeEd3kBackend final : public Ed3kWebBackend {
+public:
+    static QString root() { return QString(64, QLatin1Char('a')); }
+    mutable QStringList calls;
+    bool on = true;
+
+    bool available() const override { return on; }
+    QCborArray downloads() const override
+    {
+        return {QCborMap{{QStringLiteral("root"), root()}, {QStringLiteral("name"), QStringLiteral("film.mkv")},
+                         {QStringLiteral("size"), 1000}, {QStringLiteral("done"), 250}, {QStringLiteral("state"), 1},
+                         {QStringLiteral("priority"), 2}, {QStringLiteral("blocks"), QByteArray("\x01")}},
+                // single transfer mode row of another network: not listed
+                QCborMap{{QStringLiteral("root"), QStringLiteral("bt:xyz")}, {QStringLiteral("name"), QStringLiteral("t")}}};
+    }
+    AddResult add(const QString& hexRoot, qint64 size, const QString& name, int category, bool paused) override
+    {
+        calls << QStringLiteral("add:%1:%2:%3:%4:%5").arg(hexRoot).arg(size).arg(name).arg(category).arg(paused);
+        return {hexRoot, {}};
+    }
+    AddResult addLink(const QString& link, int, bool) override
+    {
+        calls << QStringLiteral("link:") + link;
+        if (!link.startsWith(QStringLiteral("ed3k:")))
+            return {{}, QStringLiteral("not an ed3k link")};
+        return {root(), {}};
+    }
+    bool control(const QString& hexRoot, Control action, qint64 arg) override
+    {
+        calls << QStringLiteral("control:%1:%2:%3").arg(hexRoot).arg(int(action)).arg(arg);
+        return true;
+    }
+    QString moveTo(const QString& hexRoot, const QString& dir) override
+    {
+        calls << QStringLiteral("move:%1:%2").arg(hexRoot, dir);
+        return {};
+    }
+    QString rename(const QString& hexRoot, const QString& name) override
+    {
+        calls << QStringLiteral("rename:%1:%2").arg(hexRoot, name);
+        return name.contains(QLatin1Char('/')) ? QStringLiteral("Invalid file name") : QString();
+    }
+};
+
+class FakeIndexerBackend final : public IndexerWebBackend {
+public:
+    mutable QStringList calls;
+    bool hasUsenet = true;
+
+    bool available() const override { return true; }
+    StartResult start(const Query& q) override
+    {
+        calls << QStringLiteral("start:%1:%2:%3:%4").arg(q.text).arg(q.torrents).arg(q.mode, q.indexers.join(u','));
+        if (q.torrents)
+            return {.error = QStringLiteral("No torrent indexer is configured."), .noIndexer = true};
+        return {.id = 7};
+    }
+    QCborArray searches() const override { return {*search(7)}; }
+    std::optional<QCborMap> search(quint32 id) const override
+    {
+        if (id != 7)
+            return std::nullopt;
+        return QCborMap{{QStringLiteral("id"), 7}, {QStringLiteral("network"), QStringLiteral("usenet")},
+                        {QStringLiteral("running"), false}, {QStringLiteral("count"), 1}};
+    }
+    std::optional<QCborArray> results(quint32 id) const override
+    {
+        if (id != 7)
+            return std::nullopt;
+        return QCborArray{QCborMap{{QStringLiteral("id"), QStringLiteral("ix:1")},
+                                   {QStringLiteral("title"), QStringLiteral("Some.Release")},
+                                   {QStringLiteral("isUsenet"), true}}};
+    }
+    bool stop(quint32 id) override { return id == 7; }
+    bool remove(quint32 id) override { return id == 7; }
+    void grab(quint32 searchId, const QString& resultId, const GrabOptions& o,
+              std::function<void(const GrabResult&)> done) override
+    {
+        calls << QStringLiteral("grab:%1:%2:%3:%4:%5").arg(searchId).arg(resultId).arg(o.category).arg(o.priority).arg(o.paused);
+        if (resultId == QStringLiteral("dup"))
+            done({.target = QStringLiteral("usenet"), .error = QStringLiteral("Already downloaded"), .usenetOutcome = 4});
+        else if (resultId == QStringLiteral("gone"))
+            done({.error = QStringLiteral("The indexer returned no NZB.")});
+        else
+            done({.ok = true, .target = QStringLiteral("usenet"), .id = QStringLiteral("item-1"), .usenetOutcome = 0});
+    }
+};
+
 /// A multipart/form-data body: text fields, then files as {field, file name, bytes}.
 QByteArray multipartBody(const QByteArray& boundary, const QList<std::pair<QByteArray, QByteArray>>& fields,
                          const QList<std::tuple<QByteArray, QByteArray, QByteArray>>& files)
@@ -638,6 +727,9 @@ private slots:
     void previewCapsTheResponseBody();
     void previewStopsAtWhatHasDownloaded();
     void previewWaitsForBytesThatHaveNotArrivedYet();
+    void usenetPreviewFetchesWithSeekingOff();
+    void hosterPreviewFetchesWithSeekingOff();
+    void hosterPreviewRefusesWhatNoPlayerTakes();
     void previewGivesUpWhenTheItemDisappears();
     void previewStitchesAReadAcrossTwoFiles();
     void previewRefusesAnUnstreamableReleaseAtOnce();
@@ -743,6 +835,10 @@ private slots:
     void restUsenetWithoutBackendIs503();
     void restUsenetClearCompletedAndInspect();
     void restUsenetAbsentWhenRestDisabled();
+    void restHosterRoutes();
+    void restEd3kRoutes();
+    void restIndexerRoutes();
+    void restSharedEditChecksInput();
     void theUsenetTemplateHasItsSections();
 
     // Torrents (only a BitTorrent build has the routes)
@@ -2094,7 +2190,9 @@ void tst_WebServer::previewStopsAtWhatHasDownloaded()
     const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSize);
     QVERIFY(!path.isEmpty());
 
-    m_webServer->setUsenetStreamResolver([path](const UsenetStreamRequest&) {
+    bool fetched = false;
+    m_webServer->setUsenetStreamResolver([path, &fetched](const UsenetStreamRequest& ask) {
+        fetched = ask.fetch;
         UsenetStreamSource src;
         src.found = true;
         src.pieces = {{path, 0, 0, kSize}};
@@ -2103,11 +2201,14 @@ void tst_WebServer::previewStopsAtWhatHasDownloaded()
         src.availableEnd = kHave;
         return src;
     });
+    m_preferences->setDownloadSeeking(true);
 
     const QString token = m_webServer->streamToken();
     const auto resp = sendRanged(
         QStringLiteral("/api/v1/usenet/item/0/preview?token=%1").arg(token),
         QByteArrayLiteral("bytes=0-"));
+    m_preferences->setDownloadSeeking(false);
+    QVERIFY(fetched);
 
     QCOMPARE(resp.statusCode, 206);
     // Exactly the downloaded prefix. Going further hands the player the
@@ -2145,11 +2246,13 @@ void tst_WebServer::previewWaitsForBytesThatHaveNotArrivedYet()
         src.availableEnd = since.elapsed() > 400 ? kLate : 0;
         return src;
     });
+    m_preferences->setDownloadSeeking(true);
 
     const QString token = m_webServer->streamToken();
     const auto resp = sendRanged(
         QStringLiteral("/api/v1/usenet/item/0/preview?token=%1").arg(token),
         QByteArrayLiteral("bytes=0-"));
+    m_preferences->setDownloadSeeking(false);
 
     // Answered, not refused. A zero-byte 206 reads as end-of-stream and every
     // player stops there.
@@ -2157,6 +2260,112 @@ void tst_WebServer::previewWaitsForBytesThatHaveNotArrivedYet()
     QCOMPARE(qint64(resp.rawBody.size()), kLate);
 
     m_webServer->setUsenetStreamResolver({});
+}
+
+void tst_WebServer::usenetPreviewFetchesWithSeekingOff()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    constexpr qint64 kSize = 200 * 1024;
+    constexpr qint64 kLate = 100 * 1024;
+    const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSize);
+    QVERIFY(!path.isEmpty());
+
+    // a click asks for these bytes: fetched first and waited for, not the preallocated zeros
+    QList<bool> fetches;
+    QElapsedTimer since;
+    since.start();
+    m_webServer->setUsenetStreamResolver([&](const UsenetStreamRequest& ask) {
+        fetches << ask.fetch;
+        UsenetStreamSource src;
+        src.found = true;
+        src.pieces = {{path, 0, 0, kSize}};
+        src.fileName = QStringLiteral("movie.mkv");
+        src.totalSize = kSize;
+        src.availableEnd = since.elapsed() > 400 ? kLate : 0;
+        return src;
+    });
+    QVERIFY(!m_preferences->downloadSeeking());
+    const auto resp = sendRanged(
+        QStringLiteral("/api/v1/usenet/item/0/preview?token=%1").arg(m_webServer->streamToken()),
+        QByteArrayLiteral("bytes=0-"));
+    m_webServer->setUsenetStreamResolver({});
+
+    QCOMPARE(resp.statusCode, 206);
+    QCOMPARE(qint64(resp.rawBody.size()), kLate);
+    QVERIFY(fetches.size() > 1);
+    QVERIFY(std::ranges::all_of(fetches, [](bool f) { return f; }));
+}
+
+void tst_WebServer::hosterPreviewFetchesWithSeekingOff()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    constexpr qint64 kSize = 300 * 1024;
+    constexpr qint64 kSeek = 100 * 1024;
+    const QString path = writePattern(dir, QStringLiteral("movie.mkv"), kSize);
+    QVERIFY(!path.isEmpty());
+
+    // no resolver: not built with hosters
+    auto resp = sendRanged(
+        QStringLiteral("/api/v1/hoster/7/preview?token=%1").arg(m_webServer->streamToken()),
+        QByteArrayLiteral("bytes=0-"));
+    QCOMPARE(resp.statusCode, 503);
+
+    QElapsedTimer since;
+    since.start();
+    QList<std::tuple<QString, qint64, bool>> asks;
+    m_webServer->setHosterStreamResolver([&](const QString& id, qint64 offset, bool fetch) {
+        asks.append({id, offset, fetch});
+        UsenetStreamSource src;
+        src.found = true;
+        src.fileName = QStringLiteral("movie.mkv");
+        src.totalSize = kSize;
+        src.pieces = {{path, 0, 0, kSize}};
+        src.availableEnd = fetch ? (since.elapsed() > 400 ? kSize : offset) : 0;
+        return src;
+    });
+
+    // seeking on or off: asked from the seek offset with fetch, the answer waits for the bytes
+    for (const bool seeking : {false, true}) {
+        asks.clear();
+        since.restart();
+        m_preferences->setDownloadSeeking(seeking);
+        resp = sendRanged(
+            QStringLiteral("/api/v1/hoster/7/preview?token=%1").arg(m_webServer->streamToken()),
+            QByteArrayLiteral("bytes=%1-").replace("%1", QByteArray::number(kSeek)));
+        m_preferences->setDownloadSeeking(false);
+        QCOMPARE(resp.statusCode, 206);
+        QCOMPARE(qint64(resp.rawBody.size()), kSize - kSeek);
+        QVERIFY(asks.size() > 1);
+        QVERIFY(std::ranges::all_of(asks, [](const auto& a) {
+            return std::get<0>(a) == QStringLiteral("7") && std::get<1>(a) == kSeek && std::get<2>(a);
+        }));
+    }
+
+    m_webServer->setHosterStreamResolver({});
+}
+
+void tst_WebServer::hosterPreviewRefusesWhatNoPlayerTakes()
+{
+    m_webServer->setHosterStreamResolver([](const QString& id, qint64, bool) {
+        UsenetStreamSource src;
+        src.found = id == QStringLiteral("1");
+        src.fileName = QStringLiteral("movie.part1.rar");
+        src.notSeekableReason = QStringLiteral("Packed in an archive: no preview before the extraction");
+        return src;
+    });
+    const QString token = m_webServer->streamToken();
+    auto resp = sendRanged(QStringLiteral("/api/v1/hoster/1/preview?token=%1").arg(token),
+                           QByteArrayLiteral("bytes=0-"));
+    QCOMPARE(resp.statusCode, 406);
+    resp = sendRanged(QStringLiteral("/api/v1/hoster/2/preview?token=%1").arg(token),
+                      QByteArrayLiteral("bytes=0-"));
+    QCOMPARE(resp.statusCode, 404);
+    // the stream token is required
+    resp = sendRanged(QStringLiteral("/api/v1/hoster/1/preview"), QByteArrayLiteral("bytes=0-"));
+    QVERIFY(resp.statusCode == 401 || resp.statusCode == 403);
+    m_webServer->setHosterStreamResolver({});
 }
 
 void tst_WebServer::previewEndProbeIsNotWaitedOut()
@@ -4201,8 +4410,8 @@ void tst_WebServer::webHosterPage_listsAndActs()
     fake.calls.clear();
     sendRaw(port, "POST", QStringLiteral("/?ses=%1").arg(ses), QByteArrayLiteral("w=hoster&op=password&ids=7"), form);
     QVERIFY(fake.calls.isEmpty());
-    // no REST route
-    QCOMPARE(sendRaw(port, "GET", QStringLiteral("/api/v1/hoster"), {}, {}).statusCode, 404);
+    // the REST route exists and wants the key
+    QCOMPARE(sendRaw(port, "GET", QStringLiteral("/api/v1/hoster"), {}, {}).statusCode, 401);
 
     server->stop();
 }
@@ -4522,6 +4731,157 @@ void tst_WebServer::restUsenetClearCompletedAndInspect()
     // Literal routes an id never shadows
     QVERIFY(!fake.calls.contains(QStringLiteral("details:clear-completed")));
     QVERIFY(!fake.calls.contains(QStringLiteral("details:inspect")));
+}
+
+void tst_WebServer::restHosterRoutes()
+{
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/hoster")).statusCode, 503);
+
+    FakeHosterBackend fake;
+    m_webServer->setHosterBackend(&fake);
+    const auto reset = qScopeGuard([this] { m_webServer->setHosterBackend(nullptr); });
+
+    Response r = sendRequest("GET", QStringLiteral("/api/v1/hoster"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("total")).toInt(), 2);
+    const QJsonObject first = r.json.object().value(QStringLiteral("items")).toArray().at(0).toObject();
+    QCOMPARE(first.value(QStringLiteral("state")).toString(), QStringLiteral("downloading"));
+    QCOMPARE(first.value(QStringLiteral("id")).toInt(), 7);
+
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/hoster"), "{}").statusCode, 400);
+    r = sendRequest("POST", QStringLiteral("/api/v1/hoster"),
+                    "{\"links\":[\"https://files.test/a\",\" https://files.test/b \"],\"package\":\"Pack\"}");
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("added")).toInt(), 2);
+    QVERIFY(fake.calls.contains(QStringLiteral("add:https://files.test/a\nhttps://files.test/b:Pack")));
+
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/hoster/7/pause")).statusCode, 200);
+    QVERIFY(fake.calls.contains(QStringLiteral("pause:7")));
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/hoster/8/retry")).statusCode, 404);
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/hoster/7/explode")).statusCode, 400);
+
+    // destructive: nothing without the confirmation
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/hoster/7/remove"), "{\"deleteFile\":true}").statusCode, 400);
+    QVERIFY(!fake.calls.contains(QStringLiteral("delete:7")));
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/hoster/7/remove"),
+                         "{\"deleteFile\":true,\"confirm\":true}").statusCode, 200);
+    QVERIFY(fake.calls.contains(QStringLiteral("delete:7")));
+
+    r = sendRequest("POST", QStringLiteral("/api/v1/hoster/container"),
+                    QJsonDocument(QJsonObject{{QStringLiteral("data"), QString::fromLatin1(QByteArray("dlc-bytes").toBase64())},
+                          {QStringLiteral("fileName"), QStringLiteral("links.dlc")}}).toJson());
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("added")).toInt(), 3);
+    QVERIFY(fake.calls.contains(QStringLiteral("container:links.dlc:dlc-bytes")));
+    r = sendRequest("POST", QStringLiteral("/api/v1/hoster/container"),
+                    QJsonDocument(QJsonObject{{QStringLiteral("data"), QString::fromLatin1(QByteArray("bad").toBase64())},
+                          {QStringLiteral("fileName"), QStringLiteral("links.dlc")}}).toJson());
+    QCOMPARE(r.statusCode, 422);
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/hoster/container"),
+                         "{\"data\":\"!!!!\",\"fileName\":\"links.dlc\"}").statusCode, 400);
+}
+
+void tst_WebServer::restEd3kRoutes()
+{
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/ed3k/downloads")).statusCode, 503);
+
+    FakeEd3kBackend fake;
+    m_webServer->setEd3kBackend(&fake);
+    const auto reset = qScopeGuard([this] { m_webServer->setEd3kBackend(nullptr); });
+    const QString root = FakeEd3kBackend::root();
+    const QString item = QStringLiteral("/api/v1/ed3k/downloads/") + root;
+
+    Response r = sendRequest("GET", QStringLiteral("/api/v1/ed3k/downloads"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("total")).toInt(), 1);
+    const QJsonObject row = r.json.object().value(QStringLiteral("items")).toArray().at(0).toObject();
+    QCOMPARE(row.value(QStringLiteral("state")).toString(), QStringLiteral("paused"));
+    QCOMPARE(row.value(QStringLiteral("priority")).toString(), QStringLiteral("high"));
+    QVERIFY(!row.contains(QStringLiteral("blocks")));
+
+    QCOMPARE(sendRequest("GET", item).statusCode, 200);
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/ed3k/downloads/") + QString(64, QLatin1Char('b'))).statusCode, 404);
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/ed3k/downloads/xyz")).statusCode, 400);
+
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/ed3k/downloads"), "{\"link\":\"http://x.test\"}").statusCode, 400);
+    r = sendRequest("POST", QStringLiteral("/api/v1/ed3k/downloads"), "{\"links\":[\"ed3k:file:x\",\"nope\"]}");
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("added")).toInt(), 1);
+
+    QCOMPARE(sendRequest("POST", item + QStringLiteral("/pause")).statusCode, 200);
+    QVERIFY(fake.calls.contains(QStringLiteral("control:%1:0:0").arg(root)));
+
+    r = sendRequest("PATCH", item, "{\"name\":\"new.mkv\",\"priority\":\"veryHigh\",\"category\":2}");
+    QCOMPARE(r.statusCode, 200);
+    QVERIFY(fake.calls.contains(QStringLiteral("rename:%1:new.mkv").arg(root)));
+    QVERIFY(fake.calls.contains(QStringLiteral("control:%1:3:3").arg(root)));
+    QVERIFY(fake.calls.contains(QStringLiteral("control:%1:4:2").arg(root)));
+    QCOMPARE(sendRequest("PATCH", item, "{\"name\":\"a/b\"}").statusCode, 409);
+    QCOMPARE(sendRequest("PATCH", item, "{}").statusCode, 400);
+
+    QCOMPARE(sendRequest("POST", item + QStringLiteral("/move"), "{\"folder\":\"/tmp/x\"}").statusCode, 200);
+    QVERIFY(fake.calls.contains(QStringLiteral("move:%1:/tmp/x").arg(root)));
+
+    QCOMPARE(sendRequest("POST", item + QStringLiteral("/cancel")).statusCode, 400);
+    QCOMPARE(sendRequest("POST", item + QStringLiteral("/cancel"), "{\"confirm\":true}").statusCode, 200);
+    QVERIFY(fake.calls.contains(QStringLiteral("control:%1:2:0").arg(root)));
+
+    fake.on = false;
+    QCOMPARE(sendRequest("GET", item).statusCode, 503);
+}
+
+void tst_WebServer::restIndexerRoutes()
+{
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/indexer/searches")).statusCode, 503);
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/indexers")).statusCode, 200);
+
+    FakeIndexerBackend fake;
+    m_webServer->setIndexerBackend(&fake);
+    const auto reset = qScopeGuard([this] { m_webServer->setIndexerBackend(nullptr); });
+    const QString base = QStringLiteral("/api/v1/indexer/searches");
+
+    Response r = sendRequest("POST", base, "{\"query\":\"linux iso\",\"indexers\":[\"a\",\"b\"]}");
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("id")).toInt(), 7);
+    QVERIFY(fake.calls.contains(QStringLiteral("start:linux iso:0:search:a,b")));
+    QCOMPARE(sendRequest("POST", base, "{\"query\":\"x\",\"network\":\"torrent\"}").statusCode, 409);
+    QCOMPARE(sendRequest("POST", base, "{\"query\":\"x\",\"network\":\"ed2k\"}").statusCode, 400);
+
+    r = sendRequest("GET", base);
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("total")).toInt(), 1);
+    QCOMPARE(sendRequest("GET", base + QStringLiteral("/7")).statusCode, 200);
+    QCOMPARE(sendRequest("GET", base + QStringLiteral("/8")).statusCode, 404);
+
+    r = sendRequest("GET", base + QStringLiteral("/7/results"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("items")).toArray().at(0).toObject()
+                 .value(QStringLiteral("title")).toString(), QStringLiteral("Some.Release"));
+
+    r = sendRequest("POST", base + QStringLiteral("/7/download"), "{\"result\":\"ix:1\",\"priority\":1,\"paused\":true}");
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("target")).toString(), QStringLiteral("usenet"));
+    QVERIFY(fake.calls.contains(QStringLiteral("grab:7:ix:1:0:1:1")));
+    r = sendRequest("POST", base + QStringLiteral("/7/download"), "{\"result\":\"dup\"}");
+    QCOMPARE(r.statusCode, 409);
+    QCOMPARE(r.json.object().value(QStringLiteral("outcome")).toInt(), 4);
+    QCOMPARE(sendRequest("POST", base + QStringLiteral("/7/download"), "{\"result\":\"gone\"}").statusCode, 502);
+    QCOMPARE(sendRequest("POST", base + QStringLiteral("/7/download"), "{}").statusCode, 400);
+    QCOMPARE(sendRequest("POST", base + QStringLiteral("/7/download"), "{\"result\":\"x\",\"category\":999}").statusCode, 400);
+    QCOMPARE(sendRequest("POST", base + QStringLiteral("/8/download"), "{\"result\":\"x\"}").statusCode, 404);
+
+    QCOMPARE(sendRequest("POST", base + QStringLiteral("/7/stop")).statusCode, 200);
+    QCOMPARE(sendRequest("DELETE", base + QStringLiteral("/7")).statusCode, 200);
+    QCOMPARE(sendRequest("DELETE", base + QStringLiteral("/8")).statusCode, 404);
+}
+
+void tst_WebServer::restSharedEditChecksInput()
+{
+    const QString item = QStringLiteral("/api/v1/shared/") + QString(32, QLatin1Char('0'));
+    QCOMPARE(sendRequest("PATCH", item, "{}").statusCode, 400);
+    QCOMPARE(sendRequest("PATCH", item, "{\"priority\":\"urgent\"}").statusCode, 400);
+    QCOMPARE(sendRequest("PATCH", item, "{\"rating\":9}").statusCode, 400);
+    QCOMPARE(sendRequest("PATCH", item, "{\"priority\":\"high\"}").statusCode, 404);
 }
 
 void tst_WebServer::restUsenetAbsentWhenRestDisabled()

@@ -10,6 +10,8 @@ Usage:
                                                    # export one context only
     scripts/translate_missing.py apply             # apply from lang/missing.json
     scripts/translate_missing.py apply FILE.json   # apply from custom JSON file
+    scripts/translate_missing.py --app qdonkey show
+                                                   # the qDonkey phone app (libs/qDonkey/lang/qdonkey_*.ts)
 
 Workflow after running lupdate:
     1. scripts/translate_missing.py reuse           # borrow what other contexts translate
@@ -26,7 +28,19 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from pathlib import Path
 
-LANG_DIR = Path(__file__).resolve().parent.parent / "lang"
+REPO_DIR = Path(__file__).resolve().parent.parent
+LANG_DIR = REPO_DIR / "lang"
+TS_PREFIX = "emuleqt"
+
+# --app qdonkey: the phone app's .ts files (libs/qDonkey/lang/qdonkey_<lang>.ts)
+if len(sys.argv) > 2 and sys.argv[1] == "--app":
+    _app = sys.argv[2]
+    del sys.argv[1:3]
+    if _app == "qdonkey":
+        LANG_DIR = REPO_DIR / "libs" / "qDonkey" / "lang"
+        TS_PREFIX = "qdonkey"
+    else:
+        sys.exit(f"unknown app: {_app}")
 
 LANGUAGES = ["de_DE", "es_ES", "fr_FR", "it_IT", "ja_JP", "ko_KR", "nl_NL", "pl_PL",
              "pt_BR", "ru_RU", "zh_CN", "zh_TW"]
@@ -35,7 +49,7 @@ DEFAULT_EXPORT = LANG_DIR / "missing.json"
 
 
 def ts_path(lang: str) -> Path:
-    return LANG_DIR / f"emuleqt_{lang}.ts"
+    return LANG_DIR / f"{TS_PREFIX}_{lang}.ts"
 
 
 def get_untranslated(lang: str) -> list[tuple[str, str, int]]:

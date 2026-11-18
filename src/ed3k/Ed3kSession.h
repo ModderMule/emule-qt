@@ -43,6 +43,7 @@
 #include <deque>
 #include <functional>
 #include <map>
+#include <tuple>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -57,7 +58,7 @@ struct Ed3kSettings {
     std::uint16_t udpPort = 0;   ///< 0 = any free port
     QString configDir;           ///< state goes to <configDir>/ed3k
     QHostAddress bindAddress{QHostAddress::Any};   ///< Any = dual stack
-    QString network;             ///< empty = the public network; tests only; a secret
+    QString network;             ///< empty = the public network; tests and EMULE_ED3K_NETWORK only; a secret
     bool forceOpen = false;      ///< operator/tests: address open, no NAT tests (§9.2 first nodes)
     std::uint32_t smallNetS = 0; ///< tests: Kad of a few nodes connected this long after the first answer; 0 = default (45 s)
     std::uint32_t storeMiB = 0;  ///< RAM for Kad records of others (pref ed3k.kadStoreMiB); 0 = default (128 MiB)
@@ -90,6 +91,8 @@ struct Ed3kStatus {
     std::uint32_t kadOffline = 0;
     /// reach test without a verdict yet: bit 0 IPv4, bit 1 IPv6 (class 2/3 may still turn open)
     std::uint32_t natChecking = 0;
+    /// verdict not open, but no test proved it (no prober / no 2nd site): bit 0 IPv4, bit 1 IPv6
+    std::uint32_t natUntested = 0;
     /// Kad node lookups got enough answers: searches and publishing run (not just contacts > 0)
     bool kadConnected = false;
     Ed3kHideStatus hide;         ///< hiding (hops.md §1)
@@ -275,6 +278,9 @@ public:
     };
     void addPeerBytes(::ed3k::KeyKind key, const ::ed3k::NodeId& node, std::uint64_t up, std::uint64_t down);
     [[nodiscard]] PeerBytes peerBytes(::ed3k::KeyKind key, const ::ed3k::NodeId& node) const;
+    /// Verified blocks of @p root from a peer (the Transfers row's Completed; peerBytes: all files).
+    void addPeerFileDown(::ed3k::KeyKind key, const ::ed3k::NodeId& node, const ::ed3k::Root& root, std::uint64_t down);
+    [[nodiscard]] std::uint64_t peerFileDown(::ed3k::KeyKind key, const ::ed3k::NodeId& node, const ::ed3k::Root& root) const;
     /// Download speed from a peer in B/s: verified blocks over the last 10 s (blocks are 256 KiB, a 1 s count flickers).
     [[nodiscard]] std::uint64_t downRate(::ed3k::KeyKind key, const ::ed3k::NodeId& node) const;
 
@@ -302,6 +308,9 @@ private:
     /// RpcRequest to the configured endpoint; false: none for its class and operator.
     bool startRpc(const ::ed3k::event::RpcRequest& r);
     void applyLimits();
+    /// CAP_ED2K in the Hello: set while eD2K is not switched off (Extended option).
+    void applyEd2kCap();
+    [[nodiscard]] static bool wantEd2kCap();
     /// SO_SNDBUF of the socket with the upload limit (SendBufferSizer); never shrinks
     void growSendBuffer();
     void applyUploadSlots();
@@ -374,6 +383,8 @@ private:
     QStringList m_creditRpc;
     QStringList m_chaintubeRpc;
     ::ed3k::Limits m_limits{};
+    bool m_lanUnlimited = true;   ///< last told to the engine (thePrefs.ed3kLanUnlimited)
+    bool m_ed2kCap = false;   ///< CAP_ED2K last told to the engine
     eMule::SendBufferSizer m_sendBufSizer;
     std::uint32_t m_uploadSlots = 0;
     int m_logLevel = -1;   ///< ed3k::LogLevel set on this engine; -1 = none yet
@@ -381,6 +392,7 @@ private:
     std::unique_ptr<Ed3kHide> m_hide;
     ::ed3k::KeyKind m_eventKey = ::ed3k::KeyKind::Node;
     std::map<std::pair<::ed3k::KeyKind, ::ed3k::NodeId>, PeerBytes> m_peerBytes;
+    std::map<std::tuple<::ed3k::KeyKind, ::ed3k::NodeId, ::ed3k::Root>, std::uint64_t> m_peerFileDown;
     /// downRate(): recent blocks per peer, and when its burst began
     struct RecentDown {
         std::deque<std::pair<qint64, std::uint64_t>> blocks;   ///< ms since start, bytes

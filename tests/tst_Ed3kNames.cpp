@@ -782,7 +782,7 @@ void tst_Ed3kNames::aSetTheUserFollowsIsNotEvicted()
     names.setSiteShownMs(100);
     ::ed3k::Key32 key{};
     key.fill(12);
-    QVERIFY(sets.follow(setLink(key, "mine"), Ed3kSets::Policy::Ask).has_value());
+    QVERIFY(sets.follow(setLink(key, "mine"), Ed3kSets::Policy::Browse).has_value());
     QVERIFY(names.followSite(key, "mine"));
     names.setSiteManifest(key, "mine", manifestOf(QStringLiteral("index.html"), "m"));
     names.setSiteManifest(key, "other", manifestOf(QStringLiteral("index.html"), "o"));

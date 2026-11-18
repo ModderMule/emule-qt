@@ -30,6 +30,8 @@ class IpcListenWatch;
 class ApiEventFeeder;
 class ApiEventHub;
 class DaemonApiBackend;
+class DaemonEd3kWebBackend;
+class DaemonIndexerWebBackend;
 class DaemonHosterWebBackend;
 class DaemonMetaGrabWebBackend;
 class DaemonTorrentWebBackend;
@@ -45,7 +47,7 @@ class I2pRouter;
 
 namespace usenet { class UsenetSession; }
 namespace bt { class BtSession; struct BtSettings; }
-namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; class Ed3kTorrentJoin; class Ed3kEd2kJoin; class Ed3kShared; class SharedFileSource; class Ed3kFriends; class Ed3kRooms; class Ed3kBootstrap; class Ed3kNames; class Ed3kSiteServer; class Ed3kCredit; class Ed3kUploads; class Ed3kFilters; class Ed3kChain; class Ed3kHosterJoin; class Ed3kLinkGrabber; class Ed3kHosterCatalog; class Ed3kJdResolver; class Ed3kJavaRuntime; class Ed3kResolverUpdater; class Ed3kDownloads; class Ed3kSearch; class Ed3kSets; class Ed3kLive; class Ed3kLiveBroadcast; class Ed3kPaid; class Ed3kPaidSeller; class Ed3kOwnSets; class Ed3kArchiveContents; }
+namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; class Ed3kTorrentJoin; class Ed3kEd2kJoin; class Ed3kShared; class SharedFileSource; class Ed3kFriends; class Ed3kRooms; class Ed3kBootstrap; class Ed3kNames; class Ed3kSiteServer; class Ed3kCredit; class Ed3kUploads; class Ed3kFilters; class Ed3kChain; class Ed3kHosterJoin; class Ed3kLinkGrabber; class Ed3kHosterCatalog; class Ed3kJdResolver; class Ed3kJavaRuntime; class Ed3kFfmpegTool; class Ed3kResolverUpdater; class Ed3kDownloads; class Ed3kSearch; class Ed3kSets; class Ed3kLive; class Ed3kLiveBroadcast; class Ed3kPaid; class Ed3kPaidSeller; class Ed3kOwnSets; class Ed3kArchiveContents; }
 namespace indexer { class IndexerFeedList; class IndexerSearchList; }
 
 class DaemonApp : public QObject {
@@ -80,6 +82,8 @@ public:
 
     /// Access the web server (may be nullptr if not running).
     [[nodiscard]] WebServer* webServer() const { return m_webServer.get(); }
+    /// IPC listener (may be nullptr before start)
+    [[nodiscard]] IpcServer* ipcServer() const { return m_ipcServer.get(); }
 
     /// The installed translator the web UI's languages go through. Not owned;
     /// set before start(). Without it the web UI is English.
@@ -152,6 +156,9 @@ private:
     /// Files never shared on eD2K/Kad and ed3k: ed3k plain copies, hoster and Usenet
     /// downloads while their share switch is off (#177)
     [[nodiscard]] bool neverShared(const QString& path) const;
+    /// Landed files kept out of eD2K (hoster/Usenet share switch off) to Ed3kShared for their
+    /// `ed2k` ALIAS alone, and whether new eD2K hashes may be made (eD2K not disabled).
+    void syncEd3kAliasOnly();
 
     /// Re-apply the BitTorrent settings after an Options save, starting or stopping
     /// the engine. Reached through IpcServer::btConfigChanged.
@@ -211,6 +218,8 @@ private:
 #endif
     std::unique_ptr<DaemonHosterWebBackend> m_hosterWebBackend;
     std::unique_ptr<DaemonMetaGrabWebBackend> m_metaGrabWebBackend;
+    std::unique_ptr<DaemonEd3kWebBackend> m_ed3kWebBackend;
+    std::unique_ptr<DaemonIndexerWebBackend> m_indexerWebBackend;
     std::unique_ptr<DaemonApiBackend> m_apiBackend;
     /// Events for GET /api/v1/events; outlive a web-server restart.
     ApiEventHub* m_eventHub = nullptr;
@@ -291,6 +300,8 @@ private:
     /// the JDownloader sidecar and the Java runtime it runs on
     std::unique_ptr<ed3k::Ed3kJdResolver> m_jdResolver;
     std::unique_ptr<ed3k::Ed3kJavaRuntime> m_javaRuntime;
+    /// ffmpeg + ffprobe for HLS/DASH hoster links: found or fetched when the resolver asks
+    std::unique_ptr<ed3k::Ed3kFfmpegTool> m_ffmpegTool;
     /// newer resolver.zip from the update manifest (ed3kHosterAutoUpdate)
     std::unique_ptr<ed3k::Ed3kResolverUpdater> m_resolverUpdater;
     QString m_hosterSharedWarned;   ///< read-only sharedPluginDir already logged
@@ -313,6 +324,8 @@ private:
     /// (hoster.md §6.1). Not for private torrents.
     /// The torrent join's archive sets: contents published from its verify read, or not.
     void applyTorrentArchiveContents();
+    /// ed3kAnonEd2k/Torrent/Usenet/Hoster into the joins (hops.md §1): a change restarts the join
+    void applyJoinKeys();
     /// eD2K/Usenet/BitTorrent share of the global limits; after both sessions
     std::unique_ptr<BandwidthCoordinator> m_bandwidth;
     std::unique_ptr<ScheduleNetworkBridge> m_scheduleNetwork;

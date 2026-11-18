@@ -187,6 +187,10 @@
     <ClCompile Include="..\..\src\gui\controls\TorrentPieceGrid.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\TorrentDetailsDialog.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\EditTrackersDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\TorrentCreatorDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\dialogs\FolderPickerDialog.cpp" />
+    <ClCompile Include="..\..\src\gui\controls\FolderTreeModel.cpp" />
+    <ClCompile Include="..\..\src\gui\utils\FolderLister.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\TorrentOptionsDialog.cpp" />
     <ClCompile Include="..\..\src\gui\controls\TorrentOptionsForm.cpp" />
     <ClCompile Include="..\..\src\gui\dialogs\DetailDialog.cpp" />
@@ -226,6 +230,15 @@
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\dialogs\EditTrackersDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\TorrentCreatorDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\dialogs\FolderPickerDialog.h">
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtMoc Include="..\..\src\gui\controls\FolderTreeModel.h">
       <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
     </QtMoc>
     <QtMoc Include="..\..\src\gui\dialogs\TorrentOptionsDialog.h">

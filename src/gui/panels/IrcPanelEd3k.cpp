@@ -12,9 +12,11 @@
 #include "controls/LogTextView.h"
 #include "panels/Ed3kRoomList.h"
 #include "panels/Ed3kRoomTab.h"
+#include "utils/MediaSniff.h"
 #include "IpcMessage.h"
 #include "prefs/Preferences.h"
 #include "app/SkinIcons.h"
+#include "utils/Log.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -23,6 +25,14 @@
 #include <QDateTime>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDir>
+#include <QRegularExpression>
+#include <QDoubleSpinBox>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QImageReader>
+#include <QBuffer>
+#include <QSpinBox>
 #include <QFormLayout>
 #include <QIcon>
 #include <QInputDialog>
@@ -36,6 +46,13 @@
 #include <QTabWidget>
 #include <QTextBrowser>
 #include <QUrlQuery>
+#include <QCborArray>
+#include <QLocale>
+#include <QPushButton>
+#include <QVBoxLayout>
+#include <QTimer>
+#include <QToolButton>
+#include <QTreeWidget>
 
 namespace eMule {
 
@@ -50,6 +67,11 @@ constexpr qint64 kBanSeconds = 30ll * 24 * 3600;   // room.md §2.3: at most 30 
 constexpr int kRoomPrivate = 1;
 constexpr int kRoomClosed = 2;
 constexpr int kRoomModerated = 4;
+// room.md §2.1, §2.6: media default 6.5 MiB, at most 16 MiB; history 1 to 30 days
+constexpr double kMediaDefaultMiB = 6.5;
+constexpr double kMediaMaxMiB = 16.0;
+constexpr int kKeepDaysMax = 30;
+constexpr int kKeepPostsPerDay = 1000;   // posts kept per day of history, up to 10,000
 
 // Ed3kRooms::Notice and ::Moderation (daemon side)
 enum class Notice { Joined = 0, Left, Neighbour, Banned, Generation, KeyMissing, WrapBad, Refused, Fault };
@@ -61,7 +83,16 @@ struct RoomForm {
     QString about;
     QString nick;
     int flags = 0;
+    qint64 mediaMax = 0;   ///< bytes, 0 = no media
+    bool files = false;    ///< text, NZB, DLC, torrent too (§2.6)
+    int keepDays = 1;
 };
+
+/// keep_posts for a history of @p days (§2.1: 1,000 to 10,000)
+int keepPostsOf(int days)
+{
+    return std::clamp(days * kKeepPostsPerDay, 1000, 10000);
+}
 
 std::optional<RoomForm> askRoomForm(QWidget* parent, const QString& caption, const RoomForm& start, bool create)
 {
@@ -80,6 +111,36 @@ std::optional<RoomForm> askRoomForm(QWidget* parent, const QString& caption, con
     kind->addItem(IrcPanel::tr("Closed: only admitted members"), kRoomPrivate | kRoomClosed);
     auto* moderated = new QCheckBox(IrcPanel::tr("Moderated: only admitted members post"), &dlg);
     moderated->setChecked(start.flags & kRoomModerated);
+    // §2.6: owner allows media up to a size; §4.3: how long members keep posts
+    auto* media = new QCheckBox(IrcPanel::tr("Allow images and videos, up to"), &dlg);
+    media->setObjectName(QStringLiteral("roomMedia"));
+    media->setChecked(start.mediaMax > 0);
+    auto* mediaMiB = new QDoubleSpinBox(&dlg);
+    mediaMiB->setRange(0.1, kMediaMaxMiB);
+    mediaMiB->setDecimals(1);
+    mediaMiB->setSingleStep(0.5);
+    mediaMiB->setSuffix(IrcPanel::tr(" MiB"));
+    mediaMiB->setValue(start.mediaMax > 0 ? double(start.mediaMax) / (1 << 20) : kMediaDefaultMiB);
+    mediaMiB->setEnabled(media->isChecked());
+    QObject::connect(media, &QCheckBox::toggled, mediaMiB, &QWidget::setEnabled);
+    auto* mediaRow = new QHBoxLayout;
+    mediaRow->addWidget(media);
+    mediaRow->addWidget(mediaMiB);
+    mediaRow->addStretch(1);
+    // §2.6 `files`: never fetched or opened by themselves; same size limit
+    auto* files = new QCheckBox(IrcPanel::tr("Also allow small files: text, NZB, DLC and torrent"), &dlg);
+    files->setObjectName(QStringLiteral("roomFiles"));
+    files->setToolTip(IrcPanel::tr("Members download them only on a click and open them themselves. "
+                                   "NZB, DLC and torrent files open in the add dialog, nothing starts by itself"));
+    files->setChecked(start.files && start.mediaMax > 0);
+    files->setEnabled(media->isChecked());
+    QObject::connect(media, &QCheckBox::toggled, files, &QWidget::setEnabled);
+    auto* keep = new QSpinBox(&dlg);
+    keep->setRange(1, kKeepDaysMax);
+    keep->setSuffix(IrcPanel::tr(" day(s)"));
+    keep->setValue(std::clamp(start.keepDays, 1, kKeepDaysMax));
+    keep->setToolTip(IrcPanel::tr("Members keep the posts that long and give them to members coming back. "
+                                  "Older clients keep one day"));
     form->addRow(IrcPanel::tr("Title:"), title);
     form->addRow(IrcPanel::tr("About:"), about);
     if (create) {
@@ -100,6 +161,9 @@ std::optional<RoomForm> askRoomForm(QWidget* parent, const QString& caption, con
         }
     }
     form->addRow(QString(), moderated);
+    form->addRow(IrcPanel::tr("Media:"), mediaRow);
+    form->addRow(QString(), files);
+    form->addRow(IrcPanel::tr("History kept:"), keep);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
     QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
@@ -112,6 +176,9 @@ std::optional<RoomForm> askRoomForm(QWidget* parent, const QString& caption, con
     out.about = about->toPlainText().trimmed();
     out.nick = nick->text().trimmed();
     out.flags = kind->currentData().toInt() | (moderated->isChecked() ? kRoomModerated : 0);
+    out.mediaMax = media->isChecked() ? qint64(mediaMiB->value() * (1 << 20)) : 0;
+    out.files = media->isChecked() && files->isChecked();
+    out.keepDays = keep->value();
     return out;
 }
 
@@ -156,24 +223,36 @@ void IrcPanel::setIpcClient(IpcClient* ipc)
 {
     m_ipc = ipc;
     connectEd3kRooms();
+    if (qEnvironmentVariableIntValue("EMULE_DUMP_ROOM_MENUS") == 1) {
+        auto* dump = new QTimer(this);
+        connect(dump, &QTimer::timeout, this, &IrcPanel::dumpEd3kNickMenus);
+        dump->start(30'000);
+    }
+    if (const QString dir = qEnvironmentVariable("EMULE_ROOM_FILE_SELFTEST"); !dir.isEmpty())
+        selfTestRoomFiles(dir);
 }
 
 bool IrcPanel::openEd3kRoomLink(const QString& link)
 {
+    // no room list yet (GUI start, node still starting): membership unknown, so wait for it
+    if (!m_roomList) {
+        if (!std::ranges::any_of(m_pendingRoomLinks, [&](const QString& l) { return sameRoomLink(l, link); }))
+            m_pendingRoomLinks << link;
+        return false;
+    }
     // already a member (as known eD2K/ed3k files): no question, its tab shows
-    if (m_roomList)
-        for (const QCborValue& v : m_roomList->rooms()) {
-            const QCborMap row = v.toMap();
-            if (!sameRoomLink(row.value(QStringLiteral("link")).toString(), link))
-                continue;
-            const QString room = row.value(QStringLiteral("room")).toString();
-            m_roomTabsClosed.removeAll(room);
-            ensureRoomTab(room, true);
-            const QString title = row.value(QStringLiteral("title")).toString();
-            appendInfo(Ed3kRoomTab::keyOf(room), tr("* You are already a member of the room \"%1\"")
-                                                     .arg(title.isEmpty() ? linkName(link) : title));
-            return true;
-        }
+    for (const QCborValue& v : m_roomList->rooms()) {
+        const QCborMap row = v.toMap();
+        if (!sameRoomLink(row.value(QStringLiteral("link")).toString(), link))
+            continue;
+        const QString room = row.value(QStringLiteral("room")).toString();
+        m_roomTabsClosed.removeAll(room);
+        ensureRoomTab(room, true);
+        const QString title = row.value(QStringLiteral("title")).toString();
+        appendInfo(Ed3kRoomTab::keyOf(room), tr("* You are already a member of the room \"%1\"")
+                                                 .arg(title.isEmpty() ? linkName(link) : title));
+        return true;
+    }
     // the link may carry s: the dialog names the room, never shows the secret
     const auto answer = QMessageBox::question(this, tr("ed3k room"),
         tr("Join the ed3k room \"%1\"?\n\nOther members see your nick and posts; your node takes "
@@ -200,6 +279,7 @@ void IrcPanel::connectEd3kRooms()
     connect(m_ipc, &IpcClient::ed3kRoomPostsRemoved, this, &IrcPanel::onEd3kRoomPostsRemoved, unique);
     connect(m_ipc, &IpcClient::ed3kRoomPresence, this, &IrcPanel::onEd3kRoomPresence, unique);
     connect(m_ipc, &IpcClient::ed3kRoomNotice, this, &IrcPanel::onEd3kRoomNotice, unique);
+    connect(m_ipc, &IpcClient::ed3kRoomMedia, this, &IrcPanel::onEd3kRoomMedia, unique);
     refreshEd3kRooms();
 }
 
@@ -266,6 +346,7 @@ void IrcPanel::onEd3kRooms(const IpcMessage& reply)
             continue;
         tab->setRow(row);
         const QString key = Ed3kRoomTab::keyOf(room);
+        updateAttachButton();
         auto it = m_channels.find(key);
         if (it == m_channels.end())
             continue;
@@ -284,6 +365,15 @@ void IrcPanel::onEd3kRooms(const IpcMessage& reply)
         removeChannelTab(k);
     m_roomTabsClosed.removeIf([&](const QString& r) { return !present.contains(r); });
     updateNickList();
+
+    // links that came before the list: a member's tab just shows, the rest are asked now
+    for (const QString& link : std::exchange(m_pendingRoomLinks, {})) {
+        const bool member = std::ranges::any_of(rooms, [&](const QCborValue& v) {
+            return sameRoomLink(v.toMap().value(QStringLiteral("link")).toString(), link);
+        });
+        if (!member && openEd3kRoomLink(link))
+            emit ed3kRoomJoined();
+    }
 }
 
 void IrcPanel::onEd3kRoomPost(const IpcMessage& msg)
@@ -292,8 +382,19 @@ void IrcPanel::onEd3kRoomPost(const IpcMessage& msg)
     Ed3kRoomTab* tab = roomTab(room);
     if (!tab)
         return;   // a closed tab: opening it fetches the posts
-    if (tab->addPost(Ed3kRoomTab::postFrom(msg.fieldMap(1))))
-        markActivity(Ed3kRoomTab::keyOf(room));
+    const Ed3kRoomTab::Post p = Ed3kRoomTab::postFrom(msg.fieldMap(1));
+    if (!tab->addPost(p))
+        return;
+    const QString key = Ed3kRoomTab::keyOf(room);
+    markActivity(key);
+    // someone's new post: history a join brings (older than 10 min) and muted members stay quiet
+    if (p.author == tab->memberKey() || tab->isMuted(p.authorId.toLower())
+        || p.sent < QDateTime::currentSecsSinceEpoch() - 600)
+        return;
+    const QString me = tab->row().value(QStringLiteral("nick")).toString().trimmed();
+    const Ed3kRoomTab::Post* answered = p.replyTo.isEmpty() ? nullptr : tab->post(p.replyTo);
+    noteMessage(key, (answered && answered->author == tab->memberKey())
+                         || (!me.isEmpty() && p.text.contains(me, Qt::CaseInsensitive)));
 }
 
 void IrcPanel::onEd3kRoomPostsRemoved(const IpcMessage& msg)
@@ -352,10 +453,11 @@ void IrcPanel::onEd3kRoomNotice(const IpcMessage& msg)
     const QString who = msg.fieldString(4);
     switch (kind) {
     case Notice::Joined:
-        // as IRC's "Now talking in": who we are here
-        if (const Ed3kRoomTab* tab = roomTab(room))
-            appendInfo(key, tr("* You joined the room as %1")
-                                .arg(Ed3kRoomTab::shownName(tab->row().value(QStringLiteral("nick")).toString(), tab->memberKey())));
+        // as IRC's "Now talking in": who we are here; flag: joined before (restart, reconnect)
+        if (const Ed3kRoomTab* tab = roomTab(room)) {
+            const QString me = Ed3kRoomTab::shownName(tab->row().value(QStringLiteral("nick")).toString(), tab->memberKey());
+            appendInfo(key, flag ? tr("* You re-joined the room as %1").arg(me) : tr("* You joined the room as %1").arg(me));
+        }
         break;
     case Notice::Banned:
         appendInfo(key, tr("* %1 was banned").arg(who.left(8)), IrcRouting::LineColor::Quit);
@@ -517,15 +619,38 @@ Ed3kRoomTab* IrcPanel::ensureRoomTab(const QString& room, bool show)
             const QString stamp = thePrefs.ircAddTimestamp()
                 ? QStringLiteral("[%1] ").arg(QDateTime::fromSecsSinceEpoch(p.sent).toString(QStringLiteral("HH:mm:ss")))
                 : QString();
-            QString line = messageLine(stamp, shown, p.text, own);
+            // §6: moderators' posts marked: a star by option, else the IRC "@"
+            const bool star = p.moderator && thePrefs.chatModStar();
+            QString line = messageLine(star ? stamp + Ed3kRoomTab::modMarkHtml() : stamp,
+                                       p.moderator && !star ? QStringLiteral("@") + shown : shown, p.text, own);
             if (!reply.isEmpty())
                 line = QStringLiteral("<span style=\"color:%1;\">&#8618; %2</span><br>")
                            .arg(IrcRouting::colorName(IrcRouting::LineColor::Notice), reply.toHtmlEscaped())
                      + line;
             return line;
         };
-        tab = new Ed3kRoomTab(room, [this](const QString& link) { emit linkActivated(link); }, render, this);
+        // a media link is the tab's own (Ed3kRoomMediaView), never one to open
+        tab = new Ed3kRoomTab(room, [this](const QString& link) {
+            if (Ed3kRoomMediaView::rootOfLink(link).isEmpty())
+                emit linkActivated(link);
+        }, render, this);
+        tab->setMediaLoader([this, tab = QPointer<Ed3kRoomTab>(tab)](const QString& root) {
+            if (!m_ipc)
+                return;
+            m_ipc->getEd3kRoomMedia(root, [tab, root](bool ok, const QString&, const QByteArray& data) {
+                if (tab)
+                    tab->setMediaBytes(root, ok ? data : QByteArray());
+            });
+        });
+        connect(tab, &Ed3kRoomTab::mediaFetchRequested, this, [this, room](const QString& root) {
+            if (m_ipc)
+                m_ipc->fetchEd3kRoomMedia(room, root, [self = QPointer<IrcPanel>(this)](const IpcMessage& r) {
+                    if (self && (!r.isValid() || !r.fieldBool(0)))
+                        self->ed3kRoomFailed(tr("The file was not fetched"), r);
+                });
+        });
         tab->applyFont(m_customFont);
+        connect(tab, &Ed3kRoomTab::fileOpenRequested, this, &IrcPanel::roomFileOpened);
         connect(tab, &Ed3kRoomTab::replyRequested, this, [this, tab = QPointer<Ed3kRoomTab>(tab)](const QString& id) {
             if (tab)
                 replyInEd3kRoom(tab, id);
@@ -587,14 +712,221 @@ void IrcPanel::postToRoom(Ed3kRoomTab* tab, const QString& text)
     });
 }
 
+void IrcPanel::onEd3kRoomMedia(const IpcMessage& msg)
+{
+    if (Ed3kRoomTab* tab = roomTab(msg.fieldString(0)))
+        tab->setMediaState(msg.fieldString(1).toLower(), int(msg.fieldInt(2)));
+}
+
+void IrcPanel::updateAttachButton()
+{
+    if (!m_attachBtn)   // setupUi's first addTab fires currentChanged before the button exists
+        return;
+    const IrcChannel* ch = activeChannel();
+    m_attachBtn->setVisible(ch && ch->room && ch->room->mediaMax() > 0);
+}
+
+void IrcPanel::attachToRoom()
+{
+    IrcChannel* ch = activeChannel();
+    if (!ch || !ch->room)
+        return;
+    const bool files = ch->room->takesFiles();
+    QString filter = tr("Images and videos (*.png *.jpg *.jpeg *.gif *.webp *.mp4 *.webm)");
+    if (files)
+        filter = tr("Images, videos and small files (*.png *.jpg *.jpeg *.gif *.webp *.mp4 *.webm *.txt *.nzb *.dlc *.torrent)") + QStringLiteral(";;")
+               + filter + QStringLiteral(";;") + tr("Text, NZB, DLC and torrent files (*.txt *.nzb *.dlc *.torrent)");
+    const QString path = QFileDialog::getOpenFileName(this, files ? tr("Send a file") : tr("Send an image or video"), QString(), filter);
+    if (path.isEmpty())
+        return;
+    QFile f(path);
+    if (f.size() > ch->room->mediaMax()) {
+        QMessageBox::information(this, tr("ed3k room"), tr("This room takes files up to %1.")
+                                     .arg(QLocale().formattedDataSize(ch->room->mediaMax(), 1, QLocale::DataSizeTraditionalFormat)));
+        return;
+    }
+    if (!f.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this, tr("ed3k room"), tr("The file could not be read."));
+        return;
+    }
+    postMediaToRoom(ch->room, f.readAll(), QFileInfo(path).fileName());
+}
+
+bool IrcPanel::postMediaToRoom(Ed3kRoomTab* tab, const QByteArray& data, const QString& name)
+{
+    if (!tab || !m_ipc || !m_ipc->isConnected())
+        return false;
+    // by the bytes (room.md §6): only what members show
+    const QString type = MediaSniff::type(data);
+    if (type.isEmpty() && !(tab->takesFiles() && MediaSniff::fileKind(data, name) != MediaSniff::FileKind::None)) {
+        QMessageBox::information(this, tr("ed3k room"),
+                                 tab->takesFiles() ? tr("Only PNG, JPEG, GIF and WebP images, MP4 and WebM videos and text, NZB, DLC and torrent files can be sent.")
+                                                   : tr("Only PNG, JPEG, GIF and WebP images and MP4 and WebM videos can be sent."));
+        return false;
+    }
+    if (data.size() > tab->mediaMax()) {
+        QMessageBox::information(this, tr("ed3k room"), tr("This room takes files up to %1.")
+                                     .arg(QLocale().formattedDataSize(tab->mediaMax(), 1, QLocale::DataSizeTraditionalFormat)));
+        return false;
+    }
+    QSize size;
+    if (MediaSniff::isImage(type)) {
+        QBuffer buf;
+        buf.setData(data);
+        buf.open(QIODevice::ReadOnly);
+        size = QImageReader(&buf).size();
+    }
+    // the line is the caption (§2.6: text stays required; empty: the daemon takes the name)
+    const QString caption = m_input->text().trimmed();
+    m_input->clear();
+    const QString key = Ed3kRoomTab::keyOf(tab->room());
+    appendInfo(key, tr("* Sending %1...").arg(name), IrcRouting::LineColor::Notice);
+    m_ipc->postEd3kRoomMedia(tab->room(), caption, tab->takeReplyTo(), data, name, size.isValid() ? size.width() : 0,
+                             size.isValid() ? size.height() : 0, [self = QPointer<IrcPanel>(this), key](const IpcMessage& r) {
+                                 if (self && (!r.isValid() || !r.fieldBool(0)))
+                                     self->appendInfo(key, tr("* Not posted: %1").arg(errorText(r.fieldMap(1).value(QStringLiteral("error")).toInteger())),
+                                                      IrcRouting::LineColor::Notice);
+                             });
+    return true;
+}
+
 void IrcPanel::ed3kNickMenu(Ed3kRoomTab* tab, const QString& shown, const QPoint& globalPos)
 {
     if (!tab)
         return;
+    QMenu menu(this);
+    fillEd3kNickMenu(menu, tab, shown);
+    menu.exec(globalPos);
+}
+
+void IrcPanel::dumpEd3kNickMenus()
+{
+    // dev aid (EMULE_DUMP_ROOM_MENUS=1): every listed member's menu in the log, no clicking
+    for (const IrcChannel& ch : std::as_const(m_channels)) {
+        if (!ch.room)
+            continue;
+        for (const QString& shown : ch.nicks.display()) {
+            QMenu menu;
+            fillEd3kNickMenu(menu, ch.room, shown);
+            QStringList items;
+            for (const QAction* a : menu.actions())
+                if (!a->isSeparator())
+                    items << (a->isEnabled() ? a->text() : QStringLiteral("(%1)").arg(a->text()));
+            logInfo(QStringLiteral("room menu %1 [%2%3%4] %5: %6")
+                        .arg(ch.room->row().value(QStringLiteral("title")).toString(),
+                             ch.room->row().value(QStringLiteral("closed")).toBool() ? QStringLiteral("closed ") : QString(),
+                             ch.room->row().value(QStringLiteral("moderated")).toBool() ? QStringLiteral("moderated ") : QString(),
+                             ch.room->isOwner() ? QStringLiteral("owner") : ch.room->canModerate() ? QStringLiteral("mod") : QStringLiteral("member"),
+                             shown, items.join(QStringLiteral(" | "))));
+        }
+    }
+}
+
+void IrcPanel::selfTestRoomFiles(const QString& dir)
+{
+    // dev aid (EMULE_ROOM_FILE_SELFTEST=<dir>): clicks every room file through the real path,
+    // grabs each window that opens to <dir>, says Yes to questions, closes the rest unchanged;
+    // an owner opens Room info once and turns `files` on with the checkbox
+    QDir().mkpath(dir);
+    struct State {
+        QSet<QString> clicked;            // root + state
+        int shot = 0;
+        bool formDone = false;
+    };
+    auto st = std::make_shared<State>();
+    auto* timer = new QTimer(this);
+    connect(timer, &QTimer::timeout, this, [this, dir, st] {
+        const auto grab = [&](QWidget* w, const QString& what) {
+            const QString file = QDir(dir).filePath(QStringLiteral("%1-%2.png").arg(++st->shot, 2, 10, QLatin1Char('0')).arg(what));
+            w->grab().save(file);
+            logInfo(QStringLiteral("selftest shot %1").arg(file));
+        };
+        const auto safe = [](QString s) { return s.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9.]+")), QStringLiteral("_")); };
+        for (QWidget* w : QApplication::topLevelWidgets()) {
+            auto* dlg = qobject_cast<QDialog*>(w);
+            // a property, not the address: a new box may take a closed one's
+            if (!dlg || !dlg->isVisible() || dlg->property("selftestSeen").toBool())
+                continue;
+            dlg->setProperty("selftestSeen", true);
+            if (auto* box = qobject_cast<QMessageBox*>(dlg)) {
+                logInfo(QStringLiteral("selftest box \"%1\": %2").arg(box->windowTitle(), box->text()));
+                grab(box, QStringLiteral("box"));
+                QAbstractButton* yes = box->button(QMessageBox::Yes);
+                (yes ? yes : box->defaultButton() ? box->defaultButton() : box->buttons().value(0))->click();
+                continue;
+            }
+            QStringList texts;
+            for (auto* e : dlg->findChildren<QPlainTextEdit*>())
+                texts << e->toPlainText().left(60).simplified();
+            for (auto* c : dlg->findChildren<QCheckBox*>())
+                texts << QStringLiteral("[%1%2] %3").arg(c->isChecked() ? u"x" : u" ", c->isEnabled() ? u"" : u" disabled", c->text());
+            logInfo(QStringLiteral("selftest dialog \"%1\" (%2): %3").arg(dlg->windowTitle(), QString::fromLatin1(dlg->metaObject()->className()), texts.join(QStringLiteral(" | "))));
+            grab(dlg, safe(dlg->windowTitle()));
+            if (dlg->findChild<QCheckBox*>(QStringLiteral("roomFiles"))) {
+                auto* media = dlg->findChild<QCheckBox*>(QStringLiteral("roomMedia"));
+                auto* files = dlg->findChild<QCheckBox*>(QStringLiteral("roomFiles"));
+                if (!media || !files) {
+                    dlg->reject();
+                    continue;
+                }
+                media->setChecked(false);
+                logInfo(QStringLiteral("selftest form media off: files enabled %1").arg(files->isEnabled()));
+                grab(dlg, QStringLiteral("form_media_off"));
+                media->setChecked(true);
+                files->setChecked(true);
+                logInfo(QStringLiteral("selftest form media on: files enabled %1 checked %2").arg(files->isEnabled()).arg(files->isChecked()));
+                grab(dlg, QStringLiteral("form_files_on"));
+                dlg->accept();
+                continue;
+            }
+            dlg->reject();
+        }
+        // one window at a time
+        if (std::ranges::any_of(QApplication::topLevelWidgets(), [](const QWidget* w) { return qobject_cast<const QDialog*>(w) && w->isVisible(); }))
+            return;
+        for (const IrcChannel& ch : std::as_const(m_channels)) {
+            Ed3kRoomTab* tab = ch.room;
+            if (!tab)
+                continue;
+            if (tab->isOwner() && !st->formDone) {
+                st->formDone = true;
+                logInfo(QStringLiteral("selftest room info, files now %1").arg(tab->takesFiles()));
+                QTimer::singleShot(0, this, [this, tab = QPointer<Ed3kRoomTab>(tab)] {
+                    if (tab)
+                        editEd3kRoomInfo(tab);
+                });
+                QTimer::singleShot(15'000, this, [tab = QPointer<Ed3kRoomTab>(tab)] {
+                    if (tab)
+                        logInfo(QStringLiteral("selftest room info after, files %1").arg(tab->takesFiles()));
+                });
+                return;
+            }
+            for (const Ed3kRoomTab::Post& p : tab->posts()) {
+                const QString& root = p.media.root;
+                if (root.isEmpty() || MediaSniff::isMediaType(p.media.type))
+                    continue;
+                const int state = tab->mediaState(root);
+                if (state == Ed3kRoomMediaView::Fetching || st->clicked.contains(root + QString::number(state)))
+                    continue;
+                st->clicked.insert(root + QString::number(state));
+                logInfo(QStringLiteral("selftest click %1 state %2").arg(p.media.name).arg(state));
+                // queued: the question box runs its own loop
+                QTimer::singleShot(0, this, [tab = QPointer<Ed3kRoomTab>(tab), root] {
+                    if (tab)
+                        tab->clickMedia(root);
+                });
+                return;
+            }
+        }
+    });
+    timer->start(1500);
+}
+
+void IrcPanel::fillEd3kNickMenu(QMenu& menu, Ed3kRoomTab* tab, const QString& shown)
+{
     const QString member = tab->keyOfShown(shown);
     const QString room = tab->room();
     const bool self = member == tab->memberKey();
-    QMenu menu(this);
     QAction* title = menu.addAction(skinIcon(QStringLiteral(":/icons/User.ico")), tr("Nick : %1").arg(IrcNickList::bare(shown, IrcServerModes{})));
     title->setEnabled(false);
     menu.addSeparator();
@@ -616,10 +948,19 @@ void IrcPanel::ed3kNickMenu(Ed3kRoomTab* tab, const QString& shown, const QPoint
         menu.addAction(Ed3kRoomList::actionIcon(Ed3kRoomList::Action::ImportAdmit), tr("Import admit..."), this, [this, room] { onEd3kRoomAction(int(Ed3kRoomList::Action::ImportAdmit), room); });
     }
     if (tab->canModerate() && !member.isEmpty() && !self) {
-        menu.addSeparator();
-        menu.addAction(skinIcon(QStringLiteral(":/icons/UserAdd.ico")), tr("Admit"), this, [this, room, member] { admitEd3kMember(room, member); });
-        menu.addAction(skinIcon(QStringLiteral(":/icons/UserDelete.ico")), tr("Ban (30 days)"), this, [this, room, member] { moderateEd3kMember(room, int(Moderation::Ban), member); });
-        menu.addAction(skinIcon(QStringLiteral(":/icons/Restore.ico")), tr("Lift ban"), this, [this, room, member] { moderateEd3kMember(room, int(Moderation::Lift), member); });
+        // only what changes something: an admit in a closed or moderated room for a key not
+        // admitted yet (§2.2); a moderator banned only with the room key (§2.3). A banned
+        // member is never listed (§2.4): lifting is in "Banned members..."
+        const bool memberIsMod = tab->isModerator(member);
+        const bool canAdmit = tab->admitsMatter() && !memberIsMod && !tab->isAdmitted(member);
+        const bool canBan = !memberIsMod || tab->isOwner();
+        if (canAdmit || canBan)
+            menu.addSeparator();
+        if (canAdmit)
+            menu.addAction(skinIcon(QStringLiteral(":/icons/UserAdd.ico")), tr("Admit"), this, [this, room, member] { admitEd3kMember(room, member); });
+        if (canBan)
+            menu.addAction(skinIcon(QStringLiteral(":/icons/UserDelete.ico")), tr("Ban (30 days)"), this, [this, room, member] { moderateEd3kMember(room, int(Moderation::Ban), member); });
+        // was: menu.addAction(.. tr("Lift ban") ..) for every listed member
     }
     if (tab->isOwner() && !member.isEmpty()) {
         const bool mod = tab->isModerator(member);
@@ -631,11 +972,14 @@ void IrcPanel::ed3kNickMenu(Ed3kRoomTab* tab, const QString& shown, const QPoint
     }
     if (tab->canModerate()) {
         menu.addSeparator();
-        menu.addAction(Ed3kRoomList::actionIcon(Ed3kRoomList::Action::AdmitKey), tr("Admit a member key..."), this, [this, room] { admitEd3kMember(room, {}); });
-        menu.addAction(Ed3kRoomList::actionIcon(Ed3kRoomList::Action::NewGeneration), tr("New generation"), this, [this, room] { moderateEd3kMember(room, int(Moderation::NewGeneration), {}); })
-            ->setEnabled(tab->row().value(QStringLiteral("closed")).toBool());
+        if (tab->admitsMatter())
+            menu.addAction(Ed3kRoomList::actionIcon(Ed3kRoomList::Action::AdmitKey), tr("Admit a member key..."), this, [this, room] { admitEd3kMember(room, {}); });
+        if (tab->row().value(QStringLiteral("closed")).toBool())
+            menu.addAction(Ed3kRoomList::actionIcon(Ed3kRoomList::Action::NewGeneration), tr("New generation"), this, [this, room] { moderateEd3kMember(room, int(Moderation::NewGeneration), {}); });
+        menu.addAction(skinIcon(QStringLiteral(":/icons/Restore.ico")), tr("Banned members..."), this,
+                       [this, tab = QPointer<Ed3kRoomTab>(tab)] { showEd3kBans(tab); })
+            ->setEnabled(!tab->row().value(QStringLiteral("bans")).toArray().isEmpty());
     }
-    menu.exec(globalPos);
 }
 
 void IrcPanel::createEd3kRoom()
@@ -644,6 +988,7 @@ void IrcPanel::createEd3kRoom()
         return;
     RoomForm start;
     start.nick = ed3kNick();
+    start.mediaMax = qint64(kMediaDefaultMiB * (1 << 20));
     const auto form = askRoomForm(this, tr("Create an ed3k room"), start, true);
     if (!form)
         return;
@@ -651,7 +996,8 @@ void IrcPanel::createEd3kRoom()
     if (nick.isEmpty() && (nick = askIrcNick({})).isEmpty())
         return;
     m_ipc->createEd3kRoom(form->title, form->about, form->flags, nick,
-                          [self = QPointer<IrcPanel>(this)](const IpcMessage& r) {
+                          [self = QPointer<IrcPanel>(this), mediaMax = form->mediaMax, files = form->files,
+                           days = form->keepDays](const IpcMessage& r) {
                               if (!self)
                                   return;
                               if (!r.isValid() || !r.fieldBool(0)) {
@@ -659,6 +1005,12 @@ void IrcPanel::createEd3kRoom()
                                   return;
                               }
                               const QString room = r.fieldMap(1).value(QStringLiteral("room")).toString();
+                              // a second room info with the limits (§2.1)
+                              if (mediaMax > 0 || days > 1)
+                                  self->m_ipc->setEd3kRoomLimits(room, mediaMax, days * 24, keepPostsOf(days), files, [self](const IpcMessage& l) {
+                                      if (self && (!l.isValid() || !l.fieldBool(0)))
+                                          self->ed3kRoomFailed(tr("The media and history limits were not set"), l);
+                                  });
                               // the list comes with PushEd3kRoomsChanged; then the tab opens
                               self->m_roomTabsClosed.removeAll(room);
                               self->appendInfo(self->m_statusKey,
@@ -715,9 +1067,18 @@ void IrcPanel::editEd3kRoomInfo(Ed3kRoomTab* tab)
     start.flags = (row.value(QStringLiteral("private")).toBool() ? kRoomPrivate : 0)
                 | (row.value(QStringLiteral("closed")).toBool() ? kRoomClosed : 0)
                 | (row.value(QStringLiteral("moderated")).toBool() ? kRoomModerated : 0);
+    start.mediaMax = row.value(QStringLiteral("mediaMax")).toInteger();
+    start.files = row.value(QStringLiteral("files")).toBool();
+    start.keepDays = int(std::max<qint64>(1, row.value(QStringLiteral("keepHours")).toInteger() / 24));
     const auto form = askRoomForm(this, tr("Room info"), start, false);
     if (!form)
         return;
+    if (form->mediaMax != start.mediaMax || form->files != start.files || form->keepDays != start.keepDays)
+        m_ipc->setEd3kRoomLimits(tab->room(), form->mediaMax, form->keepDays * 24, keepPostsOf(form->keepDays), form->files,
+                                 [self = QPointer<IrcPanel>(this)](const IpcMessage& r) {
+                                     if (self && (!r.isValid() || !r.fieldBool(0)))
+                                         self->ed3kRoomFailed(tr("The media and history limits were not changed"), r);
+                                 });
     m_ipc->setEd3kRoomInfo(tab->room(), form->title, form->about, form->flags & (kRoomClosed | kRoomModerated), tab->mods(),
                            [self = QPointer<IrcPanel>(this)](const IpcMessage& r) {
                                if (self && (!r.isValid() || !r.fieldBool(0)))
@@ -792,10 +1153,61 @@ void IrcPanel::setEd3kModerator(Ed3kRoomTab* tab, const QString& memberKey, bool
                     | (row.value(QStringLiteral("moderated")).toBool() ? kRoomModerated : 0);
     m_ipc->setEd3kRoomInfo(tab->room(), row.value(QStringLiteral("title")).toString(),
                            row.value(QStringLiteral("about")).toString(), flags, mods,
-                           [self = QPointer<IrcPanel>(this)](const IpcMessage& r) {
-                               if (self && (!r.isValid() || !r.fieldBool(0)))
+                           [self = QPointer<IrcPanel>(this), room = tab->room(), memberKey,
+                            keep = !on && memberKey != tab->memberKey() && tab->admitsMatter()](const IpcMessage& r) {
+                               if (!self)
+                                   return;
+                               if (!r.isValid() || !r.fieldBool(0)) {
                                    self->ed3kRoomFailed(tr("The moderators were not changed"), r);
+                                   return;
+                               }
+                               // §2.1: a dropped moderator of a closed or moderated room needs an
+                               // admit to stay a member; it is kept (our own key: the core admits it)
+                               if (keep)
+                                   self->m_ipc->moderateEd3kRoom(room, int(Moderation::Admit), memberKey, 0, [](const IpcMessage&) {});
                            });
+}
+
+void IrcPanel::showEd3kBans(Ed3kRoomTab* tab)
+{
+    if (!tab || !m_ipc)
+        return;
+    QDialog dlg(this);
+    dlg.setWindowTitle(tr("Banned members - %1").arg(tab->title()));
+    auto* layout = new QVBoxLayout(&dlg);
+    auto* list = new QTreeWidget(&dlg);
+    list->setHeaderLabels({tr("Member"), tr("Banned until")});
+    list->setRootIsDecorated(false);
+    list->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    // a banned member is gone from the list (§2.4): its nick from its posts, if any were held
+    for (const QCborValue& v : tab->row().value(QStringLiteral("bans")).toArray()) {
+        const QCborMap b = v.toMap();
+        const QString key = b.value(QStringLiteral("key")).toString();
+        const Ed3kRoomTab::Post* last = tab->lastPostOf(key);
+        auto* item = new QTreeWidgetItem(list);
+        item->setText(0, QStringLiteral("%1#%2").arg(last ? last->nick : QStringLiteral("?"),
+                                                    b.value(QStringLiteral("id")).toString().left(4)));
+        item->setToolTip(0, key);
+        item->setText(1, QLocale().toString(QDateTime::fromSecsSinceEpoch(b.value(QStringLiteral("until")).toInteger()),
+                                            QLocale::ShortFormat));
+        item->setData(0, Qt::UserRole, key);
+    }
+    list->resizeColumnToContents(0);
+    layout->addWidget(list);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dlg);
+    auto* lift = buttons->addButton(tr("Lift ban"), QDialogButtonBox::ActionRole);
+    lift->setEnabled(false);
+    connect(list, &QTreeWidget::itemSelectionChanged, lift, [list, lift] { lift->setEnabled(!list->selectedItems().isEmpty()); });
+    connect(lift, &QPushButton::clicked, &dlg, [this, list, room = tab->room()] {
+        for (QTreeWidgetItem* item : list->selectedItems()) {
+            moderateEd3kMember(room, int(Moderation::Lift), item->data(0, Qt::UserRole).toString());
+            delete item;
+        }
+    });
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    layout->addWidget(buttons);
+    dlg.resize(420, 300);
+    dlg.exec();
 }
 
 void IrcPanel::replyInEd3kRoom(Ed3kRoomTab* tab, const QString& postId)

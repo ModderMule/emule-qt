@@ -287,8 +287,10 @@ void tst_Ed3kTorrentJoin::completeTorrentGivesItsSet()
     Ed3kTorrentJoin third(node, leecher, dir);
     third.setSearchEnabled(false);
     third.start();
-    QVERIFY(third.sharesRoot(hashOf(m_a).root));
-    QVERIFY(third.sharesRoot(hashOf(m_b).root));
+    // was: QVERIFY(third.sharesRoot(...)) right after start(); the kept hashes are read on the
+    // read pool now, so the share comes one queued call later
+    QTRY_VERIFY_WITH_TIMEOUT(third.sharesRoot(hashOf(m_a).root), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(third.sharesRoot(hashOf(m_b).root), 5000);
     third.stop();
 
     // a member changed on disk (same size, new mtime): hashed again, and it no longer fits
@@ -307,7 +309,8 @@ void tst_Ed3kTorrentJoin::completeTorrentGivesItsSet()
     fourth.setSearchEnabled(false);
     fourth.start();
     QVERIFY(!fourth.sharesRoot(hashOf(m_a).root));   // its hash runs first
-    QVERIFY(fourth.sharesRoot(hashOf(m_b).root));
+    // was: QVERIFY(fourth.sharesRoot(hashOf(m_b).root)); kept hashes read on the read pool now
+    QTRY_VERIFY_WITH_TIMEOUT(fourth.sharesRoot(hashOf(m_b).root), 5000);
     QTRY_VERIFY_WITH_TIMEOUT(fourth.sharesRoot(hashOf(m_a).root), 10000);
     fourth.stop();
 

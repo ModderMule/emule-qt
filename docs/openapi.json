@@ -118,7 +118,7 @@
                         "type": "string"
                     },
                     "fakeReasons": {
-                        "description": "Why: multiple_names, names_span_kinds, bad_signal_name, bad_signal_comment, header_extension_mismatch, executable_masquerade, archive_masquerade, claimed_type_mismatch, spam_score, spam_status, bad_rating, fake_rating, multiple_aich, implausible_media_length, implausible_media_bitrate, media_size_mismatch, name_media_tag_mismatch, abuse_content_name, password_protected, media_double_extension.",
+                        "description": "Why: multiple_names, names_span_kinds, bad_signal_name, bad_signal_comment, header_extension_mismatch, executable_masquerade, archive_masquerade, claimed_type_mismatch, spam_score, spam_status, bad_rating, fake_rating, multiple_aich, implausible_media_length, implausible_media_bitrate, media_size_mismatch, name_media_tag_mismatch, abuse_content_name, password_protected, media_double_extension, spam_publisher.",
                         "items": {
                             "type": "string"
                         },
@@ -225,8 +225,12 @@
                         "description": "spam, likely_fake, suspect, caution, looks_good or genuine; empty when nothing was judged.",
                         "type": "string"
                     },
+                    "ed3kRoot": {
+                        "description": "ed3k file: its 64-hex root (GET /ed3k/downloads/{root} once added); else empty.",
+                        "type": "string"
+                    },
                     "fakeReasons": {
-                        "description": "Why: multiple_names, names_span_kinds, bad_signal_name, bad_signal_comment, header_extension_mismatch, executable_masquerade, archive_masquerade, claimed_type_mismatch, spam_score, spam_status, bad_rating, fake_rating, multiple_aich, implausible_media_length, implausible_media_bitrate, media_size_mismatch, name_media_tag_mismatch, abuse_content_name, password_protected, media_double_extension.",
+                        "description": "Why: multiple_names, names_span_kinds, bad_signal_name, bad_signal_comment, header_extension_mismatch, executable_masquerade, archive_masquerade, claimed_type_mismatch, spam_score, spam_status, bad_rating, fake_rating, multiple_aich, implausible_media_length, implausible_media_bitrate, media_size_mismatch, name_media_tag_mismatch, abuse_content_name, password_protected, media_double_extension, spam_publisher.",
                         "items": {
                             "type": "string"
                         },
@@ -262,7 +266,7 @@
                         "type": "string"
                     },
                     "metaKind": {
-                        "description": "\"torrent\", \"nzb\", \"web\" or \"container\": a release an eD2K server listed from its catalogue. Empty for an eD2K file. Not downloadable through POST /search/{id}/download.",
+                        "description": "\"torrent\", \"nzb\", \"web\" or \"container\": a release an eD2K server listed from its catalogue; POST /search/{id}/download hands it to its own queue. \"ed3k\": an ed3k file. Empty for an eD2K file.",
                         "type": "string"
                     },
                     "seenBefore": {
@@ -359,7 +363,7 @@
     "info": {
         "description": "Control and observe an eMuleQt core: eD2K and Kad file sharing plus Usenet downloads.\n\n**Authentication.** Send the API key in the `X-Api-Key` header (or as `Authorization: Bearer <key>`). `/health`, `/openapi.json` and `/docs` need none. The stream routes take `?token=` instead.\n\n**Errors.** Every failure is `{\"error\": {\"code\": <HTTP status>, \"message\": \"...\"}}`. An unknown field or query parameter is a 400, never silently ignored. 409 means the request is fine but the core is in the wrong state for it; 503 that a part of the core is not running.\n\n**Lists.** Answer `{items, total, offset, limit}`; page with `?limit=` (1-1000, default 100) and `?offset=`.\n\n**Destructive calls** need `\"confirm\": true` (in the body, or `?confirm=true` on DELETE).\n\n**Identifiers.** A file is named by its eD2K hash, 32 hexadecimal digits. Sizes are bytes. A category is an index into `GET /categories`.\n\n**Terms.** *HighID*: reachable from outside, the normal state. *LowID* / *firewalled*: not reachable, so fewer sources and slower transfers — check port forwarding. *Kad*: the serverless network; it works alongside the eD2K servers. *Source*: a peer that has (part of) a file.\n\n**Typical flow.** `GET /snapshot` → `POST /search` → `GET /search/{id}/results` until `state` is `finished` → `POST /search/{id}/download` → watch `GET /downloads/{hash}` or the `/events` stream.\n\n**Changes.** Every response carries `X-Contract-Version`. `GET /events` pushes changes so clients need not poll.",
         "title": "eMuleQt REST API",
-        "version": "0.7.31",
+        "version": "0.7.35",
         "x-contract-version": 1
     },
     "openapi": "3.1.0",
@@ -1605,6 +1609,95 @@
                 "x-mcp-tool": "download_cancel"
             }
         },
+        "/api/v1/downloads/{hash}/move": {
+            "post": {
+                "description": "The part file is copied over in the background; the download goes on. The folder joins the temp folder list.",
+                "operationId": "downloads.move",
+                "parameters": [
+                    {
+                        "description": "eD2K file hash: 32 hexadecimal digits.",
+                        "in": "path",
+                        "name": "hash",
+                        "required": true,
+                        "schema": {
+                            "description": "eD2K file hash: 32 hexadecimal digits.",
+                            "maxLength": 32,
+                            "minLength": 32,
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "folder": {
+                                        "description": "Existing, writable folder.",
+                                        "maxLength": 4096,
+                                        "minLength": 1,
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "folder"
+                                ],
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "No such item."
+                    }
+                },
+                "summary": "Move an unfinished download to another temp folder",
+                "tags": [
+                    "Downloads"
+                ],
+                "x-mcp-tool": "download_move"
+            }
+        },
         "/api/v1/downloads/{hash}/pause": {
             "post": {
                 "description": "Sources are kept; nothing is requested until it is resumed.",
@@ -2025,6 +2118,630 @@
                 "x-mcp-tool": "download_stop"
             }
         },
+        "/api/v1/ed3k/downloads": {
+            "get": {
+                "description": "The ed3k download queue (files named by a 64-hex BLAKE3 root). Sizes are bytes, rate is bytes per second. A completed download stays listed until cleared.",
+                "operationId": "ed3k.downloads",
+                "parameters": [
+                    {
+                        "description": "Rows per page.",
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "default": 100,
+                            "description": "Rows per page.",
+                            "maximum": 1000,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "description": "Rows to skip.",
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "default": 0,
+                            "description": "Rows to skip.",
+                            "minimum": 0,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    }
+                },
+                "summary": "List ed3k downloads",
+                "tags": [
+                    "ed3k"
+                ],
+                "x-mcp-tool": "ed3k_downloads_list"
+            },
+            "post": {
+                "description": "Takes one ed3k file link or several. Answers per link whether it was added, with the download's root.",
+                "operationId": "ed3k.add",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "category": {
+                                        "default": 0,
+                                        "description": "Category index from GET /categories; 0 = none.",
+                                        "minimum": 0,
+                                        "type": "integer"
+                                    },
+                                    "link": {
+                                        "description": "One ed3k file link.",
+                                        "maxLength": 8192,
+                                        "minLength": 1,
+                                        "type": "string"
+                                    },
+                                    "links": {
+                                        "description": "Several ed3k file links.",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "maxItems": 100,
+                                        "minItems": 1,
+                                        "type": "array"
+                                    },
+                                    "paused": {
+                                        "default": false,
+                                        "description": "Add in the paused state.",
+                                        "type": "boolean"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "required": false
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    }
+                },
+                "summary": "Add ed3k downloads by link",
+                "tags": [
+                    "ed3k"
+                ],
+                "x-mcp-tool": "ed3k_download_add"
+            }
+        },
+        "/api/v1/ed3k/downloads/clear-completed": {
+            "post": {
+                "description": "The files stay on disk and shared.",
+                "operationId": "ed3k.clearCompleted",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    }
+                },
+                "summary": "Remove completed ed3k downloads from the list",
+                "tags": [
+                    "ed3k"
+                ],
+                "x-mcp-tool": "ed3k_downloads_clear_completed"
+            }
+        },
+        "/api/v1/ed3k/downloads/{root}": {
+            "get": {
+                "operationId": "ed3k.get",
+                "parameters": [
+                    {
+                        "description": "ed3k root: 64 hexadecimal digits.",
+                        "in": "path",
+                        "name": "root",
+                        "required": true,
+                        "schema": {
+                            "description": "ed3k root: 64 hexadecimal digits.",
+                            "maxLength": 64,
+                            "minLength": 64,
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "No such item."
+                    }
+                },
+                "summary": "One ed3k download",
+                "tags": [
+                    "ed3k"
+                ],
+                "x-mcp-tool": "ed3k_download_get"
+            },
+            "patch": {
+                "description": "Rename it, set its priority or category, or have the first and last parts fetched first for a preview.",
+                "operationId": "ed3k.edit",
+                "parameters": [
+                    {
+                        "description": "ed3k root: 64 hexadecimal digits.",
+                        "in": "path",
+                        "name": "root",
+                        "required": true,
+                        "schema": {
+                            "description": "ed3k root: 64 hexadecimal digits.",
+                            "maxLength": 64,
+                            "minLength": 64,
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "category": {
+                                        "description": "Category index from GET /categories; 0 = none.",
+                                        "minimum": 0,
+                                        "type": "integer"
+                                    },
+                                    "name": {
+                                        "description": "New file name.",
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                    },
+                                    "previewFirst": {
+                                        "description": "Fetch the parts a preview needs first.",
+                                        "type": "boolean"
+                                    },
+                                    "priority": {
+                                        "description": "Download priority.",
+                                        "enum": [
+                                            "low",
+                                            "normal",
+                                            "high",
+                                            "veryHigh",
+                                            "veryLow"
+                                        ],
+                                        "type": "string"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "required": false
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "No such item."
+                    }
+                },
+                "summary": "Change an ed3k download",
+                "tags": [
+                    "ed3k"
+                ],
+                "x-mcp-tool": "ed3k_download_edit"
+            }
+        },
+        "/api/v1/ed3k/downloads/{root}/cancel": {
+            "post": {
+                "description": "Removes it and its part file. A completed one leaves the list; with deleteFile its file is deleted from disk too.\n\nDestructive: needs `confirm: true`.",
+                "operationId": "ed3k.cancel",
+                "parameters": [
+                    {
+                        "description": "ed3k root: 64 hexadecimal digits.",
+                        "in": "path",
+                        "name": "root",
+                        "required": true,
+                        "schema": {
+                            "description": "ed3k root: 64 hexadecimal digits.",
+                            "maxLength": 64,
+                            "minLength": 64,
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "confirm": {
+                                        "description": "Must be true. Guards against an accidental call; this cannot be undone.",
+                                        "type": "boolean"
+                                    },
+                                    "deleteFile": {
+                                        "default": false,
+                                        "description": "A completed download: delete its file.",
+                                        "type": "boolean"
+                                    }
+                                },
+                                "required": [
+                                    "confirm"
+                                ],
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "No such item."
+                    }
+                },
+                "summary": "Cancel an ed3k download",
+                "tags": [
+                    "ed3k"
+                ],
+                "x-mcp-tool": "ed3k_download_cancel"
+            }
+        },
+        "/api/v1/ed3k/downloads/{root}/move": {
+            "post": {
+                "description": "Copies the part file over in the background; the download goes on.",
+                "operationId": "ed3k.move",
+                "parameters": [
+                    {
+                        "description": "ed3k root: 64 hexadecimal digits.",
+                        "in": "path",
+                        "name": "root",
+                        "required": true,
+                        "schema": {
+                            "description": "ed3k root: 64 hexadecimal digits.",
+                            "maxLength": 64,
+                            "minLength": 64,
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "folder": {
+                                        "description": "Existing, writable folder.",
+                                        "maxLength": 4096,
+                                        "minLength": 1,
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "folder"
+                                ],
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "No such item."
+                    }
+                },
+                "summary": "Move an unfinished ed3k download to another temp folder",
+                "tags": [
+                    "ed3k"
+                ],
+                "x-mcp-tool": "ed3k_download_move"
+            }
+        },
+        "/api/v1/ed3k/downloads/{root}/{action}": {
+            "post": {
+                "operationId": "ed3k.action",
+                "parameters": [
+                    {
+                        "description": "ed3k root: 64 hexadecimal digits.",
+                        "in": "path",
+                        "name": "root",
+                        "required": true,
+                        "schema": {
+                            "description": "ed3k root: 64 hexadecimal digits.",
+                            "maxLength": 64,
+                            "minLength": 64,
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "What to do.",
+                        "in": "path",
+                        "name": "action",
+                        "required": true,
+                        "schema": {
+                            "description": "What to do.",
+                            "enum": [
+                                "pause",
+                                "resume"
+                            ],
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "No such item."
+                    }
+                },
+                "summary": "Pause or resume an ed3k download",
+                "tags": [
+                    "ed3k"
+                ],
+                "x-mcp-tool": "ed3k_download_action"
+            }
+        },
         "/api/v1/events": {
             "get": {
                 "description": "text/event-stream. Each event has an id, a type such as \"downloads.changed\" and a JSON object. Most events only say that a list changed: fetch it again. Send Last-Event-ID to resume; a \"sync.reset\" event means the gap could not be replayed and everything has to be fetched again. A comment line arrives every 15 seconds as a heartbeat.",
@@ -2405,6 +3122,498 @@
                 ]
             }
         },
+        "/api/v1/hoster": {
+            "get": {
+                "description": "Downloads from one-click hosters and web links, resolved by the hoster plugins: state, size and done in bytes, speed in bytes/s, package. \"needsUser\" waits for a captcha or password in the app.",
+                "operationId": "hoster.list",
+                "parameters": [
+                    {
+                        "description": "Rows per page.",
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "default": 100,
+                            "description": "Rows per page.",
+                            "maximum": 1000,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "description": "Rows to skip.",
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "default": 0,
+                            "description": "Rows to skip.",
+                            "minimum": 0,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    }
+                },
+                "summary": "List hoster downloads",
+                "tags": [
+                    "Hoster"
+                ],
+                "x-mcp-tool": "hoster_list"
+            },
+            "post": {
+                "description": "Links of file hosters, folders or web pages; each is resolved by a hoster plugin. With \"package\" they form one new package.",
+                "operationId": "hoster.add",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "link": {
+                                        "description": "One http(s) link.",
+                                        "maxLength": 8192,
+                                        "minLength": 1,
+                                        "type": "string"
+                                    },
+                                    "links": {
+                                        "description": "Several links.",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "maxItems": 500,
+                                        "minItems": 1,
+                                        "type": "array"
+                                    },
+                                    "package": {
+                                        "description": "Name of a new package for them.",
+                                        "maxLength": 255,
+                                        "minLength": 0,
+                                        "type": "string"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "required": false
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    }
+                },
+                "summary": "Add hoster links",
+                "tags": [
+                    "Hoster"
+                ],
+                "x-mcp-tool": "hoster_add"
+            }
+        },
+        "/api/v1/hoster/container": {
+            "post": {
+                "description": "A DLC, RSDF or CCF file, base64 in \"data\": all its links are added. Answers once the container is decrypted.",
+                "operationId": "hoster.container",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "data": {
+                                        "description": "The container file, base64.",
+                                        "maxLength": 16777216,
+                                        "minLength": 4,
+                                        "type": "string"
+                                    },
+                                    "fileName": {
+                                        "description": "Its file name; the extension says the format.",
+                                        "maxLength": 255,
+                                        "minLength": 5,
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "data",
+                                    "fileName"
+                                ],
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    }
+                },
+                "summary": "Open a link container",
+                "tags": [
+                    "Hoster"
+                ],
+                "x-mcp-tool": "hoster_open_container"
+            }
+        },
+        "/api/v1/hoster/{id}/preview": {
+            "get": {
+                "description": "For media players. Authenticated by ?token=, the stream token. Video and audio files only, not archives (406). A range not yet on disk waits up to 60 seconds, \"Enable seeking in downloads\" on or off; ed3k peers of a file with a known root fetch it first, the hoster's own stream stays in file order.",
+                "operationId": "hoster.preview",
+                "parameters": [
+                    {
+                        "description": "Hoster item id.",
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "description": "Hoster item id.",
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Stream token.",
+                        "in": "query",
+                        "name": "token",
+                        "required": true,
+                        "schema": {
+                            "description": "Stream token.",
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The requested bytes or page."
+                    }
+                },
+                "security": [
+                ],
+                "summary": "Byte-range stream of a hoster download",
+                "tags": [
+                    "Streams"
+                ]
+            }
+        },
+        "/api/v1/hoster/{id}/preview-link": {
+            "get": {
+                "description": "A URL of GET /hoster/{id}/preview with a new stream token, as downloads.previewLink.",
+                "operationId": "hoster.previewLink",
+                "parameters": [
+                    {
+                        "description": "Hoster item id.",
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "description": "Hoster item id.",
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "No such item."
+                    }
+                },
+                "summary": "Player link for a hoster download",
+                "tags": [
+                    "Streams"
+                ],
+                "x-mcp-tool": "hoster_preview_link"
+            }
+        },
+        "/api/v1/hoster/{id}/remove": {
+            "post": {
+                "description": "With deleteFile its file is deleted from disk too.\n\nDestructive: needs `confirm: true`.",
+                "operationId": "hoster.remove",
+                "parameters": [
+                    {
+                        "description": "Hoster item id from GET /hoster.",
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "description": "Hoster item id from GET /hoster.",
+                            "minimum": 0,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "confirm": {
+                                        "description": "Must be true. Guards against an accidental call; this cannot be undone.",
+                                        "type": "boolean"
+                                    },
+                                    "deleteFile": {
+                                        "default": false,
+                                        "description": "Delete its file too.",
+                                        "type": "boolean"
+                                    }
+                                },
+                                "required": [
+                                    "confirm"
+                                ],
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "No such item."
+                    }
+                },
+                "summary": "Remove a hoster download",
+                "tags": [
+                    "Hoster"
+                ],
+                "x-mcp-tool": "hoster_remove"
+            }
+        },
+        "/api/v1/hoster/{id}/{action}": {
+            "post": {
+                "operationId": "hoster.action",
+                "parameters": [
+                    {
+                        "description": "Hoster item id from GET /hoster.",
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "description": "Hoster item id from GET /hoster.",
+                            "minimum": 0,
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "description": "What to do.",
+                        "in": "path",
+                        "name": "action",
+                        "required": true,
+                        "schema": {
+                            "description": "What to do.",
+                            "enum": [
+                                "pause",
+                                "resume",
+                                "retry"
+                            ],
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "No such item."
+                    }
+                },
+                "summary": "Pause, resume or retry a hoster download",
+                "tags": [
+                    "Hoster"
+                ],
+                "x-mcp-tool": "hoster_action"
+            }
+        },
         "/api/v1/incoming": {
             "get": {
                 "description": "Authenticated by ?token=, the stream token.",
@@ -2442,6 +3651,640 @@
                 "tags": [
                     "Streams"
                 ]
+            }
+        },
+        "/api/v1/indexer/searches": {
+            "get": {
+                "description": "Every newznab/torznab search, the app's own included: running says whether accounts are still paging, count is the rows so far.",
+                "operationId": "indexer.searches",
+                "parameters": [
+                    {
+                        "description": "Rows per page.",
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "default": 100,
+                            "description": "Rows per page.",
+                            "maximum": 1000,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "description": "Rows to skip.",
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "default": 0,
+                            "description": "Rows to skip.",
+                            "minimum": 0,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    }
+                },
+                "summary": "List indexer searches",
+                "tags": [
+                    "Indexers"
+                ],
+                "x-mcp-tool": "indexer_searches_list"
+            },
+            "post": {
+                "description": "Asks every enabled newznab (network usenet) or torznab (network torrent) account at once; rows arrive as each answers, so poll the results until running is false. Needs a query, categories or an IMDb id. 409 when no indexer serves the network.",
+                "operationId": "indexer.start",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "categories": {
+                                        "description": "newznab category ids, e.g. 2000 movies, 5000 TV.",
+                                        "items": {
+                                            "type": "integer"
+                                        },
+                                        "maxItems": 50,
+                                        "minItems": 0,
+                                        "type": "array"
+                                    },
+                                    "episode": {
+                                        "description": "tvsearch: episode number.",
+                                        "maxLength": 10,
+                                        "minLength": 0,
+                                        "type": "string"
+                                    },
+                                    "imdb": {
+                                        "description": "IMDb id, with or without \"tt\".",
+                                        "maxLength": 20,
+                                        "minLength": 0,
+                                        "type": "string"
+                                    },
+                                    "indexers": {
+                                        "description": "Only these indexer names (GET /indexers); default all.",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "maxItems": 50,
+                                        "minItems": 0,
+                                        "type": "array"
+                                    },
+                                    "maxSize": {
+                                        "description": "Largest size in bytes; 0 = no limit.",
+                                        "minimum": 0,
+                                        "type": "integer"
+                                    },
+                                    "minSize": {
+                                        "description": "Smallest size in bytes.",
+                                        "minimum": 0,
+                                        "type": "integer"
+                                    },
+                                    "mode": {
+                                        "default": "search",
+                                        "description": "search; tvsearch and movie take season/episode and imdb.",
+                                        "enum": [
+                                            "search",
+                                            "tvsearch",
+                                            "movie"
+                                        ],
+                                        "type": "string"
+                                    },
+                                    "network": {
+                                        "default": "usenet",
+                                        "description": "usenet (newznab) or torrent (torznab).",
+                                        "enum": [
+                                            "usenet",
+                                            "torrent"
+                                        ],
+                                        "type": "string"
+                                    },
+                                    "query": {
+                                        "description": "Words to search for.",
+                                        "maxLength": 255,
+                                        "minLength": 0,
+                                        "type": "string"
+                                    },
+                                    "season": {
+                                        "description": "tvsearch: season number.",
+                                        "maxLength": 10,
+                                        "minLength": 0,
+                                        "type": "string"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "required": false
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    }
+                },
+                "summary": "Search the indexers",
+                "tags": [
+                    "Indexers"
+                ],
+                "x-mcp-tool": "indexer_search_start"
+            }
+        },
+        "/api/v1/indexer/searches/{id}": {
+            "delete": {
+                "operationId": "indexer.remove",
+                "parameters": [
+                    {
+                        "description": "Id returned by POST /indexer/searches.",
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "description": "Id returned by POST /indexer/searches.",
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "No such item."
+                    }
+                },
+                "summary": "Stop an indexer search and drop its results",
+                "tags": [
+                    "Indexers"
+                ],
+                "x-mcp-tool": "indexer_search_remove"
+            },
+            "get": {
+                "operationId": "indexer.get",
+                "parameters": [
+                    {
+                        "description": "Id returned by POST /indexer/searches.",
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "description": "Id returned by POST /indexer/searches.",
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "No such item."
+                    }
+                },
+                "summary": "One indexer search",
+                "tags": [
+                    "Indexers"
+                ],
+                "x-mcp-tool": "indexer_search_get"
+            }
+        },
+        "/api/v1/indexer/searches/{id}/download": {
+            "post": {
+                "description": "Fetches the row's .nzb, .torrent or magnet (one of the indexer's daily grabs) and adds it: an NZB to the Usenet queue, a torrent to Torrents. Answers once it is added. 409 asks a question — already downloaded — that \"force\" answers.",
+                "operationId": "indexer.download",
+                "parameters": [
+                    {
+                        "description": "Id returned by POST /indexer/searches.",
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "description": "Id returned by POST /indexer/searches.",
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "category": {
+                                        "default": 0,
+                                        "description": "Category index from GET /categories; 0 = none.",
+                                        "minimum": 0,
+                                        "type": "integer"
+                                    },
+                                    "force": {
+                                        "default": false,
+                                        "description": "Usenet: add even though downloaded before.",
+                                        "type": "boolean"
+                                    },
+                                    "paused": {
+                                        "default": false,
+                                        "description": "Add paused.",
+                                        "type": "boolean"
+                                    },
+                                    "priority": {
+                                        "default": 0,
+                                        "description": "Usenet: -2 (lowest) to 2 (highest).",
+                                        "maximum": 2,
+                                        "minimum": -2,
+                                        "type": "integer"
+                                    },
+                                    "result": {
+                                        "description": "The row's id from the results.",
+                                        "maxLength": 1024,
+                                        "minLength": 1,
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "result"
+                                ],
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "No such item."
+                    }
+                },
+                "summary": "Download an indexer result",
+                "tags": [
+                    "Indexers"
+                ],
+                "x-mcp-tool": "indexer_download"
+            }
+        },
+        "/api/v1/indexer/searches/{id}/results": {
+            "get": {
+                "description": "In arrival order. isUsenet false: a torrent row. grabs and seeders say how popular a release is; password: the indexer flags an archive password; confidence and fakeReasons judge the row.",
+                "operationId": "indexer.results",
+                "parameters": [
+                    {
+                        "description": "Id returned by POST /indexer/searches.",
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "description": "Id returned by POST /indexer/searches.",
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "description": "Rows per page.",
+                        "in": "query",
+                        "name": "limit",
+                        "required": false,
+                        "schema": {
+                            "default": 100,
+                            "description": "Rows per page.",
+                            "maximum": 1000,
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "description": "Rows to skip.",
+                        "in": "query",
+                        "name": "offset",
+                        "required": false,
+                        "schema": {
+                            "default": 0,
+                            "description": "Rows to skip.",
+                            "minimum": 0,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "No such item."
+                    }
+                },
+                "summary": "Results of an indexer search",
+                "tags": [
+                    "Indexers"
+                ],
+                "x-mcp-tool": "indexer_search_results"
+            }
+        },
+        "/api/v1/indexer/searches/{id}/stop": {
+            "post": {
+                "description": "The rows so far stay.",
+                "operationId": "indexer.stop",
+                "parameters": [
+                    {
+                        "description": "Id returned by POST /indexer/searches.",
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "schema": {
+                            "description": "Id returned by POST /indexer/searches.",
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "No such item."
+                    }
+                },
+                "summary": "Stop an indexer search",
+                "tags": [
+                    "Indexers"
+                ],
+                "x-mcp-tool": "indexer_search_stop"
+            }
+        },
+        "/api/v1/indexers": {
+            "get": {
+                "description": "newznab (usenet) and torznab (torrent) accounts set up in Options; \"both\" serves either search. Names go in the \"indexers\" of a search.",
+                "operationId": "indexers.list",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    }
+                },
+                "summary": "List the configured indexers",
+                "tags": [
+                    "Indexers"
+                ],
+                "x-mcp-tool": "indexers_list"
             }
         },
         "/api/v1/kad": {
@@ -3278,7 +5121,7 @@
                 "x-mcp-tool": "search_list"
             },
             "post": {
-                "description": "Returns a searchID at once; results arrive over the next seconds — fetch them with GET /search/{id}/results until state is \"finished\". 202 means the search is queued and goes out by itself once a network is connected. \"automatic\" picks the best network available and is the right choice unless one is wanted. \"usenetServer\", \"torrentServer\" and \"webServer\" ask an eD2K server's own catalogue for Usenet, torrent or web releases (keywords and NOT only); their results have metaKind set and are not eD2K downloads.",
+                "description": "Returns a searchID at once; results arrive over the next seconds — fetch them with GET /search/{id}/results until state is \"finished\". 202 means the search is queued and goes out by itself once a network is connected. \"automatic\" picks the best network available and is the right choice unless one is wanted. \"usenetServer\", \"torrentServer\" and \"webServer\" ask an eD2K server's own catalogue for Usenet, torrent or web releases (keywords and NOT only); their results have metaKind set; POST /search/{id}/download hands such a release to its own queue (Usenet, Torrents, Hoster). \"ed3k\" asks the ed3k network (metaKind \"ed3k\", ed3kRoot set).",
                 "operationId": "search.start",
                 "requestBody": {
                     "content": {
@@ -3368,7 +5211,8 @@
                                             "kad",
                                             "usenetServer",
                                             "torrentServer",
-                                            "webServer"
+                                            "webServer",
+                                            "ed3k"
                                         ],
                                         "type": "string"
                                     }
@@ -3488,7 +5332,7 @@
         },
         "/api/v1/search/{searchID}/download": {
             "post": {
-                "description": "Queues the result and carries over the sources the search found.",
+                "description": "An eD2K file is queued with the sources the search found; an ed3k file goes to the ed3k downloads. A Usenet, torrent or web release (metaKind) is fetched from the server's catalogue and handed to the Usenet queue, the Torrents list or Hoster; the answer comes once it is there.",
                 "operationId": "search.download",
                 "parameters": [
                     {
@@ -3520,6 +5364,10 @@
                                         "maxLength": 32,
                                         "minLength": 32,
                                         "type": "string"
+                                    },
+                                    "paused": {
+                                        "description": "Add paused; default: the \"add new files paused\" option.",
+                                        "type": "boolean"
                                     }
                                 },
                                 "required": [
@@ -4359,6 +6207,116 @@
                     "Shared files"
                 ],
                 "x-mcp-tool": "shared_reload"
+            }
+        },
+        "/api/v1/shared/{hash}": {
+            "patch": {
+                "description": "Send only the fields to change. Rename renames the file on disk.",
+                "operationId": "shared.edit",
+                "parameters": [
+                    {
+                        "description": "eD2K file hash: 32 hexadecimal digits.",
+                        "in": "path",
+                        "name": "hash",
+                        "required": true,
+                        "schema": {
+                            "description": "eD2K file hash: 32 hexadecimal digits.",
+                            "maxLength": 32,
+                            "minLength": 32,
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "comment": {
+                                        "description": "Your comment, published with the file; empty clears it.",
+                                        "maxLength": 128,
+                                        "minLength": 0,
+                                        "type": "string"
+                                    },
+                                    "name": {
+                                        "description": "New file name.",
+                                        "maxLength": 255,
+                                        "minLength": 1,
+                                        "type": "string"
+                                    },
+                                    "priority": {
+                                        "description": "Upload priority; \"auto\" lets the core choose.",
+                                        "enum": [
+                                            "veryLow",
+                                            "low",
+                                            "normal",
+                                            "high",
+                                            "veryHigh",
+                                            "auto"
+                                        ],
+                                        "type": "string"
+                                    },
+                                    "rating": {
+                                        "description": "Your rating: 0 none, 1 fake, 2 poor, 3 fair, 4 good, 5 excellent.",
+                                        "maximum": 5,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "required": false
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "No such item."
+                    }
+                },
+                "summary": "Rename a shared file, set its upload priority, comment or rating",
+                "tags": [
+                    "Shared files"
+                ],
+                "x-mcp-tool": "shared_edit"
             }
         },
         "/api/v1/snapshot": {
@@ -5516,7 +7474,7 @@
         },
         "/api/v1/usenet/{id}/{fileIndex}/preview": {
             "get": {
-                "description": "Authenticated by ?token=, the stream token. Waits up to 15 seconds for bytes that are still downloading.",
+                "description": "Authenticated by ?token=, the stream token. A range not yet on disk waits up to 15 seconds and its articles are fetched first, \"Enable seeking in downloads\" on or off.",
                 "operationId": "usenet.preview",
                 "parameters": [
                     {
@@ -5697,6 +7655,15 @@
         },
         {
             "name": "Streams"
+        },
+        {
+            "name": "ed3k"
+        },
+        {
+            "name": "Hoster"
+        },
+        {
+            "name": "Indexers"
         }
     ]
 }

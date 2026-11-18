@@ -1,16 +1,20 @@
 #include "Ed3kHosterJoin.h"
 
+#include "Ed3kHide.h"
 #include "Ed3kSession.h"
 #include "Ed3kStore.h"
 #include "decode/YencDecoder.h"
+#include "files/PartFile.h"
 #include "post/UsenetUnpacker.h"
 #include "prefs/Preferences.h"
 #include "utils/BackgroundFileWriter.h"
 #include "utils/Log.h"
+#include "utils/PathUtils.h"
 #include "utils/SafeRemove.h"
 
 #include <QCryptographicHash>
 #include <QDateTime>
+#include <QDeadlineTimer>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -34,6 +38,12 @@ namespace eMule::ed3k {
 namespace ev = ffi::event;
 
 namespace {
+
+/// the login worked: valid, or a free/expired account (its session is worth keeping)
+bool loggedIn(bool valid, const QString& unusable)
+{
+    return valid || unusable == QLatin1StringView("free") || unusable == QLatin1StringView("expired");
+}
 
 /// bytes per linkData call; the core holds at most a sealed chunk per stream
 constexpr std::uint32_t kFeedChunk = 1024 * 1024;
@@ -60,6 +70,11 @@ constexpr qint64 kLongWaitMs = 5 * 60 * 1000;
 constexpr std::uint64_t kMinResume = 1024 * 1024;
 /// rootless: how far the bytes on disk go is saved in steps of this (less is lost on a restart)
 constexpr std::uint64_t kWholeKeepStep = 20ULL * 1024 * 1024;
+/// tail fetch: only a read this near the end (an MP4's index); the in-order stream fetches
+/// those bytes again (it alone is hashed), so the cost stays a few MiB of premium traffic
+constexpr std::uint64_t kTailSpan = 64ULL * 1024 * 1024;
+/// no tail fetch when the stream gets there in this many seconds at its speed
+constexpr std::uint64_t kTailCatchUpS = 20;
 /// checkLinks(): checks at once, how long a result and its core link stay, how long a
 /// check or a wait for a slot may take, how many results are kept
 constexpr qint64 kCheckTtlMs = 30 * 60 * 1000;
@@ -159,6 +174,13 @@ struct Ed3kHosterJoin::Entry {
     std::uint64_t wholeAt = 0;
     bool resuming = false;               ///< those bytes are hashed again, no open yet
     bool openAfterResume = false;        ///< askOpen came while resuming
+    std::optional<std::uint64_t> focus;  ///< playFrom(): peers' blocks from here first
+    QDeadlineTimer focusUntil;           ///< focus ends
+    /// rootless: bytes [tailFrom, tailAt) a tail fetch wrote ahead of done (not saved)
+    std::uint64_t tailFrom = 0;
+    std::uint64_t tailAt = 0;
+    Ed3kResolver::TaskId tailTask = 0;   ///< the tail fetch running
+    bool tailFailed = false;             ///< the hoster cannot do one: not tried again this run
 };
 
 Ed3kHosterJoin::Ed3kHosterJoin(Ed3kSession& session, const QString& configDir, QObject* parent)
@@ -779,7 +801,7 @@ void Ed3kHosterJoin::saveSessions()
     for (const QList<Ed3kHosterAccount>* list : {&m_prefs.accounts, &m_prefs.debrid})
         for (const Ed3kHosterAccount& a : *list) {
             const auto it = m_accountStatus.find(keyOf(a));
-            if (it == m_accountStatus.end() || !it->second.valid || it->second.state.isEmpty() || it->second.state == a.session
+            if (it == m_accountStatus.end() || !loggedIn(it->second.valid, it->second.unusable) || it->second.state.isEmpty() || it->second.state == a.session
                 || it->second.password != a.password)
                 continue;
             emit sessionSaved(a.host, a.user, it->second.state);
@@ -985,6 +1007,37 @@ std::optional<Ed3kHosterJoin::Item> Ed3kHosterJoin::item(quint32 id) const
     return std::nullopt;
 }
 
+std::optional<std::uint64_t> Ed3kHosterJoin::playFrom(quint32 id, std::uint64_t offset)
+{
+    Entry* e = find(id);
+    if (!e || e->item.retired)
+        return std::nullopt;
+    const std::uint64_t size = e->item.size;
+    if (e->item.state == State::Complete)
+        return std::max(offset, size);
+    if (size > 0 && offset >= size)
+        return offset;
+    // rootless: written in file order, hashed as it comes; a tail fetch may hold bytes near
+    // the end ahead of it
+    if (!e->root)
+        return tailHeld(*e, offset).value_or(std::max(offset, e->item.done));
+    std::uint64_t held = offset;
+    for (auto b = offset / kBlock * kBlock; b < size && e->have.contains(b); b += kBlock)
+        held = std::min(size, b + kBlock);
+    if (held >= size || held - offset >= PartFile::kStreamLead)
+        return held;
+    const std::uint64_t at = held / kBlock * kBlock;
+    const bool moved = e->focus != at || e->focusUntil.hasExpired();
+    e->focus = at;
+    e->focusUntil.setRemainingTime(PartFile::kStreamFocusMs);
+    if (moved && downloading(*e->root)) {
+        if (auto* engine = m_session.engine())
+            (void)engine->downloadFocus(m_session.now(), *e->root, at);
+        requestBlocks(*e->root);
+    }
+    return held;
+}
+
 QList<Ed3kHosterJoin::SharedLink> Ed3kHosterJoin::sharedLinks(quint32 id) const
 {
     if (const Entry* e = find(id))
@@ -1010,6 +1063,13 @@ std::vector<std::uint64_t> Ed3kHosterJoin::wantedBlocks(const Download& d) const
     for (std::uint64_t off = 0; off < d.size; off += kBlock)
         if (!e->have.contains(off) && !d.outstanding.contains(off))
             out.push_back(off);
+    // a player streams: the blocks from its first missing one before all else (playFrom)
+    if (e->focus && !e->focusUntil.hasExpired()) {
+        const std::uint64_t from = *e->focus;
+        std::ranges::stable_partition(out, [&](std::uint64_t off) {
+            return off >= from && off < from + PartFile::kStreamLead;
+        });
+    }
     return out;
 }
 
@@ -1333,6 +1393,8 @@ QList<Ed3kHosterJoin::DebridSummary> Ed3kHosterJoin::debridSummaries() const
             s.expires = st.expires;
             s.trafficLeft = st.trafficLeft;
             s.trafficMax = st.trafficMax;
+            s.unlimited = st.unlimited;
+            s.unusable = st.unusable;
             s.checked = st.at / 1000;
             s.hosts = int(st.hosts.size());
             const auto blockedAll = m_debridBlocks.find(key + QStringLiteral("|*"));
@@ -1703,6 +1765,11 @@ void Ed3kHosterJoin::onResolve(const ev::LinkResolve& r)
 void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEvent& ev)
 {
     using K = ResolverEvent::Kind;
+    // first: a tail fetch never asks the user (a code, a puzzle)
+    if (m_tails.contains(task)) {
+        onTailEvent(task, ev);
+        return;
+    }
     if (ev.isFinal())
         m_codeAsks.erase(task);
     if (ev.kind == K::Code) {
@@ -1851,6 +1918,8 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
             st.expires = ev.expires;
             st.trafficLeft = ev.trafficLeft;
             st.trafficMax = ev.trafficMax;
+            st.unlimited = ev.unlimited;
+            st.unusable = ev.unusable;
             st.maxDownloads = ev.maxDownloads;
             st.multi = ev.multi;
             st.hosts = ev.hosts;
@@ -1862,9 +1931,10 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
                 logInfo(QStringLiteral("%1 downloads %2 hosters").arg(host).arg(st.hosts.size()));
         }
         emit accountChecked(host, user, ev);
-        // a stored login's new session survives a restart (no browser login again)
+        // a stored login's new session survives a restart (no browser login again);
+        // a free/expired account logged in too (RD: else captcha + mail code each start)
         if (const Ed3kHosterAccount* a = storedLogin(host, user);
-            a && st.valid && !st.state.isEmpty() && a->password == password && a->session != st.state)
+            a && loggedIn(st.valid, st.unusable) && !st.state.isEmpty() && a->password == password && a->session != st.state)
             emit sessionSaved(host, user, st.state);
         return;
     }
@@ -1962,6 +2032,7 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
         if (e) {
             if (ev.total && !e->item.verified && !e->item.size)
                 e->item.size = ev.total;
+            e->item.muxed = ev.muxed;
             if (e->item.state != State::Downloading && e->item.state != State::Puzzle)
                 viaHost.isEmpty() ? setState(*e, State::Downloading) : setState(*e, State::Downloading, Reason::ViaDebrid, viaHost);
         }
@@ -2052,6 +2123,8 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
             release(*e, false);
             setState(*e, State::Failed, Reason::PrivateAddress, ev.text);
         }
+        else if (e && ev.code == QLatin1StringView("ffmpeg"))   // HLS/DASH and no ffmpeg came: not in a minute
+            retryLater(*e, 30 * 60, Reason::ResolverError, QStringLiteral("ffmpeg: %1").arg(ev.text));
         else if (e && ev.code != QLatin1StringView("noPlugin"))
             retryLater(*e, 60, Reason::ResolverError, ev.text.isEmpty() ? ev.code : ev.text);
         final();
@@ -2219,12 +2292,7 @@ void Ed3kHosterJoin::fed(Ed3kResolver::TaskId task, std::optional<QByteArray> da
     if (a.ended)
         return;
     if (!data) {
-        // JD renames data.part to data at the end, maybe while this read ran: read from
-        // there; else the file is behind the progress it told, try again shortly
-        const QString done = a.path.endsWith(QLatin1StringView(".part")) ? a.path.chopped(5) : QString();
-        if (!done.isEmpty() && QFileInfo(done).isFile())
-            a.path = done;
-        if (++a.readFailures > kMaxReadFailures) {
+        if (!rereadLater(a)) {
             logWarning(QStringLiteral("cannot read the resolver's file %1").arg(a.path));
             endStream(task, true);
             return;
@@ -2702,6 +2770,15 @@ void Ed3kHosterJoin::release(Entry& e, bool keepFile)
             ++it;
         }
     }
+    std::vector<Ed3kResolver::TaskId> tails;
+    for (const auto& [task, a] : m_tails)
+        if (a.item == e.item.id)
+            tails.push_back(task);
+    for (const auto task : tails)
+        endTail(task, true);
+    // the file may move or go (moveTo, a restart): its tail bytes are forgotten
+    e.tailFrom = 0;
+    e.tailAt = 0;
     std::erase_if(m_matches, [&e](const auto& m) { return m.second == e.item.id; });
     std::erase_if(m_peerLinks, [&e](const auto& m) { return m.second.item == e.item.id; });
     e.peerLink = 0;
@@ -3146,9 +3223,14 @@ void Ed3kHosterJoin::publishShared(Entry& e)
     int aliases = 0;
     // alias.md §3 "Deleted file": the ALIAS records only, no SOURCE
     const bool deleted = isDeleted(*e.root) && !QFileInfo::exists(e.item.file);
+    // ffi.md MUST "nothing direct under the anonymous key": a file of it hands out no hoster
+    // link, nor an ALIAS url record (the anonymous node drops them from results anyway)
+    const auto key = m_session.hide().keyOf(*e.root);
+    const bool anonFile = key && *key == ffi::KeyKind::Anon;
     for (SharedLink& l : e.shared) {
         // §4.1: nothing while links are held back
-        const bool live = m_prefs.publishLinks && linkLive(l, now);
+        // was: const bool live = m_prefs.publishLinks && linkLive(l, now);
+        const bool live = m_prefs.publishLinks && !anonFile && linkLive(l, now);
         if (live && urls.size() < kMaxShareLinks && !deleted)
             urls << l.url;
         const bool wantAlias = live && aliases < kMaxAliasLinks;
@@ -4003,6 +4085,215 @@ void Ed3kHosterJoin::published(const QStringList& files)
 {
     if (m_published && !files.isEmpty())
         m_published(files);
+}
+
+bool Ed3kHosterJoin::rereadLater(Ask& a)
+{
+    const QString done = a.path.endsWith(QLatin1StringView(".part")) ? a.path.chopped(5) : QString();
+    if (!done.isEmpty() && QFileInfo(done).isFile())
+        a.path = done;
+    return ++a.readFailures <= kMaxReadFailures;
+}
+
+bool Ed3kHosterJoin::tailAllowed(const Entry& e) const
+{
+    // Only where a second open costs nothing but its bytes: a direct web file, or a premium
+    // login (own or multi-hoster) with a connection to spare. A free hoster would ask another
+    // puzzle or a wait of minutes (the player gives up after 60 s) and may count it as a
+    // second download against its limit; a premium one with one connection may break the first.
+    if (activeStreams() + int(m_tails.size()) >= int(m_prefs.maxStreams))
+        return false;
+    return e.item.generic || (accountTier(e.item.host) >= 2 && streamsAt(e.item.host) >= 2);
+}
+
+void Ed3kHosterJoin::startTail(Entry& e, std::uint64_t offset)
+{
+    // why: the hoster's stream comes in file order, and an MP4 with its index (moov) at the end
+    // plays only once that index is read, i.e. after the whole download. The rest of a seek
+    // waits for the stream: fetching the middle twice would cost a lot of traffic.
+    if (e.root || e.item.muxed || e.tailFailed || e.item.state != State::Downloading || !e.link
+        || e.item.size == 0 || offset <= e.item.done || offset >= e.item.size || offset + kTailSpan < e.item.size
+        || !m_resolver || !m_resolver->available())
+        return;
+    if (offset - e.item.done <= e.item.speed * kTailCatchUpS)
+        return;   // the stream gets there while the player waits
+    if (e.tailTask) {
+        if (offset >= e.tailFrom)
+            return;   // the running one gets there, it goes to the end
+        endTail(e.tailTask, true);
+    }
+    if (!tailAllowed(e))
+        return;
+    Ask a;
+    a.link = e.link;   // the item's own link for openAccount (a multi-hoster may take it)
+    a.item = e.item.id;
+    a.kind = ED3K_LINK_OPEN;
+    a.url = e.item.url;
+    a.have = offset;
+    a.dir = QDir(workDir(e.item.id)).filePath(QStringLiteral("tail"));
+    removeDirTree(a.dir);
+    QDir().mkpath(a.dir);
+    // JD resumes from where its part file ends: a sparse one that long, nothing copied
+    QFile part(QDir(a.dir).filePath(QStringLiteral("data.part")));
+    if (!part.open(QIODevice::WriteOnly) || ((void)markFileSparse(part), !part.resize(qint64(offset)))) {
+        logWarning(QStringLiteral("cannot prepare a tail fetch in %1: %2").arg(a.dir, part.errorString()));
+        removeDirTree(a.dir);
+        e.tailFailed = true;
+        return;
+    }
+    part.close();
+    const auto account = openAccount(e, a.url, a);
+    const auto task = m_resolver->open(a.url, account, a.dir, offset);
+    logInfo(QStringLiteral("%1: a player reads %2 at %3 of %4, its end is fetched ahead of the stream")
+                .arg(e.item.host, e.item.name).arg(offset).arg(e.item.size));
+    e.tailTask = task;
+    e.tailFrom = offset;
+    e.tailAt = offset;
+    m_tails[task] = std::move(a);
+}
+
+std::optional<std::uint64_t> Ed3kHosterJoin::tailHeld(Entry& e, std::uint64_t offset)
+{
+    if (e.root)
+        return std::nullopt;
+    if (offset >= e.tailFrom && offset < e.tailAt)
+        return std::max(e.tailAt, e.item.done);
+    if (offset < e.item.done)
+        return std::nullopt;
+    startTail(e, offset);
+    if (e.tailTask && offset >= e.tailFrom)
+        return offset;   // the tail fetch gets there
+    return std::nullopt;
+}
+
+void Ed3kHosterJoin::onTailEvent(Ed3kResolver::TaskId task, const ResolverEvent& ev)
+{
+    using K = ResolverEvent::Kind;
+    Ask& a = m_tails.at(task);
+    Entry* e = find(a.item);
+    if (!e || e->tailTask != task) {
+        endTail(task, !ev.isFinal());
+        return;
+    }
+    const auto fail = [&](const QString& why) {
+        logInfo(QStringLiteral("%1: no tail fetch: %2").arg(e->item.host, why));
+        e->tailFailed = true;
+        endTail(task, !ev.isFinal());
+    };
+    switch (ev.kind) {
+    case K::Status:
+        return;
+    case K::Progress:
+    case K::Done:
+        if (ev.muxed)
+            return fail(QStringLiteral("muxed"));
+        if (!ev.path.isEmpty())
+            a.path = ev.path;
+        if (ev.kind == K::Done) {
+            a.done = true;
+            a.onDisk = ev.size;
+        } else {
+            a.onDisk = std::max(a.onDisk, ev.bytes);
+        }
+        if (!a.opened) {
+            // told once: did the hoster start at the offset
+            if (!ev.from) {
+                if (ev.kind == K::Done)
+                    fail(QStringLiteral("the resolver tells no start"));
+                return;
+            }
+            if (*ev.from < a.have)
+                return fail(QStringLiteral("the hoster cannot resume"));
+            a.opened = true;
+            a.fed = a.have;
+        }
+        copyTail(task);
+        return;
+    case K::Puzzle:
+        if (m_resolver)
+            m_resolver->answerPuzzle(ev.puzzle, {});
+        return fail(QStringLiteral("puzzle"));
+    case K::Failed:
+        // the sparse front fails any whole-file checksum JD checks at the end: the bytes are in
+        if (a.opened && ev.code == QLatin1StringView("hash")) {
+            a.done = true;
+            a.onDisk = std::max(a.onDisk, std::uint64_t(std::max<qint64>(0, QFileInfo(a.path).size())));
+            copyTail(task);
+            return;
+        }
+        return fail(ev.code);
+    default:
+        // a wait, a login code, a failure: the player gives up long before
+        return fail(ev.code.isEmpty() ? ev.text : ev.code);
+    }
+}
+
+void Ed3kHosterJoin::copyTail(Ed3kResolver::TaskId task)
+{
+    const auto it = m_tails.find(task);
+    if (it == m_tails.end())
+        return;
+    Ask& a = it->second;
+    if (a.reading || !a.opened)
+        return;
+    if (a.fed >= a.onDisk) {
+        if (a.done)
+            endTail(task, false);
+        return;
+    }
+    a.reading = true;
+    const auto len = std::uint32_t(std::min<std::uint64_t>(kFeedChunk, a.onDisk - a.fed));
+    readInBackground(ownerOf(a.item) + QStringLiteral("-tail"), {FileRead{a.path, a.fed, len}},
+                     [this, task](ReadResults r) { tailCopied(task, r.empty() ? std::nullopt : std::move(r.front())); });
+}
+
+void Ed3kHosterJoin::tailCopied(Ed3kResolver::TaskId task, std::optional<QByteArray> data)
+{
+    const auto it = m_tails.find(task);
+    if (it == m_tails.end())
+        return;
+    Ask& a = it->second;
+    a.reading = false;
+    Entry* e = find(a.item);
+    // never into a file the item let go of (finish() moved it)
+    if (!e || e->tailTask != task || e->item.state == State::Complete) {
+        endTail(task, true);
+        return;
+    }
+    if (!data) {
+        if (!rereadLater(a)) {
+            logWarning(QStringLiteral("cannot read the tail fetch's file %1").arg(a.path));
+            e->tailFailed = true;
+            endTail(task, true);
+            return;
+        }
+        QTimer::singleShot(kReadRetryMs, this, [this, task] { copyTail(task); });
+        return;
+    }
+    a.readFailures = 0;
+    // the stream writes the same bytes again when it gets there; only its bytes are hashed
+    if (!writeAt(*e, a.fed, spanOf(*data)))
+        return;   // released the item, this tail too
+    a.fed += std::uint64_t(data->size());
+    count(&HosterCounters::hosterBytes, std::uint64_t(data->size()));
+    e->tailAt = std::max(e->tailAt, a.fed);
+    copyTail(task);
+}
+
+void Ed3kHosterJoin::endTail(Ed3kResolver::TaskId task, bool cancel)
+{
+    auto node = m_tails.extract(task);
+    if (node.empty())
+        return;
+    const Ask& a = node.mapped();
+    if (cancel && m_resolver)
+        m_resolver->cancel(task);
+    if (!a.via.isEmpty() && a.fed > a.have)
+        chargeDebrid(a, a.fed - a.have);
+    if (!a.dir.isEmpty())   // QDir("") is the cwd
+        removeDirTree(a.dir);
+    if (Entry* e = find(a.item); e && e->tailTask == task)
+        e->tailTask = 0;
 }
 
 } // namespace eMule::ed3k

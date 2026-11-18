@@ -48,6 +48,7 @@
 
 #include "IpcMessage.h"
 #include "prefs/Preferences.h"
+#include "utils/MediaSniff.h"
 #include "utils/WebServices.h"
 #include "utils/Log.h"
 #include "protocol/ED2KLink.h"
@@ -60,6 +61,7 @@
 #ifdef EMULE_HAVE_BITTORRENT
 #include "utils/TorrentLinks.h"
 #endif
+#include "utils/BadgeIcons.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/AppActivation.h"
 #include "utils/StringUtils.h"
@@ -73,6 +75,8 @@
 #include <QAction>
 #include <QMimeData>
 #include <QDropEvent>
+#include <QShowEvent>
+#include <QWindow>
 #include <QWindowStateChangeEvent>
 #include <QDragMoveEvent>
 #include <QDragEnterEvent>
@@ -611,6 +615,8 @@ void MainWindow::showOptionsDialog(int page)
     dlg.exec();
     updateSpeedLimitTip();
     applyTrayIconVisibility();
+    applyToolbarBadges();
+    m_ircPanel->applyChatPrefs();
 
     // a feature switched on brings its button back, even one removed from a customized toolbar
     bool toolbarChanged = false;
@@ -910,6 +916,12 @@ void MainWindow::setEd3kStatus(const QCborMap& status)
                       .arg(status.value(QStringLiteral("udpPort")).toInteger())
                       .arg(contacts)
                       .arg(className(class4), className(class6), router ? tr("yes") : tr("no"));
+    // firewalled by class only: no ed3k node probed the port (tiny network), vs. a probe failed
+    const qint64 untested = status.value(QStringLiteral("natUntested")).toInteger();
+    if (firewalled)
+        tip += QLatin1Char('\n') + (untested != 0
+            ? tr("Not proven open: no ed3k node could test the port yet")
+            : tr("Port test failed: a probe did not get through"));
     // batch 15: Kad's own network down (Protocol.md §10), bit 0 IPv4, bit 1 IPv6
     const qint64 kadOffline = status.value(QStringLiteral("kadOffline")).toInteger();
     if (kadOffline != 0) {
@@ -959,6 +971,7 @@ void MainWindow::setStreamToken(const QString& token)
     if (m_sharedFilesPanel) m_sharedFilesPanel->setStreamToken(token);
     if (m_usenetPanel)      m_usenetPanel->setStreamToken(token);
     if (m_torrentPanel)     m_torrentPanel->setStreamToken(token);
+    if (m_hosterPanel)      m_hosterPanel->setStreamToken(token);
 }
 
 void MainWindow::updateTransferRates(double upKBs, double downKBs,
@@ -1109,8 +1122,8 @@ void MainWindow::closeEvent(QCloseEvent* event)
     // closeToTray (qBittorrent, off by default) hides instead — but only for the user's
     // own close (title bar, Alt+F4: spontaneous). Tray Exit, Cmd/Ctrl+Q, forced and
     // app-wide quits still exit, so the app can always be quit.
-    if (thePrefs.closeToTray() && trayInUse() && event->spontaneous()
-        && !m_quitRequested && !s_quitWithoutPrompt) {
+    if (thePrefs.closeToTray() && event->spontaneous()
+        && !m_quitRequested && !s_quitWithoutPrompt && ensureTrayIconShown()) {
         event->ignore();
         hide();
         return;
@@ -1256,7 +1269,7 @@ void MainWindow::startMinimized(bool maximized)
     // The window state survives being hidden, so a later restore lands maximized
     if (maximized)
         setWindowState(windowState() | Qt::WindowMaximized);
-    if (trayInUse() && thePrefs.minimizeToTray())
+    if (thePrefs.minimizeToTray() && ensureTrayIconShown())
         return;   // stays hidden; the tray icon is the way in
     showMinimized();
 }
@@ -1267,7 +1280,8 @@ void MainWindow::restoreWindow(const QString& activationToken)
     // minimized, and activation needs a token from the user's click. From the tray
     // the window just stayed down. With a token the compositor raises it (Qt reads
     // the variable in requestActivate); without one, remap it: a new map comes up.
-    if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"))) {
+    const bool wayland = QGuiApplication::platformName().startsWith(QLatin1String("wayland"));
+    if (wayland) {
         if (!activationToken.isEmpty())
             qputenv("XDG_ACTIVATION_TOKEN", activationToken.toUtf8());
         else if (isVisible() && !isActiveWindow() && !QApplication::activeModalWidget())
@@ -1276,7 +1290,8 @@ void MainWindow::restoreWindow(const QString& activationToken)
 
     // Not showNormal(): that drops maximized/fullscreen, so every restore came back
     // at the normal size. Only the minimized bit goes.
-    Qt::WindowStates state = (windowState() | m_stateBeforeMinimize) & ~Qt::WindowMinimized;
+    Qt::WindowStates state = (windowState() | m_stateBeforeMinimize | std::exchange(m_trayHiddenState, {}))
+        & ~Qt::WindowMinimized;
     if (state.testFlag(Qt::WindowFullScreen))
         state &= ~Qt::WindowMaximized;
     // X11: un-minimizing a hidden window maps it behind Qt's back
@@ -1284,11 +1299,15 @@ void MainWindow::restoreWindow(const QString& activationToken)
     // stale pixels of another app (issue #24). Map it iconic first, then de-iconify.
     if (!isVisible() && QGuiApplication::platformName() == QLatin1String("xcb"))
         show();
+    // Wayland: mapping already activates (QWaylandXdgSurface::requestActivateOnShow,
+    // takes the token too); activateWindow() on top asked for a 2nd token
+    const bool mapsNow = !isVisible();
     m_restoreRequested.start();
     setWindowState(state);
     show();
     raise();
-    activateWindow();
+    if (!(wayland && mapsNow))
+        activateWindow();
 }
 
 void MainWindow::updateClickNLoad()
@@ -1335,9 +1354,23 @@ void MainWindow::changeEvent(QEvent* event)
             : 0;
         // Re-checked: a restore may already have happened by the time this runs
         QTimer::singleShot(wait, this, [this] {
-            if (isMinimized())
+            // no icon in the shell (Server 2019): stay on the taskbar, else orphaned
+            if (isMinimized() && ensureTrayIconShown())
                 hide();
         });
+    }
+}
+
+void MainWindow::showEvent(QShowEvent* event)
+{
+    QMainWindow::showEvent(event);
+    m_trayHiddenState = Qt::WindowNoState;   // restoreWindow() already used it; any other show drops it
+    // windowHandle() exists from the first show on and survives hide()
+    if (m_waylandMinimizeHooked || !QGuiApplication::platformName().startsWith(QLatin1String("wayland")))
+        return;
+    if (QWindow* handle = windowHandle()) {
+        connect(handle, &QWindow::windowStateChanged, this, &MainWindow::onWaylandWindowStateChanged);
+        m_waylandMinimizeHooked = true;
     }
 }
 
@@ -1395,7 +1428,7 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
             return true;
         }
         if (obj == m_statusChat) {
-            switchToTab(TabMessages);
+            switchToTab(!m_unreadTabs.contains(TabMessages) && m_unreadTabs.contains(TabIRC) ? TabIRC : TabMessages);
             return true;
         }
         if (obj == m_statusSpeed) {
@@ -1947,6 +1980,7 @@ void MainWindow::rebuildToolbar()
 
         const QIcon icon = toolbarIcon(tileForButton(id), *def);
         auto* action = m_toolbar->addAction(icon, tr(def->label));
+        action->setProperty("baseIcon", icon);   // the icon without the unread badge
         m_toolbarActions[id] = action;
 
         if (def->tabIndex >= 0) {
@@ -2005,6 +2039,7 @@ void MainWindow::rebuildToolbar()
     }
 
     applyFeatureTabs();
+    applyToolbarBadges();
     m_toolbarSizer->update();   // style may have changed: no layout request then
 }
 
@@ -2359,7 +2394,10 @@ void MainWindow::updateTrayIcon(bool force)
     m_trayIconPath = iconPath;
     m_trayMeterColor = barColor;
 
-    m_trayIcon->setIcon(QIcon(TrayMeterIcon::render(skinIcon(iconPath), percent, barColor)));
+    QIcon base = skinIcon(iconPath);
+    if (base.pixmap(16, 16).isNull())
+        base = appIcon(lowId);   // .ico unreadable (qico plugin missing): no blank slot
+    m_trayIcon->setIcon(QIcon(TrayMeterIcon::render(base, percent, barColor)));
 }
 
 void MainWindow::showNetworkInfo()
@@ -2500,7 +2538,22 @@ void MainWindow::setupStatusBar()
     m_statusChat->setScaledContents(true);
     m_statusChat->installEventFilter(this);
     sb->addPermanentWidget(m_statusChat);
-    connect(m_messagesPanel, &MessagesPanel::messageStateChanged, this, &MainWindow::showChatState);
+    // was: messageStateChanged → showChatState (friends only, always on); now any unread
+    // chat, under the badge option, blinking as MFC (ChatSelector.cpp:93, 1.5 s)
+    m_chatBlink = new QTimer(this);
+    m_chatBlink->setInterval(1500);
+    connect(m_chatBlink, &QTimer::timeout, this, [this] {
+        m_chatBlinkOn = !m_chatBlinkOn;
+        showChatState(m_chatBlinkOn ? 1 : 2);
+    });
+    connect(m_messagesPanel, &MessagesPanel::messageStateChanged, this,
+            [this](int state) { setChatUnread(TabMessages, state != 0); });
+    // a friend's message: the tray pop-up (main.cpp) plays its sound when it is on
+    connect(m_messagesPanel, &MessagesPanel::unseenChatMessage, this, [this] {
+        chatAttention(true, thePrefs.notifyOnChat() && thePrefs.notifySoundType() == 1);
+    });
+    connect(m_ircPanel, &IrcPanel::unreadChanged, this, [this](bool unread) { setChatUnread(TabIRC, unread); });
+    connect(m_ircPanel, &IrcPanel::messageArrived, this, [this](bool mention) { chatAttention(mention); });
 }
 
 void MainWindow::requestEd3kStatus()
@@ -2583,6 +2636,40 @@ void MainWindow::setupPages()
             m_sharedFilesPanel, &SharedFilesPanel::setIrcConnected);
     connect(m_sharedFilesPanel, &SharedFilesPanel::ircSendLinkChosen,
             m_ircPanel, &IrcPanel::setSendLink);
+    connect(m_ircPanel, &IrcPanel::ed3kRoomJoined, this, [this] { switchToTab(TabIRC); });
+    // room.md §6: a room's download list only into its add dialog, nothing started
+    connect(m_ircPanel, &IrcPanel::roomFileOpened, this, [this](const QString& name, const QByteArray& bytes) {
+        switch (MediaSniff::fileKind(bytes, name)) {
+        case MediaSniff::FileKind::Nzb:
+            if (!thePrefs.usenetEnabled()) {
+                QMessageBox::information(this, tr("Add NZB"), tr("Usenet is off. Turn it on in Options to add %1.").arg(name));
+                return;
+            }
+            switchToTab(TabUsenet);
+            m_usenetPanel->promptAddNzbData(name, bytes);
+            return;
+        case MediaSniff::FileKind::Dlc:
+#ifdef EMULE_HAVE_HOSTER_JD
+            if (m_hosterPanel && thePrefs.hosterDownloadsOn()) {
+                switchToTab(TabHoster);
+                m_hosterPanel->openContainerData(name, bytes);
+                return;
+            }
+#endif
+            QMessageBox::information(this, tr("Open DLC"), tr("Hoster downloads are off. Turn them on in Options to open %1.").arg(name));
+            return;
+        case MediaSniff::FileKind::Torrent:
+#ifdef EMULE_HAVE_BITTORRENT
+            if (m_torrentPanel && requireBitTorrent()) {
+                switchToTab(TabTorrents);
+                m_torrentPanel->promptAddTorrentData(name, bytes);
+            }
+#endif
+            return;
+        default:
+            return;
+        }
+    });
     addPage(m_ircPanel);
 
     // Tab 7: Statistics
@@ -3338,6 +3425,67 @@ void MainWindow::showChatState(int state)
     m_statusChat->setToolTip(state == 0 ? QString() : tr("New message — double-click to read"));
 }
 
+void MainWindow::setChatUnread(Tab tab, bool unread)
+{
+    if (unread == m_unreadTabs.contains(tab))
+        return;
+    if (unread)
+        m_unreadTabs.insert(tab);
+    else
+        m_unreadTabs.remove(tab);
+    applyToolbarBadges();
+}
+
+void MainWindow::applyToolbarBadges()
+{
+    const bool on = thePrefs.chatUnreadBadge();
+    for (QAction* action : std::as_const(m_toolbarActions)) {
+        const QVariant tab = action->data();
+        const QIcon base = action->property("baseIcon").value<QIcon>();
+        if (!tab.isValid() || base.isNull())
+            continue;
+        const bool badge = on && m_unreadTabs.contains(tab.toInt());
+        if (action->property("badged").toBool() == badge)
+            continue;
+        action->setProperty("badged", badge);
+        action->setIcon(badge ? BadgeIcons::withAlertBadge(base) : base);
+    }
+    // the status bar icon (MFC SBarChatMsg) under the same option; none yet while the
+    // constructor builds the toolbar before setupStatusBar (crash: null m_chatBlink)
+    if (!m_chatBlink)
+        return;
+    if (!on || m_unreadTabs.isEmpty()) {
+        m_chatBlink->stop();
+        m_chatBlinkOn = true;   // the next one starts on the Message phase
+        showChatState(0);
+    } else if (!m_chatBlink->isActive()) {
+        m_chatBlink->start();
+        showChatState(1);
+    }
+}
+
+void MainWindow::chatAttention(bool mention, bool soundDone)
+{
+    const int alert = thePrefs.chatAlert();
+    if (!isActiveWindow()
+        && (alert == Preferences::ChatAlertAll || (alert == Preferences::ChatAlertMention && mention)))
+        QApplication::alert(this);
+    if (!thePrefs.chatSound() || soundDone)
+        return;
+    if (m_chatSoundClock.isValid() && m_chatSoundClock.elapsed() < 2000)
+        return;   // a busy channel: one sound per 2 s
+    m_chatSoundClock.start();
+    const QString file = thePrefs.notifySoundFile();
+    if (thePrefs.notifySoundType() == 1 && !file.isEmpty() && QFile::exists(file)) {
+        if (!m_notifySound)
+            m_notifySound = new QSoundEffect(this);
+        m_notifySound->setSource(QUrl::fromLocalFile(file));
+        m_notifySound->play();
+    } else {
+        QApplication::beep();
+    }
+}
+
 void MainWindow::updateFreeSpaceLabel()
 {
     if (!m_statusFreeSpace)
@@ -3384,6 +3532,50 @@ void MainWindow::updateNetworkStatsLabel()
         users = files = QStringLiteral("0");
     }
     m_statusUsersLabel->setText(tr("Users: %1 | Files: %2").arg(users, files));
+}
+
+void MainWindow::onWaylandWindowStateChanged(Qt::WindowState state)
+{
+    // Qt sends xdg_toplevel.set_minimized and at once reports the window as not
+    // minimized (the protocol has no such state), so changeEvent() never sees it.
+    // This signal is the only trace. A compositor-side minimize (server-side title
+    // bar on KDE/sway, GNOME's Super+H) leaves none: the window just goes down.
+    // KWin's xdg "suspended" is no substitute: it also comes on a desktop switch.
+    if (state != Qt::WindowMinimized || !trayInUse() || !thePrefs.minimizeToTray())
+        return;
+    // Widget state still holds maximized here; Qt's "not minimized" report comes later
+    const Qt::WindowStates keep = windowState() & (Qt::WindowMaximized | Qt::WindowFullScreen);
+    // Deferred: the request comes from inside the decoration's mouse handler, and
+    // hide() tears down the surface that decoration draws on
+    QTimer::singleShot(0, this, [this, keep] {
+        if (!isVisible() || !ensureTrayIconShown())
+            return;
+        m_trayHiddenState = keep;
+        hide();
+    });
+}
+
+bool MainWindow::ensureTrayIconShown()
+{
+    if (!trayInUse())
+        return false;
+#ifdef Q_OS_WIN
+    // geometry() = Shell_NotifyIconGetRect: S_OK also in the overflow area, E_FAIL when
+    // the shell never took the icon (NIM_ADD before Explorer's tray was up, Server 2019)
+    if (m_trayIcon->geometry().isValid())
+        return true;
+    m_trayIcon->hide();
+    m_trayIcon->show();   // fresh NIM_ADD
+    updateTrayIcon(/*force*/ true);
+    if (m_trayIcon->geometry().isValid()) {
+        logInfo(QStringLiteral("Tray icon was missing from the notification area, re-added"));
+        return true;
+    }
+    logWarning(QStringLiteral("Tray icon not in the notification area: window stays on the taskbar"));
+    return false;
+#else
+    return true;
+#endif
 }
 
 } // namespace eMule

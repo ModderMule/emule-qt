@@ -131,6 +131,7 @@ void tst_Ed3kBridge::offWritesNoEd3kState()
     thePrefs.setEd3kEnabled(true);
     QVERIFY(!refused(IpcMsgType::SetEd3kPassReports, {false}));
     QVERIFY(QFileInfo::exists(ed3kDir));
+    eMule::ed3k::flushBlobWrites();   // paid.json on disk before tmp goes, else written into it at exit
 
     Ed3kDownloadsBridge::setDownloads(nullptr);
     Ed3kCreditBridge::setCredit(nullptr);
@@ -194,9 +195,14 @@ void tst_Ed3kBridge::onlyTheEd3kBlockIsAnswered()
     // (was 1049: AddEd3kCacheLink since batch 15; every free number is inside a sub-block now,
     // whose bridge answers a failure: 1149 of the downloads')
     // (1149 is GetEd3kFileLinks now; 1219: free, after the Link Grabber's 1210-1218)
-    QVERIFY(Ed3kBridge::handleRequest(IpcMessage(static_cast<IpcMsgType>(1219), 2), reply));
+    // (1219 is GetHosterAccountHosts now; 1229: free, last of the account dialogs' 1219-1229)
+    QVERIFY(Ed3kBridge::handleRequest(IpcMessage(static_cast<IpcMsgType>(1229), 2), reply));
     QCOMPARE(replies, 1);
     QCOMPARE(last.type(), IpcMsgType::Error);
+    // room media requests (1250-1253) reach the bridge: they once sat in the push block
+    for (const auto t : {IpcMsgType::SetEd3kRoomLimits, IpcMsgType::PostEd3kRoomMedia, IpcMsgType::GetEd3kRoomMedia,
+                         IpcMsgType::FetchEd3kRoomMedia, IpcMsgType::GetEd3kRooms})
+        QVERIFY2(Ed3kBridge::isEd3kRequest(t), qPrintable(QString::number(int(t))));
 }
 
 void tst_Ed3kBridge::coordinatorLimitsAndCountsTheNode()
@@ -263,6 +269,15 @@ void tst_Ed3kBridge::coordinatorSizesEd3kSlotsFromTheShare()
     QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(10), 2u);
     QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(250), 10u);
     QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(1000), 40u);
+    // Options' slot speed as for eD2K, kept inside §12.5's 9..55 KB/s
+    const uint32 rateBefore = thePrefs.uploadSlotTargetRate();
+    thePrefs.setUploadSlotTargetRate(50);
+    QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(1000), 20u);
+    thePrefs.setUploadSlotTargetRate(12);   // the pref's floor
+    QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(120), 10u);
+    thePrefs.setUploadSlotTargetRate(200);
+    QCOMPARE(BandwidthCoordinator::ed3kSlotsFor(550), 10u);
+    thePrefs.setUploadSlotTargetRate(rateBefore);
     // re-applied on a move of 10 % (at least 1) or on/off, not on the share's tick jitter
     QVERIFY(!BandwidthCoordinator::ed3kSlotsMoved(1968, 1968));
     QVERIFY(!BandwidthCoordinator::ed3kSlotsMoved(1968, 1942));

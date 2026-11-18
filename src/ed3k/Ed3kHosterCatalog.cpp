@@ -117,7 +117,7 @@ QHash<QString, QString> Ed3kHosterCatalog::countries(const QStringList& hosts)
         return out;
     loadCountries();
     const qint64 now = QDateTime::currentSecsSinceEpoch();
-    const bool canLook = m_dnsAllowed && m_dns && (!m_geoReady || m_geoReady());
+    const bool canLook = (!m_dnsAllowed || m_dnsAllowed()) && m_dns && (!m_geoReady || m_geoReady());
     QStringList toLook;
     for (const QString& raw : hosts) {
         const QString host = raw.trimmed().toLower();

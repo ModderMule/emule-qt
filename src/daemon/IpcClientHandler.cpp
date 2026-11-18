@@ -16,6 +16,10 @@
 #include "CoreNotifierBridge.h"
 #include "SharedFileRows.h"
 #include "DaemonApp.h"
+#include "Ed3kTunnelBridge.h"
+#include "IpcStreamBridge.h"
+#include "IpcServer.h"
+#include "net/OwnAddress.h"
 #ifdef EMULE_HAVE_ED3K
 #include "Ed3kStore.h"
 #endif
@@ -27,6 +31,7 @@
 #include "IndexerCapsStore.h"
 #include "IndexerClient.h"
 #include "IndexerFeedList.h"
+#include "IndexerGrab.h"
 #include "IndexerQuery.h"
 #include "IndexerSearch.h"
 #include "IndexerSearchList.h"
@@ -422,6 +427,12 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     }
     if (Ed3kBridge::handleRequest(msg, [this](const IpcMessage& reply) { sendMessage(reply); }))
         return;
+    // remote streaming + pairing (1230-1232): a phone reads file bytes over this link
+    if (IpcStreamBridge::handleRequest(msg, this, [this](const IpcMessage& reply) { sendMessage(reply); }))
+        return;
+    // phones paired for the ed3k tunnel (1233-1235)
+    if (Ed3kTunnelBridge::handleRequest(msg, [this](const IpcMessage& reply) { sendMessage(reply); }))
+        return;
 
     switch (msg.type()) {
     case IpcMsgType::Handshake:            handleHandshake(msg); break;
@@ -544,6 +555,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::SetFileShared:        handleSetFileShared(msg); break;
     case IpcMsgType::BrowseDirectory:      handleBrowseDirectory(msg); break;
     case IpcMsgType::ListFolders:          handleListFolders(msg); break;
+    case IpcMsgType::ListenIpcAddress:     handleListenIpcAddress(msg); break;
     case IpcMsgType::GetSharedDirState:    handleGetSharedDirState(msg); break;
     case IpcMsgType::GetCategories:        handleGetCategories(msg); break;
     case IpcMsgType::SetCategories:        handleSetCategories(msg); break;
@@ -633,7 +645,7 @@ void IpcClientHandler::handleHandshake(const IpcMessage& msg)
 
     // Authenticate: required for remote clients, optional for localhost. A remote
     // client only gets here over TLS (IpcTlsServer); checked again anyway.
-    if (!m_isLocal && !m_connection->isEncrypted()) {
+    if (!m_isLocal && !m_isTunnel && !m_connection->isEncrypted()) {
         logWarning(QStringLiteral("IPC auth refused — remote client without TLS"));
         m_connection->close();
         return;
@@ -864,6 +876,11 @@ void IpcClientHandler::handleRenameFiles(const IpcMessage& msg)
     for (const QCborValue& v : msg.fieldArray(0)) {
         const QCborArray pair = v.toArray();
         const QString hash = pair.at(0).toString();
+        if (hash.size() == 64) {   // an ed3k download's root
+            const QString error = Ed3kDownloadsBridge::rename(hash, pair.at(1).toString());
+            results.append(QCborArray{hash, error.isEmpty(), error});
+            continue;
+        }
         const ops::Status st = ops::renameFile(hash, pair.at(1).toString());
         results.append(QCborArray{hash, st.ok(), st.message});
     }
@@ -1133,6 +1150,21 @@ void IpcClientHandler::handleSearchKadNotes(const IpcMessage& msg)
 {
     const QString hash = msg.fieldString(0);
     const QString fileName = msg.fieldString(1); // optional; shown in the Kad search list
+    // an ed3k download's Details: its root (64 hex), NOTE records on ed3k Kad
+    if (const QByteArray root = QByteArray::fromHex(hash.toLatin1()); hash.size() == 64 && root.size() == 32) {
+        if (!theApp.ed3kConnected || !theApp.ed3kConnected()) {
+            sendMessage(IpcMessage::makeResult(msg.seqId(), false, QCborValue(tr("ed3k is not connected."))));
+            return;
+        }
+        // was: theApp.ed3kSearchNotes(root) alone; a download also looks up its names and tags
+        if (!Ed3kDownloadsBridge::searchKad(root) && (!theApp.ed3kSearchNotes || !theApp.ed3kSearchNotes(root))) {
+            sendMessage(IpcMessage::makeResult(msg.seqId(), false,
+                QCborValue(tr("Another search is already in progress. Please try again later!"))));
+            return;
+        }
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+        return;
+    }
     if (hash.size() != 32) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
         return;
@@ -1607,33 +1639,10 @@ void IpcClientHandler::handleGetSharedFiles(const IpcMessage& msg)
 
 void IpcClientHandler::handleSetSharedFilePriority(const IpcMessage& msg)
 {
-    const QString hash = msg.fieldString(0);
-    const auto priority = static_cast<uint8>(msg.fieldInt(1));
-    const bool isAuto = msg.fieldBool(2);
-
-    uint8 hashBuf[16]{};
-    if (!hexToHash(hash, hashBuf)) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
-        return;
-    }
-
-    // Look up in shared file list first, then download queue
-    KnownFile* kf = theApp.sharedFileList ? theApp.sharedFileList->getFileByID(hashBuf) : nullptr;
-    if (!kf && theApp.downloadQueue)
-        kf = theApp.downloadQueue->fileByID(hashBuf);
-
-    if (!kf) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("File not found")));
-        return;
-    }
-
-    kf->setAutoUpPriority(isAuto);
-    if (!isAuto)
-        kf->setUpPriority(priority);
-    else
-        kf->updateAutoUpPriority();
-
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    const ops::Status st = ops::setSharedFilePriority(
+        msg.fieldString(0), static_cast<uint8>(msg.fieldInt(1)), msg.fieldBool(2));
+    sendMessage(st.ok() ? IpcMessage::makeResult(msg.seqId(), true)
+                        : IpcMessage::makeError(msg.seqId(), st.code, st.message));
 }
 
 void IpcClientHandler::handleReloadSharedFiles(const IpcMessage& msg)
@@ -2109,6 +2118,14 @@ void stepPartImport(const QString& hashHex)
 
 void IpcClientHandler::handleAddDownloadSource(const IpcMessage& msg)
 {
+    // an ed3k download (64 hex root): a URL source alone, as ws= (no address:port of a node)
+    if (msg.fieldString(0).size() == 64) {
+        if (msg.fieldBool(1) && Ed3kDownloadsBridge::addWebSource(msg.fieldString(0), msg.fieldString(2)))
+            sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+        else
+            sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("The source was not accepted")));
+        return;
+    }
     PartFile* file = partFileFor(msg.fieldString(0));
     if (!file || file->isStopped()) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found or stopped")));
@@ -2143,6 +2160,10 @@ void IpcClientHandler::handleSetDownloadSourceLimit(const IpcMessage& msg)
 {
     const auto limit = static_cast<uint32>(std::max<qint64>(msg.fieldInt(1), 0));
     for (const auto& hash : msg.fieldArray(0)) {
+        if (const QString h = hash.toString(); h.size() == 64) {   // an ed3k download's root
+            (void)Ed3kDownloadsBridge::setSourceLimit(h, int(std::min<uint32>(limit, 65535)));
+            continue;
+        }
         if (PartFile* file = partFileFor(hash.toString())) {
             file->setPrivateMaxSources(limit);
             file->savePartFile();
@@ -2154,6 +2175,15 @@ void IpcClientHandler::handleSetDownloadSourceLimit(const IpcMessage& msg)
 void IpcClientHandler::handleSwapA4AFToFile(const IpcMessage& msg)
 {
     int swapped = 0;
+    if (const QString h = msg.fieldString(0); h.size() == 64) {   // an ed3k download's root
+        const auto n = Ed3kDownloadsBridge::swapA4af(h);
+        if (!n) {
+            sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("No such download")));
+            return;
+        }
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true, static_cast<qint64>(*n)));
+        return;
+    }
     const ops::Status st = ops::swapA4AFToDownload(msg.fieldString(0), &swapped);
     if (!st.ok()) {
         sendMessage(IpcMessage::makeError(msg.seqId(), st.code, st.message));
@@ -2799,7 +2829,10 @@ void IpcClientHandler::handleGetKadSearches(const IpcMessage& msg)
 
 void IpcClientHandler::handleGetKadIncoming(const IpcMessage& msg)
 {
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(ops::kadIncoming())));
+    if (msg.fieldBool(0))   // count only: the tab is hidden
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(ops::kadIncomingCount())));
+    else
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(ops::kadIncoming())));
 }
 
 void IpcClientHandler::handleGetKadIncomingGraph(const IpcMessage& msg)
@@ -3849,6 +3882,75 @@ void IpcClientHandler::handleListFolders(const IpcMessage& msg)
 }
 
 // ---------------------------------------------------------------------------
+// handleListenIpcAddress — where the IPC server listens; move it now
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleListenIpcAddress(const IpcMessage& msg)
+{
+    QString value = msg.fieldString(0).trimmed();
+    if (value.startsWith(u'[') && value.endsWith(u']'))
+        value = value.mid(1, value.size() - 2);
+    auto* server = qobject_cast<IpcServer*>(parent());
+    const int seqId = msg.seqId();
+    const auto reply = [this, server, seqId](bool ok, const QString& error, bool notOwn) {
+        QCborArray addrs;
+        if (server)
+            for (const QHostAddress& a : server->listenAddresses())   // dual stack reads "0.0.0.0"
+                addrs.append(a == QHostAddress(QHostAddress::Any) ? QStringLiteral("*") : a.toString());
+        IpcMessage resp = IpcMessage::makeResult(seqId, ok, error);
+        resp.append(thePrefs.ipcListenAddress());
+        resp.append(addrs);
+        resp.append(notOwn);
+        sendMessage(resp);
+    };
+    if (value.isEmpty() || !server) {
+        reply(server != nullptr, QString(), false);
+        return;
+    }
+    if (!m_isLocal) {
+        reply(false, QStringLiteral("Only a GUI on the core's computer can change this"), false);
+        return;
+    }
+    const auto apply = [server, value, reply](const QList<QHostAddress>& addrs) {
+        QString error;
+        if (!server->switchListen(addrs, &error)) {
+            reply(false, error, false);
+            return;
+        }
+        thePrefs.setIpcListenAddress(value);
+        thePrefs.save();
+        logInfo(QStringLiteral("IPC listen address now %1").arg(value));
+        emit server->listenHostChanged(value);
+        reply(true, QString(), false);
+    };
+    const QHostAddress addr(value);
+    if (value == u'*' || !addr.isNull()) {
+        if (!addr.isNull() && !addr.isLoopback() && addr != QHostAddress::AnyIPv4
+            && addr != QHostAddress::AnyIPv6 && !OwnAddress::isOwn(addr)) {
+            reply(false, QStringLiteral("%1 is no address of this computer").arg(value), true);
+            return;
+        }
+        apply({Preferences::ipcBindAddressOf(value)});
+        return;
+    }
+    // A name: its own addresses plus loopback, as at start. DNS off the core thread.
+    const QPointer<IpcClientHandler> self(this);
+    QThreadPool::globalInstance()->start([self, value, apply, reply] {
+        const auto own = OwnAddress::ownBindAddressesOf(value, thePrefs.ipcListenTemporaryIpv6());
+        QMetaObject::invokeMethod(QCoreApplication::instance(), [self, value, own, apply, reply] {
+            if (!self)
+                return;
+            if (!own)
+                reply(false, QStringLiteral("%1 did not resolve in time").arg(value), false);
+            else if (own->isEmpty())
+                reply(false, QStringLiteral("%1 is no address of this computer").arg(value), true);
+            else
+                apply(QList{QHostAddress(QHostAddress::LocalHost)} + *own);
+        });
+    });
+}
+
+// ---------------------------------------------------------------------------
 // handleBrowseDirectory — one directory's files with their share state
 // ---------------------------------------------------------------------------
 
@@ -4008,7 +4110,7 @@ void IpcClientHandler::handleGetDownloadDetails(const IpcMessage& msg)
     const QString hash = msg.fieldString(0);
     // an ed3k download (its root, 64 hex): the General page's fields
     if (hash.size() == 64) {
-        if (auto details = Ed3kDownloadsBridge::detailsOf(hash))
+        if (auto details = Ed3kDownloadsBridge::detailsOf(hash, msg.fieldCount() > 1 && msg.fieldBool(1)))
             sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(*details)));
         else
             sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
@@ -4368,6 +4470,10 @@ void IpcClientHandler::handleGetSharedFileDetails(const IpcMessage& msg)
     } else {
         details.insert(QLatin1StringView("dataPath"), kf->filePath());
         Ed3kBridge::appendSharedInfo(details, QByteArray(reinterpret_cast<const char*>(kf->fileHash()), 16));
+        if (kf->isEd3kOnly()) {   // no eD2K hash; its root known with ed3k off too
+            details.insert(QLatin1StringView("ed3kOnly"), true);
+            details.insert(QLatin1StringView("ed3kRoot"), QString::fromLatin1(kf->ed3kOnlyRoot().toHex()));
+        }
     }
     details.insert(QLatin1StringView("path"), QFileInfo(kf->filePath()).absolutePath());
 
@@ -4604,6 +4710,14 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setProxyUser(val.toString());
     else if (key == QStringLiteral("proxyPassword"))
         thePrefs.setProxyPassword(val.toString());
+    else if (key == QStringLiteral("proxyDohUrl"))
+        thePrefs.setProxyDohUrl(val.toString());
+    else if (key == QStringLiteral("proxyDohUrls")) {
+        QStringList urls;
+        for (const QCborValue& u : val.toArray())
+            urls << u.toString();
+        thePrefs.setProxyDohUrls(urls);
+    }
     // Server
     else if (key == QStringLiteral("safeServerConnect"))
         thePrefs.setSafeServerConnect(val.toBool());
@@ -5288,6 +5402,20 @@ bool IpcClientHandler::applyPreferenceC(const QString& key, const QCborValue& va
         thePrefs.setShowSmileys(val.toBool());
     else if (key == QStringLiteral("indicateRatings"))
         thePrefs.setIndicateRatings(val.toBool());
+    else if (key == QStringLiteral("chatSound"))
+        thePrefs.setChatSound(val.toBool());
+    else if (key == QStringLiteral("chatAlert"))
+        thePrefs.setChatAlert(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("chatUnreadBadge"))
+        thePrefs.setChatUnreadBadge(val.toBool());
+    else if (key == QStringLiteral("chatWebLinks"))
+        thePrefs.setChatWebLinks(val.toBool());
+    else if (key == QStringLiteral("chatModStar"))
+        thePrefs.setChatModStar(val.toBool());
+    else if (key == QStringLiteral("chatRoomMedia"))
+        thePrefs.setChatRoomMedia(val.toBool());
+    else if (key == QStringLiteral("chatRoomVideos"))
+        thePrefs.setChatRoomVideos(val.toBool());
 
     else
         return false;
@@ -5387,8 +5515,6 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
     // ed3k node; the daemon re-reads them on ed3kConfigChanged
     if (key == QStringLiteral("ed3kEnabled"))
         thePrefs.setEd3kEnabled(val.toBool());
-    else if (key == QStringLiteral("ed3kShareFiles"))
-        thePrefs.setEd3kShareFiles(val.toBool());
     else if (key == QStringLiteral("ed3kHashRamMiB"))
         thePrefs.setEd3kHashRamMiB(static_cast<int>(val.toInteger()));
     else if (key == QStringLiteral("ed3kKadStoreMiB"))
@@ -5407,6 +5533,18 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
         thePrefs.setEd3kArchiveContents(val.toBool());
     else if (key == QStringLiteral("ed3kOwnSetsWatch"))
         thePrefs.setEd3kOwnSetsWatch(val.toBool());
+    // was: not handled here (the Extended tree's switches never reached the core)
+    else if (key == QStringLiteral("ed3kLanUnlimited"))
+        thePrefs.setEd3kLanUnlimited(val.toBool());
+    // hops.md §1: a network's ed3k join under the anonymous key while hiding
+    else if (key == QStringLiteral("ed3kAnonEd2k"))
+        thePrefs.setEd3kAnonEd2k(val.toBool());
+    else if (key == QStringLiteral("ed3kAnonTorrent"))
+        thePrefs.setEd3kAnonTorrent(val.toBool());
+    else if (key == QStringLiteral("ed3kAnonUsenet"))
+        thePrefs.setEd3kAnonUsenet(val.toBool());
+    else if (key == QStringLiteral("ed3kAnonHoster"))
+        thePrefs.setEd3kAnonHoster(val.toBool());
     else if (key == QStringLiteral("ed3kUdpPort"))
         thePrefs.setEd3kUdpPort(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 1, 65535)));
     else if (key == QStringLiteral("ed3kCreditRpc"))
@@ -6117,61 +6255,36 @@ void IpcClientHandler::handleGetIndexerCaps(const IpcMessage& msg)
 
 void IpcClientHandler::handleStartIndexerSearch(const IpcMessage& msg)
 {
-    if (!indexer::theIndexerSearchList) {
-        sendMessage(IpcMessage::makeResult(msg.seqId(), false,
-                                           QCborValue(tr("The daemon is still starting."))));
-        return;
-    }
-
     indexer::IndexerQuery query;
-    query.text = msg.fieldString(0).trimmed();
+    query.text = msg.fieldString(0);
     for (const auto& value : msg.fieldArray(1))
         query.categories.append(int(value.toInteger()));
-    if (const QString mode = msg.fieldString(2); !mode.isEmpty())
-        query.mode = mode;
+    query.mode = msg.fieldString(2);
     // fields 5-7: season, episode, IMDb id (digits only, "tt" dropped)
-    query.season = msg.fieldString(5).trimmed();
-    query.episode = msg.fieldString(6).trimmed();
-    query.imdbId = msg.fieldString(7).trimmed();
-    query.imdbId.removeIf([](QChar c) { return !c.isDigit(); });
+    query.season = msg.fieldString(5);
+    query.episode = msg.fieldString(6);
+    query.imdbId = msg.fieldString(7);
     // fields 8-9: size bounds in bytes, filtered here (no newznab parameter)
-    query.minSize = std::max<qint64>(0, msg.fieldInt(8));
-    query.maxSize = std::max<qint64>(0, msg.fieldInt(9));
+    query.minSize = msg.fieldInt(8);
+    query.maxSize = msg.fieldInt(9);
 
     QStringList only;
     for (const auto& value : msg.fieldArray(3))
         only.append(value.toString());
 
-    if (query.text.isEmpty() && query.categories.isEmpty() && query.imdbId.isEmpty()) {
-        sendMessage(IpcMessage::makeResult(
-            msg.seqId(), false, QCborValue(tr("Enter something to search for."))));
-        return;
-    }
-
     // field 4: 0 Usenet (newznab), 1 torrents (torznab)
-    const IndexerKind wanted = msg.fieldInt(4) == int(IndexerKind::Torznab) ? IndexerKind::Torznab
-                                                                           : IndexerKind::Newznab;
-    // nothing configured for this network: field 2 tells the GUI to offer the Options page
-    if (!indexer::theIndexerSearchList->hasEnabledAccount(wanted)) {
-        IpcMessage reply = IpcMessage::makeResult(
-            msg.seqId(), false,
-            QCborValue(wanted == IndexerKind::Torznab ? tr("No torrent indexer is configured.")
-                                                      : tr("No Usenet indexer is configured.")));
-        reply.append(QStringLiteral("noIndexer"));
+    const IndexerStartResult started =
+        startIndexerSearch(std::move(query), msg.fieldInt(4) == int(IndexerKind::Torznab), only);
+    if (started.id == 0) {
+        IpcMessage reply = IpcMessage::makeResult(msg.seqId(), false, QCborValue(started.error));
+        // nothing configured for this network: field 2 tells the GUI to offer the Options page
+        if (started.noIndexer)
+            reply.append(QStringLiteral("noIndexer"));
         sendMessage(std::move(reply));
         return;
     }
-
-    QString error;
-    const quint32 searchId = indexer::theIndexerSearchList->startSearch(query, wanted, only, error);
-
-    if (searchId == 0) {
-        sendMessage(IpcMessage::makeResult(msg.seqId(), false, QCborValue(error)));
-        return;
-    }
-
     sendMessage(IpcMessage::makeResult(msg.seqId(), true,
-                                       QCborValue(static_cast<qint64>(searchId))));
+                                       QCborValue(static_cast<qint64>(started.id))));
 }
 
 void IpcClientHandler::handleStopIndexerSearch(const IpcMessage& msg)
@@ -6216,22 +6329,6 @@ bool categoryExists(int category)
     return category >= 0 && category < int(thePrefs.categoryCount());
 }
 
-/// A .torrent (bencoded dictionary) rather than an .nzb. An aggregator's rows
-/// can be either kind, so the payload decides, not the account.
-/// A magnet URI handed back as text (magnet-only torznab row or a /dl redirect).
-bool isMagnetPayload(const QByteArray& payload)
-{
-    return payload.startsWith("magnet:");
-}
-
-bool isTorrentPayload(const QByteArray& payload)
-{
-    qsizetype i = 0;
-    while (i < payload.size() && QChar::isSpace(uchar(payload.at(i))))
-        ++i;
-    return i < payload.size() && payload.at(i) == 'd';
-}
-
 } // namespace
 
 void IpcClientHandler::handleGrabIndexerResult(const IpcMessage& msg)
@@ -6268,67 +6365,27 @@ void IpcClientHandler::handleGrabIndexerResult(const IpcMessage& msg)
 
     QPointer<IpcClientHandler> self(this);
     const int seqId = msg.seqId();
-    // the row, for a replacement NZB should this one fail
-    const auto source = indexer::theIndexerSearchList->grabSource(searchId, resultId);
-
-    indexer::theIndexerSearchList->grab(
-        searchId, resultId,
-        [self, seqId, force, choices, source, kept, keptEntries, entryPassword](bool ok, const QByteArray& payload,
-                                              const QString& name, const QString& password,
-                                              const QString& error) {
+    grabIndexerResult(
+        {.searchId = searchId, .resultId = resultId, .force = force, .category = choices.category,
+         .priority = choices.priority, .paused = choices.paused, .keptFiles = kept,
+         .keptEntries = keptEntries, .entryPassword = entryPassword},
+        [self, seqId](const IndexerGrabOutcome& out) {
         if (!self)
             return;
-
-        if (!ok || payload.isEmpty()) {
-            self->sendMessage(IpcMessage::makeResult(
-                seqId, false,
-                QCborValue(error.isEmpty() ? tr("The indexer returned no NZB.") : error)));
-            return;
-        }
-
-        // Torznab row: to the Torrents tab
-        if (isTorrentPayload(payload) || isMagnetPayload(payload)) {
-            const QCborMap added = isMagnetPayload(payload)
-                                       ? BtBridge::addMagnetUri(QString::fromUtf8(payload), choices.paused)
-                                       : BtBridge::addTorrentData(payload, choices.paused, kept);
-            const int outcome = int(added.value(QStringLiteral("outcome")).toInteger(4));
-            const bool addedOk = outcome == 0 || outcome == 1;   // added, or already there
-            IpcMessage reply = IpcMessage::makeResult(
-                seqId, addedOk,
-                QCborValue(addedOk ? added.value(QStringLiteral("id")).toString()
-                                   : added.value(QStringLiteral("message")).toString()));
+        switch (out.target) {
+        case IndexerGrabOutcome::Target::Torrent: {
+            IpcMessage reply = IpcMessage::makeResult(seqId, out.ok, QCborValue(out.ok ? out.id : out.error));
             reply.append(QStringLiteral("torrent"));
             self->sendMessage(std::move(reply));
             return;
         }
-
-        if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
-            self->sendMessage(IpcMessage::makeResult(
-                seqId, false, QCborValue(tr("The Usenet engine is not running."))));
+        case IndexerGrabOutcome::Target::Usenet:
+            self->replyAddNzb(seqId, out.id, out.error, usenet::UsenetAddOutcome(out.usenetOutcome));
+            return;
+        case IndexerGrabOutcome::Target::None:
+            self->sendMessage(IpcMessage::makeResult(seqId, false, QCborValue(out.error)));
             return;
         }
-
-        QString addError;
-        usenet::UsenetAddOutcome outcome = usenet::UsenetAddOutcome::Failed;
-        // A grab is a person clicking Download, so the feed's password arrives as
-        // a Manual one and outranks the NZB's own metadata: the indexer knows
-        // the release, the NZB says whatever its poster wrote.
-        usenet::UsenetOrigin origin;
-        if (source) {
-            origin.indexerName = source->indexerName;
-            origin.guid = source->guid;
-            origin.title = source->title;
-            origin.failureUrl = indexer::IndexerClient::failureUrlFor(source->downloadUrl)
-                                    .toString(QUrl::FullyEncoded);
-        }
-        const QString itemId = usenet::theUsenetSession->queue()->addNzb(
-            payload, name, addError,
-            {.force = force, .password = password.isEmpty() ? entryPassword : password, .category = choices.category,
-             .priority = choices.priority, .paused = choices.paused, .keptFiles = kept,
-             .keptEntries = keptEntries, .origin = origin},
-            &outcome);
-        self->sendAddNzbResult(seqId, itemId, addError, outcome,
-                               usenet::UsenetAddOrigin::IndexerGrab);
     });
 }
 

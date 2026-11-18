@@ -20,6 +20,7 @@ namespace eMule {
 
 namespace ed3k {
 class Ed3kDownloads;
+class Ed3kSearch;
 } // namespace ed3k
 
 struct UsenetStreamSource;
@@ -28,6 +29,11 @@ namespace Ed3kDownloadsBridge {
 
 /// Set by DaemonApp, null when absent.
 void setDownloads(ed3k::Ed3kDownloads* downloads);
+/// The notes search (Comments of a download's Details); null when absent.
+void setSearch(ed3k::Ed3kSearch* search);
+/// "Search Kad" of a download's Details (or its File Names / Metadata tab opened): its notes
+/// and the names and media tags others publish for it. False: neither started.
+[[nodiscard]] bool searchKad(const QByteArray& root);
 
 /// Whether an opcode is one of 1140-1149.
 [[nodiscard]] bool isDownloadsRequest(Ipc::IpcMsgType type);
@@ -50,6 +56,14 @@ bool handleRequest(const Ipc::IpcMessage& msg, const std::function<void(const Ip
 
 /// "Move to" (#187) of the download of @p hexRoot. Empty: started; else why not.
 [[nodiscard]] QString moveTo(const QString& hexRoot, const QString& dir);
+/// Mass Rename of an ed3k row (64 hex root); the error, empty when done.
+[[nodiscard]] QString rename(const QString& hexRoot, const QString& name);
+/// Add Sources of an ed3k row: an http(s) URL of the whole file; false: not taken.
+[[nodiscard]] bool addWebSource(const QString& hexRoot, const QString& url);
+/// Source Limit... of an ed3k row (0: by priority); false: no such unfinished download.
+[[nodiscard]] bool setSourceLimit(const QString& hexRoot, int limit);
+/// Swap All A4AF Sources to This File of an ed3k row: the nodes it waits for; nullopt: none.
+[[nodiscard]] std::optional<int> swapA4af(const QString& hexRoot);
 
 /// The HTTP (ws=) source row of the download of @p root (32 B), as an eD2K URL source
 /// (isUrl); @p peerRate is what its ed3k sources bring, the rest of the rate is the HTTP
@@ -57,8 +71,10 @@ bool handleRequest(const Ipc::IpcMessage& msg, const std::function<void(const Ip
 [[nodiscard]] std::optional<QCborMap> webSourceRow(const QByteArray& root, qint64 peerRate);
 
 /// GetDownloadDetails of the ed3k download @p hexRoot: the General page's fields as eD2K
-/// sends them (FileDetailDialog), network "ed3k", plus ed3kKey and ed3kAliases. Empty: none.
-[[nodiscard]] std::optional<QCborMap> detailsOf(const QString& hexRoot);
+/// sends them (FileDetailDialog), network "ed3k", plus ed3kKey and ed3kAliases. Without
+/// @p generalOnly also the other pages: NOTE comments, media info, ed3k link, archive gaps.
+/// Empty: none.
+[[nodiscard]] std::optional<QCborMap> detailsOf(const QString& hexRoot, bool generalOnly = false);
 
 /// GetEd3kDownloads, also what PushEd3kDownloads carries.
 [[nodiscard]] QCborMap listToCbor();

@@ -66,6 +66,12 @@ bool VersionDownload::isInstallable() const
     return isUsable() && hex64.match(sha256).hasMatch();
 }
 
+VersionDownload FfmpegRelease::forPlatform() const
+{
+    const QString key = VersionManifest::platformKey();
+    return key.isEmpty() ? VersionDownload{} : downloads.value(key);
+}
+
 bool SkinRelease::isValidId(const QString& id)
 {
     static const QRegularExpression re(QStringLiteral("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"));
@@ -137,6 +143,12 @@ VersionManifestInfo parse(const QByteArray& json)
         d.size = e.value(QStringLiteral("size")).toInteger(0);
         return d;
     };
+    const QJsonObject ff = obj.value(QStringLiteral("ffmpeg")).toObject();
+    info.ffmpeg.version = ff.value(QStringLiteral("version")).toString().trimmed();
+    const QJsonObject ffDownloads = ff.value(QStringLiteral("downloads")).toObject();
+    for (auto it = ffDownloads.begin(); it != ffDownloads.end(); ++it)
+        if (const VersionDownload d = readDownload(it.value().toObject()); d.isInstallable())
+            info.ffmpeg.downloads.insert(it.key(), d);
     const QJsonObject skins = obj.value(QStringLiteral("skins")).toObject();
     for (auto it = skins.begin(); it != skins.end(); ++it) {
         const QJsonObject e = it.value().toObject();
