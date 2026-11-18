@@ -201,8 +201,7 @@ Ed3kKadContactsModel::Ed3kKadContactsModel(QObject* parent)
         {tr("IP"),
          [this](const QCborMap& m) {
              const QString ip = value(m, "ip");
-             return ip.isEmpty() ? QString()
-                                 : m_resolver.displayText(ip, addressWithPort(ip, static_cast<uint16_t>(number(m, "port"))));
+             return ip.isEmpty() ? QString() : m_resolver.endpointText(ip, static_cast<uint16_t>(number(m, "port")));
          },
          [this](const QCborMap& m) {
              const QString ip = value(m, "ip");
@@ -237,7 +236,7 @@ QVariant Ed3kKadContactsModel::data(const QModelIndex& index, int role) const
         if (index.column() == ColCountry)
             return CountryFlags::tooltip(value(m, "cc"));
         if (index.column() == ColIp && !value(m, "ip").isEmpty())
-            return m_resolver.toolTip(value(m, "ip"));
+            return m_resolver.toolTip(value(m, "ip"), static_cast<uint16_t>(number(m, "port")));
         if (index.column() == ColType) {
             const QString agent = value(m, "agent");
             const QString tip = agent.isEmpty() ? tr("Not connected since restart") : agent;
@@ -395,13 +394,13 @@ QVariant KadIncomingModel::data(const QModelIndex& index, int role) const
             const QString cc = CountryFlags::tooltip(value(m, "cc"));
             if (m_network == Network::Ed3k || value(m, "addr").isEmpty())
                 return cc;
-            const QString host = m_resolver.toolTip(hostAddress(m));
+            const QString host = m_resolver.toolTip(hostAddress(m), splitEndpoint(value(m, "addr")).port);
             return cc.isEmpty() ? host : cc + QLatin1Char('\n') + host;
         }
     }
     if (role == Qt::ToolTipRole && index.isValid() && index.column() == ColIp && index.row() < count()
         && !value(row(index.row()), "addr").isEmpty())
-        return m_resolver.toolTip(hostAddress(row(index.row())));
+        return m_resolver.toolTip(hostAddress(row(index.row())), splitEndpoint(value(row(index.row()), "addr")).port);
     return Ed3kKadTableModel::data(index, role);
 }
 
@@ -529,7 +528,7 @@ QString KadIncomingModel::refusalText(int code, int arg)
 
 QString KadIncomingModel::addressText(const QCborMap& m) const
 {
-    return m_resolver.displayText(hostAddress(m), value(m, "addr"));
+    return m_resolver.endpointText(hostAddress(m), splitEndpoint(value(m, "addr")).port);
 }
 
 QVariant KadIncomingModel::addressSort(const QCborMap& m) const

@@ -3424,14 +3424,14 @@ Seus downloads mantêm os arquivos e vão para Todas.</translation>
 <context>
     <name>eMule::ClientDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+179"/>
+        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+180"/>
         <location line="+21"/>
         <source>Client Details: %1</source>
         <translation>Detalhes do cliente: %1</translation>
     </message>
     <message>
         <location line="+37"/>
-        <location line="+332"/>
+        <location line="+334"/>
         <source>General</source>
         <translation>Geral</translation>
     </message>
@@ -3444,7 +3444,7 @@ Seus downloads mantêm os arquivos e vão para Todas.</translation>
         <translation type="vanished">Hash do usuário</translation>
     </message>
     <message>
-        <location line="-319"/>
+        <location line="-321"/>
         <source>ID</source>
         <translation>ID</translation>
     </message>
@@ -3464,7 +3464,7 @@ Seus downloads mantêm os arquivos e vão para Todas.</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+346"/>
+        <location line="+349"/>
         <source>Country</source>
         <translation>País</translation>
     </message>
@@ -3473,24 +3473,24 @@ Seus downloads mantêm os arquivos e vão para Todas.</translation>
         <translation type="vanished">Servidor</translation>
     </message>
     <message>
-        <location line="-359"/>
-        <location line="+330"/>
+        <location line="-362"/>
+        <location line="+332"/>
         <source>Name</source>
         <translation>Nome</translation>
     </message>
     <message>
-        <location line="-325"/>
+        <location line="-327"/>
         <source>Hash</source>
         <translation>Hash</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+342"/>
+        <location line="+345"/>
         <source>Software</source>
         <translation>Software</translation>
     </message>
     <message>
-        <location line="-305"/>
+        <location line="-306"/>
         <source>Server IP</source>
         <translation>IP do servidor</translation>
     </message>
@@ -3574,7 +3574,7 @@ Seus downloads mantêm os arquivos e vão para Todas.</translation>
         <translation>Kad</translation>
     </message>
     <message>
-        <location line="-204"/>
+        <location line="-206"/>
         <source>anonymous (ed3k)</source>
         <translation>anônimo (ed3k)</translation>
     </message>
@@ -3584,42 +3584,42 @@ Seus downloads mantêm os arquivos e vão para Todas.</translation>
         <translation>%1 (ed3k)</translation>
     </message>
     <message>
-        <location line="+203"/>
-        <location line="+342"/>
+        <location line="+205"/>
+        <location line="+343"/>
         <source>Connected</source>
         <translation>Conectado</translation>
     </message>
     <message>
-        <location line="-342"/>
+        <location line="-343"/>
         <source>Disconnected</source>
         <translation>Desconectado</translation>
     </message>
     <message>
         <location line="+198"/>
-        <location line="+173"/>
+        <location line="+174"/>
         <source>Currently downloading</source>
         <translation>Baixando no momento</translation>
     </message>
     <message>
-        <location line="-170"/>
-        <location line="+202"/>
+        <location line="-171"/>
+        <location line="+203"/>
         <source>Requested to upload</source>
         <translation>Solicitado para envio</translation>
     </message>
     <message>
-        <location line="-198"/>
-        <location line="+215"/>
+        <location line="-199"/>
+        <location line="+216"/>
         <source>Downloaded (this session)</source>
         <translation>Baixado (esta sessão)</translation>
     </message>
     <message>
-        <location line="-212"/>
-        <location line="+214"/>
+        <location line="-213"/>
+        <location line="+215"/>
         <source>Uploaded (this session)</source>
         <translation>Enviado (esta sessão)</translation>
     </message>
     <message>
-        <location line="-208"/>
+        <location line="-209"/>
         <source>Average Downloadrate</source>
         <translation>Taxa média de download</translation>
     </message>
@@ -3688,7 +3688,7 @@ Seus downloads mantêm os arquivos e vão para Todas.</translation>
         <translation>ID do nó</translation>
     </message>
     <message>
-        <location line="+76"/>
+        <location line="+77"/>
         <source>The slot reached its limit (16 MiB or 1 hour) and goes to the next peer in the queue.</source>
         <translation>O slot atingiu o limite (16 MiB ou 1 hora) e passa para o próximo peer da fila.</translation>
     </message>
@@ -3753,7 +3753,7 @@ Na fila: aguardamos na fila de upload dele.</translation>
         <translation>Não</translation>
     </message>
     <message>
-        <location line="-415"/>
+        <location line="-418"/>
         <source>User name the client sent in its hello. Anyone can pick any name.</source>
         <translation>Nome de usuário que o cliente enviou no hello. Qualquer um pode escolher qualquer nome.</translation>
     </message>
@@ -3780,25 +3780,25 @@ Low ID: está atrás de firewall e só pode ser alcançado por callback.</transl
         <translation>País do endereço IP do cliente (IP2Country).</translation>
     </message>
     <message>
-        <location line="+5"/>
-        <location line="+328"/>
+        <location line="+6"/>
+        <location line="+330"/>
         <source>Peer IP</source>
         <translation>IP do par</translation>
     </message>
     <message>
-        <location line="-328"/>
-        <location line="+329"/>
+        <location line="-329"/>
+        <location line="+330"/>
         <source>Unknown</source>
         <translation>Desconhecido</translation>
     </message>
     <message>
-        <location line="-328"/>
-        <location line="+329"/>
+        <location line="-329"/>
+        <location line="+330"/>
         <source>Peer connection address (IPv4 or IPv6).</source>
         <translation>Endereço de conexão do par (IPv4 ou IPv6).</translation>
     </message>
     <message>
-        <location line="-326"/>
+        <location line="-327"/>
         <source>Whether the client told us it is connected to Kad (it sent a Kad port).</source>
         <translation>Se o cliente informou estar conectado ao Kad (enviou uma porta Kad).</translation>
     </message>
@@ -4126,7 +4126,7 @@ Entre parênteses: o modificador que o cliente deveria nos dar, pelo que enviamo
         <translation>A identidade ed3k do peer, derivada de sua chave pública.</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>Hidden</source>
         <translation>Oculto</translation>
     </message>
@@ -4318,8 +4318,8 @@ Na fila: espera por um, na posição mostrada.</translation>
         <translation type="vanished">Não conectado</translation>
     </message>
     <message>
-        <location line="-282"/>
-        <location line="+175"/>
+        <location line="-283"/>
+        <location line="+176"/>
         <source>Transfer</source>
         <translation>Transferência</translation>
     </message>
@@ -4352,7 +4352,7 @@ Na fila: espera por um, na posição mostrada.</translation>
         <translation type="vanished">Enviado (total)</translation>
     </message>
     <message>
-        <location line="-128"/>
+        <location line="-129"/>
         <source>Scores</source>
         <translation>Pontuações</translation>
     </message>
@@ -4374,7 +4374,7 @@ Na fila: espera por um, na posição mostrada.</translation>
         <translation type="vanished">Slot de amigo</translation>
     </message>
     <message>
-        <location line="+91"/>
+        <location line="+92"/>
         <location line="+9"/>
         <location line="+11"/>
         <location line="+41"/>
@@ -6740,7 +6740,7 @@ Criar uma nova chave anônima?</translation>
         <translation>IP</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+10"/>
         <source>Hostname / IP</source>
         <translation>Nome do host / IP</translation>
     </message>
@@ -13962,7 +13962,7 @@ Se o seu provedor tenta limitar ou bloquear o eMule, a ofuscação ajuda a conto
 <context>
     <name>eMule::HostnameResolver</name>
     <message>
-        <location filename="../src/gui/utils/HostnameResolver.cpp" line="+93"/>
+        <location filename="../src/gui/utils/HostnameResolver.cpp" line="+103"/>
         <source>%1
 No hostname found.</source>
         <translation>%1

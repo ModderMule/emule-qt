@@ -10,6 +10,8 @@
 #include <QString>
 #include <QStringList>
 
+#include <cstdint>
+
 namespace eMule {
 
 /// PTR lookups for the addresses of a polled list, a few at a time. Results, failures too,
@@ -44,8 +46,12 @@ public:
     [[nodiscard]] QString hostname(const QString& address) const;
     /// The name found, else @p fallback.
     [[nodiscard]] QString displayText(const QString& address, const QString& fallback) const;
+    /// "name:port" once resolved, else "ip:port" ("[v6]:port"); @p port 0: no port.
+    [[nodiscard]] QString endpointText(const QString& address, uint16_t port) const;
     /// "name\nIP", "IP\nNo hostname found.", "IP (resolving…)", or the IP.
-    [[nodiscard]] QString toolTip(const QString& address) const;
+    [[nodiscard]] QString toolTip(const QString& address) const { return toolTip(address, 0); }
+    /// toolTip() showing "ip:port" for the IP; @p port 0: no port.
+    [[nodiscard]] QString toolTip(const QString& address, uint16_t port) const;
 
 signals:
     /// A lookup of @p address finished; its rows need a repaint.

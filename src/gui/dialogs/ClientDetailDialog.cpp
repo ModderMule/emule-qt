@@ -22,6 +22,7 @@
 #include "net/Address.h"
 #include "prefs/Preferences.h"
 #include "app/SkinIcons.h"
+#include "utils/AddressSortKey.h"
 #include "utils/ClientIcons.h"
 #include "utils/CountryFlags.h"
 #include "utils/DialogSizing.h"
@@ -263,7 +264,9 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
 
         const bool kadConn = d.value(QLatin1StringView("kadConnected")).toBool();
         const QString peerIp = str(d, QLatin1StringView("addr"));
-        addGridRow(grid, 6, 0, tr("Peer IP"), peerIp.isEmpty() ? tr("Unknown") : peerIp,
+        const auto peerPort = static_cast<uint16_t>(num(d, QLatin1StringView("port")));
+        addGridRow(grid, 6, 0, tr("Peer IP"),
+                   peerIp.isEmpty() ? tr("Unknown") : peerPort != 0 ? addressWithPort(peerIp, peerPort) : peerIp,
                    tr("Peer connection address (IPv4 or IPv6)."), 3);
         addHostnameRow(grid, 7, peerIp);
         addGridRow(grid, 4, 0, tr("Kad"), kadConn ? tr("Connected") : tr("Disconnected"),
@@ -591,8 +594,9 @@ QWidget* ClientDetailDialog::buildEd3kContent(const QCborMap& d)
 
         const bool helloKnown = d.value(QLatin1StringView("helloKnown")).toBool();
         const QString peerIp = str(d, QLatin1StringView("addr"));
+        const auto peerPort = static_cast<uint16_t>(num(d, QLatin1StringView("port")));
         addGridRow(grid, 5, 0, tr("Peer IP"), anonymous ? tr("Hidden")
-                   : peerIp.isEmpty() ? tr("Unknown") : peerIp,
+                   : peerIp.isEmpty() ? tr("Unknown") : peerPort != 0 ? addressWithPort(peerIp, peerPort) : peerIp,
                    tr("Peer connection address (IPv4 or IPv6)."), 3);
         // the anonymous queue never tells an address
         addHostnameRow(grid, 6, anonymous ? QString() : peerIp);

@@ -136,8 +136,8 @@ QVariant ClientListModel::data(const QModelIndex& index, int role) const
                 return tr("Hidden");
             if (c.addr.isEmpty())
                 return tr("Unknown");
-            return role == Qt::DisplayRole ? m_resolver.displayText(c.addr, c.addr)
-                                           : m_resolver.toolTip(c.addr);
+            return role == Qt::DisplayRole ? m_resolver.endpointText(c.addr, c.port)
+                                           : m_resolver.toolTip(c.addr, c.port);
         }
         if (role == Qt::UserRole)
             return c.anonymous ? QString() : m_resolver.displayText(c.addr, addressSortKey(c.addr, c.port));

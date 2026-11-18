@@ -3397,14 +3397,14 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::ClientDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+179"/>
+        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+180"/>
         <location line="+21"/>
         <source>Client Details: %1</source>
         <translation>客户端详情：%1</translation>
     </message>
     <message>
         <location line="+37"/>
-        <location line="+332"/>
+        <location line="+334"/>
         <source>General</source>
         <translation>常规</translation>
     </message>
@@ -3417,7 +3417,7 @@ Its downloads keep their files and move to All.</source>
         <translation type="vanished">用户哈希</translation>
     </message>
     <message>
-        <location line="-319"/>
+        <location line="-321"/>
         <source>ID</source>
         <translation>ID</translation>
     </message>
@@ -3437,7 +3437,7 @@ Its downloads keep their files and move to All.</source>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+346"/>
+        <location line="+349"/>
         <source>Country</source>
         <translation>国家</translation>
     </message>
@@ -3446,24 +3446,24 @@ Its downloads keep their files and move to All.</source>
         <translation type="vanished">服务器</translation>
     </message>
     <message>
-        <location line="-359"/>
-        <location line="+330"/>
+        <location line="-362"/>
+        <location line="+332"/>
         <source>Name</source>
         <translation>名称</translation>
     </message>
     <message>
-        <location line="-325"/>
+        <location line="-327"/>
         <source>Hash</source>
         <translation>哈希</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+342"/>
+        <location line="+345"/>
         <source>Software</source>
         <translation>软件</translation>
     </message>
     <message>
-        <location line="-305"/>
+        <location line="-306"/>
         <source>Server IP</source>
         <translation>服务器 IP</translation>
     </message>
@@ -3547,7 +3547,7 @@ Its downloads keep their files and move to All.</source>
         <translation>Kad</translation>
     </message>
     <message>
-        <location line="-204"/>
+        <location line="-206"/>
         <source>anonymous (ed3k)</source>
         <translation>匿名 (ed3k)</translation>
     </message>
@@ -3557,42 +3557,42 @@ Its downloads keep their files and move to All.</source>
         <translation>%1 (ed3k)</translation>
     </message>
     <message>
-        <location line="+203"/>
-        <location line="+342"/>
+        <location line="+205"/>
+        <location line="+343"/>
         <source>Connected</source>
         <translation>已连接</translation>
     </message>
     <message>
-        <location line="-342"/>
+        <location line="-343"/>
         <source>Disconnected</source>
         <translation>已断开</translation>
     </message>
     <message>
         <location line="+198"/>
-        <location line="+173"/>
+        <location line="+174"/>
         <source>Currently downloading</source>
         <translation>当前正在下载</translation>
     </message>
     <message>
-        <location line="-170"/>
-        <location line="+202"/>
+        <location line="-171"/>
+        <location line="+203"/>
         <source>Requested to upload</source>
         <translation>请求上传</translation>
     </message>
     <message>
-        <location line="-198"/>
-        <location line="+215"/>
+        <location line="-199"/>
+        <location line="+216"/>
         <source>Downloaded (this session)</source>
         <translation>已下载 (本次会话)</translation>
     </message>
     <message>
-        <location line="-212"/>
-        <location line="+214"/>
+        <location line="-213"/>
+        <location line="+215"/>
         <source>Uploaded (this session)</source>
         <translation>已上传 (本次会话)</translation>
     </message>
     <message>
-        <location line="-208"/>
+        <location line="-209"/>
         <source>Average Downloadrate</source>
         <translation>平均下载速度</translation>
     </message>
@@ -3661,7 +3661,7 @@ Its downloads keep their files and move to All.</source>
         <translation>节点 ID</translation>
     </message>
     <message>
-        <location line="+76"/>
+        <location line="+77"/>
         <source>The slot reached its limit (16 MiB or 1 hour) and goes to the next peer in the queue.</source>
         <translation>该槽位已达上限(16 MiB 或 1 小时),将轮到队列中的下一个节点。</translation>
     </message>
@@ -3726,7 +3726,7 @@ On queue: we wait in its upload queue.</source>
         <translation>否</translation>
     </message>
     <message>
-        <location line="-415"/>
+        <location line="-418"/>
         <source>User name the client sent in its hello. Anyone can pick any name.</source>
         <translation>客户端在 hello 中发送的用户名。任何人都可以随意取名。</translation>
     </message>
@@ -3753,25 +3753,25 @@ Low ID:它位于防火墙之后,只能通过回调联系。</translation>
         <translation>客户端 IP 地址所属国家/地区(IP2Country)。</translation>
     </message>
     <message>
-        <location line="+5"/>
-        <location line="+328"/>
+        <location line="+6"/>
+        <location line="+330"/>
         <source>Peer IP</source>
         <translation>对端 IP</translation>
     </message>
     <message>
-        <location line="-328"/>
-        <location line="+329"/>
+        <location line="-329"/>
+        <location line="+330"/>
         <source>Unknown</source>
         <translation>未知</translation>
     </message>
     <message>
-        <location line="-328"/>
-        <location line="+329"/>
+        <location line="-329"/>
+        <location line="+330"/>
         <source>Peer connection address (IPv4 or IPv6).</source>
         <translation>对端的连接地址（IPv4 或 IPv6）。</translation>
     </message>
     <message>
-        <location line="-326"/>
+        <location line="-327"/>
         <source>Whether the client told us it is connected to Kad (it sent a Kad port).</source>
         <translation>客户端是否告知已连接到 Kad(发送了 Kad 端口)。</translation>
     </message>
@@ -4099,7 +4099,7 @@ In brackets: the modifier the client should give us, from what we uploaded to it
         <translation>由对方公钥派生的 ed3k 身份。</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>Hidden</source>
         <translation>隐藏</translation>
     </message>
@@ -4291,8 +4291,8 @@ On queue: it waits for one, at the place shown.</source>
         <translation type="vanished">未连接</translation>
     </message>
     <message>
-        <location line="-282"/>
-        <location line="+175"/>
+        <location line="-283"/>
+        <location line="+176"/>
         <source>Transfer</source>
         <translation>传输</translation>
     </message>
@@ -4325,7 +4325,7 @@ On queue: it waits for one, at the place shown.</source>
         <translation type="vanished">已上传（总计）</translation>
     </message>
     <message>
-        <location line="-128"/>
+        <location line="-129"/>
         <source>Scores</source>
         <translation>评分</translation>
     </message>
@@ -4347,7 +4347,7 @@ On queue: it waits for one, at the place shown.</source>
         <translation type="vanished">好友位</translation>
     </message>
     <message>
-        <location line="+91"/>
+        <location line="+92"/>
         <location line="+9"/>
         <location line="+11"/>
         <location line="+41"/>
@@ -6710,7 +6710,7 @@ Make a new anonymous key?</source>
         <translation>IP</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+10"/>
         <source>Hostname / IP</source>
         <translation>主机名 / IP</translation>
     </message>
@@ -13903,7 +13903,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 <context>
     <name>eMule::HostnameResolver</name>
     <message>
-        <location filename="../src/gui/utils/HostnameResolver.cpp" line="+93"/>
+        <location filename="../src/gui/utils/HostnameResolver.cpp" line="+103"/>
         <source>%1
 No hostname found.</source>
         <translation>%1

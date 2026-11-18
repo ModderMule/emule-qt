@@ -3300,25 +3300,25 @@ Jej pobierania zachowają swoje pliki i trafią do Wszystkie.</translation>
 <context>
     <name>eMule::ClientDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+179"/>
+        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+180"/>
         <location line="+21"/>
         <source>Client Details: %1</source>
         <translation>Informacje o użytkowniku: %1</translation>
     </message>
     <message>
         <location line="+37"/>
-        <location line="+332"/>
+        <location line="+334"/>
         <source>General</source>
         <translation>Ogólne</translation>
     </message>
     <message>
-        <location line="-321"/>
-        <location line="+330"/>
+        <location line="-323"/>
+        <location line="+332"/>
         <source>Name</source>
         <translation>Nazwa</translation>
     </message>
     <message>
-        <location line="-325"/>
+        <location line="-327"/>
         <source>Hash</source>
         <translation>Hash</translation>
     </message>
@@ -3339,18 +3339,18 @@ Jej pobierania zachowają swoje pliki i trafią do Wszystkie.</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+342"/>
+        <location line="+345"/>
         <source>Software</source>
         <translation>Program</translation>
     </message>
     <message>
-        <location line="-338"/>
-        <location line="+346"/>
+        <location line="-341"/>
+        <location line="+349"/>
         <source>Country</source>
         <translation>Kraj</translation>
     </message>
     <message>
-        <location line="-313"/>
+        <location line="-314"/>
         <source>Server IP</source>
         <translation>IP serwera</translation>
     </message>
@@ -3434,7 +3434,7 @@ Jej pobierania zachowają swoje pliki i trafią do Wszystkie.</translation>
         <translation>Kad</translation>
     </message>
     <message>
-        <location line="-204"/>
+        <location line="-206"/>
         <source>anonymous (ed3k)</source>
         <translation>anonimowy (ed3k)</translation>
     </message>
@@ -3471,13 +3471,13 @@ Low ID: jest za zaporą i osiągalny tylko przez callback.</translation>
         <translation>Kraj adresu IP klienta (IP2Country).</translation>
     </message>
     <message>
-        <location line="+8"/>
-        <location line="+342"/>
+        <location line="+10"/>
+        <location line="+343"/>
         <source>Connected</source>
         <translation>Podłączony</translation>
     </message>
     <message>
-        <location line="-342"/>
+        <location line="-343"/>
         <source>Disconnected</source>
         <translation>Rozłączony</translation>
     </message>
@@ -3691,36 +3691,36 @@ Obsługiwane: trasy oferowane przez klienta (QUIC przez przebitą dziurę UDP lu
     </message>
     <message>
         <location line="+25"/>
-        <location line="+175"/>
+        <location line="+176"/>
         <source>Transfer</source>
         <translation>Transfer</translation>
     </message>
     <message>
-        <location line="-164"/>
-        <location line="+173"/>
+        <location line="-165"/>
+        <location line="+174"/>
         <source>Currently downloading</source>
         <translation>Aktualnie pobiera</translation>
     </message>
     <message>
-        <location line="-170"/>
-        <location line="+202"/>
+        <location line="-171"/>
+        <location line="+203"/>
         <source>Requested to upload</source>
         <translation>Żądane wysyłanie</translation>
     </message>
     <message>
-        <location line="-198"/>
-        <location line="+215"/>
+        <location line="-199"/>
+        <location line="+216"/>
         <source>Downloaded (this session)</source>
         <translation>Pobrał (ta sesja)</translation>
     </message>
     <message>
-        <location line="-212"/>
-        <location line="+214"/>
+        <location line="-213"/>
+        <location line="+215"/>
         <source>Uploaded (this session)</source>
         <translation>Wysłał (ta sesja)</translation>
     </message>
     <message>
-        <location line="-208"/>
+        <location line="-209"/>
         <source>Average Downloadrate</source>
         <translation>Średnia prędkość pobierania</translation>
     </message>
@@ -3804,7 +3804,7 @@ Obsługiwane: trasy oferowane przez klienta (QUIC przez przebitą dziurę UDP lu
         <translation>ID węzła</translation>
     </message>
     <message>
-        <location line="+76"/>
+        <location line="+77"/>
         <source>The slot reached its limit (16 MiB or 1 hour) and goes to the next peer in the queue.</source>
         <translation>Slot osiągnął limit (16 MiB lub 1 godzina) i przechodzi do kolejnego klienta w kolejce.</translation>
     </message>
@@ -3869,25 +3869,25 @@ W kolejce: czekamy w jego kolejce wysyłania.</translation>
         <translation>Tak</translation>
     </message>
     <message>
-        <location line="-398"/>
-        <location line="+328"/>
+        <location line="-400"/>
+        <location line="+330"/>
         <source>Peer IP</source>
         <translation>IP peera</translation>
     </message>
     <message>
-        <location line="-328"/>
-        <location line="+329"/>
+        <location line="-329"/>
+        <location line="+330"/>
         <source>Unknown</source>
         <translation>Nieznany</translation>
     </message>
     <message>
-        <location line="-328"/>
-        <location line="+329"/>
+        <location line="-329"/>
+        <location line="+330"/>
         <source>Peer connection address (IPv4 or IPv6).</source>
         <translation>Adres połączenia peera (IPv4 lub IPv6).</translation>
     </message>
     <message>
-        <location line="-243"/>
+        <location line="-244"/>
         <source>Unknown country</source>
         <translation>Nieznany kraj</translation>
     </message>
@@ -4002,7 +4002,7 @@ W nawiasie: modyfikator, który klient powinien nam dać, na podstawie tego, co 
         <translation>Tożsamość ed3k klienta, wyprowadzona z jego klucza publicznego.</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>Hidden</source>
         <translation>Ukryty</translation>
     </message>
@@ -6492,7 +6492,7 @@ Utworzyć nowy klucz anonimowy?</translation>
         <translation>IP</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+10"/>
         <source>Hostname / IP</source>
         <translation>Nazwa hosta / IP</translation>
     </message>
@@ -13647,7 +13647,7 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
 <context>
     <name>eMule::HostnameResolver</name>
     <message>
-        <location filename="../src/gui/utils/HostnameResolver.cpp" line="+93"/>
+        <location filename="../src/gui/utils/HostnameResolver.cpp" line="+103"/>
         <source>%1
 No hostname found.</source>
         <translation>%1

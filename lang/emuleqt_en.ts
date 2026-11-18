@@ -3124,19 +3124,19 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::ClientDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+179"/>
+        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+180"/>
         <location line="+21"/>
         <source>Client Details: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+37"/>
-        <location line="+332"/>
+        <location line="+334"/>
         <source>General</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-319"/>
+        <location line="-321"/>
         <source>ID</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3152,29 +3152,29 @@ Its downloads keep their files and move to All.</source>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+346"/>
+        <location line="+349"/>
         <source>Country</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-359"/>
-        <location line="+330"/>
+        <location line="-362"/>
+        <location line="+332"/>
         <source>Name</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-325"/>
+        <location line="-327"/>
         <source>Hash</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+342"/>
+        <location line="+345"/>
         <source>Software</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-305"/>
+        <location line="-306"/>
         <source>Server IP</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3258,7 +3258,7 @@ Its downloads keep their files and move to All.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-204"/>
+        <location line="-206"/>
         <source>anonymous (ed3k)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3294,31 +3294,31 @@ Low ID: it is firewalled and can only be reached through a callback.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+5"/>
-        <location line="+328"/>
+        <location line="+6"/>
+        <location line="+330"/>
         <source>Peer IP</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-328"/>
-        <location line="+329"/>
+        <location line="-329"/>
+        <location line="+330"/>
         <source>Unknown</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-328"/>
-        <location line="+329"/>
+        <location line="-329"/>
+        <location line="+330"/>
         <source>Peer connection address (IPv4 or IPv6).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-327"/>
-        <location line="+342"/>
+        <location line="-328"/>
+        <location line="+343"/>
         <source>Connected</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-342"/>
+        <location line="-343"/>
         <source>Disconnected</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3544,45 +3544,45 @@ No QUIC or IPv6 data path: an introduction could succeed, but we have neither QU
     </message>
     <message>
         <location line="+36"/>
-        <location line="+173"/>
+        <location line="+174"/>
         <source>Currently downloading</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-172"/>
+        <location line="-173"/>
         <source>Our file the client downloads or waits for in our upload queue.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+202"/>
+        <location line="+203"/>
         <source>Requested to upload</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-201"/>
+        <location line="-202"/>
         <source>Our download for which the client is a source.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+215"/>
+        <location line="+216"/>
         <source>Downloaded (this session)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-213"/>
+        <location line="-214"/>
         <source>What the client downloaded from us since we met it in this run.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+214"/>
+        <location line="+215"/>
         <source>Uploaded (this session)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-212"/>
+        <location line="-213"/>
         <source>What the client uploaded to us since we met it in this run.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3713,7 +3713,7 @@ In brackets: the modifier the client should give us, from what we uploaded to it
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>Hidden</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3901,12 +3901,12 @@ On queue: we wait in its upload queue.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-22"/>
+        <location line="-23"/>
         <source>ed3k Type</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+24"/>
         <location line="+9"/>
         <location line="+11"/>
         <location line="+41"/>
@@ -3971,13 +3971,13 @@ On queue: we wait in its upload queue.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-207"/>
-        <location line="+175"/>
+        <location line="-208"/>
+        <location line="+176"/>
         <source>Transfer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-128"/>
+        <location line="-129"/>
         <source>Scores</source>
         <translation type="unfinished"></translation>
     </message>
@@ -6229,7 +6229,7 @@ Make a new anonymous key?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+10"/>
         <source>Hostname / IP</source>
         <translation type="unfinished"></translation>
     </message>
@@ -12965,7 +12965,7 @@ Its files go to a folder of the set&apos;s own, below the incoming folder.</sour
 <context>
     <name>eMule::HostnameResolver</name>
     <message>
-        <location filename="../src/gui/utils/HostnameResolver.cpp" line="+93"/>
+        <location filename="../src/gui/utils/HostnameResolver.cpp" line="+103"/>
         <source>%1
 No hostname found.</source>
         <translation type="unfinished"></translation>

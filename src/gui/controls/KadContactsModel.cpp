@@ -51,7 +51,7 @@ QVariant KadContactsModel::data(const QModelIndex& index, int role) const
         case ColCountry:
             return CountryFlags::columnText(c.cc);
         case ColIp:
-            return c.addr.isEmpty() ? QString() : m_resolver.displayText(c.addr, addressWithPort(c.addr, c.udpPort));
+            return c.addr.isEmpty() ? QString() : m_resolver.endpointText(c.addr, c.udpPort);
         default:
             break;
         }

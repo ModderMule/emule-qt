@@ -3274,25 +3274,25 @@ De downloads ervan behouden hun bestanden en gaan naar Alle.</translation>
 <context>
     <name>eMule::ClientDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+179"/>
+        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+180"/>
         <location line="+21"/>
         <source>Client Details: %1</source>
         <translation>Cliëntdetails: %1</translation>
     </message>
     <message>
         <location line="+37"/>
-        <location line="+332"/>
+        <location line="+334"/>
         <source>General</source>
         <translation>Algemeen</translation>
     </message>
     <message>
-        <location line="-321"/>
-        <location line="+330"/>
+        <location line="-323"/>
+        <location line="+332"/>
         <source>Name</source>
         <translation>Naam</translation>
     </message>
     <message>
-        <location line="-325"/>
+        <location line="-327"/>
         <source>Hash</source>
         <translation>Hash</translation>
     </message>
@@ -3313,18 +3313,18 @@ De downloads ervan behouden hun bestanden en gaan naar Alle.</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+342"/>
+        <location line="+345"/>
         <source>Software</source>
         <translation>Software</translation>
     </message>
     <message>
-        <location line="-338"/>
-        <location line="+346"/>
+        <location line="-341"/>
+        <location line="+349"/>
         <source>Country</source>
         <translation>Land</translation>
     </message>
     <message>
-        <location line="-313"/>
+        <location line="-314"/>
         <source>Server IP</source>
         <translation>Server-IP</translation>
     </message>
@@ -3408,7 +3408,7 @@ De downloads ervan behouden hun bestanden en gaan naar Alle.</translation>
         <translation>Kad</translation>
     </message>
     <message>
-        <location line="-204"/>
+        <location line="-206"/>
         <source>anonymous (ed3k)</source>
         <translation>anoniem (ed3k)</translation>
     </message>
@@ -3445,13 +3445,13 @@ Low ID: hij zit achter een firewall en is alleen via een callback bereikbaar.</t
         <translation>Land van het IP-adres van de client (IP2Country).</translation>
     </message>
     <message>
-        <location line="+8"/>
-        <location line="+342"/>
+        <location line="+10"/>
+        <location line="+343"/>
         <source>Connected</source>
         <translation>Verbonden</translation>
     </message>
     <message>
-        <location line="-342"/>
+        <location line="-343"/>
         <source>Disconnected</source>
         <translation>Verbinding verbroken</translation>
     </message>
@@ -3665,36 +3665,36 @@ Ondersteund: de routes die de client aanbiedt (QUIC via een geperforeerd UDP-gat
     </message>
     <message>
         <location line="+25"/>
-        <location line="+175"/>
+        <location line="+176"/>
         <source>Transfer</source>
         <translation>Overdracht</translation>
     </message>
     <message>
-        <location line="-164"/>
-        <location line="+173"/>
+        <location line="-165"/>
+        <location line="+174"/>
         <source>Currently downloading</source>
         <translation>Huidige download</translation>
     </message>
     <message>
-        <location line="-170"/>
-        <location line="+202"/>
+        <location line="-171"/>
+        <location line="+203"/>
         <source>Requested to upload</source>
         <translation>Gevraagde upload</translation>
     </message>
     <message>
-        <location line="-198"/>
-        <location line="+215"/>
+        <location line="-199"/>
+        <location line="+216"/>
         <source>Downloaded (this session)</source>
         <translation>Gedownload (deze sessie)</translation>
     </message>
     <message>
-        <location line="-212"/>
-        <location line="+214"/>
+        <location line="-213"/>
+        <location line="+215"/>
         <source>Uploaded (this session)</source>
         <translation>Geüpload (deze sessie)</translation>
     </message>
     <message>
-        <location line="-208"/>
+        <location line="-209"/>
         <source>Average Downloadrate</source>
         <translation>Gemiddelde downloadsnelheid</translation>
     </message>
@@ -3778,7 +3778,7 @@ Ondersteund: de routes die de client aanbiedt (QUIC via een geperforeerd UDP-gat
         <translation>Node-ID</translation>
     </message>
     <message>
-        <location line="+76"/>
+        <location line="+77"/>
         <source>The slot reached its limit (16 MiB or 1 hour) and goes to the next peer in the queue.</source>
         <translation>De slot heeft zijn limiet bereikt (16 MiB of 1 uur) en gaat naar de volgende peer in de wachtrij.</translation>
     </message>
@@ -3843,25 +3843,25 @@ In wachtrij: we wachten in zijn uploadwachtrij.</translation>
         <translation>Ja</translation>
     </message>
     <message>
-        <location line="-398"/>
-        <location line="+328"/>
+        <location line="-400"/>
+        <location line="+330"/>
         <source>Peer IP</source>
         <translation>Peer-IP</translation>
     </message>
     <message>
-        <location line="-328"/>
-        <location line="+329"/>
+        <location line="-329"/>
+        <location line="+330"/>
         <source>Unknown</source>
         <translation>Onbekend</translation>
     </message>
     <message>
-        <location line="-328"/>
-        <location line="+329"/>
+        <location line="-329"/>
+        <location line="+330"/>
         <source>Peer connection address (IPv4 or IPv6).</source>
         <translation>Verbindingsadres van de peer (IPv4 of IPv6).</translation>
     </message>
     <message>
-        <location line="-243"/>
+        <location line="-244"/>
         <source>Unknown country</source>
         <translation>Onbekend land</translation>
     </message>
@@ -3976,7 +3976,7 @@ Tussen haakjes: de modifier die de client ons zou moeten geven, op basis van wat
         <translation>De ed3k-identiteit van de peer, afgeleid van zijn publieke sleutel.</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>Hidden</source>
         <translation>Verborgen</translation>
     </message>
@@ -6463,7 +6463,7 @@ Een nieuwe anonieme sleutel maken?</translation>
         <translation>IP</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+10"/>
         <source>Hostname / IP</source>
         <translation>Hostnaam / IP</translation>
     </message>
@@ -13589,7 +13589,7 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
 <context>
     <name>eMule::HostnameResolver</name>
     <message>
-        <location filename="../src/gui/utils/HostnameResolver.cpp" line="+93"/>
+        <location filename="../src/gui/utils/HostnameResolver.cpp" line="+103"/>
         <source>%1
 No hostname found.</source>
         <translation>%1

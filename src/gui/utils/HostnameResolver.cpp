@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "utils/HostnameResolver.h"
+#include "utils/AddressSortKey.h"
 
 #include <QHostAddress>
 #include <QHostInfo>
@@ -84,17 +85,26 @@ QString HostnameResolver::displayText(const QString& address, const QString& fal
     return name.isEmpty() ? fallback : name;
 }
 
-QString HostnameResolver::toolTip(const QString& address) const
+QString HostnameResolver::endpointText(const QString& address, uint16_t port) const
 {
+    const QString name = hostname(address);
+    if (port == 0)
+        return name.isEmpty() ? address : name;
+    return name.isEmpty() ? addressWithPort(address, port) : QStringLiteral("%1:%2").arg(name).arg(port);
+}
+
+QString HostnameResolver::toolTip(const QString& address, uint16_t port) const
+{
+    const QString shown = port != 0 ? addressWithPort(address, port) : address;
     if (!m_enabled)
-        return address;
+        return shown;
     const auto name = m_hostnames.constFind(address);
     if (name != m_hostnames.cend())
-        return name->isEmpty() ? tr("%1\nNo hostname found.").arg(address)
-                               : QStringLiteral("%1\n%2").arg(*name, address);
+        return name->isEmpty() ? tr("%1\nNo hostname found.").arg(shown)
+                               : QStringLiteral("%1\n%2").arg(*name, shown);
     if (m_lookups.contains(address))
-        return tr("%1 (resolving…)").arg(address);
-    return address;
+        return tr("%1 (resolving…)").arg(shown);
+    return shown;
 }
 
 // ---------------------------------------------------------------------------

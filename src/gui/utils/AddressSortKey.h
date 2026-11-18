@@ -37,14 +37,14 @@ namespace eMule {
 }
 
 /// Host and port of a "host:port" / "[v6]:port" / bare-address text (port 0: none).
-struct Endpoint {
+struct AddressPort {
     QString host;
     uint16_t port = 0;
 };
 
-[[nodiscard]] inline Endpoint splitEndpoint(const QString& endpoint)
+[[nodiscard]] inline AddressPort splitEndpoint(const QString& endpoint)
 {
-    Endpoint e{endpoint};
+    AddressPort e{endpoint};
     if (endpoint.startsWith(QLatin1Char('['))) {
         const qsizetype close = endpoint.indexOf(QLatin1Char(']'));
         if (close > 0) {
@@ -64,7 +64,7 @@ struct Endpoint {
 /// else (I2P, hidden) after the addresses, by its text.
 [[nodiscard]] inline QString endpointSortKey(const QString& endpoint)
 {
-    const Endpoint e = splitEndpoint(endpoint);
+    const AddressPort e = splitEndpoint(endpoint);
     return addressSortKey(e.host, e.port);
 }
 

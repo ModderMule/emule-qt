@@ -3248,25 +3248,25 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::ClientDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+179"/>
+        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+180"/>
         <location line="+21"/>
         <source>Client Details: %1</source>
         <translation>客戶端詳細資料：%1</translation>
     </message>
     <message>
         <location line="+37"/>
-        <location line="+332"/>
+        <location line="+334"/>
         <source>General</source>
         <translation>一般</translation>
     </message>
     <message>
-        <location line="-321"/>
-        <location line="+330"/>
+        <location line="-323"/>
+        <location line="+332"/>
         <source>Name</source>
         <translation>名稱</translation>
     </message>
     <message>
-        <location line="-325"/>
+        <location line="-327"/>
         <source>Hash</source>
         <translation>切細值</translation>
     </message>
@@ -3287,18 +3287,18 @@ Its downloads keep their files and move to All.</source>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+342"/>
+        <location line="+345"/>
         <source>Software</source>
         <translation>軟體</translation>
     </message>
     <message>
-        <location line="-338"/>
-        <location line="+346"/>
+        <location line="-341"/>
+        <location line="+349"/>
         <source>Country</source>
         <translation>國家</translation>
     </message>
     <message>
-        <location line="-313"/>
+        <location line="-314"/>
         <source>Server IP</source>
         <translation>伺服器 IP</translation>
     </message>
@@ -3382,7 +3382,7 @@ Its downloads keep their files and move to All.</source>
         <translation>Kad</translation>
     </message>
     <message>
-        <location line="-204"/>
+        <location line="-206"/>
         <source>anonymous (ed3k)</source>
         <translation>匿名 (ed3k)</translation>
     </message>
@@ -3419,13 +3419,13 @@ Low ID:它位於防火牆之後,只能透過回呼聯繫。</translation>
         <translation>用戶端 IP 位址所屬國家/地區(IP2Country)。</translation>
     </message>
     <message>
-        <location line="+8"/>
-        <location line="+342"/>
+        <location line="+10"/>
+        <location line="+343"/>
         <source>Connected</source>
         <translation>已連線</translation>
     </message>
     <message>
-        <location line="-342"/>
+        <location line="-343"/>
         <source>Disconnected</source>
         <translation>已中斷連線</translation>
     </message>
@@ -3639,36 +3639,36 @@ Supported: the routes the client offers (QUIC over a punched UDP hole, or a dire
     </message>
     <message>
         <location line="+25"/>
-        <location line="+175"/>
+        <location line="+176"/>
         <source>Transfer</source>
         <translation>傳輸</translation>
     </message>
     <message>
-        <location line="-164"/>
-        <location line="+173"/>
+        <location line="-165"/>
+        <location line="+174"/>
         <source>Currently downloading</source>
         <translation>目前正在下載</translation>
     </message>
     <message>
-        <location line="-170"/>
-        <location line="+202"/>
+        <location line="-171"/>
+        <location line="+203"/>
         <source>Requested to upload</source>
         <translation>要求上傳</translation>
     </message>
     <message>
-        <location line="-198"/>
-        <location line="+215"/>
+        <location line="-199"/>
+        <location line="+216"/>
         <source>Downloaded (this session)</source>
         <translation>已下載 (本次工作階段)</translation>
     </message>
     <message>
-        <location line="-212"/>
-        <location line="+214"/>
+        <location line="-213"/>
+        <location line="+215"/>
         <source>Uploaded (this session)</source>
         <translation>已上傳 (本次工作階段)</translation>
     </message>
     <message>
-        <location line="-208"/>
+        <location line="-209"/>
         <source>Average Downloadrate</source>
         <translation>平均下載速度</translation>
     </message>
@@ -3752,7 +3752,7 @@ Supported: the routes the client offers (QUIC over a punched UDP hole, or a dire
         <translation>節點 ID</translation>
     </message>
     <message>
-        <location line="+76"/>
+        <location line="+77"/>
         <source>The slot reached its limit (16 MiB or 1 hour) and goes to the next peer in the queue.</source>
         <translation>該插槽已達上限(16 MiB 或 1 小時),將輪到佇列中的下一個節點。</translation>
     </message>
@@ -3817,25 +3817,25 @@ On queue: we wait in its upload queue.</source>
         <translation>是</translation>
     </message>
     <message>
-        <location line="-398"/>
-        <location line="+328"/>
+        <location line="-400"/>
+        <location line="+330"/>
         <source>Peer IP</source>
         <translation>IP 位址</translation>
     </message>
     <message>
-        <location line="-328"/>
-        <location line="+329"/>
+        <location line="-329"/>
+        <location line="+330"/>
         <source>Unknown</source>
         <translation>未知</translation>
     </message>
     <message>
-        <location line="-328"/>
-        <location line="+329"/>
+        <location line="-329"/>
+        <location line="+330"/>
         <source>Peer connection address (IPv4 or IPv6).</source>
         <translation>對方的連線位址（IPv4 或 IPv6）。</translation>
     </message>
     <message>
-        <location line="-243"/>
+        <location line="-244"/>
         <source>Unknown country</source>
         <translation>未知國家</translation>
     </message>
@@ -3950,7 +3950,7 @@ In brackets: the modifier the client should give us, from what we uploaded to it
         <translation>由對方公鑰衍生的 ed3k 身分。</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>Hidden</source>
         <translation>隱藏</translation>
     </message>
@@ -6434,7 +6434,7 @@ Make a new anonymous key?</source>
         <translation>IP</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+10"/>
         <source>Hostname / IP</source>
         <translation>主機名稱 / IP</translation>
     </message>
@@ -13531,7 +13531,7 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
 <context>
     <name>eMule::HostnameResolver</name>
     <message>
-        <location filename="../src/gui/utils/HostnameResolver.cpp" line="+93"/>
+        <location filename="../src/gui/utils/HostnameResolver.cpp" line="+103"/>
         <source>%1
 No hostname found.</source>
         <translation>%1
