@@ -371,6 +371,17 @@ void tst_Ed3kSearch::aSharedFilesNoteAndMediaAreFound()
     QCOMPARE(names.front().publishers, 1);
     QCOMPARE(names.front().artist, QStringLiteral("Harbour Band"));
     QCOMPARE(names.front().duration, 215u);
+
+    // retry: the download's own name finds no keyword record, only the source's name; its words
+    // are asked next and bring the media tags (fresh search: no names kept for the root yet)
+    Ed3kSearch retry(c);
+    QVERIFY(retry.searchNames(rootBytes, QStringLiteral("Track01.mp3"), std::uint64_t(data.size())));
+    QTRY_VERIFY_WITH_TIMEOUT(!retry.namesRunning(rootBytes), 2 * Ed3kSearch::kTimeoutMs + 10000);
+    const auto retried = retry.namesOf(rootBytes);
+    QCOMPARE(retried.size(), std::size_t(1));
+    QCOMPARE(retried.front().name, QStringLiteral("silver harbour.mp3"));
+    QCOMPARE(retried.front().artist, QStringLiteral("Harbour Band"));
+    QCOMPARE(retried.front().duration, 215u);
     a.disconnect(this);
     shared.stop();
 }

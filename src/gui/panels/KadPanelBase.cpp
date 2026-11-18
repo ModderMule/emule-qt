@@ -11,11 +11,13 @@
 #include "prefs/Preferences.h"
 #include "utils/Appearance.h"
 #include "utils/ListActivation.h"
+#include "utils/PanelLayout.h"
 #include "utils/PanelPoller.h"
 
 #include "IpcMessage.h"
 
 #include <QFont>
+#include <QScrollArea>
 #include <QScrollBar>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -129,7 +131,8 @@ void KadPanelBase::buildLayout(QWidget* contacts, QWidget* controls, QWidget* se
     }
 
     topSplitter->addWidget(m_topTabWidget);
-    topSplitter->addWidget(controls);
+    // scrolls, so its full height doesn't pin the top pane's minimum (like the server panel)
+    topSplitter->addWidget(PanelLayout::scrollableColumn(controls));
     topSplitter->setStretchFactor(0, 3);
     topSplitter->setStretchFactor(1, 1);
 
@@ -160,6 +163,7 @@ void KadPanelBase::buildLayout(QWidget* contacts, QWidget* controls, QWidget* se
     m_vertSplitter->addWidget(m_bottomTabWidget);
     m_vertSplitter->setStretchFactor(0, 3);
     m_vertSplitter->setStretchFactor(1, 1);
+    PanelLayout::setPaneMinHeights(m_vertSplitter);
     if (bindSplitter)
         bindSplitter(m_vertSplitter);
 

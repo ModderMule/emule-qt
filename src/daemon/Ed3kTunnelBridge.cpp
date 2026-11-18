@@ -533,9 +533,11 @@ void setSession(ed3k::Ed3kSession* session, ed3k::Ed3kFriends* friends)
     friendsPtr() = friends;
     if (session)
         host() = std::make_unique<Host>(*session);
+    // friends running (or a list change): the paired phones become friends then
+    static QMetaObject::Connection onFriends;
+    QObject::disconnect(onFriends);
     if (friends)
-        QObject::connect(friends, &ed3k::Ed3kFriends::friendsChanged, friends, [] { reapply(); },
-                         Qt::UniqueConnection);
+        onFriends = QObject::connect(friends, &ed3k::Ed3kFriends::friendsChanged, friends, [] { reapply(); });
 #else
     Q_UNUSED(session);
     Q_UNUSED(friends);

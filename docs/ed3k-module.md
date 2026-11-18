@@ -560,7 +560,7 @@ node stops. `applyEd3kConfig` switches it with the pref.
   Files and Search log the menus of their ed3k rows every 20 s (open the page with `--tab`);
   `=2` also runs Swap A4AF and Source Limit (its dialog, 70000 entered) once, and one ed3k search
   for `EMULE_DUMP_SEARCH=<words>`, then the menu's Download on the first row whose name holds
-  `EMULE_DUMP_DOWNLOAD=<text>` (`EMULE_DUMP_DOWNLOAD_PAUSED=1`: Download (Paused); `EMULE_DUMP_DOWNLOAD_CAT=n`: category tab n first); Search logs the last menu again 1.5 s later (ed3k link actions
+  `EMULE_DUMP_DOWNLOAD=<text>` (`EMULE_DUMP_DOWNLOAD_PAUSED=1`: Download (Paused); `EMULE_DUMP_DOWNLOAD_CAT=n`: category tab n first; `EMULE_DUMP_SEARCH_TYPE=n`: that SearchType, all its rows); Search logs the last menu again 1.5 s later (ed3k link actions
   come async). Stopping the GUI shuts down a local sandbox core too.
 - **Landed files kept out of eD2K** (hoster/Usenet "share landed files" off): `DaemonApp::
   syncEd3kAliasOnly` → `setAliasOnlyFiles`: read once for MD4 + root (`hashInBackground(withEd2k)`)

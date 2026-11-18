@@ -393,6 +393,7 @@
     <ClCompile Include="utils\MenuUtils.cpp" />
     <ClCompile Include="utils\ViewNavigation.cpp" />
     <ClCompile Include="utils\ViewSelection.cpp" />
+    <ClCompile Include="utils\PanelLayout.cpp" />
     <ClCompile Include="utils\PanelPoller.cpp" />
     <ClCompile Include="utils\TaskbarProgress.cpp" />
     <ClCompile Include="utils\TaskbarProgressMac.cpp" />
@@ -428,6 +429,7 @@
     <ClInclude Include="dialogs\RenameFileDialog.h" />
     <ClInclude Include="dialogs\PortMapStatusText.h" />
     <ClInclude Include="utils\DialogSizing.h" />
+    <ClInclude Include="utils\PanelLayout.h" />
     <ClInclude Include="utils\FileAssociation.h" />
     <ClInclude Include="utils\FileTypeIcons.h" />
     <ClInclude Include="controls\ConfidenceStyle.h" />

@@ -217,6 +217,19 @@ void tst_IpcStream::tunnelPeers()
     QVERIFY(!run(bad)->fieldBool(0));
     QVERIFY(run(reg)->fieldBool(0));
     QCOMPARE(run(IpcMessage(IpcMsgType::GetTunnelPeers))->fieldArray(1).size(), before.size() + 1);
+    // the phone's node key with it (an ed3k friend then): kept in the pref, the name stays
+    const QString key = QString(64, u'a');
+    IpcMessage withKey(IpcMsgType::RegisterTunnelPeer);
+    withKey.append(node);
+    withKey.append(QString());
+    withKey.append(key);
+    QVERIFY(run(withKey)->fieldBool(0));
+    QVERIFY(thePrefs.ipcTunnelPeers().contains(node + u'/' + key + QStringLiteral(" Phone 1")));
+    // a later register without the key keeps it
+    QVERIFY(run(reg)->fieldBool(0));
+    QVERIFY(thePrefs.ipcTunnelPeers().contains(node + u'/' + key + QStringLiteral(" Phone 1")));
+    r = run(IpcMessage(IpcMsgType::GetTunnelPeers));
+    QCOMPARE(r->fieldArray(1).last().toMap().value(QStringLiteral("nodeId")).toString(), node);
     IpcMessage rm(IpcMsgType::RemoveTunnelPeer);
     rm.append(node);
     QVERIFY(run(rm)->fieldBool(0));

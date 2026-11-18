@@ -971,7 +971,9 @@ void MainWindow::setStreamToken(const QString& token)
     if (m_sharedFilesPanel) m_sharedFilesPanel->setStreamToken(token);
     if (m_usenetPanel)      m_usenetPanel->setStreamToken(token);
     if (m_torrentPanel)     m_torrentPanel->setStreamToken(token);
+#ifdef EMULE_HAVE_HOSTER_JD
     if (m_hosterPanel)      m_hosterPanel->setStreamToken(token);
+#endif
 }
 
 void MainWindow::updateTransferRates(double upKBs, double downKBs,
@@ -1312,9 +1314,14 @@ void MainWindow::restoreWindow(const QString& activationToken)
 
 void MainWindow::updateClickNLoad()
 {
+#ifdef EMULE_HAVE_HOSTER_JD
     if (m_clickNLoad)
         m_clickNLoad->setEnabled(theUiState.clickNLoad() && m_hosterPanel && m_hosterPanel->hostersEnabled(),
                                  theUiState.clickNLoadPort());
+#else
+    if (m_clickNLoad)
+        m_clickNLoad->setEnabled(false, theUiState.clickNLoadPort());   // no resolver: nothing takes the links
+#endif
 }
 
 void MainWindow::changeEvent(QEvent* event)
@@ -1526,6 +1533,9 @@ void MainWindow::onClipboardChanged()
 
 void MainWindow::checkHosterClipboard(const QString& text)
 {
+#ifndef EMULE_HAVE_HOSTER_JD
+    Q_UNUSED(text)
+#else
     if (!m_hosterPanel || !m_hosterPanel->watchesClipboard() || !m_ipc || !m_ipc->isConnected())
         return;
     if (text.isEmpty() || text == m_lastHosterClipboard)
@@ -1539,6 +1549,7 @@ void MainWindow::checkHosterClipboard(const QString& text)
         return;
     // the core crawls only links a plugin takes; the rest (any web page) is dropped quietly
     m_hosterPanel->grabLinks(text, tr("Clipboard"), true);
+#endif
 }
 
 // ---------------------------------------------------------------------------

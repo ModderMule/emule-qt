@@ -62,7 +62,8 @@ namespace {
 ///   5 — MFC default nick (emule-project.net URL) replaced by ours
 ///   6 — NZB search file row downloads that file only
 ///   7 — hoster downloads at once: old default 2 raised to 8 (JD's default)
-constexpr uint32 kCurrentPrefsVersion = 7;
+///   8 — ed3k LAN peers outside the speed limits: old default off
+constexpr uint32 kCurrentPrefsVersion = 8;
 
 /// See Preferences::usenetSubjectPatternsRevision().
 ///
@@ -6690,6 +6691,10 @@ bool Preferences::load(const QString& filePath)
         // v7: hoster streams default 2 -> 8; only the old default is rewritten
         if (m_data->startVersion < 7 && m_data->ed3kHoster.maxStreams == 2)
             m_data->ed3kHoster.maxStreams = 8;
+
+        // v8: ed3k LAN peers unlimited by default; the old default was off
+        if (m_data->startVersion < 8)
+            m_data->ed3kLanUnlimited = true;
 
         m_data->startVersion = kCurrentPrefsVersion;
         saveImpl(m_filePath);

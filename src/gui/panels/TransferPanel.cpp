@@ -1844,14 +1844,17 @@ void TransferPanel::applyClients(int clientView, std::vector<ClientRow> rows)
 {
     // setClients() resets the model when it can't match rows by key, which drops the
     // view's selection and scroll position — both are keyed back on afterwards.
+    // Both scroll directions: a background refresh must not move the view.
     const ClientSlot& slot = clientSlot(clientView);
-    const int scroll = slot.view->verticalScrollBar()->value();
+    const int vScroll = slot.view->verticalScrollBar()->value();
+    const int hScroll = slot.view->horizontalScrollBar()->value();
     const QStringList selected = saveClientSelection(slot.view, slot.model);
 
     slot.model->setClients(std::move(rows));
 
     restoreClientSelection(slot.view, slot.model, selected);
-    slot.view->verticalScrollBar()->setValue(scroll);
+    slot.view->verticalScrollBar()->setValue(vScroll);
+    slot.view->horizontalScrollBar()->setValue(hScroll);
 }
 
 // ---------------------------------------------------------------------------
@@ -2521,7 +2524,7 @@ void TransferPanel::restoreClientSelection(QTreeView* view, ClientListModel* mod
         current = selection.first().topLeft();
     sel->setCurrentIndex(current, QItemSelectionModel::NoUpdate);
     sel->select(selection, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
-    view->scrollTo(current);
+    // no scrollTo(current): it jumps the horizontal bar back to column 0 on every refresh
 }
 
 std::vector<const ClientRow*> TransferPanel::selectedClients(QTreeView* view, ClientListModel* model,

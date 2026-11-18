@@ -3883,11 +3883,14 @@ bool SearchPanel::torrentResultsShown() const
 void SearchPanel::dumpEd3kMenus()
 {
     // dev aid (EMULE_DUMP_ED3K_MENUS): the menu of the open tab's ed3k results (first 3);
-    // level 2 first runs one ed3k search for EMULE_DUMP_SEARCH
+    // level 2 first runs one ed3k search for EMULE_DUMP_SEARCH; EMULE_DUMP_SEARCH_TYPE=n
+    // another SearchType, its rows count too
     static bool searched = false;
+    bool typeOk = false;
+    const int type = qEnvironmentVariableIntValue("EMULE_DUMP_SEARCH_TYPE", &typeOk);
     if (const QString words = qEnvironmentVariable("EMULE_DUMP_SEARCH");
         MenuDump::level() >= 2 && !words.isEmpty() && !std::exchange(searched, true)) {
-        startSearchFromExternal(words, {}, static_cast<int>(SearchType::Ed3k), {});
+        startSearchFromExternal(words, {}, typeOk ? type : static_cast<int>(SearchType::Ed3k), {});
         return;
     }
     if (!m_resultView->model() || !m_resultView->selectionModel())
@@ -3896,7 +3899,7 @@ void SearchPanel::dumpEd3kMenus()
     for (int i = 0; i < m_resultView->model()->rowCount() && shown < 3; ++i) {
         const QModelIndex idx = m_resultView->model()->index(i, 0);
         const SearchResultRef ref = refAt(idx);
-        if (!ref || !ref.row->isEd3k())
+        if (!ref || (!typeOk && !ref.row->isEd3k()))
             continue;
         ++shown;
         m_resultView->selectionModel()->select(idx, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);

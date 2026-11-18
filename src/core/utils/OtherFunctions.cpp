@@ -523,7 +523,8 @@ QStringList ed2kFileTypeExtensions(const QString& typeName)
         types = {ED2KFileType::EmuleCollection};
     QStringList out;
     for (const auto& t : kTypeExts)
-        if (std::ranges::contains(types, t.type))
+        // find, not ranges::contains: GCC 12 (Ubuntu 22.04 build) lacks it
+        if (std::ranges::find(types, t.type) != types.end())
             for (auto e : t.exts)
                 out.append(QString::fromUtf16(e + 1));
     return out;
