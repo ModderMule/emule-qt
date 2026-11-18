@@ -13156,6 +13156,11 @@ Si votre FAI tente de brider ou de bloquer eMule, l&apos;obfuscation aide à con
     </message>
     <message>
         <location line="+2"/>
+        <source>Getting ffmpeg for the stream</source>
+        <translation>Récupération de ffmpeg pour le flux</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Connecting for the transfer</source>
         <translation>Connexion pour le transfert</translation>
     </message>
@@ -20036,22 +20041,22 @@ Voulez-vous vraiment continuer ?</translation>
     <message>
         <location line="+103"/>
         <source>Phone</source>
-        <translation type="unfinished"></translation>
+        <translation>Téléphone</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>ed3k Node ID</source>
-        <translation type="unfinished"></translation>
+        <translation>ID de nœud ed3k</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Phones that reach this core over the ed3k tunnel without a port forward</source>
-        <translation type="unfinished"></translation>
+        <translation>Téléphones qui joignent ce cœur par le tunnel ed3k sans redirection de port</translation>
     </message>
     <message>
         <location line="+18"/>
         <source>Paired phones:</source>
-        <translation type="unfinished"></translation>
+        <translation>Téléphones appairés :</translation>
     </message>
     <message>
         <location line="+7"/>

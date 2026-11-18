@@ -158,6 +158,9 @@ Ed3kShared::Ed3kShared(Ed3kSession& session, SharedFileSource& source, const QSt
     });
     m_aliasRetry.setSingleShot(true);
     m_aliasRetry.setInterval(5000);
+    m_stoppedSave.setSingleShot(true);
+    m_stoppedSave.setInterval(kHashRunSaveDelayMs);
+    connect(&m_stoppedSave, &QTimer::timeout, this, &Ed3kShared::flushStoppedSave);
     connect(&m_aliasRetry, &QTimer::timeout, this, [this] {
         for (auto& [key, f] : m_files)
             if (f.aliasOnly && f.aliasWaits)
@@ -252,6 +255,7 @@ void Ed3kShared::start()
     beginStart();
     m_hashingVolumes.clear();
     m_scanLogged = false;
+    flushStoppedSave();   // primed while stopped: on disk before the reload
     loadCache();
     for (const SharedEntry& e : m_source.files())
         add(e);
@@ -275,6 +279,7 @@ void Ed3kShared::start()
 
 void Ed3kShared::stop()
 {
+    flushStoppedSave();
     if (!m_started)
         return;
     m_priorityTimer.stop();
@@ -1329,6 +1334,7 @@ bool Ed3kShared::cacheMatches(const Hashed& c, const QString& path, std::uint64_
 void Ed3kShared::loadCache()
 {
     m_cache.clear();
+    m_cacheLoaded = true;
     const QByteArray blob = readBlob(cachePath());
     if (blob.isEmpty())
         return;
@@ -1675,8 +1681,13 @@ QString Ed3kShared::volumeOf(const QString& path)
 
 void Ed3kShared::primeHash(const QByteArray& md4, const QString& path, qint64 mtimeMs, const FileHash& hashed)
 {
-    if (!m_started || (m_neverShared && m_neverShared(path)))
+    if (m_neverShared && m_neverShared(path))
         return;
+    // was: if (!m_started) return; (an ed3k-only file hashed with ed3k off was read again at start)
+    if (!m_started) {
+        primeStopped(md4, path, mtimeMs, hashed);
+        return;
+    }
     if (const auto c = m_cache.find(md4); c != m_cache.end() && c->second.path == path && cacheMatches(c->second, path, hashed.size, mtimeMs))
         return;   // known already
     if (!unchanged(path, hashed.size, mtimeMs))
@@ -1690,6 +1701,36 @@ void Ed3kShared::primeHash(const QByteArray& md4, const QString& path, qint64 mt
         share(f, h);
         pumpSession();
     }
+}
+
+void Ed3kShared::primeStopped(const QByteArray& md4, const QString& path, qint64 mtimeMs, const FileHash& hashed)
+{
+    if (md4.size() != 16)
+        return;
+    if (!m_cacheLoaded)
+        loadCache();   // never started yet: a save must not drop the index on disk
+    if (const auto c = m_cache.find(md4); c != m_cache.end() && c->second.path == path && cacheMatches(c->second, path, hashed.size, mtimeMs))
+        return;
+    if (!unchanged(path, hashed.size, mtimeMs))
+        return;
+    Hashed& h = remember(md4, path, mtimeMs, hashed);   // its scheduleSave is a no-op while stopped
+    // no RAM budget while stopped: the values are read back from disk when shared
+    if (h.diskOffset >= 0) {
+        ffi::Bytes().swap(h.hashes);
+        h.inRam = false;
+    }
+    m_stoppedDirty = true;
+    if (!m_stoppedSave.isActive())
+        m_stoppedSave.start();
+}
+
+void Ed3kShared::flushStoppedSave()
+{
+    m_stoppedSave.stop();
+    if (!std::exchange(m_stoppedDirty, false))
+        return;
+    saveCache();
+    flushBlobWrites();
 }
 
 Ed3kShared::Hashed& Ed3kShared::remember(const QByteArray& md4, const QString& path, qint64 mtimeMs, const FileHash& hashed)

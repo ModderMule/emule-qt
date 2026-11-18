@@ -13156,6 +13156,11 @@ Si su proveedor intenta limitar o bloquear eMule, la ofuscación ayuda a sortear
     </message>
     <message>
         <location line="+2"/>
+        <source>Getting ffmpeg for the stream</source>
+        <translation>Obteniendo ffmpeg para la transmisión</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Connecting for the transfer</source>
         <translation>Conectando para la transferencia</translation>
     </message>
@@ -20036,22 +20041,22 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+103"/>
         <source>Phone</source>
-        <translation type="unfinished"></translation>
+        <translation>Teléfono</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>ed3k Node ID</source>
-        <translation type="unfinished"></translation>
+        <translation>ID de nodo ed3k</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Phones that reach this core over the ed3k tunnel without a port forward</source>
-        <translation type="unfinished"></translation>
+        <translation>Teléfonos que llegan a este núcleo por el túnel ed3k sin redirección de puertos</translation>
     </message>
     <message>
         <location line="+18"/>
         <source>Paired phones:</source>
-        <translation type="unfinished"></translation>
+        <translation>Teléfonos emparejados:</translation>
     </message>
     <message>
         <location line="+7"/>

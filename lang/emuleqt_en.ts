@@ -12178,6 +12178,11 @@ Its files go to a folder of the set&apos;s own, below the incoming folder.</sour
     </message>
     <message>
         <location line="+2"/>
+        <source>Getting ffmpeg for the stream</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Connecting for the transfer</source>
         <translation type="unfinished"></translation>
     </message>

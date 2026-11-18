@@ -44,6 +44,8 @@ final class OpenTask extends Task {
     private String lastServer;
     /** The download is not written to data.part in file order (HLS/DASH through ffmpeg): bytes come with the done. */
     private volatile boolean muxed;
+    /** ffmpeg was asked for once (Tools.request) */
+    private boolean toolsAsked;
 
     /** The open task that downloads @p dl, for a puzzle it raises. */
     static Long taskOfLink(final DownloadLink dl) {
@@ -210,6 +212,24 @@ final class OpenTask extends Task {
         if (d.failure != null && d.blocked != null) {
             // failed after a redirect or a request to a non-public address was refused
             Out.error(id, "private", d.blocked);
+            return;
+        }
+        if (d.failure != null && Tools.missing(d.failure)) {
+            // HLS/DASH without ffmpeg: the daemon fetches it, then the plugin runs again
+            if (!toolsAsked) {
+                toolsAsked = true;
+                status("ffmpeg");
+                if (Tools.request(this)) {
+                    Out.log("ffmpeg there now, opening again");
+                    download();
+                    return;
+                }
+                if (cancelled.get()) {
+                    Out.send(id, "cancelled");
+                    return;
+                }
+            }
+            Out.error(id, "ffmpeg", Tools.lastError() != null ? Tools.lastError() : "missing");
             return;
         }
         if (d.failure != null) {

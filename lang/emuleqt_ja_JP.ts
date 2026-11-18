@@ -13105,6 +13105,11 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
     </message>
     <message>
         <location line="+2"/>
+        <source>Getting ffmpeg for the stream</source>
+        <translation>ストリーム用に ffmpeg を取得中</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Connecting for the transfer</source>
         <translation>転送のため接続中</translation>
     </message>
@@ -19958,22 +19963,22 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+103"/>
         <source>Phone</source>
-        <translation type="unfinished"></translation>
+        <translation>電話</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>ed3k Node ID</source>
-        <translation type="unfinished"></translation>
+        <translation>ed3k ノード ID</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Phones that reach this core over the ed3k tunnel without a port forward</source>
-        <translation type="unfinished"></translation>
+        <translation>ポート転送なしで ed3k トンネル経由でこのコアに接続する電話</translation>
     </message>
     <message>
         <location line="+18"/>
         <source>Paired phones:</source>
-        <translation type="unfinished"></translation>
+        <translation>ペアリング済みの電話:</translation>
     </message>
     <message>
         <location line="+7"/>

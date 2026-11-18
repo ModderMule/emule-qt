@@ -12833,6 +12833,11 @@ Jego pliki trafiają do folderu pobranych, do własnego folderu zestawu; nowe we
     </message>
     <message>
         <location line="+2"/>
+        <source>Getting ffmpeg for the stream</source>
+        <translation>Pobieranie ffmpeg dla strumienia</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Connecting for the transfer</source>
         <translation>Łączenie w celu transferu</translation>
     </message>
@@ -19187,22 +19192,22 @@ Enter: następna strona, Esc: wyczyść</translation>
     <message>
         <location line="+36"/>
         <source>Phone</source>
-        <translation type="unfinished"></translation>
+        <translation>Telefon</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>ed3k Node ID</source>
-        <translation type="unfinished"></translation>
+        <translation>ID węzła ed3k</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Phones that reach this core over the ed3k tunnel without a port forward</source>
-        <translation type="unfinished"></translation>
+        <translation>Telefony łączące się z tym rdzeniem przez tunel ed3k bez przekierowania portu</translation>
     </message>
     <message>
         <location line="+18"/>
         <source>Paired phones:</source>
-        <translation type="unfinished"></translation>
+        <translation>Sparowane telefony:</translation>
     </message>
     <message>
         <location line="+2"/>

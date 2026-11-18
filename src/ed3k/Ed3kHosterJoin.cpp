@@ -2123,6 +2123,8 @@ void Ed3kHosterJoin::onResolverEvent(Ed3kResolver::TaskId task, const ResolverEv
             release(*e, false);
             setState(*e, State::Failed, Reason::PrivateAddress, ev.text);
         }
+        else if (e && ev.code == QLatin1StringView("ffmpeg"))   // HLS/DASH and no ffmpeg came: not in a minute
+            retryLater(*e, 30 * 60, Reason::ResolverError, QStringLiteral("ffmpeg: %1").arg(ev.text));
         else if (e && ev.code != QLatin1StringView("noPlugin"))
             retryLater(*e, 60, Reason::ResolverError, ev.text.isEmpty() ? ev.code : ev.text);
         final();

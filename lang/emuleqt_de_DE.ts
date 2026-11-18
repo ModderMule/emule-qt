@@ -13156,6 +13156,11 @@ Falls der Internetanbieter eMule drosselt oder blockiert, hilft die Verschleieru
     </message>
     <message>
         <location line="+2"/>
+        <source>Getting ffmpeg for the stream</source>
+        <translation>Lade ffmpeg für den Stream</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Connecting for the transfer</source>
         <translation>Verbindung für die Übertragung</translation>
     </message>
@@ -20036,22 +20041,22 @@ Möchten Sie wirklich fortfahren?</translation>
     <message>
         <location line="+103"/>
         <source>Phone</source>
-        <translation type="unfinished"></translation>
+        <translation>Telefon</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>ed3k Node ID</source>
-        <translation type="unfinished"></translation>
+        <translation>ed3k-Knoten-ID</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Phones that reach this core over the ed3k tunnel without a port forward</source>
-        <translation type="unfinished"></translation>
+        <translation>Telefone, die diesen Core über den ed3k-Tunnel ohne Portweiterleitung erreichen</translation>
     </message>
     <message>
         <location line="+18"/>
         <source>Paired phones:</source>
-        <translation type="unfinished"></translation>
+        <translation>Gekoppelte Telefone:</translation>
     </message>
     <message>
         <location line="+7"/>

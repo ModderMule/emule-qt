@@ -44,6 +44,7 @@ private slots:
     void notesDefaultEmpty();
     void parsesDescriptionAndChangelog();
     void parsesHosterResolver();
+    void parsesFfmpeg();
     void parsesSkins();
 };
 
@@ -116,6 +117,26 @@ void TestVersionManifest::parsesHosterResolver()
     info = VersionManifest::parse(kManifest);
     QVERIFY(info.hosterResolver.file.url.isEmpty());
     QCOMPARE(info.hosterResolver.api, 0);
+}
+
+void TestVersionManifest::parsesFfmpeg()
+{
+    // written by scripts/publish-ffmpeg.sh; an entry without a hash is dropped
+    const auto info = VersionManifest::parse(
+        "{\"latest\": \"0.8.1\", \"ffmpeg\": {\"version\": \" 9.0.2 \", \"downloads\": {"
+        " \"windows-x64\": {\"url\": \"https://emule-qt.org/pub/ffmpeg-9.0.2-windows-x64.zip\","
+        "   \"sha256\": \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"size\": 70000000},"
+        " \"mac-arm64\": {\"url\": \"https://emule-qt.org/pub/ffmpeg-9.0.2-mac-arm64.zip\","
+        "   \"sha256\": \"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\", \"size\": 50000000},"
+        " \"linux-x64\": {\"url\": \"https://emule-qt.org/pub/ffmpeg-9.0.2-linux-x64.zip\", \"size\": 1}}}}");
+    QVERIFY(info.isValid());
+    QCOMPARE(info.ffmpeg.version, QStringLiteral("9.0.2"));
+    QCOMPARE(info.ffmpeg.downloads.size(), 2);
+    QCOMPARE(info.ffmpeg.downloads.value(QStringLiteral("mac-arm64")).sha256, QString(64, QLatin1Char('b')));
+    QVERIFY(!info.ffmpeg.downloads.contains(QStringLiteral("linux-x64")));
+    const QString key = VersionManifest::platformKey();
+    QCOMPARE(info.ffmpeg.forPlatform().url, info.ffmpeg.downloads.value(key).url);
+    QVERIFY(VersionManifest::parse(kManifest).ffmpeg.downloads.isEmpty());
 }
 
 void TestVersionManifest::parsesSkins()

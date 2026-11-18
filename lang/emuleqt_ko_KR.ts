@@ -13105,6 +13105,11 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
     </message>
     <message>
         <location line="+2"/>
+        <source>Getting ffmpeg for the stream</source>
+        <translation>스트림용 ffmpeg 가져오는 중</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Connecting for the transfer</source>
         <translation>전송을 위해 연결 중</translation>
     </message>
@@ -19958,22 +19963,22 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+103"/>
         <source>Phone</source>
-        <translation type="unfinished"></translation>
+        <translation>전화</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>ed3k Node ID</source>
-        <translation type="unfinished"></translation>
+        <translation>ed3k 노드 ID</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Phones that reach this core over the ed3k tunnel without a port forward</source>
-        <translation type="unfinished"></translation>
+        <translation>포트 포워딩 없이 ed3k 터널로 이 코어에 연결하는 전화</translation>
     </message>
     <message>
         <location line="+18"/>
         <source>Paired phones:</source>
-        <translation type="unfinished"></translation>
+        <translation>페어링된 전화:</translation>
     </message>
     <message>
         <location line="+7"/>

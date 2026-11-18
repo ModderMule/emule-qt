@@ -184,6 +184,7 @@ void Ed3kJdResolver::setConfig(const JdResolverConfig& config)
     const bool puzzles = next.askPuzzles != m_config.askPuzzles;
     const bool generic = next.genericHttp != m_config.genericHttp;
     const bool solvers = next.solvers != m_config.solvers;
+    const bool tools = next.ffmpeg != m_config.ffmpeg || next.ffprobe != m_config.ffprobe;
     m_config = next;
     if (solvers)
         m_solverStates.clear();
@@ -209,6 +210,14 @@ void Ed3kJdResolver::setConfig(const JdResolverConfig& config)
     // not running: sent with the next start
     if (solvers && running())
         sendSolvers();
+    if (tools && running())
+        sendTools();
+}
+
+void Ed3kJdResolver::toolsFailed(const QString& error)
+{
+    if (running())
+        sendTools(error.isEmpty() ? QStringLiteral("not available") : error);
 }
 
 QString Ed3kJdResolver::findBundledZip()
@@ -396,6 +405,11 @@ QStringList Ed3kJdResolver::arguments() const
                      QStringLiteral("-Demuleqt.jdRevision=") + rev};
     if (m_config.loopbackHosters)
         args << QStringLiteral("-Demuleqt.loopbackHosters=true");
+    // the daemon answers needTools (Ed3kFfmpegTool); paths known now go along
+    args << QStringLiteral("-Demuleqt.tools=true");
+    if (!m_config.ffmpeg.isEmpty() && !m_config.ffprobe.isEmpty())
+        args << QStringLiteral("-Demuleqt.ffmpeg=") + QDir::toNativeSeparators(m_config.ffmpeg)
+             << QStringLiteral("-Demuleqt.ffprobe=") + QDir::toNativeSeparators(m_config.ffprobe);
     if (m_server && m_server->isListening())
         args << QStringLiteral("-Demuleqt.port=") + QString::number(m_server->serverPort());
     args << QStringLiteral("-cp") << cp << QStringLiteral("org.emuleqt.resolver.ResolverMain");
@@ -935,6 +949,17 @@ void Ed3kJdResolver::sendSolvers()
           {QStringLiteral("accounts"), list}});
 }
 
+void Ed3kJdResolver::sendTools(const QString& error)
+{
+    // an older sidecar answers "unknown op": its task fails with FFMPEG_MISSING as before
+    QJsonObject req{{QStringLiteral("op"), QStringLiteral("setTools")},
+                    {QStringLiteral("ffmpeg"), QDir::toNativeSeparators(m_config.ffmpeg)},
+                    {QStringLiteral("ffprobe"), QDir::toNativeSeparators(m_config.ffprobe)}};
+    if (!error.isEmpty())
+        req.insert(QStringLiteral("error"), error);
+    request(req, false);
+}
+
 void Ed3kJdResolver::stop()
 {
     m_idle.stop();
@@ -1025,6 +1050,12 @@ void Ed3kJdResolver::handleLine(const QByteArray& line)
                             .arg(o.value(QStringLiteral("hosts")).toInt())
                             .arg(o.value(QStringLiteral("crawlers")).toInt());
         emit stateChanged();
+        return;
+    }
+    if (o.value(QStringLiteral("ev")).toString() == QLatin1StringView("needTools")) {
+        // not a task's: one ask for every waiting task
+        logHoster(QStringLiteral("hoster: the resolver needs ffmpeg + ffprobe (HLS/DASH)"));
+        emit toolsNeeded();
         return;
     }
     auto parsed = parseEvent(line);

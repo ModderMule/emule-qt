@@ -50,6 +50,7 @@ public final class ResolverMain {
         // (JD's updater layout). Keep the loose-classes behaviour the driver was made for.
         Jd.notJared();
         Jd.init();
+        Tools.init();
         // JD's RemoteAPIController wraps the dialog handler when its class loads, lazily, maybe mid-login
         // (on top of CodeAsker: a code dialog then parks forever). Load it now, under ours; no API port.
         try {
@@ -121,6 +122,8 @@ public final class ResolverMain {
             m.put("debrid", true);
             m.put("accountHosts", true);
             m.put("code", true);
+            // takes setTools (ffmpeg paths) at run time
+            m.put("tools", true);
             Out.send(m);
             break;
         }
@@ -134,6 +137,10 @@ public final class ResolverMain {
             break;
         case "setGeneric":
             Jd.setGeneric(Boolean.TRUE.equals(req.get("on")));
+            Out.send(id, "ok");
+            break;
+        case "setTools":
+            Tools.set(str(req.get("ffmpeg")), str(req.get("ffprobe")), str(req.get("error")));
             Out.send(id, "ok");
             break;
         case "setPuzzles":

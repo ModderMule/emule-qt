@@ -12,6 +12,7 @@
 #include "Ed3kResolver.h"
 #include "Ed3kSession.h"
 #ifdef EMULE_HAVE_HOSTER_JD
+#include "Ed3kFfmpegTool.h"
 #include "Ed3kJavaRuntime.h"
 #include "Ed3kJdResolver.h"
 #include "Ed3kResolverUpdater.h"
@@ -3329,6 +3330,87 @@ private slots:
         eMule::BackgroundFileWriter::instance().flush();   // update.json is queued: on disk before tmp goes
     }
 
+    /// ffmpeg for HLS: this platform's zip of the manifest's "ffmpeg" entry, both binaries
+    /// installed into <base>/ffmpeg and started once (-version)
+    void ffmpegTool_installsFromManifest()
+    {
+        QTemporaryDir tmp;
+        const QString zip = tmp.filePath(QStringLiteral("ff.zip"));
+#ifdef Q_OS_WIN
+        // no program here prints "ffmpeg version": installed, then refused as not starting
+        const QByteArray body = "MZ not a program";
+#else
+        const QByteArray body = "#!/bin/sh
+echo 'ffmpeg version 9.0-test'
+";
+#endif
+        // in a folder, as upstream zips have it
+        QVERIFY(writeZip(zip, {{QStringLiteral("bin/") + Ed3kFfmpegTool::exe(QStringLiteral("ffmpeg")), body},
+                               {QStringLiteral("bin/") + Ed3kFfmpegTool::exe(QStringLiteral("ffprobe")), body},
+                               {QStringLiteral("README.txt"), "x"}}));
+        QFile f(zip);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        const QByteArray zipBytes = f.readAll();
+        f.close();
+        FakeHttpServer http;
+        QVERIFY(http.isListening());
+        bool withEntry = false;
+        http.handler = [&](const QByteArray& path, const QByteArray&) -> FakeHttpServer::Response {
+            if (path == "/ff.zip")
+                return {200, zipBytes};
+            QJsonObject root{{QStringLiteral("latest"), QStringLiteral("9.9.9")}};
+            if (withEntry) {
+                const QJsonObject d{{QStringLiteral("url"), http.url(QStringLiteral("/ff.zip")).toString()},
+                                    {QStringLiteral("sha256"), QString::fromLatin1(fileSha256(zip))},
+                                    {QStringLiteral("size"), zipBytes.size()}};
+                root.insert(QStringLiteral("ffmpeg"),
+                            QJsonObject{{QStringLiteral("version"), QStringLiteral("9.0-test")},
+                                        {QStringLiteral("downloads"), QJsonObject{{VersionManifest::platformKey(), d}}}});
+            }
+            return {200, QJsonDocument(root).toJson()};
+        };
+        const QString base = tmp.filePath(QStringLiteral("ed3k"));
+        {
+            // no entry for this platform: failed, logged, no new try right away
+            Ed3kFfmpegTool t(base);
+            t.setManifestUrl(http.url(QStringLiteral("/emuleqt-version.json")));
+            QVERIFY(!t.download());   // not allowed: hoster downloads off
+            t.setAllowed(true);
+            QVERIFY(t.download());
+            QTRY_COMPARE_WITH_TIMEOUT(t.state(), Ed3kFfmpegTool::State::Failed, 10000);
+            QVERIFY2(t.error().contains(QStringLiteral("no ffmpeg for")), qPrintable(t.error()));
+            QVERIFY(!t.download());
+        }
+        withEntry = true;
+        Ed3kFfmpegTool t(base);
+        t.setManifestUrl(http.url(QStringLiteral("/emuleqt-version.json")));
+        t.setAllowed(true);
+        QVERIFY(t.download());
+        QVERIFY(t.busy());
+        // Unpacking lasts through the -version start
+        QTRY_VERIFY_WITH_TIMEOUT(!t.busy(), 30000);
+        const QDir dir(t.toolDir());
+        QVERIFY(QFileInfo(dir.filePath(Ed3kFfmpegTool::exe(QStringLiteral("ffmpeg")))).isFile());
+        QVERIFY(QFileInfo(dir.filePath(Ed3kFfmpegTool::exe(QStringLiteral("ffprobe")))).isFile());
+        QVERIFY(!QFileInfo::exists(dir.filePath(QStringLiteral("README.txt"))));
+        QVERIFY(!QFileInfo::exists(t.toolDir() + QStringLiteral(".tmp")));
+        QVERIFY(!QFileInfo::exists(QDir(base).filePath(QStringLiteral("ffmpeg-download.zip"))));
+#ifdef Q_OS_WIN
+        QCOMPARE(t.state(), Ed3kFfmpegTool::State::Failed);
+        QVERIFY2(t.error().contains(QStringLiteral("does not start")), qPrintable(t.error()));
+#else
+        QCOMPARE(t.state(), Ed3kFfmpegTool::State::Ready);
+        QCOMPARE(t.ffmpeg(), QFileInfo(dir.filePath(QStringLiteral("ffmpeg"))).absoluteFilePath());
+        QCOMPARE(t.ffprobe(), QFileInfo(dir.filePath(QStringLiteral("ffprobe"))).absoluteFilePath());
+        QVERIFY(QFileInfo(t.ffmpeg()).isExecutable());
+        // a restart finds it without a fetch
+        Ed3kFfmpegTool again(base);
+        again.locate();
+        QCOMPARE(again.state(), Ed3kFfmpegTool::State::Ready);
+        QCOMPARE(again.ffmpeg(), t.ffmpeg());
+#endif
+    }
+
     /// no zip shipped: nothing at start, fetched once a hoster link wants plugins
     void resolverUpdater_noZipWaitsForLink()
     {
@@ -4054,6 +4136,132 @@ private slots:
         QFile again(done(t2)->path);
         QVERIFY(again.open(QIODevice::ReadOnly));
         QCOMPARE(again.readAll(), data);
+    }
+
+    /// HLS through the real sidecar on a machine without ffmpeg: JD skips with FFMPEG_MISSING,
+    /// the resolver asks (needTools), Ed3kFfmpegTool fetches the zip a local manifest names,
+    /// the paths go in (setTools) and the same task downloads the stream.
+    /// EMULE_HOSTER_LIVE_FFMPEG=<an ffmpeg zip of scripts/publish-ffmpeg.sh>; ffmpeg must not be on PATH
+    void live_jdResolverFetchesFfmpeg()
+    {
+        const QString ffZip = qEnvironmentVariable("EMULE_HOSTER_LIVE_FFMPEG");
+        if (ffZip.isEmpty())
+            QSKIP("live: set EMULE_HOSTER_LIVE_FFMPEG=<ffmpeg-<v>-<platform>.zip>");
+        if (!QStandardPaths::findExecutable(Ed3kFfmpegTool::exe(QStringLiteral("ffmpeg"))).isEmpty())
+            QSKIP("ffmpeg is on PATH: JD would find it");
+        const QString zip = Ed3kJdResolver::findBundledZip();
+        if (zip.isEmpty())
+            QSKIP("no resolver.zip: run scripts/build-hoster-resolver.sh");
+        QTemporaryDir tmp;
+        Ed3kJavaRuntime java(tmp.path());
+        java.locate({});
+        QTRY_VERIFY_WITH_TIMEOUT(java.state() != Ed3kJavaRuntime::State::Probing, 60000);
+        if (!java.runtime())
+            QSKIP("no Java 17+ on this machine");
+
+        // a 4 s stream, made with the zip's own ffmpeg from a folder JD never looks in
+        const QString gen = tmp.filePath(QStringLiteral("gen"));
+        {
+            ArchiveReader r;
+            QVERIFY(r.open(ffZip) && r.extractAll(gen));
+        }
+        const QString hls = tmp.filePath(QStringLiteral("hls"));
+        QVERIFY(QDir().mkpath(hls));
+        QProcess mk;
+        mk.setProcessChannelMode(QProcess::MergedChannels);
+        mk.start(QDir(gen).filePath(Ed3kFfmpegTool::exe(QStringLiteral("ffmpeg"))),
+                 {QStringLiteral("-hide_banner"), QStringLiteral("-loglevel"), QStringLiteral("error"),
+                  QStringLiteral("-f"), QStringLiteral("lavfi"), QStringLiteral("-i"), QStringLiteral("testsrc=duration=4:size=320x240:rate=25"),
+                  QStringLiteral("-f"), QStringLiteral("lavfi"), QStringLiteral("-i"), QStringLiteral("sine=frequency=440:duration=4"),
+                  QStringLiteral("-c:v"), QStringLiteral("libx264"), QStringLiteral("-c:a"), QStringLiteral("aac"), QStringLiteral("-shortest"),
+                  QStringLiteral("-f"), QStringLiteral("hls"), QStringLiteral("-hls_time"), QStringLiteral("1"),
+                  QStringLiteral("-hls_playlist_type"), QStringLiteral("vod"),
+                  QStringLiteral("-hls_segment_filename"), QDir(hls).filePath(QStringLiteral("seg%d.ts")),
+                  QDir(hls).filePath(QStringLiteral("stream.m3u8"))});
+        QVERIFY(mk.waitForFinished(60000));
+        QVERIFY2(mk.exitCode() == 0, mk.readAll().constData());
+        QVERIFY(QDir(gen).removeRecursively());
+
+        QFile zf(ffZip);
+        QVERIFY(zf.open(QIODevice::ReadOnly));
+        const QByteArray zipBytes = zf.readAll();
+        zf.close();
+        FakeHttpServer http;
+        QVERIFY(http.isListening());
+        http.handler = [&](const QByteArray& path, const QByteArray&) -> FakeHttpServer::Response {
+            if (path == "/ff.zip")
+                return {200, zipBytes};
+            if (path == "/emuleqt-version.json") {
+                const QJsonObject d{{QStringLiteral("url"), http.url(QStringLiteral("/ff.zip")).toString()},
+                                    {QStringLiteral("sha256"), QString::fromLatin1(fileSha256(ffZip))},
+                                    {QStringLiteral("size"), zipBytes.size()}};
+                const QJsonObject ff{{QStringLiteral("version"), QStringLiteral("live")},
+                                     {QStringLiteral("downloads"), QJsonObject{{VersionManifest::platformKey(), d}}}};
+                return {200, QJsonDocument(QJsonObject{{QStringLiteral("latest"), QStringLiteral("9.9.9")},
+                                                       {QStringLiteral("ffmpeg"), ff}}).toJson()};
+            }
+            QFile f(QDir(hls).filePath(QString::fromLatin1(path.mid(1))));
+            if (path.contains("..") || !f.open(QIODevice::ReadOnly))
+                return {404, {}};
+            const QByteArray type = path.endsWith(".m3u8") ? "application/vnd.apple.mpegurl" : "video/mp2t";
+            return {200, f.readAll(), {{"Content-Type", type}}};
+        };
+
+        Ed3kFfmpegTool tool(tmp.filePath(QStringLiteral("ed3k")));
+        tool.setManifestUrl(http.url(QStringLiteral("/emuleqt-version.json")));
+        tool.setAllowed(true);
+        tool.locate();
+        QCOMPARE(tool.state(), Ed3kFfmpegTool::State::Missing);
+
+        Ed3kJdResolver resolver;
+        JdResolverConfig cfg;
+        cfg.java = java.runtime()->java;
+        cfg.dataDir = tmp.filePath(QStringLiteral("resolver"));
+        cfg.zip = zip;
+        cfg.loopbackHosters = true;   // the guard lets 127.0.0.1 through
+        resolver.setConfig(cfg);
+        QVERIFY2(resolver.available(), qPrintable(resolver.unavailableReason()));
+        // DaemonApp's wiring
+        int asked = 0;
+        connect(&resolver, &Ed3kJdResolver::toolsNeeded, this, [&] {
+            ++asked;
+            if (!tool.download())
+                resolver.toolsFailed(tool.error());
+        });
+        connect(&tool, &Ed3kFfmpegTool::stateChanged, this, [&] {
+            if (tool.state() == Ed3kFfmpegTool::State::Ready) {
+                JdResolverConfig c = resolver.config();
+                c.ffmpeg = tool.ffmpeg();
+                c.ffprobe = tool.ffprobe();
+                resolver.setConfig(c);
+            } else if (tool.state() == Ed3kFfmpegTool::State::Failed) {
+                resolver.toolsFailed(tool.error());
+            }
+        });
+        std::vector<ResolverEvent> seen;
+        connect(&resolver, &Ed3kResolver::taskEvent, this,
+                [&seen](Ed3kResolver::TaskId, const ResolverEvent& e) { seen.push_back(e); });
+        const auto final = [&seen]() -> const ResolverEvent* {
+            for (const ResolverEvent& e : seen)
+                if (e.isFinal())
+                    return &e;
+            return nullptr;
+        };
+        const QString dir = tmp.filePath(QStringLiteral("t"));
+        QDir().mkpath(dir);
+        // m3u8:// keeps JD's m3u8 crawler (a plain loopback URL would go to DirectHTTP)
+        resolver.open(QStringLiteral("m3u8://") + http.url(QStringLiteral("/stream.m3u8")).toString(), std::nullopt, dir, 0);
+        QTRY_VERIFY_WITH_TIMEOUT(final(), 600000);
+        const ResolverEvent* done = final();
+        QVERIFY2(done->kind == ResolverEvent::Kind::Done, qPrintable(done->code + QLatin1Char(' ') + done->text));
+        QCOMPARE(asked, 1);
+        QCOMPARE(tool.state(), Ed3kFfmpegTool::State::Ready);
+        QVERIFY(std::ranges::any_of(seen, [](const ResolverEvent& e) {
+            return e.kind == ResolverEvent::Kind::Status && e.text == QLatin1StringView("ffmpeg");
+        }));
+        QVERIFY(std::ranges::any_of(seen, [](const ResolverEvent& e) { return e.muxed; }));
+        qInfo("HLS done: %s, %llu bytes", qPrintable(done->name), qulonglong(QFileInfo(done->path).size()));
+        QVERIFY(QFileInfo(done->path).size() > 10000);
     }
 
     /// Temurin fetched from adoptium.net, its SHA-256 checked, unpacked with tar and found.

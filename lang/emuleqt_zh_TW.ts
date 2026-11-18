@@ -12733,6 +12733,11 @@ Its files go to the incoming folder, below a folder of the set&apos;s own; new v
     </message>
     <message>
         <location line="+2"/>
+        <source>Getting ffmpeg for the stream</source>
+        <translation>正在取得用於此串流的 ffmpeg</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Connecting for the transfer</source>
         <translation>正在連線以傳輸</translation>
     </message>
@@ -19033,22 +19038,22 @@ Enter：下一頁，Esc：清除</translation>
     <message>
         <location line="+36"/>
         <source>Phone</source>
-        <translation type="unfinished"></translation>
+        <translation>手機</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>ed3k Node ID</source>
-        <translation type="unfinished"></translation>
+        <translation>ed3k 節點 ID</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Phones that reach this core over the ed3k tunnel without a port forward</source>
-        <translation type="unfinished"></translation>
+        <translation>無需連接埠轉送、透過 ed3k 通道連線此核心的手機</translation>
     </message>
     <message>
         <location line="+18"/>
         <source>Paired phones:</source>
-        <translation type="unfinished"></translation>
+        <translation>已配對的手機：</translation>
     </message>
     <message>
         <location line="+2"/>

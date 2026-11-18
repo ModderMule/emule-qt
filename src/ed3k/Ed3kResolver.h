@@ -96,13 +96,15 @@ struct ResolverEvent {
         Done,         ///< open: the whole file is at path (size, name, hash)
         Gone,         ///< the hoster says the file was removed
         NeedsUser,    ///< text: "puzzle" or "login"
-        Failed,       ///< code: "io", "defect", "failed", "noPlugin", "folder", "unavailable", "private"
+        Failed,       ///< code: "io", "defect", "failed", "noPlugin", "folder", "unavailable", "ffmpeg"
+                      ///< (HLS/DASH and no ffmpeg came, text: why), "private"
                       ///< (a request to a non-public address refused, text: the host); openContainer
                       ///< also "limit" (the DLC service refuses for a while), "invalid", "password",
                       ///< "bad" (a resolver without containers); text
         Cancelled,
         Account,      ///< accountCheck: valid, premium, expires, trafficLeft, maxDownloads; multi, hosts, state
-        Status,       ///< open: what the plugin does, text: "link", "hoster", "hosterAccount", "puzzle", "connect", "transfer"
+        Status,       ///< open: what the plugin does, text: "link", "hoster", "hosterAccount", "puzzle", "ffmpeg"
+                      ///< (waits for the daemon's ffmpeg), "connect", "transfer"
         Solvers,      ///< setSolverAccounts: solvers
         Solved,       ///< solveTest: text, host (the solver), name (the expected text, if known)
         AccountHosts, ///< accountHosts: accountHosts

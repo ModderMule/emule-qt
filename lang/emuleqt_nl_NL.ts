@@ -12783,6 +12783,11 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
     </message>
     <message>
         <location line="+2"/>
+        <source>Getting ffmpeg for the stream</source>
+        <translation>ffmpeg ophalen voor de stream</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Connecting for the transfer</source>
         <translation>Verbinden voor de overdracht</translation>
     </message>
@@ -19110,22 +19115,22 @@ Enter: volgende pagina, Esc: wissen</translation>
     <message>
         <location line="+36"/>
         <source>Phone</source>
-        <translation type="unfinished"></translation>
+        <translation>Telefoon</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>ed3k Node ID</source>
-        <translation type="unfinished"></translation>
+        <translation>ed3k-node-ID</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Phones that reach this core over the ed3k tunnel without a port forward</source>
-        <translation type="unfinished"></translation>
+        <translation>Telefoons die deze core via de ed3k-tunnel bereiken zonder port forwarding</translation>
     </message>
     <message>
         <location line="+18"/>
         <source>Paired phones:</source>
-        <translation type="unfinished"></translation>
+        <translation>Gekoppelde telefoons:</translation>
     </message>
     <message>
         <location line="+2"/>

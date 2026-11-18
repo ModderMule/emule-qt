@@ -309,6 +309,11 @@ private:
     [[nodiscard]] QString volumeOf(const QString& path);
     /// The hash of a file eD2K just read (SideSink): cached, and shared when listed.
     void primeHash(const QByteArray& md4, const QString& path, qint64 mtimeMs, const FileHash& hashed);
+    /// primeHash while stopped (an ed3k-only file hashed for its key, ed3k off): cached on
+    /// disk for the next start, no second read then
+    void primeStopped(const QByteArray& md4, const QString& path, qint64 mtimeMs, const FileHash& hashed);
+    /// primeStopped's index save, now (start/stop)
+    void flushStoppedSave();
     /// @p hashed into the cache: values stored on disk first, then the index.
     Hashed& remember(const QByteArray& md4, const QString& path, qint64 mtimeMs, const FileHash& hashed);
     /// queue drained: one summary line, run reset
@@ -392,6 +397,9 @@ private:
     mutable QTimer m_recheckTimer;
     QTimer m_priorityTimer;
     QTimer m_aliasRetry;   ///< alias-only files whose join shares the root a moment later
+    QTimer m_stoppedSave;  ///< primeStopped: the index saved once a burst is over
+    bool m_stoppedDirty = false;   ///< primeStopped changed the index, not saved yet
+    bool m_cacheLoaded = false;   ///< loadCache() ran: m_cache holds the index (stop() keeps it)
     std::function<bool(const QString&)> m_neverShared;
     bool m_ed2kHashing = true;
     QHash<QByteArray, QString> m_aliasOnly;   ///< pathKeyOf → path, setAliasOnlyFiles
