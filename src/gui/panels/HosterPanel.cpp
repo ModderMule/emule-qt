@@ -179,6 +179,8 @@ QString stepText(const QString& step)
         return HosterPanel::tr("Logging in, talking to the hoster");
     if (step == u"puzzle")
         return HosterPanel::tr("Solving a captcha");
+    if (step == u"ffmpeg")
+        return HosterPanel::tr("Getting ffmpeg for the stream");
     if (step == u"connect")
         return HosterPanel::tr("Connecting for the transfer");
     return step;

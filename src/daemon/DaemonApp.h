@@ -46,7 +46,7 @@ class I2pRouter;
 
 namespace usenet { class UsenetSession; }
 namespace bt { class BtSession; struct BtSettings; }
-namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; class Ed3kTorrentJoin; class Ed3kEd2kJoin; class Ed3kShared; class SharedFileSource; class Ed3kFriends; class Ed3kRooms; class Ed3kBootstrap; class Ed3kNames; class Ed3kSiteServer; class Ed3kCredit; class Ed3kUploads; class Ed3kFilters; class Ed3kChain; class Ed3kHosterJoin; class Ed3kLinkGrabber; class Ed3kHosterCatalog; class Ed3kJdResolver; class Ed3kJavaRuntime; class Ed3kResolverUpdater; class Ed3kDownloads; class Ed3kSearch; class Ed3kSets; class Ed3kLive; class Ed3kLiveBroadcast; class Ed3kPaid; class Ed3kPaidSeller; class Ed3kOwnSets; class Ed3kArchiveContents; }
+namespace ed3k { class Ed3kSession; class Ed3kUsenetJoin; class UsenetJoinQueue; class Ed3kTorrentJoin; class Ed3kEd2kJoin; class Ed3kShared; class SharedFileSource; class Ed3kFriends; class Ed3kRooms; class Ed3kBootstrap; class Ed3kNames; class Ed3kSiteServer; class Ed3kCredit; class Ed3kUploads; class Ed3kFilters; class Ed3kChain; class Ed3kHosterJoin; class Ed3kLinkGrabber; class Ed3kHosterCatalog; class Ed3kJdResolver; class Ed3kJavaRuntime; class Ed3kFfmpegTool; class Ed3kResolverUpdater; class Ed3kDownloads; class Ed3kSearch; class Ed3kSets; class Ed3kLive; class Ed3kLiveBroadcast; class Ed3kPaid; class Ed3kPaidSeller; class Ed3kOwnSets; class Ed3kArchiveContents; }
 namespace indexer { class IndexerFeedList; class IndexerSearchList; }
 
 class DaemonApp : public QObject {
@@ -298,6 +298,8 @@ private:
     /// the JDownloader sidecar and the Java runtime it runs on
     std::unique_ptr<ed3k::Ed3kJdResolver> m_jdResolver;
     std::unique_ptr<ed3k::Ed3kJavaRuntime> m_javaRuntime;
+    /// ffmpeg + ffprobe for HLS/DASH hoster links: found or fetched when the resolver asks
+    std::unique_ptr<ed3k::Ed3kFfmpegTool> m_ffmpegTool;
     /// newer resolver.zip from the update manifest (ed3kHosterAutoUpdate)
     std::unique_ptr<ed3k::Ed3kResolverUpdater> m_resolverUpdater;
     QString m_hosterSharedWarned;   ///< read-only sharedPluginDir already logged

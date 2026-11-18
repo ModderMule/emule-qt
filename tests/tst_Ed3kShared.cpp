@@ -1016,7 +1016,8 @@ int envInt(const char* name, int fallback)
 } // namespace
 
 // eD2K disabled: the share list keys a file by its root's head (KnownFile::isEd3kOnly), the
-// side hasher gives that root with ed3k off too; shared without an ed2k name or ALIAS
+// side hasher gives that root with ed3k off too, its block hashes kept for the next start
+// (no second read); shared without an ed2k name or ALIAS
 void tst_Ed3kShared::ed3kOnlyFilesAreSharedWithoutAnEd2kName()
 {
     const QByteArray data = payload(int(kBlock + 777), 7);
@@ -1037,16 +1038,19 @@ void tst_Ed3kShared::ed3kOnlyFilesAreSharedWithoutAnEd2kName()
         QVERIFY(side);
         side->update({reinterpret_cast<const std::byte*>(data.constData()), std::size_t(data.size())});
         QCOMPARE(side->root(), rootBytes);
-        side->finish(rootBytes.left(16), path, quint64(data.size()), 0);   // stopped: nothing kept
+        // was: stopped: nothing kept (read again at start)
+        side->finish(rootBytes.left(16), path, quint64(data.size()), QFileInfo(path).lastModified().toMSecsSinceEpoch());
+        QCoreApplication::processEvents();   // the queued result
         QCOMPARE(shared.hashCount(), 0);
-    }
+    }   // ~Ed3kShared: saved
     SharedEntry e{rootBytes.left(16), path, QStringLiteral("only.bin"), std::uint64_t(data.size())};
     e.ed3kOnly = true;
     src.entries.push_back(e);
     Ed3kShared shared(a, src, da.path());
     QSignalSpy spy(&shared, &Ed3kShared::fileShared);
     shared.start();
-    QTRY_COMPARE_WITH_TIMEOUT(spy.count(), 1, 20000);
+    QCOMPARE(spy.count(), 1);   // from the cache, no read
+    QCOMPARE(shared.hashCount(), 0);
     QCOMPARE(*shared.rootOf(e.md4), root);
     QVERIFY(shared.holdsRoot(root));
     QVERIFY(!shared.aliasPublished(e.md4));

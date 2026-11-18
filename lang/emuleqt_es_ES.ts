@@ -1466,7 +1466,7 @@ Download it again?</source>
         <translation>Añadir torrent</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+99"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+100"/>
         <source>Delete</source>
         <translation>Eliminar</translation>
     </message>
@@ -5321,7 +5321,7 @@ Reintenta el último núcleo o introduce la dirección y el token de autenticaci
         <translation>Mostrar un código QR que la app qDonkey escanea para llegar a este núcleo</translation>
     </message>
     <message>
-        <location line="+180"/>
+        <location line="+196"/>
         <source>The core did not answer.</source>
         <translation>El núcleo no respondió.</translation>
     </message>
@@ -5370,7 +5370,7 @@ Si es la dirección pública de tu router, el núcleo debe escuchar en todas las
         <translation type="vanished">Este núcleo solo acepta conexiones de este equipo. Pon Opciones › General › Núcleo › Dirección en 0.0.0.0 (o una dirección LAN), reinicia y redirige el puerto TCP %1 en el router.</translation>
     </message>
     <message>
-        <location line="-172"/>
+        <location line="-188"/>
         <source>Enter the address other computers reach this core at.</source>
         <translation>Introduce la dirección con la que otros equipos llegan a este núcleo.</translation>
     </message>
@@ -12727,6 +12727,11 @@ Si su proveedor intenta limitar o bloquear eMule, la ofuscación ayuda a sortear
     </message>
     <message>
         <location line="+2"/>
+        <source>Getting ffmpeg for the stream</source>
+        <translation>Obteniendo ffmpeg para la transmisión</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Connecting for the transfer</source>
         <translation>Conectando para la transferencia</translation>
     </message>
@@ -13803,7 +13808,7 @@ Si su proveedor intenta limitar o bloquear eMule, la ofuscación ayuda a sortear
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1205"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1208"/>
         <source>The core&apos;s certificate changed</source>
         <translation>El certificado del núcleo ha cambiado</translation>
     </message>
@@ -15896,7 +15901,7 @@ Los demás miembros ven tu nick y tus mensajes; tu nodo participa en la retransm
 <context>
     <name>eMule::MainWindow</name>
     <message>
-        <location filename="../src/gui/app/MainWindow.cpp" line="+142"/>
+        <location filename="../src/gui/app/MainWindow.cpp" line="+144"/>
         <location line="+861"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
@@ -15924,12 +15929,12 @@ Los demás miembros ven tu nick y tus mensajes; tu nodo participa en la retransm
     </message>
     <message>
         <location line="+12"/>
-        <location line="+1724"/>
+        <location line="+1738"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: Desconectado</translation>
     </message>
     <message>
-        <location line="-1638"/>
+        <location line="-1652"/>
         <source>Kad: Connected</source>
         <translation>Kad: Conectado</translation>
     </message>
@@ -15945,7 +15950,7 @@ Los demás miembros ven tu nick y tus mensajes; tu nodo participa en la retransm
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1641"/>
+        <location line="+1655"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: Desconectado</translation>
     </message>
@@ -15995,14 +16000,14 @@ Los demás miembros ven tu nick y tus mensajes; tu nodo participa en la retransm
         <translation>Características</translation>
     </message>
     <message>
-        <location line="-1205"/>
+        <location line="-1219"/>
         <location line="+7"/>
-        <location line="+1201"/>
+        <location line="+1215"/>
         <source>Version Check</source>
         <translation>Comprobar versión</translation>
     </message>
     <message>
-        <location line="-1313"/>
+        <location line="-1327"/>
         <source>Quit eMule Qt</source>
         <translation>Salir de eMule Qt</translation>
     </message>
@@ -16346,7 +16351,7 @@ El núcleo está desvinculado: sigue en ejecución con todas las descargas y sub
         <translation>Entrada de registro</translation>
     </message>
     <message>
-        <location line="+176"/>
+        <location line="+190"/>
         <source>eMule Log</source>
         <translation>Registro de eMule</translation>
     </message>
@@ -24364,17 +24369,22 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
 <context>
     <name>eMule::PhonePairDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/PhonePairDialog.cpp" line="+53"/>
+        <location filename="../src/gui/dialogs/PhonePairDialog.cpp" line="+54"/>
         <source>Pair Phone</source>
         <translation>Vincular teléfono</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>Scan this code with the qDonkey app, or send the link to the phone. The phone must reach this address: same network, a VPN such as Tailscale, or a forwarded port.</source>
         <translation>Escanea este código con la app qDonkey o envía el enlace al teléfono. El teléfono debe poder llegar a esta dirección: misma red, una VPN como Tailscale o un puerto redirigido.</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+2"/>
+        <source>Scan this code with the qDonkey app, or send the link to the phone. On the same network the phone connects directly; elsewhere it goes through ed3k, without a forwarded port or a VPN. The code pairs one phone and is valid for 10 minutes.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+12"/>
         <source>Include core token</source>
         <translation>Incluir token del núcleo</translation>
     </message>
@@ -24567,15 +24577,15 @@ La(s) palabra(s) clave usada(s) en una búsqueda en Kad debe(n) tener un mínimo
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+418"/>
-        <location line="+1276"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+425"/>
+        <location line="+1278"/>
         <location line="+21"/>
         <location line="+626"/>
         <source>Download</source>
         <translation>Descarga</translation>
     </message>
     <message>
-        <location line="-1903"/>
+        <location line="-1905"/>
         <source>Close All Searches</source>
         <translation>Cerrar todas las búsquedas</translation>
     </message>
@@ -24733,7 +24743,7 @@ La(s) palabra(s) clave usada(s) en una búsqueda en Kad debe(n) tener un mínimo
         <translation>Códec:</translation>
     </message>
     <message>
-        <location line="+3107"/>
+        <location line="+3109"/>
         <source>ed3k download added: %1</source>
         <translation>Descarga ed3k añadida: %1</translation>
     </message>
@@ -24747,7 +24757,7 @@ La(s) palabra(s) clave usada(s) en una búsqueda en Kad debe(n) tener un mínimo
         <translation type="vanished">Tasa mín. [kbps]:</translation>
     </message>
     <message>
-        <location line="-3100"/>
+        <location line="-3102"/>
         <source>Min. Length [s]:</source>
         <translation>Duración mín. [s]:</translation>
     </message>
@@ -24901,12 +24911,12 @@ La(s) palabra(s) clave usada(s) en una búsqueda en Kad debe(n) tener un mínimo
         <translation>La búsqueda «%1» falló: %2</translation>
     </message>
     <message>
-        <location line="-751"/>
+        <location line="-757"/>
         <source>Usenet search</source>
         <translation>Búsqueda en Usenet</translation>
     </message>
     <message>
-        <location line="+995"/>
+        <location line="+1001"/>
         <source>%1 results — %2 of %3 indexers</source>
         <translation>%1 resultados — %2 de %3 indexadores</translation>
     </message>
@@ -24962,7 +24972,7 @@ La(s) palabra(s) clave usada(s) en una búsqueda en Kad debe(n) tener un mínimo
         <translation>Copiar &amp;nombre</translation>
     </message>
     <message>
-        <location line="+105"/>
+        <location line="+107"/>
         <source>%1 (%2)</source>
         <translation>%1 (%2)</translation>
     </message>
@@ -24980,8 +24990,8 @@ La(s) palabra(s) clave usada(s) en una búsqueda en Kad debe(n) tener un mínimo
         <translation type="vanished">Descargar torrent</translation>
     </message>
     <message>
-        <location line="-126"/>
-        <location line="+151"/>
+        <location line="-128"/>
+        <location line="+153"/>
         <source>Copy Magnet Link</source>
         <translation>Copiar enlace magnet</translation>
     </message>
@@ -24994,18 +25004,18 @@ La(s) palabra(s) clave usada(s) en una búsqueda en Kad debe(n) tener un mínimo
         <translation type="vanished">Descargar contenedor...</translation>
     </message>
     <message>
-        <location line="-140"/>
-        <location line="+163"/>
+        <location line="-142"/>
+        <location line="+165"/>
         <source>Details...</source>
         <translation>Detalles...</translation>
     </message>
     <message>
-        <location line="-1623"/>
+        <location line="-1631"/>
         <source>Torrent search</source>
         <translation>Búsqueda de torrents</translation>
     </message>
     <message>
-        <location line="+133"/>
+        <location line="+139"/>
         <location line="+216"/>
         <source>Torrent (Indexer)</source>
         <translation>Torrent (indexador)</translation>
@@ -25120,7 +25130,7 @@ La(s) palabra(s) clave usada(s) en una búsqueda en Kad debe(n) tener un mínimo
     </message>
     <message>
         <location line="+232"/>
-        <location line="+147"/>
+        <location line="+149"/>
         <source>Save NZB File...</source>
         <translation>Guardar archivo NZB...</translation>
     </message>
@@ -25276,8 +25286,8 @@ La(s) palabra(s) clave usada(s) en una búsqueda en Kad debe(n) tener un mínimo
         <translation>Marcar como spam</translation>
     </message>
     <message>
-        <location line="-291"/>
-        <location line="+148"/>
+        <location line="-293"/>
+        <location line="+150"/>
         <source>Save Torrent File...</source>
         <translation>Guardar archivo torrent...</translation>
     </message>
@@ -26148,30 +26158,30 @@ Carpeta:	%13</translation>
 <context>
     <name>eMule::SharedFilesPanel</name>
     <message>
-        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+849"/>
+        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+858"/>
         <source>Shared Files (0)</source>
         <translation>Archivos compartidos (0)</translation>
     </message>
     <message>
-        <location line="-368"/>
+        <location line="-370"/>
         <source>Open File</source>
         <translation>Abrir archivo</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1647"/>
+        <location line="+1649"/>
         <location line="+531"/>
         <source>Open Folder</source>
         <translation>Abrir carpeta</translation>
     </message>
     <message>
-        <location line="-2166"/>
+        <location line="-2168"/>
         <source>Rename...</source>
         <translation>Renombrar...</translation>
     </message>
     <message>
         <location line="+197"/>
-        <location line="+2011"/>
+        <location line="+2013"/>
         <source>Copy eD2K Links</source>
         <translation>Copiar enlaces eD2K</translation>
     </message>
@@ -26184,8 +26194,8 @@ Carpeta:	%13</translation>
         <translation type="vanished">Nuevo nombre de archivo:</translation>
     </message>
     <message>
-        <location line="-2189"/>
-        <location line="+2151"/>
+        <location line="-2191"/>
+        <location line="+2153"/>
         <source>Delete From Disk</source>
         <translation>Eliminar del disco</translation>
     </message>
@@ -26200,12 +26210,12 @@ Carpeta:	%13</translation>
         <translation>¿Está seguro de que desea eliminar permanentemente &quot;%1&quot; del disco?</translation>
     </message>
     <message>
-        <location line="-1085"/>
+        <location line="-1087"/>
         <source>Unshare</source>
         <translation>Dejar de compartir</translation>
     </message>
     <message>
-        <location line="+1140"/>
+        <location line="+1142"/>
         <source>Unshare File</source>
         <translation>Dejar de compartir archivo</translation>
     </message>
@@ -26219,32 +26229,32 @@ The file will remain on disk.</source>
 El archivo permanecerá en el disco.</translation>
     </message>
     <message>
-        <location line="-1123"/>
-        <location line="+2131"/>
+        <location line="-1125"/>
+        <location line="+2133"/>
         <source>Priority (Upload)</source>
         <translation>Prioridad (Subida)</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+2133"/>
+        <location line="-2118"/>
+        <location line="+2135"/>
         <source>Very Low</source>
         <translation>Muy baja</translation>
     </message>
     <message>
-        <location line="-2132"/>
-        <location line="+2133"/>
+        <location line="-2134"/>
+        <location line="+2135"/>
         <source>Low</source>
         <translation>Baja</translation>
     </message>
     <message>
-        <location line="-2132"/>
-        <location line="+2133"/>
+        <location line="-2134"/>
+        <location line="+2135"/>
         <source>Normal</source>
         <translation>Normal</translation>
     </message>
     <message>
-        <location line="-2132"/>
-        <location line="+2133"/>
+        <location line="-2134"/>
+        <location line="+2135"/>
         <source>High</source>
         <translation>Alta</translation>
     </message>
@@ -26253,13 +26263,13 @@ El archivo permanecerá en el disco.</translation>
         <translation type="vanished">Muy alta</translation>
     </message>
     <message>
-        <location line="-2130"/>
-        <location line="+2132"/>
+        <location line="-2132"/>
+        <location line="+2134"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-2118"/>
+        <location line="-2120"/>
         <source>Collection</source>
         <translation>Colección</translation>
     </message>
@@ -26296,24 +26306,24 @@ El archivo permanecerá en el disco.</translation>
     </message>
     <message>
         <location line="+19"/>
-        <location line="+2022"/>
+        <location line="+2024"/>
         <source>Details...</source>
         <translation>Detalles...</translation>
     </message>
     <message>
-        <location line="-2015"/>
-        <location line="+2018"/>
+        <location line="-2017"/>
+        <location line="+2020"/>
         <source>Comments...</source>
         <translation>Comentarios...</translation>
     </message>
     <message>
-        <location line="-2002"/>
-        <location line="+2008"/>
+        <location line="-2004"/>
+        <location line="+2010"/>
         <source>eD2K Links...</source>
         <translation>Enlaces eD2K...</translation>
     </message>
     <message>
-        <location line="-1945"/>
+        <location line="-1947"/>
         <source>Find...</source>
         <translation>Buscar...</translation>
     </message>
@@ -26323,7 +26333,7 @@ El archivo permanecerá en el disco.</translation>
         <translation>Servicios web</translation>
     </message>
     <message>
-        <location line="+77"/>
+        <location line="+79"/>
         <source>Reload</source>
         <translation>Recargar</translation>
     </message>
@@ -26484,7 +26494,7 @@ El archivo permanecerá en el disco.</translation>
         <translation>Copiar</translation>
     </message>
     <message>
-        <location line="-934"/>
+        <location line="-936"/>
         <source>All</source>
         <translation>Todas</translation>
     </message>
@@ -26495,24 +26505,24 @@ El archivo permanecerá en el disco.</translation>
     </message>
     <message>
         <location line="+57"/>
-        <location line="+2133"/>
+        <location line="+2135"/>
         <source>Release</source>
         <translation>Publicación</translation>
     </message>
     <message>
-        <location line="-2105"/>
-        <location line="+1524"/>
+        <location line="-2107"/>
+        <location line="+1526"/>
         <source>Create ed3k Set...</source>
         <translation>Crear set ed3k...</translation>
     </message>
     <message>
-        <location line="-1516"/>
-        <location line="+1518"/>
+        <location line="-1518"/>
+        <location line="+1520"/>
         <source>Publish New Version...</source>
         <translation>Publicar nueva versión...</translation>
     </message>
     <message>
-        <location line="-1395"/>
+        <location line="-1397"/>
         <source>Move to Anonymous ed3k Key...</source>
         <translation>Mover a la clave ed3k anónima...</translation>
     </message>
@@ -26523,17 +26533,17 @@ El archivo permanecerá en el disco.</translation>
     </message>
     <message>
         <location line="+21"/>
-        <location line="+1465"/>
+        <location line="+1467"/>
         <source>Create Torrent...</source>
         <translation>Crear torrent...</translation>
     </message>
     <message>
-        <location line="-1450"/>
+        <location line="-1452"/>
         <source>Add To IRC Clipboard</source>
         <translation>Añadir al portapapeles de IRC</translation>
     </message>
     <message>
-        <location line="+100"/>
+        <location line="+102"/>
         <source>Rescan the shared directories. Hold %1 to re-read the media information of all shared files instead.</source>
         <translation>Volver a examinar los directorios compartidos. Mantenga pulsado %1 para volver a leer la información multimedia de todos los archivos compartidos.</translation>
     </message>
@@ -31860,97 +31870,97 @@ Hacer clic de nuevo en «Restaurar estadísticas» volverá a cargar sus estadí
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+806"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+809"/>
         <source>Downloads</source>
         <translation>Descargas</translation>
     </message>
     <message>
-        <location line="-484"/>
+        <location line="-481"/>
         <location line="+361"/>
-        <location line="+29"/>
+        <location line="+26"/>
         <source>Priority (Download)</source>
         <translation>Prioridad (Descarga)</translation>
     </message>
     <message>
-        <location line="-361"/>
-        <location line="+2320"/>
+        <location line="-358"/>
+        <location line="+2317"/>
         <location line="+196"/>
         <source>Low</source>
         <translation>Baja</translation>
     </message>
     <message>
-        <location line="-2515"/>
-        <location line="+2319"/>
+        <location line="-2512"/>
+        <location line="+2316"/>
         <location line="+197"/>
         <source>Normal</source>
         <translation>Normal</translation>
     </message>
     <message>
-        <location line="-2515"/>
-        <location line="+2318"/>
+        <location line="-2512"/>
+        <location line="+2315"/>
         <location line="+198"/>
         <source>High</source>
         <translation>Alta</translation>
     </message>
     <message>
-        <location line="-2512"/>
-        <location line="+2516"/>
+        <location line="-2509"/>
+        <location line="+2513"/>
         <source>Very Low</source>
         <translation>Muy baja</translation>
     </message>
     <message>
-        <location line="-2514"/>
-        <location line="+2516"/>
+        <location line="-2511"/>
+        <location line="+2513"/>
         <source>Very High</source>
         <translation>Muy alta</translation>
     </message>
     <message>
-        <location line="-2514"/>
-        <location line="+2517"/>
+        <location line="-2511"/>
+        <location line="+2514"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-2506"/>
+        <location line="-2503"/>
         <location line="+311"/>
-        <location line="+535"/>
+        <location line="+532"/>
         <location line="+1467"/>
         <source>Pause</source>
         <translation>Pausa</translation>
     </message>
     <message>
-        <location line="-2304"/>
+        <location line="-2301"/>
         <location line="+302"/>
-        <location line="+541"/>
+        <location line="+538"/>
         <location line="+1463"/>
         <source>Stop</source>
         <translation>Detener</translation>
     </message>
     <message>
-        <location line="-2297"/>
+        <location line="-2294"/>
         <location line="+293"/>
-        <location line="+547"/>
+        <location line="+544"/>
         <location line="+1459"/>
         <source>Resume</source>
         <translation>Reanudar</translation>
     </message>
     <message>
-        <location line="-2006"/>
-        <location line="+553"/>
+        <location line="-2003"/>
+        <location line="+550"/>
         <location line="+1455"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>Cancelar</translation>
     </message>
     <message>
-        <location line="-2259"/>
+        <location line="-2256"/>
         <location line="+249"/>
-        <location line="+23"/>
+        <location line="+20"/>
         <source>Preview with</source>
         <translation>Vista previa con</translation>
     </message>
     <message>
-        <location line="-260"/>
+        <location line="-257"/>
         <source>Pause when preview is possible</source>
         <translation>Pausar cuando la vista previa sea posible</translation>
     </message>
@@ -31966,44 +31976,46 @@ Hacer clic de nuevo en «Restaurar estadísticas» volverá a cargar sus estadí
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1589"/>
+        <location line="+1586"/>
         <location line="+1"/>
         <location line="+10"/>
         <source>Import parts to file...</source>
         <translation>Importar partes al archivo...</translation>
     </message>
     <message>
-        <location line="-1595"/>
+        <location line="-1592"/>
         <location line="+185"/>
-        <location line="+20"/>
+        <location line="+17"/>
         <source>Mass Rename...</source>
         <translation>Renombrado masivo...</translation>
     </message>
     <message>
-        <location line="-163"/>
+        <location line="-160"/>
         <location line="+144"/>
-        <location line="+19"/>
+        <location line="+16"/>
         <source>Source Handling</source>
         <translation>Gestión de fuentes</translation>
     </message>
     <message>
-        <location line="-162"/>
+        <location line="-159"/>
         <source>Add Sources...</source>
         <translation>Añadir fuentes...</translation>
     </message>
     <message>
         <location line="+3"/>
+        <location line="+1484"/>
         <location line="+1487"/>
         <source>Source Limit...</source>
         <translation>Límite de fuentes...</translation>
     </message>
     <message>
-        <location line="-1483"/>
+        <location line="-2968"/>
+        <location line="+2964"/>
         <source>Swap All A4AF Sources to This File</source>
         <translation>Pasar todas las fuentes A4AF a este archivo</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-2962"/>
         <source>cannot swap sources.</source>
         <translation>no se pueden cambiar las fuentes.</translation>
     </message>
@@ -32016,7 +32028,7 @@ Hacer clic de nuevo en «Restaurar estadísticas» volverá a cargar sus estadí
         </translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+16"/>
         <source>Copy eD2K Links</source>
         <translation>Copiar enlaces eD2K</translation>
     </message>
@@ -32025,7 +32037,7 @@ Hacer clic de nuevo en «Restaurar estadísticas» volverá a cargar sus estadí
         <translation type="vanished">Sets ed3k...</translation>
     </message>
     <message>
-        <location line="+74"/>
+        <location line="+76"/>
         <source>New...</source>
         <translation>Nueva...</translation>
     </message>
@@ -32041,7 +32053,7 @@ Hacer clic de nuevo en «Restaurar estadísticas» volverá a cargar sus estadí
         <translation>Eliminar</translation>
     </message>
     <message>
-        <location line="+45"/>
+        <location line="+42"/>
         <source>Move to Anonymous ed3k Key...</source>
         <translation>Mover a la clave ed3k anónima...</translation>
     </message>
@@ -32252,27 +32264,27 @@ Las fuentes verán la dirección de este nodo; se pierden los puestos en cola.</
         <translation type="vanished">Nombre de archivo:</translation>
     </message>
     <message>
-        <location line="-2985"/>
+        <location line="-2982"/>
         <location line="+266"/>
-        <location line="+558"/>
+        <location line="+555"/>
         <location line="+685"/>
         <source>Open File</source>
         <translation>Abrir archivo</translation>
     </message>
     <message>
-        <location line="-1500"/>
+        <location line="-1497"/>
         <location line="+2"/>
         <location line="+255"/>
-        <location line="+23"/>
+        <location line="+20"/>
         <location line="+549"/>
         <location line="+728"/>
         <source>Preview</source>
         <translation>Vista previa</translation>
     </message>
     <message>
-        <location line="-1516"/>
+        <location line="-1513"/>
         <location line="+215"/>
-        <location line="+24"/>
+        <location line="+21"/>
         <location line="+2221"/>
         <location line="+18"/>
         <location line="+123"/>
@@ -32281,33 +32293,33 @@ Las fuentes verán la dirección de este nodo; se pierden los puestos en cola.</
         <translation>Detalles...</translation>
     </message>
     <message>
-        <location line="-2608"/>
+        <location line="-2605"/>
         <location line="+206"/>
-        <location line="+24"/>
+        <location line="+21"/>
         <source>Comments...</source>
         <translation>Comentarios...</translation>
     </message>
     <message>
-        <location line="-170"/>
+        <location line="-167"/>
         <location line="+147"/>
-        <location line="+623"/>
+        <location line="+620"/>
         <source>Clear Completed</source>
         <translation>Limpiar completados</translation>
     </message>
     <message>
-        <location line="-723"/>
+        <location line="-722"/>
         <source>eD2K Links...</source>
         <translation>Enlaces eD2K...</translation>
     </message>
     <message>
-        <location line="+2891"/>
+        <location line="+2890"/>
         <source>Paste eD2K Links</source>
         <translation>Pegar enlaces eD2K</translation>
     </message>
     <message>
-        <location line="-2856"/>
-        <location line="+67"/>
-        <location line="+2232"/>
+        <location line="-2855"/>
+        <location line="+69"/>
+        <location line="+2229"/>
         <location line="+17"/>
         <location line="+113"/>
         <location line="+93"/>
@@ -32315,22 +32327,24 @@ Las fuentes verán la dirección de este nodo; se pierden los puestos en cola.</
         <translation>Buscar...</translation>
     </message>
     <message>
-        <location line="-2514"/>
-        <location line="+62"/>
-        <location line="+10"/>
+        <location line="-2513"/>
+        <location line="+64"/>
+        <location line="+7"/>
         <location line="+10"/>
         <source>Search Related Files</source>
         <translation>Buscar archivos relacionados</translation>
     </message>
     <message>
-        <location line="-73"/>
+        <location line="-72"/>
+        <location line="+55"/>
+        <location line="+17"/>
         <source>Web Services</source>
         <translation>Servicios web</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="-59"/>
         <location line="+38"/>
-        <location line="+26"/>
+        <location line="+23"/>
         <location line="+577"/>
         <source>Assign To Category</source>
         <translation>Asignar a categoría</translation>
@@ -32369,8 +32383,8 @@ Las fuentes verán la dirección de este nodo; se pierden los puestos en cola.</
         <translation>Clientes en cola:   0</translation>
     </message>
     <message>
-        <location line="-519"/>
-        <location line="+639"/>
+        <location line="-516"/>
+        <location line="+636"/>
         <source>(Unassign)</source>
         <translation>(Desasignar)</translation>
     </message>

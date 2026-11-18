@@ -1394,7 +1394,7 @@ Heeft commentaren</translation>
         <translation>Torrent toevoegen</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+99"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+100"/>
         <source>Delete</source>
         <translation>Verwijderen</translation>
     </message>
@@ -5076,7 +5076,7 @@ Probeer de laatste core opnieuw of voer het adres en authenticatietoken van een 
         <translation>Een QR-code tonen die de qDonkey-app scant om deze core te bereiken</translation>
     </message>
     <message>
-        <location line="+180"/>
+        <location line="+196"/>
         <source>The core did not answer.</source>
         <translation>De core heeft niet geantwoord.</translation>
     </message>
@@ -5125,7 +5125,7 @@ Op alle adressen luisteren?</translation>
         <translation type="vanished">Deze core accepteert alleen verbindingen van deze computer. Zet Opties › Algemeen › Core › Adres op 0.0.0.0 (of een LAN-adres), herstart en stuur TCP-poort %1 door in de router.</translation>
     </message>
     <message>
-        <location line="-172"/>
+        <location line="-188"/>
         <source>Enter the address other computers reach this core at.</source>
         <translation>Voer het adres in waarop andere computers deze core bereiken.</translation>
     </message>
@@ -12354,6 +12354,11 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
     </message>
     <message>
         <location line="+2"/>
+        <source>Getting ffmpeg for the stream</source>
+        <translation>ffmpeg ophalen voor de stream</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Connecting for the transfer</source>
         <translation>Verbinden voor de overdracht</translation>
     </message>
@@ -13430,7 +13435,7 @@ De bestanden gaan naar de map met binnenkomende bestanden, in een eigen map van 
 <context>
     <name>eMule::IpcClient</name>
     <message>
-        <location filename="../src/gui/app/IpcClient.cpp" line="+1205"/>
+        <location filename="../src/gui/app/IpcClient.cpp" line="+1208"/>
         <source>The core&apos;s certificate changed</source>
         <translation>Het certificaat van de core is gewijzigd</translation>
     </message>
@@ -15495,7 +15500,7 @@ Andere leden zien uw schuilnaam en berichten; uw node helpt de berichten van de 
 <context>
     <name>eMule::MainWindow</name>
     <message>
-        <location filename="../src/gui/app/MainWindow.cpp" line="+142"/>
+        <location filename="../src/gui/app/MainWindow.cpp" line="+144"/>
         <location line="+861"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
@@ -15557,12 +15562,12 @@ U gebruikt %2. De website van eMule Qt openen?</translation>
     <message>
         <location line="+21"/>
         <location line="+7"/>
-        <location line="+1201"/>
+        <location line="+1215"/>
         <source>Version Check</source>
         <translation>Versiecontrole</translation>
     </message>
     <message>
-        <location line="-1207"/>
+        <location line="-1221"/>
         <source>You are running the latest version of eMule Qt (v%1).</source>
         <translation>U gebruikt de nieuwste versie van eMule Qt (v%1).</translation>
     </message>
@@ -15621,12 +15626,12 @@ Schakel er minstens één in onder Opties → Verbinding om te verbinden.</trans
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1724"/>
+        <location line="+1738"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: verbinding verbroken</translation>
     </message>
     <message>
-        <location line="-1715"/>
+        <location line="-1729"/>
         <source>eD2K Server: %1  (%2 Users)</source>
         <translation>eD2K-server: %1  (%2 gebruikers)</translation>
     </message>
@@ -15667,12 +15672,12 @@ Schakel er minstens één in onder Opties → Verbinding om te verbinden.</trans
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1641"/>
+        <location line="+1655"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: verbinding verbroken</translation>
     </message>
     <message>
-        <location line="-1597"/>
+        <location line="-1611"/>
         <source>ed3k: Connected</source>
         <translation>ed3k: verbonden</translation>
     </message>
@@ -15742,12 +15747,12 @@ Router: %6</translation>
         <translation>verborgen (%1/%2 paden)</translation>
     </message>
     <message>
-        <location line="+2544"/>
+        <location line="+2558"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Gebruikers: %1 | Bestanden: %2</translation>
     </message>
     <message>
-        <location line="-2498"/>
+        <location line="-2512"/>
         <source>Up: %1(%2)</source>
         <translation>Uit: %1(%2)</translation>
     </message>
@@ -15876,7 +15881,7 @@ De core is losgekoppeld: hij blijft draaien met alle downloads en uploads. Open 
         <translation>Logregel</translation>
     </message>
     <message>
-        <location line="+176"/>
+        <location line="+190"/>
         <source>eMule Log</source>
         <translation>eMule-log</translation>
     </message>
@@ -15906,7 +15911,7 @@ De core is losgekoppeld: hij blijft draaien met alle downloads en uploads. Open 
         <translation>eMule-instellingenwizard voor eerste keer...</translation>
     </message>
     <message>
-        <location line="-840"/>
+        <location line="-854"/>
         <source>Unlimited</source>
         <translation>Onbeperkt</translation>
     </message>
@@ -15935,7 +15940,7 @@ Dubbelklik om te wijzigen</translation>
         <translation>Poorttest mislukt: een probe kwam niet door</translation>
     </message>
     <message>
-        <location line="+634"/>
+        <location line="+648"/>
         <source>IP Filter...</source>
         <translation>IP-filter...</translation>
     </message>
@@ -23847,17 +23852,22 @@ Alle gedeelde bestanden nu opnieuw hashen?</translation>
 <context>
     <name>eMule::PhonePairDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/PhonePairDialog.cpp" line="+53"/>
+        <location filename="../src/gui/dialogs/PhonePairDialog.cpp" line="+54"/>
         <source>Pair Phone</source>
         <translation>Telefoon koppelen</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>Scan this code with the qDonkey app, or send the link to the phone. The phone must reach this address: same network, a VPN such as Tailscale, or a forwarded port.</source>
         <translation>Scan deze code met de qDonkey-app of stuur de link naar de telefoon. De telefoon moet dit adres kunnen bereiken: hetzelfde netwerk, een VPN zoals Tailscale of een doorgestuurde poort.</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+2"/>
+        <source>Scan this code with the qDonkey app, or send the link to the phone. On the same network the phone connects directly; elsewhere it goes through ed3k, without a forwarded port or a VPN. The code pairs one phone and is valid for 10 minutes.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+12"/>
         <source>Include core token</source>
         <translation>Core-token meesturen</translation>
     </message>
@@ -24050,20 +24060,20 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+315"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+322"/>
         <source>Related</source>
         <translation>Gerelateerd</translation>
     </message>
     <message>
         <location line="+103"/>
-        <location line="+1276"/>
+        <location line="+1278"/>
         <location line="+21"/>
         <location line="+626"/>
         <source>Download</source>
         <translation>Downloaden</translation>
     </message>
     <message>
-        <location line="-1903"/>
+        <location line="-1905"/>
         <source>Close All Searches</source>
         <translation>Alle zoekopdrachten sluiten</translation>
     </message>
@@ -24181,12 +24191,12 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>ed3k</translation>
     </message>
     <message>
-        <location line="-124"/>
+        <location line="-130"/>
         <source>Torrent search</source>
         <translation>Torrent zoeken</translation>
     </message>
     <message>
-        <location line="+125"/>
+        <location line="+131"/>
         <source>ed3k Channel (live)</source>
         <translation>ed3k-kanaal (live)</translation>
     </message>
@@ -24417,12 +24427,12 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>Zoeken naar &quot;%1&quot; mislukt: %2</translation>
     </message>
     <message>
-        <location line="-751"/>
+        <location line="-757"/>
         <source>Usenet search</source>
         <translation>Usenet zoeken</translation>
     </message>
     <message>
-        <location line="+995"/>
+        <location line="+1001"/>
         <source>%1 results — %2 of %3 indexers</source>
         <translation>%1 resultaten — %2 van %3 indexers</translation>
     </message>
@@ -24477,7 +24487,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation>&amp;Naam kopiëren</translation>
     </message>
     <message>
-        <location line="+97"/>
+        <location line="+99"/>
         <source>Watch</source>
         <translation>Bekijken</translation>
     </message>
@@ -24500,14 +24510,14 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation type="vanished">Torrent downloaden</translation>
     </message>
     <message>
-        <location line="-129"/>
-        <location line="+148"/>
+        <location line="-131"/>
+        <location line="+150"/>
         <source>Save Torrent File...</source>
         <translation>Torrentbestand opslaan...</translation>
     </message>
     <message>
-        <location line="-145"/>
-        <location line="+151"/>
+        <location line="-147"/>
+        <location line="+153"/>
         <source>Copy Magnet Link</source>
         <translation>Magnet-link kopiëren</translation>
     </message>
@@ -24520,13 +24530,13 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
         <translation type="vanished">Container downloaden...</translation>
     </message>
     <message>
-        <location line="-140"/>
-        <location line="+163"/>
+        <location line="-142"/>
+        <location line="+165"/>
         <source>Details...</source>
         <translation>Details...</translation>
     </message>
     <message>
-        <location line="-724"/>
+        <location line="-726"/>
         <source>No torrent indexer is configured.</source>
         <translation>Er is geen torrent-indexer ingesteld.</translation>
     </message>
@@ -24600,7 +24610,7 @@ Zoekwoord(en) in Kad-zoekuitdrukkingen moeten minimaal 3 tekens lang zijn.</tran
     </message>
     <message>
         <location line="+232"/>
-        <location line="+147"/>
+        <location line="+149"/>
         <source>Save NZB File...</source>
         <translation>NZB-bestand opslaan...</translation>
     </message>
@@ -25619,12 +25629,12 @@ Map:	%13</translation>
 <context>
     <name>eMule::SharedFilesPanel</name>
     <message>
-        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+849"/>
+        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+858"/>
         <source>Shared Files (0)</source>
         <translation>Gedeelde bestanden (0)</translation>
     </message>
     <message>
-        <location line="-477"/>
+        <location line="-479"/>
         <source>All</source>
         <translation>Alle</translation>
     </message>
@@ -25635,13 +25645,13 @@ Map:	%13</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1647"/>
+        <location line="+1649"/>
         <location line="+531"/>
         <source>Open Folder</source>
         <translation>Map openen</translation>
     </message>
     <message>
-        <location line="-2166"/>
+        <location line="-2168"/>
         <source>Rename...</source>
         <translation>Hernoemen...</translation>
     </message>
@@ -25652,59 +25662,59 @@ Map:	%13</translation>
     </message>
     <message>
         <location line="+12"/>
-        <location line="+2151"/>
+        <location line="+2153"/>
         <source>Delete From Disk</source>
         <translation>Van schijf verwijderen</translation>
     </message>
     <message>
-        <location line="-2136"/>
+        <location line="-2138"/>
         <source>Unshare</source>
         <translation>Niet delen</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+2131"/>
+        <location line="+2133"/>
         <source>Priority (Upload)</source>
         <translation>Prioriteit (upload)</translation>
     </message>
     <message>
-        <location line="-2116"/>
-        <location line="+2133"/>
+        <location line="-2118"/>
+        <location line="+2135"/>
         <source>Very Low</source>
         <translation>Zeer laag</translation>
     </message>
     <message>
-        <location line="-2132"/>
-        <location line="+2133"/>
+        <location line="-2134"/>
+        <location line="+2135"/>
         <source>Low</source>
         <translation>Laag</translation>
     </message>
     <message>
-        <location line="-2132"/>
-        <location line="+2133"/>
+        <location line="-2134"/>
+        <location line="+2135"/>
         <source>Normal</source>
         <translation>Normaal</translation>
     </message>
     <message>
-        <location line="-2132"/>
-        <location line="+2133"/>
+        <location line="-2134"/>
+        <location line="+2135"/>
         <source>High</source>
         <translation>Hoog</translation>
     </message>
     <message>
-        <location line="-2132"/>
-        <location line="+2133"/>
+        <location line="-2134"/>
+        <location line="+2135"/>
         <source>Release</source>
         <translation>Uitgave</translation>
     </message>
     <message>
-        <location line="-2131"/>
-        <location line="+2132"/>
+        <location line="-2133"/>
+        <location line="+2134"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-2118"/>
+        <location line="-2120"/>
         <source>Collection</source>
         <translation>Collectie</translation>
     </message>
@@ -25715,18 +25725,18 @@ Map:	%13</translation>
     </message>
     <message>
         <location line="+9"/>
-        <location line="+1524"/>
+        <location line="+1526"/>
         <source>Create ed3k Set...</source>
         <translation>ed3k-set maken...</translation>
     </message>
     <message>
-        <location line="-1516"/>
-        <location line="+1518"/>
+        <location line="-1518"/>
+        <location line="+1520"/>
         <source>Publish New Version...</source>
         <translation>Nieuwe versie publiceren...</translation>
     </message>
     <message>
-        <location line="-1511"/>
+        <location line="-1513"/>
         <source>Modify Collection...</source>
         <translation>Collectie wijzigen...</translation>
     </message>
@@ -25753,24 +25763,24 @@ Map:	%13</translation>
     </message>
     <message>
         <location line="+19"/>
-        <location line="+2022"/>
+        <location line="+2024"/>
         <source>Details...</source>
         <translation>Details...</translation>
     </message>
     <message>
-        <location line="-2015"/>
-        <location line="+2018"/>
+        <location line="-2017"/>
+        <location line="+2020"/>
         <source>Comments...</source>
         <translation>Commentaar...</translation>
     </message>
     <message>
-        <location line="-2002"/>
-        <location line="+2008"/>
+        <location line="-2004"/>
+        <location line="+2010"/>
         <source>eD2K Links...</source>
         <translation>eD2K-links...</translation>
     </message>
     <message>
-        <location line="-1988"/>
+        <location line="-1990"/>
         <source>Move to Anonymous ed3k Key...</source>
         <translation>Naar anonieme ed3k-sleutel verplaatsen...</translation>
     </message>
@@ -25781,12 +25791,12 @@ Map:	%13</translation>
     </message>
     <message>
         <location line="+21"/>
-        <location line="+1465"/>
+        <location line="+1467"/>
         <source>Create Torrent...</source>
         <translation>Torrent maken...</translation>
     </message>
     <message>
-        <location line="-1450"/>
+        <location line="-1452"/>
         <source>Add To IRC Clipboard</source>
         <translation>Toevoegen aan IRC-klembord</translation>
     </message>
@@ -25801,7 +25811,7 @@ Map:	%13</translation>
         <translation>Webdiensten</translation>
     </message>
     <message>
-        <location line="+77"/>
+        <location line="+79"/>
         <source>Reload</source>
         <translation>Herladen</translation>
     </message>
@@ -26181,8 +26191,8 @@ Ze worden dan gepubliceerd met het adres van deze node: iedereen kan zien dat de
         <translation>Kon gesleept bestand niet delen (%1)</translation>
     </message>
     <message>
-        <location line="-2233"/>
-        <location line="+2011"/>
+        <location line="-2235"/>
+        <location line="+2013"/>
         <source>Copy eD2K Links</source>
         <translation>eD2K-links kopiëren</translation>
     </message>
@@ -31075,110 +31085,110 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+322"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+328"/>
         <location line="+361"/>
-        <location line="+29"/>
+        <location line="+26"/>
         <source>Priority (Download)</source>
         <translation>Prioriteit (download)</translation>
     </message>
     <message>
-        <location line="-361"/>
-        <location line="+2320"/>
+        <location line="-358"/>
+        <location line="+2317"/>
         <location line="+196"/>
         <source>Low</source>
         <translation>Laag</translation>
     </message>
     <message>
-        <location line="-2515"/>
-        <location line="+2319"/>
+        <location line="-2512"/>
+        <location line="+2316"/>
         <location line="+197"/>
         <source>Normal</source>
         <translation>Normaal</translation>
     </message>
     <message>
-        <location line="-2515"/>
-        <location line="+2318"/>
+        <location line="-2512"/>
+        <location line="+2315"/>
         <location line="+198"/>
         <source>High</source>
         <translation>Hoog</translation>
     </message>
     <message>
-        <location line="-2512"/>
-        <location line="+2516"/>
+        <location line="-2509"/>
+        <location line="+2513"/>
         <source>Very Low</source>
         <translation>Zeer laag</translation>
     </message>
     <message>
-        <location line="-2514"/>
-        <location line="+2516"/>
+        <location line="-2511"/>
+        <location line="+2513"/>
         <source>Very High</source>
         <translation>Zeer hoog</translation>
     </message>
     <message>
-        <location line="-2514"/>
-        <location line="+2517"/>
+        <location line="-2511"/>
+        <location line="+2514"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-2506"/>
+        <location line="-2503"/>
         <location line="+311"/>
-        <location line="+535"/>
+        <location line="+532"/>
         <location line="+1467"/>
         <source>Pause</source>
         <translation>Pauzeren</translation>
     </message>
     <message>
-        <location line="-2304"/>
+        <location line="-2301"/>
         <location line="+302"/>
-        <location line="+541"/>
+        <location line="+538"/>
         <location line="+1463"/>
         <source>Stop</source>
         <translation>Stoppen</translation>
     </message>
     <message>
-        <location line="-2297"/>
+        <location line="-2294"/>
         <location line="+293"/>
-        <location line="+547"/>
+        <location line="+544"/>
         <location line="+1459"/>
         <source>Resume</source>
         <translation>Hervatten</translation>
     </message>
     <message>
-        <location line="-2006"/>
-        <location line="+553"/>
+        <location line="-2003"/>
+        <location line="+550"/>
         <location line="+1455"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>Annuleren</translation>
     </message>
     <message>
-        <location line="-2276"/>
+        <location line="-2273"/>
         <location line="+266"/>
-        <location line="+558"/>
+        <location line="+555"/>
         <location line="+685"/>
         <source>Open File</source>
         <translation>Bestand openen</translation>
     </message>
     <message>
-        <location line="-1500"/>
+        <location line="-1497"/>
         <location line="+2"/>
         <location line="+255"/>
-        <location line="+23"/>
+        <location line="+20"/>
         <location line="+549"/>
         <location line="+728"/>
         <source>Preview</source>
         <translation>Voorvertoning</translation>
     </message>
     <message>
-        <location line="-1549"/>
+        <location line="-1546"/>
         <location line="+249"/>
-        <location line="+23"/>
+        <location line="+20"/>
         <source>Preview with</source>
         <translation>Voorvertonen met</translation>
     </message>
     <message>
-        <location line="-260"/>
+        <location line="-257"/>
         <source>Pause when preview is possible</source>
         <translation>Pauzeren indien voorvertoning mogelijk is</translation>
     </message>
@@ -31190,7 +31200,7 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
     <message>
         <location line="+9"/>
         <location line="+215"/>
-        <location line="+24"/>
+        <location line="+21"/>
         <location line="+2221"/>
         <location line="+18"/>
         <location line="+123"/>
@@ -31199,64 +31209,66 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>Details...</translation>
     </message>
     <message>
-        <location line="-2608"/>
+        <location line="-2605"/>
         <location line="+206"/>
-        <location line="+24"/>
+        <location line="+21"/>
         <source>Comments...</source>
         <translation>Commentaar...</translation>
     </message>
     <message>
-        <location line="-209"/>
+        <location line="-206"/>
         <source>Stop Import parts to file</source>
         <translation>Importeren van delen in bestand stoppen</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1589"/>
+        <location line="+1586"/>
         <location line="+1"/>
         <location line="+10"/>
         <source>Import parts to file...</source>
         <translation>Delen importeren in bestand...</translation>
     </message>
     <message>
-        <location line="-1595"/>
+        <location line="-1592"/>
         <location line="+185"/>
-        <location line="+20"/>
+        <location line="+17"/>
         <source>Mass Rename...</source>
         <translation>Massaal hernoemen...</translation>
     </message>
     <message>
-        <location line="-171"/>
+        <location line="-168"/>
         <location line="+147"/>
-        <location line="+623"/>
+        <location line="+620"/>
         <source>Clear Completed</source>
         <translation>Voltooide wissen</translation>
     </message>
     <message>
-        <location line="-762"/>
+        <location line="-759"/>
         <location line="+144"/>
-        <location line="+19"/>
+        <location line="+16"/>
         <source>Source Handling</source>
         <translation>Bronbeheer</translation>
     </message>
     <message>
-        <location line="-162"/>
+        <location line="-159"/>
         <source>Add Sources...</source>
         <translation>Bronnen toevoegen...</translation>
     </message>
     <message>
         <location line="+3"/>
+        <location line="+1484"/>
         <location line="+1487"/>
         <source>Source Limit...</source>
         <translation>Bronlimiet...</translation>
     </message>
     <message>
-        <location line="-1483"/>
+        <location line="-2968"/>
+        <location line="+2964"/>
         <source>Swap All A4AF Sources to This File</source>
         <translation>Alle A4AF-bronnen naar dit bestand wisselen</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-2962"/>
         <source>cannot swap sources.</source>
         <translation>bronnen kunnen niet worden gewisseld.</translation>
     </message>
@@ -31269,7 +31281,7 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         </translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+16"/>
         <source>Copy eD2K Links</source>
         <translation>eD2K-links kopiëren</translation>
     </message>
@@ -31279,7 +31291,7 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>eD2K-links...</translation>
     </message>
     <message>
-        <location line="+2891"/>
+        <location line="+2890"/>
         <source>Paste eD2K Links</source>
         <translation>eD2K-verwijzingen plakken</translation>
     </message>
@@ -31288,9 +31300,9 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation type="vanished">ed3k-sets...</translation>
     </message>
     <message>
-        <location line="-2856"/>
-        <location line="+67"/>
-        <location line="+2232"/>
+        <location line="-2855"/>
+        <location line="+69"/>
+        <location line="+2229"/>
         <location line="+17"/>
         <location line="+113"/>
         <location line="+93"/>
@@ -31298,39 +31310,41 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>Zoeken...</translation>
     </message>
     <message>
-        <location line="-2514"/>
-        <location line="+62"/>
-        <location line="+10"/>
+        <location line="-2513"/>
+        <location line="+64"/>
+        <location line="+7"/>
         <location line="+10"/>
         <source>Search Related Files</source>
         <translation>Zoeken naar bestanden met samenhang</translation>
     </message>
     <message>
-        <location line="-73"/>
+        <location line="-72"/>
+        <location line="+55"/>
+        <location line="+17"/>
         <source>Web Services</source>
         <translation>Webdiensten</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="-59"/>
         <location line="+38"/>
-        <location line="+26"/>
+        <location line="+23"/>
         <location line="+577"/>
         <source>Assign To Category</source>
         <translation>Toewijzen aan categorie</translation>
     </message>
     <message>
-        <location line="-636"/>
+        <location line="-633"/>
         <source>New...</source>
         <translation>Nieuw...</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+639"/>
+        <location line="+636"/>
         <source>(Unassign)</source>
         <translation>(Toewijzing opheffen)</translation>
     </message>
     <message>
-        <location line="-621"/>
+        <location line="-618"/>
         <location line="+12"/>
         <source>Show Toolbar</source>
         <translation>Werkbalk tonen</translation>
@@ -31341,7 +31355,7 @@ Opnieuw klikken op &apos;Statistieken herstellen&apos; herlaadt uw huidige stati
         <translation>Verwijderen</translation>
     </message>
     <message>
-        <location line="+45"/>
+        <location line="+42"/>
         <source>Move to Anonymous ed3k Key...</source>
         <translation>Naar anonieme ed3k-sleutel verplaatsen...</translation>
     </message>

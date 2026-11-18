@@ -530,6 +530,9 @@ final class Jd {
             if (r == SkipReason.NO_ACCOUNT) {
                 return needsUser(id, "login");
             }
+            if (r == SkipReason.FFMPEG_MISSING || r == SkipReason.FFPROBE_MISSING) {
+                return errorEvent(id, "ffmpeg", r.name());
+            }
             return errorEvent(id, "skipped", r.name());
         }
         if (e instanceof PluginException) {

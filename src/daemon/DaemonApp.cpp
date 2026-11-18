@@ -104,6 +104,7 @@
 #include "Ed3kLinkGrabber.h"
 #ifdef EMULE_HAVE_HOSTER_JD
 #include "Ed3kJavaRuntime.h"
+#include "Ed3kFfmpegTool.h"
 #include "Ed3kStore.h"
 #include "Ed3kJdResolver.h"
 #include "Ed3kResolverUpdater.h"
@@ -899,6 +900,38 @@ bool DaemonApp::start()
             QDir(QFileInfo(thePrefs.configDir()).absolutePath()).filePath(QStringLiteral("runtime/jre")));
         resolver = m_jdResolver.get();
         java = m_javaRuntime.get();
+        m_ffmpegTool = std::make_unique<ed3k::Ed3kFfmpegTool>(ed3k::stateDir(thePrefs.configDir()));
+        // an HLS/DASH link and the sidecar has no ffmpeg: one found since, or ours fetched
+        connect(m_jdResolver.get(), &ed3k::Ed3kJdResolver::toolsNeeded, this, [this] {
+            const QString had = m_jdResolver->config().ffmpeg;
+            m_ffmpegTool->locate();
+            if (m_ffmpegTool->state() == ed3k::Ed3kFfmpegTool::State::Ready) {
+                if (m_ffmpegTool->ffmpeg() != had)
+                    applyHosterConfig();   // the new paths go to the sidecar
+                else
+                    m_jdResolver->toolsFailed(QStringLiteral("%1 is not usable").arg(had));
+                return;
+            }
+            if (!m_ffmpegTool->download())
+                m_jdResolver->toolsFailed(m_ffmpegTool->error());
+        });
+        connect(m_ffmpegTool.get(), &ed3k::Ed3kFfmpegTool::stateChanged, this, [this] {
+            using S = ed3k::Ed3kFfmpegTool::State;
+            switch (m_ffmpegTool->state()) {
+            case S::Ready:
+                if (m_ffmpegTool->ffmpeg() != m_jdResolver->config().ffmpeg)
+                    applyHosterConfig();
+                break;
+            case S::Failed:
+                m_jdResolver->toolsFailed(m_ffmpegTool->error());
+                break;
+            case S::Missing:   // download switched off
+                m_jdResolver->toolsFailed(QStringLiteral("hoster downloads are off"));
+                break;
+            default:   // progress
+                break;
+            }
+        });
         m_resolverUpdater = std::make_unique<ed3k::Ed3kResolverUpdater>(
             QDir(thePrefs.configDir()).filePath(QStringLiteral("ed3k/resolver/update")));
         // a new zip: the resolver swaps it in once its sidecar is idle
@@ -1303,6 +1336,7 @@ void DaemonApp::stop()
     m_hosterJoin.reset();
 #ifdef EMULE_HAVE_HOSTER_JD
     m_resolverUpdater.reset();
+    m_ffmpegTool.reset();   // its signals reach the resolver
     m_jdResolver.reset();
     m_javaRuntime.reset();
 #endif
@@ -1916,7 +1950,7 @@ void DaemonApp::applyHosterConfig()
         }
     }
 #ifdef EMULE_HAVE_HOSTER_JD
-    if (!m_javaRuntime || !m_jdResolver)
+    if (!m_javaRuntime || !m_jdResolver || !m_ffmpegTool)
         return;
     // nothing is fetched or unpacked unless hoster downloads are on (and so is the ed3k node
     // they run on); off stops a fetch and creates nothing under config/ed3k
@@ -1939,6 +1973,10 @@ void DaemonApp::applyHosterConfig()
                              : QStringLiteral("hoster: %1 is read-only and holds no resolver plugins: per instance").arg(sharedDir));
     }
     m_javaRuntime->setAllowed(on);
+    m_ffmpegTool->setAllowed(on);
+    // once hosters are on: a cheap file lookup, no process started
+    if (on && m_ffmpegTool->state() == ed3k::Ed3kFfmpegTool::State::Unknown)
+        m_ffmpegTool->locate();
     if (on)
         m_javaRuntime->setSharedDir(sharedDir, sharedWritable);
     if (!on)
@@ -1958,10 +1996,12 @@ void DaemonApp::applyHosterConfig()
                                  : QString();
         proxy = QStringLiteral("%1://%2%3:%4").arg(scheme, auth, p.host).arg(p.port);
         m_javaRuntime->setProxy(toNetworkProxy(p));
+        m_ffmpegTool->setProxy(toNetworkProxy(p));
         if (m_resolverUpdater)
             m_resolverUpdater->setProxy(toNetworkProxy(p));
     } else {
         m_javaRuntime->setProxy(QNetworkProxy(QNetworkProxy::DefaultProxy));
+        m_ffmpegTool->setProxy(QNetworkProxy(QNetworkProxy::DefaultProxy));
         if (m_resolverUpdater)
             m_resolverUpdater->setProxy(QNetworkProxy(QNetworkProxy::DefaultProxy));
     }
@@ -1969,6 +2009,8 @@ void DaemonApp::applyHosterConfig()
     if (const auto rt = m_javaRuntime->runtime())
         cfg.java = rt->java;
     cfg.dataDir = QDir(thePrefs.configDir()).filePath(QStringLiteral("ed3k/resolver"));
+    cfg.ffmpeg = m_ffmpegTool->ffmpeg();
+    cfg.ffprobe = m_ffmpegTool->ffprobe();
     if (sharedPlugins)
         cfg.sharedDir = sharedDir;
     cfg.zip = ed3k::Ed3kJdResolver::findBundledZip();

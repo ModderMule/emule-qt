@@ -32,6 +32,16 @@ struct HosterResolverRelease {
     int api = 0;          ///< sidecar protocol (ResolverMain.PROTOCOL); 0 = not given, never auto-installed
 };
 
+/// "ffmpeg": ffmpeg + ffprobe for the hoster resolver's HLS/DASH downloads (Ed3kFfmpegTool).
+/// Per platform key one zip holding both binaries (docs/ffmpeg-tools.local.md).
+struct FfmpegRelease {
+    QString version;                           ///< e.g. "8.0.1"; empty = not given
+    QHash<QString, VersionDownload> downloads; ///< keyed "windows-x64", "mac-arm64", ...
+
+    /// This platform's zip, empty when absent.
+    [[nodiscard]] VersionDownload forPlatform() const;
+};
+
 /// One "skins" entry, written by scripts/publish-skin.py. Keyed by id in the manifest.
 struct SkinRelease {
     QString id;            ///< ini base name, [A-Za-z0-9][A-Za-z0-9._-]{0,63}
@@ -60,6 +70,7 @@ struct VersionManifestInfo {
     QString downloadUrl;   ///< this platform's usable "downloads" URL, empty otherwise
     QHash<QString, VersionDownload> downloads; ///< every entry, keyed "mac-arm64", ...
     HosterResolverRelease hosterResolver;      ///< empty file.url: none
+    FfmpegRelease ffmpeg;                      ///< empty downloads: none
     QList<SkinRelease> skins;  ///< installable ones only, sorted by name
     QString error;         ///< why the document could not be used; empty on success
 

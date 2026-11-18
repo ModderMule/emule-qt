@@ -13,6 +13,7 @@
 #include "utils/Opcodes.h"
 
 #include <QByteArray>
+#include <QFile>
 #include <QObject>
 
 #include <atomic>
@@ -379,6 +380,13 @@ protected:
     [[nodiscard]] bool completeSourcesDue(time_t now) const { return now - m_completeSourcesTime > 0; }
 
 private:
+    /// createFromFile*: opens the file, checks it against @p scanned and takes its name,
+    /// size and date. false: not to be read (open failed or changed since the scan)
+    bool openForHashing(QFile& file, const QString& directory, const QString& filename,
+                        const FileStamp* scanned, bool* changedSinceScan);
+    /// createFromFile*: size or date moved during the read (still being written)
+    [[nodiscard]] bool changedWhileHashed() const;
+
     void pruneKadNotes();  // drop expired entries, then cap to the newest N
 
     /// Flag every peer we are uploading this file to, so its next OP_FILEDESC carries
