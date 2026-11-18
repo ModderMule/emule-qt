@@ -11,6 +11,7 @@
 #include "Ed3kSession.h"
 #include "Ed3kStore.h"
 
+#include "utils/FileTypeFilter.h"
 #include "utils/Log.h"
 
 #include <QDir>
@@ -145,7 +146,7 @@ std::expected<std::uint32_t, QString> Ed3kSets::follow(const QString& link, Poli
                                             && s.parsed.b3 == parsed->b3);
         if (same) {
             if (exts)
-                s.exts = ed3kNormalizeExts(*exts);
+                s.exts = normalizeFileTypes(*exts);
             setPolicy(id, policy);
             return id;
         }
@@ -157,7 +158,7 @@ std::expected<std::uint32_t, QString> Ed3kSets::follow(const QString& link, Poli
     s.policy = policy;
     s.title = parsed->name;
     if (exts)
-        s.exts = ed3kNormalizeExts(*exts);
+        s.exts = normalizeFileTypes(*exts);
     if (!dir.trimmed().isEmpty()) {
         s.dir = QDir::cleanPath(QDir(dir.trimmed()).absolutePath());
         s.dirByUser = true;
@@ -222,7 +223,7 @@ bool Ed3kSets::setFilter(std::uint32_t id, const std::optional<QStringList>& ext
     if (!s)
         return false;
     if (exts)
-        s->exts = ed3kNormalizeExts(*exts);
+        s->exts = normalizeFileTypes(*exts);
     else
         s->exts.reset();
     if (s->policy == Policy::Download) {
@@ -1018,7 +1019,7 @@ QStringList Ed3kSets::filterOf(const Set& s) const
         return *s.exts;
     if (QStringList author = authorExtsOf(s); !author.isEmpty())
         return author;
-    return ed3kDefaultSetExts();
+    return defaultSetFileTypes();
 }
 
 QStringList Ed3kSets::authorExtsOf(const Set& s) const
@@ -1056,7 +1057,7 @@ void Ed3kSets::decideNew(Set& s)
         if (const auto it = s.known.find(m.path); it != s.known.end() && it->second == root)
             continue;   // decided already
         // §5.3: Browse waits for the user's tick, Download takes the filter's file types
-        if (s.policy == Policy::Download && ed3kExtMatches(m.path.section(QLatin1Char('/'), -1), filter))
+        if (s.policy == Policy::Download && fileTypeMatches(m.path.section(QLatin1Char('/'), -1), filter))
             s.skipped.remove(m.path);
         else
             s.skipped.insert(m.path);
@@ -1076,7 +1077,7 @@ void Ed3kSets::chooseByFilter(Set& s)
         if (m.isSet)
             continue;
         s.known[m.path] = hexOf(m.root.bytes);
-        if (ed3kExtMatches(m.path.section(QLatin1Char('/'), -1), filter))
+        if (fileTypeMatches(m.path.section(QLatin1Char('/'), -1), filter))
             continue;
         // chosen and here or on its way: stays
         const auto d = m_downloads.info(m.root);
@@ -1131,7 +1132,7 @@ void Ed3kSets::load()
             QStringList list;
             for (const QJsonValue& x : e.toArray())
                 list << x.toString();
-            s.exts = ed3kNormalizeExts(list);
+            s.exts = normalizeFileTypes(list);
         }
         s.dirByUser = o.value(QStringLiteral("dirByUser")).toBool();
         const QJsonObject known = o.value(QStringLiteral("known")).toObject();

@@ -229,8 +229,10 @@ public:
     int importEd3kRoomAdmit(const QString& text, ResponseCallback callback = nullptr);
     /// Mutes a member ID of a room here alone (room.md §6); false unmutes.
     int muteEd3kRoomMember(const QString& room, const QString& memberId, bool on, ResponseCallback callback = nullptr);
-    /// Owner: media and history limits of a room (room.md §2.1); mediaMax 0 = no media.
-    int setEd3kRoomLimits(const QString& room, qint64 mediaMax, int keepHours, int keepPosts, ResponseCallback callback = nullptr);
+    /// Owner: media and history limits of a room (room.md §2.1); mediaMax 0 = no media;
+    /// @p files: other small files too (§2.6).
+    int setEd3kRoomLimits(const QString& room, qint64 mediaMax, int keepHours, int keepPosts, bool files,
+                          ResponseCallback callback = nullptr);
     /// A post with a file (room.md §2.6), sent in parts; @p callback gets the last answer.
     void postEd3kRoomMedia(const QString& room, const QString& text, const QString& replyTo, const QByteArray& data,
                            const QString& name, int width, int height, ResponseCallback callback = nullptr);

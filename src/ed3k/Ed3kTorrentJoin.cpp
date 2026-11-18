@@ -1140,13 +1140,16 @@ void Ed3kTorrentJoin::onTorrentComplete(const QString& id)
     for (std::size_t i = 0; i < j->members.size(); ++i)
         if (const auto m = j->torrent.member(i); m && m->root)
             memberRoots.push_back(*m->root);
-    if (withholdSet(id, memberRoots))
-        logInfo(QStringLiteral("set of \"%1\" not published: a member is under the anonymous key").arg(torrentName));
-    // was: if (auto ok = e->setPublish(t, done->manifest, done->root, nameView); !ok)
-    else if (auto ok = e->setPublish(t, done->manifest, done->root, nameView); !ok)
+    // was: if (withholdSet(id, memberRoots)) (node key only); now under the members' one key
+    const auto setKey = setKeyOf(id, memberRoots);
+    if (!setKey)
+        logInfo(QStringLiteral("set of \"%1\" not published: its members are not under one key it may use (hops.md §1)").arg(torrentName));
+    // was: else if (auto ok = e->setPublish(t, done->manifest, done->root, nameView); !ok)
+    else if (auto ok = e->setPublish(t, done->manifest, done->root, nameView, ffi::SetSigner::Unsigned, nullptr, *setKey); !ok)
         logDebug([&]() -> QString { return QStringLiteral("set of \"%1\" not published (error %2)").arg(torrentName, errorName(ok.error())); });
     if (!m_holdBack && !done->aliases.empty()) {
-        if (auto ok = e->publishAlias(t, done->aliases); !ok)
+        // was: if (auto ok = e->publishAlias(t, done->aliases); !ok)
+        if (auto ok = publishAliasRecords(done->aliases); !ok)
             logDebug([&]() -> QString { return QStringLiteral("ALIAS records of \"%1\" not published (error %2)").arg(torrentName, errorName(ok.error())); });
     }
     logInfo(QStringLiteral("\"%1\" complete, torrent root %2").arg(torrentName, hexOf(done->root.bytes)));

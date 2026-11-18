@@ -4,6 +4,7 @@
 
 #include "TestHelpers.h"
 
+#include "Ed3kTunnelBridge.h"
 #include "IpcStreamBridge.h"
 
 #include "app/AppContext.h"
@@ -38,6 +39,7 @@ private slots:
     void unknownId();
     void otherTypesNotHandled();
     void identityAnswers();
+    void tunnelPeers();
 
 private:
     /// Runs one request, waits for its reply
@@ -180,6 +182,50 @@ void tst_IpcStream::identityAnswers()
     QVERIFY(r && r->fieldBool(0));
     QVERIFY(r->fieldMap(1).contains(QStringLiteral("fingerprint")));
     QCOMPARE(r->fieldMap(1).value(QStringLiteral("port")).toInteger(), qint64(thePrefs.ipcPort()));
+    // no ed3k session: no tunnel, no pair secret even when asked
+    IpcMessage pair(IpcMsgType::GetIpcIdentity);
+    pair.append(true);
+    const auto p = ask(pair);
+    QVERIFY(p && p->fieldBool(0));
+    QCOMPARE(p->fieldMap(1).value(QStringLiteral("tunnel")).toBool(), false);
+    QVERIFY(!p->fieldMap(1).contains(QStringLiteral("pairSecret")));
+}
+
+void tst_IpcStream::tunnelPeers()
+{
+    const auto run = [](IpcMessage msg) {
+        std::optional<IpcMessage> got;
+        Ed3kTunnelBridge::handleRequest(msg.withSeqId(9), [&got](const IpcMessage& r) { got = r; });
+        return got;
+    };
+    const QStringList before = thePrefs.ipcTunnelPeers();
+    const QString node = QStringLiteral("7ad13509ac378770eb81860c95502159");
+    IpcMessage reg(IpcMsgType::RegisterTunnelPeer);
+    reg.append(node.toUpper());
+    reg.append(QString());
+    auto r = run(reg);
+    QVERIFY(r && r->fieldBool(0));
+    r = run(IpcMessage(IpcMsgType::GetTunnelPeers));
+    QVERIFY(r && r->fieldBool(0));
+    const QCborArray rows = r->fieldArray(1);
+    QCOMPARE(rows.size(), before.size() + 1);
+    QCOMPARE(rows.last().toMap().value(QStringLiteral("nodeId")).toString(), node);
+    QCOMPARE(rows.last().toMap().value(QStringLiteral("name")).toString(), QStringLiteral("Phone 1"));
+    // a bad ID is refused, a second register keeps one row
+    IpcMessage bad(IpcMsgType::RegisterTunnelPeer);
+    bad.append(QStringLiteral("xyz"));
+    QVERIFY(!run(bad)->fieldBool(0));
+    QVERIFY(run(reg)->fieldBool(0));
+    QCOMPARE(run(IpcMessage(IpcMsgType::GetTunnelPeers))->fieldArray(1).size(), before.size() + 1);
+    IpcMessage rm(IpcMsgType::RemoveTunnelPeer);
+    rm.append(node);
+    QVERIFY(run(rm)->fieldBool(0));
+    QVERIFY(!run(rm)->fieldBool(0));
+    QCOMPARE(thePrefs.ipcTunnelPeers(), before);
+    // the proof: HMAC-SHA256(secret, "qdonkey-pair" || node ID), RFC 4231-style check of the shape
+    const QByteArray proof = Ed3kTunnelBridge::pairProof(QByteArray(16, 'k'), QByteArray::fromHex(node.toLatin1()));
+    QCOMPARE(proof.size(), 32);
+    QVERIFY(proof != Ed3kTunnelBridge::pairProof(QByteArray(16, 'j'), QByteArray::fromHex(node.toLatin1())));
 }
 
 QTEST_GUILESS_MAIN(tst_IpcStream)

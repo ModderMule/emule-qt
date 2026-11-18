@@ -38,6 +38,12 @@ std::vector<IncomingRequest> IncomingLog::snapshot() const
     return all;
 }
 
+size_t IncomingLog::size() const
+{
+    const QMutexLocker lock(&m_mutex);
+    return m_lookups.size() + m_other.size();
+}
+
 std::optional<IncomingRequest> IncomingLog::find(uint64 id) const
 {
     const QMutexLocker lock(&m_mutex);

@@ -14,6 +14,7 @@
 #include <QCborValue>
 #include <QDateTime>
 #include <QDir>
+#include <QHostAddress>
 #include <QFile>
 #include <QRandomGenerator>
 #include <QRegularExpression>
@@ -175,6 +176,11 @@ Ed3kRooms::Ed3kRooms(Ed3kSession& session, QObject* parent)
     connect(m_postsTimer, &QTimer::timeout, this, &Ed3kRooms::writeDirtyPosts);
     m_media = new Ed3kRoomMedia(m_session, this);
     onSessionStatus();
+    if (qEnvironmentVariableIsSet("EMULE_ED3K_ROOM_PEER")) {
+        auto* dial = new QTimer(this);
+        connect(dial, &QTimer::timeout, this, &Ed3kRooms::dialDevPeer);
+        dial->start(10'000);
+    }
 }
 
 Ed3kRooms::~Ed3kRooms()
@@ -386,7 +392,8 @@ ffi::Result<> Ed3kRooms::setInfo(const ffi::Room& room, const QString& title, co
     return ok;
 }
 
-ffi::Result<> Ed3kRooms::setLimits(const ffi::Room& room, std::uint64_t mediaMax, std::uint32_t keepHours, std::uint32_t keepPosts)
+ffi::Result<> Ed3kRooms::setLimits(const ffi::Room& room, std::uint64_t mediaMax, std::uint32_t keepHours, std::uint32_t keepPosts,
+                                   bool files)
 {
     auto* e = m_session.engine();
     if (!e)
@@ -394,7 +401,7 @@ ffi::Result<> Ed3kRooms::setLimits(const ffi::Room& room, std::uint64_t mediaMax
     const auto key = keyOf(room);
     if (!key)
         return std::unexpected(key.error());
-    auto ok = e->roomSetLimits(*key, m_session.now(), room, std::min(mediaMax, Ed3kRoomMedia::kMaxSize), keepHours, keepPosts);
+    auto ok = e->roomSetLimits(*key, m_session.now(), room, std::min(mediaMax, Ed3kRoomMedia::kMaxSize), keepHours, keepPosts, files);
     m_session.pump();
     if (ok)
         if (auto it = m_rooms.find(room); it != m_rooms.end()) {
@@ -419,6 +426,9 @@ ffi::Result<ffi::PostId> Ed3kRooms::postMedia(const ffi::Room& room, const QStri
     readLimits(it->second);
     // §2.6: no media in a room without; never above its limit
     if (it->second.mediaMax == 0 || std::uint64_t(bytes.size()) > it->second.mediaMax)
+        return std::unexpected(ffi::Error::Denied);
+    // a file that is no media only where room info sets `files`
+    if (Ed3kRoomMedia::sniffType(bytes).isEmpty() && !it->second.files)
         return std::unexpected(ffi::Error::Denied);
     auto media = m_media->add(room, *key, bytes, name, it->second.isPrivate, width, height);
     if (!media)
@@ -1038,6 +1048,7 @@ void Ed3kRooms::readLimits(Room& r)
         r.mediaMax = l->mediaMax;
         r.keepHours = l->keepHours;
         r.keepPosts = l->keepPosts;
+        r.files = l->files;
     }
 }
 
@@ -1336,6 +1347,29 @@ std::optional<ffi::Key32> Ed3kRooms::linkKey(const QString& link)
     if (q < 0)
         return std::nullopt;
     return keyFromText(QUrlQuery(link.mid(q + 1)).queryItemValue(QStringLiteral("key")));
+}
+
+void Ed3kRooms::dialDevPeer()
+{
+    // <id hex>@<port> (127.0.0.1) or <id hex>@<v4>:<port> (a node bound to one interface)
+    const QStringList parts = qEnvironmentVariable("EMULE_ED3K_ROOM_PEER").split(u'@');
+    const QByteArray id = QByteArray::fromHex(parts.value(0).toLatin1());
+    const QStringList at = parts.value(1).split(u':');
+    const QHostAddress ip(at.size() == 2 ? at[0] : QStringLiteral("127.0.0.1"));
+    const int port = at.last().toInt();
+    if (parts.size() != 2 || id.size() != 16 || ip.protocol() != QAbstractSocket::IPv4Protocol || port <= 0
+        || port > 65535 || !m_session.engine())
+        return;
+    ffi::NodeId node;
+    std::memcpy(node.bytes.data(), id.constData(), 16);
+    const quint32 v4 = ip.toIPv4Address();
+    const ffi::Source peer{node, false,
+                           ffi::Address::v4(std::uint8_t(v4 >> 24), std::uint8_t(v4 >> 16), std::uint8_t(v4 >> 8),
+                                            std::uint8_t(v4), std::uint16_t(port)),
+                           std::nullopt, {}};
+    for (const auto& [room, r] : m_rooms)
+        if (r.neighbours == 0)
+            (void)connectPeer(room, peer);
 }
 
 } // namespace eMule::ed3k

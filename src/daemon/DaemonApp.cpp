@@ -494,6 +494,7 @@ bool DaemonApp::start()
         m_usenetJoin = std::make_unique<ed3k::Ed3kUsenetJoin>(*m_ed3kSession, *m_usenetJoinQueue, thePrefs.configDir());
         m_usenetJoin->connectQueue(*queue);
         m_usenetJoin->setHoldBack(!thePrefs.ed3kShareUsenetPosts());
+        m_usenetJoin->setAnonKey(thePrefs.ed3kAnonUsenet());
         m_usenetJoin->setDeletedDays(thePrefs.ed3kDeletedFileDays());
     }
     // the share list over ed3k; also attaches on statusChanged
@@ -545,7 +546,7 @@ bool DaemonApp::start()
     m_ed3kRooms = std::make_unique<ed3k::Ed3kRooms>(*m_ed3kSession);
     Ed3kRoomsBridge::setRooms(m_ed3kRooms.get());
     // paired phones over the ed3k tunnel (ALPN emuleqt-ipc/1); listens on statusChanged
-    Ed3kTunnelBridge::setSession(m_ed3kSession.get());
+    Ed3kTunnelBridge::setSession(m_ed3kSession.get(), m_ed3kFriends.get());
     Ed3kRoomsBridge::connectPushes(*m_ed3kRooms, [this](const IpcMessage& msg) {
         if (m_ipcServer)
             m_ipcServer->broadcast(msg);
@@ -768,6 +769,7 @@ bool DaemonApp::start()
     if (theApp.downloadQueue) {
         m_ed2kJoin = std::make_unique<ed3k::Ed3kEd2kJoin>(*m_ed3kSession, *theApp.downloadQueue, thePrefs.configDir());
         m_ed2kJoin->setEnabled(thePrefs.ed3kJointDownloads());
+        m_ed2kJoin->setAnonKey(thePrefs.ed3kAnonEd2k());
         Ed3kBridge::setEd2kJoin(m_ed2kJoin.get());
         m_ed2kJoin->setRootTaken([d = m_ed3kDownloads.get()](const ::ed3k::Root& root) { return d && d->contains(root); });
         theApp.ed3kHint = [j = m_ed2kJoin.get()](UpDownClient& client, bool wait) { return j->offerHint(client, wait); };
@@ -821,6 +823,7 @@ bool DaemonApp::start()
     // hoster links (hoster.md); the resolver is the JDownloader sidecar when built in
     m_hosterJoin = std::make_unique<ed3k::Ed3kHosterJoin>(*m_ed3kSession, thePrefs.configDir());
     m_hosterJoin->setDeletedDays(thePrefs.ed3kDeletedFileDays());
+    m_hosterJoin->setAnonKey(thePrefs.ed3kAnonHoster());
     // what unpacked archives hold (hoster.md §6.1): read on the unpacker's thread, published here.
     // Made after the usenet and hoster joins: joins start on statusChanged in this order, so
     // their loadDeleted (aliasKeepDeleted) comes before its kept PACKED/b3 records of deleted
@@ -1068,6 +1071,7 @@ bool DaemonApp::start()
     // after both sessions; the node may run already (statusChanged was before this)
     m_torrentJoin = std::make_unique<ed3k::Ed3kTorrentJoin>(*m_ed3kSession, *m_btSession, thePrefs.configDir());
     m_torrentJoin->setI2pJoins(thePrefs.btI2pEd3kJoin());
+    m_torrentJoin->setAnonKey(thePrefs.ed3kAnonTorrent());
     // torrent.md §6.3: private torrents join only with btShareMode "all"
     m_torrentJoin->setPrivateJoins(thePrefs.btShareMode() >= int(BtShareMode::All));
     applyTorrentArchiveContents();
@@ -1786,6 +1790,8 @@ void DaemonApp::applyEd3kConfig()
         settings.extOff = extOff;
         settings.lan = thePrefs.ed3kLan();
         settings.forceOpen = thePrefs.ed3kForceOpen();
+        // dev aid: a named (test) network, private addresses dialable (live rigs on one host)
+        settings.network = qEnvironmentVariable("EMULE_ED3K_NETWORK");
         settings.storeMiB = static_cast<std::uint32_t>(thePrefs.ed3kKadStoreMiB());
         if (bind) {
             settings.bindAddress = *bind;
@@ -1834,6 +1840,8 @@ void DaemonApp::applyEd3kConfig()
     // ed3kShareUsenetPosts: a change restarts the usenet join (kept lists and records follow)
     if (m_usenetJoin)
         m_usenetJoin->setHoldBack(!thePrefs.ed3kShareUsenetPosts());
+    // ed3kAnon*: a change restarts that join (hops.md §1)
+    applyJoinKeys();
     // ed3kArchiveContents: off withdraws the published contents records
     if (m_archiveContents)
         m_archiveContents->setPublish(thePrefs.ed3kArchiveContents());
@@ -1861,6 +1869,22 @@ void DaemonApp::applyTorrentArchiveContents()
                 (void)ac->publishListing(l);
         };
     m_torrentJoin->setArchiveContents(std::move(publish), thePrefs.archivePasswords(), thePrefs.usenetExternalUnpacker());
+#endif
+}
+
+void DaemonApp::applyJoinKeys()
+{
+#ifdef EMULE_HAVE_ED3K
+    if (m_ed2kJoin)
+        m_ed2kJoin->setAnonKey(thePrefs.ed3kAnonEd2k());
+    if (m_usenetJoin)
+        m_usenetJoin->setAnonKey(thePrefs.ed3kAnonUsenet());
+    if (m_hosterJoin)
+        m_hosterJoin->setAnonKey(thePrefs.ed3kAnonHoster());
+#endif
+#if defined(EMULE_HAVE_ED3K) && defined(EMULE_HAVE_BITTORRENT)
+    if (m_torrentJoin)
+        m_torrentJoin->setAnonKey(thePrefs.ed3kAnonTorrent());
 #endif
 }
 

@@ -981,6 +981,7 @@ void tst_KadUDPListener::nodeLookupReq_notesAskerAndHandedContacts()
     const auto& log = Kademlia::getInstanceUDPListener()->incomingLog();
     const auto all = log.snapshot();
     QVERIFY(!all.empty());
+    QCOMPARE(log.size(), all.size());   // count-only tab title
     const IncomingRequest& r = all.front();
     QCOMPARE(r.type, IncomingType::NodeLookup);
     QVERIFY(r.answered);

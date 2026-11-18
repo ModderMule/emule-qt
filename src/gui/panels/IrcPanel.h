@@ -136,6 +136,8 @@ signals:
     void ircConnectionChanged(bool connected);
     /// A room link that waited for the room list was joined: show the IRC tab.
     void ed3kRoomJoined();
+    /// The user opened an NZB, DLC or torrent posted in an ed3k room: to its add dialog.
+    void roomFileOpened(const QString& name, const QByteArray& bytes);
     /// Some channel, private chat or ed3k room holds messages not read yet (or none now).
     void unreadChanged(bool unread);
     /// Someone's message arrived while not on screen; @p mention: private, my nick, or a reply
@@ -218,6 +220,7 @@ private:
     [[nodiscard]] QString messageHtml(const QString& key, const QString& nick, const QString& message) const;
     /// The line of messageHtml for a name as shown: an IRC message or an ed3k post.
     [[nodiscard]] QString messageLine(const QString& stamp, const QString& shown, const QString& message, bool own) const;
+    /// Soft tab colour for a line in a tab not shown; never over the red of unread.
     void markActivity(const QString& key);
     /// Someone's message in tab @p key: unread unless on screen; sound and alert (MainWindow).
     void noteMessage(const QString& key, bool mention);
@@ -271,6 +274,7 @@ private:
     void ed3kNickMenu(Ed3kRoomTab* tab, const QString& shown, const QPoint& globalPos);
     void fillEd3kNickMenu(QMenu& menu, Ed3kRoomTab* tab, const QString& shown);
     void dumpEd3kNickMenus();
+    void selfTestRoomFiles(const QString& dir);
     void createEd3kRoom();
     void joinEd3kRoom(const QString& link);
     void editEd3kRoomInfo(Ed3kRoomTab* tab);

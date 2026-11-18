@@ -922,7 +922,7 @@ void Ed3kSession::applyLimits()
 
 bool Ed3kSession::wantEd2kCap()
 {
-    return thePrefs.ed3kAdvertiseEd2k() && !thePrefs.disableEd2k();
+    return !thePrefs.disableEd2k();
 }
 
 void Ed3kSession::applyEd2kCap()

@@ -6,8 +6,11 @@
 /// list dialogs (a list on top, the member tree with check boxes below, buttons at the right).
 ///
 /// - Sets: name, author (short key), version (a newer one waiting: "1 → 2"), files, size,
-///   policy, state. Follow link…, Unfollow, the policy (ask / download), "Download selected"
-///   (the members ticked; takes a pending version), "Download parts" (open parts).
+///   policy, state. Follow link…, Unfollow, the policy (browse only: new files unticked /
+///   download automatically: new files of the file types), File Types… (the filter: the
+///   user's, else the author's FileSet.exts, file-set.md §5.3, else the default), Change
+///   Folder… (before the first download), "Download selected" (the members ticked; takes a
+///   pending version), "Download parts" (open parts, of every author or one).
 /// - Live: watched streams with their state; Watch link…, Open (the local stream URL in the
 ///   system's player or browser; local core only), Stop; Broadcast… (an HLS fMP4 folder of
 ///   the core's machine, live.md §4) and Copy Link of a broadcast; our channels off air too
@@ -26,6 +29,9 @@
 #include <QMap>
 #include <QPointer>
 #include <QString>
+#include <QStringList>
+
+#include <optional>
 
 class QCheckBox;
 class QComboBox;
@@ -59,6 +65,20 @@ public:
     /// Selects the set @p id in the list.
     void selectSet(qint64 id);
 
+    /// What the user chose when following a set (askFollow).
+    struct FollowChoice {
+        int policy = 0;                    ///< 0 browse only, 1 download automatically
+        std::optional<QStringList> exts;   ///< nullopt: the author's types, else the default
+        QString dir;                       ///< "" the default
+        bool website = false;              ///< Open as Website instead
+    };
+    /// "Follow ed3k Set": browse only or download automatically (file types), the folder.
+    /// @p text: the question; @p offerWebsite: also "Open as Website". nullopt: cancelled.
+    [[nodiscard]] static std::optional<FollowChoice> askFollow(QWidget* parent, IpcClient* ipc, const QString& text, bool offerWebsite);
+    /// "mkv, *.mp4 .AVI" → {mkv, mp4, avi}
+    [[nodiscard]] static QStringList parseExts(const QString& text);
+    [[nodiscard]] static QString extsText(const QStringList& exts);
+
     [[nodiscard]] static QString policyText(int policy);
     [[nodiscard]] static QString memberStateText(int state);
     [[nodiscard]] static QString liveStateText(int state);
@@ -83,8 +103,15 @@ private:
     void followLink();
     void unfollow();
     void setPolicy(int index);
+    /// File Types…: the filter of the current set (or back to the author's / the default)
+    void editFilter();
+    /// Change Folder…: before the first download only (the core refuses after)
+    void changeFolder();
     void downloadSelected();
-    void downloadParts();
+    /// open parts of @p author (64 hex; "" every author)
+    void downloadParts(const QString& author);
+    /// the authors of the current set's open parts in the button's menu
+    void fillPartsMenu();
     void watchLink();
     void openStream();
     void leaveStream();
@@ -126,6 +153,8 @@ private:
     QPushButton* m_unfollow = nullptr;
     QPushButton* m_download = nullptr;
     QPushButton* m_parts = nullptr;
+    QPushButton* m_filter = nullptr;
+    QPushButton* m_folder = nullptr;
     QPushButton* m_buy = nullptr;
     QPushButton* m_enterPass = nullptr;
     QPushButton* m_liveBuy = nullptr;

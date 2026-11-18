@@ -232,12 +232,20 @@ QString ed3kJoinText(const QCborMap& join)
         for (const auto& j : join.value(QStringLiteral("jobs")).toArray())
             if (const QString t = ed3kAliasText(j.toMap()); !t.isEmpty())
                 jobs << t;
-        text = jobs.isEmpty() ? QCoreApplication::translate("ClientIcons", "Joined")
-                              : QCoreApplication::translate("ClientIcons", "Joined (%1)").arg(jobs.join(QStringLiteral("; ")));
+        // was: "Joined" / "Joined (%1)" only; hops.md §1: the key is shown
+        const bool anon = join.value(QStringLiteral("key")).toString() == QLatin1String("anon");
+        if (anon)
+            text = jobs.isEmpty() ? QCoreApplication::translate("ClientIcons", "Joined under the anonymous key")
+                                  : QCoreApplication::translate("ClientIcons", "Joined under the anonymous key (%1)").arg(jobs.join(QStringLiteral("; ")));
+        else
+            text = jobs.isEmpty() ? QCoreApplication::translate("ClientIcons", "Joined")
+                                  : QCoreApplication::translate("ClientIcons", "Joined (%1)").arg(jobs.join(QStringLiteral("; ")));
     } else if (state == QLatin1String("skipped")) {
         // hops.md §1: only ed3k hides; the other networks show this address
+        // was: "Skipped (%1 is not anonymous; the file is under the anonymous key)"
         text = reason == QLatin1String("anonKey")
-            ? QCoreApplication::translate("ClientIcons", "Skipped (%1 is not anonymous; the file is under the anonymous key)").arg(name)
+            ? QCoreApplication::translate("ClientIcons", "Skipped (the file is under the anonymous key; %1 is off under "
+                                                         "Options › ed3k › Extended › Kad publishing)").arg(name)
             : QCoreApplication::translate("ClientIcons", "Skipped");
     } else if (state == QLatin1String("available")) {
         text = QCoreApplication::translate("ClientIcons", "Available, not joined");

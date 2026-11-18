@@ -22,6 +22,7 @@
 #include "search/MetaSearchRunner.h"
 
 #include <QObject>
+#include <QSet>
 #include <QString>
 #include <QTimer>
 
@@ -104,9 +105,11 @@ public:
     static constexpr std::size_t kNotesKept = 256;
 
     /// The names and media tags others publish for @p root (32 B), for the File Names and
-    /// Metadata tabs of a download: KEYWORD records hold them, no Kad record of the root
-    /// does (§10.1), so keyword searches for the longest words of @p name, @p size only,
-    /// kept where the root matches. False: no node, no word to search, or one runs for it.
+    /// Metadata tabs of a download: a SOURCE search of the root (each source's name,
+    /// Protocol.md §10.3) and keyword searches for the longest words of @p name, @p size
+    /// only, kept where the root matches (names with media tags). No media tags when all
+    /// answered: words of the other names found are asked too, kNameRetryRound per round,
+    /// kNameRetryWords in all. False: no node, nothing started, or one runs for it.
     bool searchNames(const QByteArray& root, const QString& name, std::uint64_t size);
     /// One name found by searchNames, with the media tags its records carried.
     struct FoundName {
@@ -120,6 +123,8 @@ public:
     [[nodiscard]] std::vector<FoundName> namesOf(const QByteArray& root) const;
     /// A names lookup of @p root runs.
     [[nodiscard]] bool namesRunning(const QByteArray& root) const { return m_nameTimeouts.contains(root); }
+    static constexpr int kNameRetryWords = 6;
+    static constexpr int kNameRetryRound = 2;
     /// The words searchNames asks for: the @p count longest distinct ones of @p name (3+ chars).
     [[nodiscard]] static QStringList nameWords(const QString& name, int count = 2);
 
@@ -178,6 +183,10 @@ private:
     /// A KadFound of a names lookup: records of @p root kept per name.
     void onNamesFound(const QByteArray& root, const ::ed3k::event::KadFound& found);
     void endNames(const QByteArray& root);
+    /// Keyword lookups of @p words for the names run of @p root; how many started.
+    int startNameWords(const QByteArray& root, const QStringList& words);
+    /// No media tags found for @p root yet: asks words of the names found. False: none left.
+    bool retryNames(const QByteArray& root);
     /// A listed root or MD4 (Ed3kSession::declined) hides the row (by decline.txt), else m_judge.
     [[nodiscard]] Verdict judge(const ::ed3k::FoundFile& found) const;
 
@@ -194,8 +203,16 @@ private:
         FoundName shown;
         std::set<QByteArray> publishers;
     };
+    /// The kept records of @p name for @p root, made (and the oldest root dropped) if new.
+    NameRecords& nameRecords(const QByteArray& root, const QString& name);
     std::map<std::uint64_t, QByteArray> m_nameLookups;   ///< names lookups by lookupKey(): the root
     std::map<QByteArray, std::unique_ptr<QTimer>> m_nameTimeouts;   ///< by root
+    struct NameRun {
+        std::uint64_t size = 0;
+        QSet<QString> asked;   ///< keywords asked so far
+        int retried = 0;       ///< of them from other names
+    };
+    std::map<QByteArray, NameRun> m_nameRuns;   ///< by root, while a names lookup runs
     /// namesOf: root → name → records; m_namesOrder: roots, oldest first
     std::map<QByteArray, std::map<QString, NameRecords>> m_names;
     std::deque<QByteArray> m_namesOrder;

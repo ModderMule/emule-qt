@@ -135,6 +135,7 @@ The `ed3k:` block in `preferences.yml`, with IPC/REST keys `ed3kEnabled` and `ed
 | `seedFromEd2k` | `true` | IPC/REST `ed3kSeedFromEd2k`: eD2K peers with a derived user hash seed ed3k Kad while it has < 10 contacts (§1 source 4). No restart |
 | `credit:` | | `enabled` (`false`, §9), `chainId` (0 = none), `contract` (empty = none; no defaults, §7.1), `quorum` (2, held to 1..endpoints), `bidMaxPrice` (µ/MiB per download, 0 = receipts only), `sell` (`false`), `sellFloor` (µ/MiB), `sellSlots` (0 = the queue's); IPC/REST `ed3kCreditEnabled`, `ed3kCreditChainId` (decimal text: a u64), `ed3kCreditContract`, `ed3kCreditQuorum`, `ed3kCreditBidMaxPrice`, `ed3kCreditSell`, `ed3kCreditSellFloor`, `ed3kCreditSellSlots` (`Preferences::applyEd3kCreditKey`). No restart |
 | `ownSetsWatch` | `true` | IPC/REST `ed3kOwnSetsWatch`, Options "Publish a new version of my sets when their folders change": `Ed3kOwnSets::setWatchFolders`. No restart |
+| `anonEd2k`, `anonTorrent`, `anonUsenet`, `anonHoster` | `false`, `false`, `true`, `true` | IPC/REST `ed3kAnonEd2k` …, Options › ed3k › Extended › Kad publishing: that network's join follows hiding (`Ed3kJoinBase::setAnonKey`, hops.md §1). A change restarts the join; its kept sets and ALIAS records are taken back and go out under their files' key |
 | `reportProxy:` | | `type` (0 off, 3 SOCKS5, 5 HTTP), `host`, `port`, `user`, `password`; IPC `ed3kReportProxyType`, `…Host`, `…Port`, `…User`, `…Password` (REST: type, host, port). The proxy of share reports under the anonymous key (subscription.md §5.3), see "Hiding". No restart |
 | `shareUsenetPosts` | `true` | IPC/REST `ed3kShareUsenetPosts`, Options "Share Usenet posts over ed3k too". Off holds Usenet posts back (usenet.md §6): no article lists, post sets or `nzb`/`nzb-file` records; the members are shared all the same. A change restarts the usenet join; switching off withdraws the kept `ALIAS` records (`unpublishAlias`) |
 
@@ -558,7 +559,8 @@ node stops. `applyEd3kConfig` switches it with the pref.
   a dual file gets both. Dev aid `EMULE_DUMP_ED3K_MENUS=1` (utils/MenuDump.h): Transfers, Shared
   Files and Search log the menus of their ed3k rows every 20 s (open the page with `--tab`);
   `=2` also runs Swap A4AF and Source Limit (its dialog, 70000 entered) once, and one ed3k search
-  for `EMULE_DUMP_SEARCH=<words>`; Search logs the last menu again 1.5 s later (ed3k link actions
+  for `EMULE_DUMP_SEARCH=<words>`, then the menu's Download on the first row whose name holds
+  `EMULE_DUMP_DOWNLOAD=<text>` (`EMULE_DUMP_DOWNLOAD_PAUSED=1`: Download (Paused); `EMULE_DUMP_DOWNLOAD_CAT=n`: category tab n first); Search logs the last menu again 1.5 s later (ed3k link actions
   come async). Stopping the GUI shuts down a local sandbox core too.
 - **Landed files kept out of eD2K** (hoster/Usenet "share landed files" off): `DaemonApp::
   syncEd3kAliasOnly` → `setAliasOnlyFiles`: read once for MD4 + root (`hashInBackground(withEd2k)`)
@@ -838,8 +840,17 @@ ToDo (credits):
   theirs, kept in `keys.json`. A file is never under both keys. "Move to Anonymous/Node ed3k
   Key..." (Shared Files, Transfers) asks first (hops §1), IPC 1048. "New anonymous key..." asks
   (queue places lost), 1047. Hiding off: anonymous files are not served and wait for it.
-- **Joins of other networks** (torrent, usenet, hoster, eD2K: not `anonCapable()`) never hold
-  a root of the anonymous key. `Ed3kJoinBase::keyOf` of such a join is always the node key; an
+- **Joins of other networks** (torrent, usenet, hoster, eD2K) are `anonCapable()` only when
+  their Kad publishing switch is on (`setAnonKey`, prefs `anon*`; Usenet and hoster by
+  default: only the provider sees the download; BitTorrent and eD2K off: their peers see this
+  address, §1 SHOULD NOT). Then they work as Ed3kShared does: new files under the anonymous
+  key while hiding, old ones keep theirs; the set (manifest, info dictionary, article list,
+  `setPublish`/MEMBER) goes under its members' one key (`setKeyOf`; both keys, a skipped
+  member or the anonymous key while not hiding: withheld; blobs `blobKeyOf`); ALIAS records
+  under their file's key (`publishAliasRecords`: node key, on `STATE` the anonymous node). A
+  hoster file under the anonymous key hands out no link and no `url` ALIAS (ffi.md "nothing
+  direct under the anonymous key"). File Details marks such a row `key: anon`.
+  With the switch off a join never holds a root of the anonymous key. `Ed3kJoinBase::keyOf` of such a join is always the node key; an
   anon-capable join takes the recorded key first, the engine's `fileKey` only when an
   anon-capable join holds the root (a torrent member opened first under the node key once
   decided the shared file's key and overwrote `keys.json`). `anonHeld` (recorded or held

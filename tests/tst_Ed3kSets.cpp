@@ -16,6 +16,7 @@
 #include "Ed3kSetManifest.h"
 #include "Ed3kPlainCopies.h"
 #include "Ed3kSets.h"
+#include "utils/FileTypeFilter.h"
 #include "Ed3kSetsBridge.h"
 #include "Ed3kShared.h"
 #include "Ed3kSiteServer.h"
@@ -165,7 +166,7 @@ struct Author {
 /// "ed3kset" ‖ 0x01 ‖ SetFile{body = FileSet{title, dirs, files, id, seq}, key, sigs}
 QByteArray signedManifest(const Author& a, const QString& title, const QStringList& dirs, const std::vector<MemberSpec>& members,
                           const QByteArray& id, std::uint64_t seq, const QByteArray& offer = {},
-                          std::optional<std::uint64_t> epoch = {})
+                          std::optional<std::uint64_t> epoch = {}, const QStringList& exts = {})
 {
     QByteArray set;
     bytesField(set, 1, title.toUtf8());
@@ -187,6 +188,8 @@ QByteArray signedManifest(const Author& a, const QString& title, const QStringLi
     varintField(set, 7, seq);
     if (!offer.isEmpty())
         bytesField(set, 12, offer);   // subscription.md §3: a paid catalogue
+    for (const QString& e : exts)
+        bytesField(set, 15, e.toUtf8());   // file-set.md §5.3: the author's file types
     QByteArray sig;
     varintField(sig, 1, 1);   // Ed25519
     bytesField(sig, 2, a.sign(QByteArray("ed3k v1 set manifest") + set));
@@ -325,13 +328,14 @@ private slots:
     void aSetFollowedWhileHidingKeepsTheAnonymousKey();
     void aFollowedSetIsDownloadedWhole();
     void aChosenPartIsDownloaded();
-    void aNewVersionWaitsUnderAskAcrossARestart();
+    void aNewVersionWaitsUnderBrowseAcrossARestart();
     void aNewVersionComesUnderDownloadAcrossARestart();
-    void aMountsNewVersionWaitsUnderAsk();
+    void aMountsNewVersionWaitsUnderBrowse();
     void theIpcListsAndFollows();
     void aSetNotHeldWaitsThen504Or503();
     void aSetThatIsNoWebsiteIsOffered();
     void aSealedMemberOfAPaidCatalogueIsOpened();
+    void theFilterChoosesNewFilesUnderDownload();
     void cleanupTestCase();
     void cleanup() { QTest::qWait(10); }
 
@@ -395,6 +399,55 @@ void tst_Ed3kSets::initTestCase()
     m_link = Ed3kSets::setLink(m_author.key(), m_id, QStringLiteral("Season one"));
 }
 
+// file-set.md §5.3: under Download the filter chooses the new files: the author's types
+// (FileSet.exts) unless the user set others; the files of before keep their choice
+void tst_Ed3kSets::theFilterChoosesNewFilesUnderDownload()
+{
+    QVERIFY(m_c.sets && m_c.topic && m_cSet != 0);
+    QVERIFY(m_c.sets->setPolicy(m_cSet, Ed3kSets::Policy::Download));
+    QVERIFY(m_c.sets->setFilter(m_cSet, std::nullopt));
+    const auto version = [&](std::uint64_t seq, const std::vector<MemberSpec>& extra) {
+        std::vector<MemberSpec> members = m_members;
+        members.insert(members.end(), extra.begin(), extra.end());
+        const QByteArray f = signedManifest(m_author, QStringLiteral("Season one"), {QStringLiteral("sub")}, members, m_id, seq, {}, {},
+                                            {QStringLiteral("txt")});
+        ::ed3k::event::SetManifest m{*m_c.topic, rootOf(f), {}, seq, std::nullopt};
+        for (char c : f)
+            m.file.push_back(std::byte(c));
+        bool handled = false;
+        emit m_c.session->eventPolled(m, &handled);
+        return handled;
+    };
+    const auto skippedOf = [&](const QString& path) {
+        const auto info = m_c.sets->info(m_cSet);
+        const auto it = std::ranges::find_if(info->members, [&](const auto& m) { return m.path == path; });
+        return it == info->members.end() ? std::optional<bool>() : std::optional<bool>(it->skipped);
+    };
+    QVERIFY(version(4, {{QStringLiteral("e.bin"), 0, payload(1000, 5)}, {QStringLiteral("e.txt"), 0, payload(1000, 6)}}));
+    QTRY_COMPARE(m_c.sets->info(m_cSet)->seq, std::optional<std::uint64_t>(4));
+    QCOMPARE(m_c.sets->info(m_cSet)->authorExts, QStringList{QStringLiteral("txt")});
+    QCOMPARE(m_c.sets->info(m_cSet)->exts, QStringList{QStringLiteral("txt")});
+    QCOMPARE(skippedOf(QStringLiteral("e.txt")), std::optional<bool>(false));
+    QCOMPARE(skippedOf(QStringLiteral("e.bin")), std::optional<bool>(true));
+    // downloaded already: stays chosen though .bin is not among the types
+    QCOMPARE(skippedOf(QStringLiteral("a.bin")), std::optional<bool>(false));
+    // the user's types win over the author's
+    QVERIFY(m_c.sets->setFilter(m_cSet, QStringList{QStringLiteral("bin")}));
+    QVERIFY(version(5, {{QStringLiteral("f.bin"), 0, payload(1000, 7)}, {QStringLiteral("f.txt"), 0, payload(1000, 8)}}));
+    QTRY_COMPARE(m_c.sets->info(m_cSet)->seq, std::optional<std::uint64_t>(5));
+    QCOMPARE(skippedOf(QStringLiteral("f.bin")), std::optional<bool>(false));
+    QCOMPARE(skippedOf(QStringLiteral("f.txt")), std::optional<bool>(true));
+    // a file downloaded: the folder stays
+    QVERIFY(!m_c.sets->setFolder(m_cSet, m_dc.path()));
+    // browse only: a new file waits unticked
+    QVERIFY(m_c.sets->setPolicy(m_cSet, Ed3kSets::Policy::Browse));
+    QVERIFY(version(6, {{QStringLiteral("f.bin"), 0, payload(1000, 7)}, {QStringLiteral("f.txt"), 0, payload(1000, 8)},
+                        {QStringLiteral("g.bin"), 0, payload(1000, 9)}}));
+    QTRY_COMPARE(m_c.sets->info(m_cSet)->pendingSeq, std::optional<std::uint64_t>(6));
+    QCOMPARE(skippedOf(QStringLiteral("g.bin")), std::optional<bool>(true));
+    QCOMPARE(skippedOf(QStringLiteral("f.bin")), std::optional<bool>(false));
+}
+
 void tst_Ed3kSets::cleanupTestCase()
 {
     m_c.stop();
@@ -456,6 +509,26 @@ void tst_Ed3kSets::aManifestIsReadWithLocalNames()
     QCOMPARE(ed3kSafeName(QStringLiteral("..")), QStringLiteral("_"));
     QCOMPARE(ed3kSetLocalPath(QStringLiteral("/x/set"), QStringLiteral("sub/b.bin")), QStringLiteral("/x/set/sub/b.bin"));
     QCOMPARE(ed3kSetLocalPath(QStringLiteral("/x/set"), QStringLiteral("../../etc/passwd")), QStringLiteral("/x/set/_/_/etc/passwd"));
+
+    // file-set.md §5.3: the author's file types; bad entries ignored
+    const QByteArray withExts = signedManifest(m_author, QStringLiteral("t"), {}, {m_members[0]}, m_id, 1, {}, {},
+                                               {QStringLiteral("mkv"), QStringLiteral(".EXE"), QStringLiteral("nfo"), QStringLiteral("mkv")});
+    QCOMPARE(Ed3kSetManifest::parse(withExts)->exts, (QStringList{QStringLiteral("mkv"), QStringLiteral("nfo")}));
+    QVERIFY(m->exts.isEmpty());
+    QCOMPARE(normalizeFileTypes({QStringLiteral("*.MKV"), QStringLiteral(".mp3"), QStringLiteral("a b"), QStringLiteral("mkv")}),
+             (QStringList{QStringLiteral("mkv"), QStringLiteral("mp3")}));
+    const QStringList types{QStringLiteral("rar"), QStringLiteral("nfo")};
+    QVERIFY(fileTypeMatches(QStringLiteral("x.part01.RAR"), types));
+    QVERIFY(fileTypeMatches(QStringLiteral("x.r07"), types));
+    QVERIFY(fileTypeMatches(QStringLiteral("x.7z.001"), types));
+    QVERIFY(!fileTypeMatches(QStringLiteral("setup.exe"), types));
+    QVERIFY(!fileTypeMatches(QStringLiteral("README"), types));
+    QVERIFY(fileTypeMatches(QStringLiteral("README"), {}));
+    // the default: media, archives, images, text; no programs or scripts
+    for (const char* ok : {"a.mkv", "a.flac", "a.zip", "a.jpg", "a.nfo", "a.txt", "a.srt"})
+        QVERIFY2(fileTypeMatches(QString::fromLatin1(ok), defaultSetFileTypes()), ok);
+    for (const char* no : {"a.exe", "a.bat", "a.sh", "a.js", "a.ps1", "a.scr", "a.dll", "a.msi", "a.lnk", "a.vbs"})
+        QVERIFY2(!fileTypeMatches(QString::fromLatin1(no), defaultSetFileTypes()), no);
 }
 
 // file-set.md §5.4: key 32 bytes, id 1 to 32, not with s; repeats refused
@@ -465,11 +538,11 @@ void tst_Ed3kSets::linksAreCheckedBeforeFollowing()
     Ed3kSession off;
     Ed3kDownloads dl(off, d.path());
     Ed3kSets sets(off, dl, d.path());
-    QVERIFY(!sets.follow(QStringLiteral("ed3k:set?key=abc&id=aa"), Ed3kSets::Policy::Ask));
-    QVERIFY(!sets.follow(m_link + QStringLiteral("&id=aaaa"), Ed3kSets::Policy::Ask));
-    QVERIFY(!sets.follow(m_link + QStringLiteral("&s=aaaa"), Ed3kSets::Policy::Ask));
-    QVERIFY(!sets.follow(QStringLiteral("ed3k:file?b3=x"), Ed3kSets::Policy::Ask));
-    const auto id = sets.follow(m_link, Ed3kSets::Policy::Ask);
+    QVERIFY(!sets.follow(QStringLiteral("ed3k:set?key=abc&id=aa"), Ed3kSets::Policy::Browse));
+    QVERIFY(!sets.follow(m_link + QStringLiteral("&id=aaaa"), Ed3kSets::Policy::Browse));
+    QVERIFY(!sets.follow(m_link + QStringLiteral("&s=aaaa"), Ed3kSets::Policy::Browse));
+    QVERIFY(!sets.follow(QStringLiteral("ed3k:file?b3=x"), Ed3kSets::Policy::Browse));
+    const auto id = sets.follow(m_link, Ed3kSets::Policy::Browse);
     QVERIFY(id);
     // once; the policy given again holds
     QCOMPARE(*sets.follow(m_link, Ed3kSets::Policy::Download), *id);
@@ -478,14 +551,14 @@ void tst_Ed3kSets::linksAreCheckedBeforeFollowing()
     QVERIFY(!sets.info(*id)->followed);   // no node
     // hidden: kept, its link never shown
     const auto hidden = sets.follow(QStringLiteral("ed3k:set?key=%1&s=%2").arg(base32(m_author.key()), base32(m_author.key())),
-                                    Ed3kSets::Policy::Ask);
+                                    Ed3kSets::Policy::Browse);
     QVERIFY(hidden);
     QVERIFY(sets.info(*hidden)->hidden);
     QVERIFY(sets.info(*hidden)->link.isEmpty());
     QVERIFY(sets.info(*hidden)->paidScope.isEmpty());
     // subscription.md §8.3: paid=1 with s refused; a paid one has its scope (kind 3)
-    QVERIFY(!sets.follow(QStringLiteral("ed3k:set?key=%1&paid=1&s=%1").arg(base32(m_author.key())), Ed3kSets::Policy::Ask));
-    const auto paidSet = sets.follow(QStringLiteral("ed3k:set?key=%1&paid=1").arg(base32(m_author.key())), Ed3kSets::Policy::Ask);
+    QVERIFY(!sets.follow(QStringLiteral("ed3k:set?key=%1&paid=1&s=%1").arg(base32(m_author.key())), Ed3kSets::Policy::Browse));
+    const auto paidSet = sets.follow(QStringLiteral("ed3k:set?key=%1&paid=1").arg(base32(m_author.key())), Ed3kSets::Policy::Browse);
     QVERIFY(paidSet);
     QCOMPARE(sets.info(*paidSet)->paidScope, Ed3kPaid::hexOf(*::ed3k::paidScope(3, m_author.key(), {})));
     QVERIFY(sets.unfollow(*paidSet));
@@ -497,6 +570,35 @@ void tst_Ed3kSets::linksAreCheckedBeforeFollowing()
 #endif
     QVERIFY(sets.unfollow(*hidden));
     QVERIFY(!sets.info(*hidden));
+
+    // file-set.md §5.3: the default filter until the user or the author gives one
+    const auto f = sets.follow(Ed3kSets::setLink(m_author.key(), "filters"), Ed3kSets::Policy::Download);
+    QVERIFY(f);
+    QCOMPARE(sets.info(*f)->exts, defaultSetFileTypes());
+    QVERIFY(!sets.info(*f)->extsByUser);
+    QVERIFY(sets.setFilter(*f, QStringList{QStringLiteral("*.MKV"), QStringLiteral("srt")}));
+    QCOMPARE(sets.info(*f)->exts, (QStringList{QStringLiteral("mkv"), QStringLiteral("srt")}));
+    QVERIFY(sets.info(*f)->extsByUser);
+    QVERIFY(sets.setFilter(*f, std::nullopt));
+    QVERIFY(!sets.info(*f)->extsByUser);
+    // the folder: chosen before any download, the default again with ""
+    const QString mine = QDir(d.path()).filePath(QStringLiteral("mine"));
+    QVERIFY(sets.setFolder(*f, mine));
+    QCOMPARE(sets.info(*f)->dir, mine);
+    QVERIFY(sets.info(*f)->dirByUser);
+    QVERIFY(sets.setFolder(*f, {}));
+    QVERIFY(!sets.info(*f)->dirByUser);
+    QVERIFY(!sets.setFolder(9999, mine));
+    // kept in sets.json
+    QVERIFY(sets.setFilter(*f, QStringList{QStringLiteral("nfo")}));
+    QVERIFY(sets.setFolder(*f, mine));
+    flushBlobWrites();   // saves are queued
+    {
+        Ed3kSets again(off, dl, d.path());
+        QCOMPARE(again.info(*f)->exts, QStringList{QStringLiteral("nfo")});
+        QCOMPARE(again.info(*f)->dir, mine);
+        QCOMPARE(again.info(*f)->policy, Ed3kSets::Policy::Download);
+    }
 }
 
 // hops.md §1: a set followed while hiding goes under the anonymous key (keyForUse) and keeps it
@@ -512,13 +614,13 @@ void tst_Ed3kSets::aSetFollowedWhileHidingKeepsTheAnonymousKey()
         QVERIFY(s.hide().hiding());
         Ed3kDownloads dl(s, d.path());
         Ed3kSets sets(s, dl, d.path());
-        const auto r = sets.follow(m_link, Ed3kSets::Policy::Ask);
+        const auto r = sets.follow(m_link, Ed3kSets::Policy::Browse);
         QVERIFY(r);
         id = *r;
         QCOMPARE(sets.info(id)->key, ::ed3k::KeyKind::Anon);
         // a set followed before hiding: node key
         s.setHideSettings(Ed3kHideSettings{false, 1, true, 25});
-        const auto node = sets.follow(Ed3kSets::setLink(m_author.key(), "other"), Ed3kSets::Policy::Ask);
+        const auto node = sets.follow(Ed3kSets::setLink(m_author.key(), "other"), Ed3kSets::Policy::Browse);
         QVERIFY(node);
         QCOMPARE(sets.info(*node)->key, ::ed3k::KeyKind::Node);
         s.stop();
@@ -532,11 +634,12 @@ void tst_Ed3kSets::aSetFollowedWhileHidingKeepsTheAnonymousKey()
 }
 
 // file-set.md §5.3: followed by its link; every member downloaded below the set's folder
+// (an empty filter: every file type, .bin too)
 void tst_Ed3kSets::aFollowedSetIsDownloadedWhole()
 {
     QVERIFY(m_c.start(m_dc.path(), nodeOf(m_b), sourceOf(m_a)));
     QTRY_VERIFY_WITH_TIMEOUT(m_c.session->contactCount() > 0, 20000);
-    const auto id = m_c.sets->follow(m_link, Ed3kSets::Policy::Download);
+    const auto id = m_c.sets->follow(m_link, Ed3kSets::Policy::Download, QStringList{});
     QVERIFY(id);
     m_cSet = *id;
     QTRY_VERIFY_WITH_TIMEOUT(m_c.sets->info(m_cSet)->followed, 10000);
@@ -561,7 +664,7 @@ void tst_Ed3kSets::aChosenPartIsDownloaded()
     QVERIFY(d.start(m_dd.path(), nodeOf(m_b), sourceOf(m_a)));
     QTRY_VERIFY_WITH_TIMEOUT(d.session->contactCount() > 0, 20000);
     QSignalSpy asked(d.sets.get(), &Ed3kSets::newVersion);
-    const auto id = d.sets->follow(m_link, Ed3kSets::Policy::Ask);
+    const auto id = d.sets->follow(m_link, Ed3kSets::Policy::Browse);
     QVERIFY(id);
     QTRY_COMPARE_WITH_TIMEOUT(asked.count(), 1, 90000);
     auto info = d.sets->info(*id);
@@ -569,6 +672,8 @@ void tst_Ed3kSets::aChosenPartIsDownloaded()
     QCOMPARE(info->pendingSeq, std::optional<std::uint64_t>(1));
     QCOMPARE(info->members.size(), std::size_t(2));
     QCOMPARE(d.downloads->list().size(), std::size_t(0));   // nothing before the user's word
+    // browse only: every new file unticked
+    QVERIFY(std::ranges::all_of(info->members, [](const auto& m) { return m.skipped; }));
     // the folder "sub" left out
     QVERIFY(d.sets->setSkipped(*id, {QStringLiteral("sub")}));
     QVERIFY(d.sets->applyVersion(*id));
@@ -590,17 +695,17 @@ void tst_Ed3kSets::aChosenPartIsDownloaded()
 
 // §5.3: ask keeps a new version until the user takes it. Across restarts: the followed set,
 // its version and policy come back from sets.json
-void tst_Ed3kSets::aNewVersionWaitsUnderAskAcrossARestart()
+void tst_Ed3kSets::aNewVersionWaitsUnderBrowseAcrossARestart()
 {
     QVERIFY(m_cSet != 0);
-    QVERIFY(m_c.sets->setPolicy(m_cSet, Ed3kSets::Policy::Ask));
+    QVERIFY(m_c.sets->setPolicy(m_cSet, Ed3kSets::Policy::Browse));
     QVERIFY(publish(m_v2));
     QVERIFY(restartC());
     auto info = m_c.sets->info(m_cSet);
     QVERIFY(!info->followed || m_c.session->contactCount() > 0);   // followed once there are contacts
     QVERIFY(info);
     QCOMPARE(info->seq, std::optional<std::uint64_t>(1));
-    QCOMPARE(info->policy, Ed3kSets::Policy::Ask);
+    QCOMPARE(info->policy, Ed3kSets::Policy::Browse);
     QSignalSpy asked(m_c.sets.get(), &Ed3kSets::newVersion);
     // followed again with version 1 held: the head of version 2 is newer
     QTRY_COMPARE_WITH_TIMEOUT(asked.count(), 1, 90000);
@@ -611,6 +716,11 @@ void tst_Ed3kSets::aNewVersionWaitsUnderAskAcrossARestart()
     const QString c = QDir(info->dir).filePath(QStringLiteral("sub/c.bin"));
     QTest::qWait(1000);
     QVERIFY(!QFile::exists(c));
+    // browse only: the new file unticked, the ones of before as they were
+    const auto newOne = std::ranges::find_if(info->members, [](const auto& m) { return m.path == QLatin1String("sub/c.bin"); });
+    QVERIFY(newOne != info->members.end() && newOne->skipped);
+    QVERIFY(std::ranges::count_if(info->members, [](const auto& m) { return m.skipped; }) == 1);
+    QVERIFY(m_c.sets->setSkipped(m_cSet, {}));
     QVERIFY(m_c.sets->applyVersion(m_cSet));
     QTRY_VERIFY_WITH_TIMEOUT(readFile(c) == m_members[2].data, 90000);
     QCOMPARE(m_c.sets->info(m_cSet)->seq, std::optional<std::uint64_t>(2));
@@ -637,12 +747,12 @@ void tst_Ed3kSets::aNewVersionComesUnderDownloadAcrossARestart()
     QVERIFY(!QFile::exists(QDir(info->dir).filePath(QStringLiteral("a (1).bin"))));
 }
 
-void tst_Ed3kSets::aMountsNewVersionWaitsUnderAsk()
+void tst_Ed3kSets::aMountsNewVersionWaitsUnderBrowse()
 {
     // multi-author-set.md §2: a mount's versions come as SetMount, then the mounted set's
     // SetManifest; under Ask a newer one waits for the user like a version (was: taken at once)
     QVERIFY(m_c.sets && m_c.topic);
-    QVERIFY(m_c.sets->setPolicy(m_cSet, Ed3kSets::Policy::Ask));
+    QVERIFY(m_c.sets->setPolicy(m_cSet, Ed3kSets::Policy::Browse));
     ::ed3k::Topic mounted;
     mounted.bytes.fill(0x77);
     bool handled = false;
@@ -712,7 +822,7 @@ void tst_Ed3kSets::theIpcListsAndFollows()
     policy.append(qint64(0));
     QVERIFY(Ed3kSetsBridge::handleRequest(policy, reply));
     QVERIFY(replies.back().fieldBool(0));
-    QCOMPARE(m_c.sets->info(m_cSet)->policy, Ed3kSets::Policy::Ask);
+    QCOMPARE(m_c.sets->info(m_cSet)->policy, Ed3kSets::Policy::Browse);
 
     // live without a live object: refused, not crashed
     Ipc::IpcMessage watch(Ipc::IpcMsgType::WatchEd3kLive, 4);
@@ -889,7 +999,9 @@ void tst_Ed3kSets::aSealedMemberOfAPaidCatalogueIsOpened()
     const auto passLink = ::ed3k::passLink(pass->bytes(), voucher);
     QVERIFY(passLink);
     QVERIFY(e.paid->addPassLink(QString::fromStdString(*passLink)));
-    const auto setId = e.sets->follow(Ed3kSets::setLink(m_author.key(), id, QStringLiteral("Paid season")), Ed3kSets::Policy::Download);
+    // an empty filter: .bin too
+    const auto setId = e.sets->follow(Ed3kSets::setLink(m_author.key(), id, QStringLiteral("Paid season")), Ed3kSets::Policy::Download,
+                                      QStringList{});
     QVERIFY(setId);
     QTRY_VERIFY_WITH_TIMEOUT(e.sets->info(*setId)->seq == std::uint64_t(1), 90000);
     const QString hex = Ed3kPaid::hexOf(*scope);

@@ -12,6 +12,9 @@
 #include <QBuffer>
 #include <QDateTime>
 #include <QDialog>
+#include <QDialogButtonBox>
+#include <QFileDialog>
+#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QImageReader>
 #include <QLabel>
@@ -20,6 +23,8 @@
 #include <QMessageBox>
 #include <QMovie>
 #include <QPainter>
+#include <QPlainTextEdit>
+#include <QSaveFile>
 #include <QScreen>
 #include <QTextDocument>
 #include <QVBoxLayout>
@@ -71,6 +76,8 @@ QString Ed3kRoomMediaView::html(const Ref& m)
         slot->ref.state = m.state;
     }
     Item& it = *slot;
+    if (isFile(it.ref))
+        return fileLine(it);
     const bool shown = MediaSniff::isImage(it.ref.type) || MediaSniff::isVideo(it.ref.type);
     if (!showsInline(it)) {
         // §6: the text and the file; a click asks for it
@@ -122,6 +129,12 @@ void Ed3kRoomMediaView::setBytes(const QString& root, const QByteArray& bytes)
         return;
     Item& it = **found;
     it.loading = false;
+    if (isFile(it.ref)) {
+        it.bytes = bytes;
+        if (std::exchange(it.openWhenLoaded, false) && !bytes.isEmpty())
+            openFile(it);
+        return;
+    }
     if (bytes.isEmpty()) {
         it.broken = true;
         putPlaceholder(it);
@@ -150,6 +163,10 @@ void Ed3kRoomMediaView::clicked(const QString& root, QWidget* parent)
     Item& it = **found;
     if (it.ref.state == Ignored)
         return;
+    if (isFile(it.ref)) {
+        clickedFile(it, parent);
+        return;
+    }
     if (it.ref.state == Ready) {
         if (it.decoded)
             showBig(it, parent);
@@ -345,6 +362,95 @@ void Ed3kRoomMediaView::loadIfReady(Item& it)
 QUrl Ed3kRoomMediaView::urlOf(const QString& root) const
 {
     return QUrl(QString::fromLatin1(kScheme) + QLatin1Char(':') + root);
+}
+
+bool Ed3kRoomMediaView::isFile(const Ref& m)
+{
+    return !MediaSniff::isMediaType(m.type);
+}
+
+QString Ed3kRoomMediaView::fileLine(const Item& it) const
+{
+    const QString file = QStringLiteral("&#128196; %1 (%2)").arg(it.ref.name.toHtmlEscaped(), sizeText(it.ref.size));
+    // only the kinds we open: anything else stays text (§6)
+    const auto kind = MediaSniff::claimedKind(it.ref.type, it.ref.name);
+    if (kind == MediaSniff::FileKind::None || it.ref.state == Ignored)
+        return QStringLiteral("<br><span>%1</span>").arg(file);
+    QString what = tr("click to download");
+    if (it.ref.state == Fetching)
+        what = tr("downloading...");
+    else if (it.ref.state == Failed)
+        what = tr("not found, click to try again");
+    else if (it.ref.state == Ready)
+        what = kind == MediaSniff::FileKind::Text ? tr("click to show") : tr("click to open");
+    return QStringLiteral("<br><a href=\"%1\">%2 — %3</a>").arg(urlOf(it.ref.root).toString(), file, what);
+}
+
+void Ed3kRoomMediaView::clickedFile(Item& it, QWidget* parent)
+{
+    if (MediaSniff::claimedKind(it.ref.type, it.ref.name) == MediaSniff::FileKind::None || it.ref.state == Fetching)
+        return;
+    if (it.ref.state == Ready) {
+        if (!it.bytes.isEmpty()) {
+            openFile(it);
+        } else if (m_load && !it.loading) {
+            it.loading = true;
+            it.openWhenLoaded = true;
+            m_load(it.ref.root);
+        }
+        return;
+    }
+    // a file: always asked, whatever the media prefs (room.md §6)
+    if (QMessageBox::question(parent, tr("ed3k room"),
+                              tr("Download \"%1\" (%2) from your room neighbours?\nIt opens only when you click it again.")
+                                  .arg(it.ref.name, sizeText(it.ref.size)))
+        != QMessageBox::Yes)
+        return;
+    emit fetchRequested(it.ref.root);
+}
+
+void Ed3kRoomMediaView::openFile(Item& it)
+{
+    // by name and bytes now, not the claim
+    switch (MediaSniff::fileKind(it.bytes, it.ref.name)) {
+    case MediaSniff::FileKind::Text:
+        showText(it);
+        return;
+    case MediaSniff::FileKind::Nzb:
+    case MediaSniff::FileKind::Dlc:
+    case MediaSniff::FileKind::Torrent:
+        emit fileOpenRequested(it.ref.name, it.bytes);
+        return;
+    case MediaSniff::FileKind::None:
+        break;
+    }
+    QMessageBox::information(m_log, tr("ed3k room"), tr("\"%1\" is not a text, NZB, DLC or torrent file and is not opened.").arg(it.ref.name));
+}
+
+void Ed3kRoomMediaView::showText(const Item& it)
+{
+    auto* dlg = new QDialog(m_log);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->setWindowTitle(it.ref.name);
+    auto* text = new QPlainTextEdit(dlg);
+    text->setReadOnly(true);
+    text->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    text->setPlainText(QString::fromUtf8(it.bytes));
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Close, dlg);
+    connect(buttons, &QDialogButtonBox::rejected, dlg, &QDialog::reject);
+    connect(buttons->button(QDialogButtonBox::Save), &QPushButton::clicked, dlg, [dlg, name = it.ref.name, bytes = it.bytes] {
+        const QString path = QFileDialog::getSaveFileName(dlg, tr("Save"), name, tr("Text files (*.txt)"));
+        if (path.isEmpty())
+            return;
+        QSaveFile f(path);
+        if (!f.open(QIODevice::WriteOnly) || f.write(bytes) != bytes.size() || !f.commit())
+            QMessageBox::warning(dlg, tr("Save"), tr("The file could not be written."));
+    });
+    auto* lay = new QVBoxLayout(dlg);
+    lay->addWidget(text);
+    lay->addWidget(buttons);
+    dlg->resize(640, 480);
+    dlg->show();
 }
 
 void Ed3kRoomMediaView::showBig(Item& it, QWidget* parent)

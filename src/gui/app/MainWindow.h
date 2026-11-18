@@ -430,10 +430,6 @@ private:
     /// Wayland never reports minimized: Qt's own decoration minimize button only
     /// shows up as a QWindow state request. Hides to the tray from there.
     void onWaylandWindowStateChanged(Qt::WindowState state);
-    /// KWin's title bar minimize: only xdg "suspended" (Qt: window unexposed) shows it
-    void onWaylandExposeChanged(QWindow* handle);
-    /// Tray hide on Wayland, deferred; keeps max/fullscreen for the restore
-    void hideToTrayDeferred();
 
     /// Colour of the meter bar: stats colour 11, or the system scheme when that is
     /// left on "auto".

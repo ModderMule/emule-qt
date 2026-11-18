@@ -12,6 +12,9 @@
 ///   kMaxPixels a side before decoding (room.md §6).
 /// - Videos and animations run while the tab shows (setActive).
 /// - A click: a ready one opens big (a video with sound then), else asks for the fetch.
+/// - Other small files (text, NZB, DLC, torrent; room info `files`): a file line, fetched only on a click
+///   and confirm, opened only on a further click: a text shown read only, an NZB, DLC or torrent handed
+///   to its add dialog (fileOpenRequested). Nothing starts by itself (room.md §6).
 
 #include <QHash>
 #include <QImage>
@@ -75,6 +78,8 @@ public:
 signals:
     /// Fetch @p root now (FetchEd3kRoomMedia).
     void fetchRequested(const QString& root);
+    /// The user opened an NZB, DLC or torrent of a post: to its add dialog, never started.
+    void fileOpenRequested(const QString& name, const QByteArray& bytes);
 
 private:
     struct Item {
@@ -85,6 +90,7 @@ private:
         bool loading = false;
         bool decoded = false;
         bool broken = false;             ///< bytes we cannot show
+        bool openWhenLoaded = false;     ///< a file the user clicked to open
         qint64 lastFrameMs = 0;
         std::unique_ptr<QBuffer> buffer;
         std::unique_ptr<QMovie> movie;
@@ -93,6 +99,12 @@ private:
     };
 
     [[nodiscard]] static QSize boxOf(const Ref& m);
+    /// A file, not media to show (§2.6)
+    [[nodiscard]] static bool isFile(const Ref& m);
+    [[nodiscard]] QString fileLine(const Item& it) const;
+    void clickedFile(Item& it, QWidget* parent);
+    void openFile(Item& it);
+    void showText(const Item& it);
     [[nodiscard]] bool showsInline(const Item& it) const;
     void putPlaceholder(Item& it);
     void putFrame(Item& it, const QImage& frame);

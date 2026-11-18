@@ -66,6 +66,7 @@ Ed3kRoomTab::Ed3kRoomTab(const QString& room, std::function<void(const QString&)
     // §2.6: media under its post; a click on it is ours, not a link to open
     m_media = new Ed3kRoomMediaView(log(), this);
     connect(m_media, &Ed3kRoomMediaView::fetchRequested, this, &Ed3kRoomTab::mediaFetchRequested);
+    connect(m_media, &Ed3kRoomMediaView::fileOpenRequested, this, &Ed3kRoomTab::fileOpenRequested);
     connect(log(), &QTextBrowser::anchorClicked, this, [this](const QUrl& href) {
         if (const QString root = Ed3kRoomMediaView::rootOfLink(href.toString()); !root.isEmpty())
             m_media->clicked(root, this);

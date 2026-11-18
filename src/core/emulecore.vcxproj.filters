@@ -1295,6 +1295,9 @@
     <ClInclude Include="utils\SafeRemove.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="utils\FileTypeFilter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\PerfLog.h">
       <Filter>Header Files</Filter>
     </ClInclude>

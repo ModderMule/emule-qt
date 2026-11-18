@@ -149,8 +149,9 @@ enum class IpcMsgType : int {
     /// Settings: imported on a core restart that follows the reply (parts with it).
     /// Parts only: the download folders are queued for conversion now; dir may be empty.
     ImportLegacyProfile  = 226,
-    /// [] -> [ok, [{agoMs, type, target, name, addr, cc, contacts, results, records, stored, load,
-    /// answered}]] — recent requests other Kad nodes sent us, newest first (ops::kadIncoming)
+    /// [countOnly?] -> [ok, [{agoMs, type, target, name, addr, cc, contacts, results, records, stored,
+    /// load, answered}]] — recent requests other Kad nodes sent us, newest first (ops::kadIncoming);
+    /// countOnly true -> [ok, count] (hidden tab title)
     GetKadIncoming       = 227,
     /// [id] -> [ok, {found, row of GetKadIncoming, wanted, own: {id}, asker: {id, addr, cc,
     /// version}, handed: [{id, addr, cc, version}]}] — one request for the incoming search graph
@@ -1042,8 +1043,8 @@ enum class IpcMsgType : int {
     /// [on: bool] -> [ok] — connect or disconnect the node for this run (toolbar Connect);
     /// starts as the autoConnect pref, ed3kEnabled still gates it
     SetEd3kConnected        = 1205,
-    /// [] -> [ok, [rows as GetKadIncoming; type: KadRequest.kind + 100 × (0 find, 1 search,
-    /// 2 store)]] — recent KadRequests other nodes sent this node, newest first
+    /// [countOnly?] -> [ok, [rows as GetKadIncoming; type: KadRequest.kind + 100 × (0 find, 1 search,
+    /// 2 store)]] — recent KadRequests other nodes sent this node, newest first; countOnly: [ok, count]
     GetEd3kKadIncoming      = 1206,
     /// [id] -> [ok, as GetKadIncomingGraph; ids are routing ids, `node` the node ID] — one
     /// request for the incoming search graph
@@ -1109,10 +1110,12 @@ enum class IpcMsgType : int {
     /// with waiting: true (ask again). Off: the file as it is on disk.
     ReadStream              = 1231,
     /// [pair?] -> [ok, {fingerprint (IPC TLS cert, "AB:CD:.."), port, tunnel, nodeId, endpoints,
-    /// relays ["<node hex>@ip:port"], udpPort, pairSecret (with pair: hex, 10 min, one use)}] —
+    /// relays ["<node hex>@ip:port"], udpPort, friendLink (ed3k:friend of the node), seeds (Kad
+    /// contacts, as relays), pairSecret (with pair: hex, 10 min, one use)}] —
     /// pairing code for a phone (Ed3kTunnelBridge, libs/qDonkey/docs/ed3k-tunnel.md)
     GetIpcIdentity          = 1232,
-    /// [node id hex, name] -> [ok] — a phone paired on the LAN may use the ed3k tunnel
+    /// [node id hex, name (empty: kept or "Phone N"), node key hex?] -> [ok] — a phone paired
+    /// on the LAN may use the ed3k tunnel; with the key it becomes an ed3k friend
     RegisterTunnelPeer      = 1233,
     /// [] -> [ok, [{nodeId, name}]] — phones paired for the ed3k tunnel
     GetTunnelPeers          = 1234,
@@ -1247,18 +1250,18 @@ enum class IpcMsgType : int {
     /// [admit text (ed3k-admit:...)] -> [ok, {room}] — newcomer of a closed room
     ImportEd3kRoomAdmit     = 1129,
 
-    // -- ed3k room media and history (room.md §2.6, §4.3, §4.6): Ed3kRoomsBridge. A root is hex (64).
-    /// [room, mediaMax (bytes, 0 none), keepHours, keepPosts] -> [ok] — owner; rows carry
-    /// mediaMax, keepHours, keepPosts as read (clamped)
-    SetEd3kRoomLimits       = 1058,
+    // -- ed3k room media and history (room.md §2.6, §4.3, §4.6): Ed3kRoomsBridge, 1250-1259 (1050-1099 = pushes). A root is hex (64).
+    /// [room, mediaMax (bytes, 0 none), keepHours, keepPosts, files] -> [ok] — owner; files:
+    /// text/NZB/DLC/torrent too (§2.6); rows carry mediaMax, keepHours, keepPosts (clamped), files
+    SetEd3kRoomLimits       = 1250,
     /// [room, token, offset, total, data (≤ 4 MiB), text, replyTo, name, width, height] ->
     ///   [ok, {more: true}] until offset + data = total, then [ok, ids] — a post with a file,
     ///   sent in parts (MaxPayloadSize); token: the GUI's, one per file
-    PostEd3kRoomMedia       = 1059,
+    PostEd3kRoomMedia       = 1251,
     /// [root, offset] -> [ok, {type, size, offset, data (≤ 4 MiB)}] — a cached file, opened
-    GetEd3kRoomMedia        = 1069,
+    GetEd3kRoomMedia        = 1252,
     /// [room, root] -> [ok] — fetch now (a click), whatever the hourly limit says
-    FetchEd3kRoomMedia      = 1071,
+    FetchEd3kRoomMedia      = 1253,
 
     // -- ed3k filters + rooms polish (batch 13): Ed3kFiltersBridge / Ed3kRoomsBridge. Failure as
     // their blocks above.
@@ -1652,7 +1655,7 @@ enum class IpcMsgType : int {
     // -- ed3k sets and live (batch 12), see GetEd3kSets / GetEd3kLive
     /// [{...GetEd3kSets...}] — followed sets, versions or member states changed (a state push)
     PushEd3kSetsChanged    = 1155,
-    /// [id, title, seq, added, changed, removed] — a new version of a set with policy ask
+    /// [id, title, seq, added, changed, removed] — a new version of a set with policy browse
     PushEd3kSetVersion     = 1156,
     /// [{...GetEd3kLive...}] — a stream's state changed (a state push)
     PushEd3kLiveChanged    = 1157,

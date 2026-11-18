@@ -392,6 +392,7 @@ emule_add_test(tst_IpcMessage    FOLDER "Ipc" LIBRARIES eMule::Ipc)
 # StatStream / ReadStream over IPC (qDonkey phone app): links the daemon lib
 emule_add_test(tst_IpcStream FOLDER "Ipc"
     SOURCES tst_IpcStream.cpp "${CMAKE_SOURCE_DIR}/src/daemon/IpcStreamBridge.cpp"
+            "${CMAKE_SOURCE_DIR}/src/daemon/Ed3kTunnelBridge.cpp"
     LIBRARIES eMule::Core)
 target_include_directories(tst_IpcStream PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
 emule_add_test(tst_IpcConnection FOLDER "Ipc" LIBRARIES eMule::Ipc)
@@ -1776,6 +1777,14 @@ target_link_libraries(tst_TaskbarProgress PRIVATE Qt6::Widgets)
 # Link codec shared by the Server Info, chat and IRC panes — header-only, so nothing
 # but the test itself is compiled. Widgets is for QTextDocument: one case replays the
 # rich-text parse a QTextBrowser does.
+# Chat tab colours: joins soft, someone's message red with the toolbar "!"
+emule_add_test(tst_IrcTabActivity FOLDER "Gui"
+    SOURCES tst_IrcTabActivity.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/panels/IrcPanel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp")
+target_include_directories(tst_IrcTabActivity PRIVATE "${CMAKE_SOURCE_DIR}/src/gui")
+target_link_libraries(tst_IrcTabActivity PRIVATE eMule::Core eMule::Ipc Qt6::Widgets)
+
 emule_add_test(tst_TextLinks FOLDER "Ipc"
     SOURCES tst_TextLinks.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Smileys.cpp")

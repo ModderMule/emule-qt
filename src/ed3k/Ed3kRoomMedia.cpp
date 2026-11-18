@@ -183,7 +183,10 @@ ffi::Result<Ed3kRoomMedia::Media> Ed3kRoomMedia::add(const ffi::Room& room, ffi:
 {
     if (m_dir.isEmpty() || !m_session.engine())
         return std::unexpected(ffi::Error::State);
-    const QString type = sniffType(bytes);
+    // media by the bytes, else a small file of a kind we open (room info `files`, §2.6)
+    QString type = sniffType(bytes);
+    if (type.isEmpty())
+        type = MediaSniff::fileType(MediaSniff::fileKind(bytes, name));
     if (type.isEmpty() || bytes.isEmpty() || std::uint64_t(bytes.size()) > kMaxSize)
         return std::unexpected(ffi::Error::Argument);
     Media m;

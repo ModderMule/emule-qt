@@ -366,6 +366,23 @@ void Ed3kJoinBase::setHoldBack(bool on)
         start();
 }
 
+void Ed3kJoinBase::setAnonKey(bool on)
+{
+    if (on == m_anonKey)
+        return;
+    const bool running = m_started;
+    if (running) {
+        stop();   // unshares; start() shares the kept items under their key again
+        // published under the old key: taken back, they go out again under the new one
+        withdrawKeptSets();
+        withdrawKeptRecords();
+    }
+    m_anonKey = on;
+    logInfo(QStringLiteral("%1 files %2 the hiding switch (hops.md §1)").arg(m_tag, on ? QStringLiteral("follow") : QStringLiteral("no longer follow")));
+    if (running)
+        start();
+}
+
 void Ed3kJoinBase::setSourceResearch(int everyMs, int minGapMs)
 {
     m_researchTimer.setInterval(std::max(1, everyMs));
@@ -733,6 +750,7 @@ std::vector<Ed3kJoinBase::JoinState> Ed3kJoinBase::joinStatesAt(const Ed3kSessio
                 addOwner(d->second->owner);
             if (!st.owners.isEmpty()) {
                 st.kind = JoinState::Kind::Joined;
+                st.anon = join->anonCapable() && join->keyOf(root) == ffi::KeyKind::Anon;
             } else if (join->anonHeld(root)) {
                 // none of it holds the file; one that came would be left out
                 st.kind = JoinState::Kind::Skipped;
@@ -950,8 +968,9 @@ void Ed3kJoinBase::withdrawOwner(const QString& owner)
     if (!e)
         return;
     const auto t = m_session.now();
+    // was: if (kept.set) (void)e->setUnpublish(t, kept.set->root);
     if (kept.set)
-        (void)e->setUnpublish(t, kept.set->root);
+        unpublishSet(kept.set->root);
     if (const auto records = readRecords(QDir(keptDir(owner)).filePath(kKeptRecords)); !records.empty())
         if (auto ok = e->unpublishAlias(t, records); !ok)
             logDebug([&]() -> QString { return QStringLiteral("ALIAS records of %1 not withdrawn (error %2)").arg(owner, errorName(ok.error())); });
@@ -1098,11 +1117,86 @@ bool Ed3kJoinBase::anonHeld(const ffi::Root& root) const
 
 bool Ed3kJoinBase::withholdSet(const QString& owner, std::span<const ffi::Root> members) const
 {
+    // was: if (anonCapable()) return false;
     if (anonCapable())
-        return false;
+        return !setKeyOf(owner, members);
     if (std::ranges::any_of(m_skipped, [&](const auto& kv) { return kv.second.owner == owner; }))
         return true;
     return std::ranges::any_of(members, [&](const ffi::Root& r) { return anonHeld(r); });
+}
+
+std::optional<ffi::KeyKind> Ed3kJoinBase::setKeyOf(const QString& owner, std::span<const ffi::Root> members) const
+{
+    if (!anonCapable())
+        return withholdSet(owner, members) ? std::nullopt : std::optional(ffi::KeyKind::Node);
+    if (std::ranges::any_of(m_skipped, [&](const auto& kv) { return kv.second.owner == owner; }))
+        return std::nullopt;
+    std::optional<ffi::KeyKind> key;
+    for (const ffi::Root& r : members) {
+        const ffi::KeyKind k = keyOf(r);
+        if (key && *key != k)
+            return std::nullopt;   // §1: a set lists files of one key only
+        key = k;
+    }
+    const Ed3kHide& hide = m_session.hide();
+    if (!key)
+        key = hide.keyForUse();
+    // §1: nothing falls back to the node key
+    if (*key == ffi::KeyKind::Anon && !hide.hiding())
+        return std::nullopt;
+    return key;
+}
+
+ffi::KeyKind Ed3kJoinBase::blobKeyOf(const QString& owner) const
+{
+    if (!anonCapable())
+        return ffi::KeyKind::Node;
+    std::vector<ffi::Root> roots;
+    for (const auto& [root, sh] : m_shared)
+        if (sh.member >= 0 && sh.owner == owner)
+            roots.push_back(root);
+    for (const auto& [root, d] : m_downloads)
+        if (d->member >= 0 && d->owner == owner)
+            roots.push_back(root);
+    for (const auto& m : readKept(owner).members)
+        if (std::ranges::find(roots, m.root) == roots.end())
+            roots.push_back(m.root);
+    return setKeyOf(owner, roots).value_or(ffi::KeyKind::Node);
+}
+
+std::expected<std::uint32_t, ffi::Error> Ed3kJoinBase::publishAliasRecords(std::span<const ffi::Bytes> records)
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return std::unexpected(ffi::Error::State);
+    const auto t = m_session.now();
+    const bool anon = anonCapable() && m_session.hide().hiding();
+    std::uint32_t published = 0;
+    ffi::Error last = ffi::Error::State;
+    for (const auto& r : records) {
+        auto ok = e->publishAlias(t, std::span(&r, 1));
+        // State: its root is not shared, or held under the anonymous key
+        if (!ok && ok.error() == ffi::Error::State && anon)
+            ok = e->anonPublishAlias(t, std::span(&r, 1));
+        if (ok)
+            ++published;
+        else
+            last = ok.error();
+    }
+    if (published == 0 && !records.empty())
+        return std::unexpected(last);
+    return published;
+}
+
+void Ed3kJoinBase::unpublishSet(const ffi::Root& root)
+{
+    auto* e = m_session.engine();
+    if (!e)
+        return;
+    const auto t = m_session.now();
+    (void)e->setUnpublish(t, root);   // NotFound: not under this key
+    if (m_session.hide().hiding())
+        (void)e->setUnpublish(t, root, ffi::KeyKind::Anon);
 }
 
 bool Ed3kJoinBase::moveDownloadKey(const ffi::Root& root, ffi::KeyKind key)
@@ -1382,7 +1476,8 @@ bool Ed3kJoinBase::setSearching(const QString& owner) const
 
 void Ed3kJoinBase::keepBlob(const QString& owner, const QByteArray& data, const QString& name, std::optional<ffi::Root> expect)
 {
-    const auto root = shareBlob(data, name, expect);
+    // was: const auto root = shareBlob(data, name, expect);
+    const auto root = shareBlob(data, name, expect, blobKeyOf(owner));   // hops.md §1: its members' key
     if (!root)
         return;
     Kept kept = readKept(owner);
@@ -1594,13 +1689,12 @@ QString Ed3kJoinBase::deletedPath() const
 
 void Ed3kJoinBase::republishKeptAliases(const QString& owner)
 {
-    auto* e = m_session.engine();
-    if (!e || m_holdBack)
+    if (!m_session.engine() || m_holdBack)
         return;
-    const auto t = m_session.now();
     // one by one: a record of a file neither shared nor deleted is refused (State) alone
+    // was: (void)e->publishAlias(t, std::span(&r, 1)); (node key only)
     for (const auto& r : readRecords(QDir(keptDir(owner)).filePath(kKeptRecords)))
-        (void)e->publishAlias(t, std::span(&r, 1));
+        (void)publishAliasRecords(std::span(&r, 1));
     pumpSession();
 }
 
@@ -1644,12 +1738,15 @@ void Ed3kJoinBase::shareKeptOwner(const QString& owner)
         return;
     const Kept kept = readKept(owner);
     if (shareKeptBlobs()) {
+        // hops.md §1: under the key of its members (blobKeyOf)
+        const ffi::KeyKind blobKey = blobKeyOf(owner);
         for (const auto& b : kept.blobs) {
             const QByteArray data = readBlob(QDir(keptDir(owner)).filePath(blobFile(b.root)));
             if (data.isEmpty())
                 logDebug([&]() -> QString { return QStringLiteral("kept \"%1\" of %2 is gone").arg(b.name, owner); });
             else
-                (void)shareBlob(data, b.name, b.root);
+                // was: (void)shareBlob(data, b.name, b.root);
+                (void)shareBlob(data, b.name, b.root, blobKey);
         }
     }
     // the records go out once every member had its first hash (publishAlias needs the
@@ -2455,14 +2552,19 @@ void Ed3kJoinBase::publishKeptRecords(const QString& owner)
     for (const auto& m : kept.members)
         memberRoots.push_back(m.root);
     // was: if (kept.set && shareKeptBlobs()) {
-    if (kept.set && shareKeptBlobs() && withholdSet(owner, memberRoots))
-        logDebug([&]() -> QString { return QStringLiteral("kept set of %1 not published: a member is under the anonymous key").arg(owner); });
+    // hops.md §1: under its members' one key (setKeyOf)
+    const auto setKey = setKeyOf(owner, memberRoots);
+    if (kept.set && shareKeptBlobs() && !setKey)
+        logDebug([&]() -> QString { return QStringLiteral("kept set of %1 not published: its members are not under one key it may use").arg(owner); });
     else if (kept.set && shareKeptBlobs()) {
         const QByteArray manifest = readBlob(QDir(keptDir(owner)).filePath(blobFile(kept.set->root)));
         const QByteArray n = kept.set->name.toUtf8();
         if (manifest.isEmpty())
             logDebug([&]() -> QString { return QStringLiteral("kept set of %1 is gone: not published").arg(owner); });
-        else if (auto ok = e->setPublish(t, spanOf(manifest), kept.set->root, std::string_view(n.constData(), std::size_t(n.size()))); !ok)
+        // was: e->setPublish(t, spanOf(manifest), kept.set->root, name)
+        else if (auto ok = e->setPublish(t, spanOf(manifest), kept.set->root, std::string_view(n.constData(), std::size_t(n.size())),
+                                         ffi::SetSigner::Unsigned, nullptr, *setKey);
+                 !ok)
             logDebug([&]() -> QString { return QStringLiteral("kept set of %1 not published (error %2)").arg(owner, errorName(ok.error())); });
     }
     const auto records = readRecords(QDir(keptDir(owner)).filePath(kKeptRecords));
@@ -2473,7 +2575,8 @@ void Ed3kJoinBase::publishKeptRecords(const QString& owner)
         // was: one batch; it stopped at the first record of a member gone from disk (State)
         // if (auto ok = e->publishAlias(t, records); !ok) ... else published = int(records.size());
         for (const auto& r : records) {
-            if (auto ok = e->publishAlias(t, std::span(&r, 1)); ok)
+            // was: e->publishAlias(t, std::span(&r, 1)) (node key only)
+            if (auto ok = publishAliasRecords(std::span(&r, 1)); ok)
                 ++published;
             else if (ok.error() == ffi::Error::State)
                 ++unshared;   // its file is not shared (any more)
@@ -2486,6 +2589,15 @@ void Ed3kJoinBase::publishKeptRecords(const QString& owner)
     });
     pumpSession();
     emit keptRecordsPublished(owner, published);
+}
+
+void Ed3kJoinBase::withdrawKeptSets()
+{
+    const QDir dir(joinDir(m_tag));
+    for (const QString& sub : dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot))
+        if (const Kept kept = readKept(QUrl::fromPercentEncoding(sub.toLatin1())); kept.set)
+            unpublishSet(kept.set->root);
+    pumpSession();
 }
 
 void Ed3kJoinBase::withdrawKeptRecords()

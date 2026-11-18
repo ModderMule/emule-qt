@@ -288,8 +288,11 @@ using Kind = PrefSpec::Kind;
     t << flag("ed3kArchiveContents", "Publish what archives unpacked here hold, so others can see and pick their files "
                                      "before downloading (hoster.md §6.1).");
     t << advanced(flag("ed3kLanUnlimited", "ed3k peers on the LAN are not held to the upload and download limits."));
-    t << advanced(flag("ed3kAdvertiseEd2k", "Tell ed3k peers this client also speaks eD2K, while eD2K is not switched off."));
     t << flag("ed3kOwnSetsWatch", "Watch the folders of own ed3k sets: a change publishes a new version of the set.");
+    t << advanced(flag("ed3kAnonEd2k", "While hiding: eD2K joint downloads go under the anonymous key. eD2K peers still see this address."));
+    t << advanced(flag("ed3kAnonTorrent", "While hiding: torrent files on ed3k go under the anonymous key. The swarm still sees this address."));
+    t << advanced(flag("ed3kAnonUsenet", "While hiding: Usenet files on ed3k go under the anonymous key. Only the provider sees what was downloaded."));
+    t << advanced(flag("ed3kAnonHoster", "While hiding: hoster files on ed3k go under the anonymous key. Only the hoster sees what was downloaded."));
     t << advanced(text("ed3kCreditRpc", 4096, "JSON-RPC endpoints of the credit ledger (https URLs, separated by "
                                               "spaces; operator n = the n-th). Empty = off."));
     t << advanced(text("ed3kChaintubeRpc", 4096, "JSON-RPC endpoints of the chaintube chain (https URLs, or http to "

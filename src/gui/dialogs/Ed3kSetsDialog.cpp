@@ -10,6 +10,7 @@
 #include "app/IpcClient.h"
 #include "IpcMessage.h"
 #include "utils/Clipboard.h"
+#include "utils/FileTypeFilter.h"
 #include "utils/Log.h"
 #include "utils/StringUtils.h"
 #include "utils/ModalHost.h"
@@ -28,8 +29,11 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QLocale>
+#include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QRadioButton>
+#include <QRegularExpression>
 #include <QSplitter>
 #include <QTabWidget>
 #include <QStyle>
@@ -127,12 +131,19 @@ Ed3kSetsDialog::Ed3kSetsDialog(IpcClient* ipc, QWidget* parent)
     auto* side = new QVBoxLayout;
     m_follow = button(tr("Follow Link..."), setsPage);
     m_unfollow = button(tr("Unfollow"), setsPage);
-    auto* policyLabel = new QLabel(tr("New versions:"), setsPage);
+    auto* policyLabel = new QLabel(tr("New files:"), setsPage);
     m_policy = new QComboBox(setsPage);
     m_policy->addItem(policyText(0));
     m_policy->addItem(policyText(1));
+    m_policy->setToolTip(tr("Browse only: new files of the set are listed, nothing downloads until you tick it.\n"
+                            "Download automatically: new files of the chosen file types download as they come."));
+    m_filter = button(tr("File Types..."), setsPage);
+    m_folder = button(tr("Change Folder..."), setsPage);
     m_download = button(tr("Download Selected"), setsPage);
     m_parts = button(tr("Download Parts"), setsPage);
+    // multi-author-set.md §3.5: the parts of every author or of one
+    m_parts->setMenu(new QMenu(m_parts));
+    connect(m_parts->menu(), &QMenu::aboutToShow, this, &Ed3kSetsDialog::fillPartsMenu);
     m_buy = button(tr("Buy Pass..."), setsPage);
     m_buy->setObjectName(QStringLiteral("ed3kBuyPass"));
     m_enterPass = button(tr("Enter Pass..."), setsPage);
@@ -153,6 +164,8 @@ Ed3kSetsDialog::Ed3kSetsDialog(IpcClient* ipc, QWidget* parent)
     side->addSpacing(12);
     side->addWidget(policyLabel);
     side->addWidget(m_policy);
+    side->addWidget(m_filter);
+    side->addWidget(m_folder);
     side->addSpacing(12);
     side->addWidget(m_download);
     side->addWidget(m_parts);
@@ -208,8 +221,9 @@ Ed3kSetsDialog::Ed3kSetsDialog(IpcClient* ipc, QWidget* parent)
     connect(m_follow, &QPushButton::clicked, this, &Ed3kSetsDialog::followLink);
     connect(m_unfollow, &QPushButton::clicked, this, &Ed3kSetsDialog::unfollow);
     connect(m_policy, &QComboBox::activated, this, &Ed3kSetsDialog::setPolicy);
+    connect(m_filter, &QPushButton::clicked, this, &Ed3kSetsDialog::editFilter);
+    connect(m_folder, &QPushButton::clicked, this, &Ed3kSetsDialog::changeFolder);
     connect(m_download, &QPushButton::clicked, this, &Ed3kSetsDialog::downloadSelected);
-    connect(m_parts, &QPushButton::clicked, this, &Ed3kSetsDialog::downloadParts);
     connect(m_watch, &QPushButton::clicked, this, &Ed3kSetsDialog::watchLink);
     connect(m_open, &QPushButton::clicked, this, &Ed3kSetsDialog::openStream);
     connect(m_leave, &QPushButton::clicked, this, &Ed3kSetsDialog::leaveStream);
@@ -396,7 +410,7 @@ void Ed3kSetsDialog::selectSet(qint64 id)
 
 QString Ed3kSetsDialog::policyText(int policy)
 {
-    return policy == 1 ? tr("Download") : tr("Ask");
+    return policy == 1 ? tr("Download automatically") : tr("Browse only");
 }
 
 QString Ed3kSetsDialog::memberStateText(int state)
@@ -500,6 +514,90 @@ void Ed3kSetsDialog::enterPass(QWidget* parent, IpcClient* ipc)
         addPassLink(parent, ipc, link);
 }
 
+std::optional<Ed3kSetsDialog::FollowChoice> Ed3kSetsDialog::askFollow(QWidget* parent, IpcClient* ipc, const QString& text,
+                                                                     bool offerWebsite)
+{
+    QDialog d(parent);
+    d.setWindowTitle(tr("Follow ed3k Set"));
+    auto* layout = new QVBoxLayout(&d);
+    auto* question = new QLabel(text, &d);
+    question->setWordWrap(true);
+    layout->addWidget(question);
+    // file-set.md §2.3, §5.3: browse first, or new files of these types at once
+    auto* browse = new QRadioButton(tr("Browse only: the files are listed, nothing downloads until you tick it"), &d);
+    auto* download = new QRadioButton(tr("Download automatically, now and as new versions come:"), &d);
+    browse->setChecked(true);
+    layout->addWidget(browse);
+    layout->addWidget(download);
+    auto* typesRow = new QHBoxLayout;
+    typesRow->addSpacing(20);
+    typesRow->addWidget(new QLabel(tr("File types:"), &d));
+    const QString defaults = extsText(defaultSetFileTypes());
+    auto* types = new QLineEdit(defaults, &d);
+    types->setToolTip(tr("Empty: every file. The set's own file types, if its author gave any, replace the default "
+                         "unless you change it here."));
+    typesRow->addWidget(types, 1);
+    layout->addLayout(typesRow);
+    auto* typesNote = new QLabel(tr("The author's file types replace these unless you change them."), &d);
+    typesNote->setWordWrap(true);
+    typesNote->setContentsMargins(20, 0, 0, 0);
+    layout->addWidget(typesNote);
+    const auto syncTypes = [&] {
+        types->setEnabled(download->isChecked());
+        typesNote->setEnabled(download->isChecked());
+    };
+    connect(download, &QRadioButton::toggled, &d, syncTypes);
+    syncTypes();
+    auto* folderRow = new QHBoxLayout;
+    folderRow->addWidget(new QLabel(tr("Folder:"), &d));
+    auto* folder = new QLineEdit(&d);
+    folder->setPlaceholderText(tr("Default: a folder of the set's own in Incoming"));
+    folderRow->addWidget(folder, 1);
+    auto* pick = new QPushButton(tr("Browse..."), &d);
+    pick->setAutoDefault(false);
+    folderRow->addWidget(pick);
+    layout->addLayout(folderRow);
+    connect(pick, &QPushButton::clicked, &d, [&] {
+        const QString dir = FolderPickerDialog::getExistingDirectory(&d, ipc, tr("Folder of the ed3k Set"), folder->text());
+        if (!dir.isEmpty())
+            folder->setText(dir);
+    });
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, &d);
+    QPushButton* follow = buttons->addButton(tr("Follow"), QDialogButtonBox::AcceptRole);
+    follow->setDefault(true);
+    QPushButton* site = offerWebsite ? buttons->addButton(tr("Open as Website"), QDialogButtonBox::ActionRole) : nullptr;
+    bool website = false;
+    if (site)
+        connect(site, &QPushButton::clicked, &d, [&] {
+            website = true;
+            d.accept();
+        });
+    connect(buttons, &QDialogButtonBox::accepted, &d, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &d, &QDialog::reject);
+    layout->addWidget(buttons);
+    if (d.exec() != QDialog::Accepted)
+        return std::nullopt;
+    FollowChoice c;
+    c.website = website;
+    c.policy = download->isChecked() ? 1 : 0;
+    // the default unchanged: the author's types win (§5.3)
+    if (const QStringList chosen = parseExts(types->text()); c.policy == 1 && chosen != parseExts(defaults))
+        c.exts = chosen;
+    c.dir = folder->text().trimmed();
+    return c;
+}
+
+QStringList Ed3kSetsDialog::parseExts(const QString& text)
+{
+    static const QRegularExpression kSep(QStringLiteral("[\\s,;]+"));
+    return normalizeFileTypes(text.split(kSep, Qt::SkipEmptyParts));
+}
+
+QString Ed3kSetsDialog::extsText(const QStringList& exts)
+{
+    return exts.join(QLatin1Char(' '));
+}
+
 // ---------------------------------------------------------------------------
 // Private
 // ---------------------------------------------------------------------------
@@ -560,7 +658,21 @@ void Ed3kSetsDialog::onSetChanged()
     }
     QStringList lines;
     if (!s.isEmpty()) {
-        lines << tr("Folder: %1").arg(s.value(QStringLiteral("dir")).toString());
+        lines << (s.value(QStringLiteral("dirByUser")).toBool() ? tr("Folder: %1") : tr("Folder: %1 (default)"))
+                     .arg(s.value(QStringLiteral("dir")).toString());
+        // file-set.md §5.3: whose file types the automatic download takes
+        if (s.value(QStringLiteral("policy")).toInteger() == 1) {
+            QStringList exts;
+            for (const auto& v : s.value(QStringLiteral("exts")).toArray())
+                exts << v.toString();
+            const QString types = exts.isEmpty() ? tr("all") : extsText(exts);
+            if (s.value(QStringLiteral("extsByUser")).toBool())
+                lines << tr("File types: %1").arg(types);
+            else if (!s.value(QStringLiteral("authorExts")).toArray().isEmpty())
+                lines << tr("File types (the author's): %1").arg(types);
+            else
+                lines << tr("File types (default): %1").arg(types);
+        }
         const auto count = [&](const char* key) { return s.value(QLatin1String(key)).toArray().size(); };
         if (pending >= 0)
             lines << tr("Version %1 is waiting: %2 added, %3 changed, %4 removed.")
@@ -635,6 +747,8 @@ void Ed3kSetsDialog::updateButtons()
     m_follow->setEnabled(connected);
     m_unfollow->setEnabled(connected && !s.isEmpty());
     m_policy->setEnabled(connected && !s.isEmpty());
+    m_filter->setEnabled(connected && !s.isEmpty());
+    m_folder->setEnabled(connected && !s.isEmpty());
     m_download->setEnabled(connected && !s.isEmpty()
                            && (s.value(QStringLiteral("seq")).toInteger(-1) >= 0 || s.value(QStringLiteral("pendingSeq")).toInteger(-1) >= 0));
     const QCborMap paid = paidOf(s);
@@ -716,8 +830,11 @@ void Ed3kSetsDialog::followLink()
                              .trimmed();
     if (!ok || link.isEmpty())
         return;
-    // file-set.md §2.3: the members are shown before they download; "ask" waits for the user
-    m_ipc->followEd3kSet(link, m_policy->currentIndex(), [self = QPointer(this)](const IpcMessage& r) {
+    // file-set.md §2.3: the members are shown before they download; "browse only" waits for the user
+    const auto choice = askFollow(this, m_ipc, tr("Follow this ed3k set?"), false);
+    if (!choice || !m_ipc)
+        return;
+    m_ipc->followEd3kSet(link, choice->policy, choice->exts, choice->dir, [self = QPointer(this)](const IpcMessage& r) {
         if (!self)
             return;
         if (!r.fieldBool(0)) {
@@ -770,13 +887,112 @@ void Ed3kSetsDialog::downloadSelected()
     });
 }
 
-void Ed3kSetsDialog::downloadParts()
+void Ed3kSetsDialog::downloadParts(const QString& author)
 {
     if (!m_ipc || currentId() < 0)
         return;
-    m_ipc->downloadEd3kSetParts(currentId(), {}, [self = QPointer(this)](const IpcMessage& r) {
+    m_ipc->downloadEd3kSetParts(currentId(), author, [self = QPointer(this)](const IpcMessage& r) {
         if (self && !r.fieldBool(0))
             self->showError(tr("The parts could not be downloaded."), r.fieldMap(1));
+    });
+}
+
+void Ed3kSetsDialog::fillPartsMenu()
+{
+    QMenu* menu = m_parts->menu();
+    menu->clear();
+    // per author: how many parts, files and bytes
+    struct Sum { int parts = 0; qint64 files = 0; qint64 size = 0; };
+    std::map<QString, Sum> byAuthor;
+    for (const auto& v : currentSet().value(QStringLiteral("parts")).toArray()) {
+        const QCborMap p = v.toMap();
+        Sum& sum = byAuthor[p.value(QStringLiteral("author")).toString()];
+        ++sum.parts;
+        sum.files += p.value(QStringLiteral("files")).toInteger();
+        sum.size += p.value(QStringLiteral("size")).toInteger();
+    }
+    menu->addAction(tr("From All Authors"), this, [this] { downloadParts({}); });
+    if (byAuthor.size() < 2)
+        return;
+    menu->addSeparator();
+    for (const auto& [author, sum] : byAuthor)
+        menu->addAction(tr("From %1 (parts: %2, files: %3, %4)")
+                            .arg(author.left(8))
+                            .arg(sum.parts)
+                            .arg(sum.files)
+                            .arg(formatByteSize(sum.size)),
+                        this, [this, a = author] { downloadParts(a); });
+}
+
+void Ed3kSetsDialog::editFilter()
+{
+    const QCborMap s = currentSet();
+    if (s.isEmpty() || !m_ipc)
+        return;
+    QStringList now;
+    for (const auto& v : s.value(QStringLiteral("exts")).toArray())
+        now << v.toString();
+    QStringList author;
+    for (const auto& v : s.value(QStringLiteral("authorExts")).toArray())
+        author << v.toString();
+    QDialog d(this);
+    d.setWindowTitle(tr("File Types"));
+    auto* layout = new QVBoxLayout(&d);
+    auto* note = new QLabel(tr("With \"Download automatically\", new files of these types download as they come "
+                               "(e.g. mkv mp3 jpg). Empty: every file."),
+                            &d);
+    note->setWordWrap(true);
+    layout->addWidget(note);
+    auto* edit = new QLineEdit(extsText(now), &d);
+    layout->addWidget(edit);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &d);
+    // back to the author's types (file-set.md §5.3), else the default
+    QPushButton* reset = buttons->addButton(author.isEmpty() ? tr("Use Default") : tr("Use the Author's"), QDialogButtonBox::ResetRole);
+    bool useAuthor = false;
+    connect(reset, &QPushButton::clicked, &d, [&] {
+        useAuthor = true;
+        d.accept();
+    });
+    connect(buttons, &QDialogButtonBox::accepted, &d, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &d, &QDialog::reject);
+    layout->addWidget(buttons);
+    if (d.exec() != QDialog::Accepted || !m_ipc)
+        return;
+    std::optional<QStringList> exts;
+    if (!useAuthor)
+        exts = parseExts(edit->text());
+    m_ipc->setEd3kSetFilter(currentId(), exts, [self = QPointer(this)](const IpcMessage& r) {
+        if (self && !r.fieldBool(0))
+            self->showError(tr("The file types could not be set."), r.fieldMap(1));
+    });
+}
+
+void Ed3kSetsDialog::changeFolder()
+{
+    const QCborMap s = currentSet();
+    if (s.isEmpty() || !m_ipc)
+        return;
+    QMessageBox box(QMessageBox::Question, tr("Change Folder"),
+                    tr("Files of this set go to:\n%1\n\nThe folder can be changed only before the first file of the set "
+                       "is downloaded.")
+                        .arg(s.value(QStringLiteral("dir")).toString()),
+                    QMessageBox::Cancel, this);
+    QPushButton* choose = box.addButton(tr("Choose Folder..."), QMessageBox::AcceptRole);
+    QPushButton* reset = s.value(QStringLiteral("dirByUser")).toBool() ? box.addButton(tr("Use Default"), QMessageBox::ResetRole) : nullptr;
+    box.exec();
+    QString dir;
+    if (box.clickedButton() == choose) {
+        dir = FolderPickerDialog::getExistingDirectory(this, m_ipc, tr("Folder of the ed3k Set"), s.value(QStringLiteral("dir")).toString());
+        if (dir.isEmpty())
+            return;
+    } else if (!reset || box.clickedButton() != reset) {
+        return;
+    }
+    if (!m_ipc)
+        return;
+    m_ipc->setEd3kSetFolder(currentId(), dir, [self = QPointer(this)](const IpcMessage& r) {
+        if (self && !r.fieldBool(0))
+            self->showError(tr("The folder could not be changed."), r.fieldMap(1));
     });
 }
 

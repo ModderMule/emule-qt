@@ -47,6 +47,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QTemporaryDir>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -210,6 +211,28 @@ void TorrentPanel::promptAddTorrentFiles()
     if (paths.isEmpty())
         return;
     AddTorrentDialog dlg(m_ipc, AddTorrentDialog::Mode::Files, paths, this);
+    if (dlg.exec() == QDialog::Accepted)
+        m_poller->refreshNow();
+}
+
+void TorrentPanel::promptAddTorrentData(const QString& name, const QByteArray& data)
+{
+    if (!m_ipc || !m_ipc->isConnected()) {
+        QMessageBox::warning(this, tr("Add Torrent Files"), tr("Not connected to the eMule core."));
+        return;
+    }
+    // the dialog reads paths: a temp copy while it is up
+    QTemporaryDir dir;
+    QString base = QFileInfo(name).fileName();
+    if (!base.endsWith(QStringLiteral(".torrent"), Qt::CaseInsensitive))
+        base += QStringLiteral(".torrent");
+    QFile f(dir.filePath(base));
+    if (!dir.isValid() || !f.open(QIODevice::WriteOnly) || f.write(data) != data.size()) {
+        QMessageBox::warning(this, tr("Add Torrent Files"), tr("Cannot read %1.").arg(base));
+        return;
+    }
+    f.close();
+    AddTorrentDialog dlg(m_ipc, AddTorrentDialog::Mode::Files, {f.fileName()}, this);
     if (dlg.exec() == QDialog::Accepted)
         m_poller->refreshNow();
 }

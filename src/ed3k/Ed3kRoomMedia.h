@@ -82,7 +82,8 @@ public:
     /// The core finished a fetch (ED3K_EV_ROOM_MEDIA).
     void onFetched(const ::ed3k::Room& room, const Root& root, bool ok);
 
-    /// An own post's file: sealed for a room with a secret, cached, held. The Media to post.
+    /// An own post's file (media, or a text/NZB/DLC/torrent): sealed for a room with a secret, cached,
+    /// held. The Media to post.
     ::ed3k::Result<Media> add(const ::ed3k::Room& room, ::ed3k::KeyKind key, const QByteArray& bytes, const QString& name,
                               bool sealed, std::uint32_t width, std::uint32_t height);
     /// @p room joined: its cached files held (a hold before the join may have failed).

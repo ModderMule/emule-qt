@@ -60,6 +60,13 @@ public:
     /// A change while started restarts the join; switching on withdraws the kept ALIAS records.
     void setHoldBack(bool on);
     [[nodiscard]] bool holdsBack() const { return m_holdBack; }
+    /// hops.md §1: this network's files follow the hiding switch (Options › ed3k › Extended ›
+    /// Kad publishing): downloads, shares, set and ALIAS records under the anonymous key while
+    /// hiding runs. Off: node key only, a file of the anonymous key is left out (skipped).
+    /// A change while started restarts the join; kept sets and ALIAS records are taken back
+    /// first and go out again under their files' key. Default off.
+    void setAnonKey(bool on);
+    [[nodiscard]] bool anonKey() const { return m_anonKey; }
     /// Days a deleted file's records stay out (alias.md §3 "Deleted file"; yaml
     /// ed3k.deletedFileDays, default 365, 0: no age limit, < 0: none). Shorter ends the rows
     /// over at once. Their network's check ends them regardless.
@@ -162,9 +169,11 @@ public:
         QString tag;
         Kind kind = Kind::Off;
         QStringList owners;   ///< Joined, Skipped: its jobs
-        /// Skipped: "anonKey" (hops.md §1: the root is under the anonymous key, the network is
-        /// not anonymous)
+        /// Skipped: "anonKey" (hops.md §1: the root is under the anonymous key, the network's
+        /// anonymous key switch is off)
         QString reason;
+        /// Joined: true while held under the anonymous key (the network's switch on)
+        bool anon = false;
     };
     /// One row per network join of @p session (eD2K, BitTorrent, usenet, hoster) for @p root.
     [[nodiscard]] static std::vector<JoinState> joinStatesAt(const Ed3kSession& session, const ffi::Root& root);
@@ -294,9 +303,10 @@ protected:
     /// What was kept of @p owner is shared again; false holds it back (kept on disk).
     [[nodiscard]] virtual bool sharesKeptOwner(const QString& owner) const { Q_UNUSED(owner) return true; }
     /// Whether this join's downloads and member shares follow the hiding switch (Ed3kHide):
-    /// plain downloads and the share list. Joins of other networks stay on the node key
-    /// (eD2K, BT, usenet, hoster never anonymous, ffi.md). Default off.
-    [[nodiscard]] virtual bool anonCapable() const { return false; }
+    /// plain downloads and the share list always. Joins of other networks as the user set it
+    /// per network (setAnonKey; was: never, they stayed on the node key).
+    // was: [[nodiscard]] virtual bool anonCapable() const { return false; }
+    [[nodiscard]] virtual bool anonCapable() const { return m_anonKey; }
     /// Hiding started (true) or stopped (false; the anonymous node took its downloads and
     /// shares along, the base dropped them). Default: nothing.
     virtual void onHideChanged(bool hiding) { Q_UNUSED(hiding) }
@@ -384,7 +394,21 @@ protected:
     [[nodiscard]] bool anonHeld(const ffi::Root& root) const;
     /// hops.md §1: the set (MEMBER rows, published under the node key) of @p owner is left out
     /// while a member is skipped or anonHeld: it would tie the anonymous file to this node.
+    /// anonCapable(): left out while its members are under both keys (setKeyOf).
     [[nodiscard]] bool withholdSet(const QString& owner, std::span<const ffi::Root> members) const;
+    /// hops.md §1: the key the set records of @p owner go under (manifest, set, MEMBER rows):
+    /// the one key all @p members are under (none yet: keyForUse). nullopt: withheld (both
+    /// keys, a member left out, or the anonymous key while hiding is off).
+    [[nodiscard]] std::optional<ffi::KeyKind> setKeyOf(const QString& owner, std::span<const ffi::Root> members) const;
+    /// The key blobs of @p owner (manifest, info dictionary, article list) are shared under:
+    /// setKeyOf of its members held and kept; withheld: the node key.
+    [[nodiscard]] ffi::KeyKind blobKeyOf(const QString& owner) const;
+    /// ALIAS records one by one, each under its file's key (hops.md §1: an anonymous file's
+    /// only through a path): the node key; State (held under the anonymous key) on the
+    /// anonymous node when anonCapable() and hiding. The count published; none: the last error.
+    std::expected<std::uint32_t, ffi::Error> publishAliasRecords(std::span<const ffi::Bytes> records);
+    /// The set of manifest @p root taken back under either key.
+    void unpublishSet(const ffi::Root& root);
     /// An anonCapable() join takes @p root (before it opens it): default, it shares or
     /// downloads it. Ed3kShared: a listed file hashed to it.
     [[nodiscard]] virtual bool claimsRoot(const ffi::Root& root) const
@@ -557,6 +581,7 @@ protected:
     QString m_configDir;
     bool m_started = false;
     bool m_holdBack = false;
+    bool m_anonKey = false;   ///< setAnonKey
     bool m_searchEnabled = true;
     /// reads inline (files about to be deleted: usenet filesRepaired)
     bool m_readsNow = false;
@@ -628,6 +653,8 @@ private:
     [[nodiscard]] bool deletedOver(const DeletedFile& f, qint64 now) const;
     /// unpublishAlias of every kept owner's records (hold back switched on).
     void withdrawKeptRecords();
+    /// unpublishSet of every kept owner's set (setAnonKey: published again under the new key).
+    void withdrawKeptSets();
 
     // -- turns at a source node (Protocol.md §12.5: one file stream per uploader) --------
 

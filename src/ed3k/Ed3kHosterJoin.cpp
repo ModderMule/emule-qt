@@ -1,5 +1,6 @@
 #include "Ed3kHosterJoin.h"
 
+#include "Ed3kHide.h"
 #include "Ed3kSession.h"
 #include "Ed3kStore.h"
 #include "decode/YencDecoder.h"
@@ -3220,9 +3221,14 @@ void Ed3kHosterJoin::publishShared(Entry& e)
     int aliases = 0;
     // alias.md §3 "Deleted file": the ALIAS records only, no SOURCE
     const bool deleted = isDeleted(*e.root) && !QFileInfo::exists(e.item.file);
+    // ffi.md MUST "nothing direct under the anonymous key": a file of it hands out no hoster
+    // link, nor an ALIAS url record (the anonymous node drops them from results anyway)
+    const auto key = m_session.hide().keyOf(*e.root);
+    const bool anonFile = key && *key == ffi::KeyKind::Anon;
     for (SharedLink& l : e.shared) {
         // §4.1: nothing while links are held back
-        const bool live = m_prefs.publishLinks && linkLive(l, now);
+        // was: const bool live = m_prefs.publishLinks && linkLive(l, now);
+        const bool live = m_prefs.publishLinks && !anonFile && linkLive(l, now);
         if (live && urls.size() < kMaxShareLinks && !deleted)
             urls << l.url;
         const bool wantAlias = live && aliases < kMaxAliasLinks;

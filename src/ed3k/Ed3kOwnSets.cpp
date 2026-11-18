@@ -10,6 +10,7 @@
 #include "Ed3kStore.h"
 
 #include "files/SharedDirWatcher.h"
+#include "utils/FileTypeFilter.h"
 #include "utils/Log.h"
 
 #include <QDateTime>
@@ -210,7 +211,7 @@ std::expected<QString, QString> Ed3kOwnSets::create(const QString& title, const 
     if (s.title.isEmpty())
         s.title = s.folder.isEmpty() ? QFileInfo(s.files.value(0)).completeBaseName() : QFileInfo(s.folder).fileName();
     s.kind = kind;
-    s.exts = ed3kNormalizeExts(exts);
+    s.exts = normalizeFileTypes(exts);
     s.created = m_session.now().unixS;
     const auto id = randomBytes<kIdBytes>();
     s.id = QByteArray(reinterpret_cast<const char*>(id.data()), kIdBytes);
@@ -273,7 +274,7 @@ std::expected<void, QString> Ed3kOwnSets::setExts(const QString& id, const QStri
     Set* s = find(id);
     if (!s)
         return std::unexpected(tr("This set is not yours."));
-    const QStringList norm = ed3kNormalizeExts(exts);
+    const QStringList norm = normalizeFileTypes(exts);
     if (norm == s->exts)
         return {};
     s->exts = norm;
@@ -1152,7 +1153,7 @@ void Ed3kOwnSets::load()
         s.title = o.value(QStringLiteral("title")).toString();
         for (const auto& e : o.value(QStringLiteral("exts")).toArray())
             s.exts << e.toString();
-        s.exts = ed3kNormalizeExts(s.exts);
+        s.exts = normalizeFileTypes(s.exts);
         s.folder = o.value(QStringLiteral("folder")).toString();
         for (const auto& f : o.value(QStringLiteral("files")).toArray())
             s.files << f.toString();

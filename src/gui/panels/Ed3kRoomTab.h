@@ -125,11 +125,17 @@ public:
     [[nodiscard]] bool admitImportable() const;
     /// The room takes media (§2.6): its largest file, bytes; 0 none.
     [[nodiscard]] qint64 mediaMax() const { return m_row.value(QStringLiteral("mediaMax")).toInteger(); }
+    /// The room takes other small files too: text, NZB, DLC (§2.6 `files`).
+    [[nodiscard]] bool takesFiles() const { return mediaMax() > 0 && m_row.value(QStringLiteral("files")).toBool(); }
     /// How a ready file's bytes come (IPC); they go to setMediaBytes.
     void setMediaLoader(std::function<void(const QString& root)> load) { m_media->setLoader(std::move(load)); }
     /// PushEd3kRoomMedia: a post's media changed.
     void setMediaState(const QString& root, int state);
     void setMediaBytes(const QString& root, const QByteArray& bytes) { m_media->setBytes(root, bytes); }
+    [[nodiscard]] const QVector<Post>& posts() const { return m_posts; }
+    [[nodiscard]] int mediaState(const QString& root) const { return m_media->state(root); }
+    /// As a click on the post's file or image
+    void clickMedia(const QString& root) { m_media->clicked(root, this); }
 
 signals:
     /// The post menu: answer @p id with the next post.
@@ -140,6 +146,8 @@ signals:
     void importAdmitRequested();
     /// A click asks for a post's file (FetchEd3kRoomMedia).
     void mediaFetchRequested(const QString& root);
+    /// The user opened a post's NZB, DLC or torrent: to its add dialog.
+    void fileOpenRequested(const QString& name, const QByteArray& bytes);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;

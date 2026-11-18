@@ -199,6 +199,10 @@ void tst_Ed3kBridge::onlyTheEd3kBlockIsAnswered()
     QVERIFY(Ed3kBridge::handleRequest(IpcMessage(static_cast<IpcMsgType>(1229), 2), reply));
     QCOMPARE(replies, 1);
     QCOMPARE(last.type(), IpcMsgType::Error);
+    // room media requests (1250-1253) reach the bridge: they once sat in the push block
+    for (const auto t : {IpcMsgType::SetEd3kRoomLimits, IpcMsgType::PostEd3kRoomMedia, IpcMsgType::GetEd3kRoomMedia,
+                         IpcMsgType::FetchEd3kRoomMedia, IpcMsgType::GetEd3kRooms})
+        QVERIFY2(Ed3kBridge::isEd3kRequest(t), qPrintable(QString::number(int(t))));
 }
 
 void tst_Ed3kBridge::coordinatorLimitsAndCountsTheNode()

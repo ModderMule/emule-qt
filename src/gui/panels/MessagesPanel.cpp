@@ -773,8 +773,8 @@ void MessagesPanel::updateChatDisplay()
         const auto render = [smileys](const QString& text) {
             return smileys ? Smileys::render(text) : text.toHtmlEscaped();
         };
-        // privacy: links as plain text when asked (Options › Messages)
-        const QString escapedText = thePrefs.chatPlainLinks() ? render(msg.text) : TextLinks::linkify(msg.text, render);
+        // privacy: web links only when asked (Options › Messages)
+        const QString escapedText = TextLinks::linkifyChat(msg.text, render, thePrefs.chatWebLinks());
         m_chatBrowser->append(
             QStringLiteral("<font color='gray'>[%1]</font> "
                            "<font color='%2'><b>%3:</b></font> %4")

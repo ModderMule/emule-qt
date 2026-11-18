@@ -1696,12 +1696,21 @@ public:
     /// MAY). Default off: limits hold for every peer, as eD2K's.
     [[nodiscard]] bool ed3kLanUnlimited() const;
     void setEd3kLanUnlimited(bool val);
-    /// CAP_ED2K in the ed3k Hello while eD2K is not switched off (Protocol.md §2, §14)
-    [[nodiscard]] bool ed3kAdvertiseEd2k() const;
-    void setEd3kAdvertiseEd2k(bool val);
     /// Own ed3k sets' folders watched: a changed folder publishes a new version. Default on.
     [[nodiscard]] bool ed3kOwnSetsWatch() const;
     void setEd3kOwnSetsWatch(bool val);
+    /// hops.md §1: files of a network's ed3k join (eD2K, BitTorrent, Usenet, hoster) follow the
+    /// hiding switch: downloads, shares, set and ALIAS records under the anonymous key while
+    /// hiding runs. Off: node key only. BitTorrent and eD2K show this address to their peers
+    /// (default off); Usenet and hosters only to the provider (default on).
+    [[nodiscard]] bool ed3kAnonEd2k() const;
+    void setEd3kAnonEd2k(bool val);
+    [[nodiscard]] bool ed3kAnonTorrent() const;
+    void setEd3kAnonTorrent(bool val);
+    [[nodiscard]] bool ed3kAnonUsenet() const;
+    void setEd3kAnonUsenet(bool val);
+    [[nodiscard]] bool ed3kAnonHoster() const;
+    void setEd3kAnonHoster(bool val);
 
     /// JSON-RPC endpoints of the credit ledger / the chaintube chain (https, or http to
     /// a loopback node); operator n of a call is the n-th. Empty = calls answered failed.
@@ -2226,8 +2235,9 @@ public:
     void setChatAlert(int val);
     [[nodiscard]] bool chatUnreadBadge() const;
     void setChatUnreadBadge(bool val);
-    [[nodiscard]] bool chatPlainLinks() const;
-    void setChatPlainLinks(bool val);
+    /// chats: http(s)/www/ftp clickable too; off: only ed2k, ed3k and magnet links
+    [[nodiscard]] bool chatWebLinks() const;
+    void setChatWebLinks(bool val);
     /// ed3k room moderators marked by a gold star; off: the IRC "@"
     [[nodiscard]] bool chatModStar() const;
     void setChatModStar(bool val);

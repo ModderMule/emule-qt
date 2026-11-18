@@ -55,15 +55,6 @@ struct Ed3kSetManifest {
 /// @p path below @p dir with names every file system holds (§2.2); empty: it would leave
 /// @p dir (never for a path the core accepted).
 [[nodiscard]] QString ed3kSetLocalPath(const QString& dir, const QString& path);
-/// File types as FileSet.exts holds them (§5.3): lower case, no dot ("*.mkv", ".MKV" → "mkv"),
-/// 1-16 letters or digits, no repeats, at most 64. Bad entries dropped.
-[[nodiscard]] QStringList ed3kNormalizeExts(const QStringList& exts);
-/// Whether @p fileName ends in one of @p exts; "rar" also takes .r00-.r99 volumes, "zip", "rar"
-/// and "7z" the .001 splits. Empty @p exts: every file.
-[[nodiscard]] bool ed3kExtMatches(const QString& fileName, const QStringList& exts);
-/// The local default of a followed set without the author's file types: video, audio,
-/// archives, images, subtitles, text; no scripts or programs.
-[[nodiscard]] QStringList ed3kDefaultSetExts();
 /// One path component made safe (reserved names, `:`, trailing dot or space, control chars).
 [[nodiscard]] QString ed3kSafeName(const QString& name);
 

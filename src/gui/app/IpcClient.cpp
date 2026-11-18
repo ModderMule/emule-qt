@@ -1131,13 +1131,15 @@ int IpcClient::muteEd3kRoomMember(const QString& room, const QString& memberId, 
     return sendRequest(std::move(msg), std::move(callback));
 }
 
-int IpcClient::setEd3kRoomLimits(const QString& room, qint64 mediaMax, int keepHours, int keepPosts, ResponseCallback callback)
+int IpcClient::setEd3kRoomLimits(const QString& room, qint64 mediaMax, int keepHours, int keepPosts, bool files,
+                                 ResponseCallback callback)
 {
     IpcMessage msg(IpcMsgType::SetEd3kRoomLimits);
     msg.append(room);
     msg.append(mediaMax);
     msg.append(qint64(keepHours));
     msg.append(qint64(keepPosts));
+    msg.append(files);
     return sendRequest(std::move(msg), std::move(callback));
 }
 

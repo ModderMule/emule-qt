@@ -113,6 +113,8 @@ public:
         std::uint64_t mediaMax = 0;
         std::uint32_t keepHours = 24;
         std::uint32_t keepPosts = 1000;
+        /// other small files besides media (§2.6 `files`)
+        bool files = false;
 
         [[nodiscard]] bool isModerator(const ::ed3k::Key32& member) const;
         /// This member may admit, ban and start generations.
@@ -144,8 +146,9 @@ public:
     /// A post with a file (§2.6): sealed in a room with a secret, cached, held; its id.
     ::ed3k::Result<::ed3k::PostId> postMedia(const ::ed3k::Room& room, const QString& text, std::optional<::ed3k::PostId> replyTo,
                                              const QByteArray& bytes, const QString& name, std::uint32_t width, std::uint32_t height);
-    /// Owner: media and history limits (§2.1); 0 media = none.
-    ::ed3k::Result<> setLimits(const ::ed3k::Room& room, std::uint64_t mediaMax, std::uint32_t keepHours, std::uint32_t keepPosts);
+    /// Owner: media and history limits (§2.1); 0 media = none; @p files: other small files too.
+    ::ed3k::Result<> setLimits(const ::ed3k::Room& room, std::uint64_t mediaMax, std::uint32_t keepHours, std::uint32_t keepPosts,
+                               bool files = false);
     [[nodiscard]] Ed3kRoomMedia& media() { return *m_media; }
     [[nodiscard]] const Ed3kRoomMedia& media() const { return *m_media; }
     /// Owner: a new room info (ED3K_ROOM_CLOSED, _MODERATED) and the moderators.
@@ -239,6 +242,9 @@ private:
     /// @p room's posts changed: written a few seconds later (one write per burst).
     void postsChanged(const ::ed3k::Room& room);
     void writeDirtyPosts();
+    /// dev aid EMULE_ED3K_ROOM_PEER=<node id hex>@<udp port>: rooms without a neighbour dial it on
+    /// 127.0.0.1 (two nodes on one host behind a VPN never meet by Kad)
+    void dialDevPeer();
     void writePosts(const Room& r) const;
     void removePostsFile(const ::ed3k::Room& room) const;
     [[nodiscard]] static QString postsFile(const ::ed3k::Room& room);

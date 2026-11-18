@@ -165,6 +165,7 @@ QCborMap roomToCbor(const Rooms& rooms, const Rooms::Room& r)
         {QStringLiteral("mediaMax"), qint64(r.mediaMax)},
         {QStringLiteral("keepHours"), qint64(r.keepHours)},
         {QStringLiteral("keepPosts"), qint64(r.keepPosts)},
+        {QStringLiteral("files"), r.files},
     };
 }
 
@@ -283,7 +284,7 @@ void answer(const IpcMessage& msg, Rooms& rooms, const std::function<void(const 
         break;
     case IpcMsgType::SetEd3kRoomLimits:
         done(rooms.setLimits(*room, std::uint64_t(std::max<qint64>(0, msg.fieldInt(1))), std::uint32_t(std::max<qint64>(0, msg.fieldInt(2))),
-                             std::uint32_t(std::max<qint64>(0, msg.fieldInt(3)))));
+                             std::uint32_t(std::max<qint64>(0, msg.fieldInt(3))), msg.fieldBool(4)));
         break;
     case IpcMsgType::FetchEd3kRoomMedia: {
         const auto root = ed3k::Ed3kRoomMedia::rootFrom(msg.fieldString(1));

@@ -17,9 +17,12 @@
 
 #ifdef EMULE_HAVE_ED3K
 #include "DaemonApp.h"
+#include "Ed3kFriends.h"
 #include "Ed3kPlumbing.h"
 #include "Ed3kSession.h"
 #include "IpcServer.h"
+
+#include <QUrl>
 
 #include <QElapsedTimer>
 #include <QHostAddress>
@@ -43,21 +46,33 @@ constexpr qint64 kSecretLifeMs = 10 * 60 * 1000;
 constexpr int kSecretsMax = 4;
 constexpr int kPreambleWaitMs = 15000;
 constexpr int kPeersMax = 32;
+/// Kad contacts handed to a phone as seeds of its leaf (finding the core again)
+constexpr int kSeedsMax = 8;
 
-/// "<node id 32 hex> <name>" of ipc.tunnelPeers; empty id when malformed
+/// "<node id 32 hex>[/<node key 64 hex>] <name>" of ipc.tunnelPeers; empty id when malformed
 struct Peer {
     QByteArray id;
     QString name;
+    QByteArray key;   ///< 32 bytes once known (tunnel or RegisterTunnelPeer): an ed3k friend
 };
 
 Peer parsePeer(const QString& line)
 {
     const qsizetype sp = line.indexOf(u' ');
-    const QString hex = (sp < 0 ? line : line.left(sp)).trimmed().toLower();
+    const QString head = (sp < 0 ? line : line.left(sp)).trimmed().toLower();
+    const qsizetype slash = head.indexOf(u'/');
+    const QString hex = slash < 0 ? head : head.left(slash);
     const QByteArray id = QByteArray::fromHex(hex.toLatin1());
     if (id.size() != 16 || hex.size() != 32)
         return {};
-    return {id, sp < 0 ? QString() : line.mid(sp + 1).trimmed()};
+    QByteArray key;
+    if (slash >= 0) {
+        const QString keyHex = head.mid(slash + 1);
+        key = QByteArray::fromHex(keyHex.toLatin1());
+        if (key.size() != 32 || keyHex.size() != 64)
+            key.clear();
+    }
+    return {id, sp < 0 ? QString() : line.mid(sp + 1).trimmed(), key};
 }
 
 QList<Peer> peers()
@@ -73,7 +88,8 @@ void savePeers(const QList<Peer>& list)
 {
     QStringList lines;
     for (const Peer& p : list)
-        lines << QString::fromLatin1(p.id.toHex()) + u' ' + p.name;
+        lines << QString::fromLatin1(p.id.toHex())
+                     + (p.key.size() == 32 ? u'/' + QString::fromLatin1(p.key.toHex()) : QString()) + u' ' + p.name;
     thePrefs.setIpcTunnelPeers(lines);
     thePrefs.saveInBackground();
 }
@@ -126,6 +142,51 @@ namespace ffi = ::ed3k;
 QString hexOf(std::span<const std::uint8_t> b)
 {
     return QString::fromLatin1(QByteArray(reinterpret_cast<const char*>(b.data()), qsizetype(b.size())).toHex());
+}
+
+QPointer<ed3k::Ed3kFriends>& friendsPtr()
+{
+    static QPointer<ed3k::Ed3kFriends> f;
+    return f;
+}
+
+std::optional<ffi::Key32> keyOf(const QByteArray& raw)
+{
+    return raw.size() == 32 ? ed3k::Ed3kFriends::keyFrom(raw) : std::nullopt;
+}
+
+/// The phone as an ed3k friend of the node (friend.md §1): the node stores a sealed record of
+/// its addresses for it, so the phone finds the core again after its address and relays changed
+void befriend(const Peer& p)
+{
+    auto* f = friendsPtr().data();
+    const auto key = keyOf(p.key);
+    if (!f || !key || !f->isRunning())
+        return;
+    for (const auto& known : f->friends())
+        if (known.key == *key)
+            return;
+    const QString link = QStringLiteral("ed3k:friend?key=%1&dn=%2")
+                             .arg(ed3k::base32(*key),
+                                  QString::fromLatin1(QUrl::toPercentEncoding(QStringLiteral("qDonkey ") + p.name)));
+    if (auto ok = f->add(link, {}); !ok)
+        logWarning(QStringLiteral("ed3k tunnel: %1 not added as ed3k friend (%2)").arg(p.name).arg(int(ok.error())));
+    else
+        logInfo(QStringLiteral("ed3k tunnel: %1 is an ed3k friend now (finds the core by key)").arg(p.name));
+}
+
+void unfriend(const Peer& p)
+{
+    auto* f = friendsPtr().data();
+    if (const auto key = keyOf(p.key); f && key && f->isRunning())
+        (void)f->remove(*key);
+}
+
+QString endpointText(const ffi::Address& a)
+{
+    const QHostAddress ip = ed3k::toQHostAddress(a);
+    const QString host = ip.protocol() == QAbstractSocket::IPv6Protocol ? u'[' + ip.toString() + u']' : ip.toString();
+    return host + u':' + QString::number(a.port);
 }
 
 /// One accepted tunnel
@@ -205,9 +266,27 @@ public:
         for (const QByteArray& id : QSet<QByteArray>(m_allowed))
             if (!now.contains(id))
                 setAllowed(id, false);
+        for (const Peer& p : peers())
+            befriend(p);
     }
 
 private:
+    /// A paired phone's key, from QUIC (it proved it): kept and befriended if new
+    void learnKey(const QByteArray& id, const QByteArray& key)
+    {
+        if (key.size() != 32)
+            return;
+        QList<Peer> list = peers();
+        for (Peer& q : list) {
+            if (q.id != id || q.key == key)
+                continue;
+            q.key = key;
+            savePeers(list);
+            befriend(q);
+            return;
+        }
+    }
+
     void setAllowed(const QByteArray& id, bool on)
     {
         ffi::NodeId node;
@@ -236,6 +315,8 @@ private:
             logInfo(QStringLiteral("ed3k tunnel %1: phone %2 from %3%4")
                         .arg(p.id).arg(QString::fromLatin1(p.peer.toHex().left(12)), p.remote,
                              p.known ? QString() : QStringLiteral(" (not paired yet)")));
+            if (p.known)
+                learnKey(p.peer, p.key);
             m_pipes.emplace(p.id, std::move(p));
         } else if (const auto* d = std::get_if<e::TunnelData>(&ev)) {
             auto it = m_pipes.find(d->tunnel);
@@ -299,11 +380,12 @@ private:
             }
             QList<Peer> list = peers();
             if (list.size() >= kPeersMax)
-                list.removeFirst();
+                unfriend(list.takeFirst());
             const QString name = nextName(list);
-            list.append({p.peer, name});
+            list.append({p.peer, name, p.key});
             savePeers(list);
             setAllowed(p.peer, true);
+            befriend(list.last());
             p.known = true;
             logInfo(QStringLiteral("ed3k tunnel %1: paired %2 (%3)").arg(p.id).arg(name, QString::fromLatin1(p.peer.toHex())));
         }
@@ -443,15 +525,20 @@ ed3k::Ed3kSession*& sessionPtr()
 
 } // namespace
 
-void setSession(ed3k::Ed3kSession* session)
+void setSession(ed3k::Ed3kSession* session, ed3k::Ed3kFriends* friends)
 {
 #ifdef EMULE_HAVE_ED3K
     host().reset();
     sessionPtr() = session;
+    friendsPtr() = friends;
     if (session)
         host() = std::make_unique<Host>(*session);
+    if (friends)
+        QObject::connect(friends, &ed3k::Ed3kFriends::friendsChanged, friends, [] { reapply(); },
+                         Qt::UniqueConnection);
 #else
     Q_UNUSED(session);
+    Q_UNUSED(friends);
 #endif
 }
 
@@ -493,6 +580,27 @@ QCborMap identity(bool pair)
     out.insert(QStringLiteral("relays"), relays);
     // the node's own port on this machine's addresses: the LAN fallback
     out.insert(QStringLiteral("udpPort"), static_cast<qint64>(st.udpPort));
+    // finding the core when endpoints and relays are stale: its friend link (the key) and Kad
+    // contacts the phone's leaf starts its routing table from
+    if (auto* f = friendsPtr().data()) {
+        if (auto link = f->myLink(false, {}); link)
+            out.insert(QStringLiteral("friendLink"), *link);
+    }
+    if (auto* e = s->engine()) {
+        QCborArray seeds;
+        if (auto contacts = e->kadContacts(s->now()); contacts) {
+            for (const auto& c : *contacts) {
+                if (seeds.size() >= kSeedsMax)
+                    break;
+                if (c.fails != 0)
+                    continue;
+                ffi::NodeId id;
+                std::copy(std::begin(c.id), std::end(c.id), id.bytes.begin());
+                seeds.append(QString(hexOf(id.bytes) + u'@' + endpointText(ffi::Address::from(c.addr))));
+            }
+        }
+        out.insert(QStringLiteral("seeds"), seeds);
+    }
     if (pair) {
         dropExpiredSecrets();
         while (int(secrets().size()) >= kSecretsMax)
@@ -515,17 +623,33 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
 {
     switch (msg.type()) {
     case IpcMsgType::RegisterTunnelPeer: {
-        // [node id hex, name]: a phone paired on the LAN (the token proves it may)
-        const Peer p = parsePeer(msg.fieldString(0) + u' ' + msg.fieldString(1));
+        // [node id hex, name, node key hex?]: a phone paired on the LAN (the token proves it
+        // may); the key makes it an ed3k friend (a wrong one only finds nothing)
+        Peer p = parsePeer(msg.fieldString(0) + u' ' + msg.fieldString(1));
         if (p.id.isEmpty()) {
             reply(IpcMessage::makeResult(msg.seqId(), false, QStringLiteral("bad node id")));
             return true;
         }
+        if (const QByteArray key = QByteArray::fromHex(msg.fieldString(2).toLatin1()); key.size() == 32)
+            p.key = key;
         QList<Peer> list = peers();
+        QString name = p.name.left(64);
+        for (const Peer& q : list) {
+            if (q.id != p.id)
+                continue;
+            if (name.isEmpty())
+                name = q.name;   // a refresh keeps the name
+            if (p.key.isEmpty())
+                p.key = q.key;
+        }
         list.removeIf([&](const Peer& q) { return q.id == p.id; });
-        if (list.size() >= kPeersMax)
+        if (list.size() >= kPeersMax) {
+#ifdef EMULE_HAVE_ED3K
+            unfriend(list.first());
+#endif
             list.removeFirst();
-        list.append({p.id, p.name.isEmpty() ? nextName(list) : p.name.left(64)});
+        }
+        list.append({p.id, name.isEmpty() ? nextName(list) : name, p.key});
         savePeers(list);
         reapply();
         reply(IpcMessage::makeResult(msg.seqId(), true, QCborValue()));
@@ -542,6 +666,11 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
     case IpcMsgType::RemoveTunnelPeer: {
         const QByteArray id = QByteArray::fromHex(msg.fieldString(0).toLatin1());
         QList<Peer> list = peers();
+#ifdef EMULE_HAVE_ED3K
+        for (const Peer& q : list)
+            if (q.id == id)
+                unfriend(q);   // its record for the phone is no longer stored
+#endif
         const auto n = list.removeIf([&](const Peer& q) { return q.id == id; });
         if (n > 0) {
             savePeers(list);

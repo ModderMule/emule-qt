@@ -14,7 +14,7 @@
 ///   those of the file types (filter); Policy::Browse keeps a version pending and tells the
 ///   GUI (newVersion) until applyVersion(), its new members unticked.
 /// - Filter: the user's file types, else the author's (FileSet.exts, §5.3), else
-///   ed3kDefaultSetExts(). Members are decided once, when first seen (path and root, `known`).
+///   defaultSetFileTypes(). Members are decided once, when first seen (path and root, `known`).
 /// - Members download one at a time per set, in the manifest's order (file-set.md §4.2; the
 ///   core keeps one file stream per uploader): added paused, resumed in turn.
 /// - The selection is the members left out (skipped paths); anything else, new members too,
@@ -181,7 +181,7 @@ public:
 signals:
     /// Something of the list changed (a version, a member's state); coalesced.
     void changed();
-    /// A newer version of a set with Policy::Ask waits for the user.
+    /// A newer version of a set with Policy::Browse waits for the user.
     void newVersion(std::uint32_t id, const QString& title, quint64 seq, const QStringList& added, const QStringList& changedPaths,
                     const QStringList& removed);
 

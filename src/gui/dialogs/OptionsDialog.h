@@ -130,6 +130,8 @@ private slots:
 private:
     /// General › Core button: CoreScriptDialog for the core in use
     void createConnectScript();
+    /// General › Core › Paired phones from the core (GetTunnelPeers)
+    void loadTunnelPeers();
     void editFilenameCleanups();
     /// Files page button: confirm, then have the core rehash every shared file.
     void rehashAllSharedFiles();
@@ -358,6 +360,9 @@ private:
     /// Remote cores whose TLS certificate is pinned; removals apply on Apply.
     QTreeWidget* m_trustedCoresTree = nullptr;
     QStringList m_trustedCoresRemoved;
+    /// qDonkey phones paired for the ed3k tunnel (GetTunnelPeers); removals apply on Apply.
+    QTreeWidget* m_tunnelPeersTree = nullptr;
+    QStringList m_tunnelPeersRemoved;           ///< node IDs, hex
 
     // Display page controls
     QSlider* m_depth3DSlider = nullptr;
@@ -561,7 +566,7 @@ private:
     QCheckBox* m_chatSoundCheck = nullptr;
     QComboBox* m_chatAlertCombo = nullptr;
     QCheckBox* m_chatUnreadBadgeCheck = nullptr;
-    QCheckBox* m_chatPlainLinksCheck = nullptr;
+    QCheckBox* m_chatWebLinksCheck = nullptr;
     QCheckBox* m_chatModStarCheck = nullptr;
     QCheckBox* m_chatRoomMediaCheck = nullptr;
     QCheckBox* m_chatRoomVideosCheck = nullptr;

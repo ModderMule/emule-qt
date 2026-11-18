@@ -52,6 +52,17 @@ inline constexpr std::array kSchemes = {
     QLatin1StringView{"mailto:"},  QLatin1StringView{"magnet:?"},
 };
 
+/// Chats: links that open in eMule Qt only; a click tells nobody our IP (ed3k:<kind>?…).
+inline constexpr std::array kChatSchemes = {
+    QLatin1StringView{"ed2k://"}, QLatin1StringView{"ed3k:"}, QLatin1StringView{"magnet:?"},
+};
+/// Chats with web links on: the above plus the web ones of kSchemes (no mailto).
+inline constexpr std::array kChatWebSchemes = {
+    QLatin1StringView{"ed2k://"},  QLatin1StringView{"ed3k:"},   QLatin1StringView{"magnet:?"},
+    QLatin1StringView{"http://"},  QLatin1StringView{"https://"}, QLatin1StringView{"ftp://"},
+    QLatin1StringView{"www."},     QLatin1StringView{"ftp."},
+};
+
 /// Scheme+path of the wrapper URL, up to the payload.
 inline constexpr QLatin1StringView kHrefPrefix{"emuleqt:link?u="};
 
@@ -86,14 +97,27 @@ inline constexpr QLatin1StringView kHrefPrefix{"emuleqt:link?u="};
     return c.isSpace() || c.unicode() < u' ';
 }
 
+/// A match of @p scheme at @p at really starts a link: "ed3k:" needs "<kind>?" after it,
+/// so "ed3k: nice" stays text.
+[[nodiscard]] inline bool startsLink(const QString& line, qsizetype at, QLatin1StringView scheme)
+{
+    if (scheme.compare(QLatin1StringView{"ed3k:"}, Qt::CaseInsensitive) != 0)
+        return true;
+    qsizetype i = at + scheme.size();
+    const qsizetype kind = i;
+    while (i < line.size() && line[i].isLetter())
+        ++i;
+    return i > kind && i < line.size() && line[i] == u'?';
+}
+
 /// Wrap every recognised URL in @p line in an anchor, rendering everything between the
-/// links with @p renderText.
+/// links with @p renderText. @p schemes: prefixes to look for (default: all, as MFC).
 ///
 /// @p renderText MUST HTML-escape what it returns — it is the only thing standing
 /// between remote text and the rich-text parser. It never sees a URL, so smiley and
 /// formatting substitutions cannot corrupt one.
-template <typename RenderText>
-[[nodiscard]] QString linkify(const QString& line, RenderText&& renderText)
+template <typename RenderText, typename Schemes = decltype(kSchemes)>
+[[nodiscard]] QString linkify(const QString& line, RenderText&& renderText, const Schemes& schemes = kSchemes)
 {
     QString out;
     qsizetype pos = 0;
@@ -101,8 +125,10 @@ template <typename RenderText>
     while (pos < line.size()) {
         // Find the earliest scheme match at or after pos.
         qsizetype bestStart = -1;
-        for (const auto scheme : kSchemes) {
-            const qsizetype at = line.indexOf(scheme, pos, Qt::CaseInsensitive);
+        for (const auto scheme : schemes) {
+            qsizetype at = line.indexOf(scheme, pos, Qt::CaseInsensitive);
+            while (at >= 0 && !startsLink(line, at, scheme))
+                at = line.indexOf(scheme, at + 1, Qt::CaseInsensitive);
             if (at >= 0 && (bestStart < 0 || at < bestStart))
                 bestStart = at;
         }
@@ -144,6 +170,14 @@ template <typename RenderText>
 
     out += renderText(QStringView{line}.mid(pos).toString());
     return out;
+}
+
+/// A chat line: eMule links only, web links too with @p web (Options › Messages).
+template <typename RenderText>
+[[nodiscard]] QString linkifyChat(const QString& line, RenderText&& renderText, bool web)
+{
+    return web ? linkify(line, std::forward<RenderText>(renderText), kChatWebSchemes)
+               : linkify(line, std::forward<RenderText>(renderText), kChatSchemes);
 }
 
 /// HTML-escape @p line and wrap every recognised URL in an <a> tag.

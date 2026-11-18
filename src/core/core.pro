@@ -450,6 +450,7 @@ HEADERS += \
     utils/FolderList.h \
     utils/PathUtils.h \
     utils/SafeRemove.h \
+    utils/FileTypeFilter.h \
     utils/PerfLog.h \
     utils/PlatformUtils.h \
     utils/SafeFile.h \

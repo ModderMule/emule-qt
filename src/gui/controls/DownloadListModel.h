@@ -30,8 +30,8 @@ struct SourceRow {
     QString downloadState;   // state token, see downloadStateText()
     int64_t remoteQueueRank = 0;
     bool remoteQueueFull = false;
-    int64_t transferredDown = 0;   ///< all files this session (Transferred, Client Details)
-    int64_t fileDown = -1;         ///< this row's file only (Completed); -1 = not told: transferredDown
+    int64_t transferredDown = 0;   ///< all files this session (Client Details)
+    int64_t fileDown = -1;         ///< this row's file only (Completed, Transferred); -1 = not told: transferredDown
     int64_t sessionDown = 0;
     [[nodiscard]] int64_t completedDown() const { return fileDown >= 0 ? fileDown : transferredDown; }
     int64_t datarate = 0;      // download speed from this source

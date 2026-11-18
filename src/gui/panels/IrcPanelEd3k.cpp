@@ -25,6 +25,8 @@
 #include <QDateTime>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDir>
+#include <QRegularExpression>
 #include <QDoubleSpinBox>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -82,6 +84,7 @@ struct RoomForm {
     QString nick;
     int flags = 0;
     qint64 mediaMax = 0;   ///< bytes, 0 = no media
+    bool files = false;    ///< text, NZB, DLC, torrent too (§2.6)
     int keepDays = 1;
 };
 
@@ -110,6 +113,7 @@ std::optional<RoomForm> askRoomForm(QWidget* parent, const QString& caption, con
     moderated->setChecked(start.flags & kRoomModerated);
     // §2.6: owner allows media up to a size; §4.3: how long members keep posts
     auto* media = new QCheckBox(IrcPanel::tr("Allow images and videos, up to"), &dlg);
+    media->setObjectName(QStringLiteral("roomMedia"));
     media->setChecked(start.mediaMax > 0);
     auto* mediaMiB = new QDoubleSpinBox(&dlg);
     mediaMiB->setRange(0.1, kMediaMaxMiB);
@@ -123,6 +127,14 @@ std::optional<RoomForm> askRoomForm(QWidget* parent, const QString& caption, con
     mediaRow->addWidget(media);
     mediaRow->addWidget(mediaMiB);
     mediaRow->addStretch(1);
+    // §2.6 `files`: never fetched or opened by themselves; same size limit
+    auto* files = new QCheckBox(IrcPanel::tr("Also allow small files: text, NZB, DLC and torrent"), &dlg);
+    files->setObjectName(QStringLiteral("roomFiles"));
+    files->setToolTip(IrcPanel::tr("Members download them only on a click and open them themselves. "
+                                   "NZB, DLC and torrent files open in the add dialog, nothing starts by itself"));
+    files->setChecked(start.files && start.mediaMax > 0);
+    files->setEnabled(media->isChecked());
+    QObject::connect(media, &QCheckBox::toggled, files, &QWidget::setEnabled);
     auto* keep = new QSpinBox(&dlg);
     keep->setRange(1, kKeepDaysMax);
     keep->setSuffix(IrcPanel::tr(" day(s)"));
@@ -150,6 +162,7 @@ std::optional<RoomForm> askRoomForm(QWidget* parent, const QString& caption, con
     }
     form->addRow(QString(), moderated);
     form->addRow(IrcPanel::tr("Media:"), mediaRow);
+    form->addRow(QString(), files);
     form->addRow(IrcPanel::tr("History kept:"), keep);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
     QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
@@ -164,6 +177,7 @@ std::optional<RoomForm> askRoomForm(QWidget* parent, const QString& caption, con
     out.nick = nick->text().trimmed();
     out.flags = kind->currentData().toInt() | (moderated->isChecked() ? kRoomModerated : 0);
     out.mediaMax = media->isChecked() ? qint64(mediaMiB->value() * (1 << 20)) : 0;
+    out.files = media->isChecked() && files->isChecked();
     out.keepDays = keep->value();
     return out;
 }
@@ -214,6 +228,8 @@ void IrcPanel::setIpcClient(IpcClient* ipc)
         connect(dump, &QTimer::timeout, this, &IrcPanel::dumpEd3kNickMenus);
         dump->start(30'000);
     }
+    if (const QString dir = qEnvironmentVariable("EMULE_ROOM_FILE_SELFTEST"); !dir.isEmpty())
+        selfTestRoomFiles(dir);
 }
 
 bool IrcPanel::openEd3kRoomLink(const QString& link)
@@ -634,6 +650,7 @@ Ed3kRoomTab* IrcPanel::ensureRoomTab(const QString& room, bool show)
                 });
         });
         tab->applyFont(m_customFont);
+        connect(tab, &Ed3kRoomTab::fileOpenRequested, this, &IrcPanel::roomFileOpened);
         connect(tab, &Ed3kRoomTab::replyRequested, this, [this, tab = QPointer<Ed3kRoomTab>(tab)](const QString& id) {
             if (tab)
                 replyInEd3kRoom(tab, id);
@@ -714,8 +731,12 @@ void IrcPanel::attachToRoom()
     IrcChannel* ch = activeChannel();
     if (!ch || !ch->room)
         return;
-    const QString path = QFileDialog::getOpenFileName(this, tr("Send an image or video"), QString(),
-                                                      tr("Images and videos (*.png *.jpg *.jpeg *.gif *.webp *.mp4 *.webm)"));
+    const bool files = ch->room->takesFiles();
+    QString filter = tr("Images and videos (*.png *.jpg *.jpeg *.gif *.webp *.mp4 *.webm)");
+    if (files)
+        filter = tr("Images, videos and small files (*.png *.jpg *.jpeg *.gif *.webp *.mp4 *.webm *.txt *.nzb *.dlc *.torrent)") + QStringLiteral(";;")
+               + filter + QStringLiteral(";;") + tr("Text, NZB, DLC and torrent files (*.txt *.nzb *.dlc *.torrent)");
+    const QString path = QFileDialog::getOpenFileName(this, files ? tr("Send a file") : tr("Send an image or video"), QString(), filter);
     if (path.isEmpty())
         return;
     QFile f(path);
@@ -737,8 +758,10 @@ bool IrcPanel::postMediaToRoom(Ed3kRoomTab* tab, const QByteArray& data, const Q
         return false;
     // by the bytes (room.md §6): only what members show
     const QString type = MediaSniff::type(data);
-    if (type.isEmpty()) {
-        QMessageBox::information(this, tr("ed3k room"), tr("Only PNG, JPEG, GIF and WebP images and MP4 and WebM videos can be sent."));
+    if (type.isEmpty() && !(tab->takesFiles() && MediaSniff::fileKind(data, name) != MediaSniff::FileKind::None)) {
+        QMessageBox::information(this, tr("ed3k room"),
+                                 tab->takesFiles() ? tr("Only PNG, JPEG, GIF and WebP images, MP4 and WebM videos and text, NZB, DLC and torrent files can be sent.")
+                                                   : tr("Only PNG, JPEG, GIF and WebP images and MP4 and WebM videos can be sent."));
         return false;
     }
     if (data.size() > tab->mediaMax()) {
@@ -797,6 +820,106 @@ void IrcPanel::dumpEd3kNickMenus()
                              shown, items.join(QStringLiteral(" | "))));
         }
     }
+}
+
+void IrcPanel::selfTestRoomFiles(const QString& dir)
+{
+    // dev aid (EMULE_ROOM_FILE_SELFTEST=<dir>): clicks every room file through the real path,
+    // grabs each window that opens to <dir>, says Yes to questions, closes the rest unchanged;
+    // an owner opens Room info once and turns `files` on with the checkbox
+    QDir().mkpath(dir);
+    struct State {
+        QSet<QString> clicked;            // root + state
+        int shot = 0;
+        bool formDone = false;
+    };
+    auto st = std::make_shared<State>();
+    auto* timer = new QTimer(this);
+    connect(timer, &QTimer::timeout, this, [this, dir, st] {
+        const auto grab = [&](QWidget* w, const QString& what) {
+            const QString file = QDir(dir).filePath(QStringLiteral("%1-%2.png").arg(++st->shot, 2, 10, QLatin1Char('0')).arg(what));
+            w->grab().save(file);
+            logInfo(QStringLiteral("selftest shot %1").arg(file));
+        };
+        const auto safe = [](QString s) { return s.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9.]+")), QStringLiteral("_")); };
+        for (QWidget* w : QApplication::topLevelWidgets()) {
+            auto* dlg = qobject_cast<QDialog*>(w);
+            // a property, not the address: a new box may take a closed one's
+            if (!dlg || !dlg->isVisible() || dlg->property("selftestSeen").toBool())
+                continue;
+            dlg->setProperty("selftestSeen", true);
+            if (auto* box = qobject_cast<QMessageBox*>(dlg)) {
+                logInfo(QStringLiteral("selftest box \"%1\": %2").arg(box->windowTitle(), box->text()));
+                grab(box, QStringLiteral("box"));
+                QAbstractButton* yes = box->button(QMessageBox::Yes);
+                (yes ? yes : box->defaultButton() ? box->defaultButton() : box->buttons().value(0))->click();
+                continue;
+            }
+            QStringList texts;
+            for (auto* e : dlg->findChildren<QPlainTextEdit*>())
+                texts << e->toPlainText().left(60).simplified();
+            for (auto* c : dlg->findChildren<QCheckBox*>())
+                texts << QStringLiteral("[%1%2] %3").arg(c->isChecked() ? u"x" : u" ", c->isEnabled() ? u"" : u" disabled", c->text());
+            logInfo(QStringLiteral("selftest dialog \"%1\" (%2): %3").arg(dlg->windowTitle(), QString::fromLatin1(dlg->metaObject()->className()), texts.join(QStringLiteral(" | "))));
+            grab(dlg, safe(dlg->windowTitle()));
+            if (dlg->findChild<QCheckBox*>(QStringLiteral("roomFiles"))) {
+                auto* media = dlg->findChild<QCheckBox*>(QStringLiteral("roomMedia"));
+                auto* files = dlg->findChild<QCheckBox*>(QStringLiteral("roomFiles"));
+                if (!media || !files) {
+                    dlg->reject();
+                    continue;
+                }
+                media->setChecked(false);
+                logInfo(QStringLiteral("selftest form media off: files enabled %1").arg(files->isEnabled()));
+                grab(dlg, QStringLiteral("form_media_off"));
+                media->setChecked(true);
+                files->setChecked(true);
+                logInfo(QStringLiteral("selftest form media on: files enabled %1 checked %2").arg(files->isEnabled()).arg(files->isChecked()));
+                grab(dlg, QStringLiteral("form_files_on"));
+                dlg->accept();
+                continue;
+            }
+            dlg->reject();
+        }
+        // one window at a time
+        if (std::ranges::any_of(QApplication::topLevelWidgets(), [](const QWidget* w) { return qobject_cast<const QDialog*>(w) && w->isVisible(); }))
+            return;
+        for (const IrcChannel& ch : std::as_const(m_channels)) {
+            Ed3kRoomTab* tab = ch.room;
+            if (!tab)
+                continue;
+            if (tab->isOwner() && !st->formDone) {
+                st->formDone = true;
+                logInfo(QStringLiteral("selftest room info, files now %1").arg(tab->takesFiles()));
+                QTimer::singleShot(0, this, [this, tab = QPointer<Ed3kRoomTab>(tab)] {
+                    if (tab)
+                        editEd3kRoomInfo(tab);
+                });
+                QTimer::singleShot(15'000, this, [tab = QPointer<Ed3kRoomTab>(tab)] {
+                    if (tab)
+                        logInfo(QStringLiteral("selftest room info after, files %1").arg(tab->takesFiles()));
+                });
+                return;
+            }
+            for (const Ed3kRoomTab::Post& p : tab->posts()) {
+                const QString& root = p.media.root;
+                if (root.isEmpty() || MediaSniff::isMediaType(p.media.type))
+                    continue;
+                const int state = tab->mediaState(root);
+                if (state == Ed3kRoomMediaView::Fetching || st->clicked.contains(root + QString::number(state)))
+                    continue;
+                st->clicked.insert(root + QString::number(state));
+                logInfo(QStringLiteral("selftest click %1 state %2").arg(p.media.name).arg(state));
+                // queued: the question box runs its own loop
+                QTimer::singleShot(0, this, [tab = QPointer<Ed3kRoomTab>(tab), root] {
+                    if (tab)
+                        tab->clickMedia(root);
+                });
+                return;
+            }
+        }
+    });
+    timer->start(1500);
 }
 
 void IrcPanel::fillEd3kNickMenu(QMenu& menu, Ed3kRoomTab* tab, const QString& shown)
@@ -873,7 +996,8 @@ void IrcPanel::createEd3kRoom()
     if (nick.isEmpty() && (nick = askIrcNick({})).isEmpty())
         return;
     m_ipc->createEd3kRoom(form->title, form->about, form->flags, nick,
-                          [self = QPointer<IrcPanel>(this), mediaMax = form->mediaMax, days = form->keepDays](const IpcMessage& r) {
+                          [self = QPointer<IrcPanel>(this), mediaMax = form->mediaMax, files = form->files,
+                           days = form->keepDays](const IpcMessage& r) {
                               if (!self)
                                   return;
                               if (!r.isValid() || !r.fieldBool(0)) {
@@ -883,7 +1007,7 @@ void IrcPanel::createEd3kRoom()
                               const QString room = r.fieldMap(1).value(QStringLiteral("room")).toString();
                               // a second room info with the limits (§2.1)
                               if (mediaMax > 0 || days > 1)
-                                  self->m_ipc->setEd3kRoomLimits(room, mediaMax, days * 24, keepPostsOf(days), [self](const IpcMessage& l) {
+                                  self->m_ipc->setEd3kRoomLimits(room, mediaMax, days * 24, keepPostsOf(days), files, [self](const IpcMessage& l) {
                                       if (self && (!l.isValid() || !l.fieldBool(0)))
                                           self->ed3kRoomFailed(tr("The media and history limits were not set"), l);
                                   });
@@ -944,12 +1068,13 @@ void IrcPanel::editEd3kRoomInfo(Ed3kRoomTab* tab)
                 | (row.value(QStringLiteral("closed")).toBool() ? kRoomClosed : 0)
                 | (row.value(QStringLiteral("moderated")).toBool() ? kRoomModerated : 0);
     start.mediaMax = row.value(QStringLiteral("mediaMax")).toInteger();
+    start.files = row.value(QStringLiteral("files")).toBool();
     start.keepDays = int(std::max<qint64>(1, row.value(QStringLiteral("keepHours")).toInteger() / 24));
     const auto form = askRoomForm(this, tr("Room info"), start, false);
     if (!form)
         return;
-    if (form->mediaMax != start.mediaMax || form->keepDays != start.keepDays)
-        m_ipc->setEd3kRoomLimits(tab->room(), form->mediaMax, form->keepDays * 24, keepPostsOf(form->keepDays),
+    if (form->mediaMax != start.mediaMax || form->files != start.files || form->keepDays != start.keepDays)
+        m_ipc->setEd3kRoomLimits(tab->room(), form->mediaMax, form->keepDays * 24, keepPostsOf(form->keepDays), form->files,
                                  [self = QPointer<IrcPanel>(this)](const IpcMessage& r) {
                                      if (self && (!r.isValid() || !r.fieldBool(0)))
                                          self->ed3kRoomFailed(tr("The media and history limits were not changed"), r);

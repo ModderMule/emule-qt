@@ -282,9 +282,12 @@ void Ed3kOptionsPages::load(const QCborMap& p)
     m_extTree->setChecked(m_autoIndexItem, p.value(QStringLiteral("ed3kAutoIndexNode")).toBool(false));
     m_extTree->setChecked(m_forceOpenItem, p.value(QStringLiteral("ed3kForceOpen")).toBool(false));
     m_extTree->setChecked(m_lanUnlimitedItem, p.value(QStringLiteral("ed3kLanUnlimited")).toBool(true));
-    m_extTree->setChecked(m_advertiseEd2kItem, p.value(QStringLiteral("ed3kAdvertiseEd2k")).toBool(true));
     m_extTree->setChecked(m_roomStoreItem, p.value(QStringLiteral("ed3kRoomHistoryStore")).toBool(true));
     m_extTree->setValue(m_roomMaxItem, int(p.value(QStringLiteral("ed3kRoomHistoryMax")).toInteger(5000)));
+    m_extTree->setChecked(m_anonEd2kItem, p.value(QStringLiteral("ed3kAnonEd2k")).toBool(false));
+    m_extTree->setChecked(m_anonTorrentItem, p.value(QStringLiteral("ed3kAnonTorrent")).toBool(false));
+    m_extTree->setChecked(m_anonUsenetItem, p.value(QStringLiteral("ed3kAnonUsenet")).toBool(true));
+    m_extTree->setChecked(m_anonHosterItem, p.value(QStringLiteral("ed3kAnonHoster")).toBool(true));
     m_hiding->load(p);
     m_sitePortSpin->setValue(int(p.value(QStringLiteral("ed3kSitePort")).toInteger(0)));
     m_nodeListsEdit->setPlainText(linesText(p.value(QStringLiteral("ed3kNodeLists"))));
@@ -386,9 +389,12 @@ void Ed3kOptionsPages::appendTo(IpcMessage& req) const
     put("ed3kAutoIndexNode", m_extTree->isChecked(m_autoIndexItem));
     put("ed3kForceOpen", m_extTree->isChecked(m_forceOpenItem));
     put("ed3kLanUnlimited", m_extTree->isChecked(m_lanUnlimitedItem));
-    put("ed3kAdvertiseEd2k", m_extTree->isChecked(m_advertiseEd2kItem));
     put("ed3kRoomHistoryStore", m_extTree->isChecked(m_roomStoreItem));
     put("ed3kRoomHistoryMax", qint64(m_extTree->value(m_roomMaxItem)));
+    put("ed3kAnonEd2k", m_extTree->isChecked(m_anonEd2kItem));
+    put("ed3kAnonTorrent", m_extTree->isChecked(m_anonTorrentItem));
+    put("ed3kAnonUsenet", m_extTree->isChecked(m_anonUsenetItem));
+    put("ed3kAnonHoster", m_extTree->isChecked(m_anonHosterItem));
     m_hiding->appendTo(req);
     put("ed3kSitePort", qint64(m_sitePortSpin->value()));
     put("ed3kNodeLists", linesOf(m_nodeListsEdit).join(QLatin1Char(' ')));
@@ -459,9 +465,12 @@ void Ed3kOptionsPages::saveLocal() const
     thePrefs.setEd3kAutoIndexNode(m_extTree->isChecked(m_autoIndexItem));
     thePrefs.setEd3kForceOpen(m_extTree->isChecked(m_forceOpenItem));
     thePrefs.setEd3kLanUnlimited(m_extTree->isChecked(m_lanUnlimitedItem));
-    thePrefs.setEd3kAdvertiseEd2k(m_extTree->isChecked(m_advertiseEd2kItem));
     thePrefs.setEd3kRoomHistoryStore(m_extTree->isChecked(m_roomStoreItem));
     thePrefs.setEd3kRoomHistoryMax(m_extTree->value(m_roomMaxItem));
+    thePrefs.setEd3kAnonEd2k(m_extTree->isChecked(m_anonEd2kItem));
+    thePrefs.setEd3kAnonTorrent(m_extTree->isChecked(m_anonTorrentItem));
+    thePrefs.setEd3kAnonUsenet(m_extTree->isChecked(m_anonUsenetItem));
+    thePrefs.setEd3kAnonHoster(m_extTree->isChecked(m_anonHosterItem));
     m_hiding->saveLocal();
     if (m_sitePortSpin->value() > 0)
         thePrefs.setEd3kSitePort(uint16(m_sitePortSpin->value()));
@@ -2254,10 +2263,6 @@ QWidget* Ed3kOptionsPages::buildExtended(QWidget* parent)
                                          "do not count against the upload and download limits, since they do not "
                                          "use the Internet line."));
     m_extTree->setChecked(m_lanUnlimitedItem, true);
-    m_advertiseEd2kItem = m_extTree->addCheck(connection, tr("Tell ed3k peers this client also speaks eD2K"));
-    m_advertiseEd2kItem->setToolTip(0, tr("Sets the eD2K bit in the ed3k hello while eD2K is not switched off. "
-                                          "Peers then show \"eD2K: Yes\" in the ed3k tab of Client Details."));
-    m_extTree->setChecked(m_advertiseEd2kItem, true);
     QTreeWidgetItem* rooms = m_extTree->addGroup(tr("Rooms"), skinIcon(QStringLiteral(":/icons/IRC.ico")));
     m_roomStoreItem = m_extTree->addCheck(rooms, tr("Store recent room posts on disk"));
     m_roomStoreItem->setToolTip(0, tr("Keeps the recent posts of each joined room in a file, shown again after a "
@@ -2269,6 +2274,27 @@ QWidget* Ed3kOptionsPages::buildExtended(QWidget* parent)
                                        Preferences::kMaxEd3kRoomHistoryMax, QString(), QString());
     m_roomMaxItem->setToolTip(0, tr("The newest posts kept per room, in memory and on disk."));
     m_extTree->setValue(m_roomMaxItem, 5000);
+    // hops.md §1: which networks' files go under the anonymous key while hiding runs
+    QTreeWidgetItem* kad = m_extTree->addGroup(tr("Kad publishing"), skinIcon(QStringLiteral(":/icons/Kad.ico")));
+    kad->setToolTip(0, tr("While hiding is on, files of the checked networks are shared on ed3k under the anonymous "
+                          "key, with their sets and links. Unchecked: they stay under the node key, and a file "
+                          "already under the anonymous key is left out of that network's join.\n"
+                          "Files already shared keep their key; move them in Shared Files."));
+    const QString exposed = tr("Not hidden: the peers of %1 still see this computer's address next to the file, "
+                               "and logs of it stay. Others can link that to the anonymous key.");
+    m_anonEd2kItem = m_extTree->addCheck(kad, tr("eD2K downloads under the anonymous key"));
+    m_anonEd2kItem->setToolTip(0, exposed.arg(QStringLiteral("eD2K")));
+    m_anonTorrentItem = m_extTree->addCheck(kad, tr("Torrents under the anonymous key"));
+    m_anonTorrentItem->setToolTip(0, exposed.arg(QStringLiteral("BitTorrent")));
+    m_anonUsenetItem = m_extTree->addCheck(kad, tr("Usenet downloads under the anonymous key"));
+    m_anonUsenetItem->setToolTip(0, tr("Only the Usenet provider sees what this computer downloaded (and can hand "
+                                       "over its logs); nothing public lists it."));
+    m_extTree->setChecked(m_anonUsenetItem, true);
+    m_anonHosterItem = m_extTree->addCheck(kad, tr("Hoster downloads under the anonymous key"));
+    m_anonHosterItem->setToolTip(0, tr("Only the hoster sees what this computer downloaded (and can hand over its "
+                                       "logs); nothing public lists it. Its download links are not handed out "
+                                       "under the anonymous key."));
+    m_extTree->setChecked(m_anonHosterItem, true);
     connect(m_extTree, &OptionsTree::changed, this, [this] {
         if (!m_loading)
             emit changed();

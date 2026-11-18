@@ -58,7 +58,7 @@ struct Ed3kSettings {
     std::uint16_t udpPort = 0;   ///< 0 = any free port
     QString configDir;           ///< state goes to <configDir>/ed3k
     QHostAddress bindAddress{QHostAddress::Any};   ///< Any = dual stack
-    QString network;             ///< empty = the public network; tests only; a secret
+    QString network;             ///< empty = the public network; tests and EMULE_ED3K_NETWORK only; a secret
     bool forceOpen = false;      ///< operator/tests: address open, no NAT tests (§9.2 first nodes)
     std::uint32_t smallNetS = 0; ///< tests: Kad of a few nodes connected this long after the first answer; 0 = default (45 s)
     std::uint32_t storeMiB = 0;  ///< RAM for Kad records of others (pref ed3k.kadStoreMiB); 0 = default (128 MiB)
@@ -308,7 +308,7 @@ private:
     /// RpcRequest to the configured endpoint; false: none for its class and operator.
     bool startRpc(const ::ed3k::event::RpcRequest& r);
     void applyLimits();
-    /// CAP_ED2K in the Hello: thePrefs.ed3kAdvertiseEd2k while eD2K is not switched off.
+    /// CAP_ED2K in the Hello: set while eD2K is not switched off (Extended option).
     void applyEd2kCap();
     [[nodiscard]] static bool wantEd2kCap();
     /// SO_SNDBUF of the socket with the upload limit (SendBufferSizer); never shrinks

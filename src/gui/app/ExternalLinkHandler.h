@@ -91,7 +91,7 @@ private:
     void onEd3kSetOffered(const Ipc::IpcMessage& msg);
     /// An ed3k:live link: watched, opened in the system's player (local core).
     void watchEd3kLive(const QString& link);
-    /// PushEd3kSetVersion: a new version of a set with policy ask waits for the user.
+    /// PushEd3kSetVersion: a new version of a set with policy browse waits for the user.
     void tellEd3kSetVersion(const Ipc::IpcMessage& msg);
     /// PushEd3kPaidScopesWarn: a bought pass covers more subscriptions (subscription.md §5.1).
     void askEd3kPassScopes(const Ipc::IpcMessage& msg);

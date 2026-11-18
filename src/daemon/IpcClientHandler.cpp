@@ -2829,7 +2829,10 @@ void IpcClientHandler::handleGetKadSearches(const IpcMessage& msg)
 
 void IpcClientHandler::handleGetKadIncoming(const IpcMessage& msg)
 {
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(ops::kadIncoming())));
+    if (msg.fieldBool(0))   // count only: the tab is hidden
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(ops::kadIncomingCount())));
+    else
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(ops::kadIncoming())));
 }
 
 void IpcClientHandler::handleGetKadIncomingGraph(const IpcMessage& msg)
@@ -5405,8 +5408,8 @@ bool IpcClientHandler::applyPreferenceC(const QString& key, const QCborValue& va
         thePrefs.setChatAlert(static_cast<int>(val.toInteger()));
     else if (key == QStringLiteral("chatUnreadBadge"))
         thePrefs.setChatUnreadBadge(val.toBool());
-    else if (key == QStringLiteral("chatPlainLinks"))
-        thePrefs.setChatPlainLinks(val.toBool());
+    else if (key == QStringLiteral("chatWebLinks"))
+        thePrefs.setChatWebLinks(val.toBool());
     else if (key == QStringLiteral("chatModStar"))
         thePrefs.setChatModStar(val.toBool());
     else if (key == QStringLiteral("chatRoomMedia"))
@@ -5530,6 +5533,18 @@ bool IpcClientHandler::applyPreferenceEd3k(const QString& key, const QCborValue&
         thePrefs.setEd3kArchiveContents(val.toBool());
     else if (key == QStringLiteral("ed3kOwnSetsWatch"))
         thePrefs.setEd3kOwnSetsWatch(val.toBool());
+    // was: not handled here (the Extended tree's switches never reached the core)
+    else if (key == QStringLiteral("ed3kLanUnlimited"))
+        thePrefs.setEd3kLanUnlimited(val.toBool());
+    // hops.md §1: a network's ed3k join under the anonymous key while hiding
+    else if (key == QStringLiteral("ed3kAnonEd2k"))
+        thePrefs.setEd3kAnonEd2k(val.toBool());
+    else if (key == QStringLiteral("ed3kAnonTorrent"))
+        thePrefs.setEd3kAnonTorrent(val.toBool());
+    else if (key == QStringLiteral("ed3kAnonUsenet"))
+        thePrefs.setEd3kAnonUsenet(val.toBool());
+    else if (key == QStringLiteral("ed3kAnonHoster"))
+        thePrefs.setEd3kAnonHoster(val.toBool());
     else if (key == QStringLiteral("ed3kUdpPort"))
         thePrefs.setEd3kUdpPort(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 1, 65535)));
     else if (key == QStringLiteral("ed3kCreditRpc"))

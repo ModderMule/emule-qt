@@ -293,6 +293,25 @@ void KadPanelBase::poll()
     refresh();
     if (incomingTabShown())
         requestIncoming();
+    else
+        requestIncomingCount();
+}
+
+void KadPanelBase::requestIncomingCount()
+{
+    if (!ipcReady() || !m_incomingModel)
+        return;
+    const auto type = m_network == KadIncomingModel::Network::Ed2k ? Ipc::IpcMsgType::GetKadIncoming
+                                                                   : Ipc::IpcMsgType::GetEd3kKadIncoming;
+    m_ipc->sendPoll(this, Ipc::IpcMessage(type).append(true), [this](const Ipc::IpcMessage& resp) {
+        if (incomingTabShown())
+            return;   // the full list took over
+        const bool ok = resp.type() == Ipc::IpcMsgType::Result && resp.fieldBool(0);
+        // an old core ignores countOnly and sends the rows
+        const QCborValue v = ok ? resp.field(1) : QCborValue();
+        const qint64 count = v.isArray() ? v.toArray().size() : v.toInteger();
+        m_bottomTabWidget->setTabText(1, tr("▸ Incoming Searches (%1)").arg(count));
+    });
 }
 
 void KadPanelBase::requestIncoming()

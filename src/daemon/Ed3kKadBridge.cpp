@@ -365,7 +365,8 @@ bool handleRequest(const IpcMessage& msg, const std::function<void(const IpcMess
         break;
     case IpcMsgType::GetEd3kKadIncoming:
         if (auto all = e->kadIncoming(now))
-            reply(IpcMessage::makeResult(seq, true, incomingToCbor(*all)));
+            reply(msg.fieldBool(0) ? IpcMessage::makeResult(seq, true, qint64(all->size()))   // count only
+                                   : IpcMessage::makeResult(seq, true, incomingToCbor(*all)));
         else
             reply(failure(seq, int(all.error())));
         break;

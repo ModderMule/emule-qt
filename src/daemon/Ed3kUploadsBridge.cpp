@@ -446,6 +446,8 @@ QCborArray joinsOf([[maybe_unused]] const QByteArray& root)
         row.insert(QStringLiteral("state"), QString::fromLatin1(kStates[int(st->kind)]));
         if (!st->reason.isEmpty())
             row.insert(QStringLiteral("reason"), st->reason);
+        if (st->anon)
+            row.insert(QStringLiteral("key"), QStringLiteral("anon"));
         QCborArray jobs;
         for (const QString& owner : st->owners)
             if (const QCborMap m = jobAlias(tag, owner); !m.isEmpty())

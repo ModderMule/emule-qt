@@ -442,9 +442,10 @@ QString IrcPanel::messageLine(const QString& stamp, const QString& shown, const 
 
 void IrcPanel::markActivity(const QString& key)
 {
+    // soft: joins, leaves, notices, history; red is left to noteMessage (unread)
     const int idx = findTab(key);
-    if (idx >= 0 && idx != m_tabWidget->currentIndex())
-        m_tabWidget->tabBar()->setTabTextColor(idx, Qt::red);
+    if (idx >= 0 && idx != m_tabWidget->currentIndex() && !m_unread.contains(key))
+        m_tabWidget->tabBar()->setTabTextColor(idx, roleColor(TextRole::Info));
 }
 
 void IrcPanel::onChannelMessage(const QString& channel, const QString& nick,
@@ -1400,8 +1401,8 @@ QString IrcPanel::formatMessage(const QString& text) const
             return renderMircCodes(segment, fmt);
         return Smileys::expand(renderMircCodes(Smileys::protect(segment), fmt));
     };
-    // privacy: a link clicked by mistake tells its owner our IP
-    QString html = thePrefs.chatPlainLinks() ? render(text) : TextLinks::linkify(text, render);
+    // privacy: web links only when asked (a click tells their owner our IP)
+    QString html = TextLinks::linkifyChat(text, render, thePrefs.chatWebLinks());
     return html + fmt.close();
 }
 
@@ -1972,6 +1973,9 @@ void IrcPanel::noteMessage(const QString& key, bool mention)
         if (m_unread.size() == 1)
             emit unreadChanged(true);
     }
+    // red tab = unread, like the toolbar "!"
+    if (idx >= 0 && idx != m_tabWidget->currentIndex())
+        m_tabWidget->tabBar()->setTabTextColor(idx, roleColor(TextRole::Error));
     if (!onScreen || !window()->isActiveWindow())
         emit messageArrived(mention);
 }

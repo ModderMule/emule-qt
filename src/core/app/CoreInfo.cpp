@@ -375,6 +375,13 @@ QCborArray kadIncoming()
     return out;
 }
 
+qint64 kadIncomingCount()
+{
+    auto* kad = kad::Kademlia::instance();
+    auto* listener = kad && kad->isRunning() ? kad::Kademlia::getInstanceUDPListener() : nullptr;
+    return listener ? qint64(listener->incomingLog().size()) : 0;
+}
+
 QCborMap kadIncomingGraph(quint64 id)
 {
     auto* kad = kad::Kademlia::instance();

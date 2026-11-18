@@ -114,6 +114,8 @@ private:
 private:
     void poll();
     void requestIncoming();
+    /// Tab title only, while the list is hidden (no rows sent).
+    void requestIncomingCount();
     void clearIncoming();
     [[nodiscard]] bool incomingTabShown() const;
     void onSearchSelectionChanged();

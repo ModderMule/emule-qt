@@ -48,6 +48,7 @@
 
 #include "IpcMessage.h"
 #include "prefs/Preferences.h"
+#include "utils/MediaSniff.h"
 #include "utils/WebServices.h"
 #include "utils/Log.h"
 #include "protocol/ED2KLink.h"
@@ -1364,10 +1365,6 @@ void MainWindow::showEvent(QShowEvent* event)
         return;
     if (QWindow* handle = windowHandle()) {
         connect(handle, &QWindow::windowStateChanged, this, &MainWindow::onWaylandWindowStateChanged);
-        // KWin sends "suspended" for minimized windows only (not for other desktops or
-        // Show Desktop); mutter also for other workspaces, so KDE only
-        if (qEnvironmentVariable("XDG_CURRENT_DESKTOP").contains(QLatin1String("KDE"), Qt::CaseInsensitive))
-            handle->installEventFilter(this);
         m_waylandMinimizeHooked = true;
     }
 }
@@ -1410,10 +1407,6 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
     if (obj == qApp) {
         if (event->type() == QEvent::Quit)
             m_quitRequested = true;
-        return false;
-    }
-    if (event->type() == QEvent::Expose && obj == windowHandle()) {
-        onWaylandExposeChanged(windowHandle());
         return false;
     }
     if (event->type() == QEvent::MouseButtonDblClick) {
@@ -2639,6 +2632,39 @@ void MainWindow::setupPages()
     connect(m_sharedFilesPanel, &SharedFilesPanel::ircSendLinkChosen,
             m_ircPanel, &IrcPanel::setSendLink);
     connect(m_ircPanel, &IrcPanel::ed3kRoomJoined, this, [this] { switchToTab(TabIRC); });
+    // room.md §6: a room's download list only into its add dialog, nothing started
+    connect(m_ircPanel, &IrcPanel::roomFileOpened, this, [this](const QString& name, const QByteArray& bytes) {
+        switch (MediaSniff::fileKind(bytes, name)) {
+        case MediaSniff::FileKind::Nzb:
+            if (!thePrefs.usenetEnabled()) {
+                QMessageBox::information(this, tr("Add NZB"), tr("Usenet is off. Turn it on in Options to add %1.").arg(name));
+                return;
+            }
+            switchToTab(TabUsenet);
+            m_usenetPanel->promptAddNzbData(name, bytes);
+            return;
+        case MediaSniff::FileKind::Dlc:
+#ifdef EMULE_HAVE_HOSTER_JD
+            if (m_hosterPanel && thePrefs.hosterDownloadsOn()) {
+                switchToTab(TabHoster);
+                m_hosterPanel->openContainerData(name, bytes);
+                return;
+            }
+#endif
+            QMessageBox::information(this, tr("Open DLC"), tr("Hoster downloads are off. Turn them on in Options to open %1.").arg(name));
+            return;
+        case MediaSniff::FileKind::Torrent:
+#ifdef EMULE_HAVE_BITTORRENT
+            if (m_torrentPanel && requireBitTorrent()) {
+                switchToTab(TabTorrents);
+                m_torrentPanel->promptAddTorrentData(name, bytes);
+            }
+#endif
+            return;
+        default:
+            return;
+        }
+    });
     addPage(m_ircPanel);
 
     // Tab 7: Statistics
@@ -3507,25 +3533,11 @@ void MainWindow::onWaylandWindowStateChanged(Qt::WindowState state)
 {
     // Qt sends xdg_toplevel.set_minimized and at once reports the window as not
     // minimized (the protocol has no such state), so changeEvent() never sees it.
-    // This signal is the only trace. A compositor-side minimize leaves none (sway,
-    // GNOME's Super+H); KWin's is caught in onWaylandExposeChanged.
+    // This signal is the only trace. A compositor-side minimize (server-side title
+    // bar on KDE/sway, GNOME's Super+H) leaves none: the window just goes down.
+    // KWin's xdg "suspended" is no substitute: it also comes on a desktop switch.
     if (state != Qt::WindowMinimized || !trayInUse() || !thePrefs.minimizeToTray())
         return;
-    hideToTrayDeferred();
-}
-
-void MainWindow::onWaylandExposeChanged(QWindow* handle)
-{
-    // Runs before QWidgetWindow updates WA_Mapped: set = was exposed. hide() clears it
-    // before unmapping, and a fresh map stays unexposed until configured.
-    if (handle->isExposed() || !testAttribute(Qt::WA_Mapped) || !isVisible() || !trayInUse()
-        || !thePrefs.minimizeToTray())
-        return;
-    hideToTrayDeferred();
-}
-
-void MainWindow::hideToTrayDeferred()
-{
     // Widget state still holds maximized here; Qt's "not minimized" report comes later
     const Qt::WindowStates keep = windowState() & (Qt::WindowMaximized | Qt::WindowFullScreen);
     // Deferred: the request comes from inside the decoration's mouse handler, and

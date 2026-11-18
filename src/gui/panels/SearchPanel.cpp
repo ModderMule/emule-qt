@@ -190,6 +190,8 @@ void SearchPanel::setIpcClient(IpcClient* client)
     // Download To needs the list before the menu opens, not after a round trip.
     connect(m_ipc, &IpcClient::categoriesChanged, this,
             [this](const Ipc::IpcMessage&) { requestCategories(); });
+    // set before the core answers: ask again once connected
+    connect(m_ipc, &IpcClient::connected, this, &SearchPanel::requestCategories);
     requestCategories();
     connect(m_ipc, &IpcClient::indexerResultsReceived, this,
             &SearchPanel::onIndexerResultsPush);
@@ -3901,6 +3903,27 @@ void SearchPanel::dumpEd3kMenus()
         onResultContextMenu(QPoint(-1, -1));
         m_contextMenu->hide();
         logInfo(QStringLiteral("ed3k menu Search %1: %2").arg(ref.row->fileName, MenuDump::text(m_contextMenu)));
+        // level 2: the menu's Download on the first row named EMULE_DUMP_DOWNLOAD, once;
+        // EMULE_DUMP_DOWNLOAD_PAUSED=1 picks "Download (Paused)", EMULE_DUMP_DOWNLOAD_CAT=n
+        // the category tab first
+        static bool downloaded = false;
+        if (const QString pick = qEnvironmentVariable("EMULE_DUMP_DOWNLOAD");
+            MenuDump::level() >= 2 && !pick.isEmpty() && !downloaded
+            && ref.row->fileName.contains(pick, Qt::CaseInsensitive)) {
+            const QString label = qEnvironmentVariableIntValue("EMULE_DUMP_DOWNLOAD_PAUSED")
+                ? tr("%1 (%2)").arg(tr("Download"), tr("Paused")) : tr("Download");
+            const auto actions = m_contextMenu->actions();
+            const auto it = std::ranges::find(actions, label, &QAction::text);
+            if (it != actions.end() && (*it)->isEnabled()) {
+                downloaded = true;
+                if (const int cat = qEnvironmentVariableIntValue("EMULE_DUMP_DOWNLOAD_CAT");
+                    cat > 0 && cat < m_categoryTabs->count())
+                    m_categoryTabs->setCurrentIndex(cat);
+                logInfo(QStringLiteral("ed3k menu Search: %1 %2 (category %3)")
+                            .arg(label, ref.row->fileName).arg(downloadCategory()));
+                (*it)->trigger();
+            }
+        }
     }
     // ed3k link actions arrive async: the last menu again once they could have
     if (shown)

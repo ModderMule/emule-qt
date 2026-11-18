@@ -25,6 +25,8 @@
 #include <QTemporaryDir>
 #include <QTest>
 
+#include "utils/MediaSniff.h"
+
 using namespace eMule;
 using eMule::ed3k::Ed3kHideSettings;
 using eMule::ed3k::Ed3kRooms;
@@ -1008,6 +1010,50 @@ void tst_Ed3kRooms::mediaFetchedFromNeighbour()
     QFile cached(QDir(b.stateDir()).filePath(QStringLiteral("rooms/media/%1").arg(eMule::ed3k::Ed3kRoomMedia::rootHex(root))));
     QVERIFY(cached.open(QIODevice::ReadOnly));
     QCOMPARE(cached.readAll() == png, flags == 0);
+
+    // §2.6 `files`: an NZB only where the owner allows other small files; never fetched by itself
+    const QByteArray nzb = "<?xml version=\"1.0\"?>\n<nzb xmlns=\"http://www.newzbin.com/DTD/2003/nzb\">\n</nzb>\n";
+    const auto postNzb = [&]() {
+        IpcMessage m(IpcMsgType::PostEd3kRoomMedia, 33);
+        m.append(hexOf(*room));
+        m.append(QStringLiteral("tok%1").arg(QRandomGenerator::global()->generate()));
+        m.append(qint64(0));
+        m.append(qint64(nzb.size()));
+        m.append(QCborValue(nzb));
+        m.append(QString());
+        m.append(QString());
+        m.append(QStringLiteral("release.nzb"));
+        m.append(qint64(0));
+        m.append(qint64(0));
+        return ask(&ra, m);
+    };
+    QVERIFY(!postNzb().fieldBool(0));
+    limits.append(true);
+    QVERIFY(ask(&ra, limits).fieldBool(0));
+    QVERIFY(rowOf(ra, *room).value(QStringLiteral("files")).toBool());
+    QTRY_VERIFY_WITH_TIMEOUT(rb.find(*room)->files, 30000);
+    const IpcMessage sentNzb = postNzb();
+    QVERIFY2(sentNzb.fieldBool(0), qPrintable(sentNzb.fieldMap(1).value(QStringLiteral("error")).toVariant().toString()));
+    const auto isNzb = [](const Ed3kRooms::Post& p) { return p.media && p.media->type == u"application/x-nzb"; };
+    QTRY_VERIFY_WITH_TIMEOUT(std::ranges::any_of(rb.find(*room)->posts, isNzb), 30000);
+    const auto nzbPost = std::ranges::find_if(rb.find(*room)->posts, isNzb);
+    QCOMPARE(nzbPost->text, QStringLiteral("release.nzb"));
+    const auto nzbRoot = nzbPost->media->root;
+    QTRY_COMPARE_WITH_TIMEOUT(int(rb.media().state(nzbRoot)), int(eMule::ed3k::Ed3kRoomMedia::State::Click), 10000);
+    QVERIFY(rb.media().fetch(*room, nzbRoot));
+    QTRY_COMPARE_WITH_TIMEOUT(int(rb.media().state(nzbRoot)), int(eMule::ed3k::Ed3kRoomMedia::State::Ready), 60000);
+    QCOMPARE(rb.media().read(nzbRoot).value_or(QByteArray()), nzb);
+    // any other file is refused by the bytes and name
+    QCOMPARE(eMule::MediaSniff::fileKind(nzb, QStringLiteral("x.exe")), eMule::MediaSniff::FileKind::None);
+    QCOMPARE(eMule::MediaSniff::fileKind(QByteArray("a\0b", 3),QStringLiteral("x.txt")), eMule::MediaSniff::FileKind::None);
+    QCOMPARE(eMule::MediaSniff::fileKind(QByteArray("plain words\n"), QStringLiteral("x.TXT")), eMule::MediaSniff::FileKind::Text);
+    QCOMPARE(eMule::MediaSniff::fileKind(QByteArray(120, 'A') + "==\n", QStringLiteral("l.dlc")), eMule::MediaSniff::FileKind::Dlc);
+    QCOMPARE(eMule::MediaSniff::fileKind(QByteArray(120, '<'), QStringLiteral("l.dlc")), eMule::MediaSniff::FileKind::None);
+    QCOMPARE(eMule::MediaSniff::fileKind(png, QStringLiteral("cyan.txt")), eMule::MediaSniff::FileKind::None);
+    const QByteArray torrent("d8:announce9:http://x/4:infod6:lengthi5e4:name1:a12:piece lengthi16384e6:pieces20:01234567890123456789ee");
+    QCOMPARE(eMule::MediaSniff::fileKind(torrent, QStringLiteral("a.torrent")), eMule::MediaSniff::FileKind::Torrent);
+    QCOMPARE(eMule::MediaSniff::fileKind(QByteArray("d4:name1:ae"), QStringLiteral("a.torrent")), eMule::MediaSniff::FileKind::None);
+    QCOMPARE(eMule::MediaSniff::fileType(eMule::MediaSniff::FileKind::Torrent), QStringLiteral("application/x-bittorrent"));
 }
 
 #include "tst_Ed3kRooms.moc"

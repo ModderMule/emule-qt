@@ -412,7 +412,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_chatSoundCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_chatAlertCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
     connect(m_chatUnreadBadgeCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
-    connect(m_chatPlainLinksCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_chatWebLinksCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_chatModStarCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_chatRoomMediaCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_chatRoomVideosCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -1154,6 +1154,36 @@ QWidget* OptionsDialog::createGeneralPage()
     trustedRow->addWidget(m_trustedCoresTree, 1);
     trustedRow->addWidget(removeCoreBtn, 0, Qt::AlignTop);
     coreLayout->addRow(tr("Trusted cores:"), trustedRow);
+
+    // Phones of the qDonkey app paired with this core (ed3k tunnel); removals on Apply
+    m_tunnelPeersTree = new ListTreeWidget(coreGroup);
+    m_tunnelPeersTree->setColumnCount(2);
+    m_tunnelPeersTree->setHeaderLabels({tr("Phone"), tr("ed3k Node ID")});
+    static_cast<ListTreeWidget*>(m_tunnelPeersTree)->bindColumns(QStringLiteral("tunnelPeers"));
+    m_tunnelPeersTree->setRootIsDecorated(false);
+    m_tunnelPeersTree->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    m_tunnelPeersTree->setMaximumHeight(90);
+    m_tunnelPeersTree->header()->setStretchLastSection(false);
+    m_tunnelPeersTree->header()->setSectionResizeMode(1, QHeaderView::Stretch);
+    m_tunnelPeersTree->setToolTip(tr("Phones that reach this core over the ed3k tunnel without a port forward"));
+    auto* removePhoneBtn = new QPushButton(tr("Remove"), coreGroup);
+    removePhoneBtn->setEnabled(false);
+    connect(m_tunnelPeersTree, &QTreeWidget::itemSelectionChanged, removePhoneBtn,
+            [this, removePhoneBtn] {
+                removePhoneBtn->setEnabled(!m_tunnelPeersTree->selectedItems().isEmpty());
+            });
+    connect(removePhoneBtn, &QPushButton::clicked, this, [this] {
+        const auto items = m_tunnelPeersTree->selectedItems();
+        for (QTreeWidgetItem* item : items) {
+            m_tunnelPeersRemoved.append(item->data(1, Qt::UserRole).toString());
+            delete item;
+        }
+        markDirty();
+    });
+    auto* phonesRow = new QHBoxLayout;
+    phonesRow->addWidget(m_tunnelPeersTree, 1);
+    phonesRow->addWidget(removePhoneBtn, 0, Qt::AlignTop);
+    coreLayout->addRow(tr("Paired phones:"), phonesRow);
 
     auto* coreNote = new QLabel(tr("Changes require a restart to take effect."), coreGroup);
     coreNote->setStyleSheet(QStringLiteral("color: gray; font-style: italic;"));
@@ -3109,9 +3139,9 @@ QWidget* OptionsDialog::createMessagesPage()
     // --- Chats group: friends, IRC and ed3k rooms (notices: Notifications page) ---
     auto* chatGroup = new QGroupBox(tr("Chats (friends, IRC, ed3k rooms)"), page);
     auto* chatLayout = new QVBoxLayout(chatGroup);
-    m_chatPlainLinksCheck = new QCheckBox(tr("Show links in chats as plain text"), chatGroup);
-    m_chatPlainLinksCheck->setToolTip(tr("No link in a message can be clicked by mistake: opening one tells its owner your IP address"));
-    chatLayout->addWidget(m_chatPlainLinksCheck);
+    m_chatWebLinksCheck = new QCheckBox(tr("Make web links (http, https) clickable in chats"), chatGroup);
+    m_chatWebLinksCheck->setToolTip(tr("Off: only ed2k, ed3k and magnet links can be clicked. Opening a web link tells its owner your IP address"));
+    chatLayout->addWidget(m_chatWebLinksCheck);
     m_chatModStarCheck = new QCheckBox(tr("Mark ed3k room moderators by a star instead of \"@\""), chatGroup);
     chatLayout->addWidget(m_chatModStarCheck);
     // room.md §6: off = a file line, a click fetches
@@ -7592,6 +7622,7 @@ void OptionsDialog::loadSettings()
         item->setToolTip(1, e.fingerprint);
         item->setText(2, QLocale().toString(e.firstSeen.toLocalTime(), QLocale::ShortFormat));
     }
+    loadTunnelPeers();
 
     // Display page
     m_depth3DSlider->setValue(thePrefs.depth3D());
@@ -7685,7 +7716,7 @@ void OptionsDialog::loadSettings()
     m_chatSoundCheck->setChecked(thePrefs.chatSound());
     m_chatAlertCombo->setCurrentIndex(std::max(0, m_chatAlertCombo->findData(thePrefs.chatAlert())));
     m_chatUnreadBadgeCheck->setChecked(thePrefs.chatUnreadBadge());
-    m_chatPlainLinksCheck->setChecked(thePrefs.chatPlainLinks());
+    m_chatWebLinksCheck->setChecked(thePrefs.chatWebLinks());
     m_chatModStarCheck->setChecked(thePrefs.chatModStar());
     m_chatRoomMediaCheck->setChecked(thePrefs.chatRoomMedia());
     m_chatRoomVideosCheck->setChecked(thePrefs.chatRoomVideos());
@@ -7806,6 +7837,16 @@ void OptionsDialog::saveSettings()
     for (const QString& hostPort : std::as_const(m_trustedCoresRemoved))
         KnownCores::instance().remove(hostPort);
     m_trustedCoresRemoved.clear();
+
+    // Paired phones: the core drops them and closes their tunnels at once
+    if (m_ipc && m_ipc->isConnected()) {
+        for (const QString& node : std::as_const(m_tunnelPeersRemoved)) {
+            Ipc::IpcMessage msg(Ipc::IpcMsgType::RemoveTunnelPeer);
+            msg.append(node);
+            m_ipc->sendRequest(std::move(msg));
+        }
+    }
+    m_tunnelPeersRemoved.clear();
 
     // Core settings — changes require restart
     {
@@ -7943,7 +7984,7 @@ void OptionsDialog::saveSettings()
     thePrefs.setChatSound(m_chatSoundCheck->isChecked());
     thePrefs.setChatAlert(m_chatAlertCombo->currentData().toInt());
     thePrefs.setChatUnreadBadge(m_chatUnreadBadgeCheck->isChecked());
-    thePrefs.setChatPlainLinks(m_chatPlainLinksCheck->isChecked());
+    thePrefs.setChatWebLinks(m_chatWebLinksCheck->isChecked());
     thePrefs.setChatModStar(m_chatModStarCheck->isChecked());
     thePrefs.setChatRoomMedia(m_chatRoomMediaCheck->isChecked());
     thePrefs.setChatRoomVideos(m_chatRoomVideosCheck->isChecked());
@@ -8656,8 +8697,8 @@ void OptionsDialog::saveSettings()
         req.append(static_cast<qint64>(m_chatAlertCombo->currentData().toInt()));
         req.append(QStringLiteral("chatUnreadBadge"));
         req.append(m_chatUnreadBadgeCheck->isChecked());
-        req.append(QStringLiteral("chatPlainLinks"));
-        req.append(m_chatPlainLinksCheck->isChecked());
+        req.append(QStringLiteral("chatWebLinks"));
+        req.append(m_chatWebLinksCheck->isChecked());
         req.append(QStringLiteral("chatModStar"));
         req.append(m_chatModStarCheck->isChecked());
         req.append(QStringLiteral("chatRoomMedia"));
@@ -10552,6 +10593,30 @@ void OptionsDialog::createConnectScript()
         if (fieldWasPref)
             m_coreAddressEdit->setText(listen);
     }
+}
+
+void OptionsDialog::loadTunnelPeers()
+{
+    m_tunnelPeersTree->clear();
+    m_tunnelPeersRemoved.clear();
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+    m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::GetTunnelPeers),
+                       [self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
+        if (!self || !resp.isValid() || !resp.fieldBool(0))
+            return;
+        self->m_tunnelPeersTree->clear();
+        for (const QCborValue& v : resp.fieldArray(1)) {
+            const QCborMap row = v.toMap();
+            const QString node = row.value(QStringLiteral("nodeId")).toString();
+            if (self->m_tunnelPeersRemoved.contains(node))
+                continue;
+            auto* item = new QTreeWidgetItem(self->m_tunnelPeersTree);
+            item->setText(0, row.value(QStringLiteral("name")).toString());
+            item->setText(1, node.toUpper());
+            item->setData(1, Qt::UserRole, node);
+        }
+    });
 }
 
 } // namespace eMule

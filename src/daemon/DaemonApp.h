@@ -322,6 +322,8 @@ private:
     /// (hoster.md §6.1). Not for private torrents.
     /// The torrent join's archive sets: contents published from its verify read, or not.
     void applyTorrentArchiveContents();
+    /// ed3kAnonEd2k/Torrent/Usenet/Hoster into the joins (hops.md §1): a change restarts the join
+    void applyJoinKeys();
     /// eD2K/Usenet/BitTorrent share of the global limits; after both sessions
     std::unique_ptr<BandwidthCoordinator> m_bandwidth;
     std::unique_ptr<ScheduleNetworkBridge> m_scheduleNetwork;

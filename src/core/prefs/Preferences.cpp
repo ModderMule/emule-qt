@@ -637,7 +637,7 @@ struct Preferences::Data {
     bool chatSound = false;         // a sound on a new message not on screen
     int chatAlert = 0;              // ChatAlert: flash the taskbar / bounce the dock
     bool chatUnreadBadge = true;    // red "!" on the toolbar buttons + status bar icon
-    bool chatPlainLinks = false;    // links in chats as plain text (privacy)
+    bool chatWebLinks = false;    // chats: web links clickable too (off: ed2k/ed3k/magnet only)
     bool chatModStar = false;       // room moderators: gold star, else "@"
     bool chatRoomMedia = true;      // room images shown (fetched by themselves)
     bool chatRoomVideos = false;    // room videos fetched by themselves too
@@ -873,8 +873,11 @@ struct Preferences::Data {
     bool ed3kArchiveContents = true;   // hoster.md §6.1 contents records
     // was: false (limits held for LAN peers too); packmule's default again
     bool ed3kLanUnlimited = true;      // LAN peers outside the limits (lan-discovery.md §3 MAY)
-    bool ed3kAdvertiseEd2k = true;     // CAP_ED2K in the ed3k Hello while eD2K runs (Protocol.md §2)
     bool ed3kOwnSetsWatch = true;      // own sets' folders watched: a change publishes a new version
+    bool ed3kAnonEd2k = false;         // ed2k joins under the anonymous key while hiding (hops.md §1)
+    bool ed3kAnonTorrent = false;      // torrent joins under the anonymous key while hiding (hops.md §1)
+    bool ed3kAnonUsenet = true;        // usenet joins under the anonymous key while hiding (hops.md §1)
+    bool ed3kAnonHoster = true;        // hoster joins under the anonymous key while hiding (hops.md §1)
     QStringList ed3kCreditRpc;         // JSON-RPC endpoints; empty = off
     QStringList ed3kDeclineUrls;       // decline lists fetched from URLs; empty = none
     QStringList ed3kChaintubeRpc;
@@ -2826,9 +2829,15 @@ void Preferences::setEd3kShareUsenetPosts(bool val) { set(&Data::ed3kShareUsenet
 bool Preferences::ed3kArchiveContents() const { return get(&Data::ed3kArchiveContents); }
 bool Preferences::ed3kLanUnlimited() const { return get(&Data::ed3kLanUnlimited); }
 void Preferences::setEd3kLanUnlimited(bool val) { set(&Data::ed3kLanUnlimited, val); }
-bool Preferences::ed3kAdvertiseEd2k() const { return get(&Data::ed3kAdvertiseEd2k); }
-void Preferences::setEd3kAdvertiseEd2k(bool val) { set(&Data::ed3kAdvertiseEd2k, val); }
 void Preferences::setEd3kArchiveContents(bool val) { set(&Data::ed3kArchiveContents, val); }
+bool Preferences::ed3kAnonEd2k() const { return get(&Data::ed3kAnonEd2k); }
+void Preferences::setEd3kAnonEd2k(bool val) { set(&Data::ed3kAnonEd2k, val); }
+bool Preferences::ed3kAnonTorrent() const { return get(&Data::ed3kAnonTorrent); }
+void Preferences::setEd3kAnonTorrent(bool val) { set(&Data::ed3kAnonTorrent, val); }
+bool Preferences::ed3kAnonUsenet() const { return get(&Data::ed3kAnonUsenet); }
+void Preferences::setEd3kAnonUsenet(bool val) { set(&Data::ed3kAnonUsenet, val); }
+bool Preferences::ed3kAnonHoster() const { return get(&Data::ed3kAnonHoster); }
+void Preferences::setEd3kAnonHoster(bool val) { set(&Data::ed3kAnonHoster, val); }
 bool Preferences::ed3kOwnSetsWatch() const { return get(&Data::ed3kOwnSetsWatch); }
 void Preferences::setEd3kOwnSetsWatch(bool val) { set(&Data::ed3kOwnSetsWatch, val); }
 
@@ -3728,8 +3737,8 @@ int Preferences::chatAlert() const { return get(&Data::chatAlert); }
 void Preferences::setChatAlert(int val) { set(&Data::chatAlert, std::clamp(val, 0, 2)); }
 bool Preferences::chatUnreadBadge() const { return get(&Data::chatUnreadBadge); }
 void Preferences::setChatUnreadBadge(bool val) { set(&Data::chatUnreadBadge, val); }
-bool Preferences::chatPlainLinks() const { return get(&Data::chatPlainLinks); }
-void Preferences::setChatPlainLinks(bool val) { set(&Data::chatPlainLinks, val); }
+bool Preferences::chatWebLinks() const { return get(&Data::chatWebLinks); }
+void Preferences::setChatWebLinks(bool val) { set(&Data::chatWebLinks, val); }
 bool Preferences::chatModStar() const { return get(&Data::chatModStar); }
 void Preferences::setChatModStar(bool val) { set(&Data::chatModStar, val); }
 bool Preferences::chatRoomMedia() const { return get(&Data::chatRoomMedia); }
@@ -4448,8 +4457,11 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("ed3kShareUsenetPosts"), ed3kShareUsenetPosts());
     prefs.insert(QStringLiteral("ed3kArchiveContents"), ed3kArchiveContents());
     prefs.insert(QStringLiteral("ed3kLanUnlimited"), ed3kLanUnlimited());
-    prefs.insert(QStringLiteral("ed3kAdvertiseEd2k"), ed3kAdvertiseEd2k());
     prefs.insert(QStringLiteral("ed3kOwnSetsWatch"), ed3kOwnSetsWatch());
+    prefs.insert(QStringLiteral("ed3kAnonEd2k"), ed3kAnonEd2k());
+    prefs.insert(QStringLiteral("ed3kAnonTorrent"), ed3kAnonTorrent());
+    prefs.insert(QStringLiteral("ed3kAnonUsenet"), ed3kAnonUsenet());
+    prefs.insert(QStringLiteral("ed3kAnonHoster"), ed3kAnonHoster());
     prefs.insert(QStringLiteral("ed3kCreditRpc"), ed3kCreditRpc().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("ed3kChaintubeRpc"), ed3kChaintubeRpc().join(QLatin1Char(' ')));
     prefs.insert(QStringLiteral("ed3kExtOff"), ed3kExtOff().join(QLatin1Char(' ')));
@@ -4868,8 +4880,11 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->ed3kShareUsenetPosts = p.value(QStringLiteral("ed3kShareUsenetPosts")).toBool(true);
     m_data->ed3kArchiveContents = p.value(QStringLiteral("ed3kArchiveContents")).toBool(true);
     m_data->ed3kLanUnlimited = p.value(QStringLiteral("ed3kLanUnlimited")).toBool(m_data->ed3kLanUnlimited);
-    m_data->ed3kAdvertiseEd2k = p.value(QStringLiteral("ed3kAdvertiseEd2k")).toBool(m_data->ed3kAdvertiseEd2k);
     m_data->ed3kOwnSetsWatch = p.value(QStringLiteral("ed3kOwnSetsWatch")).toBool(true);
+    m_data->ed3kAnonEd2k = p.value(QStringLiteral("ed3kAnonEd2k")).toBool(m_data->ed3kAnonEd2k);
+    m_data->ed3kAnonTorrent = p.value(QStringLiteral("ed3kAnonTorrent")).toBool(m_data->ed3kAnonTorrent);
+    m_data->ed3kAnonUsenet = p.value(QStringLiteral("ed3kAnonUsenet")).toBool(m_data->ed3kAnonUsenet);
+    m_data->ed3kAnonHoster = p.value(QStringLiteral("ed3kAnonHoster")).toBool(m_data->ed3kAnonHoster);
     m_data->ed3kCreditRpc = rpcUrlList(p.value(QStringLiteral("ed3kCreditRpc")));
     m_data->ed3kChaintubeRpc = rpcUrlList(p.value(QStringLiteral("ed3kChaintubeRpc")));
     m_data->ed3kExtOff = rpcUrlList(p.value(QStringLiteral("ed3kExtOff")));
@@ -5778,7 +5793,7 @@ bool Preferences::load(const QString& filePath)
             m_data->chatSound = ch["chatSound"].as<bool>(m_data->chatSound);
             m_data->chatAlert = std::clamp(ch["chatAlert"].as<int>(m_data->chatAlert), 0, 2);
             m_data->chatUnreadBadge = ch["chatUnreadBadge"].as<bool>(m_data->chatUnreadBadge);
-            m_data->chatPlainLinks = ch["chatPlainLinks"].as<bool>(m_data->chatPlainLinks);
+            m_data->chatWebLinks = ch["chatWebLinks"].as<bool>(m_data->chatWebLinks);
             m_data->chatModStar = ch["chatModStar"].as<bool>(m_data->chatModStar);
             m_data->chatRoomMedia = ch["chatRoomMedia"].as<bool>(m_data->chatRoomMedia);
             m_data->chatRoomVideos = ch["chatRoomVideos"].as<bool>(m_data->chatRoomVideos);
@@ -6311,8 +6326,11 @@ bool Preferences::load(const QString& filePath)
             m_data->ed3kShareUsenetPosts = e3["shareUsenetPosts"].as<bool>(m_data->ed3kShareUsenetPosts);
             m_data->ed3kArchiveContents = e3["archiveContents"].as<bool>(m_data->ed3kArchiveContents);
             m_data->ed3kLanUnlimited = e3["lanUnlimited"].as<bool>(m_data->ed3kLanUnlimited);
-            m_data->ed3kAdvertiseEd2k = e3["advertiseEd2k"].as<bool>(m_data->ed3kAdvertiseEd2k);
             m_data->ed3kOwnSetsWatch = e3["ownSetsWatch"].as<bool>(m_data->ed3kOwnSetsWatch);
+            m_data->ed3kAnonEd2k = e3["anonEd2k"].as<bool>(m_data->ed3kAnonEd2k);
+            m_data->ed3kAnonTorrent = e3["anonTorrent"].as<bool>(m_data->ed3kAnonTorrent);
+            m_data->ed3kAnonUsenet = e3["anonUsenet"].as<bool>(m_data->ed3kAnonUsenet);
+            m_data->ed3kAnonHoster = e3["anonHoster"].as<bool>(m_data->ed3kAnonHoster);
             const auto urls = [](const YAML::Node& n) {
                 QStringList out;
                 if (n && n.IsSequence())
@@ -7424,7 +7442,7 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "chatSound" << YAML::Value << m_data->chatSound;
     out << YAML::Key << "chatAlert" << YAML::Value << m_data->chatAlert;
     out << YAML::Key << "chatUnreadBadge" << YAML::Value << m_data->chatUnreadBadge;
-    out << YAML::Key << "chatPlainLinks" << YAML::Value << m_data->chatPlainLinks;
+    out << YAML::Key << "chatWebLinks" << YAML::Value << m_data->chatWebLinks;
     out << YAML::Key << "chatModStar" << YAML::Value << m_data->chatModStar;
     out << YAML::Key << "chatRoomMedia" << YAML::Value << m_data->chatRoomMedia;
     out << YAML::Key << "chatRoomVideos" << YAML::Value << m_data->chatRoomVideos;
@@ -7830,8 +7848,11 @@ QByteArray Preferences::encode() const
     out << YAML::Key << "shareUsenetPosts" << YAML::Value << m_data->ed3kShareUsenetPosts;
     out << YAML::Key << "archiveContents" << YAML::Value << m_data->ed3kArchiveContents;
     out << YAML::Key << "lanUnlimited" << YAML::Value << m_data->ed3kLanUnlimited;
-    out << YAML::Key << "advertiseEd2k" << YAML::Value << m_data->ed3kAdvertiseEd2k;
     out << YAML::Key << "ownSetsWatch" << YAML::Value << m_data->ed3kOwnSetsWatch;
+    out << YAML::Key << "anonEd2k" << YAML::Value << m_data->ed3kAnonEd2k;
+    out << YAML::Key << "anonTorrent" << YAML::Value << m_data->ed3kAnonTorrent;
+    out << YAML::Key << "anonUsenet" << YAML::Value << m_data->ed3kAnonUsenet;
+    out << YAML::Key << "anonHoster" << YAML::Value << m_data->ed3kAnonHoster;
     out << YAML::Key << "udpPort" << YAML::Value << static_cast<int>(m_data->ed3kUdpPort);
     out << YAML::Key << "lan" << YAML::Value << m_data->ed3kLan;
     out << YAML::Key << "forceOpen" << YAML::Value << m_data->ed3kForceOpen;
