@@ -87,6 +87,8 @@ public:
         auto* hdr = listHeader();
         if constexpr (std::is_base_of_v<QTableView, Base>)
             hdr->setSectionsMovable(true);   // tree headers are movable by default
+        else
+            hdr->setFirstSectionMovable(true);   // QTreeView pins column 0; MFC lets it move too
         int column = 0;
         for (const int width : defaultWidths) {
             if (width > 0 && column < hdr->count())
